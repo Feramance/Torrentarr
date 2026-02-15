@@ -151,6 +151,22 @@ public class QBittorrentClient
     }
 
     /// <summary>
+    /// Pause a single torrent
+    /// </summary>
+    public async Task<bool> PauseTorrentAsync(string hash, CancellationToken ct = default)
+    {
+        return await PauseTorrentsAsync(new List<string> { hash }, ct);
+    }
+
+    /// <summary>
+    /// Resume a single torrent
+    /// </summary>
+    public async Task<bool> ResumeTorrentAsync(string hash, CancellationToken ct = default)
+    {
+        return await ResumeTorrentsAsync(new List<string> { hash }, ct);
+    }
+
+    /// <summary>
     /// Set torrent category
     /// </summary>
     public async Task<bool> SetCategoryAsync(List<string> hashes, string category, CancellationToken ct = default)
@@ -233,6 +249,12 @@ public class TorrentInfo
 
     [JsonProperty("tracker")]
     public string Tracker { get; set; } = "";
+
+    [JsonProperty("uploaded")]
+    public long Uploaded { get; set; }
+
+    [JsonProperty("downloaded")]
+    public long Downloaded { get; set; }
 }
 
 /// <summary>

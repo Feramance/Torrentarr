@@ -9,6 +9,11 @@ public class CommandarrConfig
     public QBitConfig QBit { get; set; } = new();
     public WebUIConfig WebUI { get; set; } = new();
     public Dictionary<string, ArrInstanceConfig> ArrInstances { get; set; } = new();
+
+    /// <summary>
+    /// Helper property to get Arr instances as a list
+    /// </summary>
+    public List<ArrInstanceConfig> Arrs => ArrInstances.Values.ToList();
 }
 
 public class SettingsConfig
@@ -35,6 +40,27 @@ public class SettingsConfig
     public int MaxProcessRestarts { get; set; } = 5;
     public int ProcessRestartWindow { get; set; } = 300;
     public int ProcessRestartDelay { get; set; } = 5;
+
+    // Seeding configuration
+    public List<CategorySeedingRule>? CategorySeedingRules { get; set; }
+    public List<TrackerRule>? TrackerRules { get; set; }
+
+    // Free space configuration
+    public double? FreeSpaceThresholdGB { get; set; } = 10;
+}
+
+public class CategorySeedingRule
+{
+    public string Category { get; set; } = "";
+    public int MinimumSeedingTime { get; set; } = 0; // minutes
+    public double MinimumRatio { get; set; } = 0;
+}
+
+public class TrackerRule
+{
+    public string TrackerUrl { get; set; } = "";
+    public int MinimumSeedingTime { get; set; } = 0; // minutes
+    public double MinimumRatio { get; set; } = 0;
 }
 
 public class QBitConfig
@@ -44,6 +70,7 @@ public class QBitConfig
     public int Port { get; set; } = 8080;
     public string UserName { get; set; } = "";
     public string Password { get; set; } = "";
+    public string? DownloadPath { get; set; }
     public List<string> ManagedCategories { get; set; } = new();
     public List<TrackerConfig> Trackers { get; set; } = new();
     public CategorySeedingConfig CategorySeeding { get; set; } = new();
