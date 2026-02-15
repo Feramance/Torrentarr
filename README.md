@@ -119,9 +119,11 @@ When running in Development mode, Swagger UI is available at:
 
 - `GET /health` - Health check
 - `GET /api/status` - System status (qBit, Arr instances, stats)
-- `GET /api/radarr/{category}/movies` - Get movies for category
-- `GET /api/sonarr/{category}/series` - Get series for category
-- `POST /api/processes/{name}/restart` - Restart worker process
+- `GET /api/movies?page=1&pageSize=50` - Paginated movies list
+- `GET /api/episodes?page=1&pageSize=50` - Paginated episodes list
+- `GET /api/torrents?page=1&pageSize=50` - Paginated torrent library
+- `GET /api/stats` - Detailed statistics
+- `GET /api/config` - Configuration (sanitized)
 
 ## Development
 
@@ -139,9 +141,11 @@ src/
 │       ├── Models/            # EF Core entity models
 │       └── CommandarrDbContext.cs
 ├── Commandarr.WebUI/
-│   └── Program.cs             # ASP.NET Core app
-├── Commandarr.Workers/        # Background workers (TODO)
-└── Commandarr.Host/           # Orchestrator (TODO)
+│   └── Program.cs             # ASP.NET Core app with REST API
+├── Commandarr.Workers/
+│   └── Program.cs             # Background worker processes
+└── Commandarr.Host/
+    └── Program.cs             # Process orchestrator
 ```
 
 ### Building
@@ -207,19 +211,22 @@ dotnet test --collect:"XPlat Code Coverage"
 - [x] Configuration system (TOML parsing)
 - [x] Database models and EF Core context
 - [x] qBittorrent API client
-- [x] Radarr API client
-- [x] WebUI with basic endpoints
-- [ ] Sonarr and Lidarr API clients
-- [ ] Worker processes for Arr instances
-- [ ] Host orchestrator for process management
-- [ ] Hit & Run protection logic
-- [ ] Quality upgrade service
-- [ ] Free space management
-- [ ] Search coordinator
+- [x] Radarr, Sonarr, and Lidarr API clients
+- [x] WebUI with comprehensive REST API endpoints
+- [x] Worker processes for Arr instances
+- [x] Host orchestrator for process management
+- [x] Hit & Run protection logic
+- [x] Torrent processing and state management
+- [x] Seeding service with category/tracker rules
+- [x] Quality upgrade service
+- [x] Free space management with auto-pause/resume
+- [x] Search coordinator with configurable frequency
+- [x] Multi-instance qBittorrent support
 - [ ] React frontend integration
 - [ ] SignalR real-time updates
 - [ ] Docker support
 - [ ] Comprehensive testing
+- [ ] Performance benchmarks vs qBitrr
 
 ## Contributing
 
