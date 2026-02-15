@@ -1,0 +1,189 @@
+# Commandarr Configuration Example
+# This file is 100% compatible with qBitrr config.toml
+# Copy this file to one of the following locations:
+#   - ~/config/config.toml
+#   - ~/.config/qbitrr/config.toml
+#   - ~/.config/commandarr/config.toml
+#   - ./config.toml (current directory)
+
+[Settings]
+# Internal config schema version - managed automatically
+ConfigVersion = "5.8.8"
+
+# Logging level: CRITICAL, ERROR, WARNING, NOTICE, INFO, DEBUG, TRACE
+ConsoleLevel = "INFO"
+
+# Enable logging to files (logs/ directory)
+Logging = true
+
+# Path to completed downloads folder
+CompletedDownloadFolder = "/downloads/completed"
+
+# Desired free space (-1 to disable): K=kilobytes, M=megabytes, G=gigabytes, T=terabytes
+FreeSpace = "10G"
+
+# Folder to check for free space
+FreeSpaceFolder = "/downloads"
+
+# Enable automatic pause/resume of torrents based on free space
+AutoPauseResume = true
+
+# Sleep time when no internet connection (seconds)
+NoInternetSleepTimer = 15
+
+# Time between torrent processing loops (seconds)
+LoopSleepTimer = 5
+
+# Time between search commands (-1 to disable, seconds)
+SearchLoopDelay = 60
+
+# Category for failed torrents
+FailedCategory = "failed"
+
+# Category for torrents to recheck
+RecheckCategory = "recheck"
+
+# Operate without tags (use categories only)
+Tagless = false
+
+# Ignore torrents younger than this (seconds)
+IgnoreTorrentsYoungerThan = 180
+
+# URLs to ping for internet connectivity check
+PingURLS = ["one.one.one.one", "dns.google.com"]
+
+# Auto-download/update FFprobe binary
+FFprobeAutoUpdate = true
+
+# Enable automatic updates
+AutoUpdateEnabled = false
+
+# Cron schedule for auto-updates (weekly Sunday at 3 AM)
+AutoUpdateCron = "0 3 * * 0"
+
+# Automatically restart crashed worker processes
+AutoRestartProcesses = true
+
+# Maximum restart attempts within restart window
+MaxProcessRestarts = 5
+
+# Time window for tracking restarts (seconds)
+ProcessRestartWindow = 300
+
+# Delay before restarting a failed process (seconds)
+ProcessRestartDelay = 5
+
+[WebUI]
+# WebUI listen host (0.0.0.0 for all interfaces, 127.0.0.1 for localhost only)
+Host = "0.0.0.0"
+
+# WebUI listen port
+Port = 6969
+
+# Bearer token for API authentication (leave empty to disable)
+Token = "your-secure-token-here"
+
+# Enable live updates for Arr views
+LiveArr = true
+
+# Group Sonarr episodes by series
+GroupSonarr = true
+
+# Group Lidarr albums by artist
+GroupLidarr = true
+
+# WebUI theme (Light or Dark)
+Theme = "Dark"
+
+# View density (Comfortable or Compact)
+ViewDensity = "Comfortable"
+
+[qBit]
+# Disable qBittorrent integration (headless search-only mode)
+Disabled = false
+
+# qBittorrent WebUI host
+Host = "localhost"
+
+# qBittorrent WebUI port
+Port = 8080
+
+# qBittorrent authentication
+UserName = "admin"
+Password = "adminadmin"
+
+# Categories managed directly by qBit (not by Arr instances)
+ManagedCategories = []
+
+# Global tracker configurations (inherited by all Arr instances)
+Trackers = []
+
+[qBit.CategorySeeding]
+# Download rate limit per torrent in KB/s (-1 = unlimited)
+DownloadRateLimitPerTorrent = -1
+
+# Upload rate limit per torrent in KB/s (-1 = unlimited)
+UploadRateLimitPerTorrent = -1
+
+# Maximum upload ratio (-1 = unlimited, e.g., 2.0 for 200%)
+MaxUploadRatio = 2.0
+
+# Maximum seeding time in seconds (-1 = unlimited)
+MaxSeedingTime = 604800
+
+# Remove mode: 0=Never, 1=IfMetUploadLimit, 2=Always
+RemoveMode = 1
+
+# Enable Hit & Run protection
+HitAndRunMode = true
+
+# Minimum seed ratio for HnR protection
+MinSeedRatio = 1.0
+
+# Minimum seed time for HnR protection (seconds)
+MinSeedTime = 86400
+
+# Example Radarr instance for movies
+[Radarr-Movies]
+# Radarr API URL
+URI = "http://localhost:7878"
+
+# Radarr API key (Settings > General > Security)
+APIKey = "your-radarr-api-key"
+
+# Enable management for this instance
+Managed = true
+
+# qBittorrent category for this instance
+Category = "radarr-movies"
+
+# Search only mode (no torrent processing)
+SearchOnly = false
+
+# Processing only mode (no searches)
+ProcessingOnly = false
+
+# Example Sonarr instance for TV shows
+[Sonarr-TV]
+URI = "http://localhost:8989"
+APIKey = "your-sonarr-api-key"
+Managed = true
+Category = "sonarr-tv"
+SearchOnly = false
+ProcessingOnly = false
+
+# Example Lidarr instance for music
+[Lidarr-Music]
+URI = "http://localhost:8686"
+APIKey = "your-lidarr-api-key"
+Managed = true
+Category = "lidarr-music"
+SearchOnly = false
+ProcessingOnly = false
+
+# You can have multiple instances of the same type:
+# [Radarr-4K]
+# URI = "http://localhost:7879"
+# APIKey = "your-4k-radarr-api-key"
+# Managed = true
+# Category = "radarr-4k"

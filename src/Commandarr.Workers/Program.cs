@@ -1,5 +1,9 @@
 using Microsoft.Extensions.Logging;
 using Commandarr.Core.Configuration;
+using Commandarr.Core.Services;
+using Commandarr.Infrastructure.Database;
+using Commandarr.Infrastructure.Services;
+using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
 using Serilog;
@@ -51,6 +55,19 @@ try
     builder.Services.AddSingleton(config);
     builder.Services.AddSingleton(instanceConfig);
     builder.Services.AddSingleton(new WorkerContext { InstanceName = instanceName });
+
+    // Add database context
+    var homePath = Environment.GetFolderPath(Environment.SpecialFolder.UserProfile);
+    var dbPath = Path.Combine(homePath, ".config", "commandarr", "qbitrr.db");
+    builder.Services.AddDbContext<CommandarrDbContext>(options =>
+    {
+        options.UseSqlite($"Data Source={dbPath}");
+    });
+
+    // Add services
+    builder.Services.AddSingleton<QBittorrentConnectionManager>();
+    builder.Services.AddScoped<ITorrentProcessor, TorrentProcessor>();
+
     builder.Services.AddHostedService<ArrWorkerService>();
 
     var host = builder.Build();
@@ -83,17 +100,23 @@ class ArrWorkerService : BackgroundService
     private readonly CommandarrConfig _config;
     private readonly ArrInstanceConfig _instanceConfig;
     private readonly WorkerContext _context;
+    private readonly IServiceProvider _serviceProvider;
+    private readonly QBittorrentConnectionManager _qbitManager;
 
     public ArrWorkerService(
         ILogger<ArrWorkerService> logger,
         CommandarrConfig config,
         ArrInstanceConfig instanceConfig,
-        WorkerContext context)
+        WorkerContext context,
+        IServiceProvider serviceProvider,
+        QBittorrentConnectionManager qbitManager)
     {
         _logger = logger;
         _config = config;
         _instanceConfig = instanceConfig;
         _context = context;
+        _serviceProvider = serviceProvider;
+        _qbitManager = qbitManager;
     }
 
     protected override async Task ExecuteAsync(CancellationToken stoppingToken)
@@ -101,6 +124,23 @@ class ArrWorkerService : BackgroundService
         _logger.LogInformation("Arr Worker for {Instance} starting", _context.InstanceName);
         _logger.LogInformation("Type: {Type}, URI: {URI}, Category: {Category}",
             _instanceConfig.Type, _instanceConfig.URI, _instanceConfig.Category);
+
+        // Initialize qBittorrent connection
+        try
+        {
+            var initialized = await _qbitManager.InitializeAsync(_config.QBit);
+            if (!initialized)
+            {
+                _logger.LogError("Failed to initialize qBittorrent connection");
+                return;
+            }
+            _logger.LogInformation("Connected to qBittorrent successfully");
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Error connecting to qBittorrent");
+            return;
+        }
 
         try
         {
@@ -131,21 +171,17 @@ class ArrWorkerService : BackgroundService
     {
         _logger.LogDebug("Processing torrents for {Instance}", _context.InstanceName);
 
-        // TODO: Implement actual torrent processing logic:
-        // 1. Connect to qBittorrent
-        // 2. Get torrents for this category
-        // 3. Check torrent states (downloading, stalled, completed, failed)
-        // 4. Process imports to Arr
-        // 5. Trigger searches for missing/wanted media
-        // 6. Handle quality upgrades
-        // 7. Manage seeding rules and Hit & Run protection
+        // Create a scope for scoped services (DbContext, TorrentProcessor)
+        using var scope = _serviceProvider.CreateScope();
+        var torrentProcessor = scope.ServiceProvider.GetRequiredService<ITorrentProcessor>();
 
-        // Placeholder: Just log that we're running
-        _logger.LogInformation("Worker heartbeat for {Instance} - {Type} at {Time}",
-            _context.InstanceName,
-            _instanceConfig.Type,
-            DateTime.UtcNow);
+        // Process all torrents for this category
+        await torrentProcessor.ProcessTorrentsAsync(_instanceConfig.Category, cancellationToken);
 
-        await Task.CompletedTask;
+        // TODO: Additional processing steps:
+        // 1. Trigger searches for missing/wanted media in Arr
+        // 2. Handle quality upgrades
+        // 3. Manage seeding rules and Hit & Run protection
+        // 4. Free space management
     }
 }
