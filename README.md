@@ -164,7 +164,7 @@ dotnet build -c Release
 ### Running
 
 ```bash
-# Run WebUI
+# Run WebUI (serves React app if built)
 dotnet run --project src/Commandarr.WebUI/Commandarr.WebUI.csproj
 
 # Run with specific port
@@ -173,6 +173,23 @@ dotnet run --project src/Commandarr.WebUI/Commandarr.WebUI.csproj --urls "http:/
 # Run with hot reload
 dotnet watch --project src/Commandarr.WebUI/Commandarr.WebUI.csproj
 ```
+
+### Building the React Frontend
+
+```bash
+# Navigate to ClientApp directory
+cd src/Commandarr.WebUI/ClientApp
+
+# Install dependencies
+npm install
+
+# Build for production
+npm run build
+
+# The WebUI will automatically serve the built React app
+```
+
+For frontend development, see [ClientApp/README.md](src/Commandarr.WebUI/ClientApp/README.md)
 
 ### Testing
 
@@ -222,8 +239,8 @@ dotnet test --collect:"XPlat Code Coverage"
 - [x] Free space management with auto-pause/resume
 - [x] Search coordinator with configurable frequency
 - [x] Multi-instance qBittorrent support
-- [ ] React frontend integration
-- [ ] SignalR real-time updates
+- [x] React frontend integration with dashboard
+- [ ] SignalR real-time updates (polling implemented)
 - [ ] Docker support
 - [ ] Comprehensive testing
 - [ ] Performance benchmarks vs qBitrr

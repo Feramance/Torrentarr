@@ -99,8 +99,25 @@ if (app.Environment.IsDevelopment())
 app.UseResponseCompression();
 app.UseCors("AllowAll");
 
-app.UseDefaultFiles();
-app.UseStaticFiles();
+// Serve static files from ClientApp/build
+var clientAppPath = Path.Combine(Directory.GetCurrentDirectory(), "ClientApp", "build");
+if (Directory.Exists(clientAppPath))
+{
+    app.UseDefaultFiles(new DefaultFilesOptions
+    {
+        FileProvider = new Microsoft.Extensions.FileProviders.PhysicalFileProvider(clientAppPath)
+    });
+    app.UseStaticFiles(new StaticFileOptions
+    {
+        FileProvider = new Microsoft.Extensions.FileProviders.PhysicalFileProvider(clientAppPath)
+    });
+}
+else
+{
+    // Fallback to wwwroot if ClientApp/build doesn't exist
+    app.UseDefaultFiles();
+    app.UseStaticFiles();
+}
 
 app.MapControllers();
 
@@ -323,8 +340,19 @@ app.MapGet("/api/config", (CommandarrConfig config) =>
     });
 });
 
-// Fallback for SPA routing
-app.MapFallbackToFile("index.html");
+// Fallback for SPA routing - serve index.html from ClientApp/build or wwwroot
+if (Directory.Exists(clientAppPath))
+{
+    app.MapFallback(context =>
+    {
+        context.Response.ContentType = "text/html";
+        return context.Response.SendFileAsync(Path.Combine(clientAppPath, "index.html"));
+    });
+}
+else
+{
+    app.MapFallbackToFile("index.html");
+}
 
 Log.Information("Commandarr WebUI starting on {Host}:{Port}",
     builder.Configuration["urls"] ?? "http://localhost:5000",
