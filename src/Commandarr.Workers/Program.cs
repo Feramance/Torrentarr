@@ -67,6 +67,9 @@ try
     // Add services
     builder.Services.AddSingleton<QBittorrentConnectionManager>();
     builder.Services.AddScoped<ITorrentProcessor, TorrentProcessor>();
+    builder.Services.AddScoped<IArrMediaService, ArrMediaServiceSimple>();
+    builder.Services.AddScoped<ISeedingService, SeedingService>();
+    builder.Services.AddScoped<IFreeSpaceService, FreeSpaceService>();
 
     builder.Services.AddHostedService<ArrWorkerService>();
 
@@ -171,17 +174,83 @@ class ArrWorkerService : BackgroundService
     {
         _logger.LogDebug("Processing torrents for {Instance}", _context.InstanceName);
 
-        // Create a scope for scoped services (DbContext, TorrentProcessor)
+        // Create a scope for scoped services (DbContext, TorrentProcessor, etc.)
         using var scope = _serviceProvider.CreateScope();
         var torrentProcessor = scope.ServiceProvider.GetRequiredService<ITorrentProcessor>();
+        var arrMediaService = scope.ServiceProvider.GetRequiredService<IArrMediaService>();
+        var seedingService = scope.ServiceProvider.GetRequiredService<ISeedingService>();
+        var freeSpaceService = scope.ServiceProvider.GetRequiredService<IFreeSpaceService>();
 
-        // Process all torrents for this category
+        // 1. Check free space and pause downloads if needed
+        var pausedDueToSpace = await freeSpaceService.PauseDownloadsIfLowSpaceAsync(cancellationToken);
+        if (pausedDueToSpace)
+        {
+            _logger.LogWarning("Downloads paused due to low disk space");
+        }
+        else
+        {
+            // Try to resume if we have space
+            await freeSpaceService.ResumeDownloadsIfSpaceAvailableAsync(cancellationToken);
+        }
+
+        // 2. Process all torrents for this category
         await torrentProcessor.ProcessTorrentsAsync(_instanceConfig.Category, cancellationToken);
 
-        // TODO: Additional processing steps:
-        // 1. Trigger searches for missing/wanted media in Arr
-        // 2. Handle quality upgrades
-        // 3. Manage seeding rules and Hit & Run protection
-        // 4. Free space management
+        // 3. Manage seeding rules and remove completed torrents
+        if (!_instanceConfig.SearchOnly)
+        {
+            var removalResult = await seedingService.RemoveCompletedTorrentsAsync(_instanceConfig.Category, cancellationToken);
+            if (removalResult.TorrentsRemoved > 0)
+            {
+                _logger.LogInformation("Removed {Count} completed torrents that met seeding requirements",
+                    removalResult.TorrentsRemoved);
+            }
+            if (removalResult.TorrentsProtected > 0)
+            {
+                _logger.LogDebug("{Count} torrents protected by H&R rules", removalResult.TorrentsProtected);
+            }
+        }
+
+        // 4. Search for missing media (if configured and on search cycle)
+        if (!_instanceConfig.ProcessingOnly && ShouldRunSearch())
+        {
+            _logger.LogInformation("Searching for missing media in {Instance}", _context.InstanceName);
+            var searchResult = await arrMediaService.SearchMissingMediaAsync(_instanceConfig.Category, cancellationToken);
+
+            if (searchResult.SearchesTriggered > 0)
+            {
+                _logger.LogInformation("Triggered {Count} searches for missing media", searchResult.SearchesTriggered);
+            }
+
+            // 5. Search for quality upgrades (if enabled)
+            if (_config.Settings.SearchLoopDelay > 0)
+            {
+                var upgradeResult = await arrMediaService.SearchQualityUpgradesAsync(_instanceConfig.Category, cancellationToken);
+                if (upgradeResult.SearchesTriggered > 0)
+                {
+                    _logger.LogInformation("Triggered {Count} searches for quality upgrades", upgradeResult.SearchesTriggered);
+                }
+            }
+        }
+    }
+
+    private int _searchCycleCounter = 0;
+    private bool ShouldRunSearch()
+    {
+        // If SearchLoopDelay is -1 or 0, never search
+        if (_config.Settings.SearchLoopDelay <= 0)
+        {
+            return false;
+        }
+
+        // Run search every N cycles
+        _searchCycleCounter++;
+        if (_searchCycleCounter >= _config.Settings.SearchLoopDelay)
+        {
+            _searchCycleCounter = 0;
+            return true;
+        }
+
+        return false;
     }
 }

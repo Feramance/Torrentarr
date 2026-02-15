@@ -155,6 +155,174 @@ app.MapGet("/api/status", async (CommandarrDbContext db, CommandarrConfig config
     });
 });
 
+// Movies endpoint - get all movies with pagination
+app.MapGet("/api/movies", async (CommandarrDbContext db, int? page, int? pageSize) =>
+{
+    var currentPage = page ?? 1;
+    var currentPageSize = pageSize ?? 50;
+    var skip = (currentPage - 1) * currentPageSize;
+
+    var totalMovies = await db.Movies.CountAsync();
+    var movies = await db.Movies
+        .OrderByDescending(m => m.EntryId)
+        .Skip(skip)
+        .Take(currentPageSize)
+        .Select(m => new
+        {
+            m.EntryId,
+            m.Title,
+            m.Monitored,
+            m.TmdbId,
+            m.Year
+        })
+        .ToListAsync();
+
+    return Results.Ok(new
+    {
+        page = currentPage,
+        pageSize = currentPageSize,
+        totalCount = totalMovies,
+        totalPages = (int)Math.Ceiling((double)totalMovies / currentPageSize),
+        items = movies
+    });
+});
+
+// Episodes endpoint - get all episodes with pagination
+app.MapGet("/api/episodes", async (CommandarrDbContext db, int? page, int? pageSize) =>
+{
+    var currentPage = page ?? 1;
+    var currentPageSize = pageSize ?? 50;
+    var skip = (currentPage - 1) * currentPageSize;
+
+    var totalEpisodes = await db.Episodes.CountAsync();
+    var episodes = await db.Episodes
+        .OrderByDescending(e => e.EntryId)
+        .Skip(skip)
+        .Take(currentPageSize)
+        .Select(e => new
+        {
+            e.EntryId,
+            e.SeriesTitle,
+            e.SeasonNumber,
+            e.EpisodeNumber,
+            e.Monitored,
+            e.SeriesId
+        })
+        .ToListAsync();
+
+    return Results.Ok(new
+    {
+        page = currentPage,
+        pageSize = currentPageSize,
+        totalCount = totalEpisodes,
+        totalPages = (int)Math.Ceiling((double)totalEpisodes / currentPageSize),
+        items = episodes
+    });
+});
+
+// Torrents endpoint - get all tracked torrents
+app.MapGet("/api/torrents", async (CommandarrDbContext db, int? page, int? pageSize) =>
+{
+    var currentPage = page ?? 1;
+    var currentPageSize = pageSize ?? 50;
+    var skip = (currentPage - 1) * currentPageSize;
+
+    var totalTorrents = await db.TorrentLibrary.CountAsync();
+    var torrents = await db.TorrentLibrary
+        .OrderByDescending(t => t.Id)
+        .Skip(skip)
+        .Take(currentPageSize)
+        .Select(t => new
+        {
+            t.Hash,
+            t.Category,
+            t.Imported,
+            t.QbitInstance
+        })
+        .ToListAsync();
+
+    return Results.Ok(new
+    {
+        page = currentPage,
+        pageSize = currentPageSize,
+        totalCount = totalTorrents,
+        totalPages = (int)Math.Ceiling((double)totalTorrents / currentPageSize),
+        items = torrents
+    });
+});
+
+// Stats endpoint - detailed statistics
+app.MapGet("/api/stats", async (CommandarrDbContext db) =>
+{
+    var movieCount = await db.Movies.CountAsync();
+    var episodeCount = await db.Episodes.CountAsync();
+    var seriesCount = await db.Series.CountAsync();
+    var albumCount = await db.Albums.CountAsync();
+    var torrentCount = await db.TorrentLibrary.CountAsync();
+
+    var importedTorrents = await db.TorrentLibrary.CountAsync(t => t.Imported);
+    var activeTorrents = await db.TorrentLibrary.CountAsync(t => !t.Imported);
+
+    return Results.Ok(new
+    {
+        media = new
+        {
+            movies = movieCount,
+            episodes = episodeCount,
+            series = seriesCount,
+            albums = albumCount,
+            total = movieCount + episodeCount + albumCount
+        },
+        torrents = new
+        {
+            total = torrentCount,
+            imported = importedTorrents,
+            active = activeTorrents
+        }
+    });
+});
+
+// Configuration endpoint - get current configuration (sanitized)
+app.MapGet("/api/config", (CommandarrConfig config) =>
+{
+    return Results.Ok(new
+    {
+        settings = new
+        {
+            config.Settings.ConfigVersion,
+            config.Settings.LoopSleepTimer,
+            config.Settings.SearchLoopDelay,
+            config.Settings.AutoRestartProcesses,
+            config.Settings.FreeSpaceThresholdGB
+        },
+        webui = new
+        {
+            config.WebUI.Host,
+            config.WebUI.Port,
+            config.WebUI.Theme,
+            config.WebUI.ViewDensity,
+            config.WebUI.LiveArr,
+            config.WebUI.GroupSonarr,
+            config.WebUI.GroupLidarr
+        },
+        qbit = new
+        {
+            config.QBit.Host,
+            config.QBit.Port,
+            config.QBit.Disabled,
+            managedCategories = config.QBit.ManagedCategories
+        },
+        arrs = config.Arrs.Select(a => new
+        {
+            a.Category,
+            a.Type,
+            a.Managed,
+            a.SearchOnly,
+            a.ProcessingOnly
+        }).ToList()
+    });
+});
+
 // Fallback for SPA routing
 app.MapFallbackToFile("index.html");
 
