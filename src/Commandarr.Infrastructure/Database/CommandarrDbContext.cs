@@ -16,7 +16,13 @@ public class CommandarrDbContext : DbContext
 
     public DbSet<MoviesFilesModel> Movies { get; set; }
     public DbSet<EpisodeFilesModel> Episodes { get; set; }
+    public DbSet<SeriesFilesModel> Series { get; set; }
+    public DbSet<AlbumFilesModel> Albums { get; set; }
     public DbSet<TorrentLibrary> TorrentLibrary { get; set; }
+    public DbSet<MovieQueueModel> MovieQueue { get; set; }
+    public DbSet<EpisodeQueueModel> EpisodeQueue { get; set; }
+    public DbSet<AlbumQueueModel> AlbumQueue { get; set; }
+    public DbSet<FilesQueued> FilesQueued { get; set; }
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
@@ -25,7 +31,13 @@ public class CommandarrDbContext : DbContext
         // Configure table names to match qBitrr (lowercase)
         modelBuilder.Entity<MoviesFilesModel>().ToTable("moviesfilesmodel");
         modelBuilder.Entity<EpisodeFilesModel>().ToTable("episodefilesmodel");
+        modelBuilder.Entity<SeriesFilesModel>().ToTable("seriesfilesmodel");
+        modelBuilder.Entity<AlbumFilesModel>().ToTable("albumfilesmodel");
         modelBuilder.Entity<TorrentLibrary>().ToTable("torrentlibrary");
+        modelBuilder.Entity<MovieQueueModel>().ToTable("moviequeuemodel");
+        modelBuilder.Entity<EpisodeQueueModel>().ToTable("episodequeuemodel");
+        modelBuilder.Entity<AlbumQueueModel>().ToTable("albumqueuemodel");
+        modelBuilder.Entity<FilesQueued>().ToTable("filesqueued");
 
         // Configure unique index for TorrentLibrary (Hash, QbitInstance)
         modelBuilder.Entity<TorrentLibrary>()
