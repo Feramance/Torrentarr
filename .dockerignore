@@ -1,0 +1,68 @@
+# Git
+.git/
+.gitignore
+.gitattributes
+
+# Documentation
+*.md
+!README.md
+LICENSE
+
+# Build outputs
+**/bin/
+**/obj/
+**/publish/
+**/out/
+
+# Node.js
+**/node_modules/
+**/npm-debug.log
+**/yarn-debug.log
+**/yarn-error.log
+*.log
+
+# React build (we build it in Docker)
+**/ClientApp/build/
+**/ClientApp/dist/
+
+# IDE
+.vs/
+.vscode/
+.idea/
+*.suo
+*.user
+*.userosscache
+*.sln.docstates
+
+# Database files
+*.db
+*.db-wal
+*.db-shm
+
+# Config files (use example)
+config.toml
+
+# Test files
+**/TestResults/
+**/*.Tests/
+coverage/
+
+# OS files
+.DS_Store
+Thumbs.db
+*.swp
+*~
+
+# Docker
+docker-compose.override.yml
+Dockerfile.dev
+
+# Temporary files
+**/tmp/
+**/temp/
+logs/
+
+# Environment files
+.env
+.env.local
+.env.*.local

@@ -48,22 +48,45 @@ Commandarr/
 
 ### Installation
 
+#### Option 1: Docker (Recommended)
+
+The easiest way to get started:
+
 ```bash
 # Clone the repository
 git clone https://github.com/yourusername/commandarr.git
 cd commandarr
 
-# Restore packages
-dotnet restore
-
-# Build
-dotnet build
-
-# Run WebUI
-dotnet run --project src/Commandarr.WebUI/Commandarr.WebUI.csproj
+# Start all services (qBittorrent, Radarr, Sonarr, Commandarr)
+docker-compose up -d
 ```
 
-The WebUI will start on `http://localhost:5000` (or the port specified in launchSettings.json).
+Access at: http://localhost:6969
+
+See [DOCKER.md](DOCKER.md) for complete Docker documentation.
+
+#### Option 2: Manual Installation
+
+```bash
+# Clone the repository
+git clone https://github.com/yourusername/commandarr.git
+cd commandarr
+
+# Build React frontend
+cd src/Commandarr.WebUI/ClientApp
+npm install
+npm run build
+cd ../../..
+
+# Build .NET backend
+dotnet restore
+dotnet build
+
+# Run the Host orchestrator
+dotnet run --project src/Commandarr.Host/Commandarr.Host.csproj
+```
+
+The WebUI will start on the port specified in your config.toml (default 6969).
 
 ### Configuration
 
@@ -203,9 +226,46 @@ dotnet test --collect:"XPlat Code Coverage"
 
 ## Docker
 
-```dockerfile
-# TODO: Multi-stage Dockerfile
+Commandarr includes complete Docker support with multi-stage builds.
+
+### Quick Start with Docker Compose
+
+```bash
+# Clone and configure
+git clone https://github.com/yourusername/commandarr.git
+cd commandarr
+cp config.example.toml config/config.toml
+
+# Edit config with your settings
+nano config/config.toml
+
+# Start the full stack (Commandarr + qBittorrent + Radarr + Sonarr)
+docker-compose up -d
+
+# View logs
+docker-compose logs -f commandarr
 ```
+
+### Standalone Container
+
+```bash
+docker run -d \
+  --name commandarr \
+  -p 6969:6969 \
+  -v $(pwd)/config:/config \
+  -v $(pwd)/data:/data \
+  -e TZ=America/New_York \
+  commandarr:latest
+```
+
+See **[DOCKER.md](DOCKER.md)** for comprehensive Docker documentation including:
+- Complete docker-compose.yml with all services
+- Configuration examples
+- Networking setup
+- Volume management
+- Health checks
+- Troubleshooting
+- Production deployment
 
 ## Comparison with qBitrr
 
@@ -240,10 +300,12 @@ dotnet test --collect:"XPlat Code Coverage"
 - [x] Search coordinator with configurable frequency
 - [x] Multi-instance qBittorrent support
 - [x] React frontend integration with dashboard
+- [x] Docker support with multi-stage builds
+- [x] Docker Compose for full stack deployment
 - [ ] SignalR real-time updates (polling implemented)
-- [ ] Docker support
-- [ ] Comprehensive testing
+- [ ] Comprehensive testing suite
 - [ ] Performance benchmarks vs qBitrr
+- [ ] Kubernetes/Helm charts
 
 ## Contributing
 
