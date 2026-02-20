@@ -1,40 +1,46 @@
 # Stage 1: Build React Frontend
-FROM node:18-alpine AS frontend-build
+FROM node:22-alpine AS frontend-build
 WORKDIR /app/frontend
 
-# Copy package files
-COPY src/Torrentarr.WebUI/ClientApp/package*.json ./
+# Copy package files and npm config from webui/
+COPY webui/package*.json webui/.npmrc* ./
 
-# Install dependencies
-RUN npm ci --only=production
+# Install all dependencies (devDependencies are required for Vite/TypeScript build)
+RUN npm ci
 
 # Copy frontend source
-COPY src/Torrentarr.WebUI/ClientApp/ ./
+COPY webui/ ./
 
-# Build production bundle
+# Build production bundle.
+# vite.config.ts resolves outDir to ../src/Torrentarr.Host/wwwroot relative to
+# the config file, which in this container is /app/src/Torrentarr.Host/wwwroot.
 RUN npm run build
 
 # Stage 2: Build .NET Backend
 FROM mcr.microsoft.com/dotnet/sdk:10.0 AS backend-build
 WORKDIR /app
 
-# Copy solution and project files
+# Copy solution and project files for restore layer caching
 COPY Torrentarr.slnx ./
 COPY src/Torrentarr.Core/*.csproj ./src/Torrentarr.Core/
 COPY src/Torrentarr.Infrastructure/*.csproj ./src/Torrentarr.Infrastructure/
+COPY src/Torrentarr.Host/*.csproj ./src/Torrentarr.Host/
 COPY src/Torrentarr.WebUI/*.csproj ./src/Torrentarr.WebUI/
 COPY src/Torrentarr.Workers/*.csproj ./src/Torrentarr.Workers/
-COPY src/Torrentarr.Host/*.csproj ./src/Torrentarr.Host/
 
-# Restore dependencies
-RUN dotnet restore
+# Restore only the Host project and its transitive dependencies.
+# We do not restore the full solution because the solution file includes test
+# projects that are not present in the Docker build context.
+RUN dotnet restore src/Torrentarr.Host/Torrentarr.Host.csproj
 
 # Copy source code
 COPY src/ ./src/
 COPY nuget.config ./
 
-# Copy built React app from frontend stage
-COPY --from=frontend-build /app/frontend/build ./src/Torrentarr.WebUI/ClientApp/build
+# Overlay the built React app from the frontend stage.
+# Vite wrote to /app/src/Torrentarr.Host/wwwroot in the frontend stage;
+# dotnet publish picks up wwwroot/ automatically (Microsoft.NET.Sdk.Web).
+COPY --from=frontend-build /app/src/Torrentarr.Host/wwwroot ./src/Torrentarr.Host/wwwroot
 
 # Build and publish
 RUN dotnet publish src/Torrentarr.Host/Torrentarr.Host.csproj \
@@ -53,8 +59,8 @@ RUN apt-get update && \
     ca-certificates && \
     rm -rf /var/lib/apt/lists/*
 
-# Create non-root user
-RUN useradd -m -u 1000 torrentarr && \
+# Create non-root user (UID 1001; the aspnet base image reserves UID 1000 for its own 'app' user)
+RUN useradd -m -u 1001 torrentarr && \
     mkdir -p /config /data && \
     chown -R torrentarr:torrentarr /config /data
 

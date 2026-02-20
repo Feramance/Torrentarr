@@ -21,9 +21,14 @@ LICENSE
 **/yarn-error.log
 *.log
 
-# React build (we build it in Docker)
+# React build outputs (always rebuilt fresh inside Docker)
 **/ClientApp/build/
 **/ClientApp/dist/
+src/Torrentarr.Host/wwwroot/
+
+# Frontend dev server cache and test artifacts
+webui/dist/
+webui/coverage/
 
 # IDE
 .vs/
