@@ -1,14 +1,14 @@
-# Commandarr Configuration Example
+# Torrentarr Configuration Example
 # This file is 100% compatible with qBitrr config.toml
 # Copy this file to one of the following locations:
 #   - ~/config/config.toml
 #   - ~/.config/qbitrr/config.toml
-#   - ~/.config/commandarr/config.toml
+#   - ~/.config/torrentarr/config.toml
 #   - ./config.toml (current directory)
 
 [Settings]
 # Internal config schema version - managed automatically
-ConfigVersion = "5.8.8"
+ConfigVersion = "5.9.0"
 
 # Logging level: CRITICAL, ERROR, WARNING, NOTICE, INFO, DEBUG, TRACE
 ConsoleLevel = "INFO"

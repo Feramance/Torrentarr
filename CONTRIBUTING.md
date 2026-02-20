@@ -1,6 +1,6 @@
-# Contributing to Commandarr
+# Contributing to Torrentarr
 
-Thank you for your interest in contributing to Commandarr! This document provides guidelines and instructions for contributing.
+Thank you for your interest in contributing to Torrentarr! This document provides guidelines and instructions for contributing.
 
 ## Code of Conduct
 
@@ -44,7 +44,7 @@ What actually happens
 - OS: Windows 11 / Linux / macOS
 - .NET Version: 10.0
 - Docker Version: 24.0.0
-- Commandarr Version: 1.0.0
+- Torrentarr Version: 1.0.0
 
 **Logs:**
 ```
@@ -85,14 +85,14 @@ Enhancement suggestions are tracked as GitHub issues. When creating an enhanceme
 
 ```bash
 # Clone your fork
-git clone https://github.com/YOUR_USERNAME/commandarr.git
-cd commandarr
+git clone https://github.com/YOUR_USERNAME/torrentarr.git
+cd torrentarr
 
 # Add upstream remote
-git remote add upstream https://github.com/ORIGINAL_OWNER/commandarr.git
+git remote add upstream https://github.com/ORIGINAL_OWNER/torrentarr.git
 
 # Install frontend dependencies
-cd src/Commandarr.WebUI/ClientApp
+cd src/Torrentarr.WebUI/ClientApp
 npm install
 cd ../../..
 
@@ -109,13 +109,13 @@ dotnet test
 ### Project Structure
 
 ```
-Commandarr/
+Torrentarr/
 ├── src/
-│   ├── Commandarr.Core/           # Domain models and interfaces
-│   ├── Commandarr.Infrastructure/ # External integrations
-│   ├── Commandarr.WebUI/          # Web application
-│   ├── Commandarr.Workers/        # Background workers
-│   └── Commandarr.Host/           # Process orchestrator
+│   ├── Torrentarr.Core/           # Domain models and interfaces
+│   ├── Torrentarr.Infrastructure/ # External integrations
+│   ├── Torrentarr.WebUI/          # Web application
+│   ├── Torrentarr.Workers/        # Background workers
+│   └── Torrentarr.Host/           # Process orchestrator
 ├── tests/                          # Test projects (future)
 └── docs/                           # Additional documentation (future)
 ```
@@ -266,7 +266,7 @@ public async Task ProcessTorrentsAsync_WithValidCategory_ReturnsStats()
 dotnet test
 
 # Run specific test project
-dotnet test tests/Commandarr.Core.Tests
+dotnet test tests/Torrentarr.Core.Tests
 
 # Run with coverage
 dotnet test --collect:"XPlat Code Coverage"
@@ -330,4 +330,4 @@ Contributors will be recognized in:
 - Release notes
 - Project documentation
 
-Thank you for contributing to Commandarr! 🚀
+Thank you for contributing to Torrentarr! 🚀

@@ -1,0 +1,41 @@
+{
+  "background_color": "#101114",
+  "categories": [
+    "utilities",
+    "productivity"
+  ],
+  "description": "A Radarr and Sonarr companion app for managing torrents",
+  "display": "standalone",
+  "icons": [
+    {
+      "purpose": "any",
+      "sizes": "192x192",
+      "src": "/icon-192.png",
+      "type": "image/png"
+    },
+    {
+      "purpose": "any",
+      "sizes": "512x512",
+      "src": "/icon-512.png",
+      "type": "image/png"
+    },
+    {
+      "purpose": "maskable",
+      "sizes": "192x192",
+      "src": "/icon-192.png",
+      "type": "image/png"
+    },
+    {
+      "purpose": "maskable",
+      "sizes": "512x512",
+      "src": "/icon-512.png",
+      "type": "image/png"
+    }
+  ],
+  "name": "qBitrr",
+  "orientation": "any",
+  "screenshots": [],
+  "short_name": "qBitrr",
+  "start_url": "/",
+  "theme_color": "#7aa2f7"
+}

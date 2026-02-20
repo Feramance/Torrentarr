@@ -1,11 +1,11 @@
 @echo off
-REM Commandarr Build Script for Windows
+REM Torrentarr Build Script for Windows
 REM This script builds both the React frontend and .NET backend
 
 setlocal enabledelayedexpansion
 
 echo =========================================
-echo    Commandarr Build Script (Windows)
+echo    Torrentarr Build Script (Windows)
 echo =========================================
 echo.
 
@@ -29,7 +29,7 @@ echo.
 
 REM Build frontend
 echo Building React frontend...
-cd src\Commandarr.WebUI\ClientApp
+cd src\Torrentarr.WebUI\ClientApp
 
 if not exist "node_modules" (
     echo Installing npm dependencies...
@@ -73,7 +73,7 @@ echo [92m   Build Complete![0m
 echo [92m==========================================[0m
 echo.
 echo Run the application:
-echo   dotnet run --project src\Commandarr.Host\Commandarr.Host.csproj -c Release
+echo   dotnet run --project src\Torrentarr.Host\Torrentarr.Host.csproj -c Release
 echo.
 echo Or use Docker:
 echo   docker-compose up -d

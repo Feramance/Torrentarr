@@ -1,12 +1,12 @@
 #!/bin/bash
 
-# Commandarr Build Script
+# Torrentarr Build Script
 # This script builds both the React frontend and .NET backend
 
 set -e  # Exit on error
 
 echo "========================================="
-echo "   Commandarr Build Script"
+echo "   Torrentarr Build Script"
 echo "========================================="
 echo ""
 
@@ -34,7 +34,7 @@ echo ""
 
 # Build frontend
 echo -e "${BLUE}Building React frontend...${NC}"
-cd src/Commandarr.WebUI/ClientApp
+cd src/Torrentarr.WebUI/ClientApp
 
 if [ ! -d "node_modules" ]; then
     echo "Installing npm dependencies..."
@@ -72,7 +72,7 @@ echo -e "${GREEN}   Build Complete!${NC}"
 echo -e "${GREEN}=========================================${NC}"
 echo ""
 echo "Run the application:"
-echo "  dotnet run --project src/Commandarr.Host/Commandarr.Host.csproj -c Release"
+echo "  dotnet run --project src/Torrentarr.Host/Torrentarr.Host.csproj -c Release"
 echo ""
 echo "Or use Docker:"
 echo "  docker-compose up -d"

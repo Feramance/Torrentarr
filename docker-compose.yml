@@ -1,10 +1,10 @@
 version: '3.8'
 
 services:
-  # Commandarr - Main Application
-  commandarr:
+  # Torrentarr - Main Application
+  torrentarr:
     build: .
-    container_name: commandarr
+    container_name: torrentarr
     restart: unless-stopped
     ports:
       - "6969:6969"
@@ -21,7 +21,7 @@ services:
       - radarr
       - sonarr
     networks:
-      - commandarr-network
+      - torrentarr-network
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:6969/health"]
       interval: 30s
@@ -47,7 +47,7 @@ services:
       - PGID=1000
       - WEBUI_PORT=8080
     networks:
-      - commandarr-network
+      - torrentarr-network
 
   # Radarr (Movies)
   radarr:
@@ -65,7 +65,7 @@ services:
       - PUID=1000
       - PGID=1000
     networks:
-      - commandarr-network
+      - torrentarr-network
 
   # Sonarr (TV Shows)
   sonarr:
@@ -83,7 +83,7 @@ services:
       - PUID=1000
       - PGID=1000
     networks:
-      - commandarr-network
+      - torrentarr-network
 
   # Lidarr (Music) - Optional
   lidarr:
@@ -101,7 +101,7 @@ services:
       - PUID=1000
       - PGID=1000
     networks:
-      - commandarr-network
+      - torrentarr-network
     profiles:
       - full
 
@@ -116,5 +116,5 @@ volumes:
   music:
 
 networks:
-  commandarr-network:
+  torrentarr-network:
     driver: bridge

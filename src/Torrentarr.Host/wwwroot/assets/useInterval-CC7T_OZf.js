@@ -1,0 +1,1 @@
+import{a as r}from"./table-B9FyObL6.js";function o(t,e){const n=r.useRef(()=>{});r.useEffect(()=>{n.current=t},[t]),r.useEffect(()=>{if(e===null)return;const s=window.setInterval(()=>{n.current()},e);return()=>window.clearInterval(s)},[e])}export{o as u};

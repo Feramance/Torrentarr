@@ -3,13 +3,13 @@ FROM node:18-alpine AS frontend-build
 WORKDIR /app/frontend
 
 # Copy package files
-COPY src/Commandarr.WebUI/ClientApp/package*.json ./
+COPY src/Torrentarr.WebUI/ClientApp/package*.json ./
 
 # Install dependencies
 RUN npm ci --only=production
 
 # Copy frontend source
-COPY src/Commandarr.WebUI/ClientApp/ ./
+COPY src/Torrentarr.WebUI/ClientApp/ ./
 
 # Build production bundle
 RUN npm run build
@@ -19,12 +19,12 @@ FROM mcr.microsoft.com/dotnet/sdk:10.0 AS backend-build
 WORKDIR /app
 
 # Copy solution and project files
-COPY Commandarr.slnx ./
-COPY src/Commandarr.Core/*.csproj ./src/Commandarr.Core/
-COPY src/Commandarr.Infrastructure/*.csproj ./src/Commandarr.Infrastructure/
-COPY src/Commandarr.WebUI/*.csproj ./src/Commandarr.WebUI/
-COPY src/Commandarr.Workers/*.csproj ./src/Commandarr.Workers/
-COPY src/Commandarr.Host/*.csproj ./src/Commandarr.Host/
+COPY Torrentarr.slnx ./
+COPY src/Torrentarr.Core/*.csproj ./src/Torrentarr.Core/
+COPY src/Torrentarr.Infrastructure/*.csproj ./src/Torrentarr.Infrastructure/
+COPY src/Torrentarr.WebUI/*.csproj ./src/Torrentarr.WebUI/
+COPY src/Torrentarr.Workers/*.csproj ./src/Torrentarr.Workers/
+COPY src/Torrentarr.Host/*.csproj ./src/Torrentarr.Host/
 
 # Restore dependencies
 RUN dotnet restore
@@ -34,10 +34,10 @@ COPY src/ ./src/
 COPY nuget.config ./
 
 # Copy built React app from frontend stage
-COPY --from=frontend-build /app/frontend/build ./src/Commandarr.WebUI/ClientApp/build
+COPY --from=frontend-build /app/frontend/build ./src/Torrentarr.WebUI/ClientApp/build
 
 # Build and publish
-RUN dotnet publish src/Commandarr.Host/Commandarr.Host.csproj \
+RUN dotnet publish src/Torrentarr.Host/Torrentarr.Host.csproj \
     -c Release \
     -o /app/publish \
     --no-restore
@@ -54,9 +54,9 @@ RUN apt-get update && \
     rm -rf /var/lib/apt/lists/*
 
 # Create non-root user
-RUN useradd -m -u 1000 commandarr && \
+RUN useradd -m -u 1000 torrentarr && \
     mkdir -p /config /data && \
-    chown -R commandarr:commandarr /config /data
+    chown -R torrentarr:torrentarr /config /data
 
 # Copy published application
 COPY --from=backend-build /app/publish ./
@@ -71,7 +71,7 @@ ENV ASPNETCORE_ENVIRONMENT=Production \
     DOTNET_SYSTEM_GLOBALIZATION_INVARIANT=false
 
 # Switch to non-root user
-USER commandarr
+USER torrentarr
 
 # Expose ports
 EXPOSE 6969
@@ -87,4 +87,4 @@ VOLUME ["/config", "/data"]
 WORKDIR /config
 
 # Run the Host orchestrator
-ENTRYPOINT ["/app/Commandarr.Host"]
+ENTRYPOINT ["/app/Torrentarr.Host"]

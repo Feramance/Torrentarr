@@ -13,7 +13,7 @@ jobs:
       matrix:
         os: [ubuntu-latest, windows-latest, macos-latest]
         dotnet-version: ['10.0.x']
-        node-version: [18.x]
+        node-version: [20.x]
 
     steps:
     - name: Checkout code
@@ -35,26 +35,29 @@ jobs:
     - name: Build .NET solution
       run: dotnet build --configuration Release --no-restore
 
-    - name: Run .NET tests
-      run: dotnet test --configuration Release --no-build --verbosity normal
-      continue-on-error: true  # Until tests are implemented
+    - name: Run .NET tests (non-live)
+      run: dotnet test --configuration Release --no-build --verbosity normal --filter "Category!=Live"
 
-    - name: Install frontend dependencies
-      working-directory: src/Commandarr.WebUI/ClientApp
+    - name: Install webui dependencies
+      working-directory: webui
       run: npm ci
 
-    - name: Build React frontend
-      working-directory: src/Commandarr.WebUI/ClientApp
+    - name: Run frontend tests
+      working-directory: webui
+      run: npm test -- --run
+
+    - name: Build webui (production)
+      working-directory: webui
       run: npm run build
 
     - name: Upload build artifacts
       if: matrix.os == 'ubuntu-latest'
-      uses: actions/upload-artifact@v3
+      uses: actions/upload-artifact@v4
       with:
-        name: commandarr-build
+        name: torrentarr-build
         path: |
           src/*/bin/Release/
-          src/Commandarr.WebUI/ClientApp/build/
+          webui/dist/
         retention-days: 7
 
   docker:
@@ -70,14 +73,14 @@ jobs:
       uses: docker/setup-buildx-action@v3
 
     - name: Build Docker image
-      run: docker build -t commandarr:test .
+      run: docker build -t torrentarr:test .
 
     - name: Test Docker image
       run: |
-        docker run -d --name commandarr-test -p 6969:6969 commandarr:test
+        docker run -d --name torrentarr-test -p 6969:6969 torrentarr:test
         sleep 10
         curl -f http://localhost:6969/health || exit 1
-        docker stop commandarr-test
+        docker stop torrentarr-test
 
   lint:
     runs-on: ubuntu-latest
@@ -89,12 +92,12 @@ jobs:
     - name: Setup Node.js
       uses: actions/setup-node@v4
       with:
-        node-version: 18.x
+        node-version: 20.x
 
-    - name: Install frontend dependencies
-      working-directory: src/Commandarr.WebUI/ClientApp
+    - name: Install webui dependencies
+      working-directory: webui
       run: npm ci
 
     - name: Lint frontend code
-      working-directory: src/Commandarr.WebUI/ClientApp
+      working-directory: webui
       run: npm run lint || true  # Continue even if lint fails (until rules are configured)

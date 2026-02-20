@@ -1,6 +1,6 @@
 # Docker Deployment Guide
 
-This guide covers deploying Commandarr using Docker and Docker Compose.
+This guide covers deploying Torrentarr using Docker and Docker Compose.
 
 ## Quick Start
 
@@ -10,8 +10,8 @@ The easiest way to get started is with Docker Compose, which includes all necess
 
 ```bash
 # 1. Clone the repository
-git clone https://github.com/yourusername/commandarr.git
-cd commandarr
+git clone https://github.com/yourusername/torrentarr.git
+cd torrentarr
 
 # 2. Create config directory
 mkdir -p config
@@ -26,7 +26,7 @@ nano config/config.toml
 docker-compose up -d
 
 # 6. Check logs
-docker-compose logs -f commandarr
+docker-compose logs -f torrentarr
 ```
 
 Access the WebUI at: http://localhost:6969
@@ -35,7 +35,7 @@ Access the WebUI at: http://localhost:6969
 
 The provided `docker-compose.yml` includes:
 
-- **commandarr** - Main Commandarr application (port 6969)
+- **torrentarr** - Main Torrentarr application (port 6969)
 - **qbittorrent** - qBittorrent torrent client (port 8080)
 - **radarr** - Movie management (port 7878)
 - **sonarr** - TV show management (port 8989)
@@ -45,7 +45,7 @@ The provided `docker-compose.yml` includes:
 
 Once started, access services at:
 
-- Commandarr WebUI: http://localhost:6969
+- Torrentarr WebUI: http://localhost:6969
 - qBittorrent WebUI: http://localhost:8080 (default: admin/adminadmin)
 - Radarr: http://localhost:7878
 - Sonarr: http://localhost:8989
@@ -121,10 +121,10 @@ Managed = true
 
 ```bash
 # Build the image
-docker build -t commandarr:latest .
+docker build -t torrentarr:latest .
 
 # Or with specific version
-docker build -t commandarr:1.0.0 .
+docker build -t torrentarr:1.0.0 .
 ```
 
 ### Multi-Architecture Build
@@ -135,18 +135,18 @@ Build for multiple platforms (requires buildx):
 docker buildx create --use
 docker buildx build \
   --platform linux/amd64,linux/arm64 \
-  -t commandarr:latest \
+  -t torrentarr:latest \
   --push \
   .
 ```
 
 ## Running Standalone Container
 
-Run Commandarr without Docker Compose:
+Run Torrentarr without Docker Compose:
 
 ```bash
 docker run -d \
-  --name commandarr \
+  --name torrentarr \
   -p 6969:6969 \
   -v $(pwd)/config:/config \
   -v $(pwd)/data:/data \
@@ -154,7 +154,7 @@ docker run -d \
   -e PUID=1000 \
   -e PGID=1000 \
   --restart unless-stopped \
-  commandarr:latest
+  torrentarr:latest
 ```
 
 ## Docker Compose Commands
@@ -169,7 +169,7 @@ docker-compose up -d
 docker-compose --profile full up -d
 
 # Start specific service
-docker-compose up -d commandarr
+docker-compose up -d torrentarr
 ```
 
 ### Stop Services
@@ -189,10 +189,10 @@ docker-compose down -v
 docker-compose logs -f
 
 # Specific service
-docker-compose logs -f commandarr
+docker-compose logs -f torrentarr
 
 # Last 100 lines
-docker-compose logs --tail=100 commandarr
+docker-compose logs --tail=100 torrentarr
 ```
 
 ### Restart Services
@@ -202,7 +202,7 @@ docker-compose logs --tail=100 commandarr
 docker-compose restart
 
 # Restart specific service
-docker-compose restart commandarr
+docker-compose restart torrentarr
 ```
 
 ### Update Services
@@ -217,11 +217,11 @@ docker-compose up -d --build
 
 ## Health Checks
 
-Commandarr includes built-in health checks:
+Torrentarr includes built-in health checks:
 
 ```bash
 # Check container health
-docker inspect commandarr | grep -A 10 Health
+docker inspect torrentarr | grep -A 10 Health
 
 # Manual health check
 curl http://localhost:6969/health
@@ -241,7 +241,7 @@ Expected response:
 
 Check logs:
 ```bash
-docker-compose logs commandarr
+docker-compose logs torrentarr
 ```
 
 Common issues:
@@ -258,7 +258,7 @@ Common issues:
 
 2. Check network connectivity:
    ```bash
-   docker exec commandarr ping qbittorrent
+   docker exec torrentarr ping qbittorrent
    ```
 
 3. Verify container names in config.toml match service names
@@ -285,7 +285,7 @@ sudo chown -R 1000:1000 config data
 
 ```bash
 # Backup configuration and database
-tar -czf commandarr-backup-$(date +%Y%m%d).tar.gz config/ data/
+tar -czf torrentarr-backup-$(date +%Y%m%d).tar.gz config/ data/
 
 # Or use docker-compose
 docker-compose down
@@ -297,7 +297,7 @@ docker-compose up -d
 
 ```bash
 # Extract backup
-tar -xzf commandarr-backup-YYYYMMDD.tar.gz
+tar -xzf torrentarr-backup-YYYYMMDD.tar.gz
 
 # Start services
 docker-compose up -d
@@ -336,7 +336,7 @@ secrets:
     file: ./secrets/radarr_api_key.txt
 
 services:
-  commandarr:
+  torrentarr:
     secrets:
       - qbit_password
       - radarr_api_key
@@ -347,7 +347,7 @@ services:
 ```nginx
 server {
     listen 80;
-    server_name commandarr.yourdomain.com;
+    server_name torrentarr.yourdomain.com;
 
     location / {
         proxy_pass http://localhost:6969;
@@ -363,7 +363,7 @@ server {
 
 ```yaml
 services:
-  commandarr:
+  torrentarr:
     deploy:
       resources:
         limits:
@@ -413,13 +413,13 @@ Use the `/health` endpoint for uptime monitoring:
    cp ~/.config/qbitrr/config.toml ./config/
    ```
 
-4. **Start Commandarr**
+4. **Start Torrentarr**
    ```bash
    docker-compose up -d
    ```
 
 5. **Verify**
-   - Check logs: `docker-compose logs -f commandarr`
+   - Check logs: `docker-compose logs -f torrentarr`
    - Access WebUI: http://localhost:6969
    - Verify torrents are being processed
 
@@ -429,7 +429,7 @@ Use the `/health` endpoint for uptime monitoring:
 
 ```yaml
 networks:
-  commandarr-network:
+  torrentarr-network:
     driver: bridge
     ipam:
       config:
@@ -442,7 +442,7 @@ For better performance (Linux only):
 
 ```yaml
 services:
-  commandarr:
+  torrentarr:
     network_mode: host
 ```
 
@@ -452,7 +452,7 @@ Use named volumes for better portability:
 
 ```yaml
 volumes:
-  commandarr-config:
+  torrentarr-config:
     driver: local
     driver_opts:
       type: none
@@ -462,9 +462,9 @@ volumes:
 
 ## Support
 
-- GitHub Issues: https://github.com/yourusername/commandarr/issues
-- Docker Hub: https://hub.docker.com/r/yourusername/commandarr
-- Wiki: https://github.com/yourusername/commandarr/wiki
+- GitHub Issues: https://github.com/yourusername/torrentarr/issues
+- Docker Hub: https://hub.docker.com/r/yourusername/torrentarr
+- Wiki: https://github.com/yourusername/torrentarr/wiki
 
 ---
 

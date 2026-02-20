@@ -1,0 +1,14 @@
+<Solution>
+  <Folder Name="/src/">
+    <Project Path="src/Torrentarr.Core/Torrentarr.Core.csproj" />
+    <Project Path="src/Torrentarr.Host/Torrentarr.Host.csproj" />
+    <Project Path="src/Torrentarr.Infrastructure/Torrentarr.Infrastructure.csproj" />
+    <Project Path="src/Torrentarr.WebUI/Torrentarr.WebUI.csproj" />
+    <Project Path="src/Torrentarr.Workers/Torrentarr.Workers.csproj" />
+  </Folder>
+  <Folder Name="/tests/">
+    <Project Path="tests/Torrentarr.Core.Tests/Torrentarr.Core.Tests.csproj" />
+    <Project Path="tests/Torrentarr.Infrastructure.Tests/Torrentarr.Infrastructure.Tests.csproj" />
+    <Project Path="tests/Torrentarr.Host.Tests/Torrentarr.Host.Tests.csproj" />
+  </Folder>
+</Solution>

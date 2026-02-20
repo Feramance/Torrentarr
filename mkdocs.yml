@@ -1,0 +1,265 @@
+site_name: Torrentarr Documentation
+site_description: Intelligent automation for qBittorrent and *Arr apps (Radarr/Sonarr/Lidarr)
+site_author: Feramance
+site_url: https://feramance.github.io/Torrentarr/
+repo_name: Feramance/Torrentarr
+repo_url: https://github.com/Feramance/Torrentarr
+edit_uri: edit/master/docs/
+
+# Exclude files from documentation build
+exclude_docs: |
+  README.md
+  includes/abbreviations.md
+
+# Copyright
+copyright: Copyright &copy; 2025 Feramance
+
+# Configuration
+theme:
+  name: material
+  language: en
+  logo: assets/logov2-clean.png
+  favicon: assets/favicon.ico
+  icon:
+    repo: fontawesome/brands/github
+  palette:
+    # Light mode
+  - media: '(prefers-color-scheme: light)'
+    scheme: default
+    primary: blue-grey
+    accent: cyan
+    toggle:
+      icon: material/brightness-7
+      name: Switch to dark mode
+    # Dark mode
+  - media: '(prefers-color-scheme: dark)'
+    scheme: slate
+    primary: blue-grey
+    accent: cyan
+    toggle:
+      icon: material/brightness-4
+      name: Switch to light mode
+  features:
+  - announce.dismiss
+  - content.action.edit
+  - content.action.view
+  - content.code.annotate
+  - content.code.copy
+  - content.tooltips
+  - navigation.expand
+  - navigation.footer
+  - navigation.indexes
+  - navigation.instant
+  - navigation.instant.prefetch
+  - navigation.instant.progress
+  - navigation.path
+  - navigation.sections
+  - navigation.tabs
+  - navigation.tabs.sticky
+  - navigation.top
+  - navigation.tracking
+  - search.highlight
+  - search.share
+  - search.suggest
+  - toc.follow
+  - toc.integrate
+
+# Extensions
+markdown_extensions:
+- abbr
+- admonition
+- attr_list
+- def_list
+- footnotes
+- md_in_html
+- tables
+- toc:
+    permalink: true
+    permalink_title: Anchor link to this section
+- pymdownx.arithmatex:
+    generic: true
+- pymdownx.betterem:
+    smart_enable: all
+- pymdownx.caret
+- pymdownx.details
+- pymdownx.emoji:
+    emoji_index: !!python/name:material.extensions.emoji.twemoji
+    emoji_generator: !!python/name:material.extensions.emoji.to_svg
+- pymdownx.highlight:
+    anchor_linenums: true
+    line_spans: __span
+    pygments_lang_class: true
+- pymdownx.inlinehilite
+- pymdownx.keys
+- pymdownx.magiclink:
+    normalize_issue_symbols: true
+    repo_url_shorthand: true
+    user: Feramance
+    repo: Torrentarr
+- pymdownx.mark
+- pymdownx.smartsymbols
+- pymdownx.snippets:
+    auto_append:
+    - includes/abbreviations.md
+- pymdownx.superfences:
+    custom_fences:
+    - name: mermaid
+      class: mermaid
+      format: !!python/name:pymdownx.superfences.fence_code_format
+- pymdownx.tabbed:
+    alternate_style: true
+    combine_header_slug: true
+    slugify: !!python/object/apply:pymdownx.slugs.slugify
+      kwds:
+        case: lower
+- pymdownx.tasklist:
+    custom_checkbox: true
+- pymdownx.tilde
+
+# Plugins
+plugins:
+- search:
+    separator: '[\s\-,:!=\[\]()"`/]+|\.(?!\d)|&[lg]t;|(?!\b)(?=[A-Z][a-z])'
+- git-revision-date-localized:
+    enable_creation_date: true
+    type: timeago
+- minify:
+    minify_html: true
+    minify_js: true
+    minify_css: true
+    htmlmin_opts:
+      remove_comments: true
+- redirects:
+    redirect_maps:
+      reference/index.md: faq.md
+      reference/api.md: webui/api.md
+      reference/config-schema.md: configuration/config-file.md
+      reference/error-codes.md: troubleshooting/common-issues.md
+      reference/cli.md: getting-started/index.md
+      reference/glossary.md: faq.md
+      getting-started/first-run.md: getting-started/quickstart.md
+      troubleshooting/database-corruption.md: troubleshooting/database.md
+      fixes/DATABASE_CORRUPTION_FIX.md: troubleshooting/database.md
+      advanced/multi-qbittorrent.md: configuration/qbittorrent.md
+      advanced/custom-trackers.md: configuration/seeding.md
+      advanced/performance.md: troubleshooting/performance.md
+      advanced/config-options.md: configuration/config-file.md
+      advanced/event-loops.md: advanced/architecture.md
+      advanced/multiprocessing.md: advanced/architecture.md
+      advanced/ffprobe.md: features/health-monitoring.md
+      getting-started/installation/pip.md: getting-started/installation/dotnet.md
+
+# Additional CSS/JS
+extra_css:
+- stylesheets/extra.css
+
+extra_javascript:
+- javascripts/extra.js
+
+# Extra
+extra:
+  version:
+    provider: mike
+    default: stable
+  social:
+  - icon: fontawesome/brands/github
+    link: https://github.com/Feramance/Torrentarr
+    name: GitHub Repository
+  - icon: fontawesome/brands/docker
+    link: https://hub.docker.com/r/feramance/torrentarr
+    name: Docker Hub
+  - icon: fontawesome/brands/paypal
+    link: https://www.paypal.me/feramance
+    name: Donate via PayPal
+  analytics:
+    provider: google
+    property: G-XXXXXXXXXX  # Replace with actual GA4 ID when available
+  consent:
+    title: Cookie consent
+    description: >-
+      We use cookies to recognize your repeated visits and preferences, as well
+      as to measure the effectiveness of our documentation and whether users
+      find what they're searching for. With your consent, you're helping us to
+      make our documentation better.
+
+# Page tree
+nav:
+- Home:
+  - index.md
+  - Getting Started: getting-started/index.md
+  - Features: features/index.md
+  - FAQ: faq.md
+  - Changelog: changelog.md
+
+- Getting Started:
+  - getting-started/index.md
+  - Installation:
+    - getting-started/installation/index.md
+    - getting-started/installation/docker.md
+    - getting-started/installation/dotnet.md
+    - getting-started/installation/systemd.md
+    - getting-started/installation/binary.md
+  - Quick Start: getting-started/quickstart.md
+  - Migration Guide: getting-started/migration.md
+
+- Configuration:
+  - configuration/index.md
+  - Configuration File: configuration/config-file.md
+  - qBittorrent: configuration/qbittorrent.md
+  - Arr Instances:
+    - configuration/arr/index.md
+    - configuration/arr/radarr.md
+    - configuration/arr/sonarr.md
+    - configuration/arr/lidarr.md
+  - Torrent Settings: configuration/torrents.md
+  - Search & Requests:
+    - configuration/search/index.md
+    - configuration/search/overseerr.md
+    - configuration/search/ombi.md
+    - configuration/search/requestrr.md
+  - Quality Profiles: configuration/quality-profiles.md
+  - Seeding & Trackers: configuration/seeding.md
+  - WebUI: configuration/webui.md
+  - Environment Variables: configuration/environment.md
+
+- Features:
+  - features/index.md
+  - Torrent Health Monitoring: features/health-monitoring.md
+  - Instant Imports: features/instant-imports.md
+  - Automated Search: features/automated-search.md
+  - Quality Upgrades: features/quality-upgrades.md
+  - Request Integration: features/request-integration.md
+  - Custom Format Scoring: features/custom-formats.md
+  - Disk Space Management: features/disk-space.md
+  - Auto Updates: features/auto-updates.md
+  - Process Management: features/process-management.md
+
+- Web UI:
+  - webui/index.md
+  - Processes View: webui/processes.md
+  - Logs View: webui/logs.md
+  - Arr Views: webui/arr-views.md
+  - Config Editor: webui/config-editor.md
+  - API Reference: webui/api.md
+
+- Advanced:
+  - advanced/index.md
+  - Architecture: advanced/architecture.md
+  - Database Schema: advanced/database.md
+
+- Troubleshooting:
+  - troubleshooting/index.md
+  - Common Issues: troubleshooting/common-issues.md
+  - Debug Logging: troubleshooting/debug-logging.md
+  - Database Issues: troubleshooting/database.md
+  - Docker Issues: troubleshooting/docker.md
+  - Path Mapping: troubleshooting/path-mapping.md
+  - Performance Issues: troubleshooting/performance.md
+
+- Development:
+  - development/index.md
+  - Contributing: development/contributing.md
+  - Code Style: development/code-style.md
+  - Testing: development/testing.md
+  - Release Process: development/release-process.md
+  - WebUI Development: development/webui.md
