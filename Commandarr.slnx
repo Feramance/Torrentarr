@@ -1,9 +1,0 @@
-<Solution>
-  <Folder Name="/src/">
-    <Project Path="src/Commandarr.Core/Commandarr.Core.csproj" />
-    <Project Path="src/Commandarr.Host/Commandarr.Host.csproj" />
-    <Project Path="src/Commandarr.Infrastructure/Commandarr.Infrastructure.csproj" />
-    <Project Path="src/Commandarr.WebUI/Commandarr.WebUI.csproj" />
-    <Project Path="src/Commandarr.Workers/Commandarr.Workers.csproj" />
-  </Folder>
-</Solution>
