@@ -70,11 +70,16 @@ COPY --from=backend-build /app/publish ./
 # Copy example config
 COPY config.example.toml /config/config.example.toml
 
-# Set environment variables
+# Set environment variables.
+# TORRENTARR_CONFIG pins config to the mounted volume so the app never
+# falls back to ~/config/config.toml inside the container.
+# ASPNETCORE_CONTENTROOT must be /app so UseStaticFiles() finds wwwroot/.
 ENV ASPNETCORE_ENVIRONMENT=Production \
     ASPNETCORE_URLS=http://+:6969 \
+    ASPNETCORE_CONTENTROOT=/app \
     DOTNET_RUNNING_IN_CONTAINER=true \
-    DOTNET_SYSTEM_GLOBALIZATION_INVARIANT=false
+    DOTNET_SYSTEM_GLOBALIZATION_INVARIANT=false \
+    TORRENTARR_CONFIG=/config/config.toml
 
 # Switch to non-root user
 USER torrentarr
@@ -88,9 +93,6 @@ HEALTHCHECK --interval=30s --timeout=10s --start-period=40s --retries=3 \
 
 # Volume mounts
 VOLUME ["/config", "/data"]
-
-# Set working directory for config lookup
-WORKDIR /config
 
 # Run the Host orchestrator
 ENTRYPOINT ["/app/Torrentarr.Host"]
