@@ -456,32 +456,39 @@ try
         return Results.Ok(new { success = true, level = ls.MinimumLevel.ToString() });
     });
 
-    // Web Logs List
+    // Web Logs List — returns name, size, and last-modified for each .log file
     app.MapGet("/web/logs", () =>
     {
-        var files = new List<string>();
+        var files = new List<object>();
         if (Directory.Exists(logsPath))
         {
             foreach (var file in Directory.GetFiles(logsPath, "*.log").OrderByDescending(f => f))
-                files.Add(Path.GetFileName(file));
+            {
+                var fi = new FileInfo(file);
+                files.Add(new { name = fi.Name, size = fi.Length, modified = fi.LastWriteTimeUtc.ToString("o") });
+            }
         }
         return Results.Ok(new { files });
     });
 
-    // Web Log Tail — last 500 lines, plain text so frontend res.text() gets unquoted content
+    // Web Log Tail — last 1000 lines, plain text so frontend res.text() gets unquoted content
     app.MapGet("/web/logs/{name}", async (string name) =>
     {
+        if (!IsValidLogFileName(name))
+            return Results.BadRequest(new { error = "Invalid log file name" });
         var logFile = Path.Combine(logsPath, name);
         if (!File.Exists(logFile))
             return Results.NotFound(new { error = "Log file not found" });
 
-        var lines = await File.ReadAllLinesAsync(logFile);
-        return Results.Text(string.Join("\n", lines.TakeLast(500)), "text/plain");
+        var content = await TailLogFileAsync(logFile, 1000);
+        return Results.Text(content, "text/plain");
     });
 
     // Web Log Download
     app.MapGet("/web/logs/{name}/download", (string name) =>
     {
+        if (!IsValidLogFileName(name))
+            return Results.BadRequest(new { error = "Invalid log file name" });
         var logFile = Path.Combine(logsPath, name);
         if (!File.Exists(logFile))
             return Results.NotFound();
@@ -1859,6 +1866,59 @@ static void AddColumnIfMissing(TorrentarrDbContext db, string table, string colu
     {
         if (!wasOpen) conn.Close();
     }
+}
+
+// ── Log file helpers ──────────────────────────────────────────────────────
+
+/// <summary>
+/// Validates that a log file name is a plain filename ending in .log with no path components.
+/// Prevents directory traversal attacks.
+/// </summary>
+static bool IsValidLogFileName(string name) =>
+    !string.IsNullOrWhiteSpace(name)
+    && !name.Contains('/')
+    && !name.Contains('\\')
+    && !name.Contains("..")
+    && name.EndsWith(".log", StringComparison.OrdinalIgnoreCase);
+
+/// <summary>
+/// Reads the last <paramref name="maxLines"/> lines from a log file efficiently,
+/// using FileShare.ReadWrite so Serilog's active write lock is never contested.
+/// Uses a seek heuristic to avoid loading the entire file for large files.
+/// </summary>
+static async Task<string> TailLogFileAsync(string path, int maxLines)
+{
+    await using var fs = new FileStream(path, FileMode.Open, FileAccess.Read, FileShare.ReadWrite);
+    if (fs.Length == 0) return string.Empty;
+
+    // Heuristic: assume ~200 bytes per log line on average.
+    // Seek to an estimated position from the end and read forward from there.
+    const long bytesPerLineEstimate = 200;
+    var seekPos = Math.Max(0, fs.Length - maxLines * bytesPerLineEstimate);
+    fs.Seek(seekPos, SeekOrigin.Begin);
+
+    using var reader = new StreamReader(fs, System.Text.Encoding.UTF8,
+        detectEncodingFromByteOrderMarks: false, bufferSize: 65536, leaveOpen: true);
+
+    // If we landed in the middle of a line, discard the partial first line.
+    if (seekPos > 0) _ = await reader.ReadLineAsync();
+
+    var lines = new List<string>(maxLines + 1);
+    string? line;
+    while ((line = await reader.ReadLineAsync()) != null)
+        lines.Add(line);
+
+    if (lines.Count >= maxLines)
+        return string.Join("\n", lines.TakeLast(maxLines));
+
+    // Heuristic undershot — not enough lines captured; fall back to full read.
+    fs.Seek(0, SeekOrigin.Begin);
+    reader.DiscardBufferedData();
+    lines.Clear();
+    while ((line = await reader.ReadLineAsync()) != null)
+        lines.Add(line);
+
+    return string.Join("\n", lines.TakeLast(maxLines));
 }
 
 // ── Version / meta helper ─────────────────────────────────────────────────

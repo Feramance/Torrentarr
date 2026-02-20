@@ -98,8 +98,14 @@ export interface RestartResponse {
   restarted?: string[];
 }
 
+export interface LogFileInfo {
+  name: string;
+  size: number;
+  modified: string;
+}
+
 export interface LogsListResponse {
-  files: string[];
+  files: LogFileInfo[];
 }
 
 export interface RadarrCounts {

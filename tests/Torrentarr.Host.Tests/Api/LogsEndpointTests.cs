@@ -39,6 +39,25 @@ public class LogsEndpointTests : IClassFixture<TorrentarrWebApplicationFactory>
     }
 
     [Fact]
+    public async Task GetLogs_FilesArrayContainsObjectsWithNameField()
+    {
+        var client = _factory.CreateClient();
+
+        var response = await client.GetAsync("/web/logs");
+        var body = await response.Content.ReadAsStringAsync();
+        var json = JsonDocument.Parse(body).RootElement;
+
+        json.TryGetProperty("files", out var filesEl).Should().BeTrue();
+        // If any files exist, each element should have name/size/modified fields
+        foreach (var file in filesEl.EnumerateArray())
+        {
+            file.TryGetProperty("name", out _).Should().BeTrue();
+            file.TryGetProperty("size", out _).Should().BeTrue();
+            file.TryGetProperty("modified", out _).Should().BeTrue();
+        }
+    }
+
+    [Fact]
     public async Task GetLogFile_Returns404_WhenFileDoesNotExist()
     {
         var client = _factory.CreateClient();
@@ -46,5 +65,21 @@ public class LogsEndpointTests : IClassFixture<TorrentarrWebApplicationFactory>
         var response = await client.GetAsync("/web/logs/nonexistent-totally-fake-file.log");
 
         response.StatusCode.Should().Be(HttpStatusCode.NotFound);
+    }
+
+    // These inputs reach our handler (ASP.NET Core routing does not collapse them).
+    // Inputs with literal path separators (%2F decoded to /) are rejected by the routing
+    // layer before reaching the handler, so we only test the ones that get through.
+    [Theory]
+    [InlineData("../secret.log")]      // dot-dot traversal
+    [InlineData("../../etc/passwd.log")] // multi-level dot-dot
+    [InlineData("file.txt")]           // wrong extension
+    public async Task GetLogFile_Returns400_WhenNameIsInvalid(string name)
+    {
+        var client = _factory.CreateClient();
+
+        var response = await client.GetAsync($"/web/logs/{Uri.EscapeDataString(name)}");
+
+        response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
     }
 }

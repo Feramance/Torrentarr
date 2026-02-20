@@ -6,6 +6,7 @@ import type {
   ConfigUpdateResponse,
   MetaResponse,
   LogsListResponse,
+  LogFileInfo,
   ProcessesResponse,
   QbitCategoriesResponse,
   RadarrMoviesResponse,
@@ -14,6 +15,8 @@ import type {
   LidarrAlbumsResponse,
   StatusResponse,
 } from "./types";
+
+export type { LogFileInfo };
 
 const JSON_HEADERS = { "Content-Type": "application/json" } as const;
 const TOKEN_STORAGE_KEYS = ["token", "webui-token", "webui_token"] as const;
