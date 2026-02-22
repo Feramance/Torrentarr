@@ -61,6 +61,13 @@ public interface ISeedingService
     Task<bool> ShouldRemoveTorrentAsync(TorrentInfo torrent, CancellationToken cancellationToken = default);
 
     /// <summary>
+    /// Check if HnR obligations allow deleting this torrent.
+    /// Fetches tracker metadata and checks HnR. Returns true if deletion is allowed.
+    /// Matches qBitrr's _hnr_allows_delete() exactly.
+    /// </summary>
+    Task<bool> HnrAllowsDeleteAsync(TorrentInfo torrent, string reason, CancellationToken cancellationToken = default);
+
+    /// <summary>
     /// Apply seeding limits (ratio, time, rate limits) to a torrent.
     /// Matches qBitrr's _apply_seeding_limits() exactly.
     /// </summary>

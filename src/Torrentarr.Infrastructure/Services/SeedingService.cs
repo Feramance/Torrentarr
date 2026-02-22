@@ -17,6 +17,7 @@ public class SeedingService : ISeedingService
     private const string AllowedSeedingTag = "qBitrr-allowed_seeding";
     private const string FreeSpacePausedTag = "qBitrr-free_space_paused";
     private const string IgnoredTag = "qBitrr-ignored";
+    private const string HnrActiveTag = "qBitrr-hnr_active";
 
     private static readonly HashSet<string> DeadTrackerKeywords = new(StringComparer.OrdinalIgnoreCase)
     {
@@ -227,6 +228,7 @@ public class SeedingService : ISeedingService
     /// <summary>
     /// Get the highest-priority matching tracker config for a torrent.
     /// Matches qBitrr's _get_tracker_config() exactly.
+    /// Supports subdomain/apex matching (e.g., tracker.torrentleech.org matches torrentleech.org config).
     /// </summary>
     public async Task<TrackerConfig?> GetTrackerConfigAsync(TorrentInfo torrent, CancellationToken cancellationToken = default)
     {
@@ -256,10 +258,25 @@ public class SeedingService : ISeedingService
                 var priority = trackerCfg.Priority;
                 var cfgHost = ExtractTrackerHost(uri);
 
-                if (!string.IsNullOrEmpty(cfgHost) && torrentHosts.Contains(cfgHost) && priority > bestPriority)
+                if (string.IsNullOrEmpty(cfgHost)) continue;
+
+                // Direct host match
+                if (torrentHosts.Contains(cfgHost) && priority > bestPriority)
                 {
                     best = trackerCfg;
                     bestPriority = priority;
+                    continue;
+                }
+
+                // Subdomain/apex matching: tracker.torrentleech.org matches torrentleech.org config
+                foreach (var torrentHost in torrentHosts)
+                {
+                    if (torrentHost.EndsWith("." + cfgHost, StringComparison.OrdinalIgnoreCase) && priority > bestPriority)
+                    {
+                        best = trackerCfg;
+                        bestPriority = priority;
+                        break;
+                    }
                 }
             }
 
@@ -338,11 +355,13 @@ public class SeedingService : ISeedingService
         var isPartial = progress < 1.0 && progress >= minDownloadPercent;
         var effectiveSeedingTime = torrent.SeedingTime - bufferSeconds;
 
+        // Negligible download (<10% progress), no HnR obligation
         if (progress < minDownloadPercent)
         {
             return true;
         }
 
+        // Partial download: ratio only check
         if (isPartial)
         {
             return torrent.Ratio >= partialRatio;
@@ -368,9 +387,52 @@ public class SeedingService : ISeedingService
     }
 
     /// <summary>
+    /// Check if HnR obligations allow deleting this torrent.
+    /// Fetches tracker metadata and checks HnR. Returns true if deletion is allowed.
+    /// Matches qBitrr's _hnr_allows_delete() exactly.
+    /// </summary>
+    public async Task<bool> HnrAllowsDeleteAsync(TorrentInfo torrent, string reason, CancellationToken cancellationToken = default)
+    {
+        var trackers = GetTrackerList(torrent);
+        var hasHnrTracker = trackers.Any(t => t.HitAndRunMode == true);
+        
+        if (!hasHnrTracker)
+        {
+            return true; // Fast path: no HnR on any tracker
+        }
+
+        var trackerConfig = await GetTrackerConfigAsync(torrent, cancellationToken);
+        if (trackerConfig == null)
+        {
+            return true;
+        }
+
+        if (await IsTrackerDeadAsync(torrent, trackerConfig, cancellationToken))
+        {
+            return true;
+        }
+
+        if (await IsHnRSafeToRemoveAsync(torrent, trackerConfig, cancellationToken))
+        {
+            return true;
+        }
+
+        _logger.LogInformation(
+            "HnR protection: blocking {Reason} of [{Name}] (ratio={Ratio:F2}, seeding={SeedingTime}s, progress={Progress:P0})",
+            reason,
+            torrent.Name,
+            torrent.Ratio,
+            torrent.SeedingTime,
+            torrent.Progress);
+
+        return false;
+    }
+
+    /// <summary>
     /// Check if torrent meets removal conditions based on RemoveMode.
-    /// Matches qBitrr's _should_remove_torrent() exactly.
+    /// Matches qBitrr's _should_remove_torrent() and _should_leave_alone() logic.
     /// RemoveMode: -1=Never, 1=Ratio only, 2=Time only, 3=OR, 4=AND
+    /// HnR protection now applies only to downloading torrents, not uploading.
     /// </summary>
     public async Task<bool> ShouldRemoveTorrentAsync(TorrentInfo torrent, CancellationToken cancellationToken = default)
     {
@@ -384,22 +446,32 @@ public class SeedingService : ISeedingService
             return false;
         }
 
+        // Determine torrent state category
+        var isUploading = IsUploadingState(torrent.State);
+        var isDownloading = IsDownloadingState(torrent.State);
+
         var ratioLimit = seedingConfig.MaxUploadRatio;
         var timeLimit = seedingConfig.MaxSeedingTime;
 
         var ratioMet = ratioLimit > 0 && torrent.Ratio >= ratioLimit;
         var timeMet = timeLimit > 0 && torrent.SeedingTime >= timeLimit;
 
-        var shouldRemove = removeMode switch
+        // Only check removal conditions for uploading torrents
+        var shouldRemove = false;
+        if (isUploading)
         {
-            1 => ratioMet,
-            2 => timeMet,
-            3 => ratioMet || timeMet,
-            4 => ratioMet && timeMet,
-            _ => false
-        };
+            shouldRemove = removeMode switch
+            {
+                1 => ratioMet,
+                2 => timeMet,
+                3 => ratioMet || timeMet,
+                4 => ratioMet && timeMet,
+                _ => false
+            };
+        }
 
-        if (shouldRemove && seedingConfig.HitAndRunMode)
+        // HnR protection: only applies to downloading torrents
+        if (isDownloading && shouldRemove && seedingConfig.HitAndRunMode)
         {
             if (trackerConfig != null)
             {
@@ -411,7 +483,7 @@ public class SeedingService : ISeedingService
 
                 if (!await IsHnRSafeToRemoveAsync(torrent, trackerConfig, cancellationToken))
                 {
-                    _logger.LogDebug("H&R protection: keeping '{Name}' (ratio={Ratio:F2}, seeding={SeedingTime}s)",
+                    _logger.LogDebug("H&R protection: keeping downloading torrent '{Name}' (ratio={Ratio:F2}, seeding={SeedingTime}s)",
                         torrent.Name, torrent.Ratio, torrent.SeedingTime);
                     return false;
                 }
@@ -419,6 +491,49 @@ public class SeedingService : ISeedingService
         }
 
         return shouldRemove;
+    }
+
+    /// <summary>
+    /// Check if a torrent state indicates uploading/seeding.
+    /// Matches qBitrr's is_uploading check.
+    /// </summary>
+    public static bool IsUploadingState(string state)
+    {
+        if (string.IsNullOrEmpty(state)) return false;
+        var s = state.ToLowerInvariant();
+        return s.Contains("uploading") ||
+               s.Contains("stalledupload") ||
+               s.Contains("queuedupload") ||
+               s.Contains("pausedupload") ||
+               s.Contains("forcedupload");
+    }
+
+    /// <summary>
+    /// Check if a torrent state indicates downloading.
+    /// Matches qBitrr's is_downloading check.
+    /// </summary>
+    public static bool IsDownloadingState(string state)
+    {
+        if (string.IsNullOrEmpty(state)) return false;
+        var s = state.ToLowerInvariant();
+        return s.Contains("downloading") ||
+               s.Contains("stalleddownload") ||
+               s.Contains("queueddownload") ||
+               s.Contains("pauseddownload") ||
+               s.Contains("forceddownload") ||
+               s.Contains("metadata");
+    }
+
+    /// <summary>
+    /// Check if a torrent state indicates stopped (not paused).
+    /// </summary>
+    public static bool IsStoppedState(string state)
+    {
+        if (string.IsNullOrEmpty(state)) return false;
+        var s = state.ToLowerInvariant();
+        return s == "stoppeddownload" ||
+               s == "stoppedupload" ||
+               s.Contains("stopped");
     }
 
     private CategorySeedingConfig ConvertToCategorySeeding(TrackerConfig tracker)
@@ -588,8 +703,8 @@ public class SeedingService : ISeedingService
     }
 
     /// <summary>
-    /// Apply seeding limits (ratio, time, rate limits) to a torrent.
-    /// Matches qBitrr's _apply_seeding_limits() exactly.
+    /// Apply rate limits to a torrent.
+    /// Note: qBitrr removed set_share_limits from tracker processing - limits are set per-torrent.
     /// </summary>
     public async Task ApplySeedingLimitsAsync(TorrentInfo torrent, CancellationToken cancellationToken = default)
     {
@@ -598,28 +713,6 @@ public class SeedingService : ISeedingService
 
         var trackerConfig = await GetTrackerConfigAsync(torrent, cancellationToken);
         var config = trackerConfig != null ? ConvertToCategorySeeding(trackerConfig) : GetSeedingConfig(torrent);
-
-        var ratioLimit = config.MaxUploadRatio;
-        var timeLimit = config.MaxSeedingTime;
-
-        if (ratioLimit > 0 || timeLimit > 0)
-        {
-            try
-            {
-                await client.SetShareLimitsAsync(
-                    torrent.Hash,
-                    ratioLimit > 0 ? ratioLimit : -2,
-                    timeLimit > 0 ? timeLimit : -2,
-                    cancellationToken);
-
-                _logger.LogDebug("Applied share limits to '{Name}': ratio={Ratio}, time={Time}s",
-                    torrent.Name, ratioLimit, timeLimit);
-            }
-            catch (Exception ex)
-            {
-                _logger.LogError(ex, "Failed to set share limits for '{Name}'", torrent.Name);
-            }
-        }
 
         var dlLimit = config.DownloadRateLimitPerTorrent;
         if (dlLimit >= 0)

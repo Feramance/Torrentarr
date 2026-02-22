@@ -70,6 +70,37 @@ public class TorrentInfo
 
     [JsonProperty("eta")]
     public long Eta { get; set; }
+
+    /// <summary>
+    /// Check if torrent state indicates uploading/seeding.
+    /// Matches qBitrr's is_uploading check.
+    /// </summary>
+    public bool IsUploading => !string.IsNullOrEmpty(State) && (
+        State.Contains("uploading", StringComparison.OrdinalIgnoreCase) ||
+        State.Contains("stalledupload", StringComparison.OrdinalIgnoreCase) ||
+        State.Contains("queuedupload", StringComparison.OrdinalIgnoreCase) ||
+        State.Contains("pausedupload", StringComparison.OrdinalIgnoreCase) ||
+        State.Contains("forcedupload", StringComparison.OrdinalIgnoreCase));
+
+    /// <summary>
+    /// Check if torrent state indicates downloading.
+    /// Matches qBitrr's is_downloading check.
+    /// </summary>
+    public bool IsDownloading => !string.IsNullOrEmpty(State) && (
+        State.Contains("downloading", StringComparison.OrdinalIgnoreCase) ||
+        State.Contains("stalleddownload", StringComparison.OrdinalIgnoreCase) ||
+        State.Contains("queueddownload", StringComparison.OrdinalIgnoreCase) ||
+        State.Contains("pauseddownload", StringComparison.OrdinalIgnoreCase) ||
+        State.Contains("forceddownload", StringComparison.OrdinalIgnoreCase) ||
+        State.Contains("metadata", StringComparison.OrdinalIgnoreCase));
+
+    /// <summary>
+    /// Check if torrent is stopped (not just paused).
+    /// </summary>
+    public bool IsStopped => !string.IsNullOrEmpty(State) && (
+        State.Equals("stoppeddownload", StringComparison.OrdinalIgnoreCase) ||
+        State.Equals("stoppedupload", StringComparison.OrdinalIgnoreCase) ||
+        State.Contains("stopped", StringComparison.OrdinalIgnoreCase));
 }
 
 /// <summary>

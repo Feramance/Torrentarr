@@ -53,6 +53,27 @@ public class SeedingServiceTests
         SeedingService.ExtractTrackerHost("   ").Should().BeEmpty();
     }
 
+    [Theory]
+    [InlineData("https://sub.tracker.example.com/announce", "sub.tracker.example.com")]
+    [InlineData("https://a.b.c.example.org/announce", "a.b.c.example.org")]
+    [InlineData("tracker.torrentleech.org", "tracker.torrentleech.org")]
+    [InlineData("torrentleech.org", "torrentleech.org")]
+    public void ExtractTrackerHost_SubdomainUrls_ReturnsFullHost(string url, string expected)
+    {
+        // These tests document that ExtractTrackerHost extracts the full hostname
+        // Subdomain matching (sub.example.com matches example.com config) is done
+        // in GetTrackerConfigAsync, not in ExtractTrackerHost
+        SeedingService.ExtractTrackerHost(url).Should().Be(expected);
+    }
+
+    [Theory]
+    [InlineData("https://tracker.example.com/a/long/path/announce", "tracker.example.com")]
+    [InlineData("udp://tracker.example.com:6969/announce.php", "tracker.example.com")]
+    public void ExtractTrackerHost_LongPaths_ReturnsHostOnly(string url, string expected)
+    {
+        SeedingService.ExtractTrackerHost(url).Should().Be(expected);
+    }
+
     // ── IsHnRSafeToRemoveAsync (pure logic) ────────────────────────────────────
 
     private static TorrentInfo MakeTorrent(double progress, double ratio, long seedingTimeSec)
@@ -170,5 +191,130 @@ public class SeedingServiceTests
         var result = await svc.IsHnRSafeToRemoveAsync(torrent, config);
 
         result.Should().BeFalse();
+    }
+
+    [Fact]
+    public async Task IsHnRSafeToRemoveAsync_FullDownload_BothRatioAndTime_EitherMet_Safe()
+    {
+        // When both ratio and time requirements are set, either one being met is sufficient
+        var svc = CreateService();
+        // Ratio met, time not met
+        var torrent = MakeTorrent(progress: 1.0, ratio: 1.5, seedingTimeSec: 1000);
+        var config = HnrConfig(minRatio: 1.0, minDays: 2);
+
+        var result = await svc.IsHnRSafeToRemoveAsync(torrent, config);
+
+        result.Should().BeTrue();
+    }
+
+    // ── IsUploadingState / IsDownloadingState / IsStoppedState ──────────────────
+
+    [Theory]
+    [InlineData("uploading", true)]
+    [InlineData("stalledupload", true)]
+    [InlineData("queuedupload", true)]
+    [InlineData("pausedupload", true)]
+    [InlineData("forcedupload", true)]
+    [InlineData("downloading", false)]
+    [InlineData("stalleddownload", false)]
+    [InlineData("paused", false)]
+    [InlineData("", false)]
+    public void IsUploadingState_DetectsUploadingStates(string state, bool expected)
+    {
+        SeedingService.IsUploadingState(state).Should().Be(expected);
+    }
+
+    [Theory]
+    [InlineData("downloading", true)]
+    [InlineData("stalleddownload", true)]
+    [InlineData("queueddownload", true)]
+    [InlineData("pauseddownload", true)]
+    [InlineData("forceddownload", true)]
+    [InlineData("metadata", true)]
+    [InlineData("uploading", false)]
+    [InlineData("stalledupload", false)]
+    [InlineData("", false)]
+    public void IsDownloadingState_DetectsDownloadingStates(string state, bool expected)
+    {
+        SeedingService.IsDownloadingState(state).Should().Be(expected);
+    }
+
+    [Theory]
+    [InlineData("stoppeddownload", true)]
+    [InlineData("stoppedupload", true)]
+    [InlineData("stopped", true)]
+    [InlineData("STOPPEDDOWNLOAD", true)]
+    [InlineData("uploading", false)]
+    [InlineData("downloading", false)]
+    [InlineData("paused", false)]
+    [InlineData("", false)]
+    public void IsStoppedState_DetectsStoppedStates(string state, bool expected)
+    {
+        SeedingService.IsStoppedState(state).Should().Be(expected);
+    }
+
+    // ── HnrAllowsDeleteAsync ────────────────────────────────────────────────────
+
+    [Fact]
+    public async Task HnrAllowsDeleteAsync_NoHnrTrackers_ReturnsTrue()
+    {
+        var config = new TorrentarrConfig();
+        config.QBitInstances["qBit"] = new QBitConfig
+        {
+            Trackers = new List<TrackerConfig>() // No HnR trackers
+        };
+        var svc = CreateService(config);
+        var torrent = MakeTorrent(1.0, 0, 0);
+        torrent.QBitInstanceName = "qBit";
+
+        var result = await svc.HnrAllowsDeleteAsync(torrent, "test deletion");
+
+        result.Should().BeTrue();
+    }
+
+    // ── ShouldRemoveTorrentAsync state-based logic ───────────────────────────────
+
+    [Fact]
+    public async Task ShouldRemoveTorrentAsync_DownloadingTorrent_NeverRemoved()
+    {
+        var config = new TorrentarrConfig();
+        config.QBitInstances["qBit"] = new QBitConfig
+        {
+            CategorySeeding = new CategorySeedingConfig
+            {
+                RemoveTorrent = 1, // Remove on ratio
+                MaxUploadRatio = 0.5
+            }
+        };
+        var svc = CreateService(config);
+        var torrent = MakeTorrent(1.0, 1.0, 1000); // Ratio met
+        torrent.State = "downloading"; // But downloading, not uploading
+        torrent.QBitInstanceName = "qBit";
+
+        var result = await svc.ShouldRemoveTorrentAsync(torrent);
+
+        result.Should().BeFalse(); // Downloading torrents are never removed by seeding limits
+    }
+
+    [Fact]
+    public async Task ShouldRemoveTorrentAsync_UploadingTorrent_CanBeRemoved()
+    {
+        var config = new TorrentarrConfig();
+        config.QBitInstances["qBit"] = new QBitConfig
+        {
+            CategorySeeding = new CategorySeedingConfig
+            {
+                RemoveTorrent = 1, // Remove on ratio
+                MaxUploadRatio = 0.5
+            }
+        };
+        var svc = CreateService(config);
+        var torrent = MakeTorrent(1.0, 1.0, 1000); // Ratio met
+        torrent.State = "uploading";
+        torrent.QBitInstanceName = "qBit";
+
+        var result = await svc.ShouldRemoveTorrentAsync(torrent);
+
+        result.Should().BeTrue();
     }
 }

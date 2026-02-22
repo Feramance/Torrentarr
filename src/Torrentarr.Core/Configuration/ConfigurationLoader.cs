@@ -485,23 +485,8 @@ public class ConfigurationLoader
         if (table.TryGetValue("RemoveTrackerWithMessage", out var removeMessages) && removeMessages is TomlArray msgArray)
             seeding.RemoveTrackerWithMessage = msgArray.Select(x => x?.ToString() ?? "").ToList();
 
-        if (table.TryGetValue("HitAndRunMode", out var hnrMode))
-            seeding.HitAndRunMode = Convert.ToBoolean(hnrMode);
-
-        if (table.TryGetValue("MinSeedRatio", out var minRatio))
-            seeding.MinSeedRatio = Convert.ToDouble(minRatio);
-
-        if (table.TryGetValue("MinSeedingTimeDays", out var minDays))
-            seeding.MinSeedingTimeDays = Convert.ToInt32(minDays);
-
-        if (table.TryGetValue("HitAndRunPartialSeedRatio", out var hnrPartial))
-            seeding.HitAndRunPartialSeedRatio = Convert.ToDouble(hnrPartial);
-
-        if (table.TryGetValue("TrackerUpdateBuffer", out var trackerBuffer))
-            seeding.TrackerUpdateBuffer = Convert.ToInt32(trackerBuffer);
-
-        if (table.TryGetValue("HitAndRunMinimumDownloadPercent", out var hnrMinDl))
-            seeding.HitAndRunMinimumDownloadPercent = Convert.ToInt32(hnrMinDl);
+        // HnR settings are now tracker-only (removed from SeedingMode in v5.9.1)
+        // These fields are still parsed for backwards compatibility with old configs
 
         return seeding;
     }
@@ -860,12 +845,7 @@ public class ConfigurationLoader
             sb.AppendLine($"RemoveTorrent = {sm.RemoveTorrent}");
             sb.AppendLine($"RemoveDeadTrackers = {sm.RemoveDeadTrackers.ToString().ToLower()}");
             sb.AppendLine($"RemoveTrackerWithMessage = [{string.Join(", ", sm.RemoveTrackerWithMessage.Select(m => $"\"{EscapeTomlString(m)}\""))}]");
-            sb.AppendLine($"HitAndRunMode = {sm.HitAndRunMode.ToString().ToLower()}");
-            sb.AppendLine($"MinSeedRatio = {sm.MinSeedRatio}");
-            sb.AppendLine($"MinSeedingTimeDays = {sm.MinSeedingTimeDays}");
-            sb.AppendLine($"HitAndRunPartialSeedRatio = {sm.HitAndRunPartialSeedRatio}");
-            sb.AppendLine($"TrackerUpdateBuffer = {sm.TrackerUpdateBuffer}");
-            sb.AppendLine($"HitAndRunMinimumDownloadPercent = {sm.HitAndRunMinimumDownloadPercent}");
+            // HnR settings are now tracker-only (removed from SeedingMode in v5.9.1)
             sb.AppendLine();
 
             // [[Arr.Torrent.Trackers]] array-of-tables

@@ -19,6 +19,7 @@ public class TorrentProcessor : ITorrentProcessor
     private const string IgnoredTag = "qBitrr-ignored";
     private const string AllowedSeedingTag = "qBitrr-allowed_seeding";
     private const string FreeSpacePausedTag = "qBitrr-free_space_paused";
+    private const string HnrActiveTag = "qBitrr-hnr_active";
 
     private readonly ILogger<TorrentProcessor> _logger;
     private readonly QBittorrentConnectionManager _qbitManager;
@@ -278,6 +279,18 @@ public class TorrentProcessor : ITorrentProcessor
         // Ensure torrent exists in database
         await EnsureTorrentInDatabaseAsync(torrent, category, cancellationToken);
 
+        // Auto-resume stopped torrents that are not ignored or free-space-paused
+        if (torrent.IsStopped && !HasTag(torrent, FreeSpacePausedTag) && !HasTag(torrent, IgnoredTag))
+        {
+            var client = _qbitManager.GetAllClients().Values.FirstOrDefault();
+            if (client != null)
+            {
+                _logger.LogDebug("Resuming stopped torrent: {Name} ({Hash}) - State[{State}]",
+                    torrent.Name, torrent.Hash, torrent.State);
+                await client.ResumeTorrentsAsync(new List<string> { torrent.Hash }, cancellationToken);
+            }
+        }
+
         // Process based on state
         if (torrent.Progress >= 1.0 && !torrent.State.Contains("paused", StringComparison.OrdinalIgnoreCase))
         {
@@ -309,6 +322,18 @@ public class TorrentProcessor : ITorrentProcessor
 
         if (torrent.Category.Equals(failedCategory, StringComparison.OrdinalIgnoreCase))
         {
+            // Check HnR protection before deleting
+            if (_seedingService != null)
+            {
+                var hnrAllowsDelete = await _seedingService.HnrAllowsDeleteAsync(torrent, "failed category deletion", cancellationToken);
+                if (!hnrAllowsDelete)
+                {
+                    _logger.LogInformation("HnR protection: keeping failed torrent {Name}", torrent.Name);
+                    stats.Ignored++;
+                    return;
+                }
+            }
+
             _logger.LogWarning(
                 "Deleting manually failed torrent: {Name} | Progress: {Progress:P1}% | State: {State} | Hash: {Hash}",
                 torrent.Name, torrent.Progress * 100, torrent.State, torrent.Hash);

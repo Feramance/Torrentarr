@@ -11,7 +11,7 @@ public class TorrentarrConfigDefaultsTests
     {
         var config = new TorrentarrConfig();
 
-        config.Settings.ConfigVersion.Should().Be("5.9.0");
+        config.Settings.ConfigVersion.Should().Be("5.9.1");
         config.Settings.LoopSleepTimer.Should().Be(5);
         config.Settings.FailedCategory.Should().Be("failed");
     }
@@ -67,5 +67,66 @@ public class TorrentarrConfigDefaultsTests
         config.ArrInstances["Sonarr-1"] = new ArrInstanceConfig { Type = "sonarr" };
 
         config.Arrs.Should().HaveCount(2);
+    }
+
+    [Fact]
+    public void SeedingModeConfig_HasNoHnRFields_TrackerOnly()
+    {
+        // HnR settings were removed from SeedingModeConfig in v5.9.1
+        // They now only exist in TrackerConfig and CategorySeedingConfig
+        var seedingMode = new SeedingModeConfig();
+
+        // Verify SeedingModeConfig has seeding limits but no HnR fields
+        seedingMode.MaxUploadRatio.Should().Be(-1);
+        seedingMode.MaxSeedingTime.Should().Be(-1);
+        seedingMode.RemoveTorrent.Should().Be(-1);
+        seedingMode.RemoveDeadTrackers.Should().BeFalse();
+    }
+
+    [Fact]
+    public void CategorySeedingConfig_HasHnRFields()
+    {
+        var categorySeeding = new CategorySeedingConfig();
+
+        categorySeeding.HitAndRunMode.Should().BeFalse();
+        categorySeeding.MinSeedRatio.Should().Be(1.0);
+        categorySeeding.MinSeedingTimeDays.Should().Be(0);
+        categorySeeding.HitAndRunMinimumDownloadPercent.Should().Be(10);
+        categorySeeding.HitAndRunPartialSeedRatio.Should().Be(1.0);
+        categorySeeding.TrackerUpdateBuffer.Should().Be(0);
+    }
+
+    [Fact]
+    public void TrackerConfig_HasHnRFields()
+    {
+        var tracker = new TrackerConfig();
+
+        tracker.HitAndRunMode.Should().BeNull();
+        tracker.MinSeedRatio.Should().BeNull();
+        tracker.MinSeedingTime.Should().BeNull();
+        tracker.HitAndRunMinimumDownloadPercent.Should().BeNull();
+        tracker.HitAndRunPartialSeedRatio.Should().BeNull();
+        tracker.TrackerUpdateBuffer.Should().BeNull();
+    }
+
+    [Fact]
+    public void TrackerConfig_CanSetHnRFields()
+    {
+        var tracker = new TrackerConfig
+        {
+            HitAndRunMode = true,
+            MinSeedRatio = 1.5,
+            MinSeedingTime = 3,
+            HitAndRunMinimumDownloadPercent = 15,
+            HitAndRunPartialSeedRatio = 2.0,
+            TrackerUpdateBuffer = 300
+        };
+
+        tracker.HitAndRunMode.Should().BeTrue();
+        tracker.MinSeedRatio.Should().Be(1.5);
+        tracker.MinSeedingTime.Should().Be(3);
+        tracker.HitAndRunMinimumDownloadPercent.Should().Be(15);
+        tracker.HitAndRunPartialSeedRatio.Should().Be(2.0);
+        tracker.TrackerUpdateBuffer.Should().Be(300);
     }
 }

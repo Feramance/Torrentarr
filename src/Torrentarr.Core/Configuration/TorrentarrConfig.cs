@@ -21,7 +21,7 @@ public class TorrentarrConfig
 
 public class SettingsConfig
 {
-    public string ConfigVersion { get; set; } = "5.9.0";
+    public string ConfigVersion { get; set; } = "5.9.1";
     public string ConsoleLevel { get; set; } = "INFO";
     public bool Logging { get; set; } = true;
     public string CompletedDownloadFolder { get; set; } = "";
@@ -182,6 +182,7 @@ public class TorrentConfig
 
 /// <summary>
 /// Seeding mode configuration for Arr instances (Torrent.SeedingMode section)
+/// Note: HnR settings are now tracker-only (removed from SeedingMode in v5.9.1)
 /// </summary>
 public class SeedingModeConfig
 {
@@ -198,12 +199,6 @@ public class SeedingModeConfig
         "unsupported URL protocol",
         "info hash is not authorized with this tracker"
     };
-    public bool HitAndRunMode { get; set; } = false;
-    public double MinSeedRatio { get; set; } = 1.0;
-    public int MinSeedingTimeDays { get; set; } = 0;
-    public double HitAndRunPartialSeedRatio { get; set; } = 1.0;
-    public int TrackerUpdateBuffer { get; set; } = 0;
-    public int HitAndRunMinimumDownloadPercent { get; set; } = 10;
 }
 
 public class SearchConfig
