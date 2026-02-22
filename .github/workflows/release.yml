@@ -85,6 +85,12 @@ jobs:
       env:
         RELEASE_TYPE: ${{ steps.release_type.outputs.value }}
       run: bump2version "${RELEASE_TYPE}"
+    - name: Update all version fields
+      run: |
+        VERSION=$(grep -oP '<Version>\K[^<]+' Directory.Build.props)
+        sed -i "s|<FileVersion>[^<]*</FileVersion>|<FileVersion>${VERSION}</FileVersion>|" Directory.Build.props
+        sed -i "s|<AssemblyVersion>[^<]*</AssemblyVersion>|<AssemblyVersion>${VERSION}.0</AssemblyVersion>|" Directory.Build.props
+        echo "Updated all version fields to ${VERSION}"
     - name: Capture new version
       id: version
       run: |
