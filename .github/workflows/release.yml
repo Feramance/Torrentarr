@@ -308,6 +308,11 @@ jobs:
                     f.write(new_content)
                 print(f"Generated changelog for v{version}")
         PYEOF
+    - name: Pull and rebase with local changes
+      run: |
+        git stash
+        git pull --rebase origin master
+        git stash pop || true
     - name: Commit changelog updates
       uses: stefanzweifel/git-auto-commit-action@v7
       with:
