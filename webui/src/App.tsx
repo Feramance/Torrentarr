@@ -24,7 +24,7 @@ import SonarrIcon from "./icons/sonarr.svg";
 import LidarrIcon from "./icons/lidarr.svg";
 import QbitIcon from "./icons/qbittorrent.svg";
 import ConfigIcon from "./icons/gear.svg";
-import LogoIcon from "./icons/logo.svg";
+import LogoIcon from "./icons/logov2-clean.svg";
 
 type Tab = "processes" | "logs" | "radarr" | "sonarr" | "lidarr" | "qbittorrent" | "config";
 

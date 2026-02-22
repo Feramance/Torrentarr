@@ -1,0 +1,397 @@
+name: Create a Release
+
+on:
+  push:
+    branches:
+    - master
+  workflow_dispatch:
+    inputs:
+      release_type:
+        description: SemVer segment to bump
+        type: choice
+        default: patch
+        options:
+        - patch
+        - minor
+        - major
+
+defaults:
+  run:
+    shell: bash
+
+permissions:
+  contents: write
+  packages: write
+
+env:
+  PROJECT_NAME: Torrentarr
+
+jobs:
+  prepare_release:
+    name: Prepare release metadata
+    runs-on: ubuntu-latest
+    if: >-
+      github.event_name == 'workflow_dispatch' ||
+      startsWith(github.event.head_commit.message || '', '[patch]') ||
+      startsWith(github.event.head_commit.message || '', '[minor]') ||
+      startsWith(github.event.head_commit.message || '', '[major]')
+    outputs:
+      release_type: ${{ steps.release_type.outputs.value }}
+      new_version: ${{ steps.version.outputs.value }}
+      release_hash: ${{ steps.release_hash.outputs.value }}
+    steps:
+    - name: Checkout repository
+      uses: actions/checkout@v6
+      with:
+        fetch-depth: 0
+        token: ${{ secrets.GITHUB_TOKEN }}
+    - name: Determine release type
+      id: release_type
+      env:
+        EVENT_NAME: ${{ github.event_name }}
+        COMMIT_MESSAGE: ${{ github.event.head_commit.message || '' }}
+        INPUT_RELEASE_TYPE: ${{ github.event.inputs.release_type || '' }}
+      run: |
+        if [[ "${EVENT_NAME}" == "workflow_dispatch" ]]; then
+          type="${INPUT_RELEASE_TYPE:-patch}"
+          echo "value=${type}" >> "${GITHUB_OUTPUT}"
+          exit 0
+        fi
+
+        case "${COMMIT_MESSAGE}" in
+          "[patch]"*)
+            type="patch"
+            ;;
+          "[minor]"*)
+            type="minor"
+            ;;
+          "[major]"*)
+            type="major"
+            ;;
+          *)
+            echo "Commit message must begin with [patch], [minor], or [major]." >&2
+            exit 1
+            ;;
+        esac
+
+        echo "value=${type}" >> "${GITHUB_OUTPUT}"
+    - name: Set up Python
+      uses: actions/setup-python@v6
+      with:
+        python-version: '3.12'
+    - name: Install bump2version
+      run: python -m pip install --upgrade pip bump2version
+    - name: Bump project version
+      env:
+        RELEASE_TYPE: ${{ steps.release_type.outputs.value }}
+      run: bump2version "${RELEASE_TYPE}"
+    - name: Capture new version
+      id: version
+      run: |
+        VERSION=$(grep -oP '<Version>\K[^<]+' Directory.Build.props)
+        echo "value=${VERSION}" >> "${GITHUB_OUTPUT}"
+        echo "New version: ${VERSION}"
+    - name: Import GPG key
+      id: import_gpg
+      uses: crazy-max/ghaction-import-gpg@v6
+      if: ${{ secrets.GPG_PRIVATE_KEY != '' }}
+      with:
+        gpg_private_key: ${{ secrets.GPG_PRIVATE_KEY }}
+        passphrase: ${{ secrets.PASSPHRASE }}
+        git_user_signingkey: true
+        git_commit_gpgsign: true
+        git_tag_gpgsign: true
+    - name: Commit version bump
+      uses: stefanzweifel/git-auto-commit-action@v7
+      with:
+        commit_message: '[skip ci] Bump version to v${{ steps.version.outputs.value }}'
+        commit_options: ${{ secrets.GPG_PRIVATE_KEY != '' && '-S' || '' }}
+        commit_user_name: ${{ steps.import_gpg.outputs.name || github.actor }}
+        commit_user_email: ${{ steps.import_gpg.outputs.email || format('{0}@users.noreply.github.com', github.actor) }}
+    - name: Capture release hash
+      id: release_hash
+      run: |
+        HASH=$(git rev-parse --short HEAD)
+        echo "value=${HASH}" >> "${GITHUB_OUTPUT}"
+        echo "Release hash: ${HASH}"
+
+  create_release:
+    name: Create GitHub release draft
+    runs-on: ubuntu-latest
+    needs:
+    - prepare_release
+    if: needs.prepare_release.result == 'success'
+    steps:
+    - uses: actions/checkout@v6
+      with:
+        fetch-depth: 0
+        token: ${{ secrets.GITHUB_TOKEN }}
+    - name: Check if release exists
+      id: check_release
+      env:
+        GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      run: |
+        TAG="v${{ needs.prepare_release.outputs.new_version }}"
+        if gh release view "${TAG}" --repo ${{ github.repository }} >/dev/null 2>&1; then
+          echo "exists=true" >> "${GITHUB_OUTPUT}"
+          echo "Release ${TAG} already exists, will not create duplicate"
+        else
+          echo "exists=false" >> "${GITHUB_OUTPUT}"
+          echo "Release ${TAG} does not exist, will create"
+        fi
+    - name: Create draft release
+      if: steps.check_release.outputs.exists != 'true'
+      uses: softprops/action-gh-release@v2
+      with:
+        token: ${{ secrets.GITHUB_TOKEN }}
+        tag_name: v${{ needs.prepare_release.outputs.new_version }}
+        name: v${{ needs.prepare_release.outputs.new_version }}
+        draft: true
+        prerelease: false
+        make_latest: false
+
+  build_and_push_docker:
+    name: Build and push Docker images
+    runs-on: ubuntu-latest
+    needs:
+    - prepare_release
+    - create_release
+    if: needs.prepare_release.result == 'success'
+    env:
+      VERSION: ${{ needs.prepare_release.outputs.new_version }}
+    steps:
+    - id: repo
+      uses: ASzc/change-string-case-action@v6
+      with:
+        string: ${{ github.repository }}
+    - uses: actions/checkout@v6
+      with:
+        fetch-depth: 0
+    - uses: docker/setup-qemu-action@v3
+    - uses: docker/setup-buildx-action@v3
+    - name: Login to GitHub Container Registry
+      uses: docker/login-action@v3
+      with:
+        registry: ghcr.io
+        username: ${{ github.actor }}
+        password: ${{ secrets.GITHUB_TOKEN }}
+    - name: Extract Docker metadata
+      id: meta
+      uses: docker/metadata-action@v5
+      with:
+        images: ghcr.io/${{ steps.repo.outputs.lowercase }}
+        tags: |
+          type=raw,value=latest
+          type=raw,value=v${{ env.VERSION }}
+    - name: Build and push Docker images
+      uses: docker/build-push-action@v6
+      with:
+        context: .
+        platforms: linux/amd64,linux/arm64
+        push: true
+        tags: ${{ steps.meta.outputs.tags }}
+        labels: ${{ steps.meta.outputs.labels }}
+        cache-from: type=gha
+        cache-to: type=gha,mode=max
+
+  changelog:
+    name: Generate changelog and release notes
+    runs-on: ubuntu-latest
+    needs:
+    - prepare_release
+    - build_and_push_docker
+    if: needs.prepare_release.result == 'success'
+    steps:
+    - uses: actions/checkout@v6
+      with:
+        fetch-depth: 0
+        token: ${{ secrets.GITHUB_TOKEN }}
+    - name: Set up Python
+      uses: actions/setup-python@v6
+      with:
+        python-version: '3.12'
+    - name: Generate changelog entry
+      env:
+        VERSION: ${{ needs.prepare_release.outputs.new_version }}
+      run: |
+        python3 <<'PYEOF'
+        import os
+        import subprocess
+        import sys
+        from datetime import datetime
+        import re
+
+        version = os.environ['VERSION']
+        tag = f"v{version}"
+
+        def categorize_commit(message):
+            msg_lower = message.lower()
+            if any(x in message for x in ['[minor]', '[major]', 'feat:', 'feature:']):
+                return 'Features'
+            if 'Add ' in message or 'Implement ' in message:
+                return 'Features'
+            if any(x in message for x in ['[patch]', 'fix:', 'Fix ', 'Fixed ', 'Hotfix']):
+                return 'Bug Fixes'
+            if any(x in msg_lower for x in ['docs:', 'doc:', 'document ']):
+                return 'Documentation'
+            if 'refactor:' in msg_lower or 'Refactor' in message:
+                return 'Refactoring'
+            if any(x in msg_lower for x in ['perf:', 'performance:', 'optimize:']):
+                return 'Performance'
+            if any(x in message for x in ['chore:', 'build:', 'ci:', 'Bump ', 'Update ', 'Merge ']):
+                return 'Maintenance'
+            if message.startswith('Fix '):
+                return 'Bug Fixes'
+            return 'Maintenance'
+
+        # Get previous tag
+        prev_tag = ""
+        try:
+            result = subprocess.run(['git', 'describe', '--tags', '--abbrev=0', f'{tag}^'],
+                                    capture_output=True, text=True)
+            if result.returncode == 0:
+                prev_tag = result.stdout.strip()
+        except:
+            pass
+
+        if not prev_tag:
+            result = subprocess.run(['git', 'tag', '--sort=-version:refname'],
+                                    capture_output=True, text=True)
+            if result.returncode == 0:
+                tags = [t.strip() for t in result.stdout.strip().split('\n') if t.strip()]
+                if tag in tags:
+                    idx = tags.index(tag)
+                    if idx + 1 < len(tags):
+                        prev_tag = tags[idx + 1]
+                elif len(tags) > 0:
+                    prev_tag = tags[0]
+
+        if not prev_tag:
+            print("First release - no previous tag found")
+            prev_tag = ""
+
+        # Get commits
+        if prev_tag:
+            result = subprocess.run(['git', 'log', f'{prev_tag}..{tag}', '--format=%H %s', '--no-merges'],
+                                    capture_output=True, text=True)
+        else:
+            result = subprocess.run(['git', 'log', '-50', '--format=%H %s', '--no-merges'],
+                                    capture_output=True, text=True)
+
+        commits = [line for line in result.stdout.strip().split('\n')
+                   if line and '[skip ci]' not in line and '[ci skip]' not in line]
+
+        # Read existing changelog
+        with open('CHANGELOG.md', 'r') as f:
+            content = f.read()
+
+        date_str = datetime.now().strftime('%Y-%m-%d')
+        header = f"## v{version} ({date_str})\n"
+
+        if header not in content:
+            grouped = {}
+            for commit in commits[:50]:
+                if not commit.strip():
+                    continue
+                try:
+                    hash_val, msg = commit.split(' ', 1)
+                    category = categorize_commit(msg)
+                    if category not in grouped:
+                        grouped[category] = []
+                    grouped[category].append(f"- {msg} ([{hash_val[:7]}](https://github.com/${{ github.repository }}/commit/{hash_val}))")
+                except ValueError:
+                    continue
+
+            entry = header
+            group_order = ['Features', 'Bug Fixes', 'Documentation', 'Refactoring', 'Performance', 'Maintenance']
+            for group in group_order:
+                if group in grouped:
+                    entry += f"\n### {group}\n"
+                    for commit_line in grouped[group]:
+                        entry += f"{commit_line}\n"
+
+            entry += "\n---\n\n"
+
+            changelog_start = content.find("# Changelog\n\n")
+            if changelog_start >= 0:
+                insert_pos = changelog_start + len("# Changelog\n\n")
+                new_content = content[:insert_pos] + entry + content[insert_pos:]
+                with open('CHANGELOG.md', 'w') as f:
+                    f.write(new_content)
+                print(f"Generated changelog for v{version}")
+        PYEOF
+    - name: Import GPG key
+      id: changelog_gpg
+      uses: crazy-max/ghaction-import-gpg@v6
+      if: ${{ secrets.GPG_PRIVATE_KEY != '' }}
+      with:
+        gpg_private_key: ${{ secrets.GPG_PRIVATE_KEY }}
+        passphrase: ${{ secrets.PASSPHRASE }}
+        git_user_signingkey: true
+        git_commit_gpgsign: true
+    - name: Commit changelog updates
+      uses: stefanzweifel/git-auto-commit-action@v7
+      with:
+        commit_message: '[skip ci] Update changelog for v${{ needs.prepare_release.outputs.new_version }}'
+        commit_options: ${{ secrets.GPG_PRIVATE_KEY != '' && '-S' || '' }}
+        commit_user_name: ${{ steps.changelog_gpg.outputs.name || github.actor }}
+        commit_user_email: ${{ steps.changelog_gpg.outputs.email || format('{0}@users.noreply.github.com', github.actor) }}
+
+  publish_release:
+    name: Publish GitHub release
+    runs-on: ubuntu-latest
+    needs:
+    - prepare_release
+    - changelog
+    if: needs.prepare_release.result == 'success'
+    steps:
+    - uses: actions/checkout@v6
+      with:
+        fetch-depth: 0
+        token: ${{ secrets.GITHUB_TOKEN }}
+    - name: Pull latest changelog updates
+      run: git pull origin master
+    - name: Extract release notes from changelog
+      id: extract_notes
+      env:
+        GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        VERSION: ${{ needs.prepare_release.outputs.new_version }}
+      run: |
+        TAG="v${VERSION}"
+        python3 <<'PYEOF'
+        import os
+        import re
+
+        version = os.environ['VERSION']
+        tag = f"v{version}"
+
+        with open('CHANGELOG.md', 'r') as f:
+            content = f.read()
+
+        pattern = rf'## (v{re.escape(version)}) \((\d{{4}}-\d{{2}}-\d{{2}})\)\n(.*?)(?=\n---\n\n|\Z)'
+        match = re.search(pattern, content, re.DOTALL)
+
+        if match:
+            body = match.group(3).strip()
+            with open('/tmp/release_notes.md', 'w') as f:
+                f.write(body)
+            print(f"Extracted changelog for {tag}")
+        else:
+            with open('/tmp/release_notes.md', 'w') as f:
+                f.write(f"Release {tag}")
+            print(f"No changelog entry found for {tag}")
+        PYEOF
+
+        if [ -f /tmp/release_notes.md ]; then
+          gh release edit "${TAG}" --notes-file /tmp/release_notes.md --repo ${{ github.repository }} || true
+        fi
+    - name: Publish release
+      env:
+        GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      run: |
+        TAG="v${{ needs.prepare_release.outputs.new_version }}"
+        gh release edit "${TAG}" --draft=false --latest --repo ${{ github.repository }}
+
+concurrency:
+  group: release
+  cancel-in-progress: false

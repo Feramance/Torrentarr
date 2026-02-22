@@ -1,0 +1,99 @@
+name: Bug report
+description: Report something that is not working as expected.
+title: 'bug: <summary>'
+labels: [bug, needs triage]
+body:
+- type: markdown
+  attributes:
+    value: |
+      Thank you for helping us improve Torrentarr. Please fill in every required field so we can reproduce and fix the problem quickly. Attach relevant log snippets and mask any sensitive information.
+- type: textarea
+  id: summary
+  attributes:
+    label: Issue summary
+    description: What is happening? Provide a concise, one paragraph overview.
+    placeholder: Downloads stay in Stalled state even after rechecking
+  validations:
+    required: true
+- type: textarea
+  id: repro
+  attributes:
+    label: Steps to reproduce
+    description: List the exact steps (including config tweaks) needed to reproduce the issue.
+    placeholder: |-
+      1. Set ...
+      2. Start ...
+      3. Observe ...
+  validations:
+    required: true
+- type: textarea
+  id: expected
+  attributes:
+    label: Expected behaviour
+    description: What did you expect to happen instead?
+  validations:
+    required: true
+- type: textarea
+  id: actual
+  attributes:
+    label: Actual behaviour and logs
+    description: Paste relevant log excerpts (use triple backticks) and describe what you saw.
+    render: shell
+  validations:
+    required: true
+- type: textarea
+  id: files
+  attributes:
+    label: Required files
+    description: |
+      **Attach the following files (drag and drop into this text area):**
+      1. `All.log` - Complete log file from your logs directory
+      2. `config.toml` - Your configuration file (mask sensitive data like tokens, passwords, URLs)
+
+      These files are essential for debugging. Without them, we may not be able to help.
+    placeholder: Drag and drop All.log and config.toml here
+  validations:
+    required: true
+- type: input
+  id: version
+  attributes:
+    label: Torrentarr version
+    description: Version number or Docker image tag.
+    placeholder: 5.9.1 (ghcr.io/yourusername/torrentarr:latest)
+  validations:
+    required: true
+- type: input
+  id: platform
+  attributes:
+    label: Environment
+    description: Operating system and deployment details (native, Docker, etc.).
+    placeholder: Ubuntu 22.04, Docker compose
+  validations:
+    required: true
+- type: textarea
+  id: integrations
+  attributes:
+    label: Integration versions
+    description: Include qBittorrent, Radarr, Sonarr, Lidarr versions and any other relevant services.
+  validations:
+    required: true
+- type: checkboxes
+  id: confirmations
+  attributes:
+    label: Pre-flight checklist
+    options:
+    - label: I searched existing issues and discussions.
+      required: true
+    - label: I have attached the complete `All.log` file (not just excerpts).
+      required: true
+    - label: I have attached my `config.toml` with sensitive information masked.
+      required: true
+    - label: Logging is enabled and the attached logs cover the failure.
+      required: true
+- type: textarea
+  id: extra
+  attributes:
+    label: Additional context
+    description: Optional details, links, or screenshots.
+  validations:
+    required: false
