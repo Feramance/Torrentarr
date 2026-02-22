@@ -1,11 +1,15 @@
 # Implementation Plan: Fix Workflows & Add GitHub Infrastructure
 
-## Status: Completed - Testing release workflow
+## Status: Completed - Testing release workflow (attempt 2)
 
 ### Remaining Issues
 - **CodeQL**: Requires GitHub Advanced Security (paid feature). Added `continue-on-error: true` so it doesn't block CI.
 - **Dependabot PRs**: Using old workflow file (before `cache: true` fix). Will be resolved when PRs are closed/rebased.
 - **Docker build**: Takes 15+ min due to multi-platform (amd64 + arm64) builds. This is expected behavior.
+
+### Release Workflow Fixes
+1. Fixed bump2version search pattern for TorrentarrConfig.cs
+2. Escaped braces in search pattern (`{{ get; set; }}`)
 
 ---
 
