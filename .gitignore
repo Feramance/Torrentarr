@@ -29,6 +29,7 @@ bld/
 
 # Visual Studio Code
 .vscode/
+.vexp/
 
 # JetBrains Rider
 .idea/
