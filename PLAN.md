@@ -1,6 +1,6 @@
 # Implementation Plan: Fix Workflows & Add GitHub Infrastructure
 
-## Status: Testing patch release v5.9.3
+## Status: Testing patch release v5.9.3 (attempt 2)
 
 ### Remaining Issues
 - **CodeQL**: Requires GitHub Advanced Security (paid feature). Added `continue-on-error: true` so it doesn't block CI.
