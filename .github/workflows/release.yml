@@ -308,16 +308,12 @@ jobs:
                     f.write(new_content)
                 print(f"Generated changelog for v{version}")
         PYEOF
-    - name: Pull and rebase before commit
-      run: git pull --rebase origin master
     - name: Commit changelog updates
       uses: stefanzweifel/git-auto-commit-action@v7
       with:
         commit_message: '[skip ci] Update changelog for v${{ needs.prepare_release.outputs.new_version }}'
         commit_user_name: ${{ github.actor }}
         commit_user_email: ${{ github.actor }}@users.noreply.github.com
-        skip_fetch: false
-        skip_checkout: false
 
   publish_release:
     name: Publish GitHub release
