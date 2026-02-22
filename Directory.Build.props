@@ -1,6 +1,6 @@
 <Project>
   <PropertyGroup>
-    <Version>5.9.1</Version>
+    <Version>5.9.2</Version>
     <FileVersion>5.9.1</FileVersion>
     <AssemblyVersion>5.9.1.0</AssemblyVersion>
     <Company>Torrentarr</Company>
