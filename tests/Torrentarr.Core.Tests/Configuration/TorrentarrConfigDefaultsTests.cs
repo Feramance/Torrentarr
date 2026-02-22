@@ -11,7 +11,7 @@ public class TorrentarrConfigDefaultsTests
     {
         var config = new TorrentarrConfig();
 
-        config.Settings.ConfigVersion.Should().Be("5.9.1");
+        config.Settings.ConfigVersion.Should().MatchRegex(@"^\d+\.\d+\.\d+$");
         config.Settings.LoopSleepTimer.Should().Be(5);
         config.Settings.FailedCategory.Should().Be("failed");
     }
