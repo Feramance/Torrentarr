@@ -91,23 +91,12 @@ jobs:
         VERSION=$(grep -oP '<Version>\K[^<]+' Directory.Build.props)
         echo "value=${VERSION}" >> "${GITHUB_OUTPUT}"
         echo "New version: ${VERSION}"
-    - name: Import GPG key
-      id: import_gpg
-      uses: crazy-max/ghaction-import-gpg@v6
-      if: ${{ secrets.GPG_PRIVATE_KEY != '' }}
-      with:
-        gpg_private_key: ${{ secrets.GPG_PRIVATE_KEY }}
-        passphrase: ${{ secrets.PASSPHRASE }}
-        git_user_signingkey: true
-        git_commit_gpgsign: true
-        git_tag_gpgsign: true
     - name: Commit version bump
       uses: stefanzweifel/git-auto-commit-action@v7
       with:
         commit_message: '[skip ci] Bump version to v${{ steps.version.outputs.value }}'
-        commit_options: ${{ secrets.GPG_PRIVATE_KEY != '' && '-S' || '' }}
-        commit_user_name: ${{ steps.import_gpg.outputs.name || github.actor }}
-        commit_user_email: ${{ steps.import_gpg.outputs.email || format('{0}@users.noreply.github.com', github.actor) }}
+        commit_user_name: ${{ github.actor }}
+        commit_user_email: ${{ github.actor }}@users.noreply.github.com
     - name: Capture release hash
       id: release_hash
       run: |
@@ -244,7 +233,6 @@ jobs:
                 return 'Bug Fixes'
             return 'Maintenance'
 
-        # Get previous tag
         prev_tag = ""
         try:
             result = subprocess.run(['git', 'describe', '--tags', '--abbrev=0', f'{tag}^'],
@@ -266,11 +254,6 @@ jobs:
                 elif len(tags) > 0:
                     prev_tag = tags[0]
 
-        if not prev_tag:
-            print("First release - no previous tag found")
-            prev_tag = ""
-
-        # Get commits
         if prev_tag:
             result = subprocess.run(['git', 'log', f'{prev_tag}..{tag}', '--format=%H %s', '--no-merges'],
                                     capture_output=True, text=True)
@@ -281,7 +264,6 @@ jobs:
         commits = [line for line in result.stdout.strip().split('\n')
                    if line and '[skip ci]' not in line and '[ci skip]' not in line]
 
-        # Read existing changelog
         with open('CHANGELOG.md', 'r') as f:
             content = f.read()
 
@@ -320,22 +302,12 @@ jobs:
                     f.write(new_content)
                 print(f"Generated changelog for v{version}")
         PYEOF
-    - name: Import GPG key
-      id: changelog_gpg
-      uses: crazy-max/ghaction-import-gpg@v6
-      if: ${{ secrets.GPG_PRIVATE_KEY != '' }}
-      with:
-        gpg_private_key: ${{ secrets.GPG_PRIVATE_KEY }}
-        passphrase: ${{ secrets.PASSPHRASE }}
-        git_user_signingkey: true
-        git_commit_gpgsign: true
     - name: Commit changelog updates
       uses: stefanzweifel/git-auto-commit-action@v7
       with:
         commit_message: '[skip ci] Update changelog for v${{ needs.prepare_release.outputs.new_version }}'
-        commit_options: ${{ secrets.GPG_PRIVATE_KEY != '' && '-S' || '' }}
-        commit_user_name: ${{ steps.changelog_gpg.outputs.name || github.actor }}
-        commit_user_email: ${{ steps.changelog_gpg.outputs.email || format('{0}@users.noreply.github.com', github.actor) }}
+        commit_user_name: ${{ github.actor }}
+        commit_user_email: ${{ github.actor }}@users.noreply.github.com
 
   publish_release:
     name: Publish GitHub release
@@ -361,6 +333,7 @@ jobs:
         python3 <<'PYEOF'
         import os
         import re
+        import sys
 
         version = os.environ['VERSION']
         tag = f"v{version}"
