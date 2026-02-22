@@ -2,18 +2,23 @@
 FROM node:22-alpine AS frontend-build
 WORKDIR /app/frontend
 
+# Set npm timeout settings to prevent hanging
+ENV NPM_CONFIG_FETCH_TIMEOUT=600000 \
+    NPM_CONFIG_FETCH_RETRY=5 \
+    NPM_CONFIG_FETCH_RETRY_MINTIMEOUT=20000 \
+    NPM_CONFIG_FETCH_RETRY_MAXTIMEOUT=120000
+
 # Copy package files and npm config from webui/
 COPY webui/package*.json webui/.npmrc* ./
 
-# Install all dependencies (devDependencies are required for Vite/TypeScript build)
-RUN npm ci
+# Install dependencies with cache mount and timeout settings
+RUN --mount=type=cache,target=/root/.npm \
+    npm ci --prefer-offline --no-audit --loglevel=warn
 
 # Copy frontend source
 COPY webui/ ./
 
-# Build production bundle.
-# vite.config.ts resolves outDir to ../src/Torrentarr.Host/wwwroot relative to
-# the config file, which in this container is /app/src/Torrentarr.Host/wwwroot.
+# Build production bundle
 RUN npm run build
 
 # Stage 2: Build .NET Backend
@@ -27,19 +32,16 @@ COPY src/Torrentarr.Infrastructure/*.csproj ./src/Torrentarr.Infrastructure/
 COPY src/Torrentarr.Host/*.csproj ./src/Torrentarr.Host/
 COPY src/Torrentarr.WebUI/*.csproj ./src/Torrentarr.WebUI/
 COPY src/Torrentarr.Workers/*.csproj ./src/Torrentarr.Workers/
+COPY Directory.Build.props ./
 
-# Restore only the Host project and its transitive dependencies.
-# We do not restore the full solution because the solution file includes test
-# projects that are not present in the Docker build context.
+# Restore only the Host project and its transitive dependencies
 RUN dotnet restore src/Torrentarr.Host/Torrentarr.Host.csproj
 
 # Copy source code
 COPY src/ ./src/
 COPY nuget.config ./
 
-# Overlay the built React app from the frontend stage.
-# Vite wrote to /app/src/Torrentarr.Host/wwwroot in the frontend stage;
-# dotnet publish picks up wwwroot/ automatically (Microsoft.NET.Sdk.Web).
+# Overlay the built React app from the frontend stage
 COPY --from=frontend-build /app/src/Torrentarr.Host/wwwroot ./src/Torrentarr.Host/wwwroot
 
 # Build and publish
@@ -70,10 +72,7 @@ COPY --from=backend-build /app/publish ./
 # Copy example config
 COPY config.example.toml /config/config.example.toml
 
-# Set environment variables.
-# TORRENTARR_CONFIG pins config to the mounted volume so the app never
-# falls back to ~/config/config.toml inside the container.
-# ASPNETCORE_CONTENTROOT must be /app so UseStaticFiles() finds wwwroot/.
+# Set environment variables
 ENV ASPNETCORE_ENVIRONMENT=Production \
     ASPNETCORE_URLS=http://+:6969 \
     ASPNETCORE_CONTENTROOT=/app \
