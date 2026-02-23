@@ -2,7 +2,7 @@
 
 ## Status: Completed
 
-All workflows are now working correctly. Release v5.9.5 was published successfully.
+All workflows are now working correctly. Release v5.9.1 was published successfully.
 
 ---
 

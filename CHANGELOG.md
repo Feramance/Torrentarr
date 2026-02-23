@@ -1,6 +1,6 @@
 # Changelog
 
-## v5.9.5 (2026-02-22)
+## v5.9.1 (2026-02-22)
 
 ### Features
 - chore: Add project essentials for open source release ([c189dd6](https://github.com/Torrentarr/Torrentarr/commit/c189dd619ffa62d486bffcb841b69d8a03a4efbf))
