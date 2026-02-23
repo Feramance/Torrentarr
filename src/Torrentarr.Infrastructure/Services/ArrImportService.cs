@@ -1,24 +1,25 @@
 using Torrentarr.Core.Configuration;
 using Torrentarr.Core.Services;
 using Torrentarr.Infrastructure.ApiClients.Arr;
+using Torrentarr.Infrastructure.ApiClients.QBittorrent;
 using Microsoft.Extensions.Logging;
 
 namespace Torrentarr.Infrastructure.Services;
 
-/// <summary>
-/// Handles triggering manual imports to Radarr, Sonarr, and Lidarr
-/// </summary>
 public class ArrImportService : IArrImportService
 {
     private readonly ILogger<ArrImportService> _logger;
     private readonly TorrentarrConfig _config;
+    private readonly QBittorrentConnectionManager _qbitManager;
 
     public ArrImportService(
         ILogger<ArrImportService> logger,
-        TorrentarrConfig config)
+        TorrentarrConfig config,
+        QBittorrentConnectionManager qbitManager)
     {
         _logger = logger;
         _config = config;
+        _qbitManager = qbitManager;
     }
 
     public async Task<ImportResult> TriggerImportAsync(
@@ -233,5 +234,40 @@ public class ArrImportService : IArrImportService
         return queue.Records.Any(r =>
             r.DownloadId != null &&
             r.DownloadId.Equals(hash, StringComparison.OrdinalIgnoreCase));
+    }
+
+    public async Task MarkAsImportedAsync(string hash, IEnumerable<string> tags, CancellationToken cancellationToken = default)
+    {
+        var tagList = tags.ToList();
+        if (tagList.Count == 0)
+        {
+            tagList.Add("qbitrr-imported");
+        }
+
+        _logger.LogInformation("Adding import tags to torrent {Hash}: {Tags}", hash, string.Join(", ", tagList));
+
+        foreach (var (instanceName, _) in _config.QBitInstances)
+        {
+            try
+            {
+                var client = _qbitManager.GetClient(instanceName);
+                if (client == null) continue;
+
+                await client.CreateTagsAsync(tagList, cancellationToken);
+                var success = await client.AddTagsAsync(new List<string> { hash }, tagList, cancellationToken);
+                
+                if (success)
+                {
+                    _logger.LogDebug("Successfully added tags to {Hash} in {Instance}", hash, instanceName);
+                    return;
+                }
+            }
+            catch (Exception ex)
+            {
+                _logger.LogWarning(ex, "Failed to add tags to {Hash} in {Instance}", hash, instanceName);
+            }
+        }
+
+        _logger.LogWarning("Could not add import tags to torrent {Hash} - no qBittorrent client available", hash);
     }
 }

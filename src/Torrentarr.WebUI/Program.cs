@@ -1,5 +1,7 @@
 using Torrentarr.Core.Configuration;
+using Torrentarr.Core.Services;
 using Torrentarr.Infrastructure.Database;
+using Torrentarr.Infrastructure.Services;
 using Microsoft.EntityFrameworkCore;
 using Serilog;
 
@@ -78,6 +80,9 @@ builder.Services.AddSingleton(sp =>
         return new TorrentarrConfig();
     }
 });
+
+builder.Services.AddSingleton<IConfigReloader, ConfigReloader>();
+builder.Services.AddSingleton<ConfigurationLoader>();
 
 var app = builder.Build();
 
@@ -552,6 +557,69 @@ app.MapGet("/api/arr", (TorrentarrConfig config) =>
         arrs,
         total = arrs.Count
     });
+});
+
+app.MapGet("/api/config/full", (TorrentarrConfig config, IConfigReloader reloader) =>
+{
+    return Results.Ok(new
+    {
+        configPath = reloader.ConfigPath,
+        settings = config.Settings,
+        webui = config.WebUI,
+        qbitInstances = config.QBitInstances.ToDictionary(
+            kv => kv.Key,
+            kv => new
+            {
+                kv.Value.Host,
+                kv.Value.Port,
+                kv.Value.UserName,
+                kv.Value.Disabled,
+                kv.Value.ManagedCategories
+            }),
+        arrInstances = config.ArrInstances.ToDictionary(
+            kv => kv.Key,
+            kv => new
+            {
+                kv.Value.Type,
+                kv.Value.Category,
+                kv.Value.URI,
+                kv.Value.Managed,
+                kv.Value.SearchOnly,
+                kv.Value.ProcessingOnly,
+                kv.Value.Search
+            })
+    });
+});
+
+app.MapPost("/api/config/reload", (IConfigReloader reloader) =>
+{
+    var success = reloader.ReloadConfig();
+    return success
+        ? Results.Ok(new { success = true, message = "Configuration reloaded" })
+        : Results.BadRequest(new { success = false, message = "Failed to reload configuration" });
+});
+
+app.MapPost("/api/config/save", async (TorrentarrConfig updatedConfig, ConfigurationLoader loader, IConfigReloader reloader) =>
+{
+    try
+    {
+        loader.SaveConfig(updatedConfig, reloader.ConfigPath);
+        var reloadSuccess = reloader.ReloadConfig();
+        
+        return reloadSuccess
+            ? Results.Ok(new { success = true, message = "Configuration saved and reloaded" })
+            : Results.Ok(new { success = true, message = "Configuration saved but reload failed" });
+    }
+    catch (Exception ex)
+    {
+        Log.Error(ex, "Failed to save configuration");
+        return Results.BadRequest(new { success = false, message = ex.Message });
+    }
+});
+
+app.MapGet("/api/config/path", (IConfigReloader reloader) =>
+{
+    return Results.Ok(new { path = reloader.ConfigPath });
 });
 
 // Meta info

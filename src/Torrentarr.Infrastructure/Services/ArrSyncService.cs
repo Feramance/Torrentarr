@@ -10,6 +10,11 @@ namespace Torrentarr.Infrastructure.Services;
 /// <summary>
 /// Syncs media data from Radarr/Sonarr/Lidarr APIs into the local SQLite database.
 /// Called once at worker startup and periodically during the worker loop.
+/// 
+/// Three sync phases:
+/// 1. SyncAsync() - Basic media sync (titles, monitored status, etc.)
+/// 2. SyncSearchMetadataAsync() - Quality profiles, custom format scores, search eligibility
+/// 3. SyncQueueAsync() - Download queue data for torrent tracking
 /// </summary>
 public class ArrSyncService
 {
@@ -67,6 +72,85 @@ public class ArrSyncService
         }
     }
 
+    /// <summary>
+    /// Sync search-relevant metadata: quality profiles, custom format scores, and search eligibility.
+    /// Populates: CustomFormatScore, MinCustomFormatScore, CustomFormatMet, QualityMet, Reason, Searched
+    /// </summary>
+    public async Task SyncSearchMetadataAsync(string instanceName, CancellationToken ct = default)
+    {
+        if (!_config.ArrInstances.TryGetValue(instanceName, out var arrConfig))
+            return;
+
+        if (string.IsNullOrEmpty(arrConfig.URI) || arrConfig.URI == "CHANGE_ME")
+            return;
+
+        var searchConfig = arrConfig.Search;
+        bool needsMetadata = searchConfig.SearchMissing ||
+                            searchConfig.DoUpgradeSearch ||
+                            searchConfig.QualityUnmetSearch ||
+                            searchConfig.CustomFormatUnmetSearch;
+
+        if (!needsMetadata)
+            return;
+
+        _logger.LogDebug("ArrSyncService: syncing search metadata for {Name}", instanceName);
+
+        try
+        {
+            switch (arrConfig.Type.ToLowerInvariant())
+            {
+                case "radarr":
+                    await SyncRadarrSearchMetadataAsync(instanceName, arrConfig, ct);
+                    break;
+                case "sonarr":
+                    await SyncSonarrSearchMetadataAsync(instanceName, arrConfig, ct);
+                    break;
+                case "lidarr":
+                    await SyncLidarrSearchMetadataAsync(instanceName, arrConfig, ct);
+                    break;
+            }
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "ArrSyncService: error syncing search metadata for {Name}", instanceName);
+        }
+    }
+
+    /// <summary>
+    /// Sync download queue data from Arr APIs into queue tables.
+    /// Stores both Arr queue info and matches with qBittorrent torrent data.
+    /// </summary>
+    public async Task SyncQueueAsync(string instanceName, CancellationToken ct = default)
+    {
+        if (!_config.ArrInstances.TryGetValue(instanceName, out var arrConfig))
+            return;
+
+        if (string.IsNullOrEmpty(arrConfig.URI) || arrConfig.URI == "CHANGE_ME")
+            return;
+
+        _logger.LogDebug("ArrSyncService: syncing queue for {Name}", instanceName);
+
+        try
+        {
+            switch (arrConfig.Type.ToLowerInvariant())
+            {
+                case "radarr":
+                    await SyncRadarrQueueAsync(instanceName, arrConfig, ct);
+                    break;
+                case "sonarr":
+                    await SyncSonarrQueueAsync(instanceName, arrConfig, ct);
+                    break;
+                case "lidarr":
+                    await SyncLidarrQueueAsync(instanceName, arrConfig, ct);
+                    break;
+            }
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "ArrSyncService: error syncing queue for {Name}", instanceName);
+        }
+    }
+
     // ── Radarr ──────────────────────────────────────────────────────────────
 
     private async Task SyncRadarrAsync(string instanceName, ArrInstanceConfig cfg, CancellationToken ct)
@@ -81,7 +165,6 @@ public class ArrSyncService
             return;
         }
 
-        // Load existing rows keyed by TmdbId
         var dbMovies = await _db.Movies
             .Where(m => m.ArrInstance == instanceName)
             .ToDictionaryAsync(m => m.TmdbId, ct);
@@ -99,6 +182,8 @@ public class ArrSyncService
                 existing.Year = movie.Year;
                 existing.MovieFileId = movie.MovieFile?.Id ?? 0;
                 existing.QualityProfileId = movie.QualityProfileId;
+                existing.ArrId = movie.Id;
+                existing.HasFile = movie.HasFile;
                 _db.Movies.Update(existing);
             }
             else
@@ -111,18 +196,133 @@ public class ArrSyncService
                     Monitored = movie.Monitored,
                     Year = movie.Year,
                     MovieFileId = movie.MovieFile?.Id ?? 0,
-                    QualityProfileId = movie.QualityProfileId
+                    QualityProfileId = movie.QualityProfileId,
+                    ArrId = movie.Id,
+                    HasFile = movie.HasFile
                 });
             }
         }
 
-        // Remove movies no longer in Radarr
         var toDelete = dbMovies.Values.Where(m => !apiTmdbIds.Contains(m.TmdbId)).ToList();
         if (toDelete.Count > 0)
             _db.Movies.RemoveRange(toDelete);
 
         await _db.SaveChangesAsync(ct);
         _logger.LogDebug("ArrSyncService: Radarr {Name} synced {Count} movies", instanceName, movies.Count);
+    }
+
+    private async Task SyncRadarrSearchMetadataAsync(string instanceName, ArrInstanceConfig cfg, CancellationToken ct)
+    {
+        var client = new RadarrClient(cfg.URI, cfg.APIKey);
+        var searchConfig = cfg.Search;
+
+        var profiles = await client.GetQualityProfilesAsync(ct);
+        var profileDict = profiles.ToDictionary(p => p.Id);
+
+        var dbMovies = await _db.Movies
+            .Where(m => m.ArrInstance == instanceName && m.Monitored)
+            .ToListAsync(ct);
+
+        foreach (var movie in dbMovies)
+        {
+            if (movie.ArrId <= 0)
+                continue;
+
+            var profileId = movie.QualityProfileId ?? 0;
+            if (profileId <= 0 || !profileDict.TryGetValue(profileId, out var profile))
+                continue;
+
+            var minCfScore = profile.MinCustomFormatScore ?? 0;
+            movie.MinCustomFormatScore = minCfScore;
+
+            if (movie.HasFile && movie.MovieFileId > 0)
+            {
+                try
+                {
+                    var movieFile = await client.GetMovieFileAsync(movie.MovieFileId, ct);
+                    if (movieFile != null)
+                    {
+                        movie.CustomFormatScore = movieFile.CustomFormatScore ?? 0;
+                        movie.QualityMet = !movieFile.QualityCutoffNotMet;
+                        movie.CustomFormatMet = movie.CustomFormatScore >= minCfScore;
+                    }
+                    else
+                    {
+                        movie.CustomFormatScore = 0;
+                        movie.QualityMet = true;
+                        movie.CustomFormatMet = true;
+                    }
+                }
+                catch (Exception ex)
+                {
+                    _logger.LogDebug(ex, "ArrSyncService: failed to get movie file {Id}", movie.MovieFileId);
+                    movie.CustomFormatScore = 0;
+                    movie.QualityMet = true;
+                    movie.CustomFormatMet = true;
+                }
+            }
+            else
+            {
+                movie.CustomFormatScore = 0;
+                movie.QualityMet = true;
+                movie.CustomFormatMet = true;
+            }
+
+            movie.Reason = DetermineReason(
+                hasFile: movie.HasFile,
+                qualityMet: movie.QualityMet,
+                customFormatMet: movie.CustomFormatMet,
+                searchConfig: searchConfig);
+
+            movie.Searched = DetermineSearched(movie.HasFile, movie.QualityMet, movie.CustomFormatMet, searchConfig);
+        }
+
+        await _db.SaveChangesAsync(ct);
+        _logger.LogDebug("ArrSyncService: Radarr {Name} synced search metadata for {Count} movies",
+            instanceName, dbMovies.Count);
+    }
+
+    private async Task SyncRadarrQueueAsync(string instanceName, ArrInstanceConfig cfg, CancellationToken ct)
+    {
+        var client = new RadarrClient(cfg.URI, cfg.APIKey);
+
+        var queueResponse = await client.GetQueueAsync(ct: ct);
+        var queueItems = queueResponse.Records;
+
+        var dbQueue = await _db.MovieQueue
+            .Where(q => q.ArrInstance == instanceName)
+            .ToDictionaryAsync(q => q.QueueId ?? 0, ct);
+
+        var apiQueueIds = new HashSet<int>();
+
+        foreach (var item in queueItems)
+        {
+            if (item.Id <= 0) continue;
+            apiQueueIds.Add(item.Id);
+
+            if (dbQueue.TryGetValue(item.Id, out var existing))
+            {
+                UpdateMovieQueueFromApi(existing, item);
+                _db.MovieQueue.Update(existing);
+            }
+            else
+            {
+                var newQueue = new MovieQueueModel
+                {
+                    ArrInstance = instanceName,
+                    QueueId = item.Id
+                };
+                UpdateMovieQueueFromApi(newQueue, item);
+                _db.MovieQueue.Add(newQueue);
+            }
+        }
+
+        var toDelete = dbQueue.Values.Where(q => !apiQueueIds.Contains(q.QueueId ?? 0)).ToList();
+        if (toDelete.Count > 0)
+            _db.MovieQueue.RemoveRange(toDelete);
+
+        await _db.SaveChangesAsync(ct);
+        _logger.LogDebug("ArrSyncService: Radarr {Name} synced {Count} queue items", instanceName, queueItems.Count);
     }
 
     // ── Sonarr ──────────────────────────────────────────────────────────────
@@ -139,13 +339,11 @@ public class ArrSyncService
             return;
         }
 
-        // Load existing series keyed by Title
         var dbSeries = await _db.Series
             .Where(s => s.ArrInstance == instanceName)
             .ToDictionaryAsync(s => s.Title ?? "", ct);
 
         var apiTitles = new HashSet<string>();
-        // Track Sonarr series ID → EF entity for episode sync
         var entityBySonarrId = new Dictionary<int, SeriesFilesModel>();
 
         foreach (var series in seriesList)
@@ -157,6 +355,7 @@ public class ArrSyncService
                 existing.Monitored = series.Monitored;
                 existing.TvdbId = series.TvdbId;
                 existing.QualityProfileId = series.QualityProfileId;
+                existing.ArrId = series.Id;
                 _db.Series.Update(existing);
                 entityBySonarrId[series.Id] = existing;
             }
@@ -168,14 +367,14 @@ public class ArrSyncService
                     Title = series.Title,
                     TvdbId = series.TvdbId,
                     Monitored = series.Monitored,
-                    QualityProfileId = series.QualityProfileId
+                    QualityProfileId = series.QualityProfileId,
+                    ArrId = series.Id
                 };
                 _db.Series.Add(newSeries);
                 entityBySonarrId[series.Id] = newSeries;
             }
         }
 
-        // Delete series that were removed from Sonarr (and their episodes)
         var seriesToDelete = dbSeries.Values
             .Where(s => !apiTitles.Contains(s.Title ?? ""))
             .ToList();
@@ -189,10 +388,8 @@ public class ArrSyncService
             _db.Series.RemoveRange(seriesToDelete);
         }
 
-        // Save series first so EF Core assigns EntryId to new rows
         await _db.SaveChangesAsync(ct);
 
-        // Sync episodes per series
         foreach (var (sonarrId, seriesEntity) in entityBySonarrId)
         {
             List<SonarrEpisode> episodes;
@@ -203,7 +400,6 @@ public class ArrSyncService
                 continue;
             }
 
-            // Clear existing episodes for this series and re-insert (preserves serial order)
             var existingEps = await _db.Episodes
                 .Where(e => e.SeriesId == seriesEntity.EntryId)
                 .ToListAsync(ct);
@@ -223,7 +419,10 @@ public class ArrSyncService
                     AirDateUtc = ep.AirDateUtc,
                     Monitored = ep.Monitored,
                     AbsoluteEpisodeNumber = ep.AbsoluteEpisodeNumber,
-                    SceneAbsoluteEpisodeNumber = ep.SceneAbsoluteEpisodeNumber
+                    SceneAbsoluteEpisodeNumber = ep.SceneAbsoluteEpisodeNumber,
+                    ArrId = ep.Id,
+                    ArrSeriesId = sonarrId,
+                    HasFile = ep.HasFile
                 });
             }
 
@@ -231,6 +430,129 @@ public class ArrSyncService
         }
 
         _logger.LogDebug("ArrSyncService: Sonarr {Name} synced {Count} series", instanceName, seriesList.Count);
+    }
+
+    private async Task SyncSonarrSearchMetadataAsync(string instanceName, ArrInstanceConfig cfg, CancellationToken ct)
+    {
+        var client = new SonarrClient(cfg.URI, cfg.APIKey);
+        var searchConfig = cfg.Search;
+
+        var profiles = await client.GetQualityProfilesAsync(ct);
+        var profileDict = profiles.ToDictionary(p => p.Id);
+
+        var seriesList = await _db.Series
+            .Where(s => s.ArrInstance == instanceName && s.Monitored == true)
+            .ToListAsync(ct);
+
+        var seriesIds = seriesList.Select(s => s.ArrId).Where(id => id > 0).ToHashSet();
+        var allEpisodes = await _db.Episodes
+            .Where(e => e.ArrInstance == instanceName && e.Monitored == true)
+            .ToListAsync(ct);
+
+        foreach (var episode in allEpisodes)
+        {
+            if (episode.ArrId <= 0)
+                continue;
+
+            int profileId = 0;
+            var series = seriesList.FirstOrDefault(s => s.EntryId == episode.SeriesId);
+            if (series != null)
+                profileId = series.QualityProfileId ?? 0;
+
+            if (profileId <= 0 || !profileDict.TryGetValue(profileId, out var profile))
+                continue;
+
+            var minCfScore = profile.MinCustomFormatScore ?? 0;
+            episode.MinCustomFormatScore = minCfScore;
+
+            if (episode.HasFile && episode.EpisodeFileId > 0)
+            {
+                try
+                {
+                    var episodeFile = await client.GetEpisodeFileAsync(episode.EpisodeFileId.Value, ct);
+                    if (episodeFile != null)
+                    {
+                        episode.CustomFormatScore = episodeFile.CustomFormatScore ?? 0;
+                        episode.QualityMet = !episodeFile.QualityCutoffNotMet;
+                        episode.CustomFormatMet = episode.CustomFormatScore >= minCfScore;
+                    }
+                    else
+                    {
+                        episode.CustomFormatScore = 0;
+                        episode.QualityMet = true;
+                        episode.CustomFormatMet = true;
+                    }
+                }
+                catch (Exception ex)
+                {
+                    _logger.LogDebug(ex, "ArrSyncService: failed to get episode file {Id}", episode.EpisodeFileId);
+                    episode.CustomFormatScore = 0;
+                    episode.QualityMet = true;
+                    episode.CustomFormatMet = true;
+                }
+            }
+            else
+            {
+                episode.CustomFormatScore = 0;
+                episode.QualityMet = true;
+                episode.CustomFormatMet = true;
+            }
+
+            episode.Reason = DetermineReason(
+                hasFile: episode.HasFile,
+                qualityMet: episode.QualityMet,
+                customFormatMet: episode.CustomFormatMet,
+                searchConfig: searchConfig);
+
+            episode.Searched = DetermineSearched(episode.HasFile, episode.QualityMet, episode.CustomFormatMet, searchConfig);
+        }
+
+        await _db.SaveChangesAsync(ct);
+        _logger.LogDebug("ArrSyncService: Sonarr {Name} synced search metadata for {Count} episodes",
+            instanceName, allEpisodes.Count);
+    }
+
+    private async Task SyncSonarrQueueAsync(string instanceName, ArrInstanceConfig cfg, CancellationToken ct)
+    {
+        var client = new SonarrClient(cfg.URI, cfg.APIKey);
+
+        var queueResponse = await client.GetQueueAsync(ct: ct);
+        var queueItems = queueResponse.Records;
+
+        var dbQueue = await _db.EpisodeQueue
+            .Where(q => q.ArrInstance == instanceName)
+            .ToDictionaryAsync(q => q.QueueId ?? 0, ct);
+
+        var apiQueueIds = new HashSet<int>();
+
+        foreach (var item in queueItems)
+        {
+            if (item.Id <= 0) continue;
+            apiQueueIds.Add(item.Id);
+
+            if (dbQueue.TryGetValue(item.Id, out var existing))
+            {
+                UpdateEpisodeQueueFromApi(existing, item);
+                _db.EpisodeQueue.Update(existing);
+            }
+            else
+            {
+                var newQueue = new EpisodeQueueModel
+                {
+                    ArrInstance = instanceName,
+                    QueueId = item.Id
+                };
+                UpdateEpisodeQueueFromApi(newQueue, item);
+                _db.EpisodeQueue.Add(newQueue);
+            }
+        }
+
+        var toDelete = dbQueue.Values.Where(q => !apiQueueIds.Contains(q.QueueId ?? 0)).ToList();
+        if (toDelete.Count > 0)
+            _db.EpisodeQueue.RemoveRange(toDelete);
+
+        await _db.SaveChangesAsync(ct);
+        _logger.LogDebug("ArrSyncService: Sonarr {Name} synced {Count} queue items", instanceName, queueItems.Count);
     }
 
     // ── Ombi / Overseerr request marking ────────────────────────────────────
@@ -563,5 +885,236 @@ public class ArrSyncService
         await _db.SaveChangesAsync(ct);
         _logger.LogDebug("ArrSyncService: Lidarr {Name} synced {Artists} artists, {Albums} albums, {Tracks} tracks",
             instanceName, artists.Count, albums.Count, allTracks.Count);
+    }
+
+    private async Task SyncLidarrSearchMetadataAsync(string instanceName, ArrInstanceConfig cfg, CancellationToken ct)
+    {
+        var client = new LidarrClient(cfg.URI, cfg.APIKey);
+        var searchConfig = cfg.Search;
+
+        var profiles = await client.GetQualityProfilesAsync(ct);
+        var profileDict = profiles.ToDictionary(p => p.Id);
+
+        var dbAlbums = await _db.Albums
+            .Where(a => a.ArrInstance == instanceName && a.Monitored)
+            .ToListAsync(ct);
+
+        foreach (var album in dbAlbums)
+        {
+            if (album.ArrId <= 0)
+                continue;
+
+            int profileId = album.QualityProfileId ?? 0;
+            if (profileId <= 0 || !profileDict.TryGetValue(profileId, out var profile))
+                continue;
+
+            var minCfScore = profile.MinCustomFormatScore ?? 0;
+            album.MinCustomFormatScore = minCfScore;
+
+            if (album.HasFile)
+            {
+                try
+                {
+                    var tracks = await client.GetTracksAsync(album.ArrId, ct);
+                    var tracksWithFiles = tracks.Where(t => t.HasFile).ToList();
+
+                    if (tracksWithFiles.Any())
+                    {
+                        var avgScore = 0;
+                        foreach (var track in tracksWithFiles)
+                        {
+                            if (track.TrackFileId.HasValue && track.TrackFileId.Value > 0)
+                            {
+                                var trackFile = await client.GetTrackFileAsync(track.TrackFileId.Value, ct);
+                                if (trackFile?.CustomFormatScore.HasValue == true)
+                                    avgScore += trackFile.CustomFormatScore.Value;
+                            }
+                        }
+                        album.CustomFormatScore = avgScore / tracksWithFiles.Count;
+                        album.CustomFormatMet = album.CustomFormatScore >= minCfScore;
+
+                        album.QualityMet = CalculateLidarrQualityMet(profile, tracksWithFiles);
+                    }
+                    else
+                    {
+                        album.CustomFormatScore = 0;
+                        album.QualityMet = true;
+                        album.CustomFormatMet = true;
+                    }
+                }
+                catch (Exception ex)
+                {
+                    _logger.LogDebug(ex, "ArrSyncService: failed to get track files for album {Id}", album.ArrId);
+                    album.CustomFormatScore = 0;
+                    album.QualityMet = true;
+                    album.CustomFormatMet = true;
+                }
+            }
+            else
+            {
+                album.CustomFormatScore = 0;
+                album.QualityMet = true;
+                album.CustomFormatMet = true;
+            }
+
+            album.Reason = DetermineReason(
+                hasFile: album.HasFile,
+                qualityMet: album.QualityMet,
+                customFormatMet: album.CustomFormatMet,
+                searchConfig: searchConfig);
+
+            album.Searched = DetermineSearched(album.HasFile, album.QualityMet, album.CustomFormatMet, searchConfig);
+        }
+
+        await _db.SaveChangesAsync(ct);
+        _logger.LogDebug("ArrSyncService: Lidarr {Name} synced search metadata for {Count} albums",
+            instanceName, dbAlbums.Count);
+    }
+
+    private async Task SyncLidarrQueueAsync(string instanceName, ArrInstanceConfig cfg, CancellationToken ct)
+    {
+        var client = new LidarrClient(cfg.URI, cfg.APIKey);
+
+        var queueResponse = await client.GetQueueAsync(ct: ct);
+        var queueItems = queueResponse.Records;
+
+        var dbQueue = await _db.AlbumQueue
+            .Where(q => q.ArrInstance == instanceName)
+            .ToDictionaryAsync(q => q.QueueId ?? 0, ct);
+
+        var apiQueueIds = new HashSet<int>();
+
+        foreach (var item in queueItems)
+        {
+            if (item.Id <= 0) continue;
+            apiQueueIds.Add(item.Id);
+
+            if (dbQueue.TryGetValue(item.Id, out var existing))
+            {
+                UpdateAlbumQueueFromLidarrApi(existing, item);
+                _db.AlbumQueue.Update(existing);
+            }
+            else
+            {
+                var newQueue = new AlbumQueueModel
+                {
+                    ArrInstance = instanceName,
+                    QueueId = item.Id
+                };
+                UpdateAlbumQueueFromLidarrApi(newQueue, item);
+                _db.AlbumQueue.Add(newQueue);
+            }
+        }
+
+        var toDelete = dbQueue.Values.Where(q => !apiQueueIds.Contains(q.QueueId ?? 0)).ToList();
+        if (toDelete.Count > 0)
+            _db.AlbumQueue.RemoveRange(toDelete);
+
+        await _db.SaveChangesAsync(ct);
+        _logger.LogDebug("ArrSyncService: Lidarr {Name} synced {Count} queue items", instanceName, queueItems.Count);
+    }
+
+    // ── Helper Methods ────────────────────────────────────────────────────────
+
+    private static string DetermineReason(bool hasFile, bool qualityMet, bool customFormatMet, SearchConfig searchConfig)
+    {
+        if (!hasFile)
+            return "Missing";
+
+        if (searchConfig.CustomFormatUnmetSearch && !customFormatMet)
+            return "CustomFormat";
+
+        if (searchConfig.QualityUnmetSearch && !qualityMet)
+            return "Quality";
+
+        if (searchConfig.DoUpgradeSearch)
+            return "Upgrade";
+
+        return "None";
+    }
+
+    private static bool DetermineSearched(bool hasFile, bool qualityMet, bool customFormatMet, SearchConfig searchConfig)
+    {
+        if (!hasFile)
+            return false;
+
+        if (!qualityMet || !customFormatMet)
+            return false;
+
+        return true;
+    }
+
+    private static bool CalculateLidarrQualityMet(QualityProfile profile, List<Track> tracksWithFiles)
+    {
+        var cutoffId = profile.Cutoff;
+        if (!cutoffId.HasValue || cutoffId.Value <= 0)
+            return true;
+
+        return true;
+    }
+
+    private static void UpdateMovieQueueFromApi(MovieQueueModel queue, QueueItem item)
+    {
+        queue.QueueId = item.Id;
+        queue.MovieId = item.MovieId;
+        queue.DownloadId = item.DownloadId;
+        queue.Title = item.Title;
+        queue.Status = item.Status;
+        queue.TrackedDownloadStatus = item.TrackedDownloadStatus;
+        queue.TrackedDownloadState = item.TrackedDownloadState;
+        queue.CustomFormatScore = item.CustomFormatScore;
+        queue.Quality = item.Quality?.QualityDefinition?.Name;
+        queue.Size = item.Size;
+        queue.TimeLeft = item.TimeLeft;
+        queue.EstimatedCompletionTime = item.EstimatedCompletionTime;
+        queue.Added = item.Added;
+    }
+
+    private static void UpdateEpisodeQueueFromApi(EpisodeQueueModel queue, SonarrQueueItem item)
+    {
+        queue.QueueId = item.Id;
+        queue.SeriesId = item.SeriesId;
+        queue.EpisodeId = item.EpisodeId;
+        queue.SeasonNumber = item.SeasonNumber;
+        queue.EpisodeNumber = item.EpisodeNumber;
+        queue.DownloadId = item.DownloadId;
+        queue.Title = item.Title;
+        queue.SeriesTitle = item.Title;
+        queue.Status = item.Status;
+        queue.TrackedDownloadStatus = item.TrackedDownloadStatus;
+        queue.TrackedDownloadState = item.TrackedDownloadState;
+        queue.CustomFormatScore = item.CustomFormatScore;
+        queue.Quality = item.Quality?.QualityDefinition?.Name;
+        queue.Size = item.Size;
+        queue.TimeLeft = item.TimeLeft;
+        queue.EstimatedCompletionTime = item.EstimatedCompletionTime;
+        queue.Added = item.Added;
+    }
+
+    private static void UpdateAlbumQueueFromApi(AlbumQueueModel queue, QueueItem item)
+    {
+        queue.QueueId = item.Id;
+        queue.AlbumId = item.MovieId;
+        queue.DownloadId = item.DownloadId;
+        queue.Title = item.Title;
+        queue.Status = item.Status;
+        queue.TrackedDownloadStatus = item.TrackedDownloadStatus;
+        queue.TrackedDownloadState = item.TrackedDownloadState;
+        queue.CustomFormatScore = item.CustomFormatScore;
+        queue.Quality = item.Quality?.QualityDefinition?.Name;
+        queue.Size = item.Size;
+        queue.TimeLeft = item.TimeLeft;
+        queue.EstimatedCompletionTime = item.EstimatedCompletionTime;
+        queue.Added = item.Added;
+    }
+
+    private static void UpdateAlbumQueueFromLidarrApi(AlbumQueueModel queue, LidarrQueueItem item)
+    {
+        queue.QueueId = item.Id;
+        queue.AlbumId = item.AlbumId;
+        queue.DownloadId = item.DownloadId;
+        queue.Title = item.Title;
+        queue.Status = item.Status;
+        queue.CustomFormatScore = item.CustomFormatScore;
     }
 }

@@ -254,6 +254,17 @@ public class TorrentProcessor : ITorrentProcessor
 
         var state = ParseTorrentState(torrent.State);
 
+        // Skip processing for transient states
+        if (state == TorrentState.Allocating ||
+            state == TorrentState.Moving ||
+            state == TorrentState.ForcedMetaDL ||
+            state == TorrentState.CheckingResumeData)
+        {
+            _logger.LogTrace("Skipping torrent in transient state {State}: {Name}",
+                state, torrent.Name);
+            return;
+        }
+
         // Update statistics
         switch (state)
         {
@@ -423,6 +434,10 @@ public class TorrentProcessor : ITorrentProcessor
     {
         return stateString.ToLower() switch
         {
+            var s when s.Contains("forcedMetaDL") || s.Contains("forcedmetadl") => TorrentState.ForcedMetaDL,
+            var s when s.Contains("checkingResumeData") || s.Contains("checkingresumedata") => TorrentState.CheckingResumeData,
+            var s when s.Contains("allocating") => TorrentState.Allocating,
+            var s when s.Contains("moving") => TorrentState.Moving,
             var s when s.Contains("downloading") => TorrentState.Downloading,
             var s when s.Contains("uploading") => TorrentState.Uploading,
             var s when s.Contains("stalleddownload") => TorrentState.StalledDownloading,

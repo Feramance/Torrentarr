@@ -364,6 +364,22 @@ public class LidarrClient
         return new List<QualityProfile>();
     }
 
+    public async Task<List<TrackFile>> GetTrackFilesByAlbumAsync(int albumId, CancellationToken ct = default)
+    {
+        var request = new RestRequest("/api/v1/trackfile", Method.Get);
+        AddApiKeyHeader(request);
+        request.AddQueryParameter("albumId", albumId.ToString());
+
+        var response = await _client.ExecuteAsync(request, ct);
+
+        if (response.IsSuccessful && !string.IsNullOrEmpty(response.Content))
+        {
+            return JsonConvert.DeserializeObject<List<TrackFile>>(response.Content) ?? new List<TrackFile>();
+        }
+
+        return new List<TrackFile>();
+    }
+
     private void AddApiKeyHeader(RestRequest request)
     {
         request.AddHeader("X-Api-Key", _apiKey);
@@ -440,6 +456,12 @@ public class LidarrAlbum
 
     [JsonProperty("statistics")]
     public AlbumStatistics? Statistics { get; set; }
+
+    [JsonProperty("qualityProfileId")]
+    public int? QualityProfileId { get; set; }
+
+    [JsonProperty("albumType")]
+    public string? AlbumType { get; set; }
 }
 
 public class AlbumStatistics
@@ -539,6 +561,9 @@ public class TrackFile
 
     [JsonProperty("customFormats")]
     public List<CustomFormat> CustomFormats { get; set; } = new();
+
+    [JsonProperty("customFormatScore")]
+    public int? CustomFormatScore { get; set; }
 }
 
 /// <summary>

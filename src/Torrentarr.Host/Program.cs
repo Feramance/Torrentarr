@@ -75,7 +75,7 @@ try
     builder.Services.AddScoped<ISeedingService, SeedingService>();
     builder.Services.AddScoped<IFreeSpaceService, FreeSpaceService>();
     builder.Services.AddScoped<ITorrentProcessor, TorrentProcessor>();
-    builder.Services.AddScoped<IArrMediaService, ArrMediaServiceSimple>();
+    builder.Services.AddScoped<IArrMediaService, ArrMediaService>();
 
     builder.Services.AddControllers()
         .AddNewtonsoftJson(options =>

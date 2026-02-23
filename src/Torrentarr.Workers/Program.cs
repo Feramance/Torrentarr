@@ -69,7 +69,9 @@ try
     builder.Services.AddSingleton<ITorrentCacheService, TorrentCacheService>();
     builder.Services.AddSingleton<IMediaValidationService, MediaValidationService>();
     builder.Services.AddScoped<ITorrentProcessor, TorrentProcessor>();
-    builder.Services.AddScoped<IArrMediaService, ArrMediaServiceSimple>();
+    builder.Services.AddScoped<ArrSyncService>();
+    builder.Services.AddScoped<ISearchExecutor, SearchExecutor>();
+    builder.Services.AddScoped<IArrMediaService, ArrMediaService>();
     builder.Services.AddScoped<ISeedingService, SeedingService>();
     builder.Services.AddScoped<IFreeSpaceService, FreeSpaceService>();
     builder.Services.AddScoped<IArrImportService, ArrImportService>();
@@ -316,7 +318,9 @@ class ArrWorkerService : BackgroundService
             }
 
             // Search for quality upgrades (if enabled)
-            if (_config.Settings.SearchLoopDelay > 0)
+            if (_instanceConfig.Search.DoUpgradeSearch || 
+                _instanceConfig.Search.CustomFormatUnmetSearch || 
+                _instanceConfig.Search.QualityUnmetSearch)
             {
                 var upgradeResult = await arrMediaService.SearchQualityUpgradesAsync(_instanceConfig.Category, cancellationToken);
                 if (upgradeResult.SearchesTriggered > 0)
@@ -327,20 +331,15 @@ class ArrWorkerService : BackgroundService
         }
     }
 
-    private int _searchCycleCounter = 0;
+    private DateTime _lastSearchTime = DateTime.MinValue;
+
     private bool ShouldRunSearch()
     {
-        // If SearchLoopDelay is -1 or 0, never search
-        if (_config.Settings.SearchLoopDelay <= 0)
+        var searchInterval = TimeSpan.FromSeconds(_instanceConfig.Search.SearchRequestsEvery);
+        
+        if (DateTime.UtcNow - _lastSearchTime >= searchInterval)
         {
-            return false;
-        }
-
-        // Run search every N cycles
-        _searchCycleCounter++;
-        if (_searchCycleCounter >= _config.Settings.SearchLoopDelay)
-        {
-            _searchCycleCounter = 0;
+            _lastSearchTime = DateTime.UtcNow;
             return true;
         }
 

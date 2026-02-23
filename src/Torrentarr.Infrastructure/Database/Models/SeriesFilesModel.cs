@@ -39,4 +39,7 @@ public class SeriesFilesModel
 
     [Column("qualityprofilename")]
     public string? QualityProfileName { get; set; }
+
+    [Column("arrid")]
+    public int ArrId { get; set; }
 }

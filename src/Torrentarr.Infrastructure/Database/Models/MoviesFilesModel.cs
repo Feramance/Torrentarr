@@ -69,4 +69,10 @@ public class MoviesFilesModel
 
     [Column("originalprofileid")]
     public int? OriginalProfileId { get; set; }
+
+    [Column("arrid")]
+    public int ArrId { get; set; }
+
+    [Column("hasfile")]
+    public bool HasFile { get; set; }
 }

@@ -84,4 +84,13 @@ public class EpisodeFilesModel
 
     [Column("originalprofileid")]
     public int? OriginalProfileId { get; set; }
+
+    [Column("arrid")]
+    public int ArrId { get; set; }
+
+    [Column("hasfile")]
+    public bool HasFile { get; set; }
+
+    [Column("arrseriesid")]
+    public int ArrSeriesId { get; set; }
 }

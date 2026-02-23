@@ -75,4 +75,13 @@ public class AlbumFilesModel
 
     [Column("originalprofileid")]
     public int? OriginalProfileId { get; set; }
+
+    [Column("arrid")]
+    public int ArrId { get; set; }
+
+    [Column("hasfile")]
+    public bool HasFile { get; set; }
+
+    [Column("arrartistid")]
+    public int ArrArtistId { get; set; }
 }

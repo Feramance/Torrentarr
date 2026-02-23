@@ -36,4 +36,7 @@ public class TrackFilesModel
 
     [Column("monitored")]
     public bool Monitored { get; set; }
+
+    [Column("arrid")]
+    public int ArrId { get; set; }
 }
