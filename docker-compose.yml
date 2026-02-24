@@ -7,7 +7,7 @@ services:
       - "6969:6969"
     volumes:
       - ./.config:/config
-      - torrents:/torrents
+      # - torrents:/torrents
     environment:
       - TZ=Europe/Malta
       - PUID=1000
@@ -19,10 +19,10 @@ services:
       retries: 3
       start_period: 40s
 
-volumes:
-  torrents:
-    driver: local
-    driver_opts:
-      type: cifs
-      device: ${CIFS_PATH}
-      o: "username=${CIFS_USER},password=${CIFS_PASS},vers=3.1.1,iocharset=utf8"
+# volumes:
+#   torrents:
+#     driver: local
+#     driver_opts:
+#       type: cifs
+#       device: ${CIFS_PATH}
+#       o: "username=${CIFS_USER},password=${CIFS_PASS},vers=3.1.1,iocharset=utf8"

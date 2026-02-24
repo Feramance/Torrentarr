@@ -64,13 +64,19 @@ RUN apt-get update && \
 # Create non-root user (UID 1001; the aspnet base image reserves UID 1000 for its own 'app' user)
 RUN useradd -m -u 1001 torrentarr && \
     mkdir -p /config /data && \
+    chown -R torrentarr:torrentarr /config /data && \
+    mkdir -p /config /data && \
     chown -R torrentarr:torrentarr /config /data
 
-# Copy published application
+# Copy entrypoint script and make executable (before switching to user)
+COPY entrypoint.sh /usr/local/bin/
+RUN chmod +x /usr/local/bin/entrypoint.sh
+
+# Copy published application from build stage
 COPY --from=backend-build /app/publish ./
 
-# Copy example config
-COPY config.example.toml /config/config.example.toml
+# Switch to non-root user
+USER torrentarr
 
 # Set environment variables
 ENV ASPNETCORE_ENVIRONMENT=Production \
@@ -79,9 +85,6 @@ ENV ASPNETCORE_ENVIRONMENT=Production \
     DOTNET_RUNNING_IN_CONTAINER=true \
     DOTNET_SYSTEM_GLOBALIZATION_INVARIANT=false \
     TORRENTARR_CONFIG=/config/config.toml
-
-# Switch to non-root user
-USER torrentarr
 
 # Expose ports
 EXPOSE 6969
@@ -93,5 +96,5 @@ HEALTHCHECK --interval=30s --timeout=10s --start-period=40s --retries=3 \
 # Volume mounts
 VOLUME ["/config", "/data"]
 
-# Run the Host orchestrator
+# Run the Host orchestrator with entrypoint script
 ENTRYPOINT ["/app/Torrentarr.Host"]

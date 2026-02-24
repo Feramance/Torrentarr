@@ -1,6 +1,8 @@
 using System.Collections.Concurrent;
 using Torrentarr.Core.Configuration;
 using Torrentarr.Core.Services;
+using Torrentarr.Infrastructure.ApiClients.Arr;
+using Torrentarr.Infrastructure.ApiClients.QBittorrent;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
@@ -42,13 +44,25 @@ public class ArrWorkerManager : BackgroundService
         _appStopping = stoppingToken;
 
         // Initialise state for every configured instance (alive = false until worker starts)
+        // Create 2 process states per Arr instance: "search" and "torrent"
         foreach (var (name, arrCfg) in _config.ArrInstances)
         {
-            _stateManager.Initialize(name, new ArrProcessState
+            // Search process state
+            _stateManager.Initialize(name + "-search", new ArrProcessState
             {
-                Name = name,
+                Name = name + "-search",
+                Category = name,
+                Kind = "search",
+                Alive = false,
+                Rebuilding = false
+            });
+
+            // Torrent process state
+            _stateManager.Initialize(name + "-torrent", new ArrProcessState
+            {
+                Name = name + "-torrent",
                 Category = arrCfg.Category ?? "",
-                Kind = arrCfg.Type,
+                Kind = "torrent",
                 Alive = false,
                 Rebuilding = false
             });
@@ -73,7 +87,11 @@ public class ArrWorkerManager : BackgroundService
     {
         _logger.LogInformation("Restarting worker for {Instance}", instanceName);
 
-        _stateManager.Update(instanceName, s => { s.Alive = false; s.Rebuilding = true; });
+        var searchStateName = instanceName + "-search";
+        var torrentStateName = instanceName + "-torrent";
+
+        _stateManager.Update(searchStateName, s => { s.Alive = false; s.Rebuilding = true; });
+        _stateManager.Update(torrentStateName, s => { s.Alive = false; s.Rebuilding = true; });
 
         if (_workers.TryRemove(instanceName, out var old))
         {
@@ -106,14 +124,19 @@ public class ArrWorkerManager : BackgroundService
 
     private async Task RunWorkerAsync(string instanceName, ArrInstanceConfig arrCfg, CancellationToken ct)
     {
+        var searchStateName = instanceName + "-search";
+        var torrentStateName = instanceName + "-torrent";
+
         _logger.LogInformation("Worker starting: {Instance} ({Type}/{Category})",
             instanceName, arrCfg.Type, arrCfg.Category);
 
-        _stateManager.Update(instanceName, s => { s.Alive = true; s.Rebuilding = false; });
+        _stateManager.Update(searchStateName, s => { s.Alive = true; s.Rebuilding = false; s.Status = "Starting..."; });
+        _stateManager.Update(torrentStateName, s => { s.Alive = true; s.Rebuilding = false; });
 
         try
         {
             // Initial sync on startup
+            _stateManager.Update(searchStateName, s => s.Status = "Syncing database...");
             await RunSyncAsync(instanceName, ct);
 
             while (!ct.IsCancellationRequested)
@@ -125,16 +148,18 @@ public class ArrWorkerManager : BackgroundService
                     // 1. Process torrents (unless SearchOnly mode)
                     if (!arrCfg.SearchOnly)
                     {
+                        _stateManager.Update(searchStateName, s => s.Status = "Processing torrents...");
                         await RunTorrentProcessingAsync(instanceName, arrCfg, ct);
                     }
 
                     // 2. Search missing media (unless ProcessingOnly mode)
                     if (!arrCfg.ProcessingOnly && arrCfg.Search.SearchMissing)
                     {
+                        _stateManager.Update(searchStateName, s => s.Status = "Searching...");
                         var result = await RunSearchAsync(instanceName, arrCfg, ct);
                         if (result != null)
                         {
-                            _stateManager.Update(instanceName, s =>
+                            _stateManager.Update(searchStateName, s =>
                             {
                                 s.SearchSummary = $"{result.SearchesTriggered} searches triggered ({result.ItemsSearched} items)";
                                 s.SearchTimestamp = DateTime.UtcNow.ToString("o");
@@ -144,6 +169,7 @@ public class ArrWorkerManager : BackgroundService
                     }
 
                     // 3. Re-sync DB after processing
+                    _stateManager.Update(searchStateName, s => s.Status = "Syncing database...");
                     await RunSyncAsync(instanceName, ct);
                 }
                 catch (OperationCanceledException)
@@ -160,6 +186,7 @@ public class ArrWorkerManager : BackgroundService
                 var sleepMs = Math.Max(0, _config.Settings.LoopSleepTimer * 1000 - elapsed);
                 if (sleepMs > 0)
                 {
+                    _stateManager.Update(searchStateName, s => s.Status = "Waiting for next cycle...");
                     try { await Task.Delay(sleepMs, ct); }
                     catch (OperationCanceledException) { break; }
                 }
@@ -172,7 +199,8 @@ public class ArrWorkerManager : BackgroundService
         }
         finally
         {
-            _stateManager.Update(instanceName, s => { s.Alive = false; s.Rebuilding = false; });
+            _stateManager.Update(searchStateName, s => { s.Alive = false; s.Rebuilding = false; s.Status = null; });
+            _stateManager.Update(torrentStateName, s => { s.Alive = false; s.Rebuilding = false; });
             _logger.LogInformation("Worker stopped: {Instance}", instanceName);
         }
     }
@@ -185,10 +213,82 @@ public class ArrWorkerManager : BackgroundService
             var svc = scope.ServiceProvider.GetRequiredService<ArrSyncService>();
             await svc.SyncAsync(instanceName, ct);
             await svc.MarkRequestsAsync(instanceName, ct);
+
+            await UpdateCountsAsync(instanceName, ct);
         }
         catch (Exception ex)
         {
             _logger.LogError(ex, "Sync failed for {Instance}", instanceName);
+        }
+    }
+
+    private async Task UpdateCountsAsync(string instanceName, CancellationToken ct)
+    {
+        if (!_config.ArrInstances.TryGetValue(instanceName, out var arrCfg))
+            return;
+
+        var torrentStateName = instanceName + "-torrent";
+
+        try
+        {
+            int? queueCount = null;
+            int? categoryCount = null;
+
+            object? client = arrCfg.Type.ToLowerInvariant() switch
+            {
+                "radarr" => new RadarrClient(arrCfg.URI, arrCfg.APIKey),
+                "sonarr" => new SonarrClient(arrCfg.URI, arrCfg.APIKey),
+                "lidarr" => new LidarrClient(arrCfg.URI, arrCfg.APIKey),
+                _ => null
+            };
+
+            if (client is RadarrClient radarr)
+            {
+                var queue = await radarr.GetQueueAsync(ct: ct);
+                queueCount = queue?.TotalRecords ?? 0;
+            }
+            else if (client is SonarrClient sonarr)
+            {
+                var queue = await sonarr.GetQueueAsync(ct: ct);
+                queueCount = queue?.TotalRecords ?? 0;
+            }
+            else if (client is LidarrClient lidarr)
+            {
+                var queue = await lidarr.GetQueueAsync(ct: ct);
+                queueCount = queue?.TotalRecords ?? 0;
+            }
+
+            foreach (var (qbitName, qbitCfg) in _config.QBitInstances)
+            {
+                if (qbitCfg.Disabled || qbitCfg.Host == "CHANGE_ME")
+                    continue;
+
+                var qbitClient = new QBittorrentClient(qbitCfg.Host, qbitCfg.Port, qbitCfg.UserName, qbitCfg.Password);
+                try
+                {
+                    var loginSuccess = await qbitClient.LoginAsync(ct);
+                    if (!loginSuccess)
+                        continue;
+
+                    var torrents = await qbitClient.GetTorrentsAsync(arrCfg.Category, ct);
+                    categoryCount = torrents.Count;
+                    break;
+                }
+                catch
+                {
+                    continue;
+                }
+            }
+
+            _stateManager.Update(torrentStateName, s =>
+            {
+                s.QueueCount = queueCount;
+                s.CategoryCount = categoryCount;
+            });
+        }
+        catch (Exception ex)
+        {
+            _logger.LogDebug(ex, "Failed to update counts for {Instance}", instanceName);
         }
     }
 

@@ -38,6 +38,63 @@ public class ProcessesEndpointTests : IClassFixture<TorrentarrWebApplicationFact
     }
 
     [Fact]
+    public async Task GetProcesses_ProcessObjectContainsStatusField()
+    {
+        var client = _factory.CreateClient();
+
+        var response = await client.GetAsync("/web/processes");
+        var body = await response.Content.ReadAsStringAsync();
+
+        var json = JsonDocument.Parse(body).RootElement;
+        var processes = json.GetProperty("processes");
+
+        processes.ValueKind.Should().Be(JsonValueKind.Array);
+        if (processes.GetArrayLength() > 0)
+        {
+            var firstProcess = processes[0];
+            firstProcess.GetProperty("status").ValueKind.Should().NotBe(JsonValueKind.Undefined);
+        }
+    }
+
+    [Fact]
+    public async Task GetProcesses_ProcessObjectContainsQueueCountField()
+    {
+        var client = _factory.CreateClient();
+
+        var response = await client.GetAsync("/web/processes");
+        var body = await response.Content.ReadAsStringAsync();
+
+        var json = JsonDocument.Parse(body).RootElement;
+        var processes = json.GetProperty("processes");
+
+        processes.ValueKind.Should().Be(JsonValueKind.Array);
+        if (processes.GetArrayLength() > 0)
+        {
+            var firstProcess = processes[0];
+            firstProcess.GetProperty("queueCount").ValueKind.Should().NotBe(JsonValueKind.Undefined);
+        }
+    }
+
+    [Fact]
+    public async Task GetProcesses_ProcessObjectContainsCategoryCountField()
+    {
+        var client = _factory.CreateClient();
+
+        var response = await client.GetAsync("/web/processes");
+        var body = await response.Content.ReadAsStringAsync();
+
+        var json = JsonDocument.Parse(body).RootElement;
+        var processes = json.GetProperty("processes");
+
+        processes.ValueKind.Should().Be(JsonValueKind.Array);
+        if (processes.GetArrayLength() > 0)
+        {
+            var firstProcess = processes[0];
+            firstProcess.GetProperty("categoryCount").ValueKind.Should().NotBe(JsonValueKind.Undefined);
+        }
+    }
+
+    [Fact]
     public async Task PostRestartAll_Returns200()
     {
         var client = _factory.CreateClient();

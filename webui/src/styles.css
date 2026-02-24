@@ -1860,6 +1860,11 @@ svg[height] {
     box-shadow: 0 0 12px rgba(239, 68, 68, 0.5);
     animation: pulse 1s ease-in-out infinite;
 }
+.status-indicator--partial {
+    background: #f59e0b;
+    box-shadow: 0 0 12px rgba(245, 158, 11, 0.5);
+    animation: pulse 1.2s ease-in-out infinite;
+}
 .process-card__footer {
     display: flex;
     justify-content: flex-end;

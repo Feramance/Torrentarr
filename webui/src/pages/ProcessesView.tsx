@@ -281,8 +281,11 @@ export function ProcessesView({ active }: ProcessesViewProps): JSX.Element {
 
       if (!appBuckets.has(app)) appBuckets.set(app, new Map());
       const instances = appBuckets.get(app)!;
-      const instanceKey =
-        proc.name || proc.category || `${proc.category}:${proc.kind}`;
+      // Strip -search and -torrent suffixes to group them into same card
+      const instanceKey = (proc.name
+        ?.replace(/-search$/, "")
+        ?.replace(/-torrent$/, ""))
+        || proc.category;
       if (!instances.has(instanceKey)) instances.set(instanceKey, []);
       instances.get(instanceKey)!.push(proc);
     });
@@ -355,7 +358,7 @@ export function ProcessesView({ active }: ProcessesViewProps): JSX.Element {
               ? "status-indicator--ok"
               : runningCount === 0
               ? "status-indicator--bad"
-              : "";
+              : "status-indicator--partial";
           const statusClass = ["status-indicator"];
           if (tone) statusClass.push(tone);
           const statusLabel =
@@ -407,41 +410,50 @@ export function ProcessesView({ active }: ProcessesViewProps): JSX.Element {
                           return "Rebuilding";
                         }
                         const kindLower = item.kind.toLowerCase();
+                        const status = item.status;
+                        const summary = item.searchSummary ?? "";
+
                         if (kindLower === "search") {
-                          const summary = item.searchSummary ?? "";
-                          return summary || "No searches recorded";
+                          if (status) return status;
+                          if (summary) return summary;
+                          return "Initializing...";
                         }
                         if (kindLower === "category") {
                           const count =
                             typeof item.categoryCount === "number" ? item.categoryCount : null;
                           return count !== null
-                            ? `Managing ${count} ${count === 1 ? "category" : "categories"}`
-                            : "Category manager";
+                            ? `Torrent count ${count}`
+                            : "No torrents";
                         }
                         if (kindLower === "torrent") {
                           const metricType = item.metricType?.toLowerCase();
-                          const categoryTotal =
-                            typeof item.categoryCount === "number" ? item.categoryCount : null;
-                          const queueTotal =
-                            typeof item.queueCount === "number" ? item.queueCount : null;
+                          const categoryTotal = item.categoryCount ?? null;
+                          const queueTotal = item.queueCount ?? null;
+                          const torrentStatus = item.status;
+
+                          // Use status if available (e.g., "X torrents (Y seeding)" for qBit)
+                          if (torrentStatus) return torrentStatus;
 
                           if (!metricType) {
-                            const queueLabel = queueTotal !== null ? queueTotal : "?";
-                            const categoryLabel = categoryTotal !== null ? categoryTotal : "?";
-                            return `Torrents in queue ${queueLabel} / total ${categoryLabel}`;
+                            const queueLabel = queueTotal !== null && queueTotal !== undefined ? queueTotal : "-";
+                            const categoryLabel = categoryTotal !== null && categoryTotal !== undefined ? categoryTotal : "-";
+                            return `Downloads in queue ${queueLabel} / Torrents ${categoryLabel}`;
                           }
 
                           if (metricType === "category" && categoryTotal !== null) {
                             return `Torrent count ${categoryTotal}`;
                           }
 
-                          if (metricType === "free-space" && queueTotal !== null) {
-                            return `Torrent count ${queueTotal}`;
+                          if (metricType === "free-space" && categoryTotal !== null) {
+                            return `Paused: ${categoryTotal}`;
                           }
 
                           return "Torrent count unavailable";
                         }
-                        return "";
+
+                        if (status) return status;
+                        if (summary) return summary;
+                        return "Initializing...";
                       })()}
                     </div>
                     <div className="process-chip__actions">
