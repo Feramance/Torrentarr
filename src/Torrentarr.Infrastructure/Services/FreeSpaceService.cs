@@ -52,16 +52,26 @@ public class FreeSpaceService : IFreeSpaceService
     /// </summary>
     public async Task<FreeSpaceStats> GetFreeSpaceStatsAsync(CancellationToken cancellationToken = default)
     {
+        _logger.LogTrace("Getting free space stats for all qBit instances");
+        
         var thresholdGB = _config.Settings.FreeSpaceThresholdGB ?? 10;
         var thresholdBytes = (long)thresholdGB * 1024 * 1024 * 1024;
         FreeSpaceStats? mostConstrained = null;
 
+        _logger.LogTrace("Checking {Count} qBit instances for free space", _config.QBitInstances.Count);
+        
         foreach (var (instanceName, qbitConfig) in _config.QBitInstances)
         {
-            if (qbitConfig.Disabled) continue;
+            if (qbitConfig.Disabled)
+            {
+                _logger.LogTrace("[{Instance}] Skipping disabled instance", instanceName);
+                continue;
+            }
 
             var savePath = qbitConfig.DownloadPath ?? Environment.GetFolderPath(Environment.SpecialFolder.UserProfile);
             var stats = new FreeSpaceStats { Path = savePath };
+
+            _logger.LogTrace("[{Instance}] Checking path: {Path}", instanceName, savePath);
 
             DriveInfo? drive = null;
             if (OperatingSystem.IsWindows())
@@ -87,6 +97,9 @@ public class FreeSpaceService : IFreeSpaceService
                 stats.ThresholdBytes = thresholdBytes;
                 stats.BelowThreshold = stats.FreeBytes < thresholdBytes;
 
+                _logger.LogTrace("[{Instance}] Drive info: Total={Total}, Free={Free}, Used={Used}",
+                    instanceName, FormatBytes(stats.TotalBytes), FormatBytes(stats.FreeBytes), FormatBytes(stats.UsedBytes));
+                
                 _logger.LogDebug("[{Instance}] Free space: {Free}GB / {Total}GB ({Percent:F1}%)",
                     instanceName,
                     stats.FreeBytes / 1024.0 / 1024.0 / 1024.0,
@@ -95,7 +108,10 @@ public class FreeSpaceService : IFreeSpaceService
 
                 // Track the most constrained (lowest free bytes)
                 if (mostConstrained == null || stats.FreeBytes < mostConstrained.FreeBytes)
+                {
+                    _logger.LogTrace("[{Instance}] New most constrained drive: {Free}GB", instanceName, FormatBytes(stats.FreeBytes));
                     mostConstrained = stats;
+                }
             }
             else
             {
@@ -104,6 +120,13 @@ public class FreeSpaceService : IFreeSpaceService
         }
 
         await Task.CompletedTask;
+        
+        if (mostConstrained != null)
+        {
+            _logger.LogTrace("Most constrained: {Path} with {Free}GB free ({Percent:F1}%)", 
+                mostConstrained.Path, FormatBytes(mostConstrained.FreeBytes), mostConstrained.FreePercentage);
+        }
+        
         return mostConstrained ?? new FreeSpaceStats { ThresholdBytes = thresholdBytes };
     }
 
@@ -190,14 +213,24 @@ public class FreeSpaceService : IFreeSpaceService
     /// </summary>
     public async Task ProcessTorrentsForSpaceAsync(string category, CancellationToken cancellationToken = default)
     {
+        _logger.LogTrace("Starting free space processing for category {Category}", category);
+        
         // Gather torrents from all qBit instances, stamping instance name
         var allTorrents = new List<(string instanceName, QBittorrentClient client, TorrentInfo torrent)>();
+        var clientCount = _qbitManager.GetAllClients().Count;
+        _logger.LogTrace("Fetching torrents from {Count} qBit instances", clientCount);
+        
         foreach (var (instanceName, client) in _qbitManager.GetAllClients())
         {
             try
             {
+                _logger.LogTrace("[{Instance}] Ensuring tags exist", instanceName);
                 await EnsureTagsExistAsync(client, cancellationToken);
+                
+                _logger.LogTrace("[{Instance}] Fetching torrents for category {Category}", instanceName, category);
                 var torrents = await client.GetTorrentsAsync(category, cancellationToken);
+                _logger.LogTrace("[{Instance}] Found {Count} torrents", instanceName, torrents.Count);
+                
                 foreach (var t in torrents)
                 {
                     t.QBitInstanceName = instanceName;
@@ -210,9 +243,16 @@ public class FreeSpaceService : IFreeSpaceService
             }
         }
 
-        if (allTorrents.Count == 0) return;
+        _logger.LogTrace("Total torrents gathered: {Count}", allTorrents.Count);
+        
+        if (allTorrents.Count == 0)
+        {
+            _logger.LogTrace("No torrents to process for free space");
+            return;
+        }
 
         // Get current free space (most constrained drive across all instances)
+        _logger.LogTrace("Getting free space stats");
         var stats = await GetFreeSpaceStatsAsync(cancellationToken);
         _currentFreeSpace = stats.FreeBytes - _minFreeSpaceBytes;
 
@@ -222,21 +262,32 @@ public class FreeSpaceService : IFreeSpaceService
             FormatBytes(stats.FreeBytes),
             FormatBytes(_minFreeSpaceBytes),
             FormatBytes(_currentFreeSpace));
+        
+        _logger.LogTrace("Free space: Available={Available}, Threshold={Threshold}, Usable={Usable}",
+            FormatBytes(stats.FreeBytes), FormatBytes(_minFreeSpaceBytes), FormatBytes(_currentFreeSpace));
 
         // Sort globally by added date — older torrents get priority to keep downloading
+        _logger.LogTrace("Sorting {Count} torrents by added date", allTorrents.Count);
         var sorted = allTorrents.OrderBy(x => x.torrent.AddedOn).ToList();
-
+        
+        _logger.LogTrace("Processing {Count} torrents in order of oldest first", sorted.Count);
+        var processedCount = 0;
         foreach (var (instanceName, client, torrent) in sorted)
         {
             try
             {
+                _logger.LogTrace("[{Instance}] Processing torrent {Name} (Added: {Added})", 
+                    instanceName, torrent.Name, torrent.AddedOn);
                 await ProcessSingleTorrentSpaceAsync(client, torrent, cancellationToken);
+                processedCount++;
             }
             catch (Exception ex)
             {
                 _logger.LogError(ex, "[{Instance}] Error processing torrent {Hash} for space", instanceName, torrent.Hash);
             }
         }
+        
+        _logger.LogTrace("Free space processing complete. Processed {Processed} of {Total} torrents", processedCount, sorted.Count);
     }
 
     private async Task ProcessSingleTorrentSpaceAsync(
@@ -248,16 +299,20 @@ public class FreeSpaceService : IFreeSpaceService
         var isPausedDownload = torrent.State.Contains("pausedDL", StringComparison.OrdinalIgnoreCase);
         var hasFreeSpaceTag = HasTag(torrent, FreeSpacePausedTag);
 
+        _logger.LogTrace("Torrent {Name}: State={State}, IsDownloading={IsDl}, IsPausedDownload={IsPausedDl}, HasFreeSpaceTag={HasTag}",
+            torrent.Name, torrent.State, isDownloading, isPausedDownload, hasFreeSpaceTag);
+
         if (isDownloading || (isPausedDownload && hasFreeSpaceTag))
         {
             var freeSpaceTest = _currentFreeSpace - torrent.AmountLeft;
 
             _logger.LogTrace(
-                "Evaluating torrent: {Name} | Current space: {Current} | Space after: {After} | Remaining: {Remaining}",
+                "Evaluating torrent {Name}: Current space: {Current} | Space after: {After} | Remaining: {Remaining} | Would be: {WouldBe}",
                 torrent.Name,
                 FormatBytes(_currentFreeSpace + _minFreeSpaceBytes),
                 FormatBytes(freeSpaceTest + _minFreeSpaceBytes),
-                FormatBytes(torrent.AmountLeft));
+                FormatBytes(torrent.AmountLeft),
+                freeSpaceTest >= 0 ? "positive" : "negative");
 
             if (!isPausedDownload && freeSpaceTest < 0)
             {
@@ -268,8 +323,11 @@ public class FreeSpaceService : IFreeSpaceService
                     FormatBytes(torrent.AmountLeft),
                     FormatBytes(-freeSpaceTest));
 
+                _logger.LogTrace("Adding tag {Tag} to torrent {Hash}", FreeSpacePausedTag, torrent.Hash);
                 await client.AddTagsAsync(new List<string> { torrent.Hash }, new List<string> { FreeSpacePausedTag }, cancellationToken);
+                _logger.LogTrace("Removing tag {Tag} from torrent {Hash}", AllowedSeedingTag, torrent.Hash);
                 await client.RemoveTagsAsync(new List<string> { torrent.Hash }, new List<string> { AllowedSeedingTag }, cancellationToken);
+                _logger.LogTrace("Pausing torrent {Hash}", torrent.Hash);
                 await client.PauseTorrentAsync(torrent.Hash, cancellationToken);
             }
             else if (isPausedDownload && freeSpaceTest < 0)
@@ -281,6 +339,7 @@ public class FreeSpaceService : IFreeSpaceService
                     FormatBytes(torrent.AmountLeft),
                     FormatBytes(-freeSpaceTest));
 
+                _logger.LogTrace("Maintaining tag {Tag} on torrent {Hash}", FreeSpacePausedTag, torrent.Hash);
                 await client.AddTagsAsync(new List<string> { torrent.Hash }, new List<string> { FreeSpacePausedTag }, cancellationToken);
                 await client.RemoveTagsAsync(new List<string> { torrent.Hash }, new List<string> { AllowedSeedingTag }, cancellationToken);
             }
@@ -293,6 +352,7 @@ public class FreeSpaceService : IFreeSpaceService
                     FormatBytes(freeSpaceTest + _minFreeSpaceBytes));
 
                 _currentFreeSpace = freeSpaceTest;
+                _logger.LogTrace("Removing tag {Tag} from torrent {Hash}", FreeSpacePausedTag, torrent.Hash);
                 await client.RemoveTagsAsync(new List<string> { torrent.Hash }, new List<string> { FreeSpacePausedTag }, cancellationToken);
             }
             else if (isPausedDownload && freeSpaceTest >= 0)
@@ -304,7 +364,9 @@ public class FreeSpaceService : IFreeSpaceService
                     FormatBytes(freeSpaceTest + _minFreeSpaceBytes));
 
                 _currentFreeSpace = freeSpaceTest;
+                _logger.LogTrace("Removing tag {Tag} from torrent {Hash}", FreeSpacePausedTag, torrent.Hash);
                 await client.RemoveTagsAsync(new List<string> { torrent.Hash }, new List<string> { FreeSpacePausedTag }, cancellationToken);
+                _logger.LogTrace("Resuming torrent {Hash}", torrent.Hash);
                 await client.ResumeTorrentAsync(torrent.Hash, cancellationToken);
             }
         }
@@ -315,7 +377,12 @@ public class FreeSpaceService : IFreeSpaceService
                 torrent.Name,
                 FormatBytes(_currentFreeSpace + _minFreeSpaceBytes));
 
+            _logger.LogTrace("Removing tag {Tag} from completed torrent {Hash}", FreeSpacePausedTag, torrent.Hash);
             await client.RemoveTagsAsync(new List<string> { torrent.Hash }, new List<string> { FreeSpacePausedTag }, cancellationToken);
+        }
+        else
+        {
+            _logger.LogTrace("No action needed for torrent {Name}", torrent.Name);
         }
     }
 

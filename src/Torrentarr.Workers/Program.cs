@@ -7,17 +7,64 @@ using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
 using Serilog;
+using Serilog.Core;
+using Serilog.Events;
 
 // Parse command line arguments
 var instanceName = args.Contains("--instance") && args.Length > Array.IndexOf(args, "--instance") + 1
     ? args[Array.IndexOf(args, "--instance") + 1]
     : "Unknown";
 
-// Configure Serilog
+// Calculate base paths (matching qBitrr folder structure: config/ relative to cwd)
+var basePath = Path.Combine(Directory.GetCurrentDirectory(), "config");
+var logsPath = Path.Combine(basePath, "logs");
+Directory.CreateDirectory(basePath);
+Directory.CreateDirectory(logsPath);
+
+// Mutable level switch — lets log level be changed at runtime via file
+var levelSwitch = new LoggingLevelSwitch(LogEventLevel.Information);
+
+// Configure Serilog - write to .config/logs/ with process metadata enrichment
 Log.Logger = new LoggerConfiguration()
+    .MinimumLevel.ControlledBy(levelSwitch)
+    .Enrich.WithProperty("ProcessType", "Worker")
+    .Enrich.WithProperty("ProcessInstance", instanceName)
+    .Enrich.WithProperty("ProcessId", Environment.ProcessId)
+    .Enrich.WithProperty("MachineName", Environment.MachineName)
     .WriteTo.Console()
-    .WriteTo.File($"logs/worker-{instanceName}.log", rollingInterval: RollingInterval.Day)
+    .WriteTo.File(Path.Combine(logsPath, $"worker-{instanceName}.log"), rollingInterval: RollingInterval.Day)
     .CreateLogger();
+
+// Monitor for log level changes via file
+var logLevelFilePath = Path.Combine(logsPath, $"worker-{instanceName}.loglevel");
+Task.Run(async () =>
+{
+    while (true)
+    {
+        try
+        {
+            if (File.Exists(logLevelFilePath))
+            {
+                var level = await File.ReadAllTextAsync(logLevelFilePath);
+                level = level.Trim().ToUpperInvariant();
+                var newLevel = level switch
+                {
+                    "TRACE" or "VERBOSE" => LogEventLevel.Verbose,
+                    "DEBUG" => LogEventLevel.Debug,
+                    "INFORMATION" or "INFO" => LogEventLevel.Information,
+                    "WARNING" or "WARN" => LogEventLevel.Warning,
+                    "ERROR" => LogEventLevel.Error,
+                    "CRITICAL" or "FATAL" => LogEventLevel.Fatal,
+                    _ => LogEventLevel.Information
+                };
+                levelSwitch.MinimumLevel = newLevel;
+                Log.Information("Log level changed to {Level} via file", level);
+            }
+        }
+        catch { }
+        await Task.Delay(TimeSpan.FromSeconds(5));
+    }
+});
 
 try
 {

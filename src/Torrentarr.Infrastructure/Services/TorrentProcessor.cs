@@ -57,10 +57,13 @@ public class TorrentProcessor : ITorrentProcessor
 
     public async Task ProcessTorrentsAsync(string category, CancellationToken cancellationToken = default)
     {
+        _logger.LogTrace("Starting torrent processing for category {Category}", category);
+        
         var client = _qbitManager.GetAllClients().Values.FirstOrDefault();
         if (client == null)
         {
             _logger.LogWarning("No qBittorrent client available");
+            _logger.LogTrace("Abort processing - no qBittorrent client");
             return;
         }
 
@@ -68,31 +71,39 @@ public class TorrentProcessor : ITorrentProcessor
         if (_specialCategories.Contains(category))
         {
             _logger.LogDebug("Skipping special category {Category} - handled by Host orchestrator", category);
+            _logger.LogTrace("Abort processing - special category {Category} excluded", category);
             return;
         }
 
         try
         {
             // Ensure tags exist
+            _logger.LogTrace("Ensuring required tags exist in qBittorrent");
             await EnsureTagsExistAsync(client, cancellationToken);
+            _logger.LogTrace("Tags verified/created successfully");
 
             // NOTE: Free space management is handled GLOBALLY by the Host orchestrator
             // This matches qBitrr's design where FreeSpaceManager runs ONCE per qBittorrent instance
 
             // Get all torrents for this category
+            _logger.LogTrace("Fetching torrents from qBittorrent for category {Category}", category);
             var torrents = await client.GetTorrentsAsync(category, cancellationToken);
             _logger.LogDebug("Found {Count} torrents in category {Category}", torrents.Count, category);
+            _logger.LogTrace("Torrent fetch complete - {Count} torrents retrieved", torrents.Count);
 
             var stats = new TorrentProcessingStats
             {
                 TotalTorrents = torrents.Count
             };
 
+            _logger.LogTrace("Starting iteration through {Count} torrents", torrents.Count);
             foreach (var torrent in torrents)
             {
                 try
                 {
+                    _logger.LogTrace("Processing torrent: {Name} ({Hash})", torrent.Name, torrent.Hash);
                     await ProcessSingleTorrentAsync(torrent, category, stats, cancellationToken);
+                    _logger.LogTrace("Completed processing torrent: {Name}", torrent.Name);
                 }
                 catch (Exception ex)
                 {
@@ -100,16 +111,20 @@ public class TorrentProcessor : ITorrentProcessor
                         torrent.Hash, torrent.Name);
                 }
             }
+            _logger.LogTrace("Finished iterating through all torrents");
 
             // Update seeding tags for completed torrents
             if (_seedingService != null)
             {
+                _logger.LogTrace("Updating seeding tags for category {Category}", category);
                 await _seedingService.UpdateSeedingTagsAsync(category, cancellationToken);
+                _logger.LogTrace("Seeding tags updated");
             }
 
             _logger.LogInformation(
                 "Processed {Total} torrents in {Category}: {Downloading} downloading, {Completed} completed, {Seeding} seeding, {Failed} failed, {Ignored} ignored",
                 stats.TotalTorrents, category, stats.Downloading, stats.Completed, stats.Seeding, stats.Failed, stats.Ignored);
+            _logger.LogTrace("Torrent processing completed for category {Category}", category);
         }
         catch (Exception ex)
         {
@@ -237,22 +252,31 @@ public class TorrentProcessor : ITorrentProcessor
         TorrentProcessingStats stats,
         CancellationToken cancellationToken)
     {
+        _logger.LogTrace("Begin processing torrent {Name} | Hash: {Hash} | State: {State} | Progress: {Progress:P1} | Category: {Category}",
+            torrent.Name, torrent.Hash, torrent.State, torrent.Progress, torrent.Category);
+
         // Check if torrent is in a special category (failed, recheck)
         if (_specialCategories.Contains(torrent.Category))
         {
+            _logger.LogTrace("Torrent {Name} is in special category {Category} - routing to special category handler",
+                torrent.Name, torrent.Category);
             await ProcessSpecialCategoryTorrentAsync(torrent, stats, cancellationToken);
+            _logger.LogTrace("Special category processing complete for {Name}", torrent.Name);
             return;
         }
 
         // Check if torrent is ignored via tag
-        if (HasTag(torrent, IgnoredTag))
+        var hasIgnoredTag = HasTag(torrent, IgnoredTag);
+        _logger.LogTrace("Checking ignored tag for {Name}: {HasTag}", torrent.Name, hasIgnoredTag);
+        if (hasIgnoredTag)
         {
-            _logger.LogTrace("Skipping ignored torrent {Name}", torrent.Name);
+            _logger.LogTrace("Skipping ignored torrent {Name} (tag: {Tag})", torrent.Name, IgnoredTag);
             stats.Ignored++;
             return;
         }
 
         var state = ParseTorrentState(torrent.State);
+        _logger.LogTrace("Parsed torrent state: {OriginalState} -> {ParsedState}", torrent.State, state);
 
         // Skip processing for transient states
         if (state == TorrentState.Allocating ||
@@ -260,12 +284,12 @@ public class TorrentProcessor : ITorrentProcessor
             state == TorrentState.ForcedMetaDL ||
             state == TorrentState.CheckingResumeData)
         {
-            _logger.LogTrace("Skipping torrent in transient state {State}: {Name}",
-                state, torrent.Name);
+            _logger.LogTrace("Skipping torrent {Name} in transient state {State}", torrent.Name, state);
             return;
         }
 
         // Update statistics
+        _logger.LogTrace("Updating stats for state {State}", state);
         switch (state)
         {
             case TorrentState.Downloading:
@@ -275,6 +299,7 @@ public class TorrentProcessor : ITorrentProcessor
                 break;
             case TorrentState.Uploading:
             case TorrentState.ForcedUploading:
+            case TorrentState.StalledUploading:
                 stats.Seeding++;
                 break;
             case TorrentState.Error:
@@ -286,30 +311,49 @@ public class TorrentProcessor : ITorrentProcessor
                 stats.Paused++;
                 break;
         }
+        _logger.LogTrace("Stats updated: Downloading={Downloading}, Completed={Completed}, Seeding={Seeding}, Failed={Failed}, Paused={Paused}",
+            stats.Downloading, stats.Completed, stats.Seeding, stats.Failed, stats.Paused);
 
         // Ensure torrent exists in database
+        _logger.LogTrace("Ensuring torrent {Hash} exists in database", torrent.Hash);
         await EnsureTorrentInDatabaseAsync(torrent, category, cancellationToken);
+        _logger.LogTrace("Database check complete for {Hash}", torrent.Hash);
 
         // Auto-resume stopped torrents that are not ignored or free-space-paused
-        if (torrent.IsStopped && !HasTag(torrent, FreeSpacePausedTag) && !HasTag(torrent, IgnoredTag))
+        var hasFreeSpaceTag = HasTag(torrent, FreeSpacePausedTag);
+        _logger.LogTrace("Checking auto-resume conditions for {Name}: IsStopped={IsStopped}, HasFreeSpaceTag={FreeSpaceTag}, HasIgnoredTag={IgnoredTag}",
+            torrent.Name, torrent.IsStopped, hasFreeSpaceTag, hasIgnoredTag);
+        
+        if (torrent.IsStopped && !hasFreeSpaceTag && !hasIgnoredTag)
         {
             var client = _qbitManager.GetAllClients().Values.FirstOrDefault();
             if (client != null)
             {
                 _logger.LogDebug("Resuming stopped torrent: {Name} ({Hash}) - State[{State}]",
                     torrent.Name, torrent.Hash, torrent.State);
+                _logger.LogTrace("Executing resume for torrent {Hash}", torrent.Hash);
                 await client.ResumeTorrentsAsync(new List<string> { torrent.Hash }, cancellationToken);
+                _logger.LogTrace("Resume command sent for {Hash}", torrent.Hash);
             }
         }
 
         // Process based on state
-        if (torrent.Progress >= 1.0 && !torrent.State.Contains("paused", StringComparison.OrdinalIgnoreCase))
+        var isComplete = torrent.Progress >= 1.0;
+        var isPaused = torrent.State.Contains("paused", StringComparison.OrdinalIgnoreCase);
+        _logger.LogTrace("Completion check: Progress={Progress}, IsPaused={IsPaused}", torrent.Progress, isPaused);
+        
+        if (isComplete && !isPaused)
         {
             // Torrent is complete
+            _logger.LogTrace("Torrent {Name} is complete (Progress: {Progress:P1})", torrent.Name, torrent.Progress);
             stats.Completed++;
 
             // Check if ready for import
-            if (await IsReadyForImportAsync(torrent.Hash, cancellationToken))
+            _logger.LogTrace("Checking if torrent {Hash} is ready for import", torrent.Hash);
+            var isReadyForImport = await IsReadyForImportAsync(torrent.Hash, cancellationToken);
+            _logger.LogTrace("Import readiness check result for {Hash}: {IsReady}", torrent.Hash, isReadyForImport);
+            
+            if (isReadyForImport)
             {
                 _logger.LogDebug("Torrent {Name} is ready for import", torrent.Name);
                 // Import will be handled by the Arr-specific worker

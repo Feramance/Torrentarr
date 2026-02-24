@@ -4,16 +4,34 @@ using Torrentarr.Infrastructure.Database;
 using Torrentarr.Infrastructure.Services;
 using Microsoft.EntityFrameworkCore;
 using Serilog;
+using Serilog.Core;
+using Serilog.Events;
+
+// Calculate base paths (matching qBitrr folder structure: config/ relative to cwd)
+var basePath = Path.Combine(Directory.GetCurrentDirectory(), "config");
+var logsPath = Path.Combine(basePath, "logs");
+Directory.CreateDirectory(basePath);
+Directory.CreateDirectory(logsPath);
+
+// Mutable level switch — lets /api/loglevel change the level at runtime
+var levelSwitch = new LoggingLevelSwitch(LogEventLevel.Information);
 
 var builder = WebApplication.CreateBuilder(args);
 
-// Configure Serilog
+// Configure Serilog - write to .config/logs/ with process metadata enrichment
 Log.Logger = new LoggerConfiguration()
+    .MinimumLevel.ControlledBy(levelSwitch)
+    .Enrich.WithProperty("ProcessType", "WebUI")
+    .Enrich.WithProperty("ProcessId", Environment.ProcessId)
+    .Enrich.WithProperty("MachineName", Environment.MachineName)
     .WriteTo.Console()
-    .WriteTo.File("logs/webui.log", rollingInterval: RollingInterval.Day)
+    .WriteTo.File(Path.Combine(logsPath, "webui.log"), rollingInterval: RollingInterval.Day)
     .CreateLogger();
 
 builder.Host.UseSerilog();
+
+// Register LoggingLevelSwitch so endpoints can change log level at runtime
+builder.Services.AddSingleton(levelSwitch);
 
 // Add services to the container
 builder.Services.AddControllers()
@@ -133,6 +151,30 @@ app.MapGet("/health", () => Results.Ok(new
     service = "torrentarr-webui",
     timestamp = DateTime.UtcNow
 }));
+
+app.MapPost("/api/loglevel", (LogLevelRequest req, LoggingLevelSwitch ls) =>
+{
+    var newLevel = req.Level?.ToUpperInvariant() switch
+    {
+        "TRACE" or "VERBOSE" => LogEventLevel.Verbose,
+        "DEBUG" => LogEventLevel.Debug,
+        "INFORMATION" or "INFO" => LogEventLevel.Information,
+        "WARNING" or "WARN" => LogEventLevel.Warning,
+        "ERROR" => LogEventLevel.Error,
+        "CRITICAL" or "FATAL" => LogEventLevel.Fatal,
+        _ => LogEventLevel.Information
+    };
+    
+    ls.MinimumLevel = newLevel;
+    Log.Information("Log level changed to {Level}", req.Level);
+    
+    return Results.Ok(new { success = true, level = req.Level });
+});
+
+app.MapGet("/api/loglevel", (LoggingLevelSwitch ls) =>
+{
+    return Results.Ok(new { level = ls.MinimumLevel.ToString() });
+});
 
 // Status endpoint
 app.MapGet("/api/status", async (TorrentarrDbContext db, TorrentarrConfig config) =>
@@ -654,3 +696,5 @@ Log.Information("Torrentarr WebUI starting on {Host}:{Port}",
     "");
 
 app.Run();
+
+public record LogLevelRequest(string Level);

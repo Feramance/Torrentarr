@@ -8,14 +8,28 @@ using Microsoft.EntityFrameworkCore;
 using Serilog;
 using Serilog.Core;
 using Serilog.Events;
+
+// Calculate base paths - use /config for Docker, or config/ relative to cwd for local
+var configEnv = Environment.GetEnvironmentVariable("TORRENTARR_CONFIG");
+var basePath = !string.IsNullOrEmpty(configEnv) && configEnv.StartsWith("/config") 
+    ? "/config" 
+    : Path.Combine(Directory.GetCurrentDirectory(), "config");
+var logsPath = Path.Combine(basePath, "logs");
+var dbPath = Path.Combine(basePath, "qbitrr.db");
+Directory.CreateDirectory(basePath);
+Directory.CreateDirectory(logsPath);
+
 // Mutable level switch — lets /web/loglevel and /api/loglevel change the level at runtime
 var levelSwitch = new LoggingLevelSwitch(LogEventLevel.Information);
 
-// Configure Serilog
+// Configure Serilog - write to .config/logs/ (same path as API reads from) with process metadata enrichment
 Log.Logger = new LoggerConfiguration()
     .MinimumLevel.ControlledBy(levelSwitch)
+    .Enrich.WithProperty("ProcessType", "Host")
+    .Enrich.WithProperty("ProcessId", Environment.ProcessId)
+    .Enrich.WithProperty("MachineName", Environment.MachineName)
     .WriteTo.Console()
-    .WriteTo.File("logs/torrentarr.log", rollingInterval: RollingInterval.Day)
+    .WriteTo.File(Path.Combine(logsPath, "torrentarr.log"), rollingInterval: RollingInterval.Day)
     .CreateLogger();
 
 try
@@ -103,12 +117,7 @@ try
             policy.AllowAnyOrigin().AllowAnyMethod().AllowAnyHeader());
     });
 
-    // Database
-    var homePath = Environment.GetFolderPath(Environment.SpecialFolder.UserProfile);
-    var dbPath = Path.Combine(homePath, ".config", "torrentarr", "qbitrr.db");
-    var logsPath = Path.Combine(homePath, ".config", "torrentarr", "logs");
-    Directory.CreateDirectory(Path.GetDirectoryName(dbPath)!);
-
+    // Database - paths already defined at top of file
     builder.Services.AddDbContext<TorrentarrDbContext>(options =>
         options.UseSqlite($"Data Source={dbPath}"));
 
@@ -269,7 +278,8 @@ try
         var primaryQbit = (cfg.QBitInstances.GetValueOrDefault("qBit") ?? new QBitConfig());
         var qbitManagedSet = new HashSet<string>(primaryQbit.ManagedCategories, StringComparer.OrdinalIgnoreCase);
         var arrCategorySet = new HashSet<string>(arrCategoryToConfig.Keys, StringComparer.OrdinalIgnoreCase);
-        var monitoredForDefault = new HashSet<string>(qbitManagedSet.Union(arrCategorySet), StringComparer.OrdinalIgnoreCase);
+        // Only show ManagedCategories from qBit config - not Arr categories
+        var monitoredForDefault = qbitManagedSet;
 
         if (primaryQbit.Host != "CHANGE_ME" && monitoredForDefault.Count > 0)
         {
@@ -379,7 +389,7 @@ try
     });
 
     // Web Processes — reads live state from ProcessStateManager + qBit connection status
-    app.MapGet("/web/processes", (ProcessStateManager stateMgr, TorrentarrConfig cfg, QBittorrentConnectionManager qbitMgr) =>
+    app.MapGet("/web/processes", async (ProcessStateManager stateMgr, TorrentarrConfig cfg, QBittorrentConnectionManager qbitMgr) =>
     {
         var processes = stateMgr.GetAll().Select(s => new
         {
@@ -393,25 +403,60 @@ try
             searchTimestamp = s.SearchTimestamp,
             queueCount = s.QueueCount,
             categoryCount = s.CategoryCount,
-            metricType = s.MetricType
+            metricType = s.MetricType,
+            status = s.Status
         }).ToList<object>();
 
         // Add a process card for each configured qBit instance
         foreach (var (instanceName, qbit) in cfg.QBitInstances.Where(q => q.Value.Host != "CHANGE_ME"))
         {
+            // Use IsConnected() (no params) for "qBit" to match the special case in /web/status
+            // This returns true if ANY qBit client is connected
+            var isConnected = instanceName == "qBit" ? qbitMgr.IsConnected() : qbitMgr.IsConnected(instanceName);
+
+            int? totalCount = null;
+            int? seedingCount = null;
+
+            if (isConnected)
+            {
+                try
+                {
+                    // For "qBit", get any client; for named instances, get by name
+                    var client = instanceName == "qBit" 
+                        ? qbitMgr.GetAllClients().Values.FirstOrDefault()
+                        : qbitMgr.GetClient(instanceName);
+                    
+                    if (client != null)
+                    {
+                        var torrents = await client.GetTorrentsAsync(ct: CancellationToken.None);
+                        if (torrents != null)
+                        {
+                            totalCount = torrents.Count;
+                            seedingCount = torrents.Count(t => t.State == "uploading" || t.State == "forcedUploading");
+                        }
+                    }
+                }
+                catch { /* best-effort */ }
+            }
+
+            var statusText = isConnected
+                ? (totalCount.HasValue ? $"{totalCount} torrents ({seedingCount} seeding)" : "Connected")
+                : "Disconnected";
+
             processes.Add(new
             {
                 category = instanceName,
                 name = instanceName,
                 kind = "torrent",
                 pid = (int?)null,
-                alive = qbitMgr.IsConnected(instanceName == "qBit" ? "default" : instanceName),
+                alive = isConnected,
                 rebuilding = false,
                 searchSummary = (string?)null,
                 searchTimestamp = (string?)null,
                 queueCount = (int?)null,
                 categoryCount = (int?)null,
-                metricType = (string?)null
+                metricType = (string?)null,
+                status = statusText
             });
         }
 

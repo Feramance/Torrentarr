@@ -62,14 +62,21 @@ public class SeedingService : ISeedingService
 
     public async Task<bool> MeetsSeedingRequirementsAsync(string hash, string category, CancellationToken cancellationToken = default)
     {
+        _logger.LogTrace("Checking seeding requirements for hash {Hash} in category {Category}", hash, category);
+        
         var stats = await GetSeedingStatsAsync(hash, cancellationToken);
 
         if (stats == null)
         {
+            _logger.LogTrace("No seeding stats found for {Hash} - returning false", hash);
             return false;
         }
 
+        _logger.LogTrace("Seeding stats for {Hash}: Ratio={Ratio}, SeedingTime={Time}s, MeetsTime={MeetsTime}, MeetsRatio={MeetsRatio}",
+            hash, stats.Ratio, stats.SeedingTimeSeconds, stats.MeetsTimeRequirement, stats.MeetsRatioRequirement);
+
         var categoryConfig = _config.Settings.CategorySeedingRules?.FirstOrDefault(r => r.Category == category);
+        _logger.LogTrace("Category config for {Category}: {Config}", category, categoryConfig != null ? "found" : "not found");
 
         if (categoryConfig != null)
         {
@@ -78,6 +85,8 @@ public class SeedingService : ISeedingService
                 var seedingTime = TimeSpan.FromSeconds(stats.SeedingTimeSeconds);
                 var requiredTime = TimeSpan.FromMinutes(categoryConfig.MinimumSeedingTime);
 
+                _logger.LogTrace("Checking minimum seeding time: {Current} vs required {Required}", seedingTime, requiredTime);
+                
                 if (seedingTime < requiredTime)
                 {
                     _logger.LogDebug("Torrent {Hash} has not met minimum seeding time ({Current} < {Required})",
@@ -99,7 +108,10 @@ public class SeedingService : ISeedingService
             _logger.LogDebug("Tracker requirement for {Hash}: {Requirement}", hash, trackerReq);
         }
 
-        return stats.MeetsTimeRequirement && stats.MeetsRatioRequirement;
+        var result = stats.MeetsTimeRequirement && stats.MeetsRatioRequirement;
+        _logger.LogTrace("Seeding requirements result for {Hash}: {Result}", hash, result);
+        
+        return result;
     }
 
     public async Task<SeedingStats> GetSeedingStatsAsync(string hash, CancellationToken cancellationToken = default)
