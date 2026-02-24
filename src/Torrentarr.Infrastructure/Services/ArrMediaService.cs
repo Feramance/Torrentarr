@@ -39,61 +39,81 @@ public class ArrMediaService : IArrMediaService
 
     public async Task<SearchResult> SearchMissingMediaAsync(string category, CancellationToken cancellationToken = default)
     {
+        _logger.LogTrace("Starting missing media search for category {Category}", category);
+        
         var arrInstance = _config.ArrInstances.Values.FirstOrDefault(i =>
             i.Category.Equals(category, StringComparison.OrdinalIgnoreCase));
 
         if (arrInstance == null)
         {
             _logger.LogWarning("No Arr instance found for category {Category}", category);
+            _logger.LogTrace("Search aborted - no Arr instance for {Category}", category);
             return new SearchResult();
         }
 
         var instanceName = _config.ArrInstances.First(kvp => kvp.Value == arrInstance).Key;
+        _logger.LogTrace("Found Arr instance {Name} for category {Category}", instanceName, category);
 
         if (!arrInstance.Search.SearchMissing)
         {
             _logger.LogDebug("SearchMissing disabled for {Category}", category);
+            _logger.LogTrace("Search skipped - SearchMissing disabled");
             return new SearchResult();
         }
 
         if (_config.Settings.SearchLoopDelay == 0 || _config.Settings.SearchLoopDelay == -1)
         {
             _logger.LogDebug("SearchLoopDelay disabled for {Category}", category);
+            _logger.LogTrace("Search skipped - SearchLoopDelay disabled");
             return new SearchResult();
         }
 
         _logger.LogInformation("Searching for missing media in {Category}", category);
 
+        _logger.LogTrace("Syncing database with Arr instance {Name}", instanceName);
         await _syncService.SyncAsync(instanceName, cancellationToken);
         await _syncService.SyncSearchMetadataAsync(instanceName, cancellationToken);
+        _logger.LogTrace("Sync complete for {Name}", instanceName);
 
+        _logger.LogTrace("Getting search candidates for {Name}", instanceName);
         var candidates = await GetSearchCandidatesAsync(instanceName, arrInstance, cancellationToken);
+        _logger.LogTrace("Found {Count} search candidates", candidates.Count);
 
-        return await _searchExecutor.ExecuteSearchesAsync(instanceName, candidates, cancellationToken);
+        _logger.LogTrace("Executing searches for {Count} candidates", candidates.Count);
+        var result = await _searchExecutor.ExecuteSearchesAsync(instanceName, candidates, cancellationToken);
+        _logger.LogTrace("Search complete - triggered {Count} searches", result.SearchesTriggered);
+        
+        return result;
     }
 
     public async Task<SearchResult> SearchQualityUpgradesAsync(string category, CancellationToken cancellationToken = default)
     {
+        _logger.LogTrace("Starting quality upgrade search for category {Category}", category);
+        
         var arrInstance = _config.ArrInstances.Values.FirstOrDefault(i =>
             i.Category.Equals(category, StringComparison.OrdinalIgnoreCase));
 
         if (arrInstance == null)
         {
             _logger.LogDebug("No Arr instance found for category {Category}", category);
+            _logger.LogTrace("Search aborted - no Arr instance for {Category}", category);
             return new SearchResult();
         }
 
         var instanceName = _config.ArrInstances.First(kvp => kvp.Value == arrInstance).Key;
+        _logger.LogTrace("Found Arr instance {Name} for category {Category}", instanceName, category);
 
         if (!arrInstance.Search.DoUpgradeSearch && !arrInstance.Search.CustomFormatUnmetSearch && !arrInstance.Search.QualityUnmetSearch)
         {
             _logger.LogDebug("Quality upgrade search disabled for {Category}", category);
+            _logger.LogTrace("Search skipped - all upgrade searches disabled");
             return new SearchResult();
         }
 
         if (_config.Settings.SearchLoopDelay == 0 || _config.Settings.SearchLoopDelay == -1)
         {
             _logger.LogDebug("SearchLoopDelay disabled for {Category}", category);
+            _logger.LogTrace("Search skipped - SearchLoopDelay disabled");
             return new SearchResult();
         }
 

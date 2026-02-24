@@ -34,18 +34,23 @@ public class ArrSyncService
 
     public async Task SyncAsync(string instanceName, CancellationToken ct = default)
     {
+        _logger.LogTrace("Starting sync for Arr instance {Name}", instanceName);
+        
         if (!_config.ArrInstances.TryGetValue(instanceName, out var arrConfig))
         {
             _logger.LogWarning("ArrSyncService: no instance named {Name}", instanceName);
+            _logger.LogTrace("Sync aborted - instance {Name} not found in config", instanceName);
             return;
         }
 
         if (string.IsNullOrEmpty(arrConfig.URI) || arrConfig.URI == "CHANGE_ME")
         {
             _logger.LogDebug("ArrSyncService: skipping unconfigured instance {Name}", instanceName);
+            _logger.LogTrace("Sync skipped - instance {Name} not configured", instanceName);
             return;
         }
 
+        _logger.LogTrace("Syncing Arr instance {Name} of type {Type}", instanceName, arrConfig.Type);
         _logger.LogDebug("ArrSyncService: syncing {Type} instance {Name}", arrConfig.Type, instanceName);
 
         try
@@ -53,18 +58,23 @@ public class ArrSyncService
             switch (arrConfig.Type.ToLowerInvariant())
             {
                 case "radarr":
+                    _logger.LogTrace("Routing to Radarr sync handler");
                     await SyncRadarrAsync(instanceName, arrConfig, ct);
                     break;
                 case "sonarr":
+                    _logger.LogTrace("Routing to Sonarr sync handler");
                     await SyncSonarrAsync(instanceName, arrConfig, ct);
                     break;
                 case "lidarr":
+                    _logger.LogTrace("Routing to Lidarr sync handler");
                     await SyncLidarrAsync(instanceName, arrConfig, ct);
                     break;
                 default:
                     _logger.LogWarning("ArrSyncService: unknown type {Type} for {Name}", arrConfig.Type, instanceName);
                     break;
             }
+            
+            _logger.LogTrace("Sync completed for {Name}", instanceName);
         }
         catch (Exception ex)
         {
@@ -78,11 +88,19 @@ public class ArrSyncService
     /// </summary>
     public async Task SyncSearchMetadataAsync(string instanceName, CancellationToken ct = default)
     {
+        _logger.LogTrace("Starting search metadata sync for Arr instance {Name}", instanceName);
+        
         if (!_config.ArrInstances.TryGetValue(instanceName, out var arrConfig))
+        {
+            _logger.LogTrace("Search metadata sync aborted - instance {Name} not found", instanceName);
             return;
+        }
 
         if (string.IsNullOrEmpty(arrConfig.URI) || arrConfig.URI == "CHANGE_ME")
+        {
+            _logger.LogTrace("Search metadata sync skipped - instance {Name} not configured", instanceName);
             return;
+        }
 
         var searchConfig = arrConfig.Search;
         bool needsMetadata = searchConfig.SearchMissing ||
@@ -91,8 +109,12 @@ public class ArrSyncService
                             searchConfig.CustomFormatUnmetSearch;
 
         if (!needsMetadata)
+        {
+            _logger.LogTrace("Search metadata sync skipped - no search features enabled for {Name}", instanceName);
             return;
+        }
 
+        _logger.LogTrace("Search metadata sync required for {Name}", instanceName);
         _logger.LogDebug("ArrSyncService: syncing search metadata for {Name}", instanceName);
 
         try

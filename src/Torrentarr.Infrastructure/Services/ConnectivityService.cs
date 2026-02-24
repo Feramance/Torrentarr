@@ -37,27 +37,40 @@ public class ConnectivityService : IConnectivityService
 
     public async Task<bool> IsConnectedAsync(CancellationToken cancellationToken = default)
     {
+        _logger.LogTrace("Checking connectivity status");
+        
         try
         {
+            _logger.LogTrace("Checking qBittorrent reachability");
             var qbitReachable = await IsQBittorrentReachableAsync(cancellationToken);
             if (qbitReachable)
             {
+                _logger.LogTrace("qBittorrent is reachable - connectivity confirmed");
                 _isConnected = true;
                 _lastChecked = DateTime.UtcNow;
                 return true;
             }
 
+            _logger.LogTrace("qBittorrent not reachable, checking internet hosts");
+            var hostsChecked = 0;
             foreach (var host in _testHosts)
             {
+                hostsChecked++;
+                _logger.LogTrace("Pinging host {Host} ({Current}/{Total})", host, hostsChecked, _testHosts.Count);
+                
                 if (await PingHostAsync(host, cancellationToken))
                 {
+                    _logger.LogTrace("Ping successful to {Host} - connectivity confirmed", host);
                     _isConnected = true;
                     _lastChecked = DateTime.UtcNow;
                     _logger.LogDebug("Internet connectivity confirmed via {Host}", host);
                     return true;
                 }
+                
+                _logger.LogTrace("Ping failed to {Host}", host);
             }
 
+            _logger.LogTrace("All {Count} hosts unreachable - no connectivity", _testHosts.Count);
             _isConnected = false;
             _lastChecked = DateTime.UtcNow;
             _logger.LogWarning("No internet connectivity detected");
