@@ -12,6 +12,7 @@ services:
       - TZ=Europe/Malta
       - PUID=1000
       - PGID=1000
+      - TORRENTARR_CONFIG=/config/config.toml
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:6969/health"]
       interval: 30s
