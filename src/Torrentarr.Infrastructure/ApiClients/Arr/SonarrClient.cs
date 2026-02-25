@@ -85,6 +85,7 @@ public class SonarrClient
         var request = new RestRequest("/api/v3/episode", Method.Get);
         AddApiKeyHeader(request);
         request.AddQueryParameter("seriesId", seriesId.ToString());
+        request.AddQueryParameter("includeEpisodeFile", "true");
 
         var response = await _client.ExecuteAsync(request, ct);
 

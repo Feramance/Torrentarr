@@ -4,6 +4,7 @@ using Torrentarr.Core.Services;
 using Torrentarr.Infrastructure.ApiClients.QBittorrent;
 using Torrentarr.Infrastructure.Database;
 using Torrentarr.Infrastructure.Services;
+using Torrentarr.Host.Sinks;
 using Microsoft.EntityFrameworkCore;
 using Serilog;
 using Serilog.Core;
@@ -22,14 +23,52 @@ Directory.CreateDirectory(logsPath);
 // Mutable level switch — lets /web/loglevel and /api/loglevel change the level at runtime
 var levelSwitch = new LoggingLevelSwitch(LogEventLevel.Information);
 
+// Create custom sink for per-worker log files
+var workerSink = new WorkerLogEventSink(logsPath);
+
 // Configure Serilog - write to .config/logs/ (same path as API reads from) with process metadata enrichment
 Log.Logger = new LoggerConfiguration()
     .MinimumLevel.ControlledBy(levelSwitch)
     .Enrich.WithProperty("ProcessType", "Host")
     .Enrich.WithProperty("ProcessId", Environment.ProcessId)
     .Enrich.WithProperty("MachineName", Environment.MachineName)
+    .Filter.ByExcluding(e =>
+        e.RenderMessage().Contains("DbCommand") ||
+        e.RenderMessage().Contains("started tracking") ||
+        e.RenderMessage().Contains("changed state from") ||
+        e.RenderMessage().Contains("generated temporary value") ||
+        e.RenderMessage().Contains("Closing data reader") ||
+        e.RenderMessage().Contains("DetectChanges") ||
+        e.RenderMessage().Contains("SaveChanges") ||
+        e.RenderMessage().Contains("Opening connection") ||
+        e.RenderMessage().Contains("Opened connection") ||
+        e.RenderMessage().Contains("Closing connection") ||
+        e.RenderMessage().Contains("Closed connection") ||
+        e.RenderMessage().Contains("Creating DbConnection") ||
+        e.RenderMessage().Contains("Created DbConnection") ||
+        e.RenderMessage().Contains("Beginning transaction") ||
+        e.RenderMessage().Contains("Began transaction") ||
+        e.RenderMessage().Contains("Committing transaction") ||
+        e.RenderMessage().Contains("Committed transaction") ||
+        e.RenderMessage().Contains("Disposing transaction") ||
+        e.RenderMessage().Contains("Disposed transaction") ||
+        e.RenderMessage().Contains("Disposing connection to database") ||
+        e.RenderMessage().Contains("Disposed connection to database") ||
+        e.RenderMessage().Contains("DbContext") ||
+        e.RenderMessage().Contains("was detected as changed") ||
+        e.RenderMessage().Contains("Executing endpoint") ||
+        e.RenderMessage().Contains("Executed endpoint") ||
+        e.RenderMessage().Contains("Request starting") ||
+        e.RenderMessage().Contains("Request finished") ||
+        e.RenderMessage().Contains("Writing value of type") ||
+        e.RenderMessage().Contains("is valid for the request") ||
+        e.RenderMessage().Contains("A data reader") ||
+        e.RenderMessage().Contains("Entity Framework Core") ||
+        e.RenderMessage().Contains("queryContext.StartTracking") ||
+        e.RenderMessage().Contains("InternalEntityEntry") ||
+        e.RenderMessage().Contains("shadowSnapshot"))
     .WriteTo.Console()
-    .WriteTo.File(Path.Combine(logsPath, "torrentarr.log"), rollingInterval: RollingInterval.Day)
+    .WriteTo.Sink(workerSink)
     .CreateLogger();
 
 try
@@ -54,6 +93,21 @@ try
     {
         Log.Error(ex, "Failed to load configuration");
         return 1;
+    }
+
+    if (config.Settings.ConsoleLevel != null)
+    {
+        levelSwitch.MinimumLevel = config.Settings.ConsoleLevel.ToUpperInvariant() switch
+        {
+            "TRACE" => LogEventLevel.Verbose,
+            "DEBUG" => LogEventLevel.Debug,
+            "INFO" or "INFORMATION" or "NOTICE" => LogEventLevel.Information,
+            "WARNING" or "WARN" => LogEventLevel.Warning,
+            "ERROR" => LogEventLevel.Error,
+            "CRITICAL" or "FATAL" => LogEventLevel.Fatal,
+            _ => LogEventLevel.Information
+        };
+        Log.Information("Log level set to {Level} from config ConsoleLevel", levelSwitch.MinimumLevel);
     }
 
     if (!config.QBitInstances.Values.Any(q => q.Host != "CHANGE_ME" && q.UserName != "CHANGE_ME" && q.Password != "CHANGE_ME"))
@@ -90,6 +144,8 @@ try
     builder.Services.AddScoped<IFreeSpaceService, FreeSpaceService>();
     builder.Services.AddScoped<ITorrentProcessor, TorrentProcessor>();
     builder.Services.AddScoped<IArrMediaService, ArrMediaService>();
+    builder.Services.AddScoped<ISearchExecutor, SearchExecutor>();
+    builder.Services.AddSingleton<ITorrentCacheService, TorrentCacheService>();
 
     builder.Services.AddControllers()
         .AddNewtonsoftJson(options =>
@@ -119,7 +175,9 @@ try
 
     // Database - paths already defined at top of file
     builder.Services.AddDbContext<TorrentarrDbContext>(options =>
-        options.UseSqlite($"Data Source={dbPath}"));
+        options.UseSqlite($"Data Source={dbPath}")
+               .LogTo(_ => { }, LogLevel.None)  // Suppress all EF Core SQL logs
+               .EnableSensitiveDataLogging());   // Keep for debugging if needed
 
     builder.WebHost.ConfigureKestrel(options =>
     {
@@ -1883,6 +1941,24 @@ static void ApplyManualMigrations(TorrentarrDbContext db)
 {
     // Add tvdbid to seriesfilesmodel if it doesn't exist (added in v1.1)
     AddColumnIfMissing(db, "seriesfilesmodel", "tvdbid", "INTEGER NOT NULL DEFAULT 0");
+
+    // Add availability fields for Radarr (added in logging enhancement)
+    AddColumnIfMissing(db, "moviesfilesmodel", "InCinemas", "TEXT");
+    AddColumnIfMissing(db, "moviesfilesmodel", "DigitalRelease", "TEXT");
+    AddColumnIfMissing(db, "moviesfilesmodel", "PhysicalRelease", "TEXT");
+    AddColumnIfMissing(db, "moviesfilesmodel", "MinimumAvailability", "TEXT");
+
+    // Add availability fields for Sonarr
+    AddColumnIfMissing(db, "episodefilesmodel", "InCinemas", "TEXT");
+    AddColumnIfMissing(db, "episodefilesmodel", "DigitalRelease", "TEXT");
+    AddColumnIfMissing(db, "episodefilesmodel", "PhysicalRelease", "TEXT");
+    AddColumnIfMissing(db, "episodefilesmodel", "MinimumAvailability", "TEXT");
+
+    // Add availability fields for Lidarr
+    AddColumnIfMissing(db, "albumfilesmodel", "InCinemas", "TEXT");
+    AddColumnIfMissing(db, "albumfilesmodel", "DigitalRelease", "TEXT");
+    AddColumnIfMissing(db, "albumfilesmodel", "PhysicalRelease", "TEXT");
+    AddColumnIfMissing(db, "albumfilesmodel", "MinimumAvailability", "TEXT");
 }
 
 static void AddColumnIfMissing(TorrentarrDbContext db, string table, string column, string columnDef)
@@ -2104,11 +2180,22 @@ class ProcessOrchestratorService : BackgroundService
                 }
             }
 
-            foreach (var arrInstance in _config.ArrInstances.Where(x => x.Value.Managed && x.Value.URI != "CHANGE_ME" && !string.IsNullOrEmpty(x.Value.Category)))
+            // Get ALL categories from ALL Arr instances (not just managed ones) - matches qBitrr behavior
+            foreach (var arrInstance in _config.ArrInstances.Where(x => !string.IsNullOrEmpty(x.Value.Category)))
                 _managedCategories.Add(arrInstance.Value.Category!);
 
+            // Also add qBit-managed categories from all qBit instances
+            foreach (var qbit in _config.QBitInstances.Values)
+            {
+                if (qbit.ManagedCategories != null)
+                {
+                    foreach (var cat in qbit.ManagedCategories)
+                        _managedCategories.Add(cat);
+                }
+            }
+
             if (_managedCategories.Count > 0)
-                _logger.LogInformation("Managing {Count} categories: {Categories}", _managedCategories.Count, string.Join(", ", _managedCategories));
+                _logger.LogInformation("FreeSpace categories: {Categories}", string.Join(", ", _managedCategories));
 
             _freeSpaceFolder = GetFreeSpaceFolder();
 
@@ -2144,13 +2231,23 @@ class ProcessOrchestratorService : BackgroundService
 
     private string? GetFreeSpaceFolder()
     {
+        // Try configured folder first
         if (!string.IsNullOrEmpty(_config.Settings.FreeSpaceFolder) && _config.Settings.FreeSpaceFolder != "CHANGE_ME")
-            return _config.Settings.FreeSpaceFolder;
+        {
+            // Check if path exists, if not return null
+            if (Directory.Exists(_config.Settings.FreeSpaceFolder))
+                return _config.Settings.FreeSpaceFolder;
+        }
 
+        // Fallback to completed download folder
         if (!string.IsNullOrEmpty(_config.Settings.CompletedDownloadFolder) && _config.Settings.CompletedDownloadFolder != "CHANGE_ME")
-            return _config.Settings.CompletedDownloadFolder;
+        {
+            if (Directory.Exists(_config.Settings.CompletedDownloadFolder))
+                return _config.Settings.CompletedDownloadFolder;
+        }
 
-        return null;
+        // Final fallback: use /config which is always available in container
+        return "/config";
     }
 
     private async Task ProcessSpecialCategoriesAsync(CancellationToken cancellationToken)
@@ -2182,8 +2279,16 @@ class ProcessOrchestratorService : BackgroundService
 
     private async Task ProcessFreeSpaceManagerAsync(CancellationToken cancellationToken)
     {
-        if (string.IsNullOrEmpty(_freeSpaceFolder)) return;
+        _logger.LogInformation("FreeSpace: Starting FreeSpace manager check");
+        
+        if (string.IsNullOrEmpty(_freeSpaceFolder)) 
+        {
+            _logger.LogWarning("FreeSpace: No free space folder configured or folder doesn't exist");
+            return;
+        }
 
+        _logger.LogInformation("FreeSpace: Using folder {Folder} for space monitoring", _freeSpaceFolder);
+        
         try
         {
             var driveInfo = new DriveInfo(_freeSpaceFolder);
@@ -2222,24 +2327,63 @@ class ProcessOrchestratorService : BackgroundService
         {
             var freeSpaceTest = _currentFreeSpace - torrent.AmountLeft;
 
+            // Log evaluation (qBitrr style)
+            _logger.LogInformation(
+                "FreeSpace: Evaluating torrent: {Name} | Current space: {Available} | Space after: {SpaceAfter} | Remaining: {Needed}",
+                torrent.Name, FormatBytes(_currentFreeSpace), FormatBytes(freeSpaceTest), FormatBytes(torrent.AmountLeft));
+
             if (!isPausedDownload && freeSpaceTest < 0)
             {
-                _logger.LogInformation("Pausing download (insufficient space): {Name}", torrent.Name);
+                _logger.LogInformation(
+                    "FreeSpace: Pausing download (insufficient space) | Torrent: {Name} | Available: {Available} | Needed: {Needed} | Deficit: {Deficit}",
+                    torrent.Name, FormatBytes(_currentFreeSpace), FormatBytes(torrent.AmountLeft), FormatBytes(-freeSpaceTest));
                 await client.AddTagsAsync(new List<string> { torrent.Hash }, new List<string> { freeSpacePausedTag }, cancellationToken);
                 await client.PauseTorrentAsync(torrent.Hash, cancellationToken);
             }
             else if (isPausedDownload && freeSpaceTest >= 0)
             {
-                _logger.LogInformation("Resuming download (space available): {Name}", torrent.Name);
+                _logger.LogInformation(
+                    "FreeSpace: Resuming download (space available) | Torrent: {Name} | Available: {Available} | Space after: {SpaceAfter}",
+                    torrent.Name, FormatBytes(_currentFreeSpace), FormatBytes(freeSpaceTest));
                 _currentFreeSpace = freeSpaceTest;
                 await client.RemoveTagsAsync(new List<string> { torrent.Hash }, new List<string> { freeSpacePausedTag }, cancellationToken);
                 await client.ResumeTorrentAsync(torrent.Hash, cancellationToken);
             }
+            else if (isPausedDownload && freeSpaceTest < 0)
+            {
+                _logger.LogInformation(
+                    "FreeSpace: Keeping paused (insufficient space) | Torrent: {Name} | Available: {Available} | Needed: {Needed} | Deficit: {Deficit}",
+                    torrent.Name, FormatBytes(_currentFreeSpace), FormatBytes(torrent.AmountLeft), FormatBytes(-freeSpaceTest));
+            }
             else if (!isPausedDownload && freeSpaceTest >= 0)
             {
+                _logger.LogInformation(
+                    "FreeSpace: Continuing download (sufficient space) | Torrent: {Name} | Available: {Available} | Space after: {SpaceAfter}",
+                    torrent.Name, FormatBytes(_currentFreeSpace), FormatBytes(freeSpaceTest));
                 _currentFreeSpace = freeSpaceTest;
             }
         }
+        else if (!isDownloading && hasFreeSpaceTag)
+        {
+            // Torrent completed, remove free space tag
+            _logger.LogInformation(
+                "FreeSpace: Torrent completed, removing free space tag | Torrent: {Name} | Available: {Available}",
+                torrent.Name, FormatBytes(_currentFreeSpace + _minFreeSpaceBytes));
+            await client.RemoveTagsAsync(new List<string> { torrent.Hash }, new List<string> { freeSpacePausedTag }, cancellationToken);
+        }
+    }
+
+    private static string FormatBytes(long bytes)
+    {
+        string[] sizes = { "B", "KB", "MB", "GB", "TB" };
+        double len = bytes;
+        int order = 0;
+        while (len >= 1024 && order < sizes.Length - 1)
+        {
+            order++;
+            len /= 1024;
+        }
+        return $"{len:0.##} {sizes[order]}";
     }
 }
 

@@ -93,4 +93,16 @@ public class EpisodeFilesModel
 
     [Column("arrseriesid")]
     public int ArrSeriesId { get; set; }
+
+    [Column("incinemas")]
+    public DateTime? InCinemas { get; set; }
+
+    [Column("digitalrelease")]
+    public DateTime? DigitalRelease { get; set; }
+
+    [Column("physicalrelease")]
+    public DateTime? PhysicalRelease { get; set; }
+
+    [Column("minimumavailability")]
+    public string? MinimumAvailability { get; set; }
 }

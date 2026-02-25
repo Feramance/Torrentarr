@@ -1,5 +1,5 @@
 # Stage 1: Build React Frontend
-FROM node:22-alpine AS frontend-build
+FROM node:24-alpine AS frontend-build
 WORKDIR /app/frontend
 
 # Set npm timeout settings to prevent hanging
@@ -68,10 +68,6 @@ RUN useradd -m -u 1001 torrentarr && \
     mkdir -p /config /data && \
     chown -R torrentarr:torrentarr /config /data
 
-# Copy entrypoint script and make executable (before switching to user)
-COPY entrypoint.sh /usr/local/bin/
-RUN chmod +x /usr/local/bin/entrypoint.sh
-
 # Copy published application from build stage
 COPY --from=backend-build /app/publish ./
 
@@ -96,5 +92,5 @@ HEALTHCHECK --interval=30s --timeout=10s --start-period=40s --retries=3 \
 # Volume mounts
 VOLUME ["/config", "/data"]
 
-# Run the Host orchestrator with entrypoint script
+# Run the Host orchestrator
 ENTRYPOINT ["/app/Torrentarr.Host"]

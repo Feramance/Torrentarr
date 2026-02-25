@@ -50,9 +50,10 @@ build.bat     # Windows equivalent
 ```
 
 ### Docker
+Using docker-compose.yml
 ```bash
-docker build -t torrentarr:latest .
-docker-compose up -d
+docker build -t torrentarr:latest . --no-cache
+docker-compose up -d --force-recreate
 docker-compose logs -f torrentarr
 ```
 

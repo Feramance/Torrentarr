@@ -1,4 +1,5 @@
 using System.Collections.Concurrent;
+using Torrentarr.Core;
 using Torrentarr.Core.Configuration;
 using Torrentarr.Core.Services;
 using Torrentarr.Infrastructure.ApiClients.Arr;
@@ -6,6 +7,8 @@ using Torrentarr.Infrastructure.ApiClients.QBittorrent;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
+using Serilog;
+using Serilog.Context;
 
 namespace Torrentarr.Infrastructure.Services;
 
@@ -23,6 +26,10 @@ public class ArrWorkerManager : BackgroundService
 
     // Per-instance worker tracking: instanceName → (Task, CancellationTokenSource)
     private readonly ConcurrentDictionary<string, (Task Task, CancellationTokenSource Cts)> _workers =
+        new(StringComparer.OrdinalIgnoreCase);
+
+    // Per-instance last-search timestamp for SearchRequestsEvery throttling
+    private readonly ConcurrentDictionary<string, DateTime> _lastSearchTime =
         new(StringComparer.OrdinalIgnoreCase);
 
     private CancellationToken _appStopping;
@@ -124,36 +131,56 @@ public class ArrWorkerManager : BackgroundService
 
     private async Task RunWorkerAsync(string instanceName, ArrInstanceConfig arrCfg, CancellationToken ct)
     {
+        InstanceContext.Current = instanceName;
+        
+        using (LogContext.PushProperty("ProcessInstance", instanceName))
+        using (LogContext.PushProperty("ProcessType", "Worker"))
+        {
+            await RunWorkerCoreAsync(instanceName, arrCfg, ct);
+        }
+    }
+
+    private async Task RunWorkerCoreAsync(string instanceName, ArrInstanceConfig arrCfg, CancellationToken ct)
+    {
         var searchStateName = instanceName + "-search";
         var torrentStateName = instanceName + "-torrent";
 
-        _logger.LogInformation("Worker starting: {Instance} ({Type}/{Category})",
-            instanceName, arrCfg.Type, arrCfg.Category);
+        _logger.LogInformation(
+            "Search loop starting for {Instance} (SearchMissing={SearchMissing}, DoUpgradeSearch={DoUpgrade}, QualityUnmetSearch={Quality}, CustomFormatUnmetSearch={CF})",
+            instanceName,
+            arrCfg.Search.SearchMissing,
+            arrCfg.Search.DoUpgradeSearch,
+            arrCfg.Search.QualityUnmetSearch,
+            arrCfg.Search.CustomFormatUnmetSearch);
+        _logger.LogInformation("Search loop initialized successfully, entering main loop");
+
+        LogScriptConfig(instanceName, arrCfg);
 
         _stateManager.Update(searchStateName, s => { s.Alive = true; s.Rebuilding = false; s.Status = "Starting..."; });
         _stateManager.Update(torrentStateName, s => { s.Alive = true; s.Rebuilding = false; });
 
         try
         {
-            // Initial sync on startup
-            _stateManager.Update(searchStateName, s => s.Status = "Syncing database...");
-            await RunSyncAsync(instanceName, ct);
-
             while (!ct.IsCancellationRequested)
             {
                 var loopStart = DateTime.UtcNow;
 
                 try
                 {
-                    // 1. Process torrents (unless SearchOnly mode)
+                    // 1. Full sync at TOP of each cycle (qBitrr pattern):
+                    //    SyncAsync → SyncSearchMetadataAsync → MarkRequestsAsync
+                    _stateManager.Update(searchStateName, s => s.Status = "Syncing database...");
+                    await RunSyncAsync(instanceName, ct);
+
+                    // 2. Process torrents (unless SearchOnly mode)
                     if (!arrCfg.SearchOnly)
                     {
                         _stateManager.Update(searchStateName, s => s.Status = "Processing torrents...");
                         await RunTorrentProcessingAsync(instanceName, arrCfg, ct);
                     }
 
-                    // 2. Search missing media (unless ProcessingOnly mode)
-                    if (!arrCfg.ProcessingOnly && arrCfg.Search.SearchMissing)
+                    // 3. Search — throttled by SearchRequestsEvery (default 300s)
+                    if (!arrCfg.ProcessingOnly && ShouldRunSearch(instanceName, arrCfg))
                     {
                         _stateManager.Update(searchStateName, s => s.Status = "Searching...");
                         var result = await RunSearchAsync(instanceName, arrCfg, ct);
@@ -167,10 +194,6 @@ public class ArrWorkerManager : BackgroundService
                             });
                         }
                     }
-
-                    // 3. Re-sync DB after processing
-                    _stateManager.Update(searchStateName, s => s.Status = "Syncing database...");
-                    await RunSyncAsync(instanceName, ct);
                 }
                 catch (OperationCanceledException)
                 {
@@ -296,6 +319,7 @@ public class ArrWorkerManager : BackgroundService
     {
         try
         {
+            _logger.LogInformation("Starting torrent monitoring for {Instance}", instanceName);
             using var scope = _scopeFactory.CreateScope();
             var processor = scope.ServiceProvider.GetRequiredService<ITorrentProcessor>();
             await processor.ProcessTorrentsAsync(arrCfg.Category, ct);
@@ -306,17 +330,37 @@ public class ArrWorkerManager : BackgroundService
         }
     }
 
+    private bool ShouldRunSearch(string instanceName, ArrInstanceConfig arrCfg)
+    {
+        var interval = TimeSpan.FromSeconds(arrCfg.Search.SearchRequestsEvery);
+        var last = _lastSearchTime.GetValueOrDefault(instanceName, DateTime.MinValue);
+        if (DateTime.UtcNow - last >= interval)
+        {
+            _lastSearchTime[instanceName] = DateTime.UtcNow;
+            return true;
+        }
+        return false;
+    }
+
     private async Task<SearchResult?> RunSearchAsync(string instanceName, ArrInstanceConfig arrCfg, CancellationToken ct)
     {
         try
         {
             using var scope = _scopeFactory.CreateScope();
             var mediaSvc = scope.ServiceProvider.GetRequiredService<IArrMediaService>();
-            return await mediaSvc.SearchMissingMediaAsync(arrCfg.Category, ct);
+
+            SearchResult? result = null;
+            if (arrCfg.Search.SearchMissing)
+                result = await mediaSvc.SearchMissingMediaAsync(arrCfg.Category, ct);
+
+            if (arrCfg.Search.DoUpgradeSearch || arrCfg.Search.QualityUnmetSearch || arrCfg.Search.CustomFormatUnmetSearch)
+                await mediaSvc.SearchQualityUpgradesAsync(arrCfg.Category, ct);
+
+            return result;
         }
         catch (Exception ex)
         {
-            _logger.LogError(ex, "Search failed for {Instance}", instanceName);
+            _logger.LogError(ex, "Search failed for {Instance}: {Message}", instanceName, ex.Message);
             return null;
         }
     }
@@ -332,5 +376,40 @@ public class ArrWorkerManager : BackgroundService
             cts.Dispose();
         }
         _workers.Clear();
+    }
+
+    private void LogScriptConfig(string instanceName, ArrInstanceConfig arrCfg)
+    {
+        var searchConfig = arrCfg.Search;
+        
+        _logger.LogDebug("Script Config:  SearchMissing={SearchMissing}", searchConfig.SearchMissing);
+        _logger.LogDebug("Script Config:  QualityUnmetSearch={Quality}", searchConfig.QualityUnmetSearch);
+        _logger.LogDebug("Script Config:  CustomFormatUnmetSearch={CF}", searchConfig.CustomFormatUnmetSearch);
+        _logger.LogDebug("Script Config:  DoUpgradeSearch={Upgrade}", searchConfig.DoUpgradeSearch);
+        _logger.LogDebug("Script Config:  AlsoSearchSpecials={Specials}", searchConfig.AlsoSearchSpecials);
+        _logger.LogDebug("Script Config:  SearchUnmonitored={Unmonitored}", searchConfig.Unmonitored);
+        _logger.LogDebug("Script Config:  SearchByYear={ByYear}", searchConfig.SearchByYear);
+        _logger.LogDebug("Script Config:  PrioritizeTodaysReleases={Today}", searchConfig.PrioritizeTodaysReleases);
+        _logger.LogDebug("Script Config:  SearchLimit={Limit}", searchConfig.SearchLimit);
+        _logger.LogDebug("Script Config:  ReSearch={ReSearch}", arrCfg.ReSearch);
+        _logger.LogDebug("Script Config:  ImportMode={ImportMode}", arrCfg.ImportMode);
+        
+        var qbitCfg = _config.QBitInstances.Values.FirstOrDefault(q => 
+            q.ManagedCategories.Contains(arrCfg.Category));
+        
+        if (qbitCfg != null)
+        {
+            var seeding = qbitCfg.CategorySeeding;
+            _logger.LogDebug("Script Config:  MaxUploadRatio={MaxRatio}", seeding.MaxUploadRatio);
+            _logger.LogDebug("Script Config:  MaxSeedingTime={MaxTime}", seeding.MaxSeedingTime);
+            _logger.LogDebug("Script Config:  RemoveTorrent={Remove}", seeding.RemoveTorrent);
+            _logger.LogDebug("Script Config:  UploadRateLimitPerTorrent={ULimit}", seeding.UploadRateLimitPerTorrent);
+            _logger.LogDebug("Script Config:  DownloadRateLimitPerTorrent={DLimit}", seeding.DownloadRateLimitPerTorrent);
+            _logger.LogDebug("Script Config:  HitAndRunMode={HNR}", seeding.HitAndRunMode);
+            _logger.LogDebug("Script Config:  MinSeedRatio={MinRatio}", seeding.MinSeedRatio);
+            _logger.LogDebug("Script Config:  MinSeedingTimeDays={MinDays}", seeding.MinSeedingTimeDays);
+        }
+        
+        _logger.LogDebug("Script Config:  Category={Category}", arrCfg.Category);
     }
 }

@@ -72,7 +72,7 @@ public class ConfigReloader : IConfigReloader, IDisposable
         if (_watcher != null)
         {
             _watcher.EnableRaisingEvents = false;
-            _logger.LogDebug("ConfigReloader: stopped watching for changes");
+            _logger.LogTrace("ConfigReloader: stopped watching for changes");
         }
     }
 
@@ -120,7 +120,7 @@ public class ConfigReloader : IConfigReloader, IDisposable
         var now = DateTime.UtcNow;
         if (now - _lastReloadTime < _debounceTime)
         {
-            _logger.LogDebug("ConfigReloader: debouncing config change event");
+            _logger.LogTrace("ConfigReloader: debouncing config change event");
             return;
         }
         

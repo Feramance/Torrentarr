@@ -55,7 +55,7 @@ build.bat     # Windows equivalent
 
 ### Docker
 ```bash
-docker build -t torrentarr:latest .
+docker build -t torrentarr:latest . --no-cache
 docker-compose up -d
 docker-compose logs -f torrentarr
 ```

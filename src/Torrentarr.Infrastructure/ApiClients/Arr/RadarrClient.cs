@@ -407,6 +407,18 @@ public class RadarrMovie
 
     [JsonProperty("movieFileId")]
     public int MovieFileId { get; set; }
+
+    [JsonProperty("inCinemas")]
+    public DateTime? InCinemas { get; set; }
+
+    [JsonProperty("digitalRelease")]
+    public DateTime? DigitalRelease { get; set; }
+
+    [JsonProperty("physicalRelease")]
+    public DateTime? PhysicalRelease { get; set; }
+
+    [JsonProperty("minimumAvailability")]
+    public string? MinimumAvailability { get; set; }
 }
 
 public class MovieFile

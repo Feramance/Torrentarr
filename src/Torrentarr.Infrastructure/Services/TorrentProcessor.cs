@@ -70,7 +70,7 @@ public class TorrentProcessor : ITorrentProcessor
         // Skip special categories - they are handled globally by the Host orchestrator
         if (_specialCategories.Contains(category))
         {
-            _logger.LogDebug("Skipping special category {Category} - handled by Host orchestrator", category);
+            _logger.LogTrace("Skipping special category {Category} - handled by Host orchestrator", category);
             _logger.LogTrace("Abort processing - special category {Category} excluded", category);
             return;
         }
@@ -141,7 +141,7 @@ public class TorrentProcessor : ITorrentProcessor
     {
         // This is now handled by the Host orchestrator's ProcessSpecialCategoriesAsync
         // Keeping for backwards compatibility
-        _logger.LogDebug("ProcessSpecialCategoriesAsync called - this is now handled by Host orchestrator");
+        _logger.LogTrace("ProcessSpecialCategoriesAsync called - this is now handled by Host orchestrator");
         await Task.CompletedTask;
     }
 
@@ -252,6 +252,11 @@ public class TorrentProcessor : ITorrentProcessor
         TorrentProcessingStats stats,
         CancellationToken cancellationToken)
     {
+        _logger.LogTrace("Torrent [{Name}]: State[{State}] | Progress[{Progress:P1}] | Ratio[{Ratio:F2}] | AddedOn[{AddedOn}] | Availability[{Availability:P1}] | Size[{Size}] | Hash[{Hash}]",
+            torrent.Name, torrent.State, torrent.Progress, torrent.Ratio, 
+            DateTimeOffset.FromUnixTimeSeconds(torrent.AddedOn).DateTime,
+            torrent.Availability, torrent.Size, torrent.Hash);
+
         _logger.LogTrace("Begin processing torrent {Name} | Hash: {Hash} | State: {State} | Progress: {Progress:P1} | Category: {Category}",
             torrent.Name, torrent.Hash, torrent.State, torrent.Progress, torrent.Category);
 
@@ -267,10 +272,11 @@ public class TorrentProcessor : ITorrentProcessor
 
         // Check if torrent is ignored via tag
         var hasIgnoredTag = HasTag(torrent, IgnoredTag);
-        _logger.LogTrace("Checking ignored tag for {Name}: {HasTag}", torrent.Name, hasIgnoredTag);
+        _logger.LogTrace("[{Category}] Checking ignored tag for {Name}: {HasTag}", category, torrent.Name, hasIgnoredTag);
         if (hasIgnoredTag)
         {
-            _logger.LogTrace("Skipping ignored torrent {Name} (tag: {Tag})", torrent.Name, IgnoredTag);
+            _logger.LogTrace("[{Category}] Skipping ignored torrent: [{Name}] | Tag[{Tag}] | State[{State}] | Progress[{Progress:P1}] | Hash[{Hash}]",
+                category, torrent.Name, IgnoredTag, torrent.State, torrent.Progress, torrent.Hash);
             stats.Ignored++;
             return;
         }
@@ -284,7 +290,8 @@ public class TorrentProcessor : ITorrentProcessor
             state == TorrentState.ForcedMetaDL ||
             state == TorrentState.CheckingResumeData)
         {
-            _logger.LogTrace("Skipping torrent {Name} in transient state {State}", torrent.Name, state);
+            _logger.LogTrace("Skipping torrent in transient state: [{Name}] | State[{State}] | Progress[{Progress:P1}] | Hash[{Hash}]",
+                torrent.Name, state, torrent.Progress, torrent.Hash);
             return;
         }
 
@@ -329,8 +336,8 @@ public class TorrentProcessor : ITorrentProcessor
             var client = _qbitManager.GetAllClients().Values.FirstOrDefault();
             if (client != null)
             {
-                _logger.LogDebug("Resuming stopped torrent: {Name} ({Hash}) - State[{State}]",
-                    torrent.Name, torrent.Hash, torrent.State);
+                _logger.LogDebug("Resuming stopped torrent: [{Name}] | Progress[{Progress:P1}] | State[{State}] | Hash[{Hash}]",
+                    torrent.Name, torrent.Progress, torrent.State, torrent.Hash);
                 _logger.LogTrace("Executing resume for torrent {Hash}", torrent.Hash);
                 await client.ResumeTorrentsAsync(new List<string> { torrent.Hash }, cancellationToken);
                 _logger.LogTrace("Resume command sent for {Hash}", torrent.Hash);
@@ -355,7 +362,10 @@ public class TorrentProcessor : ITorrentProcessor
             
             if (isReadyForImport)
             {
-                _logger.LogDebug("Torrent {Name} is ready for import", torrent.Name);
+                _logger.LogDebug("Importing Completed torrent: [{Name}] | Progress[{Progress:P1}] | AddedOn[{AddedOn}] | Availability[{Availability:P1}] | Hash[{Hash}]",
+                    torrent.Name, torrent.Progress, 
+                    DateTimeOffset.FromUnixTimeSeconds(torrent.AddedOn).DateTime,
+                    torrent.Availability, torrent.Hash);
                 // Import will be handled by the Arr-specific worker
             }
         }
@@ -437,7 +447,7 @@ public class TorrentProcessor : ITorrentProcessor
             if (tagsToCreate.Count > 0)
             {
                 await client.CreateTagsAsync(tagsToCreate, cancellationToken);
-                _logger.LogDebug("Created tags: {Tags}", string.Join(", ", tagsToCreate));
+                _logger.LogTrace("Created tags: {Tags}", string.Join(", ", tagsToCreate));
             }
         }
         catch (Exception ex)
@@ -470,7 +480,7 @@ public class TorrentProcessor : ITorrentProcessor
             _dbContext.TorrentLibrary.Add(entry);
             await _dbContext.SaveChangesAsync(cancellationToken);
 
-            _logger.LogDebug("Added torrent {Hash} to database", torrent.Hash);
+            _logger.LogTrace("Added torrent {Hash} to database", torrent.Hash);
         }
     }
 

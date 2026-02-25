@@ -34,109 +34,54 @@ public class ArrSyncService
 
     public async Task SyncAsync(string instanceName, CancellationToken ct = default)
     {
-        _logger.LogTrace("Starting sync for Arr instance {Name}", instanceName);
+        _logger.LogTrace("[{Instance}] Starting sync for Arr instance {Name}", instanceName, instanceName);
         
         if (!_config.ArrInstances.TryGetValue(instanceName, out var arrConfig))
         {
-            _logger.LogWarning("ArrSyncService: no instance named {Name}", instanceName);
-            _logger.LogTrace("Sync aborted - instance {Name} not found in config", instanceName);
+            _logger.LogWarning("[{Instance}] ArrSyncService: no instance named {Name}", instanceName, instanceName);
+            _logger.LogTrace("[{Instance}] Sync aborted - instance {Name} not found in config", instanceName, instanceName);
             return;
         }
 
         if (string.IsNullOrEmpty(arrConfig.URI) || arrConfig.URI == "CHANGE_ME")
         {
-            _logger.LogDebug("ArrSyncService: skipping unconfigured instance {Name}", instanceName);
-            _logger.LogTrace("Sync skipped - instance {Name} not configured", instanceName);
+            _logger.LogDebug("[{Instance}] ArrSyncService: skipping unconfigured instance {Name}", instanceName, instanceName);
+            _logger.LogTrace("[{Instance}] Sync skipped - instance {Name} not configured", instanceName, instanceName);
             return;
         }
 
-        _logger.LogTrace("Syncing Arr instance {Name} of type {Type}", instanceName, arrConfig.Type);
-        _logger.LogDebug("ArrSyncService: syncing {Type} instance {Name}", arrConfig.Type, instanceName);
+        _logger.LogTrace("[{Instance}] Syncing Arr instance {Name} of type {Type}", instanceName, instanceName, arrConfig.Type);
+        _logger.LogDebug("[{Instance}] ArrSyncService: syncing {Type} instance {Name}", instanceName, arrConfig.Type, instanceName);
 
         try
         {
             switch (arrConfig.Type.ToLowerInvariant())
             {
                 case "radarr":
-                    _logger.LogTrace("Routing to Radarr sync handler");
+                    _logger.LogTrace("[{Instance}] Routing to Radarr sync handler", instanceName);
                     await SyncRadarrAsync(instanceName, arrConfig, ct);
                     break;
                 case "sonarr":
-                    _logger.LogTrace("Routing to Sonarr sync handler");
+                    _logger.LogTrace("[{Instance}] Routing to Sonarr sync handler", instanceName);
                     await SyncSonarrAsync(instanceName, arrConfig, ct);
                     break;
                 case "lidarr":
-                    _logger.LogTrace("Routing to Lidarr sync handler");
+                    _logger.LogTrace("[{Instance}] Routing to Lidarr sync handler", instanceName);
                     await SyncLidarrAsync(instanceName, arrConfig, ct);
                     break;
                 default:
-                    _logger.LogWarning("ArrSyncService: unknown type {Type} for {Name}", arrConfig.Type, instanceName);
+                    _logger.LogWarning("[{Instance}] ArrSyncService: unknown type {Type} for {Name}", instanceName, arrConfig.Type, instanceName);
                     break;
             }
             
-            _logger.LogTrace("Sync completed for {Name}", instanceName);
+            _logger.LogTrace("[{Instance}] Sync completed for {Name}", instanceName, instanceName);
         }
         catch (Exception ex)
         {
-            _logger.LogError(ex, "ArrSyncService: error syncing {Type} instance {Name}", arrConfig.Type, instanceName);
+            _logger.LogError(ex, "[{Instance}] ArrSyncService: error syncing {Type} instance {Name}", instanceName, arrConfig.Type, instanceName);
         }
     }
 
-    /// <summary>
-    /// Sync search-relevant metadata: quality profiles, custom format scores, and search eligibility.
-    /// Populates: CustomFormatScore, MinCustomFormatScore, CustomFormatMet, QualityMet, Reason, Searched
-    /// </summary>
-    public async Task SyncSearchMetadataAsync(string instanceName, CancellationToken ct = default)
-    {
-        _logger.LogTrace("Starting search metadata sync for Arr instance {Name}", instanceName);
-        
-        if (!_config.ArrInstances.TryGetValue(instanceName, out var arrConfig))
-        {
-            _logger.LogTrace("Search metadata sync aborted - instance {Name} not found", instanceName);
-            return;
-        }
-
-        if (string.IsNullOrEmpty(arrConfig.URI) || arrConfig.URI == "CHANGE_ME")
-        {
-            _logger.LogTrace("Search metadata sync skipped - instance {Name} not configured", instanceName);
-            return;
-        }
-
-        var searchConfig = arrConfig.Search;
-        bool needsMetadata = searchConfig.SearchMissing ||
-                            searchConfig.DoUpgradeSearch ||
-                            searchConfig.QualityUnmetSearch ||
-                            searchConfig.CustomFormatUnmetSearch;
-
-        if (!needsMetadata)
-        {
-            _logger.LogTrace("Search metadata sync skipped - no search features enabled for {Name}", instanceName);
-            return;
-        }
-
-        _logger.LogTrace("Search metadata sync required for {Name}", instanceName);
-        _logger.LogDebug("ArrSyncService: syncing search metadata for {Name}", instanceName);
-
-        try
-        {
-            switch (arrConfig.Type.ToLowerInvariant())
-            {
-                case "radarr":
-                    await SyncRadarrSearchMetadataAsync(instanceName, arrConfig, ct);
-                    break;
-                case "sonarr":
-                    await SyncSonarrSearchMetadataAsync(instanceName, arrConfig, ct);
-                    break;
-                case "lidarr":
-                    await SyncLidarrSearchMetadataAsync(instanceName, arrConfig, ct);
-                    break;
-            }
-        }
-        catch (Exception ex)
-        {
-            _logger.LogError(ex, "ArrSyncService: error syncing search metadata for {Name}", instanceName);
-        }
-    }
 
     /// <summary>
     /// Sync download queue data from Arr APIs into queue tables.
@@ -178,24 +123,41 @@ public class ArrSyncService
     private async Task SyncRadarrAsync(string instanceName, ArrInstanceConfig cfg, CancellationToken ct)
     {
         var client = new RadarrClient(cfg.URI, cfg.APIKey);
+        var searchConfig = cfg.Search;
+
+        _logger.LogInformation("Started updating database");
 
         List<RadarrMovie> movies;
         try { movies = await client.GetMoviesAsync(ct); }
         catch (Exception ex)
         {
-            _logger.LogWarning(ex, "ArrSyncService: Radarr {Name} unreachable", instanceName);
+            _logger.LogWarning(ex, "[{Instance}] ArrSyncService: Radarr {Name} unreachable", instanceName, instanceName);
             return;
         }
+
+        var profiles = await client.GetQualityProfilesAsync(ct);
+        var profileDict = profiles.ToDictionary(p => p.Id);
 
         var dbMovies = await _db.Movies
             .Where(m => m.ArrInstance == instanceName)
             .ToDictionaryAsync(m => m.TmdbId, ct);
 
         var apiTmdbIds = new HashSet<int>();
+        var added = 0;
+        var updated = 0;
 
         foreach (var movie in movies)
         {
             apiTmdbIds.Add(movie.TmdbId);
+
+            profileDict.TryGetValue(movie.QualityProfileId, out var profile);
+            var minCfScore = profile?.MinCustomFormatScore ?? 0;
+            var cfScore = movie.MovieFile?.CustomFormatScore ?? 0;
+            var qualityMet = !movie.HasFile || !(movie.MovieFile?.QualityCutoffNotMet ?? false);
+            var customFormatMet = !movie.HasFile || cfScore >= minCfScore;
+            var isAvailable = MinimumAvailabilityCheck(movie.MinimumAvailability, movie.InCinemas, movie.DigitalRelease, movie.PhysicalRelease, movie.Year, movie.Title, _logger);
+            var reason = DetermineReasonWithAvailability(movie.HasFile, qualityMet, customFormatMet, isAvailable, searchConfig);
+            var searched = DetermineSearched(movie.HasFile, qualityMet, customFormatMet, searchConfig);
 
             if (dbMovies.TryGetValue(movie.TmdbId, out var existing))
             {
@@ -206,7 +168,19 @@ public class ArrSyncService
                 existing.QualityProfileId = movie.QualityProfileId;
                 existing.ArrId = movie.Id;
                 existing.HasFile = movie.HasFile;
+                existing.InCinemas = movie.InCinemas;
+                existing.DigitalRelease = movie.DigitalRelease;
+                existing.PhysicalRelease = movie.PhysicalRelease;
+                existing.MinimumAvailability = movie.MinimumAvailability;
+                existing.CustomFormatScore = cfScore;
+                existing.QualityMet = qualityMet;
+                existing.MinCustomFormatScore = minCfScore;
+                existing.CustomFormatMet = customFormatMet;
+                existing.Reason = reason;
+                existing.Searched = searched;
                 _db.Movies.Update(existing);
+                updated++;
+                _logger.LogTrace("DB Update: Movie {Title} (TmdbId: {TmdbId}) updated in database (quality: {Quality}, file: {FileId})", movie.Title, movie.TmdbId, movie.QualityProfileId, movie.MovieFile?.Id ?? 0);
             }
             else
             {
@@ -220,88 +194,34 @@ public class ArrSyncService
                     MovieFileId = movie.MovieFile?.Id ?? 0,
                     QualityProfileId = movie.QualityProfileId,
                     ArrId = movie.Id,
-                    HasFile = movie.HasFile
+                    HasFile = movie.HasFile,
+                    InCinemas = movie.InCinemas,
+                    DigitalRelease = movie.DigitalRelease,
+                    PhysicalRelease = movie.PhysicalRelease,
+                    MinimumAvailability = movie.MinimumAvailability,
+                    CustomFormatScore = cfScore,
+                    QualityMet = qualityMet,
+                    MinCustomFormatScore = minCfScore,
+                    CustomFormatMet = customFormatMet,
+                    Reason = reason,
+                    Searched = searched
                 });
+                added++;
+                _logger.LogTrace("DB Insert: Movie {Title} (TmdbId: {TmdbId}) added to database (new)", movie.Title, movie.TmdbId);
             }
         }
 
         var toDelete = dbMovies.Values.Where(m => !apiTmdbIds.Contains(m.TmdbId)).ToList();
+        foreach (var movie in toDelete)
+        {
+            _logger.LogTrace("DB Delete: Movie {Title} (TmdbId: {TmdbId}) removed from database", movie.Title, movie.TmdbId);
+        }
         if (toDelete.Count > 0)
             _db.Movies.RemoveRange(toDelete);
 
         await _db.SaveChangesAsync(ct);
-        _logger.LogDebug("ArrSyncService: Radarr {Name} synced {Count} movies", instanceName, movies.Count);
-    }
-
-    private async Task SyncRadarrSearchMetadataAsync(string instanceName, ArrInstanceConfig cfg, CancellationToken ct)
-    {
-        var client = new RadarrClient(cfg.URI, cfg.APIKey);
-        var searchConfig = cfg.Search;
-
-        var profiles = await client.GetQualityProfilesAsync(ct);
-        var profileDict = profiles.ToDictionary(p => p.Id);
-
-        var dbMovies = await _db.Movies
-            .Where(m => m.ArrInstance == instanceName && m.Monitored)
-            .ToListAsync(ct);
-
-        foreach (var movie in dbMovies)
-        {
-            if (movie.ArrId <= 0)
-                continue;
-
-            var profileId = movie.QualityProfileId ?? 0;
-            if (profileId <= 0 || !profileDict.TryGetValue(profileId, out var profile))
-                continue;
-
-            var minCfScore = profile.MinCustomFormatScore ?? 0;
-            movie.MinCustomFormatScore = minCfScore;
-
-            if (movie.HasFile && movie.MovieFileId > 0)
-            {
-                try
-                {
-                    var movieFile = await client.GetMovieFileAsync(movie.MovieFileId, ct);
-                    if (movieFile != null)
-                    {
-                        movie.CustomFormatScore = movieFile.CustomFormatScore ?? 0;
-                        movie.QualityMet = !movieFile.QualityCutoffNotMet;
-                        movie.CustomFormatMet = movie.CustomFormatScore >= minCfScore;
-                    }
-                    else
-                    {
-                        movie.CustomFormatScore = 0;
-                        movie.QualityMet = true;
-                        movie.CustomFormatMet = true;
-                    }
-                }
-                catch (Exception ex)
-                {
-                    _logger.LogDebug(ex, "ArrSyncService: failed to get movie file {Id}", movie.MovieFileId);
-                    movie.CustomFormatScore = 0;
-                    movie.QualityMet = true;
-                    movie.CustomFormatMet = true;
-                }
-            }
-            else
-            {
-                movie.CustomFormatScore = 0;
-                movie.QualityMet = true;
-                movie.CustomFormatMet = true;
-            }
-
-            movie.Reason = DetermineReason(
-                hasFile: movie.HasFile,
-                qualityMet: movie.QualityMet,
-                customFormatMet: movie.CustomFormatMet,
-                searchConfig: searchConfig);
-
-            movie.Searched = DetermineSearched(movie.HasFile, movie.QualityMet, movie.CustomFormatMet, searchConfig);
-        }
-
-        await _db.SaveChangesAsync(ct);
-        _logger.LogDebug("ArrSyncService: Radarr {Name} synced search metadata for {Count} movies",
-            instanceName, dbMovies.Count);
+        _logger.LogDebug("[{Instance}] ArrSyncService: Radarr {Name} synced {Count} movies - Added: {Added}, Updated: {Updated}, Deleted: {Deleted}", instanceName, instanceName, movies.Count, added, updated, toDelete.Count);
+        _logger.LogTrace("[{Instance}] Finished updating database for Radarr instance {Name}", instanceName, instanceName);
     }
 
     private async Task SyncRadarrQueueAsync(string instanceName, ArrInstanceConfig cfg, CancellationToken ct)
@@ -352,14 +272,21 @@ public class ArrSyncService
     private async Task SyncSonarrAsync(string instanceName, ArrInstanceConfig cfg, CancellationToken ct)
     {
         var client = new SonarrClient(cfg.URI, cfg.APIKey);
+        var searchConfig = cfg.Search;
+
+        _logger.LogInformation("Started updating database");
 
         List<SonarrSeries> seriesList;
         try { seriesList = await client.GetSeriesAsync(ct); }
         catch (Exception ex)
         {
-            _logger.LogWarning(ex, "ArrSyncService: Sonarr {Name} unreachable", instanceName);
+            _logger.LogWarning(ex, "[{Instance}] ArrSyncService: Sonarr {Name} unreachable", instanceName, instanceName);
             return;
         }
+
+        var profiles = await client.GetQualityProfilesAsync(ct);
+        var profileDict = profiles.ToDictionary(p => p.Id);
+        var seriesProfileById = seriesList.ToDictionary(s => s.Id, s => s.QualityProfileId);
 
         var dbSeries = await _db.Series
             .Where(s => s.ArrInstance == instanceName)
@@ -367,6 +294,8 @@ public class ArrSyncService
 
         var apiTitles = new HashSet<string>();
         var entityBySonarrId = new Dictionary<int, SeriesFilesModel>();
+        var seriesAdded = 0;
+        var seriesUpdated = 0;
 
         foreach (var series in seriesList)
         {
@@ -380,6 +309,8 @@ public class ArrSyncService
                 existing.ArrId = series.Id;
                 _db.Series.Update(existing);
                 entityBySonarrId[series.Id] = existing;
+                seriesUpdated++;
+                _logger.LogTrace("DB Update: Series {Title} (TvdbId: {TvdbId}) updated in database", series.Title, series.TvdbId);
             }
             else
             {
@@ -394,12 +325,18 @@ public class ArrSyncService
                 };
                 _db.Series.Add(newSeries);
                 entityBySonarrId[series.Id] = newSeries;
+                seriesAdded++;
+                _logger.LogTrace("DB Insert: Series {Title} (TvdbId: {TvdbId}) added to database (new)", series.Title, series.TvdbId);
             }
         }
 
         var seriesToDelete = dbSeries.Values
             .Where(s => !apiTitles.Contains(s.Title ?? ""))
             .ToList();
+        foreach (var series in seriesToDelete)
+        {
+            _logger.LogTrace("DB Delete: Series {Title} removed from database", series.Title);
+        }
         if (seriesToDelete.Count > 0)
         {
             var deleteIds = seriesToDelete.Select(s => s.EntryId).ToList();
@@ -411,6 +348,8 @@ public class ArrSyncService
         }
 
         await _db.SaveChangesAsync(ct);
+
+        var episodesAdded = 0;
 
         foreach (var (sonarrId, seriesEntity) in entityBySonarrId)
         {
@@ -427,8 +366,19 @@ public class ArrSyncService
                 .ToListAsync(ct);
             _db.Episodes.RemoveRange(existingEps);
 
+            var seriesProfileId = seriesProfileById.GetValueOrDefault(sonarrId);
+            profileDict.TryGetValue(seriesProfileId, out var seriesProfile);
+            var minCfScore = seriesProfile?.MinCustomFormatScore ?? 0;
+
             foreach (var ep in episodes)
             {
+                var cfScore = ep.EpisodeFile?.CustomFormatScore ?? 0;
+                var qualityMet = !ep.HasFile || !(ep.EpisodeFile?.QualityCutoffNotMet ?? false);
+                var customFormatMet = !ep.HasFile || cfScore >= minCfScore;
+                var isAvailable = CheckEpisodeAvailability(ep.AirDateUtc, ep.Title ?? "Unknown", _logger);
+                var reason = DetermineReasonWithAvailability(ep.HasFile, qualityMet, customFormatMet, isAvailable, searchConfig);
+                var searched = DetermineSearched(ep.HasFile, qualityMet, customFormatMet, searchConfig);
+
                 _db.Episodes.Add(new EpisodeFilesModel
                 {
                     ArrInstance = instanceName,
@@ -444,94 +394,25 @@ public class ArrSyncService
                     SceneAbsoluteEpisodeNumber = ep.SceneAbsoluteEpisodeNumber,
                     ArrId = ep.Id,
                     ArrSeriesId = sonarrId,
-                    HasFile = ep.HasFile
+                    HasFile = ep.HasFile,
+                    CustomFormatScore = cfScore,
+                    QualityMet = qualityMet,
+                    MinCustomFormatScore = minCfScore,
+                    CustomFormatMet = customFormatMet,
+                    Reason = reason,
+                    Searched = searched
                 });
+                episodesAdded++;
+                _logger.LogTrace("DB Insert: Episode {SeriesTitle} S{SeasonNumber:E} E{EpisodeNumber} added to database (new)",
+                    seriesEntity.Title, ep.SeasonNumber, ep.EpisodeNumber);
             }
 
             await _db.SaveChangesAsync(ct);
         }
 
-        _logger.LogDebug("ArrSyncService: Sonarr {Name} synced {Count} series", instanceName, seriesList.Count);
-    }
-
-    private async Task SyncSonarrSearchMetadataAsync(string instanceName, ArrInstanceConfig cfg, CancellationToken ct)
-    {
-        var client = new SonarrClient(cfg.URI, cfg.APIKey);
-        var searchConfig = cfg.Search;
-
-        var profiles = await client.GetQualityProfilesAsync(ct);
-        var profileDict = profiles.ToDictionary(p => p.Id);
-
-        var seriesList = await _db.Series
-            .Where(s => s.ArrInstance == instanceName && s.Monitored == true)
-            .ToListAsync(ct);
-
-        var seriesIds = seriesList.Select(s => s.ArrId).Where(id => id > 0).ToHashSet();
-        var allEpisodes = await _db.Episodes
-            .Where(e => e.ArrInstance == instanceName && e.Monitored == true)
-            .ToListAsync(ct);
-
-        foreach (var episode in allEpisodes)
-        {
-            if (episode.ArrId <= 0)
-                continue;
-
-            int profileId = 0;
-            var series = seriesList.FirstOrDefault(s => s.EntryId == episode.SeriesId);
-            if (series != null)
-                profileId = series.QualityProfileId ?? 0;
-
-            if (profileId <= 0 || !profileDict.TryGetValue(profileId, out var profile))
-                continue;
-
-            var minCfScore = profile.MinCustomFormatScore ?? 0;
-            episode.MinCustomFormatScore = minCfScore;
-
-            if (episode.HasFile && episode.EpisodeFileId > 0)
-            {
-                try
-                {
-                    var episodeFile = await client.GetEpisodeFileAsync(episode.EpisodeFileId.Value, ct);
-                    if (episodeFile != null)
-                    {
-                        episode.CustomFormatScore = episodeFile.CustomFormatScore ?? 0;
-                        episode.QualityMet = !episodeFile.QualityCutoffNotMet;
-                        episode.CustomFormatMet = episode.CustomFormatScore >= minCfScore;
-                    }
-                    else
-                    {
-                        episode.CustomFormatScore = 0;
-                        episode.QualityMet = true;
-                        episode.CustomFormatMet = true;
-                    }
-                }
-                catch (Exception ex)
-                {
-                    _logger.LogDebug(ex, "ArrSyncService: failed to get episode file {Id}", episode.EpisodeFileId);
-                    episode.CustomFormatScore = 0;
-                    episode.QualityMet = true;
-                    episode.CustomFormatMet = true;
-                }
-            }
-            else
-            {
-                episode.CustomFormatScore = 0;
-                episode.QualityMet = true;
-                episode.CustomFormatMet = true;
-            }
-
-            episode.Reason = DetermineReason(
-                hasFile: episode.HasFile,
-                qualityMet: episode.QualityMet,
-                customFormatMet: episode.CustomFormatMet,
-                searchConfig: searchConfig);
-
-            episode.Searched = DetermineSearched(episode.HasFile, episode.QualityMet, episode.CustomFormatMet, searchConfig);
-        }
-
-        await _db.SaveChangesAsync(ct);
-        _logger.LogDebug("ArrSyncService: Sonarr {Name} synced search metadata for {Count} episodes",
-            instanceName, allEpisodes.Count);
+        _logger.LogDebug("[{Instance}] ArrSyncService: Sonarr {Name} synced {SeriesCount} series - Series Added: {SeriesAdded}, Updated: {SeriesUpdated}, Deleted: {SeriesDeleted}, Episodes Added: {EpisodesAdded}",
+            instanceName, instanceName, seriesList.Count, seriesAdded, seriesUpdated, seriesToDelete.Count, episodesAdded);
+        _logger.LogTrace("[{Instance}] Finished updating database for Sonarr instance {Name}", instanceName, instanceName);
     }
 
     private async Task SyncSonarrQueueAsync(string instanceName, ArrInstanceConfig cfg, CancellationToken ct)
@@ -757,15 +638,23 @@ public class ArrSyncService
     private async Task SyncLidarrAsync(string instanceName, ArrInstanceConfig cfg, CancellationToken ct)
     {
         var client = new LidarrClient(cfg.URI, cfg.APIKey);
+        var searchConfig = cfg.Search;
+
+        _logger.LogInformation("Started updating database");
+
+        var qualityProfiles = await client.GetQualityProfilesAsync(ct);
+        var profileDict = qualityProfiles.ToDictionary(p => p.Id);
 
         // Fetch artists
         List<LidarrArtist> artists;
         try { artists = await client.GetArtistsAsync(ct); }
         catch (Exception ex)
         {
-            _logger.LogWarning(ex, "ArrSyncService: Lidarr {Name} unreachable", instanceName);
+            _logger.LogWarning(ex, "[{Instance}] ArrSyncService: Lidarr {Name} unreachable", instanceName, instanceName);
             return;
         }
+
+        var artistProfileById = artists.ToDictionary(a => a.Id, a => a.QualityProfileId);
 
         // Upsert artists keyed by ArtistName
         var dbArtists = await _db.Artists
@@ -773,6 +662,9 @@ public class ArrSyncService
             .ToDictionaryAsync(a => a.Title ?? "", ct);
 
         var apiArtistNames = new HashSet<string>();
+        var artistsAdded = 0;
+        var artistsUpdated = 0;
+
         foreach (var artist in artists)
         {
             apiArtistNames.Add(artist.ArtistName);
@@ -781,6 +673,8 @@ public class ArrSyncService
                 existing.Monitored = artist.Monitored;
                 existing.QualityProfileId = artist.QualityProfileId;
                 _db.Artists.Update(existing);
+                artistsUpdated++;
+                _logger.LogTrace("DB Update: Artist {Title} updated in database", artist.ArtistName);
             }
             else
             {
@@ -791,11 +685,17 @@ public class ArrSyncService
                     Monitored = artist.Monitored,
                     QualityProfileId = artist.QualityProfileId
                 });
+                artistsAdded++;
+                _logger.LogTrace("DB Insert: Artist {Title} added to database (new)", artist.ArtistName);
             }
         }
         var artistsToDelete = dbArtists.Values
             .Where(a => !apiArtistNames.Contains(a.Title ?? ""))
             .ToList();
+        foreach (var artist in artistsToDelete)
+        {
+            _logger.LogTrace("DB Delete: Artist {Title} removed from database", artist.Title);
+        }
         if (artistsToDelete.Count > 0)
             _db.Artists.RemoveRange(artistsToDelete);
 
@@ -806,7 +706,7 @@ public class ArrSyncService
         try { albums = await client.GetAlbumsAsync(ct: ct); }
         catch (Exception ex)
         {
-            _logger.LogWarning(ex, "ArrSyncService: Lidarr {Name} failed to fetch albums", instanceName);
+            _logger.LogWarning(ex, "[{Instance}] ArrSyncService: Lidarr {Name} failed to fetch albums", instanceName, instanceName);
             return;
         }
 
@@ -821,11 +721,15 @@ public class ArrSyncService
         var apiForeignIds = new HashSet<string>();
         // Track Lidarr album ID → EF entity for track sync
         var albumEntityByLidarrId = new Dictionary<int, AlbumFilesModel>();
+        var albumsAdded = 0;
+        var albumsUpdated = 0;
 
         foreach (var album in albums)
         {
             apiForeignIds.Add(album.ForeignAlbumId);
             artistNameById.TryGetValue(album.ArtistId, out var artistName);
+            var albumProfileId = album.QualityProfileId
+                ?? (artistProfileById.TryGetValue(album.ArtistId, out var ap) ? ap : 0);
 
             if (dbAlbums.TryGetValue(album.ForeignAlbumId, out var existing))
             {
@@ -834,8 +738,13 @@ public class ArrSyncService
                 existing.ReleaseDate = album.ReleaseDate;
                 existing.ArtistId = album.ArtistId;
                 existing.ArtistTitle = artistName;
+                existing.QualityProfileId = albumProfileId;
+                existing.ArrId = album.Id;
+                existing.HasFile = album.Statistics?.TrackFileCount > 0;
                 _db.Albums.Update(existing);
                 albumEntityByLidarrId[album.Id] = existing;
+                albumsUpdated++;
+                _logger.LogTrace("DB Update: Album {Title} ({Artist}) updated in database", album.Title, artistName);
             }
             else
             {
@@ -847,16 +756,25 @@ public class ArrSyncService
                     Monitored = album.Monitored,
                     ReleaseDate = album.ReleaseDate,
                     ArtistId = album.ArtistId,
-                    ArtistTitle = artistName
+                    ArtistTitle = artistName,
+                    QualityProfileId = albumProfileId,
+                    ArrId = album.Id,
+                    HasFile = album.Statistics?.TrackFileCount > 0
                 };
                 _db.Albums.Add(newAlbum);
                 albumEntityByLidarrId[album.Id] = newAlbum;
+                albumsAdded++;
+                _logger.LogTrace("DB Insert: Album {Title} ({Artist}) added to database (new)", album.Title, artistName);
             }
         }
 
         var albumsToDelete = dbAlbums.Values
             .Where(a => !apiForeignIds.Contains(a.ForeignAlbumId))
             .ToList();
+        foreach (var album in albumsToDelete)
+        {
+            _logger.LogTrace("DB Delete: Album {Title} removed from database", album.Title);
+        }
         if (albumsToDelete.Count > 0)
         {
             var deleteIds = albumsToDelete.Select(a => a.EntryId).ToList();
@@ -870,12 +788,59 @@ public class ArrSyncService
         // Save so EF Core assigns EntryId to new album rows
         await _db.SaveChangesAsync(ct);
 
+        // Compute search metadata for each album using bulk track files (one API call per album)
+        foreach (var (lidarrAlbumId, albumEntity) in albumEntityByLidarrId)
+        {
+            artistProfileById.TryGetValue(albumEntity.ArtistId, out var artistProfileId);
+            profileDict.TryGetValue(artistProfileId, out var profile);
+            var minCfScore = profile?.MinCustomFormatScore ?? 0;
+            albumEntity.MinCustomFormatScore = minCfScore;
+
+            if (albumEntity.HasFile)
+            {
+                try
+                {
+                    var trackFiles = await client.GetTrackFilesByAlbumAsync(lidarrAlbumId, ct);
+                    if (trackFiles.Count > 0)
+                    {
+                        albumEntity.CustomFormatScore = trackFiles.Sum(tf => tf.CustomFormatScore ?? 0) / trackFiles.Count;
+                        albumEntity.QualityMet = true;
+                        albumEntity.CustomFormatMet = albumEntity.CustomFormatScore >= minCfScore;
+                    }
+                    else
+                    {
+                        albumEntity.CustomFormatScore = 0;
+                        albumEntity.QualityMet = true;
+                        albumEntity.CustomFormatMet = true;
+                    }
+                }
+                catch (Exception ex)
+                {
+                    _logger.LogDebug(ex, "ArrSyncService: failed to get track files for album {Id}", lidarrAlbumId);
+                    albumEntity.CustomFormatScore = 0;
+                    albumEntity.QualityMet = true;
+                    albumEntity.CustomFormatMet = true;
+                }
+            }
+            else
+            {
+                albumEntity.CustomFormatScore = 0;
+                albumEntity.QualityMet = true;
+                albumEntity.CustomFormatMet = true;
+            }
+
+            var isAvailable = CheckAlbumAvailability(albumEntity.ReleaseDate, albumEntity.Title ?? "Unknown", _logger);
+            albumEntity.Reason = DetermineReasonWithAvailability(albumEntity.HasFile, albumEntity.QualityMet, albumEntity.CustomFormatMet, isAvailable, searchConfig);
+            albumEntity.Searched = DetermineSearched(albumEntity.HasFile, albumEntity.QualityMet, albumEntity.CustomFormatMet, searchConfig);
+        }
+        await _db.SaveChangesAsync(ct);
+
         // Fetch all tracks at once and group by Lidarr album ID
         List<Track> allTracks;
         try { allTracks = await client.GetTracksAsync(ct: ct); }
         catch (Exception ex)
         {
-            _logger.LogWarning(ex, "ArrSyncService: Lidarr {Name} failed to fetch tracks", instanceName);
+            _logger.LogWarning(ex, "[{Instance}] ArrSyncService: Lidarr {Name} failed to fetch tracks", instanceName, instanceName);
             return;
         }
 
@@ -886,6 +851,7 @@ public class ArrSyncService
         _db.Tracks.RemoveRange(existingTracks);
         await _db.SaveChangesAsync(ct);
 
+        var tracksAdded = 0;
         foreach (var track in allTracks)
         {
             if (!albumEntityByLidarrId.TryGetValue(track.AlbumId, out var albumEntity))
@@ -902,95 +868,14 @@ public class ArrSyncService
                 TrackFileId = track.TrackFileId,
                 Monitored = track.Monitored
             });
+            tracksAdded++;
+            _logger.LogTrace("DB Insert: Track {Title} added to database (new)", track.Title);
         }
 
         await _db.SaveChangesAsync(ct);
-        _logger.LogDebug("ArrSyncService: Lidarr {Name} synced {Artists} artists, {Albums} albums, {Tracks} tracks",
-            instanceName, artists.Count, albums.Count, allTracks.Count);
-    }
-
-    private async Task SyncLidarrSearchMetadataAsync(string instanceName, ArrInstanceConfig cfg, CancellationToken ct)
-    {
-        var client = new LidarrClient(cfg.URI, cfg.APIKey);
-        var searchConfig = cfg.Search;
-
-        var profiles = await client.GetQualityProfilesAsync(ct);
-        var profileDict = profiles.ToDictionary(p => p.Id);
-
-        var dbAlbums = await _db.Albums
-            .Where(a => a.ArrInstance == instanceName && a.Monitored)
-            .ToListAsync(ct);
-
-        foreach (var album in dbAlbums)
-        {
-            if (album.ArrId <= 0)
-                continue;
-
-            int profileId = album.QualityProfileId ?? 0;
-            if (profileId <= 0 || !profileDict.TryGetValue(profileId, out var profile))
-                continue;
-
-            var minCfScore = profile.MinCustomFormatScore ?? 0;
-            album.MinCustomFormatScore = minCfScore;
-
-            if (album.HasFile)
-            {
-                try
-                {
-                    var tracks = await client.GetTracksAsync(album.ArrId, ct);
-                    var tracksWithFiles = tracks.Where(t => t.HasFile).ToList();
-
-                    if (tracksWithFiles.Any())
-                    {
-                        var avgScore = 0;
-                        foreach (var track in tracksWithFiles)
-                        {
-                            if (track.TrackFileId.HasValue && track.TrackFileId.Value > 0)
-                            {
-                                var trackFile = await client.GetTrackFileAsync(track.TrackFileId.Value, ct);
-                                if (trackFile?.CustomFormatScore.HasValue == true)
-                                    avgScore += trackFile.CustomFormatScore.Value;
-                            }
-                        }
-                        album.CustomFormatScore = avgScore / tracksWithFiles.Count;
-                        album.CustomFormatMet = album.CustomFormatScore >= minCfScore;
-
-                        album.QualityMet = CalculateLidarrQualityMet(profile, tracksWithFiles);
-                    }
-                    else
-                    {
-                        album.CustomFormatScore = 0;
-                        album.QualityMet = true;
-                        album.CustomFormatMet = true;
-                    }
-                }
-                catch (Exception ex)
-                {
-                    _logger.LogDebug(ex, "ArrSyncService: failed to get track files for album {Id}", album.ArrId);
-                    album.CustomFormatScore = 0;
-                    album.QualityMet = true;
-                    album.CustomFormatMet = true;
-                }
-            }
-            else
-            {
-                album.CustomFormatScore = 0;
-                album.QualityMet = true;
-                album.CustomFormatMet = true;
-            }
-
-            album.Reason = DetermineReason(
-                hasFile: album.HasFile,
-                qualityMet: album.QualityMet,
-                customFormatMet: album.CustomFormatMet,
-                searchConfig: searchConfig);
-
-            album.Searched = DetermineSearched(album.HasFile, album.QualityMet, album.CustomFormatMet, searchConfig);
-        }
-
-        await _db.SaveChangesAsync(ct);
-        _logger.LogDebug("ArrSyncService: Lidarr {Name} synced search metadata for {Count} albums",
-            instanceName, dbAlbums.Count);
+        _logger.LogDebug("[{Instance}] ArrSyncService: Lidarr {Name} synced - Artists: Added: {ArtistsAdded}, Updated: {ArtistsUpdated}, Deleted: {ArtistsDeleted} | Albums: Added: {AlbumsAdded}, Updated: {AlbumsUpdated}, Deleted: {AlbumsDeleted} | Tracks Added: {TracksAdded}",
+            instanceName, instanceName, artistsAdded, artistsUpdated, artistsToDelete.Count, albumsAdded, albumsUpdated, albumsToDelete.Count, tracksAdded);
+        _logger.LogTrace("Finished updating database for Lidarr instance {Name}", instanceName);
     }
 
     private async Task SyncLidarrQueueAsync(string instanceName, ArrInstanceConfig cfg, CancellationToken ct)
@@ -1053,6 +938,227 @@ public class ArrSyncService
             return "Upgrade";
 
         return "None";
+    }
+
+    private static string DetermineReasonWithAvailability(bool hasFile, bool qualityMet, bool customFormatMet, bool isAvailable, SearchConfig searchConfig)
+    {
+        if (!isAvailable)
+            return "NotAvailable";
+
+        if (!hasFile)
+            return "Missing";
+
+        if (searchConfig.CustomFormatUnmetSearch && !customFormatMet)
+            return "CustomFormat";
+
+        if (searchConfig.QualityUnmetSearch && !qualityMet)
+            return "Quality";
+
+        if (searchConfig.DoUpgradeSearch)
+            return "Upgrade";
+
+        return "None";
+    }
+
+    private static bool MinimumAvailabilityCheck(string? minimumAvailability, DateTime? inCinemas, DateTime? digitalRelease, DateTime? physicalRelease, int year, string title, ILogger? logger = null)
+    {
+        var now = DateTime.UtcNow;
+
+        // Case 1: Year > now.year or Year == 0 → Skip
+        if (year > now.Year || year == 0)
+        {
+            logger?.LogTrace("Skipping 1 {Title} - Minimum Availability: {MinAvail}, Dates Cinema:{Cinemas}, Digital:{Digital}, Physical:{Physical}",
+                title, minimumAvailability, inCinemas, digitalRelease, physicalRelease);
+            return false;
+        }
+
+        // Case 2: Year < now.year - 1 → Grab (old movie over 1 year old)
+        if (year < now.Year - 1)
+        {
+            logger?.LogTrace("Grabbing 2 {Title} - Minimum Availability: {MinAvail}, Dates Cinema:{Cinemas}, Digital:{Digital}, Physical:{Physical}",
+                title, minimumAvailability, inCinemas, digitalRelease, physicalRelease);
+            return true;
+        }
+
+        // Case 3: No dates + "released" → Grab
+        if (inCinemas == null && digitalRelease == null && physicalRelease == null && minimumAvailability == "released")
+        {
+            logger?.LogTrace("Grabbing 3 {Title} - Minimum Availability: {MinAvail}, Dates Cinema:{Cinemas}, Digital:{Digital}, Physical:{Physical}",
+                title, minimumAvailability, inCinemas, digitalRelease, physicalRelease);
+            return true;
+        }
+
+        // Case 4: Both dates + "released" + any passed → Grab
+        if (digitalRelease != null && physicalRelease != null && minimumAvailability == "released")
+        {
+            if (digitalRelease <= now || physicalRelease <= now)
+            {
+                logger?.LogTrace("Grabbing 4 {Title} - Minimum Availability: {MinAvail}, Dates Cinema:{Cinemas}, Digital:{Digital}, Physical:{Physical}",
+                    title, minimumAvailability, inCinemas, digitalRelease, physicalRelease);
+                return true;
+            }
+            else
+            {
+                logger?.LogTrace("Skipping 5 {Title} - Minimum Availability: {MinAvail}, Dates Cinema:{Cinemas}, Digital:{Digital}, Physical:{Physical}",
+                    title, minimumAvailability, inCinemas, digitalRelease, physicalRelease);
+                return false;
+            }
+        }
+
+        // Case 6-7: Digital only + "released"
+        if ((digitalRelease != null || physicalRelease != null) && minimumAvailability == "released")
+        {
+            if (digitalRelease != null)
+            {
+                if (digitalRelease <= now)
+                {
+                    logger?.LogTrace("Grabbing 6 {Title} - Minimum Availability: {MinAvail}, Dates Cinema:{Cinemas}, Digital:{Digital}, Physical:{Physical}",
+                        title, minimumAvailability, inCinemas, digitalRelease, physicalRelease);
+                    return true;
+                }
+                else
+                {
+                    logger?.LogTrace("Skipping 7 {Title} - Minimum Availability: {MinAvail}, Dates Cinema:{Cinemas}, Digital:{Digital}, Physical:{Physical}",
+                        title, minimumAvailability, inCinemas, digitalRelease, physicalRelease);
+                    return false;
+                }
+            }
+            else if (physicalRelease != null)
+            {
+                if (physicalRelease <= now)
+                {
+                    logger?.LogTrace("Grabbing 8 {Title} - Minimum Availability: {MinAvail}, Dates Cinema:{Cinemas}, Digital:{Digital}, Physical:{Physical}",
+                        title, minimumAvailability, inCinemas, digitalRelease, physicalRelease);
+                    return true;
+                }
+                else
+                {
+                    logger?.LogTrace("Skipping 9 {Title} - Minimum Availability: {MinAvail}, Dates Cinema:{Cinemas}, Digital:{Digital}, Physical:{Physical}",
+                        title, minimumAvailability, inCinemas, digitalRelease, physicalRelease);
+                    return false;
+                }
+            }
+        }
+
+        // Case 10: No dates + "inCinemas" → Grab
+        if (inCinemas == null && digitalRelease == null && physicalRelease == null && minimumAvailability == "inCinemas")
+        {
+            logger?.LogTrace("Grabbing 10 {Title} - Minimum Availability: {MinAvail}, Dates Cinema:{Cinemas}, Digital:{Digital}, Physical:{Physical}",
+                title, minimumAvailability, inCinemas, digitalRelease, physicalRelease);
+            return true;
+        }
+
+        // Case 11-12: inCinemas + "inCinemas"
+        if (inCinemas != null && minimumAvailability == "inCinemas")
+        {
+            if (inCinemas <= now)
+            {
+                logger?.LogTrace("Grabbing 11 {Title} - Minimum Availability: {MinAvail}, Dates Cinema:{Cinemas}, Digital:{Digital}, Physical:{Physical}",
+                    title, minimumAvailability, inCinemas, digitalRelease, physicalRelease);
+                return true;
+            }
+            else
+            {
+                logger?.LogTrace("Skipping 12 {Title} - Minimum Availability: {MinAvail}, Dates Cinema:{Cinemas}, Digital:{Digital}, Physical:{Physical}",
+                    title, minimumAvailability, inCinemas, digitalRelease, physicalRelease);
+                return false;
+            }
+        }
+
+        // Case 13-17: No inCinemas + "inCinemas" + other dates
+        if (inCinemas == null && minimumAvailability == "inCinemas")
+        {
+            if (digitalRelease != null)
+            {
+                if (digitalRelease <= now)
+                {
+                    logger?.LogTrace("Grabbing 13 {Title} - Minimum Availability: {MinAvail}, Dates Cinema:{Cinemas}, Digital:{Digital}, Physical:{Physical}",
+                        title, minimumAvailability, inCinemas, digitalRelease, physicalRelease);
+                    return true;
+                }
+                else
+                {
+                    logger?.LogTrace("Skipping 14 {Title} - Minimum Availability: {MinAvail}, Dates Cinema:{Cinemas}, Digital:{Digital}, Physical:{Physical}",
+                        title, minimumAvailability, inCinemas, digitalRelease, physicalRelease);
+                    return false;
+                }
+            }
+            else if (physicalRelease != null)
+            {
+                if (physicalRelease <= now)
+                {
+                    logger?.LogTrace("Grabbing 15 {Title} - Minimum Availability: {MinAvail}, Dates Cinema:{Cinemas}, Digital:{Digital}, Physical:{Physical}",
+                        title, minimumAvailability, inCinemas, digitalRelease, physicalRelease);
+                    return true;
+                }
+                else
+                {
+                    logger?.LogTrace("Skipping 16 {Title} - Minimum Availability: {MinAvail}, Dates Cinema:{Cinemas}, Digital:{Digital}, Physical:{Physical}",
+                        title, minimumAvailability, inCinemas, digitalRelease, physicalRelease);
+                    return false;
+                }
+            }
+            else
+            {
+                // Case 17: No inCinemas + no dates + "inCinemas" → Skip
+                logger?.LogTrace("Skipping 17 {Title} - Minimum Availability: {MinAvail}, Dates Cinema:{Cinemas}, Digital:{Digital}, Physical:{Physical}",
+                    title, minimumAvailability, inCinemas, digitalRelease, physicalRelease);
+                return false;
+            }
+        }
+
+        // Case 18: "announced" → Grab
+        if (minimumAvailability == "announced")
+        {
+            logger?.LogTrace("Grabbing 18 {Title} - Minimum Availability: {MinAvail}, Dates Cinema:{Cinemas}, Digital:{Digital}, Physical:{Physical}",
+                title, minimumAvailability, inCinemas, digitalRelease, physicalRelease);
+            return true;
+        }
+
+        // Case 19: Default → Skip
+        logger?.LogTrace("Skipping 19 {Title} - Minimum Availability: {MinAvail}, Dates Cinema:{Cinemas}, Digital:{Digital}, Physical:{Physical}",
+            title, minimumAvailability, inCinemas, digitalRelease, physicalRelease);
+        return false;
+    }
+
+    private bool CheckEpisodeAvailability(DateTime? airDateUtc, string episodeTitle, ILogger? logger = null)
+    {
+        var now = DateTime.UtcNow;
+
+        if (airDateUtc == null)
+        {
+            logger?.LogTrace("Episode {Title} - No air date, available for search", episodeTitle);
+            return true;
+        }
+
+        if (airDateUtc > now)
+        {
+            logger?.LogTrace("Episode {Title} - Not aired yet (AirDate: {AirDate}), skipping", episodeTitle, airDateUtc);
+            return false;
+        }
+
+        logger?.LogTrace("Episode {Title} - Available (aired on {AirDate})", episodeTitle, airDateUtc);
+        return true;
+    }
+
+    private bool CheckAlbumAvailability(DateTime? releaseDate, string albumTitle, ILogger? logger = null)
+    {
+        var now = DateTime.UtcNow;
+
+        if (releaseDate == null)
+        {
+            logger?.LogTrace("Album {Title} - No release date, available for search", albumTitle);
+            return true;
+        }
+
+        if (releaseDate > now)
+        {
+            logger?.LogTrace("Album {Title} - Not released yet (ReleaseDate: {ReleaseDate}), skipping", albumTitle, releaseDate);
+            return false;
+        }
+
+        logger?.LogTrace("Album {Title} - Available (released on {ReleaseDate})", albumTitle, releaseDate);
+        return true;
     }
 
     private static bool DetermineSearched(bool hasFile, bool qualityMet, bool customFormatMet, SearchConfig searchConfig)

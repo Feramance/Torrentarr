@@ -63,7 +63,7 @@ public class SearchExecutor : ISearchExecutor
 
         if (candidatesList.Count == 0)
         {
-            _logger.LogDebug("SearchExecutor: no candidates for {Name}", instanceName);
+            _logger.LogTrace("SearchExecutor: no candidates for {Name}", instanceName);
             return result;
         }
 
@@ -80,7 +80,7 @@ public class SearchExecutor : ISearchExecutor
             var activeCommands = await GetActiveCommandCountAsync(instanceName, cancellationToken);
             if (!CanSearch(activeCommands, searchLimit))
             {
-                _logger.LogDebug("SearchExecutor: command limit reached ({Active}/{Limit}), pausing searches",
+                _logger.LogTrace("SearchExecutor: command limit reached ({Active}/{Limit}), pausing searches",
                     activeCommands, searchLimit);
                 break;
             }
@@ -93,19 +93,43 @@ public class SearchExecutor : ISearchExecutor
 
             try
             {
+                // Log candidate being searched (qBitrr format) - BEFORE attempting trigger
+                var reasonText = string.IsNullOrEmpty(candidate.Reason) ? "" : $"[{candidate.Reason?.Trim('"').Trim()}]";
+                var typeText = (candidate.Type ?? "").Trim('"').Trim();
+                
+                switch (typeText.ToLowerInvariant())
+                {
+                    case "movie":
+                        _logger.LogInformation(
+                            "Searching for: {Title:l} ({Year}) [id={ArrId}|movie]{Reason:l}",
+                            candidate.Title, candidate.Year ?? 0, candidate.ArrId, reasonText);
+                        break;
+                    case "episode":
+                        _logger.LogInformation(
+                            "Searching for: {Title:l} | S{SeasonNumber:E2}E{EpisodeNumber:E3} | [id={ArrId}|episode]{Reason:l}",
+                            candidate.Title, candidate.SeasonNumber ?? 0, candidate.EpisodeNumber ?? 0, candidate.ArrId, reasonText);
+                        break;
+                    case "album":
+                        _logger.LogInformation(
+                            "Searching for: {ArtistName:l} [id={AlbumId}|album]{Reason:l}",
+                            candidate.Title, candidate.AlbumId ?? 0, reasonText);
+                        break;
+                    default:
+                        _logger.LogInformation("Searching for: {Title:l} [id={ArrId}|{Type:l}]{Reason:l}",
+                            candidate.Title, candidate.ArrId, typeText, reasonText);
+                        break;
+                }
+
                 var triggered = await TriggerSearchForCandidateAsync(arrConfig, candidate, cancellationToken);
                 if (triggered)
                 {
                     result.SearchesTriggered++;
                     result.SearchedIds.Add(candidate.ArrId);
-                    _logger.LogInformation("SearchExecutor: searched {Title} (Reason: {Reason})",
-                        candidate.Title, candidate.Reason);
-
                     await MarkAsSearchedAsync(arrConfig, candidate, cancellationToken);
                 }
                 else
                 {
-                    _logger.LogDebug("SearchExecutor: search not triggered for {Title}", candidate.Title);
+                    _logger.LogTrace("SearchExecutor: search not triggered for {Title}", candidate.Title);
                 }
             }
             catch (Exception ex)
@@ -178,7 +202,7 @@ public class SearchExecutor : ISearchExecutor
         }
         catch (Exception ex)
         {
-            _logger.LogError(ex, "SearchExecutor: error triggering search for {Title}", candidate.Title);
+            _logger.LogError(ex, "SearchExecutor: error triggering search for {Title}: {Message}", candidate.Title, ex.Message);
             return false;
         }
     }

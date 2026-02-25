@@ -20,7 +20,8 @@ public class ArrMediaService : IArrMediaService
         ["CustomFormat"] = 2,
         ["Quality"] = 3,
         ["Upgrade"] = 4,
-        ["None"] = 99
+        ["None"] = 99,
+        ["NotAvailable"] = 99
     };
 
     public ArrMediaService(
@@ -56,24 +57,12 @@ public class ArrMediaService : IArrMediaService
 
         if (!arrInstance.Search.SearchMissing)
         {
-            _logger.LogDebug("SearchMissing disabled for {Category}", category);
+            _logger.LogTrace("SearchMissing disabled for {Category}", category);
             _logger.LogTrace("Search skipped - SearchMissing disabled");
             return new SearchResult();
         }
 
-        if (_config.Settings.SearchLoopDelay == 0 || _config.Settings.SearchLoopDelay == -1)
-        {
-            _logger.LogDebug("SearchLoopDelay disabled for {Category}", category);
-            _logger.LogTrace("Search skipped - SearchLoopDelay disabled");
-            return new SearchResult();
-        }
-
         _logger.LogInformation("Searching for missing media in {Category}", category);
-
-        _logger.LogTrace("Syncing database with Arr instance {Name}", instanceName);
-        await _syncService.SyncAsync(instanceName, cancellationToken);
-        await _syncService.SyncSearchMetadataAsync(instanceName, cancellationToken);
-        _logger.LogTrace("Sync complete for {Name}", instanceName);
 
         _logger.LogTrace("Getting search candidates for {Name}", instanceName);
         var candidates = await GetSearchCandidatesAsync(instanceName, arrInstance, cancellationToken);
@@ -95,7 +84,7 @@ public class ArrMediaService : IArrMediaService
 
         if (arrInstance == null)
         {
-            _logger.LogDebug("No Arr instance found for category {Category}", category);
+            _logger.LogTrace("No Arr instance found for category {Category}", category);
             _logger.LogTrace("Search aborted - no Arr instance for {Category}", category);
             return new SearchResult();
         }
@@ -105,22 +94,12 @@ public class ArrMediaService : IArrMediaService
 
         if (!arrInstance.Search.DoUpgradeSearch && !arrInstance.Search.CustomFormatUnmetSearch && !arrInstance.Search.QualityUnmetSearch)
         {
-            _logger.LogDebug("Quality upgrade search disabled for {Category}", category);
+            _logger.LogTrace("Quality upgrade search disabled for {Category}", category);
             _logger.LogTrace("Search skipped - all upgrade searches disabled");
             return new SearchResult();
         }
 
-        if (_config.Settings.SearchLoopDelay == 0 || _config.Settings.SearchLoopDelay == -1)
-        {
-            _logger.LogDebug("SearchLoopDelay disabled for {Category}", category);
-            _logger.LogTrace("Search skipped - SearchLoopDelay disabled");
-            return new SearchResult();
-        }
-
         _logger.LogInformation("Searching for quality upgrades in {Category}", category);
-
-        await _syncService.SyncAsync(instanceName, cancellationToken);
-        await _syncService.SyncSearchMetadataAsync(instanceName, cancellationToken);
 
         var candidates = await GetUpgradeCandidatesAsync(instanceName, arrInstance, cancellationToken);
 

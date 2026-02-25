@@ -84,4 +84,16 @@ public class AlbumFilesModel
 
     [Column("arrartistid")]
     public int ArrArtistId { get; set; }
+
+    [Column("incinemas")]
+    public DateTime? InCinemas { get; set; }
+
+    [Column("digitalrelease")]
+    public DateTime? DigitalRelease { get; set; }
+
+    [Column("physicalrelease")]
+    public DateTime? PhysicalRelease { get; set; }
+
+    [Column("minimumavailability")]
+    public string? MinimumAvailability { get; set; }
 }

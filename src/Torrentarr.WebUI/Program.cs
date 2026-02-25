@@ -7,9 +7,13 @@ using Serilog;
 using Serilog.Core;
 using Serilog.Events;
 
-// Calculate base paths (matching qBitrr folder structure: config/ relative to cwd)
-var basePath = Path.Combine(Directory.GetCurrentDirectory(), "config");
+// Calculate base paths - use /config for Docker, or config/ relative to cwd for local
+var configEnv = Environment.GetEnvironmentVariable("TORRENTARR_CONFIG");
+var basePath = !string.IsNullOrEmpty(configEnv) && configEnv.StartsWith("/config") 
+    ? "/config" 
+    : Path.Combine(Directory.GetCurrentDirectory(), "config");
 var logsPath = Path.Combine(basePath, "logs");
+var dbPath = Path.Combine(basePath, "qbitrr.db");
 Directory.CreateDirectory(basePath);
 Directory.CreateDirectory(logsPath);
 
@@ -25,7 +29,11 @@ Log.Logger = new LoggerConfiguration()
     .Enrich.WithProperty("ProcessId", Environment.ProcessId)
     .Enrich.WithProperty("MachineName", Environment.MachineName)
     .WriteTo.Console()
-    .WriteTo.File(Path.Combine(logsPath, "webui.log"), rollingInterval: RollingInterval.Day)
+    .WriteTo.File(
+        Path.Combine(logsPath, "webui.log"),
+        rollingInterval: RollingInterval.Day,
+        shared: true,
+        retainedFileCountLimit: 7)
     .CreateLogger();
 
 builder.Host.UseSerilog();
@@ -72,13 +80,7 @@ builder.Services.AddCors(options =>
     });
 });
 
-// Configure Database
-var homePath = Environment.GetFolderPath(Environment.SpecialFolder.UserProfile);
-var dbPath = Path.Combine(homePath, ".config", "torrentarr", "qbitrr.db");
-
-// Ensure directory exists
-Directory.CreateDirectory(Path.GetDirectoryName(dbPath)!);
-
+// Configure Database - use same dbPath as defined at startup
 builder.Services.AddDbContext<TorrentarrDbContext>(options =>
 {
     options.UseSqlite($"Data Source={dbPath}");
@@ -428,9 +430,6 @@ app.MapPost("/api/processes/restart_all", () =>
 // Logs endpoint - list available log files
 app.MapGet("/api/logs", () =>
 {
-    var homePath = Environment.GetFolderPath(Environment.SpecialFolder.UserProfile);
-    var logsPath = Path.Combine(homePath, ".config", "torrentarr", "logs");
-
     var logs = new List<object>();
 
     if (Directory.Exists(logsPath))
@@ -453,8 +452,6 @@ app.MapGet("/api/logs", () =>
 // Log file contents
 app.MapGet("/api/logs/{name}", async (string name, int? lines) =>
 {
-    var homePath = Environment.GetFolderPath(Environment.SpecialFolder.UserProfile);
-    var logsPath = Path.Combine(homePath, ".config", "torrentarr", "logs");
     var logFile = Path.Combine(logsPath, name);
 
     if (!File.Exists(logFile))

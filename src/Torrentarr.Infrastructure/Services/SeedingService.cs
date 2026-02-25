@@ -638,15 +638,21 @@ public class SeedingService : ISeedingService
         }
 
         result.TorrentsChecked = completedByInstance.Count;
+        _logger.LogTrace("H&R Check: Processing {Count} completed torrents in category {Category}", completedByInstance.Count, category);
 
-        foreach (var (_, client, torrent) in completedByInstance)
+        foreach (var (instanceName, client, torrent) in completedByInstance)
         {
             try
             {
+                _logger.LogTrace("H&R Check: [{Name}] | Ratio[{Ratio:F2}] | SeedingTime[{SeedingTime}s] | State[{State}] | Hash[{Hash}]",
+                    torrent.Name, torrent.Ratio, torrent.SeedingTime, torrent.State, torrent.Hash);
+
                 var shouldRemove = await ShouldRemoveTorrentAsync(torrent, cancellationToken);
                 if (!shouldRemove)
                 {
-                    _logger.LogDebug("Torrent {Name} does not meet removal criteria", torrent.Name);
+                    _logger.LogTrace("H&R: Keeping torrent [{Name}] - does not meet removal criteria | Ratio[{Ratio:F2}] | SeedingTime[{SeedingTime}s]",
+                        torrent.Name, torrent.Ratio, torrent.SeedingTime);
+                    result.TorrentsProtected++;
                     continue;
                 }
 
@@ -660,18 +666,19 @@ public class SeedingService : ISeedingService
                     {
                         result.TorrentsRemoved++;
                         result.RemovedHashes.Add(torrent.Hash);
-                        _logger.LogInformation("Removed torrent {Name} (ratio: {Ratio:F2}, seeding time: {SeedingTime}s)",
-                            torrent.Name, torrent.Ratio, torrent.SeedingTime);
+                        _logger.LogInformation("H&R Remove: [{Name}] | Reason[Removal criteria met] | Ratio[{Ratio:F2}] | SeedingTime[{SeedingTime}s] | Hash[{Hash}]",
+                            torrent.Name, torrent.Ratio, torrent.SeedingTime, torrent.Hash);
                     }
                 }
                 else
                 {
-                    _logger.LogDebug("Torrent {Name} not imported yet, keeping", torrent.Name);
+                    _logger.LogTrace("H&R: Keeping torrent [{Name}] - not imported yet | Hash[{Hash}]", torrent.Name, torrent.Hash);
+                    result.TorrentsProtected++;
                 }
             }
             catch (Exception ex)
             {
-                _logger.LogError(ex, "Error processing torrent {Hash} for removal", torrent.Hash);
+                _logger.LogError(ex, "[{Instance}] Error processing torrent {Hash} for removal", instanceName, torrent.Hash);
                 result.Errors.Add($"{torrent.Name}: {ex.Message}");
             }
         }
@@ -733,7 +740,7 @@ public class SeedingService : ISeedingService
             {
                 var limitBytes = dlLimit > 0 ? dlLimit * 1024 : -1;
                 await client.SetDownloadLimitAsync(torrent.Hash, limitBytes, cancellationToken);
-                _logger.LogDebug("Set download limit for '{Name}': {Limit} KB/s", torrent.Name, dlLimit);
+                _logger.LogTrace("Set download limit for '{Name}': {Limit} KB/s", torrent.Name, dlLimit);
             }
             catch (Exception ex)
             {
@@ -748,7 +755,7 @@ public class SeedingService : ISeedingService
             {
                 var limitBytes = ulLimit > 0 ? ulLimit * 1024 : -1;
                 await client.SetUploadLimitAsync(torrent.Hash, limitBytes, cancellationToken);
-                _logger.LogDebug("Set upload limit for '{Name}': {Limit} KB/s", torrent.Name, ulLimit);
+                _logger.LogTrace("Set upload limit for '{Name}': {Limit} KB/s", torrent.Name, ulLimit);
             }
             catch (Exception ex)
             {
@@ -772,7 +779,7 @@ public class SeedingService : ISeedingService
                 new List<string> { AllowedSeedingTag },
                 cancellationToken);
 
-            _logger.LogDebug("Added {Tag} tag to torrent {Name}", AllowedSeedingTag, torrent.Name);
+            _logger.LogTrace("Added {Tag} tag to torrent {Name}", AllowedSeedingTag, torrent.Name);
         }
         else if (!meetsRequirements && hasAllowedSeedingTag)
         {
@@ -781,7 +788,7 @@ public class SeedingService : ISeedingService
                 new List<string> { AllowedSeedingTag },
                 cancellationToken);
 
-            _logger.LogDebug("Removed {Tag} tag from torrent {Name}", AllowedSeedingTag, torrent.Name);
+            _logger.LogTrace("Removed {Tag} tag from torrent {Name}", AllowedSeedingTag, torrent.Name);
         }
     }
 
@@ -810,7 +817,7 @@ public class SeedingService : ISeedingService
             if (tagsToCreate.Count > 0)
             {
                 await client.CreateTagsAsync(tagsToCreate, cancellationToken);
-                _logger.LogDebug("Created tags: {Tags}", string.Join(", ", tagsToCreate));
+                _logger.LogTrace("Created tags: {Tags}", string.Join(", ", tagsToCreate));
             }
         }
         catch (Exception ex)

@@ -15,14 +15,18 @@ var instanceName = args.Contains("--instance") && args.Length > Array.IndexOf(ar
     ? args[Array.IndexOf(args, "--instance") + 1]
     : "Unknown";
 
-// Calculate base paths (matching qBitrr folder structure: config/ relative to cwd)
-var basePath = Path.Combine(Directory.GetCurrentDirectory(), "config");
+// Calculate base paths - use /config for Docker, or config/ relative to cwd for local
+var configEnv = Environment.GetEnvironmentVariable("TORRENTARR_CONFIG");
+var basePath = !string.IsNullOrEmpty(configEnv) && configEnv.StartsWith("/config") 
+    ? "/config" 
+    : Path.Combine(Directory.GetCurrentDirectory(), "config");
 var logsPath = Path.Combine(basePath, "logs");
+var dbPath = Path.Combine(basePath, "qbitrr.db");
 Directory.CreateDirectory(basePath);
 Directory.CreateDirectory(logsPath);
 
 // Mutable level switch — lets log level be changed at runtime via file
-var levelSwitch = new LoggingLevelSwitch(LogEventLevel.Information);
+var levelSwitch = new LoggingLevelSwitch(LogEventLevel.Debug);
 
 // Configure Serilog - write to .config/logs/ with process metadata enrichment
 Log.Logger = new LoggerConfiguration()
@@ -31,8 +35,32 @@ Log.Logger = new LoggerConfiguration()
     .Enrich.WithProperty("ProcessInstance", instanceName)
     .Enrich.WithProperty("ProcessId", Environment.ProcessId)
     .Enrich.WithProperty("MachineName", Environment.MachineName)
+    .Filter.ByExcluding(e => 
+        e.RenderMessage().Contains("DbCommand") ||
+        e.RenderMessage().Contains("started tracking") ||
+        e.RenderMessage().Contains("changed state from") ||
+        e.RenderMessage().Contains("generated temporary value") ||
+        e.RenderMessage().Contains("Closing data reader") ||
+        e.RenderMessage().Contains("DetectChanges") ||
+        e.RenderMessage().Contains("SaveChanges") ||
+        e.RenderMessage().Contains("Opening connection") ||
+        e.RenderMessage().Contains("Opened connection") ||
+        e.RenderMessage().Contains("Closing connection") ||
+        e.RenderMessage().Contains("Closed connection") ||
+        e.RenderMessage().Contains("was detected as changed") ||
+        e.RenderMessage().Contains("Executing endpoint") ||
+        e.RenderMessage().Contains("Executed endpoint") ||
+        e.RenderMessage().Contains("Request starting") ||
+        e.RenderMessage().Contains("Request finished") ||
+        e.RenderMessage().Contains("Writing value of type") ||
+        e.RenderMessage().Contains("is valid for the request") ||
+        e.RenderMessage().Contains("A data reader"))
     .WriteTo.Console()
-    .WriteTo.File(Path.Combine(logsPath, $"worker-{instanceName}.log"), rollingInterval: RollingInterval.Day)
+    .WriteTo.File(
+        Path.Combine(logsPath, $"worker-{instanceName}.log"),
+        rollingInterval: RollingInterval.Day,
+        shared: true,
+        retainedFileCountLimit: 7)
     .CreateLogger();
 
 // Monitor for log level changes via file
@@ -103,9 +131,7 @@ try
     builder.Services.AddSingleton(instanceConfig);
     builder.Services.AddSingleton(new WorkerContext { InstanceName = instanceName });
 
-    // Add database context
-    var homePath = Environment.GetFolderPath(Environment.SpecialFolder.UserProfile);
-    var dbPath = Path.Combine(homePath, ".config", "torrentarr", "qbitrr.db");
+    // Add database context - use same dbPath as defined at startup
     builder.Services.AddDbContext<TorrentarrDbContext>(options =>
     {
         options.UseSqlite($"Data Source={dbPath}");
@@ -253,7 +279,7 @@ class ArrWorkerService : BackgroundService
 
                 // Sleep for configured interval
                 var sleepTime = TimeSpan.FromSeconds(_config.Settings.LoopSleepTimer);
-                _logger.LogDebug("Sleeping for {Seconds} seconds", sleepTime.TotalSeconds);
+                _logger.LogTrace("Sleeping for {Seconds} seconds", sleepTime.TotalSeconds);
                 await Task.Delay(sleepTime, stoppingToken);
             }
         }
@@ -296,7 +322,7 @@ class ArrWorkerService : BackgroundService
 
     private async Task ProcessTorrentsAsync(CancellationToken cancellationToken)
     {
-        _logger.LogDebug("Processing torrents for {Instance}", _context.InstanceName);
+        _logger.LogTrace("Processing torrents for {Instance}", _context.InstanceName);
 
         // Create a scope for scoped services (DbContext, TorrentProcessor, etc.)
         using var scope = _serviceProvider.CreateScope();
@@ -331,7 +357,7 @@ class ArrWorkerService : BackgroundService
             }
             else
             {
-                _logger.LogDebug("Database health check passed");
+                _logger.LogTrace("Database health check passed");
             }
         }
 
@@ -349,7 +375,7 @@ class ArrWorkerService : BackgroundService
             }
             if (removalResult.TorrentsProtected > 0)
             {
-                _logger.LogDebug("{Count} torrents protected by H&R rules", removalResult.TorrentsProtected);
+                _logger.LogTrace("{Count} torrents protected by H&R rules", removalResult.TorrentsProtected);
             }
         }
 

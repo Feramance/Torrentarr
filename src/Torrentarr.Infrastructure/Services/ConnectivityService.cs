@@ -63,7 +63,7 @@ public class ConnectivityService : IConnectivityService
                     _logger.LogTrace("Ping successful to {Host} - connectivity confirmed", host);
                     _isConnected = true;
                     _lastChecked = DateTime.UtcNow;
-                    _logger.LogDebug("Internet connectivity confirmed via {Host}", host);
+                    _logger.LogTrace("Internet connectivity confirmed via {Host}", host);
                     return true;
                 }
                 
@@ -100,7 +100,7 @@ public class ConnectivityService : IConnectivityService
         }
         catch (Exception ex)
         {
-            _logger.LogDebug(ex, "qBittorrent not reachable");
+            _logger.LogTrace(ex, "qBittorrent not reachable");
             return false;
         }
     }
