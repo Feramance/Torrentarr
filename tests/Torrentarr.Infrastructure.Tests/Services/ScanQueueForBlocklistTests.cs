@@ -18,6 +18,12 @@ namespace Torrentarr.Infrastructure.Tests.Services;
 /// </summary>
 public class ScanQueueForBlocklistTests
 {
+    // Alias for the tuple type the private method expects
+    private static (int Id, string? DownloadId, string? TrackedDownloadStatus,
+        string? TrackedDownloadState, List<StatusMessage>? StatusMessages)
+        Item(int id, string? downloadId, string? status, string? state, List<StatusMessage>? msgs)
+        => (id, downloadId, status, state, msgs);
+
     private static ArrSyncService CreateService()
     {
         var options = new DbContextOptionsBuilder<TorrentarrDbContext>()
@@ -51,11 +57,8 @@ public class ScanQueueForBlocklistTests
         var svc = CreateService();
         var deleted = new List<int>();
         var cfg = new ArrInstanceConfig { ArrErrorCodesToBlocklist = [] };
-        var items = new[]
-        {
-            (1, "abc", "warning", "importPending",
-             new List<StatusMessage> { new() { Messages = ["Corrupt video file"] } })
-        };
+        var items = new[] { Item(1, "abc", "warning", "importPending",
+            [new StatusMessage { Messages = ["Corrupt video file"] }]) };
 
         await InvokeScanAsync(svc, items, cfg, (id, _) => { deleted.Add(id); return Task.FromResult(true); });
 
@@ -70,11 +73,8 @@ public class ScanQueueForBlocklistTests
         var svc = CreateService();
         var deleted = new List<int>();
         var cfg = new ArrInstanceConfig { ArrErrorCodesToBlocklist = ["Corrupt"] };
-        var items = new[]
-        {
-            (2, "h2", "ok", "importPending",
-             new List<StatusMessage> { new() { Messages = ["Corrupt video file"] } })
-        };
+        var items = new[] { Item(2, "h2", "ok", "importPending",
+            [new StatusMessage { Messages = ["Corrupt video file"] }]) };
 
         await InvokeScanAsync(svc, items, cfg, (id, _) => { deleted.Add(id); return Task.FromResult(true); });
 
@@ -89,11 +89,8 @@ public class ScanQueueForBlocklistTests
         var svc = CreateService();
         var deleted = new List<int>();
         var cfg = new ArrInstanceConfig { ArrErrorCodesToBlocklist = ["Corrupt"] };
-        var items = new[]
-        {
-            (3, "h3", "warning", "downloading",
-             new List<StatusMessage> { new() { Messages = ["Corrupt video file"] } })
-        };
+        var items = new[] { Item(3, "h3", "warning", "downloading",
+            [new StatusMessage { Messages = ["Corrupt video file"] }]) };
 
         await InvokeScanAsync(svc, items, cfg, (id, _) => { deleted.Add(id); return Task.FromResult(true); });
 
@@ -108,11 +105,8 @@ public class ScanQueueForBlocklistTests
         var svc = CreateService();
         var deleted = new List<int>();
         var cfg = new ArrInstanceConfig { ArrErrorCodesToBlocklist = ["Corrupt video file"] };
-        var items = new[]
-        {
-            (42, "hashX", "warning", "importPending",
-             new List<StatusMessage> { new() { Messages = ["Corrupt video file or severe data loss"] } })
-        };
+        var items = new[] { Item(42, "hashX", "warning", "importPending",
+            [new StatusMessage { Messages = ["Corrupt video file or severe data loss"] }]) };
 
         await InvokeScanAsync(svc, items, cfg, (id, _) => { deleted.Add(id); return Task.FromResult(true); });
 
@@ -125,11 +119,8 @@ public class ScanQueueForBlocklistTests
         var svc = CreateService();
         var deleted = new List<int>();
         var cfg = new ArrInstanceConfig { ArrErrorCodesToBlocklist = ["Corrupt"] };
-        var items = new[]
-        {
-            (5, "h5", "warning", "importPending",
-             new List<StatusMessage> { new() { Messages = ["No suitable files were found"] } })
-        };
+        var items = new[] { Item(5, "h5", "warning", "importPending",
+            [new StatusMessage { Messages = ["No suitable files were found"] }]) };
 
         await InvokeScanAsync(svc, items, cfg, (id, _) => { deleted.Add(id); return Task.FromResult(true); });
 
@@ -142,10 +133,7 @@ public class ScanQueueForBlocklistTests
         var svc = CreateService();
         var deleted = new List<int>();
         var cfg = new ArrInstanceConfig { ArrErrorCodesToBlocklist = ["Corrupt"] };
-        var items = new[]
-        {
-            (6, "h6", "warning", "importPending", (List<StatusMessage>?)null)
-        };
+        var items = new[] { Item(6, "h6", "warning", "importPending", null) };
 
         await InvokeScanAsync(svc, items, cfg, (id, _) => { deleted.Add(id); return Task.FromResult(true); });
 
@@ -158,11 +146,8 @@ public class ScanQueueForBlocklistTests
         var svc = CreateService();
         var deleted = new List<int>();
         var cfg = new ArrInstanceConfig { ArrErrorCodesToBlocklist = ["Corrupt"] };
-        var items = new[]
-        {
-            (7, "h7", "warning", "importPending",
-             new List<StatusMessage> { new() { Messages = null } })
-        };
+        var items = new[] { Item(7, "h7", "warning", "importPending",
+            [new StatusMessage { Messages = null }]) };
 
         await InvokeScanAsync(svc, items, cfg, (id, _) => { deleted.Add(id); return Task.FromResult(true); });
 
@@ -176,13 +161,9 @@ public class ScanQueueForBlocklistTests
     {
         var svc = CreateService();
         var deleted = new List<int>();
-        // Code in lower-case, message and status/state in upper-case
         var cfg = new ArrInstanceConfig { ArrErrorCodesToBlocklist = ["corrupt video"] };
-        var items = new[]
-        {
-            (8, "h8", "WARNING", "IMPORTPENDING",
-             new List<StatusMessage> { new() { Messages = ["CORRUPT VIDEO file detected"] } })
-        };
+        var items = new[] { Item(8, "h8", "WARNING", "IMPORTPENDING",
+            [new StatusMessage { Messages = ["CORRUPT VIDEO file detected"] }]) };
 
         await InvokeScanAsync(svc, items, cfg, (id, _) => { deleted.Add(id); return Task.FromResult(true); });
 
@@ -199,16 +180,16 @@ public class ScanQueueForBlocklistTests
         var deleted = new List<int>();
         var cfg = new ArrInstanceConfig { ArrErrorCodesToBlocklist = ["Corrupt"] };
 
-        var items = new (int, string?, string?, string?, List<StatusMessage>?)[]
+        var items = new[]
         {
-            (10, "h10", "warning", "importPending",
-             new List<StatusMessage> { new() { Messages = ["Corrupt video"] } }),   // match
-            (11, "h11", "warning", "downloading",
-             new List<StatusMessage> { new() { Messages = ["Corrupt video"] } }),   // wrong state
-            (12, "h12", "ok",      "importPending",
-             new List<StatusMessage> { new() { Messages = ["Corrupt video"] } }),   // wrong status
-            (13, "h13", "warning", "importPending",
-             new List<StatusMessage> { new() { Messages = ["No match here"] } }),   // no code match
+            Item(10, "h10", "warning", "importPending",
+                [new StatusMessage { Messages = ["Corrupt video"] }]),   // match
+            Item(11, "h11", "warning", "downloading",
+                [new StatusMessage { Messages = ["Corrupt video"] }]),   // wrong state
+            Item(12, "h12", "ok",      "importPending",
+                [new StatusMessage { Messages = ["Corrupt video"] }]),   // wrong status
+            Item(13, "h13", "warning", "importPending",
+                [new StatusMessage { Messages = ["No match here"] }]),   // no code match
         };
 
         await InvokeScanAsync(svc, items, cfg, (id, _) => { deleted.Add(id); return Task.FromResult(true); });
@@ -222,15 +203,9 @@ public class ScanQueueForBlocklistTests
     {
         var svc = CreateService();
         var deleted = new List<int>();
-        var cfg = new ArrInstanceConfig
-        {
-            ArrErrorCodesToBlocklist = ["CodeA", "CodeB"]
-        };
-        var items = new[]
-        {
-            (20, "h20", "warning", "importPending",
-             new List<StatusMessage> { new() { Messages = ["Contains CodeB here"] } })
-        };
+        var cfg = new ArrInstanceConfig { ArrErrorCodesToBlocklist = ["CodeA", "CodeB"] };
+        var items = new[] { Item(20, "h20", "warning", "importPending",
+            [new StatusMessage { Messages = ["Contains CodeB here"] }]) };
 
         await InvokeScanAsync(svc, items, cfg, (id, _) => { deleted.Add(id); return Task.FromResult(true); });
 

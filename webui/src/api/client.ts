@@ -4,6 +4,7 @@ import type {
   ConfigResponseWithWarning,
   ConfigUpdatePayload,
   ConfigUpdateResponse,
+  LidarrTracksResponse,
   MetaResponse,
   LogsListResponse,
   LogFileInfo,
@@ -14,6 +15,7 @@ import type {
   SonarrSeriesResponse,
   LidarrAlbumsResponse,
   StatusResponse,
+  TorrentDistribution,
 } from "./types";
 
 export type { LogFileInfo };
@@ -358,4 +360,25 @@ export async function testArrConnection(
     method: "POST",
     body: JSON.stringify(request),
   });
+}
+
+export async function getToken(): Promise<{ token: string }> {
+  return fetchJson<{ token: string }>("/web/token");
+}
+
+export async function getTorrentsDistribution(): Promise<TorrentDistribution> {
+  return fetchJson<TorrentDistribution>("/web/torrents/distribution");
+}
+
+export async function getLidarrTracks(
+  category: string,
+  page = 0,
+  pageSize = 50
+): Promise<LidarrTracksResponse> {
+  const params = new URLSearchParams();
+  params.set("page", String(page));
+  params.set("page_size", String(pageSize));
+  return fetchJson<LidarrTracksResponse>(
+    `/web/lidarr/${encodeURIComponent(category)}/tracks?${params}`
+  );
 }
