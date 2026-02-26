@@ -143,7 +143,6 @@ try
     builder.Services.AddScoped<ArrSyncService>();
     builder.Services.AddScoped<IArrImportService, ArrImportService>();
     builder.Services.AddScoped<ISeedingService, SeedingService>();
-    builder.Services.AddScoped<IFreeSpaceService, FreeSpaceService>();
     builder.Services.AddScoped<ITorrentProcessor, TorrentProcessor>();
     builder.Services.AddScoped<IArrMediaService, ArrMediaService>();
     builder.Services.AddScoped<ISearchExecutor, SearchExecutor>();
@@ -2185,6 +2184,7 @@ class ProcessOrchestratorService : BackgroundService
     private readonly ILogger<ProcessOrchestratorService> _logger;
     private readonly TorrentarrConfig _config;
     private readonly QBittorrentConnectionManager _qbitManager;
+    private readonly IServiceScopeFactory _scopeFactory;
     private readonly HashSet<string> _managedCategories;
     private long _currentFreeSpace;
     private long _minFreeSpaceBytes;
@@ -2194,11 +2194,13 @@ class ProcessOrchestratorService : BackgroundService
     public ProcessOrchestratorService(
         ILogger<ProcessOrchestratorService> logger,
         TorrentarrConfig config,
-        QBittorrentConnectionManager qbitManager)
+        QBittorrentConnectionManager qbitManager,
+        IServiceScopeFactory scopeFactory)
     {
         _logger = logger;
         _config = config;
         _qbitManager = qbitManager;
+        _scopeFactory = scopeFactory;
         _managedCategories = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
         _minFreeSpaceBytes = (long)(_config.Settings.FreeSpaceThresholdGB ?? 10) * 1024L * 1024L * 1024L;
         _qbitConfigured = config.QBitInstances.Values.Any(q =>
@@ -2368,6 +2370,15 @@ class ProcessOrchestratorService : BackgroundService
 
         _logger.LogInformation("FreeSpace: Using folder {Folder} for space monitoring", _freeSpaceFolder);
         
+        // §1.6: tagless mode needs a DB scope to read/write FreeSpacePaused column
+        IServiceScope? scope = null;
+        TorrentarrDbContext? dbContext = null;
+        if (_config.Settings.Tagless)
+        {
+            scope = _scopeFactory.CreateScope();
+            dbContext = scope.ServiceProvider.GetRequiredService<TorrentarrDbContext>();
+        }
+
         try
         {
             var driveInfo = new DriveInfo(_freeSpaceFolder);
@@ -2385,28 +2396,45 @@ class ProcessOrchestratorService : BackgroundService
             }
 
             foreach (var (client, torrent) in allTorrents.OrderBy(x => x.torrent.AddedOn))
-                await ProcessSingleTorrentSpaceAsync(client, torrent, cancellationToken);
+                await ProcessSingleTorrentSpaceAsync(client, torrent, dbContext, cancellationToken);
         }
         catch (Exception ex)
         {
             _logger.LogError(ex, "Error in free space manager");
         }
+        finally
+        {
+            scope?.Dispose();
+        }
     }
 
-    private async Task ProcessSingleTorrentSpaceAsync(QBittorrentClient client, TorrentInfo torrent, CancellationToken cancellationToken)
+    private async Task ProcessSingleTorrentSpaceAsync(
+        QBittorrentClient client, TorrentInfo torrent, TorrentarrDbContext? dbContext, CancellationToken cancellationToken)
     {
         const string freeSpacePausedTag = "qBitrr-free_space_paused";
+        var tagless = _config.Settings.Tagless;
 
         var isDownloading = torrent.State.Contains("downloading", StringComparison.OrdinalIgnoreCase) ||
                            torrent.State.Contains("stalledDL", StringComparison.OrdinalIgnoreCase);
         var isPausedDownload = torrent.State.Contains("pausedDL", StringComparison.OrdinalIgnoreCase);
-        var hasFreeSpaceTag = torrent.Tags?.Contains(freeSpacePausedTag) == true;
+
+        // §1.6: tagless mode reads FreeSpacePaused from DB column; otherwise check qBit tag
+        bool hasFreeSpaceTag;
+        if (tagless && dbContext != null)
+        {
+            var dbEntry = await dbContext.TorrentLibrary.AsNoTracking()
+                .FirstOrDefaultAsync(t => t.Hash == torrent.Hash, cancellationToken);
+            hasFreeSpaceTag = dbEntry?.FreeSpacePaused == true;
+        }
+        else
+        {
+            hasFreeSpaceTag = torrent.Tags?.Contains(freeSpacePausedTag) == true;
+        }
 
         if (isDownloading || (isPausedDownload && hasFreeSpaceTag))
         {
             var freeSpaceTest = _currentFreeSpace - torrent.AmountLeft;
 
-            // Log evaluation (qBitrr style)
             _logger.LogInformation(
                 "FreeSpace: Evaluating torrent: {Name} | Current space: {Available} | Space after: {SpaceAfter} | Remaining: {Needed}",
                 torrent.Name, FormatBytes(_currentFreeSpace), FormatBytes(freeSpaceTest), FormatBytes(torrent.AmountLeft));
@@ -2416,7 +2444,12 @@ class ProcessOrchestratorService : BackgroundService
                 _logger.LogInformation(
                     "FreeSpace: Pausing download (insufficient space) | Torrent: {Name} | Available: {Available} | Needed: {Needed} | Deficit: {Deficit}",
                     torrent.Name, FormatBytes(_currentFreeSpace), FormatBytes(torrent.AmountLeft), FormatBytes(-freeSpaceTest));
-                await client.AddTagsAsync(new List<string> { torrent.Hash }, new List<string> { freeSpacePausedTag }, cancellationToken);
+                // §1.6: tagless — set DB column; else apply qBit tag
+                if (tagless && dbContext != null)
+                    await dbContext.TorrentLibrary.Where(t => t.Hash == torrent.Hash)
+                        .ExecuteUpdateAsync(s => s.SetProperty(t => t.FreeSpacePaused, true), cancellationToken);
+                else
+                    await client.AddTagsAsync(new List<string> { torrent.Hash }, new List<string> { freeSpacePausedTag }, cancellationToken);
                 await client.PauseTorrentAsync(torrent.Hash, cancellationToken);
             }
             else if (isPausedDownload && freeSpaceTest >= 0)
@@ -2425,7 +2458,12 @@ class ProcessOrchestratorService : BackgroundService
                     "FreeSpace: Resuming download (space available) | Torrent: {Name} | Available: {Available} | Space after: {SpaceAfter}",
                     torrent.Name, FormatBytes(_currentFreeSpace), FormatBytes(freeSpaceTest));
                 _currentFreeSpace = freeSpaceTest;
-                await client.RemoveTagsAsync(new List<string> { torrent.Hash }, new List<string> { freeSpacePausedTag }, cancellationToken);
+                // §1.6: tagless — clear DB column; else remove qBit tag
+                if (tagless && dbContext != null)
+                    await dbContext.TorrentLibrary.Where(t => t.Hash == torrent.Hash)
+                        .ExecuteUpdateAsync(s => s.SetProperty(t => t.FreeSpacePaused, false), cancellationToken);
+                else
+                    await client.RemoveTagsAsync(new List<string> { torrent.Hash }, new List<string> { freeSpacePausedTag }, cancellationToken);
                 await client.ResumeTorrentAsync(torrent.Hash, cancellationToken);
             }
             else if (isPausedDownload && freeSpaceTest < 0)
@@ -2444,11 +2482,16 @@ class ProcessOrchestratorService : BackgroundService
         }
         else if (!isDownloading && hasFreeSpaceTag)
         {
-            // Torrent completed, remove free space tag
+            // Torrent completed — clear the paused marker
             _logger.LogInformation(
                 "FreeSpace: Torrent completed, removing free space tag | Torrent: {Name} | Available: {Available}",
                 torrent.Name, FormatBytes(_currentFreeSpace + _minFreeSpaceBytes));
-            await client.RemoveTagsAsync(new List<string> { torrent.Hash }, new List<string> { freeSpacePausedTag }, cancellationToken);
+            // §1.6: tagless — clear DB column; else remove qBit tag
+            if (tagless && dbContext != null)
+                await dbContext.TorrentLibrary.Where(t => t.Hash == torrent.Hash)
+                    .ExecuteUpdateAsync(s => s.SetProperty(t => t.FreeSpacePaused, false), cancellationToken);
+            else
+                await client.RemoveTagsAsync(new List<string> { torrent.Hash }, new List<string> { freeSpacePausedTag }, cancellationToken);
         }
     }
 

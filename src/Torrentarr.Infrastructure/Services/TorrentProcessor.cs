@@ -28,7 +28,6 @@ public class TorrentProcessor : ITorrentProcessor
     private readonly TorrentarrConfig _config;
     private readonly IArrImportService? _importService;
     private readonly ISeedingService? _seedingService;
-    private readonly IFreeSpaceService? _freeSpaceService;
 
     private readonly HashSet<string> _specialCategories;
 
@@ -41,8 +40,7 @@ public class TorrentProcessor : ITorrentProcessor
         TorrentarrDbContext dbContext,
         TorrentarrConfig config,
         IArrImportService? importService = null,
-        ISeedingService? seedingService = null,
-        IFreeSpaceService? freeSpaceService = null)
+        ISeedingService? seedingService = null)
     {
         _logger = logger;
         _qbitManager = qbitManager;
@@ -50,7 +48,6 @@ public class TorrentProcessor : ITorrentProcessor
         _config = config;
         _importService = importService;
         _seedingService = seedingService;
-        _freeSpaceService = freeSpaceService;
 
         _specialCategories = new HashSet<string>(StringComparer.OrdinalIgnoreCase)
         {

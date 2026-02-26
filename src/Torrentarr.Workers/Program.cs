@@ -146,7 +146,6 @@ try
     builder.Services.AddScoped<ISearchExecutor, SearchExecutor>();
     builder.Services.AddScoped<IArrMediaService, ArrMediaService>();
     builder.Services.AddScoped<ISeedingService, SeedingService>();
-    builder.Services.AddScoped<IFreeSpaceService, FreeSpaceService>();
     builder.Services.AddScoped<IArrImportService, ArrImportService>();
     builder.Services.AddScoped<IDatabaseHealthService, DatabaseHealthService>();
     builder.Services.AddSingleton<IConnectivityService, ConnectivityService>();
