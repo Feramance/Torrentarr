@@ -1,3 +1,4 @@
+using System.Text.RegularExpressions;
 using Torrentarr.Core.Configuration;
 using Torrentarr.Core.Models;
 using Torrentarr.Core.Services;
@@ -30,6 +31,9 @@ public class TorrentProcessor : ITorrentProcessor
     private readonly IFreeSpaceService? _freeSpaceService;
 
     private readonly HashSet<string> _specialCategories;
+
+    // §2.1: Track torrents that have already had file filtering applied this session
+    private readonly HashSet<string> _fileFilteredTorrents = new(StringComparer.OrdinalIgnoreCase);
 
     public TorrentProcessor(
         ILogger<TorrentProcessor> logger,
@@ -77,9 +81,12 @@ public class TorrentProcessor : ITorrentProcessor
 
         try
         {
-            // Ensure tags exist
-            _logger.LogTrace("Ensuring required tags exist in qBittorrent");
-            await EnsureTagsExistAsync(client, cancellationToken);
+            // Ensure tags exist (skip in Tagless mode — §1.6)
+            if (!_config.Settings.Tagless)
+            {
+                _logger.LogTrace("Ensuring required tags exist in qBittorrent");
+                await EnsureTagsExistAsync(client, cancellationToken);
+            }
             _logger.LogTrace("Tags verified/created successfully");
 
             // NOTE: Free space management is handled GLOBALLY by the Host orchestrator
@@ -177,9 +184,17 @@ public class TorrentProcessor : ITorrentProcessor
         // 1. Progress is 100%
         // 2. State is completed/seeding
         // 3. Not already imported
+        // 4. §2.2: completed at least 60 seconds ago (files fully flushed to disk)
         var isComplete = torrent.Progress >= 1.0;
         var isSeeding = torrent.State.Contains("uploading", StringComparison.OrdinalIgnoreCase) ||
                        torrent.State.Contains("seeding", StringComparison.OrdinalIgnoreCase);
+
+        // Grace period: completion_on=0 means qBit hasn't set it yet; wait until 60s after completion
+        if (torrent.CompletionOn <= 0 ||
+            DateTimeOffset.FromUnixTimeSeconds(torrent.CompletionOn).UtcDateTime > DateTime.UtcNow.AddSeconds(-60))
+        {
+            return false;
+        }
 
         var libraryEntry = await _dbContext.TorrentLibrary
             .FirstOrDefaultAsync(t => t.Hash == hash, cancellationToken);
@@ -231,6 +246,15 @@ public class TorrentProcessor : ITorrentProcessor
                 await _dbContext.SaveChangesAsync(cancellationToken);
                 _logger.LogInformation("Successfully triggered import for torrent {Hash}: {Message}",
                     hash, result.Message);
+
+                // AutoDelete: remove torrent from qBittorrent after successful import
+                var arrCfgForDelete = _config.ArrInstances.Values.FirstOrDefault(a =>
+                    string.Equals(a.Category, libraryEntry.Category, StringComparison.OrdinalIgnoreCase));
+                if (arrCfgForDelete?.Torrent.AutoDelete == true)
+                {
+                    _logger.LogInformation("AutoDelete: removing torrent {Hash} after successful import", hash);
+                    await client.DeleteTorrentsAsync(new List<string> { hash }, deleteFiles: false, cancellationToken);
+                }
             }
             else
             {
@@ -259,6 +283,23 @@ public class TorrentProcessor : ITorrentProcessor
 
         _logger.LogTrace("Begin processing torrent {Name} | Hash: {Hash} | State: {State} | Progress: {Progress:P1} | Category: {Category}",
             torrent.Name, torrent.Hash, torrent.State, torrent.Progress, torrent.Category);
+
+        // §2.13: Per-Arr IgnoreTorrentsYoungerThan — skip non-special torrents added too recently
+        var arrCfg = _config.ArrInstances.Values.FirstOrDefault(a =>
+            string.Equals(a.Category, category, StringComparison.OrdinalIgnoreCase));
+        var ignoreYoungerThan = arrCfg?.Torrent.IgnoreTorrentsYoungerThan
+            ?? _config.Settings.IgnoreTorrentsYoungerThan;
+
+        if (!_specialCategories.Contains(torrent.Category) && torrent.AddedOn > 0)
+        {
+            var addedAt = DateTimeOffset.FromUnixTimeSeconds(torrent.AddedOn).UtcDateTime;
+            if ((DateTime.UtcNow - addedAt).TotalSeconds < ignoreYoungerThan)
+            {
+                _logger.LogTrace("Skipping torrent too young to process: [{Name}] | AddedOn[{AddedOn}] | Age[{Age:F0}s] | Threshold[{Threshold}s]",
+                    torrent.Name, addedAt, (DateTime.UtcNow - addedAt).TotalSeconds, ignoreYoungerThan);
+                return;
+            }
+        }
 
         // Check if torrent is in a special category (failed, recheck)
         if (_specialCategories.Contains(torrent.Category))
@@ -344,6 +385,104 @@ public class TorrentProcessor : ITorrentProcessor
             }
         }
 
+        // §2.1: File filtering — apply once per torrent session when first seen downloading
+        if (!_fileFilteredTorrents.Contains(torrent.Hash) &&
+            (state == TorrentState.Downloading || state == TorrentState.StalledDownloading ||
+             state == TorrentState.ForcedDownloading))
+        {
+            var filterClient = _qbitManager.GetAllClients().Values.FirstOrDefault();
+            if (filterClient != null && arrCfg != null)
+            {
+                _logger.LogTrace("Applying file filter to {Name} ({Hash}) for first time", torrent.Name, torrent.Hash);
+                var wasDeleted = await ApplyFileFilterAsync(torrent, arrCfg, filterClient, cancellationToken);
+                if (wasDeleted)
+                {
+                    _fileFilteredTorrents.Add(torrent.Hash);
+                    return; // Torrent was deleted — stop processing
+                }
+            }
+            _fileFilteredTorrents.Add(torrent.Hash);
+        }
+
+        // §1.4: ReSearchStalled — delete stalled downloads that exceed StalledDelay
+        if (arrCfg != null && arrCfg.Torrent.ReSearchStalled &&
+            state == TorrentState.StalledDownloading &&
+            torrent.LastActivity > 0)
+        {
+            var lastActivityTime = DateTimeOffset.FromUnixTimeSeconds(torrent.LastActivity).UtcDateTime;
+            var stalledMinutes = (DateTime.UtcNow - lastActivityTime).TotalMinutes;
+            if (stalledMinutes > arrCfg.Torrent.StalledDelay)
+            {
+                var stalledClient = _qbitManager.GetAllClients().Values.FirstOrDefault();
+                if (stalledClient != null)
+                {
+                    _logger.LogWarning(
+                        "Stalled torrent exceeded StalledDelay ({Delay} min, actual {Actual:F0} min) — deleting and re-queuing search: [{Name}] ({Hash})",
+                        arrCfg.Torrent.StalledDelay, stalledMinutes, torrent.Name, torrent.Hash);
+                    await stalledClient.DeleteTorrentsAsync(new List<string> { torrent.Hash }, deleteFiles: true, cancellationToken);
+                    stats.Failed++;
+                    return;
+                }
+            }
+        }
+
+        // §1.5 / §3.6: MaximumETA — delete downloads whose last activity exceeds MaximumETA seconds.
+        // Per-tracker MaxETA overrides the global Torrent.MaximumETA (qBitrr §3.6 parity).
+        if (arrCfg != null &&
+            (state == TorrentState.Downloading || state == TorrentState.StalledDownloading ||
+             state == TorrentState.ForcedDownloading) &&
+            torrent.LastActivity > 0 &&
+            torrent.Progress < arrCfg.Torrent.MaximumDeletablePercentage)
+        {
+            // §3.6: resolve per-tracker MaxETA override from merged qBit + Arr tracker config
+            var effectiveMaxETA = arrCfg.Torrent.MaximumETA;
+            if (!string.IsNullOrEmpty(torrent.Tracker))
+            {
+                var torrentTrackerHost = SeedingService.ExtractTrackerHost(torrent.Tracker);
+                var allTrackerCfgs = _config.QBitInstances.Values
+                    .SelectMany(q => q.Trackers)
+                    .Concat(arrCfg.Torrent.Trackers);
+                var matchedCfg = allTrackerCfgs.FirstOrDefault(t =>
+                {
+                    var h = SeedingService.ExtractTrackerHost(t.Uri ?? "");
+                    return string.Equals(h, torrentTrackerHost, StringComparison.OrdinalIgnoreCase)
+                        || torrentTrackerHost.EndsWith("." + h, StringComparison.OrdinalIgnoreCase);
+                });
+                if (matchedCfg?.MaxETA != null)
+                    effectiveMaxETA = matchedCfg.MaxETA.Value;
+            }
+
+            if (effectiveMaxETA > 0)
+            {
+                var lastActivityTime = DateTimeOffset.FromUnixTimeSeconds(torrent.LastActivity).UtcDateTime;
+                var inactiveSeconds = (DateTime.UtcNow - lastActivityTime).TotalSeconds;
+                if (inactiveSeconds > effectiveMaxETA)
+                {
+                    // DoNotRemoveSlow: skip deletion if torrent has a finite ETA (still making progress, just slow)
+                    var isSlow = arrCfg.Torrent.DoNotRemoveSlow && torrent.Eta > 0 && torrent.Eta < 8640000; // < 100 days
+                    if (!isSlow)
+                    {
+                        var etaClient = _qbitManager.GetAllClients().Values.FirstOrDefault();
+                        if (etaClient != null)
+                        {
+                            _logger.LogWarning(
+                                "Torrent inactive for {Inactive:F0}s (MaximumETA={Max}s) — deleting: [{Name}] ({Hash})",
+                                inactiveSeconds, effectiveMaxETA, torrent.Name, torrent.Hash);
+                            await etaClient.DeleteTorrentsAsync(new List<string> { torrent.Hash }, deleteFiles: true, cancellationToken);
+                            stats.Failed++;
+                            return;
+                        }
+                    }
+                    else
+                    {
+                        _logger.LogTrace(
+                            "DoNotRemoveSlow: skipping deletion of slow torrent [{Name}] (ETA={Eta}s, Inactive={Inactive:F0}s)",
+                            torrent.Name, torrent.Eta, inactiveSeconds);
+                    }
+                }
+            }
+        }
+
         // Process based on state
         var isComplete = torrent.Progress >= 1.0;
         var isPaused = torrent.State.Contains("paused", StringComparison.OrdinalIgnoreCase);
@@ -382,6 +521,20 @@ public class TorrentProcessor : ITorrentProcessor
         var client = _qbitManager.GetAllClients().Values.FirstOrDefault();
         if (client == null) return;
 
+        // §2.13: Settings-level IgnoreTorrentsYoungerThan applies to special categories (failed/recheck)
+        if (torrent.AddedOn > 0)
+        {
+            var addedAt = DateTimeOffset.FromUnixTimeSeconds(torrent.AddedOn).UtcDateTime;
+            var age = (DateTime.UtcNow - addedAt).TotalSeconds;
+            if (age < _config.Settings.IgnoreTorrentsYoungerThan)
+            {
+                _logger.LogTrace(
+                    "Skipping special-category torrent too young to act on: [{Name}] age={Age:F0}s < threshold={Threshold}s",
+                    torrent.Name, age, _config.Settings.IgnoreTorrentsYoungerThan);
+                return;
+            }
+        }
+
         var failedCategory = _config.Settings.FailedCategory;
         var recheckCategory = _config.Settings.RecheckCategory;
 
@@ -418,6 +571,21 @@ public class TorrentProcessor : ITorrentProcessor
 
     private bool HasTag(TorrentInfo torrent, string tag)
     {
+        // §1.6 Tagless mode: map tags to TorrentLibrary DB columns; IgnoredTag has no DB equivalent → false
+        if (_config.Settings.Tagless)
+        {
+            if (tag == IgnoredTag) return false;
+            var dbEntry = _dbContext.TorrentLibrary.AsNoTracking()
+                .FirstOrDefault(t => t.Hash == torrent.Hash);
+            if (dbEntry == null) return false;
+            return tag switch
+            {
+                FreeSpacePausedTag => dbEntry.FreeSpacePaused,
+                AllowedSeedingTag  => dbEntry.AllowedSeeding,
+                _ => false
+            };
+        }
+
         if (string.IsNullOrEmpty(torrent.Tags))
             return false;
 
@@ -505,5 +673,106 @@ public class TorrentProcessor : ITorrentProcessor
             var s when s.Contains("checking") => TorrentState.CheckingUploading,
             _ => TorrentState.Unknown
         };
+    }
+
+    /// <summary>
+    /// §2.1: Apply file filtering to a downloading torrent.
+    /// Sets excluded files to priority 0; deletes torrent if all files are excluded.
+    /// Returns true if the torrent was deleted.
+    /// </summary>
+    private async Task<bool> ApplyFileFilterAsync(
+        TorrentInfo torrent,
+        ArrInstanceConfig arrCfg,
+        QBittorrentClient client,
+        CancellationToken ct)
+    {
+        var cfg = arrCfg.Torrent;
+
+        // No filtering configured — fast exit
+        if (cfg.FolderExclusionRegex.Count == 0 &&
+            cfg.FileNameExclusionRegex.Count == 0 &&
+            cfg.FileExtensionAllowlist.Count == 0)
+            return false;
+
+        var files = await client.GetTorrentFilesAsync(torrent.Hash, ct);
+        if (files.Count == 0)
+            return false;
+
+        var regexOptions = cfg.CaseSensitiveMatches ? RegexOptions.None : RegexOptions.IgnoreCase;
+
+        var excludedIds = files
+            .Where(f => ShouldExcludeFile(f.Name, cfg, regexOptions))
+            .Select(f => f.Index)
+            .ToArray();
+
+        if (excludedIds.Length == 0)
+            return false;
+
+        // If ALL files are excluded, delete the torrent entirely
+        if (excludedIds.Length >= files.Count)
+        {
+            _logger.LogWarning(
+                "All {Total} files excluded in [{Name}] ({Hash}) — deleting torrent",
+                files.Count, torrent.Name, torrent.Hash);
+            await client.DeleteTorrentsAsync(new List<string> { torrent.Hash }, deleteFiles: true, ct);
+            return true;
+        }
+
+        // Set excluded files to priority 0 (do not download)
+        _logger.LogDebug(
+            "File filter: setting {Excluded}/{Total} files to priority 0 in [{Name}]: {Files}",
+            excludedIds.Length, files.Count, torrent.Name,
+            string.Join(", ", files.Where(f => excludedIds.Contains(f.Index)).Select(f => f.Name)));
+        await client.SetFilePriorityAsync(torrent.Hash, excludedIds, 0, ct);
+        return false;
+    }
+
+    /// <summary>
+    /// Returns true if a file should be excluded based on folder/filename regex and extension allowlist.
+    /// </summary>
+    private static bool ShouldExcludeFile(string filePath, TorrentConfig cfg, RegexOptions regexOptions)
+    {
+        // Normalize to forward slashes
+        filePath = filePath.Replace('\\', '/');
+
+        var parts = filePath.Split('/', StringSplitOptions.RemoveEmptyEntries);
+        var fileName = parts.Last();
+        var folderParts = parts.Take(parts.Length - 1);
+
+        // Check folder exclusion regex against each path component
+        foreach (var folder in folderParts)
+        {
+            foreach (var pattern in cfg.FolderExclusionRegex)
+            {
+                try
+                {
+                    if (Regex.IsMatch(folder, pattern, regexOptions))
+                        return true;
+                }
+                catch (ArgumentException) { /* skip bad regex patterns */ }
+            }
+        }
+
+        // Check file name exclusion regex
+        foreach (var pattern in cfg.FileNameExclusionRegex)
+        {
+            try
+            {
+                if (Regex.IsMatch(fileName, pattern, regexOptions))
+                    return true;
+            }
+            catch (ArgumentException) { /* skip bad regex patterns */ }
+        }
+
+        // Check file extension allowlist — if allowlist is non-empty, extension must be in it
+        if (cfg.FileExtensionAllowlist.Count > 0)
+        {
+            var ext = Path.GetExtension(fileName);
+            if (!cfg.FileExtensionAllowlist.Any(allowed =>
+                    string.Equals(allowed, ext, StringComparison.OrdinalIgnoreCase)))
+                return true;
+        }
+
+        return false;
     }
 }

@@ -103,7 +103,7 @@ public class TorrentarrConfigDefaultsTests
 
         tracker.HitAndRunMode.Should().BeNull();
         tracker.MinSeedRatio.Should().BeNull();
-        tracker.MinSeedingTime.Should().BeNull();
+        tracker.MinSeedingTimeDays.Should().BeNull();
         tracker.HitAndRunMinimumDownloadPercent.Should().BeNull();
         tracker.HitAndRunPartialSeedRatio.Should().BeNull();
         tracker.TrackerUpdateBuffer.Should().BeNull();
@@ -116,7 +116,7 @@ public class TorrentarrConfigDefaultsTests
         {
             HitAndRunMode = true,
             MinSeedRatio = 1.5,
-            MinSeedingTime = 3,
+            MinSeedingTimeDays = 3,
             HitAndRunMinimumDownloadPercent = 15,
             HitAndRunPartialSeedRatio = 2.0,
             TrackerUpdateBuffer = 300
@@ -124,7 +124,7 @@ public class TorrentarrConfigDefaultsTests
 
         tracker.HitAndRunMode.Should().BeTrue();
         tracker.MinSeedRatio.Should().Be(1.5);
-        tracker.MinSeedingTime.Should().Be(3);
+        tracker.MinSeedingTimeDays.Should().Be(3);
         tracker.HitAndRunMinimumDownloadPercent.Should().Be(15);
         tracker.HitAndRunPartialSeedRatio.Should().Be(2.0);
         tracker.TrackerUpdateBuffer.Should().Be(300);

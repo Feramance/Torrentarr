@@ -4,6 +4,7 @@ using Torrentarr.Core.Services;
 using Torrentarr.Infrastructure.ApiClients.QBittorrent;
 using Torrentarr.Infrastructure.Database;
 using Torrentarr.Infrastructure.Services;
+using Torrentarr.Host;
 using Torrentarr.Host.Sinks;
 using Microsoft.EntityFrameworkCore;
 using Serilog;
@@ -133,6 +134,7 @@ try
     builder.Services.AddSingleton(configLoader);
     builder.Services.AddSingleton<QBittorrentConnectionManager>();
     builder.Services.AddSingleton<ProcessStateManager>();
+    builder.Services.AddSingleton<IConnectivityService, ConnectivityService>();
     // ArrWorkerManager registered as both singleton and IHostedService so it's injectable in endpoints
     builder.Services.AddSingleton<ArrWorkerManager>();
     builder.Services.AddHostedService(sp => sp.GetRequiredService<ArrWorkerManager>());
@@ -145,7 +147,11 @@ try
     builder.Services.AddScoped<ITorrentProcessor, TorrentProcessor>();
     builder.Services.AddScoped<IArrMediaService, ArrMediaService>();
     builder.Services.AddScoped<ISearchExecutor, SearchExecutor>();
+    builder.Services.AddScoped<QualityProfileSwitcherService>();
     builder.Services.AddSingleton<ITorrentCacheService, TorrentCacheService>();
+    // §6.10 / §1.8: update check + auto-update
+    builder.Services.AddSingleton<UpdateService>();
+    builder.Services.AddHostedService<AutoUpdateBackgroundService>();
 
     builder.Services.AddControllers()
         .AddNewtonsoftJson(options =>
@@ -264,8 +270,12 @@ try
     // ==================== /web/* endpoints ====================
 
     // Web Meta — fetches latest release from GitHub and compares with current version
-    app.MapGet("/web/meta", async (TorrentarrConfig cfg) =>
-        Results.Ok(await FetchMetaAsync(cfg)));
+    // §6.10: GET /web/meta — version info + update state (MetaResponse-compatible)
+    app.MapGet("/web/meta", async (UpdateService updater) =>
+    {
+        await updater.CheckForUpdateAsync();
+        return Results.Ok(updater.BuildMetaResponse());
+    });
 
     // Web Status — matches TypeScript StatusResponse (no extra webui field)
     app.MapGet("/web/status", async (TorrentarrConfig cfg, QBittorrentConnectionManager qbitManager) =>
@@ -994,14 +1004,15 @@ try
         try
         {
             var payload = await request.ReadFromJsonAsync<System.Text.Json.JsonElement>();
-            System.Text.Json.JsonElement changesEl;
-            if (!payload.TryGetProperty("changes", out changesEl))
-                changesEl = payload;
+            if (!payload.TryGetProperty("changes", out var changesEl))
+                return Results.BadRequest(new { error = "Missing 'changes' field" });
 
             var newtonsoftSettings = new Newtonsoft.Json.JsonSerializerSettings
             {
                 ContractResolver = new Newtonsoft.Json.Serialization.DefaultContractResolver(),
                 NullValueHandling = Newtonsoft.Json.NullValueHandling.Ignore,
+                // Replace collections on deserialization to avoid appending to constructor-initialized defaults
+                ObjectCreationHandling = Newtonsoft.Json.ObjectCreationHandling.Replace,
             };
             var serializer = Newtonsoft.Json.JsonSerializer.Create(newtonsoftSettings);
 
@@ -1022,7 +1033,11 @@ try
             foreach (var change in changesObj.Properties())
             {
                 var parts = change.Name.Split('.');
-                var sectionKey = parts[0];
+                var rawSectionKey = parts[0];
+                // Case-insensitive section key: "webui" → "WebUI", "settings" → "Settings"
+                var sectionKey = currentObj.Properties()
+                    .FirstOrDefault(p => p.Name.Equals(rawSectionKey, StringComparison.OrdinalIgnoreCase))?.Name
+                    ?? rawSectionKey;
                 if (change.Value.Type == Newtonsoft.Json.Linq.JTokenType.Null)
                 {
                     // Deletion
@@ -1103,19 +1118,33 @@ try
         }
     });
 
-    // Web Update Trigger
-    app.MapPost("/web/update", () =>
-        Results.Ok(new { success = true, message = "Update triggered" }));
+    // §6.10: POST /web/update — trigger binary download + in-place apply
+    app.MapPost("/web/update", async (UpdateService updater, IHostApplicationLifetime lifetime) =>
+    {
+        if (updater.ApplyState.InProgress)
+            return Results.Ok(new { success = false, message = "Update already in progress" });
 
-    // Web Download Update
-    app.MapGet("/web/download-update", () =>
-        Results.Ok(new
+        // Ensure we have a fresh check before applying
+        await updater.CheckForUpdateAsync();
+        await updater.ApplyUpdateAsync(lifetime);
+        return Results.Ok(new { success = true, message = "Update started — application will restart when complete" });
+    });
+
+    // §6.10: GET /web/download-update — return download URL/name/size for the latest binary
+    app.MapGet("/web/download-update", async (UpdateService updater) =>
+    {
+        await updater.CheckForUpdateAsync();
+        var meta = updater.BuildMetaResponse();
+        // Reflect to extract binary fields from the anonymous type
+        var t = meta.GetType();
+        return Results.Ok(new
         {
-            download_url = (string?)null,
-            download_name = (string?)null,
-            download_size = (long?)null,
-            error = (string?)null
-        }));
+            download_url = (string?)t.GetProperty("binary_download_url")?.GetValue(meta),
+            download_name = (string?)t.GetProperty("binary_download_name")?.GetValue(meta),
+            download_size = (long?)t.GetProperty("binary_download_size")?.GetValue(meta),
+            error = (string?)t.GetProperty("binary_download_error")?.GetValue(meta)
+        });
+    });
 
     // Web Test Arr Connection
     app.MapPost("/web/arr/test-connection", async (TestConnectionRequest req) =>
@@ -1305,8 +1334,11 @@ try
 
     // ==================== /api/* endpoints (Bearer token protected via middleware) ====================
 
-    app.MapGet("/api/meta", async (TorrentarrConfig cfg) =>
-        Results.Ok(await FetchMetaAsync(cfg)));
+    app.MapGet("/api/meta", async (UpdateService updater) =>
+    {
+        await updater.CheckForUpdateAsync();
+        return Results.Ok(updater.BuildMetaResponse());
+    });
 
     app.MapGet("/api/status", async (TorrentarrConfig cfg, QBittorrentConnectionManager qbitManager) =>
     {
@@ -1830,17 +1862,28 @@ try
         }
     });
 
-    app.MapPost("/api/update", () =>
-        Results.Ok(new { success = true, message = "Update triggered" }));
+    app.MapPost("/api/update", async (UpdateService updater, IHostApplicationLifetime lifetime) =>
+    {
+        if (updater.ApplyState.InProgress)
+            return Results.Ok(new { success = false, message = "Update already in progress" });
+        await updater.CheckForUpdateAsync();
+        await updater.ApplyUpdateAsync(lifetime);
+        return Results.Ok(new { success = true, message = "Update started — application will restart when complete" });
+    });
 
-    app.MapGet("/api/download-update", () =>
-        Results.Ok(new
+    app.MapGet("/api/download-update", async (UpdateService updater) =>
+    {
+        await updater.CheckForUpdateAsync();
+        var meta = updater.BuildMetaResponse();
+        var t = meta.GetType();
+        return Results.Ok(new
         {
-            download_url = (string?)null,
-            download_name = (string?)null,
-            download_size = (long?)null,
-            error = (string?)null
-        }));
+            download_url = (string?)t.GetProperty("binary_download_url")?.GetValue(meta),
+            download_name = (string?)t.GetProperty("binary_download_name")?.GetValue(meta),
+            download_size = (long?)t.GetProperty("binary_download_size")?.GetValue(meta),
+            error = (string?)t.GetProperty("binary_download_error")?.GetValue(meta)
+        });
+    });
 
     app.MapPost("/api/arr/test-connection", async (TestConnectionRequest req) =>
     {
@@ -2042,10 +2085,6 @@ static async Task<string> TailLogFileAsync(string path, int maxLines)
     return string.Join("\n", lines.TakeLast(maxLines));
 }
 
-// ── Version / meta helper ─────────────────────────────────────────────────
-static Task<object> FetchMetaAsync(Torrentarr.Core.Configuration.TorrentarrConfig cfg)
-    => MetaHelper.FetchAsync(cfg);
-
 /// <summary>
 /// Recursively sets a value in a JObject following a dot-split path array starting at startIndex.
 /// Creates intermediate JObjects as needed.
@@ -2088,11 +2127,13 @@ static (string reloadType, List<string> affectedInstances) DetermineReloadType(
 {
     var serialize = (object? o) => Newtonsoft.Json.JsonConvert.SerializeObject(o);
 
-    // Global changes (Settings or QBit instances) → full reload
-    bool hasGlobalChanges = serialize(oldCfg.Settings) != serialize(newCfg.Settings)
-                         || serialize(oldCfg.QBitInstances) != serialize(newCfg.QBitInstances);
+    // QBit instance changes → full reload (requires process restart)
+    bool hasQBitChanges = serialize(oldCfg.QBitInstances) != serialize(newCfg.QBitInstances);
 
-    // WebUI connection fields → webui restart
+    // Settings changes → webui reload (workers pick up changes at next cycle)
+    bool hasSettingsChanges = serialize(oldCfg.Settings) != serialize(newCfg.Settings);
+
+    // WebUI connection fields (host/port/token) → webui restart
     bool hasWebuiKeyChanges = oldCfg.WebUI.Host != newCfg.WebUI.Host
                            || oldCfg.WebUI.Port != newCfg.WebUI.Port
                            || oldCfg.WebUI.Token != newCfg.WebUI.Token;
@@ -2113,11 +2154,11 @@ static (string reloadType, List<string> affectedInstances) DetermineReloadType(
     }
     affectedArr.Sort();
 
-    if (hasGlobalChanges)
+    if (hasQBitChanges)
         return ("full", newCfg.ArrInstances.Keys.OrderBy(k => k).ToList());
     if (affectedArr.Count > 0)
         return (affectedArr.Count > 1 ? "multi_arr" : "single_arr", affectedArr);
-    if (hasWebuiKeyChanges)
+    if (hasSettingsChanges || hasWebuiKeyChanges)
         return ("webui", []);
     if (hasFrontendOnlyChanges)
         return ("frontend", []);
@@ -2259,6 +2300,19 @@ class ProcessOrchestratorService : BackgroundService
                 var failedTorrents = await client.GetTorrentsAsync(_config.Settings.FailedCategory, cancellationToken);
                 foreach (var torrent in failedTorrents)
                 {
+                    // §2.13: Settings-level IgnoreTorrentsYoungerThan applies to failed/recheck
+                    if (torrent.AddedOn > 0)
+                    {
+                        var addedAt = DateTimeOffset.FromUnixTimeSeconds(torrent.AddedOn).UtcDateTime;
+                        if ((DateTime.UtcNow - addedAt).TotalSeconds < _config.Settings.IgnoreTorrentsYoungerThan)
+                        {
+                            _logger.LogTrace("[{Instance}] Skipping failed torrent too young: {Name} (age {Age:F0}s < {Threshold}s)",
+                                instanceName, torrent.Name,
+                                (DateTime.UtcNow - addedAt).TotalSeconds,
+                                _config.Settings.IgnoreTorrentsYoungerThan);
+                            continue;
+                        }
+                    }
                     _logger.LogWarning("[{Instance}] Deleting failed torrent: {Name}", instanceName, torrent.Name);
                     await client.DeleteTorrentsAsync(new List<string> { torrent.Hash }, deleteFiles: true, cancellationToken);
                 }
@@ -2266,6 +2320,19 @@ class ProcessOrchestratorService : BackgroundService
                 var recheckTorrents = await client.GetTorrentsAsync(_config.Settings.RecheckCategory, cancellationToken);
                 foreach (var torrent in recheckTorrents)
                 {
+                    // §2.13: Settings-level IgnoreTorrentsYoungerThan applies to failed/recheck
+                    if (torrent.AddedOn > 0)
+                    {
+                        var addedAt = DateTimeOffset.FromUnixTimeSeconds(torrent.AddedOn).UtcDateTime;
+                        if ((DateTime.UtcNow - addedAt).TotalSeconds < _config.Settings.IgnoreTorrentsYoungerThan)
+                        {
+                            _logger.LogTrace("[{Instance}] Skipping recheck torrent too young: {Name} (age {Age:F0}s < {Threshold}s)",
+                                instanceName, torrent.Name,
+                                (DateTime.UtcNow - addedAt).TotalSeconds,
+                                _config.Settings.IgnoreTorrentsYoungerThan);
+                            continue;
+                        }
+                    }
                     _logger.LogInformation("[{Instance}] Re-checking torrent: {Name}", instanceName, torrent.Name);
                     await client.RecheckTorrentsAsync(new List<string> { torrent.Hash }, cancellationToken);
                 }
@@ -2393,98 +2460,6 @@ public record TestConnectionRequest(
     [property: System.Text.Json.Serialization.JsonPropertyName("uri")] string Uri,
     [property: System.Text.Json.Serialization.JsonPropertyName("apiKey")] string ApiKey);
 public record LoggerConfigurationRequest(string Level);
-
-/// <summary>
-/// GitHub release check helper — mirrors qBitrr's versioning.py logic.
-/// Caches the result for 1 hour to avoid hammering the API.
-/// </summary>
-static class MetaHelper
-{
-    private static object? _cache;
-    private static DateTime _cacheAt = DateTime.MinValue;
-    private static readonly SemaphoreSlim _lock = new(1, 1);
-
-    private const string RepoOwner = "Feramance";
-    private const string RepoName = "Torrentarr";
-    private const string GithubApiUrl = $"https://api.github.com/repos/{RepoOwner}/{RepoName}/releases/latest";
-
-    public static async Task<object> FetchAsync(Torrentarr.Core.Configuration.TorrentarrConfig cfg)
-    {
-        if (_cache != null && (DateTime.UtcNow - _cacheAt).TotalHours < 1)
-            return _cache;
-
-        await _lock.WaitAsync();
-        try
-        {
-            // Double-check inside lock
-            if (_cache != null && (DateTime.UtcNow - _cacheAt).TotalHours < 1)
-                return _cache;
-
-            string currentVersion = GetCurrentVersion();
-
-            try
-            {
-                using var http = new System.Net.Http.HttpClient();
-                http.DefaultRequestHeaders.Add("User-Agent", $"{RepoName}/{currentVersion}");
-                http.Timeout = TimeSpan.FromSeconds(10);
-
-                var response = await http.GetAsync(GithubApiUrl);
-                if (response.IsSuccessStatusCode)
-                {
-                    var json = await response.Content.ReadAsStringAsync();
-                    var release = Newtonsoft.Json.Linq.JObject.Parse(json);
-
-                    var latestTag = release["tag_name"]?.ToObject<string>() ?? currentVersion;
-                    // Strip leading 'v' if present
-                    var latestVersion = latestTag.TrimStart('v');
-                    var updateAvailable = IsNewerVersion(latestVersion, currentVersion);
-                    var body = release["body"]?.ToObject<string>() ?? "";
-                    var htmlUrl = release["html_url"]?.ToObject<string>() ?? "";
-
-                    _cache = new
-                    {
-                        version = currentVersion,
-                        latestVersion = latestVersion,
-                        updateAvailable = updateAvailable,
-                        releaseNotes = body,
-                        releaseUrl = htmlUrl
-                    };
-                }
-                else
-                {
-                    _cache = new { version = currentVersion, latestVersion = currentVersion, updateAvailable = false };
-                }
-            }
-            catch
-            {
-                _cache = new { version = currentVersion, latestVersion = currentVersion, updateAvailable = false };
-            }
-
-            _cacheAt = DateTime.UtcNow;
-            return _cache!;
-        }
-        finally
-        {
-            _lock.Release();
-        }
-    }
-
-    private static string GetCurrentVersion()
-    {
-        var asm = System.Reflection.Assembly.GetEntryAssembly();
-        var ver = asm?.GetName().Version;
-        if (ver == null) return "0.0.0";
-        return $"{ver.Major}.{ver.Minor}.{ver.Build}";
-    }
-
-    /// <summary>Returns true if <paramref name="latest"/> is strictly newer than <paramref name="current"/>.</summary>
-    private static bool IsNewerVersion(string latest, string current)
-    {
-        if (System.Version.TryParse(latest, out var l) && System.Version.TryParse(current, out var c))
-            return l > c;
-        return false;
-    }
-}
 
 // Make Program accessible to test projects (WebApplicationFactory<Program>)
 public partial class Program { }

@@ -265,6 +265,13 @@ public class ArrSyncService
 
         await _db.SaveChangesAsync(ct);
         _logger.LogDebug("ArrSyncService: Radarr {Name} synced {Count} queue items", instanceName, queueItems.Count);
+
+        // §1.7: Scan for ArrErrorCodesToBlocklist matches
+        await ScanQueueForBlocklistAsync(
+            queueItems.Select(i => (i.Id, i.DownloadId, i.TrackedDownloadStatus, i.TrackedDownloadState, i.StatusMessages)),
+            cfg,
+            (id, token) => client.DeleteFromQueueAsync(id, removeFromClient: true, blocklist: true, ct: token),
+            ct);
     }
 
     // ── Sonarr ──────────────────────────────────────────────────────────────
@@ -456,6 +463,13 @@ public class ArrSyncService
 
         await _db.SaveChangesAsync(ct);
         _logger.LogDebug("ArrSyncService: Sonarr {Name} synced {Count} queue items", instanceName, queueItems.Count);
+
+        // §1.7: Scan for ArrErrorCodesToBlocklist matches
+        await ScanQueueForBlocklistAsync(
+            queueItems.Select(i => (i.Id, i.DownloadId, i.TrackedDownloadStatus, i.TrackedDownloadState, i.StatusMessages)),
+            cfg,
+            (id, token) => client.DeleteFromQueueAsync(id, removeFromClient: true, blocklist: true, ct: token),
+            ct);
     }
 
     // ── Ombi / Overseerr request marking ────────────────────────────────────
@@ -919,6 +933,13 @@ public class ArrSyncService
 
         await _db.SaveChangesAsync(ct);
         _logger.LogDebug("ArrSyncService: Lidarr {Name} synced {Count} queue items", instanceName, queueItems.Count);
+
+        // §1.7: Scan for ArrErrorCodesToBlocklist matches
+        await ScanQueueForBlocklistAsync(
+            queueItems.Select(i => (i.Id, i.DownloadId, i.TrackedDownloadStatus, i.TrackedDownloadState, i.StatusMessages)),
+            cfg,
+            (id, token) => client.DeleteFromQueueAsync(id, removeFromClient: true, blocklist: true, ct: token),
+            ct);
     }
 
     // ── Helper Methods ────────────────────────────────────────────────────────
@@ -1243,6 +1264,43 @@ public class ArrSyncService
         queue.DownloadId = item.DownloadId;
         queue.Title = item.Title;
         queue.Status = item.Status;
+        queue.TrackedDownloadStatus = item.TrackedDownloadStatus;
+        queue.TrackedDownloadState = item.TrackedDownloadState;
         queue.CustomFormatScore = item.CustomFormatScore;
+    }
+
+    /// <summary>
+    /// §1.7: Scan freshly-synced queue items for entries matching ArrErrorCodesToBlocklist
+    /// and blocklist+delete them from the Arr queue (removeFromClient=true also removes the
+    /// torrent from qBittorrent via Arr's queue deletion API).
+    /// </summary>
+    private async Task ScanQueueForBlocklistAsync(
+        IEnumerable<(int Id, string? DownloadId, string? TrackedDownloadStatus, string? TrackedDownloadState, List<StatusMessage>? StatusMessages)> items,
+        ArrInstanceConfig cfg,
+        Func<int, CancellationToken, Task<bool>> deleteFromQueue,
+        CancellationToken ct)
+    {
+        if (cfg.ArrErrorCodesToBlocklist.Count == 0) return;
+
+        foreach (var (id, downloadId, status, state, messages) in items)
+        {
+            if (!string.Equals(status, "warning", StringComparison.OrdinalIgnoreCase)) continue;
+            if (!string.Equals(state, "importPending", StringComparison.OrdinalIgnoreCase)) continue;
+
+            var allMessages = messages?.SelectMany(m => m.Messages ?? Enumerable.Empty<string>())
+                              ?? Enumerable.Empty<string>();
+
+            var matchedCode = allMessages.FirstOrDefault(msg =>
+                cfg.ArrErrorCodesToBlocklist.Any(code =>
+                    msg.Contains(code, StringComparison.OrdinalIgnoreCase)));
+
+            if (matchedCode == null) continue;
+
+            _logger.LogWarning(
+                "ArrErrorCodesToBlocklist: blocklisting queue item {Id} (hash: {DownloadId}) — matched: \"{Error}\"",
+                id, downloadId, matchedCode);
+
+            await deleteFromQueue(id, ct);
+        }
     }
 }

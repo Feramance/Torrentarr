@@ -7,6 +7,7 @@ using Microsoft.Extensions.DependencyInjection.Extensions;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
 using Torrentarr.Core.Configuration;
+using Torrentarr.Core.Services;
 using Torrentarr.Infrastructure.Database;
 using Torrentarr.Infrastructure.Services;
 
@@ -100,8 +101,9 @@ public class NoOpArrWorkerManager : ArrWorkerManager
         ILogger<ArrWorkerManager> logger,
         IServiceScopeFactory scopeFactory,
         TorrentarrConfig config,
-        ProcessStateManager stateManager)
-        : base(logger, scopeFactory, config, stateManager) { }
+        ProcessStateManager stateManager,
+        IConnectivityService connectivityService)
+        : base(logger, scopeFactory, config, stateManager, connectivityService) { }
 
     protected override Task ExecuteAsync(CancellationToken stoppingToken) => Task.CompletedTask;
 }

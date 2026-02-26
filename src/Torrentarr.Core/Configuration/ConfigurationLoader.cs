@@ -221,7 +221,7 @@ public class ConfigurationLoader
             tracker.MinSeedRatio = Convert.ToDouble(minRatio);
 
         if (table.TryGetValue("MinSeedingTime", out var minTime))
-            tracker.MinSeedingTime = Convert.ToInt32(minTime);
+            tracker.MinSeedingTimeDays = Convert.ToInt32(minTime);
 
         if (table.TryGetValue("HitAndRunMinimumDownloadPercent", out var hnrMinDlPct))
             tracker.HitAndRunMinimumDownloadPercent = Convert.ToInt32(hnrMinDlPct);
@@ -244,6 +244,17 @@ public class ConfigurationLoader
 
         if (table.TryGetValue("TrackerUpdateBuffer", out var trackerUpdateBuffer))
             tracker.TrackerUpdateBuffer = Convert.ToInt32(trackerUpdateBuffer);
+
+        if (table.TryGetValue("SuperSeedMode", out var superSeedMode))
+            tracker.SuperSeedMode = Convert.ToBoolean(superSeedMode);
+
+        // §3.1: Tracker management fields
+        if (table.TryGetValue("RemoveIfExists", out var removeIfExists))
+            tracker.RemoveIfExists = Convert.ToBoolean(removeIfExists);
+        if (table.TryGetValue("AddTrackerIfMissing", out var addTrackerIfMissing))
+            tracker.AddTrackerIfMissing = Convert.ToBoolean(addTrackerIfMissing);
+        if (table.TryGetValue("AddTags", out var addTagsVal) && addTagsVal is Tomlyn.Model.TomlArray addTagsArr)
+            tracker.AddTags = addTagsArr.OfType<string>().ToList();
 
         return tracker;
     }
@@ -861,10 +872,16 @@ public class ConfigurationLoader
                 sb.AppendLine($"MaxSeedingTime = {tracker.MaxSeedingTime ?? -1}");
                 sb.AppendLine($"HitAndRunMode = {(tracker.HitAndRunMode ?? false).ToString().ToLower()}");
                 sb.AppendLine($"MinSeedRatio = {tracker.MinSeedRatio ?? 1.0}");
-                sb.AppendLine($"MinSeedingTime = {tracker.MinSeedingTime ?? 0}");
+                sb.AppendLine($"MinSeedingTime = {tracker.MinSeedingTimeDays ?? 0}"); // TOML key is MinSeedingTime (qBitrr compat)
                 sb.AppendLine($"HitAndRunPartialSeedRatio = {tracker.HitAndRunPartialSeedRatio ?? 1.0}");
                 sb.AppendLine($"TrackerUpdateBuffer = {tracker.TrackerUpdateBuffer ?? 0}");
                 sb.AppendLine($"HitAndRunMinimumDownloadPercent = {tracker.HitAndRunMinimumDownloadPercent ?? 10}");
+                if (tracker.SuperSeedMode.HasValue)
+                    sb.AppendLine($"SuperSeedMode = {tracker.SuperSeedMode.Value.ToString().ToLower()}");
+                sb.AppendLine($"RemoveIfExists = {tracker.RemoveIfExists.ToString().ToLower()}");
+                sb.AppendLine($"AddTrackerIfMissing = {tracker.AddTrackerIfMissing.ToString().ToLower()}");
+                if (tracker.AddTags.Count > 0)
+                    sb.AppendLine($"AddTags = [{string.Join(", ", tracker.AddTags.Select(t => $"'{t}'"))}]");
                 sb.AppendLine();
             }
 

@@ -90,18 +90,25 @@ All processes share:
 
 ### Infrastructure Services
 
-- `TorrentProcessor` — State machine for torrent lifecycle (core processing loop)
-- `SeedingService` — Hit & Run rules (category + tracker-based limits)
-- `FreeSpaceService` — Auto pause/resume based on disk space per torrent
-- `ArrMediaService` — Triggers missing media search and quality upgrades
-- `ArrImportService` — Triggers manual imports in Radarr/Sonarr/Lidarr
-- `ArrSyncService` — Syncs Arr queue/media data into local SQLite DB
+- `TorrentProcessor` — State machine for torrent lifecycle (core processing loop); file filtering, ETA/stalled checks, import grace period, age gating
+- `SeedingService` — Hit & Run rules (category + tracker-based limits); tracker actions (add/remove trackers, tags, super-seed); dead-tracker message removal
+- `FreeSpaceService` — Auto pause/resume based on disk space; gated on `Settings.AutoPauseResume`
+- `ArrMediaService` — Triggers missing media search and quality upgrades; today's-release window (−25h/−1h); unmonitored / specials / reverse-ordering support
+- `ArrImportService` — Triggers manual imports in Radarr/Sonarr/Lidarr with 60-second completion grace period
+- `ArrSyncService` — Syncs Arr queue/media data into local SQLite DB; Ombi/Overseerr request marking; blocklist queue scan (`ArrErrorCodesToBlocklist`)
+- `SearchExecutor` — Executes searches with `SearchBySeries` (smart/true/false), temp-profile switching, search-in-reverse ordering
+- `QualityProfileSwitcherService` — Switches Arr quality profiles to temp before search, restores on timeout (`UseTempForMissing`)
 - `TorrentCacheService` — In-memory cache to reduce qBittorrent API calls
 - `MediaValidationService` — ffprobe integration for file integrity checks
 - `DatabaseHealthService` — SQLite WAL checkpoint, VACUUM, integrity checks
-- `ConnectivityService` — Internet connectivity detection before processing
+- `ConnectivityService` — Internet connectivity detection; checked at top of each worker loop iteration
 - `QBittorrentConnectionManager` — Connection pooling/management
-- `ArrWorkerManager` — Per-instance worker process lifecycle
+- `ArrWorkerManager` — Per-instance worker process lifecycle; exponential backoff (2×1.5^n up to 30 min); RSS sync + RefreshMonitoredDownloads timers
+
+### Host-Only Services
+
+- `UpdateService` — GitHub release checking (cached 1 h), binary download/apply, `UpdateApplyState` tracking; backs `/web/meta`, `/web/update`, `/web/download-update`
+- `AutoUpdateBackgroundService` — Cron-based auto-update (`Settings.AutoUpdateEnabled` / `Settings.AutoUpdateCron`); 5-field cron parser supporting wildcards, lists, ranges
 
 ### Database
 
@@ -130,14 +137,14 @@ Key config sections: `[Settings]`, `[WebUI]`, `[qBit]`, `[qBit.CategorySeeding]`
 
 ## Tests
 
-Three test projects under `tests/`, plus frontend tests in `webui/src/__tests__/`. ~128 total tests (85 .NET, 43 frontend).
+Three test projects under `tests/`, plus frontend tests in `webui/src/__tests__/`. ~276 total tests (~233 .NET, 43 frontend).
 
-| Project | Coverage |
-|---|---|
-| `tests/Torrentarr.Core.Tests` | Config parsing, model defaults — pure unit, no mocks |
-| `tests/Torrentarr.Infrastructure.Tests` | Services (unit + mocked), API clients (live, gated) |
-| `tests/Torrentarr.Host.Tests` | API endpoint integration tests via `WebApplicationFactory<Program>` |
-| `webui/src/__tests__/` | API client deserialization, page rendering, components (Vitest + MSW) |
+| Project | Tests | Coverage |
+| --- | --- | --- |
+| `tests/Torrentarr.Core.Tests` | 50 | Config parsing, model defaults — pure unit, no mocks |
+| `tests/Torrentarr.Infrastructure.Tests` | ~118 | Services (unit + mocked), API clients (live, gated) |
+| `tests/Torrentarr.Host.Tests` | 65 | API endpoint integration tests via `WebApplicationFactory<Program>`; `MatchesCron` unit tests |
+| `webui/src/__tests__/` | 43 | API client deserialization, page rendering, components (Vitest + MSW) |
 
 **Host test isolation:** `TorrentarrWebApplicationFactory` writes a minimal `TestConfigToml` to a temp file and sets `TORRENTARR_CONFIG` in its constructor (before `Program.cs` runs) so tests never touch the user's real config. Background workers are removed from DI; the in-memory SQLite connection is kept alive for the factory lifetime.
 

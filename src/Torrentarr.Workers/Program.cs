@@ -258,11 +258,12 @@ class ArrWorkerService : BackgroundService
                         continue;
                     }
 
-                    // Check internet connectivity
+                    // §2.4: Check internet connectivity, sleep NoInternetSleepTimer on failure
                     if (!await _connectivityService.IsConnectedAsync(stoppingToken))
                     {
-                        _logger.LogWarning("No internet connectivity, skipping processing cycle");
-                        await Task.Delay(TimeSpan.FromMinutes(1), stoppingToken);
+                        _logger.LogWarning("No internet connectivity, skipping processing cycle. Sleeping {Seconds}s",
+                            _config.Settings.NoInternetSleepTimer);
+                        await Task.Delay(TimeSpan.FromSeconds(_config.Settings.NoInternetSleepTimer), stoppingToken);
                         continue;
                     }
 
@@ -379,26 +380,33 @@ class ArrWorkerService : BackgroundService
             }
         }
 
-        // Search for missing media (if configured and on search cycle)
+        // Search (if configured and on search cycle)
         if (!_instanceConfig.ProcessingOnly && ShouldRunSearch())
         {
-            _logger.LogInformation("Searching for missing media in {Instance}", _context.InstanceName);
-            var searchResult = await arrMediaService.SearchMissingMediaAsync(_instanceConfig.Category, cancellationToken);
+            SearchResult? searchResult = null;
 
-            if (searchResult.SearchesTriggered > 0)
+            // §2.7: DoUpgradeSearch is exclusive — when active, skip missing-media search
+            if (_instanceConfig.Search.DoUpgradeSearch)
             {
-                _logger.LogInformation("Triggered {Count} searches for missing media", searchResult.SearchesTriggered);
+                _logger.LogInformation("Searching for quality upgrades (exclusive) in {Instance}", _context.InstanceName);
+                searchResult = await arrMediaService.SearchQualityUpgradesAsync(_instanceConfig.Category, cancellationToken);
             }
-
-            // Search for quality upgrades (if enabled)
-            if (_instanceConfig.Search.DoUpgradeSearch || 
-                _instanceConfig.Search.CustomFormatUnmetSearch || 
-                _instanceConfig.Search.QualityUnmetSearch)
+            else
             {
-                var upgradeResult = await arrMediaService.SearchQualityUpgradesAsync(_instanceConfig.Category, cancellationToken);
-                if (upgradeResult.SearchesTriggered > 0)
+                if (_instanceConfig.Search.SearchMissing)
                 {
-                    _logger.LogInformation("Triggered {Count} searches for quality upgrades", upgradeResult.SearchesTriggered);
+                    _logger.LogInformation("Searching for missing media in {Instance}", _context.InstanceName);
+                    searchResult = await arrMediaService.SearchMissingMediaAsync(_instanceConfig.Category, cancellationToken);
+                    if (searchResult.SearchesTriggered > 0)
+                        _logger.LogInformation("Triggered {Count} searches for missing media", searchResult.SearchesTriggered);
+                }
+
+                // QualityUnmetSearch / CustomFormatUnmetSearch are always additive
+                if (_instanceConfig.Search.QualityUnmetSearch || _instanceConfig.Search.CustomFormatUnmetSearch)
+                {
+                    var upgradeResult = await arrMediaService.SearchQualityUpgradesAsync(_instanceConfig.Category, cancellationToken);
+                    if (upgradeResult.SearchesTriggered > 0)
+                        _logger.LogInformation("Triggered {Count} searches for quality upgrades", upgradeResult.SearchesTriggered);
                 }
             }
         }

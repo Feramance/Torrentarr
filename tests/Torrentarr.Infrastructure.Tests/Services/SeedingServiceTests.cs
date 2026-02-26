@@ -99,7 +99,7 @@ public class SeedingServiceTests
         {
             HitAndRunMode = hnrMode,
             MinSeedRatio = minRatio,
-            MinSeedingTime = minDays,
+            MinSeedingTimeDays = minDays,
             HitAndRunMinimumDownloadPercent = minDlPct,
             HitAndRunPartialSeedRatio = partialRatio,
             TrackerUpdateBuffer = buffer

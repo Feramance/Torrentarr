@@ -159,6 +159,21 @@ public class LidarrClient
     }
 
     /// <summary>
+    /// Update an artist's quality profile (§1.2 UseTempForMissing).
+    /// Fetches the artist, swaps qualityProfileId, then PUTs it back.
+    /// </summary>
+    public async Task<bool> UpdateArtistQualityProfileAsync(int artistId, int qualityProfileId, CancellationToken ct = default)
+    {
+        var artist = await GetArtistAsync(artistId, ct);
+        if (artist == null)
+            return false;
+
+        artist.QualityProfileId = qualityProfileId;
+        var updated = await UpdateArtistAsync(artist, ct);
+        return updated != null;
+    }
+
+    /// <summary>
     /// Get wanted/missing albums
     /// </summary>
     public async Task<WantedAlbumResponse> GetWantedAsync(int page = 1, int pageSize = 50, CancellationToken ct = default)
@@ -380,6 +395,16 @@ public class LidarrClient
         return new List<TrackFile>();
     }
 
+    /// <summary>§6.7: Trigger a full library rescan (RescanArtist command)</summary>
+    public async Task<bool> RescanAsync(CancellationToken ct = default)
+    {
+        var request = new RestRequest("/api/v1/command", Method.Post);
+        AddApiKeyHeader(request);
+        request.AddJsonBody(new { name = "RescanArtist" });
+        var response = await _client.ExecuteAsync(request, ct);
+        return response.IsSuccessful;
+    }
+
     private void AddApiKeyHeader(RestRequest request)
     {
         request.AddHeader("X-Api-Key", _apiKey);
@@ -531,6 +556,15 @@ public class LidarrQueueItem
 
     [JsonProperty("customFormatScore")]
     public int? CustomFormatScore { get; set; }
+
+    [JsonProperty("trackedDownloadStatus")]
+    public string? TrackedDownloadStatus { get; set; }
+
+    [JsonProperty("trackedDownloadState")]
+    public string? TrackedDownloadState { get; set; }
+
+    [JsonProperty("statusMessages")]
+    public List<StatusMessage>? StatusMessages { get; set; }
 }
 
 /// <summary>

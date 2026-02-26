@@ -71,6 +71,9 @@ public class TorrentInfo
     [JsonProperty("eta")]
     public long Eta { get; set; }
 
+    [JsonProperty("last_activity")]
+    public long LastActivity { get; set; }
+
     /// <summary>
     /// Check if torrent state indicates uploading/seeding.
     /// Matches qBitrr's is_uploading check.

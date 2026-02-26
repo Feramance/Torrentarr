@@ -109,13 +109,21 @@ public class TrackerConfig
     public int? RemoveTorrent { get; set; }
     public bool? HitAndRunMode { get; set; }
     public double? MinSeedRatio { get; set; }
-    public int? MinSeedingTime { get; set; }
+    public int? MinSeedingTimeDays { get; set; } // days — matches qBitrr MinSeedingTimeDays / MinSeedingTime TOML key
     public int? HitAndRunMinimumDownloadPercent { get; set; }
     public double? HitAndRunPartialSeedRatio { get; set; }
     public int? DownloadRateLimit { get; set; } // KB/s
     public int? UploadRateLimit { get; set; } // KB/s
     public int? MaxETA { get; set; } // seconds
     public int? TrackerUpdateBuffer { get; set; }
+    /// <summary>§3.5: Enable super-seed mode for torrents whose active tracker matches this config.</summary>
+    public bool? SuperSeedMode { get; set; }
+    /// <summary>§3.1: Remove this tracker URL from any torrent that already has it.</summary>
+    public bool RemoveIfExists { get; set; } = false;
+    /// <summary>§3.1: Inject this tracker URL into any torrent whose category matches but lacks this tracker.</summary>
+    public bool AddTrackerIfMissing { get; set; } = false;
+    /// <summary>§3.1: Tags to apply to any torrent whose active tracker matches this config.</summary>
+    public List<string> AddTags { get; set; } = new();
 }
 
 public class WebUIConfig

@@ -274,14 +274,21 @@ public class ArrMediaService : IArrMediaService
         var candidates = new List<SearchCandidate>();
         var searchConfig = arrConfig.Search;
 
-        var today = DateTime.UtcNow.Date;
+        // qBitrr §2.12: "today's release" = aired between 25 hours ago and 1 hour ago
+        var todayLower = DateTime.UtcNow.AddHours(-25);
+        var todayUpper = DateTime.UtcNow.AddHours(-1);
 
         switch (arrConfig.Type.ToLowerInvariant())
         {
             case "radarr":
-                var movies = await _dbContext.Movies
-                    .Where(m => m.ArrInstance == instanceName && m.Monitored && !m.Searched)
-                    .ToListAsync(cancellationToken);
+                // §2.10: When Unmonitored=true, include unmonitored items
+                var movies = searchConfig.Unmonitored
+                    ? await _dbContext.Movies
+                        .Where(m => m.ArrInstance == instanceName && !m.Searched)
+                        .ToListAsync(cancellationToken)
+                    : await _dbContext.Movies
+                        .Where(m => m.ArrInstance == instanceName && m.Monitored && !m.Searched)
+                        .ToListAsync(cancellationToken);
 
                 foreach (var movie in movies)
                 {
@@ -301,9 +308,14 @@ public class ArrMediaService : IArrMediaService
                 break;
 
             case "sonarr":
-                var episodes = await _dbContext.Episodes
-                    .Where(e => e.ArrInstance == instanceName && e.Monitored == true && !e.Searched)
-                    .ToListAsync(cancellationToken);
+                // §2.10: When Unmonitored=true, include unmonitored items
+                var episodes = searchConfig.Unmonitored
+                    ? await _dbContext.Episodes
+                        .Where(e => e.ArrInstance == instanceName && !e.Searched)
+                        .ToListAsync(cancellationToken)
+                    : await _dbContext.Episodes
+                        .Where(e => e.ArrInstance == instanceName && e.Monitored == true && !e.Searched)
+                        .ToListAsync(cancellationToken);
 
                 foreach (var ep in episodes)
                 {
@@ -313,9 +325,11 @@ public class ArrMediaService : IArrMediaService
                     var priority = GetReasonPriority(ep.Reason, searchConfig);
                     if (priority >= 99) continue;
 
+                    // §2.12: 25h/1h window instead of calendar-day comparison
                     var isTodaysRelease = searchConfig.PrioritizeTodaysReleases &&
                         ep.AirDateUtc.HasValue &&
-                        ep.AirDateUtc.Value.Date == today;
+                        ep.AirDateUtc.Value >= todayLower &&
+                        ep.AirDateUtc.Value <= todayUpper;
 
                     candidates.Add(new SearchCandidate
                     {
@@ -334,9 +348,14 @@ public class ArrMediaService : IArrMediaService
                 break;
 
             case "lidarr":
-                var albums = await _dbContext.Albums
-                    .Where(a => a.ArrInstance == instanceName && a.Monitored && !a.Searched)
-                    .ToListAsync(cancellationToken);
+                // §2.10: When Unmonitored=true, include unmonitored items
+                var albums = searchConfig.Unmonitored
+                    ? await _dbContext.Albums
+                        .Where(a => a.ArrInstance == instanceName && !a.Searched)
+                        .ToListAsync(cancellationToken)
+                    : await _dbContext.Albums
+                        .Where(a => a.ArrInstance == instanceName && a.Monitored && !a.Searched)
+                        .ToListAsync(cancellationToken);
 
                 foreach (var album in albums)
                 {
