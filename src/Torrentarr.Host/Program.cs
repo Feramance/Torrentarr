@@ -271,9 +271,9 @@ try
 
     // Web Meta — fetches latest release from GitHub and compares with current version
     // §6.10: GET /web/meta — version info + update state (MetaResponse-compatible)
-    app.MapGet("/web/meta", async (UpdateService updater) =>
+    app.MapGet("/web/meta", async (UpdateService updater, int? force) =>
     {
-        await updater.CheckForUpdateAsync();
+        await updater.CheckForUpdateAsync(forceRefresh: force.GetValueOrDefault() != 0);
         return Results.Ok(updater.BuildMetaResponse());
     });
 
@@ -971,8 +971,14 @@ try
     });
 
     // Web Arr Restart
-    app.MapPost("/web/arr/{category}/restart", (string category) =>
-        Results.Ok(new { success = true, message = $"Restart requested for {category}" }));
+    app.MapPost("/web/arr/{category}/restart", async (string category, TorrentarrConfig cfg, ArrWorkerManager workerMgr) =>
+    {
+        var instanceName = cfg.ArrInstances
+            .FirstOrDefault(kv => kv.Value.Category.Equals(category, StringComparison.OrdinalIgnoreCase)).Key;
+        if (instanceName != null)
+            await workerMgr.RestartWorkerAsync(instanceName);
+        return Results.Ok(new { success = instanceName != null, message = instanceName != null ? $"Restarted {instanceName}" : $"No worker found for category '{category}'" });
+    });
 
     // Web Config Get — return a FLAT structure matching Python qBitrr's config format.
     // ConfigView.tsx expects all sections at the top level (e.g. "Radarr-1080", "qBit"),
@@ -1334,9 +1340,9 @@ try
 
     // ==================== /api/* endpoints (Bearer token protected via middleware) ====================
 
-    app.MapGet("/api/meta", async (UpdateService updater) =>
+    app.MapGet("/api/meta", async (UpdateService updater, int? force) =>
     {
-        await updater.CheckForUpdateAsync();
+        await updater.CheckForUpdateAsync(forceRefresh: force.GetValueOrDefault() != 0);
         return Results.Ok(updater.BuildMetaResponse());
     });
 
@@ -1495,8 +1501,14 @@ try
         return Results.Ok(new { arr, ready = true, counts });
     });
 
-    app.MapPost("/api/arr/{section}/restart", (string section) =>
-        Results.Ok(new { success = true, message = $"Restart requested for {section}" }));
+    app.MapPost("/api/arr/{section}/restart", async (string section, TorrentarrConfig cfg, ArrWorkerManager workerMgr) =>
+    {
+        var instanceName = cfg.ArrInstances
+            .FirstOrDefault(kv => kv.Value.Category.Equals(section, StringComparison.OrdinalIgnoreCase)).Key;
+        if (instanceName != null)
+            await workerMgr.RestartWorkerAsync(instanceName);
+        return Results.Ok(new { success = instanceName != null, message = instanceName != null ? $"Restarted {instanceName}" : $"No worker found for category '{section}'" });
+    });
 
     app.MapGet("/api/radarr/{category}/movies", async (string category, TorrentarrDbContext db, int? page, int? page_size, string? q, int? year_min, int? year_max, bool? monitored, bool? has_file, bool? quality_met, bool? is_request) =>
     {

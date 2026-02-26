@@ -65,7 +65,7 @@ Log.Logger = new LoggerConfiguration()
 
 // Monitor for log level changes via file
 var logLevelFilePath = Path.Combine(logsPath, $"worker-{instanceName}.loglevel");
-Task.Run(async () =>
+_ = Task.Run(async () =>
 {
     while (true)
     {
