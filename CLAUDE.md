@@ -140,14 +140,14 @@ Key config sections: `[Settings]`, `[WebUI]`, `[qBit]`, `[qBit.CategorySeeding]`
 
 ## Tests
 
-Three test projects under `tests/`, plus frontend tests in `webui/src/__tests__/`. ~276 total tests (~233 .NET, 43 frontend).
+Three test projects under `tests/`, plus frontend tests in `webui/src/__tests__/`. ~569 total tests (~461 .NET, 108 frontend).
 
 | Project | Tests | Coverage |
 | --- | --- | --- |
 | `tests/Torrentarr.Core.Tests` | 50 | Config parsing, model defaults — pure unit, no mocks |
-| `tests/Torrentarr.Infrastructure.Tests` | ~118 | Services (unit + mocked), API clients (live, gated) |
-| `tests/Torrentarr.Host.Tests` | 65 | API endpoint integration tests via `WebApplicationFactory<Program>`; `MatchesCron` unit tests |
-| `webui/src/__tests__/` | 43 | API client deserialization, page rendering, components (Vitest + MSW) |
+| `tests/Torrentarr.Infrastructure.Tests` | 287 | Services (unit + mocked), API clients (live, gated) |
+| `tests/Torrentarr.Host.Tests` | 124 | API endpoint integration tests via `WebApplicationFactory<Program>`; `MatchesCron` unit tests |
+| `webui/src/__tests__/` | 108 | API client deserialization, page rendering, components (Vitest + MSW) |
 
 **Host test isolation:** `TorrentarrWebApplicationFactory` writes a minimal `TestConfigToml` to a temp file and sets `TORRENTARR_CONFIG` in its constructor (before `Program.cs` runs) so tests never touch the user's real config. Background workers are removed from DI; the in-memory SQLite connection is kept alive for the factory lifetime.
 

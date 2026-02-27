@@ -8,10 +8,17 @@ import { ToastProvider } from "../../context/ToastContext";
 import { WebUIProvider } from "../../context/WebUIContext";
 import { SearchProvider } from "../../context/SearchContext";
 
+// Permanent catch-all: settles any stale inflightRequests promises instantly after
+// resetHandlers() clears runtime handlers (prevents cross-test contamination).
 const server = setupServer();
 
 beforeAll(() => server.listen({ onUnhandledRequest: "bypass" }));
-afterEach(() => server.resetHandlers());
+afterEach(async () => {
+  server.resetHandlers();
+  server.use(http.all("*", () => new HttpResponse(null, { status: 500 })));
+  await new Promise<void>((r) => setTimeout(r, 50));
+  server.resetHandlers();
+});
 afterAll(() => server.close());
 
 const minimalConfig = {
@@ -68,6 +75,9 @@ describe("SonarrView – card header", () => {
 
 describe("SonarrView – empty state", () => {
   it("shows 'No series found.' when no instances are configured", async () => {
+    // WebUIContext defaults groupSonarr=true; after config loads (GroupSonarr:false)
+    // the flat aggregate view renders "No series found.". Allow extra time for the
+    // config fetch + state update under CPU load from parallel test workers.
     server.use(
       http.get("/web/config", () => HttpResponse.json(minimalConfig)),
       http.post("/web/config", () => HttpResponse.json({})),
@@ -76,7 +86,7 @@ describe("SonarrView – empty state", () => {
 
     renderView();
 
-    await screen.findByText("No series found.");
+    await screen.findByText("No series found.", {}, { timeout: 5000 });
   });
 
   it("shows 'No series found.' when instance returns empty series list", async () => {

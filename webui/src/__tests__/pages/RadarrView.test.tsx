@@ -8,16 +8,16 @@ import { ToastProvider } from "../../context/ToastContext";
 import { WebUIProvider } from "../../context/WebUIContext";
 import { SearchProvider } from "../../context/SearchContext";
 
+// Permanent catch-all: settles any stale inflightRequests promises instantly after
+// resetHandlers() clears runtime handlers (prevents cross-test contamination).
 const server = setupServer();
 
 beforeAll(() => server.listen({ onUnhandledRequest: "bypass" }));
 afterEach(async () => {
   server.resetHandlers();
-  // The API client uses a module-level `inflightRequests` deduplication map.
-  // Tests that end before a fetch resolves can leave stale entries that bleed
-  // into the next test.  A short flush here lets pending MSW responses resolve
-  // and clears those entries before the next test starts.
+  server.use(http.all("*", () => new HttpResponse(null, { status: 500 })));
   await new Promise<void>((r) => setTimeout(r, 50));
+  server.resetHandlers();
 });
 afterAll(() => server.close());
 

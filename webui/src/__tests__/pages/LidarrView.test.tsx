@@ -8,10 +8,17 @@ import { ToastProvider } from "../../context/ToastContext";
 import { WebUIProvider } from "../../context/WebUIContext";
 import { SearchProvider } from "../../context/SearchContext";
 
+// Permanent catch-all: settles any stale inflightRequests promises instantly after
+// resetHandlers() clears runtime handlers (prevents cross-test contamination).
 const server = setupServer();
 
 beforeAll(() => server.listen({ onUnhandledRequest: "bypass" }));
-afterEach(() => server.resetHandlers());
+afterEach(async () => {
+  server.resetHandlers();
+  server.use(http.all("*", () => new HttpResponse(null, { status: 500 })));
+  await new Promise<void>((r) => setTimeout(r, 50));
+  server.resetHandlers();
+});
 afterAll(() => server.close());
 
 const minimalConfig = {
@@ -69,7 +76,9 @@ describe("LidarrView – card header", () => {
 // ── Empty state (no instances) ────────────────────────────────────────────────
 
 describe("LidarrView – empty state", () => {
-  it("shows 'No albums found.' when no instances are configured", async () => {
+  it("shows 'No tracks found.' when no instances are configured", async () => {
+    // With no instances the component falls into the aggregate view (groupLidarr=false)
+    // which displays "No tracks found." for an empty flat tracks table.
     server.use(
       http.get("/web/config", () => HttpResponse.json(minimalConfig)),
       http.post("/web/config", () => HttpResponse.json({})),
@@ -78,7 +87,7 @@ describe("LidarrView – empty state", () => {
 
     renderView();
 
-    await screen.findByText("No albums found.");
+    await screen.findByText("No tracks found.");
   });
 
   it("shows 'No albums found.' when instance returns empty album list", async () => {
