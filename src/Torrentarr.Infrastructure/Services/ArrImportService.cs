@@ -224,9 +224,9 @@ public class ArrImportService : IArrImportService
         var client = new RadarrClient(config.URI, config.APIKey);
         var queue = await client.GetQueueAsync(ct: cancellationToken);
 
-        return queue.Records.Any(r =>
+        return queue?.Records?.Any(r =>
             r.DownloadId != null &&
-            r.DownloadId.Equals(hash, StringComparison.OrdinalIgnoreCase));
+            r.DownloadId.Equals(hash, StringComparison.OrdinalIgnoreCase)) ?? false;
     }
 
     private async Task<bool> CheckSonarrQueueAsync(
@@ -237,9 +237,9 @@ public class ArrImportService : IArrImportService
         var client = new SonarrClient(config.URI, config.APIKey);
         var queue = await client.GetQueueAsync(ct: cancellationToken);
 
-        return queue.Records.Any(r =>
+        return queue?.Records?.Any(r =>
             r.DownloadId != null &&
-            r.DownloadId.Equals(hash, StringComparison.OrdinalIgnoreCase));
+            r.DownloadId.Equals(hash, StringComparison.OrdinalIgnoreCase)) ?? false;
     }
 
     private async Task<bool> CheckLidarrQueueAsync(
@@ -250,9 +250,9 @@ public class ArrImportService : IArrImportService
         var client = new LidarrClient(config.URI, config.APIKey);
         var queue = await client.GetQueueAsync(ct: cancellationToken);
 
-        return queue.Records.Any(r =>
+        return queue?.Records?.Any(r =>
             r.DownloadId != null &&
-            r.DownloadId.Equals(hash, StringComparison.OrdinalIgnoreCase));
+            r.DownloadId.Equals(hash, StringComparison.OrdinalIgnoreCase)) ?? false;
     }
 
     public async Task MarkAsImportedAsync(string hash, IEnumerable<string> tags, CancellationToken cancellationToken = default)

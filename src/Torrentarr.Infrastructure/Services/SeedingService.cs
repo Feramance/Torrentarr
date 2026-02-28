@@ -136,7 +136,7 @@ public class SeedingService : ISeedingService
         return result;
     }
 
-    public async Task<SeedingStats> GetSeedingStatsAsync(string hash, CancellationToken cancellationToken = default)
+    public async Task<SeedingStats?> GetSeedingStatsAsync(string hash, CancellationToken cancellationToken = default)
     {
         // Search all qBit instances for this hash
         TorrentInfo? torrent = null;
@@ -154,7 +154,7 @@ public class SeedingService : ISeedingService
 
         if (torrent == null)
         {
-            throw new InvalidOperationException($"Torrent {hash} not found");
+            return null;
         }
 
         var stats = new SeedingStats
@@ -197,11 +197,10 @@ public class SeedingService : ISeedingService
                 var meetsTrackerRatio = tracker.MinimumRatio == 0 ||
                     stats.Ratio >= tracker.MinimumRatio;
 
-                if (!meetsTrackerTime || !meetsTrackerRatio)
-                {
+                if (!meetsTrackerTime)
                     stats.MeetsTimeRequirement = false;
-                    stats.MeetsRatioRequirement = meetsTrackerRatio;
-                }
+                if (!meetsTrackerRatio)
+                    stats.MeetsRatioRequirement = false;
 
                 stats.TrackerRequirements.Add(
                     $"{tracker.TrackerUrl}: Ratio {tracker.MinimumRatio}, Time {tracker.MinimumSeedingTime}min");

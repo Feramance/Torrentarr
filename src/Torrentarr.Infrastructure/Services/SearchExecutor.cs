@@ -15,6 +15,9 @@ public class SearchExecutor : ISearchExecutor
     private readonly TorrentarrDbContext _db;
     private readonly QualityProfileSwitcherService _profileSwitcher;
 
+    // Cached per-instance Arr clients — created once, reused across calls
+    private readonly Dictionary<string, object> _clientCache = new(StringComparer.OrdinalIgnoreCase);
+
     private static readonly HashSet<string> ActiveCommandStatuses = new(StringComparer.OrdinalIgnoreCase)
     {
         "queued", "started", "running"
@@ -161,7 +164,7 @@ public class SearchExecutor : ISearchExecutor
                                 candidate.Title, candidate.SeriesId, reasonText);
                         else
                             _logger.LogInformation(
-                                "Searching for: {Title:l} | S{SeasonNumber:E2}E{EpisodeNumber:E3} | [id={ArrId}|episode]{Reason:l}",
+                                "Searching for: {Title:l} | S{SeasonNumber:D2}E{EpisodeNumber:D3} | [id={ArrId}|episode]{Reason:l}",
                                 candidate.Title, candidate.SeasonNumber ?? 0, candidate.EpisodeNumber ?? 0, candidate.ArrId, reasonText);
                         break;
                     case "album":
@@ -175,7 +178,7 @@ public class SearchExecutor : ISearchExecutor
                         break;
                 }
 
-                var triggered = await TriggerSearchForCandidateAsync(arrConfig, candidate, useSeriesSearch, cancellationToken);
+                var triggered = await TriggerSearchForCandidateAsync(instanceName, arrConfig, candidate, useSeriesSearch, cancellationToken);
                 if (triggered)
                 {
                     result.SearchesTriggered++;
@@ -199,6 +202,21 @@ public class SearchExecutor : ISearchExecutor
         return result;
     }
 
+    private object GetOrCreateClient(string instanceName, ArrInstanceConfig arrConfig)
+    {
+        if (_clientCache.TryGetValue(instanceName, out var cached))
+            return cached;
+        object client = arrConfig.Type.ToLowerInvariant() switch
+        {
+            "radarr" => new RadarrClient(arrConfig.URI, arrConfig.APIKey),
+            "sonarr" => new SonarrClient(arrConfig.URI, arrConfig.APIKey),
+            "lidarr" => new LidarrClient(arrConfig.URI, arrConfig.APIKey),
+            _ => new object()
+        };
+        _clientCache[instanceName] = client;
+        return client;
+    }
+
     public async Task<int> GetActiveCommandCountAsync(string instanceName, CancellationToken cancellationToken = default)
     {
         if (!_config.ArrInstances.TryGetValue(instanceName, out var arrConfig))
@@ -206,11 +224,12 @@ public class SearchExecutor : ISearchExecutor
 
         try
         {
-            List<CommandStatus> commands = arrConfig.Type.ToLowerInvariant() switch
+            var rawClient = GetOrCreateClient(instanceName, arrConfig);
+            List<CommandStatus> commands = rawClient switch
             {
-                "radarr" => await new RadarrClient(arrConfig.URI, arrConfig.APIKey).GetCommandsAsync(cancellationToken),
-                "sonarr" => await new SonarrClient(arrConfig.URI, arrConfig.APIKey).GetCommandsAsync(cancellationToken),
-                "lidarr" => await new LidarrClient(arrConfig.URI, arrConfig.APIKey).GetCommandsAsync(cancellationToken),
+                RadarrClient r => await r.GetCommandsAsync(cancellationToken),
+                SonarrClient s => await s.GetCommandsAsync(cancellationToken),
+                LidarrClient l => await l.GetCommandsAsync(cancellationToken),
                 _ => new List<CommandStatus>()
             };
 
@@ -233,6 +252,7 @@ public class SearchExecutor : ISearchExecutor
     }
 
     private async Task<bool> TriggerSearchForCandidateAsync(
+        string instanceName,
         ArrInstanceConfig arrConfig,
         SearchCandidate candidate,
         bool useSeriesSearch,
@@ -240,21 +260,20 @@ public class SearchExecutor : ISearchExecutor
     {
         try
         {
-            switch (arrConfig.Type.ToLowerInvariant())
+            var rawClient = GetOrCreateClient(instanceName, arrConfig);
+
+            switch (rawClient)
             {
-                case "radarr":
-                    var radarrClient = new RadarrClient(arrConfig.URI, arrConfig.APIKey);
+                case RadarrClient radarrClient:
                     return await radarrClient.SearchMovieAsync(candidate.ArrId, cancellationToken);
 
-                case "sonarr":
-                    var sonarrClient = new SonarrClient(arrConfig.URI, arrConfig.APIKey);
+                case SonarrClient sonarrClient:
                     // §2.11: SearchBySeries — use SeriesSearch when useSeriesSearch=true and SeriesId is available
                     if (useSeriesSearch && candidate.SeriesId.HasValue)
                         return await sonarrClient.SearchSeriesAsync(candidate.SeriesId.Value, cancellationToken);
                     return await sonarrClient.SearchEpisodeAsync(new List<int> { candidate.ArrId }, cancellationToken);
 
-                case "lidarr":
-                    var lidarrClient = new LidarrClient(arrConfig.URI, arrConfig.APIKey);
+                case LidarrClient lidarrClient:
                     return await lidarrClient.SearchAlbumAsync(new List<int> { candidate.ArrId }, cancellationToken);
 
                 default:

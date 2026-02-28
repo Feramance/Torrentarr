@@ -303,9 +303,9 @@ public class ArrSyncService
 
         var dbSeries = await _db.Series
             .Where(s => s.ArrInstance == instanceName)
-            .ToDictionaryAsync(s => s.Title ?? "", ct);
+            .ToDictionaryAsync(s => s.ArrId, ct);
 
-        var apiTitles = new HashSet<string>();
+        var apiIds = new HashSet<int>();
         var entityBySonarrId = new Dictionary<int, SeriesFilesModel>();
         var seriesAdded = 0;
         var seriesUpdated = 0;
@@ -313,9 +313,9 @@ public class ArrSyncService
         foreach (var series in seriesList)
         {
             ct.ThrowIfCancellationRequested();
-            apiTitles.Add(series.Title);
+            apiIds.Add(series.Id);
 
-            if (dbSeries.TryGetValue(series.Title, out var existing))
+            if (dbSeries.TryGetValue(series.Id, out var existing))
             {
                 existing.Monitored = series.Monitored;
                 existing.TvdbId = series.TvdbId;
@@ -345,7 +345,7 @@ public class ArrSyncService
         }
 
         var seriesToDelete = dbSeries.Values
-            .Where(s => !apiTitles.Contains(s.Title ?? ""))
+            .Where(s => !apiIds.Contains(s.ArrId))
             .ToList();
         foreach (var series in seriesToDelete)
         {
@@ -418,7 +418,7 @@ public class ArrSyncService
                     Searched = searched
                 });
                 episodesAdded++;
-                _logger.LogTrace("DB Insert: Episode {SeriesTitle} S{SeasonNumber:E} E{EpisodeNumber} added to database (new)",
+                _logger.LogTrace("DB Insert: Episode {SeriesTitle} S{SeasonNumber:D2}E{EpisodeNumber:D2} added to database (new)",
                     seriesEntity.Title, ep.SeasonNumber, ep.EpisodeNumber);
             }
 

@@ -59,9 +59,9 @@ public class TorrentProcessor : ITorrentProcessor
     public async Task ProcessTorrentsAsync(string category, CancellationToken cancellationToken = default)
     {
         _logger.LogTrace("Starting torrent processing for category {Category}", category);
-        
-        var client = _qbitManager.GetAllClients().Values.FirstOrDefault();
-        if (client == null)
+
+        var allClients = _qbitManager.GetAllClients();
+        if (allClients.Count == 0)
         {
             _logger.LogWarning("No qBittorrent client available");
             _logger.LogTrace("Abort processing - no qBittorrent client");
@@ -78,20 +78,28 @@ public class TorrentProcessor : ITorrentProcessor
 
         try
         {
-            // Ensure tags exist (skip in Tagless mode — §1.6)
+            // Ensure tags exist on all clients (skip in Tagless mode — §1.6)
             if (!_config.Settings.Tagless)
             {
                 _logger.LogTrace("Ensuring required tags exist in qBittorrent");
-                await EnsureTagsExistAsync(client, cancellationToken);
+                foreach (var (_, c) in allClients)
+                    await EnsureTagsExistAsync(c, cancellationToken);
             }
             _logger.LogTrace("Tags verified/created successfully");
 
             // NOTE: Free space management is handled GLOBALLY by the Host orchestrator
             // This matches qBitrr's design where FreeSpaceManager runs ONCE per qBittorrent instance
 
-            // Get all torrents for this category
-            _logger.LogTrace("Fetching torrents from qBittorrent for category {Category}", category);
-            var torrents = await client.GetTorrentsAsync(category, cancellationToken);
+            // Get all torrents for this category from ALL qBit instances, stamping instance name
+            _logger.LogTrace("Fetching torrents from all qBittorrent instances for category {Category}", category);
+            var torrents = new List<TorrentInfo>();
+            foreach (var (instanceName, c) in allClients)
+            {
+                var instanceTorrents = await c.GetTorrentsAsync(category, cancellationToken);
+                foreach (var t in instanceTorrents)
+                    t.QBitInstanceName = instanceName;
+                torrents.AddRange(instanceTorrents);
+            }
             _logger.LogDebug("Found {Count} torrents in category {Category}", torrents.Count, category);
             _logger.LogTrace("Torrent fetch complete - {Count} torrents retrieved", torrents.Count);
 
@@ -151,15 +159,18 @@ public class TorrentProcessor : ITorrentProcessor
 
     public async Task ProcessTorrentAsync(string hash, CancellationToken cancellationToken = default)
     {
-        var client = _qbitManager.GetAllClients().Values.FirstOrDefault();
-        if (client == null)
+        TorrentInfo? torrent = null;
+        foreach (var (instanceName, c) in _qbitManager.GetAllClients())
         {
-            _logger.LogWarning("No qBittorrent client available");
-            return;
+            var torrents = await c.GetTorrentsAsync(ct: cancellationToken);
+            var found = torrents.FirstOrDefault(t => t.Hash == hash);
+            if (found != null)
+            {
+                found.QBitInstanceName = instanceName;
+                torrent = found;
+                break;
+            }
         }
-
-        var torrents = await client.GetTorrentsAsync(ct: cancellationToken);
-        var torrent = torrents.FirstOrDefault(t => t.Hash == hash);
 
         if (torrent != null)
         {
@@ -169,11 +180,13 @@ public class TorrentProcessor : ITorrentProcessor
 
     public async Task<bool> IsReadyForImportAsync(string hash, CancellationToken cancellationToken = default)
     {
-        var client = _qbitManager.GetAllClients().Values.FirstOrDefault();
-        if (client == null) return false;
-
-        var torrents = await client.GetTorrentsAsync(ct: cancellationToken);
-        var torrent = torrents.FirstOrDefault(t => t.Hash == hash);
+        TorrentInfo? torrent = null;
+        foreach (var (_, c) in _qbitManager.GetAllClients())
+        {
+            var torrents = await c.GetTorrentsAsync(ct: cancellationToken);
+            var found = torrents.FirstOrDefault(t => t.Hash == hash);
+            if (found != null) { torrent = found; break; }
+        }
 
         if (torrent == null) return false;
 
@@ -205,20 +218,32 @@ public class TorrentProcessor : ITorrentProcessor
     {
         _logger.LogInformation("Importing torrent {Hash}", hash);
 
-        // Get torrent info
-        var client = _qbitManager.GetAllClients().Values.FirstOrDefault();
-        if (client == null)
+        // Get torrent info — search all qBit instances
+        TorrentInfo? torrent = null;
+        string? torrentInstanceName = null;
+        foreach (var (instanceName, c) in _qbitManager.GetAllClients())
         {
-            _logger.LogWarning("No qBittorrent client available for import");
-            return;
+            var torrents = await c.GetTorrentsAsync(ct: cancellationToken);
+            var found = torrents.FirstOrDefault(t => t.Hash == hash);
+            if (found != null)
+            {
+                found.QBitInstanceName = instanceName;
+                torrent = found;
+                torrentInstanceName = instanceName;
+                break;
+            }
         }
-
-        var torrents = await client.GetTorrentsAsync(ct: cancellationToken);
-        var torrent = torrents.FirstOrDefault(t => t.Hash == hash);
 
         if (torrent == null)
         {
             _logger.LogWarning("Torrent {Hash} not found in qBittorrent", hash);
+            return;
+        }
+
+        var client = _qbitManager.GetClient(torrentInstanceName!);
+        if (client == null)
+        {
+            _logger.LogWarning("No qBittorrent client available for import");
             return;
         }
 
@@ -371,7 +396,7 @@ public class TorrentProcessor : ITorrentProcessor
         
         if (torrent.IsStopped && !hasFreeSpaceTag && !hasIgnoredTag)
         {
-            var client = _qbitManager.GetAllClients().Values.FirstOrDefault();
+            var client = _qbitManager.GetClient(torrent.QBitInstanceName);
             if (client != null)
             {
                 _logger.LogDebug("Resuming stopped torrent: [{Name}] | Progress[{Progress:P1}] | State[{State}] | Hash[{Hash}]",
@@ -387,7 +412,7 @@ public class TorrentProcessor : ITorrentProcessor
             (state == TorrentState.Downloading || state == TorrentState.StalledDownloading ||
              state == TorrentState.ForcedDownloading))
         {
-            var filterClient = _qbitManager.GetAllClients().Values.FirstOrDefault();
+            var filterClient = _qbitManager.GetClient(torrent.QBitInstanceName);
             if (filterClient != null && arrCfg != null)
             {
                 _logger.LogTrace("Applying file filter to {Name} ({Hash}) for first time", torrent.Name, torrent.Hash);
@@ -410,7 +435,7 @@ public class TorrentProcessor : ITorrentProcessor
             var stalledMinutes = (DateTime.UtcNow - lastActivityTime).TotalMinutes;
             if (stalledMinutes > arrCfg.Torrent.StalledDelay)
             {
-                var stalledClient = _qbitManager.GetAllClients().Values.FirstOrDefault();
+                var stalledClient = _qbitManager.GetClient(torrent.QBitInstanceName);
                 if (stalledClient != null)
                 {
                     _logger.LogWarning(
@@ -459,7 +484,7 @@ public class TorrentProcessor : ITorrentProcessor
                     var isSlow = arrCfg.Torrent.DoNotRemoveSlow && torrent.Eta > 0 && torrent.Eta < 8640000; // < 100 days
                     if (!isSlow)
                     {
-                        var etaClient = _qbitManager.GetAllClients().Values.FirstOrDefault();
+                        var etaClient = _qbitManager.GetClient(torrent.QBitInstanceName);
                         if (etaClient != null)
                         {
                             _logger.LogWarning(
@@ -515,7 +540,7 @@ public class TorrentProcessor : ITorrentProcessor
         TorrentProcessingStats stats,
         CancellationToken cancellationToken)
     {
-        var client = _qbitManager.GetAllClients().Values.FirstOrDefault();
+        var client = _qbitManager.GetClient(torrent.QBitInstanceName);
         if (client == null) return;
 
         // §2.13: Settings-level IgnoreTorrentsYoungerThan applies to special categories (failed/recheck)
@@ -627,7 +652,7 @@ public class TorrentProcessor : ITorrentProcessor
         CancellationToken cancellationToken)
     {
         var exists = await _dbContext.TorrentLibrary
-            .AnyAsync(t => t.Hash == torrent.Hash && t.QbitInstance == "default", cancellationToken);
+            .AnyAsync(t => t.Hash == torrent.Hash && t.QbitInstance == torrent.QBitInstanceName, cancellationToken);
 
         if (!exists)
         {
@@ -635,7 +660,7 @@ public class TorrentProcessor : ITorrentProcessor
             {
                 Hash = torrent.Hash,
                 Category = category,
-                QbitInstance = "default",
+                QbitInstance = torrent.QBitInstanceName,
                 AllowedSeeding = false,
                 Imported = false,
                 AllowedStalled = false,

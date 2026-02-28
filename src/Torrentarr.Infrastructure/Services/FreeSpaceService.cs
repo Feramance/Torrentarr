@@ -187,6 +187,7 @@ public class FreeSpaceService : IFreeSpaceService
                 {
                     try
                     {
+                        await SetFreeSpacePausedTagAsync(client, torrent.Hash, true, cancellationToken);
                         await client.PauseTorrentAsync(torrent.Hash, cancellationToken);
                         _logger.LogInformation("FreeSpace: [{Instance}] Paused torrent due to low space: {Name}", instanceName, torrent.Name);
                         paused = true;
@@ -225,6 +226,7 @@ public class FreeSpaceService : IFreeSpaceService
                 {
                     try
                     {
+                        await SetFreeSpacePausedTagAsync(client, torrent.Hash, false, cancellationToken);
                         await client.ResumeTorrentAsync(torrent.Hash, cancellationToken);
                         _logger.LogInformation("FreeSpace: [{Instance}] Resumed torrent: {Name}", instanceName, torrent.Name);
                         resumed = true;
