@@ -65,15 +65,16 @@ Log.Logger = new LoggerConfiguration()
 
 // Monitor for log level changes via file
 var logLevelFilePath = Path.Combine(logsPath, $"worker-{instanceName}.loglevel");
+var logWatcherCts = new CancellationTokenSource();
 _ = Task.Run(async () =>
 {
-    while (true)
+    while (!logWatcherCts.Token.IsCancellationRequested)
     {
         try
         {
             if (File.Exists(logLevelFilePath))
             {
-                var level = await File.ReadAllTextAsync(logLevelFilePath);
+                var level = await File.ReadAllTextAsync(logLevelFilePath, logWatcherCts.Token);
                 level = level.Trim().ToUpperInvariant();
                 var newLevel = level switch
                 {
@@ -89,10 +90,18 @@ _ = Task.Run(async () =>
                 Log.Information("Log level changed to {Level} via file", level);
             }
         }
-        catch { }
-        await Task.Delay(TimeSpan.FromSeconds(5));
+        catch (OperationCanceledException)
+        {
+            break;
+        }
+        catch (Exception ex)
+        {
+            Log.Warning(ex, "Log level watcher encountered an error");
+        }
+        try { await Task.Delay(TimeSpan.FromSeconds(5), logWatcherCts.Token); }
+        catch (OperationCanceledException) { break; }
     }
-});
+}, logWatcherCts.Token);
 
 try
 {
@@ -156,6 +165,7 @@ try
 
     await host.RunAsync();
 
+    logWatcherCts.Cancel();
     return 0;
 }
 catch (Exception ex)

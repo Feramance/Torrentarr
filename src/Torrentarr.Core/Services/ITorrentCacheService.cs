@@ -49,6 +49,16 @@ public interface ITorrentCacheService
     /// Clean expired entries from all caches
     /// </summary>
     void CleanExpired();
+
+    /// <summary>
+    /// Check if file filtering has already been applied to this torrent hash this session.
+    /// </summary>
+    bool IsFileFiltered(string hash);
+
+    /// <summary>
+    /// Mark a torrent hash as having file filtering already applied.
+    /// </summary>
+    void MarkFileFiltered(string hash);
 }
 
 public class TorrentCacheStats

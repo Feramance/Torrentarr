@@ -584,23 +584,23 @@ app.MapPost("/web/processes/restart_all", () =>
 // Logs endpoint - list available log files
 app.MapGet("/web/logs", () =>
 {
-    var logs = new List<object>();
+    var files = new List<object>();
 
     if (Directory.Exists(logsPath))
     {
         foreach (var file in Directory.GetFiles(logsPath, "*.log").OrderByDescending(f => f))
         {
             var fileInfo = new FileInfo(file);
-            logs.Add(new
+            files.Add(new
             {
                 name = Path.GetFileName(file),
                 size = fileInfo.Length,
-                modified = fileInfo.LastWriteTimeUtc
+                modified = fileInfo.LastWriteTimeUtc.ToString("o")
             });
         }
     }
 
-    return Results.Ok(new { logs });
+    return Results.Ok(new { files });
 });
 
 // Log file contents

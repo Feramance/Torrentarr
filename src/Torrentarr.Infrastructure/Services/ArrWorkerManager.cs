@@ -40,6 +40,14 @@ public class ArrWorkerManager : BackgroundService
     private readonly ConcurrentDictionary<string, DateTime> _lastRefreshDownloadsTime =
         new(StringComparer.OrdinalIgnoreCase);
 
+    // Cached Arr clients — created once per instance, reused across UpdateCountsAsync ticks
+    private readonly ConcurrentDictionary<string, object> _arrClientCache =
+        new(StringComparer.OrdinalIgnoreCase);
+
+    // Cached QBit clients for count polling — keyed by qBit instance name
+    private readonly ConcurrentDictionary<string, QBittorrentClient> _qbitClientCache =
+        new(StringComparer.OrdinalIgnoreCase);
+
     private readonly IConnectivityService _connectivityService;
 
     private CancellationToken _appStopping;
@@ -115,7 +123,10 @@ public class ArrWorkerManager : BackgroundService
         if (_workers.TryRemove(instanceName, out var old))
         {
             old.Cts.Cancel();
-            try { await old.Task.WaitAsync(TimeSpan.FromSeconds(10)); } catch { }
+            try { await old.Task.WaitAsync(TimeSpan.FromSeconds(10)); }
+            catch (OperationCanceledException) { }
+            catch (TimeoutException) { _logger.LogWarning("Worker {Instance} did not stop within 10s", instanceName); }
+            catch (Exception ex) { _logger.LogError(ex, "Worker {Instance} faulted during shutdown", instanceName); }
             old.Cts.Dispose();
         }
 
@@ -312,13 +323,13 @@ public class ArrWorkerManager : BackgroundService
             int? queueCount = null;
             int? categoryCount = null;
 
-            object? client = arrCfg.Type.ToLowerInvariant() switch
+            var client = _arrClientCache.GetOrAdd(instanceName, _ => arrCfg.Type.ToLowerInvariant() switch
             {
-                "radarr" => new RadarrClient(arrCfg.URI, arrCfg.APIKey),
+                "radarr" => (object)new RadarrClient(arrCfg.URI, arrCfg.APIKey),
                 "sonarr" => new SonarrClient(arrCfg.URI, arrCfg.APIKey),
                 "lidarr" => new LidarrClient(arrCfg.URI, arrCfg.APIKey),
-                _ => null
-            };
+                _ => new object()
+            });
 
             if (client is RadarrClient radarr)
             {
@@ -341,7 +352,8 @@ public class ArrWorkerManager : BackgroundService
                 if (qbitCfg.Disabled || qbitCfg.Host == "CHANGE_ME")
                     continue;
 
-                var qbitClient = new QBittorrentClient(qbitCfg.Host, qbitCfg.Port, qbitCfg.UserName, qbitCfg.Password);
+                var qbitClient = _qbitClientCache.GetOrAdd(qbitName, _ =>
+                    new QBittorrentClient(qbitCfg.Host, qbitCfg.Port, qbitCfg.UserName, qbitCfg.Password));
                 try
                 {
                     var loginSuccess = await qbitClient.LoginAsync(ct);
@@ -535,9 +547,12 @@ public class ArrWorkerManager : BackgroundService
         var snapshot = _workers.ToArray();
         foreach (var (_, (_, cts)) in snapshot)
             cts.Cancel();
-        foreach (var (_, (task, cts)) in snapshot)
+        foreach (var (name, (task, cts)) in snapshot)
         {
-            try { await task.WaitAsync(TimeSpan.FromSeconds(10)); } catch { }
+            try { await task.WaitAsync(TimeSpan.FromSeconds(10)); }
+            catch (OperationCanceledException) { }
+            catch (TimeoutException) { _logger.LogWarning("Worker {Instance} did not stop within 10s during shutdown", name); }
+            catch (Exception ex) { _logger.LogError(ex, "Worker {Instance} faulted during shutdown", name); }
             cts.Dispose();
         }
         _workers.Clear();

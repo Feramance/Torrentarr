@@ -26,19 +26,18 @@ public class TorrentProcessor : ITorrentProcessor
     private readonly QBittorrentConnectionManager _qbitManager;
     private readonly TorrentarrDbContext _dbContext;
     private readonly TorrentarrConfig _config;
+    private readonly ITorrentCacheService _cache;
     private readonly IArrImportService? _importService;
     private readonly ISeedingService? _seedingService;
 
     private readonly HashSet<string> _specialCategories;
-
-    // §2.1: Track torrents that have already had file filtering applied this session
-    private readonly HashSet<string> _fileFilteredTorrents = new(StringComparer.OrdinalIgnoreCase);
 
     public TorrentProcessor(
         ILogger<TorrentProcessor> logger,
         QBittorrentConnectionManager qbitManager,
         TorrentarrDbContext dbContext,
         TorrentarrConfig config,
+        ITorrentCacheService cache,
         IArrImportService? importService = null,
         ISeedingService? seedingService = null)
     {
@@ -46,6 +45,7 @@ public class TorrentProcessor : ITorrentProcessor
         _qbitManager = qbitManager;
         _dbContext = dbContext;
         _config = config;
+        _cache = cache;
         _importService = importService;
         _seedingService = seedingService;
 
@@ -382,8 +382,8 @@ public class TorrentProcessor : ITorrentProcessor
             }
         }
 
-        // §2.1: File filtering — apply once per torrent session when first seen downloading
-        if (!_fileFilteredTorrents.Contains(torrent.Hash) &&
+        // §2.1: File filtering — apply once per torrent (tracked via singleton cache so it persists across loop iterations)
+        if (!_cache.IsFileFiltered(torrent.Hash) &&
             (state == TorrentState.Downloading || state == TorrentState.StalledDownloading ||
              state == TorrentState.ForcedDownloading))
         {
@@ -394,11 +394,11 @@ public class TorrentProcessor : ITorrentProcessor
                 var wasDeleted = await ApplyFileFilterAsync(torrent, arrCfg, filterClient, cancellationToken);
                 if (wasDeleted)
                 {
-                    _fileFilteredTorrents.Add(torrent.Hash);
+                    _cache.MarkFileFiltered(torrent.Hash);
                     return; // Torrent was deleted — stop processing
                 }
             }
-            _fileFilteredTorrents.Add(torrent.Hash);
+            _cache.MarkFileFiltered(torrent.Hash);
         }
 
         // §1.4: ReSearchStalled — delete stalled downloads that exceed StalledDelay

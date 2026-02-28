@@ -405,7 +405,7 @@ function AppShell(): JSX.Element {
 
     // Store current version as last seen when user opens the app (first install)
     if (!lastSeenVersion) {
-      localStorage.setItem("lastSeenVersion", currentVersion);
+      try { localStorage.setItem("lastSeenVersion", currentVersion); } catch { /* quota exceeded or private mode */ }
     }
   }, [meta?.current_version, meta?.changelog, refreshMeta]);
 
@@ -669,7 +669,7 @@ function AppShell(): JSX.Element {
     setShowWelcomeChangelog(false);
     // Mark this version as seen
     if (meta?.current_version) {
-      localStorage.setItem("lastSeenVersion", meta.current_version);
+      try { localStorage.setItem("lastSeenVersion", meta.current_version); } catch { /* quota exceeded or private mode */ }
     }
   }, [meta?.current_version]);
 

@@ -18,6 +18,12 @@ namespace Torrentarr.Infrastructure.Services;
 /// </summary>
 public class ArrSyncService
 {
+    // Shared static HttpClient — reused across calls to avoid socket exhaustion from per-call instantiation
+    private static readonly System.Net.Http.HttpClient _sharedHttpClient = new()
+    {
+        Timeout = TimeSpan.FromSeconds(10)
+    };
+
     private readonly ILogger<ArrSyncService> _logger;
     private readonly TorrentarrConfig _config;
     private readonly TorrentarrDbContext _db;
@@ -306,6 +312,7 @@ public class ArrSyncService
 
         foreach (var series in seriesList)
         {
+            ct.ThrowIfCancellationRequested();
             apiTitles.Add(series.Title);
 
             if (dbSeries.TryGetValue(series.Title, out var existing))
@@ -360,6 +367,7 @@ public class ArrSyncService
 
         foreach (var (sonarrId, seriesEntity) in entityBySonarrId)
         {
+            ct.ThrowIfCancellationRequested();
             List<SonarrEpisode> episodes;
             try { episodes = await client.GetEpisodesAsync(sonarrId, ct); }
             catch (Exception ex)
@@ -501,8 +509,7 @@ public class ArrSyncService
         var requestTmdbIds = new HashSet<int>();
         var requestTvdbIds = new HashSet<int>();
 
-        using var http = new System.Net.Http.HttpClient();
-        http.Timeout = TimeSpan.FromSeconds(10);
+        var http = _sharedHttpClient;
 
         // ── Ombi ────────────────────────────────────────────────────────────
         if (useOmbi)
@@ -681,6 +688,7 @@ public class ArrSyncService
 
         foreach (var artist in artists)
         {
+            ct.ThrowIfCancellationRequested();
             apiArtistNames.Add(artist.ArtistName);
             if (dbArtists.TryGetValue(artist.ArtistName, out var existing))
             {
@@ -740,6 +748,7 @@ public class ArrSyncService
 
         foreach (var album in albums)
         {
+            ct.ThrowIfCancellationRequested();
             apiForeignIds.Add(album.ForeignAlbumId);
             artistNameById.TryGetValue(album.ArtistId, out var artistName);
             var albumProfileId = album.QualityProfileId

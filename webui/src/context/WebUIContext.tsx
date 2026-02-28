@@ -114,7 +114,7 @@ export function WebUIProvider({ children }: { children: ReactNode }): JSX.Elemen
   const setViewDensity = useCallback((value: ViewDensity) => {
     setSettings(prev => ({ ...prev, viewDensity: value }));
     // Store in localStorage for instant application
-    localStorage.setItem("viewDensity", value);
+    try { localStorage.setItem("viewDensity", value); } catch { /* quota exceeded or private mode */ }
     // Save to backend with proper capitalization (Comfortable or Compact)
     const capitalizedDensity = value === "comfortable" ? "Comfortable" : "Compact";
     void saveSettings("ViewDensity", capitalizedDensity);
@@ -123,7 +123,7 @@ export function WebUIProvider({ children }: { children: ReactNode }): JSX.Elemen
   const setTheme = useCallback((value: Theme) => {
     setSettings(prev => ({ ...prev, theme: value }));
     // Store in localStorage for instant application
-    localStorage.setItem("theme", value);
+    try { localStorage.setItem("theme", value); } catch { /* quota exceeded or private mode */ }
     // Apply theme immediately to DOM
     document.documentElement.setAttribute('data-theme', value);
     // Save to backend with proper capitalization (Light or Dark)

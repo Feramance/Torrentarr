@@ -180,9 +180,12 @@ try
 
     // Database - paths already defined at top of file
     builder.Services.AddDbContext<TorrentarrDbContext>(options =>
+    {
         options.UseSqlite($"Data Source={dbPath}")
-               .LogTo(_ => { }, LogLevel.None)  // Suppress all EF Core SQL logs
-               .EnableSensitiveDataLogging());   // Keep for debugging if needed
+               .LogTo(_ => { }, LogLevel.None);  // Suppress all EF Core SQL logs
+        if (builder.Environment.IsDevelopment())
+            options.EnableSensitiveDataLogging();
+    });
 
     builder.WebHost.ConfigureKestrel(options =>
     {

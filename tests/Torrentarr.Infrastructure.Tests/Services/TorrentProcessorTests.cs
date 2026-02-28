@@ -48,7 +48,8 @@ public sealed class TorrentProcessorTests : IDisposable
             NullLogger<TorrentProcessor>.Instance,
             manager,
             _db,
-            config);
+            config,
+            new TorrentCacheService(NullLogger<TorrentCacheService>.Instance));
     }
 
     // ── Constructor ────────────────────────────────────────────────────────────
