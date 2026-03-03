@@ -36,7 +36,9 @@ describe("ProcessesView – empty state", () => {
     server.use(
       http.get("/web/processes", () => HttpResponse.json({ processes: [] })),
       http.get("/web/status", () => HttpResponse.json(emptyStatus)),
-      http.get("/web/qbit/categories", () => HttpResponse.json(emptyCategories))
+      http.get("/web/qbit/categories", () =>
+        HttpResponse.json(emptyCategories),
+      ),
     );
 
     renderView();
@@ -53,18 +55,32 @@ describe("ProcessesView – process grouping", () => {
       http.get("/web/processes", () =>
         HttpResponse.json({
           processes: [
-            { category: "radarr", name: "Radarr-1080", kind: "search", pid: 1, alive: true },
-            { category: "radarr", name: "Radarr-1080", kind: "torrent", pid: 2, alive: true },
+            {
+              category: "radarr",
+              name: "Radarr-1080",
+              kind: "search",
+              pid: 1,
+              alive: true,
+            },
+            {
+              category: "radarr",
+              name: "Radarr-1080",
+              kind: "torrent",
+              pid: 2,
+              alive: true,
+            },
           ],
-        })
+        }),
       ),
       http.get("/web/status", () =>
         HttpResponse.json({
           ...emptyStatus,
           arrs: [{ category: "radarr", name: "Radarr-1080", type: "radarr" }],
-        })
+        }),
       ),
-      http.get("/web/qbit/categories", () => HttpResponse.json(emptyCategories))
+      http.get("/web/qbit/categories", () =>
+        HttpResponse.json(emptyCategories),
+      ),
     );
 
     renderView();
@@ -78,10 +94,22 @@ describe("ProcessesView – process grouping", () => {
       http.get("/web/processes", () =>
         HttpResponse.json({
           processes: [
-            { category: "radarr", name: "Radarr-1080", kind: "torrent", pid: 1, alive: true },
-            { category: "sonarr", name: "Sonarr-1080", kind: "torrent", pid: 2, alive: true },
+            {
+              category: "radarr",
+              name: "Radarr-1080",
+              kind: "torrent",
+              pid: 1,
+              alive: true,
+            },
+            {
+              category: "sonarr",
+              name: "Sonarr-1080",
+              kind: "torrent",
+              pid: 2,
+              alive: true,
+            },
           ],
-        })
+        }),
       ),
       http.get("/web/status", () =>
         HttpResponse.json({
@@ -90,9 +118,11 @@ describe("ProcessesView – process grouping", () => {
             { category: "radarr", name: "Radarr-1080", type: "radarr" },
             { category: "sonarr", name: "Sonarr-1080", type: "sonarr" },
           ],
-        })
+        }),
       ),
-      http.get("/web/qbit/categories", () => HttpResponse.json(emptyCategories))
+      http.get("/web/qbit/categories", () =>
+        HttpResponse.json(emptyCategories),
+      ),
     );
 
     renderView();
@@ -107,17 +137,25 @@ describe("ProcessesView – process grouping", () => {
       http.get("/web/processes", () =>
         HttpResponse.json({
           processes: [
-            { category: "radarr", name: "Radarr-1080", kind: "torrent", pid: 1, alive: true },
+            {
+              category: "radarr",
+              name: "Radarr-1080",
+              kind: "torrent",
+              pid: 1,
+              alive: true,
+            },
           ],
-        })
+        }),
       ),
       http.get("/web/status", () =>
         HttpResponse.json({
           ...emptyStatus,
           arrs: [], // no radarr configured
-        })
+        }),
       ),
-      http.get("/web/qbit/categories", () => HttpResponse.json(emptyCategories))
+      http.get("/web/qbit/categories", () =>
+        HttpResponse.json(emptyCategories),
+      ),
     );
 
     renderView();
@@ -147,22 +185,35 @@ describe("ProcessesView – qBit category chips", () => {
       totalSize: 0,
       avgRatio: 1.0,
       avgSeedingTime: 0,
-      seedingConfig: { maxRatio: 2, maxTime: -1, removeMode: 3, downloadLimit: -1, uploadLimit: -1 },
+      seedingConfig: {
+        maxRatio: 2,
+        maxTime: -1,
+        removeMode: 3,
+        downloadLimit: -1,
+        uploadLimit: -1,
+      },
     };
 
     server.use(
       http.get("/web/processes", () =>
-        HttpResponse.json({ processes: [qbitProcess] })
+        HttpResponse.json({ processes: [qbitProcess] }),
       ),
       http.get("/web/status", () =>
         HttpResponse.json({
           ...emptyStatus,
-          qbitInstances: { qBit: { alive: true, host: "localhost", port: 8080, version: "5.0" } },
-        })
+          qbitInstances: {
+            qBit: {
+              alive: true,
+              host: "localhost",
+              port: 8080,
+              version: "5.0",
+            },
+          },
+        }),
       ),
       http.get("/web/qbit/categories", () =>
-        HttpResponse.json({ categories: [qbitCategory], ready: true })
-      )
+        HttpResponse.json({ categories: [qbitCategory], ready: true }),
+      ),
     );
 
     renderView();
@@ -189,17 +240,23 @@ describe("ProcessesView – qBit category chips", () => {
       totalSize: 0,
       avgRatio: 1.0,
       avgSeedingTime: 0,
-      seedingConfig: { maxRatio: 2, maxTime: -1, removeMode: 3, downloadLimit: -1, uploadLimit: -1 },
+      seedingConfig: {
+        maxRatio: 2,
+        maxTime: -1,
+        removeMode: 3,
+        downloadLimit: -1,
+        uploadLimit: -1,
+      },
     };
 
     server.use(
       http.get("/web/processes", () =>
-        HttpResponse.json({ processes: [qbitProcess] })
+        HttpResponse.json({ processes: [qbitProcess] }),
       ),
       http.get("/web/status", () => HttpResponse.json(emptyStatus)),
       http.get("/web/qbit/categories", () =>
-        HttpResponse.json({ categories: [arrCategory], ready: true })
-      )
+        HttpResponse.json({ categories: [arrCategory], ready: true }),
+      ),
     );
 
     renderView();

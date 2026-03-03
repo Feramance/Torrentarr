@@ -1,4 +1,11 @@
-import { useCallback, useEffect, useMemo, useRef, useState, type JSX } from "react";
+import {
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+  type JSX,
+} from "react";
 import {
   getProcesses,
   getQbitCategories,
@@ -33,7 +40,7 @@ function sanitizeSearchSummary(raw: string): string {
 
   const normalized = trimmed.replace(/\s+/g, " ");
   const releaseMatch = normalized.match(
-    /^(?<title>.+?)\s+(?<year>(?:19|20)\d{2})(?:\s+(?<rest>.*))?$/
+    /^(?<title>.+?)\s+(?<year>(?:19|20)\d{2})(?:\s+(?<rest>.*))?$/,
   );
 
   if (releaseMatch) {
@@ -108,51 +115,54 @@ export function ProcessesView({ active }: ProcessesViewProps): JSX.Element {
   const { push } = useToast();
   const isFetching = useRef(false);
 
-  const load = useCallback(async (showLoading = true) => {
-    if (isFetching.current) {
-      return;
-    }
-    isFetching.current = true;
-    if (showLoading) {
-      setLoading(true);
-    }
-    try {
-      const [processData, status, categoriesData] = await Promise.all([
-        getProcesses(),
-        getStatus(),
-        getQbitCategories().catch(() => null),
-      ]);
-      const next = (processData.processes ?? []).map((process) => {
-        if (typeof process.searchSummary === "string") {
-          const sanitized = sanitizeSearchSummary(process.searchSummary);
-          return {
-            ...process,
-            searchSummary: sanitized,
-          };
-        }
-        return process;
-      });
-      setProcesses((prev) =>
-        areProcessListsEqual(prev, next) ? prev : next
-      );
-      setStatusData(status);
-      if (categoriesData?.categories) {
-        setQbitCategories(categoriesData.categories);
+  const load = useCallback(
+    async (showLoading = true) => {
+      if (isFetching.current) {
+        return;
       }
-    } catch (error) {
-      push(
-        error instanceof Error
-          ? error.message
-          : "Failed to load processes list",
-        "error"
-      );
-    } finally {
-      isFetching.current = false;
+      isFetching.current = true;
       if (showLoading) {
-        setLoading(false);
+        setLoading(true);
       }
-    }
-  }, [push]);
+      try {
+        const [processData, status, categoriesData] = await Promise.all([
+          getProcesses(),
+          getStatus(),
+          getQbitCategories().catch(() => null),
+        ]);
+        const next = (processData.processes ?? []).map((process) => {
+          if (typeof process.searchSummary === "string") {
+            const sanitized = sanitizeSearchSummary(process.searchSummary);
+            return {
+              ...process,
+              searchSummary: sanitized,
+            };
+          }
+          return process;
+        });
+        setProcesses((prev) =>
+          areProcessListsEqual(prev, next) ? prev : next,
+        );
+        setStatusData(status);
+        if (categoriesData?.categories) {
+          setQbitCategories(categoriesData.categories);
+        }
+      } catch (error) {
+        push(
+          error instanceof Error
+            ? error.message
+            : "Failed to load processes list",
+          "error",
+        );
+      } finally {
+        isFetching.current = false;
+        if (showLoading) {
+          setLoading(false);
+        }
+      }
+    },
+    [push],
+  );
 
   useEffect(() => {
     void load();
@@ -164,10 +174,7 @@ export function ProcessesView({ active }: ProcessesViewProps): JSX.Element {
     }
   }, [active, load]);
 
-  const refreshDelay = useMemo(
-    () => getRefreshDelay(active),
-    [active]
-  );
+  const refreshDelay = useMemo(() => getRefreshDelay(active), [active]);
 
   useInterval(() => {
     void load(false); // Auto-refresh without showing loading spinner
@@ -184,17 +191,18 @@ export function ProcessesView({ active }: ProcessesViewProps): JSX.Element {
           error instanceof Error
             ? error.message
             : `Failed to restart ${category}:${kind}`,
-          "error"
+          "error",
         );
       }
     },
-    [load, push]
+    [load, push],
   );
 
   const handleRestartAll = useCallback(async () => {
     setConfirmAction({
       title: "Restart All Processes",
-      message: "Are you sure you want to restart all processes? This will temporarily interrupt all operations.",
+      message:
+        "Are you sure you want to restart all processes? This will temporarily interrupt all operations.",
       onConfirm: async () => {
         setConfirmAction(null);
         setRestartingAll(true);
@@ -205,19 +213,20 @@ export function ProcessesView({ active }: ProcessesViewProps): JSX.Element {
         } catch (error) {
           push(
             error instanceof Error ? error.message : "Failed to restart all",
-            "error"
+            "error",
           );
         } finally {
           setRestartingAll(false);
         }
-      }
+      },
     });
   }, [load, push]);
 
   const handleRebuildArrs = useCallback(async () => {
     setConfirmAction({
       title: "Rebuild Arrs",
-      message: "Are you sure you want to rebuild all Arr instances? This will refresh all connections and may take some time.",
+      message:
+        "Are you sure you want to rebuild all Arr instances? This will refresh all connections and may take some time.",
       onConfirm: async () => {
         setConfirmAction(null);
         setRebuildingArrs(true);
@@ -228,12 +237,12 @@ export function ProcessesView({ active }: ProcessesViewProps): JSX.Element {
         } catch (error) {
           push(
             error instanceof Error ? error.message : "Failed to rebuild Arrs",
-            "error"
+            "error",
           );
         } finally {
           setRebuildingArrs(false);
         }
-      }
+      },
     });
   }, [load, push]);
 
@@ -251,9 +260,12 @@ export function ProcessesView({ active }: ProcessesViewProps): JSX.Element {
     const classifyApp = (proc: ProcessInfo): string => {
       const category = (proc.category ?? "").toLowerCase();
       const name = (proc.name ?? "").toLowerCase();
-      if (category.includes("radarr") || name.includes("radarr")) return "Radarr";
-      if (category.includes("sonarr") || name.includes("sonarr")) return "Sonarr";
-      if (category.includes("lidarr") || name.includes("lidarr")) return "Lidarr";
+      if (category.includes("radarr") || name.includes("radarr"))
+        return "Radarr";
+      if (category.includes("sonarr") || name.includes("sonarr"))
+        return "Sonarr";
+      if (category.includes("lidarr") || name.includes("lidarr"))
+        return "Lidarr";
       if (
         category.includes("qbit") ||
         category.includes("qbittorrent") ||
@@ -282,10 +294,9 @@ export function ProcessesView({ active }: ProcessesViewProps): JSX.Element {
       if (!appBuckets.has(app)) appBuckets.set(app, new Map());
       const instances = appBuckets.get(app)!;
       // Strip -search and -torrent suffixes to group them into same card
-      const instanceKey = (proc.name
-        ?.replace(/-search$/, "")
-        ?.replace(/-torrent$/, ""))
-        || proc.category;
+      const instanceKey =
+        proc.name?.replace(/-search$/, "")?.replace(/-torrent$/, "") ||
+        proc.category;
       if (!instances.has(instanceKey)) instances.set(instanceKey, []);
       instances.get(instanceKey)!.push(proc);
     });
@@ -319,7 +330,7 @@ export function ProcessesView({ active }: ProcessesViewProps): JSX.Element {
     async (items: ProcessInfo[]) => {
       try {
         await Promise.all(
-          items.map((item) => restartProcess(item.category, item.kind))
+          items.map((item) => restartProcess(item.category, item.kind)),
         );
         push(`Restarted ${items[0]?.name ?? "group"}`, "success");
         void load();
@@ -328,178 +339,211 @@ export function ProcessesView({ active }: ProcessesViewProps): JSX.Element {
           error instanceof Error
             ? error.message
             : "Failed to restart process group",
-          "error"
+          "error",
         );
       }
     },
-    [load, push]
+    [load, push],
   );
 
   const cardsByApp = groupedProcesses.map(({ app, instances }) => {
-        const cards = instances.map(({ name: instanceName, items }) => {
-          // For qBittorrent cards, find matching category data
-          const instanceCategories = app === "qBittorrent"
-            ? qbitCategories.filter((cat) => {
-                // Match instance name: card name like "qBit-main" -> instance "main"
-                const nameLower = instanceName.toLowerCase();
-                const instLower = cat.instance.toLowerCase();
-                return nameLower === instLower
-                  || nameLower.endsWith(`-${instLower}`)
-                  || nameLower.endsWith(`_${instLower}`);
-              })
-            : [];
-          const name = instanceName;
-          const runningCount = items.filter((item) => item.alive).length;
-          const totalCount = items.length;
-          const tone =
-            totalCount === 0
-              ? ""
-              : runningCount === totalCount
-              ? "status-indicator--ok"
-              : runningCount === 0
+    const cards = instances.map(({ name: instanceName, items }) => {
+      // For qBittorrent cards, find matching category data
+      const instanceCategories =
+        app === "qBittorrent"
+          ? qbitCategories.filter((cat) => {
+              // Match instance name: card name like "qBit-main" -> instance "main"
+              const nameLower = instanceName.toLowerCase();
+              const instLower = cat.instance.toLowerCase();
+              return (
+                nameLower === instLower ||
+                nameLower.endsWith(`-${instLower}`) ||
+                nameLower.endsWith(`_${instLower}`)
+              );
+            })
+          : [];
+      const name = instanceName;
+      const runningCount = items.filter((item) => item.alive).length;
+      const totalCount = items.length;
+      const tone =
+        totalCount === 0
+          ? ""
+          : runningCount === totalCount
+            ? "status-indicator--ok"
+            : runningCount === 0
               ? "status-indicator--bad"
               : "status-indicator--partial";
-          const statusClass = ["status-indicator"];
-          if (tone) statusClass.push(tone);
-          const statusLabel =
-            totalCount === 0
-              ? "No processes"
-              : runningCount === totalCount
-              ? "All running"
-              : runningCount === 0
+      const statusClass = ["status-indicator"];
+      if (tone) statusClass.push(tone);
+      const statusLabel =
+        totalCount === 0
+          ? "No processes"
+          : runningCount === totalCount
+            ? "All running"
+            : runningCount === 0
               ? "Stopped"
               : `${runningCount}/${totalCount} running`;
-          const summaryLabel = totalCount === 1 ? "1 process" : `${totalCount} processes`;
-          const displayName = name === "FreeSpaceManager" ? "Free Space Manager" : name;
-          const uniqueKinds = Array.from(new Set(items.map((item) => item.kind)));
-          const filteredKinds = uniqueKinds.filter((kind) => {
-            const lower = kind.toLowerCase();
-            return lower !== "search" && lower !== "torrent";
-          });
-          const formatKind = (kind: string) =>
-            kind ? kind.charAt(0).toUpperCase() + kind.slice(1) : kind;
-
-          return (
-            <div className="process-card" key={name}>
-              <div className="process-card__header">
-                <div className="process-card__title">
-                  <div className="process-card__name">{displayName}</div>
-                  <div className="process-card__summary">{summaryLabel}</div>
-                  {filteredKinds.length ? (
-                    <div className="process-card__badges">
-                      {filteredKinds.map((kind) => (
-                        <span key={`${name}:${kind}:badge`} className="process-card__badge">
-                          {formatKind(kind)}
-                        </span>
-                      ))}
-                    </div>
-                  ) : null}
-                </div>
-                <div className={statusClass.join(" ")} title={statusLabel} />
-              </div>
-              <div className="process-card__list">
-                {items.map((item) => (
-                  <div className="process-chip" key={`${item.category}:${item.kind}`}>
-                    <div className="process-chip__top">
-                      <div className="process-chip__name">{formatKind(item.kind)}</div>
-                      <div className={`status-pill__dot ${item.alive ? "text-success" : "text-danger"}`} />
-                    </div>
-                    <div className="process-chip__detail">
-                      {(() => {
-                        if (item.rebuilding) {
-                          return "Rebuilding";
-                        }
-                        const kindLower = item.kind.toLowerCase();
-                        const status = item.status;
-                        const summary = item.searchSummary ?? "";
-
-                        if (kindLower === "search") {
-                          if (status) return status;
-                          if (summary) return summary;
-                          return "Initializing...";
-                        }
-                        if (kindLower === "category") {
-                          const count =
-                            typeof item.categoryCount === "number" ? item.categoryCount : null;
-                          return count !== null
-                            ? `Torrent count ${count}`
-                            : "No torrents";
-                        }
-                        if (kindLower === "torrent") {
-                          const metricType = item.metricType?.toLowerCase();
-                          const categoryTotal = item.categoryCount ?? null;
-                          const queueTotal = item.queueCount ?? null;
-                          const torrentStatus = item.status;
-
-                          // Use status if available (e.g., "X torrents (Y seeding)" for qBit)
-                          if (torrentStatus) return torrentStatus;
-
-                          if (!metricType) {
-                            const queueLabel = queueTotal !== null && queueTotal !== undefined ? queueTotal : "-";
-                            const categoryLabel = categoryTotal !== null && categoryTotal !== undefined ? categoryTotal : "-";
-                            return `Downloads in queue ${queueLabel} / Torrents ${categoryLabel}`;
-                          }
-
-                          if (metricType === "category" && categoryTotal !== null) {
-                            return `Torrent count ${categoryTotal}`;
-                          }
-
-                          if (metricType === "free-space" && categoryTotal !== null) {
-                            return `Paused: ${categoryTotal}`;
-                          }
-
-                          return "Torrent count unavailable";
-                        }
-
-                        if (status) return status;
-                        if (summary) return summary;
-                        return "Initializing...";
-                      })()}
-                    </div>
-                    <div className="process-chip__actions">
-                      <button
-                        className="btn small"
-                        onClick={() => handleRestart(item.category, item.kind)}
-                      >
-                        Restart
-                      </button>
-                    </div>
-                  </div>
-                ))}
-                {instanceCategories.map((cat) => {
-                  const instanceAlive = statusData?.qbitInstances?.[cat.instance]?.alive ?? false;
-                  const detail = cat.seedingCount > 0
-                    ? `${cat.torrentCount} torrents (${cat.seedingCount} seeding)`
-                    : `${cat.torrentCount} torrents`;
-                  return (
-                    <div className="process-chip process-chip--info" key={`cat:${cat.instance}:${cat.category}`}>
-                      <div className="process-chip__top">
-                        <div className="process-chip__name">
-                          {cat.category}
-                          <span className="process-chip__managed-badge">
-                            {cat.managedBy === "arr" ? "Arr" : "qBit"}
-                          </span>
-                        </div>
-                        <div className={`status-pill__dot ${instanceAlive ? "text-success" : "text-danger"}`} />
-                      </div>
-                      <div className="process-chip__detail">{detail}</div>
-                    </div>
-                  );
-                })}
-              </div>
-              <div className="process-card__footer">
-                <button
-                  className="btn small"
-                  onClick={() => void handleRestartGroup(items)}
-                >
-                  Restart All
-                </button>
-              </div>
-            </div>
-          );
-        });
-        return { app, cards };
+      const summaryLabel =
+        totalCount === 1 ? "1 process" : `${totalCount} processes`;
+      const displayName =
+        name === "FreeSpaceManager" ? "Free Space Manager" : name;
+      const uniqueKinds = Array.from(new Set(items.map((item) => item.kind)));
+      const filteredKinds = uniqueKinds.filter((kind) => {
+        const lower = kind.toLowerCase();
+        return lower !== "search" && lower !== "torrent";
       });
+      const formatKind = (kind: string) =>
+        kind ? kind.charAt(0).toUpperCase() + kind.slice(1) : kind;
+
+      return (
+        <div className="process-card" key={name}>
+          <div className="process-card__header">
+            <div className="process-card__title">
+              <div className="process-card__name">{displayName}</div>
+              <div className="process-card__summary">{summaryLabel}</div>
+              {filteredKinds.length ? (
+                <div className="process-card__badges">
+                  {filteredKinds.map((kind) => (
+                    <span
+                      key={`${name}:${kind}:badge`}
+                      className="process-card__badge"
+                    >
+                      {formatKind(kind)}
+                    </span>
+                  ))}
+                </div>
+              ) : null}
+            </div>
+            <div className={statusClass.join(" ")} title={statusLabel} />
+          </div>
+          <div className="process-card__list">
+            {items.map((item) => (
+              <div
+                className="process-chip"
+                key={`${item.category}:${item.kind}`}
+              >
+                <div className="process-chip__top">
+                  <div className="process-chip__name">
+                    {formatKind(item.kind)}
+                  </div>
+                  <div
+                    className={`status-pill__dot ${item.alive ? "text-success" : "text-danger"}`}
+                  />
+                </div>
+                <div className="process-chip__detail">
+                  {(() => {
+                    if (item.rebuilding) {
+                      return "Rebuilding";
+                    }
+                    const kindLower = item.kind.toLowerCase();
+                    const status = item.status;
+                    const summary = item.searchSummary ?? "";
+
+                    if (kindLower === "search") {
+                      if (status) return status;
+                      if (summary) return summary;
+                      return "Initializing...";
+                    }
+                    if (kindLower === "category") {
+                      const count =
+                        typeof item.categoryCount === "number"
+                          ? item.categoryCount
+                          : null;
+                      return count !== null
+                        ? `Torrent count ${count}`
+                        : "No torrents";
+                    }
+                    if (kindLower === "torrent") {
+                      const metricType = item.metricType?.toLowerCase();
+                      const categoryTotal = item.categoryCount ?? null;
+                      const queueTotal = item.queueCount ?? null;
+                      const torrentStatus = item.status;
+
+                      // Use status if available (e.g., "X torrents (Y seeding)" for qBit)
+                      if (torrentStatus) return torrentStatus;
+
+                      if (!metricType) {
+                        const queueLabel =
+                          queueTotal !== null && queueTotal !== undefined
+                            ? queueTotal
+                            : "-";
+                        const categoryLabel =
+                          categoryTotal !== null && categoryTotal !== undefined
+                            ? categoryTotal
+                            : "-";
+                        return `Downloads in queue ${queueLabel} / Torrents ${categoryLabel}`;
+                      }
+
+                      if (metricType === "category" && categoryTotal !== null) {
+                        return `Torrent count ${categoryTotal}`;
+                      }
+
+                      if (
+                        metricType === "free-space" &&
+                        categoryTotal !== null
+                      ) {
+                        return `Paused: ${categoryTotal}`;
+                      }
+
+                      return "Torrent count unavailable";
+                    }
+
+                    if (status) return status;
+                    if (summary) return summary;
+                    return "Initializing...";
+                  })()}
+                </div>
+                <div className="process-chip__actions">
+                  <button
+                    className="btn small"
+                    onClick={() => handleRestart(item.category, item.kind)}
+                  >
+                    Restart
+                  </button>
+                </div>
+              </div>
+            ))}
+            {instanceCategories.map((cat) => {
+              const instanceAlive =
+                statusData?.qbitInstances?.[cat.instance]?.alive ?? false;
+              const detail =
+                cat.seedingCount > 0
+                  ? `${cat.torrentCount} torrents (${cat.seedingCount} seeding)`
+                  : `${cat.torrentCount} torrents`;
+              return (
+                <div
+                  className="process-chip process-chip--info"
+                  key={`cat:${cat.instance}:${cat.category}`}
+                >
+                  <div className="process-chip__top">
+                    <div className="process-chip__name">
+                      {cat.category}
+                      <span className="process-chip__managed-badge">
+                        {cat.managedBy === "arr" ? "Arr" : "qBit"}
+                      </span>
+                    </div>
+                    <div
+                      className={`status-pill__dot ${instanceAlive ? "text-success" : "text-danger"}`}
+                    />
+                  </div>
+                  <div className="process-chip__detail">{detail}</div>
+                </div>
+              );
+            })}
+          </div>
+          <div className="process-card__footer">
+            <button
+              className="btn small"
+              onClick={() => void handleRestartGroup(items)}
+            >
+              Restart All
+            </button>
+          </div>
+        </div>
+      );
+    });
+    return { app, cards };
+  });
 
   return (
     <>
@@ -508,20 +552,32 @@ export function ProcessesView({ active }: ProcessesViewProps): JSX.Element {
         <div className="card-body stack">
           <div className="row">
             <div className="col inline">
-              <button className="btn ghost" onClick={() => void load()} disabled={loading}>
+              <button
+                className="btn ghost"
+                onClick={() => void load()}
+                disabled={loading}
+              >
                 {loading && <span className="spinner" />}
                 <IconImage src={RefreshIcon} />
-                {loading ? 'Refreshing...' : 'Refresh'}
+                {loading ? "Refreshing..." : "Refresh"}
               </button>
-              <button className="btn" onClick={() => void handleRestartAll()} disabled={restartingAll}>
+              <button
+                className="btn"
+                onClick={() => void handleRestartAll()}
+                disabled={restartingAll}
+              >
                 {restartingAll && <span className="spinner" />}
                 <IconImage src={RestartIcon} />
-                {restartingAll ? 'Restarting...' : 'Restart All'}
+                {restartingAll ? "Restarting..." : "Restart All"}
               </button>
-              <button className="btn" onClick={() => void handleRebuildArrs()} disabled={rebuildingArrs}>
+              <button
+                className="btn"
+                onClick={() => void handleRebuildArrs()}
+                disabled={rebuildingArrs}
+              >
                 {rebuildingArrs && <span className="spinner" />}
                 <IconImage src={ToolsIcon} />
-                {rebuildingArrs ? 'Rebuilding...' : 'Rebuild Arrs'}
+                {rebuildingArrs ? "Rebuilding..." : "Rebuild Arrs"}
               </button>
             </div>
           </div>

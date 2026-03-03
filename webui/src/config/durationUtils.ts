@@ -38,7 +38,7 @@ export const DURATION_UNITS: { value: DurationUnit; label: string }[] = [
 function parseSuffixed(
   value: unknown,
   toSeconds: boolean,
-  fallback: number
+  fallback: number,
 ): number {
   if (value === null || value === undefined) return fallback;
   if (typeof value === "number" && Number.isFinite(value)) return value;
@@ -68,7 +68,7 @@ export function parseDurationToMinutes(value: unknown, fallback = -1): number {
 
 function bestUnitForTotal(
   total: number,
-  baseUnit: "seconds" | "minutes"
+  baseUnit: "seconds" | "minutes",
 ): DurationUnit {
   if (total < 0) return "s";
   const abs = Math.abs(total);
@@ -83,14 +83,12 @@ function bestUnitForTotal(
 
 function totalToNumberAndUnit(
   total: number,
-  baseUnit: "seconds" | "minutes"
+  baseUnit: "seconds" | "minutes",
 ): { number: number; unit: DurationUnit } {
   if (total < 0) return { number: -1, unit: "s" };
   const unit = bestUnitForTotal(total, baseUnit);
   const mult =
-    baseUnit === "seconds"
-      ? SUFFIX_TO_SECONDS[unit]
-      : SUFFIX_TO_MINUTES[unit];
+    baseUnit === "seconds" ? SUFFIX_TO_SECONDS[unit] : SUFFIX_TO_MINUTES[unit];
   const n = total / mult;
   return { number: Math.round(n * 100) / 100, unit };
 }
@@ -98,25 +96,21 @@ function totalToNumberAndUnit(
 function numberAndUnitToTotal(
   num: number,
   unit: DurationUnit,
-  baseUnit: "seconds" | "minutes"
+  baseUnit: "seconds" | "minutes",
 ): number {
   const mult =
-    baseUnit === "seconds"
-      ? SUFFIX_TO_SECONDS[unit]
-      : SUFFIX_TO_MINUTES[unit];
+    baseUnit === "seconds" ? SUFFIX_TO_SECONDS[unit] : SUFFIX_TO_MINUTES[unit];
   return num * mult;
 }
 
 function toSuffixed(
   total: number,
-  baseUnit: "seconds" | "minutes"
+  baseUnit: "seconds" | "minutes",
 ): string | number {
   if (total < 0) return -1;
   const unit = bestUnitForTotal(total, baseUnit);
   const mult =
-    baseUnit === "seconds"
-      ? SUFFIX_TO_SECONDS[unit]
-      : SUFFIX_TO_MINUTES[unit];
+    baseUnit === "seconds" ? SUFFIX_TO_SECONDS[unit] : SUFFIX_TO_MINUTES[unit];
   const n = Math.round(total / mult);
   if (unit === "s" && baseUnit === "seconds") return n;
   if (unit === "m" && baseUnit === "minutes") return n;
@@ -132,7 +126,7 @@ export interface DurationDisplay {
 export function parseDurationDisplay(
   value: unknown,
   baseUnit: "seconds" | "minutes",
-  fallback = -1
+  fallback = -1,
 ): DurationDisplay {
   const total =
     baseUnit === "seconds"
@@ -146,7 +140,7 @@ export function durationDisplayToValue(
   number: number,
   unit: DurationUnit,
   baseUnit: "seconds" | "minutes",
-  allowNegative: boolean
+  allowNegative: boolean,
 ): string | number {
   if (allowNegative && number === -1) return -1;
   const total = numberAndUnitToTotal(number, unit, baseUnit);

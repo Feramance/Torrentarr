@@ -1,4 +1,11 @@
-import { createContext, useCallback, useEffect, useState, type JSX, type ReactNode } from "react";
+import {
+  createContext,
+  useCallback,
+  useEffect,
+  useState,
+  type JSX,
+  type ReactNode,
+} from "react";
 import { getConfig, updateConfig } from "../api/client";
 import { useToast } from "./ToastContext";
 
@@ -30,7 +37,11 @@ export interface WebUIContextValue {
 const WebUIContext = createContext<WebUIContextValue | null>(null);
 export { WebUIContext };
 
-export function WebUIProvider({ children }: { children: ReactNode }): JSX.Element {
+export function WebUIProvider({
+  children,
+}: {
+  children: ReactNode;
+}): JSX.Element {
   const [settings, setSettings] = useState<WebUISettings>({
     liveArr: true,
     groupSonarr: true,
@@ -58,15 +69,21 @@ export function WebUIProvider({ children }: { children: ReactNode }): JSX.Elemen
         }
 
         // Load from localStorage as fallback
-        const storedDensity = localStorage.getItem("viewDensity") as ViewDensity | null;
+        const storedDensity = localStorage.getItem(
+          "viewDensity",
+        ) as ViewDensity | null;
         const storedTheme = localStorage.getItem("theme") as Theme | null;
 
         // Get theme and view density from backend or localStorage
         const backendTheme = webui?.Theme as string | undefined;
-        const theme: Theme = storedTheme || (backendTheme?.toLowerCase() as Theme) || "dark";
+        const theme: Theme =
+          storedTheme || (backendTheme?.toLowerCase() as Theme) || "dark";
 
         const backendDensity = webui?.ViewDensity as string | undefined;
-        const viewDensity: ViewDensity = storedDensity || (backendDensity?.toLowerCase() as ViewDensity) || "comfortable";
+        const viewDensity: ViewDensity =
+          storedDensity ||
+          (backendDensity?.toLowerCase() as ViewDensity) ||
+          "comfortable";
 
         setSettings({
           liveArr: webui?.LiveArr === true,
@@ -77,7 +94,7 @@ export function WebUIProvider({ children }: { children: ReactNode }): JSX.Elemen
         });
 
         // Apply theme immediately
-        document.documentElement.setAttribute('data-theme', theme);
+        document.documentElement.setAttribute("data-theme", theme);
       } catch {
         // settings load failed, defaults will be used
       } finally {
@@ -89,48 +106,75 @@ export function WebUIProvider({ children }: { children: ReactNode }): JSX.Elemen
   }, [toast]);
 
   // Auto-save settings to backend
-  const saveSettings = useCallback(async (key: string, value: boolean | string) => {
-    try {
-      await updateConfig({ changes: { [`WebUI.${key}`]: value } });
-    } catch {
-      // save failed, non-critical
-    }
-  }, []);
+  const saveSettings = useCallback(
+    async (key: string, value: boolean | string) => {
+      try {
+        await updateConfig({ changes: { [`WebUI.${key}`]: value } });
+      } catch {
+        // save failed, non-critical
+      }
+    },
+    [],
+  );
 
-  const setLiveArr = useCallback((value: boolean) => {
-    setSettings(prev => ({ ...prev, liveArr: value }));
-    void saveSettings("LiveArr", value);
-  }, [saveSettings]);
+  const setLiveArr = useCallback(
+    (value: boolean) => {
+      setSettings((prev) => ({ ...prev, liveArr: value }));
+      void saveSettings("LiveArr", value);
+    },
+    [saveSettings],
+  );
 
-  const setGroupSonarr = useCallback((value: boolean) => {
-    setSettings(prev => ({ ...prev, groupSonarr: value }));
-    void saveSettings("GroupSonarr", value);
-  }, [saveSettings]);
+  const setGroupSonarr = useCallback(
+    (value: boolean) => {
+      setSettings((prev) => ({ ...prev, groupSonarr: value }));
+      void saveSettings("GroupSonarr", value);
+    },
+    [saveSettings],
+  );
 
-  const setGroupLidarr = useCallback((value: boolean) => {
-    setSettings(prev => ({ ...prev, groupLidarr: value }));
-    void saveSettings("GroupLidarr", value);
-  }, [saveSettings]);
+  const setGroupLidarr = useCallback(
+    (value: boolean) => {
+      setSettings((prev) => ({ ...prev, groupLidarr: value }));
+      void saveSettings("GroupLidarr", value);
+    },
+    [saveSettings],
+  );
 
-  const setViewDensity = useCallback((value: ViewDensity) => {
-    setSettings(prev => ({ ...prev, viewDensity: value }));
-    // Store in localStorage for instant application
-    try { localStorage.setItem("viewDensity", value); } catch { /* quota exceeded or private mode */ }
-    // Save to backend with proper capitalization (Comfortable or Compact)
-    const capitalizedDensity = value === "comfortable" ? "Comfortable" : "Compact";
-    void saveSettings("ViewDensity", capitalizedDensity);
-  }, [saveSettings]);
+  const setViewDensity = useCallback(
+    (value: ViewDensity) => {
+      setSettings((prev) => ({ ...prev, viewDensity: value }));
+      // Store in localStorage for instant application
+      try {
+        localStorage.setItem("viewDensity", value);
+      } catch {
+        /* quota exceeded or private mode */
+      }
+      // Save to backend with proper capitalization (Comfortable or Compact)
+      const capitalizedDensity =
+        value === "comfortable" ? "Comfortable" : "Compact";
+      void saveSettings("ViewDensity", capitalizedDensity);
+    },
+    [saveSettings],
+  );
 
-  const setTheme = useCallback((value: Theme) => {
-    setSettings(prev => ({ ...prev, theme: value }));
-    // Store in localStorage for instant application
-    try { localStorage.setItem("theme", value); } catch { /* quota exceeded or private mode */ }
-    // Apply theme immediately to DOM
-    document.documentElement.setAttribute('data-theme', value);
-    // Save to backend with proper capitalization (Light or Dark)
-    const capitalizedTheme = value === "light" ? "Light" : "Dark";
-    void saveSettings("Theme", capitalizedTheme);
-  }, [saveSettings]);
+  const setTheme = useCallback(
+    (value: Theme) => {
+      setSettings((prev) => ({ ...prev, theme: value }));
+      // Store in localStorage for instant application
+      try {
+        localStorage.setItem("theme", value);
+      } catch {
+        /* quota exceeded or private mode */
+      }
+      // Apply theme immediately to DOM
+      document.documentElement.setAttribute("data-theme", value);
+      // Save to backend with proper capitalization (Light or Dark)
+      const capitalizedTheme = value === "light" ? "Light" : "Dark";
+      void saveSettings("Theme", capitalizedTheme);
+    },
+    [saveSettings],
+  );
 
   const value: WebUIContextValue = {
     liveArr: settings.liveArr,
@@ -146,7 +190,9 @@ export function WebUIProvider({ children }: { children: ReactNode }): JSX.Elemen
     loading,
   };
 
-  return <WebUIContext.Provider value={value}>{children}</WebUIContext.Provider>;
+  return (
+    <WebUIContext.Provider value={value}>{children}</WebUIContext.Provider>
+  );
 }
 
 // Re-export hook so consumers can import from one place; implementation lives in useWebUI.ts for Fast Refresh

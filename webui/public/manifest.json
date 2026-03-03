@@ -1,9 +1,6 @@
 {
   "background_color": "#101114",
-  "categories": [
-    "utilities",
-    "productivity"
-  ],
+  "categories": ["utilities", "productivity"],
   "description": "A Radarr and Sonarr companion app for managing torrents",
   "display": "standalone",
   "icons": [

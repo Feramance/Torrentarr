@@ -1,4 +1,12 @@
-import { describe, it, expect, vi, beforeAll, afterAll, afterEach } from "vitest";
+import {
+  describe,
+  it,
+  expect,
+  vi,
+  beforeAll,
+  afterAll,
+  afterEach,
+} from "vitest";
 import { render, screen } from "@testing-library/react";
 import { http, HttpResponse } from "msw";
 import { setupServer } from "msw/node";
@@ -31,9 +39,7 @@ function renderView(active = true) {
 
 describe("LogsView – card header", () => {
   it("renders the Logs card header", async () => {
-    server.use(
-      http.get("/web/logs", () => HttpResponse.json({ files: [] }))
-    );
+    server.use(http.get("/web/logs", () => HttpResponse.json({ files: [] })));
 
     renderView();
 
@@ -41,9 +47,7 @@ describe("LogsView – card header", () => {
   });
 
   it("renders the Log File label", async () => {
-    server.use(
-      http.get("/web/logs", () => HttpResponse.json({ files: [] }))
-    );
+    server.use(http.get("/web/logs", () => HttpResponse.json({ files: [] })));
 
     renderView();
 
@@ -55,9 +59,7 @@ describe("LogsView – card header", () => {
 
 describe("LogsView – empty state", () => {
   it("shows the select-prompt when no files are returned", async () => {
-    server.use(
-      http.get("/web/logs", () => HttpResponse.json({ files: [] }))
-    );
+    server.use(http.get("/web/logs", () => HttpResponse.json({ files: [] })));
 
     renderView();
 
@@ -65,9 +67,7 @@ describe("LogsView – empty state", () => {
   });
 
   it("shows select-prompt when list request fails", async () => {
-    server.use(
-      http.get("/web/logs", () => HttpResponse.error())
-    );
+    server.use(http.get("/web/logs", () => HttpResponse.error()));
 
     renderView();
 
@@ -80,9 +80,7 @@ describe("LogsView – empty state", () => {
 
 describe("LogsView – control buttons", () => {
   it("renders the Reload List button", async () => {
-    server.use(
-      http.get("/web/logs", () => HttpResponse.json({ files: [] }))
-    );
+    server.use(http.get("/web/logs", () => HttpResponse.json({ files: [] })));
 
     renderView();
 
@@ -90,9 +88,7 @@ describe("LogsView – control buttons", () => {
   });
 
   it("renders the Reload button", async () => {
-    server.use(
-      http.get("/web/logs", () => HttpResponse.json({ files: [] }))
-    );
+    server.use(http.get("/web/logs", () => HttpResponse.json({ files: [] })));
 
     renderView();
 
@@ -100,9 +96,7 @@ describe("LogsView – control buttons", () => {
   });
 
   it("renders the Download button", async () => {
-    server.use(
-      http.get("/web/logs", () => HttpResponse.json({ files: [] }))
-    );
+    server.use(http.get("/web/logs", () => HttpResponse.json({ files: [] })));
 
     renderView();
 
@@ -110,9 +104,7 @@ describe("LogsView – control buttons", () => {
   });
 
   it("renders the Auto-scroll checkbox", async () => {
-    server.use(
-      http.get("/web/logs", () => HttpResponse.json({ files: [] }))
-    );
+    server.use(http.get("/web/logs", () => HttpResponse.json({ files: [] })));
 
     renderView();
 
@@ -128,10 +120,14 @@ describe("LogsView – with files", () => {
     server.use(
       http.get("/web/logs", () =>
         HttpResponse.json({
-          files: [{ name: "All.log", size: 1024, modified: new Date().toISOString() }],
-        })
+          files: [
+            { name: "All.log", size: 1024, modified: new Date().toISOString() },
+          ],
+        }),
       ),
-      http.get("/web/logs/All.log", () => HttpResponse.text("2025-01-01 INFO Starting"))
+      http.get("/web/logs/All.log", () =>
+        HttpResponse.text("2025-01-01 INFO Starting"),
+      ),
     );
 
     renderView();
@@ -146,15 +142,21 @@ describe("LogsView – with files", () => {
     server.use(
       http.get("/web/logs", () =>
         HttpResponse.json({
-          files: [{ name: "All.log", size: 1024, modified: new Date().toISOString() }],
-        })
+          files: [
+            { name: "All.log", size: 1024, modified: new Date().toISOString() },
+          ],
+        }),
       ),
-      http.get("/web/logs/All.log", () => HttpResponse.text("2025-01-01 INFO Starting"))
+      http.get("/web/logs/All.log", () =>
+        HttpResponse.text("2025-01-01 INFO Starting"),
+      ),
     );
 
     renderView();
 
     await screen.findByTestId("lazy-log");
-    expect(screen.queryByText("Select a log file to view...")).not.toBeInTheDocument();
+    expect(
+      screen.queryByText("Select a log file to view..."),
+    ).not.toBeInTheDocument();
   });
 });

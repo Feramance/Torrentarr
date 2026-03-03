@@ -12,7 +12,11 @@ interface StableTableProps<TData> {
   getRowKey?: (row: TData) => string;
 }
 
-function StableTableInner<TData>({ data, columns, getRowKey }: StableTableProps<TData>) {
+function StableTableInner<TData>({
+  data,
+  columns,
+  getRowKey,
+}: StableTableProps<TData>) {
   // TanStack Table returns unstable function refs; React Compiler skips memoization by design
   /* eslint-disable-next-line react-hooks/incompatible-library */
   const table = useReactTable({
@@ -33,7 +37,7 @@ function StableTableInner<TData>({ data, columns, getRowKey }: StableTableProps<
                     ? null
                     : flexRender(
                         header.column.columnDef.header,
-                        header.getContext()
+                        header.getContext(),
                       )}
                 </th>
               ))}
@@ -46,7 +50,10 @@ function StableTableInner<TData>({ data, columns, getRowKey }: StableTableProps<
             return (
               <tr key={stableKey}>
                 {row.getVisibleCells().map((cell) => (
-                  <td key={cell.id} data-label={String(cell.column.columnDef.header)}>
+                  <td
+                    key={cell.id}
+                    data-label={String(cell.column.columnDef.header)}
+                  >
                     {flexRender(cell.column.columnDef.cell, cell.getContext())}
                   </td>
                 ))}
@@ -61,5 +68,7 @@ function StableTableInner<TData>({ data, columns, getRowKey }: StableTableProps<
 
 export const StableTable = memo(StableTableInner, (prevProps, nextProps) => {
   // Only re-render if data reference changed
-  return prevProps.data === nextProps.data && prevProps.columns === nextProps.columns;
+  return (
+    prevProps.data === nextProps.data && prevProps.columns === nextProps.columns
+  );
 }) as typeof StableTableInner;

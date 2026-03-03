@@ -62,7 +62,7 @@ describe("RadarrView – card header", () => {
     server.use(
       http.get("/web/config", () => HttpResponse.json(minimalConfig)),
       http.post("/web/config", () => HttpResponse.json({})),
-      http.get("/web/arr", () => HttpResponse.json(emptyArrList))
+      http.get("/web/arr", () => HttpResponse.json(emptyArrList)),
     );
 
     renderView();
@@ -78,7 +78,7 @@ describe("RadarrView – empty state", () => {
     server.use(
       http.get("/web/config", () => HttpResponse.json(minimalConfig)),
       http.post("/web/config", () => HttpResponse.json({})),
-      http.get("/web/arr", () => HttpResponse.json(emptyArrList))
+      http.get("/web/arr", () => HttpResponse.json(emptyArrList)),
     );
 
     renderView();
@@ -92,8 +92,8 @@ describe("RadarrView – empty state", () => {
       http.post("/web/config", () => HttpResponse.json({})),
       http.get("/web/arr", () => HttpResponse.json(radarrArrList)),
       http.get("/web/radarr/radarr-hd/movies", () =>
-        HttpResponse.json(emptyMoviesResponse)
-      )
+        HttpResponse.json(emptyMoviesResponse),
+      ),
     );
 
     renderView();
@@ -111,8 +111,8 @@ describe("RadarrView – instance sidebar", () => {
       http.post("/web/config", () => HttpResponse.json({})),
       http.get("/web/arr", () => HttpResponse.json(radarrArrList)),
       http.get("/web/radarr/radarr-hd/movies", () =>
-        HttpResponse.json(emptyMoviesResponse)
-      )
+        HttpResponse.json(emptyMoviesResponse),
+      ),
     );
 
     renderView();
@@ -122,7 +122,11 @@ describe("RadarrView – instance sidebar", () => {
     // content matching (not ARIA traversal) and is much faster. The sidebar
     // <button>Radarr HD</button> appears as soon as /web/arr responds (before
     // movies are fetched), so we don't need to wait for movie data here.
-    const btn = await screen.findByText(/radarr hd/i, { selector: "button" }, { timeout: 4500 });
+    const btn = await screen.findByText(
+      /radarr hd/i,
+      { selector: "button" },
+      { timeout: 4500 },
+    );
     expect(btn).toBeInTheDocument();
   });
 
@@ -147,8 +151,8 @@ describe("RadarrView – instance sidebar", () => {
           page: 0,
           page_size: 50,
           counts: { available: 1, monitored: 1 },
-        })
-      )
+        }),
+      ),
     );
 
     renderView();
@@ -165,7 +169,7 @@ describe("RadarrView – inactive", () => {
   it("renders card frame when active=false", async () => {
     server.use(
       http.get("/web/config", () => HttpResponse.json(minimalConfig)),
-      http.post("/web/config", () => HttpResponse.json({}))
+      http.post("/web/config", () => HttpResponse.json({})),
     );
 
     renderView(false);

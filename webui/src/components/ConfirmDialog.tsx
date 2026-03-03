@@ -28,7 +28,7 @@ export function ConfirmDialog({
         role="dialog"
         aria-modal="true"
         aria-labelledby="confirm-dialog-title"
-        style={{ maxWidth: '500px' }}
+        style={{ maxWidth: "500px" }}
         onClick={(e) => e.stopPropagation()}
       >
         <div className="modal-header">
@@ -45,7 +45,7 @@ export function ConfirmDialog({
             {cancelLabel}
           </button>
           <button
-            className={`btn ${danger ? 'danger' : 'primary'}`}
+            className={`btn ${danger ? "danger" : "primary"}`}
             onClick={onConfirm}
           >
             {confirmLabel}

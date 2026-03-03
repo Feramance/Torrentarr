@@ -44,10 +44,12 @@ export const FIELD_TOOLTIPS: Record<string, string> = {
   "WebUI.Port": "Port number for the built-in WebUI.",
   "WebUI.Token":
     "Optional bearer token required by the WebUI/API. Leave empty to disable authentication.",
-   "WebUI.LiveArr": "Enable live updates for Arr views.",
-   "WebUI.GroupSonarr": "Group Sonarr views by series and seasons in collapsible sections.",
-   "WebUI.GroupLidarr": "Group Lidarr views by artist and albums in collapsible sections.",
-   "WebUI.Theme": "Choose the visual theme for the WebUI (light or dark).",
+  "WebUI.LiveArr": "Enable live updates for Arr views.",
+  "WebUI.GroupSonarr":
+    "Group Sonarr views by series and seasons in collapsible sections.",
+  "WebUI.GroupLidarr":
+    "Group Lidarr views by artist and albums in collapsible sections.",
+  "WebUI.Theme": "Choose the visual theme for the WebUI (light or dark).",
   "WebUI.ViewDensity":
     "View density for lists in the WebUI: Comfortable (more spacing) or Compact (more rows on screen).",
 
@@ -61,21 +63,23 @@ export const FIELD_TOOLTIPS: Record<string, string> = {
   "qBit.Password":
     "qBittorrent WebUI password. Remove this if authentication is bypassed for the host.",
 
-  "Disabled":
+  Disabled:
     "Disable this qBittorrent instance (headless mode for search-only setups).",
-  "Host": "qBittorrent WebUI host or IP address.",
-  "Port": "qBittorrent WebUI port.",
-  "UserName": "qBittorrent WebUI username.",
-  "Password":
+  Host: "qBittorrent WebUI host or IP address.",
+  Port: "qBittorrent WebUI port.",
+  UserName: "qBittorrent WebUI username.",
+  Password:
     "qBittorrent WebUI password. Remove this if authentication is bypassed for the host.",
 
-  "ARR.Managed": "Toggle whether this Servarr instance is actively managed by Torrentarr.",
+  "ARR.Managed":
+    "Toggle whether this Servarr instance is actively managed by Torrentarr.",
   "ARR.URI":
     "Servarr URL, including protocol and port if needed (for example http://localhost:8989).",
   "ARR.APIKey": "Servarr API key from Settings > General > Security.",
   "ARR.Category":
     "qBittorrent category applied by the Servarr instance to its downloads.",
-  "ARR.ReSearch": "Re-run searches for failed torrents that Torrentarr removes.",
+  "ARR.ReSearch":
+    "Re-run searches for failed torrents that Torrentarr removes.",
   "ARR.importMode":
     "Preferred import mode (Move, Copy, or Auto) when Servarr grabs completed files.",
   "ARR.RssSyncTimer":
@@ -86,8 +90,10 @@ export const FIELD_TOOLTIPS: Record<string, string> = {
     "List of Servarr error messages that should trigger blocklisting and cleanup.",
 
   "EntrySearch.SearchMissing": "Search for missing media items.",
-  "EntrySearch.AlsoSearchSpecials": "Include season 0 specials in missing searches.",
-  "EntrySearch.Unmonitored": "Include unmonitored series or episodes in searches.",
+  "EntrySearch.AlsoSearchSpecials":
+    "Include season 0 specials in missing searches.",
+  "EntrySearch.Unmonitored":
+    "Include unmonitored series or episodes in searches.",
   "EntrySearch.SearchLimit":
     "Maximum number of concurrent search tasks (Servarr enforces its own limits).",
   "EntrySearch.SearchByYear":
@@ -108,7 +114,8 @@ export const FIELD_TOOLTIPS: Record<string, string> = {
     "Restart the search loop when the configured year range is exhausted.",
   "EntrySearch.UseTempForMissing":
     "Switch to temporary profiles when searching for missing media.",
-  "EntrySearch.KeepTempProfile": "Do not revert to the main profile after using the temp profile.",
+  "EntrySearch.KeepTempProfile":
+    "Do not revert to the main profile after using the temp profile.",
   "EntrySearch.MainQualityProfile":
     "[DEPRECATED - Use QualityProfileMappings instead] Primary quality profile names, in the same order as the temporary profiles.",
   "EntrySearch.TempQualityProfile":
@@ -122,14 +129,17 @@ export const FIELD_TOOLTIPS: Record<string, string> = {
     "Pull pending Ombi requests when SearchMissing is enabled.",
   "EntrySearch.Ombi.OmbiURI": "Ombi server URL.",
   "EntrySearch.Ombi.OmbiAPIKey": "Ombi API key.",
-  "EntrySearch.Ombi.ApprovedOnly": "Only process Ombi requests that are approved.",
+  "EntrySearch.Ombi.ApprovedOnly":
+    "Only process Ombi requests that are approved.",
 
   "EntrySearch.Overseerr.SearchOverseerrRequests":
     "Pull Overseerr requests when SearchMissing is enabled.",
   "EntrySearch.Overseerr.OverseerrURI": "Overseerr server URL.",
   "EntrySearch.Overseerr.OverseerrAPIKey": "Overseerr API key.",
-  "EntrySearch.Overseerr.ApprovedOnly": "Only process Overseerr requests that are approved.",
-  "EntrySearch.Overseerr.Is4K": "Treat this Overseerr configuration as 4K specific.",
+  "EntrySearch.Overseerr.ApprovedOnly":
+    "Only process Overseerr requests that are approved.",
+  "EntrySearch.Overseerr.Is4K":
+    "Treat this Overseerr configuration as 4K specific.",
 
   "Torrent.CaseSensitiveMatches":
     "When enabled, regex matches will respect case; otherwise they are case-insensitive.",
@@ -139,7 +149,8 @@ export const FIELD_TOOLTIPS: Record<string, string> = {
     "Regex patterns that exclude individual files based on the file name.",
   "Torrent.FileExtensionAllowlist":
     "Allowed file extensions (or regex) for downloads; leave empty to allow all.",
-  "Torrent.AutoDelete": "Automatically delete files that are not recognised as media.",
+  "Torrent.AutoDelete":
+    "Automatically delete files that are not recognised as media.",
   "Torrent.IgnoreTorrentsYoungerThan":
     "Ignore torrents younger than this many seconds for failure handling.",
   "Torrent.MaximumETA":

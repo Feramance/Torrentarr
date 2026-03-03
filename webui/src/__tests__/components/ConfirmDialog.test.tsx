@@ -11,10 +11,12 @@ describe("ConfirmDialog", () => {
         message="This action cannot be undone."
         onConfirm={() => {}}
         onCancel={() => {}}
-      />
+      />,
     );
     expect(screen.getByText("Delete item?")).toBeInTheDocument();
-    expect(screen.getByText("This action cannot be undone.")).toBeInTheDocument();
+    expect(
+      screen.getByText("This action cannot be undone."),
+    ).toBeInTheDocument();
   });
 
   it("confirm button calls onConfirm", async () => {
@@ -27,7 +29,7 @@ describe("ConfirmDialog", () => {
         message="Message"
         onConfirm={onConfirm}
         onCancel={() => {}}
-      />
+      />,
     );
 
     await user.click(screen.getByText("Confirm"));
@@ -44,7 +46,7 @@ describe("ConfirmDialog", () => {
         message="Message"
         onConfirm={() => {}}
         onCancel={onCancel}
-      />
+      />,
     );
 
     // Click the Cancel button in the footer (not the ✕ icon button)
@@ -63,7 +65,7 @@ describe("ConfirmDialog", () => {
         message="Message"
         onConfirm={() => {}}
         onCancel={onCancel}
-      />
+      />,
     );
 
     const backdrop = container.querySelector(".modal-backdrop")!;
@@ -79,7 +81,7 @@ describe("ConfirmDialog", () => {
         onConfirm={() => {}}
         onCancel={() => {}}
         danger={true}
-      />
+      />,
     );
 
     const confirmBtn = screen.getByText("Confirm");
@@ -95,7 +97,7 @@ describe("ConfirmDialog", () => {
         onConfirm={() => {}}
         onCancel={() => {}}
         danger={false}
-      />
+      />,
     );
 
     const confirmBtn = screen.getByText("Confirm");
@@ -112,7 +114,7 @@ describe("ConfirmDialog", () => {
         cancelLabel="No, keep"
         onConfirm={() => {}}
         onCancel={() => {}}
-      />
+      />,
     );
 
     expect(screen.getByText("Yes, delete")).toBeInTheDocument();

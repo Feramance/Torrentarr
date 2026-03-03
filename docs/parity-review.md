@@ -15,8 +15,8 @@ This document verifies that all 12 gaps from [qbitrr_parity_gaps_7ae8df72.plan.m
 ## 2. Config version validation and migrations — **DONE (minimal)**
 
 - **Validation:** `ConfigurationLoader.ValidateConfigVersion()` exists (`ConfigurationLoader.cs` lines 682–696). Compares `Settings.ConfigVersion` to `ExpectedConfigVersion` ("5.9.2"); returns `(IsValid, Message, CurrentVersion)`.
-- **Migrations:** No full key-by-key migration like qBitrr’s `apply_config_migrations`. On load, `LoadOrCreate()` (lines 668–676) calls `ValidateConfigVersion`; if the message is `"migration_needed"` (current &lt; expected), it sets `ConfigVersion = ExpectedConfigVersion` and saves. So older configs get a version bump only.
-- **Verdict:** Per plan (“minimal migration step”), this is acceptable. Full key migrations were marked low priority.
+- **Migrations:** No full key-by-key migration like qBitrr's `apply_config_migrations`. On load, `LoadOrCreate()` (lines 668–676) calls `ValidateConfigVersion`; if the message is `"migration_needed"` (current &lt; expected), it sets `ConfigVersion = ExpectedConfigVersion` and saves. So older configs get a version bump only.
+- **Verdict:** Per plan ("minimal migration step"), this is acceptable. Full key migrations were marked low priority.
 
 ---
 
@@ -53,7 +53,7 @@ This document verifies that all 12 gaps from [qbitrr_parity_gaps_7ae8df72.plan.m
 ## 6. Database repair script / documentation — **DONE**
 
 - **CLI:** `src/Torrentarr.Host/Program.cs` (lines 221–244). If the only argument is `--repair-database`, the Host opens `dbPath` (from `basePath`, i.e. `config/qbitrr.db` or `/config/qbitrr.db`), runs `PRAGMA wal_checkpoint(TRUNCATE);` and `PRAGMA integrity_check;`, prints the result, and exits with 0 if result is `"ok"`, else 1. No app startup.
-- **Docs:** `docs/troubleshooting/database.md` now includes “Method 0: Torrentarr CLI” describing `torrentarr --repair-database` and the database path. `docs/advanced/database.md` was corrected from `--repair-db` to `--repair-database`.
+- **Docs:** `docs/troubleshooting/database.md` now includes "Method 0: Torrentarr CLI" describing `torrentarr --repair-database` and the database path. `docs/advanced/database.md` was corrected from `--repair-db` to `--repair-database`.
 - **Note:** Main troubleshooting doc uses `~/config/torrentarr.db` in many examples; the Host actually uses `qbitrr.db` in the config directory. Consider aligning doc examples with the real path (`config/qbitrr.db` or `/config/qbitrr.db`) or documenting both.
 
 ---
@@ -135,4 +135,4 @@ This document verifies that all 12 gaps from [qbitrr_parity_gaps_7ae8df72.plan.m
 
 ---
 
-*Review completed; all 12 parity gaps are implemented. Two documentation edits were applied: `--repair-db` → `--repair-database` in advanced/database.md, and addition of “Method 0: Torrentarr CLI” in troubleshooting/database.md.*
+*Review completed; all 12 parity gaps are implemented. Two documentation edits were applied: `--repair-db` → `--repair-database` in advanced/database.md, and addition of "Method 0: Torrentarr CLI" in troubleshooting/database.md.*

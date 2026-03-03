@@ -31,12 +31,18 @@ describe("getQbitCategories", () => {
               totalSize: 1024,
               avgRatio: 1.5,
               avgSeedingTime: 86400,
-              seedingConfig: { maxRatio: 2, maxTime: -1, removeMode: 3, downloadLimit: -1, uploadLimit: -1 },
+              seedingConfig: {
+                maxRatio: 2,
+                maxTime: -1,
+                removeMode: 3,
+                downloadLimit: -1,
+                uploadLimit: -1,
+              },
             },
           ],
           ready: true,
-        })
-      )
+        }),
+      ),
     );
 
     const result = await getQbitCategories();
@@ -61,8 +67,8 @@ describe("getStatus", () => {
           qbitInstances: {},
           arrs: [],
           ready: true,
-        })
-      )
+        }),
+      ),
     );
 
     const result = await getStatus();
@@ -76,10 +82,11 @@ describe("getStatus", () => {
 
 describe("getConfig", () => {
   it("returns plain config when no warning field", async () => {
-    const mockConfig = { Settings: { LoopSleepTimer: 5 }, WebUI: { Port: 6969 } };
-    server.use(
-      http.get("/web/config", () => HttpResponse.json(mockConfig))
-    );
+    const mockConfig = {
+      Settings: { LoopSleepTimer: 5 },
+      WebUI: { Port: 6969 },
+    };
+    server.use(http.get("/web/config", () => HttpResponse.json(mockConfig)));
 
     const result = await getConfig();
 
@@ -93,8 +100,8 @@ describe("getConfig", () => {
         HttpResponse.json({
           warning: { message: "Config version mismatch" },
           config: mockConfig,
-        })
-      )
+        }),
+      ),
     );
 
     const result = await getConfig();
@@ -112,8 +119,13 @@ describe("updateConfig", () => {
     server.use(
       http.post("/web/config", async ({ request }) => {
         capturedBody = await request.json();
-        return HttpResponse.json({ status: "ok", configReloaded: false, reloadType: "none", affectedInstances: [] });
-      })
+        return HttpResponse.json({
+          status: "ok",
+          configReloaded: false,
+          reloadType: "none",
+          affectedInstances: [],
+        });
+      }),
     );
 
     const payload = { changes: { "Settings.LoopSleepTimer": 10 } };
@@ -129,8 +141,8 @@ describe("fetchJson error handling", () => {
   it("throws error with server error message on non-OK response", async () => {
     server.use(
       http.get("/web/qbit/categories", () =>
-        HttpResponse.json({ error: "Service unavailable" }, { status: 503 })
-      )
+        HttpResponse.json({ error: "Service unavailable" }, { status: 503 }),
+      ),
     );
 
     await expect(getQbitCategories()).rejects.toThrow("Service unavailable");
@@ -138,9 +150,14 @@ describe("fetchJson error handling", () => {
 
   it("throws generic error on non-OK response without error field", async () => {
     server.use(
-      http.get("/web/qbit/categories", () =>
-        new HttpResponse(null, { status: 500, statusText: "Internal Server Error" })
-      )
+      http.get(
+        "/web/qbit/categories",
+        () =>
+          new HttpResponse(null, {
+            status: 500,
+            statusText: "Internal Server Error",
+          }),
+      ),
     );
 
     await expect(getQbitCategories()).rejects.toThrow("500");

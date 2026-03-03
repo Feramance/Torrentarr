@@ -40,8 +40,8 @@ describe("QbitCategoriesView – empty state", () => {
     server.use(
       http.get("/web/config", () => HttpResponse.json(baseConfig)),
       http.get("/web/qbit/categories", () =>
-        HttpResponse.json({ categories: [], ready: true })
-      )
+        HttpResponse.json({ categories: [], ready: true }),
+      ),
     );
 
     renderView();
@@ -68,7 +68,13 @@ const singleArrCategory = {
   totalSize: 1073741824, // 1 GB
   avgRatio: 1.25,
   avgSeedingTime: 7200,
-  seedingConfig: { maxRatio: 2, maxTime: -1, removeMode: 3, downloadLimit: -1, uploadLimit: -1 },
+  seedingConfig: {
+    maxRatio: 2,
+    maxTime: -1,
+    removeMode: 3,
+    downloadLimit: -1,
+    uploadLimit: -1,
+  },
 };
 
 const singleQbitCategory = {
@@ -80,7 +86,13 @@ const singleQbitCategory = {
   totalSize: 512 * 1024 * 1024,
   avgRatio: 0.5,
   avgSeedingTime: 3600,
-  seedingConfig: { maxRatio: -1, maxTime: 604800, removeMode: 2, downloadLimit: -1, uploadLimit: -1 },
+  seedingConfig: {
+    maxRatio: -1,
+    maxTime: 604800,
+    removeMode: 2,
+    downloadLimit: -1,
+    uploadLimit: -1,
+  },
 };
 
 describe("QbitCategoriesView – data rendering", () => {
@@ -91,8 +103,8 @@ describe("QbitCategoriesView – data rendering", () => {
         HttpResponse.json({
           categories: [singleArrCategory, singleQbitCategory],
           ready: true,
-        })
-      )
+        }),
+      ),
     );
 
     renderView();
@@ -105,8 +117,8 @@ describe("QbitCategoriesView – data rendering", () => {
     server.use(
       http.get("/web/config", () => HttpResponse.json(baseConfig)),
       http.get("/web/qbit/categories", () =>
-        HttpResponse.json({ categories: [singleArrCategory], ready: true })
-      )
+        HttpResponse.json({ categories: [singleArrCategory], ready: true }),
+      ),
     );
 
     renderView();
@@ -119,8 +131,8 @@ describe("QbitCategoriesView – data rendering", () => {
     server.use(
       http.get("/web/config", () => HttpResponse.json(baseConfig)),
       http.get("/web/qbit/categories", () =>
-        HttpResponse.json({ categories: [singleQbitCategory], ready: true })
-      )
+        HttpResponse.json({ categories: [singleQbitCategory], ready: true }),
+      ),
     );
 
     renderView();
@@ -128,15 +140,17 @@ describe("QbitCategoriesView – data rendering", () => {
     await screen.findByText("autobrr");
     // The badge specifically has class badge-qbit; the Instance column also renders "qBit"
     // so narrow the query to the badge span element.
-    expect(screen.getByText("qBit", { selector: "span.badge-qbit" })).toBeInTheDocument();
+    expect(
+      screen.getByText("qBit", { selector: "span.badge-qbit" }),
+    ).toBeInTheDocument();
   });
 
   it("shows 'Disabled' in Max Ratio column when maxRatio=-1", async () => {
     server.use(
       http.get("/web/config", () => HttpResponse.json(baseConfig)),
       http.get("/web/qbit/categories", () =>
-        HttpResponse.json({ categories: [singleArrCategory], ready: true })
-      )
+        HttpResponse.json({ categories: [singleArrCategory], ready: true }),
+      ),
     );
 
     renderView();
@@ -157,8 +171,8 @@ describe("QbitCategoriesView – summary stats", () => {
         HttpResponse.json({
           categories: [singleArrCategory, singleQbitCategory],
           ready: true,
-        })
-      )
+        }),
+      ),
     );
 
     const { container } = renderView();
@@ -178,8 +192,8 @@ describe("QbitCategoriesView – summary stats", () => {
         HttpResponse.json({
           categories: [singleArrCategory, singleQbitCategory],
           ready: true,
-        })
-      )
+        }),
+      ),
     );
 
     const { container } = renderView();
@@ -188,7 +202,7 @@ describe("QbitCategoriesView – summary stats", () => {
 
     const hintDiv = container.querySelector(".hint")!;
     expect(hintDiv.textContent).toContain("qBit-managed:"); // label present
-    expect(hintDiv.textContent).toContain("Arr-managed:");  // label present
+    expect(hintDiv.textContent).toContain("Arr-managed:"); // label present
     // singleQbitCategory.managedBy="qbit" and singleArrCategory.managedBy="arr"
     // so counts should each be 1
     expect(hintDiv.textContent).toMatch(/qBit-managed:\s*1/);

@@ -27,7 +27,10 @@ const MAX_AUTH_RETRIES = 1;
 // Request deduplication cache
 const inflightRequests = new Map<string, Promise<unknown>>();
 
-function createRequestKey(input: RequestInfo | URL, init?: RequestInit): string {
+function createRequestKey(
+  input: RequestInfo | URL,
+  init?: RequestInit,
+): string {
   const url = input instanceof Request ? input.url : String(input);
   const method = init?.method || "GET";
   const body = init?.body ? String(init.body) : "";
@@ -70,7 +73,10 @@ function clearStoredToken(): void {
   }
 }
 
-function buildInit(init: RequestInit | undefined, token: string | null): RequestInit {
+function buildInit(
+  init: RequestInit | undefined,
+  token: string | null,
+): RequestInit {
   const headers = new Headers(init?.headers || {});
   Object.entries(JSON_HEADERS).forEach(([key, value]) => {
     if (!headers.has(key)) headers.set(key, value);
@@ -88,7 +94,7 @@ async function fetchWithAuthRetry<T>(
   input: RequestInfo | URL,
   init: RequestInit | undefined,
   handler: (response: Response) => Promise<T>,
-  retries = MAX_AUTH_RETRIES
+  retries = MAX_AUTH_RETRIES,
 ): Promise<T> {
   const token = resolveToken();
   const response = await fetch(input, buildInit(init, token));
@@ -99,7 +105,10 @@ async function fetchWithAuthRetry<T>(
   return handler(response);
 }
 
-async function fetchJson<T>(input: RequestInfo | URL, init?: RequestInit): Promise<T> {
+async function fetchJson<T>(
+  input: RequestInfo | URL,
+  init?: RequestInit,
+): Promise<T> {
   // Only deduplicate GET requests (safe to share)
   const method = init?.method || "GET";
   if (method === "GET") {
@@ -110,20 +119,28 @@ async function fetchJson<T>(input: RequestInfo | URL, init?: RequestInit): Promi
       return existingRequest;
     }
 
-    const promise = fetchWithAuthRetry<T>(input, init, (response) => handleJson<T>(response))
-      .finally(() => {
-        inflightRequests.delete(key);
-      });
+    const promise = fetchWithAuthRetry<T>(input, init, (response) =>
+      handleJson<T>(response),
+    ).finally(() => {
+      inflightRequests.delete(key);
+    });
 
     inflightRequests.set(key, promise);
     return promise;
   }
 
-  return fetchWithAuthRetry<T>(input, init, (response) => handleJson<T>(response));
+  return fetchWithAuthRetry<T>(input, init, (response) =>
+    handleJson<T>(response),
+  );
 }
 
-async function fetchTextResponse(input: RequestInfo | URL, init?: RequestInit): Promise<string> {
-  return fetchWithAuthRetry<string>(input, init, (response) => handleText(response));
+async function fetchTextResponse(
+  input: RequestInfo | URL,
+  init?: RequestInit,
+): Promise<string> {
+  return fetchWithAuthRetry<string>(input, init, (response) =>
+    handleText(response),
+  );
 }
 
 async function handleJson<T>(res: Response): Promise<T> {
@@ -158,7 +175,9 @@ async function handleText(res: Response): Promise<string> {
   return res.text();
 }
 
-export async function getMeta(params?: { force?: boolean }): Promise<MetaResponse> {
+export async function getMeta(params?: {
+  force?: boolean;
+}): Promise<MetaResponse> {
   const query = params?.force ? "?force=1" : "";
   return fetchJson<MetaResponse>(`/web/meta${query}`);
 }
@@ -177,10 +196,10 @@ export async function getProcesses(): Promise<ProcessesResponse> {
 
 export async function restartProcess(
   category: string,
-  kind: string
+  kind: string,
 ): Promise<RestartResponse> {
   const url = `/web/processes/${encodeURIComponent(
-    category
+    category,
   )}/${encodeURIComponent(kind)}/restart`;
   return fetchJson<RestartResponse>(url, { method: "POST" });
 }
@@ -222,14 +241,14 @@ export async function getRadarrMovies(
   category: string,
   page: number,
   pageSize: number,
-  q: string
+  q: string,
 ): Promise<RadarrMoviesResponse> {
   const params = new URLSearchParams();
   params.set("page", String(page));
   params.set("page_size", String(pageSize));
   if (q) params.set("q", q);
   return fetchJson<RadarrMoviesResponse>(
-    `/web/radarr/${encodeURIComponent(category)}/movies?${params}`
+    `/web/radarr/${encodeURIComponent(category)}/movies?${params}`,
   );
 }
 
@@ -238,7 +257,7 @@ export async function getSonarrSeries(
   page: number,
   pageSize: number,
   q: string,
-  options?: { missingOnly?: boolean }
+  options?: { missingOnly?: boolean },
 ): Promise<SonarrSeriesResponse> {
   const params = new URLSearchParams();
   params.set("page", String(page));
@@ -248,7 +267,7 @@ export async function getSonarrSeries(
     params.set("missing", "1");
   }
   return fetchJson<SonarrSeriesResponse>(
-    `/web/sonarr/${encodeURIComponent(category)}/series?${params}`
+    `/web/sonarr/${encodeURIComponent(category)}/series?${params}`,
   );
 }
 
@@ -256,7 +275,7 @@ export async function getLidarrAlbums(
   category: string,
   page: number,
   pageSize: number,
-  query?: string
+  query?: string,
 ): Promise<LidarrAlbumsResponse> {
   const params = new URLSearchParams();
   params.set("page", page.toString());
@@ -267,27 +286,36 @@ export async function getLidarrAlbums(
   // Always include tracks
   params.set("include_tracks", "true");
   return fetchJson<LidarrAlbumsResponse>(
-    `/web/lidarr/${encodeURIComponent(category)}/albums?${params}`
+    `/web/lidarr/${encodeURIComponent(category)}/albums?${params}`,
   );
 }
 
 export async function restartArr(category: string): Promise<void> {
-  await fetchJson<void>(
-    `/web/arr/${encodeURIComponent(category)}/restart`,
-    { method: "POST" }
-  );
+  await fetchJson<void>(`/web/arr/${encodeURIComponent(category)}/restart`, {
+    method: "POST",
+  });
 }
 
 export async function getConfig(): Promise<ConfigDocument> {
   // Response might be ConfigDocument OR ConfigResponseWithWarning
-  const response = await fetchJson<ConfigDocument | ConfigResponseWithWarning>("/web/config");
+  const response = await fetchJson<ConfigDocument | ConfigResponseWithWarning>(
+    "/web/config",
+  );
 
   // Check if response contains a warning structure
-  if (response && typeof response === "object" && "warning" in response && "config" in response) {
+  if (
+    response &&
+    typeof response === "object" &&
+    "warning" in response &&
+    "config" in response
+  ) {
     // Response has warning structure - store warning for display
     const warningResponse = response as ConfigResponseWithWarning;
     if (warningResponse.warning?.message) {
-      sessionStorage.setItem("config_version_warning", warningResponse.warning.message);
+      sessionStorage.setItem(
+        "config_version_warning",
+        warningResponse.warning.message,
+      );
     }
     // Return the actual config (always present in warning structure)
     return warningResponse.config;
@@ -298,13 +326,19 @@ export async function getConfig(): Promise<ConfigDocument> {
 }
 
 export async function updateConfig(
-  payload: ConfigUpdatePayload
+  payload: ConfigUpdatePayload,
 ): Promise<ConfigUpdateResponse> {
   const token = resolveToken();
-  const response = await fetch("/web/config", buildInit({
-    method: "POST",
-    body: JSON.stringify(payload),
-  }, token));
+  const response = await fetch(
+    "/web/config",
+    buildInit(
+      {
+        method: "POST",
+        body: JSON.stringify(payload),
+      },
+      token,
+    ),
+  );
 
   if (!response.ok) {
     let detail: unknown = null;
@@ -329,7 +363,7 @@ export async function updateConfig(
   }
 
   // Parse response body with full type information
-  const data = await response.json() as ConfigUpdateResponse;
+  const data = (await response.json()) as ConfigUpdateResponse;
   return data;
 }
 
@@ -356,7 +390,7 @@ export interface TestConnectionResponse {
 }
 
 export async function testArrConnection(
-  request: TestConnectionRequest
+  request: TestConnectionRequest,
 ): Promise<TestConnectionResponse> {
   return fetchJson("/web/arr/test-connection", {
     method: "POST",
@@ -375,12 +409,12 @@ export async function getTorrentsDistribution(): Promise<TorrentDistribution> {
 export async function getLidarrTracks(
   category: string,
   page = 0,
-  pageSize = 50
+  pageSize = 50,
 ): Promise<LidarrTracksResponse> {
   const params = new URLSearchParams();
   params.set("page", String(page));
   params.set("page_size", String(pageSize));
   return fetchJson<LidarrTracksResponse>(
-    `/web/lidarr/${encodeURIComponent(category)}/tracks?${params}`
+    `/web/lidarr/${encodeURIComponent(category)}/tracks?${params}`,
   );
 }

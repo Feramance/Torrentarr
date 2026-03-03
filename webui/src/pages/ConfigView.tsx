@@ -1,14 +1,37 @@
-import { useCallback, useEffect, useMemo, useRef, useState, type JSX } from "react";
+import {
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+  type JSX,
+} from "react";
 import { produce } from "immer";
 import equal from "fast-deep-equal";
 import { get, set } from "lodash-es";
-import { getConfig, updateConfig, testArrConnection, type TestConnectionResponse } from "../api/client";
+import {
+  getConfig,
+  updateConfig,
+  testArrConnection,
+  type TestConnectionResponse,
+} from "../api/client";
 import type { ConfigDocument } from "../api/types";
 import { useToast } from "../context/ToastContext";
 import { useWebUI } from "../context/WebUIContext";
 import { getTooltip } from "../config/tooltips";
-import { getArrTorrentHandlingSummary, getQbitTorrentHandlingSummary } from "../config/torrentHandlingSummary";
-import { parseDurationDisplay, durationDisplayToValue, parseDurationToSeconds, parseDurationToMinutes, DURATION_UNITS, type DurationDisplay, type DurationUnit } from "../config/durationUtils";
+import {
+  getArrTorrentHandlingSummary,
+  getQbitTorrentHandlingSummary,
+} from "../config/torrentHandlingSummary";
+import {
+  parseDurationDisplay,
+  durationDisplayToValue,
+  parseDurationToSeconds,
+  parseDurationToMinutes,
+  DURATION_UNITS,
+  type DurationDisplay,
+  type DurationUnit,
+} from "../config/durationUtils";
 import { IconImage } from "../components/IconImage";
 import { TagInput } from "../components/TagInput";
 import Select from "react-select";
@@ -35,7 +58,14 @@ function simpleMarkdown(md: string): string {
     .replace(/\n/g, "<br/>");
 }
 
-type FieldType = "text" | "number" | "checkbox" | "password" | "select" | "tags" | "duration";
+type FieldType =
+  | "text"
+  | "number"
+  | "checkbox"
+  | "password"
+  | "select"
+  | "tags"
+  | "duration";
 
 interface ValidationContext {
   root: ConfigDocument;
@@ -43,7 +73,10 @@ interface ValidationContext {
   sectionKey?: string;
 }
 
-type FieldValidator = (value: unknown, context: ValidationContext) => string | undefined;
+type FieldValidator = (
+  value: unknown,
+  context: ValidationContext,
+) => string | undefined;
 
 interface FieldDefinition {
   label: string;
@@ -77,50 +110,56 @@ const REDACTED_PLACEHOLDER = "[redacted]";
 
 // Helper function for react-select theme-aware styles
 const getSelectStyles = () => {
-  const isDark = document.documentElement.getAttribute('data-theme') === 'dark';
+  const isDark = document.documentElement.getAttribute("data-theme") === "dark";
   return {
     control: (base: CSSObjectWithLabel) => ({
       ...base,
-      background: isDark ? '#0f131a' : '#ffffff',
-      color: isDark ? '#eaeef2' : '#1d1d1f',
-      borderColor: isDark ? '#2a2f36' : '#d2d2d7',
-      minHeight: '38px',
-      boxShadow: 'none',
-      '&:hover': {
-        borderColor: isDark ? '#3a4149' : '#b8b8bd',
-      }
+      background: isDark ? "#0f131a" : "#ffffff",
+      color: isDark ? "#eaeef2" : "#1d1d1f",
+      borderColor: isDark ? "#2a2f36" : "#d2d2d7",
+      minHeight: "38px",
+      boxShadow: "none",
+      "&:hover": {
+        borderColor: isDark ? "#3a4149" : "#b8b8bd",
+      },
     }),
     menu: (base: CSSObjectWithLabel) => ({
       ...base,
-      background: isDark ? '#0f131a' : '#ffffff',
-      borderColor: isDark ? '#2a2f36' : '#d2d2d7',
-      border: `1px solid ${isDark ? '#2a2f36' : '#d2d2d7'}`,
+      background: isDark ? "#0f131a" : "#ffffff",
+      borderColor: isDark ? "#2a2f36" : "#d2d2d7",
+      border: `1px solid ${isDark ? "#2a2f36" : "#d2d2d7"}`,
     }),
     option: (base: CSSObjectWithLabel, state: { isFocused: boolean }) => ({
       ...base,
       background: state.isFocused
-        ? (isDark ? 'rgba(122, 162, 247, 0.15)' : 'rgba(0, 113, 227, 0.1)')
-        : (isDark ? '#0f131a' : '#ffffff'),
-      color: isDark ? '#eaeef2' : '#1d1d1f',
-      '&:active': {
-        background: isDark ? 'rgba(122, 162, 247, 0.25)' : 'rgba(0, 113, 227, 0.2)',
-      }
+        ? isDark
+          ? "rgba(122, 162, 247, 0.15)"
+          : "rgba(0, 113, 227, 0.1)"
+        : isDark
+          ? "#0f131a"
+          : "#ffffff",
+      color: isDark ? "#eaeef2" : "#1d1d1f",
+      "&:active": {
+        background: isDark
+          ? "rgba(122, 162, 247, 0.25)"
+          : "rgba(0, 113, 227, 0.2)",
+      },
     }),
     singleValue: (base: CSSObjectWithLabel) => ({
       ...base,
-      color: isDark ? '#eaeef2' : '#1d1d1f',
+      color: isDark ? "#eaeef2" : "#1d1d1f",
     }),
     input: (base: CSSObjectWithLabel) => ({
       ...base,
-      color: isDark ? '#eaeef2' : '#1d1d1f',
+      color: isDark ? "#eaeef2" : "#1d1d1f",
     }),
     placeholder: (base: CSSObjectWithLabel) => ({
       ...base,
-      color: isDark ? '#9aa3ac' : '#6e6e73',
+      color: isDark ? "#9aa3ac" : "#6e6e73",
     }),
     menuList: (base: CSSObjectWithLabel) => ({
       ...base,
-      padding: '4px',
+      padding: "4px",
     }),
   };
 };
@@ -144,12 +183,6 @@ const REMOVE_TORRENT_OPTIONS = [
   "On ratio AND time (4)",
 ];
 
-
-
-
-
-
-
 const SENTENCE_END = /(.+?[.!?])(\s|$)/;
 
 function extractTooltipSummary(tooltip?: string): string | undefined {
@@ -161,16 +194,20 @@ function extractTooltipSummary(tooltip?: string): string | undefined {
   return sentence.length > 160 ? `${sentence.slice(0, 157)}…` : sentence;
 }
 
-
-
-
-
 const SETTINGS_FIELDS: FieldDefinition[] = [
   {
     label: "Console Level",
     path: ["Settings", "ConsoleLevel"],
     type: "select",
-    options: ["CRITICAL", "ERROR", "WARNING", "NOTICE", "INFO", "DEBUG", "TRACE"],
+    options: [
+      "CRITICAL",
+      "ERROR",
+      "WARNING",
+      "NOTICE",
+      "INFO",
+      "DEBUG",
+      "TRACE",
+    ],
     required: true,
   },
   { label: "Logging", path: ["Settings", "Logging"], type: "checkbox" },
@@ -223,7 +260,11 @@ const SETTINGS_FIELDS: FieldDefinition[] = [
       return undefined;
     },
   },
-  { label: "Auto Pause/Resume", path: ["Settings", "AutoPauseResume"], type: "checkbox" },
+  {
+    label: "Auto Pause/Resume",
+    path: ["Settings", "AutoPauseResume"],
+    type: "checkbox",
+  },
   {
     label: "No Internet Sleep (s)",
     path: ["Settings", "NoInternetSleepTimer"],
@@ -264,8 +305,16 @@ const SETTINGS_FIELDS: FieldDefinition[] = [
       return undefined;
     },
   },
-  { label: "Failed Category", path: ["Settings", "FailedCategory"], type: "text" },
-  { label: "Recheck Category", path: ["Settings", "RecheckCategory"], type: "text" },
+  {
+    label: "Failed Category",
+    path: ["Settings", "FailedCategory"],
+    type: "text",
+  },
+  {
+    label: "Recheck Category",
+    path: ["Settings", "RecheckCategory"],
+    type: "text",
+  },
   { label: "Tagless", path: ["Settings", "Tagless"], type: "checkbox" },
   {
     label: "Ignore Torrents Younger Than",
@@ -356,7 +405,6 @@ const SETTINGS_FIELDS: FieldDefinition[] = [
       return undefined;
     },
   },
-
 ];
 
 const WEB_SETTINGS_FIELDS: FieldDefinition[] = [
@@ -394,7 +442,12 @@ const WEB_SETTINGS_FIELDS: FieldDefinition[] = [
 ];
 
 const QBIT_FIELDS: FieldDefinition[] = [
-  { label: "Display Name", type: "text", placeholder: "qBit-seedbox", sectionName: true },
+  {
+    label: "Display Name",
+    type: "text",
+    placeholder: "qBit-seedbox",
+    sectionName: true,
+  },
   { label: "Disabled", path: ["Disabled"], type: "checkbox" },
   {
     label: "Host",
@@ -431,13 +484,21 @@ const QBIT_FIELDS: FieldDefinition[] = [
     parse: (value: string | boolean) => {
       // When saving, ensure we always save as array
       if (Array.isArray(value)) return value;
-      if (typeof value === "string") return value.split(",").map(s => s.trim()).filter(Boolean);
+      if (typeof value === "string")
+        return value
+          .split(",")
+          .map((s) => s.trim())
+          .filter(Boolean);
       return [];
     },
     format: (value: unknown) => {
       // When displaying, ensure we always show as array
       if (Array.isArray(value)) return value;
-      if (typeof value === "string") return value.split(",").map(s => s.trim()).filter(Boolean);
+      if (typeof value === "string")
+        return value
+          .split(",")
+          .map((s) => s.trim())
+          .filter(Boolean);
       return [];
     },
   },
@@ -467,7 +528,10 @@ const QBIT_FIELDS: FieldDefinition[] = [
     },
     format: (value: unknown) => {
       const num = typeof value === "number" ? value : Number(value ?? -1);
-      return REMOVE_TORRENT_OPTIONS.find(opt => opt.includes(`(${num})`)) || REMOVE_TORRENT_OPTIONS[0];
+      return (
+        REMOVE_TORRENT_OPTIONS.find((opt) => opt.includes(`(${num})`)) ||
+        REMOVE_TORRENT_OPTIONS[0]
+      );
     },
   },
   {
@@ -494,7 +558,8 @@ const QBIT_FIELDS: FieldDefinition[] = [
     type: "number",
     required: false,
     validate: (value) => {
-      if (value === null || value === undefined || value === "") return undefined;
+      if (value === null || value === undefined || value === "")
+        return undefined;
       const num = typeof value === "number" ? value : Number(value);
       if (!Number.isFinite(num) || num < 0) {
         return "Min Seed Ratio must be 0 or greater.";
@@ -508,7 +573,8 @@ const QBIT_FIELDS: FieldDefinition[] = [
     type: "number",
     required: false,
     validate: (value) => {
-      if (value === null || value === undefined || value === "") return undefined;
+      if (value === null || value === undefined || value === "")
+        return undefined;
       const num = typeof value === "number" ? value : Number(value);
       if (!Number.isFinite(num) || num < 0) {
         return "Min Seeding Time must be 0 or greater.";
@@ -522,7 +588,8 @@ const QBIT_FIELDS: FieldDefinition[] = [
     type: "number",
     required: false,
     validate: (value) => {
-      if (value === null || value === undefined || value === "") return undefined;
+      if (value === null || value === undefined || value === "")
+        return undefined;
       const num = typeof value === "number" ? value : Number(value);
       if (!Number.isFinite(num) || num < 0 || num > 100) {
         return "Min Download % must be between 0 and 100.";
@@ -536,7 +603,8 @@ const QBIT_FIELDS: FieldDefinition[] = [
     type: "number",
     required: false,
     validate: (value) => {
-      if (value === null || value === undefined || value === "") return undefined;
+      if (value === null || value === undefined || value === "")
+        return undefined;
       const num = typeof value === "number" ? value : Number(value);
       if (!Number.isFinite(num) || num < 0) {
         return "Partial Download Seed Ratio must be 0 or greater.";
@@ -551,7 +619,8 @@ const QBIT_FIELDS: FieldDefinition[] = [
     nativeUnit: "seconds",
     required: false,
     validate: (value) => {
-      if (value === null || value === undefined || value === "") return undefined;
+      if (value === null || value === undefined || value === "")
+        return undefined;
       const total = parseDurationToSeconds(value, -1);
       if (total < 0 || !Number.isFinite(total)) {
         return "Tracker Update Buffer must be 0 or greater.";
@@ -562,7 +631,12 @@ const QBIT_FIELDS: FieldDefinition[] = [
 ];
 
 const ARR_GENERAL_FIELDS: FieldDefinition[] = [
-  { label: "Display Name", type: "text", placeholder: "Sonarr-TV", sectionName: true },
+  {
+    label: "Display Name",
+    type: "text",
+    placeholder: "Sonarr-TV",
+    sectionName: true,
+  },
   { label: "Managed", path: ["Managed"], type: "checkbox" },
   {
     label: "URI",
@@ -744,26 +818,30 @@ const ARR_ENTRY_SEARCH_FIELDS: FieldDefinition[] = [
     label: "Force Reset Temp Profiles",
     path: ["EntrySearch", "ForceResetTempProfiles"],
     type: "checkbox",
-    description: "Reset all items using temp profiles to their original main profile on Torrentarr startup",
+    description:
+      "Reset all items using temp profiles to their original main profile on Torrentarr startup",
   },
   {
     label: "Temp Profile Reset Timeout (Minutes)",
     path: ["EntrySearch", "TempProfileResetTimeoutMinutes"],
     type: "number",
-    description: "Timeout in minutes after which items with temp profiles are automatically reset to main profile (0 = disabled)",
+    description:
+      "Timeout in minutes after which items with temp profiles are automatically reset to main profile (0 = disabled)",
   },
   {
     label: "Profile Switch Retry Attempts",
     path: ["EntrySearch", "ProfileSwitchRetryAttempts"],
     type: "number",
-    description: "Number of retry attempts for profile switch API calls (default: 3)",
+    description:
+      "Number of retry attempts for profile switch API calls (default: 3)",
   },
   {
     label: "Search By Series",
     path: ["EntrySearch", "SearchBySeries"],
     type: "select",
     options: ["smart", "true", "false"],
-    description: "smart = auto (series search for multiple episodes, episode search for single), true = always series search, false = always episode search",
+    description:
+      "smart = auto (series search for multiple episodes, episode search for single), true = always series search, false = always episode search",
     format: (value: unknown) => {
       // Convert boolean or string to string for display
       if (typeof value === "boolean") {
@@ -1006,7 +1084,10 @@ const ARR_SEEDING_FIELDS: FieldDefinition[] = [
     format: (value: unknown) => {
       // Convert numeric value to option string
       const num = typeof value === "number" ? value : Number(value ?? -1);
-      return REMOVE_TORRENT_OPTIONS.find(opt => opt.includes(`(${num})`)) || REMOVE_TORRENT_OPTIONS[0];
+      return (
+        REMOVE_TORRENT_OPTIONS.find((opt) => opt.includes(`(${num})`)) ||
+        REMOVE_TORRENT_OPTIONS[0]
+      );
     },
   },
   {
@@ -1127,7 +1208,8 @@ const ARR_TRACKER_FIELDS: FieldDefinition[] = [
     type: "number",
     required: false,
     validate: (value) => {
-      if (value === null || value === undefined || value === "") return undefined;
+      if (value === null || value === undefined || value === "")
+        return undefined;
       const num = typeof value === "number" ? value : Number(value);
       if (!Number.isFinite(num) || num < 0) {
         return "Min Seed Ratio must be 0 or greater.";
@@ -1141,7 +1223,8 @@ const ARR_TRACKER_FIELDS: FieldDefinition[] = [
     type: "number",
     required: false,
     validate: (value) => {
-      if (value === null || value === undefined || value === "") return undefined;
+      if (value === null || value === undefined || value === "")
+        return undefined;
       const num = typeof value === "number" ? value : Number(value);
       if (!Number.isFinite(num) || num < 0) {
         return "Min Seeding Time must be 0 or greater.";
@@ -1155,7 +1238,8 @@ const ARR_TRACKER_FIELDS: FieldDefinition[] = [
     type: "number",
     required: false,
     validate: (value) => {
-      if (value === null || value === undefined || value === "") return undefined;
+      if (value === null || value === undefined || value === "")
+        return undefined;
       const num = typeof value === "number" ? value : Number(value);
       if (!Number.isFinite(num) || num < 0 || num > 100) {
         return "Min Download % must be between 0 and 100.";
@@ -1169,7 +1253,8 @@ const ARR_TRACKER_FIELDS: FieldDefinition[] = [
     type: "number",
     required: false,
     validate: (value) => {
-      if (value === null || value === undefined || value === "") return undefined;
+      if (value === null || value === undefined || value === "")
+        return undefined;
       const num = typeof value === "number" ? value : Number(value);
       if (!Number.isFinite(num) || num < 0) {
         return "Partial Download Seed Ratio must be 0 or greater.";
@@ -1183,7 +1268,8 @@ const ARR_TRACKER_FIELDS: FieldDefinition[] = [
     type: "number",
     required: false,
     validate: (value) => {
-      if (value === null || value === undefined || value === "") return undefined;
+      if (value === null || value === undefined || value === "")
+        return undefined;
       const num = typeof value === "number" ? value : Number(value);
       if (!Number.isFinite(num) || num < 0) {
         return "Tracker Update Buffer must be 0 or greater.";
@@ -1222,7 +1308,9 @@ function getArrFieldSets(arrKey: string) {
   });
   // Ombi and Overseerr don't support music requests, so hide them for Lidarr
   const entryOmbiFields = isLidarr ? [] : [...ARR_ENTRY_SEARCH_OMBI_FIELDS];
-  const entryOverseerrFields = isLidarr ? [] : [...ARR_ENTRY_SEARCH_OVERSEERR_FIELDS];
+  const entryOverseerrFields = isLidarr
+    ? []
+    : [...ARR_ENTRY_SEARCH_OVERSEERR_FIELDS];
   const torrentFields = [...ARR_TORRENT_FIELDS];
   const seedingFields = [...ARR_SEEDING_FIELDS];
   const trackerFields = [...ARR_TRACKER_FIELDS];
@@ -1246,9 +1334,13 @@ function isEmptyValue(value: unknown): boolean {
   );
 }
 
-function basicValidation(def: FieldDefinition, value: unknown): string | undefined {
+function basicValidation(
+  def: FieldDefinition,
+  value: unknown,
+): string | undefined {
   const label = def.label;
-  const isRequired = def.required ?? (def.type === "number" || def.type === "select");
+  const isRequired =
+    def.required ?? (def.type === "number" || def.type === "select");
   switch (def.type) {
     case "text":
     case "password": {
@@ -1267,9 +1359,10 @@ function basicValidation(def: FieldDefinition, value: unknown): string | undefin
       }
       if (def.type === "duration") {
         const baseUnit = def.nativeUnit ?? "seconds";
-        const total = baseUnit === "seconds"
-          ? parseDurationToSeconds(value, NaN)
-          : parseDurationToMinutes(value, NaN);
+        const total =
+          baseUnit === "seconds"
+            ? parseDurationToSeconds(value, NaN)
+            : parseDurationToMinutes(value, NaN);
         if (!Number.isFinite(total) && (value !== -1 || !def.allowNegative)) {
           return `${label} must be a valid duration.`;
         }
@@ -1312,7 +1405,7 @@ function validateFieldGroup(
   fields: FieldDefinition[],
   state: ConfigDocument | null,
   basePath: string[],
-  context: ValidationContext
+  context: ValidationContext,
 ): void {
   if (!state) return;
   for (const field of fields) {
@@ -1340,7 +1433,9 @@ function validateFieldGroup(
   }
 }
 
-function validateFormState(formState: ConfigDocument | null): ValidationError[] {
+function validateFormState(
+  formState: ConfigDocument | null,
+): ValidationError[] {
   if (!formState) return [];
   const errors: ValidationError[] = [];
   const rootContext: ValidationContext = { root: formState };
@@ -1350,18 +1445,66 @@ function validateFormState(formState: ConfigDocument | null): ValidationError[] 
   for (const [key, value] of Object.entries(formState)) {
     if (QBIT_SECTION_REGEX.test(key) && value && typeof value === "object") {
       const section = value as ConfigDocument;
-      const sectionContext: ValidationContext = { root: formState, section, sectionKey: key };
+      const sectionContext: ValidationContext = {
+        root: formState,
+        section,
+        sectionKey: key,
+      };
       validateFieldGroup(errors, QBIT_FIELDS, section, [key], sectionContext);
-    } else if (SERVARR_SECTION_REGEX.test(key) && value && typeof value === "object") {
+    } else if (
+      SERVARR_SECTION_REGEX.test(key) &&
+      value &&
+      typeof value === "object"
+    ) {
       const section = value as ConfigDocument;
-      const sectionContext: ValidationContext = { root: formState, section, sectionKey: key };
+      const sectionContext: ValidationContext = {
+        root: formState,
+        section,
+        sectionKey: key,
+      };
       const fieldSets = getArrFieldSets(key);
-      validateFieldGroup(errors, fieldSets.generalFields, section, [key], sectionContext);
-      validateFieldGroup(errors, fieldSets.entryFields, section, [key], sectionContext);
-      validateFieldGroup(errors, fieldSets.entryOmbiFields, section, [key], sectionContext);
-      validateFieldGroup(errors, fieldSets.entryOverseerrFields, section, [key], sectionContext);
-      validateFieldGroup(errors, fieldSets.torrentFields, section, [key], sectionContext);
-      validateFieldGroup(errors, fieldSets.seedingFields, section, [key], sectionContext);
+      validateFieldGroup(
+        errors,
+        fieldSets.generalFields,
+        section,
+        [key],
+        sectionContext,
+      );
+      validateFieldGroup(
+        errors,
+        fieldSets.entryFields,
+        section,
+        [key],
+        sectionContext,
+      );
+      validateFieldGroup(
+        errors,
+        fieldSets.entryOmbiFields,
+        section,
+        [key],
+        sectionContext,
+      );
+      validateFieldGroup(
+        errors,
+        fieldSets.entryOverseerrFields,
+        section,
+        [key],
+        sectionContext,
+      );
+      validateFieldGroup(
+        errors,
+        fieldSets.torrentFields,
+        section,
+        [key],
+        sectionContext,
+      );
+      validateFieldGroup(
+        errors,
+        fieldSets.seedingFields,
+        section,
+        [key],
+        sectionContext,
+      );
     }
   }
   return errors;
@@ -1375,17 +1518,16 @@ function getValue(doc: ConfigDocument | null, path: string[]): unknown {
   return get(doc, path);
 }
 
-function setValue(
-  doc: ConfigDocument,
-  path: string[],
-  value: unknown
-): void {
+function setValue(doc: ConfigDocument, path: string[], value: unknown): void {
   set(doc, path, value);
 }
 
 // Custom flatten to create dot-notation keys (e.g., "Settings.FreeSpace")
 // Note: lodash's flatten is for arrays; this is a specialized object flattener
-function flatten(doc: ConfigDocument, prefix: string[] = []): Record<string, unknown> {
+function flatten(
+  doc: ConfigDocument,
+  prefix: string[] = [],
+): Record<string, unknown> {
   const result: Record<string, unknown> = {};
   for (const [key, value] of Object.entries(doc)) {
     const nextPath = [...prefix, key];
@@ -1411,16 +1553,16 @@ function ensureArrDefaults(type: string): ConfigDocument {
         "Unable to determine if file is a sample",
       ]
     : isLidarr
-    ? [
-        "Not a preferred word upgrade for existing album file(s)",
-        "Not an upgrade for existing album file(s)",
-        "Unable to determine if file is a sample",
-      ]
-    : [
-        "Not a preferred word upgrade for existing episode file(s)",
-        "Not an upgrade for existing episode file(s)",
-        "Unable to determine if file is a sample",
-      ];
+      ? [
+          "Not a preferred word upgrade for existing album file(s)",
+          "Not an upgrade for existing album file(s)",
+          "Unable to determine if file is a sample",
+        ]
+      : [
+          "Not a preferred word upgrade for existing episode file(s)",
+          "Not an upgrade for existing episode file(s)",
+          "Unable to determine if file is a sample",
+        ];
 
   const entrySearch: Record<string, unknown> = {
     SearchMissing: true,
@@ -1481,7 +1623,21 @@ function ensureArrDefaults(type: string): ConfigDocument {
       "comandotorrents.com",
     ],
     FileExtensionAllowlist: isLidarr
-      ? [".mp3", ".flac", ".m4a", ".aac", ".ogg", ".opus", ".wav", ".ape", ".wma", ".!qB", ".parts", ".log", ".cue"]
+      ? [
+          ".mp3",
+          ".flac",
+          ".m4a",
+          ".aac",
+          ".ogg",
+          ".opus",
+          ".wav",
+          ".ape",
+          ".wma",
+          ".!qB",
+          ".parts",
+          ".log",
+          ".cue",
+        ]
       : [".mp4", ".mkv", ".sub", ".ass", ".srt", ".!qB", ".parts"],
     AutoDelete: false,
     IgnoreTorrentsYoungerThan: 600,
@@ -1529,13 +1685,15 @@ export function ConfigView(props?: ConfigViewProps): JSX.Element {
   const { onDirtyChange } = props ?? {};
   const { push } = useToast();
   const [originalConfig, setOriginalConfig] = useState<ConfigDocument | null>(
-    null
+    null,
   );
   const [formState, setFormState] = useState<ConfigDocument | null>(null);
   const [loading, setLoading] = useState(false);
   const [saving, setSaving] = useState(false);
   // Track section renames to ensure old sections are fully deleted
-  const [pendingRenames, setPendingRenames] = useState<Map<string, string>>(new Map());
+  const [pendingRenames, setPendingRenames] = useState<Map<string, string>>(
+    new Map(),
+  );
 
   const loadConfig = useCallback(async () => {
     setLoading(true);
@@ -1548,10 +1706,8 @@ export function ConfigView(props?: ConfigViewProps): JSX.Element {
       setPendingRenames(new Map());
     } catch (error) {
       push(
-        error instanceof Error
-          ? error.message
-          : "Failed to load configuration",
-        "error"
+        error instanceof Error ? error.message : "Failed to load configuration",
+        "error",
       );
     } finally {
       setLoading(false);
@@ -1573,29 +1729,31 @@ export function ConfigView(props?: ConfigViewProps): JSX.Element {
             (def.type === "number"
               ? Number(raw) || 0
               : def.type === "checkbox"
-              ? Boolean(raw)
-              : raw);
+                ? Boolean(raw)
+                : raw);
 
       setFormState(
         produce(formState, (draft) => {
           setValue(draft, path, parsed);
-        })
+        }),
       );
     },
-    [formState]
+    [formState],
   );
 
   const arrSections = useMemo(() => {
     if (!formState) return [] as Array<[string, ConfigDocument]>;
-    return Object.entries(formState).filter(([key, value]) =>
-      SERVARR_SECTION_REGEX.test(key) && value && typeof value === "object"
+    return Object.entries(formState).filter(
+      ([key, value]) =>
+        SERVARR_SECTION_REGEX.test(key) && value && typeof value === "object",
     ) as Array<[string, ConfigDocument]>;
   }, [formState]);
 
   const qbitSections = useMemo(() => {
     if (!formState) return [] as Array<[string, ConfigDocument]>;
-    return Object.entries(formState).filter(([key, value]) =>
-      QBIT_SECTION_REGEX.test(key) && value && typeof value === "object"
+    return Object.entries(formState).filter(
+      ([key, value]) =>
+        QBIT_SECTION_REGEX.test(key) && value && typeof value === "object",
     ) as Array<[string, ConfigDocument]>;
   }, [formState]);
   const groupedArrSections = useMemo(() => {
@@ -1605,7 +1763,10 @@ export function ConfigView(props?: ConfigViewProps): JSX.Element {
       items: Array<[string, ConfigDocument]>;
     }> = [];
     const sorted = [...arrSections].sort((a, b) =>
-      a[0].localeCompare(b[0], undefined, { numeric: true, sensitivity: "base" })
+      a[0].localeCompare(b[0], undefined, {
+        numeric: true,
+        sensitivity: "base",
+      }),
     );
     const radarr: Array<[string, ConfigDocument]> = [];
     const sonarr: Array<[string, ConfigDocument]> = [];
@@ -1705,7 +1866,9 @@ export function ConfigView(props?: ConfigViewProps): JSX.Element {
   }, [onDirtyChange]);
 
   useEffect(() => {
-    const anyModalOpen = Boolean(activeArrKey || activeQbitKey || isSettingsOpen || isWebSettingsOpen);
+    const anyModalOpen = Boolean(
+      activeArrKey || activeQbitKey || isSettingsOpen || isWebSettingsOpen,
+    );
     if (!anyModalOpen) return;
     const handleKeyDown = (event: KeyboardEvent) => {
       if (event.key === "Escape") {
@@ -1749,22 +1912,26 @@ export function ConfigView(props?: ConfigViewProps): JSX.Element {
       setFormState(
         produce(formState, (draft) => {
           draft[key] = defaults;
-        })
+        }),
       );
       // Open modal for immediate configuration
       setActiveArrKey(key);
     },
-    [formState]
+    [formState],
   );
   const deleteArrInstance = useCallback(
     (key: string) => {
       if (!formState) return;
       const keyLower = key.toLowerCase();
-      if (!keyLower.startsWith("radarr") && !keyLower.startsWith("sonarr") && !keyLower.startsWith("lidarr")) {
+      if (
+        !keyLower.startsWith("radarr") &&
+        !keyLower.startsWith("sonarr") &&
+        !keyLower.startsWith("lidarr")
+      ) {
         return;
       }
       const confirmed = window.confirm(
-        `Delete ${key}? This action cannot be undone.`
+        `Delete ${key}? This action cannot be undone.`,
       );
       if (!confirmed) {
         return;
@@ -1775,14 +1942,14 @@ export function ConfigView(props?: ConfigViewProps): JSX.Element {
       setFormState(
         produce(formState, (draft) => {
           delete draft[key];
-        })
+        }),
       );
       if (activeArrKey === key) {
         setActiveArrKey(null);
       }
       push(`${key} removed`, "success");
     },
-    [formState, activeArrKey, push]
+    [formState, activeArrKey, push],
   );
 
   const addQbitInstance = useCallback(() => {
@@ -1803,7 +1970,7 @@ export function ConfigView(props?: ConfigViewProps): JSX.Element {
     setFormState(
       produce(formState, (draft) => {
         draft[key] = defaults;
-      })
+      }),
     );
     setActiveQbitKey(key);
   }, [formState]);
@@ -1812,11 +1979,14 @@ export function ConfigView(props?: ConfigViewProps): JSX.Element {
     (key: string) => {
       if (!formState) return;
       if (key === "qBit") {
-        push("The default qBit instance cannot be deleted. You can disable it via the Disabled setting.", "error");
+        push(
+          "The default qBit instance cannot be deleted. You can disable it via the Disabled setting.",
+          "error",
+        );
         return;
       }
       const confirmed = window.confirm(
-        `Delete ${key}? This action cannot be undone.`
+        `Delete ${key}? This action cannot be undone.`,
       );
       if (!confirmed) {
         return;
@@ -1827,14 +1997,14 @@ export function ConfigView(props?: ConfigViewProps): JSX.Element {
       setFormState(
         produce(formState, (draft) => {
           delete draft[key];
-        })
+        }),
       );
       if (activeQbitKey === key) {
         setActiveQbitKey(null);
       }
       push(`${key} removed`, "success");
     },
-    [formState, activeQbitKey, push]
+    [formState, activeQbitKey, push],
   );
 
   const handleRenameSection = useCallback(
@@ -1856,7 +2026,7 @@ export function ConfigView(props?: ConfigViewProps): JSX.Element {
           if (section && typeof section === "object") {
             (section as Record<string, unknown>).Name = newName;
           }
-        })
+        }),
       );
       // Track this rename to ensure old section is fully deleted on save
       setPendingRenames((prev) => new Map(prev).set(oldName, newName));
@@ -1864,7 +2034,7 @@ export function ConfigView(props?: ConfigViewProps): JSX.Element {
         setActiveArrKey(newName);
       }
     },
-    [formState, push, activeArrKey]
+    [formState, push, activeArrKey],
   );
 
   const handleRenameQbitSection = useCallback(
@@ -1875,7 +2045,10 @@ export function ConfigView(props?: ConfigViewProps): JSX.Element {
         return;
       }
       if (oldName === "qBit" && newName !== "qBit") {
-        push("Cannot rename the default qBit instance. Create a new instance instead.", "error");
+        push(
+          "Cannot rename the default qBit instance. Create a new instance instead.",
+          "error",
+        );
         return;
       }
       if (formState[newName]) {
@@ -1887,7 +2060,7 @@ export function ConfigView(props?: ConfigViewProps): JSX.Element {
           const section = draft[oldName];
           delete draft[oldName];
           draft[newName] = section;
-        })
+        }),
       );
       // Track this rename to ensure old section is fully deleted on save
       setPendingRenames((prev) => new Map(prev).set(oldName, newName));
@@ -1895,7 +2068,7 @@ export function ConfigView(props?: ConfigViewProps): JSX.Element {
         setActiveQbitKey(newName);
       }
     },
-    [formState, push, activeQbitKey]
+    [formState, push, activeQbitKey],
   );
 
   const handleSubmit = useCallback(async () => {
@@ -1946,7 +2119,8 @@ export function ConfigView(props?: ConfigViewProps): JSX.Element {
         setSaving(false);
         return;
       }
-      const { configReloaded, reloadType, affectedInstances } = await updateConfig({ changes });
+      const { configReloaded, reloadType, affectedInstances } =
+        await updateConfig({ changes });
 
       // Build appropriate success message
       let message = "Configuration saved";
@@ -1964,11 +2138,11 @@ export function ConfigView(props?: ConfigViewProps): JSX.Element {
       push(message, "success");
 
       // Only clear browser cache if backend reloaded (non-frontend-only changes)
-      if (configReloaded && 'caches' in window) {
+      if (configReloaded && "caches" in window) {
         try {
           const cacheNames = await caches.keys();
           await Promise.all(
-            cacheNames.map(cacheName => caches.delete(cacheName))
+            cacheNames.map((cacheName) => caches.delete(cacheName)),
           );
         } catch {
           // cache clear failed, non-critical
@@ -1983,7 +2157,7 @@ export function ConfigView(props?: ConfigViewProps): JSX.Element {
         error instanceof Error
           ? error.message
           : "Failed to update configuration",
-        "error"
+        "error",
       );
     } finally {
       setSaving(false);
@@ -2047,13 +2221,19 @@ export function ConfigView(props?: ConfigViewProps): JSX.Element {
                 {qbitSections.map(([key, value]) => {
                   const host = getValue(value as ConfigDocument, ["Host"]);
                   const port = getValue(value as ConfigDocument, ["Port"]);
-                  const disabled = getValue(value as ConfigDocument, ["Disabled"]);
+                  const disabled = getValue(value as ConfigDocument, [
+                    "Disabled",
+                  ]);
                   const isDefault = key === "qBit";
                   return (
                     <div className="card config-card config-arr-card" key={key}>
                       <div className="card-header">
                         {key}
-                        {isDefault && <span style={{ marginLeft: '8px', opacity: 0.6 }}>(Default)</span>}
+                        {isDefault && (
+                          <span style={{ marginLeft: "8px", opacity: 0.6 }}>
+                            (Default)
+                          </span>
+                        )}
                       </div>
                       <div className="card-body">
                         <dl className="config-arr-summary">
@@ -2063,7 +2243,12 @@ export function ConfigView(props?: ConfigViewProps): JSX.Element {
                           </div>
                           <div className="config-arr-summary__item">
                             <dt>Host</dt>
-                            <dd>{host && String(host).toUpperCase() !== "CHANGE_ME" ? `${String(host)}:${port ?? 8080}` : "Not configured"}</dd>
+                            <dd>
+                              {host &&
+                              String(host).toUpperCase() !== "CHANGE_ME"
+                                ? `${String(host)}:${port ?? 8080}`
+                                : "Not configured"}
+                            </dd>
                           </div>
                         </dl>
                         <div className="config-arr-actions">
@@ -2096,30 +2281,46 @@ export function ConfigView(props?: ConfigViewProps): JSX.Element {
               {groupedArrSections.map((group) => (
                 <section className="config-arr-group" key={group.type}>
                   <details className="config-arr-group__details" open>
-                     <summary>
-                       <span>{group.label}</span>
-                       <span className="config-arr-group__count">
-                         {group.items.length}
-                       </span>
-                        {(group.type === "radarr" || group.type === "sonarr" || group.type === "lidarr") && (
+                    <summary>
+                      <span>{group.label}</span>
+                      <span className="config-arr-group__count">
+                        {group.items.length}
+                      </span>
+                      {(group.type === "radarr" ||
+                        group.type === "sonarr" ||
+                        group.type === "lidarr") && (
                         <button
                           className="btn small"
                           type="button"
-                          onClick={() => addArrInstance(group.type as "radarr" | "sonarr" | "lidarr")}
+                          onClick={() =>
+                            addArrInstance(
+                              group.type as "radarr" | "sonarr" | "lidarr",
+                            )
+                          }
                         >
                           <IconImage src={AddIcon} />
                           Add Instance
                         </button>
-                       )}
-                     </summary>
+                      )}
+                    </summary>
                     <div className="config-arr-grid">
                       {group.items.map(([key, value]) => {
                         const uri = getValue(value as ConfigDocument, ["URI"]);
-                        const category = getValue(value as ConfigDocument, ["Category"]);
-                        const managed = getValue(value as ConfigDocument, ["Managed"]);
-                        const canDelete = group.type === "radarr" || group.type === "sonarr" || group.type === "lidarr";
+                        const category = getValue(value as ConfigDocument, [
+                          "Category",
+                        ]);
+                        const managed = getValue(value as ConfigDocument, [
+                          "Managed",
+                        ]);
+                        const canDelete =
+                          group.type === "radarr" ||
+                          group.type === "sonarr" ||
+                          group.type === "lidarr";
                         return (
-                          <div className="card config-card config-arr-card" key={key}>
+                          <div
+                            className="card config-card config-arr-card"
+                            key={key}
+                          >
                             <div className="card-header">{key}</div>
                             <div className="card-body">
                               <dl className="config-arr-summary">
@@ -2250,8 +2451,6 @@ function ConfigSummaryCard({
   );
 }
 
-
-
 interface FieldGroupProps {
   title: string | null;
   fields: FieldDefinition[];
@@ -2280,22 +2479,33 @@ function FieldGroup({
   const sectionName = sectionKey ?? basePath[0] ?? "";
 
   if (title === "Quality Profile Mappings") {
-    const mappings = (getValue(state as ConfigDocument, ["EntrySearch", "QualityProfileMappings"]) ?? {}) as Record<string, string>;
+    const mappings = (getValue(state as ConfigDocument, [
+      "EntrySearch",
+      "QualityProfileMappings",
+    ]) ?? {}) as Record<string, string>;
     const mappingEntries = Object.entries(mappings);
 
     // Check if credentials exist (URI and APIKey)
     const hasCredentials = Boolean(
       getValue(state as ConfigDocument, ["URI"]) &&
-        getValue(state as ConfigDocument, ["APIKey"])
+        getValue(state as ConfigDocument, ["APIKey"]),
     );
     const hasProfiles = qualityProfiles.length > 0;
 
     const handleAddMapping = () => {
       const nextMappings = { ...mappings, "": "" };
-      onChange([...basePath, "EntrySearch", "QualityProfileMappings"], {} as FieldDefinition, nextMappings);
+      onChange(
+        [...basePath, "EntrySearch", "QualityProfileMappings"],
+        {} as FieldDefinition,
+        nextMappings,
+      );
     };
 
-    const handleUpdateMapping = (oldKey: string, newKey: string, newValue: string) => {
+    const handleUpdateMapping = (
+      oldKey: string,
+      newKey: string,
+      newValue: string,
+    ) => {
       const nextMappings = { ...mappings };
       if (oldKey !== newKey) {
         delete nextMappings[oldKey];
@@ -2303,30 +2513,42 @@ function FieldGroup({
       if (newKey.trim()) {
         nextMappings[newKey.trim()] = newValue.trim();
       }
-      onChange([...basePath, "EntrySearch", "QualityProfileMappings"], {} as FieldDefinition, nextMappings);
+      onChange(
+        [...basePath, "EntrySearch", "QualityProfileMappings"],
+        {} as FieldDefinition,
+        nextMappings,
+      );
     };
 
     const handleDeleteMapping = (key: string) => {
       const nextMappings = { ...mappings };
       delete nextMappings[key];
-      onChange([...basePath, "EntrySearch", "QualityProfileMappings"], {} as FieldDefinition, nextMappings);
+      onChange(
+        [...basePath, "EntrySearch", "QualityProfileMappings"],
+        {} as FieldDefinition,
+        nextMappings,
+      );
     };
 
     return (
       <details className="config-section" open={defaultOpen}>
         <summary>{title}</summary>
         <div className="config-section__body">
-          <div className="field-description" style={{ marginBottom: '1rem' }}>
-            Map main quality profile names to temporary profile names. Items will be downgraded to the temp profile when not found, then upgraded back to the main profile when available.
+          <div className="field-description" style={{ marginBottom: "1rem" }}>
+            Map main quality profile names to temporary profile names. Items
+            will be downgraded to the temp profile when not found, then upgraded
+            back to the main profile when available.
           </div>
 
           {!hasCredentials ? (
             <div className="alert warning">
-              ⚠️ Please configure URI and API Key first, then click "Test Connection" to load quality profiles
+              ⚠️ Please configure URI and API Key first, then click "Test
+              Connection" to load quality profiles
             </div>
           ) : !hasProfiles ? (
             <div className="alert info">
-              ℹ️ Click "Test Connection" above to load quality profiles from your {sectionName} instance
+              ℹ️ Click "Test Connection" above to load quality profiles from
+              your {sectionName} instance
             </div>
           ) : (
             <>
@@ -2349,7 +2571,7 @@ function FieldGroup({
                           handleUpdateMapping(
                             mainProfile,
                             option?.value || "",
-                            tempProfile
+                            tempProfile,
                           )
                         }
                         placeholder="Select main profile..."
@@ -2374,7 +2596,7 @@ function FieldGroup({
                           handleUpdateMapping(
                             mainProfile,
                             mainProfile,
-                            option?.value || ""
+                            option?.value || "",
                           )
                         }
                         placeholder="Select temp profile..."
@@ -2395,7 +2617,11 @@ function FieldGroup({
                 ))}
               </div>
               <div className="config-actions">
-                <button className="btn" type="button" onClick={handleAddMapping}>
+                <button
+                  className="btn"
+                  type="button"
+                  onClick={handleAddMapping}
+                >
                   <IconImage src={AddIcon} />
                   Add Profile Mapping
                 </button>
@@ -2409,7 +2635,8 @@ function FieldGroup({
 
   if (title === "Trackers") {
     const trackerPath = qbitTrackers ? ["Trackers"] : ["Torrent", "Trackers"];
-    const trackers = (getValue(state as ConfigDocument, trackerPath) ?? []) as ConfigDocument[];
+    const trackers = (getValue(state as ConfigDocument, trackerPath) ??
+      []) as ConfigDocument[];
     const handleAddTracker = () => {
       const nextTrackers = [
         ...trackers,
@@ -2420,25 +2647,35 @@ function FieldGroup({
           AddTags: [],
         },
       ];
-      onChange([...basePath, ...trackerPath], {} as FieldDefinition, nextTrackers);
+      onChange(
+        [...basePath, ...trackerPath],
+        {} as FieldDefinition,
+        nextTrackers,
+      );
     };
     const handleDeleteTracker = (index: number) => {
       const nextTrackers = [...trackers];
       nextTrackers.splice(index, 1);
-      onChange([...basePath, ...trackerPath], {} as FieldDefinition, nextTrackers);
+      onChange(
+        [...basePath, ...trackerPath],
+        {} as FieldDefinition,
+        nextTrackers,
+      );
     };
     return (
       <details className="config-section" open={defaultOpen}>
         <summary>{title}</summary>
         <div className="config-section__body">
           {qbitTrackers && (
-            <div className="alert info" style={{ marginBottom: '12px' }}>
-              Shared tracker configs inherited by all Arr instances on this qBit instance.
+            <div className="alert info" style={{ marginBottom: "12px" }}>
+              Shared tracker configs inherited by all Arr instances on this qBit
+              instance.
             </div>
           )}
           {!qbitTrackers && (
-            <div className="alert info" style={{ marginBottom: '12px' }}>
-              Trackers inherited from qBit instance. Add here only to override specific settings.
+            <div className="alert info" style={{ marginBottom: "12px" }}>
+              Trackers inherited from qBit instance. Add here only to override
+              specific settings.
             </div>
           )}
           <div className="tracker-grid">
@@ -2496,10 +2733,9 @@ function FieldGroup({
 
     const pathSegments = field.path ?? [];
     const path = [...basePath, ...pathSegments];
-    const key = path.join('.');
-    const rawValue = path.length > 0
-      ? getValue(state as ConfigDocument, path)
-      : undefined;
+    const key = path.join(".");
+    const rawValue =
+      path.length > 0 ? getValue(state as ConfigDocument, path) : undefined;
     const formatted =
       field.format?.(rawValue) ??
       (field.type === "checkbox" ? Boolean(rawValue) : String(rawValue ?? ""));
@@ -2511,9 +2747,14 @@ function FieldGroup({
         ? `Enable or disable ${field.label}.`
         : `Set the ${field.label} value.`);
 
-    const isArrInstance = (basePath.length > 0 && SERVARR_SECTION_REGEX.test(basePath[0] ?? "")) || (!!sectionName && SERVARR_SECTION_REGEX.test(sectionName));
-    const isArrApiKey = isArrInstance && (field.path?.[field.path.length - 1] ?? "") === "APIKey";
-    const fieldClassName = field.fullWidth ? "field field--full-width" : "field";
+    const isArrInstance =
+      (basePath.length > 0 && SERVARR_SECTION_REGEX.test(basePath[0] ?? "")) ||
+      (!!sectionName && SERVARR_SECTION_REGEX.test(sectionName));
+    const isArrApiKey =
+      isArrInstance && (field.path?.[field.path.length - 1] ?? "") === "APIKey";
+    const fieldClassName = field.fullWidth
+      ? "field field--full-width"
+      : "field";
 
     if (field.secure) {
       return (
@@ -2522,7 +2763,7 @@ function FieldGroup({
           label={field.label}
           tooltip={tooltip}
           description={description}
-          value={String(rawValue ?? '')}
+          value={String(rawValue ?? "")}
           placeholder={field.placeholder}
           canView={!isArrApiKey}
           canRefresh={!isArrApiKey}
@@ -2530,8 +2771,6 @@ function FieldGroup({
         />
       );
     }
-
-
 
     if (field.type === "checkbox") {
       return (
@@ -2544,13 +2783,16 @@ function FieldGroup({
             />
             {field.label}
           </label>
-          {description && <div className="field-description">{description}</div>}
+          {description && (
+            <div className="field-description">{description}</div>
+          )}
         </div>
       );
     }
     if (field.type === "select") {
       // Special handling for Theme field - apply immediately without save
-      const isThemeField = field.label === "Theme" && path.join('.') === "WebUI.Theme";
+      const isThemeField =
+        field.label === "Theme" && path.join(".") === "WebUI.Theme";
 
       // Normalize the formatted value for theme field (case-insensitive)
       let displayValue = formatted;
@@ -2570,8 +2812,10 @@ function FieldGroup({
         <div key={key} className={fieldClassName}>
           <label title={tooltip}>{field.label}</label>
           <Select
-            options={(field.options ?? []).map(o => ({ value: o, label: o }))}
-            value={displayValue ? { value: displayValue, label: displayValue } : null}
+            options={(field.options ?? []).map((o) => ({ value: o, label: o }))}
+            value={
+              displayValue ? { value: displayValue, label: displayValue } : null
+            }
             onChange={(option) => {
               const newValue = option?.value || "";
               onChange(path, field, newValue);
@@ -2579,14 +2823,18 @@ function FieldGroup({
               // If this is the theme field, apply immediately
               if (isThemeField && typeof newValue === "string" && newValue) {
                 const theme = newValue.toLowerCase() as "light" | "dark";
-                document.documentElement.setAttribute('data-theme', theme);
+                document.documentElement.setAttribute("data-theme", theme);
                 localStorage.setItem("theme", theme);
               }
             }}
             styles={getSelectStyles()}
           />
-          {description && <div className="field-description">{description}</div>}
-          {isThemeField && <div className="field-hint">Theme changes apply immediately</div>}
+          {description && (
+            <div className="field-description">{description}</div>
+          )}
+          {isThemeField && (
+            <div className="field-hint">Theme changes apply immediately</div>
+          )}
         </div>
       );
     }
@@ -2603,7 +2851,9 @@ function FieldGroup({
             placeholder={field.placeholder}
             onChange={(v) => onChange(path, field, v)}
           />
-          {description && <div className="field-description">{description}</div>}
+          {description && (
+            <div className="field-description">{description}</div>
+          )}
         </div>
       );
     }
@@ -2614,10 +2864,14 @@ function FieldGroup({
           <input
             type="number"
             value={Number(formatted) || 0}
-            onChange={(event) => onChange(path, field, String(event.target.value))}
+            onChange={(event) =>
+              onChange(path, field, String(event.target.value))
+            }
             placeholder={field.placeholder}
           />
-          {description && <div className="field-description">{description}</div>}
+          {description && (
+            <div className="field-description">{description}</div>
+          )}
         </div>
       );
     }
@@ -2631,7 +2885,9 @@ function FieldGroup({
             onChange={(event) => onChange(path, field, event.target.value)}
             placeholder={field.placeholder}
           />
-          {description && <div className="field-description">{description}</div>}
+          {description && (
+            <div className="field-description">{description}</div>
+          )}
         </div>
       );
     }
@@ -2644,9 +2900,15 @@ function FieldGroup({
       } else if (Array.isArray(rawValue)) {
         tags = rawValue;
       } else if (typeof formatted === "string" && formatted) {
-        tags = formatted.split(",").map(s => s.trim()).filter(Boolean);
+        tags = formatted
+          .split(",")
+          .map((s) => s.trim())
+          .filter(Boolean);
       } else if (typeof rawValue === "string" && rawValue) {
-        tags = rawValue.split(",").map(s => s.trim()).filter(Boolean);
+        tags = rawValue
+          .split(",")
+          .map((s) => s.trim())
+          .filter(Boolean);
       }
 
       return (
@@ -2659,7 +2921,9 @@ function FieldGroup({
             }}
             placeholder={field.placeholder}
           />
-          {description && <div className="field-description">{description}</div>}
+          {description && (
+            <div className="field-description">{description}</div>
+          )}
         </div>
       );
     }
@@ -2709,7 +2973,7 @@ function TrackerCard({
     (path: string[], def: FieldDefinition, value: unknown) => {
       onChange([...basePath, ...path], def, value);
     },
-    [basePath, onChange]
+    [basePath, onChange],
   );
   return (
     <details className="card tracker-card" open>
@@ -2720,7 +2984,13 @@ function TrackerCard({
         </button>
       </summary>
       <div className="card-body">
-        <FieldGroup title={null} fields={fields} state={state} basePath={[]} onChange={wrappedOnChange} />
+        <FieldGroup
+          title={null}
+          fields={fields}
+          state={state}
+          basePath={[]}
+          onChange={wrappedOnChange}
+        />
       </div>
     </details>
   );
@@ -2775,7 +3045,9 @@ function SectionNameField({
 
       // Validate format
       if (adjustedName !== "qBit" && !adjustedName.match(/^qBit-.+$/)) {
-        alert(`qBit instance name must match format: qBit-NAME\nExample: qBit-seedbox`);
+        alert(
+          `qBit instance name must match format: qBit-NAME\nExample: qBit-seedbox`,
+        );
         setValue(currentName);
         return;
       }
@@ -2783,14 +3055,17 @@ function SectionNameField({
       // Enforce prefix if specified (for Arr instances)
       if (expectedPrefix && !trimmed.startsWith(expectedPrefix)) {
         // If user entered something without the prefix, prepend it
-        adjustedName = expectedPrefix + (trimmed.startsWith("-") ? trimmed : `-${trimmed}`);
+        adjustedName =
+          expectedPrefix + (trimmed.startsWith("-") ? trimmed : `-${trimmed}`);
       }
 
       // Enforce format: (Rad|Son|Lid)arr-.+ (prefix-suffix with at least one character after dash)
       const formatRegex = /^(Radarr|Sonarr|Lidarr)-.+$/;
       if (!formatRegex.test(adjustedName)) {
         // Invalid format - show error and reset
-        alert(`Instance name must match format: ${expectedPrefix || '(Rad|Son|Lid)arr'}-(name)\nExample: ${expectedPrefix || 'Radarr'}-Movies`);
+        alert(
+          `Instance name must match format: ${expectedPrefix || "(Rad|Son|Lid)arr"}-(name)\nExample: ${expectedPrefix || "Radarr"}-Movies`,
+        );
         setValue(currentName);
         return;
       }
@@ -2851,7 +3126,7 @@ function DurationInput({
 }: DurationInputProps): JSX.Element {
   const parsed: DurationDisplay = useMemo(
     () => parseDurationDisplay(value, baseUnit, allowNegative ? -1 : 0),
-    [value, baseUnit, allowNegative]
+    [value, baseUnit, allowNegative],
   );
   const [number, setNumber] = useState(parsed.number);
   const [unit, setUnit] = useState(parsed.unit);
@@ -2860,7 +3135,11 @@ function DurationInput({
   useEffect(() => {
     if (value !== lastValueRef.current) {
       lastValueRef.current = value;
-      const next = parseDurationDisplay(value, baseUnit, allowNegative ? -1 : 0);
+      const next = parseDurationDisplay(
+        value,
+        baseUnit,
+        allowNegative ? -1 : 0,
+      );
       setNumber(next.number);
       setUnit(next.unit);
     }
@@ -2873,7 +3152,7 @@ function DurationInput({
       const out = durationDisplayToValue(n, u, baseUnit, allowNegative);
       onChange(out);
     },
-    [baseUnit, allowNegative, onChange]
+    [baseUnit, allowNegative, onChange],
   );
 
   return (
@@ -2884,7 +3163,12 @@ function DurationInput({
         min={allowNegative ? -1 : 0}
         step={unit === "s" || unit === "m" ? 1 : 0.01}
         onChange={(e) => {
-          const v = e.target.value === "" ? (allowNegative ? -1 : 0) : Number(e.target.value);
+          const v =
+            e.target.value === ""
+              ? allowNegative
+                ? -1
+                : 0
+              : Number(e.target.value);
           handleChange(v, unit);
         }}
         placeholder={placeholder}
@@ -2895,7 +3179,9 @@ function DurationInput({
         aria-label="Duration unit"
       >
         {DURATION_UNITS.map(({ value: v, label: l }) => (
-          <option key={v} value={v}>{l}</option>
+          <option key={v} value={v}>
+            {l}
+          </option>
         ))}
       </select>
     </div>
@@ -2926,11 +3212,12 @@ function SecureField({
   const [showValue, setShowValue] = useState(false);
 
   const handleRefresh = () => {
-    const newKey = (typeof crypto !== "undefined" && typeof crypto.randomUUID === "function")
-      ? crypto.randomUUID().replace(/-/g, "")
-      : Array.from({ length: 32 }, () =>
-          Math.floor(Math.random() * 16).toString(16)
-        ).join("");
+    const newKey =
+      typeof crypto !== "undefined" && typeof crypto.randomUUID === "function"
+        ? crypto.randomUUID().replace(/-/g, "")
+        : Array.from({ length: 32 }, () =>
+            Math.floor(Math.random() * 16).toString(16),
+          ).join("");
     onChange(newKey);
   };
 
@@ -2945,7 +3232,11 @@ function SecureField({
           onChange={(event) => onChange(event.target.value)}
         />
         {canView && (
-          <button type="button" className="btn ghost" onClick={() => setShowValue(!showValue)}>
+          <button
+            type="button"
+            className="btn ghost"
+            onClick={() => setShowValue(!showValue)}
+          >
             <IconImage src={VisibilityIcon} />
           </button>
         )}
@@ -2975,8 +3266,15 @@ function ArrInstanceModal({
   onRename,
   onClose,
 }: ArrInstanceModalProps): JSX.Element {
-  const { generalFields, entryFields, entryOmbiFields, entryOverseerrFields, torrentFields, seedingFields, trackerFields } =
-    getArrFieldSets(keyName);
+  const {
+    generalFields,
+    entryFields,
+    entryOmbiFields,
+    entryOverseerrFields,
+    torrentFields,
+    seedingFields,
+    trackerFields,
+  } = getArrFieldSets(keyName);
   const { push } = useToast();
 
   // State for test connection
@@ -3044,7 +3342,7 @@ function ArrInstanceModal({
       const result = await testArrConnection(
         isApiKeyRedacted
           ? { arrType, instanceKey: keyName }
-          : { arrType, uri: uri ?? "", apiKey: apiKey ?? "" }
+          : { arrType, uri: uri ?? "", apiKey: apiKey ?? "" },
       );
       setTestState({ testing: false, result });
 
@@ -3111,10 +3409,26 @@ function ArrInstanceModal({
         </div>
         <div className="modal-body">
           <div className="summary-section" style={{ marginBottom: "16px" }}>
-            <h3 style={{ margin: "0 0 8px 0", fontSize: "14px", fontWeight: 600 }}>How torrents are handled</h3>
-            <div className="torrent-handling-summary" style={{ marginTop: "8px" }}>
+            <h3
+              style={{ margin: "0 0 8px 0", fontSize: "14px", fontWeight: 600 }}
+            >
+              How torrents are handled
+            </h3>
+            <div
+              className="torrent-handling-summary"
+              style={{ marginTop: "8px" }}
+            >
               <div className="torrent-handling-summary-body markdown-content">
-                <div className="torrent-handling-summary-body markdown-content" dangerouslySetInnerHTML={{ __html: simpleMarkdown(getArrTorrentHandlingSummary(state as Record<string, unknown>)) }} />
+                <div
+                  className="torrent-handling-summary-body markdown-content"
+                  dangerouslySetInnerHTML={{
+                    __html: simpleMarkdown(
+                      getArrTorrentHandlingSummary(
+                        state as Record<string, unknown>,
+                      ),
+                    ),
+                  }}
+                />
               </div>
             </div>
           </div>
@@ -3123,7 +3437,9 @@ function ArrInstanceModal({
             fields={generalFields}
             state={state}
             basePath={[]}
-            onChange={(path, def, value) => onChange([keyName, ...path], def, value)}
+            onChange={(path, def, value) =>
+              onChange([keyName, ...path], def, value)
+            }
             onRenameSection={onRename}
             sectionKey={keyName}
             defaultOpen
@@ -3164,7 +3480,9 @@ function ArrInstanceModal({
             fields={entryFields}
             state={state}
             basePath={[]}
-            onChange={(path, def, value) => onChange([keyName, ...path], def, value)}
+            onChange={(path, def, value) =>
+              onChange([keyName, ...path], def, value)
+            }
             sectionKey={keyName}
             defaultOpen
           />
@@ -3173,7 +3491,9 @@ function ArrInstanceModal({
             fields={[]}
             state={state}
             basePath={[]}
-            onChange={(path, def, value) => onChange([keyName, ...path], def, value)}
+            onChange={(path, def, value) =>
+              onChange([keyName, ...path], def, value)
+            }
             sectionKey={keyName}
             defaultOpen
             qualityProfiles={qualityProfiles}
@@ -3184,7 +3504,9 @@ function ArrInstanceModal({
               fields={entryOmbiFields}
               state={state}
               basePath={[]}
-              onChange={(path, def, value) => onChange([keyName, ...path], def, value)}
+              onChange={(path, def, value) =>
+                onChange([keyName, ...path], def, value)
+              }
               sectionKey={keyName}
             />
           )}
@@ -3194,7 +3516,9 @@ function ArrInstanceModal({
               fields={entryOverseerrFields}
               state={state}
               basePath={[]}
-              onChange={(path, def, value) => onChange([keyName, ...path], def, value)}
+              onChange={(path, def, value) =>
+                onChange([keyName, ...path], def, value)
+              }
               sectionKey={keyName}
             />
           )}
@@ -3203,7 +3527,9 @@ function ArrInstanceModal({
             fields={torrentFields}
             state={state}
             basePath={[]}
-            onChange={(path, def, value) => onChange([keyName, ...path], def, value)}
+            onChange={(path, def, value) =>
+              onChange([keyName, ...path], def, value)
+            }
             sectionKey={keyName}
           />
           <FieldGroup
@@ -3211,7 +3537,9 @@ function ArrInstanceModal({
             fields={seedingFields}
             state={state}
             basePath={[]}
-            onChange={(path, def, value) => onChange([keyName, ...path], def, value)}
+            onChange={(path, def, value) =>
+              onChange([keyName, ...path], def, value)
+            }
             sectionKey={keyName}
           />
           <FieldGroup
@@ -3219,7 +3547,9 @@ function ArrInstanceModal({
             fields={trackerFields}
             state={state}
             basePath={[]}
-            onChange={(path, def, value) => onChange([keyName, ...path], def, value)}
+            onChange={(path, def, value) =>
+              onChange([keyName, ...path], def, value)
+            }
             sectionKey={keyName}
           />
         </div>
@@ -3278,7 +3608,11 @@ function QbitInstanceModal({
         <div className="modal-header">
           <h2 id="qbit-instance-modal-title">
             Configure <code>{keyName}</code>
-            {isDefault && <span style={{ marginLeft: '8px', opacity: 0.6 }}>(Default Instance)</span>}
+            {isDefault && (
+              <span style={{ marginLeft: "8px", opacity: 0.6 }}>
+                (Default Instance)
+              </span>
+            )}
           </h2>
           <button className="btn ghost" type="button" onClick={onClose}>
             <IconImage src={CloseIcon} />
@@ -3287,10 +3621,26 @@ function QbitInstanceModal({
         </div>
         <div className="modal-body">
           <div className="summary-section" style={{ marginBottom: "16px" }}>
-            <h3 style={{ margin: "0 0 8px 0", fontSize: "14px", fontWeight: 600 }}>How torrents are handled</h3>
-            <div className="torrent-handling-summary" style={{ marginTop: "8px" }}>
+            <h3
+              style={{ margin: "0 0 8px 0", fontSize: "14px", fontWeight: 600 }}
+            >
+              How torrents are handled
+            </h3>
+            <div
+              className="torrent-handling-summary"
+              style={{ marginTop: "8px" }}
+            >
               <div className="torrent-handling-summary-body markdown-content">
-                <div className="torrent-handling-summary-body markdown-content" dangerouslySetInnerHTML={{ __html: simpleMarkdown(getQbitTorrentHandlingSummary(state as Record<string, unknown>)) }} />
+                <div
+                  className="torrent-handling-summary-body markdown-content"
+                  dangerouslySetInnerHTML={{
+                    __html: simpleMarkdown(
+                      getQbitTorrentHandlingSummary(
+                        state as Record<string, unknown>,
+                      ),
+                    ),
+                  }}
+                />
               </div>
             </div>
           </div>
@@ -3299,7 +3649,9 @@ function QbitInstanceModal({
             fields={QBIT_FIELDS}
             state={state}
             basePath={[]}
-            onChange={(path, def, value) => onChange([keyName, ...path], def, value)}
+            onChange={(path, def, value) =>
+              onChange([keyName, ...path], def, value)
+            }
             onRenameSection={isDefault ? undefined : onRename}
             sectionKey={keyName}
             defaultOpen
@@ -3309,13 +3661,16 @@ function QbitInstanceModal({
             fields={ARR_TRACKER_FIELDS}
             state={state}
             basePath={[]}
-            onChange={(path, def, value) => onChange([keyName, ...path], def, value)}
+            onChange={(path, def, value) =>
+              onChange([keyName, ...path], def, value)
+            }
             defaultOpen={false}
             qbitTrackers
           />
           {isDefault && (
-            <div className="alert info" style={{ marginTop: '16px' }}>
-              This is the default qBittorrent instance (required). To add additional instances, use the "Add Instance" button.
+            <div className="alert info" style={{ marginTop: "16px" }}>
+              This is the default qBittorrent instance (required). To add
+              additional instances, use the "Add Instance" button.
             </div>
           )}
         </div>
@@ -3387,10 +3742,12 @@ function SimpleConfigModal({
                       type="checkbox"
                       checked={webUI.liveArr}
                       onChange={(e) => webUI.setLiveArr(e.target.checked)}
-                    />
-                    {" "}Live Arr Updates
+                    />{" "}
+                    Live Arr Updates
                   </label>
-                  <p className="field-description">Enable real-time updates for Arr views</p>
+                  <p className="field-description">
+                    Enable real-time updates for Arr views
+                  </p>
                 </div>
                 <div className="field">
                   <label>
@@ -3398,10 +3755,12 @@ function SimpleConfigModal({
                       type="checkbox"
                       checked={webUI.groupSonarr}
                       onChange={(e) => webUI.setGroupSonarr(e.target.checked)}
-                    />
-                    {" "}Group Sonarr by Series
+                    />{" "}
+                    Group Sonarr by Series
                   </label>
-                  <p className="field-description">Group Sonarr episodes by series in views</p>
+                  <p className="field-description">
+                    Group Sonarr episodes by series in views
+                  </p>
                 </div>
                 <div className="field">
                   <label>
@@ -3409,21 +3768,27 @@ function SimpleConfigModal({
                       type="checkbox"
                       checked={webUI.groupLidarr}
                       onChange={(e) => webUI.setGroupLidarr(e.target.checked)}
-                    />
-                    {" "}Group Lidarr by Artist
+                    />{" "}
+                    Group Lidarr by Artist
                   </label>
-                  <p className="field-description">Group Lidarr albums by artist in views</p>
+                  <p className="field-description">
+                    Group Lidarr albums by artist in views
+                  </p>
                 </div>
                 <div className="field">
                   <label>Theme</label>
                   <select
                     value={webUI.theme}
-                    onChange={(e) => webUI.setTheme(e.target.value as "light" | "dark")}
+                    onChange={(e) =>
+                      webUI.setTheme(e.target.value as "light" | "dark")
+                    }
                   >
                     <option value="dark">Dark</option>
                     <option value="light">Light</option>
                   </select>
-                  <p className="field-description">WebUI theme (Light or Dark)</p>
+                  <p className="field-description">
+                    WebUI theme (Light or Dark)
+                  </p>
                 </div>
               </div>
             </div>

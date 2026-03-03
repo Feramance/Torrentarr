@@ -4,6 +4,7 @@ repos:
   rev: v6.0.0
   hooks:
   - id: check-yaml
+    exclude: ^mkdocs\.yml$
   - id: end-of-file-fixer
   - id: trailing-whitespace
   - id: mixed-line-ending
@@ -13,6 +14,7 @@ repos:
   - id: check-json
   - id: pretty-format-json
     args: [--autofix, --indent, '2']
+    exclude: ^webui/
 - repo: https://github.com/macisamuele/language-formatters-pre-commit-hooks
   rev: v2.15.0
   hooks:

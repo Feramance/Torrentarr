@@ -1,9 +1,34 @@
-import React, { useCallback, useEffect, useMemo, useRef, useState, type JSX, lazy, Suspense } from "react";
-const ProcessesView = lazy(() => import("./pages/ProcessesView").then(module => ({ default: module.ProcessesView })));
-const LogsView = lazy(() => import("./pages/LogsView").then(module => ({ default: module.LogsView })));
-const ArrView = lazy(() => import("./pages/ArrView").then(module => ({ default: module.ArrView })));
-const QbitCategoriesView = lazy(() => import("./pages/QbitCategoriesView").then(module => ({ default: module.QbitCategoriesView })));
-const ConfigView = lazy(() => import("./pages/ConfigView").then(module => ({ default: module.ConfigView })));
+import React, {
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+  type JSX,
+  lazy,
+  Suspense,
+} from "react";
+const ProcessesView = lazy(() =>
+  import("./pages/ProcessesView").then((module) => ({
+    default: module.ProcessesView,
+  })),
+);
+const LogsView = lazy(() =>
+  import("./pages/LogsView").then((module) => ({ default: module.LogsView })),
+);
+const ArrView = lazy(() =>
+  import("./pages/ArrView").then((module) => ({ default: module.ArrView })),
+);
+const QbitCategoriesView = lazy(() =>
+  import("./pages/QbitCategoriesView").then((module) => ({
+    default: module.QbitCategoriesView,
+  })),
+);
+const ConfigView = lazy(() =>
+  import("./pages/ConfigView").then((module) => ({
+    default: module.ConfigView,
+  })),
+);
 import ReactMarkdown from "react-markdown";
 import { ToastProvider, ToastViewport, useToast } from "./context/ToastContext";
 import { SearchProvider, useSearch } from "./context/SearchContext";
@@ -26,7 +51,14 @@ import QbitIcon from "./icons/qbittorrent.svg";
 import ConfigIcon from "./icons/gear.svg";
 import LogoIcon from "./icons/logov2-clean.svg";
 
-type Tab = "processes" | "logs" | "radarr" | "sonarr" | "lidarr" | "qbittorrent" | "config";
+type Tab =
+  | "processes"
+  | "logs"
+  | "radarr"
+  | "sonarr"
+  | "lidarr"
+  | "qbittorrent"
+  | "config";
 
 class ErrorBoundary extends React.Component<
   { children: React.ReactNode },
@@ -49,7 +81,11 @@ class ErrorBoundary extends React.Component<
           <p style={{ color: "#888" }}>{this.state.error?.message}</p>
           <button
             onClick={() => window.location.reload()}
-            style={{ marginTop: "1rem", padding: "0.5rem 1rem", cursor: "pointer" }}
+            style={{
+              marginTop: "1rem",
+              padding: "0.5rem 1rem",
+              cursor: "pointer",
+            }}
           >
             Reload Page
           </button>
@@ -108,16 +144,19 @@ function WelcomeModal({
         </div>
         <div className="modal-body changelog-modal__body">
           <div className="changelog-meta">
-            <p style={{ marginBottom: '1rem', color: 'var(--text-secondary)' }}>
-              You've been updated to version <strong>{formatVersionLabel(currentVersion)}</strong>.
-              Here's what's new in this release:
+            <p style={{ marginBottom: "1rem", color: "var(--text-secondary)" }}>
+              You've been updated to version{" "}
+              <strong>{formatVersionLabel(currentVersion)}</strong>. Here's
+              what's new in this release:
             </p>
           </div>
           <div className="changelog-section">
             <h3>Release Notes</h3>
             <div className="changelog-body markdown-content">
               <ReactMarkdown>
-                {changelog?.trim() ? changelog.trim() : "No changelog available for this version."}
+                {changelog?.trim()
+                  ? changelog.trim()
+                  : "No changelog available for this version."}
               </ReactMarkdown>
             </div>
           </div>
@@ -181,7 +220,8 @@ function AlreadyUpToDateModal({
         <div className="modal-body changelog-modal__body">
           <div className="changelog-meta">
             <p style={{ marginBottom: "1rem", color: "var(--text-secondary)" }}>
-              Current version: <strong>{formatVersionLabel(currentVersion)}</strong>
+              Current version:{" "}
+              <strong>{formatVersionLabel(currentVersion)}</strong>
             </p>
           </div>
           {changelog?.trim() ? (
@@ -260,7 +300,8 @@ function ChangelogModal({
 
   // Start countdown when update completes successfully
   useEffect(() => {
-    const isSuccess = updateState?.last_result === "success" && updateState?.completed_at;
+    const isSuccess =
+      updateState?.last_result === "success" && updateState?.completed_at;
 
     if (!isSuccess) {
       // Reset countdown asynchronously
@@ -321,9 +362,16 @@ function ChangelogModal({
       >
         <div className="modal-header">
           <h2 id="changelog-title">
-            {updateState?.in_progress ? "⚙️ Updating..." : "🚀 Update Available"}
+            {updateState?.in_progress
+              ? "⚙️ Updating..."
+              : "🚀 Update Available"}
           </h2>
-          <button className="btn ghost" type="button" onClick={onClose} disabled={updateState?.in_progress}>
+          <button
+            className="btn ghost"
+            type="button"
+            onClick={onClose}
+            disabled={updateState?.in_progress}
+          >
             <IconImage src={CloseIcon} />
             Close
           </button>
@@ -333,13 +381,17 @@ function ChangelogModal({
             <div className="version-comparison">
               <span className="version-item">
                 <strong>Current:</strong>{" "}
-                <span className="version-badge version-current">{formatVersionLabel(currentVersion)}</span>
+                <span className="version-badge version-current">
+                  {formatVersionLabel(currentVersion)}
+                </span>
               </span>
               <span className="version-arrow">→</span>
               <span className="version-item">
                 <strong>Latest:</strong>{" "}
                 <span className="version-badge version-latest">
-                  {latestVersion ? formatVersionLabel(latestVersion) : "Unknown"}
+                  {latestVersion
+                    ? formatVersionLabel(latestVersion)
+                    : "Unknown"}
                 </span>
               </span>
             </div>
@@ -353,7 +405,9 @@ function ChangelogModal({
             <h3>What's New</h3>
             <div className="changelog-body markdown-content">
               <ReactMarkdown>
-                {changelog?.trim() ? changelog.trim() : "No changelog provided."}
+                {changelog?.trim()
+                  ? changelog.trim()
+                  : "No changelog provided."}
               </ReactMarkdown>
             </div>
           </div>
@@ -375,7 +429,10 @@ function ChangelogModal({
           <div className="changelog-buttons">
             {isBinaryInstall ? (
               binaryDownloadError ? (
-                <div className="update-status text-danger" style={{ marginBottom: '0.5rem' }}>
+                <div
+                  className="update-status text-danger"
+                  style={{ marginBottom: "0.5rem" }}
+                >
                   {binaryDownloadError}
                 </div>
               ) : binaryDownloadUrl ? (
@@ -390,13 +447,26 @@ function ChangelogModal({
                     <IconImage src={DownloadIcon} />
                     Download Update
                     {binaryDownloadSize && binaryDownloadSize > 0 ? (
-                      <span style={{ marginLeft: '0.5rem', opacity: 0.8, fontSize: '0.875rem' }}>
+                      <span
+                        style={{
+                          marginLeft: "0.5rem",
+                          opacity: 0.8,
+                          fontSize: "0.875rem",
+                        }}
+                      >
                         ({(binaryDownloadSize / (1024 * 1024)).toFixed(1)} MB)
                       </span>
                     ) : null}
                   </a>
-                  <div style={{ fontSize: '0.875rem', color: 'var(--text-secondary)', marginTop: '0.5rem' }}>
-                    Binary installation detected. Download and manually replace the executable.
+                  <div
+                    style={{
+                      fontSize: "0.875rem",
+                      color: "var(--text-secondary)",
+                      marginTop: "0.5rem",
+                    }}
+                  >
+                    Binary installation detected. Download and manually replace
+                    the executable.
                   </div>
                 </>
               ) : (
@@ -441,18 +511,19 @@ function AppShell(): JSX.Element {
   const backendTimerRef = useRef<number | null>(null);
   const [reloadKey, setReloadKey] = useState(0);
   const [showWelcomeChangelog, setShowWelcomeChangelog] = useState(false);
-  const [showAlreadyUpToDateModal, setShowAlreadyUpToDateModal] = useState(false);
+  const [showAlreadyUpToDateModal, setShowAlreadyUpToDateModal] =
+    useState(false);
 
   // Theme is now managed by WebUIContext and applied automatically
 
   // Clear cache on every page load to ensure fresh content
   useEffect(() => {
     const clearCache = async () => {
-      if ('caches' in window) {
+      if ("caches" in window) {
         try {
           const cacheNames = await caches.keys();
           await Promise.all(
-            cacheNames.map(cacheName => caches.delete(cacheName))
+            cacheNames.map((cacheName) => caches.delete(cacheName)),
           );
         } catch {
           // cache clear failed, non-critical
@@ -463,7 +534,10 @@ function AppShell(): JSX.Element {
   }, []);
 
   const refreshMeta = useCallback(
-    async (options?: { force?: boolean; silent?: boolean }): Promise<MetaResponse | undefined> => {
+    async (options?: {
+      force?: boolean;
+      silent?: boolean;
+    }): Promise<MetaResponse | undefined> => {
       const force = options?.force ?? false;
       const silent = options?.silent ?? !force;
       if (!silent) {
@@ -476,7 +550,9 @@ function AppShell(): JSX.Element {
       } catch (error) {
         if (!silent) {
           const message =
-            error instanceof Error ? error.message : "Failed to fetch version information";
+            error instanceof Error
+              ? error.message
+              : "Failed to fetch version information";
           push(message, "error");
         }
         return undefined;
@@ -486,7 +562,7 @@ function AppShell(): JSX.Element {
         }
       }
     },
-    [push]
+    [push],
   );
 
   useEffect(() => {
@@ -513,9 +589,18 @@ function AppShell(): JSX.Element {
 
     // Store current version as last seen when user opens the app (first install)
     if (!lastSeenVersion) {
-      try { localStorage.setItem("lastSeenVersion", currentVersion); } catch { /* quota exceeded or private mode */ }
+      try {
+        localStorage.setItem("lastSeenVersion", currentVersion);
+      } catch {
+        /* quota exceeded or private mode */
+      }
     }
-  }, [meta?.current_version, meta?.current_version_changelog, meta?.changelog, refreshMeta]);
+  }, [
+    meta?.current_version,
+    meta?.current_version_changelog,
+    meta?.changelog,
+    refreshMeta,
+  ]);
 
   // Network status notifications
   useEffect(() => {
@@ -528,33 +613,45 @@ function AppShell(): JSX.Element {
   useEffect(() => {
     const handleKeyDown = (event: KeyboardEvent) => {
       // Don't trigger shortcuts when typing in inputs
-      if (event.target instanceof HTMLInputElement ||
-          event.target instanceof HTMLTextAreaElement ||
-          event.target instanceof HTMLSelectElement) {
+      if (
+        event.target instanceof HTMLInputElement ||
+        event.target instanceof HTMLTextAreaElement ||
+        event.target instanceof HTMLSelectElement
+      ) {
         return;
       }
 
       const isMod = event.ctrlKey || event.metaKey;
 
       // Ctrl/Cmd + K - Focus search
-      if (isMod && event.key === 'k') {
+      if (isMod && event.key === "k") {
         event.preventDefault();
-        const searchInput = document.querySelector('input[type="text"][placeholder*="Search"]') as HTMLInputElement;
+        const searchInput = document.querySelector(
+          'input[type="text"][placeholder*="Search"]',
+        ) as HTMLInputElement;
         searchInput?.focus();
         return;
       }
 
       // ESC - Clear search
-      if (event.key === 'Escape') {
-        setSearchValue('');
+      if (event.key === "Escape") {
+        setSearchValue("");
         return;
       }
 
       // Number keys 1-7 for tab switching
-      if (event.key >= '1' && event.key <= '7' && !isMod) {
+      if (event.key >= "1" && event.key <= "7" && !isMod) {
         event.preventDefault();
         const tabIndex = parseInt(event.key) - 1;
-        const tabIds: Tab[] = ['processes', 'logs', 'radarr', 'sonarr', 'lidarr', 'qbittorrent', 'config'];
+        const tabIds: Tab[] = [
+          "processes",
+          "logs",
+          "radarr",
+          "sonarr",
+          "lidarr",
+          "qbittorrent",
+          "config",
+        ];
         if (tabIndex < tabIds.length) {
           setActiveTab(tabIds[tabIndex]);
         }
@@ -562,14 +659,17 @@ function AppShell(): JSX.Element {
       }
     };
 
-    window.addEventListener('keydown', handleKeyDown);
-    return () => window.removeEventListener('keydown', handleKeyDown);
+    window.addEventListener("keydown", handleKeyDown);
+    return () => window.removeEventListener("keydown", handleKeyDown);
   }, [setSearchValue, push]);
 
   useEffect(() => {
-    const id = window.setInterval(() => {
-      void refreshMeta();
-    }, 5 * 60 * 1000);
+    const id = window.setInterval(
+      () => {
+        void refreshMeta();
+      },
+      5 * 60 * 1000,
+    );
     return () => window.clearInterval(id);
   }, [refreshMeta]);
 
@@ -621,10 +721,14 @@ function AppShell(): JSX.Element {
         restartPollCount.current = 0;
       } catch {
         restartPollCount.current += 1;
-        if (restartPollCount.current > 20) { // 60 seconds
+        if (restartPollCount.current > 20) {
+          // 60 seconds
           setBackendRestarting(false);
           restartPollCount.current = 0;
-          push("Update completed but backend restart timed out. Please refresh the page manually.", "warning");
+          push(
+            "Update completed but backend restart timed out. Please refresh the page manually.",
+            "warning",
+          );
           return;
         }
         if (meta?.update_state?.in_progress) {
@@ -679,25 +783,31 @@ function AppShell(): JSX.Element {
           return;
         }
         const readyHint =
-          status.ready ?? (Array.isArray(status.arrs) && status.arrs.length > 0);
+          status.ready ??
+          (Array.isArray(status.arrs) && status.arrs.length > 0);
         if (readyHint) {
           backendReadyRef.current = true;
           return;
         }
-        if (status.ready === false && attempts >= 3 && !backendWarnedRef.current) {
+        if (
+          status.ready === false &&
+          attempts >= 3 &&
+          !backendWarnedRef.current
+        ) {
           backendWarnedRef.current = true;
           push(
             "Torrentarr backend is still initialising. Check the logs if this persists.",
-            "warning"
+            "warning",
           );
         }
       } catch (error) {
         if (!backendWarnedRef.current && attempts >= 3) {
           backendWarnedRef.current = true;
-          const detail = error instanceof Error ? error.message : "Unknown backend error";
+          const detail =
+            error instanceof Error ? error.message : "Unknown backend error";
           push(
             `Unable to confirm Torrentarr readiness (${detail}). Please inspect the logs.`,
-            "warning"
+            "warning",
           );
         }
       } finally {
@@ -729,10 +839,11 @@ function AppShell(): JSX.Element {
       { id: "qbittorrent", label: "qBittorrent", icon: QbitIcon },
       { id: "config", label: "Config", icon: ConfigIcon },
     ],
-    []
+    [],
   );
 
-  const repositoryUrl = meta?.repository_url ?? "https://github.com/Feramance/Torrentarr";
+  const repositoryUrl =
+    meta?.repository_url ?? "https://github.com/Feramance/Torrentarr";
   const displayVersion = meta?.current_version
     ? formatVersionLabel(meta.current_version)
     : "...";
@@ -743,12 +854,16 @@ function AppShell(): JSX.Element {
 
   const versionTitleParts: string[] = [];
   if (meta?.last_checked) {
-    versionTitleParts.push(`Last checked ${new Date(meta.last_checked).toLocaleString()}`);
+    versionTitleParts.push(
+      `Last checked ${new Date(meta.last_checked).toLocaleString()}`,
+    );
   }
   if (meta?.error) {
     versionTitleParts.push(`Update check failed: ${meta.error}`);
   }
-  const versionTitle = versionTitleParts.length ? versionTitleParts.join(" • ") : undefined;
+  const versionTitle = versionTitleParts.length
+    ? versionTitleParts.join(" • ")
+    : undefined;
 
   // Redirect to processes if active tab is no longer available
   useEffect(() => {
@@ -788,7 +903,11 @@ function AppShell(): JSX.Element {
     setShowWelcomeChangelog(false);
     // Mark this version as seen
     if (meta?.current_version) {
-      try { localStorage.setItem("lastSeenVersion", meta.current_version); } catch { /* quota exceeded or private mode */ }
+      try {
+        localStorage.setItem("lastSeenVersion", meta.current_version);
+      } catch {
+        /* quota exceeded or private mode */
+      }
     }
   }, [meta?.current_version]);
 
@@ -801,7 +920,8 @@ function AppShell(): JSX.Element {
       push("Update started in the background.", "info");
       await refreshMeta({ force: true, silent: true });
     } catch (error) {
-      const message = error instanceof Error ? error.message : "Failed to start update";
+      const message =
+        error instanceof Error ? error.message : "Failed to start update";
       push(message, "error");
     } finally {
       setUpdateBusy(false);
@@ -813,12 +933,18 @@ function AppShell(): JSX.Element {
       <header className="appbar">
         <div className="appbar__inner">
           <div className="appbar__title">
-            <IconImage src={LogoIcon} alt="Torrentarr Logo" className="appbar__logo" />
+            <IconImage
+              src={LogoIcon}
+              alt="Torrentarr Logo"
+              className="appbar__logo"
+            />
             <h1>Torrentarr</h1>
             <span className="appbar__version" title={versionTitle}>
               {displayVersion}
             </span>
-            {metaLoading ? <span className="spinner" aria-hidden="true" /> : null}
+            {metaLoading ? (
+              <span className="spinner" aria-hidden="true" />
+            ) : null}
             {updateState?.in_progress ? (
               <span className="appbar__status text-info">Updating...</span>
             ) : null}
@@ -837,7 +963,14 @@ function AppShell(): JSX.Element {
           </div>
           <div className="appbar__actions">
             {!isOnline && (
-              <span className="badge" style={{ background: 'rgba(239, 68, 68, 0.15)', borderColor: 'rgba(239, 68, 68, 0.3)', color: 'var(--danger)' }}>
+              <span
+                className="badge"
+                style={{
+                  background: "rgba(239, 68, 68, 0.15)",
+                  borderColor: "rgba(239, 68, 68, 0.3)",
+                  color: "var(--danger)",
+                }}
+              >
                 Offline
               </span>
             )}
@@ -897,9 +1030,13 @@ function AppShell(): JSX.Element {
               key={tab.id}
               className={activeTab === tab.id ? "active" : ""}
               onClick={() => {
-                if (activeTab === "config" && tab.id !== "config" && configDirty) {
+                if (
+                  activeTab === "config" &&
+                  tab.id !== "config" &&
+                  configDirty
+                ) {
                   const shouldLeave = window.confirm(
-                    "You have unsaved configuration changes. Leave without saving?"
+                    "You have unsaved configuration changes. Leave without saving?",
                   );
                   if (!shouldLeave) {
                     return;
@@ -916,13 +1053,27 @@ function AppShell(): JSX.Element {
         </nav>
         <Suspense fallback={<div className="loading">Loading...</div>}>
           <div key={activeTab} className="view-transition">
-            {activeTab === "processes" && <ProcessesView key={`processes-${reloadKey}`} active />}
-            {activeTab === "logs" && <LogsView key={`logs-${reloadKey}`} active />}
-            {activeTab === "radarr" && <ArrView key={`radarr-${reloadKey}`} type="radarr" active />}
-            {activeTab === "sonarr" && <ArrView key={`sonarr-${reloadKey}`} type="sonarr" active />}
-            {activeTab === "lidarr" && <ArrView key={`lidarr-${reloadKey}`} type="lidarr" active />}
-            {activeTab === "qbittorrent" && <QbitCategoriesView key={`qbittorrent-${reloadKey}`} active />}
-            {activeTab === "config" && <ConfigView key="config" onDirtyChange={setConfigDirty} />}
+            {activeTab === "processes" && (
+              <ProcessesView key={`processes-${reloadKey}`} active />
+            )}
+            {activeTab === "logs" && (
+              <LogsView key={`logs-${reloadKey}`} active />
+            )}
+            {activeTab === "radarr" && (
+              <ArrView key={`radarr-${reloadKey}`} type="radarr" active />
+            )}
+            {activeTab === "sonarr" && (
+              <ArrView key={`sonarr-${reloadKey}`} type="sonarr" active />
+            )}
+            {activeTab === "lidarr" && (
+              <ArrView key={`lidarr-${reloadKey}`} type="lidarr" active />
+            )}
+            {activeTab === "qbittorrent" && (
+              <QbitCategoriesView key={`qbittorrent-${reloadKey}`} active />
+            )}
+            {activeTab === "config" && (
+              <ConfigView key="config" onDirtyChange={setConfigDirty} />
+            )}
           </div>
         </Suspense>
       </main>

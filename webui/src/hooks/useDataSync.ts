@@ -26,7 +26,7 @@ export interface DataSyncResult<T extends Hashable> {
  * Automatically detects changes and prevents unnecessary re-renders
  */
 export function useDataSync<T extends Hashable>(
-  options: DataSyncOptions<T>
+  options: DataSyncOptions<T>,
 ): {
   syncData: (newData: T[]) => DataSyncResult<T>;
   getData: () => T[];
@@ -44,7 +44,7 @@ export function useDataSync<T extends Hashable>(
         normalizedRef.current,
         newData,
         getKey,
-        hashFields
+        hashFields,
       );
 
       if (!changes.hasChanges) {
@@ -62,7 +62,7 @@ export function useDataSync<T extends Hashable>(
         normalizedRef.current,
         changes,
         getKey,
-        hashFields
+        hashFields,
       );
 
       normalizedRef.current = merged;
@@ -75,7 +75,7 @@ export function useDataSync<T extends Hashable>(
         lastUpdate: merged.lastUpdate,
       };
     },
-    [getKey, hashFields]
+    [getKey, hashFields],
   );
 
   const getData = useCallback((): T[] => {

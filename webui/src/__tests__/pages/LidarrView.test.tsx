@@ -64,7 +64,7 @@ describe("LidarrView – card header", () => {
     server.use(
       http.get("/web/config", () => HttpResponse.json(minimalConfig)),
       http.post("/web/config", () => HttpResponse.json({})),
-      http.get("/web/arr", () => HttpResponse.json(emptyArrList))
+      http.get("/web/arr", () => HttpResponse.json(emptyArrList)),
     );
 
     renderView();
@@ -82,7 +82,7 @@ describe("LidarrView – empty state", () => {
     server.use(
       http.get("/web/config", () => HttpResponse.json(minimalConfig)),
       http.post("/web/config", () => HttpResponse.json({})),
-      http.get("/web/arr", () => HttpResponse.json(emptyArrList))
+      http.get("/web/arr", () => HttpResponse.json(emptyArrList)),
     );
 
     renderView();
@@ -96,8 +96,8 @@ describe("LidarrView – empty state", () => {
       http.post("/web/config", () => HttpResponse.json({})),
       http.get("/web/arr", () => HttpResponse.json(lidarrArrList)),
       http.get("/web/lidarr/lidarr-hd/albums", () =>
-        HttpResponse.json(emptyAlbumsResponse)
-      )
+        HttpResponse.json(emptyAlbumsResponse),
+      ),
     );
 
     renderView();
@@ -115,14 +115,18 @@ describe("LidarrView – instance sidebar", () => {
       http.post("/web/config", () => HttpResponse.json({})),
       http.get("/web/arr", () => HttpResponse.json(lidarrArrList)),
       http.get("/web/lidarr/lidarr-hd/albums", () =>
-        HttpResponse.json(emptyAlbumsResponse)
-      )
+        HttpResponse.json(emptyAlbumsResponse),
+      ),
     );
 
     renderView();
 
     // Use findByRole to get the sidebar button specifically (not the mobile select option)
-    const btn = await screen.findByRole("button", { name: /lidarr hd/i }, { timeout: 5000 });
+    const btn = await screen.findByRole(
+      "button",
+      { name: /lidarr hd/i },
+      { timeout: 5000 },
+    );
     expect(btn).toBeInTheDocument();
   });
 
@@ -156,19 +160,24 @@ describe("LidarrView – instance sidebar", () => {
           page: 0,
           page_size: 50,
           counts: { available: 1, monitored: 1 },
-        })
-      )
+        }),
+      ),
     );
 
     renderView();
 
     // The sidebar button appears when instances load (before albums fetch completes).
     // Use waitFor to handle the race between instance load and album fetch.
-    const btn = await screen.findByRole("button", { name: /lidarr hd/i }, { timeout: 5000 });
+    const btn = await screen.findByRole(
+      "button",
+      { name: /lidarr hd/i },
+      { timeout: 5000 },
+    );
     expect(btn).toBeInTheDocument();
     await waitFor(
-      () => expect(screen.queryByText("No albums found.")).not.toBeInTheDocument(),
-      { timeout: 8000 }
+      () =>
+        expect(screen.queryByText("No albums found.")).not.toBeInTheDocument(),
+      { timeout: 8000 },
     );
   });
 });
@@ -179,7 +188,7 @@ describe("LidarrView – inactive", () => {
   it("renders card frame when active=false", async () => {
     server.use(
       http.get("/web/config", () => HttpResponse.json(minimalConfig)),
-      http.post("/web/config", () => HttpResponse.json({}))
+      http.post("/web/config", () => HttpResponse.json({})),
     );
 
     renderView(false);

@@ -45,7 +45,7 @@ describe("ArrView – routing", () => {
     server.use(
       http.get("/web/config", () => HttpResponse.json(minimalConfig)),
       http.post("/web/config", () => HttpResponse.json({})),
-      http.get("/web/arr", () => HttpResponse.json(emptyArrList))
+      http.get("/web/arr", () => HttpResponse.json(emptyArrList)),
     );
 
     render(<ArrView type="radarr" active={true} />, { wrapper: Wrapper });
@@ -57,7 +57,7 @@ describe("ArrView – routing", () => {
     server.use(
       http.get("/web/config", () => HttpResponse.json(minimalConfig)),
       http.post("/web/config", () => HttpResponse.json({})),
-      http.get("/web/arr", () => HttpResponse.json(emptyArrList))
+      http.get("/web/arr", () => HttpResponse.json(emptyArrList)),
     );
 
     render(<ArrView type="sonarr" active={true} />, { wrapper: Wrapper });
@@ -69,7 +69,7 @@ describe("ArrView – routing", () => {
     server.use(
       http.get("/web/config", () => HttpResponse.json(minimalConfig)),
       http.post("/web/config", () => HttpResponse.json({})),
-      http.get("/web/arr", () => HttpResponse.json(emptyArrList))
+      http.get("/web/arr", () => HttpResponse.json(emptyArrList)),
     );
 
     render(<ArrView type="lidarr" active={true} />, { wrapper: Wrapper });
@@ -84,7 +84,7 @@ describe("ArrView – inactive", () => {
   it("renders RadarrView card frame when type=radarr active=false", async () => {
     server.use(
       http.get("/web/config", () => HttpResponse.json(minimalConfig)),
-      http.post("/web/config", () => HttpResponse.json({}))
+      http.post("/web/config", () => HttpResponse.json({})),
     );
 
     render(<ArrView type="radarr" active={false} />, { wrapper: Wrapper });
@@ -95,7 +95,7 @@ describe("ArrView – inactive", () => {
   it("renders SonarrView card frame when type=sonarr active=false", async () => {
     server.use(
       http.get("/web/config", () => HttpResponse.json(minimalConfig)),
-      http.post("/web/config", () => HttpResponse.json({}))
+      http.post("/web/config", () => HttpResponse.json({})),
     );
 
     render(<ArrView type="sonarr" active={false} />, { wrapper: Wrapper });
@@ -106,7 +106,7 @@ describe("ArrView – inactive", () => {
   it("renders LidarrView card frame when type=lidarr active=false", async () => {
     server.use(
       http.get("/web/config", () => HttpResponse.json(minimalConfig)),
-      http.post("/web/config", () => HttpResponse.json({}))
+      http.post("/web/config", () => HttpResponse.json({})),
     );
 
     render(<ArrView type="lidarr" active={false} />, { wrapper: Wrapper });

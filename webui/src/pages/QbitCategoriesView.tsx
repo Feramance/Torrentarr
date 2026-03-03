@@ -1,13 +1,18 @@
-import { useCallback, useEffect, useMemo, useRef, useState, type JSX } from "react";
+import {
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+  type JSX,
+} from "react";
 import { getQbitCategories } from "../api/client";
 import type { QbitCategory } from "../api/types";
 import { useToast } from "../context/ToastContext";
 import { useInterval } from "../hooks/useInterval";
 import { useWebUI } from "../context/WebUIContext";
 import { StableTable } from "../components/StableTable";
-import {
-  type ColumnDef,
-} from "@tanstack/react-table";
+import { type ColumnDef } from "@tanstack/react-table";
 import { IconImage } from "../components/IconImage";
 import RefreshIcon from "../icons/refresh-arrow.svg";
 
@@ -80,7 +85,9 @@ interface QbitCategoriesViewProps {
   active: boolean;
 }
 
-export function QbitCategoriesView({ active }: QbitCategoriesViewProps): JSX.Element {
+export function QbitCategoriesView({
+  active,
+}: QbitCategoriesViewProps): JSX.Element {
   const [categories, setCategories] = useState<QbitCategory[]>([]);
   const [loading, setLoading] = useState(false);
   const { push } = useToast();
@@ -99,14 +106,14 @@ export function QbitCategoriesView({ active }: QbitCategoriesViewProps): JSX.Ele
       try {
         const data = await getQbitCategories();
         setCategories((prev) =>
-          areCategoriesEqual(prev, data.categories) ? prev : data.categories
+          areCategoriesEqual(prev, data.categories) ? prev : data.categories,
         );
       } catch (error) {
         push(
           error instanceof Error
             ? error.message
             : "Failed to load qBit categories",
-          "error"
+          "error",
         );
       } finally {
         isFetching.current = false;
@@ -115,7 +122,7 @@ export function QbitCategoriesView({ active }: QbitCategoriesViewProps): JSX.Ele
         }
       }
     },
-    [push]
+    [push],
   );
 
   useEffect(() => {
@@ -128,7 +135,7 @@ export function QbitCategoriesView({ active }: QbitCategoriesViewProps): JSX.Ele
     () => {
       void load(false);
     },
-    liveArr ? 1000 : null
+    liveArr ? 1000 : null,
   );
 
   const handleRefresh = useCallback(() => {
@@ -137,10 +144,18 @@ export function QbitCategoriesView({ active }: QbitCategoriesViewProps): JSX.Ele
 
   // Calculate summary stats
   const summary = useMemo(() => {
-    const totalTorrents = categories.reduce((sum, cat) => sum + cat.torrentCount, 0);
-    const totalSeeding = categories.reduce((sum, cat) => sum + cat.seedingCount, 0);
+    const totalTorrents = categories.reduce(
+      (sum, cat) => sum + cat.torrentCount,
+      0,
+    );
+    const totalSeeding = categories.reduce(
+      (sum, cat) => sum + cat.seedingCount,
+      0,
+    );
     const totalSize = categories.reduce((sum, cat) => sum + cat.totalSize, 0);
-    const qbitCount = categories.filter((cat) => cat.managedBy === "qbit").length;
+    const qbitCount = categories.filter(
+      (cat) => cat.managedBy === "qbit",
+    ).length;
     const arrCount = categories.filter((cat) => cat.managedBy === "arr").length;
 
     return {
@@ -239,14 +254,18 @@ export function QbitCategoriesView({ active }: QbitCategoriesViewProps): JSX.Ele
         size: 150,
       },
     ],
-    []
+    [],
   );
 
   return (
     <section className="card animate-fade-in">
       <div className="card-header">
         <span>qBittorrent Categories</span>
-        <button className="btn ghost" onClick={handleRefresh} disabled={loading}>
+        <button
+          className="btn ghost"
+          onClick={handleRefresh}
+          disabled={loading}
+        >
           {loading && <span className="spinner" />}
           <IconImage src={RefreshIcon} />
           {loading ? "Refreshing..." : "Refresh"}
@@ -258,9 +277,9 @@ export function QbitCategoriesView({ active }: QbitCategoriesViewProps): JSX.Ele
           <strong>qBit-managed:</strong> {summary.qbitCount} •{" "}
           <strong>Arr-managed:</strong> {summary.arrCount} •{" "}
           <strong>Total Torrents:</strong>{" "}
-          {summary.totalTorrents.toLocaleString()} •{" "}
-          <strong>Seeding:</strong> {summary.totalSeeding.toLocaleString()} •{" "}
-          <strong>Total Size:</strong> {formatBytes(summary.totalSize)}
+          {summary.totalTorrents.toLocaleString()} • <strong>Seeding:</strong>{" "}
+          {summary.totalSeeding.toLocaleString()} • <strong>Total Size:</strong>{" "}
+          {formatBytes(summary.totalSize)}
         </div>
 
         {loading && categories.length === 0 ? (
@@ -269,14 +288,16 @@ export function QbitCategoriesView({ active }: QbitCategoriesViewProps): JSX.Ele
           </div>
         ) : categories.length === 0 ? (
           <div className="empty-state">
-            No categories found. Configure ManagedCategories in your qBit config sections or
-            add Arr instances to see categories.
+            No categories found. Configure ManagedCategories in your qBit config
+            sections or add Arr instances to see categories.
           </div>
         ) : (
           <StableTable
             data={categories}
             columns={columns}
-            getRowKey={(cat) => `${cat.instance}-${cat.category}-${cat.managedBy}`}
+            getRowKey={(cat) =>
+              `${cat.instance}-${cat.category}-${cat.managedBy}`
+            }
           />
         )}
       </div>

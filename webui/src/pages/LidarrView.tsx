@@ -7,11 +7,7 @@ import {
   type ChangeEvent,
   type JSX,
 } from "react";
-import {
-  getArrList,
-  getLidarrAlbums,
-  restartArr,
-} from "../api/client";
+import { getArrList, getLidarrAlbums, restartArr } from "../api/client";
 import {
   useReactTable,
   getCoreRowModel,
@@ -54,8 +50,6 @@ interface LidarrTrackRow {
   [key: string]: unknown;
 }
 
-
-
 const LIDARR_PAGE_SIZE = 50;
 const LIDARR_AGG_FETCH_SIZE = 500;
 
@@ -67,7 +61,12 @@ interface LidarrAggregateViewProps {
   onPageChange: (page: number) => void;
   onRefresh: () => void;
   lastUpdated: string | null;
-  summary: { available: number; monitored: number; missing: number; total: number };
+  summary: {
+    available: number;
+    monitored: number;
+    missing: number;
+    total: number;
+  };
   instanceCount: number;
   groupLidarr: boolean;
   isAggFiltered?: boolean;
@@ -87,21 +86,28 @@ function LidarrAggregateView({
   isAggFiltered = false,
 }: LidarrAggregateViewProps): JSX.Element {
   const prevRowsRef = useRef<LidarrAggRow[]>([]);
-  const groupedDataCache = useRef<Array<{
-    instance: string;
-    artist: string;
-    qualityProfileId?: number | null;
-    qualityProfileName?: string | null;
-    albums: LidarrAggRow[];
-  }>>([]);
-  const artistGroupCache = useRef<Map<string, {
-    instance: string;
-    artist: string;
-    qualityProfileId?: number | null;
-    qualityProfileName?: string | null;
-    albums: LidarrAggRow[];
-    albumKeys: Set<string>;
-  }>>(new Map());
+  const groupedDataCache = useRef<
+    Array<{
+      instance: string;
+      artist: string;
+      qualityProfileId?: number | null;
+      qualityProfileName?: string | null;
+      albums: LidarrAggRow[];
+    }>
+  >([]);
+  const artistGroupCache = useRef<
+    Map<
+      string,
+      {
+        instance: string;
+        artist: string;
+        qualityProfileId?: number | null;
+        qualityProfileName?: string | null;
+        albums: LidarrAggRow[];
+        albumKeys: Set<string>;
+      }
+    >
+  >(new Map());
 
   // Create grouped data structure: instance > artist > albums - only rebuild if rows actually changed
   const groupedData = useMemo(() => {
@@ -113,9 +119,10 @@ function LidarrAggregateView({
     // Build instance > artist > albums map
     const instanceMap = new Map<string, Map<string, LidarrAggRow[]>>();
 
-    rows.forEach(row => {
+    rows.forEach((row) => {
       const instance = row.__instance;
-      const artist = (row.album?.["artistName"] as string | undefined) || "Unknown Artist";
+      const artist =
+        (row.album?.["artistName"] as string | undefined) || "Unknown Artist";
 
       if (!instanceMap.has(instance)) {
         instanceMap.set(instance, new Map());
@@ -136,14 +143,17 @@ function LidarrAggregateView({
       albums: LidarrAggRow[];
     }> = [];
 
-    const newArtistGroupCache = new Map<string, {
-      instance: string;
-      artist: string;
-      qualityProfileId?: number | null;
-      qualityProfileName?: string | null;
-      albums: LidarrAggRow[];
-      albumKeys: Set<string>;
-    }>();
+    const newArtistGroupCache = new Map<
+      string,
+      {
+        instance: string;
+        artist: string;
+        qualityProfileId?: number | null;
+        qualityProfileName?: string | null;
+        albums: LidarrAggRow[];
+        albumKeys: Set<string>;
+      }
+    >();
 
     instanceMap.forEach((artistMap, instance) => {
       artistMap.forEach((albums, artist) => {
@@ -151,7 +161,7 @@ function LidarrAggregateView({
 
         // Build set of album keys for this artist
         const albumKeys = new Set<string>();
-        albums.forEach(album => {
+        albums.forEach((album) => {
           const albumData = album.album as Record<string, unknown>;
           const albumKey = `${albumData?.["title"]}`;
           albumKeys.add(albumKey);
@@ -177,12 +187,18 @@ function LidarrAggregateView({
 
         // Build new artist group
         const firstAlbum = albums[0];
-        const albumData = firstAlbum?.album as Record<string, unknown> | undefined;
+        const albumData = firstAlbum?.album as
+          | Record<string, unknown>
+          | undefined;
         const artistGroup = {
           instance,
           artist,
-          qualityProfileId: (albumData?.["qualityProfileId"] as number | null | undefined) ?? null,
-          qualityProfileName: (albumData?.["qualityProfileName"] as string | null | undefined) ?? null,
+          qualityProfileId:
+            (albumData?.["qualityProfileId"] as number | null | undefined) ??
+            null,
+          qualityProfileName:
+            (albumData?.["qualityProfileName"] as string | null | undefined) ??
+            null,
           albums,
           albumKeys,
         };
@@ -215,11 +231,15 @@ function LidarrAggregateView({
 
   const flatColumns = useMemo<ColumnDef<LidarrTrackRow>[]>(
     () => [
-      ...(instanceCount > 1 ? [{
-        accessorKey: "__instance",
-        header: "Instance",
-        size: 120,
-      }] : []),
+      ...(instanceCount > 1
+        ? [
+            {
+              accessorKey: "__instance",
+              header: "Instance",
+              size: 120,
+            },
+          ]
+        : []),
       {
         accessorKey: "artistName",
         header: "Artist",
@@ -245,7 +265,7 @@ function LidarrAggregateView({
         cell: (info) => {
           const dur = info.getValue() as number | undefined;
           if (!dur) return <span className="hint">—</span>;
-          return `${Math.floor(dur / 60)}:${String(dur % 60).padStart(2, '0')}`;
+          return `${Math.floor(dur / 60)}:${String(dur % 60).padStart(2, "0")}`;
         },
         size: 80,
       },
@@ -255,8 +275,10 @@ function LidarrAggregateView({
         cell: (info) => {
           const monitored = info.getValue() as boolean;
           return (
-            <span className={`track-status ${monitored ? 'available' : 'missing'}`}>
-              {monitored ? '✓' : '✗'}
+            <span
+              className={`track-status ${monitored ? "available" : "missing"}`}
+            >
+              {monitored ? "✓" : "✗"}
             </span>
           );
         },
@@ -268,8 +290,10 @@ function LidarrAggregateView({
         cell: (info) => {
           const hasFile = info.getValue() as boolean;
           return (
-            <span className={`track-status ${hasFile ? 'available' : 'missing'}`}>
-              {hasFile ? '✓' : '✗'}
+            <span
+              className={`track-status ${hasFile ? "available" : "missing"}`}
+            >
+              {hasFile ? "✓" : "✗"}
             </span>
           );
         },
@@ -289,13 +313,20 @@ function LidarrAggregateView({
         header: "Reason",
         cell: (info) => {
           const reason = info.getValue() as string | null | undefined;
-          if (!reason) return <span className="table-badge table-badge-reason">Not being searched</span>;
-          return <span className="table-badge table-badge-reason">{reason}</span>;
+          if (!reason)
+            return (
+              <span className="table-badge table-badge-reason">
+                Not being searched
+              </span>
+            );
+          return (
+            <span className="table-badge table-badge-reason">{reason}</span>
+          );
         },
         size: 120,
       },
     ],
-    [instanceCount]
+    [instanceCount],
   );
 
   // TanStack Table returns unstable function refs; React Compiler skips memoization by design
@@ -314,20 +345,36 @@ function LidarrAggregateView({
           {lastUpdated ? `(updated ${lastUpdated})` : ""}
           <br />
           <strong>Available:</strong>{" "}
-          {summary.available.toLocaleString(undefined, { maximumFractionDigits: 0 })} •{" "}
-          <strong>Monitored:</strong>{" "}
-          {summary.monitored.toLocaleString(undefined, { maximumFractionDigits: 0 })} •{" "}
-          <strong>Missing:</strong>{" "}
-          {summary.missing.toLocaleString(undefined, { maximumFractionDigits: 0 })} •{" "}
-          <strong>Total:</strong>{" "}
-          {summary.total.toLocaleString(undefined, { maximumFractionDigits: 0 })}
-          {isAggFiltered && (groupLidarr ? rows.length : trackRows.length) < summary.total && (
-            <>
-              {" "}• <strong>Filtered:</strong>{" "}
-              {(groupLidarr ? rows.length : trackRows.length).toLocaleString(undefined, { maximumFractionDigits: 0 })} of{" "}
-              {summary.total.toLocaleString(undefined, { maximumFractionDigits: 0 })}
-            </>
-          )}
+          {summary.available.toLocaleString(undefined, {
+            maximumFractionDigits: 0,
+          })}{" "}
+          • <strong>Monitored:</strong>{" "}
+          {summary.monitored.toLocaleString(undefined, {
+            maximumFractionDigits: 0,
+          })}{" "}
+          • <strong>Missing:</strong>{" "}
+          {summary.missing.toLocaleString(undefined, {
+            maximumFractionDigits: 0,
+          })}{" "}
+          • <strong>Total:</strong>{" "}
+          {summary.total.toLocaleString(undefined, {
+            maximumFractionDigits: 0,
+          })}
+          {isAggFiltered &&
+            (groupLidarr ? rows.length : trackRows.length) < summary.total && (
+              <>
+                {" "}
+                • <strong>Filtered:</strong>{" "}
+                {(groupLidarr ? rows.length : trackRows.length).toLocaleString(
+                  undefined,
+                  { maximumFractionDigits: 0 },
+                )}{" "}
+                of{" "}
+                {summary.total.toLocaleString(undefined, {
+                  maximumFractionDigits: 0,
+                })}
+              </>
+            )}
         </div>
         <button className="btn ghost" onClick={onRefresh} disabled={loading}>
           <IconImage src={RefreshIcon} />
@@ -342,97 +389,150 @@ function LidarrAggregateView({
       ) : groupLidarr ? (
         <div className="lidarr-hierarchical-view">
           {groupedPageRows.map((artistGroup) => (
-            <details key={`${artistGroup.instance}-${artistGroup.artist}`} className="artist-details">
+            <details
+              key={`${artistGroup.instance}-${artistGroup.artist}`}
+              className="artist-details"
+            >
               <summary className="artist-summary">
                 <span className="artist-title">{artistGroup.artist}</span>
-                <span className="artist-instance">({artistGroup.instance})</span>
-                <span className="artist-count">({artistGroup.albums.length} albums)</span>
+                <span className="artist-instance">
+                  ({artistGroup.instance})
+                </span>
+                <span className="artist-count">
+                  ({artistGroup.albums.length} albums)
+                </span>
                 {artistGroup.qualityProfileName ? (
-                  <span className="artist-quality">• {artistGroup.qualityProfileName}</span>
+                  <span className="artist-quality">
+                    • {artistGroup.qualityProfileName}
+                  </span>
                 ) : null}
               </summary>
               <div className="artist-content">
                 {artistGroup.albums.map((albumEntry) => {
                   const albumData = albumEntry.album as Record<string, unknown>;
-                  const albumTitle = (albumData?.["title"] as string | undefined) || "Unknown Album";
-                  const albumId = (albumData?.["id"] as number | undefined) || 0;
-                  const artistName = (albumData?.["artistName"] as string | undefined) || "";
-                  const releaseDate = albumData?.["releaseDate"] as string | undefined;
-                  const monitored = albumData?.["monitored"] as boolean | undefined;
+                  const albumTitle =
+                    (albumData?.["title"] as string | undefined) ||
+                    "Unknown Album";
+                  const albumId =
+                    (albumData?.["id"] as number | undefined) || 0;
+                  const artistName =
+                    (albumData?.["artistName"] as string | undefined) || "";
+                  const releaseDate = albumData?.["releaseDate"] as
+                    | string
+                    | undefined;
+                  const monitored = albumData?.["monitored"] as
+                    | boolean
+                    | undefined;
                   const hasFile = albumData?.["hasFile"] as boolean | undefined;
-                  const reason = albumData?.["reason"] as string | null | undefined;
+                  const reason = albumData?.["reason"] as
+                    | string
+                    | null
+                    | undefined;
                   const tracks = albumEntry.tracks || [];
                   const totals = albumEntry.totals;
 
                   return (
-                  <details key={`${albumEntry.__instance}-${artistName}-${albumTitle}`} className="album-details">
-                    <summary className="album-summary">
-                      <span className="album-title">{albumTitle}</span>
-                      {releaseDate && (
-                        <span className="album-date">{new Date(releaseDate).toLocaleDateString()}</span>
-                      )}
-                      {tracks && tracks.length > 0 && (
-                        <span className="album-track-count">({totals.available || 0}/{totals.monitored || tracks.length} tracks)</span>
-                      )}
-                      <span className={`album-status ${hasFile ? 'has-file' : 'missing'}`}>
-                        {hasFile ? '✓' : '✗'}
-                      </span>
-                    </summary>
-                    <div className="album-content">
-                      {tracks && tracks.length > 0 ? (
-                        <div className="tracks-table-wrapper">
-                          <table className="tracks-table">
-                            <thead>
-                              <tr>
-                                <th>#</th>
-                                <th>Title</th>
-                                <th>Duration</th>
-                                <th>Has File</th>
-                                <th>Reason</th>
-                              </tr>
-                            </thead>
-                            <tbody>
-                              {tracks.map((track) => (
-                                <tr key={`${albumId}-${track.id}`} className={track.hasFile ? 'track-available' : 'track-missing'}>
-                                  <td data-label="#">{track.trackNumber}</td>
-                                  <td data-label="Title">{track.title}</td>
-                                  <td data-label="Duration">{track.duration ? `${Math.floor(track.duration / 60)}:${String(track.duration % 60).padStart(2, '0')}` : '—'}</td>
-                                  <td data-label="Has File">
-                                    <span className={`track-status ${track.hasFile ? 'available' : 'missing'}`}>
-                                      {track.hasFile ? '✓' : '✗'}
-                                    </span>
-                                  </td>
-                                  <td data-label="Reason">
-                                    {reason ? (
-                                      <span className="table-badge table-badge-reason">{reason}</span>
-                                    ) : (
-                                      <span className="table-badge table-badge-reason">Not being searched</span>
-                                    )}
-                                  </td>
+                    <details
+                      key={`${albumEntry.__instance}-${artistName}-${albumTitle}`}
+                      className="album-details"
+                    >
+                      <summary className="album-summary">
+                        <span className="album-title">{albumTitle}</span>
+                        {releaseDate && (
+                          <span className="album-date">
+                            {new Date(releaseDate).toLocaleDateString()}
+                          </span>
+                        )}
+                        {tracks && tracks.length > 0 && (
+                          <span className="album-track-count">
+                            ({totals.available || 0}/
+                            {totals.monitored || tracks.length} tracks)
+                          </span>
+                        )}
+                        <span
+                          className={`album-status ${hasFile ? "has-file" : "missing"}`}
+                        >
+                          {hasFile ? "✓" : "✗"}
+                        </span>
+                      </summary>
+                      <div className="album-content">
+                        {tracks && tracks.length > 0 ? (
+                          <div className="tracks-table-wrapper">
+                            <table className="tracks-table">
+                              <thead>
+                                <tr>
+                                  <th>#</th>
+                                  <th>Title</th>
+                                  <th>Duration</th>
+                                  <th>Has File</th>
+                                  <th>Reason</th>
                                 </tr>
-                              ))}
-                            </tbody>
-                          </table>
-                        </div>
-                      ) : (
-                        <div className="album-info">
-                          <p>
-                            <strong>Monitored:</strong> {monitored ? 'Yes' : 'No'}
-                            {' | '}
-                            <strong>Has File:</strong> {hasFile ? 'Yes' : 'No'}
-                          </p>
-                          <p>
-                            <strong>Reason:</strong>{' '}
-                            {reason ? (
-                              <span className="table-badge table-badge-reason">{reason}</span>
-                            ) : (
-                              <span className="table-badge table-badge-reason">Not being searched</span>
-                            )}
-                          </p>
-                        </div>
-                      )}
-                    </div>
-                  </details>
+                              </thead>
+                              <tbody>
+                                {tracks.map((track) => (
+                                  <tr
+                                    key={`${albumId}-${track.id}`}
+                                    className={
+                                      track.hasFile
+                                        ? "track-available"
+                                        : "track-missing"
+                                    }
+                                  >
+                                    <td data-label="#">{track.trackNumber}</td>
+                                    <td data-label="Title">{track.title}</td>
+                                    <td data-label="Duration">
+                                      {track.duration
+                                        ? `${Math.floor(track.duration / 60)}:${String(track.duration % 60).padStart(2, "0")}`
+                                        : "—"}
+                                    </td>
+                                    <td data-label="Has File">
+                                      <span
+                                        className={`track-status ${track.hasFile ? "available" : "missing"}`}
+                                      >
+                                        {track.hasFile ? "✓" : "✗"}
+                                      </span>
+                                    </td>
+                                    <td data-label="Reason">
+                                      {reason ? (
+                                        <span className="table-badge table-badge-reason">
+                                          {reason}
+                                        </span>
+                                      ) : (
+                                        <span className="table-badge table-badge-reason">
+                                          Not being searched
+                                        </span>
+                                      )}
+                                    </td>
+                                  </tr>
+                                ))}
+                              </tbody>
+                            </table>
+                          </div>
+                        ) : (
+                          <div className="album-info">
+                            <p>
+                              <strong>Monitored:</strong>{" "}
+                              {monitored ? "Yes" : "No"}
+                              {" | "}
+                              <strong>Has File:</strong>{" "}
+                              {hasFile ? "Yes" : "No"}
+                            </p>
+                            <p>
+                              <strong>Reason:</strong>{" "}
+                              {reason ? (
+                                <span className="table-badge table-badge-reason">
+                                  {reason}
+                                </span>
+                              ) : (
+                                <span className="table-badge table-badge-reason">
+                                  Not being searched
+                                </span>
+                              )}
+                            </p>
+                          </div>
+                        )}
+                      </div>
+                    </details>
                   );
                 })}
               </div>
@@ -451,7 +551,7 @@ function LidarrAggregateView({
                         ? null
                         : flexRender(
                             header.column.columnDef.header,
-                            header.getContext()
+                            header.getContext(),
                           )}
                     </th>
                   ))}
@@ -465,10 +565,13 @@ function LidarrAggregateView({
                 return (
                   <tr key={stableKey}>
                     {row.getVisibleCells().map((cell) => (
-                      <td key={cell.id} data-label={String(cell.column.columnDef.header)}>
+                      <td
+                        key={cell.id}
+                        data-label={String(cell.column.columnDef.header)}
+                      >
                         {flexRender(
                           cell.column.columnDef.cell,
-                          cell.getContext()
+                          cell.getContext(),
                         )}
                       </td>
                     ))}
@@ -486,9 +589,15 @@ function LidarrAggregateView({
         <div className="pagination">
           <div>
             {groupLidarr ? (
-              <>Page {page + 1} of {Math.ceil(groupedData.length / 50)} ({groupedData.length} artists · page size 50)</>
+              <>
+                Page {page + 1} of {Math.ceil(groupedData.length / 50)} (
+                {groupedData.length} artists · page size 50)
+              </>
             ) : (
-              <>Page {page + 1} of {Math.ceil(trackRows.length / 50)} ({trackRows.length.toLocaleString()} tracks · page size 50)</>
+              <>
+                Page {page + 1} of {Math.ceil(trackRows.length / 50)} (
+                {trackRows.length.toLocaleString()} tracks · page size 50)
+              </>
             )}
           </div>
           <div className="inline">
@@ -501,8 +610,23 @@ function LidarrAggregateView({
             </button>
             <button
               className="btn"
-              onClick={() => onPageChange(Math.min((groupLidarr ? Math.ceil(groupedData.length / 50) : Math.ceil(trackRows.length / 50)) - 1, page + 1))}
-              disabled={page >= (groupLidarr ? Math.ceil(groupedData.length / 50) : Math.ceil(trackRows.length / 50)) - 1 || loading}
+              onClick={() =>
+                onPageChange(
+                  Math.min(
+                    (groupLidarr
+                      ? Math.ceil(groupedData.length / 50)
+                      : Math.ceil(trackRows.length / 50)) - 1,
+                    page + 1,
+                  ),
+                )
+              }
+              disabled={
+                page >=
+                  (groupLidarr
+                    ? Math.ceil(groupedData.length / 50)
+                    : Math.ceil(trackRows.length / 50)) -
+                    1 || loading
+              }
             >
               Next
             </button>
@@ -562,7 +686,10 @@ function LidarrInstanceView({
     if (reasonFilter === "Not being searched") {
       return filteredAlbums.filter((entry) => {
         const albumData = entry.album as Record<string, unknown>;
-        return albumData?.["reason"] === "Not being searched" || !albumData?.["reason"];
+        return (
+          albumData?.["reason"] === "Not being searched" ||
+          !albumData?.["reason"]
+        );
       });
     }
     return filteredAlbums.filter((entry) => {
@@ -601,11 +728,13 @@ function LidarrInstanceView({
   }, [onlyMissing, reasonFilter]);
 
   const prevFilteredAlbumsRef = useRef<LidarrAlbumEntry[]>([]);
-  const groupedAlbumsCache = useRef<Array<{
-    artist: string;
-    albums: LidarrAlbumEntry[];
-    qualityProfileName?: string | null;
-  }>>([]);
+  const groupedAlbumsCache = useRef<
+    Array<{
+      artist: string;
+      albums: LidarrAlbumEntry[];
+      qualityProfileName?: string | null;
+    }>
+  >([]);
 
   // Group albums by artist for hierarchical view - only rebuild if filtered albums changed
   const groupedAlbums = useMemo(() => {
@@ -615,9 +744,10 @@ function LidarrInstanceView({
     }
 
     const artistMap = new Map<string, LidarrAlbumEntry[]>();
-    reasonFilteredAlbums.forEach(albumEntry => {
+    reasonFilteredAlbums.forEach((albumEntry) => {
       const albumData = albumEntry.album as Record<string, unknown>;
-      const artist = (albumData?.["artistName"] as string | undefined) || "Unknown Artist";
+      const artist =
+        (albumData?.["artistName"] as string | undefined) || "Unknown Artist";
       if (!artistMap.has(artist)) {
         artistMap.set(artist, []);
       }
@@ -626,8 +756,12 @@ function LidarrInstanceView({
 
     const result = Array.from(artistMap.entries()).map(([artist, albums]) => {
       // Get quality profile from first album (all albums by same artist typically share quality profile)
-      const firstAlbum = albums[0]?.album as Record<string, unknown> | undefined;
-      const qualityProfileName = (firstAlbum?.["qualityProfileName"] as string | null | undefined) ?? null;
+      const firstAlbum = albums[0]?.album as
+        | Record<string, unknown>
+        | undefined;
+      const qualityProfileName =
+        (firstAlbum?.["qualityProfileName"] as string | null | undefined) ??
+        null;
       return {
         artist,
         albums,
@@ -647,7 +781,9 @@ function LidarrInstanceView({
         header: "Album",
         cell: (info) => {
           const albumData = info.row.original.album as Record<string, unknown>;
-          return (albumData?.["title"] as string | undefined) || "Unknown Album";
+          return (
+            (albumData?.["title"] as string | undefined) || "Unknown Album"
+          );
         },
       },
       {
@@ -655,7 +791,10 @@ function LidarrInstanceView({
         header: "Artist",
         cell: (info) => {
           const albumData = info.row.original.album as Record<string, unknown>;
-          return (albumData?.["artistName"] as string | undefined) || "Unknown Artist";
+          return (
+            (albumData?.["artistName"] as string | undefined) ||
+            "Unknown Artist"
+          );
         },
         size: 150,
       },
@@ -677,8 +816,10 @@ function LidarrInstanceView({
           const albumData = info.row.original.album as Record<string, unknown>;
           const monitored = albumData?.["monitored"] as boolean | undefined;
           return (
-            <span className={`track-status ${monitored ? 'available' : 'missing'}`}>
-              {monitored ? '✓' : '✗'}
+            <span
+              className={`track-status ${monitored ? "available" : "missing"}`}
+            >
+              {monitored ? "✓" : "✗"}
             </span>
           );
         },
@@ -691,8 +832,10 @@ function LidarrInstanceView({
           const albumData = info.row.original.album as Record<string, unknown>;
           const hasFile = albumData?.["hasFile"] as boolean | undefined;
           return (
-            <span className={`track-status ${hasFile ? 'available' : 'missing'}`}>
-              {hasFile ? '✓' : '✗'}
+            <span
+              className={`track-status ${hasFile ? "available" : "missing"}`}
+            >
+              {hasFile ? "✓" : "✗"}
             </span>
           );
         },
@@ -703,7 +846,10 @@ function LidarrInstanceView({
         header: "Quality Profile",
         cell: (info) => {
           const albumData = info.row.original.album as Record<string, unknown>;
-          const profileName = albumData?.["qualityProfileName"] as string | null | undefined;
+          const profileName = albumData?.["qualityProfileName"] as
+            | string
+            | null
+            | undefined;
           return profileName || "—";
         },
         size: 150,
@@ -714,29 +860,51 @@ function LidarrInstanceView({
         cell: (info) => {
           const albumData = info.row.original.album as Record<string, unknown>;
           const reason = albumData?.["reason"] as string | null | undefined;
-          if (!reason) return <span className="table-badge table-badge-reason">Not being searched</span>;
-          return <span className="table-badge table-badge-reason">{reason}</span>;
+          if (!reason)
+            return (
+              <span className="table-badge table-badge-reason">
+                Not being searched
+              </span>
+            );
+          return (
+            <span className="table-badge table-badge-reason">{reason}</span>
+          );
         },
         size: 120,
       },
     ],
-    []
+    [],
   );
 
   // Pagination for flat view
-  const flatTotalPages = Math.max(1, Math.ceil(reasonFilteredAlbums.length / FLAT_PAGE_SIZE));
+  const flatTotalPages = Math.max(
+    1,
+    Math.ceil(reasonFilteredAlbums.length / FLAT_PAGE_SIZE),
+  );
   const flatSafePage = Math.min(flatPage, Math.max(0, flatTotalPages - 1));
   const paginatedAlbums = useMemo(() => {
-    return reasonFilteredAlbums.slice(flatSafePage * FLAT_PAGE_SIZE, (flatSafePage + 1) * FLAT_PAGE_SIZE);
+    return reasonFilteredAlbums.slice(
+      flatSafePage * FLAT_PAGE_SIZE,
+      (flatSafePage + 1) * FLAT_PAGE_SIZE,
+    );
   }, [reasonFilteredAlbums, flatSafePage]);
 
   // Pagination for grouped view (paginate by artist groups, not backend pages)
   const GROUPED_PAGE_SIZE = 50;
   const [groupedPage, setGroupedPage] = useState(0);
-  const groupedTotalPages = Math.max(1, Math.ceil(groupedAlbums.length / GROUPED_PAGE_SIZE));
-  const groupedSafePage = Math.min(groupedPage, Math.max(0, groupedTotalPages - 1));
+  const groupedTotalPages = Math.max(
+    1,
+    Math.ceil(groupedAlbums.length / GROUPED_PAGE_SIZE),
+  );
+  const groupedSafePage = Math.min(
+    groupedPage,
+    Math.max(0, groupedTotalPages - 1),
+  );
   const paginatedGroupedAlbums = useMemo(() => {
-    return groupedAlbums.slice(groupedSafePage * GROUPED_PAGE_SIZE, (groupedSafePage + 1) * GROUPED_PAGE_SIZE);
+    return groupedAlbums.slice(
+      groupedSafePage * GROUPED_PAGE_SIZE,
+      (groupedSafePage + 1) * GROUPED_PAGE_SIZE,
+    );
   }, [groupedAlbums, groupedSafePage]);
 
   // Reset grouped page when filters change
@@ -760,18 +928,32 @@ function LidarrInstanceView({
           {data?.counts ? (
             <>
               <strong>Available:</strong>{" "}
-              {(data.counts.available ?? 0).toLocaleString(undefined, { maximumFractionDigits: 0 })} •{" "}
-              <strong>Monitored:</strong>{" "}
-              {(data.counts.monitored ?? 0).toLocaleString(undefined, { maximumFractionDigits: 0 })} •{" "}
-              <strong>Missing:</strong>{" "}
-              {((data.counts.monitored ?? 0) - (data.counts.available ?? 0)).toLocaleString(undefined, { maximumFractionDigits: 0 })} •{" "}
-              <strong>Total:</strong>{" "}
-              {totalAlbums.toLocaleString(undefined, { maximumFractionDigits: 0 })}
+              {(data.counts.available ?? 0).toLocaleString(undefined, {
+                maximumFractionDigits: 0,
+              })}{" "}
+              • <strong>Monitored:</strong>{" "}
+              {(data.counts.monitored ?? 0).toLocaleString(undefined, {
+                maximumFractionDigits: 0,
+              })}{" "}
+              • <strong>Missing:</strong>{" "}
+              {(
+                (data.counts.monitored ?? 0) - (data.counts.available ?? 0)
+              ).toLocaleString(undefined, { maximumFractionDigits: 0 })}{" "}
+              • <strong>Total:</strong>{" "}
+              {totalAlbums.toLocaleString(undefined, {
+                maximumFractionDigits: 0,
+              })}
               {isFiltered && filteredCount < totalAlbums && (
                 <>
-                  {" "}• <strong>Filtered:</strong>{" "}
-                  {filteredCount.toLocaleString(undefined, { maximumFractionDigits: 0 })} of{" "}
-                  {totalAlbums.toLocaleString(undefined, { maximumFractionDigits: 0 })}
+                  {" "}
+                  • <strong>Filtered:</strong>{" "}
+                  {filteredCount.toLocaleString(undefined, {
+                    maximumFractionDigits: 0,
+                  })}{" "}
+                  of{" "}
+                  {totalAlbums.toLocaleString(undefined, {
+                    maximumFractionDigits: 0,
+                  })}
                 </>
               )}
             </>
@@ -794,103 +976,160 @@ function LidarrInstanceView({
         <div className="lidarr-hierarchical-view">
           {paginatedGroupedAlbums.map((artistGroup) => {
             // Get instance name from selection
-            const instanceName = instances.find(i => i.category === selection)?.name || selection;
+            const instanceName =
+              instances.find((i) => i.category === selection)?.name ||
+              selection;
             return (
-            <details key={artistGroup.artist} className="artist-details">
-              <summary className="artist-summary">
-                <span className="artist-title">{artistGroup.artist}</span>
-                <span className="artist-instance">({instanceName})</span>
-                <span className="artist-count">({artistGroup.albums.length} albums)</span>
-                {artistGroup.qualityProfileName ? (
-                  <span className="artist-quality">• {artistGroup.qualityProfileName}</span>
-                ) : null}
-              </summary>
-              <div className="artist-content">
-                {artistGroup.albums.map((albumEntry) => {
-                  const albumData = albumEntry.album as Record<string, unknown>;
-                  const albumTitle = (albumData?.["title"] as string | undefined) || "Unknown Album";
-                  const albumId = (albumData?.["id"] as number | undefined) || 0;
-                  const artistName = (albumData?.["artistName"] as string | undefined) || "";
-                  const releaseDate = albumData?.["releaseDate"] as string | undefined;
-                  const monitored = albumData?.["monitored"] as boolean | undefined;
-                  const hasFile = albumData?.["hasFile"] as boolean | undefined;
-                  const reason = albumData?.["reason"] as string | null | undefined;
-                  const tracks = albumEntry.tracks || [];
-                  const totals = albumEntry.totals;
+              <details key={artistGroup.artist} className="artist-details">
+                <summary className="artist-summary">
+                  <span className="artist-title">{artistGroup.artist}</span>
+                  <span className="artist-instance">({instanceName})</span>
+                  <span className="artist-count">
+                    ({artistGroup.albums.length} albums)
+                  </span>
+                  {artistGroup.qualityProfileName ? (
+                    <span className="artist-quality">
+                      • {artistGroup.qualityProfileName}
+                    </span>
+                  ) : null}
+                </summary>
+                <div className="artist-content">
+                  {artistGroup.albums.map((albumEntry) => {
+                    const albumData = albumEntry.album as Record<
+                      string,
+                      unknown
+                    >;
+                    const albumTitle =
+                      (albumData?.["title"] as string | undefined) ||
+                      "Unknown Album";
+                    const albumId =
+                      (albumData?.["id"] as number | undefined) || 0;
+                    const artistName =
+                      (albumData?.["artistName"] as string | undefined) || "";
+                    const releaseDate = albumData?.["releaseDate"] as
+                      | string
+                      | undefined;
+                    const monitored = albumData?.["monitored"] as
+                      | boolean
+                      | undefined;
+                    const hasFile = albumData?.["hasFile"] as
+                      | boolean
+                      | undefined;
+                    const reason = albumData?.["reason"] as
+                      | string
+                      | null
+                      | undefined;
+                    const tracks = albumEntry.tracks || [];
+                    const totals = albumEntry.totals;
 
-                  return (
-                  <details key={`${artistName}-${albumTitle}`} className="album-details">
-                    <summary className="album-summary">
-                      <span className="album-title">{albumTitle}</span>
-                      {releaseDate && (
-                        <span className="album-date">{new Date(releaseDate).toLocaleDateString()}</span>
-                      )}
-                      {tracks && tracks.length > 0 && (
-                        <span className="album-track-count">({totals.available || 0}/{totals.monitored || tracks.length} tracks)</span>
-                      )}
-                      <span className={`album-status ${hasFile ? 'has-file' : 'missing'}`}>
-                        {hasFile ? '✓' : '✗'}
-                      </span>
-                    </summary>
-                    <div className="album-content">
-                      {tracks && tracks.length > 0 ? (
-                        <div className="tracks-table-wrapper">
-                          <table className="tracks-table">
-                            <thead>
-                              <tr>
-                                <th>#</th>
-                                <th>Title</th>
-                                <th>Duration</th>
-                                <th>Has File</th>
-                                <th>Reason</th>
-                              </tr>
-                            </thead>
-                            <tbody>
-                              {tracks.map((track) => (
-                                <tr key={`${albumId}-${track.id}`} className={track.hasFile ? 'track-available' : 'track-missing'}>
-                                  <td data-label="#">{track.trackNumber}</td>
-                                  <td data-label="Title">{track.title}</td>
-                                  <td data-label="Duration">{track.duration ? `${Math.floor(track.duration / 60)}:${String(track.duration % 60).padStart(2, '0')}` : '—'}</td>
-                                  <td data-label="Has File">
-                                    <span className={`track-status ${track.hasFile ? 'available' : 'missing'}`}>
-                                      {track.hasFile ? '✓' : '✗'}
-                                    </span>
-                                  </td>
-                                  <td data-label="Reason">
-                                    {reason ? (
-                                      <span className="table-badge table-badge-reason">{reason}</span>
-                                    ) : (
-                                      <span className="table-badge table-badge-reason">Not being searched</span>
-                                    )}
-                                  </td>
-                                </tr>
-                              ))}
-                            </tbody>
-                          </table>
+                    return (
+                      <details
+                        key={`${artistName}-${albumTitle}`}
+                        className="album-details"
+                      >
+                        <summary className="album-summary">
+                          <span className="album-title">{albumTitle}</span>
+                          {releaseDate && (
+                            <span className="album-date">
+                              {new Date(releaseDate).toLocaleDateString()}
+                            </span>
+                          )}
+                          {tracks && tracks.length > 0 && (
+                            <span className="album-track-count">
+                              ({totals.available || 0}/
+                              {totals.monitored || tracks.length} tracks)
+                            </span>
+                          )}
+                          <span
+                            className={`album-status ${hasFile ? "has-file" : "missing"}`}
+                          >
+                            {hasFile ? "✓" : "✗"}
+                          </span>
+                        </summary>
+                        <div className="album-content">
+                          {tracks && tracks.length > 0 ? (
+                            <div className="tracks-table-wrapper">
+                              <table className="tracks-table">
+                                <thead>
+                                  <tr>
+                                    <th>#</th>
+                                    <th>Title</th>
+                                    <th>Duration</th>
+                                    <th>Has File</th>
+                                    <th>Reason</th>
+                                  </tr>
+                                </thead>
+                                <tbody>
+                                  {tracks.map((track) => (
+                                    <tr
+                                      key={`${albumId}-${track.id}`}
+                                      className={
+                                        track.hasFile
+                                          ? "track-available"
+                                          : "track-missing"
+                                      }
+                                    >
+                                      <td data-label="#">
+                                        {track.trackNumber}
+                                      </td>
+                                      <td data-label="Title">{track.title}</td>
+                                      <td data-label="Duration">
+                                        {track.duration
+                                          ? `${Math.floor(track.duration / 60)}:${String(track.duration % 60).padStart(2, "0")}`
+                                          : "—"}
+                                      </td>
+                                      <td data-label="Has File">
+                                        <span
+                                          className={`track-status ${track.hasFile ? "available" : "missing"}`}
+                                        >
+                                          {track.hasFile ? "✓" : "✗"}
+                                        </span>
+                                      </td>
+                                      <td data-label="Reason">
+                                        {reason ? (
+                                          <span className="table-badge table-badge-reason">
+                                            {reason}
+                                          </span>
+                                        ) : (
+                                          <span className="table-badge table-badge-reason">
+                                            Not being searched
+                                          </span>
+                                        )}
+                                      </td>
+                                    </tr>
+                                  ))}
+                                </tbody>
+                              </table>
+                            </div>
+                          ) : (
+                            <div className="album-info">
+                              <p>
+                                <strong>Monitored:</strong>{" "}
+                                {monitored ? "Yes" : "No"}
+                                {" | "}
+                                <strong>Has File:</strong>{" "}
+                                {hasFile ? "Yes" : "No"}
+                              </p>
+                              <p>
+                                <strong>Reason:</strong>{" "}
+                                {reason ? (
+                                  <span className="table-badge table-badge-reason">
+                                    {reason}
+                                  </span>
+                                ) : (
+                                  <span className="table-badge table-badge-reason">
+                                    Not being searched
+                                  </span>
+                                )}
+                              </p>
+                            </div>
+                          )}
                         </div>
-                      ) : (
-                        <div className="album-info">
-                          <p>
-                            <strong>Monitored:</strong> {monitored ? 'Yes' : 'No'}
-                            {' | '}
-                            <strong>Has File:</strong> {hasFile ? 'Yes' : 'No'}
-                          </p>
-                          <p>
-                            <strong>Reason:</strong>{' '}
-                            {reason ? (
-                              <span className="table-badge table-badge-reason">{reason}</span>
-                            ) : (
-                              <span className="table-badge table-badge-reason">Not being searched</span>
-                            )}
-                          </p>
-                        </div>
-                      )}
-                    </div>
-                  </details>
-                   );
-                })}
-              </div>
-            </details>
+                      </details>
+                    );
+                  })}
+                </div>
+              </details>
             );
           })}
         </div>
@@ -906,7 +1145,7 @@ function LidarrInstanceView({
                         ? null
                         : flexRender(
                             header.column.columnDef.header,
-                            header.getContext()
+                            header.getContext(),
                           )}
                     </th>
                   ))}
@@ -917,16 +1156,22 @@ function LidarrInstanceView({
               {table.getRowModel().rows.map((row) => {
                 const albumEntry = row.original;
                 const albumData = albumEntry.album as Record<string, unknown>;
-                const title = (albumData?.["title"] as string | undefined) || "Unknown";
-                const artistName = (albumData?.["artistName"] as string | undefined) || "Unknown";
+                const title =
+                  (albumData?.["title"] as string | undefined) || "Unknown";
+                const artistName =
+                  (albumData?.["artistName"] as string | undefined) ||
+                  "Unknown";
                 const stableKey = `${title}-${artistName}`;
                 return (
                   <tr key={stableKey}>
                     {row.getVisibleCells().map((cell) => (
-                      <td key={cell.id} data-label={String(cell.column.columnDef.header)}>
+                      <td
+                        key={cell.id}
+                        data-label={String(cell.column.columnDef.header)}
+                      >
                         {flexRender(
                           cell.column.columnDef.cell,
-                          cell.getContext()
+                          cell.getContext(),
                         )}
                       </td>
                     ))}
@@ -938,7 +1183,9 @@ function LidarrInstanceView({
           {flatTotalPages > 1 && (
             <div className="pagination">
               <div>
-                Page {flatSafePage + 1} of {flatTotalPages} ({reasonFilteredAlbums.length.toLocaleString()} albums · page size {FLAT_PAGE_SIZE})
+                Page {flatSafePage + 1} of {flatTotalPages} (
+                {reasonFilteredAlbums.length.toLocaleString()} albums · page
+                size {FLAT_PAGE_SIZE})
               </div>
               <div className="inline">
                 <button
@@ -950,7 +1197,9 @@ function LidarrInstanceView({
                 </button>
                 <button
                   className="btn"
-                  onClick={() => setFlatPage(Math.min(flatTotalPages - 1, flatSafePage + 1))}
+                  onClick={() =>
+                    setFlatPage(Math.min(flatTotalPages - 1, flatSafePage + 1))
+                  }
                   disabled={flatSafePage >= flatTotalPages - 1 || loading}
                 >
                   Next
@@ -966,7 +1215,9 @@ function LidarrInstanceView({
       {groupLidarr && groupedAlbums.length > 0 && (
         <div className="pagination">
           <div>
-            Page {groupedSafePage + 1} of {groupedTotalPages} ({groupedAlbums.length.toLocaleString()} artists · page size {GROUPED_PAGE_SIZE})
+            Page {groupedSafePage + 1} of {groupedTotalPages} (
+            {groupedAlbums.length.toLocaleString()} artists · page size{" "}
+            {GROUPED_PAGE_SIZE})
           </div>
           <div className="inline">
             <button
@@ -978,7 +1229,11 @@ function LidarrInstanceView({
             </button>
             <button
               className="btn"
-              onClick={() => setGroupedPage(Math.min(groupedTotalPages - 1, groupedSafePage + 1))}
+              onClick={() =>
+                setGroupedPage(
+                  Math.min(groupedTotalPages - 1, groupedSafePage + 1),
+                )
+              }
               disabled={groupedSafePage >= groupedTotalPages - 1 || loading}
             >
               Next
@@ -1002,12 +1257,16 @@ export function LidarrView({ active }: { active: boolean }): JSX.Element {
 
   const [instances, setInstances] = useState<ArrInfo[]>([]);
   const [selection, setSelection] = useState<string | "">("");
-  const [instanceData, setInstanceData] = useState<LidarrAlbumsResponse | null>(null);
+  const [instanceData, setInstanceData] = useState<LidarrAlbumsResponse | null>(
+    null,
+  );
   const [instancePage, setInstancePage] = useState(0);
   const [instanceQuery, setInstanceQuery] = useState("");
   const [instanceLoading, setInstanceLoading] = useState(false);
   const [lastUpdated, setLastUpdated] = useState<string | null>(null);
-  const [instancePages, setInstancePages] = useState<Record<number, LidarrAlbumEntry[]>>({});
+  const [instancePages, setInstancePages] = useState<
+    Record<number, LidarrAlbumEntry[]>
+  >({});
   const [instancePageSize, setInstancePageSize] = useState(LIDARR_PAGE_SIZE);
   const [instanceTotalPages, setInstanceTotalPages] = useState(1);
   const instanceKeyRef = useRef<string>("");
@@ -1020,11 +1279,12 @@ export function LidarrView({ active }: { active: boolean }): JSX.Element {
   const instanceAlbumSync = useDataSync<LidarrAlbumEntry>({
     getKey: (album) => {
       const albumData = album.album as Record<string, unknown>;
-      const artistName = (albumData?.["artistName"] as string | undefined) || "";
+      const artistName =
+        (albumData?.["artistName"] as string | undefined) || "";
       const title = (albumData?.["title"] as string | undefined) || "";
       return `${artistName}-${title}`;
     },
-    hashFields: ['album', 'tracks', 'totals'],
+    hashFields: ["album", "tracks", "totals"],
   });
 
   const [aggRows, setAggRows] = useState<LidarrAggRow[]>([]);
@@ -1039,17 +1299,28 @@ export function LidarrView({ active }: { active: boolean }): JSX.Element {
   const aggAlbumSync = useDataSync<LidarrAggRow>({
     getKey: (album) => {
       const albumData = album.album as Record<string, unknown>;
-      const artistName = (albumData?.["artistName"] as string | undefined) || "";
+      const artistName =
+        (albumData?.["artistName"] as string | undefined) || "";
       const title = (albumData?.["title"] as string | undefined) || "";
       return `${album.__instance}-${artistName}-${title}`;
     },
-    hashFields: ['__instance', 'album', 'tracks', 'totals'],
+    hashFields: ["__instance", "album", "tracks", "totals"],
   });
 
   // Smart data sync for track rows
   const aggTrackSync = useDataSync<LidarrTrackRow>({
-    getKey: (track) => `${track.__instance}-${track.artistName}-${track.albumTitle}-${track.trackNumber}`,
-    hashFields: ['__instance', 'artistName', 'albumTitle', 'trackNumber', 'title', 'hasFile', 'monitored', 'reason'],
+    getKey: (track) =>
+      `${track.__instance}-${track.artistName}-${track.albumTitle}-${track.trackNumber}`,
+    hashFields: [
+      "__instance",
+      "artistName",
+      "albumTitle",
+      "trackNumber",
+      "title",
+      "hasFile",
+      "monitored",
+      "reason",
+    ],
   });
   const [onlyMissing, setOnlyMissing] = useState(false);
   const [reasonFilter, setReasonFilter] = useState<string>("all");
@@ -1065,7 +1336,10 @@ export function LidarrView({ active }: { active: boolean }): JSX.Element {
       const data = await getArrList();
       if (data.ready === false && !backendReadyWarnedRef.current) {
         backendReadyWarnedRef.current = true;
-        push("Lidarr backend is still initialising. Check the logs if this persists.", "info");
+        push(
+          "Lidarr backend is still initialising. Check the logs if this persists.",
+          "info",
+        );
       } else if (data.ready) {
         backendReadyWarnedRef.current = true;
       }
@@ -1080,7 +1354,9 @@ export function LidarrView({ active }: { active: boolean }): JSX.Element {
       }
       if (selection === "") {
         // If only 1 instance, select it directly; otherwise use aggregate
-        setSelection(filtered.length === 1 ? filtered[0].category : "aggregate");
+        setSelection(
+          filtered.length === 1 ? filtered[0].category : "aggregate",
+        );
       } else if (
         selection !== "aggregate" &&
         !filtered.some((arr) => arr.category === selection)
@@ -1092,7 +1368,7 @@ export function LidarrView({ active }: { active: boolean }): JSX.Element {
         error instanceof Error
           ? error.message
           : "Unable to load Lidarr instances",
-        "error"
+        "error",
       );
     }
   }, [push, selection]);
@@ -1103,7 +1379,7 @@ export function LidarrView({ active }: { active: boolean }): JSX.Element {
       query: string,
       pageSize: number,
       pages: number[],
-      key: string
+      key: string,
     ) => {
       if (!pages.length) return;
       try {
@@ -1138,11 +1414,11 @@ export function LidarrView({ active }: { active: boolean }): JSX.Element {
           error instanceof Error
             ? error.message
             : `Failed to load additional pages for ${category}`,
-          "error"
+          "error",
         );
       }
     },
-    [push, instanceAlbumSync]
+    [push, instanceAlbumSync],
   );
 
   const fetchInstance = useCallback(
@@ -1150,7 +1426,7 @@ export function LidarrView({ active }: { active: boolean }): JSX.Element {
       category: string,
       page: number,
       query: string,
-      options: { preloadAll?: boolean; showLoading?: boolean } = {}
+      options: { preloadAll?: boolean; showLoading?: boolean } = {},
     ) => {
       const preloadAll = options.preloadAll !== false;
       const showLoading = options.showLoading ?? true;
@@ -1171,7 +1447,7 @@ export function LidarrView({ active }: { active: boolean }): JSX.Element {
           category,
           page,
           LIDARR_PAGE_SIZE,
-          query
+          query,
         );
         setInstanceData(response);
         const resolvedPage = response.page ?? page;
@@ -1217,7 +1493,7 @@ export function LidarrView({ active }: { active: boolean }): JSX.Element {
             query,
             pageSize,
             pagesToFetch,
-            key
+            key,
           );
         }
       } catch (error) {
@@ -1225,25 +1501,26 @@ export function LidarrView({ active }: { active: boolean }): JSX.Element {
           error instanceof Error
             ? error.message
             : `Failed to load ${category} albums`,
-          "error"
+          "error",
         );
       } finally {
         setInstanceLoading(false);
       }
     },
-    [push, preloadRemainingPages, instanceAlbumSync]
+    [push, preloadRemainingPages, instanceAlbumSync],
   );
 
-  const loadAggregate = useCallback(async (options?: { showLoading?: boolean }) => {
-    if (!instances.length) {
-      setAggRows([]);
-      setAggSummary({ available: 0, monitored: 0, missing: 0, total: 0 });
-      return;
-    }
-    const showLoading = options?.showLoading ?? true;
-    if (showLoading) {
-      setAggLoading(true);
-    }
+  const loadAggregate = useCallback(
+    async (options?: { showLoading?: boolean }) => {
+      if (!instances.length) {
+        setAggRows([]);
+        setAggSummary({ available: 0, monitored: 0, missing: 0, total: 0 });
+        return;
+      }
+      const showLoading = options?.showLoading ?? true;
+      if (showLoading) {
+        setAggLoading(true);
+      }
       try {
         const aggregated: LidarrAggRow[] = [];
         let totalAvailable = 0;
@@ -1257,119 +1534,142 @@ export function LidarrView({ active }: { active: boolean }): JSX.Element {
               inst.category,
               page,
               LIDARR_AGG_FETCH_SIZE,
-              ""
+              "",
             );
 
-          if (!counted) {
-            const counts = res.counts;
-            if (counts) {
-              totalAvailable += counts.available ?? 0;
-              totalMonitored += counts.monitored ?? 0;
+            if (!counted) {
+              const counts = res.counts;
+              if (counts) {
+                totalAvailable += counts.available ?? 0;
+                totalMonitored += counts.monitored ?? 0;
+              }
+              counted = true;
             }
-            counted = true;
-          }
-          const albumEntries = res.albums ?? [];
-          albumEntries.forEach((entry) => {
-            aggregated.push({ ...entry, __instance: label });
-          });
-          if (!albumEntries.length || albumEntries.length < LIDARR_AGG_FETCH_SIZE) break;
-          page += 1;
-        }
-      }
-
-      // Flatten tracks from all albums for flat mode
-      const trackRows: LidarrTrackRow[] = [];
-      aggregated.forEach((albumEntry) => {
-        const albumData = albumEntry.album as Record<string, unknown>;
-        const artistName = (albumData?.["artistName"] as string | undefined) || "Unknown Artist";
-        const albumTitle = (albumData?.["title"] as string | undefined) || "Unknown Album";
-        const reason = albumData?.["reason"] as string | null | undefined;
-        const qualityProfileId = albumData?.["qualityProfileId"] as number | null | undefined;
-        const qualityProfileName = albumData?.["qualityProfileName"] as string | null | undefined;
-        const tracks = albumEntry.tracks || [];
-
-        if (tracks && tracks.length > 0) {
-          tracks.forEach((track) => {
-            trackRows.push({
-              __instance: albumEntry.__instance,
-              artistName,
-              albumTitle,
-              trackNumber: track.trackNumber || 0,
-              title: track.title || "Unknown Track",
-              duration: track.duration,
-              hasFile: track.hasFile || false,
-              monitored: track.monitored || false,
-              reason,
-              qualityProfileId,
-              qualityProfileName,
+            const albumEntries = res.albums ?? [];
+            albumEntries.forEach((entry) => {
+              aggregated.push({ ...entry, __instance: label });
             });
-          });
-        }
-      });
-
-      // Smart diffing using hash-based change detection
-      const albumSyncResult = aggAlbumSync.syncData(aggregated);
-      const rowsChanged = albumSyncResult.hasChanges;
-
-      const trackSyncResult = aggTrackSync.syncData(trackRows);
-      const trackRowsChanged = trackSyncResult.hasChanges;
-
-      if (rowsChanged) {
-        setAggRows(albumSyncResult.data);
-      }
-
-      if (trackRowsChanged) {
-        setAggTrackRows(trackSyncResult.data);
-      }
-
-      const newSummary = groupLidarr
-        ? {
-            available: totalAvailable,
-            monitored: totalMonitored,
-            missing: aggregated.length - totalAvailable,
-            total: aggregated.length,
+            if (
+              !albumEntries.length ||
+              albumEntries.length < LIDARR_AGG_FETCH_SIZE
+            )
+              break;
+            page += 1;
           }
-        : {
-            available: trackRows.filter(t => t.hasFile).length,
-            monitored: trackRows.filter(t => t.monitored).length,
-            missing: trackRows.filter(t => !t.hasFile).length,
-            total: trackRows.length,
-          };
+        }
 
-      const summaryChanged = (
-        aggSummary.available !== newSummary.available ||
-        aggSummary.monitored !== newSummary.monitored ||
-        aggSummary.missing !== newSummary.missing ||
-        aggSummary.total !== newSummary.total
-      );
+        // Flatten tracks from all albums for flat mode
+        const trackRows: LidarrTrackRow[] = [];
+        aggregated.forEach((albumEntry) => {
+          const albumData = albumEntry.album as Record<string, unknown>;
+          const artistName =
+            (albumData?.["artistName"] as string | undefined) ||
+            "Unknown Artist";
+          const albumTitle =
+            (albumData?.["title"] as string | undefined) || "Unknown Album";
+          const reason = albumData?.["reason"] as string | null | undefined;
+          const qualityProfileId = albumData?.["qualityProfileId"] as
+            | number
+            | null
+            | undefined;
+          const qualityProfileName = albumData?.["qualityProfileName"] as
+            | string
+            | null
+            | undefined;
+          const tracks = albumEntry.tracks || [];
 
-      if (summaryChanged) {
-        setAggSummary(newSummary);
+          if (tracks && tracks.length > 0) {
+            tracks.forEach((track) => {
+              trackRows.push({
+                __instance: albumEntry.__instance,
+                artistName,
+                albumTitle,
+                trackNumber: track.trackNumber || 0,
+                title: track.title || "Unknown Track",
+                duration: track.duration,
+                hasFile: track.hasFile || false,
+                monitored: track.monitored || false,
+                reason,
+                qualityProfileId,
+                qualityProfileName,
+              });
+            });
+          }
+        });
+
+        // Smart diffing using hash-based change detection
+        const albumSyncResult = aggAlbumSync.syncData(aggregated);
+        const rowsChanged = albumSyncResult.hasChanges;
+
+        const trackSyncResult = aggTrackSync.syncData(trackRows);
+        const trackRowsChanged = trackSyncResult.hasChanges;
+
+        if (rowsChanged) {
+          setAggRows(albumSyncResult.data);
+        }
+
+        if (trackRowsChanged) {
+          setAggTrackRows(trackSyncResult.data);
+        }
+
+        const newSummary = groupLidarr
+          ? {
+              available: totalAvailable,
+              monitored: totalMonitored,
+              missing: aggregated.length - totalAvailable,
+              total: aggregated.length,
+            }
+          : {
+              available: trackRows.filter((t) => t.hasFile).length,
+              monitored: trackRows.filter((t) => t.monitored).length,
+              missing: trackRows.filter((t) => !t.hasFile).length,
+              total: trackRows.length,
+            };
+
+        const summaryChanged =
+          aggSummary.available !== newSummary.available ||
+          aggSummary.monitored !== newSummary.monitored ||
+          aggSummary.missing !== newSummary.missing ||
+          aggSummary.total !== newSummary.total;
+
+        if (summaryChanged) {
+          setAggSummary(newSummary);
+        }
+
+        // Only reset page if filter changed, not on refresh
+        if (aggFilter !== globalSearch) {
+          setAggPage(0);
+          setAggFilter(globalSearch);
+        }
+
+        // Only update timestamp if data actually changed
+        if (rowsChanged || summaryChanged) {
+          setAggUpdated(new Date().toLocaleTimeString());
+        }
+      } catch (error) {
+        setAggRows([]);
+        setAggSummary({ available: 0, monitored: 0, missing: 0, total: 0 });
+        push(
+          error instanceof Error
+            ? error.message
+            : "Failed to load aggregated Lidarr data",
+          "error",
+        );
+      } finally {
+        setAggLoading(false);
       }
-
-      // Only reset page if filter changed, not on refresh
-      if (aggFilter !== globalSearch) {
-        setAggPage(0);
-        setAggFilter(globalSearch);
-      }
-
-      // Only update timestamp if data actually changed
-      if (rowsChanged || summaryChanged) {
-        setAggUpdated(new Date().toLocaleTimeString());
-      }
-    } catch (error) {
-      setAggRows([]);
-      setAggSummary({ available: 0, monitored: 0, missing: 0, total: 0 });
-      push(
-        error instanceof Error
-          ? error.message
-          : "Failed to load aggregated Lidarr data",
-        "error"
-      );
-    } finally {
-      setAggLoading(false);
-    }
-  }, [instances, globalSearch, push, aggFilter, groupLidarr, aggAlbumSync, aggTrackSync, aggSummary]);
+    },
+    [
+      instances,
+      globalSearch,
+      push,
+      aggFilter,
+      groupLidarr,
+      aggAlbumSync,
+      aggTrackSync,
+      aggSummary,
+    ],
+  );
 
   // LiveArr is now loaded via WebUIContext, no need to load config here
 
@@ -1407,11 +1707,14 @@ export function LidarrView({ active }: { active: boolean }): JSX.Element {
     void loadAggregate();
   }, [active, selection, loadAggregate]);
 
-  useInterval(() => {
-    if (selection === "aggregate" && liveArr) {
-      void loadAggregate({ showLoading: false });
-    }
-  }, selection === "aggregate" && liveArr ? 1000 : null);
+  useInterval(
+    () => {
+      if (selection === "aggregate" && liveArr) {
+        void loadAggregate({ showLoading: false });
+      }
+    },
+    selection === "aggregate" && liveArr ? 1000 : null,
+  );
 
   useEffect(() => {
     if (!active) return;
@@ -1446,7 +1749,7 @@ export function LidarrView({ active }: { active: boolean }): JSX.Element {
         });
       }
     },
-    active && selection && selection !== "aggregate" && liveArr ? 1000 : null
+    active && selection && selection !== "aggregate" && liveArr ? 1000 : null,
   );
 
   // Removed: Don't reset page when filter changes - preserve scroll position
@@ -1472,10 +1775,18 @@ export function LidarrView({ active }: { active: boolean }): JSX.Element {
 
       // Search filter
       if (hasSearchFilter) {
-        const title = ((albumData?.["title"] as string | undefined) ?? "").toString().toLowerCase();
-        const artist = ((albumData?.["artistName"] as string | undefined) ?? "").toString().toLowerCase();
+        const title = ((albumData?.["title"] as string | undefined) ?? "")
+          .toString()
+          .toLowerCase();
+        const artist = ((albumData?.["artistName"] as string | undefined) ?? "")
+          .toString()
+          .toLowerCase();
         const instance = (row.__instance ?? "").toLowerCase();
-        if (!title.includes(q) && !artist.includes(q) && !instance.includes(q)) {
+        if (
+          !title.includes(q) &&
+          !artist.includes(q) &&
+          !instance.includes(q)
+        ) {
           return false;
         }
       }
@@ -1516,7 +1827,12 @@ export function LidarrView({ active }: { active: boolean }): JSX.Element {
         const album = row.albumTitle.toLowerCase();
         const title = row.title.toLowerCase();
         const instance = row.__instance.toLowerCase();
-        if (!artist.includes(q) && !album.includes(q) && !title.includes(q) && !instance.includes(q)) {
+        if (
+          !artist.includes(q) &&
+          !album.includes(q) &&
+          !title.includes(q) &&
+          !instance.includes(q)
+        ) {
           return false;
         }
       }
@@ -1565,8 +1881,10 @@ export function LidarrView({ active }: { active: boolean }): JSX.Element {
       push(`Restarted ${selection}`, "success");
     } catch (error) {
       push(
-        error instanceof Error ? error.message : `Failed to restart ${selection}`,
-        "error"
+        error instanceof Error
+          ? error.message
+          : `Failed to restart ${selection}`,
+        "error",
       );
     }
   }, [selection, push]);
@@ -1579,7 +1897,7 @@ export function LidarrView({ active }: { active: boolean }): JSX.Element {
         setGlobalSearch("");
       }
     },
-    [setSelection, setGlobalSearch]
+    [setSelection, setGlobalSearch],
   );
 
   const isAggregate = selection === "aggregate";
@@ -1625,7 +1943,9 @@ export function LidarrView({ active }: { active: boolean }): JSX.Element {
                 onChange={handleInstanceSelection}
                 disabled={!instances.length}
               >
-                {instances.length > 1 && <option value="aggregate">All Lidarr</option>}
+                {instances.length > 1 && (
+                  <option value="aggregate">All Lidarr</option>
+                )}
                 {instances.map((inst) => (
                   <option key={inst.category} value={inst.category}>
                     {inst.name || inst.category}
@@ -1633,7 +1953,10 @@ export function LidarrView({ active }: { active: boolean }): JSX.Element {
                 ))}
               </select>
             </div>
-            <div className="row" style={{ alignItems: "flex-end", gap: "12px", flexWrap: "wrap" }}>
+            <div
+              className="row"
+              style={{ alignItems: "flex-end", gap: "12px", flexWrap: "wrap" }}
+            >
               <div className="col field" style={{ flex: "1 1 200px" }}>
                 <label>Search</label>
                 <input
@@ -1642,7 +1965,10 @@ export function LidarrView({ active }: { active: boolean }): JSX.Element {
                   onChange={(event) => setGlobalSearch(event.target.value)}
                 />
               </div>
-              <div className="field" style={{ flex: "0 0 auto", minWidth: "140px" }}>
+              <div
+                className="field"
+                style={{ flex: "0 0 auto", minWidth: "140px" }}
+              >
                 <label>Status</label>
                 <select
                   onChange={(event) => {
@@ -1655,7 +1981,10 @@ export function LidarrView({ active }: { active: boolean }): JSX.Element {
                   <option value="missing">Missing Only</option>
                 </select>
               </div>
-              <div className="field" style={{ flex: "0 0 auto", minWidth: "140px" }}>
+              <div
+                className="field"
+                style={{ flex: "0 0 auto", minWidth: "140px" }}
+              >
                 <label>Search Reason</label>
                 <select
                   onChange={(event) => setReasonFilter(event.target.value)}

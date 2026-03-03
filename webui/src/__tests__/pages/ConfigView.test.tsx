@@ -1,4 +1,12 @@
-import { describe, it, expect, vi, beforeAll, afterAll, afterEach } from "vitest";
+import {
+  describe,
+  it,
+  expect,
+  vi,
+  beforeAll,
+  afterAll,
+  afterEach,
+} from "vitest";
 import { render, screen, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { http, HttpResponse } from "msw";
@@ -66,7 +74,7 @@ describe("ConfigView – delete button rendering", () => {
   it("renders a Delete button for the default qBit instance", async () => {
     server.use(
       http.get("/web/config", () => HttpResponse.json(configWithInstances)),
-      http.post("/web/config", () => HttpResponse.json(okUpdateResponse))
+      http.post("/web/config", () => HttpResponse.json(okUpdateResponse)),
     );
 
     renderConfig();
@@ -76,13 +84,15 @@ describe("ConfigView – delete button rendering", () => {
     // Find the card that contains "qBit" (Default) and confirm its delete button
     const qbitHeader = screen.getByText("qBit");
     const card = qbitHeader.closest(".card")!;
-    expect(within(card).getByRole("button", { name: /delete/i })).toBeInTheDocument();
+    expect(
+      within(card).getByRole("button", { name: /delete/i }),
+    ).toBeInTheDocument();
   });
 
   it("renders a Delete button for the qBit-1 instance", async () => {
     server.use(
       http.get("/web/config", () => HttpResponse.json(configWithInstances)),
-      http.post("/web/config", () => HttpResponse.json(okUpdateResponse))
+      http.post("/web/config", () => HttpResponse.json(okUpdateResponse)),
     );
 
     renderConfig();
@@ -90,13 +100,15 @@ describe("ConfigView – delete button rendering", () => {
     await screen.findByText("qBit-1");
     const qbit1Header = screen.getByText("qBit-1");
     const card = qbit1Header.closest(".card")!;
-    expect(within(card).getByRole("button", { name: /delete/i })).toBeInTheDocument();
+    expect(
+      within(card).getByRole("button", { name: /delete/i }),
+    ).toBeInTheDocument();
   });
 
   it("renders Delete buttons for Arr instances", async () => {
     server.use(
       http.get("/web/config", () => HttpResponse.json(configWithInstances)),
-      http.post("/web/config", () => HttpResponse.json(okUpdateResponse))
+      http.post("/web/config", () => HttpResponse.json(okUpdateResponse)),
     );
 
     renderConfig();
@@ -104,7 +116,9 @@ describe("ConfigView – delete button rendering", () => {
     await screen.findByText("Radarr-1080");
     const arrHeader = screen.getByText("Radarr-1080");
     const card = arrHeader.closest(".card")!;
-    expect(within(card).getByRole("button", { name: /delete/i })).toBeInTheDocument();
+    expect(
+      within(card).getByRole("button", { name: /delete/i }),
+    ).toBeInTheDocument();
   });
 });
 
@@ -114,7 +128,7 @@ describe("ConfigView – deleteQbitInstance behaviour", () => {
   it("clicking Delete on the default qBit shows error toast and does not call window.confirm", async () => {
     server.use(
       http.get("/web/config", () => HttpResponse.json(configWithInstances)),
-      http.post("/web/config", () => HttpResponse.json(okUpdateResponse))
+      http.post("/web/config", () => HttpResponse.json(okUpdateResponse)),
     );
 
     const confirmSpy = vi.spyOn(window, "confirm");
@@ -137,7 +151,7 @@ describe("ConfigView – deleteQbitInstance behaviour", () => {
   it("clicking Delete on qBit-1 calls window.confirm", async () => {
     server.use(
       http.get("/web/config", () => HttpResponse.json(configWithInstances)),
-      http.post("/web/config", () => HttpResponse.json(okUpdateResponse))
+      http.post("/web/config", () => HttpResponse.json(okUpdateResponse)),
     );
 
     const confirmSpy = vi.spyOn(window, "confirm").mockReturnValue(false);
@@ -152,13 +166,15 @@ describe("ConfigView – deleteQbitInstance behaviour", () => {
 
     await user.click(deleteBtn);
 
-    expect(confirmSpy).toHaveBeenCalledWith("Delete qBit-1? This action cannot be undone.");
+    expect(confirmSpy).toHaveBeenCalledWith(
+      "Delete qBit-1? This action cannot be undone.",
+    );
   });
 
   it("confirms and removes qBit-1 from the UI when window.confirm returns true", async () => {
     server.use(
       http.get("/web/config", () => HttpResponse.json(configWithInstances)),
-      http.post("/web/config", () => HttpResponse.json(okUpdateResponse))
+      http.post("/web/config", () => HttpResponse.json(okUpdateResponse)),
     );
 
     vi.spyOn(window, "confirm").mockReturnValue(true);
@@ -186,7 +202,7 @@ describe("ConfigView – addQbitInstance behaviour", () => {
   it("clicking 'Add Instance' creates a qBit-1 card when qBit is the only instance", async () => {
     server.use(
       http.get("/web/config", () => HttpResponse.json(configQbitOnly)),
-      http.post("/web/config", () => HttpResponse.json(okUpdateResponse))
+      http.post("/web/config", () => HttpResponse.json(okUpdateResponse)),
     );
 
     const user = userEvent.setup();
@@ -199,8 +215,12 @@ describe("ConfigView – addQbitInstance behaviour", () => {
     // The qBit "Add Instance" button is inside the "qBittorrent Instances" section.
     // Arr groups (Radarr/Sonarr/Lidarr) each have their own "Add Instance" button,
     // so we must scope the query to avoid ambiguity.
-    const qbitSection = screen.getByText("qBittorrent Instances").closest("section")!;
-    const addBtn = within(qbitSection).getByRole("button", { name: /add instance/i });
+    const qbitSection = screen
+      .getByText("qBittorrent Instances")
+      .closest("section")!;
+    const addBtn = within(qbitSection).getByRole("button", {
+      name: /add instance/i,
+    });
     await user.click(addBtn);
 
     // findAllByText: the card header AND the modal title both contain "qBit-1"
@@ -210,7 +230,7 @@ describe("ConfigView – addQbitInstance behaviour", () => {
   it("clicking 'Add Instance' twice creates qBit-1 and then qBit-2", async () => {
     server.use(
       http.get("/web/config", () => HttpResponse.json(configQbitOnly)),
-      http.post("/web/config", () => HttpResponse.json(okUpdateResponse))
+      http.post("/web/config", () => HttpResponse.json(okUpdateResponse)),
     );
 
     const user = userEvent.setup();
@@ -221,10 +241,9 @@ describe("ConfigView – addQbitInstance behaviour", () => {
 
     // Click once → creates qBit-1 and opens its configure modal
     const getAddBtn = () =>
-      within(screen.getByText("qBittorrent Instances").closest("section")!).getByRole(
-        "button",
-        { name: /add instance/i }
-      );
+      within(
+        screen.getByText("qBittorrent Instances").closest("section")!,
+      ).getByRole("button", { name: /add instance/i });
 
     await user.click(getAddBtn());
     // Card header + modal title both show "qBit-1"

@@ -62,7 +62,7 @@ describe("SonarrView – card header", () => {
     server.use(
       http.get("/web/config", () => HttpResponse.json(minimalConfig)),
       http.post("/web/config", () => HttpResponse.json({})),
-      http.get("/web/arr", () => HttpResponse.json(emptyArrList))
+      http.get("/web/arr", () => HttpResponse.json(emptyArrList)),
     );
 
     renderView();
@@ -81,7 +81,7 @@ describe("SonarrView – empty state", () => {
     server.use(
       http.get("/web/config", () => HttpResponse.json(minimalConfig)),
       http.post("/web/config", () => HttpResponse.json({})),
-      http.get("/web/arr", () => HttpResponse.json(emptyArrList))
+      http.get("/web/arr", () => HttpResponse.json(emptyArrList)),
     );
 
     renderView();
@@ -95,8 +95,8 @@ describe("SonarrView – empty state", () => {
       http.post("/web/config", () => HttpResponse.json({})),
       http.get("/web/arr", () => HttpResponse.json(sonarrArrList)),
       http.get("/web/sonarr/sonarr-hd/series", () =>
-        HttpResponse.json(emptySeriesResponse)
-      )
+        HttpResponse.json(emptySeriesResponse),
+      ),
     );
 
     renderView();
@@ -114,14 +114,18 @@ describe("SonarrView – instance sidebar", () => {
       http.post("/web/config", () => HttpResponse.json({})),
       http.get("/web/arr", () => HttpResponse.json(sonarrArrList)),
       http.get("/web/sonarr/sonarr-hd/series", () =>
-        HttpResponse.json(emptySeriesResponse)
-      )
+        HttpResponse.json(emptySeriesResponse),
+      ),
     );
 
     renderView();
 
     // Use findByRole to get the sidebar button specifically (not the mobile select option)
-    const btn = await screen.findByRole("button", { name: /sonarr hd/i }, { timeout: 5000 });
+    const btn = await screen.findByRole(
+      "button",
+      { name: /sonarr hd/i },
+      { timeout: 5000 },
+    );
     expect(btn).toBeInTheDocument();
   });
 
@@ -162,8 +166,8 @@ describe("SonarrView – instance sidebar", () => {
           page: 0,
           page_size: 25,
           counts: { available: 1, monitored: 1 },
-        })
-      )
+        }),
+      ),
     );
 
     renderView();
@@ -180,7 +184,7 @@ describe("SonarrView – inactive", () => {
   it("renders card frame when active=false", async () => {
     server.use(
       http.get("/web/config", () => HttpResponse.json(minimalConfig)),
-      http.post("/web/config", () => HttpResponse.json({}))
+      http.post("/web/config", () => HttpResponse.json({})),
     );
 
     renderView(false);

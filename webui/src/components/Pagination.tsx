@@ -35,7 +35,7 @@ export function Pagination({
         handleJump();
       }
     },
-    [handleJump]
+    [handleJump],
   );
 
   if (totalPages <= 0) {
@@ -88,7 +88,9 @@ export function Pagination({
 
         <button
           className="btn"
-          onClick={() => onPageChange(Math.min(totalPages - 1, currentPage + 1))}
+          onClick={() =>
+            onPageChange(Math.min(totalPages - 1, currentPage + 1))
+          }
           disabled={currentPage >= totalPages - 1 || loading}
           title="Next page"
         >

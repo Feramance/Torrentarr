@@ -78,9 +78,7 @@ describe("StableTable – cell values", () => {
 
 describe("StableTable – empty data", () => {
   it("renders no body rows for empty data array", () => {
-    const { container } = render(
-      <StableTable data={[]} columns={columns} />
-    );
+    const { container } = render(<StableTable data={[]} columns={columns} />);
 
     expect(container.querySelectorAll("tbody tr")).toHaveLength(0);
   });
@@ -114,7 +112,7 @@ describe("StableTable – getRowKey", () => {
         data={data}
         columns={columns}
         getRowKey={(row) => `item-${row.id}`}
-      />
+      />,
     );
 
     expect(container.querySelectorAll("tbody tr")).toHaveLength(data.length);
@@ -139,7 +137,9 @@ describe("StableTable – DOM structure", () => {
   it("applies .responsive-table class to the <table> element", () => {
     const { container } = render(<StableTable data={data} columns={columns} />);
 
-    expect(container.querySelector("table.responsive-table")).toBeInTheDocument();
+    expect(
+      container.querySelector("table.responsive-table"),
+    ).toBeInTheDocument();
   });
 });
 
@@ -157,7 +157,7 @@ describe("StableTable – custom cell renderer", () => {
     ];
 
     render(
-      <StableTable data={[{ id: 1, name: "Test" }]} columns={customColumns} />
+      <StableTable data={[{ id: 1, name: "Test" }]} columns={customColumns} />,
     );
 
     expect(screen.getByText("★ Test")).toBeInTheDocument();
@@ -169,9 +169,7 @@ describe("StableTable – custom cell renderer", () => {
         id: "pill",
         header: "Status",
         accessorFn: (row) => row.id,
-        cell: (info) => (
-          <span data-testid={`pill-${info.getValue()}`}>ok</span>
-        ),
+        cell: (info) => <span data-testid={`pill-${info.getValue()}`}>ok</span>,
       },
     ];
 

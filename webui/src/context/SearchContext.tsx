@@ -48,13 +48,11 @@ export function SearchProvider({ children }: PropsWithChildren): JSX.Element {
       register,
       clearHandler,
     }),
-    [value, setValue, register, clearHandler]
+    [value, setValue, register, clearHandler],
   );
 
   return (
-    <SearchContext.Provider value={valueObj}>
-      {children}
-    </SearchContext.Provider>
+    <SearchContext.Provider value={valueObj}>{children}</SearchContext.Provider>
   );
 }
 

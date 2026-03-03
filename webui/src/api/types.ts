@@ -88,8 +88,8 @@ export interface QbitCategoriesResponse {
 }
 
 export interface StatusResponse {
-  qbit: QbitStatus;  // Legacy single-instance (default) for backward compatibility
-  qbitInstances: { [instanceName: string]: QbitInstance };  // Multi-instance info
+  qbit: QbitStatus; // Legacy single-instance (default) for backward compatibility
+  qbitInstances: { [instanceName: string]: QbitInstance }; // Multi-instance info
   arrs: ArrInfo[];
   ready?: boolean;
 }
@@ -301,6 +301,12 @@ export interface MetaResponse {
 export interface ConfigUpdateResponse {
   status: string;
   configReloaded: boolean;
-  reloadType: "none" | "frontend" | "webui" | "single_arr" | "multi_arr" | "full";
+  reloadType:
+    | "none"
+    | "frontend"
+    | "webui"
+    | "single_arr"
+    | "multi_arr"
+    | "full";
   affectedInstances: string[];
 }

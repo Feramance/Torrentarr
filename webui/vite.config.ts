@@ -14,9 +14,9 @@ export default defineConfig({
     rollupOptions: {
       output: {
         manualChunks: {
-          vendor: ['react', 'react-dom'],
-          table: ['@tanstack/react-table'],
-          mantine: ['@mantine/core', '@mantine/hooks', '@mantine/dates'],
+          vendor: ["react", "react-dom"],
+          table: ["@tanstack/react-table"],
+          mantine: ["@mantine/core", "@mantine/hooks", "@mantine/dates"],
         },
       },
     },
@@ -24,8 +24,8 @@ export default defineConfig({
   server: {
     port: 3000,
     proxy: {
-      '/api': 'http://localhost:6969',
-      '/web': 'http://localhost:6969',
-    }
-  }
+      "/api": "http://localhost:6969",
+      "/web": "http://localhost:6969",
+    },
+  },
 });

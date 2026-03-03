@@ -8,7 +8,12 @@ interface TagInputProps {
   disabled?: boolean;
 }
 
-export function TagInput({ value, onChange, placeholder, disabled }: TagInputProps) {
+export function TagInput({
+  value,
+  onChange,
+  placeholder,
+  disabled,
+}: TagInputProps) {
   const [inputValue, setInputValue] = useState("");
 
   const handleKeyDown = (e: KeyboardEvent<HTMLInputElement>) => {

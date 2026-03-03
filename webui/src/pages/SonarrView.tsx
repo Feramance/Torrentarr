@@ -7,11 +7,7 @@ import {
   type ChangeEvent,
   type JSX,
 } from "react";
-import {
-  getArrList,
-  getSonarrSeries,
-  restartArr,
-} from "../api/client";
+import { getArrList, getSonarrSeries, restartArr } from "../api/client";
 import {
   useReactTable,
   getCoreRowModel,
@@ -60,14 +56,19 @@ const SONARR_PAGE_SIZE = 25;
 const SONARR_AGG_PAGE_SIZE = 50;
 const SONARR_AGG_FETCH_SIZE = 200;
 
-function filterSeriesEntriesForMissing(seriesEntries: SonarrSeriesEntry[], onlyMissing: boolean): SonarrSeriesEntry[] {
+function filterSeriesEntriesForMissing(
+  seriesEntries: SonarrSeriesEntry[],
+  onlyMissing: boolean,
+): SonarrSeriesEntry[] {
   if (!onlyMissing) return seriesEntries;
   const result: SonarrSeriesEntry[] = [];
   for (const entry of seriesEntries) {
     const seasons = entry.seasons ?? {};
     const filteredSeasons: Record<string, SonarrSeason> = {};
     for (const [seasonNumber, season] of Object.entries(seasons)) {
-      const episodes = (season.episodes ?? []).filter((episode) => !episode.hasFile);
+      const episodes = (season.episodes ?? []).filter(
+        (episode) => !episode.hasFile,
+      );
       if (!episodes.length) continue;
       filteredSeasons[seasonNumber] = { ...season, episodes };
     }
@@ -80,8 +81,13 @@ function filterSeriesEntriesForMissing(seriesEntries: SonarrSeriesEntry[], onlyM
   return result;
 }
 
-function createFilteredSignature(seriesEntries: SonarrSeriesEntry[], onlyMissing: boolean): string {
-  return JSON.stringify(filterSeriesEntriesForMissing(seriesEntries, onlyMissing));
+function createFilteredSignature(
+  seriesEntries: SonarrSeriesEntry[],
+  onlyMissing: boolean,
+): string {
+  return JSON.stringify(
+    filterSeriesEntriesForMissing(seriesEntries, onlyMissing),
+  );
 }
 
 export function SonarrView({ active }: SonarrViewProps): JSX.Element {
@@ -96,8 +102,9 @@ export function SonarrView({ active }: SonarrViewProps): JSX.Element {
 
   const [instances, setInstances] = useState<ArrInfo[]>([]);
   const [selection, setSelection] = useState<string | "">("");
-  const [instanceData, setInstanceData] =
-    useState<SonarrSeriesResponse | null>(null);
+  const [instanceData, setInstanceData] = useState<SonarrSeriesResponse | null>(
+    null,
+  );
   const [instancePage, setInstancePage] = useState(0);
   const [instanceQuery, setInstanceQuery] = useState("");
   const [instanceLoading, setInstanceLoading] = useState(false);
@@ -125,7 +132,19 @@ export function SonarrView({ active }: SonarrViewProps): JSX.Element {
   // Smart data sync for aggregate episodes
   const aggEpisodeSync = useDataSync<SonarrAggRow>({
     getKey: (ep) => `${ep.__instance}-${ep.series}-${ep.season}-${ep.episode}`,
-    hashFields: ['__instance', 'series', 'season', 'episode', 'title', 'hasFile', 'monitored', 'airDate', 'reason', 'qualityProfileId', 'qualityProfileName'],
+    hashFields: [
+      "__instance",
+      "series",
+      "season",
+      "episode",
+      "title",
+      "hasFile",
+      "monitored",
+      "airDate",
+      "reason",
+      "qualityProfileId",
+      "qualityProfileName",
+    ],
   });
 
   const [onlyMissing, setOnlyMissing] = useState(false);
@@ -145,7 +164,10 @@ export function SonarrView({ active }: SonarrViewProps): JSX.Element {
       const data = await getArrList();
       if (data.ready === false && !backendReadyWarnedRef.current) {
         backendReadyWarnedRef.current = true;
-        push("Sonarr backend is still initialising. Check the logs if this persists.", "info");
+        push(
+          "Sonarr backend is still initialising. Check the logs if this persists.",
+          "info",
+        );
       } else if (data.ready) {
         backendReadyWarnedRef.current = true;
       }
@@ -160,7 +182,9 @@ export function SonarrView({ active }: SonarrViewProps): JSX.Element {
       }
       if (selection === "") {
         // If only 1 instance, select it directly; otherwise use aggregate
-        setSelection(filtered.length === 1 ? filtered[0].category : "aggregate");
+        setSelection(
+          filtered.length === 1 ? filtered[0].category : "aggregate",
+        );
       } else if (
         selection !== "aggregate" &&
         !filtered.some((arr) => arr.category === selection)
@@ -172,7 +196,7 @@ export function SonarrView({ active }: SonarrViewProps): JSX.Element {
         error instanceof Error
           ? error.message
           : "Unable to load Sonarr instances",
-        "error"
+        "error",
       );
     }
   }, [push, selection]);
@@ -182,7 +206,11 @@ export function SonarrView({ active }: SonarrViewProps): JSX.Element {
       category: string,
       page: number,
       query: string,
-      options: { preloadAll?: boolean; showLoading?: boolean; missingOnly?: boolean } = {}
+      options: {
+        preloadAll?: boolean;
+        showLoading?: boolean;
+        missingOnly?: boolean;
+      } = {},
     ) => {
       const { preloadAll = true, showLoading = true, missingOnly } = options;
       const useMissing = missingOnly ?? onlyMissing;
@@ -206,7 +234,7 @@ export function SonarrView({ active }: SonarrViewProps): JSX.Element {
           page,
           SONARR_PAGE_SIZE,
           query,
-          { missingOnly: useMissing }
+          { missingOnly: useMissing },
         );
         const resolvedPage = response.page ?? page;
         const pageSize = response.page_size ?? SONARR_PAGE_SIZE;
@@ -216,9 +244,13 @@ export function SonarrView({ active }: SonarrViewProps): JSX.Element {
 
         const prevPages = keyChanged ? {} : instancePagesRef.current;
         const nextPages = { ...prevPages, [resolvedPage]: series };
-        const prevSignature = createFilteredSignature(prevPages[resolvedPage] ?? [], useMissing);
+        const prevSignature = createFilteredSignature(
+          prevPages[resolvedPage] ?? [],
+          useMissing,
+        );
         const nextSignature = createFilteredSignature(series, useMissing);
-        const shouldUpdateCurrentPage = keyChanged || prevSignature !== nextSignature;
+        const shouldUpdateCurrentPage =
+          keyChanged || prevSignature !== nextSignature;
 
         instancePagesRef.current = nextPages;
         if (shouldUpdateCurrentPage) {
@@ -233,8 +265,10 @@ export function SonarrView({ active }: SonarrViewProps): JSX.Element {
             prev.total !== response.total ||
             prev.page !== response.page ||
             prev.page_size !== response.page_size ||
-            (prevCounts?.available ?? null) !== (nextCounts?.available ?? null) ||
-            (prevCounts?.monitored ?? null) !== (nextCounts?.monitored ?? null) ||
+            (prevCounts?.available ?? null) !==
+              (nextCounts?.available ?? null) ||
+            (prevCounts?.monitored ?? null) !==
+              (nextCounts?.monitored ?? null) ||
             (prevCounts?.missing ?? null) !== (nextCounts?.missing ?? null);
           if (countsChanged || shouldUpdateCurrentPage) {
             instanceDataRef.current = response;
@@ -243,11 +277,17 @@ export function SonarrView({ active }: SonarrViewProps): JSX.Element {
           return prev;
         });
 
-        setInstancePage((prev) => (prev === resolvedPage ? prev : resolvedPage));
+        setInstancePage((prev) =>
+          prev === resolvedPage ? prev : resolvedPage,
+        );
         setInstanceQuery((prev) => (prev === query ? prev : query));
         setInstancePageSize((prev) => (prev === pageSize ? prev : pageSize));
-        setInstanceTotalPages((prev) => (prev === totalPages ? prev : totalPages));
-        setInstanceTotalItems((prev) => (prev === totalItems ? prev : totalItems));
+        setInstanceTotalPages((prev) =>
+          prev === totalPages ? prev : totalPages,
+        );
+        setInstanceTotalItems((prev) =>
+          prev === totalItems ? prev : totalItems,
+        );
 
         if (shouldUpdateCurrentPage) {
           setLastUpdated(new Date().toLocaleTimeString());
@@ -268,7 +308,7 @@ export function SonarrView({ active }: SonarrViewProps): JSX.Element {
                 targetPage,
                 pageSize,
                 query,
-                { missingOnly: useMissing }
+                { missingOnly: useMissing },
               );
               if (instanceKeyRef.current !== key) {
                 break;
@@ -276,10 +316,19 @@ export function SonarrView({ active }: SonarrViewProps): JSX.Element {
               const pageIndex = res.page ?? targetPage;
               const pageSeries = res.series ?? [];
               const currentPages = instancePagesRef.current;
-              const prevSnapshot = createFilteredSignature(currentPages[pageIndex] ?? [], useMissing);
-              const nextSnapshot = createFilteredSignature(pageSeries, useMissing);
+              const prevSnapshot = createFilteredSignature(
+                currentPages[pageIndex] ?? [],
+                useMissing,
+              );
+              const nextSnapshot = createFilteredSignature(
+                pageSeries,
+                useMissing,
+              );
               if (prevSnapshot === nextSnapshot) {
-                instancePagesRef.current = { ...currentPages, [pageIndex]: pageSeries };
+                instancePagesRef.current = {
+                  ...currentPages,
+                  [pageIndex]: pageSeries,
+                };
                 continue;
               }
               setInstancePages((prev) => {
@@ -297,7 +346,7 @@ export function SonarrView({ active }: SonarrViewProps): JSX.Element {
           error instanceof Error
             ? error.message
             : `Failed to load ${category} series`,
-          "error"
+          "error",
         );
       } finally {
         if (showLoading) {
@@ -305,128 +354,140 @@ export function SonarrView({ active }: SonarrViewProps): JSX.Element {
         }
       }
     },
-    [push, onlyMissing]
+    [push, onlyMissing],
   );
 
-  const loadAggregate = useCallback(async (options?: { showLoading?: boolean }) => {
-    if (!instances.length) {
-      setAggRows([]);
-      setAggSummary({ available: 0, monitored: 0, missing: 0, total: 0 });
-      return;
-    }
-    const showLoading = options?.showLoading ?? true;
-    if (showLoading) {
-      setAggLoading(true);
-    }
-    try {
-      const aggregated: SonarrAggRow[] = [];
-      let totalAvailable = 0;
-      let totalMonitored = 0;
-      let totalMissing = 0;
-      for (const inst of instances) {
-        let page = 0;
-        let counted = false;
-        const label = inst.name || inst.category;
-        while (page < 200) {
-          const res = await getSonarrSeries(
-            inst.category,
-            page,
-            SONARR_AGG_FETCH_SIZE,
-            "",
-            { missingOnly: onlyMissing }
-          );
-          if (!counted) {
-            const counts = res.counts;
-            if (counts) {
-              totalAvailable += counts.available ?? 0;
-              totalMonitored += counts.monitored ?? 0;
-              totalMissing += counts.missing ?? 0;
-            }
-            counted = true;
-          }
-           const series = res.series ?? [];
-          series.forEach((entry: SonarrSeriesEntry) => {
-            const title =
-              (entry.series?.["title"] as string | undefined) || "";
-            const qualityProfileId = entry.series?.qualityProfileId ?? null;
-            const qualityProfileName = entry.series?.qualityProfileName ?? null;
-            Object.entries(entry.seasons ?? {}).forEach(
-              ([seasonNumber, season]) => {
-                (season.episodes ?? []).forEach((episode: SonarrEpisode) => {
-                  const episodeReason = (episode.reason as string | null | undefined) ?? null;
-                  aggregated.push({
-                    __instance: label,
-                    series: title,
-                    season: seasonNumber,
-                    episode: episode.episodeNumber ?? "",
-                    title: episode.title ?? "",
-                    monitored: !!episode.monitored,
-                    hasFile: !!episode.hasFile,
-                    airDate: episode.airDateUtc ?? "",
-                    reason: episodeReason,
-                    qualityProfileId,
-                    qualityProfileName,
-                  });
-                });
-              }
+  const loadAggregate = useCallback(
+    async (options?: { showLoading?: boolean }) => {
+      if (!instances.length) {
+        setAggRows([]);
+        setAggSummary({ available: 0, monitored: 0, missing: 0, total: 0 });
+        return;
+      }
+      const showLoading = options?.showLoading ?? true;
+      if (showLoading) {
+        setAggLoading(true);
+      }
+      try {
+        const aggregated: SonarrAggRow[] = [];
+        let totalAvailable = 0;
+        let totalMonitored = 0;
+        let totalMissing = 0;
+        for (const inst of instances) {
+          let page = 0;
+          let counted = false;
+          const label = inst.name || inst.category;
+          while (page < 200) {
+            const res = await getSonarrSeries(
+              inst.category,
+              page,
+              SONARR_AGG_FETCH_SIZE,
+              "",
+              { missingOnly: onlyMissing },
             );
-          });
-          if (!series.length || series.length < SONARR_AGG_FETCH_SIZE) {
-            break;
+            if (!counted) {
+              const counts = res.counts;
+              if (counts) {
+                totalAvailable += counts.available ?? 0;
+                totalMonitored += counts.monitored ?? 0;
+                totalMissing += counts.missing ?? 0;
+              }
+              counted = true;
+            }
+            const series = res.series ?? [];
+            series.forEach((entry: SonarrSeriesEntry) => {
+              const title =
+                (entry.series?.["title"] as string | undefined) || "";
+              const qualityProfileId = entry.series?.qualityProfileId ?? null;
+              const qualityProfileName =
+                entry.series?.qualityProfileName ?? null;
+              Object.entries(entry.seasons ?? {}).forEach(
+                ([seasonNumber, season]) => {
+                  (season.episodes ?? []).forEach((episode: SonarrEpisode) => {
+                    const episodeReason =
+                      (episode.reason as string | null | undefined) ?? null;
+                    aggregated.push({
+                      __instance: label,
+                      series: title,
+                      season: seasonNumber,
+                      episode: episode.episodeNumber ?? "",
+                      title: episode.title ?? "",
+                      monitored: !!episode.monitored,
+                      hasFile: !!episode.hasFile,
+                      airDate: episode.airDateUtc ?? "",
+                      reason: episodeReason,
+                      qualityProfileId,
+                      qualityProfileName,
+                    });
+                  });
+                },
+              );
+            });
+            if (!series.length || series.length < SONARR_AGG_FETCH_SIZE) {
+              break;
+            }
+            page += 1;
           }
-          page += 1;
         }
+
+        // Smart diffing using hash-based change detection
+        const syncResult = aggEpisodeSync.syncData(aggregated);
+        const rowsChanged = syncResult.hasChanges;
+
+        if (rowsChanged) {
+          setAggRows(syncResult.data);
+        }
+
+        const newSummary = {
+          available: totalAvailable,
+          monitored: totalMonitored,
+          missing: totalMissing,
+          total: aggregated.length,
+        };
+
+        const summaryChanged =
+          aggSummary.available !== newSummary.available ||
+          aggSummary.monitored !== newSummary.monitored ||
+          aggSummary.missing !== newSummary.missing ||
+          aggSummary.total !== newSummary.total;
+
+        if (summaryChanged) {
+          setAggSummary(newSummary);
+        }
+
+        // Only reset page if filter changed, not on refresh
+        if (aggFilter !== globalSearch) {
+          setAggPage(0);
+          setAggFilter(globalSearch);
+        }
+
+        // Only update timestamp if data actually changed
+        if (rowsChanged || summaryChanged) {
+          setAggUpdated(new Date().toLocaleTimeString());
+        }
+      } catch (error) {
+        setAggRows([]);
+        setAggSummary({ available: 0, monitored: 0, missing: 0, total: 0 });
+        push(
+          error instanceof Error
+            ? error.message
+            : "Failed to load aggregated Sonarr data",
+          "error",
+        );
+      } finally {
+        setAggLoading(false);
       }
-
-      // Smart diffing using hash-based change detection
-      const syncResult = aggEpisodeSync.syncData(aggregated);
-      const rowsChanged = syncResult.hasChanges;
-
-      if (rowsChanged) {
-        setAggRows(syncResult.data);
-      }
-
-      const newSummary = {
-        available: totalAvailable,
-        monitored: totalMonitored,
-        missing: totalMissing,
-        total: aggregated.length,
-      };
-
-      const summaryChanged = (
-        aggSummary.available !== newSummary.available ||
-        aggSummary.monitored !== newSummary.monitored ||
-        aggSummary.missing !== newSummary.missing ||
-        aggSummary.total !== newSummary.total
-      );
-
-      if (summaryChanged) {
-        setAggSummary(newSummary);
-      }
-
-      // Only reset page if filter changed, not on refresh
-      if (aggFilter !== globalSearch) {
-        setAggPage(0);
-        setAggFilter(globalSearch);
-      }
-
-      // Only update timestamp if data actually changed
-      if (rowsChanged || summaryChanged) {
-        setAggUpdated(new Date().toLocaleTimeString());
-      }
-    } catch (error) {
-      setAggRows([]);
-      setAggSummary({ available: 0, monitored: 0, missing: 0, total: 0 });
-      push(
-        error instanceof Error
-          ? error.message
-          : "Failed to load aggregated Sonarr data",
-        "error"
-      );
-    } finally {
-      setAggLoading(false);
-    }
-  }, [instances, globalSearch, push, onlyMissing, aggFilter, aggEpisodeSync, aggSummary]);
+    },
+    [
+      instances,
+      globalSearch,
+      push,
+      onlyMissing,
+      aggFilter,
+      aggEpisodeSync,
+      aggSummary,
+    ],
+  );
 
   useEffect(() => {
     if (!active) return;
@@ -466,11 +527,14 @@ export function SonarrView({ active }: SonarrViewProps): JSX.Element {
     void loadAggregate();
   }, [active, selection, loadAggregate]);
 
-  useInterval(() => {
-    if (selection === "aggregate" && liveArr) {
-      void loadAggregate({ showLoading: false });
-    }
-  }, selection === "aggregate" && liveArr ? 1000 : null);
+  useInterval(
+    () => {
+      if (selection === "aggregate" && liveArr) {
+        void loadAggregate({ showLoading: false });
+      }
+    },
+    selection === "aggregate" && liveArr ? 1000 : null,
+  );
 
   useEffect(() => {
     if (!active) return;
@@ -505,7 +569,7 @@ export function SonarrView({ active }: SonarrViewProps): JSX.Element {
         });
       }
     },
-    active && selection && selection !== "aggregate" && liveArr ? 1000 : null
+    active && selection && selection !== "aggregate" && liveArr ? 1000 : null,
   );
 
   useEffect(() => {
@@ -530,7 +594,11 @@ export function SonarrView({ active }: SonarrViewProps): JSX.Element {
         const series = row.series.toLowerCase();
         const title = row.title.toLowerCase();
         const instance = row.__instance.toLowerCase();
-        if (!series.includes(q) && !title.includes(q) && !instance.includes(q)) {
+        if (
+          !series.includes(q) &&
+          !title.includes(q) &&
+          !instance.includes(q)
+        ) {
           return false;
         }
       }
@@ -555,13 +623,14 @@ export function SonarrView({ active }: SonarrViewProps): JSX.Element {
     });
   }, [aggRows, debouncedAggFilter, onlyMissing, reasonFilter]);
 
-  const isAggFiltered = Boolean(debouncedAggFilter) || onlyMissing || reasonFilter !== "all";
+  const isAggFiltered =
+    Boolean(debouncedAggFilter) || onlyMissing || reasonFilter !== "all";
 
   const sortedAggRows = filteredAggRows;
 
   const aggPages = Math.max(
     1,
-    Math.ceil(sortedAggRows.length / SONARR_AGG_PAGE_SIZE)
+    Math.ceil(sortedAggRows.length / SONARR_AGG_PAGE_SIZE),
   );
   // Paginated rows (for potential future use)
   // const aggPageRows = useMemo(
@@ -594,8 +663,10 @@ export function SonarrView({ active }: SonarrViewProps): JSX.Element {
       push(`Restarted ${selection}`, "success");
     } catch (error) {
       push(
-        error instanceof Error ? error.message : `Failed to restart ${selection}`,
-        "error"
+        error instanceof Error
+          ? error.message
+          : `Failed to restart ${selection}`,
+        "error",
       );
     }
   }, [selection, push]);
@@ -608,7 +679,7 @@ export function SonarrView({ active }: SonarrViewProps): JSX.Element {
         setGlobalSearch("");
       }
     },
-    [setSelection, setGlobalSearch]
+    [setSelection, setGlobalSearch],
   );
 
   const isAggregate = selection === "aggregate";
@@ -650,7 +721,9 @@ export function SonarrView({ active }: SonarrViewProps): JSX.Element {
                 onChange={handleInstanceSelection}
                 disabled={!instances.length}
               >
-                {instances.length > 1 && <option value="aggregate">All Sonarr</option>}
+                {instances.length > 1 && (
+                  <option value="aggregate">All Sonarr</option>
+                )}
                 {instances.map((inst) => (
                   <option key={inst.category} value={inst.category}>
                     {inst.name || inst.category}
@@ -658,7 +731,10 @@ export function SonarrView({ active }: SonarrViewProps): JSX.Element {
                 ))}
               </select>
             </div>
-            <div className="row" style={{ alignItems: "flex-end", gap: "12px", flexWrap: "wrap" }}>
+            <div
+              className="row"
+              style={{ alignItems: "flex-end", gap: "12px", flexWrap: "wrap" }}
+            >
               <div className="col field" style={{ flex: "1 1 200px" }}>
                 <label>Search</label>
                 <input
@@ -667,7 +743,10 @@ export function SonarrView({ active }: SonarrViewProps): JSX.Element {
                   onChange={(event) => setGlobalSearch(event.target.value)}
                 />
               </div>
-              <div className="field" style={{ flex: "0 0 auto", minWidth: "140px" }}>
+              <div
+                className="field"
+                style={{ flex: "0 0 auto", minWidth: "140px" }}
+              >
                 <label>Status</label>
                 <select
                   onChange={(event) => {
@@ -676,11 +755,16 @@ export function SonarrView({ active }: SonarrViewProps): JSX.Element {
                     setOnlyMissing(newMissingState);
                     // Trigger refetch when filter changes for instance views
                     if (selection && selection !== "aggregate") {
-                      void fetchInstance(selection, 0, globalSearchRef.current || "", {
-                        preloadAll: true,
-                        showLoading: true,
-                        missingOnly: newMissingState,
-                      });
+                      void fetchInstance(
+                        selection,
+                        0,
+                        globalSearchRef.current || "",
+                        {
+                          preloadAll: true,
+                          showLoading: true,
+                          missingOnly: newMissingState,
+                        },
+                      );
                     }
                   }}
                   value={onlyMissing ? "missing" : "all"}
@@ -689,7 +773,10 @@ export function SonarrView({ active }: SonarrViewProps): JSX.Element {
                   <option value="missing">Missing Only</option>
                 </select>
               </div>
-              <div className="field" style={{ flex: "0 0 auto", minWidth: "140px" }}>
+              <div
+                className="field"
+                style={{ flex: "0 0 auto", minWidth: "140px" }}
+              >
                 <label>Search Reason</label>
                 <select
                   onChange={(event) => setReasonFilter(event.target.value)}
@@ -763,7 +850,12 @@ interface SonarrAggregateViewProps {
   onRefresh: () => void;
   lastUpdated: string | null;
   groupSonarr: boolean;
-  summary: { available: number; monitored: number; missing: number; total: number };
+  summary: {
+    available: number;
+    monitored: number;
+    missing: number;
+    total: number;
+  };
   instanceCount: number;
   isAggFiltered?: boolean;
 }
@@ -782,29 +874,36 @@ function SonarrAggregateView({
   isAggFiltered = false,
 }: SonarrAggregateViewProps): JSX.Element {
   const prevRowsRef = useRef<SonarrAggRow[]>([]);
-  const groupedDataCache = useRef<Array<{
-    instance: string;
-    series: string;
-    qualityProfileId?: number | null;
-    qualityProfileName?: string | null;
-    subRows: Array<{
-      seasonNumber: string;
-      isSeason: boolean;
-      subRows: Array<SonarrAggRow & { isEpisode: boolean }>;
-    }>;
-  }>>([]);
-  const seriesGroupCache = useRef<Map<string, {
-    instance: string;
-    series: string;
-    qualityProfileId?: number | null;
-    qualityProfileName?: string | null;
-    subRows: Array<{
-      seasonNumber: string;
-      isSeason: boolean;
-      subRows: Array<SonarrAggRow & { isEpisode: boolean }>;
-    }>;
-    episodeKeys: Set<string>;
-  }>>(new Map());
+  const groupedDataCache = useRef<
+    Array<{
+      instance: string;
+      series: string;
+      qualityProfileId?: number | null;
+      qualityProfileName?: string | null;
+      subRows: Array<{
+        seasonNumber: string;
+        isSeason: boolean;
+        subRows: Array<SonarrAggRow & { isEpisode: boolean }>;
+      }>;
+    }>
+  >([]);
+  const seriesGroupCache = useRef<
+    Map<
+      string,
+      {
+        instance: string;
+        series: string;
+        qualityProfileId?: number | null;
+        qualityProfileName?: string | null;
+        subRows: Array<{
+          seasonNumber: string;
+          isSeason: boolean;
+          subRows: Array<SonarrAggRow & { isEpisode: boolean }>;
+        }>;
+        episodeKeys: Set<string>;
+      }
+    >
+  >(new Map());
 
   // Create fully grouped data from all rows - only rebuild if rows actually changed
   const allGroupedData = useMemo(() => {
@@ -814,9 +913,12 @@ function SonarrAggregateView({
     }
 
     // Build instance > series > seasons map
-    const instanceMap = new Map<string, Map<string, Map<string, SonarrAggRow[]>>>();
+    const instanceMap = new Map<
+      string,
+      Map<string, Map<string, SonarrAggRow[]>>
+    >();
 
-    rows.forEach(row => {
+    rows.forEach((row) => {
       const instance = row.__instance;
       const series = row.series;
       const season = String(row.season);
@@ -849,18 +951,21 @@ function SonarrAggregateView({
       }>;
     }> = [];
 
-    const newSeriesGroupCache = new Map<string, {
-      instance: string;
-      series: string;
-      qualityProfileId?: number | null;
-      qualityProfileName?: string | null;
-      subRows: Array<{
-        seasonNumber: string;
-        isSeason: boolean;
-        subRows: Array<SonarrAggRow & { isEpisode: boolean }>;
-      }>;
-      episodeKeys: Set<string>;
-    }>();
+    const newSeriesGroupCache = new Map<
+      string,
+      {
+        instance: string;
+        series: string;
+        qualityProfileId?: number | null;
+        qualityProfileName?: string | null;
+        subRows: Array<{
+          seasonNumber: string;
+          isSeason: boolean;
+          subRows: Array<SonarrAggRow & { isEpisode: boolean }>;
+        }>;
+        episodeKeys: Set<string>;
+      }
+    >();
 
     instanceMap.forEach((seriesMap, instance) => {
       seriesMap.forEach((seasonMap, series) => {
@@ -869,7 +974,7 @@ function SonarrAggregateView({
         // Build set of episode keys for this series
         const episodeKeys = new Set<string>();
         seasonMap.forEach((episodes, season) => {
-          episodes.forEach(ep => {
+          episodes.forEach((ep) => {
             const episodeKey = `${season}-${ep.episode}`;
             episodeKeys.add(episodeKey);
           });
@@ -900,11 +1005,13 @@ function SonarrAggregateView({
           series,
           qualityProfileId: firstEpisode?.qualityProfileId,
           qualityProfileName: firstEpisode?.qualityProfileName,
-          subRows: Array.from(seasonMap.entries()).map(([seasonNumber, episodes]) => ({
-            seasonNumber,
-            isSeason: true,
-            subRows: episodes.map(ep => ({ ...ep, isEpisode: true }))
-          })),
+          subRows: Array.from(seasonMap.entries()).map(
+            ([seasonNumber, episodes]) => ({
+              seasonNumber,
+              isSeason: true,
+              subRows: episodes.map((ep) => ({ ...ep, isEpisode: true })),
+            }),
+          ),
           episodeKeys,
         };
         result.push(seriesGroup);
@@ -935,132 +1042,160 @@ function SonarrAggregateView({
   const tableData = groupSonarr ? groupedPageRows : flatPageRows;
 
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const groupedColumns = useMemo<ColumnDef<any>[]>(() => [
-    {
-      accessorKey: "title",
-      header: "Title",
-      cell: ({ row }) => {
-        if (row.original.isEpisode) return row.original.title;
-        if (row.original.isSeason) return `Season ${row.original.seasonNumber}`;
-        // Series row - show series name, instance, and quality profile (like Lidarr)
-        const parts = [row.original.series];
-        if (row.original.instance) {
-          parts.push(`(${row.original.instance})`);
-        }
-        if (row.original.qualityProfileName) {
-          parts.push(`• ${row.original.qualityProfileName}`);
-        }
-        return parts.join(' ');
-      }
-    },
-    {
-      accessorKey: "monitored",
-      header: "Monitored",
-      cell: ({ row }) => {
-        const monitored = row.original.isEpisode ? row.original.monitored : row.original.monitored;
-        return (
-          <span className={`track-status ${monitored ? 'available' : 'missing'}`}>
-            {monitored ? '✓' : '✗'}
-          </span>
-        );
-      }
-    },
-    {
-      accessorKey: "hasFile",
-      header: "Has File",
-      cell: ({ row }) => {
-        if (row.original.isEpisode) {
-          const hasFile = row.original.hasFile;
+  const groupedColumns = useMemo<ColumnDef<any>[]>(
+    () => [
+      {
+        accessorKey: "title",
+        header: "Title",
+        cell: ({ row }) => {
+          if (row.original.isEpisode) return row.original.title;
+          if (row.original.isSeason)
+            return `Season ${row.original.seasonNumber}`;
+          // Series row - show series name, instance, and quality profile (like Lidarr)
+          const parts = [row.original.series];
+          if (row.original.instance) {
+            parts.push(`(${row.original.instance})`);
+          }
+          if (row.original.qualityProfileName) {
+            parts.push(`• ${row.original.qualityProfileName}`);
+          }
+          return parts.join(" ");
+        },
+      },
+      {
+        accessorKey: "monitored",
+        header: "Monitored",
+        cell: ({ row }) => {
+          const monitored = row.original.isEpisode
+            ? row.original.monitored
+            : row.original.monitored;
           return (
-            <span className={`track-status ${hasFile ? 'available' : 'missing'}`}>
-              {hasFile ? '✓' : '✗'}
+            <span
+              className={`track-status ${monitored ? "available" : "missing"}`}
+            >
+              {monitored ? "✓" : "✗"}
             </span>
           );
-        }
-        return null;
-      }
-    },
-    {
-      accessorKey: "airDate",
-      header: "Air Date",
-      cell: ({ row }) => {
-        if (row.original.isEpisode) {
-          return row.original.airDate || "—";
-        }
-        return null;
-      }
-    },
-  ], []);
+        },
+      },
+      {
+        accessorKey: "hasFile",
+        header: "Has File",
+        cell: ({ row }) => {
+          if (row.original.isEpisode) {
+            const hasFile = row.original.hasFile;
+            return (
+              <span
+                className={`track-status ${hasFile ? "available" : "missing"}`}
+              >
+                {hasFile ? "✓" : "✗"}
+              </span>
+            );
+          }
+          return null;
+        },
+      },
+      {
+        accessorKey: "airDate",
+        header: "Air Date",
+        cell: ({ row }) => {
+          if (row.original.isEpisode) {
+            return row.original.airDate || "—";
+          }
+          return null;
+        },
+      },
+    ],
+    [],
+  );
 
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const flatColumns = useMemo<ColumnDef<any>[]>(() => [
-    ...(instanceCount > 1 ? [{
-      accessorKey: "__instance",
-      header: "Instance",
-    }] : []),
-    {
-      accessorKey: "series",
-      header: "Series",
-    },
-    {
-      accessorKey: "season",
-      header: "Season",
-    },
-    {
-      accessorKey: "episode",
-      header: "Episode",
-    },
-    {
-      accessorKey: "title",
-      header: "Title",
-    },
-    {
-      accessorKey: "monitored",
-      header: "Monitored",
-      cell: ({ getValue }) => {
-        const monitored = getValue() as boolean;
-        return (
-          <span className={`track-status ${monitored ? 'available' : 'missing'}`}>
-            {monitored ? '✓' : '✗'}
-          </span>
-        );
+  const flatColumns = useMemo<ColumnDef<any>[]>(
+    () => [
+      ...(instanceCount > 1
+        ? [
+            {
+              accessorKey: "__instance",
+              header: "Instance",
+            },
+          ]
+        : []),
+      {
+        accessorKey: "series",
+        header: "Series",
       },
-    },
-    {
-      accessorKey: "hasFile",
-      header: "Has File",
-      cell: ({ getValue }) => {
-        const hasFile = getValue() as boolean;
-        return (
-          <span className={`track-status ${hasFile ? 'available' : 'missing'}`}>
-            {hasFile ? '✓' : '✗'}
-          </span>
-        );
+      {
+        accessorKey: "season",
+        header: "Season",
       },
-    },
-    {
-      accessorKey: "airDate",
-      header: "Air Date",
-      cell: ({ getValue }) => getValue() || "—",
-    },
-    {
-      accessorKey: "qualityProfileName",
-      header: "Quality Profile",
-      cell: ({ getValue }) => {
-        const profileName = getValue() as string | null | undefined;
-        return profileName || "—";
+      {
+        accessorKey: "episode",
+        header: "Episode",
       },
-    },
-    {
-      accessorKey: "reason",
-      header: "Reason",
-      cell: ({ getValue }) => {
-        const reason = getValue() as string | null | undefined;
-        if (!reason) return <span className="table-badge table-badge-reason">Not being searched</span>;
-        return <span className="table-badge table-badge-reason">{reason}</span>;
+      {
+        accessorKey: "title",
+        header: "Title",
       },
-    },
-  ], [instanceCount]);
+      {
+        accessorKey: "monitored",
+        header: "Monitored",
+        cell: ({ getValue }) => {
+          const monitored = getValue() as boolean;
+          return (
+            <span
+              className={`track-status ${monitored ? "available" : "missing"}`}
+            >
+              {monitored ? "✓" : "✗"}
+            </span>
+          );
+        },
+      },
+      {
+        accessorKey: "hasFile",
+        header: "Has File",
+        cell: ({ getValue }) => {
+          const hasFile = getValue() as boolean;
+          return (
+            <span
+              className={`track-status ${hasFile ? "available" : "missing"}`}
+            >
+              {hasFile ? "✓" : "✗"}
+            </span>
+          );
+        },
+      },
+      {
+        accessorKey: "airDate",
+        header: "Air Date",
+        cell: ({ getValue }) => getValue() || "—",
+      },
+      {
+        accessorKey: "qualityProfileName",
+        header: "Quality Profile",
+        cell: ({ getValue }) => {
+          const profileName = getValue() as string | null | undefined;
+          return profileName || "—";
+        },
+      },
+      {
+        accessorKey: "reason",
+        header: "Reason",
+        cell: ({ getValue }) => {
+          const reason = getValue() as string | null | undefined;
+          if (!reason)
+            return (
+              <span className="table-badge table-badge-reason">
+                Not being searched
+              </span>
+            );
+          return (
+            <span className="table-badge table-badge-reason">{reason}</span>
+          );
+        },
+      },
+    ],
+    [instanceCount],
+  );
 
   // Note: Quality profile is per-series, not per-episode
   // It would need to be fetched from the series data and added to each episode row
@@ -1111,18 +1246,32 @@ function SonarrAggregateView({
           {lastUpdated ? `(updated ${lastUpdated})` : ""}
           <br />
           <strong>Available:</strong>{" "}
-          {summary.available.toLocaleString(undefined, { maximumFractionDigits: 0 })} •{" "}
-          <strong>Monitored:</strong>{" "}
-          {summary.monitored.toLocaleString(undefined, { maximumFractionDigits: 0 })} •{" "}
-          <strong>Missing:</strong>{" "}
-          {summary.missing.toLocaleString(undefined, { maximumFractionDigits: 0 })} •{" "}
-          <strong>Total Episodes:</strong>{" "}
-          {summary.total.toLocaleString(undefined, { maximumFractionDigits: 0 })}
+          {summary.available.toLocaleString(undefined, {
+            maximumFractionDigits: 0,
+          })}{" "}
+          • <strong>Monitored:</strong>{" "}
+          {summary.monitored.toLocaleString(undefined, {
+            maximumFractionDigits: 0,
+          })}{" "}
+          • <strong>Missing:</strong>{" "}
+          {summary.missing.toLocaleString(undefined, {
+            maximumFractionDigits: 0,
+          })}{" "}
+          • <strong>Total Episodes:</strong>{" "}
+          {summary.total.toLocaleString(undefined, {
+            maximumFractionDigits: 0,
+          })}
           {isAggFiltered && rows.length < summary.total && (
             <>
-              {" "}• <strong>Filtered:</strong>{" "}
-              {rows.length.toLocaleString(undefined, { maximumFractionDigits: 0 })} of{" "}
-              {summary.total.toLocaleString(undefined, { maximumFractionDigits: 0 })}
+              {" "}
+              • <strong>Filtered:</strong>{" "}
+              {rows.length.toLocaleString(undefined, {
+                maximumFractionDigits: 0,
+              })}{" "}
+              of{" "}
+              {summary.total.toLocaleString(undefined, {
+                maximumFractionDigits: 0,
+              })}
             </>
           )}
         </div>
@@ -1139,80 +1288,122 @@ function SonarrAggregateView({
         <div className="sonarr-hierarchical-view">
           {groupedPageRows.map((seriesGroup) => {
             let episodeCount = 0;
-            seriesGroup.subRows.forEach(season => {
+            seriesGroup.subRows.forEach((season) => {
               episodeCount += season.subRows.length;
             });
             return (
-            <details key={`${seriesGroup.instance}-${seriesGroup.series}`} className="series-details">
-              <summary className="series-summary">
-                <span className="series-title">{seriesGroup.series}</span>
-                <span className="series-instance">({seriesGroup.instance})</span>
-                <span className="series-count">({episodeCount} episodes)</span>
-                {seriesGroup.qualityProfileName ? (
-                  <span className="series-quality">• {seriesGroup.qualityProfileName}</span>
-                ) : null}
-              </summary>
-              <div className="series-content">
-                {seriesGroup.subRows.map((season: typeof seriesGroup.subRows[number]) => (
-                  <details key={`${seriesGroup.instance}-${seriesGroup.series}-${season.seasonNumber}`} className="season-details">
-                    <summary className="season-summary">
-                      <span className="season-title">Season {season.seasonNumber}</span>
-                      <span className="season-count">({season.subRows.length} episodes)</span>
-                    </summary>
-                    <div className="season-content">
-                      <div className="episodes-table-wrapper">
-                        <table className="episodes-table">
-                          <thead>
-                            <tr>
-                              <th>Episode</th>
-                              <th>Title</th>
-                              <th>Monitored</th>
-                              <th>Has File</th>
-                              <th>Air Date</th>
-                              <th>Reason</th>
-                            </tr>
-                          </thead>
-                          <tbody>
-                            {season.subRows.map((episode) => (
-                              <tr key={`${episode.__instance}-${episode.series}-${episode.season}-${episode.episode}`}>
-                                <td data-label="Episode">{episode.episode}</td>
-                                <td data-label="Title">{episode.title}</td>
-                                <td data-label="Monitored">
-                                  <span className={`track-status ${episode.monitored ? 'available' : 'missing'}`}>
-                                    {episode.monitored ? '✓' : '✗'}
-                                  </span>
-                                </td>
-                                <td data-label="Has File">
-                                  <span className={`track-status ${episode.hasFile ? 'available' : 'missing'}`}>
-                                    {episode.hasFile ? '✓' : '✗'}
-                                  </span>
-                                </td>
-                                <td data-label="Air Date">{episode.airDate || "—"}</td>
-                                <td data-label="Reason">{episode.reason ? <span className="table-badge table-badge-reason">{episode.reason}</span> : <span className="table-badge table-badge-reason">Not being searched</span>}</td>
-                              </tr>
-                            ))}
-                          </tbody>
-                        </table>
-                      </div>
-                    </div>
-                  </details>
-                  ))}
+              <details
+                key={`${seriesGroup.instance}-${seriesGroup.series}`}
+                className="series-details"
+              >
+                <summary className="series-summary">
+                  <span className="series-title">{seriesGroup.series}</span>
+                  <span className="series-instance">
+                    ({seriesGroup.instance})
+                  </span>
+                  <span className="series-count">
+                    ({episodeCount} episodes)
+                  </span>
+                  {seriesGroup.qualityProfileName ? (
+                    <span className="series-quality">
+                      • {seriesGroup.qualityProfileName}
+                    </span>
+                  ) : null}
+                </summary>
+                <div className="series-content">
+                  {seriesGroup.subRows.map(
+                    (season: (typeof seriesGroup.subRows)[number]) => (
+                      <details
+                        key={`${seriesGroup.instance}-${seriesGroup.series}-${season.seasonNumber}`}
+                        className="season-details"
+                      >
+                        <summary className="season-summary">
+                          <span className="season-title">
+                            Season {season.seasonNumber}
+                          </span>
+                          <span className="season-count">
+                            ({season.subRows.length} episodes)
+                          </span>
+                        </summary>
+                        <div className="season-content">
+                          <div className="episodes-table-wrapper">
+                            <table className="episodes-table">
+                              <thead>
+                                <tr>
+                                  <th>Episode</th>
+                                  <th>Title</th>
+                                  <th>Monitored</th>
+                                  <th>Has File</th>
+                                  <th>Air Date</th>
+                                  <th>Reason</th>
+                                </tr>
+                              </thead>
+                              <tbody>
+                                {season.subRows.map((episode) => (
+                                  <tr
+                                    key={`${episode.__instance}-${episode.series}-${episode.season}-${episode.episode}`}
+                                  >
+                                    <td data-label="Episode">
+                                      {episode.episode}
+                                    </td>
+                                    <td data-label="Title">{episode.title}</td>
+                                    <td data-label="Monitored">
+                                      <span
+                                        className={`track-status ${episode.monitored ? "available" : "missing"}`}
+                                      >
+                                        {episode.monitored ? "✓" : "✗"}
+                                      </span>
+                                    </td>
+                                    <td data-label="Has File">
+                                      <span
+                                        className={`track-status ${episode.hasFile ? "available" : "missing"}`}
+                                      >
+                                        {episode.hasFile ? "✓" : "✗"}
+                                      </span>
+                                    </td>
+                                    <td data-label="Air Date">
+                                      {episode.airDate || "—"}
+                                    </td>
+                                    <td data-label="Reason">
+                                      {episode.reason ? (
+                                        <span className="table-badge table-badge-reason">
+                                          {episode.reason}
+                                        </span>
+                                      ) : (
+                                        <span className="table-badge table-badge-reason">
+                                          Not being searched
+                                        </span>
+                                      )}
+                                    </td>
+                                  </tr>
+                                ))}
+                              </tbody>
+                            </table>
+                          </div>
+                        </div>
+                      </details>
+                    ),
+                  )}
                 </div>
               </details>
-              );
-            })}
+            );
+          })}
         </div>
       ) : !loading && summary.total === 0 && instanceCount > 0 ? (
         <div className="hint">
           <p>No episodes found in the database.</p>
-          <p>The backend may still be initializing and syncing data from your Sonarr instances. Please check the logs or wait a few moments and refresh.</p>
+          <p>
+            The backend may still be initializing and syncing data from your
+            Sonarr instances. Please check the logs or wait a few moments and
+            refresh.
+          </p>
         </div>
       ) : tableData.length ? (
         <div className="table-wrapper">
           <table className="responsive-table">
             <thead>
               <tr>
-                {table.getFlatHeaders().map(header => (
+                {table.getFlatHeaders().map((header) => (
                   <th
                     key={header.id}
                     className={header.column.getCanSort() ? "sortable" : ""}
@@ -1222,7 +1413,7 @@ function SonarrAggregateView({
                       ? null
                       : flexRender(
                           header.column.columnDef.header,
-                          header.getContext()
+                          header.getContext(),
                         )}
                     {header.column.getCanSort() && (
                       <span className="sort-arrow">
@@ -1237,14 +1428,20 @@ function SonarrAggregateView({
               </tr>
             </thead>
             <tbody>
-              {table.getRowModel().rows.map(row => {
+              {table.getRowModel().rows.map((row) => {
                 const episode = row.original;
                 const stableKey = `${episode.__instance}-${episode.series}-${episode.season}-${episode.episode}`;
                 return (
                   <tr key={stableKey}>
-                    {row.getVisibleCells().map(cell => (
-                      <td key={cell.id} data-label={cell.column.columnDef.header as string}>
-                        {flexRender(cell.column.columnDef.cell, cell.getContext())}
+                    {row.getVisibleCells().map((cell) => (
+                      <td
+                        key={cell.id}
+                        data-label={cell.column.columnDef.header as string}
+                      >
+                        {flexRender(
+                          cell.column.columnDef.cell,
+                          cell.getContext(),
+                        )}
                       </td>
                     ))}
                   </tr>
@@ -1259,8 +1456,8 @@ function SonarrAggregateView({
       {tableData.length > 0 && (
         <div className="pagination">
           <div>
-            Page {safePage + 1} of {effectiveTotalPages} ({totalItemsDisplay} items ·
-            page size {pageSize})
+            Page {safePage + 1} of {effectiveTotalPages} ({totalItemsDisplay}{" "}
+            items · page size {pageSize})
           </div>
           <div className="inline">
             <button
@@ -1272,7 +1469,9 @@ function SonarrAggregateView({
             </button>
             <button
               className="btn"
-              onClick={() => onPageChange(Math.min(effectiveTotalPages - 1, safePage + 1))}
+              onClick={() =>
+                onPageChange(Math.min(effectiveTotalPages - 1, safePage + 1))
+              }
               disabled={safePage >= effectiveTotalPages - 1 || loading}
             >
               Next
@@ -1314,7 +1513,6 @@ function SonarrInstanceView({
   instances,
   selection,
 }: SonarrInstanceViewProps): JSX.Element {
-
   // Separate pagination state for flat (episode) view
   const [flatPage, setFlatPage] = useState(0);
   const FLAT_PAGE_SIZE = 50;
@@ -1355,7 +1553,9 @@ function SonarrInstanceView({
     }
     if (reasonFilter !== "all") {
       if (reasonFilter === "Not being searched") {
-        rows = rows.filter((row) => row.reason === "Not being searched" || !row.reason);
+        rows = rows.filter(
+          (row) => row.reason === "Not being searched" || !row.reason,
+        );
       } else {
         rows = rows.filter((row) => row.reason === reasonFilter);
       }
@@ -1372,7 +1572,7 @@ function SonarrInstanceView({
   // Group for hierarchical view - rebuild when filteredEpisodeRows changes
   const groupedTableData = useMemo(() => {
     const map = new Map<string, Map<string, SonarrAggRow[]>>();
-    filteredEpisodeRows.forEach(row => {
+    filteredEpisodeRows.forEach((row) => {
       const seriesKey = row.series;
       if (!map.has(seriesKey)) map.set(seriesKey, new Map());
       const seasons = map.get(seriesKey)!;
@@ -1388,11 +1588,13 @@ function SonarrInstanceView({
         series: seriesName,
         qualityProfileId: firstEpisode?.qualityProfileId,
         qualityProfileName: firstEpisode?.qualityProfileName,
-        subRows: Array.from(seasons.entries()).map(([seasonNumber, episodes]) => ({
-          seasonNumber,
-          isSeason: true,
-          subRows: episodes.map(ep => ({ ...ep, isEpisode: true }))
-        }))
+        subRows: Array.from(seasons.entries()).map(
+          ([seasonNumber, episodes]) => ({
+            seasonNumber,
+            isSeason: true,
+            subRows: episodes.map((ep) => ({ ...ep, isEpisode: true })),
+          }),
+        ),
       };
     });
 
@@ -1404,19 +1606,34 @@ function SonarrInstanceView({
   const filteredCount = filteredEpisodeRows.length;
 
   // Pagination for flat view
-  const flatTotalPages = Math.max(1, Math.ceil(filteredEpisodeRows.length / FLAT_PAGE_SIZE));
+  const flatTotalPages = Math.max(
+    1,
+    Math.ceil(filteredEpisodeRows.length / FLAT_PAGE_SIZE),
+  );
   const flatSafePage = Math.min(flatPage, Math.max(0, flatTotalPages - 1));
   const paginatedEpisodeRows = useMemo(() => {
-    return filteredEpisodeRows.slice(flatSafePage * FLAT_PAGE_SIZE, (flatSafePage + 1) * FLAT_PAGE_SIZE);
+    return filteredEpisodeRows.slice(
+      flatSafePage * FLAT_PAGE_SIZE,
+      (flatSafePage + 1) * FLAT_PAGE_SIZE,
+    );
   }, [filteredEpisodeRows, flatSafePage]);
 
   // Pagination for grouped view (paginate by series groups, not backend pages)
   const GROUPED_PAGE_SIZE = 50;
   const [groupedPage, setGroupedPage] = useState(0);
-  const groupedTotalPages = Math.max(1, Math.ceil(groupedTableData.length / GROUPED_PAGE_SIZE));
-  const groupedSafePage = Math.min(groupedPage, Math.max(0, groupedTotalPages - 1));
+  const groupedTotalPages = Math.max(
+    1,
+    Math.ceil(groupedTableData.length / GROUPED_PAGE_SIZE),
+  );
+  const groupedSafePage = Math.min(
+    groupedPage,
+    Math.max(0, groupedTotalPages - 1),
+  );
   const paginatedGroupedData = useMemo(() => {
-    return groupedTableData.slice(groupedSafePage * GROUPED_PAGE_SIZE, (groupedSafePage + 1) * GROUPED_PAGE_SIZE);
+    return groupedTableData.slice(
+      groupedSafePage * GROUPED_PAGE_SIZE,
+      (groupedSafePage + 1) * GROUPED_PAGE_SIZE,
+    );
   }, [groupedTableData, groupedSafePage]);
 
   // Reset grouped page when filters change
@@ -1432,18 +1649,32 @@ function SonarrInstanceView({
           {counts ? (
             <>
               <strong>Available:</strong>{" "}
-              {counts.available.toLocaleString(undefined, { maximumFractionDigits: 0 })} •{" "}
-              <strong>Monitored:</strong>{" "}
-              {counts.monitored.toLocaleString(undefined, { maximumFractionDigits: 0 })} •{" "}
-              <strong>Missing:</strong>{" "}
-              {(counts.missing ?? 0).toLocaleString(undefined, { maximumFractionDigits: 0 })} •{" "}
-              <strong>Total Episodes:</strong>{" "}
-              {totalEpisodes.toLocaleString(undefined, { maximumFractionDigits: 0 })}
+              {counts.available.toLocaleString(undefined, {
+                maximumFractionDigits: 0,
+              })}{" "}
+              • <strong>Monitored:</strong>{" "}
+              {counts.monitored.toLocaleString(undefined, {
+                maximumFractionDigits: 0,
+              })}{" "}
+              • <strong>Missing:</strong>{" "}
+              {(counts.missing ?? 0).toLocaleString(undefined, {
+                maximumFractionDigits: 0,
+              })}{" "}
+              • <strong>Total Episodes:</strong>{" "}
+              {totalEpisodes.toLocaleString(undefined, {
+                maximumFractionDigits: 0,
+              })}
               {isFiltered && filteredCount < totalEpisodes && (
                 <>
-                  {" "}• <strong>Filtered:</strong>{" "}
-                  {filteredCount.toLocaleString(undefined, { maximumFractionDigits: 0 })} of{" "}
-                  {totalEpisodes.toLocaleString(undefined, { maximumFractionDigits: 0 })}
+                  {" "}
+                  • <strong>Filtered:</strong>{" "}
+                  {filteredCount.toLocaleString(undefined, {
+                    maximumFractionDigits: 0,
+                  })}{" "}
+                  of{" "}
+                  {totalEpisodes.toLocaleString(undefined, {
+                    maximumFractionDigits: 0,
+                  })}
                 </>
               )}
             </>
@@ -1465,77 +1696,121 @@ function SonarrInstanceView({
         <div className="sonarr-hierarchical-view">
           {paginatedGroupedData.map((seriesGroup) => {
             let episodeCount = 0;
-            seriesGroup.subRows.forEach(season => {
+            seriesGroup.subRows.forEach((season) => {
               episodeCount += season.subRows.length;
             });
             // Get instance name from selection
-            const instanceName = instances.find(i => i.category === selection)?.name || selection;
+            const instanceName =
+              instances.find((i) => i.category === selection)?.name ||
+              selection;
             return (
-            <details key={`${seriesGroup.series}`} className="series-details">
-              <summary className="series-summary">
-                <span className="series-title">{seriesGroup.series}</span>
-                <span className="series-instance">({instanceName})</span>
-                <span className="series-count">({episodeCount} episodes)</span>
-                {seriesGroup.qualityProfileName ? (
-                  <span className="series-quality">• {seriesGroup.qualityProfileName}</span>
-                ) : null}
-              </summary>
-              <div className="series-content">
-                {seriesGroup.subRows.map((season) => (
-                  <details key={`${seriesGroup.series}-${season.seasonNumber}`} className="season-details">
-                    <summary className="season-summary">
-                      <span className="season-title">Season {season.seasonNumber}</span>
-                      <span className="season-count">({season.subRows.length} episodes)</span>
-                    </summary>
-                    <div className="season-content">
-                      <div className="episodes-table-wrapper">
-                        <table className="episodes-table">
-                          <thead>
-                            <tr>
-                              <th>Episode</th>
-                              <th>Title</th>
-                              <th>Monitored</th>
-                              <th>Has File</th>
-                              <th>Air Date</th>
-                              <th>Reason</th>
-                            </tr>
-                          </thead>
-                          <tbody>
-                            {season.subRows.map((episode: typeof season.subRows[number]) => (
-                            <tr key={`${episode.series}-${episode.season}-${episode.episode}`}>
-                              <td data-label="Episode">{episode.episode}</td>
-                              <td data-label="Title">{episode.title}</td>
-                              <td data-label="Monitored">
-                                <span className={`track-status ${episode.monitored ? 'available' : 'missing'}`}>
-                                  {episode.monitored ? '✓' : '✗'}
-                                </span>
-                              </td>
-                              <td data-label="Has File">
-                                <span className={`track-status ${episode.hasFile ? 'available' : 'missing'}`}>
-                                  {episode.hasFile ? '✓' : '✗'}
-                                </span>
-                              </td>
-                              <td data-label="Air Date">{episode.airDate || "—"}</td>
-                              <td data-label="Reason">{episode.reason ? <span className="table-badge table-badge-reason">{episode.reason}</span> : <span className="table-badge table-badge-reason">Not being searched</span>}</td>
-                            </tr>
-                          ))}
-                          </tbody>
-                        </table>
+              <details key={`${seriesGroup.series}`} className="series-details">
+                <summary className="series-summary">
+                  <span className="series-title">{seriesGroup.series}</span>
+                  <span className="series-instance">({instanceName})</span>
+                  <span className="series-count">
+                    ({episodeCount} episodes)
+                  </span>
+                  {seriesGroup.qualityProfileName ? (
+                    <span className="series-quality">
+                      • {seriesGroup.qualityProfileName}
+                    </span>
+                  ) : null}
+                </summary>
+                <div className="series-content">
+                  {seriesGroup.subRows.map((season) => (
+                    <details
+                      key={`${seriesGroup.series}-${season.seasonNumber}`}
+                      className="season-details"
+                    >
+                      <summary className="season-summary">
+                        <span className="season-title">
+                          Season {season.seasonNumber}
+                        </span>
+                        <span className="season-count">
+                          ({season.subRows.length} episodes)
+                        </span>
+                      </summary>
+                      <div className="season-content">
+                        <div className="episodes-table-wrapper">
+                          <table className="episodes-table">
+                            <thead>
+                              <tr>
+                                <th>Episode</th>
+                                <th>Title</th>
+                                <th>Monitored</th>
+                                <th>Has File</th>
+                                <th>Air Date</th>
+                                <th>Reason</th>
+                              </tr>
+                            </thead>
+                            <tbody>
+                              {season.subRows.map(
+                                (episode: (typeof season.subRows)[number]) => (
+                                  <tr
+                                    key={`${episode.series}-${episode.season}-${episode.episode}`}
+                                  >
+                                    <td data-label="Episode">
+                                      {episode.episode}
+                                    </td>
+                                    <td data-label="Title">{episode.title}</td>
+                                    <td data-label="Monitored">
+                                      <span
+                                        className={`track-status ${episode.monitored ? "available" : "missing"}`}
+                                      >
+                                        {episode.monitored ? "✓" : "✗"}
+                                      </span>
+                                    </td>
+                                    <td data-label="Has File">
+                                      <span
+                                        className={`track-status ${episode.hasFile ? "available" : "missing"}`}
+                                      >
+                                        {episode.hasFile ? "✓" : "✗"}
+                                      </span>
+                                    </td>
+                                    <td data-label="Air Date">
+                                      {episode.airDate || "—"}
+                                    </td>
+                                    <td data-label="Reason">
+                                      {episode.reason ? (
+                                        <span className="table-badge table-badge-reason">
+                                          {episode.reason}
+                                        </span>
+                                      ) : (
+                                        <span className="table-badge table-badge-reason">
+                                          Not being searched
+                                        </span>
+                                      )}
+                                    </td>
+                                  </tr>
+                                ),
+                              )}
+                            </tbody>
+                          </table>
+                        </div>
                       </div>
-                    </div>
-                  </details>
-                ))}
-              </div>
-            </details>
+                    </details>
+                  ))}
+                </div>
+              </details>
             );
           })}
         </div>
-      ) : !loading && series.length > 0 && filteredEpisodeRows.length === 0 && episodeRows.length === 0 ? (
+      ) : !loading &&
+        series.length > 0 &&
+        filteredEpisodeRows.length === 0 &&
+        episodeRows.length === 0 ? (
         <div className="hint">
           <p>No episodes found for these series.</p>
-          <p>The backend may still be syncing episode data from Sonarr. Please check the logs or wait a few moments and refresh.</p>
+          <p>
+            The backend may still be syncing episode data from Sonarr. Please
+            check the logs or wait a few moments and refresh.
+          </p>
         </div>
-      ) : !loading && series.length > 0 && filteredEpisodeRows.length === 0 && episodeRows.length > 0 ? (
+      ) : !loading &&
+        series.length > 0 &&
+        filteredEpisodeRows.length === 0 &&
+        episodeRows.length > 0 ? (
         <div className="hint">No episodes match the current filter.</div>
       ) : !groupSonarr && filteredEpisodeRows.length > 0 ? (
         <div className="table-wrapper">
@@ -1561,18 +1836,34 @@ function SonarrInstanceView({
                   <td data-label="Episode">{row.episode}</td>
                   <td data-label="Title">{row.title}</td>
                   <td data-label="Monitored">
-                    <span className={`track-status ${row.monitored ? 'available' : 'missing'}`}>
-                      {row.monitored ? '✓' : '✗'}
+                    <span
+                      className={`track-status ${row.monitored ? "available" : "missing"}`}
+                    >
+                      {row.monitored ? "✓" : "✗"}
                     </span>
                   </td>
                   <td data-label="Has File">
-                    <span className={`track-status ${row.hasFile ? 'available' : 'missing'}`}>
-                      {row.hasFile ? '✓' : '✗'}
+                    <span
+                      className={`track-status ${row.hasFile ? "available" : "missing"}`}
+                    >
+                      {row.hasFile ? "✓" : "✗"}
                     </span>
                   </td>
                   <td data-label="Air Date">{row.airDate || "—"}</td>
-                  <td data-label="Quality Profile">{row.qualityProfileName || "—"}</td>
-                  <td data-label="Reason">{row.reason ? <span className="table-badge table-badge-reason">{row.reason}</span> : <span className="table-badge table-badge-reason">Not being searched</span>}</td>
+                  <td data-label="Quality Profile">
+                    {row.qualityProfileName || "—"}
+                  </td>
+                  <td data-label="Reason">
+                    {row.reason ? (
+                      <span className="table-badge table-badge-reason">
+                        {row.reason}
+                      </span>
+                    ) : (
+                      <span className="table-badge table-badge-reason">
+                        Not being searched
+                      </span>
+                    )}
+                  </td>
                 </tr>
               ))}
             </tbody>
@@ -1580,7 +1871,9 @@ function SonarrInstanceView({
           {flatTotalPages > 1 && (
             <div className="pagination">
               <div>
-                Page {flatSafePage + 1} of {flatTotalPages} ({filteredEpisodeRows.length.toLocaleString()} episodes · page size {FLAT_PAGE_SIZE})
+                Page {flatSafePage + 1} of {flatTotalPages} (
+                {filteredEpisodeRows.length.toLocaleString()} episodes · page
+                size {FLAT_PAGE_SIZE})
               </div>
               <div className="inline">
                 <button
@@ -1592,7 +1885,9 @@ function SonarrInstanceView({
                 </button>
                 <button
                   className="btn"
-                  onClick={() => setFlatPage(Math.min(flatTotalPages - 1, flatSafePage + 1))}
+                  onClick={() =>
+                    setFlatPage(Math.min(flatTotalPages - 1, flatSafePage + 1))
+                  }
                   disabled={flatSafePage >= flatTotalPages - 1 || loading}
                 >
                   Next
@@ -1607,7 +1902,9 @@ function SonarrInstanceView({
       {groupSonarr && groupedTableData.length > 0 && (
         <div className="pagination">
           <div>
-            Page {groupedSafePage + 1} of {groupedTotalPages} ({groupedTableData.length.toLocaleString()} series · page size {GROUPED_PAGE_SIZE})
+            Page {groupedSafePage + 1} of {groupedTotalPages} (
+            {groupedTableData.length.toLocaleString()} series · page size{" "}
+            {GROUPED_PAGE_SIZE})
           </div>
           <div className="inline">
             <button
@@ -1619,7 +1916,11 @@ function SonarrInstanceView({
             </button>
             <button
               className="btn"
-              onClick={() => setGroupedPage(Math.min(groupedTotalPages - 1, groupedSafePage + 1))}
+              onClick={() =>
+                setGroupedPage(
+                  Math.min(groupedTotalPages - 1, groupedSafePage + 1),
+                )
+              }
               disabled={groupedSafePage >= groupedTotalPages - 1 || loading}
             >
               Next

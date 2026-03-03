@@ -42,7 +42,7 @@ export function ToastProvider({ children }: PropsWithChildren): JSX.Element {
       const duration = kind === "error" ? 8000 : 3500;
       window.setTimeout(() => dismiss(id), duration);
     },
-    [dismiss]
+    [dismiss],
   );
 
   const value = useMemo(
@@ -51,7 +51,7 @@ export function ToastProvider({ children }: PropsWithChildren): JSX.Element {
       push,
       dismiss,
     }),
-    [toasts, push, dismiss]
+    [toasts, push, dismiss],
   );
 
   return (

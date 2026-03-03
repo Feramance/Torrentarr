@@ -7,7 +7,12 @@ interface EmptyStateProps {
   action?: ReactNode;
 }
 
-export function EmptyState({ icon, title, message, action }: EmptyStateProps): JSX.Element {
+export function EmptyState({
+  icon,
+  title,
+  message,
+  action,
+}: EmptyStateProps): JSX.Element {
   return (
     <div className="empty-state">
       {icon && <div className="empty-state__icon">{icon}</div>}

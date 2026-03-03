@@ -9,7 +9,8 @@ function fnv1aHash(str: string): string {
   let hash = 2166136261;
   for (let i = 0; i < str.length; i++) {
     hash ^= str.charCodeAt(i);
-    hash += (hash << 1) + (hash << 4) + (hash << 7) + (hash << 8) + (hash << 24);
+    hash +=
+      (hash << 1) + (hash << 4) + (hash << 7) + (hash << 8) + (hash << 24);
   }
   return (hash >>> 0).toString(36);
 }
@@ -47,16 +48,16 @@ export interface NormalizedData<T> {
  */
 export function createItemHash<T extends Hashable>(
   item: T,
-  fields: (keyof T)[]
+  fields: (keyof T)[],
 ): string {
-  const values = fields.map(field => {
+  const values = fields.map((field) => {
     const value = item[field];
-    if (value === null || value === undefined) return '';
-    if (typeof value === 'boolean') return value ? '1' : '0';
-    if (typeof value === 'object') return JSON.stringify(value);
+    if (value === null || value === undefined) return "";
+    if (typeof value === "boolean") return value ? "1" : "0";
+    if (typeof value === "object") return JSON.stringify(value);
     return String(value);
   });
-  return fnv1aHash(values.join('|'));
+  return fnv1aHash(values.join("|"));
 }
 
 /**
@@ -66,7 +67,7 @@ export function detectChanges<T extends Hashable>(
   existing: NormalizedData<T>,
   incoming: T[],
   getKey: (item: T) => string,
-  hashFields: (keyof T)[]
+  hashFields: (keyof T)[],
 ): ChangeDetectionResult<T> {
   const added: T[] = [];
   const updated: T[] = [];
@@ -99,7 +100,8 @@ export function detectChanges<T extends Hashable>(
   }
 
   const unchanged = incoming.length - added.length - updated.length;
-  const hasChanges = added.length > 0 || updated.length > 0 || removed.length > 0;
+  const hasChanges =
+    added.length > 0 || updated.length > 0 || removed.length > 0;
 
   return { added, updated, removed, unchanged, hasChanges };
 }
@@ -111,7 +113,7 @@ export function mergeChanges<T extends Hashable>(
   existing: NormalizedData<T>,
   changes: ChangeDetectionResult<T>,
   getKey: (item: T) => string,
-  hashFields: (keyof T)[]
+  hashFields: (keyof T)[],
 ): NormalizedData<T> {
   if (!changes.hasChanges) {
     return existing;
@@ -160,7 +162,7 @@ export function mergeChanges<T extends Hashable>(
  * Convert normalized data to array
  */
 export function denormalize<T>(data: NormalizedData<T>): T[] {
-  return data.allIds.map(id => data.byId.get(id)!).filter(Boolean);
+  return data.allIds.map((id) => data.byId.get(id)!).filter(Boolean);
 }
 
 /**
@@ -169,7 +171,7 @@ export function denormalize<T>(data: NormalizedData<T>): T[] {
 export function normalize<T extends Hashable>(
   items: T[],
   getKey: (item: T) => string,
-  hashFields: (keyof T)[]
+  hashFields: (keyof T)[],
 ): NormalizedData<T> {
   const byId = new Map<string, T>();
   const byHash = new Map<string, string>();
@@ -211,7 +213,7 @@ export function arraysEqual<T extends Hashable>(
   a: T[],
   b: T[],
   getKey: (item: T) => string,
-  hashFields: (keyof T)[]
+  hashFields: (keyof T)[],
 ): boolean {
   if (a.length !== b.length) return false;
 

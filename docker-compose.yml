@@ -4,17 +4,17 @@ services:
     container_name: torrentarr
     restart: unless-stopped
     ports:
-      - "6969:6969"
+    - 6969:6969
     volumes:
-      - ./.config:/config
-      - torrents:/torrents
+    - ./.config:/config
+    - torrents:/torrents
     environment:
-      - TZ=Europe/Malta
-      - PUID=1000
-      - PGID=1000
-      - TORRENTARR_CONFIG=/config/config.toml
+    - TZ=Europe/Malta
+    - PUID=1000
+    - PGID=1000
+    - TORRENTARR_CONFIG=/config/config.toml
     healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:6969/health"]
+      test: [CMD, curl, -f, http://localhost:6969/health]
       interval: 30s
       timeout: 10s
       retries: 3
@@ -26,4 +26,4 @@ volumes:
     driver_opts:
       type: cifs
       device: ${CIFS_PATH}
-      o: "username=${CIFS_USER},password=${CIFS_PASS},vers=3.1.1,iocharset=utf8"
+      o: username=${CIFS_USER},password=${CIFS_PASS},vers=3.1.1,iocharset=utf8

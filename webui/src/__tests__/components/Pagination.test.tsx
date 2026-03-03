@@ -87,9 +87,7 @@ describe("Pagination – button disabled states", () => {
 
   it("disables all buttons when loading=true", () => {
     render(<Pagination {...base} currentPage={2} loading={true} />);
-    screen.getAllByRole("button").forEach((btn) =>
-      expect(btn).toBeDisabled()
-    );
+    screen.getAllByRole("button").forEach((btn) => expect(btn).toBeDisabled());
   });
 
   it("Go button is disabled when jump input is empty", () => {
@@ -101,7 +99,9 @@ describe("Pagination – button disabled states", () => {
 describe("Pagination – navigation callbacks", () => {
   it("calls onPageChange(0) when First button clicked", () => {
     const onPageChange = vi.fn();
-    render(<Pagination {...base} currentPage={3} onPageChange={onPageChange} />);
+    render(
+      <Pagination {...base} currentPage={3} onPageChange={onPageChange} />,
+    );
 
     fireEvent.click(screen.getByTitle("First page"));
 
@@ -110,7 +110,9 @@ describe("Pagination – navigation callbacks", () => {
 
   it("calls onPageChange(currentPage-1) when Prev clicked", () => {
     const onPageChange = vi.fn();
-    render(<Pagination {...base} currentPage={2} onPageChange={onPageChange} />);
+    render(
+      <Pagination {...base} currentPage={2} onPageChange={onPageChange} />,
+    );
 
     fireEvent.click(screen.getByTitle("Previous page"));
 
@@ -119,7 +121,9 @@ describe("Pagination – navigation callbacks", () => {
 
   it("calls onPageChange(currentPage+1) when Next clicked", () => {
     const onPageChange = vi.fn();
-    render(<Pagination {...base} currentPage={1} onPageChange={onPageChange} />);
+    render(
+      <Pagination {...base} currentPage={1} onPageChange={onPageChange} />,
+    );
 
     fireEvent.click(screen.getByTitle("Next page"));
 
@@ -129,7 +133,12 @@ describe("Pagination – navigation callbacks", () => {
   it("calls onPageChange(totalPages-1) when Last clicked", () => {
     const onPageChange = vi.fn();
     render(
-      <Pagination {...base} currentPage={0} totalPages={5} onPageChange={onPageChange} />
+      <Pagination
+        {...base}
+        currentPage={0}
+        totalPages={5}
+        onPageChange={onPageChange}
+      />,
     );
 
     fireEvent.click(screen.getByTitle("Last page"));
@@ -141,7 +150,9 @@ describe("Pagination – navigation callbacks", () => {
 describe("Pagination – jump input", () => {
   it("calls onPageChange with 0-indexed page when Go clicked", () => {
     const onPageChange = vi.fn();
-    render(<Pagination {...base} currentPage={0} onPageChange={onPageChange} />);
+    render(
+      <Pagination {...base} currentPage={0} onPageChange={onPageChange} />,
+    );
 
     fireEvent.change(screen.getByPlaceholderText("Page"), {
       target: { value: "3" },
@@ -154,7 +165,9 @@ describe("Pagination – jump input", () => {
 
   it("calls onPageChange when Enter is pressed in jump input", () => {
     const onPageChange = vi.fn();
-    render(<Pagination {...base} currentPage={0} onPageChange={onPageChange} />);
+    render(
+      <Pagination {...base} currentPage={0} onPageChange={onPageChange} />,
+    );
 
     const input = screen.getByPlaceholderText("Page");
     fireEvent.change(input, { target: { value: "2" } });
@@ -177,9 +190,7 @@ describe("Pagination – jump input", () => {
 
   it("does not call onPageChange for page > totalPages", () => {
     const onPageChange = vi.fn();
-    render(
-      <Pagination {...base} totalPages={5} onPageChange={onPageChange} />
-    );
+    render(<Pagination {...base} totalPages={5} onPageChange={onPageChange} />);
 
     fireEvent.change(screen.getByPlaceholderText("Page"), {
       target: { value: "99" },

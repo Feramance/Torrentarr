@@ -1,11 +1,27 @@
-import { useCallback, useEffect, useMemo, useRef, useState, type JSX } from "react";
+import {
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+  type JSX,
+} from "react";
 import { LazyLog } from "@melloware/react-logviewer";
-import { getLogDownloadUrl, getLogs, getLogTail, type LogFileInfo } from "../api/client";
+import {
+  getLogDownloadUrl,
+  getLogs,
+  getLogTail,
+  type LogFileInfo,
+} from "../api/client";
 import { useToast } from "../context/ToastContext";
 import { useInterval } from "../hooks/useInterval";
 import { IconImage } from "../components/IconImage";
 import { CopyButton } from "../components/CopyButton";
-import Select, { type CSSObjectWithLabel, type OptionProps, type StylesConfig } from "react-select";
+import Select, {
+  type CSSObjectWithLabel,
+  type OptionProps,
+  type StylesConfig,
+} from "react-select";
 
 import RefreshIcon from "../icons/refresh-arrow.svg";
 import DownloadIcon from "../icons/download.svg";
@@ -62,7 +78,9 @@ const getSelectStyles = (isDark: boolean): StylesConfig<LogOption, false> => ({
         : "#ffffff",
     color: isDark ? "#eaeef2" : "#1d1d1f",
     "&:active": {
-      background: isDark ? "rgba(122, 162, 247, 0.25)" : "rgba(0, 113, 227, 0.2)",
+      background: isDark
+        ? "rgba(122, 162, 247, 0.25)"
+        : "rgba(0, 113, 227, 0.2)",
     },
   }),
   singleValue: (base: CSSObjectWithLabel) => ({
@@ -98,7 +116,7 @@ export function LogsView({ active }: LogsViewProps): JSX.Element {
   const [pageVisible, setPageVisible] = useState(!document.hidden);
   // Track theme for reactive Select styling
   const [isDark, setIsDark] = useState(
-    () => document.documentElement.getAttribute("data-theme") === "dark"
+    () => document.documentElement.getAttribute("data-theme") === "dark",
   );
 
   const lastLineRef = useRef<string>("");
@@ -125,11 +143,16 @@ export function LogsView({ active }: LogsViewProps): JSX.Element {
 
   const selectStyles = useMemo(() => getSelectStyles(isDark), [isDark]);
 
-  const describeError = useCallback((reason: unknown, context: string): string => {
-    if (reason instanceof Error && reason.message) return `${context}: ${reason.message}`;
-    if (typeof reason === "string" && reason.trim().length) return `${context}: ${reason}`;
-    return context;
-  }, []);
+  const describeError = useCallback(
+    (reason: unknown, context: string): string => {
+      if (reason instanceof Error && reason.message)
+        return `${context}: ${reason.message}`;
+      if (typeof reason === "string" && reason.trim().length)
+        return `${context}: ${reason}`;
+      return context;
+    },
+    [],
+  );
 
   const loadList = useCallback(async () => {
     setLoadingList(true);
@@ -177,7 +200,7 @@ export function LogsView({ active }: LogsViewProps): JSX.Element {
         if (showLoading) setLoadingContent(false);
       }
     },
-    [selected, push, describeError]
+    [selected, push, describeError],
   );
 
   // Reset and reload whenever the selected file changes
@@ -193,7 +216,7 @@ export function LogsView({ active }: LogsViewProps): JSX.Element {
     () => {
       void fetchLogContent(false);
     },
-    active && pageVisible ? 1000 : null
+    active && pageVisible ? 1000 : null,
   );
 
   const options: LogOption[] = files.map((f) => ({
@@ -205,14 +228,26 @@ export function LogsView({ active }: LogsViewProps): JSX.Element {
   return (
     <section
       className="card"
-      style={{ height: "calc(100vh - 140px)", display: "flex", flexDirection: "column", margin: 0, padding: 0 }}
+      style={{
+        height: "calc(100vh - 140px)",
+        display: "flex",
+        flexDirection: "column",
+        margin: 0,
+        padding: 0,
+      }}
     >
       <div className="card-header" style={{ flexShrink: 0 }}>
         Logs
       </div>
       <div
         className="card-body"
-        style={{ flex: 1, display: "flex", flexDirection: "column", overflow: "hidden", padding: "12px" }}
+        style={{
+          flex: 1,
+          display: "flex",
+          flexDirection: "column",
+          overflow: "hidden",
+          padding: "12px",
+        }}
       >
         <div className="row" style={{ flexShrink: 0, marginBottom: "12px" }}>
           <div className="col field">
@@ -220,16 +255,34 @@ export function LogsView({ active }: LogsViewProps): JSX.Element {
               <label>Log File</label>
               <Select
                 options={options}
-                value={selected ? options.find((o) => o.value === selected) ?? null : null}
+                value={
+                  selected
+                    ? options.find((o) => o.value === selected) ?? null
+                    : null
+                }
                 onChange={(option) => setSelected(option?.value ?? "")}
                 isDisabled={!files.length}
                 styles={selectStyles}
                 formatOptionLabel={(opt) => (
-                  <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+                  <div
+                    style={{
+                      display: "flex",
+                      justifyContent: "space-between",
+                      alignItems: "center",
+                    }}
+                  >
                     <span>{opt.value}</span>
                     {opt.meta && (
-                      <span style={{ fontSize: "11px", opacity: 0.55, marginLeft: "12px", whiteSpace: "nowrap" }}>
-                        {formatFileSize(opt.meta.size)} · {formatRelativeTime(opt.meta.modified)}
+                      <span
+                        style={{
+                          fontSize: "11px",
+                          opacity: 0.55,
+                          marginLeft: "12px",
+                          whiteSpace: "nowrap",
+                        }}
+                      >
+                        {formatFileSize(opt.meta.size)} ·{" "}
+                        {formatRelativeTime(opt.meta.modified)}
                       </span>
                     )}
                   </div>
@@ -240,7 +293,11 @@ export function LogsView({ active }: LogsViewProps): JSX.Element {
           <div className="col field">
             <label>&nbsp;</label>
             <div className="row" style={{ alignItems: "center" }}>
-              <button className="btn ghost" onClick={() => void loadList()} disabled={loadingList}>
+              <button
+                className="btn ghost"
+                onClick={() => void loadList()}
+                disabled={loadingList}
+              >
                 <IconImage src={RefreshIcon} />
                 Reload List
               </button>
@@ -254,7 +311,9 @@ export function LogsView({ active }: LogsViewProps): JSX.Element {
               </button>
               <button
                 className="btn"
-                onClick={() => selected && window.open(getLogDownloadUrl(selected), "_blank")}
+                onClick={() =>
+                  selected && window.open(getLogDownloadUrl(selected), "_blank")
+                }
                 disabled={!selected}
               >
                 <IconImage src={DownloadIcon} />
@@ -277,7 +336,14 @@ export function LogsView({ active }: LogsViewProps): JSX.Element {
             </div>
           </div>
         </div>
-        <div style={{ flex: 1, minHeight: 0, overflow: "hidden", borderRadius: "4px" }}>
+        <div
+          style={{
+            flex: 1,
+            minHeight: 0,
+            overflow: "hidden",
+            borderRadius: "4px",
+          }}
+        >
           {loadingContent ? (
             <div
               style={{
@@ -304,13 +370,20 @@ export function LogsView({ active }: LogsViewProps): JSX.Element {
                 height: "100%",
                 backgroundColor: "#0a0e14",
                 color: "#e5e5e5",
-                fontFamily: '"Cascadia Code", "Fira Code", "Consolas", "Monaco", monospace',
+                fontFamily:
+                  '"Cascadia Code", "Fira Code", "Consolas", "Monaco", monospace',
                 fontSize: "13px",
                 lineHeight: "1.5",
               }}
             />
           ) : (
-            <div style={{ color: "#666", backgroundColor: "#0a0e14", padding: "16px" }}>
+            <div
+              style={{
+                color: "#666",
+                backgroundColor: "#0a0e14",
+                padding: "16px",
+              }}
+            >
               Select a log file to view...
             </div>
           )}
