@@ -4,6 +4,7 @@
 [![Feature Parity](https://img.shields.io/badge/feature_parity-99%25-blue)]()
 [![License: MIT](https://img.shields.io/badge/license-MIT-green)]()
 [![Documentation](https://img.shields.io/badge/docs-feramance.github.io%2FTorrentarr-blue)](https://feramance.github.io/Torrentarr/)
+[![Docker Pulls](https://img.shields.io/docker/pulls/feramance/torrentarr.svg)](https://hub.docker.com/r/feramance/torrentarr)
 
 > A high-performance C# port of [qBitrr](https://github.com/Feramance/qBitrr) — intelligent automation for qBittorrent and the *Arr ecosystem (Radarr, Sonarr, Lidarr). Same `config.toml` format and SQLite schema as qBitrr; database file is `torrentarr.db` (not `qbitrr.db`).
 

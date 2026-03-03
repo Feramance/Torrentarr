@@ -446,7 +446,7 @@ When testing changes manually:
 - **Repository:** [github.com/Feramance/Torrentarr](https://github.com/Feramance/Torrentarr)
 - **Issues:** [github.com/Feramance/Torrentarr/issues](https://github.com/Feramance/Torrentarr/issues)
 - **Discussions:** [github.com/Feramance/Torrentarr/discussions](https://github.com/Feramance/Torrentarr/discussions)
-- **Docker Hub:** [hub.docker.com/r/feramance/torrentarr](https://hub.docker.com/r/feramance/torrentarr)
+- **Docker Hub:** [![Docker Pulls](https://img.shields.io/docker/pulls/feramance/torrentarr.svg)](https://hub.docker.com/r/feramance/torrentarr)
 - **Releases:** [github.com/Feramance/Torrentarr/releases](https://github.com/Feramance/Torrentarr/releases)
 
 ### Development Guides
