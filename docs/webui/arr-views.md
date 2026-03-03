@@ -1,4 +1,4 @@
-﻿# Arr Views
+# Arr Views
 
 The **Arr Views** provide a unified interface to browse and monitor your media library across all managed Radarr, Sonarr, and Lidarr instances. View movies, TV series, episodes, albums, and tracks directly from Torrentarr's WebUI without switching between multiple Arr interfaces.
 
@@ -123,7 +123,7 @@ Torrentarr's Arr views offer:
 
 **Behavior**:
 - First page load triggers full library sync from Radarr API (`/api/v3/movie`)
-- Data stored in `MoviesFilesModel` table (`Torrentarr.db`)
+- Data stored in `MoviesFilesModel` table (`qbitrr.db`)
 - Subsequent page loads read from database (instant response)
 - Database refreshes on demand (Refresh button) or periodically
 

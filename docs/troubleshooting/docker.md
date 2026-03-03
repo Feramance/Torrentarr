@@ -1,4 +1,4 @@
-﻿# Docker Troubleshooting
+# Docker Troubleshooting
 
 This page covers Docker-specific issues with Torrentarr and their solutions.
 
@@ -333,7 +333,7 @@ docker logs -f torrentarr
 1. **Config error:** Fix config.toml syntax
 2. **Missing dependencies:** Use official image (not custom builds)
 3. **Out of memory:** Increase Docker memory limit
-4. **Database corruption:** Delete `/config/Torrentarr.db` (will rebuild)
+4. **Database corruption:** Delete `/config/qbitrr.db` (will rebuild)
 
 ---
 
