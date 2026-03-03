@@ -23,6 +23,7 @@ jobs:
       matrix:
         language:
         - csharp
+        - javascript-typescript
     steps:
     - name: Checkout repository
       uses: actions/checkout@v6
@@ -34,6 +35,11 @@ jobs:
       uses: actions/setup-dotnet@v5
       with:
         dotnet-version: '10.0.x'
+    - name: Setup Node.js
+      if: matrix.language == 'javascript-typescript'
+      uses: actions/setup-node@v6
+      with:
+        node-version: '20'
     - name: Autobuild
       uses: github/codeql-action/autobuild@v4
       continue-on-error: true
