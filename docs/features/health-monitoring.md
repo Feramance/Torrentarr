@@ -1,4 +1,4 @@
-﻿# Health Monitoring
+# Health Monitoring
 
 Torrentarr continuously monitors the health of your torrents, detecting and handling issues automatically to ensure smooth media downloads.
 
@@ -472,7 +472,7 @@ FFprobeAutoUpdate = true
 
 - Torrentarr downloads FFprobe from https://ffbinaries.com/downloads
 - Automatically updates to latest version
-- Stored in `/config/qBitManager/ffprobe` (native) or `/config/qBitManager/ffprobe` (Docker)
+- Stored in config directory (e.g. `~/config/` or `/config/` in Docker); place ffprobe in config dir or on PATH
 
 **Manual:**
 
@@ -480,12 +480,12 @@ FFprobeAutoUpdate = true
 FFprobeAutoUpdate = false
 ```
 
-- Place your own FFprobe binary at `/config/qBitManager/ffprobe.exe` (Windows) or `/config/qBitManager/ffprobe` (Linux/macOS)
+- Place your own FFprobe binary in the config directory (e.g. `~/config/ffprobe` or `~/config/ffprobe.exe` on Windows) or ensure it is on the system PATH
 - Torrentarr will use your provided binary
 
 **Disable validation:**
 
-- Remove FFprobe binary from `/config/qBitManager/`
+- Remove FFprobe binary from config directory if you no longer need custom path
 - Torrentarr will skip validation (not recommended)
 
 ---
@@ -740,10 +740,10 @@ graph LR
 1. **Check FFprobe binary:**
    ```bash
    # Native
-   ls -l ~/config/qBitManager/ffprobe
+   ls -l ~/config/ffprobe
 
    # Docker
-   docker exec torrentarr ls -l /config/qBitManager/ffprobe
+   docker exec torrentarr ls -l /config/ffprobe
    ```
 
 2. **Test FFprobe manually:**

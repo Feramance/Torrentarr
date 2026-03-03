@@ -1,4 +1,4 @@
-﻿# Torrentarr Documentation
+# Torrentarr Documentation
 
 This directory contains the source files for the Torrentarr documentation site built with MkDocs Material.
 
@@ -123,10 +123,10 @@ Use tabs for multiple examples:
     docker run ...
     ```
 
-=== "pip"
+=== "dotnet tool"
 
     ```bash
-    pip install ...
+    dotnet tool install -g torrentarr
     ```
 ````
 

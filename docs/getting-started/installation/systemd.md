@@ -258,9 +258,9 @@ Add environment variables to the service file:
 ```ini
 [Service]
 Environment="TORRENTARR_CONFIG=/opt/torrentarr/config/config.toml"
-Environment="QBITRR_LOG_LEVEL=DEBUG"
 Environment="TZ=America/New_York"
 ```
+Log level is configured in `config.toml` (`Settings.ConsoleLevel`), not via environment variables.
 
 ### Resource Limits
 

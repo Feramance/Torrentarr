@@ -547,9 +547,9 @@ FFprobeAutoUpdate = true
 
 **FFprobe Location:**
 
-- **Linux/macOS:** `~/.config/qBitManager/ffprobe`
-- **Windows:** `%APPDATA%\qBitManager\ffprobe.exe`
-- **Docker:** `/config/qBitManager/ffprobe`
+- **Linux/macOS:** config directory (e.g. `~/.config/torrentarr/` or `~/config/`) or system PATH
+- **Windows:** config directory or `%APPDATA%\torrentarr\` or system PATH
+- **Docker:** `/config/ffprobe` or on PATH
 
 !!! info "FFprobe Updates"
     FFprobe updates are **separate** from Torrentarr application updates. FFprobe is downloaded on-demand when needed, not on a schedule.

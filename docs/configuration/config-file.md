@@ -582,7 +582,7 @@ When `true`:
 - ✅ Docker (pulls latest image)
 - ⚠️ Binary (manual, not fully automated)
 
-**Recommendation:** Enable for Docker deployments. Consider manual updates for PyPI.
+**Recommendation:** Enable for Docker deployments. Consider manual updates for dotnet tool or binary installations.
 
 ---
 
@@ -1088,9 +1088,7 @@ MaximumETA = 172800  # 48 hours for large 4K files
    ```
 
 3. **Validate TOML syntax:**
-   ```bash
-   python3 -c "import toml; toml.load('/path/to/config.toml')"
-   ```
+   Use an online TOML validator (e.g. https://www.toml-lint.com/) or start Torrentarr and check logs for config parse errors.
 
 ---
 

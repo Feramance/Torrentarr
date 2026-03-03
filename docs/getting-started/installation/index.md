@@ -1,4 +1,4 @@
-﻿# Installation
+# Installation
 
 Choose the installation method that best fits your needs. Torrentarr offers multiple installation options for different environments and preferences.
 
@@ -107,7 +107,7 @@ sudo systemctl enable --now torrentarr
 - ✅ You need development flexibility
 
 ### Choose Binary if:
-- ✅ You don't have Python and don't want to install it
+- ✅ You don't have .NET and prefer not to install it
 - ✅ You want a single executable file
 - ✅ You're testing Torrentarr quickly
 - ✅ Docker isn't available

@@ -1,5 +1,9 @@
 # qBitrr Parity Gaps — Implementation Review
 
+**Docs alignment (Torrentarr):** Documentation has been updated to match the C# port: config path env var `TORRENTARR_CONFIG` only (no section overrides), database `qbitrr.db` in config directory, and pip/Python references removed in favor of dotnet tool, binary, and Docker.
+
+---
+
 This document verifies that all 12 gaps from the qBitrr parity gaps plan have been implemented correctly.
 
 ---
@@ -53,8 +57,7 @@ This document verifies that all 12 gaps from the qBitrr parity gaps plan have be
 ## 6. Database repair script / documentation — **DONE**
 
 - **CLI:** `src/Torrentarr.Host/Program.cs` (lines 221–244). If the only argument is `--repair-database`, the Host opens `dbPath` (from `basePath`, i.e. `config/qbitrr.db` or `/config/qbitrr.db`), runs `PRAGMA wal_checkpoint(TRUNCATE);` and `PRAGMA integrity_check;`, prints the result, and exits with 0 if result is `"ok"`, else 1. No app startup.
-- **Docs:** `docs/troubleshooting/database.md` now includes "Method 0: Torrentarr CLI" describing `torrentarr --repair-database` and the database path. `docs/advanced/database.md` was corrected from `--repair-db` to `--repair-database`.
-- **Note:** Main troubleshooting doc uses `~/config/torrentarr.db` in many examples; the Host actually uses `qbitrr.db` in the config directory. Consider aligning doc examples with the real path (`config/qbitrr.db` or `/config/qbitrr.db`) or documenting both.
+- **Docs:** `docs/troubleshooting/database.md` includes "Method 0: Torrentarr CLI" describing `torrentarr --repair-database` and the database path (`config/qbitrr.db`). `docs/advanced/database.md` uses `qbitrr.db` and sqlite3 for VACUUM; doc examples are aligned with the Host.
 
 ---
 
@@ -129,8 +132,8 @@ This document verifies that all 12 gaps from the qBitrr parity gaps plan have be
 
 ## Minor follow-ups (non-blocking)
 
-1. **Database path naming:** Host uses `qbitrr.db`; `docs/troubleshooting/database.md` (and others) often use `torrentarr.db`. Consider documenting that the actual file is `config/qbitrr.db` (or `/config/qbitrr.db` in Docker) for consistency, or standardizing one name in docs/code.
-2. **docs/advanced/database.md:** References `torrentarr --vacuum-db`; there is no `--vacuum-db` CLI in the Host. Either remove that example or add a short note that manual VACUUM is via sqlite3 (as in the main database troubleshooting doc).
+1. **Database path naming:** Addressed in docs: Host uses `qbitrr.db` in config directory; troubleshooting and advanced docs now use `config/qbitrr.db` (or `/config/qbitrr.db` in Docker) consistently.
+2. **docs/advanced/database.md:** Addressed: no `--vacuum-db` CLI; doc now describes using sqlite3 for VACUUM.
 3. **ConfigVersionWarning.currentVersion:** In `webui/src/api/types.ts`, `ConfigVersionWarning` has `currentVersion: number`; the API returns `currentVersion` as a string. The UI only uses `message` for the toast, so behavior is fine; the type could be `string` for accuracy.
 
 ---

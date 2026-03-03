@@ -531,8 +531,7 @@ Torrentarr follows [Semantic Versioning](https://semver.org/):
    ```
 
 3. **Automated CI/CD:**
-   - Build Python package → publish to PyPI
-   - Build Docker image → publish to Docker Hub
+   - Build .NET and Docker image → GitHub Releases, Docker Hub
    - Generate GitHub release notes
    - Update documentation
 
