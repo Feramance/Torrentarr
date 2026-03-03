@@ -1,5 +1,5 @@
 # Stage 1: Build React Frontend
-FROM node:24-alpine AS frontend-build
+FROM node:25-alpine AS frontend-build
 WORKDIR /app/frontend
 
 # Set npm timeout settings to prevent hanging
