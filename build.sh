@@ -34,7 +34,7 @@ echo ""
 
 # Build frontend
 echo -e "${BLUE}Building React frontend...${NC}"
-cd src/Torrentarr.WebUI/ClientApp
+cd webui
 
 if [ ! -d "node_modules" ]; then
     echo "Installing npm dependencies..."
@@ -51,7 +51,7 @@ else
     exit 1
 fi
 
-cd ../../..
+cd ..
 echo ""
 
 # Build backend

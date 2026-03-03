@@ -53,6 +53,8 @@ yarn-debug.log*
 yarn-error.log*
 dist/
 build/
+# Vite build output (generated during CI/Docker/local build; do not commit)
+src/Torrentarr.Host/wwwroot/
 
 # Environment files
 .env

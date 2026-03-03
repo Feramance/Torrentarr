@@ -407,7 +407,7 @@ function AppShell(): JSX.Element {
     if (!lastSeenVersion) {
       try { localStorage.setItem("lastSeenVersion", currentVersion); } catch { /* quota exceeded or private mode */ }
     }
-  }, [meta?.current_version, meta?.changelog, refreshMeta]);
+  }, [meta?.current_version, meta?.current_version_changelog, meta?.changelog, refreshMeta]);
 
   // Network status notifications
   useEffect(() => {
@@ -465,6 +465,14 @@ function AppShell(): JSX.Element {
     return () => window.clearInterval(id);
   }, [refreshMeta]);
 
+  const refreshStatus = useCallback(async () => {
+    try {
+      await getStatus();
+    } catch {
+      // Silently fail - status is not critical
+    }
+  }, []);
+
   useEffect(() => {
     const handleVisibilityChange = () => {
       if (document.visibilityState === "visible") {
@@ -479,15 +487,7 @@ function AppShell(): JSX.Element {
     return () => {
       document.removeEventListener("visibilitychange", handleVisibilityChange);
     };
-  }, [refreshMeta]);
-
-  const refreshStatus = useCallback(async () => {
-    try {
-      await getStatus();
-    } catch {
-      // Silently fail - status is not critical
-    }
-  }, []);
+  }, [refreshMeta, refreshStatus]);
 
   useEffect(() => {
     void refreshStatus();

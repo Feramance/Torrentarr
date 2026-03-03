@@ -1952,7 +1952,7 @@ export function ConfigView(props?: ConfigViewProps): JSX.Element {
     } finally {
       setSaving(false);
     }
-  }, [formState, originalConfig, loadConfig, push]);
+  }, [formState, originalConfig, loadConfig, push, pendingRenames]);
 
   if (loading || !formState) {
     return (
@@ -2870,11 +2870,14 @@ function ArrInstanceModal({
     return get(state, path);
   };
 
+  const uriValue = state != null ? get(state, ["URI"]) : undefined;
+  const apiKeyValue = state != null ? get(state, ["APIKey"]) : undefined;
+
   // Clear test state when URI or APIKey changes
   useEffect(() => {
     setTestState({ testing: false, result: null });
     setQualityProfiles([]);
-  }, [getValue(["URI"]), getValue(["APIKey"])]);
+  }, [uriValue, apiKeyValue]);
 
   // Auto-test connection when modal opens if credentials exist
   useEffect(() => {

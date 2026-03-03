@@ -1,4 +1,4 @@
-﻿# Database Troubleshooting
+# Database Troubleshooting
 
 This guide covers SQLite database structure, common issues, recovery procedures, and optimization techniques for Torrentarr's persistent storage.
 
@@ -332,6 +332,15 @@ Torrentarr automatically attempts recovery when corruption is detected:
 3. **Backup**: Original database saved as `torrentarr.db.backup`
 
 **Manual Recovery**:
+
+=== "Method 0: Torrentarr CLI (no SQLite required)"
+    Run WAL checkpoint and integrity check without starting the full app (qBitrr parity):
+
+    ```bash
+    torrentarr --repair-database
+    ```
+
+    Uses the same database path as the app (e.g. `config/qbitrr.db` or `/config/qbitrr.db` in Docker). Exit code 0 if integrity check passed, 1 otherwise.
 
 === "Method 1: WAL Checkpoint"
     ```bash
