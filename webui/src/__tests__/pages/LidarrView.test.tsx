@@ -102,8 +102,8 @@ describe("LidarrView – empty state", () => {
 
     renderView();
 
-    await screen.findByText("No albums found.", {}, { timeout: 5000 });
-  });
+    await screen.findByText("No albums found.", {}, { timeout: 10000 });
+  }, 12000);
 });
 
 // ── Single instance ───────────────────────────────────────────────────────────

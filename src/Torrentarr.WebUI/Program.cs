@@ -610,20 +610,38 @@ app.MapGet("/web/logs", () =>
 // Log file contents
 app.MapGet("/web/logs/{name}", async (string name, int? lines) =>
 {
-    var logFile = Path.Combine(logsPath, name);
+    // Sanitize: only allow the filename component (no directory traversal)
+    var safeName = Path.GetFileName(name);
 
-    if (!File.Exists(logFile))
+    // Optional: enforce .log extension to align with listed log files
+    if (!safeName.EndsWith(".log", StringComparison.OrdinalIgnoreCase) || string.IsNullOrWhiteSpace(safeName))
+    {
+        return Results.BadRequest(new { error = "Invalid log file name" });
+    }
+
+    var logFile = Path.Combine(logsPath, safeName);
+    var logsPathFull = Path.GetFullPath(logsPath);
+    var logFileFull = Path.GetFullPath(logFile);
+
+    // Ensure the resolved path stays within the logs directory
+    if (!logFileFull.StartsWith(logsPathFull + Path.DirectorySeparatorChar, StringComparison.Ordinal) &&
+        !string.Equals(logFileFull, logsPathFull, StringComparison.Ordinal))
+    {
+        return Results.BadRequest(new { error = "Invalid log file path" });
+    }
+
+    if (!File.Exists(logFileFull))
     {
         return Results.NotFound(new { error = "Log file not found" });
     }
 
     var lineCount = lines ?? 100;
-    var content = await File.ReadAllTextAsync(logFile);
+    var content = await File.ReadAllTextAsync(logFileFull);
     var logLines = content.Split('\n').TakeLast(lineCount).ToList();
 
     return Results.Ok(new
     {
-        name,
+        name = safeName,
         lines = logLines,
         totalLines = content.Split('\n').Length
     });
@@ -634,13 +652,26 @@ app.MapGet("/web/logs/{name}/download", (string name, HttpResponse response) =>
 {
     // Sanitize: only allow the filename component (no directory traversal)
     var safeName = Path.GetFileName(name);
-    var logFile = Path.Combine(logsPath, safeName);
+    if (string.IsNullOrWhiteSpace(safeName))
+    {
+        return Results.BadRequest(new { error = "Invalid log file name" });
+    }
 
-    if (!File.Exists(logFile))
+    // Resolve the full paths and ensure the requested file stays within the logs directory
+    var fullLogsPath = Path.GetFullPath(logsPath);
+    var combinedPath = Path.Combine(fullLogsPath, safeName);
+    var fullLogFile = Path.GetFullPath(combinedPath);
+
+    if (!fullLogFile.StartsWith(fullLogsPath + Path.DirectorySeparatorChar, StringComparison.OrdinalIgnoreCase))
+    {
+        return Results.BadRequest(new { error = "Invalid log file name" });
+    }
+
+    if (!File.Exists(fullLogFile))
         return Results.NotFound(new { error = "Log file not found" });
 
     response.Headers["Content-Disposition"] = $"attachment; filename=\"{safeName}\"";
-    return Results.File(logFile, "application/octet-stream", safeName);
+    return Results.File(fullLogFile, "application/octet-stream", safeName);
 });
 
 // Radarr movies for specific category
