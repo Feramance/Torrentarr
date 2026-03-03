@@ -134,7 +134,7 @@ This document verifies that all 12 gaps from the qBitrr parity gaps plan have be
 
 1. **Database path naming:** Addressed in docs: Host uses `qbitrr.db` in config directory; troubleshooting and advanced docs now use `config/qbitrr.db` (or `/config/qbitrr.db` in Docker) consistently.
 2. **docs/advanced/database.md:** Addressed: no `--vacuum-db` CLI; doc now describes using sqlite3 for VACUUM.
-3. **ConfigVersionWarning.currentVersion:** In `webui/src/api/types.ts`, `ConfigVersionWarning` has `currentVersion: number`; the API returns `currentVersion` as a string. The UI only uses `message` for the toast, so behavior is fine; the type could be `string` for accuracy.
+3. **ConfigVersionWarning.currentVersion:** Addressed: type in `webui/src/api/types.ts` is now `string` to match the API. `installation_type` union updated to include `docker` and `dotnet`, and `pip` removed.
 
 ---
 

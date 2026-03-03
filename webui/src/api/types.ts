@@ -256,7 +256,7 @@ export interface LidarrTracksResponse {
 export interface ConfigVersionWarning {
   type: "config_version_mismatch";
   message: string;
-  currentVersion: number;
+  currentVersion: string;
 }
 
 export interface ConfigResponseWithWarning {
@@ -291,7 +291,7 @@ export interface MetaResponse {
   last_checked: string | null;
   error?: string | null;
   update_state: UpdateState;
-  installation_type: "git" | "pip" | "binary" | "unknown";
+  installation_type: "docker" | "dotnet" | "binary" | "git" | "unknown";
   binary_download_url: string | null;
   binary_download_name: string | null;
   binary_download_size: number | null;
