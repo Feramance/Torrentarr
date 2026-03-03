@@ -13,6 +13,7 @@ public class TorrentCacheService : ITorrentCacheService
     private readonly Dictionary<string, string> _categoryCache = new(StringComparer.OrdinalIgnoreCase);
     private readonly Dictionary<string, string> _nameCache = new(StringComparer.OrdinalIgnoreCase);
     private readonly Dictionary<string, DateTime> _ignoreCache = new(StringComparer.OrdinalIgnoreCase);
+    private readonly HashSet<string> _fileFilteredHashes = new(StringComparer.OrdinalIgnoreCase);
     private readonly object _lock = new();
 
     public TorrentCacheService(ILogger<TorrentCacheService> logger)
@@ -88,6 +89,22 @@ public class TorrentCacheService : ITorrentCacheService
         }
     }
 
+    public bool IsFileFiltered(string hash)
+    {
+        lock (_lock)
+        {
+            return _fileFilteredHashes.Contains(hash);
+        }
+    }
+
+    public void MarkFileFiltered(string hash)
+    {
+        lock (_lock)
+        {
+            _fileFilteredHashes.Add(hash);
+        }
+    }
+
     public void Clear()
     {
         lock (_lock)
@@ -95,6 +112,7 @@ public class TorrentCacheService : ITorrentCacheService
             _categoryCache.Clear();
             _nameCache.Clear();
             _ignoreCache.Clear();
+            _fileFilteredHashes.Clear();
             _logger.LogTrace("All caches cleared");
         }
     }

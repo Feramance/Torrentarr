@@ -379,6 +379,16 @@ public class SonarrClient
         return episodes;
     }
 
+    /// <summary>§6.7: Trigger a full library rescan (RescanSeries command)</summary>
+    public async Task<bool> RescanAsync(CancellationToken ct = default)
+    {
+        var request = new RestRequest("/api/v3/command", Method.Post);
+        AddApiKeyHeader(request);
+        request.AddJsonBody(new { name = "RescanSeries" });
+        var response = await _client.ExecuteAsync(request, ct);
+        return response.IsSuccessful;
+    }
+
     private void AddApiKeyHeader(RestRequest request)
     {
         request.AddHeader("X-Api-Key", _apiKey);

@@ -25,6 +25,7 @@ public class TorrentarrDbContext : DbContext
     public DbSet<EpisodeQueueModel> EpisodeQueue { get; set; }
     public DbSet<AlbumQueueModel> AlbumQueue { get; set; }
     public DbSet<FilesQueued> FilesQueued { get; set; }
+    public DbSet<SearchActivity> SearchActivity { get; set; }
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
@@ -42,6 +43,7 @@ public class TorrentarrDbContext : DbContext
         modelBuilder.Entity<EpisodeQueueModel>().ToTable("episodequeuemodel");
         modelBuilder.Entity<AlbumQueueModel>().ToTable("albumqueuemodel");
         modelBuilder.Entity<FilesQueued>().ToTable("filesqueued");
+        modelBuilder.Entity<SearchActivity>().ToTable("searchactivity");
 
         // Configure unique index for TorrentLibrary (Hash, QbitInstance)
         modelBuilder.Entity<TorrentLibrary>()

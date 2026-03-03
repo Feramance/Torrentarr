@@ -51,10 +51,32 @@ public class SeedingService : ISeedingService
         => _config.QBitInstances.GetValueOrDefault(torrent.QBitInstanceName)?.CategorySeeding
            ?? new CategorySeedingConfig();
 
-    /// <summary>Returns the tracker list for whichever qBit instance the torrent belongs to.</summary>
+    /// <summary>
+    /// §3.3: Returns the merged tracker list: qBit-level as base, Arr-level overrides on host collision.
+    /// Matches qBitrr's _merge_trackers() — Arr-level wins when both define the same host.
+    /// </summary>
     private List<TrackerConfig> GetTrackerList(TorrentInfo torrent)
-        => _config.QBitInstances.GetValueOrDefault(torrent.QBitInstanceName)?.Trackers
-           ?? new List<TrackerConfig>();
+    {
+        var qbitTrackers = _config.QBitInstances.GetValueOrDefault(torrent.QBitInstanceName)?.Trackers
+                           ?? new List<TrackerConfig>();
+
+        // Find the Arr instance that manages this torrent's category
+        var arrInstance = _config.ArrInstances.Values
+            .FirstOrDefault(a => string.Equals(a.Category, torrent.Category, StringComparison.OrdinalIgnoreCase));
+        var arrTrackers = arrInstance?.Torrent.Trackers ?? new List<TrackerConfig>();
+
+        if (arrTrackers.Count == 0) return qbitTrackers;
+
+        // Arr-level wins on normalized host collision
+        var merged = qbitTrackers
+            .ToDictionary(t => ExtractTrackerHost(t.Uri ?? "") ?? t.Uri ?? "", StringComparer.OrdinalIgnoreCase);
+        foreach (var t in arrTrackers)
+        {
+            var host = ExtractTrackerHost(t.Uri ?? "") ?? t.Uri ?? "";
+            merged[host] = t;
+        }
+        return merged.Values.ToList();
+    }
 
     /// <summary>Returns the connected client for whichever qBit instance the torrent belongs to.</summary>
     private QBittorrentClient? GetClient(TorrentInfo torrent)
@@ -114,7 +136,7 @@ public class SeedingService : ISeedingService
         return result;
     }
 
-    public async Task<SeedingStats> GetSeedingStatsAsync(string hash, CancellationToken cancellationToken = default)
+    public async Task<SeedingStats?> GetSeedingStatsAsync(string hash, CancellationToken cancellationToken = default)
     {
         // Search all qBit instances for this hash
         TorrentInfo? torrent = null;
@@ -132,7 +154,7 @@ public class SeedingService : ISeedingService
 
         if (torrent == null)
         {
-            throw new InvalidOperationException($"Torrent {hash} not found");
+            return null;
         }
 
         var stats = new SeedingStats
@@ -175,11 +197,10 @@ public class SeedingService : ISeedingService
                 var meetsTrackerRatio = tracker.MinimumRatio == 0 ||
                     stats.Ratio >= tracker.MinimumRatio;
 
-                if (!meetsTrackerTime || !meetsTrackerRatio)
-                {
+                if (!meetsTrackerTime)
                     stats.MeetsTimeRequirement = false;
-                    stats.MeetsRatioRequirement = meetsTrackerRatio;
-                }
+                if (!meetsTrackerRatio)
+                    stats.MeetsRatioRequirement = false;
 
                 stats.TrackerRequirements.Add(
                     $"{tracker.TrackerUrl}: Ratio {tracker.MinimumRatio}, Time {tracker.MinimumSeedingTime}min");
@@ -209,7 +230,7 @@ public class SeedingService : ISeedingService
             var trackerConfig = await GetTrackerConfigAsync(torrent, cancellationToken);
             var hnrConfig = trackerConfig != null ? ConvertToCategorySeeding(trackerConfig) : GetSeedingConfig(torrent);
 
-            if (hnrConfig.HitAndRunMode != true)
+            if (!IsHnREnabled(hnrConfig.HitAndRunMode))
             {
                 return false;
             }
@@ -224,7 +245,7 @@ public class SeedingService : ISeedingService
             {
                 HitAndRunMode = hnrConfig.HitAndRunMode,
                 MinSeedRatio = hnrConfig.MinSeedRatio,
-                MinSeedingTime = hnrConfig.MinSeedingTimeDays,
+                MinSeedingTimeDays = hnrConfig.MinSeedingTimeDays,
                 HitAndRunMinimumDownloadPercent = hnrConfig.HitAndRunMinimumDownloadPercent,
                 HitAndRunPartialSeedRatio = hnrConfig.HitAndRunPartialSeedRatio,
                 TrackerUpdateBuffer = hnrConfig.TrackerUpdateBuffer
@@ -351,13 +372,14 @@ public class SeedingService : ISeedingService
     /// </summary>
     public async Task<bool> IsHnRSafeToRemoveAsync(TorrentInfo torrent, TrackerConfig config, CancellationToken cancellationToken = default)
     {
-        if (config.HitAndRunMode != true)
+        var clearMode = (config.HitAndRunMode ?? "disabled").Trim().ToLowerInvariant();
+        if (clearMode == "disabled")
         {
             return true;
         }
 
         var minRatio = config.MinSeedRatio ?? 1.0;
-        var minTimeDays = config.MinSeedingTime ?? 0;
+        var minTimeDays = config.MinSeedingTimeDays ?? 0;
         var minTimeSeconds = minTimeDays * 86400;
         var minDownloadPercent = (config.HitAndRunMinimumDownloadPercent ?? 10) / 100.0;
         var partialRatio = config.HitAndRunPartialSeedRatio ?? 1.0;
@@ -367,7 +389,7 @@ public class SeedingService : ISeedingService
         var isPartial = progress < 1.0 && progress >= minDownloadPercent;
         var effectiveSeedingTime = torrent.SeedingTime - bufferSeconds;
 
-        // Negligible download (<10% progress), no HnR obligation
+        // Negligible download (<threshold% progress), no HnR obligation
         if (progress < minDownloadPercent)
         {
             return true;
@@ -382,18 +404,19 @@ public class SeedingService : ISeedingService
         var ratioMet = minRatio > 0 && torrent.Ratio >= minRatio;
         var timeMet = minTimeSeconds > 0 && effectiveSeedingTime >= minTimeSeconds;
 
-        if (minRatio > 0 && minTimeSeconds > 0)
+        if (clearMode == "and")
         {
-            return ratioMet || timeMet;
+            // Both ratio AND time must be met
+            if (minRatio > 0 && minTimeSeconds > 0) return ratioMet && timeMet;
+            if (minRatio > 0) return ratioMet;
+            if (minTimeSeconds > 0) return timeMet;
+            return true;
         }
-        else if (minRatio > 0)
-        {
-            return ratioMet;
-        }
-        else if (minTimeSeconds > 0)
-        {
-            return timeMet;
-        }
+
+        // "or" mode: either ratio OR time clears HnR
+        if (minRatio > 0 && minTimeSeconds > 0) return ratioMet || timeMet;
+        if (minRatio > 0) return ratioMet;
+        if (minTimeSeconds > 0) return timeMet;
 
         return true;
     }
@@ -406,7 +429,7 @@ public class SeedingService : ISeedingService
     public async Task<bool> HnrAllowsDeleteAsync(TorrentInfo torrent, string reason, CancellationToken cancellationToken = default)
     {
         var trackers = GetTrackerList(torrent);
-        var hasHnrTracker = trackers.Any(t => t.HitAndRunMode == true);
+        var hasHnrTracker = trackers.Any(t => IsHnREnabled(t.HitAndRunMode));
         
         if (!hasHnrTracker)
         {
@@ -483,7 +506,7 @@ public class SeedingService : ISeedingService
         }
 
         // HnR protection: only applies to downloading torrents
-        if (isDownloading && shouldRemove && seedingConfig.HitAndRunMode)
+        if (isDownloading && shouldRemove && IsHnREnabled(seedingConfig.HitAndRunMode))
         {
             if (trackerConfig != null)
             {
@@ -555,13 +578,23 @@ public class SeedingService : ISeedingService
             MaxUploadRatio = tracker.MaxUploadRatio ?? -1,
             MaxSeedingTime = tracker.MaxSeedingTime ?? -1,
             RemoveTorrent = tracker.RemoveTorrent ?? -1,
-            HitAndRunMode = tracker.HitAndRunMode ?? false,
+            HitAndRunMode = tracker.HitAndRunMode ?? "disabled",
             MinSeedRatio = tracker.MinSeedRatio ?? 1.0,
-            MinSeedingTimeDays = tracker.MinSeedingTime ?? 0,
+            MinSeedingTimeDays = tracker.MinSeedingTimeDays ?? 0,
             DownloadRateLimitPerTorrent = tracker.DownloadRateLimit ?? -1,
             UploadRateLimitPerTorrent = tracker.UploadRateLimit ?? -1,
             TrackerUpdateBuffer = tracker.TrackerUpdateBuffer ?? 0
         };
+    }
+
+    /// <summary>
+    /// Check if HitAndRunMode is enabled (not null and not "disabled").
+    /// </summary>
+    private static bool IsHnREnabled(string? mode)
+    {
+        if (string.IsNullOrEmpty(mode)) return false;
+        var lower = mode.Trim().ToLowerInvariant();
+        return lower is "and" or "or";
     }
 
     /// <summary>
@@ -692,7 +725,8 @@ public class SeedingService : ISeedingService
         {
             try
             {
-                await EnsureTagsExistAsync(client, cancellationToken);
+                if (!_config.Settings.Tagless)
+                    await EnsureTagsExistAsync(client, cancellationToken);
 
                 var torrents = await client.GetTorrentsAsync(category, cancellationToken);
                 var completedTorrents = torrents.Where(t =>
@@ -711,6 +745,28 @@ public class SeedingService : ISeedingService
                     catch (Exception ex)
                     {
                         _logger.LogError(ex, "Error updating seeding tag for torrent {Hash}", torrent.Hash);
+                    }
+                }
+
+                // §3.1 / §3.2: Tracker actions + message scanning — run on all torrents
+                foreach (var torrent in torrents)
+                {
+                    torrent.QBitInstanceName = instanceName;
+                    try
+                    {
+                        await ApplyTrackerActionsAsync(client, torrent, cancellationToken);
+                    }
+                    catch (Exception ex)
+                    {
+                        _logger.LogError(ex, "Error applying tracker actions for {Hash}", torrent.Hash);
+                    }
+                    try
+                    {
+                        await ProcessTrackerMessagesAsync(client, torrent, cancellationToken);
+                    }
+                    catch (Exception ex)
+                    {
+                        _logger.LogError(ex, "Error processing tracker messages for {Hash}", torrent.Hash);
                     }
                 }
             }
@@ -774,26 +830,56 @@ public class SeedingService : ISeedingService
 
         if (meetsRequirements && !hasAllowedSeedingTag)
         {
-            await client.AddTagsAsync(
-                new List<string> { torrent.Hash },
-                new List<string> { AllowedSeedingTag },
-                cancellationToken);
-
-            _logger.LogTrace("Added {Tag} tag to torrent {Name}", AllowedSeedingTag, torrent.Name);
+            if (_config.Settings.Tagless)
+            {
+                await _dbContext.TorrentLibrary
+                    .Where(t => t.Hash == torrent.Hash)
+                    .ExecuteUpdateAsync(s => s.SetProperty(t => t.AllowedSeeding, true), cancellationToken);
+            }
+            else
+            {
+                await client.AddTagsAsync(
+                    new List<string> { torrent.Hash },
+                    new List<string> { AllowedSeedingTag },
+                    cancellationToken);
+            }
+            _logger.LogTrace("AllowedSeeding set for torrent {Name} (Tagless={Tagless})", torrent.Name, _config.Settings.Tagless);
         }
         else if (!meetsRequirements && hasAllowedSeedingTag)
         {
-            await client.RemoveTagsAsync(
-                new List<string> { torrent.Hash },
-                new List<string> { AllowedSeedingTag },
-                cancellationToken);
-
-            _logger.LogTrace("Removed {Tag} tag from torrent {Name}", AllowedSeedingTag, torrent.Name);
+            if (_config.Settings.Tagless)
+            {
+                await _dbContext.TorrentLibrary
+                    .Where(t => t.Hash == torrent.Hash)
+                    .ExecuteUpdateAsync(s => s.SetProperty(t => t.AllowedSeeding, false), cancellationToken);
+            }
+            else
+            {
+                await client.RemoveTagsAsync(
+                    new List<string> { torrent.Hash },
+                    new List<string> { AllowedSeedingTag },
+                    cancellationToken);
+            }
+            _logger.LogTrace("AllowedSeeding cleared for torrent {Name} (Tagless={Tagless})", torrent.Name, _config.Settings.Tagless);
         }
     }
 
     private bool HasTag(TorrentInfo torrent, string tag)
     {
+        // §1.6 Tagless mode: map tag names to TorrentLibrary DB columns
+        if (_config.Settings.Tagless)
+        {
+            var dbEntry = _dbContext.TorrentLibrary.AsNoTracking()
+                .FirstOrDefault(t => t.Hash == torrent.Hash);
+            if (dbEntry == null) return false;
+            return tag switch
+            {
+                AllowedSeedingTag => dbEntry.AllowedSeeding,
+                FreeSpacePausedTag => dbEntry.FreeSpacePaused,
+                _ => false
+            };
+        }
+
         if (string.IsNullOrEmpty(torrent.Tags))
             return false;
 
@@ -823,6 +909,157 @@ public class SeedingService : ISeedingService
         catch (Exception ex)
         {
             _logger.LogWarning(ex, "Failed to ensure tags exist");
+        }
+    }
+
+    /// <summary>
+    /// §3.1: Apply per-tracker-config actions (RemoveIfExists, AddTrackerIfMissing, AddTags).
+    /// Iterates the merged tracker list and applies each action for the trackers that match/don't match.
+    /// </summary>
+    private async Task ApplyTrackerActionsAsync(
+        QBittorrentClient client,
+        TorrentInfo torrent,
+        CancellationToken ct)
+    {
+        var trackers = GetTrackerList(torrent);
+        var actionTrackers = trackers.Where(t =>
+            t.RemoveIfExists || t.AddTrackerIfMissing || t.AddTags.Count > 0 || t.SuperSeedMode.HasValue).ToList();
+        if (actionTrackers.Count == 0) return;
+
+        List<TorrentTracker> torrentTrackers;
+        try { torrentTrackers = await client.GetTorrentTrackersAsync(torrent.Hash, ct); }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(ex, "ApplyTrackerActions: failed to get trackers for {Hash}", torrent.Hash);
+            return;
+        }
+
+        var existingTagSet = (torrent.Tags ?? "")
+            .Split(',', StringSplitOptions.RemoveEmptyEntries)
+            .Select(t => t.Trim())
+            .ToHashSet(StringComparer.OrdinalIgnoreCase);
+        var tagsToAdd = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+
+        foreach (var cfg in actionTrackers)
+        {
+            var cfgHost = ExtractTrackerHost(cfg.Uri ?? "");
+            if (string.IsNullOrEmpty(cfgHost)) continue;
+
+            // Find torrent tracker entries that match this config's host (direct or subdomain)
+            var matchingTrackers = torrentTrackers
+                .Where(t =>
+                {
+                    var h = ExtractTrackerHost(t.Url ?? "");
+                    return string.Equals(h, cfgHost, StringComparison.OrdinalIgnoreCase)
+                        || h.EndsWith("." + cfgHost, StringComparison.OrdinalIgnoreCase);
+                })
+                .ToList();
+
+            var isPresent = matchingTrackers.Count > 0;
+
+            // RemoveIfExists: torrent has this tracker → remove it
+            if (cfg.RemoveIfExists && isPresent)
+            {
+                var urlsToRemove = matchingTrackers.Select(t => t.Url ?? "").Where(u => u.Length > 0).ToList();
+                if (urlsToRemove.Count > 0)
+                {
+                    _logger.LogDebug("RemoveIfExists: removing tracker host {Host} from [{Name}]", cfgHost, torrent.Name);
+                    await client.RemoveTrackersAsync(torrent.Hash, urlsToRemove, ct);
+                    isPresent = false; // tracker was removed; AddTrackerIfMissing should not re-add
+                }
+            }
+
+            // AddTrackerIfMissing: torrent lacks this tracker → inject it
+            if (cfg.AddTrackerIfMissing && !isPresent && !string.IsNullOrEmpty(cfg.Uri))
+            {
+                _logger.LogDebug("AddTrackerIfMissing: adding tracker {Uri} to [{Name}]", cfg.Uri, torrent.Name);
+                await client.AddTrackersAsync(torrent.Hash, new List<string> { cfg.Uri }, ct);
+            }
+
+            // AddTags: active tracker match → queue user-defined tags
+            if (cfg.AddTags.Count > 0 && isPresent)
+            {
+                foreach (var tag in cfg.AddTags)
+                    tagsToAdd.Add(tag);
+            }
+
+            // §3.5: SuperSeedMode — set or clear super-seed mode when active tracker matches
+            if (cfg.SuperSeedMode.HasValue && isPresent)
+            {
+                _logger.LogDebug("SuperSeedMode={Mode}: applying to [{Name}]", cfg.SuperSeedMode.Value, torrent.Name);
+                await client.SetSuperSeedingAsync(torrent.Hash, cfg.SuperSeedMode.Value, ct);
+            }
+        }
+
+        // Apply new tags (only add, never remove — qBitrr pattern)
+        var newTags = tagsToAdd.Where(t => !existingTagSet.Contains(t)).ToList();
+        if (newTags.Count > 0)
+        {
+            _logger.LogDebug("AddTags: adding {Tags} to [{Name}]", string.Join(", ", newTags), torrent.Name);
+            await client.AddTagsAsync(new List<string> { torrent.Hash }, newTags, ct);
+        }
+    }
+
+    /// <summary>
+    /// §3.2: Check each tracker's status message against RemoveTrackerWithMessage list.
+    /// If matched: remove the tracker, or delete the torrent if RemoveDeadTrackers=true.
+    /// Checks both Arr-level SeedingMode and TorrentConfig lists.
+    /// </summary>
+    private async Task ProcessTrackerMessagesAsync(
+        QBittorrentClient client,
+        TorrentInfo torrent,
+        CancellationToken ct)
+    {
+        // Determine effective RemoveTrackerWithMessage and RemoveDeadTrackers from Arr config
+        var arrCfg = _config.ArrInstances.Values
+            .FirstOrDefault(a => string.Equals(a.Category, torrent.Category, StringComparison.OrdinalIgnoreCase));
+
+        List<string> keywords;
+        bool removeDead;
+
+        if (arrCfg != null)
+        {
+            // Prefer SeedingMode list (has defaults); fall back to Torrent-level list
+            var seedingModeKws = arrCfg.Torrent.SeedingMode?.RemoveTrackerWithMessage;
+            var torrentKws = arrCfg.Torrent.RemoveTrackerWithMessage;
+            keywords = seedingModeKws?.Count > 0 ? seedingModeKws : torrentKws;
+            removeDead = arrCfg.Torrent.SeedingMode?.RemoveDeadTrackers ?? arrCfg.Torrent.RemoveDeadTrackers;
+        }
+        else
+        {
+            // No Arr config — nothing to do
+            return;
+        }
+
+        if (keywords.Count == 0) return;
+
+        var trackers = await client.GetTorrentTrackersAsync(torrent.Hash, ct);
+
+        foreach (var tracker in trackers)
+        {
+            var msg = tracker.Msg ?? "";
+            if (string.IsNullOrEmpty(msg)) continue;
+
+            var matched = keywords.FirstOrDefault(kw =>
+                msg.Contains(kw, StringComparison.OrdinalIgnoreCase));
+
+            if (matched == null) continue;
+
+            if (removeDead)
+            {
+                _logger.LogWarning(
+                    "RemoveTrackerWithMessage+RemoveDeadTrackers: deleting torrent [{Name}] — tracker {Url} reported \"{Msg}\"",
+                    torrent.Name, tracker.Url, msg);
+                await client.DeleteTorrentsAsync(new List<string> { torrent.Hash }, deleteFiles: false, ct);
+                return; // torrent deleted; stop processing trackers
+            }
+            else
+            {
+                _logger.LogDebug(
+                    "RemoveTrackerWithMessage: removing tracker {Url} from [{Name}] — message: \"{Msg}\"",
+                    tracker.Url, torrent.Name, msg);
+                await client.RemoveTrackersAsync(torrent.Hash, new List<string> { tracker.Url }, ct);
+            }
         }
     }
 }

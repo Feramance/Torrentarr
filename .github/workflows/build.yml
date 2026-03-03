@@ -38,12 +38,6 @@ jobs:
     - name: Restore .NET dependencies
       run: dotnet restore
 
-    - name: Build .NET solution
-      run: dotnet build --configuration Release --no-restore
-
-    - name: Run .NET tests (non-live)
-      run: dotnet test --configuration Release --no-build --verbosity normal --filter "Category!=Live"
-
     - name: Install webui dependencies
       working-directory: webui
       run: npm ci
@@ -56,14 +50,18 @@ jobs:
       working-directory: webui
       run: npm run build
 
+    - name: Build .NET solution
+      run: dotnet build --configuration Release --no-restore
+
+    - name: Run .NET tests (non-live)
+      run: dotnet test --configuration Release --no-build --verbosity normal --filter "Category!=Live"
+
     - name: Upload build artifacts
       if: matrix.os == 'ubuntu-latest'
       uses: actions/upload-artifact@v4
       with:
         name: torrentarr-build
-        path: |
-          src/*/bin/Release/
-          webui/dist/
+        path: src/*/bin/Release/
         retention-days: 7
 
   docker:

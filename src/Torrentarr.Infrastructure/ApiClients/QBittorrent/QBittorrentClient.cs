@@ -435,6 +435,23 @@ public class QBittorrentClient
     }
 
     /// <summary>
+    /// Set file priority for specific files in a torrent.
+    /// Priority 0 = do not download; 1 = normal; 6 = high; 7 = maximum.
+    /// POST /api/v2/torrents/filePrio
+    /// </summary>
+    public async Task<bool> SetFilePriorityAsync(string hash, int[] fileIds, int priority, CancellationToken ct = default)
+    {
+        var request = new RestRequest("api/v2/torrents/filePrio", Method.Post);
+        AddAuthCookie(request);
+        request.AddParameter("hash", hash);
+        request.AddParameter("id", string.Join("|", fileIds));
+        request.AddParameter("priority", priority);
+
+        var response = await _client.ExecuteAsync(request, ct);
+        return response.IsSuccessful;
+    }
+
+    /// <summary>
     /// Create a new category
     /// </summary>
     public async Task<bool> CreateCategoryAsync(string name, string? savePath = null, CancellationToken ct = default)

@@ -65,15 +65,16 @@ Log.Logger = new LoggerConfiguration()
 
 // Monitor for log level changes via file
 var logLevelFilePath = Path.Combine(logsPath, $"worker-{instanceName}.loglevel");
-Task.Run(async () =>
+var logWatcherCts = new CancellationTokenSource();
+_ = Task.Run(async () =>
 {
-    while (true)
+    while (!logWatcherCts.Token.IsCancellationRequested)
     {
         try
         {
             if (File.Exists(logLevelFilePath))
             {
-                var level = await File.ReadAllTextAsync(logLevelFilePath);
+                var level = await File.ReadAllTextAsync(logLevelFilePath, logWatcherCts.Token);
                 level = level.Trim().ToUpperInvariant();
                 var newLevel = level switch
                 {
@@ -89,10 +90,18 @@ Task.Run(async () =>
                 Log.Information("Log level changed to {Level} via file", level);
             }
         }
-        catch { }
-        await Task.Delay(TimeSpan.FromSeconds(5));
+        catch (OperationCanceledException)
+        {
+            break;
+        }
+        catch (Exception ex)
+        {
+            Log.Warning(ex, "Log level watcher encountered an error");
+        }
+        try { await Task.Delay(TimeSpan.FromSeconds(5), logWatcherCts.Token); }
+        catch (OperationCanceledException) { break; }
     }
-});
+}, logWatcherCts.Token);
 
 try
 {
@@ -146,7 +155,6 @@ try
     builder.Services.AddScoped<ISearchExecutor, SearchExecutor>();
     builder.Services.AddScoped<IArrMediaService, ArrMediaService>();
     builder.Services.AddScoped<ISeedingService, SeedingService>();
-    builder.Services.AddScoped<IFreeSpaceService, FreeSpaceService>();
     builder.Services.AddScoped<IArrImportService, ArrImportService>();
     builder.Services.AddScoped<IDatabaseHealthService, DatabaseHealthService>();
     builder.Services.AddSingleton<IConnectivityService, ConnectivityService>();
@@ -157,6 +165,7 @@ try
 
     await host.RunAsync();
 
+    logWatcherCts.Cancel();
     return 0;
 }
 catch (Exception ex)
@@ -258,11 +267,12 @@ class ArrWorkerService : BackgroundService
                         continue;
                     }
 
-                    // Check internet connectivity
+                    // §2.4: Check internet connectivity, sleep NoInternetSleepTimer on failure
                     if (!await _connectivityService.IsConnectedAsync(stoppingToken))
                     {
-                        _logger.LogWarning("No internet connectivity, skipping processing cycle");
-                        await Task.Delay(TimeSpan.FromMinutes(1), stoppingToken);
+                        _logger.LogWarning("No internet connectivity, skipping processing cycle. Sleeping {Seconds}s",
+                            _config.Settings.NoInternetSleepTimer);
+                        await Task.Delay(TimeSpan.FromSeconds(_config.Settings.NoInternetSleepTimer), stoppingToken);
                         continue;
                     }
 
@@ -379,26 +389,33 @@ class ArrWorkerService : BackgroundService
             }
         }
 
-        // Search for missing media (if configured and on search cycle)
+        // Search (if configured and on search cycle)
         if (!_instanceConfig.ProcessingOnly && ShouldRunSearch())
         {
-            _logger.LogInformation("Searching for missing media in {Instance}", _context.InstanceName);
-            var searchResult = await arrMediaService.SearchMissingMediaAsync(_instanceConfig.Category, cancellationToken);
+            SearchResult? searchResult = null;
 
-            if (searchResult.SearchesTriggered > 0)
+            // §2.7: DoUpgradeSearch is exclusive — when active, skip missing-media search
+            if (_instanceConfig.Search.DoUpgradeSearch)
             {
-                _logger.LogInformation("Triggered {Count} searches for missing media", searchResult.SearchesTriggered);
+                _logger.LogInformation("Searching for quality upgrades (exclusive) in {Instance}", _context.InstanceName);
+                searchResult = await arrMediaService.SearchQualityUpgradesAsync(_instanceConfig.Category, cancellationToken);
             }
-
-            // Search for quality upgrades (if enabled)
-            if (_instanceConfig.Search.DoUpgradeSearch || 
-                _instanceConfig.Search.CustomFormatUnmetSearch || 
-                _instanceConfig.Search.QualityUnmetSearch)
+            else
             {
-                var upgradeResult = await arrMediaService.SearchQualityUpgradesAsync(_instanceConfig.Category, cancellationToken);
-                if (upgradeResult.SearchesTriggered > 0)
+                if (_instanceConfig.Search.SearchMissing)
                 {
-                    _logger.LogInformation("Triggered {Count} searches for quality upgrades", upgradeResult.SearchesTriggered);
+                    _logger.LogInformation("Searching for missing media in {Instance}", _context.InstanceName);
+                    searchResult = await arrMediaService.SearchMissingMediaAsync(_instanceConfig.Category, cancellationToken);
+                    if (searchResult.SearchesTriggered > 0)
+                        _logger.LogInformation("Triggered {Count} searches for missing media", searchResult.SearchesTriggered);
+                }
+
+                // QualityUnmetSearch / CustomFormatUnmetSearch are always additive
+                if (_instanceConfig.Search.QualityUnmetSearch || _instanceConfig.Search.CustomFormatUnmetSearch)
+                {
+                    var upgradeResult = await arrMediaService.SearchQualityUpgradesAsync(_instanceConfig.Category, cancellationToken);
+                    if (upgradeResult.SearchesTriggered > 0)
+                        _logger.LogInformation("Triggered {Count} searches for quality upgrades", upgradeResult.SearchesTriggered);
                 }
             }
         }

@@ -21,10 +21,15 @@ public class SearchExecutorTests
         var db = dbContext ?? new TorrentarrDbContext(options);
         var cfg = config ?? new TorrentarrConfig();
         
+        var switcher = new QualityProfileSwitcherService(
+            NullLogger<QualityProfileSwitcherService>.Instance,
+            db);
+
         return new SearchExecutor(
             NullLogger<SearchExecutor>.Instance,
             cfg,
-            db);
+            db,
+            switcher);
     }
 
     private static TorrentarrConfig CreateConfigWithRadarr(int searchLoopDelay = 30, int searchLimit = 5)

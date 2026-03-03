@@ -323,6 +323,8 @@ const RadarrInstanceView = memo(function RadarrInstanceView({
     []
   );
 
+  // TanStack Table returns unstable function refs; React Compiler skips memoization by design
+  /* eslint-disable-next-line react-hooks/incompatible-library */
   const table = useReactTable({
     data: reasonFilteredMovies.slice(page * pageSize, page * pageSize + pageSize),
     columns,
@@ -576,7 +578,7 @@ export function RadarrView({ active }: { active: boolean }): JSX.Element {
         );
       }
     },
-    [push]
+    [push, instanceMovieSync]
   );
 
   const fetchInstance = useCallback(
@@ -665,7 +667,7 @@ export function RadarrView({ active }: { active: boolean }): JSX.Element {
         setInstanceLoading(false);
       }
     },
-    [push, preloadRemainingPages]
+    [push, preloadRemainingPages, instanceMovieSync]
   );
 
   const loadAggregate = useCallback(async (options?: { showLoading?: boolean }) => {
@@ -758,7 +760,7 @@ export function RadarrView({ active }: { active: boolean }): JSX.Element {
     } finally {
       setAggLoading(false);
     }
-  }, [instances, globalSearch, push, aggFilter]);
+  }, [instances, globalSearch, push, aggFilter, aggMovieSync, aggSummary]);
 
   // LiveArr is now loaded via WebUIContext, no need to load config here
 

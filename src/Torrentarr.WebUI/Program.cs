@@ -1,5 +1,8 @@
 using Torrentarr.Core.Configuration;
+using Torrentarr.Core.Models;
 using Torrentarr.Core.Services;
+using Torrentarr.Infrastructure.ApiClients.Arr;
+using Torrentarr.Infrastructure.ApiClients.QBittorrent;
 using Torrentarr.Infrastructure.Database;
 using Torrentarr.Infrastructure.Services;
 using Microsoft.EntityFrameworkCore;
@@ -17,7 +20,7 @@ var dbPath = Path.Combine(basePath, "qbitrr.db");
 Directory.CreateDirectory(basePath);
 Directory.CreateDirectory(logsPath);
 
-// Mutable level switch — lets /api/loglevel change the level at runtime
+// Mutable level switch — lets /web/loglevel change the level at runtime
 var levelSwitch = new LoggingLevelSwitch(LogEventLevel.Information);
 
 var builder = WebApplication.CreateBuilder(args);
@@ -154,7 +157,7 @@ app.MapGet("/health", () => Results.Ok(new
     timestamp = DateTime.UtcNow
 }));
 
-app.MapPost("/api/loglevel", (LogLevelRequest req, LoggingLevelSwitch ls) =>
+app.MapPost("/web/loglevel", (LogLevelRequest req, LoggingLevelSwitch ls) =>
 {
     var newLevel = req.Level?.ToUpperInvariant() switch
     {
@@ -173,13 +176,13 @@ app.MapPost("/api/loglevel", (LogLevelRequest req, LoggingLevelSwitch ls) =>
     return Results.Ok(new { success = true, level = req.Level });
 });
 
-app.MapGet("/api/loglevel", (LoggingLevelSwitch ls) =>
+app.MapGet("/web/loglevel", (LoggingLevelSwitch ls) =>
 {
     return Results.Ok(new { level = ls.MinimumLevel.ToString() });
 });
 
 // Status endpoint
-app.MapGet("/api/status", async (TorrentarrDbContext db, TorrentarrConfig config) =>
+app.MapGet("/web/status", async (TorrentarrDbContext db, TorrentarrConfig config) =>
 {
     var movieCount = await db.Movies.CountAsync();
     var episodeCount = await db.Episodes.CountAsync();
@@ -215,7 +218,7 @@ app.MapGet("/api/status", async (TorrentarrDbContext db, TorrentarrConfig config
 });
 
 // Movies endpoint - get all movies with pagination
-app.MapGet("/api/movies", async (TorrentarrDbContext db, int? page, int? pageSize) =>
+app.MapGet("/web/movies", async (TorrentarrDbContext db, int? page, int? pageSize) =>
 {
     var currentPage = page ?? 1;
     var currentPageSize = pageSize ?? 50;
@@ -247,7 +250,7 @@ app.MapGet("/api/movies", async (TorrentarrDbContext db, int? page, int? pageSiz
 });
 
 // Episodes endpoint - get all episodes with pagination
-app.MapGet("/api/episodes", async (TorrentarrDbContext db, int? page, int? pageSize) =>
+app.MapGet("/web/episodes", async (TorrentarrDbContext db, int? page, int? pageSize) =>
 {
     var currentPage = page ?? 1;
     var currentPageSize = pageSize ?? 50;
@@ -280,7 +283,7 @@ app.MapGet("/api/episodes", async (TorrentarrDbContext db, int? page, int? pageS
 });
 
 // Torrents endpoint - get all tracked torrents
-app.MapGet("/api/torrents", async (TorrentarrDbContext db, int? page, int? pageSize) =>
+app.MapGet("/web/torrents", async (TorrentarrDbContext db, int? page, int? pageSize) =>
 {
     var currentPage = page ?? 1;
     var currentPageSize = pageSize ?? 50;
@@ -311,7 +314,7 @@ app.MapGet("/api/torrents", async (TorrentarrDbContext db, int? page, int? pageS
 });
 
 // Stats endpoint - detailed statistics
-app.MapGet("/api/stats", async (TorrentarrDbContext db) =>
+app.MapGet("/web/stats", async (TorrentarrDbContext db) =>
 {
     var movieCount = await db.Movies.CountAsync();
     var episodeCount = await db.Episodes.CountAsync();
@@ -342,7 +345,7 @@ app.MapGet("/api/stats", async (TorrentarrDbContext db) =>
 });
 
 // Configuration endpoint - get current configuration (sanitized)
-app.MapGet("/api/config", (TorrentarrConfig config) =>
+app.MapGet("/web/config", (TorrentarrConfig config) =>
 {
     return Results.Ok(new
     {
@@ -382,8 +385,163 @@ app.MapGet("/api/config", (TorrentarrConfig config) =>
     });
 });
 
+// §6.8: POST /web/config — partial config changes with reload-type detection
+// Accepts { "changes": { "Section.Key": value, ... } }, saves and returns reloadType
+app.MapPost("/web/config", async (HttpContext ctx, TorrentarrConfig config, ConfigurationLoader loader, IConfigReloader reloader) =>
+{
+    Newtonsoft.Json.Linq.JObject? body = null;
+    try
+    {
+        using var reader = new StreamReader(ctx.Request.Body);
+        var json = await reader.ReadToEndAsync();
+        body = Newtonsoft.Json.JsonConvert.DeserializeObject<Newtonsoft.Json.Linq.JObject>(json);
+    }
+    catch (Exception ex)
+    {
+        return Results.BadRequest(new { error = $"Invalid JSON: {ex.Message}" });
+    }
+
+    var changesToken = body?["changes"] as Newtonsoft.Json.Linq.JObject;
+    if (changesToken == null)
+        return Results.BadRequest(new { error = "Missing 'changes' field" });
+
+    // Empty changes dict → nothing to do, report reloadType="none"
+    if (!changesToken.HasValues)
+        return Results.Ok(new { status = "ok", configReloaded = false, reloadType = "none", affectedInstances = Array.Empty<string>() });
+
+    var changes = changesToken.Properties()
+        .ToDictionary(p => p.Name, p => p.Value);
+
+    // ── Classify reload type ────────────────────────────────────────────────
+    var reloadTiers = new[] { "none", "frontend", "webui", "single_arr", "multi_arr", "full" };
+    var reloadType = "none";
+    var affectedInstances = new List<string>();
+
+    static string EscalateReloadType(string current, string candidate, string[] tiers)
+    {
+        var ci = Array.IndexOf(tiers, current);
+        var ni = Array.IndexOf(tiers, candidate);
+        return ni > ci ? candidate : current;
+    }
+
+    foreach (var key in changes.Keys)
+    {
+        var lower = key.ToLowerInvariant();
+
+        if (lower.StartsWith("webui."))
+        {
+            reloadType = EscalateReloadType(reloadType, "frontend", reloadTiers);
+            continue;
+        }
+
+        if (lower.StartsWith("settings."))
+        {
+            reloadType = EscalateReloadType(reloadType, "webui", reloadTiers);
+            continue;
+        }
+
+        // Check against known Arr instance names (case-insensitive prefix match)
+        var matchedArr = config.ArrInstances.Keys
+            .FirstOrDefault(name => lower.StartsWith(name.ToLowerInvariant() + "."));
+        if (matchedArr != null)
+        {
+            if (!affectedInstances.Contains(matchedArr, StringComparer.OrdinalIgnoreCase))
+                affectedInstances.Add(matchedArr);
+            reloadType = EscalateReloadType(reloadType,
+                affectedInstances.Count > 1 ? "multi_arr" : "single_arr",
+                reloadTiers);
+            continue;
+        }
+
+        // qBit, unknown, or structural changes → full restart
+        reloadType = EscalateReloadType(reloadType, "full", reloadTiers);
+    }
+
+    // ── Apply changes to config + save ─────────────────────────────────────
+    try
+    {
+        // Serialize current config to JObject, apply dot-path changes, deserialize back
+        var configJson = Newtonsoft.Json.JsonConvert.SerializeObject(config);
+        var configObj = Newtonsoft.Json.JsonConvert.DeserializeObject<Newtonsoft.Json.Linq.JObject>(configJson)!;
+
+        foreach (var (key, value) in changes)
+        {
+            // Reject protected keys (qBitrr parity)
+            if (string.Equals(key, "Settings.ConfigVersion", StringComparison.OrdinalIgnoreCase))
+                return Results.Json(new { error = "Cannot modify protected configuration key: Settings.ConfigVersion" }, statusCode: 403);
+
+            // Convert dot-path "Section.SubKey" to JToken path "section.subKey"
+            // Apply each change via JToken pointer navigation
+            ApplyDotPathChange(configObj, key, value);
+        }
+
+        var updatedConfig = configObj.ToObject<TorrentarrConfig>();
+        if (updatedConfig != null)
+        {
+            loader.SaveConfig(updatedConfig, reloader.ConfigPath);
+        }
+    }
+    catch (Exception ex)
+    {
+        Log.Warning(ex, "POST /web/config: failed to save config changes");
+        return Results.Ok(new
+        {
+            status = "saved_with_warning",
+            configReloaded = false,
+            reloadType,
+            affectedInstances,
+            warning = ex.Message
+        });
+    }
+
+    var reloaded = reloader.ReloadConfig();
+
+    return Results.Ok(new
+    {
+        status = "ok",
+        configReloaded = reloaded,
+        reloadType,
+        affectedInstances
+    });
+});
+
+// Helper: apply a dot-path change to a JObject (e.g. "Settings.LoopSleepTimer" = 30)
+static void ApplyDotPathChange(Newtonsoft.Json.Linq.JObject root, string dotPath, Newtonsoft.Json.Linq.JToken value)
+{
+    var segments = dotPath.Split('.');
+    Newtonsoft.Json.Linq.JObject current = root;
+
+    for (var i = 0; i < segments.Length - 1; i++)
+    {
+        var seg = segments[i];
+        // Case-insensitive property lookup
+        var prop = current.Properties()
+            .FirstOrDefault(p => p.Name.Equals(seg, StringComparison.OrdinalIgnoreCase));
+
+        if (prop?.Value is Newtonsoft.Json.Linq.JObject nested)
+        {
+            current = nested;
+        }
+        else
+        {
+            // Create missing intermediate object
+            var newObj = new Newtonsoft.Json.Linq.JObject();
+            current[seg] = newObj;
+            current = newObj;
+        }
+    }
+
+    var leafKey = segments[^1];
+    var existingProp = current.Properties()
+        .FirstOrDefault(p => p.Name.Equals(leafKey, StringComparison.OrdinalIgnoreCase));
+    if (existingProp != null)
+        existingProp.Value = value;
+    else
+        current[leafKey] = value;
+}
+
 // Processes endpoint - list all processes with status
-app.MapGet("/api/processes", (TorrentarrConfig config) =>
+app.MapGet("/web/processes", (TorrentarrConfig config) =>
 {
     var processes = new List<object>();
 
@@ -408,7 +566,7 @@ app.MapGet("/api/processes", (TorrentarrConfig config) =>
 });
 
 // Restart specific process
-app.MapPost("/api/processes/{category}/{kind}/restart", (string category, string kind) =>
+app.MapPost("/web/processes/{category}/{kind}/restart", (string category, string kind) =>
 {
     return Results.Ok(new
     {
@@ -418,7 +576,7 @@ app.MapPost("/api/processes/{category}/{kind}/restart", (string category, string
 });
 
 // Restart all processes
-app.MapPost("/api/processes/restart_all", () =>
+app.MapPost("/web/processes/restart_all", () =>
 {
     return Results.Ok(new
     {
@@ -428,29 +586,29 @@ app.MapPost("/api/processes/restart_all", () =>
 });
 
 // Logs endpoint - list available log files
-app.MapGet("/api/logs", () =>
+app.MapGet("/web/logs", () =>
 {
-    var logs = new List<object>();
+    var files = new List<object>();
 
     if (Directory.Exists(logsPath))
     {
         foreach (var file in Directory.GetFiles(logsPath, "*.log").OrderByDescending(f => f))
         {
             var fileInfo = new FileInfo(file);
-            logs.Add(new
+            files.Add(new
             {
                 name = Path.GetFileName(file),
                 size = fileInfo.Length,
-                modified = fileInfo.LastWriteTimeUtc
+                modified = fileInfo.LastWriteTimeUtc.ToString("o")
             });
         }
     }
 
-    return Results.Ok(new { logs });
+    return Results.Ok(new { files });
 });
 
 // Log file contents
-app.MapGet("/api/logs/{name}", async (string name, int? lines) =>
+app.MapGet("/web/logs/{name}", async (string name, int? lines) =>
 {
     var logFile = Path.Combine(logsPath, name);
 
@@ -471,134 +629,409 @@ app.MapGet("/api/logs/{name}", async (string name, int? lines) =>
     });
 });
 
+// §6.9: Log file download — streams named log file as an attachment
+app.MapGet("/web/logs/{name}/download", (string name, HttpResponse response) =>
+{
+    // Sanitize: only allow the filename component (no directory traversal)
+    var safeName = Path.GetFileName(name);
+    var logFile = Path.Combine(logsPath, safeName);
+
+    if (!File.Exists(logFile))
+        return Results.NotFound(new { error = "Log file not found" });
+
+    response.Headers["Content-Disposition"] = $"attachment; filename=\"{safeName}\"";
+    return Results.File(logFile, "application/octet-stream", safeName);
+});
+
 // Radarr movies for specific category
-app.MapGet("/api/radarr/{category}/movies", async (string category, TorrentarrDbContext db, int? page, int? pageSize) =>
+app.MapGet("/web/radarr/{category}/movies", async (string category, TorrentarrDbContext db, int? page, int? pageSize, string? q) =>
 {
     var currentPage = page ?? 1;
     var currentPageSize = pageSize ?? 50;
     var skip = (currentPage - 1) * currentPageSize;
 
-    var totalMovies = await db.Movies.CountAsync(m => m.ArrInstance == category);
-    var movies = await db.Movies
-        .Where(m => m.ArrInstance == category)
-        .OrderByDescending(m => m.EntryId)
+    var allMovies = db.Movies.Where(m => m.ArrInstance == category);
+    // §6.3: text search filter
+    if (!string.IsNullOrWhiteSpace(q))
+        allMovies = allMovies.Where(m => m.Title != null && m.Title.Contains(q));
+    var totalMovies = await allMovies.CountAsync();
+    var monitoredCount = await allMovies.CountAsync(m => m.Monitored);
+    var availableCount = await allMovies.CountAsync(m => m.HasFile);
+    // §6.4: additional aggregate counts
+    var missingCount = await allMovies.CountAsync(m => !m.HasFile && m.Monitored);
+    var qualityMetCount = await allMovies.CountAsync(m => m.QualityMet);
+    var requestsCount = await allMovies.CountAsync(m => m.IsRequest);
+
+    var movies = await allMovies
+        .OrderByDescending(m => m.Year)
         .Skip(skip)
         .Take(currentPageSize)
         .Select(m => new
         {
-            m.EntryId,
+            id = m.EntryId,
             m.Title,
-            m.Monitored,
-            m.TmdbId,
             m.Year,
+            m.Monitored,
+            m.HasFile,
+            m.QualityMet,
+            m.CustomFormatMet,
+            m.CustomFormatScore,
+            m.MinCustomFormatScore,
+            m.IsRequest,
+            m.Upgrade,
+            m.Reason,
+            m.Searched,
+            m.QualityProfileId,
+            m.QualityProfileName,
+            m.TmdbId,
+            m.ArrId,
             m.ArrInstance
         })
         .ToListAsync();
 
     return Results.Ok(new
     {
-        page = currentPage,
-        pageSize = currentPageSize,
-        totalCount = totalMovies,
-        totalPages = (int)Math.Ceiling((double)totalMovies / currentPageSize),
         category,
-        items = movies
+        total = totalMovies,
+        page = currentPage,
+        page_size = currentPageSize,
+        counts = new { available = availableCount, monitored = monitoredCount, missing = missingCount, quality_met = qualityMetCount, requests = requestsCount },
+        movies
     });
 });
 
 // Sonarr series for specific category
-app.MapGet("/api/sonarr/{category}/series", async (string category, TorrentarrDbContext db, int? page, int? pageSize) =>
+app.MapGet("/web/sonarr/{category}/series", async (string category, TorrentarrDbContext db, int? page, int? pageSize, string? q, string? missing) =>
 {
     var currentPage = page ?? 1;
     var currentPageSize = pageSize ?? 50;
     var skip = (currentPage - 1) * currentPageSize;
 
-    var totalSeries = await db.Series.CountAsync(s => s.ArrInstance == category);
-    var series = await db.Series
-        .Where(s => s.ArrInstance == category)
+    var allSeries = db.Series.Where(s => s.ArrInstance == category);
+    // §6.3: text search filter
+    if (!string.IsNullOrWhiteSpace(q))
+        allSeries = allSeries.Where(s => s.Title != null && s.Title.Contains(q));
+    // missing=1: only return series that have unaired/missing episodes
+    if (missing == "1")
+        allSeries = allSeries.Where(s => !s.Searched);
+    var totalSeries = await allSeries.CountAsync();
+    var monitoredCount = await allSeries.CountAsync(s => s.Monitored == true);
+    // §6.4: additional aggregate counts (SeriesFilesModel has no IsRequest/QualityMet; use Searched/Upgrade as proxies)
+    var missingSeriesCount = await allSeries.CountAsync(s => !s.Searched);
+    var qualityMetSeriesCount = await allSeries.CountAsync(s => !s.Upgrade);
+
+    var seriesItems = await allSeries
         .OrderByDescending(s => s.EntryId)
         .Skip(skip)
         .Take(currentPageSize)
         .Select(s => new
         {
-            s.EntryId,
-            s.Title,
-            s.Monitored,
-            s.ArrInstance
+            series = new
+            {
+                id = s.EntryId,
+                s.Title,
+                s.TvdbId,
+                s.Monitored,
+                s.Upgrade,
+                s.MinCustomFormatScore,
+                s.QualityProfileId,
+                s.QualityProfileName,
+                s.ArrId,
+                s.ArrInstance
+            },
+            totals = new { available = s.Searched ? 1 : 0, monitored = s.Monitored == true ? 1 : 0 },
+            seasons = new Dictionary<string, object>()
         })
         .ToListAsync();
 
     return Results.Ok(new
     {
-        page = currentPage,
-        pageSize = currentPageSize,
-        totalCount = totalSeries,
-        totalPages = (int)Math.Ceiling((double)totalSeries / currentPageSize),
         category,
-        items = series
+        total = totalSeries,
+        page = currentPage,
+        page_size = currentPageSize,
+        counts = new { available = monitoredCount, monitored = monitoredCount, missing = missingSeriesCount, quality_met = qualityMetSeriesCount, requests = 0 },
+        series = seriesItems
     });
 });
 
 // Lidarr albums for specific category
-app.MapGet("/api/lidarr/{category}/albums", async (string category, TorrentarrDbContext db, int? page, int? pageSize) =>
+app.MapGet("/web/lidarr/{category}/albums", async (string category, TorrentarrDbContext db, int? page, int? pageSize, string? q) =>
 {
     var currentPage = page ?? 1;
     var currentPageSize = pageSize ?? 50;
     var skip = (currentPage - 1) * currentPageSize;
 
-    var totalAlbums = await db.Albums.CountAsync(a => a.ArrInstance == category);
-    var albums = await db.Albums
-        .Where(a => a.ArrInstance == category)
+    var allAlbums = db.Albums.Where(a => a.ArrInstance == category);
+    // §6.3: text search filter (matches artist or album title)
+    if (!string.IsNullOrWhiteSpace(q))
+        allAlbums = allAlbums.Where(a =>
+            (a.Title != null && a.Title.Contains(q)) ||
+            (a.ArtistTitle != null && a.ArtistTitle.Contains(q)));
+    var totalAlbums = await allAlbums.CountAsync();
+    var monitoredCount = await allAlbums.CountAsync(a => a.Monitored);
+    var availableCount = await allAlbums.CountAsync(a => a.HasFile);
+    // §6.4: additional aggregate counts
+    var missingAlbumCount = await allAlbums.CountAsync(a => !a.HasFile && a.Monitored);
+    var qualityMetAlbumCount = await allAlbums.CountAsync(a => a.QualityMet);
+    var requestsAlbumCount = await allAlbums.CountAsync(a => a.IsRequest);
+
+    var albums = await allAlbums
         .OrderByDescending(a => a.EntryId)
         .Skip(skip)
         .Take(currentPageSize)
         .Select(a => new
         {
-            a.EntryId,
-            a.Title,
-            a.Monitored,
-            a.ArrInstance
+            album = new
+            {
+                id = a.EntryId,
+                a.Title,
+                a.Monitored,
+                a.HasFile,
+                a.QualityMet,
+                a.CustomFormatMet,
+                a.CustomFormatScore,
+                a.MinCustomFormatScore,
+                a.IsRequest,
+                a.Upgrade,
+                a.Reason,
+                a.Searched,
+                a.QualityProfileId,
+                a.QualityProfileName,
+                a.ArrId,
+                a.ArrInstance
+            },
+            totals = new { available = a.HasFile ? 1 : 0, monitored = a.Monitored ? 1 : 0 },
+            tracks = new List<object>()
         })
         .ToListAsync();
 
     return Results.Ok(new
     {
-        page = currentPage,
-        pageSize = currentPageSize,
-        totalCount = totalAlbums,
-        totalPages = (int)Math.Ceiling((double)totalAlbums / currentPageSize),
         category,
-        items = albums
+        total = totalAlbums,
+        page = currentPage,
+        page_size = currentPageSize,
+        counts = new { available = availableCount, monitored = monitoredCount, missing = missingAlbumCount, quality_met = qualityMetAlbumCount, requests = requestsAlbumCount },
+        albums
     });
 });
 
-// Arr instances info
-app.MapGet("/api/arr", (TorrentarrConfig config) =>
+// Arr instances info — returns { arr: ArrInfo[] } matching frontend ArrListResponse
+app.MapGet("/web/arr", (TorrentarrConfig config) =>
 {
-    var arrs = new Dictionary<string, object>();
-
-    foreach (var arr in config.ArrInstances)
+    var arrList = config.ArrInstances.Select(kv => new
     {
-        arrs[arr.Key] = new
+        name = kv.Key,
+        type = kv.Value.Type,
+        category = kv.Value.Category,
+        uri = kv.Value.URI,
+        managed = kv.Value.Managed,
+        searchOnly = kv.Value.SearchOnly,
+        processingOnly = kv.Value.ProcessingOnly
+    }).ToList();
+
+    return Results.Ok(new { arr = arrList, ready = true });
+});
+
+// Restart a specific Arr worker
+app.MapPost("/web/arr/{category}/restart", (string category) =>
+{
+    return Results.Ok(new { status = "ok", restarted = new[] { category } });
+});
+
+// Test Arr connection and return quality profiles + system info
+app.MapPost("/web/arr/test-connection", async (HttpContext ctx, TorrentarrConfig config) =>
+{
+    try
+    {
+        var body = await ctx.Request.ReadFromJsonAsync<ArrTestConnectionRequest>();
+        if (body == null)
+            return Results.BadRequest(new { success = false, message = "Invalid request body" });
+
+        var uri = body.Uri;
+        var apiKey = body.ApiKey;
+
+        // When instanceKey is provided, load URI and APIKey from config (e.g. when API key is redacted in UI)
+        if (!string.IsNullOrEmpty(body.InstanceKey))
         {
-            name = arr.Key,
-            type = arr.Value.Type,
-            category = arr.Value.Category,
-            uri = arr.Value.URI,
-            managed = arr.Value.Managed,
-            searchOnly = arr.Value.SearchOnly,
-            processingOnly = arr.Value.ProcessingOnly
+            if (string.IsNullOrEmpty(body.ArrType))
+                return Results.BadRequest(new { success = false, message = "Missing required field: arrType" });
+
+            if (!config.ArrInstances.TryGetValue(body.InstanceKey, out var arrCfg))
+                return Results.Ok(new { success = false, message = "Instance not found or missing URI/APIKey in config" });
+
+            uri = arrCfg.URI;
+            apiKey = arrCfg.APIKey;
+        }
+
+        if (string.IsNullOrEmpty(body.ArrType) || string.IsNullOrEmpty(uri) || string.IsNullOrEmpty(apiKey))
+            return Results.Ok(new { success = false, message = "Missing required fields: arrType, uri, or apiKey" });
+
+        SystemInfo? systemInfo;
+        var profiles = new List<QualityProfile>();
+        var arrType = body.ArrType.ToLowerInvariant();
+
+        Func<Task<SystemInfo>> getSystemInfo;
+        Func<Task<List<QualityProfile>>> getProfiles;
+
+        switch (arrType)
+        {
+            case "radarr":
+                var radarr = new RadarrClient(uri, apiKey);
+                getSystemInfo = () => radarr.GetSystemInfoAsync();
+                getProfiles = () => radarr.GetQualityProfilesAsync();
+                break;
+            case "sonarr":
+                var sonarr = new SonarrClient(uri, apiKey);
+                getSystemInfo = () => sonarr.GetSystemInfoAsync();
+                getProfiles = () => sonarr.GetQualityProfilesAsync();
+                break;
+            case "lidarr":
+                var lidarr = new LidarrClient(uri, apiKey);
+                getSystemInfo = () => lidarr.GetSystemInfoAsync();
+                getProfiles = () => lidarr.GetQualityProfilesAsync();
+                break;
+            default:
+                return Results.Ok(new { success = false, message = $"Invalid arrType: {body.ArrType}" });
+        }
+
+        systemInfo = await getSystemInfo();
+
+        // Retry logic for quality profile fetching
+        const int maxRetries = 3;
+        for (int attempt = 1; attempt <= maxRetries; attempt++)
+        {
+            try
+            {
+                profiles = await getProfiles();
+                break;
+            }
+            catch (Exception) when (attempt < maxRetries)
+            {
+                await Task.Delay(1000);
+            }
+        }
+
+        return Results.Ok(new
+        {
+            success = true,
+            message = $"Connected to {body.ArrType} {systemInfo.Version}",
+            systemInfo = new { version = systemInfo.Version ?? "unknown", branch = (string?)null },
+            qualityProfiles = profiles.Select(p => new { id = p.Id, name = p.Name })
+        });
+    }
+    catch (Exception ex)
+    {
+        // Return 200 with success: false so frontend doesn't treat Arr errors as auth failure
+        var errorMsg = ex.Message;
+        string message;
+        if (errorMsg.Contains("401") || errorMsg.Contains("Unauthorized", StringComparison.OrdinalIgnoreCase))
+            message = "Unauthorized: Invalid API key";
+        else if (errorMsg.Contains("404"))
+            message = $"Not found: Check URI";
+        else if (errorMsg.Contains("Connection refused", StringComparison.OrdinalIgnoreCase) ||
+                 errorMsg.Contains("No connection could be made", StringComparison.OrdinalIgnoreCase))
+            message = "Connection refused: Cannot reach server";
+        else
+            message = "Connection test failed";
+
+        return Results.Ok(new { success = false, message });
+    }
+});
+
+// §6.7: Arr rebuild — triggers RescanMovie / RescanSeries / RescanArtist on the target instance
+app.MapPost("/web/arr/rebuild", async (HttpContext ctx, TorrentarrConfig config) =>
+{
+    try
+    {
+        var body = await ctx.Request.ReadFromJsonAsync<ArrRebuildRequest>();
+        if (body == null || string.IsNullOrEmpty(body.ArrInstanceName))
+            return Results.BadRequest(new { success = false, error = "arrInstanceName required" });
+
+        if (!config.ArrInstances.TryGetValue(body.ArrInstanceName, out var arrCfg))
+            return Results.NotFound(new { success = false, error = "Arr instance not found" });
+
+        bool success = arrCfg.Type?.ToLowerInvariant() switch
+        {
+            "radarr" => await new RadarrClient(arrCfg.URI, arrCfg.APIKey).RescanAsync(),
+            "sonarr" => await new SonarrClient(arrCfg.URI, arrCfg.APIKey).RescanAsync(),
+            "lidarr" => await new LidarrClient(arrCfg.URI, arrCfg.APIKey).RescanAsync(),
+            _ => false
         };
+
+        return Results.Ok(new { success, instance = body.ArrInstanceName });
+    }
+    catch (Exception ex)
+    {
+        return Results.Ok(new { success = false, error = ex.Message });
+    }
+});
+
+// §6.5: qBit categories — seeding config + live torrent stats per category
+app.MapGet("/web/qbit/categories", async (TorrentarrConfig config) =>
+{
+    var categories = new List<object>();
+
+    foreach (var (qbitName, qbitCfg) in config.QBitInstances)
+    {
+        if (qbitCfg.Disabled || qbitCfg.Host == "CHANGE_ME") continue;
+
+        // Fetch live torrent list from this qBit instance
+        var liveTorrents = new List<TorrentInfo>();
+        try
+        {
+            var qbitClient = new QBittorrentClient(qbitCfg.Host, qbitCfg.Port, qbitCfg.UserName, qbitCfg.Password);
+            if (await qbitClient.LoginAsync())
+                liveTorrents = await qbitClient.GetTorrentsAsync();
+        }
+        catch { /* live stats unavailable — return zeros */ }
+
+        foreach (var cat in qbitCfg.ManagedCategories)
+        {
+            var catTorrents = liveTorrents
+                .Where(t => string.Equals(t.Category, cat, StringComparison.OrdinalIgnoreCase))
+                .ToList();
+            var seedingTorrents = catTorrents
+                .Where(t => t.State.Contains("upload", StringComparison.OrdinalIgnoreCase) ||
+                             t.State.Contains("seeding", StringComparison.OrdinalIgnoreCase))
+                .ToList();
+            var avgRatio = catTorrents.Count > 0 ? catTorrents.Average(t => t.Ratio) : 0.0;
+            var avgSeedingTimeDays = seedingTorrents.Count > 0
+                ? seedingTorrents.Average(t => t.SeedingTime) / 86400.0
+                : 0.0;
+
+            var seeding = qbitCfg.CategorySeeding;
+            categories.Add(new
+            {
+                category = cat,
+                instance = qbitName,
+                managedBy = config.ArrInstances.Values.Any(a =>
+                    string.Equals(a.Category, cat, StringComparison.OrdinalIgnoreCase)) ? "arr" : "qbit",
+                torrentCount = catTorrents.Count,
+                seedingCount = seedingTorrents.Count,
+                totalSize = catTorrents.Sum(t => t.Size),
+                avgRatio,
+                avgSeedingTimeDays,
+                seedingConfig = new
+                {
+                    maxRatio = seeding.MaxUploadRatio,
+                    maxTime = seeding.MaxSeedingTime,
+                    removeMode = seeding.RemoveTorrent,
+                    hitAndRunMode = seeding.HitAndRunMode,
+                    minSeedRatio = seeding.MinSeedRatio,
+                    minSeedingTimeDays = seeding.MinSeedingTimeDays,
+                    downloadLimit = seeding.DownloadRateLimitPerTorrent,
+                    uploadLimit = seeding.UploadRateLimitPerTorrent
+                }
+            });
+        }
     }
 
-    return Results.Ok(new
-    {
-        arrs,
-        total = arrs.Count
-    });
+    return Results.Ok(new { categories, ready = true });
 });
 
-app.MapGet("/api/config/full", (TorrentarrConfig config, IConfigReloader reloader) =>
+app.MapGet("/web/config/full", (TorrentarrConfig config, IConfigReloader reloader) =>
 {
     return Results.Ok(new
     {
@@ -630,7 +1063,7 @@ app.MapGet("/api/config/full", (TorrentarrConfig config, IConfigReloader reloade
     });
 });
 
-app.MapPost("/api/config/reload", (IConfigReloader reloader) =>
+app.MapPost("/web/config/reload", (IConfigReloader reloader) =>
 {
     var success = reloader.ReloadConfig();
     return success
@@ -638,7 +1071,7 @@ app.MapPost("/api/config/reload", (IConfigReloader reloader) =>
         : Results.BadRequest(new { success = false, message = "Failed to reload configuration" });
 });
 
-app.MapPost("/api/config/save", async (TorrentarrConfig updatedConfig, ConfigurationLoader loader, IConfigReloader reloader) =>
+app.MapPost("/web/config/save", async (TorrentarrConfig updatedConfig, ConfigurationLoader loader, IConfigReloader reloader) =>
 {
     try
     {
@@ -656,21 +1089,41 @@ app.MapPost("/api/config/save", async (TorrentarrConfig updatedConfig, Configura
     }
 });
 
-app.MapGet("/api/config/path", (IConfigReloader reloader) =>
+app.MapGet("/web/config/path", (IConfigReloader reloader) =>
 {
     return Results.Ok(new { path = reloader.ConfigPath });
 });
 
-// Meta info
-app.MapGet("/api/meta", () =>
+// Meta info — matches frontend MetaResponse interface
+app.MapGet("/web/meta", () =>
 {
     return Results.Ok(new
     {
-        version = "1.0.0",
-        pythonEquivalent = "5.8.8",
-        platform = Environment.OSVersion.ToString(),
-        runtime = $".NET {Environment.Version}",
-        machineName = Environment.MachineName
+        current_version = "1.0.0",
+        latest_version = (string?)null,
+        update_available = false,
+        changelog = (string?)null,
+        current_version_changelog = (string?)null,
+        changelog_url = (string?)null,
+        repository_url = "https://github.com/Feramance/Torrentarr",
+        homepage_url = "https://github.com/Feramance/Torrentarr",
+        last_checked = (string?)null,
+        error = (string?)null,
+        update_state = new
+        {
+            in_progress = false,
+            last_result = (string?)null,
+            last_error = (string?)null,
+            completed_at = (string?)null
+        },
+        installation_type = "binary",
+        binary_download_url = (string?)null,
+        binary_download_name = (string?)null,
+        binary_download_size = (long?)null,
+        binary_download_error = (string?)null,
+        // Extra info not in qBitrr but useful
+        platform = Environment.OSVersion.Platform.ToString(),
+        runtime = $".NET {Environment.Version}"
     });
 });
 
@@ -695,3 +1148,5 @@ Log.Information("Torrentarr WebUI starting on {Host}:{Port}",
 app.Run();
 
 public record LogLevelRequest(string Level);
+public record ArrTestConnectionRequest(string ArrType, string? Uri, string? ApiKey, string? InstanceKey = null);
+public record ArrRebuildRequest(string ArrInstanceName);

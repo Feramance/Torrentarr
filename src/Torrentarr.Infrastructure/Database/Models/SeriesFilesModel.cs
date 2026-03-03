@@ -40,6 +40,15 @@ public class SeriesFilesModel
     [Column("qualityprofilename")]
     public string? QualityProfileName { get; set; }
 
+    [Column("lastprofileswitchtime")]
+    public DateTime? LastProfileSwitchTime { get; set; }
+
+    [Column("currentprofileid")]
+    public int? CurrentProfileId { get; set; }
+
+    [Column("originalprofileid")]
+    public int? OriginalProfileId { get; set; }
+
     [Column("arrid")]
     public int ArrId { get; set; }
 }

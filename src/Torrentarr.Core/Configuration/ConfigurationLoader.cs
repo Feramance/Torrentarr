@@ -8,6 +8,9 @@ namespace Torrentarr.Core.Configuration;
 /// </summary>
 public class ConfigurationLoader
 {
+    /// <summary>Expected config schema version (qBitrr parity). Used for validation and mismatch warning.</summary>
+    public const string ExpectedConfigVersion = "5.9.2";
+
     private readonly string _configPath;
 
     public ConfigurationLoader(string? configPath = null)
@@ -112,13 +115,13 @@ public class ConfigurationLoader
             settings.AutoPauseResume = Convert.ToBoolean(autoPauseResume);
 
         if (table.TryGetValue("NoInternetSleepTimer", out var noInternetSleep))
-            settings.NoInternetSleepTimer = Convert.ToInt32(noInternetSleep);
+            settings.NoInternetSleepTimer = DurationParser.ParseToSeconds(noInternetSleep, 15);
 
         if (table.TryGetValue("LoopSleepTimer", out var loopSleep))
-            settings.LoopSleepTimer = Convert.ToInt32(loopSleep);
+            settings.LoopSleepTimer = DurationParser.ParseToSeconds(loopSleep, 5);
 
         if (table.TryGetValue("SearchLoopDelay", out var searchDelay))
-            settings.SearchLoopDelay = Convert.ToInt32(searchDelay);
+            settings.SearchLoopDelay = DurationParser.ParseToSeconds(searchDelay, -1);
 
         if (table.TryGetValue("FailedCategory", out var failedCat))
             settings.FailedCategory = failedCat?.ToString() ?? "failed";
@@ -130,7 +133,7 @@ public class ConfigurationLoader
             settings.Tagless = Convert.ToBoolean(tagless);
 
         if (table.TryGetValue("IgnoreTorrentsYoungerThan", out var ignoreYounger))
-            settings.IgnoreTorrentsYoungerThan = Convert.ToInt32(ignoreYounger);
+            settings.IgnoreTorrentsYoungerThan = DurationParser.ParseToSeconds(ignoreYounger, 180);
 
         if (table.TryGetValue("PingURLS", out var pingUrls) && pingUrls is TomlArray pingArray)
             settings.PingURLS = pingArray.Select(x => x?.ToString() ?? "").ToList();
@@ -151,10 +154,10 @@ public class ConfigurationLoader
             settings.MaxProcessRestarts = Convert.ToInt32(maxRestarts);
 
         if (table.TryGetValue("ProcessRestartWindow", out var restartWindow))
-            settings.ProcessRestartWindow = Convert.ToInt32(restartWindow);
+            settings.ProcessRestartWindow = DurationParser.ParseToSeconds(restartWindow, 300);
 
         if (table.TryGetValue("ProcessRestartDelay", out var restartDelay))
-            settings.ProcessRestartDelay = Convert.ToInt32(restartDelay);
+            settings.ProcessRestartDelay = DurationParser.ParseToSeconds(restartDelay, 5);
 
         return settings;
     }
@@ -181,6 +184,9 @@ public class ConfigurationLoader
         if (table.TryGetValue("v5", out var v5))
             qbit.V5 = Convert.ToBoolean(v5);
 
+        if (table.TryGetValue("DownloadPath", out var downloadPath))
+            qbit.DownloadPath = downloadPath?.ToString();
+
         if (table.TryGetValue("ManagedCategories", out var categories) && categories is TomlArray catArray)
             qbit.ManagedCategories = catArray.Select(x => x?.ToString() ?? "").ToList();
 
@@ -199,6 +205,9 @@ public class ConfigurationLoader
 
         var tracker = new TrackerConfig();
 
+        if (table.TryGetValue("Name", out var name))
+            tracker.Name = name?.ToString();
+
         if (table.TryGetValue("URI", out var uri))
             tracker.Uri = uri?.ToString() ?? "";
 
@@ -209,19 +218,19 @@ public class ConfigurationLoader
             tracker.MaxUploadRatio = Convert.ToDouble(maxRatio);
 
         if (table.TryGetValue("MaxSeedingTime", out var maxTime))
-            tracker.MaxSeedingTime = Convert.ToInt32(maxTime);
+            tracker.MaxSeedingTime = DurationParser.ParseToSeconds(maxTime);
 
         if (table.TryGetValue("RemoveTorrent", out var removeTorrent))
             tracker.RemoveTorrent = Convert.ToInt32(removeTorrent);
 
         if (table.TryGetValue("HitAndRunMode", out var hnrMode))
-            tracker.HitAndRunMode = Convert.ToBoolean(hnrMode);
+            tracker.HitAndRunMode = ParseHitAndRunMode(hnrMode);
 
         if (table.TryGetValue("MinSeedRatio", out var minRatio))
             tracker.MinSeedRatio = Convert.ToDouble(minRatio);
 
         if (table.TryGetValue("MinSeedingTime", out var minTime))
-            tracker.MinSeedingTime = Convert.ToInt32(minTime);
+            tracker.MinSeedingTimeDays = Convert.ToInt32(minTime);
 
         if (table.TryGetValue("HitAndRunMinimumDownloadPercent", out var hnrMinDlPct))
             tracker.HitAndRunMinimumDownloadPercent = Convert.ToInt32(hnrMinDlPct);
@@ -236,14 +245,25 @@ public class ConfigurationLoader
             tracker.UploadRateLimit = Convert.ToInt32(uploadLimit);
 
         if (table.TryGetValue("MaxETA", out var maxEta))
-            tracker.MaxETA = Convert.ToInt32(maxEta);
+            tracker.MaxETA = DurationParser.ParseToSeconds(maxEta);
 
         // qBitrr Arr tracker sections use MaximumETA (not MaxETA)
         if (table.TryGetValue("MaximumETA", out var maximumEta))
-            tracker.MaxETA = Convert.ToInt32(maximumEta);
+            tracker.MaxETA = DurationParser.ParseToSeconds(maximumEta);
 
         if (table.TryGetValue("TrackerUpdateBuffer", out var trackerUpdateBuffer))
-            tracker.TrackerUpdateBuffer = Convert.ToInt32(trackerUpdateBuffer);
+            tracker.TrackerUpdateBuffer = DurationParser.ParseToSeconds(trackerUpdateBuffer, 0);
+
+        if (table.TryGetValue("SuperSeedMode", out var superSeedMode))
+            tracker.SuperSeedMode = Convert.ToBoolean(superSeedMode);
+
+        // §3.1: Tracker management fields
+        if (table.TryGetValue("RemoveIfExists", out var removeIfExists))
+            tracker.RemoveIfExists = Convert.ToBoolean(removeIfExists);
+        if (table.TryGetValue("AddTrackerIfMissing", out var addTrackerIfMissing))
+            tracker.AddTrackerIfMissing = Convert.ToBoolean(addTrackerIfMissing);
+        if (table.TryGetValue("AddTags", out var addTagsVal) && addTagsVal is Tomlyn.Model.TomlArray addTagsArr)
+            tracker.AddTags = addTagsArr.OfType<string>().ToList();
 
         return tracker;
     }
@@ -262,7 +282,7 @@ public class ConfigurationLoader
             seeding.MaxUploadRatio = Convert.ToDouble(maxRatio);
 
         if (table.TryGetValue("MaxSeedingTime", out var maxTime))
-            seeding.MaxSeedingTime = Convert.ToInt32(maxTime);
+            seeding.MaxSeedingTime = DurationParser.ParseToSeconds(maxTime);
 
         if (table.TryGetValue("RemoveMode", out var removeMode))
             seeding.RemoveTorrent = Convert.ToInt32(removeMode);
@@ -271,7 +291,7 @@ public class ConfigurationLoader
             seeding.RemoveTorrent = Convert.ToInt32(removeTorrent);
 
         if (table.TryGetValue("HitAndRunMode", out var hnrMode))
-            seeding.HitAndRunMode = Convert.ToBoolean(hnrMode);
+            seeding.HitAndRunMode = ParseHitAndRunMode(hnrMode) ?? "disabled";
 
         if (table.TryGetValue("MinSeedRatio", out var minRatio))
             seeding.MinSeedRatio = Convert.ToDouble(minRatio);
@@ -289,7 +309,13 @@ public class ConfigurationLoader
             seeding.HitAndRunPartialSeedRatio = Convert.ToDouble(hnrPartialRatio);
 
         if (table.TryGetValue("TrackerUpdateBuffer", out var trackerUpdateBuffer))
-            seeding.TrackerUpdateBuffer = Convert.ToInt32(trackerUpdateBuffer);
+            seeding.TrackerUpdateBuffer = DurationParser.ParseToSeconds(trackerUpdateBuffer, 0);
+
+        if (table.TryGetValue("StalledDelay", out var stalledDelay))
+            seeding.StalledDelay = DurationParser.ParseToMinutes(stalledDelay, 15);
+
+        if (table.TryGetValue("IgnoreTorrentsYoungerThan", out var ignoreYounger))
+            seeding.IgnoreTorrentsYoungerThan = DurationParser.ParseToSeconds(ignoreYounger, 180);
 
         return seeding;
     }
@@ -376,10 +402,10 @@ public class ConfigurationLoader
                     instance.ImportMode = importMode?.ToString() ?? "Auto";
 
                 if (instanceTable.TryGetValue("RssSyncTimer", out var rssSyncTimer))
-                    instance.RssSyncTimer = Convert.ToInt32(rssSyncTimer);
+                    instance.RssSyncTimer = DurationParser.ParseToMinutes(rssSyncTimer, 1);
 
                 if (instanceTable.TryGetValue("RefreshDownloadsTimer", out var refreshDownloadsTimer))
-                    instance.RefreshDownloadsTimer = Convert.ToInt32(refreshDownloadsTimer);
+                    instance.RefreshDownloadsTimer = DurationParser.ParseToMinutes(refreshDownloadsTimer, 1);
 
                 if (instanceTable.TryGetValue("ArrErrorCodesToBlocklist", out var arrErrorCodes) && arrErrorCodes is TomlArray errorArray)
                     instance.ArrErrorCodesToBlocklist = errorArray.Select(x => x?.ToString() ?? "").ToList();
@@ -423,10 +449,10 @@ public class ConfigurationLoader
             torrent.AutoDelete = Convert.ToBoolean(autoDelete);
 
         if (table.TryGetValue("IgnoreTorrentsYoungerThan", out var ignoreYounger))
-            torrent.IgnoreTorrentsYoungerThan = Convert.ToInt32(ignoreYounger);
+            torrent.IgnoreTorrentsYoungerThan = DurationParser.ParseToSeconds(ignoreYounger, 180);
 
         if (table.TryGetValue("MaximumETA", out var maxEta))
-            torrent.MaximumETA = Convert.ToInt32(maxEta);
+            torrent.MaximumETA = DurationParser.ParseToSeconds(maxEta);
 
         if (table.TryGetValue("MaximumDeletablePercentage", out var maxDeletablePct))
             torrent.MaximumDeletablePercentage = Convert.ToDouble(maxDeletablePct);
@@ -435,7 +461,7 @@ public class ConfigurationLoader
             torrent.DoNotRemoveSlow = Convert.ToBoolean(doNotRemoveSlow);
 
         if (table.TryGetValue("StalledDelay", out var stalledDelay))
-            torrent.StalledDelay = Convert.ToInt32(stalledDelay);
+            torrent.StalledDelay = DurationParser.ParseToMinutes(stalledDelay, 15);
 
         if (table.TryGetValue("ReSearchStalled", out var reSearchStalled))
             torrent.ReSearchStalled = Convert.ToBoolean(reSearchStalled);
@@ -474,7 +500,7 @@ public class ConfigurationLoader
             seeding.MaxUploadRatio = Convert.ToDouble(maxRatio);
 
         if (table.TryGetValue("MaxSeedingTime", out var maxTime))
-            seeding.MaxSeedingTime = Convert.ToInt32(maxTime);
+            seeding.MaxSeedingTime = DurationParser.ParseToSeconds(maxTime);
 
         if (table.TryGetValue("RemoveTorrent", out var removeTorrent))
             seeding.RemoveTorrent = Convert.ToInt32(removeTorrent);
@@ -514,7 +540,7 @@ public class ConfigurationLoader
             search.SearchInReverse = Convert.ToBoolean(searchInReverse);
 
         if (table.TryGetValue("SearchRequestsEvery", out var searchRequestsEvery))
-            search.SearchRequestsEvery = Convert.ToInt32(searchRequestsEvery);
+            search.SearchRequestsEvery = DurationParser.ParseToSeconds(searchRequestsEvery, 300);
 
         if (table.TryGetValue("DoUpgradeSearch", out var doUpgradeSearch))
             search.DoUpgradeSearch = Convert.ToBoolean(doUpgradeSearch);
@@ -550,7 +576,7 @@ public class ConfigurationLoader
             search.ForceResetTempProfiles = Convert.ToBoolean(forceResetTempProfiles);
 
         if (table.TryGetValue("TempProfileResetTimeoutMinutes", out var tempProfileResetTimeout))
-            search.TempProfileResetTimeoutMinutes = Convert.ToInt32(tempProfileResetTimeout);
+            search.TempProfileResetTimeoutMinutes = DurationParser.ParseToMinutes(tempProfileResetTimeout, 0);
 
         if (table.TryGetValue("ProfileSwitchRetryAttempts", out var profileSwitchRetryAttempts))
             search.ProfileSwitchRetryAttempts = Convert.ToInt32(profileSwitchRetryAttempts);
@@ -639,7 +665,35 @@ public class ConfigurationLoader
             return (config, true);
         }
 
-        return (Load(), false);
+        var config2 = Load();
+        var (isValid, message, currentVersion) = ValidateConfigVersion(config2);
+        if (message == "migration_needed")
+        {
+            config2.Settings.ConfigVersion = ExpectedConfigVersion;
+            SaveConfig(config2, _configPath);
+        }
+        return (config2, false);
+    }
+
+    /// <summary>
+    /// Validates config version against expected. Used for GET /web/config warning and optional migration.
+    /// </summary>
+    /// <returns>(isValid, message, currentVersion). isValid is true if current &lt;= expected; message is set when mismatch (newer) or "migration_needed" (older).</returns>
+    public static (bool IsValid, string? Message, string CurrentVersion) ValidateConfigVersion(TorrentarrConfig config)
+    {
+        var currentStr = config.Settings?.ConfigVersion ?? "0.0.1";
+        if (!Version.TryParse(currentStr, out var current))
+            current = new Version(0, 0, 1);
+        if (!Version.TryParse(ExpectedConfigVersion, out var expected))
+            expected = new Version(5, 9, 2);
+
+        if (current == expected)
+            return (true, null, currentStr);
+        if (current < expected)
+            return (true, "migration_needed", currentStr);
+        return (false,
+            $"Config version mismatch: found {currentStr}, expected {ExpectedConfigVersion}. Your config may have been created with a newer version and may not work correctly. Please update Torrentarr or restore a compatible config backup.",
+            currentStr);
     }
 
     /// <summary>
@@ -651,7 +705,7 @@ public class ConfigurationLoader
         {
             Settings = new SettingsConfig
             {
-                ConfigVersion = "5.9.0",
+                ConfigVersion = "5.9.2",
                 ConsoleLevel = "INFO",
                 Logging = true,
                 CompletedDownloadFolder = "CHANGE_ME",
@@ -775,6 +829,8 @@ public class ConfigurationLoader
             sb.AppendLine($"UserName = \"{qbit.UserName}\"");
             sb.AppendLine($"Password = \"{qbit.Password}\"");
             sb.AppendLine($"v5 = {qbit.V5.ToString().ToLower()}");
+            if (!string.IsNullOrEmpty(qbit.DownloadPath))
+                sb.AppendLine($"DownloadPath = \"{qbit.DownloadPath}\"");
             sb.AppendLine($"ManagedCategories = [{string.Join(", ", qbit.ManagedCategories.Select(c => $"\"{c}\""))}]");
             if (name == "qBit")
             {
@@ -793,12 +849,14 @@ public class ConfigurationLoader
             sb.AppendLine($"MaxUploadRatio = {qbit.CategorySeeding.MaxUploadRatio}");
             sb.AppendLine($"MaxSeedingTime = {qbit.CategorySeeding.MaxSeedingTime}");
             sb.AppendLine($"RemoveTorrent = {qbit.CategorySeeding.RemoveTorrent}");
-            sb.AppendLine($"HitAndRunMode = {qbit.CategorySeeding.HitAndRunMode.ToString().ToLower()}");
+            sb.AppendLine($"HitAndRunMode = \"{qbit.CategorySeeding.HitAndRunMode}\"");
             sb.AppendLine($"MinSeedRatio = {qbit.CategorySeeding.MinSeedRatio}");
             sb.AppendLine($"MinSeedingTimeDays = {qbit.CategorySeeding.MinSeedingTimeDays}");
             sb.AppendLine($"HitAndRunMinimumDownloadPercent = {qbit.CategorySeeding.HitAndRunMinimumDownloadPercent}");
             sb.AppendLine($"HitAndRunPartialSeedRatio = {qbit.CategorySeeding.HitAndRunPartialSeedRatio}");
             sb.AppendLine($"TrackerUpdateBuffer = {qbit.CategorySeeding.TrackerUpdateBuffer}");
+            sb.AppendLine($"StalledDelay = {qbit.CategorySeeding.StalledDelay}");
+            sb.AppendLine($"IgnoreTorrentsYoungerThan = {qbit.CategorySeeding.IgnoreTorrentsYoungerThan}");
             sb.AppendLine();
         }
 
@@ -852,6 +910,8 @@ public class ConfigurationLoader
             foreach (var tracker in instance.Torrent.Trackers)
             {
                 sb.AppendLine($"[[{kvp.Key}.Torrent.Trackers]]");
+                if (!string.IsNullOrEmpty(tracker.Name))
+                    sb.AppendLine($"Name = \"{EscapeTomlString(tracker.Name)}\"");
                 sb.AppendLine($"URI = \"{tracker.Uri}\"");
                 sb.AppendLine($"Priority = {tracker.Priority}");
                 sb.AppendLine($"MaximumETA = {tracker.MaxETA ?? -1}");
@@ -859,12 +919,18 @@ public class ConfigurationLoader
                 sb.AppendLine($"UploadRateLimit = {tracker.UploadRateLimit ?? -1}");
                 sb.AppendLine($"MaxUploadRatio = {tracker.MaxUploadRatio ?? -1}");
                 sb.AppendLine($"MaxSeedingTime = {tracker.MaxSeedingTime ?? -1}");
-                sb.AppendLine($"HitAndRunMode = {(tracker.HitAndRunMode ?? false).ToString().ToLower()}");
+                sb.AppendLine($"HitAndRunMode = \"{tracker.HitAndRunMode ?? "disabled"}\"");
                 sb.AppendLine($"MinSeedRatio = {tracker.MinSeedRatio ?? 1.0}");
-                sb.AppendLine($"MinSeedingTime = {tracker.MinSeedingTime ?? 0}");
+                sb.AppendLine($"MinSeedingTime = {tracker.MinSeedingTimeDays ?? 0}"); // TOML key is MinSeedingTime (qBitrr compat)
                 sb.AppendLine($"HitAndRunPartialSeedRatio = {tracker.HitAndRunPartialSeedRatio ?? 1.0}");
                 sb.AppendLine($"TrackerUpdateBuffer = {tracker.TrackerUpdateBuffer ?? 0}");
                 sb.AppendLine($"HitAndRunMinimumDownloadPercent = {tracker.HitAndRunMinimumDownloadPercent ?? 10}");
+                if (tracker.SuperSeedMode.HasValue)
+                    sb.AppendLine($"SuperSeedMode = {tracker.SuperSeedMode.Value.ToString().ToLower()}");
+                sb.AppendLine($"RemoveIfExists = {tracker.RemoveIfExists.ToString().ToLower()}");
+                sb.AppendLine($"AddTrackerIfMissing = {tracker.AddTrackerIfMissing.ToString().ToLower()}");
+                if (tracker.AddTags.Count > 0)
+                    sb.AppendLine($"AddTags = [{string.Join(", ", tracker.AddTags.Select(t => $"'{t}'"))}]");
                 sb.AppendLine();
             }
 
@@ -928,6 +994,25 @@ public class ConfigurationLoader
         }
 
         return sb.ToString();
+    }
+
+    /// <summary>
+    /// Parse HitAndRunMode from TOML value — accepts string ("and"/"or"/"disabled") or legacy bool (true→"and", false→"disabled").
+    /// </summary>
+    private static string? ParseHitAndRunMode(object? value)
+    {
+        if (value is string s)
+        {
+            var lower = s.Trim().ToLowerInvariant();
+            return lower is "and" or "or" or "disabled" ? lower : "disabled";
+        }
+        if (value is bool b)
+            return b ? "and" : "disabled";
+        // Try string conversion for other types
+        var str = value?.ToString()?.Trim().ToLowerInvariant();
+        if (str is "true") return "and";
+        if (str is "false") return "disabled";
+        return str is "and" or "or" or "disabled" ? str : "disabled";
     }
 
     /// <summary>

@@ -15,11 +15,19 @@ public class ConnectivityService : IConnectivityService
     private readonly QBittorrentConnectionManager _qbitManager;
     private readonly HashSet<string> _testHosts;
     
-    private bool _isConnected = true;
-    private DateTime? _lastChecked;
+    private volatile bool _isConnected = true;
+    private volatile bool _lastCheckedSet = false;
+    private DateTime _lastChecked;
+    private readonly object _stateLock = new();
 
     public bool IsConnected => _isConnected;
-    public DateTime? LastChecked => _lastChecked;
+    public DateTime? LastChecked
+    {
+        get
+        {
+            lock (_stateLock) return _lastCheckedSet ? _lastChecked : null;
+        }
+    }
 
     public ConnectivityService(
         ILogger<ConnectivityService> logger,
@@ -35,10 +43,20 @@ public class ConnectivityService : IConnectivityService
         };
     }
 
+    private void SetState(bool connected)
+    {
+        _isConnected = connected;
+        lock (_stateLock)
+        {
+            _lastChecked = DateTime.UtcNow;
+            _lastCheckedSet = true;
+        }
+    }
+
     public async Task<bool> IsConnectedAsync(CancellationToken cancellationToken = default)
     {
         _logger.LogTrace("Checking connectivity status");
-        
+
         try
         {
             _logger.LogTrace("Checking qBittorrent reachability");
@@ -46,8 +64,7 @@ public class ConnectivityService : IConnectivityService
             if (qbitReachable)
             {
                 _logger.LogTrace("qBittorrent is reachable - connectivity confirmed");
-                _isConnected = true;
-                _lastChecked = DateTime.UtcNow;
+                SetState(true);
                 return true;
             }
 
@@ -57,30 +74,27 @@ public class ConnectivityService : IConnectivityService
             {
                 hostsChecked++;
                 _logger.LogTrace("Pinging host {Host} ({Current}/{Total})", host, hostsChecked, _testHosts.Count);
-                
+
                 if (await PingHostAsync(host, cancellationToken))
                 {
                     _logger.LogTrace("Ping successful to {Host} - connectivity confirmed", host);
-                    _isConnected = true;
-                    _lastChecked = DateTime.UtcNow;
+                    SetState(true);
                     _logger.LogTrace("Internet connectivity confirmed via {Host}", host);
                     return true;
                 }
-                
+
                 _logger.LogTrace("Ping failed to {Host}", host);
             }
 
             _logger.LogTrace("All {Count} hosts unreachable - no connectivity", _testHosts.Count);
-            _isConnected = false;
-            _lastChecked = DateTime.UtcNow;
+            SetState(false);
             _logger.LogWarning("No internet connectivity detected");
             return false;
         }
         catch (Exception ex)
         {
             _logger.LogError(ex, "Error checking internet connectivity");
-            _isConnected = false;
-            _lastChecked = DateTime.UtcNow;
+            SetState(false);
             return false;
         }
     }

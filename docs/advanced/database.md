@@ -1,4 +1,4 @@
-﻿# Database Schema
+# Database Schema
 
 Complete reference for Torrentarr's SQLite database structure and operations.
 
@@ -571,8 +571,8 @@ with locked_database():
 **Recovery:**
 
 ```bash
-# Try auto-recovery
-torrentarr --repair-db
+# Try auto-recovery (Torrentarr CLI)
+torrentarr --repair-database
 
 # Manual recovery
 sqlite3 ~/config/Torrentarr.db ".dump" > dump.sql
