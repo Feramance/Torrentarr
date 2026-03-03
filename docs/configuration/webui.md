@@ -534,7 +534,7 @@ ports:
 
 ## Config file only
 
-WebUI settings (Host, Port, Token) are read from `config.toml` only. Torrentarr does not support environment variable overrides for individual settings. Use the [Config Editor](config-editor.md) or edit `config.toml` directly. To point Torrentarr at a different config file (e.g. in Docker), set `TORRENTARR_CONFIG=/config/config.toml`.
+WebUI settings (Host, Port, Token) are read from `config.toml` only. Torrentarr does not support environment variable overrides for individual settings. Use the [Config Editor](../webui/config-editor.md) or edit `config.toml` directly. To point Torrentarr at a different config file (e.g. in Docker), set `TORRENTARR_CONFIG=/config/config.toml`.
 
 ---
 
