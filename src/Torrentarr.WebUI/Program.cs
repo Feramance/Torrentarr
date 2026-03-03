@@ -12,8 +12,8 @@ using Serilog.Events;
 
 // Calculate base paths - use /config for Docker, or config/ relative to cwd for local
 var configEnv = Environment.GetEnvironmentVariable("TORRENTARR_CONFIG");
-var basePath = !string.IsNullOrEmpty(configEnv) && configEnv.StartsWith("/config") 
-    ? "/config" 
+var basePath = !string.IsNullOrEmpty(configEnv) && configEnv.StartsWith("/config")
+    ? "/config"
     : Path.Combine(Directory.GetCurrentDirectory(), "config");
 var logsPath = Path.Combine(basePath, "logs");
 var dbPath = Path.Combine(basePath, "qbitrr.db");
@@ -169,10 +169,10 @@ app.MapPost("/web/loglevel", (LogLevelRequest req, LoggingLevelSwitch ls) =>
         "CRITICAL" or "FATAL" => LogEventLevel.Fatal,
         _ => LogEventLevel.Information
     };
-    
+
     ls.MinimumLevel = newLevel;
     Log.Information("Log level changed to {Level}", req.Level);
-    
+
     return Results.Ok(new { success = true, level = req.Level });
 });
 
@@ -1077,7 +1077,7 @@ app.MapPost("/web/config/save", async (TorrentarrConfig updatedConfig, Configura
     {
         loader.SaveConfig(updatedConfig, reloader.ConfigPath);
         var reloadSuccess = reloader.ReloadConfig();
-        
+
         return reloadSuccess
             ? Results.Ok(new { success = true, message = "Configuration saved and reloaded" })
             : Results.Ok(new { success = true, message = "Configuration saved but reload failed" });

@@ -20,7 +20,7 @@ public class AvailabilityCheckTests
         int year,
         string title)
     {
-        var method = typeof(ArrSyncService).GetMethod("MinimumAvailabilityCheck", 
+        var method = typeof(ArrSyncService).GetMethod("MinimumAvailabilityCheck",
             System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Static);
         return (bool)method!.Invoke(null, new object?[] { minimumAvailability, inCinemas, digitalRelease, physicalRelease, year, title, Logger })!;
     }

@@ -299,7 +299,7 @@ public class TorrentProcessor : ITorrentProcessor
         CancellationToken cancellationToken)
     {
         _logger.LogTrace("Torrent [{Name}]: State[{State}] | Progress[{Progress:P1}] | Ratio[{Ratio:F2}] | AddedOn[{AddedOn}] | Availability[{Availability:P1}] | Size[{Size}] | Hash[{Hash}]",
-            torrent.Name, torrent.State, torrent.Progress, torrent.Ratio, 
+            torrent.Name, torrent.State, torrent.Progress, torrent.Ratio,
             DateTimeOffset.FromUnixTimeSeconds(torrent.AddedOn).DateTime,
             torrent.Availability, torrent.Size, torrent.Hash);
 
@@ -393,7 +393,7 @@ public class TorrentProcessor : ITorrentProcessor
         var hasFreeSpaceTag = HasTag(torrent, FreeSpacePausedTag);
         _logger.LogTrace("Checking auto-resume conditions for {Name}: IsStopped={IsStopped}, HasFreeSpaceTag={FreeSpaceTag}, HasIgnoredTag={IgnoredTag}",
             torrent.Name, torrent.IsStopped, hasFreeSpaceTag, hasIgnoredTag);
-        
+
         if (torrent.IsStopped && !hasFreeSpaceTag && !hasIgnoredTag)
         {
             var client = _qbitManager.GetClient(torrent.QBitInstanceName);
@@ -509,7 +509,7 @@ public class TorrentProcessor : ITorrentProcessor
         var isComplete = torrent.Progress >= 1.0;
         var isPaused = torrent.State.Contains("paused", StringComparison.OrdinalIgnoreCase);
         _logger.LogTrace("Completion check: Progress={Progress}, IsPaused={IsPaused}", torrent.Progress, isPaused);
-        
+
         if (isComplete && !isPaused)
         {
             // Torrent is complete
@@ -520,11 +520,11 @@ public class TorrentProcessor : ITorrentProcessor
             _logger.LogTrace("Checking if torrent {Hash} is ready for import", torrent.Hash);
             var isReadyForImport = await IsReadyForImportAsync(torrent.Hash, cancellationToken);
             _logger.LogTrace("Import readiness check result for {Hash}: {IsReady}", torrent.Hash, isReadyForImport);
-            
+
             if (isReadyForImport)
             {
                 _logger.LogDebug("Importing Completed torrent: [{Name}] | Progress[{Progress:P1}] | AddedOn[{AddedOn}] | Availability[{Availability:P1}] | Hash[{Hash}]",
-                    torrent.Name, torrent.Progress, 
+                    torrent.Name, torrent.Progress,
                     DateTimeOffset.FromUnixTimeSeconds(torrent.AddedOn).DateTime,
                     torrent.Availability, torrent.Hash);
                 // Import will be handled by the Arr-specific worker

@@ -14,14 +14,14 @@ public class ConfigReloader : IConfigReloader, IDisposable
     private readonly TimeSpan _debounceTime = TimeSpan.FromSeconds(1);
 
     public event EventHandler<ConfigReloadedEventArgs>? ConfigReloaded;
-    
+
     public string ConfigPath { get; }
 
     public ConfigReloader(ILogger<ConfigReloader> logger)
     {
         _logger = logger;
         _loader = new ConfigurationLoader();
-        
+
         var configPath = Environment.GetEnvironmentVariable("TORRENTARR_CONFIG");
         if (!string.IsNullOrEmpty(configPath) && File.Exists(configPath))
         {
@@ -44,7 +44,7 @@ public class ConfigReloader : IConfigReloader, IDisposable
 
         var directory = Path.GetDirectoryName(ConfigPath);
         var fileName = Path.GetFileName(ConfigPath);
-        
+
         if (!string.IsNullOrEmpty(directory) && Directory.Exists(directory))
         {
             _watcher = new FileSystemWatcher(directory)
@@ -53,7 +53,7 @@ public class ConfigReloader : IConfigReloader, IDisposable
                 NotifyFilter = NotifyFilters.LastWrite | NotifyFilters.Size,
                 EnableRaisingEvents = false
             };
-            
+
             _watcher.Changed += OnConfigFileChanged;
         }
     }
@@ -83,33 +83,33 @@ public class ConfigReloader : IConfigReloader, IDisposable
             try
             {
                 _logger.LogInformation("ConfigReloader: reloading configuration from {Path}", ConfigPath);
-                
+
                 var newConfig = _loader.Load();
-                
+
                 var args = new ConfigReloadedEventArgs
                 {
                     Success = true,
                     ReloadedAt = DateTime.UtcNow
                 };
-                
+
                 ConfigReloaded?.Invoke(this, args);
-                
+
                 _logger.LogInformation("ConfigReloader: configuration reloaded successfully");
                 return true;
             }
             catch (Exception ex)
             {
                 _logger.LogError(ex, "ConfigReloader: failed to reload configuration");
-                
+
                 var args = new ConfigReloadedEventArgs
                 {
                     Success = false,
                     ErrorMessage = ex.Message,
                     ReloadedAt = DateTime.UtcNow
                 };
-                
+
                 ConfigReloaded?.Invoke(this, args);
-                
+
                 return false;
             }
         }
@@ -123,10 +123,10 @@ public class ConfigReloader : IConfigReloader, IDisposable
             _logger.LogTrace("ConfigReloader: debouncing config change event");
             return;
         }
-        
+
         _lastReloadTime = now;
         _logger.LogInformation("ConfigReloader: detected change in {Path}", e.FullPath);
-        
+
         Task.Run(() =>
         {
             try

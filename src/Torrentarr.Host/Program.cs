@@ -14,8 +14,8 @@ using Serilog.Events;
 
 // Calculate base paths - use /config for Docker, or config/ relative to cwd for local
 var configEnv = Environment.GetEnvironmentVariable("TORRENTARR_CONFIG");
-var basePath = !string.IsNullOrEmpty(configEnv) && configEnv.StartsWith("/config") 
-    ? "/config" 
+var basePath = !string.IsNullOrEmpty(configEnv) && configEnv.StartsWith("/config")
+    ? "/config"
     : Path.Combine(Directory.GetCurrentDirectory(), "config");
 var logsPath = Path.Combine(basePath, "logs");
 var dbPath = Path.Combine(basePath, "qbitrr.db");
@@ -537,10 +537,10 @@ try
                 try
                 {
                     // For "qBit", get any client; for named instances, get by name
-                    var client = instanceName == "qBit" 
+                    var client = instanceName == "qBit"
                         ? qbitMgr.GetAllClients().Values.FirstOrDefault()
                         : qbitMgr.GetClient(instanceName);
-                    
+
                     if (client != null)
                     {
                         var torrents = await client.GetTorrentsAsync(ct: CancellationToken.None);
@@ -2541,15 +2541,15 @@ class ProcessOrchestratorService : BackgroundService
     private async Task ProcessFreeSpaceManagerAsync(CancellationToken cancellationToken)
     {
         _logger.LogInformation("FreeSpace: Starting FreeSpace manager check");
-        
-        if (string.IsNullOrEmpty(_freeSpaceFolder)) 
+
+        if (string.IsNullOrEmpty(_freeSpaceFolder))
         {
             _logger.LogWarning("FreeSpace: No free space folder configured or folder doesn't exist");
             return;
         }
 
         _logger.LogInformation("FreeSpace: Using folder {Folder} for space monitoring", _freeSpaceFolder);
-        
+
         // §1.6: tagless mode needs a DB scope to read/write FreeSpacePaused column
         IServiceScope? scope = null;
         TorrentarrDbContext? dbContext = null;

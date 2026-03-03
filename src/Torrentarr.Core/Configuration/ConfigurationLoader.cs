@@ -759,7 +759,7 @@ public class ConfigurationLoader
     {
         var filePath = path ?? _configPath;
         var directory = Path.GetDirectoryName(filePath);
-        
+
         if (!string.IsNullOrEmpty(directory) && !Directory.Exists(directory))
         {
             Directory.CreateDirectory(directory);

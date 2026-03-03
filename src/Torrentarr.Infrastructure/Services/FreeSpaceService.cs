@@ -136,7 +136,7 @@ public class FreeSpaceService : IFreeSpaceService
 
                 _logger.LogTrace("FreeSpace: [{Instance}] Drive info: Total={Total}, Free={Free}, Used={Used}",
                     instanceName, FormatBytes(stats.TotalBytes), FormatBytes(stats.FreeBytes), FormatBytes(stats.UsedBytes));
-                
+
                 _logger.LogTrace("FreeSpace: [{Instance}] Free space: {Free}GB / {Total}GB ({Percent:F1}%)",
                     instanceName,
                     stats.FreeBytes / 1024.0 / 1024.0 / 1024.0,
@@ -157,13 +157,13 @@ public class FreeSpaceService : IFreeSpaceService
         }
 
         await Task.CompletedTask;
-        
+
         if (mostConstrained != null)
         {
-            _logger.LogTrace("Most constrained: {Path} with {Free}GB free ({Percent:F1}%)", 
+            _logger.LogTrace("Most constrained: {Path} with {Free}GB free ({Percent:F1}%)",
                 mostConstrained.Path, FormatBytes(mostConstrained.FreeBytes), mostConstrained.FreePercentage);
         }
-        
+
         return mostConstrained ?? new FreeSpaceStats { ThresholdBytes = thresholdBytes };
     }
 
@@ -253,23 +253,23 @@ public class FreeSpaceService : IFreeSpaceService
     public async Task ProcessTorrentsForSpaceAsync(string category, CancellationToken cancellationToken = default)
     {
         _logger.LogTrace("Starting free space processing for category {Category}", category);
-        
+
         // Gather torrents from all qBit instances, stamping instance name
         var allTorrents = new List<(string instanceName, QBittorrentClient client, TorrentInfo torrent)>();
         var clientCount = _qbitManager.GetAllClients().Count;
         _logger.LogTrace("Fetching torrents from {Count} qBit instances", clientCount);
-        
+
         foreach (var (instanceName, client) in _qbitManager.GetAllClients())
         {
             try
             {
                 _logger.LogTrace("FreeSpace: [{Instance}] Ensuring tags exist", instanceName);
                 await EnsureTagsExistAsync(client, cancellationToken);
-                
+
                 _logger.LogTrace("FreeSpace: [{Instance}] Fetching torrents for category {Category}", instanceName, category);
                 var torrents = await client.GetTorrentsAsync(category, cancellationToken);
                 _logger.LogTrace("FreeSpace: [{Instance}] Found {Count} torrents", instanceName, torrents.Count);
-                
+
                 foreach (var t in torrents)
                 {
                     t.QBitInstanceName = instanceName;
@@ -283,7 +283,7 @@ public class FreeSpaceService : IFreeSpaceService
         }
 
         _logger.LogTrace("Total torrents gathered: {Count}", allTorrents.Count);
-        
+
         if (allTorrents.Count == 0)
         {
             _logger.LogTrace("No torrents to process for free space");
@@ -301,14 +301,14 @@ public class FreeSpaceService : IFreeSpaceService
             FormatBytes(stats.FreeBytes),
             FormatBytes(_minFreeSpaceBytes),
             FormatBytes(_currentFreeSpace));
-        
+
         _logger.LogTrace("Free space: Available={Available}, Threshold={Threshold}, Usable={Usable}",
             FormatBytes(stats.FreeBytes), FormatBytes(_minFreeSpaceBytes), FormatBytes(_currentFreeSpace));
 
         // Sort globally by added date — older torrents get priority to keep downloading
         _logger.LogTrace("Sorting {Count} torrents by added date", allTorrents.Count);
         var sorted = allTorrents.OrderBy(x => x.torrent.AddedOn).ToList();
-        
+
         _logger.LogTrace("Processing {Count} torrents in order of oldest first", sorted.Count);
         var processedCount = 0;
         foreach (var (instanceName, client, torrent) in sorted)
@@ -325,7 +325,7 @@ public class FreeSpaceService : IFreeSpaceService
                 _logger.LogError(ex, "FreeSpace: [{Instance}] Error processing torrent {Hash} for space", instanceName, torrent.Hash);
             }
         }
-        
+
         _logger.LogTrace("Free space processing complete. Processed {Processed} of {Total} torrents", processedCount, sorted.Count);
     }
 

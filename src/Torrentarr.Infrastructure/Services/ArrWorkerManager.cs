@@ -210,7 +210,7 @@ public class ArrWorkerManager : BackgroundService
     private async Task RunWorkerAsync(string instanceName, ArrInstanceConfig arrCfg, CancellationToken ct)
     {
         InstanceContext.Current = instanceName;
-        
+
         using (LogContext.PushProperty("ProcessInstance", instanceName))
         using (LogContext.PushProperty("ProcessType", "Worker"))
         {

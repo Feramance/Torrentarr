@@ -85,7 +85,7 @@ public class SeedingService : ISeedingService
     public async Task<bool> MeetsSeedingRequirementsAsync(string hash, string category, CancellationToken cancellationToken = default)
     {
         _logger.LogTrace("Checking seeding requirements for hash {Hash} in category {Category}", hash, category);
-        
+
         var stats = await GetSeedingStatsAsync(hash, cancellationToken);
 
         if (stats == null)
@@ -108,7 +108,7 @@ public class SeedingService : ISeedingService
                 var requiredTime = TimeSpan.FromMinutes(categoryConfig.MinimumSeedingTime);
 
                 _logger.LogTrace("Checking minimum seeding time: {Current} vs required {Required}", seedingTime, requiredTime);
-                
+
                 if (seedingTime < requiredTime)
                 {
                     _logger.LogDebug("Torrent {Hash} has not met minimum seeding time ({Current} < {Required})",
@@ -132,7 +132,7 @@ public class SeedingService : ISeedingService
 
         var result = stats.MeetsTimeRequirement && stats.MeetsRatioRequirement;
         _logger.LogTrace("Seeding requirements result for {Hash}: {Result}", hash, result);
-        
+
         return result;
     }
 
@@ -430,7 +430,7 @@ public class SeedingService : ISeedingService
     {
         var trackers = GetTrackerList(torrent);
         var hasHnrTracker = trackers.Any(t => IsHnREnabled(t.HitAndRunMode));
-        
+
         if (!hasHnrTracker)
         {
             return true; // Fast path: no HnR on any tracker

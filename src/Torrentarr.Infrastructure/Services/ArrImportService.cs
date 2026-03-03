@@ -47,7 +47,7 @@ public class ArrImportService : IArrImportService
             };
         }
 
-        _logger.LogTrace("Found Arr instance: Type={Type}, URI={URI}, Category={Category}", 
+        _logger.LogTrace("Found Arr instance: Type={Type}, URI={URI}, Category={Category}",
             arrInstance.Type, arrInstance.URI, arrInstance.Category);
         _logger.LogDebug("Found Arr instance: {Type} at {URI}", arrInstance.Type, arrInstance.URI);
 
@@ -65,8 +65,8 @@ public class ArrImportService : IArrImportService
                     Message = $"Unknown Arr type: {arrInstance.Type}"
                 }
             };
-            
-            _logger.LogTrace("Import result for {Hash}: Success={Success}, Message={Message}", 
+
+            _logger.LogTrace("Import result for {Hash}: Success={Success}, Message={Message}",
                 hash, result.Success, result.Message);
             return result;
         }
@@ -84,15 +84,15 @@ public class ArrImportService : IArrImportService
     public async Task<bool> IsImportedAsync(string hash, CancellationToken cancellationToken = default)
     {
         _logger.LogTrace("Checking if hash {Hash} has been imported", hash);
-        
+
         // Check all Arr instances to see if they have this download in their queue
         var instancesChecked = 0;
         foreach (var arrInstance in _config.ArrInstances.Values)
         {
             instancesChecked++;
-            _logger.LogTrace("Checking Arr instance {Name} ({Type}) for hash {Hash}", 
+            _logger.LogTrace("Checking Arr instance {Name} ({Type}) for hash {Hash}",
                 arrInstance.Category, arrInstance.Type, hash);
-            
+
             try
             {
                 var hasInQueue = arrInstance.Type.ToLower() switch
@@ -271,7 +271,7 @@ public class ArrImportService : IArrImportService
         {
             instancesAttempted++;
             _logger.LogTrace("Attempting to add tags to {Hash} in qBit instance {Instance}", hash, instanceName);
-            
+
             try
             {
                 var client = _qbitManager.GetClient(instanceName);
@@ -283,10 +283,10 @@ public class ArrImportService : IArrImportService
 
                 _logger.LogTrace("Creating tags {Tags} in {Instance}", string.Join(", ", tagList), instanceName);
                 await client.CreateTagsAsync(tagList, cancellationToken);
-                
+
                 _logger.LogTrace("Adding tags {Tags} to torrent {Hash}", string.Join(", ", tagList), hash);
                 var success = await client.AddTagsAsync(new List<string> { hash }, tagList, cancellationToken);
-                
+
                 if (success)
                 {
                     _logger.LogDebug("Successfully added tags to {Hash} in {Instance}", hash, instanceName);

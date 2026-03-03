@@ -186,7 +186,7 @@ public class DatabaseHealthService : IDatabaseHealthService
 
             await using var tempCmd = tempConn.CreateCommand();
             tempCmd.CommandText = dumpCommand.CommandText;
-            
+
             await tempConn.CloseAsync();
             await sourceConn.CloseAsync();
 

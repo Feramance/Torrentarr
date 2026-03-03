@@ -20,7 +20,7 @@ public class ArrMediaServiceTests
             .Options;
         var dbContext = new TorrentarrDbContext(options);
         var cfg = config ?? new TorrentarrConfig();
-        
+
         var mockSearchExecutor = new Mock<ISearchExecutor>();
         mockSearchExecutor.Setup(x => x.ExecuteSearchesAsync(It.IsAny<string>(), It.IsAny<IEnumerable<SearchCandidate>>(), It.IsAny<CancellationToken>()))
             .ReturnsAsync(new SearchResult());
@@ -28,12 +28,12 @@ public class ArrMediaServiceTests
             .ReturnsAsync(0);
         mockSearchExecutor.Setup(x => x.CanSearch(It.IsAny<int>(), It.IsAny<int>()))
             .Returns(true);
-        
+
         var mockSyncService = new Mock<ArrSyncService>(
             NullLogger<ArrSyncService>.Instance,
             cfg,
             dbContext);
-        
+
         return new ArrMediaService(
             NullLogger<ArrMediaService>.Instance,
             dbContext,

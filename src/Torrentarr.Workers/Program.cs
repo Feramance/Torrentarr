@@ -17,8 +17,8 @@ var instanceName = args.Contains("--instance") && args.Length > Array.IndexOf(ar
 
 // Calculate base paths - use /config for Docker, or config/ relative to cwd for local
 var configEnv = Environment.GetEnvironmentVariable("TORRENTARR_CONFIG");
-var basePath = !string.IsNullOrEmpty(configEnv) && configEnv.StartsWith("/config") 
-    ? "/config" 
+var basePath = !string.IsNullOrEmpty(configEnv) && configEnv.StartsWith("/config")
+    ? "/config"
     : Path.Combine(Directory.GetCurrentDirectory(), "config");
 var logsPath = Path.Combine(basePath, "logs");
 var dbPath = Path.Combine(basePath, "qbitrr.db");
@@ -35,7 +35,7 @@ Log.Logger = new LoggerConfiguration()
     .Enrich.WithProperty("ProcessInstance", instanceName)
     .Enrich.WithProperty("ProcessId", Environment.ProcessId)
     .Enrich.WithProperty("MachineName", Environment.MachineName)
-    .Filter.ByExcluding(e => 
+    .Filter.ByExcluding(e =>
         e.RenderMessage().Contains("DbCommand") ||
         e.RenderMessage().Contains("started tracking") ||
         e.RenderMessage().Contains("changed state from") ||
@@ -277,7 +277,7 @@ class ArrWorkerService : BackgroundService
                     }
 
                     await ProcessTorrentsAsync(stoppingToken);
-                    
+
                     // Reset error counter on successful processing
                     _consecutiveErrors = 0;
                 }
@@ -346,7 +346,7 @@ class ArrWorkerService : BackgroundService
         // GLOBALLY by the Host orchestrator - not per-worker. This matches qBitrr's design where:
         // - FreeSpaceManager runs ONCE per qBittorrent instance, handling ALL categories
         // - PlaceHolderArr handles special categories globally
-        
+
         // Clean expired cache entries
         cacheService.CleanExpired();
 
@@ -357,7 +357,7 @@ class ArrWorkerService : BackgroundService
             if (!healthResult.IsHealthy)
             {
                 _logger.LogWarning("Database health check failed: {Message}", healthResult.Message);
-                
+
                 // Try WAL checkpoint first
                 var checkpointed = await dbHealthService.CheckpointWalAsync(cancellationToken);
                 if (!checkpointed)
@@ -426,7 +426,7 @@ class ArrWorkerService : BackgroundService
     private bool ShouldRunSearch()
     {
         var searchInterval = TimeSpan.FromSeconds(_instanceConfig.Search.SearchRequestsEvery);
-        
+
         if (DateTime.UtcNow - _lastSearchTime >= searchInterval)
         {
             _lastSearchTime = DateTime.UtcNow;

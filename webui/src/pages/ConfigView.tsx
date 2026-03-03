@@ -21,7 +21,6 @@ import AddIcon from "../icons/plus.svg";
 import SaveIcon from "../icons/check-mark.svg";
 import DeleteIcon from "../icons/trash.svg";
 import CloseIcon from "../icons/close.svg";
-import ReactMarkdown from "react-markdown";
 
 /** Minimal markdown→HTML for torrent handling summary (headings, bold, lists, line breaks). */
 function simpleMarkdown(md: string): string {
@@ -2850,7 +2849,7 @@ function DurationInput({
   placeholder,
   onChange,
 }: DurationInputProps): JSX.Element {
-  const parsed = useMemo(
+  const parsed: DurationDisplay = useMemo(
     () => parseDurationDisplay(value, baseUnit, allowNegative ? -1 : 0),
     [value, baseUnit, allowNegative]
   );
@@ -3115,7 +3114,7 @@ function ArrInstanceModal({
             <h3 style={{ margin: "0 0 8px 0", fontSize: "14px", fontWeight: 600 }}>How torrents are handled</h3>
             <div className="torrent-handling-summary" style={{ marginTop: "8px" }}>
               <div className="torrent-handling-summary-body markdown-content">
-                <ReactMarkdown>{getArrTorrentHandlingSummary(state as Record<string, unknown>)}</ReactMarkdown>
+                <div className="torrent-handling-summary-body markdown-content" dangerouslySetInnerHTML={{ __html: simpleMarkdown(getArrTorrentHandlingSummary(state as Record<string, unknown>)) }} />
               </div>
             </div>
           </div>
@@ -3291,7 +3290,7 @@ function QbitInstanceModal({
             <h3 style={{ margin: "0 0 8px 0", fontSize: "14px", fontWeight: 600 }}>How torrents are handled</h3>
             <div className="torrent-handling-summary" style={{ marginTop: "8px" }}>
               <div className="torrent-handling-summary-body markdown-content">
-                <ReactMarkdown>{getQbitTorrentHandlingSummary(state as Record<string, unknown>)}</ReactMarkdown>
+                <div className="torrent-handling-summary-body markdown-content" dangerouslySetInnerHTML={{ __html: simpleMarkdown(getQbitTorrentHandlingSummary(state as Record<string, unknown>)) }} />
               </div>
             </div>
           </div>

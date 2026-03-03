@@ -14,7 +14,7 @@ public class ConnectivityService : IConnectivityService
     private readonly ILogger<ConnectivityService> _logger;
     private readonly QBittorrentConnectionManager _qbitManager;
     private readonly HashSet<string> _testHosts;
-    
+
     private volatile bool _isConnected = true;
     private volatile bool _lastCheckedSet = false;
     private DateTime _lastChecked;
@@ -127,7 +127,7 @@ public class ConnectivityService : IConnectivityService
             {
                 var addresses = await Dns.GetHostAddressesAsync(host, cancellationToken);
                 ipAddress = addresses.FirstOrDefault();
-                
+
                 if (ipAddress == null)
                 {
                     return false;

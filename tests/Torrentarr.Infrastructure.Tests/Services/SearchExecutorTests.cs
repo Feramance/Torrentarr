@@ -20,7 +20,7 @@ public class SearchExecutorTests
             .Options;
         var db = dbContext ?? new TorrentarrDbContext(options);
         var cfg = config ?? new TorrentarrConfig();
-        
+
         var switcher = new QualityProfileSwitcherService(
             NullLogger<QualityProfileSwitcherService>.Instance,
             db);

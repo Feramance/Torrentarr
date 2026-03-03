@@ -86,7 +86,7 @@ public class MediaValidationService : IMediaValidationService
         try
         {
             var probeResult = await RunFFprobeAsync(filePath, cancellationToken);
-            
+
             if (probeResult == null)
             {
                 result.IsValid = false;
@@ -110,7 +110,7 @@ public class MediaValidationService : IMediaValidationService
         {
             result.IsValid = false;
             result.ErrorMessage = ex.Message;
-            
+
             if (ex.Message.Contains("Invalid data found when processing input"))
             {
                 _logger.LogWarning("Invalid media file: {File}", filePath);
@@ -140,7 +140,7 @@ public class MediaValidationService : IMediaValidationService
         foreach (var file in files)
         {
             var fileName = Path.GetFileName(file);
-            
+
             if (fileName is "desktop.ini" or ".DS_Store")
                 continue;
 
@@ -198,7 +198,7 @@ public class MediaValidationService : IMediaValidationService
             _logger.LogInformation("Downloading ffprobe from: {Url}", downloadUrl);
             await DownloadAndExtractAsync(downloadUrl, cancellationToken);
 
-            await File.WriteAllTextAsync(_ffprobeVersionPath, 
+            await File.WriteAllTextAsync(_ffprobeVersionPath,
                 JsonSerializer.Serialize(new { version = latestVersion.Version }), cancellationToken);
 
             if (!RuntimeInformation.IsOSPlatform(OSPlatform.Windows))
@@ -327,7 +327,7 @@ public class MediaValidationService : IMediaValidationService
         try
         {
             using var archive = ZipFile.OpenRead(tempPath);
-            var ffprobeEntry = archive.Entries.FirstOrDefault(e => 
+            var ffprobeEntry = archive.Entries.FirstOrDefault(e =>
                 e.Name.StartsWith("ffprobe", StringComparison.OrdinalIgnoreCase));
 
             if (ffprobeEntry != null)
@@ -347,7 +347,7 @@ public class MediaValidationService : IMediaValidationService
     {
         var homePath = Environment.GetFolderPath(Environment.SpecialFolder.UserProfile);
         var configPath = Path.Combine(homePath, ".config", "torrentarr");
-        
+
         if (!Directory.Exists(configPath))
             Directory.CreateDirectory(configPath);
 

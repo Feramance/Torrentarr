@@ -15,20 +15,20 @@ public class WorkerLogEventSink : ILogEventSink
     {
         _logsPath = logsPath;
         _date = DateTime.Now.Date;
-        
+
         // Rotate existing log files to .old on startup
         if (Directory.Exists(_logsPath))
         {
             var todayPattern = $"*-{_date:yyyyMMdd}.log";
             foreach (var existingFile in Directory.GetFiles(_logsPath, todayPattern))
             {
-                try 
+                try
                 {
                     var oldPath = existingFile.Replace(".log", ".old");
-                    if (File.Exists(oldPath)) 
+                    if (File.Exists(oldPath))
                         File.Delete(oldPath);
                     File.Move(existingFile, oldPath);
-                } 
+                }
                 catch { /* ignore */ }
             }
         }
@@ -38,7 +38,7 @@ public class WorkerLogEventSink : ILogEventSink
     {
         string? instance = null;
         var message = logEvent.RenderMessage();
-        
+
         // First try to get from ProcessInstance property
         if (logEvent.Properties.TryGetValue("ProcessInstance", out var prop))
         {
@@ -56,7 +56,7 @@ public class WorkerLogEventSink : ILogEventSink
 
         // Fallback: extract instance name from log message if not in property
         if (string.IsNullOrEmpty(instance))
-        {            
+        {
             // Match: Worker starting: "Sonarr-Anime"
             var match = System.Text.RegularExpressions.Regex.Match(
                 message, @"Worker starting:\s*""([^""]+)""");
@@ -64,7 +64,7 @@ public class WorkerLogEventSink : ILogEventSink
             {
                 instance = match.Groups[1].Value.Trim('"');
             }
-            
+
             // Match: Started updating database for Radarr instance "Radarr-1080"
             if (string.IsNullOrEmpty(instance))
             {
@@ -75,8 +75,8 @@ public class WorkerLogEventSink : ILogEventSink
                     instance = match.Groups[1].Value.Trim('"');
                 }
             }
-            
-            // Match: Processing torrents for category "radarr" on instance "Radarr-1080"  
+
+            // Match: Processing torrents for category "radarr" on instance "Radarr-1080"
             if (string.IsNullOrEmpty(instance))
             {
                 match = System.Text.RegularExpressions.Regex.Match(
@@ -108,7 +108,7 @@ public class WorkerLogEventSink : ILogEventSink
         // Check for FreeSpace messages - route to separate log file
         var isFreeSpace = message.Contains("FreeSpace:");
         string fileName;
-        
+
         if (isFreeSpace)
         {
             fileName = $"freespace-{_date:yyyyMMdd}.log";

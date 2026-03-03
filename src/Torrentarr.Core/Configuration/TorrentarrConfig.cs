@@ -152,20 +152,20 @@ public class ArrInstanceConfig
     public string Type { get; set; } = ""; // radarr, sonarr, lidarr
     public bool SearchOnly { get; set; } = false;
     public bool ProcessingOnly { get; set; } = false;
-    
+
     // Search/processing options
     public bool ReSearch { get; set; } = true;
     public string ImportMode { get; set; } = "Auto";
     public int RssSyncTimer { get; set; } = 1; // minutes
     public int RefreshDownloadsTimer { get; set; } = 1; // minutes
     public List<string> ArrErrorCodesToBlocklist { get; set; } = new();
-    
+
     // Torrent processing options (includes Torrent.Trackers and Torrent.SeedingMode)
     public TorrentConfig Torrent { get; set; } = new();
-    
+
     // Search configuration
     public SearchConfig Search { get; set; } = new();
-    
+
     // Instance-level seeding configuration (deprecated, use Torrent.SeedingMode)
     public CategorySeedingConfig? SeedingMode { get; set; }
 }
@@ -238,10 +238,10 @@ public class SearchConfig
     public List<string> TempQualityProfile { get; set; } = new();
     public string SearchBySeries { get; set; } = "smart"; // true, false, "smart" (Sonarr only)
     public bool PrioritizeTodaysReleases { get; set; } = true; // Sonarr only
-    
+
     // Ombi configuration
     public OmbiConfig? Ombi { get; set; }
-    
+
     // Overseerr configuration
     public OverseerrConfig? Overseerr { get; set; }
 }

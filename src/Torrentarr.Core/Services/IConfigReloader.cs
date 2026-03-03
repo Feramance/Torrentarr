@@ -3,13 +3,13 @@ namespace Torrentarr.Core.Services;
 public interface IConfigReloader
 {
     event EventHandler<ConfigReloadedEventArgs>? ConfigReloaded;
-    
+
     void StartWatching();
-    
+
     void StopWatching();
-    
+
     bool ReloadConfig();
-    
+
     string ConfigPath { get; }
 }
 

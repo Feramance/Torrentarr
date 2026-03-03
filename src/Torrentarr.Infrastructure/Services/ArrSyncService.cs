@@ -10,7 +10,7 @@ namespace Torrentarr.Infrastructure.Services;
 /// <summary>
 /// Syncs media data from Radarr/Sonarr/Lidarr APIs into the local SQLite database.
 /// Called once at worker startup and periodically during the worker loop.
-/// 
+///
 /// Three sync phases:
 /// 1. SyncAsync() - Basic media sync (titles, monitored status, etc.)
 /// 2. SyncSearchMetadataAsync() - Quality profiles, custom format scores, search eligibility
@@ -41,7 +41,7 @@ public class ArrSyncService
     public async Task SyncAsync(string instanceName, CancellationToken ct = default)
     {
         _logger.LogTrace("[{Instance}] Starting sync for Arr instance {Name}", instanceName, instanceName);
-        
+
         if (!_config.ArrInstances.TryGetValue(instanceName, out var arrConfig))
         {
             _logger.LogWarning("[{Instance}] ArrSyncService: no instance named {Name}", instanceName, instanceName);
@@ -79,7 +79,7 @@ public class ArrSyncService
                     _logger.LogWarning("[{Instance}] ArrSyncService: unknown type {Type} for {Name}", instanceName, arrConfig.Type, instanceName);
                     break;
             }
-            
+
             _logger.LogTrace("[{Instance}] Sync completed for {Name}", instanceName, instanceName);
         }
         catch (Exception ex)

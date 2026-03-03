@@ -41,7 +41,7 @@ public class ArrMediaService : IArrMediaService
     public async Task<SearchResult> SearchMissingMediaAsync(string category, CancellationToken cancellationToken = default)
     {
         _logger.LogTrace("Starting missing media search for category {Category}", category);
-        
+
         var arrInstance = _config.ArrInstances.Values.FirstOrDefault(i =>
             i.Category.Equals(category, StringComparison.OrdinalIgnoreCase));
 
@@ -71,14 +71,14 @@ public class ArrMediaService : IArrMediaService
         _logger.LogTrace("Executing searches for {Count} candidates", candidates.Count);
         var result = await _searchExecutor.ExecuteSearchesAsync(instanceName, candidates, cancellationToken);
         _logger.LogTrace("Search complete - triggered {Count} searches", result.SearchesTriggered);
-        
+
         return result;
     }
 
     public async Task<SearchResult> SearchQualityUpgradesAsync(string category, CancellationToken cancellationToken = default)
     {
         _logger.LogTrace("Starting quality upgrade search for category {Category}", category);
-        
+
         var arrInstance = _config.ArrInstances.Values.FirstOrDefault(i =>
             i.Category.Equals(category, StringComparison.OrdinalIgnoreCase));
 
