@@ -30,7 +30,7 @@ public class TorrentarrWebApplicationFactory : WebApplicationFactory<Program>, I
     // Single-quoted strings are TOML literal strings (no escape processing) — safe for regex patterns.
     private const string TestConfigToml = """
         [Settings]
-        ConfigVersion = "5.9.0"
+        ConfigVersion = "5.9.2"
         LoopSleepTimer = 5
         FailedCategory = "failed"
         RecheckCategory = "recheck"
