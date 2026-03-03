@@ -85,6 +85,7 @@ public class SonarrClient
         var request = new RestRequest("/api/v3/episode", Method.Get);
         AddApiKeyHeader(request);
         request.AddQueryParameter("seriesId", seriesId.ToString());
+        request.AddQueryParameter("includeEpisodeFile", "true");
 
         var response = await _client.ExecuteAsync(request, ct);
 
@@ -356,6 +357,38 @@ public class SonarrClient
         return new List<QualityProfile>();
     }
 
+    public async Task<List<EpisodeFile>> GetEpisodeFilesAsync(int seriesId, CancellationToken ct = default)
+    {
+        var request = new RestRequest("/api/v3/episodefile", Method.Get);
+        AddApiKeyHeader(request);
+        request.AddQueryParameter("seriesId", seriesId.ToString());
+
+        var response = await _client.ExecuteAsync(request, ct);
+
+        if (response.IsSuccessful && !string.IsNullOrEmpty(response.Content))
+        {
+            return JsonConvert.DeserializeObject<List<EpisodeFile>>(response.Content) ?? new List<EpisodeFile>();
+        }
+
+        return new List<EpisodeFile>();
+    }
+
+    public async Task<List<SonarrEpisode>> GetEpisodesWithFilesAsync(int seriesId, CancellationToken ct = default)
+    {
+        var episodes = await GetEpisodesAsync(seriesId, ct);
+        return episodes;
+    }
+
+    /// <summary>§6.7: Trigger a full library rescan (RescanSeries command)</summary>
+    public async Task<bool> RescanAsync(CancellationToken ct = default)
+    {
+        var request = new RestRequest("/api/v3/command", Method.Post);
+        AddApiKeyHeader(request);
+        request.AddJsonBody(new { name = "RescanSeries" });
+        var response = await _client.ExecuteAsync(request, ct);
+        return response.IsSuccessful;
+    }
+
     private void AddApiKeyHeader(RestRequest request)
     {
         request.AddHeader("X-Api-Key", _apiKey);
@@ -387,6 +420,18 @@ public class SonarrSeries
 
     [JsonProperty("statistics")]
     public SeriesStatistics? Statistics { get; set; }
+
+    [JsonProperty("seasons")]
+    public List<Season>? Seasons { get; set; }
+}
+
+public class Season
+{
+    [JsonProperty("seasonNumber")]
+    public int SeasonNumber { get; set; }
+
+    [JsonProperty("monitored")]
+    public bool Monitored { get; set; }
 }
 
 public class SeriesStatistics
@@ -444,6 +489,12 @@ public class SonarrEpisode
 
     [JsonProperty("sceneAbsoluteEpisodeNumber")]
     public int? SceneAbsoluteEpisodeNumber { get; set; }
+
+    [JsonProperty("episodeFile")]
+    public EpisodeFile? EpisodeFile { get; set; }
+
+    [JsonProperty("qualityProfileId")]
+    public int? QualityProfileId { get; set; }
 }
 
 public class WantedEpisodeResponse
@@ -498,6 +549,42 @@ public class SonarrQueueItem
 
     [JsonProperty("customFormatScore")]
     public int? CustomFormatScore { get; set; }
+
+    [JsonProperty("quality")]
+    public Quality? Quality { get; set; }
+
+    [JsonProperty("trackedDownloadStatus")]
+    public string? TrackedDownloadStatus { get; set; }
+
+    [JsonProperty("trackedDownloadState")]
+    public string? TrackedDownloadState { get; set; }
+
+    [JsonProperty("size")]
+    public long? Size { get; set; }
+
+    [JsonProperty("sizeleft")]
+    public long? SizeLeft { get; set; }
+
+    [JsonProperty("timeleft")]
+    public string? TimeLeft { get; set; }
+
+    [JsonProperty("estimatedCompletionTime")]
+    public DateTime? EstimatedCompletionTime { get; set; }
+
+    [JsonProperty("added")]
+    public DateTime? Added { get; set; }
+
+    [JsonProperty("statusMessages")]
+    public List<StatusMessage>? StatusMessages { get; set; }
+
+    [JsonProperty("downloadClient")]
+    public string? DownloadClient { get; set; }
+
+    [JsonProperty("seasonNumber")]
+    public int? SeasonNumber { get; set; }
+
+    [JsonProperty("episodeNumber")]
+    public int? EpisodeNumber { get; set; }
 }
 
 /// <summary>
@@ -528,6 +615,21 @@ public class EpisodeFile
 
     [JsonProperty("customFormats")]
     public List<CustomFormat> CustomFormats { get; set; } = new();
+
+    [JsonProperty("customFormatScore")]
+    public int? CustomFormatScore { get; set; }
+
+    [JsonProperty("qualityCutoffNotMet")]
+    public bool QualityCutoffNotMet { get; set; }
+
+    [JsonProperty("episodeFileId")]
+    public int? EpisodeFileId { get; set; }
+
+    [JsonProperty("dateAdded")]
+    public DateTime? DateAdded { get; set; }
+
+    [JsonProperty("releaseGroup")]
+    public string? ReleaseGroup { get; set; }
 }
 
 // Note: CommandResponse and CommandStatus are shared from RadarrClient.cs

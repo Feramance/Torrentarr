@@ -1,133 +1,109 @@
 using Torrentarr.Core.Configuration;
 using Torrentarr.Core.Services;
-using Torrentarr.Infrastructure.ApiClients.Arr;
 using Torrentarr.Infrastructure.Database;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging;
 
 namespace Torrentarr.Infrastructure.Services;
 
-/// <summary>
-/// Service for managing media searches and quality upgrades in Arr applications.
-/// Supports Radarr, Sonarr, and Lidarr search operations.
-/// </summary>
-public class ArrMediaServiceSimple : IArrMediaService
+public class ArrMediaService : IArrMediaService
 {
-    private readonly ILogger<ArrMediaServiceSimple> _logger;
+    private readonly ILogger<ArrMediaService> _logger;
     private readonly TorrentarrDbContext _dbContext;
     private readonly TorrentarrConfig _config;
+    private readonly ISearchExecutor _searchExecutor;
+    private readonly ArrSyncService _syncService;
 
-    public ArrMediaServiceSimple(
-        ILogger<ArrMediaServiceSimple> logger,
+    private static readonly Dictionary<string, int> ReasonPriority = new(StringComparer.OrdinalIgnoreCase)
+    {
+        ["Missing"] = 1,
+        ["CustomFormat"] = 2,
+        ["Quality"] = 3,
+        ["Upgrade"] = 4,
+        ["None"] = 99,
+        ["NotAvailable"] = 99
+    };
+
+    public ArrMediaService(
+        ILogger<ArrMediaService> logger,
         TorrentarrDbContext dbContext,
-        TorrentarrConfig config)
+        TorrentarrConfig config,
+        ISearchExecutor searchExecutor,
+        ArrSyncService syncService)
     {
         _logger = logger;
         _dbContext = dbContext;
         _config = config;
+        _searchExecutor = searchExecutor;
+        _syncService = syncService;
     }
 
     public async Task<SearchResult> SearchMissingMediaAsync(string category, CancellationToken cancellationToken = default)
     {
-        var result = new SearchResult();
-
+        _logger.LogTrace("Starting missing media search for category {Category}", category);
+        
         var arrInstance = _config.ArrInstances.Values.FirstOrDefault(i =>
             i.Category.Equals(category, StringComparison.OrdinalIgnoreCase));
 
         if (arrInstance == null)
         {
             _logger.LogWarning("No Arr instance found for category {Category}", category);
-            return result;
+            _logger.LogTrace("Search aborted - no Arr instance for {Category}", category);
+            return new SearchResult();
         }
 
-        try
+        var instanceName = _config.ArrInstances.First(kvp => kvp.Value == arrInstance).Key;
+        _logger.LogTrace("Found Arr instance {Name} for category {Category}", instanceName, category);
+
+        if (!arrInstance.Search.SearchMissing)
         {
-            var wanted = await GetWantedMediaAsync(category, cancellationToken);
-            
-            if (wanted.Count == 0)
-            {
-                _logger.LogDebug("No missing media found for category {Category}", category);
-                return result;
-            }
-
-            _logger.LogInformation("Found {Count} missing media items for category {Category}", wanted.Count, category);
-
-            var searchLimit = GetSearchLimit(arrInstance);
-            var toSearch = wanted.Take(searchLimit).ToList();
-
-            foreach (var media in toSearch)
-            {
-                try
-                {
-                    var searchTriggered = await TriggerSearchAsync(arrInstance, media, cancellationToken);
-                    if (searchTriggered)
-                    {
-                        result.SearchesTriggered++;
-                        result.SearchedIds.Add(media.Id);
-                    }
-                }
-                catch (Exception ex)
-                {
-                    _logger.LogError(ex, "Error searching for {Title} (ID: {Id})", media.Title, media.Id);
-                }
-            }
-
-            _logger.LogInformation("Triggered {Count} searches for missing media in {Category}",
-                result.SearchesTriggered, category);
-        }
-        catch (Exception ex)
-        {
-            _logger.LogError(ex, "Error searching missing media for category {Category}", category);
+            _logger.LogTrace("SearchMissing disabled for {Category}", category);
+            _logger.LogTrace("Search skipped - SearchMissing disabled");
+            return new SearchResult();
         }
 
+        _logger.LogInformation("Searching for missing media in {Category}", category);
+
+        _logger.LogTrace("Getting search candidates for {Name}", instanceName);
+        var candidates = await GetSearchCandidatesAsync(instanceName, arrInstance, cancellationToken);
+        _logger.LogTrace("Found {Count} search candidates", candidates.Count);
+
+        _logger.LogTrace("Executing searches for {Count} candidates", candidates.Count);
+        var result = await _searchExecutor.ExecuteSearchesAsync(instanceName, candidates, cancellationToken);
+        _logger.LogTrace("Search complete - triggered {Count} searches", result.SearchesTriggered);
+        
         return result;
     }
 
     public async Task<SearchResult> SearchQualityUpgradesAsync(string category, CancellationToken cancellationToken = default)
     {
-        var result = new SearchResult();
-
+        _logger.LogTrace("Starting quality upgrade search for category {Category}", category);
+        
         var arrInstance = _config.ArrInstances.Values.FirstOrDefault(i =>
             i.Category.Equals(category, StringComparison.OrdinalIgnoreCase));
 
         if (arrInstance == null)
         {
-            return result;
+            _logger.LogTrace("No Arr instance found for category {Category}", category);
+            _logger.LogTrace("Search aborted - no Arr instance for {Category}", category);
+            return new SearchResult();
         }
 
-        try
+        var instanceName = _config.ArrInstances.First(kvp => kvp.Value == arrInstance).Key;
+        _logger.LogTrace("Found Arr instance {Name} for category {Category}", instanceName, category);
+
+        if (!arrInstance.Search.DoUpgradeSearch && !arrInstance.Search.CustomFormatUnmetSearch && !arrInstance.Search.QualityUnmetSearch)
         {
-            var client = CreateArrClient(arrInstance);
-            if (client == null)
-            {
-                return result;
-            }
-
-            var queue = await GetQueueWithCustomFormatScoresAsync(arrInstance, client, cancellationToken);
-            
-            var upgradesAvailable = queue.Where(q => 
-                q.CustomFormatScore.HasValue && q.CustomFormatScore.Value > 0).ToList();
-
-            if (upgradesAvailable.Count == 0)
-            {
-                return result;
-            }
-
-            _logger.LogDebug("Found {Count} potential quality upgrades in {Category}",
-                upgradesAvailable.Count, category);
-
-            foreach (var item in upgradesAvailable.Take(5))
-            {
-                _logger.LogDebug("Quality upgrade available: {Title} (CF Score: {Score})",
-                    item.Title, item.CustomFormatScore);
-            }
-        }
-        catch (Exception ex)
-        {
-            _logger.LogError(ex, "Error searching quality upgrades for category {Category}", category);
+            _logger.LogTrace("Quality upgrade search disabled for {Category}", category);
+            _logger.LogTrace("Search skipped - all upgrade searches disabled");
+            return new SearchResult();
         }
 
-        return result;
+        _logger.LogInformation("Searching for quality upgrades in {Category}", category);
+
+        var candidates = await GetUpgradeCandidatesAsync(instanceName, arrInstance, cancellationToken);
+
+        return await _searchExecutor.ExecuteSearchesAsync(instanceName, candidates, cancellationToken);
     }
 
     public async Task<bool> IsQualityUpgradeAsync(int arrId, string quality, CancellationToken cancellationToken = default)
@@ -144,42 +120,56 @@ public class ArrMediaServiceSimple : IArrMediaService
             i.Category.Equals(category, StringComparison.OrdinalIgnoreCase));
 
         if (arrInstance == null)
-        {
             return wanted;
-        }
+
+        var instanceName = _config.ArrInstances.First(kvp => kvp.Value == arrInstance).Key;
 
         try
         {
-            var client = CreateArrClient(arrInstance);
-            if (client == null)
-            {
-                return wanted;
-            }
-
-            switch (arrInstance.Type.ToLower())
+            switch (arrInstance.Type.ToLowerInvariant())
             {
                 case "radarr":
-                    var radarrClient = client as RadarrClient;
-                    if (radarrClient != null)
+                    var movies = await _dbContext.Movies
+                        .Where(m => m.ArrInstance == instanceName && m.Monitored && !m.HasFile && !m.Searched)
+                        .ToListAsync(cancellationToken);
+                    wanted.AddRange(movies.Select(m => new WantedMedia
                     {
-                        wanted = await GetRadarrWantedAsync(radarrClient, cancellationToken);
-                    }
+                        Id = m.ArrId,
+                        ArrId = m.ArrId,
+                        Title = m.Title,
+                        Year = m.Year,
+                        Monitored = m.Monitored
+                    }));
                     break;
 
                 case "sonarr":
-                    var sonarrClient = client as SonarrClient;
-                    if (sonarrClient != null)
+                    var episodes = await _dbContext.Episodes
+                        .Where(e => e.ArrInstance == instanceName && e.Monitored == true && !e.HasFile && !e.Searched)
+                        .ToListAsync(cancellationToken);
+                    wanted.AddRange(episodes.Select(e => new WantedMedia
                     {
-                        wanted = await GetSonarrWantedAsync(sonarrClient, cancellationToken);
-                    }
+                        Id = e.ArrId,
+                        ArrId = e.ArrId,
+                        Title = $"{e.SeriesTitle} S{e.SeasonNumber:00}E{e.EpisodeNumber:00}",
+                        SeriesId = e.ArrSeriesId,
+                        SeasonNumber = e.SeasonNumber,
+                        EpisodeNumber = e.EpisodeNumber,
+                        Monitored = e.Monitored ?? false
+                    }));
                     break;
 
                 case "lidarr":
-                    var lidarrClient = client as LidarrClient;
-                    if (lidarrClient != null)
+                    var albums = await _dbContext.Albums
+                        .Where(a => a.ArrInstance == instanceName && a.Monitored && !a.HasFile && !a.Searched)
+                        .ToListAsync(cancellationToken);
+                    wanted.AddRange(albums.Select(a => new WantedMedia
                     {
-                        wanted = await GetLidarrWantedAsync(lidarrClient, cancellationToken);
-                    }
+                        Id = a.ArrId,
+                        ArrId = a.ArrId,
+                        Title = $"{a.ArtistTitle} - {a.Title}",
+                        ArtistId = a.ArrArtistId,
+                        Monitored = a.Monitored
+                    }));
                     break;
             }
         }
@@ -191,200 +181,339 @@ public class ArrMediaServiceSimple : IArrMediaService
         return wanted;
     }
 
-    private object? CreateArrClient(ArrInstanceConfig arrInstance)
+    public async Task<QualityUpgradeResult> GetCustomFormatUnmetMediaAsync(string category, CancellationToken cancellationToken = default)
     {
-        return arrInstance.Type.ToLower() switch
-        {
-            "radarr" => new RadarrClient(arrInstance.URI, arrInstance.APIKey),
-            "sonarr" => new SonarrClient(arrInstance.URI, arrInstance.APIKey),
-            "lidarr" => new LidarrClient(arrInstance.URI, arrInstance.APIKey),
-            _ => null
-        };
-    }
+        var result = new QualityUpgradeResult();
 
-    private async Task<List<WantedMedia>> GetRadarrWantedAsync(RadarrClient client, CancellationToken cancellationToken)
-    {
-        var wanted = new List<WantedMedia>();
+        var arrInstance = _config.ArrInstances.Values.FirstOrDefault(i =>
+            i.Category.Equals(category, StringComparison.OrdinalIgnoreCase));
+
+        if (arrInstance == null)
+            return result;
+
+        var instanceName = _config.ArrInstances.First(kvp => kvp.Value == arrInstance).Key;
 
         try
         {
-            var movies = await client.GetMoviesAsync(cancellationToken);
-            
-            foreach (var movie in movies.Where(m => m.Monitored && !m.HasFile))
-            {
-                wanted.Add(new WantedMedia
-                {
-                    Id = movie.Id,
-                    Title = movie.Title,
-                    Year = movie.Year,
-                    Monitored = movie.Monitored
-                });
-            }
-
-            _logger.LogDebug("Found {Count} wanted movies in Radarr", wanted.Count);
-        }
-        catch (Exception ex)
-        {
-            _logger.LogError(ex, "Error getting wanted movies from Radarr");
-        }
-
-        return wanted;
-    }
-
-    private async Task<List<WantedMedia>> GetSonarrWantedAsync(SonarrClient client, CancellationToken cancellationToken)
-    {
-        var wanted = new List<WantedMedia>();
-
-        try
-        {
-            var wantedResponse = await client.GetWantedAsync(pageSize: 100, ct: cancellationToken);
-            
-            foreach (var episode in wantedResponse.Records.Where(e => e.Monitored && !e.HasFile))
-            {
-                wanted.Add(new WantedMedia
-                {
-                    Id = episode.Id,
-                    Title = episode.Title,
-                    SeriesId = episode.SeriesId,
-                    SeasonNumber = episode.SeasonNumber,
-                    EpisodeNumber = episode.EpisodeNumber,
-                    Monitored = episode.Monitored
-                });
-            }
-
-            _logger.LogDebug("Found {Count} wanted episodes in Sonarr", wanted.Count);
-        }
-        catch (Exception ex)
-        {
-            _logger.LogError(ex, "Error getting wanted episodes from Sonarr");
-        }
-
-        return wanted;
-    }
-
-    private async Task<List<WantedMedia>> GetLidarrWantedAsync(LidarrClient client, CancellationToken cancellationToken)
-    {
-        var wanted = new List<WantedMedia>();
-
-        try
-        {
-            var wantedResponse = await client.GetWantedAsync(pageSize: 100, ct: cancellationToken);
-            
-            foreach (var album in wantedResponse.Records.Where(a => a.Monitored))
-            {
-                wanted.Add(new WantedMedia
-                {
-                    Id = album.Id,
-                    Title = album.Title,
-                    ArtistId = album.ArtistId,
-                    Monitored = album.Monitored
-                });
-            }
-
-            _logger.LogDebug("Found {Count} wanted albums in Lidarr", wanted.Count);
-        }
-        catch (Exception ex)
-        {
-            _logger.LogError(ex, "Error getting wanted albums from Lidarr");
-        }
-
-        return wanted;
-    }
-
-    private async Task<bool> TriggerSearchAsync(ArrInstanceConfig arrInstance, WantedMedia media, CancellationToken cancellationToken)
-    {
-        try
-        {
-            switch (arrInstance.Type.ToLower())
+            switch (arrInstance.Type.ToLowerInvariant())
             {
                 case "radarr":
-                    var radarrClient = new RadarrClient(arrInstance.URI, arrInstance.APIKey);
-                    return await radarrClient.SearchMovieAsync(media.Id, cancellationToken);
+                    var movies = await _dbContext.Movies
+                        .Where(m => m.ArrInstance == instanceName && m.Monitored && m.HasFile && !m.CustomFormatMet)
+                        .ToListAsync(cancellationToken);
+                    foreach (var movie in movies)
+                    {
+                        result.UnmetMedia.Add(new CustomFormatUnmetItem
+                        {
+                            Id = movie.ArrId,
+                            Title = movie.Title,
+                            Type = "Movie",
+                            CurrentCustomFormatScore = movie.CustomFormatScore ?? 0,
+                            MinCustomFormatScore = movie.MinCustomFormatScore ?? 0,
+                            QualityProfileId = movie.QualityProfileId ?? 0,
+                            QualityProfileName = movie.QualityProfileName ?? ""
+                        });
+                    }
+                    break;
 
                 case "sonarr":
-                    var sonarrClient = new SonarrClient(arrInstance.URI, arrInstance.APIKey);
-                    return await sonarrClient.SearchEpisodeAsync(new List<int> { media.Id }, cancellationToken);
+                    var episodes = await _dbContext.Episodes
+                        .Where(e => e.ArrInstance == instanceName && e.Monitored == true && e.HasFile && !e.CustomFormatMet)
+                        .ToListAsync(cancellationToken);
+                    foreach (var ep in episodes)
+                    {
+                        result.UnmetMedia.Add(new CustomFormatUnmetItem
+                        {
+                            Id = ep.ArrId,
+                            Title = $"{ep.SeriesTitle} S{ep.SeasonNumber:00}E{ep.EpisodeNumber:00}",
+                            Type = "Episode",
+                            CurrentCustomFormatScore = ep.CustomFormatScore ?? 0,
+                            MinCustomFormatScore = ep.MinCustomFormatScore ?? 0,
+                            QualityProfileId = ep.QualityProfileId ?? 0,
+                            QualityProfileName = ep.QualityProfileName ?? "",
+                            SeasonNumber = ep.SeasonNumber,
+                            EpisodeNumber = ep.EpisodeNumber
+                        });
+                    }
+                    break;
 
                 case "lidarr":
-                    var lidarrClient = new LidarrClient(arrInstance.URI, arrInstance.APIKey);
-                    return await lidarrClient.SearchAlbumAsync(new List<int> { media.Id }, cancellationToken);
+                    var albums = await _dbContext.Albums
+                        .Where(a => a.ArrInstance == instanceName && a.Monitored && a.HasFile && !a.CustomFormatMet)
+                        .ToListAsync(cancellationToken);
+                    foreach (var album in albums)
+                    {
+                        result.UnmetMedia.Add(new CustomFormatUnmetItem
+                        {
+                            Id = album.ArrId,
+                            Title = $"{album.ArtistTitle} - {album.Title}",
+                            Type = "Album",
+                            CurrentCustomFormatScore = album.CustomFormatScore ?? 0,
+                            MinCustomFormatScore = album.MinCustomFormatScore ?? 0,
+                            QualityProfileId = album.QualityProfileId ?? 0,
+                            QualityProfileName = album.QualityProfileName ?? "",
+                            ArtistId = album.ArrArtistId
+                        });
+                    }
+                    break;
             }
         }
         catch (Exception ex)
         {
-            _logger.LogError(ex, "Error triggering search for {Title}", media.Title);
+            _logger.LogError(ex, "Error getting CF unmet media for category {Category}", category);
         }
 
-        return false;
+        return result;
     }
 
-    private async Task<List<QueueItemWithScore>> GetQueueWithCustomFormatScoresAsync(
-        ArrInstanceConfig arrInstance,
-        object client,
+    private async Task<List<SearchCandidate>> GetSearchCandidatesAsync(
+        string instanceName,
+        ArrInstanceConfig arrConfig,
         CancellationToken cancellationToken)
     {
-        var items = new List<QueueItemWithScore>();
+        var candidates = new List<SearchCandidate>();
+        var searchConfig = arrConfig.Search;
 
-        try
+        // qBitrr §2.12: "today's release" = aired between 25 hours ago and 1 hour ago
+        var todayLower = DateTime.UtcNow.AddHours(-25);
+        var todayUpper = DateTime.UtcNow.AddHours(-1);
+
+        switch (arrConfig.Type.ToLowerInvariant())
         {
-            switch (arrInstance.Type.ToLower())
-            {
-                case "radarr":
-                    var radarrClient = client as RadarrClient;
-                    if (radarrClient != null)
-                    {
-                        var queue = await radarrClient.GetQueueAsync(ct: cancellationToken);
-                        items = queue.Records.Select(r => new QueueItemWithScore
-                        {
-                            Title = r.Title,
-                            CustomFormatScore = r.CustomFormatScore
-                        }).ToList();
-                    }
-                    break;
+            case "radarr":
+                // §2.10: When Unmonitored=true, include unmonitored items
+                var movies = searchConfig.Unmonitored
+                    ? await _dbContext.Movies
+                        .Where(m => m.ArrInstance == instanceName && !m.Searched)
+                        .ToListAsync(cancellationToken)
+                    : await _dbContext.Movies
+                        .Where(m => m.ArrInstance == instanceName && m.Monitored && !m.Searched)
+                        .ToListAsync(cancellationToken);
 
-                case "sonarr":
-                    var sonarrClient = client as SonarrClient;
-                    if (sonarrClient != null)
-                    {
-                        var queue = await sonarrClient.GetQueueAsync(ct: cancellationToken);
-                        items = queue.Records.Select(r => new QueueItemWithScore
-                        {
-                            Title = r.Title,
-                            CustomFormatScore = r.CustomFormatScore
-                        }).ToList();
-                    }
-                    break;
+                foreach (var movie in movies)
+                {
+                    var priority = GetReasonPriority(movie.Reason, searchConfig);
+                    if (priority >= 99) continue;
 
-                case "lidarr":
-                    var lidarrClient = client as LidarrClient;
-                    if (lidarrClient != null)
+                    candidates.Add(new SearchCandidate
                     {
-                        var queue = await lidarrClient.GetQueueAsync(ct: cancellationToken);
-                        items = queue.Records.Select(r => new QueueItemWithScore
-                        {
-                            Title = r.Title,
-                            CustomFormatScore = r.CustomFormatScore
-                        }).ToList();
-                    }
-                    break;
-            }
+                        ArrId = movie.ArrId,
+                        Title = movie.Title,
+                        Type = "Movie",
+                        Reason = movie.Reason ?? "Missing",
+                        Priority = priority,
+                        Year = movie.Year
+                    });
+                }
+                break;
+
+            case "sonarr":
+                // §2.10: When Unmonitored=true, include unmonitored items
+                var episodes = searchConfig.Unmonitored
+                    ? await _dbContext.Episodes
+                        .Where(e => e.ArrInstance == instanceName && !e.Searched)
+                        .ToListAsync(cancellationToken)
+                    : await _dbContext.Episodes
+                        .Where(e => e.ArrInstance == instanceName && e.Monitored == true && !e.Searched)
+                        .ToListAsync(cancellationToken);
+
+                foreach (var ep in episodes)
+                {
+                    if (!searchConfig.AlsoSearchSpecials && ep.SeasonNumber == 0)
+                        continue;
+
+                    var priority = GetReasonPriority(ep.Reason, searchConfig);
+                    if (priority >= 99) continue;
+
+                    // §2.12: 25h/1h window instead of calendar-day comparison
+                    var isTodaysRelease = searchConfig.PrioritizeTodaysReleases &&
+                        ep.AirDateUtc.HasValue &&
+                        ep.AirDateUtc.Value >= todayLower &&
+                        ep.AirDateUtc.Value <= todayUpper;
+
+                    candidates.Add(new SearchCandidate
+                    {
+                        ArrId = ep.ArrId,
+                        Title = $"{ep.SeriesTitle} S{ep.SeasonNumber:00}E{ep.EpisodeNumber:00}",
+                        Type = "Episode",
+                        Reason = ep.Reason ?? "Missing",
+                        Priority = priority,
+                        SeriesId = ep.ArrSeriesId,
+                        SeasonNumber = ep.SeasonNumber,
+                        EpisodeNumber = ep.EpisodeNumber,
+                        AirDate = ep.AirDateUtc,
+                        IsTodaysRelease = isTodaysRelease
+                    });
+                }
+                break;
+
+            case "lidarr":
+                // §2.10: When Unmonitored=true, include unmonitored items
+                var albums = searchConfig.Unmonitored
+                    ? await _dbContext.Albums
+                        .Where(a => a.ArrInstance == instanceName && !a.Searched)
+                        .ToListAsync(cancellationToken)
+                    : await _dbContext.Albums
+                        .Where(a => a.ArrInstance == instanceName && a.Monitored && !a.Searched)
+                        .ToListAsync(cancellationToken);
+
+                foreach (var album in albums)
+                {
+                    var priority = GetReasonPriority(album.Reason, searchConfig);
+                    if (priority >= 99) continue;
+
+                    candidates.Add(new SearchCandidate
+                    {
+                        ArrId = album.ArrId,
+                        Title = $"{album.ArtistTitle} - {album.Title}",
+                        Type = "Album",
+                        Reason = album.Reason ?? "Missing",
+                        Priority = priority,
+                        ArtistId = album.ArrArtistId,
+                        AlbumId = album.ArrId,
+                        Year = album.ReleaseDate?.Year
+                    });
+                }
+                break;
         }
-        catch (Exception ex)
-        {
-            _logger.LogError(ex, "Error getting queue from {Type}", arrInstance.Type);
-        }
 
-        return items;
+        return candidates;
     }
 
-    private int GetSearchLimit(ArrInstanceConfig arrInstance)
+    private async Task<List<SearchCandidate>> GetUpgradeCandidatesAsync(
+        string instanceName,
+        ArrInstanceConfig arrConfig,
+        CancellationToken cancellationToken)
     {
-        return arrInstance.Search.SearchLimit > 0 ? arrInstance.Search.SearchLimit : 5;
+        var candidates = new List<SearchCandidate>();
+        var searchConfig = arrConfig.Search;
+
+        switch (arrConfig.Type.ToLowerInvariant())
+        {
+            case "radarr":
+                var movies = await _dbContext.Movies
+                    .Where(m => m.ArrInstance == instanceName && m.Monitored && m.HasFile && !m.Searched)
+                    .ToListAsync(cancellationToken);
+
+                foreach (var movie in movies)
+                {
+                    var priority = GetUpgradePriority(movie.QualityMet, movie.CustomFormatMet, searchConfig);
+                    if (priority >= 99) continue;
+
+                    var reason = DetermineUpgradeReason(movie.QualityMet, movie.CustomFormatMet, searchConfig);
+
+                    candidates.Add(new SearchCandidate
+                    {
+                        ArrId = movie.ArrId,
+                        Title = movie.Title,
+                        Type = "Movie",
+                        Reason = reason,
+                        Priority = priority,
+                        Year = movie.Year
+                    });
+                }
+                break;
+
+            case "sonarr":
+                var episodes = await _dbContext.Episodes
+                    .Where(e => e.ArrInstance == instanceName && e.Monitored == true && e.HasFile && !e.Searched)
+                    .ToListAsync(cancellationToken);
+
+                foreach (var ep in episodes)
+                {
+                    var priority = GetUpgradePriority(ep.QualityMet, ep.CustomFormatMet, searchConfig);
+                    if (priority >= 99) continue;
+
+                    var reason = DetermineUpgradeReason(ep.QualityMet, ep.CustomFormatMet, searchConfig);
+
+                    candidates.Add(new SearchCandidate
+                    {
+                        ArrId = ep.ArrId,
+                        Title = $"{ep.SeriesTitle} S{ep.SeasonNumber:00}E{ep.EpisodeNumber:00}",
+                        Type = "Episode",
+                        Reason = reason,
+                        Priority = priority,
+                        SeriesId = ep.ArrSeriesId,
+                        SeasonNumber = ep.SeasonNumber,
+                        EpisodeNumber = ep.EpisodeNumber
+                    });
+                }
+                break;
+
+            case "lidarr":
+                var albums = await _dbContext.Albums
+                    .Where(a => a.ArrInstance == instanceName && a.Monitored && a.HasFile && !a.Searched)
+                    .ToListAsync(cancellationToken);
+
+                foreach (var album in albums)
+                {
+                    var priority = GetUpgradePriority(album.QualityMet, album.CustomFormatMet, searchConfig);
+                    if (priority >= 99) continue;
+
+                    var reason = DetermineUpgradeReason(album.QualityMet, album.CustomFormatMet, searchConfig);
+
+                    candidates.Add(new SearchCandidate
+                    {
+                        ArrId = album.ArrId,
+                        Title = $"{album.ArtistTitle} - {album.Title}",
+                        Type = "Album",
+                        Reason = reason,
+                        Priority = priority,
+                        ArtistId = album.ArrArtistId,
+                        Year = album.ReleaseDate?.Year
+                    });
+                }
+                break;
+        }
+
+        return candidates;
     }
 
-    private class QueueItemWithScore
+    private int GetReasonPriority(string? reason, SearchConfig searchConfig)
     {
-        public string Title { get; set; } = "";
-        public int? CustomFormatScore { get; set; }
+        if (string.IsNullOrEmpty(reason))
+            return ReasonPriority["Missing"];
+
+        if (!ReasonPriority.TryGetValue(reason, out var priority))
+            return 99;
+
+        if (reason == "CustomFormat" && !searchConfig.CustomFormatUnmetSearch)
+            return 99;
+
+        if (reason == "Quality" && !searchConfig.QualityUnmetSearch)
+            return 99;
+
+        if (reason == "Upgrade" && !searchConfig.DoUpgradeSearch)
+            return 99;
+
+        return priority;
+    }
+
+    private int GetUpgradePriority(bool qualityMet, bool customFormatMet, SearchConfig searchConfig)
+    {
+        if (searchConfig.DoUpgradeSearch)
+            return ReasonPriority["Upgrade"];
+
+        if (!customFormatMet && searchConfig.CustomFormatUnmetSearch)
+            return ReasonPriority["CustomFormat"];
+
+        if (!qualityMet && searchConfig.QualityUnmetSearch)
+            return ReasonPriority["Quality"];
+
+        return 99;
+    }
+
+    private string DetermineUpgradeReason(bool qualityMet, bool customFormatMet, SearchConfig searchConfig)
+    {
+        if (searchConfig.DoUpgradeSearch)
+            return "Upgrade";
+
+        if (!customFormatMet && searchConfig.CustomFormatUnmetSearch)
+            return "CustomFormat";
+
+        if (!qualityMet && searchConfig.QualityUnmetSearch)
+            return "Quality";
+
+        return "None";
     }
 }

@@ -405,9 +405,9 @@ function AppShell(): JSX.Element {
 
     // Store current version as last seen when user opens the app (first install)
     if (!lastSeenVersion) {
-      localStorage.setItem("lastSeenVersion", currentVersion);
+      try { localStorage.setItem("lastSeenVersion", currentVersion); } catch { /* quota exceeded or private mode */ }
     }
-  }, [meta?.current_version, meta?.changelog, refreshMeta]);
+  }, [meta?.current_version, meta?.current_version_changelog, meta?.changelog, refreshMeta]);
 
   // Network status notifications
   useEffect(() => {
@@ -465,6 +465,14 @@ function AppShell(): JSX.Element {
     return () => window.clearInterval(id);
   }, [refreshMeta]);
 
+  const refreshStatus = useCallback(async () => {
+    try {
+      await getStatus();
+    } catch {
+      // Silently fail - status is not critical
+    }
+  }, []);
+
   useEffect(() => {
     const handleVisibilityChange = () => {
       if (document.visibilityState === "visible") {
@@ -479,15 +487,7 @@ function AppShell(): JSX.Element {
     return () => {
       document.removeEventListener("visibilitychange", handleVisibilityChange);
     };
-  }, [refreshMeta]);
-
-  const refreshStatus = useCallback(async () => {
-    try {
-      await getStatus();
-    } catch {
-      // Silently fail - status is not critical
-    }
-  }, []);
+  }, [refreshMeta, refreshStatus]);
 
   useEffect(() => {
     void refreshStatus();
@@ -669,7 +669,7 @@ function AppShell(): JSX.Element {
     setShowWelcomeChangelog(false);
     // Mark this version as seen
     if (meta?.current_version) {
-      localStorage.setItem("lastSeenVersion", meta.current_version);
+      try { localStorage.setItem("lastSeenVersion", meta.current_version); } catch { /* quota exceeded or private mode */ }
     }
   }, [meta?.current_version]);
 

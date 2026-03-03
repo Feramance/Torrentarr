@@ -48,7 +48,7 @@ public class MediaValidationService : IMediaValidationService
         {
             result.IsValid = true;
             result.ErrorMessage = "ffprobe not available";
-            _logger.LogDebug("ffprobe not available, skipping validation for {File}", filePath);
+            _logger.LogTrace("ffprobe not available, skipping validation for {File}", filePath);
             return result;
         }
 
@@ -103,7 +103,7 @@ public class MediaValidationService : IMediaValidationService
             result.Height = probeResult.Streams?.FirstOrDefault()?.Height;
 
             _probedFiles.Add(filePath);
-            _logger.LogDebug("Validated media file: {File} (Format: {Format}, Duration: {Duration})",
+            _logger.LogTrace("Validated media file: {File} (Format: {Format}, Duration: {Duration})",
                 filePath, result.Format, result.Duration);
         }
         catch (Exception ex)
@@ -167,7 +167,7 @@ public class MediaValidationService : IMediaValidationService
     {
         if (!_config.Settings.FFprobeAutoUpdate)
         {
-            _logger.LogDebug("FFprobe auto-update disabled");
+            _logger.LogTrace("FFprobe auto-update disabled");
             return false;
         }
 
@@ -184,7 +184,7 @@ public class MediaValidationService : IMediaValidationService
 
             if (currentVersion == latestVersion.Version && IsFFprobeAvailable)
             {
-                _logger.LogDebug("FFprobe is up to date: {Version}", currentVersion);
+                _logger.LogTrace("FFprobe is up to date: {Version}", currentVersion);
                 return true;
             }
 

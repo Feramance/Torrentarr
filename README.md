@@ -51,9 +51,10 @@ services:
 git clone https://github.com/yourusername/torrentarr.git
 cd torrentarr
 
-# Build
-dotnet restore
-dotnet build
+# Build (frontend is built into Host/wwwroot; not committed)
+./build.sh       # Linux/macOS: builds React then .NET
+# or: build.bat  # Windows
+# Or manually: cd webui && npm run build && cd .. && dotnet restore && dotnet build
 
 # Run (creates ~/config/config.toml on first run)
 dotnet run --project src/Torrentarr.Host/Torrentarr.Host.csproj

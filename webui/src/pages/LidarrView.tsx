@@ -298,6 +298,8 @@ function LidarrAggregateView({
     [instanceCount]
   );
 
+  // TanStack Table returns unstable function refs; React Compiler skips memoization by design
+  /* eslint-disable-next-line react-hooks/incompatible-library */
   const flatTable = useReactTable({
     data: flatPageRows,
     columns: flatColumns,
@@ -742,6 +744,8 @@ function LidarrInstanceView({
     setGroupedPage(0);
   }, [onlyMissing, reasonFilter]);
 
+  // TanStack Table returns unstable function refs; React Compiler skips memoization by design
+  /* eslint-disable-next-line react-hooks/incompatible-library */
   const table = useReactTable({
     data: paginatedAlbums,
     columns,
@@ -1138,7 +1142,7 @@ export function LidarrView({ active }: { active: boolean }): JSX.Element {
         );
       }
     },
-    [push]
+    [push, instanceAlbumSync]
   );
 
   const fetchInstance = useCallback(
@@ -1227,7 +1231,7 @@ export function LidarrView({ active }: { active: boolean }): JSX.Element {
         setInstanceLoading(false);
       }
     },
-    [push, preloadRemainingPages]
+    [push, preloadRemainingPages, instanceAlbumSync]
   );
 
   const loadAggregate = useCallback(async (options?: { showLoading?: boolean }) => {
@@ -1365,7 +1369,7 @@ export function LidarrView({ active }: { active: boolean }): JSX.Element {
     } finally {
       setAggLoading(false);
     }
-  }, [instances, globalSearch, push, aggFilter, groupLidarr]);
+  }, [instances, globalSearch, push, aggFilter, groupLidarr, aggAlbumSync, aggTrackSync, aggSummary]);
 
   // LiveArr is now loaded via WebUIContext, no need to load config here
 

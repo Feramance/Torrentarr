@@ -1,5 +1,5 @@
 # Stage 1: Build React Frontend
-FROM node:22-alpine AS frontend-build
+FROM node:24-alpine AS frontend-build
 WORKDIR /app/frontend
 
 # Set npm timeout settings to prevent hanging
@@ -64,13 +64,15 @@ RUN apt-get update && \
 # Create non-root user (UID 1001; the aspnet base image reserves UID 1000 for its own 'app' user)
 RUN useradd -m -u 1001 torrentarr && \
     mkdir -p /config /data && \
+    chown -R torrentarr:torrentarr /config /data && \
+    mkdir -p /config /data && \
     chown -R torrentarr:torrentarr /config /data
 
-# Copy published application
+# Copy published application from build stage
 COPY --from=backend-build /app/publish ./
 
-# Copy example config
-COPY config.example.toml /config/config.example.toml
+# Switch to non-root user
+USER torrentarr
 
 # Set environment variables
 ENV ASPNETCORE_ENVIRONMENT=Production \
@@ -79,9 +81,6 @@ ENV ASPNETCORE_ENVIRONMENT=Production \
     DOTNET_RUNNING_IN_CONTAINER=true \
     DOTNET_SYSTEM_GLOBALIZATION_INVARIANT=false \
     TORRENTARR_CONFIG=/config/config.toml
-
-# Switch to non-root user
-USER torrentarr
 
 # Expose ports
 EXPOSE 6969

@@ -82,4 +82,78 @@ public class ProcessStateManagerTests
         // State must still be valid (not null / not thrown)
         mgr.GetState("Instance-1").Should().NotBeNull();
     }
+
+    [Fact]
+    public void Initialize_SupportsStatusField()
+    {
+        var mgr = CreateManager();
+        var state = new ArrProcessState
+        {
+            Name = "Radarr-Movies",
+            Kind = "radarr",
+            Alive = true,
+            Status = "Starting..."
+        };
+
+        mgr.Initialize("Radarr-Movies", state);
+
+        mgr.GetState("Radarr-Movies")!.Status.Should().Be("Starting...");
+    }
+
+    [Fact]
+    public void Update_CanModifyStatus()
+    {
+        var mgr = CreateManager();
+        mgr.Initialize("Radarr-Movies", new ArrProcessState { Name = "Radarr-Movies", Status = null });
+
+        mgr.Update("Radarr-Movies", s => s.Status = "Syncing database...");
+
+        mgr.GetState("Radarr-Movies")!.Status.Should().Be("Syncing database...");
+    }
+
+    [Fact]
+    public void Update_CanSetStatusToNull()
+    {
+        var mgr = CreateManager();
+        mgr.Initialize("Radarr-Movies", new ArrProcessState { Name = "Radarr-Movies", Status = "Processing..." });
+
+        mgr.Update("Radarr-Movies", s => s.Status = null);
+
+        mgr.GetState("Radarr-Movies")!.Status.Should().BeNull();
+    }
+
+    [Fact]
+    public void Initialize_SupportsQueueCountAndCategoryCount()
+    {
+        var mgr = CreateManager();
+        var state = new ArrProcessState
+        {
+            Name = "Radarr-Movies",
+            Kind = "radarr",
+            QueueCount = 5,
+            CategoryCount = 12
+        };
+
+        mgr.Initialize("Radarr-Movies", state);
+
+        mgr.GetState("Radarr-Movies")!.QueueCount.Should().Be(5);
+        mgr.GetState("Radarr-Movies")!.CategoryCount.Should().Be(12);
+    }
+
+    [Fact]
+    public void Update_CanModifyQueueCountAndCategoryCount()
+    {
+        var mgr = CreateManager();
+        mgr.Initialize("Radarr-Movies", new ArrProcessState { Name = "Radarr-Movies", QueueCount = 0, CategoryCount = 0 });
+
+        mgr.Update("Radarr-Movies", s =>
+        {
+            s.QueueCount = 3;
+            s.CategoryCount = 10;
+        });
+
+        var state = mgr.GetState("Radarr-Movies");
+        state!.QueueCount.Should().Be(3);
+        state.CategoryCount.Should().Be(10);
+    }
 }

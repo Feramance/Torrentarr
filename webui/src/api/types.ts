@@ -12,6 +12,7 @@ export interface ProcessInfo {
   queueCount?: number;
   categoryCount?: number;
   metricType?: string;
+  status?: string;
 }
 
 export interface ProcessesResponse {

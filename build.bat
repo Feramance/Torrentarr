@@ -29,7 +29,7 @@ echo.
 
 REM Build frontend
 echo Building React frontend...
-cd src\Torrentarr.WebUI\ClientApp
+cd webui
 
 if not exist "node_modules" (
     echo Installing npm dependencies...
@@ -48,7 +48,7 @@ if %ERRORLEVEL% NEQ 0 (
 )
 
 echo [92m✓ Frontend build successful[0m
-cd ..\..\..
+cd ..
 echo.
 
 REM Build backend

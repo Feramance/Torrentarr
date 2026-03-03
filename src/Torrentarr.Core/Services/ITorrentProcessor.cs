@@ -68,5 +68,7 @@ public enum TorrentState
     Allocating,
     Error,
     MissingFiles,
-    Moving
+    Moving,
+    ForcedMetaDL,
+    CheckingResumeData
 }

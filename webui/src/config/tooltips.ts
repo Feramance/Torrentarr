@@ -164,7 +164,7 @@ export const FIELD_TOOLTIPS: Record<string, string> = {
   "Torrent.SeedingMode.RemoveTorrent":
     "Removal policy: -1 do not remove, 1 remove on ratio, 2 remove on time, 3 remove on ratio or time, 4 remove on ratio and time.",
   "CategorySeeding.HitAndRunMode":
-    "Enable Hit and Run protection for managed category torrents.",
+    "Hit and Run protection mode: 'and' requires both ratio and time, 'or' clears on either, 'disabled' turns off HnR.",
   "CategorySeeding.MinSeedRatio":
     "Minimum seed ratio before removal allowed for managed categories (HnR protection).",
   "CategorySeeding.MinSeedingTimeDays":
@@ -176,7 +176,7 @@ export const FIELD_TOOLTIPS: Record<string, string> = {
   "CategorySeeding.TrackerUpdateBuffer":
     "Extra seconds buffer for tracker stats lag in managed categories.",
   HitAndRunMode:
-    "Enable Hit and Run protection for this tracker. Prevents torrent removal until seeding obligations are met.",
+    "Hit and Run protection mode for this tracker: 'and' requires both ratio and time, 'or' clears on either, 'disabled' turns off HnR.",
   MinSeedRatio:
     "Minimum seed ratio before HnR obligation is cleared (e.g. 1.0 for 1:1 ratio).",
   MinSeedingTimeDays:

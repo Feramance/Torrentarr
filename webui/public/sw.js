@@ -65,8 +65,8 @@ self.addEventListener('fetch', (event) => {
     return;
   }
 
-  // Network-first for API calls
-  if (url.pathname.startsWith('/api/')) {
+  // Network-first for web API calls
+  if (url.pathname.startsWith('/web/')) {
     event.respondWith(
       fetch(request)
         .then((response) => {

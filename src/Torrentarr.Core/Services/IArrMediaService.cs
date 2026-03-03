@@ -1,29 +1,16 @@
 namespace Torrentarr.Core.Services;
 
-/// <summary>
-/// Service for managing media searches and quality upgrades in Arr applications
-/// </summary>
 public interface IArrMediaService
 {
-    /// <summary>
-    /// Search for missing media in the Arr instance
-    /// </summary>
     Task<SearchResult> SearchMissingMediaAsync(string category, CancellationToken cancellationToken = default);
 
-    /// <summary>
-    /// Search for quality upgrades for existing media
-    /// </summary>
     Task<SearchResult> SearchQualityUpgradesAsync(string category, CancellationToken cancellationToken = default);
 
-    /// <summary>
-    /// Check if a torrent qualifies for a quality upgrade
-    /// </summary>
     Task<bool> IsQualityUpgradeAsync(int arrId, string quality, CancellationToken cancellationToken = default);
 
-    /// <summary>
-    /// Get wanted/missing media from Arr instance
-    /// </summary>
     Task<List<WantedMedia>> GetWantedMediaAsync(string category, CancellationToken cancellationToken = default);
+
+    Task<QualityUpgradeResult> GetCustomFormatUnmetMediaAsync(string category, CancellationToken cancellationToken = default);
 }
 
 public class SearchResult
@@ -49,4 +36,26 @@ public class WantedMedia
     public int ArtistId { get; set; }
     public DateTime Added { get; set; }
     public bool Monitored { get; set; }
+}
+
+public class QualityUpgradeResult
+{
+    public List<CustomFormatUnmetItem> UnmetMedia { get; set; } = new();
+    public int TotalUnmet => UnmetMedia.Count;
+}
+
+public class CustomFormatUnmetItem
+{
+    public int Id { get; set; }
+    public string Title { get; set; } = "";
+    public string Type { get; set; } = "";
+    public int CurrentCustomFormatScore { get; set; }
+    public int MinCustomFormatScore { get; set; }
+    public int QualityProfileId { get; set; }
+    public string QualityProfileName { get; set; } = "";
+    public string FilePath { get; set; } = "";
+    public int? SeriesId { get; set; }
+    public int? SeasonNumber { get; set; }
+    public int? EpisodeNumber { get; set; }
+    public int? ArtistId { get; set; }
 }

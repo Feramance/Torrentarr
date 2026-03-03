@@ -335,6 +335,48 @@ public class RadarrClient
         return new List<CustomFormat>();
     }
 
+    public async Task<List<MovieFile>> GetMovieFilesAsync(int movieId, CancellationToken ct = default)
+    {
+        var request = new RestRequest("/api/v3/moviefile", Method.Get);
+        AddApiKeyHeader(request);
+        request.AddQueryParameter("movieId", movieId.ToString());
+
+        var response = await _client.ExecuteAsync(request, ct);
+
+        if (response.IsSuccessful && !string.IsNullOrEmpty(response.Content))
+        {
+            return JsonConvert.DeserializeObject<List<MovieFile>>(response.Content) ?? new List<MovieFile>();
+        }
+
+        return new List<MovieFile>();
+    }
+
+    public async Task<List<RadarrMovie>> GetMoviesWithFilesAsync(CancellationToken ct = default)
+    {
+        var request = new RestRequest("/api/v3/movie", Method.Get);
+        AddApiKeyHeader(request);
+        request.AddQueryParameter("includeMovieImages", "false");
+
+        var response = await _client.ExecuteAsync(request, ct);
+
+        if (response.IsSuccessful && !string.IsNullOrEmpty(response.Content))
+        {
+            return JsonConvert.DeserializeObject<List<RadarrMovie>>(response.Content) ?? new List<RadarrMovie>();
+        }
+
+        return new List<RadarrMovie>();
+    }
+
+    /// <summary>§6.7: Trigger a full library rescan (RescanMovie command)</summary>
+    public async Task<bool> RescanAsync(CancellationToken ct = default)
+    {
+        var request = new RestRequest("/api/v3/command", Method.Post);
+        AddApiKeyHeader(request);
+        request.AddJsonBody(new { name = "RescanMovie" });
+        var response = await _client.ExecuteAsync(request, ct);
+        return response.IsSuccessful;
+    }
+
     private void AddApiKeyHeader(RestRequest request)
     {
         request.AddHeader("X-Api-Key", _apiKey);
@@ -372,6 +414,21 @@ public class RadarrMovie
 
     [JsonProperty("path")]
     public string Path { get; set; } = "";
+
+    [JsonProperty("movieFileId")]
+    public int MovieFileId { get; set; }
+
+    [JsonProperty("inCinemas")]
+    public DateTime? InCinemas { get; set; }
+
+    [JsonProperty("digitalRelease")]
+    public DateTime? DigitalRelease { get; set; }
+
+    [JsonProperty("physicalRelease")]
+    public DateTime? PhysicalRelease { get; set; }
+
+    [JsonProperty("minimumAvailability")]
+    public string? MinimumAvailability { get; set; }
 }
 
 public class MovieFile
@@ -382,11 +439,32 @@ public class MovieFile
     [JsonProperty("relativePath")]
     public string RelativePath { get; set; } = "";
 
+    [JsonProperty("path")]
+    public string Path { get; set; } = "";
+
+    [JsonProperty("size")]
+    public long Size { get; set; }
+
     [JsonProperty("quality")]
     public Quality Quality { get; set; } = new();
 
     [JsonProperty("customFormats")]
     public List<CustomFormat> CustomFormats { get; set; } = new();
+
+    [JsonProperty("customFormatScore")]
+    public int? CustomFormatScore { get; set; }
+
+    [JsonProperty("qualityCutoffNotMet")]
+    public bool QualityCutoffNotMet { get; set; }
+
+    [JsonProperty("movieId")]
+    public int? MovieId { get; set; }
+
+    [JsonProperty("dateAdded")]
+    public DateTime? DateAdded { get; set; }
+
+    [JsonProperty("releaseGroup")]
+    public string? ReleaseGroup { get; set; }
 }
 
 public class Quality
@@ -420,6 +498,24 @@ public class QualityProfile
 
     [JsonProperty("name")]
     public string Name { get; set; } = "";
+
+    [JsonProperty("minCustomFormatScore")]
+    public int? MinCustomFormatScore { get; set; }
+
+    [JsonProperty("cutoff")]
+    public int? Cutoff { get; set; }
+
+    [JsonProperty("items")]
+    public List<QualityProfileItem>? Items { get; set; }
+}
+
+public class QualityProfileItem
+{
+    [JsonProperty("quality")]
+    public QualityDefinition? Quality { get; set; }
+
+    [JsonProperty("allowed")]
+    public bool Allowed { get; set; }
 }
 
 public class WantedResponse
@@ -474,6 +570,45 @@ public class QueueItem
 
     [JsonProperty("quality")]
     public Quality? Quality { get; set; }
+
+    [JsonProperty("trackedDownloadStatus")]
+    public string? TrackedDownloadStatus { get; set; }
+
+    [JsonProperty("trackedDownloadState")]
+    public string? TrackedDownloadState { get; set; }
+
+    [JsonProperty("size")]
+    public long? Size { get; set; }
+
+    [JsonProperty("sizeleft")]
+    public long? SizeLeft { get; set; }
+
+    [JsonProperty("timeleft")]
+    public string? TimeLeft { get; set; }
+
+    [JsonProperty("estimatedCompletionTime")]
+    public DateTime? EstimatedCompletionTime { get; set; }
+
+    [JsonProperty("added")]
+    public DateTime? Added { get; set; }
+
+    [JsonProperty("statusMessages")]
+    public List<StatusMessage>? StatusMessages { get; set; }
+
+    [JsonProperty("downloadClient")]
+    public string? DownloadClient { get; set; }
+
+    [JsonProperty("downloadClientHasPostImportCategory")]
+    public bool? DownloadClientHasPostImportCategory { get; set; }
+}
+
+public class StatusMessage
+{
+    [JsonProperty("title")]
+    public string? Title { get; set; }
+
+    [JsonProperty("messages")]
+    public List<string>? Messages { get; set; }
 }
 
 public class CommandResponse
