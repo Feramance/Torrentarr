@@ -7,7 +7,7 @@
 **Torrentarr** is the intelligent glue between qBittorrent and the *Arr ecosystem (Radarr, Sonarr, Lidarr). It monitors torrent health, triggers instant imports when downloads complete, automates quality upgrades, manages disk space, integrates with request systems (Overseerr/Ombi), and provides a modern React dashboard for complete visibility and control.
 
 [![GitHub release](https://img.shields.io/github/v/release/Feramance/Torrentarr)](https://github.com/Feramance/Torrentarr/releases)
-[![Docker Pulls](https://img.shields.io/docker/pulls/feramance/torrentarr.svg)](https://hub.docker.com/r/feramance/torrentarr)
+[![Docker Pulls](https://img.shields.io/docker/pulls/feramance/torrentarr.svg?cacheSeconds=3600)](https://hub.docker.com/r/feramance/torrentarr)
 [![License: MIT](https://img.shields.io/badge/license-MIT-green)](https://github.com/Feramance/Torrentarr/blob/master/LICENSE)
 
 ## Quick Links
