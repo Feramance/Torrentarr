@@ -170,3 +170,7 @@ Three test projects under `tests/`, plus frontend tests in `webui/src/__tests__/
 ## CI/CD
 
 GitHub Actions runs a matrix build across Ubuntu, Windows, and macOS with .NET 10 + Node 20. Pipeline: restore → build → test (non-live) → frontend build → Docker build (on `master` push). Artifacts retained 7 days.
+
+## Git commits
+
+**Do not use `git commit --no-verify` or `git commit -n`.** Pre-commit hooks must run on every commit. When committing or pushing on the user's behalf, use `git commit` without the `--no-verify` flag so that pre-commit runs. If hooks fail, fix the reported issues (e.g. formatting) or inform the user—do not bypass hooks.
