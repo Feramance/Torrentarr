@@ -7,17 +7,101 @@ using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
 using Serilog;
+using Serilog.Core;
+using Serilog.Events;
 
 // Parse command line arguments
 var instanceName = args.Contains("--instance") && args.Length > Array.IndexOf(args, "--instance") + 1
     ? args[Array.IndexOf(args, "--instance") + 1]
     : "Unknown";
 
-// Configure Serilog
+// Calculate base paths - use /config for Docker, or config/ relative to cwd for local
+var configEnv = Environment.GetEnvironmentVariable("TORRENTARR_CONFIG");
+var basePath = !string.IsNullOrEmpty(configEnv) && configEnv.StartsWith("/config") 
+    ? "/config" 
+    : Path.Combine(Directory.GetCurrentDirectory(), "config");
+var logsPath = Path.Combine(basePath, "logs");
+var dbPath = Path.Combine(basePath, "qbitrr.db");
+Directory.CreateDirectory(basePath);
+Directory.CreateDirectory(logsPath);
+
+// Mutable level switch — lets log level be changed at runtime via file
+var levelSwitch = new LoggingLevelSwitch(LogEventLevel.Debug);
+
+// Configure Serilog - write to .config/logs/ with process metadata enrichment
 Log.Logger = new LoggerConfiguration()
+    .MinimumLevel.ControlledBy(levelSwitch)
+    .Enrich.WithProperty("ProcessType", "Worker")
+    .Enrich.WithProperty("ProcessInstance", instanceName)
+    .Enrich.WithProperty("ProcessId", Environment.ProcessId)
+    .Enrich.WithProperty("MachineName", Environment.MachineName)
+    .Filter.ByExcluding(e => 
+        e.RenderMessage().Contains("DbCommand") ||
+        e.RenderMessage().Contains("started tracking") ||
+        e.RenderMessage().Contains("changed state from") ||
+        e.RenderMessage().Contains("generated temporary value") ||
+        e.RenderMessage().Contains("Closing data reader") ||
+        e.RenderMessage().Contains("DetectChanges") ||
+        e.RenderMessage().Contains("SaveChanges") ||
+        e.RenderMessage().Contains("Opening connection") ||
+        e.RenderMessage().Contains("Opened connection") ||
+        e.RenderMessage().Contains("Closing connection") ||
+        e.RenderMessage().Contains("Closed connection") ||
+        e.RenderMessage().Contains("was detected as changed") ||
+        e.RenderMessage().Contains("Executing endpoint") ||
+        e.RenderMessage().Contains("Executed endpoint") ||
+        e.RenderMessage().Contains("Request starting") ||
+        e.RenderMessage().Contains("Request finished") ||
+        e.RenderMessage().Contains("Writing value of type") ||
+        e.RenderMessage().Contains("is valid for the request") ||
+        e.RenderMessage().Contains("A data reader"))
     .WriteTo.Console()
-    .WriteTo.File($"logs/worker-{instanceName}.log", rollingInterval: RollingInterval.Day)
+    .WriteTo.File(
+        Path.Combine(logsPath, $"worker-{instanceName}.log"),
+        rollingInterval: RollingInterval.Day,
+        shared: true,
+        retainedFileCountLimit: 7)
     .CreateLogger();
+
+// Monitor for log level changes via file
+var logLevelFilePath = Path.Combine(logsPath, $"worker-{instanceName}.loglevel");
+var logWatcherCts = new CancellationTokenSource();
+_ = Task.Run(async () =>
+{
+    while (!logWatcherCts.Token.IsCancellationRequested)
+    {
+        try
+        {
+            if (File.Exists(logLevelFilePath))
+            {
+                var level = await File.ReadAllTextAsync(logLevelFilePath, logWatcherCts.Token);
+                level = level.Trim().ToUpperInvariant();
+                var newLevel = level switch
+                {
+                    "TRACE" or "VERBOSE" => LogEventLevel.Verbose,
+                    "DEBUG" => LogEventLevel.Debug,
+                    "INFORMATION" or "INFO" => LogEventLevel.Information,
+                    "WARNING" or "WARN" => LogEventLevel.Warning,
+                    "ERROR" => LogEventLevel.Error,
+                    "CRITICAL" or "FATAL" => LogEventLevel.Fatal,
+                    _ => LogEventLevel.Information
+                };
+                levelSwitch.MinimumLevel = newLevel;
+                Log.Information("Log level changed to {Level} via file", level);
+            }
+        }
+        catch (OperationCanceledException)
+        {
+            break;
+        }
+        catch (Exception ex)
+        {
+            Log.Warning(ex, "Log level watcher encountered an error");
+        }
+        try { await Task.Delay(TimeSpan.FromSeconds(5), logWatcherCts.Token); }
+        catch (OperationCanceledException) { break; }
+    }
+}, logWatcherCts.Token);
 
 try
 {
@@ -56,9 +140,7 @@ try
     builder.Services.AddSingleton(instanceConfig);
     builder.Services.AddSingleton(new WorkerContext { InstanceName = instanceName });
 
-    // Add database context
-    var homePath = Environment.GetFolderPath(Environment.SpecialFolder.UserProfile);
-    var dbPath = Path.Combine(homePath, ".config", "torrentarr", "qbitrr.db");
+    // Add database context - use same dbPath as defined at startup
     builder.Services.AddDbContext<TorrentarrDbContext>(options =>
     {
         options.UseSqlite($"Data Source={dbPath}");
@@ -69,9 +151,10 @@ try
     builder.Services.AddSingleton<ITorrentCacheService, TorrentCacheService>();
     builder.Services.AddSingleton<IMediaValidationService, MediaValidationService>();
     builder.Services.AddScoped<ITorrentProcessor, TorrentProcessor>();
-    builder.Services.AddScoped<IArrMediaService, ArrMediaServiceSimple>();
+    builder.Services.AddScoped<ArrSyncService>();
+    builder.Services.AddScoped<ISearchExecutor, SearchExecutor>();
+    builder.Services.AddScoped<IArrMediaService, ArrMediaService>();
     builder.Services.AddScoped<ISeedingService, SeedingService>();
-    builder.Services.AddScoped<IFreeSpaceService, FreeSpaceService>();
     builder.Services.AddScoped<IArrImportService, ArrImportService>();
     builder.Services.AddScoped<IDatabaseHealthService, DatabaseHealthService>();
     builder.Services.AddSingleton<IConnectivityService, ConnectivityService>();
@@ -82,6 +165,7 @@ try
 
     await host.RunAsync();
 
+    logWatcherCts.Cancel();
     return 0;
 }
 catch (Exception ex)
@@ -183,11 +267,12 @@ class ArrWorkerService : BackgroundService
                         continue;
                     }
 
-                    // Check internet connectivity
+                    // §2.4: Check internet connectivity, sleep NoInternetSleepTimer on failure
                     if (!await _connectivityService.IsConnectedAsync(stoppingToken))
                     {
-                        _logger.LogWarning("No internet connectivity, skipping processing cycle");
-                        await Task.Delay(TimeSpan.FromMinutes(1), stoppingToken);
+                        _logger.LogWarning("No internet connectivity, skipping processing cycle. Sleeping {Seconds}s",
+                            _config.Settings.NoInternetSleepTimer);
+                        await Task.Delay(TimeSpan.FromSeconds(_config.Settings.NoInternetSleepTimer), stoppingToken);
                         continue;
                     }
 
@@ -204,7 +289,7 @@ class ArrWorkerService : BackgroundService
 
                 // Sleep for configured interval
                 var sleepTime = TimeSpan.FromSeconds(_config.Settings.LoopSleepTimer);
-                _logger.LogDebug("Sleeping for {Seconds} seconds", sleepTime.TotalSeconds);
+                _logger.LogTrace("Sleeping for {Seconds} seconds", sleepTime.TotalSeconds);
                 await Task.Delay(sleepTime, stoppingToken);
             }
         }
@@ -247,7 +332,7 @@ class ArrWorkerService : BackgroundService
 
     private async Task ProcessTorrentsAsync(CancellationToken cancellationToken)
     {
-        _logger.LogDebug("Processing torrents for {Instance}", _context.InstanceName);
+        _logger.LogTrace("Processing torrents for {Instance}", _context.InstanceName);
 
         // Create a scope for scoped services (DbContext, TorrentProcessor, etc.)
         using var scope = _serviceProvider.CreateScope();
@@ -282,7 +367,7 @@ class ArrWorkerService : BackgroundService
             }
             else
             {
-                _logger.LogDebug("Database health check passed");
+                _logger.LogTrace("Database health check passed");
             }
         }
 
@@ -300,47 +385,51 @@ class ArrWorkerService : BackgroundService
             }
             if (removalResult.TorrentsProtected > 0)
             {
-                _logger.LogDebug("{Count} torrents protected by H&R rules", removalResult.TorrentsProtected);
+                _logger.LogTrace("{Count} torrents protected by H&R rules", removalResult.TorrentsProtected);
             }
         }
 
-        // Search for missing media (if configured and on search cycle)
+        // Search (if configured and on search cycle)
         if (!_instanceConfig.ProcessingOnly && ShouldRunSearch())
         {
-            _logger.LogInformation("Searching for missing media in {Instance}", _context.InstanceName);
-            var searchResult = await arrMediaService.SearchMissingMediaAsync(_instanceConfig.Category, cancellationToken);
+            SearchResult? searchResult = null;
 
-            if (searchResult.SearchesTriggered > 0)
+            // §2.7: DoUpgradeSearch is exclusive — when active, skip missing-media search
+            if (_instanceConfig.Search.DoUpgradeSearch)
             {
-                _logger.LogInformation("Triggered {Count} searches for missing media", searchResult.SearchesTriggered);
+                _logger.LogInformation("Searching for quality upgrades (exclusive) in {Instance}", _context.InstanceName);
+                searchResult = await arrMediaService.SearchQualityUpgradesAsync(_instanceConfig.Category, cancellationToken);
             }
-
-            // Search for quality upgrades (if enabled)
-            if (_config.Settings.SearchLoopDelay > 0)
+            else
             {
-                var upgradeResult = await arrMediaService.SearchQualityUpgradesAsync(_instanceConfig.Category, cancellationToken);
-                if (upgradeResult.SearchesTriggered > 0)
+                if (_instanceConfig.Search.SearchMissing)
                 {
-                    _logger.LogInformation("Triggered {Count} searches for quality upgrades", upgradeResult.SearchesTriggered);
+                    _logger.LogInformation("Searching for missing media in {Instance}", _context.InstanceName);
+                    searchResult = await arrMediaService.SearchMissingMediaAsync(_instanceConfig.Category, cancellationToken);
+                    if (searchResult.SearchesTriggered > 0)
+                        _logger.LogInformation("Triggered {Count} searches for missing media", searchResult.SearchesTriggered);
+                }
+
+                // QualityUnmetSearch / CustomFormatUnmetSearch are always additive
+                if (_instanceConfig.Search.QualityUnmetSearch || _instanceConfig.Search.CustomFormatUnmetSearch)
+                {
+                    var upgradeResult = await arrMediaService.SearchQualityUpgradesAsync(_instanceConfig.Category, cancellationToken);
+                    if (upgradeResult.SearchesTriggered > 0)
+                        _logger.LogInformation("Triggered {Count} searches for quality upgrades", upgradeResult.SearchesTriggered);
                 }
             }
         }
     }
 
-    private int _searchCycleCounter = 0;
+    private DateTime _lastSearchTime = DateTime.MinValue;
+
     private bool ShouldRunSearch()
     {
-        // If SearchLoopDelay is -1 or 0, never search
-        if (_config.Settings.SearchLoopDelay <= 0)
+        var searchInterval = TimeSpan.FromSeconds(_instanceConfig.Search.SearchRequestsEvery);
+        
+        if (DateTime.UtcNow - _lastSearchTime >= searchInterval)
         {
-            return false;
-        }
-
-        // Run search every N cycles
-        _searchCycleCounter++;
-        if (_searchCycleCounter >= _config.Settings.SearchLoopDelay)
-        {
-            _searchCycleCounter = 0;
+            _lastSearchTime = DateTime.UtcNow;
             return true;
         }
 

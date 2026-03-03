@@ -13,6 +13,7 @@ public class TorrentCacheService : ITorrentCacheService
     private readonly Dictionary<string, string> _categoryCache = new(StringComparer.OrdinalIgnoreCase);
     private readonly Dictionary<string, string> _nameCache = new(StringComparer.OrdinalIgnoreCase);
     private readonly Dictionary<string, DateTime> _ignoreCache = new(StringComparer.OrdinalIgnoreCase);
+    private readonly HashSet<string> _fileFilteredHashes = new(StringComparer.OrdinalIgnoreCase);
     private readonly object _lock = new();
 
     public TorrentCacheService(ILogger<TorrentCacheService> logger)
@@ -76,7 +77,7 @@ public class TorrentCacheService : ITorrentCacheService
         lock (_lock)
         {
             _ignoreCache[hash] = DateTime.UtcNow.Add(duration);
-            _logger.LogDebug("Added {Hash} to ignore cache for {Duration}", hash, duration);
+            _logger.LogTrace("Added {Hash} to ignore cache for {Duration}", hash, duration);
         }
     }
 
@@ -88,6 +89,22 @@ public class TorrentCacheService : ITorrentCacheService
         }
     }
 
+    public bool IsFileFiltered(string hash)
+    {
+        lock (_lock)
+        {
+            return _fileFilteredHashes.Contains(hash);
+        }
+    }
+
+    public void MarkFileFiltered(string hash)
+    {
+        lock (_lock)
+        {
+            _fileFilteredHashes.Add(hash);
+        }
+    }
+
     public void Clear()
     {
         lock (_lock)
@@ -95,7 +112,8 @@ public class TorrentCacheService : ITorrentCacheService
             _categoryCache.Clear();
             _nameCache.Clear();
             _ignoreCache.Clear();
-            _logger.LogDebug("All caches cleared");
+            _fileFilteredHashes.Clear();
+            _logger.LogTrace("All caches cleared");
         }
     }
 
@@ -116,7 +134,7 @@ public class TorrentCacheService : ITorrentCacheService
 
             if (expiredKeys.Count > 0)
             {
-                _logger.LogDebug("Cleaned {Count} expired entries from ignore cache", expiredKeys.Count);
+                _logger.LogTrace("Cleaned {Count} expired entries from ignore cache", expiredKeys.Count);
             }
         }
     }

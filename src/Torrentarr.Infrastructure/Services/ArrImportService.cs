@@ -1,24 +1,25 @@
 using Torrentarr.Core.Configuration;
 using Torrentarr.Core.Services;
 using Torrentarr.Infrastructure.ApiClients.Arr;
+using Torrentarr.Infrastructure.ApiClients.QBittorrent;
 using Microsoft.Extensions.Logging;
 
 namespace Torrentarr.Infrastructure.Services;
 
-/// <summary>
-/// Handles triggering manual imports to Radarr, Sonarr, and Lidarr
-/// </summary>
 public class ArrImportService : IArrImportService
 {
     private readonly ILogger<ArrImportService> _logger;
     private readonly TorrentarrConfig _config;
+    private readonly QBittorrentConnectionManager _qbitManager;
 
     public ArrImportService(
         ILogger<ArrImportService> logger,
-        TorrentarrConfig config)
+        TorrentarrConfig config,
+        QBittorrentConnectionManager qbitManager)
     {
         _logger = logger;
         _config = config;
+        _qbitManager = qbitManager;
     }
 
     public async Task<ImportResult> TriggerImportAsync(
@@ -27,15 +28,18 @@ public class ArrImportService : IArrImportService
         string category,
         CancellationToken cancellationToken = default)
     {
+        _logger.LogTrace("Starting import trigger for hash {Hash} in category {Category}", hash, category);
         _logger.LogInformation("Triggering import for hash {Hash} in category {Category}", hash, category);
 
         // Find the Arr instance configuration for this category
+        _logger.LogTrace("Looking up Arr instance for category {Category}", category);
         var arrInstance = _config.ArrInstances.Values.FirstOrDefault(i =>
             i.Category.Equals(category, StringComparison.OrdinalIgnoreCase));
 
         if (arrInstance == null)
         {
             _logger.LogWarning("No Arr instance configured for category {Category}", category);
+            _logger.LogTrace("Import aborted - no Arr instance found for category {Category}", category);
             return new ImportResult
             {
                 Success = false,
@@ -43,11 +47,14 @@ public class ArrImportService : IArrImportService
             };
         }
 
+        _logger.LogTrace("Found Arr instance: Type={Type}, URI={URI}, Category={Category}", 
+            arrInstance.Type, arrInstance.URI, arrInstance.Category);
         _logger.LogDebug("Found Arr instance: {Type} at {URI}", arrInstance.Type, arrInstance.URI);
 
         try
         {
-            return arrInstance.Type.ToLower() switch
+            _logger.LogTrace("Routing import to {Type} handler", arrInstance.Type);
+            var result = arrInstance.Type.ToLower() switch
             {
                 "radarr" => await TriggerRadarrImportAsync(arrInstance, hash, contentPath, cancellationToken),
                 "sonarr" => await TriggerSonarrImportAsync(arrInstance, hash, contentPath, cancellationToken),
@@ -58,6 +65,10 @@ public class ArrImportService : IArrImportService
                     Message = $"Unknown Arr type: {arrInstance.Type}"
                 }
             };
+            
+            _logger.LogTrace("Import result for {Hash}: Success={Success}, Message={Message}", 
+                hash, result.Success, result.Message);
+            return result;
         }
         catch (Exception ex)
         {
@@ -72,9 +83,16 @@ public class ArrImportService : IArrImportService
 
     public async Task<bool> IsImportedAsync(string hash, CancellationToken cancellationToken = default)
     {
+        _logger.LogTrace("Checking if hash {Hash} has been imported", hash);
+        
         // Check all Arr instances to see if they have this download in their queue
+        var instancesChecked = 0;
         foreach (var arrInstance in _config.ArrInstances.Values)
         {
+            instancesChecked++;
+            _logger.LogTrace("Checking Arr instance {Name} ({Type}) for hash {Hash}", 
+                arrInstance.Category, arrInstance.Type, hash);
+            
             try
             {
                 var hasInQueue = arrInstance.Type.ToLower() switch
@@ -87,6 +105,7 @@ public class ArrImportService : IArrImportService
 
                 if (hasInQueue)
                 {
+                    _logger.LogTrace("Hash {Hash} found in queue for {Instance}, not yet imported", hash, arrInstance.Category);
                     return false; // Still in queue, not yet imported
                 }
             }
@@ -96,6 +115,7 @@ public class ArrImportService : IArrImportService
             }
         }
 
+        _logger.LogTrace("Checked {Count} Arr instances, hash {Hash} not in any queue", instancesChecked, hash);
         // Not in any queue means it's been imported
         return true;
     }
@@ -204,9 +224,9 @@ public class ArrImportService : IArrImportService
         var client = new RadarrClient(config.URI, config.APIKey);
         var queue = await client.GetQueueAsync(ct: cancellationToken);
 
-        return queue.Records.Any(r =>
+        return queue?.Records?.Any(r =>
             r.DownloadId != null &&
-            r.DownloadId.Equals(hash, StringComparison.OrdinalIgnoreCase));
+            r.DownloadId.Equals(hash, StringComparison.OrdinalIgnoreCase)) ?? false;
     }
 
     private async Task<bool> CheckSonarrQueueAsync(
@@ -217,9 +237,9 @@ public class ArrImportService : IArrImportService
         var client = new SonarrClient(config.URI, config.APIKey);
         var queue = await client.GetQueueAsync(ct: cancellationToken);
 
-        return queue.Records.Any(r =>
+        return queue?.Records?.Any(r =>
             r.DownloadId != null &&
-            r.DownloadId.Equals(hash, StringComparison.OrdinalIgnoreCase));
+            r.DownloadId.Equals(hash, StringComparison.OrdinalIgnoreCase)) ?? false;
     }
 
     private async Task<bool> CheckLidarrQueueAsync(
@@ -230,8 +250,56 @@ public class ArrImportService : IArrImportService
         var client = new LidarrClient(config.URI, config.APIKey);
         var queue = await client.GetQueueAsync(ct: cancellationToken);
 
-        return queue.Records.Any(r =>
+        return queue?.Records?.Any(r =>
             r.DownloadId != null &&
-            r.DownloadId.Equals(hash, StringComparison.OrdinalIgnoreCase));
+            r.DownloadId.Equals(hash, StringComparison.OrdinalIgnoreCase)) ?? false;
+    }
+
+    public async Task MarkAsImportedAsync(string hash, IEnumerable<string> tags, CancellationToken cancellationToken = default)
+    {
+        var tagList = tags.ToList();
+        if (tagList.Count == 0)
+        {
+            tagList.Add("qbitrr-imported");
+        }
+
+        _logger.LogTrace("Marking hash {Hash} as imported with tags {Tags}", hash, string.Join(", ", tagList));
+        _logger.LogInformation("Adding import tags to torrent {Hash}: {Tags}", hash, string.Join(", ", tagList));
+
+        var instancesAttempted = 0;
+        foreach (var (instanceName, _) in _config.QBitInstances)
+        {
+            instancesAttempted++;
+            _logger.LogTrace("Attempting to add tags to {Hash} in qBit instance {Instance}", hash, instanceName);
+            
+            try
+            {
+                var client = _qbitManager.GetClient(instanceName);
+                if (client == null)
+                {
+                    _logger.LogTrace("No client available for instance {Instance}, skipping", instanceName);
+                    continue;
+                }
+
+                _logger.LogTrace("Creating tags {Tags} in {Instance}", string.Join(", ", tagList), instanceName);
+                await client.CreateTagsAsync(tagList, cancellationToken);
+                
+                _logger.LogTrace("Adding tags {Tags} to torrent {Hash}", string.Join(", ", tagList), hash);
+                var success = await client.AddTagsAsync(new List<string> { hash }, tagList, cancellationToken);
+                
+                if (success)
+                {
+                    _logger.LogDebug("Successfully added tags to {Hash} in {Instance}", hash, instanceName);
+                    _logger.LogTrace("Successfully marked {Hash} as imported", hash);
+                    return;
+                }
+            }
+            catch (Exception ex)
+            {
+                _logger.LogWarning(ex, "Failed to add tags to {Hash} in {Instance}", hash, instanceName);
+            }
+        }
+
+        _logger.LogWarning("Could not add import tags to torrent {Hash} - tried {Count} instances", hash, instancesAttempted);
     }
 }

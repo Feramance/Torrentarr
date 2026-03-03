@@ -116,4 +116,98 @@ public class FreeSpaceServiceTests
         var torrent = new TorrentInfo { Tags = "QBITRR-ALLOWED_SEEDING" };
         HasTag(torrent, "qBitrr-allowed_seeding").Should().BeTrue();
     }
+
+    // ── ParseFreeSpaceString (replicated logic) ───────────────────────────────
+    // FreeSpaceService uses this to convert the Settings.FreeSpace config string
+    // (e.g. "10G", "500M", "-1") into a byte count.
+
+    private static long ParseFreeSpaceString(string? value)
+    {
+        if (string.IsNullOrWhiteSpace(value) || value.Trim() == "-1") return -1;
+        var v = value.Trim().ToUpperInvariant();
+        try
+        {
+            if (v.EndsWith("G")) return long.Parse(v[..^1]) * 1024L * 1024L * 1024L;
+            if (v.EndsWith("M")) return long.Parse(v[..^1]) * 1024L * 1024L;
+            if (v.EndsWith("K")) return long.Parse(v[..^1]) * 1024L;
+            return long.Parse(v);
+        }
+        catch { return -1; }
+    }
+
+    [Fact]
+    public void ParseFreeSpaceString_DisabledSentinel_ReturnsNegativeOne()
+    {
+        ParseFreeSpaceString("-1").Should().Be(-1);
+    }
+
+    [Fact]
+    public void ParseFreeSpaceString_Null_ReturnsNegativeOne()
+    {
+        ParseFreeSpaceString(null).Should().Be(-1);
+    }
+
+    [Fact]
+    public void ParseFreeSpaceString_Empty_ReturnsNegativeOne()
+    {
+        ParseFreeSpaceString("").Should().Be(-1);
+    }
+
+    [Fact]
+    public void ParseFreeSpaceString_WhitespaceOnly_ReturnsNegativeOne()
+    {
+        ParseFreeSpaceString("   ").Should().Be(-1);
+    }
+
+    [Theory]
+    [InlineData("1G",   1L  * 1024 * 1024 * 1024)]
+    [InlineData("10G",  10L * 1024 * 1024 * 1024)]
+    [InlineData("100G", 100L * 1024 * 1024 * 1024)]
+    public void ParseFreeSpaceString_GigabyteString_ReturnsCorrectBytes(string input, long expected)
+    {
+        ParseFreeSpaceString(input).Should().Be(expected);
+    }
+
+    [Theory]
+    [InlineData("1M",   1L   * 1024 * 1024)]
+    [InlineData("500M", 500L * 1024 * 1024)]
+    public void ParseFreeSpaceString_MegabyteString_ReturnsCorrectBytes(string input, long expected)
+    {
+        ParseFreeSpaceString(input).Should().Be(expected);
+    }
+
+    [Theory]
+    [InlineData("1K",    1L    * 1024)]
+    [InlineData("1024K", 1024L * 1024)]
+    public void ParseFreeSpaceString_KilobyteString_ReturnsCorrectBytes(string input, long expected)
+    {
+        ParseFreeSpaceString(input).Should().Be(expected);
+    }
+
+    [Fact]
+    public void ParseFreeSpaceString_RawBytes_ReturnsAsIs()
+    {
+        ParseFreeSpaceString("1073741824").Should().Be(1073741824L); // 1 GiB expressed as raw bytes
+    }
+
+    [Fact]
+    public void ParseFreeSpaceString_LowercaseSuffix_IsCaseInsensitive()
+    {
+        // Suffix is uppercased before parsing, so "10g" == "10G"
+        ParseFreeSpaceString("10g").Should().Be(ParseFreeSpaceString("10G"));
+    }
+
+    [Fact]
+    public void ParseFreeSpaceString_InvalidString_ReturnsNegativeOne()
+    {
+        ParseFreeSpaceString("notanumber").Should().Be(-1);
+    }
+
+    [Fact]
+    public void ParseFreeSpaceString_InvalidSuffix_ReturnsNegativeOne()
+    {
+        // "10T" — terabyte suffix is not supported (only G, M, K)
+        // Parser attempts long.Parse("10T") which fails → returns -1
+        ParseFreeSpaceString("10T").Should().Be(-1);
+    }
 }

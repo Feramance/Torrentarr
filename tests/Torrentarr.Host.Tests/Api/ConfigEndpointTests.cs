@@ -71,4 +71,75 @@ public class ConfigEndpointTests : IClassFixture<TorrentarrWebApplicationFactory
         var json = JsonDocument.Parse(body).RootElement;
         json.GetProperty("status").GetString().Should().Be("ok");
     }
+
+    [Fact]
+    public async Task PostConfig_Returns400_WhenMissingChanges()
+    {
+        var client = _factory.CreateClient();
+        var content = new StringContent("{}", Encoding.UTF8, "application/json");
+
+        var response = await client.PostAsync("/web/config", content);
+
+        response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
+    }
+
+    [Fact]
+    public async Task PostConfig_ReturnsReloadType_None_ForWebuiKeys()
+    {
+        var client = _factory.CreateClient();
+        var payload = new
+        {
+            changes = new Dictionary<string, object>
+            {
+                ["webui.theme"] = "dark"
+            }
+        };
+        var content = new StringContent(JsonSerializer.Serialize(payload), Encoding.UTF8, "application/json");
+
+        var response = await client.PostAsync("/web/config", content);
+
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+        var json = JsonDocument.Parse(await response.Content.ReadAsStringAsync()).RootElement;
+        json.GetProperty("reloadType").GetString().Should().Be("frontend");
+    }
+
+    [Fact]
+    public async Task PostConfig_ReturnsReloadType_Webui_ForSettingsKeys()
+    {
+        var client = _factory.CreateClient();
+        var payload = new
+        {
+            changes = new Dictionary<string, object>
+            {
+                ["settings.loopSleepTimer"] = 10
+            }
+        };
+        var content = new StringContent(JsonSerializer.Serialize(payload), Encoding.UTF8, "application/json");
+
+        var response = await client.PostAsync("/web/config", content);
+
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+        var json = JsonDocument.Parse(await response.Content.ReadAsStringAsync()).RootElement;
+        json.GetProperty("reloadType").GetString().Should().Be("webui");
+    }
+
+    [Fact]
+    public async Task PostConfig_ReturnsReloadType_Full_ForQbitKeys()
+    {
+        var client = _factory.CreateClient();
+        var payload = new
+        {
+            changes = new Dictionary<string, object>
+            {
+                ["qbit.host"] = "192.168.1.1"
+            }
+        };
+        var content = new StringContent(JsonSerializer.Serialize(payload), Encoding.UTF8, "application/json");
+
+        var response = await client.PostAsync("/web/config", content);
+
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+        var json = JsonDocument.Parse(await response.Content.ReadAsStringAsync()).RootElement;
+        json.GetProperty("reloadType").GetString().Should().Be("full");
+    }
 }

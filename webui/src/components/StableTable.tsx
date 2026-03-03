@@ -13,6 +13,8 @@ interface StableTableProps<TData> {
 }
 
 function StableTableInner<TData>({ data, columns, getRowKey }: StableTableProps<TData>) {
+  // TanStack Table returns unstable function refs; React Compiler skips memoization by design
+  /* eslint-disable-next-line react-hooks/incompatible-library */
   const table = useReactTable({
     data,
     columns,

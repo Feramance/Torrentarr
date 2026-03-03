@@ -7,6 +7,7 @@ using Microsoft.Extensions.DependencyInjection.Extensions;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
 using Torrentarr.Core.Configuration;
+using Torrentarr.Core.Services;
 using Torrentarr.Infrastructure.Database;
 using Torrentarr.Infrastructure.Services;
 
@@ -29,7 +30,7 @@ public class TorrentarrWebApplicationFactory : WebApplicationFactory<Program>, I
     // Single-quoted strings are TOML literal strings (no escape processing) — safe for regex patterns.
     private const string TestConfigToml = """
         [Settings]
-        ConfigVersion = "5.9.0"
+        ConfigVersion = "5.9.2"
         LoopSleepTimer = 5
         FailedCategory = "failed"
         RecheckCategory = "recheck"
@@ -100,8 +101,9 @@ public class NoOpArrWorkerManager : ArrWorkerManager
         ILogger<ArrWorkerManager> logger,
         IServiceScopeFactory scopeFactory,
         TorrentarrConfig config,
-        ProcessStateManager stateManager)
-        : base(logger, scopeFactory, config, stateManager) { }
+        ProcessStateManager stateManager,
+        IConnectivityService connectivityService)
+        : base(logger, scopeFactory, config, stateManager, connectivityService) { }
 
     protected override Task ExecuteAsync(CancellationToken stoppingToken) => Task.CompletedTask;
 }

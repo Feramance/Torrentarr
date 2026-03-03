@@ -1,7 +1,4 @@
-version: '3.8'
-
 services:
-  # Torrentarr - Main Application
   torrentarr:
     build: .
     container_name: torrentarr
@@ -9,19 +6,13 @@ services:
     ports:
       - "6969:6969"
     volumes:
-      - ./config:/config
-      - ./data:/data
-      - downloads:/downloads
+      - ./.config:/config
+      - torrents:/torrents
     environment:
-      - TZ=America/New_York
+      - TZ=Europe/Malta
       - PUID=1000
       - PGID=1000
-    depends_on:
-      - qbittorrent
-      - radarr
-      - sonarr
-    networks:
-      - torrentarr-network
+      - TORRENTARR_CONFIG=/config/config.toml
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:6969/health"]
       interval: 30s
@@ -29,92 +20,10 @@ services:
       retries: 3
       start_period: 40s
 
-  # qBittorrent
-  qbittorrent:
-    image: lscr.io/linuxserver/qbittorrent:latest
-    container_name: qbittorrent
-    restart: unless-stopped
-    ports:
-      - "8080:8080"
-      - "6881:6881"
-      - "6881:6881/udp"
-    volumes:
-      - qbittorrent-config:/config
-      - downloads:/downloads
-    environment:
-      - TZ=America/New_York
-      - PUID=1000
-      - PGID=1000
-      - WEBUI_PORT=8080
-    networks:
-      - torrentarr-network
-
-  # Radarr (Movies)
-  radarr:
-    image: lscr.io/linuxserver/radarr:latest
-    container_name: radarr
-    restart: unless-stopped
-    ports:
-      - "7878:7878"
-    volumes:
-      - radarr-config:/config
-      - downloads:/downloads
-      - movies:/movies
-    environment:
-      - TZ=America/New_York
-      - PUID=1000
-      - PGID=1000
-    networks:
-      - torrentarr-network
-
-  # Sonarr (TV Shows)
-  sonarr:
-    image: lscr.io/linuxserver/sonarr:latest
-    container_name: sonarr
-    restart: unless-stopped
-    ports:
-      - "8989:8989"
-    volumes:
-      - sonarr-config:/config
-      - downloads:/downloads
-      - tv:/tv
-    environment:
-      - TZ=America/New_York
-      - PUID=1000
-      - PGID=1000
-    networks:
-      - torrentarr-network
-
-  # Lidarr (Music) - Optional
-  lidarr:
-    image: lscr.io/linuxserver/lidarr:latest
-    container_name: lidarr
-    restart: unless-stopped
-    ports:
-      - "8686:8686"
-    volumes:
-      - lidarr-config:/config
-      - downloads:/downloads
-      - music:/music
-    environment:
-      - TZ=America/New_York
-      - PUID=1000
-      - PGID=1000
-    networks:
-      - torrentarr-network
-    profiles:
-      - full
-
 volumes:
-  qbittorrent-config:
-  radarr-config:
-  sonarr-config:
-  lidarr-config:
-  downloads:
-  movies:
-  tv:
-  music:
-
-networks:
-  torrentarr-network:
-    driver: bridge
+  torrents:
+    driver: local
+    driver_opts:
+      type: cifs
+      device: ${CIFS_PATH}
+      o: "username=${CIFS_USER},password=${CIFS_PASS},vers=3.1.1,iocharset=utf8"

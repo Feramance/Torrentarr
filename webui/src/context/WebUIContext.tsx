@@ -1,4 +1,4 @@
-import { createContext, useCallback, useContext, useEffect, useState, type JSX, type ReactNode } from "react";
+import { createContext, useCallback, useEffect, useState, type JSX, type ReactNode } from "react";
 import { getConfig, updateConfig } from "../api/client";
 import { useToast } from "./ToastContext";
 
@@ -13,7 +13,7 @@ interface WebUISettings {
   theme: Theme;
 }
 
-interface WebUIContextValue {
+export interface WebUIContextValue {
   liveArr: boolean;
   groupSonarr: boolean;
   groupLidarr: boolean;
@@ -28,6 +28,7 @@ interface WebUIContextValue {
 }
 
 const WebUIContext = createContext<WebUIContextValue | null>(null);
+export { WebUIContext };
 
 export function WebUIProvider({ children }: { children: ReactNode }): JSX.Element {
   const [settings, setSettings] = useState<WebUISettings>({
@@ -114,7 +115,7 @@ export function WebUIProvider({ children }: { children: ReactNode }): JSX.Elemen
   const setViewDensity = useCallback((value: ViewDensity) => {
     setSettings(prev => ({ ...prev, viewDensity: value }));
     // Store in localStorage for instant application
-    localStorage.setItem("viewDensity", value);
+    try { localStorage.setItem("viewDensity", value); } catch { /* quota exceeded or private mode */ }
     // Save to backend with proper capitalization (Comfortable or Compact)
     const capitalizedDensity = value === "comfortable" ? "Comfortable" : "Compact";
     void saveSettings("ViewDensity", capitalizedDensity);
@@ -123,7 +124,7 @@ export function WebUIProvider({ children }: { children: ReactNode }): JSX.Elemen
   const setTheme = useCallback((value: Theme) => {
     setSettings(prev => ({ ...prev, theme: value }));
     // Store in localStorage for instant application
-    localStorage.setItem("theme", value);
+    try { localStorage.setItem("theme", value); } catch { /* quota exceeded or private mode */ }
     // Apply theme immediately to DOM
     document.documentElement.setAttribute('data-theme', value);
     // Save to backend with proper capitalization (Light or Dark)
@@ -148,10 +149,6 @@ export function WebUIProvider({ children }: { children: ReactNode }): JSX.Elemen
   return <WebUIContext.Provider value={value}>{children}</WebUIContext.Provider>;
 }
 
-export function useWebUI(): WebUIContextValue {
-  const context = useContext(WebUIContext);
-  if (!context) {
-    throw new Error("useWebUI must be used within WebUIProvider");
-  }
-  return context;
-}
+// Re-export hook so consumers can import from one place; implementation lives in useWebUI.ts for Fast Refresh
+/* eslint-disable-next-line react-refresh/only-export-components */
+export { useWebUI } from "./useWebUI";

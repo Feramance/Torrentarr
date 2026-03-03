@@ -426,7 +426,7 @@ export function SonarrView({ active }: SonarrViewProps): JSX.Element {
     } finally {
       setAggLoading(false);
     }
-  }, [instances, globalSearch, push, onlyMissing, aggFilter]);
+  }, [instances, globalSearch, push, onlyMissing, aggFilter, aggEpisodeSync, aggSummary]);
 
   useEffect(() => {
     if (!active) return;

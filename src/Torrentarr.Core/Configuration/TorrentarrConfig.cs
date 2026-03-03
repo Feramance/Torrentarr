@@ -21,7 +21,7 @@ public class TorrentarrConfig
 
 public class SettingsConfig
 {
-    public string ConfigVersion { get; set; } = "5.9.1";
+    public string ConfigVersion { get; set; } = "5.9.2";
     public string ConsoleLevel { get; set; } = "INFO";
     public bool Logging { get; set; } = true;
     public string CompletedDownloadFolder { get; set; } = "";
@@ -92,30 +92,43 @@ public class CategorySeedingConfig
     public double MaxUploadRatio { get; set; } = -1;
     public int MaxSeedingTime { get; set; } = -1; // seconds
     public int RemoveTorrent { get; set; } = -1; // -1=Never, 1=Ratio, 2=Time, 3=OR, 4=AND
-    public bool HitAndRunMode { get; set; } = false;
+    public string HitAndRunMode { get; set; } = "disabled"; // "and", "or", "disabled"
     public double MinSeedRatio { get; set; } = 1.0;
     public int MinSeedingTimeDays { get; set; } = 0;
     public int HitAndRunMinimumDownloadPercent { get; set; } = 10;
     public double HitAndRunPartialSeedRatio { get; set; } = 1.0;
     public int TrackerUpdateBuffer { get; set; } = 0; // seconds buffer for tracker stats
+    /// <summary>§10 qBitrr parity: StalledDelay in minutes for qBit-managed categories.</summary>
+    public int StalledDelay { get; set; } = 15; // minutes
+    /// <summary>§10 qBitrr parity: IgnoreTorrentsYoungerThan in seconds for qBit-managed categories.</summary>
+    public int IgnoreTorrentsYoungerThan { get; set; } = 180; // seconds
 }
 
 public class TrackerConfig
 {
+    public string? Name { get; set; } // Human-readable tracker name
     public string Uri { get; set; } = "";
     public int Priority { get; set; } = 0;
     public double? MaxUploadRatio { get; set; }
     public int? MaxSeedingTime { get; set; }
     public int? RemoveTorrent { get; set; }
-    public bool? HitAndRunMode { get; set; }
+    public string? HitAndRunMode { get; set; } // "and", "or", "disabled"
     public double? MinSeedRatio { get; set; }
-    public int? MinSeedingTime { get; set; }
+    public int? MinSeedingTimeDays { get; set; } // days — matches qBitrr MinSeedingTimeDays / MinSeedingTime TOML key
     public int? HitAndRunMinimumDownloadPercent { get; set; }
     public double? HitAndRunPartialSeedRatio { get; set; }
     public int? DownloadRateLimit { get; set; } // KB/s
     public int? UploadRateLimit { get; set; } // KB/s
     public int? MaxETA { get; set; } // seconds
     public int? TrackerUpdateBuffer { get; set; }
+    /// <summary>§3.5: Enable super-seed mode for torrents whose active tracker matches this config.</summary>
+    public bool? SuperSeedMode { get; set; }
+    /// <summary>§3.1: Remove this tracker URL from any torrent that already has it.</summary>
+    public bool RemoveIfExists { get; set; } = false;
+    /// <summary>§3.1: Inject this tracker URL into any torrent whose category matches but lacks this tracker.</summary>
+    public bool AddTrackerIfMissing { get; set; } = false;
+    /// <summary>§3.1: Tags to apply to any torrent whose active tracker matches this config.</summary>
+    public List<string> AddTags { get; set; } = new();
 }
 
 public class WebUIConfig
