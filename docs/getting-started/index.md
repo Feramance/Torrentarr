@@ -1,4 +1,4 @@
-﻿# Getting Started with Torrentarr
+# Getting Started with Torrentarr
 
 Welcome! This comprehensive guide will help you install and configure Torrentarr for the first time.
 
@@ -115,28 +115,26 @@ Choose the installation method that best fits your infrastructure:
 
 ---
 
-### 📦 pip (Python Package)
+### 📦 .NET tool
 
 **Best for:**
 
-- Python developers
-- Native Linux/macOS installations
-- Custom Python environments
-- Integration with existing Python tools
+- Native Linux/macOS/Windows installations
+- Users who prefer not to use Docker
+- Integration with existing .NET tooling
 
 **Advantages:**
 
 - ✅ Native performance
-- ✅ Easy integration with Python ecosystem
+- ✅ Single global tool command
 - ✅ Full control over environment
 
 **Requirements:**
 
-- Python 3.11+
-- pip 20.0+
-- virtualenv (recommended)
+- .NET 8.0 SDK or runtime
+- qBittorrent and at least one Arr instance
 
-[**pip Installation Guide →**](installation/pip.md)
+[**.NET tool Installation Guide →**](installation/dotnet.md)
 
 ---
 

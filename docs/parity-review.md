@@ -1,6 +1,6 @@
 # qBitrr Parity Gaps — Implementation Review
 
-This document verifies that all 12 gaps from [qbitrr_parity_gaps_7ae8df72.plan.md](.cursor/plans/qbitrr_parity_gaps_7ae8df72.plan.md) have been implemented correctly.
+This document verifies that all 12 gaps from the qBitrr parity gaps plan have been implemented correctly.
 
 ---
 

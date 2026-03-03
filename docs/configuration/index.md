@@ -1,4 +1,4 @@
-﻿# Configuration
+# Configuration
 
 Welcome to the Torrentarr configuration guide! This section covers all aspects of configuring Torrentarr to work with your setup.
 
@@ -406,7 +406,7 @@ Follow this recommended workflow when setting up Torrentarr:
 
 1. **Install Torrentarr** - Choose your installation method:
    - [Docker](../getting-started/installation/docker.md) (recommended)
-   - [pip](../getting-started/installation/pip.md)
+   - [.NET tool](../getting-started/installation/dotnet.md)
    - [Binary](../getting-started/installation/binary.md)
 
 2. **Generate Default Config**:

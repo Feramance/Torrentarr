@@ -1,4 +1,4 @@
-﻿# Frequently Asked Questions
+# Frequently Asked Questions
 
 ## General Questions
 
@@ -572,7 +572,7 @@ Yes! Installation options:
 - PowerShell or CMD for commands
 - Docker Desktop requires WSL2
 
-[Windows installation →](getting-started/installation/pip.md#windows)
+[Windows installation →](getting-started/installation/dotnet.md#windows)
 
 ### How often should I update Torrentarr?
 
