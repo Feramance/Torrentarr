@@ -1584,6 +1584,10 @@ export function LidarrView({ active }: { active: boolean }): JSX.Element {
 
   const isAggregate = selection === "aggregate";
 
+  // When there are no instances, show the aggregate empty state ("No tracks found.") so
+  // the UI doesn't show the instance view's "No albums found." before loadInstances runs.
+  const showAggregateView = isAggregate || instances.length === 0;
+
   return (
     <section className="card">
       <div className="card-header">Lidarr</div>
@@ -1667,7 +1671,7 @@ export function LidarrView({ active }: { active: boolean }): JSX.Element {
               </div>
             </div>
 
-            {isAggregate ? (
+            {showAggregateView ? (
               <LidarrAggregateView
                 loading={aggLoading}
                 rows={filteredAggRows}

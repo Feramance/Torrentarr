@@ -11,6 +11,7 @@ namespace Torrentarr.Host.Tests.Api;
 ///   POST /web/loglevel
 ///   POST /api/loglevel
 /// </summary>
+[Collection("HostWeb")]
 public class LogLevelEndpointTests : IClassFixture<TorrentarrWebApplicationFactory>
 {
     private readonly TorrentarrWebApplicationFactory _factory;

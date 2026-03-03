@@ -5,6 +5,7 @@ using Xunit;
 
 namespace Torrentarr.Host.Tests.Api;
 
+[Collection("HostWeb")]
 public class HealthEndpointTests : IClassFixture<TorrentarrWebApplicationFactory>
 {
     private readonly TorrentarrWebApplicationFactory _factory;

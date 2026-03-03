@@ -5,6 +5,7 @@ using Xunit;
 
 namespace Torrentarr.Host.Tests.Api;
 
+[Collection("HostWeb")]
 public class QbitCategoriesEndpointTests : IClassFixture<TorrentarrWebApplicationFactory>
 {
     private readonly TorrentarrWebApplicationFactory _factory;

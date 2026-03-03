@@ -10,6 +10,7 @@ namespace Torrentarr.Host.Tests.Api;
 ///   POST /web/processes/{category}/{kind}/restart
 ///   POST /api/processes/{category}/{kind}/restart
 /// </summary>
+[Collection("HostWeb")]
 public class ProcessRestartEndpointTests : IClassFixture<TorrentarrWebApplicationFactory>
 {
     private readonly TorrentarrWebApplicationFactory _factory;

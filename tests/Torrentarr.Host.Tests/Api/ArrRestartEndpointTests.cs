@@ -10,6 +10,7 @@ namespace Torrentarr.Host.Tests.Api;
 ///   POST /web/arr/{category}/restart
 ///   POST /api/arr/{section}/restart
 /// </summary>
+[Collection("HostWeb")]
 public class ArrRestartEndpointTests : IClassFixture<TorrentarrWebApplicationFactory>
 {
     private readonly TorrentarrWebApplicationFactory _factory;

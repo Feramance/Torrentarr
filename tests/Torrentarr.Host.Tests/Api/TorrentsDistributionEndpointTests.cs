@@ -10,6 +10,7 @@ namespace Torrentarr.Host.Tests.Api;
 ///   GET /web/torrents/distribution
 ///   GET /api/torrents/distribution
 /// </summary>
+[Collection("HostWeb")]
 public class TorrentsDistributionEndpointTests : IClassFixture<TorrentarrWebApplicationFactory>
 {
     private readonly TorrentarrWebApplicationFactory _factory;

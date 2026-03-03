@@ -10,6 +10,7 @@ namespace Torrentarr.Host.Tests.Api;
 ///   GET /web/lidarr/{category}/tracks
 ///   GET /api/lidarr/{category}/tracks
 /// </summary>
+[Collection("HostWeb")]
 public class LidarrTracksEndpointTests : IClassFixture<TorrentarrWebApplicationFactory>
 {
     private readonly TorrentarrWebApplicationFactory _factory;

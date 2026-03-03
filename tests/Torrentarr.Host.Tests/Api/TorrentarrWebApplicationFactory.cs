@@ -10,8 +10,16 @@ using Torrentarr.Core.Configuration;
 using Torrentarr.Core.Services;
 using Torrentarr.Infrastructure.Database;
 using Torrentarr.Infrastructure.Services;
+using Xunit;
 
 namespace Torrentarr.Host.Tests.Api;
+
+/// <summary>
+/// Collection for all tests that use TorrentarrWebApplicationFactory so they run sequentially
+/// and avoid "The entry point exited without ever building an IHost" when starting the host.
+/// </summary>
+[CollectionDefinition("HostWeb", DisableParallelization = true)]
+public class HostWebCollection : ICollectionFixture<TorrentarrWebApplicationFactory>;
 
 /// <summary>
 /// Custom WebApplicationFactory that:

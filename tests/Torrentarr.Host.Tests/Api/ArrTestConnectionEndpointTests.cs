@@ -11,6 +11,7 @@ namespace Torrentarr.Host.Tests.Api;
 ///   POST /web/arr/test-connection
 ///   POST /api/arr/test-connection
 /// </summary>
+[Collection("HostWeb")]
 public class ArrTestConnectionEndpointTests : IClassFixture<TorrentarrWebApplicationFactory>
 {
     private readonly TorrentarrWebApplicationFactory _factory;

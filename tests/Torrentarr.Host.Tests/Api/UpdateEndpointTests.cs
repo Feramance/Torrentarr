@@ -11,6 +11,7 @@ namespace Torrentarr.Host.Tests.Api;
 ///   POST /web/update
 ///   GET  /web/download-update
 /// </summary>
+[Collection("HostWeb")]
 public class UpdateEndpointTests : IClassFixture<TorrentarrWebApplicationFactory>
 {
     private readonly TorrentarrWebApplicationFactory _factory;

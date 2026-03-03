@@ -10,6 +10,7 @@ namespace Torrentarr.Host.Tests.Api;
 ///   POST /web/arr/rebuild
 ///   POST /api/arr/rebuild
 /// </summary>
+[Collection("HostWeb")]
 public class ArrRebuildEndpointTests : IClassFixture<TorrentarrWebApplicationFactory>
 {
     private readonly TorrentarrWebApplicationFactory _factory;
