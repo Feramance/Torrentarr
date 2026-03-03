@@ -7,7 +7,7 @@ Download and run pre-built Torrentarr binaries for Linux, macOS, or Windows. No 
 
 ## Prerequisites
 
-- 64-bit operating system (Linux, macOS, or Windows)
+- 64-bit x86 or ARM64 (Linux, macOS, or Windows)
 - qBittorrent running and accessible
 - At least one Arr instance (Radarr, Sonarr, or Lidarr)
 
@@ -19,13 +19,15 @@ Visit the [GitHub Releases page](https://github.com/Feramance/Torrentarr/release
 
 | Platform | File |
 |----------|------|
-| Linux | `torrentarr-linux-x64` |
-| macOS | `torrentarr-macos-x64` |
+| Linux (x64) | `torrentarr-linux-x64` |
+| Linux (ARM64) | `torrentarr-linux-arm64` |
+| macOS (Intel) | `torrentarr-macos-x64` |
+| macOS (Apple Silicon) | `torrentarr-macos-arm64` |
 | Windows | `torrentarr-windows-x64.exe` |
 
 ### Command Line Download
 
-=== "Linux"
+=== "Linux (x64)"
 
     ```bash
     # Download latest release
@@ -38,11 +40,37 @@ Visit the [GitHub Releases page](https://github.com/Feramance/Torrentarr/release
     ./torrentarr
     ```
 
-=== "macOS"
+=== "Linux (ARM64)"
+
+    ```bash
+    # Download latest release
+    curl -L -o torrentarr https://github.com/Feramance/Torrentarr/releases/latest/download/torrentarr-linux-arm64
+
+    # Make executable
+    chmod +x torrentarr
+
+    # Run
+    ./torrentarr
+    ```
+
+=== "macOS (Intel)"
 
     ```bash
     # Download latest release
     curl -L -o torrentarr https://github.com/Feramance/Torrentarr/releases/latest/download/torrentarr-macos-x64
+
+    # Make executable
+    chmod +x torrentarr
+
+    # Run (you may need to allow in Security settings)
+    ./torrentarr
+    ```
+
+=== "macOS (Apple Silicon)"
+
+    ```bash
+    # Download latest release
+    curl -L -o torrentarr https://github.com/Feramance/Torrentarr/releases/latest/download/torrentarr-macos-arm64
 
     # Make executable
     chmod +x torrentarr
@@ -65,10 +93,17 @@ Visit the [GitHub Releases page](https://github.com/Feramance/Torrentarr/release
 
 ### Linux
 
+Use `torrentarr-linux-x64` for Intel/AMD 64-bit, or `torrentarr-linux-arm64` for ARM64.
+
 1. **Download and install:**
    ```bash
+   # For x64 (Intel/AMD)
    sudo curl -L -o /usr/local/bin/torrentarr \
      https://github.com/Feramance/Torrentarr/releases/latest/download/torrentarr-linux-x64
+
+   # For ARM64
+   # sudo curl -L -o /usr/local/bin/torrentarr \
+   #   https://github.com/Feramance/Torrentarr/releases/latest/download/torrentarr-linux-arm64
 
    sudo chmod +x /usr/local/bin/torrentarr
    ```
@@ -80,11 +115,15 @@ Visit the [GitHub Releases page](https://github.com/Feramance/Torrentarr/release
 
 ### macOS
 
+Use `torrentarr-macos-x64` for Intel or `torrentarr-macos-arm64` for Apple Silicon.
+
 1. **Download:**
    ```bash
+   # For Intel
    curl -L -o ~/Downloads/torrentarr \
      https://github.com/Feramance/Torrentarr/releases/latest/download/torrentarr-macos-x64
 
+   # For Apple Silicon use: .../torrentarr-macos-arm64
    chmod +x ~/Downloads/torrentarr
    ```
 
@@ -257,11 +296,13 @@ Binary installations do not support auto-update. You must manually download and 
 
 ### Linux/macOS
 
+Use the same filename as your platform: `torrentarr-linux-x64`, `torrentarr-linux-arm64`, `torrentarr-macos-x64`, or `torrentarr-macos-arm64`.
+
 ```bash
 # Backup current binary
 sudo mv /usr/local/bin/torrentarr /usr/local/bin/torrentarr.bak
 
-# Download latest
+# Download latest (example for Linux x64; use torrentarr-linux-arm64 for ARM64, or torrentarr-macos-* for macOS)
 sudo curl -L -o /usr/local/bin/torrentarr \
   https://github.com/Feramance/Torrentarr/releases/latest/download/torrentarr-linux-x64
 
