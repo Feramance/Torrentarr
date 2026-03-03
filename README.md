@@ -5,7 +5,7 @@
 [![License: MIT](https://img.shields.io/badge/license-MIT-green)]()
 [![Documentation](https://img.shields.io/badge/docs-feramance.github.io%2FTorrentarr-blue)](https://feramance.github.io/Torrentarr/)
 
-> A high-performance C# port of [qBitrr](https://github.com/Feramance/qBitrr) — intelligent automation for qBittorrent and the *Arr ecosystem (Radarr, Sonarr, Lidarr). 100% config and database compatible with qBitrr.
+> A high-performance C# port of [qBitrr](https://github.com/Feramance/qBitrr) — intelligent automation for qBittorrent and the *Arr ecosystem (Radarr, Sonarr, Lidarr). Same `config.toml` format and SQLite schema as qBitrr; database file is `torrentarr.db` (not `qbitrr.db`).
 
 ## Documentation
 
@@ -74,7 +74,7 @@ Access the WebUI at `http://<host>:6969/ui` after startup.
 - **Hit and Run Protection** – Automatic HnR obligation tracking with configurable thresholds, partial download handling, and dead tracker bypass
 - **Disk Space Management** – Auto-pause when low on space, configurable thresholds
 - **Modern WebUI** – Live process monitoring, log viewer, Arr insights
-- **100% Backwards Compatible** – Uses same `config.toml` and SQLite database as qBitrr
+- **Config & schema compatible** – Same `config.toml` format as qBitrr; SQLite schema matches (same tables). Database file is `torrentarr.db` in the config directory, not `qbitrr.db`.
 - **Process Isolation** – WebUI stays online even if a worker crashes
 
 ## Essential Configuration

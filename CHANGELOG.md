@@ -61,7 +61,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Features
 
-- C# port of qBitrr with 100% config and database compatibility
+- C# port of qBitrr with same config.toml format and SQLite schema; database file is `torrentarr.db` (not `qbitrr.db`)
 - Multi-qBittorrent instance support for load balancing and VPN isolation
 - Process-isolated architecture - WebUI stays online even if workers crash
 - Hit and Run protection with tracker-based seeding rules

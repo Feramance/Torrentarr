@@ -1,6 +1,6 @@
 ## What This Project Is
 
-**Torrentarr** is a C# port of [qBitrr](https://github.com/Feramance/qBitrr) (Python). It automates qBittorrent torrent management with integration to Radarr, Sonarr, and Lidarr — handling Hit & Run protection, free space management, quality upgrades, and import triggering. The goal is 100% configuration and database compatibility with qBitrr while offering better performance and process isolation.
+**Torrentarr** is a C# port of [qBitrr](https://github.com/Feramance/qBitrr) (Python). It automates qBittorrent torrent management with integration to Radarr, Sonarr, and Lidarr — handling Hit & Run protection, free space management, quality upgrades, and import triggering. Same `config.toml` format and SQLite schema as qBitrr; database file is `torrentarr.db` (not `qbitrr.db`). Goal: feature parity with better performance and process isolation.
 
 ## Build & Run Commands
 
