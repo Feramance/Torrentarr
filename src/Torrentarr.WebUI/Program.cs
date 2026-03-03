@@ -652,13 +652,26 @@ app.MapGet("/web/logs/{name}/download", (string name, HttpResponse response) =>
 {
     // Sanitize: only allow the filename component (no directory traversal)
     var safeName = Path.GetFileName(name);
-    var logFile = Path.Combine(logsPath, safeName);
+    if (string.IsNullOrWhiteSpace(safeName))
+    {
+        return Results.BadRequest(new { error = "Invalid log file name" });
+    }
 
-    if (!File.Exists(logFile))
+    // Resolve the full paths and ensure the requested file stays within the logs directory
+    var fullLogsPath = Path.GetFullPath(logsPath);
+    var combinedPath = Path.Combine(fullLogsPath, safeName);
+    var fullLogFile = Path.GetFullPath(combinedPath);
+
+    if (!fullLogFile.StartsWith(fullLogsPath + Path.DirectorySeparatorChar, StringComparison.OrdinalIgnoreCase))
+    {
+        return Results.BadRequest(new { error = "Invalid log file name" });
+    }
+
+    if (!File.Exists(fullLogFile))
         return Results.NotFound(new { error = "Log file not found" });
 
     response.Headers["Content-Disposition"] = $"attachment; filename=\"{safeName}\"";
-    return Results.File(logFile, "application/octet-stream", safeName);
+    return Results.File(fullLogFile, "application/octet-stream", safeName);
 });
 
 // Radarr movies for specific category
