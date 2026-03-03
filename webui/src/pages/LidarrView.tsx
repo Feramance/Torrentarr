@@ -387,158 +387,169 @@ function LidarrAggregateView({
           <span className="spinner" /> Loading Lidarr library…
         </div>
       ) : groupLidarr ? (
-        <div className="lidarr-hierarchical-view">
-          {groupedPageRows.map((artistGroup) => (
-            <details
-              key={`${artistGroup.instance}-${artistGroup.artist}`}
-              className="artist-details"
-            >
-              <summary className="artist-summary">
-                <span className="artist-title">{artistGroup.artist}</span>
-                <span className="artist-instance">
-                  ({artistGroup.instance})
-                </span>
-                <span className="artist-count">
-                  ({artistGroup.albums.length} albums)
-                </span>
-                {artistGroup.qualityProfileName ? (
-                  <span className="artist-quality">
-                    • {artistGroup.qualityProfileName}
+        groupedPageRows.length > 0 ? (
+          <div className="lidarr-hierarchical-view">
+            {groupedPageRows.map((artistGroup) => (
+              <details
+                key={`${artistGroup.instance}-${artistGroup.artist}`}
+                className="artist-details"
+              >
+                <summary className="artist-summary">
+                  <span className="artist-title">{artistGroup.artist}</span>
+                  <span className="artist-instance">
+                    ({artistGroup.instance})
                   </span>
-                ) : null}
-              </summary>
-              <div className="artist-content">
-                {artistGroup.albums.map((albumEntry) => {
-                  const albumData = albumEntry.album as Record<string, unknown>;
-                  const albumTitle =
-                    (albumData?.["title"] as string | undefined) ||
-                    "Unknown Album";
-                  const albumId =
-                    (albumData?.["id"] as number | undefined) || 0;
-                  const artistName =
-                    (albumData?.["artistName"] as string | undefined) || "";
-                  const releaseDate = albumData?.["releaseDate"] as
-                    | string
-                    | undefined;
-                  const monitored = albumData?.["monitored"] as
-                    | boolean
-                    | undefined;
-                  const hasFile = albumData?.["hasFile"] as boolean | undefined;
-                  const reason = albumData?.["reason"] as
-                    | string
-                    | null
-                    | undefined;
-                  const tracks = albumEntry.tracks || [];
-                  const totals = albumEntry.totals;
+                  <span className="artist-count">
+                    ({artistGroup.albums.length} albums)
+                  </span>
+                  {artistGroup.qualityProfileName ? (
+                    <span className="artist-quality">
+                      • {artistGroup.qualityProfileName}
+                    </span>
+                  ) : null}
+                </summary>
+                <div className="artist-content">
+                  {artistGroup.albums.map((albumEntry) => {
+                    const albumData = albumEntry.album as Record<
+                      string,
+                      unknown
+                    >;
+                    const albumTitle =
+                      (albumData?.["title"] as string | undefined) ||
+                      "Unknown Album";
+                    const albumId =
+                      (albumData?.["id"] as number | undefined) || 0;
+                    const artistName =
+                      (albumData?.["artistName"] as string | undefined) || "";
+                    const releaseDate = albumData?.["releaseDate"] as
+                      | string
+                      | undefined;
+                    const monitored = albumData?.["monitored"] as
+                      | boolean
+                      | undefined;
+                    const hasFile = albumData?.["hasFile"] as
+                      | boolean
+                      | undefined;
+                    const reason = albumData?.["reason"] as
+                      | string
+                      | null
+                      | undefined;
+                    const tracks = albumEntry.tracks || [];
+                    const totals = albumEntry.totals;
 
-                  return (
-                    <details
-                      key={`${albumEntry.__instance}-${artistName}-${albumTitle}`}
-                      className="album-details"
-                    >
-                      <summary className="album-summary">
-                        <span className="album-title">{albumTitle}</span>
-                        {releaseDate && (
-                          <span className="album-date">
-                            {new Date(releaseDate).toLocaleDateString()}
+                    return (
+                      <details
+                        key={`${albumEntry.__instance}-${artistName}-${albumTitle}`}
+                        className="album-details"
+                      >
+                        <summary className="album-summary">
+                          <span className="album-title">{albumTitle}</span>
+                          {releaseDate && (
+                            <span className="album-date">
+                              {new Date(releaseDate).toLocaleDateString()}
+                            </span>
+                          )}
+                          {tracks && tracks.length > 0 && (
+                            <span className="album-track-count">
+                              ({totals.available || 0}/
+                              {totals.monitored || tracks.length} tracks)
+                            </span>
+                          )}
+                          <span
+                            className={`album-status ${hasFile ? "has-file" : "missing"}`}
+                          >
+                            {hasFile ? "✓" : "✗"}
                           </span>
-                        )}
-                        {tracks && tracks.length > 0 && (
-                          <span className="album-track-count">
-                            ({totals.available || 0}/
-                            {totals.monitored || tracks.length} tracks)
-                          </span>
-                        )}
-                        <span
-                          className={`album-status ${hasFile ? "has-file" : "missing"}`}
-                        >
-                          {hasFile ? "✓" : "✗"}
-                        </span>
-                      </summary>
-                      <div className="album-content">
-                        {tracks && tracks.length > 0 ? (
-                          <div className="tracks-table-wrapper">
-                            <table className="tracks-table">
-                              <thead>
-                                <tr>
-                                  <th>#</th>
-                                  <th>Title</th>
-                                  <th>Duration</th>
-                                  <th>Has File</th>
-                                  <th>Reason</th>
-                                </tr>
-                              </thead>
-                              <tbody>
-                                {tracks.map((track) => (
-                                  <tr
-                                    key={`${albumId}-${track.id}`}
-                                    className={
-                                      track.hasFile
-                                        ? "track-available"
-                                        : "track-missing"
-                                    }
-                                  >
-                                    <td data-label="#">{track.trackNumber}</td>
-                                    <td data-label="Title">{track.title}</td>
-                                    <td data-label="Duration">
-                                      {track.duration
-                                        ? `${Math.floor(track.duration / 60)}:${String(track.duration % 60).padStart(2, "0")}`
-                                        : "—"}
-                                    </td>
-                                    <td data-label="Has File">
-                                      <span
-                                        className={`track-status ${track.hasFile ? "available" : "missing"}`}
-                                      >
-                                        {track.hasFile ? "✓" : "✗"}
-                                      </span>
-                                    </td>
-                                    <td data-label="Reason">
-                                      {reason ? (
-                                        <span className="table-badge table-badge-reason">
-                                          {reason}
-                                        </span>
-                                      ) : (
-                                        <span className="table-badge table-badge-reason">
-                                          Not being searched
-                                        </span>
-                                      )}
-                                    </td>
+                        </summary>
+                        <div className="album-content">
+                          {tracks && tracks.length > 0 ? (
+                            <div className="tracks-table-wrapper">
+                              <table className="tracks-table">
+                                <thead>
+                                  <tr>
+                                    <th>#</th>
+                                    <th>Title</th>
+                                    <th>Duration</th>
+                                    <th>Has File</th>
+                                    <th>Reason</th>
                                   </tr>
-                                ))}
-                              </tbody>
-                            </table>
-                          </div>
-                        ) : (
-                          <div className="album-info">
-                            <p>
-                              <strong>Monitored:</strong>{" "}
-                              {monitored ? "Yes" : "No"}
-                              {" | "}
-                              <strong>Has File:</strong>{" "}
-                              {hasFile ? "Yes" : "No"}
-                            </p>
-                            <p>
-                              <strong>Reason:</strong>{" "}
-                              {reason ? (
-                                <span className="table-badge table-badge-reason">
-                                  {reason}
-                                </span>
-                              ) : (
-                                <span className="table-badge table-badge-reason">
-                                  Not being searched
-                                </span>
-                              )}
-                            </p>
-                          </div>
-                        )}
-                      </div>
-                    </details>
-                  );
-                })}
-              </div>
-            </details>
-          ))}
-        </div>
+                                </thead>
+                                <tbody>
+                                  {tracks.map((track) => (
+                                    <tr
+                                      key={`${albumId}-${track.id}`}
+                                      className={
+                                        track.hasFile
+                                          ? "track-available"
+                                          : "track-missing"
+                                      }
+                                    >
+                                      <td data-label="#">
+                                        {track.trackNumber}
+                                      </td>
+                                      <td data-label="Title">{track.title}</td>
+                                      <td data-label="Duration">
+                                        {track.duration
+                                          ? `${Math.floor(track.duration / 60)}:${String(track.duration % 60).padStart(2, "0")}`
+                                          : "—"}
+                                      </td>
+                                      <td data-label="Has File">
+                                        <span
+                                          className={`track-status ${track.hasFile ? "available" : "missing"}`}
+                                        >
+                                          {track.hasFile ? "✓" : "✗"}
+                                        </span>
+                                      </td>
+                                      <td data-label="Reason">
+                                        {reason ? (
+                                          <span className="table-badge table-badge-reason">
+                                            {reason}
+                                          </span>
+                                        ) : (
+                                          <span className="table-badge table-badge-reason">
+                                            Not being searched
+                                          </span>
+                                        )}
+                                      </td>
+                                    </tr>
+                                  ))}
+                                </tbody>
+                              </table>
+                            </div>
+                          ) : (
+                            <div className="album-info">
+                              <p>
+                                <strong>Monitored:</strong>{" "}
+                                {monitored ? "Yes" : "No"}
+                                {" | "}
+                                <strong>Has File:</strong>{" "}
+                                {hasFile ? "Yes" : "No"}
+                              </p>
+                              <p>
+                                <strong>Reason:</strong>{" "}
+                                {reason ? (
+                                  <span className="table-badge table-badge-reason">
+                                    {reason}
+                                  </span>
+                                ) : (
+                                  <span className="table-badge table-badge-reason">
+                                    Not being searched
+                                  </span>
+                                )}
+                              </p>
+                            </div>
+                          )}
+                        </div>
+                      </details>
+                    );
+                  })}
+                </div>
+              </details>
+            ))}
+          </div>
+        ) : (
+          <div className="hint">No tracks found.</div>
+        )
       ) : trackRows.length ? (
         <div className="table-wrapper">
           <table className="responsive-table">
@@ -973,166 +984,172 @@ function LidarrInstanceView({
           <span className="spinner" /> Loading…
         </div>
       ) : groupLidarr ? (
-        <div className="lidarr-hierarchical-view">
-          {paginatedGroupedAlbums.map((artistGroup) => {
-            // Get instance name from selection
-            const instanceName =
-              instances.find((i) => i.category === selection)?.name ||
-              selection;
-            return (
-              <details key={artistGroup.artist} className="artist-details">
-                <summary className="artist-summary">
-                  <span className="artist-title">{artistGroup.artist}</span>
-                  <span className="artist-instance">({instanceName})</span>
-                  <span className="artist-count">
-                    ({artistGroup.albums.length} albums)
-                  </span>
-                  {artistGroup.qualityProfileName ? (
-                    <span className="artist-quality">
-                      • {artistGroup.qualityProfileName}
+        paginatedGroupedAlbums.length > 0 ? (
+          <div className="lidarr-hierarchical-view">
+            {paginatedGroupedAlbums.map((artistGroup) => {
+              // Get instance name from selection
+              const instanceName =
+                instances.find((i) => i.category === selection)?.name ||
+                selection;
+              return (
+                <details key={artistGroup.artist} className="artist-details">
+                  <summary className="artist-summary">
+                    <span className="artist-title">{artistGroup.artist}</span>
+                    <span className="artist-instance">({instanceName})</span>
+                    <span className="artist-count">
+                      ({artistGroup.albums.length} albums)
                     </span>
-                  ) : null}
-                </summary>
-                <div className="artist-content">
-                  {artistGroup.albums.map((albumEntry) => {
-                    const albumData = albumEntry.album as Record<
-                      string,
-                      unknown
-                    >;
-                    const albumTitle =
-                      (albumData?.["title"] as string | undefined) ||
-                      "Unknown Album";
-                    const albumId =
-                      (albumData?.["id"] as number | undefined) || 0;
-                    const artistName =
-                      (albumData?.["artistName"] as string | undefined) || "";
-                    const releaseDate = albumData?.["releaseDate"] as
-                      | string
-                      | undefined;
-                    const monitored = albumData?.["monitored"] as
-                      | boolean
-                      | undefined;
-                    const hasFile = albumData?.["hasFile"] as
-                      | boolean
-                      | undefined;
-                    const reason = albumData?.["reason"] as
-                      | string
-                      | null
-                      | undefined;
-                    const tracks = albumEntry.tracks || [];
-                    const totals = albumEntry.totals;
+                    {artistGroup.qualityProfileName ? (
+                      <span className="artist-quality">
+                        • {artistGroup.qualityProfileName}
+                      </span>
+                    ) : null}
+                  </summary>
+                  <div className="artist-content">
+                    {artistGroup.albums.map((albumEntry) => {
+                      const albumData = albumEntry.album as Record<
+                        string,
+                        unknown
+                      >;
+                      const albumTitle =
+                        (albumData?.["title"] as string | undefined) ||
+                        "Unknown Album";
+                      const albumId =
+                        (albumData?.["id"] as number | undefined) || 0;
+                      const artistName =
+                        (albumData?.["artistName"] as string | undefined) || "";
+                      const releaseDate = albumData?.["releaseDate"] as
+                        | string
+                        | undefined;
+                      const monitored = albumData?.["monitored"] as
+                        | boolean
+                        | undefined;
+                      const hasFile = albumData?.["hasFile"] as
+                        | boolean
+                        | undefined;
+                      const reason = albumData?.["reason"] as
+                        | string
+                        | null
+                        | undefined;
+                      const tracks = albumEntry.tracks || [];
+                      const totals = albumEntry.totals;
 
-                    return (
-                      <details
-                        key={`${artistName}-${albumTitle}`}
-                        className="album-details"
-                      >
-                        <summary className="album-summary">
-                          <span className="album-title">{albumTitle}</span>
-                          {releaseDate && (
-                            <span className="album-date">
-                              {new Date(releaseDate).toLocaleDateString()}
+                      return (
+                        <details
+                          key={`${artistName}-${albumTitle}`}
+                          className="album-details"
+                        >
+                          <summary className="album-summary">
+                            <span className="album-title">{albumTitle}</span>
+                            {releaseDate && (
+                              <span className="album-date">
+                                {new Date(releaseDate).toLocaleDateString()}
+                              </span>
+                            )}
+                            {tracks && tracks.length > 0 && (
+                              <span className="album-track-count">
+                                ({totals.available || 0}/
+                                {totals.monitored || tracks.length} tracks)
+                              </span>
+                            )}
+                            <span
+                              className={`album-status ${hasFile ? "has-file" : "missing"}`}
+                            >
+                              {hasFile ? "✓" : "✗"}
                             </span>
-                          )}
-                          {tracks && tracks.length > 0 && (
-                            <span className="album-track-count">
-                              ({totals.available || 0}/
-                              {totals.monitored || tracks.length} tracks)
-                            </span>
-                          )}
-                          <span
-                            className={`album-status ${hasFile ? "has-file" : "missing"}`}
-                          >
-                            {hasFile ? "✓" : "✗"}
-                          </span>
-                        </summary>
-                        <div className="album-content">
-                          {tracks && tracks.length > 0 ? (
-                            <div className="tracks-table-wrapper">
-                              <table className="tracks-table">
-                                <thead>
-                                  <tr>
-                                    <th>#</th>
-                                    <th>Title</th>
-                                    <th>Duration</th>
-                                    <th>Has File</th>
-                                    <th>Reason</th>
-                                  </tr>
-                                </thead>
-                                <tbody>
-                                  {tracks.map((track) => (
-                                    <tr
-                                      key={`${albumId}-${track.id}`}
-                                      className={
-                                        track.hasFile
-                                          ? "track-available"
-                                          : "track-missing"
-                                      }
-                                    >
-                                      <td data-label="#">
-                                        {track.trackNumber}
-                                      </td>
-                                      <td data-label="Title">{track.title}</td>
-                                      <td data-label="Duration">
-                                        {track.duration
-                                          ? `${Math.floor(track.duration / 60)}:${String(track.duration % 60).padStart(2, "0")}`
-                                          : "—"}
-                                      </td>
-                                      <td data-label="Has File">
-                                        <span
-                                          className={`track-status ${track.hasFile ? "available" : "missing"}`}
-                                        >
-                                          {track.hasFile ? "✓" : "✗"}
-                                        </span>
-                                      </td>
-                                      <td data-label="Reason">
-                                        {reason ? (
-                                          <span className="table-badge table-badge-reason">
-                                            {reason}
-                                          </span>
-                                        ) : (
-                                          <span className="table-badge table-badge-reason">
-                                            Not being searched
-                                          </span>
-                                        )}
-                                      </td>
+                          </summary>
+                          <div className="album-content">
+                            {tracks && tracks.length > 0 ? (
+                              <div className="tracks-table-wrapper">
+                                <table className="tracks-table">
+                                  <thead>
+                                    <tr>
+                                      <th>#</th>
+                                      <th>Title</th>
+                                      <th>Duration</th>
+                                      <th>Has File</th>
+                                      <th>Reason</th>
                                     </tr>
-                                  ))}
-                                </tbody>
-                              </table>
-                            </div>
-                          ) : (
-                            <div className="album-info">
-                              <p>
-                                <strong>Monitored:</strong>{" "}
-                                {monitored ? "Yes" : "No"}
-                                {" | "}
-                                <strong>Has File:</strong>{" "}
-                                {hasFile ? "Yes" : "No"}
-                              </p>
-                              <p>
-                                <strong>Reason:</strong>{" "}
-                                {reason ? (
-                                  <span className="table-badge table-badge-reason">
-                                    {reason}
-                                  </span>
-                                ) : (
-                                  <span className="table-badge table-badge-reason">
-                                    Not being searched
-                                  </span>
-                                )}
-                              </p>
-                            </div>
-                          )}
-                        </div>
-                      </details>
-                    );
-                  })}
-                </div>
-              </details>
-            );
-          })}
-        </div>
+                                  </thead>
+                                  <tbody>
+                                    {tracks.map((track) => (
+                                      <tr
+                                        key={`${albumId}-${track.id}`}
+                                        className={
+                                          track.hasFile
+                                            ? "track-available"
+                                            : "track-missing"
+                                        }
+                                      >
+                                        <td data-label="#">
+                                          {track.trackNumber}
+                                        </td>
+                                        <td data-label="Title">
+                                          {track.title}
+                                        </td>
+                                        <td data-label="Duration">
+                                          {track.duration
+                                            ? `${Math.floor(track.duration / 60)}:${String(track.duration % 60).padStart(2, "0")}`
+                                            : "—"}
+                                        </td>
+                                        <td data-label="Has File">
+                                          <span
+                                            className={`track-status ${track.hasFile ? "available" : "missing"}`}
+                                          >
+                                            {track.hasFile ? "✓" : "✗"}
+                                          </span>
+                                        </td>
+                                        <td data-label="Reason">
+                                          {reason ? (
+                                            <span className="table-badge table-badge-reason">
+                                              {reason}
+                                            </span>
+                                          ) : (
+                                            <span className="table-badge table-badge-reason">
+                                              Not being searched
+                                            </span>
+                                          )}
+                                        </td>
+                                      </tr>
+                                    ))}
+                                  </tbody>
+                                </table>
+                              </div>
+                            ) : (
+                              <div className="album-info">
+                                <p>
+                                  <strong>Monitored:</strong>{" "}
+                                  {monitored ? "Yes" : "No"}
+                                  {" | "}
+                                  <strong>Has File:</strong>{" "}
+                                  {hasFile ? "Yes" : "No"}
+                                </p>
+                                <p>
+                                  <strong>Reason:</strong>{" "}
+                                  {reason ? (
+                                    <span className="table-badge table-badge-reason">
+                                      {reason}
+                                    </span>
+                                  ) : (
+                                    <span className="table-badge table-badge-reason">
+                                      Not being searched
+                                    </span>
+                                  )}
+                                </p>
+                              </div>
+                            )}
+                          </div>
+                        </details>
+                      );
+                    })}
+                  </div>
+                </details>
+              );
+            })}
+          </div>
+        ) : (
+          <div className="hint">No albums found.</div>
+        )
       ) : !groupLidarr && allAlbums.length ? (
         <div className="table-wrapper">
           <table className="responsive-table">
