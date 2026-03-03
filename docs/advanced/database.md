@@ -7,11 +7,11 @@ Complete reference for Torrentarr's SQLite database structure and operations.
 Torrentarr uses **SQLite** with **Entity Framework Core** for persistent state management.
 
 **Database Location:**
-- Native install: `~/config/qbitrr.db` or `./config/qbitrr.db`
-- Docker: `/config/qbitrr.db`
+- Native install: `~/config/torrentarr.db` or `./config/torrentarr.db`
+- Docker: `/config/torrentarr.db`
 
 !!! success "Single Consolidated Database (v5.8.0+)"
-    As of version 5.8.0, Torrentarr uses a **single consolidated database** file (`qbitrr.db`) for all Arr instances, replacing the previous per-instance database approach.
+    As of version 5.8.0, Torrentarr uses a **single consolidated database** file (`torrentarr.db`) for all Arr instances, replacing the previous per-instance database approach.
 
 **Why SQLite?**
 - Zero configuration required
@@ -28,7 +28,7 @@ Torrentarr uses **SQLite** with **Entity Framework Core** for persistent state m
 All Arr instances now share a single database file with **ArrInstance field** for data isolation:
 
 ```
-qbitrr.db
+torrentarr.db
 ├── MoviesFilesModel      (ArrInstance: "Radarr-4K", "Radarr-1080", etc.)
 ├── EpisodeFilesModel     (ArrInstance: "Sonarr-TV", "Sonarr-4K", etc.)
 ├── AlbumFilesModel       (ArrInstance: "Lidarr", etc.)
@@ -185,7 +185,7 @@ Entities map to the tables above (e.g. `TorrentLibrary`, `MoviesFilesModel`, `Ep
 
 Database is initialized on first run using the centralized `get_database()` function:
 
-Database path is set at startup (e.g. `~/config/qbitrr.db` or `./config/qbitrr.db`). Torrentarr.Host passes the path to Torrentarr.Infrastructure; EF Core creates the database and tables if they don't exist. All Arr workers share the same database file, with isolation by the `ArrInstance` field.
+Database path is set at startup (e.g. `~/config/torrentarr.db` or `./config/torrentarr.db`). Torrentarr.Host passes the path to Torrentarr.Infrastructure; EF Core creates the database and tables if they don't exist. All Arr workers share the same database file, with isolation by the `ArrInstance` field.
 
 ### Concurrency Control
 
@@ -202,11 +202,11 @@ EF Core wraps SaveChanges in transactions. Use the same DbContext scope for mult
 
 #### Consolidated Database Migration (v5.7.x → v5.8.0)
 
-**Location:** Torrentarr.Host / Torrentarr.Infrastructure — on startup, old per-instance DBs are removed and the consolidated `qbitrr.db` is used.
+**Location:** Torrentarr.Host / Torrentarr.Infrastructure — on startup, old per-instance DBs are removed and the consolidated `torrentarr.db` is used.
 
 When upgrading to v5.8.0+:
 1. **Deletes old per-instance databases** (Radarr-*.db, Sonarr-*.db, etc.) if present
-2. **Uses consolidated database** (`qbitrr.db`) in config directory
+2. **Uses consolidated database** (`torrentarr.db`) in config directory
 3. **Re-syncs data** from Arr APIs automatically
 
 This approach ensures:
@@ -225,17 +225,17 @@ This approach ensures:
 
 ```bash
 # Manual backup
-cp ~/config/qbitrr.db ~/config/qbitrr.db.backup
+cp ~/config/torrentarr.db ~/config/torrentarr.db.backup
 
 # Automated backup (cron)
-0 2 * * * cp ~/config/qbitrr.db ~/config/qbitrr.db.$(date +\%Y\%m\%d)
+0 2 * * * cp ~/config/torrentarr.db ~/config/torrentarr.db.$(date +\%Y\%m\%d)
 
 # Docker backup
-docker exec torrentarr sqlite3 /config/qbitrr.db ".backup /config/qbitrr.db.backup"
+docker exec torrentarr sqlite3 /config/torrentarr.db ".backup /config/torrentarr.db.backup"
 ```
 
 **What to backup:**
-- `qbitrr.db` - Primary database
+- `torrentarr.db` - Primary database
 - `config.toml` - Configuration file
 - `logs/` - Optional, for troubleshooting
 
@@ -245,8 +245,8 @@ docker exec torrentarr sqlite3 /config/qbitrr.db ".backup /config/qbitrr.db.back
 
 ```bash
 # Stop Torrentarr, then:
-sqlite3 ~/config/qbitrr.db "VACUUM;"
-# Or Docker: docker exec torrentarr sqlite3 /config/qbitrr.db "VACUUM;"
+sqlite3 ~/config/torrentarr.db "VACUUM;"
+# Or Docker: docker exec torrentarr sqlite3 /config/torrentarr.db "VACUUM;"
 ```
 
 **When to vacuum:**
@@ -267,7 +267,7 @@ AutoVacuum = true  # VACUUM during startup if DB > threshold
 
 ```bash
 # Check for corruption
-sqlite3 ~/config/qbitrr.db "PRAGMA integrity_check;"
+sqlite3 ~/config/torrentarr.db "PRAGMA integrity_check;"
 
 # Expected output: ok
 ```
@@ -283,7 +283,7 @@ Torrentarr includes automatic recovery in `Torrentarr.Infrastructure` (e.g. `Dat
 ```bash
 # Reset: remove database file and restart to recreate
 # Stop Torrentarr, then:
-rm ~/config/qbitrr.db
+rm ~/config/torrentarr.db
 # Restart Torrentarr — database recreated on next start
 ```
 
@@ -327,9 +327,9 @@ Indexes are automatically created for:
 ```bash
 # Try Torrentarr CLI if available (see troubleshooting docs)
 # Or manual recovery:
-sqlite3 ~/config/qbitrr.db ".dump" > dump.sql
-mv ~/config/qbitrr.db ~/config/qbitrr.db.corrupt
-sqlite3 ~/config/qbitrr.db < dump.sql
+sqlite3 ~/config/torrentarr.db ".dump" > dump.sql
+mv ~/config/torrentarr.db ~/config/torrentarr.db.corrupt
+sqlite3 ~/config/torrentarr.db < dump.sql
 ```
 
 ### High Disk Usage
@@ -357,8 +357,8 @@ Use sqlite3 to run VACUUM (see above); Torrentarr has no `--vacuum-db` CLI.
 
 ```bash
 # Restrict access to database
-chmod 600 ~/config/qbitrr.db
-chown torrentarr:torrentarr ~/config/qbitrr.db
+chmod 600 ~/config/torrentarr.db
+chown torrentarr:torrentarr ~/config/torrentarr.db
 
 # Docker automatically sets via PUID/PGID
 ```

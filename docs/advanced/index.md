@@ -25,7 +25,7 @@ qBittorrent → Torrentarr → Process Torrents → Arr Instance
 
 Torrentarr uses SQLite for persistent state:
 
-- **Location:** `~/config/qbitrr.db`
+- **Location:** `~/config/torrentarr.db`
 - **Tables:**
   - `downloads` - Tracked torrent information
   - `searches` - Search activity history
@@ -33,7 +33,7 @@ Torrentarr uses SQLite for persistent state:
 
 **Backup:**
 ```bash
-cp ~/config/qbitrr.db ~/config/qbitrr.db.backup
+cp ~/config/torrentarr.db ~/config/torrentarr.db.backup
 ```
 
 ## Performance Tuning
@@ -210,7 +210,7 @@ AutoVacuum = true   # Automatically vacuum database
 Optimize database size:
 
 ```bash
-sqlite3 ~/config/qbitrr.db "VACUUM;"
+sqlite3 ~/config/torrentarr.db "VACUUM;"
 ```
 
 ### Recovery
@@ -221,7 +221,7 @@ If database becomes corrupt:
 # Torrentarr has automatic recovery
 # Check logs for recovery messages
 # Or manually delete and regenerate:
-rm ~/config/qbitrr.db
+rm ~/config/torrentarr.db
 ```
 
 ## Network Optimization
@@ -400,7 +400,7 @@ ps aux | grep torrentarr
 What to backup:
 
 1. **Configuration:** `~/config/config.toml`
-2. **Database:** `~/config/qbitrr.db`
+2. **Database:** `~/config/torrentarr.db`
 3. **Logs (optional):** `~/config/logs/`
 
 ### Restore Procedure
@@ -432,7 +432,7 @@ grep "torrent_hash" ~/config/logs/Main.log
 Query the database directly:
 
 ```bash
-sqlite3 ~/config/qbitrr.db
+sqlite3 ~/config/torrentarr.db
 sqlite> SELECT * FROM downloads WHERE hash = 'torrent_hash';
 sqlite> .quit
 ```

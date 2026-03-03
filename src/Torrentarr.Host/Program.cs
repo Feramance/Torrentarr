@@ -18,7 +18,7 @@ var basePath = !string.IsNullOrEmpty(configEnv) && configEnv.StartsWith("/config
     ? "/config"
     : Path.Combine(Directory.GetCurrentDirectory(), "config");
 var logsPath = Path.Combine(basePath, "logs");
-var dbPath = Path.Combine(basePath, "qbitrr.db");
+var dbPath = Path.Combine(basePath, "torrentarr.db");
 Directory.CreateDirectory(basePath);
 Directory.CreateDirectory(logsPath);
 

@@ -8,12 +8,12 @@ Torrentarr uses a **single consolidated SQLite database** to maintain persistent
 
 | Database File | Purpose | Location |
 |--------------|---------|----------|
-| `qbitrr.db` | **Single consolidated database** for all Arr instances and WebUI data | `~/config/` or `./config/` (native), `/config/` (Docker) |
-| `qbitrr.db-wal` | Write-Ahead Log (uncommitted changes) | Same directory |
-| `qbitrr.db-shm` | Shared memory index for WAL mode | Same directory |
+| `torrentarr.db` | **Single consolidated database** for all Arr instances and WebUI data | `~/config/` or `./config/` (native), `/config/` (Docker) |
+| `torrentarr.db-wal` | Write-Ahead Log (uncommitted changes) | Same directory |
+| `torrentarr.db-shm` | Shared memory index for WAL mode | Same directory |
 
 !!! success "Database (qBitrr compatible)"
-    Torrentarr uses a **single `qbitrr.db` file** (same name as qBitrr for config compatibility). All data is isolated using the `ArrInstance` field in each table.
+    Torrentarr uses a **single `torrentarr.db` file**. All data is isolated using the `ArrInstance` field in each table.
 
 !!! info "Database Modes"
     Torrentarr uses SQLite's **WAL (Write-Ahead Logging)** mode for better concurrency and crash resilience. WAL mode creates `-wal` and `-shm` temporary files alongside the main database.
@@ -23,7 +23,7 @@ Torrentarr uses a **single consolidated SQLite database** to maintain persistent
 When upgrading from v5.7.x or earlier:
 
 1. **Old databases are automatically deleted** on first startup (Radarr-*.db, Sonarr-*.db, Lidarr.db, webui_activity.db)
-2. **New consolidated database is created** (`qbitrr.db` in config directory)
+2. **New consolidated database is created** (`torrentarr.db` in config directory)
 3. **Data is automatically re-synced** from your Arr instances (takes 5-30 minutes depending on library size)
 4. **No manual intervention required** - this happens automatically
 
@@ -241,7 +241,7 @@ CREATE TABLE searchactivity (
 ```
 
 !!! note "Consolidated in v5.8.0"
-    Prior to v5.8.0, each Arr instance had separate database files. Now all data is in the single `qbitrr.db` file with the `ArrInstance` field providing isolation.
+    Prior to v5.8.0, each Arr instance had separate database files. Now all data is in the single `torrentarr.db` file with the `ArrInstance` field providing isolation.
 
 ---
 
@@ -329,7 +329,7 @@ Torrentarr automatically attempts recovery when corruption is detected:
 
 1. **WAL Checkpoint**: Flushes WAL to main database
 2. **Full Repair**: Dumps recoverable data to new database
-3. **Backup**: Original database saved as `qbitrr.db.backup`
+3. **Backup**: Original database saved as `torrentarr.db.backup`
 
 **Manual Recovery**:
 
@@ -340,7 +340,7 @@ Torrentarr automatically attempts recovery when corruption is detected:
     torrentarr --repair-database
     ```
 
-    Uses the same database path as the app (e.g. `config/qbitrr.db` or `/config/qbitrr.db` in Docker). Exit code 0 if integrity check passed, 1 otherwise.
+    Uses the same database path as the app (e.g. `config/torrentarr.db` or `/config/torrentarr.db` in Docker). Exit code 0 if integrity check passed, 1 otherwise.
 
 === "Method 1: WAL Checkpoint"
     ```bash
@@ -348,10 +348,10 @@ Torrentarr automatically attempts recovery when corruption is detected:
     docker stop torrentarr  # or: systemctl stop torrentarr
 
     # Checkpoint WAL (least invasive)
-    sqlite3 ~/config/qbitrr.db "PRAGMA wal_checkpoint(TRUNCATE);"
+    sqlite3 ~/config/torrentarr.db "PRAGMA wal_checkpoint(TRUNCATE);"
 
     # Verify integrity
-    sqlite3 ~/config/qbitrr.db "PRAGMA integrity_check;"
+    sqlite3 ~/config/torrentarr.db "PRAGMA integrity_check;"
 
     # Restart
     docker start torrentarr
@@ -363,17 +363,17 @@ Torrentarr automatically attempts recovery when corruption is detected:
     docker stop torrentarr
 
     # Backup corrupted database
-    cp ~/config/qbitrr.db ~/config/qbitrr.db.corrupt
+    cp ~/config/torrentarr.db ~/config/torrentarr.db.corrupt
 
     # Dump recoverable data
-    sqlite3 ~/config/qbitrr.db ".dump" > ~/config/dump.sql
+    sqlite3 ~/config/torrentarr.db ".dump" > ~/config/dump.sql
 
     # Create new database from dump
-    rm ~/config/qbitrr.db
-    sqlite3 ~/config/qbitrr.db < ~/config/dump.sql
+    rm ~/config/torrentarr.db
+    sqlite3 ~/config/torrentarr.db < ~/config/dump.sql
 
     # Verify
-    sqlite3 ~/config/qbitrr.db "PRAGMA integrity_check;"
+    sqlite3 ~/config/torrentarr.db "PRAGMA integrity_check;"
 
     # Restart
     docker start torrentarr
@@ -387,7 +387,7 @@ Torrentarr automatically attempts recovery when corruption is detected:
     docker stop torrentarr
 
     # Backup old database
-    mv ~/config/qbitrr.db ~/config/qbitrr.db.old
+    mv ~/config/torrentarr.db ~/config/torrentarr.db.old
 
     # Restart (Torrentarr creates new database)
     docker start torrentarr
@@ -408,8 +408,8 @@ Follow these practices to minimize corruption risk:
 1. **Use local storage** — SQLite on NFS/CIFS is unreliable due to file locking issues
 2. **Graceful shutdown** — Always use `docker stop` (not `docker kill`); set `stop_grace_period: 30s` in Docker Compose
 3. **Ensure adequate disk space** — WAL operations need temporary space; configure `FreeSpace` in config
-4. **Regular backups** — Set up daily backups of `qbitrr.db` (see [Backup & Restore](#database-backup-restore))
-5. **Proper permissions** — Ensure the Torrentarr user owns the database files (`chown 1000:1000 /config/qbitrr.db`)
+4. **Regular backups** — Set up daily backups of `torrentarr.db` (see [Backup & Restore](#database-backup-restore))
+5. **Proper permissions** — Ensure the Torrentarr user owns the database files (`chown 1000:1000 /config/torrentarr.db`)
 
 !!! note "Historical Fix: synchronous Setting"
     Prior to the fix in commit `465c306d`, Torrentarr used `PRAGMA synchronous=0` (OFF), which traded data integrity for write speed. This was changed to `synchronous=1` (NORMAL), which prevents corruption from power loss/crashes with minimal performance impact (~5-10% write latency increase, mitigated by WAL mode).
@@ -449,19 +449,19 @@ OSError: [Errno 5] Input/output error
 === "Check File Permissions"
     ```bash
     # Docker
-    docker exec torrentarr ls -lh /config/qbitrr.db
+    docker exec torrentarr ls -lh /config/torrentarr.db
 
     # Host
-    ls -lh ~/config/qbitrr.db
+    ls -lh ~/config/torrentarr.db
     ```
 
     Ensure Torrentarr user owns the database:
     ```bash
     # Docker (PUID/PGID)
-    chown 1000:1000 ~/config/qbitrr.db
+    chown 1000:1000 ~/config/torrentarr.db
 
     # Systemd
-    chown torrentarr:torrentarr ~/config/qbitrr.db
+    chown torrentarr:torrentarr ~/config/torrentarr.db
     ```
 
 === "Test Disk Health"
@@ -483,7 +483,7 @@ OSError: [Errno 5] Input/output error
    docker stop torrentarr
 
    # Move database
-   mv ~/config/qbitrr.db /new/path/qbitrr.db
+   mv ~/config/torrentarr.db /new/path/torrentarr.db
 
    # Update config.toml
    # (No explicit DB path in config; just move entire config folder)
@@ -515,7 +515,7 @@ sqlite3.IntegrityError: UNIQUE constraint failed: moviesfilesmodel.EntryId
     docker stop torrentarr
 
     # Identify duplicate
-    sqlite3 ~/config/qbitrr.db << EOF
+    sqlite3 ~/config/torrentarr.db << EOF
     SELECT EntryId, COUNT(*) as count
     FROM moviesfilesmodel
     GROUP BY EntryId
@@ -523,7 +523,7 @@ sqlite3.IntegrityError: UNIQUE constraint failed: moviesfilesmodel.EntryId
     EOF
 
     # Delete duplicate (keep first entry)
-    sqlite3 ~/config/qbitrr.db << EOF
+    sqlite3 ~/config/torrentarr.db << EOF
     DELETE FROM moviesfilesmodel
     WHERE rowid NOT IN (
         SELECT MIN(rowid)
@@ -542,7 +542,7 @@ sqlite3.IntegrityError: UNIQUE constraint failed: moviesfilesmodel.EntryId
     docker stop torrentarr
 
     # Backup
-    mv ~/config/qbitrr.db ~/config/qbitrr.db.backup
+    mv ~/config/torrentarr.db ~/config/torrentarr.db.backup
 
     # Restart (rebuilds from Arr APIs)
     docker start torrentarr
@@ -567,7 +567,7 @@ sqlite3.OperationalError: no such table: moviesfilesmodel
 
 === "Verify Schema"
     ```bash
-    sqlite3 ~/config/qbitrr.db << EOF
+    sqlite3 ~/config/torrentarr.db << EOF
     .tables
     .schema moviesfilesmodel
     EOF
@@ -585,7 +585,7 @@ sqlite3.OperationalError: no such table: moviesfilesmodel
     docker stop torrentarr
 
     # Backup old database
-    mv ~/config/qbitrr.db ~/config/qbitrr.db.old
+    mv ~/config/torrentarr.db ~/config/torrentarr.db.old
 
     # Restart (creates new database with current schema)
     docker start torrentarr
@@ -602,7 +602,7 @@ sqlite3.OperationalError: no such table: moviesfilesmodel
 
 ```bash
 # Open interactive shell
-sqlite3 ~/config/qbitrr.db
+sqlite3 ~/config/torrentarr.db
 
 # List all tables
 .tables
@@ -633,22 +633,22 @@ LIMIT 20;
 
 ```bash
 # Reset all movie searches (triggers new automated search)
-sqlite3 ~/config/qbitrr.db << EOF
+sqlite3 ~/config/torrentarr.db << EOF
 UPDATE moviesfilesmodel SET Searched = 0 WHERE Searched = 1;
 EOF
 
 # Reset specific movie
-sqlite3 ~/config/qbitrr.db << EOF
+sqlite3 ~/config/torrentarr.db << EOF
 UPDATE moviesfilesmodel SET Searched = 0 WHERE EntryId = 123;
 EOF
 
 # Reset TV series searches
-sqlite3 ~/config/qbitrr.db << EOF
+sqlite3 ~/config/torrentarr.db << EOF
 UPDATE seriesfilesmodel SET Searched = 0 WHERE Searched = 1;
 EOF
 
 # Reset episode searches
-sqlite3 ~/config/qbitrr.db << EOF
+sqlite3 ~/config/torrentarr.db << EOF
 UPDATE episodefilesmodel SET Searched = 0 WHERE Searched = 1;
 EOF
 ```
@@ -657,17 +657,17 @@ EOF
 
 ```bash
 # Remove specific torrent
-sqlite3 ~/config/qbitrr.db << EOF
+sqlite3 ~/config/torrentarr.db << EOF
 DELETE FROM torrentlibrary WHERE Hash = 'abc123...';
 EOF
 
 # Clear all torrents for category
-sqlite3 ~/config/qbitrr.db << EOF
+sqlite3 ~/config/torrentarr.db << EOF
 DELETE FROM torrentlibrary WHERE Category = 'radarr-movies';
 EOF
 
 # Clear all torrents (CAUTION: Torrentarr re-adds active torrents)
-sqlite3 ~/config/qbitrr.db << EOF
+sqlite3 ~/config/torrentarr.db << EOF
 DELETE FROM torrentlibrary;
 EOF
 ```
@@ -676,7 +676,7 @@ EOF
 
 ```bash
 # Reset profile tracking (allows new switch attempt)
-sqlite3 ~/config/qbitrr.db << EOF
+sqlite3 ~/config/torrentarr.db << EOF
 UPDATE moviesfilesmodel
 SET LastProfileSwitchTime = NULL,
     CurrentProfileId = OriginalProfileId
@@ -692,7 +692,7 @@ EOF
 
 Torrentarr automatically creates backups during recovery:
 
-- **Location**: `~/config/qbitrr.db.backup`
+- **Location**: `~/config/torrentarr.db.backup`
 - **Trigger**: Before repair operations
 - **Retention**: Single backup (overwrites previous)
 
@@ -704,22 +704,22 @@ Torrentarr automatically creates backups during recovery:
     docker stop torrentarr
 
     # Backup consolidated database (v5.8.0+)
-    cp ~/config/qbitrr.db ~/backups/torrentarr-$(date +%Y%m%d).db
+    cp ~/config/torrentarr.db ~/backups/torrentarr-$(date +%Y%m%d).db
 
     # Also backup WAL and SHM files for consistency
-    cp ~/config/qbitrr.db* ~/backups/
+    cp ~/config/torrentarr.db* ~/backups/
 
     # Restart
     docker start torrentarr
     ```
 
     !!! tip "Single File Backup"
-        With the consolidated database, you only need to backup **one file** (`qbitrr.db`) instead of multiple per-instance databases!
+        With the consolidated database, you only need to backup **one file** (`torrentarr.db`) instead of multiple per-instance databases!
 
 === "SQLite Backup Command"
     ```bash
     # Hot backup (no stop required, but slower)
-    sqlite3 ~/config/qbitrr.db << EOF
+    sqlite3 ~/config/torrentarr.db << EOF
     .backup /backups/torrentarr-$(date +%Y%m%d).db
     EOF
     ```
@@ -727,7 +727,7 @@ Torrentarr automatically creates backups during recovery:
 === "Dump to SQL"
     ```bash
     # Human-readable backup
-    sqlite3 ~/config/qbitrr.db .dump > ~/backups/torrentarr-$(date +%Y%m%d).sql
+    sqlite3 ~/config/torrentarr.db .dump > ~/backups/torrentarr-$(date +%Y%m%d).sql
     ```
 
 ### Restore from Backup
@@ -737,10 +737,10 @@ Torrentarr automatically creates backups during recovery:
 docker stop torrentarr
 
 # Restore database
-cp ~/backups/torrentarr-20231127.db ~/config/qbitrr.db
+cp ~/backups/torrentarr-20231127.db ~/config/torrentarr.db
 
 # Verify integrity
-sqlite3 ~/config/qbitrr.db "PRAGMA integrity_check;"
+sqlite3 ~/config/torrentarr.db "PRAGMA integrity_check;"
 
 # Restart
 docker start torrentarr
@@ -759,10 +759,10 @@ Reclaims space and optimizes database file.
 docker stop torrentarr
 
 # Run VACUUM
-sqlite3 ~/config/qbitrr.db "VACUUM;"
+sqlite3 ~/config/torrentarr.db "VACUUM;"
 
 # Check new size
-ls -lh ~/config/qbitrr.db
+ls -lh ~/config/torrentarr.db
 
 # Restart
 docker start torrentarr
@@ -785,7 +785,7 @@ Updates query planner statistics for better performance.
 
 ```bash
 # Hot operation (no stop required)
-sqlite3 ~/config/qbitrr.db "ANALYZE;"
+sqlite3 ~/config/torrentarr.db "ANALYZE;"
 ```
 
 Run after:
@@ -811,7 +811,7 @@ PRAGMA mmap_size=268435456;        -- 256MB memory-mapped I/O
 
     ```bash
     # Increase cache for large libraries
-    sqlite3 ~/config/qbitrr.db "PRAGMA cache_size=-128000;"  # 128MB
+    sqlite3 ~/config/torrentarr.db "PRAGMA cache_size=-128000;"  # 128MB
     ```
 
 ---
@@ -834,10 +834,10 @@ if not healthy:
 
 ```bash
 # Quick check (fast)
-sqlite3 ~/config/qbitrr.db "PRAGMA quick_check;"
+sqlite3 ~/config/torrentarr.db "PRAGMA quick_check;"
 
 # Full integrity check (slow, thorough)
-sqlite3 ~/config/qbitrr.db "PRAGMA integrity_check;"
+sqlite3 ~/config/torrentarr.db "PRAGMA integrity_check;"
 ```
 
 Expected output: `ok`
@@ -867,7 +867,7 @@ ls -lh ~/config/*.db-wal
     ```bash
     # Force checkpoint
     docker stop torrentarr
-    sqlite3 ~/config/qbitrr.db "PRAGMA wal_checkpoint(TRUNCATE);"
+    sqlite3 ~/config/torrentarr.db "PRAGMA wal_checkpoint(TRUNCATE);"
     docker start torrentarr
     ```
 
@@ -875,7 +875,7 @@ ls -lh ~/config/*.db-wal
 
 ```bash
 # Enable query timer
-sqlite3 ~/config/qbitrr.db << EOF
+sqlite3 ~/config/torrentarr.db << EOF
 .timer ON
 .eqp ON
 
@@ -908,7 +908,7 @@ apply_config_migrations()  # Migrates database schema
 
 ```bash
 # Check schema version (no built-in version field)
-sqlite3 ~/config/qbitrr.db << EOF
+sqlite3 ~/config/torrentarr.db << EOF
 .schema
 EOF
 
@@ -924,10 +924,10 @@ EOF
 
 ```bash
 # Backup database
-cp ~/config/qbitrr.db ~/backups/torrentarr-before-downgrade.db
+cp ~/config/torrentarr.db ~/backups/torrentarr-before-downgrade.db
 
 # Delete database (force rebuild)
-rm ~/config/qbitrr.db
+rm ~/config/torrentarr.db
 
 # Downgrade Torrentarr
 docker pull feramance/torrentarr:5.2.0
@@ -951,8 +951,8 @@ Torrentarr uses SQLite's Write-Ahead Logging (WAL) mode for:
 
 **WAL Files**:
 
-- `qbitrr.db-wal`: Write-ahead log (uncommitted changes)
-- `qbitrr.db-shm`: Shared memory index for WAL
+- `torrentarr.db-wal`: Write-ahead log (uncommitted changes)
+- `torrentarr.db-shm`: Shared memory index for WAL
 
 **Checkpoint Modes**:
 
@@ -968,7 +968,7 @@ Torrentarr uses SQLite's Write-Ahead Logging (WAL) mode for:
 Torrentarr uses inter-process file locks to coordinate database access:
 
 ```python
-# Lock file: ~/config/qbitrr.db.lock
+# Lock file: ~/config/torrentarr.db.lock
 with database_lock():
     # All database operations here
     db.execute_sql("UPDATE ...")
@@ -1019,22 +1019,22 @@ ON torrentlibrary(Hash);
 
 ```bash
 # Check database health
-sqlite3 ~/config/qbitrr.db "PRAGMA quick_check;"
+sqlite3 ~/config/torrentarr.db "PRAGMA quick_check;"
 
 # View tables
-sqlite3 ~/config/qbitrr.db ".tables"
+sqlite3 ~/config/torrentarr.db ".tables"
 
 # Checkpoint WAL
-sqlite3 ~/config/qbitrr.db "PRAGMA wal_checkpoint(TRUNCATE);"
+sqlite3 ~/config/torrentarr.db "PRAGMA wal_checkpoint(TRUNCATE);"
 
 # Vacuum database
-sqlite3 ~/config/qbitrr.db "VACUUM;"
+sqlite3 ~/config/torrentarr.db "VACUUM;"
 
 # Backup database
-cp ~/config/qbitrr.db ~/backups/torrentarr-$(date +%Y%m%d).db
+cp ~/config/torrentarr.db ~/backups/torrentarr-$(date +%Y%m%d).db
 
 # Reset all searches
-sqlite3 ~/config/qbitrr.db "UPDATE moviesfilesmodel SET Searched = 0;"
+sqlite3 ~/config/torrentarr.db "UPDATE moviesfilesmodel SET Searched = 0;"
 ```
 
 ### Emergency Recovery
@@ -1044,14 +1044,14 @@ sqlite3 ~/config/qbitrr.db "UPDATE moviesfilesmodel SET Searched = 0;"
 docker stop torrentarr
 
 # 2. Backup corrupted database
-cp ~/config/qbitrr.db ~/config/qbitrr.db.corrupt
+cp ~/config/torrentarr.db ~/config/torrentarr.db.corrupt
 
 # 3. Attempt repair
-sqlite3 ~/config/qbitrr.db ".dump" | sqlite3 ~/config/qbitrr.db.new
-mv ~/config/qbitrr.db.new ~/config/qbitrr.db
+sqlite3 ~/config/torrentarr.db ".dump" | sqlite3 ~/config/torrentarr.db.new
+mv ~/config/torrentarr.db.new ~/config/torrentarr.db
 
 # 4. Verify
-sqlite3 ~/config/qbitrr.db "PRAGMA integrity_check;"
+sqlite3 ~/config/torrentarr.db "PRAGMA integrity_check;"
 
 # 5. Restart
 docker start torrentarr
@@ -1060,7 +1060,7 @@ docker start torrentarr
 If repair fails, delete database and rebuild:
 
 ```bash
-rm ~/config/qbitrr.db
+rm ~/config/torrentarr.db
 docker start torrentarr  # Rebuilds from Arr APIs
 ```
 

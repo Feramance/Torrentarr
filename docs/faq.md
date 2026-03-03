@@ -327,7 +327,7 @@ Backup these files/folders:
 ```bash
 # Essential
 ~/config/config.toml      # Configuration file
-~/config/qbitrr.db        # Database
+~/config/torrentarr.db        # Database
 
 # Optional
 ~/config/logs/            # Log files (if needed)
@@ -336,7 +336,7 @@ Backup these files/folders:
 **Docker backup:**
 ```bash
 docker cp torrentarr:/config/config.toml ./config.toml.backup
-docker cp torrentarr:/config/qbitrr.db ./qbitrr.db.backup
+docker cp torrentarr:/config/torrentarr.db ./torrentarr.db.backup
 ```
 
 ### Can I run Torrentarr on NAS devices?
@@ -728,7 +728,7 @@ Category = "radarr-movies"
 ### Common File Locations
 
 - **Config**: `~/config/config.toml` or `/config/config.toml`
-- **Database**: `~/config/qbitrr.db` or `/config/qbitrr.db`
+- **Database**: `~/config/torrentarr.db` or `/config/torrentarr.db`
 - **Logs**: `~/config/logs/` or `/config/logs/`
 - **WebUI**: `http://localhost:6969/ui`
 

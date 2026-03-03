@@ -373,7 +373,7 @@ webui/src/
 - **Event loops:** Each worker runs a loop: fetch torrents, health checks, trigger imports, search, cleanup. Implemented in `Torrentarr.Infrastructure` (e.g. TorrentProcessor, SeedingService).
 - **Health monitoring:** Stalled detection, ETA limits, FFprobe validation, tracker checks — see config options and `TorrentProcessor` / `SeedingService`.
 - **Instant import:** On completion, workers call Arr's `DownloadedMoviesScan` (or equivalent) and update the shared SQLite DB.
-- **Database:** Single `qbitrr.db` (EF Core); workers coordinate via the shared file. See [Database](../advanced/database.md) and [Architecture](../advanced/architecture.md).
+- **Database:** Single `torrentarr.db` (EF Core); workers coordinate via the shared file. See [Database](../advanced/database.md) and [Architecture](../advanced/architecture.md).
 
 For implementation details, browse `src/Torrentarr.Infrastructure` and `src/Torrentarr.Workers`.
 
@@ -403,7 +403,7 @@ Add API endpoints in `Torrentarr.Host/Program.cs` (or WebUI project) with `app.M
 
 - Set `ConsoleLevel = "DEBUG"` in config or use the WebUI log level control.
 - Check logs in `~/config/logs/` or Docker logs.
-- Use `dotnet run` with a debugger (F5 in VS/ Rider) or add breakpoints. For database state, use `sqlite3 ~/config/qbitrr.db` or the Host's `--repair-database` for integrity checks.
+- Use `dotnet run` with a debugger (F5 in VS/ Rider) or add breakpoints. For database state, use `sqlite3 ~/config/torrentarr.db` or the Host's `--repair-database` for integrity checks.
 
 ## Performance Optimization
 

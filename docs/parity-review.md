@@ -1,6 +1,6 @@
 # qBitrr Parity Gaps — Implementation Review
 
-**Docs alignment (Torrentarr):** Documentation has been updated to match the C# port: config path env var `TORRENTARR_CONFIG` only (no section overrides), database `qbitrr.db` in config directory, and pip/Python references removed in favor of dotnet tool, binary, and Docker.
+**Docs alignment (Torrentarr):** Documentation has been updated to match the C# port: config path env var `TORRENTARR_CONFIG` only (no section overrides), database `torrentarr.db` in config directory, and pip/Python references removed in favor of dotnet tool, binary, and Docker.
 
 ---
 
@@ -56,8 +56,8 @@ This document verifies that all 12 gaps from the qBitrr parity gaps plan have be
 
 ## 6. Database repair script / documentation — **DONE**
 
-- **CLI:** `src/Torrentarr.Host/Program.cs` (lines 221–244). If the only argument is `--repair-database`, the Host opens `dbPath` (from `basePath`, i.e. `config/qbitrr.db` or `/config/qbitrr.db`), runs `PRAGMA wal_checkpoint(TRUNCATE);` and `PRAGMA integrity_check;`, prints the result, and exits with 0 if result is `"ok"`, else 1. No app startup.
-- **Docs:** `docs/troubleshooting/database.md` includes "Method 0: Torrentarr CLI" describing `torrentarr --repair-database` and the database path (`config/qbitrr.db`). `docs/advanced/database.md` uses `qbitrr.db` and sqlite3 for VACUUM; doc examples are aligned with the Host.
+- **CLI:** `src/Torrentarr.Host/Program.cs` (lines 221–244). If the only argument is `--repair-database`, the Host opens `dbPath` (from `basePath`, i.e. `config/torrentarr.db` or `/config/torrentarr.db`), runs `PRAGMA wal_checkpoint(TRUNCATE);` and `PRAGMA integrity_check;`, prints the result, and exits with 0 if result is `"ok"`, else 1. No app startup.
+- **Docs:** `docs/troubleshooting/database.md` includes "Method 0: Torrentarr CLI" describing `torrentarr --repair-database` and the database path (`config/torrentarr.db`). `docs/advanced/database.md` uses `torrentarr.db` and sqlite3 for VACUUM; doc examples are aligned with the Host.
 
 ---
 
@@ -132,7 +132,7 @@ This document verifies that all 12 gaps from the qBitrr parity gaps plan have be
 
 ## Minor follow-ups (non-blocking)
 
-1. **Database path naming:** Addressed in docs: Host uses `qbitrr.db` in config directory; troubleshooting and advanced docs now use `config/qbitrr.db` (or `/config/qbitrr.db` in Docker) consistently.
+1. **Database path naming:** Addressed in docs: Host uses `torrentarr.db` in config directory; troubleshooting and advanced docs now use `config/torrentarr.db` (or `/config/torrentarr.db` in Docker) consistently.
 2. **docs/advanced/database.md:** Addressed: no `--vacuum-db` CLI; doc now describes using sqlite3 for VACUUM.
 3. **ConfigVersionWarning.currentVersion:** Addressed: type in `webui/src/api/types.ts` is now `string` to match the API. `installation_type` union updated to include `docker` and `dotnet`, and `pip` removed.
 

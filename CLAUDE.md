@@ -116,7 +116,7 @@ All processes share:
 
 ### Database
 
-SQLite (`qbitrr.db`, same schema as qBitrr for compatibility). Uses EF Core with WAL mode and memory-mapped I/O pragmas. Entities: `TorrentLibrary`, `MoviesFilesModel`, `EpisodeFilesModel`, `AlbumFilesModel`, `SeriesFilesModel`, `ArtistFilesModel`, `TrackFilesModel`, queue models.
+SQLite (`torrentarr.db`, same schema as qBitrr for compatibility). Uses EF Core with WAL mode and memory-mapped I/O pragmas. Entities: `TorrentLibrary`, `MoviesFilesModel`, `EpisodeFilesModel`, `AlbumFilesModel`, `SeriesFilesModel`, `ArtistFilesModel`, `TrackFilesModel`, queue models.
 
 ### Configuration
 

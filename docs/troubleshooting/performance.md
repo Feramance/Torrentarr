@@ -412,7 +412,7 @@ Reclaim space and optimize SQLite:
 docker stop torrentarr
 
 # Vacuum database
-docker run --rm -v /path/to/config:/config -it alpine sh -c "apk add sqlite && sqlite3 /config/qbitrr.db 'VACUUM;'"
+docker run --rm -v /path/to/config:/config -it alpine sh -c "apk add sqlite && sqlite3 /config/torrentarr.db 'VACUUM;'"
 
 # Restart
 docker start torrentarr
@@ -425,7 +425,7 @@ Run monthly for large libraries.
 Update query planner statistics:
 
 ```bash
-docker exec torrentarr sqlite3 /config/qbitrr.db "ANALYZE;"
+docker exec torrentarr sqlite3 /config/torrentarr.db "ANALYZE;"
 ```
 
 Run after major library changes (1000+ new entries).
@@ -434,10 +434,10 @@ Run after major library changes (1000+ new entries).
 
 ```bash
 # Check database size
-docker exec torrentarr ls -lh /config/qbitrr.db
+docker exec torrentarr ls -lh /config/torrentarr.db
 
 # Check WAL size
-docker exec torrentarr ls -lh /config/qbitrr.db-wal
+docker exec torrentarr ls -lh /config/torrentarr.db-wal
 ```
 
 If database exceeds 500 MB, consider:
@@ -642,7 +642,7 @@ docker logs torrentarr | grep "API request"
 4. **Check database size:**
 
    ```bash
-   docker exec torrentarr ls -lh /config/qbitrr.db
+   docker exec torrentarr ls -lh /config/torrentarr.db
    ```
 
    If > 500 MB, run VACUUM

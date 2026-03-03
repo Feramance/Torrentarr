@@ -20,10 +20,10 @@ This guide helps you migrate from older versions of Torrentarr or similar tools 
 2. **Backup your database:**
    ```bash
    # Native
-   cp ~/config/qbitrr.db ~/config/qbitrr.db.backup
+   cp ~/config/torrentarr.db ~/config/torrentarr.db.backup
 
    # Docker
-   docker cp torrentarr:/config/qbitrr.db qbitrr.db.backup
+   docker cp torrentarr:/config/torrentarr.db torrentarr.db.backup
    ```
 
 3. **Review release notes:**
@@ -55,7 +55,7 @@ This guide helps you migrate from older versions of Torrentarr or similar tools 
 **After (v5.8.0+):**
 ```
 ~/config/   (or ./config/ native, /config/ Docker)
-└── qbitrr.db  (single consolidated database)
+└── torrentarr.db  (single consolidated database)
 ```
 
 #### Automatic Migration Process
@@ -63,8 +63,8 @@ This guide helps you migrate from older versions of Torrentarr or similar tools 
 When you upgrade to v5.8.0+:
 
 1. **New consolidated database is created**
-   - Single `qbitrr.db` file with `ArrInstance` field for data isolation
-   - Location: `config/qbitrr.db` or `/config/qbitrr.db` (Docker)
+   - Single `torrentarr.db` file with `ArrInstance` field for data isolation
+   - Location: `config/torrentarr.db` or `/config/torrentarr.db` (Docker)
 
 2. **Old data is cleaned up** on first startup
    - Records without `ArrInstance` field are automatically removed
@@ -553,7 +553,7 @@ killall torrentarr
 cp ~/config/config.toml.backup ~/config/config.toml
 
 # Restore database
-cp ~/config/qbitrr.db.backup ~/config/qbitrr.db
+cp ~/config/torrentarr.db.backup ~/config/torrentarr.db
 
 # Downgrade Torrentarr
 dotnet tool install -g torrentarr==4.5.0  # Replace with desired version
@@ -572,7 +572,7 @@ docker-compose down torrentarr
 docker cp config.toml.backup torrentarr:/config/config.toml
 
 # Restore database (if needed)
-docker cp qbitrr.db.backup torrentarr:/config/qbitrr.db
+docker cp torrentarr.db.backup torrentarr:/config/torrentarr.db
 
 # Use older image
 docker pull feramance/torrentarr:4.5.0

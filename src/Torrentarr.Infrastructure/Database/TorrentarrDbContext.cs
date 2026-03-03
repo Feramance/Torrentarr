@@ -57,7 +57,7 @@ public class TorrentarrDbContext : DbContext
         {
             // Default connection string (will be overridden by DI)
             var homePath = Environment.GetFolderPath(Environment.SpecialFolder.UserProfile);
-            var dbPath = Path.Combine(homePath, ".config", "torrentarr", "qbitrr.db");
+            var dbPath = Path.Combine(homePath, ".config", "torrentarr", "torrentarr.db");
             optionsBuilder.UseSqlite($"Data Source={dbPath}");
 
             // SQLite-specific options — only when we're setting up the default connection.

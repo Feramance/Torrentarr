@@ -659,7 +659,7 @@ Before enabling auto-update for the first time, backup your configuration:
 cp /config/config.toml /config/config.toml.backup
 
 # Backup database
-cp /config/qbitrr.db /config/qbitrr.db.backup
+cp /config/torrentarr.db /config/torrentarr.db.backup
 ```
 
 ---

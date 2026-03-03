@@ -123,7 +123,7 @@ Torrentarr's Arr views offer:
 
 **Behavior**:
 - First page load triggers full library sync from Radarr API (`/api/v3/movie`)
-- Data stored in `MoviesFilesModel` table (`qbitrr.db`)
+- Data stored in `MoviesFilesModel` table (`torrentarr.db`)
 - Subsequent page loads read from database (instant response)
 - Database refreshes on demand (Refresh button) or periodically
 

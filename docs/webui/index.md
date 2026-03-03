@@ -891,10 +891,10 @@ All responses are JSON:
 
     ```bash
     # Check database size
-    ls -lh ~/config/qbitrr.db
+    ls -lh ~/config/torrentarr.db
 
     # If large, consider VACUUM (stop Torrentarr first)
-    sqlite3 ~/config/qbitrr.db "VACUUM;"
+    sqlite3 ~/config/torrentarr.db "VACUUM;"
     ```
 
 ---

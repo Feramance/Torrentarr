@@ -269,7 +269,7 @@ Configure SQLite database behavior:
 **Key settings:**
 ```toml
 [Settings]
-# Database is qbitrr.db in config directory (path not usually set in TOML)
+# Database is torrentarr.db in config directory (path not usually set in TOML)
 DatabaseBackupEnabled = true
 ```
 
@@ -858,7 +858,7 @@ See: [Performance Troubleshooting](../troubleshooting/performance.md)
 ```bash
 # Backup config and database
 cp ~/config/config.toml ~/config/config.toml.backup
-cp ~/config/qbitrr.db ~/config/qbitrr.db.backup
+cp ~/config/torrentarr.db ~/config/torrentarr.db.backup
 
 # Docker
 docker cp torrentarr:/config/config.toml ./config.toml.backup

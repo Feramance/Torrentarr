@@ -34,7 +34,7 @@ services:
       - /path/to/config:/config
 ```
 
-When `TORRENTARR_CONFIG` is set and starts with `/config`, Torrentarr uses `/config` as the base directory for the database (`qbitrr.db`) and logs. Otherwise it uses `./config` (relative to the current working directory).
+When `TORRENTARR_CONFIG` is set and starts with `/config`, Torrentarr uses `/config` as the base directory for the database (`torrentarr.db`) and logs. Otherwise it uses `./config` (relative to the current working directory).
 
 ---
 

@@ -291,7 +291,7 @@ top -p $(pidof torrentarr)
 
 3. **Vacuum database regularly:**
    ```bash
-   sqlite3 ~/config/qbitrr.db "VACUUM;"
+   sqlite3 ~/config/torrentarr.db "VACUUM;"
    ```
 
 4. **Restart Torrentarr periodically:**
@@ -318,10 +318,10 @@ top -p $(pidof torrentarr)
 3. **Database optimization:**
    ```bash
    # Check database size
-   ls -lh ~/config/qbitrr.db
+   ls -lh ~/config/torrentarr.db
 
    # If > 100MB, vacuum
-   sqlite3 ~/config/qbitrr.db "VACUUM;"
+   sqlite3 ~/config/torrentarr.db "VACUUM;"
    ```
 
 4. **Browser performance:**
@@ -852,12 +852,12 @@ If the database becomes corrupt:
 
 1. **Backup existing database:**
    ```bash
-   cp ~/config/qbitrr.db ~/config/qbitrr.db.backup
+   cp ~/config/torrentarr.db ~/config/torrentarr.db.backup
    ```
 
 2. **Let Torrentarr recreate:**
    ```bash
-   rm ~/config/qbitrr.db
+   rm ~/config/torrentarr.db
    # Restart Torrentarr - it will create a new database
    ```
 
