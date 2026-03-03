@@ -3111,6 +3111,14 @@ function ArrInstanceModal({
           </button>
         </div>
         <div className="modal-body">
+          <div className="summary-section" style={{ marginBottom: "16px" }}>
+            <h3 style={{ margin: "0 0 8px 0", fontSize: "14px", fontWeight: 600 }}>How torrents are handled</h3>
+            <div className="torrent-handling-summary" style={{ marginTop: "8px" }}>
+              <div className="torrent-handling-summary-body markdown-content">
+                <ReactMarkdown>{getArrTorrentHandlingSummary(state as Record<string, unknown>)}</ReactMarkdown>
+              </div>
+            </div>
+          </div>
           <FieldGroup
             title={null}
             fields={generalFields}
@@ -3215,14 +3223,6 @@ function ArrInstanceModal({
             onChange={(path, def, value) => onChange([keyName, ...path], def, value)}
             sectionKey={keyName}
           />
-          <details className="summary-section" style={{ marginTop: "16px" }}>
-            <summary style={{ cursor: "pointer", fontWeight: 600, padding: "8px 0" }}>Torrent Handling Summary</summary>
-            <div className="torrent-handling-summary" style={{ marginTop: "8px" }}>
-              <div className="torrent-handling-summary-body markdown-content">
-                <ReactMarkdown>{getArrTorrentHandlingSummary(state as Record<string, unknown>)}</ReactMarkdown>
-              </div>
-            </div>
-          </details>
         </div>
         <div className="modal-footer">
           <button
@@ -3287,6 +3287,14 @@ function QbitInstanceModal({
           </button>
         </div>
         <div className="modal-body">
+          <div className="summary-section" style={{ marginBottom: "16px" }}>
+            <h3 style={{ margin: "0 0 8px 0", fontSize: "14px", fontWeight: 600 }}>How torrents are handled</h3>
+            <div className="torrent-handling-summary" style={{ marginTop: "8px" }}>
+              <div className="torrent-handling-summary-body markdown-content">
+                <ReactMarkdown>{getQbitTorrentHandlingSummary(state as Record<string, unknown>)}</ReactMarkdown>
+              </div>
+            </div>
+          </div>
           <FieldGroup
             title={null}
             fields={QBIT_FIELDS}
@@ -3306,14 +3314,6 @@ function QbitInstanceModal({
             defaultOpen={false}
             qbitTrackers
           />
-          <details className="summary-section" style={{ marginTop: "16px" }}>
-            <summary style={{ cursor: "pointer", fontWeight: 600, padding: "8px 0" }}>Torrent Handling Summary</summary>
-            <div className="torrent-handling-summary" style={{ marginTop: "8px" }}>
-              <div className="torrent-handling-summary-body markdown-content">
-                <ReactMarkdown>{getQbitTorrentHandlingSummary(state as Record<string, unknown>)}</ReactMarkdown>
-              </div>
-            </div>
-          </details>
           {isDefault && (
             <div className="alert info" style={{ marginTop: '16px' }}>
               This is the default qBittorrent instance (required). To add additional instances, use the "Add Instance" button.
