@@ -1,0 +1,56 @@
+# Auto-fix and commit pre-commit changes when a commit wasn't pre-processed (any branch).
+
+name: Pre-commit auto-fix and commit
+
+on:
+  push:
+    # Any branch; omit branches to run on all
+
+permissions:
+  contents: write
+
+jobs:
+  pre-commit-autofix:
+    runs-on: ubuntu-latest
+    # Skip when this workflow already created the commit (avoid loop)
+    if: |
+      github.event_name != 'push' ||
+      github.event.head_commit.message == null ||
+      !startsWith(github.event.head_commit.message, '[pre-commit] auto fixes')
+    steps:
+    - name: Checkout
+      uses: actions/checkout@v6
+      with:
+        token: ${{ secrets.GITHUB_TOKEN }}
+        fetch-depth: 0
+
+    - name: Set up Python
+      uses: actions/setup-python@v6
+      with:
+        python-version: '3.12'
+
+    - name: Install pre-commit
+      run: pip install pre-commit
+
+    - name: Run pre-commit (autofix)
+      run: pre-commit run --all-files || true
+
+    - name: Check for changes
+      id: changes
+      run: |
+        if [ -n "$(git status --porcelain)" ]; then
+          echo "has_changes=true" >> "$GITHUB_OUTPUT"
+        else
+          echo "has_changes=false" >> "$GITHUB_OUTPUT"
+        fi
+
+    - name: Commit and push fixes
+      if: steps.changes.outputs.has_changes == 'true'
+      run: |
+        git config user.name "github-actions[bot]"
+        git config user.email "github-actions[bot]@users.noreply.github.com"
+        git add -A
+        git commit -m "[pre-commit] auto fixes from pre-commit hooks
+
+for more information, see https://pre-commit.ci"
+        git push

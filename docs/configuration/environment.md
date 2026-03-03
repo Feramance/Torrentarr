@@ -6,8 +6,8 @@ Torrentarr reads the configuration file path from a single environment variable.
 
 ## Config file path: TORRENTARR_CONFIG
 
-**Variable:** `TORRENTARR_CONFIG`  
-**Purpose:** Path to the `config.toml` file (or its directory, depending on deployment).  
+**Variable:** `TORRENTARR_CONFIG`
+**Purpose:** Path to the `config.toml` file (or its directory, depending on deployment).
 **Used by:** All Torrentarr processes (Host, WebUI, Workers).
 
 If set, this overrides the default config file search order. This is the **only** environment variable Torrentarr reads for configuration.
