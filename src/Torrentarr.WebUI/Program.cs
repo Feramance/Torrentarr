@@ -610,16 +610,16 @@ app.MapGet("/web/logs", () =>
 // Log file contents
 app.MapGet("/web/logs/{name}", async (string name, int? lines) =>
 {
-    // Validate that the provided name does not contain directory traversal or separators
-    if (string.IsNullOrWhiteSpace(name) ||
-        name.Contains("..", StringComparison.Ordinal) ||
-        name.Contains(Path.DirectorySeparatorChar) ||
-        name.Contains(Path.AltDirectorySeparatorChar))
+    // Sanitize: only allow the filename component (no directory traversal)
+    var safeName = Path.GetFileName(name);
+
+    // Optional: enforce .log extension to align with listed log files
+    if (!safeName.EndsWith(".log", StringComparison.OrdinalIgnoreCase) || string.IsNullOrWhiteSpace(safeName))
     {
         return Results.BadRequest(new { error = "Invalid log file name" });
     }
 
-    var logFile = Path.Combine(logsPath, name);
+    var logFile = Path.Combine(logsPath, safeName);
     var logsPathFull = Path.GetFullPath(logsPath);
     var logFileFull = Path.GetFullPath(logFile);
 
@@ -641,7 +641,7 @@ app.MapGet("/web/logs/{name}", async (string name, int? lines) =>
 
     return Results.Ok(new
     {
-        name,
+        name = safeName,
         lines = logLines,
         totalLines = content.Split('\n').Length
     });
