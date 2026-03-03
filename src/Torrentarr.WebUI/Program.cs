@@ -610,15 +610,33 @@ app.MapGet("/web/logs", () =>
 // Log file contents
 app.MapGet("/web/logs/{name}", async (string name, int? lines) =>
 {
-    var logFile = Path.Combine(logsPath, name);
+    // Validate that the provided name does not contain directory traversal or separators
+    if (string.IsNullOrWhiteSpace(name) ||
+        name.Contains("..", StringComparison.Ordinal) ||
+        name.Contains(Path.DirectorySeparatorChar) ||
+        name.Contains(Path.AltDirectorySeparatorChar))
+    {
+        return Results.BadRequest(new { error = "Invalid log file name" });
+    }
 
-    if (!File.Exists(logFile))
+    var logFile = Path.Combine(logsPath, name);
+    var logsPathFull = Path.GetFullPath(logsPath);
+    var logFileFull = Path.GetFullPath(logFile);
+
+    // Ensure the resolved path stays within the logs directory
+    if (!logFileFull.StartsWith(logsPathFull + Path.DirectorySeparatorChar, StringComparison.Ordinal) &&
+        !string.Equals(logFileFull, logsPathFull, StringComparison.Ordinal))
+    {
+        return Results.BadRequest(new { error = "Invalid log file path" });
+    }
+
+    if (!File.Exists(logFileFull))
     {
         return Results.NotFound(new { error = "Log file not found" });
     }
 
     var lineCount = lines ?? 100;
-    var content = await File.ReadAllTextAsync(logFile);
+    var content = await File.ReadAllTextAsync(logFileFull);
     var logLines = content.Split('\n').TakeLast(lineCount).ToList();
 
     return Results.Ok(new
