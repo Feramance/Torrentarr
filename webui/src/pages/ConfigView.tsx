@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState, type JSX } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState, type JSX } from "react";
 import { produce } from "immer";
 import equal from "fast-deep-equal";
 import { get, set } from "lodash-es";
@@ -8,6 +8,7 @@ import { useToast } from "../context/ToastContext";
 import { useWebUI } from "../context/WebUIContext";
 import { getTooltip } from "../config/tooltips";
 import { getArrTorrentHandlingSummary, getQbitTorrentHandlingSummary } from "../config/torrentHandlingSummary";
+import { parseDurationDisplay, durationDisplayToValue, parseDurationToSeconds, parseDurationToMinutes, DURATION_UNITS, type DurationDisplay, type DurationUnit } from "../config/durationUtils";
 import { IconImage } from "../components/IconImage";
 import { TagInput } from "../components/TagInput";
 import Select from "react-select";
@@ -20,6 +21,7 @@ import AddIcon from "../icons/plus.svg";
 import SaveIcon from "../icons/check-mark.svg";
 import DeleteIcon from "../icons/trash.svg";
 import CloseIcon from "../icons/close.svg";
+import ReactMarkdown from "react-markdown";
 
 /** Minimal markdown→HTML for torrent handling summary (headings, bold, lists, line breaks). */
 function simpleMarkdown(md: string): string {
@@ -34,7 +36,7 @@ function simpleMarkdown(md: string): string {
     .replace(/\n/g, "<br/>");
 }
 
-type FieldType = "text" | "number" | "checkbox" | "password" | "select" | "tags";
+type FieldType = "text" | "number" | "checkbox" | "password" | "select" | "tags" | "duration";
 
 interface ValidationContext {
   root: ConfigDocument;
@@ -58,6 +60,10 @@ interface FieldDefinition {
   required?: boolean;
   validate?: FieldValidator;
   fullWidth?: boolean;
+  /** For type "duration": store/parse in seconds or minutes */
+  nativeUnit?: "seconds" | "minutes";
+  /** Allow -1 (e.g. disabled) */
+  allowNegative?: boolean;
 }
 
 interface ValidationError {
@@ -222,11 +228,12 @@ const SETTINGS_FIELDS: FieldDefinition[] = [
   {
     label: "No Internet Sleep (s)",
     path: ["Settings", "NoInternetSleepTimer"],
-    type: "number",
+    type: "duration",
+    nativeUnit: "seconds",
     validate: (value) => {
-      const num = typeof value === "number" ? value : Number(value);
-      if (!Number.isFinite(num) || num < 0) {
-        return "No Internet Sleep must be a non-negative number.";
+      const total = parseDurationToSeconds(value, -1);
+      if (total < 0 || !Number.isFinite(total)) {
+        return "No Internet Sleep must be a non-negative duration.";
       }
       return undefined;
     },
@@ -234,11 +241,12 @@ const SETTINGS_FIELDS: FieldDefinition[] = [
   {
     label: "Loop Sleep (s)",
     path: ["Settings", "LoopSleepTimer"],
-    type: "number",
+    type: "duration",
+    nativeUnit: "seconds",
     validate: (value) => {
-      const num = typeof value === "number" ? value : Number(value);
-      if (!Number.isFinite(num) || num < 0) {
-        return "Loop Sleep must be a non-negative number.";
+      const total = parseDurationToSeconds(value, -1);
+      if (total < 0 || !Number.isFinite(total)) {
+        return "Loop Sleep must be a non-negative duration.";
       }
       return undefined;
     },
@@ -246,11 +254,13 @@ const SETTINGS_FIELDS: FieldDefinition[] = [
   {
     label: "Search Loop Delay (s)",
     path: ["Settings", "SearchLoopDelay"],
-    type: "number",
+    type: "duration",
+    nativeUnit: "seconds",
+    allowNegative: true,
     validate: (value) => {
-      const num = typeof value === "number" ? value : Number(value);
-      if (!Number.isFinite(num) || num < 0) {
-        return "Search Loop Delay must be a non-negative number.";
+      const total = parseDurationToSeconds(value, -2);
+      if (total < -1 || !Number.isFinite(total)) {
+        return "Search Loop Delay must be -1 (disabled) or a non-negative duration.";
       }
       return undefined;
     },
@@ -261,11 +271,12 @@ const SETTINGS_FIELDS: FieldDefinition[] = [
   {
     label: "Ignore Torrents Younger Than",
     path: ["Settings", "IgnoreTorrentsYoungerThan"],
-    type: "number",
+    type: "duration",
+    nativeUnit: "seconds",
     validate: (value) => {
-      const num = typeof value === "number" ? value : Number(value);
-      if (!Number.isFinite(num) || num < 0) {
-        return "Ignore Torrents Younger Than must be a non-negative number.";
+      const total = parseDurationToSeconds(value, -1);
+      if (total < 0 || !Number.isFinite(total)) {
+        return "Ignore Torrents Younger Than must be a non-negative duration.";
       }
       return undefined;
     },
@@ -323,10 +334,11 @@ const SETTINGS_FIELDS: FieldDefinition[] = [
   {
     label: "Process Restart Window (s)",
     path: ["Settings", "ProcessRestartWindow"],
-    type: "number",
+    type: "duration",
+    nativeUnit: "seconds",
     validate: (value) => {
-      const num = typeof value === "number" ? value : Number(value);
-      if (!Number.isFinite(num) || num < 1) {
+      const total = parseDurationToSeconds(value, 0);
+      if (!Number.isFinite(total) || total < 1) {
         return "Process Restart Window must be at least 1 second.";
       }
       return undefined;
@@ -335,11 +347,12 @@ const SETTINGS_FIELDS: FieldDefinition[] = [
   {
     label: "Process Restart Delay (s)",
     path: ["Settings", "ProcessRestartDelay"],
-    type: "number",
+    type: "duration",
+    nativeUnit: "seconds",
     validate: (value) => {
-      const num = typeof value === "number" ? value : Number(value);
-      if (!Number.isFinite(num) || num < 0) {
-        return "Process Restart Delay must be a non-negative number.";
+      const total = parseDurationToSeconds(value, -1);
+      if (total < 0 || !Number.isFinite(total)) {
+        return "Process Restart Delay must be a non-negative duration.";
       }
       return undefined;
     },
@@ -438,7 +451,9 @@ const QBIT_FIELDS: FieldDefinition[] = [
   {
     label: "Max Seeding Time (seconds)",
     path: ["CategorySeeding", "MaxSeedingTime"],
-    type: "number",
+    type: "duration",
+    nativeUnit: "seconds",
+    allowNegative: true,
     placeholder: "-1 (disabled), or positive number",
   },
   {
@@ -533,12 +548,13 @@ const QBIT_FIELDS: FieldDefinition[] = [
   {
     label: "Tracker Update Buffer (s)",
     path: ["CategorySeeding", "TrackerUpdateBuffer"],
-    type: "number",
+    type: "duration",
+    nativeUnit: "seconds",
     required: false,
     validate: (value) => {
       if (value === null || value === undefined || value === "") return undefined;
-      const num = typeof value === "number" ? value : Number(value);
-      if (!Number.isFinite(num) || num < 0) {
+      const total = parseDurationToSeconds(value, -1);
+      if (total < 0 || !Number.isFinite(total)) {
         return "Tracker Update Buffer must be 0 or greater.";
       }
       return undefined;
@@ -608,11 +624,12 @@ const ARR_GENERAL_FIELDS: FieldDefinition[] = [
   {
     label: "RSS Sync Timer (min)",
     path: ["RssSyncTimer"],
-    type: "number",
+    type: "duration",
+    nativeUnit: "minutes",
     validate: (value) => {
-      const num = typeof value === "number" ? value : Number(value);
-      if (!Number.isFinite(num) || num < 0) {
-        return "RSS Sync Timer must be a non-negative number.";
+      const total = parseDurationToMinutes(value, -1);
+      if (total < 0 || !Number.isFinite(total)) {
+        return "RSS Sync Timer must be a non-negative duration.";
       }
       return undefined;
     },
@@ -620,11 +637,12 @@ const ARR_GENERAL_FIELDS: FieldDefinition[] = [
   {
     label: "Refresh Downloads Timer (min)",
     path: ["RefreshDownloadsTimer"],
-    type: "number",
+    type: "duration",
+    nativeUnit: "minutes",
     validate: (value) => {
-      const num = typeof value === "number" ? value : Number(value);
-      if (!Number.isFinite(num) || num < 0) {
-        return "Refresh Downloads Timer must be a non-negative number.";
+      const total = parseDurationToMinutes(value, -1);
+      if (total < 0 || !Number.isFinite(total)) {
+        return "Refresh Downloads Timer must be a non-negative duration.";
       }
       return undefined;
     },
@@ -727,7 +745,7 @@ const ARR_ENTRY_SEARCH_FIELDS: FieldDefinition[] = [
     label: "Force Reset Temp Profiles",
     path: ["EntrySearch", "ForceResetTempProfiles"],
     type: "checkbox",
-    description: "Reset all items using temp profiles to their original main profile on qBitrr startup",
+    description: "Reset all items using temp profiles to their original main profile on Torrentarr startup",
   },
   {
     label: "Temp Profile Reset Timeout (Minutes)",
@@ -863,11 +881,12 @@ const ARR_TORRENT_FIELDS: FieldDefinition[] = [
   {
     label: "Ignore Torrents Younger Than (s)",
     path: ["Torrent", "IgnoreTorrentsYoungerThan"],
-    type: "number",
+    type: "duration",
+    nativeUnit: "seconds",
     validate: (value) => {
-      const num = typeof value === "number" ? value : Number(value);
-      if (!Number.isFinite(num) || num < 0) {
-        return "Ignore Torrents Younger Than must be a non-negative number.";
+      const total = parseDurationToSeconds(value, -1);
+      if (total < 0 || !Number.isFinite(total)) {
+        return "Ignore Torrents Younger Than must be a non-negative duration.";
       }
       return undefined;
     },
@@ -875,11 +894,13 @@ const ARR_TORRENT_FIELDS: FieldDefinition[] = [
   {
     label: "Maximum ETA (s)",
     path: ["Torrent", "MaximumETA"],
-    type: "number",
+    type: "duration",
+    nativeUnit: "seconds",
+    allowNegative: true,
     validate: (value) => {
-      const num = typeof value === "number" ? value : Number(value);
-      if (!Number.isFinite(num) || num < -1) {
-        return "Maximum ETA must be -1 or a non-negative number.";
+      const total = parseDurationToSeconds(value, -2);
+      if (total < -1 || !Number.isFinite(total)) {
+        return "Maximum ETA must be -1 or a non-negative duration.";
       }
       return undefined;
     },
@@ -904,11 +925,12 @@ const ARR_TORRENT_FIELDS: FieldDefinition[] = [
   {
     label: "Stalled Delay (min)",
     path: ["Torrent", "StalledDelay"],
-    type: "number",
+    type: "duration",
+    nativeUnit: "minutes",
     validate: (value) => {
-      const num = typeof value === "number" ? value : Number(value);
-      if (!Number.isFinite(num) || num < 0) {
-        return "Stalled Delay must be a non-negative number.";
+      const total = parseDurationToMinutes(value, -1);
+      if (total < 0 || !Number.isFinite(total)) {
+        return "Stalled Delay must be a non-negative duration.";
       }
       return undefined;
     },
@@ -960,10 +982,12 @@ const ARR_SEEDING_FIELDS: FieldDefinition[] = [
   {
     label: "Max Seeding Time (s)",
     path: ["Torrent", "SeedingMode", "MaxSeedingTime"],
-    type: "number",
+    type: "duration",
+    nativeUnit: "seconds",
+    allowNegative: true,
     validate: (value) => {
-      const num = typeof value === "number" ? value : Number(value);
-      if (!Number.isFinite(num) || num < -1) {
+      const total = parseDurationToSeconds(value, -2);
+      if (total < -1 || !Number.isFinite(total)) {
         return "Max Seeding Time must be -1 or greater.";
       }
       return undefined;
@@ -1019,11 +1043,13 @@ const ARR_TRACKER_FIELDS: FieldDefinition[] = [
   {
     label: "Maximum ETA",
     path: ["MaximumETA"],
-    type: "number",
+    type: "duration",
+    nativeUnit: "seconds",
+    allowNegative: true,
     validate: (value) => {
-      const num = typeof value === "number" ? value : Number(value);
-      if (!Number.isFinite(num) || num < -1) {
-        return "Maximum ETA must be -1 or a non-negative number.";
+      const total = parseDurationToSeconds(value, -2);
+      if (total < -1 || !Number.isFinite(total)) {
+        return "Maximum ETA must be -1 or a non-negative duration.";
       }
       return undefined;
     },
@@ -1235,9 +1261,20 @@ function basicValidation(def: FieldDefinition, value: unknown): string | undefin
       }
       return undefined;
     }
-    case "number": {
+    case "number":
+    case "duration": {
       if (value === null || value === undefined || value === "") {
         return isRequired ? `${label} is required.` : undefined;
+      }
+      if (def.type === "duration") {
+        const baseUnit = def.nativeUnit ?? "seconds";
+        const total = baseUnit === "seconds"
+          ? parseDurationToSeconds(value, NaN)
+          : parseDurationToMinutes(value, NaN);
+        if (!Number.isFinite(total) && (value !== -1 || !def.allowNegative)) {
+          return `${label} must be a valid duration.`;
+        }
+        return undefined;
       }
       const num = typeof value === "number" ? value : Number(value);
       if (!Number.isFinite(num)) {
@@ -2475,7 +2512,7 @@ function FieldGroup({
         ? `Enable or disable ${field.label}.`
         : `Set the ${field.label} value.`);
 
-    const isArrInstance = basePath.length > 0 && SERVARR_SECTION_REGEX.test(basePath[0] ?? "");
+    const isArrInstance = (basePath.length > 0 && SERVARR_SECTION_REGEX.test(basePath[0] ?? "")) || (!!sectionName && SERVARR_SECTION_REGEX.test(sectionName));
     const isArrApiKey = isArrInstance && (field.path?.[field.path.length - 1] ?? "") === "APIKey";
     const fieldClassName = field.fullWidth ? "field field--full-width" : "field";
 
@@ -2488,6 +2525,7 @@ function FieldGroup({
           description={description}
           value={String(rawValue ?? '')}
           placeholder={field.placeholder}
+          canView={!isArrApiKey}
           canRefresh={!isArrApiKey}
           onChange={(val) => onChange(path, field, val)}
         />
@@ -2550,6 +2588,23 @@ function FieldGroup({
           />
           {description && <div className="field-description">{description}</div>}
           {isThemeField && <div className="field-hint">Theme changes apply immediately</div>}
+        </div>
+      );
+    }
+    if (field.type === "duration") {
+      const baseUnit = field.nativeUnit ?? "seconds";
+      const allowNeg = field.allowNegative ?? false;
+      return (
+        <div key={key} className={fieldClassName}>
+          <label title={tooltip}>{field.label}</label>
+          <DurationInput
+            value={rawValue}
+            baseUnit={baseUnit}
+            allowNegative={allowNeg}
+            placeholder={field.placeholder}
+            onChange={(v) => onChange(path, field, v)}
+          />
+          {description && <div className="field-description">{description}</div>}
         </div>
       );
     }
@@ -2780,12 +2835,81 @@ function SectionNameField({
   );
 }
 
+interface DurationInputProps {
+  value: unknown;
+  baseUnit: "seconds" | "minutes";
+  allowNegative: boolean;
+  placeholder?: string;
+  onChange: (value: string | number) => void;
+}
+
+function DurationInput({
+  value,
+  baseUnit,
+  allowNegative,
+  placeholder,
+  onChange,
+}: DurationInputProps): JSX.Element {
+  const parsed = useMemo(
+    () => parseDurationDisplay(value, baseUnit, allowNegative ? -1 : 0),
+    [value, baseUnit, allowNegative]
+  );
+  const [number, setNumber] = useState(parsed.number);
+  const [unit, setUnit] = useState(parsed.unit);
+  const lastValueRef = useRef(value);
+
+  useEffect(() => {
+    if (value !== lastValueRef.current) {
+      lastValueRef.current = value;
+      const next = parseDurationDisplay(value, baseUnit, allowNegative ? -1 : 0);
+      setNumber(next.number);
+      setUnit(next.unit);
+    }
+  }, [value, baseUnit, allowNegative]);
+
+  const handleChange = useCallback(
+    (n: number, u: DurationUnit) => {
+      setNumber(n);
+      setUnit(u);
+      const out = durationDisplayToValue(n, u, baseUnit, allowNegative);
+      onChange(out);
+    },
+    [baseUnit, allowNegative, onChange]
+  );
+
+  return (
+    <div className="duration-input">
+      <input
+        type="number"
+        value={number}
+        min={allowNegative ? -1 : 0}
+        step={unit === "s" || unit === "m" ? 1 : 0.01}
+        onChange={(e) => {
+          const v = e.target.value === "" ? (allowNegative ? -1 : 0) : Number(e.target.value);
+          handleChange(v, unit);
+        }}
+        placeholder={placeholder}
+      />
+      <select
+        value={unit}
+        onChange={(e) => handleChange(number, e.target.value as DurationUnit)}
+        aria-label="Duration unit"
+      >
+        {DURATION_UNITS.map(({ value: v, label: l }) => (
+          <option key={v} value={v}>{l}</option>
+        ))}
+      </select>
+    </div>
+  );
+}
+
 interface SecureFieldProps {
   label: string;
   value: string;
   placeholder?: string;
   tooltip?: string;
   description?: string;
+  canView?: boolean;
   canRefresh?: boolean;
   onChange: (value: string) => void;
 }
@@ -2796,6 +2920,7 @@ function SecureField({
   placeholder,
   tooltip,
   description,
+  canView = true,
   canRefresh = true,
   onChange,
 }: SecureFieldProps): JSX.Element {
@@ -2820,9 +2945,11 @@ function SecureField({
           placeholder={placeholder}
           onChange={(event) => onChange(event.target.value)}
         />
-        <button type="button" className="btn ghost" onClick={() => setShowValue(!showValue)}>
-          <IconImage src={VisibilityIcon} />
-        </button>
+        {canView && (
+          <button type="button" className="btn ghost" onClick={() => setShowValue(!showValue)}>
+            <IconImage src={VisibilityIcon} />
+          </button>
+        )}
         {canRefresh && (
           <button type="button" className="btn ghost" onClick={handleRefresh}>
             <IconImage src={RefreshIcon} />
@@ -3090,11 +3217,11 @@ function ArrInstanceModal({
           />
           <details className="summary-section" style={{ marginTop: "16px" }}>
             <summary style={{ cursor: "pointer", fontWeight: 600, padding: "8px 0" }}>Torrent Handling Summary</summary>
-            <div
-              className="markdown-summary"
-              style={{ padding: "12px", background: "var(--bg-secondary, #f5f5f5)", borderRadius: "6px", marginTop: "8px", whiteSpace: "pre-wrap", lineHeight: 1.6 }}
-              dangerouslySetInnerHTML={{ __html: simpleMarkdown(getArrTorrentHandlingSummary(state as Record<string, unknown>)) }}
-            />
+            <div className="torrent-handling-summary" style={{ marginTop: "8px" }}>
+              <div className="torrent-handling-summary-body markdown-content">
+                <ReactMarkdown>{getArrTorrentHandlingSummary(state as Record<string, unknown>)}</ReactMarkdown>
+              </div>
+            </div>
           </details>
         </div>
         <div className="modal-footer">
@@ -3181,11 +3308,11 @@ function QbitInstanceModal({
           />
           <details className="summary-section" style={{ marginTop: "16px" }}>
             <summary style={{ cursor: "pointer", fontWeight: 600, padding: "8px 0" }}>Torrent Handling Summary</summary>
-            <div
-              className="markdown-summary"
-              style={{ padding: "12px", background: "var(--bg-secondary, #f5f5f5)", borderRadius: "6px", marginTop: "8px", whiteSpace: "pre-wrap", lineHeight: 1.6 }}
-              dangerouslySetInnerHTML={{ __html: simpleMarkdown(getQbitTorrentHandlingSummary(state as Record<string, unknown>)) }}
-            />
+            <div className="torrent-handling-summary" style={{ marginTop: "8px" }}>
+              <div className="torrent-handling-summary-body markdown-content">
+                <ReactMarkdown>{getQbitTorrentHandlingSummary(state as Record<string, unknown>)}</ReactMarkdown>
+              </div>
+            </div>
           </details>
           {isDefault && (
             <div className="alert info" style={{ marginTop: '16px' }}>

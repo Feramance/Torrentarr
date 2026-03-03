@@ -32,10 +32,10 @@
       "type": "image/png"
     }
   ],
-  "name": "qBitrr",
+  "name": "Torrentarr",
   "orientation": "any",
   "screenshots": [],
-  "short_name": "qBitrr",
+  "short_name": "Torrentarr",
   "start_url": "/",
   "theme_color": "#7aa2f7"
 }

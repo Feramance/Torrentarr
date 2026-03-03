@@ -1,6 +1,6 @@
 export const FIELD_TOOLTIPS: Record<string, string> = {
   "Settings.ConfigVersion":
-    "Internal schema version managed automatically by qBitrr for config migrations. DO NOT manually modify this value.",
+    "Internal schema version managed automatically by Torrentarr for config migrations. DO NOT manually modify this value.",
   "Settings.ConsoleLevel":
     "Level of logging; choose between CRITICAL, ERROR, WARNING, NOTICE, INFO, DEBUG, TRACE.",
   "Settings.Logging": "Enable writing log output to files.",
@@ -28,7 +28,7 @@ export const FIELD_TOOLTIPS: Record<string, string> = {
   "Settings.FFprobeAutoUpdate":
     "Download and update the bundled ffprobe binary automatically.",
   "Settings.AutoUpdateEnabled":
-    "Enable the background worker that periodically checks for qBitrr updates.",
+    "Enable the background worker that periodically checks for Torrentarr updates.",
   "Settings.AutoUpdateCron":
     "Cron expression describing when to check for updates (default weekly Sunday at 03:00).",
   "Settings.AutoRestartProcesses":
@@ -48,11 +48,13 @@ export const FIELD_TOOLTIPS: Record<string, string> = {
    "WebUI.GroupSonarr": "Group Sonarr views by series and seasons in collapsible sections.",
    "WebUI.GroupLidarr": "Group Lidarr views by artist and albums in collapsible sections.",
    "WebUI.Theme": "Choose the visual theme for the WebUI (light or dark).",
+  "WebUI.ViewDensity":
+    "View density for lists in the WebUI: Comfortable (more spacing) or Compact (more rows on screen).",
 
   "qBit.Trackers":
     "Tracker configs shared by all Arr instances on this qBit instance. Define tracker-specific rate limits, HnR protection, and management rules here. Arr instances inherit these and can optionally override per-tracker settings.",
   "qBit.Disabled":
-    "Disable qBitrr's direct qBittorrent integration (headless mode for search-only setups).",
+    "Disable Torrentarr's direct qBittorrent integration (headless mode for search-only setups).",
   "qBit.Host": "qBittorrent WebUI host or IP address.",
   "qBit.Port": "qBittorrent WebUI port.",
   "qBit.UserName": "qBittorrent WebUI username.",
@@ -67,13 +69,13 @@ export const FIELD_TOOLTIPS: Record<string, string> = {
   "Password":
     "qBittorrent WebUI password. Remove this if authentication is bypassed for the host.",
 
-  "ARR.Managed": "Toggle whether this Servarr instance is actively managed by qBitrr.",
+  "ARR.Managed": "Toggle whether this Servarr instance is actively managed by Torrentarr.",
   "ARR.URI":
     "Servarr URL, including protocol and port if needed (for example http://localhost:8989).",
   "ARR.APIKey": "Servarr API key from Settings > General > Security.",
   "ARR.Category":
     "qBittorrent category applied by the Servarr instance to its downloads.",
-  "ARR.ReSearch": "Re-run searches for failed torrents that qBitrr removes.",
+  "ARR.ReSearch": "Re-run searches for failed torrents that Torrentarr removes.",
   "ARR.importMode":
     "Preferred import mode (Move, Copy, or Auto) when Servarr grabs completed files.",
   "ARR.RssSyncTimer":
@@ -93,7 +95,7 @@ export const FIELD_TOOLTIPS: Record<string, string> = {
   "EntrySearch.SearchInReverse":
     "Reverse search order (search oldest to newest instead of newest to oldest).",
   "EntrySearch.SearchRequestsEvery":
-    "Delay, in seconds, between checking for new Overseerr/Ombi requests. After processing all pending requests, qBitrr waits this long before checking again. Default: 300 seconds (5 minutes).",
+    "Delay, in seconds, between checking for new Overseerr/Ombi requests. After processing all pending requests, Torrentarr waits this long before checking again. Default: 300 seconds (5 minutes).",
   "EntrySearch.DoUpgradeSearch":
     "Search for improved releases even if a file already exists.",
   "EntrySearch.QualityUnmetSearch":

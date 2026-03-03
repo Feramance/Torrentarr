@@ -1,8 +1,8 @@
-// qBitrr Service Worker
+// Torrentarr Service Worker
 // Update cache version on every deployment to force refresh
 const CACHE_VERSION = Date.now();
-const CACHE_NAME = `qbitrr-v${CACHE_VERSION}`;
-const RUNTIME_CACHE = `qbitrr-runtime-v${CACHE_VERSION}`;
+const CACHE_NAME = `torrentarr-v${CACHE_VERSION}`;
+const RUNTIME_CACHE = `torrentarr-runtime-v${CACHE_VERSION}`;
 
 // Assets to cache on install
 // Keep this empty to avoid installation failures in various deployment scenarios

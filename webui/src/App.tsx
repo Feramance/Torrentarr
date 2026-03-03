@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef, useState, type JSX, lazy, Suspense } from "react";
+import React, { useCallback, useEffect, useMemo, useRef, useState, type JSX, lazy, Suspense } from "react";
 const ProcessesView = lazy(() => import("./pages/ProcessesView").then(module => ({ default: module.ProcessesView })));
 const LogsView = lazy(() => import("./pages/LogsView").then(module => ({ default: module.LogsView })));
 const ArrView = lazy(() => import("./pages/ArrView").then(module => ({ default: module.ArrView })));
@@ -27,6 +27,38 @@ import ConfigIcon from "./icons/gear.svg";
 import LogoIcon from "./icons/logov2-clean.svg";
 
 type Tab = "processes" | "logs" | "radarr" | "sonarr" | "lidarr" | "qbittorrent" | "config";
+
+class ErrorBoundary extends React.Component<
+  { children: React.ReactNode },
+  { hasError: boolean; error: Error | null }
+> {
+  constructor(props: { children: React.ReactNode }) {
+    super(props);
+    this.state = { hasError: false, error: null };
+  }
+
+  static getDerivedStateFromError(error: Error) {
+    return { hasError: true, error };
+  }
+
+  render() {
+    if (this.state.hasError) {
+      return (
+        <div style={{ padding: "2rem", textAlign: "center" }}>
+          <h2>Something went wrong</h2>
+          <p style={{ color: "#888" }}>{this.state.error?.message}</p>
+          <button
+            onClick={() => window.location.reload()}
+            style={{ marginTop: "1rem", padding: "0.5rem 1rem", cursor: "pointer" }}
+          >
+            Reload Page
+          </button>
+        </div>
+      );
+    }
+    return this.props.children;
+  }
+}
 
 interface NavTab {
   id: Tab;
@@ -71,7 +103,7 @@ function WelcomeModal({
       >
         <div className="modal-header">
           <h2 id="welcome-title">
-            🎉 Welcome to qBitrr {formatVersionLabel(currentVersion)}!
+            🎉 Welcome to Torrentarr {formatVersionLabel(currentVersion)}!
           </h2>
         </div>
         <div className="modal-body changelog-modal__body">
@@ -83,9 +115,11 @@ function WelcomeModal({
           </div>
           <div className="changelog-section">
             <h3>Release Notes</h3>
-            <pre className="changelog-body">
-              {changelog?.trim() ? changelog.trim() : "No changelog available for this version."}
-            </pre>
+            <div className="changelog-body markdown-content">
+              <ReactMarkdown>
+                {changelog?.trim() ? changelog.trim() : "No changelog available for this version."}
+              </ReactMarkdown>
+            </div>
           </div>
         </div>
         <div className="modal-footer">
@@ -105,6 +139,77 @@ function WelcomeModal({
           <div className="changelog-buttons">
             <button className="btn primary" type="button" onClick={onClose}>
               Got it!
+            </button>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+interface AlreadyUpToDateModalProps {
+  currentVersion: string;
+  changelog: string | null;
+  changelogUrl: string | null;
+  repositoryUrl: string;
+  onClose: () => void;
+}
+
+function AlreadyUpToDateModal({
+  currentVersion,
+  changelog,
+  changelogUrl,
+  repositoryUrl,
+  onClose,
+}: AlreadyUpToDateModalProps): JSX.Element {
+  return (
+    <div className="modal-backdrop" role="presentation" onClick={onClose}>
+      <div
+        className="modal"
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="already-up-to-date-title"
+        onClick={(event) => event.stopPropagation()}
+      >
+        <div className="modal-header">
+          <h2 id="already-up-to-date-title">You're on the latest version</h2>
+          <button className="btn ghost" type="button" onClick={onClose}>
+            <IconImage src={CloseIcon} />
+            Close
+          </button>
+        </div>
+        <div className="modal-body changelog-modal__body">
+          <div className="changelog-meta">
+            <p style={{ marginBottom: "1rem", color: "var(--text-secondary)" }}>
+              Current version: <strong>{formatVersionLabel(currentVersion)}</strong>
+            </p>
+          </div>
+          {changelog?.trim() ? (
+            <div className="changelog-section">
+              <h3>Release Notes</h3>
+              <div className="changelog-body markdown-content">
+                <ReactMarkdown>{changelog.trim()}</ReactMarkdown>
+              </div>
+            </div>
+          ) : null}
+        </div>
+        <div className="modal-footer">
+          <div className="changelog-links">
+            {(changelogUrl || repositoryUrl) && (
+              <a
+                className="btn ghost small"
+                href={changelogUrl ?? repositoryUrl}
+                target="_blank"
+                rel="noreferrer"
+              >
+                <IconImage src={ExternalIcon} />
+                View on GitHub
+              </a>
+            )}
+          </div>
+          <div className="changelog-buttons">
+            <button className="btn primary" type="button" onClick={onClose}>
+              Got it
             </button>
           </div>
         </div>
@@ -336,6 +441,7 @@ function AppShell(): JSX.Element {
   const backendTimerRef = useRef<number | null>(null);
   const [reloadKey, setReloadKey] = useState(0);
   const [showWelcomeChangelog, setShowWelcomeChangelog] = useState(false);
+  const [showAlreadyUpToDateModal, setShowAlreadyUpToDateModal] = useState(false);
 
   // Theme is now managed by WebUIContext and applied automatically
 
@@ -357,7 +463,7 @@ function AppShell(): JSX.Element {
   }, []);
 
   const refreshMeta = useCallback(
-    async (options?: { force?: boolean; silent?: boolean }) => {
+    async (options?: { force?: boolean; silent?: boolean }): Promise<MetaResponse | undefined> => {
       const force = options?.force ?? false;
       const silent = options?.silent ?? !force;
       if (!silent) {
@@ -366,12 +472,14 @@ function AppShell(): JSX.Element {
       try {
         const data = await getMeta({ force });
         setMeta(data);
+        return data;
       } catch (error) {
         if (!silent) {
           const message =
             error instanceof Error ? error.message : "Failed to fetch version information";
           push(message, "error");
         }
+        return undefined;
       } finally {
         if (!silent) {
           setMetaLoading(false);
@@ -579,7 +687,7 @@ function AppShell(): JSX.Element {
         if (status.ready === false && attempts >= 3 && !backendWarnedRef.current) {
           backendWarnedRef.current = true;
           push(
-            "qBitrr backend is still initialising. Check the logs if this persists.",
+            "Torrentarr backend is still initialising. Check the logs if this persists.",
             "warning"
           );
         }
@@ -588,7 +696,7 @@ function AppShell(): JSX.Element {
           backendWarnedRef.current = true;
           const detail = error instanceof Error ? error.message : "Unknown backend error";
           push(
-            `Unable to confirm qBitrr readiness (${detail}). Please inspect the logs.`,
+            `Unable to confirm Torrentarr readiness (${detail}). Please inspect the logs.`,
             "warning"
           );
         }
@@ -624,7 +732,7 @@ function AppShell(): JSX.Element {
     []
   );
 
-  const repositoryUrl = meta?.repository_url ?? "https://github.com/Feramance/qBitrr";
+  const repositoryUrl = meta?.repository_url ?? "https://github.com/Feramance/Torrentarr";
   const displayVersion = meta?.current_version
     ? formatVersionLabel(meta.current_version)
     : "...";
@@ -650,9 +758,20 @@ function AppShell(): JSX.Element {
     }
   }, [tabs, activeTab]);
 
-  const handleCheckUpdates = useCallback(() => {
-    void refreshMeta({ force: true });
+  const handleCheckUpdates = useCallback(async () => {
+    const data = await refreshMeta({ force: true });
+    if (data) {
+      if (data.update_available) {
+        setShowChangelog(true);
+      } else {
+        setShowAlreadyUpToDateModal(true);
+      }
+    }
   }, [refreshMeta]);
+
+  const handleCloseAlreadyUpToDateModal = useCallback(() => {
+    setShowAlreadyUpToDateModal(false);
+  }, []);
 
   const handleOpenChangelog = useCallback(() => {
     setShowChangelog(true);
@@ -759,7 +878,7 @@ function AppShell(): JSX.Element {
               GitHub
             </a>
             <a
-              href="https://feramance.github.io/qBitrr/"
+              href="https://github.com/Feramance/Torrentarr"
               target="_blank"
               rel="noreferrer"
               className="btn small ghost"
@@ -834,6 +953,15 @@ function AppShell(): JSX.Element {
           onClose={handleCloseWelcomeChangelog}
         />
       ) : null}
+      {showAlreadyUpToDateModal && meta ? (
+        <AlreadyUpToDateModal
+          currentVersion={meta.current_version}
+          changelog={meta.current_version_changelog || meta.changelog}
+          changelogUrl={changelogUrl}
+          repositoryUrl={repositoryUrl}
+          onClose={handleCloseAlreadyUpToDateModal}
+        />
+      ) : null}
     </div>
   );
 }
@@ -841,12 +969,14 @@ function AppShell(): JSX.Element {
 export default function App(): JSX.Element {
   return (
     <ToastProvider>
-      <SearchProvider>
-        <WebUIProvider>
-          <AppShell />
-          <ToastViewport />
-        </WebUIProvider>
-      </SearchProvider>
+      <ErrorBoundary>
+        <SearchProvider>
+          <WebUIProvider>
+            <AppShell />
+            <ToastViewport />
+          </WebUIProvider>
+        </SearchProvider>
+      </ErrorBoundary>
     </ToastProvider>
   );
 }

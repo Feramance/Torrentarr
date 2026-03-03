@@ -32,14 +32,14 @@ export function TagInput({ value, onChange, placeholder, disabled }: TagInputPro
   return (
     <div className="tag-input-container">
       <div className="tag-input-wrapper">
-        {value.map((tag, index) => (
-          <span key={index} className="tag">
+        {value.map((tag) => (
+          <span key={tag} className="tag">
             {tag}
             {!disabled && (
               <button
                 type="button"
                 className="tag-remove"
-                onClick={() => handleRemove(index)}
+                onClick={() => handleRemove(value.indexOf(tag))}
                 aria-label={`Remove ${tag}`}
               >
                 <img src={CloseIcon} alt="Remove" />
