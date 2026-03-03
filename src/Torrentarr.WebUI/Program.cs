@@ -610,7 +610,24 @@ app.MapGet("/web/logs", () =>
 // Log file contents
 app.MapGet("/web/logs/{name}", async (string name, int? lines) =>
 {
-    var logFile = Path.Combine(logsPath, name);
+    // Sanitize: only allow the filename component (no directory traversal)
+    var safeName = Path.GetFileName(name);
+
+    // Optional: enforce .log extension to align with listed log files
+    if (!safeName.EndsWith(".log", StringComparison.OrdinalIgnoreCase) || string.IsNullOrWhiteSpace(safeName))
+    {
+        return Results.BadRequest(new { error = "Invalid log file name" });
+    }
+
+    var basePath = Path.GetFullPath(logsPath);
+    var logFile = Path.GetFullPath(Path.Combine(basePath, safeName));
+
+    // Ensure the resolved path stays within the logs directory
+    if (!logFile.StartsWith(basePath + Path.DirectorySeparatorChar, StringComparison.OrdinalIgnoreCase)
+        && !string.Equals(logFile, basePath, StringComparison.OrdinalIgnoreCase))
+    {
+        return Results.BadRequest(new { error = "Invalid log file path" });
+    }
 
     if (!File.Exists(logFile))
     {
@@ -623,7 +640,7 @@ app.MapGet("/web/logs/{name}", async (string name, int? lines) =>
 
     return Results.Ok(new
     {
-        name,
+        name = safeName,
         lines = logLines,
         totalLines = content.Split('\n').Length
     });
