@@ -88,7 +88,7 @@ public class TorrentarrConfigDefaultsTests
     {
         var categorySeeding = new CategorySeedingConfig();
 
-        categorySeeding.HitAndRunMode.Should().BeFalse();
+        categorySeeding.HitAndRunMode.Should().Be("disabled");
         categorySeeding.MinSeedRatio.Should().Be(1.0);
         categorySeeding.MinSeedingTimeDays.Should().Be(0);
         categorySeeding.HitAndRunMinimumDownloadPercent.Should().Be(10);
@@ -101,7 +101,7 @@ public class TorrentarrConfigDefaultsTests
     {
         var tracker = new TrackerConfig();
 
-        tracker.HitAndRunMode.Should().BeNull();
+        tracker.HitAndRunMode.Should().BeNull(); // string? defaults to null
         tracker.MinSeedRatio.Should().BeNull();
         tracker.MinSeedingTimeDays.Should().BeNull();
         tracker.HitAndRunMinimumDownloadPercent.Should().BeNull();
@@ -114,7 +114,7 @@ public class TorrentarrConfigDefaultsTests
     {
         var tracker = new TrackerConfig
         {
-            HitAndRunMode = true,
+            HitAndRunMode = "and",
             MinSeedRatio = 1.5,
             MinSeedingTimeDays = 3,
             HitAndRunMinimumDownloadPercent = 15,
@@ -122,7 +122,7 @@ public class TorrentarrConfigDefaultsTests
             TrackerUpdateBuffer = 300
         };
 
-        tracker.HitAndRunMode.Should().BeTrue();
+        tracker.HitAndRunMode.Should().Be("and");
         tracker.MinSeedRatio.Should().Be(1.5);
         tracker.MinSeedingTimeDays.Should().Be(3);
         tracker.HitAndRunMinimumDownloadPercent.Should().Be(15);

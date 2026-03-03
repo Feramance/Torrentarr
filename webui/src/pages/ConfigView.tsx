@@ -7,6 +7,7 @@ import type { ConfigDocument } from "../api/types";
 import { useToast } from "../context/ToastContext";
 import { useWebUI } from "../context/WebUIContext";
 import { getTooltip } from "../config/tooltips";
+import { getArrTorrentHandlingSummary, getQbitTorrentHandlingSummary } from "../config/torrentHandlingSummary";
 import { IconImage } from "../components/IconImage";
 import { TagInput } from "../components/TagInput";
 import Select from "react-select";
@@ -19,6 +20,19 @@ import AddIcon from "../icons/plus.svg";
 import SaveIcon from "../icons/check-mark.svg";
 import DeleteIcon from "../icons/trash.svg";
 import CloseIcon from "../icons/close.svg";
+
+/** Minimal markdown→HTML for torrent handling summary (headings, bold, lists, line breaks). */
+function simpleMarkdown(md: string): string {
+  return md
+    .replace(/### (.+)/g, "<h4>$1</h4>")
+    .replace(/\*\*(.+?)\*\*/g, "<strong>$1</strong>")
+    .replace(/\u2014/g, "&mdash;")
+    .replace(/^- (.+)$/gm, "<li>$1</li>")
+    .replace(/(<li>.*<\/li>)/gs, "<ul>$1</ul>")
+    .replace(/<\/ul>\s*<ul>/g, "")
+    .replace(/\n\n/g, "<br/><br/>")
+    .replace(/\n/g, "<br/>");
+}
 
 type FieldType = "text" | "number" | "checkbox" | "password" | "select" | "tags";
 
@@ -53,6 +67,8 @@ interface ValidationError {
 
 const SERVARR_SECTION_REGEX = /(rad|son|lid)arr/i;
 const QBIT_SECTION_REGEX = /^qBit(-.*)?$/i;
+/** Matches backend REDACTED_PLACEHOLDER; when API key equals this, test uses instanceKey. */
+const REDACTED_PLACEHOLDER = "[redacted]";
 
 // Helper function for react-select theme-aware styles
 const getSelectStyles = () => {
@@ -455,7 +471,8 @@ const QBIT_FIELDS: FieldDefinition[] = [
   {
     label: "Hit and Run Mode",
     path: ["CategorySeeding", "HitAndRunMode"],
-    type: "checkbox",
+    type: "select",
+    options: ["disabled", "and", "or"],
   },
   {
     label: "Min Seed Ratio",
@@ -1076,7 +1093,8 @@ const ARR_TRACKER_FIELDS: FieldDefinition[] = [
   {
     label: "Hit and Run Mode",
     path: ["HitAndRunMode"],
-    type: "checkbox",
+    type: "select",
+    options: ["disabled", "and", "or"],
   },
   {
     label: "Min Seed Ratio",
@@ -2874,6 +2892,7 @@ function ArrInstanceModal({
   const handleTestConnection = async (silent = false) => {
     const uri = getValue(["URI"]) as string;
     const apiKey = getValue(["APIKey"]) as string;
+    const isApiKeyRedacted = (apiKey ?? "").trim() === REDACTED_PLACEHOLDER;
 
     // Determine Arr type from keyName
     const keyLower = keyName.toLowerCase();
@@ -2883,7 +2902,7 @@ function ArrInstanceModal({
         ? "sonarr"
         : "lidarr";
 
-    if (!uri || !apiKey) {
+    if (!isApiKeyRedacted && (!uri || !apiKey)) {
       if (!silent) {
         push("Please configure URI and API Key first", "error");
       }
@@ -2893,7 +2912,11 @@ function ArrInstanceModal({
     setTestState({ testing: true, result: null });
 
     try {
-      const result = await testArrConnection({ arrType, uri, apiKey });
+      const result = await testArrConnection(
+        isApiKeyRedacted
+          ? { arrType, instanceKey: keyName }
+          : { arrType, uri: uri ?? "", apiKey: apiKey ?? "" }
+      );
       setTestState({ testing: false, result });
 
       if (result.success) {
@@ -3062,6 +3085,14 @@ function ArrInstanceModal({
             onChange={(path, def, value) => onChange([keyName, ...path], def, value)}
             sectionKey={keyName}
           />
+          <details className="summary-section" style={{ marginTop: "16px" }}>
+            <summary style={{ cursor: "pointer", fontWeight: 600, padding: "8px 0" }}>Torrent Handling Summary</summary>
+            <div
+              className="markdown-summary"
+              style={{ padding: "12px", background: "var(--bg-secondary, #f5f5f5)", borderRadius: "6px", marginTop: "8px", whiteSpace: "pre-wrap", lineHeight: 1.6 }}
+              dangerouslySetInnerHTML={{ __html: simpleMarkdown(getArrTorrentHandlingSummary(state as Record<string, unknown>)) }}
+            />
+          </details>
         </div>
         <div className="modal-footer">
           <button
@@ -3145,6 +3176,14 @@ function QbitInstanceModal({
             defaultOpen={false}
             qbitTrackers
           />
+          <details className="summary-section" style={{ marginTop: "16px" }}>
+            <summary style={{ cursor: "pointer", fontWeight: 600, padding: "8px 0" }}>Torrent Handling Summary</summary>
+            <div
+              className="markdown-summary"
+              style={{ padding: "12px", background: "var(--bg-secondary, #f5f5f5)", borderRadius: "6px", marginTop: "8px", whiteSpace: "pre-wrap", lineHeight: 1.6 }}
+              dangerouslySetInnerHTML={{ __html: simpleMarkdown(getQbitTorrentHandlingSummary(state as Record<string, unknown>)) }}
+            />
+          </details>
           {isDefault && (
             <div className="alert info" style={{ marginTop: '16px' }}>
               This is the default qBittorrent instance (required). To add additional instances, use the "Add Instance" button.

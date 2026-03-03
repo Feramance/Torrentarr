@@ -466,6 +466,10 @@ app.MapPost("/web/config", async (HttpContext ctx, TorrentarrConfig config, Conf
 
         foreach (var (key, value) in changes)
         {
+            // Reject protected keys (qBitrr parity)
+            if (string.Equals(key, "Settings.ConfigVersion", StringComparison.OrdinalIgnoreCase))
+                return Results.Json(new { error = "Cannot modify protected configuration key: Settings.ConfigVersion" }, statusCode: 403);
+
             // Convert dot-path "Section.SubKey" to JToken path "section.subKey"
             // Apply each change via JToken pointer navigation
             ApplyDotPathChange(configObj, key, value);
@@ -836,31 +840,103 @@ app.MapPost("/web/arr/{category}/restart", (string category) =>
     return Results.Ok(new { status = "ok", restarted = new[] { category } });
 });
 
-// Test Arr connection and return quality profiles
-app.MapPost("/web/arr/test-connection", async (HttpContext ctx) =>
+// Test Arr connection and return quality profiles + system info
+app.MapPost("/web/arr/test-connection", async (HttpContext ctx, TorrentarrConfig config) =>
 {
     try
     {
         var body = await ctx.Request.ReadFromJsonAsync<ArrTestConnectionRequest>();
         if (body == null)
-            return Results.BadRequest(new { success = false, error = "Invalid request body" });
+            return Results.BadRequest(new { success = false, message = "Invalid request body" });
 
-        var profiles = body.ArrType?.ToLowerInvariant() switch
+        var uri = body.Uri;
+        var apiKey = body.ApiKey;
+
+        // When instanceKey is provided, load URI and APIKey from config (e.g. when API key is redacted in UI)
+        if (!string.IsNullOrEmpty(body.InstanceKey))
         {
-            "radarr" => (await new RadarrClient(body.Uri, body.ApiKey).GetQualityProfilesAsync())
-                            .Select(p => new { p.Id, p.Name }).Cast<object>().ToList(),
-            "sonarr" => (await new SonarrClient(body.Uri, body.ApiKey).GetQualityProfilesAsync())
-                            .Select(p => new { p.Id, p.Name }).Cast<object>().ToList(),
-            "lidarr" => (await new LidarrClient(body.Uri, body.ApiKey).GetQualityProfilesAsync())
-                            .Select(p => new { p.Id, p.Name }).Cast<object>().ToList(),
-            _ => new List<object>()
-        };
+            if (string.IsNullOrEmpty(body.ArrType))
+                return Results.BadRequest(new { success = false, message = "Missing required field: arrType" });
 
-        return Results.Ok(new { success = true, profiles });
+            if (!config.ArrInstances.TryGetValue(body.InstanceKey, out var arrCfg))
+                return Results.Ok(new { success = false, message = "Instance not found or missing URI/APIKey in config" });
+
+            uri = arrCfg.URI;
+            apiKey = arrCfg.APIKey;
+        }
+
+        if (string.IsNullOrEmpty(body.ArrType) || string.IsNullOrEmpty(uri) || string.IsNullOrEmpty(apiKey))
+            return Results.Ok(new { success = false, message = "Missing required fields: arrType, uri, or apiKey" });
+
+        SystemInfo? systemInfo;
+        var profiles = new List<QualityProfile>();
+        var arrType = body.ArrType.ToLowerInvariant();
+
+        Func<Task<SystemInfo>> getSystemInfo;
+        Func<Task<List<QualityProfile>>> getProfiles;
+
+        switch (arrType)
+        {
+            case "radarr":
+                var radarr = new RadarrClient(uri, apiKey);
+                getSystemInfo = () => radarr.GetSystemInfoAsync();
+                getProfiles = () => radarr.GetQualityProfilesAsync();
+                break;
+            case "sonarr":
+                var sonarr = new SonarrClient(uri, apiKey);
+                getSystemInfo = () => sonarr.GetSystemInfoAsync();
+                getProfiles = () => sonarr.GetQualityProfilesAsync();
+                break;
+            case "lidarr":
+                var lidarr = new LidarrClient(uri, apiKey);
+                getSystemInfo = () => lidarr.GetSystemInfoAsync();
+                getProfiles = () => lidarr.GetQualityProfilesAsync();
+                break;
+            default:
+                return Results.Ok(new { success = false, message = $"Invalid arrType: {body.ArrType}" });
+        }
+
+        systemInfo = await getSystemInfo();
+
+        // Retry logic for quality profile fetching
+        const int maxRetries = 3;
+        for (int attempt = 1; attempt <= maxRetries; attempt++)
+        {
+            try
+            {
+                profiles = await getProfiles();
+                break;
+            }
+            catch (Exception) when (attempt < maxRetries)
+            {
+                await Task.Delay(1000);
+            }
+        }
+
+        return Results.Ok(new
+        {
+            success = true,
+            message = $"Connected to {body.ArrType} {systemInfo.Version}",
+            systemInfo = new { version = systemInfo.Version ?? "unknown", branch = (string?)null },
+            qualityProfiles = profiles.Select(p => new { id = p.Id, name = p.Name })
+        });
     }
     catch (Exception ex)
     {
-        return Results.Ok(new { success = false, error = ex.Message });
+        // Return 200 with success: false so frontend doesn't treat Arr errors as auth failure
+        var errorMsg = ex.Message;
+        string message;
+        if (errorMsg.Contains("401") || errorMsg.Contains("Unauthorized", StringComparison.OrdinalIgnoreCase))
+            message = "Unauthorized: Invalid API key";
+        else if (errorMsg.Contains("404"))
+            message = $"Not found: Check URI";
+        else if (errorMsg.Contains("Connection refused", StringComparison.OrdinalIgnoreCase) ||
+                 errorMsg.Contains("No connection could be made", StringComparison.OrdinalIgnoreCase))
+            message = "Connection refused: Cannot reach server";
+        else
+            message = "Connection test failed";
+
+        return Results.Ok(new { success = false, message });
     }
 });
 
@@ -1072,5 +1148,5 @@ Log.Information("Torrentarr WebUI starting on {Host}:{Port}",
 app.Run();
 
 public record LogLevelRequest(string Level);
-public record ArrTestConnectionRequest(string ArrType, string Uri, string ApiKey);
+public record ArrTestConnectionRequest(string ArrType, string? Uri, string? ApiKey, string? InstanceKey = null);
 public record ArrRebuildRequest(string ArrInstanceName);

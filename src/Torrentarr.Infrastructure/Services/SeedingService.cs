@@ -230,7 +230,7 @@ public class SeedingService : ISeedingService
             var trackerConfig = await GetTrackerConfigAsync(torrent, cancellationToken);
             var hnrConfig = trackerConfig != null ? ConvertToCategorySeeding(trackerConfig) : GetSeedingConfig(torrent);
 
-            if (hnrConfig.HitAndRunMode != true)
+            if (!IsHnREnabled(hnrConfig.HitAndRunMode))
             {
                 return false;
             }
@@ -372,7 +372,8 @@ public class SeedingService : ISeedingService
     /// </summary>
     public async Task<bool> IsHnRSafeToRemoveAsync(TorrentInfo torrent, TrackerConfig config, CancellationToken cancellationToken = default)
     {
-        if (config.HitAndRunMode != true)
+        var clearMode = (config.HitAndRunMode ?? "disabled").Trim().ToLowerInvariant();
+        if (clearMode == "disabled")
         {
             return true;
         }
@@ -388,7 +389,7 @@ public class SeedingService : ISeedingService
         var isPartial = progress < 1.0 && progress >= minDownloadPercent;
         var effectiveSeedingTime = torrent.SeedingTime - bufferSeconds;
 
-        // Negligible download (<10% progress), no HnR obligation
+        // Negligible download (<threshold% progress), no HnR obligation
         if (progress < minDownloadPercent)
         {
             return true;
@@ -403,18 +404,19 @@ public class SeedingService : ISeedingService
         var ratioMet = minRatio > 0 && torrent.Ratio >= minRatio;
         var timeMet = minTimeSeconds > 0 && effectiveSeedingTime >= minTimeSeconds;
 
-        if (minRatio > 0 && minTimeSeconds > 0)
+        if (clearMode == "and")
         {
-            return ratioMet || timeMet;
+            // Both ratio AND time must be met
+            if (minRatio > 0 && minTimeSeconds > 0) return ratioMet && timeMet;
+            if (minRatio > 0) return ratioMet;
+            if (minTimeSeconds > 0) return timeMet;
+            return true;
         }
-        else if (minRatio > 0)
-        {
-            return ratioMet;
-        }
-        else if (minTimeSeconds > 0)
-        {
-            return timeMet;
-        }
+
+        // "or" mode: either ratio OR time clears HnR
+        if (minRatio > 0 && minTimeSeconds > 0) return ratioMet || timeMet;
+        if (minRatio > 0) return ratioMet;
+        if (minTimeSeconds > 0) return timeMet;
 
         return true;
     }
@@ -427,7 +429,7 @@ public class SeedingService : ISeedingService
     public async Task<bool> HnrAllowsDeleteAsync(TorrentInfo torrent, string reason, CancellationToken cancellationToken = default)
     {
         var trackers = GetTrackerList(torrent);
-        var hasHnrTracker = trackers.Any(t => t.HitAndRunMode == true);
+        var hasHnrTracker = trackers.Any(t => IsHnREnabled(t.HitAndRunMode));
         
         if (!hasHnrTracker)
         {
@@ -504,7 +506,7 @@ public class SeedingService : ISeedingService
         }
 
         // HnR protection: only applies to downloading torrents
-        if (isDownloading && shouldRemove && seedingConfig.HitAndRunMode)
+        if (isDownloading && shouldRemove && IsHnREnabled(seedingConfig.HitAndRunMode))
         {
             if (trackerConfig != null)
             {
@@ -576,13 +578,23 @@ public class SeedingService : ISeedingService
             MaxUploadRatio = tracker.MaxUploadRatio ?? -1,
             MaxSeedingTime = tracker.MaxSeedingTime ?? -1,
             RemoveTorrent = tracker.RemoveTorrent ?? -1,
-            HitAndRunMode = tracker.HitAndRunMode ?? false,
+            HitAndRunMode = tracker.HitAndRunMode ?? "disabled",
             MinSeedRatio = tracker.MinSeedRatio ?? 1.0,
             MinSeedingTimeDays = tracker.MinSeedingTimeDays ?? 0,
             DownloadRateLimitPerTorrent = tracker.DownloadRateLimit ?? -1,
             UploadRateLimitPerTorrent = tracker.UploadRateLimit ?? -1,
             TrackerUpdateBuffer = tracker.TrackerUpdateBuffer ?? 0
         };
+    }
+
+    /// <summary>
+    /// Check if HitAndRunMode is enabled (not null and not "disabled").
+    /// </summary>
+    private static bool IsHnREnabled(string? mode)
+    {
+        if (string.IsNullOrEmpty(mode)) return false;
+        var lower = mode.Trim().ToLowerInvariant();
+        return lower is "and" or "or";
     }
 
     /// <summary>

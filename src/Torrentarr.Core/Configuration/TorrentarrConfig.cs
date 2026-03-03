@@ -21,7 +21,7 @@ public class TorrentarrConfig
 
 public class SettingsConfig
 {
-    public string ConfigVersion { get; set; } = "5.9.1";
+    public string ConfigVersion { get; set; } = "5.9.2";
     public string ConsoleLevel { get; set; } = "INFO";
     public bool Logging { get; set; } = true;
     public string CompletedDownloadFolder { get; set; } = "";
@@ -92,22 +92,27 @@ public class CategorySeedingConfig
     public double MaxUploadRatio { get; set; } = -1;
     public int MaxSeedingTime { get; set; } = -1; // seconds
     public int RemoveTorrent { get; set; } = -1; // -1=Never, 1=Ratio, 2=Time, 3=OR, 4=AND
-    public bool HitAndRunMode { get; set; } = false;
+    public string HitAndRunMode { get; set; } = "disabled"; // "and", "or", "disabled"
     public double MinSeedRatio { get; set; } = 1.0;
     public int MinSeedingTimeDays { get; set; } = 0;
     public int HitAndRunMinimumDownloadPercent { get; set; } = 10;
     public double HitAndRunPartialSeedRatio { get; set; } = 1.0;
     public int TrackerUpdateBuffer { get; set; } = 0; // seconds buffer for tracker stats
+    /// <summary>§10 qBitrr parity: StalledDelay in minutes for qBit-managed categories.</summary>
+    public int StalledDelay { get; set; } = 15; // minutes
+    /// <summary>§10 qBitrr parity: IgnoreTorrentsYoungerThan in seconds for qBit-managed categories.</summary>
+    public int IgnoreTorrentsYoungerThan { get; set; } = 180; // seconds
 }
 
 public class TrackerConfig
 {
+    public string? Name { get; set; } // Human-readable tracker name
     public string Uri { get; set; } = "";
     public int Priority { get; set; } = 0;
     public double? MaxUploadRatio { get; set; }
     public int? MaxSeedingTime { get; set; }
     public int? RemoveTorrent { get; set; }
-    public bool? HitAndRunMode { get; set; }
+    public string? HitAndRunMode { get; set; } // "and", "or", "disabled"
     public double? MinSeedRatio { get; set; }
     public int? MinSeedingTimeDays { get; set; } // days — matches qBitrr MinSeedingTimeDays / MinSeedingTime TOML key
     public int? HitAndRunMinimumDownloadPercent { get; set; }

@@ -5,6 +5,7 @@ using Torrentarr.Core.Services;
 using Torrentarr.Infrastructure.ApiClients.Arr;
 using Torrentarr.Infrastructure.ApiClients.QBittorrent;
 using Torrentarr.Infrastructure.Database;
+using Torrentarr.Infrastructure.Database.Models;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
@@ -47,6 +48,11 @@ public class ArrWorkerManager : BackgroundService
     // Cached QBit clients for count polling — keyed by qBit instance name
     private readonly ConcurrentDictionary<string, QBittorrentClient> _qbitClientCache =
         new(StringComparer.OrdinalIgnoreCase);
+
+    // §4: Process restart limits (qBitrr parity): per-instance restart timestamps for rate limiting
+    private readonly ConcurrentDictionary<string, List<DateTime>> _restartTimestamps =
+        new(StringComparer.OrdinalIgnoreCase);
+    private readonly object _restartLock = new();
 
     private readonly IConnectivityService _connectivityService;
 
@@ -95,6 +101,24 @@ public class ArrWorkerManager : BackgroundService
             });
         }
 
+        // §5: Load persisted search activity into state so Processes page shows last activity across restarts
+        try
+        {
+            using var scope = _scopeFactory.CreateScope();
+            var db = scope.ServiceProvider.GetRequiredService<TorrentarrDbContext>();
+            var activities = await db.SearchActivity.ToListAsync(stoppingToken);
+            foreach (var a in activities)
+            {
+                var stateKey = a.Category + "-search";
+                if (_stateManager.GetState(stateKey) != null)
+                    _stateManager.Update(stateKey, s => { s.SearchSummary = a.Summary; s.SearchTimestamp = a.Timestamp; });
+            }
+        }
+        catch (Exception ex)
+        {
+            _logger.LogDebug(ex, "Could not load persisted search activity");
+        }
+
         // Start a worker for every managed instance that has a real URI
         foreach (var (name, arrCfg) in _config.ArrInstances)
         {
@@ -110,8 +134,38 @@ public class ArrWorkerManager : BackgroundService
     }
 
     /// <summary>Restart a single instance worker (called from restart endpoint).</summary>
-    public async Task RestartWorkerAsync(string instanceName)
+    /// <returns>True if restart was performed; false if gated by AutoRestartProcesses or MaxProcessRestarts.</returns>
+    public async Task<bool> RestartWorkerAsync(string instanceName)
     {
+        var settings = _config.Settings;
+        if (!settings.AutoRestartProcesses)
+        {
+            _logger.LogWarning("Restart skipped for {Instance}: AutoRestartProcesses is disabled", instanceName);
+            return false;
+        }
+
+        var windowSeconds = settings.ProcessRestartWindow;
+        var maxRestarts = settings.MaxProcessRestarts;
+        var delaySeconds = settings.ProcessRestartDelay;
+
+        lock (_restartLock)
+        {
+            var list = _restartTimestamps.GetOrAdd(instanceName, _ => new List<DateTime>());
+            var cutoff = DateTime.UtcNow.AddSeconds(-windowSeconds);
+            list.RemoveAll(d => d < cutoff);
+            if (list.Count >= maxRestarts)
+            {
+                _logger.LogWarning(
+                    "Restart skipped for {Instance}: {Count} restarts in last {Window}s (max {Max})",
+                    instanceName, list.Count, windowSeconds, maxRestarts);
+                return false;
+            }
+            list.Add(DateTime.UtcNow);
+        }
+
+        if (delaySeconds > 0)
+            await Task.Delay(TimeSpan.FromSeconds(delaySeconds));
+
         _logger.LogInformation("Restarting worker for {Instance}", instanceName);
 
         var searchStateName = instanceName + "-search";
@@ -131,6 +185,7 @@ public class ArrWorkerManager : BackgroundService
         }
 
         StartWorker(instanceName, _appStopping);
+        return true;
     }
 
     /// <summary>Restart all workers.</summary>
@@ -247,6 +302,27 @@ public class ArrWorkerManager : BackgroundService
                                 s.SearchTimestamp = DateTime.UtcNow.ToString("o");
                                 s.MetricType = "search";
                             });
+                            // §5: Persist search activity for Processes page across restarts
+                            try
+                            {
+                                using var scope = _scopeFactory.CreateScope();
+                                var db = scope.ServiceProvider.GetRequiredService<TorrentarrDbContext>();
+                                var existing = await db.SearchActivity.FindAsync([instanceName], ct);
+                                var ts = DateTime.UtcNow.ToString("o");
+                                var summary = $"{result.SearchesTriggered} searches triggered ({result.ItemsSearched} items)";
+                                if (existing != null)
+                                {
+                                    existing.Summary = summary;
+                                    existing.Timestamp = ts;
+                                }
+                                else
+                                    db.SearchActivity.Add(new SearchActivity { Category = instanceName, Summary = summary, Timestamp = ts });
+                                await db.SaveChangesAsync(ct);
+                            }
+                            catch (Exception ex)
+                            {
+                                _logger.LogTrace(ex, "Could not persist search activity for {Instance}", instanceName);
+                            }
                         }
                     }
 

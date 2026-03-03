@@ -57,7 +57,7 @@ public class ConfigurationLoaderTests : IDisposable
         config.QBitInstances["qBit"].Host.Should().Be("192.168.1.100");
         config.QBitInstances["qBit"].Port.Should().Be(8090);
         config.QBitInstances["qBit"].CategorySeeding.MaxUploadRatio.Should().BeApproximately(2.5, 0.001);
-        config.QBitInstances["qBit"].CategorySeeding.HitAndRunMode.Should().BeTrue();
+        config.QBitInstances["qBit"].CategorySeeding.HitAndRunMode.Should().Be("and"); // legacy true → "and"
     }
 
     [Fact]

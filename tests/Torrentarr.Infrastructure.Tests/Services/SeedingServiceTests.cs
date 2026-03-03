@@ -89,7 +89,7 @@ public class SeedingServiceTests
         };
 
     private static TrackerConfig HnrConfig(
-        bool hnrMode = true,
+        string hnrMode = "or",
         double minRatio = 1.0,
         int minDays = 0,
         int minDlPct = 10,
@@ -110,7 +110,7 @@ public class SeedingServiceTests
     {
         var svc = CreateService();
         var torrent = MakeTorrent(1.0, 0, 0);
-        var config = HnrConfig(hnrMode: false);
+        var config = HnrConfig(hnrMode: "disabled");
 
         var result = await svc.IsHnRSafeToRemoveAsync(torrent, config);
 

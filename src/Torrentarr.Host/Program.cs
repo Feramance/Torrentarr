@@ -1,6 +1,7 @@
 using Torrentarr.Core.Configuration;
 using Torrentarr.Core.Models;
 using Torrentarr.Core.Services;
+using Torrentarr.Infrastructure.ApiClients.Arr;
 using Torrentarr.Infrastructure.ApiClients.QBittorrent;
 using Torrentarr.Infrastructure.Database;
 using Torrentarr.Infrastructure.Services;
@@ -20,6 +21,14 @@ var logsPath = Path.Combine(basePath, "logs");
 var dbPath = Path.Combine(basePath, "qbitrr.db");
 Directory.CreateDirectory(basePath);
 Directory.CreateDirectory(logsPath);
+
+// CLI args (checked after host is built so WebApplicationFactory gets an IHost)
+var cmdArgs = Environment.GetCommandLineArgs().Skip(1).ToList();
+var firstArg = cmdArgs.Count > 0 ? cmdArgs[0].Trim().ToLowerInvariant() : "";
+
+// Config web: placeholder for redacted secrets; must be in scope before any handler that uses it
+const string REDACTED_PLACEHOLDER = "[redacted]";
+const string SensitiveKeyPatternRegex = @"(apikey|api_key|token|password|secret|passkey|credential)";
 
 // Mutable level switch — lets /web/loglevel and /api/loglevel change the level at runtime
 var levelSwitch = new LoggingLevelSwitch(LogEventLevel.Information);
@@ -198,6 +207,42 @@ try
     });
 
     var app = builder.Build();
+
+    // --gen-config / -gc: write default config and exit (qBitrr parity). Run after Build() so WebApplicationFactory gets an IHost.
+    if (cmdArgs.Count == 1 && (firstArg == "--gen-config" || firstArg == "-gc"))
+    {
+        var configPath = ConfigurationLoader.GetDefaultConfigPath();
+        var loader = new ConfigurationLoader(configPath);
+        var defaultConfig = ConfigurationLoader.GenerateDefaultConfig();
+        loader.SaveConfig(defaultConfig, configPath);
+        Console.WriteLine($"Generated default configuration at: {configPath}");
+        return 0;
+    }
+    // --repair-database: run WAL checkpoint + integrity check and exit (qBitrr parity).
+    if (cmdArgs.Count == 1 && firstArg == "--repair-database")
+    {
+        if (!File.Exists(dbPath))
+        {
+            Console.Error.WriteLine($"Database not found: {dbPath}");
+            return 1;
+        }
+        var connStr = $"Data Source={dbPath}";
+        using var conn = new Microsoft.Data.Sqlite.SqliteConnection(connStr);
+        conn.Open();
+        using (var cmd = conn.CreateCommand())
+        {
+            cmd.CommandText = "PRAGMA wal_checkpoint(TRUNCATE);";
+            cmd.ExecuteNonQuery();
+        }
+        string result;
+        using (var cmd2 = conn.CreateCommand())
+        {
+            cmd2.CommandText = "PRAGMA integrity_check;";
+            result = (cmd2.ExecuteScalar() as string) ?? "unknown";
+        }
+        Console.WriteLine($"Integrity check: {result}");
+        return result.Equals("ok", StringComparison.OrdinalIgnoreCase) ? 0 : 1;
+    }
 
     using (var scope = app.Services.CreateScope())
     {
@@ -533,9 +578,13 @@ try
         return Results.Ok(new { processes });
     });
 
-    // Web Restart Process — stops and restarts the named instance worker
+    // Web Restart Process — stops and restarts the named instance worker (kind is advisory; one loop per Arr)
     app.MapPost("/web/processes/{category}/{kind}/restart", async (string category, string kind, TorrentarrConfig cfg, ArrWorkerManager workerMgr) =>
     {
+        var kindNorm = (kind ?? "").Trim().ToLowerInvariant();
+        if (kindNorm != "search" && kindNorm != "torrent" && kindNorm != "category" && kindNorm != "arr")
+            return Results.BadRequest(new { error = "kind must be search, torrent, category, or arr" });
+
         var instanceName = cfg.ArrInstances
             .FirstOrDefault(kv => kv.Value.Category.Equals(category, StringComparison.OrdinalIgnoreCase)).Key;
         if (instanceName != null)
@@ -1000,8 +1049,16 @@ try
             ContractResolver = new Newtonsoft.Json.Serialization.DefaultContractResolver(),
             NullValueHandling = Newtonsoft.Json.NullValueHandling.Include,
         };
-        var json = Newtonsoft.Json.JsonConvert.SerializeObject(flat, jsonSettings);
-        return Results.Content(json, "application/json");
+        // Serialize then redact sensitive keys (API keys, passwords, tokens) before sending to frontend
+        var jObj = Newtonsoft.Json.Linq.JObject.FromObject(flat, Newtonsoft.Json.JsonSerializer.Create(jsonSettings));
+        var redacted = StripSensitiveKeys(jObj);
+
+        // Config version mismatch warning (qBitrr parity): return { config, warning } so frontend can show toast
+        var validation = ConfigurationLoader.ValidateConfigVersion(cfg);
+        if (!validation.IsValid && validation.Message != null)
+            return Results.Json(new { config = redacted, warning = new { type = "config_version_mismatch", message = validation.Message, currentVersion = validation.CurrentVersion } });
+
+        return Results.Content(redacted.ToString(Newtonsoft.Json.Formatting.None), "application/json");
     });
 
     // Web Config Update — frontend sends { changes: { "Section.Key": value, ... } } (dotted keys).
@@ -1040,6 +1097,16 @@ try
             var changesObj = Newtonsoft.Json.Linq.JObject.Parse(changesEl.GetRawText());
             foreach (var change in changesObj.Properties())
             {
+                // Reject protected keys (qBitrr parity)
+                if (string.Equals(change.Name, "Settings.ConfigVersion", StringComparison.OrdinalIgnoreCase))
+                    return Results.Json(new { error = "Cannot modify protected configuration key: Settings.ConfigVersion" }, statusCode: 403);
+
+                // Never overwrite a real secret with the redaction placeholder from the frontend
+                if (IsSensitiveDottedKey(change.Name) &&
+                    change.Value.Type == Newtonsoft.Json.Linq.JTokenType.String &&
+                    change.Value.ToString() == REDACTED_PLACEHOLDER)
+                    continue;
+
                 var parts = change.Name.Split('.');
                 var rawSectionKey = parts[0];
                 // Case-insensitive section key: "webui" → "WebUI", "settings" → "Settings"
@@ -1154,57 +1221,9 @@ try
         });
     });
 
-    // Web Test Arr Connection
-    app.MapPost("/web/arr/test-connection", async (TestConnectionRequest req) =>
-    {
-        try
-        {
-            if (req.ArrType == "radarr")
-            {
-                var client = new Torrentarr.Infrastructure.ApiClients.Arr.RadarrClient(req.Uri, req.ApiKey);
-                var systemInfo = await client.GetSystemInfoAsync();
-                var profiles = await client.GetQualityProfilesAsync();
-                return Results.Ok(new
-                {
-                    success = true,
-                    message = $"Connected to Radarr {systemInfo.Version}",
-                    systemInfo = new { version = systemInfo.Version ?? "unknown" },
-                    qualityProfiles = profiles.Select(p => new { id = p.Id, name = p.Name })
-                });
-            }
-            else if (req.ArrType == "sonarr")
-            {
-                var client = new Torrentarr.Infrastructure.ApiClients.Arr.SonarrClient(req.Uri, req.ApiKey);
-                var systemInfo = await client.GetSystemInfoAsync();
-                var profiles = await client.GetQualityProfilesAsync();
-                return Results.Ok(new
-                {
-                    success = true,
-                    message = $"Connected to Sonarr {systemInfo.Version}",
-                    systemInfo = new { version = systemInfo.Version ?? "unknown" },
-                    qualityProfiles = profiles.Select(p => new { id = p.Id, name = p.Name })
-                });
-            }
-            else if (req.ArrType == "lidarr")
-            {
-                var client = new Torrentarr.Infrastructure.ApiClients.Arr.LidarrClient(req.Uri, req.ApiKey);
-                var systemInfo = await client.GetSystemInfoAsync();
-                var profiles = await client.GetQualityProfilesAsync();
-                return Results.Ok(new
-                {
-                    success = true,
-                    message = $"Connected to Lidarr {systemInfo.Version}",
-                    systemInfo = new { version = systemInfo.Version ?? "unknown" },
-                    qualityProfiles = profiles.Select(p => new { id = p.Id, name = p.Name })
-                });
-            }
-            return Results.BadRequest(new { error = "Unknown arr type" });
-        }
-        catch (Exception ex)
-        {
-            return Results.Ok(new { success = false, message = ex.Message });
-        }
-    });
+    // Web Test Arr Connection (no auth — frontend uses this directly)
+    app.MapPost("/web/arr/test-connection", (TestConnectionRequest req, TorrentarrConfig cfg) =>
+        HandleTestConnection(req, cfg));
 
     // Web Torrents Distribution — count media items per qBit category per Arr instance
     app.MapGet("/web/torrents/distribution", async (TorrentarrConfig cfg, TorrentarrDbContext db) =>
@@ -1417,6 +1436,10 @@ try
 
     app.MapPost("/api/processes/{category}/{kind}/restart", async (string category, string kind, TorrentarrConfig cfg, ArrWorkerManager workerMgr) =>
     {
+        var kindNorm = (kind ?? "").Trim().ToLowerInvariant();
+        if (kindNorm != "search" && kindNorm != "torrent" && kindNorm != "category" && kindNorm != "arr")
+            return Results.BadRequest(new { error = "kind must be search, torrent, category, or arr" });
+
         var instanceName = cfg.ArrInstances
             .FirstOrDefault(kv => kv.Value.Category.Equals(category, StringComparison.OrdinalIgnoreCase)).Key;
         if (instanceName != null)
@@ -1899,56 +1922,8 @@ try
         });
     });
 
-    app.MapPost("/api/arr/test-connection", async (TestConnectionRequest req) =>
-    {
-        try
-        {
-            if (req.ArrType == "radarr")
-            {
-                var client = new Torrentarr.Infrastructure.ApiClients.Arr.RadarrClient(req.Uri, req.ApiKey);
-                var systemInfo = await client.GetSystemInfoAsync();
-                var profiles = await client.GetQualityProfilesAsync();
-                return Results.Ok(new
-                {
-                    success = true,
-                    message = $"Connected to Radarr {systemInfo.Version}",
-                    systemInfo = new { version = systemInfo.Version ?? "unknown" },
-                    qualityProfiles = profiles.Select(p => new { id = p.Id, name = p.Name })
-                });
-            }
-            else if (req.ArrType == "sonarr")
-            {
-                var client = new Torrentarr.Infrastructure.ApiClients.Arr.SonarrClient(req.Uri, req.ApiKey);
-                var systemInfo = await client.GetSystemInfoAsync();
-                var profiles = await client.GetQualityProfilesAsync();
-                return Results.Ok(new
-                {
-                    success = true,
-                    message = $"Connected to Sonarr {systemInfo.Version}",
-                    systemInfo = new { version = systemInfo.Version ?? "unknown" },
-                    qualityProfiles = profiles.Select(p => new { id = p.Id, name = p.Name })
-                });
-            }
-            else if (req.ArrType == "lidarr")
-            {
-                var client = new Torrentarr.Infrastructure.ApiClients.Arr.LidarrClient(req.Uri, req.ApiKey);
-                var systemInfo = await client.GetSystemInfoAsync();
-                var profiles = await client.GetQualityProfilesAsync();
-                return Results.Ok(new
-                {
-                    success = true,
-                    message = $"Connected to Lidarr {systemInfo.Version}",
-                    systemInfo = new { version = systemInfo.Version ?? "unknown" },
-                    qualityProfiles = profiles.Select(p => new { id = p.Id, name = p.Name })
-                });
-            }
-            return Results.BadRequest(new { error = "Unknown arr type" });
-        }
-        catch (Exception ex)
-        {
-            return Results.Ok(new { success = false, message = ex.Message });
-        }
-    });
+    app.MapPost("/api/arr/test-connection", (TestConnectionRequest req, TorrentarrConfig cfg) =>
+        HandleTestConnection(req, cfg));
 
     app.MapGet("/api/token", (TorrentarrConfig cfg) =>
         Results.Ok(new { token = cfg.WebUI.Token }));
@@ -2016,6 +1991,36 @@ static void ApplyManualMigrations(TorrentarrDbContext db)
     AddColumnIfMissing(db, "albumfilesmodel", "DigitalRelease", "TEXT");
     AddColumnIfMissing(db, "albumfilesmodel", "PhysicalRelease", "TEXT");
     AddColumnIfMissing(db, "albumfilesmodel", "MinimumAvailability", "TEXT");
+
+    // §5: Search activity table for Processes page (qBitrr parity)
+    CreateTableIfMissing(db, "searchactivity", "CREATE TABLE IF NOT EXISTS searchactivity ( category TEXT NOT NULL PRIMARY KEY, summary TEXT, timestamp TEXT );");
+}
+
+static void CreateTableIfMissing(TorrentarrDbContext db, string tableName, string createSql)
+{
+    var conn = db.Database.GetDbConnection();
+    var wasOpen = conn.State == System.Data.ConnectionState.Open;
+    if (!wasOpen) conn.Open();
+    try
+    {
+        using var cmd = conn.CreateCommand();
+        cmd.CommandText = "SELECT name FROM sqlite_master WHERE type='table' AND name=@name;";
+        var p = cmd.CreateParameter();
+        p.ParameterName = "@name";
+        p.Value = tableName;
+        cmd.Parameters.Add(p);
+        var exists = cmd.ExecuteScalar() != null;
+        if (!exists)
+        {
+            using var create = conn.CreateCommand();
+            create.CommandText = createSql;
+            create.ExecuteNonQuery();
+        }
+    }
+    finally
+    {
+        if (!wasOpen) conn.Close();
+    }
 }
 
 static void AddColumnIfMissing(TorrentarrDbContext db, string table, string column, string columnDef)
@@ -2097,6 +2102,151 @@ static async Task<string> TailLogFileAsync(string path, int maxLines)
         lines.Add(line);
 
     return string.Join("\n", lines.TakeLast(maxLines));
+}
+
+/// <summary>
+/// Shared handler for both /web/arr/test-connection and /api/arr/test-connection.
+/// Supports instanceKey for redacted API key lookups and includes retry logic for quality profiles.
+/// Always returns 200 so the frontend doesn't treat Arr errors as WebUI auth failures.
+/// </summary>
+static async Task<IResult> HandleTestConnection(TestConnectionRequest req, TorrentarrConfig cfg)
+{
+    try
+    {
+        var uri = req.Uri;
+        var apiKey = req.ApiKey;
+
+        // When instanceKey is provided, load URI and APIKey from config (e.g. when API key is redacted in UI)
+        if (!string.IsNullOrEmpty(req.InstanceKey))
+        {
+            if (string.IsNullOrEmpty(req.ArrType))
+                return Results.BadRequest(new { success = false, message = "Missing required field: arrType" });
+
+            if (!cfg.ArrInstances.TryGetValue(req.InstanceKey, out var arrCfg))
+                return Results.Ok(new { success = false, message = "Instance not found or missing URI/APIKey in config" });
+
+            uri = arrCfg.URI;
+            apiKey = arrCfg.APIKey;
+        }
+
+        if (string.IsNullOrEmpty(req.ArrType) || string.IsNullOrEmpty(uri) || string.IsNullOrEmpty(apiKey))
+            return Results.Ok(new { success = false, message = "Missing required fields: arrType, uri, or apiKey" });
+
+        // Validate URI scheme
+        if (!Uri.TryCreate(uri, UriKind.Absolute, out var parsedUri) ||
+            (parsedUri.Scheme != "http" && parsedUri.Scheme != "https"))
+            return Results.Ok(new { success = false, message = "URI must use http or https scheme" });
+
+        // Create the appropriate Arr client and fetch system info + quality profiles
+        SystemInfo? systemInfo;
+        var profiles = new List<QualityProfile>();
+        var arrType = req.ArrType.ToLowerInvariant();
+
+        Func<Task<SystemInfo>> getSystemInfo;
+        Func<Task<List<QualityProfile>>> getProfiles;
+
+        switch (arrType)
+        {
+            case "radarr":
+                var radarr = new Torrentarr.Infrastructure.ApiClients.Arr.RadarrClient(uri, apiKey);
+                getSystemInfo = () => radarr.GetSystemInfoAsync();
+                getProfiles = () => radarr.GetQualityProfilesAsync();
+                break;
+            case "sonarr":
+                var sonarr = new Torrentarr.Infrastructure.ApiClients.Arr.SonarrClient(uri, apiKey);
+                getSystemInfo = () => sonarr.GetSystemInfoAsync();
+                getProfiles = () => sonarr.GetQualityProfilesAsync();
+                break;
+            case "lidarr":
+                var lidarr = new Torrentarr.Infrastructure.ApiClients.Arr.LidarrClient(uri, apiKey);
+                getSystemInfo = () => lidarr.GetSystemInfoAsync();
+                getProfiles = () => lidarr.GetQualityProfilesAsync();
+                break;
+            default:
+                return Results.BadRequest(new { error = $"Invalid arrType: {req.ArrType}" });
+        }
+
+        // Get system info to verify connection
+        systemInfo = await getSystemInfo();
+
+        // Fetch quality profiles with retry logic for transient errors
+        const int maxRetries = 3;
+        for (int attempt = 1; attempt <= maxRetries; attempt++)
+        {
+            try
+            {
+                profiles = await getProfiles();
+                break;
+            }
+            catch (Exception) when (attempt < maxRetries)
+            {
+                await Task.Delay(1000);
+            }
+        }
+
+        return Results.Ok(new
+        {
+            success = true,
+            message = $"Connected to {req.ArrType} {systemInfo!.Version}",
+            systemInfo = new { version = systemInfo.Version ?? "unknown", branch = (string?)null },
+            qualityProfiles = profiles.Select(p => new { id = p.Id, name = p.Name })
+        });
+    }
+    catch (Exception ex)
+    {
+        // Return 200 with success: false so the frontend doesn't treat Arr errors as WebUI auth failure
+        var errorMsg = ex.Message;
+        string message;
+        if (errorMsg.Contains("401") || errorMsg.Contains("Unauthorized", StringComparison.OrdinalIgnoreCase))
+            message = "Unauthorized: Invalid API key";
+        else if (errorMsg.Contains("404"))
+            message = $"Not found: Check URI";
+        else if (errorMsg.Contains("Connection refused", StringComparison.OrdinalIgnoreCase) ||
+                 errorMsg.Contains("No connection could be made", StringComparison.OrdinalIgnoreCase))
+            message = $"Connection refused: Cannot reach server";
+        else
+            message = "Connection test failed";
+
+        return Results.Ok(new { success = false, message });
+    }
+}
+
+/// <summary>
+/// Recursively redact string values whose keys match <see cref="SensitiveKeyPatternRegex"/>.
+/// Returns a new JToken with sensitive values replaced by <see cref="REDACTED_PLACEHOLDER"/>.
+/// </summary>
+static Newtonsoft.Json.Linq.JToken StripSensitiveKeys(Newtonsoft.Json.Linq.JToken token)
+{
+    if (token is Newtonsoft.Json.Linq.JObject obj)
+    {
+        var result = new Newtonsoft.Json.Linq.JObject();
+        foreach (var prop in obj.Properties())
+        {
+            if (prop.Value.Type == Newtonsoft.Json.Linq.JTokenType.String && System.Text.RegularExpressions.Regex.IsMatch(prop.Name, SensitiveKeyPatternRegex, System.Text.RegularExpressions.RegexOptions.IgnoreCase))
+                result[prop.Name] = REDACTED_PLACEHOLDER;
+            else
+                result[prop.Name] = StripSensitiveKeys(prop.Value);
+        }
+        return result;
+    }
+    if (token is Newtonsoft.Json.Linq.JArray arr)
+    {
+        var result = new Newtonsoft.Json.Linq.JArray();
+        foreach (var item in arr)
+            result.Add(StripSensitiveKeys(item));
+        return result;
+    }
+    return token.DeepClone();
+}
+
+/// <summary>
+/// Returns true if a dotted config key refers to a sensitive value (e.g. "Radarr-1080.APIKey").
+/// </summary>
+static bool IsSensitiveDottedKey(string dottedKey)
+{
+    if (string.IsNullOrEmpty(dottedKey) || !dottedKey.Contains('.')) return false;
+    var lastPart = dottedKey[(dottedKey.LastIndexOf('.') + 1)..];
+    return System.Text.RegularExpressions.Regex.IsMatch(lastPart, SensitiveKeyPatternRegex, System.Text.RegularExpressions.RegexOptions.IgnoreCase);
 }
 
 /// <summary>
@@ -2193,6 +2343,7 @@ class ProcessOrchestratorService : BackgroundService
     private long _minFreeSpaceBytes;
     private string? _freeSpaceFolder;
     private bool _qbitConfigured;
+    private bool _freeSpaceEnabled;
 
     public ProcessOrchestratorService(
         ILogger<ProcessOrchestratorService> logger,
@@ -2205,9 +2356,35 @@ class ProcessOrchestratorService : BackgroundService
         _qbitManager = qbitManager;
         _scopeFactory = scopeFactory;
         _managedCategories = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
-        _minFreeSpaceBytes = (long)(_config.Settings.FreeSpaceThresholdGB ?? 10) * 1024L * 1024L * 1024L;
+        // §8: Respect Settings.FreeSpace string ("-1" = disabled, "10G"/"500M" = threshold)
+        var freeSpaceBytes = ParseFreeSpaceString(_config.Settings.FreeSpace);
+        if (freeSpaceBytes < 0)
+        {
+            _freeSpaceEnabled = false;
+            _minFreeSpaceBytes = (long)(_config.Settings.FreeSpaceThresholdGB ?? 10) * 1024L * 1024L * 1024L;
+        }
+        else
+        {
+            _freeSpaceEnabled = true;
+            _minFreeSpaceBytes = freeSpaceBytes;
+        }
         _qbitConfigured = config.QBitInstances.Values.Any(q =>
             !q.Disabled && q.Host != "CHANGE_ME" && q.UserName != "CHANGE_ME" && q.Password != "CHANGE_ME");
+    }
+
+    /// <summary>Parse qBitrr FreeSpace string: "-1" = disabled, "10G"/"500M"/"1024K" or raw number = threshold bytes.</summary>
+    private static long ParseFreeSpaceString(string? value)
+    {
+        if (string.IsNullOrWhiteSpace(value) || value.Trim() == "-1") return -1;
+        var v = value.Trim().ToUpperInvariant();
+        try
+        {
+            if (v.EndsWith("G")) return long.Parse(v[..^1]) * 1024L * 1024L * 1024L;
+            if (v.EndsWith("M")) return long.Parse(v[..^1]) * 1024L * 1024L;
+            if (v.EndsWith("K")) return long.Parse(v[..^1]) * 1024L;
+            return long.Parse(v);
+        }
+        catch { return -1; }
     }
 
     protected override async Task ExecuteAsync(CancellationToken stoppingToken)
@@ -2265,7 +2442,7 @@ class ProcessOrchestratorService : BackgroundService
                     {
                         await ProcessSpecialCategoriesAsync(stoppingToken);
 
-                        if (_config.Settings.AutoPauseResume && _config.Settings.FreeSpaceThresholdGB > 0)
+                        if (_config.Settings.AutoPauseResume && _freeSpaceEnabled && _minFreeSpaceBytes > 0)
                             await ProcessFreeSpaceManagerAsync(stoppingToken);
                     }
                 }
@@ -2515,8 +2692,9 @@ class ProcessOrchestratorService : BackgroundService
 // Request models for API endpoints
 public record TestConnectionRequest(
     [property: System.Text.Json.Serialization.JsonPropertyName("arrType")] string ArrType,
-    [property: System.Text.Json.Serialization.JsonPropertyName("uri")] string Uri,
-    [property: System.Text.Json.Serialization.JsonPropertyName("apiKey")] string ApiKey);
+    [property: System.Text.Json.Serialization.JsonPropertyName("uri")] string? Uri,
+    [property: System.Text.Json.Serialization.JsonPropertyName("apiKey")] string? ApiKey,
+    [property: System.Text.Json.Serialization.JsonPropertyName("instanceKey")] string? InstanceKey = null);
 public record LoggerConfigurationRequest(string Level);
 
 // Make Program accessible to test projects (WebApplicationFactory<Program>)
