@@ -1,4 +1,4 @@
-﻿# Requestrr Integration
+# Requestrr Integration
 
 Requestrr is a Discord chatbot that allows users to request movies, TV shows, and music through Discord. Torrentarr integrates with Requestrr **through Overseerr or Ombi** as the request management backend.
 
@@ -119,16 +119,15 @@ services:
     container_name: torrentarr
     environment:
       - TZ=America/New_York
-      # Overseerr integration
-      - QBITRR_RADARR_MOVIES__ENTRYSEARCH__OVERSEERR__SEARCHOVERSEERRQUESTS=true
-      - QBITRR_RADARR_MOVIES__ENTRYSEARCH__OVERSEERR__OVERSEERRURI=http://overseerr:5055
-      - QBITRR_RADARR_MOVIES__ENTRYSEARCH__OVERSEERR__OVERSEERRAPIKEY=overseerr-api-key
+      - TORRENTARR_CONFIG=/config/config.toml
     volumes:
       - /path/to/torrentarr/config:/config
     depends_on:
       - overseerr
     restart: unless-stopped
 ```
+
+Configure Overseerr in `config.toml` under your Radarr instance's `[Radarr-Movies.EntrySearch.Overseerr]` section.
 
 ## Frequently Asked Questions
 

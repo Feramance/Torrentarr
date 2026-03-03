@@ -126,14 +126,14 @@ Set a custom config directory:
 === "Linux/macOS"
 
     ```bash
-    export QBITRR_CONFIG_PATH=/path/to/config
+    export TORRENTARR_CONFIG=/path/to/config/config.toml
     torrentarr
     ```
 
 === "Windows"
 
     ```powershell
-    $env:QBITRR_CONFIG_PATH = "C:\path\to\config"
+    $env:TORRENTARR_CONFIG = "C:\path\to\config\config.toml"
     torrentarr
     ```
 

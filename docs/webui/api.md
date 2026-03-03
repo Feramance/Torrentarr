@@ -1,4 +1,4 @@
-﻿# WebUI API Reference
+# WebUI API Reference
 
 Complete API reference for Torrentarr's WebUI REST API. All endpoints are accessible via the built-in WebUI server (default port 6969).
 
@@ -263,10 +263,9 @@ Get current version, latest version, update availability, and changelog.
 
 **Installation Types**:
 
-- `pip` - Installed via pip/PyPI
 - `docker` - Running in Docker container
+- `dotnet` - Installed as dotnet global tool or run from source
 - `binary` - Standalone binary
-- `source` - Running from source
 - `unknown` - Cannot determine
 
 **Update State**:
@@ -1110,7 +1109,7 @@ Test connection to Arr instance without saving configuration.
 
 ### Trigger Manual Update
 
-Trigger Torrentarr self-update (pip or binary).
+Trigger Torrentarr self-update (dotnet tool or binary; not applicable for Docker).
 
 **Endpoints**:
 - `POST /api/update` (requires auth)
@@ -1139,8 +1138,8 @@ Trigger Torrentarr self-update (pip or binary).
 
 **Behavior**:
 
-1. Spawns background thread
-2. Runs `dotnet tool update -g torrentarr` (pip) or downloads binary (binary)
+1. Spawns background task
+2. For dotnet tool: runs `dotnet tool update -g torrentarr` (or equivalent). For binary: downloads release from GitHub.
 3. Restarts Torrentarr on success
 4. Returns immediately (update is asynchronous)
 

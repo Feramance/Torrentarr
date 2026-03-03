@@ -1,4 +1,4 @@
-﻿# Release Process
+# Release Process
 
 Torrentarr uses automated releases via GitHub Actions. This document describes the release workflow for maintainers.
 
@@ -6,24 +6,17 @@ Torrentarr uses automated releases via GitHub Actions. This document describes t
 
 ### 1. Version Bumping
 
-Torrentarr uses **bump2version** for version management:
+Torrentarr uses **version in .NET project files** (e.g. `Directory.Build.props` or the main Host project). Update the version there, then create a tag:
 
 ```bash
-# Patch release (5.5.4 → 5.5.5)
-bump2version patch
-
-# Minor release (5.5.5 → 5.6.0)
-bump2version minor
-
-# Major release (5.6.0 → 6.0.0)
-bump2version major
+# Example: set Version to 5.6.0 in project file, then:
+git tag -a v5.6.0 -m "Release v5.6.0"
+git push origin v5.6.0
 ```
 
-**What bump2version updates:**
-- `setup.cfg` - Package version
-- `pyproject.toml` - Project metadata
-- `.bumpversion.cfg` - Version tracker
-- Git tag created automatically
+**What to update:**
+- `Directory.Build.props` or main project `Version` / `AssemblyVersion` / `FileVersion`
+- Changelog / release notes as needed
 
 ### 2. Changelog Generation
 
@@ -62,15 +55,14 @@ gren release --override
 #### Option A: Automated (Recommended)
 
 ```bash
-# 1. Bump version
-bump2version minor  # or patch/major
+# 1. Update version in project file(s)
+# 2. Push to master, then create and push tag
+git tag -a v5.6.0 -m "Release v5.6.0"
+git push origin v5.6.0
 
-# 2. Push tags
-git push origin master --tags
-
-# 3. GitHub Actions automatically:
-#    - Builds Python package
-#    - Publishes to PyPI
+# GitHub Actions automatically:
+#    - Builds .NET and WebUI
+#    - Runs tests
 #    - Builds Docker image
 #    - Pushes to Docker Hub
 #    - Creates GitHub Release
@@ -83,21 +75,18 @@ git push origin master --tags
 git tag -a v5.6.0 -m "Release v5.6.0"
 git push origin v5.6.0
 
-# 2. Build package
-python setup.py sdist bdist_wheel
+# 2. Build (see build.sh / build.bat or dotnet build + webui build)
+./build.sh   # or build.bat on Windows
 
-# 3. Upload to PyPI
-twine upload dist/*
-
-# 4. Build Docker image
+# 3. Build Docker image
 docker build -t feramance/torrentarr:5.6.0 .
 docker build -t feramance/torrentarr:latest .
 
-# 5. Push to Docker Hub
+# 4. Push to Docker Hub
 docker push feramance/torrentarr:5.6.0
 docker push feramance/torrentarr:latest
 
-# 6. Create GitHub Release manually
+# 5. Create GitHub Release manually and attach binaries if desired
 ```
 
 ## Release Types
@@ -108,8 +97,8 @@ docker push feramance/torrentarr:latest
 
 **Process:**
 1. Merge bug fix PRs to `master`
-2. `bump2version patch`
-3. Push tags
+2. Update version in project file(s)
+3. Tag and push
 
 **Example commits:**
 - `fix(radarr): resolve import path issue`
@@ -121,9 +110,8 @@ docker push feramance/torrentarr:latest
 
 **Process:**
 1. Merge feature PRs to `master`
-2. `bump2version minor`
-3. Update documentation
-4. Push tags
+2. Update version and documentation
+3. Tag and push
 
 **Example commits:**
 - `feat(lidarr): add Lidarr v2.0 support`
@@ -139,9 +127,8 @@ docker push feramance/torrentarr:latest
 3. Update documentation
 4. Test thoroughly
 5. Merge to `master`
-6. `bump2version major`
-7. Push tags
-8. Write migration guide
+6. Update version and tag
+7. Write migration guide
 
 **Example commits:**
 - `feat!: replace SQLite with PostgreSQL`
@@ -151,18 +138,18 @@ docker push feramance/torrentarr:latest
 
 ### Release Workflow
 
-**File:** `.github/workflows/release.yml`
+**File:** `.github/workflows/release.yml` (or equivalent)
 
 **Triggers:**
 - Push tags matching `v*.*.*`
 
 **Steps:**
 1. Checkout code
-2. Set up Python 3.12
-3. Install build dependencies
-4. Build WebUI (`npm run build`)
-5. Build Python package (`python setup.py sdist bdist_wheel`)
-6. Publish to PyPI (`twine upload`)
+2. Set up .NET (e.g. dotnet-version: '10.0.x')
+3. Set up Node for WebUI build
+4. Restore and build .NET
+5. Run tests (`dotnet test --filter "Category!=Live"`)
+6. Build WebUI (`cd webui && npm ci && npm run build`)
 7. Build Docker image (multi-platform: amd64, arm64)
 8. Push to Docker Hub with tags:
    - `feramance/torrentarr:5.6.0`
@@ -243,44 +230,13 @@ docker buildx build \
 
 ## PyPI Publishing
 
-### Package Metadata
-
-**File:** `setup.cfg`
-
-```ini
-[metadata]
-name = Torrentarr
-version = 5.6.0
-description = Automate qBittorrent and *arr integration
-author = Feramance
-url = https://github.com/Feramance/Torrentarr
-```
-
-### Publishing
-
-Automated via GitHub Actions when tags are pushed.
-
-**Manual publishing:**
-
-```bash
-# Build
-python setup.py sdist bdist_wheel
-
-# Check
-twine check dist/*
-
-# Upload (requires PyPI credentials)
-twine upload dist/*
-```
+Torrentarr does **not** publish to PyPI; it is a .NET application. Distribution is via GitHub Releases (binaries), Docker Hub, and optionally NuGet (e.g. as a dotnet global tool). Skip any PyPI-related steps.
 
 ## Post-Release
 
 ### 1. Verify Release
 
 ```bash
-# Check PyPI
-dotnet tool install -g torrentarr==5.6.0
-
 # Check Docker Hub
 docker pull feramance/torrentarr:5.6.0
 
@@ -330,7 +286,8 @@ git commit -m "fix(critical): resolve data loss issue"
 **4. Release:**
 
 ```bash
-bump2version patch  # 5.6.0 → 5.6.1
+# Update version to 5.6.1 in project file(s)
+git tag -a v5.6.1 -m "Hotfix v5.6.1"
 git push origin hotfix/5.6.1 --tags
 ```
 
@@ -347,18 +304,17 @@ git push origin master
 
 Before releasing:
 
-- [ ] All tests pass (once implemented)
+- [ ] All tests pass (`dotnet test --filter "Category!=Live"`, WebUI tests if applicable)
 - [ ] Documentation updated
 - [ ] Changelog generated
-- [ ] Version bumped
-- [ ] Tag created
+- [ ] Version bumped in project file(s)
+- [ ] Tag created and pushed
 - [ ] No open critical issues
 
 After releasing:
 
-- [ ] PyPI package available
 - [ ] Docker images pushed
-- [ ] GitHub Release created
+- [ ] GitHub Release created (with binaries if applicable)
 - [ ] Documentation deployed
 - [ ] Announcement posted
 - [ ] Monitor for issues
@@ -374,12 +330,7 @@ If a release has critical issues:
 docker pull feramance/torrentarr:5.5.5
 ```
 
-**2. Yank PyPI package:**
-
-```bash
-# Marks package as unavailable (requires PyPI maintainer)
-# Contact Feramance to yank if needed
-```
+**2. Yank PyPI package:** N/A — Torrentarr does not publish to PyPI.
 
 **3. Create hotfix release:**
 

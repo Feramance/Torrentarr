@@ -1,4 +1,4 @@
-﻿# Debug Logging
+# Debug Logging
 
 Comprehensive guide to enabling, reading, and analyzing Torrentarr logs for effective troubleshooting.
 
@@ -75,7 +75,7 @@ Restart Torrentarr:
     sudo systemctl restart torrentarr
     ```
 
-=== "pip/Native"
+=== "Native (dotnet/binary)"
     ```bash
     # Stop Torrentarr (Ctrl+C if running in foreground)
     # Then restart:
@@ -211,7 +211,7 @@ Torrentarr                    # Root logger
     tail -n 100 ~/config/logs/Main.log
     ```
 
-=== "pip/Native"
+=== "Native (dotnet/binary)"
     ```bash
     # Real-time follow
     tail -f ~/config/logs/Main.log

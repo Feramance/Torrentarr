@@ -1,4 +1,4 @@
-﻿# Features Overview
+# Features Overview
 
 Torrentarr provides intelligent automation and monitoring for your media management setup, bridging the gap between qBittorrent and the Arr stack (Radarr/Sonarr/Lidarr).
 
@@ -329,13 +329,13 @@ AutoUpdateCron = "0 3 * * 0"  # Sundays at 3:00 AM
 
 1. Torrentarr checks for new versions on schedule
 2. Downloads latest release from GitHub
-3. Installs update (PyPI package or binary)
+3. Installs update (dotnet tool update or binary download)
 4. Restarts Torrentarr automatically
 5. Logs update in `Main.log`
 
 **Supported installation methods:**
 
-- ✅ PyPI package (`pip install -U torrentarr2`)
+- ✅ dotnet tool (`dotnet tool update -g torrentarr`)
 - ✅ Docker (pull latest image)
 - ⚠️ Binary (manual download, not fully automated)
 

@@ -1,4 +1,4 @@
-﻿# Process Management
+# Process Management
 
 Torrentarr uses a multiprocessing architecture where each Arr instance (Radarr, Sonarr, Lidarr) runs in a separate process. This design ensures isolation, fault tolerance, and efficient resource utilization. The process management system automatically monitors and restarts failed processes to maintain high availability.
 
@@ -391,7 +391,8 @@ services:
     image: feramance/torrentarr:latest
     restart: unless-stopped  # Container-level restart
     environment:
-      - QBITRR_SETTINGS__AUTORESTARTPROCESSES=true  # Process-level restart
+      - TORRENTARR_CONFIG=/config/config.toml
+      # Process restart: set in config.toml [Settings] AutoRestartProcesses = true
 ```
 
 **Layered Restart:**
@@ -447,7 +448,8 @@ services:
       retries: 3
       start_period: 40s
     environment:
-      - QBITRR_SETTINGS__AUTORESTARTPROCESSES=true
+      - TORRENTARR_CONFIG=/config/config.toml
+      # Auto-restart: set in config.toml [Settings] AutoRestartProcesses = true
 ```
 
 ---

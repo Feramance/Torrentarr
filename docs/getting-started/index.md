@@ -157,7 +157,7 @@ Choose the installation method that best fits your infrastructure:
 **Requirements:**
 
 - Linux with systemd
-- Python 3.11+ or Torrentarr binary
+- .NET 8+ or Torrentarr binary
 - sudo/root access for setup
 
 [**Systemd Installation Guide →**](installation/systemd.md)
@@ -171,11 +171,11 @@ Choose the installation method that best fits your infrastructure:
 - Advanced users
 - Minimal dependencies
 - Portable installations
-- Testing without Python
+- Testing without .NET (use binary)
 
 **Advantages:**
 
-- ✅ No Python required
+- ✅ No .NET or Python required
 - ✅ Portable executable
 - ✅ Quick testing
 
@@ -191,11 +191,11 @@ Choose the installation method that best fits your infrastructure:
 
 ## Installation Comparison
 
-| Feature | Docker | pip | Systemd | Binary |
+| Feature | Docker | dotnet tool | Systemd | Binary |
 |---------|--------|-----|---------|--------|
 | **Ease of Setup** | ⭐⭐⭐⭐⭐ | ⭐⭐⭐⭐ | ⭐⭐⭐ | ⭐⭐⭐⭐ |
 | **Updates** | Very Easy | Easy | Manual | Manual |
-| **Dependencies** | Auto | Manual | Manual | None |
+| **Dependencies** | Auto | .NET 8+ | .NET or binary | None |
 | **Cross-Platform** | Yes | Yes | Linux only | Yes |
 | **Performance** | Good | Excellent | Excellent | Excellent |
 | **Isolation** | Excellent | None | Good | None |
@@ -219,7 +219,7 @@ Start Torrentarr to generate the default configuration:
     docker logs -f torrentarr
     ```
 
-=== "pip"
+=== "dotnet tool"
 
     ```bash
     torrentarr
@@ -256,7 +256,7 @@ Stop Torrentarr to edit the configuration:
     docker-compose down
     ```
 
-=== "pip/Binary"
+=== "dotnet tool / Binary"
 
     Press ++ctrl+c++
 
@@ -277,7 +277,7 @@ Edit the generated `config.toml` file:
     nano /path/to/config/config.toml
     ```
 
-=== "pip"
+=== "dotnet tool"
 
     ```bash
     nano ~/config/config.toml
@@ -316,7 +316,7 @@ Restart Torrentarr with your configuration:
     docker-compose up -d
     ```
 
-=== "pip"
+=== "dotnet tool"
 
     ```bash
     torrentarr
@@ -443,7 +443,7 @@ ApprovedOnly = true
 - Strict seeding requirements
 - Disk space management
 
-**Installation:** pip + systemd
+**Installation:** dotnet tool or binary + systemd
 
 **Time to setup:** 30 minutes
 
@@ -501,7 +501,7 @@ ApprovedOnly = true
 
 **Check:**
 
-1. Python version (3.11+ required for pip/systemd)
+1. .NET 8+ (for dotnet tool) or use Binary/Docker
 2. Port 6969 not in use
 3. Config file exists and is valid TOML
 4. Permissions on config/logs folders
@@ -588,12 +588,11 @@ torrentarr [OPTIONS]
 
 | Variable | Description | Default |
 |----------|-------------|---------|
-| `QBITRR_CONFIG` | Path to config.toml | `~/config/config.toml` |
-| `QBITRR_LOG_LEVEL` | Logging level | `INFO` |
+| `TORRENTARR_CONFIG` | Path to config.toml | (see search order below) |
 | `PUID` / `PGID` | User/Group ID (Docker) | `1000` |
 | `TZ` | Timezone | `UTC` |
 
-Environment variables can override config.toml settings using the format `QBITRR_SECTION__KEY=value` (double underscore as separator).
+Config file path is taken from `TORRENTARR_CONFIG` when set. All other settings are read from `config.toml` only (no per-key env overrides).
 
 ### Signals
 
@@ -616,11 +615,12 @@ Environment variables can override config.toml settings using the format `QBITRR
 
 ### Config File Search Order
 
-1. `--config` option
-2. `QBITRR_CONFIG` environment variable
-3. `/config/config.toml` (Docker)
-4. `~/config/config.toml` (native)
-5. `~/.config/Torrentarr/config.toml` (pip install)
+1. `--config` option (if added in future)
+2. `TORRENTARR_CONFIG` environment variable
+3. `~/config/config.toml`
+4. `~/.config/qbitrr/config.toml`
+5. `~/.config/torrentarr/config.toml`
+6. `./config.toml`
 
 ---
 

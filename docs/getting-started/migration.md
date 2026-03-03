@@ -1,4 +1,4 @@
-﻿# Migration Guide
+# Migration Guide
 
 This guide helps you migrate from older versions of Torrentarr or similar tools to the latest version.
 
@@ -20,10 +20,10 @@ This guide helps you migrate from older versions of Torrentarr or similar tools 
 2. **Backup your database:**
    ```bash
    # Native
-   cp ~/config/Torrentarr.db ~/config/Torrentarr.db.backup
+   cp ~/config/qbitrr.db ~/config/qbitrr.db.backup
 
    # Docker
-   docker cp torrentarr:/config/Torrentarr.db Torrentarr.db.backup
+   docker cp torrentarr:/config/qbitrr.db qbitrr.db.backup
    ```
 
 3. **Review release notes:**
@@ -43,7 +43,7 @@ This guide helps you migrate from older versions of Torrentarr or similar tools 
 
 **Before (v5.7.x and earlier):**
 ```
-~/config/qBitManager/
+~/config/
 ├── Radarr-4K.db
 ├── Radarr-1080.db
 ├── Sonarr-TV.db
@@ -54,8 +54,8 @@ This guide helps you migrate from older versions of Torrentarr or similar tools 
 
 **After (v5.8.0+):**
 ```
-~/config/qBitManager/
-└── torrentarr.db  (single consolidated database)
+~/config/   (or ./config/ native, /config/ Docker)
+└── qbitrr.db  (single consolidated database)
 ```
 
 #### Automatic Migration Process
@@ -63,8 +63,8 @@ This guide helps you migrate from older versions of Torrentarr or similar tools 
 When you upgrade to v5.8.0+:
 
 1. **New consolidated database is created**
-   - Single `torrentarr.db` file with `ArrInstance` field for data isolation
-   - You'll see: `Initialized single database: /config/qBitManager/torrentarr.db`
+   - Single `qbitrr.db` file with `ArrInstance` field for data isolation
+   - Location: `config/qbitrr.db` or `/config/qbitrr.db` (Docker)
 
 2. **Old data is cleaned up** on first startup
    - Records without `ArrInstance` field are automatically removed
@@ -553,7 +553,7 @@ killall torrentarr
 cp ~/config/config.toml.backup ~/config/config.toml
 
 # Restore database
-cp ~/config/Torrentarr.db.backup ~/config/Torrentarr.db
+cp ~/config/qbitrr.db.backup ~/config/qbitrr.db
 
 # Downgrade Torrentarr
 dotnet tool install -g torrentarr==4.5.0  # Replace with desired version
@@ -570,6 +570,9 @@ docker-compose down torrentarr
 
 # Restore config
 docker cp config.toml.backup torrentarr:/config/config.toml
+
+# Restore database (if needed)
+docker cp qbitrr.db.backup torrentarr:/config/qbitrr.db
 
 # Use older image
 docker pull feramance/torrentarr:4.5.0

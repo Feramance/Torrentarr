@@ -1,4 +1,4 @@
-﻿# Common Issues & Solutions
+# Common Issues & Solutions
 
 This page covers the most frequently encountered issues with Torrentarr and their solutions.
 
@@ -791,33 +791,7 @@ If your issue isn't covered here:
 
 ### Exception Hierarchy
 
-Torrentarr uses a custom exception hierarchy for error handling:
-
-```
-qBitManagerError (base)
-├── UnhandledError
-├── ConfigException
-├── ArrManagerException
-│   └── RestartLoopException
-├── SkipException
-├── RequireConfigValue
-├── NoConnectionrException
-└── DelayLoopException
-```
-
-### Python Exceptions
-
-| Exception | Purpose | Common Causes |
-|-----------|---------|---------------|
-| `qBitManagerError` | Base exception for all Torrentarr errors | Catch-all for Torrentarr exceptions |
-| `UnhandledError` | Unhandled edge case encountered | Unexpected API response, unknown torrent state |
-| `ConfigException` | Configuration parsing/validation error | Invalid TOML syntax, missing required fields |
-| `RequireConfigValue` | Specific config value missing | Missing API key, missing host |
-| `ArrManagerException` | Arr-related error | API connection failure, invalid response, instance offline |
-| `RestartLoopException` | Signal event loop to restart | Config changed, manual restart requested |
-| `DelayLoopException` | Delay next event loop iteration | Network failure, temporary API unavailability |
-| `NoConnectionrException` | Connection failure with retry logic | Cannot connect to qBittorrent or Arr instance |
-| `SkipException` | Skip current torrent, continue next | Torrent doesn't match criteria, already processed |
+Torrentarr uses a custom exception hierarchy for error handling (C# types in Torrentarr.Core / Infrastructure). Base and derived types represent configuration, connection, and Arr-related failures.
 
 ### Exit Codes
 

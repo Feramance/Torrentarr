@@ -1,4 +1,4 @@
-﻿# Systemd Service Setup
+# Systemd Service Setup
 
 Run Torrentarr as a systemd service on Linux for automatic startup, restart management, and proper logging.
 
@@ -65,7 +65,7 @@ sudo chown -R torrentarr:torrentarr /opt/torrentarr
 Run Torrentarr once to generate the default configuration:
 
 ```bash
-sudo -u torrentarr QBITRR_CONFIG_PATH=/opt/torrentarr/config torrentarr
+sudo -u torrentarr TORRENTARR_CONFIG=/opt/torrentarr/config/config.toml torrentarr
 ```
 
 Press ++ctrl+c++ to stop, then edit:
@@ -103,7 +103,7 @@ WorkingDirectory=/opt/torrentarr
 ExecStart=/usr/local/bin/torrentarr
 
 # Environment variables
-Environment="QBITRR_CONFIG_PATH=/opt/torrentarr/config"
+Environment="TORRENTARR_CONFIG=/opt/torrentarr/config/config.toml"
 
 # Restart policy
 Restart=always
@@ -239,7 +239,7 @@ To use a different config location, update the service file:
 
 ```ini
 [Service]
-Environment="QBITRR_CONFIG_PATH=/etc/torrentarr"
+Environment="TORRENTARR_CONFIG=/etc/torrentarr/config.toml"
 WorkingDirectory=/etc/torrentarr
 ExecStart=/usr/local/bin/torrentarr
 ```
@@ -257,7 +257,7 @@ Add environment variables to the service file:
 
 ```ini
 [Service]
-Environment="QBITRR_CONFIG_PATH=/opt/torrentarr/config"
+Environment="TORRENTARR_CONFIG=/opt/torrentarr/config/config.toml"
 Environment="QBITRR_LOG_LEVEL=DEBUG"
 Environment="TZ=America/New_York"
 ```
@@ -331,7 +331,7 @@ Edit `torrentarr-movies.service`:
 [Service]
 User=torrentarr-movies
 WorkingDirectory=/opt/torrentarr-movies
-Environment="QBITRR_CONFIG_PATH=/opt/torrentarr-movies/config"
+Environment="TORRENTARR_CONFIG=/opt/torrentarr-movies/config/config.toml"
 ```
 
 Edit `torrentarr-tv.service`:
@@ -340,7 +340,7 @@ Edit `torrentarr-tv.service`:
 [Service]
 User=torrentarr-tv
 WorkingDirectory=/opt/torrentarr-tv
-Environment="QBITRR_CONFIG_PATH=/opt/torrentarr-tv/config"
+Environment="TORRENTARR_CONFIG=/opt/torrentarr-tv/config/config.toml"
 ```
 
 ### 3. Create Users and Directories
@@ -462,7 +462,7 @@ WorkingDirectory=/opt/torrentarr
 ExecStart=/usr/local/bin/torrentarr
 
 # Environment
-Environment="QBITRR_CONFIG_PATH=/opt/torrentarr/config"
+Environment="TORRENTARR_CONFIG=/opt/torrentarr/config/config.toml"
 Environment="TZ=America/New_York"
 
 # Restart policy

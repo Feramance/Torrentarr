@@ -4,14 +4,14 @@ Complete reference for Torrentarr's SQLite database structure and operations.
 
 ## Overview
 
-Torrentarr uses **SQLite** with **Peewee ORM** for persistent state management.
+Torrentarr uses **SQLite** with **Entity Framework Core** for persistent state management.
 
 **Database Location:**
-- Native install: `~/config/qBitManager/torrentarr.db`
-- Docker: `/config/qBitManager/torrentarr.db`
+- Native install: `~/config/qbitrr.db` or `./config/qbitrr.db`
+- Docker: `/config/qbitrr.db`
 
 !!! success "Single Consolidated Database (v5.8.0+)"
-    As of version 5.8.0, Torrentarr uses a **single consolidated database** file for all Arr instances, replacing the previous per-instance database approach. This simplifies backups, reduces file overhead, and improves performance.
+    As of version 5.8.0, Torrentarr uses a **single consolidated database** file (`qbitrr.db`) for all Arr instances, replacing the previous per-instance database approach.
 
 **Why SQLite?**
 - Zero configuration required
@@ -28,7 +28,7 @@ Torrentarr uses **SQLite** with **Peewee ORM** for persistent state management.
 All Arr instances now share a single database file with **ArrInstance field** for data isolation:
 
 ```
-torrentarr.db
+qbitrr.db
 ├── MoviesFilesModel      (ArrInstance: "Radarr-4K", "Radarr-1080", etc.)
 ├── EpisodeFilesModel     (ArrInstance: "Sonarr-TV", "Sonarr-4K", etc.)
 ├── AlbumFilesModel       (ArrInstance: "Lidarr", etc.)
@@ -51,17 +51,9 @@ torrentarr.db
 
 ### Schema Definition
 
-All models include an **ArrInstance field** to isolate data by Arr instance:
+All models include an **ArrInstance field** to isolate data by Arr instance (EF Core entity property).
 
-```sql
-ArrInstance = CharField(null=True, default="")
-```
-
-Torrentarr maintains tables defined in `Torrentarr/tables.py`:
-
-#### downloads
-
-Tracks all torrents managed by Torrentarr.
+Torrentarr maintains tables via **Torrentarr.Infrastructure** (EF Core entities in `TorrentarrDbContext`). Key tables:
 
 ```sql
 CREATE TABLE downloads (
@@ -179,233 +171,51 @@ RetentionDays = 30  # Keep entries for 30 days
 
 Cleanup runs automatically during each event loop iteration.
 
-## Peewee ORM Models
+## EF Core and DbContext
 
-**File:** `Torrentarr/tables.py`
+**Location:** `Torrentarr.Infrastructure/Database/` — EF Core entities and `TorrentarrDbContext`
 
-### DownloadsModel
-
-```python
-from peewee import *
-from datetime import datetime
-
-class DownloadsModel(Model):
-    hash = CharField(primary_key=True)
-    name = CharField()
-    arr_type = CharField()
-    arr_name = CharField()
-    media_id = IntegerField()
-    state = CharField()
-    added_at = DateTimeField(default=datetime.now)
-    updated_at = DateTimeField(default=datetime.now)
-    # ... additional fields
-
-    class Meta:
-        database = database_proxy
-        table_name = 'downloads'
-```
-
-**Common Queries:**
-
-```python
-# Get all downloading torrents for Radarr instance
-torrents = (DownloadsModel
-    .select()
-    .where(
-        (DownloadsModel.arr_name == 'Radarr-4K') &
-        (DownloadsModel.state == 'downloading')
-    ))
-
-# Update torrent state
-download = DownloadsModel.get(DownloadsModel.hash == torrent_hash)
-download.state = 'completed'
-download.completed_at = datetime.now()
-download.save()
-
-# Bulk delete old entries
-deleted = (DownloadsModel
-    .delete()
-    .where(DownloadsModel.updated_at < cutoff_date)
-    .execute())
-```
-
-### SearchModel
-
-```python
-class SearchModel(Model):
-    arr_type = CharField()
-    arr_name = CharField()
-    media_id = IntegerField()
-    query = CharField()
-    searched_at = DateTimeField(default=datetime.now)
-    result_count = IntegerField(default=0)
-
-    class Meta:
-        database = database_proxy
-        table_name = 'searches'
-```
-
-**Common Queries:**
-
-```python
-# Check if searched recently (prevent duplicate searches)
-recent = (SearchModel
-    .select()
-    .where(
-        (SearchModel.media_id == movie_id) &
-        (SearchModel.searched_at > datetime.now() - timedelta(hours=1))
-    )
-    .exists())
-
-# Get search success rate for instance
-total = SearchModel.select().where(SearchModel.arr_name == 'Radarr-4K').count()
-successful = SearchModel.select().where(
-    (SearchModel.arr_name == 'Radarr-4K') &
-    (SearchModel.success == True)
-).count()
-success_rate = (successful / total * 100) if total > 0 else 0
-```
-
-### EntryExpiry
-
-```python
-class EntryExpiry(Model):
-    entry_id = CharField(primary_key=True)
-    entry_type = CharField()
-    expires_at = DateTimeField()
-    created_at = DateTimeField(default=datetime.now)
-
-    class Meta:
-        database = database_proxy
-        table_name = 'expiry'
-```
+Entities map to the tables above (e.g. `TorrentLibrary`, `MoviesFilesModel`, `EpisodeFilesModel`, queue models, `SearchActivity`). Use dependency injection to get `TorrentarrDbContext`; run queries and updates through the DbContext. All Arr workers share the same database file; data is isolated by the `ArrInstance` (or equivalent) field per entity.
 
 ## Database Operations
 
 ### Initialization
 
-**File:** `Torrentarr/database.py`
+**File:** `Torrentarr.Infrastructure` (EF Core DbContext and services)
 
 Database is initialized on first run using the centralized `get_database()` function:
 
-```python
-from Torrentarr.database import get_database
-
-def main():
-    db = get_database()  # Returns singleton instance
-    # Database is at: ~/config/qBitManager/torrentarr.db
-    # Tables are created automatically if they don't exist
-```
-
-The `get_database()` function:
-
-1. Creates database at `APPDATA_FOLDER/torrentarr.db`
-2. Configures WAL mode and performance pragmas
-3. Binds all model classes to the database
-4. Creates all tables with `safe=True` (no error if exists)
-5. Returns the shared database instance
-
-**All Arr instances share this single database**, with isolation provided by the `ArrInstance` field in each model.
+Database path is set at startup (e.g. `~/config/qbitrr.db` or `./config/qbitrr.db`). Torrentarr.Host passes the path to Torrentarr.Infrastructure; EF Core creates the database and tables if they don't exist. All Arr workers share the same database file, with isolation by the `ArrInstance` field.
 
 ### Concurrency Control
 
-**File:** `Torrentarr/db_lock.py`
-
-All database writes use a global lock:
-
-```python
-from Torrentarr.db_lock import locked_database
-
-# Safe concurrent access
-with locked_database():
-    DownloadsModel.create(
-        hash=torrent_hash,
-        name=torrent_name,
-        state='downloading'
-    )
-```
-
-**Why locking is needed:**
-- Multiple Arr manager processes write concurrently
-- SQLite has limited concurrent write support
-- Lock prevents "database is locked" errors
-- Uses `threading.RLock()` for reentrant locking
+**Why coordination is needed:**
+- Multiple Arr worker processes may write concurrently
+- SQLite WAL mode and EF Core handle coordination
+- For offline recovery options, see [Database Troubleshooting](../troubleshooting/database.md).
 
 ### Transactions
 
-Peewee automatically wraps operations in transactions:
-
-```python
-# Atomic transaction
-with database.atomic():
-    download = DownloadsModel.get(hash=torrent_hash)
-    download.state = 'imported'
-    download.save()
-
-    # If this fails, download.save() is rolled back
-    SearchModel.create(media_id=download.media_id, ...)
-```
+EF Core wraps SaveChanges in transactions. Use the same DbContext scope for multi-entity updates to keep them atomic.
 
 ### Migrations
 
 #### Consolidated Database Migration (v5.7.x → v5.8.0)
 
-**File:** `Torrentarr/main.py:_delete_all_databases()`
+**Location:** Torrentarr.Host / Torrentarr.Infrastructure — on startup, old per-instance DBs are removed and the consolidated `qbitrr.db` is used.
 
-When upgrading to v5.8.0+, Torrentarr performs a **clean slate migration**:
-
-1. **Deletes old per-instance databases** (Radarr-*.db, Sonarr-*.db, etc.)
-2. **Creates new consolidated database** (`torrentarr.db`)
-3. **Preserves the consolidated database** across future restarts
-4. **Re-syncs data** from Arr APIs automatically
-
-```python
-def _delete_all_databases() -> None:
-    """Delete old per-instance databases, preserve consolidated database."""
-    preserve_files = {"torrentarr.db", "Torrents.db"}
-
-    for db_file in glob.glob(str(APPDATA_FOLDER / "*.db*")):
-        if any(base in db_file for base in preserve_files):
-            continue  # Preserve consolidated database
-
-        os.remove(db_file)  # Delete old per-instance databases
-```
+When upgrading to v5.8.0+:
+1. **Deletes old per-instance databases** (Radarr-*.db, Sonarr-*.db, etc.) if present
+2. **Uses consolidated database** (`qbitrr.db`) in config directory
+3. **Re-syncs data** from Arr APIs automatically
 
 This approach ensures:
-- ✅ Clean database schema (no migration conflicts)
-- ✅ Automatic data recovery from Arr APIs
-- ✅ No complex migration logic required
-
-#### Future Schema Changes
-
-When adding/modifying fields in future versions:
-
-```python
-# Example: Adding a new field to existing model
-from playhouse.migrate import SqliteMigrator, migrate
-
-def apply_database_migration_v9():
-    """Add NewField to ExistingModel (v8 → v9)."""
-    from Torrentarr.database import get_database
-
-    db = get_database()
-    migrator = SqliteMigrator(db)
-
-    # Add new field with default value
-    new_field = CharField(null=True, default="")
-
-    with db.atomic():
-        migrate(
-            migrator.add_column('moviesfilesmodel', 'NewField', new_field)
-        )
-```
 
 **Best Practices:**
 - Always provide `null=True` and `default` values for new columns
 - Test migrations on backup database first
-- Increment config version in `config_version.py`
+- Increment config version in `Torrentarr.Core` (ConfigurationLoader.ExpectedConfigVersion)
 - Document migration in CHANGELOG.md
-- Consider adding migration to `apply_config_migrations()`
 
 ## Maintenance
 
@@ -415,30 +225,28 @@ def apply_database_migration_v9():
 
 ```bash
 # Manual backup
-cp ~/config/Torrentarr.db ~/config/Torrentarr.db.backup
+cp ~/config/qbitrr.db ~/config/qbitrr.db.backup
 
 # Automated backup (cron)
-0 2 * * * cp ~/config/Torrentarr.db ~/config/Torrentarr.db.$(date +\%Y\%m\%d)
+0 2 * * * cp ~/config/qbitrr.db ~/config/qbitrr.db.$(date +\%Y\%m\%d)
 
 # Docker backup
-docker exec torrentarr sqlite3 /config/Torrentarr.db ".backup /config/Torrentarr.db.backup"
+docker exec torrentarr sqlite3 /config/qbitrr.db ".backup /config/qbitrr.db.backup"
 ```
 
 **What to backup:**
-- `Torrentarr.db` - Primary database
+- `qbitrr.db` - Primary database
 - `config.toml` - Configuration file
 - `logs/` - Optional, for troubleshooting
 
 ### VACUUM
 
-**Optimize database size:**
+**Optimize database size:** Torrentarr does not provide a `--vacuum-db` CLI. Use sqlite3 directly (stop Torrentarr first):
 
 ```bash
-# Manual vacuum
-sqlite3 ~/config/Torrentarr.db "VACUUM;"
-
-# Or use Torrentarr CLI
-torrentarr --vacuum-db
+# Stop Torrentarr, then:
+sqlite3 ~/config/qbitrr.db "VACUUM;"
+# Or Docker: docker exec torrentarr sqlite3 /config/qbitrr.db "VACUUM;"
 ```
 
 **When to vacuum:**
@@ -459,44 +267,27 @@ AutoVacuum = true  # VACUUM during startup if DB > threshold
 
 ```bash
 # Check for corruption
-sqlite3 ~/config/Torrentarr.db "PRAGMA integrity_check;"
+sqlite3 ~/config/qbitrr.db "PRAGMA integrity_check;"
 
 # Expected output: ok
 ```
 
 **Auto-recovery:**
 
-Torrentarr includes automatic recovery in `Torrentarr/db_recovery.py`:
-
-```python
-def recover_database(db_path):
-    # Attempt to dump and recreate database
-    try:
-        subprocess.run(['sqlite3', db_path, '.dump'],
-                      stdout=temp_file, check=True)
-        os.rename(db_path, f"{db_path}.corrupt")
-        subprocess.run(['sqlite3', db_path],
-                      stdin=temp_file, check=True)
-        logger.info("Database recovered successfully")
-    except Exception as e:
-        logger.error(f"Recovery failed: {e}")
-```
+Torrentarr includes automatic recovery in `Torrentarr.Infrastructure` (e.g. `DatabaseHealthService` and WAL checkpoint). For manual recovery, use sqlite3 to dump and reimport (see [Database Troubleshooting](../troubleshooting/database.md)).
 
 ### Reset Operations
 
 **Clear all data:**
 
 ```bash
-# Reset all torrent tracking (keeps searches)
-torrentarr --reset-torrents
-
-# Reset all search history (keeps torrents)
-torrentarr --reset-searches
-
-# Reset everything (destructive!)
-rm ~/config/Torrentarr.db
-torrentarr  # Will recreate on next start
+# Reset: remove database file and restart to recreate
+# Stop Torrentarr, then:
+rm ~/config/qbitrr.db
+# Restart Torrentarr — database recreated on next start
 ```
+
+There is no `--reset-torrents` or `--reset-searches` CLI; use sqlite3 or the API if such operations are exposed.
 
 ## Performance Optimization
 
@@ -512,40 +303,9 @@ Indexes are automatically created for:
 - INSERT/UPDATE: Minimal overhead (< 5%)
 - Disk space: Indexes add ~20% to DB size
 
-### Query Optimization
+**Slow query example:** Avoid N+1 queries by using EF Core `.Include()` or explicit loading. Prefer single queries with joins over per-entity lookups.
 
-**Slow query example:**
-
-```python
-# BAD: N+1 query problem
-for download in DownloadsModel.select():
-    expiry = EntryExpiry.get(entry_id=download.hash)  # Extra query!
-```
-
-**Optimized:**
-
-```python
-# GOOD: Single query with JOIN
-downloads = (DownloadsModel
-    .select(DownloadsModel, EntryExpiry)
-    .join(EntryExpiry, JOIN.LEFT_OUTER,
-          on=(DownloadsModel.hash == EntryExpiry.entry_id))
-    .execute())
-```
-
-### Batch Operations
-
-**Bulk insert:**
-
-```python
-# BAD: One insert per torrent
-for torrent in torrents:
-    DownloadsModel.create(**torrent)  # N queries
-
-# GOOD: Batch insert
-with database.atomic():
-    DownloadsModel.insert_many(torrents).execute()  # 1 query
-```
+**Batch operations:** Use EF Core `AddRange` and `SaveChanges` for bulk inserts; run in a single transaction scope.
 
 ## Troubleshooting
 
@@ -553,13 +313,7 @@ with database.atomic():
 
 **Cause:** Concurrent write from multiple processes without lock
 
-**Solution:**
-
-```python
-# Always use locked_database() context manager
-with locked_database():
-    DownloadsModel.create(...)
-```
+**Solution:** Ensure only one process writes at a time, or use WAL mode (default). SQLite and EF Core handle coordination; if you see lock errors, check that multiple Torrentarr instances are not sharing the same DB file.
 
 ### Corruption Detection
 
@@ -571,13 +325,11 @@ with locked_database():
 **Recovery:**
 
 ```bash
-# Try auto-recovery (Torrentarr CLI)
-torrentarr --repair-database
-
-# Manual recovery
-sqlite3 ~/config/Torrentarr.db ".dump" > dump.sql
-mv ~/config/Torrentarr.db ~/config/Torrentarr.db.corrupt
-sqlite3 ~/config/Torrentarr.db < dump.sql
+# Try Torrentarr CLI if available (see troubleshooting docs)
+# Or manual recovery:
+sqlite3 ~/config/qbitrr.db ".dump" > dump.sql
+mv ~/config/qbitrr.db ~/config/qbitrr.db.corrupt
+sqlite3 ~/config/qbitrr.db < dump.sql
 ```
 
 ### High Disk Usage
@@ -594,7 +346,7 @@ AutoVacuum = true
 
 ```bash
 # Immediate cleanup
-torrentarr --vacuum-db
+Use sqlite3 to run VACUUM (see above); Torrentarr has no `--vacuum-db` CLI.
 ```
 
 ## Security Considerations
@@ -605,8 +357,8 @@ torrentarr --vacuum-db
 
 ```bash
 # Restrict access to database
-chmod 600 ~/config/Torrentarr.db
-chown torrentarr:torrentarr ~/config/Torrentarr.db
+chmod 600 ~/config/qbitrr.db
+chown torrentarr:torrentarr ~/config/qbitrr.db
 
 # Docker automatically sets via PUID/PGID
 ```

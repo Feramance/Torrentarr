@@ -1,4 +1,4 @@
-﻿# Ombi Integration
+# Ombi Integration
 
 !!! tip "Requestrr Integration"
     Want Discord-based requests? Configure Requestrr to use Ombi as its backend,
@@ -480,10 +480,7 @@ This ensures Ombi requests respect your custom format requirements (e.g., no har
 ### Security
 
 - **Protect API Keys**: Never commit `OmbiAPIKey` to public repositories
-- **Use Environment Variables**: Store sensitive keys in environment variables:
-  ```bash
-  export QBITRR_RADARR_MOVIES__ENTRYSEARCH__OMBI__OMBIAPIKEY="abc123"
-  ```
+- **Config file**: Store Ombi settings (including API key) in `config.toml` with restricted file permissions, or use the WebUI Config Editor. Torrentarr does not support per-setting environment variable overrides.
 - **HTTPS**: Use HTTPS for Ombi if exposed to the internet
 - **Reverse Proxy**: Place Ombi behind a reverse proxy (Nginx, Caddy, Traefik)
 
@@ -526,17 +523,15 @@ services:
     container_name: torrentarr
     environment:
       - TZ=America/New_York
-      # Ombi integration via environment variables
-      - QBITRR_RADARR_MOVIES__ENTRYSEARCH__OMBI__SEARCHOMBIQUESTS=true
-      - QBITRR_RADARR_MOVIES__ENTRYSEARCH__OMBI__OMBIURI=http://ombi:3579
-      - QBITRR_RADARR_MOVIES__ENTRYSEARCH__OMBI__OMBIAPIKEY=your-api-key
-      - QBITRR_RADARR_MOVIES__ENTRYSEARCH__OMBI__APPROVEDONLY=true
+      - TORRENTARR_CONFIG=/config/config.toml
     volumes:
       - /path/to/torrentarr/config:/config
     depends_on:
       - ombi
     restart: unless-stopped
 ```
+
+Configure Ombi in `config.toml` under `[Radarr-Movies.EntrySearch.Ombi]` (or your Arr instance name): `SearchOmbiQuests`, `OmbiURI`, `OmbiAPIKey`, `ApprovedOnly`.
 
 ---
 

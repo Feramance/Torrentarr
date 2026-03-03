@@ -3,11 +3,13 @@
 [![Build Status](https://img.shields.io/badge/build-passing-brightgreen)]()
 [![Feature Parity](https://img.shields.io/badge/feature_parity-99%25-blue)]()
 [![License: MIT](https://img.shields.io/badge/license-MIT-green)]()
+[![Documentation](https://img.shields.io/badge/docs-feramance.github.io%2FTorrentarr-blue)](https://feramance.github.io/Torrentarr/)
 
 > A high-performance C# port of [qBitrr](https://github.com/Feramance/qBitrr) — intelligent automation for qBittorrent and the *Arr ecosystem (Radarr, Sonarr, Lidarr). 100% config and database compatible with qBitrr.
 
 ## Documentation
 
+- **Full documentation:** [https://feramance.github.io/Torrentarr/](https://feramance.github.io/Torrentarr/)
 - **Getting Started** – Installation guides for Docker and native setups
 - **Configuration** – qBittorrent, Arr instances, quality profiles, and more
 - **Features** – Health monitoring, automated search, quality management, disk space
@@ -26,14 +28,14 @@ docker run -d \
   -v /path/to/appdata/torrentarr:/config \
   -v /path/to/completed/downloads:/completed_downloads:rw \
   --restart unless-stopped \
-  torrentarr:latest
+  feramance/torrentarr:latest
 ```
 
 **Docker Compose:**
 ```yaml
 services:
   torrentarr:
-    image: torrentarr:latest
+    image: feramance/torrentarr:latest
     container_name: torrentarr
     restart: unless-stopped
     environment:
@@ -48,8 +50,8 @@ services:
 ### Native Installation
 
 ```bash
-git clone https://github.com/yourusername/torrentarr.git
-cd torrentarr
+git clone https://github.com/Feramance/Torrentarr.git
+cd Torrentarr
 
 # Build (frontend is built into Host/wwwroot; not committed)
 ./build.sh       # Linux/macOS: builds React then .NET
@@ -118,7 +120,7 @@ UserName = "admin"
 Password = "seedboxpass"
 ```
 
-See [config.example.toml](https://github.com/Feramance/qBitrr/blob/master/config.example.toml) for all available options.
+See [config.example.toml](https://github.com/Feramance/Torrentarr/blob/master/config.example.toml) for all available options.
 
 ## Architecture
 
@@ -135,9 +137,9 @@ Torrentarr.Host (orchestrator)
 
 ## Resources
 
-- **Example Config:** [config.example.toml](https://github.com/Feramance/qBitrr/blob/master/config.example.toml)
-- **Original qBitrr:** [Feramance/qBitrr](https://github.com/Feramance/qBitrr)
-- **qBitrr Documentation:** https://feramance.github.io/qBitrr/
+- **Torrentarr Documentation:** [https://feramance.github.io/Torrentarr/](https://feramance.github.io/Torrentarr/)
+- **Example Config:** [config.example.toml](https://github.com/Feramance/Torrentarr/blob/master/config.example.toml)
+- **Original qBitrr:** [Feramance/qBitrr](https://github.com/Feramance/qBitrr) — [qBitrr Documentation](https://feramance.github.io/qBitrr/)
 
 ## Development
 
@@ -169,8 +171,8 @@ npm run build   # Production bundle
 
 ## Issues & Support
 
-- **Report Bugs:** [GitHub Issues](https://github.com/yourusername/torrentarr/issues)
-- **Discussions:** [GitHub Discussions](https://github.com/yourusername/torrentarr/discussions)
+- **Report Bugs:** [GitHub Issues](https://github.com/Feramance/Torrentarr/issues)
+- **Discussions:** [GitHub Discussions](https://github.com/Feramance/Torrentarr/discussions)
 
 ## Contributing
 
@@ -195,6 +197,6 @@ Released under the [MIT License](LICENSE).
 
 **Made with ❤️ as a C# port of qBitrr**
 
-[GitHub](https://github.com/yourusername/torrentarr) • [qBitrr](https://github.com/Feramance/qBitrr)
+[GitHub](https://github.com/Feramance/Torrentarr) • [qBitrr](https://github.com/Feramance/qBitrr)
 
 </div>

@@ -232,10 +232,9 @@ Configure Torrentarr via environment variables:
 
 **Common variables:**
 ```bash
-QBITRR_LOG_LEVEL=DEBUG
-QBITRR_CONFIG_PATH=/custom/path
-QBITRR_QBITTORRENT_HOST=http://qbittorrent:8080
+TORRENTARR_CONFIG=/custom/path/config.toml
 ```
+Torrentarr only supports the config file path via `TORRENTARR_CONFIG`; per-key env overrides are not supported.
 
 #### 2. Logging Configuration
 
@@ -270,7 +269,7 @@ Configure SQLite database behavior:
 **Key settings:**
 ```toml
 [Settings]
-DatabasePath = "/config/torrentarr.db"
+# Database is qbitrr.db in config directory (path not usually set in TOML)
 DatabaseBackupEnabled = true
 ```
 
@@ -283,14 +282,10 @@ The configuration file is located at:
     /config/config.toml
     ```
 
-=== "Native Install"
+=== "Native Install (dotnet / binary)"
     ```
     ~/config/config.toml
-    ```
-
-=== "pip Install"
-    ```
-    ~/.config/Torrentarr/config.toml
+    or ~/.config/torrentarr/config.toml or ~/.config/qbitrr/config.toml
     ```
 
 ## Getting Started
@@ -420,8 +415,7 @@ Follow this recommended workflow when setting up Torrentarr:
 
 3. **Locate Config File**:
    - Docker: `/config/config.toml`
-   - Native: `~/config/config.toml`
-   - pip: `~/.config/Torrentarr/config.toml`
+   - Native: `~/config/config.toml` or `~/.config/torrentarr/config.toml`
 
 ### Step 2: Configure Essentials
 
@@ -864,7 +858,7 @@ See: [Performance Troubleshooting](../troubleshooting/performance.md)
 ```bash
 # Backup config and database
 cp ~/config/config.toml ~/config/config.toml.backup
-cp ~/config/torrentarr.db ~/config/torrentarr.db.backup
+cp ~/config/qbitrr.db ~/config/qbitrr.db.backup
 
 # Docker
 docker cp torrentarr:/config/config.toml ./config.toml.backup

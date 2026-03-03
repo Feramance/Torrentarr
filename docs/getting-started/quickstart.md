@@ -1,4 +1,4 @@
-﻿# Quick Start Guide
+# Quick Start Guide
 
 Get Torrentarr running in 5 minutes!
 
@@ -44,7 +44,7 @@ Stop Torrentarr so you can edit the configuration:
     docker stop torrentarr
     ```
 
-=== "pip"
+=== "dotnet tool / Binary"
 
     Press ++ctrl+c++ in the terminal
 
@@ -62,13 +62,13 @@ Find and edit your `config.toml` file:
 
     Location: `/path/to/config/config.toml` (where you mounted `/config`)
 
-=== "pip"
+=== "dotnet tool / Binary"
 
-    Location: `~/config/config.toml` (home directory)
+    Location: `~/config/config.toml` (or path set by TORRENTARR_CONFIG)
 
 === "Systemd"
 
-    Location: Set via `Environment="QBITRR_CONFIG_PATH=/path/to/config"` in service file
+    Location: Set via `Environment="TORRENTARR_CONFIG=/path/to/config/config.toml"` in service file
 
 ### Minimal Configuration
 

@@ -1,4 +1,4 @@
-﻿# WebUI Development
+# WebUI Development
 
 Guide for developing Torrentarr's React-based web interface.
 
@@ -97,8 +97,7 @@ webui/
 
 **Terminal 1: Backend**
 ```bash
-# Start Torrentarr
-torrentarr
+dotnet run --project src/Torrentarr.Host/Torrentarr.Host.csproj
 ```
 
 **Terminal 2: Frontend**
@@ -449,9 +448,7 @@ npm run build
 - Compressed assets
 - Source maps (for debugging)
 
-**Integration with Python package:**
-
-The `setup.py` copies `webui/dist/` to `Torrentarr/static/` during package build.
+**Integration with backend:** The build script (`build.sh` / `build.bat`) runs `npm run build` in `webui/`; output goes to `Torrentarr.Host/wwwroot/` so the Host serves the SPA. No Python package step.
 
 ## Testing
 

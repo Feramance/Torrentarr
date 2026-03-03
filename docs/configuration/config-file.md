@@ -1,4 +1,4 @@
-﻿# Configuration File Reference
+# Configuration File Reference
 
 This comprehensive guide explains every setting in Torrentarr's `config.toml` configuration file.
 
@@ -547,12 +547,12 @@ When `true`:
 
 - Torrentarr downloads FFprobe from https://ffbinaries.com/downloads
 - Automatically updates to latest version
-- Stored in `~/config/qBitManager/ffprobe`
+- Stored in config directory (e.g. `~/config/` or `./config/`); ffprobe path can be configured if needed
 
 When `false`:
 
 - You must provide your own FFprobe binary
-- Place at `~/config/qBitManager/ffprobe` (Linux/Mac) or `ffprobe.exe` (Windows)
+- Place in config directory or system PATH (e.g. `~/config/` or `ffprobe` on PATH)
 
 **Recommendation:** Keep `true` for automatic management.
 
@@ -578,7 +578,7 @@ When `true`:
 
 **Supported installation methods:**
 
-- ✅ PyPI package (`pip install`)
+- ✅ dotnet tool or binary installation
 - ✅ Docker (pulls latest image)
 - ⚠️ Binary (manual, not fully automated)
 
@@ -990,30 +990,22 @@ cp config.example.toml ~/config/config.toml
 
 ---
 
-### 2. Use Environment Variables
+### 2. Config file path (environment)
 
-Override settings with environment variables (Docker-friendly):
+To point Torrentarr at a specific config file (e.g. in Docker):
 
 ```bash
-# Format: QBITRR_<SECTION>_<KEY>
-export QBITRR_SETTINGS_CONSOLELEVEL=DEBUG
-export QBITRR_WEBUI_PORT=8080
-export QBITRR_QBIT_HOST=qbittorrent
+# Path to config.toml file
+export TORRENTARR_CONFIG=/config/config.toml
 ```
+
+Torrentarr does not support per-setting environment variable overrides; use `config.toml` or the WebUI Config Editor for all other settings. See [Environment Variables](environment.md).
 
 ---
 
 ### 3. Validate Your Config
 
-Check for syntax errors:
-
-```bash
-# Python TOML validation
-python3 -c "import toml; toml.load('~/config/config.toml')"
-
-# Or use online validator
-# https://www.toml-lint.com/
-```
+Check for syntax errors with an online TOML validator (e.g. https://www.toml-lint.com/) or by starting Torrentarr and checking logs for config parse errors.
 
 ---
 
@@ -1056,12 +1048,7 @@ Password = "your-password"
 Token = "your-token"
 ```
 
-**Use environment variables for secrets:**
-
-```bash
-export QBITRR_RADARR_MOVIES_APIKEY="your-secret-key"
-export QBITRR_QBIT_PASSWORD="your-password"
-```
+**Use the WebUI Config Editor or edit config.toml for secrets.** Torrentarr does not support per-key environment variable overrides; store secrets in `config.toml` with restricted file permissions or use the WebUI.
 
 ---
 
@@ -1239,7 +1226,7 @@ Torrentarr uses infinite retry loops in specific scenarios for reliability:
 
 #### Quality Profile Fetching (Startup)
 
-**Location:** `arss.py`
+**Location:** Torrentarr.Infrastructure (Arr worker services)
 **Behavior:** Retries forever until Arr responds with quality profiles
 
 **Retry Strategy:**
@@ -1254,7 +1241,7 @@ Torrentarr uses infinite retry loops in specific scenarios for reliability:
 
 #### Search Command Posting
 
-**Location:** `arss.py`
+**Location:** Torrentarr.Infrastructure (Arr worker services)
 **Behavior:** Retries search API call until network succeeds
 
 **Retry Strategy:**

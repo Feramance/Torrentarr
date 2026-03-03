@@ -1,4 +1,4 @@
-﻿# Docker Installation
+# Docker Installation
 
 Docker is the recommended way to run Torrentarr. It provides an isolated, consistent environment that works across all platforms.
 
@@ -60,11 +60,10 @@ docker-compose up -d
 
 | Variable | Default | Description |
 |----------|---------|-------------|
+| `TORRENTARR_CONFIG` | `/config/config.toml` | Path to config file |
 | `PUID` | `1000` | User ID for file permissions |
 | `PGID` | `1000` | Group ID for file permissions |
 | `TZ` | `UTC` | Timezone (e.g., `America/New_York`, `Europe/London`) |
-| `QBITRR_CONFIG_PATH` | `/config` | Path to config directory |
-| `QBITRR_LOG_LEVEL` | `INFO` | Logging level (`DEBUG`, `INFO`, `WARNING`, `ERROR`) |
 
 ### Volume Mapping
 
@@ -663,7 +662,7 @@ image: feramance/torrentarr:5.5.5  # Not latest
 
 ```yaml
 environment:
-  - QBITRR_LOG_LEVEL=INFO  # Not DEBUG
+  - ConsoleLevel in config.toml [Settings]  # Not DEBUG
 ```
 
 ### 4. Use Local DNS

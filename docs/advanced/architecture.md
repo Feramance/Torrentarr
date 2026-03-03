@@ -202,11 +202,11 @@ flowchart TD
     CheckVersion -->|No| Migrate["⚙️ Apply Migrations<br/>(MigrateConfig)"]
     CheckVersion -->|Yes| EnvVars
 
-    Migrate --> EnvVars["🌍 Environment Override<br/>(QBITRR_* env vars)"]
+    Migrate --> EnvVars["🌍 Config path override<br/>(TORRENTARR_CONFIG)"]
 
-    EnvVars --> CheckEnv{QBITRR_*<br/>env vars?}
+    EnvVars --> CheckEnv{TORRENTARR_CONFIG<br/>set?}
 
-    CheckEnv -->|Yes| Override["✏️ Override TOML values<br/>(useful for Docker)"]
+    CheckEnv -->|Yes| Override["✏️ Use as config file path<br/>(e.g. Docker)"]
     CheckEnv -->|No| Validate
 
     Override --> Validate["✅ Validation<br/>(ValidateConfig)"]
@@ -241,7 +241,7 @@ flowchart TD
 
 **Configuration Precedence (highest to lowest):**
 
-1. **Environment Variables** (`QBITRR_*`) — Highest priority
+1. **Environment Variable** (`TORRENTARR_CONFIG`) — Config file path only; when set, used to locate config.toml
 2. **TOML File** (`config.toml`) — Standard configuration
 3. **Defaults** (in `ConfigurationLoader.cs`) — Fallback values
 

@@ -1,4 +1,4 @@
-﻿# Troubleshooting
+# Troubleshooting
 
 Having issues with Torrentarr? This section provides solutions to common problems and debugging techniques.
 
@@ -89,7 +89,7 @@ Torrentarr logs provide detailed information about operations:
     journalctl -u torrentarr -n 100
     ```
 
-=== "pip/Native"
+=== "Native (dotnet/binary)"
     ```bash
     # Logs are in ~/config/logs/
     tail -f ~/config/logs/Main.log
@@ -167,7 +167,7 @@ docker exec torrentarr ls -la /downloads
 
 2. **Gather information:**
    - Torrentarr version
-   - Installation method (Docker/pip/binary)
+   - Installation method (Docker/dotnet/binary)
    - Arr versions
    - Relevant log excerpts
    - Configuration (redact API keys!)
@@ -523,7 +523,7 @@ top -p $(pidof torrentarr)
 **Validate TOML:**
 
 ```bash
-# Python validation
+# .NET / runtime validation
 python3 -c "import toml; toml.load(open('config.toml'))"
 
 # Online validator
@@ -555,30 +555,24 @@ Category = "radarr"             # REQUIRED (must match qBit download client)
 
 ### Environment Variable Overrides Not Working
 
-**Symptoms:** Environment variables don't override config file
+**Symptoms:** Config path environment variable not applied
 
 **Solutions:**
 
-1. **Check variable naming:**
+1. **Use the correct variable:** Torrentarr only reads `TORRENTARR_CONFIG` (path to config.toml). It does not support per-setting env overrides.
    ```bash
-   # Correct format: QBITRR_SECTION__KEY
-   export QBITRR_SETTINGS__LOGLEVEL=DEBUG
-
-   # For array items:
-   export QBITRR_RADARR__0__URI=http://radarr:7878
+   export TORRENTARR_CONFIG=/path/to/config/config.toml
    ```
 
-2. **Verify variables are passed to container:**
+2. **Verify variable is passed to container:**
    ```bash
-   docker exec torrentarr env | grep QBITRR
+   docker exec torrentarr env | grep TORRENTARR_CONFIG
    ```
 
-3. **Check Docker Compose syntax:**
+3. **In Docker Compose:**
    ```yaml
    environment:
-     - QBITRR_SETTINGS__LOGLEVEL=DEBUG
-     # or
-     QBITRR_SETTINGS__LOGLEVEL: DEBUG
+     TORRENTARR_CONFIG: /config/config.toml
    ```
 
 ---
@@ -747,7 +741,7 @@ Category = "radarr"             # REQUIRED (must match qBit download client)
     ls -la /path/to/config/logs/
     ```
 
-=== "Native/pip"
+=== "Native (dotnet/binary)"
     ```
     ~/config/logs/
     ├── Main.log
@@ -781,8 +775,8 @@ Category = "radarr"             # REQUIRED (must match qBit download client)
 
 2. **Verify permissions:**
    ```bash
-   # For pip install
-   dotnet tool update -g torrentarr --user
+   # For dotnet tool
+   dotnet tool update -g torrentarr
 
    # For Docker
    docker pull feramance/torrentarr:latest
@@ -794,8 +788,8 @@ Category = "radarr"             # REQUIRED (must match qBit download client)
 
 4. **Manual update:**
    ```bash
-   # pip
-   dotnet tool update -g torrentarr --force-reinstall
+   # dotnet tool
+   dotnet tool update -g torrentarr
 
    # Docker
    docker-compose pull torrentarr
@@ -812,7 +806,7 @@ Category = "radarr"             # REQUIRED (must match qBit download client)
 
 1. **Check version:**
    ```bash
-   torrentarr --version  # pip/native
+   torrentarr --version  # native
    docker exec torrentarr torrentarr --version  # Docker
    ```
 
@@ -822,8 +816,8 @@ Category = "radarr"             # REQUIRED (must match qBit download client)
 
 3. **Rollback if needed:**
    ```bash
-   # pip
-   dotnet tool install -g torrentarr==5.4.0  # Specific version
+   # dotnet tool
+   dotnet tool install -g torrentarr --version 5.4.0  # Specific version
 
    # Docker
    docker pull feramance/torrentarr:5.4.0
@@ -845,7 +839,7 @@ Sometimes a clean restart resolves issues:
     sudo systemctl restart torrentarr
     ```
 
-=== "pip/Native"
+=== "Native (dotnet/binary)"
     ```bash
     # Stop Torrentarr (Ctrl+C if running in foreground)
     # Then restart

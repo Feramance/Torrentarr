@@ -1,4 +1,4 @@
-﻿# Processes View
+# Processes View
 
 The **Processes View** provides real-time monitoring and control of Torrentarr's multiprocessing architecture. Each Arr instance (Radarr/Sonarr/Lidarr) runs two independent processes—**search** and **torrent**—that can be monitored and restarted individually.
 
@@ -203,7 +203,7 @@ The Processes view **auto-refreshes** at adaptive intervals:
 ### Search Process
 
 **Field**: `searchSummary`
-**Source**: `Torrentarr/search_activity_store.py`
+**Source:** Backend services (e.g. `ArrWorkerManager`, `SearchActivity` or equivalent in Torrentarr.Infrastructure / Torrentarr.Host)
 
 Displays the most recent search operation formatted as:
 

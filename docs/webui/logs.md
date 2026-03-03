@@ -1,4 +1,4 @@
-﻿# Logs View
+# Logs View
 
 The **Logs View** provides real-time streaming and viewing of Torrentarr's log files. Monitor application activity, debug issues, and track system events through an intuitive interface with auto-refresh and log file selection capabilities.
 
@@ -9,8 +9,8 @@ The **Logs View** provides real-time streaming and viewing of Torrentarr's log f
 Torrentarr generates structured logs for all major components:
 
 - **Main.log**: Core application events, initialization, shutdown
-- **WebUI.log**: Flask/Waitress HTTP server logs, API requests
-- **<ArrName>.log**: Per-instance logs (e.g., `Radarr-Movies.log`, `Sonarr-TV.log`)
+- **WebUI / API logs**: ASP.NET Core and API request logs
+- **<ArrName>.log**: Per-instance logs (e.g., `Radarr-Movies.log`, `Sonarr-TV.log`) if emitted
 - **Rotated logs**: Timestamped backups (e.g., `Main.log.2025-11-27`)
 
 The Logs view provides:
@@ -143,52 +143,11 @@ Displays the full content of the selected log file with:
 
 ### Structured Logging
 
-Torrentarr uses Python's `logging` module with custom formatters:
-
-**Format Pattern**:
-```
-%(asctime)s | %(levelname)-8s | %(name)s | %(message)s
-```
-
-**Example**:
-```
-2025-11-27 10:30:15 | INFO     | Torrentarr.Main | Starting Torrentarr 5.0.3
-```
-
-**Components**:
-
-| Field | Description | Example |
-|-------|-------------|---------|
-| `asctime` | ISO 8601 timestamp (local timezone) | `2025-11-27 10:30:15` |
-| `levelname` | Log level (8 characters, left-padded) | `INFO`, `WARNING`, `ERROR` |
-| `name` | Logger name (module path) | `Torrentarr.Main`, `Torrentarr.arr.Radarr-Movies` |
-| `message` | Log message | `Starting Torrentarr 5.0.3` |
+Torrentarr uses **Serilog** (or the host's structured logging) for application logs. Log format and levels are configured in the Host (e.g. `Torrentarr.Host` / `Program.cs`). Check the codebase for the exact format pattern and level names.
 
 ### Log Levels
 
-Torrentarr supports standard Python log levels plus custom levels:
-
-| Level | Numeric Value | Color (ANSI) | Use Case |
-|-------|---------------|--------------|----------|
-| **TRACE** | 5 | Dim gray | Detailed debugging (function calls, variable states) |
-| **DEBUG** | 10 | Gray | Development diagnostics (API responses, loop iterations) |
-| **INFO** | 20 | White | Standard operational messages (startup, config load) |
-| **NOTICE** | 25 | Cyan | Important user-facing events (Arr connections, searches) |
-| **SUCCESS** | 25 | Green | Successful operations (imports, deletions) |
-| **WARNING** | 30 | Yellow | Recoverable issues (retries, fallbacks, deprecations) |
-| **ERROR** | 40 | Red | Failures requiring attention (API errors, file I/O) |
-| **CRITICAL** | 50 | Bold red | Fatal errors (database corruption, unhandled exceptions) |
-
-**Custom Levels**:
-- **NOTICE**: Custom level at 25 (between INFO and WARNING)
-- **SUCCESS**: Custom level at 25 (between INFO and WARNING)
-- **TRACE**: Custom level at 5 (below DEBUG)
-
-**Setting Log Level**:
-```toml
-[Settings]
-ConsoleLevel = "INFO"  # CRITICAL, ERROR, WARNING, NOTICE, INFO, DEBUG, TRACE
-```
+Torrentarr supports standard log levels (e.g. Serilog: Verbose, Debug, Information, Warning, Error, Fatal). Check config for `ConsoleLevel` or equivalent. Colors in the viewer map level to ANSI/HTML as in the table below.
 
 ### ANSI Color Codes
 
@@ -320,33 +279,7 @@ Content-Type: application/octet-stream
 
 ## Log Rotation
 
-Torrentarr uses Python's `RotatingFileHandler` for automatic log rotation:
-
-**Rotation Policy**:
-- **Max Size**: 10 MB per log file
-- **Backup Count**: 5 (keeps 5 rotated copies)
-- **Naming**: `<log_name>.log.<index>` → timestamped on next rotation
-
-**Example Lifecycle**:
-```
-Main.log              → Active log (current writes)
-Main.log.1            → Yesterday's log (first rotation)
-Main.log.2            → 2 days ago
-Main.log.3            → 3 days ago
-Main.log.4            → 4 days ago
-Main.log.5            → 5 days ago (oldest, deleted on next rotation)
-```
-
-**Manual Rotation**:
-Logs rotate automatically when size exceeds 10 MB. To force rotation:
-1. Stop Torrentarr
-2. Rename `Main.log` → `Main.log.manual`
-3. Restart Torrentarr (creates new `Main.log`)
-
-**Viewing Rotated Logs**:
-1. Click **Reload List** to refresh log file dropdown
-2. Select `Main.log.1` (or other rotated file)
-3. Download for offline viewing (rotated logs are read-only)
+Torrentarr uses rolling file sinks (e.g. Serilog rolling file) for automatic log rotation. Check Host configuration for max file size and retained file count.
 
 ---
 
@@ -452,7 +385,7 @@ Logging = false  # Disable file logging
 
 **Solutions**:
 - Increase `Settings.ConsoleLevel` to `DEBUG` or `TRACE` (more colorful output)
-- Check logger configuration in `Torrentarr/logger.py` (color formatter may be disabled)
+- Check logger configuration (e.g. Serilog in Torrentarr.Host) — color/detail may be configurable
 - Verify terminal emulator supports ANSI colors (if running Torrentarr manually)
 
 ### Auto-scroll not working

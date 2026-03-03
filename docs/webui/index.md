@@ -1,4 +1,4 @@
-﻿# WebUI Overview
+# WebUI Overview
 
 Torrentarr includes a modern, React-based web interface for real-time monitoring, configuration management, and system control. Built with TypeScript and Mantine UI components, the WebUI provides a responsive, intuitive interface for managing your Torrentarr instance.
 
@@ -379,7 +379,7 @@ Overview of Torrentarr's health and performance.
 
 - **Version Information**
   - Torrentarr version
-  - Python version
+  - .NET runtime version
   - qBittorrent version
   - Arr instance versions
 
@@ -710,12 +710,13 @@ All responses are JSON:
         sudo systemctl start torrentarr
         ```
 
-    === "Native/pip"
+    === "Native (dotnet/binary)"
 
         ```bash
-        ps aux | grep torrentarr
+        ps aux | grep -E "Torrentarr|dotnet"
         # If not running:
-        torrentarr
+        dotnet run --project src/Torrentarr.Host/Torrentarr.Host.csproj
+        # Or run the installed binary / dotnet tool
         ```
 
 2. **Verify port configuration:**
@@ -890,10 +891,10 @@ All responses are JSON:
 
     ```bash
     # Check database size
-    ls -lh ~/config/Torrentarr.db
+    ls -lh ~/config/qbitrr.db
 
-    # If over 100MB, consider cleaning old data
-    sqlite3 ~/config/Torrentarr.db "VACUUM;"
+    # If large, consider VACUUM (stop Torrentarr first)
+    sqlite3 ~/config/qbitrr.db "VACUUM;"
     ```
 
 ---

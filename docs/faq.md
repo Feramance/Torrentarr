@@ -24,7 +24,7 @@ Torrentarr works with:
 - **Radarr**: v3.x and v4.x
 - **Sonarr**: v3.x and v4.x
 - **Lidarr**: v1.x
-- **Python**: 3.11 or higher
+- **.NET**: 8.0+ (for dotnet tool) or use Binary/Docker
 - **Platforms**: Linux, macOS, Windows, Docker
 
 ## Installation Questions
@@ -32,7 +32,7 @@ Torrentarr works with:
 ### Which installation method should I use?
 
 - **Docker**: Best for most users. Easy updates, isolated environment.
-- **pip**: Good if you're already using Python or prefer native installs.
+- **dotnet tool**: Good if you have .NET 8+ or prefer native installs.
 - **Systemd**: Ideal for running as a Linux service.
 - **Binary**: Pre-built executables for advanced users.
 
@@ -239,7 +239,7 @@ torrentarr:
 
 Check these:
 
-1. **Installation type**: Torrentarr must detect git/pip/binary install correctly
+1. **Installation type**: Torrentarr detects docker/dotnet/binary install for update behavior
 2. **Permissions**: User running Torrentarr needs write access
 3. **GitHub API rate limit**: Check if you're rate-limited
 4. **Docker**: Pull new image instead of using built-in updater
@@ -343,7 +343,7 @@ docker cp torrentarr:/config/Torrentarr.db ./Torrentarr.db.backup
 
 Yes! Torrentarr runs on many NAS platforms:
 
-- **Synology**: Docker or native Python
+- **Synology**: Docker or native binary/dotnet
 - **QNAP**: Container Station (Docker)
 - **Unraid**: Community Applications
 - **TrueNAS**: Jails or Docker
@@ -563,9 +563,9 @@ docker ps | grep radarr
 Yes! Installation options:
 
 1. **Docker Desktop**: Recommended for Windows
-2. **pip install**: Requires Python 3.11+
+2. **dotnet tool**: Requires .NET 8+
 
-**Note:** Pre-built binaries are not currently available. Use Docker or pip installation methods.
+**Note:** Use Docker, dotnet tool, or binary installation methods.
 
 **Windows-specific notes:**
 - Use Windows paths (e.g., `C:\Downloads`)
@@ -669,7 +669,7 @@ Quick reference for common terms used throughout Torrentarr documentation.
 | **Instant Import** | Triggering Arr import immediately when download completes |
 | **MaxETA** | Maximum allowed ETA before marking a torrent as failed |
 | **Monitored** | Arr status indicating content should be automatically downloaded |
-| **Peewee** | Python ORM library used by Torrentarr for SQLite database interactions |
+| **EF Core** | .NET ORM used by Torrentarr for SQLite |
 | **Quality Cutoff** | Quality level that, once met, stops searching for upgrades |
 | **Seed Ratio** | Upload/download ratio (1.0 = uploaded as much as downloaded) |
 | **Stalled Torrent** | Torrent with no download progress, usually due to lack of seeders |
@@ -697,7 +697,7 @@ Quick reference for common terms used throughout Torrentarr documentation.
 
 ```bash
 # Start Torrentarr
-torrentarr                              # pip/native
+torrentarr                              # native (dotnet tool or binary)
 docker start torrentarr                 # Docker
 sudo systemctl start torrentarr         # Systemd
 

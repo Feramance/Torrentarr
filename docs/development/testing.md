@@ -1,6 +1,6 @@
-﻿# Testing
+# Testing
 
-Torrentarr testing strategies and guidelines. Currently, Torrentarr relies on manual testing with plans for automated testing in the future.
+Torrentarr testing strategies and guidelines. The project uses xUnit (backend) and Vitest (WebUI) for automated tests, plus manual testing against real services where needed.
 
 ## Current Testing Approach
 
@@ -23,7 +23,7 @@ cp config.example.toml test-config.toml
 # Edit test-config.toml with test service URLs
 
 # 2. Run Torrentarr with test config
-torrentarr --config test-config.toml --foreground
+TORRENTARR_CONFIG=/path/to/test-config.toml dotnet run --project src/Torrentarr.Host/Torrentarr.Host.csproj
 ```
 
 ### Testing Checklist
@@ -65,9 +65,9 @@ When making changes, test these scenarios:
 
 #### Configuration
 - [ ] Config file changes detected
-- [ ] Environment variables override TOML
+- [ ] Environment variables: only `TORRENTARR_CONFIG` is supported (config path)
 - [ ] Invalid config generates helpful errors
-- [ ] Config validation works (--validate-config)
+- [ ] Config validation works (see logs on load)
 
 #### WebUI
 - [ ] Dashboard loads correctly
@@ -99,212 +99,39 @@ docker stop torrentarr-test
 docker rm torrentarr-test
 ```
 
-## Future: Automated Testing
+## Automated Testing
 
-**Planned for v6.0:**
+Torrentarr uses **xUnit** for .NET tests and **Vitest** for the WebUI.
 
-### Unit Tests
-
-Test individual functions and classes:
-
-```python
-# tests/test_torrent_processing.py
-import pytest
-from Torrentarr.arss import RadarrManager
-
-def test_torrent_health_check():
-    manager = RadarrManager(test_config)
-
-    # Test healthy torrent
-    healthy_torrent = {'eta': 1800, 'progress': 0.5}
-    assert manager.check_health(healthy_torrent) == 'healthy'
-
-    # Test stalled torrent
-    stalled_torrent = {'eta': 7200, 'progress': 0.1}
-    assert manager.check_health(stalled_torrent) == 'stalled'
-```
-
-**Run with pytest:**
+### .NET tests
 
 ```bash
-pytest tests/ -v
-pytest tests/test_torrent_processing.py::test_torrent_health_check
+# All non-live tests (suitable for CI)
+dotnet test --filter "Category!=Live"
+
+# Single project
+dotnet test tests/Torrentarr.Infrastructure.Tests/
+
+# Single test
+dotnet test --filter "FullyQualifiedName~ConfigurationLoaderTests"
 ```
 
-### Integration Tests
-
-Test components working together:
-
-```python
-# tests/integration/test_import_flow.py
-def test_full_import_flow(qbit_mock, radarr_mock):
-    """Test complete torrent → import → seeding flow."""
-    # 1. Add torrent to qBittorrent (mock)
-    torrent = qbit_mock.add_torrent(movie_torrent)
-
-    # 2. Wait for completion
-    qbit_mock.complete_torrent(torrent.hash)
-
-    # 3. Run Torrentarr event loop
-    manager.run_once()
-
-    # 4. Verify import triggered
-    assert radarr_mock.import_called_with(torrent.hash)
-
-    # 5. Verify database updated
-    db_entry = DownloadsModel.get(hash=torrent.hash)
-    assert db_entry.state == 'imported'
-```
-
-### End-to-End Tests
-
-Test against real services (Docker Compose):
-
-```yaml
-# docker-compose.test.yml
-services:
-  qbittorrent:
-    image: linuxserver/qbittorrent
-    # ...
-
-  radarr:
-    image: linuxserver/radarr
-    # ...
-
-  torrentarr:
-    build: .
-    depends_on:
-      - qbittorrent
-      - radarr
-    # ...
-```
+### Live integration tests
 
 ```bash
-# Run E2E tests
-docker-compose -f docker-compose.test.yml up -d
-python tests/e2e/test_real_services.py
-docker-compose -f docker-compose.test.yml down
+# Requires real qBittorrent and Arr configured in config.toml
+dotnet test --filter "Category=Live"
 ```
 
-### Performance Tests
-
-Test performance under load:
-
-```python
-# tests/performance/test_event_loop.py
-def test_event_loop_with_many_torrents():
-    """Ensure event loop completes in reasonable time with 100 torrents."""
-    torrents = generate_test_torrents(count=100)
-
-    start = time.time()
-    manager.process_torrents(torrents)
-    duration = time.time() - start
-
-    assert duration < 10.0, f"Event loop took {duration}s (expected < 10s)"
-```
-
-### CI/CD Integration
-
-**GitHub Actions workflow (planned):**
-
-```yaml
-# .github/workflows/test.yml
-name: Tests
-
-on: [push, pull_request]
-
-jobs:
-  test:
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v3
-      - uses: actions/setup-python@v4
-        with:
-          python-version: '3.12'
-      - name: Install dependencies
-        run: |
-          pip install -e ".[test]"
-      - name: Run unit tests
-        run: pytest tests/unit -v
-      - name: Run integration tests
-        run: pytest tests/integration -v
-```
-
-## Test Data
-
-### Sample Configurations
-
-Located in `tests/fixtures/`:
-
-- `valid_config.toml` - Valid configuration
-- `invalid_config.toml` - Invalid configuration (for error testing)
-- `minimal_config.toml` - Minimal required fields
-
-### Mock Data
-
-```python
-# tests/fixtures/torrents.py
-SAMPLE_TORRENTS = {
-    'downloading': {
-        'hash': 'abc123',
-        'name': 'Test Movie 2024',
-        'progress': 0.5,
-        'eta': 1800,
-        'state': 'downloading'
-    },
-    'completed': {
-        'hash': 'def456',
-        'name': 'Another Movie 2024',
-        'progress': 1.0,
-        'eta': 0,
-        'state': 'uploading'
-    },
-    'stalled': {
-        'hash': 'ghi789',
-        'name': 'Stalled Movie',
-        'progress': 0.1,
-        'eta': 7200,
-        'state': 'stalledDL'
-    }
-}
-```
-
-## Debugging Tests
-
-### Enable Debug Logging
-
-```python
-# conftest.py
-import logging
-
-@pytest.fixture(autouse=True)
-def enable_debug_logging():
-    logging.basicConfig(level=logging.DEBUG)
-```
-
-### Run Single Test
+### WebUI tests
 
 ```bash
-# Run specific test
-pytest tests/test_torrent.py::test_health_check -v
-
-# Run with print statements
-pytest tests/test_torrent.py::test_health_check -v -s
-
-# Stop on first failure
-pytest tests/ -x
+cd webui
+npm test          # Watch mode
+npx vitest run    # Single run (CI)
 ```
 
-### Test Coverage
-
-```bash
-# Run tests with coverage
-pytest --cov=Torrentarr tests/
-
-# Generate HTML coverage report
-pytest --cov=Torrentarr --cov-report=html tests/
-open htmlcov/index.html
-```
+See the repository `tests/` folder and `webui/src/__tests__/` for examples. Mock external APIs in unit tests; use `TorrentarrWebApplicationFactory` in Host.Tests for API integration tests.
 
 ## Manual Test Scenarios
 

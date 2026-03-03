@@ -1,4 +1,4 @@
-﻿# Overseerr Integration
+# Overseerr Integration
 
 !!! tip "Requestrr Integration"
     Want Discord-based requests? Configure Requestrr to use Overseerr as its backend,
@@ -574,10 +574,7 @@ This ensures Overseerr requests respect your custom format requirements (e.g., n
 ### Security
 
 - **Protect API Keys**: Never commit `OverseerrAPIKey` to public repositories
-- **Use Environment Variables**: Store sensitive keys in environment variables:
-  ```bash
-  export QBITRR_RADARR_MOVIES__ENTRYSEARCH__OVERSEERR__OVERSEERRAPIKEY="abc123"
-  ```
+- **Config file**: Store Overseerr settings (including API key) in `config.toml` with restricted permissions, or use the WebUI Config Editor. Torrentarr does not support per-setting environment variable overrides.
 - **HTTPS**: Use HTTPS for Overseerr if exposed to the internet
 - **Reverse Proxy**: Place Overseerr behind a reverse proxy (Nginx, Caddy, Traefik)
 
@@ -619,18 +616,15 @@ services:
     container_name: torrentarr
     environment:
       - TZ=America/New_York
-      # Overseerr integration via environment variables
-      - QBITRR_RADARR_MOVIES__ENTRYSEARCH__OVERSEERR__SEARCHOVERSEERRQUESTS=true
-      - QBITRR_RADARR_MOVIES__ENTRYSEARCH__OVERSEERR__OVERSEERRURI=http://overseerr:5055
-      - QBITRR_RADARR_MOVIES__ENTRYSEARCH__OVERSEERR__OVERSEERRAPIKEY=your-api-key
-      - QBITRR_RADARR_MOVIES__ENTRYSEARCH__OVERSEERR__APPROVEDONLY=true
-      - QBITRR_RADARR_MOVIES__ENTRYSEARCH__OVERSEERR__IS4K=false
+      - TORRENTARR_CONFIG=/config/config.toml
     volumes:
       - /path/to/torrentarr/config:/config
     depends_on:
       - overseerr
     restart: unless-stopped
 ```
+
+Configure Overseerr in `config.toml` under `[Radarr-Movies.EntrySearch.Overseerr]`: `SearchOverseerrRequests`, `OverseerrURI`, `OverseerrAPIKey`, `ApprovedOnly`, `Is4K`.
 
 ---
 

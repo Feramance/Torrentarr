@@ -1,4 +1,4 @@
-﻿# Welcome to Torrentarr Documentation
+# Welcome to Torrentarr Documentation
 
 <div style="text-align: center; margin: 2rem 0;">
   <img src="assets/logov2-clean.svg" alt="Torrentarr Logo" width="200"/>
@@ -6,10 +6,9 @@
 
 **Torrentarr** is the intelligent glue between qBittorrent and the *Arr ecosystem (Radarr, Sonarr, Lidarr). It monitors torrent health, triggers instant imports when downloads complete, automates quality upgrades, manages disk space, integrates with request systems (Overseerr/Ombi), and provides a modern React dashboard for complete visibility and control.
 
-[![PyPI](https://img.shields.io/pypi/v/Torrentarr?label=PyPI)](https://nuget.org/packages/Torrentarr/)
-[![Downloads](https://img.shields.io/pypi/dm/Torrentarr)](https://nuget.org/packages/Torrentarr/)
+[![GitHub release](https://img.shields.io/github/v/release/Feramance/Torrentarr)](https://github.com/Feramance/Torrentarr/releases)
 [![Docker Pulls](https://img.shields.io/docker/pulls/feramance/torrentarr.svg)](https://hub.docker.com/r/feramance/torrentarr)
-[![License: MIT](https://img.shields.io/pypi/l/torrentarr)](https://github.com/Feramance/Torrentarr/blob/master/LICENSE)
+[![License: MIT](https://img.shields.io/badge/license-MIT-green)](https://github.com/Feramance/Torrentarr/blob/master/LICENSE)
 
 ## Quick Links
 
@@ -84,7 +83,7 @@
 ### 🔄 Auto-Updates & Self-Healing
 - **Scheduled auto-updates** – update on a cron schedule
 - **Manual update trigger** – one-click updates from WebUI
-- **Installation-aware** – detects git/pip/binary installs
+- **Installation-aware** – detects docker/dotnet/binary installs
 - **Process auto-restart** – restart crashed processes automatically
 - **Crash loop protection** – prevent infinite restart loops
 
@@ -121,7 +120,7 @@
         restart: unless-stopped
     ```
 
-=== "pip"
+=== "dotnet tool"
 
     ```bash
     dotnet tool install -g torrentarr
@@ -195,15 +194,14 @@ Total time to library: 20.5 minutes (26% faster)
     - Docker Compose 2.0+ (optional but recommended)
     - No other dependencies required
 
-=== "pip Installation"
+=== "dotnet tool Installation"
 
-    - Python 3.11 or higher (3.12+ recommended)
-    - pip 20.0+
-    - virtualenv (recommended)
+    - .NET 8.0+ SDK or runtime
+    - Or use Binary / Docker for no .NET requirement
 
 === "Binary Installation"
 
-    - No Python required
+    - No .NET or Python required
     - Supported platforms:
         - Linux: x86_64, aarch64
         - macOS: Intel, Apple Silicon
@@ -268,7 +266,7 @@ Total time to library: 20.5 minutes (26% faster)
 
 ### Operating Systems
 
-| Platform | Docker | pip | Binary | Systemd |
+| Platform | Docker | dotnet tool | Binary | Systemd |
 |----------|--------|-----|--------|---------|
 | **Linux (x86_64)** | ✅ | ✅ | ✅ | ✅ |
 | **Linux (ARM64)** | ✅ | ✅ | ✅ | ✅ |
@@ -454,8 +452,8 @@ copies of the Software.
 
 **Built With**:
 
-- [Python](https://python.org) - Backend language
-- [Flask](https://flask.palletsprojects.com/) - API framework
+- [.NET](https://dotnet.microsoft.com/) - Backend runtime
+- [ASP.NET Core](https://aspnetcore.io/) - API framework
 - [React](https://react.dev/) - WebUI framework
 - [Mantine](https://mantine.dev/) - UI component library
 

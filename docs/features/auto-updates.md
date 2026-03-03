@@ -1,4 +1,4 @@
-﻿# Auto-Updates
+# Auto-Updates
 
 Torrentarr includes a built-in automatic update system that can check for new releases and upgrade your installation on a schedule. This feature supports multiple installation methods and provides a hands-off way to stay current with the latest bug fixes and features.
 
@@ -16,8 +16,8 @@ The auto-update feature automatically:
 !!! note "Installation Method Support"
     Auto-update support varies by installation method:
 
-    - **Git Installation**: ✅ Fully supported (`git pull` or tag checkout)
-    - **PyPI/pip Installation**: ✅ Fully supported (`pip install --upgrade`)
+    - **Docker**: Use Watchtower or manual `docker pull`; Torrentarr can also check and notify
+    - **dotnet tool**: ✅ Fully supported (`dotnet tool update -g torrentarr`)
     - **Binary Installation**: ⚠️ Manual update required (auto-update will notify only)
 
 ---
@@ -43,7 +43,7 @@ AutoUpdateCron = "0 3 * * 0"
 
 **Type:** Boolean
 **Default:** `false`
-**Environment Variable:** `QBITRR_AUTO_UPDATE_ENABLED`
+**Config:** `[Settings]` in config.toml — `AutoUpdateEnabled`
 
 Enable or disable the automatic update worker.
 
@@ -58,7 +58,7 @@ AutoUpdateEnabled = true
 
 **Type:** String (cron expression)
 **Default:** `"0 3 * * 0"` (weekly Sunday at 3 AM)
-**Environment Variable:** `QBITRR_AUTO_UPDATE_CRON`
+**Config:** `[Settings]` in config.toml — `AutoUpdateCron`
 
 Cron expression defining when to check for and install updates.
 
@@ -128,36 +128,29 @@ Fast-forward
 
 ---
 
-### PyPI/pip Installation
+### dotnet tool Installation
 
-**Detection:** Not a binary, no `.git/` folder present
+**Detection:** Torrentarr is run as a .NET tool (`dotnet tool run` or `torrentarr` from dotnet tools path)
 
 **Update Method:**
 
 - **Without Target Version:** Runs `dotnet tool update -g torrentarr`
-- **With Target Version:** Runs `dotnet tool install -g torrentarr==5.4.3`
+- **With Target Version:** Runs `dotnet tool install -g torrentarr --version 5.4.3`
 
 **Process:**
 
 ```bash
 # Default behavior (latest)
-python -m dotnet tool update -g torrentarr
+dotnet tool update -g torrentarr
 
 # Specific version
-python -m dotnet tool install -g torrentarr==5.4.3
+dotnet tool install -g torrentarr --version 5.4.3
 ```
 
 **Logs:**
 
 ```
-[INFO] Installation type detected: pip
-[INFO] PyPI installation detected
-[DEBUG] Upgrading package: Torrentarr
-[INFO] pip upgrade output:
-Collecting Torrentarr
-  Downloading Torrentarr-5.4.3-py3-none-any.whl (245 kB)
-Installing collected packages: Torrentarr
-Successfully installed Torrentarr-5.4.3
+[INFO] Installation type detected: dotnet tool
 [INFO] Update completed successfully
 ```
 
@@ -165,7 +158,7 @@ Successfully installed Torrentarr-5.4.3
 
 ### Binary Installation
 
-**Detection:** Running as PyInstaller frozen executable (`sys.frozen` is True)
+**Detection:** Running as a standalone executable (not dotnet tool)
 
 **Update Method:** **Manual only** - auto-update cannot replace running executable
 
@@ -193,11 +186,7 @@ Binary builds are available for:
 - `windows-latest-x64` (Windows x86_64)
 
 !!! warning "Platform Availability"
-    Binary builds are NOT available for:
-
-    - Linux ARM64 (use Docker or pip)
-    - macOS Intel x64 (use pip)
-    - Windows ARM64 (use pip)
+    Binary builds may not be available for all platforms. Use Docker or dotnet tool where binary is not offered (e.g. some ARM or older OS).
 
 ---
 
@@ -226,7 +215,7 @@ curl -X POST http://localhost:6969/api/check-updates \
   "current_version": "5.4.2",
   "latest_version": "5.4.3",
   "update_available": true,
-  "install_type": "pip"
+  "install_type": "dotnet"
 }
 
 # Install update
@@ -350,37 +339,28 @@ git reset --hard
 **Symptom:**
 
 ```
-[ERROR] Failed to upgrade package via pip: ERROR: Could not install packages due to an EnvironmentError: [Errno 13] Permission denied: '/usr/local/lib/python3.12/site-packages/...'
+[ERROR] Failed to upgrade via dotnet tool: Permission denied or network error. Run `dotnet tool update -g torrentarr` manually.
 ```
 
 **Solution:**
 
 Run Torrentarr as a user with permission to install packages, or use a virtual environment:
 
-**Option 1: Virtual Environment (Recommended)**
+**Option 1: dotnet tool (Recommended for native)**
 
 ```bash
-# Create venv if not already using one
-python -m venv /opt/torrentarr/venv
-source /opt/torrentarr/venv/bin/activate
 dotnet tool install -g torrentarr
-
-# Start Torrentarr (venv remains active for auto-updates)
+# Start Torrentarr
 torrentarr
 ```
 
-**Option 2: User Install**
+**Option 2: Docker**
 
-```bash
-pip install --user Torrentarr
-```
+Use Watchtower or `docker pull feramance/torrentarr:latest` and restart the container.
 
-**Option 3: System Install with sudo**
+**Option 3: Binary**
 
-```bash
-sudo dotnet tool install -g torrentarr
-# Run Torrentarr as root (not recommended for security)
-```
+Download the latest release from GitHub and replace the executable.
 
 ### Update Available but Not Installing
 
@@ -423,16 +403,17 @@ For **binary installations**, auto-update cannot replace the running executable.
 
 ```bash
 which torrentarr
-pip show Torrentarr
+dotnet tool list -g | grep torrentarr
 
 # For git installations
 cd /path/to/Torrentarr && git describe --tags
 ```
 
-**Force Reinstall (pip):**
+**Force Reinstall (dotnet tool):**
 
 ```bash
-pip install --force-reinstall Torrentarr==5.4.3
+dotnet tool uninstall -g torrentarr
+dotnet tool install -g torrentarr --version 5.4.3
 ```
 
 **Force Pull (git):**
@@ -582,7 +563,8 @@ FFprobeAutoUpdate = true
 Torrentarr updates are pulled from official sources:
 
 - **Git:** GitHub repository `Feramance/Torrentarr`
-- **PyPI:** Official package `Torrentarr`
+- **GitHub Releases:** https://github.com/Feramance/Torrentarr/releases
+- **NuGet:** (if published) dotnet tool package
 - **Binary:** GitHub Releases with checksums
 
 ### Network Requirements
@@ -590,7 +572,7 @@ Torrentarr updates are pulled from official sources:
 Auto-update requires outbound internet access to:
 
 - `github.com` (for git installations and version checks)
-- `pypi.org` (for pip installations)
+- `github.com/Feramance/Torrentarr/releases` (for binary and release checks)
 - `ffbinaries.com` (for FFprobe downloads)
 
 If running in an air-gapped environment, disable auto-update and manage updates manually.
@@ -631,7 +613,7 @@ tail -100 /config/logs/Main.log | grep -i update
 
 # Expected success output
 [INFO] Auto update triggered
-[INFO] Installation type detected: pip
+[INFO] Installation type detected: dotnet tool
 [INFO] Update completed successfully
 [INFO] Update verified: version 5.4.3 installed successfully
 ```
@@ -696,7 +678,7 @@ cp /config/Torrentarr.db /config/Torrentarr.db.backup
   "current_version": "5.4.2",
   "latest_version": "5.4.3",
   "update_available": true,
-  "install_type": "pip",
+  "install_type": "dotnet",
   "release_url": "https://github.com/Feramance/Torrentarr/releases/tag/v5.4.3",
   "changelog": "Bug fixes and performance improvements"
 }
@@ -740,7 +722,7 @@ cp /config/Torrentarr.db /config/Torrentarr.db.backup
 
 ## Summary
 
-- Auto-update supports **Git** and **PyPI** installations; binary installations require manual updates
+- Auto-update supports **dotnet tool** and **Docker** (via notification); binary installations require manual updates
 - Configure schedule with **cron expressions** (`AutoUpdateCron`)
 - Updates can be **triggered manually** via WebUI or API
 - For **Docker**, use **Watchtower** or **Ouroboros** instead of internal auto-update
