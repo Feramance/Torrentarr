@@ -203,7 +203,9 @@ app.Use(async (context, next) =>
             await context.Response.WriteAsJsonAsync(new { error = "Unauthorized" });
             return;
         }
-        context.User = new ClaimsPrincipal(new ClaimsIdentity("Bearer"));
+        var identity = new ClaimsIdentity("Bearer");
+        identity.AddClaim(new Claim(ClaimTypes.Name, "api"));
+        context.User = new ClaimsPrincipal(identity);
         await next(context);
         return;
     }
@@ -229,7 +231,9 @@ app.Use(async (context, next) =>
             providedToken = context.Request.Query["token"];
         if (!string.IsNullOrEmpty(providedToken) && TokenEquals(providedToken, configuredTokenWeb))
         {
-            context.User = new ClaimsPrincipal(new ClaimsIdentity("Bearer"));
+            var identity = new ClaimsIdentity("Bearer");
+            identity.AddClaim(new Claim(ClaimTypes.Name, "api"));
+            context.User = new ClaimsPrincipal(identity);
             await next(context);
             return;
         }
@@ -268,9 +272,17 @@ static bool WebUIPublicPath(string path, string method)
     if (string.IsNullOrEmpty(path)) return true;
     if (path.Equals("/health", StringComparison.OrdinalIgnoreCase)) return true;
     if (path.Equals("/", StringComparison.OrdinalIgnoreCase)) return true;
-    if (path.StartsWith("/ui", StringComparison.OrdinalIgnoreCase)) return true;
-    if (path.Equals("/sw.js", StringComparison.OrdinalIgnoreCase)) return true;
+    // Do NOT treat /ui as public: the SPA and all routes under /ui require auth when AuthDisabled is false.
+    // Only allow paths needed for the login page to load: /login, /assets/*, and root static assets.
     if (path.Equals("/login", StringComparison.OrdinalIgnoreCase)) return true;
+    if (path.StartsWith("/assets/", StringComparison.OrdinalIgnoreCase)) return true;
+    if (path.Equals("/favicon.ico", StringComparison.OrdinalIgnoreCase)) return true;
+    if (path.Equals("/favicon-16x16.png", StringComparison.OrdinalIgnoreCase)) return true;
+    if (path.Equals("/favicon-32x32.png", StringComparison.OrdinalIgnoreCase)) return true;
+    if (path.Equals("/favicon-48x48.png", StringComparison.OrdinalIgnoreCase)) return true;
+    if (path.Equals("/logov2-clean.png", StringComparison.OrdinalIgnoreCase)) return true;
+    if (path.Equals("/manifest.json", StringComparison.OrdinalIgnoreCase)) return true;
+    if (path.Equals("/sw.js", StringComparison.OrdinalIgnoreCase)) return true;
     if (path.Equals("/web/meta", StringComparison.OrdinalIgnoreCase)) return true;
     if (path.Equals("/web/login", StringComparison.OrdinalIgnoreCase) && method == "POST") return true;
     if (path.Equals("/web/auth/set-password", StringComparison.OrdinalIgnoreCase) && method == "POST") return true;
