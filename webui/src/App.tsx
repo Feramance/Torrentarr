@@ -500,12 +500,23 @@ function ChangelogModal({
 
 function AuthGate({ children }: { children: React.ReactNode }): JSX.Element {
   const [needsLogin, setNeedsLogin] = useState<boolean | null>(null);
+  const [authMeta, setAuthMeta] = useState<MetaResponse | null>(null);
 
   useEffect(() => {
     let cancelled = false;
-    getToken()
-      .then(() => {
-        if (!cancelled) setNeedsLogin(false);
+    getMeta()
+      .then((meta) => {
+        if (cancelled) return;
+        if (!meta.auth_required) {
+          setNeedsLogin(false);
+          return;
+        }
+        setAuthMeta(meta);
+        return getToken();
+      })
+      .then((result) => {
+        if (cancelled || result === undefined) return;
+        setNeedsLogin(false);
       })
       .catch(() => {
         if (!cancelled) setNeedsLogin(true);
@@ -521,6 +532,8 @@ function AuthGate({ children }: { children: React.ReactNode }): JSX.Element {
   if (needsLogin) {
     return (
       <LoginPage
+        localAuthEnabled={authMeta?.local_auth_enabled ?? true}
+        oidcEnabled={authMeta?.oidc_enabled ?? false}
         onSuccess={() => {
           setNeedsLogin(false);
         }}
@@ -530,11 +543,46 @@ function AuthGate({ children }: { children: React.ReactNode }): JSX.Element {
   return <>{children}</>;
 }
 
-interface LoginPageProps {
-  onSuccess: () => void;
+/** Wrapper for direct /login path: fetches meta, redirects to /ui if auth not required, else shows LoginPage. */
+function LoginRoute(): JSX.Element {
+  const [meta, setMeta] = useState<MetaResponse | null>(null);
+  useEffect(() => {
+    let cancelled = false;
+    getMeta()
+      .then((m) => {
+        if (cancelled) return;
+        setMeta(m);
+        if (!m.auth_required) window.location.replace("/ui");
+      })
+      .catch(() => {
+        if (!cancelled) setMeta({} as MetaResponse);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+  if (meta === null) return <div className="loading">Loading...</div>;
+  if (!meta.auth_required) return <div className="loading">Redirecting...</div>;
+  return (
+    <LoginPage
+      localAuthEnabled={meta.local_auth_enabled ?? true}
+      oidcEnabled={meta.oidc_enabled ?? false}
+      onSuccess={() => window.location.replace("/ui")}
+    />
+  );
 }
 
-function LoginPage({ onSuccess }: LoginPageProps): JSX.Element {
+interface LoginPageProps {
+  onSuccess: () => void;
+  localAuthEnabled?: boolean;
+  oidcEnabled?: boolean;
+}
+
+function LoginPage({
+  onSuccess,
+  localAuthEnabled = true,
+  oidcEnabled = false,
+}: LoginPageProps): JSX.Element {
   const [username, setUsername] = useState("");
   const [password, setPasswordState] = useState("");
   const [error, setError] = useState<string | null>(null);
@@ -559,37 +607,47 @@ function LoginPage({ onSuccess }: LoginPageProps): JSX.Element {
       <div className="login-card">
         <h1>Torrentarr</h1>
         <p className="login-subtitle">Sign in to continue</p>
-        <form onSubmit={handleSubmit}>
-          <div className="form-group">
-            <label htmlFor="login-username">Username</label>
-            <input
-              id="login-username"
-              type="text"
-              autoComplete="username"
-              value={username}
-              onChange={(e) => setUsername(e.target.value)}
-              required
-            />
-          </div>
-          <div className="form-group">
-            <label htmlFor="login-password">Password</label>
-            <input
-              id="login-password"
-              type="password"
-              autoComplete="current-password"
-              value={password}
-              onChange={(e) => setPasswordState(e.target.value)}
-              required
-            />
-          </div>
-          {error && <p className="login-error">{error}</p>}
-          <button type="submit" className="btn primary" disabled={submitting}>
-            {submitting ? "Signing in..." : "Sign in"}
-          </button>
-        </form>
-        <p className="login-oidc">
-          <a href="/web/auth/oidc/challenge">Sign in with OIDC</a>
-        </p>
+        {localAuthEnabled && (
+          <form onSubmit={handleSubmit}>
+            <div className="form-group">
+              <label htmlFor="login-username">Username</label>
+              <input
+                id="login-username"
+                type="text"
+                autoComplete="username"
+                value={username}
+                onChange={(e) => setUsername(e.target.value)}
+                required
+              />
+            </div>
+            <div className="form-group">
+              <label htmlFor="login-password">Password</label>
+              <input
+                id="login-password"
+                type="password"
+                autoComplete="current-password"
+                value={password}
+                onChange={(e) => setPasswordState(e.target.value)}
+                required
+              />
+            </div>
+            {error && <p className="login-error">{error}</p>}
+            <button type="submit" className="btn primary" disabled={submitting}>
+              {submitting ? "Signing in..." : "Sign in"}
+            </button>
+          </form>
+        )}
+        {localAuthEnabled && oidcEnabled && <p className="login-divider">or</p>}
+        {oidcEnabled && (
+          <p className="login-oidc">
+            <a href="/web/auth/oidc/challenge">Sign in with OIDC</a>
+          </p>
+        )}
+        {!localAuthEnabled && !oidcEnabled && (
+          <p className="login-error">
+            No login method is configured. Contact the administrator.
+          </p>
+        )}
       </div>
     </div>
   );
@@ -1211,11 +1269,7 @@ export default function App(): JSX.Element {
         <SearchProvider>
           <WebUIProvider>
             {isLoginPath ? (
-              <LoginPage
-                onSuccess={() => {
-                  window.location.replace("/ui");
-                }}
-              />
+              <LoginRoute />
             ) : (
               <AuthGate>
                 <AppShell />

@@ -7,7 +7,7 @@ using Xunit;
 namespace Torrentarr.Host.Tests.Api;
 
 /// <summary>
-/// Auth middleware and token endpoint behaviour when auth is enabled (TokenOnly).
+/// Auth middleware and token endpoint behaviour when auth is required (AuthDisabled = false).
 /// </summary>
 [Collection("HostWebAuth")]
 public class AuthMiddlewareTests : IClassFixture<AuthEnabledWebApplicationFactory>

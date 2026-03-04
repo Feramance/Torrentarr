@@ -2569,6 +2569,12 @@ svg[height] {
   margin-top: 8px;
   padding: 10px 16px;
 }
+.login-divider {
+  margin: 12px 0;
+  text-align: center;
+  font-size: 13px;
+  color: var(--muted);
+}
 .login-oidc {
   margin: 16px 0 0;
   text-align: center;

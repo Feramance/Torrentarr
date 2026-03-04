@@ -54,7 +54,9 @@ public class TorrentarrWebApplicationFactory : WebApplicationFactory<Program>, I
         Host = "0.0.0.0"
         Port = 6969
         Token = ""
-        AuthMode = "Disabled"
+        AuthDisabled = true
+        LocalAuthEnabled = false
+        OIDCEnabled = false
         LiveArr = false
         """;
 
@@ -119,8 +121,7 @@ public class TorrentarrWebApplicationFactory : WebApplicationFactory<Program>, I
 }
 
 /// <summary>
-/// Factory that uses auth-enabled config (Token = "test-api-token", AuthMode = "TokenOnly")
-/// for auth middleware and GET /web/token 401 tests.
+/// Factory that uses auth-enabled config (AuthDisabled = false, no Local/OIDC so token-only) for auth middleware and GET /web/token 401 tests.
 /// </summary>
 public class AuthEnabledWebApplicationFactory : TorrentarrWebApplicationFactory
 {
@@ -167,7 +168,9 @@ public class AuthEnabledWebApplicationFactory : TorrentarrWebApplicationFactory
         Host = "0.0.0.0"
         Port = 6969
         Token = "test-api-token"
-        AuthMode = "TokenOnly"
+        AuthDisabled = false
+        LocalAuthEnabled = false
+        OIDCEnabled = false
         LiveArr = false
         """;
 }
@@ -198,7 +201,9 @@ public class LocalAuthWebApplicationFactory : TorrentarrWebApplicationFactory
             Host = "0.0.0.0"
             Port = 6969
             Token = "test-api-token"
-            AuthMode = "Local"
+            AuthDisabled = false
+            LocalAuthEnabled = true
+            OIDCEnabled = false
             Username = "admin"
             PasswordHash = "{escapedHash}"
             LiveArr = false

@@ -672,12 +672,15 @@ public class ConfigurationLoader
             root["WebUI"] = new TomlTable();
         if (root["WebUI"] is TomlTable webui)
         {
+            var hasLegacyAuthMode = webui.ContainsKey("AuthMode");
             var webuiDefaults = new (string Key, object Default)[]
             {
                 ("Host", "0.0.0.0"),
                 ("Port", (long)6969),
                 ("Token", ""),
-                ("AuthMode", "Disabled"),
+                ("AuthDisabled", true),
+                ("LocalAuthEnabled", false),
+                ("OIDCEnabled", false),
                 ("Username", ""),
                 ("PasswordHash", ""),
                 ("LiveArr", true),
@@ -690,6 +693,8 @@ public class ConfigurationLoader
             {
                 if (!webui.ContainsKey(key))
                 {
+                    if (hasLegacyAuthMode && (key == "AuthDisabled" || key == "LocalAuthEnabled" || key == "OIDCEnabled"))
+                        continue;
                     webui[key] = defaultVal;
                     changed = true;
                 }
@@ -1090,8 +1095,47 @@ public class ConfigurationLoader
         if (table.TryGetValue("Token", out var token))
             webui.Token = token?.ToString() ?? "";
 
-        if (table.TryGetValue("AuthMode", out var authMode))
-            webui.AuthMode = authMode?.ToString()?.Trim() ?? "Disabled";
+        bool hasNewAuthKeys = table.TryGetValue("AuthDisabled", out var authDisabledVal) ||
+            table.TryGetValue("LocalAuthEnabled", out var localAuthVal) ||
+            table.TryGetValue("OIDCEnabled", out var oidcEnabledVal);
+
+        if (hasNewAuthKeys)
+        {
+            if (table.TryGetValue("AuthDisabled", out authDisabledVal))
+                webui.AuthDisabled = Convert.ToBoolean(authDisabledVal);
+            if (table.TryGetValue("LocalAuthEnabled", out localAuthVal))
+                webui.LocalAuthEnabled = Convert.ToBoolean(localAuthVal);
+            if (table.TryGetValue("OIDCEnabled", out oidcEnabledVal))
+                webui.OIDCEnabled = Convert.ToBoolean(oidcEnabledVal);
+        }
+        else if (table.TryGetValue("AuthMode", out var authMode))
+        {
+            var mode = authMode?.ToString()?.Trim() ?? "Disabled";
+            if (string.Equals(mode, "Disabled", StringComparison.OrdinalIgnoreCase) || string.Equals(mode, "TokenOnly", StringComparison.OrdinalIgnoreCase))
+            {
+                webui.AuthDisabled = true;
+                webui.LocalAuthEnabled = false;
+                webui.OIDCEnabled = false;
+            }
+            else if (string.Equals(mode, "Local", StringComparison.OrdinalIgnoreCase))
+            {
+                webui.AuthDisabled = false;
+                webui.LocalAuthEnabled = true;
+                webui.OIDCEnabled = false;
+            }
+            else if (string.Equals(mode, "OIDC", StringComparison.OrdinalIgnoreCase))
+            {
+                webui.AuthDisabled = false;
+                webui.LocalAuthEnabled = false;
+                webui.OIDCEnabled = true;
+            }
+            else
+            {
+                webui.AuthDisabled = true;
+                webui.LocalAuthEnabled = false;
+                webui.OIDCEnabled = false;
+            }
+        }
 
         if (table.TryGetValue("Username", out var username))
             webui.Username = username?.ToString() ?? "";
@@ -1515,7 +1559,9 @@ public class ConfigurationLoader
                 Host = "0.0.0.0",
                 Port = 6969,
                 Token = "",
-                AuthMode = "Disabled",
+                AuthDisabled = true,
+                LocalAuthEnabled = false,
+                OIDCEnabled = false,
                 Username = "",
                 PasswordHash = "",
                 LiveArr = true,
@@ -1592,7 +1638,9 @@ public class ConfigurationLoader
         sb.AppendLine($"Host = \"{config.WebUI.Host}\"");
         sb.AppendLine($"Port = {config.WebUI.Port}");
         sb.AppendLine($"Token = \"{config.WebUI.Token}\"");
-        sb.AppendLine($"AuthMode = \"{config.WebUI.AuthMode}\"");
+        sb.AppendLine($"AuthDisabled = {config.WebUI.AuthDisabled.ToString().ToLower()}");
+        sb.AppendLine($"LocalAuthEnabled = {config.WebUI.LocalAuthEnabled.ToString().ToLower()}");
+        sb.AppendLine($"OIDCEnabled = {config.WebUI.OIDCEnabled.ToString().ToLower()}");
         sb.AppendLine($"Username = \"{EscapeTomlString(config.WebUI.Username)}\"");
         sb.AppendLine($"PasswordHash = \"{EscapeTomlString(config.WebUI.PasswordHash)}\"");
         sb.AppendLine($"LiveArr = {config.WebUI.LiveArr.ToString().ToLower()}");

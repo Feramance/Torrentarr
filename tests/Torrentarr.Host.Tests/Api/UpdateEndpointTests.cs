@@ -45,6 +45,10 @@ public class UpdateEndpointTests : IClassFixture<TorrentarrWebApplicationFactory
         updateState.TryGetProperty("in_progress", out _).Should().BeTrue("update_state.in_progress is required");
         json.TryGetProperty("repository_url", out _).Should().BeTrue("repository_url is required");
         json.TryGetProperty("homepage_url", out _).Should().BeTrue("homepage_url is required");
+        json.TryGetProperty("auth_required", out var authRequired).Should().BeTrue("auth_required is required");
+        authRequired.ValueKind.Should().Be(JsonValueKind.False, "base factory has auth disabled");
+        json.TryGetProperty("local_auth_enabled", out _).Should().BeTrue("local_auth_enabled is required");
+        json.TryGetProperty("oidc_enabled", out _).Should().BeTrue("oidc_enabled is required");
     }
 
     [Fact]

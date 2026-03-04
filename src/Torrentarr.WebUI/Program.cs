@@ -165,11 +165,11 @@ else
 
 app.UseAuthentication();
 
-// Auth middleware (same logic as Host): protect /web/* when auth enabled; Bearer token always works
+// Auth middleware (same logic as Host): protect /web/* when auth required; Bearer token always works
 app.Use(async (context, next) =>
 {
     var cfg = context.RequestServices.GetRequiredService<TorrentarrConfig>();
-    if (!WebUIAuthIsEnabled(cfg))
+    if (!WebUIAuthRequired(cfg))
     {
         await next(context);
         return;
@@ -214,14 +214,7 @@ app.Use(async (context, next) =>
     context.Response.Redirect("/login");
 });
 
-static bool WebUIAuthIsEnabled(TorrentarrConfig c)
-{
-    if (!string.IsNullOrEmpty(c.WebUI.Token)) return true;
-    var mode = c.WebUI.AuthMode?.Trim() ?? "";
-    return string.Equals(mode, "Local", StringComparison.OrdinalIgnoreCase)
-        || string.Equals(mode, "OIDC", StringComparison.OrdinalIgnoreCase)
-        || string.Equals(mode, "TokenOnly", StringComparison.OrdinalIgnoreCase);
-}
+static bool WebUIAuthRequired(TorrentarrConfig c) => !c.WebUI.AuthDisabled;
 
 static bool WebUIPublicPath(string path, string method)
 {
@@ -231,6 +224,7 @@ static bool WebUIPublicPath(string path, string method)
     if (path.StartsWith("/ui", StringComparison.OrdinalIgnoreCase)) return true;
     if (path.Equals("/sw.js", StringComparison.OrdinalIgnoreCase)) return true;
     if (path.Equals("/login", StringComparison.OrdinalIgnoreCase)) return true;
+    if (path.Equals("/web/meta", StringComparison.OrdinalIgnoreCase)) return true;
     if (path.Equals("/web/login", StringComparison.OrdinalIgnoreCase) && method == "POST") return true;
     if (path.Equals("/web/auth/set-password", StringComparison.OrdinalIgnoreCase) && method == "POST") return true;
     return false;
@@ -249,7 +243,7 @@ app.MapGet("/health", () => Results.Ok(new
 app.MapGet("/web/token", (TorrentarrConfig cfg, HttpContext ctx) =>
 {
     var isAuthenticated = ctx.User?.Identity?.IsAuthenticated == true;
-    if (!isAuthenticated && WebUIAuthIsEnabled(cfg))
+    if (!isAuthenticated && WebUIAuthRequired(cfg))
         return Results.Json(new { token = "" }, statusCode: 401);
     return Results.Ok(new { token = cfg.WebUI.Token });
 });
@@ -259,7 +253,7 @@ app.MapPost("/web/login", async (HttpContext ctx, TorrentarrConfig cfg, IPasswor
     var body = await ctx.Request.ReadFromJsonAsync<LoginRequest>();
     if (body == null || string.IsNullOrWhiteSpace(body.Username) || string.IsNullOrWhiteSpace(body.Password))
         return Results.BadRequest(new { error = "Username and password required" });
-    if (!string.Equals(cfg.WebUI.AuthMode, "Local", StringComparison.OrdinalIgnoreCase))
+    if (!cfg.WebUI.LocalAuthEnabled)
         return Results.Json(new { error = "Local login not configured" }, statusCode: 400);
     if (string.IsNullOrEmpty(cfg.WebUI.PasswordHash))
         return Results.Json(new { error = "Password not set", code = "SETUP_REQUIRED" }, statusCode: 403);
@@ -289,8 +283,11 @@ app.MapPost("/web/auth/set-password", async (HttpContext ctx, TorrentarrConfig c
         return Results.Json(new { error = "Set password not allowed" }, statusCode: 403);
     cfg.WebUI.Username = body.Username.Trim();
     cfg.WebUI.PasswordHash = hasher.HashPassword(body.Password);
-    if (string.Equals(cfg.WebUI.AuthMode, "Disabled", StringComparison.OrdinalIgnoreCase))
-        cfg.WebUI.AuthMode = "Local";
+    if (cfg.WebUI.AuthDisabled)
+    {
+        cfg.WebUI.AuthDisabled = false;
+        cfg.WebUI.LocalAuthEnabled = true;
+    }
     try
     {
         loader.SaveConfig(cfg);
@@ -1270,8 +1267,8 @@ app.MapGet("/web/config/path", (IConfigReloader reloader) =>
     return Results.Ok(new { path = reloader.ConfigPath });
 });
 
-// Meta info — matches frontend MetaResponse interface
-app.MapGet("/web/meta", () =>
+// Meta info — matches frontend MetaResponse interface (includes auth flags)
+app.MapGet("/web/meta", (TorrentarrConfig cfg) =>
 {
     return Results.Ok(new
     {
@@ -1297,9 +1294,11 @@ app.MapGet("/web/meta", () =>
         binary_download_name = (string?)null,
         binary_download_size = (long?)null,
         binary_download_error = (string?)null,
-        // Extra info not in qBitrr but useful
         platform = Environment.OSVersion.Platform.ToString(),
-        runtime = $".NET {Environment.Version}"
+        runtime = $".NET {Environment.Version}",
+        auth_required = !cfg.WebUI.AuthDisabled,
+        local_auth_enabled = cfg.WebUI.LocalAuthEnabled,
+        oidc_enabled = cfg.WebUI.OIDCEnabled
     });
 });
 

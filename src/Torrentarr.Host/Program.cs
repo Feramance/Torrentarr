@@ -178,8 +178,7 @@ try
             options.LoginPath = "/login";
             options.AccessDeniedPath = "/login";
         });
-    if (string.Equals(config.WebUI.AuthMode, "OIDC", StringComparison.OrdinalIgnoreCase)
-        && config.WebUI.OIDC is { } oidc
+    if (config.WebUI.OIDCEnabled && config.WebUI.OIDC is { } oidc
         && !string.IsNullOrWhiteSpace(oidc.Authority)
         && !string.IsNullOrWhiteSpace(oidc.ClientId))
     {
@@ -336,11 +335,11 @@ try
 
     app.UseAuthentication();
 
-    // Auth: when enabled, protect /api/* and /web/* except public paths. Bearer token always works for API.
+    // Auth: when required (!AuthDisabled), protect /api/* and /web/* except public paths. Bearer token always works for API.
     app.Use(async (context, next) =>
     {
         var cfg = context.RequestServices.GetRequiredService<TorrentarrConfig>();
-        if (!IsAuthEnabled(cfg))
+        if (!IsAuthRequired(cfg))
         {
             await next(context);
             return;
@@ -396,14 +395,7 @@ try
         context.Response.Redirect("/login");
     });
 
-    static bool IsAuthEnabled(TorrentarrConfig c)
-    {
-        if (!string.IsNullOrEmpty(c.WebUI.Token)) return true;
-        var mode = c.WebUI.AuthMode?.Trim() ?? "";
-        return string.Equals(mode, "Local", StringComparison.OrdinalIgnoreCase)
-            || string.Equals(mode, "OIDC", StringComparison.OrdinalIgnoreCase)
-            || string.Equals(mode, "TokenOnly", StringComparison.OrdinalIgnoreCase);
-    }
+    static bool IsAuthRequired(TorrentarrConfig c) => !c.WebUI.AuthDisabled;
 
     static bool IsPublicPath(string path, string method)
     {
@@ -413,6 +405,7 @@ try
         if (path.StartsWith("/ui", StringComparison.OrdinalIgnoreCase)) return true;
         if (path.Equals("/sw.js", StringComparison.OrdinalIgnoreCase)) return true;
         if (path.Equals("/login", StringComparison.OrdinalIgnoreCase)) return true;
+        if (path.Equals("/web/meta", StringComparison.OrdinalIgnoreCase)) return true;
         if (path.Equals("/web/login", StringComparison.OrdinalIgnoreCase) && method == "POST") return true;
         if (path.Equals("/web/auth/set-password", StringComparison.OrdinalIgnoreCase) && method == "POST") return true;
         if (path.StartsWith("/signin-oidc", StringComparison.OrdinalIgnoreCase)) return true;
@@ -436,11 +429,11 @@ try
     // ==================== /web/* endpoints ====================
 
     // Web Meta — fetches latest release from GitHub and compares with current version
-    // §6.10: GET /web/meta — version info + update state (MetaResponse-compatible)
-    app.MapGet("/web/meta", async (UpdateService updater, int? force) =>
+    // §6.10: GET /web/meta — version info + update state + auth flags (MetaResponse-compatible)
+    app.MapGet("/web/meta", async (UpdateService updater, TorrentarrConfig cfg, int? force) =>
     {
         await updater.CheckForUpdateAsync(forceRefresh: force.GetValueOrDefault() != 0);
-        return Results.Ok(updater.BuildMetaResponse());
+        return Results.Ok(updater.BuildMetaResponse(cfg.WebUI));
     });
 
     // Web Status — matches TypeScript StatusResponse (no extra webui field)
@@ -1381,7 +1374,7 @@ try
     app.MapGet("/web/token", (TorrentarrConfig cfg, HttpContext ctx) =>
     {
         var isAuthenticated = ctx.User?.Identity?.IsAuthenticated == true;
-        if (!isAuthenticated && IsAuthEnabled(cfg))
+        if (!isAuthenticated && IsAuthRequired(cfg))
             return Results.Json(new { token = "" }, statusCode: 401);
         return Results.Ok(new { token = cfg.WebUI.Token });
     });
@@ -1393,7 +1386,7 @@ try
         if (body == null || string.IsNullOrWhiteSpace(body.Username) || string.IsNullOrWhiteSpace(body.Password))
             return Results.BadRequest(new { error = "Username and password required" });
 
-        if (!string.Equals(cfg.WebUI.AuthMode, "Local", StringComparison.OrdinalIgnoreCase))
+        if (!cfg.WebUI.LocalAuthEnabled)
             return Results.Json(new { error = "Local login not configured" }, statusCode: 400);
 
         if (string.IsNullOrEmpty(cfg.WebUI.PasswordHash))
@@ -1431,8 +1424,11 @@ try
 
         cfg.WebUI.Username = body.Username.Trim();
         cfg.WebUI.PasswordHash = hasher.HashPassword(body.Password);
-        if (string.Equals(cfg.WebUI.AuthMode, "Disabled", StringComparison.OrdinalIgnoreCase))
-            cfg.WebUI.AuthMode = "Local";
+        if (cfg.WebUI.AuthDisabled)
+        {
+            cfg.WebUI.AuthDisabled = false;
+            cfg.WebUI.LocalAuthEnabled = true;
+        }
         try
         {
             loader.SaveConfig(cfg);
@@ -1449,7 +1445,7 @@ try
     // OIDC challenge: redirect to IdP (used by login page "Sign in with OIDC" button)
     app.MapGet("/web/auth/oidc/challenge", async (HttpContext ctx, TorrentarrConfig cfg) =>
     {
-        if (!string.Equals(cfg.WebUI.AuthMode, "OIDC", StringComparison.OrdinalIgnoreCase))
+        if (!cfg.WebUI.OIDCEnabled)
             return Results.BadRequest(new { error = "OIDC not configured" });
         await ctx.ChallengeAsync(OpenIdConnectDefaults.AuthenticationScheme);
         return Results.Empty;

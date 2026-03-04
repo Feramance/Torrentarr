@@ -136,8 +136,12 @@ public class WebUIConfig
     public string Host { get; set; } = "0.0.0.0";
     public int Port { get; set; } = 6969;
     public string Token { get; set; } = "";
-    /// <summary>Authentication mode: Disabled, Local, OIDC, or TokenOnly. When not set, derived from Token/Username+PasswordHash.</summary>
-    public string AuthMode { get; set; } = "Disabled";
+    /// <summary>When true, no authentication is required; login screen is skipped. When false, at least one of LocalAuthEnabled or OIDCEnabled should be true for browser login.</summary>
+    public bool AuthDisabled { get; set; } = true;
+    /// <summary>When true (and AuthDisabled is false), allow username/password login via POST /web/login.</summary>
+    public bool LocalAuthEnabled { get; set; } = false;
+    /// <summary>When true (and AuthDisabled is false), allow OIDC challenge and cookie-based login.</summary>
+    public bool OIDCEnabled { get; set; } = false;
     /// <summary>For Local auth: single admin username. Password is stored only as PasswordHash.</summary>
     public string Username { get; set; } = "";
     /// <summary>For Local auth: only ever store the hash (e.g. BCrypt or Argon2). Never plain password.</summary>
@@ -147,7 +151,7 @@ public class WebUIConfig
     public bool GroupLidarr { get; set; } = true;
     public string Theme { get; set; } = "Dark";
     public string ViewDensity { get; set; } = "Comfortable";
-    /// <summary>OIDC settings when AuthMode is OIDC. Optional.</summary>
+    /// <summary>OIDC settings when OIDCEnabled is true. Optional.</summary>
     public OIDCConfig? OIDC { get; set; }
 }
 
