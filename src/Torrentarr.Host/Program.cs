@@ -367,9 +367,7 @@ try
                 providedToken = authHeader["Bearer ".Length..];
             else if (context.Request.Query.ContainsKey("token") && context.Request.Method == "GET")
                 providedToken = context.Request.Query["token"];
-            if (string.IsNullOrEmpty(providedToken) || !CryptographicOperations.FixedTimeEquals(
-                Encoding.UTF8.GetBytes(providedToken),
-                Encoding.UTF8.GetBytes(configuredToken)))
+            if (string.IsNullOrEmpty(providedToken) || !TokenEquals(providedToken, configuredToken))
             {
                 context.Response.StatusCode = 401;
                 await context.Response.WriteAsJsonAsync(new { error = "Unauthorized" });
@@ -405,9 +403,7 @@ try
             else if (context.Request.Query.ContainsKey("token") && context.Request.Method == "GET")
                 providedToken = context.Request.Query["token"];
 
-            if (!string.IsNullOrEmpty(providedToken) && CryptographicOperations.FixedTimeEquals(
-                Encoding.UTF8.GetBytes(providedToken),
-                Encoding.UTF8.GetBytes(webToken)))
+            if (!string.IsNullOrEmpty(providedToken) && TokenEquals(providedToken, webToken))
             {
                 var identity = new ClaimsIdentity("Bearer");
                 identity.AddClaim(new Claim(ClaimTypes.Name, "api"));
@@ -439,6 +435,16 @@ try
 
     static bool IsAuthRequired(TorrentarrConfig c) => !c.WebUI.AuthDisabled;
 
+    /// <summary>Constant-time token comparison using SHA-256 hashes to avoid leaking length.</summary>
+    static bool TokenEquals(string? a, string? b)
+    {
+        var aBytes = Encoding.UTF8.GetBytes(a ?? "");
+        var bBytes = Encoding.UTF8.GetBytes(b ?? "");
+        var aHash = SHA256.HashData(aBytes);
+        var bHash = SHA256.HashData(bBytes);
+        return CryptographicOperations.FixedTimeEquals(aHash, bHash);
+    }
+
     static bool IsPublicPath(string path, string method)
     {
         if (string.IsNullOrEmpty(path)) return true;
@@ -451,7 +457,7 @@ try
         if (path.Equals("/web/login", StringComparison.OrdinalIgnoreCase) && method == "POST") return true;
         if (path.Equals("/web/auth/set-password", StringComparison.OrdinalIgnoreCase) && method == "POST") return true;
         if (path.StartsWith("/signin-oidc", StringComparison.OrdinalIgnoreCase)) return true;
-        if (path.StartsWith("/web/auth/oidc", StringComparison.OrdinalIgnoreCase)) return true;
+        if (path.StartsWith("/web/auth/oidc/challenge", StringComparison.OrdinalIgnoreCase)) return true;
         return false;
     }
 
@@ -1462,9 +1468,7 @@ try
         var setupToken = Environment.GetEnvironmentVariable("TORRENTARR_SETUP_TOKEN");
         var allowSet = string.IsNullOrEmpty(cfg.WebUI.PasswordHash)
             || (!string.IsNullOrEmpty(setupToken) && body.SetupToken != null
-                && CryptographicOperations.FixedTimeEquals(
-                    Encoding.UTF8.GetBytes(body.SetupToken),
-                    Encoding.UTF8.GetBytes(setupToken)));
+                && TokenEquals(body.SetupToken, setupToken));
         if (!allowSet)
             return Results.Json(new { error = "Set password not allowed" }, statusCode: 403);
 
