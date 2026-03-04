@@ -501,9 +501,11 @@ function ChangelogModal({
 function AuthGate({ children }: { children: React.ReactNode }): JSX.Element {
   const [needsLogin, setNeedsLogin] = useState<boolean | null>(null);
   const [authMeta, setAuthMeta] = useState<MetaResponse | null>(null);
+  const [connectionError, setConnectionError] = useState(false);
 
   useEffect(() => {
     let cancelled = false;
+    setConnectionError(false);
     getMeta()
       .then((meta) => {
         if (cancelled) return;
@@ -519,15 +521,37 @@ function AuthGate({ children }: { children: React.ReactNode }): JSX.Element {
         setNeedsLogin(false);
       })
       .catch(() => {
-        if (!cancelled) setNeedsLogin(true);
+        if (!cancelled) {
+          setConnectionError(true);
+          setNeedsLogin(false);
+        }
       });
     return () => {
       cancelled = true;
     };
   }, []);
 
-  if (needsLogin === null) {
+  if (needsLogin === null && !connectionError) {
     return <div className="loading">Loading...</div>;
+  }
+  if (connectionError) {
+    return (
+      <div className="login-page">
+        <div className="login-card">
+          <h1>Torrentarr</h1>
+          <p className="login-error">
+            Cannot reach the server. Check your connection and try again.
+          </p>
+          <button
+            type="button"
+            className="btn primary"
+            onClick={() => window.location.reload()}
+          >
+            Retry
+          </button>
+        </div>
+      </div>
+    );
   }
   if (needsLogin) {
     return (
