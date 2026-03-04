@@ -36,6 +36,9 @@ public class HostWebLocalAuthCollection : ICollectionFixture<LocalAuthWebApplica
 /// </summary>
 public class TorrentarrWebApplicationFactory : WebApplicationFactory<Program>, IDisposable
 {
+    /// <summary>When set by a derived factory before CreateClient(), this host build uses that config path (avoids races when collections run in parallel).</summary>
+    protected static readonly System.Threading.AsyncLocal<string?> ConfigPathForCurrentBuild = new();
+
     // Keep the connection open for the lifetime of the factory so the in-memory DB persists.
     private readonly SqliteConnection _keepAliveConnection;
     private readonly string _tempConfigPath;
@@ -73,8 +76,11 @@ public class TorrentarrWebApplicationFactory : WebApplicationFactory<Program>, I
 
     protected override void ConfigureWebHost(IWebHostBuilder builder)
     {
-        // Ensure our config path is used when this factory builds the host (env can be overwritten by other fixtures)
-        Environment.SetEnvironmentVariable("TORRENTARR_CONFIG", _tempConfigPath);
+        // Use per-build path when set (e.g. by derived factory's SetConfigEnv before CreateClient) so parallel collections get correct config.
+        var configPath = ConfigPathForCurrentBuild.Value ?? _tempConfigPath;
+        ConfigPathForCurrentBuild.Value = null; // clear so a later base-factory build does not inherit an auth path
+        Environment.SetEnvironmentVariable("TORRENTARR_CONFIG", configPath);
+        ConfigurationLoader.TestConfigPathOverride = configPath;
         builder.UseEnvironment("Testing");
 
         builder.ConfigureServices(services =>
@@ -135,14 +141,17 @@ public class AuthEnabledWebApplicationFactory : TorrentarrWebApplicationFactory
         ConfigurationLoader.TestConfigPathOverride = _authConfigPath;
     }
 
-    protected override void ConfigureWebHost(IWebHostBuilder builder)
-    {
-        Environment.SetEnvironmentVariable("TORRENTARR_CONFIG", _authConfigPath);
-        base.ConfigureWebHost(builder);
-    }
-
     public new void SetConfigEnv()
     {
+        Environment.SetEnvironmentVariable("TORRENTARR_CONFIG", _authConfigPath);
+        ConfigurationLoader.TestConfigPathOverride = _authConfigPath;
+        ConfigPathForCurrentBuild.Value = _authConfigPath;
+    }
+
+    protected override void ConfigureWebHost(IWebHostBuilder builder)
+    {
+        base.ConfigureWebHost(builder);
+        // Ensure auth config is used even when build runs on a different thread (AsyncLocal not set)
         Environment.SetEnvironmentVariable("TORRENTARR_CONFIG", _authConfigPath);
         ConfigurationLoader.TestConfigPathOverride = _authConfigPath;
     }
@@ -213,10 +222,19 @@ public class LocalAuthWebApplicationFactory : TorrentarrWebApplicationFactory
         ConfigurationLoader.TestConfigPathOverride = _localAuthConfigPath;
     }
 
+    protected override void ConfigureWebHost(IWebHostBuilder builder)
+    {
+        base.ConfigureWebHost(builder);
+        // Ensure local auth config is used even when build runs on a different thread (AsyncLocal not set)
+        Environment.SetEnvironmentVariable("TORRENTARR_CONFIG", _localAuthConfigPath);
+        ConfigurationLoader.TestConfigPathOverride = _localAuthConfigPath;
+    }
+
     public new void SetConfigEnv()
     {
         Environment.SetEnvironmentVariable("TORRENTARR_CONFIG", _localAuthConfigPath);
         ConfigurationLoader.TestConfigPathOverride = _localAuthConfigPath;
+        ConfigPathForCurrentBuild.Value = _localAuthConfigPath;
     }
 
     protected override void Dispose(bool disposing)
