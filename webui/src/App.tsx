@@ -505,10 +505,12 @@ function AuthGate({ children }: { children: React.ReactNode }): JSX.Element {
 
   useEffect(() => {
     let cancelled = false;
+    let metaReceived = false;
     setConnectionError(false);
     getMeta()
       .then((meta) => {
         if (cancelled) return;
+        metaReceived = true;
         if (!meta.auth_required) {
           setNeedsLogin(false);
           return;
@@ -522,8 +524,12 @@ function AuthGate({ children }: { children: React.ReactNode }): JSX.Element {
       })
       .catch(() => {
         if (!cancelled) {
-          setConnectionError(true);
-          setNeedsLogin(false);
+          if (metaReceived) {
+            setNeedsLogin(true);
+          } else {
+            setConnectionError(true);
+            setNeedsLogin(false);
+          }
         }
       });
     return () => {
