@@ -344,6 +344,13 @@ app.MapPost("/web/auth/set-password", async (HttpContext ctx, TorrentarrConfig c
             && TokenEquals(body.SetupToken, setupToken));
     if (!allowSet)
         return Results.Json(new { error = "Set password not allowed" }, statusCode: 403);
+
+    // Capture current values so we can revert if SaveConfig fails
+    var prevUsername = cfg.WebUI.Username;
+    var prevPasswordHash = cfg.WebUI.PasswordHash;
+    var prevAuthDisabled = cfg.WebUI.AuthDisabled;
+    var prevLocalAuthEnabled = cfg.WebUI.LocalAuthEnabled;
+
     cfg.WebUI.Username = body.Username.Trim();
     cfg.WebUI.PasswordHash = hasher.HashPassword(body.Password);
     if (cfg.WebUI.AuthDisabled)
@@ -357,6 +364,11 @@ app.MapPost("/web/auth/set-password", async (HttpContext ctx, TorrentarrConfig c
     }
     catch
     {
+        // Revert in-memory config so it stays in sync with persisted file
+        cfg.WebUI.Username = prevUsername;
+        cfg.WebUI.PasswordHash = prevPasswordHash;
+        cfg.WebUI.AuthDisabled = prevAuthDisabled;
+        cfg.WebUI.LocalAuthEnabled = prevLocalAuthEnabled;
         return Results.Json(new { error = "Failed to save configuration" }, statusCode: 500);
     }
     return Results.Ok(new { success = true });

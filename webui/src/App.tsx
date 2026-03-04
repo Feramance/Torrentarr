@@ -521,6 +521,9 @@ function AuthGate({ children }: { children: React.ReactNode }): JSX.Element {
       .then((result) => {
         if (cancelled || result === undefined) return;
         setNeedsLogin(false);
+        if (result.token) {
+          localStorage.setItem("token", result.token);
+        }
       })
       .catch(() => {
         if (!cancelled) {

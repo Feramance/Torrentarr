@@ -450,9 +450,17 @@ try
         if (string.IsNullOrEmpty(path)) return true;
         if (path.Equals("/health", StringComparison.OrdinalIgnoreCase)) return true;
         if (path.Equals("/", StringComparison.OrdinalIgnoreCase)) return true;
-        if (path.StartsWith("/ui", StringComparison.OrdinalIgnoreCase)) return true;
-        if (path.Equals("/sw.js", StringComparison.OrdinalIgnoreCase)) return true;
+        // Do NOT treat /ui as public: the SPA and all routes under /ui require auth when AuthDisabled is false.
+        // Only allow paths needed for the login page to load: /login (serves index.html), /assets/* (JS/CSS bundle), and root static assets.
         if (path.Equals("/login", StringComparison.OrdinalIgnoreCase)) return true;
+        if (path.StartsWith("/assets/", StringComparison.OrdinalIgnoreCase)) return true;
+        if (path.Equals("/favicon.ico", StringComparison.OrdinalIgnoreCase)) return true;
+        if (path.Equals("/favicon-16x16.png", StringComparison.OrdinalIgnoreCase)) return true;
+        if (path.Equals("/favicon-32x32.png", StringComparison.OrdinalIgnoreCase)) return true;
+        if (path.Equals("/favicon-48x48.png", StringComparison.OrdinalIgnoreCase)) return true;
+        if (path.Equals("/logov2-clean.png", StringComparison.OrdinalIgnoreCase)) return true;
+        if (path.Equals("/manifest.json", StringComparison.OrdinalIgnoreCase)) return true;
+        if (path.Equals("/sw.js", StringComparison.OrdinalIgnoreCase)) return true;
         if (path.Equals("/web/meta", StringComparison.OrdinalIgnoreCase)) return true;
         if (path.Equals("/web/login", StringComparison.OrdinalIgnoreCase) && method == "POST") return true;
         if (path.Equals("/web/auth/set-password", StringComparison.OrdinalIgnoreCase) && method == "POST") return true;
@@ -1472,6 +1480,12 @@ try
         if (!allowSet)
             return Results.Json(new { error = "Set password not allowed" }, statusCode: 403);
 
+        // Capture current values so we can revert if SaveConfig fails
+        var prevUsername = cfg.WebUI.Username;
+        var prevPasswordHash = cfg.WebUI.PasswordHash;
+        var prevAuthDisabled = cfg.WebUI.AuthDisabled;
+        var prevLocalAuthEnabled = cfg.WebUI.LocalAuthEnabled;
+
         cfg.WebUI.Username = body.Username.Trim();
         cfg.WebUI.PasswordHash = hasher.HashPassword(body.Password);
         if (cfg.WebUI.AuthDisabled)
@@ -1486,6 +1500,11 @@ try
         catch (Exception ex)
         {
             log.LogError(ex, "Failed to save config after set-password");
+            // Revert in-memory config so it stays in sync with persisted file
+            cfg.WebUI.Username = prevUsername;
+            cfg.WebUI.PasswordHash = prevPasswordHash;
+            cfg.WebUI.AuthDisabled = prevAuthDisabled;
+            cfg.WebUI.LocalAuthEnabled = prevLocalAuthEnabled;
             return Results.Json(new { error = "Failed to save configuration" }, statusCode: 500);
         }
         log.LogInformation("Password set for user {User}", cfg.WebUI.Username);
