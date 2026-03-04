@@ -860,7 +860,7 @@ public class TorrentProcessor : ITorrentProcessor
 
     /// <summary>
     /// Returns true if the torrent is in a complete (upload/seeding) state.
-    /// Matches qBitrr's is_complete_state: UPLOADING, STALLED_UPLOAD, PAUSED_UPLOAD, QUEUED_UPLOAD, FORCED_UPLOAD.
+    /// Matches qBitrr's is_complete_state: UPLOADING, STALLED_UPLOAD, PAUSED_UPLOAD, QUEUED_UPLOAD, FORCED_UPLOAD, CHECKING_UPLOAD.
     /// </summary>
     private static bool IsCompleteState(TorrentState state)
     {
@@ -868,7 +868,8 @@ public class TorrentProcessor : ITorrentProcessor
             or TorrentState.StalledUploading
             or TorrentState.PausedUploading
             or TorrentState.QueuedUploading
-            or TorrentState.ForcedUploading;
+            or TorrentState.ForcedUploading
+            or TorrentState.CheckingUploading;
     }
 
     /// <summary>
