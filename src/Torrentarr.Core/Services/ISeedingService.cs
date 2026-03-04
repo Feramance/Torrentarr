@@ -72,6 +72,12 @@ public interface ISeedingService
     /// Matches qBitrr's _apply_seeding_limits() exactly.
     /// </summary>
     Task ApplySeedingLimitsAsync(TorrentInfo torrent, CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Apply tracker actions (add/remove trackers, tags, super-seed) to a torrent.
+    /// In qBitrr this runs for ALL torrents as a pre-step before the state machine.
+    /// </summary>
+    Task ApplyTrackerActionsForTorrentAsync(TorrentInfo torrent, CancellationToken cancellationToken = default);
 }
 
 public class SeedingStats

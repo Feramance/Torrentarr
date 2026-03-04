@@ -913,6 +913,34 @@ public class SeedingService : ISeedingService
     }
 
     /// <summary>
+    /// Public entry point for tracker actions, callable from TorrentProcessor pre-step.
+    /// In qBitrr this runs for EVERY torrent BEFORE the state machine.
+    /// </summary>
+    public async Task ApplyTrackerActionsForTorrentAsync(TorrentInfo torrent, CancellationToken cancellationToken = default)
+    {
+        var client = _qbitManager.GetClient(torrent.QBitInstanceName);
+        if (client == null) return;
+
+        try
+        {
+            await ApplyTrackerActionsAsync(client, torrent, cancellationToken);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Error applying tracker actions for {Hash}", torrent.Hash);
+        }
+
+        try
+        {
+            await ProcessTrackerMessagesAsync(client, torrent, cancellationToken);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Error processing tracker messages for {Hash}", torrent.Hash);
+        }
+    }
+
+    /// <summary>
     /// §3.1: Apply per-tracker-config actions (RemoveIfExists, AddTrackerIfMissing, AddTags).
     /// Iterates the merged tracker list and applies each action for the trackers that match/don't match.
     /// </summary>

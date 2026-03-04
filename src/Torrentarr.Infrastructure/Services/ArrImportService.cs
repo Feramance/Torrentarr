@@ -2,6 +2,8 @@ using Torrentarr.Core.Configuration;
 using Torrentarr.Core.Services;
 using Torrentarr.Infrastructure.ApiClients.Arr;
 using Torrentarr.Infrastructure.ApiClients.QBittorrent;
+using Torrentarr.Infrastructure.Database;
+using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging;
 
 namespace Torrentarr.Infrastructure.Services;
@@ -11,15 +13,18 @@ public class ArrImportService : IArrImportService
     private readonly ILogger<ArrImportService> _logger;
     private readonly TorrentarrConfig _config;
     private readonly QBittorrentConnectionManager _qbitManager;
+    private readonly TorrentarrDbContext _dbContext;
 
     public ArrImportService(
         ILogger<ArrImportService> logger,
         TorrentarrConfig config,
-        QBittorrentConnectionManager qbitManager)
+        QBittorrentConnectionManager qbitManager,
+        TorrentarrDbContext dbContext)
     {
         _logger = logger;
         _config = config;
         _qbitManager = qbitManager;
+        _dbContext = dbContext;
     }
 
     public async Task<ImportResult> TriggerImportAsync(
@@ -301,5 +306,214 @@ public class ArrImportService : IArrImportService
         }
 
         _logger.LogWarning("Could not add import tags to torrent {Hash} - tried {Count} instances", hash, instancesAttempted);
+    }
+
+    /// <summary>
+    /// Check if a torrent's custom format score is unmet.
+    /// Matches qBitrr's custom_format_unmet_check (arss.py:6255-6324).
+    /// </summary>
+    public async Task<bool> IsCustomFormatUnmetAsync(string hash, string category, CancellationToken cancellationToken = default)
+    {
+        var arrInstance = _config.ArrInstances.Values.FirstOrDefault(i =>
+            i.Category.Equals(category, StringComparison.OrdinalIgnoreCase));
+
+        if (arrInstance == null || !arrInstance.Search.CustomFormatUnmetSearch)
+            return false;
+
+        try
+        {
+            var downloadId = hash.ToUpperInvariant();
+
+            return arrInstance.Type.ToLower() switch
+            {
+                "radarr" => await CheckRadarrCfUnmetAsync(arrInstance, downloadId, cancellationToken),
+                "sonarr" => await CheckSonarrCfUnmetAsync(arrInstance, downloadId, cancellationToken),
+                "lidarr" => await CheckLidarrCfUnmetAsync(arrInstance, downloadId, cancellationToken),
+                _ => false
+            };
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(ex, "Error checking custom format for torrent {Hash}", hash);
+            return false;
+        }
+    }
+
+    private async Task<bool> CheckRadarrCfUnmetAsync(ArrInstanceConfig config, string downloadId, CancellationToken ct)
+    {
+        var client = new RadarrClient(config.URI, config.APIKey);
+        var queue = await client.GetQueueAsync(ct: ct);
+        var record = queue.Records.FirstOrDefault(r =>
+            string.Equals(r.DownloadId, downloadId, StringComparison.OrdinalIgnoreCase));
+
+        if (record?.CustomFormatScore == null || record.MovieId == null)
+            return false;
+
+        var arrName = _config.ArrInstances.FirstOrDefault(kv =>
+            kv.Value == config).Key ?? "";
+
+        var modelEntry = await _dbContext.Movies.AsNoTracking()
+            .FirstOrDefaultAsync(m => m.EntryId == record.MovieId && m.ArrInstance == arrName, ct);
+
+        if (modelEntry == null)
+            return false;
+
+        if (modelEntry.MovieFileId != 0)
+        {
+            var cfUnmet = record.CustomFormatScore < (modelEntry.CustomFormatScore ?? 0);
+            if (config.Search.ForceMinimumCustomFormat)
+                cfUnmet = cfUnmet && record.CustomFormatScore < (modelEntry.MinCustomFormatScore ?? 0);
+            return cfUnmet;
+        }
+
+        return false;
+    }
+
+    private async Task<bool> CheckSonarrCfUnmetAsync(ArrInstanceConfig config, string downloadId, CancellationToken ct)
+    {
+        var client = new SonarrClient(config.URI, config.APIKey);
+        var queue = await client.GetQueueAsync(ct: ct);
+        var record = queue.Records.FirstOrDefault(r =>
+            string.Equals(r.DownloadId, downloadId, StringComparison.OrdinalIgnoreCase));
+
+        if (record?.CustomFormatScore == null)
+            return false;
+
+        var arrName = _config.ArrInstances.FirstOrDefault(kv =>
+            kv.Value == config).Key ?? "";
+
+        var isSeriesSearch = config.Search.SearchBySeries.Equals("true", StringComparison.OrdinalIgnoreCase);
+
+        if (isSeriesSearch)
+        {
+            if (record.SeriesId == null) return false;
+
+            var seriesEntry = await _dbContext.Series.AsNoTracking()
+                .FirstOrDefaultAsync(s => s.EntryId == record.SeriesId && s.ArrInstance == arrName, ct);
+
+            if (seriesEntry == null) return false;
+
+            if (config.Search.ForceMinimumCustomFormat)
+                return record.CustomFormatScore < (seriesEntry.MinCustomFormatScore ?? 0);
+
+            return false;
+        }
+        else
+        {
+            if (record.EpisodeId == null) return false;
+
+            var episodeEntry = await _dbContext.Episodes.AsNoTracking()
+                .FirstOrDefaultAsync(e => e.EntryId == record.EpisodeId && e.ArrInstance == arrName, ct);
+
+            if (episodeEntry == null) return false;
+
+            if (episodeEntry.EpisodeFileId is > 0)
+            {
+                var cfUnmet = record.CustomFormatScore < (episodeEntry.CustomFormatScore ?? 0);
+                if (config.Search.ForceMinimumCustomFormat)
+                    cfUnmet = cfUnmet && record.CustomFormatScore < (episodeEntry.MinCustomFormatScore ?? 0);
+                return cfUnmet;
+            }
+
+            return false;
+        }
+    }
+
+    private async Task<bool> CheckLidarrCfUnmetAsync(ArrInstanceConfig config, string downloadId, CancellationToken ct)
+    {
+        var client = new LidarrClient(config.URI, config.APIKey);
+        var queue = await client.GetQueueAsync(ct: ct);
+        var record = queue.Records.FirstOrDefault(r =>
+            string.Equals(r.DownloadId, downloadId, StringComparison.OrdinalIgnoreCase));
+
+        if (record?.CustomFormatScore == null || record.AlbumId == null)
+            return false;
+
+        var arrName = _config.ArrInstances.FirstOrDefault(kv =>
+            kv.Value == config).Key ?? "";
+
+        var modelEntry = await _dbContext.Albums.AsNoTracking()
+            .FirstOrDefaultAsync(a => a.EntryId == record.AlbumId && a.ArrInstance == arrName, ct);
+
+        if (modelEntry == null)
+            return false;
+
+        var cfUnmet = record.CustomFormatScore < (modelEntry.CustomFormatScore ?? 0);
+        if (config.Search.ForceMinimumCustomFormat)
+            cfUnmet = cfUnmet && record.CustomFormatScore < (modelEntry.MinCustomFormatScore ?? 0);
+        return cfUnmet;
+    }
+
+    /// <summary>
+    /// Blocklist a torrent in the Arr queue (removeFromClient=false, blocklist=true).
+    /// The Arr will then automatically re-search for a replacement.
+    /// </summary>
+    public async Task<bool> BlocklistAndReSearchAsync(string hash, string category, CancellationToken cancellationToken = default)
+    {
+        var arrInstance = _config.ArrInstances.Values.FirstOrDefault(i =>
+            i.Category.Equals(category, StringComparison.OrdinalIgnoreCase));
+
+        if (arrInstance == null)
+        {
+            _logger.LogWarning("No Arr instance for category {Category} — cannot blocklist", category);
+            return false;
+        }
+
+        try
+        {
+            var downloadId = hash.ToUpperInvariant();
+
+            return arrInstance.Type.ToLower() switch
+            {
+                "radarr" => await BlocklistRadarrAsync(arrInstance, downloadId, cancellationToken),
+                "sonarr" => await BlocklistSonarrAsync(arrInstance, downloadId, cancellationToken),
+                "lidarr" => await BlocklistLidarrAsync(arrInstance, downloadId, cancellationToken),
+                _ => false
+            };
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Error blocklisting torrent {Hash} in {Category}", hash, category);
+            return false;
+        }
+    }
+
+    private async Task<bool> BlocklistRadarrAsync(ArrInstanceConfig config, string downloadId, CancellationToken ct)
+    {
+        var client = new RadarrClient(config.URI, config.APIKey);
+        var queue = await client.GetQueueAsync(ct: ct);
+        var record = queue.Records.FirstOrDefault(r =>
+            string.Equals(r.DownloadId, downloadId, StringComparison.OrdinalIgnoreCase));
+
+        if (record == null) return false;
+
+        _logger.LogInformation("Blocklisting Radarr queue item {Id} (hash: {Hash})", record.Id, downloadId);
+        return await client.DeleteFromQueueAsync(record.Id, removeFromClient: false, blocklist: true, ct);
+    }
+
+    private async Task<bool> BlocklistSonarrAsync(ArrInstanceConfig config, string downloadId, CancellationToken ct)
+    {
+        var client = new SonarrClient(config.URI, config.APIKey);
+        var queue = await client.GetQueueAsync(ct: ct);
+        var record = queue.Records.FirstOrDefault(r =>
+            string.Equals(r.DownloadId, downloadId, StringComparison.OrdinalIgnoreCase));
+
+        if (record == null) return false;
+
+        _logger.LogInformation("Blocklisting Sonarr queue item {Id} (hash: {Hash})", record.Id, downloadId);
+        return await client.DeleteFromQueueAsync(record.Id, removeFromClient: false, blocklist: true, ct);
+    }
+
+    private async Task<bool> BlocklistLidarrAsync(ArrInstanceConfig config, string downloadId, CancellationToken ct)
+    {
+        var client = new LidarrClient(config.URI, config.APIKey);
+        var queue = await client.GetQueueAsync(ct: ct);
+        var record = queue.Records.FirstOrDefault(r =>
+            string.Equals(r.DownloadId, downloadId, StringComparison.OrdinalIgnoreCase));
+
+        if (record == null) return false;
+
+        _logger.LogInformation("Blocklisting Lidarr queue item {Id} (hash: {Hash})", record.Id, downloadId);
+        return await client.DeleteFromQueueAsync(record.Id, removeFromClient: false, blocklist: true, ct);
     }
 }

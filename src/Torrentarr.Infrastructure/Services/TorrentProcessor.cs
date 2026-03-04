@@ -294,6 +294,13 @@ public class TorrentProcessor : ITorrentProcessor
         // Ensure torrent exists in database
         await EnsureTorrentInDatabaseAsync(torrent, category, ct);
 
+        // PRE-STEP 0: Tracker actions — runs for EVERY torrent BEFORE the state machine
+        // (qBitrr: _process_single_torrent_trackers — arss.py:6070)
+        if (_seedingService != null)
+        {
+            await _seedingService.ApplyTrackerActionsForTorrentAsync(torrent, ct);
+        }
+
         // PRE-STEP 1: Resolve leave_alone / remove_torrent / maxEta (qBitrr: _should_leave_alone)
         var (leaveAlone, maxEta, removeTorrent) = await ResolveLeaveAloneAsync(torrent, state, arrCfg, ct);
         _logger.LogTrace("Torrent [{Name}]: LeaveAlone={LeaveAlone}, MaxETA={MaxEta}, RemoveTorrent={Remove}",
@@ -329,10 +336,17 @@ public class TorrentProcessor : ITorrentProcessor
         // ================================================================================
 
         // Branch 1: Custom format unmet → delete (qBitrr line 6099-6105)
-        // TODO: Requires Arr API queue access — not yet available in TorrentProcessor.
-        // ArrSyncService.ScanQueueForBlocklistAsync handles ArrErrorCodesToBlocklist;
-        // CF-unmet scoring requires per-entry customFormatScore from the Arr queue.
-
+        if (_importService != null
+            && arrCfg?.Search.CustomFormatUnmetSearch == true
+            && !HasTag(torrent, IgnoredTag)
+            && !HasTag(torrent, FreeSpacePausedTag)
+            && await _importService.IsCustomFormatUnmetAsync(torrent.Hash, category, ct))
+        {
+            _logger.LogWarning("Deleting torrent (custom format unmet): [{Name}] | Hash[{Hash}]",
+                torrent.Name, torrent.Hash);
+            await client.DeleteTorrentsAsync(new List<string> { torrent.Hash }, deleteFiles: true, ct);
+            stats.Failed++;
+        }
         // Branch 2: Ratio/seed limit met AND not leave_alone AND fully downloaded → delete
         // (qBitrr line 6106-6109: remove_torrent and not leave_alone and amount_left==0)
         if (removeTorrent && !leaveAlone && torrent.AmountLeft == 0)
@@ -695,12 +709,13 @@ public class TorrentProcessor : ITorrentProcessor
                 if (client != null)
                     await AddStalledTagAsync(torrent, client, ct);
 
-                // TODO: If ReSearchStalled is enabled, blocklist + re-search via Arr API
+                // If ReSearchStalled is enabled, blocklist + re-search via Arr API
                 // (qBitrr: process_entries([torrent.hash]) + _process_failed_individual)
-                if (arrCfg?.Torrent.ReSearchStalled == true)
+                if (arrCfg?.Torrent.ReSearchStalled == true && _importService != null)
                 {
-                    _logger.LogDebug("Stalled torrent [{Name}] — ReSearchStalled enabled; tag added (re-search requires Arr API)",
+                    _logger.LogDebug("Stalled torrent [{Name}] — ReSearchStalled enabled; blocklisting + re-search",
                         torrent.Name);
+                    await _importService.BlocklistAndReSearchAsync(torrent.Hash, torrent.Category, ct);
                 }
             }
             return true; // within delay, stalled_ignore = True

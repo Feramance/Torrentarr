@@ -1,6 +1,8 @@
 using FluentAssertions;
+using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging.Abstractions;
 using Torrentarr.Core.Configuration;
+using Torrentarr.Infrastructure.Database;
 using Torrentarr.Infrastructure.Services;
 using Xunit;
 
@@ -18,8 +20,12 @@ public class ArrImportServiceTests
         config ??= new TorrentarrConfig();
         var manager = new QBittorrentConnectionManager(
             NullLogger<QBittorrentConnectionManager>.Instance);
+        var options = new DbContextOptionsBuilder<TorrentarrDbContext>()
+            .UseInMemoryDatabase(Guid.NewGuid().ToString())
+            .Options;
+        var dbContext = new TorrentarrDbContext(options);
         return new ArrImportService(
-            NullLogger<ArrImportService>.Instance, config, manager);
+            NullLogger<ArrImportService>.Instance, config, manager, dbContext);
     }
 
     // ── TriggerImportAsync – no instances ────────────────────────────────────
