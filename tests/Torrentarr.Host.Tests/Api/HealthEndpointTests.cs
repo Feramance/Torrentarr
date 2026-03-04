@@ -18,7 +18,7 @@ public class HealthEndpointTests : IClassFixture<TorrentarrWebApplicationFactory
     [Fact]
     public async Task GetHealth_Returns200_WithHealthyStatus()
     {
-        var client = _factory.CreateClient();
+        var client = _factory.CreateClientWithApiToken();
 
         var response = await client.GetAsync("/health");
 

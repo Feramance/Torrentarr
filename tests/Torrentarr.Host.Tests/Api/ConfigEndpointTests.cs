@@ -19,7 +19,7 @@ public class ConfigEndpointTests : IClassFixture<TorrentarrWebApplicationFactory
     [Fact]
     public async Task GetConfig_Returns200()
     {
-        var client = _factory.CreateClient();
+        var client = _factory.CreateClientWithApiToken();
 
         var response = await client.GetAsync("/web/config");
 
@@ -29,7 +29,7 @@ public class ConfigEndpointTests : IClassFixture<TorrentarrWebApplicationFactory
     [Fact]
     public async Task GetConfig_ReturnsFlatStructure_WithSettingsAndWebUI()
     {
-        var client = _factory.CreateClient();
+        var client = _factory.CreateClientWithApiToken();
 
         var response = await client.GetAsync("/web/config");
         var body = await response.Content.ReadAsStringAsync();
@@ -45,7 +45,7 @@ public class ConfigEndpointTests : IClassFixture<TorrentarrWebApplicationFactory
     public async Task GetConfig_DoesNotIncludeQBit_WhenNotConfigured()
     {
         // Default config has Host = "CHANGE_ME" → qBit section should not be present
-        var client = _factory.CreateClient();
+        var client = _factory.CreateClientWithApiToken();
 
         var response = await client.GetAsync("/web/config");
         var body = await response.Content.ReadAsStringAsync();
@@ -58,7 +58,7 @@ public class ConfigEndpointTests : IClassFixture<TorrentarrWebApplicationFactory
     [Fact]
     public async Task PostConfig_Returns200_WithValidPayload()
     {
-        var client = _factory.CreateClient();
+        var client = _factory.CreateClientWithApiToken();
         var payload = new { changes = new { } };
         var content = new StringContent(
             JsonSerializer.Serialize(payload),
@@ -76,7 +76,7 @@ public class ConfigEndpointTests : IClassFixture<TorrentarrWebApplicationFactory
     [Fact]
     public async Task PostConfig_Returns400_WhenMissingChanges()
     {
-        var client = _factory.CreateClient();
+        var client = _factory.CreateClientWithApiToken();
         var content = new StringContent("{}", Encoding.UTF8, "application/json");
 
         var response = await client.PostAsync("/web/config", content);
@@ -87,7 +87,7 @@ public class ConfigEndpointTests : IClassFixture<TorrentarrWebApplicationFactory
     [Fact]
     public async Task PostConfig_ReturnsReloadType_None_ForWebuiKeys()
     {
-        var client = _factory.CreateClient();
+        var client = _factory.CreateClientWithApiToken();
         var payload = new
         {
             changes = new Dictionary<string, object>
@@ -107,7 +107,7 @@ public class ConfigEndpointTests : IClassFixture<TorrentarrWebApplicationFactory
     [Fact]
     public async Task PostConfig_ReturnsReloadType_Webui_ForSettingsKeys()
     {
-        var client = _factory.CreateClient();
+        var client = _factory.CreateClientWithApiToken();
         var payload = new
         {
             changes = new Dictionary<string, object>
@@ -127,7 +127,7 @@ public class ConfigEndpointTests : IClassFixture<TorrentarrWebApplicationFactory
     [Fact]
     public async Task PostConfig_ReturnsReloadType_Full_ForQbitKeys()
     {
-        var client = _factory.CreateClient();
+        var client = _factory.CreateClientWithApiToken();
         var payload = new
         {
             changes = new Dictionary<string, object>

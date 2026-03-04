@@ -6,6 +6,7 @@ using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
+using System.Net.Http.Headers;
 using Torrentarr.Core.Configuration;
 using Torrentarr.Core.Services;
 using Torrentarr.Infrastructure.Database;
@@ -56,7 +57,7 @@ public class TorrentarrWebApplicationFactory : WebApplicationFactory<Program>, I
         [WebUI]
         Host = "0.0.0.0"
         Port = 6969
-        Token = ""
+        Token = "test-api-token"
         AuthDisabled = true
         LocalAuthEnabled = false
         OIDCEnabled = false
@@ -104,6 +105,20 @@ public class TorrentarrWebApplicationFactory : WebApplicationFactory<Program>, I
             services.RemoveAll<ArrWorkerManager>();
             services.AddSingleton<ArrWorkerManager, NoOpArrWorkerManager>();
         });
+    }
+
+    /// <summary>Creates a client with default Bearer token for /api/* (API token is always required). Use this for tests that call API endpoints.</summary>
+    public HttpClient CreateClientWithApiToken()
+    {
+        var client = base.CreateClient();
+        client.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", "test-api-token");
+        return client;
+    }
+
+    /// <summary>Creates a client without the default Bearer token. Use for tests that expect 401 when calling /api/* without auth.</summary>
+    public HttpClient CreateClientWithoutApiToken()
+    {
+        return base.CreateClient();
     }
 
     /// <summary>Sets TORRENTARR_CONFIG and ConfigurationLoader.TestConfigPathOverride to this factory's config path. Call before CreateClient() when multiple factory types exist in the test run.</summary>

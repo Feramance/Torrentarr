@@ -25,7 +25,7 @@ public class ArrRestartEndpointTests : IClassFixture<TorrentarrWebApplicationFac
     [Fact]
     public async Task PostArrRestart_Returns200()
     {
-        var client = _factory.CreateClient();
+        var client = _factory.CreateClientWithApiToken();
 
         var response = await client.PostAsync("/web/arr/radarr/restart", null);
 
@@ -35,7 +35,7 @@ public class ArrRestartEndpointTests : IClassFixture<TorrentarrWebApplicationFac
     [Fact]
     public async Task PostArrRestart_ResponseHasSuccessField()
     {
-        var client = _factory.CreateClient();
+        var client = _factory.CreateClientWithApiToken();
 
         var response = await client.PostAsync("/web/arr/radarr/restart", null);
         var body = await response.Content.ReadAsStringAsync();
@@ -47,7 +47,7 @@ public class ArrRestartEndpointTests : IClassFixture<TorrentarrWebApplicationFac
     [Fact]
     public async Task PostArrRestart_ResponseHasMessageField()
     {
-        var client = _factory.CreateClient();
+        var client = _factory.CreateClientWithApiToken();
 
         var response = await client.PostAsync("/web/arr/radarr/restart", null);
         var body = await response.Content.ReadAsStringAsync();
@@ -59,7 +59,7 @@ public class ArrRestartEndpointTests : IClassFixture<TorrentarrWebApplicationFac
     [Fact]
     public async Task PostArrRestart_UnknownCategory_SuccessFalse()
     {
-        var client = _factory.CreateClient();
+        var client = _factory.CreateClientWithApiToken();
 
         // Test config has no Arr instances so any category is "unknown"
         var response = await client.PostAsync("/web/arr/nonexistent-category/restart", null);
@@ -74,7 +74,7 @@ public class ArrRestartEndpointTests : IClassFixture<TorrentarrWebApplicationFac
     [Fact]
     public async Task PostArrRestart_UnknownCategory_MessageContainsCategory()
     {
-        var client = _factory.CreateClient();
+        var client = _factory.CreateClientWithApiToken();
 
         var response = await client.PostAsync("/web/arr/nonexistent-category/restart", null);
         var body = await response.Content.ReadAsStringAsync();
@@ -88,7 +88,7 @@ public class ArrRestartEndpointTests : IClassFixture<TorrentarrWebApplicationFac
     [Fact]
     public async Task PostApiArrRestart_Returns200()
     {
-        var client = _factory.CreateClient();
+        var client = _factory.CreateClientWithApiToken();
 
         var response = await client.PostAsync("/api/arr/radarr/restart", null);
 
@@ -98,7 +98,7 @@ public class ArrRestartEndpointTests : IClassFixture<TorrentarrWebApplicationFac
     [Fact]
     public async Task PostApiArrRestart_ResponseHasSameShape()
     {
-        var client = _factory.CreateClient();
+        var client = _factory.CreateClientWithApiToken();
 
         var response = await client.PostAsync("/api/arr/radarr/restart", null);
         var body = await response.Content.ReadAsStringAsync();

@@ -24,6 +24,7 @@ jobs:
 
     - name: Set .NET version from repo
       id: dotnet_version
+      shell: bash
       run: |
         DOTNET_VERSION=$(bash scripts/ensure-global-json.sh)
         echo "version=$DOTNET_VERSION" >> $GITHUB_OUTPUT

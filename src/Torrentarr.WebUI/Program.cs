@@ -98,15 +98,25 @@ builder.Services.AddDbContext<TorrentarrDbContext>(options =>
 builder.Services.AddSingleton(sp =>
 {
     var loader = new ConfigurationLoader();
+    TorrentarrConfig cfg;
     try
     {
-        return loader.Load();
+        cfg = loader.Load();
     }
     catch (FileNotFoundException)
     {
         Log.Warning("Configuration file not found, using defaults");
         return new TorrentarrConfig();
     }
+    if (string.IsNullOrEmpty(cfg.WebUI.Token))
+    {
+        var tokenBytes = new byte[32];
+        RandomNumberGenerator.Fill(tokenBytes);
+        cfg.WebUI.Token = Convert.ToBase64String(tokenBytes);
+        loader.SaveConfig(cfg);
+        Log.Information("Generated and persisted API token (Token was empty)");
+    }
+    return cfg;
 });
 
 builder.Services.AddSingleton<IConfigReloader, ConfigReloader>();
@@ -165,23 +175,53 @@ else
 
 app.UseAuthentication();
 
-// Auth middleware (same logic as Host): protect /web/* when auth required; Bearer token always works
+// Auth middleware (same logic as Host): protect /web/* when auth required; API token always required for /api/*
 app.Use(async (context, next) =>
 {
     var cfg = context.RequestServices.GetRequiredService<TorrentarrConfig>();
+    var path = context.Request.Path.Value ?? "";
+
+    // Always enforce API token for /api/* (token is generated at startup if empty)
+    if (path.StartsWith("/api", StringComparison.OrdinalIgnoreCase))
+    {
+        var configuredToken = cfg.WebUI.Token;
+        if (string.IsNullOrEmpty(configuredToken))
+        {
+            context.Response.StatusCode = 401;
+            await context.Response.WriteAsJsonAsync(new { error = "Unauthorized" });
+            return;
+        }
+        string? providedToken = null;
+        var authHeader = context.Request.Headers.Authorization.FirstOrDefault();
+        if (authHeader?.StartsWith("Bearer ", StringComparison.OrdinalIgnoreCase) == true)
+            providedToken = authHeader["Bearer ".Length..];
+        else if (context.Request.Query.ContainsKey("token") && context.Request.Method == "GET")
+            providedToken = context.Request.Query["token"];
+        if (string.IsNullOrEmpty(providedToken) || !CryptographicOperations.FixedTimeEquals(
+            Encoding.UTF8.GetBytes(providedToken),
+            Encoding.UTF8.GetBytes(configuredToken)))
+        {
+            context.Response.StatusCode = 401;
+            await context.Response.WriteAsJsonAsync(new { error = "Unauthorized" });
+            return;
+        }
+        context.User = new ClaimsPrincipal(new ClaimsIdentity("Bearer"));
+        await next(context);
+        return;
+    }
+
     if (!WebUIAuthRequired(cfg))
     {
         await next(context);
         return;
     }
-    var path = context.Request.Path.Value ?? "";
     if (WebUIPublicPath(path, context.Request.Method))
     {
         await next(context);
         return;
     }
-    var configuredToken = cfg.WebUI.Token;
-    if (!string.IsNullOrEmpty(configuredToken))
+    var configuredTokenWeb = cfg.WebUI.Token;
+    if (!string.IsNullOrEmpty(configuredTokenWeb))
     {
         string? providedToken = null;
         var authHeader = context.Request.Headers.Authorization.FirstOrDefault();
@@ -191,8 +231,9 @@ app.Use(async (context, next) =>
             providedToken = context.Request.Query["token"];
         if (!string.IsNullOrEmpty(providedToken) && CryptographicOperations.FixedTimeEquals(
             Encoding.UTF8.GetBytes(providedToken),
-            Encoding.UTF8.GetBytes(configuredToken)))
+            Encoding.UTF8.GetBytes(configuredTokenWeb)))
         {
+            context.User = new ClaimsPrincipal(new ClaimsIdentity("Bearer"));
             await next(context);
             return;
         }
@@ -227,6 +268,8 @@ static bool WebUIPublicPath(string path, string method)
     if (path.Equals("/web/meta", StringComparison.OrdinalIgnoreCase)) return true;
     if (path.Equals("/web/login", StringComparison.OrdinalIgnoreCase) && method == "POST") return true;
     if (path.Equals("/web/auth/set-password", StringComparison.OrdinalIgnoreCase) && method == "POST") return true;
+    if (path.StartsWith("/signin-oidc", StringComparison.OrdinalIgnoreCase)) return true;
+    if (path.StartsWith("/web/auth/oidc", StringComparison.OrdinalIgnoreCase)) return true;
     return false;
 }
 
@@ -278,7 +321,11 @@ app.MapPost("/web/auth/set-password", async (HttpContext ctx, TorrentarrConfig c
     if (body == null || string.IsNullOrWhiteSpace(body.Username) || string.IsNullOrWhiteSpace(body.Password))
         return Results.BadRequest(new { error = "Username and password required" });
     var setupToken = Environment.GetEnvironmentVariable("TORRENTARR_SETUP_TOKEN");
-    var allowSet = string.IsNullOrEmpty(cfg.WebUI.PasswordHash) || (!string.IsNullOrEmpty(setupToken) && body.SetupToken == setupToken);
+    var allowSet = string.IsNullOrEmpty(cfg.WebUI.PasswordHash)
+        || (!string.IsNullOrEmpty(setupToken) && body.SetupToken != null
+            && CryptographicOperations.FixedTimeEquals(
+                Encoding.UTF8.GetBytes(body.SetupToken),
+                Encoding.UTF8.GetBytes(setupToken)));
     if (!allowSet)
         return Results.Json(new { error = "Set password not allowed" }, statusCode: 403);
     cfg.WebUI.Username = body.Username.Trim();

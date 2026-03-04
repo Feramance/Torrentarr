@@ -11,7 +11,11 @@ public class ConfigurationLoader
     /// <summary>Expected config schema version (qBitrr parity). Used for validation and mismatch warning.</summary>
     public const string ExpectedConfigVersion = "5.9.2";
 
-    /// <summary>When set by test fixtures, GetDefaultConfigPath() returns this instead of env/defaults. Ensures correct config is loaded when host builds.</summary>
+    /// <summary>
+    /// TEST USE ONLY. When set by test fixtures, GetDefaultConfigPath() returns this instead of env/defaults.
+    /// Ensures the correct config is loaded when the host builds. Must never be set in production —
+    /// doing so would redirect config loading to an arbitrary path and is a security/maintainability risk.
+    /// </summary>
     public static string? TestConfigPathOverride { get; set; }
 
     private readonly string _configPath;

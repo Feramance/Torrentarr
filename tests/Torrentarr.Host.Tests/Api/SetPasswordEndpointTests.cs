@@ -23,7 +23,7 @@ public class SetPasswordEndpointTests : IClassFixture<TorrentarrWebApplicationFa
     public async Task PostSetPassword_WhenNoPasswordSet_ThenLoginWithNewPassword_Succeeds()
     {
         _factory.SetConfigEnv();
-        var client = _factory.CreateClient();
+        var client = _factory.CreateClientWithApiToken();
         await client.PostAsJsonAsync("/web/auth/set-password", new
         {
             username = "admin",
@@ -45,7 +45,7 @@ public class SetPasswordEndpointTests : IClassFixture<TorrentarrWebApplicationFa
         try
         {
             factory.SetConfigEnv();
-            var client = factory.CreateClient();
+            var client = factory.CreateClientWithApiToken();
             var response = await client.PostAsJsonAsync("/web/auth/set-password", new
             {
                 username = "other",

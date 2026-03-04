@@ -20,7 +20,7 @@ public class LoginEndpointTests : IClassFixture<LocalAuthWebApplicationFactory>
     public async Task PostLogin_WrongPassword_Returns401()
     {
         _factory.SetConfigEnv();
-        var client = _factory.CreateClient();
+        var client = _factory.CreateClientWithApiToken();
         var response = await client.PostAsJsonAsync("/web/login", new
         {
             username = LocalAuthWebApplicationFactory.TestUsername,
@@ -33,7 +33,7 @@ public class LoginEndpointTests : IClassFixture<LocalAuthWebApplicationFactory>
     public async Task PostLogin_CorrectCredentials_Returns200AndSetsCookie()
     {
         _factory.SetConfigEnv();
-        var client = _factory.CreateClient();
+        var client = _factory.CreateClientWithApiToken();
         var response = await client.PostAsJsonAsync("/web/login", new
         {
             username = LocalAuthWebApplicationFactory.TestUsername,
@@ -49,7 +49,7 @@ public class LoginEndpointTests : IClassFixture<LocalAuthWebApplicationFactory>
     public async Task GetWebToken_AfterLogin_WithCookie_Returns200AndToken()
     {
         _factory.SetConfigEnv();
-        var client = _factory.CreateClient();
+        var client = _factory.CreateClientWithApiToken();
         var loginResponse = await client.PostAsJsonAsync("/web/login", new
         {
             username = LocalAuthWebApplicationFactory.TestUsername,

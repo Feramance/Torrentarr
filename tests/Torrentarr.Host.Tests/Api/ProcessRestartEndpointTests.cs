@@ -25,7 +25,7 @@ public class ProcessRestartEndpointTests : IClassFixture<TorrentarrWebApplicatio
     [Fact]
     public async Task PostProcessRestart_Returns200()
     {
-        var client = _factory.CreateClient();
+        var client = _factory.CreateClientWithApiToken();
 
         var response = await client.PostAsync("/web/processes/radarr/arr/restart", null);
 
@@ -35,7 +35,7 @@ public class ProcessRestartEndpointTests : IClassFixture<TorrentarrWebApplicatio
     [Fact]
     public async Task PostProcessRestart_ResponseHasStatusField()
     {
-        var client = _factory.CreateClient();
+        var client = _factory.CreateClientWithApiToken();
 
         var response = await client.PostAsync("/web/processes/radarr/arr/restart", null);
         var body = await response.Content.ReadAsStringAsync();
@@ -48,7 +48,7 @@ public class ProcessRestartEndpointTests : IClassFixture<TorrentarrWebApplicatio
     [Fact]
     public async Task PostProcessRestart_ResponseHasRestartedArray()
     {
-        var client = _factory.CreateClient();
+        var client = _factory.CreateClientWithApiToken();
 
         var response = await client.PostAsync("/web/processes/radarr/arr/restart", null);
         var body = await response.Content.ReadAsStringAsync();
@@ -61,7 +61,7 @@ public class ProcessRestartEndpointTests : IClassFixture<TorrentarrWebApplicatio
     [Fact]
     public async Task PostProcessRestart_UnknownCategory_RestartedIsEmpty()
     {
-        var client = _factory.CreateClient();
+        var client = _factory.CreateClientWithApiToken();
 
         // Test config has no Arr instances configured, so any category is unknown
         var response = await client.PostAsync("/web/processes/nonexistent/arr/restart", null);
@@ -78,7 +78,7 @@ public class ProcessRestartEndpointTests : IClassFixture<TorrentarrWebApplicatio
     [Fact]
     public async Task PostApiProcessRestart_Returns200()
     {
-        var client = _factory.CreateClient();
+        var client = _factory.CreateClientWithApiToken();
 
         var response = await client.PostAsync("/api/processes/radarr/arr/restart", null);
 
@@ -88,7 +88,7 @@ public class ProcessRestartEndpointTests : IClassFixture<TorrentarrWebApplicatio
     [Fact]
     public async Task PostApiProcessRestart_ResponseHasSameShape()
     {
-        var client = _factory.CreateClient();
+        var client = _factory.CreateClientWithApiToken();
 
         var response = await client.PostAsync("/api/processes/radarr/arr/restart", null);
         var body = await response.Content.ReadAsStringAsync();

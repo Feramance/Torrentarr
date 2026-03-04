@@ -25,7 +25,7 @@ public class TokenEndpointTests : IClassFixture<TorrentarrWebApplicationFactory>
     [Fact]
     public async Task GetToken_Returns200()
     {
-        var client = _factory.CreateClient();
+        var client = _factory.CreateClientWithApiToken();
 
         var response = await client.GetAsync("/web/token");
 
@@ -35,7 +35,7 @@ public class TokenEndpointTests : IClassFixture<TorrentarrWebApplicationFactory>
     [Fact]
     public async Task GetToken_ResponseHasTokenField()
     {
-        var client = _factory.CreateClient();
+        var client = _factory.CreateClientWithApiToken();
 
         var response = await client.GetAsync("/web/token");
         var body = await response.Content.ReadAsStringAsync();
@@ -47,14 +47,14 @@ public class TokenEndpointTests : IClassFixture<TorrentarrWebApplicationFactory>
     [Fact]
     public async Task GetToken_TokenMatchesConfig()
     {
-        var client = _factory.CreateClient();
+        var client = _factory.CreateClientWithApiToken();
 
-        // Test config sets Token = "" in [WebUI]
+        // Test config sets Token = "test-api-token" in [WebUI]
         var response = await client.GetAsync("/web/token");
         var body = await response.Content.ReadAsStringAsync();
         var json = JsonDocument.Parse(body).RootElement;
 
-        // Token is empty string in the test config
+        // Token is the configured test value
         var token = json.GetProperty("token").GetString();
         token.Should().NotBeNull("token field must be a string (may be empty)");
     }
@@ -64,7 +64,7 @@ public class TokenEndpointTests : IClassFixture<TorrentarrWebApplicationFactory>
     [Fact]
     public async Task GetApiToken_Returns200()
     {
-        var client = _factory.CreateClient();
+        var client = _factory.CreateClientWithApiToken();
 
         var response = await client.GetAsync("/api/token");
 
@@ -74,7 +74,7 @@ public class TokenEndpointTests : IClassFixture<TorrentarrWebApplicationFactory>
     [Fact]
     public async Task GetApiToken_ResponseHasSameShape()
     {
-        var client = _factory.CreateClient();
+        var client = _factory.CreateClientWithApiToken();
 
         var response = await client.GetAsync("/api/token");
         var body = await response.Content.ReadAsStringAsync();

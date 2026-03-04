@@ -103,6 +103,16 @@ try
         if (createdDefault)
             Log.Information("Created default configuration at: {Path}", ConfigurationLoader.GetDefaultConfigPath());
 
+        // Ensure API token exists so /api/* is never unprotected
+        if (string.IsNullOrEmpty(config.WebUI.Token))
+        {
+            var tokenBytes = new byte[32];
+            RandomNumberGenerator.Fill(tokenBytes);
+            config.WebUI.Token = Convert.ToBase64String(tokenBytes);
+            configLoader.SaveConfig(config);
+            Log.Information("Generated and persisted API token (Token was empty)");
+        }
+
         Log.Information("Configuration loaded from {Path}", ConfigurationLoader.GetDefaultConfigPath());
     }
     catch (Exception ex)
@@ -339,13 +349,45 @@ try
     app.Use(async (context, next) =>
     {
         var cfg = context.RequestServices.GetRequiredService<TorrentarrConfig>();
+        var path = context.Request.Path.Value ?? "";
+
+        // Always enforce API token for /api/* (token is generated at startup if empty)
+        if (path.StartsWith("/api", StringComparison.OrdinalIgnoreCase))
+        {
+            var configuredToken = cfg.WebUI.Token;
+            if (string.IsNullOrEmpty(configuredToken))
+            {
+                context.Response.StatusCode = 401;
+                await context.Response.WriteAsJsonAsync(new { error = "Unauthorized" });
+                return;
+            }
+            string? providedToken = null;
+            var authHeader = context.Request.Headers.Authorization.FirstOrDefault();
+            if (authHeader?.StartsWith("Bearer ", StringComparison.OrdinalIgnoreCase) == true)
+                providedToken = authHeader["Bearer ".Length..];
+            else if (context.Request.Query.ContainsKey("token") && context.Request.Method == "GET")
+                providedToken = context.Request.Query["token"];
+            if (string.IsNullOrEmpty(providedToken) || !CryptographicOperations.FixedTimeEquals(
+                Encoding.UTF8.GetBytes(providedToken),
+                Encoding.UTF8.GetBytes(configuredToken)))
+            {
+                context.Response.StatusCode = 401;
+                await context.Response.WriteAsJsonAsync(new { error = "Unauthorized" });
+                return;
+            }
+            var identity = new ClaimsIdentity("Bearer");
+            identity.AddClaim(new Claim(ClaimTypes.Name, "api"));
+            context.User = new ClaimsPrincipal(identity);
+            await next(context);
+            return;
+        }
+
         if (!IsAuthRequired(cfg))
         {
             await next(context);
             return;
         }
 
-        var path = context.Request.Path.Value ?? "";
         if (IsPublicPath(path, context.Request.Method))
         {
             await next(context);
@@ -353,8 +395,8 @@ try
         }
 
         // 1) Bearer token (constant-time) — always accepted for API when Token is set
-        var configuredToken = cfg.WebUI.Token;
-        if (!string.IsNullOrEmpty(configuredToken))
+        var webToken = cfg.WebUI.Token;
+        if (!string.IsNullOrEmpty(webToken))
         {
             string? providedToken = null;
             var authHeader = context.Request.Headers.Authorization.FirstOrDefault();
@@ -365,7 +407,7 @@ try
 
             if (!string.IsNullOrEmpty(providedToken) && CryptographicOperations.FixedTimeEquals(
                 Encoding.UTF8.GetBytes(providedToken),
-                Encoding.UTF8.GetBytes(configuredToken)))
+                Encoding.UTF8.GetBytes(webToken)))
             {
                 var identity = new ClaimsIdentity("Bearer");
                 identity.AddClaim(new Claim(ClaimTypes.Name, "api"));
@@ -1418,7 +1460,11 @@ try
             return Results.BadRequest(new { error = "Username and password required" });
 
         var setupToken = Environment.GetEnvironmentVariable("TORRENTARR_SETUP_TOKEN");
-        var allowSet = string.IsNullOrEmpty(cfg.WebUI.PasswordHash) || (!string.IsNullOrEmpty(setupToken) && body.SetupToken == setupToken);
+        var allowSet = string.IsNullOrEmpty(cfg.WebUI.PasswordHash)
+            || (!string.IsNullOrEmpty(setupToken) && body.SetupToken != null
+                && CryptographicOperations.FixedTimeEquals(
+                    Encoding.UTF8.GetBytes(body.SetupToken),
+                    Encoding.UTF8.GetBytes(setupToken)));
         if (!allowSet)
             return Results.Json(new { error = "Set password not allowed" }, statusCode: 403);
 

@@ -24,7 +24,7 @@ public class AuthMiddlewareTests : IClassFixture<AuthEnabledWebApplicationFactor
     public async Task GetApiMeta_WithoutAuth_Returns401()
     {
         _factory.SetConfigEnv();
-        var client = _factory.CreateClient();
+        var client = _factory.CreateClientWithoutApiToken();
         var response = await client.GetAsync("/api/meta");
         response.StatusCode.Should().Be(HttpStatusCode.Unauthorized);
     }
@@ -33,7 +33,7 @@ public class AuthMiddlewareTests : IClassFixture<AuthEnabledWebApplicationFactor
     public async Task GetWebStatus_WithBearer_Returns200()
     {
         _factory.SetConfigEnv();
-        var client = _factory.CreateClient();
+        var client = _factory.CreateClientWithApiToken();
         client.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", "test-api-token");
         var response = await client.GetAsync("/web/status");
         response.StatusCode.Should().Be(HttpStatusCode.OK);
@@ -43,7 +43,7 @@ public class AuthMiddlewareTests : IClassFixture<AuthEnabledWebApplicationFactor
     public async Task GetApiMeta_WithBearer_Returns200()
     {
         _factory.SetConfigEnv();
-        var client = _factory.CreateClient();
+        var client = _factory.CreateClientWithApiToken();
         client.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", "test-api-token");
         var response = await client.GetAsync("/api/meta");
         response.StatusCode.Should().Be(HttpStatusCode.OK);
@@ -53,7 +53,7 @@ public class AuthMiddlewareTests : IClassFixture<AuthEnabledWebApplicationFactor
     public async Task GetHealth_WithoutAuth_Returns200()
     {
         _factory.SetConfigEnv();
-        var client = _factory.CreateClient();
+        var client = _factory.CreateClientWithApiToken();
         var response = await client.GetAsync("/health");
         response.StatusCode.Should().Be(HttpStatusCode.OK);
     }
@@ -62,7 +62,7 @@ public class AuthMiddlewareTests : IClassFixture<AuthEnabledWebApplicationFactor
     public async Task GetWebToken_WithBearer_Returns200AndToken()
     {
         _factory.SetConfigEnv();
-        var client = _factory.CreateClient();
+        var client = _factory.CreateClientWithApiToken();
         client.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", "test-api-token");
         var response = await client.GetAsync("/web/token");
         response.StatusCode.Should().Be(HttpStatusCode.OK);

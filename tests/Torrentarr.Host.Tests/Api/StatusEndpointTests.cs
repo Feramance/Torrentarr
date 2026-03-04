@@ -18,7 +18,7 @@ public class StatusEndpointTests : IClassFixture<TorrentarrWebApplicationFactory
     [Fact]
     public async Task GetStatus_Returns200()
     {
-        var client = _factory.CreateClient();
+        var client = _factory.CreateClientWithApiToken();
 
         var response = await client.GetAsync("/web/status");
 
@@ -29,7 +29,7 @@ public class StatusEndpointTests : IClassFixture<TorrentarrWebApplicationFactory
     public async Task GetStatus_QbitAlive_False_WhenNotConfigured()
     {
         // Default config has Host = "CHANGE_ME", so qBit won't be alive
-        var client = _factory.CreateClient();
+        var client = _factory.CreateClientWithApiToken();
 
         var response = await client.GetAsync("/web/status");
         var body = await response.Content.ReadAsStringAsync();
@@ -43,7 +43,7 @@ public class StatusEndpointTests : IClassFixture<TorrentarrWebApplicationFactory
     public async Task GetStatus_ArrsMatchConfiguredInstances()
     {
         // Default test config has no Arr instances
-        var client = _factory.CreateClient();
+        var client = _factory.CreateClientWithApiToken();
 
         var response = await client.GetAsync("/web/status");
         var body = await response.Content.ReadAsStringAsync();

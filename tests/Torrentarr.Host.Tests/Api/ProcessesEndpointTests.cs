@@ -18,7 +18,7 @@ public class ProcessesEndpointTests : IClassFixture<TorrentarrWebApplicationFact
     [Fact]
     public async Task GetProcesses_Returns200()
     {
-        var client = _factory.CreateClient();
+        var client = _factory.CreateClientWithApiToken();
 
         var response = await client.GetAsync("/web/processes");
 
@@ -28,7 +28,7 @@ public class ProcessesEndpointTests : IClassFixture<TorrentarrWebApplicationFact
     [Fact]
     public async Task GetProcesses_ReturnsJsonArray()
     {
-        var client = _factory.CreateClient();
+        var client = _factory.CreateClientWithApiToken();
 
         var response = await client.GetAsync("/web/processes");
         var body = await response.Content.ReadAsStringAsync();
@@ -41,7 +41,7 @@ public class ProcessesEndpointTests : IClassFixture<TorrentarrWebApplicationFact
     [Fact]
     public async Task GetProcesses_ProcessObjectContainsStatusField()
     {
-        var client = _factory.CreateClient();
+        var client = _factory.CreateClientWithApiToken();
 
         var response = await client.GetAsync("/web/processes");
         var body = await response.Content.ReadAsStringAsync();
@@ -60,7 +60,7 @@ public class ProcessesEndpointTests : IClassFixture<TorrentarrWebApplicationFact
     [Fact]
     public async Task GetProcesses_ProcessObjectContainsQueueCountField()
     {
-        var client = _factory.CreateClient();
+        var client = _factory.CreateClientWithApiToken();
 
         var response = await client.GetAsync("/web/processes");
         var body = await response.Content.ReadAsStringAsync();
@@ -79,7 +79,7 @@ public class ProcessesEndpointTests : IClassFixture<TorrentarrWebApplicationFact
     [Fact]
     public async Task GetProcesses_ProcessObjectContainsCategoryCountField()
     {
-        var client = _factory.CreateClient();
+        var client = _factory.CreateClientWithApiToken();
 
         var response = await client.GetAsync("/web/processes");
         var body = await response.Content.ReadAsStringAsync();
@@ -98,7 +98,7 @@ public class ProcessesEndpointTests : IClassFixture<TorrentarrWebApplicationFact
     [Fact]
     public async Task PostRestartAll_Returns200()
     {
-        var client = _factory.CreateClient();
+        var client = _factory.CreateClientWithApiToken();
 
         var response = await client.PostAsync("/web/processes/restart_all", null);
 

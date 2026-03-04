@@ -1882,6 +1882,7 @@ export function ConfigView(props?: ConfigViewProps): JSX.Element {
         setActiveQbitKey(null);
         setSettingsOpen(false);
         setWebSettingsOpen(false);
+        setAuthOpen(false);
       }
     };
     window.addEventListener("keydown", handleKeyDown);
