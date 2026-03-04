@@ -136,11 +136,32 @@ public class WebUIConfig
     public string Host { get; set; } = "0.0.0.0";
     public int Port { get; set; } = 6969;
     public string Token { get; set; } = "";
+    /// <summary>Authentication mode: Disabled, Local, OIDC, or TokenOnly. When not set, derived from Token/Username+PasswordHash.</summary>
+    public string AuthMode { get; set; } = "Disabled";
+    /// <summary>For Local auth: single admin username. Password is stored only as PasswordHash.</summary>
+    public string Username { get; set; } = "";
+    /// <summary>For Local auth: only ever store the hash (e.g. BCrypt or Argon2). Never plain password.</summary>
+    public string PasswordHash { get; set; } = "";
     public bool LiveArr { get; set; } = true;
     public bool GroupSonarr { get; set; } = true;
     public bool GroupLidarr { get; set; } = true;
     public string Theme { get; set; } = "Dark";
     public string ViewDensity { get; set; } = "Comfortable";
+    /// <summary>OIDC settings when AuthMode is OIDC. Optional.</summary>
+    public OIDCConfig? OIDC { get; set; }
+}
+
+/// <summary>
+/// OpenID Connect configuration for external IdP (Keycloak, Auth0, Azure AD, etc.).
+/// </summary>
+public class OIDCConfig
+{
+    public string Authority { get; set; } = "";
+    public string ClientId { get; set; } = "";
+    public string ClientSecret { get; set; } = "";
+    public string Scopes { get; set; } = "openid profile";
+    public string CallbackPath { get; set; } = "/signin-oidc";
+    public bool RequireHttpsMetadata { get; set; } = true;
 }
 
 public class ArrInstanceConfig

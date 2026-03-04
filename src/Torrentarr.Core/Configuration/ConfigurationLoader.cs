@@ -11,6 +11,9 @@ public class ConfigurationLoader
     /// <summary>Expected config schema version (qBitrr parity). Used for validation and mismatch warning.</summary>
     public const string ExpectedConfigVersion = "5.9.2";
 
+    /// <summary>When set by test fixtures, GetDefaultConfigPath() returns this instead of env/defaults. Ensures correct config is loaded when host builds.</summary>
+    public static string? TestConfigPathOverride { get; set; }
+
     private readonly string _configPath;
 
     public ConfigurationLoader(string? configPath = null)
@@ -20,6 +23,9 @@ public class ConfigurationLoader
 
     public static string GetDefaultConfigPath()
     {
+        if (!string.IsNullOrEmpty(TestConfigPathOverride))
+            return TestConfigPathOverride;
+
         // Allow test harnesses and Docker to override the config path via an environment variable
         var envOverride = Environment.GetEnvironmentVariable("TORRENTARR_CONFIG");
         if (!string.IsNullOrEmpty(envOverride))
@@ -671,6 +677,9 @@ public class ConfigurationLoader
                 ("Host", "0.0.0.0"),
                 ("Port", (long)6969),
                 ("Token", ""),
+                ("AuthMode", "Disabled"),
+                ("Username", ""),
+                ("PasswordHash", ""),
                 ("LiveArr", true),
                 ("GroupSonarr", true),
                 ("GroupLidarr", true),
@@ -1081,6 +1090,15 @@ public class ConfigurationLoader
         if (table.TryGetValue("Token", out var token))
             webui.Token = token?.ToString() ?? "";
 
+        if (table.TryGetValue("AuthMode", out var authMode))
+            webui.AuthMode = authMode?.ToString()?.Trim() ?? "Disabled";
+
+        if (table.TryGetValue("Username", out var username))
+            webui.Username = username?.ToString() ?? "";
+
+        if (table.TryGetValue("PasswordHash", out var passwordHash))
+            webui.PasswordHash = passwordHash?.ToString() ?? "";
+
         if (table.TryGetValue("LiveArr", out var liveArr))
             webui.LiveArr = Convert.ToBoolean(liveArr);
 
@@ -1096,7 +1114,22 @@ public class ConfigurationLoader
         if (table.TryGetValue("ViewDensity", out var viewDensity))
             webui.ViewDensity = viewDensity?.ToString() ?? "Comfortable";
 
+        if (table.TryGetValue("OIDC", out var oidcObj) && oidcObj is TomlTable oidcTable)
+            webui.OIDC = ParseOIDC(oidcTable);
+
         return webui;
+    }
+
+    private static OIDCConfig ParseOIDC(TomlTable table)
+    {
+        var oidc = new OIDCConfig();
+        if (table.TryGetValue("Authority", out var v)) oidc.Authority = v?.ToString() ?? "";
+        if (table.TryGetValue("ClientId", out v)) oidc.ClientId = v?.ToString() ?? "";
+        if (table.TryGetValue("ClientSecret", out v)) oidc.ClientSecret = v?.ToString() ?? "";
+        if (table.TryGetValue("Scopes", out v)) oidc.Scopes = v?.ToString() ?? "openid profile";
+        if (table.TryGetValue("CallbackPath", out v)) oidc.CallbackPath = v?.ToString() ?? "/signin-oidc";
+        if (table.TryGetValue("RequireHttpsMetadata", out v)) oidc.RequireHttpsMetadata = Convert.ToBoolean(v);
+        return oidc;
     }
 
     private Dictionary<string, ArrInstanceConfig> ParseArrInstances(TomlTable rootTable)
@@ -1482,6 +1515,9 @@ public class ConfigurationLoader
                 Host = "0.0.0.0",
                 Port = 6969,
                 Token = "",
+                AuthMode = "Disabled",
+                Username = "",
+                PasswordHash = "",
                 LiveArr = true,
                 GroupSonarr = true,
                 GroupLidarr = true,
@@ -1556,11 +1592,26 @@ public class ConfigurationLoader
         sb.AppendLine($"Host = \"{config.WebUI.Host}\"");
         sb.AppendLine($"Port = {config.WebUI.Port}");
         sb.AppendLine($"Token = \"{config.WebUI.Token}\"");
+        sb.AppendLine($"AuthMode = \"{config.WebUI.AuthMode}\"");
+        sb.AppendLine($"Username = \"{EscapeTomlString(config.WebUI.Username)}\"");
+        sb.AppendLine($"PasswordHash = \"{EscapeTomlString(config.WebUI.PasswordHash)}\"");
         sb.AppendLine($"LiveArr = {config.WebUI.LiveArr.ToString().ToLower()}");
         sb.AppendLine($"GroupSonarr = {config.WebUI.GroupSonarr.ToString().ToLower()}");
         sb.AppendLine($"GroupLidarr = {config.WebUI.GroupLidarr.ToString().ToLower()}");
         sb.AppendLine($"Theme = \"{config.WebUI.Theme}\"");
         sb.AppendLine($"ViewDensity = \"{config.WebUI.ViewDensity}\"");
+        if (config.WebUI.OIDC != null)
+        {
+            var o = config.WebUI.OIDC;
+            sb.AppendLine();
+            sb.AppendLine("[WebUI.OIDC]");
+            sb.AppendLine($"Authority = \"{EscapeTomlString(o.Authority)}\"");
+            sb.AppendLine($"ClientId = \"{EscapeTomlString(o.ClientId)}\"");
+            sb.AppendLine($"ClientSecret = \"{EscapeTomlString(o.ClientSecret)}\"");
+            sb.AppendLine($"Scopes = \"{EscapeTomlString(o.Scopes)}\"");
+            sb.AppendLine($"CallbackPath = \"{EscapeTomlString(o.CallbackPath)}\"");
+            sb.AppendLine($"RequireHttpsMetadata = {o.RequireHttpsMetadata.ToString().ToLower()}");
+        }
         sb.AppendLine();
 
         // All qBit instances — "qBit" written first (primary), then additional [qBit-XXX]

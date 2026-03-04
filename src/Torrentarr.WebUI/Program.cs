@@ -5,10 +5,15 @@ using Torrentarr.Infrastructure.ApiClients.Arr;
 using Torrentarr.Infrastructure.ApiClients.QBittorrent;
 using Torrentarr.Infrastructure.Database;
 using Torrentarr.Infrastructure.Services;
+using Microsoft.AspNetCore.Authentication;
+using Microsoft.AspNetCore.Authentication.Cookies;
 using Microsoft.EntityFrameworkCore;
 using Serilog;
 using Serilog.Core;
 using Serilog.Events;
+using System.Security.Claims;
+using System.Security.Cryptography;
+using System.Text;
 
 // Calculate base paths - use /config for Docker, or config/ relative to cwd for local
 var configEnv = Environment.GetEnvironmentVariable("TORRENTARR_CONFIG");
@@ -107,6 +112,17 @@ builder.Services.AddSingleton(sp =>
 builder.Services.AddSingleton<IConfigReloader, ConfigReloader>();
 builder.Services.AddSingleton<ConfigurationLoader>();
 
+builder.Services.AddSingleton<IPasswordHasher, BCryptPasswordHasher>();
+builder.Services.AddAuthentication(CookieAuthenticationDefaults.AuthenticationScheme)
+    .AddCookie(options =>
+    {
+        options.Cookie.Name = "torrentarr_session";
+        options.Cookie.HttpOnly = true;
+        options.Cookie.SameSite = SameSiteMode.Lax;
+        options.LoginPath = "/login";
+        options.AccessDeniedPath = "/login";
+    });
+
 var app = builder.Build();
 
 // Ensure database is created and configure WAL mode
@@ -147,6 +163,79 @@ else
     app.UseStaticFiles();
 }
 
+app.UseAuthentication();
+
+// Auth middleware (same logic as Host): protect /web/* when auth enabled; Bearer token always works
+app.Use(async (context, next) =>
+{
+    var cfg = context.RequestServices.GetRequiredService<TorrentarrConfig>();
+    if (!WebUIAuthIsEnabled(cfg))
+    {
+        await next(context);
+        return;
+    }
+    var path = context.Request.Path.Value ?? "";
+    if (WebUIPublicPath(path, context.Request.Method))
+    {
+        await next(context);
+        return;
+    }
+    var configuredToken = cfg.WebUI.Token;
+    if (!string.IsNullOrEmpty(configuredToken))
+    {
+        string? providedToken = null;
+        var authHeader = context.Request.Headers.Authorization.FirstOrDefault();
+        if (authHeader?.StartsWith("Bearer ", StringComparison.OrdinalIgnoreCase) == true)
+            providedToken = authHeader["Bearer ".Length..];
+        else if (context.Request.Query.ContainsKey("token") && context.Request.Method == "GET")
+            providedToken = context.Request.Query["token"];
+        if (!string.IsNullOrEmpty(providedToken) && CryptographicOperations.FixedTimeEquals(
+            Encoding.UTF8.GetBytes(providedToken),
+            Encoding.UTF8.GetBytes(configuredToken)))
+        {
+            await next(context);
+            return;
+        }
+    }
+    var result = await context.AuthenticateAsync(CookieAuthenticationDefaults.AuthenticationScheme);
+    if (result.Succeeded && result.Principal?.Identity?.IsAuthenticated == true)
+    {
+        context.User = result.Principal;
+        await next(context);
+        return;
+    }
+    if (path.StartsWith("/api", StringComparison.OrdinalIgnoreCase) ||
+        context.Request.Headers.Accept.Any(a => a?.Contains("application/json", StringComparison.OrdinalIgnoreCase) == true))
+    {
+        context.Response.StatusCode = 401;
+        await context.Response.WriteAsJsonAsync(new { error = "Unauthorized" });
+        return;
+    }
+    context.Response.Redirect("/login");
+});
+
+static bool WebUIAuthIsEnabled(TorrentarrConfig c)
+{
+    if (!string.IsNullOrEmpty(c.WebUI.Token)) return true;
+    var mode = c.WebUI.AuthMode?.Trim() ?? "";
+    return string.Equals(mode, "Local", StringComparison.OrdinalIgnoreCase)
+        || string.Equals(mode, "OIDC", StringComparison.OrdinalIgnoreCase)
+        || string.Equals(mode, "TokenOnly", StringComparison.OrdinalIgnoreCase);
+}
+
+static bool WebUIPublicPath(string path, string method)
+{
+    if (string.IsNullOrEmpty(path)) return true;
+    if (path.Equals("/health", StringComparison.OrdinalIgnoreCase)) return true;
+    if (path.Equals("/", StringComparison.OrdinalIgnoreCase)) return true;
+    if (path.StartsWith("/ui", StringComparison.OrdinalIgnoreCase)) return true;
+    if (path.Equals("/sw.js", StringComparison.OrdinalIgnoreCase)) return true;
+    if (path.Equals("/login", StringComparison.OrdinalIgnoreCase)) return true;
+    if (path.Equals("/web/login", StringComparison.OrdinalIgnoreCase) && method == "POST") return true;
+    if (path.Equals("/web/auth/set-password", StringComparison.OrdinalIgnoreCase) && method == "POST") return true;
+    return false;
+}
+
 app.MapControllers();
 
 // Health check endpoint
@@ -156,6 +245,62 @@ app.MapGet("/health", () => Results.Ok(new
     service = "torrentarr-webui",
     timestamp = DateTime.UtcNow
 }));
+
+app.MapGet("/web/token", (TorrentarrConfig cfg, HttpContext ctx) =>
+{
+    var isAuthenticated = ctx.User?.Identity?.IsAuthenticated == true;
+    if (!isAuthenticated && WebUIAuthIsEnabled(cfg))
+        return Results.Json(new { token = "" }, statusCode: 401);
+    return Results.Ok(new { token = cfg.WebUI.Token });
+});
+
+app.MapPost("/web/login", async (HttpContext ctx, TorrentarrConfig cfg, IPasswordHasher hasher) =>
+{
+    var body = await ctx.Request.ReadFromJsonAsync<LoginRequest>();
+    if (body == null || string.IsNullOrWhiteSpace(body.Username) || string.IsNullOrWhiteSpace(body.Password))
+        return Results.BadRequest(new { error = "Username and password required" });
+    if (!string.Equals(cfg.WebUI.AuthMode, "Local", StringComparison.OrdinalIgnoreCase))
+        return Results.Json(new { error = "Local login not configured" }, statusCode: 400);
+    if (string.IsNullOrEmpty(cfg.WebUI.PasswordHash))
+        return Results.Json(new { error = "Password not set", code = "SETUP_REQUIRED" }, statusCode: 403);
+    if (!string.Equals(body.Username.Trim(), cfg.WebUI.Username?.Trim(), StringComparison.Ordinal))
+        return Results.Json(new { error = "Unauthorized" }, statusCode: 401);
+    if (!hasher.VerifyPassword(body.Password, cfg.WebUI.PasswordHash))
+        return Results.Json(new { error = "Unauthorized" }, statusCode: 401);
+    var identity = new ClaimsIdentity(CookieAuthenticationDefaults.AuthenticationScheme);
+    identity.AddClaim(new Claim(ClaimTypes.Name, body.Username.Trim()));
+    var principal = new ClaimsPrincipal(identity);
+    await ctx.SignInAsync(CookieAuthenticationDefaults.AuthenticationScheme, principal, new AuthenticationProperties
+    {
+        IsPersistent = true,
+        ExpiresUtc = DateTimeOffset.UtcNow.AddDays(7)
+    });
+    return Results.Ok(new { success = true });
+});
+
+app.MapPost("/web/auth/set-password", async (HttpContext ctx, TorrentarrConfig cfg, ConfigurationLoader loader, IPasswordHasher hasher) =>
+{
+    var body = await ctx.Request.ReadFromJsonAsync<SetPasswordRequest>();
+    if (body == null || string.IsNullOrWhiteSpace(body.Username) || string.IsNullOrWhiteSpace(body.Password))
+        return Results.BadRequest(new { error = "Username and password required" });
+    var setupToken = Environment.GetEnvironmentVariable("TORRENTARR_SETUP_TOKEN");
+    var allowSet = string.IsNullOrEmpty(cfg.WebUI.PasswordHash) || (!string.IsNullOrEmpty(setupToken) && body.SetupToken == setupToken);
+    if (!allowSet)
+        return Results.Json(new { error = "Set password not allowed" }, statusCode: 403);
+    cfg.WebUI.Username = body.Username.Trim();
+    cfg.WebUI.PasswordHash = hasher.HashPassword(body.Password);
+    if (string.Equals(cfg.WebUI.AuthMode, "Disabled", StringComparison.OrdinalIgnoreCase))
+        cfg.WebUI.AuthMode = "Local";
+    try
+    {
+        loader.SaveConfig(cfg);
+    }
+    catch
+    {
+        return Results.Json(new { error = "Failed to save configuration" }, statusCode: 500);
+    }
+    return Results.Ok(new { success = true });
+});
 
 app.MapPost("/web/loglevel", (LogLevelRequest req, LoggingLevelSwitch ls) =>
 {
@@ -1181,3 +1326,5 @@ app.Run();
 public record LogLevelRequest(string Level);
 public record ArrTestConnectionRequest(string ArrType, string? Uri, string? ApiKey, string? InstanceKey = null);
 public record ArrRebuildRequest(string ArrInstanceName);
+public record LoginRequest(string? Username, string? Password);
+public record SetPasswordRequest(string? Username, string? Password, string? SetupToken = null);

@@ -13,6 +13,7 @@ import {
   getConfig,
   updateConfig,
   testArrConnection,
+  setPassword,
   type TestConnectionResponse,
 } from "../api/client";
 import type { ConfigDocument } from "../api/types";
@@ -1798,6 +1799,7 @@ export function ConfigView(props?: ConfigViewProps): JSX.Element {
   const [activeQbitKey, setActiveQbitKey] = useState<string | null>(null);
   const [isSettingsOpen, setSettingsOpen] = useState(false);
   const [isWebSettingsOpen, setWebSettingsOpen] = useState(false);
+  const [isAuthOpen, setAuthOpen] = useState(false);
   const [isDirty, setDirty] = useState(false);
 
   useEffect(() => {
@@ -1867,7 +1869,11 @@ export function ConfigView(props?: ConfigViewProps): JSX.Element {
 
   useEffect(() => {
     const anyModalOpen = Boolean(
-      activeArrKey || activeQbitKey || isSettingsOpen || isWebSettingsOpen,
+      activeArrKey ||
+        activeQbitKey ||
+        isSettingsOpen ||
+        isWebSettingsOpen ||
+        isAuthOpen,
     );
     if (!anyModalOpen) return;
     const handleKeyDown = (event: KeyboardEvent) => {
@@ -1886,7 +1892,13 @@ export function ConfigView(props?: ConfigViewProps): JSX.Element {
       window.removeEventListener("keydown", handleKeyDown);
       style.overflow = originalOverflow;
     };
-  }, [activeArrKey, activeQbitKey, isSettingsOpen, isWebSettingsOpen]);
+  }, [
+    activeArrKey,
+    activeQbitKey,
+    isSettingsOpen,
+    isWebSettingsOpen,
+    isAuthOpen,
+  ]);
 
   useEffect(() => {
     if (!activeArrKey) return;
@@ -2198,6 +2210,11 @@ export function ConfigView(props?: ConfigViewProps): JSX.Element {
                   description="Web UI configuration"
                   onConfigure={() => setWebSettingsOpen(true)}
                 />
+                <ConfigSummaryCard
+                  title="Auth"
+                  description="Authentication (Local, OIDC, or API token)"
+                  onConfigure={() => setAuthOpen(true)}
+                />
               </div>
             </details>
           </section>
@@ -2411,6 +2428,18 @@ export function ConfigView(props?: ConfigViewProps): JSX.Element {
           showLiveSettings={true}
         />
       ) : null}
+      {isAuthOpen && formState ? (
+        <AuthConfigModal
+          state={formState}
+          onChange={handleFieldChange}
+          onClose={() => setAuthOpen(false)}
+          onSave={async (changes) => {
+            await updateConfig({ changes });
+          }}
+          setPasswordApi={setPassword}
+          pushToast={push}
+        />
+      ) : null}
       {activeQbitKey && formState ? (
         <QbitInstanceModal
           keyName={activeQbitKey}
@@ -2428,6 +2457,349 @@ interface ConfigSummaryCardProps {
   title: string;
   description: string;
   onConfigure: () => void;
+}
+
+const AUTH_MODES = [
+  { value: "Disabled", label: "Disabled" },
+  { value: "Local", label: "Local (username + password)" },
+  { value: "OIDC", label: "OIDC (external IdP)" },
+  { value: "TokenOnly", label: "Token only (API)" },
+] as const;
+
+type AuthModeValue = (typeof AUTH_MODES)[number]["value"];
+
+interface AuthConfigModalProps {
+  state: ConfigDocument;
+  onChange: (path: string[], def: FieldDefinition, value: unknown) => void;
+  onClose: () => void;
+  onSave: (changes: Record<string, unknown>) => Promise<void>;
+  setPasswordApi: (req: {
+    username: string;
+    password: string;
+    setupToken?: string;
+  }) => Promise<{ success: boolean }>;
+  pushToast: (message: string, type?: "success" | "error" | "info") => void;
+}
+
+function AuthConfigModal({
+  state,
+  onChange,
+  onClose,
+  onSave,
+  setPasswordApi,
+  pushToast,
+}: AuthConfigModalProps): JSX.Element {
+  const webui = (getValue(state, ["WebUI"]) as Record<string, unknown>) ?? {};
+  const authMode = (webui.AuthMode as string) || "Disabled";
+  const oidc = (webui.OIDC as Record<string, unknown>) ?? {};
+  const [saving, setSaving] = useState(false);
+  const [setPasswordUsername, setSetPasswordUsername] = useState("");
+  const [setPasswordPassword, setSetPasswordPassword] = useState("");
+  const [setPasswordSubmitting, setSetPasswordSubmitting] = useState(false);
+
+  const handleModeChange = (option: { value: string } | null) => {
+    const value = (option?.value ?? "Disabled") as AuthModeValue;
+    onChange(["WebUI", "AuthMode"], {} as FieldDefinition, value);
+  };
+
+  const handleSave = async () => {
+    setSaving(true);
+    try {
+      const changes: Record<string, unknown> = {
+        "WebUI.AuthMode": authMode,
+        "WebUI.Token": webui.Token ?? "",
+        "WebUI.Username": webui.Username ?? "",
+      };
+      if (authMode === "OIDC" && oidc) {
+        changes["WebUI.OIDC.Authority"] = oidc.Authority ?? "";
+        changes["WebUI.OIDC.ClientId"] = oidc.ClientId ?? "";
+        changes["WebUI.OIDC.ClientSecret"] = oidc.ClientSecret ?? "";
+        changes["WebUI.OIDC.Scopes"] = oidc.Scopes ?? "openid profile";
+        changes["WebUI.OIDC.CallbackPath"] =
+          oidc.CallbackPath ?? "/signin-oidc";
+        changes["WebUI.OIDC.RequireHttpsMetadata"] =
+          oidc.RequireHttpsMetadata ?? true;
+      }
+      await onSave(changes);
+      pushToast("Auth configuration saved", "success");
+      onClose();
+    } catch (e) {
+      pushToast(e instanceof Error ? e.message : "Failed to save", "error");
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const handleSetPassword = async () => {
+    if (!setPasswordUsername.trim() || !setPasswordPassword) {
+      pushToast("Username and password required", "error");
+      return;
+    }
+    setSetPasswordSubmitting(true);
+    try {
+      await setPasswordApi({
+        username: setPasswordUsername.trim(),
+        password: setPasswordPassword,
+      });
+      pushToast("Password set successfully", "success");
+      setSetPasswordPassword("");
+      onChange(
+        ["WebUI", "Username"],
+        {} as FieldDefinition,
+        setPasswordUsername.trim(),
+      );
+    } catch (e) {
+      pushToast(
+        e instanceof Error ? e.message : "Set password failed",
+        "error",
+      );
+    } finally {
+      setSetPasswordSubmitting(false);
+    }
+  };
+
+  const currentModeOption =
+    AUTH_MODES.find((m) => m.value === authMode) ?? AUTH_MODES[0];
+
+  return (
+    <div className="modal-backdrop" role="presentation" onClick={onClose}>
+      <div
+        className="modal"
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="auth-modal-title"
+        onClick={(e) => e.stopPropagation()}
+      >
+        <div className="modal-header">
+          <h2 id="auth-modal-title">Authentication</h2>
+          <button className="btn ghost" type="button" onClick={onClose}>
+            <IconImage src={CloseIcon} />
+          </button>
+        </div>
+        <div className="modal-body">
+          <div className="field" style={{ marginBottom: "16px" }}>
+            <label>Mode</label>
+            <Select
+              options={[...AUTH_MODES]}
+              value={currentModeOption}
+              onChange={handleModeChange}
+              styles={getSelectStyles()}
+              classNamePrefix="react-select"
+            />
+          </div>
+
+          {authMode === "Disabled" && (
+            <p className="field-description">
+              Authentication is off. If an API token is set below, it can still
+              be used for script/API access.
+            </p>
+          )}
+
+          {authMode === "Local" && (
+            <>
+              <p className="field-description" style={{ marginBottom: "12px" }}>
+                Set a username and password for browser login. The password is
+                stored only as a hash. The API token below is always used for
+                script and API access.
+              </p>
+              <div className="field">
+                <label>Username</label>
+                <input
+                  type="text"
+                  value={(webui.Username as string) ?? ""}
+                  onChange={(e) =>
+                    onChange(
+                      ["WebUI", "Username"],
+                      {} as FieldDefinition,
+                      e.target.value,
+                    )
+                  }
+                  placeholder="Admin username"
+                />
+              </div>
+              <div className="field">
+                <label>Set / change password</label>
+                <input
+                  type="password"
+                  value={setPasswordPassword}
+                  onChange={(e) => setSetPasswordPassword(e.target.value)}
+                  placeholder="New password"
+                />
+                <input
+                  type="text"
+                  value={
+                    setPasswordUsername || ((webui.Username as string) ?? "")
+                  }
+                  onChange={(e) => setSetPasswordUsername(e.target.value)}
+                  placeholder="Username (for set password)"
+                  style={{ marginTop: "8px" }}
+                />
+                <button
+                  className="btn small"
+                  type="button"
+                  onClick={handleSetPassword}
+                  disabled={setPasswordSubmitting}
+                >
+                  {setPasswordSubmitting ? "Saving…" : "Set password"}
+                </button>
+              </div>
+            </>
+          )}
+
+          {authMode === "OIDC" && (
+            <>
+              <p className="field-description" style={{ marginBottom: "12px" }}>
+                Register this application in your identity provider. Set the
+                redirect/callback URL to:{" "}
+                <code>
+                  {typeof window !== "undefined"
+                    ? `${window.location.origin}/signin-oidc`
+                    : "{origin}/signin-oidc"}
+                </code>
+                . The API token below is still required for script/API access.
+              </p>
+              <div className="field">
+                <label>Authority</label>
+                <input
+                  type="text"
+                  value={(oidc.Authority as string) ?? ""}
+                  onChange={(e) =>
+                    onChange(
+                      ["WebUI", "OIDC", "Authority"],
+                      {} as FieldDefinition,
+                      e.target.value,
+                    )
+                  }
+                  placeholder="https://idp.example.com/realms/myrelm"
+                />
+              </div>
+              <div className="field">
+                <label>Client ID</label>
+                <input
+                  type="text"
+                  value={(oidc.ClientId as string) ?? ""}
+                  onChange={(e) =>
+                    onChange(
+                      ["WebUI", "OIDC", "ClientId"],
+                      {} as FieldDefinition,
+                      e.target.value,
+                    )
+                  }
+                />
+              </div>
+              <div className="field">
+                <label>Client secret</label>
+                <input
+                  type="password"
+                  value={
+                    ((oidc.ClientSecret as string) === "[redacted]"
+                      ? ""
+                      : (oidc.ClientSecret as string)) ?? ""
+                  }
+                  onChange={(e) =>
+                    onChange(
+                      ["WebUI", "OIDC", "ClientSecret"],
+                      {} as FieldDefinition,
+                      e.target.value,
+                    )
+                  }
+                  placeholder="Leave blank to keep existing"
+                />
+              </div>
+              <div className="field">
+                <label>Scopes</label>
+                <input
+                  type="text"
+                  value={(oidc.Scopes as string) ?? "openid profile"}
+                  onChange={(e) =>
+                    onChange(
+                      ["WebUI", "OIDC", "Scopes"],
+                      {} as FieldDefinition,
+                      e.target.value,
+                    )
+                  }
+                />
+              </div>
+              <div className="field">
+                <label>Callback path</label>
+                <input
+                  type="text"
+                  value={(oidc.CallbackPath as string) ?? "/signin-oidc"}
+                  onChange={(e) =>
+                    onChange(
+                      ["WebUI", "OIDC", "CallbackPath"],
+                      {} as FieldDefinition,
+                      e.target.value,
+                    )
+                  }
+                />
+              </div>
+              <div className="field">
+                <label>
+                  <input
+                    type="checkbox"
+                    checked={!!oidc.RequireHttpsMetadata}
+                    onChange={(e) =>
+                      onChange(
+                        ["WebUI", "OIDC", "RequireHttpsMetadata"],
+                        {} as FieldDefinition,
+                        e.target.checked,
+                      )
+                    }
+                  />{" "}
+                  Require HTTPS metadata
+                </label>
+              </div>
+            </>
+          )}
+
+          {authMode === "TokenOnly" && (
+            <p className="field-description" style={{ marginBottom: "12px" }}>
+              Use the token below in the <code>Authorization: Bearer</code>{" "}
+              header for all API and /web requests. No login page is shown;
+              scripts and tools should use this token.
+            </p>
+          )}
+
+          {(authMode === "Local" ||
+            authMode === "OIDC" ||
+            authMode === "TokenOnly") && (
+            <div className="field" style={{ marginTop: "16px" }}>
+              <label>API token</label>
+              <input
+                type="password"
+                value={(webui.Token as string) ?? ""}
+                onChange={(e) =>
+                  onChange(
+                    ["WebUI", "Token"],
+                    {} as FieldDefinition,
+                    e.target.value,
+                  )
+                }
+                placeholder="Bearer token for API/scripts"
+              />
+              <p className="field-description">
+                Always accepted for API access in every auth mode.
+              </p>
+            </div>
+          )}
+        </div>
+        <div className="modal-footer">
+          <button className="btn ghost" type="button" onClick={onClose}>
+            Cancel
+          </button>
+          <button
+            className="btn primary"
+            type="button"
+            onClick={handleSave}
+            disabled={saving}
+          >
+            {saving ? "Saving…" : "Save"}
+          </button>
+        </div>
+      </div>
+    </div>
+  );
 }
 
 function ConfigSummaryCard({

@@ -86,6 +86,7 @@ function buildInit(
   }
   return {
     ...init,
+    credentials: "include",
     headers,
   };
 }
@@ -400,6 +401,54 @@ export async function testArrConnection(
 
 export async function getToken(): Promise<{ token: string }> {
   return fetchJson<{ token: string }>("/web/token");
+}
+
+export interface SetPasswordRequest {
+  username: string;
+  password: string;
+  setupToken?: string;
+}
+
+export async function setPassword(
+  request: SetPasswordRequest,
+): Promise<{ success: boolean }> {
+  const token = resolveToken();
+  const response = await fetch(
+    "/web/auth/set-password",
+    buildInit(
+      {
+        method: "POST",
+        body: JSON.stringify(request),
+      },
+      token,
+    ),
+  );
+  if (!response.ok) {
+    const detail = (await response.json()) as { error?: string };
+    throw new Error(detail?.error ?? response.statusText);
+  }
+  return (await response.json()) as { success: boolean };
+}
+
+export interface LoginRequest {
+  username: string;
+  password: string;
+}
+
+export async function login(
+  request: LoginRequest,
+): Promise<{ success: boolean }> {
+  const response = await fetch("/web/login", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    credentials: "include",
+    body: JSON.stringify(request),
+  });
+  if (!response.ok) {
+    const detail = (await response.json()) as { error?: string; code?: string };
+    throw new Error(detail?.error ?? response.statusText);
+  }
+  return (await response.json()) as { success: boolean };
 }
 
 export async function getTorrentsDistribution(): Promise<TorrentDistribution> {

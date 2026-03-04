@@ -7,10 +7,16 @@ using Torrentarr.Infrastructure.Database;
 using Torrentarr.Infrastructure.Services;
 using Torrentarr.Host;
 using Torrentarr.Host.Sinks;
+using Microsoft.AspNetCore.Authentication;
+using Microsoft.AspNetCore.Authentication.Cookies;
+using Microsoft.AspNetCore.Authentication.OpenIdConnect;
 using Microsoft.EntityFrameworkCore;
 using Serilog;
 using Serilog.Core;
 using Serilog.Events;
+using System.Security.Claims;
+using System.Security.Cryptography;
+using System.Text;
 
 // Calculate base paths - use /config for Docker, or config/ relative to cwd for local
 var configEnv = Environment.GetEnvironmentVariable("TORRENTARR_CONFIG");
@@ -161,6 +167,36 @@ try
     builder.Services.AddSingleton<UpdateService>();
     builder.Services.AddHostedService<AutoUpdateBackgroundService>();
 
+    builder.Services.AddSingleton<IPasswordHasher, BCryptPasswordHasher>();
+
+    var authBuilder = builder.Services.AddAuthentication(CookieAuthenticationDefaults.AuthenticationScheme)
+        .AddCookie(options =>
+        {
+            options.Cookie.Name = "torrentarr_session";
+            options.Cookie.HttpOnly = true;
+            options.Cookie.SameSite = SameSiteMode.Lax;
+            options.LoginPath = "/login";
+            options.AccessDeniedPath = "/login";
+        });
+    if (string.Equals(config.WebUI.AuthMode, "OIDC", StringComparison.OrdinalIgnoreCase)
+        && config.WebUI.OIDC is { } oidc
+        && !string.IsNullOrWhiteSpace(oidc.Authority)
+        && !string.IsNullOrWhiteSpace(oidc.ClientId))
+    {
+        authBuilder.AddOpenIdConnect(OpenIdConnectDefaults.AuthenticationScheme, options =>
+        {
+            options.Authority = oidc.Authority.TrimEnd('/');
+            options.ClientId = oidc.ClientId;
+            options.ClientSecret = oidc.ClientSecret;
+            options.CallbackPath = oidc.CallbackPath;
+            options.RequireHttpsMetadata = oidc.RequireHttpsMetadata;
+            options.SignInScheme = CookieAuthenticationDefaults.AuthenticationScheme;
+            options.Scope.Clear();
+            foreach (var s in (oidc.Scopes ?? "openid profile").Split(' ', StringSplitOptions.RemoveEmptyEntries))
+                options.Scope.Add(s);
+        });
+    }
+
     builder.Services.AddControllers()
         .AddNewtonsoftJson(options =>
         {
@@ -298,31 +334,91 @@ try
     });
     app.UseStaticFiles();
 
-    // Bearer token auth for all /api/* routes
+    app.UseAuthentication();
+
+    // Auth: when enabled, protect /api/* and /web/* except public paths. Bearer token always works for API.
     app.Use(async (context, next) =>
     {
-        if (context.Request.Path.StartsWithSegments("/api"))
+        var cfg = context.RequestServices.GetRequiredService<TorrentarrConfig>();
+        if (!IsAuthEnabled(cfg))
         {
-            var configuredToken = config.WebUI.Token;
-            if (!string.IsNullOrEmpty(configuredToken))
-            {
-                string? providedToken = null;
-                var authHeader = context.Request.Headers.Authorization.FirstOrDefault();
-                if (authHeader?.StartsWith("Bearer ", StringComparison.OrdinalIgnoreCase) == true)
-                    providedToken = authHeader["Bearer ".Length..];
-                else if (context.Request.Query.ContainsKey("token"))
-                    providedToken = context.Request.Query["token"];
+            await next(context);
+            return;
+        }
 
-                if (providedToken != configuredToken)
-                {
-                    context.Response.StatusCode = 401;
-                    await context.Response.WriteAsJsonAsync(new { error = "Unauthorized" });
-                    return;
-                }
+        var path = context.Request.Path.Value ?? "";
+        if (IsPublicPath(path, context.Request.Method))
+        {
+            await next(context);
+            return;
+        }
+
+        // 1) Bearer token (constant-time) — always accepted for API when Token is set
+        var configuredToken = cfg.WebUI.Token;
+        if (!string.IsNullOrEmpty(configuredToken))
+        {
+            string? providedToken = null;
+            var authHeader = context.Request.Headers.Authorization.FirstOrDefault();
+            if (authHeader?.StartsWith("Bearer ", StringComparison.OrdinalIgnoreCase) == true)
+                providedToken = authHeader["Bearer ".Length..];
+            else if (context.Request.Query.ContainsKey("token") && context.Request.Method == "GET")
+                providedToken = context.Request.Query["token"];
+
+            if (!string.IsNullOrEmpty(providedToken) && CryptographicOperations.FixedTimeEquals(
+                Encoding.UTF8.GetBytes(providedToken),
+                Encoding.UTF8.GetBytes(configuredToken)))
+            {
+                var identity = new ClaimsIdentity("Bearer");
+                identity.AddClaim(new Claim(ClaimTypes.Name, "api"));
+                context.User = new ClaimsPrincipal(identity);
+                await next(context);
+                return;
             }
         }
-        await next(context);
+
+        // 2) Cookie (local or OIDC login)
+        var result = await context.AuthenticateAsync(CookieAuthenticationDefaults.AuthenticationScheme);
+        if (result.Succeeded && result.Principal?.Identity?.IsAuthenticated == true)
+        {
+            context.User = result.Principal;
+            await next(context);
+            return;
+        }
+
+        // Unauthenticated: 401 for API, redirect to /login for browser
+        if (path.StartsWith("/api", StringComparison.OrdinalIgnoreCase) ||
+            context.Request.Headers.Accept.Any(a => a?.Contains("application/json", StringComparison.OrdinalIgnoreCase) == true))
+        {
+            context.Response.StatusCode = 401;
+            await context.Response.WriteAsJsonAsync(new { error = "Unauthorized" });
+            return;
+        }
+        context.Response.Redirect("/login");
     });
+
+    static bool IsAuthEnabled(TorrentarrConfig c)
+    {
+        if (!string.IsNullOrEmpty(c.WebUI.Token)) return true;
+        var mode = c.WebUI.AuthMode?.Trim() ?? "";
+        return string.Equals(mode, "Local", StringComparison.OrdinalIgnoreCase)
+            || string.Equals(mode, "OIDC", StringComparison.OrdinalIgnoreCase)
+            || string.Equals(mode, "TokenOnly", StringComparison.OrdinalIgnoreCase);
+    }
+
+    static bool IsPublicPath(string path, string method)
+    {
+        if (string.IsNullOrEmpty(path)) return true;
+        if (path.Equals("/health", StringComparison.OrdinalIgnoreCase)) return true;
+        if (path.Equals("/", StringComparison.OrdinalIgnoreCase)) return true;
+        if (path.StartsWith("/ui", StringComparison.OrdinalIgnoreCase)) return true;
+        if (path.Equals("/sw.js", StringComparison.OrdinalIgnoreCase)) return true;
+        if (path.Equals("/login", StringComparison.OrdinalIgnoreCase)) return true;
+        if (path.Equals("/web/login", StringComparison.OrdinalIgnoreCase) && method == "POST") return true;
+        if (path.Equals("/web/auth/set-password", StringComparison.OrdinalIgnoreCase) && method == "POST") return true;
+        if (path.StartsWith("/signin-oidc", StringComparison.OrdinalIgnoreCase)) return true;
+        if (path.StartsWith("/web/auth/oidc", StringComparison.OrdinalIgnoreCase)) return true;
+        return false;
+    }
 
     app.MapControllers();
 
@@ -1281,9 +1377,83 @@ try
         return Results.Ok(new { distribution });
     });
 
-    // Web Token
-    app.MapGet("/web/token", (TorrentarrConfig cfg) =>
-        Results.Ok(new { token = cfg.WebUI.Token }));
+    // Web Token — only returned when already authenticated (middleware enforces when auth enabled)
+    app.MapGet("/web/token", (TorrentarrConfig cfg, HttpContext ctx) =>
+    {
+        var isAuthenticated = ctx.User?.Identity?.IsAuthenticated == true;
+        if (!isAuthenticated && IsAuthEnabled(cfg))
+            return Results.Json(new { token = "" }, statusCode: 401);
+        return Results.Ok(new { token = cfg.WebUI.Token });
+    });
+
+    // Local login: username + password → session cookie
+    app.MapPost("/web/login", async (HttpContext ctx, TorrentarrConfig cfg, IPasswordHasher hasher, ILogger<Program> log) =>
+    {
+        var body = await ctx.Request.ReadFromJsonAsync<LoginRequest>();
+        if (body == null || string.IsNullOrWhiteSpace(body.Username) || string.IsNullOrWhiteSpace(body.Password))
+            return Results.BadRequest(new { error = "Username and password required" });
+
+        if (!string.Equals(cfg.WebUI.AuthMode, "Local", StringComparison.OrdinalIgnoreCase))
+            return Results.Json(new { error = "Local login not configured" }, statusCode: 400);
+
+        if (string.IsNullOrEmpty(cfg.WebUI.PasswordHash))
+            return Results.Json(new { error = "Password not set", code = "SETUP_REQUIRED" }, statusCode: 403);
+
+        if (!string.Equals(body.Username.Trim(), cfg.WebUI.Username?.Trim(), StringComparison.Ordinal))
+            return Results.Json(new { error = "Unauthorized" }, statusCode: 401);
+
+        if (!hasher.VerifyPassword(body.Password, cfg.WebUI.PasswordHash))
+            return Results.Json(new { error = "Unauthorized" }, statusCode: 401);
+
+        var identity = new ClaimsIdentity(CookieAuthenticationDefaults.AuthenticationScheme);
+        identity.AddClaim(new Claim(ClaimTypes.Name, body.Username.Trim()));
+        var principal = new ClaimsPrincipal(identity);
+        await ctx.SignInAsync(CookieAuthenticationDefaults.AuthenticationScheme, principal, new AuthenticationProperties
+        {
+            IsPersistent = true,
+            ExpiresUtc = DateTimeOffset.UtcNow.AddDays(7)
+        });
+        log.LogInformation("User {User} logged in via local auth", body.Username);
+        return Results.Ok(new { success = true });
+    });
+
+    // Set password (first-time or reset): hash and write to config. Allowed when PasswordHash is empty or via setup token.
+    app.MapPost("/web/auth/set-password", async (HttpContext ctx, TorrentarrConfig cfg, ConfigurationLoader loader, IPasswordHasher hasher, ILogger<Program> log) =>
+    {
+        var body = await ctx.Request.ReadFromJsonAsync<SetPasswordRequest>();
+        if (body == null || string.IsNullOrWhiteSpace(body.Username) || string.IsNullOrWhiteSpace(body.Password))
+            return Results.BadRequest(new { error = "Username and password required" });
+
+        var setupToken = Environment.GetEnvironmentVariable("TORRENTARR_SETUP_TOKEN");
+        var allowSet = string.IsNullOrEmpty(cfg.WebUI.PasswordHash) || (!string.IsNullOrEmpty(setupToken) && body.SetupToken == setupToken);
+        if (!allowSet)
+            return Results.Json(new { error = "Set password not allowed" }, statusCode: 403);
+
+        cfg.WebUI.Username = body.Username.Trim();
+        cfg.WebUI.PasswordHash = hasher.HashPassword(body.Password);
+        if (string.Equals(cfg.WebUI.AuthMode, "Disabled", StringComparison.OrdinalIgnoreCase))
+            cfg.WebUI.AuthMode = "Local";
+        try
+        {
+            loader.SaveConfig(cfg);
+        }
+        catch (Exception ex)
+        {
+            log.LogError(ex, "Failed to save config after set-password");
+            return Results.Json(new { error = "Failed to save configuration" }, statusCode: 500);
+        }
+        log.LogInformation("Password set for user {User}", cfg.WebUI.Username);
+        return Results.Ok(new { success = true });
+    });
+
+    // OIDC challenge: redirect to IdP (used by login page "Sign in with OIDC" button)
+    app.MapGet("/web/auth/oidc/challenge", async (HttpContext ctx, TorrentarrConfig cfg) =>
+    {
+        if (!string.Equals(cfg.WebUI.AuthMode, "OIDC", StringComparison.OrdinalIgnoreCase))
+            return Results.BadRequest(new { error = "OIDC not configured" });
+        await ctx.ChallengeAsync(OpenIdConnectDefaults.AuthenticationScheme);
+        return Results.Empty;
+    });
 
     // Web Qbit Categories (api mirror — same logic as /web/qbit/categories, token-protected)
     app.MapGet("/api/qbit/categories", async (QBittorrentConnectionManager qbitManager, TorrentarrConfig cfg) =>
@@ -2743,6 +2913,13 @@ public record TestConnectionRequest(
     [property: System.Text.Json.Serialization.JsonPropertyName("apiKey")] string? ApiKey,
     [property: System.Text.Json.Serialization.JsonPropertyName("instanceKey")] string? InstanceKey = null);
 public record LoggerConfigurationRequest(string Level);
+public record LoginRequest(
+    [property: System.Text.Json.Serialization.JsonPropertyName("username")] string? Username,
+    [property: System.Text.Json.Serialization.JsonPropertyName("password")] string? Password);
+public record SetPasswordRequest(
+    [property: System.Text.Json.Serialization.JsonPropertyName("username")] string? Username,
+    [property: System.Text.Json.Serialization.JsonPropertyName("password")] string? Password,
+    [property: System.Text.Json.Serialization.JsonPropertyName("setupToken")] string? SetupToken = null);
 
 // Make Program accessible to test projects (WebApplicationFactory<Program>)
 public partial class Program { }

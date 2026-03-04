@@ -34,7 +34,13 @@ import { ToastProvider, ToastViewport, useToast } from "./context/ToastContext";
 import { SearchProvider, useSearch } from "./context/SearchContext";
 import { WebUIProvider, useWebUI } from "./context/WebUIContext";
 import { useNetworkStatus } from "./hooks/useNetworkStatus";
-import { getMeta, getStatus, triggerUpdate } from "./api/client";
+import {
+  getMeta,
+  getStatus,
+  triggerUpdate,
+  getToken,
+  login,
+} from "./api/client";
 import type { MetaResponse } from "./api/types";
 import { IconImage } from "./components/IconImage";
 import CloseIcon from "./icons/close.svg";
@@ -492,6 +498,114 @@ function ChangelogModal({
   );
 }
 
+function formatVersionLabel(value: string | null | undefined): string {
+  if (!value) {
+    return "unknown";
+  }
+  const trimmed = value.trim();
+  if (!trimmed) {
+    return "unknown";
+  }
+  return trimmed[0] === "v" || trimmed[0] === "V" ? trimmed : `v${trimmed}`;
+}
+
+function AuthGate({ children }: { children: React.ReactNode }): JSX.Element {
+  const [needsLogin, setNeedsLogin] = useState<boolean | null>(null);
+
+  useEffect(() => {
+    let cancelled = false;
+    getToken()
+      .then(() => {
+        if (!cancelled) setNeedsLogin(false);
+      })
+      .catch(() => {
+        if (!cancelled) setNeedsLogin(true);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  if (needsLogin === null) {
+    return <div className="loading">Loading...</div>;
+  }
+  if (needsLogin) {
+    return (
+      <LoginPage
+        onSuccess={() => {
+          setNeedsLogin(false);
+        }}
+      />
+    );
+  }
+  return <>{children}</>;
+}
+
+interface LoginPageProps {
+  onSuccess: () => void;
+}
+
+function LoginPage({ onSuccess }: LoginPageProps): JSX.Element {
+  const [username, setUsername] = useState("");
+  const [password, setPasswordState] = useState("");
+  const [error, setError] = useState<string | null>(null);
+  const [submitting, setSubmitting] = useState(false);
+
+  const handleSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setError(null);
+    setSubmitting(true);
+    try {
+      await login({ username, password });
+      onSuccess();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Login failed");
+    } finally {
+      setSubmitting(false);
+    }
+  };
+
+  return (
+    <div className="login-page">
+      <div className="login-card">
+        <h1>Torrentarr</h1>
+        <p className="login-subtitle">Sign in to continue</p>
+        <form onSubmit={handleSubmit}>
+          <div className="form-group">
+            <label htmlFor="login-username">Username</label>
+            <input
+              id="login-username"
+              type="text"
+              autoComplete="username"
+              value={username}
+              onChange={(e) => setUsername(e.target.value)}
+              required
+            />
+          </div>
+          <div className="form-group">
+            <label htmlFor="login-password">Password</label>
+            <input
+              id="login-password"
+              type="password"
+              autoComplete="current-password"
+              value={password}
+              onChange={(e) => setPasswordState(e.target.value)}
+              required
+            />
+          </div>
+          {error && <p className="login-error">{error}</p>}
+          <button type="submit" className="btn primary" disabled={submitting}>
+            {submitting ? "Signing in..." : "Sign in"}
+          </button>
+        </form>
+        <p className="login-oidc">
+          <a href="/web/auth/oidc/challenge">Sign in with OIDC</a>
+        </p>
+      </div>
+    </div>
+  );
+}
+
 function AppShell(): JSX.Element {
   const [activeTab, setActiveTab] = useState<Tab>("processes");
   const [configDirty, setConfigDirty] = useState(false);
@@ -513,25 +627,6 @@ function AppShell(): JSX.Element {
   const [showWelcomeChangelog, setShowWelcomeChangelog] = useState(false);
   const [showAlreadyUpToDateModal, setShowAlreadyUpToDateModal] =
     useState(false);
-
-  // Theme is now managed by WebUIContext and applied automatically
-
-  // Clear cache on every page load to ensure fresh content
-  useEffect(() => {
-    const clearCache = async () => {
-      if ("caches" in window) {
-        try {
-          const cacheNames = await caches.keys();
-          await Promise.all(
-            cacheNames.map((cacheName) => caches.delete(cacheName)),
-          );
-        } catch {
-          // cache clear failed, non-critical
-        }
-      }
-    };
-    clearCache();
-  }, []);
 
   const refreshMeta = useCallback(
     async (options?: {
@@ -1118,13 +1213,26 @@ function AppShell(): JSX.Element {
 }
 
 export default function App(): JSX.Element {
+  const pathname = window.location.pathname;
+  const isLoginPath = pathname === "/login" || pathname === "/login/";
+
   return (
     <ToastProvider>
       <ErrorBoundary>
         <SearchProvider>
           <WebUIProvider>
-            <AppShell />
-            <ToastViewport />
+            {isLoginPath ? (
+              <LoginPage
+                onSuccess={() => {
+                  window.location.replace("/ui");
+                }}
+              />
+            ) : (
+              <AuthGate>
+                <AppShell />
+                <ToastViewport />
+              </AuthGate>
+            )}
           </WebUIProvider>
         </SearchProvider>
       </ErrorBoundary>
