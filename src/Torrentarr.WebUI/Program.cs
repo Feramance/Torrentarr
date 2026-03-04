@@ -7,6 +7,7 @@ using Torrentarr.Infrastructure.Database;
 using Torrentarr.Infrastructure.Services;
 using Microsoft.AspNetCore.Authentication;
 using Microsoft.AspNetCore.Authentication.Cookies;
+using Microsoft.AspNetCore.Authentication.OpenIdConnect;
 using Microsoft.EntityFrameworkCore;
 using Serilog;
 using Serilog.Core;
@@ -123,7 +124,17 @@ builder.Services.AddSingleton<IConfigReloader, ConfigReloader>();
 builder.Services.AddSingleton<ConfigurationLoader>();
 
 builder.Services.AddSingleton<IPasswordHasher, BCryptPasswordHasher>();
-builder.Services.AddAuthentication(CookieAuthenticationDefaults.AuthenticationScheme)
+
+// Load config once for auth registration (OIDC must be registered at startup)
+TorrentarrConfig? authConfig = null;
+try
+{
+    var configPath = ConfigurationLoader.GetDefaultConfigPath();
+    authConfig = new ConfigurationLoader(configPath).Load();
+}
+catch (FileNotFoundException) { }
+
+var authBuilder = builder.Services.AddAuthentication(CookieAuthenticationDefaults.AuthenticationScheme)
     .AddCookie(options =>
     {
         options.Cookie.Name = "torrentarr_session";
@@ -132,6 +143,23 @@ builder.Services.AddAuthentication(CookieAuthenticationDefaults.AuthenticationSc
         options.LoginPath = "/login";
         options.AccessDeniedPath = "/login";
     });
+if (authConfig?.WebUI.OIDCEnabled == true && authConfig.WebUI.OIDC is { } oidc
+    && !string.IsNullOrWhiteSpace(oidc.Authority)
+    && !string.IsNullOrWhiteSpace(oidc.ClientId))
+{
+    authBuilder.AddOpenIdConnect(OpenIdConnectDefaults.AuthenticationScheme, options =>
+    {
+        options.Authority = oidc.Authority.TrimEnd('/');
+        options.ClientId = oidc.ClientId;
+        options.ClientSecret = oidc.ClientSecret;
+        options.CallbackPath = oidc.CallbackPath;
+        options.RequireHttpsMetadata = oidc.RequireHttpsMetadata;
+        options.SignInScheme = CookieAuthenticationDefaults.AuthenticationScheme;
+        options.Scope.Clear();
+        foreach (var s in (oidc.Scopes ?? "openid profile").Split(' ', StringSplitOptions.RemoveEmptyEntries))
+            options.Scope.Add(s);
+    });
+}
 
 var app = builder.Build();
 
@@ -318,9 +346,10 @@ app.MapPost("/web/login", async (HttpContext ctx, TorrentarrConfig cfg, IPasswor
         return Results.Json(new { error = "Local login not configured" }, statusCode: 400);
     if (string.IsNullOrEmpty(cfg.WebUI.PasswordHash))
         return Results.Json(new { error = "Password not set", code = "SETUP_REQUIRED" }, statusCode: 403);
-    if (!string.Equals(body.Username.Trim(), cfg.WebUI.Username?.Trim(), StringComparison.Ordinal))
-        return Results.Json(new { error = "Unauthorized" }, statusCode: 401);
-    if (!hasher.VerifyPassword(body.Password, cfg.WebUI.PasswordHash))
+    // Always run bcrypt verification to avoid timing leak (username enumeration)
+    var passwordValid = hasher.VerifyPassword(body.Password, cfg.WebUI.PasswordHash);
+    var usernameMatch = string.Equals(body.Username.Trim(), cfg.WebUI.Username?.Trim(), StringComparison.Ordinal);
+    if (!usernameMatch || !passwordValid)
         return Results.Json(new { error = "Unauthorized" }, statusCode: 401);
     var identity = new ClaimsIdentity(CookieAuthenticationDefaults.AuthenticationScheme);
     identity.AddClaim(new Claim(ClaimTypes.Name, body.Username.Trim()));
@@ -372,6 +401,14 @@ app.MapPost("/web/auth/set-password", async (HttpContext ctx, TorrentarrConfig c
         return Results.Json(new { error = "Failed to save configuration" }, statusCode: 500);
     }
     return Results.Ok(new { success = true });
+});
+
+app.MapGet("/web/auth/oidc/challenge", async (HttpContext ctx, TorrentarrConfig cfg) =>
+{
+    if (!cfg.WebUI.OIDCEnabled)
+        return Results.BadRequest(new { error = "OIDC not configured" });
+    await ctx.ChallengeAsync(OpenIdConnectDefaults.AuthenticationScheme);
+    return Results.Empty;
 });
 
 app.MapPost("/web/loglevel", (LogLevelRequest req, LoggingLevelSwitch ls) =>

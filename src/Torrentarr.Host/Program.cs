@@ -1448,10 +1448,10 @@ try
         if (string.IsNullOrEmpty(cfg.WebUI.PasswordHash))
             return Results.Json(new { error = "Password not set", code = "SETUP_REQUIRED" }, statusCode: 403);
 
-        if (!string.Equals(body.Username.Trim(), cfg.WebUI.Username?.Trim(), StringComparison.Ordinal))
-            return Results.Json(new { error = "Unauthorized" }, statusCode: 401);
-
-        if (!hasher.VerifyPassword(body.Password, cfg.WebUI.PasswordHash))
+        // Always run bcrypt verification to avoid timing leak (username enumeration)
+        var passwordValid = hasher.VerifyPassword(body.Password, cfg.WebUI.PasswordHash);
+        var usernameMatch = string.Equals(body.Username.Trim(), cfg.WebUI.Username?.Trim(), StringComparison.Ordinal);
+        if (!usernameMatch || !passwordValid)
             return Results.Json(new { error = "Unauthorized" }, statusCode: 401);
 
         var identity = new ClaimsIdentity(CookieAuthenticationDefaults.AuthenticationScheme);
