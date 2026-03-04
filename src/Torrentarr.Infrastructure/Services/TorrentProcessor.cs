@@ -19,6 +19,7 @@ public class TorrentProcessor : ITorrentProcessor
 {
     private const string IgnoredTag = "qBitrr-ignored";
     private const string AllowedSeedingTag = "qBitrr-allowed_seeding";
+    private const string AllowedStalledTag = "qBitrr-allowed_stalled";
     private const string FreeSpacePausedTag = "qBitrr-free_space_paused";
     private const string HnrActiveTag = "qBitrr-hnr_active";
 
@@ -426,7 +427,8 @@ public class TorrentProcessor : ITorrentProcessor
             _cache.MarkFileFiltered(torrent.Hash);
         }
 
-        // §1.4: ReSearchStalled — delete stalled downloads that exceed StalledDelay
+        // §1.4: ReSearchStalled — delete stalled downloads that exceed StalledDelay.
+        // While within the delay window, mark with qBitrr-allowed_stalled tag (qBitrr parity).
         if (arrCfg != null && arrCfg.Torrent.ReSearchStalled &&
             state == TorrentState.StalledDownloading &&
             torrent.LastActivity > 0)
@@ -438,12 +440,26 @@ public class TorrentProcessor : ITorrentProcessor
                 var stalledClient = _qbitManager.GetClient(torrent.QBitInstanceName);
                 if (stalledClient != null)
                 {
+                    // Remove the allowed_stalled tag before deleting
+                    await RemoveStalledTagAsync(torrent, stalledClient, cancellationToken);
                     _logger.LogWarning(
                         "Stalled torrent exceeded StalledDelay ({Delay} min, actual {Actual:F0} min) — deleting and re-queuing search: [{Name}] ({Hash})",
                         arrCfg.Torrent.StalledDelay, stalledMinutes, torrent.Name, torrent.Hash);
                     await stalledClient.DeleteTorrentsAsync(new List<string> { torrent.Hash }, deleteFiles: true, cancellationToken);
                     stats.Failed++;
                     return;
+                }
+            }
+            else
+            {
+                // Within stall delay window — mark as allowed_stalled (visible in qBit UI)
+                var stalledTagClient = _qbitManager.GetClient(torrent.QBitInstanceName);
+                if (stalledTagClient != null && !HasTag(torrent, AllowedStalledTag))
+                {
+                    await AddStalledTagAsync(torrent, stalledTagClient, cancellationToken);
+                    _logger.LogDebug(
+                        "Stalled torrent within StalledDelay ({Delay} min, actual {Actual:F0} min) — marked as allowed_stalled: [{Name}]",
+                        arrCfg.Torrent.StalledDelay, stalledMinutes, torrent.Name);
                 }
             }
         }
@@ -603,7 +619,8 @@ public class TorrentProcessor : ITorrentProcessor
             return tag switch
             {
                 FreeSpacePausedTag => dbEntry.FreeSpacePaused,
-                AllowedSeedingTag  => dbEntry.AllowedSeeding,
+                AllowedSeedingTag => dbEntry.AllowedSeeding,
+                AllowedStalledTag => dbEntry.AllowedStalled,
                 _ => false
             };
         }
@@ -630,6 +647,9 @@ public class TorrentProcessor : ITorrentProcessor
 
             if (!existingTags.Contains(AllowedSeedingTag, StringComparer.OrdinalIgnoreCase))
                 tagsToCreate.Add(AllowedSeedingTag);
+
+            if (!existingTags.Contains(AllowedStalledTag, StringComparer.OrdinalIgnoreCase))
+                tagsToCreate.Add(AllowedStalledTag);
 
             if (!existingTags.Contains(FreeSpacePausedTag, StringComparer.OrdinalIgnoreCase))
                 tagsToCreate.Add(FreeSpacePausedTag);
@@ -796,5 +816,47 @@ public class TorrentProcessor : ITorrentProcessor
         }
 
         return false;
+    }
+
+    /// <summary>
+    /// Add qBitrr-allowed_stalled tag (or set DB column in tagless mode).
+    /// </summary>
+    private async Task AddStalledTagAsync(TorrentInfo torrent, QBittorrentClient client, CancellationToken ct)
+    {
+        if (_config.Settings.Tagless)
+        {
+            var entry = await _dbContext.TorrentLibrary
+                .FirstOrDefaultAsync(t => t.Hash == torrent.Hash && t.QbitInstance == torrent.QBitInstanceName, ct);
+            if (entry != null)
+            {
+                entry.AllowedStalled = true;
+                await _dbContext.SaveChangesAsync(ct);
+            }
+        }
+        else
+        {
+            await client.AddTagsAsync(new List<string> { torrent.Hash }, new List<string> { AllowedStalledTag }, ct);
+        }
+    }
+
+    /// <summary>
+    /// Remove qBitrr-allowed_stalled tag (or clear DB column in tagless mode).
+    /// </summary>
+    private async Task RemoveStalledTagAsync(TorrentInfo torrent, QBittorrentClient client, CancellationToken ct)
+    {
+        if (_config.Settings.Tagless)
+        {
+            var entry = await _dbContext.TorrentLibrary
+                .FirstOrDefaultAsync(t => t.Hash == torrent.Hash && t.QbitInstance == torrent.QBitInstanceName, ct);
+            if (entry != null)
+            {
+                entry.AllowedStalled = false;
+                await _dbContext.SaveChangesAsync(ct);
+            }
+        }
+        else
+        {
+            await client.RemoveTagsAsync(new List<string> { torrent.Hash }, new List<string> { AllowedStalledTag }, ct);
+        }
     }
 }

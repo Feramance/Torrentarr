@@ -15,16 +15,15 @@ repos:
   - id: pretty-format-json
     args: [--autofix, --indent, '2']
     exclude: ^webui/
+  - id: check-added-large-files
+    args: [--maxkb=500]
+  - id: check-merge-conflict
+  - id: check-case-conflict
 - repo: https://github.com/macisamuele/language-formatters-pre-commit-hooks
   rev: v2.15.0
   hooks:
   - id: pretty-format-yaml
     args: [--autofix, --indent, '2']
-- repo: https://github.com/sirosen/texthooks
-  rev: 0.7.1
-  hooks:
-  - id: fix-smartquotes
-  - id: fix-ligatures
 - repo: https://github.com/pre-commit/mirrors-prettier
   rev: v3.1.0
   hooks:
@@ -33,6 +32,14 @@ repos:
     files: ^webui/
     additional_dependencies:
     - prettier@3.2.5
+- repo: local
+  hooks:
+  - id: dotnet-format
+    name: dotnet format
+    entry: dotnet format
+    language: system
+    types: [c#]
+    pass_filenames: false
 ci:
   autofix_commit_msg: |
     [pre-commit.ci] auto fixes from pre-commit.com hooks

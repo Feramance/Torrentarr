@@ -208,6 +208,29 @@ try
 
     var app = builder.Build();
 
+    // --version / -v: print version and exit (qBitrr parity)
+    if (cmdArgs.Count == 1 && (firstArg == "--version" || firstArg == "-v"))
+    {
+        Console.WriteLine($"Torrentarr {UpdateService.GetCurrentVersion()}");
+        return 0;
+    }
+
+    // --license / -l: print license and exit (qBitrr parity)
+    if (cmdArgs.Count == 1 && (firstArg == "--license" || firstArg == "-l"))
+    {
+        Console.WriteLine("Torrentarr is licensed under the MIT License.");
+        Console.WriteLine("Copyright (c) 2024-2026 Torrentarr contributors.");
+        Console.WriteLine("See https://github.com/Feramance/Torrentarr/blob/master/LICENSE for the full text.");
+        return 0;
+    }
+
+    // --source / -s: print source code URL and exit (qBitrr parity)
+    if (cmdArgs.Count == 1 && (firstArg == "--source" || firstArg == "-s"))
+    {
+        Console.WriteLine("https://github.com/Feramance/Torrentarr");
+        return 0;
+    }
+
     // --gen-config / -gc: write default config and exit (qBitrr parity). Run after Build() so WebApplicationFactory gets an IHost.
     if (cmdArgs.Count == 1 && (firstArg == "--gen-config" || firstArg == "-gc"))
     {
@@ -882,9 +905,14 @@ try
                 orderby t.TrackNumber
                 select new
                 {
-                    id = t.EntryId, trackNumber = t.TrackNumber, title = t.Title,
-                    hasFile = t.HasFile, duration = t.Duration, monitored = t.Monitored,
-                    trackFileId = t.TrackFileId, albumId = t.AlbumId,
+                    id = t.EntryId,
+                    trackNumber = t.TrackNumber,
+                    title = t.Title,
+                    hasFile = t.HasFile,
+                    duration = t.Duration,
+                    monitored = t.Monitored,
+                    trackFileId = t.TrackFileId,
+                    albumId = t.AlbumId,
                     albumTitle = album != null ? album.Title : null,
                     artistTitle = album != null ? album.ArtistTitle : null,
                     artistId = album != null ? (int?)album.ArtistId : null
@@ -911,9 +939,16 @@ try
             .Take(currentPageSize)
             .Select(a => new
             {
-                a.EntryId, a.Title, a.ArtistId, a.ArtistTitle,
-                a.ReleaseDate, a.Monitored, a.AlbumFileId,
-                a.Reason, a.QualityProfileId, a.QualityProfileName
+                a.EntryId,
+                a.Title,
+                a.ArtistId,
+                a.ArtistTitle,
+                a.ReleaseDate,
+                a.Monitored,
+                a.AlbumFileId,
+                a.Reason,
+                a.QualityProfileId,
+                a.QualityProfileName
             })
             .ToListAsync();
 
@@ -1724,9 +1759,14 @@ try
                 orderby t.TrackNumber
                 select new
                 {
-                    id = t.EntryId, trackNumber = t.TrackNumber, title = t.Title,
-                    hasFile = t.HasFile, duration = t.Duration, monitored = t.Monitored,
-                    trackFileId = t.TrackFileId, albumId = t.AlbumId,
+                    id = t.EntryId,
+                    trackNumber = t.TrackNumber,
+                    title = t.Title,
+                    hasFile = t.HasFile,
+                    duration = t.Duration,
+                    monitored = t.Monitored,
+                    trackFileId = t.TrackFileId,
+                    albumId = t.AlbumId,
                     albumTitle = album != null ? album.Title : null,
                     artistTitle = album != null ? album.ArtistTitle : null,
                     artistId = album != null ? (int?)album.ArtistId : null
@@ -1753,9 +1793,16 @@ try
             .Take(currentPageSize)
             .Select(a => new
             {
-                a.EntryId, a.Title, a.ArtistId, a.ArtistTitle,
-                a.ReleaseDate, a.Monitored, a.AlbumFileId,
-                a.Reason, a.QualityProfileId, a.QualityProfileName
+                a.EntryId,
+                a.Title,
+                a.ArtistId,
+                a.ArtistTitle,
+                a.ReleaseDate,
+                a.Monitored,
+                a.AlbumFileId,
+                a.Reason,
+                a.QualityProfileId,
+                a.QualityProfileName
             })
             .ToListAsync();
 

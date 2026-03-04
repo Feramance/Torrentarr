@@ -139,13 +139,13 @@ public class WorkerLogEventSink : ILogEventSink
 
     private static string GetLevelAlias(LogEventLevel level) => level switch
     {
-        LogEventLevel.Verbose     => "TRACE   ",
-        LogEventLevel.Debug       => "DEBUG   ",
+        LogEventLevel.Verbose => "TRACE   ",
+        LogEventLevel.Debug => "DEBUG   ",
         LogEventLevel.Information => "INFO    ",
-        LogEventLevel.Warning     => "WARNING ",
-        LogEventLevel.Error       => "ERROR   ",
-        LogEventLevel.Fatal       => "FATAL   ",
-        _                         => "INFO    "
+        LogEventLevel.Warning => "WARNING ",
+        LogEventLevel.Error => "ERROR   ",
+        LogEventLevel.Fatal => "FATAL   ",
+        _ => "INFO    "
     };
 
     private StreamWriter GetOrCreateWriter(string path)

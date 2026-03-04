@@ -160,8 +160,8 @@ public class FreeSpaceServiceTests
     }
 
     [Theory]
-    [InlineData("1G",   1L  * 1024 * 1024 * 1024)]
-    [InlineData("10G",  10L * 1024 * 1024 * 1024)]
+    [InlineData("1G", 1L * 1024 * 1024 * 1024)]
+    [InlineData("10G", 10L * 1024 * 1024 * 1024)]
     [InlineData("100G", 100L * 1024 * 1024 * 1024)]
     public void ParseFreeSpaceString_GigabyteString_ReturnsCorrectBytes(string input, long expected)
     {
@@ -169,7 +169,7 @@ public class FreeSpaceServiceTests
     }
 
     [Theory]
-    [InlineData("1M",   1L   * 1024 * 1024)]
+    [InlineData("1M", 1L * 1024 * 1024)]
     [InlineData("500M", 500L * 1024 * 1024)]
     public void ParseFreeSpaceString_MegabyteString_ReturnsCorrectBytes(string input, long expected)
     {
@@ -177,7 +177,7 @@ public class FreeSpaceServiceTests
     }
 
     [Theory]
-    [InlineData("1K",    1L    * 1024)]
+    [InlineData("1K", 1L * 1024)]
     [InlineData("1024K", 1024L * 1024)]
     public void ParseFreeSpaceString_KilobyteString_ReturnsCorrectBytes(string input, long expected)
     {

@@ -56,6 +56,24 @@ public class ConfigurationLoader
         var tomlContent = File.ReadAllText(_configPath);
         var tomlTable = Toml.ToModel(tomlContent);
 
+        // Apply config migrations on the raw TOML table before parsing (qBitrr parity)
+        var migrated = ApplyConfigMigrations(tomlTable);
+        if (migrated)
+        {
+            try
+            {
+                // Write back the migrated TOML and create a backup
+                var backupPath = _configPath + ".bak";
+                if (File.Exists(_configPath))
+                    File.Copy(_configPath, backupPath, overwrite: true);
+                File.WriteAllText(_configPath, Toml.FromModel(tomlTable));
+            }
+            catch
+            {
+                // Migration save failed — continue with in-memory migrated table
+            }
+        }
+
         var config = new TorrentarrConfig();
 
         // Parse Settings section
@@ -86,7 +104,737 @@ public class ConfigurationLoader
         // Parse Arr instances (Radarr-*, Sonarr-*, Lidarr-*)
         config.ArrInstances = ParseArrInstances(tomlTable);
 
+        // Apply TORRENTARR_* environment variable overrides (qBitrr parity: QBITRR_* env vars)
+        ApplyEnvironmentOverrides(config);
+
         return config;
+    }
+
+    /// <summary>
+    /// Apply TORRENTARR_* environment variable overrides after TOML parsing.
+    /// Matches qBitrr's QBITRR_SETTINGS_*, QBITRR_QBIT_*, QBITRR_OVERRIDES_* env vars.
+    /// Only non-null env vars override the TOML-parsed values.
+    /// </summary>
+    private static void ApplyEnvironmentOverrides(TorrentarrConfig config)
+    {
+        // TORRENTARR_SETTINGS_* → config.Settings
+        var s = config.Settings;
+        ApplyEnvString("TORRENTARR_SETTINGS_CONSOLE_LEVEL", v => s.ConsoleLevel = v);
+        ApplyEnvBool("TORRENTARR_SETTINGS_LOGGING", v => s.Logging = v);
+        ApplyEnvString("TORRENTARR_SETTINGS_COMPLETED_DOWNLOAD_FOLDER", v => s.CompletedDownloadFolder = v);
+        ApplyEnvString("TORRENTARR_SETTINGS_FREE_SPACE", v => s.FreeSpace = v);
+        ApplyEnvString("TORRENTARR_SETTINGS_FREE_SPACE_FOLDER", v => s.FreeSpaceFolder = v);
+        ApplyEnvInt("TORRENTARR_SETTINGS_NO_INTERNET_SLEEP_TIMER", v => s.NoInternetSleepTimer = v);
+        ApplyEnvInt("TORRENTARR_SETTINGS_LOOP_SLEEP_TIMER", v => s.LoopSleepTimer = v);
+        ApplyEnvInt("TORRENTARR_SETTINGS_SEARCH_LOOP_DELAY", v => s.SearchLoopDelay = v);
+        ApplyEnvBool("TORRENTARR_SETTINGS_AUTO_PAUSE_RESUME", v => s.AutoPauseResume = v);
+        ApplyEnvString("TORRENTARR_SETTINGS_FAILED_CATEGORY", v => s.FailedCategory = v);
+        ApplyEnvString("TORRENTARR_SETTINGS_RECHECK_CATEGORY", v => s.RecheckCategory = v);
+        ApplyEnvBool("TORRENTARR_SETTINGS_TAGLESS", v => s.Tagless = v);
+        ApplyEnvInt("TORRENTARR_SETTINGS_IGNORE_TORRENTS_YOUNGER_THAN", v => s.IgnoreTorrentsYoungerThan = v);
+        ApplyEnvBool("TORRENTARR_SETTINGS_FFPROBE_AUTO_UPDATE", v => s.FFprobeAutoUpdate = v);
+        ApplyEnvBool("TORRENTARR_SETTINGS_AUTO_UPDATE_ENABLED", v => s.AutoUpdateEnabled = v);
+        ApplyEnvString("TORRENTARR_SETTINGS_AUTO_UPDATE_CRON", v => s.AutoUpdateCron = v);
+        ApplyEnvList("TORRENTARR_SETTINGS_PING_URLS", v => s.PingURLS = v);
+
+        // TORRENTARR_QBIT_* → primary qBit instance (config.QBitInstances["qBit"])
+        if (config.QBitInstances.TryGetValue("qBit", out var qbit))
+        {
+            ApplyEnvBool("TORRENTARR_QBIT_DISABLED", v => qbit.Disabled = v);
+            ApplyEnvString("TORRENTARR_QBIT_HOST", v => qbit.Host = v);
+            ApplyEnvInt("TORRENTARR_QBIT_PORT", v => qbit.Port = v);
+            ApplyEnvString("TORRENTARR_QBIT_USERNAME", v => qbit.UserName = v);
+            ApplyEnvString("TORRENTARR_QBIT_PASSWORD", v => qbit.Password = v);
+        }
+    }
+
+    private static void ApplyEnvString(string envName, Action<string> setter)
+    {
+        var value = Environment.GetEnvironmentVariable(envName);
+        if (!string.IsNullOrEmpty(value))
+            setter(value);
+    }
+
+    private static void ApplyEnvBool(string envName, Action<bool> setter)
+    {
+        var value = Environment.GetEnvironmentVariable(envName);
+        if (string.IsNullOrEmpty(value)) return;
+        var lower = value.Trim().ToLowerInvariant();
+        if (lower is "true" or "1" or "yes" or "on" or "y" or "t")
+            setter(true);
+        else if (lower is "false" or "0" or "no" or "off" or "n" or "f")
+            setter(false);
+    }
+
+    private static void ApplyEnvInt(string envName, Action<int> setter)
+    {
+        var value = Environment.GetEnvironmentVariable(envName);
+        if (!string.IsNullOrEmpty(value) && int.TryParse(value, out var intVal))
+            setter(intVal);
+    }
+
+    private static void ApplyEnvList(string envName, Action<List<string>> setter)
+    {
+        var value = Environment.GetEnvironmentVariable(envName);
+        if (!string.IsNullOrEmpty(value))
+            setter(value.Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries).ToList());
+    }
+
+    /// <summary>
+    /// Apply config migrations on the raw TOML table before parsing into C# models.
+    /// Matches qBitrr's apply_config_migrations() (WebUI migration, quality profile list→dict,
+    /// HnR settings, category seeding defaults). Returns true if any changes were made.
+    /// </summary>
+    private static bool ApplyConfigMigrations(TomlTable root)
+    {
+        var changed = false;
+
+        // Determine current config version
+        var currentVersion = new Version(0, 0, 1);
+        if (root.TryGetValue("Settings", out var settingsObj) && settingsObj is TomlTable settings)
+        {
+            if (settings.TryGetValue("ConfigVersion", out var verObj))
+            {
+                var verStr = verObj?.ToString() ?? "0.0.1";
+                if (!Version.TryParse(verStr, out currentVersion!))
+                    currentVersion = new Version(0, 0, 1);
+            }
+        }
+
+        var expected = Version.Parse(ExpectedConfigVersion);
+        if (currentVersion >= expected)
+            return false; // Already current
+
+        // Migration 1: Move WebUI Host/Port/Token from [Settings] to [WebUI]
+        if (MigrateWebUIConfig(root))
+            changed = true;
+
+        // Migration 2: Convert MainQualityProfile/TempQualityProfile lists to QualityProfileMappings dict
+        if (MigrateQualityProfileMappings(root))
+            changed = true;
+
+        // Migration 3: Add process restart settings defaults (< 0.0.3)
+        if (currentVersion < new Version(0, 0, 3) && MigrateProcessRestartSettings(root))
+            changed = true;
+
+        // Migration 4: Add qBit category settings defaults (< 0.0.4)
+        if (currentVersion < new Version(0, 0, 4) && MigrateQBitCategorySettings(root))
+            changed = true;
+
+        // Migration 5: Move HnR from SeedingMode to trackers, promote trackers to qBit level (< 5.8.8)
+        if (currentVersion < new Version(5, 8, 8) && MigrateHnrSettings(root))
+            changed = true;
+
+        // Migration 6: Consolidate HitAndRunMode bool + HitAndRunClearMode → single string key
+        if (MigrateHnrMode(root))
+            changed = true;
+
+        // Validate and fill missing config values with defaults
+        if (ValidateAndFillConfig(root))
+            changed = true;
+
+        // Update ConfigVersion to current
+        if (changed || currentVersion < expected)
+        {
+            if (!root.ContainsKey("Settings"))
+                root["Settings"] = new TomlTable();
+            if (root["Settings"] is TomlTable s)
+            {
+                s["ConfigVersion"] = ExpectedConfigVersion;
+                changed = true;
+            }
+        }
+
+        return changed;
+    }
+
+    /// <summary>
+    /// Migration: Move Host/Port/Token from [Settings] to [WebUI] if present in wrong section.
+    /// </summary>
+    private static bool MigrateWebUIConfig(TomlTable root)
+    {
+        if (!root.TryGetValue("Settings", out var sObj) || sObj is not TomlTable settings)
+            return false;
+
+        if (!root.ContainsKey("WebUI"))
+            root["WebUI"] = new TomlTable();
+        if (root["WebUI"] is not TomlTable webui)
+            return false;
+
+        var migrated = false;
+        foreach (var key in new[] { "Host", "Port", "Token" })
+        {
+            if (settings.ContainsKey(key) && !webui.ContainsKey(key))
+            {
+                webui[key] = settings[key];
+                settings.Remove(key);
+                migrated = true;
+            }
+        }
+        return migrated;
+    }
+
+    /// <summary>
+    /// Migration: Convert MainQualityProfile + TempQualityProfile lists to QualityProfileMappings dict.
+    /// </summary>
+    private static bool MigrateQualityProfileMappings(TomlTable root)
+    {
+        var changed = false;
+        foreach (var kvp in root)
+        {
+            if (!(kvp.Key.StartsWith("Radarr", StringComparison.OrdinalIgnoreCase) ||
+                  kvp.Key.StartsWith("Sonarr", StringComparison.OrdinalIgnoreCase) ||
+                  kvp.Key.StartsWith("Lidarr", StringComparison.OrdinalIgnoreCase)))
+                continue;
+            if (kvp.Value is not TomlTable arrTable)
+                continue;
+            if (!arrTable.TryGetValue("EntrySearch", out var esObj) || esObj is not TomlTable entrySearch)
+                continue;
+
+            if (entrySearch.TryGetValue("MainQualityProfile", out var mainObj) &&
+                entrySearch.TryGetValue("TempQualityProfile", out var tempObj) &&
+                mainObj is TomlArray mainArr && tempObj is TomlArray tempArr &&
+                mainArr.Count == tempArr.Count && mainArr.Count > 0)
+            {
+                var mappings = new TomlTable();
+                for (var i = 0; i < mainArr.Count; i++)
+                {
+                    var mainName = mainArr[i]?.ToString()?.Trim() ?? "";
+                    var tempName = tempArr[i]?.ToString()?.Trim() ?? "";
+                    if (!string.IsNullOrEmpty(mainName) && !string.IsNullOrEmpty(tempName))
+                        mappings[mainName] = tempName;
+                }
+                if (mappings.Count > 0)
+                {
+                    entrySearch["QualityProfileMappings"] = mappings;
+                    entrySearch.Remove("MainQualityProfile");
+                    entrySearch.Remove("TempQualityProfile");
+                    changed = true;
+                }
+            }
+        }
+        return changed;
+    }
+
+    /// <summary>
+    /// Migration: Convert bool HitAndRunMode values to string "and"/"or"/"disabled".
+    /// qBitrr pre-5.9.2 used booleans; 5.9.2+ uses string.
+    /// </summary>
+    private static bool MigrateHnrMode(TomlTable root)
+    {
+        var changed = false;
+
+        // Migrate in all [qBit*] CategorySeeding and Trackers sections
+        foreach (var kvp in root)
+        {
+            if (!(kvp.Key.Equals("qBit", StringComparison.OrdinalIgnoreCase) ||
+                  kvp.Key.StartsWith("qBit-", StringComparison.OrdinalIgnoreCase)))
+                continue;
+            if (kvp.Value is not TomlTable qbitTable) continue;
+            if (qbitTable.TryGetValue("CategorySeeding", out var csObj) && csObj is TomlTable catSeeding)
+                if (MigrateHnrModeField(catSeeding)) changed = true;
+            if (qbitTable.TryGetValue("Trackers", out var qtrObj))
+                foreach (var trackerTable in GetTrackerTables(qtrObj))
+                    if (MigrateHnrModeField(trackerTable))
+                        changed = true;
+        }
+
+        // Migrate in all Arr Tracker sections
+        foreach (var kvp in root)
+        {
+            if (!(kvp.Key.StartsWith("Radarr", StringComparison.OrdinalIgnoreCase) ||
+                  kvp.Key.StartsWith("Sonarr", StringComparison.OrdinalIgnoreCase) ||
+                  kvp.Key.StartsWith("Lidarr", StringComparison.OrdinalIgnoreCase)))
+                continue;
+            if (kvp.Value is not TomlTable arrTable) continue;
+            if (!arrTable.TryGetValue("Torrent", out var tObj) || tObj is not TomlTable torrentTable) continue;
+            if (!torrentTable.TryGetValue("Trackers", out var trObj)) continue;
+            foreach (var trackerTable in GetTrackerTables(trObj))
+            {
+                if (MigrateHnrModeField(trackerTable))
+                    changed = true;
+            }
+        }
+
+        return changed;
+    }
+
+    /// <summary>
+    /// Get tracker tables from a TOML value that may be either a TomlArray or TomlTableArray.
+    /// TOML [[...]] syntax creates TomlTableArray; programmatic creation uses TomlArray.
+    /// </summary>
+    private static IEnumerable<TomlTable> GetTrackerTables(object? trackersObj)
+    {
+        if (trackersObj is TomlTableArray tableArray)
+        {
+            foreach (var t in tableArray)
+                yield return t;
+        }
+        else if (trackersObj is TomlArray array)
+        {
+            foreach (var item in array)
+                if (item is TomlTable t)
+                    yield return t;
+        }
+    }
+
+    /// <summary>
+    /// Resolve HitAndRunMode from a table, handling bool, string, and HitAndRunClearMode consolidation.
+    /// </summary>
+    private static string ResolveHnrMode(TomlTable table)
+    {
+        var validModes = new[] { "and", "or", "disabled" };
+
+        // HitAndRunClearMode takes priority (newer key that supersedes bool HitAndRunMode)
+        if (table.TryGetValue("HitAndRunClearMode", out var clearVal) && clearVal is string clearStr)
+        {
+            var normalized = clearStr.Trim().ToLowerInvariant();
+            if (validModes.Contains(normalized))
+                return normalized;
+        }
+
+        // Then check existing HitAndRunMode
+        if (table.TryGetValue("HitAndRunMode", out var modeVal))
+        {
+            if (modeVal is string modeStr)
+            {
+                var normalized = modeStr.Trim().ToLowerInvariant();
+                if (validModes.Contains(normalized))
+                    return normalized;
+            }
+            if (modeVal is bool boolVal)
+                return boolVal ? "and" : "disabled";
+        }
+
+        return "disabled";
+    }
+
+    private static bool MigrateHnrModeField(TomlTable table)
+    {
+        var hadClear = table.ContainsKey("HitAndRunClearMode");
+        var hadBool = table.TryGetValue("HitAndRunMode", out var val) && val is bool;
+
+        if (!hadClear && !hadBool) return false;
+
+        var resolved = ResolveHnrMode(table);
+        table["HitAndRunMode"] = resolved;
+        if (hadClear)
+            table.Remove("HitAndRunClearMode");
+        return true;
+    }
+
+    /// <summary>
+    /// Migration 3: Add process restart settings defaults to [Settings] if missing (qBitrr &lt; 0.0.3).
+    /// </summary>
+    private static bool MigrateProcessRestartSettings(TomlTable root)
+    {
+        if (!root.ContainsKey("Settings"))
+            root["Settings"] = new TomlTable();
+        if (root["Settings"] is not TomlTable settings)
+            return false;
+
+        var changed = false;
+        if (!settings.ContainsKey("AutoRestartProcesses")) { settings["AutoRestartProcesses"] = true; changed = true; }
+        if (!settings.ContainsKey("MaxProcessRestarts")) { settings["MaxProcessRestarts"] = (long)5; changed = true; }
+        if (!settings.ContainsKey("ProcessRestartWindow")) { settings["ProcessRestartWindow"] = (long)300; changed = true; }
+        if (!settings.ContainsKey("ProcessRestartDelay")) { settings["ProcessRestartDelay"] = (long)5; changed = true; }
+        return changed;
+    }
+
+    /// <summary>
+    /// Migration 4: Add ManagedCategories and CategorySeeding defaults to all qBit instances (qBitrr &lt; 0.0.4).
+    /// </summary>
+    private static bool MigrateQBitCategorySettings(TomlTable root)
+    {
+        var changed = false;
+        foreach (var kvp in root)
+        {
+            if (!(kvp.Key.Equals("qBit", StringComparison.OrdinalIgnoreCase) ||
+                  kvp.Key.StartsWith("qBit-", StringComparison.OrdinalIgnoreCase)))
+                continue;
+            if (kvp.Value is not TomlTable qbitTable) continue;
+
+            if (!qbitTable.ContainsKey("ManagedCategories"))
+            {
+                qbitTable["ManagedCategories"] = new TomlArray();
+                changed = true;
+            }
+
+            if (!qbitTable.ContainsKey("CategorySeeding"))
+            {
+                var seeding = new TomlTable
+                {
+                    ["DownloadRateLimitPerTorrent"] = (long)(-1),
+                    ["UploadRateLimitPerTorrent"] = (long)(-1),
+                    ["MaxUploadRatio"] = -1.0,
+                    ["MaxSeedingTime"] = (long)(-1),
+                    ["RemoveTorrent"] = (long)(-1),
+                    ["HitAndRunMode"] = "disabled",
+                    ["MinSeedRatio"] = 1.0,
+                    ["MinSeedingTimeDays"] = (long)0,
+                    ["HitAndRunMinimumDownloadPercent"] = (long)10,
+                    ["HitAndRunPartialSeedRatio"] = 1.0,
+                    ["TrackerUpdateBuffer"] = (long)0
+                };
+                qbitTable["CategorySeeding"] = seeding;
+                changed = true;
+            }
+        }
+        return changed;
+    }
+
+    /// <summary>
+    /// Migration 5: Move HnR fields from Arr SeedingMode to trackers, promote Arr trackers to qBit level (qBitrr &lt; 5.8.8).
+    /// </summary>
+    private static bool MigrateHnrSettings(TomlTable root)
+    {
+        var changed = false;
+        var hnrFields = new[] { "HitAndRunMode", "MinSeedRatio", "MinSeedingTimeDays",
+            "HitAndRunMinimumDownloadPercent", "HitAndRunPartialSeedRatio", "TrackerUpdateBuffer" };
+        var hnrDefaults = new Dictionary<string, object>
+        {
+            ["HitAndRunMode"] = "disabled",
+            ["MinSeedRatio"] = 1.0,
+            ["MinSeedingTimeDays"] = (long)0,
+            ["HitAndRunMinimumDownloadPercent"] = (long)10,
+            ["HitAndRunPartialSeedRatio"] = 1.0,
+            ["TrackerUpdateBuffer"] = (long)0
+        };
+
+        // Step 1: Remove HnR fields from Arr SeedingMode sections + add to Arr tracker entries
+        foreach (var kvp in root)
+        {
+            if (!(kvp.Key.StartsWith("Radarr", StringComparison.OrdinalIgnoreCase) ||
+                  kvp.Key.StartsWith("Sonarr", StringComparison.OrdinalIgnoreCase) ||
+                  kvp.Key.StartsWith("Lidarr", StringComparison.OrdinalIgnoreCase)))
+                continue;
+            if (kvp.Value is not TomlTable arrTable) continue;
+            if (!arrTable.TryGetValue("Torrent", out var tObj) || tObj is not TomlTable torrentTable) continue;
+
+            // Remove HnR from SeedingMode
+            if (torrentTable.TryGetValue("SeedingMode", out var smObj) && smObj is TomlTable seedingMode)
+            {
+                foreach (var field in hnrFields)
+                {
+                    if (seedingMode.ContainsKey(field))
+                    {
+                        seedingMode.Remove(field);
+                        changed = true;
+                    }
+                }
+            }
+
+            // Add HnR defaults to each tracker entry
+            if (torrentTable.TryGetValue("Trackers", out var trObj))
+            {
+                foreach (var trackerTable in GetTrackerTables(trObj))
+                {
+                    foreach (var (field, defaultVal) in hnrDefaults)
+                    {
+                        if (!trackerTable.ContainsKey(field))
+                        {
+                            trackerTable[field] = defaultVal;
+                            changed = true;
+                        }
+                    }
+                }
+            }
+        }
+
+        // Step 2: Add HnR defaults to qBit CategorySeeding sections
+        foreach (var kvp in root)
+        {
+            if (!(kvp.Key.Equals("qBit", StringComparison.OrdinalIgnoreCase) ||
+                  kvp.Key.StartsWith("qBit-", StringComparison.OrdinalIgnoreCase)))
+                continue;
+            if (kvp.Value is not TomlTable qbitTable) continue;
+            if (!qbitTable.TryGetValue("CategorySeeding", out var csObj) || csObj is not TomlTable catSeeding) continue;
+
+            foreach (var (field, defaultVal) in hnrDefaults)
+            {
+                if (!catSeeding.ContainsKey(field))
+                {
+                    catSeeding[field] = defaultVal;
+                    changed = true;
+                }
+            }
+        }
+
+        // Step 3: Promote Arr-level trackers to qBit.Trackers (deduplicate by URI)
+        foreach (var kvp in root)
+        {
+            if (!(kvp.Key.Equals("qBit", StringComparison.OrdinalIgnoreCase) ||
+                  kvp.Key.StartsWith("qBit-", StringComparison.OrdinalIgnoreCase)))
+                continue;
+            if (kvp.Value is not TomlTable qbitTable) continue;
+            if (qbitTable.ContainsKey("Trackers")) continue; // Already has trackers
+
+            // Collect trackers from all Arr instances, deduplicate by URI
+            var promoted = new Dictionary<string, TomlTable>(StringComparer.OrdinalIgnoreCase);
+            foreach (var arrKvp in root)
+            {
+                if (!(arrKvp.Key.StartsWith("Radarr", StringComparison.OrdinalIgnoreCase) ||
+                      arrKvp.Key.StartsWith("Sonarr", StringComparison.OrdinalIgnoreCase) ||
+                      arrKvp.Key.StartsWith("Lidarr", StringComparison.OrdinalIgnoreCase)))
+                    continue;
+                if (arrKvp.Value is not TomlTable arrTable) continue;
+                if (!arrTable.TryGetValue("Torrent", out var tObj) || tObj is not TomlTable torrentTable) continue;
+                if (!torrentTable.TryGetValue("Trackers", out var trObj)) continue;
+
+                foreach (var trackerTable in GetTrackerTables(trObj))
+                {
+                    var uri = trackerTable.TryGetValue("URI", out var uriObj) ? uriObj?.ToString()?.Trim().TrimEnd('/') ?? "" : "";
+                    if (!string.IsNullOrEmpty(uri) && !promoted.ContainsKey(uri))
+                        promoted[uri] = trackerTable;
+                }
+            }
+
+            if (promoted.Count > 0)
+            {
+                var trackerArray = new TomlArray();
+                foreach (var t in promoted.Values)
+                    trackerArray.Add(t);
+                qbitTable["Trackers"] = trackerArray;
+                changed = true;
+            }
+            else
+            {
+                qbitTable["Trackers"] = new TomlArray();
+                changed = true;
+            }
+        }
+
+        return changed;
+    }
+
+    /// <summary>
+    /// Validate configuration and fill missing values with defaults. Normalize Theme/ViewDensity casing.
+    /// Matches qBitrr's _validate_and_fill_config().
+    /// </summary>
+    private static bool ValidateAndFillConfig(TomlTable root)
+    {
+        var changed = false;
+
+        // --- Settings defaults ---
+        if (!root.ContainsKey("Settings"))
+            root["Settings"] = new TomlTable();
+        if (root["Settings"] is TomlTable settings)
+        {
+            var settingsDefaults = new (string Key, object Default)[]
+            {
+                ("ConsoleLevel", "INFO"),
+                ("Logging", true),
+                ("CompletedDownloadFolder", ""),
+                ("FreeSpace", "-1"),
+                ("FreeSpaceFolder", ""),
+                ("AutoPauseResume", true),
+                ("NoInternetSleepTimer", (long)15),
+                ("LoopSleepTimer", (long)5),
+                ("SearchLoopDelay", (long)(-1)),
+                ("FailedCategory", "failed"),
+                ("RecheckCategory", "recheck"),
+                ("Tagless", false),
+                ("IgnoreTorrentsYoungerThan", (long)180),
+                ("FFprobeAutoUpdate", true),
+                ("AutoUpdateEnabled", false),
+                ("AutoUpdateCron", "0 3 * * 0"),
+                ("AutoRestartProcesses", true),
+                ("MaxProcessRestarts", (long)5),
+                ("ProcessRestartWindow", (long)300),
+                ("ProcessRestartDelay", (long)5),
+            };
+            foreach (var (key, defaultVal) in settingsDefaults)
+            {
+                if (!settings.ContainsKey(key))
+                {
+                    settings[key] = defaultVal;
+                    changed = true;
+                }
+            }
+
+            // PingURLS default (array)
+            if (!settings.ContainsKey("PingURLS"))
+            {
+                var pingArr = new TomlArray { "one.one.one.one", "dns.google.com" };
+                settings["PingURLS"] = pingArr;
+                changed = true;
+            }
+        }
+
+        // --- WebUI defaults ---
+        if (!root.ContainsKey("WebUI"))
+            root["WebUI"] = new TomlTable();
+        if (root["WebUI"] is TomlTable webui)
+        {
+            var webuiDefaults = new (string Key, object Default)[]
+            {
+                ("Host", "0.0.0.0"),
+                ("Port", (long)6969),
+                ("Token", ""),
+                ("LiveArr", true),
+                ("GroupSonarr", true),
+                ("GroupLidarr", true),
+                ("Theme", "Dark"),
+                ("ViewDensity", "Comfortable"),
+            };
+            foreach (var (key, defaultVal) in webuiDefaults)
+            {
+                if (!webui.ContainsKey(key))
+                {
+                    webui[key] = defaultVal;
+                    changed = true;
+                }
+            }
+
+            // Normalize Theme casing
+            if (webui.TryGetValue("Theme", out var themeVal))
+            {
+                var themeStr = themeVal?.ToString()?.Trim().ToLowerInvariant() ?? "dark";
+                var normalized = themeStr == "light" ? "Light" : "Dark";
+                if (themeVal?.ToString() != normalized)
+                {
+                    webui["Theme"] = normalized;
+                    changed = true;
+                }
+            }
+
+            // Normalize ViewDensity casing
+            if (webui.TryGetValue("ViewDensity", out var densityVal))
+            {
+                var densityStr = densityVal?.ToString()?.Trim().ToLowerInvariant() ?? "comfortable";
+                var normalized = densityStr == "compact" ? "Compact" : "Comfortable";
+                if (densityVal?.ToString() != normalized)
+                {
+                    webui["ViewDensity"] = normalized;
+                    changed = true;
+                }
+            }
+        }
+
+        // --- qBit defaults ---
+        foreach (var kvp in root)
+        {
+            if (!(kvp.Key.Equals("qBit", StringComparison.OrdinalIgnoreCase) ||
+                  kvp.Key.StartsWith("qBit-", StringComparison.OrdinalIgnoreCase)))
+                continue;
+            if (kvp.Value is not TomlTable qbitTable) continue;
+
+            var qbitDefaults = new (string Key, object Default)[]
+            {
+                ("Disabled", false),
+                ("Host", "CHANGE_ME"),
+                ("Port", (long)8080),
+                ("UserName", "CHANGE_ME"),
+                ("Password", "CHANGE_ME"),
+            };
+            foreach (var (key, defaultVal) in qbitDefaults)
+            {
+                if (!qbitTable.ContainsKey(key))
+                {
+                    qbitTable[key] = defaultVal;
+                    changed = true;
+                }
+            }
+        }
+
+        // --- Arr EntrySearch defaults ---
+        foreach (var kvp in root)
+        {
+            if (!(kvp.Key.StartsWith("Radarr", StringComparison.OrdinalIgnoreCase) ||
+                  kvp.Key.StartsWith("Sonarr", StringComparison.OrdinalIgnoreCase) ||
+                  kvp.Key.StartsWith("Lidarr", StringComparison.OrdinalIgnoreCase)))
+                continue;
+            if (kvp.Value is not TomlTable arrTable) continue;
+            if (!arrTable.TryGetValue("EntrySearch", out var esObj) || esObj is not TomlTable entrySearch) continue;
+
+            var esDefaults = new (string Key, object Default)[]
+            {
+                ("ForceResetTempProfiles", false),
+                ("TempProfileResetTimeoutMinutes", (long)0),
+                ("ProfileSwitchRetryAttempts", (long)3),
+            };
+            foreach (var (key, defaultVal) in esDefaults)
+            {
+                if (!entrySearch.ContainsKey(key))
+                {
+                    entrySearch[key] = defaultVal;
+                    changed = true;
+                }
+            }
+
+            // QualityProfileMappings as inline table
+            if (!entrySearch.ContainsKey("QualityProfileMappings"))
+            {
+                entrySearch["QualityProfileMappings"] = new TomlTable();
+                changed = true;
+            }
+        }
+
+        // --- HnR defaults on CategorySeeding and Tracker sections ---
+        var hnrDefaults = new Dictionary<string, object>
+        {
+            ["HitAndRunMode"] = "disabled",
+            ["MinSeedRatio"] = 1.0,
+            ["MinSeedingTimeDays"] = (long)0,
+            ["HitAndRunMinimumDownloadPercent"] = (long)10,
+            ["HitAndRunPartialSeedRatio"] = 1.0,
+            ["TrackerUpdateBuffer"] = (long)0
+        };
+
+        foreach (var kvp in root)
+        {
+            if (kvp.Value is not TomlTable section) continue;
+
+            // qBit.CategorySeeding
+            if ((kvp.Key.Equals("qBit", StringComparison.OrdinalIgnoreCase) ||
+                 kvp.Key.StartsWith("qBit-", StringComparison.OrdinalIgnoreCase)) &&
+                section.TryGetValue("CategorySeeding", out var csObj) && csObj is TomlTable catSeeding)
+            {
+                foreach (var (field, defaultVal) in hnrDefaults)
+                {
+                    if (!catSeeding.ContainsKey(field))
+                    {
+                        catSeeding[field] = defaultVal;
+                        changed = true;
+                    }
+                }
+            }
+
+            // qBit.Trackers
+            if (section.TryGetValue("Trackers", out var trObj))
+            {
+                foreach (var trackerTable in GetTrackerTables(trObj))
+                {
+                    foreach (var (field, defaultVal) in hnrDefaults)
+                    {
+                        if (!trackerTable.ContainsKey(field))
+                        {
+                            trackerTable[field] = defaultVal;
+                            changed = true;
+                        }
+                    }
+                }
+            }
+
+            // Arr.Torrent.Trackers
+            if (section.TryGetValue("Torrent", out var tObj) && tObj is TomlTable torrentTable &&
+                torrentTable.TryGetValue("Trackers", out var atrObj))
+            {
+                foreach (var trackerTable in GetTrackerTables(atrObj))
+                {
+                    foreach (var (field, defaultVal) in hnrDefaults)
+                    {
+                        if (!trackerTable.ContainsKey(field))
+                        {
+                            trackerTable[field] = defaultVal;
+                            changed = true;
+                        }
+                    }
+                }
+            }
+        }
+
+        return changed;
     }
 
     private SettingsConfig ParseSettings(TomlTable table)
@@ -193,8 +941,8 @@ public class ConfigurationLoader
         if (table.TryGetValue("CategorySeeding", out var seedingObj) && seedingObj is TomlTable seedingTable)
             qbit.CategorySeeding = ParseCategorySeeding(seedingTable);
 
-        if (table.TryGetValue("Trackers", out var trackersObj) && trackersObj is TomlArray trackersArray)
-            qbit.Trackers = trackersArray.Select(t => ParseTrackerConfig(t as TomlTable)).Where(t => t != null).ToList()!;
+        if (table.TryGetValue("Trackers", out var trackersObj))
+            qbit.Trackers = GetTrackerTables(trackersObj).Select(t => ParseTrackerConfig(t)).Where(t => t != null).ToList()!;
 
         return qbit;
     }
@@ -473,9 +1221,9 @@ public class ConfigurationLoader
         if (table.TryGetValue("RemoveTrackerWithMessage", out var removeMsgs) && removeMsgs is TomlArray removeMsgArray)
             torrent.RemoveTrackerWithMessage = removeMsgArray.Select(x => x?.ToString() ?? "").ToList();
 
-        // Parse [[Arr.Torrent.Trackers]] array-of-tables
-        if (table.TryGetValue("Trackers", out var trackersObj) && trackersObj is TomlArray trackersArray)
-            torrent.Trackers = trackersArray.Select(t => ParseTrackerConfig(t as TomlTable)).Where(t => t != null).ToList()!;
+        // Parse [[Arr.Torrent.Trackers]] array-of-tables (TomlTableArray from [[...]] or TomlArray from programmatic)
+        if (table.TryGetValue("Trackers", out var trackersObj))
+            torrent.Trackers = GetTrackerTables(trackersObj).Select(t => ParseTrackerConfig(t)).Where(t => t != null).ToList()!;
 
         // Parse SeedingMode section
         if (table.TryGetValue("SeedingMode", out var seedingModeObj) && seedingModeObj is TomlTable seedingModeTable)
