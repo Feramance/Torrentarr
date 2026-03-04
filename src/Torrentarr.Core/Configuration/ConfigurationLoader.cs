@@ -1099,17 +1099,17 @@ public class ConfigurationLoader
         if (table.TryGetValue("Token", out var token))
             webui.Token = token?.ToString() ?? "";
 
-        bool hasNewAuthKeys = table.TryGetValue("AuthDisabled", out var authDisabledVal) ||
-            table.TryGetValue("LocalAuthEnabled", out var localAuthVal) ||
-            table.TryGetValue("OIDCEnabled", out var oidcEnabledVal);
+        bool hasNewAuthKeys = table.ContainsKey("AuthDisabled") ||
+            table.ContainsKey("LocalAuthEnabled") ||
+            table.ContainsKey("OIDCEnabled");
 
         if (hasNewAuthKeys)
         {
-            if (table.TryGetValue("AuthDisabled", out authDisabledVal))
+            if (table.TryGetValue("AuthDisabled", out var authDisabledVal))
                 webui.AuthDisabled = Convert.ToBoolean(authDisabledVal);
-            if (table.TryGetValue("LocalAuthEnabled", out localAuthVal))
+            if (table.TryGetValue("LocalAuthEnabled", out var localAuthVal))
                 webui.LocalAuthEnabled = Convert.ToBoolean(localAuthVal);
-            if (table.TryGetValue("OIDCEnabled", out oidcEnabledVal))
+            if (table.TryGetValue("OIDCEnabled", out var oidcEnabledVal))
                 webui.OIDCEnabled = Convert.ToBoolean(oidcEnabledVal);
         }
         else if (table.TryGetValue("AuthMode", out var authMode))

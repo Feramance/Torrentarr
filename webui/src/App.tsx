@@ -566,6 +566,14 @@ function AuthGate({ children }: { children: React.ReactNode }): JSX.Element {
         oidcEnabled={authMeta?.oidc_enabled ?? false}
         onSuccess={() => {
           setNeedsLogin(false);
+          void getToken().then(
+            (r) => {
+              if (r?.token) {
+                localStorage.setItem("token", r.token);
+              }
+            },
+            () => {},
+          );
         }}
       />
     );
