@@ -36,6 +36,10 @@ public class ArrWorkerManager : BackgroundService
         new(StringComparer.OrdinalIgnoreCase);
 
     // §2.6: Per-instance timers for RSS Sync and Refresh Monitored Downloads
+    /// <summary>§1.3: Tracks whether searches were triggered last cycle per instance (for loop-completion detection).</summary>
+    private readonly ConcurrentDictionary<string, bool> _hadSearchesLastCycle =
+        new(StringComparer.OrdinalIgnoreCase);
+
     private readonly ConcurrentDictionary<string, DateTime> _lastRssSyncTime =
         new(StringComparer.OrdinalIgnoreCase);
     private readonly ConcurrentDictionary<string, DateTime> _lastRefreshDownloadsTime =
@@ -571,8 +575,14 @@ public class ArrWorkerManager : BackgroundService
                     await mediaSvc.SearchQualityUpgradesAsync(arrCfg.Category, ct);
             }
 
-            // §1.3: SearchAgainOnSearchCompletion — reset Searched=false so items re-enter the queue next cycle
-            if (arrCfg.Search.SearchAgainOnSearchCompletion && result != null && result.SearchesTriggered > 0)
+            // §1.3: SearchAgainOnSearchCompletion — reset only on loop completion (qBitrr parity).
+            // In qBitrr, reset happens after loop_completed flag (all candidates processed).
+            // We detect loop completion as: previous cycle had searches, this cycle has none.
+            var hadPrevious = _hadSearchesLastCycle.GetValueOrDefault(instanceName, false);
+            var hasNow = result != null && result.SearchesTriggered > 0;
+            _hadSearchesLastCycle[instanceName] = hasNow;
+
+            if (arrCfg.Search.SearchAgainOnSearchCompletion && hadPrevious && !hasNow)
                 await ResetSearchedFlagAsync(instanceName, arrCfg, ct);
 
             return result;

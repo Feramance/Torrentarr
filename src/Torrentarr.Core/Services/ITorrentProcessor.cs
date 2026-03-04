@@ -70,5 +70,6 @@ public enum TorrentState
     MissingFiles,
     Moving,
     ForcedMetaDL,
-    CheckingResumeData
+    CheckingResumeData,
+    MetadataDownloading
 }

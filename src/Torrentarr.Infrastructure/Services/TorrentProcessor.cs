@@ -11,9 +11,8 @@ using Microsoft.Extensions.Logging;
 namespace Torrentarr.Infrastructure.Services;
 
 /// <summary>
-/// Implements torrent processing logic with tag-based filtering.
-/// Skips torrents tagged with qBitrr-ignored and integrates with seeding/space services.
-/// Handles special categories (failed, recheck) with bypass logic.
+/// Implements torrent processing logic matching qBitrr's _process_single_torrent state machine.
+/// Handles tag-based filtering, seeding rules, special categories, and import triggering.
 /// </summary>
 public class TorrentProcessor : ITorrentProcessor
 {
@@ -65,7 +64,6 @@ public class TorrentProcessor : ITorrentProcessor
         if (allClients.Count == 0)
         {
             _logger.LogWarning("No qBittorrent client available");
-            _logger.LogTrace("Abort processing - no qBittorrent client");
             return;
         }
 
@@ -73,7 +71,6 @@ public class TorrentProcessor : ITorrentProcessor
         if (_specialCategories.Contains(category))
         {
             _logger.LogTrace("Skipping special category {Category} - handled by Host orchestrator", category);
-            _logger.LogTrace("Abort processing - special category {Category} excluded", category);
             return;
         }
 
@@ -82,17 +79,11 @@ public class TorrentProcessor : ITorrentProcessor
             // Ensure tags exist on all clients (skip in Tagless mode — §1.6)
             if (!_config.Settings.Tagless)
             {
-                _logger.LogTrace("Ensuring required tags exist in qBittorrent");
                 foreach (var (_, c) in allClients)
                     await EnsureTagsExistAsync(c, cancellationToken);
             }
-            _logger.LogTrace("Tags verified/created successfully");
-
-            // NOTE: Free space management is handled GLOBALLY by the Host orchestrator
-            // This matches qBitrr's design where FreeSpaceManager runs ONCE per qBittorrent instance
 
             // Get all torrents for this category from ALL qBit instances, stamping instance name
-            _logger.LogTrace("Fetching torrents from all qBittorrent instances for category {Category}", category);
             var torrents = new List<TorrentInfo>();
             foreach (var (instanceName, c) in allClients)
             {
@@ -102,21 +93,17 @@ public class TorrentProcessor : ITorrentProcessor
                 torrents.AddRange(instanceTorrents);
             }
             _logger.LogDebug("Found {Count} torrents in category {Category}", torrents.Count, category);
-            _logger.LogTrace("Torrent fetch complete - {Count} torrents retrieved", torrents.Count);
 
             var stats = new TorrentProcessingStats
             {
                 TotalTorrents = torrents.Count
             };
 
-            _logger.LogTrace("Starting iteration through {Count} torrents", torrents.Count);
             foreach (var torrent in torrents)
             {
                 try
                 {
-                    _logger.LogTrace("Processing torrent: {Name} ({Hash})", torrent.Name, torrent.Hash);
                     await ProcessSingleTorrentAsync(torrent, category, stats, cancellationToken);
-                    _logger.LogTrace("Completed processing torrent: {Name}", torrent.Name);
                 }
                 catch (Exception ex)
                 {
@@ -124,20 +111,16 @@ public class TorrentProcessor : ITorrentProcessor
                         torrent.Hash, torrent.Name);
                 }
             }
-            _logger.LogTrace("Finished iterating through all torrents");
 
             // Update seeding tags for completed torrents
             if (_seedingService != null)
             {
-                _logger.LogTrace("Updating seeding tags for category {Category}", category);
                 await _seedingService.UpdateSeedingTagsAsync(category, cancellationToken);
-                _logger.LogTrace("Seeding tags updated");
             }
 
             _logger.LogInformation(
                 "Processed {Total} torrents in {Category}: {Downloading} downloading, {Completed} completed, {Seeding} seeding, {Failed} failed, {Ignored} ignored",
                 stats.TotalTorrents, category, stats.Downloading, stats.Completed, stats.Seeding, stats.Failed, stats.Ignored);
-            _logger.LogTrace("Torrent processing completed for category {Category}", category);
         }
         catch (Exception ex)
         {
@@ -145,15 +128,9 @@ public class TorrentProcessor : ITorrentProcessor
         }
     }
 
-    /// <summary>
-    /// Process special categories (failed, recheck).
-    /// NOTE: This is now handled globally by the Host orchestrator to match qBitrr's design.
-    /// </summary>
     [Obsolete("Special categories are now handled by the Host orchestrator. This method is kept for backwards compatibility.")]
     public async Task ProcessSpecialCategoriesAsync(CancellationToken cancellationToken = default)
     {
-        // This is now handled by the Host orchestrator's ProcessSpecialCategoriesAsync
-        // Keeping for backwards compatibility
         _logger.LogTrace("ProcessSpecialCategoriesAsync called - this is now handled by Host orchestrator");
         await Task.CompletedTask;
     }
@@ -191,16 +168,11 @@ public class TorrentProcessor : ITorrentProcessor
 
         if (torrent == null) return false;
 
-        // Torrent is ready for import if:
-        // 1. Progress is 100%
-        // 2. State is completed/seeding
-        // 3. Not already imported
-        // 4. §2.2: completed at least 60 seconds ago (files fully flushed to disk)
         var isComplete = torrent.Progress >= 1.0;
         var isSeeding = torrent.State.Contains("uploading", StringComparison.OrdinalIgnoreCase) ||
                        torrent.State.Contains("seeding", StringComparison.OrdinalIgnoreCase);
 
-        // Grace period: completion_on=0 means qBit hasn't set it yet; wait until 60s after completion
+        // §2.2: Grace period: completion_on=0 means qBit hasn't set it yet; wait until 60s after completion
         if (torrent.CompletionOn <= 0 ||
             DateTimeOffset.FromUnixTimeSeconds(torrent.CompletionOn).UtcDateTime > DateTime.UtcNow.AddSeconds(-60))
         {
@@ -219,7 +191,6 @@ public class TorrentProcessor : ITorrentProcessor
     {
         _logger.LogInformation("Importing torrent {Hash}", hash);
 
-        // Get torrent info — search all qBit instances
         TorrentInfo? torrent = null;
         string? torrentInstanceName = null;
         foreach (var (instanceName, c) in _qbitManager.GetAllClients())
@@ -257,7 +228,6 @@ public class TorrentProcessor : ITorrentProcessor
             return;
         }
 
-        // Trigger import using the ArrImportService
         if (_importService != null)
         {
             var result = await _importService.TriggerImportAsync(
@@ -293,79 +263,637 @@ public class TorrentProcessor : ITorrentProcessor
         }
     }
 
+    // ========================================================================================
+    // CORE STATE MACHINE — matches qBitrr's _process_single_torrent (arss.py:6065-6253)
+    // ========================================================================================
+
     private async Task ProcessSingleTorrentAsync(
         TorrentInfo torrent,
         string category,
         TorrentProcessingStats stats,
-        CancellationToken cancellationToken)
+        CancellationToken ct)
     {
-        _logger.LogTrace("Torrent [{Name}]: State[{State}] | Progress[{Progress:P1}] | Ratio[{Ratio:F2}] | AddedOn[{AddedOn}] | Availability[{Availability:P1}] | Size[{Size}] | Hash[{Hash}]",
+        _logger.LogTrace(
+            "Torrent [{Name}]: State[{State}] | Progress[{Progress:P1}] | Ratio[{Ratio:F2}] | " +
+            "AddedOn[{AddedOn}] | Availability[{Availability:P1}] | Size[{Size}] | Hash[{Hash}]",
             torrent.Name, torrent.State, torrent.Progress, torrent.Ratio,
             DateTimeOffset.FromUnixTimeSeconds(torrent.AddedOn).DateTime,
             torrent.Availability, torrent.Size, torrent.Hash);
 
-        _logger.LogTrace("Begin processing torrent {Name} | Hash: {Hash} | State: {State} | Progress: {Progress:P1} | Category: {Category}",
-            torrent.Name, torrent.Hash, torrent.State, torrent.Progress, torrent.Category);
-
-        // §2.13: Per-Arr IgnoreTorrentsYoungerThan — skip non-special torrents added too recently
+        var state = ParseTorrentState(torrent.State);
         var arrCfg = _config.ArrInstances.Values.FirstOrDefault(a =>
             string.Equals(a.Category, category, StringComparison.OrdinalIgnoreCase));
         var ignoreYoungerThan = arrCfg?.Torrent.IgnoreTorrentsYoungerThan
             ?? _config.Settings.IgnoreTorrentsYoungerThan;
+        var timeNow = DateTimeOffset.UtcNow.ToUnixTimeSeconds();
 
-        if (!_specialCategories.Contains(torrent.Category) && torrent.AddedOn > 0)
+        // Cache torrent metadata
+        _cache.SetCategory(torrent.Hash, torrent.Category);
+        _cache.SetName(torrent.Hash, torrent.Name);
+
+        // Ensure torrent exists in database
+        await EnsureTorrentInDatabaseAsync(torrent, category, ct);
+
+        // PRE-STEP 1: Resolve leave_alone / remove_torrent / maxEta (qBitrr: _should_leave_alone)
+        var (leaveAlone, maxEta, removeTorrent) = await ResolveLeaveAloneAsync(torrent, state, arrCfg, ct);
+        _logger.LogTrace("Torrent [{Name}]: LeaveAlone={LeaveAlone}, MaxETA={MaxEta}, RemoveTorrent={Remove}",
+            torrent.Name, leaveAlone, maxEta, removeTorrent);
+
+        // PRE-STEP 2: Stalled check for MetaDL / StalledDL / Downloading states
+        // (qBitrr: _stalled_check — runs before the state machine)
+        var stalledIgnore = false;
+        if (state is TorrentState.MetadataDownloading or TorrentState.StalledDownloading or TorrentState.Downloading)
         {
-            var addedAt = DateTimeOffset.FromUnixTimeSeconds(torrent.AddedOn).UtcDateTime;
-            if ((DateTime.UtcNow - addedAt).TotalSeconds < ignoreYoungerThan)
-            {
-                _logger.LogTrace("Skipping torrent too young to process: [{Name}] | AddedOn[{AddedOn}] | Age[{Age:F0}s] | Threshold[{Threshold}s]",
-                    torrent.Name, addedAt, (DateTime.UtcNow - addedAt).TotalSeconds, ignoreYoungerThan);
-                return;
-            }
+            stalledIgnore = await StalledCheckAsync(torrent, state, arrCfg, timeNow, ct);
         }
 
-        // Check if torrent is in a special category (failed, recheck)
-        if (_specialCategories.Contains(torrent.Category))
+        // If ignored via tag: clean up seeding/free-space tags and skip (qBitrr: lines 6094-6098)
+        if (HasTag(torrent, IgnoredTag))
         {
-            _logger.LogTrace("Torrent {Name} is in special category {Category} - routing to special category handler",
-                torrent.Name, torrent.Category);
-            await ProcessSpecialCategoryTorrentAsync(torrent, stats, cancellationToken);
-            _logger.LogTrace("Special category processing complete for {Name}", torrent.Name);
-            return;
-        }
-
-        // Check if torrent is ignored via tag
-        var hasIgnoredTag = HasTag(torrent, IgnoredTag);
-        _logger.LogTrace("[{Category}] Checking ignored tag for {Name}: {HasTag}", category, torrent.Name, hasIgnoredTag);
-        if (hasIgnoredTag)
-        {
-            _logger.LogTrace("[{Category}] Skipping ignored torrent: [{Name}] | Tag[{Tag}] | State[{State}] | Progress[{Progress:P1}] | Hash[{Hash}]",
-                category, torrent.Name, IgnoredTag, torrent.State, torrent.Progress, torrent.Hash);
+            var ignClient = _qbitManager.GetClient(torrent.QBitInstanceName);
+            if (ignClient != null && !_config.Settings.Tagless)
+                await ignClient.RemoveTagsAsync(new List<string> { torrent.Hash },
+                    new List<string> { AllowedSeedingTag, FreeSpacePausedTag }, ct);
             stats.Ignored++;
             return;
         }
 
-        var state = ParseTorrentState(torrent.State);
-        _logger.LogTrace("Parsed torrent state: {OriginalState} -> {ParsedState}", torrent.State, state);
+        // Update statistics based on state
+        UpdateStats(state, stats);
 
-        // Skip processing for transient states
-        if (state == TorrentState.Allocating ||
-            state == TorrentState.Moving ||
-            state == TorrentState.ForcedMetaDL ||
-            state == TorrentState.CheckingResumeData)
+        var client = _qbitManager.GetClient(torrent.QBitInstanceName);
+        if (client == null) return;
+
+        // ================================================================================
+        // STATE MACHINE — if/elif chain matching qBitrr's _process_single_torrent ordering
+        // ================================================================================
+
+        // Branch 1: Custom format unmet → delete (qBitrr line 6099-6105)
+        // TODO: Requires Arr API queue access — not yet available in TorrentProcessor.
+        // ArrSyncService.ScanQueueForBlocklistAsync handles ArrErrorCodesToBlocklist;
+        // CF-unmet scoring requires per-entry customFormatScore from the Arr queue.
+
+        // Branch 2: Ratio/seed limit met AND not leave_alone AND fully downloaded → delete
+        // (qBitrr line 6106-6109: remove_torrent and not leave_alone and amount_left==0)
+        if (removeTorrent && !leaveAlone && torrent.AmountLeft == 0)
         {
-            _logger.LogTrace("Skipping torrent in transient state: [{Name}] | State[{State}] | Progress[{Progress:P1}] | Hash[{Hash}]",
-                torrent.Name, state, torrent.Progress, torrent.Hash);
-            return;
+            var hnrAllows = _seedingService == null || await _seedingService.HnrAllowsDeleteAsync(torrent, "ratio/seed limit", ct);
+            if (hnrAllows)
+            {
+                _logger.LogWarning("Deleting torrent (ratio/seed limit reached): [{Name}] | Ratio[{Ratio:F2}] | SeedingTime[{SeedTime}s] | Hash[{Hash}]",
+                    torrent.Name, torrent.Ratio, torrent.SeedingTime, torrent.Hash);
+                await client.DeleteTorrentsAsync(new List<string> { torrent.Hash }, deleteFiles: true, ct);
+                stats.Failed++;
+            }
+        }
+        // Branch 3: Failed category → delete (qBitrr line 6110-6112)
+        else if (torrent.Category.Equals(_config.Settings.FailedCategory, StringComparison.OrdinalIgnoreCase))
+        {
+            // Check HnR protection before deleting
+            var hnrAllows = _seedingService == null || await _seedingService.HnrAllowsDeleteAsync(torrent, "failed category deletion", ct);
+            if (hnrAllows)
+            {
+                _logger.LogWarning("Deleting manually failed torrent: [{Name}] | Hash[{Hash}]", torrent.Name, torrent.Hash);
+                await client.DeleteTorrentsAsync(new List<string> { torrent.Hash }, deleteFiles: true, ct);
+                stats.Failed++;
+            }
+            else
+            {
+                _logger.LogInformation("HnR protection: keeping failed torrent [{Name}]", torrent.Name);
+                stats.Ignored++;
+            }
+        }
+        // Branch 4: Recheck category → recheck (qBitrr line 6113-6115)
+        else if (torrent.Category.Equals(_config.Settings.RecheckCategory, StringComparison.OrdinalIgnoreCase))
+        {
+            _logger.LogInformation("Re-checking manually set torrent: [{Name}] | Hash[{Hash}]", torrent.Name, torrent.Hash);
+            await client.RecheckTorrentsAsync(new List<string> { torrent.Hash }, ct);
+        }
+        // Branch 5: Missing files → delete from client, no blacklist (qBitrr line 6116-6118)
+        else if (IsMissingFilesTorrent(torrent, state))
+        {
+            _logger.LogInformation("Deleting torrent with missing files: [{Name}] | State[{State}] | Hash[{Hash}]",
+                torrent.Name, torrent.State, torrent.Hash);
+            await client.DeleteTorrentsAsync(new List<string> { torrent.Hash }, deleteFiles: false, ct);
+            stats.Failed++;
+        }
+        // Branch 6: Ignored states → skip (qBitrr line 6119-6120: is_ignored_state)
+        else if (IsIgnoredState(state))
+        {
+            _logger.LogTrace("Skipping torrent in ignored state: [{Name}] | State[{State}]", torrent.Name, state);
+        }
+        // Branch 7: Stopped + leave_alone → resume (qBitrr line 6121-6133)
+        else if (torrent.IsStopped
+            && leaveAlone
+            && !HasTag(torrent, FreeSpacePausedTag)
+            && !HasTag(torrent, IgnoredTag))
+        {
+            _logger.LogDebug("Resuming stopped torrent (leave_alone): [{Name}] | State[{State}] | Hash[{Hash}]",
+                torrent.Name, torrent.State, torrent.Hash);
+            await client.ResumeTorrentsAsync(new List<string> { torrent.Hash }, ct);
+        }
+        // Branch 8: Stalled DL / MetaDL + not stalled_ignore → stalled processing (qBitrr line 6134-6140)
+        else if (state is TorrentState.MetadataDownloading or TorrentState.StalledDownloading
+            && !HasTag(torrent, IgnoredTag)
+            && !HasTag(torrent, FreeSpacePausedTag)
+            && !stalledIgnore)
+        {
+            await ProcessStalledTorrentAsync(torrent, "Stalled State", client, arrCfg, stats, timeNow, ct);
+        }
+        // Branch 9: Downloading + not yet file-filtered → file filter (qBitrr line 6141-6147)
+        else if (IsActiveDownloadingState(state)
+            && state != TorrentState.MetadataDownloading
+            && !_cache.IsFileFiltered(torrent.Hash))
+        {
+            if (arrCfg != null)
+            {
+                var wasDeleted = await ApplyFileFilterAsync(torrent, arrCfg, client, ct);
+                _cache.MarkFileFiltered(torrent.Hash);
+                if (wasDeleted) return;
+            }
+            else
+            {
+                _cache.MarkFileFiltered(torrent.Hash);
+            }
+        }
+        // Branch 10: In timed ignore cache → resume if stopped, else skip (qBitrr line 6148-6163)
+        else if (_cache.IsInIgnoreCache(torrent.Hash))
+        {
+            if (torrent.IsStopped
+                && !HasTag(torrent, FreeSpacePausedTag)
+                && !HasTag(torrent, IgnoredTag))
+            {
+                _logger.LogDebug("Resuming stopped torrent (in ignore cache): [{Name}]", torrent.Name);
+                await client.ResumeTorrentsAsync(new List<string> { torrent.Hash }, ct);
+            }
+            else
+            {
+                _logger.LogTrace("Skipping torrent in ignore cache: [{Name}]", torrent.Name);
+            }
+        }
+        // Branch 11: Queued upload → pause if !leave_alone (qBitrr line 6164-6165)
+        else if (state == TorrentState.QueuedUploading)
+        {
+            if (leaveAlone || state == TorrentState.ForcedUploading)
+            {
+                _logger.LogTrace("Queued upload, allowing seeding: [{Name}]", torrent.Name);
+            }
+            else
+            {
+                _logger.LogTrace("Pausing queued upload torrent: [{Name}]", torrent.Name);
+                await client.PauseTorrentsAsync(new List<string> { torrent.Hash }, ct);
+            }
+        }
+        // Branch 12: Paused download with amount_left → resume (qBitrr line 6167-6173)
+        else if (state == TorrentState.PausedDownloading
+            && torrent.AmountLeft != 0
+            && !HasTag(torrent, FreeSpacePausedTag)
+            && !HasTag(torrent, IgnoredTag))
+        {
+            _logger.LogDebug("Resuming incomplete paused download: [{Name}] | Progress[{Progress:P1}] | Hash[{Hash}]",
+                torrent.Name, torrent.Progress, torrent.Hash);
+            _cache.AddToIgnoreCache(torrent.Hash, TimeSpan.FromSeconds(ignoreYoungerThan));
+            await client.ResumeTorrentsAsync(new List<string> { torrent.Hash }, ct);
+        }
+        // Branch 13: Percentage threshold — high progress, not complete, already filtered (qBitrr line 6174-6181)
+        else if (torrent.Progress <= (arrCfg?.Torrent.MaximumDeletablePercentage ?? 0.99)
+            && !IsCompleteState(torrent)
+            && !HasTag(torrent, IgnoredTag)
+            && !HasTag(torrent, FreeSpacePausedTag)
+            && !stalledIgnore
+            && _cache.IsFileFiltered(torrent.Hash))
+        {
+            await ProcessPercentageThresholdAsync(torrent, maxEta, client, stats, ct);
+        }
+        // Branch 14: Already imported → skip (qBitrr line 6184-6187)
+        else if (await IsImportedInDatabaseAsync(torrent.Hash, ct)
+            && _cache.IsFileFiltered(torrent.Hash))
+        {
+            _logger.LogTrace("Skipping already-imported torrent: [{Name}]", torrent.Name);
+        }
+        // Branch 15: Error state → recheck (qBitrr line 6191-6192)
+        else if (state == TorrentState.Error)
+        {
+            _logger.LogInformation("Re-checking errored torrent: [{Name}] | Hash[{Hash}]", torrent.Name, torrent.Hash);
+            await client.RecheckTorrentsAsync(new List<string> { torrent.Hash }, ct);
+        }
+        // Branch 16: Fully completed (60s grace period) → trigger import (qBitrr line 6196-6205)
+        else if (torrent.AddedOn > 0
+            && torrent.CompletionOn > 0
+            && torrent.AmountLeft == 0
+            && state != TorrentState.PausedUploading
+            && IsCompleteState(torrent)
+            && !string.IsNullOrEmpty(torrent.ContentPath)
+            && torrent.CompletionOn < timeNow - 60)
+        {
+            stats.Completed++;
+            var isReady = await IsReadyForImportAsync(torrent.Hash, ct);
+            if (isReady)
+            {
+                _logger.LogDebug("Completed torrent ready for import: [{Name}] | Progress[{Progress:P1}] | Hash[{Hash}]",
+                    torrent.Name, torrent.Progress, torrent.Hash);
+                // Import will be triggered by the Arr-specific worker
+            }
+        }
+        // Branch 17: Uploading + seeding limits configured → pause if !leave_alone (qBitrr line 6207-6215)
+        else if (IsUploadingState(state)
+            && torrent.SeedingTime > 1
+            && torrent.AmountLeft == 0
+            && torrent.AddedOn > 0
+            && !string.IsNullOrEmpty(torrent.ContentPath)
+            && GetRemoveMode(torrent, arrCfg) != -1
+            && _cache.IsFileFiltered(torrent.Hash))
+        {
+            if (leaveAlone || state == TorrentState.ForcedUploading)
+            {
+                _logger.LogTrace("Uploading, allowing seeding: [{Name}]", torrent.Name);
+            }
+            else
+            {
+                _logger.LogInformation("Pausing uploading torrent (seeding limits configured): [{Name}] | Hash[{Hash}]",
+                    torrent.Name, torrent.Hash);
+                await client.PauseTorrentsAsync(new List<string> { torrent.Hash }, ct);
+            }
+        }
+        // Branch 18: Slow download — 0 < maxEta < torrent.Eta + DoNotRemoveSlow=false (qBitrr line 6217-6227)
+        else if (state != TorrentState.PausedDownloading
+            && IsActiveDownloadingState(state)
+            && timeNow > torrent.AddedOn + ignoreYoungerThan
+            && maxEta > 0 && torrent.Eta > 0 && maxEta < torrent.Eta
+            && !(arrCfg?.Torrent.DoNotRemoveSlow ?? true)
+            && !HasTag(torrent, IgnoredTag)
+            && !HasTag(torrent, FreeSpacePausedTag)
+            && !stalledIgnore)
+        {
+            _logger.LogWarning("Deleting slow torrent (ETA {Eta}s > MaxETA {Max}s): [{Name}] ({Hash})",
+                torrent.Eta, maxEta, torrent.Name, torrent.Hash);
+            var hnrAllows = _seedingService == null || await _seedingService.HnrAllowsDeleteAsync(torrent, "slow torrent deletion", ct);
+            if (hnrAllows)
+            {
+                await client.DeleteTorrentsAsync(new List<string> { torrent.Hash }, deleteFiles: true, ct);
+                stats.Failed++;
+            }
+        }
+        // Branch 19: Downloading — availability-based deletion or file processing (qBitrr line 6229-6249)
+        else if (IsActiveDownloadingState(state))
+        {
+            if (timeNow > torrent.AddedOn + ignoreYoungerThan
+                && torrent.Availability < 1
+                && _cache.IsFileFiltered(torrent.Hash)
+                && !HasTag(torrent, IgnoredTag)
+                && !HasTag(torrent, FreeSpacePausedTag)
+                && !stalledIgnore)
+            {
+                // Unavailable torrent past age gate → mark for deletion
+                await ProcessStalledTorrentAsync(torrent, "Unavailable", client, arrCfg, stats, timeNow, ct);
+            }
+            else if (_cache.IsFileFiltered(torrent.Hash))
+            {
+                // Already filtered, skip
+                _logger.LogTrace("Already cleaned up: [{Name}]", torrent.Name);
+            }
+            else
+            {
+                // Not yet filtered — apply file filter
+                if (arrCfg != null)
+                {
+                    var wasDeleted = await ApplyFileFilterAsync(torrent, arrCfg, client, ct);
+                    _cache.MarkFileFiltered(torrent.Hash);
+                    if (wasDeleted) return;
+                }
+            }
+        }
+        // Branch 20: Complete + paused + leave_alone → allow seeding (qBitrr line 6250-6251)
+        else if (IsCompleteState(torrent) && leaveAlone)
+        {
+            _logger.LogTrace("Allowing seeding for complete torrent: [{Name}]", torrent.Name);
+        }
+        // Branch 21: Default — unprocessed
+        else
+        {
+            _logger.LogTrace("Unprocessed torrent: [{Name}] | State[{State}] | Progress[{Progress:P1}]",
+                torrent.Name, state, torrent.Progress);
+        }
+    }
+
+    // ========================================================================================
+    // PRE-STEP: leave_alone resolution (qBitrr: _should_leave_alone — arss.py:5804-5892)
+    // ========================================================================================
+
+    /// <summary>
+    /// Resolves whether a torrent should be left alone (allowed to seed),
+    /// the effective MaxETA, and whether removal conditions are met.
+    /// Manages qBitrr-allowed_seeding and qBitrr-hnr_active tags.
+    /// </summary>
+    private async Task<(bool LeaveAlone, int MaxEta, bool RemoveTorrent)> ResolveLeaveAloneAsync(
+        TorrentInfo torrent, TorrentState state, ArrInstanceConfig? arrCfg, CancellationToken ct)
+    {
+        var defaultMaxEta = arrCfg?.Torrent.MaximumETA ?? -1;
+
+        if (_seedingService == null)
+            return (true, defaultMaxEta, false);
+
+        // Super seeding or forced upload → always leave alone (qBitrr: lines 5809-5810)
+        if (state == TorrentState.ForcedUploading)
+            return (true, -1, false);
+
+        var isUploading = IsUploadingState(state);
+
+        // Get tracker config for MaxETA override (qBitrr: data_settings.get("max_eta"))
+        var trackerCfg = await _seedingService.GetTrackerConfigAsync(torrent, ct);
+        var maxEta = trackerCfg?.MaxETA ?? defaultMaxEta;
+
+        // Check if torrent should be removed (ratio/time limits met)
+        // ShouldRemoveTorrentAsync already handles HnR protection for downloading torrents
+        var shouldRemove = await _seedingService.ShouldRemoveTorrentAsync(torrent, ct);
+
+        // leave_alone = NOT (isUploading AND shouldRemove) — qBitrr line 5862-5864
+        var leaveAlone = !(isUploading && shouldRemove);
+
+        // Free space paused → leave alone — qBitrr line 5867-5868
+        if (HasTag(torrent, FreeSpacePausedTag))
+            leaveAlone = true;
+
+        // Tag management: qBitrr-allowed_seeding (qBitrr lines 5869-5878)
+        var client = _qbitManager.GetClient(torrent.QBitInstanceName);
+        if (client != null)
+        {
+            var hasAllowedSeeding = HasTag(torrent, AllowedSeedingTag);
+            var hasFreeSpacePaused = HasTag(torrent, FreeSpacePausedTag);
+
+            if (leaveAlone && !hasAllowedSeeding && !hasFreeSpacePaused)
+            {
+                await AddTagAsync(torrent, client, AllowedSeedingTag, ct);
+            }
+            else if ((!leaveAlone && hasAllowedSeeding) || hasFreeSpacePaused)
+            {
+                await RemoveTagAsync(torrent, client, AllowedSeedingTag, ct);
+            }
         }
 
-        // Update statistics
-        _logger.LogTrace("Updating stats for state {State}", state);
+        return (leaveAlone, maxEta, shouldRemove);
+    }
+
+    // ========================================================================================
+    // PRE-STEP: Stalled check (qBitrr: _stalled_check — arss.py:5973-6063)
+    // ========================================================================================
+
+    /// <summary>
+    /// Checks if a torrent should be ignored during stalled processing.
+    /// Returns true (stalled_ignore) if the torrent is too young or within the stalled delay window.
+    /// </summary>
+    private async Task<bool> StalledCheckAsync(
+        TorrentInfo torrent,
+        TorrentState state,
+        ArrInstanceConfig? arrCfg,
+        long timeNow,
+        CancellationToken ct)
+    {
+        var stalledDelay = arrCfg?.Torrent.StalledDelay ?? 15;
+        var ignoreYoungerThan = arrCfg?.Torrent.IgnoreTorrentsYoungerThan
+            ?? _config.Settings.IgnoreTorrentsYoungerThan;
+
+        // If stalled delay is disabled (< 0): stalled_ignore = False (process immediately)
+        if (stalledDelay < 0)
+            return false;
+
+        var stalledDelaySeconds = stalledDelay * 60;
+
+        // Too young → stalled_ignore = True (qBitrr line 5984)
+        if (timeNow < torrent.AddedOn + ignoreYoungerThan)
+        {
+            _logger.LogTrace("Stalled check: torrent too young [{Name}]", torrent.Name);
+            return true;
+        }
+
+        // Check stalled condition:
+        // - MetaDL/StalledDL AND not ignored AND not free_space_paused
+        // - OR: Downloading AND availability < 1 AND already file-filtered AND not ignored AND not free_space_paused
+        var isIgnored = HasTag(torrent, IgnoredTag);
+        var isFreeSpacePaused = HasTag(torrent, FreeSpacePausedTag);
+
+        var isStalledState = (state is TorrentState.MetadataDownloading or TorrentState.StalledDownloading)
+            && !isIgnored && !isFreeSpacePaused;
+        var isUnavailableDownloading = torrent.Availability < 1
+            && _cache.IsFileFiltered(torrent.Hash)
+            && state == TorrentState.Downloading
+            && !isIgnored && !isFreeSpacePaused;
+
+        if ((isStalledState || isUnavailableDownloading) && stalledDelay >= 0)
+        {
+            // Stalled delay expired → stalled_ignore = False (let the state machine handle deletion)
+            if (stalledDelay > 0 && timeNow >= torrent.LastActivity + stalledDelaySeconds)
+            {
+                _logger.LogTrace("Stalled delay expired for [{Name}]", torrent.Name);
+                return false;
+            }
+
+            // Within delay: add allowed_stalled tag (qBitrr line 6029-6046)
+            if (!HasTag(torrent, AllowedStalledTag))
+            {
+                var client = _qbitManager.GetClient(torrent.QBitInstanceName);
+                if (client != null)
+                    await AddStalledTagAsync(torrent, client, ct);
+
+                // TODO: If ReSearchStalled is enabled, blocklist + re-search via Arr API
+                // (qBitrr: process_entries([torrent.hash]) + _process_failed_individual)
+                if (arrCfg?.Torrent.ReSearchStalled == true)
+                {
+                    _logger.LogDebug("Stalled torrent [{Name}] — ReSearchStalled enabled; tag added (re-search requires Arr API)",
+                        torrent.Name);
+                }
+            }
+            return true; // within delay, stalled_ignore = True
+        }
+
+        // Not stalled: remove allowed_stalled tag if present (qBitrr line 6056-6059)
+        if (HasTag(torrent, AllowedStalledTag))
+        {
+            var client = _qbitManager.GetClient(torrent.QBitInstanceName);
+            if (client != null)
+                await RemoveStalledTagAsync(torrent, client, ct);
+            return false;
+        }
+
+        return false;
+    }
+
+    // ========================================================================================
+    // STATE MACHINE HELPER: Stalled torrent processing (qBitrr: _process_single_torrent_stalled_torrent)
+    // ========================================================================================
+
+    /// <summary>
+    /// Process stalled or unavailable torrents: check age gate + last_activity + HnR before deletion.
+    /// </summary>
+    private async Task ProcessStalledTorrentAsync(
+        TorrentInfo torrent, string reason,
+        QBittorrentClient client, ArrInstanceConfig? arrCfg,
+        TorrentProcessingStats stats, long timeNow, CancellationToken ct)
+    {
+        var ignoreYoungerThan = arrCfg?.Torrent.IgnoreTorrentsYoungerThan
+            ?? _config.Settings.IgnoreTorrentsYoungerThan;
+
+        // qBitrr line 5247-5252: only delete if added AND last_activity are both past the age threshold
+        if (torrent.AddedOn < timeNow - ignoreYoungerThan
+            && torrent.LastActivity < timeNow - ignoreYoungerThan)
+        {
+            var hnrAllows = _seedingService == null || await _seedingService.HnrAllowsDeleteAsync(torrent, reason, ct);
+            if (hnrAllows)
+            {
+                _logger.LogWarning("Deleting stalled torrent ({Reason}): [{Name}] | Availability[{Avail:P1}] | Hash[{Hash}]",
+                    reason, torrent.Name, torrent.Availability, torrent.Hash);
+                await client.DeleteTorrentsAsync(new List<string> { torrent.Hash }, deleteFiles: true, ct);
+                stats.Failed++;
+            }
+        }
+        else
+        {
+            _logger.LogTrace("Ignoring stale torrent ({Reason}): [{Name}] (too young or recently active)", reason, torrent.Name);
+        }
+    }
+
+    // ========================================================================================
+    // STATE MACHINE HELPER: Percentage threshold (qBitrr: _process_single_torrent_percentage_threshold)
+    // ========================================================================================
+
+    /// <summary>
+    /// Process torrents at high progress that are stale: delete if last_activity exceeds MaxETA.
+    /// If MaxETA not set or torrent is still active, skip.
+    /// </summary>
+    private async Task ProcessPercentageThresholdAsync(
+        TorrentInfo torrent, int maxEta,
+        QBittorrentClient client, TorrentProcessingStats stats, CancellationToken ct)
+    {
+        // qBitrr line 5284: only delete if maxEta > 0 AND last_activity is stale
+        if (maxEta > 0 && torrent.LastActivity < DateTimeOffset.UtcNow.ToUnixTimeSeconds() - maxEta)
+        {
+            var hnrAllows = _seedingService == null || await _seedingService.HnrAllowsDeleteAsync(torrent, "stale high-percentage deletion", ct);
+            if (hnrAllows)
+            {
+                _logger.LogWarning("Deleting stale high-percentage torrent: [{Name}] | Progress[{Progress:P1}] | Hash[{Hash}]",
+                    torrent.Name, torrent.Progress, torrent.Hash);
+                await client.DeleteTorrentsAsync(new List<string> { torrent.Hash }, deleteFiles: true, ct);
+                stats.Failed++;
+            }
+        }
+        else
+        {
+            _logger.LogTrace("Skipping high-percentage torrent (still active): [{Name}] | Progress[{Progress:P1}]",
+                torrent.Name, torrent.Progress);
+        }
+    }
+
+    // ========================================================================================
+    // STATE HELPERS
+    // ========================================================================================
+
+    /// <summary>
+    /// Check for missing files state (qBitrr: _is_missing_files_torrent — arss.py:931-941).
+    /// Returns true for MissingFiles state or Error state with "missing" in the raw state string.
+    /// </summary>
+    private static bool IsMissingFilesTorrent(TorrentInfo torrent, TorrentState state)
+    {
+        if (state == TorrentState.MissingFiles)
+            return true;
+        if (state == TorrentState.Error)
+        {
+            var raw = torrent.State;
+            if (!string.IsNullOrEmpty(raw) &&
+                (raw.Equals("missingFiles", StringComparison.OrdinalIgnoreCase) ||
+                 raw.Contains("missing", StringComparison.OrdinalIgnoreCase)))
+                return true;
+        }
+        return false;
+    }
+
+    /// <summary>
+    /// Check for ignored states (qBitrr: is_ignored_state — arss.py:918-928).
+    /// These states are skipped entirely during torrent processing.
+    /// </summary>
+    private static bool IsIgnoredState(TorrentState state)
+    {
+        return state is TorrentState.ForcedDownloading
+            or TorrentState.ForcedUploading
+            or TorrentState.CheckingUploading
+            or TorrentState.CheckingDownloading
+            or TorrentState.CheckingResumeData
+            or TorrentState.Allocating
+            or TorrentState.Moving
+            or TorrentState.QueuedDownloading;
+    }
+
+    /// <summary>
+    /// Returns true if the state is an active downloading state
+    /// (Downloading, StalledDownloading, ForcedDownloading, MetadataDownloading).
+    /// </summary>
+    private static bool IsActiveDownloadingState(TorrentState state)
+    {
+        return state is TorrentState.Downloading
+            or TorrentState.StalledDownloading
+            or TorrentState.ForcedDownloading
+            or TorrentState.MetadataDownloading;
+    }
+
+    /// <summary>
+    /// Returns true if the state is an uploading/seeding state.
+    /// </summary>
+    private static bool IsUploadingState(TorrentState state)
+    {
+        return state is TorrentState.Uploading
+            or TorrentState.StalledUploading
+            or TorrentState.QueuedUploading
+            or TorrentState.PausedUploading
+            or TorrentState.ForcedUploading;
+    }
+
+    /// <summary>
+    /// Returns true if the torrent is in a complete state (progress >= 1.0 or uploading/seeding).
+    /// </summary>
+    private static bool IsCompleteState(TorrentInfo torrent)
+    {
+        return torrent.Progress >= 1.0;
+    }
+
+    /// <summary>
+    /// Gets the removal mode for a torrent from its category seeding config.
+    /// -1 = Never, 1 = Ratio, 2 = Time, 3 = OR, 4 = AND.
+    /// </summary>
+    private int GetRemoveMode(TorrentInfo torrent, ArrInstanceConfig? arrCfg)
+    {
+        // Check qBit instance's CategorySeeding config first
+        var qbitCfg = _config.QBitInstances.GetValueOrDefault(torrent.QBitInstanceName);
+        if (qbitCfg?.CategorySeeding?.RemoveTorrent != null)
+            return qbitCfg.CategorySeeding.RemoveTorrent;
+
+        // Then check Arr instance's SeedingMode
+        if (arrCfg?.Torrent.SeedingMode?.RemoveTorrent != null)
+            return arrCfg.Torrent.SeedingMode.RemoveTorrent;
+
+        return -1; // Default: never remove
+    }
+
+    /// <summary>
+    /// Check if a torrent is marked as imported in the database.
+    /// </summary>
+    private async Task<bool> IsImportedInDatabaseAsync(string hash, CancellationToken ct)
+    {
+        var entry = await _dbContext.TorrentLibrary
+            .AsNoTracking()
+            .FirstOrDefaultAsync(t => t.Hash == hash, ct);
+        return entry?.Imported == true;
+    }
+
+    /// <summary>
+    /// Update statistics based on torrent state.
+    /// </summary>
+    private static void UpdateStats(TorrentState state, TorrentProcessingStats stats)
+    {
         switch (state)
         {
             case TorrentState.Downloading:
             case TorrentState.StalledDownloading:
             case TorrentState.ForcedDownloading:
+            case TorrentState.MetadataDownloading:
                 stats.Downloading++;
                 break;
             case TorrentState.Uploading:
@@ -382,230 +910,67 @@ public class TorrentProcessor : ITorrentProcessor
                 stats.Paused++;
                 break;
         }
-        _logger.LogTrace("Stats updated: Downloading={Downloading}, Completed={Completed}, Seeding={Seeding}, Failed={Failed}, Paused={Paused}",
-            stats.Downloading, stats.Completed, stats.Seeding, stats.Failed, stats.Paused);
-
-        // Ensure torrent exists in database
-        _logger.LogTrace("Ensuring torrent {Hash} exists in database", torrent.Hash);
-        await EnsureTorrentInDatabaseAsync(torrent, category, cancellationToken);
-        _logger.LogTrace("Database check complete for {Hash}", torrent.Hash);
-
-        // Auto-resume stopped torrents that are not ignored or free-space-paused
-        var hasFreeSpaceTag = HasTag(torrent, FreeSpacePausedTag);
-        _logger.LogTrace("Checking auto-resume conditions for {Name}: IsStopped={IsStopped}, HasFreeSpaceTag={FreeSpaceTag}, HasIgnoredTag={IgnoredTag}",
-            torrent.Name, torrent.IsStopped, hasFreeSpaceTag, hasIgnoredTag);
-
-        if (torrent.IsStopped && !hasFreeSpaceTag && !hasIgnoredTag)
-        {
-            var client = _qbitManager.GetClient(torrent.QBitInstanceName);
-            if (client != null)
-            {
-                _logger.LogDebug("Resuming stopped torrent: [{Name}] | Progress[{Progress:P1}] | State[{State}] | Hash[{Hash}]",
-                    torrent.Name, torrent.Progress, torrent.State, torrent.Hash);
-                _logger.LogTrace("Executing resume for torrent {Hash}", torrent.Hash);
-                await client.ResumeTorrentsAsync(new List<string> { torrent.Hash }, cancellationToken);
-                _logger.LogTrace("Resume command sent for {Hash}", torrent.Hash);
-            }
-        }
-
-        // §2.1: File filtering — apply once per torrent (tracked via singleton cache so it persists across loop iterations)
-        if (!_cache.IsFileFiltered(torrent.Hash) &&
-            (state == TorrentState.Downloading || state == TorrentState.StalledDownloading ||
-             state == TorrentState.ForcedDownloading))
-        {
-            var filterClient = _qbitManager.GetClient(torrent.QBitInstanceName);
-            if (filterClient != null && arrCfg != null)
-            {
-                _logger.LogTrace("Applying file filter to {Name} ({Hash}) for first time", torrent.Name, torrent.Hash);
-                var wasDeleted = await ApplyFileFilterAsync(torrent, arrCfg, filterClient, cancellationToken);
-                if (wasDeleted)
-                {
-                    _cache.MarkFileFiltered(torrent.Hash);
-                    return; // Torrent was deleted — stop processing
-                }
-            }
-            _cache.MarkFileFiltered(torrent.Hash);
-        }
-
-        // §1.4: ReSearchStalled — delete stalled downloads that exceed StalledDelay.
-        // While within the delay window, mark with qBitrr-allowed_stalled tag (qBitrr parity).
-        if (arrCfg != null && arrCfg.Torrent.ReSearchStalled &&
-            state == TorrentState.StalledDownloading &&
-            torrent.LastActivity > 0)
-        {
-            var lastActivityTime = DateTimeOffset.FromUnixTimeSeconds(torrent.LastActivity).UtcDateTime;
-            var stalledMinutes = (DateTime.UtcNow - lastActivityTime).TotalMinutes;
-            if (stalledMinutes > arrCfg.Torrent.StalledDelay)
-            {
-                var stalledClient = _qbitManager.GetClient(torrent.QBitInstanceName);
-                if (stalledClient != null)
-                {
-                    // Remove the allowed_stalled tag before deleting
-                    await RemoveStalledTagAsync(torrent, stalledClient, cancellationToken);
-                    _logger.LogWarning(
-                        "Stalled torrent exceeded StalledDelay ({Delay} min, actual {Actual:F0} min) — deleting and re-queuing search: [{Name}] ({Hash})",
-                        arrCfg.Torrent.StalledDelay, stalledMinutes, torrent.Name, torrent.Hash);
-                    await stalledClient.DeleteTorrentsAsync(new List<string> { torrent.Hash }, deleteFiles: true, cancellationToken);
-                    stats.Failed++;
-                    return;
-                }
-            }
-            else
-            {
-                // Within stall delay window — mark as allowed_stalled (visible in qBit UI)
-                var stalledTagClient = _qbitManager.GetClient(torrent.QBitInstanceName);
-                if (stalledTagClient != null && !HasTag(torrent, AllowedStalledTag))
-                {
-                    await AddStalledTagAsync(torrent, stalledTagClient, cancellationToken);
-                    _logger.LogDebug(
-                        "Stalled torrent within StalledDelay ({Delay} min, actual {Actual:F0} min) — marked as allowed_stalled: [{Name}]",
-                        arrCfg.Torrent.StalledDelay, stalledMinutes, torrent.Name);
-                }
-            }
-        }
-
-        // §1.5 / §3.6: MaximumETA — delete downloads whose last activity exceeds MaximumETA seconds.
-        // Per-tracker MaxETA overrides the global Torrent.MaximumETA (qBitrr §3.6 parity).
-        if (arrCfg != null &&
-            (state == TorrentState.Downloading || state == TorrentState.StalledDownloading ||
-             state == TorrentState.ForcedDownloading) &&
-            torrent.LastActivity > 0 &&
-            torrent.Progress < arrCfg.Torrent.MaximumDeletablePercentage)
-        {
-            // §3.6: resolve per-tracker MaxETA override from merged qBit + Arr tracker config
-            var effectiveMaxETA = arrCfg.Torrent.MaximumETA;
-            if (!string.IsNullOrEmpty(torrent.Tracker))
-            {
-                var torrentTrackerHost = SeedingService.ExtractTrackerHost(torrent.Tracker);
-                var allTrackerCfgs = _config.QBitInstances.Values
-                    .SelectMany(q => q.Trackers)
-                    .Concat(arrCfg.Torrent.Trackers);
-                var matchedCfg = allTrackerCfgs.FirstOrDefault(t =>
-                {
-                    var h = SeedingService.ExtractTrackerHost(t.Uri ?? "");
-                    return string.Equals(h, torrentTrackerHost, StringComparison.OrdinalIgnoreCase)
-                        || torrentTrackerHost.EndsWith("." + h, StringComparison.OrdinalIgnoreCase);
-                });
-                if (matchedCfg?.MaxETA != null)
-                    effectiveMaxETA = matchedCfg.MaxETA.Value;
-            }
-
-            if (effectiveMaxETA > 0)
-            {
-                var lastActivityTime = DateTimeOffset.FromUnixTimeSeconds(torrent.LastActivity).UtcDateTime;
-                var inactiveSeconds = (DateTime.UtcNow - lastActivityTime).TotalSeconds;
-                if (inactiveSeconds > effectiveMaxETA)
-                {
-                    // DoNotRemoveSlow: skip deletion if torrent has a finite ETA (still making progress, just slow)
-                    var isSlow = arrCfg.Torrent.DoNotRemoveSlow && torrent.Eta > 0 && torrent.Eta < 8640000; // < 100 days
-                    if (!isSlow)
-                    {
-                        var etaClient = _qbitManager.GetClient(torrent.QBitInstanceName);
-                        if (etaClient != null)
-                        {
-                            _logger.LogWarning(
-                                "Torrent inactive for {Inactive:F0}s (MaximumETA={Max}s) — deleting: [{Name}] ({Hash})",
-                                inactiveSeconds, effectiveMaxETA, torrent.Name, torrent.Hash);
-                            await etaClient.DeleteTorrentsAsync(new List<string> { torrent.Hash }, deleteFiles: true, cancellationToken);
-                            stats.Failed++;
-                            return;
-                        }
-                    }
-                    else
-                    {
-                        _logger.LogTrace(
-                            "DoNotRemoveSlow: skipping deletion of slow torrent [{Name}] (ETA={Eta}s, Inactive={Inactive:F0}s)",
-                            torrent.Name, torrent.Eta, inactiveSeconds);
-                    }
-                }
-            }
-        }
-
-        // Process based on state
-        var isComplete = torrent.Progress >= 1.0;
-        var isPaused = torrent.State.Contains("paused", StringComparison.OrdinalIgnoreCase);
-        _logger.LogTrace("Completion check: Progress={Progress}, IsPaused={IsPaused}", torrent.Progress, isPaused);
-
-        if (isComplete && !isPaused)
-        {
-            // Torrent is complete
-            _logger.LogTrace("Torrent {Name} is complete (Progress: {Progress:P1})", torrent.Name, torrent.Progress);
-            stats.Completed++;
-
-            // Check if ready for import
-            _logger.LogTrace("Checking if torrent {Hash} is ready for import", torrent.Hash);
-            var isReadyForImport = await IsReadyForImportAsync(torrent.Hash, cancellationToken);
-            _logger.LogTrace("Import readiness check result for {Hash}: {IsReady}", torrent.Hash, isReadyForImport);
-
-            if (isReadyForImport)
-            {
-                _logger.LogDebug("Importing Completed torrent: [{Name}] | Progress[{Progress:P1}] | AddedOn[{AddedOn}] | Availability[{Availability:P1}] | Hash[{Hash}]",
-                    torrent.Name, torrent.Progress,
-                    DateTimeOffset.FromUnixTimeSeconds(torrent.AddedOn).DateTime,
-                    torrent.Availability, torrent.Hash);
-                // Import will be handled by the Arr-specific worker
-            }
-        }
-
-        _logger.LogTrace("Processed torrent {Name} in state {State} (Progress: {Progress:P0})",
-            torrent.Name, torrent.State, torrent.Progress);
     }
 
-    private async Task ProcessSpecialCategoryTorrentAsync(
-        TorrentInfo torrent,
-        TorrentProcessingStats stats,
-        CancellationToken cancellationToken)
+    // ========================================================================================
+    // TAG HELPERS
+    // ========================================================================================
+
+    /// <summary>
+    /// Add a tag to a torrent (respects tagless mode).
+    /// </summary>
+    private async Task AddTagAsync(TorrentInfo torrent, QBittorrentClient client, string tag, CancellationToken ct)
     {
-        var client = _qbitManager.GetClient(torrent.QBitInstanceName);
-        if (client == null) return;
-
-        // §2.13: Settings-level IgnoreTorrentsYoungerThan applies to special categories (failed/recheck)
-        if (torrent.AddedOn > 0)
+        if (_config.Settings.Tagless)
         {
-            var addedAt = DateTimeOffset.FromUnixTimeSeconds(torrent.AddedOn).UtcDateTime;
-            var age = (DateTime.UtcNow - addedAt).TotalSeconds;
-            if (age < _config.Settings.IgnoreTorrentsYoungerThan)
+            var entry = await _dbContext.TorrentLibrary
+                .FirstOrDefaultAsync(t => t.Hash == torrent.Hash && t.QbitInstance == torrent.QBitInstanceName, ct);
+            if (entry != null)
             {
-                _logger.LogTrace(
-                    "Skipping special-category torrent too young to act on: [{Name}] age={Age:F0}s < threshold={Threshold}s",
-                    torrent.Name, age, _config.Settings.IgnoreTorrentsYoungerThan);
-                return;
-            }
-        }
-
-        var failedCategory = _config.Settings.FailedCategory;
-        var recheckCategory = _config.Settings.RecheckCategory;
-
-        if (torrent.Category.Equals(failedCategory, StringComparison.OrdinalIgnoreCase))
-        {
-            // Check HnR protection before deleting
-            if (_seedingService != null)
-            {
-                var hnrAllowsDelete = await _seedingService.HnrAllowsDeleteAsync(torrent, "failed category deletion", cancellationToken);
-                if (!hnrAllowsDelete)
+                switch (tag)
                 {
-                    _logger.LogInformation("HnR protection: keeping failed torrent {Name}", torrent.Name);
-                    stats.Ignored++;
-                    return;
+                    case AllowedSeedingTag: entry.AllowedSeeding = true; break;
+                    case AllowedStalledTag: entry.AllowedStalled = true; break;
+                    case FreeSpacePausedTag: entry.FreeSpacePaused = true; break;
                 }
+                await _dbContext.SaveChangesAsync(ct);
             }
-
-            _logger.LogWarning(
-                "Deleting manually failed torrent: {Name} | Progress: {Progress:P1}% | State: {State} | Hash: {Hash}",
-                torrent.Name, torrent.Progress * 100, torrent.State, torrent.Hash);
-
-            await client.DeleteTorrentsAsync(new List<string> { torrent.Hash }, deleteFiles: true, cancellationToken);
-            stats.Failed++;
         }
-        else if (torrent.Category.Equals(recheckCategory, StringComparison.OrdinalIgnoreCase))
+        else
         {
-            _logger.LogInformation(
-                "Re-checking manually set torrent: {Name} | Progress: {Progress:P1}% | State: {State} | Hash: {Hash}",
-                torrent.Name, torrent.Progress * 100, torrent.State, torrent.Hash);
-
-            await client.RecheckTorrentsAsync(new List<string> { torrent.Hash }, cancellationToken);
+            await client.AddTagsAsync(new List<string> { torrent.Hash }, new List<string> { tag }, ct);
         }
     }
+
+    /// <summary>
+    /// Remove a tag from a torrent (respects tagless mode).
+    /// </summary>
+    private async Task RemoveTagAsync(TorrentInfo torrent, QBittorrentClient client, string tag, CancellationToken ct)
+    {
+        if (_config.Settings.Tagless)
+        {
+            var entry = await _dbContext.TorrentLibrary
+                .FirstOrDefaultAsync(t => t.Hash == torrent.Hash && t.QbitInstance == torrent.QBitInstanceName, ct);
+            if (entry != null)
+            {
+                switch (tag)
+                {
+                    case AllowedSeedingTag: entry.AllowedSeeding = false; break;
+                    case AllowedStalledTag: entry.AllowedStalled = false; break;
+                    case FreeSpacePausedTag: entry.FreeSpacePaused = false; break;
+                }
+                await _dbContext.SaveChangesAsync(ct);
+            }
+        }
+        else
+        {
+            await client.RemoveTagsAsync(new List<string> { torrent.Hash }, new List<string> { tag }, ct);
+        }
+    }
+
+    // ========================================================================================
+    // EXISTING HELPERS (preserved)
+    // ========================================================================================
 
     private bool HasTag(TorrentInfo torrent, string tag)
     {
@@ -698,18 +1063,23 @@ public class TorrentProcessor : ITorrentProcessor
     {
         return stateString.ToLower() switch
         {
-            var s when s.Contains("forcedMetaDL") || s.Contains("forcedmetadl") => TorrentState.ForcedMetaDL,
-            var s when s.Contains("checkingResumeData") || s.Contains("checkingresumedata") => TorrentState.CheckingResumeData,
+            var s when s.Contains("forcedmetadl") => TorrentState.ForcedMetaDL,
+            var s when s == "metadl" || s.Contains("metadl") && !s.Contains("forced") => TorrentState.MetadataDownloading,
+            var s when s.Contains("checkingresumedata") => TorrentState.CheckingResumeData,
             var s when s.Contains("allocating") => TorrentState.Allocating,
             var s when s.Contains("moving") => TorrentState.Moving,
+            var s when s.Contains("stalleddownload") || s == "stalleddl" => TorrentState.StalledDownloading,
+            var s when s.Contains("stalledupload") || s == "stalledup" => TorrentState.StalledUploading,
+            var s when s.Contains("forceddownload") || s == "forceddl" => TorrentState.ForcedDownloading,
+            var s when s.Contains("forcedup") || s == "forcedup" => TorrentState.ForcedUploading,
+            var s when s.Contains("pauseddownload") || s == "pauseddl" || s.Contains("stoppeddownload") || s == "stoppeddl" => TorrentState.PausedDownloading,
+            var s when s.Contains("pausedupload") || s == "pausedup" || s.Contains("stoppedupload") || s == "stoppedup" => TorrentState.PausedUploading,
+            var s when s.Contains("queueddownload") || s == "queueddl" => TorrentState.QueuedDownloading,
+            var s when s.Contains("queuedupload") || s == "queuedup" => TorrentState.QueuedUploading,
+            var s when s.Contains("checkingupload") || s == "checkingup" => TorrentState.CheckingUploading,
+            var s when s.Contains("checkingdownload") || s == "checkingdl" => TorrentState.CheckingDownloading,
             var s when s.Contains("downloading") => TorrentState.Downloading,
             var s when s.Contains("uploading") => TorrentState.Uploading,
-            var s when s.Contains("stalleddownload") => TorrentState.StalledDownloading,
-            var s when s.Contains("stalledupload") => TorrentState.StalledUploading,
-            var s when s.Contains("pauseddownload") => TorrentState.PausedDownloading,
-            var s when s.Contains("pausedupload") => TorrentState.PausedUploading,
-            var s when s.Contains("queueddownload") => TorrentState.QueuedDownloading,
-            var s when s.Contains("queuedupload") => TorrentState.QueuedUploading,
             var s when s.Contains("error") => TorrentState.Error,
             var s when s.Contains("missingfiles") => TorrentState.MissingFiles,
             var s when s.Contains("checking") => TorrentState.CheckingUploading,
