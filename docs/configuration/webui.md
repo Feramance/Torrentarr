@@ -30,8 +30,16 @@ Host = "0.0.0.0"
 # Listen port
 Port = 6969
 
-# Optional authentication token
+# Optional authentication token (API and optional browser auth)
 Token = ""
+
+# Authentication mode (see Authentication section below)
+AuthDisabled = true
+LocalAuthEnabled = false
+OIDCEnabled = false
+# For local auth: Username = ""
+# PasswordHash is set via login page or POST /web/auth/set-password (never store plain password)
+# Optional OIDC: [WebUI.OIDC] with Authority, ClientId, ClientSecret, Scopes, CallbackPath, RequireHttpsMetadata
 
 # Live updates
 LiveArr = true
@@ -129,19 +137,13 @@ Token = ""
 ```
 
 **Type:** String
-**Default:** `""` (empty, no authentication)
+**Default:** `""` (empty on first run; then auto-generated and persisted if left empty)
 
-Bearer token for API authentication.
+Bearer token for API authentication. All `/api/*` requests require this token (via `Authorization: Bearer` header or `?token=` on GET). When empty at startup, Torrentarr generates a secure token and saves it to config so the API is never unprotected.
 
-**When empty:**
-- WebUI and API are publicly accessible
-- No authentication required
-- Anyone with network access can use the WebUI
+When **AuthDisabled** is false (browser login enabled), users can still authenticate via this token (Bearer in the browser) or by logging in with local username/password or OIDC; after login, the session cookie grants access and `/web/token` returns the API token for the frontend.
 
-**When set:**
-- All `/api/*` endpoints require authentication
-- Must include `Authorization: Bearer` header in API requests
-- WebUI automatically handles token for you
+For full authentication options (local login, OIDC, legacy AuthMode), see [WebUI Authentication](webui-authentication.md).
 
 **Setting up authentication:**
 
@@ -181,6 +183,16 @@ curl -H "Authorization: Bearer my-secure-token-12345" \
     - Behind reverse proxy with its own authentication
     - Only accessible from localhost
     - Running in a trusted private network
+
+---
+
+## Authentication
+
+When **AuthDisabled** = `true` (default), there is no login screen; the WebUI and API are protected only by the Token (or are public if Token was empty and has not yet been auto-generated). When **AuthDisabled** = `false`, browser users must either log in (local username/password and/or OIDC) or present the Bearer token. At least one of **LocalAuthEnabled** or **OIDCEnabled** should be true so the login page can offer a sign-in method.
+
+Local auth uses a single **Username** and a stored **PasswordHash** (set via the login page or `POST /web/auth/set-password`; never store a plain password in config). OIDC uses an external identity provider (e.g. Authentik, Keycloak) and a `[WebUI.OIDC]` block with Authority, ClientId, ClientSecret, and related settings.
+
+**Full reference:** [WebUI Authentication](webui-authentication.md). **Example with Authentik:** [OIDC with Authentik](webui-oidc-authentik.md).
 
 ---
 
@@ -331,7 +343,8 @@ Default color theme for the WebUI.
 [WebUI]
 Host = "0.0.0.0"
 Port = 6969
-Token = ""  # No authentication
+Token = ""  # Auto-generated at startup if empty
+AuthDisabled = true
 LiveArr = true
 GroupSonarr = true
 GroupLidarr = true
@@ -352,6 +365,7 @@ ViewDensity = "Comfortable"
 Host = "0.0.0.0"
 Port = 6969
 Token = "a1b2c3d4e5f6g7h8i9j0k1l2m3n4o5p6"
+AuthDisabled = true
 LiveArr = true
 GroupSonarr = true
 GroupLidarr = true
@@ -365,7 +379,59 @@ ViewDensity = "Comfortable"
 
 ---
 
-### Example 3: Localhost Only (with Reverse Proxy)
+### Example 3: Local auth (username/password)
+
+```toml
+[WebUI]
+Host = "0.0.0.0"
+Port = 6969
+Token = ""  # Optional; set for API or leave to auto-generate
+AuthDisabled = false
+LocalAuthEnabled = true
+OIDCEnabled = false
+Username = "admin"
+# PasswordHash set via login page "Set password" or POST /web/auth/set-password
+LiveArr = true
+GroupSonarr = true
+GroupLidarr = true
+Theme = "Dark"
+ViewDensity = "Comfortable"
+```
+
+See [WebUI Authentication](webui-authentication.md) for details (set-password flow, TORRENTARR_SETUP_TOKEN, etc.).
+
+---
+
+### Example 4: OIDC (e.g. Authentik)
+
+```toml
+[WebUI]
+Host = "0.0.0.0"
+Port = 6969
+Token = ""
+AuthDisabled = false
+LocalAuthEnabled = false
+OIDCEnabled = true
+LiveArr = true
+GroupSonarr = true
+GroupLidarr = true
+Theme = "Dark"
+ViewDensity = "Comfortable"
+
+[WebUI.OIDC]
+Authority = "https://auth.example.com/application/o/torrentarr"
+ClientId = "your-client-id"
+ClientSecret = "your-client-secret"
+Scopes = "openid profile"
+CallbackPath = "/signin-oidc"
+RequireHttpsMetadata = true
+```
+
+See [OIDC with Authentik](webui-oidc-authentik.md) for step-by-step setup.
+
+---
+
+### Example 5: Localhost Only (with Reverse Proxy)
 
 ```toml
 [WebUI]
@@ -393,7 +459,7 @@ location /torrentarr/ {
 
 ---
 
-### Example 4: Low Resource System
+### Example 6: Low Resource System
 
 ```toml
 [WebUI]
@@ -589,24 +655,20 @@ WebUI settings (Host, Port, Token) are read from `config.toml` only. Torrentarr 
 
 **Solutions:**
 
-1. **Check token is set:**
-   ```toml
-   [WebUI]
-   Token = "your-token"
-   ```
-
+1. **Check token is set:** When Token is empty, Torrentarr auto-generates one at startup; ensure the app has run at least once and config was saved.
 2. **Include token in requests:**
    ```bash
    curl -H "Authorization: Bearer your-token" \
      http://localhost:6969/api/processes
    ```
-
-3. **Clear browser cache and cookies**
-
-4. **Check WebUI logs:**
+3. **When browser login is enabled (AuthDisabled = false):** For API calls use the Bearer token. For the WebUI, ensure you are logged in (local or OIDC) or provide the token; if using local auth, ensure a password has been set (PasswordHash in config or via the login page "Set password").
+4. **Clear browser cache and cookies**
+5. **Check WebUI logs:**
    ```bash
    tail -f ~/logs/WebUI.log | grep -i "401\|auth"
    ```
+
+For more authentication troubleshooting, see [WebUI Authentication](webui-authentication.md).
 
 ---
 
@@ -801,6 +863,8 @@ Theme = "Dark"  # Lower power on OLED
 ## See Also
 
 - [WebUI Usage Guide](../webui/index.md) - Using the WebUI
+- [WebUI Authentication](webui-authentication.md) - Full auth reference (local and OIDC)
+- [OIDC with Authentik](webui-oidc-authentik.md) - Step-by-step Authentik setup
 - [Config File Reference](config-file.md) - All configuration options
 - [Getting Started](../getting-started/index.md) - Initial setup
 - [Troubleshooting](../troubleshooting/index.md) - Common issues

@@ -732,10 +732,25 @@ The `[WebUI]` section configures Torrentarr's web interface.
 Host = "0.0.0.0"
 Port = 6969
 Token = ""
+AuthDisabled = true
+LocalAuthEnabled = false
+OIDCEnabled = false
+Username = ""
+PasswordHash = ""
 LiveArr = true
 GroupSonarr = true
 GroupLidarr = true
 Theme = "Dark"
+ViewDensity = "Comfortable"
+
+# Optional: when OIDCEnabled = true
+# [WebUI.OIDC]
+# Authority = "https://auth.example.com/application/o/myapp"
+# ClientId = "your-client-id"
+# ClientSecret = "your-client-secret"
+# Scopes = "openid profile"
+# CallbackPath = "/signin-oidc"
+# RequireHttpsMetadata = true
 ```
 
 ---
@@ -820,6 +835,30 @@ curl -H "Authorization: Bearer my-secret-token-12345" \
 ```
 
 **Recommendation:** Set a token if Torrentarr is accessible from the internet.
+
+---
+
+### AuthDisabled, LocalAuthEnabled, OIDCEnabled
+
+**Type:** Boolean
+**Defaults:** `AuthDisabled = true`, `LocalAuthEnabled = false`, `OIDCEnabled = false`
+
+Control whether browser users must log in (local username/password and/or OIDC) or can access with token only. See [WebUI Authentication](webui-authentication.md) for full authentication options and [OIDC with Authentik](webui-oidc-authentik.md) for an example IdP setup.
+
+---
+
+### Username, PasswordHash
+
+**Type:** String
+**Defaults:** `""`
+
+Used for local auth when **LocalAuthEnabled** is true. **PasswordHash** stores only the hashed password (set via login page or `POST /web/auth/set-password`). See [WebUI Authentication](webui-authentication.md).
+
+---
+
+### OIDC ([WebUI.OIDC])
+
+Optional table when **OIDCEnabled** is true. Keys: **Authority**, **ClientId**, **ClientSecret**, **Scopes**, **CallbackPath**, **RequireHttpsMetadata**. See [WebUI Authentication](webui-authentication.md) for full authentication and [OIDC with Authentik](webui-oidc-authentik.md) for an example IdP setup.
 
 ---
 

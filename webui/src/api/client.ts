@@ -437,12 +437,11 @@ export interface LoginRequest {
 
 /** Error thrown by `login()`. Preserves the `code` field from the server response (e.g. "SETUP_REQUIRED"). */
 export class AuthError extends Error {
-  constructor(
-    message: string,
-    public readonly code?: string,
-  ) {
+  readonly code?: string;
+  constructor(message: string, code?: string) {
     super(message);
     this.name = "AuthError";
+    this.code = code;
   }
 }
 
