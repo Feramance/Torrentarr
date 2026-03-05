@@ -1514,7 +1514,8 @@ try
     // OIDC challenge: redirect to IdP (used by login page "Sign in with OIDC" button)
     app.MapGet("/web/auth/oidc/challenge", async (HttpContext ctx, TorrentarrConfig cfg) =>
     {
-        if (!cfg.WebUI.OIDCEnabled)
+        if (!cfg.WebUI.OIDCEnabled || cfg.WebUI.OIDC is not { } oidc
+            || string.IsNullOrWhiteSpace(oidc.Authority) || string.IsNullOrWhiteSpace(oidc.ClientId))
             return Results.BadRequest(new { error = "OIDC not configured" });
         await ctx.ChallengeAsync(OpenIdConnectDefaults.AuthenticationScheme);
         return Results.Empty;

@@ -513,7 +513,7 @@ function AuthGate({ children }: { children: React.ReactNode }): JSX.Element {
         metaReceived = true;
         if (!meta.auth_required) {
           setNeedsLogin(false);
-          return;
+          return getToken();
         }
         setAuthMeta(meta);
         return getToken();
