@@ -1115,9 +1115,16 @@ public class ConfigurationLoader
         else if (table.TryGetValue("AuthMode", out var authMode))
         {
             var mode = authMode?.ToString()?.Trim() ?? "Disabled";
-            if (string.Equals(mode, "Disabled", StringComparison.OrdinalIgnoreCase) || string.Equals(mode, "TokenOnly", StringComparison.OrdinalIgnoreCase))
+            if (string.Equals(mode, "Disabled", StringComparison.OrdinalIgnoreCase))
             {
                 webui.AuthDisabled = true;
+                webui.LocalAuthEnabled = false;
+                webui.OIDCEnabled = false;
+            }
+            else if (string.Equals(mode, "TokenOnly", StringComparison.OrdinalIgnoreCase))
+            {
+                // TokenOnly = require token for all access; auth required, no local/OIDC login
+                webui.AuthDisabled = false;
                 webui.LocalAuthEnabled = false;
                 webui.OIDCEnabled = false;
             }

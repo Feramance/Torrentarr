@@ -541,7 +541,7 @@ public class ConfigurationLoaderTests : IDisposable
 
     [Theory]
     [InlineData("Disabled", true, false, false)]
-    [InlineData("TokenOnly", true, false, false)]
+    [InlineData("TokenOnly", false, false, false)]
     [InlineData("Local", false, true, false)]
     [InlineData("OIDC", false, false, true)]
     public void Load_WebUI_MigratesAuthMode_ToBooleans(string authMode, bool expectAuthDisabled, bool expectLocalEnabled, bool expectOidcEnabled)

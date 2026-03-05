@@ -90,7 +90,8 @@ Older configs may use a single **AuthMode** key instead of **AuthDisabled**, **L
 
 | AuthMode value | AuthDisabled | LocalAuthEnabled | OIDCEnabled |
 |----------------|--------------|------------------|-------------|
-| `Disabled` or `TokenOnly` | true | false | false |
+| `Disabled` | true | false | false |
+| `TokenOnly` | false | false | false |
 | `Local` | false | true | false |
 | `OIDC` | false | false | true |
 | Other | true | false | false |
