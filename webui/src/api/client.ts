@@ -52,6 +52,12 @@ function resolveToken(): string | null {
     const fromQuery = params.get("token");
     if (fromQuery) {
       localStorage.setItem("token", fromQuery);
+      // Remove the token from the URL so it doesn't persist in browser history or logs
+      params.delete("token");
+      const newSearch = params.toString();
+      const newUrl =
+        window.location.pathname + (newSearch ? `?${newSearch}` : "");
+      history.replaceState(null, "", newUrl);
       return fromQuery;
     }
   } catch {

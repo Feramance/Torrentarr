@@ -2534,8 +2534,8 @@ function AuthConfigModal({
       pushToast("Set a username above before setting a password", "error");
       return;
     }
-    if (!newPassword) {
-      pushToast("New password is required", "error");
+    if (!newPassword || newPassword.length < 8) {
+      pushToast("Password must be at least 8 characters", "error");
       return;
     }
     if (newPassword !== confirmPassword) {

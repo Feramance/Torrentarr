@@ -17,6 +17,7 @@ using Serilog.Events;
 using System.Security.Claims;
 using System.Security.Cryptography;
 using System.Text;
+using System.Collections.Concurrent;
 
 // Calculate base paths - use /config for Docker, or config/ relative to cwd for local
 var configEnv = Environment.GetEnvironmentVariable("TORRENTARR_CONFIG");
@@ -185,6 +186,7 @@ try
             options.Cookie.Name = "torrentarr_session";
             options.Cookie.HttpOnly = true;
             options.Cookie.SameSite = SameSiteMode.Lax;
+            options.Cookie.SecurePolicy = Microsoft.AspNetCore.Http.CookieSecurePolicy.SameAsRequest;
             options.LoginPath = "/login";
             options.AccessDeniedPath = "/login";
         });
@@ -329,6 +331,15 @@ try
 
     app.UseCors("AllowAll");
 
+    // Security headers
+    app.Use(async (context, next) =>
+    {
+        context.Response.Headers["X-Frame-Options"] = "DENY";
+        context.Response.Headers["X-Content-Type-Options"] = "nosniff";
+        context.Response.Headers["Referrer-Policy"] = "strict-origin-when-cross-origin";
+        await next(context);
+    });
+
     // Static files — add cache-busting headers for the service worker
     app.UseDefaultFiles();
     app.Use(async (context, next) =>
@@ -462,7 +473,7 @@ try
         if (path.Equals("/manifest.json", StringComparison.OrdinalIgnoreCase)) return true;
         if (path.Equals("/sw.js", StringComparison.OrdinalIgnoreCase)) return true;
         if (path.Equals("/web/meta", StringComparison.OrdinalIgnoreCase)) return true;
-        if (path.Equals("/web/login", StringComparison.OrdinalIgnoreCase) && method == "POST") return true;
+        if (path.Equals("/web/login", StringComparison.OrdinalIgnoreCase)) return true;
         if (path.Equals("/web/auth/set-password", StringComparison.OrdinalIgnoreCase) && method == "POST") return true;
         if (path.StartsWith("/signin-oidc", StringComparison.OrdinalIgnoreCase)) return true;
         if (path.StartsWith("/web/auth/oidc/challenge", StringComparison.OrdinalIgnoreCase)) return true;
@@ -1438,6 +1449,10 @@ try
     // Local login: username + password → session cookie
     app.MapPost("/web/login", async (HttpContext ctx, TorrentarrConfig cfg, IPasswordHasher hasher, ILogger<Program> log) =>
     {
+        var ip = ctx.Connection.RemoteIpAddress?.ToString();
+        if (ip != null && !LoginRateLimiter.TryAcquire(ip))
+            return Results.Json(new { error = "Too many login attempts. Try again later." }, statusCode: 429);
+
         var body = await ctx.Request.ReadFromJsonAsync<LoginRequest>();
         if (body == null || string.IsNullOrWhiteSpace(body.Username) || string.IsNullOrWhiteSpace(body.Password))
             return Results.BadRequest(new { error = "Username and password required" });
@@ -1469,13 +1484,19 @@ try
     // Set password (first-time or reset): hash and write to config. Allowed when PasswordHash is empty or via setup token.
     app.MapPost("/web/auth/set-password", async (HttpContext ctx, TorrentarrConfig cfg, ConfigurationLoader loader, IPasswordHasher hasher, ILogger<Program> log) =>
     {
+        var ip = ctx.Connection.RemoteIpAddress?.ToString();
+        if (ip != null && !SetPasswordRateLimiter.TryAcquire(ip))
+            return Results.Json(new { error = "Too many set-password attempts. Try again later." }, statusCode: 429);
+
         var body = await ctx.Request.ReadFromJsonAsync<SetPasswordRequest>();
         if (body == null || string.IsNullOrWhiteSpace(body.Username) || string.IsNullOrWhiteSpace(body.Password))
             return Results.BadRequest(new { error = "Username and password required" });
+        if (body.Password.Length < 8)
+            return Results.BadRequest(new { error = "Password must be at least 8 characters" });
 
         var setupToken = Environment.GetEnvironmentVariable("TORRENTARR_SETUP_TOKEN");
         var allowSet = string.IsNullOrEmpty(cfg.WebUI.PasswordHash)
-            || (!string.IsNullOrEmpty(setupToken) && body.SetupToken != null
+            || (!string.IsNullOrWhiteSpace(setupToken) && body.SetupToken != null
                 && TokenEquals(body.SetupToken, setupToken));
         if (!allowSet)
             return Results.Json(new { error = "Set password not allowed" }, statusCode: 403);
@@ -1488,11 +1509,10 @@ try
 
         cfg.WebUI.Username = body.Username.Trim();
         cfg.WebUI.PasswordHash = hasher.HashPassword(body.Password);
+        // Always enable local auth after setting a password, regardless of previous mode
         if (cfg.WebUI.AuthDisabled)
-        {
             cfg.WebUI.AuthDisabled = false;
-            cfg.WebUI.LocalAuthEnabled = true;
-        }
+        cfg.WebUI.LocalAuthEnabled = true;
         try
         {
             loader.SaveConfig(cfg);
@@ -1518,7 +1538,7 @@ try
             || string.IsNullOrWhiteSpace(oidc.Authority) || string.IsNullOrWhiteSpace(oidc.ClientId))
             return Results.BadRequest(new { error = "OIDC not configured" });
         await ctx.ChallengeAsync(OpenIdConnectDefaults.AuthenticationScheme);
-        return Results.Empty;
+        return NoOpAfterChallengeResult.Instance;
     });
 
     // Web Qbit Categories (api mirror — same logic as /web/qbit/categories, token-protected)
@@ -1756,6 +1776,8 @@ try
 
     app.MapGet("/api/logs/{name}", async (string name) =>
     {
+        if (!IsValidLogFileName(name))
+            return Results.BadRequest(new { error = "Invalid log file name" });
         var logFile = Path.Combine(logsPath, name);
         if (!File.Exists(logFile))
             return Results.NotFound(new { error = "Log file not found" });
@@ -1765,6 +1787,8 @@ try
 
     app.MapGet("/api/logs/{name}/download", (string name) =>
     {
+        if (!IsValidLogFileName(name))
+            return Results.BadRequest(new { error = "Invalid log file name" });
         var logFile = Path.Combine(logsPath, name);
         if (!File.Exists(logFile))
             return Results.NotFound();
@@ -2988,4 +3012,70 @@ public record SetPasswordRequest(
     [property: System.Text.Json.Serialization.JsonPropertyName("setupToken")] string? SetupToken = null);
 
 // Make Program accessible to test projects (WebApplicationFactory<Program>)
-public partial class Program { }
+public partial class Program
+{
+    /// <summary>Result that does nothing when executed; used after ChallengeAsync() has already written the redirect.</summary>
+    sealed class NoOpAfterChallengeResult : IResult
+    {
+        public static readonly NoOpAfterChallengeResult Instance = new();
+        public Task ExecuteAsync(HttpContext ctx) => Task.CompletedTask;
+    }
+
+    /// <summary>Per-IP rate limiter for login endpoint: 10 attempts per 15 minutes.</summary>
+    static class LoginRateLimiter
+    {
+        const int WindowMinutes = 15;
+        const int MaxAttempts = 10;
+        static readonly ConcurrentDictionary<string, (int Count, DateTime WindowStart)> _attempts = new();
+        static readonly object _lock = new();
+
+        public static bool TryAcquire(string key)
+        {
+            var now = DateTime.UtcNow;
+            lock (_lock)
+            {
+                if (_attempts.TryGetValue(key, out var v))
+                {
+                    if (now - v.WindowStart > TimeSpan.FromMinutes(WindowMinutes))
+                        _attempts[key] = (1, now);
+                    else if (v.Count >= MaxAttempts)
+                        return false;
+                    else
+                        _attempts[key] = (v.Count + 1, v.WindowStart);
+                }
+                else
+                    _attempts[key] = (1, now);
+                return true;
+            }
+        }
+    }
+
+    /// <summary>Per-IP rate limiter for set-password endpoint to mitigate brute-force of setup token.</summary>
+    static class SetPasswordRateLimiter
+    {
+        const int WindowMinutes = 15;
+        const int MaxAttempts = 5;
+        static readonly ConcurrentDictionary<string, (int Count, DateTime WindowStart)> _attempts = new();
+        static readonly object _lock = new();
+
+        public static bool TryAcquire(string key)
+        {
+            var now = DateTime.UtcNow;
+            lock (_lock)
+            {
+                if (_attempts.TryGetValue(key, out var v))
+                {
+                    if (now - v.WindowStart > TimeSpan.FromMinutes(WindowMinutes))
+                        _attempts[key] = (1, now);
+                    else if (v.Count >= MaxAttempts)
+                        return false;
+                    else
+                        _attempts[key] = (v.Count + 1, v.WindowStart);
+                }
+                else
+                    _attempts[key] = (1, now);
+                return true;
+            }
+        }
+    }
+}

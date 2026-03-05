@@ -1,5 +1,6 @@
 using FluentAssertions;
 using System.Net;
+using System.Net.Http.Json;
 using System.Text;
 using System.Text.Json;
 using Xunit;
@@ -142,5 +143,65 @@ public class ConfigEndpointTests : IClassFixture<TorrentarrWebApplicationFactory
         response.StatusCode.Should().Be(HttpStatusCode.OK);
         var json = JsonDocument.Parse(await response.Content.ReadAsStringAsync()).RootElement;
         json.GetProperty("reloadType").GetString().Should().Be("full");
+    }
+}
+
+/// <summary>
+/// MT-4: GET /web/config must redact PasswordHash (return "[redacted]" not the bcrypt hash).
+/// MT-5: POST /web/config with {"WebUI.PasswordHash":"[redacted]"} must NOT overwrite the real hash.
+/// Uses LocalAuthWebApplicationFactory which has a real bcrypt hash configured.
+/// </summary>
+[Collection("HostWebLocalAuth")]
+public class ConfigRedactionTests : IClassFixture<LocalAuthWebApplicationFactory>
+{
+    private readonly LocalAuthWebApplicationFactory _factory;
+
+    public ConfigRedactionTests(LocalAuthWebApplicationFactory factory)
+    {
+        _factory = factory;
+    }
+
+    /// <summary>MT-4: PasswordHash in GET /web/config response must be "[redacted]".</summary>
+    [Fact]
+    public async Task GetConfig_RedactsPasswordHash()
+    {
+        _factory.SetConfigEnv();
+        var client = _factory.CreateClientWithApiToken();
+        var response = await client.GetAsync("/web/config");
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+        var body = await response.Content.ReadAsStringAsync();
+        var json = JsonDocument.Parse(body).RootElement;
+        var webui = json.GetProperty("WebUI");
+        webui.TryGetProperty("PasswordHash", out var hash).Should().BeTrue("PasswordHash must be present in config response");
+        hash.GetString().Should().Be("[redacted]", "PasswordHash must be redacted in the config API response");
+    }
+
+    /// <summary>MT-5: POST /web/config with PasswordHash="[redacted]" must not overwrite the stored hash.</summary>
+    [Fact]
+    public async Task PostConfig_WithRedactedPasswordHash_DoesNotOverwriteRealHash()
+    {
+        _factory.SetConfigEnv();
+        var client = _factory.CreateClientWithApiToken();
+
+        // Confirm login works with the original password before attempting to wipe the hash
+        var loginBefore = await client.PostAsJsonAsync("/web/login", new
+        {
+            username = LocalAuthWebApplicationFactory.TestUsername,
+            password = LocalAuthWebApplicationFactory.TestPassword
+        });
+        loginBefore.StatusCode.Should().Be(HttpStatusCode.OK);
+
+        // POST config with [redacted] placeholder — this should be silently ignored
+        var payload = new { changes = new Dictionary<string, object> { ["WebUI.PasswordHash"] = "[redacted]" } };
+        var patchResponse = await client.PostAsJsonAsync("/web/config", payload);
+        patchResponse.StatusCode.Should().Be(HttpStatusCode.OK);
+
+        // Login must still work — the real hash must not have been overwritten
+        var loginAfter = await client.PostAsJsonAsync("/web/login", new
+        {
+            username = LocalAuthWebApplicationFactory.TestUsername,
+            password = LocalAuthWebApplicationFactory.TestPassword
+        });
+        loginAfter.StatusCode.Should().Be(HttpStatusCode.OK, "login should still work because [redacted] must not overwrite the real hash");
     }
 }

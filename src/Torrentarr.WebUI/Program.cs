@@ -15,6 +15,7 @@ using Serilog.Events;
 using System.Security.Claims;
 using System.Security.Cryptography;
 using System.Text;
+using System.Collections.Concurrent;
 
 // Calculate base paths - use /config for Docker, or config/ relative to cwd for local
 var configEnv = Environment.GetEnvironmentVariable("TORRENTARR_CONFIG");
@@ -95,44 +96,33 @@ builder.Services.AddDbContext<TorrentarrDbContext>(options =>
     options.UseSqlite($"Data Source={dbPath}");
 });
 
-// Add Configuration Loader
-builder.Services.AddSingleton(sp =>
-{
-    var loader = new ConfigurationLoader();
-    TorrentarrConfig cfg;
-    try
-    {
-        cfg = loader.Load();
-    }
-    catch (FileNotFoundException)
-    {
-        Log.Warning("Configuration file not found, using defaults");
-        return new TorrentarrConfig();
-    }
-    if (string.IsNullOrEmpty(cfg.WebUI.Token))
-    {
-        var tokenBytes = new byte[32];
-        RandomNumberGenerator.Fill(tokenBytes);
-        cfg.WebUI.Token = Convert.ToBase64String(tokenBytes);
-        loader.SaveConfig(cfg);
-        Log.Information("Generated and persisted API token (Token was empty)");
-    }
-    return cfg;
-});
-
-builder.Services.AddSingleton<IConfigReloader, ConfigReloader>();
-builder.Services.AddSingleton<ConfigurationLoader>();
-
-builder.Services.AddSingleton<IPasswordHasher, BCryptPasswordHasher>();
-
-// Load config once for auth registration (OIDC must be registered at startup)
-TorrentarrConfig? authConfig = null;
+// Add Configuration Loader — load once and use for both DI and OIDC registration
+var configLoader = new ConfigurationLoader();
+TorrentarrConfig configForDI;
 try
 {
-    var configPath = ConfigurationLoader.GetDefaultConfigPath();
-    authConfig = new ConfigurationLoader(configPath).Load();
+    configForDI = configLoader.Load();
 }
-catch (FileNotFoundException) { }
+catch (FileNotFoundException)
+{
+    Log.Warning("Configuration file not found, using defaults");
+    configForDI = new TorrentarrConfig();
+}
+if (string.IsNullOrEmpty(configForDI.WebUI.Token))
+{
+    var tokenBytes = new byte[32];
+    RandomNumberGenerator.Fill(tokenBytes);
+    configForDI.WebUI.Token = Convert.ToBase64String(tokenBytes);
+    configLoader.SaveConfig(configForDI);
+    Log.Information("Generated and persisted API token (Token was empty)");
+}
+
+builder.Services.AddSingleton(configForDI);
+
+builder.Services.AddSingleton<IConfigReloader, ConfigReloader>();
+builder.Services.AddSingleton(configLoader);
+
+builder.Services.AddSingleton<IPasswordHasher, BCryptPasswordHasher>();
 
 var authBuilder = builder.Services.AddAuthentication(CookieAuthenticationDefaults.AuthenticationScheme)
     .AddCookie(options =>
@@ -140,10 +130,11 @@ var authBuilder = builder.Services.AddAuthentication(CookieAuthenticationDefault
         options.Cookie.Name = "torrentarr_session";
         options.Cookie.HttpOnly = true;
         options.Cookie.SameSite = SameSiteMode.Lax;
+        options.Cookie.SecurePolicy = Microsoft.AspNetCore.Http.CookieSecurePolicy.SameAsRequest;
         options.LoginPath = "/login";
         options.AccessDeniedPath = "/login";
     });
-if (authConfig?.WebUI.OIDCEnabled == true && authConfig.WebUI.OIDC is { } oidc
+if (configForDI.WebUI.OIDCEnabled && configForDI.WebUI.OIDC is { } oidc
     && !string.IsNullOrWhiteSpace(oidc.Authority)
     && !string.IsNullOrWhiteSpace(oidc.ClientId))
 {
@@ -180,6 +171,15 @@ if (app.Environment.IsDevelopment())
 
 app.UseResponseCompression();
 app.UseCors("AllowAll");
+
+// Security headers
+app.Use(async (context, next) =>
+{
+    context.Response.Headers["X-Frame-Options"] = "DENY";
+    context.Response.Headers["X-Content-Type-Options"] = "nosniff";
+    context.Response.Headers["Referrer-Policy"] = "strict-origin-when-cross-origin";
+    await next(context);
+});
 
 // Serve static files from ClientApp/build
 var clientAppPath = Path.Combine(Directory.GetCurrentDirectory(), "ClientApp", "build");
@@ -312,7 +312,7 @@ static bool WebUIPublicPath(string path, string method)
     if (path.Equals("/manifest.json", StringComparison.OrdinalIgnoreCase)) return true;
     if (path.Equals("/sw.js", StringComparison.OrdinalIgnoreCase)) return true;
     if (path.Equals("/web/meta", StringComparison.OrdinalIgnoreCase)) return true;
-    if (path.Equals("/web/login", StringComparison.OrdinalIgnoreCase) && method == "POST") return true;
+    if (path.Equals("/web/login", StringComparison.OrdinalIgnoreCase)) return true;
     if (path.Equals("/web/auth/set-password", StringComparison.OrdinalIgnoreCase) && method == "POST") return true;
     if (path.StartsWith("/signin-oidc", StringComparison.OrdinalIgnoreCase)) return true;
     if (path.StartsWith("/web/auth/oidc/challenge", StringComparison.OrdinalIgnoreCase)) return true;
@@ -339,6 +339,10 @@ app.MapGet("/web/token", (TorrentarrConfig cfg, HttpContext ctx) =>
 
 app.MapPost("/web/login", async (HttpContext ctx, TorrentarrConfig cfg, IPasswordHasher hasher) =>
 {
+    var ip = ctx.Connection.RemoteIpAddress?.ToString();
+    if (ip != null && !LoginRateLimiter.TryAcquire(ip))
+        return Results.Json(new { error = "Too many login attempts. Try again later." }, statusCode: 429);
+
     var body = await ctx.Request.ReadFromJsonAsync<LoginRequest>();
     if (body == null || string.IsNullOrWhiteSpace(body.Username) || string.IsNullOrWhiteSpace(body.Password))
         return Results.BadRequest(new { error = "Username and password required" });
@@ -364,12 +368,18 @@ app.MapPost("/web/login", async (HttpContext ctx, TorrentarrConfig cfg, IPasswor
 
 app.MapPost("/web/auth/set-password", async (HttpContext ctx, TorrentarrConfig cfg, ConfigurationLoader loader, IPasswordHasher hasher) =>
 {
+    var ip = ctx.Connection.RemoteIpAddress?.ToString();
+    if (ip != null && !SetPasswordRateLimiter.TryAcquire(ip))
+        return Results.Json(new { error = "Too many set-password attempts. Try again later." }, statusCode: 429);
+
     var body = await ctx.Request.ReadFromJsonAsync<SetPasswordRequest>();
     if (body == null || string.IsNullOrWhiteSpace(body.Username) || string.IsNullOrWhiteSpace(body.Password))
         return Results.BadRequest(new { error = "Username and password required" });
+    if (body.Password.Length < 8)
+        return Results.BadRequest(new { error = "Password must be at least 8 characters" });
     var setupToken = Environment.GetEnvironmentVariable("TORRENTARR_SETUP_TOKEN");
     var allowSet = string.IsNullOrEmpty(cfg.WebUI.PasswordHash)
-        || (!string.IsNullOrEmpty(setupToken) && body.SetupToken != null
+        || (!string.IsNullOrWhiteSpace(setupToken) && body.SetupToken != null
             && TokenEquals(body.SetupToken, setupToken));
     if (!allowSet)
         return Results.Json(new { error = "Set password not allowed" }, statusCode: 403);
@@ -382,11 +392,10 @@ app.MapPost("/web/auth/set-password", async (HttpContext ctx, TorrentarrConfig c
 
     cfg.WebUI.Username = body.Username.Trim();
     cfg.WebUI.PasswordHash = hasher.HashPassword(body.Password);
+    // Always enable local auth after setting a password, regardless of previous mode
     if (cfg.WebUI.AuthDisabled)
-    {
         cfg.WebUI.AuthDisabled = false;
-        cfg.WebUI.LocalAuthEnabled = true;
-    }
+    cfg.WebUI.LocalAuthEnabled = true;
     try
     {
         loader.SaveConfig(cfg);
@@ -409,7 +418,7 @@ app.MapGet("/web/auth/oidc/challenge", async (HttpContext ctx, TorrentarrConfig 
         || string.IsNullOrWhiteSpace(oidc.Authority) || string.IsNullOrWhiteSpace(oidc.ClientId))
         return Results.BadRequest(new { error = "OIDC not configured" });
     await ctx.ChallengeAsync(OpenIdConnectDefaults.AuthenticationScheme);
-    return Results.Empty;
+    return NoOpAfterChallengeResult.Instance;
 });
 
 app.MapPost("/web/loglevel", (LogLevelRequest req, LoggingLevelSwitch ls) =>
@@ -724,6 +733,12 @@ app.MapPost("/web/config", async (HttpContext ctx, TorrentarrConfig config, Conf
             // Reject protected keys (qBitrr parity)
             if (string.Equals(key, "Settings.ConfigVersion", StringComparison.OrdinalIgnoreCase))
                 return Results.Json(new { error = "Cannot modify protected configuration key: Settings.ConfigVersion" }, statusCode: 403);
+
+            // Never overwrite a real secret with the redaction placeholder from the frontend
+            if (IsSensitiveDottedKey(key)
+                && value.Type == Newtonsoft.Json.Linq.JTokenType.String
+                && value.ToString() == "[redacted]")
+                continue;
 
             // Convert dot-path "Section.SubKey" to JToken path "section.subKey"
             // Apply each change via JToken pointer navigation
@@ -1433,6 +1448,13 @@ Log.Information("Torrentarr WebUI starting on {Host}:{Port}",
     builder.Configuration["urls"] ?? "http://localhost:5000",
     "");
 
+static bool IsSensitiveDottedKey(string dottedKey)
+{
+    const string pattern = @"(apikey|api_key|token|password|secret|passkey|credential)";
+    var lastPart = dottedKey.Contains('.') ? dottedKey[(dottedKey.LastIndexOf('.') + 1)..] : dottedKey;
+    return System.Text.RegularExpressions.Regex.IsMatch(lastPart, pattern, System.Text.RegularExpressions.RegexOptions.IgnoreCase);
+}
+
 app.Run();
 
 public record LogLevelRequest(string Level);
@@ -1440,3 +1462,68 @@ public record ArrTestConnectionRequest(string ArrType, string? Uri, string? ApiK
 public record ArrRebuildRequest(string ArrInstanceName);
 public record LoginRequest(string? Username, string? Password);
 public record SetPasswordRequest(string? Username, string? Password, string? SetupToken = null);
+
+sealed class NoOpAfterChallengeResult : IResult
+{
+    public static readonly NoOpAfterChallengeResult Instance = new();
+    public Task ExecuteAsync(HttpContext ctx) => Task.CompletedTask;
+}
+
+// ── Per-IP rate limiters ──────────────────────────────────────────────────
+
+/// <summary>Per-IP rate limiter for login endpoint: 10 attempts per 15 minutes.</summary>
+static class LoginRateLimiter
+{
+    const int WindowMinutes = 15;
+    const int MaxAttempts = 10;
+    static readonly ConcurrentDictionary<string, (int Count, DateTime WindowStart)> _attempts = new();
+    static readonly object _lock = new();
+
+    public static bool TryAcquire(string key)
+    {
+        var now = DateTime.UtcNow;
+        lock (_lock)
+        {
+            if (_attempts.TryGetValue(key, out var v))
+            {
+                if (now - v.WindowStart > TimeSpan.FromMinutes(WindowMinutes))
+                    _attempts[key] = (1, now);
+                else if (v.Count >= MaxAttempts)
+                    return false;
+                else
+                    _attempts[key] = (v.Count + 1, v.WindowStart);
+            }
+            else
+                _attempts[key] = (1, now);
+            return true;
+        }
+    }
+}
+
+static class SetPasswordRateLimiter
+{
+    const int WindowMinutes = 15;
+    const int MaxAttempts = 5;
+    static readonly ConcurrentDictionary<string, (int Count, DateTime WindowStart)> _attempts = new();
+    static readonly object _lock = new();
+
+    public static bool TryAcquire(string key)
+    {
+        var now = DateTime.UtcNow;
+        lock (_lock)
+        {
+            if (_attempts.TryGetValue(key, out var v))
+            {
+                if (now - v.WindowStart > TimeSpan.FromMinutes(WindowMinutes))
+                    _attempts[key] = (1, now);
+                else if (v.Count >= MaxAttempts)
+                    return false;
+                else
+                    _attempts[key] = (v.Count + 1, v.WindowStart);
+            }
+            else
+                _attempts[key] = (1, now);
+            return true;
+        }
+    }
+}

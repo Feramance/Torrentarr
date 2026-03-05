@@ -113,4 +113,27 @@ public class AuthMiddlewareTests : IClassFixture<AuthEnabledWebApplicationFactor
         var body = await response.Content.ReadAsStringAsync();
         body.Should().Contain("OIDC not configured");
     }
+
+    /// <summary>
+    /// MT-2: Bearer token via ?token= query parameter is accepted for GET requests
+    /// (used by SSE/WebSocket flows that cannot set Authorization headers).
+    /// </summary>
+    [Fact]
+    public async Task GetApiMeta_WithTokenQueryParam_Returns200()
+    {
+        _factory.SetConfigEnv();
+        var client = _factory.CreateClientWithoutApiToken();
+        var response = await client.GetAsync("/api/meta?token=test-api-token");
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+    }
+
+    /// <summary>MT-2 negative: wrong token in ?token= must still be rejected.</summary>
+    [Fact]
+    public async Task GetApiMeta_WithWrongTokenQueryParam_Returns401()
+    {
+        _factory.SetConfigEnv();
+        var client = _factory.CreateClientWithoutApiToken();
+        var response = await client.GetAsync("/api/meta?token=wrong-token");
+        response.StatusCode.Should().Be(HttpStatusCode.Unauthorized);
+    }
 }

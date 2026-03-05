@@ -508,12 +508,14 @@ function AuthGate({ children }: { children: React.ReactNode }): JSX.Element {
   useEffect(() => {
     let cancelled = false;
     let metaReceived = false;
+    let authRequired = false;
     setConnectionError(false);
     getMeta()
       .then((meta) => {
         if (cancelled) return;
         metaReceived = true;
-        if (!meta.auth_required) {
+        authRequired = meta.auth_required ?? false;
+        if (!authRequired) {
           setNeedsLogin(false);
           return getToken();
         }
@@ -530,7 +532,11 @@ function AuthGate({ children }: { children: React.ReactNode }): JSX.Element {
       .catch(() => {
         if (!cancelled) {
           if (metaReceived) {
-            setNeedsLogin(true);
+            // Only show login when auth is required and getToken failed (e.g. 401)
+            if (authRequired) {
+              setNeedsLogin(true);
+            }
+            // When auth is disabled, keep needsLogin false even if getToken failed
           } else {
             setConnectionError(true);
             setNeedsLogin(false);
@@ -657,6 +663,10 @@ function LoginPage({
 
   const handleSetPassword = async (e: React.FormEvent) => {
     e.preventDefault();
+    if (newPassword.length < 8) {
+      setError("Password must be at least 8 characters");
+      return;
+    }
     if (newPassword !== confirmPassword) {
       setError("Passwords do not match");
       return;

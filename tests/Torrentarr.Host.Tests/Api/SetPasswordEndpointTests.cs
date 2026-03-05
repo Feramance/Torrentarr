@@ -55,6 +55,21 @@ public class SetPasswordEndpointTests : IClassFixture<TorrentarrWebApplicationFa
     }
 
     [Fact]
+    public async Task PostSetPassword_WithShortPassword_Returns400()
+    {
+        _factory.SetConfigEnv();
+        var client = _factory.CreateClientWithoutApiToken();
+        var response = await client.PostAsJsonAsync("/web/auth/set-password", new
+        {
+            username = "admin",
+            password = "short" // < 8 characters
+        });
+        response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
+        var body = await response.Content.ReadAsStringAsync();
+        body.Should().Contain("8");
+    }
+
+    [Fact]
     public async Task PostSetPassword_WhenPasswordAlreadySet_WithoutSetupToken_Returns403()
     {
         var factory = new LocalAuthWebApplicationFactory();
