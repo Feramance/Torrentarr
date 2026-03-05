@@ -2486,10 +2486,17 @@ function AuthConfigModal({
   const localAuthEnabled = !!(webui.LocalAuthEnabled ?? webui.localAuthEnabled);
   const oidcEnabled = !!(webui.OIDCEnabled ?? webui.oidcEnabled);
   const oidc = (webui.OIDC as Record<string, unknown>) ?? {};
+  const configUsername = (webui.Username as string) ?? "";
+
   const [saving, setSaving] = useState(false);
-  const [setPasswordUsername, setSetPasswordUsername] = useState("");
-  const [setPasswordPassword, setSetPasswordPassword] = useState("");
+  const [newPassword, setNewPassword] = useState("");
+  const [confirmPassword, setConfirmPassword] = useState("");
+  const [showNewPassword, setShowNewPassword] = useState(false);
+  const [showToken, setShowToken] = useState(false);
   const [setPasswordSubmitting, setSetPasswordSubmitting] = useState(false);
+
+  const passwordMismatch =
+    confirmPassword.length > 0 && newPassword !== confirmPassword;
 
   const handleSave = async () => {
     setSaving(true);
@@ -2522,23 +2529,25 @@ function AuthConfigModal({
   };
 
   const handleSetPassword = async () => {
-    if (!setPasswordUsername.trim() || !setPasswordPassword) {
-      pushToast("Username and password required", "error");
+    const username = configUsername.trim();
+    if (!username) {
+      pushToast("Set a username above before setting a password", "error");
+      return;
+    }
+    if (!newPassword) {
+      pushToast("New password is required", "error");
+      return;
+    }
+    if (newPassword !== confirmPassword) {
+      pushToast("Passwords do not match", "error");
       return;
     }
     setSetPasswordSubmitting(true);
     try {
-      await setPasswordApi({
-        username: setPasswordUsername.trim(),
-        password: setPasswordPassword,
-      });
+      await setPasswordApi({ username, password: newPassword });
       pushToast("Password set successfully", "success");
-      setSetPasswordPassword("");
-      onChange(
-        ["WebUI", "Username"],
-        {} as FieldDefinition,
-        setPasswordUsername.trim(),
-      );
+      setNewPassword("");
+      setConfirmPassword("");
     } catch (e) {
       pushToast(
         e instanceof Error ? e.message : "Set password failed",
@@ -2548,6 +2557,13 @@ function AuthConfigModal({
       setSetPasswordSubmitting(false);
     }
   };
+
+  // Derive a human-readable mode label for the status badge
+  const modeLabel = authDisabled
+    ? "Disabled"
+    : [localAuthEnabled && "Local login", oidcEnabled && "OIDC"]
+        .filter(Boolean)
+        .join(" + ") || "Enabled (no method)";
 
   return (
     <div className="modal-backdrop" role="presentation" onClick={onClose}>
@@ -2565,6 +2581,28 @@ function AuthConfigModal({
           </button>
         </div>
         <div className="modal-body">
+          {/* Current mode status */}
+          <div
+            style={{
+              display: "flex",
+              alignItems: "center",
+              gap: "8px",
+              marginBottom: "20px",
+            }}
+          >
+            <span className="field-description" style={{ margin: 0 }}>
+              Current mode:
+            </span>
+            <span
+              className={`status-pill ${authDisabled ? "status-pill--bad" : "status-pill--ok"}`}
+              style={{ fontSize: "12px" }}
+            >
+              <span className="status-pill__dot" />
+              {modeLabel}
+            </span>
+          </div>
+
+          {/* Disable auth toggle */}
           <div className="field" style={{ marginBottom: "16px" }}>
             <label>
               <input
@@ -2580,20 +2618,26 @@ function AuthConfigModal({
               />{" "}
               Disable authentication
             </label>
+            {authDisabled && (
+              <p className="field-description" style={{ marginTop: "6px" }}>
+                The login screen is skipped. The API token below still works for
+                script/API access.
+              </p>
+            )}
           </div>
-
-          {authDisabled && (
-            <p className="field-description">
-              When authentication is disabled, the login screen is skipped. If
-              an API token is set below, it can still be used for script/API
-              access.
-            </p>
-          )}
 
           {!authDisabled && (
             <>
-              <div className="field" style={{ marginTop: "16px" }}>
-                <strong>Local (username + password)</strong>
+              {/* Local login section */}
+              <div
+                className="field"
+                style={{
+                  marginTop: "16px",
+                  paddingTop: "16px",
+                  borderTop: "1px solid var(--border)",
+                }}
+              >
+                <strong>Local login (username + password)</strong>
                 <label style={{ display: "block", marginTop: "8px" }}>
                   <input
                     type="checkbox"
@@ -2609,20 +2653,22 @@ function AuthConfigModal({
                   Enable local login
                 </label>
               </div>
+
               {localAuthEnabled && (
                 <>
                   <p
                     className="field-description"
-                    style={{ marginBottom: "12px" }}
+                    style={{ margin: "6px 0 12px" }}
                   >
-                    Set a username and password for browser login. The password
-                    is stored only as a hash.
+                    Passwords are stored as bcrypt hashes. Click{" "}
+                    <strong>Set password</strong> to apply immediately — no need
+                    to save the page first.
                   </p>
                   <div className="field">
                     <label>Username</label>
                     <input
                       type="text"
-                      value={(webui.Username as string) ?? ""}
+                      value={configUsername}
                       onChange={(e) =>
                         onChange(
                           ["WebUI", "Username"],
@@ -2630,41 +2676,76 @@ function AuthConfigModal({
                           e.target.value,
                         )
                       }
-                      placeholder="Admin username"
+                      placeholder="e.g. admin"
+                      autoComplete="username"
                     />
                   </div>
                   <div className="field">
-                    <label>Set / change password</label>
-                    <input
-                      type="password"
-                      value={setPasswordPassword}
-                      onChange={(e) => setSetPasswordPassword(e.target.value)}
-                      placeholder="New password"
-                    />
-                    <input
-                      type="text"
-                      value={
-                        setPasswordUsername ||
-                        ((webui.Username as string) ?? "")
-                      }
-                      onChange={(e) => setSetPasswordUsername(e.target.value)}
-                      placeholder="Username (for set password)"
-                      style={{ marginTop: "8px" }}
-                    />
-                    <button
-                      className="btn small"
-                      type="button"
-                      onClick={handleSetPassword}
-                      disabled={setPasswordSubmitting}
-                    >
-                      {setPasswordSubmitting ? "Saving…" : "Set password"}
-                    </button>
+                    <label>New password</label>
+                    <div className="secure-field__input-group">
+                      <input
+                        type={showNewPassword ? "text" : "password"}
+                        value={newPassword}
+                        onChange={(e) => setNewPassword(e.target.value)}
+                        placeholder="New password"
+                        autoComplete="new-password"
+                      />
+                      <button
+                        type="button"
+                        className="btn ghost"
+                        onClick={() => setShowNewPassword((v) => !v)}
+                        title={
+                          showNewPassword ? "Hide password" : "Show password"
+                        }
+                      >
+                        <IconImage src={VisibilityIcon} />
+                      </button>
+                    </div>
                   </div>
+                  <div className="field">
+                    <label>Confirm password</label>
+                    <input
+                      type={showNewPassword ? "text" : "password"}
+                      value={confirmPassword}
+                      onChange={(e) => setConfirmPassword(e.target.value)}
+                      placeholder="Repeat new password"
+                      autoComplete="new-password"
+                      style={
+                        passwordMismatch
+                          ? { borderColor: "var(--danger)" }
+                          : undefined
+                      }
+                    />
+                    {passwordMismatch && (
+                      <p
+                        className="field-description"
+                        style={{ color: "var(--danger)", marginTop: "4px" }}
+                      >
+                        Passwords do not match
+                      </p>
+                    )}
+                  </div>
+                  <button
+                    className="btn small"
+                    type="button"
+                    onClick={handleSetPassword}
+                    disabled={setPasswordSubmitting || passwordMismatch}
+                  >
+                    {setPasswordSubmitting ? "Saving…" : "Set password"}
+                  </button>
                 </>
               )}
 
-              <div className="field" style={{ marginTop: "16px" }}>
-                <strong>OIDC (external IdP)</strong>
+              {/* OIDC section */}
+              <div
+                className="field"
+                style={{
+                  marginTop: "16px",
+                  paddingTop: "16px",
+                  borderTop: "1px solid var(--border)",
+                }}
+              >
+                <strong>OIDC (external identity provider)</strong>
                 <label style={{ display: "block", marginTop: "8px" }}>
                   <input
                     type="checkbox"
@@ -2684,16 +2765,15 @@ function AuthConfigModal({
                 <>
                   <p
                     className="field-description"
-                    style={{ marginBottom: "12px" }}
+                    style={{ margin: "6px 0 12px" }}
                   >
-                    Register this application in your identity provider. Set the
-                    redirect/callback URL to:{" "}
+                    Register this app in your IdP. Set the redirect/callback URL
+                    to:{" "}
                     <code>
                       {typeof window !== "undefined"
                         ? `${window.location.origin}/signin-oidc`
                         : "{origin}/signin-oidc"}
                     </code>
-                    .
                   </p>
                   <div className="field">
                     <label>Authority</label>
@@ -2707,8 +2787,12 @@ function AuthConfigModal({
                           e.target.value,
                         )
                       }
-                      placeholder="https://idp.example.com/realms/myrelm"
+                      placeholder="https://idp.example.com/realms/myrealm"
                     />
+                    <p className="field-description">
+                      Base URL of your identity provider (Keycloak, Authentik,
+                      Authelia, etc.)
+                    </p>
                   </div>
                   <div className="field">
                     <label>Client ID</label>
@@ -2722,26 +2806,29 @@ function AuthConfigModal({
                           e.target.value,
                         )
                       }
+                      placeholder="torrentarr"
                     />
                   </div>
                   <div className="field">
                     <label>Client secret</label>
-                    <input
-                      type="password"
-                      value={
-                        ((oidc.ClientSecret as string) === "[redacted]"
-                          ? ""
-                          : (oidc.ClientSecret as string)) ?? ""
-                      }
-                      onChange={(e) =>
-                        onChange(
-                          ["WebUI", "OIDC", "ClientSecret"],
-                          {} as FieldDefinition,
-                          e.target.value,
-                        )
-                      }
-                      placeholder="Leave blank to keep existing"
-                    />
+                    <div className="secure-field__input-group">
+                      <input
+                        type="password"
+                        value={
+                          ((oidc.ClientSecret as string) === "[redacted]"
+                            ? ""
+                            : (oidc.ClientSecret as string)) ?? ""
+                        }
+                        onChange={(e) =>
+                          onChange(
+                            ["WebUI", "OIDC", "ClientSecret"],
+                            {} as FieldDefinition,
+                            e.target.value,
+                          )
+                        }
+                        placeholder="Leave blank to keep existing"
+                      />
+                    </div>
                   </div>
                   <div className="field">
                     <label>Scopes</label>
@@ -2756,6 +2843,10 @@ function AuthConfigModal({
                         )
                       }
                     />
+                    <p className="field-description">
+                      Space-separated OAuth scopes to request (e.g.{" "}
+                      <code>openid profile email</code>)
+                    </p>
                   </div>
                   <div className="field">
                     <label>Callback path</label>
@@ -2770,6 +2861,10 @@ function AuthConfigModal({
                         )
                       }
                     />
+                    <p className="field-description">
+                      Must match the redirect URI registered with your IdP
+                      (default: <code>/signin-oidc</code>)
+                    </p>
                   </div>
                   <div className="field">
                     <label>
@@ -2786,26 +2881,47 @@ function AuthConfigModal({
                       />{" "}
                       Require HTTPS metadata
                     </label>
+                    <p className="field-description">
+                      Disable only for local development (HTTP IdP endpoints)
+                    </p>
                   </div>
                 </>
               )}
             </>
           )}
 
-          <div className="field" style={{ marginTop: "16px" }}>
+          {/* API token — always visible */}
+          <div
+            className="field"
+            style={{
+              marginTop: "16px",
+              paddingTop: "16px",
+              borderTop: "1px solid var(--border)",
+            }}
+          >
             <label>API token</label>
-            <input
-              type="password"
-              value={(webui.Token as string) ?? ""}
-              onChange={(e) =>
-                onChange(
-                  ["WebUI", "Token"],
-                  {} as FieldDefinition,
-                  e.target.value,
-                )
-              }
-              placeholder="Bearer token for API/scripts"
-            />
+            <div className="secure-field__input-group">
+              <input
+                type={showToken ? "text" : "password"}
+                value={(webui.Token as string) ?? ""}
+                onChange={(e) =>
+                  onChange(
+                    ["WebUI", "Token"],
+                    {} as FieldDefinition,
+                    e.target.value,
+                  )
+                }
+                placeholder="Bearer token for API/scripts"
+              />
+              <button
+                type="button"
+                className="btn ghost"
+                onClick={() => setShowToken((v) => !v)}
+                title={showToken ? "Hide token" : "Show token"}
+              >
+                <IconImage src={VisibilityIcon} />
+              </button>
+            </div>
             <p className="field-description">
               Used for API and script access in all cases. When authentication
               is enabled, this token is also accepted as Bearer for API

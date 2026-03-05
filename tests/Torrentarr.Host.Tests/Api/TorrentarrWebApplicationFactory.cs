@@ -28,6 +28,9 @@ public class HostWebAuthCollection : ICollectionFixture<AuthEnabledWebApplicatio
 [CollectionDefinition("HostWebLocalAuth", DisableParallelization = true)]
 public class HostWebLocalAuthCollection : ICollectionFixture<LocalAuthWebApplicationFactory>;
 
+[CollectionDefinition("HostWebLocalAuthNoPassword", DisableParallelization = true)]
+public class HostWebLocalAuthNoPasswordCollection : ICollectionFixture<LocalAuthNoPasswordWebApplicationFactory>;
+
 /// <summary>
 /// Custom WebApplicationFactory that:
 /// - Writes a minimal, known-good config.toml to a temp file and points
@@ -256,6 +259,64 @@ public class LocalAuthWebApplicationFactory : TorrentarrWebApplicationFactory
     {
         if (disposing && File.Exists(_localAuthConfigPath))
             File.Delete(_localAuthConfigPath);
+        base.Dispose(disposing);
+    }
+}
+
+/// <summary>
+/// Factory with local auth enabled but no password set (AuthDisabled=false, LocalAuthEnabled=true, PasswordHash="").
+/// Used to test the SETUP_REQUIRED login flow.
+/// </summary>
+public class LocalAuthNoPasswordWebApplicationFactory : TorrentarrWebApplicationFactory
+{
+    private readonly string _configPath;
+
+    private const string TomlContent = """
+        [Settings]
+        ConfigVersion = "5.9.2"
+        LoopSleepTimer = 5
+        FailedCategory = "failed"
+        RecheckCategory = "recheck"
+        PingURLS = ["one.one.one.one"]
+
+        [WebUI]
+        Host = "0.0.0.0"
+        Port = 6969
+        Token = "test-api-token"
+        AuthDisabled = false
+        LocalAuthEnabled = true
+        OIDCEnabled = false
+        Username = ""
+        PasswordHash = ""
+        LiveArr = false
+        """;
+
+    public LocalAuthNoPasswordWebApplicationFactory()
+    {
+        _configPath = Path.GetTempFileName() + ".nopwd.toml";
+        File.WriteAllText(_configPath, TomlContent);
+        Environment.SetEnvironmentVariable("TORRENTARR_CONFIG", _configPath);
+        ConfigurationLoader.TestConfigPathOverride = _configPath;
+    }
+
+    protected override void ConfigureWebHost(IWebHostBuilder builder)
+    {
+        base.ConfigureWebHost(builder);
+        Environment.SetEnvironmentVariable("TORRENTARR_CONFIG", _configPath);
+        ConfigurationLoader.TestConfigPathOverride = _configPath;
+    }
+
+    public new void SetConfigEnv()
+    {
+        Environment.SetEnvironmentVariable("TORRENTARR_CONFIG", _configPath);
+        ConfigurationLoader.TestConfigPathOverride = _configPath;
+        ConfigPathForCurrentBuild.Value = _configPath;
+    }
+
+    protected override void Dispose(bool disposing)
+    {
+        if (disposing && File.Exists(_configPath))
+            File.Delete(_configPath);
         base.Dispose(disposing);
     }
 }

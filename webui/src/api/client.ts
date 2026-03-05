@@ -435,6 +435,17 @@ export interface LoginRequest {
   password: string;
 }
 
+/** Error thrown by `login()`. Preserves the `code` field from the server response (e.g. "SETUP_REQUIRED"). */
+export class AuthError extends Error {
+  constructor(
+    message: string,
+    public readonly code?: string,
+  ) {
+    super(message);
+    this.name = "AuthError";
+  }
+}
+
 export async function login(
   request: LoginRequest,
 ): Promise<{ success: boolean }> {
@@ -446,7 +457,7 @@ export async function login(
   });
   if (!response.ok) {
     const detail = (await response.json()) as { error?: string; code?: string };
-    throw new Error(detail?.error ?? response.statusText);
+    throw new AuthError(detail?.error ?? response.statusText, detail?.code);
   }
   return (await response.json()) as { success: boolean };
 }

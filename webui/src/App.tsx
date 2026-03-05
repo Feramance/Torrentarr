@@ -40,6 +40,8 @@ import {
   triggerUpdate,
   getToken,
   login,
+  setPassword,
+  AuthError,
 } from "./api/client";
 import type { MetaResponse } from "./api/types";
 import { IconImage } from "./components/IconImage";
@@ -628,6 +630,11 @@ function LoginPage({
   const [password, setPasswordState] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
+  // When the server returns SETUP_REQUIRED (LocalAuthEnabled=true but no password set),
+  // switch to inline set-password form so the user can set credentials without leaving the page.
+  const [setupRequired, setSetupRequired] = useState(false);
+  const [newPassword, setNewPassword] = useState("");
+  const [confirmPassword, setConfirmPassword] = useState("");
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -637,11 +644,88 @@ function LoginPage({
       await login({ username, password });
       onSuccess();
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Login failed");
+      if (err instanceof AuthError && err.code === "SETUP_REQUIRED") {
+        setSetupRequired(true);
+        setError(null);
+      } else {
+        setError(err instanceof Error ? err.message : "Login failed");
+      }
     } finally {
       setSubmitting(false);
     }
   };
+
+  const handleSetPassword = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (newPassword !== confirmPassword) {
+      setError("Passwords do not match");
+      return;
+    }
+    setError(null);
+    setSubmitting(true);
+    try {
+      await setPassword({ username, password: newPassword });
+      await login({ username, password: newPassword });
+      onSuccess();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Failed to set password");
+    } finally {
+      setSubmitting(false);
+    }
+  };
+
+  if (setupRequired) {
+    return (
+      <div className="login-page">
+        <div className="login-card">
+          <h1>Torrentarr</h1>
+          <p className="login-subtitle">Set a password to continue</p>
+          <p className="login-info">
+            No password has been configured yet. Set one to enable local login.
+          </p>
+          <form onSubmit={handleSetPassword}>
+            <div className="form-group">
+              <label htmlFor="setup-username">Username</label>
+              <input
+                id="setup-username"
+                type="text"
+                autoComplete="username"
+                value={username}
+                onChange={(e) => setUsername(e.target.value)}
+                required
+              />
+            </div>
+            <div className="form-group">
+              <label htmlFor="setup-password">New password</label>
+              <input
+                id="setup-password"
+                type="password"
+                autoComplete="new-password"
+                value={newPassword}
+                onChange={(e) => setNewPassword(e.target.value)}
+                required
+              />
+            </div>
+            <div className="form-group">
+              <label htmlFor="setup-confirm">Confirm password</label>
+              <input
+                id="setup-confirm"
+                type="password"
+                autoComplete="new-password"
+                value={confirmPassword}
+                onChange={(e) => setConfirmPassword(e.target.value)}
+                required
+              />
+            </div>
+            {error && <p className="login-error">{error}</p>}
+            <button type="submit" className="btn primary" disabled={submitting}>
+              {submitting ? "Setting password..." : "Set password"}
+            </button>
+          </form>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="login-page">
