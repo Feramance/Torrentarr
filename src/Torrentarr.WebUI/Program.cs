@@ -312,7 +312,8 @@ static bool WebUIPublicPath(string path, string method)
     if (path.Equals("/manifest.json", StringComparison.OrdinalIgnoreCase)) return true;
     if (path.Equals("/sw.js", StringComparison.OrdinalIgnoreCase)) return true;
     if (path.Equals("/web/meta", StringComparison.OrdinalIgnoreCase)) return true;
-    if (path.Equals("/web/login", StringComparison.OrdinalIgnoreCase)) return true;
+    // GET /web/login allows SPA/redirects; POST is the login submit (both must be public).
+    if (path.Equals("/web/login", StringComparison.OrdinalIgnoreCase) && (method == "GET" || method == "POST")) return true;
     if (path.Equals("/web/auth/set-password", StringComparison.OrdinalIgnoreCase) && method == "POST") return true;
     if (path.StartsWith("/signin-oidc", StringComparison.OrdinalIgnoreCase)) return true;
     if (path.StartsWith("/web/auth/oidc/challenge", StringComparison.OrdinalIgnoreCase)) return true;
@@ -418,6 +419,7 @@ app.MapGet("/web/auth/oidc/challenge", async (HttpContext ctx, TorrentarrConfig 
         || string.IsNullOrWhiteSpace(oidc.Authority) || string.IsNullOrWhiteSpace(oidc.ClientId))
         return Results.BadRequest(new { error = "OIDC not configured" });
     await ctx.ChallengeAsync(OpenIdConnectDefaults.AuthenticationScheme);
+    // ChallengeAsync already wrote the 302 response; do not return a result that writes (would conflict).
     return NoOpAfterChallengeResult.Instance;
 });
 

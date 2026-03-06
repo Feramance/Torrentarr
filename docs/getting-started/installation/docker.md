@@ -261,7 +261,8 @@ docker exec torrentarr ls -la /downloads
 **Network connectivity:**
 ```toml
 [qBit]
-Host = "http://qbittorrent:8080"  # Use container name
+Host = "qbittorrent"  # Use container name
+Port = 8080
 
 [[Radarr]]
 URI = "http://radarr:7878"  # Use container name

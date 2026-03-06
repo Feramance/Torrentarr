@@ -250,7 +250,7 @@ Get current version, latest version, update availability, and changelog.
   "repository_url": "https://github.com/Feramance/Torrentarr",
   "homepage_url": "https://github.com/Feramance/Torrentarr",
   "last_checked": "2025-11-27T12:00:00Z",
-  "installation_type": "pip",
+  "installation_type": "dotnet",
   "error": null,
   "update_state": {
     "in_progress": false,
@@ -986,7 +986,7 @@ Apply changes to configuration and trigger reload.
 {
   "changes": {
     "Settings.LoopSleepTimer": 60,
-    "Radarr-4K.EntrySearch.SearchLimit": 10,
+    "Radarr-4K.Search.SearchLimit": 10,
     "WebUI.Theme": "Dark"
   }
 }

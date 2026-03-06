@@ -266,3 +266,60 @@ describe("ProcessesView – qBit category chips", () => {
     expect(screen.getByText("Arr")).toBeInTheDocument();
   });
 });
+
+// ── Other section (Recheck, Failed, Free Space Manager) ───────────────────────
+
+describe("ProcessesView – Other section", () => {
+  it("shows Other section with Recheck, Failed, and Free Space Manager cards", async () => {
+    server.use(
+      http.get("/web/processes", () =>
+        HttpResponse.json({
+          processes: [
+            {
+              category: "Recheck",
+              name: "Recheck",
+              kind: "category",
+              pid: null,
+              alive: true,
+              categoryCount: 0,
+            },
+            {
+              category: "Failed",
+              name: "Failed",
+              kind: "category",
+              pid: null,
+              alive: true,
+              categoryCount: 0,
+            },
+            {
+              category: "FreeSpaceManager",
+              name: "FreeSpaceManager",
+              kind: "torrent",
+              metricType: "free-space",
+              pid: null,
+              alive: true,
+              categoryCount: 0,
+            },
+          ],
+        }),
+      ),
+      http.get("/web/status", () => HttpResponse.json(emptyStatus)),
+      http.get("/web/qbit/categories", () =>
+        HttpResponse.json(emptyCategories),
+      ),
+    );
+
+    renderView();
+
+    await screen.findByText("Other");
+    expect(screen.getAllByText("Recheck").length).toBeGreaterThanOrEqual(1);
+    expect(screen.getAllByText("Failed").length).toBeGreaterThanOrEqual(1);
+    expect(
+      screen.getAllByText("Free Space Manager").length,
+    ).toBeGreaterThanOrEqual(1);
+    expect(
+      screen.getAllByText("Torrent count 0").length,
+    ).toBeGreaterThanOrEqual(2);
+    expect(screen.getByText("Paused: 0")).toBeInTheDocument();
+  });
+});

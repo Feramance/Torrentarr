@@ -1288,7 +1288,7 @@ function AppShell(): JSX.Element {
               GitHub
             </a>
             <a
-              href="https://github.com/Feramance/Torrentarr"
+              href="https://feramance.github.io/Torrentarr/"
               target="_blank"
               rel="noreferrer"
               className="btn small ghost"

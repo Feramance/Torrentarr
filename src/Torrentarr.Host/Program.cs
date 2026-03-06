@@ -473,7 +473,8 @@ try
         if (path.Equals("/manifest.json", StringComparison.OrdinalIgnoreCase)) return true;
         if (path.Equals("/sw.js", StringComparison.OrdinalIgnoreCase)) return true;
         if (path.Equals("/web/meta", StringComparison.OrdinalIgnoreCase)) return true;
-        if (path.Equals("/web/login", StringComparison.OrdinalIgnoreCase)) return true;
+        // GET /web/login allows SPA/redirects; POST is the login submit (both must be public).
+        if (path.Equals("/web/login", StringComparison.OrdinalIgnoreCase) && (method == "GET" || method == "POST")) return true;
         if (path.Equals("/web/auth/set-password", StringComparison.OrdinalIgnoreCase) && method == "POST") return true;
         if (path.StartsWith("/signin-oidc", StringComparison.OrdinalIgnoreCase)) return true;
         if (path.StartsWith("/web/auth/oidc/challenge", StringComparison.OrdinalIgnoreCase)) return true;
@@ -1538,6 +1539,7 @@ try
             || string.IsNullOrWhiteSpace(oidc.Authority) || string.IsNullOrWhiteSpace(oidc.ClientId))
             return Results.BadRequest(new { error = "OIDC not configured" });
         await ctx.ChallengeAsync(OpenIdConnectDefaults.AuthenticationScheme);
+        // ChallengeAsync already wrote the 302 response; do not return a result that writes (would conflict).
         return NoOpAfterChallengeResult.Instance;
     });
 
@@ -2645,6 +2647,7 @@ class ProcessOrchestratorService : BackgroundService
     private readonly TorrentarrConfig _config;
     private readonly QBittorrentConnectionManager _qbitManager;
     private readonly IServiceScopeFactory _scopeFactory;
+    private readonly ProcessStateManager _stateManager;
     private readonly HashSet<string> _managedCategories;
     private long _currentFreeSpace;
     private long _minFreeSpaceBytes;
@@ -2656,12 +2659,14 @@ class ProcessOrchestratorService : BackgroundService
         ILogger<ProcessOrchestratorService> logger,
         TorrentarrConfig config,
         QBittorrentConnectionManager qbitManager,
-        IServiceScopeFactory scopeFactory)
+        IServiceScopeFactory scopeFactory,
+        ProcessStateManager stateManager)
     {
         _logger = logger;
         _config = config;
         _qbitManager = qbitManager;
         _scopeFactory = scopeFactory;
+        _stateManager = stateManager;
         _managedCategories = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
         // §8: Respect Settings.FreeSpace string ("-1" = disabled, "10G"/"500M" = threshold)
         var freeSpaceBytes = ParseFreeSpaceString(_config.Settings.FreeSpace);
@@ -2741,6 +2746,36 @@ class ProcessOrchestratorService : BackgroundService
 
             _freeSpaceFolder = GetFreeSpaceFolder();
 
+            // Other section (Recheck, Failed, Free Space Manager): only when qBit is configured
+            if (_qbitConfigured)
+            {
+                _stateManager.Initialize("Recheck", new ArrProcessState
+                {
+                    Name = "Recheck",
+                    Category = "Recheck",
+                    Kind = "category",
+                    Alive = false,
+                    CategoryCount = null
+                });
+                _stateManager.Initialize("Failed", new ArrProcessState
+                {
+                    Name = "Failed",
+                    Category = "Failed",
+                    Kind = "category",
+                    Alive = false,
+                    CategoryCount = null
+                });
+                _stateManager.Initialize("FreeSpaceManager", new ArrProcessState
+                {
+                    Name = "FreeSpaceManager",
+                    Category = "FreeSpaceManager",
+                    Kind = "torrent",
+                    MetricType = "free-space",
+                    Alive = false,
+                    CategoryCount = null
+                });
+            }
+
             while (!stoppingToken.IsCancellationRequested)
             {
                 try
@@ -2794,11 +2829,14 @@ class ProcessOrchestratorService : BackgroundService
 
     private async Task ProcessSpecialCategoriesAsync(CancellationToken cancellationToken)
     {
+        int totalFailed = 0;
+        int totalRecheck = 0;
         foreach (var (instanceName, client) in _qbitManager.GetAllClients())
         {
             try
             {
                 var failedTorrents = await client.GetTorrentsAsync(_config.Settings.FailedCategory, cancellationToken);
+                totalFailed += failedTorrents.Count;
                 foreach (var torrent in failedTorrents)
                 {
                     // §2.13: Settings-level IgnoreTorrentsYoungerThan applies to failed/recheck
@@ -2819,6 +2857,7 @@ class ProcessOrchestratorService : BackgroundService
                 }
 
                 var recheckTorrents = await client.GetTorrentsAsync(_config.Settings.RecheckCategory, cancellationToken);
+                totalRecheck += recheckTorrents.Count;
                 foreach (var torrent in recheckTorrents)
                 {
                     // §2.13: Settings-level IgnoreTorrentsYoungerThan applies to failed/recheck
@@ -2843,6 +2882,8 @@ class ProcessOrchestratorService : BackgroundService
                 _logger.LogError(ex, "[{Instance}] Error processing special categories", instanceName);
             }
         }
+        _stateManager.Update("Failed", s => { s.CategoryCount = totalFailed; s.Alive = true; });
+        _stateManager.Update("Recheck", s => { s.CategoryCount = totalRecheck; s.Alive = true; });
     }
 
     private async Task ProcessFreeSpaceManagerAsync(CancellationToken cancellationToken)
@@ -2852,6 +2893,7 @@ class ProcessOrchestratorService : BackgroundService
         if (string.IsNullOrEmpty(_freeSpaceFolder))
         {
             _logger.LogWarning("FreeSpace: No free space folder configured or folder doesn't exist");
+            _stateManager.Update("FreeSpaceManager", s => { s.Alive = false; s.CategoryCount = 0; });
             return;
         }
 
@@ -2865,6 +2907,9 @@ class ProcessOrchestratorService : BackgroundService
             scope = _scopeFactory.CreateScope();
             dbContext = scope.ServiceProvider.GetRequiredService<TorrentarrDbContext>();
         }
+
+        const string freeSpacePausedTag = "qBitrr-free_space_paused";
+        int pausedCount = 0;
 
         try
         {
@@ -2882,8 +2927,27 @@ class ProcessOrchestratorService : BackgroundService
                 }
             }
 
+            int[]? pausedCountRef = null;
+            if (!_config.Settings.Tagless)
+            {
+                pausedCount = allTorrents.Count(t => t.torrent.Tags?.Contains(freeSpacePausedTag) == true);
+                pausedCountRef = new int[] { pausedCount };
+            }
+
             foreach (var (client, torrent) in allTorrents.OrderBy(x => x.torrent.AddedOn))
-                await ProcessSingleTorrentSpaceAsync(client, torrent, dbContext, cancellationToken);
+                await ProcessSingleTorrentSpaceAsync(client, torrent, dbContext, pausedCountRef, cancellationToken);
+
+            if (_config.Settings.Tagless && dbContext != null)
+                pausedCount = await dbContext.TorrentLibrary.CountAsync(t => t.FreeSpacePaused, cancellationToken);
+            else if (pausedCountRef != null)
+                pausedCount = pausedCountRef[0];
+
+            _stateManager.Update("FreeSpaceManager", s =>
+            {
+                s.CategoryCount = pausedCount;
+                s.MetricType = "free-space";
+                s.Alive = _freeSpaceEnabled && _minFreeSpaceBytes > 0 && !string.IsNullOrEmpty(_freeSpaceFolder);
+            });
         }
         catch (Exception ex)
         {
@@ -2896,7 +2960,7 @@ class ProcessOrchestratorService : BackgroundService
     }
 
     private async Task ProcessSingleTorrentSpaceAsync(
-        QBittorrentClient client, TorrentInfo torrent, TorrentarrDbContext? dbContext, CancellationToken cancellationToken)
+        QBittorrentClient client, TorrentInfo torrent, TorrentarrDbContext? dbContext, int[]? pausedCountRef, CancellationToken cancellationToken)
     {
         const string freeSpacePausedTag = "qBitrr-free_space_paused";
         var tagless = _config.Settings.Tagless;
@@ -2937,6 +3001,7 @@ class ProcessOrchestratorService : BackgroundService
                         .ExecuteUpdateAsync(s => s.SetProperty(t => t.FreeSpacePaused, true), cancellationToken);
                 else
                     await client.AddTagsAsync(new List<string> { torrent.Hash }, new List<string> { freeSpacePausedTag }, cancellationToken);
+                if (pausedCountRef != null) pausedCountRef[0]++;
                 await client.PauseTorrentAsync(torrent.Hash, cancellationToken);
             }
             else if (isPausedDownload && freeSpaceTest >= 0)
@@ -2951,6 +3016,7 @@ class ProcessOrchestratorService : BackgroundService
                         .ExecuteUpdateAsync(s => s.SetProperty(t => t.FreeSpacePaused, false), cancellationToken);
                 else
                     await client.RemoveTagsAsync(new List<string> { torrent.Hash }, new List<string> { freeSpacePausedTag }, cancellationToken);
+                if (pausedCountRef != null) pausedCountRef[0]--;
                 await client.ResumeTorrentAsync(torrent.Hash, cancellationToken);
             }
             else if (isPausedDownload && freeSpaceTest < 0)
@@ -2979,6 +3045,7 @@ class ProcessOrchestratorService : BackgroundService
                     .ExecuteUpdateAsync(s => s.SetProperty(t => t.FreeSpacePaused, false), cancellationToken);
             else
                 await client.RemoveTagsAsync(new List<string> { torrent.Hash }, new List<string> { freeSpacePausedTag }, cancellationToken);
+            if (pausedCountRef != null) pausedCountRef[0]--;
         }
     }
 

@@ -161,7 +161,7 @@ APIKey = "your-radarr-api-key"
 Category = "radarr-movies"
 
 # Import mode
-importMode = "Auto"
+ImportMode = "Auto"
 ```
 
 That's it! Instant imports are now active.
@@ -195,13 +195,13 @@ Control how Arr imports files:
 ```toml
 [Radarr-Movies]
 # Let Arr decide based on its settings
-importMode = "Auto"
+ImportMode = "Auto"
 
 # Move files (faster, frees disk space)
-importMode = "Move"
+ImportMode = "Move"
 
 # Copy files (preserves torrents for seeding)
-importMode = "Copy"
+ImportMode = "Copy"
 ```
 
 **Recommendation:**
@@ -312,7 +312,7 @@ sequenceDiagram
 2. **Completion Detection**: Detects 100% progress + seeding state
 3. **Validation**: FFprobe checks file integrity (if enabled)
 4. **Import Trigger**: Sends `DownloadedMoviesScan` (Radarr) / `DownloadedEpisodesScan` (Sonarr) / `DownloadedAlbumsScan` (Lidarr) command to Arr
-5. **File Transfer**: Arr copies or moves files based on `importMode`
+5. **File Transfer**: Arr copies or moves files based on `ImportMode`
 6. **Finalization**: Arr renames, adds metadata, updates library
 
 ---
@@ -327,7 +327,7 @@ Managed = true
 URI = "http://localhost:7878"
 APIKey = "abc123"
 Category = "radarr-movies"
-importMode = "Auto"
+ImportMode = "Auto"
 ```
 
 **Process:**
@@ -352,7 +352,7 @@ Managed = true
 URI = "http://localhost:8989"
 APIKey = "def456"
 Category = "sonarr-tv"
-importMode = "Copy"
+ImportMode = "Copy"
 ```
 
 **Process:**
@@ -365,7 +365,7 @@ importMode = "Copy"
 6. Torrentarr validates file
 7. **Torrentarr triggers Sonarr import**
 8. Sonarr **copies** file to `/tv/Breaking Bad/Season 5/`
-9. Torrent continues seeding (because `importMode = "Copy"`)
+9. Torrent continues seeding (because `ImportMode = "Copy"`)
 10. Episode available immediately
 
 ---
@@ -378,7 +378,7 @@ Managed = true
 URI = "http://localhost:8686"
 APIKey = "ghi789"
 Category = "lidarr-music"
-importMode = "Copy"
+ImportMode = "Copy"
 ```
 
 **Process:**
@@ -895,13 +895,13 @@ Prevents importing fake/corrupt files.
 
 ```toml
 # Private trackers (must seed)
-importMode = "Copy"
+ImportMode = "Copy"
 
 # Public trackers (save space)
-importMode = "Move"
+ImportMode = "Move"
 
 # Mixed trackers
-importMode = "Auto"
+ImportMode = "Auto"
 ```
 
 ---

@@ -23,15 +23,15 @@ Torrentarr's configuration is organized into several logical sections, each cont
 
 [[Radarr]]                    # Radarr instance(s)
   [Radarr.Torrent]           # Torrent settings
-  [Radarr.EntrySearch]       # Search settings
+  [Radarr.Search]       # Search settings
 
 [[Sonarr]]                    # Sonarr instance(s)
   [Sonarr.Torrent]
-  [Sonarr.EntrySearch]
+  [Sonarr.Search]
 
 [[Lidarr]]                    # Lidarr instance(s)
   [Lidarr.Torrent]
-  [Lidarr.EntrySearch]
+  [Lidarr.Search]
 ```
 
 **Minimum required:**
@@ -39,7 +39,7 @@ Torrentarr's configuration is organized into several logical sections, each cont
 [qBit]
 Host = "http://localhost"
 Port = 8080
-Username = "admin"
+UserName = "admin"
 Password = "adminadmin"
 ```
 
@@ -65,7 +65,7 @@ Configure connection to your qBittorrent instance:
 [qBit]
 Host = "http://localhost"
 Port = 8080
-Username = "admin"
+UserName = "admin"
 Password = "adminadmin"
 ```
 
@@ -118,7 +118,7 @@ Automatically search for missing or wanted content:
 
 **Key settings:**
 ```toml
-[Radarr.EntrySearch]
+[Radarr.Search]
 SearchMissing = true
 SearchRequestsEvery = 300
 DoUpgradeSearch = true
@@ -174,7 +174,7 @@ Manage quality profiles and temporary quality handling:
 
 **Key settings:**
 ```toml
-[Lidarr.EntrySearch]
+[Lidarr.Search]
 UseTempForMissing = true
 QualityProfileMappings = {"Lossless (FLAC)" = "Any (MP3-320)"}
 ```
@@ -348,7 +348,7 @@ Simplest setup for movie management only:
 [qBit]
 Host = "http://localhost"
 Port = 8080
-Username = "admin"
+UserName = "admin"
 Password = "adminadmin"
 
 [[Radarr]]
@@ -433,7 +433,7 @@ Follow this recommended workflow when setting up Torrentarr:
    [qBit]
    Host = "http://qbittorrent"
    Port = 8080
-   Username = "admin"
+   UserName = "admin"
    Password = "your-password"
    ```
 
@@ -463,7 +463,7 @@ HealthCheck = true
 
 **For Intermediate** - Add automation:
 ```toml
-[Radarr.EntrySearch]
+[Radarr.Search]
 SearchMissing = true
 SearchRequestsEvery = 300
 
@@ -474,7 +474,7 @@ StalledDelay = 30
 
 **For Advanced** - Full automation:
 ```toml
-[Radarr.EntrySearch]
+[Radarr.Search]
 SearchMissing = true
 DoUpgradeSearch = true
 QualityUnmetSearch = true
@@ -551,7 +551,7 @@ FreeSpace = "10G"
 [qBit]
 Host = "http://localhost"
 Port = 8080
-Username = "admin"
+UserName = "admin"
 Password = "adminadmin"
 
 [[Radarr]]
@@ -594,7 +594,7 @@ APIKey = "radarr-api-key"
 Category = "radarr-4k"
 ImportMode = "Hardlink"
 
-[Radarr-4K.EntrySearch]
+[Radarr-4K.Search]
 SearchMissing = true
 SearchRequestsEvery = 300
 DoUpgradeSearch = true
@@ -630,7 +630,7 @@ FreeSpace = "20G"
 [qBit]
 Host = "http://qbittorrent"  # Container name
 Port = 8080
-Username = "admin"
+UserName = "admin"
 Password = "adminadmin"
 
 [WebUI]
@@ -707,7 +707,7 @@ URI = "http://radarr:7878"
 APIKey = "radarr-api-key"
 Category = "radarr-1080p"
 
-[Radarr-1080p.EntrySearch]
+[Radarr-1080p.Search]
 SearchMissing = true
 SearchRequestsEvery = 180  # Check every 3 minutes
 

@@ -29,7 +29,7 @@ Category = "radarr-movies"
 ReSearch = true
 
 # Import mode (Auto, Move, or Copy)
-importMode = "Auto"
+ImportMode = "Auto"
 
 # RSS sync timer in minutes (0 = disabled)
 RssSyncTimer = 1
@@ -104,7 +104,7 @@ When `Managed = false`, Torrentarr will completely ignore this Radarr instance. 
 ### Import Mode
 
 ```toml
-importMode = "Auto"  # Auto | Move | Copy
+ImportMode = "Auto"  # Auto | Move | Copy
 ```
 
 | Mode | Behavior |
@@ -207,12 +207,12 @@ ArrErrorCodesToBlocklist = []  # Empty list = disabled
 
 ## Automated Search Configuration
 
-Torrentarr can automatically search for missing movies, quality upgrades, and user requests. Configure these settings in the `[Radarr-Movies.EntrySearch]` subsection.
+Torrentarr can automatically search for missing movies, quality upgrades, and user requests. Configure these settings in the `[Radarr-Movies.Search]` subsection.
 
 ### Basic Search Settings
 
 ```toml
-[Radarr-Movies.EntrySearch]
+[Radarr-Movies.Search]
 # Enable automated search for missing movies
 SearchMissing = true
 
@@ -243,7 +243,7 @@ SearchAgainOnSearchCompletion = true
 ### Quality Upgrade Searches
 
 ```toml
-[Radarr-Movies.EntrySearch]
+[Radarr-Movies.Search]
 # Search for better quality versions of existing movies
 DoUpgradeSearch = false
 
@@ -278,7 +278,7 @@ ForceMinimumCustomFormat = false
 Temporarily lower quality standards for missing movies, then upgrade them later:
 
 ```toml
-[Radarr-Movies.EntrySearch]
+[Radarr-Movies.Search]
 # Use temp profile for missing movies
 UseTempForMissing = false
 
@@ -321,7 +321,7 @@ ProfileSwitchRetryAttempts = 3
 ### Overseerr
 
 ```toml
-[Radarr-Movies.EntrySearch.Overseerr]
+[Radarr-Movies.Search.Overseerr]
 # Enable Overseerr request processing
 SearchOverseerrRequests = false
 
@@ -353,7 +353,7 @@ When enabled, Torrentarr:
 ### Ombi
 
 ```toml
-[Radarr-Movies.EntrySearch.Ombi]
+[Radarr-Movies.Search.Ombi]
 # Enable Ombi request processing
 SearchOmbiRequests = false
 
@@ -469,7 +469,7 @@ URI = "http://localhost:7878"
 APIKey = "your-radarr-api-key"
 Category = "radarr-movies"
 ReSearch = true
-importMode = "Auto"
+ImportMode = "Auto"
 RssSyncTimer = 1
 RefreshDownloadsTimer = 1
 ArrErrorCodesToBlocklist = [
@@ -477,7 +477,7 @@ ArrErrorCodesToBlocklist = [
   "Unable to determine if file is a sample"
 ]
 
-[Radarr-Movies.EntrySearch]
+[Radarr-Movies.Search]
 SearchMissing = true
 Unmonitored = false
 SearchLimit = 5
@@ -496,7 +496,7 @@ ForceResetTempProfiles = false
 TempProfileResetTimeoutMinutes = 0
 ProfileSwitchRetryAttempts = 3
 
-[Radarr-Movies.EntrySearch.Overseerr]
+[Radarr-Movies.Search.Overseerr]
 SearchOverseerrRequests = true
 OverseerrURI = "http://localhost:5055"
 OverseerrAPIKey = "your-overseerr-api-key"
@@ -536,19 +536,19 @@ URI = "http://localhost:7879"
 APIKey = "your-4k-radarr-api-key"
 Category = "radarr-4k"
 ReSearch = true
-importMode = "Copy"  # Copy mode to preserve seeding
+ImportMode = "Copy"  # Copy mode to preserve seeding
 RssSyncTimer = 5
 RefreshDownloadsTimer = 5
 ArrErrorCodesToBlocklist = ["Not an upgrade for existing movie file(s)"]
 
-[Radarr-4K.EntrySearch]
+[Radarr-4K.Search]
 SearchMissing = true
 SearchLimit = 3
 DoUpgradeSearch = true  # Enabled for 4K upgrades
 CustomFormatUnmetSearch = true  # Enforce CF scores
 ForceMinimumCustomFormat = true  # Strict CF enforcement
 
-[Radarr-4K.EntrySearch.Overseerr]
+[Radarr-4K.Search.Overseerr]
 SearchOverseerrRequests = true
 OverseerrURI = "http://localhost:5055"
 OverseerrAPIKey = "your-overseerr-api-key"
@@ -585,7 +585,7 @@ RemoveTorrent = 4  # Remove only when both ratio AND time met
 
 **Solutions:**
 
-1. ✅ Verify `SearchMissing = true` in `[Radarr-Movies.EntrySearch]`
+1. ✅ Verify `SearchMissing = true` in `[Radarr-Movies.Search]`
 2. ✅ Check `SearchLimit` isn't too low
 3. ✅ Ensure Radarr has indexers configured and working
 4. ✅ Review `SearchRequestsEvery` delay setting

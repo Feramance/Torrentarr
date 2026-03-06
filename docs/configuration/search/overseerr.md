@@ -56,12 +56,12 @@ URI = "http://localhost:7878"
 APIKey = "your-radarr-api-key"
 Category = "radarr-movies"
 
-[Radarr-Movies.EntrySearch]
+[Radarr-Movies.Search]
 SearchMissing = true  # Must be enabled for request integration
 SearchLimit = 5
 SearchRequestsEvery = 3  # Check requests every 3 loops
 
-[Radarr-Movies.EntrySearch.Overseerr]
+[Radarr-Movies.Search.Overseerr]
 SearchOverseerrRequests = true
 OverseerrURI = "http://localhost:5055"
 OverseerrAPIKey = "your-overseerr-api-key"
@@ -78,12 +78,12 @@ URI = "http://localhost:8989"
 APIKey = "your-sonarr-api-key"
 Category = "sonarr-series"
 
-[Sonarr-Series.EntrySearch]
+[Sonarr-Series.Search]
 SearchMissing = true
 SearchLimit = 5
 SearchRequestsEvery = 3
 
-[Sonarr-Series.EntrySearch.Overseerr]
+[Sonarr-Series.Search.Overseerr]
 SearchOverseerrRequests = true
 OverseerrURI = "http://localhost:5055"
 OverseerrAPIKey = "your-overseerr-api-key"
@@ -102,13 +102,13 @@ URI = "http://localhost:7879"  # Different port for 4K instance
 APIKey = "your-4k-radarr-api-key"
 Category = "radarr-4k"
 
-[Radarr-4K.EntrySearch]
+[Radarr-4K.Search]
 SearchMissing = true
 SearchLimit = 3  # Lower limit for 4K (fewer releases)
 DoUpgradeSearch = true  # Enable quality upgrades
 CustomFormatUnmetSearch = true  # Enforce custom format requirements
 
-[Radarr-4K.EntrySearch.Overseerr]
+[Radarr-4K.Search.Overseerr]
 SearchOverseerrRequests = true
 OverseerrURI = "http://localhost:5055"
 OverseerrAPIKey = "your-overseerr-api-key"
@@ -140,7 +140,7 @@ Is4K = true  # IMPORTANT: Set to true for 4K instances
 Overseerr integration **requires** these parent settings to be enabled:
 
 ```toml
-[Radarr-Movies.EntrySearch]
+[Radarr-Movies.Search]
 SearchMissing = true  # REQUIRED: Enables search functionality
 SearchRequestsEvery = 3  # Optional: How often to check (in loop iterations)
 SearchLimit = 5  # Optional: Max concurrent searches
@@ -169,10 +169,10 @@ Ensure Overseerr is properly configured:
 
 ### 3. Configure Torrentarr
 
-Add the `[EntrySearch.Overseerr]` section to each Arr instance that should process Overseerr requests:
+Add the `[Search.Overseerr]` section to each Arr instance that should process Overseerr requests:
 
 ```toml
-[Radarr-Movies.EntrySearch.Overseerr]
+[Radarr-Movies.Search.Overseerr]
 SearchOverseerrRequests = true
 OverseerrURI = "http://localhost:5055"
 OverseerrAPIKey = "abc123def456"
@@ -277,7 +277,7 @@ URI = "http://localhost:7878"
 APIKey = "standard-api-key"
 Category = "radarr-movies"
 
-[Radarr-Movies.EntrySearch.Overseerr]
+[Radarr-Movies.Search.Overseerr]
 SearchOverseerrRequests = true
 OverseerrURI = "http://localhost:5055"
 OverseerrAPIKey = "overseerr-api-key"
@@ -290,7 +290,7 @@ URI = "http://localhost:7879"
 APIKey = "4k-api-key"
 Category = "radarr-4k"
 
-[Radarr-4K.EntrySearch.Overseerr]
+[Radarr-4K.Search.Overseerr]
 SearchOverseerrRequests = true
 OverseerrURI = "http://localhost:5055"
 OverseerrAPIKey = "overseerr-api-key"
@@ -309,14 +309,14 @@ Is4K = true  # 4K quality
 For public Plex servers where admins review all requests:
 
 ```toml
-[Radarr-Movies.EntrySearch.Overseerr]
+[Radarr-Movies.Search.Overseerr]
 SearchOverseerrRequests = true
 OverseerrURI = "http://localhost:5055"
 OverseerrAPIKey = "your-api-key"
 ApprovedOnly = true  # Admins must approve first
 Is4K = false
 
-[Radarr-Movies.EntrySearch]
+[Radarr-Movies.Search]
 SearchMissing = true
 SearchRequestsEvery = 5  # Check every 5 loops (slower polling)
 SearchLimit = 3  # Limit concurrent searches
@@ -327,14 +327,14 @@ SearchLimit = 3  # Limit concurrent searches
 For family/friends servers where all requests are trusted:
 
 ```toml
-[Radarr-Movies.EntrySearch.Overseerr]
+[Radarr-Movies.Search.Overseerr]
 SearchOverseerrRequests = true
 OverseerrURI = "http://localhost:5055"
 OverseerrAPIKey = "your-api-key"
 ApprovedOnly = false  # Auto-approve all requests
 Is4K = false
 
-[Radarr-Movies.EntrySearch]
+[Radarr-Movies.Search]
 SearchMissing = true
 SearchRequestsEvery = 2  # Check every 2 loops (faster polling)
 SearchLimit = 10  # Higher concurrent search limit
@@ -352,11 +352,11 @@ URI = "http://localhost:7878"
 APIKey = "standard-api-key"
 Category = "radarr-movies"
 
-[Radarr-Movies.EntrySearch]
+[Radarr-Movies.Search]
 SearchMissing = true
 SearchRequestsEvery = 3
 
-[Radarr-Movies.EntrySearch.Overseerr]
+[Radarr-Movies.Search.Overseerr]
 SearchOverseerrRequests = true
 OverseerrURI = "http://localhost:5055"
 OverseerrAPIKey = "shared-api-key"
@@ -370,12 +370,12 @@ URI = "http://localhost:7879"
 APIKey = "4k-api-key"
 Category = "radarr-4k"
 
-[Radarr-4K.EntrySearch]
+[Radarr-4K.Search]
 SearchMissing = true
 SearchRequestsEvery = 5  # Slower polling for 4K
 SearchLimit = 2  # Fewer concurrent searches
 
-[Radarr-4K.EntrySearch.Overseerr]
+[Radarr-4K.Search.Overseerr]
 SearchOverseerrRequests = true
 OverseerrURI = "http://localhost:5055"
 OverseerrAPIKey = "shared-api-key"
@@ -393,7 +393,7 @@ Is4K = true  # Separate 4K flag
 
 **Solutions:**
 
-1. ✅ Verify `SearchMissing = true` in `[EntrySearch]` section
+1. ✅ Verify `SearchMissing = true` in `[Search]` section
 2. ✅ Check `SearchOverseerrRequests = true`
 3. ✅ Ensure `OverseerrURI` is correct (include `http://` or `https://`)
 4. ✅ Test API key manually:
@@ -513,11 +513,11 @@ Overseerr has **no built-in rate limiting**, but Torrentarr implements efficient
 Overseerr requests work **alongside** regular missing content searches:
 
 ```toml
-[Radarr-Movies.EntrySearch]
+[Radarr-Movies.Search]
 SearchMissing = true  # Search monitored missing content
 SearchLimit = 10  # Total concurrent searches
 
-[Radarr-Movies.EntrySearch.Overseerr]
+[Radarr-Movies.Search.Overseerr]
 SearchOverseerrRequests = true  # Also search Overseerr requests
 ApprovedOnly = true
 ```
@@ -534,12 +534,12 @@ Torrentarr will:
 Combine Overseerr requests with quality upgrades:
 
 ```toml
-[Radarr-Movies.EntrySearch]
+[Radarr-Movies.Search]
 SearchMissing = true
 DoUpgradeSearch = true  # Enable quality upgrades
 QualityUnmetSearch = true  # Search for unmet quality profiles
 
-[Radarr-Movies.EntrySearch.Overseerr]
+[Radarr-Movies.Search.Overseerr]
 SearchOverseerrRequests = true
 ApprovedOnly = true
 ```
@@ -555,12 +555,12 @@ This ensures:
 Enforce custom format scores for Overseerr requests:
 
 ```toml
-[Radarr-Movies.EntrySearch]
+[Radarr-Movies.Search]
 SearchMissing = true
 CustomFormatUnmetSearch = true  # Search for CF score improvements
 ForceMinimumCustomFormat = true  # Block releases below CF threshold
 
-[Radarr-Movies.EntrySearch.Overseerr]
+[Radarr-Movies.Search.Overseerr]
 SearchOverseerrRequests = true
 ApprovedOnly = true
 ```
@@ -624,7 +624,7 @@ services:
     restart: unless-stopped
 ```
 
-Configure Overseerr in `config.toml` under `[Radarr-Movies.EntrySearch.Overseerr]`: `SearchOverseerrRequests`, `OverseerrURI`, `OverseerrAPIKey`, `ApprovedOnly`, `Is4K`.
+Configure Overseerr in `config.toml` under `[Radarr-Movies.Search.Overseerr]`: `SearchOverseerrRequests`, `OverseerrURI`, `OverseerrAPIKey`, `ApprovedOnly`, `Is4K`.
 
 ---
 

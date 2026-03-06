@@ -363,7 +363,7 @@ Restart Torrentarr with your configuration:
 If you want Torrentarr to search for missing media:
 
 ```toml
-[Radarr-Movies.EntrySearch]
+[Radarr-Movies.Search]
 SearchMissing = true
 SearchLimit = 5
 SearchByYear = true
@@ -390,7 +390,7 @@ ReSearchStalled = true
 If using Overseerr or Ombi:
 
 ```toml
-[Radarr-Movies.EntrySearch.Overseerr]
+[Radarr-Movies.Search.Overseerr]
 SearchOverseerrRequests = true
 OverseerrURI = "http://localhost:5055"
 OverseerrAPIKey = "your_overseerr_api_key"
