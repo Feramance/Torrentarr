@@ -610,45 +610,11 @@ app.MapGet("/web/stats", async (TorrentarrDbContext db) =>
     });
 });
 
-// Configuration endpoint - get current configuration (sanitized)
+// Configuration endpoint - get full flat config (mirrors TOML section structure)
 app.MapGet("/web/config", (TorrentarrConfig config) =>
 {
-    return Results.Ok(new
-    {
-        settings = new
-        {
-            config.Settings.ConfigVersion,
-            config.Settings.LoopSleepTimer,
-            config.Settings.SearchLoopDelay,
-            config.Settings.AutoRestartProcesses,
-            config.Settings.FreeSpaceThresholdGB
-        },
-        webui = new
-        {
-            config.WebUI.Host,
-            config.WebUI.Port,
-            config.WebUI.Theme,
-            config.WebUI.ViewDensity,
-            config.WebUI.LiveArr,
-            config.WebUI.GroupSonarr,
-            config.WebUI.GroupLidarr
-        },
-        qbit = new
-        {
-            (config.QBitInstances.GetValueOrDefault("qBit") ?? new QBitConfig()).Host,
-            (config.QBitInstances.GetValueOrDefault("qBit") ?? new QBitConfig()).Port,
-            (config.QBitInstances.GetValueOrDefault("qBit") ?? new QBitConfig()).Disabled,
-            managedCategories = (config.QBitInstances.GetValueOrDefault("qBit") ?? new QBitConfig()).ManagedCategories
-        },
-        arrs = config.Arrs.Select(a => new
-        {
-            a.Category,
-            a.Type,
-            a.Managed,
-            a.SearchOnly,
-            a.ProcessingOnly
-        }).ToList()
-    });
+    var flat = BuildFlatConfig(config, redactSensitive: true);
+    return Results.Ok(flat);
 });
 
 // §6.8: POST /web/config — partial config changes with reload-type detection
@@ -726,9 +692,8 @@ app.MapPost("/web/config", async (HttpContext ctx, TorrentarrConfig config, Conf
     // ── Apply changes to config + save ─────────────────────────────────────
     try
     {
-        // Serialize current config to JObject, apply dot-path changes, deserialize back
-        var configJson = Newtonsoft.Json.JsonConvert.SerializeObject(config);
-        var configObj = Newtonsoft.Json.JsonConvert.DeserializeObject<Newtonsoft.Json.Linq.JObject>(configJson)!;
+        // Build flat TOML-like config, apply changes, convert back to TorrentarrConfig
+        var flatConfig = BuildFlatConfig(config, redactSensitive: false);
 
         foreach (var (key, value) in changes)
         {
@@ -742,16 +707,11 @@ app.MapPost("/web/config", async (HttpContext ctx, TorrentarrConfig config, Conf
                 && value.ToString() == "[redacted]")
                 continue;
 
-            // Convert dot-path "Section.SubKey" to JToken path "section.subKey"
-            // Apply each change via JToken pointer navigation
-            ApplyDotPathChange(configObj, key, value);
+            ApplyDotPathChange(flatConfig, key, value);
         }
 
-        var updatedConfig = configObj.ToObject<TorrentarrConfig>();
-        if (updatedConfig != null)
-        {
-            loader.SaveConfig(updatedConfig, reloader.ConfigPath);
-        }
+        var updatedConfig = FlatToConfig(flatConfig, config);
+        loader.SaveConfig(updatedConfig, reloader.ConfigPath);
     }
     catch (Exception ex)
     {
@@ -810,6 +770,126 @@ static void ApplyDotPathChange(Newtonsoft.Json.Linq.JObject root, string dotPath
         existingProp.Value = value;
     else
         current[leafKey] = value;
+}
+
+// Helper: build a flat TOML-like JObject from TorrentarrConfig
+// Keys mirror TOML section names: "Settings", "WebUI", "qBit", "qBit-1", "Radarr-1080", etc.
+// ArrInstanceConfig.Search is serialized under key "EntrySearch" (TOML compat).
+static Newtonsoft.Json.Linq.JObject BuildFlatConfig(TorrentarrConfig config, bool redactSensitive)
+{
+    var flat = new Newtonsoft.Json.Linq.JObject();
+    flat["Settings"] = Newtonsoft.Json.Linq.JObject.FromObject(config.Settings);
+
+    var webuiObj = Newtonsoft.Json.Linq.JObject.FromObject(config.WebUI);
+    if (redactSensitive)
+    {
+        RedactFlatField(webuiObj, "Token");
+        RedactFlatField(webuiObj, "PasswordHash");
+    }
+    flat["WebUI"] = webuiObj;
+
+    foreach (var (name, qbit) in config.QBitInstances)
+    {
+        var qbitObj = Newtonsoft.Json.Linq.JObject.FromObject(qbit);
+        if (redactSensitive) RedactFlatField(qbitObj, "Password");
+        flat[name] = qbitObj;
+    }
+
+    foreach (var (name, arr) in config.ArrInstances)
+    {
+        var arrObj = Newtonsoft.Json.Linq.JObject.FromObject(arr);
+        // Rename "Search" → "EntrySearch" for TOML compat (frontend uses "EntrySearch" paths)
+        var searchProp = arrObj.Properties()
+            .FirstOrDefault(p => p.Name.Equals("Search", StringComparison.OrdinalIgnoreCase));
+        if (searchProp != null)
+        {
+            arrObj["EntrySearch"] = searchProp.Value;
+            searchProp.Remove();
+        }
+        if (redactSensitive) RedactFlatField(arrObj, "APIKey");
+        flat[name] = arrObj;
+    }
+
+    return flat;
+}
+
+static void RedactFlatField(Newtonsoft.Json.Linq.JObject obj, string key)
+{
+    var prop = obj.Properties()
+        .FirstOrDefault(p => p.Name.Equals(key, StringComparison.OrdinalIgnoreCase));
+    if (prop != null
+        && prop.Value.Type == Newtonsoft.Json.Linq.JTokenType.String
+        && !string.IsNullOrEmpty(prop.Value.ToString())
+        && prop.Value.ToString() != "CHANGE_ME")
+    {
+        prop.Value = "[redacted]";
+    }
+}
+
+// Helper: convert a flat config JObject back to TorrentarrConfig
+// Handles "EntrySearch" → "Search" remapping for Arr instances.
+// Restores redacted sensitive values from the current (in-memory) config.
+static TorrentarrConfig FlatToConfig(Newtonsoft.Json.Linq.JObject flat, TorrentarrConfig current)
+{
+    var result = new TorrentarrConfig();
+
+    // Settings
+    result.Settings = flat["Settings"] is Newtonsoft.Json.Linq.JObject settingsObj
+        ? settingsObj.ToObject<SettingsConfig>() ?? current.Settings
+        : current.Settings;
+
+    // WebUI — restore redacted sensitive fields
+    if (flat["WebUI"] is Newtonsoft.Json.Linq.JObject webuiObj)
+    {
+        result.WebUI = webuiObj.ToObject<WebUIConfig>() ?? current.WebUI;
+        if (result.WebUI.Token == "[redacted]") result.WebUI.Token = current.WebUI.Token;
+        if (result.WebUI.PasswordHash == "[redacted]") result.WebUI.PasswordHash = current.WebUI.PasswordHash;
+    }
+    else
+    {
+        result.WebUI = current.WebUI;
+    }
+
+    result.QBitInstances = new Dictionary<string, QBitConfig>(current.QBitInstances);
+    result.ArrInstances = new Dictionary<string, ArrInstanceConfig>(current.ArrInstances);
+
+    foreach (var prop in flat.Properties())
+    {
+        if (prop.Name is "Settings" or "WebUI") continue;
+        if (prop.Value is not Newtonsoft.Json.Linq.JObject instanceObj) continue;
+
+        bool isKnownQBit = current.QBitInstances.ContainsKey(prop.Name);
+        bool isKnownArr = current.ArrInstances.ContainsKey(prop.Name);
+
+        if (isKnownQBit || (!isKnownArr && prop.Name.StartsWith("qBit", StringComparison.OrdinalIgnoreCase)))
+        {
+            var qbit = instanceObj.ToObject<QBitConfig>() ?? new QBitConfig();
+            if (qbit.Password == "[redacted]" && current.QBitInstances.TryGetValue(prop.Name, out var existingQBit))
+                qbit.Password = existingQBit.Password;
+            result.QBitInstances[prop.Name] = qbit;
+        }
+        else if (isKnownArr
+            || prop.Name.StartsWith("Radarr", StringComparison.OrdinalIgnoreCase)
+            || prop.Name.StartsWith("Sonarr", StringComparison.OrdinalIgnoreCase)
+            || prop.Name.StartsWith("Lidarr", StringComparison.OrdinalIgnoreCase))
+        {
+            // Rename "EntrySearch" → "Search" before deserializing
+            var arrCopy = (Newtonsoft.Json.Linq.JObject)instanceObj.DeepClone();
+            var esProp = arrCopy.Properties()
+                .FirstOrDefault(p => p.Name.Equals("EntrySearch", StringComparison.OrdinalIgnoreCase));
+            if (esProp != null)
+            {
+                arrCopy["Search"] = esProp.Value;
+                esProp.Remove();
+            }
+            var arr = arrCopy.ToObject<ArrInstanceConfig>() ?? new ArrInstanceConfig();
+            if (arr.APIKey == "[redacted]" && current.ArrInstances.TryGetValue(prop.Name, out var existingArr))
+                arr.APIKey = existingArr.APIKey;
+            result.ArrInstances[prop.Name] = arr;
+        }
+    }
+
+    return result;
 }
 
 // Processes endpoint - list all processes with status

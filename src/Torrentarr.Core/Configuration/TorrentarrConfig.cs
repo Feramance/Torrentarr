@@ -77,8 +77,6 @@ public class QBitConfig
     public int Port { get; set; } = 8080;
     public string UserName { get; set; } = "CHANGE_ME";
     public string Password { get; set; } = "CHANGE_ME";
-    /// <summary>Set to true for qBittorrent v5+ which uses a different API authentication scheme.</summary>
-    public bool V5 { get; set; } = false;
     public string? DownloadPath { get; set; }
     public List<string> ManagedCategories { get; set; } = new();
     public List<TrackerConfig> Trackers { get; set; } = new();

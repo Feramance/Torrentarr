@@ -138,7 +138,7 @@ Key config sections: `[Settings]`, `[WebUI]`, `[qBit]`, `[qBit.CategorySeeding]`
 
 **Cross-instance free space:** `FreeSpaceService` iterates ALL configured qBit instances, gathers torrents from all clients, sorts them globally by `AddedOn` date, and processes the oldest first. `DownloadPath` is checked per-instance for space.
 
-**Config version:** Current format is `5.9.2` (`ConfigurationLoader.ExpectedConfigVersion`). Notable fields: `v5 = true` in `[qBit]` for qBittorrent v5 auth. `HitAndRunMode` is a **string** (`"and"` / `"or"` / `"disabled"`) — not a boolean (changed in v5.9.2). Seeding configuration (`HitAndRunMode`, `MinSeedRatio`, `MinSeedingTimeDays`, etc.) lives in `[qBit.CategorySeeding]` per qBit instance — not in `[WebUI]`.
+**Config version:** Current format is `5.9.2` (`ConfigurationLoader.ExpectedConfigVersion`). Notable fields: `HitAndRunMode` is a **string** (`"and"` / `"or"` / `"disabled"`) — not a boolean (changed in v5.9.2). Seeding configuration (`HitAndRunMode`, `MinSeedRatio`, `MinSeedingTimeDays`, etc.) lives in `[qBit.CategorySeeding]` per qBit instance — not in `[WebUI]`.
 
 **TOML serialization rule:** Arrays that may contain regex or file extension patterns (e.g., `FileExtensionAllowlist`) must use single-quoted TOML literal strings (`'\.mkv'`) to avoid invalid escape sequences — Tomlyn enforces strict TOML and rejects `\.` in double-quoted strings.
 

@@ -477,6 +477,12 @@ const QBIT_FIELDS: FieldDefinition[] = [
   { label: "UserName", path: ["UserName"], type: "text" },
   { label: "Password", path: ["Password"], type: "password", secure: true },
   {
+    label: "Download Path",
+    path: ["DownloadPath"],
+    type: "text",
+    placeholder: "/downloads",
+  },
+  {
     label: "Managed Categories",
     path: ["ManagedCategories"],
     type: "tags",
@@ -629,6 +635,29 @@ const QBIT_FIELDS: FieldDefinition[] = [
       return undefined;
     },
   },
+  {
+    label: "Stalled Delay (min)",
+    path: ["CategorySeeding", "StalledDelay"],
+    type: "duration",
+    nativeUnit: "minutes",
+    required: false,
+    validate: (value) => {
+      if (value === null || value === undefined || value === "")
+        return undefined;
+      const total = parseDurationToMinutes(value, -1);
+      if (total < 0 || !Number.isFinite(total)) {
+        return "Stalled Delay must be 0 or greater.";
+      }
+      return undefined;
+    },
+  },
+  {
+    label: "Ignore Torrents Younger Than",
+    path: ["CategorySeeding", "IgnoreTorrentsYoungerThan"],
+    type: "duration",
+    nativeUnit: "seconds",
+    required: false,
+  },
 ];
 
 const ARR_GENERAL_FIELDS: FieldDefinition[] = [
@@ -639,6 +668,8 @@ const ARR_GENERAL_FIELDS: FieldDefinition[] = [
     sectionName: true,
   },
   { label: "Managed", path: ["Managed"], type: "checkbox" },
+  { label: "Search Only", path: ["SearchOnly"], type: "checkbox" },
+  { label: "Processing Only", path: ["ProcessingOnly"], type: "checkbox" },
   {
     label: "URI",
     path: ["URI"],
@@ -886,11 +917,6 @@ const ARR_ENTRY_SEARCH_OMBI_FIELDS: FieldDefinition[] = [
   {
     label: "Approved Only",
     path: ["EntrySearch", "Ombi", "ApprovedOnly"],
-    type: "checkbox",
-  },
-  {
-    label: "Is 4K Instance",
-    path: ["EntrySearch", "Ombi", "Is4K"],
     type: "checkbox",
   },
 ];
@@ -4305,6 +4331,23 @@ function SimpleConfigModal({
                   </select>
                   <p className="field-description">
                     WebUI theme (Light or Dark)
+                  </p>
+                </div>
+                <div className="field">
+                  <label>View Density</label>
+                  <select
+                    value={webUI.viewDensity}
+                    onChange={(e) =>
+                      webUI.setViewDensity(
+                        e.target.value as "comfortable" | "compact",
+                      )
+                    }
+                  >
+                    <option value="comfortable">Comfortable</option>
+                    <option value="compact">Compact</option>
+                  </select>
+                  <p className="field-description">
+                    Comfortable (more spacing) or Compact (more rows on screen)
                   </p>
                 </div>
               </div>

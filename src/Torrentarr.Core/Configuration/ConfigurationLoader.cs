@@ -947,9 +947,6 @@ public class ConfigurationLoader
         if (table.TryGetValue("Password", out var password))
             qbit.Password = password?.ToString() ?? "";
 
-        if (table.TryGetValue("v5", out var v5))
-            qbit.V5 = Convert.ToBoolean(v5);
-
         if (table.TryGetValue("DownloadPath", out var downloadPath))
             qbit.DownloadPath = downloadPath?.ToString();
 
@@ -1686,7 +1683,6 @@ public class ConfigurationLoader
             sb.AppendLine($"Port = {qbit.Port}");
             sb.AppendLine($"UserName = \"{qbit.UserName}\"");
             sb.AppendLine($"Password = \"{qbit.Password}\"");
-            sb.AppendLine($"v5 = {qbit.V5.ToString().ToLower()}");
             if (!string.IsNullOrEmpty(qbit.DownloadPath))
                 sb.AppendLine($"DownloadPath = \"{qbit.DownloadPath}\"");
             sb.AppendLine($"ManagedCategories = [{string.Join(", ", qbit.ManagedCategories.Select(c => $"\"{c}\""))}]");
