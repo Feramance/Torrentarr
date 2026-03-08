@@ -325,6 +325,43 @@ describe("getMeta", () => {
     expect(result.auth_required).toBe(false);
     expect(result.local_auth_enabled).toBe(false);
   });
+
+  it("deserializes setup_required when present", async () => {
+    server.use(
+      http.get("/web/meta", () =>
+        HttpResponse.json({
+          current_version: "5.9.2",
+          latest_version: null,
+          update_available: false,
+          changelog: null,
+          current_version_changelog: null,
+          changelog_url: null,
+          repository_url: "",
+          homepage_url: "",
+          last_checked: null,
+          update_state: {
+            in_progress: false,
+            last_result: null,
+            last_error: null,
+            completed_at: null,
+          },
+          installation_type: "binary",
+          binary_download_url: null,
+          binary_download_name: null,
+          binary_download_size: null,
+          binary_download_error: null,
+          auth_required: true,
+          local_auth_enabled: true,
+          oidc_enabled: false,
+          setup_required: true,
+        }),
+      ),
+    );
+
+    const result = await getMeta();
+
+    expect(result.setup_required).toBe(true);
+  });
 });
 
 // ── setPassword ───────────────────────────────────────────────────────────────

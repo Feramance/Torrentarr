@@ -302,6 +302,8 @@ export interface MetaResponse {
   local_auth_enabled?: boolean;
   /** When true, show "Sign in with OIDC" on login page. */
   oidc_enabled?: boolean;
+  /** When true, show welcome/setup screen to create username and password before accessing the app. */
+  setup_required?: boolean;
 }
 
 export interface ConfigUpdateResponse {

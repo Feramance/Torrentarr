@@ -256,6 +256,7 @@ public class SetupRequiredTests : IClassFixture<LocalAuthNoPasswordWebApplicatio
         using var doc = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
         doc.RootElement.GetProperty("auth_required").GetBoolean().Should().BeTrue();
         doc.RootElement.GetProperty("local_auth_enabled").GetBoolean().Should().BeTrue();
+        doc.RootElement.GetProperty("setup_required").GetBoolean().Should().BeTrue("no password set and local auth enabled");
     }
 }
 

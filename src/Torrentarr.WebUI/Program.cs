@@ -1500,7 +1500,8 @@ app.MapGet("/web/meta", (TorrentarrConfig cfg) =>
         runtime = $".NET {Environment.Version}",
         auth_required = !cfg.WebUI.AuthDisabled,
         local_auth_enabled = cfg.WebUI.LocalAuthEnabled,
-        oidc_enabled = cfg.WebUI.OIDCEnabled
+        oidc_enabled = cfg.WebUI.OIDCEnabled,
+        setup_required = !cfg.WebUI.AuthDisabled && cfg.WebUI.LocalAuthEnabled && string.IsNullOrEmpty(cfg.WebUI.PasswordHash)
     });
 });
 

@@ -6,9 +6,11 @@ This page describes Torrentarr's WebUI authentication options: token-only, local
 
 ## Overview
 
-- **AuthDisabled = true (default):** No login screen. The WebUI and API are protected only by the [Token](webui.md#token) (or are public until Torrentarr has run once and auto-generated a token). Use this when you rely on the API token or a reverse proxy for access control.
+- **AuthDisabled = true (default for existing configs):** No login screen. The WebUI and API are protected only by the [Token](webui.md#token) (or are public until Torrentarr has run once and auto-generated a token). Use this when you rely on the API token or a reverse proxy for access control.
 
 - **AuthDisabled = false:** Browser users must log in or present the Bearer token. At least one of **LocalAuthEnabled** or **OIDCEnabled** should be true so the login page offers a sign-in method. The API token still works for `/api/*` (Bearer or `?token=` on GET). After a successful login (local or OIDC), a session cookie grants access to the WebUI and `/web/token` returns the API token for the frontend.
+
+**New installs:** When Torrentarr runs for the first time and creates the config file (it did not exist before), the generated config has **AuthDisabled = false** and **LocalAuthEnabled = true** by default. The user is shown a welcome screen to create an admin username and password before accessing the rest of the WebUI. Existing configs (file already present) are unchanged and keep **AuthDisabled = true** unless you edit the auth settings.
 
 ---
 
@@ -21,7 +23,7 @@ AuthDisabled = true
 ```
 
 **Type:** Boolean
-**Default:** `true`
+**Default:** `true` when loading an existing config that does not set this key. When Torrentarr creates a new config file (first run, no config existed), the generated config uses `false` so new installs require auth and a one-time username/password setup.
 
 When `true`, authentication is disabled for browser access: no login screen, and protection is via Token only (or public if Token is empty before first run). When `false`, unauthenticated browser requests to `/ui` and other protected paths are redirected to the login page unless the request includes a valid Bearer token.
 

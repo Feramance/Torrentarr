@@ -188,7 +188,8 @@ public class UpdateService
             runtime = $".NET {Environment.Version}",
             auth_required = !webUi.AuthDisabled,
             local_auth_enabled = webUi.LocalAuthEnabled,
-            oidc_enabled = webUi.OIDCEnabled
+            oidc_enabled = webUi.OIDCEnabled,
+            setup_required = !webUi.AuthDisabled && webUi.LocalAuthEnabled && string.IsNullOrEmpty(webUi.PasswordHash)
         };
     }
 

@@ -575,6 +575,7 @@ function AuthGate({ children }: { children: React.ReactNode }): JSX.Element {
       <LoginPage
         localAuthEnabled={authMeta?.local_auth_enabled ?? true}
         oidcEnabled={authMeta?.oidc_enabled ?? false}
+        showSetupFirst={authMeta?.setup_required ?? false}
         onSuccess={() => {
           setNeedsLogin(false);
           void getToken().then(
@@ -616,6 +617,7 @@ function LoginRoute(): JSX.Element {
     <LoginPage
       localAuthEnabled={meta.local_auth_enabled ?? true}
       oidcEnabled={meta.oidc_enabled ?? false}
+      showSetupFirst={meta.setup_required ?? false}
       onSuccess={() => window.location.replace("/ui")}
     />
   );
@@ -625,20 +627,23 @@ interface LoginPageProps {
   onSuccess: () => void;
   localAuthEnabled?: boolean;
   oidcEnabled?: boolean;
+  /** When true, show the set-password welcome screen first (for new installs with setup_required). */
+  showSetupFirst?: boolean;
 }
 
 function LoginPage({
   onSuccess,
   localAuthEnabled = true,
   oidcEnabled = false,
+  showSetupFirst = false,
 }: LoginPageProps): JSX.Element {
   const [username, setUsername] = useState("");
   const [password, setPasswordState] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
   // When the server returns SETUP_REQUIRED (LocalAuthEnabled=true but no password set),
-  // switch to inline set-password form so the user can set credentials without leaving the page.
-  const [setupRequired, setSetupRequired] = useState(false);
+  // or when showSetupFirst (meta.setup_required), show set-password form.
+  const [setupRequired, setSetupRequired] = useState(showSetupFirst);
   const [newPassword, setNewPassword] = useState("");
   const [confirmPassword, setConfirmPassword] = useState("");
 
@@ -689,10 +694,22 @@ function LoginPage({
       <div className="login-page">
         <div className="login-card">
           <h1>Torrentarr</h1>
-          <p className="login-subtitle">Set a password to continue</p>
-          <p className="login-info">
-            No password has been configured yet. Set one to enable local login.
-          </p>
+          {showSetupFirst ? (
+            <>
+              <p className="login-subtitle">Welcome to Torrentarr</p>
+              <p className="login-info">
+                Create an admin username and password to get started.
+              </p>
+            </>
+          ) : (
+            <>
+              <p className="login-subtitle">Set a password to continue</p>
+              <p className="login-info">
+                No password has been configured yet. Set one to enable local
+                login.
+              </p>
+            </>
+          )}
           <form onSubmit={handleSetPassword}>
             <div className="form-group">
               <label htmlFor="setup-username">Username</label>

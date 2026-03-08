@@ -188,7 +188,9 @@ curl -H "Authorization: Bearer my-secure-token-12345" \
 
 ## Authentication
 
-When **AuthDisabled** = `true` (default), there is no login screen; the WebUI and API are protected only by the Token (or are public if Token was empty and has not yet been auto-generated). When **AuthDisabled** = `false`, browser users must either log in (local username/password and/or OIDC) or present the Bearer token. At least one of **LocalAuthEnabled** or **OIDCEnabled** should be true so the login page can offer a sign-in method.
+When **AuthDisabled** = `true` (default for existing configs), there is no login screen; the WebUI and API are protected only by the Token (or are public if Token was empty and has not yet been auto-generated). When **AuthDisabled** = `false`, browser users must either log in (local username/password and/or OIDC) or present the Bearer token. At least one of **LocalAuthEnabled** or **OIDCEnabled** should be true so the login page can offer a sign-in method.
+
+**New installs:** If Torrentarr creates the config file on first run (it did not exist before), the generated config has **AuthDisabled = false** and **LocalAuthEnabled = true**. Users see a welcome screen to set an admin username and password before accessing the rest of the WebUI. Existing configs are unchanged unless you edit auth settings.
 
 Local auth uses a single **Username** and a stored **PasswordHash** (set via the login page or `POST /web/auth/set-password`; never store a plain password in config). OIDC uses an external identity provider (e.g. Authentik, Keycloak) and a `[WebUI.OIDC]` block with Authority, ClientId, ClientSecret, and related settings.
 

@@ -1562,13 +1562,14 @@ public class ConfigurationLoader
                 ProcessRestartDelay = 5
             },
             // QBit is intentionally omitted from default config — user adds it via WebUI
+            // New installs get auth enabled by default; user must set username/password on first access.
             WebUI = new WebUIConfig
             {
                 Host = "0.0.0.0",
                 Port = 6969,
                 Token = "",
-                AuthDisabled = true,
-                LocalAuthEnabled = false,
+                AuthDisabled = false,
+                LocalAuthEnabled = true,
                 OIDCEnabled = false,
                 Username = "",
                 PasswordHash = "",

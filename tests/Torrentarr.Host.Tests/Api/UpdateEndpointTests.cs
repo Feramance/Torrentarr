@@ -49,6 +49,8 @@ public class UpdateEndpointTests : IClassFixture<TorrentarrWebApplicationFactory
         authRequired.ValueKind.Should().Be(JsonValueKind.False, "base factory has auth disabled");
         json.TryGetProperty("local_auth_enabled", out _).Should().BeTrue("local_auth_enabled is required");
         json.TryGetProperty("oidc_enabled", out _).Should().BeTrue("oidc_enabled is required");
+        json.TryGetProperty("setup_required", out var setupRequired).Should().BeTrue("setup_required is required");
+        setupRequired.ValueKind.Should().Be(JsonValueKind.False, "base factory has auth disabled so setup not required");
     }
 
     [Fact]

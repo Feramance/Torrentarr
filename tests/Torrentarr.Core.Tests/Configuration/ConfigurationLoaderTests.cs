@@ -584,4 +584,13 @@ public class ConfigurationLoaderTests : IDisposable
         content.Should().Contain("LocalAuthEnabled = true");
         content.Should().Contain("OIDCEnabled = true");
     }
+
+    [Fact]
+    public void GenerateDefaultConfig_ReturnsAuthEnabledForNewInstalls()
+    {
+        var config = ConfigurationLoader.GenerateDefaultConfig();
+
+        config.WebUI.AuthDisabled.Should().BeFalse("new installs get auth enabled by default");
+        config.WebUI.LocalAuthEnabled.Should().BeTrue("new installs get local auth enabled by default");
+    }
 }
