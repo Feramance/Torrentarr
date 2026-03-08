@@ -3673,6 +3673,9 @@ function DurationInput({
   );
   const [number, setNumber] = useState(parsed.number);
   const [unit, setUnit] = useState(parsed.unit);
+  // rawInput holds the exact string in the number input so the user can clear
+  // the field and type a new value without it being immediately clamped to -1.
+  const [rawInput, setRawInput] = useState(String(parsed.number));
   const lastValueRef = useRef(value);
 
   useEffect(() => {
@@ -3685,6 +3688,7 @@ function DurationInput({
       );
       setNumber(next.number);
       setUnit(next.unit);
+      setRawInput(String(next.number));
     }
   }, [value, baseUnit, allowNegative]);
 
@@ -3702,17 +3706,25 @@ function DurationInput({
     <div className="duration-input">
       <input
         type="number"
-        value={number}
+        value={rawInput}
         min={allowNegative ? -1 : 0}
         step={unit === "s" || unit === "m" ? 1 : 0.01}
         onChange={(e) => {
-          const v =
-            e.target.value === ""
-              ? allowNegative
-                ? -1
-                : 0
-              : Number(e.target.value);
-          handleChange(v, unit);
+          const raw = e.target.value;
+          setRawInput(raw);
+          // Only commit when the user has typed a valid number; an empty field
+          // means they are mid-edit — apply the default only on blur.
+          if (raw !== "") {
+            const v = Number(raw);
+            if (!isNaN(v)) handleChange(v, unit);
+          }
+        }}
+        onBlur={(e) => {
+          if (e.target.value === "") {
+            const def = allowNegative ? -1 : 0;
+            setRawInput(String(def));
+            handleChange(def, unit);
+          }
         }}
         placeholder={placeholder}
       />
