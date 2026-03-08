@@ -29,7 +29,7 @@ Category = "sonarr-tv"
 ReSearch = true
 
 # Import mode (Auto, Move, or Copy)
-importMode = "Auto"
+ImportMode = "Auto"
 
 # RSS sync timer in minutes (0 = disabled)
 RssSyncTimer = 1
@@ -104,7 +104,7 @@ When `Managed = false`, Torrentarr will completely ignore this Sonarr instance. 
 ### Import Mode
 
 ```toml
-importMode = "Auto"  # Auto | Move | Copy
+ImportMode = "Auto"  # Auto | Move | Copy
 ```
 
 | Mode | Behavior |
@@ -207,12 +207,12 @@ ArrErrorCodesToBlocklist = []  # Empty list = disabled
 
 ## Automated Search Configuration
 
-Torrentarr can automatically search for missing episodes, quality upgrades, and user requests. Configure these settings in the `[Sonarr-TV.EntrySearch]` subsection.
+Torrentarr can automatically search for missing episodes, quality upgrades, and user requests. Configure these settings in the `[Sonarr-TV.Search]` subsection.
 
 ### Basic Search Settings
 
 ```toml
-[Sonarr-TV.EntrySearch]
+[Sonarr-TV.Search]
 # Enable automated search for missing episodes
 SearchMissing = true
 
@@ -246,7 +246,7 @@ SearchAgainOnSearchCompletion = true
 ### Search Mode (Series vs. Episode)
 
 ```toml
-[Sonarr-TV.EntrySearch]
+[Sonarr-TV.Search]
 # Search mode: true | false | "smart"
 SearchBySeries = "smart"
 ```
@@ -265,7 +265,7 @@ SearchBySeries = "smart"
 ### Prioritize Today's Releases
 
 ```toml
-[Sonarr-TV.EntrySearch]
+[Sonarr-TV.Search]
 # Prioritize episodes that aired today
 PrioritizeTodaysReleases = true
 ```
@@ -286,7 +286,7 @@ When enabled, Torrentarr searches for episodes that aired **today** before proce
 ### Quality Upgrade Searches
 
 ```toml
-[Sonarr-TV.EntrySearch]
+[Sonarr-TV.Search]
 # Search for better quality versions of existing episodes
 DoUpgradeSearch = false
 
@@ -324,7 +324,7 @@ ForceMinimumCustomFormat = false
 Temporarily lower quality standards for missing episodes, then upgrade them later:
 
 ```toml
-[Sonarr-TV.EntrySearch]
+[Sonarr-TV.Search]
 # Use temp profile for missing episodes
 UseTempForMissing = false
 
@@ -367,7 +367,7 @@ ProfileSwitchRetryAttempts = 3
 ### Overseerr
 
 ```toml
-[Sonarr-TV.EntrySearch.Overseerr]
+[Sonarr-TV.Search.Overseerr]
 # Enable Overseerr request processing
 SearchOverseerrRequests = false
 
@@ -399,7 +399,7 @@ When enabled, Torrentarr:
 ### Ombi
 
 ```toml
-[Sonarr-TV.EntrySearch.Ombi]
+[Sonarr-TV.Search.Ombi]
 # Enable Ombi request processing
 SearchOmbiRequests = false
 
@@ -548,7 +548,7 @@ URI = "http://localhost:8989"
 APIKey = "your-sonarr-api-key"
 Category = "sonarr-tv"
 ReSearch = true
-importMode = "Auto"
+ImportMode = "Auto"
 RssSyncTimer = 1
 RefreshDownloadsTimer = 1
 ArrErrorCodesToBlocklist = [
@@ -556,7 +556,7 @@ ArrErrorCodesToBlocklist = [
   "Unable to determine if file is a sample"
 ]
 
-[Sonarr-TV.EntrySearch]
+[Sonarr-TV.Search]
 SearchMissing = true
 AlsoSearchSpecials = false
 Unmonitored = false
@@ -578,7 +578,7 @@ ProfileSwitchRetryAttempts = 3
 SearchBySeries = "smart"
 PrioritizeTodaysReleases = true
 
-[Sonarr-TV.EntrySearch.Overseerr]
+[Sonarr-TV.Search.Overseerr]
 SearchOverseerrRequests = true
 OverseerrURI = "http://localhost:5055"
 OverseerrAPIKey = "your-overseerr-api-key"
@@ -618,12 +618,12 @@ URI = "http://localhost:8990"
 APIKey = "your-anime-sonarr-api-key"
 Category = "sonarr-anime"
 ReSearch = true
-importMode = "Copy"  # Copy to preserve seeding for anime trackers
+ImportMode = "Copy"  # Copy to preserve seeding for anime trackers
 RssSyncTimer = 1
 RefreshDownloadsTimer = 1
 ArrErrorCodesToBlocklist = ["Not an upgrade for existing episode file(s)"]
 
-[Sonarr-Anime.EntrySearch]
+[Sonarr-Anime.Search]
 SearchMissing = true
 AlsoSearchSpecials = true  # Often want anime specials
 Unmonitored = false
@@ -683,7 +683,7 @@ RemoveTorrent = 4  # Remove only when both ratio AND time met
 
 **Solutions:**
 
-1. ✅ Verify `SearchMissing = true` in `[Sonarr-TV.EntrySearch]`
+1. ✅ Verify `SearchMissing = true` in `[Sonarr-TV.Search]`
 2. ✅ Check `SearchLimit` isn't too low
 3. ✅ Ensure Sonarr has indexers configured and working
 4. ✅ Review `SearchRequestsEvery` delay setting

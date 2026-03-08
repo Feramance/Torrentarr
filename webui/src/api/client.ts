@@ -52,6 +52,12 @@ function resolveToken(): string | null {
     const fromQuery = params.get("token");
     if (fromQuery) {
       localStorage.setItem("token", fromQuery);
+      // Remove the token from the URL so it doesn't persist in browser history or logs
+      params.delete("token");
+      const newSearch = params.toString();
+      const newUrl =
+        window.location.pathname + (newSearch ? `?${newSearch}` : "");
+      history.replaceState(null, "", newUrl);
       return fromQuery;
     }
   } catch {
@@ -86,6 +92,7 @@ function buildInit(
   }
   return {
     ...init,
+    credentials: "include",
     headers,
   };
 }
@@ -400,6 +407,64 @@ export async function testArrConnection(
 
 export async function getToken(): Promise<{ token: string }> {
   return fetchJson<{ token: string }>("/web/token");
+}
+
+export interface SetPasswordRequest {
+  username: string;
+  password: string;
+  setupToken?: string;
+}
+
+export async function setPassword(
+  request: SetPasswordRequest,
+): Promise<{ success: boolean }> {
+  const token = resolveToken();
+  const response = await fetch(
+    "/web/auth/set-password",
+    buildInit(
+      {
+        method: "POST",
+        body: JSON.stringify(request),
+      },
+      token,
+    ),
+  );
+  if (!response.ok) {
+    const detail = (await response.json()) as { error?: string };
+    throw new Error(detail?.error ?? response.statusText);
+  }
+  return (await response.json()) as { success: boolean };
+}
+
+export interface LoginRequest {
+  username: string;
+  password: string;
+}
+
+/** Error thrown by `login()`. Preserves the `code` field from the server response (e.g. "SETUP_REQUIRED"). */
+export class AuthError extends Error {
+  readonly code?: string;
+  constructor(message: string, code?: string) {
+    super(message);
+    this.name = "AuthError";
+    this.code = code;
+  }
+}
+
+export async function login(
+  request: LoginRequest,
+): Promise<{ success: boolean }> {
+  const response = await fetch("/web/login", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    credentials: "include",
+    body: JSON.stringify(request),
+  });
+  if (!response.ok) {
+    const detail = (await response.json()) as { error?: string; code?: string };
+    throw new AuthError(detail?.error ?? response.statusText, detail?.code);
+  }
+  return (await response.json()) as { success: boolean };
 }
 
 export async function getTorrentsDistribution(): Promise<TorrentDistribution> {

@@ -18,7 +18,7 @@ public class ArrEndpointTests : IClassFixture<TorrentarrWebApplicationFactory>
     [Fact]
     public async Task GetArr_Returns200()
     {
-        var client = _factory.CreateClient();
+        var client = _factory.CreateClientWithApiToken();
 
         var response = await client.GetAsync("/web/arr");
 
@@ -28,7 +28,7 @@ public class ArrEndpointTests : IClassFixture<TorrentarrWebApplicationFactory>
     [Fact]
     public async Task GetRadarrMovies_Returns200_WithPaginatedShape()
     {
-        var client = _factory.CreateClient();
+        var client = _factory.CreateClientWithApiToken();
 
         // "radarr" is the category name — empty DB returns empty page
         var response = await client.GetAsync("/web/radarr/radarr/movies");
@@ -45,7 +45,7 @@ public class ArrEndpointTests : IClassFixture<TorrentarrWebApplicationFactory>
     [Fact]
     public async Task GetSonarrSeries_Returns200_WithPaginatedShape()
     {
-        var client = _factory.CreateClient();
+        var client = _factory.CreateClientWithApiToken();
 
         var response = await client.GetAsync("/web/sonarr/sonarr/series");
 
@@ -61,7 +61,7 @@ public class ArrEndpointTests : IClassFixture<TorrentarrWebApplicationFactory>
     [Fact]
     public async Task GetLidarrAlbums_Returns200_WithPaginatedShape()
     {
-        var client = _factory.CreateClient();
+        var client = _factory.CreateClientWithApiToken();
 
         var response = await client.GetAsync("/web/lidarr/lidarr/albums");
 

@@ -7,7 +7,6 @@
 *.user
 *.userosscache
 *.sln.docstates
-CLAUDE.md
 .claude/
 .config/
 

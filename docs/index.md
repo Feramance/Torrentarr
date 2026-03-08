@@ -347,7 +347,7 @@ Optimize for private tracker requirements:
 
 ### Current Version
 
-**Latest Release**: v5.9.0 (January 2025)
+**Latest Release**: v6.0.0 (March 2026)
 
 - ✅ Production ready
 - ✅ Active development
@@ -356,10 +356,8 @@ Optimize for private tracker requirements:
 
 ### Recent Updates
 
-- **v5.5** - Enhanced WebUI with real-time updates
-- **v5.4** - Custom format enforcement improvements
-- **v5.3** - Overseerr request integration
-- **v5.2** - Auto-restart and self-healing features
+- **v6.0.0** - First stable release; complete qBitrr parity, state-machine rewrite, WebUI auth (local + OIDC), auto-update
+- **v5.9.1** - Initial C# port with React WebUI, multi-qBit support, and process-isolated architecture
 
 [**Full Changelog →**](changelog.md)
 
@@ -371,7 +369,6 @@ Optimize for private tracker requirements:
 - 🚧 Torrent management from WebUI
 - 🚧 Advanced statistics dashboard
 - 🚧 Multi-language support
-- 🚧 Mobile app (planned)
 
 [**GitHub Projects →**](https://github.com/Feramance/Torrentarr/projects)
 

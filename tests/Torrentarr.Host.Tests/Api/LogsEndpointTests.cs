@@ -18,7 +18,7 @@ public class LogsEndpointTests : IClassFixture<TorrentarrWebApplicationFactory>
     [Fact]
     public async Task GetLogs_Returns200()
     {
-        var client = _factory.CreateClient();
+        var client = _factory.CreateClientWithApiToken();
 
         var response = await client.GetAsync("/web/logs");
 
@@ -28,7 +28,7 @@ public class LogsEndpointTests : IClassFixture<TorrentarrWebApplicationFactory>
     [Fact]
     public async Task GetLogs_ReturnsFilesArray()
     {
-        var client = _factory.CreateClient();
+        var client = _factory.CreateClientWithApiToken();
 
         var response = await client.GetAsync("/web/logs");
         var body = await response.Content.ReadAsStringAsync();
@@ -42,7 +42,7 @@ public class LogsEndpointTests : IClassFixture<TorrentarrWebApplicationFactory>
     [Fact]
     public async Task GetLogs_FilesArrayContainsObjectsWithNameField()
     {
-        var client = _factory.CreateClient();
+        var client = _factory.CreateClientWithApiToken();
 
         var response = await client.GetAsync("/web/logs");
         var body = await response.Content.ReadAsStringAsync();
@@ -61,7 +61,7 @@ public class LogsEndpointTests : IClassFixture<TorrentarrWebApplicationFactory>
     [Fact]
     public async Task GetLogFile_Returns404_WhenFileDoesNotExist()
     {
-        var client = _factory.CreateClient();
+        var client = _factory.CreateClientWithApiToken();
 
         var response = await client.GetAsync("/web/logs/nonexistent-totally-fake-file.log");
 
@@ -77,7 +77,7 @@ public class LogsEndpointTests : IClassFixture<TorrentarrWebApplicationFactory>
     [InlineData("file.txt")]           // wrong extension
     public async Task GetLogFile_Returns400_WhenNameIsInvalid(string name)
     {
-        var client = _factory.CreateClient();
+        var client = _factory.CreateClientWithApiToken();
 
         var response = await client.GetAsync($"/web/logs/{Uri.EscapeDataString(name)}");
 

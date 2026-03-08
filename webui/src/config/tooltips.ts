@@ -70,9 +70,15 @@ export const FIELD_TOOLTIPS: Record<string, string> = {
   UserName: "qBittorrent WebUI username.",
   Password:
     "qBittorrent WebUI password. Remove this if authentication is bypassed for the host.",
+  DownloadPath:
+    "Override the download folder path used for free space monitoring. Leave blank to use qBittorrent's configured default.",
 
   "ARR.Managed":
     "Toggle whether this Servarr instance is actively managed by Torrentarr.",
+  "ARR.SearchOnly":
+    "Only perform searches; do not process imports. Mutually exclusive with Processing Only.",
+  "ARR.ProcessingOnly":
+    "Only process imports; do not perform searches. Mutually exclusive with Search Only.",
   "ARR.URI":
     "Servarr URL, including protocol and port if needed (for example http://localhost:8989).",
   "ARR.APIKey": "Servarr API key from Settings > General > Security.",
@@ -188,6 +194,10 @@ export const FIELD_TOOLTIPS: Record<string, string> = {
     "Minimum ratio for partial downloads in managed categories (HnR protection).",
   "CategorySeeding.TrackerUpdateBuffer":
     "Extra seconds buffer for tracker stats lag in managed categories.",
+  "CategorySeeding.StalledDelay":
+    "Minutes to allow stalled torrents in managed categories before taking action.",
+  "CategorySeeding.IgnoreTorrentsYoungerThan":
+    "Ignore torrents younger than this many seconds in managed categories when evaluating failures.",
   HitAndRunMode:
     "Hit and Run protection mode for this tracker: 'and' requires both ratio and time, 'or' clears on either, 'disabled' turns off HnR.",
   MinSeedRatio:

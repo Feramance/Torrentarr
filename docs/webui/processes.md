@@ -23,7 +23,7 @@ Each managed Arr instance spawns **two separate processes**:
 
 1. **Search Process** (`search`)
     - Polls Radarr/Sonarr/Lidarr for missing/wanted media
-    - Triggers searches based on EntrySearch configuration
+    - Triggers searches based on Search configuration
     - Handles Overseerr/Ombi request integration
     - Logs the most recent search operation (e.g., "Movie Title (2023)")
 
@@ -35,9 +35,12 @@ Each managed Arr instance spawns **two separate processes**:
 
 ### Special Processes
 
-- **Free Space Manager**
+- **Free Space Manager** (shown under **Other** when qBit is configured)
     - Monitors disk space and pauses torrents when threshold is reached
-    - Displays count of torrents paused due to low disk space
+    - Displays total count of torrents paused due to low disk space across all qBit instances
+
+- **Recheck** and **Failed** (shown under **Other** when qBit is configured)
+    - Host-managed categories: Recheck shows torrent count in `Settings.RecheckCategory`, Failed shows count in `Settings.FailedCategory`, each summed across all qBit instances
 
 - **qBittorrent** (if configured as a category-only tracker)
     - Displays total torrent count in the category
@@ -52,8 +55,13 @@ Processes are grouped by application type:
 
 - **Radarr**: All Radarr instances (e.g., `Radarr-Movies`, `Radarr-4K`)
 - **Sonarr**: All Sonarr instances (e.g., `Sonarr-TV`, `Sonarr-Anime`)
-- **qBittorrent**: Free space manager and category-only processes
-- **Other**: Custom trackers or unclassified instances
+- **qBittorrent**: Category-only processes and synthetic instance cards
+- **Other**: Shown **only when at least one qBittorrent instance is configured**. Contains three Host-managed cards:
+  - **Recheck** — Total torrent count in the recheck category (`Settings.RecheckCategory`) across all qBit instances
+  - **Failed** — Total torrent count in the failed category (`Settings.FailedCategory`) across all qBit instances
+  - **Free Space Manager** — Total count of torrents currently paused due to low disk space (across all instances)
+
+  These entries are display-only; restart does not apply (they are managed by the Host orchestrator, not per-Arr workers).
 
 ### Process Cards
 
@@ -381,7 +389,7 @@ See [Process Management](../features/process-management.md) for restart policies
 **Possible Causes**:
 
 1. Search process just started and hasn't run a cycle yet
-2. `EntrySearch.SearchMissing` is disabled
+2. `Search.SearchMissing` is disabled
 3. No missing media to search
 4. Search database (`search_activity.db`) was cleared
 

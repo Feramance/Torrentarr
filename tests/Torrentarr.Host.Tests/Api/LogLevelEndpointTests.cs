@@ -26,7 +26,7 @@ public class LogLevelEndpointTests : IClassFixture<TorrentarrWebApplicationFacto
     [Fact]
     public async Task PostLogLevel_Returns200()
     {
-        var client = _factory.CreateClient();
+        var client = _factory.CreateClientWithApiToken();
 
         var response = await client.PostAsJsonAsync("/web/loglevel", new { level = "information" });
 
@@ -36,7 +36,7 @@ public class LogLevelEndpointTests : IClassFixture<TorrentarrWebApplicationFacto
     [Fact]
     public async Task PostLogLevel_ResponseHasSuccessTrue()
     {
-        var client = _factory.CreateClient();
+        var client = _factory.CreateClientWithApiToken();
 
         var response = await client.PostAsJsonAsync("/web/loglevel", new { level = "information" });
         var body = await response.Content.ReadAsStringAsync();
@@ -49,7 +49,7 @@ public class LogLevelEndpointTests : IClassFixture<TorrentarrWebApplicationFacto
     [Fact]
     public async Task PostLogLevel_ResponseHasLevelField()
     {
-        var client = _factory.CreateClient();
+        var client = _factory.CreateClientWithApiToken();
 
         var response = await client.PostAsJsonAsync("/web/loglevel", new { level = "information" });
         var body = await response.Content.ReadAsStringAsync();
@@ -67,7 +67,7 @@ public class LogLevelEndpointTests : IClassFixture<TorrentarrWebApplicationFacto
     [InlineData("CRITICAL")]  // alias for fatal
     public async Task PostLogLevel_ValidLevel_Returns200(string level)
     {
-        var client = _factory.CreateClient();
+        var client = _factory.CreateClientWithApiToken();
 
         var response = await client.PostAsJsonAsync("/web/loglevel", new { level });
 
@@ -77,7 +77,7 @@ public class LogLevelEndpointTests : IClassFixture<TorrentarrWebApplicationFacto
     [Fact]
     public async Task PostLogLevel_UnknownLevel_FallsBackToInformation()
     {
-        var client = _factory.CreateClient();
+        var client = _factory.CreateClientWithApiToken();
 
         // Unknown level strings fall back to Information per the switch default
         var response = await client.PostAsJsonAsync("/web/loglevel", new { level = "garbage" });
@@ -93,7 +93,7 @@ public class LogLevelEndpointTests : IClassFixture<TorrentarrWebApplicationFacto
     [Fact]
     public async Task PostApiLogLevel_Returns200()
     {
-        var client = _factory.CreateClient();
+        var client = _factory.CreateClientWithApiToken();
 
         var response = await client.PostAsJsonAsync("/api/loglevel", new { level = "information" });
 
@@ -103,7 +103,7 @@ public class LogLevelEndpointTests : IClassFixture<TorrentarrWebApplicationFacto
     [Fact]
     public async Task PostApiLogLevel_ResponseHasSameShape()
     {
-        var client = _factory.CreateClient();
+        var client = _factory.CreateClientWithApiToken();
 
         var response = await client.PostAsJsonAsync("/api/loglevel", new { level = "debug" });
         var body = await response.Content.ReadAsStringAsync();

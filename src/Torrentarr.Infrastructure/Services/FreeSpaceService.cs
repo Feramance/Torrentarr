@@ -415,6 +415,8 @@ public class FreeSpaceService : IFreeSpaceService
                 _currentFreeSpace = freeSpaceTest;
                 _logger.LogTrace("FreeSpace: [{Instance}] Clearing FreeSpacePaused on torrent {Hash}", instanceName, torrent.Hash);
                 await SetFreeSpacePausedTagAsync(client, torrent.Hash, false, cancellationToken);
+                if (!_config.Settings.Tagless)
+                    await client.AddTagsAsync(new List<string> { torrent.Hash }, new List<string> { AllowedSeedingTag }, cancellationToken);
                 _logger.LogTrace("FreeSpace: [{Instance}] Resuming torrent {Hash}", instanceName, torrent.Hash);
                 await client.ResumeTorrentAsync(torrent.Hash, cancellationToken);
             }

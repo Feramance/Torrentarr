@@ -13,6 +13,7 @@ import {
   getConfig,
   updateConfig,
   testArrConnection,
+  setPassword,
   type TestConnectionResponse,
 } from "../api/client";
 import type { ConfigDocument } from "../api/types";
@@ -476,6 +477,12 @@ const QBIT_FIELDS: FieldDefinition[] = [
   { label: "UserName", path: ["UserName"], type: "text" },
   { label: "Password", path: ["Password"], type: "password", secure: true },
   {
+    label: "Download Path",
+    path: ["DownloadPath"],
+    type: "text",
+    placeholder: "/downloads",
+  },
+  {
     label: "Managed Categories",
     path: ["ManagedCategories"],
     type: "tags",
@@ -628,6 +635,29 @@ const QBIT_FIELDS: FieldDefinition[] = [
       return undefined;
     },
   },
+  {
+    label: "Stalled Delay (min)",
+    path: ["CategorySeeding", "StalledDelay"],
+    type: "duration",
+    nativeUnit: "minutes",
+    required: false,
+    validate: (value) => {
+      if (value === null || value === undefined || value === "")
+        return undefined;
+      const total = parseDurationToMinutes(value, -1);
+      if (total < 0 || !Number.isFinite(total)) {
+        return "Stalled Delay must be 0 or greater.";
+      }
+      return undefined;
+    },
+  },
+  {
+    label: "Ignore Torrents Younger Than",
+    path: ["CategorySeeding", "IgnoreTorrentsYoungerThan"],
+    type: "duration",
+    nativeUnit: "seconds",
+    required: false,
+  },
 ];
 
 const ARR_GENERAL_FIELDS: FieldDefinition[] = [
@@ -638,6 +668,8 @@ const ARR_GENERAL_FIELDS: FieldDefinition[] = [
     sectionName: true,
   },
   { label: "Managed", path: ["Managed"], type: "checkbox" },
+  { label: "Search Only", path: ["SearchOnly"], type: "checkbox" },
+  { label: "Processing Only", path: ["ProcessingOnly"], type: "checkbox" },
   {
     label: "URI",
     path: ["URI"],
@@ -887,11 +919,6 @@ const ARR_ENTRY_SEARCH_OMBI_FIELDS: FieldDefinition[] = [
     path: ["EntrySearch", "Ombi", "ApprovedOnly"],
     type: "checkbox",
   },
-  {
-    label: "Is 4K Instance",
-    path: ["EntrySearch", "Ombi", "Is4K"],
-    type: "checkbox",
-  },
 ];
 
 const ARR_ENTRY_SEARCH_OVERSEERR_FIELDS: FieldDefinition[] = [
@@ -1107,7 +1134,7 @@ const ARR_SEEDING_FIELDS: FieldDefinition[] = [
 
 const ARR_TRACKER_FIELDS: FieldDefinition[] = [
   { label: "Name", path: ["Name"], type: "text", required: true },
-  { label: "URI", path: ["URI"], type: "text", required: true },
+  { label: "URI", path: ["Uri"], type: "text", required: true },
   {
     label: "Priority",
     path: ["Priority"],
@@ -1122,7 +1149,7 @@ const ARR_TRACKER_FIELDS: FieldDefinition[] = [
   },
   {
     label: "Maximum ETA",
-    path: ["MaximumETA"],
+    path: ["MaxETA"],
     type: "duration",
     nativeUnit: "seconds",
     allowNegative: true,
@@ -1798,6 +1825,7 @@ export function ConfigView(props?: ConfigViewProps): JSX.Element {
   const [activeQbitKey, setActiveQbitKey] = useState<string | null>(null);
   const [isSettingsOpen, setSettingsOpen] = useState(false);
   const [isWebSettingsOpen, setWebSettingsOpen] = useState(false);
+  const [isAuthOpen, setAuthOpen] = useState(false);
   const [isDirty, setDirty] = useState(false);
 
   useEffect(() => {
@@ -1867,7 +1895,11 @@ export function ConfigView(props?: ConfigViewProps): JSX.Element {
 
   useEffect(() => {
     const anyModalOpen = Boolean(
-      activeArrKey || activeQbitKey || isSettingsOpen || isWebSettingsOpen,
+      activeArrKey ||
+        activeQbitKey ||
+        isSettingsOpen ||
+        isWebSettingsOpen ||
+        isAuthOpen,
     );
     if (!anyModalOpen) return;
     const handleKeyDown = (event: KeyboardEvent) => {
@@ -1876,6 +1908,7 @@ export function ConfigView(props?: ConfigViewProps): JSX.Element {
         setActiveQbitKey(null);
         setSettingsOpen(false);
         setWebSettingsOpen(false);
+        setAuthOpen(false);
       }
     };
     window.addEventListener("keydown", handleKeyDown);
@@ -1886,7 +1919,13 @@ export function ConfigView(props?: ConfigViewProps): JSX.Element {
       window.removeEventListener("keydown", handleKeyDown);
       style.overflow = originalOverflow;
     };
-  }, [activeArrKey, activeQbitKey, isSettingsOpen, isWebSettingsOpen]);
+  }, [
+    activeArrKey,
+    activeQbitKey,
+    isSettingsOpen,
+    isWebSettingsOpen,
+    isAuthOpen,
+  ]);
 
   useEffect(() => {
     if (!activeArrKey) return;
@@ -2198,6 +2237,11 @@ export function ConfigView(props?: ConfigViewProps): JSX.Element {
                   description="Web UI configuration"
                   onConfigure={() => setWebSettingsOpen(true)}
                 />
+                <ConfigSummaryCard
+                  title="Auth"
+                  description="Authentication (disable auth, local login, OIDC, API token)"
+                  onConfigure={() => setAuthOpen(true)}
+                />
               </div>
             </details>
           </section>
@@ -2411,6 +2455,18 @@ export function ConfigView(props?: ConfigViewProps): JSX.Element {
           showLiveSettings={true}
         />
       ) : null}
+      {isAuthOpen && formState ? (
+        <AuthConfigModal
+          state={formState}
+          onChange={handleFieldChange}
+          onClose={() => setAuthOpen(false)}
+          onSave={async (changes) => {
+            await updateConfig({ changes });
+          }}
+          setPasswordApi={setPassword}
+          pushToast={push}
+        />
+      ) : null}
       {activeQbitKey && formState ? (
         <QbitInstanceModal
           keyName={activeQbitKey}
@@ -2428,6 +2484,493 @@ interface ConfigSummaryCardProps {
   title: string;
   description: string;
   onConfigure: () => void;
+}
+
+interface AuthConfigModalProps {
+  state: ConfigDocument;
+  onChange: (path: string[], def: FieldDefinition, value: unknown) => void;
+  onClose: () => void;
+  onSave: (changes: Record<string, unknown>) => Promise<void>;
+  setPasswordApi: (req: {
+    username: string;
+    password: string;
+    setupToken?: string;
+  }) => Promise<{ success: boolean }>;
+  pushToast: (message: string, type?: "success" | "error" | "info") => void;
+}
+
+function AuthConfigModal({
+  state,
+  onChange,
+  onClose,
+  onSave,
+  setPasswordApi,
+  pushToast,
+}: AuthConfigModalProps): JSX.Element {
+  const webui = (getValue(state, ["WebUI"]) as Record<string, unknown>) ?? {};
+  const authDisabled = (webui.AuthDisabled ?? webui.authDisabled) !== false;
+  const localAuthEnabled = !!(webui.LocalAuthEnabled ?? webui.localAuthEnabled);
+  const oidcEnabled = !!(webui.OIDCEnabled ?? webui.oidcEnabled);
+  const oidc = (webui.OIDC as Record<string, unknown>) ?? {};
+  const configUsername = (webui.Username as string) ?? "";
+
+  const [saving, setSaving] = useState(false);
+  const [newPassword, setNewPassword] = useState("");
+  const [confirmPassword, setConfirmPassword] = useState("");
+  const [showNewPassword, setShowNewPassword] = useState(false);
+  const [showToken, setShowToken] = useState(false);
+  const [setPasswordSubmitting, setSetPasswordSubmitting] = useState(false);
+
+  const passwordMismatch =
+    confirmPassword.length > 0 && newPassword !== confirmPassword;
+
+  const handleSave = async () => {
+    setSaving(true);
+    try {
+      const changes: Record<string, unknown> = {
+        "WebUI.AuthDisabled": authDisabled,
+        "WebUI.LocalAuthEnabled": localAuthEnabled,
+        "WebUI.OIDCEnabled": oidcEnabled,
+        "WebUI.Token": webui.Token ?? "",
+        "WebUI.Username": webui.Username ?? "",
+      };
+      if (oidcEnabled && oidc) {
+        changes["WebUI.OIDC.Authority"] = oidc.Authority ?? "";
+        changes["WebUI.OIDC.ClientId"] = oidc.ClientId ?? "";
+        changes["WebUI.OIDC.ClientSecret"] = oidc.ClientSecret ?? "";
+        changes["WebUI.OIDC.Scopes"] = oidc.Scopes ?? "openid profile";
+        changes["WebUI.OIDC.CallbackPath"] =
+          oidc.CallbackPath ?? "/signin-oidc";
+        changes["WebUI.OIDC.RequireHttpsMetadata"] =
+          oidc.RequireHttpsMetadata ?? true;
+      }
+      await onSave(changes);
+      pushToast("Auth configuration saved", "success");
+      onClose();
+    } catch (e) {
+      pushToast(e instanceof Error ? e.message : "Failed to save", "error");
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const handleSetPassword = async () => {
+    const username = configUsername.trim();
+    if (!username) {
+      pushToast("Set a username above before setting a password", "error");
+      return;
+    }
+    if (!newPassword || newPassword.length < 8) {
+      pushToast("Password must be at least 8 characters", "error");
+      return;
+    }
+    if (newPassword !== confirmPassword) {
+      pushToast("Passwords do not match", "error");
+      return;
+    }
+    setSetPasswordSubmitting(true);
+    try {
+      await setPasswordApi({ username, password: newPassword });
+      pushToast("Password set successfully", "success");
+      setNewPassword("");
+      setConfirmPassword("");
+    } catch (e) {
+      pushToast(
+        e instanceof Error ? e.message : "Set password failed",
+        "error",
+      );
+    } finally {
+      setSetPasswordSubmitting(false);
+    }
+  };
+
+  // Derive a human-readable mode label for the status badge
+  const modeLabel = authDisabled
+    ? "Disabled"
+    : [localAuthEnabled && "Local login", oidcEnabled && "OIDC"]
+        .filter(Boolean)
+        .join(" + ") || "Enabled (no method)";
+
+  return (
+    <div className="modal-backdrop" role="presentation" onClick={onClose}>
+      <div
+        className="modal"
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="auth-modal-title"
+        onClick={(e) => e.stopPropagation()}
+      >
+        <div className="modal-header">
+          <h2 id="auth-modal-title">Authentication</h2>
+          <button className="btn ghost" type="button" onClick={onClose}>
+            <IconImage src={CloseIcon} />
+          </button>
+        </div>
+        <div className="modal-body">
+          {/* Current mode status */}
+          <div
+            style={{
+              display: "flex",
+              alignItems: "center",
+              gap: "8px",
+              marginBottom: "20px",
+            }}
+          >
+            <span className="field-description" style={{ margin: 0 }}>
+              Current mode:
+            </span>
+            <span
+              className={`status-pill ${authDisabled ? "status-pill--bad" : "status-pill--ok"}`}
+              style={{ fontSize: "12px" }}
+            >
+              <span className="status-pill__dot" />
+              {modeLabel}
+            </span>
+          </div>
+
+          {/* Disable auth toggle */}
+          <div className="field" style={{ marginBottom: "16px" }}>
+            <label>
+              <input
+                type="checkbox"
+                checked={authDisabled}
+                onChange={(e) =>
+                  onChange(
+                    ["WebUI", "AuthDisabled"],
+                    {} as FieldDefinition,
+                    e.target.checked,
+                  )
+                }
+              />{" "}
+              Disable authentication
+            </label>
+            {authDisabled && (
+              <p className="field-description" style={{ marginTop: "6px" }}>
+                The login screen is skipped. The API token below still works for
+                script/API access.
+              </p>
+            )}
+          </div>
+
+          {!authDisabled && (
+            <>
+              {/* Local login section */}
+              <div
+                className="field"
+                style={{
+                  marginTop: "16px",
+                  paddingTop: "16px",
+                  borderTop: "1px solid var(--border)",
+                }}
+              >
+                <strong>Local login (username + password)</strong>
+                <label style={{ display: "block", marginTop: "8px" }}>
+                  <input
+                    type="checkbox"
+                    checked={localAuthEnabled}
+                    onChange={(e) =>
+                      onChange(
+                        ["WebUI", "LocalAuthEnabled"],
+                        {} as FieldDefinition,
+                        e.target.checked,
+                      )
+                    }
+                  />{" "}
+                  Enable local login
+                </label>
+              </div>
+
+              {localAuthEnabled && (
+                <>
+                  <p
+                    className="field-description"
+                    style={{ margin: "6px 0 12px" }}
+                  >
+                    Passwords are stored as bcrypt hashes. Click{" "}
+                    <strong>Set password</strong> to apply immediately — no need
+                    to save the page first.
+                  </p>
+                  <div className="field">
+                    <label>Username</label>
+                    <input
+                      type="text"
+                      value={configUsername}
+                      onChange={(e) =>
+                        onChange(
+                          ["WebUI", "Username"],
+                          {} as FieldDefinition,
+                          e.target.value,
+                        )
+                      }
+                      placeholder="e.g. admin"
+                      autoComplete="username"
+                    />
+                  </div>
+                  <div className="field">
+                    <label>New password</label>
+                    <div className="secure-field__input-group">
+                      <input
+                        type={showNewPassword ? "text" : "password"}
+                        value={newPassword}
+                        onChange={(e) => setNewPassword(e.target.value)}
+                        placeholder="New password"
+                        autoComplete="new-password"
+                      />
+                      <button
+                        type="button"
+                        className="btn ghost"
+                        onClick={() => setShowNewPassword((v) => !v)}
+                        title={
+                          showNewPassword ? "Hide password" : "Show password"
+                        }
+                      >
+                        <IconImage src={VisibilityIcon} />
+                      </button>
+                    </div>
+                  </div>
+                  <div className="field">
+                    <label>Confirm password</label>
+                    <input
+                      type={showNewPassword ? "text" : "password"}
+                      value={confirmPassword}
+                      onChange={(e) => setConfirmPassword(e.target.value)}
+                      placeholder="Repeat new password"
+                      autoComplete="new-password"
+                      style={
+                        passwordMismatch
+                          ? { borderColor: "var(--danger)" }
+                          : undefined
+                      }
+                    />
+                    {passwordMismatch && (
+                      <p
+                        className="field-description"
+                        style={{ color: "var(--danger)", marginTop: "4px" }}
+                      >
+                        Passwords do not match
+                      </p>
+                    )}
+                  </div>
+                  <button
+                    className="btn small"
+                    type="button"
+                    onClick={handleSetPassword}
+                    disabled={setPasswordSubmitting || passwordMismatch}
+                  >
+                    {setPasswordSubmitting ? "Saving…" : "Set password"}
+                  </button>
+                </>
+              )}
+
+              {/* OIDC section */}
+              <div
+                className="field"
+                style={{
+                  marginTop: "16px",
+                  paddingTop: "16px",
+                  borderTop: "1px solid var(--border)",
+                }}
+              >
+                <strong>OIDC (external identity provider)</strong>
+                <label style={{ display: "block", marginTop: "8px" }}>
+                  <input
+                    type="checkbox"
+                    checked={oidcEnabled}
+                    onChange={(e) =>
+                      onChange(
+                        ["WebUI", "OIDCEnabled"],
+                        {} as FieldDefinition,
+                        e.target.checked,
+                      )
+                    }
+                  />{" "}
+                  Enable OIDC
+                </label>
+              </div>
+              {oidcEnabled && (
+                <>
+                  <p
+                    className="field-description"
+                    style={{ margin: "6px 0 12px" }}
+                  >
+                    Register this app in your IdP. Set the redirect/callback URL
+                    to:{" "}
+                    <code>
+                      {typeof window !== "undefined"
+                        ? `${window.location.origin}/signin-oidc`
+                        : "{origin}/signin-oidc"}
+                    </code>
+                  </p>
+                  <div className="field">
+                    <label>Authority</label>
+                    <input
+                      type="text"
+                      value={(oidc.Authority as string) ?? ""}
+                      onChange={(e) =>
+                        onChange(
+                          ["WebUI", "OIDC", "Authority"],
+                          {} as FieldDefinition,
+                          e.target.value,
+                        )
+                      }
+                      placeholder="https://idp.example.com/realms/myrealm"
+                    />
+                    <p className="field-description">
+                      Base URL of your identity provider (Keycloak, Authentik,
+                      Authelia, etc.)
+                    </p>
+                  </div>
+                  <div className="field">
+                    <label>Client ID</label>
+                    <input
+                      type="text"
+                      value={(oidc.ClientId as string) ?? ""}
+                      onChange={(e) =>
+                        onChange(
+                          ["WebUI", "OIDC", "ClientId"],
+                          {} as FieldDefinition,
+                          e.target.value,
+                        )
+                      }
+                      placeholder="torrentarr"
+                    />
+                  </div>
+                  <div className="field">
+                    <label>Client secret</label>
+                    <div className="secure-field__input-group">
+                      <input
+                        type="password"
+                        value={
+                          ((oidc.ClientSecret as string) === "[redacted]"
+                            ? ""
+                            : (oidc.ClientSecret as string)) ?? ""
+                        }
+                        onChange={(e) =>
+                          onChange(
+                            ["WebUI", "OIDC", "ClientSecret"],
+                            {} as FieldDefinition,
+                            e.target.value,
+                          )
+                        }
+                        placeholder="Leave blank to keep existing"
+                      />
+                    </div>
+                  </div>
+                  <div className="field">
+                    <label>Scopes</label>
+                    <input
+                      type="text"
+                      value={(oidc.Scopes as string) ?? "openid profile"}
+                      onChange={(e) =>
+                        onChange(
+                          ["WebUI", "OIDC", "Scopes"],
+                          {} as FieldDefinition,
+                          e.target.value,
+                        )
+                      }
+                    />
+                    <p className="field-description">
+                      Space-separated OAuth scopes to request (e.g.{" "}
+                      <code>openid profile email</code>)
+                    </p>
+                  </div>
+                  <div className="field">
+                    <label>Callback path</label>
+                    <input
+                      type="text"
+                      value={(oidc.CallbackPath as string) ?? "/signin-oidc"}
+                      onChange={(e) =>
+                        onChange(
+                          ["WebUI", "OIDC", "CallbackPath"],
+                          {} as FieldDefinition,
+                          e.target.value,
+                        )
+                      }
+                    />
+                    <p className="field-description">
+                      Must match the redirect URI registered with your IdP
+                      (default: <code>/signin-oidc</code>)
+                    </p>
+                  </div>
+                  <div className="field">
+                    <label>
+                      <input
+                        type="checkbox"
+                        checked={!!oidc.RequireHttpsMetadata}
+                        onChange={(e) =>
+                          onChange(
+                            ["WebUI", "OIDC", "RequireHttpsMetadata"],
+                            {} as FieldDefinition,
+                            e.target.checked,
+                          )
+                        }
+                      />{" "}
+                      Require HTTPS metadata
+                    </label>
+                    <p className="field-description">
+                      Disable only for local development (HTTP IdP endpoints)
+                    </p>
+                  </div>
+                </>
+              )}
+            </>
+          )}
+
+          {/* API token — always visible */}
+          <div
+            className="field"
+            style={{
+              marginTop: "16px",
+              paddingTop: "16px",
+              borderTop: "1px solid var(--border)",
+            }}
+          >
+            <label>API token</label>
+            <div className="secure-field__input-group">
+              <input
+                type={showToken ? "text" : "password"}
+                value={(webui.Token as string) ?? ""}
+                onChange={(e) =>
+                  onChange(
+                    ["WebUI", "Token"],
+                    {} as FieldDefinition,
+                    e.target.value,
+                  )
+                }
+                placeholder="Bearer token for API/scripts"
+              />
+              <button
+                type="button"
+                className="btn ghost"
+                onClick={() => setShowToken((v) => !v)}
+                title={showToken ? "Hide token" : "Show token"}
+              >
+                <IconImage src={VisibilityIcon} />
+              </button>
+            </div>
+            <p className="field-description">
+              Used for API and script access in all cases. When authentication
+              is enabled, this token is also accepted as Bearer for API
+              requests.
+            </p>
+          </div>
+        </div>
+        <div className="modal-footer">
+          <button className="btn ghost" type="button" onClick={onClose}>
+            Cancel
+          </button>
+          <button
+            className="btn primary"
+            type="button"
+            onClick={handleSave}
+            disabled={saving}
+          >
+            {saving ? "Saving…" : "Save"}
+          </button>
+        </div>
+      </div>
+    </div>
+  );
 }
 
 function ConfigSummaryCard({
@@ -2641,7 +3184,9 @@ function FieldGroup({
       const nextTrackers = [
         ...trackers,
         {
-          Url: "",
+          Name: "",
+          Uri: "",
+          Priority: 0,
           RemoveIfExists: false,
           SuperSeedMode: false,
           AddTags: [],
@@ -3130,6 +3675,9 @@ function DurationInput({
   );
   const [number, setNumber] = useState(parsed.number);
   const [unit, setUnit] = useState(parsed.unit);
+  // rawInput holds the exact string in the number input so the user can clear
+  // the field and type a new value without it being immediately clamped to -1.
+  const [rawInput, setRawInput] = useState(String(parsed.number));
   const lastValueRef = useRef(value);
 
   useEffect(() => {
@@ -3142,6 +3690,7 @@ function DurationInput({
       );
       setNumber(next.number);
       setUnit(next.unit);
+      setRawInput(String(next.number));
     }
   }, [value, baseUnit, allowNegative]);
 
@@ -3159,17 +3708,25 @@ function DurationInput({
     <div className="duration-input">
       <input
         type="number"
-        value={number}
+        value={rawInput}
         min={allowNegative ? -1 : 0}
         step={unit === "s" || unit === "m" ? 1 : 0.01}
         onChange={(e) => {
-          const v =
-            e.target.value === ""
-              ? allowNegative
-                ? -1
-                : 0
-              : Number(e.target.value);
-          handleChange(v, unit);
+          const raw = e.target.value;
+          setRawInput(raw);
+          // Only commit when the user has typed a valid number; an empty field
+          // means they are mid-edit — apply the default only on blur.
+          if (raw !== "") {
+            const v = Number(raw);
+            if (!isNaN(v)) handleChange(v, unit);
+          }
+        }}
+        onBlur={(e) => {
+          if (e.target.value === "") {
+            const def = allowNegative ? -1 : 0;
+            setRawInput(String(def));
+            handleChange(def, unit);
+          }
         }}
         placeholder={placeholder}
       />
@@ -3788,6 +4345,23 @@ function SimpleConfigModal({
                   </select>
                   <p className="field-description">
                     WebUI theme (Light or Dark)
+                  </p>
+                </div>
+                <div className="field">
+                  <label>View Density</label>
+                  <select
+                    value={webUI.viewDensity}
+                    onChange={(e) =>
+                      webUI.setViewDensity(
+                        e.target.value as "comfortable" | "compact",
+                      )
+                    }
+                  >
+                    <option value="comfortable">Comfortable</option>
+                    <option value="compact">Compact</option>
+                  </select>
+                  <p className="field-description">
+                    Comfortable (more spacing) or Compact (more rows on screen)
                   </p>
                 </div>
               </div>

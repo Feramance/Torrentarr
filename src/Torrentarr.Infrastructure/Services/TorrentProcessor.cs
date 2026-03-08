@@ -349,7 +349,7 @@ public class TorrentProcessor : ITorrentProcessor
         }
         // Branch 2: Ratio/seed limit met AND not leave_alone AND fully downloaded → delete
         // (qBitrr line 6106-6109: remove_torrent and not leave_alone and amount_left==0)
-        if (removeTorrent && !leaveAlone && torrent.AmountLeft == 0)
+        else if (removeTorrent && !leaveAlone && torrent.AmountLeft == 0)
         {
             var hnrAllows = _seedingService == null || await _seedingService.HnrAllowsDeleteAsync(torrent, "ratio/seed limit", ct);
             if (hnrAllows)
@@ -361,21 +361,12 @@ public class TorrentProcessor : ITorrentProcessor
             }
         }
         // Branch 3: Failed category → delete (qBitrr line 6110-6112)
+        // No HnR check — manually failed torrents are always deleted immediately (qBitrr parity)
         else if (torrent.Category.Equals(_config.Settings.FailedCategory, StringComparison.OrdinalIgnoreCase))
         {
-            // Check HnR protection before deleting
-            var hnrAllows = _seedingService == null || await _seedingService.HnrAllowsDeleteAsync(torrent, "failed category deletion", ct);
-            if (hnrAllows)
-            {
-                _logger.LogWarning("Deleting manually failed torrent: [{Name}] | Hash[{Hash}]", torrent.Name, torrent.Hash);
-                await client.DeleteTorrentsAsync(new List<string> { torrent.Hash }, deleteFiles: true, ct);
-                stats.Failed++;
-            }
-            else
-            {
-                _logger.LogInformation("HnR protection: keeping failed torrent [{Name}]", torrent.Name);
-                stats.Ignored++;
-            }
+            _logger.LogWarning("Deleting manually failed torrent: [{Name}] | Hash[{Hash}]", torrent.Name, torrent.Hash);
+            await client.DeleteTorrentsAsync(new List<string> { torrent.Hash }, deleteFiles: true, ct);
+            stats.Failed++;
         }
         // Branch 4: Recheck category → recheck (qBitrr line 6113-6115)
         else if (torrent.Category.Equals(_config.Settings.RecheckCategory, StringComparison.OrdinalIgnoreCase))
@@ -448,7 +439,7 @@ public class TorrentProcessor : ITorrentProcessor
         // Branch 11: Queued upload → pause if !leave_alone (qBitrr line 6164-6165)
         else if (state == TorrentState.QueuedUploading)
         {
-            if (leaveAlone || state == TorrentState.ForcedUploading)
+            if (leaveAlone)
             {
                 _logger.LogTrace("Queued upload, allowing seeding: [{Name}]", torrent.Name);
             }
@@ -471,7 +462,7 @@ public class TorrentProcessor : ITorrentProcessor
         }
         // Branch 13: Percentage threshold — high progress, not complete, already filtered (qBitrr line 6174-6181)
         else if (torrent.Progress <= (arrCfg?.Torrent.MaximumDeletablePercentage ?? 0.99)
-            && !IsCompleteState(torrent)
+            && !IsCompleteState(state)
             && !HasTag(torrent, IgnoredTag)
             && !HasTag(torrent, FreeSpacePausedTag)
             && !stalledIgnore
@@ -492,21 +483,25 @@ public class TorrentProcessor : ITorrentProcessor
             await client.RecheckTorrentsAsync(new List<string> { torrent.Hash }, ct);
         }
         // Branch 16: Fully completed (60s grace period) → trigger import (qBitrr line 6196-6205)
+        // Python: if leave_alone → allow seeding; elif not tagged qBitrr-imported → dispatch to import_torrents
         else if (torrent.AddedOn > 0
             && torrent.CompletionOn > 0
             && torrent.AmountLeft == 0
             && state != TorrentState.PausedUploading
-            && IsCompleteState(torrent)
+            && IsCompleteState(state)
             && !string.IsNullOrEmpty(torrent.ContentPath)
             && torrent.CompletionOn < timeNow - 60)
         {
             stats.Completed++;
-            var isReady = await IsReadyForImportAsync(torrent.Hash, ct);
-            if (isReady)
+            if (leaveAlone || state == TorrentState.ForcedUploading)
+            {
+                _logger.LogTrace("Completed torrent — allowing seeding: [{Name}]", torrent.Name);
+            }
+            else if (await IsReadyForImportAsync(torrent.Hash, ct))
             {
                 _logger.LogDebug("Completed torrent ready for import: [{Name}] | Progress[{Progress:P1}] | Hash[{Hash}]",
                     torrent.Name, torrent.Progress, torrent.Hash);
-                // Import will be triggered by the Arr-specific worker
+                await ImportTorrentAsync(torrent.Hash, ct);
             }
         }
         // Branch 17: Uploading + seeding limits configured → pause if !leave_alone (qBitrr line 6207-6215)
@@ -577,10 +572,12 @@ public class TorrentProcessor : ITorrentProcessor
                 }
             }
         }
-        // Branch 20: Complete + paused + leave_alone → allow seeding (qBitrr line 6250-6251)
-        else if (IsCompleteState(torrent) && leaveAlone)
+        // Branch 20: Complete + leave_alone → resume if not already running (qBitrr line 6250-6251)
+        // Python: self.resume.add(torrent.hash) — ensures paused-upload complete torrents resume seeding
+        else if (IsCompleteState(state) && leaveAlone)
         {
             _logger.LogTrace("Allowing seeding for complete torrent: [{Name}]", torrent.Name);
+            await client.ResumeTorrentsAsync(new List<string> { torrent.Hash }, ct);
         }
         // Branch 21: Default — unprocessed
         else
@@ -608,7 +605,7 @@ public class TorrentProcessor : ITorrentProcessor
             return (true, defaultMaxEta, false);
 
         // Super seeding or forced upload → always leave alone (qBitrr: lines 5809-5810)
-        if (state == TorrentState.ForcedUploading)
+        if (torrent.SuperSeeding || state == TorrentState.ForcedUploading)
             return (true, -1, false);
 
         var isUploading = IsUploadingState(state);
@@ -862,11 +859,17 @@ public class TorrentProcessor : ITorrentProcessor
     }
 
     /// <summary>
-    /// Returns true if the torrent is in a complete state (progress >= 1.0 or uploading/seeding).
+    /// Returns true if the torrent is in a complete (upload/seeding) state.
+    /// Matches qBitrr's is_complete_state: UPLOADING, STALLED_UPLOAD, PAUSED_UPLOAD, QUEUED_UPLOAD, FORCED_UPLOAD, CHECKING_UPLOAD.
     /// </summary>
-    private static bool IsCompleteState(TorrentInfo torrent)
+    private static bool IsCompleteState(TorrentState state)
     {
-        return torrent.Progress >= 1.0;
+        return state is TorrentState.Uploading
+            or TorrentState.StalledUploading
+            or TorrentState.PausedUploading
+            or TorrentState.QueuedUploading
+            or TorrentState.ForcedUploading
+            or TorrentState.CheckingUploading;
     }
 
     /// <summary>

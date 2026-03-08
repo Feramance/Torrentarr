@@ -7,10 +7,17 @@ using Torrentarr.Infrastructure.Database;
 using Torrentarr.Infrastructure.Services;
 using Torrentarr.Host;
 using Torrentarr.Host.Sinks;
+using Microsoft.AspNetCore.Authentication;
+using Microsoft.AspNetCore.Authentication.Cookies;
+using Microsoft.AspNetCore.Authentication.OpenIdConnect;
 using Microsoft.EntityFrameworkCore;
 using Serilog;
 using Serilog.Core;
 using Serilog.Events;
+using System.Security.Claims;
+using System.Security.Cryptography;
+using System.Text;
+using System.Collections.Concurrent;
 
 // Calculate base paths - use /config for Docker, or config/ relative to cwd for local
 var configEnv = Environment.GetEnvironmentVariable("TORRENTARR_CONFIG");
@@ -97,6 +104,16 @@ try
         if (createdDefault)
             Log.Information("Created default configuration at: {Path}", ConfigurationLoader.GetDefaultConfigPath());
 
+        // Ensure API token exists so /api/* is never unprotected
+        if (string.IsNullOrEmpty(config.WebUI.Token))
+        {
+            var tokenBytes = new byte[32];
+            RandomNumberGenerator.Fill(tokenBytes);
+            config.WebUI.Token = Convert.ToBase64String(tokenBytes);
+            configLoader.SaveConfig(config);
+            Log.Information("Generated and persisted API token (Token was empty)");
+        }
+
         Log.Information("Configuration loaded from {Path}", ConfigurationLoader.GetDefaultConfigPath());
     }
     catch (Exception ex)
@@ -160,6 +177,36 @@ try
     // §6.10 / §1.8: update check + auto-update
     builder.Services.AddSingleton<UpdateService>();
     builder.Services.AddHostedService<AutoUpdateBackgroundService>();
+
+    builder.Services.AddSingleton<IPasswordHasher, BCryptPasswordHasher>();
+
+    var authBuilder = builder.Services.AddAuthentication(CookieAuthenticationDefaults.AuthenticationScheme)
+        .AddCookie(options =>
+        {
+            options.Cookie.Name = "torrentarr_session";
+            options.Cookie.HttpOnly = true;
+            options.Cookie.SameSite = SameSiteMode.Lax;
+            options.Cookie.SecurePolicy = Microsoft.AspNetCore.Http.CookieSecurePolicy.SameAsRequest;
+            options.LoginPath = "/login";
+            options.AccessDeniedPath = "/login";
+        });
+    if (config.WebUI.OIDCEnabled && config.WebUI.OIDC is { } oidc
+        && !string.IsNullOrWhiteSpace(oidc.Authority)
+        && !string.IsNullOrWhiteSpace(oidc.ClientId))
+    {
+        authBuilder.AddOpenIdConnect(OpenIdConnectDefaults.AuthenticationScheme, options =>
+        {
+            options.Authority = oidc.Authority.TrimEnd('/');
+            options.ClientId = oidc.ClientId;
+            options.ClientSecret = oidc.ClientSecret;
+            options.CallbackPath = oidc.CallbackPath;
+            options.RequireHttpsMetadata = oidc.RequireHttpsMetadata;
+            options.SignInScheme = CookieAuthenticationDefaults.AuthenticationScheme;
+            options.Scope.Clear();
+            foreach (var s in (oidc.Scopes ?? "openid profile").Split(' ', StringSplitOptions.RemoveEmptyEntries))
+                options.Scope.Add(s);
+        });
+    }
 
     builder.Services.AddControllers()
         .AddNewtonsoftJson(options =>
@@ -284,6 +331,15 @@ try
 
     app.UseCors("AllowAll");
 
+    // Security headers
+    app.Use(async (context, next) =>
+    {
+        context.Response.Headers["X-Frame-Options"] = "DENY";
+        context.Response.Headers["X-Content-Type-Options"] = "nosniff";
+        context.Response.Headers["Referrer-Policy"] = "strict-origin-when-cross-origin";
+        await next(context);
+    });
+
     // Static files — add cache-busting headers for the service worker
     app.UseDefaultFiles();
     app.Use(async (context, next) =>
@@ -298,31 +354,132 @@ try
     });
     app.UseStaticFiles();
 
-    // Bearer token auth for all /api/* routes
+    app.UseAuthentication();
+
+    // Auth: when required (!AuthDisabled), protect /api/* and /web/* except public paths. Bearer token always works for API.
     app.Use(async (context, next) =>
     {
-        if (context.Request.Path.StartsWithSegments("/api"))
-        {
-            var configuredToken = config.WebUI.Token;
-            if (!string.IsNullOrEmpty(configuredToken))
-            {
-                string? providedToken = null;
-                var authHeader = context.Request.Headers.Authorization.FirstOrDefault();
-                if (authHeader?.StartsWith("Bearer ", StringComparison.OrdinalIgnoreCase) == true)
-                    providedToken = authHeader["Bearer ".Length..];
-                else if (context.Request.Query.ContainsKey("token"))
-                    providedToken = context.Request.Query["token"];
+        var cfg = context.RequestServices.GetRequiredService<TorrentarrConfig>();
+        var path = context.Request.Path.Value ?? "";
 
-                if (providedToken != configuredToken)
-                {
-                    context.Response.StatusCode = 401;
-                    await context.Response.WriteAsJsonAsync(new { error = "Unauthorized" });
-                    return;
-                }
+        // Always enforce API token for /api/* (token is generated at startup if empty)
+        if (path.StartsWith("/api", StringComparison.OrdinalIgnoreCase))
+        {
+            var configuredToken = cfg.WebUI.Token;
+            if (string.IsNullOrEmpty(configuredToken))
+            {
+                context.Response.StatusCode = 401;
+                await context.Response.WriteAsJsonAsync(new { error = "Unauthorized" });
+                return;
+            }
+            string? providedToken = null;
+            var authHeader = context.Request.Headers.Authorization.FirstOrDefault();
+            if (authHeader?.StartsWith("Bearer ", StringComparison.OrdinalIgnoreCase) == true)
+                providedToken = authHeader["Bearer ".Length..];
+            else if (context.Request.Query.ContainsKey("token") && context.Request.Method == "GET")
+                providedToken = context.Request.Query["token"];
+            if (string.IsNullOrEmpty(providedToken) || !TokenEquals(providedToken, configuredToken))
+            {
+                context.Response.StatusCode = 401;
+                await context.Response.WriteAsJsonAsync(new { error = "Unauthorized" });
+                return;
+            }
+            var identity = new ClaimsIdentity("Bearer");
+            identity.AddClaim(new Claim(ClaimTypes.Name, "api"));
+            context.User = new ClaimsPrincipal(identity);
+            await next(context);
+            return;
+        }
+
+        if (!IsAuthRequired(cfg))
+        {
+            await next(context);
+            return;
+        }
+
+        if (IsPublicPath(path, context.Request.Method))
+        {
+            await next(context);
+            return;
+        }
+
+        // 1) Bearer token (constant-time) — always accepted for API when Token is set
+        var webToken = cfg.WebUI.Token;
+        if (!string.IsNullOrEmpty(webToken))
+        {
+            string? providedToken = null;
+            var authHeader = context.Request.Headers.Authorization.FirstOrDefault();
+            if (authHeader?.StartsWith("Bearer ", StringComparison.OrdinalIgnoreCase) == true)
+                providedToken = authHeader["Bearer ".Length..];
+            else if (context.Request.Query.ContainsKey("token") && context.Request.Method == "GET")
+                providedToken = context.Request.Query["token"];
+
+            if (!string.IsNullOrEmpty(providedToken) && TokenEquals(providedToken, webToken))
+            {
+                var identity = new ClaimsIdentity("Bearer");
+                identity.AddClaim(new Claim(ClaimTypes.Name, "api"));
+                context.User = new ClaimsPrincipal(identity);
+                await next(context);
+                return;
             }
         }
-        await next(context);
+
+        // 2) Cookie (local or OIDC login)
+        var result = await context.AuthenticateAsync(CookieAuthenticationDefaults.AuthenticationScheme);
+        if (result.Succeeded && result.Principal?.Identity?.IsAuthenticated == true)
+        {
+            context.User = result.Principal;
+            await next(context);
+            return;
+        }
+
+        // Unauthenticated: 401 for API, redirect to /login for browser
+        if (path.StartsWith("/api", StringComparison.OrdinalIgnoreCase) ||
+            context.Request.Headers.Accept.Any(a => a?.Contains("application/json", StringComparison.OrdinalIgnoreCase) == true))
+        {
+            context.Response.StatusCode = 401;
+            await context.Response.WriteAsJsonAsync(new { error = "Unauthorized" });
+            return;
+        }
+        context.Response.Redirect("/login");
     });
+
+    static bool IsAuthRequired(TorrentarrConfig c) => !c.WebUI.AuthDisabled;
+
+    /// <summary>Constant-time token comparison using SHA-256 hashes to avoid leaking length.</summary>
+    static bool TokenEquals(string? a, string? b)
+    {
+        var aBytes = Encoding.UTF8.GetBytes(a ?? "");
+        var bBytes = Encoding.UTF8.GetBytes(b ?? "");
+        var aHash = SHA256.HashData(aBytes);
+        var bHash = SHA256.HashData(bBytes);
+        return CryptographicOperations.FixedTimeEquals(aHash, bHash);
+    }
+
+    static bool IsPublicPath(string path, string method)
+    {
+        if (string.IsNullOrEmpty(path)) return true;
+        if (path.Equals("/health", StringComparison.OrdinalIgnoreCase)) return true;
+        if (path.Equals("/", StringComparison.OrdinalIgnoreCase)) return true;
+        // Do NOT treat /ui as public: the SPA and all routes under /ui require auth when AuthDisabled is false.
+        // Only allow paths needed for the login page to load: /login (serves index.html), /assets/* (JS/CSS bundle), and root static assets.
+        if (path.Equals("/login", StringComparison.OrdinalIgnoreCase)) return true;
+        if (path.StartsWith("/assets/", StringComparison.OrdinalIgnoreCase)) return true;
+        if (path.Equals("/favicon.ico", StringComparison.OrdinalIgnoreCase)) return true;
+        if (path.Equals("/favicon-16x16.png", StringComparison.OrdinalIgnoreCase)) return true;
+        if (path.Equals("/favicon-32x32.png", StringComparison.OrdinalIgnoreCase)) return true;
+        if (path.Equals("/favicon-48x48.png", StringComparison.OrdinalIgnoreCase)) return true;
+        if (path.Equals("/logov2-clean.png", StringComparison.OrdinalIgnoreCase)) return true;
+        if (path.Equals("/manifest.json", StringComparison.OrdinalIgnoreCase)) return true;
+        if (path.Equals("/sw.js", StringComparison.OrdinalIgnoreCase)) return true;
+        if (path.Equals("/web/meta", StringComparison.OrdinalIgnoreCase)) return true;
+        // GET /web/login allows SPA/redirects; POST is the login submit (both must be public).
+        if (path.Equals("/web/login", StringComparison.OrdinalIgnoreCase) && (method == "GET" || method == "POST")) return true;
+        if (path.Equals("/web/auth/set-password", StringComparison.OrdinalIgnoreCase) && method == "POST") return true;
+        if (path.StartsWith("/signin-oidc", StringComparison.OrdinalIgnoreCase)) return true;
+        if (path.StartsWith("/web/auth/oidc/challenge", StringComparison.OrdinalIgnoreCase)) return true;
+        return false;
+    }
 
     app.MapControllers();
 
@@ -340,11 +497,11 @@ try
     // ==================== /web/* endpoints ====================
 
     // Web Meta — fetches latest release from GitHub and compares with current version
-    // §6.10: GET /web/meta — version info + update state (MetaResponse-compatible)
-    app.MapGet("/web/meta", async (UpdateService updater, int? force) =>
+    // §6.10: GET /web/meta — version info + update state + auth flags (MetaResponse-compatible)
+    app.MapGet("/web/meta", async (UpdateService updater, TorrentarrConfig cfg, int? force) =>
     {
         await updater.CheckForUpdateAsync(forceRefresh: force.GetValueOrDefault() != 0);
-        return Results.Ok(updater.BuildMetaResponse());
+        return Results.Ok(updater.BuildMetaResponse(cfg.WebUI));
     });
 
     // Web Status — matches TypeScript StatusResponse (no extra webui field)
@@ -1281,9 +1438,110 @@ try
         return Results.Ok(new { distribution });
     });
 
-    // Web Token
-    app.MapGet("/web/token", (TorrentarrConfig cfg) =>
-        Results.Ok(new { token = cfg.WebUI.Token }));
+    // Web Token — only returned when already authenticated (middleware enforces when auth enabled)
+    app.MapGet("/web/token", (TorrentarrConfig cfg, HttpContext ctx) =>
+    {
+        var isAuthenticated = ctx.User?.Identity?.IsAuthenticated == true;
+        if (!isAuthenticated && IsAuthRequired(cfg))
+            return Results.Json(new { token = "" }, statusCode: 401);
+        return Results.Ok(new { token = cfg.WebUI.Token });
+    });
+
+    // Local login: username + password → session cookie
+    app.MapPost("/web/login", async (HttpContext ctx, TorrentarrConfig cfg, IPasswordHasher hasher, ILogger<Program> log) =>
+    {
+        var ip = ctx.Connection.RemoteIpAddress?.ToString();
+        if (ip != null && !LoginRateLimiter.TryAcquire(ip))
+            return Results.Json(new { error = "Too many login attempts. Try again later." }, statusCode: 429);
+
+        var body = await ctx.Request.ReadFromJsonAsync<LoginRequest>();
+        if (body == null || string.IsNullOrWhiteSpace(body.Username) || string.IsNullOrWhiteSpace(body.Password))
+            return Results.BadRequest(new { error = "Username and password required" });
+
+        if (!cfg.WebUI.LocalAuthEnabled)
+            return Results.Json(new { error = "Local login not configured" }, statusCode: 400);
+
+        if (string.IsNullOrEmpty(cfg.WebUI.PasswordHash))
+            return Results.Json(new { error = "Password not set", code = "SETUP_REQUIRED" }, statusCode: 403);
+
+        // Always run bcrypt verification to avoid timing leak (username enumeration)
+        var passwordValid = hasher.VerifyPassword(body.Password, cfg.WebUI.PasswordHash);
+        var usernameMatch = string.Equals(body.Username.Trim(), cfg.WebUI.Username?.Trim(), StringComparison.Ordinal);
+        if (!usernameMatch || !passwordValid)
+            return Results.Json(new { error = "Unauthorized" }, statusCode: 401);
+
+        var identity = new ClaimsIdentity(CookieAuthenticationDefaults.AuthenticationScheme);
+        identity.AddClaim(new Claim(ClaimTypes.Name, body.Username.Trim()));
+        var principal = new ClaimsPrincipal(identity);
+        await ctx.SignInAsync(CookieAuthenticationDefaults.AuthenticationScheme, principal, new AuthenticationProperties
+        {
+            IsPersistent = true,
+            ExpiresUtc = DateTimeOffset.UtcNow.AddDays(7)
+        });
+        log.LogInformation("User {User} logged in via local auth", body.Username);
+        return Results.Ok(new { success = true });
+    });
+
+    // Set password (first-time or reset): hash and write to config. Allowed when PasswordHash is empty or via setup token.
+    app.MapPost("/web/auth/set-password", async (HttpContext ctx, TorrentarrConfig cfg, ConfigurationLoader loader, IPasswordHasher hasher, ILogger<Program> log) =>
+    {
+        var ip = ctx.Connection.RemoteIpAddress?.ToString();
+        if (ip != null && !SetPasswordRateLimiter.TryAcquire(ip))
+            return Results.Json(new { error = "Too many set-password attempts. Try again later." }, statusCode: 429);
+
+        var body = await ctx.Request.ReadFromJsonAsync<SetPasswordRequest>();
+        if (body == null || string.IsNullOrWhiteSpace(body.Username) || string.IsNullOrWhiteSpace(body.Password))
+            return Results.BadRequest(new { error = "Username and password required" });
+        if (body.Password.Length < 8)
+            return Results.BadRequest(new { error = "Password must be at least 8 characters" });
+
+        var setupToken = Environment.GetEnvironmentVariable("TORRENTARR_SETUP_TOKEN");
+        var allowSet = string.IsNullOrEmpty(cfg.WebUI.PasswordHash)
+            || (!string.IsNullOrWhiteSpace(setupToken) && body.SetupToken != null
+                && TokenEquals(body.SetupToken, setupToken));
+        if (!allowSet)
+            return Results.Json(new { error = "Set password not allowed" }, statusCode: 403);
+
+        // Capture current values so we can revert if SaveConfig fails
+        var prevUsername = cfg.WebUI.Username;
+        var prevPasswordHash = cfg.WebUI.PasswordHash;
+        var prevAuthDisabled = cfg.WebUI.AuthDisabled;
+        var prevLocalAuthEnabled = cfg.WebUI.LocalAuthEnabled;
+
+        cfg.WebUI.Username = body.Username.Trim();
+        cfg.WebUI.PasswordHash = hasher.HashPassword(body.Password);
+        // Always enable local auth after setting a password, regardless of previous mode
+        if (cfg.WebUI.AuthDisabled)
+            cfg.WebUI.AuthDisabled = false;
+        cfg.WebUI.LocalAuthEnabled = true;
+        try
+        {
+            loader.SaveConfig(cfg);
+        }
+        catch (Exception ex)
+        {
+            log.LogError(ex, "Failed to save config after set-password");
+            // Revert in-memory config so it stays in sync with persisted file
+            cfg.WebUI.Username = prevUsername;
+            cfg.WebUI.PasswordHash = prevPasswordHash;
+            cfg.WebUI.AuthDisabled = prevAuthDisabled;
+            cfg.WebUI.LocalAuthEnabled = prevLocalAuthEnabled;
+            return Results.Json(new { error = "Failed to save configuration" }, statusCode: 500);
+        }
+        log.LogInformation("Password set for user {User}", cfg.WebUI.Username);
+        return Results.Ok(new { success = true });
+    });
+
+    // OIDC challenge: redirect to IdP (used by login page "Sign in with OIDC" button)
+    app.MapGet("/web/auth/oidc/challenge", async (HttpContext ctx, TorrentarrConfig cfg) =>
+    {
+        if (!cfg.WebUI.OIDCEnabled || cfg.WebUI.OIDC is not { } oidc
+            || string.IsNullOrWhiteSpace(oidc.Authority) || string.IsNullOrWhiteSpace(oidc.ClientId))
+            return Results.BadRequest(new { error = "OIDC not configured" });
+        await ctx.ChallengeAsync(OpenIdConnectDefaults.AuthenticationScheme);
+        // ChallengeAsync already wrote the 302 response; do not return a result that writes (would conflict).
+        return NoOpAfterChallengeResult.Instance;
+    });
 
     // Web Qbit Categories (api mirror — same logic as /web/qbit/categories, token-protected)
     app.MapGet("/api/qbit/categories", async (QBittorrentConnectionManager qbitManager, TorrentarrConfig cfg) =>
@@ -1520,6 +1778,8 @@ try
 
     app.MapGet("/api/logs/{name}", async (string name) =>
     {
+        if (!IsValidLogFileName(name))
+            return Results.BadRequest(new { error = "Invalid log file name" });
         var logFile = Path.Combine(logsPath, name);
         if (!File.Exists(logFile))
             return Results.NotFound(new { error = "Log file not found" });
@@ -1529,6 +1789,8 @@ try
 
     app.MapGet("/api/logs/{name}/download", (string name) =>
     {
+        if (!IsValidLogFileName(name))
+            return Results.BadRequest(new { error = "Invalid log file name" });
         var logFile = Path.Combine(logsPath, name);
         if (!File.Exists(logFile))
             return Results.NotFound();
@@ -2385,6 +2647,7 @@ class ProcessOrchestratorService : BackgroundService
     private readonly TorrentarrConfig _config;
     private readonly QBittorrentConnectionManager _qbitManager;
     private readonly IServiceScopeFactory _scopeFactory;
+    private readonly ProcessStateManager _stateManager;
     private readonly HashSet<string> _managedCategories;
     private long _currentFreeSpace;
     private long _minFreeSpaceBytes;
@@ -2396,12 +2659,14 @@ class ProcessOrchestratorService : BackgroundService
         ILogger<ProcessOrchestratorService> logger,
         TorrentarrConfig config,
         QBittorrentConnectionManager qbitManager,
-        IServiceScopeFactory scopeFactory)
+        IServiceScopeFactory scopeFactory,
+        ProcessStateManager stateManager)
     {
         _logger = logger;
         _config = config;
         _qbitManager = qbitManager;
         _scopeFactory = scopeFactory;
+        _stateManager = stateManager;
         _managedCategories = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
         // §8: Respect Settings.FreeSpace string ("-1" = disabled, "10G"/"500M" = threshold)
         var freeSpaceBytes = ParseFreeSpaceString(_config.Settings.FreeSpace);
@@ -2481,6 +2746,36 @@ class ProcessOrchestratorService : BackgroundService
 
             _freeSpaceFolder = GetFreeSpaceFolder();
 
+            // Other section (Recheck, Failed, Free Space Manager): only when qBit is configured
+            if (_qbitConfigured)
+            {
+                _stateManager.Initialize("Recheck", new ArrProcessState
+                {
+                    Name = "Recheck",
+                    Category = "Recheck",
+                    Kind = "category",
+                    Alive = false,
+                    CategoryCount = null
+                });
+                _stateManager.Initialize("Failed", new ArrProcessState
+                {
+                    Name = "Failed",
+                    Category = "Failed",
+                    Kind = "category",
+                    Alive = false,
+                    CategoryCount = null
+                });
+                _stateManager.Initialize("FreeSpaceManager", new ArrProcessState
+                {
+                    Name = "FreeSpaceManager",
+                    Category = "FreeSpaceManager",
+                    Kind = "torrent",
+                    MetricType = "free-space",
+                    Alive = false,
+                    CategoryCount = null
+                });
+            }
+
             while (!stoppingToken.IsCancellationRequested)
             {
                 try
@@ -2534,11 +2829,14 @@ class ProcessOrchestratorService : BackgroundService
 
     private async Task ProcessSpecialCategoriesAsync(CancellationToken cancellationToken)
     {
+        int totalFailed = 0;
+        int totalRecheck = 0;
         foreach (var (instanceName, client) in _qbitManager.GetAllClients())
         {
             try
             {
                 var failedTorrents = await client.GetTorrentsAsync(_config.Settings.FailedCategory, cancellationToken);
+                totalFailed += failedTorrents.Count;
                 foreach (var torrent in failedTorrents)
                 {
                     // §2.13: Settings-level IgnoreTorrentsYoungerThan applies to failed/recheck
@@ -2559,6 +2857,7 @@ class ProcessOrchestratorService : BackgroundService
                 }
 
                 var recheckTorrents = await client.GetTorrentsAsync(_config.Settings.RecheckCategory, cancellationToken);
+                totalRecheck += recheckTorrents.Count;
                 foreach (var torrent in recheckTorrents)
                 {
                     // §2.13: Settings-level IgnoreTorrentsYoungerThan applies to failed/recheck
@@ -2583,6 +2882,8 @@ class ProcessOrchestratorService : BackgroundService
                 _logger.LogError(ex, "[{Instance}] Error processing special categories", instanceName);
             }
         }
+        _stateManager.Update("Failed", s => { s.CategoryCount = totalFailed; s.Alive = true; });
+        _stateManager.Update("Recheck", s => { s.CategoryCount = totalRecheck; s.Alive = true; });
     }
 
     private async Task ProcessFreeSpaceManagerAsync(CancellationToken cancellationToken)
@@ -2592,6 +2893,7 @@ class ProcessOrchestratorService : BackgroundService
         if (string.IsNullOrEmpty(_freeSpaceFolder))
         {
             _logger.LogWarning("FreeSpace: No free space folder configured or folder doesn't exist");
+            _stateManager.Update("FreeSpaceManager", s => { s.Alive = false; s.CategoryCount = 0; });
             return;
         }
 
@@ -2605,6 +2907,9 @@ class ProcessOrchestratorService : BackgroundService
             scope = _scopeFactory.CreateScope();
             dbContext = scope.ServiceProvider.GetRequiredService<TorrentarrDbContext>();
         }
+
+        const string freeSpacePausedTag = "qBitrr-free_space_paused";
+        int pausedCount = 0;
 
         try
         {
@@ -2622,8 +2927,27 @@ class ProcessOrchestratorService : BackgroundService
                 }
             }
 
+            int[]? pausedCountRef = null;
+            if (!_config.Settings.Tagless)
+            {
+                pausedCount = allTorrents.Count(t => t.torrent.Tags?.Contains(freeSpacePausedTag) == true);
+                pausedCountRef = new int[] { pausedCount };
+            }
+
             foreach (var (client, torrent) in allTorrents.OrderBy(x => x.torrent.AddedOn))
-                await ProcessSingleTorrentSpaceAsync(client, torrent, dbContext, cancellationToken);
+                await ProcessSingleTorrentSpaceAsync(client, torrent, dbContext, pausedCountRef, cancellationToken);
+
+            if (_config.Settings.Tagless && dbContext != null)
+                pausedCount = await dbContext.TorrentLibrary.CountAsync(t => t.FreeSpacePaused, cancellationToken);
+            else if (pausedCountRef != null)
+                pausedCount = pausedCountRef[0];
+
+            _stateManager.Update("FreeSpaceManager", s =>
+            {
+                s.CategoryCount = pausedCount;
+                s.MetricType = "free-space";
+                s.Alive = _freeSpaceEnabled && _minFreeSpaceBytes > 0 && !string.IsNullOrEmpty(_freeSpaceFolder);
+            });
         }
         catch (Exception ex)
         {
@@ -2636,7 +2960,7 @@ class ProcessOrchestratorService : BackgroundService
     }
 
     private async Task ProcessSingleTorrentSpaceAsync(
-        QBittorrentClient client, TorrentInfo torrent, TorrentarrDbContext? dbContext, CancellationToken cancellationToken)
+        QBittorrentClient client, TorrentInfo torrent, TorrentarrDbContext? dbContext, int[]? pausedCountRef, CancellationToken cancellationToken)
     {
         const string freeSpacePausedTag = "qBitrr-free_space_paused";
         var tagless = _config.Settings.Tagless;
@@ -2677,6 +3001,7 @@ class ProcessOrchestratorService : BackgroundService
                         .ExecuteUpdateAsync(s => s.SetProperty(t => t.FreeSpacePaused, true), cancellationToken);
                 else
                     await client.AddTagsAsync(new List<string> { torrent.Hash }, new List<string> { freeSpacePausedTag }, cancellationToken);
+                if (pausedCountRef != null) pausedCountRef[0]++;
                 await client.PauseTorrentAsync(torrent.Hash, cancellationToken);
             }
             else if (isPausedDownload && freeSpaceTest >= 0)
@@ -2691,6 +3016,7 @@ class ProcessOrchestratorService : BackgroundService
                         .ExecuteUpdateAsync(s => s.SetProperty(t => t.FreeSpacePaused, false), cancellationToken);
                 else
                     await client.RemoveTagsAsync(new List<string> { torrent.Hash }, new List<string> { freeSpacePausedTag }, cancellationToken);
+                if (pausedCountRef != null) pausedCountRef[0]--;
                 await client.ResumeTorrentAsync(torrent.Hash, cancellationToken);
             }
             else if (isPausedDownload && freeSpaceTest < 0)
@@ -2719,6 +3045,7 @@ class ProcessOrchestratorService : BackgroundService
                     .ExecuteUpdateAsync(s => s.SetProperty(t => t.FreeSpacePaused, false), cancellationToken);
             else
                 await client.RemoveTagsAsync(new List<string> { torrent.Hash }, new List<string> { freeSpacePausedTag }, cancellationToken);
+            if (pausedCountRef != null) pausedCountRef[0]--;
         }
     }
 
@@ -2743,6 +3070,95 @@ public record TestConnectionRequest(
     [property: System.Text.Json.Serialization.JsonPropertyName("apiKey")] string? ApiKey,
     [property: System.Text.Json.Serialization.JsonPropertyName("instanceKey")] string? InstanceKey = null);
 public record LoggerConfigurationRequest(string Level);
+public record LoginRequest(
+    [property: System.Text.Json.Serialization.JsonPropertyName("username")] string? Username,
+    [property: System.Text.Json.Serialization.JsonPropertyName("password")] string? Password);
+public record SetPasswordRequest(
+    [property: System.Text.Json.Serialization.JsonPropertyName("username")] string? Username,
+    [property: System.Text.Json.Serialization.JsonPropertyName("password")] string? Password,
+    [property: System.Text.Json.Serialization.JsonPropertyName("setupToken")] string? SetupToken = null);
 
 // Make Program accessible to test projects (WebApplicationFactory<Program>)
-public partial class Program { }
+public partial class Program
+{
+    /// <summary>Result that does nothing when executed; used after ChallengeAsync() has already written the redirect.</summary>
+    sealed class NoOpAfterChallengeResult : IResult
+    {
+        public static readonly NoOpAfterChallengeResult Instance = new();
+        public Task ExecuteAsync(HttpContext ctx) => Task.CompletedTask;
+    }
+
+    /// <summary>Per-IP rate limiter for login endpoint: 10 attempts per 15 minutes.</summary>
+    static class LoginRateLimiter
+    {
+        const int WindowMinutes = 15;
+        const int MaxAttempts = 10;
+        const int CleanupThreshold = 200;
+        static readonly ConcurrentDictionary<string, (int Count, DateTime WindowStart)> _attempts = new();
+        static readonly object _lock = new();
+
+        public static bool TryAcquire(string key)
+        {
+            var now = DateTime.UtcNow;
+            var window = TimeSpan.FromMinutes(WindowMinutes);
+            lock (_lock)
+            {
+                if (_attempts.Count >= CleanupThreshold)
+                {
+                    var toRemove = _attempts.Where(kvp => now - kvp.Value.WindowStart > window).Select(kvp => kvp.Key).ToList();
+                    foreach (var k in toRemove)
+                        _attempts.TryRemove(k, out _);
+                }
+                if (_attempts.TryGetValue(key, out var v))
+                {
+                    if (now - v.WindowStart > window)
+                        _attempts[key] = (1, now);
+                    else if (v.Count >= MaxAttempts)
+                        return false;
+                    else
+                        _attempts[key] = (v.Count + 1, v.WindowStart);
+                }
+                else
+                    _attempts[key] = (1, now);
+                return true;
+            }
+        }
+    }
+
+    /// <summary>Per-IP rate limiter for set-password endpoint to mitigate brute-force of setup token.</summary>
+    static class SetPasswordRateLimiter
+    {
+        const int WindowMinutes = 15;
+        const int MaxAttempts = 5;
+        const int CleanupThreshold = 200;
+        static readonly ConcurrentDictionary<string, (int Count, DateTime WindowStart)> _attempts = new();
+        static readonly object _lock = new();
+
+        public static bool TryAcquire(string key)
+        {
+            var now = DateTime.UtcNow;
+            var window = TimeSpan.FromMinutes(WindowMinutes);
+            lock (_lock)
+            {
+                if (_attempts.Count >= CleanupThreshold)
+                {
+                    var toRemove = _attempts.Where(kvp => now - kvp.Value.WindowStart > window).Select(kvp => kvp.Key).ToList();
+                    foreach (var k in toRemove)
+                        _attempts.TryRemove(k, out _);
+                }
+                if (_attempts.TryGetValue(key, out var v))
+                {
+                    if (now - v.WindowStart > window)
+                        _attempts[key] = (1, now);
+                    else if (v.Count >= MaxAttempts)
+                        return false;
+                    else
+                        _attempts[key] = (v.Count + 1, v.WindowStart);
+                }
+                else
+                    _attempts[key] = (1, now);
+                return true;
+            }
+        }
+    }
+}

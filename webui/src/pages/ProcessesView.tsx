@@ -29,6 +29,9 @@ const RELEASE_TOKEN_REGEX =
 const EPISODE_TOKEN_REGEX = /\bS\d{1,3}E\d{1,3}\b/i;
 const SEASON_TOKEN_REGEX = /\bSeason\s+\d+\b/i;
 
+/** Other section entries that are display-only (no restart). */
+const OTHER_DISPLAY_ONLY_NAMES = ["Recheck", "Failed", "FreeSpaceManager"];
+
 function sanitizeSearchSummary(raw: string): string {
   const trimmed = raw.trim();
   if (!trimmed) return "";
@@ -387,6 +390,9 @@ export function ProcessesView({ active }: ProcessesViewProps): JSX.Element {
         totalCount === 1 ? "1 process" : `${totalCount} processes`;
       const displayName =
         name === "FreeSpaceManager" ? "Free Space Manager" : name;
+      const isOtherDisplayOnly = items.every((item) =>
+        OTHER_DISPLAY_ONLY_NAMES.includes(item.name),
+      );
       const uniqueKinds = Array.from(new Set(items.map((item) => item.kind)));
       const filteredKinds = uniqueKinds.filter((kind) => {
         const lower = kind.toLowerCase();
@@ -424,7 +430,7 @@ export function ProcessesView({ active }: ProcessesViewProps): JSX.Element {
               >
                 <div className="process-chip__top">
                   <div className="process-chip__name">
-                    {formatKind(item.kind)}
+                    {isOtherDisplayOnly ? displayName : formatKind(item.kind)}
                   </div>
                   <div
                     className={`status-pill__dot ${item.alive ? "text-success" : "text-danger"}`}
@@ -493,14 +499,16 @@ export function ProcessesView({ active }: ProcessesViewProps): JSX.Element {
                     return "Initializing...";
                   })()}
                 </div>
-                <div className="process-chip__actions">
-                  <button
-                    className="btn small"
-                    onClick={() => handleRestart(item.category, item.kind)}
-                  >
-                    Restart
-                  </button>
-                </div>
+                {!isOtherDisplayOnly && (
+                  <div className="process-chip__actions">
+                    <button
+                      className="btn small"
+                      onClick={() => handleRestart(item.category, item.kind)}
+                    >
+                      Restart
+                    </button>
+                  </div>
+                )}
               </div>
             ))}
             {instanceCategories.map((cat) => {
@@ -531,14 +539,16 @@ export function ProcessesView({ active }: ProcessesViewProps): JSX.Element {
               );
             })}
           </div>
-          <div className="process-card__footer">
-            <button
-              className="btn small"
-              onClick={() => void handleRestartGroup(items)}
-            >
-              Restart All
-            </button>
-          </div>
+          {!isOtherDisplayOnly && (
+            <div className="process-card__footer">
+              <button
+                className="btn small"
+                onClick={() => void handleRestartGroup(items)}
+              >
+                Restart All
+              </button>
+            </div>
+          )}
         </div>
       );
     });

@@ -112,7 +112,7 @@ URI = "http://localhost:7878"
 APIKey = "your-radarr-api-key"
 Category = "radarr-movies"
 
-[Radarr-Movies.EntrySearch]
+[Radarr-Movies.Search]
 SearchMissing = true  # REQUIRED: Enables search functionality
 SearchRequestsEvery = 300  # Check for new requests every 5 minutes (300 seconds)
 SearchLimit = 5  # Max concurrent searches
@@ -120,7 +120,7 @@ SearchLimit = 5  # Max concurrent searches
 # Choose ONE request system:
 
 # Option 1: Overseerr
-[Radarr-Movies.EntrySearch.Overseerr]
+[Radarr-Movies.Search.Overseerr]
 SearchOverseerrRequests = true
 OverseerrURI = "http://localhost:5055"
 OverseerrAPIKey = "your-overseerr-api-key"
@@ -128,7 +128,7 @@ ApprovedOnly = true
 Is4K = false
 
 # Option 2: Ombi
-[Radarr-Movies.EntrySearch.Ombi]
+[Radarr-Movies.Search.Ombi]
 SearchOmbiRequests = true
 OmbiURI = "http://localhost:3579"
 OmbiAPIKey = "your-ombi-api-key"
@@ -137,7 +137,7 @@ ApprovedOnly = true
 
 ### Required Parent Settings
 
-Request integration **requires** these settings in `[EntrySearch]`:
+Request integration **requires** these settings in `[Search]`:
 
 | Setting | Required | Purpose |
 |---------|----------|---------|
@@ -179,7 +179,7 @@ Request integration **requires** these settings in `[EntrySearch]`:
 
 **Example:**
 ```toml
-[Radarr-Movies.EntrySearch.Overseerr]
+[Radarr-Movies.Search.Overseerr]
 SearchOverseerrRequests = true
 OverseerrURI = "http://localhost:5055"
 OverseerrAPIKey = "your-api-key"
@@ -203,7 +203,7 @@ ApprovedOnly = true  # Require admin approval
 
 **Example:**
 ```toml
-[Radarr-Movies.EntrySearch.Overseerr]
+[Radarr-Movies.Search.Overseerr]
 SearchOverseerrRequests = true
 OverseerrURI = "http://localhost:5055"
 OverseerrAPIKey = "your-api-key"
@@ -229,11 +229,11 @@ URI = "http://localhost:7878"
 APIKey = "radarr-api-key"
 Category = "radarr-movies"
 
-[Radarr-Movies.EntrySearch]
+[Radarr-Movies.Search]
 SearchMissing = true
 SearchRequestsEvery = 3
 
-[Radarr-Movies.EntrySearch.Overseerr]
+[Radarr-Movies.Search.Overseerr]
 SearchOverseerrRequests = true
 OverseerrURI = "http://localhost:5055"
 OverseerrAPIKey = "shared-api-key"
@@ -247,11 +247,11 @@ URI = "http://localhost:8989"
 APIKey = "sonarr-api-key"
 Category = "sonarr-series"
 
-[Sonarr-Series.EntrySearch]
+[Sonarr-Series.Search]
 SearchMissing = true
 SearchRequestsEvery = 3
 
-[Sonarr-Series.EntrySearch.Overseerr]
+[Sonarr-Series.Search.Overseerr]
 SearchOverseerrRequests = true
 OverseerrURI = "http://localhost:5055"  # Same Overseerr instance
 OverseerrAPIKey = "shared-api-key"  # Same API key
@@ -276,7 +276,7 @@ URI = "http://localhost:7878"
 APIKey = "standard-api-key"
 Category = "radarr-movies"
 
-[Radarr-Movies.EntrySearch.Overseerr]
+[Radarr-Movies.Search.Overseerr]
 SearchOverseerrRequests = true
 OverseerrURI = "http://localhost:5055"
 OverseerrAPIKey = "api-key"
@@ -289,7 +289,7 @@ URI = "http://localhost:7879"
 APIKey = "4k-api-key"
 Category = "radarr-4k"
 
-[Radarr-4K.EntrySearch.Overseerr]
+[Radarr-4K.Search.Overseerr]
 SearchOverseerrRequests = true
 OverseerrURI = "http://localhost:5055"  # Same Overseerr
 OverseerrAPIKey = "api-key"  # Same API key
@@ -305,11 +305,11 @@ Is4K = true  # 4K quality requests
 Request integration works **alongside** regular missing content searches:
 
 ```toml
-[Radarr-Movies.EntrySearch]
+[Radarr-Movies.Search]
 SearchMissing = true  # Search for missing monitored content
 SearchLimit = 10  # Total searches across all sources
 
-[Radarr-Movies.EntrySearch.Overseerr]
+[Radarr-Movies.Search.Overseerr]
 SearchOverseerrRequests = true  # Also search Overseerr requests
 ApprovedOnly = true
 ```
@@ -326,12 +326,12 @@ ApprovedOnly = true
 Combine request integration with quality upgrades:
 
 ```toml
-[Radarr-Movies.EntrySearch]
+[Radarr-Movies.Search]
 SearchMissing = true
 DoUpgradeSearch = true  # Search for quality upgrades
 QualityUnmetSearch = true  # Search for unmet quality profiles
 
-[Radarr-Movies.EntrySearch.Overseerr]
+[Radarr-Movies.Search.Overseerr]
 SearchOverseerrRequests = true
 ApprovedOnly = true
 ```
@@ -348,12 +348,12 @@ ApprovedOnly = true
 Enforce custom format scores for requested content:
 
 ```toml
-[Radarr-Movies.EntrySearch]
+[Radarr-Movies.Search]
 SearchMissing = true
 CustomFormatUnmetSearch = true  # Search for CF score improvements
 ForceMinimumCustomFormat = true  # Block releases below threshold
 
-[Radarr-Movies.EntrySearch.Overseerr]
+[Radarr-Movies.Search.Overseerr]
 SearchOverseerrRequests = true
 ApprovedOnly = true
 ```
@@ -380,7 +380,7 @@ Adjust `SearchRequestsEvery` based on request volume:
 
 **Example:**
 ```toml
-[Radarr-Movies.EntrySearch]
+[Radarr-Movies.Search]
 SearchMissing = true
 SearchRequestsEvery = 600  # Check for new requests every 10 minutes
 ```
@@ -404,7 +404,7 @@ Balance `SearchLimit` to avoid overwhelming indexers:
 
 **Example:**
 ```toml
-[Radarr-Movies.EntrySearch]
+[Radarr-Movies.Search]
 SearchMissing = true
 SearchLimit = 5  # Max 5 concurrent searches
 ```
@@ -451,7 +451,7 @@ Navigate to **Logs** tab and filter by "overseerr" or "ombi"
 **Symptoms:** Approved requests remain in "Requested" state
 
 **Solutions:**
-1. ✅ Verify `SearchMissing = true` in `[EntrySearch]`
+1. ✅ Verify `SearchMissing = true` in `[Search]`
 2. ✅ Check request system integration is enabled
 3. ✅ Ensure content has been **released** (not scheduled for future)
 4. ✅ Verify API key is correct

@@ -211,7 +211,7 @@ Include:
    [qBit]
    Host = "http://qbittorrent"
    Port = 8080
-   Username = "admin"
+   UserName = "admin"
    Password = "REDACTED"
    ```
 
@@ -542,8 +542,9 @@ Check these required fields are set:
 
 ```toml
 [qBit]
-Host = "http://localhost:8080"  # REQUIRED
-# Username and Password (if qBit has auth enabled)
+Host = "localhost"  # REQUIRED
+Port = 8080
+# UserName and Password (if qBit has auth enabled)
 
 [[Radarr]]
 URI = "http://localhost:7878"   # REQUIRED
@@ -588,7 +589,7 @@ Category = "radarr"             # REQUIRED (must match qBit download client)
 1. **Enable search functionality:**
    ```toml
    [[Radarr]]
-   [Radarr.EntrySearch]
+   [Radarr.Search]
    SearchMissing = true
    ```
 

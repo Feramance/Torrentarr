@@ -87,12 +87,12 @@ graph TD
 
 ## Torrentarr Custom Format Settings
 
-Configure custom format integration in the `[<Arr>-<Name>.EntrySearch]` section.
+Configure custom format integration in the `[<Arr>-<Name>.Search]` section.
 
 ### Complete Custom Format Configuration
 
 ```toml
-[Radarr-4K.EntrySearch]
+[Radarr-4K.Search]
 # Enable custom format-based searches
 CustomFormatUnmetSearch = true
 
@@ -202,7 +202,7 @@ ForceMinimumCustomFormat = true
 **Torrentarr config:**
 
 ```toml
-[Radarr-4K.EntrySearch]
+[Radarr-4K.Search]
 DoUpgradeSearch = true
 CustomFormatUnmetSearch = false  # Accept SDR initially
 ForceMinimumCustomFormat = false
@@ -230,7 +230,7 @@ ForceMinimumCustomFormat = false
 **Torrentarr config:**
 
 ```toml
-[Radarr-Movies.EntrySearch]
+[Radarr-Movies.Search]
 DoUpgradeSearch = true
 CustomFormatUnmetSearch = true  # Search if below 50
 ForceMinimumCustomFormat = true  # Reject scene releases
@@ -258,7 +258,7 @@ ForceMinimumCustomFormat = true  # Reject scene releases
 **Torrentarr config:**
 
 ```toml
-[Radarr-Movies.EntrySearch]
+[Radarr-Movies.Search]
 DoUpgradeSearch = true
 CustomFormatUnmetSearch = false
 ForceMinimumCustomFormat = false
@@ -287,7 +287,7 @@ ForceMinimumCustomFormat = false
 **Torrentarr config:**
 
 ```toml
-[Radarr-4K.EntrySearch]
+[Radarr-4K.Search]
 CustomFormatUnmetSearch = true
 ForceMinimumCustomFormat = true
 DoUpgradeSearch = true
@@ -660,7 +660,7 @@ Before enabling `ForceMinimumCustomFormat`:
 ### Workflow 1: Initial Download + Upgrade
 
 ```toml
-[Radarr-Movies.EntrySearch]
+[Radarr-Movies.Search]
 SearchMissing = true
 CustomFormatUnmetSearch = false  # Accept any initially
 ForceMinimumCustomFormat = false
@@ -681,7 +681,7 @@ DoUpgradeSearch = true  # Upgrade later
 ### Workflow 2: Strict Quality Only
 
 ```toml
-[Radarr-4K.EntrySearch]
+[Radarr-4K.Search]
 SearchMissing = true
 CustomFormatUnmetSearch = true
 ForceMinimumCustomFormat = true
@@ -704,14 +704,14 @@ DoUpgradeSearch = true
 
 ```toml
 # Radarr-HD instance (lenient)
-[Radarr-HD.EntrySearch]
+[Radarr-HD.Search]
 SearchMissing = true
 CustomFormatUnmetSearch = false
 DoUpgradeSearch = false
 # Minimum score: 0
 
 # Radarr-4K instance (strict)
-[Radarr-4K.EntrySearch]
+[Radarr-4K.Search]
 SearchMissing = true
 CustomFormatUnmetSearch = true
 ForceMinimumCustomFormat = true

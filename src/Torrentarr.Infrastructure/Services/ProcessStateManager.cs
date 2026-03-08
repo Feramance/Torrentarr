@@ -23,7 +23,8 @@ public class ArrProcessState
 
 /// <summary>
 /// Singleton that tracks per-Arr-instance runtime state. Thread-safe.
-/// Populated by ArrWorkerManager; read by /web/processes and /api/processes endpoints.
+/// Populated by ArrWorkerManager and by the Host's ProcessOrchestratorService (Recheck, Failed, FreeSpaceManager).
+/// Read by /web/processes and /api/processes endpoints.
 /// </summary>
 public class ProcessStateManager
 {

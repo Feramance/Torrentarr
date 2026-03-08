@@ -380,7 +380,7 @@ Filter what content Torrentarr searches for:
 
 ```toml
 [[Sonarr]]
-[Sonarr.EntrySearch]
+[Sonarr.Search]
 # Only search for monitored content
 Monitored = true
 
@@ -436,7 +436,7 @@ APIKey = "radarr-1080p-api-key"
 Category = "radarr-1080p"
 ImportMode = "Move"
 
-[Radarr-1080p.EntrySearch]
+[Radarr-1080p.Search]
 SearchMissing = true
 DoUpgradeSearch = true
 
@@ -447,7 +447,7 @@ APIKey = "radarr-4k-api-key"
 Category = "radarr-4k"
 ImportMode = "Hardlink"
 
-[Radarr-4K.EntrySearch]
+[Radarr-4K.Search]
 SearchMissing = true
 DoUpgradeSearch = true
 CustomFormatUnmetSearch = true
@@ -465,7 +465,7 @@ URI = "http://localhost:8989"
 APIKey = "sonarr-tv-api-key"
 Category = "sonarr-tv"
 
-[Sonarr-TV.EntrySearch]
+[Sonarr-TV.Search]
 SearchMissing = true
 SearchLimit = 100  # Search up to 100 episodes
 AlsoSearchSpecials = false
@@ -477,7 +477,7 @@ URI = "http://localhost:8990"
 APIKey = "sonarr-anime-api-key"
 Category = "sonarr-anime"
 
-[Sonarr-Anime.EntrySearch]
+[Sonarr-Anime.Search]
 SearchMissing = true
 AlsoSearchSpecials = true  # Search for OVAs, specials
 ```
@@ -493,7 +493,7 @@ URI = "http://localhost:8686"
 APIKey = "lidarr-api-key"
 Category = "lidarr"
 
-[Lidarr-Music.EntrySearch]
+[Lidarr-Music.Search]
 SearchMissing = true
 UseTempForMissing = true  # Accept lower quality temporarily
 
@@ -730,7 +730,7 @@ See: [Troubleshooting Guide](../../troubleshooting/common-issues.md#import-issue
 
 1. **Check search is enabled:**
    ```toml
-   [Radarr.EntrySearch]
+   [Radarr.Search]
    SearchMissing = true
    ```
 

@@ -29,7 +29,7 @@ Category = "lidarr-music"
 ReSearch = true
 
 # Import mode (Auto, Move, or Copy)
-importMode = "Auto"
+ImportMode = "Auto"
 
 # RSS sync timer in minutes (0 = disabled)
 RssSyncTimer = 1
@@ -104,7 +104,7 @@ When `Managed = false`, Torrentarr will completely ignore this Lidarr instance. 
 ### Import Mode
 
 ```toml
-importMode = "Auto"  # Auto | Move | Copy
+ImportMode = "Auto"  # Auto | Move | Copy
 ```
 
 | Mode | Behavior |
@@ -206,12 +206,12 @@ ArrErrorCodesToBlocklist = []  # Empty list = disabled
 
 ## Automated Search Configuration
 
-Torrentarr can automatically search for missing albums and quality upgrades. Configure these settings in the `[Lidarr-Music.EntrySearch]` subsection.
+Torrentarr can automatically search for missing albums and quality upgrades. Configure these settings in the `[Lidarr-Music.Search]` subsection.
 
 ### Basic Search Settings
 
 ```toml
-[Lidarr-Music.EntrySearch]
+[Lidarr-Music.Search]
 # Enable automated search for missing albums
 SearchMissing = true
 
@@ -239,7 +239,7 @@ SearchAgainOnSearchCompletion = true
 ### Quality Upgrade Searches
 
 ```toml
-[Lidarr-Music.EntrySearch]
+[Lidarr-Music.Search]
 # Search for better quality versions of existing albums
 DoUpgradeSearch = false
 
@@ -270,7 +270,7 @@ ForceMinimumCustomFormat = false
 Temporarily lower quality standards for missing albums, then upgrade them later:
 
 ```toml
-[Lidarr-Music.EntrySearch]
+[Lidarr-Music.Search]
 # Use temp profile for missing albums
 UseTempForMissing = false
 
@@ -478,7 +478,7 @@ URI = "http://localhost:8686"
 APIKey = "your-lidarr-api-key"
 Category = "lidarr-music"
 ReSearch = true
-importMode = "Copy"  # Preserve seeding
+ImportMode = "Copy"  # Preserve seeding
 RssSyncTimer = 5
 RefreshDownloadsTimer = 5
 ArrErrorCodesToBlocklist = [
@@ -486,7 +486,7 @@ ArrErrorCodesToBlocklist = [
   "Unable to determine if file is a sample"
 ]
 
-[Lidarr-Music.EntrySearch]
+[Lidarr-Music.Search]
 SearchMissing = true
 SearchInReverse = false
 SearchRequestsEvery = 300
@@ -535,11 +535,11 @@ URI = "http://localhost:8687"
 APIKey = "your-lossless-lidarr-api-key"
 Category = "lidarr-lossless"
 ReSearch = true
-importMode = "Copy"
+ImportMode = "Copy"
 RssSyncTimer = 5
 RefreshDownloadsTimer = 5
 
-[Lidarr-Lossless.EntrySearch]
+[Lidarr-Lossless.Search]
 SearchMissing = true
 DoUpgradeSearch = true  # Always look for better lossless releases
 QualityUnmetSearch = true
@@ -573,9 +573,9 @@ URI = "http://localhost:8688"
 APIKey = "your-api-key"
 Category = "lidarr-private"
 ReSearch = true
-importMode = "Copy"  # Must preserve seeding!
+ImportMode = "Copy"  # Must preserve seeding!
 
-[Lidarr-PrivateTracker.EntrySearch]
+[Lidarr-PrivateTracker.Search]
 SearchMissing = true
 DoUpgradeSearch = true  # Look for better encodes
 CustomFormatUnmetSearch = true  # Enforce scene/source rules
@@ -625,7 +625,7 @@ AddTags = ["RED", "private", "lossless"]
 
 **Solutions:**
 
-1. ✅ Verify `SearchMissing = true` in `[Lidarr-Music.EntrySearch]`
+1. ✅ Verify `SearchMissing = true` in `[Lidarr-Music.Search]`
 2. ✅ Ensure Lidarr has indexers configured and working
 3. ✅ Review `SearchRequestsEvery` delay setting
 4. ✅ Check Lidarr logs for rate limiting or indexer errors
@@ -670,7 +670,7 @@ AddTags = ["RED", "private", "lossless"]
 
 4. ✅ Use `Copy` import mode:
    ```toml
-   importMode = "Copy"  # Preserves files for seeding
+   ImportMode = "Copy"  # Preserves files for seeding
    ```
 
 ---

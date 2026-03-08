@@ -26,7 +26,7 @@ public class UpdateEndpointTests : IClassFixture<TorrentarrWebApplicationFactory
     [Fact]
     public async Task GetMeta_Returns200_WithRequiredFields()
     {
-        var client = _factory.CreateClient();
+        var client = _factory.CreateClientWithApiToken();
 
         var response = await client.GetAsync("/web/meta");
 
@@ -45,12 +45,16 @@ public class UpdateEndpointTests : IClassFixture<TorrentarrWebApplicationFactory
         updateState.TryGetProperty("in_progress", out _).Should().BeTrue("update_state.in_progress is required");
         json.TryGetProperty("repository_url", out _).Should().BeTrue("repository_url is required");
         json.TryGetProperty("homepage_url", out _).Should().BeTrue("homepage_url is required");
+        json.TryGetProperty("auth_required", out var authRequired).Should().BeTrue("auth_required is required");
+        authRequired.ValueKind.Should().Be(JsonValueKind.False, "base factory has auth disabled");
+        json.TryGetProperty("local_auth_enabled", out _).Should().BeTrue("local_auth_enabled is required");
+        json.TryGetProperty("oidc_enabled", out _).Should().BeTrue("oidc_enabled is required");
     }
 
     [Fact]
     public async Task GetMeta_CurrentVersion_IsNotEmpty()
     {
-        var client = _factory.CreateClient();
+        var client = _factory.CreateClientWithApiToken();
 
         var response = await client.GetAsync("/web/meta");
         response.StatusCode.Should().Be(HttpStatusCode.OK);
@@ -65,7 +69,7 @@ public class UpdateEndpointTests : IClassFixture<TorrentarrWebApplicationFactory
     [Fact]
     public async Task GetMeta_UpdateState_InProgressFalseInitially()
     {
-        var client = _factory.CreateClient();
+        var client = _factory.CreateClientWithApiToken();
 
         var response = await client.GetAsync("/web/meta");
         response.StatusCode.Should().Be(HttpStatusCode.OK);
@@ -82,7 +86,7 @@ public class UpdateEndpointTests : IClassFixture<TorrentarrWebApplicationFactory
     [Fact]
     public async Task GetApiMeta_Returns200_WithSameShape()
     {
-        var client = _factory.CreateClient();
+        var client = _factory.CreateClientWithApiToken();
 
         var response = await client.GetAsync("/api/meta");
 
@@ -101,7 +105,7 @@ public class UpdateEndpointTests : IClassFixture<TorrentarrWebApplicationFactory
     [Fact]
     public async Task PostUpdate_Returns200_WithSuccessMessage()
     {
-        var client = _factory.CreateClient();
+        var client = _factory.CreateClientWithApiToken();
 
         // When no update is available, ApplyUpdateAsync exits early with an error state,
         // but the HTTP response itself should still be 200 OK.
@@ -118,7 +122,7 @@ public class UpdateEndpointTests : IClassFixture<TorrentarrWebApplicationFactory
     [Fact]
     public async Task PostUpdate_SecondCall_ReturnsAlreadyInProgress_OrSuccess()
     {
-        var client = _factory.CreateClient();
+        var client = _factory.CreateClientWithApiToken();
 
         // Both calls should return 200; the second may get "already in progress" or
         // "started" depending on timing — just verify the shape is consistent.
@@ -138,7 +142,7 @@ public class UpdateEndpointTests : IClassFixture<TorrentarrWebApplicationFactory
     [Fact]
     public async Task GetDownloadUpdate_Returns200_WithExpectedShape()
     {
-        var client = _factory.CreateClient();
+        var client = _factory.CreateClientWithApiToken();
 
         var response = await client.GetAsync("/web/download-update");
 
@@ -159,7 +163,7 @@ public class UpdateEndpointTests : IClassFixture<TorrentarrWebApplicationFactory
     [Fact]
     public async Task GetApiDownloadUpdate_Returns200_WithExpectedShape()
     {
-        var client = _factory.CreateClient();
+        var client = _factory.CreateClientWithApiToken();
 
         var response = await client.GetAsync("/api/download-update");
 

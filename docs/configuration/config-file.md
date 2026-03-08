@@ -70,7 +70,7 @@ The `[Settings]` section contains global configuration that applies to all Torre
 ```toml
 [Settings]
 # Internal config schema version - DO NOT MODIFY
-ConfigVersion = 3
+ConfigVersion = "5.9.2"
 
 # Logging
 ConsoleLevel = "INFO"
@@ -119,14 +119,14 @@ ProcessRestartDelay = 5
 ### ConfigVersion
 
 ```toml
-ConfigVersion = 3
+ConfigVersion = "5.9.2"
 ```
 
-**Type:** Integer
-**Default:** `3`
+**Type:** String
+**Default:** `"5.9.2"`
 **Required:** Yes (managed automatically)
 
-Internal configuration schema version. **DO NOT MODIFY** this value manually. Torrentarr uses it to detect when config migrations are needed.
+Internal configuration schema version. **DO NOT MODIFY** this value manually. Torrentarr uses it to detect when config migrations are needed. Updated automatically when Torrentarr migrates an older config to the current format.
 
 ---
 
@@ -732,10 +732,25 @@ The `[WebUI]` section configures Torrentarr's web interface.
 Host = "0.0.0.0"
 Port = 6969
 Token = ""
+AuthDisabled = true
+LocalAuthEnabled = false
+OIDCEnabled = false
+Username = ""
+PasswordHash = ""
 LiveArr = true
 GroupSonarr = true
 GroupLidarr = true
 Theme = "Dark"
+ViewDensity = "Comfortable"
+
+# Optional: when OIDCEnabled = true
+# [WebUI.OIDC]
+# Authority = "https://auth.example.com/application/o/myapp"
+# ClientId = "your-client-id"
+# ClientSecret = "your-client-secret"
+# Scopes = "openid profile"
+# CallbackPath = "/signin-oidc"
+# RequireHttpsMetadata = true
 ```
 
 ---
@@ -820,6 +835,30 @@ curl -H "Authorization: Bearer my-secret-token-12345" \
 ```
 
 **Recommendation:** Set a token if Torrentarr is accessible from the internet.
+
+---
+
+### AuthDisabled, LocalAuthEnabled, OIDCEnabled
+
+**Type:** Boolean
+**Defaults:** `AuthDisabled = true`, `LocalAuthEnabled = false`, `OIDCEnabled = false`
+
+Control whether browser users must log in (local username/password and/or OIDC) or can access with token only. See [WebUI Authentication](webui-authentication.md) for full authentication options and [OIDC with Authentik](webui-oidc-authentik.md) for an example IdP setup.
+
+---
+
+### Username, PasswordHash
+
+**Type:** String
+**Defaults:** `""`
+
+Used for local auth when **LocalAuthEnabled** is true. **PasswordHash** stores only the hashed password (set via login page or `POST /web/auth/set-password`). See [WebUI Authentication](webui-authentication.md).
+
+---
+
+### OIDC ([WebUI.OIDC])
+
+Optional table when **OIDCEnabled** is true. Keys: **Authority**, **ClientId**, **ClientSecret**, **Scopes**, **CallbackPath**, **RequireHttpsMetadata**. See [WebUI Authentication](webui-authentication.md) for full authentication and [OIDC with Authentik](webui-oidc-authentik.md) for an example IdP setup.
 
 ---
 
@@ -962,7 +1001,7 @@ Arr sections follow the naming pattern `[<Type>-<Name>]`:
 
 Each Arr instance has its own section with subsections for:
 
-- `[<Type>-<Name>.EntrySearch]` - Automated searching
+- `[<Type>-<Name>.Search]` - Automated searching
 - `[<Type>-<Name>.Overseerr]` - Request integration (Radarr/Sonarr only)
 - `[<Type>-<Name>.Torrent]` - Torrent management
 - `[<Type>-<Name>.Torrent.SeedingMode]` - Seeding configuration
@@ -1159,7 +1198,7 @@ Absolute minimum configuration to get started:
 
 ```toml
 [Settings]
-ConfigVersion = 3
+ConfigVersion = "5.9.2"
 CompletedDownloadFolder = "/data/downloads"
 
 [WebUI]

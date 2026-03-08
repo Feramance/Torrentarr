@@ -18,7 +18,7 @@ public class QbitCategoriesEndpointTests : IClassFixture<TorrentarrWebApplicatio
     [Fact]
     public async Task GetQbitCategories_Returns200()
     {
-        var client = _factory.CreateClient();
+        var client = _factory.CreateClientWithApiToken();
 
         var response = await client.GetAsync("/web/qbit/categories");
 
@@ -29,7 +29,7 @@ public class QbitCategoriesEndpointTests : IClassFixture<TorrentarrWebApplicatio
     public async Task GetQbitCategories_ReturnsEmptyArray_WhenNoCategories()
     {
         // Default config: Host = "CHANGE_ME" and ManagedCategories = [] → no categories returned
-        var client = _factory.CreateClient();
+        var client = _factory.CreateClientWithApiToken();
 
         var response = await client.GetAsync("/web/qbit/categories");
         var body = await response.Content.ReadAsStringAsync();

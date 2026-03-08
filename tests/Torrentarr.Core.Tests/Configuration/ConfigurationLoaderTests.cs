@@ -518,4 +518,70 @@ public class ConfigurationLoaderTests : IDisposable
             .Should().ContainKey("Ultra-HD")
             .WhoseValue.Should().Be("HD-720p");
     }
+
+    [Fact]
+    public void Load_WebUI_ParsesAuthBooleans()
+    {
+        WriteToml("""
+            [Settings]
+            LoopSleepTimer = 5
+
+            [WebUI]
+            AuthDisabled = false
+            LocalAuthEnabled = true
+            OIDCEnabled = true
+            """);
+
+        var config = new ConfigurationLoader(_tempFilePath).Load();
+
+        config.WebUI.AuthDisabled.Should().BeFalse();
+        config.WebUI.LocalAuthEnabled.Should().BeTrue();
+        config.WebUI.OIDCEnabled.Should().BeTrue();
+    }
+
+    [Theory]
+    [InlineData("Disabled", true, false, false)]
+    [InlineData("TokenOnly", false, false, false)]
+    [InlineData("Local", false, true, false)]
+    [InlineData("OIDC", false, false, true)]
+    public void Load_WebUI_MigratesAuthMode_ToBooleans(string authMode, bool expectAuthDisabled, bool expectLocalEnabled, bool expectOidcEnabled)
+    {
+        WriteToml($"""
+            [Settings]
+            LoopSleepTimer = 5
+
+            [WebUI]
+            AuthMode = "{authMode}"
+            """);
+
+        var config = new ConfigurationLoader(_tempFilePath).Load();
+
+        config.WebUI.AuthDisabled.Should().Be(expectAuthDisabled);
+        config.WebUI.LocalAuthEnabled.Should().Be(expectLocalEnabled);
+        config.WebUI.OIDCEnabled.Should().Be(expectOidcEnabled);
+    }
+
+    [Fact]
+    public void Save_WebUI_WritesAuthBooleans()
+    {
+        WriteToml("""
+            [Settings]
+            LoopSleepTimer = 5
+
+            [WebUI]
+            AuthDisabled = false
+            LocalAuthEnabled = true
+            OIDCEnabled = false
+            """);
+
+        var loader = new ConfigurationLoader(_tempFilePath);
+        var config = loader.Load();
+        config.WebUI.OIDCEnabled = true;
+        loader.SaveConfig(config);
+
+        var content = File.ReadAllText(_tempFilePath);
+        content.Should().Contain("AuthDisabled = false");
+        content.Should().Contain("LocalAuthEnabled = true");
+        content.Should().Contain("OIDCEnabled = true");
+    }
 }

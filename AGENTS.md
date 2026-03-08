@@ -84,7 +84,7 @@ All processes share:
 | Project | Purpose |
 |---|---|
 | `Torrentarr.Core` | Domain interfaces, configuration models (TOML via Tomlyn) |
-| `Torrentarr.Infrastructure` | API clients (QBittorrent, Radarr, Sonarr, Lidarr), EF Core SQLite DB, 13 services |
+| `Torrentarr.Infrastructure` | API clients (QBittorrent, Radarr, Sonarr, Lidarr), EF Core SQLite DB, 17 services |
 | `Torrentarr.WebUI` | ASP.NET Core REST API + React frontend (SPA proxy in dev, static files in prod) |
 | `Torrentarr.Workers` | Background worker entry point, per-Arr job orchestration |
 | `Torrentarr.Host` | Main orchestrator — launches WebUI + workers, manages lifecycle |
@@ -105,6 +105,9 @@ All processes share:
 - `ConnectivityService` — Internet connectivity detection; checked at top of each worker loop iteration
 - `QBittorrentConnectionManager` — Connection pooling/management
 - `ArrWorkerManager` — Per-instance worker process lifecycle; exponential backoff (2×1.5^n up to 30 min); RSS sync + RefreshMonitoredDownloads timers
+- `BCryptPasswordHasher` — BCrypt password hashing for local auth credential storage
+- `ConfigReloader` — Hot-reloads config from disk; signals dependent services on change
+- `ProcessStateManager` — Tracks worker process health and restart state across all Arr instances
 
 ### Host-Only Services
 
@@ -132,20 +135,20 @@ Key config sections: `[Settings]`, `[WebUI]`, `[qBit]`, `[qBit.CategorySeeding]`
 
 **Cross-instance free space:** `FreeSpaceService` iterates ALL configured qBit instances, gathers torrents from all clients, sorts them globally by `AddedOn` date, and processes the oldest first. `DownloadPath` is checked per-instance for space.
 
-**Config version:** Current format is `5.9.0`. Notable fields: `v5 = true` in `[qBit]` for qBittorrent v5 auth. Seeding configuration (`HitAndRunMode`, `MinSeedRatio`, `MinSeedingTimeDays`, etc.) lives in `[qBit.CategorySeeding]` per qBit instance — not in `[WebUI]`.
+**Config version:** Current format is `5.9.2` (`ConfigurationLoader.ExpectedConfigVersion`). Notable fields: `v5 = true` in `[qBit]` for qBittorrent v5 auth. `HitAndRunMode` is a **string** (`"and"` / `"or"` / `"disabled"`) — not a boolean. Seeding configuration (`HitAndRunMode`, `MinSeedRatio`, `MinSeedingTimeDays`, etc.) lives in `[qBit.CategorySeeding]` per qBit instance — not in `[WebUI]`.
 
 **TOML serialization rule:** Arrays that may contain regex or file extension patterns (e.g., `FileExtensionAllowlist`) must use single-quoted TOML literal strings (`'\.mkv'`) to avoid invalid escape sequences — Tomlyn enforces strict TOML and rejects `\.` in double-quoted strings.
 
 ## Tests
 
-Three test projects under `tests/`, plus frontend tests in `webui/src/__tests__/`. ~276 total tests (~233 .NET, 43 frontend).
+Three test projects under `tests/`, plus frontend tests in `webui/src/__tests__/`. ~593 total tests (~479 .NET, 114 frontend).
 
 | Project | Tests | Coverage |
 | --- | --- | --- |
 | `tests/Torrentarr.Core.Tests` | 50 | Config parsing, model defaults — pure unit, no mocks |
-| `tests/Torrentarr.Infrastructure.Tests` | ~118 | Services (unit + mocked), API clients (live, gated) |
-| `tests/Torrentarr.Host.Tests` | 65 | API endpoint integration tests via `WebApplicationFactory<Program>`; `MatchesCron` unit tests |
-| `webui/src/__tests__/` | 43 | API client deserialization, page rendering, components (Vitest + MSW) |
+| `tests/Torrentarr.Infrastructure.Tests` | 305 | Services (unit + mocked), API clients (live, gated) |
+| `tests/Torrentarr.Host.Tests` | 124 | API endpoint integration tests via `WebApplicationFactory<Program>`; `MatchesCron` unit tests |
+| `webui/src/__tests__/` | 114 | API client deserialization, page rendering, components (Vitest + MSW) |
 
 **Host test isolation:** `TorrentarrWebApplicationFactory` writes a minimal `TestConfigToml` to a temp file and sets `TORRENTARR_CONFIG` in its constructor (before `Program.cs` runs) so tests never touch the user's real config. Background workers are removed from DI; the in-memory SQLite connection is kept alive for the factory lifetime.
 

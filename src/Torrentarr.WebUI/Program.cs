@@ -5,10 +5,17 @@ using Torrentarr.Infrastructure.ApiClients.Arr;
 using Torrentarr.Infrastructure.ApiClients.QBittorrent;
 using Torrentarr.Infrastructure.Database;
 using Torrentarr.Infrastructure.Services;
+using Microsoft.AspNetCore.Authentication;
+using Microsoft.AspNetCore.Authentication.Cookies;
+using Microsoft.AspNetCore.Authentication.OpenIdConnect;
 using Microsoft.EntityFrameworkCore;
 using Serilog;
 using Serilog.Core;
 using Serilog.Events;
+using System.Security.Claims;
+using System.Security.Cryptography;
+using System.Text;
+using System.Collections.Concurrent;
 
 // Calculate base paths - use /config for Docker, or config/ relative to cwd for local
 var configEnv = Environment.GetEnvironmentVariable("TORRENTARR_CONFIG");
@@ -89,23 +96,61 @@ builder.Services.AddDbContext<TorrentarrDbContext>(options =>
     options.UseSqlite($"Data Source={dbPath}");
 });
 
-// Add Configuration Loader
-builder.Services.AddSingleton(sp =>
+// Add Configuration Loader — load once and use for both DI and OIDC registration
+var configLoader = new ConfigurationLoader();
+TorrentarrConfig configForDI;
+try
 {
-    var loader = new ConfigurationLoader();
-    try
-    {
-        return loader.Load();
-    }
-    catch (FileNotFoundException)
-    {
-        Log.Warning("Configuration file not found, using defaults");
-        return new TorrentarrConfig();
-    }
-});
+    configForDI = configLoader.Load();
+}
+catch (FileNotFoundException)
+{
+    Log.Warning("Configuration file not found, using defaults");
+    configForDI = new TorrentarrConfig();
+}
+if (string.IsNullOrEmpty(configForDI.WebUI.Token))
+{
+    var tokenBytes = new byte[32];
+    RandomNumberGenerator.Fill(tokenBytes);
+    configForDI.WebUI.Token = Convert.ToBase64String(tokenBytes);
+    configLoader.SaveConfig(configForDI);
+    Log.Information("Generated and persisted API token (Token was empty)");
+}
+
+builder.Services.AddSingleton(configForDI);
 
 builder.Services.AddSingleton<IConfigReloader, ConfigReloader>();
-builder.Services.AddSingleton<ConfigurationLoader>();
+builder.Services.AddSingleton(configLoader);
+
+builder.Services.AddSingleton<IPasswordHasher, BCryptPasswordHasher>();
+
+var authBuilder = builder.Services.AddAuthentication(CookieAuthenticationDefaults.AuthenticationScheme)
+    .AddCookie(options =>
+    {
+        options.Cookie.Name = "torrentarr_session";
+        options.Cookie.HttpOnly = true;
+        options.Cookie.SameSite = SameSiteMode.Lax;
+        options.Cookie.SecurePolicy = Microsoft.AspNetCore.Http.CookieSecurePolicy.SameAsRequest;
+        options.LoginPath = "/login";
+        options.AccessDeniedPath = "/login";
+    });
+if (configForDI.WebUI.OIDCEnabled && configForDI.WebUI.OIDC is { } oidc
+    && !string.IsNullOrWhiteSpace(oidc.Authority)
+    && !string.IsNullOrWhiteSpace(oidc.ClientId))
+{
+    authBuilder.AddOpenIdConnect(OpenIdConnectDefaults.AuthenticationScheme, options =>
+    {
+        options.Authority = oidc.Authority.TrimEnd('/');
+        options.ClientId = oidc.ClientId;
+        options.ClientSecret = oidc.ClientSecret;
+        options.CallbackPath = oidc.CallbackPath;
+        options.RequireHttpsMetadata = oidc.RequireHttpsMetadata;
+        options.SignInScheme = CookieAuthenticationDefaults.AuthenticationScheme;
+        options.Scope.Clear();
+        foreach (var s in (oidc.Scopes ?? "openid profile").Split(' ', StringSplitOptions.RemoveEmptyEntries))
+            options.Scope.Add(s);
+    });
+}
 
 var app = builder.Build();
 
@@ -127,6 +172,15 @@ if (app.Environment.IsDevelopment())
 app.UseResponseCompression();
 app.UseCors("AllowAll");
 
+// Security headers
+app.Use(async (context, next) =>
+{
+    context.Response.Headers["X-Frame-Options"] = "DENY";
+    context.Response.Headers["X-Content-Type-Options"] = "nosniff";
+    context.Response.Headers["Referrer-Policy"] = "strict-origin-when-cross-origin";
+    await next(context);
+});
+
 // Serve static files from ClientApp/build
 var clientAppPath = Path.Combine(Directory.GetCurrentDirectory(), "ClientApp", "build");
 if (Directory.Exists(clientAppPath))
@@ -147,6 +201,125 @@ else
     app.UseStaticFiles();
 }
 
+app.UseAuthentication();
+
+// Auth middleware (same logic as Host): protect /web/* when auth required; API token always required for /api/*
+app.Use(async (context, next) =>
+{
+    var cfg = context.RequestServices.GetRequiredService<TorrentarrConfig>();
+    var path = context.Request.Path.Value ?? "";
+
+    // Always enforce API token for /api/* (token is generated at startup if empty)
+    if (path.StartsWith("/api", StringComparison.OrdinalIgnoreCase))
+    {
+        var configuredToken = cfg.WebUI.Token;
+        if (string.IsNullOrEmpty(configuredToken))
+        {
+            context.Response.StatusCode = 401;
+            await context.Response.WriteAsJsonAsync(new { error = "Unauthorized" });
+            return;
+        }
+        string? providedToken = null;
+        var authHeader = context.Request.Headers.Authorization.FirstOrDefault();
+        if (authHeader?.StartsWith("Bearer ", StringComparison.OrdinalIgnoreCase) == true)
+            providedToken = authHeader["Bearer ".Length..];
+        else if (context.Request.Query.ContainsKey("token") && context.Request.Method == "GET")
+            providedToken = context.Request.Query["token"];
+        if (string.IsNullOrEmpty(providedToken) || !TokenEquals(providedToken, configuredToken))
+        {
+            context.Response.StatusCode = 401;
+            await context.Response.WriteAsJsonAsync(new { error = "Unauthorized" });
+            return;
+        }
+        var identity = new ClaimsIdentity("Bearer");
+        identity.AddClaim(new Claim(ClaimTypes.Name, "api"));
+        context.User = new ClaimsPrincipal(identity);
+        await next(context);
+        return;
+    }
+
+    if (!WebUIAuthRequired(cfg))
+    {
+        await next(context);
+        return;
+    }
+    if (WebUIPublicPath(path, context.Request.Method))
+    {
+        await next(context);
+        return;
+    }
+    var configuredTokenWeb = cfg.WebUI.Token;
+    if (!string.IsNullOrEmpty(configuredTokenWeb))
+    {
+        string? providedToken = null;
+        var authHeader = context.Request.Headers.Authorization.FirstOrDefault();
+        if (authHeader?.StartsWith("Bearer ", StringComparison.OrdinalIgnoreCase) == true)
+            providedToken = authHeader["Bearer ".Length..];
+        else if (context.Request.Query.ContainsKey("token") && context.Request.Method == "GET")
+            providedToken = context.Request.Query["token"];
+        if (!string.IsNullOrEmpty(providedToken) && TokenEquals(providedToken, configuredTokenWeb))
+        {
+            var identity = new ClaimsIdentity("Bearer");
+            identity.AddClaim(new Claim(ClaimTypes.Name, "api"));
+            context.User = new ClaimsPrincipal(identity);
+            await next(context);
+            return;
+        }
+    }
+    var result = await context.AuthenticateAsync(CookieAuthenticationDefaults.AuthenticationScheme);
+    if (result.Succeeded && result.Principal?.Identity?.IsAuthenticated == true)
+    {
+        context.User = result.Principal;
+        await next(context);
+        return;
+    }
+    if (path.StartsWith("/api", StringComparison.OrdinalIgnoreCase) ||
+        context.Request.Headers.Accept.Any(a => a?.Contains("application/json", StringComparison.OrdinalIgnoreCase) == true))
+    {
+        context.Response.StatusCode = 401;
+        await context.Response.WriteAsJsonAsync(new { error = "Unauthorized" });
+        return;
+    }
+    context.Response.Redirect("/login");
+});
+
+static bool WebUIAuthRequired(TorrentarrConfig c) => !c.WebUI.AuthDisabled;
+
+/// <summary>Constant-time token comparison using SHA-256 hashes to avoid leaking length.</summary>
+static bool TokenEquals(string? a, string? b)
+{
+    var aBytes = Encoding.UTF8.GetBytes(a ?? "");
+    var bBytes = Encoding.UTF8.GetBytes(b ?? "");
+    var aHash = SHA256.HashData(aBytes);
+    var bHash = SHA256.HashData(bBytes);
+    return CryptographicOperations.FixedTimeEquals(aHash, bHash);
+}
+
+static bool WebUIPublicPath(string path, string method)
+{
+    if (string.IsNullOrEmpty(path)) return true;
+    if (path.Equals("/health", StringComparison.OrdinalIgnoreCase)) return true;
+    if (path.Equals("/", StringComparison.OrdinalIgnoreCase)) return true;
+    // Do NOT treat /ui as public: the SPA and all routes under /ui require auth when AuthDisabled is false.
+    // Only allow paths needed for the login page to load: /login, /assets/*, and root static assets.
+    if (path.Equals("/login", StringComparison.OrdinalIgnoreCase)) return true;
+    if (path.StartsWith("/assets/", StringComparison.OrdinalIgnoreCase)) return true;
+    if (path.Equals("/favicon.ico", StringComparison.OrdinalIgnoreCase)) return true;
+    if (path.Equals("/favicon-16x16.png", StringComparison.OrdinalIgnoreCase)) return true;
+    if (path.Equals("/favicon-32x32.png", StringComparison.OrdinalIgnoreCase)) return true;
+    if (path.Equals("/favicon-48x48.png", StringComparison.OrdinalIgnoreCase)) return true;
+    if (path.Equals("/logov2-clean.png", StringComparison.OrdinalIgnoreCase)) return true;
+    if (path.Equals("/manifest.json", StringComparison.OrdinalIgnoreCase)) return true;
+    if (path.Equals("/sw.js", StringComparison.OrdinalIgnoreCase)) return true;
+    if (path.Equals("/web/meta", StringComparison.OrdinalIgnoreCase)) return true;
+    // GET /web/login allows SPA/redirects; POST is the login submit (both must be public).
+    if (path.Equals("/web/login", StringComparison.OrdinalIgnoreCase) && (method == "GET" || method == "POST")) return true;
+    if (path.Equals("/web/auth/set-password", StringComparison.OrdinalIgnoreCase) && method == "POST") return true;
+    if (path.StartsWith("/signin-oidc", StringComparison.OrdinalIgnoreCase)) return true;
+    if (path.StartsWith("/web/auth/oidc/challenge", StringComparison.OrdinalIgnoreCase)) return true;
+    return false;
+}
+
 app.MapControllers();
 
 // Health check endpoint
@@ -156,6 +329,99 @@ app.MapGet("/health", () => Results.Ok(new
     service = "torrentarr-webui",
     timestamp = DateTime.UtcNow
 }));
+
+app.MapGet("/web/token", (TorrentarrConfig cfg, HttpContext ctx) =>
+{
+    var isAuthenticated = ctx.User?.Identity?.IsAuthenticated == true;
+    if (!isAuthenticated && WebUIAuthRequired(cfg))
+        return Results.Json(new { token = "" }, statusCode: 401);
+    return Results.Ok(new { token = cfg.WebUI.Token });
+});
+
+app.MapPost("/web/login", async (HttpContext ctx, TorrentarrConfig cfg, IPasswordHasher hasher) =>
+{
+    var ip = ctx.Connection.RemoteIpAddress?.ToString();
+    if (ip != null && !LoginRateLimiter.TryAcquire(ip))
+        return Results.Json(new { error = "Too many login attempts. Try again later." }, statusCode: 429);
+
+    var body = await ctx.Request.ReadFromJsonAsync<LoginRequest>();
+    if (body == null || string.IsNullOrWhiteSpace(body.Username) || string.IsNullOrWhiteSpace(body.Password))
+        return Results.BadRequest(new { error = "Username and password required" });
+    if (!cfg.WebUI.LocalAuthEnabled)
+        return Results.Json(new { error = "Local login not configured" }, statusCode: 400);
+    if (string.IsNullOrEmpty(cfg.WebUI.PasswordHash))
+        return Results.Json(new { error = "Password not set", code = "SETUP_REQUIRED" }, statusCode: 403);
+    // Always run bcrypt verification to avoid timing leak (username enumeration)
+    var passwordValid = hasher.VerifyPassword(body.Password, cfg.WebUI.PasswordHash);
+    var usernameMatch = string.Equals(body.Username.Trim(), cfg.WebUI.Username?.Trim(), StringComparison.Ordinal);
+    if (!usernameMatch || !passwordValid)
+        return Results.Json(new { error = "Unauthorized" }, statusCode: 401);
+    var identity = new ClaimsIdentity(CookieAuthenticationDefaults.AuthenticationScheme);
+    identity.AddClaim(new Claim(ClaimTypes.Name, body.Username.Trim()));
+    var principal = new ClaimsPrincipal(identity);
+    await ctx.SignInAsync(CookieAuthenticationDefaults.AuthenticationScheme, principal, new AuthenticationProperties
+    {
+        IsPersistent = true,
+        ExpiresUtc = DateTimeOffset.UtcNow.AddDays(7)
+    });
+    return Results.Ok(new { success = true });
+});
+
+app.MapPost("/web/auth/set-password", async (HttpContext ctx, TorrentarrConfig cfg, ConfigurationLoader loader, IPasswordHasher hasher) =>
+{
+    var ip = ctx.Connection.RemoteIpAddress?.ToString();
+    if (ip != null && !SetPasswordRateLimiter.TryAcquire(ip))
+        return Results.Json(new { error = "Too many set-password attempts. Try again later." }, statusCode: 429);
+
+    var body = await ctx.Request.ReadFromJsonAsync<SetPasswordRequest>();
+    if (body == null || string.IsNullOrWhiteSpace(body.Username) || string.IsNullOrWhiteSpace(body.Password))
+        return Results.BadRequest(new { error = "Username and password required" });
+    if (body.Password.Length < 8)
+        return Results.BadRequest(new { error = "Password must be at least 8 characters" });
+    var setupToken = Environment.GetEnvironmentVariable("TORRENTARR_SETUP_TOKEN");
+    var allowSet = string.IsNullOrEmpty(cfg.WebUI.PasswordHash)
+        || (!string.IsNullOrWhiteSpace(setupToken) && body.SetupToken != null
+            && TokenEquals(body.SetupToken, setupToken));
+    if (!allowSet)
+        return Results.Json(new { error = "Set password not allowed" }, statusCode: 403);
+
+    // Capture current values so we can revert if SaveConfig fails
+    var prevUsername = cfg.WebUI.Username;
+    var prevPasswordHash = cfg.WebUI.PasswordHash;
+    var prevAuthDisabled = cfg.WebUI.AuthDisabled;
+    var prevLocalAuthEnabled = cfg.WebUI.LocalAuthEnabled;
+
+    cfg.WebUI.Username = body.Username.Trim();
+    cfg.WebUI.PasswordHash = hasher.HashPassword(body.Password);
+    // Always enable local auth after setting a password, regardless of previous mode
+    if (cfg.WebUI.AuthDisabled)
+        cfg.WebUI.AuthDisabled = false;
+    cfg.WebUI.LocalAuthEnabled = true;
+    try
+    {
+        loader.SaveConfig(cfg);
+    }
+    catch
+    {
+        // Revert in-memory config so it stays in sync with persisted file
+        cfg.WebUI.Username = prevUsername;
+        cfg.WebUI.PasswordHash = prevPasswordHash;
+        cfg.WebUI.AuthDisabled = prevAuthDisabled;
+        cfg.WebUI.LocalAuthEnabled = prevLocalAuthEnabled;
+        return Results.Json(new { error = "Failed to save configuration" }, statusCode: 500);
+    }
+    return Results.Ok(new { success = true });
+});
+
+app.MapGet("/web/auth/oidc/challenge", async (HttpContext ctx, TorrentarrConfig cfg) =>
+{
+    if (!cfg.WebUI.OIDCEnabled || cfg.WebUI.OIDC is not { } oidc
+        || string.IsNullOrWhiteSpace(oidc.Authority) || string.IsNullOrWhiteSpace(oidc.ClientId))
+        return Results.BadRequest(new { error = "OIDC not configured" });
+    await ctx.ChallengeAsync(OpenIdConnectDefaults.AuthenticationScheme);
+    // ChallengeAsync already wrote the 302 response; do not return a result that writes (would conflict).
+    return NoOpAfterChallengeResult.Instance;
+});
 
 app.MapPost("/web/loglevel", (LogLevelRequest req, LoggingLevelSwitch ls) =>
 {
@@ -344,45 +610,11 @@ app.MapGet("/web/stats", async (TorrentarrDbContext db) =>
     });
 });
 
-// Configuration endpoint - get current configuration (sanitized)
+// Configuration endpoint - get full flat config (mirrors TOML section structure)
 app.MapGet("/web/config", (TorrentarrConfig config) =>
 {
-    return Results.Ok(new
-    {
-        settings = new
-        {
-            config.Settings.ConfigVersion,
-            config.Settings.LoopSleepTimer,
-            config.Settings.SearchLoopDelay,
-            config.Settings.AutoRestartProcesses,
-            config.Settings.FreeSpaceThresholdGB
-        },
-        webui = new
-        {
-            config.WebUI.Host,
-            config.WebUI.Port,
-            config.WebUI.Theme,
-            config.WebUI.ViewDensity,
-            config.WebUI.LiveArr,
-            config.WebUI.GroupSonarr,
-            config.WebUI.GroupLidarr
-        },
-        qbit = new
-        {
-            (config.QBitInstances.GetValueOrDefault("qBit") ?? new QBitConfig()).Host,
-            (config.QBitInstances.GetValueOrDefault("qBit") ?? new QBitConfig()).Port,
-            (config.QBitInstances.GetValueOrDefault("qBit") ?? new QBitConfig()).Disabled,
-            managedCategories = (config.QBitInstances.GetValueOrDefault("qBit") ?? new QBitConfig()).ManagedCategories
-        },
-        arrs = config.Arrs.Select(a => new
-        {
-            a.Category,
-            a.Type,
-            a.Managed,
-            a.SearchOnly,
-            a.ProcessingOnly
-        }).ToList()
-    });
+    var flat = BuildFlatConfig(config, redactSensitive: true);
+    return Results.Ok(flat);
 });
 
 // §6.8: POST /web/config — partial config changes with reload-type detection
@@ -460,9 +692,8 @@ app.MapPost("/web/config", async (HttpContext ctx, TorrentarrConfig config, Conf
     // ── Apply changes to config + save ─────────────────────────────────────
     try
     {
-        // Serialize current config to JObject, apply dot-path changes, deserialize back
-        var configJson = Newtonsoft.Json.JsonConvert.SerializeObject(config);
-        var configObj = Newtonsoft.Json.JsonConvert.DeserializeObject<Newtonsoft.Json.Linq.JObject>(configJson)!;
+        // Build flat TOML-like config, apply changes, convert back to TorrentarrConfig
+        var flatConfig = BuildFlatConfig(config, redactSensitive: false);
 
         foreach (var (key, value) in changes)
         {
@@ -470,28 +701,22 @@ app.MapPost("/web/config", async (HttpContext ctx, TorrentarrConfig config, Conf
             if (string.Equals(key, "Settings.ConfigVersion", StringComparison.OrdinalIgnoreCase))
                 return Results.Json(new { error = "Cannot modify protected configuration key: Settings.ConfigVersion" }, statusCode: 403);
 
-            // Convert dot-path "Section.SubKey" to JToken path "section.subKey"
-            // Apply each change via JToken pointer navigation
-            ApplyDotPathChange(configObj, key, value);
+            // Never overwrite a real secret with the redaction placeholder from the frontend
+            if (IsSensitiveDottedKey(key)
+                && value.Type == Newtonsoft.Json.Linq.JTokenType.String
+                && value.ToString() == "[redacted]")
+                continue;
+
+            ApplyDotPathChange(flatConfig, key, value);
         }
 
-        var updatedConfig = configObj.ToObject<TorrentarrConfig>();
-        if (updatedConfig != null)
-        {
-            loader.SaveConfig(updatedConfig, reloader.ConfigPath);
-        }
+        var updatedConfig = FlatToConfig(flatConfig, config);
+        loader.SaveConfig(updatedConfig, reloader.ConfigPath);
     }
     catch (Exception ex)
     {
-        Log.Warning(ex, "POST /web/config: failed to save config changes");
-        return Results.Ok(new
-        {
-            status = "saved_with_warning",
-            configReloaded = false,
-            reloadType,
-            affectedInstances,
-            warning = ex.Message
-        });
+        Log.Error(ex, "POST /web/config: failed to save config changes");
+        return Results.Json(new { error = "Failed to save configuration", details = ex.Message }, statusCode: 500);
     }
 
     var reloaded = reloader.ReloadConfig();
@@ -540,6 +765,126 @@ static void ApplyDotPathChange(Newtonsoft.Json.Linq.JObject root, string dotPath
         current[leafKey] = value;
 }
 
+// Helper: build a flat TOML-like JObject from TorrentarrConfig
+// Keys mirror TOML section names: "Settings", "WebUI", "qBit", "qBit-1", "Radarr-1080", etc.
+// ArrInstanceConfig.Search is serialized under key "EntrySearch" (TOML compat).
+static Newtonsoft.Json.Linq.JObject BuildFlatConfig(TorrentarrConfig config, bool redactSensitive)
+{
+    var flat = new Newtonsoft.Json.Linq.JObject();
+    flat["Settings"] = Newtonsoft.Json.Linq.JObject.FromObject(config.Settings);
+
+    var webuiObj = Newtonsoft.Json.Linq.JObject.FromObject(config.WebUI);
+    if (redactSensitive)
+    {
+        RedactFlatField(webuiObj, "Token");
+        RedactFlatField(webuiObj, "PasswordHash");
+    }
+    flat["WebUI"] = webuiObj;
+
+    foreach (var (name, qbit) in config.QBitInstances)
+    {
+        var qbitObj = Newtonsoft.Json.Linq.JObject.FromObject(qbit);
+        if (redactSensitive) RedactFlatField(qbitObj, "Password");
+        flat[name] = qbitObj;
+    }
+
+    foreach (var (name, arr) in config.ArrInstances)
+    {
+        var arrObj = Newtonsoft.Json.Linq.JObject.FromObject(arr);
+        // Rename "Search" → "EntrySearch" for TOML compat (frontend uses "EntrySearch" paths)
+        var searchProp = arrObj.Properties()
+            .FirstOrDefault(p => p.Name.Equals("Search", StringComparison.OrdinalIgnoreCase));
+        if (searchProp != null)
+        {
+            arrObj["EntrySearch"] = searchProp.Value;
+            searchProp.Remove();
+        }
+        if (redactSensitive) RedactFlatField(arrObj, "APIKey");
+        flat[name] = arrObj;
+    }
+
+    return flat;
+}
+
+static void RedactFlatField(Newtonsoft.Json.Linq.JObject obj, string key)
+{
+    var prop = obj.Properties()
+        .FirstOrDefault(p => p.Name.Equals(key, StringComparison.OrdinalIgnoreCase));
+    if (prop != null
+        && prop.Value.Type == Newtonsoft.Json.Linq.JTokenType.String
+        && !string.IsNullOrEmpty(prop.Value.ToString())
+        && prop.Value.ToString() != "CHANGE_ME")
+    {
+        prop.Value = "[redacted]";
+    }
+}
+
+// Helper: convert a flat config JObject back to TorrentarrConfig
+// Handles "EntrySearch" → "Search" remapping for Arr instances.
+// Restores redacted sensitive values from the current (in-memory) config.
+static TorrentarrConfig FlatToConfig(Newtonsoft.Json.Linq.JObject flat, TorrentarrConfig current)
+{
+    var result = new TorrentarrConfig();
+
+    // Settings
+    result.Settings = flat["Settings"] is Newtonsoft.Json.Linq.JObject settingsObj
+        ? settingsObj.ToObject<SettingsConfig>() ?? current.Settings
+        : current.Settings;
+
+    // WebUI — restore redacted sensitive fields
+    if (flat["WebUI"] is Newtonsoft.Json.Linq.JObject webuiObj)
+    {
+        result.WebUI = webuiObj.ToObject<WebUIConfig>() ?? current.WebUI;
+        if (result.WebUI.Token == "[redacted]") result.WebUI.Token = current.WebUI.Token;
+        if (result.WebUI.PasswordHash == "[redacted]") result.WebUI.PasswordHash = current.WebUI.PasswordHash;
+    }
+    else
+    {
+        result.WebUI = current.WebUI;
+    }
+
+    result.QBitInstances = new Dictionary<string, QBitConfig>(current.QBitInstances);
+    result.ArrInstances = new Dictionary<string, ArrInstanceConfig>(current.ArrInstances);
+
+    foreach (var prop in flat.Properties())
+    {
+        if (prop.Name is "Settings" or "WebUI") continue;
+        if (prop.Value is not Newtonsoft.Json.Linq.JObject instanceObj) continue;
+
+        bool isKnownQBit = current.QBitInstances.ContainsKey(prop.Name);
+        bool isKnownArr = current.ArrInstances.ContainsKey(prop.Name);
+
+        if (isKnownQBit || (!isKnownArr && prop.Name.StartsWith("qBit", StringComparison.OrdinalIgnoreCase)))
+        {
+            var qbit = instanceObj.ToObject<QBitConfig>() ?? new QBitConfig();
+            if (qbit.Password == "[redacted]" && current.QBitInstances.TryGetValue(prop.Name, out var existingQBit))
+                qbit.Password = existingQBit.Password;
+            result.QBitInstances[prop.Name] = qbit;
+        }
+        else if (isKnownArr
+            || prop.Name.StartsWith("Radarr", StringComparison.OrdinalIgnoreCase)
+            || prop.Name.StartsWith("Sonarr", StringComparison.OrdinalIgnoreCase)
+            || prop.Name.StartsWith("Lidarr", StringComparison.OrdinalIgnoreCase))
+        {
+            // Rename "EntrySearch" → "Search" before deserializing
+            var arrCopy = (Newtonsoft.Json.Linq.JObject)instanceObj.DeepClone();
+            var esProp = arrCopy.Properties()
+                .FirstOrDefault(p => p.Name.Equals("EntrySearch", StringComparison.OrdinalIgnoreCase));
+            if (esProp != null)
+            {
+                arrCopy["Search"] = esProp.Value;
+                esProp.Remove();
+            }
+            var arr = arrCopy.ToObject<ArrInstanceConfig>() ?? new ArrInstanceConfig();
+            if (arr.APIKey == "[redacted]" && current.ArrInstances.TryGetValue(prop.Name, out var existingArr))
+                arr.APIKey = existingArr.APIKey;
+            result.ArrInstances[prop.Name] = arr;
+        }
+    }
+
+    return result;
+}
+
 // Processes endpoint - list all processes with status
 app.MapGet("/web/processes", (TorrentarrConfig config) =>
 {
@@ -585,6 +930,14 @@ app.MapPost("/web/processes/restart_all", () =>
     });
 });
 
+// Validates that a log file name is a plain filename ending in .log with no path components (matches Host).
+static bool IsValidLogFileName(string name) =>
+    !string.IsNullOrWhiteSpace(name)
+    && !name.Contains('/')
+    && !name.Contains('\\')
+    && !name.Contains("..")
+    && name.EndsWith(".log", StringComparison.OrdinalIgnoreCase);
+
 // Logs endpoint - list available log files
 app.MapGet("/web/logs", () =>
 {
@@ -610,14 +963,9 @@ app.MapGet("/web/logs", () =>
 // Log file contents
 app.MapGet("/web/logs/{name}", async (string name, int? lines) =>
 {
-    // Sanitize: only allow the filename component (no directory traversal)
     var safeName = Path.GetFileName(name);
-
-    // Optional: enforce .log extension to align with listed log files
-    if (!safeName.EndsWith(".log", StringComparison.OrdinalIgnoreCase) || string.IsNullOrWhiteSpace(safeName))
-    {
+    if (!IsValidLogFileName(safeName))
         return Results.BadRequest(new { error = "Invalid log file name" });
-    }
 
     var logFile = Path.Combine(logsPath, safeName);
     var logsPathFull = Path.GetFullPath(logsPath);
@@ -650,14 +998,10 @@ app.MapGet("/web/logs/{name}", async (string name, int? lines) =>
 // §6.9: Log file download — streams named log file as an attachment
 app.MapGet("/web/logs/{name}/download", (string name, HttpResponse response) =>
 {
-    // Sanitize: only allow the filename component (no directory traversal)
     var safeName = Path.GetFileName(name);
-    if (string.IsNullOrWhiteSpace(safeName))
-    {
+    if (!IsValidLogFileName(safeName))
         return Results.BadRequest(new { error = "Invalid log file name" });
-    }
 
-    // Resolve the full paths and ensure the requested file stays within the logs directory
     var fullLogsPath = Path.GetFullPath(logsPath);
     var combinedPath = Path.Combine(fullLogsPath, safeName);
     var fullLogFile = Path.GetFullPath(combinedPath);
@@ -1125,8 +1469,8 @@ app.MapGet("/web/config/path", (IConfigReloader reloader) =>
     return Results.Ok(new { path = reloader.ConfigPath });
 });
 
-// Meta info — matches frontend MetaResponse interface
-app.MapGet("/web/meta", () =>
+// Meta info — matches frontend MetaResponse interface (includes auth flags)
+app.MapGet("/web/meta", (TorrentarrConfig cfg) =>
 {
     return Results.Ok(new
     {
@@ -1152,9 +1496,11 @@ app.MapGet("/web/meta", () =>
         binary_download_name = (string?)null,
         binary_download_size = (long?)null,
         binary_download_error = (string?)null,
-        // Extra info not in qBitrr but useful
         platform = Environment.OSVersion.Platform.ToString(),
-        runtime = $".NET {Environment.Version}"
+        runtime = $".NET {Environment.Version}",
+        auth_required = !cfg.WebUI.AuthDisabled,
+        local_auth_enabled = cfg.WebUI.LocalAuthEnabled,
+        oidc_enabled = cfg.WebUI.OIDCEnabled
     });
 });
 
@@ -1176,8 +1522,98 @@ Log.Information("Torrentarr WebUI starting on {Host}:{Port}",
     builder.Configuration["urls"] ?? "http://localhost:5000",
     "");
 
+static bool IsSensitiveDottedKey(string dottedKey)
+{
+    const string pattern = @"(apikey|api_key|token|password|secret|passkey|credential)";
+    var lastPart = dottedKey.Contains('.') ? dottedKey[(dottedKey.LastIndexOf('.') + 1)..] : dottedKey;
+    return System.Text.RegularExpressions.Regex.IsMatch(lastPart, pattern, System.Text.RegularExpressions.RegexOptions.IgnoreCase);
+}
+
 app.Run();
 
 public record LogLevelRequest(string Level);
 public record ArrTestConnectionRequest(string ArrType, string? Uri, string? ApiKey, string? InstanceKey = null);
 public record ArrRebuildRequest(string ArrInstanceName);
+public record LoginRequest(string? Username, string? Password);
+public record SetPasswordRequest(string? Username, string? Password, string? SetupToken = null);
+
+sealed class NoOpAfterChallengeResult : IResult
+{
+    public static readonly NoOpAfterChallengeResult Instance = new();
+    public Task ExecuteAsync(HttpContext ctx) => Task.CompletedTask;
+}
+
+// ── Per-IP rate limiters ──────────────────────────────────────────────────
+
+/// <summary>Per-IP rate limiter for login endpoint: 10 attempts per 15 minutes.</summary>
+static class LoginRateLimiter
+{
+    const int WindowMinutes = 15;
+    const int MaxAttempts = 10;
+    const int CleanupThreshold = 200;
+    static readonly ConcurrentDictionary<string, (int Count, DateTime WindowStart)> _attempts = new();
+    static readonly object _lock = new();
+
+    public static bool TryAcquire(string key)
+    {
+        var now = DateTime.UtcNow;
+        var window = TimeSpan.FromMinutes(WindowMinutes);
+        lock (_lock)
+        {
+            if (_attempts.Count >= CleanupThreshold)
+            {
+                var toRemove = _attempts.Where(kvp => now - kvp.Value.WindowStart > window).Select(kvp => kvp.Key).ToList();
+                foreach (var k in toRemove)
+                    _attempts.TryRemove(k, out _);
+            }
+            if (_attempts.TryGetValue(key, out var v))
+            {
+                if (now - v.WindowStart > window)
+                    _attempts[key] = (1, now);
+                else if (v.Count >= MaxAttempts)
+                    return false;
+                else
+                    _attempts[key] = (v.Count + 1, v.WindowStart);
+            }
+            else
+                _attempts[key] = (1, now);
+            return true;
+        }
+    }
+}
+
+static class SetPasswordRateLimiter
+{
+    const int WindowMinutes = 15;
+    const int MaxAttempts = 5;
+    const int CleanupThreshold = 200;
+    static readonly ConcurrentDictionary<string, (int Count, DateTime WindowStart)> _attempts = new();
+    static readonly object _lock = new();
+
+    public static bool TryAcquire(string key)
+    {
+        var now = DateTime.UtcNow;
+        var window = TimeSpan.FromMinutes(WindowMinutes);
+        lock (_lock)
+        {
+            if (_attempts.Count >= CleanupThreshold)
+            {
+                var toRemove = _attempts.Where(kvp => now - kvp.Value.WindowStart > window).Select(kvp => kvp.Key).ToList();
+                foreach (var k in toRemove)
+                    _attempts.TryRemove(k, out _);
+            }
+            if (_attempts.TryGetValue(key, out var v))
+            {
+                if (now - v.WindowStart > window)
+                    _attempts[key] = (1, now);
+                else if (v.Count >= MaxAttempts)
+                    return false;
+                else
+                    _attempts[key] = (v.Count + 1, v.WindowStart);
+            }
+            else
+                _attempts[key] = (1, now);
+            return true;
+        }
+    }
+}
