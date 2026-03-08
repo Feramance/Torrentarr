@@ -89,7 +89,7 @@ jobs:
         images: ghcr.io/${{ steps.repo.outputs.lowercase }}
         tags: type=ref,event=pr
     - name: Build Docker image (no push)
-      uses: docker/build-push-action@v6
+      uses: docker/build-push-action@v7
       with:
         context: .
         platforms: linux/amd64,linux/arm64
