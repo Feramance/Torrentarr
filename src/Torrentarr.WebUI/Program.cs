@@ -930,6 +930,14 @@ app.MapPost("/web/processes/restart_all", () =>
     });
 });
 
+// Validates that a log file name is a plain filename ending in .log with no path components (matches Host).
+static bool IsValidLogFileName(string name) =>
+    !string.IsNullOrWhiteSpace(name)
+    && !name.Contains('/')
+    && !name.Contains('\\')
+    && !name.Contains("..")
+    && name.EndsWith(".log", StringComparison.OrdinalIgnoreCase);
+
 // Logs endpoint - list available log files
 app.MapGet("/web/logs", () =>
 {
@@ -955,14 +963,9 @@ app.MapGet("/web/logs", () =>
 // Log file contents
 app.MapGet("/web/logs/{name}", async (string name, int? lines) =>
 {
-    // Sanitize: only allow the filename component (no directory traversal)
     var safeName = Path.GetFileName(name);
-
-    // Optional: enforce .log extension to align with listed log files
-    if (!safeName.EndsWith(".log", StringComparison.OrdinalIgnoreCase) || string.IsNullOrWhiteSpace(safeName))
-    {
+    if (!IsValidLogFileName(safeName))
         return Results.BadRequest(new { error = "Invalid log file name" });
-    }
 
     var logFile = Path.Combine(logsPath, safeName);
     var logsPathFull = Path.GetFullPath(logsPath);
@@ -995,14 +998,10 @@ app.MapGet("/web/logs/{name}", async (string name, int? lines) =>
 // §6.9: Log file download — streams named log file as an attachment
 app.MapGet("/web/logs/{name}/download", (string name, HttpResponse response) =>
 {
-    // Sanitize: only allow the filename component (no directory traversal)
     var safeName = Path.GetFileName(name);
-    if (string.IsNullOrWhiteSpace(safeName))
-    {
+    if (!IsValidLogFileName(safeName))
         return Results.BadRequest(new { error = "Invalid log file name" });
-    }
 
-    // Resolve the full paths and ensure the requested file stays within the logs directory
     var fullLogsPath = Path.GetFullPath(logsPath);
     var combinedPath = Path.Combine(fullLogsPath, safeName);
     var fullLogFile = Path.GetFullPath(combinedPath);
@@ -1551,17 +1550,25 @@ static class LoginRateLimiter
 {
     const int WindowMinutes = 15;
     const int MaxAttempts = 10;
+    const int CleanupThreshold = 200;
     static readonly ConcurrentDictionary<string, (int Count, DateTime WindowStart)> _attempts = new();
     static readonly object _lock = new();
 
     public static bool TryAcquire(string key)
     {
         var now = DateTime.UtcNow;
+        var window = TimeSpan.FromMinutes(WindowMinutes);
         lock (_lock)
         {
+            if (_attempts.Count >= CleanupThreshold)
+            {
+                var toRemove = _attempts.Where(kvp => now - kvp.Value.WindowStart > window).Select(kvp => kvp.Key).ToList();
+                foreach (var k in toRemove)
+                    _attempts.TryRemove(k, out _);
+            }
             if (_attempts.TryGetValue(key, out var v))
             {
-                if (now - v.WindowStart > TimeSpan.FromMinutes(WindowMinutes))
+                if (now - v.WindowStart > window)
                     _attempts[key] = (1, now);
                 else if (v.Count >= MaxAttempts)
                     return false;
@@ -1579,17 +1586,25 @@ static class SetPasswordRateLimiter
 {
     const int WindowMinutes = 15;
     const int MaxAttempts = 5;
+    const int CleanupThreshold = 200;
     static readonly ConcurrentDictionary<string, (int Count, DateTime WindowStart)> _attempts = new();
     static readonly object _lock = new();
 
     public static bool TryAcquire(string key)
     {
         var now = DateTime.UtcNow;
+        var window = TimeSpan.FromMinutes(WindowMinutes);
         lock (_lock)
         {
+            if (_attempts.Count >= CleanupThreshold)
+            {
+                var toRemove = _attempts.Where(kvp => now - kvp.Value.WindowStart > window).Select(kvp => kvp.Key).ToList();
+                foreach (var k in toRemove)
+                    _attempts.TryRemove(k, out _);
+            }
             if (_attempts.TryGetValue(key, out var v))
             {
-                if (now - v.WindowStart > TimeSpan.FromMinutes(WindowMinutes))
+                if (now - v.WindowStart > window)
                     _attempts[key] = (1, now);
                 else if (v.Count >= MaxAttempts)
                     return false;

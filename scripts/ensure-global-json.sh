@@ -16,14 +16,25 @@ if [ -z "$TFM" ]; then
   echo "ensure-global-json: could not find TargetFramework in $CSPROJ" >&2
   exit 1
 fi
-# Write global.json with minimum patch so any 10.0.x SDK satisfies (pre-commit.ci, etc.)
+# Write global.json only if content would change (avoids dirty working tree from pre-commit).
+# Normalize line endings (strip CR) so CRLF vs LF does not cause unnecessary overwrites.
 GLOBAL_JSON="$REPO_ROOT/global.json"
-cat > "$GLOBAL_JSON" << EOF
-{
-  "sdk": {
-    "rollForward": "latestPatch",
-    "version": "${TFM}.100"
+NEW_CONTENT="{
+  \"sdk\": {
+    \"rollForward\": \"latestPatch\",
+    \"version\": \"${TFM}.100\"
   }
 }
-EOF
+"
+if [ -f "$GLOBAL_JSON" ]; then
+  CURRENT=$(tr -d '\r' < "$GLOBAL_JSON")
+  NEW_NORM=$(echo "$NEW_CONTENT" | tr -d '\r')
+  if [ "$CURRENT" = "$NEW_NORM" ]; then
+    : # no change
+  else
+    echo "$NEW_CONTENT" > "$GLOBAL_JSON"
+  fi
+else
+  echo "$NEW_CONTENT" > "$GLOBAL_JSON"
+fi
 echo "$TFM"

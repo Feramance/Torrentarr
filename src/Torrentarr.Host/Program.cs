@@ -3093,17 +3093,25 @@ public partial class Program
     {
         const int WindowMinutes = 15;
         const int MaxAttempts = 10;
+        const int CleanupThreshold = 200;
         static readonly ConcurrentDictionary<string, (int Count, DateTime WindowStart)> _attempts = new();
         static readonly object _lock = new();
 
         public static bool TryAcquire(string key)
         {
             var now = DateTime.UtcNow;
+            var window = TimeSpan.FromMinutes(WindowMinutes);
             lock (_lock)
             {
+                if (_attempts.Count >= CleanupThreshold)
+                {
+                    var toRemove = _attempts.Where(kvp => now - kvp.Value.WindowStart > window).Select(kvp => kvp.Key).ToList();
+                    foreach (var k in toRemove)
+                        _attempts.TryRemove(k, out _);
+                }
                 if (_attempts.TryGetValue(key, out var v))
                 {
-                    if (now - v.WindowStart > TimeSpan.FromMinutes(WindowMinutes))
+                    if (now - v.WindowStart > window)
                         _attempts[key] = (1, now);
                     else if (v.Count >= MaxAttempts)
                         return false;
@@ -3122,17 +3130,25 @@ public partial class Program
     {
         const int WindowMinutes = 15;
         const int MaxAttempts = 5;
+        const int CleanupThreshold = 200;
         static readonly ConcurrentDictionary<string, (int Count, DateTime WindowStart)> _attempts = new();
         static readonly object _lock = new();
 
         public static bool TryAcquire(string key)
         {
             var now = DateTime.UtcNow;
+            var window = TimeSpan.FromMinutes(WindowMinutes);
             lock (_lock)
             {
+                if (_attempts.Count >= CleanupThreshold)
+                {
+                    var toRemove = _attempts.Where(kvp => now - kvp.Value.WindowStart > window).Select(kvp => kvp.Key).ToList();
+                    foreach (var k in toRemove)
+                        _attempts.TryRemove(k, out _);
+                }
                 if (_attempts.TryGetValue(key, out var v))
                 {
-                    if (now - v.WindowStart > TimeSpan.FromMinutes(WindowMinutes))
+                    if (now - v.WindowStart > window)
                         _attempts[key] = (1, now);
                     else if (v.Count >= MaxAttempts)
                         return false;
