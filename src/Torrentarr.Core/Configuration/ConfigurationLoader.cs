@@ -9,7 +9,7 @@ namespace Torrentarr.Core.Configuration;
 public class ConfigurationLoader
 {
     /// <summary>Expected config schema version (qBitrr parity). Used for validation and mismatch warning.</summary>
-    public const string ExpectedConfigVersion = "5.9.2";
+    public const string ExpectedConfigVersion = "6.0.0";
 
     /// <summary>
     /// TEST USE ONLY. When set by test fixtures, GetDefaultConfigPath() returns this instead of env/defaults.

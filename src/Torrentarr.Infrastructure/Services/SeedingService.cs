@@ -1050,7 +1050,7 @@ public class SeedingService : ISeedingService
             // Prefer SeedingMode list (has defaults); fall back to Torrent-level list
             var seedingModeKws = arrCfg.Torrent.SeedingMode?.RemoveTrackerWithMessage;
             var torrentKws = arrCfg.Torrent.RemoveTrackerWithMessage;
-            keywords = seedingModeKws?.Count > 0 ? seedingModeKws : torrentKws;
+            keywords = seedingModeKws?.Count > 0 ? seedingModeKws : (torrentKws ?? []);
             removeDead = arrCfg.Torrent.SeedingMode?.RemoveDeadTrackers ?? arrCfg.Torrent.RemoveDeadTrackers;
         }
         else

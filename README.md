@@ -75,6 +75,7 @@ Access the WebUI at `http://<host>:6969/ui` after startup.
 - **Hit and Run Protection** – Automatic HnR obligation tracking with configurable thresholds, partial download handling, and dead tracker bypass
 - **Disk Space Management** – Auto-pause when low on space, configurable thresholds
 - **Modern WebUI** – Live process monitoring, log viewer, Arr insights
+- **WebUI authentication** – Optional login (local or OIDC), API token, and secure set-password
 - **Config & schema compatible** – Same `config.toml` format as qBitrr; SQLite schema matches (same tables). Database file is `torrentarr.db` in the config directory, not `qbitrr.db`.
 - **Process Isolation** – WebUI stays online even if a worker crashes
 

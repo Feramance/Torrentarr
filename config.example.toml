@@ -8,7 +8,7 @@
 
 [Settings]
 # Internal config schema version - managed automatically
-ConfigVersion = "5.9.0"
+ConfigVersion = "6.0.0"
 
 # Logging level: CRITICAL, ERROR, WARNING, NOTICE, INFO, DEBUG, TRACE
 ConsoleLevel = "INFO"
@@ -83,6 +83,11 @@ Port = 6969
 # Bearer token for API authentication (leave empty to disable)
 Token = "your-secure-token-here"
 
+# Authentication: AuthDisabled=true (default) = no login; false = require login (Local and/or OIDC). See docs/configuration/webui-authentication.md
+AuthDisabled = true
+LocalAuthEnabled = false
+OIDCEnabled = false
+
 # Enable live updates for Arr views
 LiveArr = true
 
@@ -135,7 +140,7 @@ MaxSeedingTime = 604800
 RemoveMode = 1
 
 # Enable Hit & Run protection
-HitAndRunMode = true
+HitAndRunMode = "and"
 
 # Minimum seed ratio for HnR protection
 MinSeedRatio = 1.0

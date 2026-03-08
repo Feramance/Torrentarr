@@ -439,7 +439,7 @@ public class TorrentProcessor : ITorrentProcessor
         // Branch 11: Queued upload → pause if !leave_alone (qBitrr line 6164-6165)
         else if (state == TorrentState.QueuedUploading)
         {
-            if (leaveAlone || state == TorrentState.ForcedUploading)
+            if (leaveAlone)
             {
                 _logger.LogTrace("Queued upload, allowing seeding: [{Name}]", torrent.Name);
             }

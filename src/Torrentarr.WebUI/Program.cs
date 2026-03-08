@@ -715,15 +715,8 @@ app.MapPost("/web/config", async (HttpContext ctx, TorrentarrConfig config, Conf
     }
     catch (Exception ex)
     {
-        Log.Warning(ex, "POST /web/config: failed to save config changes");
-        return Results.Ok(new
-        {
-            status = "saved_with_warning",
-            configReloaded = false,
-            reloadType,
-            affectedInstances,
-            warning = ex.Message
-        });
+        Log.Error(ex, "POST /web/config: failed to save config changes");
+        return Results.Json(new { error = "Failed to save configuration", details = ex.Message }, statusCode: 500);
     }
 
     var reloaded = reloader.ReloadConfig();

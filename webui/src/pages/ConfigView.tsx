@@ -1134,7 +1134,7 @@ const ARR_SEEDING_FIELDS: FieldDefinition[] = [
 
 const ARR_TRACKER_FIELDS: FieldDefinition[] = [
   { label: "Name", path: ["Name"], type: "text", required: true },
-  { label: "URI", path: ["URI"], type: "text", required: true },
+  { label: "URI", path: ["Uri"], type: "text", required: true },
   {
     label: "Priority",
     path: ["Priority"],
@@ -1149,7 +1149,7 @@ const ARR_TRACKER_FIELDS: FieldDefinition[] = [
   },
   {
     label: "Maximum ETA",
-    path: ["MaximumETA"],
+    path: ["MaxETA"],
     type: "duration",
     nativeUnit: "seconds",
     allowNegative: true,
@@ -3184,7 +3184,9 @@ function FieldGroup({
       const nextTrackers = [
         ...trackers,
         {
-          Url: "",
+          Name: "",
+          Uri: "",
+          Priority: 0,
           RemoveIfExists: false,
           SuperSeedMode: false,
           AddTags: [],
