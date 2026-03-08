@@ -4,8 +4,8 @@
 # Echoes the major.minor to stdout for use in CI (e.g. setup-dotnet with "10.0.x").
 set -e
 REPO_ROOT="${1:-.}"
-# Find first csproj outside obj
-CSPROJ=$(find "$REPO_ROOT" -name "*.csproj" -not -path "*/obj/*" 2>/dev/null | head -1)
+# Find first csproj outside obj (sorted for deterministic selection)
+CSPROJ=$(find "$REPO_ROOT" -name "*.csproj" -not -path "*/obj/*" 2>/dev/null | sort | head -1)
 if [ -z "$CSPROJ" ]; then
   echo "ensure-global-json: no .csproj found" >&2
   exit 1
