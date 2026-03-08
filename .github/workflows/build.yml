@@ -147,6 +147,7 @@ jobs:
 
   docker-pr:
     name: Build and push Docker image (PR)
+    needs: build
     runs-on: ubuntu-latest
     if: github.event_name == 'pull_request'
     permissions:
