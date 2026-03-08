@@ -42,7 +42,7 @@ jobs:
         DOTNET_VERSION=$(bash scripts/ensure-global-json.sh)
         echo "DOTNET_SDK_VERSION=$DOTNET_VERSION" >> $GITHUB_ENV
     - name: Setup .NET
-      uses: actions/setup-dotnet@v5.1.0
+      uses: actions/setup-dotnet@v5.2.0
       with:
         dotnet-version: ${{ env.DOTNET_SDK_VERSION }}.x
     - name: Setup Node.js
@@ -86,15 +86,15 @@ jobs:
     - name: Set up QEMU
       uses: docker/setup-qemu-action@v3
     - name: Set up Docker Buildx
-      uses: docker/setup-buildx-action@v3
+      uses: docker/setup-buildx-action@v4
     - name: Extract metadata for Docker
       id: meta
-      uses: docker/metadata-action@v5
+      uses: docker/metadata-action@v6
       with:
         images: ghcr.io/${{ steps.repo.outputs.lowercase }}
         tags: type=ref,event=pr
     - name: Build Docker image (no push)
-      uses: docker/build-push-action@v6
+      uses: docker/build-push-action@v7
       with:
         context: .
         platforms: linux/amd64,linux/arm64
