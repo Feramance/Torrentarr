@@ -22,7 +22,7 @@ public class ExportOpenApiSpecTests : IClassFixture<TorrentarrWebApplicationFact
     [Fact]
     public async Task SwaggerJson_IsServed()
     {
-        var client = _factory.CreateClient();
+        var client = _factory.CreateClientWithApiToken();
         var response = await client.GetAsync("/swagger/v1/swagger.json");
         response.StatusCode.Should().Be(HttpStatusCode.OK);
         var json = await response.Content.ReadAsStringAsync();
