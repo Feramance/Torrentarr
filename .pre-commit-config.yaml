@@ -36,7 +36,7 @@ repos:
   hooks:
   - id: dotnet-format
     name: dotnet format
-    entry: bash -c "scripts/ensure-global-json.sh >/dev/null && dotnet format"
+    entry: dotnet format
     language: system
     types: [c#]
     pass_filenames: false
