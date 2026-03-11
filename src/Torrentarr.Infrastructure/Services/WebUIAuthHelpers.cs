@@ -35,8 +35,9 @@ public static class WebUIAuthHelpers
         if (path.Equals("/web/login", StringComparison.OrdinalIgnoreCase) && (method == "GET" || method == "POST")) return true;
         if (path.Equals("/web/logout", StringComparison.OrdinalIgnoreCase) && (method == "GET" || method == "POST")) return true;
         if (path.Equals("/web/auth/set-password", StringComparison.OrdinalIgnoreCase) && method == "POST") return true;
-        if (path.StartsWith("/signin-oidc", StringComparison.OrdinalIgnoreCase)) return true;
-        if (path.StartsWith("/web/auth/oidc/challenge", StringComparison.OrdinalIgnoreCase)) return true;
+        // OIDC: only GET allowed (challenge redirect; callback with code in query)
+        if (path.StartsWith("/signin-oidc", StringComparison.OrdinalIgnoreCase) && method == "GET") return true;
+        if (path.StartsWith("/web/auth/oidc/challenge", StringComparison.OrdinalIgnoreCase) && method == "GET") return true;
         return false;
     }
 }

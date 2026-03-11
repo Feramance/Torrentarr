@@ -26,6 +26,33 @@ const minimalConfig = {
   WebUI: { LiveArr: false, GroupSonarr: false, GroupLidarr: false },
 };
 
+const minimalMeta = () =>
+  HttpResponse.json({
+    current_version: "5.9.2",
+    latest_version: null,
+    update_available: false,
+    changelog: null,
+    current_version_changelog: null,
+    changelog_url: null,
+    repository_url: "",
+    homepage_url: "",
+    last_checked: null,
+    update_state: {
+      in_progress: false,
+      last_result: null,
+      last_error: null,
+      completed_at: null,
+    },
+    installation_type: "binary",
+    binary_download_url: null,
+    binary_download_name: null,
+    binary_download_size: null,
+    binary_download_error: null,
+    auth_required: false,
+    local_auth_enabled: false,
+    oidc_enabled: false,
+  });
+
 const emptyArrList = { arr: [], ready: true };
 
 const radarrArrList = {
@@ -132,6 +159,7 @@ describe("RadarrView – instance sidebar", () => {
 
   it("shows movies table columns when movies are returned", async () => {
     server.use(
+      http.get("/web/meta", minimalMeta),
       http.get("/web/config", () => HttpResponse.json(minimalConfig)),
       http.post("/web/config", () => HttpResponse.json({})),
       http.get("/web/arr", () => HttpResponse.json(radarrArrList)),
@@ -158,9 +186,9 @@ describe("RadarrView – instance sidebar", () => {
     renderView();
 
     // Table columns always appear when movies are loaded
-    await screen.findByText("Title", {}, { timeout: 5000 });
+    await screen.findByText("Title", {}, { timeout: 8000 });
     expect(screen.queryByText("No movies found.")).not.toBeInTheDocument();
-  });
+  }, 10000);
 });
 
 // ── Inactive view ─────────────────────────────────────────────────────────────

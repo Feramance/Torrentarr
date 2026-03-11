@@ -214,6 +214,19 @@ RequireHttpsMetadata = true
 
 ---
 
+## Security pass (release checklist)
+
+Before tagging a release, the following are verified:
+
+- **Login:** BCrypt verification runs before username check to avoid timing-based username enumeration; same generic "Unauthorized" on failure. Rate limit: 10 attempts per 15 minutes per IP.
+- **Set-password:** Setup token compared with constant-time `TokenEquals`; rate limit: 5 attempts per 15 minutes per IP. No token or password in logs.
+- **API token:** Bearer and `?token=` (GET only) compared with constant-time `TokenEquals`. Prefer `Authorization: Bearer`; query token can leak via Referer or server logs.
+- **OIDC:** Public paths `/signin-oidc` and `/web/auth/oidc/challenge` allow **GET only**; POST to these paths requires authentication. Authority and ClientId are validated before challenge.
+- **Cookies:** Session cookie is HttpOnly, SameSite=Lax, SecurePolicy=SameAsRequest.
+- **Rate limit key:** Uses `Connection.RemoteIpAddress`. When behind a reverse proxy, configure forwarded headers so the client IP is set correctly (see "Running behind a reverse proxy" above).
+
+---
+
 ## See also
 
 - [WebUI Configuration](webui.md) — Host, Port, Token, theme, and other WebUI settings

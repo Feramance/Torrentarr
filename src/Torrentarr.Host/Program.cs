@@ -394,7 +394,7 @@ try
             if (authHeader?.StartsWith("Bearer ", StringComparison.OrdinalIgnoreCase) == true)
                 providedToken = authHeader["Bearer ".Length..];
             else if (context.Request.Query.ContainsKey("token") && context.Request.Method == "GET")
-                providedToken = context.Request.Query["token"];
+                providedToken = context.Request.Query["token"]; // Prefer Authorization: Bearer; query token can leak via Referer or server logs
             if (string.IsNullOrEmpty(providedToken) || !WebUIAuthHelpers.TokenEquals(providedToken, configuredToken))
             {
                 context.Response.StatusCode = 401;
@@ -429,7 +429,7 @@ try
             if (authHeader?.StartsWith("Bearer ", StringComparison.OrdinalIgnoreCase) == true)
                 providedToken = authHeader["Bearer ".Length..];
             else if (context.Request.Query.ContainsKey("token") && context.Request.Method == "GET")
-                providedToken = context.Request.Query["token"];
+                providedToken = context.Request.Query["token"]; // Prefer Authorization: Bearer; query token can leak via Referer or server logs
 
             if (!string.IsNullOrEmpty(providedToken) && WebUIAuthHelpers.TokenEquals(providedToken, webToken))
             {
