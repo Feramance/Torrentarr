@@ -39,7 +39,7 @@ jobs:
     - name: Set .NET version from repo
       id: dotnet_version
       run: |
-        DOTNET_VERSION=$(bash scripts/ensure-global-json.sh)
+        DOTNET_VERSION=$(bash scripts/ensure-global-json.sh "${{ github.workspace }}")
         echo "version=$DOTNET_VERSION" >> $GITHUB_OUTPUT
         echo "DOTNET_SDK_VERSION=$DOTNET_VERSION" >> $GITHUB_ENV
 
@@ -209,7 +209,7 @@ jobs:
     - name: Set .NET version from repo
       id: dotnet_version
       run: |
-        DOTNET_VERSION=$(bash scripts/ensure-global-json.sh)
+        DOTNET_VERSION=$(bash scripts/ensure-global-json.sh "${{ github.workspace }}")
         echo "DOTNET_SDK_VERSION=$DOTNET_VERSION" >> $GITHUB_ENV
 
     - name: Setup .NET

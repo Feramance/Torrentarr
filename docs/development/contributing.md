@@ -15,6 +15,12 @@ Thank you for contributing to Torrentarr! This guide covers how to contribute ef
    make newenv    # Create virtual environment
    make syncenv   # Install dependencies
    ```
+   For pre-commit (including compile checks) you also need:
+   ```bash
+   dotnet restore
+   cd webui && npm ci
+   ```
+   Pre-commit runs **dotnet build** and **webui build**; the .NET SDK and Node/npm with webui dependencies must be installed.
 4. **Create a branch:**
    ```bash
    git checkout -b feature/your-feature-name
@@ -29,7 +35,7 @@ Thank you for contributing to Torrentarr! This guide covers how to contribute ef
 Ensure your contribution meets these requirements:
 
 - [ ] Code follows [style guidelines](code-style.md)
-- [ ] Pre-commit hooks pass (`pre-commit run --all-files`)
+- [ ] Pre-commit hooks pass (`pre-commit run --all-files`) — hooks include **compile checks** (dotnet build, webui build); ensure you have run `dotnet restore` and `npm ci` in `webui/` before committing.
 - [ ] Changes tested locally with live qBittorrent + Arr instances
 - [ ] Documentation updated (if adding features)
 - [ ] If you changed WebUI API endpoints: [OpenAPI spec regenerated](release-process.md#regenerating-the-openapi-spec) (`docs/assets/openapi.json`)

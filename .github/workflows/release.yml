@@ -159,7 +159,7 @@ jobs:
     - name: Set .NET version from repo
       id: dotnet_version
       run: |
-        DOTNET_VERSION=$(bash scripts/ensure-global-json.sh)
+        DOTNET_VERSION=$(bash scripts/ensure-global-json.sh "${{ github.workspace }}")
         echo "DOTNET_SDK_VERSION=$DOTNET_VERSION" >> $GITHUB_ENV
     - name: Setup Node.js
       uses: actions/setup-node@v6
