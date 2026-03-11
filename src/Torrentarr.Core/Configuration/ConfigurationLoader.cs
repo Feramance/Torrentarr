@@ -860,7 +860,7 @@ public class ConfigurationLoader
         var settings = new SettingsConfig();
 
         if (table.TryGetValue("ConfigVersion", out var configVersion))
-            settings.ConfigVersion = configVersion?.ToString() ?? "5.9.0";
+            settings.ConfigVersion = configVersion?.ToString() ?? ExpectedConfigVersion;
 
         if (table.TryGetValue("ConsoleLevel", out var consoleLevel))
             settings.ConsoleLevel = consoleLevel?.ToString() ?? "INFO";
@@ -1518,7 +1518,11 @@ public class ConfigurationLoader
         if (!Version.TryParse(currentStr, out var current))
             current = new Version(0, 0, 1);
         if (!Version.TryParse(ExpectedConfigVersion, out var expected))
-            expected = new Version(5, 9, 2);
+        {
+            var numericExpected = ExpectedConfigVersion.Split('-', '+')[0];
+            if (!Version.TryParse(numericExpected, out expected))
+                expected = new Version(0, 0, 1);
+        }
 
         if (current == expected)
             return (true, null, currentStr);
@@ -1538,7 +1542,7 @@ public class ConfigurationLoader
         {
             Settings = new SettingsConfig
             {
-                ConfigVersion = "5.9.2",
+                ConfigVersion = ExpectedConfigVersion,
                 ConsoleLevel = "INFO",
                 Logging = true,
                 CompletedDownloadFolder = "CHANGE_ME",
