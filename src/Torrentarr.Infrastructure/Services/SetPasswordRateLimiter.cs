@@ -1,3 +1,5 @@
+using System.Collections.Concurrent;
+
 namespace Torrentarr.Infrastructure.Services;
 
 /// <summary>Per-IP rate limiter for set-password endpoint to mitigate brute-force of setup token.</summary>

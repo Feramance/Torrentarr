@@ -1,3 +1,5 @@
+using System.Collections.Concurrent;
+
 namespace Torrentarr.Infrastructure.Services;
 
 /// <summary>Per-IP rate limiter for login endpoint: 10 attempts per 15 minutes.</summary>

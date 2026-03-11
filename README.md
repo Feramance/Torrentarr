@@ -1,5 +1,7 @@
 # Torrentarr
 
+**Automated qBittorrent management for the *Arr stack** — Hit & Run protection, free space control, quality upgrades, and import triggering. C# port of qBitrr with the same config and schema.
+
 [![Build Status](https://img.shields.io/badge/build-passing-brightgreen)]()
 [![Feature Parity](https://img.shields.io/badge/feature_parity-99%25-blue)]()
 [![License: MIT](https://img.shields.io/badge/license-MIT-green)]()
