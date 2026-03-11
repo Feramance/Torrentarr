@@ -34,6 +34,12 @@ repos:
     - prettier@3.2.5
 - repo: local
   hooks:
+  - id: dotnet-format
+    name: dotnet format
+    entry: dotnet format
+    language: system
+    types: [c#]
+    pass_filenames: false
   - id: dotnet-build
     name: dotnet build
     entry: dotnet build --configuration Release
@@ -43,12 +49,6 @@ repos:
     name: webui build
     entry: node scripts/pre-commit-webui-build.cjs
     language: system
-    pass_filenames: false
-  - id: dotnet-format
-    name: dotnet format
-    entry: dotnet format
-    language: system
-    types: [c#]
     pass_filenames: false
 ci:
   autofix_commit_msg: |
