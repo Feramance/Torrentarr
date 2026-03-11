@@ -8,7 +8,7 @@ This page describes Torrentarr's WebUI authentication options: token-only, local
 
 - **AuthDisabled = true (default for existing configs):** No login screen. The WebUI and API are protected only by the [Token](webui.md#token) (or are public until Torrentarr has run once and auto-generated a token). Use this when you rely on the API token or a reverse proxy for access control.
 
-- **AuthDisabled = false:** Browser users must log in or present the Bearer token. At least one of **LocalAuthEnabled** or **OIDCEnabled** should be true so the login page offers a sign-in method. The API token still works for `/api/*` (Bearer or `?token=` on GET). After a successful login (local or OIDC), a session cookie grants access to the WebUI and `/web/token` returns the API token for the frontend.
+- **AuthDisabled = false:** Browser users must log in or present the Bearer token. At least one of **LocalAuthEnabled** or **OIDCEnabled** should be true so the login page offers a sign-in method. The API token still works for `/api/*` (Bearer or `?token=` on GET). After a successful login (local or OIDC), a session cookie grants access to the WebUI and `/web/token` returns the API token for the frontend. Use **Log out** in the app bar (or `GET`/`POST` `/web/logout`) to sign out and return to the login page.
 
 **New installs:** When Torrentarr runs for the first time and creates the config file (it did not exist before), the generated config has **AuthDisabled = false** and **LocalAuthEnabled = true** by default. The user is shown a welcome screen to create an admin username and password before accessing the rest of the WebUI. Existing configs (file already present) are unchanged and keep **AuthDisabled = true** unless you edit the auth settings.
 
@@ -81,7 +81,7 @@ BCrypt hash of the local-auth password. Never store a plain password in config.
 
 **Setting the password:**
 
-- **First-time:** Leave **PasswordHash** empty. Open the login page and use "Set password," or send username and password to `POST /web/auth/set-password`. Torrentarr hashes the password and writes it to config; if **AuthDisabled** was true, it will also set **AuthDisabled** = false and **LocalAuthEnabled** = true.
+- **First-time:** Leave **PasswordHash** empty. Open the login page and use "Set password," or send username and password to `POST /web/auth/set-password`. Torrentarr hashes the password and writes it to config; if **AuthDisabled** was true, it will also set **AuthDisabled** = false and **LocalAuthEnabled** = true. **Note:** When **PasswordHash** is empty, anyone who can reach `POST /web/auth/set-password` can set the admin password (“first hit wins”). For deployments where the app is network-reachable before the admin visits (e.g. Docker with a published port), use network isolation or a reverse proxy that restricts access until setup is complete.
 - **Reset:** Set the environment variable **TORRENTARR_SETUP_TOKEN** to a secret value. Call `POST /web/auth/set-password` with the same value in the `setupToken` field along with the new username and password. Torrentarr will update the hash in config.
 
 ---
@@ -116,6 +116,8 @@ When **OIDCEnabled** is true, add a **\[WebUI.OIDC]** table with your identity p
 | **RequireHttpsMetadata** | boolean | `true` | Whether to require HTTPS when fetching IdP metadata. Set `false` only for local HTTP IdPs (e.g. dev). |
 
 When Torrentarr is behind a reverse proxy, the redirect URI the IdP must allow is the **public** URL, e.g. `https://torrentarr.example.com/signin-oidc` (same scheme, host, and path as users use to reach Torrentarr).
+
+**Running behind a reverse proxy:** Login and set-password rate limiting (and any IP-based logging) use the connection’s remote IP. Behind a reverse proxy (e.g. Nginx, Traefik), that is usually the proxy’s IP, so all clients share one “IP” and rate limiting applies globally. Configure forwarded headers so Torrentarr sees the real client IP: enable `X-Forwarded-For` and `X-Forwarded-Proto` in your proxy and, if you run Torrentarr with forwarded-headers support, configure `ForwardedHeaders` (e.g. `UseForwardedHeaders`) so rate limiting and logs are per client. See your proxy’s documentation for setting these headers.
 
 For a step-by-step example with one IdP, see [OIDC with Authentik](webui-oidc-authentik.md). For Authentik’s OAuth2/OIDC provider details, see the [Authentik OAuth 2.0 provider](https://docs.goauthentik.io/add-secure-apps/providers/oauth2/) documentation.
 
@@ -193,7 +195,7 @@ RequireHttpsMetadata = true
 
 ### 401 Unauthorized
 
-- **API (`/api/*`):** Ensure the **Token** is set (or was auto-generated at startup). Send it as `Authorization: Bearer <token>` or, for GET only, `?token=<token>`.
+- **API (`/api/*`):** Ensure the **Token** is set (or was auto-generated at startup). Prefer sending it as `Authorization: Bearer <token>`. The `?token=<token>` query parameter is supported for GET requests only; avoid it on untrusted or shared links, as tokens in URLs can leak via Referer, server logs, and browser history.
 - **Browser:** If **AuthDisabled** is false, either log in (local or OIDC) or send the Bearer token. For local auth, ensure **PasswordHash** has been set (via the login page or set-password).
 - Clear browser cache and cookies and check logs for auth-related errors.
 
@@ -202,6 +204,13 @@ RequireHttpsMetadata = true
 - **Redirect URI:** The URI registered at the IdP must match exactly: same scheme, host, and path as Torrentarr’s public URL (e.g. `https://torrentarr.example.com/signin-oidc`). No trailing slash on the path unless **CallbackPath** includes it.
 - **Authority:** Use the IdP issuer URL **without** a trailing slash (Torrentarr trims it).
 - **HTTPS:** If **RequireHttpsMetadata** is true, the IdP’s metadata URL must be HTTPS. For local or HTTP-only IdPs, set **RequireHttpsMetadata** = false (dev only).
+
+---
+
+## Deployment and security
+
+- **CORS:** The WebUI server may allow cross-origin requests (e.g. `AllowAnyOrigin` in development). In sensitive deployments, restrict CORS to trusted origins via your reverse proxy or application configuration so that only your intended UI origin can call the API.
+- **HTTPS:** In production, serve Torrentarr over HTTPS (e.g. behind a reverse proxy with TLS). Session cookies use `SecurePolicy=SameAsRequest`, so they are only sent over HTTPS when the request is HTTPS.
 
 ---
 

@@ -1,4 +1,4 @@
-﻿# Contributing
+# Contributing
 
 Thank you for contributing to Torrentarr! This guide covers how to contribute effectively.
 
@@ -32,6 +32,7 @@ Ensure your contribution meets these requirements:
 - [ ] Pre-commit hooks pass (`pre-commit run --all-files`)
 - [ ] Changes tested locally with live qBittorrent + Arr instances
 - [ ] Documentation updated (if adding features)
+- [ ] If you changed WebUI API endpoints: [OpenAPI spec regenerated](release-process.md#regenerating-the-openapi-spec) (`docs/assets/openapi.json`)
 - [ ] Commit messages follow conventional commits format
 
 ## Commit Message Format

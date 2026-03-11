@@ -40,6 +40,7 @@ import {
   triggerUpdate,
   getToken,
   login,
+  logout,
   setPassword,
   AuthError,
 } from "./api/client";
@@ -1256,6 +1257,16 @@ function AppShell(): JSX.Element {
             ) : null}
           </div>
           <div className="appbar__actions">
+            {meta?.auth_required && (
+              <button
+                type="button"
+                className="btn small ghost"
+                onClick={() => logout()}
+                title="Sign out"
+              >
+                Log out
+              </button>
+            )}
             {!isOnline && (
               <span
                 className="badge"

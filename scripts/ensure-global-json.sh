@@ -21,7 +21,7 @@ fi
 GLOBAL_JSON="$REPO_ROOT/global.json"
 NEW_CONTENT="{
   \"sdk\": {
-    \"rollForward\": \"latestPatch\",
+    \"rollForward\": \"latestMinor\",
     \"version\": \"${TFM}.100\"
   }
 }

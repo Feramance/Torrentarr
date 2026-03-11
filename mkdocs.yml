@@ -122,6 +122,7 @@ markdown_extensions:
 plugins:
 - search:
     separator: '[\s\-,:!=\[\]()"`/]+|\.(?!\d)|&[lg]t;|(?!\b)(?=[A-Z][a-z])'
+- swagger-ui-tag:
 - git-revision-date-localized:
     enable_creation_date: true
     type: timeago
@@ -247,6 +248,7 @@ nav:
   - Arr Views: webui/arr-views.md
   - Config Editor: webui/config-editor.md
   - API Reference: webui/api.md
+  - Interactive API (Swagger): webui/swagger.md
 
 - Advanced:
   - advanced/index.md

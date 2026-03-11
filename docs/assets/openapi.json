@@ -1,0 +1,46 @@
+{
+  "info": {
+    "description": "API for qBittorrent + Arr automation (qBitrr C# port).",
+    "title": "Torrentarr API",
+    "version": "v1"
+  },
+  "openapi": "3.0.1",
+  "paths": {
+    "/api/status": {
+      "get": {
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        },
+        "summary": "System status (requires auth)"
+      }
+    },
+    "/health": {
+      "get": {
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        },
+        "summary": "Health check"
+      }
+    },
+    "/web/status": {
+      "get": {
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        },
+        "summary": "System status (public)"
+      }
+    }
+  },
+  "servers": [
+    {
+      "description": "Default WebUI port",
+      "url": "http://localhost:6969"
+    }
+  ]
+}

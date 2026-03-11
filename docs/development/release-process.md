@@ -338,6 +338,17 @@ docker pull feramance/torrentarr:5.5.5
 # Fix issue and release 5.6.1
 ```
 
+## Regenerating the OpenAPI spec
+
+The documentation site embeds an interactive Swagger UI that loads the API spec from `docs/assets/openapi.json`. When you add or change WebUI API endpoints, regenerate this file so the published docs stay in sync:
+
+1. From the repository root, set the export environment variable and run the export test:
+   - **Windows (PowerShell):** `$env:TORRENTARR_EXPORT_OPENAPI='1'; dotnet test tests/Torrentarr.Host.Tests --filter "FullyQualifiedName~ExportOpenApiSpec"`
+   - **Linux/macOS:** `TORRENTARR_EXPORT_OPENAPI=1 dotnet test tests/Torrentarr.Host.Tests --filter "FullyQualifiedName~ExportOpenApiSpec"`
+2. Commit the updated `docs/assets/openapi.json` if it changed.
+
+Include this step in your release checklist when you have modified API routes.
+
 ## Related Documentation
 
 - [Contributing](contributing.md) - Contribution guidelines

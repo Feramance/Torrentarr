@@ -467,6 +467,12 @@ export async function login(
   return (await response.json()) as { success: boolean };
 }
 
+/** Navigate to /web/logout to sign out the session cookie; server redirects to /login. Clears stored API token. */
+export function logout(): void {
+  clearStoredToken();
+  window.location.href = "/web/logout";
+}
+
 export async function getTorrentsDistribution(): Promise<TorrentDistribution> {
   return fetchJson<TorrentDistribution>("/web/torrents/distribution");
 }

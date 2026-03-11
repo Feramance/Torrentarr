@@ -81,6 +81,18 @@ public class LoginEndpointTests : IClassFixture<LocalAuthWebApplicationFactory>
         using var doc = JsonDocument.Parse(await tokenResponse.Content.ReadAsStringAsync());
         doc.RootElement.GetProperty("token").GetString().Should().Be("test-api-token");
     }
+
+    /// <summary>GET /web/logout redirects to /login (and clears session when one was present).</summary>
+    [Fact]
+    public async Task GetWebLogout_ReturnsRedirectToLogin()
+    {
+        _factory.SetConfigEnv();
+        var client = _factory.CreateClientWithoutApiToken();
+        var response = await client.GetAsync("/web/logout");
+        response.StatusCode.Should().Be(HttpStatusCode.Redirect);
+        response.Headers.Location.Should().NotBeNull();
+        response.Headers.Location!.ToString().Should().Be("/login");
+    }
 }
 
 /// <summary>

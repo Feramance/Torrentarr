@@ -15,9 +15,6 @@ using Serilog;
 using Serilog.Core;
 using Serilog.Events;
 using System.Security.Claims;
-using System.Security.Cryptography;
-using System.Text;
-using System.Collections.Concurrent;
 
 // Calculate base paths - use /config for Docker, or config/ relative to cwd for local
 var configEnv = Environment.GetEnvironmentVariable("TORRENTARR_CONFIG");
@@ -226,6 +223,28 @@ try
             Version = "v1",
             Description = "API for qBittorrent + Arr automation (qBitrr C# port)"
         });
+        c.AddSecurityDefinition("Bearer", new Microsoft.OpenApi.Models.OpenApiSecurityScheme
+        {
+            Name = "Authorization",
+            Type = Microsoft.OpenApi.Models.SecuritySchemeType.Http,
+            Scheme = "bearer",
+            In = Microsoft.OpenApi.Models.ParameterLocation.Header,
+            Description = "API token (WebUI.Token). Use for /api/* endpoints. Use the Authorize button to set."
+        });
+        c.AddSecurityRequirement(new Microsoft.OpenApi.Models.OpenApiSecurityRequirement
+        {
+            {
+                new Microsoft.OpenApi.Models.OpenApiSecurityScheme
+                {
+                    Reference = new Microsoft.OpenApi.Models.OpenApiReference
+                    {
+                        Type = Microsoft.OpenApi.Models.ReferenceType.SecurityScheme,
+                        Id = "Bearer"
+                    }
+                },
+                Array.Empty<string>()
+            }
+        });
     });
 
     builder.Services.AddCors(options =>
@@ -323,11 +342,8 @@ try
         ApplyManualMigrations(db);
     }
 
-    if (app.Environment.IsDevelopment())
-    {
-        app.UseSwagger();
-        app.UseSwaggerUI();
-    }
+    app.UseSwagger();
+    app.UseSwaggerUI();
 
     app.UseCors("AllowAll");
 
@@ -378,7 +394,7 @@ try
                 providedToken = authHeader["Bearer ".Length..];
             else if (context.Request.Query.ContainsKey("token") && context.Request.Method == "GET")
                 providedToken = context.Request.Query["token"];
-            if (string.IsNullOrEmpty(providedToken) || !TokenEquals(providedToken, configuredToken))
+            if (string.IsNullOrEmpty(providedToken) || !WebUIAuthHelpers.TokenEquals(providedToken, configuredToken))
             {
                 context.Response.StatusCode = 401;
                 await context.Response.WriteAsJsonAsync(new { error = "Unauthorized" });
@@ -397,7 +413,7 @@ try
             return;
         }
 
-        if (IsPublicPath(path, context.Request.Method))
+        if (WebUIAuthHelpers.IsPublicPath(path, context.Request.Method))
         {
             await next(context);
             return;
@@ -414,7 +430,7 @@ try
             else if (context.Request.Query.ContainsKey("token") && context.Request.Method == "GET")
                 providedToken = context.Request.Query["token"];
 
-            if (!string.IsNullOrEmpty(providedToken) && TokenEquals(providedToken, webToken))
+            if (!string.IsNullOrEmpty(providedToken) && WebUIAuthHelpers.TokenEquals(providedToken, webToken))
             {
                 var identity = new ClaimsIdentity("Bearer");
                 identity.AddClaim(new Claim(ClaimTypes.Name, "api"));
@@ -445,41 +461,6 @@ try
     });
 
     static bool IsAuthRequired(TorrentarrConfig c) => !c.WebUI.AuthDisabled;
-
-    /// <summary>Constant-time token comparison using SHA-256 hashes to avoid leaking length.</summary>
-    static bool TokenEquals(string? a, string? b)
-    {
-        var aBytes = Encoding.UTF8.GetBytes(a ?? "");
-        var bBytes = Encoding.UTF8.GetBytes(b ?? "");
-        var aHash = SHA256.HashData(aBytes);
-        var bHash = SHA256.HashData(bBytes);
-        return CryptographicOperations.FixedTimeEquals(aHash, bHash);
-    }
-
-    static bool IsPublicPath(string path, string method)
-    {
-        if (string.IsNullOrEmpty(path)) return true;
-        if (path.Equals("/health", StringComparison.OrdinalIgnoreCase)) return true;
-        if (path.Equals("/", StringComparison.OrdinalIgnoreCase)) return true;
-        // Do NOT treat /ui as public: the SPA and all routes under /ui require auth when AuthDisabled is false.
-        // Only allow paths needed for the login page to load: /login (serves index.html), /assets/* (JS/CSS bundle), and root static assets.
-        if (path.Equals("/login", StringComparison.OrdinalIgnoreCase)) return true;
-        if (path.StartsWith("/assets/", StringComparison.OrdinalIgnoreCase)) return true;
-        if (path.Equals("/favicon.ico", StringComparison.OrdinalIgnoreCase)) return true;
-        if (path.Equals("/favicon-16x16.png", StringComparison.OrdinalIgnoreCase)) return true;
-        if (path.Equals("/favicon-32x32.png", StringComparison.OrdinalIgnoreCase)) return true;
-        if (path.Equals("/favicon-48x48.png", StringComparison.OrdinalIgnoreCase)) return true;
-        if (path.Equals("/logov2-clean.png", StringComparison.OrdinalIgnoreCase)) return true;
-        if (path.Equals("/manifest.json", StringComparison.OrdinalIgnoreCase)) return true;
-        if (path.Equals("/sw.js", StringComparison.OrdinalIgnoreCase)) return true;
-        if (path.Equals("/web/meta", StringComparison.OrdinalIgnoreCase)) return true;
-        // GET /web/login allows SPA/redirects; POST is the login submit (both must be public).
-        if (path.Equals("/web/login", StringComparison.OrdinalIgnoreCase) && (method == "GET" || method == "POST")) return true;
-        if (path.Equals("/web/auth/set-password", StringComparison.OrdinalIgnoreCase) && method == "POST") return true;
-        if (path.StartsWith("/signin-oidc", StringComparison.OrdinalIgnoreCase)) return true;
-        if (path.StartsWith("/web/auth/oidc/challenge", StringComparison.OrdinalIgnoreCase)) return true;
-        return false;
-    }
 
     app.MapControllers();
 
@@ -1482,6 +1463,18 @@ try
         return Results.Ok(new { success = true });
     });
 
+    // Logout: sign out cookie and redirect to login (GET or POST for link/form compatibility).
+    app.MapGet("/web/logout", async (HttpContext ctx) =>
+    {
+        await ctx.SignOutAsync(CookieAuthenticationDefaults.AuthenticationScheme);
+        return Results.Redirect("/login", false);
+    });
+    app.MapPost("/web/logout", async (HttpContext ctx) =>
+    {
+        await ctx.SignOutAsync(CookieAuthenticationDefaults.AuthenticationScheme);
+        return Results.Redirect("/login", false);
+    });
+
     // Set password (first-time or reset): hash and write to config. Allowed when PasswordHash is empty or via setup token.
     app.MapPost("/web/auth/set-password", async (HttpContext ctx, TorrentarrConfig cfg, ConfigurationLoader loader, IPasswordHasher hasher, ILogger<Program> log) =>
     {
@@ -1498,7 +1491,7 @@ try
         var setupToken = Environment.GetEnvironmentVariable("TORRENTARR_SETUP_TOKEN");
         var allowSet = string.IsNullOrEmpty(cfg.WebUI.PasswordHash)
             || (!string.IsNullOrWhiteSpace(setupToken) && body.SetupToken != null
-                && TokenEquals(body.SetupToken, setupToken));
+                && WebUIAuthHelpers.TokenEquals(body.SetupToken, setupToken));
         if (!allowSet)
             return Results.Json(new { error = "Set password not allowed" }, statusCode: 403);
 
@@ -3086,79 +3079,5 @@ public partial class Program
     {
         public static readonly NoOpAfterChallengeResult Instance = new();
         public Task ExecuteAsync(HttpContext ctx) => Task.CompletedTask;
-    }
-
-    /// <summary>Per-IP rate limiter for login endpoint: 10 attempts per 15 minutes.</summary>
-    static class LoginRateLimiter
-    {
-        const int WindowMinutes = 15;
-        const int MaxAttempts = 10;
-        const int CleanupThreshold = 200;
-        static readonly ConcurrentDictionary<string, (int Count, DateTime WindowStart)> _attempts = new();
-        static readonly object _lock = new();
-
-        public static bool TryAcquire(string key)
-        {
-            var now = DateTime.UtcNow;
-            var window = TimeSpan.FromMinutes(WindowMinutes);
-            lock (_lock)
-            {
-                if (_attempts.Count >= CleanupThreshold)
-                {
-                    var toRemove = _attempts.Where(kvp => now - kvp.Value.WindowStart > window).Select(kvp => kvp.Key).ToList();
-                    foreach (var k in toRemove)
-                        _attempts.TryRemove(k, out _);
-                }
-                if (_attempts.TryGetValue(key, out var v))
-                {
-                    if (now - v.WindowStart > window)
-                        _attempts[key] = (1, now);
-                    else if (v.Count >= MaxAttempts)
-                        return false;
-                    else
-                        _attempts[key] = (v.Count + 1, v.WindowStart);
-                }
-                else
-                    _attempts[key] = (1, now);
-                return true;
-            }
-        }
-    }
-
-    /// <summary>Per-IP rate limiter for set-password endpoint to mitigate brute-force of setup token.</summary>
-    static class SetPasswordRateLimiter
-    {
-        const int WindowMinutes = 15;
-        const int MaxAttempts = 5;
-        const int CleanupThreshold = 200;
-        static readonly ConcurrentDictionary<string, (int Count, DateTime WindowStart)> _attempts = new();
-        static readonly object _lock = new();
-
-        public static bool TryAcquire(string key)
-        {
-            var now = DateTime.UtcNow;
-            var window = TimeSpan.FromMinutes(WindowMinutes);
-            lock (_lock)
-            {
-                if (_attempts.Count >= CleanupThreshold)
-                {
-                    var toRemove = _attempts.Where(kvp => now - kvp.Value.WindowStart > window).Select(kvp => kvp.Key).ToList();
-                    foreach (var k in toRemove)
-                        _attempts.TryRemove(k, out _);
-                }
-                if (_attempts.TryGetValue(key, out var v))
-                {
-                    if (now - v.WindowStart > window)
-                        _attempts[key] = (1, now);
-                    else if (v.Count >= MaxAttempts)
-                        return false;
-                    else
-                        _attempts[key] = (v.Count + 1, v.WindowStart);
-                }
-                else
-                    _attempts[key] = (1, now);
-                return true;
-            }
-        }
     }
 }
