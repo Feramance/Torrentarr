@@ -2,6 +2,7 @@ using System.Net;
 using System.Net.Http.Json;
 using System.Text.Json;
 using FluentAssertions;
+using Microsoft.AspNetCore.Mvc.Testing;
 using Xunit;
 
 namespace Torrentarr.Host.Tests.Api;
@@ -87,7 +88,8 @@ public class LoginEndpointTests : IClassFixture<LocalAuthWebApplicationFactory>
     public async Task GetWebLogout_ReturnsRedirectToLogin()
     {
         _factory.SetConfigEnv();
-        var client = _factory.CreateClientWithoutApiToken();
+        // Do not follow redirects so we can assert on 302 and Location header
+        var client = _factory.CreateClient(new WebApplicationFactoryClientOptions { AllowAutoRedirect = false });
         var response = await client.GetAsync("/web/logout");
         response.StatusCode.Should().Be(HttpStatusCode.Redirect);
         response.Headers.Location.Should().NotBeNull();
