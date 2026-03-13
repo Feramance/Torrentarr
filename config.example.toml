@@ -8,7 +8,7 @@
 
 [Settings]
 # Internal config schema version - managed automatically
-ConfigVersion = "6.0.0"
+ConfigVersion = "6.1.0"
 
 # Logging level: CRITICAL, ERROR, WARNING, NOTICE, INFO, DEBUG, TRACE
 ConsoleLevel = "INFO"
