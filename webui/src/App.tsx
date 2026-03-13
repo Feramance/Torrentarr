@@ -138,7 +138,7 @@ function WelcomeModal({
   onClose,
 }: WelcomeModalProps): JSX.Element {
   return (
-    <div className="modal-backdrop" role="presentation" onClick={onClose}>
+    <div className="modal-backdrop" role="presentation">
       <div
         className="modal"
         role="dialog"
@@ -211,7 +211,7 @@ function AlreadyUpToDateModal({
   onClose,
 }: AlreadyUpToDateModalProps): JSX.Element {
   return (
-    <div className="modal-backdrop" role="presentation" onClick={onClose}>
+    <div className="modal-backdrop" role="presentation">
       <div
         className="modal"
         role="dialog"
@@ -361,7 +361,7 @@ function ChangelogModal({
   }
 
   return (
-    <div className="modal-backdrop" role="presentation" onClick={onClose}>
+    <div className="modal-backdrop" role="presentation">
       <div
         className="modal"
         role="dialog"

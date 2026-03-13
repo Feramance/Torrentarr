@@ -2592,7 +2592,7 @@ function AuthConfigModal({
         .join(" + ") || "Enabled (no method)";
 
   return (
-    <div className="modal-backdrop" role="presentation" onClick={onClose}>
+    <div className="modal-backdrop" role="presentation">
       <div
         className="modal"
         role="dialog"
@@ -3947,7 +3947,7 @@ function ArrInstanceModal({
   };
 
   return (
-    <div className="modal-backdrop" role="presentation" onClick={onClose}>
+    <div className="modal-backdrop" role="presentation">
       <div
         className="modal"
         role="dialog"
@@ -4154,7 +4154,7 @@ function QbitInstanceModal({
   const isDefault = keyName === "qBit";
 
   return (
-    <div className="modal-backdrop" role="presentation" onClick={onClose}>
+    <div className="modal-backdrop" role="presentation">
       <div
         className="modal"
         role="dialog"
@@ -4265,7 +4265,7 @@ function SimpleConfigModal({
 
   if (!state) return null;
   return (
-    <div className="modal-backdrop" role="presentation" onClick={onClose}>
+    <div className="modal-backdrop" role="presentation">
       <div
         className="modal"
         role="dialog"

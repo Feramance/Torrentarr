@@ -22,7 +22,7 @@ export function ConfirmDialog({
   danger = false,
 }: ConfirmDialogProps): JSX.Element {
   return (
-    <div className="modal-backdrop" onClick={onCancel}>
+    <div className="modal-backdrop">
       <div
         className="modal"
         role="dialog"
