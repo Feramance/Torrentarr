@@ -1,5 +1,67 @@
 # Changelog
 
+## v6.1.0 (2026-03-13)
+
+### Features
+- feat(docs): add Swagger UI in running app and MkDocs - Enable Swagger in all environments (Host + WebUI) - Add Bearer token support in Swagger UI for /api/* endpoints - Document /swagger in docs/webui/api.md - Add mkdocs-swagger-ui-tag, docs/webui/swagger.md, docs/assets/openapi.json - Add ExportOpenApiSpecTests to regenerate spec when TORRENTARR_EXPORT_OPENAPI=1 - Document spec regeneration in release-process and contributing - ensure-global-json: use latestMinor so 10.0.200 SDK is accepted by pre-commit - Also includes: WebUI auth helpers, login/set-password rate limiters, and related tests/docs. ([8c9a261](https://github.com/Feramance/Torrentarr/commit/8c9a2612675f1d0b829c7e4c1f24759c3b4036e5))
+
+### Bug Fixes
+- Fix main branch nightly docker and hook order ([1f8494f](https://github.com/Feramance/Torrentarr/commit/1f8494f238481c954c09d2f916212ae2f1465046))
+- fix: add System.Collections.Concurrent for ConcurrentDictionary in rate limiters ([dcee0d2](https://github.com/Feramance/Torrentarr/commit/dcee0d265d31322ce337d3a98f8f44035f9ffeab))
+- fix: add OpenIdConnect package to WebUI project for PR build ([683b791](https://github.com/Feramance/Torrentarr/commit/683b791d9043099d47f82a8f48eca3968dd56e70))
+
+### Documentation
+- docs: add WebUI auth docs and fix MkDocs git-revision plugin warnings ([b32116b](https://github.com/Feramance/Torrentarr/commit/b32116b948784bd314c43058f644dfd5a1e17b54))
+
+### Maintenance
+- fix(webui): modals close only on Close/Done/Cancel/Confirm (qBitrr #332) ([950190c](https://github.com/Feramance/Torrentarr/commit/950190c242638113d95a0c04e2fc00a80b802359))
+- fix(tests): RadarrView timeout + security pass on auth paths ([657df2c](https://github.com/Feramance/Torrentarr/commit/657df2cf6c5133fdea5f3202faaf6cff096c36ba))
+- test: use AllowAutoRedirect=false for logout test to assert on 302 ([eec2154](https://github.com/Feramance/Torrentarr/commit/eec2154a3effa209e721ad990e59a0bb7b74022a))
+- ci: add .NET and Node setup to pre-commit workflow for local hooks ([88efe9a](https://github.com/Feramance/Torrentarr/commit/88efe9a71088cadf208170007f31736ba1555aea))
+- fix(tests): use API token for Swagger spec test so it passes when auth enabled ([3df9a0c](https://github.com/Feramance/Torrentarr/commit/3df9a0cab7d299c2c97ddc0b322948d99b81f1dc))
+- ci: harden build workflow and add pre-commit compile checks ([d825b10](https://github.com/Feramance/Torrentarr/commit/d825b100eeab93108fd82c71de01e130b7d83c97))
+- pre-commit fixes ([46fffe7](https://github.com/Feramance/Torrentarr/commit/46fffe77db3c2cba0f2f83c50cf44fec3b1b6887))
+- Align config version fallbacks with expected schema ([b6e55d8](https://github.com/Feramance/Torrentarr/commit/b6e55d86952475b29206a5c5f2ea7a35b07b200b))
+- Gate PR Docker publish on build job ([30179e0](https://github.com/Feramance/Torrentarr/commit/30179e04d202b0b873fa069644d8dac8f4ae62cd))
+- Auth by default for new installs with welcome setup screen ([ac2366b](https://github.com/Feramance/Torrentarr/commit/ac2366b2a4a73e5330d11054d49ea296dca3c366))
+- Require build job before nightly Docker publish ([7415324](https://github.com/Feramance/Torrentarr/commit/7415324efdb5a4d60f02881bb5bec0c342575207))
+- Consolidate CI: single build workflow, remove pull_requests and nightly ([851297e](https://github.com/Feramance/Torrentarr/commit/851297ebf64f90f24d91bac624f5d80434cab080))
+- Make csproj selection deterministic in ensure-global-json ([73ec79a](https://github.com/Feramance/Torrentarr/commit/73ec79a19f5d894e2a5b09d56ceab126c5f4d212))
+- fix(security): override immutable to 5.1.5 (CVE-2026-29063, GHSA-wf6x-7x77-mvgw) ([a785265](https://github.com/Feramance/Torrentarr/commit/a7852658d16706bd1985fe0c0bfa2bea577d4759))
+- fix(deps): align Microsoft.Extensions and EF Core to 10.0.3 for Dependabot merge ([f0a8e1e](https://github.com/Feramance/Torrentarr/commit/f0a8e1ef98484df6eb0b2db46c9bf6422f39caea))
+- Update config, services, WebUI and ConfigView ([dc3e1ae](https://github.com/Feramance/Torrentarr/commit/dc3e1aecbec41935497079aacab794f356057071))
+- chore(deps): bump @mantine/hooks from 8.3.15 to 8.3.16 in /webui (#38) ([e65f5ff](https://github.com/Feramance/Torrentarr/commit/e65f5fff4875fa31cdace962186220487b85de84))
+- chore(deps-dev): bump eslint from 10.0.1 to 10.0.3 in /webui (#31) ([644db82](https://github.com/Feramance/Torrentarr/commit/644db825315fbd31212e6b14e30076daeced9344))
+- chore(deps-dev): bump typescript-eslint from 8.56.0 to 8.56.1 in /webui (#37) ([486c793](https://github.com/Feramance/Torrentarr/commit/486c793b490a618a580d460021df971c1d0429ab))
+- chore(deps-dev): bump @types/node from 25.3.0 to 25.3.5 in /webui (#36) ([0d544cb](https://github.com/Feramance/Torrentarr/commit/0d544cbb59a11be50e08f164859d376bf4967f2c))
+- chore(deps): bump @mantine/core from 8.3.15 to 8.3.16 in /webui (#34) ([934391e](https://github.com/Feramance/Torrentarr/commit/934391e3e073fb25965194a051caec369c151a4b))
+- fix(config): fix DurationInput empty-string clamping bug ([74f0a06](https://github.com/Feramance/Torrentarr/commit/74f0a061a5d4ebf46e35de237d3922121f8919b7))
+- Bump Microsoft.EntityFrameworkCore.InMemory from 9.0.0 to 10.0.3 ([b98250e](https://github.com/Feramance/Torrentarr/commit/b98250e8889e45f4b8a9a3b7f7ee0b7da137fbd5))
+- Bump Microsoft.EntityFrameworkCore.Design from 9.0.0 to 10.0.3 ([f50535d](https://github.com/Feramance/Torrentarr/commit/f50535d72ff1bea4972e5efd56b4ab8e0022669c))
+- Bump Microsoft.EntityFrameworkCore from 9.0.0 to 10.0.3 ([aa94c95](https://github.com/Feramance/Torrentarr/commit/aa94c954c351107f1737f0e4e24a1a322f0c0d1f))
+- Bump Microsoft.AspNetCore.SpaServices.Extensions from 9.0.0 to 10.0.3 ([ffec7c6](https://github.com/Feramance/Torrentarr/commit/ffec7c6261d122524d805abfd670dee7c4765a88))
+- Bump Microsoft.AspNetCore.Mvc.NewtonsoftJson from 9.0.0 to 10.0.3 ([59877b4](https://github.com/Feramance/Torrentarr/commit/59877b4ce32c8cfa576cf85a0d52dc480a6c89fb))
+- chore(deps): bump docker/setup-buildx-action from 3 to 4 ([ca1f970](https://github.com/Feramance/Torrentarr/commit/ca1f970425c0d8ce38d958147b616eb0c78952ea))
+- chore(deps): bump docker/login-action from 3 to 4 ([bd07038](https://github.com/Feramance/Torrentarr/commit/bd070382905734432b0d62465867c03bb42fe932))
+- chore(deps): bump docker/metadata-action from 5 to 6 ([297f406](https://github.com/Feramance/Torrentarr/commit/297f40642a13fcd56359e15d533c1d9a8068ac64))
+- chore(deps-dev): bump autoprefixer from 10.4.24 to 10.4.27 in /webui (#29) ([922ba82](https://github.com/Feramance/Torrentarr/commit/922ba82fc64a4a9ff6d94af8c989d96214e2a5f1))
+- chore(deps): bump actions/setup-dotnet from 5.1.0 to 5.2.0 ([8f602b7](https://github.com/Feramance/Torrentarr/commit/8f602b77c1530654d272898a2387fc6552e20f62))
+- chore(deps): bump docker/build-push-action from 6 to 7 ([adaa153](https://github.com/Feramance/Torrentarr/commit/adaa1539d4036c8eed2441f8fc53c85845db2d8d))
+- fix(config): fix config view data flow and add missing fields ([ca9b4da](https://github.com/Feramance/Torrentarr/commit/ca9b4daf6c89fdb2954262e260309b942bc86fbc))
+- chore: update .gitignore and CLAUDE.md ([60d1041](https://github.com/Feramance/Torrentarr/commit/60d1041e37bfd19f8bc37fd6a09b016f60da20e9))
+- Docs and Processes UI: formatting and content updates, process state and tests ([9e52a03](https://github.com/Feramance/Torrentarr/commit/9e52a033bea0b8e1625a54253220f693f60d83b7))
+- Update Patreon funding name to 'Feramance' ([c97d400](https://github.com/Feramance/Torrentarr/commit/c97d4004ab1c3d76486461ac891c5b49e4c70791))
+- fix(auth): TokenOnly mode must set AuthDisabled=false not true ([a8d409f](https://github.com/Feramance/Torrentarr/commit/a8d409f148600a475cecc7a6fe0395a19c624719))
+- security(auth): harden login, set-password, and config endpoints ([db9814a](https://github.com/Feramance/Torrentarr/commit/db9814a09c0a1ee09fc6cd79e12a8e0dc6294fb1))
+- feat(auth): comprehensive auth test coverage + improved auth settings modal ([fafb065](https://github.com/Feramance/Torrentarr/commit/fafb0657975256a0674a3107135043745a5efab8))
+- Cursor review: OIDC challenge check Authority/ClientId; AuthGate fetch and store token when auth disabled ([7e628f2](https://github.com/Feramance/Torrentarr/commit/7e628f281457ca6db03ae090375f2a33b6a67f9b))
+- Cursor review: login constant-time bcrypt to prevent username enum; WebUI OIDC registration and challenge endpoint ([9eebf46](https://github.com/Feramance/Torrentarr/commit/9eebf46ff963531dc979dbaaf440bc83a86532b0))
+- Cursor review: set-password revert config on save failure; AuthGate store token on initial getToken success ([96902dc](https://github.com/Feramance/Torrentarr/commit/96902dc0c066d015ecc52eb9331ea565b8cba585))
+- fix(webui): add Name claim to Bearer identity for consistency with Host ([4f440bd](https://github.com/Feramance/Torrentarr/commit/4f440bd5b54abcf532338e72cb0a63bdb5fee89b))
+- Cursor bot: constant-time token compare via SHA-256, restrict OIDC public path to challenge ([3646f22](https://github.com/Feramance/Torrentarr/commit/3646f22a78bda65c568a306500f5bd62c464468f))
+
+---
+
 ## v6.0.0 (2026-03-03)
 
 ### Features
