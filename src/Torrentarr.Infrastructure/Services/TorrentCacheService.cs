@@ -15,6 +15,8 @@ public class TorrentCacheService : ITorrentCacheService
     private readonly Dictionary<string, DateTime> _ignoreCache = new(StringComparer.OrdinalIgnoreCase);
     private readonly HashSet<string> _fileFilteredHashes = new(StringComparer.OrdinalIgnoreCase);
     private readonly object _lock = new();
+    private DateTime _lastFullClearUtc = DateTime.MinValue;
+    private static readonly TimeSpan FullClearInterval = TimeSpan.FromHours(24);
 
     public TorrentCacheService(ILogger<TorrentCacheService> logger)
     {
@@ -113,6 +115,7 @@ public class TorrentCacheService : ITorrentCacheService
             _nameCache.Clear();
             _ignoreCache.Clear();
             _fileFilteredHashes.Clear();
+            _lastFullClearUtc = DateTime.UtcNow;
             _logger.LogTrace("All caches cleared");
         }
     }
@@ -122,19 +125,34 @@ public class TorrentCacheService : ITorrentCacheService
         lock (_lock)
         {
             var now = DateTime.UtcNow;
-            var expiredKeys = _ignoreCache
-                .Where(kvp => kvp.Value < now)
-                .Select(kvp => kvp.Key)
-                .ToList();
-
-            foreach (var key in expiredKeys)
+            if (_lastFullClearUtc != DateTime.MinValue && now - _lastFullClearUtc >= FullClearInterval)
             {
-                _ignoreCache.Remove(key);
+                _categoryCache.Clear();
+                _nameCache.Clear();
+                _ignoreCache.Clear();
+                _fileFilteredHashes.Clear();
+                _lastFullClearUtc = now;
+                _logger.LogInformation("Periodic full cache clear (every {Hours}h) to bound memory growth", (int)FullClearInterval.TotalHours);
             }
-
-            if (expiredKeys.Count > 0)
+            else
             {
-                _logger.LogTrace("Cleaned {Count} expired entries from ignore cache", expiredKeys.Count);
+                if (_lastFullClearUtc == DateTime.MinValue)
+                    _lastFullClearUtc = now;
+
+                var expiredKeys = _ignoreCache
+                    .Where(kvp => kvp.Value < now)
+                    .Select(kvp => kvp.Key)
+                    .ToList();
+
+                foreach (var key in expiredKeys)
+                {
+                    _ignoreCache.Remove(key);
+                }
+
+                if (expiredKeys.Count > 0)
+                {
+                    _logger.LogTrace("Cleaned {Count} expired entries from ignore cache", expiredKeys.Count);
+                }
             }
         }
     }

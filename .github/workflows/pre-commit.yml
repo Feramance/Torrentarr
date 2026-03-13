@@ -10,12 +10,43 @@ on:
 jobs:
   pre-commit:
     runs-on: ubuntu-latest
+    defaults:
+      run:
+        shell: bash
     permissions:
       contents: read
     steps:
     - uses: actions/checkout@v6
+
+    - name: Set .NET version from repo
+      id: dotnet_version
+      run: |
+        DOTNET_VERSION=$(bash scripts/ensure-global-json.sh "${{ github.workspace }}")
+        echo "version=$DOTNET_VERSION" >> $GITHUB_OUTPUT
+        echo "DOTNET_SDK_VERSION=$DOTNET_VERSION" >> $GITHUB_ENV
+
+    - name: Setup .NET
+      uses: actions/setup-dotnet@v5.2.0
+      with:
+        dotnet-version: ${{ env.DOTNET_SDK_VERSION }}.x
+
+    - name: Setup Node.js
+      uses: actions/setup-node@v6
+      with:
+        node-version: '20'
+        cache: npm
+        cache-dependency-path: webui/package-lock.json
+
     - name: Set up Python
       uses: actions/setup-python@v6
       with:
         python-version: '3.12'
+
+    - name: Restore .NET dependencies
+      run: dotnet restore
+
+    - name: Install webui dependencies
+      working-directory: webui
+      run: npm ci
+
     - uses: pre-commit/action@v3.0.1

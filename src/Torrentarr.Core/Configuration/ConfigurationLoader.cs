@@ -9,7 +9,14 @@ namespace Torrentarr.Core.Configuration;
 public class ConfigurationLoader
 {
     /// <summary>Expected config schema version (qBitrr parity). Used for validation and mismatch warning.</summary>
-    public const string ExpectedConfigVersion = "5.9.2";
+    public const string ExpectedConfigVersion = "6.0.0";
+
+    /// <summary>
+    /// TEST USE ONLY. When set by test fixtures, GetDefaultConfigPath() returns this instead of env/defaults.
+    /// Ensures the correct config is loaded when the host builds. Must never be set in production —
+    /// doing so would redirect config loading to an arbitrary path and is a security/maintainability risk.
+    /// </summary>
+    public static string? TestConfigPathOverride { get; set; }
 
     private readonly string _configPath;
 
@@ -20,6 +27,9 @@ public class ConfigurationLoader
 
     public static string GetDefaultConfigPath()
     {
+        if (!string.IsNullOrEmpty(TestConfigPathOverride))
+            return TestConfigPathOverride;
+
         // Allow test harnesses and Docker to override the config path via an environment variable
         var envOverride = Environment.GetEnvironmentVariable("TORRENTARR_CONFIG");
         if (!string.IsNullOrEmpty(envOverride))
@@ -666,11 +676,17 @@ public class ConfigurationLoader
             root["WebUI"] = new TomlTable();
         if (root["WebUI"] is TomlTable webui)
         {
+            var hasLegacyAuthMode = webui.ContainsKey("AuthMode");
             var webuiDefaults = new (string Key, object Default)[]
             {
                 ("Host", "0.0.0.0"),
                 ("Port", (long)6969),
                 ("Token", ""),
+                ("AuthDisabled", true),
+                ("LocalAuthEnabled", false),
+                ("OIDCEnabled", false),
+                ("Username", ""),
+                ("PasswordHash", ""),
                 ("LiveArr", true),
                 ("GroupSonarr", true),
                 ("GroupLidarr", true),
@@ -681,6 +697,8 @@ public class ConfigurationLoader
             {
                 if (!webui.ContainsKey(key))
                 {
+                    if (hasLegacyAuthMode && (key == "AuthDisabled" || key == "LocalAuthEnabled" || key == "OIDCEnabled"))
+                        continue;
                     webui[key] = defaultVal;
                     changed = true;
                 }
@@ -842,7 +860,7 @@ public class ConfigurationLoader
         var settings = new SettingsConfig();
 
         if (table.TryGetValue("ConfigVersion", out var configVersion))
-            settings.ConfigVersion = configVersion?.ToString() ?? "5.9.0";
+            settings.ConfigVersion = configVersion?.ToString() ?? ExpectedConfigVersion;
 
         if (table.TryGetValue("ConsoleLevel", out var consoleLevel))
             settings.ConsoleLevel = consoleLevel?.ToString() ?? "INFO";
@@ -928,9 +946,6 @@ public class ConfigurationLoader
 
         if (table.TryGetValue("Password", out var password))
             qbit.Password = password?.ToString() ?? "";
-
-        if (table.TryGetValue("v5", out var v5))
-            qbit.V5 = Convert.ToBoolean(v5);
 
         if (table.TryGetValue("DownloadPath", out var downloadPath))
             qbit.DownloadPath = downloadPath?.ToString();
@@ -1081,6 +1096,61 @@ public class ConfigurationLoader
         if (table.TryGetValue("Token", out var token))
             webui.Token = token?.ToString() ?? "";
 
+        bool hasNewAuthKeys = table.ContainsKey("AuthDisabled") ||
+            table.ContainsKey("LocalAuthEnabled") ||
+            table.ContainsKey("OIDCEnabled");
+
+        if (hasNewAuthKeys)
+        {
+            if (table.TryGetValue("AuthDisabled", out var authDisabledVal))
+                webui.AuthDisabled = Convert.ToBoolean(authDisabledVal);
+            if (table.TryGetValue("LocalAuthEnabled", out var localAuthVal))
+                webui.LocalAuthEnabled = Convert.ToBoolean(localAuthVal);
+            if (table.TryGetValue("OIDCEnabled", out var oidcEnabledVal))
+                webui.OIDCEnabled = Convert.ToBoolean(oidcEnabledVal);
+        }
+        else if (table.TryGetValue("AuthMode", out var authMode))
+        {
+            var mode = authMode?.ToString()?.Trim() ?? "Disabled";
+            if (string.Equals(mode, "Disabled", StringComparison.OrdinalIgnoreCase))
+            {
+                webui.AuthDisabled = true;
+                webui.LocalAuthEnabled = false;
+                webui.OIDCEnabled = false;
+            }
+            else if (string.Equals(mode, "TokenOnly", StringComparison.OrdinalIgnoreCase))
+            {
+                // TokenOnly = require token for all access; auth required, no local/OIDC login
+                webui.AuthDisabled = false;
+                webui.LocalAuthEnabled = false;
+                webui.OIDCEnabled = false;
+            }
+            else if (string.Equals(mode, "Local", StringComparison.OrdinalIgnoreCase))
+            {
+                webui.AuthDisabled = false;
+                webui.LocalAuthEnabled = true;
+                webui.OIDCEnabled = false;
+            }
+            else if (string.Equals(mode, "OIDC", StringComparison.OrdinalIgnoreCase))
+            {
+                webui.AuthDisabled = false;
+                webui.LocalAuthEnabled = false;
+                webui.OIDCEnabled = true;
+            }
+            else
+            {
+                webui.AuthDisabled = true;
+                webui.LocalAuthEnabled = false;
+                webui.OIDCEnabled = false;
+            }
+        }
+
+        if (table.TryGetValue("Username", out var username))
+            webui.Username = username?.ToString() ?? "";
+
+        if (table.TryGetValue("PasswordHash", out var passwordHash))
+            webui.PasswordHash = passwordHash?.ToString() ?? "";
+
         if (table.TryGetValue("LiveArr", out var liveArr))
             webui.LiveArr = Convert.ToBoolean(liveArr);
 
@@ -1096,7 +1166,22 @@ public class ConfigurationLoader
         if (table.TryGetValue("ViewDensity", out var viewDensity))
             webui.ViewDensity = viewDensity?.ToString() ?? "Comfortable";
 
+        if (table.TryGetValue("OIDC", out var oidcObj) && oidcObj is TomlTable oidcTable)
+            webui.OIDC = ParseOIDC(oidcTable);
+
         return webui;
+    }
+
+    private static OIDCConfig ParseOIDC(TomlTable table)
+    {
+        var oidc = new OIDCConfig();
+        if (table.TryGetValue("Authority", out var v)) oidc.Authority = v?.ToString() ?? "";
+        if (table.TryGetValue("ClientId", out v)) oidc.ClientId = v?.ToString() ?? "";
+        if (table.TryGetValue("ClientSecret", out v)) oidc.ClientSecret = v?.ToString() ?? "";
+        if (table.TryGetValue("Scopes", out v)) oidc.Scopes = v?.ToString() ?? "openid profile";
+        if (table.TryGetValue("CallbackPath", out v)) oidc.CallbackPath = v?.ToString() ?? "/signin-oidc";
+        if (table.TryGetValue("RequireHttpsMetadata", out v)) oidc.RequireHttpsMetadata = Convert.ToBoolean(v);
+        return oidc;
     }
 
     private Dictionary<string, ArrInstanceConfig> ParseArrInstances(TomlTable rootTable)
@@ -1433,7 +1518,11 @@ public class ConfigurationLoader
         if (!Version.TryParse(currentStr, out var current))
             current = new Version(0, 0, 1);
         if (!Version.TryParse(ExpectedConfigVersion, out var expected))
-            expected = new Version(5, 9, 2);
+        {
+            var numericExpected = ExpectedConfigVersion.Split('-', '+')[0];
+            if (!Version.TryParse(numericExpected, out expected))
+                expected = new Version(0, 0, 1);
+        }
 
         if (current == expected)
             return (true, null, currentStr);
@@ -1453,7 +1542,7 @@ public class ConfigurationLoader
         {
             Settings = new SettingsConfig
             {
-                ConfigVersion = "5.9.2",
+                ConfigVersion = ExpectedConfigVersion,
                 ConsoleLevel = "INFO",
                 Logging = true,
                 CompletedDownloadFolder = "CHANGE_ME",
@@ -1477,11 +1566,17 @@ public class ConfigurationLoader
                 ProcessRestartDelay = 5
             },
             // QBit is intentionally omitted from default config — user adds it via WebUI
+            // New installs get auth enabled by default; user must set username/password on first access.
             WebUI = new WebUIConfig
             {
                 Host = "0.0.0.0",
                 Port = 6969,
                 Token = "",
+                AuthDisabled = false,
+                LocalAuthEnabled = true,
+                OIDCEnabled = false,
+                Username = "",
+                PasswordHash = "",
                 LiveArr = true,
                 GroupSonarr = true,
                 GroupLidarr = true,
@@ -1556,11 +1651,28 @@ public class ConfigurationLoader
         sb.AppendLine($"Host = \"{config.WebUI.Host}\"");
         sb.AppendLine($"Port = {config.WebUI.Port}");
         sb.AppendLine($"Token = \"{config.WebUI.Token}\"");
+        sb.AppendLine($"AuthDisabled = {config.WebUI.AuthDisabled.ToString().ToLower()}");
+        sb.AppendLine($"LocalAuthEnabled = {config.WebUI.LocalAuthEnabled.ToString().ToLower()}");
+        sb.AppendLine($"OIDCEnabled = {config.WebUI.OIDCEnabled.ToString().ToLower()}");
+        sb.AppendLine($"Username = \"{EscapeTomlString(config.WebUI.Username)}\"");
+        sb.AppendLine($"PasswordHash = \"{EscapeTomlString(config.WebUI.PasswordHash)}\"");
         sb.AppendLine($"LiveArr = {config.WebUI.LiveArr.ToString().ToLower()}");
         sb.AppendLine($"GroupSonarr = {config.WebUI.GroupSonarr.ToString().ToLower()}");
         sb.AppendLine($"GroupLidarr = {config.WebUI.GroupLidarr.ToString().ToLower()}");
         sb.AppendLine($"Theme = \"{config.WebUI.Theme}\"");
         sb.AppendLine($"ViewDensity = \"{config.WebUI.ViewDensity}\"");
+        if (config.WebUI.OIDC != null)
+        {
+            var o = config.WebUI.OIDC;
+            sb.AppendLine();
+            sb.AppendLine("[WebUI.OIDC]");
+            sb.AppendLine($"Authority = \"{EscapeTomlString(o.Authority)}\"");
+            sb.AppendLine($"ClientId = \"{EscapeTomlString(o.ClientId)}\"");
+            sb.AppendLine($"ClientSecret = \"{EscapeTomlString(o.ClientSecret)}\"");
+            sb.AppendLine($"Scopes = \"{EscapeTomlString(o.Scopes)}\"");
+            sb.AppendLine($"CallbackPath = \"{EscapeTomlString(o.CallbackPath)}\"");
+            sb.AppendLine($"RequireHttpsMetadata = {o.RequireHttpsMetadata.ToString().ToLower()}");
+        }
         sb.AppendLine();
 
         // All qBit instances — "qBit" written first (primary), then additional [qBit-XXX]
@@ -1576,7 +1688,6 @@ public class ConfigurationLoader
             sb.AppendLine($"Port = {qbit.Port}");
             sb.AppendLine($"UserName = \"{qbit.UserName}\"");
             sb.AppendLine($"Password = \"{qbit.Password}\"");
-            sb.AppendLine($"v5 = {qbit.V5.ToString().ToLower()}");
             if (!string.IsNullOrEmpty(qbit.DownloadPath))
                 sb.AppendLine($"DownloadPath = \"{qbit.DownloadPath}\"");
             sb.AppendLine($"ManagedCategories = [{string.Join(", ", qbit.ManagedCategories.Select(c => $"\"{c}\""))}]");

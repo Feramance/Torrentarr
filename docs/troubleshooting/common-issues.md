@@ -288,7 +288,7 @@ The #1 reason Torrentarr doesn't process torrents is **mismatched categories**.
 
 1. **Enable SearchMissing (required):**
    ```toml
-   [Radarr-Movies.EntrySearch]
+   [Radarr-Movies.Search]
    SearchMissing = true  # REQUIRED - master switch for all search features
    ```
 
@@ -338,7 +338,7 @@ The #1 reason Torrentarr doesn't process torrents is **mismatched categories**.
 
 1. **Enable request processing:**
    ```toml
-   [Radarr-Movies.EntrySearch.Overseerr]
+   [Radarr-Movies.Search.Overseerr]
    SearchOverseerrRequests = true
    ```
 
@@ -471,7 +471,7 @@ The #1 reason Torrentarr doesn't process torrents is **mismatched categories**.
 
 3. **Use quality upgrade search:**
    ```toml
-   [Radarr-Movies.EntrySearch]
+   [Radarr-Movies.Search]
    DoUpgradeSearch = true
    QualityUnmetSearch = true
    ```
@@ -503,7 +503,7 @@ The #1 reason Torrentarr doesn't process torrents is **mismatched categories**.
 
 2. **Too many concurrent searches:**
    ```toml
-   [Radarr-Movies.EntrySearch]
+   [Radarr-Movies.Search]
    SearchLimit = 10  # Too high
    ```
    **Solution:** Lower to 3-5:
@@ -585,11 +585,11 @@ The #1 reason Torrentarr doesn't process torrents is **mismatched categories**.
 1. **Files copied, not moved:**
    ```toml
    [Radarr-Movies]
-   importMode = "Copy"  # Leaves files in download folder
+   ImportMode = "Copy"  # Leaves files in download folder
    ```
    **Solution:** Use Move to free space:
    ```toml
-   importMode = "Move"
+   ImportMode = "Move"
    ```
 
 2. **Seeding torrents:**

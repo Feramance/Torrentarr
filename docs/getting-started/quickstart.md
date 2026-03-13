@@ -20,10 +20,10 @@ Get Torrentarr running in 5 minutes!
       feramance/torrentarr:latest
     ```
 
-=== "pip"
+=== "dotnet / Binary"
 
     ```bash
-    torrentarr
+    dotnet Torrentarr.Host.dll
     ```
 
 === "Systemd"
@@ -116,13 +116,23 @@ Torrentarr **requires** your Arr downloads to be tagged so it knows which torren
 
 ### In Torrentarr config.toml
 
-Make sure your category names match:
+Set the `Category` field on each Arr instance to match what you configured in qBittorrent and in the Arr download client:
 
 ```toml
-[Settings]
-CategoryRadarr = "radarr-movies"
-CategorySonarr = "sonarr-tv"
-CategoryLidarr = "lidarr-music"
+[Radarr-Movies]
+URI = "http://localhost:7878"
+APIKey = "your_radarr_api_key"
+Category = "radarr-movies"   # Must match qBittorrent category + Radarr download client category
+
+[Sonarr-TV]
+URI = "http://localhost:8989"
+APIKey = "your_sonarr_api_key"
+Category = "sonarr-tv"       # Must match qBittorrent category + Sonarr download client category
+
+[Lidarr-Music]
+URI = "http://localhost:8686"
+APIKey = "your_lidarr_api_key"
+Category = "lidarr-music"    # Must match qBittorrent category + Lidarr download client category
 ```
 
 ## Step 5: Start Torrentarr Again
@@ -133,10 +143,10 @@ CategoryLidarr = "lidarr-music"
     docker start torrentarr
     ```
 
-=== "pip"
+=== "dotnet / Binary"
 
     ```bash
-    torrentarr
+    dotnet Torrentarr.Host.dll
     ```
 
 === "Systemd"
@@ -155,11 +165,9 @@ CategoryLidarr = "lidarr-music"
     docker logs -f torrentarr
     ```
 
-=== "pip"
+=== "dotnet / Binary"
 
-    ```bash
-    tail -f ~/logs/Main.log
-    ```
+    Logs are printed to the console where you started Torrentarr. Check the terminal output.
 
 === "Systemd"
 
@@ -210,7 +218,7 @@ APIKey = "your-api-key-here"
 Category = "radarr-movies"
 Managed = true
 ReSearch = true
-importMode = "Auto"
+ImportMode = "Auto"
 ```
 
 **What You Get:**
@@ -247,7 +255,7 @@ Category = "radarr-movies"
 Managed = true
 ReSearch = true
 
-[Radarr-Movies.EntrySearch]
+[Radarr-Movies.Search]
 SearchMissing = true
 SearchLimit = 5
 SearchByYear = true
@@ -259,7 +267,7 @@ Category = "sonarr-tv"
 Managed = true
 ReSearch = true
 
-[Sonarr-TV.EntrySearch]
+[Sonarr-TV.Search]
 SearchMissing = true
 PrioritizeTodaysReleases = true
 SearchBySeries = "smart"
@@ -296,7 +304,6 @@ Password = "secure-password-here"
 
 [Settings]
 FFprobeAutoUpdate = true  # Validate files before import
-FFprobeAutoUpdate = true
 
 # Radarr for 4K movies
 [Radarr-4K]
@@ -304,9 +311,9 @@ URI = "http://radarr-4k:7879"
 APIKey = "radarr-4k-api-key"
 Category = "radarr-4k"
 Managed = true
-importMode = "Copy"  # Keep seeding
+ImportMode = "Copy"  # Keep seeding
 
-[Radarr-4K.EntrySearch]
+[Radarr-4K.Search]
 SearchMissing = true
 DoUpgradeSearch = true
 CustomFormatUnmetSearch = true
@@ -329,9 +336,9 @@ URI = "http://radarr:7878"
 APIKey = "radarr-hd-api-key"
 Category = "radarr-hd"
 Managed = true
-importMode = "Move"
+ImportMode = "Move"
 
-[Radarr-HD.EntrySearch]
+[Radarr-HD.Search]
 SearchMissing = true
 SearchLimit = 10
 
@@ -342,7 +349,7 @@ APIKey = "sonarr-api-key"
 Category = "sonarr-tv"
 Managed = true
 
-[Sonarr-TV.EntrySearch]
+[Sonarr-TV.Search]
 SearchMissing = true
 PrioritizeTodaysReleases = true
 AlsoSearchSpecials = false
@@ -448,8 +455,9 @@ services:
 **Torrentarr config.toml:**
 ```toml
 [qBit]
-Host = "http://qbittorrent:8080"  # Use container names
-Username = "admin"
+Host = "qbittorrent"  # Use container names
+Port = 8080
+UserName = "admin"
 Password = "adminpass"
 
 [Settings]
@@ -461,7 +469,7 @@ APIKey = "your-radarr-api-key"
 Category = "radarr-movies"
 Managed = true
 
-[Radarr-Movies.EntrySearch.Overseerr]
+[Radarr-Movies.Search.Overseerr]
 SearchOverseerrRequests = true
 OverseerrURI = "http://overseerr:5055"
 OverseerrAPIKey = "your-overseerr-api-key"
@@ -474,7 +482,7 @@ APIKey = "your-sonarr-api-key"
 Category = "sonarr-tv"
 Managed = true
 
-[Sonarr-TV.EntrySearch.Overseerr]
+[Sonarr-TV.Search.Overseerr]
 SearchOverseerrRequests = true
 OverseerrURI = "http://overseerr:5055"
 OverseerrAPIKey = "your-overseerr-api-key"
@@ -571,10 +579,12 @@ ERROR - Failed to connect to qBittorrent at http://localhost:8080
 2. **Use correct hostname:**
    ```toml
    # Docker: Use container name
-   Host = "http://qbittorrent:8080"
+   Host = "qbittorrent"
+   Port = 8080
 
    # Native: Use localhost or IP
-   Host = "http://localhost:8080"
+   Host = "localhost"
+   Port = 8080
    ```
 
 3. **Verify port mapping:**
@@ -595,7 +605,7 @@ ERROR - qBittorrent authentication failed
 
 1. **Check credentials:**
    ```toml
-   Username = "admin"  # Must match qBittorrent
+   UserName = "admin"  # Must match qBittorrent
    Password = "adminpass"  # Case-sensitive!
    ```
 
@@ -775,7 +785,7 @@ torrentarr:
 
 1. **Enable Automated Search:**
    ```toml
-   [Radarr-Movies.EntrySearch]
+   [Radarr-Movies.Search]
    SearchMissing = true
    SearchLimit = 5
    SearchByYear = true
@@ -873,8 +883,9 @@ Include:
 4. **Configuration (redact sensitive info):**
    ```toml
    [qBit]
-   Host = "http://qbittorrent:8080"
-   Username = "admin"
+   Host = "qbittorrent"
+   Port = 8080
+   UserName = "admin"
    Password = "REDACTED"
    ```
 

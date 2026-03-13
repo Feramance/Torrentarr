@@ -25,7 +25,7 @@ public class ArrRebuildEndpointTests : IClassFixture<TorrentarrWebApplicationFac
     [Fact]
     public async Task PostArrRebuild_Returns200()
     {
-        var client = _factory.CreateClient();
+        var client = _factory.CreateClientWithApiToken();
 
         var response = await client.PostAsync("/web/arr/rebuild", null);
 
@@ -35,7 +35,7 @@ public class ArrRebuildEndpointTests : IClassFixture<TorrentarrWebApplicationFac
     [Fact]
     public async Task PostArrRebuild_ResponseHasStatusField()
     {
-        var client = _factory.CreateClient();
+        var client = _factory.CreateClientWithApiToken();
 
         var response = await client.PostAsync("/web/arr/rebuild", null);
         var body = await response.Content.ReadAsStringAsync();
@@ -48,7 +48,7 @@ public class ArrRebuildEndpointTests : IClassFixture<TorrentarrWebApplicationFac
     [Fact]
     public async Task PostArrRebuild_ResponseHasRestartedArray()
     {
-        var client = _factory.CreateClient();
+        var client = _factory.CreateClientWithApiToken();
 
         var response = await client.PostAsync("/web/arr/rebuild", null);
         var body = await response.Content.ReadAsStringAsync();
@@ -63,7 +63,7 @@ public class ArrRebuildEndpointTests : IClassFixture<TorrentarrWebApplicationFac
     [Fact]
     public async Task PostApiArrRebuild_Returns200()
     {
-        var client = _factory.CreateClient();
+        var client = _factory.CreateClientWithApiToken();
 
         var response = await client.PostAsync("/api/arr/rebuild", null);
 
@@ -73,7 +73,7 @@ public class ArrRebuildEndpointTests : IClassFixture<TorrentarrWebApplicationFac
     [Fact]
     public async Task PostApiArrRebuild_ResponseHasSameShape()
     {
-        var client = _factory.CreateClient();
+        var client = _factory.CreateClientWithApiToken();
 
         var response = await client.PostAsync("/api/arr/rebuild", null);
         var body = await response.Content.ReadAsStringAsync();

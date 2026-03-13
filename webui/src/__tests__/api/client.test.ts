@@ -6,6 +6,11 @@ import {
   getStatus,
   getConfig,
   updateConfig,
+  login,
+  getToken,
+  getMeta,
+  setPassword,
+  AuthError,
 } from "../../api/client";
 
 const server = setupServer();
@@ -161,5 +166,265 @@ describe("fetchJson error handling", () => {
     );
 
     await expect(getQbitCategories()).rejects.toThrow("500");
+  });
+});
+
+// ── login ─────────────────────────────────────────────────────────────────────
+
+describe("login", () => {
+  it("returns success on 200", async () => {
+    server.use(
+      http.post("/web/login", () => HttpResponse.json({ success: true })),
+    );
+    const result = await login({ username: "admin", password: "password" });
+    expect(result.success).toBe(true);
+  });
+
+  it("throws AuthError with message on 401", async () => {
+    server.use(
+      http.post("/web/login", () =>
+        HttpResponse.json({ error: "Unauthorized" }, { status: 401 }),
+      ),
+    );
+    await expect(
+      login({ username: "admin", password: "wrong" }),
+    ).rejects.toThrow("Unauthorized");
+  });
+
+  it("throws AuthError with SETUP_REQUIRED code on 403", async () => {
+    server.use(
+      http.post("/web/login", () =>
+        HttpResponse.json(
+          { error: "Password not set", code: "SETUP_REQUIRED" },
+          { status: 403 },
+        ),
+      ),
+    );
+    let caught: unknown;
+    try {
+      await login({ username: "admin", password: "any" });
+    } catch (e) {
+      caught = e;
+    }
+    expect(caught).toBeInstanceOf(AuthError);
+    expect((caught as AuthError).code).toBe("SETUP_REQUIRED");
+    expect((caught as AuthError).message).toBe("Password not set");
+  });
+
+  it("thrown error is also an instanceof Error", async () => {
+    server.use(
+      http.post("/web/login", () =>
+        HttpResponse.json({ error: "Unauthorized" }, { status: 401 }),
+      ),
+    );
+    await expect(
+      login({ username: "a", password: "b" }),
+    ).rejects.toBeInstanceOf(Error);
+  });
+});
+
+// ── getToken ──────────────────────────────────────────────────────────────────
+
+describe("getToken", () => {
+  it("returns token on 200", async () => {
+    server.use(
+      http.get("/web/token", () =>
+        HttpResponse.json({ token: "my-api-token" }),
+      ),
+    );
+    const result = await getToken();
+    expect(result.token).toBe("my-api-token");
+  });
+
+  it("throws on 401", async () => {
+    server.use(
+      http.get("/web/token", () =>
+        HttpResponse.json({ error: "Unauthorized" }, { status: 401 }),
+      ),
+    );
+    await expect(getToken()).rejects.toThrow("Unauthorized");
+  });
+});
+
+// ── getMeta ───────────────────────────────────────────────────────────────────
+
+describe("getMeta", () => {
+  it("deserializes MetaResponse auth fields", async () => {
+    server.use(
+      http.get("/web/meta", () =>
+        HttpResponse.json({
+          current_version: "5.9.2",
+          latest_version: null,
+          update_available: false,
+          changelog: null,
+          current_version_changelog: null,
+          changelog_url: null,
+          repository_url: "https://github.com/example/torrentarr",
+          homepage_url: "https://github.com/example/torrentarr",
+          last_checked: null,
+          update_state: {
+            in_progress: false,
+            last_result: null,
+            last_error: null,
+            completed_at: null,
+          },
+          installation_type: "binary",
+          binary_download_url: null,
+          binary_download_name: null,
+          binary_download_size: null,
+          binary_download_error: null,
+          auth_required: true,
+          local_auth_enabled: true,
+          oidc_enabled: false,
+        }),
+      ),
+    );
+
+    const result = await getMeta();
+
+    expect(result.auth_required).toBe(true);
+    expect(result.local_auth_enabled).toBe(true);
+    expect(result.oidc_enabled).toBe(false);
+    expect(result.current_version).toBe("5.9.2");
+    expect(result.update_available).toBe(false);
+  });
+
+  it("auth_required false when auth is disabled", async () => {
+    server.use(
+      http.get("/web/meta", () =>
+        HttpResponse.json({
+          current_version: "5.9.2",
+          latest_version: null,
+          update_available: false,
+          changelog: null,
+          current_version_changelog: null,
+          changelog_url: null,
+          repository_url: "",
+          homepage_url: "",
+          last_checked: null,
+          update_state: {
+            in_progress: false,
+            last_result: null,
+            last_error: null,
+            completed_at: null,
+          },
+          installation_type: "binary",
+          binary_download_url: null,
+          binary_download_name: null,
+          binary_download_size: null,
+          binary_download_error: null,
+          auth_required: false,
+          local_auth_enabled: false,
+          oidc_enabled: false,
+        }),
+      ),
+    );
+
+    const result = await getMeta();
+
+    expect(result.auth_required).toBe(false);
+    expect(result.local_auth_enabled).toBe(false);
+  });
+
+  it("deserializes setup_required when present", async () => {
+    server.use(
+      http.get("/web/meta", () =>
+        HttpResponse.json({
+          current_version: "5.9.2",
+          latest_version: null,
+          update_available: false,
+          changelog: null,
+          current_version_changelog: null,
+          changelog_url: null,
+          repository_url: "",
+          homepage_url: "",
+          last_checked: null,
+          update_state: {
+            in_progress: false,
+            last_result: null,
+            last_error: null,
+            completed_at: null,
+          },
+          installation_type: "binary",
+          binary_download_url: null,
+          binary_download_name: null,
+          binary_download_size: null,
+          binary_download_error: null,
+          auth_required: true,
+          local_auth_enabled: true,
+          oidc_enabled: false,
+          setup_required: true,
+        }),
+      ),
+    );
+
+    const result = await getMeta();
+
+    expect(result.setup_required).toBe(true);
+  });
+});
+
+// ── setPassword ───────────────────────────────────────────────────────────────
+
+describe("setPassword", () => {
+  it("returns success on 200", async () => {
+    server.use(
+      http.post("/web/auth/set-password", () =>
+        HttpResponse.json({ success: true }),
+      ),
+    );
+    const result = await setPassword({ username: "admin", password: "newpwd" });
+    expect(result.success).toBe(true);
+  });
+
+  it("throws with server error message on 403", async () => {
+    server.use(
+      http.post("/web/auth/set-password", () =>
+        HttpResponse.json(
+          { error: "Set password not allowed" },
+          { status: 403 },
+        ),
+      ),
+    );
+    await expect(
+      setPassword({ username: "admin", password: "newpwd" }),
+    ).rejects.toThrow("Set password not allowed");
+  });
+
+  it("sends setupToken when provided", async () => {
+    let capturedBody: Record<string, unknown> | null = null;
+    server.use(
+      http.post("/web/auth/set-password", async ({ request }) => {
+        capturedBody = (await request.json()) as Record<string, unknown>;
+        return HttpResponse.json({ success: true });
+      }),
+    );
+    await setPassword({
+      username: "admin",
+      password: "newpwd",
+      setupToken: "my-setup-token",
+    });
+    expect(capturedBody?.setupToken).toBe("my-setup-token");
+  });
+});
+
+// ── AuthError ─────────────────────────────────────────────────────────────────
+
+describe("AuthError", () => {
+  it("is an instanceof Error", () => {
+    const err = new AuthError("test");
+    expect(err).toBeInstanceOf(Error);
+  });
+
+  it("preserves code field", () => {
+    const err = new AuthError("msg", "SETUP_REQUIRED");
+    expect(err.code).toBe("SETUP_REQUIRED");
+    expect(err.message).toBe("msg");
+    expect(err.name).toBe("AuthError");
+  });
+
+  it("code is undefined when not provided", () => {
+    const err = new AuthError("msg");
+    expect(err.code).toBeUndefined();
   });
 });

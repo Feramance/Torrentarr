@@ -296,6 +296,14 @@ export interface MetaResponse {
   binary_download_name: string | null;
   binary_download_size: number | null;
   binary_download_error: string | null;
+  /** When false, login screen is skipped. */
+  auth_required?: boolean;
+  /** When true, show username/password form on login page. */
+  local_auth_enabled?: boolean;
+  /** When true, show "Sign in with OIDC" on login page. */
+  oidc_enabled?: boolean;
+  /** When true, show welcome/setup screen to create username and password before accessing the app. */
+  setup_required?: boolean;
 }
 
 export interface ConfigUpdateResponse {

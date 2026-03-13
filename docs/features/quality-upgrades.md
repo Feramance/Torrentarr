@@ -32,7 +32,7 @@ Quality upgrading is a continuous process where Torrentarr:
 **Configuration:**
 
 ```toml
-[Radarr-Movies.EntrySearch]
+[Radarr-Movies.Search]
 SearchMissing = true
 DoUpgradeSearch = true  # Enable upgrade searching
 SearchRequestsEvery = 600  # Check every 10 minutes
@@ -66,7 +66,7 @@ SearchAgainOnSearchCompletion = true  # Continuous loop
 **Configuration:**
 
 ```toml
-[Radarr-Movies.EntrySearch]
+[Radarr-Movies.Search]
 SearchMissing = true
 DoUpgradeSearch = false
 QualityUnmetSearch = true  # Only search if quality not met
@@ -102,7 +102,7 @@ SearchRequestsEvery = 1200  # Check every 20 minutes
 **Configuration:**
 
 ```toml
-[Radarr-Movies.EntrySearch]
+[Radarr-Movies.Search]
 SearchMissing = true
 DoUpgradeSearch = false
 CustomFormatUnmetSearch = true  # Search for better custom format scores
@@ -140,7 +140,7 @@ SearchRequestsEvery = 1200
 **Configuration:**
 
 ```toml
-[Radarr-Movies.EntrySearch]
+[Radarr-Movies.Search]
 SearchMissing = true
 DoUpgradeSearch = true
 CustomFormatUnmetSearch = true
@@ -175,7 +175,7 @@ SearchRequestsEvery = 600
 **Phase 1: Build Library (Get Anything)**
 
 ```toml
-[Radarr-Movies.EntrySearch]
+[Radarr-Movies.Search]
 SearchMissing = true
 DoUpgradeSearch = false
 UseTempForMissing = true  # Accept lower quality for missing
@@ -185,7 +185,7 @@ QualityProfileMappings = {"Ultra HD" = "HD-1080p"}
 **Phase 2: Upgrade to Target Quality**
 
 ```toml
-[Radarr-Movies.EntrySearch]
+[Radarr-Movies.Search]
 SearchMissing = true
 DoUpgradeSearch = false
 QualityUnmetSearch = true  # Upgrade to cutoff
@@ -195,7 +195,7 @@ UseTempForMissing = false
 **Phase 3: Continuous Improvement**
 
 ```toml
-[Radarr-Movies.EntrySearch]
+[Radarr-Movies.Search]
 SearchMissing = true
 DoUpgradeSearch = true  # Always look for better
 QualityUnmetSearch = true
@@ -322,7 +322,7 @@ ForceMinimumCustomFormat = true
 **In Torrentarr:**
 
 ```toml
-[Radarr-Movies.EntrySearch]
+[Radarr-Movies.Search]
 SearchMissing = true
 QualityUnmetSearch = true  # Search until 1080p cutoff met
 DoUpgradeSearch = true  # Continue searching for 4K
@@ -351,7 +351,7 @@ SearchRequestsEvery = 1200
 **In Torrentarr:**
 
 ```toml
-[Sonarr-TV.EntrySearch]
+[Sonarr-TV.Search]
 SearchMissing = true
 PrioritizeTodaysReleases = true  # Get new episodes fast
 DoUpgradeSearch = true  # Upgrade to Bluray later
@@ -379,7 +379,7 @@ SearchRequestsEvery = 600
 **In Torrentarr:**
 
 ```toml
-[Lidarr-Music.EntrySearch]
+[Lidarr-Music.Search]
 SearchMissing = true
 UseTempForMissing = true
 QualityProfileMappings = {"Lossless (FLAC)" = "Lossy (MP3-320)"}
@@ -444,7 +444,7 @@ Result: Gradual upgrades to 4K, better release groups, HDR
 **During Airing Season:**
 
 ```toml
-[Sonarr-OngoingTV.EntrySearch]
+[Sonarr-OngoingTV.Search]
 SearchMissing = true
 PrioritizeTodaysReleases = true
 DoUpgradeSearch = false
@@ -456,7 +456,7 @@ Result: WEB-DL episodes available within minutes of release
 **After Season Ends:**
 
 ```toml
-[Sonarr-OngoingTV.EntrySearch]
+[Sonarr-OngoingTV.Search]
 SearchMissing = true
 DoUpgradeSearch = true  # Now look for Bluray
 SearchRequestsEvery = 3600  # Less frequent (hourly)
@@ -473,7 +473,7 @@ Result: Gradual upgrade to Bluray-1080p as releases become available
 **Phase 1: Accept Anything**
 
 ```toml
-[Lidarr-Music.EntrySearch]
+[Lidarr-Music.Search]
 SearchMissing = true
 DoUpgradeSearch = false
 UseTempForMissing = true
@@ -483,7 +483,7 @@ QualityProfileMappings = {"Lossless" = "Any"}
 **Phase 2: Target Lossless**
 
 ```toml
-[Lidarr-Music.EntrySearch]
+[Lidarr-Music.Search]
 SearchMissing = true
 QualityUnmetSearch = true  # Upgrade to FLAC
 DoUpgradeSearch = true

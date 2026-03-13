@@ -25,20 +25,26 @@ Torrentarr provides dual endpoint patterns for flexibility:
 
 Both patterns return identical responses. Choose based on your authentication requirements.
 
+### Interactive API (Swagger)
+
+When Torrentarr is running, interactive API documentation is available at **`/swagger`** (for example, `http://localhost:6969/swagger`). Swagger UI lists all endpoints and lets you try them from the browser.
+
+When `WebUI.Token` is set, use the **Authorize** button in Swagger UI, enter your Bearer token (or paste the value from `GET /web/token`), then click Authorize. Requests to `/api/*` endpoints will then include the token. `/web/*` endpoints do not require authorization.
+
 ---
 
 ## Authentication
 
 ### Bearer Token
 
-If `WebUI.Token` is configured, `/api/*` endpoints require authentication via Bearer token:
+If `WebUI.Token` is configured, `/api/*` endpoints require authentication via Bearer token. Prefer the **Authorization header**; the query parameter is supported for GET only and can leak tokens via Referer, server logs, and browser history—avoid `?token=` on untrusted or shared links.
 
-**Header**:
+**Header** (recommended):
 ```http
 Authorization: Bearer <token>
 ```
 
-**Query Parameter** (alternative):
+**Query Parameter** (GET only; avoid on shared/untrusted links):
 ```
 ?token=<token>
 ```
@@ -61,14 +67,14 @@ The following endpoints are **always public** (no authentication):
 
 ### Token Authentication
 
-Authentication supports multiple formats for flexibility:
+Prefer the **Bearer header**; the query parameter is supported for GET only and can leak tokens via Referer and logs—avoid `?token=` on untrusted or shared links.
 
 **Bearer Token** (recommended):
 ```http
 Authorization: Bearer <token>
 ```
 
-**Query Parameter** (for URLs):
+**Query Parameter** (for GET URLs only; avoid on shared/untrusted links):
 ```
 ?token=<token>
 ```
@@ -82,6 +88,8 @@ curl -H "Authorization: Bearer abc123..." http://localhost:6969/api/processes
 ```json
 {"token": "<your-token>"}
 ```
+
+**Logout** — When authentication is enabled, `GET` or `POST` `/web/logout` signs out the session cookie and redirects to `/login`. Use this to end a browser session (e.g. from the app bar “Log out” button).
 
 ---
 
@@ -250,7 +258,7 @@ Get current version, latest version, update availability, and changelog.
   "repository_url": "https://github.com/Feramance/Torrentarr",
   "homepage_url": "https://github.com/Feramance/Torrentarr",
   "last_checked": "2025-11-27T12:00:00Z",
-  "installation_type": "pip",
+  "installation_type": "dotnet",
   "error": null,
   "update_state": {
     "in_progress": false,
@@ -986,7 +994,7 @@ Apply changes to configuration and trigger reload.
 {
   "changes": {
     "Settings.LoopSleepTimer": 60,
-    "Radarr-4K.EntrySearch.SearchLimit": 10,
+    "Radarr-4K.Search.SearchLimit": 10,
     "WebUI.Theme": "Dark"
   }
 }
@@ -1224,13 +1232,7 @@ All errors return JSON with an `error` field:
 
 ## CORS
 
-**Cross-Origin Requests**: Not explicitly configured. CORS headers are **not** set by default. Configure reverse proxy to add CORS headers if needed:
-
-```nginx
-add_header Access-Control-Allow-Origin *;
-add_header Access-Control-Allow-Methods "GET, POST, OPTIONS";
-add_header Access-Control-Allow-Headers "Authorization, Content-Type";
-```
+**Cross-Origin Requests:** The application may allow cross-origin requests (e.g. for development). In sensitive deployments, restrict CORS to trusted origins—e.g. via reverse proxy or application configuration—so only your intended UI origin can call the API.
 
 ---
 

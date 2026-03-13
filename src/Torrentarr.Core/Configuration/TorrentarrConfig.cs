@@ -77,8 +77,6 @@ public class QBitConfig
     public int Port { get; set; } = 8080;
     public string UserName { get; set; } = "CHANGE_ME";
     public string Password { get; set; } = "CHANGE_ME";
-    /// <summary>Set to true for qBittorrent v5+ which uses a different API authentication scheme.</summary>
-    public bool V5 { get; set; } = false;
     public string? DownloadPath { get; set; }
     public List<string> ManagedCategories { get; set; } = new();
     public List<TrackerConfig> Trackers { get; set; } = new();
@@ -136,11 +134,36 @@ public class WebUIConfig
     public string Host { get; set; } = "0.0.0.0";
     public int Port { get; set; } = 6969;
     public string Token { get; set; } = "";
+    /// <summary>When true, no authentication is required; login screen is skipped. When false, at least one of LocalAuthEnabled or OIDCEnabled should be true for browser login.</summary>
+    public bool AuthDisabled { get; set; } = true;
+    /// <summary>When true (and AuthDisabled is false), allow username/password login via POST /web/login.</summary>
+    public bool LocalAuthEnabled { get; set; } = false;
+    /// <summary>When true (and AuthDisabled is false), allow OIDC challenge and cookie-based login.</summary>
+    public bool OIDCEnabled { get; set; } = false;
+    /// <summary>For Local auth: single admin username. Password is stored only as PasswordHash.</summary>
+    public string Username { get; set; } = "";
+    /// <summary>For Local auth: only ever store the hash (e.g. BCrypt or Argon2). Never plain password.</summary>
+    public string PasswordHash { get; set; } = "";
     public bool LiveArr { get; set; } = true;
     public bool GroupSonarr { get; set; } = true;
     public bool GroupLidarr { get; set; } = true;
     public string Theme { get; set; } = "Dark";
     public string ViewDensity { get; set; } = "Comfortable";
+    /// <summary>OIDC settings when OIDCEnabled is true. Optional.</summary>
+    public OIDCConfig? OIDC { get; set; }
+}
+
+/// <summary>
+/// OpenID Connect configuration for external IdP (Keycloak, Auth0, Azure AD, etc.).
+/// </summary>
+public class OIDCConfig
+{
+    public string Authority { get; set; } = "";
+    public string ClientId { get; set; } = "";
+    public string ClientSecret { get; set; } = "";
+    public string Scopes { get; set; } = "openid profile";
+    public string CallbackPath { get; set; } = "/signin-oidc";
+    public bool RequireHttpsMetadata { get; set; } = true;
 }
 
 public class ArrInstanceConfig

@@ -55,7 +55,7 @@ describe("ConfirmDialog", () => {
     expect(onCancel).toHaveBeenCalledOnce();
   });
 
-  it("clicking backdrop calls onCancel", async () => {
+  it("clicking backdrop does not call onCancel", async () => {
     const onCancel = vi.fn();
     const user = userEvent.setup();
 
@@ -70,7 +70,7 @@ describe("ConfirmDialog", () => {
 
     const backdrop = container.querySelector(".modal-backdrop")!;
     await user.click(backdrop);
-    expect(onCancel).toHaveBeenCalled();
+    expect(onCancel).not.toHaveBeenCalled();
   });
 
   it("applies danger class to confirm button when danger=true", () => {

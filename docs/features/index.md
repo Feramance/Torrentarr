@@ -101,7 +101,7 @@ Automatically search for missing media in your Arr libraries.
 **Example configuration:**
 
 ```toml
-[Sonarr-TV.EntrySearch]
+[Sonarr-TV.Search]
 # Search for missing episodes
 SearchMissing = true
 
@@ -141,7 +141,7 @@ Automatically replace existing media with higher quality versions.
 **Configuration:**
 
 ```toml
-[Radarr-Movies.EntrySearch]
+[Radarr-Movies.Search]
 # Enable upgrade searching
 DoUpgradeSearch = true
 
@@ -180,7 +180,7 @@ Temporarily lower quality requirements for missing media, then upgrade later.
 **Configuration:**
 
 ```toml
-[Lidarr-Music.EntrySearch]
+[Lidarr-Music.Search]
 # Enable temporary profiles
 UseTempForMissing = true
 
@@ -525,7 +525,7 @@ Tagless = false  # Set to true to enable
 For users who want everything, quickly:
 
 ```toml
-[Radarr-Movies.EntrySearch]
+[Radarr-Movies.Search]
 SearchMissing = true
 SearchRequestsEvery = 180
 DoUpgradeSearch = false
@@ -544,7 +544,7 @@ StalledDelay = 30
 For users prioritizing quality over speed:
 
 ```toml
-[Radarr-4K.EntrySearch]
+[Radarr-4K.Search]
 SearchMissing = true
 DoUpgradeSearch = true
 QualityUnmetSearch = true
@@ -565,7 +565,7 @@ For users on private trackers with strict rules:
 
 ```toml
 [Radarr-Private]
-importMode = "Copy"  # Preserve seeding
+ImportMode = "Copy"  # Preserve seeding
 
 [Radarr-Private.Torrent]
 DoNotRemoveSlow = true

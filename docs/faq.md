@@ -472,7 +472,7 @@ Common migrations:
 Yes, extensive search customization:
 
 ```toml
-[Radarr-Movies.EntrySearch]
+[Radarr-Movies.Search]
 SearchMissing = true              # Auto-search missing
 SearchByYear = true               # Order by release year
 SearchInReverse = false           # Newest first
@@ -493,7 +493,7 @@ Custom Formats (CF) are Radarr/Sonarr scoring rules for releases. Torrentarr can
 3. **Force quality standards**: Block non-compliant releases
 
 ```toml
-[Radarr-Movies.EntrySearch]
+[Radarr-Movies.Search]
 CustomFormatUnmetSearch = true     # Search for CF improvements
 ForceMinimumCustomFormat = true    # Remove below threshold
 ```
@@ -715,8 +715,9 @@ http://localhost:6969/ui
 ```toml
 # Minimum config
 [qBit]
-Host = "http://localhost:8080"
-Username = "admin"
+Host = "localhost"
+Port = 8080
+UserName = "admin"
 Password = "adminpass"
 
 [Radarr-Movies]

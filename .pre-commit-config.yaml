@@ -40,6 +40,16 @@ repos:
     language: system
     types: [c#]
     pass_filenames: false
+  - id: dotnet-build
+    name: dotnet build
+    entry: dotnet build --configuration Release
+    language: system
+    pass_filenames: false
+  - id: webui-build
+    name: webui build
+    entry: node scripts/pre-commit-webui-build.cjs
+    language: system
+    pass_filenames: false
 ci:
   autofix_commit_msg: |
     [pre-commit.ci] auto fixes from pre-commit.com hooks

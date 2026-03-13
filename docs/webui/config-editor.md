@@ -193,7 +193,7 @@ Each Radarr, Sonarr, or Lidarr instance is configured independently via dedicate
 
 **Important**: The system now explicitly tracks renamed instances to ensure complete cleanup:
 - All old configuration keys are marked for deletion
-- Subsections (EntrySearch, Torrent, SeedingMode, Trackers) are automatically removed
+- Subsections (Search, Torrent, SeedingMode, Trackers) are automatically removed
 - No orphaned config sections remain after rename
 
 ---
@@ -221,7 +221,7 @@ URI = "http://localhost:7878"
 APIKey = "abc123..."
 Category = "radarr-4k"
 ReSearch = true
-importMode = "Auto"
+ImportMode = "Auto"
 RssSyncTimer = 5
 RefreshDownloadsTimer = 5
 ArrErrorCodesToBlocklist = [
@@ -278,7 +278,7 @@ Configure automated searching for missing media, quality upgrades, and request i
 
 **Example**:
 ```toml
-[Radarr-4K.EntrySearch]
+[Radarr-4K.Search]
 SearchMissing = true
 Unmonitored = false
 SearchLimit = 5
@@ -317,7 +317,7 @@ Integrate Ombi to automatically search for pending requests.
 
 **Example**:
 ```toml
-[Radarr-4K.EntrySearch.Ombi]
+[Radarr-4K.Search.Ombi]
 SearchOmbiRequests = true
 OmbiURI = "http://localhost:5000"
 OmbiAPIKey = "ombi_key_here"
@@ -341,7 +341,7 @@ Integrate Overseerr/Jellyseerr to automatically search for pending requests.
 
 **Example**:
 ```toml
-[Radarr-4K.EntrySearch.Overseerr]
+[Radarr-4K.Search.Overseerr]
 SearchOverseerrRequests = true
 OverseerrURI = "http://localhost:5055"
 OverseerrAPIKey = "overseerr_key_here"
@@ -582,7 +582,7 @@ The editor validates fields **on change** and **before save**, displaying inline
 | `Arr.URI` | Required when `Arr.Managed = true` |
 | `Arr.APIKey` | Required when `Arr.Managed = true` |
 | `Arr.Category` | Must not be empty |
-| `EntrySearch.SearchLimit` | Must be ≥ 1 |
+| `Search.SearchLimit` | Must be ≥ 1 |
 | `AutoUpdateCron` | Must contain 5 or 6 space-separated fields |
 | `Torrent.MaximumDeletablePercentage` | Must be 0-100 |
 | `Torrent.SeedingMode.RemoveTorrent` | Must be -1, 1, 2, 3, or 4 |
@@ -731,7 +731,7 @@ Below each field is a short auto-generated description:
 - **Checkbox**: "Enable or disable {label}."
 - **Other**: "Set the {label} value."
 
-For complex fields, custom descriptions override the default (e.g., `EntrySearch.SearchBySeries` shows strategy options).
+For complex fields, custom descriptions override the default (e.g., `Search.SearchBySeries` shows strategy options).
 
 ---
 
@@ -793,7 +793,7 @@ Apply changes to configuration and trigger reload.
 {
   "changes": {
     "Settings.LoopSleepTimer": 60,
-    "Radarr-4K.EntrySearch.SearchLimit": 10,
+    "Radarr-4K.Search.SearchLimit": 10,
     "WebUI.Theme": "Dark"
   }
 }

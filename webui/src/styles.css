@@ -2505,6 +2505,89 @@ svg[height] {
 [data-theme="light"] .modal-backdrop {
   background: rgba(0, 0, 0, 0.3);
 }
+
+/* Login page */
+.login-page {
+  min-height: 100vh;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 24px;
+  background: var(--bg);
+}
+.login-card {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 16px;
+  padding: 32px;
+  width: 100%;
+  max-width: 400px;
+  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.15);
+}
+.login-card h1 {
+  margin: 0 0 8px;
+  font-size: 24px;
+  font-weight: 600;
+  color: var(--on-surface);
+}
+.login-subtitle {
+  margin: 0 0 24px;
+  color: var(--muted);
+  font-size: 14px;
+}
+.login-card .form-group {
+  margin-bottom: 16px;
+}
+.login-card .form-group label {
+  display: block;
+  margin-bottom: 6px;
+  font-size: 14px;
+  font-weight: 500;
+  color: var(--on-surface);
+}
+.login-card .form-group input {
+  width: 100%;
+  padding: 10px 12px;
+  font-size: 16px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--bg);
+  color: var(--on-surface);
+}
+.login-card .form-group input:focus {
+  outline: none;
+  border-color: var(--primary);
+  box-shadow: 0 0 0 2px rgba(122, 162, 247, 0.25);
+}
+.login-error {
+  margin: 0 0 12px;
+  color: var(--danger);
+  font-size: 14px;
+}
+.login-card .btn.primary {
+  width: 100%;
+  margin-top: 8px;
+  padding: 10px 16px;
+}
+.login-divider {
+  margin: 12px 0;
+  text-align: center;
+  font-size: 13px;
+  color: var(--muted);
+}
+.login-oidc {
+  margin: 16px 0 0;
+  text-align: center;
+  font-size: 14px;
+}
+.login-oidc a {
+  color: var(--primary);
+  text-decoration: none;
+}
+.login-oidc a:hover {
+  text-decoration: underline;
+}
+
 @keyframes fadeIn {
   from {
     opacity: 0;

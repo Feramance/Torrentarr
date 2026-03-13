@@ -25,7 +25,7 @@ public class TorrentsDistributionEndpointTests : IClassFixture<TorrentarrWebAppl
     [Fact]
     public async Task GetTorrentsDistribution_Returns200()
     {
-        var client = _factory.CreateClient();
+        var client = _factory.CreateClientWithApiToken();
 
         var response = await client.GetAsync("/web/torrents/distribution");
 
@@ -35,7 +35,7 @@ public class TorrentsDistributionEndpointTests : IClassFixture<TorrentarrWebAppl
     [Fact]
     public async Task GetTorrentsDistribution_ResponseHasDistributionObject()
     {
-        var client = _factory.CreateClient();
+        var client = _factory.CreateClientWithApiToken();
 
         var response = await client.GetAsync("/web/torrents/distribution");
         var body = await response.Content.ReadAsStringAsync();
@@ -48,7 +48,7 @@ public class TorrentsDistributionEndpointTests : IClassFixture<TorrentarrWebAppl
     [Fact]
     public async Task GetTorrentsDistribution_NoArrInstances_DistributionIsEmpty()
     {
-        var client = _factory.CreateClient();
+        var client = _factory.CreateClientWithApiToken();
 
         // Test config has no Arr instances → distribution dictionary is empty
         var response = await client.GetAsync("/web/torrents/distribution");
@@ -64,7 +64,7 @@ public class TorrentsDistributionEndpointTests : IClassFixture<TorrentarrWebAppl
     [Fact]
     public async Task GetApiTorrentsDistribution_Returns200()
     {
-        var client = _factory.CreateClient();
+        var client = _factory.CreateClientWithApiToken();
 
         var response = await client.GetAsync("/api/torrents/distribution");
 
@@ -74,7 +74,7 @@ public class TorrentsDistributionEndpointTests : IClassFixture<TorrentarrWebAppl
     [Fact]
     public async Task GetApiTorrentsDistribution_ResponseHasSameShape()
     {
-        var client = _factory.CreateClient();
+        var client = _factory.CreateClientWithApiToken();
 
         var response = await client.GetAsync("/api/torrents/distribution");
         var body = await response.Content.ReadAsStringAsync();

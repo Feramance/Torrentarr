@@ -160,7 +160,7 @@ Theme = "Dark"
 **Old (v4.x):**
 
 ```toml
-[Radarr-Movies.EntrySearch]
+[Radarr-Movies.Search]
 MainQualityProfile = ["Ultra-HD", "HD-1080p"]
 TempQualityProfile = ["HD-1080p", "HDTV-720p"]
 ```
@@ -168,7 +168,7 @@ TempQualityProfile = ["HD-1080p", "HDTV-720p"]
 **New (v5.x):**
 
 ```toml
-[Radarr-Movies.EntrySearch]
+[Radarr-Movies.Search]
 QualityProfileMappings = { "Ultra-HD" = "HD-1080p", "HD-1080p" = "HDTV-720p" }
 ```
 
@@ -197,7 +197,7 @@ ProcessRestartDelay = 5
 1. **Review custom format settings:**
 
 ```toml
-[Radarr-Movies.EntrySearch]
+[Radarr-Movies.Search]
 CustomFormatUnmetSearch = false  # Enable if using TRaSH guides
 ForceMinimumCustomFormat = false  # Enable for strict CF enforcement
 ```
@@ -205,7 +205,7 @@ ForceMinimumCustomFormat = false  # Enable for strict CF enforcement
 3. **Update Sonarr search mode:**
 
 ```toml
-[Sonarr-TV.EntrySearch]
+[Sonarr-TV.Search]
 SearchBySeries = "smart"  # New smart mode (recommended)
 ```
 
@@ -246,7 +246,7 @@ FFprobeAutoUpdate = true  # Default, downloads ffprobe automatically
 3. **Add request integration (optional):**
 
 ```toml
-[Radarr-Movies.EntrySearch.Overseerr]
+[Radarr-Movies.Search.Overseerr]
 SearchOverseerrRequests = false
 OverseerrURI = "http://localhost:5055"
 OverseerrAPIKey = "your-api-key"
@@ -334,7 +334,7 @@ Users running custom Arr scripts can consolidate functionality into Torrentarr.
 
    **Missing media script:**
    ```toml
-   [Radarr-Movies.EntrySearch]
+   [Radarr-Movies.Search]
    SearchMissing = true
    SearchByYear = true
    SearchAgainOnSearchCompletion = true
@@ -342,7 +342,7 @@ Users running custom Arr scripts can consolidate functionality into Torrentarr.
 
    **Upgrade script:**
    ```toml
-   [Radarr-Movies.EntrySearch]
+   [Radarr-Movies.Search]
    DoUpgradeSearch = true
    QualityUnmetSearch = true
    CustomFormatUnmetSearch = true

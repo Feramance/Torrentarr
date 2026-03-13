@@ -422,7 +422,7 @@ Check paused torrents in qBittorrent:
    ```toml
    # Move files instead of copy
    [Radarr-Movies]
-   importMode = "Move"  # Frees up space
+   ImportMode = "Move"  # Frees up space
    ```
 
 4. **Cleanup old torrents:**
@@ -515,7 +515,7 @@ Check paused torrents in qBittorrent:
 1. **Use "Move" import mode:**
    ```toml
    [Radarr-Movies]
-   importMode = "Move"  # Frees download space
+   ImportMode = "Move"  # Frees download space
    ```
 
 2. **Monitor library filesystem too:**
@@ -556,7 +556,7 @@ FreeSpace = "200G"
 ```toml
 # Need space for original + copy
 FreeSpace = "200G"  # Higher threshold
-importMode = "Copy"
+ImportMode = "Copy"
 ```
 
 **With "Move" mode (space freed immediately):**
@@ -564,7 +564,7 @@ importMode = "Copy"
 ```toml
 # Original file moved, space freed
 FreeSpace = "100G"  # Normal threshold
-importMode = "Move"
+ImportMode = "Move"
 ```
 
 ---
@@ -585,10 +585,10 @@ df -h /data/library
 
 ```toml
 [Radarr-Movies]
-importMode = "Move"
+ImportMode = "Move"
 
 [Sonarr-TV]
-importMode = "Move"
+ImportMode = "Move"
 ```
 
 **Unless you need seeding:**
@@ -596,7 +596,7 @@ importMode = "Move"
 ```toml
 # Private trackers - must keep seeding
 [Radarr-Private]
-importMode = "Copy"
+ImportMode = "Copy"
 ```
 
 ---
@@ -639,7 +639,7 @@ See [Seeding Configuration](../configuration/seeding.md).
 When disk space is low:
 
 1. Torrentarr pauses downloads
-2. Completed downloads still import (if `importMode = "Move"`)
+2. Completed downloads still import (if `ImportMode = "Move"`)
 3. Import frees up space
 4. Torrentarr resumes downloads
 5. Cycle continues

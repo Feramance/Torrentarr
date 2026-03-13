@@ -25,7 +25,7 @@ public class LidarrTracksEndpointTests : IClassFixture<TorrentarrWebApplicationF
     [Fact]
     public async Task GetLidarrTracks_Returns200()
     {
-        var client = _factory.CreateClient();
+        var client = _factory.CreateClientWithApiToken();
 
         var response = await client.GetAsync("/web/lidarr/lidarr/tracks");
 
@@ -35,7 +35,7 @@ public class LidarrTracksEndpointTests : IClassFixture<TorrentarrWebApplicationF
     [Fact]
     public async Task GetLidarrTracks_ResponseHasTracksArray()
     {
-        var client = _factory.CreateClient();
+        var client = _factory.CreateClientWithApiToken();
 
         var response = await client.GetAsync("/web/lidarr/lidarr/tracks");
         var body = await response.Content.ReadAsStringAsync();
@@ -48,7 +48,7 @@ public class LidarrTracksEndpointTests : IClassFixture<TorrentarrWebApplicationF
     [Fact]
     public async Task GetLidarrTracks_ResponseHasRequiredPaginationFields()
     {
-        var client = _factory.CreateClient();
+        var client = _factory.CreateClientWithApiToken();
 
         var response = await client.GetAsync("/web/lidarr/lidarr/tracks");
         var body = await response.Content.ReadAsStringAsync();
@@ -63,7 +63,7 @@ public class LidarrTracksEndpointTests : IClassFixture<TorrentarrWebApplicationF
     [Fact]
     public async Task GetLidarrTracks_ResponseHasCountsObject()
     {
-        var client = _factory.CreateClient();
+        var client = _factory.CreateClientWithApiToken();
 
         var response = await client.GetAsync("/web/lidarr/lidarr/tracks");
         var body = await response.Content.ReadAsStringAsync();
@@ -78,7 +78,7 @@ public class LidarrTracksEndpointTests : IClassFixture<TorrentarrWebApplicationF
     [Fact]
     public async Task GetLidarrTracks_EmptyDb_TotalIsZero()
     {
-        var client = _factory.CreateClient();
+        var client = _factory.CreateClientWithApiToken();
 
         var response = await client.GetAsync("/web/lidarr/lidarr/tracks");
         var body = await response.Content.ReadAsStringAsync();
@@ -90,7 +90,7 @@ public class LidarrTracksEndpointTests : IClassFixture<TorrentarrWebApplicationF
     [Fact]
     public async Task GetLidarrTracks_CategoryEchoedInResponse()
     {
-        var client = _factory.CreateClient();
+        var client = _factory.CreateClientWithApiToken();
 
         var response = await client.GetAsync("/web/lidarr/my-lidarr/tracks");
         var body = await response.Content.ReadAsStringAsync();
@@ -102,7 +102,7 @@ public class LidarrTracksEndpointTests : IClassFixture<TorrentarrWebApplicationF
     [Fact]
     public async Task GetLidarrTracks_DefaultPagination_PageZeroPageSize50()
     {
-        var client = _factory.CreateClient();
+        var client = _factory.CreateClientWithApiToken();
 
         var response = await client.GetAsync("/web/lidarr/lidarr/tracks");
         var body = await response.Content.ReadAsStringAsync();
@@ -117,7 +117,7 @@ public class LidarrTracksEndpointTests : IClassFixture<TorrentarrWebApplicationF
     [Fact]
     public async Task GetApiLidarrTracks_Returns200()
     {
-        var client = _factory.CreateClient();
+        var client = _factory.CreateClientWithApiToken();
 
         var response = await client.GetAsync("/api/lidarr/lidarr/tracks");
 
@@ -127,7 +127,7 @@ public class LidarrTracksEndpointTests : IClassFixture<TorrentarrWebApplicationF
     [Fact]
     public async Task GetApiLidarrTracks_ResponseHasSameShape()
     {
-        var client = _factory.CreateClient();
+        var client = _factory.CreateClientWithApiToken();
 
         var response = await client.GetAsync("/api/lidarr/lidarr/tracks");
         var body = await response.Content.ReadAsStringAsync();

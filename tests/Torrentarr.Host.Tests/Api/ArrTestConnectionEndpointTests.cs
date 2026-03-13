@@ -26,7 +26,7 @@ public class ArrTestConnectionEndpointTests : IClassFixture<TorrentarrWebApplica
     [Fact]
     public async Task PostTestConnection_UnknownArrType_Returns400()
     {
-        var client = _factory.CreateClient();
+        var client = _factory.CreateClientWithApiToken();
 
         var response = await client.PostAsJsonAsync("/web/arr/test-connection", new
         {
@@ -41,7 +41,7 @@ public class ArrTestConnectionEndpointTests : IClassFixture<TorrentarrWebApplica
     [Fact]
     public async Task PostTestConnection_UnknownArrType_ResponseHasErrorField()
     {
-        var client = _factory.CreateClient();
+        var client = _factory.CreateClientWithApiToken();
 
         var response = await client.PostAsJsonAsync("/web/arr/test-connection", new
         {
@@ -62,7 +62,7 @@ public class ArrTestConnectionEndpointTests : IClassFixture<TorrentarrWebApplica
     [InlineData("lidarr")]
     public async Task PostTestConnection_ValidType_Returns200(string arrType)
     {
-        var client = _factory.CreateClient();
+        var client = _factory.CreateClientWithApiToken();
 
         var response = await client.PostAsJsonAsync("/web/arr/test-connection", new
         {
@@ -81,7 +81,7 @@ public class ArrTestConnectionEndpointTests : IClassFixture<TorrentarrWebApplica
     [InlineData("lidarr")]
     public async Task PostTestConnection_ValidType_ResponseHasSuccessAndMessage(string arrType)
     {
-        var client = _factory.CreateClient();
+        var client = _factory.CreateClientWithApiToken();
 
         var response = await client.PostAsJsonAsync("/web/arr/test-connection", new
         {
@@ -104,7 +104,7 @@ public class ArrTestConnectionEndpointTests : IClassFixture<TorrentarrWebApplica
     [Fact]
     public async Task PostApiTestConnection_UnknownArrType_Returns400()
     {
-        var client = _factory.CreateClient();
+        var client = _factory.CreateClientWithApiToken();
 
         var response = await client.PostAsJsonAsync("/api/arr/test-connection", new
         {
@@ -119,7 +119,7 @@ public class ArrTestConnectionEndpointTests : IClassFixture<TorrentarrWebApplica
     [Fact]
     public async Task PostApiTestConnection_ValidType_Returns200WithShape()
     {
-        var client = _factory.CreateClient();
+        var client = _factory.CreateClientWithApiToken();
 
         var response = await client.PostAsJsonAsync("/api/arr/test-connection", new
         {

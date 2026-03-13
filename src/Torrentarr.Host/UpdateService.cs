@@ -4,6 +4,7 @@ using System.Runtime.InteropServices;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
 using Newtonsoft.Json.Linq;
+using Torrentarr.Core.Configuration;
 
 namespace Torrentarr.Host;
 
@@ -130,10 +131,41 @@ public class UpdateService
         }
     }
 
-    /// <summary>Builds the MetaResponse-compatible anonymous object for <c>GET /web/meta</c>.</summary>
-    public object BuildMetaResponse()
+    /// <summary>Builds the MetaResponse-compatible anonymous object for <c>GET /web/meta</c>. When <paramref name="webUi"/> is provided, includes auth_required, local_auth_enabled, oidc_enabled.</summary>
+    public object BuildMetaResponse(WebUIConfig? webUi = null)
     {
         var currentVersion = GetCurrentVersion();
+        var updateState = new
+        {
+            in_progress = ApplyState.InProgress,
+            last_result = ApplyState.LastResult,
+            last_error = ApplyState.LastError,
+            completed_at = ApplyState.CompletedAt?.ToString("o")
+        };
+        if (webUi == null)
+        {
+            return new
+            {
+                current_version = currentVersion,
+                latest_version = _latestVersion,
+                update_available = _updateAvailable,
+                changelog = _changelog,
+                current_version_changelog = (string?)null,
+                changelog_url = _changelogUrl,
+                repository_url = RepositoryUrl,
+                homepage_url = RepositoryUrl,
+                last_checked = _lastChecked == DateTime.MinValue ? (string?)null : _lastChecked.ToString("o"),
+                error = _checkError,
+                update_state = updateState,
+                installation_type = "binary",
+                binary_download_url = _binaryDownloadUrl,
+                binary_download_name = _binaryDownloadName,
+                binary_download_size = _binaryDownloadSize,
+                binary_download_error = _binaryDownloadError,
+                platform = Environment.OSVersion.Platform.ToString(),
+                runtime = $".NET {Environment.Version}"
+            };
+        }
         return new
         {
             current_version = currentVersion,
@@ -146,20 +178,18 @@ public class UpdateService
             homepage_url = RepositoryUrl,
             last_checked = _lastChecked == DateTime.MinValue ? (string?)null : _lastChecked.ToString("o"),
             error = _checkError,
-            update_state = new
-            {
-                in_progress = ApplyState.InProgress,
-                last_result = ApplyState.LastResult,
-                last_error = ApplyState.LastError,
-                completed_at = ApplyState.CompletedAt?.ToString("o")
-            },
+            update_state = updateState,
             installation_type = "binary",
             binary_download_url = _binaryDownloadUrl,
             binary_download_name = _binaryDownloadName,
             binary_download_size = _binaryDownloadSize,
             binary_download_error = _binaryDownloadError,
             platform = Environment.OSVersion.Platform.ToString(),
-            runtime = $".NET {Environment.Version}"
+            runtime = $".NET {Environment.Version}",
+            auth_required = !webUi.AuthDisabled,
+            local_auth_enabled = webUi.LocalAuthEnabled,
+            oidc_enabled = webUi.OIDCEnabled,
+            setup_required = !webUi.AuthDisabled && webUi.LocalAuthEnabled && string.IsNullOrEmpty(webUi.PasswordHash)
         };
     }
 

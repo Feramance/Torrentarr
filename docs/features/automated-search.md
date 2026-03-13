@@ -61,10 +61,10 @@ graph TD
 
 ## Basic Configuration
 
-Enable automated search in the `[<Arr>-<Name>.EntrySearch]` section:
+Enable automated search in the `[<Arr>-<Name>.Search]` section:
 
 ```toml
-[Radarr-Movies.EntrySearch]
+[Radarr-Movies.Search]
 # Enable searching for missing movies
 SearchMissing = true
 
@@ -103,7 +103,7 @@ When `true`:
 - Request searches (Overseerr/Ombi) are enabled
 - Upgrade searches are enabled
 - Quality/Custom Format searches are enabled
-- All other EntrySearch settings become active
+- All other Search settings become active
 - Search loop runs continuously
 
 When `false`:
@@ -889,7 +889,7 @@ Search for media requested via Overseerr or Ombi.
 ### Overseerr Configuration
 
 ```toml
-[Radarr-Movies.EntrySearch.Overseerr]
+[Radarr-Movies.Search.Overseerr]
 # Enable Overseerr integration
 SearchOverseerrRequests = false
 
@@ -913,7 +913,7 @@ For details, see the Overseerr configuration section in [Radarr](../configuratio
 ### Ombi Configuration
 
 ```toml
-[Sonarr-TV.EntrySearch.Ombi]
+[Sonarr-TV.Search.Ombi]
 # Enable Ombi integration
 SearchOmbiRequests = false
 
@@ -938,7 +938,7 @@ ApprovedOnly = true
 Fill a new library quickly:
 
 ```toml
-[Radarr-Movies.EntrySearch]
+[Radarr-Movies.Search]
 SearchMissing = true
 SearchByYear = true  # Recent movies first
 SearchInReverse = false
@@ -955,7 +955,7 @@ SearchAgainOnSearchCompletion = true  # Continuous
 Build a high-quality library:
 
 ```toml
-[Radarr-4K.EntrySearch]
+[Radarr-4K.Search]
 SearchMissing = true
 SearchRequestsEvery = 600  # 10 minutes (conservative)
 DoUpgradeSearch = true  # Always seek better
@@ -972,7 +972,7 @@ SearchAgainOnSearchCompletion = true
 Fill in classic movies/TV:
 
 ```toml
-[Radarr-Classics.EntrySearch]
+[Radarr-Classics.Search]
 SearchMissing = true
 SearchByYear = true
 SearchInReverse = true  # Start with oldest
@@ -988,7 +988,7 @@ SearchAgainOnSearchCompletion = false  # One pass
 Stay current with airing shows:
 
 ```toml
-[Sonarr-TV.EntrySearch]
+[Sonarr-TV.Search]
 SearchMissing = true
 AlsoSearchSpecials = false
 Unmonitored = false
@@ -1009,7 +1009,7 @@ SearchAgainOnSearchCompletion = true
 Music library - get MP3 now, upgrade to FLAC later:
 
 ```toml
-[Lidarr-Music.EntrySearch]
+[Lidarr-Music.Search]
 SearchMissing = true
 SearchInReverse = false
 SearchRequestsEvery = 300
@@ -1532,13 +1532,13 @@ tail -f ~/logs/Radarr-Movies.log | grep -i "failed\|error"
 **A:** Yes! Configure per-instance:
 
 ```toml
-[Radarr-4K.EntrySearch]
+[Radarr-4K.Search]
 TempProfileResetTimeoutMinutes = 43200  # 30 days for 4K
 
-[Sonarr-TV.EntrySearch]
+[Sonarr-TV.Search]
 TempProfileResetTimeoutMinutes = 1440  # 1 day for TV
 
-[Lidarr-Music.EntrySearch]
+[Lidarr-Music.Search]
 TempProfileResetTimeoutMinutes = 10080  # 7 days for music
 ```
 

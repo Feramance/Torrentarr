@@ -63,10 +63,10 @@ Configure Torrentarr to poll the **same** Overseerr/Ombi instance:
 
 **Option A: Overseerr Backend**
 ```toml
-[Radarr-Movies.EntrySearch]
+[Radarr-Movies.Search]
 SearchMissing = true
 
-[Radarr-Movies.EntrySearch.Overseerr]
+[Radarr-Movies.Search.Overseerr]
 SearchOverseerrRequests = true
 OverseerrURI = "http://localhost:5055"
 OverseerrAPIKey = "your-api-key"
@@ -75,10 +75,10 @@ ApprovedOnly = true
 
 **Option B: Ombi Backend**
 ```toml
-[Radarr-Movies.EntrySearch]
+[Radarr-Movies.Search]
 SearchMissing = true
 
-[Radarr-Movies.EntrySearch.Ombi]
+[Radarr-Movies.Search.Ombi]
 SearchOmbiRequests = true
 OmbiURI = "http://localhost:3579"
 OmbiAPIKey = "your-api-key"
@@ -127,7 +127,7 @@ services:
     restart: unless-stopped
 ```
 
-Configure Overseerr in `config.toml` under your Radarr instance's `[Radarr-Movies.EntrySearch.Overseerr]` section.
+Configure Overseerr in `config.toml` under your Radarr instance's `[Radarr-Movies.Search.Overseerr]` section.
 
 ## Frequently Asked Questions
 

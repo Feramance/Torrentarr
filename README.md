@@ -1,5 +1,7 @@
 # Torrentarr
 
+**Automated qBittorrent management for the *Arr stack** — Hit & Run protection, free space control, quality upgrades, and import triggering. C# port of qBitrr with the same config and schema.
+
 [![Build Status](https://img.shields.io/badge/build-passing-brightgreen)]()
 [![Feature Parity](https://img.shields.io/badge/feature_parity-99%25-blue)]()
 [![License: MIT](https://img.shields.io/badge/license-MIT-green)]()
@@ -75,6 +77,7 @@ Access the WebUI at `http://<host>:6969/ui` after startup.
 - **Hit and Run Protection** – Automatic HnR obligation tracking with configurable thresholds, partial download handling, and dead tracker bypass
 - **Disk Space Management** – Auto-pause when low on space, configurable thresholds
 - **Modern WebUI** – Live process monitoring, log viewer, Arr insights
+- **WebUI authentication** – Optional login (local or OIDC), API token, and secure set-password
 - **Config & schema compatible** – Same `config.toml` format as qBitrr; SQLite schema matches (same tables). Database file is `torrentarr.db` in the config directory, not `qbitrr.db`.
 - **Process Isolation** – WebUI stays online even if a worker crashes
 
@@ -191,6 +194,14 @@ Released under the [MIT License](LICENSE).
 ## Credits
 
 - Original [qBitrr](https://github.com/Feramance/qBitrr) by Drapersniper & Feramance
+
+## Star History
+
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="https://api.star-history.com/svg?repos=Feramance/Torrentarr&type=Date&theme=dark" />
+  <source media="(prefers-color-scheme: light)" srcset="https://api.star-history.com/svg?repos=Feramance/Torrentarr&type=Date" />
+  <img alt="Star History Chart" src="https://api.star-history.com/svg?repos=Feramance/Torrentarr&type=Date" />
+</picture>
 
 ---
 

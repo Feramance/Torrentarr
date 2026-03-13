@@ -34,7 +34,16 @@ import { ToastProvider, ToastViewport, useToast } from "./context/ToastContext";
 import { SearchProvider, useSearch } from "./context/SearchContext";
 import { WebUIProvider, useWebUI } from "./context/WebUIContext";
 import { useNetworkStatus } from "./hooks/useNetworkStatus";
-import { getMeta, getStatus, triggerUpdate } from "./api/client";
+import {
+  getMeta,
+  getStatus,
+  triggerUpdate,
+  getToken,
+  login,
+  logout,
+  setPassword,
+  AuthError,
+} from "./api/client";
 import type { MetaResponse } from "./api/types";
 import { IconImage } from "./components/IconImage";
 import CloseIcon from "./icons/close.svg";
@@ -129,7 +138,7 @@ function WelcomeModal({
   onClose,
 }: WelcomeModalProps): JSX.Element {
   return (
-    <div className="modal-backdrop" role="presentation" onClick={onClose}>
+    <div className="modal-backdrop" role="presentation">
       <div
         className="modal"
         role="dialog"
@@ -202,7 +211,7 @@ function AlreadyUpToDateModal({
   onClose,
 }: AlreadyUpToDateModalProps): JSX.Element {
   return (
-    <div className="modal-backdrop" role="presentation" onClick={onClose}>
+    <div className="modal-backdrop" role="presentation">
       <div
         className="modal"
         role="dialog"
@@ -352,7 +361,7 @@ function ChangelogModal({
   }
 
   return (
-    <div className="modal-backdrop" role="presentation" onClick={onClose}>
+    <div className="modal-backdrop" role="presentation">
       <div
         className="modal"
         role="dialog"
@@ -492,6 +501,311 @@ function ChangelogModal({
   );
 }
 
+function AuthGate({ children }: { children: React.ReactNode }): JSX.Element {
+  const [needsLogin, setNeedsLogin] = useState<boolean | null>(null);
+  const [authMeta, setAuthMeta] = useState<MetaResponse | null>(null);
+  const [connectionError, setConnectionError] = useState(false);
+
+  useEffect(() => {
+    let cancelled = false;
+    let metaReceived = false;
+    let authRequired = false;
+    setConnectionError(false);
+    getMeta()
+      .then((meta) => {
+        if (cancelled) return;
+        metaReceived = true;
+        authRequired = meta.auth_required ?? false;
+        if (!authRequired) {
+          setNeedsLogin(false);
+          return getToken();
+        }
+        setAuthMeta(meta);
+        return getToken();
+      })
+      .then((result) => {
+        if (cancelled || result === undefined) return;
+        setNeedsLogin(false);
+        if (result.token) {
+          localStorage.setItem("token", result.token);
+        }
+      })
+      .catch(() => {
+        if (!cancelled) {
+          if (metaReceived) {
+            // Only show login when auth is required and getToken failed (e.g. 401)
+            if (authRequired) {
+              setNeedsLogin(true);
+            }
+            // When auth is disabled, keep needsLogin false even if getToken failed
+          } else {
+            setConnectionError(true);
+            setNeedsLogin(false);
+          }
+        }
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  if (needsLogin === null && !connectionError) {
+    return <div className="loading">Loading...</div>;
+  }
+  if (connectionError) {
+    return (
+      <div className="login-page">
+        <div className="login-card">
+          <h1>Torrentarr</h1>
+          <p className="login-error">
+            Cannot reach the server. Check your connection and try again.
+          </p>
+          <button
+            type="button"
+            className="btn primary"
+            onClick={() => window.location.reload()}
+          >
+            Retry
+          </button>
+        </div>
+      </div>
+    );
+  }
+  if (needsLogin) {
+    return (
+      <LoginPage
+        localAuthEnabled={authMeta?.local_auth_enabled ?? true}
+        oidcEnabled={authMeta?.oidc_enabled ?? false}
+        showSetupFirst={authMeta?.setup_required ?? false}
+        onSuccess={() => {
+          setNeedsLogin(false);
+          void getToken().then(
+            (r) => {
+              if (r?.token) {
+                localStorage.setItem("token", r.token);
+              }
+            },
+            () => {},
+          );
+        }}
+      />
+    );
+  }
+  return <>{children}</>;
+}
+
+/** Wrapper for direct /login path: fetches meta, redirects to /ui if auth not required, else shows LoginPage. */
+function LoginRoute(): JSX.Element {
+  const [meta, setMeta] = useState<MetaResponse | null>(null);
+  useEffect(() => {
+    let cancelled = false;
+    getMeta()
+      .then((m) => {
+        if (cancelled) return;
+        setMeta(m);
+        if (!m.auth_required) window.location.replace("/ui");
+      })
+      .catch(() => {
+        if (!cancelled) setMeta({} as MetaResponse);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+  if (meta === null) return <div className="loading">Loading...</div>;
+  if (!meta.auth_required) return <div className="loading">Redirecting...</div>;
+  return (
+    <LoginPage
+      localAuthEnabled={meta.local_auth_enabled ?? true}
+      oidcEnabled={meta.oidc_enabled ?? false}
+      showSetupFirst={meta.setup_required ?? false}
+      onSuccess={() => window.location.replace("/ui")}
+    />
+  );
+}
+
+interface LoginPageProps {
+  onSuccess: () => void;
+  localAuthEnabled?: boolean;
+  oidcEnabled?: boolean;
+  /** When true, show the set-password welcome screen first (for new installs with setup_required). */
+  showSetupFirst?: boolean;
+}
+
+function LoginPage({
+  onSuccess,
+  localAuthEnabled = true,
+  oidcEnabled = false,
+  showSetupFirst = false,
+}: LoginPageProps): JSX.Element {
+  const [username, setUsername] = useState("");
+  const [password, setPasswordState] = useState("");
+  const [error, setError] = useState<string | null>(null);
+  const [submitting, setSubmitting] = useState(false);
+  // When the server returns SETUP_REQUIRED (LocalAuthEnabled=true but no password set),
+  // or when showSetupFirst (meta.setup_required), show set-password form.
+  const [setupRequired, setSetupRequired] = useState(showSetupFirst);
+  const [newPassword, setNewPassword] = useState("");
+  const [confirmPassword, setConfirmPassword] = useState("");
+
+  const handleSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setError(null);
+    setSubmitting(true);
+    try {
+      await login({ username, password });
+      onSuccess();
+    } catch (err) {
+      if (err instanceof AuthError && err.code === "SETUP_REQUIRED") {
+        setSetupRequired(true);
+        setError(null);
+      } else {
+        setError(err instanceof Error ? err.message : "Login failed");
+      }
+    } finally {
+      setSubmitting(false);
+    }
+  };
+
+  const handleSetPassword = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (newPassword.length < 8) {
+      setError("Password must be at least 8 characters");
+      return;
+    }
+    if (newPassword !== confirmPassword) {
+      setError("Passwords do not match");
+      return;
+    }
+    setError(null);
+    setSubmitting(true);
+    try {
+      await setPassword({ username, password: newPassword });
+      await login({ username, password: newPassword });
+      onSuccess();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Failed to set password");
+    } finally {
+      setSubmitting(false);
+    }
+  };
+
+  if (setupRequired) {
+    return (
+      <div className="login-page">
+        <div className="login-card">
+          <h1>Torrentarr</h1>
+          {showSetupFirst ? (
+            <>
+              <p className="login-subtitle">Welcome to Torrentarr</p>
+              <p className="login-info">
+                Create an admin username and password to get started.
+              </p>
+            </>
+          ) : (
+            <>
+              <p className="login-subtitle">Set a password to continue</p>
+              <p className="login-info">
+                No password has been configured yet. Set one to enable local
+                login.
+              </p>
+            </>
+          )}
+          <form onSubmit={handleSetPassword}>
+            <div className="form-group">
+              <label htmlFor="setup-username">Username</label>
+              <input
+                id="setup-username"
+                type="text"
+                autoComplete="username"
+                value={username}
+                onChange={(e) => setUsername(e.target.value)}
+                required
+              />
+            </div>
+            <div className="form-group">
+              <label htmlFor="setup-password">New password</label>
+              <input
+                id="setup-password"
+                type="password"
+                autoComplete="new-password"
+                value={newPassword}
+                onChange={(e) => setNewPassword(e.target.value)}
+                required
+              />
+            </div>
+            <div className="form-group">
+              <label htmlFor="setup-confirm">Confirm password</label>
+              <input
+                id="setup-confirm"
+                type="password"
+                autoComplete="new-password"
+                value={confirmPassword}
+                onChange={(e) => setConfirmPassword(e.target.value)}
+                required
+              />
+            </div>
+            {error && <p className="login-error">{error}</p>}
+            <button type="submit" className="btn primary" disabled={submitting}>
+              {submitting ? "Setting password..." : "Set password"}
+            </button>
+          </form>
+        </div>
+      </div>
+    );
+  }
+
+  return (
+    <div className="login-page">
+      <div className="login-card">
+        <h1>Torrentarr</h1>
+        <p className="login-subtitle">Sign in to continue</p>
+        {localAuthEnabled && (
+          <form onSubmit={handleSubmit}>
+            <div className="form-group">
+              <label htmlFor="login-username">Username</label>
+              <input
+                id="login-username"
+                type="text"
+                autoComplete="username"
+                value={username}
+                onChange={(e) => setUsername(e.target.value)}
+                required
+              />
+            </div>
+            <div className="form-group">
+              <label htmlFor="login-password">Password</label>
+              <input
+                id="login-password"
+                type="password"
+                autoComplete="current-password"
+                value={password}
+                onChange={(e) => setPasswordState(e.target.value)}
+                required
+              />
+            </div>
+            {error && <p className="login-error">{error}</p>}
+            <button type="submit" className="btn primary" disabled={submitting}>
+              {submitting ? "Signing in..." : "Sign in"}
+            </button>
+          </form>
+        )}
+        {localAuthEnabled && oidcEnabled && <p className="login-divider">or</p>}
+        {oidcEnabled && (
+          <p className="login-oidc">
+            <a href="/web/auth/oidc/challenge">Sign in with OIDC</a>
+          </p>
+        )}
+        {!localAuthEnabled && !oidcEnabled && (
+          <p className="login-error">
+            No login method is configured. Contact the administrator.
+          </p>
+        )}
+      </div>
+    </div>
+  );
+}
+
 function AppShell(): JSX.Element {
   const [activeTab, setActiveTab] = useState<Tab>("processes");
   const [configDirty, setConfigDirty] = useState(false);
@@ -513,25 +827,6 @@ function AppShell(): JSX.Element {
   const [showWelcomeChangelog, setShowWelcomeChangelog] = useState(false);
   const [showAlreadyUpToDateModal, setShowAlreadyUpToDateModal] =
     useState(false);
-
-  // Theme is now managed by WebUIContext and applied automatically
-
-  // Clear cache on every page load to ensure fresh content
-  useEffect(() => {
-    const clearCache = async () => {
-      if ("caches" in window) {
-        try {
-          const cacheNames = await caches.keys();
-          await Promise.all(
-            cacheNames.map((cacheName) => caches.delete(cacheName)),
-          );
-        } catch {
-          // cache clear failed, non-critical
-        }
-      }
-    };
-    clearCache();
-  }, []);
 
   const refreshMeta = useCallback(
     async (options?: {
@@ -962,6 +1257,16 @@ function AppShell(): JSX.Element {
             ) : null}
           </div>
           <div className="appbar__actions">
+            {meta?.auth_required && (
+              <button
+                type="button"
+                className="btn small ghost"
+                onClick={() => logout()}
+                title="Sign out"
+              >
+                Log out
+              </button>
+            )}
             {!isOnline && (
               <span
                 className="badge"
@@ -1011,7 +1316,7 @@ function AppShell(): JSX.Element {
               GitHub
             </a>
             <a
-              href="https://github.com/Feramance/Torrentarr"
+              href="https://feramance.github.io/Torrentarr/"
               target="_blank"
               rel="noreferrer"
               className="btn small ghost"
@@ -1118,13 +1423,22 @@ function AppShell(): JSX.Element {
 }
 
 export default function App(): JSX.Element {
+  const pathname = window.location.pathname;
+  const isLoginPath = pathname === "/login" || pathname === "/login/";
+
   return (
     <ToastProvider>
       <ErrorBoundary>
         <SearchProvider>
           <WebUIProvider>
-            <AppShell />
-            <ToastViewport />
+            {isLoginPath ? (
+              <LoginRoute />
+            ) : (
+              <AuthGate>
+                <AppShell />
+                <ToastViewport />
+              </AuthGate>
+            )}
           </WebUIProvider>
         </SearchProvider>
       </ErrorBoundary>

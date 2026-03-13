@@ -215,10 +215,10 @@ flowchart TD
 
 ### Configuration
 
-Temporary profiles are configured in `[<Arr>-<Name>.EntrySearch]`:
+Temporary profiles are configured in `[<Arr>-<Name>.Search]`:
 
 ```toml
-[Lidarr-Music.EntrySearch]
+[Lidarr-Music.Search]
 # Enable temporary profile switching
 UseTempForMissing = true
 
@@ -540,7 +540,7 @@ Number of retry attempts for profile switch API calls.
 **Setup:**
 
 ```toml
-[Lidarr-Music.EntrySearch]
+[Lidarr-Music.Search]
 UseTempForMissing = true
 KeepTempProfile = false
 QualityProfileMappings = {"Lossless (FLAC)" = "Lossy (MP3-320)"}
@@ -589,7 +589,7 @@ sequenceDiagram
 **Setup:**
 
 ```toml
-[Radarr-4K.EntrySearch]
+[Radarr-4K.Search]
 UseTempForMissing = true
 KeepTempProfile = false
 QualityProfileMappings = {"Ultra-HD" = "HD-1080p"}
@@ -638,7 +638,7 @@ stateDiagram-v2
 **Setup:**
 
 ```toml
-[Sonarr-TV.EntrySearch]
+[Sonarr-TV.Search]
 UseTempForMissing = true
 KeepTempProfile = false
 QualityProfileMappings = {"WEB-DL 1080p" = "HDTV-1080p"}

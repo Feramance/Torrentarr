@@ -122,10 +122,12 @@ markdown_extensions:
 plugins:
 - search:
     separator: '[\s\-,:!=\[\]()"`/]+|\.(?!\d)|&[lg]t;|(?!\b)(?=[A-Z][a-z])'
+- swagger-ui-tag:
 - git-revision-date-localized:
     enable_creation_date: true
     type: timeago
     enable_parallel_processing: false
+    enable_git_follow: false
 - minify:
     minify_html: true
     minify_js: true
@@ -223,6 +225,8 @@ nav:
   - Quality Profiles: configuration/quality-profiles.md
   - Seeding & Trackers: configuration/seeding.md
   - WebUI: configuration/webui.md
+  - WebUI Authentication: configuration/webui-authentication.md
+  - OIDC with Authentik: configuration/webui-oidc-authentik.md
   - Environment Variables: configuration/environment.md
 
 - Features:
@@ -244,6 +248,7 @@ nav:
   - Arr Views: webui/arr-views.md
   - Config Editor: webui/config-editor.md
   - API Reference: webui/api.md
+  - Interactive API (Swagger): webui/swagger.md
 
 - Advanced:
   - advanced/index.md
