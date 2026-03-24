@@ -150,6 +150,10 @@ public class WebUIConfig
     public bool GroupLidarr { get; set; } = true;
     public string Theme { get; set; } = "Dark";
     public string ViewDensity { get; set; } = "Comfortable";
+    /// <summary>
+    /// When non-empty, CORS allows only these origins (with credentials). When empty, any origin is allowed (legacy behavior).
+    /// </summary>
+    public List<string> CorsAllowedOrigins { get; set; } = new();
     /// <summary>OIDC settings when OIDCEnabled is true. Optional.</summary>
     public OIDCConfig? OIDC { get; set; }
 }

@@ -103,6 +103,9 @@ Theme = "Dark"
 # View density (Comfortable or Compact)
 ViewDensity = "Comfortable"
 
+# Optional: restrict browser CORS to these origins (omit or set [] to allow any origin). See docs/configuration/webui-authentication.md
+# CorsAllowedOrigins = [ "https://torrentarr.example.com" ]
+
 [qBit]
 # Disable qBittorrent integration (headless search-only mode)
 Disabled = false

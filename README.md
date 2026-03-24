@@ -177,6 +177,7 @@ npm run build   # Production bundle
 
 - **Report Bugs:** [GitHub Issues](https://github.com/Feramance/Torrentarr/issues)
 - **Discussions:** [GitHub Discussions](https://github.com/Feramance/Torrentarr/discussions)
+- **Security:** [SECURITY.md](SECURITY.md) (supported versions, vulnerability reporting)
 
 ## Contributing
 

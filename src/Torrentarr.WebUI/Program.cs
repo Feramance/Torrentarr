@@ -99,17 +99,6 @@ builder.Services.AddResponseCompression(options =>
     options.EnableForHttps = true;
 });
 
-// Add CORS for development
-builder.Services.AddCors(options =>
-{
-    options.AddPolicy("AllowAll", policy =>
-    {
-        policy.AllowAnyOrigin()
-              .AllowAnyMethod()
-              .AllowAnyHeader();
-    });
-});
-
 // Configure Database - use same dbPath as defined at startup
 builder.Services.AddDbContext<TorrentarrDbContext>(options =>
 {
@@ -136,6 +125,26 @@ if (string.IsNullOrEmpty(configForDI.WebUI.Token))
     configLoader.SaveConfig(configForDI);
     Log.Information("Generated and persisted API token (Token was empty)");
 }
+
+builder.Services.AddCors(options =>
+{
+    options.AddPolicy("AllowAll", policy =>
+    {
+        if (configForDI.WebUI.CorsAllowedOrigins.Count > 0)
+        {
+            policy.WithOrigins(configForDI.WebUI.CorsAllowedOrigins.ToArray())
+                .AllowAnyMethod()
+                .AllowAnyHeader()
+                .AllowCredentials();
+        }
+        else
+        {
+            policy.AllowAnyOrigin()
+                .AllowAnyMethod()
+                .AllowAnyHeader();
+        }
+    });
+});
 
 builder.Services.AddSingleton(configForDI);
 

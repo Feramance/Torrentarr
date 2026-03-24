@@ -2639,20 +2639,31 @@ function AuthConfigModal({
               <input
                 type="checkbox"
                 checked={authDisabled}
-                onChange={(e) =>
+                onChange={(e) => {
+                  const next = e.target.checked;
+                  if (next) {
+                    const ok = window.confirm(
+                      "Disabling authentication removes the login screen. Anyone who can reach this WebUI can change settings and control Torrentarr.\n\n" +
+                        "If Torrentarr is exposed to the internet or untrusted networks, use a reverse proxy with authentication, a VPN, or firewall rules—or keep authentication enabled.\n\n" +
+                        "Disable authentication anyway?",
+                    );
+                    if (!ok) return;
+                  }
                   onChange(
                     ["WebUI", "AuthDisabled"],
                     {} as FieldDefinition,
-                    e.target.checked,
-                  )
-                }
+                    next,
+                  );
+                }}
               />{" "}
               Disable authentication
             </label>
             {authDisabled && (
               <p className="field-description" style={{ marginTop: "6px" }}>
-                The login screen is skipped. The API token below still works for
-                script/API access.
+                The login screen is skipped. The API token below still protects{" "}
+                <code>/api/*</code> for scripts. If this server is reachable
+                from the internet, add network-level protection or re-enable
+                authentication.
               </p>
             )}
           </div>

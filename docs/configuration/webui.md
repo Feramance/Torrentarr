@@ -188,7 +188,7 @@ curl -H "Authorization: Bearer my-secure-token-12345" \
 
 ## Authentication
 
-When **AuthDisabled** = `true` (default for existing configs), there is no login screen; the WebUI and API are protected only by the Token (or are public if Token was empty and has not yet been auto-generated). When **AuthDisabled** = `false`, browser users must either log in (local username/password and/or OIDC) or present the Bearer token. At least one of **LocalAuthEnabled** or **OIDCEnabled** should be true so the login page can offer a sign-in method.
+When **AuthDisabled** = `true` (default for existing configs), there is no login screen; **`/api/*`** is protected by the **Token** (Bearer), while **`/web/*`** is open to the network path—use firewall, reverse proxy auth, or keep **AuthDisabled** = `false` if exposing to untrusted networks. The WebUI warns you when disabling authentication. When **AuthDisabled** = `false`, browser users must either log in (local username/password and/or OIDC) or present the Bearer token. At least one of **LocalAuthEnabled** or **OIDCEnabled** should be true so the login page can offer a sign-in method.
 
 **New installs:** If Torrentarr creates the config file on first run (it did not exist before), the generated config has **AuthDisabled = false** and **LocalAuthEnabled = true**. Users see a welcome screen to set an admin username and password before accessing the rest of the WebUI. Existing configs are unchanged unless you edit auth settings.
 
@@ -334,6 +334,19 @@ Default color theme for the WebUI.
 - `"Light"` - Light mode (better in bright environments)
 
 **Note:** Users can toggle theme in the WebUI itself. This sets the initial default.
+
+---
+
+## CorsAllowedOrigins
+
+```toml
+# CorsAllowedOrigins = [ "https://torrentarr.example.com" ]
+```
+
+**Type:** Array of strings (optional)
+**Default:** omitted or empty — any origin is allowed for cross-origin browser requests (legacy behavior).
+
+When set to one or more origins, the server restricts CORS to those origins and allows credentials. Restart after changing this value. See [WebUI authentication — Deployment and security](webui-authentication.md#deployment-and-security).
 
 ---
 

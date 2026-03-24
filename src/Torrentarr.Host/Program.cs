@@ -251,7 +251,19 @@ try
     builder.Services.AddCors(options =>
     {
         options.AddPolicy("AllowAll", policy =>
-            policy.AllowAnyOrigin().AllowAnyMethod().AllowAnyHeader());
+        {
+            if (config.WebUI.CorsAllowedOrigins.Count > 0)
+            {
+                policy.WithOrigins(config.WebUI.CorsAllowedOrigins.ToArray())
+                    .AllowAnyMethod()
+                    .AllowAnyHeader()
+                    .AllowCredentials();
+            }
+            else
+            {
+                policy.AllowAnyOrigin().AllowAnyMethod().AllowAnyHeader();
+            }
+        });
     });
 
     // Database - paths already defined at top of file

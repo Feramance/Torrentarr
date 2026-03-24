@@ -21,15 +21,15 @@ Torrentarr provides dual endpoint patterns for flexibility:
 | Pattern | Purpose | Authentication | Use Case |
 |---------|---------|----------------|----------|
 | `/api/*` | API-first endpoints | **Required** (Bearer token) | External clients, scripts, automation |
-| `/web/*` | First-party endpoints | **Optional** (no token required) | WebUI, reverse proxies with auth bypass |
+| `/web/*` | First-party endpoints | **Optional** when `AuthDisabled` is true (no login); login/OIDC or Bearer when auth is required | WebUI, reverse proxies with auth bypass |
 
-Both patterns return identical responses. Choose based on your authentication requirements.
+Both patterns return identical responses. Choose based on your authentication requirements. If you disable authentication in config, confirm the warning in the WebUI: untrusted network access should use a reverse proxy, VPN, or firewall—or keep authentication enabled.
 
 ### Interactive API (Swagger)
 
 When Torrentarr is running, interactive API documentation is available at **`/swagger`** (for example, `http://localhost:6969/swagger`). Swagger UI lists all endpoints and lets you try them from the browser.
 
-When `WebUI.Token` is set, use the **Authorize** button in Swagger UI, enter your Bearer token (or paste the value from `GET /web/token`), then click Authorize. Requests to `/api/*` endpoints will then include the token. `/web/*` endpoints do not require authorization.
+When `WebUI.Token` is set, use the **Authorize** button in Swagger UI, enter your Bearer token (or paste the value from `GET /web/token`), then click Authorize. Requests to `/api/*` endpoints will then include the token. `/web/*` endpoints do not require the Bearer token when `AuthDisabled` is true (see [WebUI authentication](../configuration/webui-authentication.md) for login when auth is enabled).
 
 ---
 
@@ -63,7 +63,7 @@ The following endpoints are **always public** (no authentication):
 - `GET /ui` - WebUI entry point
 - `GET /sw.js` - Service worker
 - `GET /static/*` - Static assets
-- `GET /web/*` - All first-party endpoints
+- `GET /web/*` - All first-party endpoints when `AuthDisabled` is true; when authentication is required, see [WebUI authentication](../configuration/webui-authentication.md)
 
 ### Token Authentication
 
@@ -1292,7 +1292,7 @@ curl "http://localhost:6969/web/radarr/radarr-4k/movies?has_file=false&year_min=
 
 ## Best Practices
 
-1. **Use `/web/*` endpoints** for WebUI to avoid token management
+1. **Use `/web/*` endpoints** for WebUI when `AuthDisabled` is true to avoid token management for browser traffic
 2. **Use `/api/*` endpoints** for external clients with Bearer token
 3. **Cache `/api/meta` responses** for 1 hour to reduce GitHub API load
 4. **Poll `/api/processes`** every 5-10 seconds (not faster to avoid overhead)
