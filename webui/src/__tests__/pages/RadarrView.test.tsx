@@ -185,8 +185,8 @@ describe("RadarrView – instance sidebar", () => {
 
     renderView();
 
-    // Table columns always appear when movies are loaded
-    await screen.findByText("Title", {}, { timeout: 8000 });
+    // Wait for returned movie row; this is more stable than asserting header text.
+    await screen.findByText("The Matrix", {}, { timeout: 8000 });
     expect(screen.queryByText("No movies found.")).not.toBeInTheDocument();
   }, 10000);
 });
