@@ -94,7 +94,7 @@ public class TorrentProcessor : ITorrentProcessor
             }
             _logger.LogDebug("Found {Count} torrents in category {Category}", torrents.Count, category);
 
-            await SortTorrentsByTrackerPriorityAsync(torrents, cancellationToken);
+            await SortTorrentsByTrackerPriorityAsync(cancellationToken);
 
             var stats = new TorrentProcessingStats
             {
@@ -591,13 +591,13 @@ public class TorrentProcessor : ITorrentProcessor
 
     /// <summary>
     /// Reorder qBittorrent queue by tracker priority for torrents whose effective tracker
-    /// config has SortTorrents=true. Runs once per processing cycle per category.
+    /// config has SortTorrents=true. Sorts globally per qBit instance to preserve
+    /// cross-category ordering.
     /// </summary>
     private async Task SortTorrentsByTrackerPriorityAsync(
-        List<TorrentInfo> torrents,
         CancellationToken ct)
     {
-        if (_seedingService == null || torrents.Count == 0)
+        if (_seedingService == null)
             return;
 
         // Fast-path: if no configured tracker enables sorting, skip per-torrent tracker API lookups.
@@ -609,9 +609,23 @@ public class TorrentProcessor : ITorrentProcessor
         if (!hasSortTorrentsEnabled)
             return;
 
+        // topPrio is global to the qBit queue, so gather torrents across all categories
+        // to avoid category-local sort calls overwriting each other.
+        var allTorrents = new List<TorrentInfo>();
+        foreach (var (instanceName, client) in _qbitManager.GetAllClients())
+        {
+            var instanceTorrents = await client.GetTorrentsAsync(ct: ct);
+            foreach (var t in instanceTorrents)
+                t.QBitInstanceName = instanceName;
+            allTorrents.AddRange(instanceTorrents);
+        }
+
+        if (allTorrents.Count == 0)
+            return;
+
         var sortableByInstance = new Dictionary<string, List<(TorrentInfo Torrent, int Priority)>>(StringComparer.OrdinalIgnoreCase);
 
-        foreach (var torrent in torrents)
+        foreach (var torrent in allTorrents)
         {
             try
             {
