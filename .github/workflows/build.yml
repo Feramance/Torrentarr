@@ -95,7 +95,7 @@ jobs:
 
     steps:
     - id: repo
-      uses: ASzc/change-string-case-action@v6
+      uses: ASzc/change-string-case-action@v8
       with:
         string: ${{ github.repository }}
 
@@ -156,7 +156,7 @@ jobs:
 
     steps:
     - id: repo
-      uses: ASzc/change-string-case-action@v6
+      uses: ASzc/change-string-case-action@v8
       with:
         string: ${{ github.repository }}
 
