@@ -96,7 +96,16 @@ public class TorrentProcessor : ITorrentProcessor
             }
             _logger.LogDebug("Found {Count} torrents in category {Category}", torrents.Count, category);
 
-            await SortTorrentsByTrackerPriorityAsync(cancellationToken);
+            try
+            {
+                await SortTorrentsByTrackerPriorityAsync(cancellationToken);
+            }
+            catch (Exception ex)
+            {
+                _logger.LogWarning(ex,
+                    "Failed to sort torrents by tracker priority for category {Category}; continuing torrent processing",
+                    category);
+            }
 
             var stats = new TorrentProcessingStats
             {
