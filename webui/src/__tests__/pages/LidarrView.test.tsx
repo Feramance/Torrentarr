@@ -1,3 +1,4 @@
+import React from "react";
 import { describe, it, expect, beforeAll, afterAll, afterEach } from "vitest";
 import { render, screen, waitFor } from "@testing-library/react";
 import { http, HttpResponse } from "msw";

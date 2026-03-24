@@ -13,10 +13,16 @@ export default defineConfig({
     chunkSizeWarningLimit: 1000,
     rollupOptions: {
       output: {
-        manualChunks: {
-          vendor: ["react", "react-dom"],
-          table: ["@tanstack/react-table"],
-          mantine: ["@mantine/core", "@mantine/hooks", "@mantine/dates"],
+        manualChunks(id) {
+          if (id.includes("@tanstack/react-table")) return "table";
+          if (
+            id.includes("@mantine/core") ||
+            id.includes("@mantine/hooks") ||
+            id.includes("@mantine/dates")
+          )
+            return "mantine";
+          if (id.includes("react") || id.includes("react-dom")) return "vendor";
+          return undefined;
         },
       },
     },
