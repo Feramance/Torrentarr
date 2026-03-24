@@ -600,6 +600,15 @@ public class TorrentProcessor : ITorrentProcessor
         if (_seedingService == null || torrents.Count == 0)
             return;
 
+        // Fast-path: if no configured tracker enables sorting, skip per-torrent tracker API lookups.
+        var hasSortTorrentsEnabled = _config.QBitInstances.Values.Any(q =>
+            q.Trackers.Any(t => t.SortTorrents))
+            || _config.ArrInstances.Values.Any(a =>
+                a.Torrent.Trackers.Any(t => t.SortTorrents));
+
+        if (!hasSortTorrentsEnabled)
+            return;
+
         var sortableByInstance = new Dictionary<string, List<(TorrentInfo Torrent, int Priority)>>(StringComparer.OrdinalIgnoreCase);
 
         foreach (var torrent in torrents)
