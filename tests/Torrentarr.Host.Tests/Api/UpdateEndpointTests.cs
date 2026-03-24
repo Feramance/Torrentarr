@@ -72,15 +72,29 @@ public class UpdateEndpointTests : IClassFixture<TorrentarrWebApplicationFactory
     public async Task GetMeta_UpdateState_InProgressFalseInitially()
     {
         var client = _factory.CreateClientWithApiToken();
+        var inProgress = false;
+        var attempts = 0;
 
-        var response = await client.GetAsync("/web/meta");
-        response.StatusCode.Should().Be(HttpStatusCode.OK);
+        // Other update tests may briefly toggle shared ApplyState; poll briefly
+        // so this assertion verifies steady state instead of execution order.
+        do
+        {
+            var response = await client.GetAsync("/web/meta");
+            response.StatusCode.Should().Be(HttpStatusCode.OK);
 
-        var body = await response.Content.ReadAsStringAsync();
-        var json = JsonDocument.Parse(body).RootElement;
+            var body = await response.Content.ReadAsStringAsync();
+            var json = JsonDocument.Parse(body).RootElement;
 
-        json.GetProperty("update_state").GetProperty("in_progress").GetBoolean()
-            .Should().BeFalse("no update should be in progress at test start");
+            inProgress = json.GetProperty("update_state").GetProperty("in_progress").GetBoolean();
+            attempts++;
+            if (inProgress)
+            {
+                await Task.Delay(100);
+            }
+        }
+        while (inProgress && attempts < 30);
+
+        inProgress.Should().BeFalse("no update should be in progress once startup/update endpoint activity settles");
     }
 
     // ── GET /api/meta (mirror) ────────────────────────────────────────────────
