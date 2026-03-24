@@ -789,6 +789,10 @@ public class ConfigurationLoader
         }
 
         // --- HnR defaults on CategorySeeding and Tracker sections ---
+        var trackerDefaults = new Dictionary<string, object>
+        {
+            ["SortTorrents"] = false
+        };
         var hnrDefaults = new Dictionary<string, object>
         {
             ["HitAndRunMode"] = "disabled",
@@ -823,6 +827,14 @@ public class ConfigurationLoader
             {
                 foreach (var trackerTable in GetTrackerTables(trObj))
                 {
+                    foreach (var (field, defaultVal) in trackerDefaults)
+                    {
+                        if (!trackerTable.ContainsKey(field))
+                        {
+                            trackerTable[field] = defaultVal;
+                            changed = true;
+                        }
+                    }
                     foreach (var (field, defaultVal) in hnrDefaults)
                     {
                         if (!trackerTable.ContainsKey(field))
@@ -840,6 +852,14 @@ public class ConfigurationLoader
             {
                 foreach (var trackerTable in GetTrackerTables(atrObj))
                 {
+                    foreach (var (field, defaultVal) in trackerDefaults)
+                    {
+                        if (!trackerTable.ContainsKey(field))
+                        {
+                            trackerTable[field] = defaultVal;
+                            changed = true;
+                        }
+                    }
                     foreach (var (field, defaultVal) in hnrDefaults)
                     {
                         if (!trackerTable.ContainsKey(field))
@@ -976,6 +996,9 @@ public class ConfigurationLoader
 
         if (table.TryGetValue("Priority", out var priority))
             tracker.Priority = Convert.ToInt32(priority);
+
+        if (table.TryGetValue("SortTorrents", out var sortTorrents))
+            tracker.SortTorrents = Convert.ToBoolean(sortTorrents);
 
         if (table.TryGetValue("MaxUploadRatio", out var maxRatio))
             tracker.MaxUploadRatio = Convert.ToDouble(maxRatio);
@@ -1773,6 +1796,7 @@ public class ConfigurationLoader
                     sb.AppendLine($"Name = \"{EscapeTomlString(tracker.Name)}\"");
                 sb.AppendLine($"URI = \"{tracker.Uri}\"");
                 sb.AppendLine($"Priority = {tracker.Priority}");
+                sb.AppendLine($"SortTorrents = {tracker.SortTorrents.ToString().ToLower()}");
                 sb.AppendLine($"MaximumETA = {tracker.MaxETA ?? -1}");
                 sb.AppendLine($"DownloadRateLimit = {tracker.DownloadRateLimit ?? -1}");
                 sb.AppendLine($"UploadRateLimit = {tracker.UploadRateLimit ?? -1}");

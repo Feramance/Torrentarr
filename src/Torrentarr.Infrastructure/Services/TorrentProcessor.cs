@@ -94,6 +94,8 @@ public class TorrentProcessor : ITorrentProcessor
             }
             _logger.LogDebug("Found {Count} torrents in category {Category}", torrents.Count, category);
 
+            await SortTorrentsByTrackerPriorityAsync(torrents, cancellationToken);
+
             var stats = new TorrentProcessingStats
             {
                 TotalTorrents = torrents.Count
@@ -584,6 +586,71 @@ public class TorrentProcessor : ITorrentProcessor
         {
             _logger.LogTrace("Unprocessed torrent: [{Name}] | State[{State}] | Progress[{Progress:P1}]",
                 torrent.Name, state, torrent.Progress);
+        }
+    }
+
+    /// <summary>
+    /// Reorder qBittorrent queue by tracker priority for torrents whose effective tracker
+    /// config has SortTorrents=true. Runs once per processing cycle per category.
+    /// </summary>
+    private async Task SortTorrentsByTrackerPriorityAsync(
+        List<TorrentInfo> torrents,
+        CancellationToken ct)
+    {
+        if (_seedingService == null || torrents.Count == 0)
+            return;
+
+        var sortableByInstance = new Dictionary<string, List<(TorrentInfo Torrent, int Priority)>>(StringComparer.OrdinalIgnoreCase);
+
+        foreach (var torrent in torrents)
+        {
+            try
+            {
+                var trackerConfig = await _seedingService.GetTrackerConfigAsync(torrent, ct);
+                if (trackerConfig?.SortTorrents != true)
+                    continue;
+
+                if (!sortableByInstance.TryGetValue(torrent.QBitInstanceName, out var list))
+                {
+                    list = new List<(TorrentInfo Torrent, int Priority)>();
+                    sortableByInstance[torrent.QBitInstanceName] = list;
+                }
+
+                list.Add((torrent, trackerConfig.Priority));
+            }
+            catch (Exception ex)
+            {
+                _logger.LogDebug(ex, "Skipping sort evaluation for torrent {Hash}", torrent.Hash);
+            }
+        }
+
+        foreach (var (instanceName, sortable) in sortableByInstance)
+        {
+            if (sortable.Count == 0)
+                continue;
+
+            var client = _qbitManager.GetClient(instanceName);
+            if (client == null)
+                continue;
+
+            try
+            {
+                // qB topPrio is move-to-top, so apply reverse order of descending priority
+                // to preserve highest-priority torrents at the very top.
+                var ordered = sortable
+                    .OrderByDescending(t => t.Priority)
+                    .ThenBy(t => t.Torrent.AddedOn)
+                    .Select(t => t.Torrent.Hash)
+                    .Reverse()
+                    .ToList();
+
+                if (ordered.Count > 0)
+                    await client.TopPriorityAsync(ordered, ct);
+            }
+            catch (Exception ex)
+            {
+                _logger.LogWarning(ex, "Failed to sort torrent queue for qBit instance {Instance}", instanceName);
+            }
         }
     }
 

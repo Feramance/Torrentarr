@@ -200,6 +200,8 @@ export const FIELD_TOOLTIPS: Record<string, string> = {
     "Ignore torrents younger than this many seconds in managed categories when evaluating failures.",
   HitAndRunMode:
     "Hit and Run protection mode for this tracker: 'and' requires both ratio and time, 'or' clears on either, 'disabled' turns off HnR.",
+  SortTorrents:
+    "When enabled, torrents matching this tracker are moved to the top of the qBittorrent queue by tracker priority. Requires qBittorrent Torrent Queuing to be enabled.",
   MinSeedRatio:
     "Minimum seed ratio before HnR obligation is cleared (e.g. 1.0 for 1:1 ratio).",
   MinSeedingTimeDays:

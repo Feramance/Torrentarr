@@ -452,6 +452,23 @@ public class QBittorrentClient
     }
 
     /// <summary>
+    /// Move torrents to the top of the queue priority list.
+    /// POST /api/v2/torrents/topPrio
+    /// </summary>
+    public async Task<bool> TopPriorityAsync(List<string> hashes, CancellationToken ct = default)
+    {
+        if (hashes == null || hashes.Count == 0)
+            return true;
+
+        var request = new RestRequest("api/v2/torrents/topPrio", Method.Post);
+        AddAuthCookie(request);
+        request.AddParameter("hashes", string.Join("|", hashes));
+
+        var response = await _client.ExecuteAsync(request, ct);
+        return response.IsSuccessful;
+    }
+
+    /// <summary>
     /// Create a new category
     /// </summary>
     public async Task<bool> CreateCategoryAsync(string name, string? savePath = null, CancellationToken ct = default)

@@ -1148,6 +1148,11 @@ const ARR_TRACKER_FIELDS: FieldDefinition[] = [
     },
   },
   {
+    label: "Sort Torrents",
+    path: ["SortTorrents"],
+    type: "checkbox",
+  },
+  {
     label: "Maximum ETA",
     path: ["MaxETA"],
     type: "duration",
@@ -3187,6 +3192,7 @@ function FieldGroup({
           Name: "",
           Uri: "",
           Priority: 0,
+          SortTorrents: false,
           RemoveIfExists: false,
           SuperSeedMode: false,
           AddTags: [],

@@ -1,4 +1,4 @@
-﻿# Configuration Editor
+# Configuration Editor
 
 The Configuration Editor provides a user-friendly interface for managing Torrentarr's configuration through the WebUI. All changes are saved to the `config.toml` file and can trigger live reloads of affected components without requiring a full application restart.
 
@@ -445,6 +445,7 @@ Define custom per-tracker seeding policies and tagging rules.
 - **Name**: Tracker name (for display purposes)
 - **URI**: Tracker URL (used for matching)
 - **Priority**: Tracker priority (higher = preferred)
+- **Sort Torrents**: Reorder matching torrents in qBittorrent queue by tracker priority
 - **Maximum ETA (s)**: Override global ETA limit for this tracker
 - **Download Rate Limit**: Override global download limit
 - **Upload Rate Limit**: Override global upload limit
@@ -461,6 +462,7 @@ Define custom per-tracker seeding policies and tagging rules.
 Name = "Premium Tracker"
 URI = "https://premium.tracker.com/announce"
 Priority = 10
+SortTorrents = false
 MaximumETA = 86400
 DownloadRateLimit = -1
 UploadRateLimit = -1

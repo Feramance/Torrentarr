@@ -107,6 +107,7 @@ public class TrackerConfig
     public string? Name { get; set; } // Human-readable tracker name
     public string Uri { get; set; } = "";
     public int Priority { get; set; } = 0;
+    public bool SortTorrents { get; set; } = false;
     public double? MaxUploadRatio { get; set; }
     public int? MaxSeedingTime { get; set; }
     public int? RemoveTorrent { get; set; }

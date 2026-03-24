@@ -1,4 +1,4 @@
-﻿# Seeding Configuration
+# Seeding Configuration
 
 Configure intelligent seeding management with per-torrent and per-tracker rules for ratio limits, seeding time, and automatic cleanup.
 
@@ -434,6 +434,23 @@ MaxUploadRatio = 2.0
 
 # Torrent with both trackers → Uses BeyondHD settings (ratio 1.0)
 ```
+
+---
+
+#### SortTorrents
+
+```toml
+SortTorrents = false
+```
+
+**Type:** Boolean
+**Default:** `false`
+
+When enabled for a tracker, torrents matching that tracker are reordered in the qBittorrent queue by tracker `Priority` during processing.
+
+- Higher `Priority` trackers are pushed toward the top of the queue.
+- This setting only affects torrents whose effective tracker configuration has `SortTorrents = true`.
+- qBittorrent **Torrent Queuing** must be enabled for queue ordering effects to be visible.
 
 ---
 

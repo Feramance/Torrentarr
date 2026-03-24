@@ -101,6 +101,7 @@ public class TorrentarrConfigDefaultsTests
     {
         var tracker = new TrackerConfig();
 
+        tracker.SortTorrents.Should().BeFalse();
         tracker.HitAndRunMode.Should().BeNull(); // string? defaults to null
         tracker.MinSeedRatio.Should().BeNull();
         tracker.MinSeedingTimeDays.Should().BeNull();

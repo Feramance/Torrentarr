@@ -123,6 +123,13 @@ ManagedCategories = []
 # Global tracker configurations (inherited by all Arr instances)
 Trackers = []
 
+# Example per-tracker override:
+# [[qBit.Trackers]]
+# Name = "Private Tracker"
+# URI = "https://tracker.example.com/announce"
+# Priority = 10
+# SortTorrents = false
+
 [qBit.CategorySeeding]
 # Download rate limit per torrent in KB/s (-1 = unlimited)
 DownloadRateLimitPerTorrent = -1

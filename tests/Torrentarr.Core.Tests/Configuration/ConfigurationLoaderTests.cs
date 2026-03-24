@@ -593,4 +593,78 @@ public class ConfigurationLoaderTests : IDisposable
         config.WebUI.AuthDisabled.Should().BeFalse("new installs get auth enabled by default");
         config.WebUI.LocalAuthEnabled.Should().BeTrue("new installs get local auth enabled by default");
     }
+
+    [Fact]
+    public void Load_ParsesTrackerSortTorrents_DefaultsFalseWhenMissing()
+    {
+        WriteToml("""
+            [qBit]
+            Host = "localhost"
+
+            [Radarr-Movies]
+            URI = "http://radarr:7878"
+            APIKey = "key"
+            Category = "radarr"
+
+            [[Radarr-Movies.Torrent.Trackers]]
+            URI = "https://tracker.example.com/announce"
+            Priority = 10
+            """);
+
+        var config = new ConfigurationLoader(_tempFilePath).Load();
+
+        config.ArrInstances["Radarr-Movies"].Torrent.Trackers.Should().HaveCount(1);
+        config.ArrInstances["Radarr-Movies"].Torrent.Trackers[0].SortTorrents.Should().BeFalse();
+    }
+
+    [Fact]
+    public void Save_WritesTrackerSortTorrents()
+    {
+        WriteToml("""
+            [qBit]
+            Host = "localhost"
+
+            [Radarr-Movies]
+            URI = "http://radarr:7878"
+            APIKey = "key"
+            Category = "radarr"
+            """);
+
+        var loader = new ConfigurationLoader(_tempFilePath);
+        var config = loader.Load();
+        config.ArrInstances["Radarr-Movies"].Torrent.Trackers.Add(new TrackerConfig
+        {
+            Uri = "https://tracker.example.com/announce",
+            Priority = 10,
+            SortTorrents = true
+        });
+
+        loader.SaveConfig(config);
+        var content = File.ReadAllText(_tempFilePath);
+
+        content.Should().Contain("SortTorrents = true");
+    }
+
+    [Fact]
+    public void Load_ParsesTrackerSortTorrents_TrueWhenSet()
+    {
+        WriteToml("""
+            [qBit]
+            Host = "localhost"
+
+            [Radarr-Movies]
+            URI = "http://radarr:7878"
+            APIKey = "key"
+            Category = "radarr"
+
+            [[Radarr-Movies.Torrent.Trackers]]
+            URI = "https://tracker.example.com/announce"
+            Priority = 10
+            SortTorrents = true
+            """);
+
+        var config = new ConfigurationLoader(_tempFilePath).Load();
+
+        config.ArrInstances["Radarr-Movies"].Torrent.Trackers[0].SortTorrents.Should().BeTrue();
+    }
 }
