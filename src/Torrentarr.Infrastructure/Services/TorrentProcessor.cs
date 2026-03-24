@@ -644,8 +644,9 @@ public class TorrentProcessor : ITorrentProcessor
 
             try
             {
-                // qB topPrio is move-to-top, so apply reverse order of descending priority
-                // to preserve highest-priority torrents at the very top.
+                // qB topPrio moves torrents to the top of the queue.
+                // Apply reverse order of descending priority one hash at a time so each later
+                // call is placed above the previous one (highest priority ends up at the top).
                 var ordered = sortable
                     .OrderByDescending(t => t.Priority)
                     .ThenBy(t => t.Torrent.AddedOn)
@@ -653,8 +654,10 @@ public class TorrentProcessor : ITorrentProcessor
                     .Reverse()
                     .ToList();
 
-                if (ordered.Count > 0)
-                    await client.TopPriorityAsync(ordered, ct);
+                foreach (var hash in ordered)
+                {
+                    await client.TopPriorityAsync(new List<string> { hash }, ct);
+                }
             }
             catch (Exception ex)
             {
