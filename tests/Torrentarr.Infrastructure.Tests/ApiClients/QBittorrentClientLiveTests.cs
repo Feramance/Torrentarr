@@ -98,4 +98,18 @@ public class QBittorrentClientLiveTests : IAsyncLifetime
         var tags = await _client!.GetTagsAsync();
         tags.Should().NotBeNull();
     }
+
+    [SkippableFact]
+    public async Task TopPriorityAsync_WithExistingTorrentHash_ReturnsTrue()
+    {
+        Skip.If(_skipReason != null, _skipReason!);
+        var torrents = await _client!.GetTorrentsAsync();
+        Skip.If(torrents.Count == 0, "No torrents in qBit — skipping TopPriority live test.");
+
+        var hash = torrents[0].Hash;
+        Skip.If(string.IsNullOrWhiteSpace(hash), "Torrent has no hash — skipping TopPriority live test.");
+
+        var ok = await _client.TopPriorityAsync([hash]);
+        ok.Should().BeTrue("qBit topPrio API should accept a valid torrent hash");
+    }
 }

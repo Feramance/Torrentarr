@@ -8,6 +8,25 @@ namespace Torrentarr.Infrastructure.Tests.Services;
 public class TrackerQueueSortOrderingTests
 {
     [Fact]
+    public void BuildOrderedHashes_EmptyInput_ReturnsEmptyList()
+    {
+        var ordered = TrackerQueueSortOrdering.BuildOrderedHashesForTopPriorityCalls([]);
+
+        ordered.Should().BeEmpty();
+    }
+
+    [Fact]
+    public void BuildOrderedHashes_SingleTorrent_ReturnsSingleHash()
+    {
+        var t = new TorrentInfo { Hash = "only", AddedOn = 42 };
+        var sortable = new List<(TorrentInfo, int)> { (t, 7) };
+
+        var ordered = TrackerQueueSortOrdering.BuildOrderedHashesForTopPriorityCalls(sortable);
+
+        ordered.Should().Equal("only");
+    }
+
+    [Fact]
     public void BuildOrderedHashes_HigherPriorityCalledLastSoItEndsOnTop()
     {
         var low = new TorrentInfo { Hash = "low", AddedOn = 100 };
@@ -30,5 +49,24 @@ public class TrackerQueueSortOrderingTests
         var ordered = TrackerQueueSortOrdering.BuildOrderedHashesForTopPriorityCalls(sortable);
 
         ordered.Should().Equal("b", "a");
+    }
+
+    [Fact]
+    public void BuildOrderedHashes_ThreeDistinctPriorities_LowestPrioFirstHighestPrioLastInTopPrioSequence()
+    {
+        var low = new TorrentInfo { Hash = "low", AddedOn = 1 };
+        var mid = new TorrentInfo { Hash = "mid", AddedOn = 2 };
+        var high = new TorrentInfo { Hash = "high", AddedOn = 3 };
+        var sortable = new List<(TorrentInfo, int)>
+        {
+            (mid, 5),
+            (low, 1),
+            (high, 10)
+        };
+
+        var ordered = TrackerQueueSortOrdering.BuildOrderedHashesForTopPriorityCalls(sortable);
+
+        // Sequential topPrio: last call wins → highest priority hash must be last.
+        ordered.Should().Equal("low", "mid", "high");
     }
 }
