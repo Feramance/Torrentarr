@@ -1,3 +1,4 @@
+using System.Linq;
 using Torrentarr.Core.Configuration;
 using Torrentarr.Core.Models;
 using Torrentarr.Core.Services;
@@ -509,5 +510,191 @@ public class FreeSpaceService : IFreeSpaceService
         double size = bytes;
         while (size >= 1024 && order < sizes.Length - 1) { order++; size /= 1024; }
         return $"{size:0.##} {sizes[order]}";
+    }
+
+    /// <inheritdoc />
+    public async Task<GlobalFreeSpacePassResult> ProcessGlobalManagedCategoriesHostPassAsync(CancellationToken cancellationToken = default)
+    {
+        var freeSpaceCfg = ParseFreeSpaceString(_config.Settings.FreeSpace);
+        if (freeSpaceCfg < 0 || !_config.Settings.AutoPauseResume)
+            return new GlobalFreeSpacePassResult(0, false);
+
+        var minBytes = freeSpaceCfg;
+        var folder = GetResolvedFreeSpaceFolderPath();
+        if (string.IsNullOrEmpty(folder))
+        {
+            _logger.LogWarning("FreeSpace: No free space folder configured or folder doesn't exist");
+            return new GlobalFreeSpacePassResult(0, false);
+        }
+
+        _logger.LogInformation("FreeSpace: Starting FreeSpace manager check");
+        _logger.LogInformation("FreeSpace: Using folder {Folder} for space monitoring", folder);
+
+        var managedCategories = BuildManagedCategoriesSet();
+        long currentFreeSpace;
+        try
+        {
+            var driveInfo = new DriveInfo(folder);
+            currentFreeSpace = driveInfo.AvailableFreeSpace - minBytes;
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "FreeSpace: Failed to read drive for folder {Folder}", folder);
+            return new GlobalFreeSpacePassResult(0, false);
+        }
+
+        var allTorrents = new List<(QBittorrentClient client, TorrentInfo torrent)>();
+        foreach (var (_, client) in _qbitManager.GetAllClients())
+        {
+            foreach (var category in managedCategories)
+            {
+                var torrents = await client.GetTorrentsAsync(category, cancellationToken);
+                allTorrents.AddRange(torrents.Select(t => (client, t)));
+            }
+        }
+
+        int pausedCount;
+        int[]? pausedCountRef = null;
+        if (!_config.Settings.Tagless)
+        {
+            pausedCount = allTorrents.Count(t => t.torrent.Tags?.Contains(FreeSpacePausedTag) == true);
+            pausedCountRef = new int[] { pausedCount };
+        }
+        else
+            pausedCount = 0;
+
+        foreach (var (client, torrent) in allTorrents.OrderBy(x => x.torrent.AddedOn))
+        {
+            currentFreeSpace = await ProcessSingleTorrentSpaceHostOrchestratorStyleAsync(
+                client, torrent, currentFreeSpace, minBytes, pausedCountRef, cancellationToken);
+        }
+
+        if (_config.Settings.Tagless)
+            pausedCount = await _dbContext.TorrentLibrary.CountAsync(t => t.FreeSpacePaused, cancellationToken);
+        else if (pausedCountRef != null)
+            pausedCount = pausedCountRef[0];
+
+        return new GlobalFreeSpacePassResult(pausedCount, minBytes > 0 && !string.IsNullOrEmpty(folder));
+    }
+
+    private HashSet<string> BuildManagedCategoriesSet()
+    {
+        var set = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        foreach (var arrInstance in _config.ArrInstances.Where(x => !string.IsNullOrEmpty(x.Value.Category)))
+            set.Add(arrInstance.Value.Category!);
+        foreach (var qbit in _config.QBitInstances.Values)
+        {
+            if (qbit.ManagedCategories != null)
+            {
+                foreach (var cat in qbit.ManagedCategories)
+                    set.Add(cat);
+            }
+        }
+        return set;
+    }
+
+    private string? GetResolvedFreeSpaceFolderPath()
+    {
+        if (!string.IsNullOrEmpty(_config.Settings.FreeSpaceFolder) && _config.Settings.FreeSpaceFolder != "CHANGE_ME")
+        {
+            if (Directory.Exists(_config.Settings.FreeSpaceFolder))
+                return _config.Settings.FreeSpaceFolder;
+        }
+        if (!string.IsNullOrEmpty(_config.Settings.CompletedDownloadFolder) && _config.Settings.CompletedDownloadFolder != "CHANGE_ME")
+        {
+            if (Directory.Exists(_config.Settings.CompletedDownloadFolder))
+                return _config.Settings.CompletedDownloadFolder;
+        }
+        return "/config";
+    }
+
+    /// <summary>Matches former Host <c>ProcessSingleTorrentSpaceAsync</c> (downloading = DL + stalledDL only, not metaDL).</summary>
+    private async Task<long> ProcessSingleTorrentSpaceHostOrchestratorStyleAsync(
+        QBittorrentClient client,
+        TorrentInfo torrent,
+        long currentFreeSpace,
+        long minFreeSpaceBytes,
+        int[]? pausedCountRef,
+        CancellationToken cancellationToken)
+    {
+        var tagless = _config.Settings.Tagless;
+
+        var isDownloading = torrent.State.Contains("downloading", StringComparison.OrdinalIgnoreCase) ||
+                           torrent.State.Contains("stalledDL", StringComparison.OrdinalIgnoreCase);
+        var isPausedDownload = torrent.State.Contains("pausedDL", StringComparison.OrdinalIgnoreCase);
+
+        bool hasFreeSpaceTag;
+        if (tagless)
+        {
+            var dbEntry = await _dbContext.TorrentLibrary.AsNoTracking()
+                .FirstOrDefaultAsync(t => t.Hash == torrent.Hash, cancellationToken);
+            hasFreeSpaceTag = dbEntry?.FreeSpacePaused == true;
+        }
+        else
+            hasFreeSpaceTag = torrent.Tags?.Contains(FreeSpacePausedTag, StringComparison.OrdinalIgnoreCase) == true;
+
+        if (isDownloading || (isPausedDownload && hasFreeSpaceTag))
+        {
+            var freeSpaceTest = currentFreeSpace - torrent.AmountLeft;
+
+            _logger.LogInformation(
+                "FreeSpace: Evaluating torrent: {Name} | Current space: {Available} | Space after: {SpaceAfter} | Remaining: {Needed}",
+                torrent.Name, FormatBytes(currentFreeSpace), FormatBytes(freeSpaceTest), FormatBytes(torrent.AmountLeft));
+
+            if (!isPausedDownload && freeSpaceTest < 0)
+            {
+                _logger.LogInformation(
+                    "FreeSpace: Pausing download (insufficient space) | Torrent: {Name} | Available: {Available} | Needed: {Needed} | Deficit: {Deficit}",
+                    torrent.Name, FormatBytes(currentFreeSpace), FormatBytes(torrent.AmountLeft), FormatBytes(-freeSpaceTest));
+                if (tagless)
+                    await _dbContext.TorrentLibrary.Where(t => t.Hash == torrent.Hash)
+                        .ExecuteUpdateAsync(s => s.SetProperty(t => t.FreeSpacePaused, true), cancellationToken);
+                else
+                    await client.AddTagsAsync(new List<string> { torrent.Hash }, new List<string> { FreeSpacePausedTag }, cancellationToken);
+                if (pausedCountRef != null) pausedCountRef[0]++;
+                await client.PauseTorrentAsync(torrent.Hash, cancellationToken);
+            }
+            else if (isPausedDownload && freeSpaceTest >= 0)
+            {
+                _logger.LogInformation(
+                    "FreeSpace: Resuming download (space available) | Torrent: {Name} | Available: {Available} | Space after: {SpaceAfter}",
+                    torrent.Name, FormatBytes(currentFreeSpace), FormatBytes(freeSpaceTest));
+                currentFreeSpace = freeSpaceTest;
+                if (tagless)
+                    await _dbContext.TorrentLibrary.Where(t => t.Hash == torrent.Hash)
+                        .ExecuteUpdateAsync(s => s.SetProperty(t => t.FreeSpacePaused, false), cancellationToken);
+                else
+                    await client.RemoveTagsAsync(new List<string> { torrent.Hash }, new List<string> { FreeSpacePausedTag }, cancellationToken);
+                if (pausedCountRef != null) pausedCountRef[0]--;
+                await client.ResumeTorrentAsync(torrent.Hash, cancellationToken);
+            }
+            else if (isPausedDownload && freeSpaceTest < 0)
+            {
+                _logger.LogInformation(
+                    "FreeSpace: Keeping paused (insufficient space) | Torrent: {Name} | Available: {Available} | Needed: {Needed} | Deficit: {Deficit}",
+                    torrent.Name, FormatBytes(currentFreeSpace), FormatBytes(torrent.AmountLeft), FormatBytes(-freeSpaceTest));
+            }
+            else if (!isPausedDownload && freeSpaceTest >= 0)
+            {
+                _logger.LogInformation(
+                    "FreeSpace: Continuing download (sufficient space) | Torrent: {Name} | Available: {Available} | Space after: {SpaceAfter}",
+                    torrent.Name, FormatBytes(currentFreeSpace), FormatBytes(freeSpaceTest));
+                currentFreeSpace = freeSpaceTest;
+            }
+        }
+        else if (!isDownloading && hasFreeSpaceTag)
+        {
+            _logger.LogInformation(
+                "FreeSpace: Torrent completed, removing free space tag | Torrent: {Name} | Available: {Available}",
+                torrent.Name, FormatBytes(currentFreeSpace + minFreeSpaceBytes));
+            if (tagless)
+                await _dbContext.TorrentLibrary.Where(t => t.Hash == torrent.Hash)
+                    .ExecuteUpdateAsync(s => s.SetProperty(t => t.FreeSpacePaused, false), cancellationToken);
+            else
+                await client.RemoveTagsAsync(new List<string> { torrent.Hash }, new List<string> { FreeSpacePausedTag }, cancellationToken);
+            if (pausedCountRef != null) pausedCountRef[0]--;
+        }
+
+        return currentFreeSpace;
     }
 }

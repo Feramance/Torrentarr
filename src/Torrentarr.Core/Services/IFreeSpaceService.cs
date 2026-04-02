@@ -30,7 +30,17 @@ public interface IFreeSpaceService
     /// Pauses torrents that would exceed free space threshold and manages tags.
     /// </summary>
     Task ProcessTorrentsForSpaceAsync(string category, CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Host free-space manager pass: all Arr + qBit-managed categories, DriveInfo on resolved folder,
+    /// per-torrent pause/resume matching former Host orchestrator behavior (tagless DB column supported).
+    /// Intended when Settings.AutoPauseResume is true and free-space string is not disabled (-1).
+    /// </summary>
+    Task<GlobalFreeSpacePassResult> ProcessGlobalManagedCategoriesHostPassAsync(CancellationToken cancellationToken = default);
 }
+
+/// <summary>Result of <see cref="IFreeSpaceService.ProcessGlobalManagedCategoriesHostPassAsync"/>.</summary>
+public sealed record GlobalFreeSpacePassResult(int PausedTorrentCount, bool ManagerAlive);
 
 public class FreeSpaceStats
 {

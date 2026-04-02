@@ -270,7 +270,7 @@ describe("ProcessesView – qBit category chips", () => {
 // ── Other section (Recheck, Failed, Free Space Manager) ───────────────────────
 
 describe("ProcessesView – Other section", () => {
-  it("shows Other section with Recheck, Failed, and Free Space Manager cards", async () => {
+  it("shows Other section with host worker cards including Tracker Sort Manager", async () => {
     server.use(
       http.get("/web/processes", () =>
         HttpResponse.json({
@@ -300,6 +300,15 @@ describe("ProcessesView – Other section", () => {
               alive: true,
               categoryCount: 0,
             },
+            {
+              category: "TrackerSortManager",
+              name: "TrackerSortManager",
+              kind: "torrent",
+              metricType: "tracker-sort",
+              pid: null,
+              alive: true,
+              categoryCount: null,
+            },
           ],
         }),
       ),
@@ -317,6 +326,10 @@ describe("ProcessesView – Other section", () => {
     expect(
       screen.getAllByText("Free Space Manager").length,
     ).toBeGreaterThanOrEqual(1);
+    expect(
+      screen.getAllByText("Tracker Sort Manager").length,
+    ).toBeGreaterThanOrEqual(1);
+    expect(screen.getByText("Tracker queue ordering")).toBeInTheDocument();
     expect(
       screen.getAllByText("Torrent count 0").length,
     ).toBeGreaterThanOrEqual(2);

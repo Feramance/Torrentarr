@@ -1,4 +1,4 @@
-using Torrentarr.Core.Configuration;
+﻿using Torrentarr.Core.Configuration;
 using Torrentarr.Core.Models;
 using Torrentarr.Core.Services;
 using Torrentarr.Infrastructure.ApiClients.Arr;
@@ -14,6 +14,7 @@ using Microsoft.EntityFrameworkCore;
 using Serilog;
 using Serilog.Core;
 using Serilog.Events;
+using System.Linq;
 using System.Security.Claims;
 using System.Security.Cryptography;
 
@@ -35,7 +36,7 @@ var firstArg = cmdArgs.Count > 0 ? cmdArgs[0].Trim().ToLowerInvariant() : "";
 const string REDACTED_PLACEHOLDER = "[redacted]";
 const string SensitiveKeyPatternRegex = @"(apikey|api_key|token|password|secret|passkey|credential)";
 
-// Mutable level switch — lets /web/loglevel and /api/loglevel change the level at runtime
+// Mutable level switch â€” lets /web/loglevel and /api/loglevel change the level at runtime
 var levelSwitch = new LoggingLevelSwitch(LogEventLevel.Information);
 
 // Create custom sink for per-worker log files
@@ -162,17 +163,20 @@ try
     // ArrWorkerManager registered as both singleton and IHostedService so it's injectable in endpoints
     builder.Services.AddSingleton<ArrWorkerManager>();
     builder.Services.AddHostedService(sp => sp.GetRequiredService<ArrWorkerManager>());
-    builder.Services.AddHostedService<ProcessOrchestratorService>();
+    builder.Services.AddSingleton<HostWorkerManager>();
+    builder.Services.AddHostedService(sp => sp.GetRequiredService<HostWorkerManager>());
     // Scoped services (one per request / scope)
     builder.Services.AddScoped<ArrSyncService>();
     builder.Services.AddScoped<IArrImportService, ArrImportService>();
     builder.Services.AddScoped<ISeedingService, SeedingService>();
+    builder.Services.AddScoped<IFreeSpaceService, FreeSpaceService>();
+    builder.Services.AddScoped<ITrackerQueueSortService, TrackerQueueSortService>();
     builder.Services.AddScoped<ITorrentProcessor, TorrentProcessor>();
     builder.Services.AddScoped<IArrMediaService, ArrMediaService>();
     builder.Services.AddScoped<ISearchExecutor, SearchExecutor>();
     builder.Services.AddScoped<QualityProfileSwitcherService>();
     builder.Services.AddSingleton<ITorrentCacheService, TorrentCacheService>();
-    // §6.10 / §1.8: update check + auto-update
+    // Â§6.10 / Â§1.8: update check + auto-update
     builder.Services.AddSingleton<UpdateService>();
     builder.Services.AddHostedService<AutoUpdateBackgroundService>();
 
@@ -369,7 +373,7 @@ try
         await next(context);
     });
 
-    // Static files — add cache-busting headers for the service worker
+    // Static files â€” add cache-busting headers for the service worker
     app.UseDefaultFiles();
     app.Use(async (context, next) =>
     {
@@ -432,7 +436,7 @@ try
             return;
         }
 
-        // 1) Bearer token (constant-time) — always accepted for API when Token is set
+        // 1) Bearer token (constant-time) â€” always accepted for API when Token is set
         var webToken = cfg.WebUI.Token;
         if (!string.IsNullOrEmpty(webToken))
         {
@@ -477,7 +481,7 @@ try
 
     app.MapControllers();
 
-    // Home redirect: / → /ui
+    // Home redirect: / â†’ /ui
     app.MapGet("/", () => Results.Redirect("/ui"));
 
     // Health check
@@ -490,15 +494,15 @@ try
 
     // ==================== /web/* endpoints ====================
 
-    // Web Meta — fetches latest release from GitHub and compares with current version
-    // §6.10: GET /web/meta — version info + update state + auth flags (MetaResponse-compatible)
+    // Web Meta â€” fetches latest release from GitHub and compares with current version
+    // Â§6.10: GET /web/meta â€” version info + update state + auth flags (MetaResponse-compatible)
     app.MapGet("/web/meta", async (UpdateService updater, TorrentarrConfig cfg, int? force) =>
     {
         await updater.CheckForUpdateAsync(forceRefresh: force.GetValueOrDefault() != 0);
         return Results.Ok(updater.BuildMetaResponse(cfg.WebUI));
     });
 
-    // Web Status — matches TypeScript StatusResponse (no extra webui field)
+    // Web Status â€” matches TypeScript StatusResponse (no extra webui field)
     app.MapGet("/web/status", async (TorrentarrConfig cfg, QBittorrentConnectionManager qbitManager) =>
     {
         var primaryQbit = (cfg.QBitInstances.GetValueOrDefault("qBit") ?? new QBitConfig());
@@ -549,17 +553,17 @@ try
         });
     });
 
-    // Web Qbit Categories — full QbitCategory shape
+    // Web Qbit Categories â€” full QbitCategory shape
     // Only returns categories that are configured to be monitored:
-    //   • cfg.QBit.ManagedCategories  (qBit-managed)
-    //   • each Arr instance's Category (Arr-managed)
+    //   â€¢ cfg.QBit.ManagedCategories  (qBit-managed)
+    //   â€¢ each Arr instance's Category (Arr-managed)
     // The "instance" field is always the qBit instance name (never the Arr instance name)
     // so that ProcessesView can match categories to the correct qBit process card.
     app.MapGet("/web/qbit/categories", async (QBittorrentConnectionManager qbitManager, TorrentarrConfig cfg) =>
     {
         var categories = new List<object>();
 
-        // Build Arr-managed category lookup: category name → ArrInstanceConfig
+        // Build Arr-managed category lookup: category name â†’ ArrInstanceConfig
         var arrCategoryToConfig = cfg.ArrInstances
             .Where(kvp => !string.IsNullOrEmpty(kvp.Value.Category))
             .ToDictionary(kvp => kvp.Value.Category!, kvp => kvp.Value, StringComparer.OrdinalIgnoreCase);
@@ -610,7 +614,7 @@ try
                         categories.Add(new
                         {
                             category = catName,
-                            // Always the qBit instance name — ProcessesView matches on this field
+                            // Always the qBit instance name â€” ProcessesView matches on this field
                             instance = "qBit",
                             managedBy,
                             torrentCount = torrentsInCat.Count,
@@ -633,7 +637,7 @@ try
             catch { /* qBit not reachable */ }
         }
 
-        // Additional qBit instances — only their own ManagedCategories are monitored
+        // Additional qBit instances â€” only their own ManagedCategories are monitored
         foreach (var (instName, instCfg) in cfg.QBitInstances.Where(q => q.Key != "qBit" && q.Value.Host != "CHANGE_ME"))
         {
             if (instCfg.ManagedCategories.Count == 0) continue;
@@ -677,7 +681,7 @@ try
         return Results.Ok(new { categories, ready = true });
     });
 
-    // Web Processes — reads live state from ProcessStateManager + qBit connection status
+    // Web Processes â€” reads live state from ProcessStateManager + qBit connection status
     app.MapGet("/web/processes", async (ProcessStateManager stateMgr, TorrentarrConfig cfg, QBittorrentConnectionManager qbitMgr) =>
     {
         var processes = stateMgr.GetAll().Select(s => new
@@ -752,12 +756,18 @@ try
         return Results.Ok(new { processes });
     });
 
-    // Web Restart Process — stops and restarts the named instance worker (kind is advisory; one loop per Arr)
-    app.MapPost("/web/processes/{category}/{kind}/restart", async (string category, string kind, TorrentarrConfig cfg, ArrWorkerManager workerMgr) =>
+    // Web Restart Process â€” stops and restarts the named instance worker (kind is advisory; one loop per Arr)
+    app.MapPost("/web/processes/{category}/{kind}/restart", async (string category, string kind, TorrentarrConfig cfg, ArrWorkerManager workerMgr, HostWorkerManager hostWorkerMgr) =>
     {
         var kindNorm = (kind ?? "").Trim().ToLowerInvariant();
         if (kindNorm != "search" && kindNorm != "torrent" && kindNorm != "category" && kindNorm != "arr")
             return Results.BadRequest(new { error = "kind must be search, torrent, category, or arr" });
+
+        if (HostWorkerManager.AllHostWorkerNames.Contains(category, StringComparer.OrdinalIgnoreCase))
+        {
+            var ok = await hostWorkerMgr.RestartWorkerAsync(category);
+            return Results.Ok(new { status = ok ? "restarted" : "skipped", restarted = ok ? new[] { category } : Array.Empty<string>() });
+        }
 
         var instanceName = cfg.ArrInstances
             .FirstOrDefault(kv => kv.Value.Category.Equals(category, StringComparison.OrdinalIgnoreCase)).Key;
@@ -767,20 +777,22 @@ try
     });
 
     // Web Restart All Processes
-    app.MapPost("/web/processes/restart_all", async (TorrentarrConfig cfg, ArrWorkerManager workerMgr) =>
+    app.MapPost("/web/processes/restart_all", async (TorrentarrConfig cfg, ArrWorkerManager workerMgr, HostWorkerManager hostWorkerMgr) =>
     {
         await workerMgr.RestartAllWorkersAsync();
-        return Results.Ok(new { status = "restarted", restarted = cfg.ArrInstances.Keys.ToArray() });
+        await hostWorkerMgr.RestartAllWorkersAsync();
+        return Results.Ok(new { status = "restarted", restarted = cfg.ArrInstances.Keys.Concat(HostWorkerManager.AllHostWorkerNames).ToArray() });
     });
 
-    // Web Arr Rebuild — same shape as RestartResponse
-    app.MapPost("/web/arr/rebuild", async (TorrentarrConfig cfg, ArrWorkerManager workerMgr) =>
+    // Web Arr Rebuild â€” same shape as RestartResponse
+    app.MapPost("/web/arr/rebuild", async (TorrentarrConfig cfg, ArrWorkerManager workerMgr, HostWorkerManager hostWorkerMgr) =>
     {
         await workerMgr.RestartAllWorkersAsync();
-        return Results.Ok(new { status = "restarted", restarted = cfg.ArrInstances.Keys.ToArray() });
+        await hostWorkerMgr.RestartAllWorkersAsync();
+        return Results.Ok(new { status = "restarted", restarted = cfg.ArrInstances.Keys.Concat(HostWorkerManager.AllHostWorkerNames).ToArray() });
     });
 
-    // Web Log Level — actually changes the Serilog level at runtime
+    // Web Log Level â€” actually changes the Serilog level at runtime
     app.MapPost("/web/loglevel", (LoggerConfigurationRequest req, LoggingLevelSwitch ls) =>
     {
         ls.MinimumLevel = req.Level?.ToUpperInvariant() switch
@@ -794,7 +806,7 @@ try
         return Results.Ok(new { success = true, level = ls.MinimumLevel.ToString() });
     });
 
-    // Web Logs List — returns name, size, and last-modified for each .log file
+    // Web Logs List â€” returns name, size, and last-modified for each .log file
     app.MapGet("/web/logs", () =>
     {
         var files = new List<object>();
@@ -809,7 +821,7 @@ try
         return Results.Ok(new { files });
     });
 
-    // Web Log Tail — last 1000 lines, plain text so frontend res.text() gets unquoted content
+    // Web Log Tail â€” last 1000 lines, plain text so frontend res.text() gets unquoted content
     app.MapGet("/web/logs/{name}", async (string name) =>
     {
         if (!IsValidLogFileName(name))
@@ -922,7 +934,7 @@ try
         });
     });
 
-    // Web Sonarr Series — seasons populated from episodes table
+    // Web Sonarr Series â€” seasons populated from episodes table
     app.MapGet("/web/sonarr/{category}/series", async (string category, TorrentarrDbContext db, int? page, int? page_size, string? q, int? missing) =>
     {
         var currentPage = page ?? 0;
@@ -1022,7 +1034,7 @@ try
         });
     });
 
-    // Web Lidarr Albums — tracks populated from tracks table
+    // Web Lidarr Albums â€” tracks populated from tracks table
     app.MapGet("/web/lidarr/{category}/albums", async (string category, TorrentarrDbContext db, int? page, int? page_size, string? q, bool? monitored, bool? has_file, bool? quality_met, bool? is_request, bool? flat_mode) =>
     {
         var currentPage = page ?? 0;
@@ -1156,7 +1168,7 @@ try
         });
     });
 
-    // Web Lidarr Tracks — paginated flat track list for a Lidarr instance
+    // Web Lidarr Tracks â€” paginated flat track list for a Lidarr instance
     app.MapGet("/web/lidarr/{category}/tracks", async (string category, TorrentarrDbContext db, int? page, int? page_size, string? q) =>
     {
         var currentPage = page ?? 0;
@@ -1217,7 +1229,7 @@ try
         return Results.Ok(new { success = instanceName != null, message = instanceName != null ? $"Restarted {instanceName}" : $"No worker found for category '{category}'" });
     });
 
-    // Web Config Get — return a FLAT structure matching Python qBitrr's config format.
+    // Web Config Get â€” return a FLAT structure matching Python qBitrr's config format.
     // ConfigView.tsx expects all sections at the top level (e.g. "Radarr-1080", "qBit"),
     // NOT nested under "ArrInstances" / "QBit". Keys use PascalCase to match field paths.
     app.MapGet("/web/config", (TorrentarrConfig cfg) =>
@@ -1247,7 +1259,7 @@ try
         return Results.Content(redacted.ToString(Newtonsoft.Json.Formatting.None), "application/json");
     });
 
-    // Web Config Update — frontend sends { changes: { "Section.Key": value, ... } } (dotted keys).
+    // Web Config Update â€” frontend sends { changes: { "Section.Key": value, ... } } (dotted keys).
     // ConfigView.tsx flatten()s the hierarchical config into dotted paths before sending only the
     // changed keys.  We apply those changes onto the current in-memory config and save.
     app.MapPost("/web/config", async (HttpRequest request, TorrentarrConfig cfg, ConfigurationLoader loader) =>
@@ -1268,7 +1280,7 @@ try
             var serializer = Newtonsoft.Json.JsonSerializer.Create(newtonsoftSettings);
 
             // Step 1: Snapshot current config as a flat-section JObject (mirrors GET /web/config).
-            // Keys are section names ("Settings", "WebUI", "qBit", "Radarr-1080", …).
+            // Keys are section names ("Settings", "WebUI", "qBit", "Radarr-1080", â€¦).
             var currentObj = new Newtonsoft.Json.Linq.JObject();
             currentObj["Settings"] = Newtonsoft.Json.Linq.JObject.FromObject(cfg.Settings, serializer);
             currentObj["WebUI"] = Newtonsoft.Json.Linq.JObject.FromObject(cfg.WebUI, serializer);
@@ -1278,7 +1290,7 @@ try
                 currentObj[key] = Newtonsoft.Json.Linq.JObject.FromObject(arr, serializer);
 
             // Step 2: Apply each dotted-key change onto the snapshot.
-            // e.g. "Settings.ConsoleLevel" → sets currentObj["Settings"]["ConsoleLevel"].
+            // e.g. "Settings.ConsoleLevel" â†’ sets currentObj["Settings"]["ConsoleLevel"].
             // null value means delete.
             var changesObj = Newtonsoft.Json.Linq.JObject.Parse(changesEl.GetRawText());
             foreach (var change in changesObj.Properties())
@@ -1295,7 +1307,7 @@ try
 
                 var parts = change.Name.Split('.');
                 var rawSectionKey = parts[0];
-                // Case-insensitive section key: "webui" → "WebUI", "settings" → "Settings"
+                // Case-insensitive section key: "webui" â†’ "WebUI", "settings" â†’ "Settings"
                 var sectionKey = currentObj.Properties()
                     .FirstOrDefault(p => p.Name.Equals(rawSectionKey, StringComparison.OrdinalIgnoreCase))?.Name
                     ?? rawSectionKey;
@@ -1323,7 +1335,7 @@ try
             }
 
             // Cleanup: remove sections that had all their keys deleted (became empty {}).
-            // This handles renames: the old section has all sub-keys set to null → empty JObject.
+            // This handles renames: the old section has all sub-keys set to null â†’ empty JObject.
             foreach (var emptyProp in currentObj.Properties().ToList())
             {
                 if (emptyProp.Value is Newtonsoft.Json.Linq.JObject emptyObj && !emptyObj.Properties().Any())
@@ -1379,7 +1391,7 @@ try
         }
     });
 
-    // §6.10: POST /web/update — trigger binary download + in-place apply
+    // Â§6.10: POST /web/update â€” trigger binary download + in-place apply
     app.MapPost("/web/update", async (UpdateService updater, IHostApplicationLifetime lifetime) =>
     {
         if (updater.ApplyState.InProgress)
@@ -1388,10 +1400,10 @@ try
         // Ensure we have a fresh check before applying
         await updater.CheckForUpdateAsync();
         await updater.ApplyUpdateAsync(lifetime);
-        return Results.Ok(new { success = true, message = "Update started — application will restart when complete" });
+        return Results.Ok(new { success = true, message = "Update started â€” application will restart when complete" });
     });
 
-    // §6.10: GET /web/download-update — return download URL/name/size for the latest binary
+    // Â§6.10: GET /web/download-update â€” return download URL/name/size for the latest binary
     app.MapGet("/web/download-update", async (UpdateService updater) =>
     {
         await updater.CheckForUpdateAsync();
@@ -1407,11 +1419,11 @@ try
         });
     });
 
-    // Web Test Arr Connection (no auth — frontend uses this directly)
+    // Web Test Arr Connection (no auth â€” frontend uses this directly)
     app.MapPost("/web/arr/test-connection", (TestConnectionRequest req, TorrentarrConfig cfg) =>
         HandleTestConnection(req, cfg));
 
-    // Web Torrents Distribution — count media items per qBit category per Arr instance
+    // Web Torrents Distribution â€” count media items per qBit category per Arr instance
     app.MapGet("/web/torrents/distribution", async (TorrentarrConfig cfg, TorrentarrDbContext db) =>
     {
         var distribution = new Dictionary<string, Dictionary<string, int>>();
@@ -1432,7 +1444,7 @@ try
         return Results.Ok(new { distribution });
     });
 
-    // Web Token — only returned when already authenticated (middleware enforces when auth enabled)
+    // Web Token â€” only returned when already authenticated (middleware enforces when auth enabled)
     app.MapGet("/web/token", (TorrentarrConfig cfg, HttpContext ctx) =>
     {
         var isAuthenticated = ctx.User?.Identity?.IsAuthenticated == true;
@@ -1441,7 +1453,7 @@ try
         return Results.Ok(new { token = cfg.WebUI.Token });
     });
 
-    // Local login: username + password → session cookie
+    // Local login: username + password â†’ session cookie
     app.MapPost("/web/login", async (HttpContext ctx, TorrentarrConfig cfg, IPasswordHasher hasher, ILogger<Program> log) =>
     {
         var ip = ctx.Connection.RemoteIpAddress?.ToString();
@@ -1549,7 +1561,7 @@ try
         return NoOpAfterChallengeResult.Instance;
     });
 
-    // Web Qbit Categories (api mirror — same logic as /web/qbit/categories, token-protected)
+    // Web Qbit Categories (api mirror â€” same logic as /web/qbit/categories, token-protected)
     app.MapGet("/api/qbit/categories", async (QBittorrentConnectionManager qbitManager, TorrentarrConfig cfg) =>
     {
         var categories = new List<object>();
@@ -1733,11 +1745,17 @@ try
         return Results.Ok(new { processes });
     });
 
-    app.MapPost("/api/processes/{category}/{kind}/restart", async (string category, string kind, TorrentarrConfig cfg, ArrWorkerManager workerMgr) =>
+    app.MapPost("/api/processes/{category}/{kind}/restart", async (string category, string kind, TorrentarrConfig cfg, ArrWorkerManager workerMgr, HostWorkerManager hostWorkerMgr) =>
     {
         var kindNorm = (kind ?? "").Trim().ToLowerInvariant();
         if (kindNorm != "search" && kindNorm != "torrent" && kindNorm != "category" && kindNorm != "arr")
             return Results.BadRequest(new { error = "kind must be search, torrent, category, or arr" });
+
+        if (HostWorkerManager.AllHostWorkerNames.Contains(category, StringComparer.OrdinalIgnoreCase))
+        {
+            var ok = await hostWorkerMgr.RestartWorkerAsync(category);
+            return Results.Ok(new { status = ok ? "restarted" : "skipped", restarted = ok ? new[] { category } : Array.Empty<string>() });
+        }
 
         var instanceName = cfg.ArrInstances
             .FirstOrDefault(kv => kv.Value.Category.Equals(category, StringComparison.OrdinalIgnoreCase)).Key;
@@ -1746,16 +1764,18 @@ try
         return Results.Ok(new { status = "restarted", restarted = instanceName != null ? new[] { instanceName } : Array.Empty<string>() });
     });
 
-    app.MapPost("/api/processes/restart_all", async (TorrentarrConfig cfg, ArrWorkerManager workerMgr) =>
+    app.MapPost("/api/processes/restart_all", async (TorrentarrConfig cfg, ArrWorkerManager workerMgr, HostWorkerManager hostWorkerMgr) =>
     {
         await workerMgr.RestartAllWorkersAsync();
-        return Results.Ok(new { status = "restarted", restarted = cfg.ArrInstances.Keys.ToArray() });
+        await hostWorkerMgr.RestartAllWorkersAsync();
+        return Results.Ok(new { status = "restarted", restarted = cfg.ArrInstances.Keys.Concat(HostWorkerManager.AllHostWorkerNames).ToArray() });
     });
 
-    app.MapPost("/api/arr/rebuild", async (TorrentarrConfig cfg, ArrWorkerManager workerMgr) =>
+    app.MapPost("/api/arr/rebuild", async (TorrentarrConfig cfg, ArrWorkerManager workerMgr, HostWorkerManager hostWorkerManager) =>
     {
         await workerMgr.RestartAllWorkersAsync();
-        return Results.Ok(new { status = "restarted", restarted = cfg.ArrInstances.Keys.ToArray() });
+        await hostWorkerManager.RestartAllWorkersAsync();
+        return Results.Ok(new { status = "restarted", restarted = cfg.ArrInstances.Keys.Concat(HostWorkerManager.AllHostWorkerNames).ToArray() });
     });
 
     app.MapPost("/api/loglevel", (LoggerConfigurationRequest req, LoggingLevelSwitch ls) =>
@@ -2220,7 +2240,7 @@ try
             return Results.Ok(new { success = false, message = "Update already in progress" });
         await updater.CheckForUpdateAsync();
         await updater.ApplyUpdateAsync(lifetime);
-        return Results.Ok(new { success = true, message = "Update started — application will restart when complete" });
+        return Results.Ok(new { success = true, message = "Update started â€” application will restart when complete" });
     });
 
     app.MapGet("/api/download-update", async (UpdateService updater) =>
@@ -2283,7 +2303,7 @@ finally
 
 return 0;
 
-// ── Manual DB migrations (columns added after initial EnsureCreated) ──────
+// â”€â”€ Manual DB migrations (columns added after initial EnsureCreated) â”€â”€â”€â”€â”€â”€
 static void ApplyManualMigrations(TorrentarrDbContext db)
 {
     // Add tvdbid to seriesfilesmodel if it doesn't exist (added in v1.1)
@@ -2307,7 +2327,7 @@ static void ApplyManualMigrations(TorrentarrDbContext db)
     AddColumnIfMissing(db, "albumfilesmodel", "PhysicalRelease", "TEXT");
     AddColumnIfMissing(db, "albumfilesmodel", "MinimumAvailability", "TEXT");
 
-    // §5: Search activity table for Processes page (qBitrr parity)
+    // Â§5: Search activity table for Processes page (qBitrr parity)
     CreateTableIfMissing(db, "searchactivity", "CREATE TABLE IF NOT EXISTS searchactivity ( category TEXT NOT NULL PRIMARY KEY, summary TEXT, timestamp TEXT );");
 }
 
@@ -2366,7 +2386,7 @@ static void AddColumnIfMissing(TorrentarrDbContext db, string table, string colu
     }
 }
 
-// ── Log file helpers ──────────────────────────────────────────────────────
+// â”€â”€ Log file helpers â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 /// <summary>
 /// Validates that a log file name is a plain filename ending in .log with no path components.
@@ -2409,7 +2429,7 @@ static async Task<string> TailLogFileAsync(string path, int maxLines)
     if (lines.Count >= maxLines)
         return string.Join("\n", lines.TakeLast(maxLines));
 
-    // Heuristic undershot — not enough lines captured; fall back to full read.
+    // Heuristic undershot â€” not enough lines captured; fall back to full read.
     fs.Seek(0, SeekOrigin.Begin);
     reader.DiscardBufferedData();
     lines.Clear();
@@ -2606,18 +2626,18 @@ static (string reloadType, List<string> affectedInstances) DetermineReloadType(
 {
     var serialize = (object? o) => Newtonsoft.Json.JsonConvert.SerializeObject(o);
 
-    // QBit instance changes → full reload (requires process restart)
+    // QBit instance changes â†’ full reload (requires process restart)
     bool hasQBitChanges = serialize(oldCfg.QBitInstances) != serialize(newCfg.QBitInstances);
 
-    // Settings changes → webui reload (workers pick up changes at next cycle)
+    // Settings changes â†’ webui reload (workers pick up changes at next cycle)
     bool hasSettingsChanges = serialize(oldCfg.Settings) != serialize(newCfg.Settings);
 
-    // WebUI connection fields (host/port/token) → webui restart
+    // WebUI connection fields (host/port/token) â†’ webui restart
     bool hasWebuiKeyChanges = oldCfg.WebUI.Host != newCfg.WebUI.Host
                            || oldCfg.WebUI.Port != newCfg.WebUI.Port
                            || oldCfg.WebUI.Token != newCfg.WebUI.Token;
 
-    // Other WebUI fields (theme, density, grouping, liveArr) → frontend-only, no restart
+    // Other WebUI fields (theme, density, grouping, liveArr) â†’ frontend-only, no restart
     bool hasFrontendOnlyChanges = !hasWebuiKeyChanges
                                && serialize(oldCfg.WebUI) != serialize(newCfg.WebUI);
 
@@ -2644,430 +2664,6 @@ static (string reloadType, List<string> affectedInstances) DetermineReloadType(
     return ("none", []);
 }
 
-/// <summary>
-/// Background service that orchestrates all processes.
-/// </summary>
-class ProcessOrchestratorService : BackgroundService
-{
-    private readonly ILogger<ProcessOrchestratorService> _logger;
-    private readonly TorrentarrConfig _config;
-    private readonly QBittorrentConnectionManager _qbitManager;
-    private readonly IServiceScopeFactory _scopeFactory;
-    private readonly ProcessStateManager _stateManager;
-    private readonly HashSet<string> _managedCategories;
-    private long _currentFreeSpace;
-    private long _minFreeSpaceBytes;
-    private string? _freeSpaceFolder;
-    private bool _qbitConfigured;
-    private bool _freeSpaceEnabled;
-
-    public ProcessOrchestratorService(
-        ILogger<ProcessOrchestratorService> logger,
-        TorrentarrConfig config,
-        QBittorrentConnectionManager qbitManager,
-        IServiceScopeFactory scopeFactory,
-        ProcessStateManager stateManager)
-    {
-        _logger = logger;
-        _config = config;
-        _qbitManager = qbitManager;
-        _scopeFactory = scopeFactory;
-        _stateManager = stateManager;
-        _managedCategories = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
-        // §8: Respect Settings.FreeSpace string ("-1" = disabled, "10G"/"500M" = threshold)
-        var freeSpaceBytes = ParseFreeSpaceString(_config.Settings.FreeSpace);
-        if (freeSpaceBytes < 0)
-        {
-            _freeSpaceEnabled = false;
-            _minFreeSpaceBytes = (long)(_config.Settings.FreeSpaceThresholdGB ?? 10) * 1024L * 1024L * 1024L;
-        }
-        else
-        {
-            _freeSpaceEnabled = true;
-            _minFreeSpaceBytes = freeSpaceBytes;
-        }
-        _qbitConfigured = config.QBitInstances.Values.Any(q =>
-            !q.Disabled && q.Host != "CHANGE_ME" && q.UserName != "CHANGE_ME" && q.Password != "CHANGE_ME");
-    }
-
-    /// <summary>Parse qBitrr FreeSpace string: "-1" = disabled, "10G"/"500M"/"1024K" or raw number = threshold bytes.</summary>
-    private static long ParseFreeSpaceString(string? value)
-    {
-        if (string.IsNullOrWhiteSpace(value) || value.Trim() == "-1") return -1;
-        var v = value.Trim().ToUpperInvariant();
-        try
-        {
-            if (v.EndsWith("G")) return long.Parse(v[..^1]) * 1024L * 1024L * 1024L;
-            if (v.EndsWith("M")) return long.Parse(v[..^1]) * 1024L * 1024L;
-            if (v.EndsWith("K")) return long.Parse(v[..^1]) * 1024L;
-            return long.Parse(v);
-        }
-        catch { return -1; }
-    }
-
-    protected override async Task ExecuteAsync(CancellationToken stoppingToken)
-    {
-        _logger.LogInformation("Process Orchestrator starting");
-
-        try
-        {
-            if (!_qbitConfigured)
-            {
-                _logger.LogWarning("No qBittorrent instances configured - WebUI only mode");
-            }
-            else
-            {
-                var anyConnected = false;
-                foreach (var (name, qbit) in _config.QBitInstances)
-                {
-                    if (!qbit.Disabled && qbit.Host != "CHANGE_ME")
-                    {
-                        var ok = await _qbitManager.InitializeAsync(name, qbit, stoppingToken);
-                        if (ok) anyConnected = true;
-                    }
-                }
-                if (!anyConnected)
-                {
-                    _logger.LogWarning("Failed to connect to any qBittorrent instance. WebUI is still available.");
-                    _qbitConfigured = false;
-                }
-            }
-
-            // Get ALL categories from ALL Arr instances (not just managed ones) - matches qBitrr behavior
-            foreach (var arrInstance in _config.ArrInstances.Where(x => !string.IsNullOrEmpty(x.Value.Category)))
-                _managedCategories.Add(arrInstance.Value.Category!);
-
-            // Also add qBit-managed categories from all qBit instances
-            foreach (var qbit in _config.QBitInstances.Values)
-            {
-                if (qbit.ManagedCategories != null)
-                {
-                    foreach (var cat in qbit.ManagedCategories)
-                        _managedCategories.Add(cat);
-                }
-            }
-
-            if (_managedCategories.Count > 0)
-                _logger.LogInformation("FreeSpace categories: {Categories}", string.Join(", ", _managedCategories));
-
-            _freeSpaceFolder = GetFreeSpaceFolder();
-
-            // Other section (Recheck, Failed, Free Space Manager): only when qBit is configured
-            if (_qbitConfigured)
-            {
-                _stateManager.Initialize("Recheck", new ArrProcessState
-                {
-                    Name = "Recheck",
-                    Category = "Recheck",
-                    Kind = "category",
-                    Alive = false,
-                    CategoryCount = null
-                });
-                _stateManager.Initialize("Failed", new ArrProcessState
-                {
-                    Name = "Failed",
-                    Category = "Failed",
-                    Kind = "category",
-                    Alive = false,
-                    CategoryCount = null
-                });
-                _stateManager.Initialize("FreeSpaceManager", new ArrProcessState
-                {
-                    Name = "FreeSpaceManager",
-                    Category = "FreeSpaceManager",
-                    Kind = "torrent",
-                    MetricType = "free-space",
-                    Alive = false,
-                    CategoryCount = null
-                });
-            }
-
-            while (!stoppingToken.IsCancellationRequested)
-            {
-                try
-                {
-                    if (_qbitConfigured)
-                    {
-                        await ProcessSpecialCategoriesAsync(stoppingToken);
-
-                        if (_config.Settings.AutoPauseResume && _freeSpaceEnabled && _minFreeSpaceBytes > 0)
-                            await ProcessFreeSpaceManagerAsync(stoppingToken);
-                    }
-                }
-                catch (Exception ex)
-                {
-                    _logger.LogError(ex, "Error in orchestrator loop");
-                }
-
-                await Task.Delay(TimeSpan.FromSeconds(_config.Settings.LoopSleepTimer), stoppingToken);
-            }
-        }
-        catch (OperationCanceledException)
-        {
-            _logger.LogInformation("Orchestrator shutting down gracefully");
-        }
-        catch (Exception ex)
-        {
-            _logger.LogError(ex, "Error in process orchestrator");
-        }
-    }
-
-    private string? GetFreeSpaceFolder()
-    {
-        // Try configured folder first
-        if (!string.IsNullOrEmpty(_config.Settings.FreeSpaceFolder) && _config.Settings.FreeSpaceFolder != "CHANGE_ME")
-        {
-            // Check if path exists, if not return null
-            if (Directory.Exists(_config.Settings.FreeSpaceFolder))
-                return _config.Settings.FreeSpaceFolder;
-        }
-
-        // Fallback to completed download folder
-        if (!string.IsNullOrEmpty(_config.Settings.CompletedDownloadFolder) && _config.Settings.CompletedDownloadFolder != "CHANGE_ME")
-        {
-            if (Directory.Exists(_config.Settings.CompletedDownloadFolder))
-                return _config.Settings.CompletedDownloadFolder;
-        }
-
-        // Final fallback: use /config which is always available in container
-        return "/config";
-    }
-
-    private async Task ProcessSpecialCategoriesAsync(CancellationToken cancellationToken)
-    {
-        int totalFailed = 0;
-        int totalRecheck = 0;
-        foreach (var (instanceName, client) in _qbitManager.GetAllClients())
-        {
-            try
-            {
-                var failedTorrents = await client.GetTorrentsAsync(_config.Settings.FailedCategory, cancellationToken);
-                totalFailed += failedTorrents.Count;
-                foreach (var torrent in failedTorrents)
-                {
-                    // §2.13: Settings-level IgnoreTorrentsYoungerThan applies to failed/recheck
-                    if (torrent.AddedOn > 0)
-                    {
-                        var addedAt = DateTimeOffset.FromUnixTimeSeconds(torrent.AddedOn).UtcDateTime;
-                        if ((DateTime.UtcNow - addedAt).TotalSeconds < _config.Settings.IgnoreTorrentsYoungerThan)
-                        {
-                            _logger.LogTrace("[{Instance}] Skipping failed torrent too young: {Name} (age {Age:F0}s < {Threshold}s)",
-                                instanceName, torrent.Name,
-                                (DateTime.UtcNow - addedAt).TotalSeconds,
-                                _config.Settings.IgnoreTorrentsYoungerThan);
-                            continue;
-                        }
-                    }
-                    _logger.LogWarning("[{Instance}] Deleting failed torrent: {Name}", instanceName, torrent.Name);
-                    await client.DeleteTorrentsAsync(new List<string> { torrent.Hash }, deleteFiles: true, cancellationToken);
-                }
-
-                var recheckTorrents = await client.GetTorrentsAsync(_config.Settings.RecheckCategory, cancellationToken);
-                totalRecheck += recheckTorrents.Count;
-                foreach (var torrent in recheckTorrents)
-                {
-                    // §2.13: Settings-level IgnoreTorrentsYoungerThan applies to failed/recheck
-                    if (torrent.AddedOn > 0)
-                    {
-                        var addedAt = DateTimeOffset.FromUnixTimeSeconds(torrent.AddedOn).UtcDateTime;
-                        if ((DateTime.UtcNow - addedAt).TotalSeconds < _config.Settings.IgnoreTorrentsYoungerThan)
-                        {
-                            _logger.LogTrace("[{Instance}] Skipping recheck torrent too young: {Name} (age {Age:F0}s < {Threshold}s)",
-                                instanceName, torrent.Name,
-                                (DateTime.UtcNow - addedAt).TotalSeconds,
-                                _config.Settings.IgnoreTorrentsYoungerThan);
-                            continue;
-                        }
-                    }
-                    _logger.LogInformation("[{Instance}] Re-checking torrent: {Name}", instanceName, torrent.Name);
-                    await client.RecheckTorrentsAsync(new List<string> { torrent.Hash }, cancellationToken);
-                }
-            }
-            catch (Exception ex)
-            {
-                _logger.LogError(ex, "[{Instance}] Error processing special categories", instanceName);
-            }
-        }
-        _stateManager.Update("Failed", s => { s.CategoryCount = totalFailed; s.Alive = true; });
-        _stateManager.Update("Recheck", s => { s.CategoryCount = totalRecheck; s.Alive = true; });
-    }
-
-    private async Task ProcessFreeSpaceManagerAsync(CancellationToken cancellationToken)
-    {
-        _logger.LogInformation("FreeSpace: Starting FreeSpace manager check");
-
-        if (string.IsNullOrEmpty(_freeSpaceFolder))
-        {
-            _logger.LogWarning("FreeSpace: No free space folder configured or folder doesn't exist");
-            _stateManager.Update("FreeSpaceManager", s => { s.Alive = false; s.CategoryCount = 0; });
-            return;
-        }
-
-        _logger.LogInformation("FreeSpace: Using folder {Folder} for space monitoring", _freeSpaceFolder);
-
-        // §1.6: tagless mode needs a DB scope to read/write FreeSpacePaused column
-        IServiceScope? scope = null;
-        TorrentarrDbContext? dbContext = null;
-        if (_config.Settings.Tagless)
-        {
-            scope = _scopeFactory.CreateScope();
-            dbContext = scope.ServiceProvider.GetRequiredService<TorrentarrDbContext>();
-        }
-
-        const string freeSpacePausedTag = "qBitrr-free_space_paused";
-        int pausedCount = 0;
-
-        try
-        {
-            var driveInfo = new DriveInfo(_freeSpaceFolder);
-            _currentFreeSpace = driveInfo.AvailableFreeSpace - _minFreeSpaceBytes;
-
-            // Gather torrents from ALL qBit instances across all managed categories, sorted by added date
-            var allTorrents = new List<(QBittorrentClient client, TorrentInfo torrent)>();
-            foreach (var (_, client) in _qbitManager.GetAllClients())
-            {
-                foreach (var category in _managedCategories)
-                {
-                    var torrents = await client.GetTorrentsAsync(category, cancellationToken);
-                    allTorrents.AddRange(torrents.Select(t => (client, t)));
-                }
-            }
-
-            int[]? pausedCountRef = null;
-            if (!_config.Settings.Tagless)
-            {
-                pausedCount = allTorrents.Count(t => t.torrent.Tags?.Contains(freeSpacePausedTag) == true);
-                pausedCountRef = new int[] { pausedCount };
-            }
-
-            foreach (var (client, torrent) in allTorrents.OrderBy(x => x.torrent.AddedOn))
-                await ProcessSingleTorrentSpaceAsync(client, torrent, dbContext, pausedCountRef, cancellationToken);
-
-            if (_config.Settings.Tagless && dbContext != null)
-                pausedCount = await dbContext.TorrentLibrary.CountAsync(t => t.FreeSpacePaused, cancellationToken);
-            else if (pausedCountRef != null)
-                pausedCount = pausedCountRef[0];
-
-            _stateManager.Update("FreeSpaceManager", s =>
-            {
-                s.CategoryCount = pausedCount;
-                s.MetricType = "free-space";
-                s.Alive = _freeSpaceEnabled && _minFreeSpaceBytes > 0 && !string.IsNullOrEmpty(_freeSpaceFolder);
-            });
-        }
-        catch (Exception ex)
-        {
-            _logger.LogError(ex, "Error in free space manager");
-        }
-        finally
-        {
-            scope?.Dispose();
-        }
-    }
-
-    private async Task ProcessSingleTorrentSpaceAsync(
-        QBittorrentClient client, TorrentInfo torrent, TorrentarrDbContext? dbContext, int[]? pausedCountRef, CancellationToken cancellationToken)
-    {
-        const string freeSpacePausedTag = "qBitrr-free_space_paused";
-        var tagless = _config.Settings.Tagless;
-
-        var isDownloading = torrent.State.Contains("downloading", StringComparison.OrdinalIgnoreCase) ||
-                           torrent.State.Contains("stalledDL", StringComparison.OrdinalIgnoreCase);
-        var isPausedDownload = torrent.State.Contains("pausedDL", StringComparison.OrdinalIgnoreCase);
-
-        // §1.6: tagless mode reads FreeSpacePaused from DB column; otherwise check qBit tag
-        bool hasFreeSpaceTag;
-        if (tagless && dbContext != null)
-        {
-            var dbEntry = await dbContext.TorrentLibrary.AsNoTracking()
-                .FirstOrDefaultAsync(t => t.Hash == torrent.Hash, cancellationToken);
-            hasFreeSpaceTag = dbEntry?.FreeSpacePaused == true;
-        }
-        else
-        {
-            hasFreeSpaceTag = torrent.Tags?.Contains(freeSpacePausedTag) == true;
-        }
-
-        if (isDownloading || (isPausedDownload && hasFreeSpaceTag))
-        {
-            var freeSpaceTest = _currentFreeSpace - torrent.AmountLeft;
-
-            _logger.LogInformation(
-                "FreeSpace: Evaluating torrent: {Name} | Current space: {Available} | Space after: {SpaceAfter} | Remaining: {Needed}",
-                torrent.Name, FormatBytes(_currentFreeSpace), FormatBytes(freeSpaceTest), FormatBytes(torrent.AmountLeft));
-
-            if (!isPausedDownload && freeSpaceTest < 0)
-            {
-                _logger.LogInformation(
-                    "FreeSpace: Pausing download (insufficient space) | Torrent: {Name} | Available: {Available} | Needed: {Needed} | Deficit: {Deficit}",
-                    torrent.Name, FormatBytes(_currentFreeSpace), FormatBytes(torrent.AmountLeft), FormatBytes(-freeSpaceTest));
-                // §1.6: tagless — set DB column; else apply qBit tag
-                if (tagless && dbContext != null)
-                    await dbContext.TorrentLibrary.Where(t => t.Hash == torrent.Hash)
-                        .ExecuteUpdateAsync(s => s.SetProperty(t => t.FreeSpacePaused, true), cancellationToken);
-                else
-                    await client.AddTagsAsync(new List<string> { torrent.Hash }, new List<string> { freeSpacePausedTag }, cancellationToken);
-                if (pausedCountRef != null) pausedCountRef[0]++;
-                await client.PauseTorrentAsync(torrent.Hash, cancellationToken);
-            }
-            else if (isPausedDownload && freeSpaceTest >= 0)
-            {
-                _logger.LogInformation(
-                    "FreeSpace: Resuming download (space available) | Torrent: {Name} | Available: {Available} | Space after: {SpaceAfter}",
-                    torrent.Name, FormatBytes(_currentFreeSpace), FormatBytes(freeSpaceTest));
-                _currentFreeSpace = freeSpaceTest;
-                // §1.6: tagless — clear DB column; else remove qBit tag
-                if (tagless && dbContext != null)
-                    await dbContext.TorrentLibrary.Where(t => t.Hash == torrent.Hash)
-                        .ExecuteUpdateAsync(s => s.SetProperty(t => t.FreeSpacePaused, false), cancellationToken);
-                else
-                    await client.RemoveTagsAsync(new List<string> { torrent.Hash }, new List<string> { freeSpacePausedTag }, cancellationToken);
-                if (pausedCountRef != null) pausedCountRef[0]--;
-                await client.ResumeTorrentAsync(torrent.Hash, cancellationToken);
-            }
-            else if (isPausedDownload && freeSpaceTest < 0)
-            {
-                _logger.LogInformation(
-                    "FreeSpace: Keeping paused (insufficient space) | Torrent: {Name} | Available: {Available} | Needed: {Needed} | Deficit: {Deficit}",
-                    torrent.Name, FormatBytes(_currentFreeSpace), FormatBytes(torrent.AmountLeft), FormatBytes(-freeSpaceTest));
-            }
-            else if (!isPausedDownload && freeSpaceTest >= 0)
-            {
-                _logger.LogInformation(
-                    "FreeSpace: Continuing download (sufficient space) | Torrent: {Name} | Available: {Available} | Space after: {SpaceAfter}",
-                    torrent.Name, FormatBytes(_currentFreeSpace), FormatBytes(freeSpaceTest));
-                _currentFreeSpace = freeSpaceTest;
-            }
-        }
-        else if (!isDownloading && hasFreeSpaceTag)
-        {
-            // Torrent completed — clear the paused marker
-            _logger.LogInformation(
-                "FreeSpace: Torrent completed, removing free space tag | Torrent: {Name} | Available: {Available}",
-                torrent.Name, FormatBytes(_currentFreeSpace + _minFreeSpaceBytes));
-            // §1.6: tagless — clear DB column; else remove qBit tag
-            if (tagless && dbContext != null)
-                await dbContext.TorrentLibrary.Where(t => t.Hash == torrent.Hash)
-                    .ExecuteUpdateAsync(s => s.SetProperty(t => t.FreeSpacePaused, false), cancellationToken);
-            else
-                await client.RemoveTagsAsync(new List<string> { torrent.Hash }, new List<string> { freeSpacePausedTag }, cancellationToken);
-            if (pausedCountRef != null) pausedCountRef[0]--;
-        }
-    }
-
-    private static string FormatBytes(long bytes)
-    {
-        string[] sizes = { "B", "KB", "MB", "GB", "TB" };
-        double len = bytes;
-        int order = 0;
-        while (len >= 1024 && order < sizes.Length - 1)
-        {
-            order++;
-            len /= 1024;
-        }
-        return $"{len:0.##} {sizes[order]}";
-    }
-}
 
 // Request models for API endpoints
 public record TestConnectionRequest(

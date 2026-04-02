@@ -21,8 +21,6 @@ public class TorrentProcessor : ITorrentProcessor
     private const string AllowedStalledTag = "qBitrr-allowed_stalled";
     private const string FreeSpacePausedTag = "qBitrr-free_space_paused";
     private const string HnrActiveTag = "qBitrr-hnr_active";
-    private static readonly SemaphoreSlim GlobalTrackerSortLock = new(1, 1);
-    private static long _lastGlobalTrackerSortTicksUtc = DateTime.MinValue.Ticks;
 
     private readonly ILogger<TorrentProcessor> _logger;
     private readonly QBittorrentConnectionManager _qbitManager;
@@ -69,10 +67,10 @@ public class TorrentProcessor : ITorrentProcessor
             return;
         }
 
-        // Skip special categories - they are handled globally by the Host orchestrator
+        // Skip special categories — handled by HostWorkerManager (Failed / Recheck loops)
         if (_specialCategories.Contains(category))
         {
-            _logger.LogTrace("Skipping special category {Category} - handled by Host orchestrator", category);
+            _logger.LogTrace("Skipping special category {Category} - handled by HostWorkerManager", category);
             return;
         }
 
@@ -95,17 +93,6 @@ public class TorrentProcessor : ITorrentProcessor
                 torrents.AddRange(instanceTorrents);
             }
             _logger.LogDebug("Found {Count} torrents in category {Category}", torrents.Count, category);
-
-            try
-            {
-                await SortTorrentsByTrackerPriorityAsync(cancellationToken);
-            }
-            catch (Exception ex)
-            {
-                _logger.LogWarning(ex,
-                    "Failed to sort torrents by tracker priority for category {Category}; continuing torrent processing",
-                    category);
-            }
 
             var stats = new TorrentProcessingStats
             {
@@ -597,121 +584,6 @@ public class TorrentProcessor : ITorrentProcessor
         {
             _logger.LogTrace("Unprocessed torrent: [{Name}] | State[{State}] | Progress[{Progress:P1}]",
                 torrent.Name, state, torrent.Progress);
-        }
-    }
-
-    /// <summary>
-    /// Reorder qBittorrent queue by tracker priority for torrents whose effective tracker
-    /// config has SortTorrents=true. Sorts globally per qBit instance to preserve
-    /// cross-category ordering.
-    /// </summary>
-    private async Task SortTorrentsByTrackerPriorityAsync(
-        CancellationToken ct)
-    {
-        if (_seedingService == null)
-            return;
-
-        // Fast-path: if no configured tracker enables sorting, skip per-torrent tracker API lookups.
-        var hasSortTorrentsEnabled = _config.QBitInstances.Values.Any(q =>
-            q.Trackers.Any(t => t.SortTorrents))
-            || _config.ArrInstances.Values.Any(a =>
-                a.Torrent.Trackers.Any(t => t.SortTorrents));
-
-        if (!hasSortTorrentsEnabled)
-            return;
-
-        var minimumSortInterval = TimeSpan.FromSeconds(Math.Max(1, _config.Settings.LoopSleepTimer));
-        var lastSortTicks = Interlocked.Read(ref _lastGlobalTrackerSortTicksUtc);
-        if (DateTime.UtcNow - new DateTime(lastSortTicks, DateTimeKind.Utc) < minimumSortInterval)
-            return;
-
-        await GlobalTrackerSortLock.WaitAsync(ct);
-        try
-        {
-            // Double-check after acquiring the lock to prevent concurrent workers
-            // from repeating the same global sort in the same processing window.
-            lastSortTicks = Interlocked.Read(ref _lastGlobalTrackerSortTicksUtc);
-            if (DateTime.UtcNow - new DateTime(lastSortTicks, DateTimeKind.Utc) < minimumSortInterval)
-                return;
-
-            // topPrio is global to the qBit queue, so gather torrents across all categories
-            // to avoid category-local sort calls overwriting each other.
-            var allTorrents = new List<TorrentInfo>();
-            foreach (var (instanceName, client) in _qbitManager.GetAllClients())
-            {
-                var instanceTorrents = await client.GetTorrentsAsync(ct: ct);
-                foreach (var t in instanceTorrents)
-                    t.QBitInstanceName = instanceName;
-                allTorrents.AddRange(instanceTorrents);
-            }
-
-            if (allTorrents.Count == 0)
-            {
-                Interlocked.Exchange(ref _lastGlobalTrackerSortTicksUtc, DateTime.UtcNow.Ticks);
-                return;
-            }
-
-            var sortableByInstance = new Dictionary<string, List<(TorrentInfo Torrent, int Priority)>>(StringComparer.OrdinalIgnoreCase);
-
-            foreach (var torrent in allTorrents)
-            {
-                try
-                {
-                    var trackerConfig = await _seedingService.GetTrackerConfigAsync(torrent, ct);
-                    if (trackerConfig?.SortTorrents != true)
-                        continue;
-
-                    if (!sortableByInstance.TryGetValue(torrent.QBitInstanceName, out var list))
-                    {
-                        list = new List<(TorrentInfo Torrent, int Priority)>();
-                        sortableByInstance[torrent.QBitInstanceName] = list;
-                    }
-
-                    list.Add((torrent, trackerConfig.Priority));
-                }
-                catch (Exception ex)
-                {
-                    _logger.LogDebug(ex, "Skipping sort evaluation for torrent {Hash}", torrent.Hash);
-                }
-            }
-
-            foreach (var (instanceName, sortable) in sortableByInstance)
-            {
-                if (sortable.Count == 0)
-                    continue;
-
-                var client = _qbitManager.GetClient(instanceName);
-                if (client == null)
-                    continue;
-
-                try
-                {
-                    // qB topPrio moves torrents to the top of the queue.
-                    // Apply reverse order of descending priority one hash at a time so each later
-                    // call is placed above the previous one (highest priority ends up at the top).
-                    var ordered = sortable
-                        .OrderByDescending(t => t.Priority)
-                        .ThenBy(t => t.Torrent.AddedOn)
-                        .Select(t => t.Torrent.Hash)
-                        .Reverse()
-                        .ToList();
-
-                    foreach (var hash in ordered)
-                    {
-                        await client.TopPriorityAsync(new List<string> { hash }, ct);
-                    }
-                }
-                catch (Exception ex)
-                {
-                    _logger.LogWarning(ex, "Failed to sort torrent queue for qBit instance {Instance}", instanceName);
-                }
-            }
-
-            Interlocked.Exchange(ref _lastGlobalTrackerSortTicksUtc, DateTime.UtcNow.Ticks);
-        }
-        finally
-        {
-            GlobalTrackerSortLock.Release();
         }
     }
 

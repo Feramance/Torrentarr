@@ -342,10 +342,8 @@ class ArrWorkerService : BackgroundService
         var dbHealthService = scope.ServiceProvider.GetRequiredService<IDatabaseHealthService>();
         var cacheService = scope.ServiceProvider.GetRequiredService<ITorrentCacheService>();
 
-        // NOTE: Free space management and special categories (failed, recheck) are handled
-        // GLOBALLY by the Host orchestrator - not per-worker. This matches qBitrr's design where:
-        // - FreeSpaceManager runs ONCE per qBittorrent instance, handling ALL categories
-        // - PlaceHolderArr handles special categories globally
+        // NOTE: Free space management, special categories (failed, recheck), and tracker queue sort
+        // are handled GLOBALLY by the Host's HostWorkerManager (fire-and-forget loops), not per Arr worker.
 
         // Clean expired cache entries
         cacheService.CleanExpired();

@@ -36,7 +36,7 @@ public class HostWebLocalAuthNoPasswordCollection : ICollectionFixture<LocalAuth
 /// - Writes a minimal, known-good config.toml to a temp file and points
 ///   TORRENTARR_CONFIG at it so Program.cs never touches the user's real config.
 /// - Replaces the SQLite on-disk database with an in-process SQLite :memory: database.
-/// - Prevents ArrWorkerManager and ProcessOrchestratorService from spawning processes.
+/// - Prevents ArrWorkerManager and HostWorkerManager from running (all IHostedService registrations removed).
 /// </summary>
 public class TorrentarrWebApplicationFactory : WebApplicationFactory<Program>, IDisposable
 {

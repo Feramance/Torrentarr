@@ -29,8 +29,24 @@ const RELEASE_TOKEN_REGEX =
 const EPISODE_TOKEN_REGEX = /\bS\d{1,3}E\d{1,3}\b/i;
 const SEASON_TOKEN_REGEX = /\bSeason\s+\d+\b/i;
 
-/** Other section entries that are display-only (no restart). */
-const OTHER_DISPLAY_ONLY_NAMES = ["Recheck", "Failed", "FreeSpaceManager"];
+/** Host subprocess rows (Failed / Recheck / free space / tracker sort) — friendly card title, restart supported. */
+const HOST_SECTION_NAMES = [
+  "Recheck",
+  "Failed",
+  "FreeSpaceManager",
+  "TrackerSortManager",
+];
+
+function hostSectionDisplayName(sectionName: string): string {
+  switch (sectionName) {
+    case "FreeSpaceManager":
+      return "Free Space Manager";
+    case "TrackerSortManager":
+      return "Tracker Sort Manager";
+    default:
+      return sectionName;
+  }
+}
 
 function sanitizeSearchSummary(raw: string): string {
   const trimmed = raw.trim();
@@ -388,11 +404,12 @@ export function ProcessesView({ active }: ProcessesViewProps): JSX.Element {
               : `${runningCount}/${totalCount} running`;
       const summaryLabel =
         totalCount === 1 ? "1 process" : `${totalCount} processes`;
-      const displayName =
-        name === "FreeSpaceManager" ? "Free Space Manager" : name;
-      const isOtherDisplayOnly = items.every((item) =>
-        OTHER_DISPLAY_ONLY_NAMES.includes(item.name),
+      const isHostSection = items.every((item) =>
+        HOST_SECTION_NAMES.includes(item.name),
       );
+      const groupDisplayName = isHostSection
+        ? hostSectionDisplayName(name)
+        : name;
       const uniqueKinds = Array.from(new Set(items.map((item) => item.kind)));
       const filteredKinds = uniqueKinds.filter((kind) => {
         const lower = kind.toLowerCase();
@@ -405,7 +422,7 @@ export function ProcessesView({ active }: ProcessesViewProps): JSX.Element {
         <div className="process-card" key={name}>
           <div className="process-card__header">
             <div className="process-card__title">
-              <div className="process-card__name">{displayName}</div>
+              <div className="process-card__name">{groupDisplayName}</div>
               <div className="process-card__summary">{summaryLabel}</div>
               {filteredKinds.length ? (
                 <div className="process-card__badges">
@@ -430,7 +447,9 @@ export function ProcessesView({ active }: ProcessesViewProps): JSX.Element {
               >
                 <div className="process-chip__top">
                   <div className="process-chip__name">
-                    {isOtherDisplayOnly ? displayName : formatKind(item.kind)}
+                    {isHostSection
+                      ? hostSectionDisplayName(item.name)
+                      : formatKind(item.kind)}
                   </div>
                   <div
                     className={`status-pill__dot ${item.alive ? "text-success" : "text-danger"}`}
@@ -491,6 +510,10 @@ export function ProcessesView({ active }: ProcessesViewProps): JSX.Element {
                         return `Paused: ${categoryTotal}`;
                       }
 
+                      if (metricType === "tracker-sort") {
+                        return "Tracker queue ordering";
+                      }
+
                       return "Torrent count unavailable";
                     }
 
@@ -499,16 +522,14 @@ export function ProcessesView({ active }: ProcessesViewProps): JSX.Element {
                     return "Initializing...";
                   })()}
                 </div>
-                {!isOtherDisplayOnly && (
-                  <div className="process-chip__actions">
-                    <button
-                      className="btn small"
-                      onClick={() => handleRestart(item.category, item.kind)}
-                    >
-                      Restart
-                    </button>
-                  </div>
-                )}
+                <div className="process-chip__actions">
+                  <button
+                    className="btn small"
+                    onClick={() => handleRestart(item.category, item.kind)}
+                  >
+                    Restart
+                  </button>
+                </div>
               </div>
             ))}
             {instanceCategories.map((cat) => {
@@ -539,16 +560,14 @@ export function ProcessesView({ active }: ProcessesViewProps): JSX.Element {
               );
             })}
           </div>
-          {!isOtherDisplayOnly && (
-            <div className="process-card__footer">
-              <button
-                className="btn small"
-                onClick={() => void handleRestartGroup(items)}
-              >
-                Restart All
-              </button>
-            </div>
-          )}
+          <div className="process-card__footer">
+            <button
+              className="btn small"
+              onClick={() => void handleRestartGroup(items)}
+            >
+              Restart All
+            </button>
+          </div>
         </div>
       );
     });

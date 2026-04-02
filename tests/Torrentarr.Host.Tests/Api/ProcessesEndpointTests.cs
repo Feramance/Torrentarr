@@ -47,6 +47,15 @@ public class ProcessesEndpointTests : IClassFixture<TorrentarrWebApplicationFact
             Alive = true,
             CategoryCount = 0
         });
+        stateMgr.Initialize("TrackerSortManager", new ArrProcessState
+        {
+            Name = "TrackerSortManager",
+            Category = "TrackerSortManager",
+            Kind = "torrent",
+            MetricType = "tracker-sort",
+            Alive = true,
+            CategoryCount = null
+        });
 
         var client = _factory.CreateClientWithApiToken();
         var response = await client.GetAsync("/web/processes");
@@ -63,6 +72,7 @@ public class ProcessesEndpointTests : IClassFixture<TorrentarrWebApplicationFact
         names.Should().Contain("Recheck");
         names.Should().Contain("Failed");
         names.Should().Contain("FreeSpaceManager");
+        names.Should().Contain("TrackerSortManager");
     }
 
     [Fact]
