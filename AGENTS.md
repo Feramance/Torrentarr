@@ -176,9 +176,9 @@ GitHub Actions runs a matrix build across Ubuntu, Windows, and macOS with .NET 1
 
 ## Documentation and Mermaid
 
-- **Assistant output (plans, long explanations):** Prefer bullet lists plus **Mermaid** (`flowchart`, `sequenceDiagram`, `xychart-beta`, `block` / `block-beta` where the renderer supports it) for comparisons, decision logic, and charts. Avoid markdown tables in that context.
-- **Repo docs (`docs/`, `README.md`):** Use Mermaid for narrative comparisons, mode mappings, and decision-style explanations. Keep **markdown tables** for dense reference: API parameters, “Key | Type | Default | Description” config blocks, wide troubleshooting matrices, and similar grep-friendly listings.
-- **Rendering:** Confirm new diagrams in GitHub’s Markdown preview (or your doc host); fall back to `flowchart` + subgraphs if a beta diagram type fails. Follow existing diagrams in `docs/`: no custom Mermaid colors, use camelCase or underscores for node IDs (no spaces), quote edge labels that contain parentheses.
+- **Tabular data:** Use **markdown tables** by default. Do not recreate tables as Mermaid **flowcharts** (or subgraph “grids”). If you use Mermaid for a table, use a dedicated **table** diagram type only when your Mermaid version and doc host support it; otherwise stay with markdown.
+- **Mermaid for non-tabular content:** Use `flowchart`, `sequenceDiagram`, architecture diagrams, `xychart-beta`, and similar for processes, relationships, and charts—not for spreadsheet-style comparisons or lookup matrices.
+- **Rendering:** Confirm new diagrams in GitHub’s Markdown preview (or your doc host). Follow existing diagrams in `docs/`: no custom Mermaid colors, use camelCase or underscores for node IDs (no spaces), quote edge labels that contain parentheses.
 
 ## Git commits
 

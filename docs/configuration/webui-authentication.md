@@ -90,30 +90,13 @@ BCrypt hash of the local-auth password. Never store a plain password in config.
 
 Older configs may use a single **AuthMode** key instead of **AuthDisabled**, **LocalAuthEnabled**, and **OIDCEnabled**. Torrentarr maps them as follows:
 
-```mermaid
-flowchart LR
-  subgraph legacy [AuthMode value]
-    direction TB
-    mDisabled["Disabled"]
-    mToken["TokenOnly"]
-    mLocal["Local"]
-    mOidc["OIDC"]
-    mOther["Other"]
-  end
-  subgraph flags [Maps to]
-    direction TB
-    fDisabled["AuthDisabled true<br/>LocalAuthEnabled false<br/>OIDCEnabled false"]
-    fToken["AuthDisabled false<br/>LocalAuthEnabled false<br/>OIDCEnabled false"]
-    fLocal["AuthDisabled false<br/>LocalAuthEnabled true<br/>OIDCEnabled false"]
-    fOidc["AuthDisabled false<br/>LocalAuthEnabled false<br/>OIDCEnabled true"]
-    fOther["AuthDisabled true<br/>LocalAuthEnabled false<br/>OIDCEnabled false"]
-  end
-  mDisabled --> fDisabled
-  mToken --> fToken
-  mLocal --> fLocal
-  mOidc --> fOidc
-  mOther --> fOther
-```
+| AuthMode value | AuthDisabled | LocalAuthEnabled | OIDCEnabled |
+|----------------|--------------|------------------|-------------|
+| `Disabled` | true | false | false |
+| `TokenOnly` | false | false | false |
+| `Local` | false | true | false |
+| `OIDC` | false | false | true |
+| Other | true | false | false |
 
 New configs should use the boolean keys. If your config already has **AuthMode**, you can leave it; the loader will derive the three booleans. When saving config, Torrentarr writes the boolean keys.
 
