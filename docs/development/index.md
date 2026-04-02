@@ -294,7 +294,7 @@ Open the solution (e.g. `Torrentarr.sln` if present) or the folder; set `Torrent
 
 Torrentarr's backend is **.NET (C#)** with ASP.NET Core and separate worker processes. Key points:
 
-- **Torrentarr.Host** — Orchestrator: hosts WebUI (ASP.NET Core minimal API), manages free space, spawns per-Arr **Torrentarr.Workers** processes.
+- **Torrentarr.Host** — Orchestrator: hosts WebUI (ASP.NET Core minimal API), runs **HostWorkerManager** (Failed/Recheck/free space/tracker sort loops with auto-restart), spawns per-Arr **Torrentarr.Workers** processes.
 - **Torrentarr.Infrastructure** — EF Core (SQLite), qBittorrent/Arr API clients, services (TorrentProcessor, SeedingService, ArrSyncService, etc.).
 - **Torrentarr.Core** — Config models, interfaces.
 

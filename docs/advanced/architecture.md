@@ -346,6 +346,8 @@ Torrentarr uses .NET's `IHostedService` / `BackgroundService` pattern:
                   └───────────────────┘
 ```
 
+**Host-only workers:** `HostWorkerManager` (in Infrastructure, hosted by Torrentarr.Host) runs concurrent `Task.Run` loops for Failed/Recheck category handling, global free-space pause/resume, and tracker-priority queue ordering when `SortTorrents` is enabled. It monitors worker tasks and restarts them on unexpected completion, similar in spirit to `ArrWorkerManager` for OS worker processes.
+
 **Service Registration** (`Program.cs`):
 
 ```csharp

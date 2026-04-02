@@ -174,6 +174,12 @@ Three test projects under `tests/`, plus frontend tests in `webui/src/__tests__/
 
 GitHub Actions runs a matrix build across Ubuntu, Windows, and macOS with .NET 10 + Node 20. Pipeline: restore → build → test (non-live) → frontend build → Docker build (on `master` push). Artifacts retained 7 days.
 
+## Documentation and Mermaid
+
+- **Assistant output (plans, long explanations):** Prefer bullet lists plus **Mermaid** (`flowchart`, `sequenceDiagram`, `xychart-beta`, `block` / `block-beta` where the renderer supports it) for comparisons, decision logic, and charts. Avoid markdown tables in that context.
+- **Repo docs (`docs/`, `README.md`):** Use Mermaid for narrative comparisons, mode mappings, and decision-style explanations. Keep **markdown tables** for dense reference: API parameters, “Key | Type | Default | Description” config blocks, wide troubleshooting matrices, and similar grep-friendly listings.
+- **Rendering:** Confirm new diagrams in GitHub’s Markdown preview (or your doc host); fall back to `flowchart` + subgraphs if a beta diagram type fails. Follow existing diagrams in `docs/`: no custom Mermaid colors, use camelCase or underscores for node IDs (no spaces), quote edge labels that contain parentheses.
+
 ## Git commits
 
 **Do not use `git commit --no-verify` or `git commit -n`.** Pre-commit hooks must run on every commit. When committing or pushing on the user's behalf, use `git commit` without the `--no-verify` flag so that pre-commit runs. If hooks fail, fix the reported issues (e.g. formatting) or inform the user—do not bypass hooks.

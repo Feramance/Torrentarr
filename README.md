@@ -161,17 +161,42 @@ npm run build   # Production bundle
 
 ## Comparison with qBitrr
 
-| Feature | qBitrr (Python) | Torrentarr (C#) |
-|---------|-----------------|-----------------|
-| **Config Format** | TOML | TOML (same file) |
-| **Database** | SQLite (Peewee) | SQLite (EF Core) |
-| **Web Framework** | Flask | ASP.NET Core |
-| **Performance** | Good | Excellent |
-| **Memory Usage** | ~100MB | ~80MB |
-| **Startup Time** | ~2s | ~0.5s |
-| **Process Isolation** | Single process | Multi-process |
-| **Health Checks** | Custom | Built-in |
-| **Feature Parity** | 100% | **99%** |
+```mermaid
+flowchart LR
+  subgraph qbitrrCol [qBitrr Python]
+    direction TB
+    qbCfg[Config: TOML]
+    qbDb[DB: SQLite Peewee]
+    qbWeb[Web: Flask]
+    qbPerf[Performance: Good]
+    qbMem[Memory: ~100MB]
+    qbStart[Startup: ~2s]
+    qbProc[Process: Single]
+    qbHealth[Health: Custom]
+    qbFeat[Feature parity: 100%]
+  end
+  subgraph torrentarrCol ["Torrentarr (C#)"]
+    direction TB
+    trCfg[Config: TOML same file]
+    trDb[DB: SQLite EF Core]
+    trWeb[Web: ASP.NET Core]
+    trPerf[Performance: Excellent]
+    trMem[Memory: ~80MB]
+    trStart[Startup: ~0.5s]
+    trProc[Process: Multi-process]
+    trHealth[Health: Built-in]
+    trFeat[Feature parity: 99%]
+  end
+  qbCfg --- trCfg
+  qbDb --- trDb
+  qbWeb --- trWeb
+  qbPerf --- trPerf
+  qbMem --- trMem
+  qbStart --- trStart
+  qbProc --- trProc
+  qbHealth --- trHealth
+  qbFeat --- trFeat
+```
 
 ## Issues & Support
 

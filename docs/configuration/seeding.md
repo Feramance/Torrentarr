@@ -235,13 +235,14 @@ Controls when Torrentarr removes torrents based on seeding limits.
 
 **Options:**
 
-| Value | Condition | Behavior |
-|-------|-----------|----------|
-| `-1` | **Never** | Keep seeding indefinitely |
-| `1` | **Ratio** | Remove when `MaxUploadRatio` reached |
-| `2` | **Time** | Remove when `MaxSeedingTime` reached |
-| `3` | **OR** | Remove when EITHER ratio OR time met |
-| `4` | **AND** | Remove when BOTH ratio AND time met |
+```mermaid
+flowchart TD
+  optNeg1["-1 Never — keep seeding indefinitely"]
+  opt1["1 Ratio — remove when MaxUploadRatio reached"]
+  opt2["2 Time — remove when MaxSeedingTime reached"]
+  opt3["3 OR — remove when EITHER ratio OR time met"]
+  opt4["4 AND — remove when BOTH ratio AND time met"]
+```
 
 **Comparison:**
 
@@ -249,23 +250,69 @@ Controls when Torrentarr removes torrents based on seeding limits.
 # Example: MaxUploadRatio = 2.0, MaxSeedingTime = 259200 (3 days)
 ```
 
-| RemoveTorrent | After 1 day @ 3.0 ratio | After 5 days @ 0.5 ratio | After 4 days @ 2.5 ratio |
-|---------------|------------------------|-------------------------|-------------------------|
-| `-1` | Keep | Keep | Keep |
-| `1` (ratio only) | Remove (ratio met) | Keep (ratio not met) | Remove (ratio met) |
-| `2` (time only) | Keep (time not met) | Remove (time met) | Remove (time met) |
-| `3` (OR) | Remove (ratio met) | Remove (time met) | Remove (either met) |
-| `4` (AND) | Keep (time not met) | Keep (ratio not met) | Remove (both met) |
+```mermaid
+flowchart LR
+  subgraph scenA [After 1 day at 3.0 ratio]
+    direction TB
+    a0["-1: Keep"]
+    a1["1 ratio only: Remove ratio met"]
+    a2["2 time only: Keep time not met"]
+    a3["3 OR: Remove ratio met"]
+    a4["4 AND: Keep time not met"]
+  end
+  subgraph scenB [After 5 days at 0.5 ratio]
+    direction TB
+    b0["-1: Keep"]
+    b1["1 ratio only: Keep ratio not met"]
+    b2["2 time only: Remove time met"]
+    b3["3 OR: Remove time met"]
+    b4["4 AND: Keep ratio not met"]
+  end
+  subgraph scenC [After 4 days at 2.5 ratio]
+    direction TB
+    c0["-1: Keep"]
+    c1["1 ratio only: Remove ratio met"]
+    c2["2 time only: Remove time met"]
+    c3["3 OR: Remove either met"]
+    c4["4 AND: Remove both met"]
+  end
+```
 
 **Recommendations:**
 
-| Use Case | RemoveTorrent | MaxUploadRatio | MaxSeedingTime |
-|----------|---------------|----------------|----------------|
-| **Public trackers** | `3` (OR) | `1.0` | `86400` (1 day) |
-| **Private trackers** | `4` (AND) | `1.5` | `259200` (3 days) |
-| **Long-term seeding** | `-1` (Never) | `-1` | `-1` |
-| **Ratio priority** | `1` (Ratio) | `2.0` | `-1` |
-| **Time priority** | `2` (Time) | `-1` | `604800` (7 days) |
+```mermaid
+flowchart LR
+  subgraph usePublic [Public trackers]
+    direction TB
+    pubRT["RemoveTorrent 3 OR"]
+    pubRatio["MaxUploadRatio 1.0"]
+    pubTime["MaxSeedingTime 86400 1 day"]
+  end
+  subgraph usePrivate [Private trackers]
+    direction TB
+    prvRT["RemoveTorrent 4 AND"]
+    prvRatio["MaxUploadRatio 1.5"]
+    prvTime["MaxSeedingTime 259200 3 days"]
+  end
+  subgraph useLong [Long-term seeding]
+    direction TB
+    longRT["RemoveTorrent -1 Never"]
+    longRatio["MaxUploadRatio -1"]
+    longTime["MaxSeedingTime -1"]
+  end
+  subgraph useRatioPrio [Ratio priority]
+    direction TB
+    rpRT["RemoveTorrent 1 Ratio"]
+    rpRatio["MaxUploadRatio 2.0"]
+    rpTime["MaxSeedingTime -1"]
+  end
+  subgraph useTimePrio [Time priority]
+    direction TB
+    tpRT["RemoveTorrent 2 Time"]
+    tpRatio["MaxUploadRatio -1"]
+    tpTime["MaxSeedingTime 604800 7 days"]
+  end
+```
 
 ---
 
@@ -446,8 +493,9 @@ SortTorrents = false
 **Type:** Boolean
 **Default:** `false`
 
-When enabled for a tracker, torrents matching that tracker are reordered in the qBittorrent queue by tracker `Priority` during processing.
+When enabled for a tracker, torrents matching that tracker are reordered in the qBittorrent queue by tracker `Priority`.
 
+- Ordering runs in the **Host** `TrackerSortManager` subprocess (fire-and-forget loop managed with Failed/Recheck/Free Space), not inside each Arr torrent worker.
 - Higher `Priority` trackers are pushed toward the top of the queue.
 - This setting only affects torrents whose effective tracker configuration has `SortTorrents = true`.
 - qBittorrent **Torrent Queuing** must be enabled for queue ordering effects to be visible.
