@@ -37,27 +37,10 @@ public class FreeSpaceService : IFreeSpaceService
         _qbitManager = qbitManager;
         _dbContext = dbContext;
         // §FreeSpace parity: prefer Settings.FreeSpace (qBitrr string format) over FreeSpaceThresholdGB
-        var freeSpaceBytes = ParseFreeSpaceString(config.Settings.FreeSpace);
+        var freeSpaceBytes = FreeSpaceParser.ParseFreeSpaceString(config.Settings.FreeSpace);
         _minFreeSpaceBytes = freeSpaceBytes > 0
             ? freeSpaceBytes
             : (long)(_config.Settings.FreeSpaceThresholdGB ?? 10) * 1024L * 1024L * 1024L;
-    }
-
-    /// <summary>
-    /// Parse qBitrr FreeSpace config string: "-1" → disabled (-1), "10G" → 10 GiB, "500M" → 500 MiB, "1024K" → 1 KiB, raw number → bytes.
-    /// </summary>
-    private static long ParseFreeSpaceString(string? value)
-    {
-        if (string.IsNullOrWhiteSpace(value) || value.Trim() == "-1") return -1;
-        var v = value.Trim().ToUpperInvariant();
-        try
-        {
-            if (v.EndsWith("G")) return long.Parse(v[..^1]) * 1024L * 1024L * 1024L;
-            if (v.EndsWith("M")) return long.Parse(v[..^1]) * 1024L * 1024L;
-            if (v.EndsWith("K")) return long.Parse(v[..^1]) * 1024L;
-            return long.Parse(v);
-        }
-        catch { return -1; }
     }
 
     public async Task<bool> HasEnoughFreeSpaceAsync(long requiredBytes, CancellationToken cancellationToken = default)
@@ -515,7 +498,7 @@ public class FreeSpaceService : IFreeSpaceService
     /// <inheritdoc />
     public async Task<GlobalFreeSpacePassResult> ProcessGlobalManagedCategoriesHostPassAsync(CancellationToken cancellationToken = default)
     {
-        var freeSpaceCfg = ParseFreeSpaceString(_config.Settings.FreeSpace);
+        var freeSpaceCfg = FreeSpaceParser.ParseFreeSpaceString(_config.Settings.FreeSpace);
         if (freeSpaceCfg < 0 || !_config.Settings.AutoPauseResume)
             return new GlobalFreeSpacePassResult(0, false);
 
