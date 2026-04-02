@@ -646,6 +646,30 @@ public class ConfigurationLoaderTests : IDisposable
     }
 
     [Fact]
+    public void Save_WritesQBitTrackerSortTorrents()
+    {
+        WriteToml("""
+            [qBit]
+            Host = "localhost"
+            """);
+
+        var loader = new ConfigurationLoader(_tempFilePath);
+        var config = loader.Load();
+        config.QBitInstances["qBit"].Trackers.Add(new TrackerConfig
+        {
+            Uri = "https://tracker.example.com/announce",
+            Priority = 10,
+            SortTorrents = true
+        });
+
+        loader.SaveConfig(config);
+        var content = File.ReadAllText(_tempFilePath);
+
+        content.Should().Contain("[[qBit.Trackers]]");
+        content.Should().Contain("SortTorrents = true");
+    }
+
+    [Fact]
     public void Load_ParsesTrackerSortTorrents_TrueWhenSet()
     {
         WriteToml("""

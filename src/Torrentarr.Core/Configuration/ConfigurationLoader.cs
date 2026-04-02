@@ -1735,7 +1735,40 @@ public class ConfigurationLoader
                 sb.AppendLine("#          URI = \"tracker.example.com\"");
                 sb.AppendLine("#          Priority = 1");
             }
-            sb.AppendLine("Trackers = []");
+            if (qbit.Trackers.Count == 0)
+            {
+                sb.AppendLine("Trackers = []");
+            }
+            else
+            {
+                foreach (var tracker in qbit.Trackers)
+                {
+                    sb.AppendLine($"[[{name}.Trackers]]");
+                    if (!string.IsNullOrEmpty(tracker.Name))
+                        sb.AppendLine($"Name = \"{EscapeTomlString(tracker.Name)}\"");
+                    sb.AppendLine($"URI = \"{tracker.Uri}\"");
+                    sb.AppendLine($"Priority = {tracker.Priority}");
+                    sb.AppendLine($"SortTorrents = {tracker.SortTorrents.ToString().ToLower()}");
+                    sb.AppendLine($"MaxETA = {tracker.MaxETA ?? -1}");
+                    sb.AppendLine($"DownloadRateLimit = {tracker.DownloadRateLimit ?? -1}");
+                    sb.AppendLine($"UploadRateLimit = {tracker.UploadRateLimit ?? -1}");
+                    sb.AppendLine($"MaxUploadRatio = {tracker.MaxUploadRatio ?? -1}");
+                    sb.AppendLine($"MaxSeedingTime = {tracker.MaxSeedingTime ?? -1}");
+                    sb.AppendLine($"HitAndRunMode = \"{tracker.HitAndRunMode ?? "disabled"}\"");
+                    sb.AppendLine($"MinSeedRatio = {tracker.MinSeedRatio ?? 1.0}");
+                    sb.AppendLine($"MinSeedingTime = {tracker.MinSeedingTimeDays ?? 0}");
+                    sb.AppendLine($"HitAndRunPartialSeedRatio = {tracker.HitAndRunPartialSeedRatio ?? 1.0}");
+                    sb.AppendLine($"TrackerUpdateBuffer = {tracker.TrackerUpdateBuffer ?? 0}");
+                    sb.AppendLine($"HitAndRunMinimumDownloadPercent = {tracker.HitAndRunMinimumDownloadPercent ?? 10}");
+                    if (tracker.SuperSeedMode.HasValue)
+                        sb.AppendLine($"SuperSeedMode = {tracker.SuperSeedMode.Value.ToString().ToLower()}");
+                    sb.AppendLine($"RemoveIfExists = {tracker.RemoveIfExists.ToString().ToLower()}");
+                    sb.AppendLine($"AddTrackerIfMissing = {tracker.AddTrackerIfMissing.ToString().ToLower()}");
+                    if (tracker.AddTags.Count > 0)
+                        sb.AppendLine($"AddTags = [{string.Join(", ", tracker.AddTags.Select(t => $"'{t}'"))}]");
+                    sb.AppendLine();
+                }
+            }
             sb.AppendLine();
 
             sb.AppendLine($"[{name}.CategorySeeding]");
