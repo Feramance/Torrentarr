@@ -248,6 +248,10 @@ public class HostWorkerManager : BackgroundService
 
     private async Task RestartHostWorkerFromWatchAsync(string name, CancellationToken appStopping)
     {
+        var workerName = AllHostWorkerNames.FirstOrDefault(n => n.Equals(name, StringComparison.OrdinalIgnoreCase));
+        if (workerName is null)
+            return;
+
         if (_workers.TryRemove(name, out var old))
         {
             try { old.Cts.Cancel(); } catch { /* ignore */ }
@@ -261,7 +265,7 @@ public class HostWorkerManager : BackgroundService
         if (appStopping.IsCancellationRequested)
             return;
 
-        switch (name)
+        switch (workerName)
         {
             case FailedWorkerName:
                 StartHostWorker(FailedWorkerName, RunFailedLoopAsync, appStopping);
