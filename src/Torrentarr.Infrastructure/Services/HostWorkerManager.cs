@@ -60,20 +60,6 @@ public class HostWorkerManager : BackgroundService
             !q.Disabled && q.Host != "CHANGE_ME" && q.UserName != "CHANGE_ME" && q.Password != "CHANGE_ME");
     }
 
-    private static long ParseFreeSpaceString(string? value)
-    {
-        if (string.IsNullOrWhiteSpace(value) || value.Trim() == "-1") return -1;
-        var v = value.Trim().ToUpperInvariant();
-        try
-        {
-            if (v.EndsWith("G")) return long.Parse(v[..^1]) * 1024L * 1024L * 1024L;
-            if (v.EndsWith("M")) return long.Parse(v[..^1]) * 1024L * 1024L;
-            if (v.EndsWith("K")) return long.Parse(v[..^1]) * 1024L;
-            return long.Parse(v);
-        }
-        catch { return -1; }
-    }
-
     private static bool GlobalSortTorrentsEnabled(TorrentarrConfig config) =>
         config.QBitInstances.Values.Any(q => q.Trackers.Any(t => t.SortTorrents))
         || config.ArrInstances.Values.Any(a => a.Torrent.Trackers.Any(t => t.SortTorrents));
@@ -114,7 +100,7 @@ public class HostWorkerManager : BackgroundService
         StartHostWorker(FailedWorkerName, RunFailedLoopAsync, stoppingToken);
         StartHostWorker(RecheckWorkerName, RunRecheckLoopAsync, stoppingToken);
 
-        var freeSpaceBytes = ParseFreeSpaceString(_config.Settings.FreeSpace);
+        var freeSpaceBytes = FreeSpaceParser.ParseFreeSpaceString(_config.Settings.FreeSpace);
         if (_config.Settings.AutoPauseResume && freeSpaceBytes > 0)
             StartHostWorker(FreeSpaceWorkerName, RunFreeSpaceLoopAsync, stoppingToken);
 
@@ -274,7 +260,7 @@ public class HostWorkerManager : BackgroundService
                 StartHostWorker(RecheckWorkerName, RunRecheckLoopAsync, appStopping);
                 break;
             case FreeSpaceWorkerName:
-                if (_config.Settings.AutoPauseResume && ParseFreeSpaceString(_config.Settings.FreeSpace) > 0)
+                if (_config.Settings.AutoPauseResume && FreeSpaceParser.ParseFreeSpaceString(_config.Settings.FreeSpace) > 0)
                     StartHostWorker(FreeSpaceWorkerName, RunFreeSpaceLoopAsync, appStopping);
                 break;
             case TrackerSortWorkerName:
