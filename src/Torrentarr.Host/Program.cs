@@ -780,16 +780,16 @@ try
     app.MapPost("/web/processes/restart_all", async (TorrentarrConfig cfg, ArrWorkerManager workerMgr, HostWorkerManager hostWorkerMgr) =>
     {
         await workerMgr.RestartAllWorkersAsync();
-        await hostWorkerMgr.RestartAllWorkersAsync();
-        return Results.Ok(new { status = "restarted", restarted = cfg.ArrInstances.Keys.Concat(HostWorkerManager.AllHostWorkerNames).ToArray() });
+        var restartedHostWorkers = await hostWorkerMgr.RestartAllWorkersAsync();
+        return Results.Ok(new { status = "restarted", restarted = cfg.ArrInstances.Keys.Concat(restartedHostWorkers).ToArray() });
     });
 
     // Web Arr Rebuild â€” same shape as RestartResponse
     app.MapPost("/web/arr/rebuild", async (TorrentarrConfig cfg, ArrWorkerManager workerMgr, HostWorkerManager hostWorkerMgr) =>
     {
         await workerMgr.RestartAllWorkersAsync();
-        await hostWorkerMgr.RestartAllWorkersAsync();
-        return Results.Ok(new { status = "restarted", restarted = cfg.ArrInstances.Keys.Concat(HostWorkerManager.AllHostWorkerNames).ToArray() });
+        var restartedHostWorkers = await hostWorkerMgr.RestartAllWorkersAsync();
+        return Results.Ok(new { status = "restarted", restarted = cfg.ArrInstances.Keys.Concat(restartedHostWorkers).ToArray() });
     });
 
     // Web Log Level â€” actually changes the Serilog level at runtime
@@ -1767,15 +1767,15 @@ try
     app.MapPost("/api/processes/restart_all", async (TorrentarrConfig cfg, ArrWorkerManager workerMgr, HostWorkerManager hostWorkerMgr) =>
     {
         await workerMgr.RestartAllWorkersAsync();
-        await hostWorkerMgr.RestartAllWorkersAsync();
-        return Results.Ok(new { status = "restarted", restarted = cfg.ArrInstances.Keys.Concat(HostWorkerManager.AllHostWorkerNames).ToArray() });
+        var restartedHostWorkers = await hostWorkerMgr.RestartAllWorkersAsync();
+        return Results.Ok(new { status = "restarted", restarted = cfg.ArrInstances.Keys.Concat(restartedHostWorkers).ToArray() });
     });
 
     app.MapPost("/api/arr/rebuild", async (TorrentarrConfig cfg, ArrWorkerManager workerMgr, HostWorkerManager hostWorkerManager) =>
     {
         await workerMgr.RestartAllWorkersAsync();
-        await hostWorkerManager.RestartAllWorkersAsync();
-        return Results.Ok(new { status = "restarted", restarted = cfg.ArrInstances.Keys.Concat(HostWorkerManager.AllHostWorkerNames).ToArray() });
+        var restartedHostWorkers = await hostWorkerManager.RestartAllWorkersAsync();
+        return Results.Ok(new { status = "restarted", restarted = cfg.ArrInstances.Keys.Concat(restartedHostWorkers).ToArray() });
     });
 
     app.MapPost("/api/loglevel", (LoggerConfigurationRequest req, LoggingLevelSwitch ls) =>

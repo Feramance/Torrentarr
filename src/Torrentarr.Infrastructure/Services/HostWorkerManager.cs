@@ -2,6 +2,7 @@ using System.Collections.Concurrent;
 using System.Linq;
 using Torrentarr.Core.Configuration;
 using Torrentarr.Core.Services;
+using Torrentarr.Infrastructure.ApiClients.QBittorrent;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
@@ -232,10 +233,17 @@ public class HostWorkerManager : BackgroundService
     }
 
     /// <summary>Restart every running Host subprocess worker.</summary>
-    public async Task RestartAllWorkersAsync()
+    public async Task<string[]> RestartAllWorkersAsync()
     {
-        foreach (var name in _workers.Keys.ToList())
+        var workerNames = _workers.Keys.ToList();
+        var restartedWorkers = new List<string>(workerNames.Count);
+        foreach (var name in workerNames)
+        {
             await RestartHostWorkerFromWatchAsync(name, _appStopping);
+            if (_workers.ContainsKey(name))
+                restartedWorkers.Add(name);
+        }
+        return restartedWorkers.ToArray();
     }
 
     private async Task RestartHostWorkerFromWatchAsync(string name, CancellationToken appStopping)
@@ -302,9 +310,36 @@ public class HostWorkerManager : BackgroundService
         _workers.Clear();
     }
 
-    private async Task RunFailedLoopAsync(CancellationToken ct)
+    private Task RunFailedLoopAsync(CancellationToken ct) =>
+        RunCategoryLoopAsync(
+            FailedWorkerName,
+            _config.Settings.FailedCategory,
+            "[{Instance}] Deleting failed torrent: {Name}",
+            LogLevel.Warning,
+            "[{Instance}] Error processing failed category",
+            (client, hash, token) => client.DeleteTorrentsAsync(new List<string> { hash }, deleteFiles: true, token),
+            ct);
+
+    private Task RunRecheckLoopAsync(CancellationToken ct) =>
+        RunCategoryLoopAsync(
+            RecheckWorkerName,
+            _config.Settings.RecheckCategory,
+            "[{Instance}] Re-checking torrent: {Name}",
+            LogLevel.Information,
+            "[{Instance}] Error processing recheck category",
+            (client, hash, token) => client.RecheckTorrentsAsync(new List<string> { hash }, token),
+            ct);
+
+    private async Task RunCategoryLoopAsync(
+        string workerName,
+        string category,
+        string actionLogTemplate,
+        LogLevel actionLogLevel,
+        string categoryErrorLogTemplate,
+        Func<QBittorrentClient, string, CancellationToken, Task> processTorrentAsync,
+        CancellationToken ct)
     {
-        _stateManager.Update(FailedWorkerName, s => { s.Alive = true; s.Rebuilding = false; });
+        _stateManager.Update(workerName, s => { s.Alive = true; s.Rebuilding = false; });
         var consecutiveErrors = 0;
         try
         {
@@ -319,14 +354,14 @@ public class HostWorkerManager : BackgroundService
                         continue;
                     }
 
-                    var totalFailed = 0;
+                    var totalCount = 0;
                     foreach (var (instanceName, client) in _qbitManager.GetAllClients())
                     {
                         try
                         {
-                            var failedTorrents = await client.GetTorrentsAsync(_config.Settings.FailedCategory, ct);
-                            totalFailed += failedTorrents.Count;
-                            foreach (var torrent in failedTorrents)
+                            var categoryTorrents = await client.GetTorrentsAsync(category, ct);
+                            totalCount += categoryTorrents.Count;
+                            foreach (var torrent in categoryTorrents)
                             {
                                 if (torrent.AddedOn > 0)
                                 {
@@ -334,16 +369,19 @@ public class HostWorkerManager : BackgroundService
                                     if ((DateTime.UtcNow - addedAt).TotalSeconds < _config.Settings.IgnoreTorrentsYoungerThan)
                                         continue;
                                 }
-                                _logger.LogWarning("[{Instance}] Deleting failed torrent: {Name}", instanceName, torrent.Name);
-                                await client.DeleteTorrentsAsync(new List<string> { torrent.Hash }, deleteFiles: true, ct);
+                                if (actionLogLevel == LogLevel.Warning)
+                                    _logger.LogWarning(actionLogTemplate, instanceName, torrent.Name);
+                                else
+                                    _logger.LogInformation(actionLogTemplate, instanceName, torrent.Name);
+                                await processTorrentAsync(client, torrent.Hash, ct);
                             }
                         }
                         catch (Exception ex)
                         {
-                            _logger.LogError(ex, "[{Instance}] Error processing failed category", instanceName);
+                            _logger.LogError(ex, categoryErrorLogTemplate, instanceName);
                         }
                     }
-                    _stateManager.Update(FailedWorkerName, s => { s.CategoryCount = totalFailed; s.Alive = true; });
+                    _stateManager.Update(workerName, s => { s.CategoryCount = totalCount; s.Alive = true; });
                     consecutiveErrors = 0;
                 }
                 catch (OperationCanceledException) when (ct.IsCancellationRequested)
@@ -355,7 +393,7 @@ public class HostWorkerManager : BackgroundService
                     consecutiveErrors++;
                     var backoffMinutes = Math.Min(2.0 * Math.Pow(1.5, consecutiveErrors), 30.0);
                     _logger.LogError(ex, "Host worker {Name} loop error #{Count} — backing off {Minutes:F1} min",
-                        FailedWorkerName, consecutiveErrors, backoffMinutes);
+                        workerName, consecutiveErrors, backoffMinutes);
                     try { await Task.Delay(TimeSpan.FromMinutes(backoffMinutes), ct); }
                     catch (OperationCanceledException) { break; }
                     continue;
@@ -372,81 +410,7 @@ public class HostWorkerManager : BackgroundService
         }
         finally
         {
-            _stateManager.Update(FailedWorkerName, s => { s.Alive = false; s.Rebuilding = false; });
-        }
-    }
-
-    private async Task RunRecheckLoopAsync(CancellationToken ct)
-    {
-        _stateManager.Update(RecheckWorkerName, s => { s.Alive = true; s.Rebuilding = false; });
-        var consecutiveErrors = 0;
-        try
-        {
-            while (!ct.IsCancellationRequested)
-            {
-                var loopStart = DateTime.UtcNow;
-                try
-                {
-                    if (_qbitManager.GetAllClients().Count == 0)
-                    {
-                        await Task.Delay(TimeSpan.FromSeconds(_config.Settings.LoopSleepTimer), ct);
-                        continue;
-                    }
-
-                    var totalRecheck = 0;
-                    foreach (var (instanceName, client) in _qbitManager.GetAllClients())
-                    {
-                        try
-                        {
-                            var recheckTorrents = await client.GetTorrentsAsync(_config.Settings.RecheckCategory, ct);
-                            totalRecheck += recheckTorrents.Count;
-                            foreach (var torrent in recheckTorrents)
-                            {
-                                if (torrent.AddedOn > 0)
-                                {
-                                    var addedAt = DateTimeOffset.FromUnixTimeSeconds(torrent.AddedOn).UtcDateTime;
-                                    if ((DateTime.UtcNow - addedAt).TotalSeconds < _config.Settings.IgnoreTorrentsYoungerThan)
-                                        continue;
-                                }
-                                _logger.LogInformation("[{Instance}] Re-checking torrent: {Name}", instanceName, torrent.Name);
-                                await client.RecheckTorrentsAsync(new List<string> { torrent.Hash }, ct);
-                            }
-                        }
-                        catch (Exception ex)
-                        {
-                            _logger.LogError(ex, "[{Instance}] Error processing recheck category", instanceName);
-                        }
-                    }
-                    _stateManager.Update(RecheckWorkerName, s => { s.CategoryCount = totalRecheck; s.Alive = true; });
-                    consecutiveErrors = 0;
-                }
-                catch (OperationCanceledException) when (ct.IsCancellationRequested)
-                {
-                    break;
-                }
-                catch (Exception ex)
-                {
-                    consecutiveErrors++;
-                    var backoffMinutes = Math.Min(2.0 * Math.Pow(1.5, consecutiveErrors), 30.0);
-                    _logger.LogError(ex, "Host worker {Name} loop error #{Count} — backing off {Minutes:F1} min",
-                        RecheckWorkerName, consecutiveErrors, backoffMinutes);
-                    try { await Task.Delay(TimeSpan.FromMinutes(backoffMinutes), ct); }
-                    catch (OperationCanceledException) { break; }
-                    continue;
-                }
-
-                var elapsed = (int)(DateTime.UtcNow - loopStart).TotalMilliseconds;
-                var sleepMs = Math.Max(0, _config.Settings.LoopSleepTimer * 1000 - elapsed);
-                if (sleepMs > 0)
-                {
-                    try { await Task.Delay(sleepMs, ct); }
-                    catch (OperationCanceledException) { break; }
-                }
-            }
-        }
-        finally
-        {
-            _stateManager.Update(RecheckWorkerName, s => { s.Alive = false; s.Rebuilding = false; });
+            _stateManager.Update(workerName, s => { s.Alive = false; s.Rebuilding = false; });
         }
     }
 
