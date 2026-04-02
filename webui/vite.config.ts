@@ -26,6 +26,7 @@ export default defineConfig({
     proxy: {
       "/api": "http://localhost:6969",
       "/web": "http://localhost:6969",
+      "/swagger": "http://localhost:6969",
     },
   },
 });

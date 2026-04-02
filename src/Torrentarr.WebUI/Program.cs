@@ -192,9 +192,6 @@ using (var scope = app.Services.CreateScope())
 }
 
 // Configure the HTTP request pipeline
-app.UseSwagger();
-app.UseSwaggerUI();
-
 app.UseResponseCompression();
 app.UseCors("AllowAll");
 
@@ -310,6 +307,9 @@ app.Use(async (context, next) =>
 });
 
 static bool WebUIAuthRequired(TorrentarrConfig c) => !c.WebUI.AuthDisabled;
+
+app.UseSwagger();
+app.UseSwaggerUI();
 
 app.MapControllers();
 

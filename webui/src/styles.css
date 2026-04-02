@@ -222,7 +222,8 @@ body {
   flex-wrap: wrap;
   width: 100%;
 }
-.nav button {
+.nav button,
+.nav a.nav-api-docs {
   color: var(--muted);
   background: transparent;
   border: 1px solid var(--border);
@@ -236,9 +237,13 @@ body {
   transition: all 0.15s ease;
   position: relative;
   overflow: hidden;
+  text-decoration: none;
+  box-sizing: border-box;
+  font: inherit;
 }
 
-.nav button::before {
+.nav button::before,
+.nav a.nav-api-docs::before {
   content: "";
   position: absolute;
   top: 0;
@@ -250,13 +255,15 @@ body {
   transition: opacity 0.15s ease;
 }
 
-.nav button .icon {
+.nav button .icon,
+.nav a.nav-api-docs .icon {
   width: 1.4em;
   height: 1.4em;
   transition: transform 0.15s ease;
 }
 
-.nav button:hover .icon {
+.nav button:hover .icon,
+.nav a.nav-api-docs:hover .icon {
   transform: scale(1.1);
 }
 
@@ -276,14 +283,16 @@ body {
     0 2px 8px rgba(0, 113, 227, 0.2);
 }
 
-.nav button:hover:not(.active) {
+.nav button:hover:not(.active),
+.nav a.nav-api-docs:hover {
   color: var(--on-surface);
   border-color: rgba(122, 162, 247, 0.4);
   background: rgba(122, 162, 247, 0.06);
   transform: translateY(-1px);
 }
 
-.nav button:hover::before {
+.nav button:hover::before,
+.nav a.nav-api-docs:hover::before {
   opacity: 1;
 }
 
@@ -478,12 +487,14 @@ body {
   box-shadow: 0 0 0 3px rgba(0, 113, 227, 0.3);
 }
 
-.nav button:focus-visible {
+.nav button:focus-visible,
+.nav a.nav-api-docs:focus-visible {
   outline: none;
   box-shadow: 0 0 0 3px rgba(122, 162, 247, 0.25);
 }
 
-[data-theme="light"] .nav button:focus-visible {
+[data-theme="light"] .nav button:focus-visible,
+[data-theme="light"] .nav a.nav-api-docs:focus-visible {
   box-shadow: 0 0 0 3px rgba(0, 113, 227, 0.25);
 }
 .btn:disabled {

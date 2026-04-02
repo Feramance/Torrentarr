@@ -1,4 +1,4 @@
-﻿using Torrentarr.Core.Configuration;
+using Torrentarr.Core.Configuration;
 using Torrentarr.Core.Models;
 using Torrentarr.Core.Services;
 using Torrentarr.Infrastructure.ApiClients.Arr;
@@ -359,9 +359,6 @@ try
         ApplyManualMigrations(db);
     }
 
-    app.UseSwagger();
-    app.UseSwaggerUI();
-
     app.UseCors("AllowAll");
 
     // Security headers
@@ -478,6 +475,9 @@ try
     });
 
     static bool IsAuthRequired(TorrentarrConfig c) => !c.WebUI.AuthDisabled;
+
+    app.UseSwagger();
+    app.UseSwaggerUI();
 
     app.MapControllers();
 
