@@ -39,7 +39,7 @@ public class TrackerQueueSortService : ITrackerQueueSortService
         if (!hasSortTorrentsEnabled)
             return;
 
-        var managedCategories = BuildManagedCategoriesSet();
+        var managedCategories = _config.BuildManagedCategoriesSet();
         var allTorrents = new List<TorrentInfo>();
         foreach (var (instanceName, client) in _qbitManager.GetAllClients())
         {
@@ -102,21 +102,6 @@ public class TrackerQueueSortService : ITrackerQueueSortService
         }
     }
 
-    private HashSet<string> BuildManagedCategoriesSet()
-    {
-        var set = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
-        foreach (var arrInstance in _config.ArrInstances.Where(x => !string.IsNullOrEmpty(x.Value.Category)))
-            set.Add(arrInstance.Value.Category!);
-        foreach (var qbit in _config.QBitInstances.Values)
-        {
-            if (qbit.ManagedCategories != null)
-            {
-                foreach (var cat in qbit.ManagedCategories)
-                    set.Add(cat);
-            }
-        }
-        return set;
-    }
 }
 
 /// <summary>

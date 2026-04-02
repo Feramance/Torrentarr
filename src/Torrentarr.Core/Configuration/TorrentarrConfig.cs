@@ -17,6 +17,22 @@ public class TorrentarrConfig
     /// Helper property to get Arr instances as a list
     /// </summary>
     public List<ArrInstanceConfig> Arrs => ArrInstances.Values.ToList();
+
+    public HashSet<string> BuildManagedCategoriesSet()
+    {
+        var set = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        foreach (var arrInstance in ArrInstances.Where(x => !string.IsNullOrEmpty(x.Value.Category)))
+            set.Add(arrInstance.Value.Category!);
+        foreach (var qbit in QBitInstances.Values)
+        {
+            if (qbit.ManagedCategories != null)
+            {
+                foreach (var cat in qbit.ManagedCategories)
+                    set.Add(cat);
+            }
+        }
+        return set;
+    }
 }
 
 public class SettingsConfig

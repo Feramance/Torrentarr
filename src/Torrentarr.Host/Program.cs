@@ -1400,7 +1400,7 @@ try
         // Ensure we have a fresh check before applying
         await updater.CheckForUpdateAsync();
         await updater.ApplyUpdateAsync(lifetime);
-        return Results.Ok(new { success = true, message = "Update started â€” application will restart when complete" });
+        return Results.Ok(new { success = true, message = "Update started - application will restart when complete" });
     });
 
     // Â§6.10: GET /web/download-update â€” return download URL/name/size for the latest binary
@@ -2240,7 +2240,7 @@ try
             return Results.Ok(new { success = false, message = "Update already in progress" });
         await updater.CheckForUpdateAsync();
         await updater.ApplyUpdateAsync(lifetime);
-        return Results.Ok(new { success = true, message = "Update started â€” application will restart when complete" });
+        return Results.Ok(new { success = true, message = "Update started - application will restart when complete" });
     });
 
     app.MapGet("/api/download-update", async (UpdateService updater) =>

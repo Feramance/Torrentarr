@@ -530,7 +530,7 @@ public class FreeSpaceService : IFreeSpaceService
         _logger.LogInformation("FreeSpace: Starting FreeSpace manager check");
         _logger.LogInformation("FreeSpace: Using folder {Folder} for space monitoring", folder);
 
-        var managedCategories = BuildManagedCategoriesSet();
+        var managedCategories = _config.BuildManagedCategoriesSet();
         long currentFreeSpace;
         try
         {
@@ -575,22 +575,6 @@ public class FreeSpaceService : IFreeSpaceService
             pausedCount = pausedCountRef[0];
 
         return new GlobalFreeSpacePassResult(pausedCount, minBytes > 0 && !string.IsNullOrEmpty(folder));
-    }
-
-    private HashSet<string> BuildManagedCategoriesSet()
-    {
-        var set = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
-        foreach (var arrInstance in _config.ArrInstances.Where(x => !string.IsNullOrEmpty(x.Value.Category)))
-            set.Add(arrInstance.Value.Category!);
-        foreach (var qbit in _config.QBitInstances.Values)
-        {
-            if (qbit.ManagedCategories != null)
-            {
-                foreach (var cat in qbit.ManagedCategories)
-                    set.Add(cat);
-            }
-        }
-        return set;
     }
 
     private string? GetResolvedFreeSpaceFolderPath()
