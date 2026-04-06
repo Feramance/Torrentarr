@@ -152,7 +152,7 @@ plugins:
       advanced/event-loops.md: advanced/architecture.md
       advanced/multiprocessing.md: advanced/architecture.md
       advanced/ffprobe.md: features/health-monitoring.md
-      getting-started/installation/pip.md: getting-started/installation/dotnet.md
+      getting-started/installation/pip.md: getting-started/installation/binary.md
 
 # Additional CSS/JS
 extra_css:
@@ -201,7 +201,6 @@ nav:
   - Installation:
     - getting-started/installation/index.md
     - getting-started/installation/docker.md
-    - getting-started/installation/dotnet.md
     - getting-started/installation/systemd.md
     - getting-started/installation/binary.md
   - Quick Start: getting-started/quickstart.md

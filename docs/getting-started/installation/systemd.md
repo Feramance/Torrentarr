@@ -5,7 +5,7 @@ Run Torrentarr as a systemd service on Linux for automatic startup, restart mana
 ## Prerequisites
 
 - Linux system with systemd (most modern distributions)
-- .NET 8.0 SDK or higher ([Download .NET](https://dotnet.microsoft.com/download))
+- A [binary](binary.md) for your architecture (x64 or ARM64), or another self-contained `torrentarr` executable on disk
 - Non-root user account (recommended for security)
 
 ## Quick Start
@@ -14,8 +14,10 @@ Run Torrentarr as a systemd service on Linux for automatic startup, restart mana
 # Create Torrentarr user
 sudo useradd -r -s /bin/bash -d /opt/torrentarr -m torrentarr
 
-# Install Torrentarr to shared path
-sudo dotnet tool install --tool-path /usr/local/bin torrentarr
+# Install binary to shared path (x64 example — use torrentarr-linux-arm64 on ARM64)
+sudo curl -L -o /usr/local/bin/torrentarr \
+  https://github.com/Feramance/Torrentarr/releases/latest/download/torrentarr-linux-x64
+sudo chmod +x /usr/local/bin/torrentarr
 
 # Create directories
 sudo mkdir -p /opt/torrentarr/{config,logs}
@@ -44,10 +46,13 @@ sudo useradd -r -s /bin/bash -d /opt/torrentarr -m torrentarr
 
 ### 2. Install Torrentarr
 
-Install to a shared path accessible by the service user:
+Install the [release binary](binary.md) to a shared path accessible by the service user:
 
 ```bash
-sudo dotnet tool install --tool-path /usr/local/bin torrentarr
+# Linux x64 (use torrentarr-linux-arm64 on ARM64)
+sudo curl -L -o /usr/local/bin/torrentarr \
+  https://github.com/Feramance/Torrentarr/releases/latest/download/torrentarr-linux-x64
+sudo chmod +x /usr/local/bin/torrentarr
 ```
 
 This places the `torrentarr` binary at `/usr/local/bin/torrentarr`, which is readable by all users without home-directory PATH tricks.
@@ -121,9 +126,6 @@ PrivateTmp=true
 [Install]
 WantedBy=multi-user.target
 ```
-
-!!! tip "Binary Location"
-    If you installed via `dotnet tool install -g torrentarr` for the torrentarr user, the binary will be at `/opt/torrentarr/.dotnet/tools/torrentarr`. Update `ExecStart` and add `Environment="HOME=/opt/torrentarr"` accordingly.
 
 ### 6. Enable and Start Service
 
@@ -222,14 +224,7 @@ sudo systemctl enable --now torrentarr
 
 ## Auto-Update Behavior
 
-When Torrentarr performs an auto-update or manual update via WebUI:
-
-1. **Process replacement**: Torrentarr calls `os.execv()` to replace itself with the new version
-2. **PID maintained**: The process keeps the same PID
-3. **Systemd continues monitoring**: No service interruption
-4. **Automatic restart**: `Restart=always` ensures service continues
-
-The `RestartSec=5` setting adds a 5-second delay between restart attempts to prevent rapid restart loops.
+When Torrentarr applies an update from the WebUI (binary installs), it downloads the release asset, replaces the on-disk executable, and restarts the process. With `Restart=always`, systemd will start the service again if the process exits; allow a short delay via `RestartSec` so restart loops are avoided if startup fails.
 
 ## Configuration Options
 
@@ -410,12 +405,13 @@ sudo -u torrentarr /usr/local/bin/torrentarr
 
 ### Update Not Working
 
-Manual update:
+Manual update: download the matching [release binary](https://github.com/Feramance/Torrentarr/releases), replace `/usr/local/bin/torrentarr` (or your `ExecStart` path), then:
 
 ```bash
-sudo -u torrentarr dotnet tool update -g torrentarr
 sudo systemctl restart torrentarr
 ```
+
+Or use the WebUI update flow if enabled in your configuration.
 
 ### Permission Issues
 
