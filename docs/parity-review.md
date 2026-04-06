@@ -1,6 +1,6 @@
 # qBitrr Parity Gaps — Implementation Review
 
-**Docs alignment (Torrentarr):** Documentation has been updated to match the C# port: config path env var `TORRENTARR_CONFIG` only (no section overrides), database `torrentarr.db` in config directory, and pip/Python references removed in favor of dotnet tool, binary, and Docker.
+**Docs alignment (Torrentarr):** Documentation has been updated to match the C# port: config path env var `TORRENTARR_CONFIG` only (no section overrides), database `torrentarr.db` in config directory, and pip/Python references removed in favor of Docker, release **binary**, optional **systemd**, and **from source** (`dotnet run`) for development.
 
 ---
 

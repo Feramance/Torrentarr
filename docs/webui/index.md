@@ -710,13 +710,14 @@ All responses are JSON:
         sudo systemctl start torrentarr
         ```
 
-    === "Native (dotnet/binary)"
+    === "Native (binary / source)"
 
         ```bash
-        ps aux | grep -E "Torrentarr|dotnet"
-        # If not running:
+        ps aux | grep -i torrentarr
+        # If not running: release binary
+        torrentarr
+        # Or from a cloned repo:
         dotnet run --project src/Torrentarr.Host/Torrentarr.Host.csproj
-        # Or run the installed binary / dotnet tool
         ```
 
 2. **Verify port configuration:**
