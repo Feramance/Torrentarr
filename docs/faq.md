@@ -24,7 +24,7 @@ Torrentarr works with:
 - **Radarr**: v3.x and v4.x
 - **Sonarr**: v3.x and v4.x
 - **Lidarr**: v1.x
-- **.NET**: 8.0+ (for dotnet tool) or use Binary/Docker
+- **Runtime**: Self-contained **binary** (no separate .NET install) or **Docker**; **from source** needs a .NET SDK
 - **Platforms**: Linux, macOS, Windows, Docker
 
 ## Installation Questions
@@ -32,9 +32,9 @@ Torrentarr works with:
 ### Which installation method should I use?
 
 - **Docker**: Best for most users. Easy updates, isolated environment.
-- **dotnet tool**: Good if you have .NET 8+ or prefer native installs.
-- **Systemd**: Ideal for running as a Linux service.
-- **Binary**: Pre-built executables for advanced users.
+- **Binary**: Pre-built self-contained executable for native installs.
+- **Systemd**: Ideal for running as a Linux service (usually with a binary path).
+- **From source**: Clone the repo and `dotnet run` (developers).
 
 [Installation guides →](getting-started/installation/index.md)
 
@@ -239,7 +239,7 @@ torrentarr:
 
 Check these:
 
-1. **Installation type**: Torrentarr detects docker/dotnet/binary install for update behavior
+1. **Deployment**: Native installs use GitHub release assets; Docker installs should usually `docker pull` a new image
 2. **Permissions**: User running Torrentarr needs write access
 3. **GitHub API rate limit**: Check if you're rate-limited
 4. **Docker**: Pull new image instead of using built-in updater
@@ -343,7 +343,7 @@ docker cp torrentarr:/config/torrentarr.db ./torrentarr.db.backup
 
 Yes! Torrentarr runs on many NAS platforms:
 
-- **Synology**: Docker or native binary/dotnet
+- **Synology**: Docker or native binary
 - **QNAP**: Container Station (Docker)
 - **Unraid**: Community Applications
 - **TrueNAS**: Jails or Docker
@@ -563,16 +563,16 @@ docker ps | grep radarr
 Yes! Installation options:
 
 1. **Docker Desktop**: Recommended for Windows
-2. **dotnet tool**: Requires .NET 8+
+2. **Binary**: Download `torrentarr-windows-x64.exe` from [GitHub Releases](https://github.com/Feramance/Torrentarr/releases)
 
-**Note:** Use Docker, dotnet tool, or binary installation methods.
+**Note:** Use Docker or binary; from source requires the .NET SDK.
 
 **Windows-specific notes:**
 - Use Windows paths (e.g., `C:\Downloads`)
 - PowerShell or CMD for commands
 - Docker Desktop requires WSL2
 
-[Windows installation →](getting-started/installation/dotnet.md#windows)
+[Binary installation →](getting-started/installation/binary.md)
 
 ### How often should I update Torrentarr?
 
@@ -697,7 +697,7 @@ Quick reference for common terms used throughout Torrentarr documentation.
 
 ```bash
 # Start Torrentarr
-torrentarr                              # native (dotnet tool or binary)
+torrentarr                              # native binary
 docker start torrentarr                 # Docker
 sudo systemctl start torrentarr         # Systemd
 

@@ -20,10 +20,10 @@ Get Torrentarr running in 5 minutes!
       feramance/torrentarr:latest
     ```
 
-=== "dotnet / Binary"
+=== "Binary"
 
     ```bash
-    dotnet Torrentarr.Host.dll
+    ./torrentarr
     ```
 
 === "Systemd"
@@ -44,7 +44,7 @@ Stop Torrentarr so you can edit the configuration:
     docker stop torrentarr
     ```
 
-=== "dotnet tool / Binary"
+=== "Binary"
 
     Press ++ctrl+c++ in the terminal
 
@@ -62,9 +62,9 @@ Find and edit your `config.toml` file:
 
     Location: `/path/to/config/config.toml` (where you mounted `/config`)
 
-=== "dotnet tool / Binary"
+=== "Binary"
 
-    Location: `~/config/config.toml` (or path set by TORRENTARR_CONFIG)
+    Location: `~/.config/torrentarr/config.toml` or `~/config/config.toml` (or path set by `TORRENTARR_CONFIG`)
 
 === "Systemd"
 
@@ -143,10 +143,10 @@ Category = "lidarr-music"    # Must match qBittorrent category + Lidarr download
     docker start torrentarr
     ```
 
-=== "dotnet / Binary"
+=== "Binary"
 
     ```bash
-    dotnet Torrentarr.Host.dll
+    ./torrentarr
     ```
 
 === "Systemd"
@@ -165,7 +165,7 @@ Category = "lidarr-music"    # Must match qBittorrent category + Lidarr download
     docker logs -f torrentarr
     ```
 
-=== "dotnet / Binary"
+=== "Binary"
 
     Logs are printed to the console where you started Torrentarr. Check the terminal output.
 

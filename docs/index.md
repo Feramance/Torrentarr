@@ -83,7 +83,7 @@
 ### 🔄 Auto-Updates & Self-Healing
 - **Scheduled auto-updates** – update on a cron schedule
 - **Manual update trigger** – one-click updates from WebUI
-- **Installation-aware** – detects docker/dotnet/binary installs
+- **Installation-aware** – Docker, binary, and manual update flows
 - **Process auto-restart** – restart crashed processes automatically
 - **Crash loop protection** – prevent infinite restart loops
 
@@ -120,11 +120,12 @@
         restart: unless-stopped
     ```
 
-=== "dotnet tool"
+=== "Binary"
 
     ```bash
-    dotnet tool install -g torrentarr
-    torrentarr
+    curl -L -o torrentarr https://github.com/Feramance/Torrentarr/releases/latest/download/torrentarr-linux-x64
+    chmod +x torrentarr
+    ./torrentarr
     ```
 
 [View detailed installation instructions →](getting-started/installation/index.md)
@@ -194,14 +195,9 @@ Total time to library: 20.5 minutes (26% faster)
     - Docker Compose 2.0+ (optional but recommended)
     - No other dependencies required
 
-=== "dotnet tool Installation"
-
-    - .NET 8.0+ SDK or runtime
-    - Or use Binary / Docker for no .NET requirement
-
 === "Binary Installation"
 
-    - No .NET or Python required
+    - No separate .NET install required (self-contained release binary)
     - Supported platforms:
         - Linux: x86_64, aarch64
         - macOS: Intel, Apple Silicon
@@ -266,16 +262,16 @@ Total time to library: 20.5 minutes (26% faster)
 
 ### Operating Systems
 
-| Platform | Docker | dotnet tool | Binary | Systemd |
-|----------|--------|-----|--------|---------|
-| **Linux (x86_64)** | ✅ | ✅ | ✅ | ✅ |
-| **Linux (ARM64)** | ✅ | ✅ | ✅ | ✅ |
-| **macOS (Intel)** | ✅ | ✅ | ✅ | ❌ |
-| **macOS (Apple Silicon)** | ✅ | ✅ | ✅ | ❌ |
-| **Windows 10/11** | ✅ | ✅ | ✅ | ❌ |
-| **FreeBSD** | ⚠️ | ⚠️ | ❌ | ❌ |
-| **Unraid** | ✅ | ❌ | ❌ | ❌ |
-| **TrueNAS** | ✅ | ⚠️ | ❌ | ❌ |
+| Platform | Docker | Binary | Systemd |
+|----------|--------|--------|---------|
+| **Linux (x86_64)** | ✅ | ✅ | ✅ |
+| **Linux (ARM64)** | ✅ | ✅ | ✅ |
+| **macOS (Intel)** | ✅ | ✅ | ❌ |
+| **macOS (Apple Silicon)** | ✅ | ✅ | ❌ |
+| **Windows 10/11** | ✅ | ✅ | ❌ |
+| **FreeBSD** | ⚠️ | ❌ | ❌ |
+| **Unraid** | ✅ | ❌ | ❌ |
+| **TrueNAS** | ✅ | ⚠️ | ❌ |
 
 ✅ = Fully Supported | ⚠️ = Community Tested | ❌ = Not Supported
 

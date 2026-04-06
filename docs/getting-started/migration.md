@@ -555,8 +555,7 @@ cp ~/config/config.toml.backup ~/config/config.toml
 # Restore database
 cp ~/config/torrentarr.db.backup ~/config/torrentarr.db
 
-# Downgrade Torrentarr
-dotnet tool install -g torrentarr==4.5.0  # Replace with desired version
+# Downgrade Torrentarr — install the older release binary from GitHub, or pin a Docker image tag
 
 # Restart
 torrentarr

@@ -822,10 +822,7 @@ Keep Torrentarr updated for security patches:
 docker pull feramance/torrentarr:latest
 docker restart torrentarr
 
-# dotnet tool
-dotnet tool update -g torrentarr
-
-# Binary: download latest from GitHub Releases and replace executable
+# Binary: WebUI Install update, or download latest from GitHub Releases and replace executable
 ```
 
 ---
