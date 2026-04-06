@@ -292,7 +292,7 @@ launchctl load ~/Library/LaunchAgents/com.torrentarr.plist
 
 ## Updating
 
-Binary installations do not support auto-update. You must manually download and replace the binary.
+You can update by downloading a new release and replacing the binary. If enabled, the WebUI can also download and apply a GitHub release binary for the current platform (see [Auto-updates](../../features/auto-updates.md)).
 
 ### Linux/macOS
 
@@ -334,7 +334,7 @@ sudo systemctl restart torrentarr  # if using systemd
     - Missing `glibc` (too old — binary requires glibc 2.17+)
     - Missing `libssl`
 
-    Solution: Use [dotnet tool installation](dotnet.md) instead.
+    Solution: Try a newer OS/glibc, use [Docker](docker.md), or build from source for your environment.
 
 === "macOS"
 
@@ -348,7 +348,7 @@ sudo systemctl restart torrentarr  # if using systemd
 
     If blocked by Windows Defender:
     - Add exception in Windows Security
-    - Or use [dotnet tool installation](dotnet.md)
+    - Or install via [Docker](docker.md)
 
 ### Permission Denied
 
@@ -406,10 +406,9 @@ This is normal for .NET self-contained single-file binaries.
 ### ❌ Disadvantages
 
 - Large file size (50-100MB)
-- No auto-update support
-- Manual updates required
+- Manual updates if you do not use WebUI apply-update
 - May trigger antivirus warnings
-- Slower startup than dotnet tool install
+- Slower cold start than a framework-dependent build (self-contained single-file extraction)
 
 ## Building from Source
 

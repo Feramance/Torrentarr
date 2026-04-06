@@ -1,730 +1,174 @@
 # Auto-Updates
 
-Torrentarr includes a built-in automatic update system that can check for new releases and upgrade your installation on a schedule. This feature supports multiple installation methods and provides a hands-off way to stay current with the latest bug fixes and features.
+Torrentarr can check [GitHub Releases](https://github.com/Feramance/Torrentarr/releases) for newer versions and, when enabled, **download and apply** a matching **self-contained binary** for the current OS/architecture. Docker deployments should normally be updated by **refreshing the image** (Watchtower, `docker pull`, etc.), not by relying on in-container binary replacement.
 
 ---
 
 ## Overview
 
-The auto-update feature automatically:
+When auto-update runs it:
 
-1. **Checks** for new Torrentarr releases on GitHub
-2. **Downloads** and **installs** updates using the appropriate method
-3. **Verifies** the installation succeeded
-4. **Restarts** the application (if restart is enabled)
+1. **Checks** the GitHub API for the latest release (cached for about one hour unless forced).
+2. **Compares** the published version to the running build.
+3. **Applies** an update by downloading the release asset, replacing the running executable, and restarting the process (same mechanism as **Install update** in the WebUI).
 
-!!! note "Installation Method Support"
-    Auto-update support varies by installation method:
+`GET /web/meta` (and `GET /api/meta`) report `installation_type` as `"binary"` and include `update_available`, `binary_download_url`, and apply state.
 
-    - **Docker**: Use Watchtower or manual `docker pull`; Torrentarr can also check and notify
-    - **dotnet tool**: ✅ Fully supported (`dotnet tool update -g torrentarr`)
-    - **Binary Installation**: ⚠️ Manual update required (auto-update will notify only)
+!!! note "What is supported"
+    - **Native / binary installs:** Scheduled check + apply when `AutoUpdateEnabled = true`, or manual/WebUI **Install update**.
+    - **Docker:** Prefer **Watchtower**, **compose pull**, or your orchestrator. In-container apply is fragile (layers reset on recreate); keep `AutoUpdateEnabled = false` unless you know you want it.
+    - **Running from `dotnet run` / unpublished builds:** Treat updates as **manual** (pull latest, rebuild, or use a release binary).
 
 ---
 
 ## Configuration
 
-### Basic Setup
-
-Auto-updates are configured in the `[Settings]` section of `config.toml`:
+Auto-updates are configured under `[Settings]` in `config.toml`:
 
 ```toml
 [Settings]
-# Enable automatic updates on a schedule
+# Enable the cron-driven update worker (Host only)
 AutoUpdateEnabled = false
 
-# Cron expression for update schedule (default: weekly Sunday at 3 AM)
+# Cron expression (UTC), 5 fields: minute hour day-of-month month day-of-week
 AutoUpdateCron = "0 3 * * 0"
 ```
 
-### Configuration Options
-
-#### `AutoUpdateEnabled`
+### `AutoUpdateEnabled`
 
 **Type:** Boolean
 **Default:** `false`
-**Config:** `[Settings]` in config.toml — `AutoUpdateEnabled`
 
-Enable or disable the automatic update worker.
+When `true`, the Host runs `AutoUpdateBackgroundService`: on each matching cron minute it refreshes the release check and, if a newer version is available and no apply is already running, starts the same apply path as **POST /web/update**.
 
-```toml
-AutoUpdateEnabled = true
-```
+### `AutoUpdateCron`
 
-!!! warning "Binary Installations"
-    For binary installations, enabling this option will only log available updates. Manual download and installation is still required.
+**Default:** `"0 3 * * 0"` (Sundays 03:00 UTC)
 
-#### `AutoUpdateCron`
-
-**Type:** String (cron expression)
-**Default:** `"0 3 * * 0"` (weekly Sunday at 3 AM)
-**Config:** `[Settings]` in config.toml — `AutoUpdateCron`
-
-Cron expression defining when to check for and install updates.
-
-**Common Schedules:**
+Examples:
 
 ```toml
-# Daily at 3 AM
-AutoUpdateCron = "0 3 * * *"
-
-# Weekly on Sunday at 3 AM (default)
-AutoUpdateCron = "0 3 * * 0"
-
-# Weekly on Saturday at midnight
-AutoUpdateCron = "0 0 * * 6"
-
-# Twice per week (Wednesday and Sunday at 3 AM)
-AutoUpdateCron = "0 3 * * 0,3"
-
-# Monthly on the 1st at 2 AM
-AutoUpdateCron = "0 2 1 * *"
+AutoUpdateCron = "0 3 * * *"    # daily 03:00 UTC
+AutoUpdateCron = "0 3 * * 0,3"  # Sun and Wed 03:00 UTC
+AutoUpdateCron = "0 2 1 * *"    # 1st of month 02:00 UTC
 ```
-
-!!! info "Cron Syntax"
-    Standard cron syntax: `minute hour day_of_month month day_of_week`
-
-    - `*` = any value
-    - `0-23` = hour range
-    - `0-6` = day of week (0=Sunday, 6=Saturday)
-    - `,` = multiple values (e.g., `0,3` for Sunday and Wednesday)
-    - `*/n` = every n units (e.g., `*/2` for every 2 hours)
 
 ---
 
-## Installation Method Behavior
+## Manual updates
 
-### Git Installation
+### WebUI
 
-**Detection:** Directory contains `.git/` folder
+1. Open **Settings** → **Updates** (or your build’s updates screen).
+2. **Check for updates** (loads `GET /web/meta`, optionally with force refresh).
+3. If an update is available, use **Install update** (calls `POST /web/update`).
 
-**Update Method:**
+### API (Host)
 
-- **Without Target Version:** Runs `git pull --ff-only` to update to latest master
-- **With Target Version:** Fetches tags and checks out specific version tag
-
-**Process:**
+Check meta (includes `update_available`, `latest_version`, `binary_download_url` when resolved):
 
 ```bash
-# Default behavior (latest)
-git pull --ff-only
-
-# Specific version
-git fetch --tags --force
-git checkout v5.4.3
-```
-
-**Logs:**
-
-```
-[INFO] Installation type detected: git
-[INFO] git pull output:
-Updating abc1234..def5678
-Fast-forward
- Torrentarr/main.py | 15 +++++++++++----
- 1 file changed, 11 insertions(+), 4 deletions(-)
-[INFO] Update completed successfully
-```
-
----
-
-### dotnet tool Installation
-
-**Detection:** Torrentarr is run as a .NET tool (`dotnet tool run` or `torrentarr` from dotnet tools path)
-
-**Update Method:**
-
-- **Without Target Version:** Runs `dotnet tool update -g torrentarr`
-- **With Target Version:** Runs `dotnet tool install -g torrentarr --version 5.4.3`
-
-**Process:**
-
-```bash
-# Default behavior (latest)
-dotnet tool update -g torrentarr
-
-# Specific version
-dotnet tool install -g torrentarr --version 5.4.3
-```
-
-**Logs:**
-
-```
-[INFO] Installation type detected: dotnet tool
-[INFO] Update completed successfully
-```
-
----
-
-### Binary Installation
-
-**Detection:** Running as a standalone executable (not dotnet tool)
-
-**Update Method:** **Manual only** - auto-update cannot replace running executable
-
-**Process:**
-
-When an update is available, Torrentarr will log instructions:
-
-```
-[INFO] Binary installation detected - manual update required
-[INFO] Update available: v5.4.3
-[INFO] Download from: https://github.com/Feramance/Torrentarr/releases/latest
-[INFO] Instructions:
-[INFO]   1. Download the binary for your platform
-[INFO]   2. Extract the archive
-[INFO]   3. Replace current executable with new binary
-[INFO]   4. Restart Torrentarr
-```
-
-**Supported Platforms:**
-
-Binary builds are available for:
-
-- `ubuntu-latest-x64` (Linux x86_64)
-- `macOS-latest-arm64` (macOS Apple Silicon)
-- `windows-latest-x64` (Windows x86_64)
-
-!!! warning "Platform Availability"
-    Binary builds may not be available for all platforms. Use Docker or dotnet tool where binary is not offered (e.g. some ARM or older OS).
-
----
-
-## Manual Updates
-
-You can trigger an update manually via the WebUI or API without waiting for the cron schedule.
-
-### Via WebUI
-
-1. Navigate to **Settings** → **Updates**
-2. Click **"Check for Updates"**
-3. If an update is available, click **"Install Update"**
-4. Monitor the **Logs** view for progress
-
-### Via API
-
-Trigger an update via the REST API:
-
-```bash
-# Check for updates
-curl -X POST http://localhost:6969/api/check-updates \
+curl -s "http://localhost:6969/api/meta?force=1" \
   -H "Authorization: Bearer YOUR_TOKEN"
+```
 
-# Response
-{
-  "current_version": "5.4.2",
-  "latest_version": "5.4.3",
-  "update_available": true,
-  "install_type": "dotnet"
-}
+Start apply (downloads asset and replaces executable; process restarts):
 
-# Install update
-curl -X POST http://localhost:6969/api/install-update \
+```bash
+curl -s -X POST "http://localhost:6969/api/update" \
   -H "Authorization: Bearer YOUR_TOKEN"
+```
 
-# Response
-{
-  "success": true,
-  "message": "Update completed successfully",
-  "new_version": "5.4.3"
-}
+Download info only:
+
+```bash
+curl -s "http://localhost:6969/api/download-update" \
+  -H "Authorization: Bearer YOUR_TOKEN"
 ```
 
 ---
 
-## Update Process Flow
-
-### Automatic Updates
+## Flow (scheduled)
 
 ```mermaid
 graph TD
-    A[Cron Schedule Triggers] --> B{Check GitHub Releases}
-    B --> C{New Version Available?}
-    C -->|No| D[Log: Already up to date]
-    C -->|Yes| E{Installation Type?}
-    E -->|Git| F[git pull --ff-only]
-    E -->|Pip| G[dotnet tool update -g torrentarr]
-    E -->|Binary| H[Log manual instructions]
-    F --> I{Update Successful?}
-    G --> I
-    H --> D
-    I -->|Yes| J[Verify New Version]
-    I -->|No| K[Log Error]
-    J --> L{Version Matches?}
-    L -->|Yes| M[Restart Application]
-    L -->|No| K
-    M --> N[Update Complete]
+    A[Cron matches UTC minute] --> B[Refresh GitHub release check]
+    B --> C{Newer than current?}
+    C -->|No| D[Log up to date]
+    C -->|Yes| E{Apply already in progress?}
+    E -->|Yes| D
+    E -->|No| F[Download platform asset]
+    F --> G[Replace executable and restart]
 ```
 
-### Verification Steps
+---
 
-After installation, Torrentarr verifies the update:
+## Docker
 
-1. **Reload Version Module:** Clears `Torrentarr.bundled_data` from `sys.modules`
-2. **Re-import Version:** Imports fresh version string
-3. **Compare Versions:** Checks installed version matches expected version
-4. **Log Result:**
-   - ✅ Success: `Update verified: version 5.4.3 installed successfully`
-   - ❌ Failure: `Version mismatch after update: expected 5.4.3, got 5.4.2`
+Recommended:
+
+- Set **`AutoUpdateEnabled = false`** in container config.
+- Update with **`docker pull feramance/torrentarr:tag`** and recreate the container, or use **Watchtower** / similar.
+
+If you enable internal auto-update inside a container, the filesystem may still be ephemeral; the **image tag** you deploy should remain the source of truth for production.
 
 ---
 
 ## Troubleshooting
 
-### Invalid Cron Expression
+### Invalid cron
 
-**Symptom:**
+Fix `AutoUpdateCron` to five fields with valid ranges (hour 0–23, etc.). Invalid expressions are rejected and auto-update stays off.
 
-```
-[ERROR] Auto update disabled: invalid cron expression '0 25 * * *'
-        (bad hour: 25 is not a valid hour)
-```
+### Apply fails (permissions / disk)
 
-**Solution:**
+Ensure the process user can write to the executable directory and temp space for the download. Check Host logs and `update_state` on `GET /web/meta`.
 
-Fix the cron expression in `config.toml`. Hour must be 0-23.
+### No binary for this platform
 
-```toml
-# Incorrect (hour 25 doesn't exist)
-AutoUpdateCron = "0 25 * * *"
-
-# Correct (3 AM)
-AutoUpdateCron = "0 3 * * *"
-```
-
-### Git Pull Fails (Merge Conflicts)
-
-**Symptom:**
-
-```
-[ERROR] Failed to update repository via git: error: Your local changes to the following files would be overwritten by merge:
-        Torrentarr/config.py
-Please commit your changes or stash them before you merge.
-```
-
-**Solution:**
-
-You have uncommitted local changes. Either:
-
-**Option 1: Stash Changes**
-
-```bash
-cd /path/to/Torrentarr
-git stash
-# Torrentarr will auto-update on next cron run
-
-# Later, restore your changes:
-git stash pop
-```
-
-**Option 2: Commit Changes**
-
-```bash
-cd /path/to/Torrentarr
-git add .
-git commit -m "Local config changes"
-git pull --rebase
-```
-
-**Option 3: Discard Changes**
-
-```bash
-cd /path/to/Torrentarr
-git reset --hard
-# Torrentarr will auto-update on next cron run
-```
-
-### Pip Upgrade Fails (Permission Denied)
-
-**Symptom:**
-
-```
-[ERROR] Failed to upgrade via dotnet tool: Permission denied or network error. Run `dotnet tool update -g torrentarr` manually.
-```
-
-**Solution:**
-
-Run Torrentarr as a user with permission to install packages, or use a virtual environment:
-
-**Option 1: dotnet tool (Recommended for native)**
-
-```bash
-dotnet tool install -g torrentarr
-# Start Torrentarr
-torrentarr
-```
-
-**Option 2: Docker**
-
-Use Watchtower or `docker pull feramance/torrentarr:latest` and restart the container.
-
-**Option 3: Binary**
-
-Download the latest release from GitHub and replace the executable.
-
-### Update Available but Not Installing
-
-**Symptom:**
-
-```
-[INFO] Update available: v5.4.3
-[INFO] Binary installation detected - manual update required
-```
-
-**Solution:**
-
-For **binary installations**, auto-update cannot replace the running executable. Download manually:
-
-1. Go to https://github.com/Feramance/Torrentarr/releases/latest
-2. Download the appropriate binary for your platform:
-   - Linux: `Torrentarr-ubuntu-latest-x64.tar.gz`
-   - macOS: `Torrentarr-macOS-latest-arm64.tar.gz`
-   - Windows: `Torrentarr-windows-latest-x64.zip`
-3. Extract and replace your current binary
-4. Restart Torrentarr
-
-### Version Mismatch After Update
-
-**Symptom:**
-
-```
-[WARNING] Version mismatch after update: expected 5.4.3, got 5.4.2
-```
-
-**Possible Causes:**
-
-1. **Cache Issue:** Python module cache not cleared
-2. **Multiple Installations:** Different Torrentarr installations in PATH
-3. **Partial Update:** Update partially succeeded
-
-**Solution:**
-
-**Check Installation:**
-
-```bash
-which torrentarr
-dotnet tool list -g | grep torrentarr
-
-# For git installations
-cd /path/to/Torrentarr && git describe --tags
-```
-
-**Force Reinstall (dotnet tool):**
-
-```bash
-dotnet tool uninstall -g torrentarr
-dotnet tool install -g torrentarr --version 5.4.3
-```
-
-**Force Pull (git):**
-
-```bash
-cd /path/to/Torrentarr
-git fetch --tags --force
-git checkout v5.4.3
-```
-
-### Update Worker Not Running
-
-**Symptom:**
-
-No update checks happening, no logs about auto-update
-
-**Check Configuration:**
-
-```bash
-# Verify config
-grep AutoUpdate config.toml
-```
-
-**Expected Output:**
-
-```toml
-AutoUpdateEnabled = true
-AutoUpdateCron = "0 3 * * 0"
-```
-
-**Check Logs:**
-
-```
-[INFO] Auto update scheduled with cron '0 3 * * 0'.
-[DEBUG] Next auto update scheduled for 2025-12-01T03:00:00
-```
-
-If you don't see these logs, auto-update is not enabled. Set `AutoUpdateEnabled = true` and restart.
+Release assets follow CI naming (e.g. `linux-x64`, `linux-arm64`, `osx-x64`, `osx-arm64`, `win-x64`). If no asset matches, use **Docker** or **build from source**.
 
 ---
 
-## Docker Considerations
+## FFprobe auto-update
 
-### Auto-Update in Docker
-
-For Docker deployments, there are **two approaches** to auto-updates:
-
-#### Approach 1: Update Torrentarr Inside Container (Not Recommended)
-
-You can enable `AutoUpdateEnabled = true` inside a Docker container, and Torrentarr will update the **Python package** inside the container.
-
-**Limitations:**
-
-- Updates are **lost on container restart** (ephemeral)
-- Container image remains outdated
-- Not recommended for production
-
-#### Approach 2: Update Docker Image (Recommended)
-
-Use an external tool to update the Docker image itself:
-
-**Option A: Watchtower**
-
-Automatically pull and restart with new image:
-
-```yaml
-version: "3"
-services:
-  torrentarr:
-    image: feramance/torrentarr:latest
-    # ... other config ...
-
-  watchtower:
-    image: containrrr/watchtower:latest
-    volumes:
-      - /var/run/docker.sock:/var/run/docker.sock
-    environment:
-      - WATCHTOWER_CLEANUP=true
-      - WATCHTOWER_SCHEDULE=0 3 * * 0  # Weekly Sunday 3 AM
-    restart: unless-stopped
-```
-
-**Option B: Manual Update**
-
-```bash
-# Pull latest image
-docker pull feramance/torrentarr:latest
-
-# Recreate container
-docker-compose down
-docker-compose up -d
-```
-
-**Option C: Ouroboros**
-
-Alternative to Watchtower:
-
-```yaml
-services:
-  ouroboros:
-    image: pyouroboros/ouroboros:latest
-    volumes:
-      - /var/run/docker.sock:/var/run/docker.sock
-    environment:
-      - CLEANUP=true
-      - INTERVAL=86400  # Check daily
-    restart: unless-stopped
-```
-
-!!! tip "Docker Auto-Update Best Practice"
-    Disable Torrentarr's internal auto-update (`AutoUpdateEnabled = false`) and use Watchtower or Ouroboros to manage Docker image updates.
-
----
-
-## FFprobe Auto-Update
-
-Torrentarr also supports auto-updating the FFprobe binary used for media file verification.
-
-### Configuration
+Torrentarr can download **FFprobe** for media checks (separate from application updates).
 
 ```toml
 [Settings]
-# Enable automatic FFprobe binary updates
 FFprobeAutoUpdate = true
 ```
 
-### Behavior
-
-- **Enabled (default):** Torrentarr downloads FFprobe from https://ffbinaries.com/downloads on startup if not present
-- **Disabled:** You must manually place `ffprobe` (or `ffprobe.exe` on Windows) in the data folder
-
-**FFprobe Location:**
-
-- **Linux/macOS:** config directory (e.g. `~/.config/torrentarr/` or `~/config/`) or system PATH
-- **Windows:** config directory or `%APPDATA%\torrentarr\` or system PATH
-- **Docker:** `/config/ffprobe` or on PATH
-
-!!! info "FFprobe Updates"
-    FFprobe updates are **separate** from Torrentarr application updates. FFprobe is downloaded on-demand when needed, not on a schedule.
+When enabled, FFprobe may be fetched (e.g. via ffbinaries) if missing. Paths follow your config directory layout; see [Health monitoring](health-monitoring.md).
 
 ---
 
-## Security Considerations
+## Security
 
-### Update Source Verification
-
-Torrentarr updates are pulled from official sources:
-
-- **Git:** GitHub repository `Feramance/Torrentarr`
-- **GitHub Releases:** https://github.com/Feramance/Torrentarr/releases
-- **NuGet:** (if published) dotnet tool package
-- **Binary:** GitHub Releases with checksums
-
-### Network Requirements
-
-Auto-update requires outbound internet access to:
-
-- `github.com` (for git installations and version checks)
-- `github.com/Feramance/Torrentarr/releases` (for binary and release checks)
-- `ffbinaries.com` (for FFprobe downloads)
-
-If running in an air-gapped environment, disable auto-update and manage updates manually.
-
-### Authentication
-
-GitHub API requests are unauthenticated (public API). If you hit rate limits (60 requests/hour), you can provide a GitHub token:
-
-```bash
-export GITHUB_TOKEN="ghp_YOUR_PERSONAL_ACCESS_TOKEN"
-torrentarr
-```
+- Application updates use **GitHub Releases** for the `Feramance/Torrentarr` repository.
+- Outbound HTTPS to `github.com` is required for version checks and downloads.
+- Optional: set `GITHUB_TOKEN` if you hit unauthenticated API rate limits.
 
 ---
 
-## Best Practices
+## Best practices
 
-### 1. Choose Appropriate Schedule
-
-```toml
-# Production: Weekly updates (stable)
-AutoUpdateCron = "0 3 * * 0"  # Sunday 3 AM
-
-# Development/Testing: Daily updates (latest features)
-AutoUpdateCron = "0 3 * * *"  # Daily 3 AM
-
-# Conservative: Monthly updates
-AutoUpdateCron = "0 2 1 * *"  # 1st of month, 2 AM
-```
-
-### 2. Monitor Logs After Updates
-
-Check logs after scheduled updates:
-
-```bash
-# Check for successful update
-tail -100 /config/logs/Main.log | grep -i update
-
-# Expected success output
-[INFO] Auto update triggered
-[INFO] Installation type detected: dotnet tool
-[INFO] Update completed successfully
-[INFO] Update verified: version 5.4.3 installed successfully
-```
-
-### 3. Test Updates in Staging First
-
-For critical deployments:
-
-1. Run a **staging Torrentarr instance** with `AutoUpdateEnabled = true`
-2. Test for 1-2 weeks
-3. If stable, manually update production or enable auto-update
-
-### 4. Pin Versions for Stability
-
-If you need version stability (e.g., for LTS environments), **disable auto-update** and pin to a specific version:
-
-**Git:**
-
-```bash
-git checkout v5.4.3
-```
-
-**Pip:**
-
-```bash
-dotnet tool install -g torrentarr==5.4.3
-```
-
-**Docker:**
-
-```yaml
-services:
-  torrentarr:
-    image: feramance/torrentarr:5.4.3  # Pin to specific version
-```
-
-### 5. Backup Before Enabling
-
-Before enabling auto-update for the first time, backup your configuration:
-
-```bash
-# Backup config
-cp /config/config.toml /config/config.toml.backup
-
-# Backup database
-cp /config/torrentarr.db /config/torrentarr.db.backup
-```
+- **Production:** Prefer pinned Docker tags or tested binaries; enable cron apply only if you accept automatic restarts.
+- **After updates:** Confirm version in the WebUI and that workers reconnect.
+- **Back up** `config.toml` and `torrentarr.db` before first enable.
 
 ---
 
-## API Reference
+## Related
 
-### Check for Updates
-
-**Endpoint:** `POST /api/check-updates`
-**Authentication:** Required (`Authorization: Bearer <token>`)
-
-**Response:**
-
-```json
-{
-  "current_version": "5.4.2",
-  "latest_version": "5.4.3",
-  "update_available": true,
-  "install_type": "dotnet",
-  "release_url": "https://github.com/Feramance/Torrentarr/releases/tag/v5.4.3",
-  "changelog": "Bug fixes and performance improvements"
-}
-```
-
-### Install Update
-
-**Endpoint:** `POST /api/install-update`
-**Authentication:** Required (`Authorization: Bearer <token>`)
-
-**Response:**
-
-```json
-{
-  "success": true,
-  "message": "Update completed successfully",
-  "old_version": "5.4.2",
-  "new_version": "5.4.3"
-}
-```
-
-**Error Response:**
-
-```json
-{
-  "success": false,
-  "error": "Binary installation detected - manual update required",
-  "install_type": "binary"
-}
-```
-
----
-
-## Related Features
-
-- **[Health Monitoring](health-monitoring.md)** - Monitors torrent and system health
-- **[Disk Space Management](disk-space.md)** - Automatic pause/resume based on free space
-- **[WebUI Configuration](../configuration/webui.md)** - Configure WebUI for update management
+- [WebUI API reference](../webui/api.md) — `/web/meta`, `/web/update`
+- [WebUI configuration](../configuration/webui.md)
+- [Binary installation](../getting-started/installation/binary.md)
 
 ---
 
 ## Summary
 
-- Auto-update supports **dotnet tool** and **Docker** (via notification); binary installations require manual updates
-- Configure schedule with **cron expressions** (`AutoUpdateCron`)
-- Updates can be **triggered manually** via WebUI or API
-- For **Docker**, use **Watchtower** or **Ouroboros** instead of internal auto-update
-- Always **monitor logs** after updates to verify success
-- **Backup config and database** before enabling auto-update
+- **Binary / native Host:** GitHub release check + optional **cron apply** and **WebUI/API apply**.
+- **Docker:** Update the **image** with your platform workflow; internal auto-update is optional and often disabled.
+- **From source:** Update by rebuilding or switching to a release binary.
