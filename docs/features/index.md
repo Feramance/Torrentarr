@@ -329,15 +329,15 @@ AutoUpdateCron = "0 3 * * 0"  # Sundays at 3:00 AM
 
 1. Torrentarr checks for new versions on schedule
 2. Downloads latest release from GitHub
-3. Installs update (dotnet tool update or binary download)
+3. Downloads the GitHub release asset for the current platform and replaces the executable
 4. Restarts Torrentarr automatically
-5. Logs update in `Main.log`
+5. Logs progress to Host logs
 
 **Supported installation methods:**
 
-- ✅ dotnet tool (`dotnet tool update -g torrentarr`)
-- ✅ Docker (pull latest image)
-- ⚠️ Binary (manual download, not fully automated)
+- ✅ Native / binary (cron apply, WebUI, or `POST /api/update`)
+- ✅ Docker (pull latest image — recommended over in-container apply)
+- ⚠️ `dotnet run` / dev builds (update manually)
 
 ---
 

@@ -31,6 +31,10 @@ export default defineConfig({
     environment: "jsdom",
     setupFiles: ["./src/__tests__/setup.ts"],
     globals: true,
+    // MSW setupServer() is per-file; parallel test files share one worker process and can
+    // race handlers → flaky findBy* timeouts. Run files sequentially (tests within a file
+    // still run in parallel).
+    fileParallelism: false,
     coverage: {
       provider: "v8",
       reporter: ["text", "json", "html"],

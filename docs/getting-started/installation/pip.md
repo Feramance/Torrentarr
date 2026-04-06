@@ -4,9 +4,9 @@ Torrentarr is a **C#/.NET** application and does **not** ship via PyPI or pip. T
 
 **To install Torrentarr, use one of these methods instead:**
 
-- **[dotnet tool](dotnet.md)** — `dotnet tool install -g torrentarr` (recommended if you have .NET 8+)
-- **[Binary](binary.md)** — Download a pre-built executable (no .NET required)
+- **[Binary](binary.md)** — Download a pre-built self-contained executable
 - **[Docker](docker.md)** — `feramance/torrentarr:latest`
-- **[Systemd](systemd.md)** — Run as a Linux service
+- **[Systemd](systemd.md)** — Run as a Linux service (usually with a binary install)
+- **From source** — Clone the repo and `dotnet run --project src/Torrentarr.Host/Torrentarr.Host.csproj` (see [Development Guide](../../development/index.md))
 
 See the [Installation overview](index.md) for comparison and links.
