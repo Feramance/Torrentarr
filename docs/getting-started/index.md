@@ -115,29 +115,6 @@ Choose the installation method that best fits your infrastructure:
 
 ---
 
-### 📦 .NET tool
-
-**Best for:**
-
-- Native Linux/macOS/Windows installations
-- Users who prefer not to use Docker
-- Integration with existing .NET tooling
-
-**Advantages:**
-
-- ✅ Native performance
-- ✅ Single global tool command
-- ✅ Full control over environment
-
-**Requirements:**
-
-- .NET 8.0 SDK or runtime
-- qBittorrent and at least one Arr instance
-
-[**.NET tool Installation Guide →**](installation/dotnet.md)
-
----
-
 ### 🔧 Systemd Service
 
 **Best for:**
@@ -157,7 +134,7 @@ Choose the installation method that best fits your infrastructure:
 **Requirements:**
 
 - Linux with systemd
-- .NET 8+ or Torrentarr binary
+- Torrentarr [binary](installation/binary.md) (or your own build) on disk
 - sudo/root access for setup
 
 [**Systemd Installation Guide →**](installation/systemd.md)
@@ -191,16 +168,16 @@ Choose the installation method that best fits your infrastructure:
 
 ## Installation Comparison
 
-| Feature | Docker | dotnet tool | Systemd | Binary |
-|---------|--------|-----|---------|--------|
-| **Ease of Setup** | ⭐⭐⭐⭐⭐ | ⭐⭐⭐⭐ | ⭐⭐⭐ | ⭐⭐⭐⭐ |
-| **Updates** | Very Easy | Easy | Manual | Manual |
-| **Dependencies** | Auto | .NET 8+ | .NET or binary | None |
-| **Cross-Platform** | Yes | Yes | Linux only | Yes |
-| **Performance** | Good | Excellent | Excellent | Excellent |
-| **Isolation** | Excellent | None | Good | None |
-| **Auto-Start** | Yes | No | Yes | No |
-| **Resource Usage** | Medium | Low | Low | Low |
+| Feature | Docker | Systemd | Binary |
+|---------|--------|---------|--------|
+| **Ease of Setup** | ⭐⭐⭐⭐⭐ | ⭐⭐⭐ | ⭐⭐⭐⭐ |
+| **Updates** | Very Easy | Manual | Manual / WebUI |
+| **Dependencies** | Auto | None (self-contained binary) | None (self-contained) |
+| **Cross-Platform** | Yes | Linux only | Yes |
+| **Performance** | Good | Excellent | Excellent |
+| **Isolation** | Excellent | Good | None |
+| **Auto-Start** | Yes | Yes | No |
+| **Resource Usage** | Medium | Low | Low |
 
 ---
 
@@ -217,12 +194,6 @@ Start Torrentarr to generate the default configuration:
     ```bash
     docker-compose up -d torrentarr
     docker logs -f torrentarr
-    ```
-
-=== "dotnet tool"
-
-    ```bash
-    torrentarr
     ```
 
 === "Systemd"
@@ -256,7 +227,7 @@ Stop Torrentarr to edit the configuration:
     docker-compose down
     ```
 
-=== "dotnet tool / Binary"
+=== "Binary"
 
     Press ++ctrl+c++
 
@@ -277,10 +248,10 @@ Edit the generated `config.toml` file:
     nano /path/to/config/config.toml
     ```
 
-=== "dotnet tool"
+=== "Binary"
 
     ```bash
-    nano ~/config/config.toml
+    nano ~/.config/torrentarr/config.toml
     ```
 
 === "Systemd"
@@ -316,10 +287,10 @@ Restart Torrentarr with your configuration:
     docker-compose up -d
     ```
 
-=== "dotnet tool"
+=== "Binary"
 
     ```bash
-    torrentarr
+    ./torrentarr
     ```
 
 === "Systemd"
@@ -443,7 +414,7 @@ ApprovedOnly = true
 - Strict seeding requirements
 - Disk space management
 
-**Installation:** dotnet tool or binary + systemd
+**Installation:** Binary or Docker + optional systemd on Linux
 
 **Time to setup:** 30 minutes
 
@@ -501,7 +472,7 @@ ApprovedOnly = true
 
 **Check:**
 
-1. .NET 8+ (for dotnet tool) or use Binary/Docker
+1. Valid binary/Docker setup and writable config/logs paths
 2. Port 6969 not in use
 3. Config file exists and is valid TOML
 4. Permissions on config/logs folders

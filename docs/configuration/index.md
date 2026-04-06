@@ -405,8 +405,8 @@ Follow this recommended workflow when setting up Torrentarr:
 
 1. **Install Torrentarr** - Choose your installation method:
    - [Docker](../getting-started/installation/docker.md) (recommended)
-   - [.NET tool](../getting-started/installation/dotnet.md)
    - [Binary](../getting-started/installation/binary.md)
+   - [Systemd](../getting-started/installation/systemd.md) (Linux service, usually with a binary)
 
 2. **Generate Default Config**:
    ```bash

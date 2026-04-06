@@ -774,14 +774,7 @@ Category = "radarr"             # REQUIRED (must match qBit download client)
    df -h /path/to/torrentarr
    ```
 
-2. **Verify permissions:**
-   ```bash
-   # For dotnet tool
-   dotnet tool update -g torrentarr
-
-   # For Docker
-   docker pull feramance/torrentarr:latest
-   ```
+2. **Verify permissions:** the Host process must be able to write next to (or replace) its executable and use temp space for the download.
 
 3. **Check for breaking changes:**
    - Review [CHANGELOG.md](../changelog.md)
@@ -789,12 +782,11 @@ Category = "radarr"             # REQUIRED (must match qBit download client)
 
 4. **Manual update:**
    ```bash
-   # dotnet tool
-   dotnet tool update -g torrentarr
-
    # Docker
    docker-compose pull torrentarr
    docker-compose up -d torrentarr
+
+   # Binary: download the matching asset from GitHub Releases, replace the executable, restart
    ```
 
 ---
@@ -817,11 +809,10 @@ Category = "radarr"             # REQUIRED (must match qBit download client)
 
 3. **Rollback if needed:**
    ```bash
-   # dotnet tool
-   dotnet tool install -g torrentarr --version 5.4.0  # Specific version
-
-   # Docker
+   # Docker — pin image tag
    docker pull feramance/torrentarr:5.4.0
+
+   # Binary — download the older release asset from GitHub and replace the executable
    ```
 
 ## Clean Restart
@@ -840,7 +831,7 @@ Sometimes a clean restart resolves issues:
     sudo systemctl restart torrentarr
     ```
 
-=== "Native (dotnet/binary)"
+=== "Native (binary)"
     ```bash
     # Stop Torrentarr (Ctrl+C if running in foreground)
     # Then restart

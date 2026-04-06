@@ -578,11 +578,11 @@ When `true`:
 
 **Supported installation methods:**
 
-- ✅ dotnet tool or binary installation
-- ✅ Docker (pulls latest image)
-- ⚠️ Binary (manual, not fully automated)
+- ✅ Native / binary (cron-driven apply downloads GitHub release asset)
+- ⚠️ Docker (prefer `docker pull` / Watchtower; in-container apply is optional)
+- ⚠️ `dotnet run` / dev trees (update manually)
 
-**Recommendation:** Enable for Docker deployments. Consider manual updates for dotnet tool or binary installations.
+**Recommendation:** For Docker, prefer image updates. For native installs, cron apply is optional; always back up config before enabling.
 
 ---
 

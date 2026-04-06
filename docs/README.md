@@ -123,10 +123,10 @@ Use tabs for multiple examples:
     docker run ...
     ```
 
-=== "dotnet tool"
+=== "Binary"
 
     ```bash
-    dotnet tool install -g torrentarr
+    ./torrentarr
     ```
 ````
 

@@ -1117,41 +1117,41 @@ Test connection to Arr instance without saving configuration.
 
 ### Trigger Manual Update
 
-Trigger Torrentarr self-update (dotnet tool or binary; not applicable for Docker).
+Trigger Torrentarr self-update: downloads the **GitHub release asset** for the current OS/architecture, replaces the running Host executable, and restarts the process. Intended for **native / binary** installs; **Docker** users should normally `docker pull` a new image instead.
 
 **Endpoints**:
 - `POST /api/update` (requires auth)
-- `POST /web/update` (public)
+- `POST /web/update` (follows the same WebUI auth rules as other `/web/*` routes)
 
 **Request**: No body required
 
 **Response** (Success):
 ```json
 {
-  "status": "started"
+  "success": true,
+  "message": "Update started — application will restart when complete"
 }
 ```
 
 **Response** (Already Running):
 ```json
 {
-  "error": "An update is already in progress."
+  "success": false,
+  "message": "Update already in progress"
 }
 ```
 
 **HTTP Status Codes**:
 
-- `200` - Update started
-- `409` - Update already in progress
+- `200` - Update started, or already in progress (see `success`)
 
 **Behavior**:
 
-1. Spawns background task
-2. For dotnet tool: runs `dotnet tool update -g torrentarr` (or equivalent). For binary: downloads release from GitHub.
-3. Restarts Torrentarr on success
-4. Returns immediately (update is asynchronous)
+1. Starts a background task (returns immediately).
+2. Ensures a fresh release check, then downloads and applies the platform binary from GitHub Releases.
+3. Process exits/restarts when apply completes (supervisor or manual restart may be required depending on environment).
 
-**Monitoring**: Poll `GET /api/meta` to check `update_state.in_progress` and `update_state.last_result`.
+**Monitoring**: Poll `GET /api/meta` or `GET /web/meta` for `update_state.in_progress`, `update_state.last_result`, and `update_state.last_error`.
 
 ---
 

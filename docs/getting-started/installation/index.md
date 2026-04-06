@@ -25,39 +25,21 @@ docker run -d \
   feramance/torrentarr:latest
 ```
 
-### dotnet tool
-
-Install Torrentarr as a global .NET tool — the simplest native installation method.
-
-**Best for:**
-
-- Users with .NET 8.0+ already installed
-- Native performance requirements
-- Easy updates with a single command
-- Developers and power users
-
-**Get Started:** [dotnet tool Installation Guide →](dotnet.md)
-
-```bash
-dotnet tool install -g torrentarr
-torrentarr
-```
-
 ### Binary Download
 
-Download pre-built executables for Linux, macOS, or Windows. No Python required!
+Download pre-built executables for Linux, macOS, or Windows. Self-contained builds include the .NET runtime — no separate .NET install required.
 
 **Best for:**
 
-- Users who don't have Python installed
+- Native installs without Docker
 - Simple single-file deployment
 - Systems where Docker isn't available
-- Quick testing without dependencies
+- Quick testing without building from source
 
 **Get Started:** [Binary Installation Guide →](binary.md)
 
 ```bash
-# Linux/macOS
+# Linux/macOS (x64 example)
 curl -L -o torrentarr https://github.com/Feramance/Torrentarr/releases/latest/download/torrentarr-linux-x64
 chmod +x torrentarr
 ./torrentarr
@@ -65,7 +47,7 @@ chmod +x torrentarr
 
 ### Systemd Service
 
-Run Torrentarr as a system service on Linux.
+Run Torrentarr as a system service on Linux (typically with a binary under `/usr/local/bin` or similar).
 
 **Best for:**
 
@@ -80,43 +62,62 @@ Run Torrentarr as a system service on Linux.
 sudo systemctl enable --now torrentarr
 ```
 
+### From source
+
+Build and run from the repository when you are developing or need an unpublished build.
+
+**Best for:**
+
+- Contributors and local development
+- Testing changes before a release
+
+Use a .NET SDK matching the repo (see repository `global.json` / CI), then:
+
+```bash
+dotnet run --project src/Torrentarr.Host/Torrentarr.Host.csproj
+```
+
+See the [Development Guide](../../development/index.md) for the full workflow (restore, tests, publishing).
+
 ## Comparison
 
-| Feature | Docker | dotnet tool | Binary | Systemd |
-|---------|--------|-------------|--------|---------|
-| **.NET Required** | No | Yes (8.0+) | No | Yes |
-| **Easy Updates** | ✅ | ✅ | ⚠️ Manual | ✅ |
-| **Auto-start** | ✅ | ⚠️ Manual | ⚠️ Manual | ✅ |
-| **Resource Usage** | Medium | Low | Low | Low |
-| **Isolation** | ✅ | ❌ | ❌ | ⚠️ Partial |
-| **Path Mapping** | ✅ Easy | ⚠️ Complex | ⚠️ Complex | ⚠️ Complex |
-| **Multi-user** | ✅ | ❌ | ❌ | ✅ |
+| Feature | Docker | Binary | Systemd | From source |
+|---------|--------|--------|---------|-------------|
+| **.NET SDK required** | No | No | No | Yes |
+| **Easy updates** | ✅ (`docker pull`) | ⚠️ Manual or WebUI binary update | ⚠️ Same as binary | Rebuild |
+| **Auto-start** | ✅ | ⚠️ Manual | ✅ | ⚠️ Manual |
+| **Resource usage** | Medium | Low | Low | Low |
+| **Isolation** | ✅ | ❌ | ⚠️ Partial | ❌ |
+| **Path mapping** | ✅ Easy | ⚠️ Manual | ⚠️ Manual | ⚠️ Manual |
+| **Multi-user** | ✅ | ❌ | ✅ | ❌ |
 
-## Quick Comparison
+## Quick comparison
 
 ### Choose Docker if:
+
 - ✅ You're already using Docker for qBittorrent/Arr apps
 - ✅ You want simple updates (just `docker pull`)
 - ✅ You need consistent environments across systems
 - ✅ You want easy path mapping and permission management
 
-### Choose dotnet tool if:
-- ✅ You already have .NET 8.0+ installed
-- ✅ You want native performance
-- ✅ You prefer simple `dotnet tool update` upgrades
-- ✅ You need development flexibility
-
 ### Choose Binary if:
-- ✅ You don't have .NET and prefer not to install it
-- ✅ You want a single executable file
+
+- ✅ You want a native install without Docker
+- ✅ You want a single downloadable executable
 - ✅ You're testing Torrentarr quickly
 - ✅ Docker isn't available
 
 ### Choose Systemd if:
+
 - ✅ You're on Linux and want system integration
 - ✅ You need automatic startup on boot
 - ✅ You want centralized logging via journald
 - ✅ You're running a production server
+
+### Choose From source if:
+
+- ✅ You are developing or patching Torrentarr
+- ✅ You need a build that is not yet in releases
 
 ## Prerequisites
 
@@ -176,7 +177,6 @@ Need assistance with installation?
 Ready to install? Choose your method:
 
 - 🐳 [Docker Installation →](docker.md) (Recommended)
-- ⚙️ [dotnet tool Installation →](dotnet.md)
 - 📦 [Binary Installation →](binary.md)
 - ⚙️ [Systemd Service →](systemd.md)
 
