@@ -3,7 +3,7 @@
     "@mantine/core": "^9.0.0",
     "@mantine/dates": "^9.0.1",
     "@mantine/hooks": "^9.0.0",
-    "@melloware/react-logviewer": "^6.5.1",
+    "@melloware/react-logviewer": "^6.5.2",
     "@tanstack/react-table": "^8.21.3",
     "dayjs": "^1.11.20",
     "fast-deep-equal": "^3.1.3",
