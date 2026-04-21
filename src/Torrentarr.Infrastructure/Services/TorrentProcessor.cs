@@ -296,7 +296,10 @@ public class TorrentProcessor : ITorrentProcessor
 
         // PRE-STEP 0: Tracker actions — runs for EVERY torrent BEFORE the state machine
         // (qBitrr: _process_single_torrent_trackers — arss.py:6070)
-        if (_seedingService != null)
+        // TorrentPolicyManager owns this when global SortTorrents is enabled (arss.py:6615-6628).
+        if (_seedingService != null
+            && !(TorrentPolicyHelper.PolicyManagerOwnsTrackerSync(_config)
+                 && TorrentPolicyHelper.IsMonitoredPolicyCategory(_config, torrent.Category)))
         {
             await _seedingService.ApplyTrackerActionsForTorrentAsync(torrent, ct);
         }

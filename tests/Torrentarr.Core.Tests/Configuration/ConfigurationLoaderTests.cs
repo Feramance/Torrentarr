@@ -539,6 +539,26 @@ public class ConfigurationLoaderTests : IDisposable
         config.WebUI.OIDCEnabled.Should().BeTrue();
     }
 
+    [Fact]
+    public void Load_ParsesTrackerSortTorrentsFlag()
+    {
+        WriteToml("""
+            [qBit]
+            Host = "localhost"
+
+            [[qBit.Trackers]]
+            URI = "https://tracker.example.com/announce"
+            Priority = 10
+            SortTorrents = true
+            """);
+
+        var config = new ConfigurationLoader(_tempFilePath).Load();
+
+        config.QBitInstances["qBit"].Trackers.Should().ContainSingle();
+        config.QBitInstances["qBit"].Trackers[0].SortTorrents.Should().BeTrue();
+        config.QBitInstances["qBit"].Trackers[0].Priority.Should().Be(10);
+    }
+
     [Theory]
     [InlineData("Disabled", true, false, false)]
     [InlineData("TokenOnly", false, false, false)]
@@ -592,5 +612,43 @@ public class ConfigurationLoaderTests : IDisposable
 
         config.WebUI.AuthDisabled.Should().BeFalse("new installs get auth enabled by default");
         config.WebUI.LocalAuthEnabled.Should().BeTrue("new installs get local auth enabled by default");
+    }
+
+    [Fact]
+    public void Load_Migration1_RenamesSecureCookies_ToBehindHttpsProxy()
+    {
+        WriteToml($"""
+            [Settings]
+            ConfigVersion = "{ConfigurationLoader.ExpectedConfigVersion}"
+
+            [WebUI]
+            SecureCookies = true
+            """);
+
+        var config = new ConfigurationLoader(_tempFilePath).Load();
+
+        config.WebUI.BehindHttpsProxy.Should().BeTrue();
+    }
+
+    [Fact]
+    public void Load_AcceptsQbitrrEnvironmentVariableAliases()
+    {
+        var previous = Environment.GetEnvironmentVariable("QBITRR_SETTINGS_FREE_SPACE");
+        try
+        {
+            Environment.SetEnvironmentVariable("QBITRR_SETTINGS_FREE_SPACE", "42G");
+
+            WriteToml("""
+                [Settings]
+                FreeSpace = "10G"
+                """);
+
+            var config = new ConfigurationLoader(_tempFilePath).Load();
+            config.Settings.FreeSpace.Should().Be("42G");
+        }
+        finally
+        {
+            Environment.SetEnvironmentVariable("QBITRR_SETTINGS_FREE_SPACE", previous);
+        }
     }
 }

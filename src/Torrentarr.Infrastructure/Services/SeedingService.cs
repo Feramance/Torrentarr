@@ -940,6 +940,54 @@ public class SeedingService : ISeedingService
         }
     }
 
+    /// <inheritdoc />
+    public async Task<int> GetQueueSortAnnouncePriorityAsync(TorrentInfo torrent, CancellationToken cancellationToken = default)
+    {
+        try
+        {
+            var cfg = await GetTrackerConfigAsync(torrent, cancellationToken);
+            return cfg?.Priority ?? -100;
+        }
+        catch (Exception ex)
+        {
+            _logger.LogDebug(ex, "Queue sort announce priority failed for {Hash}", torrent.Hash);
+            return -100;
+        }
+    }
+
+    /// <inheritdoc />
+    public async Task<int> GetTorrentQueueSortPriorityAsync(
+        TorrentInfo torrent,
+        IReadOnlyDictionary<string, int> tagToPriorityMax,
+        CancellationToken cancellationToken = default)
+    {
+        var announcePri = await GetQueueSortAnnouncePriorityAsync(torrent, cancellationToken);
+        if (tagToPriorityMax == null || tagToPriorityMax.Count == 0)
+            return announcePri;
+
+        var present = ParseQBitTagListForQueueSort(torrent.Tags);
+        var matched = new List<int>();
+        foreach (var tag in present)
+        {
+            if (tagToPriorityMax.TryGetValue(tag, out var p))
+                matched.Add(p);
+        }
+
+        if (matched.Count == 0)
+            return announcePri;
+
+        var tagPri = matched.Max();
+        if (tagPri <= -100)
+            return announcePri;
+        return Math.Max(tagPri, announcePri);
+    }
+
+    private static List<string> ParseQBitTagListForQueueSort(string? tags)
+    {
+        if (string.IsNullOrWhiteSpace(tags)) return [];
+        return tags.Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries).ToList();
+    }
+
     /// <summary>
     /// §3.1: Apply per-tracker-config actions (RemoveIfExists, AddTrackerIfMissing, AddTags).
     /// Iterates the merged tracker list and applies each action for the trackers that match/don't match.
