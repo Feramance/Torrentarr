@@ -260,7 +260,11 @@ public class ConfigurationLoader
             if (!root.ContainsKey("Settings"))
                 root["Settings"] = new TomlTable();
             if (root["Settings"] is TomlTable s && currentVersion <= expected)
+            {
                 s["ConfigVersion"] = ExpectedConfigVersion;
+                // Version-only bump must persist; otherwise needsMigration stays true every startup.
+                changed = true;
+            }
         }
 
         return changed;

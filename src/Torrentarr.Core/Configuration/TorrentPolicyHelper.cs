@@ -103,6 +103,7 @@ public static class TorrentPolicyHelper
 
     /// <summary>
     /// Seeding / upload side of qBittorrent queue for <c>SortTorrents</c> (arss.py <c>is_queue_seeding_for_sort</c>).
+    /// Includes <c>stoppedUP</c> (qBittorrent v5+; replaces <c>pausedUP</c> in the API).
     /// </summary>
     public static bool IsQueueSeedingForSort(string? state)
     {
@@ -112,15 +113,20 @@ public static class TorrentPolicyHelper
                || lower.Contains("stalledup", StringComparison.Ordinal)
                || lower.Contains("queuedup", StringComparison.Ordinal)
                || lower.Contains("pausedup", StringComparison.Ordinal)
+               || lower.Contains("stoppedup", StringComparison.Ordinal)
                || lower.Contains("forcedup", StringComparison.Ordinal)
                || lower.Contains("checkingup", StringComparison.Ordinal);
     }
 
     /// <summary>
     /// Categories monitored by the global policy worker (Arr categories + qBit <c>ManagedCategories</c>).
+    /// Result is cached on <paramref name="config"/> for the lifetime of that instance (one allocation per reload).
     /// </summary>
     public static HashSet<string> GetAllMonitoredPolicyCategories(TorrentarrConfig config)
     {
+        if (config.MonitoredPolicyCategoriesCache != null)
+            return config.MonitoredPolicyCategoriesCache;
+
         var set = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
         foreach (var a in config.ArrInstances.Values)
         {
@@ -138,6 +144,7 @@ public static class TorrentPolicyHelper
             }
         }
 
+        config.MonitoredPolicyCategoriesCache = set;
         return set;
     }
 

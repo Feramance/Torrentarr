@@ -473,6 +473,59 @@ public class ConfigurationLoaderTests : IDisposable
         config.Settings.LoopSleepTimer.Should().Be(5);
     }
 
+    [Fact]
+    public void Load_BumpsConfigVersionOnDisk_WhenOlderVersionAndNoOtherMigrationChanges()
+    {
+        // Schema-complete config at 6.0.0: no ValidateAndFill/migration mutations except ConfigVersion bump.
+        WriteToml("""
+            [Settings]
+            ConfigVersion = "6.0.0"
+            ConsoleLevel = "INFO"
+            Logging = true
+            CompletedDownloadFolder = ""
+            FreeSpace = "-1"
+            FreeSpaceFolder = ""
+            AutoPauseResume = true
+            NoInternetSleepTimer = 15
+            LoopSleepTimer = 5
+            SearchLoopDelay = -1
+            FailedCategory = "failed"
+            RecheckCategory = "recheck"
+            Tagless = false
+            IgnoreTorrentsYoungerThan = 180
+            FFprobeAutoUpdate = true
+            AutoUpdateEnabled = false
+            AutoUpdateCron = "0 3 * * 0"
+            AutoRestartProcesses = true
+            MaxProcessRestarts = 5
+            ProcessRestartWindow = 300
+            ProcessRestartDelay = 5
+            PingURLS = ["one.one.one.one", "dns.google.com"]
+
+            [WebUI]
+            Host = "0.0.0.0"
+            Port = 6969
+            Token = ""
+            AuthDisabled = false
+            LocalAuthEnabled = true
+            OIDCEnabled = false
+            BehindHttpsProxy = false
+            Username = ""
+            PasswordHash = ""
+            LiveArr = true
+            GroupSonarr = true
+            GroupLidarr = true
+            Theme = "Dark"
+            ViewDensity = "Comfortable"
+            """);
+
+        var config = new ConfigurationLoader(_tempFilePath).Load();
+
+        config.Settings.ConfigVersion.Should().Be(ConfigurationLoader.ExpectedConfigVersion);
+        var onDisk = File.ReadAllText(_tempFilePath);
+        onDisk.Should().Contain($"ConfigVersion = \"{ConfigurationLoader.ExpectedConfigVersion}\"");
+    }
+
     // --- WebUI Migration (Migration 1) ---
 
     [Fact]

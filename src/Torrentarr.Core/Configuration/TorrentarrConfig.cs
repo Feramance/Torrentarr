@@ -1,3 +1,5 @@
+using System.Collections.Generic;
+
 namespace Torrentarr.Core.Configuration;
 
 /// <summary>
@@ -5,6 +7,11 @@ namespace Torrentarr.Core.Configuration;
 /// </summary>
 public class TorrentarrConfig
 {
+    /// <summary>
+    /// Lazily populated by <see cref="TorrentPolicyHelper.GetAllMonitoredPolicyCategories"/>.
+    /// </summary>
+    internal HashSet<string>? MonitoredPolicyCategoriesCache { get; set; }
+
     public SettingsConfig Settings { get; set; } = new();
     /// <summary>
     /// All qBittorrent instances keyed by section name ("qBit", "qBit-seedbox", …).
