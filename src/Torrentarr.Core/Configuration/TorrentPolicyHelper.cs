@@ -103,6 +103,7 @@ public static class TorrentPolicyHelper
 
     /// <summary>
     /// Seeding / upload side of qBittorrent queue for <c>SortTorrents</c> (arss.py <c>is_queue_seeding_for_sort</c>).
+    /// Includes <c>stoppedUP</c> (qBittorrent v5+; replaces <c>pausedUP</c> in the API).
     /// </summary>
     public static bool IsQueueSeedingForSort(string? state)
     {
@@ -112,15 +113,28 @@ public static class TorrentPolicyHelper
                || lower.Contains("stalledup", StringComparison.Ordinal)
                || lower.Contains("queuedup", StringComparison.Ordinal)
                || lower.Contains("pausedup", StringComparison.Ordinal)
+               || lower.Contains("stoppedup", StringComparison.Ordinal)
                || lower.Contains("forcedup", StringComparison.Ordinal)
                || lower.Contains("checkingup", StringComparison.Ordinal);
     }
 
     /// <summary>
+    /// Call after the same <see cref="TorrentarrConfig"/> instance is mutated in place (e.g. API config apply)
+    /// so the next <see cref="GetAllMonitoredPolicyCategories"/> rebuilds from current Arr / qBit category lists.
+    /// </summary>
+    public static void InvalidateMonitoredPolicyCategoriesCache(TorrentarrConfig config) =>
+        config.MonitoredPolicyCategoriesCache = null;
+
+    /// <summary>
     /// Categories monitored by the global policy worker (Arr categories + qBit <c>ManagedCategories</c>).
+    /// Result is cached on <paramref name="config"/> for the lifetime of that instance (one allocation per reload
+    /// until <see cref="InvalidateMonitoredPolicyCategoriesCache"/> is called or a new <paramref name="config"/> is used).
     /// </summary>
     public static HashSet<string> GetAllMonitoredPolicyCategories(TorrentarrConfig config)
     {
+        if (config.MonitoredPolicyCategoriesCache != null)
+            return config.MonitoredPolicyCategoriesCache;
+
         var set = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
         foreach (var a in config.ArrInstances.Values)
         {
@@ -138,6 +152,7 @@ public static class TorrentPolicyHelper
             }
         }
 
+        config.MonitoredPolicyCategoriesCache = set;
         return set;
     }
 

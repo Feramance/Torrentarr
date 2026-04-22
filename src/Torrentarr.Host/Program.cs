@@ -1353,6 +1353,7 @@ try
             cfg.WebUI = updatedConfig.WebUI;
             cfg.ArrInstances = updatedConfig.ArrInstances;
             cfg.QBitInstances = updatedConfig.QBitInstances;
+            TorrentPolicyHelper.InvalidateMonitoredPolicyCategoriesCache(cfg);
             return Results.Ok(new
             {
                 status = "ok",
@@ -2188,6 +2189,7 @@ try
             cfg.WebUI = updatedConfig.WebUI;
             cfg.ArrInstances = updatedConfig.ArrInstances;
             cfg.QBitInstances = updatedConfig.QBitInstances;
+            TorrentPolicyHelper.InvalidateMonitoredPolicyCategoriesCache(cfg);
             return Results.Ok(new
             {
                 status = "ok",

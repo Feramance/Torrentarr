@@ -89,6 +89,8 @@ public class TorrentPolicyHelperTests
     {
         TorrentPolicyHelper.IsQueueSeedingForSort("forcedUP").Should().BeTrue();
         TorrentPolicyHelper.IsQueueSeedingForSort("checkingUP").Should().BeTrue();
+        TorrentPolicyHelper.IsQueueSeedingForSort("stoppedUP").Should().BeTrue();
+        TorrentPolicyHelper.IsQueueSeedingForSort("pausedUP").Should().BeTrue();
         TorrentPolicyHelper.IsQueueSeedingForSort("stalledDL").Should().BeFalse();
     }
 
@@ -102,5 +104,31 @@ public class TorrentPolicyHelperTests
         TorrentPolicyHelper.IsMonitoredPolicyCategory(cfg, "movies").Should().BeTrue();
         TorrentPolicyHelper.IsMonitoredPolicyCategory(cfg, "tv").Should().BeTrue();
         TorrentPolicyHelper.IsMonitoredPolicyCategory(cfg, "other").Should().BeFalse();
+    }
+
+    [Fact]
+    public void GetAllMonitoredPolicyCategories_ReusesCachedSetPerConfigInstance()
+    {
+        var cfg = new TorrentarrConfig();
+        cfg.ArrInstances["R"] = new ArrInstanceConfig { Category = "movies" };
+        cfg.QBitInstances["qBit"] = new QBitConfig { ManagedCategories = ["tv"] };
+
+        var first = TorrentPolicyHelper.GetAllMonitoredPolicyCategories(cfg);
+        var second = TorrentPolicyHelper.GetAllMonitoredPolicyCategories(cfg);
+
+        ReferenceEquals(first, second).Should().BeTrue();
+    }
+
+    [Fact]
+    public void InvalidateMonitoredPolicyCategoriesCache_AllowsRefreshAfterInPlaceConfigChange()
+    {
+        var cfg = new TorrentarrConfig();
+        cfg.ArrInstances["R"] = new ArrInstanceConfig { Category = "movies" };
+        _ = TorrentPolicyHelper.GetAllMonitoredPolicyCategories(cfg);
+        cfg.ArrInstances["R2"] = new ArrInstanceConfig { Category = "anime" };
+        TorrentPolicyHelper.IsMonitoredPolicyCategory(cfg, "anime").Should().BeFalse();
+
+        TorrentPolicyHelper.InvalidateMonitoredPolicyCategoriesCache(cfg);
+        TorrentPolicyHelper.IsMonitoredPolicyCategory(cfg, "anime").Should().BeTrue();
     }
 }
