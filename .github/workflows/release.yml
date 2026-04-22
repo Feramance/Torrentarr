@@ -136,7 +136,7 @@ jobs:
         fi
     - name: Create draft release
       if: steps.check_release.outputs.exists != 'true'
-      uses: softprops/action-gh-release@v2
+      uses: softprops/action-gh-release@v3
       with:
         token: ${{ secrets.GITHUB_TOKEN }}
         tag_name: v${{ needs.prepare_release.outputs.new_version }}
@@ -194,7 +194,7 @@ jobs:
         cp dist/osx-x64/Torrentarr.Host release/torrentarr-macos-x64
         cp dist/osx-arm64/Torrentarr.Host release/torrentarr-macos-arm64
     - name: Upload binaries to release
-      uses: softprops/action-gh-release@v2
+      uses: softprops/action-gh-release@v3
       with:
         token: ${{ secrets.GITHUB_TOKEN }}
         tag_name: v${{ needs.prepare_release.outputs.new_version }}

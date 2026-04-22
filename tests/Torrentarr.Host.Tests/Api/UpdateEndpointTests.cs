@@ -1,7 +1,9 @@
 using FluentAssertions;
 using System.Net;
 using System.Text.Json;
+using Torrentarr.Host.Tests;
 using Xunit;
+using Xunit.Sdk;
 
 namespace Torrentarr.Host.Tests.Api;
 
@@ -11,7 +13,8 @@ namespace Torrentarr.Host.Tests.Api;
 ///   POST /web/update
 ///   GET  /web/download-update
 /// </summary>
-[Collection("HostWeb")]
+[Collection("HostWebUpdate")]
+[TestCaseOrderer("Torrentarr.Host.Tests.PriorityOrderer", "Torrentarr.Host.Tests")]
 public class UpdateEndpointTests : IClassFixture<TorrentarrWebApplicationFactory>
 {
     private readonly TorrentarrWebApplicationFactory _factory;
@@ -24,6 +27,7 @@ public class UpdateEndpointTests : IClassFixture<TorrentarrWebApplicationFactory
     // ── GET /web/meta ─────────────────────────────────────────────────────────
 
     [Fact]
+    [TestPriority(1)]
     public async Task GetMeta_Returns200_WithRequiredFields()
     {
         var client = _factory.CreateClientWithApiToken();
@@ -54,6 +58,7 @@ public class UpdateEndpointTests : IClassFixture<TorrentarrWebApplicationFactory
     }
 
     [Fact]
+    [TestPriority(1)]
     public async Task GetMeta_CurrentVersion_IsNotEmpty()
     {
         var client = _factory.CreateClientWithApiToken();
@@ -69,6 +74,7 @@ public class UpdateEndpointTests : IClassFixture<TorrentarrWebApplicationFactory
     }
 
     [Fact]
+    [TestPriority(1)]
     public async Task GetMeta_UpdateState_InProgressFalseInitially()
     {
         var client = _factory.CreateClientWithApiToken();
@@ -100,6 +106,7 @@ public class UpdateEndpointTests : IClassFixture<TorrentarrWebApplicationFactory
     // ── GET /api/meta (mirror) ────────────────────────────────────────────────
 
     [Fact]
+    [TestPriority(1)]
     public async Task GetApiMeta_Returns200_WithSameShape()
     {
         var client = _factory.CreateClientWithApiToken();
@@ -119,6 +126,7 @@ public class UpdateEndpointTests : IClassFixture<TorrentarrWebApplicationFactory
     // ── POST /web/update ─────────────────────────────────────────────────────
 
     [Fact]
+    [TestPriority(2)]
     public async Task PostUpdate_Returns200_WithSuccessMessage()
     {
         var client = _factory.CreateClientWithApiToken();
@@ -136,6 +144,7 @@ public class UpdateEndpointTests : IClassFixture<TorrentarrWebApplicationFactory
     }
 
     [Fact]
+    [TestPriority(2)]
     public async Task PostUpdate_SecondCall_ReturnsAlreadyInProgress_OrSuccess()
     {
         var client = _factory.CreateClientWithApiToken();
@@ -156,6 +165,7 @@ public class UpdateEndpointTests : IClassFixture<TorrentarrWebApplicationFactory
     // ── GET /web/download-update ──────────────────────────────────────────────
 
     [Fact]
+    [TestPriority(1)]
     public async Task GetDownloadUpdate_Returns200_WithExpectedShape()
     {
         var client = _factory.CreateClientWithApiToken();
@@ -177,6 +187,7 @@ public class UpdateEndpointTests : IClassFixture<TorrentarrWebApplicationFactory
     // ── GET /api/download-update (mirror) ─────────────────────────────────────
 
     [Fact]
+    [TestPriority(1)]
     public async Task GetApiDownloadUpdate_Returns200_WithExpectedShape()
     {
         var client = _factory.CreateClientWithApiToken();
