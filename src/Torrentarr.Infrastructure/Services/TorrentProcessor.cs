@@ -87,7 +87,7 @@ public class TorrentProcessor : ITorrentProcessor
             var torrents = new List<TorrentInfo>();
             foreach (var (instanceName, c) in allClients)
             {
-                var instanceTorrents = await c.GetTorrentsAsync(category, cancellationToken);
+                var instanceTorrents = await c.GetTorrentsAsync(category, cancellationToken: cancellationToken);
                 foreach (var t in instanceTorrents)
                     t.QBitInstanceName = instanceName;
                 torrents.AddRange(instanceTorrents);
@@ -140,7 +140,7 @@ public class TorrentProcessor : ITorrentProcessor
         TorrentInfo? torrent = null;
         foreach (var (instanceName, c) in _qbitManager.GetAllClients())
         {
-            var torrents = await c.GetTorrentsAsync(ct: cancellationToken);
+            var torrents = await c.GetTorrentsAsync(cancellationToken: cancellationToken);
             var found = torrents.FirstOrDefault(t => t.Hash == hash);
             if (found != null)
             {
@@ -161,7 +161,7 @@ public class TorrentProcessor : ITorrentProcessor
         TorrentInfo? torrent = null;
         foreach (var (_, c) in _qbitManager.GetAllClients())
         {
-            var torrents = await c.GetTorrentsAsync(ct: cancellationToken);
+            var torrents = await c.GetTorrentsAsync(cancellationToken: cancellationToken);
             var found = torrents.FirstOrDefault(t => t.Hash == hash);
             if (found != null) { torrent = found; break; }
         }
@@ -195,7 +195,7 @@ public class TorrentProcessor : ITorrentProcessor
         string? torrentInstanceName = null;
         foreach (var (instanceName, c) in _qbitManager.GetAllClients())
         {
-            var torrents = await c.GetTorrentsAsync(ct: cancellationToken);
+            var torrents = await c.GetTorrentsAsync(cancellationToken: cancellationToken);
             var found = torrents.FirstOrDefault(t => t.Hash == hash);
             if (found != null)
             {

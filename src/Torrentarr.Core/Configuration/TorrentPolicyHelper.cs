@@ -122,8 +122,11 @@ public static class TorrentPolicyHelper
     /// Call after the same <see cref="TorrentarrConfig"/> instance is mutated in place (e.g. API config apply)
     /// so the next <see cref="GetAllMonitoredPolicyCategories"/> rebuilds from current Arr / qBit category lists.
     /// </summary>
-    public static void InvalidateMonitoredPolicyCategoriesCache(TorrentarrConfig config) =>
-        config.MonitoredPolicyCategoriesCache = null;
+    public static void InvalidateMonitoredPolicyCategoriesCache(TorrentarrConfig config)
+    {
+        lock (config.MonitoredPolicyCategoriesCacheLock)
+            config.MonitoredPolicyCategoriesCache = null;
+    }
 
     /// <summary>
     /// Categories monitored by the global policy worker (Arr categories + qBit <c>ManagedCategories</c>).
@@ -132,28 +135,35 @@ public static class TorrentPolicyHelper
     /// </summary>
     public static HashSet<string> GetAllMonitoredPolicyCategories(TorrentarrConfig config)
     {
-        if (config.MonitoredPolicyCategoriesCache != null)
-            return config.MonitoredPolicyCategoriesCache;
+        var cached = config.MonitoredPolicyCategoriesCache;
+        if (cached != null)
+            return cached;
 
-        var set = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
-        foreach (var a in config.ArrInstances.Values)
+        lock (config.MonitoredPolicyCategoriesCacheLock)
         {
-            if (!string.IsNullOrEmpty(a.Category))
-                set.Add(a.Category);
-        }
+            if (config.MonitoredPolicyCategoriesCache != null)
+                return config.MonitoredPolicyCategoriesCache;
 
-        foreach (var q in config.QBitInstances.Values)
-        {
-            if (q.ManagedCategories == null) continue;
-            foreach (var c in q.ManagedCategories)
+            var set = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+            foreach (var a in config.ArrInstances.Values)
             {
-                if (!string.IsNullOrEmpty(c))
-                    set.Add(c);
+                if (!string.IsNullOrEmpty(a.Category))
+                    set.Add(a.Category);
             }
-        }
 
-        config.MonitoredPolicyCategoriesCache = set;
-        return set;
+            foreach (var q in config.QBitInstances.Values)
+            {
+                if (q.ManagedCategories == null) continue;
+                foreach (var c in q.ManagedCategories)
+                {
+                    if (!string.IsNullOrEmpty(c))
+                        set.Add(c);
+                }
+            }
+
+            config.MonitoredPolicyCategoriesCache = set;
+            return set;
+        }
     }
 
     public static bool IsMonitoredPolicyCategory(TorrentarrConfig config, string? category)

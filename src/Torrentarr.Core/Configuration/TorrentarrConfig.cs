@@ -9,8 +9,14 @@ public class TorrentarrConfig
 {
     /// <summary>
     /// Lazily populated by <see cref="TorrentPolicyHelper.GetAllMonitoredPolicyCategories"/>.
+    /// Guarded by <see cref="MonitoredPolicyCategoriesCacheLock"/>.
     /// </summary>
     internal HashSet<string>? MonitoredPolicyCategoriesCache { get; set; }
+
+    /// <summary>
+    /// Synchronizes populate / invalidate of <see cref="MonitoredPolicyCategoriesCache"/> across threads.
+    /// </summary>
+    internal object MonitoredPolicyCategoriesCacheLock { get; } = new();
 
     public SettingsConfig Settings { get; set; } = new();
     /// <summary>

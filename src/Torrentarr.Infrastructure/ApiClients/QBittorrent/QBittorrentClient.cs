@@ -81,7 +81,7 @@ public class QBittorrentClient
     /// <summary>
     /// Get all torrents
     /// </summary>
-    public async Task<List<TorrentInfo>> GetTorrentsAsync(string? category = null, CancellationToken ct = default, string? sort = null)
+    public async Task<List<TorrentInfo>> GetTorrentsAsync(string? category = null, string? sort = null, CancellationToken cancellationToken = default)
     {
         var request = new RestRequest("/api/v2/torrents/info", Method.Get);
         AddAuthCookie(request);
@@ -91,7 +91,7 @@ public class QBittorrentClient
         if (!string.IsNullOrEmpty(sort))
             request.AddQueryParameter("sort", sort);
 
-        var response = await _client.ExecuteAsync(request, ct);
+        var response = await _client.ExecuteAsync(request, cancellationToken);
 
         if (response.IsSuccessful && !string.IsNullOrEmpty(response.Content))
         {

@@ -705,7 +705,7 @@ try
 
                     if (client != null)
                     {
-                        var torrents = await client.GetTorrentsAsync(ct: CancellationToken.None);
+                        var torrents = await client.GetTorrentsAsync(cancellationToken: CancellationToken.None);
                         if (torrents != null)
                         {
                             totalCount = torrents.Count;
@@ -2940,7 +2940,7 @@ class ProcessOrchestratorService : BackgroundService
         {
             try
             {
-                var failedTorrents = await client.GetTorrentsAsync(_config.Settings.FailedCategory, cancellationToken);
+                var failedTorrents = await client.GetTorrentsAsync(_config.Settings.FailedCategory, cancellationToken: cancellationToken);
                 totalFailed += failedTorrents.Count;
                 foreach (var torrent in failedTorrents)
                 {
@@ -2961,7 +2961,7 @@ class ProcessOrchestratorService : BackgroundService
                     await client.DeleteTorrentsAsync(new List<string> { torrent.Hash }, deleteFiles: true, cancellationToken);
                 }
 
-                var recheckTorrents = await client.GetTorrentsAsync(_config.Settings.RecheckCategory, cancellationToken);
+                var recheckTorrents = await client.GetTorrentsAsync(_config.Settings.RecheckCategory, cancellationToken: cancellationToken);
                 totalRecheck += recheckTorrents.Count;
                 foreach (var torrent in recheckTorrents)
                 {
@@ -3048,7 +3048,7 @@ class ProcessOrchestratorService : BackgroundService
                 List<TorrentInfo> torrents;
                 try
                 {
-                    torrents = await client.GetTorrentsAsync(category, cancellationToken);
+                    torrents = await client.GetTorrentsAsync(category, cancellationToken: cancellationToken);
                 }
                 catch (Exception ex)
                 {
@@ -3103,7 +3103,7 @@ class ProcessOrchestratorService : BackgroundService
             {
                 foreach (var category in managedCategories)
                 {
-                    var torrents = await client.GetTorrentsAsync(category, cancellationToken, sort: "priority");
+                    var torrents = await client.GetTorrentsAsync(category, "priority", cancellationToken);
                     allTorrents.AddRange(torrents.Select(t => (client, t)));
                 }
             }
@@ -3161,12 +3161,12 @@ class ProcessOrchestratorService : BackgroundService
                 List<TorrentInfo> torrentList;
                 try
                 {
-                    torrentList = await client.GetTorrentsAsync(category: null, cancellationToken, sort: "priority");
+                    torrentList = await client.GetTorrentsAsync(category: null, "priority", cancellationToken);
                 }
                 catch (Exception ex)
                 {
                     _logger.LogDebug(ex, "[{Instance}] SortTorrents: falling back to added_on sort", instanceName);
-                    torrentList = await client.GetTorrentsAsync(category: null, cancellationToken, sort: "added_on");
+                    torrentList = await client.GetTorrentsAsync(category: null, "added_on", cancellationToken);
                 }
 
                 torrentList = torrentList

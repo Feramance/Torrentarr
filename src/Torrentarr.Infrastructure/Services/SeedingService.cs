@@ -142,7 +142,7 @@ public class SeedingService : ISeedingService
         TorrentInfo? torrent = null;
         foreach (var (instanceName, client) in _qbitManager.GetAllClients())
         {
-            var torrents = await client.GetTorrentsAsync(ct: cancellationToken);
+            var torrents = await client.GetTorrentsAsync(cancellationToken: cancellationToken);
             var found = torrents.FirstOrDefault(t => t.Hash.Equals(hash, StringComparison.OrdinalIgnoreCase));
             if (found != null)
             {
@@ -217,7 +217,7 @@ public class SeedingService : ISeedingService
             TorrentInfo? torrent = null;
             foreach (var (instanceName, client) in _qbitManager.GetAllClients())
             {
-                var torrents = await client.GetTorrentsAsync(ct: cancellationToken);
+                var torrents = await client.GetTorrentsAsync(cancellationToken: cancellationToken);
                 var found = torrents.FirstOrDefault(t => t.Hash.Equals(hash, StringComparison.OrdinalIgnoreCase));
                 if (found != null) { found.QBitInstanceName = instanceName; torrent = found; break; }
             }
@@ -658,7 +658,7 @@ public class SeedingService : ISeedingService
         var completedByInstance = new List<(string instanceName, QBittorrentClient client, TorrentInfo torrent)>();
         foreach (var (instanceName, client) in allClients)
         {
-            var torrents = await client.GetTorrentsAsync(category, cancellationToken);
+            var torrents = await client.GetTorrentsAsync(category, cancellationToken: cancellationToken);
             foreach (var t in torrents)
             {
                 if (t.State.Contains("up", StringComparison.OrdinalIgnoreCase) ||
@@ -728,7 +728,7 @@ public class SeedingService : ISeedingService
                 if (!_config.Settings.Tagless)
                     await EnsureTagsExistAsync(client, cancellationToken);
 
-                var torrents = await client.GetTorrentsAsync(category, cancellationToken);
+                var torrents = await client.GetTorrentsAsync(category, cancellationToken: cancellationToken);
                 var completedTorrents = torrents.Where(t =>
                     t.Progress >= 1.0 &&
                     !HasTag(t, IgnoredTag) &&
