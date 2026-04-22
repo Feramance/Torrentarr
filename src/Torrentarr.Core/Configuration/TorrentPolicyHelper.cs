@@ -108,12 +108,12 @@ public static class TorrentPolicyHelper
     {
         if (string.IsNullOrWhiteSpace(state)) return false;
         var lower = state.ToLowerInvariant();
-        return lower.Contains("upload", StringComparison.OrdinalIgnoreCase)
-               || lower.Contains("stalledup", StringComparison.OrdinalIgnoreCase)
-               || lower.Contains("queuedup", StringComparison.OrdinalIgnoreCase)
-               || lower.Contains("pausedup", StringComparison.OrdinalIgnoreCase)
-               || lower.Contains("forcedup", StringComparison.OrdinalIgnoreCase)
-               || lower.Contains("checkingup", StringComparison.OrdinalIgnoreCase);
+        return lower.Contains("upload", StringComparison.Ordinal)
+               || lower.Contains("stalledup", StringComparison.Ordinal)
+               || lower.Contains("queuedup", StringComparison.Ordinal)
+               || lower.Contains("pausedup", StringComparison.Ordinal)
+               || lower.Contains("forcedup", StringComparison.Ordinal)
+               || lower.Contains("checkingup", StringComparison.Ordinal);
     }
 
     /// <summary>

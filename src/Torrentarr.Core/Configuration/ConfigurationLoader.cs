@@ -123,7 +123,8 @@ public class ConfigurationLoader
     /// <summary>
     /// Apply TORRENTARR_* environment variable overrides after TOML parsing.
     /// For compatibility with qBitrr deployments, also accepts QBITRR_* aliases.
-    /// Only non-null env vars override the TOML-parsed values.
+    /// Non-empty values override the TOML-parsed values. If the primary <c>TORRENTARR_*</c>
+    /// variable is set to an empty string, the alias is not consulted (primary wins).
     /// </summary>
     private static void ApplyEnvironmentOverrides(TorrentarrConfig config)
     {
@@ -161,7 +162,7 @@ public class ConfigurationLoader
     private static string? ReadEnv(string primaryEnvName, string? aliasEnvName)
     {
         var primary = Environment.GetEnvironmentVariable(primaryEnvName);
-        if (!string.IsNullOrEmpty(primary))
+        if (primary != null)
             return primary;
         if (!string.IsNullOrEmpty(aliasEnvName))
             return Environment.GetEnvironmentVariable(aliasEnvName);
@@ -252,8 +253,8 @@ public class ConfigurationLoader
         if (ValidateAndFillConfig(root))
             changed = true;
 
-        // Update ConfigVersion to current
-        if (needsMigration)
+        // Update ConfigVersion to current when semver is behind or any migration/fill rewrote the file
+        if (needsMigration || changed)
         {
             if (!root.ContainsKey("Settings"))
                 root["Settings"] = new TomlTable();

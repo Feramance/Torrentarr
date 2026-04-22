@@ -651,4 +651,35 @@ public class ConfigurationLoaderTests : IDisposable
             Environment.SetEnvironmentVariable("QBITRR_SETTINGS_FREE_SPACE", previous);
         }
     }
+
+    [Fact]
+    public void Load_EmptyTorrentarrEnvBlocksQbitrrAlias()
+    {
+        var prevPrimary = Environment.GetEnvironmentVariable("TORRENTARR_SETTINGS_FREE_SPACE");
+        var prevAlias = Environment.GetEnvironmentVariable("QBITRR_SETTINGS_FREE_SPACE");
+        try
+        {
+            Environment.SetEnvironmentVariable("TORRENTARR_SETTINGS_FREE_SPACE", "");
+            Environment.SetEnvironmentVariable("QBITRR_SETTINGS_FREE_SPACE", "42G");
+
+            WriteToml("""
+                [Settings]
+                FreeSpace = "10G"
+                """);
+
+            var config = new ConfigurationLoader(_tempFilePath).Load();
+            config.Settings.FreeSpace.Should().Be("10G");
+        }
+        finally
+        {
+            if (prevPrimary is null)
+                Environment.SetEnvironmentVariable("TORRENTARR_SETTINGS_FREE_SPACE", null);
+            else
+                Environment.SetEnvironmentVariable("TORRENTARR_SETTINGS_FREE_SPACE", prevPrimary);
+            if (prevAlias is null)
+                Environment.SetEnvironmentVariable("QBITRR_SETTINGS_FREE_SPACE", null);
+            else
+                Environment.SetEnvironmentVariable("QBITRR_SETTINGS_FREE_SPACE", prevAlias);
+        }
+    }
 }
