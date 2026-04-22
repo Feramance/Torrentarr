@@ -635,6 +635,36 @@ public class ConfigurationLoaderTests : IDisposable
     }
 
     [Fact]
+    public void Load_DoesNotDowngradeConfigVersionWhenNewerThanExpected_AfterValidateAndFill()
+    {
+        WriteToml("""
+            [Settings]
+            ConfigVersion = "99.0.0"
+
+            [WebUI]
+            Host = "0.0.0.0"
+            Port = 6969
+            Token = ""
+            AuthDisabled = false
+            LocalAuthEnabled = true
+            OIDCEnabled = false
+            Username = ""
+            PasswordHash = ""
+            LiveArr = true
+            GroupSonarr = true
+            GroupLidarr = true
+            Theme = "Dark"
+            ViewDensity = "Comfortable"
+            """);
+
+        _ = new ConfigurationLoader(_tempFilePath).Load();
+
+        var content = File.ReadAllText(_tempFilePath);
+        content.Should().Contain("ConfigVersion = \"99.0.0\"");
+        content.Should().Contain("BehindHttpsProxy");
+    }
+
+    [Fact]
     public void Load_AcceptsQbitrrEnvironmentVariableAliases()
     {
         var previous = Environment.GetEnvironmentVariable("QBITRR_SETTINGS_FREE_SPACE");

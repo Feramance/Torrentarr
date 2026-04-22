@@ -253,16 +253,14 @@ public class ConfigurationLoader
         if (ValidateAndFillConfig(root))
             changed = true;
 
-        // Update ConfigVersion to current when semver is behind or any migration/fill rewrote the file
+        // Bump ConfigVersion to this build's expected when the file is older or equal; never downgrade a newer
+        // ConfigVersion (forward-compatible / prerelease configs) just because ValidateAndFill added keys.
         if (needsMigration || changed)
         {
             if (!root.ContainsKey("Settings"))
                 root["Settings"] = new TomlTable();
-            if (root["Settings"] is TomlTable s)
-            {
+            if (root["Settings"] is TomlTable s && currentVersion <= expected)
                 s["ConfigVersion"] = ExpectedConfigVersion;
-                changed = true;
-            }
         }
 
         return changed;

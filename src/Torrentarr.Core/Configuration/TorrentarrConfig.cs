@@ -141,7 +141,7 @@ public class WebUIConfig
     /// <summary>When true, WebUI is assumed behind HTTPS reverse proxy and secure cookie behavior is enabled.</summary>
     public bool BehindHttpsProxy { get; set; } = false;
     /// <summary>When true (and AuthDisabled is false), allow username/password login via POST /web/login.</summary>
-    public bool LocalAuthEnabled { get; set; } = false;
+    public bool LocalAuthEnabled { get; set; } = true;
     /// <summary>When true (and AuthDisabled is false), allow OIDC challenge and cookie-based login.</summary>
     public bool OIDCEnabled { get; set; } = false;
     /// <summary>For Local auth: single admin username. Password is stored only as PasswordHash.</summary>
