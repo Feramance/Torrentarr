@@ -2298,17 +2298,27 @@ static void ApplyManualMigrations(TorrentarrDbContext db)
     // §5: Search activity table for Processes page (qBitrr parity)
     CreateTableIfMissing(db, "searchactivity", "CREATE TABLE IF NOT EXISTS searchactivity ( category TEXT NOT NULL PRIMARY KEY, summary TEXT, timestamp TEXT );");
 
-    // qBitrr parity: remove legacy rows with blank ArrInstance so workers repopulate cleanly.
-    DeleteRowsWithEmptyArrInstance(db, "moviesfilesmodel");
-    DeleteRowsWithEmptyArrInstance(db, "episodefilesmodel");
-    DeleteRowsWithEmptyArrInstance(db, "seriesfilesmodel");
-    DeleteRowsWithEmptyArrInstance(db, "albumfilesmodel");
-    DeleteRowsWithEmptyArrInstance(db, "artistfilesmodel");
-    DeleteRowsWithEmptyArrInstance(db, "trackfilesmodel");
-    DeleteRowsWithEmptyArrInstance(db, "moviequeuemodel");
-    DeleteRowsWithEmptyArrInstance(db, "episodequeuemodel");
-    DeleteRowsWithEmptyArrInstance(db, "albumqueuemodel");
-    DeleteRowsWithEmptyArrInstance(db, "filesqueued");
+    // qBitrr parity: one-time cleanup of legacy rows with blank ArrInstance (not every startup: avoids repeat DELETE I/O
+    // and preserves operator-visible bad data if a bug reintroduces blank keys).
+    CreateTableIfMissing(
+        db,
+        "torrentarr_manual_migrations",
+        "CREATE TABLE IF NOT EXISTS torrentarr_manual_migrations ( name TEXT NOT NULL PRIMARY KEY );");
+    const string emptyArrInstanceCleanup = "empty_arrinstance_row_cleanup_v1";
+    if (!IsManualMigrationApplied(db, emptyArrInstanceCleanup))
+    {
+        DeleteRowsWithEmptyArrInstance(db, "moviesfilesmodel");
+        DeleteRowsWithEmptyArrInstance(db, "episodefilesmodel");
+        DeleteRowsWithEmptyArrInstance(db, "seriesfilesmodel");
+        DeleteRowsWithEmptyArrInstance(db, "albumfilesmodel");
+        DeleteRowsWithEmptyArrInstance(db, "artistfilesmodel");
+        DeleteRowsWithEmptyArrInstance(db, "trackfilesmodel");
+        DeleteRowsWithEmptyArrInstance(db, "moviequeuemodel");
+        DeleteRowsWithEmptyArrInstance(db, "episodequeuemodel");
+        DeleteRowsWithEmptyArrInstance(db, "albumqueuemodel");
+        DeleteRowsWithEmptyArrInstance(db, "filesqueued");
+        MarkManualMigrationApplied(db, emptyArrInstanceCleanup);
+    }
 
     // qBitrr parity: ensure ArrInstance indexes exist even on upgraded DBs.
     CreateIndexIfMissing(db, "idx_arrinstance_movies", "moviesfilesmodel", "arrinstance");
@@ -2387,6 +2397,48 @@ static void DeleteRowsWithEmptyArrInstance(TorrentarrDbContext db, string table)
     {
         using var cmd = conn.CreateCommand();
         cmd.CommandText = $"DELETE FROM {table} WHERE arrinstance IS NULL OR TRIM(arrinstance)='';";
+        cmd.ExecuteNonQuery();
+    }
+    finally
+    {
+        if (!wasOpen) conn.Close();
+    }
+}
+
+static bool IsManualMigrationApplied(TorrentarrDbContext db, string name)
+{
+    var conn = db.Database.GetDbConnection();
+    var wasOpen = conn.State == System.Data.ConnectionState.Open;
+    if (!wasOpen) conn.Open();
+    try
+    {
+        using var cmd = conn.CreateCommand();
+        cmd.CommandText = "SELECT 1 FROM torrentarr_manual_migrations WHERE name = @name LIMIT 1;";
+        var p = cmd.CreateParameter();
+        p.ParameterName = "@name";
+        p.Value = name;
+        cmd.Parameters.Add(p);
+        return cmd.ExecuteScalar() != null;
+    }
+    finally
+    {
+        if (!wasOpen) conn.Close();
+    }
+}
+
+static void MarkManualMigrationApplied(TorrentarrDbContext db, string name)
+{
+    var conn = db.Database.GetDbConnection();
+    var wasOpen = conn.State == System.Data.ConnectionState.Open;
+    if (!wasOpen) conn.Open();
+    try
+    {
+        using var cmd = conn.CreateCommand();
+        cmd.CommandText = "INSERT INTO torrentarr_manual_migrations (name) VALUES (@name);";
+        var p = cmd.CreateParameter();
+        p.ParameterName = "@name";
+        p.Value = name;
+        cmd.Parameters.Add(p);
         cmd.ExecuteNonQuery();
     }
     finally

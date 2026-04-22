@@ -387,6 +387,10 @@ public class ConfigurationLoaderTests : IDisposable
         config.WebUI.Theme.Should().Be("Dark");
         config.WebUI.ViewDensity.Should().Be("Comfortable");
         config.WebUI.LiveArr.Should().BeTrue();
+        // Filled WebUI auth defaults must match GenerateDefaultConfig: require auth with local login, not a lockout.
+        config.WebUI.AuthDisabled.Should().BeFalse();
+        config.WebUI.LocalAuthEnabled.Should().BeTrue();
+        config.WebUI.OIDCEnabled.Should().BeFalse();
     }
 
     [Fact]

@@ -708,7 +708,8 @@ public class ConfigurationLoader
                 ("Port", (long)6969),
                 ("Token", ""),
                 ("AuthDisabled", false),
-                ("LocalAuthEnabled", false),
+                // Must match <see cref="GenerateDefaultConfig"/>: when auth is required, local login is the default path.
+                ("LocalAuthEnabled", true),
                 ("OIDCEnabled", false),
                 ("BehindHttpsProxy", false),
                 ("Username", ""),
