@@ -22,6 +22,10 @@ namespace Torrentarr.Host.Tests.Api;
 [CollectionDefinition("HostWeb", DisableParallelization = true)]
 public class HostWebCollection : ICollectionFixture<TorrentarrWebApplicationFactory>;
 
+/// <summary>Separate host instance for update endpoint tests so POST /web/update cannot interleave with other API tests that share <see cref="HostWebCollection"/>.</summary>
+[CollectionDefinition("HostWebUpdate", DisableParallelization = true)]
+public class HostWebUpdateCollection : ICollectionFixture<TorrentarrWebApplicationFactory>;
+
 [CollectionDefinition("HostWebAuth", DisableParallelization = true)]
 public class HostWebAuthCollection : ICollectionFixture<AuthEnabledWebApplicationFactory>;
 
