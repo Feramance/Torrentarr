@@ -119,8 +119,16 @@ public static class TorrentPolicyHelper
     }
 
     /// <summary>
+    /// Call after the same <see cref="TorrentarrConfig"/> instance is mutated in place (e.g. API config apply)
+    /// so the next <see cref="GetAllMonitoredPolicyCategories"/> rebuilds from current Arr / qBit category lists.
+    /// </summary>
+    public static void InvalidateMonitoredPolicyCategoriesCache(TorrentarrConfig config) =>
+        config.MonitoredPolicyCategoriesCache = null;
+
+    /// <summary>
     /// Categories monitored by the global policy worker (Arr categories + qBit <c>ManagedCategories</c>).
-    /// Result is cached on <paramref name="config"/> for the lifetime of that instance (one allocation per reload).
+    /// Result is cached on <paramref name="config"/> for the lifetime of that instance (one allocation per reload
+    /// until <see cref="InvalidateMonitoredPolicyCategoriesCache"/> is called or a new <paramref name="config"/> is used).
     /// </summary>
     public static HashSet<string> GetAllMonitoredPolicyCategories(TorrentarrConfig config)
     {

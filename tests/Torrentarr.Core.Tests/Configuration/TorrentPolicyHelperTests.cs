@@ -118,4 +118,17 @@ public class TorrentPolicyHelperTests
 
         ReferenceEquals(first, second).Should().BeTrue();
     }
+
+    [Fact]
+    public void InvalidateMonitoredPolicyCategoriesCache_AllowsRefreshAfterInPlaceConfigChange()
+    {
+        var cfg = new TorrentarrConfig();
+        cfg.ArrInstances["R"] = new ArrInstanceConfig { Category = "movies" };
+        _ = TorrentPolicyHelper.GetAllMonitoredPolicyCategories(cfg);
+        cfg.ArrInstances["R2"] = new ArrInstanceConfig { Category = "anime" };
+        TorrentPolicyHelper.IsMonitoredPolicyCategory(cfg, "anime").Should().BeFalse();
+
+        TorrentPolicyHelper.InvalidateMonitoredPolicyCategoriesCache(cfg);
+        TorrentPolicyHelper.IsMonitoredPolicyCategory(cfg, "anime").Should().BeTrue();
+    }
 }
