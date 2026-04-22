@@ -2762,7 +2762,6 @@ class ProcessOrchestratorService : BackgroundService
     private readonly QBittorrentConnectionManager _qbitManager;
     private readonly IServiceScopeFactory _scopeFactory;
     private readonly ProcessStateManager _stateManager;
-    private readonly HashSet<string> _managedCategories;
     private long _currentFreeSpace;
     private long _minFreeSpaceBytes;
     private string? _freeSpaceFolder;
@@ -2781,7 +2780,6 @@ class ProcessOrchestratorService : BackgroundService
         _qbitManager = qbitManager;
         _scopeFactory = scopeFactory;
         _stateManager = stateManager;
-        _managedCategories = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
         // §8: Respect Settings.FreeSpace string ("-1" = disabled, "10G"/"500M" = threshold)
         var freeSpaceBytes = ParseFreeSpaceString(_config.Settings.FreeSpace);
         if (freeSpaceBytes < 0)
@@ -2841,22 +2839,9 @@ class ProcessOrchestratorService : BackgroundService
                 }
             }
 
-            // Get ALL categories from ALL Arr instances (not just managed ones) - matches qBitrr behavior
-            foreach (var arrInstance in _config.ArrInstances.Where(x => !string.IsNullOrEmpty(x.Value.Category)))
-                _managedCategories.Add(arrInstance.Value.Category!);
-
-            // Also add qBit-managed categories from all qBit instances
-            foreach (var qbit in _config.QBitInstances.Values)
-            {
-                if (qbit.ManagedCategories != null)
-                {
-                    foreach (var cat in qbit.ManagedCategories)
-                        _managedCategories.Add(cat);
-                }
-            }
-
-            if (_managedCategories.Count > 0)
-                _logger.LogInformation("FreeSpace categories: {Categories}", string.Join(", ", _managedCategories));
+            var initialManaged = TorrentPolicyHelper.GetAllMonitoredPolicyCategories(_config);
+            if (initialManaged.Count > 0)
+                _logger.LogInformation("FreeSpace categories: {Categories}", string.Join(", ", initialManaged));
 
             _freeSpaceFolder = GetFreeSpaceFolder();
 
@@ -2901,8 +2886,9 @@ class ProcessOrchestratorService : BackgroundService
                         var freeSpaceGuardActive = _freeSpaceEnabled && _minFreeSpaceBytes > 0;
                         var enableTrackerSort = TorrentPolicyHelper.EnableTrackerSort(_config);
                         var enableFreeSpace = TorrentPolicyHelper.EnableFreeSpace(_config, freeSpaceGuardActive);
-                        if (_managedCategories.Count > 0 && (enableTrackerSort || enableFreeSpace))
-                            await ProcessTorrentPolicyAsync(enableTrackerSort, enableFreeSpace, stoppingToken);
+                        var managedCategories = TorrentPolicyHelper.GetAllMonitoredPolicyCategories(_config);
+                        if (managedCategories.Count > 0 && (enableTrackerSort || enableFreeSpace))
+                            await ProcessTorrentPolicyAsync(managedCategories, enableTrackerSort, enableFreeSpace, stoppingToken);
                     }
                 }
                 catch (Exception ex)
@@ -3006,7 +2992,11 @@ class ProcessOrchestratorService : BackgroundService
     /// <summary>
     /// qBitrr <c>TorrentPolicyManager.process_torrents</c>: optional pre-sort sync + queue sort, then optional free-space.
     /// </summary>
-    private async Task ProcessTorrentPolicyAsync(bool enableTrackerSort, bool enableFreeSpace, CancellationToken cancellationToken)
+    private async Task ProcessTorrentPolicyAsync(
+        HashSet<string> managedCategories,
+        bool enableTrackerSort,
+        bool enableFreeSpace,
+        CancellationToken cancellationToken)
     {
         IServiceScope? policyScope = null;
         try
@@ -3023,8 +3013,8 @@ class ProcessOrchestratorService : BackgroundService
                 _logger.LogDebug(
                     "TorrentPolicyManager workflow: pre-sort tracker/tag sync -> queue sort{Tail}",
                     enableFreeSpace ? " -> free-space" : "");
-                await PreSortTrackerTagSyncAsync(seeding, cancellationToken);
-                await SortManagedTorrentsByTrackerPriorityAsync(seeding, cancellationToken);
+                await PreSortTrackerTagSyncAsync(seeding, managedCategories, cancellationToken);
+                await SortManagedTorrentsByTrackerPriorityAsync(seeding, managedCategories, cancellationToken);
             }
             else if (enableFreeSpace)
             {
@@ -3033,7 +3023,7 @@ class ProcessOrchestratorService : BackgroundService
             }
 
             if (enableFreeSpace)
-                await ProcessFreeSpaceManagerAsync(cancellationToken);
+                await ProcessFreeSpaceManagerAsync(managedCategories, cancellationToken);
         }
         finally
         {
@@ -3044,11 +3034,14 @@ class ProcessOrchestratorService : BackgroundService
     /// <summary>
     /// qBitrr <c>TorrentPolicyManager._sync_tracker_tags_before_sort</c>.
     /// </summary>
-    private async Task PreSortTrackerTagSyncAsync(ISeedingService seeding, CancellationToken cancellationToken)
+    private async Task PreSortTrackerTagSyncAsync(
+        ISeedingService seeding,
+        HashSet<string> managedCategories,
+        CancellationToken cancellationToken)
     {
         foreach (var (instanceName, client) in _qbitManager.GetAllClients())
         {
-            foreach (var category in _managedCategories)
+            foreach (var category in managedCategories)
             {
                 List<TorrentInfo> torrents;
                 try
@@ -3072,7 +3065,7 @@ class ProcessOrchestratorService : BackgroundService
         }
     }
 
-    private async Task ProcessFreeSpaceManagerAsync(CancellationToken cancellationToken)
+    private async Task ProcessFreeSpaceManagerAsync(HashSet<string> managedCategories, CancellationToken cancellationToken)
     {
         _logger.LogInformation("FreeSpace: Starting FreeSpace manager check");
 
@@ -3106,7 +3099,7 @@ class ProcessOrchestratorService : BackgroundService
             var allTorrents = new List<(QBittorrentClient client, TorrentInfo torrent)>();
             foreach (var (_, client) in _qbitManager.GetAllClients())
             {
-                foreach (var category in _managedCategories)
+                foreach (var category in managedCategories)
                 {
                     var torrents = await client.GetTorrentsAsync(category, cancellationToken, sort: "priority");
                     allTorrents.AddRange(torrents.Select(t => (client, t)));
@@ -3121,9 +3114,11 @@ class ProcessOrchestratorService : BackgroundService
             }
 
             foreach (var (client, torrent) in allTorrents
-                .OrderBy(x => TorrentPolicyHelper.TorrentQueuePositionSortKey(x.torrent).InactiveQueueGroup)
-                .ThenBy(x => TorrentPolicyHelper.TorrentQueuePositionSortKey(x.torrent).Nq)
-                .ThenBy(x => x.torrent.AddedOn))
+                .Select(x => (x.client, x.torrent, key: TorrentPolicyHelper.TorrentQueuePositionSortKey(x.torrent)))
+                .OrderBy(x => x.key.InactiveQueueGroup)
+                .ThenBy(x => x.key.Nq)
+                .ThenBy(x => x.torrent.AddedOn)
+                .Select(x => (x.client, x.torrent)))
                 await ProcessSingleTorrentSpaceAsync(client, torrent, dbContext, pausedCountRef, cancellationToken);
 
             if (_config.Settings.Tagless && dbContext != null)
@@ -3151,7 +3146,10 @@ class ProcessOrchestratorService : BackgroundService
     /// <summary>
     /// qBitrr <c>Arr._sort_torrents_by_tracker_priority</c> when <c>categories</c> is set (TorrentPolicyManager).
     /// </summary>
-    private async Task SortManagedTorrentsByTrackerPriorityAsync(ISeedingService seeding, CancellationToken cancellationToken)
+    private async Task SortManagedTorrentsByTrackerPriorityAsync(
+        ISeedingService seeding,
+        HashSet<string> managedCategories,
+        CancellationToken cancellationToken)
     {
         var tagToPriority = TorrentPolicyHelper.MergeGlobalTrackerTagToPriorityMax(_config);
         foreach (var (instanceName, client) in _qbitManager.GetAllClients())
@@ -3170,7 +3168,7 @@ class ProcessOrchestratorService : BackgroundService
                 }
 
                 torrentList = torrentList
-                    .Where(t => !string.IsNullOrEmpty(t.Category) && _managedCategories.Contains(t.Category))
+                    .Where(t => !string.IsNullOrEmpty(t.Category) && managedCategories.Contains(t.Category))
                     .ToList();
                 foreach (var t in torrentList)
                     t.QBitInstanceName = instanceName;
@@ -3197,8 +3195,10 @@ class ProcessOrchestratorService : BackgroundService
                     StringComparer.OrdinalIgnoreCase);
 
                 var currentByPosition = torrentList
-                    .OrderBy(t => TorrentPolicyHelper.TorrentQueuePositionSortKey(t).InactiveQueueGroup)
-                    .ThenBy(t => TorrentPolicyHelper.TorrentQueuePositionSortKey(t).Nq)
+                    .Select(t => (t, key: TorrentPolicyHelper.TorrentQueuePositionSortKey(t)))
+                    .OrderBy(x => x.key.InactiveQueueGroup)
+                    .ThenBy(x => x.key.Nq)
+                    .Select(x => x.t)
                     .ToList();
 
                 var currentDownloadingOrder = currentByPosition
