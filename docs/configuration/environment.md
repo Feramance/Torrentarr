@@ -34,18 +34,19 @@ services:
       - /path/to/config:/config
 ```
 
-When `TORRENTARR_CONFIG` is set and starts with `/config`, Torrentarr uses `/config` as the base directory for the database (`torrentarr.db`) and logs. Otherwise it uses `./config` (relative to the current working directory).
+When `TORRENTARR_CONFIG` is set and starts with `/config`, Torrentarr uses `/config` as the base directory for the database (`torrentarr.db`) and logs. Otherwise the data directory is the folder containing that config file. See `ConfigurationLoader.GetDataDirectoryPath()` in the source.
 
 ---
 
 ## Config file search order (when TORRENTARR_CONFIG is not set)
 
-1. `~/config/config.toml`
-2. `~/.config/qbitrr/config.toml`
-3. `~/.config/torrentarr/config.toml`
-4. `./config.toml`
+1. `./.config/config.toml` (under the process current working directory)
+2. `~/config/config.toml`
+3. `~/.config/qbitrr/config.toml`
+4. `~/.config/torrentarr/config.toml`
+5. `./config.toml`
 
-The first existing file wins. If none exist, the default path used for generating a new config is `~/config/config.toml`.
+The first existing file wins. If none exist, a new default config is created at `./.config/config.toml` (so the database and logs typically live in `./.config/` on first run from that working directory).
 
 ---
 

@@ -17,11 +17,8 @@ using Serilog.Events;
 using System.Security.Claims;
 using System.Security.Cryptography;
 
-// Calculate base paths - use /config for Docker, or config/ relative to cwd for local
-var configEnv = Environment.GetEnvironmentVariable("TORRENTARR_CONFIG");
-var basePath = !string.IsNullOrEmpty(configEnv) && configEnv.StartsWith("/config")
-    ? "/config"
-    : Path.Combine(Directory.GetCurrentDirectory(), "config");
+// Data directory: aligned with resolved config path (see ConfigurationLoader.GetDataDirectoryPath)
+var basePath = ConfigurationLoader.GetDataDirectoryPath();
 var logsPath = Path.Combine(basePath, "logs");
 var dbPath = Path.Combine(basePath, "torrentarr.db");
 Directory.CreateDirectory(basePath);
@@ -274,6 +271,19 @@ try
     });
 
     var app = builder.Build();
+
+    // First-run hint: Host wwwroot is build output; API still works without the SPA bundle.
+    var webRoot = app.Environment.WebRootPath;
+    if (!string.IsNullOrEmpty(webRoot))
+    {
+        var indexFile = Path.Combine(webRoot, "index.html");
+        if (!File.Exists(indexFile))
+        {
+            Log.Warning(
+                "Web UI bundle not found at {Index}. Run ./build.sh or build webui and publish to wwwroot for the full SPA. API and Swagger (/swagger) are still available.",
+                indexFile);
+        }
+    }
 
     // --version / -v: print version and exit (qBitrr parity)
     if (cmdArgs.Count == 1 && (firstArg == "--version" || firstArg == "-v"))

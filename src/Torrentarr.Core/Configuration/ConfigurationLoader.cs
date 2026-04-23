@@ -35,15 +35,17 @@ public class ConfigurationLoader
         if (!string.IsNullOrEmpty(envOverride))
             return envOverride;
 
-        // Try multiple locations (same as qBitrr)
+        // Try multiple locations (qBitrr parity, with cwd .config first for first-run from project / install dir)
         var homePath = Environment.GetFolderPath(Environment.SpecialFolder.UserProfile);
+        var cwd = Directory.GetCurrentDirectory();
 
         var possiblePaths = new[]
         {
+            Path.Combine(cwd, ".config", "config.toml"),
             Path.Combine(homePath, "config", "config.toml"),
             Path.Combine(homePath, ".config", "qbitrr", "config.toml"),
             Path.Combine(homePath, ".config", "torrentarr", "config.toml"),
-            Path.Combine(Directory.GetCurrentDirectory(), "config.toml")
+            Path.Combine(cwd, "config.toml")
         };
 
         foreach (var path in possiblePaths)
@@ -54,6 +56,30 @@ public class ConfigurationLoader
 
         // Default to first location
         return possiblePaths[0];
+    }
+
+    /// <summary>
+    /// Directory for SQLite, process logs, and related files. Matches Docker layout (<c>/config</c>),
+    /// the directory of <c>TORRENTARR_CONFIG</c> when set to a file path, or the directory of
+    /// <see cref="GetDefaultConfigPath"/> otherwise (not <c>cwd/config</c> when config resolves elsewhere).
+    /// </summary>
+    public static string GetDataDirectoryPath()
+    {
+        var envOverride = Environment.GetEnvironmentVariable("TORRENTARR_CONFIG");
+        if (!string.IsNullOrEmpty(envOverride))
+        {
+            if (envOverride.StartsWith("/config", StringComparison.Ordinal))
+                return "/config";
+            var fullConfig = Path.GetFullPath(envOverride);
+            return Path.GetDirectoryName(fullConfig)
+                ?? Path.Combine(Directory.GetCurrentDirectory(), "config");
+        }
+
+        var cfgPath = GetDefaultConfigPath();
+        var dir = Path.GetDirectoryName(Path.GetFullPath(cfgPath));
+        return !string.IsNullOrEmpty(dir)
+            ? dir
+            : Path.Combine(Directory.GetCurrentDirectory(), "config");
     }
 
     public TorrentarrConfig Load()

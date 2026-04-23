@@ -65,13 +65,23 @@ public sealed class ConfigReloaderTests : IDisposable
     }
 
     [Fact]
-    public void ConfigPath_WhenEnvVarPointsToNonExistentFile_DoesNotUseThatPath()
+    public void ConfigPath_WhenEnvVarPointsToNonExistentFile_StillUsesEnvPath()
     {
-        // Non-existent file → env var is ignored; ConfigPath falls through to
-        // the default search list and will be some path other than the bogus one.
+        // Matches ConfigurationLoader.GetDefaultConfigPath(): TORRENTARR_CONFIG wins even if missing.
+        var bogus = "/does/not/exist/config.toml";
+        using var reloader = CreateReloader(bogus);
+
+        reloader.ConfigPath.Should().Be(bogus);
+    }
+
+    [Fact]
+    public void ReloadConfig_WhenEnvVarPointsToNonExistentFile_ReturnsFalse()
+    {
         using var reloader = CreateReloader("/does/not/exist/config.toml");
 
-        reloader.ConfigPath.Should().NotBe("/does/not/exist/config.toml");
+        var result = reloader.ReloadConfig();
+
+        result.Should().BeFalse();
     }
 
     // ── ReloadConfig – failure paths ──────────────────────────────────────────

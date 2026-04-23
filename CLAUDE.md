@@ -125,12 +125,13 @@ SQLite (`torrentarr.db`, same schema as qBitrr for compatibility). Uses EF Core 
 
 ### Configuration
 
-`config.toml` is 100% compatible with qBitrr's format. Search order:
+`config.toml` is 100% compatible with qBitrr's format. Search order (first existing file wins; if none exist, a new default is created at the first path):
 1. `TORRENTARR_CONFIG` environment variable (takes priority — used for tests and Docker)
-2. `~/config/config.toml`
-3. `~/.config/qbitrr/config.toml`
-4. `~/.config/torrentarr/config.toml`
-5. `./config.toml`
+2. `./.config/config.toml` (under the process current working directory — typical first-run layout for `dotnet run`)
+3. `~/config/config.toml`
+4. `~/.config/qbitrr/config.toml`
+5. `~/.config/torrentarr/config.toml`
+6. `./config.toml`
 
 Key config sections: `[Settings]`, `[WebUI]`, `[qBit]`, `[qBit.CategorySeeding]`, `[Radarr-*]`, `[Sonarr-*]`, `[Lidarr-*]`. Both Arr instances and qBittorrent instances are uniform dictionaries — `[Radarr-4K]` and `[qBit-seedbox]` follow the same pattern. `[qBit]` is the conventional name for the primary qBit instance but carries no special status in code; all qBit instances are equal.
 
