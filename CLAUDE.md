@@ -6,6 +6,8 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 **Torrentarr** is a C# port of [qBitrr](https://github.com/Feramance/qBitrr) (Python). It automates qBittorrent torrent management with integration to Radarr, Sonarr, and Lidarr — handling Hit & Run protection, free space management, quality upgrades, and import triggering. Same `config.toml` format and SQLite schema as qBitrr; database file is `torrentarr.db` (not `qbitrr.db`). Goal: feature parity with better performance and process isolation.
 
+**Release numbering:** Torrentarr **intentionally uses a major version one ahead of qBitrr’s** (e.g. qBitrr **5**.x → Torrentarr **6**.x). Minor and patch versions are independent; the +1 major rule distinguishes the products while configs stay compatible.
+
 ## Build & Run Commands
 
 ### .NET Backend
@@ -125,12 +127,13 @@ SQLite (`torrentarr.db`, same schema as qBitrr for compatibility). Uses EF Core 
 
 ### Configuration
 
-`config.toml` is 100% compatible with qBitrr's format. Search order:
+`config.toml` is 100% compatible with qBitrr's format. Search order (first existing file wins; if none exist, a new default is created at the first path):
 1. `TORRENTARR_CONFIG` environment variable (takes priority — used for tests and Docker)
-2. `~/config/config.toml`
-3. `~/.config/qbitrr/config.toml`
-4. `~/.config/torrentarr/config.toml`
-5. `./config.toml`
+2. `./.config/config.toml` (under the process current working directory — typical first-run layout for `dotnet run`)
+3. `~/config/config.toml`
+4. `~/.config/qbitrr/config.toml`
+5. `~/.config/torrentarr/config.toml`
+6. `./config.toml`
 
 Key config sections: `[Settings]`, `[WebUI]`, `[qBit]`, `[qBit.CategorySeeding]`, `[Radarr-*]`, `[Sonarr-*]`, `[Lidarr-*]`. Both Arr instances and qBittorrent instances are uniform dictionaries — `[Radarr-4K]` and `[qBit-seedbox]` follow the same pattern. `[qBit]` is the conventional name for the primary qBit instance but carries no special status in code; all qBit instances are equal.
 
@@ -140,7 +143,7 @@ Key config sections: `[Settings]`, `[WebUI]`, `[qBit]`, `[qBit.CategorySeeding]`
 
 **Cross-instance free space:** `FreeSpaceService` iterates ALL configured qBit instances, gathers torrents from all clients, sorts them globally by `AddedOn` date, and processes the oldest first. `DownloadPath` is checked per-instance for space.
 
-**Config version:** Current format is `5.9.2` (`ConfigurationLoader.ExpectedConfigVersion`). Notable fields: `HitAndRunMode` is a **string** (`"and"` / `"or"` / `"disabled"`) — not a boolean (changed in v5.9.2). Seeding configuration (`HitAndRunMode`, `MinSeedRatio`, `MinSeedingTimeDays`, etc.) lives in `[qBit.CategorySeeding]` per qBit instance — not in `[WebUI]`.
+**Config version:** Current `Settings.ConfigVersion` / `ConfigurationLoader.ExpectedConfigVersion` is **`6.1.0`**. That is **Torrentarr’s** schema id — it follows the **+1 major vs qBitrr** policy (see **What This Project Is** above), not a 1:1 copy of qBitrr’s tag. Notable fields: `HitAndRunMode` is a **string** (`"and"` / `"or"` / `"disabled"`) — not a boolean (qBitrr switched from booleans in older versions). Seeding configuration (`HitAndRunMode`, `MinSeedRatio`, `MinSeedingTimeDays`, etc.) lives in `[qBit.CategorySeeding]` per qBit instance — not in `[WebUI]`.
 
 **TOML serialization rule:** Arrays that may contain regex or file extension patterns (e.g., `FileExtensionAllowlist`) must use single-quoted TOML literal strings (`'\.mkv'`) to avoid invalid escape sequences — Tomlyn enforces strict TOML and rejects `\.` in double-quoted strings.
 

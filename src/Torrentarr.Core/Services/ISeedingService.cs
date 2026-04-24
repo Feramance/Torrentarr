@@ -78,6 +78,19 @@ public interface ISeedingService
     /// In qBitrr this runs for ALL torrents as a pre-step before the state machine.
     /// </summary>
     Task ApplyTrackerActionsForTorrentAsync(TorrentInfo torrent, CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Announce-based tracker priority for <c>SortTorrents</c> (qBitrr <c>_get_torrent_tracker_priority(for_queue_sort=True)</c>).
+    /// </summary>
+    Task<int> GetQueueSortAnnouncePriorityAsync(TorrentInfo torrent, CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Blended queue-sort priority: max(tag-derived, announce) per qBitrr <c>_get_torrent_queue_sort_priority</c>.
+    /// </summary>
+    Task<int> GetTorrentQueueSortPriorityAsync(
+        TorrentInfo torrent,
+        IReadOnlyDictionary<string, int> tagToPriorityMax,
+        CancellationToken cancellationToken = default);
 }
 
 public class SeedingStats

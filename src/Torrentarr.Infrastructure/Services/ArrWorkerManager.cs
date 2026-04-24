@@ -440,7 +440,7 @@ public class ArrWorkerManager : BackgroundService
                     if (!loginSuccess)
                         continue;
 
-                    var torrents = await qbitClient.GetTorrentsAsync(arrCfg.Category, ct);
+                    var torrents = await qbitClient.GetTorrentsAsync(arrCfg.Category, cancellationToken: ct);
                     categoryCount = torrents.Count;
                     break;
                 }

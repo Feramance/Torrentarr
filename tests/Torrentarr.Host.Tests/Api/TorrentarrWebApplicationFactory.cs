@@ -55,7 +55,7 @@ public class TorrentarrWebApplicationFactory : WebApplicationFactory<Program>, I
     // Single-quoted strings are TOML literal strings (no escape processing) — safe for regex patterns.
     private const string TestConfigToml = """
         [Settings]
-        ConfigVersion = "5.9.2"
+        ConfigVersion = "6.1.0"
         LoopSleepTimer = 5
         FailedCategory = "failed"
         RecheckCategory = "recheck"
@@ -189,7 +189,7 @@ public class AuthEnabledWebApplicationFactory : TorrentarrWebApplicationFactory
 
     private const string TestConfigTomlWithAuth = """
         [Settings]
-        ConfigVersion = "5.9.2"
+        ConfigVersion = "6.1.0"
         LoopSleepTimer = 5
         FailedCategory = "failed"
         RecheckCategory = "recheck"
@@ -222,7 +222,7 @@ public class LocalAuthWebApplicationFactory : TorrentarrWebApplicationFactory
         _localAuthConfigPath = Path.GetTempFileName() + ".localauth.toml";
         var toml = $"""
             [Settings]
-            ConfigVersion = "5.9.2"
+            ConfigVersion = "6.1.0"
             LoopSleepTimer = 5
             FailedCategory = "failed"
             RecheckCategory = "recheck"
@@ -277,7 +277,7 @@ public class LocalAuthNoPasswordWebApplicationFactory : TorrentarrWebApplication
 
     private const string TomlContent = """
         [Settings]
-        ConfigVersion = "5.9.2"
+        ConfigVersion = "6.1.0"
         LoopSleepTimer = 5
         FailedCategory = "failed"
         RecheckCategory = "recheck"

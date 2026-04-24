@@ -35,15 +35,17 @@ public class ConfigurationLoader
         if (!string.IsNullOrEmpty(envOverride))
             return envOverride;
 
-        // Try multiple locations (same as qBitrr)
+        // Try multiple locations (qBitrr parity, with cwd .config first for first-run from project / install dir)
         var homePath = Environment.GetFolderPath(Environment.SpecialFolder.UserProfile);
+        var cwd = Directory.GetCurrentDirectory();
 
         var possiblePaths = new[]
         {
+            Path.Combine(cwd, ".config", "config.toml"),
             Path.Combine(homePath, "config", "config.toml"),
             Path.Combine(homePath, ".config", "qbitrr", "config.toml"),
             Path.Combine(homePath, ".config", "torrentarr", "config.toml"),
-            Path.Combine(Directory.GetCurrentDirectory(), "config.toml")
+            Path.Combine(cwd, "config.toml")
         };
 
         foreach (var path in possiblePaths)
@@ -54,6 +56,30 @@ public class ConfigurationLoader
 
         // Default to first location
         return possiblePaths[0];
+    }
+
+    /// <summary>
+    /// Directory for SQLite, process logs, and related files. Matches Docker layout (<c>/config</c>),
+    /// the directory of <c>TORRENTARR_CONFIG</c> when set to a file path, or the directory of
+    /// <see cref="GetDefaultConfigPath"/> otherwise (not <c>cwd/config</c> when config resolves elsewhere).
+    /// </summary>
+    public static string GetDataDirectoryPath()
+    {
+        var envOverride = Environment.GetEnvironmentVariable("TORRENTARR_CONFIG");
+        if (!string.IsNullOrEmpty(envOverride))
+        {
+            if (envOverride.StartsWith("/config", StringComparison.Ordinal))
+                return "/config";
+            var fullConfig = Path.GetFullPath(envOverride);
+            return Path.GetDirectoryName(fullConfig)
+                ?? Path.Combine(Directory.GetCurrentDirectory(), "config");
+        }
+
+        var cfgPath = GetDefaultConfigPath();
+        var dir = Path.GetDirectoryName(Path.GetFullPath(cfgPath));
+        return !string.IsNullOrEmpty(dir)
+            ? dir
+            : Path.Combine(Directory.GetCurrentDirectory(), "config");
     }
 
     public TorrentarrConfig Load()
@@ -122,52 +148,63 @@ public class ConfigurationLoader
 
     /// <summary>
     /// Apply TORRENTARR_* environment variable overrides after TOML parsing.
-    /// Matches qBitrr's QBITRR_SETTINGS_*, QBITRR_QBIT_*, QBITRR_OVERRIDES_* env vars.
-    /// Only non-null env vars override the TOML-parsed values.
+    /// For compatibility with qBitrr deployments, also accepts QBITRR_* aliases.
+    /// Non-empty values override the TOML-parsed values. If the primary <c>TORRENTARR_*</c>
+    /// variable is set to an empty string, the alias is not consulted (primary wins).
     /// </summary>
     private static void ApplyEnvironmentOverrides(TorrentarrConfig config)
     {
-        // TORRENTARR_SETTINGS_* → config.Settings
+        // TORRENTARR_SETTINGS_* / QBITRR_SETTINGS_* -> config.Settings
         var s = config.Settings;
-        ApplyEnvString("TORRENTARR_SETTINGS_CONSOLE_LEVEL", v => s.ConsoleLevel = v);
-        ApplyEnvBool("TORRENTARR_SETTINGS_LOGGING", v => s.Logging = v);
-        ApplyEnvString("TORRENTARR_SETTINGS_COMPLETED_DOWNLOAD_FOLDER", v => s.CompletedDownloadFolder = v);
-        ApplyEnvString("TORRENTARR_SETTINGS_FREE_SPACE", v => s.FreeSpace = v);
-        ApplyEnvString("TORRENTARR_SETTINGS_FREE_SPACE_FOLDER", v => s.FreeSpaceFolder = v);
-        ApplyEnvInt("TORRENTARR_SETTINGS_NO_INTERNET_SLEEP_TIMER", v => s.NoInternetSleepTimer = v);
-        ApplyEnvInt("TORRENTARR_SETTINGS_LOOP_SLEEP_TIMER", v => s.LoopSleepTimer = v);
-        ApplyEnvInt("TORRENTARR_SETTINGS_SEARCH_LOOP_DELAY", v => s.SearchLoopDelay = v);
-        ApplyEnvBool("TORRENTARR_SETTINGS_AUTO_PAUSE_RESUME", v => s.AutoPauseResume = v);
-        ApplyEnvString("TORRENTARR_SETTINGS_FAILED_CATEGORY", v => s.FailedCategory = v);
-        ApplyEnvString("TORRENTARR_SETTINGS_RECHECK_CATEGORY", v => s.RecheckCategory = v);
-        ApplyEnvBool("TORRENTARR_SETTINGS_TAGLESS", v => s.Tagless = v);
-        ApplyEnvInt("TORRENTARR_SETTINGS_IGNORE_TORRENTS_YOUNGER_THAN", v => s.IgnoreTorrentsYoungerThan = v);
-        ApplyEnvBool("TORRENTARR_SETTINGS_FFPROBE_AUTO_UPDATE", v => s.FFprobeAutoUpdate = v);
-        ApplyEnvBool("TORRENTARR_SETTINGS_AUTO_UPDATE_ENABLED", v => s.AutoUpdateEnabled = v);
-        ApplyEnvString("TORRENTARR_SETTINGS_AUTO_UPDATE_CRON", v => s.AutoUpdateCron = v);
-        ApplyEnvList("TORRENTARR_SETTINGS_PING_URLS", v => s.PingURLS = v);
+        ApplyEnvString("TORRENTARR_SETTINGS_CONSOLE_LEVEL", "QBITRR_SETTINGS_CONSOLE_LEVEL", v => s.ConsoleLevel = v);
+        ApplyEnvBool("TORRENTARR_SETTINGS_LOGGING", "QBITRR_SETTINGS_LOGGING", v => s.Logging = v);
+        ApplyEnvString("TORRENTARR_SETTINGS_COMPLETED_DOWNLOAD_FOLDER", "QBITRR_SETTINGS_COMPLETED_DOWNLOAD_FOLDER", v => s.CompletedDownloadFolder = v);
+        ApplyEnvString("TORRENTARR_SETTINGS_FREE_SPACE", "QBITRR_SETTINGS_FREE_SPACE", v => s.FreeSpace = v);
+        ApplyEnvString("TORRENTARR_SETTINGS_FREE_SPACE_FOLDER", "QBITRR_SETTINGS_FREE_SPACE_FOLDER", v => s.FreeSpaceFolder = v);
+        ApplyEnvInt("TORRENTARR_SETTINGS_NO_INTERNET_SLEEP_TIMER", "QBITRR_SETTINGS_NO_INTERNET_SLEEP_TIMER", v => s.NoInternetSleepTimer = v);
+        ApplyEnvInt("TORRENTARR_SETTINGS_LOOP_SLEEP_TIMER", "QBITRR_SETTINGS_LOOP_SLEEP_TIMER", v => s.LoopSleepTimer = v);
+        ApplyEnvInt("TORRENTARR_SETTINGS_SEARCH_LOOP_DELAY", "QBITRR_SETTINGS_SEARCH_LOOP_DELAY", v => s.SearchLoopDelay = v);
+        ApplyEnvBool("TORRENTARR_SETTINGS_AUTO_PAUSE_RESUME", "QBITRR_SETTINGS_AUTO_PAUSE_RESUME", v => s.AutoPauseResume = v);
+        ApplyEnvString("TORRENTARR_SETTINGS_FAILED_CATEGORY", "QBITRR_SETTINGS_FAILED_CATEGORY", v => s.FailedCategory = v);
+        ApplyEnvString("TORRENTARR_SETTINGS_RECHECK_CATEGORY", "QBITRR_SETTINGS_RECHECK_CATEGORY", v => s.RecheckCategory = v);
+        ApplyEnvBool("TORRENTARR_SETTINGS_TAGLESS", "QBITRR_SETTINGS_TAGLESS", v => s.Tagless = v);
+        ApplyEnvInt("TORRENTARR_SETTINGS_IGNORE_TORRENTS_YOUNGER_THAN", "QBITRR_SETTINGS_IGNORE_TORRENTS_YOUNGER_THAN", v => s.IgnoreTorrentsYoungerThan = v);
+        ApplyEnvBool("TORRENTARR_SETTINGS_FFPROBE_AUTO_UPDATE", "QBITRR_SETTINGS_FFPROBE_AUTO_UPDATE", v => s.FFprobeAutoUpdate = v);
+        ApplyEnvBool("TORRENTARR_SETTINGS_AUTO_UPDATE_ENABLED", "QBITRR_SETTINGS_AUTO_UPDATE_ENABLED", v => s.AutoUpdateEnabled = v);
+        ApplyEnvString("TORRENTARR_SETTINGS_AUTO_UPDATE_CRON", "QBITRR_SETTINGS_AUTO_UPDATE_CRON", v => s.AutoUpdateCron = v);
+        ApplyEnvList("TORRENTARR_SETTINGS_PING_URLS", "QBITRR_SETTINGS_PING_URLS", v => s.PingURLS = v);
 
-        // TORRENTARR_QBIT_* → primary qBit instance (config.QBitInstances["qBit"])
+        // TORRENTARR_QBIT_* / QBITRR_QBIT_* -> primary qBit instance (config.QBitInstances["qBit"])
         if (config.QBitInstances.TryGetValue("qBit", out var qbit))
         {
-            ApplyEnvBool("TORRENTARR_QBIT_DISABLED", v => qbit.Disabled = v);
-            ApplyEnvString("TORRENTARR_QBIT_HOST", v => qbit.Host = v);
-            ApplyEnvInt("TORRENTARR_QBIT_PORT", v => qbit.Port = v);
-            ApplyEnvString("TORRENTARR_QBIT_USERNAME", v => qbit.UserName = v);
-            ApplyEnvString("TORRENTARR_QBIT_PASSWORD", v => qbit.Password = v);
+            ApplyEnvBool("TORRENTARR_QBIT_DISABLED", "QBITRR_QBIT_DISABLED", v => qbit.Disabled = v);
+            ApplyEnvString("TORRENTARR_QBIT_HOST", "QBITRR_QBIT_HOST", v => qbit.Host = v);
+            ApplyEnvInt("TORRENTARR_QBIT_PORT", "QBITRR_QBIT_PORT", v => qbit.Port = v);
+            ApplyEnvString("TORRENTARR_QBIT_USERNAME", "QBITRR_QBIT_USERNAME", v => qbit.UserName = v);
+            ApplyEnvString("TORRENTARR_QBIT_PASSWORD", "QBITRR_QBIT_PASSWORD", v => qbit.Password = v);
         }
     }
 
-    private static void ApplyEnvString(string envName, Action<string> setter)
+    private static string? ReadEnv(string primaryEnvName, string? aliasEnvName)
     {
-        var value = Environment.GetEnvironmentVariable(envName);
+        var primary = Environment.GetEnvironmentVariable(primaryEnvName);
+        if (primary != null)
+            return primary;
+        if (!string.IsNullOrEmpty(aliasEnvName))
+            return Environment.GetEnvironmentVariable(aliasEnvName);
+        return null;
+    }
+
+    private static void ApplyEnvString(string primaryEnvName, string? aliasEnvName, Action<string> setter)
+    {
+        var value = ReadEnv(primaryEnvName, aliasEnvName);
         if (!string.IsNullOrEmpty(value))
             setter(value);
     }
 
-    private static void ApplyEnvBool(string envName, Action<bool> setter)
+    private static void ApplyEnvBool(string primaryEnvName, string? aliasEnvName, Action<bool> setter)
     {
-        var value = Environment.GetEnvironmentVariable(envName);
+        var value = ReadEnv(primaryEnvName, aliasEnvName);
         if (string.IsNullOrEmpty(value)) return;
         var lower = value.Trim().ToLowerInvariant();
         if (lower is "true" or "1" or "yes" or "on" or "y" or "t")
@@ -176,16 +213,16 @@ public class ConfigurationLoader
             setter(false);
     }
 
-    private static void ApplyEnvInt(string envName, Action<int> setter)
+    private static void ApplyEnvInt(string primaryEnvName, string? aliasEnvName, Action<int> setter)
     {
-        var value = Environment.GetEnvironmentVariable(envName);
+        var value = ReadEnv(primaryEnvName, aliasEnvName);
         if (!string.IsNullOrEmpty(value) && int.TryParse(value, out var intVal))
             setter(intVal);
     }
 
-    private static void ApplyEnvList(string envName, Action<List<string>> setter)
+    private static void ApplyEnvList(string primaryEnvName, string? aliasEnvName, Action<List<string>> setter)
     {
-        var value = Environment.GetEnvironmentVariable(envName);
+        var value = ReadEnv(primaryEnvName, aliasEnvName);
         if (!string.IsNullOrEmpty(value))
             setter(value.Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries).ToList());
     }
@@ -212,8 +249,7 @@ public class ConfigurationLoader
         }
 
         var expected = Version.Parse(ExpectedConfigVersion);
-        if (currentVersion >= expected)
-            return false; // Already current
+        var needsMigration = currentVersion < expected;
 
         // Migration 1: Move WebUI Host/Port/Token from [Settings] to [WebUI]
         if (MigrateWebUIConfig(root))
@@ -243,14 +279,16 @@ public class ConfigurationLoader
         if (ValidateAndFillConfig(root))
             changed = true;
 
-        // Update ConfigVersion to current
-        if (changed || currentVersion < expected)
+        // Bump ConfigVersion to this build's expected when the file is older or equal; never downgrade a newer
+        // ConfigVersion (forward-compatible / prerelease configs) just because ValidateAndFill added keys.
+        if (needsMigration || changed)
         {
             if (!root.ContainsKey("Settings"))
                 root["Settings"] = new TomlTable();
-            if (root["Settings"] is TomlTable s)
+            if (root["Settings"] is TomlTable s && currentVersion <= expected)
             {
                 s["ConfigVersion"] = ExpectedConfigVersion;
+                // Version-only bump must persist; otherwise needsMigration stays true every startup.
                 changed = true;
             }
         }
@@ -263,8 +301,16 @@ public class ConfigurationLoader
     /// </summary>
     private static bool MigrateWebUIConfig(TomlTable root)
     {
-        if (!root.TryGetValue("Settings", out var sObj) || sObj is not TomlTable settings)
-            return false;
+        TomlTable settings;
+        if (!root.TryGetValue("Settings", out var sObj) || sObj is not TomlTable settingsTable)
+        {
+            settings = new TomlTable();
+            root["Settings"] = settings;
+        }
+        else
+        {
+            settings = settingsTable;
+        }
 
         if (!root.ContainsKey("WebUI"))
             root["WebUI"] = new TomlTable();
@@ -280,6 +326,13 @@ public class ConfigurationLoader
                 settings.Remove(key);
                 migrated = true;
             }
+        }
+
+        if (webui.ContainsKey("SecureCookies") && !webui.ContainsKey("BehindHttpsProxy"))
+        {
+            webui["BehindHttpsProxy"] = webui["SecureCookies"];
+            webui.Remove("SecureCookies");
+            migrated = true;
         }
         return migrated;
     }
@@ -682,9 +735,11 @@ public class ConfigurationLoader
                 ("Host", "0.0.0.0"),
                 ("Port", (long)6969),
                 ("Token", ""),
-                ("AuthDisabled", true),
-                ("LocalAuthEnabled", false),
+                ("AuthDisabled", false),
+                // Must match <see cref="GenerateDefaultConfig"/>: when auth is required, local login is the default path.
+                ("LocalAuthEnabled", true),
                 ("OIDCEnabled", false),
+                ("BehindHttpsProxy", false),
                 ("Username", ""),
                 ("PasswordHash", ""),
                 ("LiveArr", true),
@@ -936,16 +991,24 @@ public class ConfigurationLoader
             qbit.Disabled = Convert.ToBoolean(disabled);
 
         if (table.TryGetValue("Host", out var host))
-            qbit.Host = host?.ToString() ?? "localhost";
+            qbit.Host = host?.ToString() ?? "CHANGE_ME";
+        else
+            qbit.Host = "CHANGE_ME";
 
         if (table.TryGetValue("Port", out var port))
             qbit.Port = Convert.ToInt32(port);
+        else
+            qbit.Port = 8080;
 
         if (table.TryGetValue("UserName", out var username))
-            qbit.UserName = username?.ToString() ?? "";
+            qbit.UserName = username?.ToString() ?? "CHANGE_ME";
+        else
+            qbit.UserName = "CHANGE_ME";
 
         if (table.TryGetValue("Password", out var password))
-            qbit.Password = password?.ToString() ?? "";
+            qbit.Password = password?.ToString() ?? "CHANGE_ME";
+        else
+            qbit.Password = "CHANGE_ME";
 
         if (table.TryGetValue("DownloadPath", out var downloadPath))
             qbit.DownloadPath = downloadPath?.ToString();
@@ -976,6 +1039,9 @@ public class ConfigurationLoader
 
         if (table.TryGetValue("Priority", out var priority))
             tracker.Priority = Convert.ToInt32(priority);
+
+        if (table.TryGetValue("SortTorrents", out var sortTorrents))
+            tracker.SortTorrents = Convert.ToBoolean(sortTorrents);
 
         if (table.TryGetValue("MaxUploadRatio", out var maxRatio))
             tracker.MaxUploadRatio = Convert.ToDouble(maxRatio);
@@ -1095,6 +1161,9 @@ public class ConfigurationLoader
 
         if (table.TryGetValue("Token", out var token))
             webui.Token = token?.ToString() ?? "";
+
+        if (table.TryGetValue("BehindHttpsProxy", out var behindHttpsProxy))
+            webui.BehindHttpsProxy = Convert.ToBoolean(behindHttpsProxy);
 
         bool hasNewAuthKeys = table.ContainsKey("AuthDisabled") ||
             table.ContainsKey("LocalAuthEnabled") ||
@@ -1573,6 +1642,7 @@ public class ConfigurationLoader
                 Port = 6969,
                 Token = "",
                 AuthDisabled = false,
+                BehindHttpsProxy = false,
                 LocalAuthEnabled = true,
                 OIDCEnabled = false,
                 Username = "",
@@ -1651,6 +1721,7 @@ public class ConfigurationLoader
         sb.AppendLine($"Host = \"{config.WebUI.Host}\"");
         sb.AppendLine($"Port = {config.WebUI.Port}");
         sb.AppendLine($"Token = \"{config.WebUI.Token}\"");
+        sb.AppendLine($"BehindHttpsProxy = {config.WebUI.BehindHttpsProxy.ToString().ToLower()}");
         sb.AppendLine($"AuthDisabled = {config.WebUI.AuthDisabled.ToString().ToLower()}");
         sb.AppendLine($"LocalAuthEnabled = {config.WebUI.LocalAuthEnabled.ToString().ToLower()}");
         sb.AppendLine($"OIDCEnabled = {config.WebUI.OIDCEnabled.ToString().ToLower()}");
@@ -1773,6 +1844,7 @@ public class ConfigurationLoader
                     sb.AppendLine($"Name = \"{EscapeTomlString(tracker.Name)}\"");
                 sb.AppendLine($"URI = \"{tracker.Uri}\"");
                 sb.AppendLine($"Priority = {tracker.Priority}");
+                sb.AppendLine($"SortTorrents = {tracker.SortTorrents.ToString().ToLower()}");
                 sb.AppendLine($"MaximumETA = {tracker.MaxETA ?? -1}");
                 sb.AppendLine($"DownloadRateLimit = {tracker.DownloadRateLimit ?? -1}");
                 sb.AppendLine($"UploadRateLimit = {tracker.UploadRateLimit ?? -1}");

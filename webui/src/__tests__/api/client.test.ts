@@ -253,7 +253,7 @@ describe("getMeta", () => {
     server.use(
       http.get("/web/meta", () =>
         HttpResponse.json({
-          current_version: "5.9.2",
+          current_version: "6.1.0",
           latest_version: null,
           update_available: false,
           changelog: null,
@@ -285,7 +285,7 @@ describe("getMeta", () => {
     expect(result.auth_required).toBe(true);
     expect(result.local_auth_enabled).toBe(true);
     expect(result.oidc_enabled).toBe(false);
-    expect(result.current_version).toBe("5.9.2");
+    expect(result.current_version).toBe("6.1.0");
     expect(result.update_available).toBe(false);
   });
 
@@ -293,7 +293,7 @@ describe("getMeta", () => {
     server.use(
       http.get("/web/meta", () =>
         HttpResponse.json({
-          current_version: "5.9.2",
+          current_version: "6.1.0",
           latest_version: null,
           update_available: false,
           changelog: null,
@@ -330,7 +330,7 @@ describe("getMeta", () => {
     server.use(
       http.get("/web/meta", () =>
         HttpResponse.json({
-          current_version: "5.9.2",
+          current_version: "6.1.0",
           latest_version: null,
           update_available: false,
           changelog: null,

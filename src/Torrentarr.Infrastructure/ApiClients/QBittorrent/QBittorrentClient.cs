@@ -81,15 +81,17 @@ public class QBittorrentClient
     /// <summary>
     /// Get all torrents
     /// </summary>
-    public async Task<List<TorrentInfo>> GetTorrentsAsync(string? category = null, CancellationToken ct = default)
+    public async Task<List<TorrentInfo>> GetTorrentsAsync(string? category = null, string? sort = null, CancellationToken cancellationToken = default)
     {
         var request = new RestRequest("/api/v2/torrents/info", Method.Get);
         AddAuthCookie(request);
 
         if (!string.IsNullOrEmpty(category))
             request.AddQueryParameter("category", category);
+        if (!string.IsNullOrEmpty(sort))
+            request.AddQueryParameter("sort", sort);
 
-        var response = await _client.ExecuteAsync(request, ct);
+        var response = await _client.ExecuteAsync(request, cancellationToken);
 
         if (response.IsSuccessful && !string.IsNullOrEmpty(response.Content))
         {
@@ -381,6 +383,18 @@ public class QBittorrentClient
         request.AddParameter("hashes", hash);
         request.AddParameter("value", enabled ? "true" : "false");
 
+        var response = await _client.ExecuteAsync(request, ct);
+        return response.IsSuccessful;
+    }
+
+    /// <summary>
+    /// Move a torrent to top priority in qBittorrent queue ordering.
+    /// </summary>
+    public async Task<bool> SetTopPriorityAsync(string hash, CancellationToken ct = default)
+    {
+        var request = new RestRequest("api/v2/torrents/topPrio", Method.Post);
+        AddAuthCookie(request);
+        request.AddParameter("hashes", hash);
         var response = await _client.ExecuteAsync(request, ct);
         return response.IsSuccessful;
     }

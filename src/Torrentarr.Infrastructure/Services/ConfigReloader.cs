@@ -22,25 +22,8 @@ public class ConfigReloader : IConfigReloader, IDisposable
         _logger = logger;
         _loader = new ConfigurationLoader();
 
-        var configPath = Environment.GetEnvironmentVariable("TORRENTARR_CONFIG");
-        if (!string.IsNullOrEmpty(configPath) && File.Exists(configPath))
-        {
-            ConfigPath = configPath;
-        }
-        else
-        {
-            var homePath = Environment.GetFolderPath(Environment.SpecialFolder.UserProfile);
-            var possiblePaths = new[]
-            {
-                Path.Combine(homePath, "config", "config.toml"),
-                Path.Combine(homePath, ".config", "qbitrr", "config.toml"),
-                Path.Combine(homePath, ".config", "torrentarr", "config.toml"),
-                Path.Combine(".", "config.toml"),
-                Path.Combine(".", "config", "config.toml")
-            };
-
-            ConfigPath = possiblePaths.FirstOrDefault(File.Exists) ?? possiblePaths[0];
-        }
+        // Same resolution as ConfigurationLoader / GetDataDirectoryPath (watch the file we load)
+        ConfigPath = ConfigurationLoader.GetDefaultConfigPath();
 
         var directory = Path.GetDirectoryName(ConfigPath);
         var fileName = Path.GetFileName(ConfigPath);

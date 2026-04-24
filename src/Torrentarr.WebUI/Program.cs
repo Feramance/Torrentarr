@@ -15,11 +15,8 @@ using Serilog.Events;
 using System.Security.Claims;
 using System.Security.Cryptography;
 
-// Calculate base paths - use /config for Docker, or config/ relative to cwd for local
-var configEnv = Environment.GetEnvironmentVariable("TORRENTARR_CONFIG");
-var basePath = !string.IsNullOrEmpty(configEnv) && configEnv.StartsWith("/config")
-    ? "/config"
-    : Path.Combine(Directory.GetCurrentDirectory(), "config");
+// Data directory: aligned with resolved config path (see ConfigurationLoader.GetDataDirectoryPath)
+var basePath = ConfigurationLoader.GetDataDirectoryPath();
 var logsPath = Path.Combine(basePath, "logs");
 var dbPath = Path.Combine(basePath, "torrentarr.db");
 Directory.CreateDirectory(basePath);
@@ -127,6 +124,11 @@ catch (FileNotFoundException)
 {
     Log.Warning("Configuration file not found, using defaults");
     configForDI = new TorrentarrConfig();
+}
+catch (Exception ex)
+{
+    Log.Fatal(ex, "Failed to load configuration");
+    Environment.Exit(1);
 }
 if (string.IsNullOrEmpty(configForDI.WebUI.Token))
 {

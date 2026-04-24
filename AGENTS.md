@@ -2,6 +2,8 @@
 
 **Torrentarr** is a C# port of [qBitrr](https://github.com/Feramance/qBitrr) (Python). It automates qBittorrent torrent management with integration to Radarr, Sonarr, and Lidarr — handling Hit & Run protection, free space management, quality upgrades, and import triggering. Same `config.toml` format and SQLite schema as qBitrr; database file is `torrentarr.db` (not `qbitrr.db`). Goal: feature parity with better performance and process isolation.
 
+**Release numbering:** Torrentarr **intentionally uses a major version one ahead of qBitrr’s** (e.g. qBitrr **5**.x → Torrentarr **6**.x). Minor and patch versions are independent on each side; the +1 major rule keeps the two products clearly distinct while configs stay compatible.
+
 ## Build & Run Commands
 
 ### .NET Backend
@@ -120,12 +122,15 @@ SQLite (`torrentarr.db`, same schema as qBitrr for compatibility). Uses EF Core 
 
 ### Configuration
 
-`config.toml` is 100% compatible with qBitrr's format. Search order:
+`config.toml` is 100% compatible with qBitrr's format. Search order (first existing file wins; if none exist, a new default is created at the first path):
 1. `TORRENTARR_CONFIG` environment variable (takes priority — used for tests and Docker)
-2. `~/config/config.toml`
-3. `~/.config/qbitrr/config.toml`
-4. `~/.config/torrentarr/config.toml`
-5. `./config.toml`
+2. `./.config/config.toml` (under the process current working directory — typical first-run layout for `dotnet run`)
+3. `~/config/config.toml`
+4. `~/.config/qbitrr/config.toml`
+5. `~/.config/torrentarr/config.toml`
+6. `./config.toml`
+
+**Data directory:** `torrentarr.db` and process log directories (`logs/` under the same root) are determined by `ConfigurationLoader.GetDataDirectoryPath()`: the directory containing the resolved `config.toml`, except when `TORRENTARR_CONFIG` points at a path under `/config` (typical Docker layout), in which case the data directory is `/config`. If you previously ran with `config.toml` in an XDG-style path but the database under `./config` next to the working directory, move `torrentarr.db` and `logs` into the directory that now matches your resolved config path once.
 
 Key config sections: `[Settings]`, `[WebUI]`, `[qBit]`, `[qBit.CategorySeeding]`, `[Radarr-*]`, `[Sonarr-*]`, `[Lidarr-*]`. Both Arr instances and qBittorrent instances are uniform dictionaries — `[Radarr-4K]` and `[qBit-seedbox]` follow the same pattern. `[qBit]` is the conventional name for the primary qBit instance but carries no special status in code; all qBit instances are equal.
 
@@ -135,18 +140,18 @@ Key config sections: `[Settings]`, `[WebUI]`, `[qBit]`, `[qBit.CategorySeeding]`
 
 **Cross-instance free space:** `FreeSpaceService` iterates ALL configured qBit instances, gathers torrents from all clients, sorts them globally by `AddedOn` date, and processes the oldest first. `DownloadPath` is checked per-instance for space.
 
-**Config version:** Current format is `5.9.2` (`ConfigurationLoader.ExpectedConfigVersion`). Notable fields: `v5 = true` in `[qBit]` for qBittorrent v5 auth. `HitAndRunMode` is a **string** (`"and"` / `"or"` / `"disabled"`) — not a boolean. Seeding configuration (`HitAndRunMode`, `MinSeedRatio`, `MinSeedingTimeDays`, etc.) lives in `[qBit.CategorySeeding]` per qBit instance — not in `[WebUI]`.
+**Config version:** Current `Settings.ConfigVersion` / `ConfigurationLoader.ExpectedConfigVersion` is **`6.1.0`**. That value is the **Torrentarr** schema id — it follows the **+1 major vs qBitrr** release policy (see **What This Project Is** above), not qBitrr’s raw package version. Notable fields: `v5 = true` in `[qBit]` for qBittorrent v5 auth. `HitAndRunMode` is a **string** (`"and"` / `"or"` / `"disabled"`) — not a boolean. Seeding configuration (`HitAndRunMode`, `MinSeedRatio`, `MinSeedingTimeDays`, etc.) lives in `[qBit.CategorySeeding]` per qBit instance — not in `[WebUI]`.
 
 **TOML serialization rule:** Arrays that may contain regex or file extension patterns (e.g., `FileExtensionAllowlist`) must use single-quoted TOML literal strings (`'\.mkv'`) to avoid invalid escape sequences — Tomlyn enforces strict TOML and rejects `\.` in double-quoted strings.
 
 ## Tests
 
-Three test projects under `tests/`, plus frontend tests in `webui/src/__tests__/`. ~593 total tests (~479 .NET, 114 frontend).
+Three test projects under `tests/`, plus frontend tests in `webui/src/__tests__/`. ~597 total tests (~483 .NET, 114 frontend).
 
 | Project | Tests | Coverage |
 | --- | --- | --- |
-| `tests/Torrentarr.Core.Tests` | 50 | Config parsing, model defaults — pure unit, no mocks |
-| `tests/Torrentarr.Infrastructure.Tests` | 305 | Services (unit + mocked), API clients (live, gated) |
+| `tests/Torrentarr.Core.Tests` | 53 | Config parsing, model defaults — pure unit, no mocks |
+| `tests/Torrentarr.Infrastructure.Tests` | 306 | Services (unit + mocked), API clients (live, gated) |
 | `tests/Torrentarr.Host.Tests` | 124 | API endpoint integration tests via `WebApplicationFactory<Program>`; `MatchesCron` unit tests |
 | `webui/src/__tests__/` | 114 | API client deserialization, page rendering, components (Vitest + MSW) |
 

@@ -358,7 +358,7 @@ Restart specific Arr instance process(es).
 **Path Parameters**:
 
 - `category` (string, required) - Arr instance category (e.g., `radarr-4k`)
-- `kind` (string, required) - Process type: `search`, `torrent`, or `all`
+- `kind` (string, required) - Process type hint: `search`, `torrent`, `category`, or `arr`
 
 **Request**: No body required
 
@@ -973,8 +973,8 @@ Fetch current configuration from disk.
   "config": { ... },
   "warning": {
     "type": "config_version_mismatch",
-    "message": "Config version 1 is outdated (current: 2)",
-    "currentVersion": 1
+    "message": "Config version mismatch: found 5.8.8, expected 6.1.0.",
+    "currentVersion": "5.8.8"
   }
 }
 ```

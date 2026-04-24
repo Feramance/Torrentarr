@@ -17,11 +17,8 @@ using Serilog.Events;
 using System.Security.Claims;
 using System.Security.Cryptography;
 
-// Calculate base paths - use /config for Docker, or config/ relative to cwd for local
-var configEnv = Environment.GetEnvironmentVariable("TORRENTARR_CONFIG");
-var basePath = !string.IsNullOrEmpty(configEnv) && configEnv.StartsWith("/config")
-    ? "/config"
-    : Path.Combine(Directory.GetCurrentDirectory(), "config");
+// Data directory: aligned with resolved config path (see ConfigurationLoader.GetDataDirectoryPath)
+var basePath = ConfigurationLoader.GetDataDirectoryPath();
 var logsPath = Path.Combine(basePath, "logs");
 var dbPath = Path.Combine(basePath, "torrentarr.db");
 Directory.CreateDirectory(basePath);
@@ -274,6 +271,19 @@ try
     });
 
     var app = builder.Build();
+
+    // First-run hint: Host wwwroot is build output; API still works without the SPA bundle.
+    var webRoot = app.Environment.WebRootPath;
+    if (!string.IsNullOrEmpty(webRoot))
+    {
+        var indexFile = Path.Combine(webRoot, "index.html");
+        if (!File.Exists(indexFile))
+        {
+            Log.Warning(
+                "Web UI bundle not found at {Index}. Run ./build.sh or build webui and publish to wwwroot for the full SPA. API and Swagger (/swagger) are still available.",
+                indexFile);
+        }
+    }
 
     // --version / -v: print version and exit (qBitrr parity)
     if (cmdArgs.Count == 1 && (firstArg == "--version" || firstArg == "-v"))
@@ -705,7 +715,7 @@ try
 
                     if (client != null)
                     {
-                        var torrents = await client.GetTorrentsAsync(ct: CancellationToken.None);
+                        var torrents = await client.GetTorrentsAsync(cancellationToken: CancellationToken.None);
                         if (torrents != null)
                         {
                             totalCount = torrents.Count;
@@ -1353,6 +1363,7 @@ try
             cfg.WebUI = updatedConfig.WebUI;
             cfg.ArrInstances = updatedConfig.ArrInstances;
             cfg.QBitInstances = updatedConfig.QBitInstances;
+            TorrentPolicyHelper.InvalidateMonitoredPolicyCategoriesCache(cfg);
             return Results.Ok(new
             {
                 status = "ok",
@@ -2188,6 +2199,7 @@ try
             cfg.WebUI = updatedConfig.WebUI;
             cfg.ArrInstances = updatedConfig.ArrInstances;
             cfg.QBitInstances = updatedConfig.QBitInstances;
+            TorrentPolicyHelper.InvalidateMonitoredPolicyCategoriesCache(cfg);
             return Results.Ok(new
             {
                 status = "ok",
@@ -2297,6 +2309,40 @@ static void ApplyManualMigrations(TorrentarrDbContext db)
 
     // §5: Search activity table for Processes page (qBitrr parity)
     CreateTableIfMissing(db, "searchactivity", "CREATE TABLE IF NOT EXISTS searchactivity ( category TEXT NOT NULL PRIMARY KEY, summary TEXT, timestamp TEXT );");
+
+    // qBitrr parity: one-time cleanup of legacy rows with blank ArrInstance (not every startup: avoids repeat DELETE I/O
+    // and preserves operator-visible bad data if a bug reintroduces blank keys).
+    CreateTableIfMissing(
+        db,
+        "torrentarr_manual_migrations",
+        "CREATE TABLE IF NOT EXISTS torrentarr_manual_migrations ( name TEXT NOT NULL PRIMARY KEY );");
+    const string emptyArrInstanceCleanup = "empty_arrinstance_row_cleanup_v1";
+    if (!IsManualMigrationApplied(db, emptyArrInstanceCleanup))
+    {
+        DeleteRowsWithEmptyArrInstance(db, "moviesfilesmodel");
+        DeleteRowsWithEmptyArrInstance(db, "episodefilesmodel");
+        DeleteRowsWithEmptyArrInstance(db, "seriesfilesmodel");
+        DeleteRowsWithEmptyArrInstance(db, "albumfilesmodel");
+        DeleteRowsWithEmptyArrInstance(db, "artistfilesmodel");
+        DeleteRowsWithEmptyArrInstance(db, "trackfilesmodel");
+        DeleteRowsWithEmptyArrInstance(db, "moviequeuemodel");
+        DeleteRowsWithEmptyArrInstance(db, "episodequeuemodel");
+        DeleteRowsWithEmptyArrInstance(db, "albumqueuemodel");
+        DeleteRowsWithEmptyArrInstance(db, "filesqueued");
+        MarkManualMigrationApplied(db, emptyArrInstanceCleanup);
+    }
+
+    // qBitrr parity: ensure ArrInstance indexes exist even on upgraded DBs.
+    CreateIndexIfMissing(db, "idx_arrinstance_movies", "moviesfilesmodel", "arrinstance");
+    CreateIndexIfMissing(db, "idx_arrinstance_episodes", "episodefilesmodel", "arrinstance");
+    CreateIndexIfMissing(db, "idx_arrinstance_series", "seriesfilesmodel", "arrinstance");
+    CreateIndexIfMissing(db, "idx_arrinstance_albums", "albumfilesmodel", "arrinstance");
+    CreateIndexIfMissing(db, "idx_arrinstance_artists", "artistfilesmodel", "arrinstance");
+    CreateIndexIfMissing(db, "idx_arrinstance_tracks", "trackfilesmodel", "arrinstance");
+    CreateIndexIfMissing(db, "idx_arrinstance_moviequeue", "moviequeuemodel", "arrinstance");
+    CreateIndexIfMissing(db, "idx_arrinstance_episodequeue", "episodequeuemodel", "arrinstance");
+    CreateIndexIfMissing(db, "idx_arrinstance_albumqueue", "albumqueuemodel", "arrinstance");
+    CreateIndexIfMissing(db, "idx_arrinstance_filesqueued", "filesqueued", "arrinstance");
 }
 
 static void CreateTableIfMissing(TorrentarrDbContext db, string tableName, string createSql)
@@ -2346,6 +2392,92 @@ static void AddColumnIfMissing(TorrentarrDbContext db, string table, string colu
             using var alter = conn.CreateCommand();
             alter.CommandText = $"ALTER TABLE {table} ADD COLUMN {column} {columnDef};";
             alter.ExecuteNonQuery();
+        }
+    }
+    finally
+    {
+        if (!wasOpen) conn.Close();
+    }
+}
+
+static void DeleteRowsWithEmptyArrInstance(TorrentarrDbContext db, string table)
+{
+    var conn = db.Database.GetDbConnection();
+    var wasOpen = conn.State == System.Data.ConnectionState.Open;
+    if (!wasOpen) conn.Open();
+    try
+    {
+        using var cmd = conn.CreateCommand();
+        cmd.CommandText = $"DELETE FROM {table} WHERE arrinstance IS NULL OR TRIM(arrinstance)='';";
+        cmd.ExecuteNonQuery();
+    }
+    finally
+    {
+        if (!wasOpen) conn.Close();
+    }
+}
+
+static bool IsManualMigrationApplied(TorrentarrDbContext db, string name)
+{
+    var conn = db.Database.GetDbConnection();
+    var wasOpen = conn.State == System.Data.ConnectionState.Open;
+    if (!wasOpen) conn.Open();
+    try
+    {
+        using var cmd = conn.CreateCommand();
+        cmd.CommandText = "SELECT 1 FROM torrentarr_manual_migrations WHERE name = @name LIMIT 1;";
+        var p = cmd.CreateParameter();
+        p.ParameterName = "@name";
+        p.Value = name;
+        cmd.Parameters.Add(p);
+        return cmd.ExecuteScalar() != null;
+    }
+    finally
+    {
+        if (!wasOpen) conn.Close();
+    }
+}
+
+static void MarkManualMigrationApplied(TorrentarrDbContext db, string name)
+{
+    var conn = db.Database.GetDbConnection();
+    var wasOpen = conn.State == System.Data.ConnectionState.Open;
+    if (!wasOpen) conn.Open();
+    try
+    {
+        using var cmd = conn.CreateCommand();
+        cmd.CommandText = "INSERT INTO torrentarr_manual_migrations (name) VALUES (@name);";
+        var p = cmd.CreateParameter();
+        p.ParameterName = "@name";
+        p.Value = name;
+        cmd.Parameters.Add(p);
+        cmd.ExecuteNonQuery();
+    }
+    finally
+    {
+        if (!wasOpen) conn.Close();
+    }
+}
+
+static void CreateIndexIfMissing(TorrentarrDbContext db, string indexName, string table, string column)
+{
+    var conn = db.Database.GetDbConnection();
+    var wasOpen = conn.State == System.Data.ConnectionState.Open;
+    if (!wasOpen) conn.Open();
+    try
+    {
+        using var cmd = conn.CreateCommand();
+        cmd.CommandText = "SELECT name FROM sqlite_master WHERE type='index' AND name=@name;";
+        var p = cmd.CreateParameter();
+        p.ParameterName = "@name";
+        p.Value = indexName;
+        cmd.Parameters.Add(p);
+        var exists = cmd.ExecuteScalar() != null;
+        if (!exists)
+        {
+            using var create = conn.CreateCommand();
+            create.CommandText = $"CREATE INDEX {indexName} ON {table}({column});";
+            create.ExecuteNonQuery();
         }
     }
     finally
@@ -2642,7 +2774,6 @@ class ProcessOrchestratorService : BackgroundService
     private readonly QBittorrentConnectionManager _qbitManager;
     private readonly IServiceScopeFactory _scopeFactory;
     private readonly ProcessStateManager _stateManager;
-    private readonly HashSet<string> _managedCategories;
     private long _currentFreeSpace;
     private long _minFreeSpaceBytes;
     private string? _freeSpaceFolder;
@@ -2661,7 +2792,6 @@ class ProcessOrchestratorService : BackgroundService
         _qbitManager = qbitManager;
         _scopeFactory = scopeFactory;
         _stateManager = stateManager;
-        _managedCategories = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
         // §8: Respect Settings.FreeSpace string ("-1" = disabled, "10G"/"500M" = threshold)
         var freeSpaceBytes = ParseFreeSpaceString(_config.Settings.FreeSpace);
         if (freeSpaceBytes < 0)
@@ -2721,22 +2851,9 @@ class ProcessOrchestratorService : BackgroundService
                 }
             }
 
-            // Get ALL categories from ALL Arr instances (not just managed ones) - matches qBitrr behavior
-            foreach (var arrInstance in _config.ArrInstances.Where(x => !string.IsNullOrEmpty(x.Value.Category)))
-                _managedCategories.Add(arrInstance.Value.Category!);
-
-            // Also add qBit-managed categories from all qBit instances
-            foreach (var qbit in _config.QBitInstances.Values)
-            {
-                if (qbit.ManagedCategories != null)
-                {
-                    foreach (var cat in qbit.ManagedCategories)
-                        _managedCategories.Add(cat);
-                }
-            }
-
-            if (_managedCategories.Count > 0)
-                _logger.LogInformation("FreeSpace categories: {Categories}", string.Join(", ", _managedCategories));
+            var initialManaged = TorrentPolicyHelper.GetAllMonitoredPolicyCategories(_config);
+            if (initialManaged.Count > 0)
+                _logger.LogInformation("FreeSpace categories: {Categories}", string.Join(", ", initialManaged));
 
             _freeSpaceFolder = GetFreeSpaceFolder();
 
@@ -2778,8 +2895,12 @@ class ProcessOrchestratorService : BackgroundService
                     {
                         await ProcessSpecialCategoriesAsync(stoppingToken);
 
-                        if (_config.Settings.AutoPauseResume && _freeSpaceEnabled && _minFreeSpaceBytes > 0)
-                            await ProcessFreeSpaceManagerAsync(stoppingToken);
+                        var freeSpaceGuardActive = _freeSpaceEnabled && _minFreeSpaceBytes > 0;
+                        var enableTrackerSort = TorrentPolicyHelper.EnableTrackerSort(_config);
+                        var enableFreeSpace = TorrentPolicyHelper.EnableFreeSpace(_config, freeSpaceGuardActive);
+                        var managedCategories = TorrentPolicyHelper.GetAllMonitoredPolicyCategories(_config);
+                        if (managedCategories.Count > 0 && (enableTrackerSort || enableFreeSpace))
+                            await ProcessTorrentPolicyAsync(managedCategories, enableTrackerSort, enableFreeSpace, stoppingToken);
                     }
                 }
                 catch (Exception ex)
@@ -2829,7 +2950,7 @@ class ProcessOrchestratorService : BackgroundService
         {
             try
             {
-                var failedTorrents = await client.GetTorrentsAsync(_config.Settings.FailedCategory, cancellationToken);
+                var failedTorrents = await client.GetTorrentsAsync(_config.Settings.FailedCategory, cancellationToken: cancellationToken);
                 totalFailed += failedTorrents.Count;
                 foreach (var torrent in failedTorrents)
                 {
@@ -2850,7 +2971,7 @@ class ProcessOrchestratorService : BackgroundService
                     await client.DeleteTorrentsAsync(new List<string> { torrent.Hash }, deleteFiles: true, cancellationToken);
                 }
 
-                var recheckTorrents = await client.GetTorrentsAsync(_config.Settings.RecheckCategory, cancellationToken);
+                var recheckTorrents = await client.GetTorrentsAsync(_config.Settings.RecheckCategory, cancellationToken: cancellationToken);
                 totalRecheck += recheckTorrents.Count;
                 foreach (var torrent in recheckTorrents)
                 {
@@ -2880,7 +3001,83 @@ class ProcessOrchestratorService : BackgroundService
         _stateManager.Update("Recheck", s => { s.CategoryCount = totalRecheck; s.Alive = true; });
     }
 
-    private async Task ProcessFreeSpaceManagerAsync(CancellationToken cancellationToken)
+    /// <summary>
+    /// qBitrr <c>TorrentPolicyManager.process_torrents</c>: optional pre-sort sync + queue sort, then optional free-space.
+    /// </summary>
+    private async Task ProcessTorrentPolicyAsync(
+        HashSet<string> managedCategories,
+        bool enableTrackerSort,
+        bool enableFreeSpace,
+        CancellationToken cancellationToken)
+    {
+        IServiceScope? policyScope = null;
+        try
+        {
+            ISeedingService? seeding = null;
+            if (enableTrackerSort)
+            {
+                policyScope = _scopeFactory.CreateScope();
+                seeding = policyScope.ServiceProvider.GetRequiredService<ISeedingService>();
+            }
+
+            if (enableTrackerSort && seeding != null)
+            {
+                _logger.LogDebug(
+                    "TorrentPolicyManager workflow: pre-sort tracker/tag sync -> queue sort{Tail}",
+                    enableFreeSpace ? " -> free-space" : "");
+                await PreSortTrackerTagSyncAsync(seeding, managedCategories, cancellationToken);
+                await SortManagedTorrentsByTrackerPriorityAsync(seeding, managedCategories, cancellationToken);
+            }
+            else if (enableFreeSpace)
+            {
+                _logger.LogDebug(
+                    "TorrentPolicyManager tracker sorting disabled: Arr loops retain tracker/tag sync ownership");
+            }
+
+            if (enableFreeSpace)
+                await ProcessFreeSpaceManagerAsync(managedCategories, cancellationToken);
+        }
+        finally
+        {
+            policyScope?.Dispose();
+        }
+    }
+
+    /// <summary>
+    /// qBitrr <c>TorrentPolicyManager._sync_tracker_tags_before_sort</c>.
+    /// </summary>
+    private async Task PreSortTrackerTagSyncAsync(
+        ISeedingService seeding,
+        HashSet<string> managedCategories,
+        CancellationToken cancellationToken)
+    {
+        foreach (var (instanceName, client) in _qbitManager.GetAllClients())
+        {
+            foreach (var category in managedCategories)
+            {
+                List<TorrentInfo> torrents;
+                try
+                {
+                    torrents = await client.GetTorrentsAsync(category, cancellationToken: cancellationToken);
+                }
+                catch (Exception ex)
+                {
+                    _logger.LogDebug(ex, "[{Instance}] Pre-sort sync: skip category {Category}", instanceName, category);
+                    continue;
+                }
+
+                foreach (var t in torrents)
+                {
+                    if (t.Tags.Contains("qBitrr-ignored", StringComparison.OrdinalIgnoreCase))
+                        continue;
+                    t.QBitInstanceName = instanceName;
+                    await seeding.ApplyTrackerActionsForTorrentAsync(t, cancellationToken);
+                }
+            }
+        }
+    }
+
+    private async Task ProcessFreeSpaceManagerAsync(HashSet<string> managedCategories, CancellationToken cancellationToken)
     {
         _logger.LogInformation("FreeSpace: Starting FreeSpace manager check");
 
@@ -2910,13 +3107,13 @@ class ProcessOrchestratorService : BackgroundService
             var driveInfo = new DriveInfo(_freeSpaceFolder);
             _currentFreeSpace = driveInfo.AvailableFreeSpace - _minFreeSpaceBytes;
 
-            // Gather torrents from ALL qBit instances across all managed categories, sorted by added date
+            // Gather torrents from ALL qBit instances across all managed categories.
             var allTorrents = new List<(QBittorrentClient client, TorrentInfo torrent)>();
             foreach (var (_, client) in _qbitManager.GetAllClients())
             {
-                foreach (var category in _managedCategories)
+                foreach (var category in managedCategories)
                 {
-                    var torrents = await client.GetTorrentsAsync(category, cancellationToken);
+                    var torrents = await client.GetTorrentsAsync(category, "priority", cancellationToken);
                     allTorrents.AddRange(torrents.Select(t => (client, t)));
                 }
             }
@@ -2928,7 +3125,12 @@ class ProcessOrchestratorService : BackgroundService
                 pausedCountRef = new int[] { pausedCount };
             }
 
-            foreach (var (client, torrent) in allTorrents.OrderBy(x => x.torrent.AddedOn))
+            foreach (var (client, torrent) in allTorrents
+                .Select(x => (x.client, x.torrent, key: TorrentPolicyHelper.TorrentQueuePositionSortKey(x.torrent)))
+                .OrderBy(x => x.key.InactiveQueueGroup)
+                .ThenBy(x => x.key.Nq)
+                .ThenBy(x => x.torrent.AddedOn)
+                .Select(x => (x.client, x.torrent)))
                 await ProcessSingleTorrentSpaceAsync(client, torrent, dbContext, pausedCountRef, cancellationToken);
 
             if (_config.Settings.Tagless && dbContext != null)
@@ -2950,6 +3152,100 @@ class ProcessOrchestratorService : BackgroundService
         finally
         {
             scope?.Dispose();
+        }
+    }
+
+    /// <summary>
+    /// qBitrr <c>Arr._sort_torrents_by_tracker_priority</c> when <c>categories</c> is set (TorrentPolicyManager).
+    /// </summary>
+    private async Task SortManagedTorrentsByTrackerPriorityAsync(
+        ISeedingService seeding,
+        HashSet<string> managedCategories,
+        CancellationToken cancellationToken)
+    {
+        var tagToPriority = TorrentPolicyHelper.MergeGlobalTrackerTagToPriorityMax(_config);
+        foreach (var (instanceName, client) in _qbitManager.GetAllClients())
+        {
+            try
+            {
+                List<TorrentInfo> torrentList;
+                try
+                {
+                    torrentList = await client.GetTorrentsAsync(category: null, "priority", cancellationToken);
+                }
+                catch (Exception ex)
+                {
+                    _logger.LogDebug(ex, "[{Instance}] SortTorrents: falling back to added_on sort", instanceName);
+                    torrentList = await client.GetTorrentsAsync(category: null, "added_on", cancellationToken);
+                }
+
+                torrentList = torrentList
+                    .Where(t => !string.IsNullOrEmpty(t.Category) && managedCategories.Contains(t.Category))
+                    .ToList();
+                foreach (var t in torrentList)
+                    t.QBitInstanceName = instanceName;
+
+                if (torrentList.Count <= 1)
+                    continue;
+
+                var sortPriorities = new Dictionary<string, int>(StringComparer.OrdinalIgnoreCase);
+                foreach (var t in torrentList)
+                {
+                    sortPriorities[t.Hash] = await seeding.GetTorrentQueueSortPriorityAsync(t, tagToPriority, cancellationToken);
+                }
+
+                var sortedTorrents = torrentList
+                    .OrderBy(t => -sortPriorities.GetValueOrDefault(t.Hash, -100))
+                    .ThenBy(t => -t.AddedOn)
+                    .ThenBy(t => t.Name ?? "", StringComparer.OrdinalIgnoreCase)
+                    .ThenBy(t => t.Hash ?? "", StringComparer.OrdinalIgnoreCase)
+                    .ToList();
+
+                var queueMembership = torrentList.ToDictionary(
+                    t => t.Hash,
+                    t => TorrentPolicyHelper.IsQueueSeedingForSort(t.State),
+                    StringComparer.OrdinalIgnoreCase);
+
+                var currentByPosition = torrentList
+                    .Select(t => (t, key: TorrentPolicyHelper.TorrentQueuePositionSortKey(t)))
+                    .OrderBy(x => x.key.InactiveQueueGroup)
+                    .ThenBy(x => x.key.Nq)
+                    .Select(x => x.t)
+                    .ToList();
+
+                var currentDownloadingOrder = currentByPosition
+                    .Where(t => !queueMembership.GetValueOrDefault(t.Hash))
+                    .Select(t => t.Hash)
+                    .ToList();
+                var currentSeedingOrder = currentByPosition
+                    .Where(t => queueMembership.GetValueOrDefault(t.Hash))
+                    .Select(t => t.Hash)
+                    .ToList();
+
+                var desiredDownloadingOrder = sortedTorrents
+                    .Where(t => !queueMembership.GetValueOrDefault(t.Hash))
+                    .Select(t => t.Hash)
+                    .ToList();
+                var desiredSeedingOrder = sortedTorrents
+                    .Where(t => queueMembership.GetValueOrDefault(t.Hash))
+                    .Select(t => t.Hash)
+                    .ToList();
+
+                if (currentDownloadingOrder.SequenceEqual(desiredDownloadingOrder)
+                    && currentSeedingOrder.SequenceEqual(desiredSeedingOrder))
+                    continue;
+
+                foreach (var queueIsSeeding in new[] { true, false })
+                {
+                    var queueTorrents = sortedTorrents.Where(t => queueMembership.GetValueOrDefault(t.Hash) == queueIsSeeding).ToList();
+                    foreach (var torrent in queueTorrents.AsEnumerable().Reverse())
+                        await client.SetTopPriorityAsync(torrent.Hash, cancellationToken);
+                }
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "[{Instance}] SortTorrents policy step failed", instanceName);
+            }
         }
     }
 

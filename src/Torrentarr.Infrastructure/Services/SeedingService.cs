@@ -142,7 +142,7 @@ public class SeedingService : ISeedingService
         TorrentInfo? torrent = null;
         foreach (var (instanceName, client) in _qbitManager.GetAllClients())
         {
-            var torrents = await client.GetTorrentsAsync(ct: cancellationToken);
+            var torrents = await client.GetTorrentsAsync(cancellationToken: cancellationToken);
             var found = torrents.FirstOrDefault(t => t.Hash.Equals(hash, StringComparison.OrdinalIgnoreCase));
             if (found != null)
             {
@@ -217,7 +217,7 @@ public class SeedingService : ISeedingService
             TorrentInfo? torrent = null;
             foreach (var (instanceName, client) in _qbitManager.GetAllClients())
             {
-                var torrents = await client.GetTorrentsAsync(ct: cancellationToken);
+                var torrents = await client.GetTorrentsAsync(cancellationToken: cancellationToken);
                 var found = torrents.FirstOrDefault(t => t.Hash.Equals(hash, StringComparison.OrdinalIgnoreCase));
                 if (found != null) { found.QBitInstanceName = instanceName; torrent = found; break; }
             }
@@ -658,7 +658,7 @@ public class SeedingService : ISeedingService
         var completedByInstance = new List<(string instanceName, QBittorrentClient client, TorrentInfo torrent)>();
         foreach (var (instanceName, client) in allClients)
         {
-            var torrents = await client.GetTorrentsAsync(category, cancellationToken);
+            var torrents = await client.GetTorrentsAsync(category, cancellationToken: cancellationToken);
             foreach (var t in torrents)
             {
                 if (t.State.Contains("up", StringComparison.OrdinalIgnoreCase) ||
@@ -728,7 +728,7 @@ public class SeedingService : ISeedingService
                 if (!_config.Settings.Tagless)
                     await EnsureTagsExistAsync(client, cancellationToken);
 
-                var torrents = await client.GetTorrentsAsync(category, cancellationToken);
+                var torrents = await client.GetTorrentsAsync(category, cancellationToken: cancellationToken);
                 var completedTorrents = torrents.Where(t =>
                     t.Progress >= 1.0 &&
                     !HasTag(t, IgnoredTag) &&
@@ -938,6 +938,54 @@ public class SeedingService : ISeedingService
         {
             _logger.LogError(ex, "Error processing tracker messages for {Hash}", torrent.Hash);
         }
+    }
+
+    /// <inheritdoc />
+    public async Task<int> GetQueueSortAnnouncePriorityAsync(TorrentInfo torrent, CancellationToken cancellationToken = default)
+    {
+        try
+        {
+            var cfg = await GetTrackerConfigAsync(torrent, cancellationToken);
+            return cfg?.Priority ?? -100;
+        }
+        catch (Exception ex)
+        {
+            _logger.LogDebug(ex, "Queue sort announce priority failed for {Hash}", torrent.Hash);
+            return -100;
+        }
+    }
+
+    /// <inheritdoc />
+    public async Task<int> GetTorrentQueueSortPriorityAsync(
+        TorrentInfo torrent,
+        IReadOnlyDictionary<string, int> tagToPriorityMax,
+        CancellationToken cancellationToken = default)
+    {
+        var announcePri = await GetQueueSortAnnouncePriorityAsync(torrent, cancellationToken);
+        if (tagToPriorityMax == null || tagToPriorityMax.Count == 0)
+            return announcePri;
+
+        var present = ParseQBitTagListForQueueSort(torrent.Tags);
+        var matched = new List<int>();
+        foreach (var tag in present)
+        {
+            if (tagToPriorityMax.TryGetValue(tag, out var p))
+                matched.Add(p);
+        }
+
+        if (matched.Count == 0)
+            return announcePri;
+
+        var tagPri = matched.Max();
+        if (tagPri <= -100)
+            return announcePri;
+        return Math.Max(tagPri, announcePri);
+    }
+
+    private static List<string> ParseQBitTagListForQueueSort(string? tags)
+    {
+        if (string.IsNullOrWhiteSpace(tags)) return [];
+        return tags.Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries).ToList();
     }
 
     /// <summary>
