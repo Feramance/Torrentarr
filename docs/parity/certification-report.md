@@ -8,6 +8,8 @@ Primary tracking artifacts:
 
 - `docs/parity/full-parity-matrix.md`
 - `docs/parity/contract-baseline.md`
+- `docs/parity/contributor-reference.md` (upstream pin, test matrices, OpenAPI, internal checklists; **not** for end users)
+- `docs/parity/overview.md` (user-facing qBitrr relationship)
 
 ## Implemented in This Pass
 
@@ -64,3 +66,13 @@ Focused regression checks added:
 
 Use `docs/parity/full-parity-matrix.md` as the final closeout checklist.
 A strict “100% parity” claim is only valid when no rows remain `partial` or `missing`.
+
+## Deep-dive program (this pass)
+
+- Pinned default upstream: **`v5.11.1`** in [contributor-reference.md#upstream-qbitrr-baseline](contributor-reference.md#upstream-qbitrr-baseline) (re-verify commit SHA when rebasing the pin).
+- **Intentional** differences and internal procedures: [contributor-reference.md](contributor-reference.md).
+- **Schema table-name CI harness:** [SchemaParityTests.cs](../../tests/Torrentarr.Infrastructure.Tests/Database/SchemaParityTests.cs).
+- **Targeted repair / release scripts** matrix rows: evidence under [Targeted database repair](contributor-reference.md#targeted-database-repair) and [Support scripts and CI](contributor-reference.md#support-scripts-and-ci).
+- **Web / policy / long-tail** review templates: same file — [Web and API field coverage](contributor-reference.md#web-and-api-field-coverage), [Policy engine test matrix](contributor-reference.md#policy-engine-test-matrix), [Long-tail module mapping](contributor-reference.md#long-tail-module-mapping).
+
+Runtime module rows **remain `partial` overall**; this pass adds evidence links and process docs toward eventual `full` status per row.

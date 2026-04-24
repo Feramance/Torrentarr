@@ -9,6 +9,36 @@ namespace Torrentarr.Core.Tests.Configuration;
 public class TorrentPolicyHelperTests
 {
     [Fact]
+    public void GlobalSortTorrentsEnabled_TrueWhenAnyQBitTrackerHasSort()
+    {
+        var cfg = new TorrentarrConfig();
+        cfg.QBitInstances["qBit"] = new QBitConfig();
+        cfg.QBitInstances["qBit"].Trackers.Add(
+            new TrackerConfig { Uri = "https://example.com/announce", SortTorrents = true });
+        TorrentPolicyHelper.GlobalSortTorrentsEnabled(cfg).Should().BeTrue();
+    }
+
+    [Fact]
+    public void GlobalSortTorrentsEnabled_TrueWhenAnyArrTrackerHasSort()
+    {
+        var cfg = new TorrentarrConfig();
+        cfg.ArrInstances["R"] = new ArrInstanceConfig();
+        cfg.ArrInstances["R"].Torrent.Trackers.Add(
+            new TrackerConfig { Uri = "https://a.com/x", SortTorrents = true });
+        TorrentPolicyHelper.GlobalSortTorrentsEnabled(cfg).Should().BeTrue();
+    }
+
+    [Fact]
+    public void GlobalSortTorrentsEnabled_FalseWhenNoSortTorrents()
+    {
+        var cfg = new TorrentarrConfig();
+        cfg.QBitInstances["qBit"] = new QBitConfig();
+        cfg.QBitInstances["qBit"].Trackers.Add(
+            new TrackerConfig { Uri = "https://example.com/announce", SortTorrents = false });
+        TorrentPolicyHelper.GlobalSortTorrentsEnabled(cfg).Should().BeFalse();
+    }
+
+    [Fact]
     public void EnableTrackerSort_TrueWhenSortTorrents_AndQBitNotDisabled()
     {
         var cfg = new TorrentarrConfig();

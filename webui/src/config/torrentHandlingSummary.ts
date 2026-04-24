@@ -254,14 +254,17 @@ export function getArrTorrentHandlingSummary(
         "day",
         "days",
       );
+      const sortNote = Boolean(t.SortTorrents)
+        ? " **Queue sort** uses this tracker's priority in qBittorrent's download queue when queuing is enabled."
+        : "";
       if (mode === "disabled") {
         blocks.push(
-          `- **${name}** \u2014 HnR is off. The torrent may be removed as soon as the seeding rules above are met.`,
+          `- **${name}** \u2014 HnR is off. The torrent may be removed as soon as the seeding rules above are met.${sortNote}`,
         );
       } else {
         const both = mode === "and" ? "both required" : "either allows removal";
         blocks.push(
-          `- **${name}** \u2014 HnR is on (${both}). The torrent will **not** be removed until it has reached ratio ${ratioStr} and been seeding for ${daysVal} ${daysLabel}. Until then, it is protected from removal even if stalled or if the global seeding limit would allow removal.`,
+          `- **${name}** \u2014 HnR is on (${both}). The torrent will **not** be removed until it has reached ratio ${ratioStr} and been seeding for ${daysVal} ${daysLabel}. Until then, it is protected from removal even if stalled or if the global seeding limit would allow removal.${sortNote}`,
         );
       }
     });
@@ -407,9 +410,12 @@ export function getQbitTorrentHandlingSummary(
         "day",
         "days",
       );
+      const sortNote = Boolean(t.SortTorrents)
+        ? " **Queue sort** uses this tracker's priority in qBittorrent's download queue when queuing is enabled."
+        : "";
       if (mode === "disabled") {
         blocks.push(
-          `- **${name}** \u2014 HnR is off. The torrent may be removed as soon as the seeding rules above are met (e.g. after max time or when max ratio is reached).`,
+          `- **${name}** \u2014 HnR is off. The torrent may be removed as soon as the seeding rules above are met (e.g. after max time or when max ratio is reached).${sortNote}`,
         );
       } else {
         const both = mode === "and" ? "both required" : "either allows removal";
@@ -418,7 +424,7 @@ export function getQbitTorrentHandlingSummary(
             ? `until it has reached ratio ${ratioStr} and been seeding for ${daysVal} ${daysLabel}`
             : `until it has reached ratio ${ratioStr} or been seeding for ${daysVal} ${daysLabel}`;
         blocks.push(
-          `- **${name}** \u2014 HnR is on (${both}). The torrent will **not** be removed ${until}. Until then, it is protected from removal even if stalled or if the global seeding time would allow removal.`,
+          `- **${name}** \u2014 HnR is on (${both}). The torrent will **not** be removed ${until}. Until then, it is protected from removal even if stalled or if the global seeding time would allow removal.${sortNote}`,
         );
       }
     });

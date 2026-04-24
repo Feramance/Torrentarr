@@ -345,6 +345,8 @@ Optimize for private tracker requirements:
 
 **Latest Release**: v6.1.0 (March 2026)
 
+Torrentarr’s **major** version is **intentionally one ahead of [qBitrr](https://github.com/Feramance/qBitrr)’s** (e.g. qBitrr 5.x ↔ Torrentarr 6.x); minor and patch numbers move independently. That rule keeps the two products unambiguous while sharing `config.toml` compatibility. For the short user-facing story, see [qBitrr and Torrentarr (overview)](parity/overview.md). Contributors: [parity matrix](parity/full-parity-matrix.md) and [contributor reference](parity/contributor-reference.md).
+
 - ✅ Production ready
 - ✅ Active development
 - ✅ Regular updates
@@ -352,7 +354,7 @@ Optimize for private tracker requirements:
 
 ### Recent Updates
 
-- **v6.0.0** - First stable release; complete qBitrr parity, state-machine rewrite, WebUI auth (local + OIDC), auto-update
+- **v6.0.0** - First stable release; major alignment with qBitrr (state machine, `config.toml`), WebUI auth (local + OIDC), auto-update — implementation parity is a [maintainer checklist](parity/contributor-reference.md), not a simple “done” for every upstream module
 - **v5.9.1** - Initial C# port with React WebUI, multi-qBit support, and process-isolated architecture
 
 [**Full Changelog →**](changelog.md)

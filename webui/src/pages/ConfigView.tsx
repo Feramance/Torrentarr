@@ -1304,6 +1304,11 @@ const ARR_TRACKER_FIELDS: FieldDefinition[] = [
       return undefined;
     },
   },
+  {
+    label: "Sort torrents (queue priority)",
+    path: ["SortTorrents"],
+    type: "checkbox",
+  },
 ];
 
 function getArrFieldSets(arrKey: string) {

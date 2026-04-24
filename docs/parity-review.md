@@ -1,10 +1,5 @@
-# qBitrr Parity Review (Superseded)
+# qBitrr parity review (superseded)
 
-This legacy document is retained for historical context only.
+**Users:** read [qBitrr and Torrentarr (overview)](parity/overview.md).
 
-The active strict-parity work now tracks against:
-
-- `docs/parity/full-parity-matrix.md`
-- `docs/parity/contract-baseline.md`
-
-Use those documents as the source of truth for current parity status and implementation sequencing.
+**Contributors:** use [full-parity-matrix.md](parity/full-parity-matrix.md) and [contributor-reference.md](parity/contributor-reference.md). This file is a legacy pointer only.

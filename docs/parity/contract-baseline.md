@@ -2,6 +2,8 @@
 
 This document defines the contract baselines Torrentarr must match to claim strict full parity with upstream qBitrr master.
 
+**Intentional product differences** and **pinned upstream** ref for maintainers: [contributor-reference.md](contributor-reference.md) (end users: [overview.md](overview.md)).
+
 ## 1) Configuration Contract Baseline
 
 Authoritative upstream sources (upstream qBitrr repository paths):
@@ -81,6 +83,8 @@ Torrentarr implementation surface:
 - `webui/src`
 - `docs/assets/openapi.json`
 
+Periodic drift check vs upstream: [OpenAPI alignment](contributor-reference.md#openapi-alignment) in [contributor-reference.md](contributor-reference.md).
+
 Required parity guarantees:
 
 - Equivalent route coverage (`/api/*` and `/web/*` semantics).
@@ -96,3 +100,5 @@ Parity claim gate:
 - Critical behavior paths are covered by deterministic automated tests.
 - API/OpenAPI and migration fixtures are snapshot-verified in CI.
 - Docs describe implemented behavior with no known drift.
+
+**Public messaging:** The index page, README, and release notes should **not** use phrases like “complete” or “100% parity” with qBitrr until the matrix has no `partial` or `missing` module rows. Prefer **“C# port targeting qBitrr”** and link to the matrix for status.

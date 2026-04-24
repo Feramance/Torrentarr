@@ -29,7 +29,7 @@ const minimalConfig = {
 
 const minimalMeta = () =>
   HttpResponse.json({
-    current_version: "5.9.2",
+    current_version: "6.1.0",
     latest_version: null,
     update_available: false,
     changelog: null,

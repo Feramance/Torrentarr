@@ -70,7 +70,7 @@ The `[Settings]` section contains global configuration that applies to all Torre
 ```toml
 [Settings]
 # Internal config schema version - DO NOT MODIFY
-ConfigVersion = "5.9.2"
+ConfigVersion = "6.1.0"
 
 # Logging
 ConsoleLevel = "INFO"
@@ -119,14 +119,16 @@ ProcessRestartDelay = 5
 ### ConfigVersion
 
 ```toml
-ConfigVersion = "5.9.2"
+ConfigVersion = "6.1.0"
 ```
 
 **Type:** String
-**Default:** `"5.9.2"`
+**Default:** `"6.1.0"`
 **Required:** Yes (managed automatically)
 
 Internal configuration schema version. **DO NOT MODIFY** this value manually. Torrentarr uses it to detect when config migrations are needed. Updated automatically when Torrentarr migrates an older config to the current format.
+
+The numeric **major** of this field follows Torrentarr’s release policy: **one major version ahead of qBitrr’s** (e.g. while qBitrr is on 5.x, Torrentarr’s line is 6.x). It is not meant to equal qBitrr’s package version.
 
 ---
 
@@ -1198,7 +1200,7 @@ Absolute minimum configuration to get started:
 
 ```toml
 [Settings]
-ConfigVersion = "5.9.2"
+ConfigVersion = "6.1.0"
 CompletedDownloadFolder = "/data/downloads"
 
 [WebUI]
