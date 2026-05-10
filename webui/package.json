@@ -37,7 +37,7 @@
     "globals": "^17.6.0",
     "jsdom": "^29.1.1",
     "msw": "^2.14.5",
-    "postcss": "^8.5.13",
+    "postcss": "^8.5.14",
     "tailwindcss": "^4.2.2",
     "typescript": "~6.0.3",
     "typescript-eslint": "^8.59.0",
