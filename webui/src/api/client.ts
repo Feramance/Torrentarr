@@ -1,3 +1,4 @@
+import { setUrlBaseFromMeta, webPath } from "./urlBase";
 import type {
   ArrListResponse,
   ConfigDocument,
@@ -14,6 +15,8 @@ import type {
   RestartResponse,
   SonarrSeriesResponse,
   LidarrAlbumsResponse,
+  LidarrArtistsResponse,
+  LidarrArtistDetailResponse,
   StatusResponse,
   TorrentDistribution,
 } from "./types";
@@ -97,6 +100,13 @@ function buildInit(
   };
 }
 
+function resolveRequestInput(input: RequestInfo | URL): RequestInfo | URL {
+  if (typeof input === "string" && input.startsWith("/")) {
+    return webPath(input);
+  }
+  return input;
+}
+
 async function fetchWithAuthRetry<T>(
   input: RequestInfo | URL,
   init: RequestInit | undefined,
@@ -104,7 +114,7 @@ async function fetchWithAuthRetry<T>(
   retries = MAX_AUTH_RETRIES,
 ): Promise<T> {
   const token = resolveToken();
-  const response = await fetch(input, buildInit(init, token));
+  const response = await fetch(resolveRequestInput(input), buildInit(init, token));
   if (response.status === 401 && retries > 0 && token) {
     clearStoredToken();
     return fetchWithAuthRetry(input, init, handler, retries - 1);
@@ -186,7 +196,9 @@ export async function getMeta(params?: {
   force?: boolean;
 }): Promise<MetaResponse> {
   const query = params?.force ? "?force=1" : "";
-  return fetchJson<MetaResponse>(`/web/meta${query}`);
+  const meta = await fetchJson<MetaResponse>(`/web/meta${query}`);
+  setUrlBaseFromMeta(meta.url_base);
+  return meta;
 }
 
 export async function getStatus(): Promise<StatusResponse> {
@@ -237,7 +249,7 @@ export async function getLogTail(name: string): Promise<string> {
 }
 
 export function getLogDownloadUrl(name: string): string {
-  return `/web/logs/${encodeURIComponent(name)}/download`;
+  return webPath(`/web/logs/${encodeURIComponent(name)}/download`);
 }
 
 export async function getArrList(): Promise<ArrListResponse> {
@@ -275,6 +287,32 @@ export async function getSonarrSeries(
   }
   return fetchJson<SonarrSeriesResponse>(
     `/web/sonarr/${encodeURIComponent(category)}/series?${params}`,
+  );
+}
+
+export async function getLidarrArtists(
+  category: string,
+  page: number,
+  pageSize: number,
+  query?: string,
+): Promise<LidarrArtistsResponse> {
+  const params = new URLSearchParams();
+  params.set("page", page.toString());
+  params.set("page_size", pageSize.toString());
+  if (query) {
+    params.set("q", query);
+  }
+  return fetchJson<LidarrArtistsResponse>(
+    `/web/lidarr/${encodeURIComponent(category)}/artists?${params}`,
+  );
+}
+
+export async function getLidarrArtistDetail(
+  category: string,
+  artistId: number,
+): Promise<LidarrArtistDetailResponse> {
+  return fetchJson<LidarrArtistDetailResponse>(
+    `/web/lidarr/${encodeURIComponent(category)}/artist/${artistId}`,
   );
 }
 

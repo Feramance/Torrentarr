@@ -282,7 +282,9 @@ public class TorrentProcessor : ITorrentProcessor
 
         var state = ParseTorrentState(torrent.State);
         var arrCfg = _config.ArrInstances.Values.FirstOrDefault(a =>
-            string.Equals(a.Category, category, StringComparison.OrdinalIgnoreCase));
+            !string.IsNullOrEmpty(a.Category)
+            && CategoryPathHelper.MatchesConfigured(category, new[] { a.Category }, prefix: true)
+                == CategoryPathHelper.NormalizeCategory(a.Category));
         var ignoreYoungerThan = arrCfg?.Torrent.IgnoreTorrentsYoungerThan
             ?? _config.Settings.IgnoreTorrentsYoungerThan;
         var timeNow = DateTimeOffset.UtcNow.ToUnixTimeSeconds();

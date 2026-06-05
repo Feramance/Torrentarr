@@ -75,6 +75,18 @@ public class SeedingServiceTests
         SeedingService.ExtractTrackerHost(url).Should().Be(expected);
     }
 
+    // ── TrackerMessageIndicatesDead (qBitrr #412 parity) ─────────────────────
+
+    [Theory]
+    [InlineData("Torrent not found", true)]
+    [InlineData("unregistered torrent", true)]
+    [InlineData("Host not found (authoritative)", false)]
+    [InlineData("DNS lookup failed: not found", false)]
+    public void TrackerMessageIndicatesDead_MatchesTorrentSpecificKeywordsOnly(string message, bool expected)
+    {
+        SeedingService.TrackerMessageIndicatesDead(message).Should().Be(expected);
+    }
+
     // ── IsHnRSafeToRemoveAsync (pure logic) ────────────────────────────────────
 
     private static TorrentInfo MakeTorrent(double progress, double ratio, long seedingTimeSec)

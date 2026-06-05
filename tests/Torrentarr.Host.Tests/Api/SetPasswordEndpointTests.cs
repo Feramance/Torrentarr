@@ -21,6 +21,29 @@ public class SetPasswordEndpointTests : IClassFixture<TorrentarrWebApplicationFa
     }
 
     [Fact]
+    public async Task PostSetPassword_WhenNoPasswordSet_WithoutSetupToken_Returns403()
+    {
+        var factory = new LocalAuthNoPasswordWebApplicationFactory();
+        try
+        {
+            factory.SetConfigEnv();
+            var client = factory.CreateClientWithoutApiToken();
+            var response = await client.PostAsJsonAsync("/web/auth/set-password", new
+            {
+                username = "admin",
+                password = "newPassword123"
+            });
+            response.StatusCode.Should().Be(HttpStatusCode.Forbidden);
+            var body = await response.Content.ReadAsStringAsync();
+            body.Should().Contain("Setup token required");
+        }
+        finally
+        {
+            factory.Dispose();
+        }
+    }
+
+    [Fact]
     public async Task PostSetPassword_WhenNoPasswordSet_ThenLoginWithNewPassword_Succeeds()
     {
         _factory.SetConfigEnv();
@@ -28,9 +51,9 @@ public class SetPasswordEndpointTests : IClassFixture<TorrentarrWebApplicationFa
         var setResponse = await client.PostAsJsonAsync("/web/auth/set-password", new
         {
             username = "admin",
-            password = "newPassword123"
+            password = "newPassword123",
+            setupToken = "test-api-token"
         });
-        // set-password is a public path; should succeed when PasswordHash is empty
         setResponse.StatusCode.Should().Be(HttpStatusCode.OK);
 
         var loginResponse = await client.PostAsJsonAsync("/web/login", new
@@ -229,11 +252,12 @@ public class SetupRequiredTests : IClassFixture<LocalAuthNoPasswordWebApplicatio
         });
         loginBefore.StatusCode.Should().Be(HttpStatusCode.Forbidden);
 
-        // Set the password
+        // Set the password (requires setup token per qBitrr 5.12.2 bootstrap parity)
         var setResp = await client.PostAsJsonAsync("/web/auth/set-password", new
         {
             username = "newuser",
-            password = "somepassword"
+            password = "somepassword",
+            setupToken = "test-api-token"
         });
         setResp.StatusCode.Should().Be(HttpStatusCode.OK);
 

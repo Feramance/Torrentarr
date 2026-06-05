@@ -34,7 +34,7 @@ public class TorrentarrConfig
 
 public class SettingsConfig
 {
-    public string ConfigVersion { get; set; } = "6.1.0";
+    public string ConfigVersion { get; set; } = "6.12.2";
     public string ConsoleLevel { get; set; } = "INFO";
     public bool Logging { get; set; } = true;
     public string CompletedDownloadFolder { get; set; } = "";
@@ -153,6 +153,8 @@ public class WebUIConfig
     public bool AuthDisabled { get; set; } = false;
     /// <summary>When true, WebUI is assumed behind HTTPS reverse proxy and secure cookie behavior is enabled.</summary>
     public bool BehindHttpsProxy { get; set; } = false;
+    /// <summary>Public URL path prefix when served behind a reverse proxy (e.g. /qbitrr). No trailing slash.</summary>
+    public string UrlBase { get; set; } = "";
     /// <summary>When true (and AuthDisabled is false), allow username/password login via POST /web/login.</summary>
     public bool LocalAuthEnabled { get; set; } = true;
     /// <summary>When true (and AuthDisabled is false), allow OIDC challenge and cookie-based login.</summary>

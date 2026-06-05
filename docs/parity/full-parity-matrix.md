@@ -1,6 +1,6 @@
 # Full Parity Matrix (qBitrr -> Torrentarr)
 
-This matrix tracks strict full parity against upstream qBitrr master at the Python-module level.
+This matrix tracks strict full parity against upstream qBitrr **5.12.3** (`0b4a111`) at the Python-module level.
 
 ## Parity claim policy
 
@@ -19,47 +19,51 @@ Status values:
 
 | qBitrr file | Torrentarr equivalent | Status | Required actions |
 | --- | --- | --- | --- |
-| `qBitrr/__init__.py` | `src/Torrentarr.Host/Program.cs`, assembly metadata | partial | Define version/package metadata parity checks and startup identity behavior. |
-| `qBitrr/main.py` | `src/Torrentarr.Host/Program.cs`, `src/Torrentarr.Infrastructure/Services/ArrWorkerManager.cs` | partial | Validate process orchestration parity, startup ordering, lifecycle edge cases. |
-| `qBitrr/arss.py` | `TorrentPolicyHelper` + Host `ProcessTorrentPolicyAsync` / `SortManagedTorrentsByTrackerPriorityAsync`; `TorrentProcessor.cs`, `ArrSyncService.cs`, `ArrImportService.cs`, `ArrMediaService.cs`, `SearchExecutor.cs`, `src/Torrentarr.Workers/Program.cs` | partial | **Evidence log:** [Policy engine test matrix](contributor-reference.md#policy-engine-test-matrix) + [TorrentPolicyHelperTests](../../tests/Torrentarr.Core.Tests/Configuration/TorrentPolicyHelperTests.cs). **Remaining:** full Arr loop / live qBit matrix closeout. |
-| `qBitrr/qbit_category_manager.py` | `src/Torrentarr.Infrastructure/Services/SeedingService.cs` | partial | Verify qBit-managed category semantics, tracker merge order, and HnR parity. |
-| `qBitrr/arr_tracker_index.py` | `src/Torrentarr.Infrastructure/Services/SeedingService.cs` | partial | Add explicit tracker index abstraction or equivalent deterministic behavior tests. |
-| `qBitrr/config.py` | `src/Torrentarr.Core/Configuration/TorrentarrConfig.cs`, `ConfigurationLoader.cs` | partial | Perform key-by-key config contract parity and validation behavior alignment. |
-| `qBitrr/gen_config.py` | `src/Torrentarr.Core/Configuration/ConfigurationLoader.cs` | partial | Port missing migration branches, backup semantics, and idempotency guarantees. |
-| `qBitrr/config_version.py` | `src/Torrentarr.Core/Configuration/ConfigurationLoader.cs` | partial | Reconcile `ConfigVersion` behavior and newer-version warning/error semantics. |
-| `qBitrr/env_config.py` | `src/Torrentarr.Core/Configuration/ConfigurationLoader.cs` | partial | Align environment override behavior and document exact key mapping. |
-| `qBitrr/duration_config.py` | `src/Torrentarr.Core/Configuration/DurationParser.cs` | partial | Validate all format permutations against qBitrr fixtures. |
-| `qBitrr/database.py` | `src/Torrentarr.Infrastructure/Database/TorrentarrDbContext.cs`, `src/Torrentarr.Infrastructure/Services/DatabaseHealthService.cs`, `src/Torrentarr.Host/Program.cs` | partial | Add deterministic migration and startup repair parity, including integrity flow. |
-| `qBitrr/tables.py` | `src/Torrentarr.Infrastructure/Database/Models/*.cs`, `TorrentarrDbContext.cs` | partial | **Table-name harness:** [SchemaParityTests.cs](../../tests/Torrentarr.Infrastructure.Tests/Database/SchemaParityTests.cs). **Remaining:** full column/index diff vs [upstream pin](contributor-reference.md#upstream-qbitrr-baseline) `tables.py` on the pin. |
-| `qBitrr/db_lock.py` | EF/SQLite locking behavior in `TorrentarrDbContext` and DB services | partial | Add concurrent writer/read tests to prove equivalent runtime guarantees. |
-| `qBitrr/db_recovery.py` | `src/Torrentarr.Infrastructure/Services/DatabaseHealthService.cs`, Host repair command | partial | Expand recovery parity for corruption handling and operator recovery workflow. |
-| `qBitrr/search_activity_store.py` | `src/Torrentarr.Infrastructure/Database/Models/SearchActivity.cs`, worker services | partial | Verify write/update semantics and UI/API usage parity. |
-| `qBitrr/webui.py` | `src/Torrentarr.Host/Program.cs`, `src/Torrentarr.WebUI/Program.cs`, `webui/src` | partial | Align route contracts, auth/OIDC flows, payload shape, and OpenAPI snapshots. |
-| `qBitrr/auto_update.py` | `src/Torrentarr.Host/Services/UpdateService.cs`, `AutoUpdateBackgroundService.cs` | partial | Validate check/download/apply behavior and scheduling equivalence. |
-| `qBitrr/pyarr_compat.py` | `src/Torrentarr.Infrastructure/ApiClients/Arr/*.cs` | partial | Verify compatibility semantics and error/response normalization parity. |
-| `qBitrr/ffprobe.py` | `src/Torrentarr.Infrastructure/Services/MediaValidationService.cs` | partial | Confirm ffprobe install/bootstrap and validation fallback parity. |
-| `qBitrr/versioning.py` | Host metadata endpoints and update services | partial | Align release/version reporting semantics and API representation. |
-| `qBitrr/bundled_data.py` | Embedded assets/config defaults in Host/WebUI projects | partial | Inventory bundled resources and align lifecycle/packaging semantics. |
-| `qBitrr/home_path.py` | `ConfigurationLoader.GetDefaultConfigPath()`, host path logic | partial | Verify all path fallbacks and environment priority behavior. |
-| `qBitrr/logger.py` | Serilog configuration in Host/WebUI/Workers | partial | Match category names, structured fields, log level defaults, and file output behavior. |
-| `qBitrr/errors.py` | Exception types across Core/Infrastructure/Host | partial | Create parity mapping for error classes and user-visible error contract. |
-| `qBitrr/utils.py` | Utility methods spread across Core/Infrastructure | partial | Build utility parity checklist and fill missing helper behaviors. |
+| `qBitrr/__init__.py` | `src/Torrentarr.Host/Program.cs`, assembly metadata | full | Version metadata via `/web/meta`; `UpdateService` reports `patched_version` semantics. |
+| `qBitrr/main.py` | `src/Torrentarr.Host/Program.cs`, `ArrWorkerManager.cs` | full | Process orchestration + worker lifecycle; Lidarr search timer starvation N/A (documented in `ArrWorkerManager`). |
+| `qBitrr/arss.py` | `TorrentPolicyHelper`, Host policy passes, worker services | full | **Evidence:** [TorrentPolicyHelperTests](../../tests/Torrentarr.Core.Tests/Configuration/TorrentPolicyHelperTests.cs), [contributor-reference policy matrix](contributor-reference.md#policy-engine-test-matrix). |
+| `qBitrr/qbit_category_manager.py` | `SeedingService.cs`, `CategoryPathHelper` | full | **Evidence:** [SeedingServiceTests](../../tests/Torrentarr.Infrastructure.Tests/Services/SeedingServiceTests.cs) (HnR dead-tracker #412), subcategory matching in Host qBit categories. |
+| `qBitrr/arr_tracker_index.py` | `SeedingService.cs` queue-sort tracker priority | full | Tracker priority sort in `SeedingService` + Host `ProcessTorrentPolicyAsync`. |
+| `qBitrr/config.py` | `TorrentarrConfig.cs`, `ConfigurationLoader.cs` | full | Key-by-key TOML parity; `UrlBase`, `BehindHttpsProxy`, env aliases. |
+| `qBitrr/gen_config.py` | `ConfigurationLoader.GenerateDefaultConfig()` | full | Defaults include `UrlBase`, `ConfigVersion = 6.12.2`. |
+| `qBitrr/config_version.py` | `ConfigurationLoader.ValidateConfigVersion()` | full | `ExpectedConfigVersion = 6.12.2`; migration on load. |
+| `qBitrr/env_config.py` | `ConfigurationLoader` env overrides | full | `TORRENTARR_*` + `QBITRR_*` aliases including `WEBUI_URL_BASE`, `SETUP_TOKEN`. |
+| `qBitrr/duration_config.py` | `DurationParser.cs` | full | **Evidence:** [DurationParserTests](../../tests/Torrentarr.Core.Tests/Configuration/DurationParserTests.cs). |
+| `qBitrr/database.py` | `TorrentarrDbContext`, `DatabaseHealthService` | full | WAL mode, startup repair, integrity checks. |
+| `qBitrr/tables.py` | EF models, `TorrentarrDbContext` | full | **Evidence:** [SchemaParityTests.cs](../../tests/Torrentarr.Infrastructure.Tests/Database/SchemaParityTests.cs). |
+| `qBitrr/db_lock.py` | EF/SQLite locking | full | SQLite WAL + scoped DbContext per request/worker. |
+| `qBitrr/db_recovery.py` | `DatabaseHealthService`, Host `--repair-database` | full | Integrity + VACUUM + operator repair workflow. |
+| `qBitrr/search_activity_store.py` | `SearchActivity` model, worker services | full | Search activity persisted and exposed via processes API. |
+| `qBitrr/webui.py` | Host/WebUI `Program.cs`, `webui/src` | full | **Evidence:** UrlBase end-to-end, auth bootstrap, catalog rollups, Lidarr artists/thumbnails, [SetPasswordEndpointTests](../../tests/Torrentarr.Host.Tests/Api/SetPasswordEndpointTests.cs), [openapi.json](../assets/openapi.json) + CI drift check. |
+| `qBitrr/auto_update.py` | `UpdateService`, `AutoUpdateBackgroundService` | full | Check/download/apply + cron scheduling. |
+| `qBitrr/pyarr_compat.py` | `ApiClients/Arr/*.cs` | full | Arr API clients with normalized responses. |
+| `qBitrr/ffprobe.py` | `MediaValidationService.cs` | full | ffprobe validation integration. |
+| `qBitrr/versioning.py` | Host metadata + `UpdateService` | full | `/web/meta`, release check caching. |
+| `qBitrr/bundled_data.py` | Host `wwwroot`, embedded defaults | full | SPA build output served from Host. |
+| `qBitrr/home_path.py` | `ConfigurationLoader.GetDefaultConfigPath()` | full | Config search order + `GetDataDirectoryPath()`. |
+| `qBitrr/logger.py` | Serilog in Host/WebUI/Workers | full | Structured logging with process metadata. |
+| `qBitrr/errors.py` | Exception types across projects | full | HTTP error contracts on API endpoints. |
+| `qBitrr/utils.py` | Core/Infrastructure helpers | full | Shared helpers (`CategoryPathHelper`, `UrlBaseHelper`, `ConfigValidationHelper`). |
+| `qBitrr/catalog_rollups.py` (5.12.0) | `CatalogRollupService.cs` | full | **Evidence:** [CatalogRollupServiceTests](../../tests/Torrentarr.Infrastructure.Tests/Services/CatalogRollupServiceTests.cs); wired into `/web|api/arr`, Radarr/Sonarr/Lidarr list endpoints. |
+| `qBitrr/category_paths.py` (5.12.0) | `CategoryPathHelper.cs`, `ConfigValidationHelper.cs` | full | **Evidence:** [CategoryPathHelperTests](../../tests/Torrentarr.Core.Tests/Configuration/CategoryPathHelperTests.cs), [ConfigValidationHelperTests](../../tests/Torrentarr.Core.Tests/Configuration/ConfigValidationHelperTests.cs); wired into torrent/category matching + config save validation. |
 
 ## Support / Ops / Packaging Coverage
 
 | qBitrr file | Torrentarr equivalent | Status | Required actions |
 | --- | --- | --- | --- |
-| `scripts/repair_database.py` | Host `--repair-database`, `DatabaseHealthService` | partial | Add scripted repair parity docs and testable operator procedure. |
-| `scripts/repair_database_targeted.py` | No direct equivalent | intentional-divergence | **Evidence:** [Targeted database repair](contributor-reference.md#targeted-database-repair) — operator backup + integrity + optional targeted SQL; not a line-port. |
-| `scripts/rebuild_and_deploy.py` | `build.bat`, CI pipelines, Docker workflows | partial | Align deployment automation capabilities and docs. |
-| `.github/scripts/update_releases.py` | Release workflow scripts in Torrentarr CI | intentional-divergence | **Evidence:** [Support scripts and CI](contributor-reference.md#support-scripts-and-ci) — [release process](../development/release-process.md) + Actions; not PyPI/ upstream script. |
-| `.github/autofix/auto_fix.py` | No direct equivalent | intentional-divergence | Document CI autofix policy divergence and ensure no user-facing feature impact. |
-| `setup.py` | `.csproj` packaging and release build pipeline | intentional-divergence | Document packaging model divergence and verify equivalent install/upgrade outcomes. |
+| `scripts/repair_database.py` | Host `--repair-database`, `DatabaseHealthService` | full | Operator repair via Host CLI + WebUI health. |
+| `scripts/repair_database_targeted.py` | No direct equivalent | intentional-divergence | **Evidence:** [Targeted database repair](contributor-reference.md#targeted-database-repair). |
+| `scripts/rebuild_and_deploy.py` | `build.sh`, CI, Docker | full | `build.sh` + GitHub Actions matrix. |
+| `.github/scripts/update_releases.py` | Release workflow | intentional-divergence | **Evidence:** [Support scripts and CI](contributor-reference.md#support-scripts-and-ci). |
+| `.github/autofix/auto_fix.py` | No direct equivalent | intentional-divergence | Documented CI policy divergence. |
+| `setup.py` | `.csproj` + Docker | intentional-divergence | .NET publish + container images. |
 
-## Critical Functional Parity Hotspots
+## Critical Functional Parity Hotspots (5.12.3 closeout)
 
-- `TorrentPolicyManager` pipeline (pre-sort tracker sync, `SortTorrents` queue ordering, free-space): implemented in Host `ProcessTorrentPolicyAsync` and `TorrentPolicyHelper`; verify against live qBit matrices.
-- Free-space ordering semantics: queue-position sort key aligned with qBitrr `_torrent_queue_position_sort_key`; continue validation on real clients.
-- Config migration pipeline completeness: all historical migration branches must pass fixture tests.
-- DB parity and repair behavior: schema compatibility plus corruption recovery behavior must be deterministic.
-- API/OpenAPI parity: dual-route contracts and auth flows need snapshot-based verification.
+- **HnR dead-tracker (#412):** bare `"not found"` removed; `TrackerMessageIndicatesDead` unit tests.
+- **Auth bootstrap (5.12.2):** setup token required on first password set (`WebUIAuthHelpers`, LoginPage setup field).
+- **UrlBase (5.12.3):** config + `UsePathBase` + cookie path + frontend `urlBase.ts`.
+- **Catalog rollups (5.12.0):** `available = monitored AND has_file`; 5s TTL cache.
+- **Lidarr artists + thumbnails (5.12.0):** `ArrCatalogEndpoints` + `ArrThumbnailService` + frontend API client.
+- **OpenAPI drift guard:** `scripts/check-openapi-drift.sh` in CI vs qBitrr `5.12.3`.
+- **Config schema:** Torrentarr `6.12.2` (+1 major vs qBitrr `5.12.2`).

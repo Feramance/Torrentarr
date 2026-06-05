@@ -9,7 +9,7 @@ namespace Torrentarr.Core.Configuration;
 public class ConfigurationLoader
 {
     /// <summary>Expected config schema version (qBitrr parity). Used for validation and mismatch warning.</summary>
-    public const string ExpectedConfigVersion = "6.1.0";
+    public const string ExpectedConfigVersion = "6.12.2";
 
     /// <summary>
     /// TEST USE ONLY. When set by test fixtures, GetDefaultConfigPath() returns this instead of env/defaults.
@@ -183,6 +183,9 @@ public class ConfigurationLoader
             ApplyEnvString("TORRENTARR_QBIT_USERNAME", "QBITRR_QBIT_USERNAME", v => qbit.UserName = v);
             ApplyEnvString("TORRENTARR_QBIT_PASSWORD", "QBITRR_QBIT_PASSWORD", v => qbit.Password = v);
         }
+
+        var webui = config.WebUI;
+        ApplyEnvString("TORRENTARR_WEBUI_URL_BASE", "QBITRR_WEBUI_URL_BASE", v => webui.UrlBase = UrlBaseHelper.NormalizeUrlBase(v));
     }
 
     private static string? ReadEnv(string primaryEnvName, string? aliasEnvName)
@@ -740,6 +743,7 @@ public class ConfigurationLoader
                 ("LocalAuthEnabled", true),
                 ("OIDCEnabled", false),
                 ("BehindHttpsProxy", false),
+                ("UrlBase", ""),
                 ("Username", ""),
                 ("PasswordHash", ""),
                 ("LiveArr", true),
@@ -1164,6 +1168,9 @@ public class ConfigurationLoader
 
         if (table.TryGetValue("BehindHttpsProxy", out var behindHttpsProxy))
             webui.BehindHttpsProxy = Convert.ToBoolean(behindHttpsProxy);
+
+        if (table.TryGetValue("UrlBase", out var urlBase))
+            webui.UrlBase = UrlBaseHelper.NormalizeUrlBase(urlBase);
 
         bool hasNewAuthKeys = table.ContainsKey("AuthDisabled") ||
             table.ContainsKey("LocalAuthEnabled") ||
@@ -1643,6 +1650,7 @@ public class ConfigurationLoader
                 Token = "",
                 AuthDisabled = false,
                 BehindHttpsProxy = false,
+                UrlBase = "",
                 LocalAuthEnabled = true,
                 OIDCEnabled = false,
                 Username = "",
@@ -1722,6 +1730,7 @@ public class ConfigurationLoader
         sb.AppendLine($"Port = {config.WebUI.Port}");
         sb.AppendLine($"Token = \"{config.WebUI.Token}\"");
         sb.AppendLine($"BehindHttpsProxy = {config.WebUI.BehindHttpsProxy.ToString().ToLower()}");
+        sb.AppendLine($"UrlBase = \"{EscapeTomlString(config.WebUI.UrlBase)}\"");
         sb.AppendLine($"AuthDisabled = {config.WebUI.AuthDisabled.ToString().ToLower()}");
         sb.AppendLine($"LocalAuthEnabled = {config.WebUI.LocalAuthEnabled.ToString().ToLower()}");
         sb.AppendLine($"OIDCEnabled = {config.WebUI.OIDCEnabled.ToString().ToLower()}");

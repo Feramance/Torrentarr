@@ -2,77 +2,59 @@
 
 ## Scope
 
-This report captures the implementation pass for strict qBitrr parity work across config/migrations, database behavior, policy engine behavior, web/API contracts, and docs alignment.
+This report captures the qBitrr **5.12.3** (`0b4a111`) parity closeout pass across config/migrations, database behavior, policy engine, web/API contracts, and docs alignment.
 
 Primary tracking artifacts:
 
 - `docs/parity/full-parity-matrix.md`
 - `docs/parity/contract-baseline.md`
-- `docs/parity/contributor-reference.md` (upstream pin, test matrices, OpenAPI, internal checklists; **not** for end users)
-- `docs/parity/overview.md` (user-facing qBitrr relationship)
+- `docs/parity/contributor-reference.md`
+- `docs/parity/overview.md`
 
-## Implemented in This Pass
+## Implemented in This Pass (5.12.3)
 
-- Added exhaustive parity matrix coverage for all 31 qBitrr Python files.
-- Added contract baseline document for configuration, database, policy engine, and web/API.
-- Updated configuration parity in `ConfigurationLoader`:
-  - `ExpectedConfigVersion` aligned to `6.1.0`.
-  - qBitrr-compatible env aliases (`QBITRR_*`) accepted alongside `TORRENTARR_*`.
-  - migration flow now runs even on current/newer versions for idempotent cleanup.
-  - legacy `WebUI.SecureCookies` migration to `WebUI.BehindHttpsProxy`.
-  - qBit default fallback values aligned to qBitrr-style defaults.
-- Added `WebUI.BehindHttpsProxy` to C# config model and TOML parse/save flow.
-- Added tracker-level `SortTorrents` config support and parsing.
-- Added qBit queue `priority` field to `TorrentInfo`.
-- Added qBittorrent API client support for:
-  - `/api/v2/torrents/info?sort=...`
-  - `/api/v2/torrents/topPrio`
-- Hardened DB parity:
-  - ArrInstance indexes added in EF model.
-  - startup manual migration now cleans blank `arrinstance` rows.
-  - startup manual migration now ensures ArrInstance indexes exist.
-- Implemented policy behavior improvements in Host orchestrator:
-  - tracker-priority sorting pass for managed torrents when `SortTorrents` is enabled.
-  - free-space manager now consumes queue-priority sort semantics instead of AddedOn-only ordering.
-- Updated stale documentation:
-  - `docs/configuration/environment.md`
-  - `docs/parity-review.md` (superseded pointer)
-  - targeted contract corrections in `docs/webui/api.md`.
+### Phase 0 — Branch hygiene
+- Merged `origin/master` into `tracker-sorter` (dependency bumps only).
+- Re-pinned upstream to qBitrr branch **5.12.3** @ `0b4a111` in `contributor-reference.md`.
+
+### Phase 1 — Critical correctness
+- **HnR dead-tracker (#412):** removed bare `"not found"` from `SeedingService`; added `TrackerMessageIndicatesDead` tests.
+- **Auth bootstrap (5.12.2):** `WebUIAuthHelpers.IsSetPasswordAllowed()` requires setup token; LoginPage setup token field; `SetPasswordEndpointTests` updated.
+- **Lidarr search timer:** documented N/A in `ArrWorkerManager` (single-loop architecture).
+
+### Phase 2 — 5.12.x features
+- **UrlBase:** `WebUI.UrlBase` config, `UrlBaseHelper`, `UsePathBase`, cookie path, `url_base` in meta, frontend `urlBase.ts` + ConfigView field.
+- **Category paths:** `CategoryPathHelper` + `ConfigValidationHelper` overlap validation on config save; wired into torrent/category matching.
+- **Catalog rollups:** `CatalogRollupService` with qBitrr semantics + 5s TTL; integrated into `/web|api/arr`, Radarr/Sonarr/Lidarr endpoints.
+- **Lidarr artists + thumbnails:** `ArrCatalogEndpoints`, `ArrThumbnailService`, frontend `getLidarrArtists` / `getLidarrArtistDetail`.
+- **OpenAPI:** expanded `docs/assets/openapi.json` (26 paths); `scripts/check-openapi-drift.sh` in CI.
+
+### Phase 3 — Config schema
+- `ExpectedConfigVersion = 6.12.2` (+1 major vs qBitrr `5.12.2`).
+- Default `Settings.ConfigVersion` updated to `6.12.2`.
 
 ## Validation Evidence
 
-Backend tests:
+Backend tests (`dotnet test --filter "Category!=Live"`):
 
-- `dotnet test tests/Torrentarr.Core.Tests/Torrentarr.Core.Tests.csproj`
-  - Passed: 79
-- `dotnet test --filter "Category!=Live"`
-  - Core: 79 passed
-  - Host: 156 passed
-  - Infrastructure: 332 passed
-  - Total: 567 passed
+| Project | Passed |
+| --- | --- |
+| Torrentarr.Core.Tests | 106 |
+| Torrentarr.Host.Tests | 157 |
+| Torrentarr.Infrastructure.Tests | 341 |
+| **Total** | **604** |
 
-Frontend tests:
+Frontend tests (`cd webui && npx vitest run`): exit code 0 (130 tests).
 
-- `npx vitest run` in `webui/`
-  - Exit code: 0
+OpenAPI drift: `bash scripts/check-openapi-drift.sh` — 26 Torrentarr paths ⊆ 66 qBitrr 5.12.3 paths.
 
-Focused regression checks added:
+Focused regression checks added/updated:
 
-- `Load_Migration1_RenamesSecureCookies_ToBehindHttpsProxy`
-- `Load_AcceptsQbitrrEnvironmentVariableAliases`
-- `Load_ParsesTrackerSortTorrentsFlag`
+- `SeedingServiceTests` — dead-tracker false positive guard
+- `CategoryPathHelperTests`, `ConfigValidationHelperTests`
+- `CatalogRollupServiceTests`
+- `SetPasswordEndpointTests` — setup token bootstrap
 
-## Remaining Work Gate
+## Matrix Status
 
-Use `docs/parity/full-parity-matrix.md` as the final closeout checklist.
-A strict “100% parity” claim is only valid when no rows remain `partial` or `missing`.
-
-## Deep-dive program (this pass)
-
-- Pinned default upstream: **`v5.11.1`** in [contributor-reference.md#upstream-qbitrr-baseline](contributor-reference.md#upstream-qbitrr-baseline) (re-verify commit SHA when rebasing the pin).
-- **Intentional** differences and internal procedures: [contributor-reference.md](contributor-reference.md).
-- **Schema table-name CI harness:** [SchemaParityTests.cs](../../tests/Torrentarr.Infrastructure.Tests/Database/SchemaParityTests.cs).
-- **Targeted repair / release scripts** matrix rows: evidence under [Targeted database repair](contributor-reference.md#targeted-database-repair) and [Support scripts and CI](contributor-reference.md#support-scripts-and-ci).
-- **Web / policy / long-tail** review templates: same file — [Web and API field coverage](contributor-reference.md#web-and-api-field-coverage), [Policy engine test matrix](contributor-reference.md#policy-engine-test-matrix), [Long-tail module mapping](contributor-reference.md#long-tail-module-mapping).
-
-Runtime module rows **remain `partial` overall**; this pass adds evidence links and process docs toward eventual `full` status per row.
+All runtime module rows in `full-parity-matrix.md` are **`full`** or **`intentional-divergence`** as of this pass. Upstream pin: **5.12.3 @ 0b4a111**.

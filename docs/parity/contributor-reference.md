@@ -12,9 +12,10 @@ Torrentarr parity work is diffed against a **pinned** upstream ref so behavior d
 
 | Field | Value |
 | --- | --- |
-| **Tag** | `v5.11.1` |
-| **Role** | Default behavioral baseline for policy (`arss.py`), `SortTorrents` + `arr_tracker_index.py`, WebUI/OpenAPI additions, and docs at that line. |
-| **Commit (verify locally)** | `git ls-remote --tags https://github.com/Feramance/qBitrr v5.11.1` or `git show v5.11.1` after clone. Re-record the full SHA in release notes when bumping the pin. |
+| **Branch** | `5.12.3` |
+| **Role** | Default behavioral baseline for policy (`arss.py`), `SortTorrents`, Arr catalog views/rollups, `UrlBase`, subcategory paths, and WebUI/OpenAPI at that line. |
+| **Commit** | `0b4a1119e1c59e664c6bb8654d6e206a81d8db52` (merge of `master` into `5.12.3`, 2026-06-03). Re-verify with `git ls-remote https://github.com/Feramance/qBitrr refs/heads/5.12.3` when bumping the pin. |
+| **Shipped tag baseline** | `v5.12.2` — use branch tip for unreleased `5.12.3` fixes (Lidarr search timer, `UrlBase`). |
 
 To move the pin: update this section, re-run the inventories below, and adjust [full-parity-matrix.md](full-parity-matrix.md) / tests as needed.
 
@@ -33,7 +34,7 @@ To move the pin: update this section, re-run the inventories below, and adjust [
 | Public API doc | `docs/webui/api.md` |
 | Operator scripts | `scripts/repair_database.py`, `scripts/repair_database_targeted.py` |
 
-**Browse tag:** [v5.11.1 on GitHub](https://github.com/Feramance/qBitrr/releases/tag/v5.11.1). **Raw prefix:** `https://raw.githubusercontent.com/Feramance/qBitrr/v5.11.1/`
+**Browse branch:** [5.12.3 on GitHub](https://github.com/Feramance/qBitrr/tree/5.12.3). **Raw prefix:** `https://raw.githubusercontent.com/Feramance/qBitrr/5.12.3/`
 
 ### Torrentarr mapping (where to look)
 

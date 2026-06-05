@@ -25,9 +25,17 @@ public class SeedingService : ISeedingService
         "torrent not registered",
         "info hash is not authorized",
         "torrent is not authorized",
-        "not found",
         "torrent not found"
     };
+
+    /// <summary>Returns true when a tracker status message indicates the torrent is unregistered/dead on that tracker.</summary>
+    internal static bool TrackerMessageIndicatesDead(string? message)
+    {
+        if (string.IsNullOrWhiteSpace(message))
+            return false;
+        var messageText = message.ToLowerInvariant();
+        return DeadTrackerKeywords.Any(keyword => messageText.Contains(keyword));
+    }
 
     private readonly ILogger<SeedingService> _logger;
     private readonly TorrentarrDbContext _dbContext;
@@ -351,8 +359,7 @@ public class SeedingService : ISeedingService
                     continue;
                 }
 
-                var messageText = (tracker.Msg ?? "").ToLowerInvariant();
-                if (DeadTrackerKeywords.Any(keyword => messageText.Contains(keyword)))
+                if (TrackerMessageIndicatesDead(tracker.Msg))
                 {
                     return true;
                 }
