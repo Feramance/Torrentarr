@@ -162,8 +162,8 @@ var authBuilder = builder.Services.AddAuthentication(CookieAuthenticationDefault
         options.Cookie.SecurePolicy = Microsoft.AspNetCore.Http.CookieSecurePolicy.SameAsRequest;
         if (!string.IsNullOrEmpty(urlBase))
             options.Cookie.Path = urlBase + "/";
-        options.LoginPath = "/login";
-        options.AccessDeniedPath = "/login";
+        options.LoginPath = UrlBaseHelper.WithUrlBase(urlBase, "/login");
+        options.AccessDeniedPath = UrlBaseHelper.WithUrlBase(urlBase, "/login");
     });
 if (configForDI.WebUI.OIDCEnabled && configForDI.WebUI.OIDC is { } oidc
     && !string.IsNullOrWhiteSpace(oidc.Authority)
@@ -320,7 +320,9 @@ app.Use(async (context, next) =>
         await context.Response.WriteAsJsonAsync(new { error = "Unauthorized" });
         return;
     }
-    context.Response.Redirect("/login");
+    var cfgRedirect = context.RequestServices.GetRequiredService<TorrentarrConfig>();
+    context.Response.Redirect(UrlBaseHelper.WithUrlBase(
+        UrlBaseHelper.NormalizeUrlBase(cfgRedirect.WebUI.UrlBase), "/login"));
 });
 
 static bool WebUIAuthRequired(TorrentarrConfig c) => !c.WebUI.AuthDisabled;
@@ -373,15 +375,17 @@ app.MapPost("/web/login", async (HttpContext ctx, TorrentarrConfig cfg, IPasswor
 });
 
 // Logout: sign out cookie and redirect to login (GET or POST for link/form compatibility).
-app.MapGet("/web/logout", async (HttpContext ctx) =>
+app.MapGet("/web/logout", async (HttpContext ctx, TorrentarrConfig cfg) =>
 {
     await ctx.SignOutAsync(CookieAuthenticationDefaults.AuthenticationScheme);
-    return Results.Redirect("/login", false);
+    return Results.Redirect(UrlBaseHelper.WithUrlBase(
+        UrlBaseHelper.NormalizeUrlBase(cfg.WebUI.UrlBase), "/login"), false);
 });
-app.MapPost("/web/logout", async (HttpContext ctx) =>
+app.MapPost("/web/logout", async (HttpContext ctx, TorrentarrConfig cfg) =>
 {
     await ctx.SignOutAsync(CookieAuthenticationDefaults.AuthenticationScheme);
-    return Results.Redirect("/login", false);
+    return Results.Redirect(UrlBaseHelper.WithUrlBase(
+        UrlBaseHelper.NormalizeUrlBase(cfg.WebUI.UrlBase), "/login"), false);
 });
 
 app.MapPost("/web/auth/set-password", async (HttpContext ctx, TorrentarrConfig cfg, ConfigurationLoader loader, IPasswordHasher hasher) =>

@@ -14,4 +14,15 @@ public static class UrlBaseHelper
             raw = "/" + raw;
         return raw.TrimEnd('/');
     }
+
+    /// <summary>Prefix <paramref name="path"/> with a path base (configured UrlBase or request PathBase).</summary>
+    public static string WithUrlBase(string urlBase, string path)
+    {
+        urlBase ??= "";
+        if (string.IsNullOrEmpty(path))
+            return urlBase;
+        if (!path.StartsWith('/'))
+            path = "/" + path;
+        return string.IsNullOrEmpty(urlBase) ? path : urlBase + path;
+    }
 }

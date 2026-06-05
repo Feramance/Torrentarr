@@ -1,4 +1,5 @@
 using FluentAssertions;
+using Microsoft.AspNetCore.Mvc.Testing;
 using System.Net;
 using System.Text.Json;
 using Xunit;
@@ -60,5 +61,33 @@ public class UrlBaseEndpointTests : IClassFixture<UrlBaseWebApplicationFactory>
         var client = _factory.CreateClientWithPathBase("/torrentarr", withApiToken: false);
         var response = await client.GetAsync("/web/meta");
         response.StatusCode.Should().Be(HttpStatusCode.OK);
+    }
+}
+
+[Collection("HostWebUrlBase")]
+public class UrlBaseAuthRedirectEndpointTests : IClassFixture<UrlBaseAuthWebApplicationFactory>
+{
+    private readonly UrlBaseAuthWebApplicationFactory _factory;
+
+    public UrlBaseAuthRedirectEndpointTests(UrlBaseAuthWebApplicationFactory factory)
+    {
+        _factory = factory;
+    }
+
+    [Fact]
+    public async Task GetProtected_WithoutAuth_RedirectsToLoginUnderUrlBase()
+    {
+        _factory.SetConfigEnv();
+        var client = _factory.CreateClient(new WebApplicationFactoryClientOptions
+        {
+            BaseAddress = new Uri("http://localhost/torrentarr/"),
+            AllowAutoRedirect = false,
+        });
+        client.DefaultRequestHeaders.Accept.ParseAdd("text/html");
+
+        var response = await client.GetAsync("/web/token");
+
+        response.StatusCode.Should().Be(HttpStatusCode.Redirect);
+        response.Headers.Location!.ToString().Should().Be("/torrentarr/login");
     }
 }
