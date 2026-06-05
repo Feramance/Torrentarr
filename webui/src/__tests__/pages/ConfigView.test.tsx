@@ -291,7 +291,9 @@ describe("ConfigView – UrlBase field", () => {
     renderConfig();
 
     await screen.findByText("Save + Live Reload");
-    await user.click(screen.getByRole("button", { name: /save \+ live reload/i }));
+    await user.click(
+      screen.getByRole("button", { name: /save \+ live reload/i }),
+    );
 
     expect(
       await screen.findByText(/UrlBase must start with \//i),

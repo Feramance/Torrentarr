@@ -469,7 +469,9 @@ describe("getLidarrArtistDetail", () => {
           albums: [
             {
               album: { id: 10, title: "Album", monitored: true, hasFile: true },
-              tracks: [{ id: 100, title: "Track", monitored: true, hasFile: true }],
+              tracks: [
+                { id: 100, title: "Track", monitored: true, hasFile: true },
+              ],
             },
           ],
         }),

@@ -78,7 +78,9 @@ describe("App login setup flow", () => {
       .closest("form")!;
     fireEvent.submit(form);
 
-    expect(await screen.findByText("Setup token is required.")).toBeInTheDocument();
+    expect(
+      await screen.findByText("Setup token is required."),
+    ).toBeInTheDocument();
     expect(setPassword).not.toHaveBeenCalled();
   });
 
