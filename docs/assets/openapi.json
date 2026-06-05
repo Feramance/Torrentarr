@@ -6,84 +6,273 @@
   },
   "openapi": "3.0.1",
   "paths": {
-    "/health": {
-      "get": { "summary": "Health check", "responses": { "200": { "description": "OK" } } }
-    },
-    "/web/meta": {
-      "get": { "summary": "WebUI metadata", "responses": { "200": { "description": "OK" } } }
-    },
-    "/web/status": {
-      "get": { "summary": "System status (public)", "responses": { "200": { "description": "OK" } } }
-    },
-    "/web/arr": {
-      "get": { "summary": "Arr instance list with rollup counts", "responses": { "200": { "description": "OK" } } }
-    },
-    "/web/config": {
-      "get": { "summary": "Get configuration", "responses": { "200": { "description": "OK" } } },
-      "post": { "summary": "Update configuration", "responses": { "200": { "description": "OK" } } }
-    },
-    "/web/login": {
-      "post": { "summary": "Local login", "responses": { "200": { "description": "OK" } } }
-    },
-    "/web/auth/set-password": {
-      "post": { "summary": "Set local password", "responses": { "200": { "description": "OK" } } }
-    },
-    "/web/radarr/{category}/movies": {
-      "get": { "summary": "Radarr movies browse", "responses": { "200": { "description": "OK" } } }
-    },
-    "/web/sonarr/{category}/series": {
-      "get": { "summary": "Sonarr series browse", "responses": { "200": { "description": "OK" } } }
-    },
-    "/web/lidarr/{category}/albums": {
-      "get": { "summary": "Lidarr albums browse", "responses": { "200": { "description": "OK" } } }
-    },
-    "/web/lidarr/{category}/artists": {
-      "get": { "summary": "Lidarr artists browse", "responses": { "200": { "description": "OK" } } }
-    },
-    "/web/lidarr/{category}/artist/{artist_id}": {
-      "get": { "summary": "Lidarr artist detail", "responses": { "200": { "description": "OK" } } }
-    },
-    "/web/lidarr/{category}/artist/{artist_id}/thumbnail": {
-      "get": { "summary": "Lidarr artist thumbnail proxy", "responses": { "200": { "description": "OK" } } }
-    },
-    "/web/radarr/{category}/movie/{id}/thumbnail": {
-      "get": { "summary": "Radarr movie thumbnail proxy", "responses": { "200": { "description": "OK" } } }
-    },
-    "/web/sonarr/{category}/series/{id}/thumbnail": {
-      "get": { "summary": "Sonarr series thumbnail proxy", "responses": { "200": { "description": "OK" } } }
-    },
-    "/api/status": {
-      "get": { "summary": "System status (requires auth)", "responses": { "200": { "description": "OK" } } }
-    },
-    "/api/meta": {
-      "get": { "summary": "API metadata", "responses": { "200": { "description": "OK" } } }
-    },
     "/api/arr": {
-      "get": { "summary": "Arr instance list", "responses": { "200": { "description": "OK" } } }
-    },
-    "/api/radarr/{category}/movies": {
-      "get": { "summary": "Radarr movies (API)", "responses": { "200": { "description": "OK" } } }
-    },
-    "/api/sonarr/{category}/series": {
-      "get": { "summary": "Sonarr series (API)", "responses": { "200": { "description": "OK" } } }
+      "get": {
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        },
+        "summary": "Arr instance list"
+      }
     },
     "/api/lidarr/{category}/albums": {
-      "get": { "summary": "Lidarr albums (API)", "responses": { "200": { "description": "OK" } } }
-    },
-    "/api/lidarr/{category}/artists": {
-      "get": { "summary": "Lidarr artists (API)", "responses": { "200": { "description": "OK" } } }
+      "get": {
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        },
+        "summary": "Lidarr albums (API)"
+      }
     },
     "/api/lidarr/{category}/artist/{artist_id}": {
-      "get": { "summary": "Lidarr artist detail (API)", "responses": { "200": { "description": "OK" } } }
+      "get": {
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        },
+        "summary": "Lidarr artist detail (API)"
+      }
     },
     "/api/lidarr/{category}/artist/{artist_id}/thumbnail": {
-      "get": { "summary": "Lidarr artist thumbnail (API)", "responses": { "200": { "description": "OK" } } }
+      "get": {
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        },
+        "summary": "Lidarr artist thumbnail (API)"
+      }
+    },
+    "/api/lidarr/{category}/artists": {
+      "get": {
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        },
+        "summary": "Lidarr artists (API)"
+      }
+    },
+    "/api/meta": {
+      "get": {
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        },
+        "summary": "API metadata"
+      }
     },
     "/api/radarr/{category}/movie/{id}/thumbnail": {
-      "get": { "summary": "Radarr movie thumbnail (API)", "responses": { "200": { "description": "OK" } } }
+      "get": {
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        },
+        "summary": "Radarr movie thumbnail (API)"
+      }
+    },
+    "/api/radarr/{category}/movies": {
+      "get": {
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        },
+        "summary": "Radarr movies (API)"
+      }
+    },
+    "/api/sonarr/{category}/series": {
+      "get": {
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        },
+        "summary": "Sonarr series (API)"
+      }
     },
     "/api/sonarr/{category}/series/{id}/thumbnail": {
-      "get": { "summary": "Sonarr series thumbnail (API)", "responses": { "200": { "description": "OK" } } }
+      "get": {
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        },
+        "summary": "Sonarr series thumbnail (API)"
+      }
+    },
+    "/api/status": {
+      "get": {
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        },
+        "summary": "System status (requires auth)"
+      }
+    },
+    "/health": {
+      "get": {
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        },
+        "summary": "Health check"
+      }
+    },
+    "/web/arr": {
+      "get": {
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        },
+        "summary": "Arr instance list with rollup counts"
+      }
+    },
+    "/web/auth/set-password": {
+      "post": {
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        },
+        "summary": "Set local password"
+      }
+    },
+    "/web/config": {
+      "get": {
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        },
+        "summary": "Get configuration"
+      },
+      "post": {
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        },
+        "summary": "Update configuration"
+      }
+    },
+    "/web/lidarr/{category}/albums": {
+      "get": {
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        },
+        "summary": "Lidarr albums browse"
+      }
+    },
+    "/web/lidarr/{category}/artist/{artist_id}": {
+      "get": {
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        },
+        "summary": "Lidarr artist detail"
+      }
+    },
+    "/web/lidarr/{category}/artist/{artist_id}/thumbnail": {
+      "get": {
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        },
+        "summary": "Lidarr artist thumbnail proxy"
+      }
+    },
+    "/web/lidarr/{category}/artists": {
+      "get": {
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        },
+        "summary": "Lidarr artists browse"
+      }
+    },
+    "/web/login": {
+      "post": {
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        },
+        "summary": "Local login"
+      }
+    },
+    "/web/meta": {
+      "get": {
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        },
+        "summary": "WebUI metadata"
+      }
+    },
+    "/web/radarr/{category}/movie/{id}/thumbnail": {
+      "get": {
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        },
+        "summary": "Radarr movie thumbnail proxy"
+      }
+    },
+    "/web/radarr/{category}/movies": {
+      "get": {
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        },
+        "summary": "Radarr movies browse"
+      }
+    },
+    "/web/sonarr/{category}/series": {
+      "get": {
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        },
+        "summary": "Sonarr series browse"
+      }
+    },
+    "/web/sonarr/{category}/series/{id}/thumbnail": {
+      "get": {
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        },
+        "summary": "Sonarr series thumbnail proxy"
+      }
+    },
+    "/web/status": {
+      "get": {
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        },
+        "summary": "System status (public)"
+      }
     }
   },
   "servers": [

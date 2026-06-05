@@ -450,8 +450,10 @@ const WEB_SETTINGS_FIELDS: FieldDefinition[] = [
     validate: (value) => {
       const raw = String(value ?? "").trim();
       if (!raw) return undefined;
-      if (!raw.startsWith("/")) return "UrlBase must start with / (e.g. /qbitrr).";
-      if (raw.endsWith("/")) return "UrlBase must not end with a trailing slash.";
+      if (!raw.startsWith("/"))
+        return "UrlBase must start with / (e.g. /qbitrr).";
+      if (raw.endsWith("/"))
+        return "UrlBase must not end with a trailing slash.";
       if (raw.includes("//")) return "UrlBase is invalid.";
       return undefined;
     },

@@ -114,7 +114,10 @@ async function fetchWithAuthRetry<T>(
   retries = MAX_AUTH_RETRIES,
 ): Promise<T> {
   const token = resolveToken();
-  const response = await fetch(resolveRequestInput(input), buildInit(init, token));
+  const response = await fetch(
+    resolveRequestInput(input),
+    buildInit(init, token),
+  );
   if (response.status === 401 && retries > 0 && token) {
     clearStoredToken();
     return fetchWithAuthRetry(input, init, handler, retries - 1);

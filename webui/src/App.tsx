@@ -765,7 +765,8 @@ function LoginPage({
                 required
               />
               <p className="login-info">
-                Use TORRENTARR_SETUP_TOKEN or the WebUI.Token value from config.toml.
+                Use TORRENTARR_SETUP_TOKEN or the WebUI.Token value from
+                config.toml.
               </p>
             </div>
             {error && <p className="login-error">{error}</p>}

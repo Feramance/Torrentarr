@@ -3,7 +3,9 @@ let cachedUrlBaseFromMeta: string | null = null;
 
 /** Derive UrlBase from the current page pathname (e.g. /qbitrr/static/index.html). */
 export function pathnameUrlBase(): string {
-  const staticMatch = window.location.pathname.match(/^(.*)\/static\/index\.html$/);
+  const staticMatch = window.location.pathname.match(
+    /^(.*)\/static\/index\.html$/,
+  );
   return staticMatch ? staticMatch[1] : "";
 }
 
