@@ -24,6 +24,11 @@ export function setUrlBaseFromMeta(base: string | undefined): void {
   }
 }
 
+/** Clear cached UrlBase (for Vitest isolation). */
+export function resetUrlBaseCacheForTests(): void {
+  cachedUrlBaseFromMeta = null;
+}
+
 /** Prefix an app-relative path (must start with /) with the active UrlBase. */
 export function webPath(path: string): string {
   if (!path.startsWith("/")) {

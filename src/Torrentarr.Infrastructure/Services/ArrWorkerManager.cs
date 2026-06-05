@@ -529,7 +529,7 @@ public class ArrWorkerManager : BackgroundService
         }
     }
 
-    private bool ShouldRunSearch(string instanceName, ArrInstanceConfig arrCfg)
+    internal bool ShouldRunSearch(string instanceName, ArrInstanceConfig arrCfg)
     {
         var interval = TimeSpan.FromSeconds(arrCfg.Search.SearchRequestsEvery);
         var last = _lastSearchTime.GetValueOrDefault(instanceName, DateTime.MinValue);

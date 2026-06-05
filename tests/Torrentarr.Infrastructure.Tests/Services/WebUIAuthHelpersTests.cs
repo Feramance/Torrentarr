@@ -1,4 +1,5 @@
 using FluentAssertions;
+using Torrentarr.Core.Configuration;
 using Torrentarr.Infrastructure.Services;
 using Xunit;
 
@@ -49,5 +50,85 @@ public class WebUIAuthHelpersTests
     public void IsPublicPath_ReturnsExpected(string path, string method, bool expected)
     {
         WebUIAuthHelpers.IsPublicPath(path, method).Should().Be(expected);
+    }
+
+    [Fact]
+    public void IsSetPasswordAllowed_AllowsAuthenticatedCaller()
+    {
+        var cfg = new TorrentarrConfig { WebUI = new WebUIConfig { Token = "secret" } };
+        WebUIAuthHelpers.IsSetPasswordAllowed(cfg, null, isAuthenticated: true, bearerOrQueryToken: null)
+            .Should().BeTrue();
+    }
+
+    [Fact]
+    public void IsSetPasswordAllowed_AllowsMatchingBearerToken()
+    {
+        var cfg = new TorrentarrConfig { WebUI = new WebUIConfig { Token = "api-token" } };
+        WebUIAuthHelpers.IsSetPasswordAllowed(cfg, null, isAuthenticated: false, bearerOrQueryToken: "api-token")
+            .Should().BeTrue();
+    }
+
+    [Fact]
+    public void IsSetPasswordAllowed_AllowsEnvSetupToken()
+    {
+        var cfg = new TorrentarrConfig { WebUI = new WebUIConfig { Token = "" } };
+        Environment.SetEnvironmentVariable("TORRENTARR_SETUP_TOKEN", "env-setup");
+        try
+        {
+            WebUIAuthHelpers.IsSetPasswordAllowed(cfg, "env-setup", isAuthenticated: false, bearerOrQueryToken: null)
+                .Should().BeTrue();
+        }
+        finally
+        {
+            Environment.SetEnvironmentVariable("TORRENTARR_SETUP_TOKEN", null);
+        }
+    }
+
+    [Fact]
+    public void IsSetPasswordAllowed_AllowsQbitrrEnvSetupToken()
+    {
+        var cfg = new TorrentarrConfig { WebUI = new WebUIConfig { Token = "" } };
+        Environment.SetEnvironmentVariable("QBITRR_SETUP_TOKEN", "legacy-setup");
+        try
+        {
+            WebUIAuthHelpers.IsSetPasswordAllowed(cfg, "legacy-setup", isAuthenticated: false, bearerOrQueryToken: null)
+                .Should().BeTrue();
+        }
+        finally
+        {
+            Environment.SetEnvironmentVariable("QBITRR_SETUP_TOKEN", null);
+        }
+    }
+
+    [Fact]
+    public void IsSetPasswordAllowed_AllowsWebUiTokenAsSetupToken()
+    {
+        var cfg = new TorrentarrConfig { WebUI = new WebUIConfig { Token = "config-token" } };
+        WebUIAuthHelpers.IsSetPasswordAllowed(cfg, "config-token", isAuthenticated: false, bearerOrQueryToken: null)
+            .Should().BeTrue();
+    }
+
+    [Fact]
+    public void IsSetPasswordAllowed_RejectsMissingSetupToken()
+    {
+        var cfg = new TorrentarrConfig { WebUI = new WebUIConfig { Token = "secret" } };
+        WebUIAuthHelpers.IsSetPasswordAllowed(cfg, null, isAuthenticated: false, bearerOrQueryToken: null)
+            .Should().BeFalse();
+    }
+
+    [Fact]
+    public void IsSetPasswordAllowed_RejectsWrongSetupToken()
+    {
+        var cfg = new TorrentarrConfig { WebUI = new WebUIConfig { Token = "secret" } };
+        Environment.SetEnvironmentVariable("TORRENTARR_SETUP_TOKEN", "expected");
+        try
+        {
+            WebUIAuthHelpers.IsSetPasswordAllowed(cfg, "wrong", isAuthenticated: false, bearerOrQueryToken: null)
+                .Should().BeFalse();
+        }
+        finally
+        {
+            Environment.SetEnvironmentVariable("TORRENTARR_SETUP_TOKEN", null);
+        }
     }
 }
