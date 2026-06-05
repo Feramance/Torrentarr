@@ -1,4 +1,5 @@
 using FluentAssertions;
+using Torrentarr.Core.Configuration;
 using Torrentarr.Infrastructure.Services;
 using Xunit;
 
@@ -49,5 +50,21 @@ public class WebUIAuthHelpersTests
     public void IsPublicPath_ReturnsExpected(string path, string method, bool expected)
     {
         WebUIAuthHelpers.IsPublicPath(path, method).Should().Be(expected);
+    }
+
+    [Fact]
+    public void IsSetPasswordAllowed_BearerApiToken_WhenPasswordUnset_AllowsBootstrap()
+    {
+        var cfg = new TorrentarrConfig { WebUI = { Token = "api-token", PasswordHash = "" } };
+        WebUIAuthHelpers.IsSetPasswordAllowed(cfg, setupToken: null, isAuthenticated: false, bearerOrQueryToken: "api-token")
+            .Should().BeTrue();
+    }
+
+    [Fact]
+    public void IsSetPasswordAllowed_BearerApiToken_WhenPasswordAlreadySet_DeniesReset()
+    {
+        var cfg = new TorrentarrConfig { WebUI = { Token = "api-token", PasswordHash = "hashed" } };
+        WebUIAuthHelpers.IsSetPasswordAllowed(cfg, setupToken: null, isAuthenticated: false, bearerOrQueryToken: "api-token")
+            .Should().BeFalse();
     }
 }
