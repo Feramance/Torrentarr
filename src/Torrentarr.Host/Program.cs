@@ -189,8 +189,8 @@ try
             options.Cookie.SecurePolicy = Microsoft.AspNetCore.Http.CookieSecurePolicy.SameAsRequest;
             if (!string.IsNullOrEmpty(urlBase))
                 options.Cookie.Path = urlBase + "/";
-            options.LoginPath = "/login";
-            options.AccessDeniedPath = "/login";
+            options.LoginPath = UrlBaseHelper.WithUrlBase(urlBase, "/login");
+            options.AccessDeniedPath = UrlBaseHelper.WithUrlBase(urlBase, "/login");
         });
     if (config.WebUI.OIDCEnabled && config.WebUI.OIDC is { } oidc
         && !string.IsNullOrWhiteSpace(oidc.Authority)
@@ -487,7 +487,8 @@ try
             await context.Response.WriteAsJsonAsync(new { error = "Unauthorized" });
             return;
         }
-        context.Response.Redirect("/login");
+        context.Response.Redirect(UrlBaseHelper.WithUrlBase(
+            UrlBaseHelper.NormalizeUrlBase(cfg.WebUI.UrlBase), "/login"));
     });
 
     static bool IsAuthRequired(TorrentarrConfig c) => !c.WebUI.AuthDisabled;
@@ -1519,15 +1520,17 @@ try
     });
 
     // Logout: sign out cookie and redirect to login (GET or POST for link/form compatibility).
-    app.MapGet("/web/logout", async (HttpContext ctx) =>
+    app.MapGet("/web/logout", async (HttpContext ctx, TorrentarrConfig cfg) =>
     {
         await ctx.SignOutAsync(CookieAuthenticationDefaults.AuthenticationScheme);
-        return Results.Redirect("/login", false);
+        return Results.Redirect(UrlBaseHelper.WithUrlBase(
+            UrlBaseHelper.NormalizeUrlBase(cfg.WebUI.UrlBase), "/login"), false);
     });
-    app.MapPost("/web/logout", async (HttpContext ctx) =>
+    app.MapPost("/web/logout", async (HttpContext ctx, TorrentarrConfig cfg) =>
     {
         await ctx.SignOutAsync(CookieAuthenticationDefaults.AuthenticationScheme);
-        return Results.Redirect("/login", false);
+        return Results.Redirect(UrlBaseHelper.WithUrlBase(
+            UrlBaseHelper.NormalizeUrlBase(cfg.WebUI.UrlBase), "/login"), false);
     });
 
     // Set password (first-time or reset): hash and write to config. Allowed when PasswordHash is empty or via setup token.

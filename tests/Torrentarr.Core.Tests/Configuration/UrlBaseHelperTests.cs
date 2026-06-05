@@ -24,4 +24,19 @@ public class UrlBaseHelperTests
     {
         UrlBaseHelper.NormalizeUrlBase(42).Should().Be("/42");
     }
+
+    [Theory]
+    [InlineData("", "/login", "/login")]
+    [InlineData("/torrentarr", "/login", "/torrentarr/login")]
+    [InlineData("/torrentarr", "login", "/torrentarr/login")]
+    public void WithUrlBase_PrefixesConfiguredBase(string urlBase, string path, string expected)
+    {
+        UrlBaseHelper.WithUrlBase(urlBase, path).Should().Be(expected);
+    }
+
+    [Fact]
+    public void WithUrlBase_HandlesRequestStylePathBase()
+    {
+        UrlBaseHelper.WithUrlBase("/torrentarr", "/login").Should().Be("/torrentarr/login");
+    }
 }
