@@ -28,7 +28,7 @@
         </member>
         <member name="M:Microsoft.AspNetCore.Identity.AuthenticatorTokenProvider`1.ValidateAsync(System.String,System.String,Microsoft.AspNetCore.Identity.UserManager{`0},`0)">
              <summary>
-            
+
              </summary>
              <param name="purpose"></param>
              <param name="token"></param>
@@ -555,12 +555,12 @@
         </member>
         <member name="F:Microsoft.AspNetCore.Identity.IdentitySchemaVersions.Default">
             <summary>
-            Represents the default version of the identity schema 
+            Represents the default version of the identity schema
             </summary>
         </member>
         <member name="F:Microsoft.AspNetCore.Identity.IdentitySchemaVersions.Version1">
             <summary>
-            Represents the initial 1.0 version of the identity schema 
+            Represents the initial 1.0 version of the identity schema
             </summary>
         </member>
         <member name="F:Microsoft.AspNetCore.Identity.IdentitySchemaVersions.Version2">
@@ -1576,7 +1576,7 @@
              insuring a token for one purpose cannot be used for another. For example if you specified a purpose of "Email"
              and validated it with the same purpose a token with the purpose of TOTP would not pass the check even if it was
              for the same user.
-            
+
              Implementations of <see cref="T:Microsoft.AspNetCore.Identity.IUserTwoFactorTokenProvider`1"/> should validate that purpose is not null or empty to
              help with token separation.
              </remarks>
@@ -2377,15 +2377,15 @@
             <param name="manager">The <see cref="T:Microsoft.AspNetCore.Identity.UserManager`1"/> that can be used to retrieve user properties.</param>
             <param name="user">The user a token should be generated for.</param>
             <returns>
-            The <see cref="T:System.Threading.Tasks.Task"/> that represents the asynchronous operation, containing the token for the specified 
+            The <see cref="T:System.Threading.Tasks.Task"/> that represents the asynchronous operation, containing the token for the specified
             <paramref name="user"/> and <paramref name="purpose"/>.
             </returns>
             <remarks>
             The <paramref name="purpose"/> parameter allows a token generator to be used for multiple types of token whilst
-            insuring a token for one purpose cannot be used for another. For example if you specified a purpose of "Email" 
+            insuring a token for one purpose cannot be used for another. For example if you specified a purpose of "Email"
             and validated it with the same purpose a token with the purpose of TOTP would not pass the check even if it was
             for the same user.
-            
+
             Implementations of <see cref="T:Microsoft.AspNetCore.Identity.IUserTwoFactorTokenProvider`1"/> should validate that purpose is not null or empty to
             help with token separation.
             </remarks>
@@ -2413,7 +2413,7 @@
             <param name="manager">The <see cref="T:Microsoft.AspNetCore.Identity.UserManager`1"/> that can be used to retrieve user properties.</param>
             <param name="user">The user a token should be generated for.</param>
             <returns>
-            The <see cref="T:System.Threading.Tasks.Task"/> that represents the asynchronous operation, containing a constant modifier for the specified 
+            The <see cref="T:System.Threading.Tasks.Task"/> that represents the asynchronous operation, containing a constant modifier for the specified
             <paramref name="user"/> and <paramref name="purpose"/>.
             </returns>
         </member>

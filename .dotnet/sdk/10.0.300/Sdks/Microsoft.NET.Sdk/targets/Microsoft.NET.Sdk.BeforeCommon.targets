@@ -253,7 +253,7 @@ Copyright (c) .NET Foundation. All rights reserved.
     <ItemGroup>
       <!--
         Prefer the normalized version of the supported target platform version when available.
-        This allows to drop the .1 at the end of the version in CsWinRT 3.0 scenarios and 
+        This allows to drop the .1 at the end of the version in CsWinRT 3.0 scenarios and
         use a common define for both CsWinRT 3.0 and CsWinRT 2.x.
       -->
       <_SupportedPlatformCompatibleVersions Include="@(SdkSupportedTargetPlatformVersion)"

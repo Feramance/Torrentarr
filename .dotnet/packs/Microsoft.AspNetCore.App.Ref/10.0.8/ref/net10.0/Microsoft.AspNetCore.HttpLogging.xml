@@ -434,9 +434,9 @@
             </remarks>
         </member>
         <member name="P:Microsoft.AspNetCore.HttpLogging.ISystemDateTime.Now">
-            <summary> 
+            <summary>
             Retrieves the date and time currently set for this machine.
-            </summary> 
+            </summary>
         </member>
         <member name="T:Microsoft.AspNetCore.HttpLogging.MediaTypeOptions">
             <summary>

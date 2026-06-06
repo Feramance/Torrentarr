@@ -1,15 +1,19 @@
 {
+  "compilationOptions": {},
+  "libraries": {
+    "Microsoft.SourceLink.Common/10.0.300": {
+      "serviceable": false,
+      "sha512": "",
+      "type": "project"
+    }
+  },
   "runtimeTarget": {
     "name": ".NETCoreApp,Version=v8.0",
     "signature": ""
   },
-  "compilationOptions": {},
   "targets": {
     ".NETCoreApp,Version=v8.0": {
       "Microsoft.SourceLink.Common/10.0.300": {
-        "runtime": {
-          "Microsoft.SourceLink.Common.dll": {}
-        },
         "resources": {
           "cs/Microsoft.SourceLink.Common.resources.dll": {
             "locale": "cs"
@@ -50,15 +54,11 @@
           "zh-Hant/Microsoft.SourceLink.Common.resources.dll": {
             "locale": "zh-Hant"
           }
+        },
+        "runtime": {
+          "Microsoft.SourceLink.Common.dll": {}
         }
       }
-    }
-  },
-  "libraries": {
-    "Microsoft.SourceLink.Common/10.0.300": {
-      "type": "project",
-      "serviceable": false,
-      "sha512": ""
     }
   }
 }

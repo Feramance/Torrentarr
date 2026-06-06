@@ -1,9 +1,16 @@
 {
+  "compilationOptions": {},
+  "libraries": {
+    "dotnet-dev-certs/10.0.8-servicing.26229.119": {
+      "serviceable": false,
+      "sha512": "",
+      "type": "project"
+    }
+  },
   "runtimeTarget": {
     "name": ".NETCoreApp,Version=v10.0",
     "signature": ""
   },
-  "compilationOptions": {},
   "targets": {
     ".NETCoreApp,Version=v10.0": {
       "dotnet-dev-certs/10.0.8-servicing.26229.119": {
@@ -11,13 +18,6 @@
           "dotnet-dev-certs.dll": {}
         }
       }
-    }
-  },
-  "libraries": {
-    "dotnet-dev-certs/10.0.8-servicing.26229.119": {
-      "type": "project",
-      "serviceable": false,
-      "sha512": ""
     }
   }
 }

@@ -2334,8 +2334,8 @@ Note: In .NET for Windows Store apps or the Portable Class Library, catch the ba
       <param name="lHashVal">A hash value to speed up the search, computed by the <see langword="LHashValOfNameSys" /> function. If <paramref name="lHashVal" /> is 0, a value is computed.</param>
       <param name="ppTInfo">When this method returns, contains an array of pointers to the type descriptions that contain the name specified in <paramref name="szNameBuf" />. This parameter is passed uninitialized.</param>
       <param name="rgMemId">An array of the <see langword="MEMBERID" /> 's of the found items; <paramref name="rgMemId" /> [i] is the <see langword="MEMBERID" /> that indexes into the type description specified by <paramref name="ppTInfo" /> [i]. Cannot be <see langword="null" />.</param>
-      <param name="pcFound">On entry, indicates how many instances to look for. For example, <paramref name="pcFound" /> = 1 can be called to find the first occurrence. The search stops when one instance is found.  
-  
+      <param name="pcFound">On entry, indicates how many instances to look for. For example, <paramref name="pcFound" /> = 1 can be called to find the first occurrence. The search stops when one instance is found.
+
  On exit, indicates the number of instances that were found. If the <see langword="in" /> and <see langword="out" /> values of <paramref name="pcFound" /> are identical, there might be more type descriptions that contain the name.</param>
     </member>
     <member name="M:System.Runtime.InteropServices.ComTypes.ITypeLib.GetDocumentation(System.Int32,System.String@,System.String@,System.Int32@,System.String@)">
@@ -2393,8 +2393,8 @@ Note: In .NET for Windows Store apps or the Portable Class Library, catch the ba
       <param name="lHashVal">A hash value to speed up the search, computed by the <see langword="LHashValOfNameSys" /> function. If <paramref name="lHashVal" /> is 0, a value is computed.</param>
       <param name="ppTInfo">When this method returns, contains an array of pointers to the type descriptions that contain the name specified in <paramref name="szNameBuf" />. This parameter is passed uninitialized.</param>
       <param name="rgMemId">When this method returns, contains an array of the <see langword="MEMBERID" />s of the found items; <paramref name="rgMemId" /> [i] is the <see langword="MEMBERID" /> that indexes into the type description specified by <paramref name="ppTInfo" /> [i]. This parameter cannot be <see langword="null" />. This parameter is passed uninitialized.</param>
-      <param name="pcFound">On entry, a value, passed by reference, that indicates how many instances to look for. For example, <paramref name="pcFound" /> = 1 can be called to find the first occurrence. The search stops when one instance is found.  
-  
+      <param name="pcFound">On entry, a value, passed by reference, that indicates how many instances to look for. For example, <paramref name="pcFound" /> = 1 can be called to find the first occurrence. The search stops when one instance is found.
+
  On exit, indicates the number of instances that were found. If the <see langword="in" /> and <see langword="out" /> values of <paramref name="pcFound" /> are identical, there might be more type descriptions that contain the name.</param>
     </member>
     <member name="M:System.Runtime.InteropServices.ComTypes.ITypeLib2.GetAllCustData(System.IntPtr)">
@@ -3165,15 +3165,15 @@ Note: In .NET for Windows Store apps or the Portable Class Library, catch the ba
       <summary>Initializes a new instance of the <see cref="T:System.Runtime.InteropServices.DispatchWrapper" /> class with the object being wrapped.</summary>
       <param name="obj">The object to be wrapped and converted to <see cref="F:System.Runtime.InteropServices.VarEnum.VT_DISPATCH" />.</param>
       <exception cref="T:System.ArgumentException">
-        <paramref name="obj" /> is not a class or an array.  
-  
- -or-  
-  
+        <paramref name="obj" /> is not a class or an array.
+
+ -or-
+
  <paramref name="obj" /> does not support <see langword="IDispatch" />.</exception>
-      <exception cref="T:System.InvalidOperationException">The <paramref name="obj" /> parameter was marked with a <see cref="T:System.Runtime.InteropServices.ComVisibleAttribute" /> attribute that was passed a value of <see langword="false" />.  
-  
- -or-  
-  
+      <exception cref="T:System.InvalidOperationException">The <paramref name="obj" /> parameter was marked with a <see cref="T:System.Runtime.InteropServices.ComVisibleAttribute" /> attribute that was passed a value of <see langword="false" />.
+
+ -or-
+
  The <paramref name="obj" /> parameter inherits from a type marked with a <see cref="T:System.Runtime.InteropServices.ComVisibleAttribute" /> attribute that was passed a value of <see langword="false" />.</exception>
     </member>
     <member name="P:System.Runtime.InteropServices.DispatchWrapper.WrappedObject">
@@ -3302,10 +3302,10 @@ Note: In .NET for Windows Store apps or the Portable Class Library, catch the ba
       <param name="name">A name for the collector.  This parameter allows you to name collectors that track handle types separately.</param>
       <param name="initialThreshold">A value that specifies the point at which collections should begin.</param>
       <param name="maximumThreshold">A value that specifies the point at which collections must occur. This should be set to the maximum number of available handles.</param>
-      <exception cref="T:System.ArgumentOutOfRangeException">The <paramref name="initialThreshold" /> parameter is less than 0.  
-  
- -or-  
-  
+      <exception cref="T:System.ArgumentOutOfRangeException">The <paramref name="initialThreshold" /> parameter is less than 0.
+
+ -or-
+
  The <paramref name="maximumThreshold" /> parameter is less than 0.</exception>
       <exception cref="T:System.ArgumentException">The <paramref name="maximumThreshold" /> parameter is less than the <paramref name="initialThreshold" /> parameter.</exception>
     </member>

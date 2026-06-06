@@ -23,7 +23,7 @@
              <item><term>EndColumnNumber</term></item>
              <item><term>{OriginalFormat}</term><description>(usually provided by the underlying logging framework)</description></item>
              </list>
-            
+
              So if you add these to the scope (e.g. via <code lang="csharp">_logger.BeginScope(new Dictionary&lt;string, object&gt;{ ... }))</code> or on the message format itself,
              they will be extracted and used to format the message correctly for MSBuild.
              </remarks>

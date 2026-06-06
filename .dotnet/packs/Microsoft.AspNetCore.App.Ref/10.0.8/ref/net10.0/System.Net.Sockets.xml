@@ -918,8 +918,8 @@ There was a failure while writing to the network.</exception>
       <param name="count">The number bytes to send starting from the <paramref name="offset" /> parameter. If <paramref name="count" /> is zero, no bytes are sent.</param>
       <param name="endOfPacket">A Boolean value that specifies that this element should not be combined with the next element in a single send request from the sockets layer to the transport. This flag is used for granular control of the content of each message on a datagram or message-oriented socket.</param>
       <exception cref="T:System.ArgumentNullException">The <paramref name="buffer" /> parameter cannot be null.</exception>
-      <exception cref="T:System.ArgumentOutOfRangeException">The <paramref name="offset" /> and <paramref name="count" /> parameters must be greater than or equal to zero.  
-  
+      <exception cref="T:System.ArgumentOutOfRangeException">The <paramref name="offset" /> and <paramref name="count" /> parameters must be greater than or equal to zero.
+
  The <paramref name="offset" /> and <paramref name="count" /> must be less than the size of the buffer.</exception>
     </member>
     <member name="M:System.Net.Sockets.SendPacketsElement.#ctor(System.Byte[],System.Int32,System.Int32)">
@@ -928,8 +928,8 @@ There was a failure while writing to the network.</exception>
       <param name="offset">The offset, in bytes, from the beginning of the <paramref name="buffer" /> to the location in the <paramref name="buffer" /> to start sending the data specified in the <paramref name="buffer" /> parameter.</param>
       <param name="count">The number of bytes to send starting from the <paramref name="offset" /> parameter. If <paramref name="count" /> is zero, no bytes are sent.</param>
       <exception cref="T:System.ArgumentNullException">The <paramref name="buffer" /> parameter cannot be null.</exception>
-      <exception cref="T:System.ArgumentOutOfRangeException">The <paramref name="offset" /> and <paramref name="count" /> parameters must be greater than or equal to zero.  
-  
+      <exception cref="T:System.ArgumentOutOfRangeException">The <paramref name="offset" /> and <paramref name="count" /> parameters must be greater than or equal to zero.
+
  The <paramref name="offset" /> and <paramref name="count" /> must be less than the size of the buffer.</exception>
     </member>
     <member name="M:System.Net.Sockets.SendPacketsElement.#ctor(System.Byte[])">

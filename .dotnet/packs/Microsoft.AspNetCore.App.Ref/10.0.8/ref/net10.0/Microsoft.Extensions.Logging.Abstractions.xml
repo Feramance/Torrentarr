@@ -71,14 +71,14 @@
              <remarks>
              A logging provider implements the <see cref="T:Microsoft.Extensions.Logging.ILogger" /> interface that gets invoked by the
              logging infrastructure whenever it’s time to log a piece of state.
-            
+
              A logging provider may also optionally implement the <see cref="T:Microsoft.Extensions.Logging.Abstractions.IBufferedLogger" /> interface.
              The logging infrastructure may type-test the <see cref="T:Microsoft.Extensions.Logging.ILogger" /> object to determine if
              it supports the <see cref="T:Microsoft.Extensions.Logging.Abstractions.IBufferedLogger" /> interface. If it does, that indicates to the
              logging infrastructure that the logging provider supports buffering. Whenever log
              buffering is enabled, buffered log records may be delivered to the logging provider
              in a batch via <see cref="M:Microsoft.Extensions.Logging.Abstractions.IBufferedLogger.LogRecords(System.Collections.Generic.IEnumerable{Microsoft.Extensions.Logging.Abstractions.BufferedLogRecord})" />.
-            
+
              If a logging provider does not support log buffering, then it will always be given
              unbuffered log records. If a logging provider does support log buffering, whether its
              <see cref="T:Microsoft.Extensions.Logging.ILogger" /> or <see cref="T:Microsoft.Extensions.Logging.Abstractions.IBufferedLogger" /> implementation is used is

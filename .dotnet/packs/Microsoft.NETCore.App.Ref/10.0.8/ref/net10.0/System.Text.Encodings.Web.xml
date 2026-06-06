@@ -262,9 +262,9 @@
       <param name="firstCodePoint">The first code point in the range.</param>
       <param name="length">The number of code points in the range.</param>
       <exception cref="T:System.ArgumentOutOfRangeException">
-        <paramref name="firstCodePoint" /> is less than zero or greater than 0xFFFF. 
+        <paramref name="firstCodePoint" /> is less than zero or greater than 0xFFFF.
 
--or-           
+-or-
 
 <paramref name="length" /> is less than zero.
 

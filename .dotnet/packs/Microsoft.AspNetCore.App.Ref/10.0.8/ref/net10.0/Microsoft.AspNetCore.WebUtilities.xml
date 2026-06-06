@@ -37,16 +37,16 @@
         <member name="M:Microsoft.AspNetCore.Internal.UrlDecoder.UnescapePercentEncoding(System.Int32@,System.Span{System.Byte},System.Boolean)">
              <summary>
              Read the percent-encoding and try unescape it.
-            
+
              The operation first peek at the character the <paramref name="scan"/>
              iterator points at. If it is % the <paramref name="scan"/> is then
              moved on to scan the following to characters. If the two following
              characters are hexadecimal literals they will be unescaped and the
              value will be returned.
-            
+
              If the first character is not % the <paramref name="scan"/> iterator
              will be removed beyond the location of % and -1 will be returned.
-            
+
              If the following two characters can't be successfully unescaped the
              <paramref name="scan"/> iterator will be move behind the % and -1
              will be returned.
@@ -59,7 +59,7 @@
         <member name="M:Microsoft.AspNetCore.Internal.UrlDecoder.ReadHex(System.Int32@,System.Span{System.Byte})">
              <summary>
              Read the next char and convert it into hexadecimal value.
-            
+
              The <paramref name="scan"/> index will be moved to the next
              byte no matter whether the operation successes.
              </summary>
@@ -103,16 +103,16 @@
         <member name="M:Microsoft.AspNetCore.Internal.UrlDecoder.UnescapePercentEncoding(System.Int32@,System.ReadOnlySpan{System.Char})">
              <summary>
              Read the percent-encoding and try unescape it.
-            
+
              The operation first peek at the character the <paramref name="scan"/>
              iterator points at. If it is % the <paramref name="scan"/> is then
              moved on to scan the following to characters. If the two following
              characters are hexadecimal literals they will be unescaped and the
              value will be returned.
-            
+
              If the first character is not % the <paramref name="scan"/> iterator
              will be removed beyond the location of % and -1 will be returned.
-            
+
              If the following two characters can't be successfully unescaped the
              <paramref name="scan"/> iterator will be move behind the % and -1
              will be returned.
@@ -124,7 +124,7 @@
         <member name="M:Microsoft.AspNetCore.Internal.UrlDecoder.ReadHex(System.Int32@,System.ReadOnlySpan{System.Char})">
              <summary>
              Read the next char and convert it into hexadecimal value.
-            
+
              The <paramref name="scan"/> index will be moved to the next
              char no matter whether the operation successes.
              </summary>

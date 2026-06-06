@@ -13,16 +13,16 @@
       <param name="eventRights">A bitwise combination of <see cref="T:System.Security.AccessControl.EventWaitHandleRights" /> values specifying the rights allowed or denied.</param>
       <param name="type">One of the <see cref="T:System.Security.AccessControl.AccessControlType" /> values specifying whether the rights are allowed or denied.</param>
       <exception cref="T:System.ArgumentOutOfRangeException">
-        <paramref name="eventRights" /> specifies an invalid value.  
-  
- -or-  
-  
+        <paramref name="eventRights" /> specifies an invalid value.
+
+ -or-
+
  <paramref name="type" /> specifies an invalid value.</exception>
       <exception cref="T:System.ArgumentNullException">
-        <paramref name="identity" /> is <see langword="null" />.  
-  
- -or-  
-  
+        <paramref name="identity" /> is <see langword="null" />.
+
+ -or-
+
  <paramref name="eventRights" /> is zero.</exception>
       <exception cref="T:System.ArgumentException">
         <paramref name="identity" /> is neither of type <see cref="T:System.Security.Principal.SecurityIdentifier" /> nor of a type such as <see cref="T:System.Security.Principal.NTAccount" /> that can be converted to type <see cref="T:System.Security.Principal.SecurityIdentifier" />.</exception>
@@ -33,22 +33,22 @@
       <param name="eventRights">A bitwise combination of <see cref="T:System.Security.AccessControl.EventWaitHandleRights" /> values specifying the rights allowed or denied.</param>
       <param name="type">One of the <see cref="T:System.Security.AccessControl.AccessControlType" /> values specifying whether the rights are allowed or denied.</param>
       <exception cref="T:System.ArgumentOutOfRangeException">
-        <paramref name="eventRights" /> specifies an invalid value.  
-  
- -or-  
-  
+        <paramref name="eventRights" /> specifies an invalid value.
+
+ -or-
+
  <paramref name="type" /> specifies an invalid value.</exception>
       <exception cref="T:System.ArgumentNullException">
         <paramref name="eventRights" /> is zero.</exception>
       <exception cref="T:System.ArgumentException">
-        <paramref name="identity" /> is <see langword="null" />.  
-  
- -or-  
-  
- <paramref name="identity" /> is a zero-length string.  
-  
- -or-  
-  
+        <paramref name="identity" /> is <see langword="null" />.
+
+ -or-
+
+ <paramref name="identity" /> is a zero-length string.
+
+ -or-
+
  <paramref name="identity" /> is longer than 512 characters.</exception>
     </member>
     <member name="P:System.Security.AccessControl.EventWaitHandleAccessRule.EventWaitHandleRights">
@@ -64,16 +64,16 @@
       <param name="eventRights">A bitwise combination of <see cref="T:System.Security.AccessControl.EventWaitHandleRights" /> values specifying the kinds of access to audit.</param>
       <param name="flags">A bitwise combination of <see cref="T:System.Security.AccessControl.AuditFlags" /> values specifying whether to audit success, failure, or both.</param>
       <exception cref="T:System.ArgumentOutOfRangeException">
-        <paramref name="eventRights" /> specifies an invalid value.  
-  
- -or-  
-  
+        <paramref name="eventRights" /> specifies an invalid value.
+
+ -or-
+
  <paramref name="flags" /> specifies an invalid value.</exception>
       <exception cref="T:System.ArgumentNullException">
-        <paramref name="identity" /> is <see langword="null" />.  
-  
- -or-  
-  
+        <paramref name="identity" /> is <see langword="null" />.
+
+ -or-
+
  <paramref name="eventRights" /> is zero.</exception>
       <exception cref="T:System.ArgumentException">
         <paramref name="identity" /> is neither of type <see cref="T:System.Security.Principal.SecurityIdentifier" /> nor of a type such as <see cref="T:System.Security.Principal.NTAccount" /> that can be converted to type <see cref="T:System.Security.Principal.SecurityIdentifier" />.</exception>
@@ -243,16 +243,16 @@
       <param name="eventRights">A bitwise combination of <see cref="T:System.Security.AccessControl.MutexRights" /> values specifying the rights allowed or denied.</param>
       <param name="type">One of the <see cref="T:System.Security.AccessControl.AccessControlType" /> values specifying whether the rights are allowed or denied.</param>
       <exception cref="T:System.ArgumentOutOfRangeException">
-        <paramref name="eventRights" /> specifies an invalid value.  
-  
- -or-  
-  
+        <paramref name="eventRights" /> specifies an invalid value.
+
+ -or-
+
  <paramref name="type" /> specifies an invalid value.</exception>
       <exception cref="T:System.ArgumentNullException">
-        <paramref name="identity" /> is <see langword="null" />.  
-  
- -or-  
-  
+        <paramref name="identity" /> is <see langword="null" />.
+
+ -or-
+
  <paramref name="eventRights" /> is zero.</exception>
       <exception cref="T:System.ArgumentException">
         <paramref name="identity" /> is neither of type <see cref="T:System.Security.Principal.SecurityIdentifier" /> nor of a type such as <see cref="T:System.Security.Principal.NTAccount" /> that can be converted to type <see cref="T:System.Security.Principal.SecurityIdentifier" />.</exception>
@@ -263,22 +263,22 @@
       <param name="eventRights">A bitwise combination of <see cref="T:System.Security.AccessControl.MutexRights" /> values specifying the rights allowed or denied.</param>
       <param name="type">One of the <see cref="T:System.Security.AccessControl.AccessControlType" /> values specifying whether the rights are allowed or denied.</param>
       <exception cref="T:System.ArgumentOutOfRangeException">
-        <paramref name="eventRights" /> specifies an invalid value.  
-  
- -or-  
-  
+        <paramref name="eventRights" /> specifies an invalid value.
+
+ -or-
+
  <paramref name="type" /> specifies an invalid value.</exception>
       <exception cref="T:System.ArgumentNullException">
         <paramref name="eventRights" /> is zero.</exception>
       <exception cref="T:System.ArgumentException">
-        <paramref name="identity" /> is <see langword="null" />.  
-  
- -or-  
-  
- <paramref name="identity" /> is a zero-length string.  
-  
- -or-  
-  
+        <paramref name="identity" /> is <see langword="null" />.
+
+ -or-
+
+ <paramref name="identity" /> is a zero-length string.
+
+ -or-
+
  <paramref name="identity" /> is longer than 512 characters.</exception>
     </member>
     <member name="P:System.Security.AccessControl.MutexAccessRule.MutexRights">
@@ -294,16 +294,16 @@
       <param name="eventRights">A bitwise combination of <see cref="T:System.Security.AccessControl.MutexRights" /> values specifying the kinds of access to audit.</param>
       <param name="flags">A bitwise combination of <see cref="T:System.Security.AccessControl.AuditFlags" /> values specifying whether to audit success, failure, or both.</param>
       <exception cref="T:System.ArgumentOutOfRangeException">
-        <paramref name="eventRights" /> specifies an invalid value.  
-  
- -or-  
-  
+        <paramref name="eventRights" /> specifies an invalid value.
+
+ -or-
+
  <paramref name="flags" /> specifies an invalid value.</exception>
       <exception cref="T:System.ArgumentNullException">
-        <paramref name="identity" /> is <see langword="null" />.  
-  
- -or-  
-  
+        <paramref name="identity" /> is <see langword="null" />.
+
+ -or-
+
  <paramref name="eventRights" /> is zero.</exception>
       <exception cref="T:System.ArgumentException">
         <paramref name="identity" /> is neither of type <see cref="T:System.Security.Principal.SecurityIdentifier" /> nor of a type such as <see cref="T:System.Security.Principal.NTAccount" /> that can be translated to type <see cref="T:System.Security.Principal.SecurityIdentifier" />.</exception>
@@ -479,16 +479,16 @@
       <param name="eventRights">A bitwise combination of <see cref="T:System.Security.AccessControl.SemaphoreRights" /> values specifying the rights allowed or denied.</param>
       <param name="type">One of the <see cref="T:System.Security.AccessControl.AccessControlType" /> values specifying whether the rights are allowed or denied.</param>
       <exception cref="T:System.ArgumentOutOfRangeException">
-        <paramref name="eventRights" /> specifies an invalid value.  
-  
- -or-  
-  
+        <paramref name="eventRights" /> specifies an invalid value.
+
+ -or-
+
  <paramref name="type" /> specifies an invalid value.</exception>
       <exception cref="T:System.ArgumentNullException">
-        <paramref name="identity" /> is <see langword="null" />.  
-  
- -or-  
-  
+        <paramref name="identity" /> is <see langword="null" />.
+
+ -or-
+
  <paramref name="eventRights" /> is zero.</exception>
       <exception cref="T:System.ArgumentException">
         <paramref name="identity" /> is neither of type <see cref="T:System.Security.Principal.SecurityIdentifier" /> nor of a type such as <see cref="T:System.Security.Principal.NTAccount" /> that can be converted to type <see cref="T:System.Security.Principal.SecurityIdentifier" />.</exception>
@@ -499,22 +499,22 @@
       <param name="eventRights">A bitwise combination of <see cref="T:System.Security.AccessControl.SemaphoreRights" /> values specifying the rights allowed or denied.</param>
       <param name="type">One of the <see cref="T:System.Security.AccessControl.AccessControlType" /> values specifying whether the rights are allowed or denied.</param>
       <exception cref="T:System.ArgumentOutOfRangeException">
-        <paramref name="eventRights" /> specifies an invalid value.  
-  
- -or-  
-  
+        <paramref name="eventRights" /> specifies an invalid value.
+
+ -or-
+
  <paramref name="type" /> specifies an invalid value.</exception>
       <exception cref="T:System.ArgumentNullException">
         <paramref name="eventRights" /> is zero.</exception>
       <exception cref="T:System.ArgumentException">
-        <paramref name="identity" /> is <see langword="null" />.  
-  
- -or-  
-  
- <paramref name="identity" /> is a zero-length string.  
-  
- -or-  
-  
+        <paramref name="identity" /> is <see langword="null" />.
+
+ -or-
+
+ <paramref name="identity" /> is a zero-length string.
+
+ -or-
+
  <paramref name="identity" /> is longer than 512 characters.</exception>
     </member>
     <member name="P:System.Security.AccessControl.SemaphoreAccessRule.SemaphoreRights">
@@ -530,16 +530,16 @@
       <param name="eventRights">A bitwise combination of <see cref="T:System.Security.AccessControl.SemaphoreRights" /> values specifying the kinds of access to audit.</param>
       <param name="flags">A bitwise combination of <see cref="T:System.Security.AccessControl.AuditFlags" /> values specifying whether to audit success, failure, or both.</param>
       <exception cref="T:System.ArgumentOutOfRangeException">
-        <paramref name="eventRights" /> specifies an invalid value.  
-  
- -or-  
-  
+        <paramref name="eventRights" /> specifies an invalid value.
+
+ -or-
+
  <paramref name="flags" /> specifies an invalid value.</exception>
       <exception cref="T:System.ArgumentNullException">
-        <paramref name="identity" /> is <see langword="null" />.  
-  
- -or-  
-  
+        <paramref name="identity" /> is <see langword="null" />.
+
+ -or-
+
  <paramref name="eventRights" /> is zero.</exception>
       <exception cref="T:System.ArgumentException">
         <paramref name="identity" /> is neither of type <see cref="T:System.Security.Principal.SecurityIdentifier" /> nor of a type such as <see cref="T:System.Security.Principal.NTAccount" /> that can be converted to type <see cref="T:System.Security.Principal.SecurityIdentifier" />.</exception>

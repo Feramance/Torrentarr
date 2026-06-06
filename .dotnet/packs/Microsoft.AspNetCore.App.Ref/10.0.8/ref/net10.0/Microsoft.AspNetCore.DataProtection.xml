@@ -613,7 +613,7 @@
              specify 4 for 'preBufferSize' and overwrite the first 32 bits of the buffer returned
              by this function. This saves the caller from having to allocate a new buffer to hold the final
              transformed result.
-            
+
              All cryptography-related exceptions should be homogenized to CryptographicException.
              </remarks>
         </member>
@@ -1143,7 +1143,7 @@
         <member name="M:Microsoft.AspNetCore.DataProtection.KeyManagement.IDeletableKeyManager.DeleteKeys(System.Func{Microsoft.AspNetCore.DataProtection.KeyManagement.IKey,System.Boolean})">
              <summary>
              Deletes keys matching a predicate.
-            
+
              Use with caution as deleting active keys will normally cause data loss.
              </summary>
              <param name="shouldDelete">
@@ -1156,10 +1156,10 @@
              <remarks>
              Deletion is stronger than revocation.  A revoked key is retained and can even be (forcefully) applied.
              A deleted key is indistinguishable from a key that never existed.
-             
+
              Generally, keys should only be deleted to save space.  If space is not a concern, keys
              should be revoked or allowed to expire instead.
-            
+
              This method will not mutate existing IKey instances. After calling this method,
              all existing IKey instances should be discarded, and GetAllKeys should be called again.
              </remarks>

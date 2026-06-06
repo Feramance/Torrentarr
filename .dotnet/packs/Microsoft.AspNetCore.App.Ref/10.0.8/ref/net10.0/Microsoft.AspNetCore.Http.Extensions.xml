@@ -559,7 +559,7 @@
         <member name="T:Microsoft.AspNetCore.Http.ProblemDetailsJsonOptionsSetup">
              <summary>
              Adds the ProblemDetailsJsonContext to the current JsonSerializerOptions.
-            
+
              This allows for consistent serialization behavior for ProblemDetails regardless if
              the default reflection-based serializer is used or not. And makes it trim/NativeAOT compatible.
              </summary>
@@ -1290,14 +1290,14 @@
              which supplies an awaitable-of-object. This always works, but can incur several extra heap allocations
              as compared with using Execute and then using "await" on the result value typecasted to the known
              awaitable type. The possible extra heap allocations are for:
-            
+
              1. The custom awaitable (though usually there's a heap allocation for this anyway, since normally
                 it's a reference type, and you normally create a new instance per call).
              2. The custom awaiter (whether or not it's a value type, since if it's not, you need a new instance
                 of it, and if it is, it will have to be boxed so the calling code can reference it as an object).
              3. The async result value, if it's a value type (it has to be boxed as an object, since the calling
                 code doesn't know what type it's going to be).
-            
+
              Note if <see cref="M:Microsoft.Extensions.Internal.ObjectMethodExecutor.CreateTrimAotCompatible(System.Reflection.MethodInfo,System.Reflection.TypeInfo)"/> was used to create the ObjectMethodExecutor, only the
              built-in Task types are supported and not custom awaitables.
              </remarks>

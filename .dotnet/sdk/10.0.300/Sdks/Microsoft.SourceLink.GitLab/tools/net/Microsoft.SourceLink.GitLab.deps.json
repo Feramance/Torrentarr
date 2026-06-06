@@ -1,15 +1,26 @@
 {
+  "compilationOptions": {},
+  "libraries": {
+    "Microsoft.SourceLink.GitLab/10.0.300": {
+      "serviceable": false,
+      "sha512": "",
+      "type": "project"
+    },
+    "System.IO.Hashing/10.0.8": {
+      "hashPath": "system.io.hashing.10.0.8.nupkg.sha512",
+      "path": "system.io.hashing/10.0.8",
+      "serviceable": true,
+      "sha512": "sha512-+dJsbPJ3FyUbTZNplFj0RCKePFizmv6ewDV46JE9q/IVH4c3xTCftHfHelLsAKf0jryIPqgMb5GpS0x7TAY3mg==",
+      "type": "package"
+    }
+  },
   "runtimeTarget": {
     "name": ".NETCoreApp,Version=v8.0",
     "signature": ""
   },
-  "compilationOptions": {},
   "targets": {
     ".NETCoreApp,Version=v8.0": {
       "Microsoft.SourceLink.GitLab/10.0.300": {
-        "runtime": {
-          "Microsoft.SourceLink.GitLab.dll": {}
-        },
         "resources": {
           "cs/Microsoft.SourceLink.GitLab.resources.dll": {
             "locale": "cs"
@@ -50,6 +61,9 @@
           "zh-Hant/Microsoft.SourceLink.GitLab.resources.dll": {
             "locale": "zh-Hant"
           }
+        },
+        "runtime": {
+          "Microsoft.SourceLink.GitLab.dll": {}
         }
       },
       "System.IO.Hashing/10.0.8": {
@@ -60,20 +74,6 @@
           }
         }
       }
-    }
-  },
-  "libraries": {
-    "Microsoft.SourceLink.GitLab/10.0.300": {
-      "type": "project",
-      "serviceable": false,
-      "sha512": ""
-    },
-    "System.IO.Hashing/10.0.8": {
-      "type": "package",
-      "serviceable": true,
-      "sha512": "sha512-+dJsbPJ3FyUbTZNplFj0RCKePFizmv6ewDV46JE9q/IVH4c3xTCftHfHelLsAKf0jryIPqgMb5GpS0x7TAY3mg==",
-      "path": "system.io.hashing/10.0.8",
-      "hashPath": "system.io.hashing.10.0.8.nupkg.sha512"
     }
   }
 }

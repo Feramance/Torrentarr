@@ -538,7 +538,7 @@ Copyright (c) .NET Foundation. All rights reserved.
     </Copy>
 
   </Target>
-  
+
   <Target Name="_BuildCopyStaticWebAssetsIfDifferent"
     AfterTargets="_SplitStaticWebAssetsByCopyOptions">
 

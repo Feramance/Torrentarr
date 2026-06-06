@@ -383,7 +383,7 @@
              care of rendering the component inside its hierarchy of layouts (via LayoutView) as well as converting
              any information we want into component parameters. We could also use this to supply other data from the
              original HttpContext as component parameters, e.g., for model binding.
-            
+
              It happens to be almost the same as RouteView except it doesn't supply any query parameters. We can
              resolve that at the same time we implement support for form posts.
              </summary>
@@ -397,11 +397,11 @@
              <summary>
              A <see cref="T:Microsoft.AspNetCore.Components.HtmlRendering.Infrastructure.StaticHtmlRenderer"/> subclass which is also the implementation of the
              <see cref="T:Microsoft.AspNetCore.Components.Endpoints.IComponentPrerenderer"/> DI service. This is the underlying mechanism shared by:
-            
+
              * Html.RenderComponentAsync (the earliest prerendering mechanism - a Razor HTML helper)
              * ComponentTagHelper (the primary prerendering mechanism before .NET 8)
              * RazorComponentResult and RazorComponentEndpoint (the primary prerendering mechanisms since .NET 8)
-            
+
              EndpointHtmlRenderer wraps the underlying <see cref="T:Microsoft.AspNetCore.Components.Web.HtmlRenderer"/> mechanism, annotating the
              output with prerendering markers so the content can later switch into interactive mode when used with
              blazor.*.js. It also deals with initializing the standard component DI services once per request.
@@ -911,7 +911,7 @@
              Gets or sets a flag to indicate whether streaming rendering should be prevented. If true, the renderer will
              wait for the component hierarchy to complete asynchronous tasks such as loading before supplying the HTML response.
              If false, streaming rendering will be determined by the components being rendered.
-            
+
              The default value is false.
              </summary>
         </member>
@@ -1121,7 +1121,7 @@
              <summary>
              Given an object, adds each instance property with a public get method as a key and its
              associated value to a dictionary.
-            
+
              If the object is already an <see cref="T:System.Collections.Generic.IDictionary`2"/> instance, then a copy
              is returned.
              </summary>

@@ -279,12 +279,12 @@
         <member name="T:System.IO.Pipelines.DuplexPipe">
              <remarks>
              A <see cref="T:System.IO.Pipelines.Pipe"/> is a reader-writer pair, where content written to the writer can be read from the reader.
-            
+
              An <see cref="T:System.IO.Pipelines.IDuplexPipe"/> is *not* a pipe.  It is also a reader-writer pair, but the reader and writer are not
              connected.  Rather, it can be regarded as *one end* of a two-way (i.e. duplex) communication channel, where content
              written to the writer is sent to the counterparty and content received from the counterparty is readable from the
              reader.
-            
+
              A <see cref="T:System.IO.Pipelines.DuplexPipe.DuplexPipePair"/> is a pair of <see cref="T:System.IO.Pipelines.IDuplexPipe"/> instances, each of which represents one end of
              a two-way communication channel.  (In a sense, this makes it a "duplex pipe".)  It can also be viewed as a pair of
              <see cref="T:System.IO.Pipelines.Pipe"/>s, as these underlie the <see cref="T:System.IO.Pipelines.IDuplexPipe"/> instances.  In either view, it is composed of

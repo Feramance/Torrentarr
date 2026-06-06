@@ -34,15 +34,15 @@
       <summary>Specifies how the <see cref="T:System.Xml.XmlTextReader" /> or <see cref="T:System.Xml.XmlValidatingReader" /> handle entities.</summary>
     </member>
     <member name="F:System.Xml.EntityHandling.ExpandCharEntities">
-      <summary>Expands character entities and returns general entities as <see cref="F:System.Xml.XmlNodeType.EntityReference" /> nodes. 
-        
-You must call <see cref="Overload:System.Xml.XmlReader.ResolveEntity" /> to see what the general entities expand to. This enables you to optimize entity handling by only expanding the entity the first time it is used.  
-  
+      <summary>Expands character entities and returns general entities as <see cref="F:System.Xml.XmlNodeType.EntityReference" /> nodes.
+
+You must call <see cref="Overload:System.Xml.XmlReader.ResolveEntity" /> to see what the general entities expand to. This enables you to optimize entity handling by only expanding the entity the first time it is used.
+
 When set to <see langword="ExpandCharEntities" />, a reader call to the <see cref="Overload:System.Xml.XmlReader.GetAttribute" /> method expands all entities (both general and character entities).</summary>
     </member>
     <member name="F:System.Xml.EntityHandling.ExpandEntities">
       <summary>Expands all entities and returns the expanded nodes.
-        
+
 <see cref="F:System.Xml.XmlNodeType.EntityReference" /> nodes are not returned. The entity text is expanded in place of the entity references.</summary>
     </member>
     <member name="T:System.Xml.Formatting">
@@ -382,8 +382,8 @@ This option indents element content only; mixed content is not affected. For the
     </member>
     <member name="T:System.Xml.Schema.ValidationEventHandler">
       <summary>Represents the callback method that will handle XML schema validation events and the <see cref="T:System.Xml.Schema.ValidationEventArgs" />.</summary>
-      <param name="sender">The source of the event.  
-  
+      <param name="sender">The source of the event.
+
  Note Determine the type of a sender before using it in your code. You cannot assume that the sender is an instance of a particular type. The sender is also not guaranteed to not  be null. Always surround your casts with failure handling logic.</param>
       <param name="e">The event data.</param>
     </member>
@@ -1065,7 +1065,7 @@ This option indents element content only; mixed content is not affected. For the
     </member>
     <member name="F:System.Xml.Schema.XmlSchemaContentProcessing.Lax">
       <summary>If the associated schema is found, the document items will be validated. No errors will be thrown otherwise.
-        
+
 If the item is not validated, the XML processor attempts to notify the client through a validation event handler with <see cref="P:System.Xml.Schema.ValidationEventArgs.Severity" /> = <see langword="XmlSeverityType.Warning" />. If a validation event handler has not been set up, no information is returned when the warning is produced.</summary>
     </member>
     <member name="F:System.Xml.Schema.XmlSchemaContentProcessing.None">
@@ -1073,12 +1073,12 @@ If the item is not validated, the XML processor attempts to notify the client th
     </member>
     <member name="F:System.Xml.Schema.XmlSchemaContentProcessing.Skip">
       <summary>Document items must consist of well-formed XML and are not validated by the schema.
-        
+
 The XML processor attempts to notify the client through a validation event handler with <see cref="P:System.Xml.Schema.ValidationEventArgs.Severity" /> = <see langword="XmlSeverityType.Warning" /> that no validation took place for the given item. If a validation event handler has not been set up, no information is returned when the warning is produced.</summary>
     </member>
     <member name="F:System.Xml.Schema.XmlSchemaContentProcessing.Strict">
       <summary>The schema processor must find a schema associated with the indicated namespace to validate the document items.
-        
+
 If the processor cannot find a schema or if the items are not valid, the XML processor attempts to notify the client through a validation event handler with <see cref="P:System.Xml.Schema.ValidationEventArgs.Severity" /> = <see langword="XmlSeverityType.Warning" />. If a validation error occurs and a validation event handler is not provided, an exception is thrown.</summary>
     </member>
     <member name="T:System.Xml.Schema.XmlSchemaContentType">
@@ -2086,8 +2086,8 @@ If the processor cannot find a schema or if the items are not valid, the XML pro
     </member>
     <member name="P:System.Xml.Schema.XmlSchemaSimpleContentRestriction.Facets">
       <summary>Gets or sets an Xml Schema facet.</summary>
-      <returns>One of the following facet classes:  
-  
+      <returns>One of the following facet classes:
+
  <see cref="T:System.Xml.Schema.XmlSchemaLengthFacet" />, <see cref="T:System.Xml.Schema.XmlSchemaMinLengthFacet" />, <see cref="T:System.Xml.Schema.XmlSchemaMaxLengthFacet" />, <see cref="T:System.Xml.Schema.XmlSchemaPatternFacet" />, <see cref="T:System.Xml.Schema.XmlSchemaEnumerationFacet" />, <see cref="T:System.Xml.Schema.XmlSchemaMaxInclusiveFacet" />, <see cref="T:System.Xml.Schema.XmlSchemaMaxExclusiveFacet" />, <see cref="T:System.Xml.Schema.XmlSchemaMinInclusiveFacet" />, <see cref="T:System.Xml.Schema.XmlSchemaMinExclusiveFacet" />, <see cref="T:System.Xml.Schema.XmlSchemaFractionDigitsFacet" />, <see cref="T:System.Xml.Schema.XmlSchemaTotalDigitsFacet" />, <see cref="T:System.Xml.Schema.XmlSchemaWhiteSpaceFacet" />.</returns>
     </member>
     <member name="T:System.Xml.Schema.XmlSchemaSimpleType">
@@ -2140,8 +2140,8 @@ If the processor cannot find a schema or if the items are not valid, the XML pro
     </member>
     <member name="P:System.Xml.Schema.XmlSchemaSimpleTypeRestriction.Facets">
       <summary>Gets or sets an Xml Schema facet.</summary>
-      <returns>One of the following facet classes:  
-  
+      <returns>One of the following facet classes:
+
  <see cref="T:System.Xml.Schema.XmlSchemaLengthFacet" />, <see cref="T:System.Xml.Schema.XmlSchemaMinLengthFacet" />, <see cref="T:System.Xml.Schema.XmlSchemaMaxLengthFacet" />, <see cref="T:System.Xml.Schema.XmlSchemaPatternFacet" />, <see cref="T:System.Xml.Schema.XmlSchemaEnumerationFacet" />, <see cref="T:System.Xml.Schema.XmlSchemaMaxInclusiveFacet" />, <see cref="T:System.Xml.Schema.XmlSchemaMaxExclusiveFacet" />, <see cref="T:System.Xml.Schema.XmlSchemaMinInclusiveFacet" />, <see cref="T:System.Xml.Schema.XmlSchemaMinExclusiveFacet" />, <see cref="T:System.Xml.Schema.XmlSchemaFractionDigitsFacet" />, <see cref="T:System.Xml.Schema.XmlSchemaTotalDigitsFacet" />, <see cref="T:System.Xml.Schema.XmlSchemaWhiteSpaceFacet" />.</returns>
     </member>
     <member name="T:System.Xml.Schema.XmlSchemaSimpleTypeUnion">
@@ -2958,7 +2958,7 @@ If the processor cannot find a schema or if the items are not valid, the XML pro
       <summary>Specifies the type of validation to perform.</summary>
     </member>
     <member name="F:System.Xml.ValidationType.Auto">
-      <summary>Validates if DTD or schema information is found. 
+      <summary>Validates if DTD or schema information is found.
 
 Starting with .NET Framework 2.0, this field is obsolete. It applies only to the obsolete <see cref="T:System.Xml.XmlValidatingReader" /> class.</summary>
     </member>
@@ -2967,7 +2967,7 @@ Starting with .NET Framework 2.0, this field is obsolete. It applies only to the
     </member>
     <member name="F:System.Xml.ValidationType.None">
       <summary>No validation is performed, and no validation errors are thrown. This setting creates an XML 1.0 compliant non-validating parser.
-        
+
 Calls to <see cref="M:System.Xml.XmlReader.ResolveEntity" /> report default attributes and resolve general entities. The DOCTYPE is not used for validation purposes.</summary>
     </member>
     <member name="F:System.Xml.ValidationType.Schema">
@@ -2975,7 +2975,7 @@ Calls to <see cref="M:System.Xml.XmlReader.ResolveEntity" /> report default attr
     </member>
     <member name="F:System.Xml.ValidationType.XDR">
       <summary>Validate according to XML-Data Reduced (XDR) schemas, including inline XDR schemas. XDR schemas are recognized using the <see langword="x-schema" /> namespace prefix or the <see cref="P:System.Xml.XmlValidatingReader.Schemas" /> property.
-        
+
 Starting with .NET Framework 2.0, this field is obsolete. It applies only to the obsolete <see cref="T:System.Xml.XmlValidatingReader" /> class.</summary>
     </member>
     <member name="T:System.Xml.WhitespaceHandling">
@@ -4942,16 +4942,16 @@ Starting with .NET Framework 2.0, this field is obsolete. It applies only to the
       <param name="array">The character array containing the name to add.</param>
       <param name="offset">Zero-based index into the array specifying the first character of the name.</param>
       <param name="length">The number of characters in the name.</param>
-      <exception cref="T:System.IndexOutOfRangeException">0 &gt; <paramref name="offset" />  
-  
- -or-  
-  
- <paramref name="offset" /> &gt;= <paramref name="array" />.Length  
-  
- -or-  
-  
- <paramref name="length" /> &gt; <paramref name="array" />.Length  
-  
+      <exception cref="T:System.IndexOutOfRangeException">0 &gt; <paramref name="offset" />
+
+ -or-
+
+ <paramref name="offset" /> &gt;= <paramref name="array" />.Length
+
+ -or-
+
+ <paramref name="length" /> &gt; <paramref name="array" />.Length
+
  The above conditions do not cause an exception to be thrown if <paramref name="length" /> =0.</exception>
       <exception cref="T:System.ArgumentOutOfRangeException">
         <paramref name="length" /> &lt; 0.</exception>
@@ -4969,16 +4969,16 @@ Starting with .NET Framework 2.0, this field is obsolete. It applies only to the
       <param name="array">The character array containing the name to look up.</param>
       <param name="offset">The zero-based index into the array specifying the first character of the name.</param>
       <param name="length">The number of characters in the name.</param>
-      <exception cref="T:System.IndexOutOfRangeException">0 &gt; <paramref name="offset" />  
-  
- -or-  
-  
- <paramref name="offset" /> &gt;= <paramref name="array" />.Length  
-  
- -or-  
-  
- <paramref name="length" /> &gt; <paramref name="array" />.Length  
-  
+      <exception cref="T:System.IndexOutOfRangeException">0 &gt; <paramref name="offset" />
+
+ -or-
+
+ <paramref name="offset" /> &gt;= <paramref name="array" />.Length
+
+ -or-
+
+ <paramref name="length" /> &gt; <paramref name="array" />.Length
+
  The above conditions do not cause an exception to be thrown if <paramref name="length" /> =0.</exception>
       <exception cref="T:System.ArgumentOutOfRangeException">
         <paramref name="length" /> &lt; 0.</exception>

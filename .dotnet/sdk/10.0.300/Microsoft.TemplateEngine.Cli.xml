@@ -449,14 +449,14 @@
         </member>
         <member name="P:Microsoft.TemplateEngine.Cli.Commands.SymbolStrings.Command_Details_Description">
             <summary>
-              Looks up a localized string similar to 
+              Looks up a localized string similar to
                  Provides the details for specified template package.
                  The command checks if the package is installed locally, if it was not found, it searches the configured NuGet feeds..
             </summary>
         </member>
         <member name="P:Microsoft.TemplateEngine.Cli.Commands.SymbolStrings.Command_Install_Argument_Package">
              <summary>
-               Looks up a localized string similar to NuGet package ID or path to folder or NuGet package to install. 
+               Looks up a localized string similar to NuGet package ID or path to folder or NuGet package to install.
             To install the NuGet package of certain version, use &lt;package ID&gt;::&lt;version&gt;.
             .
              </summary>
@@ -513,7 +513,7 @@
         </member>
         <member name="P:Microsoft.TemplateEngine.Cli.Commands.SymbolStrings.Command_Uninstall_Argument_Package">
              <summary>
-               Looks up a localized string similar to NuGet package ID (without version) or path to folder to uninstall. 
+               Looks up a localized string similar to NuGet package ID (without version) or path to folder to uninstall.
             If command is specified without the argument, it lists all the template packages installed..
              </summary>
         </member>
@@ -1333,9 +1333,9 @@
         </member>
         <member name="P:Microsoft.TemplateEngine.Cli.LocalizableStrings.Generic_Info_NoMatchingTemplatePackage">
             <summary>
-              Looks up a localized string similar to 
+              Looks up a localized string similar to
                  No template packages found matching: {0}.
-                 
+
                  To list installed template packages, run:
                    dotnet new uninstall
                  To search for the template packages on NuGet.org, run:
@@ -1566,7 +1566,7 @@
         <member name="P:Microsoft.TemplateEngine.Cli.LocalizableStrings.PostAction_ModifyJson_Error_NullJson">
              <summary>
                Looks up a localized string similar to The result of parsing the following JSON was &apos;null&apos;:
-            
+
             {0}.
              </summary>
         </member>
@@ -2067,7 +2067,7 @@
               * https://github.com/openbsd/src/blob/master/include/sysexits.h.
              Further documentation: https://aka.ms/templating-exit-codes.
              Future exit codes should be allocated in a range of 107 - 113. If not sufficient, a range of 79 - 99 may be used as well.
-            
+
              127 is not explicitly used here - it is injected from sdk:
                 https://github.com/dotnet/sdk/blob/main/src/Cli/dotnet/Parser.cs#L148.
              </summary>
@@ -2207,7 +2207,7 @@
         <member name="M:Microsoft.TemplateEngine.Cli.TabularOutput.TemplateGroupDisplay.DisplayTemplateList(Microsoft.TemplateEngine.Abstractions.IEngineEnvironmentSettings,System.Collections.Generic.IEnumerable{Microsoft.TemplateEngine.Cli.TemplateGroup},Microsoft.TemplateEngine.Cli.TabularOutput.TabularOutputSettings,Microsoft.DotNet.Cli.Utils.IReporter,System.String)">
              <summary>
              Displays the list of templates in a table, one row per template group.
-            
+
              The columns displayed are as follows:
              Except where noted, the values are taken from the highest-precedence template in the group. The info could vary among the templates in the group, but shouldn't.
              (There is no check that the info doesn't vary.)
@@ -2221,7 +2221,7 @@
         <member name="M:Microsoft.TemplateEngine.Cli.TabularOutput.TemplateGroupDisplay.DisplayTemplateList(Microsoft.TemplateEngine.Abstractions.IEngineEnvironmentSettings,System.Collections.Generic.IEnumerable{Microsoft.TemplateEngine.Abstractions.ITemplateInfo},Microsoft.TemplateEngine.Cli.TabularOutput.TabularOutputSettings,Microsoft.DotNet.Cli.Utils.IReporter,System.String)">
              <summary>
              Displays the list of templates in a table, one row per template group.
-            
+
              The columns displayed are as follows:
              Except where noted, the values are taken from the highest-precedence template in the group. The info could vary among the templates in the group, but shouldn't.
              (There is no check that the info doesn't vary.)

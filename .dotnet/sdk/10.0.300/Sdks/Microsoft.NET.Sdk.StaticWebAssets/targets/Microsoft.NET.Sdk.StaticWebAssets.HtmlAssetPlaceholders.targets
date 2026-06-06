@@ -11,7 +11,7 @@ Copyright (c) .NET Foundation. All rights reserved.
 -->
 
 <Project ToolsVersion="14.0">
-    
+
   <UsingTask TaskName="Microsoft.AspNetCore.StaticWebAssets.Tasks.OverrideHtmlAssetPlaceholders" AssemblyFile="$(StaticWebAssetsSdkBuildTasksAssembly)" />
 
   <PropertyGroup>
@@ -142,7 +142,7 @@ Copyright (c) .NET Foundation. All rights reserved.
       <StaticWebAssetEndpoint Include="@(_UpdatedHtmlStaticWebAssetsEndpoint)" />
     </ItemGroup>
   </Target>
-  
+
   <!-- Publish -->
 
   <Target Name="ResolveHtmlAssetPlaceholdersPublishConfiguration">

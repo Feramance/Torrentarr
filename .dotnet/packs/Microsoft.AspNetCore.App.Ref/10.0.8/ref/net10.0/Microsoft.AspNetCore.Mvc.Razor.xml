@@ -1161,7 +1161,7 @@
              <see cref="P:Microsoft.AspNetCore.Mvc.Razor.RazorViewEngineOptions.PageViewLocationFormats"/> work in tandem with a view location expander to perform hierarchical
              path lookups. For instance, given a Page like /Account/Manage/Index using /Pages as the root, the view engine
              will search for views in the following locations:
-            
+
               /Pages/Account/Manage/{0}.cshtml
               /Pages/Account/{0}.cshtml
               /Pages/{0}.cshtml
@@ -1195,7 +1195,7 @@
              <see cref="P:Microsoft.AspNetCore.Mvc.Razor.RazorViewEngineOptions.AreaPageViewLocationFormats"/> work in tandem with a view location expander to perform hierarchical
              path lookups. For instance, given a Page like /Areas/Account/Pages/Manage/User.cshtml using /Areas as the area pages root and
              /Pages as the root, the view engine will search for views in the following locations:
-            
+
               /Areas/Accounts/Pages/Manage/{0}.cshtml
               /Areas/Accounts/Pages/{0}.cshtml
               /Areas/Accounts/Pages/Shared/{0}.cshtml

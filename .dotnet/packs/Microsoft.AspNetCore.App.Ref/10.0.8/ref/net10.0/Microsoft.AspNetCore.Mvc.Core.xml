@@ -769,7 +769,7 @@
              <remarks>
              <see cref="P:Microsoft.AspNetCore.Mvc.ApplicationModels.ActionModel.ApiExplorer"/> allows configuration of settings for ApiExplorer
              which apply to the action.
-            
+
              Settings applied by <see cref="P:Microsoft.AspNetCore.Mvc.ApplicationModels.ActionModel.ApiExplorer"/> override settings from
              <see cref="P:Microsoft.AspNetCore.Mvc.ApplicationModels.ApplicationModel.ApiExplorer"/> and <see cref="P:Microsoft.AspNetCore.Mvc.ApplicationModels.ControllerModel.ApiExplorer"/>.
              </remarks>
@@ -954,7 +954,7 @@
              <see cref="P:Microsoft.AspNetCore.Mvc.ApplicationModels.ApplicationModel.ApiExplorer"/> allows configuration of default settings
              for ApiExplorer that apply to all actions unless overridden by
              <see cref="P:Microsoft.AspNetCore.Mvc.ApplicationModels.ControllerModel.ApiExplorer"/> or <see cref="P:Microsoft.AspNetCore.Mvc.ApplicationModels.ActionModel.ApiExplorer"/>.
-            
+
              If using <see cref="P:Microsoft.AspNetCore.Mvc.ApplicationModels.ApplicationModel.ApiExplorer"/> to set <see cref="P:Microsoft.AspNetCore.Mvc.ApplicationModels.ApiExplorerModel.IsVisible"/> to
              <c>true</c>, this setting will only be honored for actions which use attribute routing.
              </remarks>
@@ -1196,7 +1196,7 @@
              <remarks>
              <see cref="P:Microsoft.AspNetCore.Mvc.ApplicationModels.ControllerModel.ApiExplorer"/> allows configuration of settings for ApiExplorer
              which apply to all actions in the controller unless overridden by <see cref="P:Microsoft.AspNetCore.Mvc.ApplicationModels.ActionModel.ApiExplorer"/>.
-            
+
              Settings applied by <see cref="P:Microsoft.AspNetCore.Mvc.ApplicationModels.ControllerModel.ApiExplorer"/> override settings from
              <see cref="P:Microsoft.AspNetCore.Mvc.ApplicationModels.ApplicationModel.ApiExplorer"/>.
              </remarks>
@@ -1320,7 +1320,7 @@
              <remarks>
              To use this interface, create an <see cref="T:System.Attribute"/> class which implements the interface and
              place it on an action method.
-            
+
              <see cref="T:Microsoft.AspNetCore.Mvc.ApplicationModels.IActionModelConvention"/> customizations run after
              <see cref="T:Microsoft.AspNetCore.Mvc.ApplicationModels.IControllerModelConvention"/> customizations and before
              <see cref="T:Microsoft.AspNetCore.Mvc.ApplicationModels.IParameterModelConvention"/> customizations.
@@ -1349,7 +1349,7 @@
              <remarks>
              Implementations of this interface can be registered in <see cref="P:Microsoft.AspNetCore.Mvc.MvcOptions.Conventions"/>
              to customize metadata about the application.
-            
+
              <see cref="T:Microsoft.AspNetCore.Mvc.ApplicationModels.IApplicationModelConvention"/> run before other types of customizations to the
              reflected model.
              </remarks>
@@ -1435,7 +1435,7 @@
              <remarks>
              To use this interface, create an <see cref="T:System.Attribute"/> class which implements the interface and
              place it on a controller class.
-            
+
              <see cref="T:Microsoft.AspNetCore.Mvc.ApplicationModels.IControllerModelConvention"/> customizations run after
              <see cref="T:Microsoft.AspNetCore.Mvc.ApplicationModels.IApplicationModelConvention"/> customizations and before
              <see cref="T:Microsoft.AspNetCore.Mvc.ApplicationModels.IActionModelConvention"/> customizations.
@@ -1536,7 +1536,7 @@
              <remarks>
              To use this interface, create an <see cref="T:System.Attribute"/> class which implements the interface and
              place it on an action method parameter.
-            
+
              <see cref="T:Microsoft.AspNetCore.Mvc.ApplicationModels.IParameterModelConvention"/> customizations run after
              <see cref="T:Microsoft.AspNetCore.Mvc.ApplicationModels.IActionModelConvention"/> customizations.
              </remarks>
@@ -2006,7 +2006,7 @@
             this filter to the associated action or controller.
             </summary>
             <remarks>
-            An authorize filter is not meant to be used in combination with <see cref="P:Microsoft.AspNetCore.Authorization.AuthorizationOptions.FallbackPolicy"/>. 
+            An authorize filter is not meant to be used in combination with <see cref="P:Microsoft.AspNetCore.Authorization.AuthorizationOptions.FallbackPolicy"/>.
             The fallback policy takes precedence over an authorize filter.
             </remarks>
         </member>
@@ -2313,12 +2313,12 @@
              public class Startup
              {
                  ...
-            
+
                  public void ConfigureServices(IServiceCollection services)
                  {
                      services.AddMvc().SetCompatibilityVersion(CompatibilityVersion.Version_3_0);
                  }
-            
+
                  ...
              }
              </code>
@@ -2718,7 +2718,7 @@
                  var product = RetrieveProduct(id);
                  return View(product);
              }
-            
+
              [HttpPost]
              public IActionResult Product(int id, Product product)
              {
@@ -6145,19 +6145,19 @@
              <remarks>
              This will iterate the filter collection once per-stage, and skip any filters that don't have
              the one of interfaces that applies to the current stage.
-            
+
              Filters are always executed in the following order, but short circuiting plays a role.
-            
+
              Indentation reflects nesting.
-            
+
              1. Exception Filters
                  2. Authorization Filters
                  3. Action Filters
                     Action
-            
+
              4. Result Filters
                 Result
-            
+
              </remarks>
         </member>
         <member name="T:Microsoft.AspNetCore.Mvc.Filters.FilterScope">
@@ -7033,10 +7033,10 @@
              </summary>
              <remarks>
              Binds a parameter or property to the request body.
-            
+
              By default, ASP.NET Core MVC delegates the responsibility of reading the body to an input formatter.<br/>
              In the case of ASP.NET Core Minimal APIs, the body is deserialized by <see cref="T:System.Text.Json.JsonSerializer"/>.
-            
+
              For more information about parameter binding see
              <see href="https://learn.microsoft.com/aspnet/core/fundamentals/minimal-apis/parameter-binding">Parameter binding</see>.
              </remarks>
@@ -7045,10 +7045,10 @@
              and the value of the 'age' field is bound to the age parameter.
              <code>
              app.MapPost("/from-body", ([FromBody] Person person) => person);
-            
+
              public record Person(string Name, int Age);
              </code>
-            
+
              If the EmptyBodyBehavior is set to EmptyBodyBehavior.Allow in the FromBody attribute,
              requests without a request body are allowed.
              <code>
@@ -7081,7 +7081,7 @@
              Binds a parameter or property to a field in a form-data request body with the same name,
              or the name specified in the <see cref="P:Microsoft.AspNetCore.Mvc.FromFormAttribute.Name"/> property.
              Form parameter names are matched case-insensitively.
-            
+
              For more information about parameter binding see
              <see href="https://learn.microsoft.com/aspnet/core/fundamentals/minimal-apis/parameter-binding">Parameter binding</see>.
              </remarks>
@@ -7108,7 +7108,7 @@
              Binds a parameter or property to the value of the request header with the same name,
              or the name specified in the <see cref="P:Microsoft.AspNetCore.Mvc.FromHeaderAttribute.Name"/> property.
              Note that HTTP header names are case-insensitive, so the header name is matched without regard to case.
-            
+
              For more information about parameter binding see
              <see href="https://learn.microsoft.com/aspnet/core/fundamentals/minimal-apis/parameter-binding">Parameter binding</see>.
              </remarks>
@@ -7134,7 +7134,7 @@
              Binds a parameter or property to the value of query string parameter with the same name,
              or the name specified in the <see cref="P:Microsoft.AspNetCore.Mvc.FromQueryAttribute.Name"/> property.
              The query parameter name is matched case-insensitively.
-            
+
              For more information about parameter binding see
              <see href="https://learn.microsoft.com/aspnet/core/fundamentals/minimal-apis/parameter-binding">Parameter binding</see>.
              </remarks>
@@ -7160,7 +7160,7 @@
              Binds a parameter or property to the value of a route parameter with the same name,
              or the name specified in the <see cref="P:Microsoft.AspNetCore.Mvc.FromRouteAttribute.Name"/> property.
              The route parameter name is matched against parameter segments of the route pattern case-insensitively.
-            
+
              For more information about parameter binding see
              <see href="https://learn.microsoft.com/aspnet/core/fundamentals/minimal-apis/parameter-binding">Parameter binding</see>.
              </remarks>
@@ -7187,7 +7187,7 @@
              In this example an implementation of IProductModelRequestService is registered as a service.
              Then in the GetProduct action, the parameter is bound to an instance of IProductModelRequestService
              which is resolved from the request services.
-            
+
              <code>
              [HttpGet]
              public ProductModel GetProduct([FromServices] IProductModelRequestService productModelRequest)
@@ -11952,21 +11952,21 @@
              <example>
                  Model: IList&lt;Student&gt;
                  Query String: ?students[0].Age=8&amp;students[1].Age=9
-            
+
                  In this case the elements of the collection are identified in the input data set by an incrementing
                  integer index.
              </example>
-            
+
              or:
-            
+
              <example>
                  Model: IDictionary&lt;string, int&gt;
                  Query String: ?students[0].Key=Joey&amp;students[0].Value=8
-            
+
                  In this case the dictionary is treated as a collection of key-value pairs, and the elements of the
                  collection are identified in the input data set by an incrementing integer index.
              </example>
-            
+
              Using this key format, the enumerator enumerates model objects of type matching
              <see cref="P:Microsoft.AspNetCore.Mvc.ModelBinding.ModelMetadata.ElementMetadata"/>. The indices of the elements in the collection are used to
              compute the model prefix keys.
@@ -12028,13 +12028,13 @@
              <example>
                  Model: IList&lt;Student&gt;
                  Query String: ?students.index=Joey,Katherine&amp;students[Joey].Age=8&amp;students[Katherine].Age=9
-            
+
                  In this case, 'Joey' and 'Katherine' need to be used in the model prefix keys, but cannot be inferred
                  form inspecting the collection. These prefixes are captured during model binding, and mapped to
                  the corresponding ordinal index of a model object in the collection. The enumerator returned from this
                  class will yield two 'Student' objects with corresponding keys 'students[Joey]' and 'students[Katherine]'.
              </example>
-            
+
              Using this key format, the enumerator enumerates model objects of type matching
              <see cref="P:Microsoft.AspNetCore.Mvc.ModelBinding.ModelMetadata.ElementMetadata"/>. The keys captured during model binding are mapped to the elements
              in the collection to compute the model prefix keys.
@@ -12120,12 +12120,12 @@
              <example>
                  Model: IDictionary&lt;string, Student&gt;
                  Query String: ?students[Joey].Age=8&amp;students[Katherine].Age=9
-            
+
                  In this case, 'Joey' and 'Katherine' are the keys of the dictionary, used to bind two 'Student'
                  objects. The enumerator returned from this class will yield two 'Student' objects with corresponding
                  keys 'students[Joey]' and 'students[Katherine]'
              </example>
-            
+
              Using this key format, the enumerator enumerates model objects of type <typeparamref name="TValue"/>. The
              keys of the dictionary are not validated as they must be simple types.
              </remarks>
@@ -13703,9 +13703,9 @@
              <summary>
              Used to distinguish a `Type` set by default in the constructor versus
              one provided by the user.
-            
+
              When <see langword="false"/>, then <see cref="P:Microsoft.AspNetCore.Mvc.ProducesResponseTypeAttribute.Type"/> is set by user.
-            
+
              When <see langword="true"/>, then <see cref="P:Microsoft.AspNetCore.Mvc.ProducesResponseTypeAttribute.Type"/> is set by by
              default in the constructor
              </summary>
@@ -14449,13 +14449,13 @@
              <para>
              Operations on a <see cref="T:Microsoft.AspNetCore.Mvc.Routing.DynamicRouteValueTransformer" /> instance will be called for each dynamic endpoint
              in the following sequence:
-            
+
              <list type="bullet">
                <item><description><see cref="P:Microsoft.AspNetCore.Mvc.Routing.DynamicRouteValueTransformer.State" /> is set</description></item>
                <item><description><see cref="M:Microsoft.AspNetCore.Mvc.Routing.DynamicRouteValueTransformer.TransformAsync(Microsoft.AspNetCore.Http.HttpContext,Microsoft.AspNetCore.Routing.RouteValueDictionary)"/></description></item>
                <item><description><see cref="M:Microsoft.AspNetCore.Mvc.Routing.DynamicRouteValueTransformer.FilterAsync(Microsoft.AspNetCore.Http.HttpContext,Microsoft.AspNetCore.Routing.RouteValueDictionary,System.Collections.Generic.IReadOnlyList{Microsoft.AspNetCore.Http.Endpoint})" /></description></item>
              </list>
-            
+
              Implementations that are registered with the service collection as transient may safely use class
              members to persist state across these operations.
              </para>
@@ -14637,24 +14637,24 @@
                  - <c>MyApp.Areas.Blog.Controllers.HomeController.Index()</c>
              where <c>MyApp.Areas.Blog.Controllers.HomeController</c> has an area attribute
              <c>[Area("Blog")]</c>.
-            
+
              For <see cref="P:Microsoft.AspNetCore.Routing.RouteData.Values"/> like:
              {
                  "action": "Index",
                  "controller": "Home"
              }
-            
+
              <c>MyApp.Controllers.HomeController.Index()</c> will be selected.
              <c>MyApp.Area.Blog.Controllers.HomeController.Index()</c> is not considered eligible because the
              <see cref="P:Microsoft.AspNetCore.Routing.RouteData.Values"/> does not contain the value 'Blog' for 'area'.
-            
+
              For <see cref="P:Microsoft.AspNetCore.Routing.RouteData.Values"/> like:
              {
                  "area": "Blog",
                  "action": "Index",
                  "controller": "Home"
              }
-            
+
              <c>MyApp.Area.Blog.Controllers.HomeController.Index()</c> will be selected.
              <c>MyApp.Controllers.HomeController.Index()</c> is not considered eligible because the route values
              contain a value for 'area'. <c>MyApp.Controllers.HomeController.Index()</c> cannot match any value
@@ -16253,7 +16253,7 @@
              The maximum size of cookie to send back to the client. If a cookie exceeds this size it will be broken down into multiple
              cookies. Set this value to null to disable this behavior. The default is 4050 characters, which is supported by all
              common browsers.
-            
+
              Note that browsers may also have limits on the total size of all cookies per domain, and on the number of cookies per domain.
              </summary>
         </member>
@@ -16881,14 +16881,14 @@
              which supplies an awaitable-of-object. This always works, but can incur several extra heap allocations
              as compared with using Execute and then using "await" on the result value typecasted to the known
              awaitable type. The possible extra heap allocations are for:
-            
+
              1. The custom awaitable (though usually there's a heap allocation for this anyway, since normally
                 it's a reference type, and you normally create a new instance per call).
              2. The custom awaiter (whether or not it's a value type, since if it's not, you need a new instance
                 of it, and if it is, it will have to be boxed so the calling code can reference it as an object).
              3. The async result value, if it's a value type (it has to be boxed as an object, since the calling
                 code doesn't know what type it's going to be).
-            
+
              Note if <see cref="M:Microsoft.Extensions.Internal.ObjectMethodExecutor.CreateTrimAotCompatible(System.Reflection.MethodInfo,System.Reflection.TypeInfo)"/> was used to create the ObjectMethodExecutor, only the
              built-in Task types are supported and not custom awaitables.
              </remarks>
@@ -17059,7 +17059,7 @@
              <summary>
              Given an object, adds each instance property with a public get method as a key and its
              associated value to a dictionary.
-            
+
              If the object is already an <see cref="T:System.Collections.Generic.IDictionary`2"/> instance, then a copy
              is returned.
              </summary>

@@ -290,7 +290,7 @@
         </member>
         <member name="M:Microsoft.AspNetCore.Http.EndpointFilterInvocationContext.Create(Microsoft.AspNetCore.Http.HttpContext)">
             <summary>
-            Creates the default implementation of a <see cref="T:Microsoft.AspNetCore.Http.EndpointFilterInvocationContext"/>.    
+            Creates the default implementation of a <see cref="T:Microsoft.AspNetCore.Http.EndpointFilterInvocationContext"/>.
             </summary>
         </member>
         <member name="M:Microsoft.AspNetCore.Http.EndpointFilterInvocationContext.Create``1(Microsoft.AspNetCore.Http.HttpContext,``0)">
@@ -1548,7 +1548,7 @@
         </member>
         <member name="P:Microsoft.AspNetCore.Http.Metadata.IAcceptsMetadata.RequestType">
             <summary>
-            Gets the type being read from the request. 
+            Gets the type being read from the request.
             </summary>
         </member>
         <member name="P:Microsoft.AspNetCore.Http.Metadata.IAcceptsMetadata.IsOptional">
@@ -1567,9 +1567,9 @@
              <summary>
              Metadata that indicates the endpoint should disable cookie-based authentication redirects
              typically because it is intended for API clients rather than direct browser navigation.
-            
+
              <see cref="T:Microsoft.AspNetCore.Http.Metadata.IAllowCookieRedirectMetadata"/> overrides this no matter the order.
-            
+
              When present and not overridden, the cookie authentication handler will prefer using
              401 and 403 status codes over redirecting to the login or access denied paths.
              </summary>
@@ -2987,7 +2987,7 @@
         </member>
         <member name="M:Microsoft.AspNetCore.Http.WebSocketManager.AcceptWebSocketAsync(Microsoft.AspNetCore.Http.WebSocketAcceptContext)">
              <summary>
-            
+
              </summary>
              <param name="acceptContext"></param>
              <returns></returns>
@@ -3668,16 +3668,16 @@
         <member name="M:Microsoft.AspNetCore.Internal.UrlDecoder.UnescapePercentEncoding(System.Int32@,System.Span{System.Byte},System.Boolean)">
              <summary>
              Read the percent-encoding and try unescape it.
-            
+
              The operation first peek at the character the <paramref name="scan"/>
              iterator points at. If it is % the <paramref name="scan"/> is then
              moved on to scan the following to characters. If the two following
              characters are hexadecimal literals they will be unescaped and the
              value will be returned.
-            
+
              If the first character is not % the <paramref name="scan"/> iterator
              will be removed beyond the location of % and -1 will be returned.
-            
+
              If the following two characters can't be successfully unescaped the
              <paramref name="scan"/> iterator will be move behind the % and -1
              will be returned.
@@ -3690,7 +3690,7 @@
         <member name="M:Microsoft.AspNetCore.Internal.UrlDecoder.ReadHex(System.Int32@,System.Span{System.Byte})">
              <summary>
              Read the next char and convert it into hexadecimal value.
-            
+
              The <paramref name="scan"/> index will be moved to the next
              byte no matter whether the operation successes.
              </summary>
@@ -3734,16 +3734,16 @@
         <member name="M:Microsoft.AspNetCore.Internal.UrlDecoder.UnescapePercentEncoding(System.Int32@,System.ReadOnlySpan{System.Char})">
              <summary>
              Read the percent-encoding and try unescape it.
-            
+
              The operation first peek at the character the <paramref name="scan"/>
              iterator points at. If it is % the <paramref name="scan"/> is then
              moved on to scan the following to characters. If the two following
              characters are hexadecimal literals they will be unescaped and the
              value will be returned.
-            
+
              If the first character is not % the <paramref name="scan"/> iterator
              will be removed beyond the location of % and -1 will be returned.
-            
+
              If the following two characters can't be successfully unescaped the
              <paramref name="scan"/> iterator will be move behind the % and -1
              will be returned.
@@ -3755,7 +3755,7 @@
         <member name="M:Microsoft.AspNetCore.Internal.UrlDecoder.ReadHex(System.Int32@,System.ReadOnlySpan{System.Char})">
              <summary>
              Read the next char and convert it into hexadecimal value.
-            
+
              The <paramref name="scan"/> index will be moved to the next
              char no matter whether the operation successes.
              </summary>
@@ -3870,7 +3870,7 @@
              <summary>
              Given an object, adds each instance property with a public get method as a key and its
              associated value to a dictionary.
-            
+
              If the object is already an <see cref="T:System.Collections.Generic.IDictionary`2"/> instance, then a copy
              is returned.
              </summary>

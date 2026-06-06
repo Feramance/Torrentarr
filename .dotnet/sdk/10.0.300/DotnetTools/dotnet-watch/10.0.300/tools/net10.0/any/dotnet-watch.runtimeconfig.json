@@ -1,6 +1,9 @@
 {
   "runtimeOptions": {
-    "tfm": "net10.0",
+    "configProperties": {
+      "System.Reflection.Metadata.MetadataUpdater.IsSupported": false,
+      "System.Runtime.Serialization.EnableUnsafeBinaryFormatterSerialization": false
+    },
     "frameworks": [
       {
         "name": "Microsoft.NETCore.App",
@@ -12,9 +15,6 @@
       }
     ],
     "rollForwardOnNoCandidateFx": 2,
-    "configProperties": {
-      "System.Reflection.Metadata.MetadataUpdater.IsSupported": false,
-      "System.Runtime.Serialization.EnableUnsafeBinaryFormatterSerialization": false
-    }
+    "tfm": "net10.0"
   }
 }

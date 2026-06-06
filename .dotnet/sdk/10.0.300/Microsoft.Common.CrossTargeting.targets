@@ -233,7 +233,7 @@ Copyright (C) Microsoft Corporation. All rights reserved.
         project extension mechanism wants to import project extensions during restore, they need to explicitly set ImportProjectExtensionTargets
     -->
     <ImportProjectExtensionTargets Condition="$([MSBuild]::AreFeaturesEnabled('17.10')) And '$(ImportProjectExtensionTargets)' == '' And '$(MSBuildIsRestoring)' == 'true'">false</ImportProjectExtensionTargets>
-    
+
     <ImportProjectExtensionTargets Condition="'$(ImportProjectExtensionTargets)' == ''">true</ImportProjectExtensionTargets>
   </PropertyGroup>
 

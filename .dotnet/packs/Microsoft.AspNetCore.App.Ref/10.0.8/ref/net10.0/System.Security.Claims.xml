@@ -820,10 +820,10 @@
       <summary>Initializes a new instance of the <see cref="T:System.Security.Principal.GenericIdentity" /> class representing the user with the specified name and authentication type.</summary>
       <param name="name">The name of the user on whose behalf the code is running.</param>
       <param name="type">The type of authentication used to identify the user.</param>
-      <exception cref="T:System.ArgumentNullException">The <paramref name="name" /> parameter is <see langword="null" />.  
-  
- -or-  
-  
+      <exception cref="T:System.ArgumentNullException">The <paramref name="name" /> parameter is <see langword="null" />.
+
+ -or-
+
  The <paramref name="type" /> parameter is <see langword="null" />.</exception>
     </member>
     <member name="M:System.Security.Principal.GenericIdentity.#ctor(System.String)">

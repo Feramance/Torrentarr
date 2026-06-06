@@ -1920,7 +1920,7 @@
         <paramref name="catchType" /> is invalid.</exception>
       <exception cref="T:System.ArgumentOutOfRangeException">
         <paramref name="kind" /> has an invalid value.
-          
+
 -or-
 
 <paramref name="tryOffset" />, <paramref name="tryLength" />, <paramref name="handlerOffset" />, or <paramref name="handlerLength" /> is out of range.</exception>
@@ -2060,7 +2060,7 @@
         <paramref name="code" /> is not a branch instruction.
 
 -or-
-                    
+
 <paramref name="label" /> was not defined by this encoder.</exception>
       <exception cref="T:System.InvalidOperationException">
         <see cref="P:System.Reflection.Metadata.Ecma335.InstructionEncoder.ControlFlowBuilder" /> is <see langword="null" />.</exception>
@@ -3948,7 +3948,7 @@
       <summary>Gets the constrained <see cref="T:System.Reflection.Metadata.GenericParameterHandle" />.</summary>
     </member>
     <member name="P:System.Reflection.Metadata.GenericParameterConstraint.Type">
-      <summary>Gets a handle (<see cref="T:System.Reflection.Metadata.TypeDefinitionHandle" />, <see cref="T:System.Reflection.Metadata.TypeReferenceHandle" />, or <see cref="T:System.Reflection.Metadata.TypeSpecificationHandle" />) 
+      <summary>Gets a handle (<see cref="T:System.Reflection.Metadata.TypeDefinitionHandle" />, <see cref="T:System.Reflection.Metadata.TypeReferenceHandle" />, or <see cref="T:System.Reflection.Metadata.TypeSpecificationHandle" />)
             specifying from which type this generic parameter is constrained to derive,
             or which interface this generic parameter is constrained to implement.</summary>
       <returns>An <see cref="T:System.Reflection.Metadata.EntityHandle" /> instance.</returns>

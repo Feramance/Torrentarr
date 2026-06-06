@@ -2282,7 +2282,7 @@
              Route Template: "{controller=Home}/{action=Index}/{id?}"
              Route Values: { controller = "Store", action = "Index" }
              </code>
-            
+
              A route pattern produced in this way will match and generate URL paths like: <c>/Store</c>,
              <c>/Store/Index</c>, and <c>/Store/Index/17</c>.
              </example>
@@ -3415,7 +3415,7 @@
              </param>
              <remarks>
              If the <paramref name="value"/> is a string, it will be converted to a <see cref="T:Microsoft.AspNetCore.Routing.Constraints.RegexRouteConstraint"/>.
-            
+
              For example, the string <c>Product[0-9]+</c> will be converted to the regular expression
              <c>^(Product[0-9]+)</c>. See <see cref="T:System.Text.RegularExpressions.Regex"/> for more details.
              </remarks>
@@ -3709,7 +3709,7 @@
              Values that are are not strings are converted to strings using
              <c>Convert.ToString(x, CultureInfo.InvariantCulture)</c>. <c>null</c> values are converted
              to the empty string.
-            
+
              strings are compared using <see cref="F:System.StringComparison.OrdinalIgnoreCase"/>.
              </remarks>
         </member>
@@ -4171,7 +4171,7 @@
              This combines implicit (ambient) values from the <see cref="T:Microsoft.AspNetCore.Routing.RouteData"/> of the current request
              (if applicable), explictly provided values, and default values for parameters that appear in
              the route template.
-            
+
              Implicit (ambient) values which are invalidated due to changes in values lexically earlier in the
              route template are excluded from this set.
              </remarks>
@@ -5843,7 +5843,7 @@
              <summary>
              Given an object, adds each instance property with a public get method as a key and its
              associated value to a dictionary.
-            
+
              If the object is already an <see cref="T:System.Collections.Generic.IDictionary`2"/> instance, then a copy
              is returned.
              </summary>

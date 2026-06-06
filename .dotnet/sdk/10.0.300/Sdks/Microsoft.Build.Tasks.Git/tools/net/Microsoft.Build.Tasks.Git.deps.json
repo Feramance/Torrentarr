@@ -1,17 +1,28 @@
 {
+  "compilationOptions": {},
+  "libraries": {
+    "Microsoft.Build.Tasks.Git/10.0.300": {
+      "serviceable": false,
+      "sha512": "",
+      "type": "project"
+    },
+    "System.IO.Hashing/10.0.8": {
+      "hashPath": "system.io.hashing.10.0.8.nupkg.sha512",
+      "path": "system.io.hashing/10.0.8",
+      "serviceable": true,
+      "sha512": "sha512-+dJsbPJ3FyUbTZNplFj0RCKePFizmv6ewDV46JE9q/IVH4c3xTCftHfHelLsAKf0jryIPqgMb5GpS0x7TAY3mg==",
+      "type": "package"
+    }
+  },
   "runtimeTarget": {
     "name": ".NETCoreApp,Version=v8.0",
     "signature": ""
   },
-  "compilationOptions": {},
   "targets": {
     ".NETCoreApp,Version=v8.0": {
       "Microsoft.Build.Tasks.Git/10.0.300": {
         "dependencies": {
           "System.IO.Hashing": "10.0.8"
-        },
-        "runtime": {
-          "Microsoft.Build.Tasks.Git.dll": {}
         },
         "resources": {
           "cs/Microsoft.Build.Tasks.Git.resources.dll": {
@@ -53,6 +64,9 @@
           "zh-Hant/Microsoft.Build.Tasks.Git.resources.dll": {
             "locale": "zh-Hant"
           }
+        },
+        "runtime": {
+          "Microsoft.Build.Tasks.Git.dll": {}
         }
       },
       "System.IO.Hashing/10.0.8": {
@@ -63,20 +77,6 @@
           }
         }
       }
-    }
-  },
-  "libraries": {
-    "Microsoft.Build.Tasks.Git/10.0.300": {
-      "type": "project",
-      "serviceable": false,
-      "sha512": ""
-    },
-    "System.IO.Hashing/10.0.8": {
-      "type": "package",
-      "serviceable": true,
-      "sha512": "sha512-+dJsbPJ3FyUbTZNplFj0RCKePFizmv6ewDV46JE9q/IVH4c3xTCftHfHelLsAKf0jryIPqgMb5GpS0x7TAY3mg==",
-      "path": "system.io.hashing/10.0.8",
-      "hashPath": "system.io.hashing.10.0.8.nupkg.sha512"
     }
   }
 }

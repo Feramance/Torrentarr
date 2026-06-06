@@ -176,7 +176,7 @@
              <summary>
              If enabled, form submission is performed without fully reloading the page. This is
              equivalent to adding <code>data-enhance</code> to the form.
-            
+
              This flag is only relevant in server-side rendering (SSR) scenarios. For interactive
              rendering, the flag has no effect since there is no full-page reload on submit anyway.
              </summary>
@@ -196,7 +196,7 @@
         <member name="P:Microsoft.AspNetCore.Components.Forms.EditForm.OnSubmit">
              <summary>
              A callback that will be invoked when the form is submitted.
-            
+
              If using this parameter, you are responsible for triggering any validation
              manually, e.g., by calling <see cref="M:Microsoft.AspNetCore.Components.Forms.EditContext.Validate"/>.
              </summary>
@@ -1583,7 +1583,7 @@
              Gets or sets the tag name of the HTML element that will be used as the virtualization spacer.
              One such element will be rendered before the visible items, and one more after them, using
              an explicit "height" style to control the scroll range.
-            
+
              The default value is "div". If you are placing the <see cref="T:Microsoft.AspNetCore.Components.Web.Virtualization.Virtualize`1"/> instance inside
              an element that requires a specific child tag name, consider setting that here. For example when
              rendering inside a "tbody", consider setting <see cref="P:Microsoft.AspNetCore.Components.Web.Virtualization.Virtualize`1.SpacerElement"/> to the value "tr".
@@ -1593,7 +1593,7 @@
              <summary>
              Gets or sets the maximum number of items that will be rendered, even if the client reports
              that its viewport is large enough to show more. The default value is 100.
-            
+
              This should only be used as a safeguard against excessive memory usage or large data loads.
              Do not set this to a smaller number than you expect to fit on a realistic-sized window, because
              that will leave a blank gap below and the user may not be able to see the rest of the content.
@@ -2464,7 +2464,7 @@
         </member>
         <member name="T:Microsoft.AspNetCore.Components.Routing.NavigationLock">
             <summary>
-            A component that can be used to intercept navigation events. 
+            A component that can be used to intercept navigation events.
             </summary>
         </member>
         <member name="P:Microsoft.AspNetCore.Components.Routing.NavigationLock.OnBeforeInternalNavigation">

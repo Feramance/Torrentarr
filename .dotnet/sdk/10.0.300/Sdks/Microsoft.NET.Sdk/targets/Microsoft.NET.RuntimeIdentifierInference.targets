@@ -268,7 +268,7 @@ Copyright (c) .NET Foundation. All rights reserved.
                 FormatArguments="PublishAot"/>
 
   </Target>
-  
+
   <Target Name="_CheckForUnsupportedAppHostUsage"
           BeforeTargets="_CheckForInvalidConfigurationAndPlatform"
           DependsOnTargets="_CheckRIDAsserts"

@@ -691,13 +691,13 @@
             </summary>
         </member>
         <member name="M:Microsoft.AspNetCore.OutputCaching.LockingPolicy.Microsoft#AspNetCore#OutputCaching#IOutputCachePolicy#CacheRequestAsync(Microsoft.AspNetCore.OutputCaching.OutputCacheContext,System.Threading.CancellationToken)">
-            <inheritdoc /> 
+            <inheritdoc />
         </member>
         <member name="M:Microsoft.AspNetCore.OutputCaching.LockingPolicy.Microsoft#AspNetCore#OutputCaching#IOutputCachePolicy#ServeFromCacheAsync(Microsoft.AspNetCore.OutputCaching.OutputCacheContext,System.Threading.CancellationToken)">
-            <inheritdoc /> 
+            <inheritdoc />
         </member>
         <member name="M:Microsoft.AspNetCore.OutputCaching.LockingPolicy.Microsoft#AspNetCore#OutputCaching#IOutputCachePolicy#ServeResponseAsync(Microsoft.AspNetCore.OutputCaching.OutputCacheContext,System.Threading.CancellationToken)">
-            <inheritdoc /> 
+            <inheritdoc />
         </member>
         <member name="T:Microsoft.AspNetCore.OutputCaching.NamedPolicy">
             <summary>

@@ -1,28 +1,34 @@
 {
+  "compilationOptions": {},
+  "libraries": {
+    "Microsoft.CodeAnalysis.Common/5.6.0-2.26230.102": {
+      "serviceable": false,
+      "sha512": "",
+      "type": "project"
+    },
+    "Microsoft.CodeAnalysis.VisualBasic/5.6.0-2.26230.102": {
+      "serviceable": false,
+      "sha512": "",
+      "type": "project"
+    },
+    "Microsoft.CodeAnalysis/5.6.0.0": {
+      "serviceable": false,
+      "sha512": "",
+      "type": "reference"
+    },
+    "vbc/5.6.0-2.26230.102": {
+      "serviceable": false,
+      "sha512": "",
+      "type": "project"
+    }
+  },
   "runtimeTarget": {
     "name": ".NETCoreApp,Version=v10.0",
     "signature": ""
   },
-  "compilationOptions": {},
   "targets": {
     ".NETCoreApp,Version=v10.0": {
-      "vbc/5.6.0-2.26230.102": {
-        "dependencies": {
-          "Microsoft.CodeAnalysis.Common": "5.6.0-2.26230.102",
-          "Microsoft.CodeAnalysis.VisualBasic": "5.6.0-2.26230.102",
-          "Microsoft.CodeAnalysis": "5.6.0.0"
-        },
-        "runtime": {
-          "vbc.dll": {}
-        }
-      },
       "Microsoft.CodeAnalysis.Common/5.6.0-2.26230.102": {
-        "runtime": {
-          "Microsoft.CodeAnalysis.dll": {
-            "assemblyVersion": "5.6.0.0",
-            "fileVersion": "5.600.26.23102"
-          }
-        },
         "resources": {
           "cs/Microsoft.CodeAnalysis.resources.dll": {
             "locale": "cs"
@@ -63,17 +69,17 @@
           "zh-Hant/Microsoft.CodeAnalysis.resources.dll": {
             "locale": "zh-Hant"
           }
+        },
+        "runtime": {
+          "Microsoft.CodeAnalysis.dll": {
+            "assemblyVersion": "5.6.0.0",
+            "fileVersion": "5.600.26.23102"
+          }
         }
       },
       "Microsoft.CodeAnalysis.VisualBasic/5.6.0-2.26230.102": {
         "dependencies": {
           "Microsoft.CodeAnalysis.Common": "5.6.0-2.26230.102"
-        },
-        "runtime": {
-          "Microsoft.CodeAnalysis.VisualBasic.dll": {
-            "assemblyVersion": "5.6.0.0",
-            "fileVersion": "5.600.26.23102"
-          }
         },
         "resources": {
           "cs/Microsoft.CodeAnalysis.VisualBasic.resources.dll": {
@@ -115,15 +121,15 @@
           "zh-Hant/Microsoft.CodeAnalysis.VisualBasic.resources.dll": {
             "locale": "zh-Hant"
           }
-        }
-      },
-      "Microsoft.CodeAnalysis/5.6.0.0": {
+        },
         "runtime": {
-          "Microsoft.CodeAnalysis.dll": {
+          "Microsoft.CodeAnalysis.VisualBasic.dll": {
             "assemblyVersion": "5.6.0.0",
             "fileVersion": "5.600.26.23102"
           }
-        },
+        }
+      },
+      "Microsoft.CodeAnalysis/5.6.0.0": {
         "resources": {
           "cs/Microsoft.CodeAnalysis.resources.dll": {
             "locale": "cs"
@@ -164,30 +170,24 @@
           "zh-Hant/Microsoft.CodeAnalysis.resources.dll": {
             "locale": "zh-Hant"
           }
+        },
+        "runtime": {
+          "Microsoft.CodeAnalysis.dll": {
+            "assemblyVersion": "5.6.0.0",
+            "fileVersion": "5.600.26.23102"
+          }
+        }
+      },
+      "vbc/5.6.0-2.26230.102": {
+        "dependencies": {
+          "Microsoft.CodeAnalysis": "5.6.0.0",
+          "Microsoft.CodeAnalysis.Common": "5.6.0-2.26230.102",
+          "Microsoft.CodeAnalysis.VisualBasic": "5.6.0-2.26230.102"
+        },
+        "runtime": {
+          "vbc.dll": {}
         }
       }
-    }
-  },
-  "libraries": {
-    "vbc/5.6.0-2.26230.102": {
-      "type": "project",
-      "serviceable": false,
-      "sha512": ""
-    },
-    "Microsoft.CodeAnalysis.Common/5.6.0-2.26230.102": {
-      "type": "project",
-      "serviceable": false,
-      "sha512": ""
-    },
-    "Microsoft.CodeAnalysis.VisualBasic/5.6.0-2.26230.102": {
-      "type": "project",
-      "serviceable": false,
-      "sha512": ""
-    },
-    "Microsoft.CodeAnalysis/5.6.0.0": {
-      "type": "reference",
-      "serviceable": false,
-      "sha512": ""
     }
   }
 }

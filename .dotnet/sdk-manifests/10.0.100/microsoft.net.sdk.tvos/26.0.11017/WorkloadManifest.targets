@@ -31,4 +31,3 @@
 		<SdkSupportedTargetPlatformIdentifier Include="tvos" DisplayName="tvOS" />
 	</ItemGroup>
 </Project>
-

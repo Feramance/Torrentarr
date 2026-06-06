@@ -873,7 +873,7 @@
              Creates a dictionary from an object, by adding each public instance property as a key with its associated
              value to the dictionary. It will expose public properties from derived types as well. This is typically
              used with objects of an anonymous type.
-            
+
              If the <paramref name="value"/> is already an <see cref="T:System.Collections.Generic.IDictionary`2"/> instance, then it
              is returned as-is.
              <example>
@@ -3901,7 +3901,7 @@
             <item><description><see cref="P:Microsoft.AspNetCore.Http.CookieBuilder.SecurePolicy"/> defaults to <see cref="F:Microsoft.AspNetCore.Http.CookieSecurePolicy.SameAsRequest" />.</description></item>
             <item><description><see cref="P:Microsoft.AspNetCore.Http.CookieBuilder.HttpOnly"/> defaults to <c>true</c>.</description></item>
             <item><description><see cref="P:Microsoft.AspNetCore.Http.CookieBuilder.IsEssential"/> defaults to <c>false</c>. This property is only considered when a
-            user opts into the CookiePolicyMiddleware. If you are using the CookiePolicyMiddleware middleware together with 
+            user opts into the CookiePolicyMiddleware. If you are using the CookiePolicyMiddleware middleware together with
             <see cref="T:Microsoft.AspNetCore.Mvc.ViewFeatures.CookieTempDataProvider"/>, then either set this property to <c>true</c> or
             request user consent for non-essential cookies.</description></item>
             </list>

@@ -498,21 +498,21 @@
             <summary>Specifying both the `-r|--runtime` and `-os` options is not supported.</summary>
         </member>
         <member name="P:Microsoft.DotNet.Cli.CommandDefinitionStrings.CmdEnvironmentVariableDescription">
-            <summary>Sets the value of an environment variable. 
-            Creates the variable if it does not exist, overrides if it does. 
+            <summary>Sets the value of an environment variable.
+            Creates the variable if it does not exist, overrides if it does.
             This argument can be specified multiple times to provide multiple variables.
-            
+
             Examples:
             -e VARIABLE=abc
             -e VARIABLE="value with spaces"
             -e VARIABL ...</summary>
         </member>
         <member name="P:Microsoft.DotNet.Cli.CommandDefinitionStrings.CmdTestEnvironmentVariableDescription">
-            <summary>Sets the value of an environment variable. 
-            Creates the variable if it does not exist, overrides if it does. 
-            This will force the tests to be run in an isolated process. 
+            <summary>Sets the value of an environment variable.
+            Creates the variable if it does not exist, overrides if it does.
+            This will force the tests to be run in an isolated process.
             This argument can be specified multiple times to provide multiple variables.
-            
+
             Example ...</summary>
         </member>
         <member name="P:Microsoft.DotNet.Cli.CommandDefinitionStrings.CmdEnvironmentVariableExpression">
@@ -641,7 +641,7 @@
         </member>
         <member name="P:Microsoft.DotNet.Cli.CommandDefinitionStrings.CmdBlameCrashDescription">
             <summary>Runs the tests in blame mode and collects a crash dump when the test host exits unexpectedly. This option depends on the version of .NET used, the type of error, and the operating system.
-            
+
             For exceptions in managed code, a dump will be automatically collec ...</summary>
         </member>
         <member name="P:Microsoft.DotNet.Cli.CommandDefinitionStrings.CmdBlameCrashDumpTypeDescription">
@@ -649,7 +649,7 @@
         </member>
         <member name="P:Microsoft.DotNet.Cli.CommandDefinitionStrings.CmdBlameDescription">
             <summary>Runs the tests in blame mode. This option is helpful in isolating problematic tests that cause the test host to crash or hang, but it does not create a memory dump by default.
-            
+
             When a crash is detected, it creates an sequence file in TestResults/guid/guid_ ...</summary>
         </member>
         <member name="P:Microsoft.DotNet.Cli.CommandDefinitionStrings.CmdBlameHangDescription">
@@ -1589,7 +1589,7 @@
                   The command checks if the package is installed locally, if it was not found, it searches the configured NuGet feeds.</summary>
         </member>
         <member name="P:Microsoft.DotNet.Cli.CommandDefinitionStrings.Command_Install_Argument_Package">
-            <summary>NuGet package ID or path to folder or NuGet package to install. 
+            <summary>NuGet package ID or path to folder or NuGet package to install.
             To install the NuGet package of certain version, use &lt;package ID&gt;::&lt;version&gt;.</summary>
         </member>
         <member name="P:Microsoft.DotNet.Cli.CommandDefinitionStrings.Command_Install_Description">
@@ -1623,7 +1623,7 @@
             <summary>Searches for the templates on NuGet.org.</summary>
         </member>
         <member name="P:Microsoft.DotNet.Cli.CommandDefinitionStrings.Command_Uninstall_Argument_Package">
-            <summary>NuGet package ID (without version) or path to folder to uninstall. 
+            <summary>NuGet package ID (without version) or path to folder to uninstall.
             If command is specified without the argument, it lists all the template packages installed.</summary>
         </member>
         <member name="P:Microsoft.DotNet.Cli.CommandDefinitionStrings.Command_Uninstall_Description">

@@ -1100,7 +1100,7 @@
         </member>
         <member name="P:Microsoft.AspNetCore.Identity.PasskeyAssertionContext.HttpContext">
             <summary>
-            Gets or sets the <see cref="T:Microsoft.AspNetCore.Http.HttpContext"/> for the current request. 
+            Gets or sets the <see cref="T:Microsoft.AspNetCore.Http.HttpContext"/> for the current request.
             </summary>
         </member>
         <member name="P:Microsoft.AspNetCore.Identity.PasskeyAssertionContext.CredentialJson">
@@ -1170,7 +1170,7 @@
         </member>
         <member name="P:Microsoft.AspNetCore.Identity.PasskeyAttestationContext.HttpContext">
             <summary>
-            Gets or sets the <see cref="T:Microsoft.AspNetCore.Http.HttpContext"/> for the current request. 
+            Gets or sets the <see cref="T:Microsoft.AspNetCore.Http.HttpContext"/> for the current request.
             </summary>
         </member>
         <member name="P:Microsoft.AspNetCore.Identity.PasskeyAttestationContext.CredentialJson">

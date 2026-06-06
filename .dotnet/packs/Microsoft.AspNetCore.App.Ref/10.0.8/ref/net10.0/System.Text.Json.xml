@@ -5292,7 +5292,7 @@ The JSON string contains invalid UTF-8 bytes or invalid UTF-16 surrogates.</exce
       <summary>Parses the current JSON token value from the source as a <see cref="T:System.Byte" />.</summary>
       <exception cref="T:System.InvalidOperationException">The value of the JSON token is not a <see cref="F:System.Text.Json.JsonTokenType.Number" />.</exception>
       <exception cref="T:System.FormatException">The numeric format of the JSON token value is incorrect (for example, it contains a fractional value or is written in scientific notation).
-          
+
 -or-
 
 The JSON token value represents a number less than <see cref="F:System.Byte.MinValue">Byte.MinValue</see> or greater than <see cref="F:System.Byte.MaxValue">Byte.MaxValue</see>.</exception>
@@ -5321,9 +5321,9 @@ The value is incomplete. That is, the JSON string length is not a multiple of 4.
       <summary>Reads the next JSON token value from the source and parses it to a <see cref="T:System.DateTime" />.</summary>
       <exception cref="T:System.InvalidOperationException">The value of the JSON token isn't a <see cref="F:System.Text.Json.JsonTokenType.String" />.</exception>
       <exception cref="T:System.FormatException">The JSON token value cannot be read as a <see cref="T:System.DateTime" />.
-        
+
 -or-
-        
+
 The entire UTF-8 encoded token value cannot be parsed to a <see cref="T:System.DateTime" /> value.
 
 -or-
@@ -5337,7 +5337,7 @@ The JSON token value is of an unsupported format.</exception>
       <exception cref="T:System.FormatException">The JSON token value cannot be read as a <see cref="T:System.DateTimeOffset" />.
 
 -or-
-        
+
 The entire UTF-8 encoded token value cannot be parsed to a <see cref="T:System.DateTimeOffset" /> value.
 
 -or-
@@ -5361,7 +5361,7 @@ The JSON token value is of an unsupported format.</exception>
       <summary>Reads the next JSON token value from the source and parses it to a <see cref="T:System.Guid" />.</summary>
       <exception cref="T:System.InvalidOperationException">The value of the JSON token isn't a <see cref="F:System.Text.Json.JsonTokenType.String" />.</exception>
       <exception cref="T:System.FormatException">The JSON token value is in an unsupported format for a Guid.
-        
+
 -or-
 
 The entire UTF-8 encoded token value cannot be parsed to a <see cref="T:System.Guid" /> value.</exception>
@@ -5371,7 +5371,7 @@ The entire UTF-8 encoded token value cannot be parsed to a <see cref="T:System.G
       <summary>Parses the current JSON token value from the source as a <see cref="T:System.Int16" />.</summary>
       <exception cref="T:System.InvalidOperationException">The value of the JSON token is not a <see cref="F:System.Text.Json.JsonTokenType.Number" />.</exception>
       <exception cref="T:System.FormatException">The numeric format of the JSON token value is incorrect (for example, it contains a fractional value or is written in scientific notation).
-          
+
 -or-
 
 The JSON token value represents a number less than <see cref="F:System.Int16.MinValue">Int16.MinValue</see> or greater than <see cref="F:System.Int16.MaxValue">Int16.MaxValue</see>.</exception>
@@ -5381,7 +5381,7 @@ The JSON token value represents a number less than <see cref="F:System.Int16.Min
       <summary>Reads the next JSON token value from the source and parses it to an <see cref="T:System.Int32" />.</summary>
       <exception cref="T:System.InvalidOperationException">The JSON token value isn't a <see cref="F:System.Text.Json.JsonTokenType.Number" />.</exception>
       <exception cref="T:System.FormatException">The JSON token value is of the incorrect numeric format. For example, it contains a decimal or is written in scientific notation.
-            
+
 -or-
 
 The JSON token value represents a number less than <see cref="F:System.Int32.MinValue">Int32.MinValue</see> or greater than <see cref="F:System.Int32.MaxValue">Int32.MaxValue</see>.</exception>
@@ -5391,7 +5391,7 @@ The JSON token value represents a number less than <see cref="F:System.Int32.Min
       <summary>Reads the next JSON token value from the source and parses it to an <see cref="T:System.Int64" />.</summary>
       <exception cref="T:System.InvalidOperationException">The JSON token value isn't a <see cref="F:System.Text.Json.JsonTokenType.Number" />.</exception>
       <exception cref="T:System.FormatException">The JSON token value is of the incorrect numeric format. For example, it contains a decimal or is written in scientific notation.
-            
+
 -or-
 
 The JSON token value represents a number less than <see cref="F:System.Int64.MinValue">Int64.MinValue</see> or greater than <see cref="F:System.Int64.MaxValue">Int64.MaxValue</see>.</exception>
@@ -5401,7 +5401,7 @@ The JSON token value represents a number less than <see cref="F:System.Int64.Min
       <summary>Parses the current JSON token value from the source as an <see cref="T:System.SByte" />.</summary>
       <exception cref="T:System.InvalidOperationException">The value of the JSON token is not a <see cref="F:System.Text.Json.JsonTokenType.Number" />.</exception>
       <exception cref="T:System.FormatException">The numeric format of the JSON token value is incorrect (for example, it contains a fractional value or is written in scientific notation).
-          
+
 -or-
 
 The JSON token value represents a number less than <see cref="F:System.SByte.MinValue">SByte.MinValue</see> or greater than <see cref="F:System.SByte.MaxValue">SByte.MaxValue</see>.</exception>
@@ -5426,7 +5426,7 @@ The JSON string contains invalid UTF-8 bytes or invalid UTF-16 surrogates.</exce
       <summary>Parses the current JSON token value from the source as a <see cref="T:System.UInt16" />.</summary>
       <exception cref="T:System.InvalidOperationException">The value of the JSON token is not a <see cref="F:System.Text.Json.JsonTokenType.Number" />.</exception>
       <exception cref="T:System.FormatException">The numeric format of the JSON token value is incorrect (for example, it contains a fractional value or is written in scientific notation).
-          
+
 -or-
 
 The JSON token value represents a number less than <see cref="F:System.UInt16.MinValue">UInt16.MinValue</see> or greater than <see cref="F:System.UInt16.MaxValue">UInt16.MaxValue</see>.</exception>
@@ -5446,7 +5446,7 @@ The JSON token value represents a number less than <see cref="F:System.UInt32.Mi
       <summary>Reads the next JSON token value from the source and parses it to a <see cref="T:System.UInt64" />.</summary>
       <exception cref="T:System.InvalidOperationException">The JSON token value isn't a <see cref="F:System.Text.Json.JsonTokenType.Number" />.</exception>
       <exception cref="T:System.FormatException">The JSON token value is of the incorrect numeric format. For example, it contains a decimal or is written in scientific notation.
-            
+
 -or-
 
 The JSON token value represents a number less than <see cref="F:System.UInt64.MinValue">UInt64.MinValue</see> or greater than <see cref="F:System.UInt64.MaxValue">UInt64.MaxValue</see>.</exception>
@@ -5455,7 +5455,7 @@ The JSON token value represents a number less than <see cref="F:System.UInt64.Mi
     <member name="M:System.Text.Json.Utf8JsonReader.Read">
       <summary>Reads the next JSON token from the input source.</summary>
       <exception cref="T:System.Text.Json.JsonException">An invalid JSON token according to the JSON RFC is encountered.
-        
+
 -or-
 
 The current depth exceeds the recursive limit set by the maximum depth.</exception>
@@ -5579,7 +5579,7 @@ The current depth exceeds the recursive limit set by the maximum depth.</excepti
     <member name="M:System.Text.Json.Utf8JsonReader.TrySkip">
       <summary>Tries to skip the children of the current JSON token.</summary>
       <exception cref="T:System.Text.Json.JsonException">An invalid JSON token was encountered while skipping, according to the JSON RFC.
-          
+
 -or -
 
 The current depth exceeds the recursive limit set by the maximum depth.</exception>

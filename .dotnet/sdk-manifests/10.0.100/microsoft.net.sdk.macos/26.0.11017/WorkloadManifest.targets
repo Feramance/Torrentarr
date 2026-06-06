@@ -31,4 +31,3 @@
 		<SdkSupportedTargetPlatformIdentifier Include="macos" DisplayName="macOS" />
 	</ItemGroup>
 </Project>
-

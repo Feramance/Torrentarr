@@ -1000,10 +1000,10 @@ No process is associated with this <see cref="T:System.Diagnostics.Process" /> o
     </member>
     <member name="P:System.Diagnostics.ProcessThread.PriorityBoostEnabled">
       <summary>Gets or sets a value indicating whether the operating system should temporarily boost the priority of the associated thread whenever the main window of the thread's process receives the focus.</summary>
-      <exception cref="T:System.ComponentModel.Win32Exception">The priority boost information could not be retrieved.  
-  
- -or-  
-  
+      <exception cref="T:System.ComponentModel.Win32Exception">The priority boost information could not be retrieved.
+
+ -or-
+
  The priority boost information could not be set.</exception>
       <exception cref="T:System.NotSupportedException">The process is on a remote computer.</exception>
       <returns>
@@ -1011,10 +1011,10 @@ No process is associated with this <see cref="T:System.Diagnostics.Process" /> o
     </member>
     <member name="P:System.Diagnostics.ProcessThread.PriorityLevel">
       <summary>Gets or sets the priority level of the thread.</summary>
-      <exception cref="T:System.ComponentModel.Win32Exception">The thread priority level information could not be retrieved.  
-  
- -or-  
-  
+      <exception cref="T:System.ComponentModel.Win32Exception">The thread priority level information could not be retrieved.
+
+ -or-
+
  The thread priority level could not be set.</exception>
       <exception cref="T:System.NotSupportedException">The process is on a remote computer.</exception>
       <returns>One of the <see cref="T:System.Diagnostics.ThreadPriorityLevel" /> values, specifying a range that bounds the thread's priority.</returns>

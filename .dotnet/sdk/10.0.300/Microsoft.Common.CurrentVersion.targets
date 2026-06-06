@@ -5777,7 +5777,7 @@ Copyright (C) Microsoft Corporation. All rights reserved.
     <ItemGroup>
       <_CleanPriorFileWrites Include="@(_CleanUnfilteredPriorFileWrites)" Exclude="@(_ResolveAssemblyReferenceResolvedFilesAbsolute)"/>
     </ItemGroup>
-    
+
     <PropertyGroup>
     <!--
         Of shareable files, keep only those that are in the project's directory.
@@ -5797,7 +5797,7 @@ Copyright (C) Microsoft Corporation. All rights reserved.
       -->
       <TrackFileWritesShareableOutsideOfProjectDirectory Condition=" '$(TrackFileWritesShareableOutsideOfProjectDirectory)' == '' ">false</TrackFileWritesShareableOutsideOfProjectDirectory>
     </PropertyGroup>
-    
+
     <!-- Even if we don't allow cleaning filewrites from outside of the project bubble, we should still include FileWritesShareable that are inside the bubble -->
     <FindUnderPath Condition="!$(TrackFileWritesShareableOutsideOfProjectDirectory)" Path="$(MSBuildProjectDirectory)" Files="@(FileWritesShareable)" UpdateToAbsolutePaths="true">
       <Output TaskParameter="InPath" ItemName="FileWrites"/>

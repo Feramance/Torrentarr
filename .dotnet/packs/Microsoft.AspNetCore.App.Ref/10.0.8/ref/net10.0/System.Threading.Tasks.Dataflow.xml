@@ -13,10 +13,10 @@
       <param name="action">The action to invoke with each data element received.</param>
       <param name="dataflowBlockOptions">The options with which to configure this <see cref="T:System.Threading.Tasks.Dataflow.ActionBlock`1" />.</param>
       <exception cref="T:System.ArgumentNullException">
-        <paramref name="action" /> is <see langword="null" />.  
-  
- -or-  
-  
+        <paramref name="action" /> is <see langword="null" />.
+
+ -or-
+
  <paramref name="dataflowBlockOptions" /> is <see langword="null" />.</exception>
     </member>
     <member name="M:System.Threading.Tasks.Dataflow.ActionBlock`1.#ctor(System.Action{`0})">
@@ -30,10 +30,10 @@
       <param name="action">The action to invoke with each data element received.</param>
       <param name="dataflowBlockOptions">The options with which to configure this <see cref="T:System.Threading.Tasks.Dataflow.ActionBlock`1" />.</param>
       <exception cref="T:System.ArgumentNullException">
-        <paramref name="action" /> is <see langword="null" />.  
-  
- -or-  
-  
+        <paramref name="action" /> is <see langword="null" />.
+
+ -or-
+
  <paramref name="dataflowBlockOptions" /> is <see langword="null" />.</exception>
     </member>
     <member name="M:System.Threading.Tasks.Dataflow.ActionBlock`1.#ctor(System.Func{`0,System.Threading.Tasks.Task})">
@@ -65,15 +65,15 @@
       <param name="consumeToAccept">
         <see langword="true" /> to instruct the target to call <see cref="M:System.Threading.Tasks.Dataflow.ISourceBlock`1.ConsumeMessage(System.Threading.Tasks.Dataflow.DataflowMessageHeader,System.Threading.Tasks.Dataflow.ITargetBlock{`0},System.Boolean@)" /> synchronously during the call to <see cref="M:System.Threading.Tasks.Dataflow.ITargetBlock`1.OfferMessage(System.Threading.Tasks.Dataflow.DataflowMessageHeader,`0,System.Threading.Tasks.Dataflow.ISourceBlock{`0},System.Boolean)" />, prior to returning <see cref="F:System.Threading.Tasks.Dataflow.DataflowMessageStatus.Accepted" />, in order to consume the message; otherwise, <see langword="false" />.</param>
       <exception cref="T:System.ArgumentException">
-        <paramref name="messageHeader" /> is not valid.  
-  
+        <paramref name="messageHeader" /> is not valid.
+
  -or- <paramref name="consumeToAccept" /> may be <see langword="true" /> only if provided with a non-null <paramref name="source" />.</exception>
-      <returns>The status of the offered message.  If the message was accepted by the target, <see cref="F:System.Threading.Tasks.Dataflow.DataflowMessageStatus.Accepted" /> is returned, and the source should no longer use the offered message, because it is now owned by the target. If the message was postponed by the target, <see cref="F:System.Threading.Tasks.Dataflow.DataflowMessageStatus.Postponed" /> is returned as a notification that the target may later attempt to consume or reserve the message; in the meantime, the source still owns the message and may offer it to other blocks.  
-  
- If the target would have otherwise postponed message, but source was <see langword="null" />, <see cref="F:System.Threading.Tasks.Dataflow.DataflowMessageStatus.Declined" /> is returned.  
-  
- If the target tried to accept the message but missed it due to the source delivering the message to another target or simply discarding it, <see cref="F:System.Threading.Tasks.Dataflow.DataflowMessageStatus.NotAvailable" /> is returned.  
-  
+      <returns>The status of the offered message.  If the message was accepted by the target, <see cref="F:System.Threading.Tasks.Dataflow.DataflowMessageStatus.Accepted" /> is returned, and the source should no longer use the offered message, because it is now owned by the target. If the message was postponed by the target, <see cref="F:System.Threading.Tasks.Dataflow.DataflowMessageStatus.Postponed" /> is returned as a notification that the target may later attempt to consume or reserve the message; in the meantime, the source still owns the message and may offer it to other blocks.
+
+ If the target would have otherwise postponed message, but source was <see langword="null" />, <see cref="F:System.Threading.Tasks.Dataflow.DataflowMessageStatus.Declined" /> is returned.
+
+ If the target tried to accept the message but missed it due to the source delivering the message to another target or simply discarding it, <see cref="F:System.Threading.Tasks.Dataflow.DataflowMessageStatus.NotAvailable" /> is returned.
+
  If the target chose not to accept the message, <see cref="F:System.Threading.Tasks.Dataflow.DataflowMessageStatus.Declined" /> is returned. If the target chose not to accept the message and will never accept another message from this source, <see cref="F:System.Threading.Tasks.Dataflow.DataflowMessageStatus.DecliningPermanently" /> is returned.</returns>
     </member>
     <member name="M:System.Threading.Tasks.Dataflow.ActionBlock`1.ToString">
@@ -96,10 +96,10 @@
       <summary>Initializes a new <see cref="T:System.Threading.Tasks.Dataflow.BatchBlock`1" /> with the specified batch size, declining option, and block options.</summary>
       <param name="batchSize">The number of items to group into a batch.</param>
       <param name="dataflowBlockOptions">The options with which to configure this <see cref="T:System.Threading.Tasks.Dataflow.BatchBlock`1" />.</param>
-      <exception cref="T:System.ArgumentOutOfRangeException">The <paramref name="batchSize" /> must be positive.  
-  
- -or-  
-  
+      <exception cref="T:System.ArgumentOutOfRangeException">The <paramref name="batchSize" /> must be positive.
+
+ -or-
+
  The <paramref name="batchSize" /> must be smaller than the value of the <see cref="P:System.Threading.Tasks.Dataflow.DataflowBlockOptions.BoundedCapacity" /> option if a non-default value has been set.</exception>
       <exception cref="T:System.ArgumentNullException">The <paramref name="dataflowBlockOptions" /> is <see langword="null" />.</exception>
     </member>
@@ -132,8 +132,8 @@
         <see langword="true" /> if the message was successfully consumed; otherwise, <see langword="false" />.</param>
       <exception cref="T:System.ArgumentException">The  <paramref name="messageHeader" /> is not valid.</exception>
       <exception cref="T:System.ArgumentNullException">The <paramref name="target" /> is <see langword="null" />.</exception>
-      <returns>The value of the consumed message. This may correspond to a different <see cref="T:System.Threading.Tasks.Dataflow.DataflowMessageHeader" /> instance than was previously reserved and passed as the <paramref name="messageHeader" /> to <see cref="M:System.Threading.Tasks.Dataflow.ISourceBlock`1.ConsumeMessage(System.Threading.Tasks.Dataflow.DataflowMessageHeader,System.Threading.Tasks.Dataflow.ITargetBlock{`0},System.Boolean@)" />. The consuming <see cref="T:System.Threading.Tasks.Dataflow.ITargetBlock`1" /> must use the returned value instead of the value passed as messageValue through <see cref="M:System.Threading.Tasks.Dataflow.ITargetBlock`1.OfferMessage(System.Threading.Tasks.Dataflow.DataflowMessageHeader,`0,System.Threading.Tasks.Dataflow.ISourceBlock{`0},System.Boolean)" />.  
-  
+      <returns>The value of the consumed message. This may correspond to a different <see cref="T:System.Threading.Tasks.Dataflow.DataflowMessageHeader" /> instance than was previously reserved and passed as the <paramref name="messageHeader" /> to <see cref="M:System.Threading.Tasks.Dataflow.ISourceBlock`1.ConsumeMessage(System.Threading.Tasks.Dataflow.DataflowMessageHeader,System.Threading.Tasks.Dataflow.ITargetBlock{`0},System.Boolean@)" />. The consuming <see cref="T:System.Threading.Tasks.Dataflow.ITargetBlock`1" /> must use the returned value instead of the value passed as messageValue through <see cref="M:System.Threading.Tasks.Dataflow.ITargetBlock`1.OfferMessage(System.Threading.Tasks.Dataflow.DataflowMessageHeader,`0,System.Threading.Tasks.Dataflow.ISourceBlock{`0},System.Boolean)" />.
+
  If the message requested is not available, the return value will be <see langword="null" />.</returns>
     </member>
     <member name="M:System.Threading.Tasks.Dataflow.BatchBlock`1.System#Threading#Tasks#Dataflow#ISourceBlock{T[]}#ReleaseReservation(System.Threading.Tasks.Dataflow.DataflowMessageHeader,System.Threading.Tasks.Dataflow.ITargetBlock{`0[]})">
@@ -159,15 +159,15 @@
       <param name="messageValue">The value of the message being offered.</param>
       <param name="source">The <see cref="T:System.Threading.Tasks.Dataflow.ISourceBlock`1" /> offering the message. This may be null.</param>
       <param name="consumeToAccept">Set to <see langword="true" /> to instruct the target to call <see cref="M:System.Threading.Tasks.Dataflow.ISourceBlock`1.ConsumeMessage(System.Threading.Tasks.Dataflow.DataflowMessageHeader,System.Threading.Tasks.Dataflow.ITargetBlock{`0},System.Boolean@)" /> synchronously during the call to <see cref="M:System.Threading.Tasks.Dataflow.ITargetBlock`1.OfferMessage(System.Threading.Tasks.Dataflow.DataflowMessageHeader,`0,System.Threading.Tasks.Dataflow.ISourceBlock{`0},System.Boolean)" />, prior to returning <see cref="F:System.Threading.Tasks.Dataflow.DataflowMessageStatus.Accepted" />, in order to consume the message.</param>
-      <exception cref="T:System.ArgumentException">The  <paramref name="messageHeader" /> is not valid.  
-  
+      <exception cref="T:System.ArgumentException">The  <paramref name="messageHeader" /> is not valid.
+
  -or- <paramref name="consumeToAccept" /> may only be true if provided with a non-null <paramref name="source" />.</exception>
-      <returns>The status of the offered message. If the message was accepted by the target, <see cref="F:System.Threading.Tasks.Dataflow.DataflowMessageStatus.Accepted" /> is returned, and the source should no longer use the offered message, because it is now owned by the target. If the message was postponed by the target, <see cref="F:System.Threading.Tasks.Dataflow.DataflowMessageStatus.Postponed" /> is returned as a notification that the target may later attempt to consume or reserve the message; in the meantime, the source still owns the message and may offer it to other blocks.  
-  
- If the target would have otherwise postponed message, but <paramref name="source" /> was <see langword="null" />, <see cref="F:System.Threading.Tasks.Dataflow.DataflowMessageStatus.Declined" /> is instead returned.  
-  
- If the target tried to accept the message but missed it due to the source delivering the message to another target or simply discarding it, <see cref="F:System.Threading.Tasks.Dataflow.DataflowMessageStatus.NotAvailable" /> is returned.  
-  
+      <returns>The status of the offered message. If the message was accepted by the target, <see cref="F:System.Threading.Tasks.Dataflow.DataflowMessageStatus.Accepted" /> is returned, and the source should no longer use the offered message, because it is now owned by the target. If the message was postponed by the target, <see cref="F:System.Threading.Tasks.Dataflow.DataflowMessageStatus.Postponed" /> is returned as a notification that the target may later attempt to consume or reserve the message; in the meantime, the source still owns the message and may offer it to other blocks.
+
+ If the target would have otherwise postponed message, but <paramref name="source" /> was <see langword="null" />, <see cref="F:System.Threading.Tasks.Dataflow.DataflowMessageStatus.Declined" /> is instead returned.
+
+ If the target tried to accept the message but missed it due to the source delivering the message to another target or simply discarding it, <see cref="F:System.Threading.Tasks.Dataflow.DataflowMessageStatus.NotAvailable" /> is returned.
+
  If the target chose not to accept the message, <see cref="F:System.Threading.Tasks.Dataflow.DataflowMessageStatus.Declined" /> is returned. If the target chose not to accept the message and will never accept another message from this source, <see cref="F:System.Threading.Tasks.Dataflow.DataflowMessageStatus.DecliningPermanently" /> is returned.</returns>
     </member>
     <member name="M:System.Threading.Tasks.Dataflow.BatchBlock`1.ToString">
@@ -448,8 +448,8 @@
         <see langword="true" /> if the message was successfully consumed; otherwise, <see langword="false" />.</param>
       <exception cref="T:System.ArgumentException">The <paramref name="messageHeader" /> is not valid.</exception>
       <exception cref="T:System.ArgumentNullException">The <paramref name="target" /> is <see langword="null" />.</exception>
-      <returns>The value of the consumed message. This may correspond to a different  <see cref="T:System.Threading.Tasks.Dataflow.DataflowMessageHeader" /> instance than was previously reserved and passed as the <paramref name="messageHeader" /> to <see cref="M:System.Threading.Tasks.Dataflow.ISourceBlock`1.ConsumeMessage(System.Threading.Tasks.Dataflow.DataflowMessageHeader,System.Threading.Tasks.Dataflow.ITargetBlock{`0},System.Boolean@)" />. The consuming <see cref="T:System.Threading.Tasks.Dataflow.ITargetBlock`1" /> must use the returned value instead of the value passed as <paramref name="messageValue" /> through <see cref="M:System.Threading.Tasks.Dataflow.ITargetBlock`1.OfferMessage(System.Threading.Tasks.Dataflow.DataflowMessageHeader,`0,System.Threading.Tasks.Dataflow.ISourceBlock{`0},System.Boolean)" />.  
-  
+      <returns>The value of the consumed message. This may correspond to a different  <see cref="T:System.Threading.Tasks.Dataflow.DataflowMessageHeader" /> instance than was previously reserved and passed as the <paramref name="messageHeader" /> to <see cref="M:System.Threading.Tasks.Dataflow.ISourceBlock`1.ConsumeMessage(System.Threading.Tasks.Dataflow.DataflowMessageHeader,System.Threading.Tasks.Dataflow.ITargetBlock{`0},System.Boolean@)" />. The consuming <see cref="T:System.Threading.Tasks.Dataflow.ITargetBlock`1" /> must use the returned value instead of the value passed as <paramref name="messageValue" /> through <see cref="M:System.Threading.Tasks.Dataflow.ITargetBlock`1.OfferMessage(System.Threading.Tasks.Dataflow.DataflowMessageHeader,`0,System.Threading.Tasks.Dataflow.ISourceBlock{`0},System.Boolean)" />.
+
  If the message requested is not available, the return value will be <see langword="null" />.</returns>
     </member>
     <member name="M:System.Threading.Tasks.Dataflow.BroadcastBlock`1.System#Threading#Tasks#Dataflow#ISourceBlock{T}#ReleaseReservation(System.Threading.Tasks.Dataflow.DataflowMessageHeader,System.Threading.Tasks.Dataflow.ITargetBlock{`0})">
@@ -475,15 +475,15 @@
       <param name="messageValue">The value of the message being offered.</param>
       <param name="source">The <see cref="T:System.Threading.Tasks.Dataflow.ISourceBlock`1" /> offering the message. This may be null.</param>
       <param name="consumeToAccept">Set to <see langword="true" /> to instruct the target to call <see cref="M:System.Threading.Tasks.Dataflow.ISourceBlock`1.ConsumeMessage(System.Threading.Tasks.Dataflow.DataflowMessageHeader,System.Threading.Tasks.Dataflow.ITargetBlock{`0},System.Boolean@)" /> synchronously during the call to <see cref="M:System.Threading.Tasks.Dataflow.ITargetBlock`1.OfferMessage(System.Threading.Tasks.Dataflow.DataflowMessageHeader,`0,System.Threading.Tasks.Dataflow.ISourceBlock{`0},System.Boolean)" />, prior to returning <see cref="F:System.Threading.Tasks.Dataflow.DataflowMessageStatus.Accepted" />, in order to consume the message.</param>
-      <exception cref="T:System.ArgumentException">The  <paramref name="messageHeader" /> is not valid.  
-  
+      <exception cref="T:System.ArgumentException">The  <paramref name="messageHeader" /> is not valid.
+
  -or- <paramref name="consumeToAccept" /> may only be true if provided with a non-null <paramref name="source" />.</exception>
-      <returns>The status of the offered message. If the message was accepted by the target, <see cref="F:System.Threading.Tasks.Dataflow.DataflowMessageStatus.Accepted" /> is returned, and the source should no longer use the offered message, because it is now owned by the target. If the message was postponed by the target, <see cref="F:System.Threading.Tasks.Dataflow.DataflowMessageStatus.Postponed" /> is returned as a notification that the target may later attempt to consume or reserve the message; in the meantime, the source still owns the message and may offer it to other blocks.  
-  
- If the target would have otherwise postponed message, but <paramref name="source" /> was <see langword="null" />, <see cref="F:System.Threading.Tasks.Dataflow.DataflowMessageStatus.Declined" /> is instead returned.  
-  
- If the target tried to accept the message but missed it due to the source delivering the message to another target or simply discarding it, <see cref="F:System.Threading.Tasks.Dataflow.DataflowMessageStatus.NotAvailable" /> is returned.  
-  
+      <returns>The status of the offered message. If the message was accepted by the target, <see cref="F:System.Threading.Tasks.Dataflow.DataflowMessageStatus.Accepted" /> is returned, and the source should no longer use the offered message, because it is now owned by the target. If the message was postponed by the target, <see cref="F:System.Threading.Tasks.Dataflow.DataflowMessageStatus.Postponed" /> is returned as a notification that the target may later attempt to consume or reserve the message; in the meantime, the source still owns the message and may offer it to other blocks.
+
+ If the target would have otherwise postponed message, but <paramref name="source" /> was <see langword="null" />, <see cref="F:System.Threading.Tasks.Dataflow.DataflowMessageStatus.Declined" /> is instead returned.
+
+ If the target tried to accept the message but missed it due to the source delivering the message to another target or simply discarding it, <see cref="F:System.Threading.Tasks.Dataflow.DataflowMessageStatus.NotAvailable" /> is returned.
+
  If the target chose not to accept the message, <see cref="F:System.Threading.Tasks.Dataflow.DataflowMessageStatus.Declined" /> is returned. If the target chose not to accept the message and will never accept another message from this source, <see cref="F:System.Threading.Tasks.Dataflow.DataflowMessageStatus.DecliningPermanently" /> is returned.</returns>
     </member>
     <member name="M:System.Threading.Tasks.Dataflow.BroadcastBlock`1.ToString">
@@ -537,8 +537,8 @@
         <see langword="true" /> if the message was successfully consumed; otherwise, <see langword="false" />.</param>
       <exception cref="T:System.ArgumentException">The <paramref name="messageHeader" /> is not valid.</exception>
       <exception cref="T:System.ArgumentNullException">The <paramref name="target" /> is <see langword="null" />.</exception>
-      <returns>The value of the consumed message. This may correspond to a different  <see cref="T:System.Threading.Tasks.Dataflow.DataflowMessageHeader" /> instance than was previously reserved and passed as the <paramref name="messageHeader" /> to  <see cref="M:System.Threading.Tasks.Dataflow.ISourceBlock`1.ConsumeMessage(System.Threading.Tasks.Dataflow.DataflowMessageHeader,System.Threading.Tasks.Dataflow.ITargetBlock{`0},System.Boolean@)" />. The consuming <see cref="T:System.Threading.Tasks.Dataflow.ITargetBlock`1" /> must use the returned value instead of the value passed as <paramref name="messageValue" /> through <see cref="M:System.Threading.Tasks.Dataflow.ITargetBlock`1.OfferMessage(System.Threading.Tasks.Dataflow.DataflowMessageHeader,`0,System.Threading.Tasks.Dataflow.ISourceBlock{`0},System.Boolean)" />.  
-  
+      <returns>The value of the consumed message. This may correspond to a different  <see cref="T:System.Threading.Tasks.Dataflow.DataflowMessageHeader" /> instance than was previously reserved and passed as the <paramref name="messageHeader" /> to  <see cref="M:System.Threading.Tasks.Dataflow.ISourceBlock`1.ConsumeMessage(System.Threading.Tasks.Dataflow.DataflowMessageHeader,System.Threading.Tasks.Dataflow.ITargetBlock{`0},System.Boolean@)" />. The consuming <see cref="T:System.Threading.Tasks.Dataflow.ITargetBlock`1" /> must use the returned value instead of the value passed as <paramref name="messageValue" /> through <see cref="M:System.Threading.Tasks.Dataflow.ITargetBlock`1.OfferMessage(System.Threading.Tasks.Dataflow.DataflowMessageHeader,`0,System.Threading.Tasks.Dataflow.ISourceBlock{`0},System.Boolean)" />.
+
  If the message requested is not available, the return value will be <see langword="null" />.</returns>
     </member>
     <member name="M:System.Threading.Tasks.Dataflow.BufferBlock`1.System#Threading#Tasks#Dataflow#ISourceBlock{T}#ReleaseReservation(System.Threading.Tasks.Dataflow.DataflowMessageHeader,System.Threading.Tasks.Dataflow.ITargetBlock{`0})">
@@ -564,15 +564,15 @@
       <param name="messageValue">The value of the message being offered.</param>
       <param name="source">The <see cref="T:System.Threading.Tasks.Dataflow.ISourceBlock`1" /> offering the message. This may be <see langword="null" />.</param>
       <param name="consumeToAccept">Set to true to instruct the target to call <see cref="M:System.Threading.Tasks.Dataflow.ISourceBlock`1.ConsumeMessage(System.Threading.Tasks.Dataflow.DataflowMessageHeader,System.Threading.Tasks.Dataflow.ITargetBlock{`0},System.Boolean@)" /> synchronously during the call to <see cref="M:System.Threading.Tasks.Dataflow.ITargetBlock`1.OfferMessage(System.Threading.Tasks.Dataflow.DataflowMessageHeader,`0,System.Threading.Tasks.Dataflow.ISourceBlock{`0},System.Boolean)" />, prior to returning <see cref="F:System.Threading.Tasks.Dataflow.DataflowMessageStatus.Accepted" />, in order to consume the message.</param>
-      <exception cref="T:System.ArgumentException">The  <paramref name="messageHeader" /> is not valid.  
-  
+      <exception cref="T:System.ArgumentException">The  <paramref name="messageHeader" /> is not valid.
+
  -or- <paramref name="consumeToAccept" /> may only be true if provided with a non-null <paramref name="source" />.</exception>
-      <returns>The status of the offered message. If the message was accepted by the target, <see cref="F:System.Threading.Tasks.Dataflow.DataflowMessageStatus.Accepted" /> is returned, and the source should no longer use the offered message, because it is now owned by the target. If the message was postponed by the target, <see cref="F:System.Threading.Tasks.Dataflow.DataflowMessageStatus.Postponed" /> is returned as a notification that the target may later attempt to consume or reserve the message; in the meantime, the source still owns the message and may offer it to other blocks.  
-  
- If the target would have otherwise postponed message, but <paramref name="source" /> was <see langword="null" />, <see cref="F:System.Threading.Tasks.Dataflow.DataflowMessageStatus.Declined" /> is instead returned.  
-  
- If the target tried to accept the message but missed it due to the source delivering the message to another target or simply discarding it, <see cref="F:System.Threading.Tasks.Dataflow.DataflowMessageStatus.NotAvailable" /> is returned.  
-  
+      <returns>The status of the offered message. If the message was accepted by the target, <see cref="F:System.Threading.Tasks.Dataflow.DataflowMessageStatus.Accepted" /> is returned, and the source should no longer use the offered message, because it is now owned by the target. If the message was postponed by the target, <see cref="F:System.Threading.Tasks.Dataflow.DataflowMessageStatus.Postponed" /> is returned as a notification that the target may later attempt to consume or reserve the message; in the meantime, the source still owns the message and may offer it to other blocks.
+
+ If the target would have otherwise postponed message, but <paramref name="source" /> was <see langword="null" />, <see cref="F:System.Threading.Tasks.Dataflow.DataflowMessageStatus.Declined" /> is instead returned.
+
+ If the target tried to accept the message but missed it due to the source delivering the message to another target or simply discarding it, <see cref="F:System.Threading.Tasks.Dataflow.DataflowMessageStatus.NotAvailable" /> is returned.
+
  If the target chose not to accept the message, <see cref="F:System.Threading.Tasks.Dataflow.DataflowMessageStatus.Declined" /> is returned. If the target chose not to accept the message and will never accept another message from this source, <see cref="F:System.Threading.Tasks.Dataflow.DataflowMessageStatus.DecliningPermanently" /> is returned.</returns>
     </member>
     <member name="M:System.Threading.Tasks.Dataflow.BufferBlock`1.ToString">
@@ -625,22 +625,22 @@
       <param name="dataflowBlockOptions">The options with which to configure this choice.</param>
       <typeparam name="T1">Specifies type of data contained in the first source.</typeparam>
       <typeparam name="T2">Specifies type of data contained in the second source.</typeparam>
-      <exception cref="T:System.ArgumentNullException">The <paramref name="source1" /> is <see langword="null" />.  
-  
- -or-  
-  
- The <paramref name="action1" /> is <see langword="null" />.  
-  
- -or-  
-  
- The <paramref name="source2" /> is <see langword="null" />.  
-  
- -or-  
-  
- The <paramref name="action2" /> is <see langword="null" />.  
-  
- -or-  
-  
+      <exception cref="T:System.ArgumentNullException">The <paramref name="source1" /> is <see langword="null" />.
+
+ -or-
+
+ The <paramref name="action1" /> is <see langword="null" />.
+
+ -or-
+
+ The <paramref name="source2" /> is <see langword="null" />.
+
+ -or-
+
+ The <paramref name="action2" /> is <see langword="null" />.
+
+ -or-
+
  The <paramref name="dataflowBlockOptions" /> is <see langword="null" />.</exception>
       <returns>A  <see cref="T:System.Threading.Tasks.Task`1" /> that represents the asynchronous choice. If both sources are completed prior to the choice completing, or if the <see cref="T:System.Threading.CancellationToken" /> provided as part of <paramref name="dataflowBlockOptions" /> is canceled prior to the choice completing, the resulting task will be canceled. When one of the sources has data available and successfully propagates it to the choice, the resulting task will complete when the handler completes; if the handler throws an exception, the task will end in the <see cref="F:System.Threading.Tasks.TaskStatus.Faulted" /> state and will contain the unhandled exception. Otherwise, the task will end with its <see cref="P:System.Threading.Tasks.Task`1.Result" /> set to either 0 or 1 to represent the first or second source, respectively.</returns>
     </member>
@@ -652,21 +652,21 @@
       <param name="action2">The handler to execute on data from the second source.</param>
       <typeparam name="T1">Specifies type of data contained in the first source.</typeparam>
       <typeparam name="T2">Specifies type of data contained in the second source.</typeparam>
-      <exception cref="T:System.ArgumentNullException">The <paramref name="source1" /> is <see langword="null" />.  
-  
- -or-  
-  
- The  <paramref name="action1" /> is <see langword="null" />.  
-  
- -or-  
-  
- The <paramref name="source2" /> is <see langword="null" />.  
-  
- -or-  
-  
+      <exception cref="T:System.ArgumentNullException">The <paramref name="source1" /> is <see langword="null" />.
+
+ -or-
+
+ The  <paramref name="action1" /> is <see langword="null" />.
+
+ -or-
+
+ The <paramref name="source2" /> is <see langword="null" />.
+
+ -or-
+
  The <paramref name="action2" /> is <see langword="null" />.</exception>
-      <returns>A  <see cref="T:System.Threading.Tasks.Task`1" /> that represents the asynchronous choice. If both sources are completed prior to the choice completing, the resulting task will be canceled. When one of the sources has data available and successfully propagates it to the choice, the resulting task will complete when the handler completes; if the handler throws an exception, the task will end in the <see cref="F:System.Threading.Tasks.TaskStatus.Faulted" /> state and will contain the unhandled exception. Otherwise, the task will end with its <see cref="P:System.Threading.Tasks.Task`1.Result" /> set to either 0 or 1 to represent the first or second source, respectively.  
-  
+      <returns>A  <see cref="T:System.Threading.Tasks.Task`1" /> that represents the asynchronous choice. If both sources are completed prior to the choice completing, the resulting task will be canceled. When one of the sources has data available and successfully propagates it to the choice, the resulting task will complete when the handler completes; if the handler throws an exception, the task will end in the <see cref="F:System.Threading.Tasks.TaskStatus.Faulted" /> state and will contain the unhandled exception. Otherwise, the task will end with its <see cref="P:System.Threading.Tasks.Task`1.Result" /> set to either 0 or 1 to represent the first or second source, respectively.
+
  This method will only consume an element from one of the two data sources, never both.</returns>
     </member>
     <member name="M:System.Threading.Tasks.Dataflow.DataflowBlock.Choose``3(System.Threading.Tasks.Dataflow.ISourceBlock{``0},System.Action{``0},System.Threading.Tasks.Dataflow.ISourceBlock{``1},System.Action{``1},System.Threading.Tasks.Dataflow.ISourceBlock{``2},System.Action{``2},System.Threading.Tasks.Dataflow.DataflowBlockOptions)">
@@ -681,33 +681,33 @@
       <typeparam name="T1">Specifies type of data contained in the first source.</typeparam>
       <typeparam name="T2">Specifies type of data contained in the second source.</typeparam>
       <typeparam name="T3">Specifies type of data contained in the third source.</typeparam>
-      <exception cref="T:System.ArgumentNullException">The <paramref name="source1" /> is <see langword="null" />.  
-  
- -or-  
-  
- The <paramref name="action1" /> is <see langword="null" />.  
-  
- -or-  
-  
- The <paramref name="source2" /> is <see langword="null" />.  
-  
- -or-  
-  
- The <paramref name="action2" /> is <see langword="null" />.  
-  
- -or-  
-  
- The <paramref name="source3" /> is <see langword="null" />.  
-  
- -or-  
-  
- The <paramref name="action3" /> is <see langword="null" />.  
-  
- -or-  
-  
+      <exception cref="T:System.ArgumentNullException">The <paramref name="source1" /> is <see langword="null" />.
+
+ -or-
+
+ The <paramref name="action1" /> is <see langword="null" />.
+
+ -or-
+
+ The <paramref name="source2" /> is <see langword="null" />.
+
+ -or-
+
+ The <paramref name="action2" /> is <see langword="null" />.
+
+ -or-
+
+ The <paramref name="source3" /> is <see langword="null" />.
+
+ -or-
+
+ The <paramref name="action3" /> is <see langword="null" />.
+
+ -or-
+
  The <paramref name="dataflowBlockOptions" /> is <see langword="null" />.</exception>
-      <returns>A  <see cref="T:System.Threading.Tasks.Task`1" /> that represents the asynchronous choice. If all sources are completed prior to the choice completing, or if the <see cref="T:System.Threading.CancellationToken" /> provided as part of <paramref name="dataflowBlockOptions" /> is canceled prior to the choice completing, the resulting task will be canceled. When one of the sources has data available and successfully propagates it to the choice, the resulting task will complete when the handler completes; if the handler throws an exception, the task will end in the <see cref="F:System.Threading.Tasks.TaskStatus.Faulted" /> state and will contain the unhandled exception. Otherwise, the task will end with its <see cref="P:System.Threading.Tasks.Task`1.Result" /> set to the 0-based index of the source.  
-  
+      <returns>A  <see cref="T:System.Threading.Tasks.Task`1" /> that represents the asynchronous choice. If all sources are completed prior to the choice completing, or if the <see cref="T:System.Threading.CancellationToken" /> provided as part of <paramref name="dataflowBlockOptions" /> is canceled prior to the choice completing, the resulting task will be canceled. When one of the sources has data available and successfully propagates it to the choice, the resulting task will complete when the handler completes; if the handler throws an exception, the task will end in the <see cref="F:System.Threading.Tasks.TaskStatus.Faulted" /> state and will contain the unhandled exception. Otherwise, the task will end with its <see cref="P:System.Threading.Tasks.Task`1.Result" /> set to the 0-based index of the source.
+
  This method will only consume an element from one of the data sources, never more than one. If cancellation is requested after an element has been received, the cancellation request will be ignored, and the relevant handler will be allowed to execute.</returns>
     </member>
     <member name="M:System.Threading.Tasks.Dataflow.DataflowBlock.Choose``3(System.Threading.Tasks.Dataflow.ISourceBlock{``0},System.Action{``0},System.Threading.Tasks.Dataflow.ISourceBlock{``1},System.Action{``1},System.Threading.Tasks.Dataflow.ISourceBlock{``2},System.Action{``2})">
@@ -721,29 +721,29 @@
       <typeparam name="T1">Specifies type of data contained in the first source.</typeparam>
       <typeparam name="T2">Specifies type of data contained in the second source.</typeparam>
       <typeparam name="T3">Specifies type of data contained in the third source.</typeparam>
-      <exception cref="T:System.ArgumentNullException">The <paramref name="source1" /> is <see langword="null" />.  
-  
- -or-  
-  
- The <paramref name="action1" /> is <see langword="null" />.  
-  
- -or-  
-  
- The <paramref name="source2" /> is <see langword="null" />.  
-  
- -or-  
-  
- The <paramref name="action2" /> is <see langword="null" />.  
-  
- -or-  
-  
- The <paramref name="source3" /> is <see langword="null" />.  
-  
- -or-  
-  
+      <exception cref="T:System.ArgumentNullException">The <paramref name="source1" /> is <see langword="null" />.
+
+ -or-
+
+ The <paramref name="action1" /> is <see langword="null" />.
+
+ -or-
+
+ The <paramref name="source2" /> is <see langword="null" />.
+
+ -or-
+
+ The <paramref name="action2" /> is <see langword="null" />.
+
+ -or-
+
+ The <paramref name="source3" /> is <see langword="null" />.
+
+ -or-
+
  The <paramref name="action3" /> is <see langword="null" />.</exception>
-      <returns>A  <see cref="T:System.Threading.Tasks.Task`1" /> that represents the asynchronous choice. If all sources are completed prior to the choice completing, the resulting task will be canceled. When one of the sources has data available and successfully propagates it to the choice, the resulting task will complete when the handler completes; if the handler throws an exception, the task will end in the <see cref="F:System.Threading.Tasks.TaskStatus.Faulted" /> state and will contain the unhandled exception. Otherwise, the task will end with its <see cref="P:System.Threading.Tasks.Task`1.Result" /> set to the 0-based index of the source.  
-  
+      <returns>A  <see cref="T:System.Threading.Tasks.Task`1" /> that represents the asynchronous choice. If all sources are completed prior to the choice completing, the resulting task will be canceled. When one of the sources has data available and successfully propagates it to the choice, the resulting task will complete when the handler completes; if the handler throws an exception, the task will end in the <see cref="F:System.Threading.Tasks.TaskStatus.Faulted" /> state and will contain the unhandled exception. Otherwise, the task will end with its <see cref="P:System.Threading.Tasks.Task`1.Result" /> set to the 0-based index of the source.
+
  This method will only consume an element from one of the data sources, never more than one.</returns>
     </member>
     <member name="M:System.Threading.Tasks.Dataflow.DataflowBlock.Encapsulate``2(System.Threading.Tasks.Dataflow.ITargetBlock{``0},System.Threading.Tasks.Dataflow.ISourceBlock{``1})">
@@ -760,14 +760,14 @@
       <param name="target">The  <see cref="T:System.Threading.Tasks.Dataflow.ITargetBlock`1" /> to which to connect the source.</param>
       <param name="predicate">The filter a message must pass in order for it to propagate from the source to the target.</param>
       <typeparam name="TOutput">Specifies the type of data contained in the source.</typeparam>
-      <exception cref="T:System.ArgumentNullException">The <paramref name="source" /> is <see langword="null" />.  
-  
- -or-  
-  
- The <paramref name="target" /> is <see langword="null" />.  
-  
- -or-  
-  
+      <exception cref="T:System.ArgumentNullException">The <paramref name="source" /> is <see langword="null" />.
+
+ -or-
+
+ The <paramref name="target" /> is <see langword="null" />.
+
+ -or-
+
  The <paramref name="predicate" /> is <see langword="null" />.</exception>
       <returns>An <see cref="T:System.IDisposable" /> that, upon calling <see langword="Dispose" />, will unlink the source from the target.</returns>
     </member>
@@ -778,18 +778,18 @@
       <param name="linkOptions">One of the enumeration values that specifies how to configure a link between dataflow blocks.</param>
       <param name="predicate">The filter a message must pass in order for it to propagate from the source to the target.</param>
       <typeparam name="TOutput">Specifies the type of data contained in the source.</typeparam>
-      <exception cref="T:System.ArgumentNullException">The  <paramref name="source" /> is null (Nothing in Visual Basic).  
-  
- -or-  
-  
- The  <paramref name="target" /> is null (Nothing in Visual Basic).  
-  
- -or-  
-  
- The  <paramref name="linkOptions" /> is null (Nothing in Visual Basic).  
-  
- -or-  
-  
+      <exception cref="T:System.ArgumentNullException">The  <paramref name="source" /> is null (Nothing in Visual Basic).
+
+ -or-
+
+ The  <paramref name="target" /> is null (Nothing in Visual Basic).
+
+ -or-
+
+ The  <paramref name="linkOptions" /> is null (Nothing in Visual Basic).
+
+ -or-
+
  The  <paramref name="predicate" /> is null (Nothing in Visual Basic).</exception>
       <returns>An <see cref="T:System.IDisposable" /> that, upon calling <see langword="Dispose" />, will unlink the source from the target.</returns>
     </member>
@@ -798,10 +798,10 @@
       <param name="source">The source from which to link.</param>
       <param name="target">The <see cref="T:System.Threading.Tasks.Dataflow.ITargetBlock`1" /> to which to connect the source.</param>
       <typeparam name="TOutput">Specifies the type of data contained in the source.</typeparam>
-      <exception cref="T:System.ArgumentNullException">The <paramref name="source" /> is <see langword="null" />.  
-  
- -or-  
-  
+      <exception cref="T:System.ArgumentNullException">The <paramref name="source" /> is <see langword="null" />.
+
+ -or-
+
  The <paramref name="target" /> is <see langword="null" />.</exception>
       <returns>An <see cref="T:System.IDisposable" /> that, upon calling <see langword="Dispose" />, will unlink the source from the target.</returns>
     </member>
@@ -822,8 +822,8 @@
       <summary>Provides a <see cref="T:System.Threading.Tasks.Task`1" /> that asynchronously monitors the source for available output.</summary>
       <param name="source">The source to monitor.</param>
       <typeparam name="TOutput">Specifies the type of data contained in the source.</typeparam>
-      <returns>A <see cref="T:System.Threading.Tasks.Task`1" /> that informs of whether and when more output is available. If, when the task completes, its <see cref="P:System.Threading.Tasks.Task`1.Result" /> is <see langword="true" />, more output is available in the source (though another consumer of the source may retrieve the data).  
-  
+      <returns>A <see cref="T:System.Threading.Tasks.Task`1" /> that informs of whether and when more output is available. If, when the task completes, its <see cref="P:System.Threading.Tasks.Task`1.Result" /> is <see langword="true" />, more output is available in the source (though another consumer of the source may retrieve the data).
+
  If it returns <see langword="false" />, more output is not and will never be available, due to the source completing prior to output being available.</returns>
     </member>
     <member name="M:System.Threading.Tasks.Dataflow.DataflowBlock.Post``1(System.Threading.Tasks.Dataflow.ITargetBlock{``0},``0)">
@@ -853,10 +853,10 @@
       <typeparam name="TOutput">The type of data contained in the source.</typeparam>
       <exception cref="T:System.ArgumentNullException">The <paramref name="source" /> is <see langword="null" />.</exception>
       <exception cref="T:System.ArgumentOutOfRangeException">
-        <paramref name="timeout" /> is a negative number other than -1 milliseconds, which represents an infinite time-out period.  
-  
- -or-  
-  
+        <paramref name="timeout" /> is a negative number other than -1 milliseconds, which represents an infinite time-out period.
+
+ -or-
+
  <paramref name="timeout" /> is greater than <see cref="F:System.Int32.MaxValue">Int32.MaxValue</see>.</exception>
       <exception cref="T:System.InvalidOperationException">No item could be received from the source.</exception>
       <exception cref="T:System.TimeoutException">The specified time-out expired before an item was received from the source.</exception>
@@ -869,10 +869,10 @@
       <param name="timeout">The maximum time interval, in milliseconds, to wait for the synchronous operation to complete, or an interval that represents -1 milliseconds to wait indefinitely.</param>
       <typeparam name="TOutput">The type of data contained in the source.</typeparam>
       <exception cref="T:System.ArgumentOutOfRangeException">
-        <paramref name="timeout" /> is a negative number other than -1 milliseconds, which represents an infinite time-out period.  
-  
- -or-  
-  
+        <paramref name="timeout" /> is a negative number other than -1 milliseconds, which represents an infinite time-out period.
+
+ -or-
+
  <paramref name="timeout" /> is greater than <see cref="F:System.Int32.MaxValue">Int32.MaxValue</see>.</exception>
       <exception cref="T:System.ArgumentNullException">
         <paramref name="source" /> is <see langword="null" />.</exception>
@@ -917,10 +917,10 @@
       <exception cref="T:System.ArgumentNullException">
         <paramref name="source" /> is <see langword="null" />.</exception>
       <exception cref="T:System.ArgumentOutOfRangeException">
-        <paramref name="timeout" /> is a negative number other than -1 milliseconds, which represents an infinite time-out period.  
-  
- -or-  
-  
+        <paramref name="timeout" /> is a negative number other than -1 milliseconds, which represents an infinite time-out period.
+
+ -or-
+
  <paramref name="timeout" /> is greater than <see cref="F:System.Int32.MaxValue">Int32.MaxValue</see>.</exception>
       <exception cref="T:System.OperationCanceledException">The cancellation token was canceled. This exception is stored into the returned task.</exception>
       <returns>A task that represents the asynchronous receive operation. When a value is successfully received from the source, the returned task is completed and its <see cref="P:System.Threading.Tasks.Task`1.Result" /> returns the value. If a value cannot be retrieved because the time-out expired or cancellation was requested, the returned task is canceled. If the value cannot be retrieved because the source is empty and completed, an <see cref="T:System.InvalidOperationException" /> exception is thrown in the returned task.</returns>
@@ -933,10 +933,10 @@
       <exception cref="T:System.ArgumentNullException">
         <paramref name="source" /> is <see langword="null" />.</exception>
       <exception cref="T:System.ArgumentOutOfRangeException">
-        <paramref name="timeout" /> is a negative number other than -1 milliseconds, which represents an infinite time-out period.  
-  
- -or-  
-  
+        <paramref name="timeout" /> is a negative number other than -1 milliseconds, which represents an infinite time-out period.
+
+ -or-
+
  <paramref name="timeout" /> is greater than <see cref="F:System.Int32.MaxValue">Int32.MaxValue</see>.</exception>
       <returns>A task that represents the asynchronous receive operation. When a value is successfully received from the source, the returned task is completed and its <see cref="P:System.Threading.Tasks.Task`1.Result" /> returns the value. If a value cannot be retrieved because the time-out expired, the returned task is canceled. If the value cannot be retrieved because the source is empty and completed , an <see cref="T:System.InvalidOperationException" /> exception is thrown in the returned task.</returns>
     </member>
@@ -956,8 +956,8 @@
       <typeparam name="TInput">Specifies the type of the data to post to the target.</typeparam>
       <exception cref="T:System.ArgumentNullException">The  <paramref name="target" /> is null (Nothing in Visual Basic).</exception>
       <exception cref="T:System.OperationCanceledException">The cancellation token was canceled. This exception is stored into the returned task.</exception>
-      <returns>A <see cref="T:System.Threading.Tasks.Task`1" /> that represents the asynchronous send.  If the target accepts and consumes the offered element during the call to SendAsync, upon return from the call the resulting <see cref="T:System.Threading.Tasks.Task`1" /> will be completed and its <c>Result</c> property will return true.  If the target declines the offered element during the call, upon return from the call the resulting <see cref="T:System.Threading.Tasks.Task`1" /> will be completed and its <c>Result</c> property will return false. If the target postpones the offered element, the element will be buffered until such time that the target consumes or releases it, at which point the Task will complete, with its <c>Result</c> indicating whether the message was consumed. If the target never attempts to consume or release the message, the returned task will never complete.  
-  
+      <returns>A <see cref="T:System.Threading.Tasks.Task`1" /> that represents the asynchronous send.  If the target accepts and consumes the offered element during the call to SendAsync, upon return from the call the resulting <see cref="T:System.Threading.Tasks.Task`1" /> will be completed and its <c>Result</c> property will return true.  If the target declines the offered element during the call, upon return from the call the resulting <see cref="T:System.Threading.Tasks.Task`1" /> will be completed and its <c>Result</c> property will return false. If the target postpones the offered element, the element will be buffered until such time that the target consumes or releases it, at which point the Task will complete, with its <c>Result</c> indicating whether the message was consumed. If the target never attempts to consume or release the message, the returned task will never complete.
+
  If cancellation is requested before the target has successfully consumed the sent data, the returned task will complete in the Canceled state and the data will no longer be available to the target.</returns>
     </member>
     <member name="M:System.Threading.Tasks.Dataflow.DataflowBlock.SendAsync``1(System.Threading.Tasks.Dataflow.ITargetBlock{``0},``0)">
@@ -1084,16 +1084,16 @@
       <summary>Indicates that the <see cref="T:System.Threading.Tasks.Dataflow.ITargetBlock`1" /> declined the message. The <see cref="T:System.Threading.Tasks.Dataflow.ISourceBlock`1" /> still owns the message.</summary>
     </member>
     <member name="F:System.Threading.Tasks.Dataflow.DataflowMessageStatus.DecliningPermanently">
-      <summary>Indicates that the <see cref="T:System.Threading.Tasks.Dataflow.ITargetBlock`1" /> declined the message. The <see cref="T:System.Threading.Tasks.Dataflow.ISourceBlock`1" /> still owns the message.  
-  
+      <summary>Indicates that the <see cref="T:System.Threading.Tasks.Dataflow.ITargetBlock`1" /> declined the message. The <see cref="T:System.Threading.Tasks.Dataflow.ISourceBlock`1" /> still owns the message.
+
  Additionally, the <see cref="T:System.Threading.Tasks.Dataflow.ITargetBlock`1" /> will decline all future messages sent by the source.</summary>
     </member>
     <member name="F:System.Threading.Tasks.Dataflow.DataflowMessageStatus.NotAvailable">
       <summary>Indicates that the <see cref="T:System.Threading.Tasks.Dataflow.ITargetBlock`1" /> tried to accept the message from the <see cref="T:System.Threading.Tasks.Dataflow.ISourceBlock`1" />, but the message was no longer available.</summary>
     </member>
     <member name="F:System.Threading.Tasks.Dataflow.DataflowMessageStatus.Postponed">
-      <summary>Indicates that the <see cref="T:System.Threading.Tasks.Dataflow.ITargetBlock`1" /> postponed the message for potential consumption at a later time.  
-  
+      <summary>Indicates that the <see cref="T:System.Threading.Tasks.Dataflow.ITargetBlock`1" /> postponed the message for potential consumption at a later time.
+
  The <see cref="T:System.Threading.Tasks.Dataflow.ISourceBlock`1" /> still owns the message.</summary>
     </member>
     <member name="T:System.Threading.Tasks.Dataflow.ExecutionDataflowBlockOptions">
@@ -1174,8 +1174,8 @@
         <see langword="true" /> if the message was successfully consumed; otherwise, <see langword="false" />.</param>
       <exception cref="T:System.ArgumentException">The messageHeader is not valid.</exception>
       <exception cref="T:System.ArgumentNullException">The target is <see langword="null" />.</exception>
-      <returns>The value of the consumed message. This may correspond to a different  <see cref="T:System.Threading.Tasks.Dataflow.DataflowMessageHeader" /> instance than was previously reserved and passed as the <paramref name="messageHeader" /> to <see cref="M:System.Threading.Tasks.Dataflow.ISourceBlock`1.ConsumeMessage(System.Threading.Tasks.Dataflow.DataflowMessageHeader,System.Threading.Tasks.Dataflow.ITargetBlock{`0},System.Boolean@)" />. The consuming <see cref="T:System.Threading.Tasks.Dataflow.ITargetBlock`1" /> must use the returned value instead of the value passed as <paramref name="messageValue" /> through <see cref="M:System.Threading.Tasks.Dataflow.ITargetBlock`1.OfferMessage(System.Threading.Tasks.Dataflow.DataflowMessageHeader,`0,System.Threading.Tasks.Dataflow.ISourceBlock{`0},System.Boolean)" />.  
-  
+      <returns>The value of the consumed message. This may correspond to a different  <see cref="T:System.Threading.Tasks.Dataflow.DataflowMessageHeader" /> instance than was previously reserved and passed as the <paramref name="messageHeader" /> to <see cref="M:System.Threading.Tasks.Dataflow.ISourceBlock`1.ConsumeMessage(System.Threading.Tasks.Dataflow.DataflowMessageHeader,System.Threading.Tasks.Dataflow.ITargetBlock{`0},System.Boolean@)" />. The consuming <see cref="T:System.Threading.Tasks.Dataflow.ITargetBlock`1" /> must use the returned value instead of the value passed as <paramref name="messageValue" /> through <see cref="M:System.Threading.Tasks.Dataflow.ITargetBlock`1.OfferMessage(System.Threading.Tasks.Dataflow.DataflowMessageHeader,`0,System.Threading.Tasks.Dataflow.ISourceBlock{`0},System.Boolean)" />.
+
  If the message requested is not available, the return value will be null.</returns>
     </member>
     <member name="M:System.Threading.Tasks.Dataflow.ISourceBlock`1.LinkTo(System.Threading.Tasks.Dataflow.ITargetBlock{`0},System.Threading.Tasks.Dataflow.DataflowLinkOptions)">
@@ -1213,15 +1213,15 @@
       <param name="messageValue">The value of the message being offered.</param>
       <param name="source">The <see cref="T:System.Threading.Tasks.Dataflow.ISourceBlock`1" /> offering the message. This may be null.</param>
       <param name="consumeToAccept">Set to <see langword="true" /> to instruct the target to call <see cref="M:System.Threading.Tasks.Dataflow.ISourceBlock`1.ConsumeMessage(System.Threading.Tasks.Dataflow.DataflowMessageHeader,System.Threading.Tasks.Dataflow.ITargetBlock{`0},System.Boolean@)" /> synchronously during the call to <see cref="M:System.Threading.Tasks.Dataflow.ITargetBlock`1.OfferMessage(System.Threading.Tasks.Dataflow.DataflowMessageHeader,`0,System.Threading.Tasks.Dataflow.ISourceBlock{`0},System.Boolean)" />, prior to returning <see cref="F:System.Threading.Tasks.Dataflow.DataflowMessageStatus.Accepted" />, in order to consume the message.</param>
-      <exception cref="T:System.ArgumentException">The  <paramref name="messageHeader" /> is not valid.  
-  
+      <exception cref="T:System.ArgumentException">The  <paramref name="messageHeader" /> is not valid.
+
  -or- <paramref name="consumeToAccept" /> may only be true if provided with a non-null <paramref name="source" />.</exception>
-      <returns>The status of the offered message. If the message was accepted by the target, <see cref="F:System.Threading.Tasks.Dataflow.DataflowMessageStatus.Accepted" /> is returned, and the source should no longer use the offered message, because it is now owned by the target. If the message was postponed by the target, <see cref="F:System.Threading.Tasks.Dataflow.DataflowMessageStatus.Postponed" /> is returned as a notification that the target may later attempt to consume or reserve the message; in the meantime, the source still owns the message and may offer it to other blocks.  
-  
- If the target would have otherwise postponed message, but source was <see langword="null" />, <see cref="F:System.Threading.Tasks.Dataflow.DataflowMessageStatus.Declined" /> is instead returned.  
-  
- If the target tried to accept the message but missed it due to the source delivering the message to another target or simply discarding it, <see cref="F:System.Threading.Tasks.Dataflow.DataflowMessageStatus.NotAvailable" /> is returned.  
-  
+      <returns>The status of the offered message. If the message was accepted by the target, <see cref="F:System.Threading.Tasks.Dataflow.DataflowMessageStatus.Accepted" /> is returned, and the source should no longer use the offered message, because it is now owned by the target. If the message was postponed by the target, <see cref="F:System.Threading.Tasks.Dataflow.DataflowMessageStatus.Postponed" /> is returned as a notification that the target may later attempt to consume or reserve the message; in the meantime, the source still owns the message and may offer it to other blocks.
+
+ If the target would have otherwise postponed message, but source was <see langword="null" />, <see cref="F:System.Threading.Tasks.Dataflow.DataflowMessageStatus.Declined" /> is instead returned.
+
+ If the target tried to accept the message but missed it due to the source delivering the message to another target or simply discarding it, <see cref="F:System.Threading.Tasks.Dataflow.DataflowMessageStatus.NotAvailable" /> is returned.
+
  If the target chose not to accept the message, <see cref="F:System.Threading.Tasks.Dataflow.DataflowMessageStatus.Declined" /> is returned. If the target chose not to accept the message and will never accept another message from this source, <see cref="F:System.Threading.Tasks.Dataflow.DataflowMessageStatus.DecliningPermanently" /> is returned.</returns>
     </member>
     <member name="T:System.Threading.Tasks.Dataflow.JoinBlock`2">
@@ -1335,10 +1335,10 @@
       <param name="target">The target block to which to connect this source.</param>
       <param name="linkOptions">An object that configures the link.</param>
       <exception cref="T:System.ArgumentNullException">
-        <paramref name="target" /> is <see langword="null" />.  
-  
- -or-  
-  
+        <paramref name="target" /> is <see langword="null" />.
+
+ -or-
+
  <paramref name="linkOptions" /> is <see langword="null" />.</exception>
       <returns>A disposable object that unlinks the source from the target when its <see cref="M:System.IDisposable.Dispose" /> method is called.</returns>
     </member>
@@ -1420,10 +1420,10 @@
       <summary>Initializes a new <see cref="T:System.Threading.Tasks.Dataflow.TransformBlock`2" /> with the specified  <see cref="T:System.Func`2" /> and <see cref="T:System.Threading.Tasks.Dataflow.ExecutionDataflowBlockOptions" />.</summary>
       <param name="transform">The function to invoke with each data element received.</param>
       <param name="dataflowBlockOptions">The options with which to configure this  <see cref="T:System.Threading.Tasks.Dataflow.TransformBlock`2" />.</param>
-      <exception cref="T:System.ArgumentNullException">The <paramref name="transform" /> is <see langword="null" />.  
-  
- -or-  
-  
+      <exception cref="T:System.ArgumentNullException">The <paramref name="transform" /> is <see langword="null" />.
+
+ -or-
+
  The <paramref name="dataflowBlockOptions" /> is <see langword="null" />.</exception>
     </member>
     <member name="M:System.Threading.Tasks.Dataflow.TransformBlock`2.#ctor(System.Func{`0,`1})">
@@ -1435,10 +1435,10 @@
       <summary>Initializes a new <see cref="T:System.Threading.Tasks.Dataflow.TransformBlock`2" /> with the specified  <see cref="T:System.Func`2" /> and <see cref="T:System.Threading.Tasks.Dataflow.ExecutionDataflowBlockOptions" />.</summary>
       <param name="transform">The function to invoke with each data element received.</param>
       <param name="dataflowBlockOptions">The options with which to configure this  <see cref="T:System.Threading.Tasks.Dataflow.TransformBlock`2" />.</param>
-      <exception cref="T:System.ArgumentNullException">The <paramref name="transform" /> is <see langword="null" />.  
-  
- -or-  
-  
+      <exception cref="T:System.ArgumentNullException">The <paramref name="transform" /> is <see langword="null" />.
+
+ -or-
+
  The <paramref name="dataflowBlockOptions" /> is <see langword="null" />.</exception>
     </member>
     <member name="M:System.Threading.Tasks.Dataflow.TransformBlock`2.#ctor(System.Func{`0,System.Threading.Tasks.Task{`1}})">
@@ -1470,8 +1470,8 @@
         <see langword="true" /> if the message was successfully consumed; otherwise, <see langword="false" />.</param>
       <exception cref="T:System.ArgumentException">The <paramref name="messageHeader" /> is not valid.</exception>
       <exception cref="T:System.ArgumentNullException">The <paramref name="target" /> is <see langword="null" />.</exception>
-      <returns>The value of the consumed message. This may correspond to a different <see cref="T:System.Threading.Tasks.Dataflow.DataflowMessageHeader" /> instance than was previously reserved and passed as the <paramref name="messageHeader" /> to <see cref="M:System.Threading.Tasks.Dataflow.ISourceBlock`1.ConsumeMessage(System.Threading.Tasks.Dataflow.DataflowMessageHeader,System.Threading.Tasks.Dataflow.ITargetBlock{`0},System.Boolean@)" />. The consuming <see cref="T:System.Threading.Tasks.Dataflow.ITargetBlock`1" /> must use the returned value instead of the value passed as <paramref name="messageValue" /> through <see cref="M:System.Threading.Tasks.Dataflow.TransformBlock`2.System#Threading#Tasks#Dataflow#ITargetBlock{TInput}#OfferMessage(System.Threading.Tasks.Dataflow.DataflowMessageHeader,`0,System.Threading.Tasks.Dataflow.ISourceBlock{`0},System.Boolean)" />.  
-  
+      <returns>The value of the consumed message. This may correspond to a different <see cref="T:System.Threading.Tasks.Dataflow.DataflowMessageHeader" /> instance than was previously reserved and passed as the <paramref name="messageHeader" /> to <see cref="M:System.Threading.Tasks.Dataflow.ISourceBlock`1.ConsumeMessage(System.Threading.Tasks.Dataflow.DataflowMessageHeader,System.Threading.Tasks.Dataflow.ITargetBlock{`0},System.Boolean@)" />. The consuming <see cref="T:System.Threading.Tasks.Dataflow.ITargetBlock`1" /> must use the returned value instead of the value passed as <paramref name="messageValue" /> through <see cref="M:System.Threading.Tasks.Dataflow.TransformBlock`2.System#Threading#Tasks#Dataflow#ITargetBlock{TInput}#OfferMessage(System.Threading.Tasks.Dataflow.DataflowMessageHeader,`0,System.Threading.Tasks.Dataflow.ISourceBlock{`0},System.Boolean)" />.
+
  If the message requested is not available, the return value will be <see langword="null" />.</returns>
     </member>
     <member name="M:System.Threading.Tasks.Dataflow.TransformBlock`2.System#Threading#Tasks#Dataflow#ISourceBlock{TOutput}#ReleaseReservation(System.Threading.Tasks.Dataflow.DataflowMessageHeader,System.Threading.Tasks.Dataflow.ITargetBlock{`1})">
@@ -1498,15 +1498,15 @@
       <param name="source">The <see cref="T:System.Threading.Tasks.Dataflow.ISourceBlock`1" /> offering the message. This may be <see langword="null" />.</param>
       <param name="consumeToAccept">
         <see langword="true" /> if the target must call <see cref="M:System.Threading.Tasks.Dataflow.ISourceBlock`1.ConsumeMessage(System.Threading.Tasks.Dataflow.DataflowMessageHeader,System.Threading.Tasks.Dataflow.ITargetBlock{`0},System.Boolean@)" /> synchronously during the call to <see cref="M:System.Threading.Tasks.Dataflow.TransformBlock`2.System#Threading#Tasks#Dataflow#ITargetBlock{TInput}#OfferMessage(System.Threading.Tasks.Dataflow.DataflowMessageHeader,`0,System.Threading.Tasks.Dataflow.ISourceBlock{`0},System.Boolean)" />, prior to returning <see cref="F:System.Threading.Tasks.Dataflow.DataflowMessageStatus.Accepted" />, in order to consume the message.</param>
-      <exception cref="T:System.ArgumentException">The <paramref name="messageHeader" /> is not valid.  
-  
+      <exception cref="T:System.ArgumentException">The <paramref name="messageHeader" /> is not valid.
+
  -or- <paramref name="consumeToAccept" /> may only be true if provided with a non-null <paramref name="source" />.</exception>
-      <returns>The status of the offered message. If the message was accepted by the target, <see cref="F:System.Threading.Tasks.Dataflow.DataflowMessageStatus.Accepted" /> is returned, and the source should no longer use the offered message, because it is now owned by the target. If the message was postponed by the target, <see cref="F:System.Threading.Tasks.Dataflow.DataflowMessageStatus.Postponed" /> is returned as a notification that the target may later attempt to consume or reserve the message; in the meantime, the source still owns the message and may offer it to other blocks.  
-  
- If the target would have otherwise postponed but source was <see langword="null" />, <see cref="F:System.Threading.Tasks.Dataflow.DataflowMessageStatus.Declined" /> is instead returned.  
-  
- If the target tried to accept the message but missed it due to the source delivering the message to another target or simply discarding it, <see cref="F:System.Threading.Tasks.Dataflow.DataflowMessageStatus.NotAvailable" /> is returned.  
-  
+      <returns>The status of the offered message. If the message was accepted by the target, <see cref="F:System.Threading.Tasks.Dataflow.DataflowMessageStatus.Accepted" /> is returned, and the source should no longer use the offered message, because it is now owned by the target. If the message was postponed by the target, <see cref="F:System.Threading.Tasks.Dataflow.DataflowMessageStatus.Postponed" /> is returned as a notification that the target may later attempt to consume or reserve the message; in the meantime, the source still owns the message and may offer it to other blocks.
+
+ If the target would have otherwise postponed but source was <see langword="null" />, <see cref="F:System.Threading.Tasks.Dataflow.DataflowMessageStatus.Declined" /> is instead returned.
+
+ If the target tried to accept the message but missed it due to the source delivering the message to another target or simply discarding it, <see cref="F:System.Threading.Tasks.Dataflow.DataflowMessageStatus.NotAvailable" /> is returned.
+
  If the target chose not to accept the message, <see cref="F:System.Threading.Tasks.Dataflow.DataflowMessageStatus.Declined" /> is returned. If the target chose not to accept the message and will never accept another message from this source, <see cref="F:System.Threading.Tasks.Dataflow.DataflowMessageStatus.DecliningPermanently" /> is returned.</returns>
     </member>
     <member name="M:System.Threading.Tasks.Dataflow.TransformBlock`2.ToString">
@@ -1558,10 +1558,10 @@
       <summary>Initializes a new <see cref="T:System.Threading.Tasks.Dataflow.TransformManyBlock`2" /> with the specified function and <see cref="T:System.Threading.Tasks.Dataflow.ExecutionDataflowBlockOptions" />.</summary>
       <param name="transform">The function to invoke with each data element received. All of the data from the returned in the <see cref="T:System.Collections.Generic.IEnumerable`1" /> will be made available as output from this  <see cref="T:System.Threading.Tasks.Dataflow.TransformManyBlock`2" />.</param>
       <param name="dataflowBlockOptions">The options with which to configure this <see cref="T:System.Threading.Tasks.Dataflow.TransformManyBlock`2" />.</param>
-      <exception cref="T:System.ArgumentNullException">The <paramref name="transform" /> is <see langword="null" />.  
-  
- -or-  
-  
+      <exception cref="T:System.ArgumentNullException">The <paramref name="transform" /> is <see langword="null" />.
+
+ -or-
+
  The <paramref name="dataflowBlockOptions" /> is <see langword="null" />.</exception>
     </member>
     <member name="M:System.Threading.Tasks.Dataflow.TransformManyBlock`2.#ctor(System.Func{`0,System.Collections.Generic.IEnumerable{`1}})">
@@ -1573,10 +1573,10 @@
       <summary>Initializes a new <see cref="T:System.Threading.Tasks.Dataflow.TransformManyBlock`2" /> with the specified function and <see cref="T:System.Threading.Tasks.Dataflow.ExecutionDataflowBlockOptions" />.</summary>
       <param name="transform">The function to invoke with each data element received. All of the data asynchronously returned in the <see cref="T:System.Collections.Generic.IEnumerable`1" /> will be made available as output from this  <see cref="T:System.Threading.Tasks.Dataflow.TransformManyBlock`2" />.</param>
       <param name="dataflowBlockOptions">The options with which to configure this <see cref="T:System.Threading.Tasks.Dataflow.TransformManyBlock`2" />.</param>
-      <exception cref="T:System.ArgumentNullException">The <paramref name="transform" /> is <see langword="null" />.  
-  
- -or-  
-  
+      <exception cref="T:System.ArgumentNullException">The <paramref name="transform" /> is <see langword="null" />.
+
+ -or-
+
  The <paramref name="dataflowBlockOptions" /> is <see langword="null" />.</exception>
     </member>
     <member name="M:System.Threading.Tasks.Dataflow.TransformManyBlock`2.#ctor(System.Func{`0,System.Threading.Tasks.Task{System.Collections.Generic.IEnumerable{`1}}})">
@@ -1608,8 +1608,8 @@
         <see langword="true" /> if the message was successfully consumed; otherwise, <see langword="false" />.</param>
       <exception cref="T:System.ArgumentException">The <paramref name="messageHeader" /> is not valid.</exception>
       <exception cref="T:System.ArgumentNullException">The <paramref name="target" /> is <see langword="null" />.</exception>
-      <returns>The value of the consumed message. This may correspond to a different <see cref="T:System.Threading.Tasks.Dataflow.DataflowMessageHeader" /> instance than was previously reserved and passed as the <paramref name="messageHeader" /> to <see cref="M:System.Threading.Tasks.Dataflow.ISourceBlock`1.ConsumeMessage(System.Threading.Tasks.Dataflow.DataflowMessageHeader,System.Threading.Tasks.Dataflow.ITargetBlock{`0},System.Boolean@)" />. The consuming <see cref="T:System.Threading.Tasks.Dataflow.ITargetBlock`1" /> must use the returned value instead of the value passed as <paramref name="messageValue" /> through OfferMessage <see cref="M:System.Threading.Tasks.Dataflow.TransformManyBlock`2.System#Threading#Tasks#Dataflow#ITargetBlock{TInput}#OfferMessage(System.Threading.Tasks.Dataflow.DataflowMessageHeader,`0,System.Threading.Tasks.Dataflow.ISourceBlock{`0},System.Boolean)" />  
-  
+      <returns>The value of the consumed message. This may correspond to a different <see cref="T:System.Threading.Tasks.Dataflow.DataflowMessageHeader" /> instance than was previously reserved and passed as the <paramref name="messageHeader" /> to <see cref="M:System.Threading.Tasks.Dataflow.ISourceBlock`1.ConsumeMessage(System.Threading.Tasks.Dataflow.DataflowMessageHeader,System.Threading.Tasks.Dataflow.ITargetBlock{`0},System.Boolean@)" />. The consuming <see cref="T:System.Threading.Tasks.Dataflow.ITargetBlock`1" /> must use the returned value instead of the value passed as <paramref name="messageValue" /> through OfferMessage <see cref="M:System.Threading.Tasks.Dataflow.TransformManyBlock`2.System#Threading#Tasks#Dataflow#ITargetBlock{TInput}#OfferMessage(System.Threading.Tasks.Dataflow.DataflowMessageHeader,`0,System.Threading.Tasks.Dataflow.ISourceBlock{`0},System.Boolean)" />
+
  If the message requested is not available, the return value will be <see langword="null" />.</returns>
     </member>
     <member name="M:System.Threading.Tasks.Dataflow.TransformManyBlock`2.System#Threading#Tasks#Dataflow#ISourceBlock{TOutput}#ReleaseReservation(System.Threading.Tasks.Dataflow.DataflowMessageHeader,System.Threading.Tasks.Dataflow.ITargetBlock{`1})">
@@ -1636,17 +1636,17 @@
       <param name="source">The <see cref="T:System.Threading.Tasks.Dataflow.ISourceBlock`1" /> offering the message. This may be <see langword="null" />.</param>
       <param name="consumeToAccept">
         <see langword="true" /> if the target must call <see cref="M:System.Threading.Tasks.Dataflow.ISourceBlock`1.ConsumeMessage(System.Threading.Tasks.Dataflow.DataflowMessageHeader,System.Threading.Tasks.Dataflow.ITargetBlock{`0},System.Boolean@)" /> synchronously during the call to <see cref="T:System.Threading.Tasks.Dataflow.ITargetBlock`1" />, prior to returning <see cref="F:System.Threading.Tasks.Dataflow.DataflowMessageStatus.Accepted" />, in order to consume the message.</param>
-      <exception cref="T:System.ArgumentException">The <paramref name="messageHeader" /> is not valid.  
-  
- -or-  
-  
+      <exception cref="T:System.ArgumentException">The <paramref name="messageHeader" /> is not valid.
+
+ -or-
+
  <paramref name="consumeToAccept" /> may only be true if provided with a non-null <paramref name="source" />.</exception>
-      <returns>The status of the offered message. If the message was accepted by the target, <see cref="F:System.Threading.Tasks.Dataflow.DataflowMessageStatus.Accepted" /> is returned, and the source should no longer use the offered message, as it is now owned by the target. If the message was postponed by the target, <see cref="F:System.Threading.Tasks.Dataflow.DataflowMessageStatus.Postponed" /> is returned as a notification that the target may later attempt to consume or reserve the message; in the meantime, the source still owns the message and may offer it to other blocks.  
-  
- If the target would have otherwise postponed but source was <see langword="null" />, <see cref="F:System.Threading.Tasks.Dataflow.DataflowMessageStatus.Declined" /> is instead returned.  
-  
- If the target tried to accept the message but missed it due to the source delivering the message to another target or simply discarding it, <see cref="F:System.Threading.Tasks.Dataflow.DataflowMessageStatus.NotAvailable" /> is returned.  
-  
+      <returns>The status of the offered message. If the message was accepted by the target, <see cref="F:System.Threading.Tasks.Dataflow.DataflowMessageStatus.Accepted" /> is returned, and the source should no longer use the offered message, as it is now owned by the target. If the message was postponed by the target, <see cref="F:System.Threading.Tasks.Dataflow.DataflowMessageStatus.Postponed" /> is returned as a notification that the target may later attempt to consume or reserve the message; in the meantime, the source still owns the message and may offer it to other blocks.
+
+ If the target would have otherwise postponed but source was <see langword="null" />, <see cref="F:System.Threading.Tasks.Dataflow.DataflowMessageStatus.Declined" /> is instead returned.
+
+ If the target tried to accept the message but missed it due to the source delivering the message to another target or simply discarding it, <see cref="F:System.Threading.Tasks.Dataflow.DataflowMessageStatus.NotAvailable" /> is returned.
+
  If the target chose not to accept the message, <see cref="F:System.Threading.Tasks.Dataflow.DataflowMessageStatus.Declined" /> is returned. If the target chose not to accept the message and will never accept another message from this source, <see cref="F:System.Threading.Tasks.Dataflow.DataflowMessageStatus.DecliningPermanently" /> is returned.</returns>
     </member>
     <member name="M:System.Threading.Tasks.Dataflow.TransformManyBlock`2.ToString">
@@ -1722,8 +1722,8 @@
         <see langword="true" /> if the message was successfully consumed; otherwise, <see langword="false" />.</param>
       <exception cref="T:System.ArgumentException">The <paramref name="messageHeader" /> is not valid.</exception>
       <exception cref="T:System.ArgumentNullException">The <paramref name="target" /> is <see langword="null" />.</exception>
-      <returns>The value of the consumed message. This may correspond to a different  <see cref="T:System.Threading.Tasks.Dataflow.DataflowMessageHeader" /> instance than was previously reserved and passed as the <paramref name="messageHeader" /> to <see cref="M:System.Threading.Tasks.Dataflow.ISourceBlock`1.ConsumeMessage(System.Threading.Tasks.Dataflow.DataflowMessageHeader,System.Threading.Tasks.Dataflow.ITargetBlock{`0},System.Boolean@)" />. The consuming <see cref="T:System.Threading.Tasks.Dataflow.ITargetBlock`1" /> must use the returned value instead of the value passed as <paramref name="messageValue" /> through <see cref="M:System.Threading.Tasks.Dataflow.ITargetBlock`1.OfferMessage(System.Threading.Tasks.Dataflow.DataflowMessageHeader,`0,System.Threading.Tasks.Dataflow.ISourceBlock{`0},System.Boolean)" />.  
-  
+      <returns>The value of the consumed message. This may correspond to a different  <see cref="T:System.Threading.Tasks.Dataflow.DataflowMessageHeader" /> instance than was previously reserved and passed as the <paramref name="messageHeader" /> to <see cref="M:System.Threading.Tasks.Dataflow.ISourceBlock`1.ConsumeMessage(System.Threading.Tasks.Dataflow.DataflowMessageHeader,System.Threading.Tasks.Dataflow.ITargetBlock{`0},System.Boolean@)" />. The consuming <see cref="T:System.Threading.Tasks.Dataflow.ITargetBlock`1" /> must use the returned value instead of the value passed as <paramref name="messageValue" /> through <see cref="M:System.Threading.Tasks.Dataflow.ITargetBlock`1.OfferMessage(System.Threading.Tasks.Dataflow.DataflowMessageHeader,`0,System.Threading.Tasks.Dataflow.ISourceBlock{`0},System.Boolean)" />.
+
  If the message requested is not available, the return value will be <see langword="null" />.</returns>
     </member>
     <member name="M:System.Threading.Tasks.Dataflow.WriteOnceBlock`1.System#Threading#Tasks#Dataflow#ISourceBlock{T}#ReleaseReservation(System.Threading.Tasks.Dataflow.DataflowMessageHeader,System.Threading.Tasks.Dataflow.ITargetBlock{`0})">
@@ -1749,15 +1749,15 @@
       <param name="messageValue">The value of the message being offered.</param>
       <param name="source">The <see cref="T:System.Threading.Tasks.Dataflow.ISourceBlock`1" /> offering the message. This may be <see langword="null" />.</param>
       <param name="consumeToAccept">Set to <see langword="true" /> to instruct the target to call <see cref="M:System.Threading.Tasks.Dataflow.ISourceBlock`1.ConsumeMessage(System.Threading.Tasks.Dataflow.DataflowMessageHeader,System.Threading.Tasks.Dataflow.ITargetBlock{`0},System.Boolean@)" /> synchronously during the call to <see cref="M:System.Threading.Tasks.Dataflow.ITargetBlock`1.OfferMessage(System.Threading.Tasks.Dataflow.DataflowMessageHeader,`0,System.Threading.Tasks.Dataflow.ISourceBlock{`0},System.Boolean)" />, prior to returning <see cref="F:System.Threading.Tasks.Dataflow.DataflowMessageStatus.Accepted" />, in order to consume the message.</param>
-      <exception cref="T:System.ArgumentException">The  <paramref name="messageHeader" /> is not valid.  
-  
+      <exception cref="T:System.ArgumentException">The  <paramref name="messageHeader" /> is not valid.
+
  -or- <paramref name="consumeToAccept" /> may only be true if provided with a non-null <paramref name="source" />.</exception>
-      <returns>The status of the offered message. If the message was accepted by the target, <see cref="F:System.Threading.Tasks.Dataflow.DataflowMessageStatus.Accepted" /> is returned, and the source should no longer use the offered message, because it is now owned by the target. If the message was postponed by the target, <see cref="F:System.Threading.Tasks.Dataflow.DataflowMessageStatus.Postponed" /> is returned as a notification that the target may later attempt to consume or reserve the message; in the meantime, the source still owns the message and may offer it to other blocks.  
-  
- If the target would have otherwise postponed message, but <paramref name="source" /> was <see langword="null" />, <see cref="F:System.Threading.Tasks.Dataflow.DataflowMessageStatus.Declined" /> is instead returned.  
-  
- If the target tried to accept the message but missed it due to the source delivering the message to another target or simply discarding it, <see cref="F:System.Threading.Tasks.Dataflow.DataflowMessageStatus.NotAvailable" /> is returned.  
-  
+      <returns>The status of the offered message. If the message was accepted by the target, <see cref="F:System.Threading.Tasks.Dataflow.DataflowMessageStatus.Accepted" /> is returned, and the source should no longer use the offered message, because it is now owned by the target. If the message was postponed by the target, <see cref="F:System.Threading.Tasks.Dataflow.DataflowMessageStatus.Postponed" /> is returned as a notification that the target may later attempt to consume or reserve the message; in the meantime, the source still owns the message and may offer it to other blocks.
+
+ If the target would have otherwise postponed message, but <paramref name="source" /> was <see langword="null" />, <see cref="F:System.Threading.Tasks.Dataflow.DataflowMessageStatus.Declined" /> is instead returned.
+
+ If the target tried to accept the message but missed it due to the source delivering the message to another target or simply discarding it, <see cref="F:System.Threading.Tasks.Dataflow.DataflowMessageStatus.NotAvailable" /> is returned.
+
  If the target chose not to accept the message, <see cref="F:System.Threading.Tasks.Dataflow.DataflowMessageStatus.Declined" /> is returned. If the target chose not to accept the message and will never accept another message from this source, <see cref="F:System.Threading.Tasks.Dataflow.DataflowMessageStatus.DecliningPermanently" /> is returned.</returns>
     </member>
     <member name="M:System.Threading.Tasks.Dataflow.WriteOnceBlock`1.ToString">

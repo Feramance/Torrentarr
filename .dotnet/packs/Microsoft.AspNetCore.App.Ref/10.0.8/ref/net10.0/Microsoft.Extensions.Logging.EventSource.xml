@@ -190,11 +190,11 @@
              Given a set of specifications  Pat1:Level1;Pat1;Level2 ... Where
              Pat is a string pattern (a logger Name with a optional trailing wildcard * char)
              and Level is a number 0 (Trace) through 5 (Critical).
-            
+
              The :Level can be omitted (thus Pat1;Pat2 ...) in which case the level is 1 (Debug).
-            
+
              A completely empty string act like * (all loggers set to Debug level).
-            
+
              The first specification that 'loggers' Name matches is used.
              </summary>
         </member>

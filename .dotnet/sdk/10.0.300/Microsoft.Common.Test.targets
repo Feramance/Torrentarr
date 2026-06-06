@@ -13,7 +13,7 @@ Copyright (C) Microsoft Corporation. All rights reserved.
     ============================================================
     This stub `Test` target allows for targets implementing Test execution functionality
     to run after it.
-    
+
     For example:
     <Target Name="RunVSTest" AfterTargets="Test">
      (implementation)

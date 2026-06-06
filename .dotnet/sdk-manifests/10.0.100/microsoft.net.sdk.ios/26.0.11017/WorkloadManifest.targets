@@ -36,4 +36,3 @@
 		<SdkSupportedTargetPlatformIdentifier Include="ios" DisplayName="iOS" />
 	</ItemGroup>
 </Project>
-

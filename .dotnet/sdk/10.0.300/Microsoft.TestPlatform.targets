@@ -6,7 +6,7 @@ WARNING:  DO NOT MODIFY this file unless you are knowledgeable about MSBuild and
           created a backup copy.  Incorrect changes to this file will make it
           impossible to load or build your projects from the command-line or the IDE.
 
-Copyright (c) .NET Foundation. All rights reserved. 
+Copyright (c) .NET Foundation. All rights reserved.
 ***********************************************************************************************
 -->
 <Project xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
@@ -79,7 +79,7 @@ Copyright (c) .NET Foundation. All rights reserved.
   <!-- Used when called from dotnet test command line: does not use MSBuild logs to allow for console colorization -->
   <Target Name="_VSTestConsole">
     <CallTarget Condition="'$(VSTestNoBuild)' != 'true' AND '$(IsTestProject)' == 'true'" Targets="BuildProject" />
-    
+
     <CallTarget Targets="ShowCallOfVSTestTaskWithParameter" />
 
     <VSTestTask
@@ -125,7 +125,7 @@ Copyright (c) .NET Foundation. All rights reserved.
 
     <Message Importance="Low" Text="Done Building project $(MSBuildProjectFullPath) for TargetFramework=$(TargetFramework)" />
   </Target>
-  
+
   <Target Name="ShowMsbuildWithParameter">
     <Message Importance="Low" Text="Building project $(MSBuildProjectFullPath) for TargetFramework=$(TargetFramework)" />
     <Message Importance="Low" Text="Value passed to msbuild are..." />
@@ -134,7 +134,7 @@ Copyright (c) .NET Foundation. All rights reserved.
     <Message Importance="Low" Text="Platform = $(PlatformTarget)" />
     <Message Importance="Low" Text="OutputPath = $(OutputPath)" />
   </Target>
-  
+
   <Target Name="ShowCallOfVSTestTaskWithParameter">
     <Message Importance="Low" Text="Calling task Microsoft.TestPlatform.Build.Tasks.VSTestTask with following parameter..." />
     <Message Importance="Low" Text="TestFileFullPath = $(TargetPath)" />

@@ -74,7 +74,7 @@
              Combines the behaviors of <see cref="T:Microsoft.AspNetCore.Components.Authorization.AuthorizeView"/> and <see cref="T:Microsoft.AspNetCore.Components.RouteView"/>,
              so that it displays the page matching the specified route but only if the user
              is authorized to see it.
-            
+
              Additionally, this component supplies a cascading parameter of type <see cref="T:System.Threading.Tasks.Task`1"/>,
              which makes the user's current authentication state available to descendants.
              </summary>
@@ -203,7 +203,7 @@
             An interface implemented by services to receive authentication state information from the host environment.
             If this is implemented by the host's <see cref="T:Microsoft.AspNetCore.Components.Authorization.AuthenticationStateProvider"/>, it will receive authentication state from the HttpContext.
             Or if this implemented service that is registered directly as an <see cref="T:Microsoft.AspNetCore.Components.Authorization.IHostEnvironmentAuthenticationStateProvider"/>,
-            it will receive the <see cref="T:Microsoft.AspNetCore.Components.Authorization.AuthenticationState"/> returned by <see cref="M:Microsoft.AspNetCore.Components.Authorization.AuthenticationStateProvider.GetAuthenticationStateAsync"/> 
+            it will receive the <see cref="T:Microsoft.AspNetCore.Components.Authorization.AuthenticationState"/> returned by <see cref="M:Microsoft.AspNetCore.Components.Authorization.AuthenticationStateProvider.GetAuthenticationStateAsync"/>
             </summary>
         </member>
         <member name="M:Microsoft.AspNetCore.Components.Authorization.IHostEnvironmentAuthenticationStateProvider.SetAuthenticationState(System.Threading.Tasks.Task{Microsoft.AspNetCore.Components.Authorization.AuthenticationState})">

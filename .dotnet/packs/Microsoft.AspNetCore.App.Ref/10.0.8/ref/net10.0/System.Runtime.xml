@@ -8890,8 +8890,8 @@ The underlying array of <paramref name="destination" /> is <see langword="null" 
       <summary>Compares two objects and returns a value indicating whether one is less than, equal to, or greater than the other.</summary>
       <param name="x">The first object to compare.</param>
       <param name="y">The second object to compare.</param>
-      <returns>A signed integer that indicates the relative values of <paramref name="x" /> and <paramref name="y" />, as shown in the following table.  
-  
+      <returns>A signed integer that indicates the relative values of <paramref name="x" /> and <paramref name="y" />, as shown in the following table.
+
  <list type="table"><listheader><term> Value</term><description> Meaning</description></listheader><item><term> Less than zero</term><description><paramref name="x" /> is less than <paramref name="y" />.</description></item><item><term> Zero</term><description><paramref name="x" /> equals <paramref name="y" />.</description></item><item><term> Greater than zero</term><description><paramref name="x" /> is greater than <paramref name="y" />.</description></item></list></returns>
     </member>
     <member name="T:System.Collections.Generic.IDictionary`2">
@@ -9703,10 +9703,10 @@ The underlying array of <paramref name="destination" /> is <see langword="null" 
       <summary>Compares two objects and returns a value indicating whether one is less than, equal to, or greater than the other.</summary>
       <param name="x">The first object to compare.</param>
       <param name="y">The second object to compare.</param>
-      <exception cref="T:System.ArgumentException">Neither <paramref name="x" /> nor <paramref name="y" /> implements the <see cref="T:System.IComparable" /> interface.  
-  
- -or-  
-  
+      <exception cref="T:System.ArgumentException">Neither <paramref name="x" /> nor <paramref name="y" /> implements the <see cref="T:System.IComparable" /> interface.
+
+ -or-
+
  <paramref name="x" /> and <paramref name="y" /> are of different types and neither one can handle comparisons with the other.</exception>
       <returns>A signed integer that indicates the relative values of <paramref name="x" /> and <paramref name="y" />:<br />   - If less than 0, <paramref name="x" /> is less than <paramref name="y" />.<br />   - If 0, <paramref name="x" /> equals <paramref name="y" />.<br />   - If greater than 0, <paramref name="x" /> is greater than <paramref name="y" />.</returns>
     </member>
@@ -10440,13 +10440,13 @@ The underlying array of <paramref name="destination" /> is <see langword="null" 
         <paramref name="arrayIndex" /> is less than 0.</exception>
       <exception cref="T:System.ArgumentException">
         <paramref name="array" /> is multidimensional.
-              
+
 -or-
-              
+
 The number of elements in the source dictionary is greater than the available space from <paramref name="arrayIndex" /> to the end of the destination <paramref name="array" />.
-              
+
 -or-
-              
+
 Type <paramref name="T" /> cannot be cast automatically to the type of the destination <paramref name="array" />.</exception>
     </member>
     <member name="M:System.Collections.ObjectModel.ReadOnlyDictionary`2.System#Collections#Generic#ICollection{System#Collections#Generic#KeyValuePair{TKey@TValue}}#Remove(System.Collections.Generic.KeyValuePair{`0,`1})">
@@ -10476,14 +10476,14 @@ Type <paramref name="T" /> cannot be cast automatically to the type of the desti
       <exception cref="T:System.ArgumentOutOfRangeException">
         <paramref name="index" /> is less than zero.</exception>
       <exception cref="T:System.ArgumentException">
-        <paramref name="array" /> is multidimensional.  
-  
- -or-  
-  
- The number of elements in the source dictionary is greater than the available space from <paramref name="index" /> to the end of the destination <paramref name="array" />.  
-  
- -or-  
-  
+        <paramref name="array" /> is multidimensional.
+
+ -or-
+
+ The number of elements in the source dictionary is greater than the available space from <paramref name="index" /> to the end of the destination <paramref name="array" />.
+
+ -or-
+
  The type of the source dictionary cannot be cast automatically to the type of the destination <paramref name="array" />.</exception>
     </member>
     <member name="M:System.Collections.ObjectModel.ReadOnlyDictionary`2.System#Collections#IDictionary#Add(System.Object,System.Object)">
@@ -10601,10 +10601,10 @@ Type <paramref name="T" /> cannot be cast automatically to the type of the desti
       <param name="key">The key of the element to get or set.</param>
       <exception cref="T:System.ArgumentNullException">
         <paramref name="key" /> is <see langword="null" />.</exception>
-      <exception cref="T:System.NotSupportedException">The property is set.  
-  
- -or-  
-  
+      <exception cref="T:System.NotSupportedException">The property is set.
+
+ -or-
+
  The property is set, <paramref name="key" /> does not exist in the collection, and the dictionary has a fixed size.</exception>
       <returns>The element that has the specified key.</returns>
     </member>
@@ -10640,14 +10640,14 @@ Type <paramref name="T" /> cannot be cast automatically to the type of the desti
       <exception cref="T:System.ArgumentOutOfRangeException">
         <paramref name="arrayIndex" /> is less than 0.</exception>
       <exception cref="T:System.ArgumentException">
-        <paramref name="array" /> is multidimensional.  
-  
- -or-  
-  
- The number of elements in the source collection is greater than the available space from <paramref name="arrayIndex" /> to the end of the destination <paramref name="array" />.  
-  
- -or-  
-  
+        <paramref name="array" /> is multidimensional.
+
+ -or-
+
+ The number of elements in the source collection is greater than the available space from <paramref name="arrayIndex" /> to the end of the destination <paramref name="array" />.
+
+ -or-
+
  Type <paramref name="T" /> cannot be cast automatically to the type of the destination <paramref name="array" />.</exception>
     </member>
     <member name="M:System.Collections.ObjectModel.ReadOnlyDictionary`2.KeyCollection.GetEnumerator">
@@ -10679,10 +10679,10 @@ Type <paramref name="T" /> cannot be cast automatically to the type of the desti
       <exception cref="T:System.ArgumentOutOfRangeException">
         <paramref name="index" /> is less than 0.</exception>
       <exception cref="T:System.ArgumentException">
-        <paramref name="array" /> is multidimensional.  
-  
- -or-  
-  
+        <paramref name="array" /> is multidimensional.
+
+ -or-
+
  The number of elements in the source collection is greater than the available space from <paramref name="index" /> to the end of the destination <paramref name="array" />.</exception>
     </member>
     <member name="M:System.Collections.ObjectModel.ReadOnlyDictionary`2.KeyCollection.System#Collections#IEnumerable#GetEnumerator">
@@ -10721,14 +10721,14 @@ Type <paramref name="T" /> cannot be cast automatically to the type of the desti
       <exception cref="T:System.ArgumentOutOfRangeException">
         <paramref name="arrayIndex" /> is less than 0.</exception>
       <exception cref="T:System.ArgumentException">
-        <paramref name="array" /> is multidimensional.  
-  
- -or-  
-  
- The number of elements in the source collection is greater than the available space from <paramref name="arrayIndex" /> to the end of the destination <paramref name="array" />.  
-  
- -or-  
-  
+        <paramref name="array" /> is multidimensional.
+
+ -or-
+
+ The number of elements in the source collection is greater than the available space from <paramref name="arrayIndex" /> to the end of the destination <paramref name="array" />.
+
+ -or-
+
  Type <paramref name="T" /> cannot be cast automatically to the type of the destination <paramref name="array" />.</exception>
     </member>
     <member name="M:System.Collections.ObjectModel.ReadOnlyDictionary`2.ValueCollection.GetEnumerator">
@@ -10766,10 +10766,10 @@ Type <paramref name="T" /> cannot be cast automatically to the type of the desti
       <exception cref="T:System.ArgumentOutOfRangeException">
         <paramref name="index" /> is less than 0.</exception>
       <exception cref="T:System.ArgumentException">
-        <paramref name="array" /> is multidimensional.  
-  
- -or-  
-  
+        <paramref name="array" /> is multidimensional.
+
+ -or-
+
  The number of elements in the source collection is greater than the available space from <paramref name="index" /> to the end of the destination <paramref name="array" />.</exception>
     </member>
     <member name="M:System.Collections.ObjectModel.ReadOnlyDictionary`2.ValueCollection.System#Collections#IEnumerable#GetEnumerator">
@@ -19536,8 +19536,8 @@ The number, order, or type of parameters listed in <paramref name="args" /> is i
       <summary>Use the implicit MSIL sequence points, not the program database (PDB) sequence points. The symbolic information normally includes at least one Microsoft intermediate language (MSIL) offset for each source line. When the just-in-time (JIT) compiler is about to compile a method, it asks the profiling services for a list of MSIL offsets that should be preserved. These MSIL offsets are called sequence points.</summary>
     </member>
     <member name="F:System.Diagnostics.DebuggableAttribute.DebuggingModes.None">
-      <summary>Starting with the .NET Framework version 2.0, JIT tracking information is always generated, and this flag has the same effect as <see cref="F:System.Diagnostics.DebuggableAttribute.DebuggingModes.Default" />, except that it sets the <see cref="P:System.Diagnostics.DebuggableAttribute.IsJITTrackingEnabled" /> property to <see langword="false" />. However, because JIT tracking is always enabled, the property value is ignored in version 2.0 or later.  
-  
+      <summary>Starting with the .NET Framework version 2.0, JIT tracking information is always generated, and this flag has the same effect as <see cref="F:System.Diagnostics.DebuggableAttribute.DebuggingModes.Default" />, except that it sets the <see cref="P:System.Diagnostics.DebuggableAttribute.IsJITTrackingEnabled" /> property to <see langword="false" />. However, because JIT tracking is always enabled, the property value is ignored in version 2.0 or later.
+
  Note that, unlike the <see cref="F:System.Diagnostics.DebuggableAttribute.DebuggingModes.DisableOptimizations" /> flag, the <see cref="F:System.Diagnostics.DebuggableAttribute.DebuggingModes.None" /> flag cannot be used to disable JIT optimizations.</summary>
     </member>
     <member name="T:System.Diagnostics.Debugger">
@@ -54367,7 +54367,7 @@ Note: In .NET for Windows Store apps or the Portable Class Library, catch the ba
       <param name="interfaceType">The interface to retrieve a mapping for.</param>
       <exception cref="T:System.ArgumentNullException">
         <paramref name="typeInfo" /> is <see langword="null" />.
-        
+
 -or-
 
 <paramref name="interfaceType" /> is <see langword="null" />.</exception>
@@ -55640,18 +55640,18 @@ The invoked method is not supported in the base class. Derived classes must prov
       <param name="exception">The exception to bind to the task.</param>
       <exception cref="T:System.ArgumentNullException">
         <paramref name="exception" /> is <see langword="null" />.</exception>
-      <exception cref="T:System.InvalidOperationException">The task has already completed.  
-  
- -or-  
-  
+      <exception cref="T:System.InvalidOperationException">The task has already completed.
+
+ -or-
+
  The builder is not initialized.</exception>
     </member>
     <member name="M:System.Runtime.CompilerServices.AsyncTaskMethodBuilder.SetResult">
       <summary>Marks the task as successfully completed.</summary>
-      <exception cref="T:System.InvalidOperationException">The task has already completed.  
-  
- -or-  
-  
+      <exception cref="T:System.InvalidOperationException">The task has already completed.
+
+ -or-
+
  The builder is not initialized.</exception>
     </member>
     <member name="M:System.Runtime.CompilerServices.AsyncTaskMethodBuilder.SetStateMachine(System.Runtime.CompilerServices.IAsyncStateMachine)">
@@ -56539,10 +56539,10 @@ Note: In the .NET for Windows Store apps or the Portable Class Library, catch th
       <param name="format">A composite format string.</param>
       <param name="arguments">The arguments whose string representations are to be inserted in the result string.</param>
       <exception cref="T:System.ArgumentNullException">
-        <paramref name="format" /> is <see langword="null" />.  
-  
- -or-  
-  
+        <paramref name="format" /> is <see langword="null" />.
+
+ -or-
+
  <paramref name="arguments" /> is <see langword="null" />.</exception>
       <returns>The object that represents the composite format string and its arguments.</returns>
     </member>
@@ -58022,8 +58022,8 @@ Note: In the .NET for Windows Store apps or the Portable Class Library, catch th
       <summary>Enables garbage collection that is more conservative in reclaiming objects. Full collections occur only if the system is under memory pressure, whereas generation 0 and generation 1 collections might occur more frequently. This mode is not available for the server garbage collector.</summary>
     </member>
     <member name="F:System.Runtime.GCLatencyMode.NoGCRegion">
-      <summary>Indicates that garbage collection is suspended while the app is executing a critical path.  
-  
+      <summary>Indicates that garbage collection is suspended while the app is executing a critical path.
+
  <see cref="F:System.Runtime.GCLatencyMode.NoGCRegion" /> is a read-only value; that is, you cannot assign the <see cref="F:System.Runtime.GCLatencyMode.NoGCRegion" /> value to the <see cref="P:System.Runtime.GCSettings.LatencyMode" /> property. You specify the no GC region latency mode by calling the <see cref="Overload:System.GC.TryStartNoGCRegion" /> method and terminate it by calling the <see cref="M:System.GC.EndNoGCRegion" /> method.</summary>
     </member>
     <member name="F:System.Runtime.GCLatencyMode.SustainedLowLatency">
@@ -58043,10 +58043,10 @@ Note: In the .NET for Windows Store apps or the Portable Class Library, catch th
     </member>
     <member name="P:System.Runtime.GCSettings.LatencyMode">
       <summary>Gets or sets the current latency mode for garbage collection.</summary>
-      <exception cref="T:System.ArgumentOutOfRangeException">The <see cref="P:System.Runtime.GCSettings.LatencyMode" /> property is being set to an invalid value.  
-  
- -or-  
-  
+      <exception cref="T:System.ArgumentOutOfRangeException">The <see cref="P:System.Runtime.GCSettings.LatencyMode" /> property is being set to an invalid value.
+
+ -or-
+
  The <see cref="P:System.Runtime.GCSettings.LatencyMode" /> property cannot be set to <see cref="F:System.Runtime.GCLatencyMode.NoGCRegion" />.</exception>
       <returns>One of the enumeration values that specifies the latency mode.</returns>
     </member>
@@ -61598,10 +61598,10 @@ Note: In the .NET for Windows Store apps or the Portable Class Library, catch th
     </member>
     <member name="M:System.Security.IStackWalk.Demand">
       <summary>Determines at run time whether all callers in the call stack have been granted the permission specified by the current permission object.</summary>
-      <exception cref="T:System.Security.SecurityException">A caller higher in the call stack does not have the permission specified by the current permission object.  
-  
- -or-  
-  
+      <exception cref="T:System.Security.SecurityException">A caller higher in the call stack does not have the permission specified by the current permission object.
+
+ -or-
+
  A caller in the call stack has called <see cref="M:System.Security.IStackWalk.Deny" /> on the current permission object.</exception>
     </member>
     <member name="M:System.Security.IStackWalk.Deny">
@@ -66424,26 +66424,26 @@ The current instance does not equal <see cref="F:System.String.Empty" />, and <p
       <param name="bytesUnknown">An input array of bytes.</param>
       <param name="index">The index position of a byte in the input.</param>
       <exception cref="T:System.Text.DecoderFallbackException">This method always throws an exception that reports the value and index position of the input byte that cannot be decoded.</exception>
-      <returns>None. No value is returned because the <see cref="M:System.Text.DecoderExceptionFallbackBuffer.Fallback(System.Byte[],System.Int32)" /> method always throws an exception.  
-  
+      <returns>None. No value is returned because the <see cref="M:System.Text.DecoderExceptionFallbackBuffer.Fallback(System.Byte[],System.Int32)" /> method always throws an exception.
+
  The nominal return value is <see langword="true" />. A return value is defined, although it is unchanging, because this method implements an abstract method.</returns>
     </member>
     <member name="M:System.Text.DecoderExceptionFallbackBuffer.GetNextChar">
       <summary>Retrieves the next character in the exception data buffer.</summary>
-      <returns>The return value is always the Unicode character NULL (U+0000).  
-  
+      <returns>The return value is always the Unicode character NULL (U+0000).
+
  A return value is defined, although it is unchanging, because this method implements an abstract method.</returns>
     </member>
     <member name="M:System.Text.DecoderExceptionFallbackBuffer.MovePrevious">
       <summary>Causes the next call to <see cref="M:System.Text.DecoderExceptionFallbackBuffer.GetNextChar" /> to access the exception data buffer character position that is prior to the current position.</summary>
-      <returns>The return value is always <see langword="false" />.  
-  
+      <returns>The return value is always <see langword="false" />.
+
  A return value is defined, although it is unchanging, because this method implements an abstract method.</returns>
     </member>
     <member name="P:System.Text.DecoderExceptionFallbackBuffer.Remaining">
       <summary>Gets the number of characters in the current <see cref="T:System.Text.DecoderExceptionFallbackBuffer" /> object that remain to be processed.</summary>
-      <returns>The return value is always zero.  
-  
+      <returns>The return value is always zero.
+
  A return value is defined, although it is unchanging, because this method implements an abstract method.</returns>
     </member>
     <member name="T:System.Text.DecoderFallback">
@@ -66843,20 +66843,20 @@ The current instance does not equal <see cref="F:System.String.Empty" />, and <p
     </member>
     <member name="M:System.Text.EncoderExceptionFallbackBuffer.GetNextChar">
       <summary>Retrieves the next character in the exception fallback buffer.</summary>
-      <returns>The return value is always the Unicode character, NULL (U+0000).  
-  
+      <returns>The return value is always the Unicode character, NULL (U+0000).
+
  A return value is defined, although it is unchanging, because this method implements an abstract method.</returns>
     </member>
     <member name="M:System.Text.EncoderExceptionFallbackBuffer.MovePrevious">
       <summary>Causes the next call to the <see cref="M:System.Text.EncoderExceptionFallbackBuffer.GetNextChar" /> method to access the exception data buffer character position that is prior to the current position.</summary>
-      <returns>The return value is always <see langword="false" />.  
-  
+      <returns>The return value is always <see langword="false" />.
+
  A return value is defined, although it is unchanging, because this method implements an abstract method.</returns>
     </member>
     <member name="P:System.Text.EncoderExceptionFallbackBuffer.Remaining">
       <summary>Gets the number of characters in the current <see cref="T:System.Text.EncoderExceptionFallbackBuffer" /> object that remain to be processed.</summary>
-      <returns>The return value is always zero.  
-  
+      <returns>The return value is always zero.
+
  A return value is defined, although it is unchanging, because this method implements an abstract method.</returns>
     </member>
     <member name="T:System.Text.EncoderFallback">
@@ -67003,10 +67003,10 @@ The current instance does not equal <see cref="F:System.String.Empty" />, and <p
       <param name="charUnknownLow">The low surrogate of the input pair.</param>
       <param name="index">The index position of the surrogate pair in the input buffer.</param>
       <exception cref="T:System.ArgumentException">This method is called again before the <see cref="M:System.Text.EncoderReplacementFallbackBuffer.GetNextChar" /> method has read all the replacement string characters.</exception>
-      <exception cref="T:System.ArgumentOutOfRangeException">The value of <paramref name="charUnknownHigh" /> is less than U+D800 or greater than U+D8FF.  
-  
- -or-  
-  
+      <exception cref="T:System.ArgumentOutOfRangeException">The value of <paramref name="charUnknownHigh" /> is less than U+D800 or greater than U+D8FF.
+
+ -or-
+
  The value of <paramref name="charUnknownLow" /> is less than U+DC00 or greater than U+DFFF.</exception>
       <returns>
         <see langword="true" /> if the replacement string is not empty; <see langword="false" /> if the replacement string is empty.</returns>
@@ -69613,7 +69613,7 @@ The index of a format item is less than 0 (zero), or greater than or equal to th
       <param name="state">The state to pass to the <paramref name="callback" /> when the delegate is invoked.  This may be <see langword="null" />.</param>
       <exception cref="T:System.ArgumentNullException">
         <paramref name="callback" /> is null.</exception>
-      <returns>An object that can 
+      <returns>An object that can
             be used to unregister the callback.</returns>
     </member>
     <member name="P:System.Threading.CancellationToken.CanBeCanceled">
@@ -69642,7 +69642,7 @@ The index of a format item is less than 0 (zero), or greater than or equal to th
       <summary>Disposes of the registration and unregisters the target callback from the associated <see cref="T:System.Threading.CancellationToken" />.</summary>
     </member>
     <member name="M:System.Threading.CancellationTokenRegistration.DisposeAsync">
-      <summary>Disposes of the registration and unregisters the target callback from the associated 
+      <summary>Disposes of the registration and unregisters the target callback from the associated
             <see cref="T:System.Threading.CancellationToken" />.</summary>
       <returns>A task that represents the asynchronous dispose operation.</returns>
     </member>
@@ -69650,16 +69650,16 @@ The index of a format item is less than 0 (zero), or greater than or equal to th
       <summary>Determines whether the current <see cref="T:System.Threading.CancellationTokenRegistration" /> instance is equal to the specified <see cref="T:System.Threading.CancellationTokenRegistration" />.</summary>
       <param name="obj">The other object to which to compare this instance.</param>
       <returns>
-        <see langword="true" /> if both this and <paramref name="obj" /> are equal. False, otherwise.  
-  
+        <see langword="true" /> if both this and <paramref name="obj" /> are equal. False, otherwise.
+
  Two <see cref="T:System.Threading.CancellationTokenRegistration" /> instances are equal if they both refer to the output of a single call to the same Register method of a <see cref="T:System.Threading.CancellationToken" />.</returns>
     </member>
     <member name="M:System.Threading.CancellationTokenRegistration.Equals(System.Threading.CancellationTokenRegistration)">
       <summary>Determines whether the current <see cref="T:System.Threading.CancellationTokenRegistration" /> instance is equal to the specified <see cref="T:System.Threading.CancellationTokenRegistration" />.</summary>
       <param name="other">The other <see cref="T:System.Threading.CancellationTokenRegistration" /> to which to compare this instance.</param>
       <returns>
-        <see langword="true" /> if both this and <paramref name="other" /> are equal. False, otherwise.  
-  
+        <see langword="true" /> if both this and <paramref name="other" /> are equal. False, otherwise.
+
  Two <see cref="T:System.Threading.CancellationTokenRegistration" /> instances are equal if they both refer to the output of a single call to the same Register method of a <see cref="T:System.Threading.CancellationToken" />.</returns>
     </member>
     <member name="M:System.Threading.CancellationTokenRegistration.GetHashCode">
@@ -69681,7 +69681,7 @@ The index of a format item is less than 0 (zero), or greater than or equal to th
         <see langword="true" /> if the instances are not equal; otherwise, <see langword="false" />.</returns>
     </member>
     <member name="M:System.Threading.CancellationTokenRegistration.Unregister">
-      <summary>Disposes of the registration and unregisters the target callback from the associated 
+      <summary>Disposes of the registration and unregisters the target callback from the associated
             <see cref="T:System.Threading.CancellationToken" />.</summary>
       <returns>
         <see langword="true" /> if the method succeeds; otherwise, <see langword="false" />.</returns>

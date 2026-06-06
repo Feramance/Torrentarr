@@ -53,7 +53,7 @@ Copyright (c) .NET Foundation. All rights reserved.
     <ArtifactsPackageOutputName Condition="'$(ArtifactsPackageOutputName)' == ''">package</ArtifactsPackageOutputName>
     <!-- By default MSBuild won't allow tracking/automatic clean-up of files that are outside of a Project's child directory structure.
          This flag opts us into a mode where the Common targets will track and clean such files, which is good because
-         in Artifacts layout virtually all transitive and package references are such files. 
+         in Artifacts layout virtually all transitive and package references are such files.
          See https://github.com/dotnet/msbuild/pull/12096 for full details. -->
     <TrackFileWritesShareableOutsideOfProjectDirectory>true</TrackFileWritesShareableOutsideOfProjectDirectory>
   </PropertyGroup>

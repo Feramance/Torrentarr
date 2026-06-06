@@ -249,7 +249,7 @@
         </member>
         <member name="M:Microsoft.AspNetCore.Http.Features.DefaultConnectionLifetimeNotificationFeature.#ctor(Microsoft.AspNetCore.Http.Features.IHttpResponseFeature)">
              <summary>
-            
+
              </summary>
              <param name="httpResponseFeature"></param>
         </member>

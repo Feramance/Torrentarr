@@ -1254,8 +1254,8 @@ The number of elements in the source <see cref="T:System.Collections.ICollection
     </member>
     <member name="M:System.Collections.Concurrent.IProducerConsumerCollection`1.CopyTo(`0[],System.Int32)">
       <summary>Copies the elements of the <see cref="T:System.Collections.Concurrent.IProducerConsumerCollection`1" /> to an <see cref="T:System.Array" />, starting at a specified index.</summary>
-      <param name="array">The one-dimensional <see cref="T:System.Array" /> that is the destination of the elements copied from the <see cref="T:System.Collections.Concurrent.IProducerConsumerCollection`1" />.  
-  
+      <param name="array">The one-dimensional <see cref="T:System.Array" /> that is the destination of the elements copied from the <see cref="T:System.Collections.Concurrent.IProducerConsumerCollection`1" />.
+
  The array must have zero-based indexing.</param>
       <param name="index">The zero-based index in <paramref name="array" /> at which copying begins.</param>
       <exception cref="T:System.ArgumentNullException">
@@ -1335,10 +1335,10 @@ The number of elements in the source <see cref="T:System.Collections.ICollection
       <param name="fromInclusive">The lower, inclusive bound of the range.</param>
       <param name="toExclusive">The upper, exclusive bound of the range.</param>
       <param name="rangeSize">The size of each subrange.</param>
-      <exception cref="T:System.ArgumentOutOfRangeException">The <paramref name="toExclusive" /> argument is less than or equal to the <paramref name="fromInclusive" /> argument.  
-  
- -or-  
-  
+      <exception cref="T:System.ArgumentOutOfRangeException">The <paramref name="toExclusive" /> argument is less than or equal to the <paramref name="fromInclusive" /> argument.
+
+ -or-
+
  The <paramref name="rangeSize" /> argument is less than or equal to 0.</exception>
       <returns>A partitioner.</returns>
     </member>
@@ -1354,10 +1354,10 @@ The number of elements in the source <see cref="T:System.Collections.ICollection
       <param name="fromInclusive">The lower, inclusive bound of the range.</param>
       <param name="toExclusive">The upper, exclusive bound of the range.</param>
       <param name="rangeSize">The size of each subrange.</param>
-      <exception cref="T:System.ArgumentOutOfRangeException">The <paramref name="toExclusive" /> argument is less than or equal to the <paramref name="fromInclusive" /> argument.  
-  
- -or-  
-  
+      <exception cref="T:System.ArgumentOutOfRangeException">The <paramref name="toExclusive" /> argument is less than or equal to the <paramref name="fromInclusive" /> argument.
+
+ -or-
+
  The <paramref name="rangeSize" /> argument is less than or equal to 0.</exception>
       <returns>A partitioner.</returns>
     </member>

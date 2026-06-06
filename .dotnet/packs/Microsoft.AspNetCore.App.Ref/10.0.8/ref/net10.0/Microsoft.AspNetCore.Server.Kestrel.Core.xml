@@ -1482,11 +1482,11 @@
              GET http://www.example.com/path/to/index.html HTTP/1.1
              </code>
              the Host header is redundant.  In fact, the RFC says
-            
+
                When an origin server receives a request with an absolute-form of request-target,
                the origin server MUST ignore the received Host header field (if any) and instead
                use the host information of the request-target.
-            
+
              However, it is still sensible to check whether the request target and Host header match
              because a mismatch might indicate, for example, a spoofing attempt.  Setting this property
              to true bypasses that check and unconditionally overwrites the Host header with the value
@@ -2921,7 +2921,7 @@
             <summary>
             A callback to be invoked to get the TLS client hello bytes.
             Null by default.
-            If you want to store the bytes from the <see cref="T:System.Buffers.ReadOnlySequence`1"/>, 
+            If you want to store the bytes from the <see cref="T:System.Buffers.ReadOnlySequence`1"/>,
             copy them into a buffer that you control rather than keeping a reference to the <see cref="T:System.Buffers.ReadOnlySequence`1"/> or <see cref="T:System.ReadOnlyMemory`1"/> instances.
             </summary>
         </member>
@@ -3611,16 +3611,16 @@
         <member name="M:Microsoft.AspNetCore.Internal.UrlDecoder.UnescapePercentEncoding(System.Int32@,System.Span{System.Byte},System.Boolean)">
              <summary>
              Read the percent-encoding and try unescape it.
-            
+
              The operation first peek at the character the <paramref name="scan"/>
              iterator points at. If it is % the <paramref name="scan"/> is then
              moved on to scan the following to characters. If the two following
              characters are hexadecimal literals they will be unescaped and the
              value will be returned.
-            
+
              If the first character is not % the <paramref name="scan"/> iterator
              will be removed beyond the location of % and -1 will be returned.
-            
+
              If the following two characters can't be successfully unescaped the
              <paramref name="scan"/> iterator will be move behind the % and -1
              will be returned.
@@ -3633,7 +3633,7 @@
         <member name="M:Microsoft.AspNetCore.Internal.UrlDecoder.ReadHex(System.Int32@,System.Span{System.Byte})">
              <summary>
              Read the next char and convert it into hexadecimal value.
-            
+
              The <paramref name="scan"/> index will be moved to the next
              byte no matter whether the operation successes.
              </summary>
@@ -3677,16 +3677,16 @@
         <member name="M:Microsoft.AspNetCore.Internal.UrlDecoder.UnescapePercentEncoding(System.Int32@,System.ReadOnlySpan{System.Char})">
              <summary>
              Read the percent-encoding and try unescape it.
-            
+
              The operation first peek at the character the <paramref name="scan"/>
              iterator points at. If it is % the <paramref name="scan"/> is then
              moved on to scan the following to characters. If the two following
              characters are hexadecimal literals they will be unescaped and the
              value will be returned.
-            
+
              If the first character is not % the <paramref name="scan"/> iterator
              will be removed beyond the location of % and -1 will be returned.
-            
+
              If the following two characters can't be successfully unescaped the
              <paramref name="scan"/> iterator will be move behind the % and -1
              will be returned.
@@ -3698,7 +3698,7 @@
         <member name="M:Microsoft.AspNetCore.Internal.UrlDecoder.ReadHex(System.Int32@,System.ReadOnlySpan{System.Char})">
              <summary>
              Read the next char and convert it into hexadecimal value.
-            
+
              The <paramref name="scan"/> index will be moved to the next
              char no matter whether the operation successes.
              </summary>
@@ -4384,12 +4384,12 @@
         <member name="T:System.IO.Pipelines.DuplexPipe">
              <remarks>
              A <see cref="T:System.IO.Pipelines.Pipe"/> is a reader-writer pair, where content written to the writer can be read from the reader.
-            
+
              An <see cref="T:System.IO.Pipelines.IDuplexPipe"/> is *not* a pipe.  It is also a reader-writer pair, but the reader and writer are not
              connected.  Rather, it can be regarded as *one end* of a two-way (i.e. duplex) communication channel, where content
              written to the writer is sent to the counterparty and content received from the counterparty is readable from the
              reader.
-            
+
              A <see cref="T:System.IO.Pipelines.DuplexPipe.DuplexPipePair"/> is a pair of <see cref="T:System.IO.Pipelines.IDuplexPipe"/> instances, each of which represents one end of
              a two-way communication channel.  (In a sense, this makes it a "duplex pipe".)  It can also be viewed as a pair of
              <see cref="T:System.IO.Pipelines.Pipe"/>s, as these underlie the <see cref="T:System.IO.Pipelines.IDuplexPipe"/> instances.  In either view, it is composed of

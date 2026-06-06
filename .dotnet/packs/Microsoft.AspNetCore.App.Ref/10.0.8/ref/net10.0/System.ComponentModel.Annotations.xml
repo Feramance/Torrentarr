@@ -304,7 +304,7 @@
     </member>
     <member name="M:System.ComponentModel.DataAnnotations.DisplayAttribute.GetShortName">
       <summary>Returns the value of the <see cref="P:System.ComponentModel.DataAnnotations.DisplayAttribute.ShortName" /> property.</summary>
-      <exception cref="T:System.InvalidOperationException">Both the <see cref="P:System.ComponentModel.DataAnnotations.DisplayAttribute.ResourceType" /> property and <see cref="P:System.ComponentModel.DataAnnotations.DisplayAttribute.ShortName" /> properties were set, 
+      <exception cref="T:System.InvalidOperationException">Both the <see cref="P:System.ComponentModel.DataAnnotations.DisplayAttribute.ResourceType" /> property and <see cref="P:System.ComponentModel.DataAnnotations.DisplayAttribute.ShortName" /> properties were set,
 but a public static property with a name matching the <see cref="P:System.ComponentModel.DataAnnotations.DisplayAttribute.ShortName" /> value couldn't be found on the <see cref="P:System.ComponentModel.DataAnnotations.DisplayAttribute.ResourceType" />.</exception>
       <returns>The localized string for the <see cref="P:System.ComponentModel.DataAnnotations.DisplayAttribute.ShortName" /> property if the <see cref="P:System.ComponentModel.DataAnnotations.DisplayAttribute.ResourceType" /> property has been specified and if the <see cref="P:System.ComponentModel.DataAnnotations.DisplayAttribute.ShortName" /> property represents a resource key; otherwise, the non-localized value of the <see cref="P:System.ComponentModel.DataAnnotations.DisplayAttribute.ShortName" /> value property.</returns>
     </member>
@@ -881,10 +881,10 @@ Using <see cref="P:System.ComponentModel.DataAnnotations.DisplayFormatAttribute.
       <summary>Applies formatting to a specified error message.</summary>
       <param name="name">The name of the field that caused the validation failure.</param>
       <exception cref="T:System.ArgumentOutOfRangeException">
-        <paramref name="maximumLength" /> is negative.  
-  
- -or-  
-  
+        <paramref name="maximumLength" /> is negative.
+
+ -or-
+
  <paramref name="maximumLength" /> is less than <paramref name="minimumLength" />.</exception>
       <exception cref="T:System.InvalidOperationException">The current attribute is ill-formed.</exception>
       <returns>The formatted error message.</returns>
@@ -893,10 +893,10 @@ Using <see cref="P:System.ComponentModel.DataAnnotations.DisplayFormatAttribute.
       <summary>Determines whether a specified object is valid.</summary>
       <param name="value">The object to validate.</param>
       <exception cref="T:System.ArgumentOutOfRangeException">
-        <paramref name="maximumLength" /> is negative.  
-  
- -or-  
-  
+        <paramref name="maximumLength" /> is negative.
+
+ -or-
+
  <paramref name="maximumLength" /> is less than <see cref="P:System.ComponentModel.DataAnnotations.StringLengthAttribute.MinimumLength" />.</exception>
       <exception cref="T:System.InvalidOperationException">The current attribute is ill-formed.</exception>
       <returns>
@@ -925,10 +925,10 @@ Using <see cref="P:System.ComponentModel.DataAnnotations.DisplayFormatAttribute.
       <param name="presentationLayer">The presentation layer that uses the class. Can be set to "HTML", "Silverlight", "WPF", or "WinForms".</param>
       <param name="controlParameters">The object to use to retrieve values from any data sources.</param>
       <exception cref="T:System.ArgumentException">
-        <see cref="P:System.ComponentModel.DataAnnotations.UIHintAttribute.ControlParameters" /> is <see langword="null" /> or it is a constraint key.  
-  
- -or-  
-  
+        <see cref="P:System.ComponentModel.DataAnnotations.UIHintAttribute.ControlParameters" /> is <see langword="null" /> or it is a constraint key.
+
+ -or-
+
  The value of <see cref="P:System.ComponentModel.DataAnnotations.UIHintAttribute.ControlParameters" /> is not a string.</exception>
     </member>
     <member name="M:System.ComponentModel.DataAnnotations.UIHintAttribute.#ctor(System.String,System.String)">
@@ -1244,10 +1244,10 @@ Using <see cref="P:System.ComponentModel.DataAnnotations.DisplayFormatAttribute.
       <param name="validationContext">The context that describes the property to validate.</param>
       <param name="validationResults">A collection to hold each failed validation.</param>
       <exception cref="T:System.ArgumentNullException">
-        <paramref name="value" /> cannot be assigned to the property.  
-  
- -or-  
-  
+        <paramref name="value" /> cannot be assigned to the property.
+
+ -or-
+
  <paramref name="value" /> is <see langword="null" />.</exception>
       <exception cref="T:System.ArgumentException">The <see cref="P:System.ComponentModel.DataAnnotations.ValidationContext.MemberName" /> property of <paramref name="validationContext" /> is not a valid property.</exception>
       <returns>

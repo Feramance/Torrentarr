@@ -83,7 +83,7 @@
             <summary>
             Implements an <see cref="T:Microsoft.AspNetCore.Authorization.IAuthorizationHandler"/> and <see cref="T:Microsoft.AspNetCore.Authorization.IAuthorizationRequirement"/> which requires the current user must be authenticated.
             This calls <see cref="M:Microsoft.AspNetCore.Authorization.AuthorizationHandlerContext.Succeed(Microsoft.AspNetCore.Authorization.IAuthorizationRequirement)"/> for authenticated users. Like all built-in requirements,
-            it never calls <see cref="M:Microsoft.AspNetCore.Authorization.AuthorizationHandlerContext.Fail"/>. The <see cref="T:Microsoft.AspNetCore.Authorization.DefaultAuthorizationEvaluator"/> produces a failed <see cref="T:Microsoft.AspNetCore.Authorization.AuthorizationResult" /> 
+            it never calls <see cref="M:Microsoft.AspNetCore.Authorization.AuthorizationHandlerContext.Fail"/>. The <see cref="T:Microsoft.AspNetCore.Authorization.DefaultAuthorizationEvaluator"/> produces a failed <see cref="T:Microsoft.AspNetCore.Authorization.AuthorizationResult" />
             when any requirement has not succeeded even if other requirements have succeeded, and no requirement has explicitly failed.
             </summary>
         </member>

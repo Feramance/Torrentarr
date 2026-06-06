@@ -10,7 +10,7 @@ WARNING:  DO NOT MODIFY this file unless you are knowledgeable about MSBuild and
 
 This file defines the steps in the standard build process specific for F# .NET projects.
 For example, it contains the step that actually calls the F# compiler.  The remainder
-of the build process is defined in Microsoft.Common.targets, which is imported by 
+of the build process is defined in Microsoft.Common.targets, which is imported by
 this file.
 ***********************************************************************************************
 -->
@@ -102,14 +102,14 @@ this file.
     <!--
       The CreateManifestResourceNames target create the manifest resource names from the .RESX
       files.
-      
+
           [IN]
           @(EmbeddedResource) - The list of EmbeddedResource items that have been pre-processed to add metadata about resource type
                                 Expected Metadata "Type" can either be "Resx" or "Non-Resx"
 
           [OUT]
-          @(EmbeddedResource) - EmbeddedResource items with metadata         
-          
+          @(EmbeddedResource) - EmbeddedResource items with metadata
+
       For F# applications the transformation is like:
 
           Resources1.resx => Resources1 => Build into main assembly
@@ -289,7 +289,7 @@ this file.
                 $(AssemblyOriginatorKeyFile);
                 @(ReferencePathWithRefAssemblies);
                 @(CompiledLicenseFile);
-                @(EmbeddedDocumentation); 
+                @(EmbeddedDocumentation);
                 $(Win32Resource);
                 $(Win32Manifest);
                 @(CustomAdditionalCompileInputs);
@@ -432,7 +432,7 @@ this file.
             ============================================================
             GenerateTargetFrameworkMonikerAttribute
 
-            Emit the target framework moniker attribute as  a code 
+            Emit the target framework moniker attribute as  a code
             fragment into a temporary source file for the compiler.
 
             ============================================================

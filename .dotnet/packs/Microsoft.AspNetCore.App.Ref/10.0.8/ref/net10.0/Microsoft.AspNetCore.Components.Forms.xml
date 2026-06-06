@@ -99,7 +99,7 @@
         <member name="M:Microsoft.AspNetCore.Components.Forms.EditContext.GetValidationMessages">
              <summary>
              Gets the current validation messages across all fields.
-            
+
              This method does not perform validation itself. It only returns messages determined by previous validation actions.
              </summary>
              <returns>The current validation messages.</returns>
@@ -107,7 +107,7 @@
         <member name="M:Microsoft.AspNetCore.Components.Forms.EditContext.GetValidationMessages(Microsoft.AspNetCore.Components.Forms.FieldIdentifier)">
              <summary>
              Gets the current validation messages for the specified field.
-            
+
              This method does not perform validation itself. It only returns messages determined by previous validation actions.
              </summary>
              <param name="fieldIdentifier">Identifies the field whose current validation messages should be returned.</param>
@@ -116,7 +116,7 @@
         <member name="M:Microsoft.AspNetCore.Components.Forms.EditContext.GetValidationMessages(System.Linq.Expressions.Expression{System.Func{System.Object}})">
              <summary>
              Gets the current validation messages for the specified field.
-            
+
              This method does not perform validation itself. It only returns messages determined by previous validation actions.
              </summary>
              <param name="accessor">Identifies the field whose current validation messages should be returned.</param>
@@ -305,7 +305,7 @@
         <member name="P:Microsoft.AspNetCore.Components.Forms.ValidationMessageStore.Item(Microsoft.AspNetCore.Components.Forms.FieldIdentifier)">
              <summary>
              Gets the validation messages within this <see cref="T:Microsoft.AspNetCore.Components.Forms.ValidationMessageStore"/> for the specified field.
-            
+
              To get the validation messages across all validation message stores, use <see cref="M:Microsoft.AspNetCore.Components.Forms.EditContext.GetValidationMessages(Microsoft.AspNetCore.Components.Forms.FieldIdentifier)"/> instead
              </summary>
              <param name="fieldIdentifier">The identifier for the field.</param>
@@ -314,7 +314,7 @@
         <member name="P:Microsoft.AspNetCore.Components.Forms.ValidationMessageStore.Item(System.Linq.Expressions.Expression{System.Func{System.Object}})">
              <summary>
              Gets the validation messages within this <see cref="T:Microsoft.AspNetCore.Components.Forms.ValidationMessageStore"/> for the specified field.
-            
+
              To get the validation messages across all validation message stores, use <see cref="M:Microsoft.AspNetCore.Components.Forms.EditContext.GetValidationMessages(Microsoft.AspNetCore.Components.Forms.FieldIdentifier)"/> instead
              </summary>
              <param name="accessor">The identifier for the field.</param>

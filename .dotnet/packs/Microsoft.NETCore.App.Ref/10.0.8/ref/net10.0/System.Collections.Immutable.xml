@@ -687,8 +687,8 @@
       <returns>A new list that contains the new element, even if the element at the specified location is the same as the new element.</returns>
     </member>
     <member name="T:System.Collections.Immutable.IImmutableQueue`1">
-      <summary>Represents an immutable first-in, first-out collection of objects.  
-  
+      <summary>Represents an immutable first-in, first-out collection of objects.
+
  NuGet package: System.Collections.Immutable (about immutable collections and how to install)</summary>
       <typeparam name="T">The type of elements in the queue.</typeparam>
     </member>
@@ -806,8 +806,8 @@
       <returns>A new immutable set with the items added; or the original set if all the items were already in the set.</returns>
     </member>
     <member name="T:System.Collections.Immutable.IImmutableStack`1">
-      <summary>Represents an immutable last-in-first-out (LIFO) collection.  
-  
+      <summary>Represents an immutable last-in-first-out (LIFO) collection.
+
  NuGet package: System.Collections.Immutable (about immutable collections and how to install)</summary>
       <typeparam name="T">The type of elements in the stack.</typeparam>
     </member>
@@ -836,8 +836,8 @@
         <see langword="true" /> if this stack is empty; otherwise,<see langword="false" />.</returns>
     </member>
     <member name="T:System.Collections.Immutable.ImmutableArray">
-      <summary>Provides methods for creating an array that is immutable; meaning it cannot be changed once it is created.  
-  
+      <summary>Provides methods for creating an array that is immutable; meaning it cannot be changed once it is created.
+
  NuGet package: System.Collections.Immutable (about immutable collections and how to install)</summary>
     </member>
     <member name="M:System.Collections.Immutable.ImmutableArray.BinarySearch``1(System.Collections.Immutable.ImmutableArray{``0},``0,System.Collections.Generic.IComparer{``0})">
@@ -871,7 +871,7 @@
         <paramref name="comparer" /> is null and <paramref name="value" /> does not implement <see cref="T:System.IComparable" /> or the search encounters an element that does not implement <see cref="T:System.IComparable" />.</exception>
       <exception cref="T:System.ArgumentException">
         <paramref name="index" /> and <paramref name="length" /> do not specify a valid range in <paramref name="array" />.
-        
+
 -or-
 
 <paramref name="comparer" /> is <see langword="null" />, and <paramref name="value" /> is of a type that is not compatible with the elements of <paramref name="array" />.</exception>
@@ -896,7 +896,7 @@
         <paramref name="index" /> and <paramref name="length" /> do not specify a valid range in <paramref name="array" />.</exception>
       <exception cref="T:System.ArgumentOutOfRangeException">
         <paramref name="index" /> is less than the lower bound of <paramref name="array" />.
-        
+
 -or-
 
 <paramref name="length" /> is less than zero.</exception>
@@ -1693,8 +1693,8 @@
       <returns>The object at the specified index.</returns>
     </member>
     <member name="T:System.Collections.Immutable.ImmutableArray`1.Builder">
-      <summary>A writable array accessor that can be converted into an <see cref="T:System.Collections.Immutable.ImmutableArray`1" /> instance without allocating extra memory.  
-  
+      <summary>A writable array accessor that can be converted into an <see cref="T:System.Collections.Immutable.ImmutableArray`1" /> instance without allocating extra memory.
+
  NuGet package: System.Collections.Immutable (about immutable collections and how to install)</summary>
       <typeparam name="T" />
     </member>
@@ -1983,8 +1983,8 @@
         <see langword="true" /> if the <see cref="T:System.Collections.Generic.ICollection`1" /> is read-only; otherwise, <see langword="false" />.</returns>
     </member>
     <member name="T:System.Collections.Immutable.ImmutableArray`1.Enumerator">
-      <summary>An array enumerator.  
-  
+      <summary>An array enumerator.
+
  NuGet package: System.Collections.Immutable (about immutable collections and how to install)</summary>
       <typeparam name="T" />
     </member>
@@ -1998,8 +1998,8 @@
       <returns>The current item.</returns>
     </member>
     <member name="T:System.Collections.Immutable.ImmutableDictionary">
-      <summary>Provides a set of initialization methods for instances of the <see cref="T:System.Collections.Immutable.ImmutableDictionary`2" /> class.  
-  
+      <summary>Provides a set of initialization methods for instances of the <see cref="T:System.Collections.Immutable.ImmutableDictionary`2" /> class.
+
  NuGet package: System.Collections.Immutable (about immutable collections and how to install)</summary>
     </member>
     <member name="M:System.Collections.Immutable.ImmutableDictionary.Contains``2(System.Collections.Immutable.IImmutableDictionary{``0,``1},``0,``1)">
@@ -2697,8 +2697,8 @@
       <returns>A collection that contains the values of the object that implements the dictionary.</returns>
     </member>
     <member name="T:System.Collections.Immutable.ImmutableDictionary`2.Enumerator">
-      <summary>Enumerates the contents of the immutable dictionary without allocating any memory.  
-  
+      <summary>Enumerates the contents of the immutable dictionary without allocating any memory.
+
  NuGet package: System.Collections.Immutable (about immutable collections and how to install)</summary>
       <typeparam name="TKey" />
       <typeparam name="TValue" />
@@ -2725,8 +2725,8 @@
       <returns>Current element in enumeration.</returns>
     </member>
     <member name="T:System.Collections.Immutable.ImmutableHashSet">
-      <summary>Provides a set of initialization methods for instances of the <see cref="T:System.Collections.Immutable.ImmutableHashSet`1" /> class.  
-  
+      <summary>Provides a set of initialization methods for instances of the <see cref="T:System.Collections.Immutable.ImmutableHashSet`1" /> class.
+
  NuGet package: System.Collections.Immutable (about immutable collections and how to install)</summary>
     </member>
     <member name="M:System.Collections.Immutable.ImmutableHashSet.Create``1">
@@ -2823,8 +2823,8 @@
       <returns>An immutable hash set that contains the current contents in the builder's set.</returns>
     </member>
     <member name="T:System.Collections.Immutable.ImmutableHashSet`1">
-      <summary>Represents an immutable, unordered hash set.  
-  
+      <summary>Represents an immutable, unordered hash set.
+
  NuGet package: System.Collections.Immutable (about immutable collections and how to install)</summary>
       <typeparam name="T">The type of elements in the hash set.</typeparam>
     </member>
@@ -3043,8 +3043,8 @@
       <returns>An object that can be used to synchronize access to the <see cref="T:System.Collections.ICollection" />.</returns>
     </member>
     <member name="T:System.Collections.Immutable.ImmutableHashSet`1.Builder">
-      <summary>Represents a hash set that mutates with little or no memory allocations and that can produce or build on immutable hash set instances very efficiently.  
-  
+      <summary>Represents a hash set that mutates with little or no memory allocations and that can produce or build on immutable hash set instances very efficiently.
+
  NuGet package: System.Collections.Immutable (about immutable collections and how to install)</summary>
       <typeparam name="T" />
     </member>
@@ -3169,8 +3169,8 @@
         <see langword="true" /> if the <see cref="T:System.Collections.Generic.ICollection`1" /> is read-only; otherwise, <see langword="false" />.</returns>
     </member>
     <member name="T:System.Collections.Immutable.ImmutableHashSet`1.Enumerator">
-      <summary>Enumerates the contents of the immutable hash set without allocating any memory.  
-  
+      <summary>Enumerates the contents of the immutable hash set without allocating any memory.
+
  NuGet package: System.Collections.Immutable (about immutable collections and how to install)</summary>
       <typeparam name="T" />
     </member>
@@ -3370,8 +3370,8 @@
         <see langword="true" /> if the location's value is changed by applying the result of the <paramref name="transformer" /> function; <see langword="false" /> if the location's value remained the same because the last invocation of <paramref name="transformer" /> returned the existing value.</returns>
     </member>
     <member name="T:System.Collections.Immutable.ImmutableList">
-      <summary>Provides a set of initialization methods for instances of the <see cref="T:System.Collections.Immutable.ImmutableList`1" /> class.  
-  
+      <summary>Provides a set of initialization methods for instances of the <see cref="T:System.Collections.Immutable.ImmutableList`1" /> class.
+
  NuGet package: System.Collections.Immutable (about immutable collections and how to install)</summary>
     </member>
     <member name="M:System.Collections.Immutable.ImmutableList.Create``1">
@@ -4387,8 +4387,8 @@
       <returns>The object at the specified index.</returns>
     </member>
     <member name="T:System.Collections.Immutable.ImmutableList`1.Enumerator">
-      <summary>Enumerates the contents of a binary tree.  
-  
+      <summary>Enumerates the contents of a binary tree.
+
  NuGet package: System.Collections.Immutable (about immutable collections and how to install)</summary>
       <typeparam name="T" />
     </member>
@@ -4412,8 +4412,8 @@
       <returns>The element in the collection at the current position of the enumerator.</returns>
     </member>
     <member name="T:System.Collections.Immutable.ImmutableQueue">
-      <summary>Provides a set of initialization methods for instances of the <see cref="T:System.Collections.Immutable.ImmutableQueue`1" /> class.  
-  
+      <summary>Provides a set of initialization methods for instances of the <see cref="T:System.Collections.Immutable.ImmutableQueue`1" /> class.
+
  NuGet package: System.Collections.Immutable (about immutable collections and how to install)</summary>
     </member>
     <member name="M:System.Collections.Immutable.ImmutableQueue.Create``1">
@@ -4454,8 +4454,8 @@
       <returns>The new queue with the item removed.</returns>
     </member>
     <member name="T:System.Collections.Immutable.ImmutableQueue`1">
-      <summary>Represents an immutable queue.  
-  
+      <summary>Represents an immutable queue.
+
  NuGet package: System.Collections.Immutable (about immutable collections and how to install)</summary>
       <typeparam name="T">The type of elements in the queue.</typeparam>
     </member>
@@ -4520,15 +4520,15 @@
       <returns>An empty immutable queue.</returns>
     </member>
     <member name="P:System.Collections.Immutable.ImmutableQueue`1.IsEmpty">
-      <summary>Gets a value that indicates whether this immutable queue is empty.  
-  
+      <summary>Gets a value that indicates whether this immutable queue is empty.
+
  NuGet package: System.Collections.Immutable (about immutable collections and how to install)</summary>
       <returns>
         <see langword="true" /> if this queue is empty; otherwise, <see langword="false" />.</returns>
     </member>
     <member name="T:System.Collections.Immutable.ImmutableQueue`1.Enumerator">
-      <summary>Enumerates the contents of an immutable queue without allocating any memory.  
-  
+      <summary>Enumerates the contents of an immutable queue without allocating any memory.
+
  NuGet package: System.Collections.Immutable (about immutable collections and how to install)</summary>
       <typeparam name="T" />
     </member>
@@ -4542,8 +4542,8 @@
       <returns>The element at the current position of the enumerator.</returns>
     </member>
     <member name="T:System.Collections.Immutable.ImmutableSortedDictionary">
-      <summary>Provides a set of initialization methods for instances of the <see cref="T:System.Collections.Immutable.ImmutableSortedDictionary`2" /> class.  
-  
+      <summary>Provides a set of initialization methods for instances of the <see cref="T:System.Collections.Immutable.ImmutableSortedDictionary`2" /> class.
+
  NuGet package: System.Collections.Immutable (about immutable collections and how to install)</summary>
     </member>
     <member name="M:System.Collections.Immutable.ImmutableSortedDictionary.Create``2">
@@ -5174,8 +5174,8 @@
       <returns>A collection that contains the values of the object that implements the dictionary.</returns>
     </member>
     <member name="T:System.Collections.Immutable.ImmutableSortedDictionary`2.Enumerator">
-      <summary>Enumerates the contents of a binary tree.  
-  
+      <summary>Enumerates the contents of a binary tree.
+
  NuGet package: System.Collections.Immutable (about immutable collections and how to install)</summary>
       <typeparam name="TKey" />
       <typeparam name="TValue" />
@@ -5200,8 +5200,8 @@
       <returns>The element in the collection at the current position of the enumerator.</returns>
     </member>
     <member name="T:System.Collections.Immutable.ImmutableSortedSet">
-      <summary>Provides a set of initialization methods for instances of the <see cref="T:System.Collections.Immutable.ImmutableSortedSet`1" /> class.  
-  
+      <summary>Provides a set of initialization methods for instances of the <see cref="T:System.Collections.Immutable.ImmutableSortedSet`1" /> class.
+
  NuGet package: System.Collections.Immutable (about immutable collections and how to install)</summary>
     </member>
     <member name="M:System.Collections.Immutable.ImmutableSortedSet.Create``1">
@@ -5608,8 +5608,8 @@ NuGet package: System.Collections.Immutable (about immutable collections and how
       <returns>The <see cref="T:System.Object" />.</returns>
     </member>
     <member name="T:System.Collections.Immutable.ImmutableSortedSet`1.Builder">
-      <summary>Represents a sorted set that enables changes with little or no memory allocations, and efficiently manipulates or builds immutable sorted sets.  
-  
+      <summary>Represents a sorted set that enables changes with little or no memory allocations, and efficiently manipulates or builds immutable sorted sets.
+
  NuGet package: System.Collections.Immutable (about immutable collections and how to install)</summary>
       <typeparam name="T" />
     </member>
@@ -5771,31 +5771,31 @@ NuGet package: System.Collections.Immutable (about immutable collections and how
       <returns>An object that can be used to synchronize access to the <see cref="T:System.Collections.ICollection" />.</returns>
     </member>
     <member name="T:System.Collections.Immutable.ImmutableSortedSet`1.Enumerator">
-      <summary>Enumerates the contents of a binary tree.  
-  
+      <summary>Enumerates the contents of a binary tree.
+
  NuGet package: System.Collections.Immutable (about immutable collections and how to install)</summary>
       <typeparam name="T" />
     </member>
     <member name="M:System.Collections.Immutable.ImmutableSortedSet`1.Enumerator.Dispose">
-      <summary>Releases the resources used by the current instance of the <see cref="T:System.Collections.Immutable.ImmutableSortedSet`1.Enumerator" /> class.  
-  
+      <summary>Releases the resources used by the current instance of the <see cref="T:System.Collections.Immutable.ImmutableSortedSet`1.Enumerator" /> class.
+
  NuGet package: System.Collections.Immutable (about immutable collections and how to install)</summary>
     </member>
     <member name="M:System.Collections.Immutable.ImmutableSortedSet`1.Enumerator.MoveNext">
-      <summary>Advances the enumerator to the next element of the immutable sorted set.  
-  
+      <summary>Advances the enumerator to the next element of the immutable sorted set.
+
  NuGet package: System.Collections.Immutable (about immutable collections and how to install)</summary>
       <returns>
         <see langword="true" /> if the enumerator was successfully advanced to the next element; <see langword="false" /> if the enumerator has passed the end of the sorted set.</returns>
     </member>
     <member name="M:System.Collections.Immutable.ImmutableSortedSet`1.Enumerator.Reset">
-      <summary>Sets the enumerator to its initial position, which is before the first element in the immutable sorted set.  
-  
+      <summary>Sets the enumerator to its initial position, which is before the first element in the immutable sorted set.
+
  NuGet package: System.Collections.Immutable (about immutable collections and how to install)</summary>
     </member>
     <member name="P:System.Collections.Immutable.ImmutableSortedSet`1.Enumerator.Current">
-      <summary>Gets the element at the current position of the enumerator.  
-  
+      <summary>Gets the element at the current position of the enumerator.
+
  NuGet package: System.Collections.Immutable (about immutable collections and how to install)</summary>
       <returns>The element at the current position of the enumerator.</returns>
     </member>
@@ -5804,8 +5804,8 @@ NuGet package: System.Collections.Immutable (about immutable collections and how
       <returns>The element in the collection at the current position of the enumerator.</returns>
     </member>
     <member name="T:System.Collections.Immutable.ImmutableStack">
-      <summary>Provides a set of initialization methods for instances of the <see cref="T:System.Collections.Immutable.ImmutableStack`1" /> class.  
-  
+      <summary>Provides a set of initialization methods for instances of the <see cref="T:System.Collections.Immutable.ImmutableStack`1" /> class.
+
  NuGet package: System.Collections.Immutable (about immutable collections and how to install)</summary>
     </member>
     <member name="M:System.Collections.Immutable.ImmutableStack.Create``1">
@@ -5846,8 +5846,8 @@ NuGet package: System.Collections.Immutable (about immutable collections and how
       <returns>A stack; never <see langword="null" />.</returns>
     </member>
     <member name="T:System.Collections.Immutable.ImmutableStack`1">
-      <summary>Represents an immutable stack.  
-  
+      <summary>Represents an immutable stack.
+
  NuGet package: System.Collections.Immutable (about immutable collections and how to install)</summary>
       <typeparam name="T">The type of element on the stack.</typeparam>
     </member>
@@ -5916,8 +5916,8 @@ NuGet package: System.Collections.Immutable (about immutable collections and how
         <see langword="true" /> if this instance is empty; otherwise, <see langword="false" />.</returns>
     </member>
     <member name="T:System.Collections.Immutable.ImmutableStack`1.Enumerator">
-      <summary>Enumerates the contents of an immutable stack without allocating any memory.  
-  
+      <summary>Enumerates the contents of an immutable stack without allocating any memory.
+
  NuGet package: System.Collections.Immutable (about immutable collections and how to install)</summary>
       <typeparam name="T" />
     </member>

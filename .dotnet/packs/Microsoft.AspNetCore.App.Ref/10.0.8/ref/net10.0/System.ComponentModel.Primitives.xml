@@ -574,10 +574,10 @@
     <member name="M:System.ComponentModel.IContainer.Add(System.ComponentModel.IComponent,System.String)">
       <summary>Adds the specified <see cref="T:System.ComponentModel.IComponent" /> to the <see cref="T:System.ComponentModel.IContainer" /> at the end of the list, and assigns a name to the component.</summary>
       <param name="component">The <see cref="T:System.ComponentModel.IComponent" /> to add.</param>
-      <param name="name">The unique, case-insensitive name to assign to the component.  
-  
- -or-  
-  
+      <param name="name">The unique, case-insensitive name to assign to the component.
+
+ -or-
+
  <see langword="null" /> that leaves the component unnamed.</param>
     </member>
     <member name="M:System.ComponentModel.IContainer.Add(System.ComponentModel.IComponent)">

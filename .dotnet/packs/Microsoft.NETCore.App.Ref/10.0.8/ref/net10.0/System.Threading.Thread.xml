@@ -35,10 +35,10 @@
     </member>
     <member name="M:System.Threading.CompressedStack.GetCompressedStack">
       <summary>Gets the compressed stack for the current thread.</summary>
-      <exception cref="T:System.Security.SecurityException">A caller in the call chain does not have permission to access unmanaged code.  
-  
- -or-  
-  
+      <exception cref="T:System.Security.SecurityException">A caller in the call chain does not have permission to access unmanaged code.
+
+ -or-
+
  The request for <see cref="T:System.Security.Permissions.StrongNameIdentityPermission" /> failed.</exception>
       <returns>A <see cref="T:System.Threading.CompressedStack" /> for the current thread.</returns>
     </member>

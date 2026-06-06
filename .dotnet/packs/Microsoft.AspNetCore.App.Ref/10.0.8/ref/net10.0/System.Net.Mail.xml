@@ -1211,13 +1211,13 @@
       <summary>The delivery format to use for sending outgoing email using the Simple Mail Transport Protocol (SMTP).</summary>
     </member>
     <member name="F:System.Net.Mail.SmtpDeliveryFormat.International">
-      <summary>A delivery format where non-ASCII characters in the envelope and header fields used in the Simple Mail Transport Protocol (SMTP) for mail messages are encoded with UTF-8 characters.  
-  
+      <summary>A delivery format where non-ASCII characters in the envelope and header fields used in the Simple Mail Transport Protocol (SMTP) for mail messages are encoded with UTF-8 characters.
+
  The extensions to support international email are defined in IETF RFC 6530, 6531, and 6532.</summary>
     </member>
     <member name="F:System.Net.Mail.SmtpDeliveryFormat.SevenBit">
-      <summary>A delivery format using 7-bit ASCII.  
-  
+      <summary>A delivery format using 7-bit ASCII.
+
  The traditional delivery format used in the Simple Mail Transport Protocol (SMTP) for mail messages.</summary>
     </member>
     <member name="T:System.Net.Mail.SmtpDeliveryMethod">

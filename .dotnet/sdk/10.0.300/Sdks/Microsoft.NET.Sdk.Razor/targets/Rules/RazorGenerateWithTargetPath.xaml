@@ -20,7 +20,7 @@
       Name="General"
       DisplayName="General" />
   </Rule.Categories>
-  
+
   <StringProperty
     Category="General"
     Name="TargetPath"

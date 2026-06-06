@@ -1832,10 +1832,10 @@
       <param name="command">The SQL SELECT statement used to retrieve rows from the data source.</param>
       <param name="behavior">One of the <see cref="T:System.Data.CommandBehavior" /> values.</param>
       <exception cref="T:System.InvalidOperationException">The source table is invalid.</exception>
-      <exception cref="T:System.ArgumentException">The <paramref name="startRecord" /> parameter is less than 0.  
-  
- -or-  
-  
+      <exception cref="T:System.ArgumentException">The <paramref name="startRecord" /> parameter is less than 0.
+
+ -or-
+
  The <paramref name="maxRecords" /> parameter is less than 0.</exception>
       <returns>The number of rows successfully added to or refreshed in the <see cref="T:System.Data.DataSet" />. This does not include rows affected by statements that do not return rows.</returns>
     </member>
@@ -1846,16 +1846,16 @@
       <param name="maxRecords">The maximum number of records to retrieve. Specify 0 to retrieve all records after the start record.</param>
       <param name="srcTable">The name of the source table to use for table mapping.</param>
       <exception cref="T:System.SystemException">The <see cref="T:System.Data.DataSet" /> is invalid.</exception>
-      <exception cref="T:System.InvalidOperationException">The source table is invalid.  
-  
- -or-  
-  
+      <exception cref="T:System.InvalidOperationException">The source table is invalid.
+
+ -or-
+
  The connection is invalid.</exception>
       <exception cref="T:System.InvalidCastException">The connection could not be found.</exception>
-      <exception cref="T:System.ArgumentException">The <paramref name="startRecord" /> parameter is less than 0.  
-  
- -or-  
-  
+      <exception cref="T:System.ArgumentException">The <paramref name="startRecord" /> parameter is less than 0.
+
+ -or-
+
  The <paramref name="maxRecords" /> parameter is less than 0.</exception>
       <returns>The number of rows successfully added to or refreshed in the <see cref="T:System.Data.DataSet" />. This does not include rows affected by statements that do not return rows.</returns>
     </member>
@@ -1892,16 +1892,16 @@
       <param name="command">The <see cref="T:System.Data.IDbCommand" /> executed to fill the <see cref="T:System.Data.DataTable" /> objects.</param>
       <param name="behavior">One of the <see cref="T:System.Data.CommandBehavior" /> values.</param>
       <exception cref="T:System.SystemException">The <see cref="T:System.Data.DataSet" /> is invalid.</exception>
-      <exception cref="T:System.InvalidOperationException">The source table is invalid.  
-  
- -or-  
-  
+      <exception cref="T:System.InvalidOperationException">The source table is invalid.
+
+ -or-
+
  The connection is invalid.</exception>
       <exception cref="T:System.InvalidCastException">The connection could not be found.</exception>
-      <exception cref="T:System.ArgumentException">The <paramref name="startRecord" /> parameter is less than 0.  
-  
- -or-  
-  
+      <exception cref="T:System.ArgumentException">The <paramref name="startRecord" /> parameter is less than 0.
+
+ -or-
+
  The <paramref name="maxRecords" /> parameter is less than 0.</exception>
       <returns>The number of rows added to or refreshed in the data tables.</returns>
     </member>
@@ -2001,14 +2001,14 @@
       <param name="tableMapping">The <see cref="P:System.Data.IDataAdapter.TableMappings" /> collection to use.</param>
       <exception cref="T:System.ArgumentNullException">The <see cref="T:System.Data.DataSet" /> is invalid.</exception>
       <exception cref="T:System.InvalidOperationException">The source table is invalid.</exception>
-      <exception cref="T:System.SystemException">No <see cref="T:System.Data.DataRow" /> exists to update.  
-  
- -or-  
-  
- No <see cref="T:System.Data.DataTable" /> exists to update.  
-  
- -or-  
-  
+      <exception cref="T:System.SystemException">No <see cref="T:System.Data.DataRow" /> exists to update.
+
+ -or-
+
+ No <see cref="T:System.Data.DataTable" /> exists to update.
+
+ -or-
+
  No <see cref="T:System.Data.DataSet" /> exists to use as a source.</exception>
       <exception cref="T:System.Data.DBConcurrencyException">An attempt to execute an INSERT, UPDATE, or DELETE statement resulted in zero records affected.</exception>
       <returns>The number of rows successfully updated from the array of <see cref="T:System.Data.DataRow" /> objects.</returns>
@@ -2018,14 +2018,14 @@
       <param name="dataRows">An array of <see cref="T:System.Data.DataRow" /> objects used to update the data source.</param>
       <exception cref="T:System.ArgumentNullException">The <see cref="T:System.Data.DataSet" /> is invalid.</exception>
       <exception cref="T:System.InvalidOperationException">The source table is invalid.</exception>
-      <exception cref="T:System.SystemException">No <see cref="T:System.Data.DataRow" /> exists to update.  
-  
- -or-  
-  
- No <see cref="T:System.Data.DataTable" /> exists to update.  
-  
- -or-  
-  
+      <exception cref="T:System.SystemException">No <see cref="T:System.Data.DataRow" /> exists to update.
+
+ -or-
+
+ No <see cref="T:System.Data.DataTable" /> exists to update.
+
+ -or-
+
  No <see cref="T:System.Data.DataSet" /> exists to use as a source.</exception>
       <exception cref="T:System.Data.DBConcurrencyException">An attempt to execute an INSERT, UPDATE, or DELETE statement resulted in zero records affected.</exception>
       <returns>The number of rows successfully updated from the <see cref="T:System.Data.DataSet" />.</returns>
@@ -2051,14 +2051,14 @@
       <param name="dataTable">The <see cref="T:System.Data.DataTable" /> used to update the data source.</param>
       <exception cref="T:System.ArgumentNullException">The <see cref="T:System.Data.DataSet" /> is invalid.</exception>
       <exception cref="T:System.InvalidOperationException">The source table is invalid.</exception>
-      <exception cref="T:System.SystemException">No <see cref="T:System.Data.DataRow" /> exists to update.  
-  
- -or-  
-  
- No <see cref="T:System.Data.DataTable" /> exists to update.  
-  
- -or-  
-  
+      <exception cref="T:System.SystemException">No <see cref="T:System.Data.DataRow" /> exists to update.
+
+ -or-
+
+ No <see cref="T:System.Data.DataTable" /> exists to update.
+
+ -or-
+
  No <see cref="T:System.Data.DataSet" /> exists to use as a source.</exception>
       <exception cref="T:System.Data.DBConcurrencyException">An attempt to execute an INSERT, UPDATE, or DELETE statement resulted in zero records affected.</exception>
       <returns>The number of rows successfully updated from the <see cref="T:System.Data.DataTable" />.</returns>
@@ -2097,9 +2097,9 @@
     </member>
     <member name="P:System.Data.Common.DbDataAdapter.UpdateBatchSize">
       <summary>Gets or sets a value that enables or disables batch processing support, and specifies the number of commands that can be executed in a batch.</summary>
-      <returns>The number of rows to process per batch.  
-  
- <list type="table"><listheader><term> Value is</term><description> Effect</description></listheader><item><term> 0</term><description> There is no limit on the batch size.</description></item><item><term> 1</term><description> Disables batch updating.</description></item><item><term> &gt; 1</term><description> Changes are sent using batches of <see cref="P:System.Data.Common.DbDataAdapter.UpdateBatchSize" /> operations at a time.</description></item></list>  
+      <returns>The number of rows to process per batch.
+
+ <list type="table"><listheader><term> Value is</term><description> Effect</description></listheader><item><term> 0</term><description> There is no limit on the batch size.</description></item><item><term> 1</term><description> Disables batch updating.</description></item><item><term> &gt; 1</term><description> Changes are sent using batches of <see cref="P:System.Data.Common.DbDataAdapter.UpdateBatchSize" /> operations at a time.</description></item></list>
 
  When setting this to a value other than 1, all the commands associated with the <see cref="T:System.Data.Common.DbDataAdapter" /> must have their <see cref="P:System.Data.IDbCommand.UpdatedRowSource" /> property set to None or OutputParameters. An exception will be thrown otherwise.</returns>
     </member>
@@ -3360,8 +3360,8 @@ Returns <see langword="null" /> if the executed command returned no resultset, o
     </member>
     <member name="M:System.Data.Common.DbProviderFactories.GetFactoryClasses">
       <summary>Returns a <see cref="T:System.Data.DataTable" /> that contains information about all installed providers that implement <see cref="T:System.Data.Common.DbProviderFactory" />.</summary>
-      <returns>A <see cref="T:System.Data.DataTable" /> containing <see cref="T:System.Data.DataRow" /> objects that contain the following data:  
-  
+      <returns>A <see cref="T:System.Data.DataTable" /> containing <see cref="T:System.Data.DataRow" /> objects that contain the following data:
+
  <list type="table"><listheader><term> Column ordinal</term><description> Column name</description><description> Description</description></listheader><item><term> 0</term><description> Name</description><description> Human-readable name for the data provider.</description></item><item><term> 1</term><description> Description</description><description> Human-readable description of the data provider.</description></item><item><term> 2</term><description> InvariantName</description><description> Name that can be used programmatically to refer to the data provider.</description></item><item><term> 3</term><description> AssemblyQualifiedName</description><description> Fully qualified name of the factory class, which contains enough information to instantiate the object.</description></item></list></returns>
     </member>
     <member name="M:System.Data.Common.DbProviderFactories.GetProviderInvariantNames">
@@ -3892,10 +3892,10 @@ Returns <see langword="null" /> if the executed command returned no resultset, o
       <param name="name">The name of the <see langword="UniqueConstraint" />.</param>
       <param name="column">The <see cref="T:System.Data.DataColumn" /> to which the constraint applies.</param>
       <param name="primaryKey">Specifies whether the column should be the primary key. If <see langword="true" />, the column will be a primary key column.</param>
-      <exception cref="T:System.ArgumentException">The constraint already belongs to this collection.  
-  
- -Or-  
-  
+      <exception cref="T:System.ArgumentException">The constraint already belongs to this collection.
+
+ -Or-
+
  The constraint belongs to another collection.</exception>
       <exception cref="T:System.Data.DuplicateNameException">The collection already has a constraint with the specified name. (The comparison is not case-sensitive.)</exception>
       <returns>A new <see langword="UniqueConstraint" />.</returns>
@@ -3912,10 +3912,10 @@ Returns <see langword="null" /> if the executed command returned no resultset, o
       <param name="name">The name of the <see cref="T:System.Data.UniqueConstraint" />.</param>
       <param name="columns">An array of <see cref="T:System.Data.DataColumn" /> objects to which the constraint applies.</param>
       <param name="primaryKey">Specifies whether the column should be the primary key. If <see langword="true" />, the column will be a primary key column.</param>
-      <exception cref="T:System.ArgumentException">The constraint already belongs to this collection.  
-  
- -Or-  
-  
+      <exception cref="T:System.ArgumentException">The constraint already belongs to this collection.
+
+ -Or-
+
  The constraint belongs to another collection.</exception>
       <exception cref="T:System.Data.DuplicateNameException">The collection already has a constraint with the specified name. (The comparison is not case-sensitive.)</exception>
       <returns>A new <see langword="UniqueConstraint" />.</returns>
@@ -4433,19 +4433,19 @@ Another column's expression depends on this column.</exception>
       <param name="reader">The data reader to get the column value from.</param>
       <param name="name">The name of the column.</param>
       <typeparam name="T">The type of the value to be returned.</typeparam>
-      <exception cref="T:System.InvalidOperationException">The connection was dropped or closed during data retrieval.  
-
--or-
-  
- The data reader was closed during data retrieval.  
-  
--or-
-
- There is no data ready to be read (for example, the first <see cref="M:System.Data.Common.DbDataReader.Read" /> hasn't been called, or it returned <see langword="false" />).  
+      <exception cref="T:System.InvalidOperationException">The connection was dropped or closed during data retrieval.
 
 -or-
 
- The reader tried to read a previously-read column in sequential mode.  
+ The data reader was closed during data retrieval.
+
+-or-
+
+ There is no data ready to be read (for example, the first <see cref="M:System.Data.Common.DbDataReader.Read" /> hasn't been called, or it returned <see langword="false" />).
+
+-or-
+
+ The reader tried to read a previously-read column in sequential mode.
 
 -or-
 
@@ -4460,11 +4460,11 @@ Another column's expression depends on this column.</exception>
       <param name="name">The name of the column.</param>
       <param name="cancellationToken">An optional token to cancel the asynchronous operation.</param>
       <typeparam name="T">The type of the value to be returned.</typeparam>
-      <exception cref="T:System.InvalidOperationException">The connection was dropped or closed during data retrieval.  
-  
+      <exception cref="T:System.InvalidOperationException">The connection was dropped or closed during data retrieval.
+
 -or-
 
- The data reader was closed during the data retrieval.  
+ The data reader was closed during the data retrieval.
 
 -or-
 
@@ -4472,7 +4472,7 @@ Another column's expression depends on this column.</exception>
 
 -or-
 
- Tried to read a previously-read column in sequential mode.  
+ Tried to read a previously-read column in sequential mode.
 
 -or-
 
@@ -4541,19 +4541,19 @@ Another column's expression depends on this column.</exception>
       <summary>Gets a stream to retrieve data from the specified column.</summary>
       <param name="reader">The data reader to get the column value from.</param>
       <param name="name">The name of the column.</param>
-      <exception cref="T:System.InvalidOperationException">The connection was dropped or closed during the data retrieval.  
-  
--or-
-
- The data reader is closed during the data retrieval.  
+      <exception cref="T:System.InvalidOperationException">The connection was dropped or closed during the data retrieval.
 
 -or-
 
- There is no data ready to be read (for example, the first <see cref="M:System.Data.Common.DbDataReader.Read" /> hasn't been called, or returned false).  
+ The data reader is closed during the data retrieval.
 
 -or-
 
- The data reader tried to read a previously-read column in sequential mode.  
+ There is no data ready to be read (for example, the first <see cref="M:System.Data.Common.DbDataReader.Read" /> hasn't been called, or returned false).
+
+-or-
+
+ The data reader tried to read a previously-read column in sequential mode.
 
 -or-
 
@@ -4574,19 +4574,19 @@ Another column's expression depends on this column.</exception>
       <summary>Gets a text reader to retrieve data from the column.</summary>
       <param name="reader">The data reader to get the column value from.</param>
       <param name="name">The name of the column.</param>
-      <exception cref="T:System.InvalidOperationException">The connection was dropped or closed during the data retrieval.  
-  
--or-
-
- The data reader is closed during the data retrieval.  
+      <exception cref="T:System.InvalidOperationException">The connection was dropped or closed during the data retrieval.
 
 -or-
 
- There is no data ready to be read (for example, the first <see cref="M:System.Data.Common.DbDataReader.Read" /> hasn't been called, or returned false).  
+ The data reader is closed during the data retrieval.
 
 -or-
 
- The data reader tried to read a previously-read column in sequential mode.  
+ There is no data ready to be read (for example, the first <see cref="M:System.Data.Common.DbDataReader.Read" /> hasn't been called, or returned false).
+
+-or-
+
+ The data reader tried to read a previously-read column in sequential mode.
 
 -or-
 
@@ -4615,22 +4615,22 @@ Another column's expression depends on this column.</exception>
       <param name="reader">The data reader to get the column value from.</param>
       <param name="name">The name of the column.</param>
       <param name="cancellationToken">An optional token to cancel the asynchronous operation.</param>
-      <exception cref="T:System.InvalidOperationException">The connection was dropped or closed during the data retrieval.  
-  
--or-
-
- The data reader is closed during the data retrieval.  
+      <exception cref="T:System.InvalidOperationException">The connection was dropped or closed during the data retrieval.
 
 -or-
 
- There is no data ready to be read (for example, the first <see cref="M:System.Data.Common.DbDataReader.Read" /> hasn't been called, or returned false).  
+ The data reader is closed during the data retrieval.
 
 -or-
 
- Trying to read a previously read column in sequential mode.  
+ There is no data ready to be read (for example, the first <see cref="M:System.Data.Common.DbDataReader.Read" /> hasn't been called, or returned false).
 
 -or-
-  
+
+ Trying to read a previously read column in sequential mode.
+
+-or-
+
  There was an asynchronous operation in progress. This applies to all Get* methods when running in sequential mode, as they could be called while reading a stream.</exception>
       <exception cref="T:System.IndexOutOfRangeException">The name specified is not a valid column name.</exception>
       <exception cref="T:System.OperationCanceledException">The cancellation token was canceled. This exception is stored into the returned task.</exception>
@@ -4646,10 +4646,10 @@ Another column's expression depends on this column.</exception>
       <param name="childColumn">The child <see cref="T:System.Data.DataColumn" /> in the relation.</param>
       <param name="createConstraints">A value that indicates whether constraints are created. <see langword="true" />, if constraints are created. Otherwise, <see langword="false" />.</param>
       <exception cref="T:System.ArgumentNullException">One or both of the <see cref="T:System.Data.DataColumn" /> objects contains <see langword="null" />.</exception>
-      <exception cref="T:System.Data.InvalidConstraintException">The columns have different data types  
-  
- -Or-  
-  
+      <exception cref="T:System.Data.InvalidConstraintException">The columns have different data types
+
+ -Or-
+
  The tables do not belong to the same <see cref="T:System.Data.DataSet" />.</exception>
     </member>
     <member name="M:System.Data.DataRelation.#ctor(System.String,System.Data.DataColumn,System.Data.DataColumn)">
@@ -4658,10 +4658,10 @@ Another column's expression depends on this column.</exception>
       <param name="parentColumn">The parent <see cref="T:System.Data.DataColumn" /> in the relationship.</param>
       <param name="childColumn">The child <see cref="T:System.Data.DataColumn" /> in the relationship.</param>
       <exception cref="T:System.ArgumentNullException">One or both of the <see cref="T:System.Data.DataColumn" /> objects contains <see langword="null" />.</exception>
-      <exception cref="T:System.Data.InvalidConstraintException">The columns have different data types  
-  
- -Or-  
-  
+      <exception cref="T:System.Data.InvalidConstraintException">The columns have different data types
+
+ -Or-
+
  The tables do not belong to the same <see cref="T:System.Data.DataSet" />.</exception>
     </member>
     <member name="M:System.Data.DataRelation.#ctor(System.String,System.Data.DataColumn[],System.Data.DataColumn[],System.Boolean)">
@@ -4671,10 +4671,10 @@ Another column's expression depends on this column.</exception>
       <param name="childColumns">An array of child <see cref="T:System.Data.DataColumn" /> objects.</param>
       <param name="createConstraints">A value that indicates whether to create constraints. <see langword="true" />, if constraints are created. Otherwise, <see langword="false" />.</param>
       <exception cref="T:System.ArgumentNullException">One or both of the <see cref="T:System.Data.DataColumn" /> objects is <see langword="null" />.</exception>
-      <exception cref="T:System.Data.InvalidConstraintException">The columns have different data types  
-  
- -Or-  
-  
+      <exception cref="T:System.Data.InvalidConstraintException">The columns have different data types
+
+ -Or-
+
  The tables do not belong to the same <see cref="T:System.Data.DataSet" />.</exception>
     </member>
     <member name="M:System.Data.DataRelation.#ctor(System.String,System.Data.DataColumn[],System.Data.DataColumn[])">
@@ -4683,14 +4683,14 @@ Another column's expression depends on this column.</exception>
       <param name="parentColumns">An array of parent <see cref="T:System.Data.DataColumn" /> objects.</param>
       <param name="childColumns">An array of child <see cref="T:System.Data.DataColumn" /> objects.</param>
       <exception cref="T:System.ArgumentNullException">One or both of the <see cref="T:System.Data.DataColumn" /> objects contains <see langword="null" />.</exception>
-      <exception cref="T:System.Data.InvalidConstraintException">The <see cref="T:System.Data.DataColumn" /> objects have different data types  
-  
- -Or-  
-  
- One or both of the arrays are not composed of distinct columns from the same table.  
-  
- -Or-  
-  
+      <exception cref="T:System.Data.InvalidConstraintException">The <see cref="T:System.Data.DataColumn" /> objects have different data types
+
+ -Or-
+
+ One or both of the arrays are not composed of distinct columns from the same table.
+
+ -Or-
+
  The tables do not belong to the same <see cref="T:System.Data.DataSet" />.</exception>
     </member>
     <member name="M:System.Data.DataRelation.#ctor(System.String,System.String,System.String,System.String,System.String,System.String[],System.String[],System.Boolean)">
@@ -4715,14 +4715,14 @@ Another column's expression depends on this column.</exception>
     </member>
     <member name="M:System.Data.DataRelation.CheckStateForProperty">
       <summary>This method supports .NET infrastructure and is not intended to be used directly from your code.</summary>
-      <exception cref="T:System.Data.DataException">The parent and child tables belong to different <see cref="T:System.Data.DataSet" /> objects.  
-  
- -Or-  
-  
- One or more pairs of parent and child <see cref="T:System.Data.DataColumn" /> objects have mismatched data types.  
-  
- -Or-  
-  
+      <exception cref="T:System.Data.DataException">The parent and child tables belong to different <see cref="T:System.Data.DataSet" /> objects.
+
+ -Or-
+
+ One or more pairs of parent and child <see cref="T:System.Data.DataColumn" /> objects have mismatched data types.
+
+ -Or-
+
  The parent and child <see cref="T:System.Data.DataColumn" /> objects are identical.</exception>
     </member>
     <member name="M:System.Data.DataRelation.OnPropertyChanging(System.ComponentModel.PropertyChangedEventArgs)">
@@ -6895,10 +6895,10 @@ The <see cref="P:System.Data.DataRowView.DataView" /> doesn't allow edits and <s
       <summary>Removes the specified <see cref="T:System.Data.DataTable" /> object from the collection.</summary>
       <param name="table">The <see langword="DataTable" /> to remove.</param>
       <exception cref="T:System.ArgumentNullException">The value specified for the table is <see langword="null" />.</exception>
-      <exception cref="T:System.ArgumentException">The table does not belong to this collection.  
-  
- -or-  
-  
+      <exception cref="T:System.ArgumentException">The table does not belong to this collection.
+
+ -or-
+
  The table is part of a relationship.</exception>
     </member>
     <member name="M:System.Data.DataTableCollection.Remove(System.String,System.String)">
@@ -8722,10 +8722,10 @@ Returns <see langword="null" /> if the executed command returned no resultset, o
     </member>
     <member name="M:System.Data.IDbCommand.ExecuteNonQuery">
       <summary>Executes an SQL statement against the <see langword="Connection" /> object of a .NET data provider, and returns the number of rows affected.</summary>
-      <exception cref="T:System.InvalidOperationException">The connection does not exist.  
-  
- -or-  
-  
+      <exception cref="T:System.InvalidOperationException">The connection does not exist.
+
+ -or-
+
  The connection is not open.</exception>
       <returns>The number of rows affected.</returns>
     </member>
@@ -8744,10 +8744,10 @@ Returns <see langword="null" /> if the executed command returned no resultset, o
     </member>
     <member name="M:System.Data.IDbCommand.Prepare">
       <summary>Creates a prepared (or compiled) version of the command on the data source.</summary>
-      <exception cref="T:System.InvalidOperationException">The <see cref="P:System.Data.OleDb.OleDbCommand.Connection" /> is not set.  
-  
- -or-  
-  
+      <exception cref="T:System.InvalidOperationException">The <see cref="P:System.Data.OleDb.OleDbCommand.Connection" /> is not set.
+
+ -or-
+
  The <see cref="P:System.Data.OleDb.OleDbCommand.Connection" /> is not <see cref="M:System.Data.OleDb.OleDbConnection.Open" />.</exception>
     </member>
     <member name="P:System.Data.IDbCommand.CommandText">
@@ -8862,19 +8862,19 @@ Returns <see langword="null" /> if the executed command returned no resultset, o
     <member name="M:System.Data.IDbTransaction.Commit">
       <summary>Commits the database transaction.</summary>
       <exception cref="T:System.Exception">An error occurred while trying to commit the transaction.</exception>
-      <exception cref="T:System.InvalidOperationException">The transaction has already been committed or rolled back.  
-  
- -or-  
-  
+      <exception cref="T:System.InvalidOperationException">The transaction has already been committed or rolled back.
+
+ -or-
+
  The connection is broken.</exception>
     </member>
     <member name="M:System.Data.IDbTransaction.Rollback">
       <summary>Rolls back a transaction from a pending state.</summary>
       <exception cref="T:System.Exception">An error occurred while trying to commit the transaction.</exception>
-      <exception cref="T:System.InvalidOperationException">The transaction has already been committed or rolled back.  
-  
- -or-  
-  
+      <exception cref="T:System.InvalidOperationException">The transaction has already been committed or rolled back.
+
+ -or-
+
  The connection is broken.</exception>
     </member>
     <member name="P:System.Data.IDbTransaction.Connection">
@@ -9466,15 +9466,15 @@ Returns <see langword="null" /> if the executed command returned no resultset, o
     <member name="M:System.Data.SqlTypes.SqlBinary.CompareTo(System.Data.SqlTypes.SqlBinary)">
       <summary>Compares this <see cref="T:System.Data.SqlTypes.SqlBinary" /> object to the supplied <see cref="T:System.Data.SqlTypes.SqlBinary" /> object and returns an indication of their relative values.</summary>
       <param name="value">The <see cref="T:System.Data.SqlTypes.SqlBinary" /> object to be compared to this <see cref="T:System.Data.SqlTypes.SqlBinary" /> structure.</param>
-      <returns>A signed number that indicates the relative values of this <see cref="T:System.Data.SqlTypes.SqlBinary" /> structure and the object.  
-  
+      <returns>A signed number that indicates the relative values of this <see cref="T:System.Data.SqlTypes.SqlBinary" /> structure and the object.
+
  <list type="table"><listheader><term> Return value</term><description> Condition</description></listheader><item><term> Less than zero</term><description> The value of this <see cref="T:System.Data.SqlTypes.SqlBinary" /> object is less than the object.</description></item><item><term> Zero</term><description> This <see cref="T:System.Data.SqlTypes.SqlBinary" /> object is the same as object.</description></item><item><term> Greater than zero</term><description> This <see cref="T:System.Data.SqlTypes.SqlBinary" /> object is greater than object, or the object is a null reference.</description></item></list></returns>
     </member>
     <member name="M:System.Data.SqlTypes.SqlBinary.CompareTo(System.Object)">
       <summary>Compares this <see cref="T:System.Data.SqlTypes.SqlBinary" /> object to the supplied object and returns an indication of their relative values.</summary>
       <param name="value">The object to be compared to this <see cref="T:System.Data.SqlTypes.SqlBinary" /> structure.</param>
-      <returns>A signed number that indicates the relative values of this <see cref="T:System.Data.SqlTypes.SqlBinary" /> structure and the object.  
-  
+      <returns>A signed number that indicates the relative values of this <see cref="T:System.Data.SqlTypes.SqlBinary" /> structure and the object.
+
  <list type="table"><listheader><term> Return value</term><description> Condition</description></listheader><item><term> Less than zero</term><description> The value of this <see cref="T:System.Data.SqlTypes.SqlBinary" /> object is less than the object.</description></item><item><term> Zero</term><description> This <see cref="T:System.Data.SqlTypes.SqlBinary" /> object is the same as object.</description></item><item><term> Greater than zero</term><description> This <see cref="T:System.Data.SqlTypes.SqlBinary" /> object is greater than object, or the object is a null reference.</description></item></list></returns>
     </member>
     <member name="M:System.Data.SqlTypes.SqlBinary.Concat(System.Data.SqlTypes.SqlBinary,System.Data.SqlTypes.SqlBinary)">
@@ -9631,10 +9631,10 @@ Returns <see langword="null" /> if the executed command returned no resultset, o
     <member name="P:System.Data.SqlTypes.SqlBinary.Item(System.Int32)">
       <summary>Gets the single byte from the <see cref="P:System.Data.SqlTypes.SqlBinary.Value" /> property located at the position indicated by the integer parameter, <paramref name="index" />. If <paramref name="index" /> indicates a position beyond the end of the byte array, a <see cref="T:System.Data.SqlTypes.SqlNullValueException" /> will be raised. This property is read-only.</summary>
       <param name="index">The position of the byte to be retrieved.</param>
-      <exception cref="T:System.Data.SqlTypes.SqlNullValueException">The property is read when the <see cref="P:System.Data.SqlTypes.SqlBinary.Value" /> property contains <see cref="F:System.Data.SqlTypes.SqlBinary.Null" />  
-  
+      <exception cref="T:System.Data.SqlTypes.SqlNullValueException">The property is read when the <see cref="P:System.Data.SqlTypes.SqlBinary.Value" /> property contains <see cref="F:System.Data.SqlTypes.SqlBinary.Null" />
+
 -or-
-  
+
  The <paramref name="index" /> parameter indicates a position beyond the length of the byte array as indicated by the <see cref="P:System.Data.SqlTypes.SqlBinary.Length" /> property.</exception>
       <returns>The byte located at the position indicated by the integer parameter.</returns>
     </member>
@@ -9683,15 +9683,15 @@ Returns <see langword="null" /> if the executed command returned no resultset, o
     <member name="M:System.Data.SqlTypes.SqlBoolean.CompareTo(System.Data.SqlTypes.SqlBoolean)">
       <summary>Compares this <see cref="T:System.Data.SqlTypes.SqlBoolean" /> object to the supplied <see cref="T:System.Data.SqlTypes.SqlBoolean" /> object and returns an indication of their relative values.</summary>
       <param name="value">A <see cref="T:System.Data.SqlTypes.SqlBoolean" /><see cref="T:System.Data.SqlTypes.SqlBoolean" /> object to compare, or a null reference (<see langword="Nothing" /> in Visual Basic).</param>
-      <returns>A signed number that indicates the relative values of the instance and value.  
-  
+      <returns>A signed number that indicates the relative values of the instance and value.
+
  <list type="table"><listheader><term> Value</term><description> Description</description></listheader><item><term> A negative integer</term><description> This instance is less than <paramref name="value" />.</description></item><item><term> Zero</term><description> This instance is equal to <paramref name="value" />.</description></item><item><term> A positive integer</term><description> This instance is greater than <paramref name="value" />, or <paramref name="value" /> is a null reference (<see langword="Nothing" /> in Visual Basic).</description></item></list></returns>
     </member>
     <member name="M:System.Data.SqlTypes.SqlBoolean.CompareTo(System.Object)">
       <summary>Compares this <see cref="T:System.Data.SqlTypes.SqlBoolean" /> structure to a specified object and returns an indication of their relative values.</summary>
       <param name="value">An object to compare, or a null reference (<see langword="Nothing" /> in Visual Basic).</param>
-      <returns>A signed number that indicates the relative values of the instance and value.  
-  
+      <returns>A signed number that indicates the relative values of the instance and value.
+
  <list type="table"><listheader><term> Value</term><description> Description</description></listheader><item><term> A negative integer</term><description> This instance is less than <paramref name="value" />.</description></item><item><term> Zero</term><description> This instance is equal to <paramref name="value" />.</description></item><item><term> A positive integer</term><description> This instance is greater than <paramref name="value" />, or <paramref name="value" /> is a null reference (<see langword="Nothing" /> in Visual Basic).</description></item></list></returns>
     </member>
     <member name="M:System.Data.SqlTypes.SqlBoolean.Equals(System.Data.SqlTypes.SqlBoolean,System.Data.SqlTypes.SqlBoolean)">
@@ -9956,8 +9956,8 @@ Returns <see langword="null" /> if the executed command returned no resultset, o
     </member>
     <member name="M:System.Data.SqlTypes.SqlBoolean.ToSqlSingle">
       <summary>Converts this <see cref="T:System.Data.SqlTypes.SqlBoolean" /> structure to <see cref="T:System.Data.SqlTypes.SqlSingle" />.</summary>
-      <returns>A new <see cref="T:System.Data.SqlTypes.SqlSingle" /> structure whose value is 1 or 0.  
-  
+      <returns>A new <see cref="T:System.Data.SqlTypes.SqlSingle" /> structure whose value is 1 or 0.
+
  If the <see cref="T:System.Data.SqlTypes.SqlBoolean" /> structure's value equals true, the new <see cref="T:System.Data.SqlTypes.SqlSingle" /> structure's value is 1; otherwise the new <see cref="T:System.Data.SqlTypes.SqlSingle" /> structure's value is 0.</returns>
     </member>
     <member name="M:System.Data.SqlTypes.SqlBoolean.ToSqlString">
@@ -10039,23 +10039,23 @@ Returns <see langword="null" /> if the executed command returned no resultset, o
     <member name="M:System.Data.SqlTypes.SqlByte.CompareTo(System.Data.SqlTypes.SqlByte)">
       <summary>Compares this instance to the supplied <see cref="T:System.Data.SqlTypes.SqlByte" /> object and returns an indication of their relative values.</summary>
       <param name="value">The <see cref="T:System.Data.SqlTypes.SqlByte" /> object to be compared.</param>
-      <returns>A signed number that indicates the relative values of the instance and the object.  
-  
- <list type="table"><listheader><term> Return Value</term><description> Condition</description></listheader><item><term> Less than zero</term><description> This instance is less than the object.</description></item><item><term> Zero</term><description> This instance is the same as the object.</description></item><item><term> Greater than zero</term><description> This instance is greater than the object  
-  
- -or-  
-  
+      <returns>A signed number that indicates the relative values of the instance and the object.
+
+ <list type="table"><listheader><term> Return Value</term><description> Condition</description></listheader><item><term> Less than zero</term><description> This instance is less than the object.</description></item><item><term> Zero</term><description> This instance is the same as the object.</description></item><item><term> Greater than zero</term><description> This instance is greater than the object
+
+ -or-
+
  The object is a null reference (<see langword="Nothing" /> in Visual Basic)</description></item></list></returns>
     </member>
     <member name="M:System.Data.SqlTypes.SqlByte.CompareTo(System.Object)">
       <summary>Compares this instance to the supplied <see cref="T:System.Object" /> and returns an indication of their relative values.</summary>
       <param name="value">The <see cref="T:System.Object" /> to be compared.</param>
-      <returns>A signed number that indicates the relative values of the instance and the object.  
-  
- <list type="table"><listheader><term> Return Value</term><description> Condition</description></listheader><item><term> Less than zero</term><description> This instance is less than the object.</description></item><item><term> Zero</term><description> This instance is the same as the object.</description></item><item><term> Greater than zero</term><description> This instance is greater than the object  
-  
- -or-  
-  
+      <returns>A signed number that indicates the relative values of the instance and the object.
+
+ <list type="table"><listheader><term> Return Value</term><description> Condition</description></listheader><item><term> Less than zero</term><description> This instance is less than the object.</description></item><item><term> Zero</term><description> This instance is the same as the object.</description></item><item><term> Greater than zero</term><description> This instance is greater than the object
+
+ -or-
+
  The object is a null reference (<see langword="Nothing" /> in Visual Basic)</description></item></list></returns>
     </member>
     <member name="M:System.Data.SqlTypes.SqlByte.Divide(System.Data.SqlTypes.SqlByte,System.Data.SqlTypes.SqlByte)">
@@ -10468,10 +10468,10 @@ Returns <see langword="null" /> if the executed command returned no resultset, o
     </member>
     <member name="P:System.Data.SqlTypes.SqlBytes.Length">
       <summary>Gets the length of the value that is contained in the <see cref="T:System.Data.SqlTypes.SqlBytes" /> instance.</summary>
-      <returns>A <see cref="T:System.Int64" /> value representing the length of the value that is contained in the <see cref="T:System.Data.SqlTypes.SqlBytes" /> instance.  
-  
- Returns -1 if no buffer is available to the instance or if the value is null.  
-  
+      <returns>A <see cref="T:System.Int64" /> value representing the length of the value that is contained in the <see cref="T:System.Data.SqlTypes.SqlBytes" /> instance.
+
+ Returns -1 if no buffer is available to the instance or if the value is null.
+
  Returns a <see cref="P:System.IO.Stream.Length" /> for a stream-wrapped instance.</returns>
     </member>
     <member name="P:System.Data.SqlTypes.SqlBytes.MaxLength">
@@ -10709,23 +10709,23 @@ Returns <see langword="null" /> if the executed command returned no resultset, o
     <member name="M:System.Data.SqlTypes.SqlDateTime.CompareTo(System.Data.SqlTypes.SqlDateTime)">
       <summary>Compares this <see cref="T:System.Data.SqlTypes.SqlDateTime" /> structure to the supplied <see cref="T:System.Data.SqlTypes.SqlDateTime" /> structure and returns an indication of their relative values.</summary>
       <param name="value">The <see cref="T:System.Data.SqlTypes.SqlDateTime" /> structure to be compared.</param>
-      <returns>A signed number that indicates the relative values of the instance and the object.  
-  
- <list type="table"><listheader><term> Return value</term><description> Condition</description></listheader><item><term> Less than zero</term><description> This instance is less than <see cref="T:System.Data.SqlTypes.SqlDateTime" />.</description></item><item><term> Zero</term><description> This instance is the same as <see cref="T:System.Data.SqlTypes.SqlDateTime" />.</description></item><item><term> Greater than zero</term><description> This instance is greater than <see cref="T:System.Data.SqlTypes.SqlDateTime" />  
-  
- -or-  
-  
+      <returns>A signed number that indicates the relative values of the instance and the object.
+
+ <list type="table"><listheader><term> Return value</term><description> Condition</description></listheader><item><term> Less than zero</term><description> This instance is less than <see cref="T:System.Data.SqlTypes.SqlDateTime" />.</description></item><item><term> Zero</term><description> This instance is the same as <see cref="T:System.Data.SqlTypes.SqlDateTime" />.</description></item><item><term> Greater than zero</term><description> This instance is greater than <see cref="T:System.Data.SqlTypes.SqlDateTime" />
+
+ -or-
+
  <see cref="T:System.Data.SqlTypes.SqlDateTime" /> is a null reference (<see langword="Nothing" /> in Visual Basic)</description></item></list></returns>
     </member>
     <member name="M:System.Data.SqlTypes.SqlDateTime.CompareTo(System.Object)">
       <summary>Compares this <see cref="T:System.Data.SqlTypes.SqlDateTime" /> structure to the supplied <see cref="T:System.Object" /> and returns an indication of their relative values.</summary>
       <param name="value">The <see cref="T:System.Object" /> to be compared.</param>
-      <returns>A signed number that indicates the relative values of the instance and the object.  
-  
- <list type="table"><listheader><term> Return value</term><description> Condition</description></listheader><item><term> Less than zero</term><description> This instance is less than the object.</description></item><item><term> Zero</term><description> This instance is the same as the object.</description></item><item><term> Greater than zero</term><description> This instance is greater than the object  
-  
- -or-  
-  
+      <returns>A signed number that indicates the relative values of the instance and the object.
+
+ <list type="table"><listheader><term> Return value</term><description> Condition</description></listheader><item><term> Less than zero</term><description> This instance is less than the object.</description></item><item><term> Zero</term><description> This instance is the same as the object.</description></item><item><term> Greater than zero</term><description> This instance is greater than the object
+
+ -or-
+
  The object is a null reference (<see langword="Nothing" /> as Visual Basic).</description></item></list></returns>
     </member>
     <member name="M:System.Data.SqlTypes.SqlDateTime.Equals(System.Data.SqlTypes.SqlDateTime,System.Data.SqlTypes.SqlDateTime)">
@@ -11372,23 +11372,23 @@ Returns <see langword="null" /> if the executed command returned no resultset, o
     <member name="M:System.Data.SqlTypes.SqlDouble.CompareTo(System.Data.SqlTypes.SqlDouble)">
       <summary>Compares this <see cref="T:System.Data.SqlTypes.SqlDouble" /> instance to the supplied <see cref="T:System.Data.SqlTypes.SqlDouble" /> and returns an indication of their relative values.</summary>
       <param name="value">The <see cref="T:System.Data.SqlTypes.SqlDouble" /> to be compared.</param>
-      <returns>A signed number that indicates the relative values of the instance and the object.  
-  
- <list type="table"><listheader><term> Return value</term><description> Condition</description></listheader><item><term> Less than zero</term><description> This instance is less than the object.</description></item><item><term> Zero</term><description> This instance is the same as the object.</description></item><item><term> Greater than zero</term><description> This instance is greater than the object  
-  
- -or-  
-  
+      <returns>A signed number that indicates the relative values of the instance and the object.
+
+ <list type="table"><listheader><term> Return value</term><description> Condition</description></listheader><item><term> Less than zero</term><description> This instance is less than the object.</description></item><item><term> Zero</term><description> This instance is the same as the object.</description></item><item><term> Greater than zero</term><description> This instance is greater than the object
+
+ -or-
+
  The object is a null reference (<see langword="Nothing" /> in Visual Basic)</description></item></list></returns>
     </member>
     <member name="M:System.Data.SqlTypes.SqlDouble.CompareTo(System.Object)">
       <summary>Compares this <see cref="T:System.Data.SqlTypes.SqlDouble" /> instance to the supplied <see cref="T:System.Object" /> and returns an indication of their relative values.</summary>
       <param name="value">The <see cref="T:System.Object" /> to compare.</param>
-      <returns>A signed number that indicates the relative values of the instance and the object.  
-  
- <list type="table"><listheader><term> Return value</term><description> Condition</description></listheader><item><term> Less than zero</term><description> This instance is less than the object.</description></item><item><term> Zero</term><description> This instance is the same as the object.</description></item><item><term> Greater than zero</term><description> This instance is greater than the object  
-  
- -or-  
-  
+      <returns>A signed number that indicates the relative values of the instance and the object.
+
+ <list type="table"><listheader><term> Return value</term><description> Condition</description></listheader><item><term> Less than zero</term><description> This instance is less than the object.</description></item><item><term> Zero</term><description> This instance is the same as the object.</description></item><item><term> Greater than zero</term><description> This instance is greater than the object
+
+ -or-
+
  The object is a null reference (<see langword="Nothing" /> in Visual Basic).</description></item></list></returns>
     </member>
     <member name="M:System.Data.SqlTypes.SqlDouble.Divide(System.Data.SqlTypes.SqlDouble,System.Data.SqlTypes.SqlDouble)">
@@ -11689,23 +11689,23 @@ Returns <see langword="null" /> if the executed command returned no resultset, o
     <member name="M:System.Data.SqlTypes.SqlGuid.CompareTo(System.Data.SqlTypes.SqlGuid)">
       <summary>Compares this <see cref="T:System.Data.SqlTypes.SqlGuid" /> structure to the supplied <see cref="T:System.Data.SqlTypes.SqlGuid" /> and returns an indication of their relative values. Compares more than the last 6 bytes, but treats the last 6 bytes as the most significant ones in comparisons.</summary>
       <param name="value">The <see cref="T:System.Data.SqlTypes.SqlGuid" /> to be compared.</param>
-      <returns>A signed number that indicates the relative values of the instance and the object.  
-  
- <list type="table"><listheader><term> Return Value</term><description> Condition</description></listheader><item><term> Less than zero</term><description> This instance is less than object.</description></item><item><term> Zero</term><description> This instance is the same as object.</description></item><item><term> Greater than zero</term><description> This instance is greater than object  
-  
- -or-  
-  
+      <returns>A signed number that indicates the relative values of the instance and the object.
+
+ <list type="table"><listheader><term> Return Value</term><description> Condition</description></listheader><item><term> Less than zero</term><description> This instance is less than object.</description></item><item><term> Zero</term><description> This instance is the same as object.</description></item><item><term> Greater than zero</term><description> This instance is greater than object
+
+ -or-
+
  object is a null reference (<see langword="Nothing" />).</description></item></list></returns>
     </member>
     <member name="M:System.Data.SqlTypes.SqlGuid.CompareTo(System.Object)">
       <summary>Compares this <see cref="T:System.Data.SqlTypes.SqlGuid" /> structure to the supplied object and returns an indication of their relative values. Compares more than the last 6 bytes, but treats the last 6 bytes as the most significant ones in comparisons.</summary>
       <param name="value">The <see cref="T:System.Object" /> to be compared.</param>
-      <returns>A signed number that indicates the relative values of the instance and the object.  
-  
- <list type="table"><listheader><term> Return Value</term><description> Condition</description></listheader><item><term> Less than zero</term><description> This instance is less than object.</description></item><item><term> Zero</term><description> This instance is the same as object.</description></item><item><term> Greater than zero</term><description> This instance is greater than object  
-  
- -or-  
-  
+      <returns>A signed number that indicates the relative values of the instance and the object.
+
+ <list type="table"><listheader><term> Return Value</term><description> Condition</description></listheader><item><term> Less than zero</term><description> This instance is less than object.</description></item><item><term> Zero</term><description> This instance is the same as object.</description></item><item><term> Greater than zero</term><description> This instance is greater than object
+
+ -or-
+
  object is a null reference (<see langword="Nothing" />)</description></item></list></returns>
     </member>
     <member name="M:System.Data.SqlTypes.SqlGuid.Equals(System.Data.SqlTypes.SqlGuid,System.Data.SqlTypes.SqlGuid)">
@@ -12287,23 +12287,23 @@ Returns <see langword="null" /> if the executed command returned no resultset, o
     <member name="M:System.Data.SqlTypes.SqlInt32.CompareTo(System.Data.SqlTypes.SqlInt32)">
       <summary>Compares this <see cref="T:System.Data.SqlTypes.SqlInt32" /> instance to the supplied <see cref="T:System.Data.SqlTypes.SqlInt32" /> and returns an indication of their relative values.</summary>
       <param name="value">The <see cref="T:System.Data.SqlTypes.SqlInt32" /> to be compared.</param>
-      <returns>A signed number that indicates the relative values of the instance and the object.  
-  
- <list type="table"><listheader><term> Return value</term><description> Condition</description></listheader><item><term> Less than zero</term><description> This instance is less than the object.</description></item><item><term> Zero</term><description> This instance is the same as the object.</description></item><item><term> Greater than zero</term><description> This instance is greater than the object  
-  
- -or-  
-  
+      <returns>A signed number that indicates the relative values of the instance and the object.
+
+ <list type="table"><listheader><term> Return value</term><description> Condition</description></listheader><item><term> Less than zero</term><description> This instance is less than the object.</description></item><item><term> Zero</term><description> This instance is the same as the object.</description></item><item><term> Greater than zero</term><description> This instance is greater than the object
+
+ -or-
+
  The object is a null reference (<see langword="Nothing" /> in Visual Basic)</description></item></list></returns>
     </member>
     <member name="M:System.Data.SqlTypes.SqlInt32.CompareTo(System.Object)">
       <summary>Compares this <see cref="T:System.Data.SqlTypes.SqlInt32" /> instance to the supplied <see cref="T:System.Object" /> and returns an indication of their relative values.</summary>
       <param name="value">The <see cref="T:System.Object" /> to be compared.</param>
-      <returns>A signed number that indicates the relative values of the instance and the object.  
-  
- <list type="table"><listheader><term> Return value</term><description> Condition</description></listheader><item><term> Less than zero</term><description> This instance is less than the object.</description></item><item><term> Zero</term><description> This instance is the same as the object.</description></item><item><term> Greater than zero</term><description> This instance is greater than the object  
-  
- -or-  
-  
+      <returns>A signed number that indicates the relative values of the instance and the object.
+
+ <list type="table"><listheader><term> Return value</term><description> Condition</description></listheader><item><term> Less than zero</term><description> This instance is less than the object.</description></item><item><term> Zero</term><description> This instance is the same as the object.</description></item><item><term> Greater than zero</term><description> This instance is greater than the object
+
+ -or-
+
  The object is a null reference (<see langword="Nothing" /> in Visual Basic).</description></item></list></returns>
     </member>
     <member name="M:System.Data.SqlTypes.SqlInt32.Divide(System.Data.SqlTypes.SqlInt32,System.Data.SqlTypes.SqlInt32)">
@@ -12665,23 +12665,23 @@ Returns <see langword="null" /> if the executed command returned no resultset, o
     <member name="M:System.Data.SqlTypes.SqlInt64.CompareTo(System.Data.SqlTypes.SqlInt64)">
       <summary>Compares this <see cref="T:System.Data.SqlTypes.SqlInt64" /> instance to the supplied <see cref="T:System.Data.SqlTypes.SqlInt64" /> and returns an indication of their relative values.</summary>
       <param name="value">The <see cref="T:System.Data.SqlTypes.SqlInt64" /> to be compared.</param>
-      <returns>A signed number that indicates the relative values of the instance and the object.  
-  
- <list type="table"><listheader><term> Return value</term><description> Condition</description></listheader><item><term> Less than zero</term><description> This instance is less than the object.</description></item><item><term> Zero</term><description> This instance is the same as the object.</description></item><item><term> Greater than zero</term><description> This instance is greater than the object  
-  
- -or-  
-  
+      <returns>A signed number that indicates the relative values of the instance and the object.
+
+ <list type="table"><listheader><term> Return value</term><description> Condition</description></listheader><item><term> Less than zero</term><description> This instance is less than the object.</description></item><item><term> Zero</term><description> This instance is the same as the object.</description></item><item><term> Greater than zero</term><description> This instance is greater than the object
+
+ -or-
+
  The object is a null reference (<see langword="Nothing" /> in Visual Basic).</description></item></list></returns>
     </member>
     <member name="M:System.Data.SqlTypes.SqlInt64.CompareTo(System.Object)">
       <summary>Compares this <see cref="T:System.Data.SqlTypes.SqlInt64" /> instance to the supplied <see cref="T:System.Object" /> and returns an indication of their relative values.</summary>
       <param name="value">The <see cref="T:System.Object" /> to be compared.</param>
-      <returns>A signed number that indicates the relative values of the instance and the object.  
-  
- <list type="table"><listheader><term> Return value</term><description> Condition</description></listheader><item><term> Less than zero</term><description> This instance is less than the object.</description></item><item><term> Zero</term><description> This instance is the same as the object.</description></item><item><term> Greater than zero</term><description> This instance is greater than the object  
-  
- -or-  
-  
+      <returns>A signed number that indicates the relative values of the instance and the object.
+
+ <list type="table"><listheader><term> Return value</term><description> Condition</description></listheader><item><term> Less than zero</term><description> This instance is less than the object.</description></item><item><term> Zero</term><description> This instance is the same as the object.</description></item><item><term> Greater than zero</term><description> This instance is greater than the object
+
+ -or-
+
  The object is a null reference (<see langword="Nothing" /> in Visual Basic).</description></item></list></returns>
     </member>
     <member name="M:System.Data.SqlTypes.SqlInt64.Divide(System.Data.SqlTypes.SqlInt64,System.Data.SqlTypes.SqlInt64)">
@@ -13043,23 +13043,23 @@ Returns <see langword="null" /> if the executed command returned no resultset, o
     <member name="M:System.Data.SqlTypes.SqlMoney.CompareTo(System.Data.SqlTypes.SqlMoney)">
       <summary>Compares this <see cref="T:System.Data.SqlTypes.SqlMoney" /> instance to the supplied <see cref="T:System.Data.SqlTypes.SqlMoney" /> and returns an indication of their relative values.</summary>
       <param name="value">The <see cref="T:System.Data.SqlTypes.SqlMoney" /> to be compared.</param>
-      <returns>A signed number that indicates the relative values of the instance and the object.  
-  
- <list type="table"><listheader><term> Return value</term><description> Condition</description></listheader><item><term> Less than zero</term><description> This instance is less than the object.</description></item><item><term> Zero</term><description> This instance is the same as the object.</description></item><item><term> Greater than zero</term><description> This instance is greater than the object  
-  
- -or-  
-  
+      <returns>A signed number that indicates the relative values of the instance and the object.
+
+ <list type="table"><listheader><term> Return value</term><description> Condition</description></listheader><item><term> Less than zero</term><description> This instance is less than the object.</description></item><item><term> Zero</term><description> This instance is the same as the object.</description></item><item><term> Greater than zero</term><description> This instance is greater than the object
+
+ -or-
+
  The object is a null reference (<see langword="Nothing" /> in Visual Basic)</description></item></list></returns>
     </member>
     <member name="M:System.Data.SqlTypes.SqlMoney.CompareTo(System.Object)">
       <summary>Compares this <see cref="T:System.Data.SqlTypes.SqlMoney" /> instance to the supplied <see cref="T:System.Object" /> and returns an indication of their relative values.</summary>
       <param name="value">The <see cref="T:System.Object" /> to be compared.</param>
-      <returns>A signed number that indicates the relative values of the instance and the object.  
-  
- <list type="table"><listheader><term> Return value</term><description> Condition</description></listheader><item><term> Less than zero</term><description> This instance is less than the object.</description></item><item><term> Zero</term><description> This instance is the same as the object.</description></item><item><term> Greater than zero</term><description> This instance is greater than the object  
-  
- -or-  
-  
+      <returns>A signed number that indicates the relative values of the instance and the object.
+
+ <list type="table"><listheader><term> Return value</term><description> Condition</description></listheader><item><term> Less than zero</term><description> This instance is less than the object.</description></item><item><term> Zero</term><description> This instance is the same as the object.</description></item><item><term> Greater than zero</term><description> This instance is greater than the object
+
+ -or-
+
  The object is a null reference (<see langword="Nothing" /> in Visual Basic)</description></item></list></returns>
     </member>
     <member name="M:System.Data.SqlTypes.SqlMoney.Divide(System.Data.SqlTypes.SqlMoney,System.Data.SqlTypes.SqlMoney)">
@@ -13802,23 +13802,23 @@ Returns <see langword="null" /> if the executed command returned no resultset, o
     <member name="M:System.Data.SqlTypes.SqlString.CompareTo(System.Data.SqlTypes.SqlString)">
       <summary>Compares this <see cref="T:System.Data.SqlTypes.SqlString" /> instance to the supplied <see cref="T:System.Data.SqlTypes.SqlString" /> and returns an indication of their relative values.</summary>
       <param name="value">The <see cref="T:System.Data.SqlTypes.SqlString" /> to be compared.</param>
-      <returns>A signed number that indicates the relative values of the instance and the object.  
-  
- <list type="table"><listheader><term> Return value</term><description> Condition</description></listheader><item><term> Less than zero</term><description> This instance is less than the object.</description></item><item><term> Zero</term><description> This instance is the same as the object.</description></item><item><term> Greater than zero</term><description> This instance is greater than the object  
-  
- -or-  
-  
+      <returns>A signed number that indicates the relative values of the instance and the object.
+
+ <list type="table"><listheader><term> Return value</term><description> Condition</description></listheader><item><term> Less than zero</term><description> This instance is less than the object.</description></item><item><term> Zero</term><description> This instance is the same as the object.</description></item><item><term> Greater than zero</term><description> This instance is greater than the object
+
+ -or-
+
  The object is a null reference (<see langword="Nothing" /> in Visual Basic).</description></item></list></returns>
     </member>
     <member name="M:System.Data.SqlTypes.SqlString.CompareTo(System.Object)">
       <summary>Compares this <see cref="T:System.Data.SqlTypes.SqlString" /> object to the supplied <see cref="T:System.Object" /> and returns an indication of their relative values.</summary>
       <param name="value">The <see cref="T:System.Object" /> to be compared.</param>
-      <returns>A signed number that indicates the relative values of the instance and the object.  
-  
- <list type="table"><listheader><term> Return Value</term><description> Condition</description></listheader><item><term> Less than zero</term><description> This instance is less than the object.</description></item><item><term> Zero</term><description> This instance is the same as the object.</description></item><item><term> Greater than zero</term><description> This instance is greater than the object  
-  
- -or-  
-  
+      <returns>A signed number that indicates the relative values of the instance and the object.
+
+ <list type="table"><listheader><term> Return Value</term><description> Condition</description></listheader><item><term> Less than zero</term><description> This instance is less than the object.</description></item><item><term> Zero</term><description> This instance is the same as the object.</description></item><item><term> Greater than zero</term><description> This instance is greater than the object
+
+ -or-
+
  The object is a null reference (<see langword="Nothing" /> in Visual Basic)</description></item></list></returns>
     </member>
     <member name="M:System.Data.SqlTypes.SqlString.Concat(System.Data.SqlTypes.SqlString,System.Data.SqlTypes.SqlString)">
@@ -14507,7 +14507,7 @@ Returns <see langword="null" /> if the executed command returned no resultset, o
     </member>
     <member name="F:System.Data.XmlReadMode.DiffGram">
       <summary>Reads a DiffGram, applying changes from the DiffGram to the <see cref="T:System.Data.DataSet" />. The semantics are identical to those of a <see cref="M:System.Data.DataSet.Merge(System.Data.DataSet)" /> operation. As with the <see cref="M:System.Data.DataSet.Merge(System.Data.DataSet)" /> operation, <see cref="P:System.Data.DataRow.RowState" /> values are preserved. Input to <see cref="M:System.Data.DataSet.ReadXml(System.Xml.XmlReader)" /> with DiffGrams should only be obtained using the output from <see cref="M:System.Data.DataSet.WriteXml(System.IO.Stream)" /> as a DiffGram.
-        
+
 The target <see cref="T:System.Data.DataSet" /> must have the same schema as the <see cref="T:System.Data.DataSet" /> on which <see cref="Overload:System.Data.DataSet.WriteXml" /> as DiffGram is called. Otherwise the DiffGram merge operation fails and an exception is thrown.</summary>
     </member>
     <member name="F:System.Data.XmlReadMode.Fragment">

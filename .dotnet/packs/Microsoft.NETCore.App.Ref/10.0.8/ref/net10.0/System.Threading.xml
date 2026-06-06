@@ -55,10 +55,10 @@
     </member>
     <member name="M:System.Threading.AsyncFlowControl.Dispose">
       <summary>Releases all resources used by the current instance of the <see cref="T:System.Threading.AsyncFlowControl" /> class.</summary>
-      <exception cref="T:System.InvalidOperationException">The <see cref="T:System.Threading.AsyncFlowControl" /> structure is not used on the thread where it was created.  
-  
- -or-  
-  
+      <exception cref="T:System.InvalidOperationException">The <see cref="T:System.Threading.AsyncFlowControl" /> structure is not used on the thread where it was created.
+
+ -or-
+
  The <see cref="T:System.Threading.AsyncFlowControl" /> structure has already been used to call <see cref="M:System.Threading.AsyncFlowControl.Dispose" /> or <see cref="M:System.Threading.AsyncFlowControl.Undo" />.</exception>
     </member>
     <member name="M:System.Threading.AsyncFlowControl.Equals(System.Object)">
@@ -93,10 +93,10 @@
     </member>
     <member name="M:System.Threading.AsyncFlowControl.Undo">
       <summary>Restores the flow of the execution context between threads.</summary>
-      <exception cref="T:System.InvalidOperationException">The <see cref="T:System.Threading.AsyncFlowControl" /> structure is not used on the thread where it was created.  
-  
- -or-  
-  
+      <exception cref="T:System.InvalidOperationException">The <see cref="T:System.Threading.AsyncFlowControl" /> structure is not used on the thread where it was created.
+
+ -or-
+
  The <see cref="T:System.Threading.AsyncFlowControl" /> structure has already been used to call <see cref="M:System.Threading.AsyncFlowControl.Dispose" /> or <see cref="M:System.Threading.AsyncFlowControl.Undo" />.</exception>
     </member>
     <member name="T:System.Threading.AsyncLocal`1">
@@ -158,10 +158,10 @@
     <member name="M:System.Threading.Barrier.AddParticipant">
       <summary>Notifies the <see cref="T:System.Threading.Barrier" /> that there will be an additional participant.</summary>
       <exception cref="T:System.ObjectDisposedException">The current instance has already been disposed.</exception>
-      <exception cref="T:System.InvalidOperationException">Adding a participant would cause the barrier's participant count to exceed 32,767.  
-  
- -or-  
-  
+      <exception cref="T:System.InvalidOperationException">Adding a participant would cause the barrier's participant count to exceed 32,767.
+
+ -or-
+
  The method was invoked from within a post-phase action.</exception>
       <returns>The phase number of the barrier in which the new participants will first participate.</returns>
     </member>
@@ -170,10 +170,10 @@
       <param name="participantCount">The number of additional participants to add to the barrier.</param>
       <exception cref="T:System.ObjectDisposedException">The current instance has already been disposed.</exception>
       <exception cref="T:System.ArgumentOutOfRangeException">
-        <paramref name="participantCount" /> is less than 0.  
-  
- -or-  
-  
+        <paramref name="participantCount" /> is less than 0.
+
+ -or-
+
  Adding <paramref name="participantCount" /> participants would cause the barrier's participant count to exceed 32,767.</exception>
       <exception cref="T:System.InvalidOperationException">The method was invoked from within a post-phase action.</exception>
       <returns>The phase number of the barrier in which the new participants will first participate.</returns>
@@ -189,10 +189,10 @@
     <member name="M:System.Threading.Barrier.RemoveParticipant">
       <summary>Notifies the <see cref="T:System.Threading.Barrier" /> that there will be one less participant.</summary>
       <exception cref="T:System.ObjectDisposedException">The current instance has already been disposed.</exception>
-      <exception cref="T:System.InvalidOperationException">The barrier already has 0 participants.  
-  
- -or-  
-  
+      <exception cref="T:System.InvalidOperationException">The barrier already has 0 participants.
+
+ -or-
+
  The method was invoked from within a post-phase action.</exception>
     </member>
     <member name="M:System.Threading.Barrier.RemoveParticipants(System.Int32)">
@@ -200,14 +200,14 @@
       <param name="participantCount">The number of additional participants to remove from the barrier.</param>
       <exception cref="T:System.ObjectDisposedException">The current instance has already been disposed.</exception>
       <exception cref="T:System.ArgumentOutOfRangeException">The total participant count is less than the specified <paramref name="participantCount" /></exception>
-      <exception cref="T:System.InvalidOperationException">The barrier already has 0 participants.  
-  
- -or-  
-  
- The method was invoked from within a post-phase action.  
-  
- -or-  
-  
+      <exception cref="T:System.InvalidOperationException">The barrier already has 0 participants.
+
+ -or-
+
+ The method was invoked from within a post-phase action.
+
+ -or-
+
  The current participant count is less than the specified participantCount.</exception>
     </member>
     <member name="M:System.Threading.Barrier.SignalAndWait">
@@ -784,24 +784,24 @@ There was some other error. The HResult property might provide more information.
       <summary>Restores the host execution context to its prior state.</summary>
       <param name="previousState">The previous context state to revert to.</param>
       <exception cref="T:System.InvalidOperationException">
-        <paramref name="previousState" /> is <see langword="null" />.  
-  
- -or-  
-  
- <paramref name="previousState" /> was not created on the current thread.  
-  
- -or-  
-  
+        <paramref name="previousState" /> is <see langword="null" />.
+
+ -or-
+
+ <paramref name="previousState" /> was not created on the current thread.
+
+ -or-
+
  <paramref name="previousState" /> is not the last state for the <see cref="T:System.Threading.HostExecutionContext" />.</exception>
     </member>
     <member name="M:System.Threading.HostExecutionContextManager.SetHostExecutionContext(System.Threading.HostExecutionContext)">
       <summary>Sets the current host execution context to the specified host execution context.</summary>
       <param name="hostExecutionContext">The <see cref="T:System.Threading.HostExecutionContext" /> to be set.</param>
       <exception cref="T:System.InvalidOperationException">
-        <paramref name="hostExecutionContext" /> was not acquired through a capture operation.  
-  
- -or-  
-  
+        <paramref name="hostExecutionContext" /> was not acquired through a capture operation.
+
+ -or-
+
  <paramref name="hostExecutionContext" /> has been the argument to a previous <see cref="M:System.Threading.HostExecutionContextManager.SetHostExecutionContext(System.Threading.HostExecutionContext)" /> method call.</exception>
       <returns>An object for restoring the <see cref="T:System.Threading.HostExecutionContext" /> to its previous state.</returns>
     </member>
@@ -1370,10 +1370,10 @@ There was some other error. The HResult property might provide more information.
       <param name="timeout">A <see cref="T:System.TimeSpan" /> that represents the number of milliseconds to wait, or a <see cref="T:System.TimeSpan" /> that represents -1 milliseconds to wait indefinitely.</param>
       <param name="cancellationToken">The <see cref="T:System.Threading.CancellationToken" /> to observe.</param>
       <exception cref="T:System.ArgumentOutOfRangeException">
-        <paramref name="timeout" /> is a negative number other than -1 milliseconds, which represents an infinite time-out.  
-  
- -or-  
-  
+        <paramref name="timeout" /> is a negative number other than -1 milliseconds, which represents an infinite time-out.
+
+ -or-
+
  The number of milliseconds in <paramref name="timeout" /> is greater than <see cref="F:System.Int32.MaxValue">Int32.MaxValue</see>.</exception>
       <exception cref="T:System.InvalidOperationException">The maximum number of waiters has been exceeded.</exception>
       <exception cref="T:System.ObjectDisposedException">The object has already been disposed or the <see cref="T:System.Threading.CancellationTokenSource" /> that created <paramref name="cancellationToken" /> has been disposed.</exception>
@@ -1386,10 +1386,10 @@ There was some other error. The HResult property might provide more information.
       <summary>Blocks the current thread until the current <see cref="T:System.Threading.ManualResetEventSlim" /> is set, using a <see cref="T:System.TimeSpan" /> to measure the time interval.</summary>
       <param name="timeout">A <see cref="T:System.TimeSpan" /> that represents the number of milliseconds to wait, or a <see cref="T:System.TimeSpan" /> that represents -1 milliseconds to wait indefinitely.</param>
       <exception cref="T:System.ArgumentOutOfRangeException">
-        <paramref name="timeout" /> is a negative number other than -1 milliseconds, which represents an infinite time-out.  
-  
- -or-  
-  
+        <paramref name="timeout" /> is a negative number other than -1 milliseconds, which represents an infinite time-out.
+
+ -or-
+
  The number of milliseconds in <paramref name="timeout" /> is greater than <see cref="F:System.Int32.MaxValue">Int32.MaxValue</see>.</exception>
       <exception cref="T:System.InvalidOperationException">The maximum number of waiters has been exceeded.</exception>
       <exception cref="T:System.ObjectDisposedException">The object has already been disposed.</exception>

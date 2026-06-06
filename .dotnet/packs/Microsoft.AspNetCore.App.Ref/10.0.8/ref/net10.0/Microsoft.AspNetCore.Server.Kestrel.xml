@@ -15,7 +15,7 @@
              opt in to certain HTTPS functionality.  For example, if <code>ASPNETCORE_URLS</code> includes
              an <code>https://</code> address, <see cref="M:Microsoft.AspNetCore.Hosting.WebHostBuilderKestrelExtensions.UseKestrelHttpsConfiguration(Microsoft.AspNetCore.Hosting.IWebHostBuilder)"/> will enable configuration
              of HTTPS on that endpoint.
-            
+
              Has no effect in <see cref="M:Microsoft.AspNetCore.Hosting.WebHostBuilderKestrelExtensions.UseKestrel(Microsoft.AspNetCore.Hosting.IWebHostBuilder)"/> scenarios.
              </summary>
              <param name="hostBuilder">

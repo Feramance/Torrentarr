@@ -1000,7 +1000,7 @@
         <member name="M:Microsoft.AspNetCore.Authentication.RemoteAuthenticationHandler`1.HandleRemoteAuthenticateAsync">
              <summary>
              Authenticate the user identity with the identity provider.
-            
+
              The method process the request on the endpoint defined by CallbackPath.
              </summary>
         </member>

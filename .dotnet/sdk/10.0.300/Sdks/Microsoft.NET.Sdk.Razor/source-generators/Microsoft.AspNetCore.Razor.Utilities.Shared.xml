@@ -4177,7 +4177,7 @@
         </member>
         <member name="M:Microsoft.AspNetCore.Razor.Utilities.CleanableWeakCache`2.CleanUpIfNeeded_NoLock">
             <summary>
-             Increments the add counter and removes all cache entries whose weak references no longer have live targets 
+             Increments the add counter and removes all cache entries whose weak references no longer have live targets
              if the cleanup threshold has been reached. This method assumes the caller already holds the lock.
             </summary>
             <remarks>
@@ -4386,7 +4386,7 @@
             <example>
              <code>
              private static string? _cachedValue;
-            
+
              public static string GetCachedValue()
              {
                  return InterlockedOperations.Initialize(ref _cachedValue, ComputeExpensiveValue());
@@ -4431,12 +4431,12 @@
              <code>
              private static Dictionary&lt;string, int&gt;? _lookupTable;
              private static int _lookupTableState;
-            
+
              public static Dictionary&lt;string, int&gt; GetLookupTable()
              {
                  return InterlockedOperations.Initialize(
-                     ref _lookupTable, 
-                     ref _lookupTableState, 
+                     ref _lookupTable,
+                     ref _lookupTableState,
                      () => BuildExpensiveLookupTable());
              }
              </code>
@@ -4473,12 +4473,12 @@
              <code>
              private static Dictionary&lt;Checksum, int&gt;? _lookupTable;
              private static int _lookupTableState;
-             
+
              public static Dictionary&lt;Checksum, int&gt; GetLookupTable(IEnumerable&lt;Item&gt; items)
              {
                  return InterlockedOperations.Initialize(
-                     ref _lookupTable, 
-                     ref _lookupTableState, 
+                     ref _lookupTable,
+                     ref _lookupTableState,
                      items,
                      static items => BuildLookupTable(items)); // Static method avoids closure
              }
@@ -4582,7 +4582,7 @@
             <summary>
             A pool of <see cref="T:System.Collections.Immutable.ImmutableArray`1.Builder"/> instances.
             </summary>
-            
+
             <remarks>
             Instances originating from this pool are intended to be short-lived and are suitable
             for temporary work. Do not return them as the results of methods or store them in fields.
@@ -4592,7 +4592,7 @@
             <summary>
             A pool of <see cref="T:System.Collections.Immutable.ImmutableDictionary`2.Builder"/> instances.
             </summary>
-            
+
             <remarks>
             Instances originating from this pool are intended to be short-lived and are suitable
             for temporary work. Do not return them as the results of methods or store them in fields.
@@ -4602,7 +4602,7 @@
             <summary>
             A pool of <see cref="T:System.Collections.Generic.Dictionary`2"/> instances.
             </summary>
-            
+
             <remarks>
             Instances originating from this pool are intended to be short-lived and are suitable
             for temporary work. Do not return them as the results of methods or store them in fields.
@@ -4612,7 +4612,7 @@
             <summary>
             A pool of <see cref="T:System.Collections.Generic.HashSet`1"/> instances that compares items using default equality.
             </summary>
-            
+
             <remarks>
             Instances originating from this pool are intended to be short-lived and are suitable
             for temporary work. Do not return them as the results of methods or store them in fields.
@@ -4622,7 +4622,7 @@
             <summary>
             A pool of <see cref="T:System.Collections.Generic.List`1"/> instances.
             </summary>
-            
+
             <remarks>
             Instances originating from this pool are intended to be short-lived and are suitable
             for temporary work. Do not return them as the results of methods or store them in fields.
@@ -4636,17 +4636,17 @@
              <para>This supporting method allows <see cref="T:Microsoft.AspNetCore.Razor.PooledObjects.PooledArrayBuilder`1"/>, a non-copyable <see langword="struct"/>
              implementing <see cref="T:System.IDisposable"/>, to be used with <c>using</c> statements while still allowing them to
              be passed by reference in calls. The following two calls are equivalent:</para>
-            
+
              <code>
              using var array = PooledArrayBuilder&lt;T&gt;.Empty;
-            
+
              // Using the 'Unsafe.AsRef' method
              Method(ref Unsafe.AsRef(in builder));
-            
+
              // Using this helper method
              Method(ref builder.AsRef());
              </code>
-            
+
              <para>⚠ Do not move or rename this method without updating the corresponding
              Razor.Diagnostics.Analyzers\PooledArrayBuilderAsRefAnalyzer.cs.</para>
              </remarks>
@@ -4659,7 +4659,7 @@
               Wraps a pooled <see cref="T:System.Collections.Immutable.ImmutableArray`1.Builder"/> but doesn't allocate it until
               it's needed. Note: Dispose this to ensure that the pooled array builder is returned
               to the pool.
-            
+
               There is significant effort to avoid retrieving the <see cref="T:System.Collections.Immutable.ImmutableArray`1.Builder"/>.
               For very small arrays of length 4 or less, the elements will be stored on the stack. If the array
               grows larger than 4 elements, a builder will be employed. Afterward, the build will
@@ -5319,7 +5319,7 @@
             <summary>
             A pool of <see cref="T:System.Collections.Generic.HashSet`1"/> instances that compares items using reference equality.
             </summary>
-            
+
             <remarks>
             Instances originating from this pool are intended to be short-lived and are suitable
             for temporary work. Do not return them as the results of methods or store them in fields.
@@ -5329,7 +5329,7 @@
             <summary>
             Pooled <see cref="T:System.Collections.Generic.Dictionary`2"/> instances when the key is of type <see cref="T:System.String"/>.
             </summary>
-            
+
             <remarks>
             Instances originating from this pool are intended to be short-lived and are suitable
             for temporary work. Do not return them as the results of methods or store them in fields.
@@ -5339,7 +5339,7 @@
             <summary>
             A pool of <see cref="T:System.Collections.Generic.HashSet`1"/> instances that compares strings.
             </summary>
-            
+
             <remarks>
             Instances originating from this pool are intended to be short-lived and are suitable
             for temporary work. Do not return them as the results of methods or store them in fields.
@@ -5349,7 +5349,7 @@
             <summary>
             A pool of <see cref="T:System.Collections.Generic.Stack`1"/> instances.
             </summary>
-            
+
             <remarks>
             Instances originating from this pool are intended to be short-lived and are suitable
             for temporary work. Do not return them as the results of methods or store them in fields.
@@ -5359,7 +5359,7 @@
             <summary>
             A pool of <see cref="T:System.Diagnostics.Stopwatch"/> instances.
             </summary>
-            
+
             <remarks>
             Instances originating from this pool are intended to be short-lived and are suitable
             for temporary work. Do not return them as the results of methods or store them in fields.
@@ -5369,7 +5369,7 @@
             <summary>
             A pool of <see cref="T:System.Text.StringBuilder"/> instances.
             </summary>
-            
+
             <remarks>
             Instances originating from this pool are intended to be short-lived and are suitable
             for temporary work. Do not return them as the results of methods or store them in fields.
@@ -5382,7 +5382,7 @@
             can request the value. As long as there are outstanding clients the underlying computation will
             proceed.  If all outstanding clients cancel their request then the underlying value computation
             will be cancelled as well.
-            
+
             Creators of an <see cref="T:Microsoft.AspNetCore.Razor.Threading.AsyncLazy`1" /> can specify whether the result of the computation is
             cached for future requests or not. Choosing to not cache means the computation function is kept
             alive, whereas caching means the value (but not function) is kept alive once complete.
@@ -5478,7 +5478,7 @@
             <example>
              <code>
              private LazyValue&lt;Dictionary&lt;string, int&gt;&gt; _lookup = new(() => BuildExpensiveLookup());
-             
+
              public Dictionary&lt;string, int&gt; GetLookup()
              {
                  return _lookup.GetValue(); // Thread-safe, initialized exactly once
@@ -5543,12 +5543,12 @@
             <example>
              <code>
              private LazyValue&lt;MyCollection, Dictionary&lt;string, int&gt;&gt; _lookup = new(BuildLookupTable);
-             
+
              public Dictionary&lt;string, int&gt; GetLookup(MyCollection collection)
              {
                  return _lookup.GetValue(collection); // Thread-safe, initialized exactly once
              }
-             
+
              private static Dictionary&lt;string, int&gt; BuildLookupTable(MyCollection collection)
              {
                  // Static method avoids closure allocation
@@ -5574,7 +5574,7 @@
              <code>
              // Preferred: static method avoids closure
              var lazy = new LazyValue&lt;MyData, ProcessedData&gt;(ProcessData);
-             
+
              // Avoid: lambda creates closure allocation
              var lazy = new LazyValue&lt;MyData, ProcessedData&gt;(data => ExpensiveOperation(data, someField));
              </code>

@@ -24,7 +24,7 @@ Copyright (c) .NET Foundation. All rights reserved.
       <!-- CSharpCoreTargetsPath and VisualBasicCoreTargetsPath point to the same location, Microsoft.CodeAnalysis.CSharp and Microsoft.CodeAnalysis.VisualBasic
            are on the same directory as Microsoft.CodeAnalysis. So there is no need to distinguish between csproj or vbproj. -->
       <RoslynAssembliesPath Condition="'$(_UseRoslynToolsetPackage)' == 'true'">$([System.IO.Path]::GetDirectoryName('$(CSharpCoreTargetsPath)'))</RoslynAssembliesPath>
-      
+
       <!-- Otherwise, default to the roslyn compiler provided by the SDK / Visual Studio. -->
       <RoslynAssembliesPath Condition="'$(_UseRoslynToolsetPackage)' != 'true'">$(RoslynTargetsPath)</RoslynAssembliesPath>
 

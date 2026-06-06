@@ -13,7 +13,7 @@ WARNING:  DO NOT MODIFY this file unless you are knowledgeable about MSBuild and
 
 <Project TreatAsLocalProperty="RestoreAdditionalProjectSources" xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
   <UsingTask TaskName="MapSourceRoots" AssemblyFile="$(FSharpBuildAssemblyFile)" />
-  
+
   <PropertyGroup>
     <MSBuildAllProjects>$(MSBuildAllProjects);$(MSBuildThisFileFullPath)</MSBuildAllProjects>
   </PropertyGroup>
@@ -106,21 +106,21 @@ WARNING:  DO NOT MODIFY this file unless you are knowledgeable about MSBuild and
       </TfmSpecificPackageFile>
     </ItemGroup>
   </Target>
-  
+
   <!--
     The following targets and props for Deterministic Build/SourceRoot mapping were copied from Roslyn:
       https://github.com/dotnet/roslyn/blob/f244a9377cd43685fa56dfa9c9a0b374f4560cd9/src/Compilers/Core/MSBuildTask/Microsoft.Managed.Core.targets#L131-L192
-    
+
     The associated build task was added to this project as well and directly used below.
-    
+
     When https://github.com/dotnet/msbuild/issues/5398 is resolved these all should be able to be deleted.
   -->
-  
+
   <!--
     ========================
     DeterministicSourcePaths
     ========================
-    
+
     Unless specified otherwise enable deterministic source root (PathMap) when building deterministically on CI server, but not for local builds.
     In order for the debugger to find source files when debugging a locally built binary the PDB must contain original, unmapped local paths.
   -->
@@ -139,7 +139,7 @@ WARNING:  DO NOT MODIFY this file unless you are knowledgeable about MSBuild and
     In addition, the target validates and deduplicates the SourceRoot items.
     InitializeSourceControlInformation is an msbuild target that ensures the SourceRoot items are populated from source control.
     The target is available only if SourceControlInformationFeatureSupported is true.
-    A consumer of SourceRoot.MappedPath metadata, such as Source Link generator, shall depend on this target. 
+    A consumer of SourceRoot.MappedPath metadata, such as Source Link generator, shall depend on this target.
   -->
 
   <Target Name="InitializeSourceRootMappedPaths"
@@ -160,7 +160,7 @@ WARNING:  DO NOT MODIFY this file unless you are knowledgeable about MSBuild and
     </ItemGroup>
   </Target>
 
-  <!-- 
+  <!--
     Declare that target InitializeSourceRootMappedPaths that populates MappedPaths metadata on SourceRoot items is available.
   -->
   <PropertyGroup>
@@ -169,7 +169,7 @@ WARNING:  DO NOT MODIFY this file unless you are knowledgeable about MSBuild and
 
   <!-- Register the GenerateILLinkSubstitutions task -->
   <UsingTask TaskName="GenerateILLinkSubstitutions" AssemblyFile="$(FSharpBuildAssemblyFile)" />
-  
+
   <!-- Generate ILLink.Substitutions.xml to remove F# metadata resources during trimming. F# Core already has the resource defined -->
   <Target Name="GenerateFSharpILLinkSubstitutions" BeforeTargets="CoreCompile" Condition="$(DisableILLinkSubstitutions) != 'true' and $(AssemblyName) != 'FSharp.Core'">
     <GenerateILLinkSubstitutions
@@ -179,8 +179,8 @@ WARNING:  DO NOT MODIFY this file unless you are knowledgeable about MSBuild and
     </GenerateILLinkSubstitutions>
   </Target>
 
-  <!-- 
-    If InitializeSourceControlInformation target isn't supported, we just continue without invoking that synchronization target. 
+  <!--
+    If InitializeSourceControlInformation target isn't supported, we just continue without invoking that synchronization target.
     We'll proceed with SourceRoot (and other source control properties) provided by the user (or blank).
   -->
   <Target Name="_InitializeSourceRootMappedPathsFromSourceControl"
@@ -223,12 +223,12 @@ WARNING:  DO NOT MODIFY this file unless you are knowledgeable about MSBuild and
   <!--
     Warn if resolved FSharp.Core major version exceeds SDK's compiler version.
   -->
-  <Target Name="_CheckForUnsupportedFSharpCoreVersion" 
+  <Target Name="_CheckForUnsupportedFSharpCoreVersion"
           AfterTargets="ResolvePackageAssets"
           Condition="'$(ValidateFSharpCoreVersion)' != 'false' and '$(FSharpCoreMaximumMajorVersion)' != ''">
 
     <ItemGroup>
-      <_ResolvedFSharpCore Include="@(ReferencePath)" 
+      <_ResolvedFSharpCore Include="@(ReferencePath)"
                             Condition="'%(ReferencePath.NuGetPackageId)' == 'FSharp.Core'" />
     </ItemGroup>
 
@@ -238,7 +238,7 @@ WARNING:  DO NOT MODIFY this file unless you are knowledgeable about MSBuild and
       <_FSharpCoreVersionTooHigh Condition="$(_ResolvedFSharpCoreMajor) &gt; $(FSharpCoreMaximumMajorVersion)">true</_FSharpCoreVersionTooHigh>
     </PropertyGroup>
 
-    <Warning 
+    <Warning
       Condition="'$(_FSharpCoreVersionTooHigh)' == 'true'"
       Code="FSSDK0001"
       Text="The referenced FSharp.Core $(_ResolvedFSharpCoreVersion) has a higher major version ($(_ResolvedFSharpCoreMajor)) than this SDK supports ($(FSharpCoreMaximumMajorVersion)). This may cause compilation errors or runtime failures." />

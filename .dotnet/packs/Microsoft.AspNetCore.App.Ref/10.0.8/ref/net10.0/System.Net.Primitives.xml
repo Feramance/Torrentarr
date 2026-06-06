@@ -608,17 +608,17 @@
       <param name="host">The host name or a string representation of the IP address.</param>
       <param name="port">The port number associated with the address, or 0 to specify any available port. <paramref name="port" /> is in host order.</param>
       <param name="addressFamily">One of the <see cref="T:System.Net.Sockets.AddressFamily" /> values.</param>
-      <exception cref="T:System.ArgumentException">The <paramref name="host" /> parameter contains an empty string.  
-  
- -or-  
-  
+      <exception cref="T:System.ArgumentException">The <paramref name="host" /> parameter contains an empty string.
+
+ -or-
+
  <paramref name="addressFamily" /> is <see cref="F:System.Net.Sockets.AddressFamily.Unknown" />.</exception>
       <exception cref="T:System.ArgumentNullException">The <paramref name="host" /> parameter is a <see langword="null" />.</exception>
       <exception cref="T:System.ArgumentOutOfRangeException">
-        <paramref name="port" /> is less than <see cref="F:System.Net.IPEndPoint.MinPort" />.  
-  
- -or-  
-  
+        <paramref name="port" /> is less than <see cref="F:System.Net.IPEndPoint.MinPort" />.
+
+ -or-
+
  <paramref name="port" /> is greater than <see cref="F:System.Net.IPEndPoint.MaxPort" />.</exception>
     </member>
     <member name="M:System.Net.DnsEndPoint.#ctor(System.String,System.Int32)">
@@ -628,10 +628,10 @@
       <exception cref="T:System.ArgumentException">The <paramref name="host" /> parameter contains an empty string.</exception>
       <exception cref="T:System.ArgumentNullException">The <paramref name="host" /> parameter is a <see langword="null" />.</exception>
       <exception cref="T:System.ArgumentOutOfRangeException">
-        <paramref name="port" /> is less than <see cref="F:System.Net.IPEndPoint.MinPort" />.  
-  
- -or-  
-  
+        <paramref name="port" /> is less than <see cref="F:System.Net.IPEndPoint.MinPort" />.
+
+ -or-
+
  <paramref name="port" /> is greater than <see cref="F:System.Net.IPEndPoint.MaxPort" />.</exception>
     </member>
     <member name="M:System.Net.DnsEndPoint.Equals(System.Object)">
@@ -1435,11 +1435,11 @@ The scope identifier is &gt; 0x00000000FFFFFFFF</exception>
     </member>
     <member name="M:System.Net.IPNetwork.System#IFormattable#ToString(System.String,System.IFormatProvider)">
       <summary>Formats the value of the current instance using the specified format.</summary>
-      <param name="format">The format to use.   
- -or-   
+      <param name="format">The format to use.
+ -or-
  A <see langword="null" /> reference (<see langword="Nothing" /> in Visual Basic) to use the default format defined for the type of the <see cref="T:System.IFormattable" /> implementation.</param>
-      <param name="provider">The provider to use to format the value.   
- -or-   
+      <param name="provider">The provider to use to format the value.
+ -or-
  A <see langword="null" /> reference (<see langword="Nothing" /> in Visual Basic) to obtain the numeric format information from the current locale setting of the operating system.</param>
       <returns>The value of the current instance in the specified format.</returns>
     </member>
@@ -1653,9 +1653,9 @@ The scope identifier is &gt; 0x00000000FFFFFFFF</exception>
       <exception cref="T:System.ArgumentOutOfRangeException">
         <paramref name="offset" /> is less than zero.</exception>
       <exception cref="T:System.ArgumentException">
-        <paramref name="array" /> is multidimensional.  
+        <paramref name="array" /> is multidimensional.
 
--or-  
+-or-
 
 The number of elements in this <see cref="T:System.Net.NetworkInformation.IPAddressCollection" /> is greater than the available space from <paramref name="offset" /> to the end of the destination <paramref name="array" />.</exception>
       <exception cref="T:System.InvalidCastException">The elements in this <see cref="T:System.Net.NetworkInformation.IPAddressCollection" /> cannot be cast automatically to the type of the destination <paramref name="array" />.</exception>

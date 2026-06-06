@@ -18,7 +18,7 @@ Copyright (c) .NET Foundation. All rights reserved.
   <PropertyGroup>
     <_DefaultArtifactsPathPropsImported>true</_DefaultArtifactsPathPropsImported>
   </PropertyGroup>
-  
+
   <!-- Setting ArtifactsPath automatically opts in to the artifacts output format -->
   <PropertyGroup Condition="'$(ArtifactsPath)' != '' And '$(UsingMicrosoftArtifactsSdk)' != 'true'">
     <UseArtifactsOutput Condition="'$(UseArtifactsOutput)' == ''">true</UseArtifactsOutput>

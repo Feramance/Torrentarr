@@ -8,7 +8,7 @@
   <Rule.DataSource>
     <DataSource
       Persistence="ProjectFile"
-      HasConfigurationCondition="True" 
+      HasConfigurationCondition="True"
       ItemType="RazorConfiguration" />
   </Rule.DataSource>
 

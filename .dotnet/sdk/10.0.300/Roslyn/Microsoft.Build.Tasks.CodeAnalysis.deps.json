@@ -1,15 +1,19 @@
 {
+  "compilationOptions": {},
+  "libraries": {
+    "Microsoft.Build.Tasks.CodeAnalysis/5.6.0-2.26230.102": {
+      "serviceable": false,
+      "sha512": "",
+      "type": "project"
+    }
+  },
   "runtimeTarget": {
     "name": ".NETCoreApp,Version=v10.0",
     "signature": ""
   },
-  "compilationOptions": {},
   "targets": {
     ".NETCoreApp,Version=v10.0": {
       "Microsoft.Build.Tasks.CodeAnalysis/5.6.0-2.26230.102": {
-        "runtime": {
-          "Microsoft.Build.Tasks.CodeAnalysis.dll": {}
-        },
         "resources": {
           "cs/Microsoft.Build.Tasks.CodeAnalysis.resources.dll": {
             "locale": "cs"
@@ -50,15 +54,11 @@
           "zh-Hant/Microsoft.Build.Tasks.CodeAnalysis.resources.dll": {
             "locale": "zh-Hant"
           }
+        },
+        "runtime": {
+          "Microsoft.Build.Tasks.CodeAnalysis.dll": {}
         }
       }
-    }
-  },
-  "libraries": {
-    "Microsoft.Build.Tasks.CodeAnalysis/5.6.0-2.26230.102": {
-      "type": "project",
-      "serviceable": false,
-      "sha512": ""
     }
   }
 }

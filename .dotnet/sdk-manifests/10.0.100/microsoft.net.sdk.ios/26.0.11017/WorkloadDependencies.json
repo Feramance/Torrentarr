@@ -1,15 +1,17 @@
 {
   "microsoft.net.sdk.ios": {
+    "sdk": {
+      "version": "26.0"
+    },
     "workload": {
-      "alias": [ "ios" ],
+      "alias": [
+        "ios"
+      ],
       "version": "26.0.11017"
     },
     "xcode": {
-      "version": "[26.0,)",
-      "recommendedVersion": "26.0"
-    },
-    "sdk": {
-      "version": "26.0"
+      "recommendedVersion": "26.0",
+      "version": "[26.0,)"
     }
   }
 }

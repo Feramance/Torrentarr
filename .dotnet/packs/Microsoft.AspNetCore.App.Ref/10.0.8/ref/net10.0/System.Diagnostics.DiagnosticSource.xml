@@ -760,7 +760,7 @@ Activity links can be used to represent batched operations where an activity was
         <paramref name="idData" /> does not contain 16 hexadecimal characters.
 
 -or-
-          
+
 The characters in <paramref name="idData" /> are not all lower-case hexadecimal characters or all zeros.</exception>
       <returns>The new span ID.</returns>
     </member>
@@ -917,7 +917,7 @@ This collection behaves as follows:
     </member>
     <member name="P:System.Diagnostics.ActivityTagsCollection.Item(System.String)">
       <summary>Gets or sets a specified collection item.
-        
+
         When setting a value to this indexer property, the following behavior is observed:
 - If the key previously existed in the collection and the value is <see langword="null" />, the collection item matching the key will get removed from the collection.
 - If the key previously existed in the collection and the value is not <see langword="null" />, the value will replace the old value stored in the collection.

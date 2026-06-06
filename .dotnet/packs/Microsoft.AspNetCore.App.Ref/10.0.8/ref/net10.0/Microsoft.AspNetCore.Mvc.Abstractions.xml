@@ -466,23 +466,23 @@
              <remarks>
              Action constraints have the secondary effect of making an action with a constraint applied a better
              match than one without.
-            
+
              Consider two actions, 'A' and 'B' with the same action and controller name. Action 'A' only allows the
              HTTP POST method (via a constraint) and action 'B' has no constraints.
-            
+
              If an incoming request is a POST, then 'A' is considered the best match because it both matches and
              has a constraint. If an incoming request uses any other verb, 'A' will not be valid for selection
              due to it's constraint, so 'B' is the best match.
-            
-            
+
+
              Action constraints are also grouped according to their order value. Any constraints with the same
              group value are considered to be part of the same application policy, and will be executed in the
              same stage.
-            
+
              Stages run in ascending order based on the value of <see cref="P:Microsoft.AspNetCore.Mvc.ActionConstraints.IActionConstraint.Order"/>. Given a set of actions which
              are candidates for selection, the next stage to run is the lowest value of <see cref="P:Microsoft.AspNetCore.Mvc.ActionConstraints.IActionConstraint.Order"/> for any
              constraint of any candidate which is greater than the order of the last stage.
-            
+
              Once the stage order is identified, each action has all of its constraints in that stage executed.
              If any constraint does not match, then that action is not a candidate for selection. If any actions
              with constraints in the current state are still candidates, then those are the 'best' actions and this
@@ -514,7 +514,7 @@
              <remarks>
              <see cref="T:Microsoft.AspNetCore.Mvc.ActionConstraints.IActionConstraintFactory"/> will be invoked during action selection
              to create constraint instances for an action.
-            
+
              Place an attribute implementing this interface on a controller or action to insert an action
              constraint created by a factory.
              </remarks>
@@ -800,7 +800,7 @@
              <remarks>
              An optional parameter is considered optional by the routing system. This does not imply
              that the parameter is considered optional by the action.
-            
+
              If the parameter uses <see cref="F:Microsoft.AspNetCore.Mvc.ModelBinding.BindingSource.ModelBinding"/> for the value of
              <see cref="P:Microsoft.AspNetCore.Mvc.ApiExplorer.ApiParameterDescription.Source"/> then the value may also come from the
              URL query string or form data.
@@ -1146,14 +1146,14 @@
              </summary>
              <remarks>
              <see cref="T:Microsoft.AspNetCore.Mvc.Filters.FilterDescriptor"/> describes an <see cref="T:Microsoft.AspNetCore.Mvc.Filters.IFilterMetadata"/> with an order and scope.
-            
+
              Order and scope control the execution order of filters. Filters with a higher value of Order execute
              later in the pipeline.
-            
+
              When filters have the same Order, the Scope value is used to determine the order of execution. Filters
              with a higher value of Scope execute later in the pipeline. See <c>Microsoft.AspNetCore.Mvc.FilterScope</c>
              for commonly used scopes.
-            
+
              For <see cref="T:Microsoft.AspNetCore.Mvc.Filters.IExceptionFilter"/> implementations, the filter runs only after an exception has occurred,
              and so the observed order of execution will be opposite that of other filters.
              </remarks>
@@ -2486,7 +2486,7 @@
              When using this method, it is expected that the left-hand-side is metadata specified
              on a property or parameter for model binding, and the right hand side is a source of
              data used by a model binder or value provider.
-            
+
              This distinction is important as the left-hand-side may be a composite, but the right
              may not.
              </remarks>

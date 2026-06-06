@@ -466,16 +466,16 @@
         <member name="M:Microsoft.AspNetCore.HttpSys.Internal.RequestUriBuilder.UnescapePercentEncoding(System.Int32@,System.Int32,System.ReadOnlySpan{System.Byte})">
              <summary>
              Read the percent-encoding and try unescape it.
-            
+
              The operation first peek at the character the <paramref name="scan"/>
              iterator points at. If it is % the <paramref name="scan"/> is then
              moved on to scan the following to characters. If the two following
              characters are hexadecimal literals they will be unescaped and the
              value will be returned.
-            
+
              If the first character is not % the <paramref name="scan"/> iterator
              will be removed beyond the location of % and -1 will be returned.
-            
+
              If the following two characters can't be successfully unescaped the
              <paramref name="scan"/> iterator will be move behind the % and -1
              will be returned.
@@ -488,7 +488,7 @@
         <member name="M:Microsoft.AspNetCore.HttpSys.Internal.RequestUriBuilder.ReadHex(System.Int32@,System.Int32,System.ReadOnlySpan{System.Byte})">
              <summary>
              Read the next char and convert it into hexadecimal value.
-            
+
              The <paramref name="scan"/> iterator will be moved to the next
              byte no matter no matter whether the operation successes.
              </summary>
@@ -909,12 +909,12 @@
         <member name="T:System.IO.Pipelines.DuplexPipe">
              <remarks>
              A <see cref="T:System.IO.Pipelines.Pipe"/> is a reader-writer pair, where content written to the writer can be read from the reader.
-            
+
              An <see cref="T:System.IO.Pipelines.IDuplexPipe"/> is *not* a pipe.  It is also a reader-writer pair, but the reader and writer are not
              connected.  Rather, it can be regarded as *one end* of a two-way (i.e. duplex) communication channel, where content
              written to the writer is sent to the counterparty and content received from the counterparty is readable from the
              reader.
-            
+
              A <see cref="T:System.IO.Pipelines.DuplexPipe.DuplexPipePair"/> is a pair of <see cref="T:System.IO.Pipelines.IDuplexPipe"/> instances, each of which represents one end of
              a two-way communication channel.  (In a sense, this makes it a "duplex pipe".)  It can also be viewed as a pair of
              <see cref="T:System.IO.Pipelines.Pipe"/>s, as these underlie the <see cref="T:System.IO.Pipelines.IDuplexPipe"/> instances.  In either view, it is composed of

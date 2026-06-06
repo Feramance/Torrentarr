@@ -21,7 +21,7 @@ export async function onRuntimeReady({ getAssemblyExports }) {
     if (!isHotReloadEnabled) {
         return;
     }
-    
+
     const exports = await getAssemblyExports("Microsoft.DotNet.HotReload.WebAssembly.Browser");
     await exports.Microsoft.DotNet.HotReload.WebAssembly.Browser.WebAssemblyHotReload.InitializeAsync(document.baseURI);
 

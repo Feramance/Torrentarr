@@ -680,7 +680,7 @@
              If specified, the parameter value will be supplied by the closest
              ancestor <see cref="T:Microsoft.AspNetCore.Components.CascadingValue`1"/> that supplies a value with
              this name.
-            
+
              If null, the parameter value will be supplied by the closest ancestor
              <see cref="T:Microsoft.AspNetCore.Components.CascadingValue`1"/>  that supplies a value with a compatible
              type.
@@ -754,7 +754,7 @@
              <summary>
              Optionally gives a name to the provided value. Descendant components
              will be able to receive the value by specifying this name.
-            
+
              If no name is specified, then descendant components will receive the
              value based the type of value they are requesting.
              </summary>
@@ -952,7 +952,7 @@
              <summary>
              Method invoked when the component is ready to start, having received its
              initial parameters from its parent in the render tree.
-            
+
              Override this method if you will perform an asynchronous operation and
              want the component to refresh when that operation is completed.
              </summary>
@@ -988,7 +988,7 @@
              Method invoked after each time the component has rendered interactively and the UI has finished
              updating (for example, after elements have been added to the browser DOM). Any <see cref="T:Microsoft.AspNetCore.Components.ElementReference" />
              fields will be populated by the time this runs.
-            
+
              This method is not invoked during prerendering or server-side rendering, because those processes
              are not attached to any live browser DOM and are already complete before the DOM is updated.
              </summary>
@@ -1008,10 +1008,10 @@
              Method invoked after each time the component has been rendered interactively and the UI has finished
              updating (for example, after elements have been added to the browser DOM). Any <see cref="T:Microsoft.AspNetCore.Components.ElementReference" />
              fields will be populated by the time this runs.
-            
+
              This method is not invoked during prerendering or server-side rendering, because those processes
              are not attached to any live browser DOM and are already complete before the DOM is updated.
-            
+
              Note that the component does not automatically re-render after the completion of any returned <see cref="T:System.Threading.Tasks.Task"/>,
              because that would cause an infinite render loop.
              </summary>
@@ -1046,7 +1046,7 @@
              Treats the supplied <paramref name="exception"/> as being thrown by this component. This will cause the
              enclosing ErrorBoundary to transition into a failed state. If there is no enclosing ErrorBoundary,
              it will be regarded as an exception from the enclosing renderer.
-            
+
              This is useful if an exception occurs outside the component lifecycle methods, but you wish to treat it
              the same as an exception from a component lifecycle method.
              </summary>
@@ -3953,7 +3953,7 @@
              don't match existing entries. For example, when building a dictionary of almost entirely unique keys.
              It's faster than the normal string comparer in this case because it doesn't use string.GetHashCode,
              and hence doesn't have to consider every character in the string.
-            
+
              This primary scenario is <see cref="M:Microsoft.AspNetCore.Components.Rendering.RenderTreeBuilder.ProcessDuplicateAttributes(System.Int32)"/>, which needs
              to detect when one attribute is overriding another, but in the vast majority of cases attributes don't
              actually override each other.
@@ -3962,7 +3962,7 @@
         <member name="T:Microsoft.AspNetCore.Components.RenderModeAttribute">
              <summary>
              Specifies a fixed rendering mode for a component type.
-            
+
              Where possible, components should not specify any render mode this way, and should
              be implemented to work across all render modes. Component authors should only specify
              a fixed rendering mode when the component is incapable of running in other modes.
@@ -4295,7 +4295,7 @@
              used to trigger the first render of a root component, or to update its parameters and
              trigger a subsequent render. Note that components may also make their own decisions about
              when to re-render, and may re-render at any time.
-            
+
              The returned <see cref="T:System.Threading.Tasks.Task"/> waits for this component and all descendant components to
              finish rendering in case there is any asynchronous work being done by any of them.
              </summary>
@@ -4413,7 +4413,7 @@
              <summary>
              Determines how to handle an <see cref="T:Microsoft.AspNetCore.Components.IComponentRenderMode"/> when obtaining a component instance.
              This is only called when a render mode is specified either at the call site or on the component type.
-            
+
              Subclasses may override this method to return a component of a different type, or throw, depending on whether the renderer
              supports the render mode and how it implements that support.
              </summary>
@@ -4455,7 +4455,7 @@
              Exists only so that the various methods in this class can call each other without
              constantly building up long lists of parameters. Is private to this class, so the
              fact that it's a mutable struct is manageable.
-            
+
              Always pass by ref to avoid copying, and because the 'SiblingIndex' is mutable.
              </summary>
         </member>
@@ -4805,7 +4805,7 @@
         <member name="T:Microsoft.AspNetCore.Components.RenderTree.ArrayBuilder`1">
              <summary>
              Implements a list that uses an array of objects to store the elements.
-            
+
              This differs from a <see cref="T:System.Collections.Generic.List`1"/> in that
              it not only grows as required but also shrinks if cleared with significant
              excess capacity. This makes it useful for component rendering, because
@@ -5068,7 +5068,7 @@
             <summary>
             Refreshes scroll position for hash on the client.
             </summary>
-            <param name="locationAbsolute">Absolute URL of location</param> 
+            <param name="locationAbsolute">Absolute URL of location</param>
             <returns>A <see cref="T:System.Threading.Tasks.Task" /> that represents the asynchronous operation.</returns>
         </member>
         <member name="T:Microsoft.AspNetCore.Components.Routing.LocationChangedEventArgs">
@@ -5566,7 +5566,7 @@
              /Literal is more specific than /Parameter
              /Route/With/{parameter} is more specific than /{multiple}/With/{parameters}
              /Product/{id:int} is more specific than /Product/{id}
-            
+
              Routes can be ambiguous if:
              They are composed of literals and those literals have the same values (case insensitive)
              They are composed of a mix of literals and parameters, in the same relative order and the
@@ -5575,7 +5575,7 @@
              * /literal and /Literal
              /{parameter}/literal and /{something}/literal
              /{parameter:constraint}/literal and /{something:constraint}/literal
-            
+
              To calculate the precedence we sort the list of routes as follows:
              * Shorter routes go first.
              * A literal wins over a parameter in precedence.
@@ -5638,10 +5638,10 @@
         <member name="T:Microsoft.AspNetCore.Components.StreamRenderingAttribute">
              <summary>
              An attribute to indicate whether to stream the rendering of a component and its descendants.
-             
+
              This attribute only takes effect within renderers that support streaming rendering (for example,
              server-side HTML rendering from a Razor Component endpoint). In other hosting models it has no effect.
-            
+
              If a component type does not declare this attribute, then instances of that component type will share
              the same streaming rendering mode as their parent component.
              </summary>
@@ -5807,16 +5807,16 @@
         <member name="M:Microsoft.AspNetCore.Internal.UrlDecoder.UnescapePercentEncoding(System.Int32@,System.Span{System.Byte},System.Boolean)">
              <summary>
              Read the percent-encoding and try unescape it.
-            
+
              The operation first peek at the character the <paramref name="scan"/>
              iterator points at. If it is % the <paramref name="scan"/> is then
              moved on to scan the following to characters. If the two following
              characters are hexadecimal literals they will be unescaped and the
              value will be returned.
-            
+
              If the first character is not % the <paramref name="scan"/> iterator
              will be removed beyond the location of % and -1 will be returned.
-            
+
              If the following two characters can't be successfully unescaped the
              <paramref name="scan"/> iterator will be move behind the % and -1
              will be returned.
@@ -5829,7 +5829,7 @@
         <member name="M:Microsoft.AspNetCore.Internal.UrlDecoder.ReadHex(System.Int32@,System.Span{System.Byte})">
              <summary>
              Read the next char and convert it into hexadecimal value.
-            
+
              The <paramref name="scan"/> index will be moved to the next
              byte no matter whether the operation successes.
              </summary>
@@ -5873,16 +5873,16 @@
         <member name="M:Microsoft.AspNetCore.Internal.UrlDecoder.UnescapePercentEncoding(System.Int32@,System.ReadOnlySpan{System.Char})">
              <summary>
              Read the percent-encoding and try unescape it.
-            
+
              The operation first peek at the character the <paramref name="scan"/>
              iterator points at. If it is % the <paramref name="scan"/> is then
              moved on to scan the following to characters. If the two following
              characters are hexadecimal literals they will be unescaped and the
              value will be returned.
-            
+
              If the first character is not % the <paramref name="scan"/> iterator
              will be removed beyond the location of % and -1 will be returned.
-            
+
              If the following two characters can't be successfully unescaped the
              <paramref name="scan"/> iterator will be move behind the % and -1
              will be returned.
@@ -5894,7 +5894,7 @@
         <member name="M:Microsoft.AspNetCore.Internal.UrlDecoder.ReadHex(System.Int32@,System.ReadOnlySpan{System.Char})">
              <summary>
              Read the next char and convert it into hexadecimal value.
-            
+
              The <paramref name="scan"/> index will be moved to the next
              char no matter whether the operation successes.
              </summary>
@@ -5916,7 +5916,7 @@
              Values that are are not strings are converted to strings using
              <c>Convert.ToString(x, CultureInfo.InvariantCulture)</c>. <c>null</c> values are converted
              to the empty string.
-            
+
              strings are compared using <see cref="F:System.StringComparison.OrdinalIgnoreCase"/>.
              </remarks>
         </member>
@@ -6103,7 +6103,7 @@
              Route Template: "{controller=Home}/{action=Index}/{id?}"
              Route Values: { controller = "Store", action = "Index" }
              </code>
-            
+
              A route pattern produced in this way will match and generate URL paths like: <c>/Store</c>,
              <c>/Store/Index</c>, and <c>/Store/Index/17</c>.
              </example>
@@ -6661,7 +6661,7 @@
              <summary>
              Adds a cascading value to the <paramref name="serviceCollection"/>. This is equivalent to having
              a <see cref="T:Microsoft.AspNetCore.Components.CascadingValue`1"/> at the root of the component hierarchy.
-            
+
              With this overload, you can supply a <see cref="T:Microsoft.AspNetCore.Components.CascadingValueSource`1"/> which allows you
              to notify about updates to the value later, causing recipients to re-render. This overload should
              only be used if you plan to update the value dynamically.
@@ -6699,7 +6699,7 @@
             Adds a cascading value to the <paramref name="serviceCollection"/>, if none is already registered
             with the value type. This is equivalent to having a fixed <see cref="T:Microsoft.AspNetCore.Components.CascadingValue`1"/> at
             the root of the component hierarchy.
-            
+
             With this overload, you can supply a <see cref="T:Microsoft.AspNetCore.Components.CascadingValueSource`1"/> which allows you
             to notify about updates to the value later, causing recipients to re-render. This overload should
             only be used if you plan to update the value dynamically.

@@ -2123,6 +2123,12 @@
         "linux-armv6"
       ]
     },
+    "linux-musl-loongarch64": {
+      "#import": [
+        "linux-musl",
+        "linux-loongarch64"
+      ]
+    },
     "linux-musl-ppc64le": {
       "#import": [
         "linux-musl",
@@ -2133,12 +2139,6 @@
       "#import": [
         "linux-musl",
         "linux-riscv64"
-      ]
-    },
-    "linux-musl-loongarch64": {
-      "#import": [
-        "linux-musl",
-        "linux-loongarch64"
       ]
     },
     "linux-musl-s390x": {

@@ -242,7 +242,7 @@ Copyright (c) .NET Foundation. All rights reserved.
     </Copy>
 
   </Target>
-  
+
   <Target Name="_PublishCopyStaticWebAssetsIfDifferent"
     AfterTargets="_SplitPublishStaticWebAssetsByCopyOptions"
     Condition=" '@(_PublishStaticWebAssetsIfDifferent)' != '' ">

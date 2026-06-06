@@ -158,10 +158,10 @@
       <param name="name">The event counter name.</param>
       <param name="eventSource">The event source.</param>
       <exception cref="T:System.ArgumentNullException">
-        <paramref name="name" /> is <see langword="null" />.  
-  
- -or-  
-  
+        <paramref name="name" /> is <see langword="null" />.
+
+ -or-
+
  <paramref name="eventSource" /> is <see langword="null" />.</exception>
     </member>
     <member name="M:System.Diagnostics.Tracing.EventCounter.ToString">

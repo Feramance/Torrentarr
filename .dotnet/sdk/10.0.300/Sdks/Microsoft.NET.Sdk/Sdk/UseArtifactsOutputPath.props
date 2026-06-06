@@ -21,7 +21,7 @@ Copyright (c) .NET Foundation. All rights reserved.
     <UseArtifactsIntermediateOutput Condition="'$(UseArtifactsIntermediateOutput)' == ''">true</UseArtifactsIntermediateOutput>
     <ArtifactsProjectName Condition="'$(ArtifactsProjectName)' == ''">$(MSBuildProjectName)</ArtifactsProjectName>
   </PropertyGroup>
-  
+
   <PropertyGroup Condition="'$(UseArtifactsOutput)' == 'true' And '$(BaseIntermediateOutputPath)' == '' And '$(UseArtifactsIntermediateOutput)' == 'true'">
     <BaseIntermediateOutputPath Condition="'$(IncludeProjectNameInArtifactsPaths)' == 'true'">$(ArtifactsPath)\obj\$(ArtifactsProjectName)\</BaseIntermediateOutputPath>
     <BaseIntermediateOutputPath Condition="'$(BaseIntermediateOutputPath)' == ''">$(ArtifactsPath)\obj\</BaseIntermediateOutputPath>
