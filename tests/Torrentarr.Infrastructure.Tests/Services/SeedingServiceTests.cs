@@ -272,6 +272,52 @@ public class SeedingServiceTests
         result.Should().BeTrue();
     }
 
+    [Fact]
+    public async Task HnrAllowsDeleteAsync_CategorySeedingOnly_BlocksWhenObligationsUnmet()
+    {
+        var config = new TorrentarrConfig();
+        config.QBitInstances["qBit"] = new QBitConfig
+        {
+            CategorySeeding = new CategorySeedingConfig
+            {
+                HitAndRunMode = "and",
+                MinSeedRatio = 1.0,
+                MinSeedingTimeDays = 7
+            },
+            Trackers = new List<TrackerConfig>()
+        };
+        var svc = CreateService(config);
+        var torrent = MakeTorrent(1.0, 0.5, 3600);
+        torrent.QBitInstanceName = "qBit";
+
+        var result = await svc.HnrAllowsDeleteAsync(torrent, "stalled deletion");
+
+        result.Should().BeFalse();
+    }
+
+    [Fact]
+    public async Task HnrAllowsDeleteAsync_CategorySeedingOnly_AllowsWhenObligationsMet()
+    {
+        var config = new TorrentarrConfig();
+        config.QBitInstances["qBit"] = new QBitConfig
+        {
+            CategorySeeding = new CategorySeedingConfig
+            {
+                HitAndRunMode = "and",
+                MinSeedRatio = 1.0,
+                MinSeedingTimeDays = 0
+            },
+            Trackers = new List<TrackerConfig>()
+        };
+        var svc = CreateService(config);
+        var torrent = MakeTorrent(1.0, 1.5, 3600);
+        torrent.QBitInstanceName = "qBit";
+
+        var result = await svc.HnrAllowsDeleteAsync(torrent, "stalled deletion");
+
+        result.Should().BeTrue();
+    }
+
     // ── ShouldRemoveTorrentAsync state-based logic ───────────────────────────────
 
     [Fact]

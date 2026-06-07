@@ -428,26 +428,30 @@ public class SeedingService : ISeedingService
     /// </summary>
     public async Task<bool> HnrAllowsDeleteAsync(TorrentInfo torrent, string reason, CancellationToken cancellationToken = default)
     {
-        var trackers = GetTrackerList(torrent);
-        var hasHnrTracker = trackers.Any(t => IsHnREnabled(t.HitAndRunMode));
-
-        if (!hasHnrTracker)
-        {
-            return true; // Fast path: no HnR on any tracker
-        }
-
         var trackerConfig = await GetTrackerConfigAsync(torrent, cancellationToken);
-        if (trackerConfig == null)
+        var hnrConfig = trackerConfig != null ? ConvertToCategorySeeding(trackerConfig) : GetSeedingConfig(torrent);
+
+        if (!IsHnREnabled(hnrConfig.HitAndRunMode))
         {
             return true;
         }
 
-        if (await IsTrackerDeadAsync(torrent, trackerConfig, cancellationToken))
+        if (trackerConfig != null && await IsTrackerDeadAsync(torrent, trackerConfig, cancellationToken))
         {
             return true;
         }
 
-        if (await IsHnRSafeToRemoveAsync(torrent, trackerConfig, cancellationToken))
+        var effectiveConfig = trackerConfig ?? new TrackerConfig
+        {
+            HitAndRunMode = hnrConfig.HitAndRunMode,
+            MinSeedRatio = hnrConfig.MinSeedRatio,
+            MinSeedingTimeDays = hnrConfig.MinSeedingTimeDays,
+            HitAndRunMinimumDownloadPercent = hnrConfig.HitAndRunMinimumDownloadPercent,
+            HitAndRunPartialSeedRatio = hnrConfig.HitAndRunPartialSeedRatio,
+            TrackerUpdateBuffer = hnrConfig.TrackerUpdateBuffer
+        };
+
+        if (await IsHnRSafeToRemoveAsync(torrent, effectiveConfig, cancellationToken))
         {
             return true;
         }
