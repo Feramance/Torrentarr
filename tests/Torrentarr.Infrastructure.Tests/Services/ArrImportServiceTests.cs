@@ -3,6 +3,7 @@ using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging.Abstractions;
 using Torrentarr.Core.Configuration;
 using Torrentarr.Infrastructure.Database;
+using Torrentarr.Infrastructure.Database.Models;
 using Torrentarr.Infrastructure.Services;
 using Xunit;
 
@@ -175,6 +176,36 @@ public class ArrImportServiceTests
         var act = async () => await svc.IsImportedAsync("abc123", cts.Token);
 
         await act.Should().NotThrowAsync();
+    }
+
+    // ── Custom format unmet DB lookup (regression: Arr API ids vs SQLite EntryId) ─
+
+    [Fact]
+    public async Task CfUnmetMovieLookup_MatchesArrId_NotEntryId()
+    {
+        var options = new DbContextOptionsBuilder<TorrentarrDbContext>()
+            .UseInMemoryDatabase(Guid.NewGuid().ToString())
+            .Options;
+        await using var dbContext = new TorrentarrDbContext(options);
+        dbContext.Movies.Add(new MoviesFilesModel
+        {
+            Title = "Test Movie",
+            ArrInstance = "Radarr-HD",
+            ArrId = 42,
+            MovieFileId = 1,
+            CustomFormatScore = 100,
+            MinCustomFormatScore = 200
+        });
+        await dbContext.SaveChangesAsync();
+
+        var byArrId = await dbContext.Movies.AsNoTracking()
+            .FirstOrDefaultAsync(m => m.ArrId == 42 && m.ArrInstance == "Radarr-HD");
+        var byEntryId = await dbContext.Movies.AsNoTracking()
+            .FirstOrDefaultAsync(m => m.EntryId == 42 && m.ArrInstance == "Radarr-HD");
+
+        byArrId.Should().NotBeNull();
+        byArrId!.Title.Should().Be("Test Movie");
+        byEntryId.Should().BeNull("queue MovieId is the Arr API id, not the SQLite EntryId");
     }
 
     // ── MarkAsImportedAsync ───────────────────────────────────────────────────
