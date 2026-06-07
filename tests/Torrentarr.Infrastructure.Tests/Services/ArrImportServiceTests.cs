@@ -3,6 +3,7 @@ using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging.Abstractions;
 using Torrentarr.Core.Configuration;
 using Torrentarr.Infrastructure.Database;
+using Torrentarr.Infrastructure.Database.Models;
 using Torrentarr.Infrastructure.Services;
 using Xunit;
 
@@ -213,5 +214,51 @@ public class ArrImportServiceTests
             await svc.MarkAsImportedAsync("abc123", Enumerable.Empty<string>());
 
         await act.Should().NotThrowAsync();
+    }
+
+    // ── CustomFormatUnmet lookup regression ───────────────────────────────────
+
+    [Fact]
+    public async Task CustomFormatUnmetLookup_UsesArrIdNotSqliteEntryId()
+    {
+        // Arr queue IDs are Radarr/Sonarr/Lidarr API IDs (ArrId), not SQLite EntryId.
+        // Matching on EntryId can resolve the wrong row when EntryId collides with another movie's ArrId.
+        var options = new DbContextOptionsBuilder<TorrentarrDbContext>()
+            .UseInMemoryDatabase(Guid.NewGuid().ToString())
+            .Options;
+        await using var db = new TorrentarrDbContext(options);
+
+        db.Movies.Add(new MoviesFilesModel
+        {
+            EntryId = 42,
+            Title = "Wrong Match",
+            ArrInstance = "Radarr-HD",
+            ArrId = 5,
+            MovieFileId = 999,
+            CustomFormatScore = 10
+        });
+        db.Movies.Add(new MoviesFilesModel
+        {
+            EntryId = 1,
+            Title = "Target Movie",
+            ArrInstance = "Radarr-HD",
+            ArrId = 42,
+            MovieFileId = 0,
+            CustomFormatScore = 50
+        });
+        await db.SaveChangesAsync();
+
+        const int queueMovieId = 42;
+
+        var correctLookup = await db.Movies.AsNoTracking()
+            .FirstOrDefaultAsync(m => m.ArrId == queueMovieId && m.ArrInstance == "Radarr-HD");
+        correctLookup.Should().NotBeNull();
+        correctLookup!.Title.Should().Be("Target Movie");
+
+        var buggyLookup = await db.Movies.AsNoTracking()
+            .FirstOrDefaultAsync(m => m.EntryId == queueMovieId && m.ArrInstance == "Radarr-HD");
+        buggyLookup.Should().NotBeNull();
+        buggyLookup!.Title.Should().Be("Wrong Match",
+            "EntryId collisions can make CustomFormatUnmet delete the wrong torrent");
     }
 }
