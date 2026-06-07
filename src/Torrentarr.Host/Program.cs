@@ -1246,120 +1246,14 @@ try
             if (!payload.TryGetProperty("changes", out var changesEl))
                 return Results.BadRequest(new { error = "Missing 'changes' field" });
 
-            var newtonsoftSettings = new Newtonsoft.Json.JsonSerializerSettings
-            {
-                ContractResolver = new Newtonsoft.Json.Serialization.DefaultContractResolver(),
-                NullValueHandling = Newtonsoft.Json.NullValueHandling.Ignore,
-                // Replace collections on deserialization to avoid appending to constructor-initialized defaults
-                ObjectCreationHandling = Newtonsoft.Json.ObjectCreationHandling.Replace,
-            };
-            var serializer = Newtonsoft.Json.JsonSerializer.Create(newtonsoftSettings);
-
-            // Step 1: Snapshot current config as a flat-section JObject (mirrors GET /web/config).
-            // Keys are section names ("Settings", "WebUI", "qBit", "Radarr-1080", …).
-            var currentObj = new Newtonsoft.Json.Linq.JObject();
-            currentObj["Settings"] = Newtonsoft.Json.Linq.JObject.FromObject(cfg.Settings, serializer);
-            currentObj["WebUI"] = Newtonsoft.Json.Linq.JObject.FromObject(cfg.WebUI, serializer);
-            foreach (var (key, qbit) in cfg.QBitInstances.Where(kv => kv.Value.Host != "CHANGE_ME"))
-                currentObj[key] = Newtonsoft.Json.Linq.JObject.FromObject(qbit, serializer);
-            foreach (var (key, arr) in cfg.ArrInstances)
-                currentObj[key] = Newtonsoft.Json.Linq.JObject.FromObject(arr, serializer);
-
-            // Step 2: Apply each dotted-key change onto the snapshot.
-            // e.g. "Settings.ConsoleLevel" → sets currentObj["Settings"]["ConsoleLevel"].
-            // null value means delete.
             var changesObj = Newtonsoft.Json.Linq.JObject.Parse(changesEl.GetRawText());
-            foreach (var change in changesObj.Properties())
-            {
-                // Reject protected keys (qBitrr parity)
-                if (string.Equals(change.Name, "Settings.ConfigVersion", StringComparison.OrdinalIgnoreCase))
-                    return Results.Json(new { error = "Cannot modify protected configuration key: Settings.ConfigVersion" }, statusCode: 403);
+            var (updatedConfig, applyError) = ApplyDottedConfigChanges(cfg, changesObj);
+            if (applyError != null)
+                return applyError;
+            if (updatedConfig == null)
+                return Results.BadRequest(new { error = "Invalid config payload" });
 
-                // Never overwrite a real secret with the redaction placeholder from the frontend
-                if (IsSensitiveDottedKey(change.Name) &&
-                    change.Value.Type == Newtonsoft.Json.Linq.JTokenType.String &&
-                    change.Value.ToString() == REDACTED_PLACEHOLDER)
-                    continue;
-
-                var parts = change.Name.Split('.');
-                var rawSectionKey = parts[0];
-                // Case-insensitive section key: "webui" → "WebUI", "settings" → "Settings"
-                var sectionKey = currentObj.Properties()
-                    .FirstOrDefault(p => p.Name.Equals(rawSectionKey, StringComparison.OrdinalIgnoreCase))?.Name
-                    ?? rawSectionKey;
-                if (change.Value.Type == Newtonsoft.Json.Linq.JTokenType.Null)
-                {
-                    // Deletion
-                    if (parts.Length == 1)
-                        currentObj.Remove(sectionKey);
-                    else if (currentObj[sectionKey] is Newtonsoft.Json.Linq.JObject sect)
-                        DeleteNestedToken(sect, parts, 1);
-                }
-                else if (parts.Length == 1)
-                {
-                    currentObj[sectionKey] = change.Value;
-                }
-                else
-                {
-                    if (currentObj[sectionKey] is not Newtonsoft.Json.Linq.JObject sect)
-                    {
-                        sect = new Newtonsoft.Json.Linq.JObject();
-                        currentObj[sectionKey] = sect;
-                    }
-                    SetNestedToken(sect, parts, 1, change.Value);
-                }
-            }
-
-            // Cleanup: remove sections that had all their keys deleted (became empty {}).
-            // This handles renames: the old section has all sub-keys set to null → empty JObject.
-            foreach (var emptyProp in currentObj.Properties().ToList())
-            {
-                if (emptyProp.Value is Newtonsoft.Json.Linq.JObject emptyObj && !emptyObj.Properties().Any())
-                    currentObj.Remove(emptyProp.Name);
-            }
-
-            // Step 3: Reconstruct TorrentarrConfig from the updated flat-section JObject.
-            var updatedConfig = new TorrentarrConfig();
-            if (currentObj["Settings"] is Newtonsoft.Json.Linq.JObject settingsObj)
-                updatedConfig.Settings = settingsObj.ToObject<SettingsConfig>(serializer) ?? new SettingsConfig();
-            if (currentObj["WebUI"] is Newtonsoft.Json.Linq.JObject webuiObj)
-                updatedConfig.WebUI = webuiObj.ToObject<WebUIConfig>(serializer) ?? new WebUIConfig();
-
-            foreach (var prop in currentObj.Properties())
-            {
-                if (prop.Value is not Newtonsoft.Json.Linq.JObject sectionObj) continue;
-                var lower = prop.Name.ToLowerInvariant();
-                bool isRadarr = lower == "radarr" || lower.StartsWith("radarr-");
-                bool isSonarr = lower == "sonarr" || lower.StartsWith("sonarr-");
-                bool isLidarr = lower == "lidarr" || lower.StartsWith("lidarr-");
-                bool isQbit = lower == "qbit" || lower.StartsWith("qbit-");
-                if (isRadarr || isSonarr || isLidarr)
-                {
-                    var arrConfig = sectionObj.ToObject<ArrInstanceConfig>(serializer) ?? new ArrInstanceConfig();
-                    if (string.IsNullOrEmpty(arrConfig.Type))
-                        arrConfig.Type = isRadarr ? "radarr" : isSonarr ? "sonarr" : "lidarr";
-                    updatedConfig.ArrInstances[prop.Name] = arrConfig;
-                }
-                else if (isQbit)
-                {
-                    updatedConfig.QBitInstances[prop.Name] = sectionObj.ToObject<QBitConfig>(serializer) ?? new QBitConfig();
-                }
-            }
-
-            var (reloadType, affectedInstancesList) = DetermineReloadType(cfg, updatedConfig);
-
-            loader.SaveConfig(updatedConfig);
-            cfg.Settings = updatedConfig.Settings;
-            cfg.WebUI = updatedConfig.WebUI;
-            cfg.ArrInstances = updatedConfig.ArrInstances;
-            cfg.QBitInstances = updatedConfig.QBitInstances;
-            return Results.Ok(new
-            {
-                status = "ok",
-                configReloaded = reloadType != "none" && reloadType != "frontend",
-                reloadType,
-                affectedInstances = affectedInstancesList
-            });
+            return SaveAndRespondConfigUpdate(cfg, updatedConfig, loader);
         }
         catch (Exception ex)
         {
@@ -2171,30 +2065,24 @@ try
         try
         {
             var payload = await request.ReadFromJsonAsync<System.Text.Json.JsonElement>();
-            string configJson;
+            TorrentarrConfig? updatedConfig;
             if (payload.TryGetProperty("changes", out var changesEl))
-                configJson = changesEl.GetRawText();
+            {
+                var changesObj = Newtonsoft.Json.Linq.JObject.Parse(changesEl.GetRawText());
+                var (mergedConfig, applyError) = ApplyDottedConfigChanges(cfg, changesObj);
+                if (applyError != null)
+                    return applyError;
+                updatedConfig = mergedConfig;
+            }
             else
-                configJson = payload.GetRawText();
-            var updatedConfig = Newtonsoft.Json.JsonConvert.DeserializeObject<TorrentarrConfig>(configJson);
+            {
+                updatedConfig = Newtonsoft.Json.JsonConvert.DeserializeObject<TorrentarrConfig>(payload.GetRawText());
+            }
+
             if (updatedConfig == null)
                 return Results.BadRequest(new { error = "Invalid config payload" });
 
-            // Determine reload type by comparing old vs new config before applying
-            var (reloadType, affectedInstancesList) = DetermineReloadType(cfg, updatedConfig);
-
-            loader.SaveConfig(updatedConfig);
-            cfg.Settings = updatedConfig.Settings;
-            cfg.WebUI = updatedConfig.WebUI;
-            cfg.ArrInstances = updatedConfig.ArrInstances;
-            cfg.QBitInstances = updatedConfig.QBitInstances;
-            return Results.Ok(new
-            {
-                status = "ok",
-                configReloaded = reloadType != "none" && reloadType != "frontend",
-                reloadType,
-                affectedInstances = affectedInstancesList
-            });
+            return SaveAndRespondConfigUpdate(cfg, updatedConfig, loader);
         }
         catch (Exception ex)
         {
@@ -2514,6 +2402,125 @@ static async Task<IResult> HandleTestConnection(TestConnectionRequest req, Torre
     }
 }
 
+static Newtonsoft.Json.JsonSerializerSettings CreateConfigMergeSerializerSettings() => new()
+{
+    ContractResolver = new Newtonsoft.Json.Serialization.DefaultContractResolver(),
+    NullValueHandling = Newtonsoft.Json.NullValueHandling.Ignore,
+    ObjectCreationHandling = Newtonsoft.Json.ObjectCreationHandling.Replace,
+};
+
+/// <summary>
+/// Apply dotted-key config changes onto the current in-memory config snapshot.
+/// Used by POST /web/config and POST /api/config when a <c>changes</c> object is supplied.
+/// </summary>
+static (TorrentarrConfig? updatedConfig, IResult? error) ApplyDottedConfigChanges(
+    TorrentarrConfig cfg,
+    Newtonsoft.Json.Linq.JObject changesObj)
+{
+    var serializer = Newtonsoft.Json.JsonSerializer.Create(CreateConfigMergeSerializerSettings());
+
+    var currentObj = new Newtonsoft.Json.Linq.JObject();
+    currentObj["Settings"] = Newtonsoft.Json.Linq.JObject.FromObject(cfg.Settings, serializer);
+    currentObj["WebUI"] = Newtonsoft.Json.Linq.JObject.FromObject(cfg.WebUI, serializer);
+    foreach (var (key, qbit) in cfg.QBitInstances.Where(kv => kv.Value.Host != "CHANGE_ME"))
+        currentObj[key] = Newtonsoft.Json.Linq.JObject.FromObject(qbit, serializer);
+    foreach (var (key, arr) in cfg.ArrInstances)
+        currentObj[key] = Newtonsoft.Json.Linq.JObject.FromObject(arr, serializer);
+
+    foreach (var change in changesObj.Properties())
+    {
+        if (string.Equals(change.Name, "Settings.ConfigVersion", StringComparison.OrdinalIgnoreCase))
+            return (null, Results.Json(new { error = "Cannot modify protected configuration key: Settings.ConfigVersion" }, statusCode: 403));
+
+        if (IsSensitiveDottedKey(change.Name) &&
+            change.Value.Type == Newtonsoft.Json.Linq.JTokenType.String &&
+            change.Value.ToString() == REDACTED_PLACEHOLDER)
+            continue;
+
+        var parts = change.Name.Split('.');
+        var rawSectionKey = parts[0];
+        var sectionKey = currentObj.Properties()
+            .FirstOrDefault(p => p.Name.Equals(rawSectionKey, StringComparison.OrdinalIgnoreCase))?.Name
+            ?? rawSectionKey;
+        if (change.Value.Type == Newtonsoft.Json.Linq.JTokenType.Null)
+        {
+            if (parts.Length == 1)
+                currentObj.Remove(sectionKey);
+            else if (currentObj[sectionKey] is Newtonsoft.Json.Linq.JObject sect)
+                DeleteNestedToken(sect, parts, 1);
+        }
+        else if (parts.Length == 1)
+        {
+            currentObj[sectionKey] = change.Value;
+        }
+        else
+        {
+            if (currentObj[sectionKey] is not Newtonsoft.Json.Linq.JObject sect)
+            {
+                sect = new Newtonsoft.Json.Linq.JObject();
+                currentObj[sectionKey] = sect;
+            }
+            SetNestedToken(sect, parts, 1, change.Value);
+        }
+    }
+
+    foreach (var emptyProp in currentObj.Properties().ToList())
+    {
+        if (emptyProp.Value is Newtonsoft.Json.Linq.JObject emptyObj && !emptyObj.Properties().Any())
+            currentObj.Remove(emptyProp.Name);
+    }
+
+    var updatedConfig = new TorrentarrConfig();
+    if (currentObj["Settings"] is Newtonsoft.Json.Linq.JObject settingsObj)
+        updatedConfig.Settings = settingsObj.ToObject<SettingsConfig>(serializer) ?? new SettingsConfig();
+    if (currentObj["WebUI"] is Newtonsoft.Json.Linq.JObject webuiObj)
+        updatedConfig.WebUI = webuiObj.ToObject<WebUIConfig>(serializer) ?? new WebUIConfig();
+
+    foreach (var prop in currentObj.Properties())
+    {
+        if (prop.Value is not Newtonsoft.Json.Linq.JObject sectionObj) continue;
+        var lower = prop.Name.ToLowerInvariant();
+        bool isRadarr = lower == "radarr" || lower.StartsWith("radarr-");
+        bool isSonarr = lower == "sonarr" || lower.StartsWith("sonarr-");
+        bool isLidarr = lower == "lidarr" || lower.StartsWith("lidarr-");
+        bool isQbit = lower == "qbit" || lower.StartsWith("qbit-");
+        if (isRadarr || isSonarr || isLidarr)
+        {
+            var arrConfig = sectionObj.ToObject<ArrInstanceConfig>(serializer) ?? new ArrInstanceConfig();
+            if (string.IsNullOrEmpty(arrConfig.Type))
+                arrConfig.Type = isRadarr ? "radarr" : isSonarr ? "sonarr" : "lidarr";
+            updatedConfig.ArrInstances[prop.Name] = arrConfig;
+        }
+        else if (isQbit)
+        {
+            updatedConfig.QBitInstances[prop.Name] = sectionObj.ToObject<QBitConfig>(serializer) ?? new QBitConfig();
+        }
+    }
+
+    return (updatedConfig, null);
+}
+
+static IResult SaveAndRespondConfigUpdate(
+    TorrentarrConfig cfg,
+    TorrentarrConfig updatedConfig,
+    ConfigurationLoader loader)
+{
+    var (reloadType, affectedInstancesList) = DetermineReloadType(cfg, updatedConfig);
+
+    loader.SaveConfig(updatedConfig);
+    cfg.Settings = updatedConfig.Settings;
+    cfg.WebUI = updatedConfig.WebUI;
+    cfg.ArrInstances = updatedConfig.ArrInstances;
+    cfg.QBitInstances = updatedConfig.QBitInstances;
+    return Results.Ok(new
+    {
+        status = "ok",
+        configReloaded = reloadType != "none" && reloadType != "frontend",
+        reloadType,
+        affectedInstances = affectedInstancesList
+    });
+}
+
 /// <summary>
 /// Recursively redact string values whose keys match <see cref="SensitiveKeyPatternRegex"/>.
 /// Returns a new JToken with sensitive values replaced by <see cref="REDACTED_PLACEHOLDER"/>.
@@ -2817,8 +2824,19 @@ class ProcessOrchestratorService : BackgroundService
                 return _config.Settings.CompletedDownloadFolder;
         }
 
-        // Final fallback: use /config which is always available in container
-        return "/config";
+        // Fall back to qBit download paths (Docker mounts torrents separately from /config)
+        foreach (var (_, qbit) in _config.QBitInstances)
+        {
+            if (qbit.Disabled)
+                continue;
+            var path = qbit.DownloadPath;
+            if (string.IsNullOrWhiteSpace(path) || path == "CHANGE_ME")
+                continue;
+            if (Directory.Exists(path))
+                return path;
+        }
+
+        return null;
     }
 
     private async Task ProcessSpecialCategoriesAsync(CancellationToken cancellationToken)

@@ -144,6 +144,32 @@ public class ConfigEndpointTests : IClassFixture<TorrentarrWebApplicationFactory
         var json = JsonDocument.Parse(await response.Content.ReadAsStringAsync()).RootElement;
         json.GetProperty("reloadType").GetString().Should().Be("full");
     }
+
+    [Fact]
+    public async Task PostApiConfig_WithChanges_PreservesUnchangedSections()
+    {
+        var client = _factory.CreateClientWithApiToken();
+        var before = await client.GetAsync("/web/config");
+        before.StatusCode.Should().Be(HttpStatusCode.OK);
+        var beforeJson = JsonDocument.Parse(await before.Content.ReadAsStringAsync()).RootElement;
+        beforeJson.TryGetProperty("WebUI", out _).Should().BeTrue();
+        var originalPort = beforeJson.GetProperty("WebUI").GetProperty("Port").GetInt32();
+
+        var payload = new
+        {
+            changes = new Dictionary<string, object>
+            {
+                ["Settings.LoopSleepTimer"] = 42
+            }
+        };
+        var patchResponse = await client.PostAsJsonAsync("/api/config", payload);
+        patchResponse.StatusCode.Should().Be(HttpStatusCode.OK);
+
+        var after = await client.GetAsync("/web/config");
+        var afterJson = JsonDocument.Parse(await after.Content.ReadAsStringAsync()).RootElement;
+        afterJson.GetProperty("Settings").GetProperty("LoopSleepTimer").GetInt32().Should().Be(42);
+        afterJson.GetProperty("WebUI").GetProperty("Port").GetInt32().Should().Be(originalPort);
+    }
 }
 
 /// <summary>
