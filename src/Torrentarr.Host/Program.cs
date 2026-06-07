@@ -1346,6 +1346,9 @@ try
                 }
             }
 
+            foreach (var (key, qbit) in cfg.QBitInstances.Where(kv => kv.Value.Host == "CHANGE_ME"))
+                updatedConfig.QBitInstances.TryAdd(key, qbit);
+
             var (reloadType, affectedInstancesList) = DetermineReloadType(cfg, updatedConfig);
 
             loader.SaveConfig(updatedConfig);
