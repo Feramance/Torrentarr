@@ -70,6 +70,27 @@ public class SetPasswordEndpointTests : IClassFixture<TorrentarrWebApplicationFa
     }
 
     [Fact]
+    public async Task PostSetPassword_WhenTokenOnlyAuth_WithoutSetupToken_Returns403()
+    {
+        var factory = new AuthEnabledWebApplicationFactory();
+        try
+        {
+            factory.SetConfigEnv();
+            var client = factory.CreateClientWithoutApiToken();
+            var response = await client.PostAsJsonAsync("/web/auth/set-password", new
+            {
+                username = "attacker",
+                password = "password123"
+            });
+            response.StatusCode.Should().Be(HttpStatusCode.Forbidden);
+        }
+        finally
+        {
+            factory.Dispose();
+        }
+    }
+
+    [Fact]
     public async Task PostSetPassword_WhenPasswordAlreadySet_WithoutSetupToken_Returns403()
     {
         var factory = new LocalAuthWebApplicationFactory();
