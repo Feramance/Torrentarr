@@ -133,7 +133,7 @@ public class ArrImportService : IArrImportService
     {
         var client = new RadarrClient(config.URI, config.APIKey);
 
-        var importMode = _config.Settings.ImportMode ?? "Auto";
+        var importMode = config.ImportMode ?? "Auto";
         var response = await client.TriggerDownloadedMoviesScanAsync(
             contentPath, hash, importMode, cancellationToken);
 
@@ -165,7 +165,7 @@ public class ArrImportService : IArrImportService
     {
         var client = new SonarrClient(config.URI, config.APIKey);
 
-        var importMode = _config.Settings.ImportMode ?? "Auto";
+        var importMode = config.ImportMode ?? "Auto";
         var response = await client.TriggerDownloadedEpisodesScanAsync(
             contentPath, hash, importMode, cancellationToken);
 
@@ -197,7 +197,7 @@ public class ArrImportService : IArrImportService
     {
         var client = new LidarrClient(config.URI, config.APIKey);
 
-        var importMode = _config.Settings.ImportMode ?? "Auto";
+        var importMode = config.ImportMode ?? "Auto";
         var response = await client.TriggerDownloadedAlbumsScanAsync(
             contentPath, hash, importMode, cancellationToken);
 
