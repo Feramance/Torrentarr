@@ -144,6 +144,24 @@ public class ConfigEndpointTests : IClassFixture<TorrentarrWebApplicationFactory
         var json = JsonDocument.Parse(await response.Content.ReadAsStringAsync()).RootElement;
         json.GetProperty("reloadType").GetString().Should().Be("full");
     }
+
+    [Fact]
+    public async Task PostConfig_PreservesPlaceholderQBitInstances_OnDisk()
+    {
+        var configPath = Environment.GetEnvironmentVariable("TORRENTARR_CONFIG")
+            ?? throw new InvalidOperationException("TORRENTARR_CONFIG not set");
+
+        var client = _factory.CreateClientWithApiToken();
+        var payload = new { changes = new { } };
+        var content = new StringContent(JsonSerializer.Serialize(payload), Encoding.UTF8, "application/json");
+
+        var response = await client.PostAsync("/web/config", content);
+
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+        var saved = await File.ReadAllTextAsync(configPath);
+        saved.Should().Contain("[qBit-seedbox]");
+        saved.Should().Contain("Host = \"CHANGE_ME\"");
+    }
 }
 
 /// <summary>

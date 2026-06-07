@@ -32,13 +32,7 @@ public class LidarrClient
         AddApiKeyHeader(request);
 
         var response = await _client.ExecuteAsync(request, ct);
-
-        if (response.IsSuccessful && !string.IsNullOrEmpty(response.Content))
-        {
-            return JsonConvert.DeserializeObject<List<LidarrArtist>>(response.Content) ?? new List<LidarrArtist>();
-        }
-
-        return new List<LidarrArtist>();
+        return ArrApiResponseHelper.DeserializeListOrThrow<LidarrArtist>(response, "Lidarr GET /api/v1/artist");
     }
 
     /// <summary>
@@ -89,13 +83,7 @@ public class LidarrClient
             request.AddQueryParameter("artistId", artistId.Value.ToString());
 
         var response = await _client.ExecuteAsync(request, ct);
-
-        if (response.IsSuccessful && !string.IsNullOrEmpty(response.Content))
-        {
-            return JsonConvert.DeserializeObject<List<LidarrAlbum>>(response.Content) ?? new List<LidarrAlbum>();
-        }
-
-        return new List<LidarrAlbum>();
+        return ArrApiResponseHelper.DeserializeListOrThrow<LidarrAlbum>(response, "Lidarr GET /api/v1/album");
     }
 
     /// <summary>
@@ -206,13 +194,7 @@ public class LidarrClient
         request.AddQueryParameter("pageSize", pageSize.ToString());
 
         var response = await _client.ExecuteAsync(request, ct);
-
-        if (response.IsSuccessful && !string.IsNullOrEmpty(response.Content))
-        {
-            return JsonConvert.DeserializeObject<LidarrQueueResponse>(response.Content) ?? new LidarrQueueResponse();
-        }
-
-        return new LidarrQueueResponse();
+        return ArrApiResponseHelper.DeserializeOrThrow<LidarrQueueResponse>(response, "Lidarr GET /api/v1/queue");
     }
 
     /// <summary>

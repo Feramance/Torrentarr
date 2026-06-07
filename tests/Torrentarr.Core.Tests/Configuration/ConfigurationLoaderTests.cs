@@ -586,6 +586,29 @@ public class ConfigurationLoaderTests : IDisposable
     }
 
     [Fact]
+    public void Save_PreservesPlaceholderQBitInstances()
+    {
+        WriteToml("""
+            [Settings]
+            ConfigVersion = "5.9.2"
+
+            [qBit-seedbox]
+            Host = "CHANGE_ME"
+            Port = 8080
+            UserName = "CHANGE_ME"
+            Password = "CHANGE_ME"
+            """);
+
+        var loader = new ConfigurationLoader(_tempFilePath);
+        var config = loader.Load();
+        loader.SaveConfig(config);
+
+        var content = File.ReadAllText(_tempFilePath);
+        content.Should().Contain("[qBit-seedbox]");
+        content.Should().Contain("Host = \"CHANGE_ME\"");
+    }
+
+    [Fact]
     public void GenerateDefaultConfig_ReturnsAuthEnabledForNewInstalls()
     {
         var config = ConfigurationLoader.GenerateDefaultConfig();
