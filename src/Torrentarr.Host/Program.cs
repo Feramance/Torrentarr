@@ -1260,7 +1260,7 @@ try
             var currentObj = new Newtonsoft.Json.Linq.JObject();
             currentObj["Settings"] = Newtonsoft.Json.Linq.JObject.FromObject(cfg.Settings, serializer);
             currentObj["WebUI"] = Newtonsoft.Json.Linq.JObject.FromObject(cfg.WebUI, serializer);
-            foreach (var (key, qbit) in cfg.QBitInstances.Where(kv => kv.Value.Host != "CHANGE_ME"))
+            foreach (var (key, qbit) in cfg.QBitInstances.Where(kv => kv.Key != "qBit" || kv.Value.Host != "CHANGE_ME"))
                 currentObj[key] = Newtonsoft.Json.Linq.JObject.FromObject(qbit, serializer);
             foreach (var (key, arr) in cfg.ArrInstances)
                 currentObj[key] = Newtonsoft.Json.Linq.JObject.FromObject(arr, serializer);
@@ -2991,8 +2991,12 @@ class ProcessOrchestratorService : BackgroundService
                     torrent.Name, FormatBytes(_currentFreeSpace), FormatBytes(torrent.AmountLeft), FormatBytes(-freeSpaceTest));
                 // §1.6: tagless — set DB column; else apply qBit tag
                 if (tagless && dbContext != null)
-                    await dbContext.TorrentLibrary.Where(t => t.Hash == torrent.Hash)
-                        .ExecuteUpdateAsync(s => s.SetProperty(t => t.FreeSpacePaused, true), cancellationToken);
+                {
+                    var qbitInstance = _qbitManager.GetAllClients()
+                        .FirstOrDefault(kv => kv.Value == client).Key ?? "qBit";
+                    await TorrentLibraryFreeSpaceHelper.SetFreeSpacePausedAsync(
+                        dbContext, torrent.Hash, torrent.Category, qbitInstance, true, cancellationToken);
+                }
                 else
                     await client.AddTagsAsync(new List<string> { torrent.Hash }, new List<string> { freeSpacePausedTag }, cancellationToken);
                 if (pausedCountRef != null) pausedCountRef[0]++;
