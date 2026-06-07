@@ -373,7 +373,10 @@ app.MapPost("/web/auth/set-password", async (HttpContext ctx, TorrentarrConfig c
     if (body.Password.Length < 8)
         return Results.BadRequest(new { error = "Password must be at least 8 characters" });
     var setupToken = Environment.GetEnvironmentVariable("TORRENTARR_SETUP_TOKEN");
-    var allowSet = string.IsNullOrEmpty(cfg.WebUI.PasswordHash)
+    // First-time setup when local auth is enabled, or when auth is disabled (enabling auth).
+    // TokenOnly/OIDC-only (auth required, no local login) must not allow unauthenticated hijack.
+    var allowSet = (string.IsNullOrEmpty(cfg.WebUI.PasswordHash)
+            && (cfg.WebUI.LocalAuthEnabled || cfg.WebUI.AuthDisabled))
         || (!string.IsNullOrWhiteSpace(setupToken) && body.SetupToken != null
             && WebUIAuthHelpers.TokenEquals(body.SetupToken, setupToken));
     if (!allowSet)
