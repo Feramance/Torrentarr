@@ -1676,8 +1676,10 @@ public class ConfigurationLoader
         sb.AppendLine();
 
         // All qBit instances — "qBit" written first (primary), then additional [qBit-XXX]
+        // Preserve additional qBit-* placeholders (CHANGE_ME) while omitting unconfigured primary [qBit].
         var orderedQbit = config.QBitInstances
-            .Where(kv => !string.IsNullOrEmpty(kv.Value.Host) && kv.Value.Host != "CHANGE_ME")
+            .Where(kv => !string.IsNullOrEmpty(kv.Value.Host)
+                && (kv.Key != "qBit" || kv.Value.Host != "CHANGE_ME"))
             .OrderBy(kv => kv.Key == "qBit" ? 0 : 1).ThenBy(kv => kv.Key);
 
         foreach (var (name, qbit) in orderedQbit)

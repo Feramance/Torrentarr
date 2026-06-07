@@ -144,6 +144,61 @@ public class ConfigEndpointTests : IClassFixture<TorrentarrWebApplicationFactory
         var json = JsonDocument.Parse(await response.Content.ReadAsStringAsync()).RootElement;
         json.GetProperty("reloadType").GetString().Should().Be("full");
     }
+
+    [Fact]
+    public async Task PostConfig_PreservesPlaceholderQBitInstances()
+    {
+        var configPath = Environment.GetEnvironmentVariable("TORRENTARR_CONFIG")
+            ?? throw new InvalidOperationException("TORRENTARR_CONFIG not set");
+        var originalToml = await File.ReadAllTextAsync(configPath);
+        var toml = """
+            [Settings]
+            ConfigVersion = "5.9.2"
+            LoopSleepTimer = 5
+            FailedCategory = "failed"
+            RecheckCategory = "recheck"
+            PingURLS = ["one.one.one.one"]
+
+            [WebUI]
+            Host = "0.0.0.0"
+            Port = 6969
+            Token = "test-api-token"
+            AuthDisabled = true
+            LocalAuthEnabled = false
+            OIDCEnabled = false
+            LiveArr = false
+
+            [qBit]
+            Host = "192.168.1.10"
+            Port = 8080
+            UserName = "admin"
+            Password = "secret"
+
+            [qBit-seedbox]
+            Host = "CHANGE_ME"
+            Port = 8080
+            UserName = "CHANGE_ME"
+            Password = "CHANGE_ME"
+            """;
+        try
+        {
+            await File.WriteAllTextAsync(configPath, toml);
+
+            var client = _factory.CreateClientWithApiToken();
+            var payload = new { changes = new Dictionary<string, object> { ["Settings.LoopSleepTimer"] = 7 } };
+            var content = new StringContent(JsonSerializer.Serialize(payload), Encoding.UTF8, "application/json");
+            var response = await client.PostAsync("/web/config", content);
+
+            response.StatusCode.Should().Be(HttpStatusCode.OK);
+            var saved = await File.ReadAllTextAsync(configPath);
+            saved.Should().Contain("[qBit-seedbox]");
+            saved.Should().Contain("LoopSleepTimer = 7");
+        }
+        finally
+        {
+            await File.WriteAllTextAsync(configPath, originalToml);
+        }
+    }
 }
 
 /// <summary>

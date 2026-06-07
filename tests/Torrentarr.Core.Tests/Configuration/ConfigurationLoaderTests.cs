@@ -593,4 +593,48 @@ public class ConfigurationLoaderTests : IDisposable
         config.WebUI.AuthDisabled.Should().BeFalse("new installs get auth enabled by default");
         config.WebUI.LocalAuthEnabled.Should().BeTrue("new installs get local auth enabled by default");
     }
+
+    [Fact]
+    public void Save_PreservesAdditionalQBitPlaceholderInstances()
+    {
+        WriteToml("""
+            [Settings]
+            LoopSleepTimer = 5
+
+            [qBit]
+            Host = "192.168.1.10"
+            Port = 8080
+            UserName = "admin"
+            Password = "secret"
+
+            [qBit-seedbox]
+            Host = "CHANGE_ME"
+            Port = 8080
+            UserName = "CHANGE_ME"
+            Password = "CHANGE_ME"
+            """);
+
+        var loader = new ConfigurationLoader(_tempFilePath);
+        var config = loader.Load();
+        config.Settings.LoopSleepTimer = 6;
+        loader.SaveConfig(config);
+
+        var content = File.ReadAllText(_tempFilePath);
+        content.Should().Contain("[qBit-seedbox]");
+        content.Should().Contain("Host = \"CHANGE_ME\"", "placeholder seedbox instance must survive save");
+        content.Should().Contain("LoopSleepTimer = 6");
+    }
+
+    [Fact]
+    public void Save_OmitsUnconfiguredPrimaryQBit()
+    {
+        var config = ConfigurationLoader.GenerateDefaultConfig();
+        config.QBitInstances["qBit"] = new QBitConfig();
+
+        var loader = new ConfigurationLoader(_tempFilePath);
+        loader.SaveConfig(config);
+
+        var content = File.ReadAllText(_tempFilePath);
+        content.Should().NotContain("[qBit]");
+    }
 }
