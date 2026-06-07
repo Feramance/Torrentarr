@@ -32,13 +32,7 @@ public class LidarrClient
         AddApiKeyHeader(request);
 
         var response = await _client.ExecuteAsync(request, ct);
-
-        if (response.IsSuccessful && !string.IsNullOrEmpty(response.Content))
-        {
-            return JsonConvert.DeserializeObject<List<LidarrArtist>>(response.Content) ?? new List<LidarrArtist>();
-        }
-
-        return new List<LidarrArtist>();
+        return ArrApiResponse.ParseListOrThrow<LidarrArtist>(response, "Lidarr GetArtists");
     }
 
     /// <summary>
@@ -89,13 +83,7 @@ public class LidarrClient
             request.AddQueryParameter("artistId", artistId.Value.ToString());
 
         var response = await _client.ExecuteAsync(request, ct);
-
-        if (response.IsSuccessful && !string.IsNullOrEmpty(response.Content))
-        {
-            return JsonConvert.DeserializeObject<List<LidarrAlbum>>(response.Content) ?? new List<LidarrAlbum>();
-        }
-
-        return new List<LidarrAlbum>();
+        return ArrApiResponse.ParseListOrThrow<LidarrAlbum>(response, "Lidarr GetAlbums");
     }
 
     /// <summary>

@@ -32,13 +32,7 @@ public class RadarrClient
         AddApiKeyHeader(request);
 
         var response = await _client.ExecuteAsync(request, ct);
-
-        if (response.IsSuccessful && !string.IsNullOrEmpty(response.Content))
-        {
-            return JsonConvert.DeserializeObject<List<RadarrMovie>>(response.Content) ?? new List<RadarrMovie>();
-        }
-
-        return new List<RadarrMovie>();
+        return ArrApiResponse.ParseListOrThrow<RadarrMovie>(response, "Radarr GetMovies");
     }
 
     /// <summary>
