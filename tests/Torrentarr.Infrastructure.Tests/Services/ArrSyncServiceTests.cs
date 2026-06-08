@@ -188,4 +188,46 @@ public sealed class ArrSyncServiceTests : IDisposable
 
         await act.Should().NotThrowAsync();
     }
+
+    [Fact]
+    public void ShouldSkipDestructiveDelete_EmptyApiWithExistingRows_ReturnsTrue()
+    {
+        var config = new TorrentarrConfig
+        {
+            ArrInstances = new Dictionary<string, ArrInstanceConfig>
+            {
+                ["test"] = MakeInstance("radarr", "")
+            }
+        };
+        var svc = CreateService(config);
+
+        var method = typeof(ArrSyncService).GetMethod(
+            "ShouldSkipDestructiveDelete",
+            System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance)!;
+
+        var result = (bool)method.Invoke(svc, new object[] { 0, 10, "test", "movies" })!;
+
+        result.Should().BeTrue();
+    }
+
+    [Fact]
+    public void ShouldSkipDestructiveDelete_EmptyApiAndEmptyDb_ReturnsFalse()
+    {
+        var config = new TorrentarrConfig
+        {
+            ArrInstances = new Dictionary<string, ArrInstanceConfig>
+            {
+                ["test"] = MakeInstance("radarr", "")
+            }
+        };
+        var svc = CreateService(config);
+
+        var method = typeof(ArrSyncService).GetMethod(
+            "ShouldSkipDestructiveDelete",
+            System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance)!;
+
+        var result = (bool)method.Invoke(svc, new object[] { 0, 0, "test", "movies" })!;
+
+        result.Should().BeFalse();
+    }
 }

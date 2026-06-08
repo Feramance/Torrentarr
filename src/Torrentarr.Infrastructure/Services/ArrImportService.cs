@@ -133,7 +133,7 @@ public class ArrImportService : IArrImportService
     {
         var client = new RadarrClient(config.URI, config.APIKey);
 
-        var importMode = _config.Settings.ImportMode ?? "Auto";
+        var importMode = config.ImportMode ?? "Auto";
         var response = await client.TriggerDownloadedMoviesScanAsync(
             contentPath, hash, importMode, cancellationToken);
 
@@ -165,7 +165,7 @@ public class ArrImportService : IArrImportService
     {
         var client = new SonarrClient(config.URI, config.APIKey);
 
-        var importMode = _config.Settings.ImportMode ?? "Auto";
+        var importMode = config.ImportMode ?? "Auto";
         var response = await client.TriggerDownloadedEpisodesScanAsync(
             contentPath, hash, importMode, cancellationToken);
 
@@ -197,7 +197,7 @@ public class ArrImportService : IArrImportService
     {
         var client = new LidarrClient(config.URI, config.APIKey);
 
-        var importMode = _config.Settings.ImportMode ?? "Auto";
+        var importMode = config.ImportMode ?? "Auto";
         var response = await client.TriggerDownloadedAlbumsScanAsync(
             contentPath, hash, importMode, cancellationToken);
 
@@ -353,7 +353,7 @@ public class ArrImportService : IArrImportService
             kv.Value == config).Key ?? "";
 
         var modelEntry = await _dbContext.Movies.AsNoTracking()
-            .FirstOrDefaultAsync(m => m.EntryId == record.MovieId && m.ArrInstance == arrName, ct);
+            .FirstOrDefaultAsync(m => m.ArrId == record.MovieId && m.ArrInstance == arrName, ct);
 
         if (modelEntry == null)
             return false;
@@ -389,7 +389,7 @@ public class ArrImportService : IArrImportService
             if (record.SeriesId == null) return false;
 
             var seriesEntry = await _dbContext.Series.AsNoTracking()
-                .FirstOrDefaultAsync(s => s.EntryId == record.SeriesId && s.ArrInstance == arrName, ct);
+                .FirstOrDefaultAsync(s => s.ArrId == record.SeriesId && s.ArrInstance == arrName, ct);
 
             if (seriesEntry == null) return false;
 
@@ -403,7 +403,7 @@ public class ArrImportService : IArrImportService
             if (record.EpisodeId == null) return false;
 
             var episodeEntry = await _dbContext.Episodes.AsNoTracking()
-                .FirstOrDefaultAsync(e => e.EntryId == record.EpisodeId && e.ArrInstance == arrName, ct);
+                .FirstOrDefaultAsync(e => e.ArrId == record.EpisodeId && e.ArrInstance == arrName, ct);
 
             if (episodeEntry == null) return false;
 
@@ -433,7 +433,7 @@ public class ArrImportService : IArrImportService
             kv.Value == config).Key ?? "";
 
         var modelEntry = await _dbContext.Albums.AsNoTracking()
-            .FirstOrDefaultAsync(a => a.EntryId == record.AlbumId && a.ArrInstance == arrName, ct);
+            .FirstOrDefaultAsync(a => a.ArrId == record.AlbumId && a.ArrInstance == arrName, ct);
 
         if (modelEntry == null)
             return false;

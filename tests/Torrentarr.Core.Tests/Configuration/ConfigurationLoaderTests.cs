@@ -593,4 +593,120 @@ public class ConfigurationLoaderTests : IDisposable
         config.WebUI.AuthDisabled.Should().BeFalse("new installs get auth enabled by default");
         config.WebUI.LocalAuthEnabled.Should().BeTrue("new installs get local auth enabled by default");
     }
+
+    [Fact]
+    public void Save_PreservesAdditionalQBitPlaceholderInstances()
+    {
+        WriteToml("""
+            [Settings]
+            LoopSleepTimer = 5
+
+            [qBit]
+            Host = "192.168.1.10"
+            Port = 8080
+            UserName = "admin"
+            Password = "secret"
+
+            [qBit-seedbox]
+            Host = "CHANGE_ME"
+            Port = 8080
+            UserName = "CHANGE_ME"
+            Password = "CHANGE_ME"
+            """);
+
+        var loader = new ConfigurationLoader(_tempFilePath);
+        var config = loader.Load();
+        config.Settings.LoopSleepTimer = 6;
+        loader.SaveConfig(config);
+
+        var content = File.ReadAllText(_tempFilePath);
+        content.Should().Contain("[qBit-seedbox]");
+        content.Should().Contain("Host = \"CHANGE_ME\"", "placeholder seedbox instance must survive save");
+        content.Should().Contain("LoopSleepTimer = 6");
+    }
+
+    [Fact]
+    public void Save_OmitsUnconfiguredPrimaryQBit()
+    {
+        var config = ConfigurationLoader.GenerateDefaultConfig();
+        config.QBitInstances["qBit"] = new QBitConfig();
+
+        var loader = new ConfigurationLoader(_tempFilePath);
+        loader.SaveConfig(config);
+
+        var content = File.ReadAllText(_tempFilePath);
+        content.Should().NotContain("[qBit]");
+    }
+
+    [Fact]
+    public void SaveConfig_PreservesQBitTrackers_OnRoundTrip()
+    {
+        WriteToml("""
+            [Settings]
+            LoopSleepTimer = 5
+
+            [qBit]
+            Host = "localhost"
+            Port = 8080
+            UserName = "admin"
+            Password = "adminpass"
+
+            [[qBit.Trackers]]
+            Name = "BeyondHD"
+            URI = "https://tracker.beyond-hd.me/announce"
+            Priority = 10
+            MaxUploadRatio = 1.5
+            HitAndRunMode = "or"
+            MinSeedingTime = 3
+
+            [qBit.CategorySeeding]
+            MaxUploadRatio = 2.0
+            """);
+
+        var loader = new ConfigurationLoader(_tempFilePath);
+        var config = loader.Load();
+        config.Settings.LoopSleepTimer = 10;
+        loader.SaveConfig(config);
+
+        var reloaded = new ConfigurationLoader(_tempFilePath).Load();
+        reloaded.QBitInstances["qBit"].Trackers.Should().HaveCount(1);
+        reloaded.QBitInstances["qBit"].Trackers[0].Name.Should().Be("BeyondHD");
+        reloaded.QBitInstances["qBit"].Trackers[0].Uri.Should().Be("https://tracker.beyond-hd.me/announce");
+        reloaded.QBitInstances["qBit"].Trackers[0].Priority.Should().Be(10);
+        reloaded.QBitInstances["qBit"].Trackers[0].MaxUploadRatio.Should().Be(1.5);
+        reloaded.QBitInstances["qBit"].Trackers[0].HitAndRunMode.Should().Be("or");
+        reloaded.QBitInstances["qBit"].Trackers[0].MinSeedingTimeDays.Should().Be(3);
+    }
+
+    [Fact]
+    public void SaveConfig_PreservesPerInstanceImportMode_OnRoundTrip()
+    {
+        WriteToml("""
+            [Settings]
+            LoopSleepTimer = 5
+
+            [qBit]
+            Host = "localhost"
+            Port = 8080
+            UserName = "admin"
+            Password = "adminpass"
+
+            [Radarr-Movies]
+            URI = "http://radarr:7878"
+            APIKey = "key"
+            Category = "radarr"
+            importMode = "Copy"
+            """);
+
+        var loader = new ConfigurationLoader(_tempFilePath);
+        var config = loader.Load();
+        config.Settings.LoopSleepTimer = 10;
+        loader.SaveConfig(config);
+
+        var content = File.ReadAllText(_tempFilePath);
+        content.Should().Contain("importMode = \"Copy\"");
+
+        var reloaded = new ConfigurationLoader(_tempFilePath).Load();
+        reloaded.ArrInstances["Radarr-Movies"].ImportMode.Should().Be("Copy");
+    }
 }

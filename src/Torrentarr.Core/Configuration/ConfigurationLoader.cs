@@ -1675,9 +1675,11 @@ public class ConfigurationLoader
         }
         sb.AppendLine();
 
-        // All qBit instances — "qBit" written first (primary), then additional [qBit-XXX]
+        // All qBit instances — "qBit" written first (primary), then additional [qBit-XXX].
+        // Preserve additional qBit-* placeholders (CHANGE_ME) while omitting unconfigured primary [qBit].
         var orderedQbit = config.QBitInstances
-            .Where(kv => !string.IsNullOrEmpty(kv.Value.Host) && kv.Value.Host != "CHANGE_ME")
+            .Where(kv => !string.IsNullOrEmpty(kv.Value.Host)
+                && (kv.Key != "qBit" || kv.Value.Host != "CHANGE_ME"))
             .OrderBy(kv => kv.Key == "qBit" ? 0 : 1).ThenBy(kv => kv.Key);
 
         foreach (var (name, qbit) in orderedQbit)
@@ -1699,7 +1701,15 @@ public class ConfigurationLoader
                 sb.AppendLine("#          URI = \"tracker.example.com\"");
                 sb.AppendLine("#          Priority = 1");
             }
-            sb.AppendLine("Trackers = []");
+            if (qbit.Trackers.Count == 0)
+            {
+                sb.AppendLine("Trackers = []");
+            }
+            else
+            {
+                foreach (var tracker in qbit.Trackers)
+                    AppendTrackerToml(sb, $"{name}.Trackers", tracker);
+            }
             sb.AppendLine();
 
             sb.AppendLine($"[{name}.CategorySeeding]");
@@ -1767,31 +1777,7 @@ public class ConfigurationLoader
 
             // [[Arr.Torrent.Trackers]] array-of-tables
             foreach (var tracker in instance.Torrent.Trackers)
-            {
-                sb.AppendLine($"[[{kvp.Key}.Torrent.Trackers]]");
-                if (!string.IsNullOrEmpty(tracker.Name))
-                    sb.AppendLine($"Name = \"{EscapeTomlString(tracker.Name)}\"");
-                sb.AppendLine($"URI = \"{tracker.Uri}\"");
-                sb.AppendLine($"Priority = {tracker.Priority}");
-                sb.AppendLine($"MaximumETA = {tracker.MaxETA ?? -1}");
-                sb.AppendLine($"DownloadRateLimit = {tracker.DownloadRateLimit ?? -1}");
-                sb.AppendLine($"UploadRateLimit = {tracker.UploadRateLimit ?? -1}");
-                sb.AppendLine($"MaxUploadRatio = {tracker.MaxUploadRatio ?? -1}");
-                sb.AppendLine($"MaxSeedingTime = {tracker.MaxSeedingTime ?? -1}");
-                sb.AppendLine($"HitAndRunMode = \"{tracker.HitAndRunMode ?? "disabled"}\"");
-                sb.AppendLine($"MinSeedRatio = {tracker.MinSeedRatio ?? 1.0}");
-                sb.AppendLine($"MinSeedingTime = {tracker.MinSeedingTimeDays ?? 0}"); // TOML key is MinSeedingTime (qBitrr compat)
-                sb.AppendLine($"HitAndRunPartialSeedRatio = {tracker.HitAndRunPartialSeedRatio ?? 1.0}");
-                sb.AppendLine($"TrackerUpdateBuffer = {tracker.TrackerUpdateBuffer ?? 0}");
-                sb.AppendLine($"HitAndRunMinimumDownloadPercent = {tracker.HitAndRunMinimumDownloadPercent ?? 10}");
-                if (tracker.SuperSeedMode.HasValue)
-                    sb.AppendLine($"SuperSeedMode = {tracker.SuperSeedMode.Value.ToString().ToLower()}");
-                sb.AppendLine($"RemoveIfExists = {tracker.RemoveIfExists.ToString().ToLower()}");
-                sb.AppendLine($"AddTrackerIfMissing = {tracker.AddTrackerIfMissing.ToString().ToLower()}");
-                if (tracker.AddTags.Count > 0)
-                    sb.AppendLine($"AddTags = [{string.Join(", ", tracker.AddTags.Select(t => $"'{t}'"))}]");
-                sb.AppendLine();
-            }
+                AppendTrackerToml(sb, $"{kvp.Key}.Torrent.Trackers", tracker);
 
             // EntrySearch section
             sb.AppendLine($"[{kvp.Key}.EntrySearch]");
@@ -1872,6 +1858,33 @@ public class ConfigurationLoader
         if (str is "true") return "and";
         if (str is "false") return "disabled";
         return str is "and" or "or" or "disabled" ? str : "disabled";
+    }
+
+    private static void AppendTrackerToml(System.Text.StringBuilder sb, string tableKey, TrackerConfig tracker)
+    {
+        sb.AppendLine($"[[{tableKey}]]");
+        if (!string.IsNullOrEmpty(tracker.Name))
+            sb.AppendLine($"Name = \"{EscapeTomlString(tracker.Name)}\"");
+        sb.AppendLine($"URI = \"{tracker.Uri}\"");
+        sb.AppendLine($"Priority = {tracker.Priority}");
+        sb.AppendLine($"MaximumETA = {tracker.MaxETA ?? -1}");
+        sb.AppendLine($"DownloadRateLimit = {tracker.DownloadRateLimit ?? -1}");
+        sb.AppendLine($"UploadRateLimit = {tracker.UploadRateLimit ?? -1}");
+        sb.AppendLine($"MaxUploadRatio = {tracker.MaxUploadRatio ?? -1}");
+        sb.AppendLine($"MaxSeedingTime = {tracker.MaxSeedingTime ?? -1}");
+        sb.AppendLine($"HitAndRunMode = \"{tracker.HitAndRunMode ?? "disabled"}\"");
+        sb.AppendLine($"MinSeedRatio = {tracker.MinSeedRatio ?? 1.0}");
+        sb.AppendLine($"MinSeedingTime = {tracker.MinSeedingTimeDays ?? 0}"); // TOML key is MinSeedingTime (qBitrr compat)
+        sb.AppendLine($"HitAndRunPartialSeedRatio = {tracker.HitAndRunPartialSeedRatio ?? 1.0}");
+        sb.AppendLine($"TrackerUpdateBuffer = {tracker.TrackerUpdateBuffer ?? 0}");
+        sb.AppendLine($"HitAndRunMinimumDownloadPercent = {tracker.HitAndRunMinimumDownloadPercent ?? 10}");
+        if (tracker.SuperSeedMode.HasValue)
+            sb.AppendLine($"SuperSeedMode = {tracker.SuperSeedMode.Value.ToString().ToLower()}");
+        sb.AppendLine($"RemoveIfExists = {tracker.RemoveIfExists.ToString().ToLower()}");
+        sb.AppendLine($"AddTrackerIfMissing = {tracker.AddTrackerIfMissing.ToString().ToLower()}");
+        if (tracker.AddTags.Count > 0)
+            sb.AppendLine($"AddTags = [{string.Join(", ", tracker.AddTags.Select(t => $"'{t}'"))}]");
+        sb.AppendLine();
     }
 
     /// <summary>

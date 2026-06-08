@@ -69,6 +69,12 @@ public class TorrentarrWebApplicationFactory : WebApplicationFactory<Program>, I
         LocalAuthEnabled = false
         OIDCEnabled = false
         LiveArr = false
+
+        [qBit-seedbox]
+        Host = "CHANGE_ME"
+        Port = 8080
+        UserName = "CHANGE_ME"
+        Password = "CHANGE_ME"
         """;
 
     public TorrentarrWebApplicationFactory()
