@@ -1,5 +1,19 @@
 # Changelog
 
+## v6.12.2 (2026-06-08)
+
+### Features
+- qBitrr 5.12.3 feature parity: TorrentPolicyManager (tracker sort + free-space gating), UrlBase subpath support, catalog rollups, Lidarr artists/thumbnails, category path validation, auth bootstrap setup token, OpenAPI expansion with CI drift check
+- Comprehensive test coverage for parity surfaces (692 .NET + 148 Vitest non-live tests)
+
+### Bug Fixes
+- HnR dead-tracker: remove bare `"not found"` keyword from `SeedingService` (#412)
+- WebUI `configForDI` compile error; config/env alias precedence and migration fixes
+
+### Documentation
+- Parity docs under `docs/parity/` with GitHub blob links for MkDocs CI
+- Align `AGENTS.md`, `CLAUDE.md`, and config docs with `ExpectedConfigVersion = 6.12.2`
+
 ## v6.1.0 (2026-03-13)
 
 ### Features
