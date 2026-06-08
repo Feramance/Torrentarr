@@ -40,14 +40,14 @@ To move the pin: update this section, re-run the inventories below, and adjust [
 
 | Upstream | Torrentarr (primary) |
 | --- | --- |
-| `config*.py` | [ConfigurationLoader.cs](../../src/Torrentarr.Core/Configuration/ConfigurationLoader.cs), [TorrentarrConfig.cs](../../src/Torrentarr.Core/Configuration/TorrentarrConfig.cs) |
-| `arss.py` / policy | [TorrentPolicyHelper.cs](../../src/Torrentarr.Core/Configuration/TorrentPolicyHelper.cs), [Host Program.cs](../../src/Torrentarr.Host/Program.cs), [TorrentProcessor.cs](../../src/Torrentarr.Infrastructure/Services/TorrentProcessor.cs) |
-| `webui.py` | [WebUI Program.cs](../../src/Torrentarr.WebUI/Program.cs), [Host Program.cs](../../src/Torrentarr.Host/Program.cs), `webui/` |
-| `tables.py` | [TorrentarrDbContext.cs](../../src/Torrentarr.Infrastructure/Database/TorrentarrDbContext.cs), `Database/Models/*.cs` |
+| `config*.py` | [`ConfigurationLoader.cs`](https://github.com/Feramance/Torrentarr/blob/master/src/Torrentarr.Core/Configuration/ConfigurationLoader.cs), [`TorrentarrConfig.cs`](https://github.com/Feramance/Torrentarr/blob/master/src/Torrentarr.Core/Configuration/TorrentarrConfig.cs) |
+| `arss.py` / policy | [`TorrentPolicyHelper.cs`](https://github.com/Feramance/Torrentarr/blob/master/src/Torrentarr.Core/Configuration/TorrentPolicyHelper.cs), [Host `Program.cs`](https://github.com/Feramance/Torrentarr/blob/master/src/Torrentarr.Host/Program.cs), [`TorrentProcessor.cs`](https://github.com/Feramance/Torrentarr/blob/master/src/Torrentarr.Infrastructure/Services/TorrentProcessor.cs) |
+| `webui.py` | [WebUI `Program.cs`](https://github.com/Feramance/Torrentarr/blob/master/src/Torrentarr.WebUI/Program.cs), [Host `Program.cs`](https://github.com/Feramance/Torrentarr/blob/master/src/Torrentarr.Host/Program.cs), `webui/` |
+| `tables.py` | [`TorrentarrDbContext.cs`](https://github.com/Feramance/Torrentarr/blob/master/src/Torrentarr.Infrastructure/Database/TorrentarrDbContext.cs), `Database/Models/*.cs` |
 
 ### Release validation checklist
 
-1. Diff `config.example.toml` (upstream) vs Torrentarr’s documented config and [ConfigurationLoader](../../src/Torrentarr.Core/Configuration/ConfigurationLoader.cs) for new keys.
+1. Diff `config.example.toml` (upstream) vs Torrentarr’s documented config and [`ConfigurationLoader`](https://github.com/Feramance/Torrentarr/blob/master/src/Torrentarr.Core/Configuration/ConfigurationLoader.cs) for new keys.
 2. Diff route lists: upstream `docs/webui/api.md` and `openapi.json` vs [docs/assets/openapi.json](../assets/openapi.json) and [docs/webui/api.md](../webui/api.md) — use [OpenAPI alignment](#openapi-alignment) below.
 3. Run: `dotnet test --filter "Category!=Live"`, `npx vitest run` in `webui/`.
 
@@ -62,8 +62,8 @@ Parity means **compatible config**, **equivalent external behavior** (qBittorren
 | **Process model** | Single process | [Host](https://github.com/Feramance/Torrentarr) orchestrates WebUI + per-Arr workers | WebUI stays up if a worker crashes. |
 | **Runtime / install** | Python, `pip`, `setup.py` | .NET 10, releases/Docker | `setup.py` row in matrix: intentional-divergence. |
 | **Database filename** | `qbitrr.db` (conventional) | `torrentarr.db` | Same schema intent; name reflects product. |
-| **Release major version** | 5.x | 6.x (+1 major) | [AGENTS.md](../../AGENTS.md), [index.md](../index.md) |
-| **Migrations** | Peewee / Python | EF Core + [ConfigurationLoader](../../src/Torrentarr.Core/Configuration/ConfigurationLoader.cs) | Preserve TOML + DB upgrade stories. |
+| **Release major version** | 5.x | 6.x (+1 major) | [`AGENTS.md`](https://github.com/Feramance/Torrentarr/blob/master/AGENTS.md), [index.md](../index.md) |
+| **Migrations** | Peewee / Python | EF Core + [`ConfigurationLoader`](https://github.com/Feramance/Torrentarr/blob/master/src/Torrentarr.Core/Configuration/ConfigurationLoader.cs) | Preserve TOML + DB upgrade stories. |
 | **Logging** | Python logging | Serilog | Parity **goal** for events; format differs. |
 | **CI automations** | e.g. `.github/autofix` | See [Support scripts and CI](#support-scripts-and-ci) | No user feature required to match. |
 
@@ -76,11 +76,11 @@ If you find a difference not listed, open an issue or add a matrix row with stat
 Upstream may ship `repair_database_targeted.py`. Torrentarr does not port that script.
 
 1. **Stop** all processes using the DB.
-2. Use Host `--repair-database` and [DatabaseHealthService](../../src/Torrentarr.Infrastructure/Services/DatabaseHealthService.cs) — [database troubleshooting](../troubleshooting/database.md).
+2. Use Host `--repair-database` and [`DatabaseHealthService`](https://github.com/Feramance/Torrentarr/blob/master/src/Torrentarr.Infrastructure/Services/DatabaseHealthService.cs) — [database troubleshooting](../troubleshooting/database.md).
 3. For isolated bad rows: **backup** `torrentarr.db`, then `sqlite3` with `PRAGMA foreign_key_check;` and targeted `DELETE`/`UPDATE` as appropriate.
 4. `PRAGMA integrity_check;`, then start Torrentarr.
 
-**Matrix:** `repair_database_targeted.py` = intentional-divergence. Tests: [DatabaseHealthServiceTests.cs](../../tests/Torrentarr.Infrastructure.Tests/Services/DatabaseHealthServiceTests.cs).
+**Matrix:** `repair_database_targeted.py` = intentional-divergence. Tests: [`DatabaseHealthServiceTests.cs`](https://github.com/Feramance/Torrentarr/blob/master/tests/Torrentarr.Infrastructure.Tests/Services/DatabaseHealthServiceTests.cs).
 
 ---
 
@@ -92,21 +92,21 @@ Maps upstream concepts to CI tests; live qBittorrent still needed for full order
 
 | Concern | qBitrr | Torrentarr | Tests |
 | --- | --- | --- | --- |
-| `SortTorrents` gating | `global_sort_torrents_enabled` | [TorrentPolicyHelper](../../src/Torrentarr.Core/Configuration/TorrentPolicyHelper.cs) | [TorrentPolicyHelperTests.cs](../../tests/Torrentarr.Core.Tests/Configuration/TorrentPolicyHelperTests.cs) |
+| `SortTorrents` gating | `global_sort_torrents_enabled` | [`TorrentPolicyHelper`](https://github.com/Feramance/Torrentarr/blob/master/src/Torrentarr.Core/Configuration/TorrentPolicyHelper.cs) | [`TorrentPolicyHelperTests.cs`](https://github.com/Feramance/Torrentarr/blob/master/tests/Torrentarr.Core.Tests/Configuration/TorrentPolicyHelperTests.cs) |
 | Queue position sort | `_torrent_queue_position_sort_key` | `TorrentQueuePositionSortKey` | same |
 | Queue seeding for sort | `is_queue_seeding_for_sort` | `IsQueueSeedingForSort` | same |
 | Monitored policy categories | Union | `IsMonitoredPolicyCategory` / cache | same |
 | Free space gate | + AutoPause + qBit | `EnableFreeSpace` | same |
 | Tracker merge (priority) | `merge_global_tracker_tag_to_priority_max` | `MergeGlobalTrackerTagToPriorityMax` | same |
-| State machine | `_process_single_torrent` | [TorrentProcessor](../../src/Torrentarr.Infrastructure/Services/TorrentProcessor.cs) | [TorrentProcessorTests.cs](../../tests/Torrentarr.Infrastructure.Tests/Services/TorrentProcessorTests.cs) |
-| Seeding / HnR | `qbit_category_manager` | [SeedingService](../../src/Torrentarr.Infrastructure/Services/SeedingService.cs) | [SeedingServiceTrackerMergeTests.cs](../../tests/Torrentarr.Infrastructure.Tests/Services/SeedingServiceTrackerMergeTests.cs) |
+| State machine | `_process_single_torrent` | [`TorrentProcessor`](https://github.com/Feramance/Torrentarr/blob/master/src/Torrentarr.Infrastructure/Services/TorrentProcessor.cs) | [`TorrentProcessorTests.cs`](https://github.com/Feramance/Torrentarr/blob/master/tests/Torrentarr.Infrastructure.Tests/Services/TorrentProcessorTests.cs) |
+| Seeding / HnR | `qbit_category_manager` | [`SeedingService`](https://github.com/Feramance/Torrentarr/blob/master/src/Torrentarr.Infrastructure/Services/SeedingService.cs) | [`SeedingServiceTrackerMergeTests.cs`](https://github.com/Feramance/Torrentarr/blob/master/tests/Torrentarr.Infrastructure.Tests/Services/SeedingServiceTrackerMergeTests.cs) |
 
 ### Live (`Category=Live`) — optional
 
 | Scenario | Goal |
 | --- | --- |
-| `SortTorrents` on, multiple trackers | Queue / `topPrio` vs tracker priority — [Host Program.cs](../../src/Torrentarr.Host/Program.cs) |
-| Free space + `AutoPauseResume` | [FreeSpaceService](../../src/Torrentarr.Infrastructure/Services/FreeSpaceService.cs) |
+| `SortTorrents` on, multiple trackers | Queue / `topPrio` vs tracker priority — [Host `Program.cs`](https://github.com/Feramance/Torrentarr/blob/master/src/Torrentarr.Host/Program.cs) |
+| Free space + `AutoPauseResume` | [`FreeSpaceService`](https://github.com/Feramance/Torrentarr/blob/master/src/Torrentarr.Infrastructure/Services/FreeSpaceService.cs) |
 | Multi `qBit-*` | Per-instance `QBitInstanceName` |
 
 `dotnet test --filter "Category=Live"` with real [config](../configuration/config-file.md).
@@ -117,7 +117,7 @@ Maps upstream concepts to CI tests; live qBittorrent still needed for full order
 
 Compare to upstream on the [pinned tag](#upstream-qbitrr-baseline) for **behavior-affecting** API/UI only (not layout).
 
-- **Routes:** [WebUI Program.cs](../../src/Torrentarr.WebUI/Program.cs) + Host vs `webui.py` and [upstream API](https://github.com/Feramance/qBitrr/blob/v5.11.1/docs/webui/api.md).
+- **Routes:** [WebUI `Program.cs`](https://github.com/Feramance/Torrentarr/blob/master/src/Torrentarr.WebUI/Program.cs) + Host vs `webui.py` and [upstream API](https://github.com/Feramance/qBitrr/blob/v5.11.1/docs/webui/api.md).
 - **OpenAPI:** [docs/assets/openapi.json](../assets/openapi.json) vs upstream `qBitrr/openapi.json` — [OpenAPI alignment](#openapi-alignment).
 - **React:** Config (all TOML keys, including `SortTorrents` on trackers), Processes, Logs, Auth — [docs/webui/api.md](../webui/api.md).
 
@@ -127,13 +127,13 @@ Compare to upstream on the [pinned tag](#upstream-qbitrr-baseline) for **behavio
 
 | qBitrr | Role | Torrentarr |
 | --- | --- | --- |
-| `pyarr_compat.py` | Arr API normalization | [ApiClients/Arr/](../../src/Torrentarr.Infrastructure/ApiClients/Arr/) |
-| `ffprobe.py` | Media checks | [MediaValidationService.cs](../../src/Torrentarr.Infrastructure/Services/MediaValidationService.cs) |
+| `pyarr_compat.py` | Arr API normalization | [`ApiClients/Arr/`](https://github.com/Feramance/Torrentarr/tree/master/src/Torrentarr.Infrastructure/ApiClients/Arr) |
+| `ffprobe.py` | Media checks | [`MediaValidationService.cs`](https://github.com/Feramance/Torrentarr/blob/master/src/Torrentarr.Infrastructure/Services/MediaValidationService.cs) |
 | `errors.py` | Errors | Exception types + HTTP JSON in WebUI |
 | `logger.py` | Logging | Serilog in Host/WebUI/Workers |
 | `utils.py` | Helpers | Search `qBitrr` in Infrastructure |
-| `versioning` / `bundled_data` | Version/assets | [UpdateService](../../src/Torrentarr.Host/UpdateService.cs) |
-| `home_path.py` | Config paths | [ConfigurationLoader](../../src/Torrentarr.Core/Configuration/ConfigurationLoader.cs) |
+| `versioning` / `bundled_data` | Version/assets | [`UpdateService`](https://github.com/Feramance/Torrentarr/blob/master/src/Torrentarr.Host/UpdateService.cs) |
+| `home_path.py` | Config paths | [`ConfigurationLoader`](https://github.com/Feramance/Torrentarr/blob/master/src/Torrentarr.Core/Configuration/ConfigurationLoader.cs) |
 
 ---
 
@@ -141,7 +141,7 @@ Compare to upstream on the [pinned tag](#upstream-qbitrr-baseline) for **behavio
 
 | Upstream | Torrentarr |
 | --- | --- |
-| `scripts/repair_database.py` | [DatabaseHealthService](../../src/Torrentarr.Infrastructure/Services/DatabaseHealthService.cs), `--repair-database` |
+| `scripts/repair_database.py` | [`DatabaseHealthService`](https://github.com/Feramance/Torrentarr/blob/master/src/Torrentarr.Infrastructure/Services/DatabaseHealthService.cs), `--repair-database` |
 | `repair_database_targeted.py` | [Targeted database repair](#targeted-database-repair) — no separate script |
 | `.github/scripts/update_releases.py` | [Release process](../development/release-process.md) + GitHub Actions |
 | `.github/autofix` | pre-commit, `dotnet format`, PR review — no user feature |
