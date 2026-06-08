@@ -647,6 +647,7 @@ function LoginPage({
   const [setupRequired, setSetupRequired] = useState(showSetupFirst);
   const [newPassword, setNewPassword] = useState("");
   const [confirmPassword, setConfirmPassword] = useState("");
+  const [setupToken, setSetupToken] = useState("");
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -677,10 +678,18 @@ function LoginPage({
       setError("Passwords do not match");
       return;
     }
+    if (!setupToken.trim()) {
+      setError("Setup token is required.");
+      return;
+    }
     setError(null);
     setSubmitting(true);
     try {
-      await setPassword({ username, password: newPassword });
+      await setPassword({
+        username,
+        password: newPassword,
+        setupToken: setupToken.trim(),
+      });
       await login({ username, password: newPassword });
       onSuccess();
     } catch (err) {
@@ -744,6 +753,21 @@ function LoginPage({
                 onChange={(e) => setConfirmPassword(e.target.value)}
                 required
               />
+            </div>
+            <div className="form-group">
+              <label htmlFor="setup-token">Setup token</label>
+              <input
+                id="setup-token"
+                type="password"
+                autoComplete="off"
+                value={setupToken}
+                onChange={(e) => setSetupToken(e.target.value)}
+                required
+              />
+              <p className="login-info">
+                Use TORRENTARR_SETUP_TOKEN or the WebUI.Token value from
+                config.toml.
+              </p>
             </div>
             {error && <p className="login-error">{error}</p>}
             <button type="submit" className="btn primary" disabled={submitting}>

@@ -1,4 +1,5 @@
 import { describe, it, expect, beforeAll, afterAll, afterEach } from "vitest";
+import { resetUrlBaseCacheForTests } from "../../api/urlBase";
 import { http, HttpResponse } from "msw";
 import { setupServer } from "msw/node";
 import {
@@ -11,12 +12,17 @@ import {
   getMeta,
   setPassword,
   AuthError,
+  getLidarrArtists,
+  getLidarrArtistDetail,
 } from "../../api/client";
 
 const server = setupServer();
 
 beforeAll(() => server.listen({ onUnhandledRequest: "bypass" }));
-afterEach(() => server.resetHandlers());
+afterEach(() => {
+  server.resetHandlers();
+  resetUrlBaseCacheForTests();
+});
 afterAll(() => server.close());
 
 // ── getQbitCategories ────────────────────────────────────────────────────────
@@ -253,7 +259,7 @@ describe("getMeta", () => {
     server.use(
       http.get("/web/meta", () =>
         HttpResponse.json({
-          current_version: "5.9.2",
+          current_version: "6.1.0",
           latest_version: null,
           update_available: false,
           changelog: null,
@@ -285,7 +291,7 @@ describe("getMeta", () => {
     expect(result.auth_required).toBe(true);
     expect(result.local_auth_enabled).toBe(true);
     expect(result.oidc_enabled).toBe(false);
-    expect(result.current_version).toBe("5.9.2");
+    expect(result.current_version).toBe("6.1.0");
     expect(result.update_available).toBe(false);
   });
 
@@ -293,7 +299,7 @@ describe("getMeta", () => {
     server.use(
       http.get("/web/meta", () =>
         HttpResponse.json({
-          current_version: "5.9.2",
+          current_version: "6.1.0",
           latest_version: null,
           update_available: false,
           changelog: null,
@@ -326,11 +332,47 @@ describe("getMeta", () => {
     expect(result.local_auth_enabled).toBe(false);
   });
 
+  it("deserializes url_base when present", async () => {
+    server.use(
+      http.get("/web/meta", () =>
+        HttpResponse.json({
+          current_version: "6.12.2",
+          latest_version: null,
+          update_available: false,
+          changelog: null,
+          current_version_changelog: null,
+          changelog_url: null,
+          repository_url: "",
+          homepage_url: "",
+          last_checked: null,
+          update_state: {
+            in_progress: false,
+            last_result: null,
+            last_error: null,
+            completed_at: null,
+          },
+          installation_type: "binary",
+          binary_download_url: null,
+          binary_download_name: null,
+          binary_download_size: null,
+          binary_download_error: null,
+          auth_required: false,
+          local_auth_enabled: false,
+          oidc_enabled: false,
+          url_base: "/torrentarr",
+        }),
+      ),
+    );
+
+    const result = await getMeta();
+    expect(result.url_base).toBe("/torrentarr");
+  });
+
   it("deserializes setup_required when present", async () => {
     server.use(
       http.get("/web/meta", () =>
         HttpResponse.json({
-          current_version: "5.9.2",
+          current_version: "6.1.0",
           latest_version: null,
           update_available: false,
           changelog: null,
@@ -361,6 +403,94 @@ describe("getMeta", () => {
     const result = await getMeta();
 
     expect(result.setup_required).toBe(true);
+  });
+});
+
+// ── getLidarrArtists / getLidarrArtistDetail ────────────────────────────────
+
+describe("getLidarrArtists", () => {
+  it("deserializes artists response and encodes category", async () => {
+    let requestedUrl = "";
+    server.use(
+      http.get("/web/lidarr/*/artists", ({ request }) => {
+        requestedUrl = new URL(request.url).pathname;
+        return HttpResponse.json({
+          category: "my lidarr",
+          counts: { available: 1, monitored: 2, missing: 1 },
+          counts_tracks: { available: 3, monitored: 4, missing: 1 },
+          album_total: 2,
+          total: 1,
+          page: 0,
+          page_size: 25,
+          artists: [
+            {
+              artist: {
+                id: 1,
+                name: "Artist",
+                monitored: true,
+                albumsMonitored: 2,
+                albumsAvailable: 1,
+                albumsMissing: 1,
+              },
+            },
+          ],
+        });
+      }),
+    );
+
+    const result = await getLidarrArtists("my lidarr", 0, 25, "beat");
+
+    expect(requestedUrl).toBe("/web/lidarr/my%20lidarr/artists");
+    expect(result.artists).toHaveLength(1);
+    expect(result.artists[0].artist.name).toBe("Artist");
+    expect(result.counts_tracks?.monitored).toBe(4);
+  });
+
+  it("throws on non-OK response", async () => {
+    server.use(
+      http.get("/web/lidarr/*/artists", () =>
+        HttpResponse.json({ error: "bad" }, { status: 500 }),
+      ),
+    );
+
+    await expect(getLidarrArtists("lidarr", 0, 50)).rejects.toThrow();
+  });
+});
+
+describe("getLidarrArtistDetail", () => {
+  it("deserializes artist detail with albums and tracks", async () => {
+    server.use(
+      http.get("/web/lidarr/*/artist/:id", () =>
+        HttpResponse.json({
+          category: "lidarr",
+          counts: { available: 1, monitored: 2, missing: 1 },
+          counts_tracks: { available: 1, monitored: 2, missing: 1 },
+          artist: { id: 5, name: "Detail Artist", monitored: true },
+          albums: [
+            {
+              album: { id: 10, title: "Album", monitored: true, hasFile: true },
+              tracks: [
+                { id: 100, title: "Track", monitored: true, hasFile: true },
+              ],
+            },
+          ],
+        }),
+      ),
+    );
+
+    const result = await getLidarrArtistDetail("lidarr", 5);
+    expect(result.artist.name).toBe("Detail Artist");
+    expect(result.albums[0].tracks).toHaveLength(1);
+  });
+
+  it("throws on 404", async () => {
+    server.use(
+      http.get("/web/lidarr/*/artist/:id", () =>
+        HttpResponse.json({ error: "Artist not found" }, { status: 404 }),
+      ),
+    );
+
+    await expect(getLidarrArtistDetail("lidarr", 999)).rejects.toThrow();
   });
 });
 

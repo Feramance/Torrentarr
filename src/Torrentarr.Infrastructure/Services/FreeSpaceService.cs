@@ -177,7 +177,7 @@ public class FreeSpaceService : IFreeSpaceService
         {
             try
             {
-                var torrents = await client.GetTorrentsAsync(ct: cancellationToken);
+                var torrents = await client.GetTorrentsAsync(cancellationToken: cancellationToken);
                 var downloading = torrents.Where(t =>
                     t.State.Contains("downloading", StringComparison.OrdinalIgnoreCase) ||
                     t.State.Contains("stalledDL", StringComparison.OrdinalIgnoreCase)
@@ -217,7 +217,7 @@ public class FreeSpaceService : IFreeSpaceService
         {
             try
             {
-                var torrents = await client.GetTorrentsAsync(ct: cancellationToken);
+                var torrents = await client.GetTorrentsAsync(cancellationToken: cancellationToken);
                 var paused = torrents.Where(t =>
                     t.State.Contains("pausedDL", StringComparison.OrdinalIgnoreCase)
                 ).ToList();
@@ -267,7 +267,7 @@ public class FreeSpaceService : IFreeSpaceService
                 await EnsureTagsExistAsync(client, cancellationToken);
 
                 _logger.LogTrace("FreeSpace: [{Instance}] Fetching torrents for category {Category}", instanceName, category);
-                var torrents = await client.GetTorrentsAsync(category, cancellationToken);
+                var torrents = await client.GetTorrentsAsync(category, cancellationToken: cancellationToken);
                 _logger.LogTrace("FreeSpace: [{Instance}] Found {Count} torrents", instanceName, torrents.Count);
 
                 foreach (var t in torrents)

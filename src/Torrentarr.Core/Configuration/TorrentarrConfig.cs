@@ -1,3 +1,5 @@
+using System.Collections.Generic;
+
 namespace Torrentarr.Core.Configuration;
 
 /// <summary>
@@ -5,6 +7,17 @@ namespace Torrentarr.Core.Configuration;
 /// </summary>
 public class TorrentarrConfig
 {
+    /// <summary>
+    /// Lazily populated by <see cref="TorrentPolicyHelper.GetAllMonitoredPolicyCategories"/>.
+    /// Guarded by <see cref="MonitoredPolicyCategoriesCacheLock"/>.
+    /// </summary>
+    internal HashSet<string>? MonitoredPolicyCategoriesCache { get; set; }
+
+    /// <summary>
+    /// Synchronizes populate / invalidate of <see cref="MonitoredPolicyCategoriesCache"/> across threads.
+    /// </summary>
+    internal object MonitoredPolicyCategoriesCacheLock { get; } = new();
+
     public SettingsConfig Settings { get; set; } = new();
     /// <summary>
     /// All qBittorrent instances keyed by section name ("qBit", "qBit-seedbox", …).
@@ -21,7 +34,7 @@ public class TorrentarrConfig
 
 public class SettingsConfig
 {
-    public string ConfigVersion { get; set; } = "6.1.0";
+    public string ConfigVersion { get; set; } = "6.12.2";
     public string ConsoleLevel { get; set; } = "INFO";
     public bool Logging { get; set; } = true;
     public string CompletedDownloadFolder { get; set; } = "";
@@ -107,6 +120,8 @@ public class TrackerConfig
     public string? Name { get; set; } // Human-readable tracker name
     public string Uri { get; set; } = "";
     public int Priority { get; set; } = 0;
+    /// <summary>When true, torrent queue ordering may be adjusted globally using this tracker priority.</summary>
+    public bool SortTorrents { get; set; } = false;
     public double? MaxUploadRatio { get; set; }
     public int? MaxSeedingTime { get; set; }
     public int? RemoveTorrent { get; set; }
@@ -135,9 +150,13 @@ public class WebUIConfig
     public int Port { get; set; } = 6969;
     public string Token { get; set; } = "";
     /// <summary>When true, no authentication is required; login screen is skipped. When false, at least one of LocalAuthEnabled or OIDCEnabled should be true for browser login.</summary>
-    public bool AuthDisabled { get; set; } = true;
+    public bool AuthDisabled { get; set; } = false;
+    /// <summary>When true, WebUI is assumed behind HTTPS reverse proxy and secure cookie behavior is enabled.</summary>
+    public bool BehindHttpsProxy { get; set; } = false;
+    /// <summary>Public URL path prefix when served behind a reverse proxy (e.g. /qbitrr). No trailing slash.</summary>
+    public string UrlBase { get; set; } = "";
     /// <summary>When true (and AuthDisabled is false), allow username/password login via POST /web/login.</summary>
-    public bool LocalAuthEnabled { get; set; } = false;
+    public bool LocalAuthEnabled { get; set; } = true;
     /// <summary>When true (and AuthDisabled is false), allow OIDC challenge and cookie-based login.</summary>
     public bool OIDCEnabled { get; set; } = false;
     /// <summary>For Local auth: single admin username. Password is stored only as PasswordHash.</summary>

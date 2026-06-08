@@ -255,3 +255,71 @@ describe("ConfigView – addQbitInstance behaviour", () => {
     await screen.findAllByText("qBit-2");
   });
 });
+
+// ── UrlBase field ─────────────────────────────────────────────────────────────
+
+describe("ConfigView – UrlBase field", () => {
+  it("renders Url Base field in Web Settings modal", async () => {
+    server.use(
+      http.get("/web/config", () => HttpResponse.json(configQbitOnly)),
+      http.post("/web/config", () => HttpResponse.json(okUpdateResponse)),
+    );
+
+    const user = userEvent.setup();
+    renderConfig();
+
+    await screen.findByText("Web Settings");
+    const webSettingsCard = screen.getByText("Web Settings").closest(".card")!;
+    await user.click(
+      within(webSettingsCard).getByRole("button", { name: /configure/i }),
+    );
+    expect(await screen.findByText("Url Base")).toBeInTheDocument();
+  });
+
+  it("shows validation toast for invalid UrlBase on save", async () => {
+    server.use(
+      http.get("/web/config", () =>
+        HttpResponse.json({
+          ...configQbitOnly,
+          WebUI: { ...configQbitOnly.WebUI, UrlBase: "no-leading-slash" },
+        }),
+      ),
+      http.post("/web/config", () => HttpResponse.json(okUpdateResponse)),
+    );
+
+    const user = userEvent.setup();
+    renderConfig();
+
+    await screen.findByText("Save + Live Reload");
+    await user.click(
+      screen.getByRole("button", { name: /save \+ live reload/i }),
+    );
+
+    expect(
+      await screen.findByText(/UrlBase must start with \//i),
+    ).toBeInTheDocument();
+  });
+
+  it("stores valid UrlBase in form state for save", async () => {
+    server.use(
+      http.get("/web/config", () => HttpResponse.json(configQbitOnly)),
+      http.post("/web/config", () => HttpResponse.json(okUpdateResponse)),
+    );
+
+    const user = userEvent.setup();
+    renderConfig();
+
+    await screen.findByText("Web Settings");
+    const webSettingsCard = screen.getByText("Web Settings").closest(".card")!;
+    await user.click(
+      within(webSettingsCard).getByRole("button", { name: /configure/i }),
+    );
+    await screen.findByText("Url Base");
+    const urlBaseField = screen.getByText("Url Base").closest(".field")!;
+    const urlBaseInput = within(urlBaseField).getByRole("textbox");
+    await user.clear(urlBaseInput);
+    await user.type(urlBaseInput, "/qbitrr");
+
+    expect(urlBaseInput).toHaveValue("/qbitrr");
+  });
+});

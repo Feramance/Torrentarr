@@ -3,12 +3,12 @@
 **Automated qBittorrent management for the *Arr stack** — Hit & Run protection, free space control, quality upgrades, and import triggering. C# port of qBitrr with the same config and schema.
 
 [![Build Status](https://img.shields.io/badge/build-passing-brightgreen)]()
-[![Feature Parity](https://img.shields.io/badge/feature_parity-99%25-blue)]()
+[![vs qBitrr](https://img.shields.io/badge/vs_qBitrr-%2B1_major-blue)]()
 [![License: MIT](https://img.shields.io/badge/license-MIT-green)]()
 [![Documentation](https://img.shields.io/badge/docs-feramance.github.io%2FTorrentarr-blue)](https://feramance.github.io/Torrentarr/)
 [![Docker Pulls](https://img.shields.io/docker/pulls/feramance/torrentarr.svg)](https://hub.docker.com/r/feramance/torrentarr)
 
-> A high-performance C# port of [qBitrr](https://github.com/Feramance/qBitrr) — intelligent automation for qBittorrent and the *Arr ecosystem (Radarr, Sonarr, Lidarr). Same `config.toml` format and SQLite schema as qBitrr; database file is `torrentarr.db` (not `qbitrr.db`).
+> A high-performance C# port of [qBitrr](https://github.com/Feramance/qBitrr) — intelligent automation for qBittorrent and the *Arr ecosystem (Radarr, Sonarr, Lidarr). Same `config.toml` format and SQLite schema as qBitrr; database file is `torrentarr.db` (not `qbitrr.db`). **Releases use a major version one higher than qBitrr’s** (e.g. qBitrr 5.x → Torrentarr 6.x) so the two products stay clearly distinct.
 
 ## Documentation
 
@@ -171,7 +171,7 @@ npm run build   # Production bundle
 | **Startup Time** | ~2s | ~0.5s |
 | **Process Isolation** | Single process | Multi-process |
 | **Health Checks** | Custom | Built-in |
-| **Feature Parity** | 100% | **99%** |
+| **Upstream alignment** | qBitrr master | C# port [tracked in the parity matrix](docs/parity/full-parity-matrix.md) (not a fixed %) |
 
 ## Issues & Support
 

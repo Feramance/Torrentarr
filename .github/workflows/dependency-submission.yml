@@ -1,0 +1,23 @@
+name: Dependency submission
+
+on:
+  push:
+    branches: [main, master, develop, releases/**]
+  workflow_dispatch:
+
+# Required for the dependency submission API; do not inherit build.yml's contents:read-only default.
+permissions:
+  id-token: write
+  contents: write
+
+jobs:
+  component-detection:
+    runs-on: ubuntu-latest
+    steps:
+    - name: Checkout
+      uses: actions/checkout@v6
+
+    - name: Component detection (NuGet)
+      uses: actions/component-detection-dependency-submission-action@374343effede691df3a5ffaf36b4e7acab919590
+      with:
+        detectorsCategories: NuGet

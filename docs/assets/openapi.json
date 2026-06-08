@@ -1,11 +1,111 @@
 {
   "info": {
-    "description": "API for qBittorrent + Arr automation (qBitrr C# port).",
+    "description": "API for qBittorrent + Arr automation (qBitrr C# port). Subset aligned with qBitrr 5.12.3.",
     "title": "Torrentarr API",
     "version": "v1"
   },
   "openapi": "3.0.1",
   "paths": {
+    "/api/arr": {
+      "get": {
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        },
+        "summary": "Arr instance list"
+      }
+    },
+    "/api/lidarr/{category}/albums": {
+      "get": {
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        },
+        "summary": "Lidarr albums (API)"
+      }
+    },
+    "/api/lidarr/{category}/artist/{artist_id}": {
+      "get": {
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        },
+        "summary": "Lidarr artist detail (API)"
+      }
+    },
+    "/api/lidarr/{category}/artist/{artist_id}/thumbnail": {
+      "get": {
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        },
+        "summary": "Lidarr artist thumbnail (API)"
+      }
+    },
+    "/api/lidarr/{category}/artists": {
+      "get": {
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        },
+        "summary": "Lidarr artists (API)"
+      }
+    },
+    "/api/meta": {
+      "get": {
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        },
+        "summary": "API metadata"
+      }
+    },
+    "/api/radarr/{category}/movie/{id}/thumbnail": {
+      "get": {
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        },
+        "summary": "Radarr movie thumbnail (API)"
+      }
+    },
+    "/api/radarr/{category}/movies": {
+      "get": {
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        },
+        "summary": "Radarr movies (API)"
+      }
+    },
+    "/api/sonarr/{category}/series": {
+      "get": {
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        },
+        "summary": "Sonarr series (API)"
+      }
+    },
+    "/api/sonarr/{category}/series/{id}/thumbnail": {
+      "get": {
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        },
+        "summary": "Sonarr series thumbnail (API)"
+      }
+    },
     "/api/status": {
       "get": {
         "responses": {
@@ -24,6 +124,144 @@
           }
         },
         "summary": "Health check"
+      }
+    },
+    "/web/arr": {
+      "get": {
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        },
+        "summary": "Arr instance list with rollup counts"
+      }
+    },
+    "/web/auth/set-password": {
+      "post": {
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        },
+        "summary": "Set local password"
+      }
+    },
+    "/web/config": {
+      "get": {
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        },
+        "summary": "Get configuration"
+      },
+      "post": {
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        },
+        "summary": "Update configuration"
+      }
+    },
+    "/web/lidarr/{category}/albums": {
+      "get": {
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        },
+        "summary": "Lidarr albums browse"
+      }
+    },
+    "/web/lidarr/{category}/artist/{artist_id}": {
+      "get": {
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        },
+        "summary": "Lidarr artist detail"
+      }
+    },
+    "/web/lidarr/{category}/artist/{artist_id}/thumbnail": {
+      "get": {
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        },
+        "summary": "Lidarr artist thumbnail proxy"
+      }
+    },
+    "/web/lidarr/{category}/artists": {
+      "get": {
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        },
+        "summary": "Lidarr artists browse"
+      }
+    },
+    "/web/login": {
+      "post": {
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        },
+        "summary": "Local login"
+      }
+    },
+    "/web/meta": {
+      "get": {
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        },
+        "summary": "WebUI metadata"
+      }
+    },
+    "/web/radarr/{category}/movie/{id}/thumbnail": {
+      "get": {
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        },
+        "summary": "Radarr movie thumbnail proxy"
+      }
+    },
+    "/web/radarr/{category}/movies": {
+      "get": {
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        },
+        "summary": "Radarr movies browse"
+      }
+    },
+    "/web/sonarr/{category}/series": {
+      "get": {
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        },
+        "summary": "Sonarr series browse"
+      }
+    },
+    "/web/sonarr/{category}/series/{id}/thumbnail": {
+      "get": {
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        },
+        "summary": "Sonarr series thumbnail proxy"
       }
     },
     "/web/status": {

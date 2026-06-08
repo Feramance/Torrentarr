@@ -234,9 +234,42 @@ export interface LidarrAlbumEntry {
 export interface LidarrAlbumsResponse {
   category: string;
   counts: LidarrCounts;
+  counts_tracks?: LidarrCounts;
   total: number;
   page: number;
   page_size: number;
+  albums: LidarrAlbumEntry[];
+}
+
+export interface LidarrArtistEntry {
+  artist: {
+    id: number;
+    name?: string;
+    monitored?: boolean;
+    qualityProfileName?: string | null;
+    searched?: boolean;
+    albumsMonitored?: number;
+    albumsAvailable?: number;
+    albumsMissing?: number;
+  };
+}
+
+export interface LidarrArtistsResponse {
+  category: string;
+  counts: LidarrCounts;
+  counts_tracks?: LidarrCounts;
+  album_total?: number;
+  total: number;
+  page: number;
+  page_size: number;
+  artists: LidarrArtistEntry[];
+}
+
+export interface LidarrArtistDetailResponse {
+  category: string;
+  counts: LidarrCounts;
+  counts_tracks?: LidarrCounts;
+  artist: LidarrArtistEntry["artist"];
   albums: LidarrAlbumEntry[];
 }
 
@@ -304,6 +337,8 @@ export interface MetaResponse {
   oidc_enabled?: boolean;
   /** When true, show welcome/setup screen to create username and password before accessing the app. */
   setup_required?: boolean;
+  /** Public path prefix when behind a reverse proxy (e.g. /qbitrr). */
+  url_base?: string;
 }
 
 export interface ConfigUpdateResponse {

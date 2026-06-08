@@ -1,3 +1,4 @@
+using System.Collections.Generic;
 using FluentAssertions;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging.Abstractions;
@@ -72,6 +73,18 @@ public class SeedingServiceTests
     public void ExtractTrackerHost_LongPaths_ReturnsHostOnly(string url, string expected)
     {
         SeedingService.ExtractTrackerHost(url).Should().Be(expected);
+    }
+
+    // ── TrackerMessageIndicatesDead (qBitrr #412 parity) ─────────────────────
+
+    [Theory]
+    [InlineData("Torrent not found", true)]
+    [InlineData("unregistered torrent", true)]
+    [InlineData("Host not found (authoritative)", false)]
+    [InlineData("DNS lookup failed: not found", false)]
+    public void TrackerMessageIndicatesDead_MatchesTorrentSpecificKeywordsOnly(string message, bool expected)
+    {
+        SeedingService.TrackerMessageIndicatesDead(message).Should().Be(expected);
     }
 
     // ── IsHnRSafeToRemoveAsync (pure logic) ────────────────────────────────────
@@ -316,5 +329,41 @@ public class SeedingServiceTests
         var result = await svc.ShouldRemoveTorrentAsync(torrent);
 
         result.Should().BeTrue();
+    }
+
+    [Fact]
+    public async Task GetTorrentQueueSortPriorityAsync_UsesTagTierWhenNoAnnounceMatch()
+    {
+        var svc = CreateService();
+        var torrent = new TorrentInfo
+        {
+            Hash = "abc",
+            Name = "t",
+            Category = "movies",
+            Tags = "vip",
+            QBitInstanceName = "qBit"
+        };
+        var map = new Dictionary<string, int>(StringComparer.OrdinalIgnoreCase) { ["vip"] = 12 };
+
+        var p = await svc.GetTorrentQueueSortPriorityAsync(torrent, map);
+
+        p.Should().Be(12);
+    }
+
+    [Fact]
+    public async Task GetTorrentQueueSortPriorityAsync_TagPriAtOrBelowNegative100_FallsBackToAnnounce()
+    {
+        var svc = CreateService();
+        var torrent = new TorrentInfo
+        {
+            Hash = "abc",
+            Tags = "low",
+            QBitInstanceName = "qBit"
+        };
+        var map = new Dictionary<string, int>(StringComparer.OrdinalIgnoreCase) { ["low"] = -100 };
+
+        var p = await svc.GetTorrentQueueSortPriorityAsync(torrent, map);
+
+        p.Should().Be(-100);
     }
 }

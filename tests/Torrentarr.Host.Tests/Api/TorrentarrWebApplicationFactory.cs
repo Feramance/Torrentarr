@@ -35,6 +35,12 @@ public class HostWebLocalAuthCollection : ICollectionFixture<LocalAuthWebApplica
 [CollectionDefinition("HostWebLocalAuthNoPassword", DisableParallelization = true)]
 public class HostWebLocalAuthNoPasswordCollection : ICollectionFixture<LocalAuthNoPasswordWebApplicationFactory>;
 
+[CollectionDefinition("HostWebCatalog", DisableParallelization = true)]
+public class HostWebCatalogCollection : ICollectionFixture<ArrCatalogWebApplicationFactory>;
+
+[CollectionDefinition("HostWebUrlBase", DisableParallelization = true)]
+public class HostWebUrlBaseCollection : ICollectionFixture<UrlBaseWebApplicationFactory>;
+
 /// <summary>
 /// Custom WebApplicationFactory that:
 /// - Writes a minimal, known-good config.toml to a temp file and points
@@ -49,13 +55,13 @@ public class TorrentarrWebApplicationFactory : WebApplicationFactory<Program>, I
 
     // Keep the connection open for the lifetime of the factory so the in-memory DB persists.
     private readonly SqliteConnection _keepAliveConnection;
-    private readonly string _tempConfigPath;
+    public string TempConfigPath { get; private set; } = "";
 
     // Minimal valid TOML config used for all Host integration tests.
     // Single-quoted strings are TOML literal strings (no escape processing) — safe for regex patterns.
-    private const string TestConfigToml = """
+    protected const string DefaultTestConfigToml = """
         [Settings]
-        ConfigVersion = "5.9.2"
+        ConfigVersion = "6.12.2"
         LoopSleepTimer = 5
         FailedCategory = "failed"
         RecheckCategory = "recheck"
@@ -71,21 +77,32 @@ public class TorrentarrWebApplicationFactory : WebApplicationFactory<Program>, I
         LiveArr = false
         """;
 
+    protected virtual string GetTestConfigToml() => DefaultTestConfigToml;
+
+    /// <summary>Rewrites the temp config after the derived constructor runs (virtual dispatch is not available during base construction).</summary>
+    protected void RewriteConfigFile()
+    {
+        File.WriteAllText(TempConfigPath, GetTestConfigToml());
+        Environment.SetEnvironmentVariable("TORRENTARR_CONFIG", TempConfigPath);
+        ConfigurationLoader.TestConfigPathOverride = TempConfigPath;
+    }
+
     public TorrentarrWebApplicationFactory()
     {
         _keepAliveConnection = new SqliteConnection("Data Source=:memory:");
         _keepAliveConnection.Open();
 
         // Write the test config before the host starts so Program.cs picks it up.
-        _tempConfigPath = Path.GetTempFileName() + ".toml";
-        File.WriteAllText(_tempConfigPath, TestConfigToml);
-        Environment.SetEnvironmentVariable("TORRENTARR_CONFIG", _tempConfigPath);
+        TempConfigPath = Path.GetTempFileName() + ".toml";
+        File.WriteAllText(TempConfigPath, GetTestConfigToml());
+        Environment.SetEnvironmentVariable("TORRENTARR_CONFIG", TempConfigPath);
+        ConfigurationLoader.TestConfigPathOverride = TempConfigPath;
     }
 
     protected override void ConfigureWebHost(IWebHostBuilder builder)
     {
         // Use per-build path when set (e.g. by derived factory's SetConfigEnv before CreateClient) so parallel collections get correct config.
-        var configPath = ConfigPathForCurrentBuild.Value ?? _tempConfigPath;
+        var configPath = ConfigPathForCurrentBuild.Value ?? TempConfigPath;
         ConfigPathForCurrentBuild.Value = null; // clear so a later base-factory build does not inherit an auth path
         Environment.SetEnvironmentVariable("TORRENTARR_CONFIG", configPath);
         ConfigurationLoader.TestConfigPathOverride = configPath;
@@ -122,6 +139,29 @@ public class TorrentarrWebApplicationFactory : WebApplicationFactory<Program>, I
         return client;
     }
 
+    /// <summary>Creates a client with the given path base as BaseAddress (for UrlBase integration tests).</summary>
+    public HttpClient CreateClientWithPathBase(string pathBase, bool withApiToken = true)
+    {
+        var baseAddress = string.IsNullOrEmpty(pathBase)
+            ? "http://localhost/"
+            : $"http://localhost{pathBase.TrimEnd('/')}/";
+        var client = base.CreateClient(new WebApplicationFactoryClientOptions
+        {
+            BaseAddress = new Uri(baseAddress),
+        });
+        if (withApiToken)
+            client.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", "test-api-token");
+        return client;
+    }
+
+    /// <summary>Creates a client that does not follow redirects (for open-link endpoint tests).</summary>
+    public HttpClient CreateClientWithApiTokenNoRedirect()
+    {
+        var client = base.CreateClient(new WebApplicationFactoryClientOptions { AllowAutoRedirect = false });
+        client.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", "test-api-token");
+        return client;
+    }
+
     /// <summary>Creates a client without the default Bearer token. Use for tests that expect 401 when calling /api/* without auth.</summary>
     public HttpClient CreateClientWithoutApiToken()
     {
@@ -131,8 +171,8 @@ public class TorrentarrWebApplicationFactory : WebApplicationFactory<Program>, I
     /// <summary>Sets TORRENTARR_CONFIG and ConfigurationLoader.TestConfigPathOverride to this factory's config path. Call before CreateClient() when multiple factory types exist in the test run.</summary>
     public void SetConfigEnv()
     {
-        Environment.SetEnvironmentVariable("TORRENTARR_CONFIG", _tempConfigPath);
-        ConfigurationLoader.TestConfigPathOverride = _tempConfigPath;
+        Environment.SetEnvironmentVariable("TORRENTARR_CONFIG", TempConfigPath);
+        ConfigurationLoader.TestConfigPathOverride = TempConfigPath;
     }
 
     protected override void Dispose(bool disposing)
@@ -140,8 +180,8 @@ public class TorrentarrWebApplicationFactory : WebApplicationFactory<Program>, I
         if (disposing)
         {
             _keepAliveConnection.Dispose();
-            if (File.Exists(_tempConfigPath))
-                File.Delete(_tempConfigPath);
+            if (File.Exists(TempConfigPath))
+                File.Delete(TempConfigPath);
             Environment.SetEnvironmentVariable("TORRENTARR_CONFIG", null);
         }
         base.Dispose(disposing);
@@ -158,7 +198,7 @@ public class AuthEnabledWebApplicationFactory : TorrentarrWebApplicationFactory
     public AuthEnabledWebApplicationFactory()
     {
         _authConfigPath = Path.GetTempFileName() + ".auth.toml";
-        File.WriteAllText(_authConfigPath, TestConfigTomlWithAuth);
+        File.WriteAllText(_authConfigPath, DefaultTestConfigTomlWithAuth);
         Environment.SetEnvironmentVariable("TORRENTARR_CONFIG", _authConfigPath);
         ConfigurationLoader.TestConfigPathOverride = _authConfigPath;
     }
@@ -187,9 +227,9 @@ public class AuthEnabledWebApplicationFactory : TorrentarrWebApplicationFactory
         base.Dispose(disposing);
     }
 
-    private const string TestConfigTomlWithAuth = """
+    private const string DefaultTestConfigTomlWithAuth = """
         [Settings]
-        ConfigVersion = "5.9.2"
+        ConfigVersion = "6.12.2"
         LoopSleepTimer = 5
         FailedCategory = "failed"
         RecheckCategory = "recheck"
@@ -222,7 +262,7 @@ public class LocalAuthWebApplicationFactory : TorrentarrWebApplicationFactory
         _localAuthConfigPath = Path.GetTempFileName() + ".localauth.toml";
         var toml = $"""
             [Settings]
-            ConfigVersion = "5.9.2"
+            ConfigVersion = "6.12.2"
             LoopSleepTimer = 5
             FailedCategory = "failed"
             RecheckCategory = "recheck"
@@ -277,7 +317,7 @@ public class LocalAuthNoPasswordWebApplicationFactory : TorrentarrWebApplication
 
     private const string TomlContent = """
         [Settings]
-        ConfigVersion = "5.9.2"
+        ConfigVersion = "6.12.2"
         LoopSleepTimer = 5
         FailedCategory = "failed"
         RecheckCategory = "recheck"
@@ -322,6 +362,221 @@ public class LocalAuthNoPasswordWebApplicationFactory : TorrentarrWebApplication
         if (disposing && File.Exists(_configPath))
             File.Delete(_configPath);
         base.Dispose(disposing);
+    }
+}
+
+/// <summary>Factory with Radarr, Sonarr, Lidarr, and qBit sections for catalog/validation endpoint tests.</summary>
+public class ArrCatalogWebApplicationFactory : TorrentarrWebApplicationFactory
+{
+    public ArrCatalogWebApplicationFactory() => RewriteConfigFile();
+
+    protected override string GetTestConfigToml() => """
+        [Settings]
+        ConfigVersion = "6.12.2"
+        LoopSleepTimer = 5
+        FailedCategory = "failed"
+        RecheckCategory = "recheck"
+        PingURLS = ["one.one.one.one"]
+
+        [WebUI]
+        Host = "0.0.0.0"
+        Port = 6969
+        Token = "test-api-token"
+        AuthDisabled = true
+        LocalAuthEnabled = false
+        OIDCEnabled = false
+        LiveArr = false
+
+        [qBit]
+        Host = "localhost"
+        Port = 8080
+        ManagedCategories = ["seed"]
+
+        [Radarr]
+        URI = "http://radarr:7878"
+        APIKey = "radarr-key"
+        Category = "radarr"
+
+        [Sonarr]
+        URI = "http://sonarr:8989"
+        APIKey = "sonarr-key"
+        Category = "sonarr"
+
+        [Lidarr]
+        URI = "http://lidarr:8686"
+        APIKey = "lidarr-key"
+        Category = "lidarr"
+        """;
+}
+
+/// <summary>Factory with WebUI.UrlBase = "torrentarr" (normalizes to /torrentarr).</summary>
+public class UrlBaseWebApplicationFactory : TorrentarrWebApplicationFactory
+{
+    public UrlBaseWebApplicationFactory() => RewriteConfigFile();
+
+    protected override string GetTestConfigToml() => """
+        [Settings]
+        ConfigVersion = "6.12.2"
+        LoopSleepTimer = 5
+        FailedCategory = "failed"
+        RecheckCategory = "recheck"
+        PingURLS = ["one.one.one.one"]
+
+        [WebUI]
+        Host = "0.0.0.0"
+        Port = 6969
+        Token = "test-api-token"
+        AuthDisabled = true
+        LocalAuthEnabled = false
+        OIDCEnabled = false
+        LiveArr = false
+        UrlBase = "torrentarr"
+        """;
+}
+
+/// <summary>Shared DB seed helpers for catalog rollup and browse endpoint tests.</summary>
+public static class CatalogTestDataSeeder
+{
+    public static async Task ClearCatalogDataAsync(TorrentarrDbContext db)
+    {
+        db.Tracks.RemoveRange(db.Tracks);
+        db.Albums.RemoveRange(db.Albums);
+        db.Artists.RemoveRange(db.Artists);
+        db.Episodes.RemoveRange(db.Episodes);
+        db.Series.RemoveRange(db.Series);
+        db.Movies.RemoveRange(db.Movies);
+        await db.SaveChangesAsync();
+    }
+
+    public static async Task SeedAllCatalogDataAsync(TorrentarrDbContext db)
+    {
+        await ClearCatalogDataAsync(db);
+        await SeedRadarrMoviesAsync(db, clearFirst: false);
+        await SeedSonarrEpisodesAsync(db, clearFirst: false);
+        await SeedLidarrArtistsAsync(db, clearFirst: false);
+    }
+
+    public static async Task SeedRadarrMoviesAsync(TorrentarrDbContext db, string instance = "radarr", bool clearFirst = true)
+    {
+        if (clearFirst)
+            await ClearCatalogDataAsync(db);
+        db.Movies.AddRange(
+            new Torrentarr.Infrastructure.Database.Models.MoviesFilesModel
+            {
+                EntryId = 1,
+                ArrInstance = instance,
+                Monitored = true,
+                MovieFileId = 10,
+                Title = "Available",
+                ArrId = 101
+            },
+            new Torrentarr.Infrastructure.Database.Models.MoviesFilesModel
+            {
+                EntryId = 2,
+                ArrInstance = instance,
+                Monitored = true,
+                MovieFileId = 0,
+                Title = "Missing",
+                ArrId = 102
+            },
+            new Torrentarr.Infrastructure.Database.Models.MoviesFilesModel
+            {
+                EntryId = 3,
+                ArrInstance = instance,
+                Monitored = false,
+                MovieFileId = 0,
+                Title = "Unmonitored",
+                ArrId = 103
+            });
+        await db.SaveChangesAsync();
+    }
+
+    public static async Task SeedSonarrEpisodesAsync(TorrentarrDbContext db, string instance = "sonarr", bool clearFirst = true)
+    {
+        if (clearFirst)
+            await ClearCatalogDataAsync(db);
+        db.Series.Add(new Torrentarr.Infrastructure.Database.Models.SeriesFilesModel
+        {
+            EntryId = 1,
+            ArrInstance = instance,
+            Title = "Show",
+            ArrId = 201
+        });
+        db.Episodes.AddRange(
+            new Torrentarr.Infrastructure.Database.Models.EpisodeFilesModel
+            {
+                EntryId = 1,
+                ArrInstance = instance,
+                SeriesId = 1,
+                Monitored = true,
+                EpisodeFileId = 5,
+                ArrId = 301
+            },
+            new Torrentarr.Infrastructure.Database.Models.EpisodeFilesModel
+            {
+                EntryId = 2,
+                ArrInstance = instance,
+                SeriesId = 1,
+                Monitored = true,
+                EpisodeFileId = 0,
+                ArrId = 302
+            });
+        await db.SaveChangesAsync();
+    }
+
+    public static async Task SeedLidarrArtistsAsync(TorrentarrDbContext db, string instance = "lidarr", bool clearFirst = true)
+    {
+        if (clearFirst)
+            await ClearCatalogDataAsync(db);
+        db.Artists.Add(new Torrentarr.Infrastructure.Database.Models.ArtistFilesModel
+        {
+            EntryId = 1,
+            ArrInstance = instance,
+            Title = "Artist One",
+            Monitored = true,
+            ArrId = 401
+        });
+        db.Albums.AddRange(
+            new Torrentarr.Infrastructure.Database.Models.AlbumFilesModel
+            {
+                EntryId = 10,
+                ArrInstance = instance,
+                ArtistId = 1,
+                Title = "Album A",
+                Monitored = true,
+                HasFile = true,
+                ArrId = 501
+            },
+            new Torrentarr.Infrastructure.Database.Models.AlbumFilesModel
+            {
+                EntryId = 11,
+                ArrInstance = instance,
+                ArtistId = 1,
+                Title = "Album B",
+                Monitored = true,
+                HasFile = false,
+                ArrId = 502
+            });
+        db.Tracks.AddRange(
+            new Torrentarr.Infrastructure.Database.Models.TrackFilesModel
+            {
+                EntryId = 100,
+                ArrInstance = instance,
+                AlbumId = 10,
+                Monitored = true,
+                HasFile = true,
+                Title = "Track 1"
+            },
+            new Torrentarr.Infrastructure.Database.Models.TrackFilesModel
+            {
+                EntryId = 101,
+                ArrInstance = instance,
+                AlbumId = 11,
+                Monitored = true,
+                HasFile = false,
+                Title = "Track 2"
+            });
+        await db.SaveChangesAsync();
     }
 }
 

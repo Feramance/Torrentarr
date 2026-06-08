@@ -440,6 +440,24 @@ const WEB_SETTINGS_FIELDS: FieldDefinition[] = [
     secure: true,
     fullWidth: true,
   },
+  {
+    label: "Url Base",
+    path: ["WebUI", "UrlBase"],
+    type: "text",
+    placeholder: "/qbitrr",
+    description:
+      "Public path prefix when behind a reverse proxy (e.g. /qbitrr). Leave empty for site root.",
+    validate: (value) => {
+      const raw = String(value ?? "").trim();
+      if (!raw) return undefined;
+      if (!raw.startsWith("/"))
+        return "UrlBase must start with / (e.g. /qbitrr).";
+      if (raw.endsWith("/"))
+        return "UrlBase must not end with a trailing slash.";
+      if (raw.includes("//")) return "UrlBase is invalid.";
+      return undefined;
+    },
+  },
 ];
 
 const QBIT_FIELDS: FieldDefinition[] = [
@@ -1303,6 +1321,11 @@ const ARR_TRACKER_FIELDS: FieldDefinition[] = [
       }
       return undefined;
     },
+  },
+  {
+    label: "Sort torrents (queue priority)",
+    path: ["SortTorrents"],
+    type: "checkbox",
   },
 ];
 

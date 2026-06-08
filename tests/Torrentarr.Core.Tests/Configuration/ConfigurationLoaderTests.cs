@@ -387,6 +387,10 @@ public class ConfigurationLoaderTests : IDisposable
         config.WebUI.Theme.Should().Be("Dark");
         config.WebUI.ViewDensity.Should().Be("Comfortable");
         config.WebUI.LiveArr.Should().BeTrue();
+        // Filled WebUI auth defaults must match GenerateDefaultConfig: require auth with local login, not a lockout.
+        config.WebUI.AuthDisabled.Should().BeFalse();
+        config.WebUI.LocalAuthEnabled.Should().BeTrue();
+        config.WebUI.OIDCEnabled.Should().BeFalse();
     }
 
     [Fact]
@@ -469,6 +473,59 @@ public class ConfigurationLoaderTests : IDisposable
         config.Settings.LoopSleepTimer.Should().Be(5);
     }
 
+    [Fact]
+    public void Load_BumpsConfigVersionOnDisk_WhenOlderVersionAndNoOtherMigrationChanges()
+    {
+        // Schema-complete config at 6.0.0: no ValidateAndFill/migration mutations except ConfigVersion bump.
+        WriteToml("""
+            [Settings]
+            ConfigVersion = "6.0.0"
+            ConsoleLevel = "INFO"
+            Logging = true
+            CompletedDownloadFolder = ""
+            FreeSpace = "-1"
+            FreeSpaceFolder = ""
+            AutoPauseResume = true
+            NoInternetSleepTimer = 15
+            LoopSleepTimer = 5
+            SearchLoopDelay = -1
+            FailedCategory = "failed"
+            RecheckCategory = "recheck"
+            Tagless = false
+            IgnoreTorrentsYoungerThan = 180
+            FFprobeAutoUpdate = true
+            AutoUpdateEnabled = false
+            AutoUpdateCron = "0 3 * * 0"
+            AutoRestartProcesses = true
+            MaxProcessRestarts = 5
+            ProcessRestartWindow = 300
+            ProcessRestartDelay = 5
+            PingURLS = ["one.one.one.one", "dns.google.com"]
+
+            [WebUI]
+            Host = "0.0.0.0"
+            Port = 6969
+            Token = ""
+            AuthDisabled = false
+            LocalAuthEnabled = true
+            OIDCEnabled = false
+            BehindHttpsProxy = false
+            Username = ""
+            PasswordHash = ""
+            LiveArr = true
+            GroupSonarr = true
+            GroupLidarr = true
+            Theme = "Dark"
+            ViewDensity = "Comfortable"
+            """);
+
+        var config = new ConfigurationLoader(_tempFilePath).Load();
+
+        config.Settings.ConfigVersion.Should().Be(ConfigurationLoader.ExpectedConfigVersion);
+        var onDisk = File.ReadAllText(_tempFilePath);
+        onDisk.Should().Contain($"ConfigVersion = \"{ConfigurationLoader.ExpectedConfigVersion}\"");
+    }
+
     // --- WebUI Migration (Migration 1) ---
 
     [Fact]
@@ -539,6 +596,26 @@ public class ConfigurationLoaderTests : IDisposable
         config.WebUI.OIDCEnabled.Should().BeTrue();
     }
 
+    [Fact]
+    public void Load_ParsesTrackerSortTorrentsFlag()
+    {
+        WriteToml("""
+            [qBit]
+            Host = "localhost"
+
+            [[qBit.Trackers]]
+            URI = "https://tracker.example.com/announce"
+            Priority = 10
+            SortTorrents = true
+            """);
+
+        var config = new ConfigurationLoader(_tempFilePath).Load();
+
+        config.QBitInstances["qBit"].Trackers.Should().ContainSingle();
+        config.QBitInstances["qBit"].Trackers[0].SortTorrents.Should().BeTrue();
+        config.QBitInstances["qBit"].Trackers[0].Priority.Should().Be(10);
+    }
+
     [Theory]
     [InlineData("Disabled", true, false, false)]
     [InlineData("TokenOnly", false, false, false)]
@@ -592,5 +669,104 @@ public class ConfigurationLoaderTests : IDisposable
 
         config.WebUI.AuthDisabled.Should().BeFalse("new installs get auth enabled by default");
         config.WebUI.LocalAuthEnabled.Should().BeTrue("new installs get local auth enabled by default");
+    }
+
+    [Fact]
+    public void Load_Migration1_RenamesSecureCookies_ToBehindHttpsProxy()
+    {
+        WriteToml($"""
+            [Settings]
+            ConfigVersion = "{ConfigurationLoader.ExpectedConfigVersion}"
+
+            [WebUI]
+            SecureCookies = true
+            """);
+
+        var config = new ConfigurationLoader(_tempFilePath).Load();
+
+        config.WebUI.BehindHttpsProxy.Should().BeTrue();
+    }
+
+    [Fact]
+    public void Load_DoesNotDowngradeConfigVersionWhenNewerThanExpected_AfterValidateAndFill()
+    {
+        WriteToml("""
+            [Settings]
+            ConfigVersion = "99.0.0"
+
+            [WebUI]
+            Host = "0.0.0.0"
+            Port = 6969
+            Token = ""
+            AuthDisabled = false
+            LocalAuthEnabled = true
+            OIDCEnabled = false
+            Username = ""
+            PasswordHash = ""
+            LiveArr = true
+            GroupSonarr = true
+            GroupLidarr = true
+            Theme = "Dark"
+            ViewDensity = "Comfortable"
+            """);
+
+        _ = new ConfigurationLoader(_tempFilePath).Load();
+
+        var content = File.ReadAllText(_tempFilePath);
+        content.Should().Contain("ConfigVersion = \"99.0.0\"");
+        content.Should().Contain("BehindHttpsProxy");
+    }
+
+    [Fact]
+    public void Load_AcceptsQbitrrEnvironmentVariableAliases()
+    {
+        var previous = Environment.GetEnvironmentVariable("QBITRR_SETTINGS_FREE_SPACE");
+        try
+        {
+            Environment.SetEnvironmentVariable("QBITRR_SETTINGS_FREE_SPACE", "42G");
+
+            WriteToml("""
+                [Settings]
+                FreeSpace = "10G"
+                """);
+
+            var config = new ConfigurationLoader(_tempFilePath).Load();
+            config.Settings.FreeSpace.Should().Be("42G");
+        }
+        finally
+        {
+            Environment.SetEnvironmentVariable("QBITRR_SETTINGS_FREE_SPACE", previous);
+        }
+    }
+
+    [Fact]
+    public void Load_EmptyTorrentarrEnvBlocksQbitrrAlias()
+    {
+        var prevPrimary = Environment.GetEnvironmentVariable("TORRENTARR_SETTINGS_FREE_SPACE");
+        var prevAlias = Environment.GetEnvironmentVariable("QBITRR_SETTINGS_FREE_SPACE");
+        try
+        {
+            Environment.SetEnvironmentVariable("TORRENTARR_SETTINGS_FREE_SPACE", "");
+            Environment.SetEnvironmentVariable("QBITRR_SETTINGS_FREE_SPACE", "42G");
+
+            WriteToml("""
+                [Settings]
+                FreeSpace = "10G"
+                """);
+
+            var config = new ConfigurationLoader(_tempFilePath).Load();
+            config.Settings.FreeSpace.Should().Be("10G");
+        }
+        finally
+        {
+            if (prevPrimary is null)
+                Environment.SetEnvironmentVariable("TORRENTARR_SETTINGS_FREE_SPACE", null);
+            else
+                Environment.SetEnvironmentVariable("TORRENTARR_SETTINGS_FREE_SPACE", prevPrimary);
+            if (prevAlias is null)
+                Environment.SetEnvironmentVariable("QBITRR_SETTINGS_FREE_SPACE", null);
+            else
+                Environment.SetEnvironmentVariable("QBITRR_SETTINGS_FREE_SPACE", prevAlias);
+        }
     }
 }

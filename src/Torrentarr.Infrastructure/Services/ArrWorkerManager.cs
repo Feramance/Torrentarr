@@ -286,6 +286,10 @@ public class ArrWorkerManager : BackgroundService
                     }
 
                     // 2. Sync DB from Arr API (after torrent processing, before search)
+                    // qBitrr 5.12.3 resets a separate search-loop timer after db_update() to avoid
+                    // Lidarr search starvation on huge libraries. Torrentarr uses a single worker loop
+                    // (sync then search in the same iteration, gated by SearchRequestsEvery) — no
+                    // RestartLoopException path exists here; search always follows sync in-order.
                     _stateManager.Update(searchStateName, s => s.Status = "Syncing database...");
                     await RunSyncAsync(instanceName, ct);
 
@@ -440,7 +444,7 @@ public class ArrWorkerManager : BackgroundService
                     if (!loginSuccess)
                         continue;
 
-                    var torrents = await qbitClient.GetTorrentsAsync(arrCfg.Category, ct);
+                    var torrents = await qbitClient.GetTorrentsAsync(arrCfg.Category, cancellationToken: ct);
                     categoryCount = torrents.Count;
                     break;
                 }
@@ -525,7 +529,7 @@ public class ArrWorkerManager : BackgroundService
         }
     }
 
-    private bool ShouldRunSearch(string instanceName, ArrInstanceConfig arrCfg)
+    internal bool ShouldRunSearch(string instanceName, ArrInstanceConfig arrCfg)
     {
         var interval = TimeSpan.FromSeconds(arrCfg.Search.SearchRequestsEvery);
         var last = _lastSearchTime.GetValueOrDefault(instanceName, DateTime.MinValue);

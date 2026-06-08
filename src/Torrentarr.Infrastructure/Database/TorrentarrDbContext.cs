@@ -49,6 +49,18 @@ public class TorrentarrDbContext : DbContext
         modelBuilder.Entity<TorrentLibrary>()
             .HasIndex(t => new { t.Hash, t.QbitInstance })
             .IsUnique();
+
+        // qBitrr parity: maintain ArrInstance indexes for high-frequency lookups.
+        modelBuilder.Entity<MoviesFilesModel>().HasIndex(m => m.ArrInstance).HasDatabaseName("idx_arrinstance_movies");
+        modelBuilder.Entity<EpisodeFilesModel>().HasIndex(e => e.ArrInstance).HasDatabaseName("idx_arrinstance_episodes");
+        modelBuilder.Entity<SeriesFilesModel>().HasIndex(s => s.ArrInstance).HasDatabaseName("idx_arrinstance_series");
+        modelBuilder.Entity<AlbumFilesModel>().HasIndex(a => a.ArrInstance).HasDatabaseName("idx_arrinstance_albums");
+        modelBuilder.Entity<ArtistFilesModel>().HasIndex(a => a.ArrInstance).HasDatabaseName("idx_arrinstance_artists");
+        modelBuilder.Entity<TrackFilesModel>().HasIndex(t => t.ArrInstance).HasDatabaseName("idx_arrinstance_tracks");
+        modelBuilder.Entity<MovieQueueModel>().HasIndex(q => q.ArrInstance).HasDatabaseName("idx_arrinstance_moviequeue");
+        modelBuilder.Entity<EpisodeQueueModel>().HasIndex(q => q.ArrInstance).HasDatabaseName("idx_arrinstance_episodequeue");
+        modelBuilder.Entity<AlbumQueueModel>().HasIndex(q => q.ArrInstance).HasDatabaseName("idx_arrinstance_albumqueue");
+        modelBuilder.Entity<FilesQueued>().HasIndex(f => f.ArrInstance).HasDatabaseName("idx_arrinstance_filesqueued");
     }
 
     protected override void OnConfiguring(DbContextOptionsBuilder optionsBuilder)

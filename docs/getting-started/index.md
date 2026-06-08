@@ -588,10 +588,13 @@ Config file path is taken from `TORRENTARR_CONFIG` when set. All other settings 
 
 1. `--config` option (if added in future)
 2. `TORRENTARR_CONFIG` environment variable
-3. `~/config/config.toml`
-4. `~/.config/qbitrr/config.toml`
-5. `~/.config/torrentarr/config.toml`
-6. `./config.toml`
+3. `./.config/config.toml` (under current working directory)
+4. `~/config/config.toml`
+5. `~/.config/qbitrr/config.toml`
+6. `~/.config/torrentarr/config.toml`
+7. `./config.toml`
+
+If no file exists yet, a new default is written to the first path in this list (`./.config/config.toml` when `TORRENTARR_CONFIG` is unset).
 
 ---
 

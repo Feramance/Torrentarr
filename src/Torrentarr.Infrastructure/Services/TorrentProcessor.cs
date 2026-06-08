@@ -87,7 +87,7 @@ public class TorrentProcessor : ITorrentProcessor
             var torrents = new List<TorrentInfo>();
             foreach (var (instanceName, c) in allClients)
             {
-                var instanceTorrents = await c.GetTorrentsAsync(category, cancellationToken);
+                var instanceTorrents = await c.GetTorrentsAsync(category, cancellationToken: cancellationToken);
                 foreach (var t in instanceTorrents)
                     t.QBitInstanceName = instanceName;
                 torrents.AddRange(instanceTorrents);
@@ -140,7 +140,7 @@ public class TorrentProcessor : ITorrentProcessor
         TorrentInfo? torrent = null;
         foreach (var (instanceName, c) in _qbitManager.GetAllClients())
         {
-            var torrents = await c.GetTorrentsAsync(ct: cancellationToken);
+            var torrents = await c.GetTorrentsAsync(cancellationToken: cancellationToken);
             var found = torrents.FirstOrDefault(t => t.Hash == hash);
             if (found != null)
             {
@@ -161,7 +161,7 @@ public class TorrentProcessor : ITorrentProcessor
         TorrentInfo? torrent = null;
         foreach (var (_, c) in _qbitManager.GetAllClients())
         {
-            var torrents = await c.GetTorrentsAsync(ct: cancellationToken);
+            var torrents = await c.GetTorrentsAsync(cancellationToken: cancellationToken);
             var found = torrents.FirstOrDefault(t => t.Hash == hash);
             if (found != null) { torrent = found; break; }
         }
@@ -195,7 +195,7 @@ public class TorrentProcessor : ITorrentProcessor
         string? torrentInstanceName = null;
         foreach (var (instanceName, c) in _qbitManager.GetAllClients())
         {
-            var torrents = await c.GetTorrentsAsync(ct: cancellationToken);
+            var torrents = await c.GetTorrentsAsync(cancellationToken: cancellationToken);
             var found = torrents.FirstOrDefault(t => t.Hash == hash);
             if (found != null)
             {
@@ -282,7 +282,9 @@ public class TorrentProcessor : ITorrentProcessor
 
         var state = ParseTorrentState(torrent.State);
         var arrCfg = _config.ArrInstances.Values.FirstOrDefault(a =>
-            string.Equals(a.Category, category, StringComparison.OrdinalIgnoreCase));
+            !string.IsNullOrEmpty(a.Category)
+            && CategoryPathHelper.MatchesConfigured(category, new[] { a.Category }, prefix: true)
+                == CategoryPathHelper.NormalizeCategory(a.Category));
         var ignoreYoungerThan = arrCfg?.Torrent.IgnoreTorrentsYoungerThan
             ?? _config.Settings.IgnoreTorrentsYoungerThan;
         var timeNow = DateTimeOffset.UtcNow.ToUnixTimeSeconds();
@@ -296,7 +298,10 @@ public class TorrentProcessor : ITorrentProcessor
 
         // PRE-STEP 0: Tracker actions — runs for EVERY torrent BEFORE the state machine
         // (qBitrr: _process_single_torrent_trackers — arss.py:6070)
-        if (_seedingService != null)
+        // TorrentPolicyManager owns this when global SortTorrents is enabled (arss.py:6615-6628).
+        if (_seedingService != null
+            && !(TorrentPolicyHelper.PolicyManagerOwnsTrackerSync(_config)
+                 && TorrentPolicyHelper.IsMonitoredPolicyCategory(_config, torrent.Category)))
         {
             await _seedingService.ApplyTrackerActionsForTorrentAsync(torrent, ct);
         }

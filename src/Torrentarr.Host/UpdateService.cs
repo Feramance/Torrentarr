@@ -189,7 +189,8 @@ public class UpdateService
             auth_required = !webUi.AuthDisabled,
             local_auth_enabled = webUi.LocalAuthEnabled,
             oidc_enabled = webUi.OIDCEnabled,
-            setup_required = !webUi.AuthDisabled && webUi.LocalAuthEnabled && string.IsNullOrEmpty(webUi.PasswordHash)
+            setup_required = !webUi.AuthDisabled && webUi.LocalAuthEnabled && string.IsNullOrEmpty(webUi.PasswordHash),
+            url_base = UrlBaseHelper.NormalizeUrlBase(webUi.UrlBase)
         };
     }
 

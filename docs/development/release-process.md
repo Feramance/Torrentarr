@@ -2,6 +2,10 @@
 
 Torrentarr uses automated releases via GitHub Actions. This document describes the release workflow for maintainers.
 
+## Versioning vs qBitrr
+
+Torrentarr **keeps its major version one ahead of [qBitrr](https://github.com/Feramance/qBitrr)** (e.g. qBitrr is 5.x while Torrentarr is 6.x). Minor and patch bumps are decided independently for each project. When cutting a Torrentarr release, confirm the major still matches this policy relative to the upstream line you are tracking.
+
 ## Release Workflow
 
 ### 1. Version Bumping

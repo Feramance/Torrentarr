@@ -153,6 +153,14 @@ plugins:
       advanced/multiprocessing.md: advanced/architecture.md
       advanced/ffprobe.md: features/health-monitoring.md
       getting-started/installation/pip.md: getting-started/installation/binary.md
+      parity/upstream-baseline.md: parity/contributor-reference.md
+      parity/intentional-differences.md: parity/contributor-reference.md
+      parity/targeted-repair.md: parity/contributor-reference.md
+      parity/policy-test-matrix.md: parity/contributor-reference.md
+      parity/webui-field-coverage.md: parity/contributor-reference.md
+      parity/behavioral-mapping.md: parity/contributor-reference.md
+      parity/support-scripts-ci.md: parity/contributor-reference.md
+      parity/openapi-alignment.md: parity/contributor-reference.md
 
 # Additional CSS/JS
 extra_css:

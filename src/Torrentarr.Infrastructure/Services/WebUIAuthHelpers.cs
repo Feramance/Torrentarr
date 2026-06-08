@@ -1,5 +1,6 @@
 using System.Security.Cryptography;
 using System.Text;
+using Torrentarr.Core.Configuration;
 
 namespace Torrentarr.Infrastructure.Services;
 
@@ -38,6 +39,38 @@ public static class WebUIAuthHelpers
         // OIDC: only GET allowed (challenge redirect; callback with code in query)
         if (path.StartsWith("/signin-oidc", StringComparison.OrdinalIgnoreCase) && method == "GET") return true;
         if (path.StartsWith("/web/auth/oidc/challenge", StringComparison.OrdinalIgnoreCase) && method == "GET") return true;
+        return false;
+    }
+
+    /// <summary>
+    /// Returns true when POST /web/auth/set-password is allowed (qBitrr 5.12.2 bootstrap parity).
+    /// Requires setup token (env or WebUI.Token) unless the caller is already authenticated.
+    /// </summary>
+    public static bool IsSetPasswordAllowed(
+        TorrentarrConfig cfg,
+        string? setupToken,
+        bool isAuthenticated,
+        string? bearerOrQueryToken)
+    {
+        if (isAuthenticated)
+            return true;
+
+        if (!string.IsNullOrWhiteSpace(bearerOrQueryToken)
+            && !string.IsNullOrWhiteSpace(cfg.WebUI.Token)
+            && TokenEquals(bearerOrQueryToken, cfg.WebUI.Token))
+            return true;
+
+        if (string.IsNullOrWhiteSpace(setupToken))
+            return false;
+
+        var envToken = Environment.GetEnvironmentVariable("TORRENTARR_SETUP_TOKEN")
+            ?? Environment.GetEnvironmentVariable("QBITRR_SETUP_TOKEN");
+        if (!string.IsNullOrWhiteSpace(envToken) && TokenEquals(setupToken, envToken))
+            return true;
+
+        if (!string.IsNullOrWhiteSpace(cfg.WebUI.Token) && TokenEquals(setupToken, cfg.WebUI.Token))
+            return true;
+
         return false;
     }
 }

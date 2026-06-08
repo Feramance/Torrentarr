@@ -52,6 +52,9 @@ public class TorrentInfo
     [JsonProperty("tags")]
     public string Tags { get; set; } = "";
 
+    [JsonProperty("priority")]
+    public int Priority { get; set; }
+
     /// <summary>
     /// The name of the QBitInstances key this torrent was fetched from (e.g. "qBit", "qBit-seedbox").
     /// Not from JSON — set by the code that fetches the torrent from a specific qBit client.

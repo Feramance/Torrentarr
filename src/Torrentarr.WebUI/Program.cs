@@ -4,10 +4,12 @@ using Torrentarr.Core.Services;
 using Torrentarr.Infrastructure.ApiClients.Arr;
 using Torrentarr.Infrastructure.ApiClients.QBittorrent;
 using Torrentarr.Infrastructure.Database;
+using Torrentarr.Infrastructure.Endpoints;
 using Torrentarr.Infrastructure.Services;
 using Microsoft.AspNetCore.Authentication;
 using Microsoft.AspNetCore.Authentication.Cookies;
 using Microsoft.AspNetCore.Authentication.OpenIdConnect;
+using Microsoft.AspNetCore.HttpOverrides;
 using Microsoft.EntityFrameworkCore;
 using Serilog;
 using Serilog.Core;
@@ -15,11 +17,8 @@ using Serilog.Events;
 using System.Security.Claims;
 using System.Security.Cryptography;
 
-// Calculate base paths - use /config for Docker, or config/ relative to cwd for local
-var configEnv = Environment.GetEnvironmentVariable("TORRENTARR_CONFIG");
-var basePath = !string.IsNullOrEmpty(configEnv) && configEnv.StartsWith("/config")
-    ? "/config"
-    : Path.Combine(Directory.GetCurrentDirectory(), "config");
+// Data directory: aligned with resolved config path (see ConfigurationLoader.GetDataDirectoryPath)
+var basePath = ConfigurationLoader.GetDataDirectoryPath();
 var logsPath = Path.Combine(basePath, "logs");
 var dbPath = Path.Combine(basePath, "torrentarr.db");
 Directory.CreateDirectory(basePath);
@@ -118,7 +117,7 @@ builder.Services.AddDbContext<TorrentarrDbContext>(options =>
 
 // Add Configuration Loader — load once and use for both DI and OIDC registration
 var configLoader = new ConfigurationLoader();
-TorrentarrConfig configForDI;
+TorrentarrConfig configForDI = new();
 try
 {
     configForDI = configLoader.Load();
@@ -127,6 +126,11 @@ catch (FileNotFoundException)
 {
     Log.Warning("Configuration file not found, using defaults");
     configForDI = new TorrentarrConfig();
+}
+catch (Exception ex)
+{
+    Log.Fatal(ex, "Failed to load configuration");
+    Environment.Exit(1);
 }
 if (string.IsNullOrEmpty(configForDI.WebUI.Token))
 {
@@ -143,6 +147,11 @@ builder.Services.AddSingleton<IConfigReloader, ConfigReloader>();
 builder.Services.AddSingleton(configLoader);
 
 builder.Services.AddSingleton<IPasswordHasher, BCryptPasswordHasher>();
+builder.Services.AddHttpClient();
+builder.Services.AddScoped<CatalogRollupService>();
+builder.Services.AddScoped<ArrThumbnailService>();
+
+var urlBase = UrlBaseHelper.NormalizeUrlBase(configForDI.WebUI.UrlBase);
 
 var authBuilder = builder.Services.AddAuthentication(CookieAuthenticationDefaults.AuthenticationScheme)
     .AddCookie(options =>
@@ -151,6 +160,8 @@ var authBuilder = builder.Services.AddAuthentication(CookieAuthenticationDefault
         options.Cookie.HttpOnly = true;
         options.Cookie.SameSite = SameSiteMode.Lax;
         options.Cookie.SecurePolicy = Microsoft.AspNetCore.Http.CookieSecurePolicy.SameAsRequest;
+        if (!string.IsNullOrEmpty(urlBase))
+            options.Cookie.Path = urlBase + "/";
         options.LoginPath = "/login";
         options.AccessDeniedPath = "/login";
     });
@@ -173,6 +184,18 @@ if (configForDI.WebUI.OIDCEnabled && configForDI.WebUI.OIDC is { } oidc
 }
 
 var app = builder.Build();
+
+if (configForDI.WebUI.BehindHttpsProxy)
+{
+    app.UseForwardedHeaders(new ForwardedHeadersOptions
+    {
+        ForwardedHeaders = Microsoft.AspNetCore.HttpOverrides.ForwardedHeaders.XForwardedFor
+            | Microsoft.AspNetCore.HttpOverrides.ForwardedHeaders.XForwardedProto
+    });
+}
+
+if (!string.IsNullOrEmpty(urlBase))
+    app.UsePathBase(urlBase);
 
 // Ensure database is created and configure WAL mode
 using (var scope = app.Services.CreateScope())
@@ -372,12 +395,20 @@ app.MapPost("/web/auth/set-password", async (HttpContext ctx, TorrentarrConfig c
         return Results.BadRequest(new { error = "Username and password required" });
     if (body.Password.Length < 8)
         return Results.BadRequest(new { error = "Password must be at least 8 characters" });
-    var setupToken = Environment.GetEnvironmentVariable("TORRENTARR_SETUP_TOKEN");
-    var allowSet = string.IsNullOrEmpty(cfg.WebUI.PasswordHash)
-        || (!string.IsNullOrWhiteSpace(setupToken) && body.SetupToken != null
-            && WebUIAuthHelpers.TokenEquals(body.SetupToken, setupToken));
-    if (!allowSet)
-        return Results.Json(new { error = "Set password not allowed" }, statusCode: 403);
+    var bearerToken = ctx.Request.Headers.Authorization.FirstOrDefault()?.Replace("Bearer ", "", StringComparison.OrdinalIgnoreCase).Trim();
+    var queryToken = ctx.Request.Query["token"].FirstOrDefault();
+    var suppliedToken = !string.IsNullOrWhiteSpace(bearerToken) ? bearerToken : queryToken;
+    var isAuthenticated = ctx.User.Identity?.IsAuthenticated == true;
+    if (!WebUIAuthHelpers.IsSetPasswordAllowed(cfg, body.SetupToken, isAuthenticated, suppliedToken))
+    {
+        var firstTime = string.IsNullOrEmpty(cfg.WebUI.PasswordHash);
+        return Results.Json(new
+        {
+            error = firstTime
+                ? "Setup token required. Use TORRENTARR_SETUP_TOKEN or the WebUI.Token value from config.toml."
+                : "Set password not allowed"
+        }, statusCode: 403);
+    }
 
     // Capture current values so we can revert if SaveConfig fails
     var prevUsername = cfg.WebUI.Username;
@@ -1463,6 +1494,8 @@ app.MapGet("/web/config/path", (IConfigReloader reloader) =>
     return Results.Ok(new { path = reloader.ConfigPath });
 });
 
+app.MapArrCatalogEndpoints();
+
 // Meta info — matches frontend MetaResponse interface (includes auth flags)
 app.MapGet("/web/meta", (TorrentarrConfig cfg) =>
 {
@@ -1495,7 +1528,8 @@ app.MapGet("/web/meta", (TorrentarrConfig cfg) =>
         auth_required = !cfg.WebUI.AuthDisabled,
         local_auth_enabled = cfg.WebUI.LocalAuthEnabled,
         oidc_enabled = cfg.WebUI.OIDCEnabled,
-        setup_required = !cfg.WebUI.AuthDisabled && cfg.WebUI.LocalAuthEnabled && string.IsNullOrEmpty(cfg.WebUI.PasswordHash)
+        setup_required = !cfg.WebUI.AuthDisabled && cfg.WebUI.LocalAuthEnabled && string.IsNullOrEmpty(cfg.WebUI.PasswordHash),
+        url_base = UrlBaseHelper.NormalizeUrlBase(cfg.WebUI.UrlBase)
     });
 });
 
