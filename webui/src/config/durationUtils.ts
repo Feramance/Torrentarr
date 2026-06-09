@@ -141,9 +141,8 @@ export function durationDisplayToValue(
   unit: DurationUnit,
   baseUnit: "seconds" | "minutes",
   allowNegative: boolean,
-): string | number {
+): number {
   if (allowNegative && number === -1) return -1;
   const total = numberAndUnitToTotal(number, unit, baseUnit);
-  const out = toSuffixed(total, baseUnit);
-  return typeof out === "number" ? out : out;
+  return baseUnit === "minutes" ? Math.floor(total) : Math.round(total);
 }
