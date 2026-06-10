@@ -3143,7 +3143,7 @@ class ProcessOrchestratorService : BackgroundService
 
                 foreach (var t in torrents)
                 {
-                    if (t.Tags.Contains("qBitrr-ignored", StringComparison.OrdinalIgnoreCase))
+                    if (t.Tags?.Contains("qBitrr-ignored", StringComparison.OrdinalIgnoreCase) == true)
                         continue;
                     t.QBitInstanceName = instanceName;
                     await seeding.ApplyTrackerActionsForTorrentAsync(t, cancellationToken);
@@ -3330,9 +3330,8 @@ class ProcessOrchestratorService : BackgroundService
         const string freeSpacePausedTag = "qBitrr-free_space_paused";
         var tagless = _config.Settings.Tagless;
 
-        var isDownloading = torrent.State.Contains("downloading", StringComparison.OrdinalIgnoreCase) ||
-                           torrent.State.Contains("stalledDL", StringComparison.OrdinalIgnoreCase);
-        var isPausedDownload = torrent.State.Contains("pausedDL", StringComparison.OrdinalIgnoreCase);
+        var isDownloading = TorrentPolicyHelper.IsActiveDownloadingStateForFreeSpace(torrent.State);
+        var isPausedDownload = TorrentPolicyHelper.IsPausedDownloadStateForFreeSpace(torrent.State);
 
         // §1.6: tagless mode reads FreeSpacePaused from DB column; otherwise check qBit tag
         bool hasFreeSpaceTag;

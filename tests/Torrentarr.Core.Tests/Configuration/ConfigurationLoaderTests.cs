@@ -639,6 +639,39 @@ public class ConfigurationLoaderTests : IDisposable
     }
 
     [Fact]
+    public void SaveConfig_PreservesQBitTrackers()
+    {
+        WriteToml("""
+            [Settings]
+            LoopSleepTimer = 5
+
+            [qBit]
+            Host = "localhost"
+
+            [[qBit.Trackers]]
+            URI = "https://tracker.example.com/announce"
+            Priority = 10
+            SortTorrents = true
+            HitAndRunMode = "and"
+            MinSeedRatio = 2.0
+            """);
+
+        var loader = new ConfigurationLoader(_tempFilePath);
+        var config = loader.Load();
+        config.Settings.LoopSleepTimer = 10;
+        loader.SaveConfig(config);
+
+        var reloaded = new ConfigurationLoader(_tempFilePath).Load();
+        reloaded.QBitInstances["qBit"].Trackers.Should().ContainSingle();
+        reloaded.QBitInstances["qBit"].Trackers[0].Uri.Should().Be("https://tracker.example.com/announce");
+        reloaded.QBitInstances["qBit"].Trackers[0].SortTorrents.Should().BeTrue();
+        reloaded.QBitInstances["qBit"].Trackers[0].Priority.Should().Be(10);
+        reloaded.QBitInstances["qBit"].Trackers[0].HitAndRunMode.Should().Be("and");
+        reloaded.QBitInstances["qBit"].Trackers[0].MinSeedRatio.Should().Be(2.0);
+        reloaded.Settings.LoopSleepTimer.Should().Be(10);
+    }
+
+    [Fact]
     public void Save_WebUI_WritesAuthBooleans()
     {
         WriteToml("""
