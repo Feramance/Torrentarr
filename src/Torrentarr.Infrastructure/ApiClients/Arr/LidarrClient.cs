@@ -32,13 +32,12 @@ public class LidarrClient
         AddApiKeyHeader(request);
 
         var response = await _client.ExecuteAsync(request, ct);
+        ArrClientResponse.EnsureSuccess(response, "GET /api/v1/artist");
 
-        if (response.IsSuccessful && !string.IsNullOrEmpty(response.Content))
-        {
-            return JsonConvert.DeserializeObject<List<LidarrArtist>>(response.Content) ?? new List<LidarrArtist>();
-        }
+        if (string.IsNullOrEmpty(response.Content))
+            return new List<LidarrArtist>();
 
-        return new List<LidarrArtist>();
+        return JsonConvert.DeserializeObject<List<LidarrArtist>>(response.Content) ?? new List<LidarrArtist>();
     }
 
     /// <summary>
@@ -89,13 +88,12 @@ public class LidarrClient
             request.AddQueryParameter("artistId", artistId.Value.ToString());
 
         var response = await _client.ExecuteAsync(request, ct);
+        ArrClientResponse.EnsureSuccess(response, "GET /api/v1/album");
 
-        if (response.IsSuccessful && !string.IsNullOrEmpty(response.Content))
-        {
-            return JsonConvert.DeserializeObject<List<LidarrAlbum>>(response.Content) ?? new List<LidarrAlbum>();
-        }
+        if (string.IsNullOrEmpty(response.Content))
+            return new List<LidarrAlbum>();
 
-        return new List<LidarrAlbum>();
+        return JsonConvert.DeserializeObject<List<LidarrAlbum>>(response.Content) ?? new List<LidarrAlbum>();
     }
 
     /// <summary>
@@ -206,13 +204,12 @@ public class LidarrClient
         request.AddQueryParameter("pageSize", pageSize.ToString());
 
         var response = await _client.ExecuteAsync(request, ct);
+        ArrClientResponse.EnsureSuccess(response, "GET /api/v1/queue");
 
-        if (response.IsSuccessful && !string.IsNullOrEmpty(response.Content))
-        {
-            return JsonConvert.DeserializeObject<LidarrQueueResponse>(response.Content) ?? new LidarrQueueResponse();
-        }
+        if (string.IsNullOrEmpty(response.Content))
+            return new LidarrQueueResponse();
 
-        return new LidarrQueueResponse();
+        return JsonConvert.DeserializeObject<LidarrQueueResponse>(response.Content) ?? new LidarrQueueResponse();
     }
 
     /// <summary>
@@ -295,13 +292,12 @@ public class LidarrClient
             request.AddQueryParameter("albumId", albumId.Value.ToString());
 
         var response = await _client.ExecuteAsync(request, ct);
+        ArrClientResponse.EnsureSuccess(response, "GET /api/v1/track");
 
-        if (response.IsSuccessful && !string.IsNullOrEmpty(response.Content))
-        {
-            return JsonConvert.DeserializeObject<List<Track>>(response.Content) ?? new List<Track>();
-        }
+        if (string.IsNullOrEmpty(response.Content))
+            return new List<Track>();
 
-        return new List<Track>();
+        return JsonConvert.DeserializeObject<List<Track>>(response.Content) ?? new List<Track>();
     }
 
     /// <summary>
