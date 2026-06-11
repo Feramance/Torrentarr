@@ -245,4 +245,46 @@ public class ArrImportServiceTests
 
         await act.Should().NotThrowAsync();
     }
+
+    [Fact]
+    public async Task CustomFormatUnmetLookup_UsesArrIdNotSqliteEntryId()
+    {
+        var options = new DbContextOptionsBuilder<TorrentarrDbContext>()
+            .UseInMemoryDatabase(Guid.NewGuid().ToString())
+            .Options;
+        await using var db = new TorrentarrDbContext(options);
+
+        db.Movies.Add(new MoviesFilesModel
+        {
+            EntryId = 42,
+            Title = "Wrong Match",
+            ArrInstance = "Radarr-HD",
+            ArrId = 5,
+            MovieFileId = 999,
+            CustomFormatScore = 10
+        });
+        db.Movies.Add(new MoviesFilesModel
+        {
+            EntryId = 1,
+            Title = "Target Movie",
+            ArrInstance = "Radarr-HD",
+            ArrId = 42,
+            MovieFileId = 0,
+            CustomFormatScore = 50
+        });
+        await db.SaveChangesAsync();
+
+        const int queueMovieId = 42;
+
+        var correctLookup = await db.Movies.AsNoTracking()
+            .FirstOrDefaultAsync(m => m.ArrId == queueMovieId && m.ArrInstance == "Radarr-HD");
+        correctLookup.Should().NotBeNull();
+        correctLookup!.Title.Should().Be("Target Movie");
+
+        var buggyLookup = await db.Movies.AsNoTracking()
+            .FirstOrDefaultAsync(m => m.EntryId == queueMovieId && m.ArrInstance == "Radarr-HD");
+        buggyLookup.Should().NotBeNull();
+        buggyLookup!.Title.Should().Be("Wrong Match",
+            "EntryId collisions can make CustomFormatUnmet delete the wrong torrent");
+    }
 }
