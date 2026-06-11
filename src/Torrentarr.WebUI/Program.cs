@@ -737,6 +737,7 @@ app.MapPost("/web/config", async (HttpContext ctx, TorrentarrConfig config, Conf
 
         var updatedConfig = FlatToConfig(flatConfig, config);
         loader.SaveConfig(updatedConfig, reloader.ConfigPath);
+        ApplyConfigInPlace(config, updatedConfig);
     }
     catch (Exception ex)
     {
@@ -754,6 +755,15 @@ app.MapPost("/web/config", async (HttpContext ctx, TorrentarrConfig config, Conf
         affectedInstances
     });
 });
+
+static void ApplyConfigInPlace(TorrentarrConfig target, TorrentarrConfig source)
+{
+    target.Settings = source.Settings;
+    target.WebUI = source.WebUI;
+    target.ArrInstances = source.ArrInstances;
+    target.QBitInstances = source.QBitInstances;
+    TorrentPolicyHelper.InvalidateMonitoredPolicyCategoriesCache(target);
+}
 
 // Helper: apply a dot-path change to a JObject (e.g. "Settings.LoopSleepTimer" = 30)
 static void ApplyDotPathChange(Newtonsoft.Json.Linq.JObject root, string dotPath, Newtonsoft.Json.Linq.JToken value)
@@ -1471,11 +1481,12 @@ app.MapPost("/web/config/reload", (IConfigReloader reloader) =>
         : Results.BadRequest(new { success = false, message = "Failed to reload configuration" });
 });
 
-app.MapPost("/web/config/save", async (TorrentarrConfig updatedConfig, ConfigurationLoader loader, IConfigReloader reloader) =>
+app.MapPost("/web/config/save", async (TorrentarrConfig updatedConfig, TorrentarrConfig config, ConfigurationLoader loader, IConfigReloader reloader) =>
 {
     try
     {
         loader.SaveConfig(updatedConfig, reloader.ConfigPath);
+        ApplyConfigInPlace(config, updatedConfig);
         var reloadSuccess = reloader.ReloadConfig();
 
         return reloadSuccess

@@ -335,8 +335,8 @@ public class FreeSpaceService : IFreeSpaceService
         TorrentInfo torrent,
         CancellationToken cancellationToken)
     {
-        var isDownloading = IsDownloadingState(torrent.State);
-        var isPausedDownload = torrent.State.Contains("pausedDL", StringComparison.OrdinalIgnoreCase);
+        var isDownloading = TorrentPolicyHelper.IsActiveDownloadingStateForFreeSpace(torrent.State);
+        var isPausedDownload = TorrentPolicyHelper.IsPausedDownloadStateForFreeSpace(torrent.State);
         var hasFreeSpaceTag = HasTag(torrent, FreeSpacePausedTag);
 
         _logger.LogTrace("FreeSpace: [{Name}] | State[{State}] | Progress[{Progress:P1}] | Size[{Size}] | AmountLeft[{AmountLeft}] | HasTag[{HasTag}] | Hash[{Hash}]",
