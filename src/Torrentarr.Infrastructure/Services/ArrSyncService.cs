@@ -718,7 +718,7 @@ public class ArrSyncService
         {
             _logger.LogTrace("DB Delete: Artist {Title} removed from database", artist.Title);
         }
-        if (artistsToDelete.Count > 0)
+        if (artistsToDelete.Count > 0 && !ShouldSkipDestructiveDelete(artists.Count, dbArtists.Count, instanceName, "artists"))
             _db.Artists.RemoveRange(artistsToDelete);
 
         await _db.SaveChangesAsync(ct);
@@ -798,7 +798,7 @@ public class ArrSyncService
         {
             _logger.LogTrace("DB Delete: Album {Title} removed from database", album.Title);
         }
-        if (albumsToDelete.Count > 0)
+        if (albumsToDelete.Count > 0 && !ShouldSkipDestructiveDelete(albums.Count, dbAlbums.Count, instanceName, "albums"))
         {
             var deleteIds = albumsToDelete.Select(a => a.EntryId).ToList();
             var orphanedTracks = await _db.Tracks

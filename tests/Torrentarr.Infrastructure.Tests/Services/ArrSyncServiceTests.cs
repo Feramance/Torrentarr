@@ -211,6 +211,20 @@ public sealed class ArrSyncServiceTests : IDisposable
     }
 
     [Fact]
+    public void ShouldSkipDestructiveDelete_EmptyAlbumApiWithExistingRows_ReturnsTrue()
+    {
+        var svc = CreateService();
+        var method = typeof(ArrSyncService).GetMethod(
+            "ShouldSkipDestructiveDelete",
+            System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance)!;
+
+        var result = (bool)method.Invoke(svc, new object[] { 0, 12, "Lidarr-test", "albums" })!;
+
+        result.Should().BeTrue(
+            "empty album API must not cascade-delete tracks via orphaned-track cleanup before the track guard runs");
+    }
+
+    [Fact]
     public async Task SyncQueueAsync_UnknownArrType_DoesNotThrow()
     {
         // The switch has no default case for unknown types — falls through silently.
