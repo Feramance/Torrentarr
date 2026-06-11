@@ -32,15 +32,31 @@ public static class TaglessTorrentLibraryHelper
             return;
         }
 
-        if (paused)
+        if (!paused)
+            return;
+
+        db.TorrentLibrary.Add(new TorrentLibrary
         {
-            db.TorrentLibrary.Add(new TorrentLibrary
-            {
-                Hash = hash,
-                Category = category,
-                QbitInstance = qbitInstance,
-                FreeSpacePaused = true
-            });
+            Hash = hash,
+            Category = category,
+            QbitInstance = qbitInstance,
+            FreeSpacePaused = true
+        });
+
+        try
+        {
+            await db.SaveChangesAsync(ct);
+        }
+        catch (DbUpdateException)
+        {
+            // TorrentProcessor.EnsureTorrentInDatabaseAsync may insert the same row concurrently.
+            db.ChangeTracker.Clear();
+            entry = await db.TorrentLibrary
+                .FirstOrDefaultAsync(t => t.Hash == hash && t.QbitInstance == qbitInstance, ct);
+            if (entry == null)
+                throw;
+
+            entry.FreeSpacePaused = true;
             await db.SaveChangesAsync(ct);
         }
     }

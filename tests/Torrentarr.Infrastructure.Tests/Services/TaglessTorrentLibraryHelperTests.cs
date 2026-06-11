@@ -61,4 +61,23 @@ public class TaglessTorrentLibraryHelperTests
 
         (await db.TorrentLibrary.CountAsync()).Should().Be(0);
     }
+
+    [Fact]
+    public async Task SetFreeSpacePaused_ScopedPerQbitInstance()
+    {
+        await using var db = CreateDb();
+        db.TorrentLibrary.AddRange(
+            new() { Hash = "abc123", Category = "radarr", QbitInstance = "qBit", FreeSpacePaused = true },
+            new() { Hash = "abc123", Category = "radarr", QbitInstance = "qBit-seedbox", FreeSpacePaused = false });
+        await db.SaveChangesAsync();
+
+        await TaglessTorrentLibraryHelper.SetFreeSpacePausedAsync(
+            db, "abc123", "radarr", "qBit-seedbox", paused: true);
+
+        var entries = await db.TorrentLibrary.OrderBy(t => t.QbitInstance).ToListAsync();
+        entries[0].QbitInstance.Should().Be("qBit");
+        entries[0].FreeSpacePaused.Should().BeTrue();
+        entries[1].QbitInstance.Should().Be("qBit-seedbox");
+        entries[1].FreeSpacePaused.Should().BeTrue();
+    }
 }
