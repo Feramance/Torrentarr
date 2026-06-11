@@ -210,6 +210,21 @@ public sealed class ArrSyncServiceTests : IDisposable
         result.Should().BeFalse();
     }
 
+    [Theory]
+    [InlineData("artists")]
+    [InlineData("albums")]
+    public void ShouldSkipDestructiveDelete_LidarrEntities_EmptyApiWithExistingRows_ReturnsTrue(string entityName)
+    {
+        var svc = CreateService();
+        var method = typeof(ArrSyncService).GetMethod(
+            "ShouldSkipDestructiveDelete",
+            System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance)!;
+
+        var result = (bool)method.Invoke(svc, new object[] { 0, 12, "Lidarr-test", entityName })!;
+
+        result.Should().BeTrue();
+    }
+
     [Fact]
     public async Task SyncQueueAsync_UnknownArrType_DoesNotThrow()
     {
