@@ -351,7 +351,7 @@ public class ArrSyncService
         {
             _logger.LogTrace("DB Delete: Series {Title} removed from database", series.Title);
         }
-        if (seriesToDelete.Count > 0)
+        if (seriesToDelete.Count > 0 && !ShouldSkipDestructiveDelete(seriesList.Count, dbSeries.Count, instanceName, "series"))
         {
             var deleteIds = seriesToDelete.Select(s => s.EntryId).ToList();
             var orphanedEps = await _db.Episodes
@@ -718,7 +718,7 @@ public class ArrSyncService
         {
             _logger.LogTrace("DB Delete: Artist {Title} removed from database", artist.Title);
         }
-        if (artistsToDelete.Count > 0)
+        if (artistsToDelete.Count > 0 && !ShouldSkipDestructiveDelete(artists.Count, dbArtists.Count, instanceName, "artists"))
             _db.Artists.RemoveRange(artistsToDelete);
 
         await _db.SaveChangesAsync(ct);
@@ -798,7 +798,7 @@ public class ArrSyncService
         {
             _logger.LogTrace("DB Delete: Album {Title} removed from database", album.Title);
         }
-        if (albumsToDelete.Count > 0)
+        if (albumsToDelete.Count > 0 && !ShouldSkipDestructiveDelete(albums.Count, dbAlbums.Count, instanceName, "albums"))
         {
             var deleteIds = albumsToDelete.Select(a => a.EntryId).ToList();
             var orphanedTracks = await _db.Tracks
@@ -871,6 +871,14 @@ public class ArrSyncService
         var existingTracks = await _db.Tracks
             .Where(t => t.ArrInstance == instanceName)
             .ToListAsync(ct);
+
+        if (ShouldSkipDestructiveDelete(allTracks.Count, existingTracks.Count, instanceName, "tracks"))
+        {
+            _logger.LogDebug("[{Instance}] ArrSyncService: Lidarr {Name} track sync skipped (suspicious empty API response)",
+                instanceName, instanceName);
+            return;
+        }
+
         _db.Tracks.RemoveRange(existingTracks);
         await _db.SaveChangesAsync(ct);
 
@@ -1276,6 +1284,23 @@ public class ArrSyncService
         queue.TrackedDownloadStatus = item.TrackedDownloadStatus;
         queue.TrackedDownloadState = item.TrackedDownloadState;
         queue.CustomFormatScore = item.CustomFormatScore;
+    }
+
+    /// <summary>
+    /// Refuse delete-all / mass-delete when the Arr API returns an empty catalog but the local DB still has rows.
+    /// Prevents wiping SQLite on transient API failures or misconfigured responses.
+    /// </summary>
+    private bool ShouldSkipDestructiveDelete(int apiCount, int existingCount, string instanceName, string entityName)
+    {
+        if (apiCount == 0 && existingCount > 0)
+        {
+            _logger.LogWarning(
+                "[{Instance}] ArrSyncService: refusing destructive {Entity} sync — API returned no items but DB has {Count} rows",
+                instanceName, entityName, existingCount);
+            return true;
+        }
+
+        return false;
     }
 
     /// <summary>
