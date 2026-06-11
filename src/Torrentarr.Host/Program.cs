@@ -3350,7 +3350,7 @@ class ProcessOrchestratorService : BackgroundService
         const string freeSpacePausedTag = "qBitrr-free_space_paused";
         var tagless = _config.Settings.Tagless;
 
-        var isDownloading = TorrentPolicyHelper.IsActiveDownloadingStateForFreeSpace(torrent.State);
+        var isFreeSpaceDownload = TorrentPolicyHelper.IsFreeSpaceDownloadState(torrent.State);
         var isPausedDownload = TorrentPolicyHelper.IsPausedDownloadStateForFreeSpace(torrent.State);
 
         // §1.6: tagless mode reads FreeSpacePaused from DB column; otherwise check qBit tag
@@ -3366,7 +3366,7 @@ class ProcessOrchestratorService : BackgroundService
             hasFreeSpaceTag = torrent.Tags?.Contains(freeSpacePausedTag) == true;
         }
 
-        if (isDownloading || (isPausedDownload && hasFreeSpaceTag))
+        if (isFreeSpaceDownload)
         {
             var freeSpaceTest = _currentFreeSpace - torrent.AmountLeft;
 
@@ -3388,7 +3388,18 @@ class ProcessOrchestratorService : BackgroundService
                 if (pausedCountRef != null) pausedCountRef[0]++;
                 await client.PauseTorrentAsync(torrent.Hash, cancellationToken);
             }
-            else if (isPausedDownload && freeSpaceTest >= 0)
+            else if (isPausedDownload && freeSpaceTest < 0)
+            {
+                _logger.LogInformation(
+                    "FreeSpace: Keeping paused (insufficient space) | Torrent: {Name} | Available: {Available} | Needed: {Needed} | Deficit: {Deficit}",
+                    torrent.Name, FormatBytes(_currentFreeSpace), FormatBytes(torrent.AmountLeft), FormatBytes(-freeSpaceTest));
+                if (tagless && dbContext != null)
+                    await dbContext.TorrentLibrary.Where(t => t.Hash == torrent.Hash)
+                        .ExecuteUpdateAsync(s => s.SetProperty(t => t.FreeSpacePaused, true), cancellationToken);
+                else
+                    await client.AddTagsAsync(new List<string> { torrent.Hash }, new List<string> { freeSpacePausedTag }, cancellationToken);
+            }
+            else if (isPausedDownload && freeSpaceTest >= 0 && hasFreeSpaceTag)
             {
                 _logger.LogInformation(
                     "FreeSpace: Resuming download (space available) | Torrent: {Name} | Available: {Available} | Space after: {SpaceAfter}",
@@ -3403,12 +3414,6 @@ class ProcessOrchestratorService : BackgroundService
                 if (pausedCountRef != null) pausedCountRef[0]--;
                 await client.ResumeTorrentAsync(torrent.Hash, cancellationToken);
             }
-            else if (isPausedDownload && freeSpaceTest < 0)
-            {
-                _logger.LogInformation(
-                    "FreeSpace: Keeping paused (insufficient space) | Torrent: {Name} | Available: {Available} | Needed: {Needed} | Deficit: {Deficit}",
-                    torrent.Name, FormatBytes(_currentFreeSpace), FormatBytes(torrent.AmountLeft), FormatBytes(-freeSpaceTest));
-            }
             else if (!isPausedDownload && freeSpaceTest >= 0)
             {
                 _logger.LogInformation(
@@ -3417,7 +3422,7 @@ class ProcessOrchestratorService : BackgroundService
                 _currentFreeSpace = freeSpaceTest;
             }
         }
-        else if (!isDownloading && hasFreeSpaceTag)
+        else if (!isFreeSpaceDownload && hasFreeSpaceTag)
         {
             // Torrent completed — clear the paused marker
             _logger.LogInformation(

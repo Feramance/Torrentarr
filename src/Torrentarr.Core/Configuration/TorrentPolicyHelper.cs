@@ -102,14 +102,25 @@ public static class TorrentPolicyHelper
     }
 
     /// <summary>
-    /// Active download states for free-space evaluation (includes <c>metaDL</c>).
+    /// Active download states for free-space evaluation (qBitrr <c>is_free_space_download_state</c> active subset).
     /// </summary>
     public static bool IsActiveDownloadingStateForFreeSpace(string? state)
     {
         if (string.IsNullOrWhiteSpace(state)) return false;
         return state.Contains("downloading", StringComparison.OrdinalIgnoreCase)
                || state.Contains("stalledDL", StringComparison.OrdinalIgnoreCase)
+               || state.Contains("queuedDL", StringComparison.OrdinalIgnoreCase)
+               || state.Contains("forcedDL", StringComparison.OrdinalIgnoreCase)
                || state.Contains("metaDL", StringComparison.OrdinalIgnoreCase);
+    }
+
+    /// <summary>
+    /// Download-side states considered by free-space pause/resume (qBitrr <c>is_free_space_download_state</c>).
+    /// </summary>
+    public static bool IsFreeSpaceDownloadState(string? state)
+    {
+        return IsActiveDownloadingStateForFreeSpace(state)
+               || IsPausedDownloadStateForFreeSpace(state);
     }
 
     /// <summary>
