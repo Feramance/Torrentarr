@@ -2968,7 +2968,7 @@ class ProcessOrchestratorService : BackgroundService
         if (tagless && dbContext != null)
         {
             var dbEntry = await dbContext.TorrentLibrary.AsNoTracking()
-                .FirstOrDefaultAsync(t => t.Hash == torrent.Hash, cancellationToken);
+                .FirstOrDefaultAsync(t => t.Hash == torrent.Hash && t.QbitInstance == instanceName, cancellationToken);
             hasFreeSpaceTag = dbEntry?.FreeSpacePaused == true;
         }
         else
