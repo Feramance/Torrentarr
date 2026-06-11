@@ -696,6 +696,14 @@ public class SeedingService : ISeedingService
                     continue;
                 }
 
+                if (!await HnrAllowsDeleteAsync(torrent, "removal criteria", cancellationToken))
+                {
+                    _logger.LogDebug("H&R: Keeping torrent [{Name}] - Hit and Run protection active | Ratio[{Ratio:F2}] | SeedingTime[{SeedingTime}s]",
+                        torrent.Name, torrent.Ratio, torrent.SeedingTime);
+                    result.TorrentsProtected++;
+                    continue;
+                }
+
                 var imported = await _dbContext.TorrentLibrary
                     .AnyAsync(t => t.Hash == torrent.Hash && t.Imported, cancellationToken);
 
