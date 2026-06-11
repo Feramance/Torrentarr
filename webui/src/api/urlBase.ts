@@ -3,8 +3,7 @@ let cachedUrlBaseFromMeta: string | null = null;
 
 /** Derive UrlBase from the current page pathname before /web/meta is loaded. */
 export function pathnameUrlBase(): string {
-  const path =
-    window.location.pathname.replace(/\/$/, "") || "/";
+  const path = window.location.pathname.replace(/\/$/, "") || "/";
 
   const staticMatch = path.match(/^(.*)\/static\/index\.html$/);
   if (staticMatch) return staticMatch[1];
