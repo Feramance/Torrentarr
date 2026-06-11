@@ -208,6 +208,30 @@ public class ArrImportServiceTests
         byEntryId.Should().BeNull("queue MovieId is the Arr API id, not the SQLite EntryId");
     }
 
+    [Fact]
+    public async Task CfUnmetSeriesLookup_RequiresMinCustomFormatScore_OnSeriesRow()
+    {
+        var options = new DbContextOptionsBuilder<TorrentarrDbContext>()
+            .UseInMemoryDatabase(Guid.NewGuid().ToString())
+            .Options;
+        await using var dbContext = new TorrentarrDbContext(options);
+        dbContext.Series.Add(new SeriesFilesModel
+        {
+            Title = "Test Series",
+            ArrInstance = "Sonarr-HD",
+            ArrId = 99,
+            MinCustomFormatScore = 200
+        });
+        await dbContext.SaveChangesAsync();
+
+        var seriesEntry = await dbContext.Series.AsNoTracking()
+            .FirstOrDefaultAsync(s => s.ArrId == 99 && s.ArrInstance == "Sonarr-HD");
+
+        seriesEntry.Should().NotBeNull();
+        seriesEntry!.MinCustomFormatScore.Should().Be(200,
+            "Sonarr series-search CF unmet checks MinCustomFormatScore on the series row");
+    }
+
     // ── MarkAsImportedAsync ───────────────────────────────────────────────────
 
     [Fact]

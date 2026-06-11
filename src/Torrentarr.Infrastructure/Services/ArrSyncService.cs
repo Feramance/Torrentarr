@@ -315,12 +315,16 @@ public class ArrSyncService
             ct.ThrowIfCancellationRequested();
             apiIds.Add(series.Id);
 
+            profileDict.TryGetValue(series.QualityProfileId, out var seriesProfile);
+            var seriesMinCfScore = seriesProfile?.MinCustomFormatScore ?? 0;
+
             if (dbSeries.TryGetValue(series.Id, out var existing))
             {
                 existing.Monitored = series.Monitored;
                 existing.TvdbId = series.TvdbId;
                 existing.QualityProfileId = series.QualityProfileId;
                 existing.ArrId = series.Id;
+                existing.MinCustomFormatScore = seriesMinCfScore;
                 _db.Series.Update(existing);
                 entityBySonarrId[series.Id] = existing;
                 seriesUpdated++;
@@ -335,7 +339,8 @@ public class ArrSyncService
                     TvdbId = series.TvdbId,
                     Monitored = series.Monitored,
                     QualityProfileId = series.QualityProfileId,
-                    ArrId = series.Id
+                    ArrId = series.Id,
+                    MinCustomFormatScore = seriesMinCfScore
                 };
                 _db.Series.Add(newSeries);
                 entityBySonarrId[series.Id] = newSeries;
