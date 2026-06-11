@@ -3183,13 +3183,13 @@ class ProcessOrchestratorService : BackgroundService
             _currentFreeSpace = driveInfo.AvailableFreeSpace - _minFreeSpaceBytes;
 
             // Gather torrents from ALL qBit instances across all managed categories.
-            var allTorrents = new List<(QBittorrentClient client, TorrentInfo torrent)>();
-            foreach (var (_, client) in _qbitManager.GetAllClients())
+            var allTorrents = new List<(string instanceName, QBittorrentClient client, TorrentInfo torrent)>();
+            foreach (var (instanceName, client) in _qbitManager.GetAllClients())
             {
                 foreach (var category in managedCategories)
                 {
                     var torrents = await client.GetTorrentsAsync(category, "priority", cancellationToken);
-                    allTorrents.AddRange(torrents.Select(t => (client, t)));
+                    allTorrents.AddRange(torrents.Select(t => (instanceName, client, t)));
                 }
             }
 
@@ -3200,13 +3200,13 @@ class ProcessOrchestratorService : BackgroundService
                 pausedCountRef = new int[] { pausedCount };
             }
 
-            foreach (var (client, torrent) in allTorrents
-                .Select(x => (x.client, x.torrent, key: TorrentPolicyHelper.TorrentQueuePositionSortKey(x.torrent)))
+            foreach (var (instanceName, client, torrent) in allTorrents
+                .Select(x => (x.instanceName, x.client, x.torrent, key: TorrentPolicyHelper.TorrentQueuePositionSortKey(x.torrent)))
                 .OrderBy(x => x.key.InactiveQueueGroup)
                 .ThenBy(x => x.key.Nq)
                 .ThenBy(x => x.torrent.AddedOn)
-                .Select(x => (x.client, x.torrent)))
-                await ProcessSingleTorrentSpaceAsync(client, torrent, dbContext, pausedCountRef, cancellationToken);
+                .Select(x => (x.instanceName, x.client, x.torrent)))
+                await ProcessSingleTorrentSpaceAsync(instanceName, client, torrent, dbContext, pausedCountRef, cancellationToken);
 
             if (_config.Settings.Tagless && dbContext != null)
                 pausedCount = await dbContext.TorrentLibrary.CountAsync(t => t.FreeSpacePaused, cancellationToken);
@@ -3325,7 +3325,7 @@ class ProcessOrchestratorService : BackgroundService
     }
 
     private async Task ProcessSingleTorrentSpaceAsync(
-        QBittorrentClient client, TorrentInfo torrent, TorrentarrDbContext? dbContext, int[]? pausedCountRef, CancellationToken cancellationToken)
+        string instanceName, QBittorrentClient client, TorrentInfo torrent, TorrentarrDbContext? dbContext, int[]? pausedCountRef, CancellationToken cancellationToken)
     {
         const string freeSpacePausedTag = "qBitrr-free_space_paused";
         var tagless = _config.Settings.Tagless;
@@ -3361,8 +3361,8 @@ class ProcessOrchestratorService : BackgroundService
                     torrent.Name, FormatBytes(_currentFreeSpace), FormatBytes(torrent.AmountLeft), FormatBytes(-freeSpaceTest));
                 // §1.6: tagless — set DB column; else apply qBit tag
                 if (tagless && dbContext != null)
-                    await dbContext.TorrentLibrary.Where(t => t.Hash == torrent.Hash)
-                        .ExecuteUpdateAsync(s => s.SetProperty(t => t.FreeSpacePaused, true), cancellationToken);
+                    await TaglessTorrentLibraryHelper.SetFreeSpacePausedAsync(
+                        dbContext, torrent.Hash, torrent.Category, instanceName, paused: true, cancellationToken);
                 else
                     await client.AddTagsAsync(new List<string> { torrent.Hash }, new List<string> { freeSpacePausedTag }, cancellationToken);
                 if (pausedCountRef != null) pausedCountRef[0]++;
@@ -3376,8 +3376,8 @@ class ProcessOrchestratorService : BackgroundService
                 _currentFreeSpace = freeSpaceTest;
                 // §1.6: tagless — clear DB column; else remove qBit tag
                 if (tagless && dbContext != null)
-                    await dbContext.TorrentLibrary.Where(t => t.Hash == torrent.Hash)
-                        .ExecuteUpdateAsync(s => s.SetProperty(t => t.FreeSpacePaused, false), cancellationToken);
+                    await TaglessTorrentLibraryHelper.SetFreeSpacePausedAsync(
+                        dbContext, torrent.Hash, torrent.Category, instanceName, paused: false, cancellationToken);
                 else
                     await client.RemoveTagsAsync(new List<string> { torrent.Hash }, new List<string> { freeSpacePausedTag }, cancellationToken);
                 if (pausedCountRef != null) pausedCountRef[0]--;
@@ -3405,8 +3405,8 @@ class ProcessOrchestratorService : BackgroundService
                 torrent.Name, FormatBytes(_currentFreeSpace + _minFreeSpaceBytes));
             // §1.6: tagless — clear DB column; else remove qBit tag
             if (tagless && dbContext != null)
-                await dbContext.TorrentLibrary.Where(t => t.Hash == torrent.Hash)
-                    .ExecuteUpdateAsync(s => s.SetProperty(t => t.FreeSpacePaused, false), cancellationToken);
+                await TaglessTorrentLibraryHelper.SetFreeSpacePausedAsync(
+                    dbContext, torrent.Hash, torrent.Category, instanceName, paused: false, cancellationToken);
             else
                 await client.RemoveTagsAsync(new List<string> { torrent.Hash }, new List<string> { freeSpacePausedTag }, cancellationToken);
             if (pausedCountRef != null) pausedCountRef[0]--;
