@@ -189,8 +189,8 @@ try
             options.Cookie.SecurePolicy = Microsoft.AspNetCore.Http.CookieSecurePolicy.SameAsRequest;
             if (!string.IsNullOrEmpty(urlBase))
                 options.Cookie.Path = urlBase + "/";
-            options.LoginPath = "/login";
-            options.AccessDeniedPath = "/login";
+            options.LoginPath = UrlBaseHelper.WithUrlBase(urlBase, "/login");
+            options.AccessDeniedPath = UrlBaseHelper.WithUrlBase(urlBase, "/login");
         });
     if (config.WebUI.OIDCEnabled && config.WebUI.OIDC is { } oidc
         && !string.IsNullOrWhiteSpace(oidc.Authority)
@@ -487,7 +487,8 @@ try
             await context.Response.WriteAsJsonAsync(new { error = "Unauthorized" });
             return;
         }
-        context.Response.Redirect("/login");
+        context.Response.Redirect(UrlBaseHelper.WithUrlBase(
+            UrlBaseHelper.NormalizeUrlBase(cfg.WebUI.UrlBase), "/login"));
     });
 
     static bool IsAuthRequired(TorrentarrConfig c) => !c.WebUI.AuthDisabled;
@@ -1295,125 +1296,18 @@ try
             if (!payload.TryGetProperty("changes", out var changesEl))
                 return Results.BadRequest(new { error = "Missing 'changes' field" });
 
-            var newtonsoftSettings = new Newtonsoft.Json.JsonSerializerSettings
-            {
-                ContractResolver = new Newtonsoft.Json.Serialization.DefaultContractResolver(),
-                NullValueHandling = Newtonsoft.Json.NullValueHandling.Ignore,
-                // Replace collections on deserialization to avoid appending to constructor-initialized defaults
-                ObjectCreationHandling = Newtonsoft.Json.ObjectCreationHandling.Replace,
-            };
-            var serializer = Newtonsoft.Json.JsonSerializer.Create(newtonsoftSettings);
-
-            // Step 1: Snapshot current config as a flat-section JObject (mirrors GET /web/config).
-            // Keys are section names ("Settings", "WebUI", "qBit", "Radarr-1080", …).
-            var currentObj = new Newtonsoft.Json.Linq.JObject();
-            currentObj["Settings"] = Newtonsoft.Json.Linq.JObject.FromObject(cfg.Settings, serializer);
-            currentObj["WebUI"] = Newtonsoft.Json.Linq.JObject.FromObject(cfg.WebUI, serializer);
-            foreach (var (key, qbit) in cfg.QBitInstances.Where(kv => kv.Value.Host != "CHANGE_ME"))
-                currentObj[key] = Newtonsoft.Json.Linq.JObject.FromObject(qbit, serializer);
-            foreach (var (key, arr) in cfg.ArrInstances)
-                currentObj[key] = Newtonsoft.Json.Linq.JObject.FromObject(arr, serializer);
-
-            // Step 2: Apply each dotted-key change onto the snapshot.
-            // e.g. "Settings.ConsoleLevel" → sets currentObj["Settings"]["ConsoleLevel"].
-            // null value means delete.
             var changesObj = Newtonsoft.Json.Linq.JObject.Parse(changesEl.GetRawText());
-            foreach (var change in changesObj.Properties())
-            {
-                // Reject protected keys (qBitrr parity)
-                if (string.Equals(change.Name, "Settings.ConfigVersion", StringComparison.OrdinalIgnoreCase))
-                    return Results.Json(new { error = "Cannot modify protected configuration key: Settings.ConfigVersion" }, statusCode: 403);
-
-                // Never overwrite a real secret with the redaction placeholder from the frontend
-                if (IsSensitiveDottedKey(change.Name) &&
-                    change.Value.Type == Newtonsoft.Json.Linq.JTokenType.String &&
-                    change.Value.ToString() == REDACTED_PLACEHOLDER)
-                    continue;
-
-                var parts = change.Name.Split('.');
-                var rawSectionKey = parts[0];
-                // Case-insensitive section key: "webui" → "WebUI", "settings" → "Settings"
-                var sectionKey = currentObj.Properties()
-                    .FirstOrDefault(p => p.Name.Equals(rawSectionKey, StringComparison.OrdinalIgnoreCase))?.Name
-                    ?? rawSectionKey;
-                if (change.Value.Type == Newtonsoft.Json.Linq.JTokenType.Null)
-                {
-                    // Deletion
-                    if (parts.Length == 1)
-                        currentObj.Remove(sectionKey);
-                    else if (currentObj[sectionKey] is Newtonsoft.Json.Linq.JObject sect)
-                        DeleteNestedToken(sect, parts, 1);
-                }
-                else if (parts.Length == 1)
-                {
-                    currentObj[sectionKey] = change.Value;
-                }
-                else
-                {
-                    if (currentObj[sectionKey] is not Newtonsoft.Json.Linq.JObject sect)
-                    {
-                        sect = new Newtonsoft.Json.Linq.JObject();
-                        currentObj[sectionKey] = sect;
-                    }
-                    SetNestedToken(sect, parts, 1, change.Value);
-                }
-            }
-
-            // Cleanup: remove sections that had all their keys deleted (became empty {}).
-            // This handles renames: the old section has all sub-keys set to null → empty JObject.
-            foreach (var emptyProp in currentObj.Properties().ToList())
-            {
-                if (emptyProp.Value is Newtonsoft.Json.Linq.JObject emptyObj && !emptyObj.Properties().Any())
-                    currentObj.Remove(emptyProp.Name);
-            }
-
-            // Step 3: Reconstruct TorrentarrConfig from the updated flat-section JObject.
-            var updatedConfig = new TorrentarrConfig();
-            if (currentObj["Settings"] is Newtonsoft.Json.Linq.JObject settingsObj)
-                updatedConfig.Settings = settingsObj.ToObject<SettingsConfig>(serializer) ?? new SettingsConfig();
-            if (currentObj["WebUI"] is Newtonsoft.Json.Linq.JObject webuiObj)
-                updatedConfig.WebUI = webuiObj.ToObject<WebUIConfig>(serializer) ?? new WebUIConfig();
-
-            foreach (var prop in currentObj.Properties())
-            {
-                if (prop.Value is not Newtonsoft.Json.Linq.JObject sectionObj) continue;
-                var lower = prop.Name.ToLowerInvariant();
-                bool isRadarr = lower == "radarr" || lower.StartsWith("radarr-");
-                bool isSonarr = lower == "sonarr" || lower.StartsWith("sonarr-");
-                bool isLidarr = lower == "lidarr" || lower.StartsWith("lidarr-");
-                bool isQbit = lower == "qbit" || lower.StartsWith("qbit-");
-                if (isRadarr || isSonarr || isLidarr)
-                {
-                    var arrConfig = sectionObj.ToObject<ArrInstanceConfig>(serializer) ?? new ArrInstanceConfig();
-                    if (string.IsNullOrEmpty(arrConfig.Type))
-                        arrConfig.Type = isRadarr ? "radarr" : isSonarr ? "sonarr" : "lidarr";
-                    updatedConfig.ArrInstances[prop.Name] = arrConfig;
-                }
-                else if (isQbit)
-                {
-                    updatedConfig.QBitInstances[prop.Name] = sectionObj.ToObject<QBitConfig>(serializer) ?? new QBitConfig();
-                }
-            }
-
-            var (reloadType, affectedInstancesList) = DetermineReloadType(cfg, updatedConfig);
+            var (updatedConfig, applyError) = ApplyDottedConfigChanges(cfg, changesObj);
+            if (applyError != null)
+                return applyError;
+            if (updatedConfig == null)
+                return Results.BadRequest(new { error = "Invalid config payload" });
 
             var (valid, validationError) = ConfigValidationHelper.ValidateAll(updatedConfig);
             if (!valid)
                 return Results.BadRequest(new { error = validationError });
 
-            loader.SaveConfig(updatedConfig);
-            cfg.Settings = updatedConfig.Settings;
-            cfg.WebUI = updatedConfig.WebUI;
-            cfg.ArrInstances = updatedConfig.ArrInstances;
-            cfg.QBitInstances = updatedConfig.QBitInstances;
-            TorrentPolicyHelper.InvalidateMonitoredPolicyCategoriesCache(cfg);
-            return Results.Ok(new
-            {
-                status = "ok",
-                configReloaded = reloadType != "none" && reloadType != "frontend",
-                reloadType,
-                affectedInstances = affectedInstancesList
-            });
+            return SaveAndRespondConfigUpdate(cfg, updatedConfig, loader);
         }
         catch (Exception ex)
         {
@@ -1519,15 +1413,17 @@ try
     });
 
     // Logout: sign out cookie and redirect to login (GET or POST for link/form compatibility).
-    app.MapGet("/web/logout", async (HttpContext ctx) =>
+    app.MapGet("/web/logout", async (HttpContext ctx, TorrentarrConfig cfg) =>
     {
         await ctx.SignOutAsync(CookieAuthenticationDefaults.AuthenticationScheme);
-        return Results.Redirect("/login", false);
+        return Results.Redirect(UrlBaseHelper.WithUrlBase(
+            UrlBaseHelper.NormalizeUrlBase(cfg.WebUI.UrlBase), "/login"), false);
     });
-    app.MapPost("/web/logout", async (HttpContext ctx) =>
+    app.MapPost("/web/logout", async (HttpContext ctx, TorrentarrConfig cfg) =>
     {
         await ctx.SignOutAsync(CookieAuthenticationDefaults.AuthenticationScheme);
-        return Results.Redirect("/login", false);
+        return Results.Redirect(UrlBaseHelper.WithUrlBase(
+            UrlBaseHelper.NormalizeUrlBase(cfg.WebUI.UrlBase), "/login"), false);
     });
 
     // Set password (first-time or reset): hash and write to config. Allowed when PasswordHash is empty or via setup token.
@@ -2253,35 +2149,28 @@ try
         try
         {
             var payload = await request.ReadFromJsonAsync<System.Text.Json.JsonElement>();
-            string configJson;
+            TorrentarrConfig? updatedConfig;
             if (payload.TryGetProperty("changes", out var changesEl))
-                configJson = changesEl.GetRawText();
+            {
+                var changesObj = Newtonsoft.Json.Linq.JObject.Parse(changesEl.GetRawText());
+                var (mergedConfig, applyError) = ApplyDottedConfigChanges(cfg, changesObj);
+                if (applyError != null)
+                    return applyError;
+                updatedConfig = mergedConfig;
+            }
             else
-                configJson = payload.GetRawText();
-            var updatedConfig = Newtonsoft.Json.JsonConvert.DeserializeObject<TorrentarrConfig>(configJson);
+            {
+                updatedConfig = Newtonsoft.Json.JsonConvert.DeserializeObject<TorrentarrConfig>(payload.GetRawText());
+            }
+
             if (updatedConfig == null)
                 return Results.BadRequest(new { error = "Invalid config payload" });
-
-            // Determine reload type by comparing old vs new config before applying
-            var (reloadType, affectedInstancesList) = DetermineReloadType(cfg, updatedConfig);
 
             var (valid, validationError) = ConfigValidationHelper.ValidateAll(updatedConfig);
             if (!valid)
                 return Results.BadRequest(new { error = validationError });
 
-            loader.SaveConfig(updatedConfig);
-            cfg.Settings = updatedConfig.Settings;
-            cfg.WebUI = updatedConfig.WebUI;
-            cfg.ArrInstances = updatedConfig.ArrInstances;
-            cfg.QBitInstances = updatedConfig.QBitInstances;
-            TorrentPolicyHelper.InvalidateMonitoredPolicyCategoriesCache(cfg);
-            return Results.Ok(new
-            {
-                status = "ok",
-                configReloaded = reloadType != "none" && reloadType != "frontend",
-                reloadType,
-                affectedInstances = affectedInstancesList
-            });
+            return SaveAndRespondConfigUpdate(cfg, updatedConfig, loader);
         }
         catch (Exception ex)
         {
@@ -2721,6 +2610,126 @@ static async Task<IResult> HandleTestConnection(TestConnectionRequest req, Torre
     }
 }
 
+static Newtonsoft.Json.JsonSerializerSettings CreateConfigMergeSerializerSettings() => new()
+{
+    ContractResolver = new Newtonsoft.Json.Serialization.DefaultContractResolver(),
+    NullValueHandling = Newtonsoft.Json.NullValueHandling.Ignore,
+    ObjectCreationHandling = Newtonsoft.Json.ObjectCreationHandling.Replace,
+};
+
+/// <summary>
+/// Apply dotted-key config changes onto the current in-memory config snapshot.
+/// Used by POST /web/config and POST /api/config when a <c>changes</c> object is supplied.
+/// </summary>
+static (TorrentarrConfig? updatedConfig, IResult? error) ApplyDottedConfigChanges(
+    TorrentarrConfig cfg,
+    Newtonsoft.Json.Linq.JObject changesObj)
+{
+    var serializer = Newtonsoft.Json.JsonSerializer.Create(CreateConfigMergeSerializerSettings());
+
+    var currentObj = new Newtonsoft.Json.Linq.JObject();
+    currentObj["Settings"] = Newtonsoft.Json.Linq.JObject.FromObject(cfg.Settings, serializer);
+    currentObj["WebUI"] = Newtonsoft.Json.Linq.JObject.FromObject(cfg.WebUI, serializer);
+    foreach (var (key, qbit) in cfg.QBitInstances.Where(kv => kv.Value.Host != "CHANGE_ME"))
+        currentObj[key] = Newtonsoft.Json.Linq.JObject.FromObject(qbit, serializer);
+    foreach (var (key, arr) in cfg.ArrInstances)
+        currentObj[key] = Newtonsoft.Json.Linq.JObject.FromObject(arr, serializer);
+
+    foreach (var change in changesObj.Properties())
+    {
+        if (string.Equals(change.Name, "Settings.ConfigVersion", StringComparison.OrdinalIgnoreCase))
+            return (null, Results.Json(new { error = "Cannot modify protected configuration key: Settings.ConfigVersion" }, statusCode: 403));
+
+        if (IsSensitiveDottedKey(change.Name) &&
+            change.Value.Type == Newtonsoft.Json.Linq.JTokenType.String &&
+            change.Value.ToString() == REDACTED_PLACEHOLDER)
+            continue;
+
+        var parts = change.Name.Split('.');
+        var rawSectionKey = parts[0];
+        var sectionKey = currentObj.Properties()
+            .FirstOrDefault(p => p.Name.Equals(rawSectionKey, StringComparison.OrdinalIgnoreCase))?.Name
+            ?? rawSectionKey;
+        if (change.Value.Type == Newtonsoft.Json.Linq.JTokenType.Null)
+        {
+            if (parts.Length == 1)
+                currentObj.Remove(sectionKey);
+            else if (currentObj[sectionKey] is Newtonsoft.Json.Linq.JObject sect)
+                DeleteNestedToken(sect, parts, 1);
+        }
+        else if (parts.Length == 1)
+        {
+            currentObj[sectionKey] = change.Value;
+        }
+        else
+        {
+            if (currentObj[sectionKey] is not Newtonsoft.Json.Linq.JObject sect)
+            {
+                sect = new Newtonsoft.Json.Linq.JObject();
+                currentObj[sectionKey] = sect;
+            }
+            SetNestedToken(sect, parts, 1, change.Value);
+        }
+    }
+
+    foreach (var emptyProp in currentObj.Properties().ToList())
+    {
+        if (emptyProp.Value is Newtonsoft.Json.Linq.JObject emptyObj && !emptyObj.Properties().Any())
+            currentObj.Remove(emptyProp.Name);
+    }
+
+    var updatedConfig = new TorrentarrConfig();
+    if (currentObj["Settings"] is Newtonsoft.Json.Linq.JObject settingsObj)
+        updatedConfig.Settings = settingsObj.ToObject<SettingsConfig>(serializer) ?? new SettingsConfig();
+    if (currentObj["WebUI"] is Newtonsoft.Json.Linq.JObject webuiObj)
+        updatedConfig.WebUI = webuiObj.ToObject<WebUIConfig>(serializer) ?? new WebUIConfig();
+
+    foreach (var prop in currentObj.Properties())
+    {
+        if (prop.Value is not Newtonsoft.Json.Linq.JObject sectionObj) continue;
+        var lower = prop.Name.ToLowerInvariant();
+        bool isRadarr = lower == "radarr" || lower.StartsWith("radarr-");
+        bool isSonarr = lower == "sonarr" || lower.StartsWith("sonarr-");
+        bool isLidarr = lower == "lidarr" || lower.StartsWith("lidarr-");
+        bool isQbit = lower == "qbit" || lower.StartsWith("qbit-");
+        if (isRadarr || isSonarr || isLidarr)
+        {
+            var arrConfig = sectionObj.ToObject<ArrInstanceConfig>(serializer) ?? new ArrInstanceConfig();
+            if (string.IsNullOrEmpty(arrConfig.Type))
+                arrConfig.Type = isRadarr ? "radarr" : isSonarr ? "sonarr" : "lidarr";
+            updatedConfig.ArrInstances[prop.Name] = arrConfig;
+        }
+        else if (isQbit)
+        {
+            updatedConfig.QBitInstances[prop.Name] = sectionObj.ToObject<QBitConfig>(serializer) ?? new QBitConfig();
+        }
+    }
+
+    return (updatedConfig, null);
+}
+
+static IResult SaveAndRespondConfigUpdate(
+    TorrentarrConfig cfg,
+    TorrentarrConfig updatedConfig,
+    ConfigurationLoader loader)
+{
+    var (reloadType, affectedInstancesList) = DetermineReloadType(cfg, updatedConfig);
+
+    loader.SaveConfig(updatedConfig);
+    cfg.Settings = updatedConfig.Settings;
+    cfg.WebUI = updatedConfig.WebUI;
+    cfg.ArrInstances = updatedConfig.ArrInstances;
+    cfg.QBitInstances = updatedConfig.QBitInstances;
+    TorrentPolicyHelper.InvalidateMonitoredPolicyCategoriesCache(cfg);
+    return Results.Ok(new
+    {
+        status = "ok",
+        configReloaded = reloadType != "none" && reloadType != "frontend",
+        reloadType,
+        affectedInstances = affectedInstancesList
+    });
+}
+
 /// <summary>
 /// Recursively redact string values whose keys match <see cref="SensitiveKeyPatternRegex"/>.
 /// Returns a new JToken with sensitive values replaced by <see cref="REDACTED_PLACEHOLDER"/>.
@@ -3013,8 +3022,19 @@ class ProcessOrchestratorService : BackgroundService
                 return _config.Settings.CompletedDownloadFolder;
         }
 
-        // Final fallback: use /config which is always available in container
-        return "/config";
+        // Fall back to qBit download paths (Docker mounts torrents separately from /config)
+        foreach (var (_, qbit) in _config.QBitInstances)
+        {
+            if (qbit.Disabled)
+                continue;
+            var path = qbit.DownloadPath;
+            if (string.IsNullOrWhiteSpace(path) || path == "CHANGE_ME")
+                continue;
+            if (Directory.Exists(path))
+                return path;
+        }
+
+        return null;
     }
 
     private async Task ProcessSpecialCategoriesAsync(CancellationToken cancellationToken)
@@ -3143,7 +3163,7 @@ class ProcessOrchestratorService : BackgroundService
 
                 foreach (var t in torrents)
                 {
-                    if (t.Tags.Contains("qBitrr-ignored", StringComparison.OrdinalIgnoreCase))
+                    if (t.Tags?.Contains("qBitrr-ignored", StringComparison.OrdinalIgnoreCase) == true)
                         continue;
                     t.QBitInstanceName = instanceName;
                     await seeding.ApplyTrackerActionsForTorrentAsync(t, cancellationToken);
@@ -3183,13 +3203,13 @@ class ProcessOrchestratorService : BackgroundService
             _currentFreeSpace = driveInfo.AvailableFreeSpace - _minFreeSpaceBytes;
 
             // Gather torrents from ALL qBit instances across all managed categories.
-            var allTorrents = new List<(QBittorrentClient client, TorrentInfo torrent)>();
-            foreach (var (_, client) in _qbitManager.GetAllClients())
+            var allTorrents = new List<(string instanceName, QBittorrentClient client, TorrentInfo torrent)>();
+            foreach (var (instanceName, client) in _qbitManager.GetAllClients())
             {
                 foreach (var category in managedCategories)
                 {
                     var torrents = await client.GetTorrentsAsync(category, "priority", cancellationToken);
-                    allTorrents.AddRange(torrents.Select(t => (client, t)));
+                    allTorrents.AddRange(torrents.Select(t => (instanceName, client, t)));
                 }
             }
 
@@ -3200,13 +3220,13 @@ class ProcessOrchestratorService : BackgroundService
                 pausedCountRef = new int[] { pausedCount };
             }
 
-            foreach (var (client, torrent) in allTorrents
-                .Select(x => (x.client, x.torrent, key: TorrentPolicyHelper.TorrentQueuePositionSortKey(x.torrent)))
+            foreach (var (instanceName, client, torrent) in allTorrents
+                .Select(x => (x.instanceName, x.client, x.torrent, key: TorrentPolicyHelper.TorrentQueuePositionSortKey(x.torrent)))
                 .OrderBy(x => x.key.InactiveQueueGroup)
                 .ThenBy(x => x.key.Nq)
                 .ThenBy(x => x.torrent.AddedOn)
-                .Select(x => (x.client, x.torrent)))
-                await ProcessSingleTorrentSpaceAsync(client, torrent, dbContext, pausedCountRef, cancellationToken);
+                .Select(x => (x.instanceName, x.client, x.torrent)))
+                await ProcessSingleTorrentSpaceAsync(instanceName, client, torrent, dbContext, pausedCountRef, cancellationToken);
 
             if (_config.Settings.Tagless && dbContext != null)
                 pausedCount = await dbContext.TorrentLibrary.CountAsync(t => t.FreeSpacePaused, cancellationToken);
@@ -3325,21 +3345,20 @@ class ProcessOrchestratorService : BackgroundService
     }
 
     private async Task ProcessSingleTorrentSpaceAsync(
-        QBittorrentClient client, TorrentInfo torrent, TorrentarrDbContext? dbContext, int[]? pausedCountRef, CancellationToken cancellationToken)
+        string instanceName, QBittorrentClient client, TorrentInfo torrent, TorrentarrDbContext? dbContext, int[]? pausedCountRef, CancellationToken cancellationToken)
     {
         const string freeSpacePausedTag = "qBitrr-free_space_paused";
         var tagless = _config.Settings.Tagless;
 
-        var isDownloading = torrent.State.Contains("downloading", StringComparison.OrdinalIgnoreCase) ||
-                           torrent.State.Contains("stalledDL", StringComparison.OrdinalIgnoreCase);
-        var isPausedDownload = torrent.State.Contains("pausedDL", StringComparison.OrdinalIgnoreCase);
+        var isFreeSpaceDownload = TorrentPolicyHelper.IsFreeSpaceDownloadState(torrent.State);
+        var isPausedDownload = TorrentPolicyHelper.IsPausedDownloadStateForFreeSpace(torrent.State);
 
         // §1.6: tagless mode reads FreeSpacePaused from DB column; otherwise check qBit tag
         bool hasFreeSpaceTag;
         if (tagless && dbContext != null)
         {
             var dbEntry = await dbContext.TorrentLibrary.AsNoTracking()
-                .FirstOrDefaultAsync(t => t.Hash == torrent.Hash, cancellationToken);
+                .FirstOrDefaultAsync(t => t.Hash == torrent.Hash && t.QbitInstance == instanceName, cancellationToken);
             hasFreeSpaceTag = dbEntry?.FreeSpacePaused == true;
         }
         else
@@ -3347,7 +3366,7 @@ class ProcessOrchestratorService : BackgroundService
             hasFreeSpaceTag = torrent.Tags?.Contains(freeSpacePausedTag) == true;
         }
 
-        if (isDownloading || (isPausedDownload && hasFreeSpaceTag))
+        if (isFreeSpaceDownload)
         {
             var freeSpaceTest = _currentFreeSpace - torrent.AmountLeft;
 
@@ -3362,14 +3381,25 @@ class ProcessOrchestratorService : BackgroundService
                     torrent.Name, FormatBytes(_currentFreeSpace), FormatBytes(torrent.AmountLeft), FormatBytes(-freeSpaceTest));
                 // §1.6: tagless — set DB column; else apply qBit tag
                 if (tagless && dbContext != null)
-                    await dbContext.TorrentLibrary.Where(t => t.Hash == torrent.Hash)
-                        .ExecuteUpdateAsync(s => s.SetProperty(t => t.FreeSpacePaused, true), cancellationToken);
+                    await TaglessTorrentLibraryHelper.SetFreeSpacePausedAsync(
+                        dbContext, torrent.Hash, torrent.Category, instanceName, paused: true, cancellationToken);
                 else
                     await client.AddTagsAsync(new List<string> { torrent.Hash }, new List<string> { freeSpacePausedTag }, cancellationToken);
                 if (pausedCountRef != null) pausedCountRef[0]++;
                 await client.PauseTorrentAsync(torrent.Hash, cancellationToken);
             }
-            else if (isPausedDownload && freeSpaceTest >= 0)
+            else if (isPausedDownload && freeSpaceTest < 0)
+            {
+                _logger.LogInformation(
+                    "FreeSpace: Keeping paused (insufficient space) | Torrent: {Name} | Available: {Available} | Needed: {Needed} | Deficit: {Deficit}",
+                    torrent.Name, FormatBytes(_currentFreeSpace), FormatBytes(torrent.AmountLeft), FormatBytes(-freeSpaceTest));
+                if (tagless && dbContext != null)
+                    await dbContext.TorrentLibrary.Where(t => t.Hash == torrent.Hash)
+                        .ExecuteUpdateAsync(s => s.SetProperty(t => t.FreeSpacePaused, true), cancellationToken);
+                else
+                    await client.AddTagsAsync(new List<string> { torrent.Hash }, new List<string> { freeSpacePausedTag }, cancellationToken);
+            }
+            else if (isPausedDownload && freeSpaceTest >= 0 && hasFreeSpaceTag)
             {
                 _logger.LogInformation(
                     "FreeSpace: Resuming download (space available) | Torrent: {Name} | Available: {Available} | Space after: {SpaceAfter}",
@@ -3377,18 +3407,12 @@ class ProcessOrchestratorService : BackgroundService
                 _currentFreeSpace = freeSpaceTest;
                 // §1.6: tagless — clear DB column; else remove qBit tag
                 if (tagless && dbContext != null)
-                    await dbContext.TorrentLibrary.Where(t => t.Hash == torrent.Hash)
-                        .ExecuteUpdateAsync(s => s.SetProperty(t => t.FreeSpacePaused, false), cancellationToken);
+                    await TaglessTorrentLibraryHelper.SetFreeSpacePausedAsync(
+                        dbContext, torrent.Hash, torrent.Category, instanceName, paused: false, cancellationToken);
                 else
                     await client.RemoveTagsAsync(new List<string> { torrent.Hash }, new List<string> { freeSpacePausedTag }, cancellationToken);
                 if (pausedCountRef != null) pausedCountRef[0]--;
                 await client.ResumeTorrentAsync(torrent.Hash, cancellationToken);
-            }
-            else if (isPausedDownload && freeSpaceTest < 0)
-            {
-                _logger.LogInformation(
-                    "FreeSpace: Keeping paused (insufficient space) | Torrent: {Name} | Available: {Available} | Needed: {Needed} | Deficit: {Deficit}",
-                    torrent.Name, FormatBytes(_currentFreeSpace), FormatBytes(torrent.AmountLeft), FormatBytes(-freeSpaceTest));
             }
             else if (!isPausedDownload && freeSpaceTest >= 0)
             {
@@ -3398,7 +3422,7 @@ class ProcessOrchestratorService : BackgroundService
                 _currentFreeSpace = freeSpaceTest;
             }
         }
-        else if (!isDownloading && hasFreeSpaceTag)
+        else if (!isFreeSpaceDownload && hasFreeSpaceTag)
         {
             // Torrent completed — clear the paused marker
             _logger.LogInformation(
@@ -3406,8 +3430,8 @@ class ProcessOrchestratorService : BackgroundService
                 torrent.Name, FormatBytes(_currentFreeSpace + _minFreeSpaceBytes));
             // §1.6: tagless — clear DB column; else remove qBit tag
             if (tagless && dbContext != null)
-                await dbContext.TorrentLibrary.Where(t => t.Hash == torrent.Hash)
-                    .ExecuteUpdateAsync(s => s.SetProperty(t => t.FreeSpacePaused, false), cancellationToken);
+                await TaglessTorrentLibraryHelper.SetFreeSpacePausedAsync(
+                    dbContext, torrent.Hash, torrent.Category, instanceName, paused: false, cancellationToken);
             else
                 await client.RemoveTagsAsync(new List<string> { torrent.Hash }, new List<string> { freeSpacePausedTag }, cancellationToken);
             if (pausedCountRef != null) pausedCountRef[0]--;

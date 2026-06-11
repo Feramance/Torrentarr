@@ -1,4 +1,5 @@
 using FluentAssertions;
+using Torrentarr.Core.Configuration;
 using Torrentarr.Core.Models;
 using Xunit;
 
@@ -54,25 +55,20 @@ public class FreeSpaceServiceTests
 
     // ── IsDownloadingState helper (replicated logic) ──────────────────────────
 
-    private static bool IsDownloadingState(string state)
-    {
-        return state.Contains("downloading", StringComparison.OrdinalIgnoreCase) ||
-               state.Contains("stalledDL", StringComparison.OrdinalIgnoreCase) ||
-               state.Contains("metaDL", StringComparison.OrdinalIgnoreCase);
-    }
-
     [Theory]
     [InlineData("downloading", true)]
     [InlineData("stalledDL", true)]
+    [InlineData("queuedDL", true)]
+    [InlineData("forcedDL", true)]
     [InlineData("metaDL", true)]
     [InlineData("Downloading", true)]   // case-insensitive
     [InlineData("uploading", false)]
     [InlineData("stalledUP", false)]
     [InlineData("pausedUP", false)]
     [InlineData("", false)]
-    public void IsDownloadingState_MatchesExpected(string state, bool expected)
+    public void IsActiveDownloadingStateForFreeSpace_MatchesExpected(string state, bool expected)
     {
-        IsDownloadingState(state).Should().Be(expected);
+        TorrentPolicyHelper.IsActiveDownloadingStateForFreeSpace(state).Should().Be(expected);
     }
 
     // ── HasTag helper (replicated logic from FreeSpaceService) ───────────────

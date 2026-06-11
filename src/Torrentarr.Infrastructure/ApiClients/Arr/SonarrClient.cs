@@ -32,13 +32,12 @@ public class SonarrClient
         AddApiKeyHeader(request);
 
         var response = await _client.ExecuteAsync(request, ct);
+        ArrClientResponse.EnsureSuccess(response, "GET /api/v3/series");
 
-        if (response.IsSuccessful && !string.IsNullOrEmpty(response.Content))
-        {
-            return JsonConvert.DeserializeObject<List<SonarrSeries>>(response.Content) ?? new List<SonarrSeries>();
-        }
+        if (string.IsNullOrEmpty(response.Content))
+            return new List<SonarrSeries>();
 
-        return new List<SonarrSeries>();
+        return JsonConvert.DeserializeObject<List<SonarrSeries>>(response.Content) ?? new List<SonarrSeries>();
     }
 
     /// <summary>
@@ -88,13 +87,12 @@ public class SonarrClient
         request.AddQueryParameter("includeEpisodeFile", "true");
 
         var response = await _client.ExecuteAsync(request, ct);
+        ArrClientResponse.EnsureSuccess(response, "GET /api/v3/episode");
 
-        if (response.IsSuccessful && !string.IsNullOrEmpty(response.Content))
-        {
-            return JsonConvert.DeserializeObject<List<SonarrEpisode>>(response.Content) ?? new List<SonarrEpisode>();
-        }
+        if (string.IsNullOrEmpty(response.Content))
+            return new List<SonarrEpisode>();
 
-        return new List<SonarrEpisode>();
+        return JsonConvert.DeserializeObject<List<SonarrEpisode>>(response.Content) ?? new List<SonarrEpisode>();
     }
 
     /// <summary>
@@ -192,13 +190,12 @@ public class SonarrClient
         request.AddQueryParameter("pageSize", pageSize.ToString());
 
         var response = await _client.ExecuteAsync(request, ct);
+        ArrClientResponse.EnsureSuccess(response, "GET /api/v3/queue");
 
-        if (response.IsSuccessful && !string.IsNullOrEmpty(response.Content))
-        {
-            return JsonConvert.DeserializeObject<SonarrQueueResponse>(response.Content) ?? new SonarrQueueResponse();
-        }
+        if (string.IsNullOrEmpty(response.Content))
+            return new SonarrQueueResponse();
 
-        return new SonarrQueueResponse();
+        return JsonConvert.DeserializeObject<SonarrQueueResponse>(response.Content) ?? new SonarrQueueResponse();
     }
 
     /// <summary>

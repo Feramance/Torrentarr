@@ -434,6 +434,33 @@ public class UrlBaseWebApplicationFactory : TorrentarrWebApplicationFactory
         """;
 }
 
+/// <summary>UrlBase + auth required (browser redirect to login under path base).</summary>
+public class UrlBaseAuthWebApplicationFactory : TorrentarrWebApplicationFactory
+{
+    public UrlBaseAuthWebApplicationFactory() => RewriteConfigFile();
+
+    protected override string GetTestConfigToml() => """
+        [Settings]
+        ConfigVersion = "6.12.2"
+        LoopSleepTimer = 5
+        FailedCategory = "failed"
+        RecheckCategory = "recheck"
+        PingURLS = ["one.one.one.one"]
+
+        [WebUI]
+        Host = "0.0.0.0"
+        Port = 6969
+        Token = "test-api-token"
+        AuthDisabled = false
+        LocalAuthEnabled = true
+        OIDCEnabled = false
+        Username = "admin"
+        PasswordHash = "$2a$11$testhash"
+        LiveArr = false
+        UrlBase = "torrentarr"
+        """;
+}
+
 /// <summary>Shared DB seed helpers for catalog rollup and browse endpoint tests.</summary>
 public static class CatalogTestDataSeeder
 {

@@ -61,11 +61,19 @@ public class WebUIAuthHelpersTests
     }
 
     [Fact]
-    public void IsSetPasswordAllowed_AllowsMatchingBearerToken()
+    public void IsSetPasswordAllowed_BearerApiToken_WhenPasswordUnset_AllowsBootstrap()
     {
-        var cfg = new TorrentarrConfig { WebUI = new WebUIConfig { Token = "api-token" } };
-        WebUIAuthHelpers.IsSetPasswordAllowed(cfg, null, isAuthenticated: false, bearerOrQueryToken: "api-token")
+        var cfg = new TorrentarrConfig { WebUI = { Token = "api-token", PasswordHash = "" } };
+        WebUIAuthHelpers.IsSetPasswordAllowed(cfg, setupToken: null, isAuthenticated: false, bearerOrQueryToken: "api-token")
             .Should().BeTrue();
+    }
+
+    [Fact]
+    public void IsSetPasswordAllowed_BearerApiToken_WhenPasswordAlreadySet_DeniesReset()
+    {
+        var cfg = new TorrentarrConfig { WebUI = { Token = "api-token", PasswordHash = "hashed" } };
+        WebUIAuthHelpers.IsSetPasswordAllowed(cfg, setupToken: null, isAuthenticated: false, bearerOrQueryToken: "api-token")
+            .Should().BeFalse();
     }
 
     [Fact]

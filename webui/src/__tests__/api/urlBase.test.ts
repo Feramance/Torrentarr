@@ -26,6 +26,26 @@ describe("urlBase", () => {
     expect(pathnameUrlBase()).toBe("");
   });
 
+  it("pathnameUrlBase extracts prefix from /ui and /login under UrlBase", async () => {
+    stubLocation("/torrentarr/ui");
+    const { pathnameUrlBase } = await loadUrlBase();
+    expect(pathnameUrlBase()).toBe("/torrentarr");
+  });
+
+  it("pathnameUrlBase extracts prefix from nested login path", async () => {
+    stubLocation("/torrentarr/login/");
+    const { pathnameUrlBase } = await loadUrlBase();
+    expect(pathnameUrlBase()).toBe("/torrentarr");
+  });
+
+  it("isLoginPathname matches login routes with UrlBase", async () => {
+    stubLocation("/torrentarr/login");
+    const { isLoginPathname } = await loadUrlBase();
+    expect(isLoginPathname("/torrentarr/login")).toBe(true);
+    expect(isLoginPathname("/torrentarr/ui")).toBe(false);
+    expect(isLoginPathname("/login")).toBe(true);
+  });
+
   it("getUrlBase prefers meta cache over pathname", async () => {
     stubLocation("/qbitrr/static/index.html");
     const { getUrlBase, setUrlBaseFromMeta } = await loadUrlBase();

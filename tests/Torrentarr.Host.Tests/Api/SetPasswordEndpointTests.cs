@@ -1,4 +1,5 @@
 using System.Net;
+using System.Net.Http.Headers;
 using System.Net.Http.Json;
 using System.Text.Json;
 using FluentAssertions;
@@ -106,6 +107,52 @@ public class SetPasswordEndpointTests : IClassFixture<TorrentarrWebApplicationFa
                 password = "otherPassword"
             });
             response.StatusCode.Should().Be(HttpStatusCode.Forbidden);
+        }
+        finally
+        {
+            factory.Dispose();
+        }
+    }
+
+    [Fact]
+    public async Task PostSetPassword_WhenPasswordAlreadySet_WithBearerApiToken_Returns403()
+    {
+        var factory = new LocalAuthWebApplicationFactory();
+        try
+        {
+            factory.SetConfigEnv();
+            var client = factory.CreateClientWithoutApiToken();
+            client.DefaultRequestHeaders.Authorization =
+                new AuthenticationHeaderValue("Bearer", "test-api-token");
+            var response = await client.PostAsJsonAsync("/web/auth/set-password", new
+            {
+                username = "attacker",
+                password = "newPassword123"
+            });
+            response.StatusCode.Should().Be(HttpStatusCode.Forbidden);
+        }
+        finally
+        {
+            factory.Dispose();
+        }
+    }
+
+    [Fact]
+    public async Task PostSetPassword_WhenNoPasswordSet_WithBearerApiToken_Returns200()
+    {
+        var factory = new LocalAuthNoPasswordWebApplicationFactory();
+        try
+        {
+            factory.SetConfigEnv();
+            var client = factory.CreateClientWithoutApiToken();
+            client.DefaultRequestHeaders.Authorization =
+                new AuthenticationHeaderValue("Bearer", "test-api-token");
+            var response = await client.PostAsJsonAsync("/web/auth/set-password", new
+            {
+                username = "admin",
+                password = "newPassword123"
+            });
+            response.StatusCode.Should().Be(HttpStatusCode.OK);
         }
         finally
         {

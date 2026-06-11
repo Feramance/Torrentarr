@@ -32,13 +32,12 @@ public class RadarrClient
         AddApiKeyHeader(request);
 
         var response = await _client.ExecuteAsync(request, ct);
+        ArrClientResponse.EnsureSuccess(response, "GET /api/v3/movie");
 
-        if (response.IsSuccessful && !string.IsNullOrEmpty(response.Content))
-        {
-            return JsonConvert.DeserializeObject<List<RadarrMovie>>(response.Content) ?? new List<RadarrMovie>();
-        }
+        if (string.IsNullOrEmpty(response.Content))
+            return new List<RadarrMovie>();
 
-        return new List<RadarrMovie>();
+        return JsonConvert.DeserializeObject<List<RadarrMovie>>(response.Content) ?? new List<RadarrMovie>();
     }
 
     /// <summary>
@@ -170,13 +169,12 @@ public class RadarrClient
         request.AddQueryParameter("pageSize", pageSize.ToString());
 
         var response = await _client.ExecuteAsync(request, ct);
+        ArrClientResponse.EnsureSuccess(response, "GET /api/v3/queue");
 
-        if (response.IsSuccessful && !string.IsNullOrEmpty(response.Content))
-        {
-            return JsonConvert.DeserializeObject<QueueResponse>(response.Content) ?? new QueueResponse();
-        }
+        if (string.IsNullOrEmpty(response.Content))
+            return new QueueResponse();
 
-        return new QueueResponse();
+        return JsonConvert.DeserializeObject<QueueResponse>(response.Content) ?? new QueueResponse();
     }
 
     /// <summary>

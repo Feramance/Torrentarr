@@ -102,6 +102,38 @@ public static class TorrentPolicyHelper
     }
 
     /// <summary>
+    /// Active download states for free-space evaluation (qBitrr <c>is_free_space_download_state</c> active subset).
+    /// </summary>
+    public static bool IsActiveDownloadingStateForFreeSpace(string? state)
+    {
+        if (string.IsNullOrWhiteSpace(state)) return false;
+        return state.Contains("downloading", StringComparison.OrdinalIgnoreCase)
+               || state.Contains("stalledDL", StringComparison.OrdinalIgnoreCase)
+               || state.Contains("queuedDL", StringComparison.OrdinalIgnoreCase)
+               || state.Contains("forcedDL", StringComparison.OrdinalIgnoreCase)
+               || state.Contains("metaDL", StringComparison.OrdinalIgnoreCase);
+    }
+
+    /// <summary>
+    /// Download-side states considered by free-space pause/resume (qBitrr <c>is_free_space_download_state</c>).
+    /// </summary>
+    public static bool IsFreeSpaceDownloadState(string? state)
+    {
+        return IsActiveDownloadingStateForFreeSpace(state)
+               || IsPausedDownloadStateForFreeSpace(state);
+    }
+
+    /// <summary>
+    /// Paused download states for free-space resume/pause (qBittorrent v5+ uses <c>stoppedDL</c>).
+    /// </summary>
+    public static bool IsPausedDownloadStateForFreeSpace(string? state)
+    {
+        if (string.IsNullOrWhiteSpace(state)) return false;
+        return state.Contains("pausedDL", StringComparison.OrdinalIgnoreCase)
+               || state.Contains("stoppedDL", StringComparison.OrdinalIgnoreCase);
+    }
+
+    /// <summary>
     /// Seeding / upload side of qBittorrent queue for <c>SortTorrents</c> (arss.py <c>is_queue_seeding_for_sort</c>).
     /// Includes <c>stoppedUP</c> (qBittorrent v5+; replaces <c>pausedUP</c> in the API).
     /// </summary>

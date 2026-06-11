@@ -45,6 +45,7 @@ import {
   AuthError,
 } from "./api/client";
 import type { MetaResponse } from "./api/types";
+import { isLoginPathname, webPath } from "./api/urlBase";
 import { IconImage } from "./components/IconImage";
 import CloseIcon from "./icons/close.svg";
 import ExternalIcon from "./icons/github.svg";
@@ -603,7 +604,7 @@ function LoginRoute(): JSX.Element {
       .then((m) => {
         if (cancelled) return;
         setMeta(m);
-        if (!m.auth_required) window.location.replace("/ui");
+        if (!m.auth_required) window.location.replace(webPath("/ui"));
       })
       .catch(() => {
         if (!cancelled) setMeta({} as MetaResponse);
@@ -619,7 +620,7 @@ function LoginRoute(): JSX.Element {
       localAuthEnabled={meta.local_auth_enabled ?? true}
       oidcEnabled={meta.oidc_enabled ?? false}
       showSetupFirst={meta.setup_required ?? false}
-      onSuccess={() => window.location.replace("/ui")}
+      onSuccess={() => window.location.replace(webPath("/ui"))}
     />
   );
 }
@@ -1447,8 +1448,7 @@ function AppShell(): JSX.Element {
 }
 
 export default function App(): JSX.Element {
-  const pathname = window.location.pathname;
-  const isLoginPath = pathname === "/login" || pathname === "/login/";
+  const isLoginPath = isLoginPathname(window.location.pathname);
 
   return (
     <ToastProvider>

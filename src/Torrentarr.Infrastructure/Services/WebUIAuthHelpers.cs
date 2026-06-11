@@ -55,9 +55,12 @@ public static class WebUIAuthHelpers
         if (isAuthenticated)
             return true;
 
+        // WebUI.Token as Bearer/query is for /api/* auth. Allow it for first-time bootstrap only;
+        // password resets require setupToken (env) or an authenticated session.
         if (!string.IsNullOrWhiteSpace(bearerOrQueryToken)
             && !string.IsNullOrWhiteSpace(cfg.WebUI.Token)
-            && TokenEquals(bearerOrQueryToken, cfg.WebUI.Token))
+            && TokenEquals(bearerOrQueryToken, cfg.WebUI.Token)
+            && string.IsNullOrEmpty(cfg.WebUI.PasswordHash))
             return true;
 
         if (string.IsNullOrWhiteSpace(setupToken))

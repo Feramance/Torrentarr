@@ -124,6 +124,39 @@ public class TorrentPolicyHelperTests
         TorrentPolicyHelper.IsQueueSeedingForSort("stalledDL").Should().BeFalse();
     }
 
+    [Theory]
+    [InlineData("downloading", true)]
+    [InlineData("stalledDL", true)]
+    [InlineData("queuedDL", true)]
+    [InlineData("forcedDL", true)]
+    [InlineData("metaDL", true)]
+    [InlineData("uploading", false)]
+    public void IsActiveDownloadingStateForFreeSpace_MatchesExpectedStates(string state, bool expected)
+    {
+        TorrentPolicyHelper.IsActiveDownloadingStateForFreeSpace(state).Should().Be(expected);
+    }
+
+    [Theory]
+    [InlineData("pausedDL", true)]
+    [InlineData("stoppedDL", true)]
+    [InlineData("downloading", false)]
+    public void IsPausedDownloadStateForFreeSpace_MatchesExpectedStates(string state, bool expected)
+    {
+        TorrentPolicyHelper.IsPausedDownloadStateForFreeSpace(state).Should().Be(expected);
+    }
+
+    [Theory]
+    [InlineData("downloading", true)]
+    [InlineData("queuedDL", true)]
+    [InlineData("forcedDL", true)]
+    [InlineData("pausedDL", true)]
+    [InlineData("stoppedDL", true)]
+    [InlineData("uploading", false)]
+    public void IsFreeSpaceDownloadState_MatchesQbitrrDownloadStates(string state, bool expected)
+    {
+        TorrentPolicyHelper.IsFreeSpaceDownloadState(state).Should().Be(expected);
+    }
+
     [Fact]
     public void IsMonitoredPolicyCategory_IncludesArrAndQBitManaged()
     {

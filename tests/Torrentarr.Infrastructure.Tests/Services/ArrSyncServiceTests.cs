@@ -172,6 +172,60 @@ public sealed class ArrSyncServiceTests : IDisposable
     }
 
     [Fact]
+    public void ShouldSkipDestructiveDelete_EmptyApiWithExistingRows_ReturnsTrue()
+    {
+        var svc = CreateService();
+        var method = typeof(ArrSyncService).GetMethod(
+            "ShouldSkipDestructiveDelete",
+            System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance)!;
+
+        var result = (bool)method.Invoke(svc, new object[] { 0, 5, "Lidarr-test", "tracks" })!;
+
+        result.Should().BeTrue();
+    }
+
+    [Fact]
+    public void ShouldSkipDestructiveDelete_EmptyApiAndEmptyDb_ReturnsFalse()
+    {
+        var svc = CreateService();
+        var method = typeof(ArrSyncService).GetMethod(
+            "ShouldSkipDestructiveDelete",
+            System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance)!;
+
+        var result = (bool)method.Invoke(svc, new object[] { 0, 0, "Lidarr-test", "tracks" })!;
+
+        result.Should().BeFalse();
+    }
+
+    [Fact]
+    public void ShouldSkipDestructiveDelete_NonEmptyApi_ReturnsFalse()
+    {
+        var svc = CreateService();
+        var method = typeof(ArrSyncService).GetMethod(
+            "ShouldSkipDestructiveDelete",
+            System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance)!;
+
+        var result = (bool)method.Invoke(svc, new object[] { 10, 5, "Radarr-test", "movies" })!;
+
+        result.Should().BeFalse();
+    }
+
+    [Theory]
+    [InlineData("artists")]
+    [InlineData("albums")]
+    public void ShouldSkipDestructiveDelete_LidarrEntities_EmptyApiWithExistingRows_ReturnsTrue(string entityName)
+    {
+        var svc = CreateService();
+        var method = typeof(ArrSyncService).GetMethod(
+            "ShouldSkipDestructiveDelete",
+            System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance)!;
+
+        var result = (bool)method.Invoke(svc, new object[] { 0, 12, "Lidarr-test", entityName })!;
+
+        result.Should().BeTrue();
+    }
+
+    [Fact]
     public async Task SyncQueueAsync_UnknownArrType_DoesNotThrow()
     {
         // The switch has no default case for unknown types — falls through silently.

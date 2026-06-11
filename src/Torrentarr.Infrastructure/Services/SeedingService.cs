@@ -430,31 +430,34 @@ public class SeedingService : ISeedingService
 
     /// <summary>
     /// Check if HnR obligations allow deleting this torrent.
-    /// Fetches tracker metadata and checks HnR. Returns true if deletion is allowed.
-    /// Matches qBitrr's _hnr_allows_delete() exactly.
+    /// Uses matched tracker config when available, otherwise category seeding (same resolution as
+    /// <see cref="IsHitAndRunProtectedAsync"/>). Returns true if deletion is allowed.
     /// </summary>
     public async Task<bool> HnrAllowsDeleteAsync(TorrentInfo torrent, string reason, CancellationToken cancellationToken = default)
     {
-        var trackers = GetTrackerList(torrent);
-        var hasHnrTracker = trackers.Any(t => IsHnREnabled(t.HitAndRunMode));
-
-        if (!hasHnrTracker)
-        {
-            return true; // Fast path: no HnR on any tracker
-        }
-
         var trackerConfig = await GetTrackerConfigAsync(torrent, cancellationToken);
-        if (trackerConfig == null)
+        var hnrConfig = trackerConfig != null ? ConvertToCategorySeeding(trackerConfig) : GetSeedingConfig(torrent);
+
+        if (!IsHnREnabled(hnrConfig.HitAndRunMode))
         {
             return true;
         }
 
-        if (await IsTrackerDeadAsync(torrent, trackerConfig, cancellationToken))
+        if (trackerConfig != null && await IsTrackerDeadAsync(torrent, trackerConfig, cancellationToken))
         {
+            _logger.LogDebug("HnR bypass: tracker reports torrent as unregistered/dead '{Name}'", torrent.Name);
             return true;
         }
 
-        if (await IsHnRSafeToRemoveAsync(torrent, trackerConfig, cancellationToken))
+        if (await IsHnRSafeToRemoveAsync(torrent, trackerConfig ?? new TrackerConfig
+        {
+            HitAndRunMode = hnrConfig.HitAndRunMode,
+            MinSeedRatio = hnrConfig.MinSeedRatio,
+            MinSeedingTimeDays = hnrConfig.MinSeedingTimeDays,
+            HitAndRunMinimumDownloadPercent = hnrConfig.HitAndRunMinimumDownloadPercent,
+            HitAndRunPartialSeedRatio = hnrConfig.HitAndRunPartialSeedRatio,
+            TrackerUpdateBuffer = hnrConfig.TrackerUpdateBuffer
+        }, cancellationToken))
         {
             return true;
         }
@@ -691,6 +694,14 @@ public class SeedingService : ISeedingService
                 if (!shouldRemove)
                 {
                     _logger.LogTrace("H&R: Keeping torrent [{Name}] - does not meet removal criteria | Ratio[{Ratio:F2}] | SeedingTime[{SeedingTime}s]",
+                        torrent.Name, torrent.Ratio, torrent.SeedingTime);
+                    result.TorrentsProtected++;
+                    continue;
+                }
+
+                if (!await HnrAllowsDeleteAsync(torrent, "removal criteria", cancellationToken))
+                {
+                    _logger.LogDebug("H&R: Keeping torrent [{Name}] - Hit and Run protection active | Ratio[{Ratio:F2}] | SeedingTime[{SeedingTime}s]",
                         torrent.Name, torrent.Ratio, torrent.SeedingTime);
                     result.TorrentsProtected++;
                     continue;
