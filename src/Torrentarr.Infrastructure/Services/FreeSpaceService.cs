@@ -335,17 +335,17 @@ public class FreeSpaceService : IFreeSpaceService
         TorrentInfo torrent,
         CancellationToken cancellationToken)
     {
-        var isDownloading = TorrentPolicyHelper.IsActiveDownloadingStateForFreeSpace(torrent.State);
+        var isFreeSpaceDownload = TorrentPolicyHelper.IsFreeSpaceDownloadState(torrent.State);
         var isPausedDownload = TorrentPolicyHelper.IsPausedDownloadStateForFreeSpace(torrent.State);
         var hasFreeSpaceTag = HasTag(torrent, FreeSpacePausedTag);
 
         _logger.LogTrace("FreeSpace: [{Name}] | State[{State}] | Progress[{Progress:P1}] | Size[{Size}] | AmountLeft[{AmountLeft}] | HasTag[{HasTag}] | Hash[{Hash}]",
             torrent.Name, torrent.State, torrent.Progress, FormatBytes(torrent.Size), FormatBytes(torrent.AmountLeft), hasFreeSpaceTag, torrent.Hash);
 
-        _logger.LogTrace("FreeSpace: [{Instance}] Torrent {Name}: State={State}, IsDownloading={IsDl}, IsPausedDownload={IsPausedDl}, HasFreeSpaceTag={HasTag}",
-            instanceName, torrent.Name, torrent.State, isDownloading, isPausedDownload, hasFreeSpaceTag);
+        _logger.LogTrace("FreeSpace: [{Instance}] Torrent {Name}: State={State}, IsFreeSpaceDownload={IsDl}, IsPausedDownload={IsPausedDl}, HasFreeSpaceTag={HasTag}",
+            instanceName, torrent.Name, torrent.State, isFreeSpaceDownload, isPausedDownload, hasFreeSpaceTag);
 
-        if (isDownloading || (isPausedDownload && hasFreeSpaceTag))
+        if (isFreeSpaceDownload)
         {
             var freeSpaceTest = _currentFreeSpace - torrent.AmountLeft;
 
@@ -403,7 +403,7 @@ public class FreeSpaceService : IFreeSpaceService
                 _logger.LogTrace("FreeSpace: [{Instance}] Clearing FreeSpacePaused on torrent {Hash}", instanceName, torrent.Hash);
                 await SetFreeSpacePausedTagAsync(client, torrent.Hash, false, cancellationToken);
             }
-            else if (isPausedDownload && freeSpaceTest >= 0)
+            else if (isPausedDownload && freeSpaceTest >= 0 && hasFreeSpaceTag)
             {
                 _logger.LogInformation(
                     "FreeSpace: [{Instance}] Resuming download [{Name}] | Available[{Available}] | SpaceAfter[{SpaceAfter}] | Hash[{Hash}]",
@@ -421,7 +421,7 @@ public class FreeSpaceService : IFreeSpaceService
                 await client.ResumeTorrentAsync(torrent.Hash, cancellationToken);
             }
         }
-        else if (!isDownloading && hasFreeSpaceTag)
+        else if (!isFreeSpaceDownload && hasFreeSpaceTag)
         {
             _logger.LogInformation(
                 "FreeSpace: [{Instance}] Completed, removing tag [{Name}] | Available[{Available}] | Hash[{Hash}]",
@@ -436,13 +436,6 @@ public class FreeSpaceService : IFreeSpaceService
         {
             _logger.LogTrace("FreeSpace: [{Instance}] No action needed for torrent {Name}", instanceName, torrent.Name);
         }
-    }
-
-    private bool IsDownloadingState(string state)
-    {
-        return state.Contains("downloading", StringComparison.OrdinalIgnoreCase) ||
-               state.Contains("stalledDL", StringComparison.OrdinalIgnoreCase) ||
-               state.Contains("metaDL", StringComparison.OrdinalIgnoreCase);
     }
 
     private bool HasTag(TorrentInfo torrent, string tag)
