@@ -3394,8 +3394,8 @@ class ProcessOrchestratorService : BackgroundService
                     "FreeSpace: Keeping paused (insufficient space) | Torrent: {Name} | Available: {Available} | Needed: {Needed} | Deficit: {Deficit}",
                     torrent.Name, FormatBytes(_currentFreeSpace), FormatBytes(torrent.AmountLeft), FormatBytes(-freeSpaceTest));
                 if (tagless && dbContext != null)
-                    await dbContext.TorrentLibrary.Where(t => t.Hash == torrent.Hash)
-                        .ExecuteUpdateAsync(s => s.SetProperty(t => t.FreeSpacePaused, true), cancellationToken);
+                    await TaglessTorrentLibraryHelper.SetFreeSpacePausedAsync(
+                        dbContext, torrent.Hash, torrent.Category, instanceName, paused: true, cancellationToken);
                 else
                     await client.AddTagsAsync(new List<string> { torrent.Hash }, new List<string> { freeSpacePausedTag }, cancellationToken);
             }

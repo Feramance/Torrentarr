@@ -384,6 +384,10 @@ public class ArrSyncService
             var existingEps = await _db.Episodes
                 .Where(e => e.SeriesId == seriesEntity.EntryId)
                 .ToListAsync(ct);
+
+            if (ShouldSkipDestructiveDelete(episodes.Count, existingEps.Count, instanceName, "episodes"))
+                continue;
+
             _db.Episodes.RemoveRange(existingEps);
 
             var seriesProfileId = seriesProfileById.GetValueOrDefault(sonarrId);

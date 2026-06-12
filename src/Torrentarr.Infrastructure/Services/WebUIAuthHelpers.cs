@@ -44,7 +44,7 @@ public static class WebUIAuthHelpers
 
     /// <summary>
     /// Returns true when POST /web/auth/set-password is allowed (qBitrr 5.12.2 bootstrap parity).
-    /// Requires setup token (env or WebUI.Token) unless the caller is already authenticated.
+    /// Requires setup token (env, or WebUI.Token for first-time bootstrap only) unless authenticated.
     /// </summary>
     public static bool IsSetPasswordAllowed(
         TorrentarrConfig cfg,
@@ -71,7 +71,10 @@ public static class WebUIAuthHelpers
         if (!string.IsNullOrWhiteSpace(envToken) && TokenEquals(setupToken, envToken))
             return true;
 
-        if (!string.IsNullOrWhiteSpace(cfg.WebUI.Token) && TokenEquals(setupToken, cfg.WebUI.Token))
+        // WebUI.Token in setupToken is bootstrap-only; password resets require TORRENTARR_SETUP_TOKEN.
+        if (!string.IsNullOrWhiteSpace(cfg.WebUI.Token)
+            && TokenEquals(setupToken, cfg.WebUI.Token)
+            && string.IsNullOrEmpty(cfg.WebUI.PasswordHash))
             return true;
 
         return false;

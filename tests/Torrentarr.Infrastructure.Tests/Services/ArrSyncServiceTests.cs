@@ -210,6 +210,19 @@ public sealed class ArrSyncServiceTests : IDisposable
         result.Should().BeFalse();
     }
 
+    [Fact]
+    public void ShouldSkipDestructiveDelete_Episodes_EmptyApiWithExistingRows_ReturnsTrue()
+    {
+        var svc = CreateService();
+        var method = typeof(ArrSyncService).GetMethod(
+            "ShouldSkipDestructiveDelete",
+            System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance)!;
+
+        var result = (bool)method.Invoke(svc, new object[] { 0, 24, "Sonarr-test", "episodes" })!;
+
+        result.Should().BeTrue();
+    }
+
     [Theory]
     [InlineData("artists")]
     [InlineData("albums")]
