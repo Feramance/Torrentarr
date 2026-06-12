@@ -109,11 +109,19 @@ public class WebUIAuthHelpersTests
     }
 
     [Fact]
-    public void IsSetPasswordAllowed_AllowsWebUiTokenAsSetupToken()
+    public void IsSetPasswordAllowed_AllowsWebUiTokenAsSetupToken_WhenPasswordUnset()
     {
-        var cfg = new TorrentarrConfig { WebUI = new WebUIConfig { Token = "config-token" } };
+        var cfg = new TorrentarrConfig { WebUI = new WebUIConfig { Token = "config-token", PasswordHash = "" } };
         WebUIAuthHelpers.IsSetPasswordAllowed(cfg, "config-token", isAuthenticated: false, bearerOrQueryToken: null)
             .Should().BeTrue();
+    }
+
+    [Fact]
+    public void IsSetPasswordAllowed_WebUiTokenAsSetupToken_WhenPasswordAlreadySet_DeniesReset()
+    {
+        var cfg = new TorrentarrConfig { WebUI = { Token = "config-token", PasswordHash = "hashed" } };
+        WebUIAuthHelpers.IsSetPasswordAllowed(cfg, "config-token", isAuthenticated: false, bearerOrQueryToken: null)
+            .Should().BeFalse();
     }
 
     [Fact]
