@@ -120,6 +120,7 @@ public class TorrentPolicyHelperTests
         TorrentPolicyHelper.IsQueueSeedingForSort("forcedUP").Should().BeTrue();
         TorrentPolicyHelper.IsQueueSeedingForSort("checkingUP").Should().BeTrue();
         TorrentPolicyHelper.IsQueueSeedingForSort("stoppedUP").Should().BeTrue();
+        TorrentPolicyHelper.IsQueueSeedingForSort("stalledUP").Should().BeTrue();
         TorrentPolicyHelper.IsQueueSeedingForSort("pausedUP").Should().BeTrue();
         TorrentPolicyHelper.IsQueueSeedingForSort("stalledDL").Should().BeFalse();
     }

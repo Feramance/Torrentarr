@@ -169,8 +169,7 @@ public class TorrentProcessor : ITorrentProcessor
         if (torrent == null) return false;
 
         var isComplete = torrent.Progress >= 1.0;
-        var isSeeding = torrent.State.Contains("uploading", StringComparison.OrdinalIgnoreCase) ||
-                       torrent.State.Contains("seeding", StringComparison.OrdinalIgnoreCase);
+        var isSeeding = TorrentPolicyHelper.IsQueueSeedingForSort(torrent.State);
 
         // §2.2: Grace period: completion_on=0 means qBit hasn't set it yet; wait until 60s after completion
         if (torrent.CompletionOn <= 0 ||
@@ -492,7 +491,6 @@ public class TorrentProcessor : ITorrentProcessor
         else if (torrent.AddedOn > 0
             && torrent.CompletionOn > 0
             && torrent.AmountLeft == 0
-            && state != TorrentState.PausedUploading
             && IsCompleteState(state)
             && !string.IsNullOrEmpty(torrent.ContentPath)
             && torrent.CompletionOn < timeNow - 60)
@@ -1002,7 +1000,7 @@ public class TorrentProcessor : ITorrentProcessor
         {
             if (tag == IgnoredTag) return false;
             var dbEntry = _dbContext.TorrentLibrary.AsNoTracking()
-                .FirstOrDefault(t => t.Hash == torrent.Hash);
+                .FirstOrDefault(t => t.Hash == torrent.Hash && t.QbitInstance == torrent.QBitInstanceName);
             if (dbEntry == null) return false;
             return tag switch
             {
