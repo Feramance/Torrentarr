@@ -850,9 +850,8 @@ public class SeedingService : ISeedingService
         {
             if (_config.Settings.Tagless)
             {
-                await _dbContext.TorrentLibrary
-                    .Where(t => t.Hash == torrent.Hash)
-                    .ExecuteUpdateAsync(s => s.SetProperty(t => t.AllowedSeeding, true), cancellationToken);
+                await TaglessTorrentLibraryHelper.SetAllowedSeedingAsync(
+                    _dbContext, torrent.Hash, torrent.QBitInstanceName, allowed: true, cancellationToken);
             }
             else
             {
@@ -867,9 +866,8 @@ public class SeedingService : ISeedingService
         {
             if (_config.Settings.Tagless)
             {
-                await _dbContext.TorrentLibrary
-                    .Where(t => t.Hash == torrent.Hash)
-                    .ExecuteUpdateAsync(s => s.SetProperty(t => t.AllowedSeeding, false), cancellationToken);
+                await TaglessTorrentLibraryHelper.SetAllowedSeedingAsync(
+                    _dbContext, torrent.Hash, torrent.QBitInstanceName, allowed: false, cancellationToken);
             }
             else
             {
@@ -887,15 +885,8 @@ public class SeedingService : ISeedingService
         // §1.6 Tagless mode: map tag names to TorrentLibrary DB columns
         if (_config.Settings.Tagless)
         {
-            var dbEntry = _dbContext.TorrentLibrary.AsNoTracking()
-                .FirstOrDefault(t => t.Hash == torrent.Hash);
-            if (dbEntry == null) return false;
-            return tag switch
-            {
-                AllowedSeedingTag => dbEntry.AllowedSeeding,
-                FreeSpacePausedTag => dbEntry.FreeSpacePaused,
-                _ => false
-            };
+            return TaglessTorrentLibraryHelper.HasTag(
+                _dbContext, torrent.Hash, torrent.QBitInstanceName, tag);
         }
 
         if (string.IsNullOrEmpty(torrent.Tags))

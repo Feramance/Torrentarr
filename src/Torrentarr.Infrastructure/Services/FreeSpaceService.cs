@@ -443,9 +443,8 @@ public class FreeSpaceService : IFreeSpaceService
         // §1.6 Tagless: FreeSpacePaused → DB column
         if (_config.Settings.Tagless)
         {
-            var dbEntry = _dbContext.TorrentLibrary.AsNoTracking()
-                .FirstOrDefault(t => t.Hash == torrent.Hash);
-            return dbEntry != null && tag == FreeSpacePausedTag && dbEntry.FreeSpacePaused;
+            return TaglessTorrentLibraryHelper.HasTag(
+                _dbContext, torrent.Hash, torrent.QBitInstanceName, tag);
         }
 
         if (string.IsNullOrEmpty(torrent.Tags)) return false;

@@ -159,11 +159,18 @@ public class TorrentProcessor : ITorrentProcessor
     public async Task<bool> IsReadyForImportAsync(string hash, CancellationToken cancellationToken = default)
     {
         TorrentInfo? torrent = null;
-        foreach (var (_, c) in _qbitManager.GetAllClients())
+        string? instanceName = null;
+        foreach (var (name, c) in _qbitManager.GetAllClients())
         {
             var torrents = await c.GetTorrentsAsync(cancellationToken: cancellationToken);
             var found = torrents.FirstOrDefault(t => t.Hash == hash);
-            if (found != null) { torrent = found; break; }
+            if (found != null)
+            {
+                found.QBitInstanceName = name;
+                torrent = found;
+                instanceName = name;
+                break;
+            }
         }
 
         if (torrent == null) return false;
@@ -180,7 +187,9 @@ public class TorrentProcessor : ITorrentProcessor
         }
 
         var libraryEntry = await _dbContext.TorrentLibrary
-            .FirstOrDefaultAsync(t => t.Hash == hash, cancellationToken);
+            .FirstOrDefaultAsync(
+                t => t.Hash == hash && t.QbitInstance == instanceName,
+                cancellationToken);
 
         var notImported = libraryEntry == null || !libraryEntry.Imported;
 
@@ -220,11 +229,13 @@ public class TorrentProcessor : ITorrentProcessor
         }
 
         var libraryEntry = await _dbContext.TorrentLibrary
-            .FirstOrDefaultAsync(t => t.Hash == hash, cancellationToken);
+            .FirstOrDefaultAsync(
+                t => t.Hash == hash && t.QbitInstance == torrentInstanceName,
+                cancellationToken);
 
         if (libraryEntry == null)
         {
-            _logger.LogWarning("Torrent {Hash} not found in database", hash);
+            _logger.LogWarning("Torrent {Hash} not found in database for instance {Instance}", hash, torrentInstanceName);
             return;
         }
 
@@ -476,7 +487,7 @@ public class TorrentProcessor : ITorrentProcessor
             await ProcessPercentageThresholdAsync(torrent, maxEta, client, stats, ct);
         }
         // Branch 14: Already imported → skip (qBitrr line 6184-6187)
-        else if (await IsImportedInDatabaseAsync(torrent.Hash, ct)
+        else if (await IsImportedInDatabaseAsync(torrent.Hash, torrent.QBitInstanceName, ct)
             && _cache.IsFileFiltered(torrent.Hash))
         {
             _logger.LogTrace("Skipping already-imported torrent: [{Name}]", torrent.Name);
@@ -898,11 +909,11 @@ public class TorrentProcessor : ITorrentProcessor
     /// <summary>
     /// Check if a torrent is marked as imported in the database.
     /// </summary>
-    private async Task<bool> IsImportedInDatabaseAsync(string hash, CancellationToken ct)
+    private async Task<bool> IsImportedInDatabaseAsync(string hash, string qbitInstance, CancellationToken ct)
     {
         var entry = await _dbContext.TorrentLibrary
             .AsNoTracking()
-            .FirstOrDefaultAsync(t => t.Hash == hash, ct);
+            .FirstOrDefaultAsync(t => t.Hash == hash && t.QbitInstance == qbitInstance, ct);
         return entry?.Imported == true;
     }
 
@@ -1000,17 +1011,8 @@ public class TorrentProcessor : ITorrentProcessor
         // §1.6 Tagless mode: map tags to TorrentLibrary DB columns; IgnoredTag has no DB equivalent → false
         if (_config.Settings.Tagless)
         {
-            if (tag == IgnoredTag) return false;
-            var dbEntry = _dbContext.TorrentLibrary.AsNoTracking()
-                .FirstOrDefault(t => t.Hash == torrent.Hash);
-            if (dbEntry == null) return false;
-            return tag switch
-            {
-                FreeSpacePausedTag => dbEntry.FreeSpacePaused,
-                AllowedSeedingTag => dbEntry.AllowedSeeding,
-                AllowedStalledTag => dbEntry.AllowedStalled,
-                _ => false
-            };
+            return TaglessTorrentLibraryHelper.HasTag(
+                _dbContext, torrent.Hash, torrent.QBitInstanceName, tag);
         }
 
         if (string.IsNullOrEmpty(torrent.Tags))
@@ -1076,9 +1078,16 @@ public class TorrentProcessor : ITorrentProcessor
             };
 
             _dbContext.TorrentLibrary.Add(entry);
-            await _dbContext.SaveChangesAsync(cancellationToken);
-
-            _logger.LogTrace("Added torrent {Hash} to database", torrent.Hash);
+            try
+            {
+                await _dbContext.SaveChangesAsync(cancellationToken);
+                _logger.LogTrace("Added torrent {Hash} to database", torrent.Hash);
+            }
+            catch (DbUpdateException)
+            {
+                // TaglessTorrentLibraryHelper.SetFreeSpacePausedAsync may insert the same row concurrently.
+                _dbContext.ChangeTracker.Clear();
+            }
         }
     }
 
