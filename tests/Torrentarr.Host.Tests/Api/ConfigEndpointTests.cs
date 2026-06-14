@@ -170,6 +170,18 @@ public class ConfigEndpointTests : IClassFixture<TorrentarrWebApplicationFactory
         afterJson.GetProperty("Settings").GetProperty("LoopSleepTimer").GetInt32().Should().Be(42);
         afterJson.GetProperty("WebUI").GetProperty("Port").GetInt32().Should().Be(originalPort);
     }
+
+    [Fact]
+    public async Task PostApiConfig_WithoutChanges_Returns400()
+    {
+        var client = _factory.CreateClientWithApiToken();
+
+        var response = await client.PostAsJsonAsync("/api/config", new { });
+
+        response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
+        var body = await response.Content.ReadAsStringAsync();
+        body.Should().Contain("changes");
+    }
 }
 
 /// <summary>
@@ -229,5 +241,31 @@ public class ConfigRedactionTests : IClassFixture<LocalAuthWebApplicationFactory
             password = LocalAuthWebApplicationFactory.TestPassword
         });
         loginAfter.StatusCode.Should().Be(HttpStatusCode.OK, "login should still work because [redacted] must not overwrite the real hash");
+    }
+
+    /// <summary>Empty PasswordHash in POST /web/config must not clear the stored hash (account takeover bypass).</summary>
+    [Fact]
+    public async Task PostConfig_WithEmptyPasswordHash_DoesNotOverwriteRealHash()
+    {
+        _factory.SetConfigEnv();
+        var client = _factory.CreateClientWithApiToken();
+
+        var loginBefore = await client.PostAsJsonAsync("/web/login", new
+        {
+            username = LocalAuthWebApplicationFactory.TestUsername,
+            password = LocalAuthWebApplicationFactory.TestPassword
+        });
+        loginBefore.StatusCode.Should().Be(HttpStatusCode.OK);
+
+        var payload = new { changes = new Dictionary<string, object> { ["WebUI.PasswordHash"] = "" } };
+        var patchResponse = await client.PostAsJsonAsync("/web/config", payload);
+        patchResponse.StatusCode.Should().Be(HttpStatusCode.OK);
+
+        var loginAfter = await client.PostAsJsonAsync("/web/login", new
+        {
+            username = LocalAuthWebApplicationFactory.TestUsername,
+            password = LocalAuthWebApplicationFactory.TestPassword
+        });
+        loginAfter.StatusCode.Should().Be(HttpStatusCode.OK, "empty PasswordHash must not clear the stored hash");
     }
 }

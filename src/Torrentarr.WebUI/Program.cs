@@ -730,10 +730,8 @@ app.MapPost("/web/config", async (HttpContext ctx, TorrentarrConfig config, Conf
             if (string.Equals(key, "Settings.ConfigVersion", StringComparison.OrdinalIgnoreCase))
                 return Results.Json(new { error = "Cannot modify protected configuration key: Settings.ConfigVersion" }, statusCode: 403);
 
-            // Never overwrite a real secret with the redaction placeholder from the frontend
-            if (IsSensitiveDottedKey(key)
-                && value.Type == Newtonsoft.Json.Linq.JTokenType.String
-                && value.ToString() == "[redacted]")
+            // Never overwrite a real secret with the redaction placeholder, empty string, or null
+            if (ShouldIgnoreSensitiveConfigChange(key, value))
                 continue;
 
             ApplyDotPathChange(flatConfig, key, value);
@@ -1565,6 +1563,23 @@ else
 Log.Information("Torrentarr WebUI starting on {Host}:{Port}",
     builder.Configuration["urls"] ?? "http://localhost:5000",
     "");
+
+static bool ShouldIgnoreSensitiveConfigChange(string dottedKey, Newtonsoft.Json.Linq.JToken value)
+{
+    if (!IsSensitiveDottedKey(dottedKey))
+        return false;
+
+    if (value.Type == Newtonsoft.Json.Linq.JTokenType.Null)
+        return true;
+
+    if (value.Type == Newtonsoft.Json.Linq.JTokenType.String)
+    {
+        var s = value.ToString();
+        return string.IsNullOrEmpty(s) || s == "[redacted]";
+    }
+
+    return false;
+}
 
 static bool IsSensitiveDottedKey(string dottedKey)
 {

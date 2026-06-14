@@ -159,15 +159,23 @@ public class TorrentProcessor : ITorrentProcessor
     public async Task<bool> IsReadyForImportAsync(string hash, CancellationToken cancellationToken = default)
     {
         TorrentInfo? torrent = null;
-        foreach (var (_, c) in _qbitManager.GetAllClients())
+        foreach (var (instanceName, c) in _qbitManager.GetAllClients())
         {
             var torrents = await c.GetTorrentsAsync(cancellationToken: cancellationToken);
             var found = torrents.FirstOrDefault(t => t.Hash == hash);
-            if (found != null) { torrent = found; break; }
+            if (found != null)
+            {
+                found.QBitInstanceName = instanceName;
+                torrent = found;
+                break;
+            }
         }
 
-        if (torrent == null) return false;
+        return torrent != null && await IsReadyForImportAsync(torrent, cancellationToken);
+    }
 
+    private async Task<bool> IsReadyForImportAsync(TorrentInfo torrent, CancellationToken cancellationToken)
+    {
         var isComplete = torrent.Progress >= 1.0;
         var isSeeding = torrent.State.Contains("uploading", StringComparison.OrdinalIgnoreCase) ||
                        torrent.State.Contains("seeding", StringComparison.OrdinalIgnoreCase);
@@ -180,7 +188,9 @@ public class TorrentProcessor : ITorrentProcessor
         }
 
         var libraryEntry = await _dbContext.TorrentLibrary
-            .FirstOrDefaultAsync(t => t.Hash == hash, cancellationToken);
+            .FirstOrDefaultAsync(
+                t => t.Hash == torrent.Hash && t.QbitInstance == torrent.QBitInstanceName,
+                cancellationToken);
 
         var notImported = libraryEntry == null || !libraryEntry.Imported;
 
@@ -189,10 +199,7 @@ public class TorrentProcessor : ITorrentProcessor
 
     public async Task ImportTorrentAsync(string hash, CancellationToken cancellationToken = default)
     {
-        _logger.LogInformation("Importing torrent {Hash}", hash);
-
         TorrentInfo? torrent = null;
-        string? torrentInstanceName = null;
         foreach (var (instanceName, c) in _qbitManager.GetAllClients())
         {
             var torrents = await c.GetTorrentsAsync(cancellationToken: cancellationToken);
@@ -201,18 +208,22 @@ public class TorrentProcessor : ITorrentProcessor
             {
                 found.QBitInstanceName = instanceName;
                 torrent = found;
-                torrentInstanceName = instanceName;
                 break;
             }
         }
 
-        if (torrent == null)
-        {
+        if (torrent != null)
+            await ImportTorrentAsync(torrent, cancellationToken);
+        else
             _logger.LogWarning("Torrent {Hash} not found in qBittorrent", hash);
-            return;
-        }
+    }
 
-        var client = _qbitManager.GetClient(torrentInstanceName!);
+    private async Task ImportTorrentAsync(TorrentInfo torrent, CancellationToken cancellationToken)
+    {
+        var hash = torrent.Hash;
+        _logger.LogInformation("Importing torrent {Hash}", hash);
+
+        var client = _qbitManager.GetClient(torrent.QBitInstanceName);
         if (client == null)
         {
             _logger.LogWarning("No qBittorrent client available for import");
@@ -220,7 +231,9 @@ public class TorrentProcessor : ITorrentProcessor
         }
 
         var libraryEntry = await _dbContext.TorrentLibrary
-            .FirstOrDefaultAsync(t => t.Hash == hash, cancellationToken);
+            .FirstOrDefaultAsync(
+                t => t.Hash == hash && t.QbitInstance == torrent.QBitInstanceName,
+                cancellationToken);
 
         if (libraryEntry == null)
         {
@@ -476,7 +489,7 @@ public class TorrentProcessor : ITorrentProcessor
             await ProcessPercentageThresholdAsync(torrent, maxEta, client, stats, ct);
         }
         // Branch 14: Already imported → skip (qBitrr line 6184-6187)
-        else if (await IsImportedInDatabaseAsync(torrent.Hash, ct)
+        else if (await IsImportedInDatabaseAsync(torrent.Hash, torrent.QBitInstanceName, ct)
             && _cache.IsFileFiltered(torrent.Hash))
         {
             _logger.LogTrace("Skipping already-imported torrent: [{Name}]", torrent.Name);
@@ -502,11 +515,11 @@ public class TorrentProcessor : ITorrentProcessor
             {
                 _logger.LogTrace("Completed torrent — allowing seeding: [{Name}]", torrent.Name);
             }
-            else if (await IsReadyForImportAsync(torrent.Hash, ct))
+            else if (await IsReadyForImportAsync(torrent, ct))
             {
                 _logger.LogDebug("Completed torrent ready for import: [{Name}] | Progress[{Progress:P1}] | Hash[{Hash}]",
                     torrent.Name, torrent.Progress, torrent.Hash);
-                await ImportTorrentAsync(torrent.Hash, ct);
+                await ImportTorrentAsync(torrent, ct);
             }
         }
         // Branch 17: Uploading + seeding limits configured → pause if !leave_alone (qBitrr line 6207-6215)
@@ -898,11 +911,11 @@ public class TorrentProcessor : ITorrentProcessor
     /// <summary>
     /// Check if a torrent is marked as imported in the database.
     /// </summary>
-    private async Task<bool> IsImportedInDatabaseAsync(string hash, CancellationToken ct)
+    private async Task<bool> IsImportedInDatabaseAsync(string hash, string qbitInstance, CancellationToken ct)
     {
         var entry = await _dbContext.TorrentLibrary
             .AsNoTracking()
-            .FirstOrDefaultAsync(t => t.Hash == hash, ct);
+            .FirstOrDefaultAsync(t => t.Hash == hash && t.QbitInstance == qbitInstance, ct);
         return entry?.Imported == true;
     }
 
@@ -1002,7 +1015,7 @@ public class TorrentProcessor : ITorrentProcessor
         {
             if (tag == IgnoredTag) return false;
             var dbEntry = _dbContext.TorrentLibrary.AsNoTracking()
-                .FirstOrDefault(t => t.Hash == torrent.Hash);
+                .FirstOrDefault(t => t.Hash == torrent.Hash && t.QbitInstance == torrent.QBitInstanceName);
             if (dbEntry == null) return false;
             return tag switch
             {

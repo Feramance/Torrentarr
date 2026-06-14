@@ -2150,18 +2150,14 @@ try
         {
             var payload = await request.ReadFromJsonAsync<System.Text.Json.JsonElement>();
             TorrentarrConfig? updatedConfig;
-            if (payload.TryGetProperty("changes", out var changesEl))
-            {
-                var changesObj = Newtonsoft.Json.Linq.JObject.Parse(changesEl.GetRawText());
-                var (mergedConfig, applyError) = ApplyDottedConfigChanges(cfg, changesObj);
-                if (applyError != null)
-                    return applyError;
-                updatedConfig = mergedConfig;
-            }
-            else
-            {
-                updatedConfig = Newtonsoft.Json.JsonConvert.DeserializeObject<TorrentarrConfig>(payload.GetRawText());
-            }
+            if (!payload.TryGetProperty("changes", out var changesEl))
+                return Results.BadRequest(new { error = "Config updates must use a 'changes' object" });
+
+            var changesObj = Newtonsoft.Json.Linq.JObject.Parse(changesEl.GetRawText());
+            var (mergedConfig, applyError) = ApplyDottedConfigChanges(cfg, changesObj);
+            if (applyError != null)
+                return applyError;
+            updatedConfig = mergedConfig;
 
             if (updatedConfig == null)
                 return Results.BadRequest(new { error = "Invalid config payload" });
@@ -2640,9 +2636,7 @@ static (TorrentarrConfig? updatedConfig, IResult? error) ApplyDottedConfigChange
         if (string.Equals(change.Name, "Settings.ConfigVersion", StringComparison.OrdinalIgnoreCase))
             return (null, Results.Json(new { error = "Cannot modify protected configuration key: Settings.ConfigVersion" }, statusCode: 403));
 
-        if (IsSensitiveDottedKey(change.Name) &&
-            change.Value.Type == Newtonsoft.Json.Linq.JTokenType.String &&
-            change.Value.ToString() == REDACTED_PLACEHOLDER)
+        if (ShouldIgnoreSensitiveConfigChange(change.Name, change.Value))
             continue;
 
         var parts = change.Name.Split('.');
@@ -2756,6 +2750,26 @@ static Newtonsoft.Json.Linq.JToken StripSensitiveKeys(Newtonsoft.Json.Linq.JToke
         return result;
     }
     return token.DeepClone();
+}
+
+/// <summary>
+/// Returns true when a config change should not overwrite a stored secret (redacted placeholder, empty, or null).
+/// </summary>
+static bool ShouldIgnoreSensitiveConfigChange(string dottedKey, Newtonsoft.Json.Linq.JToken value)
+{
+    if (!IsSensitiveDottedKey(dottedKey))
+        return false;
+
+    if (value.Type == Newtonsoft.Json.Linq.JTokenType.Null)
+        return true;
+
+    if (value.Type == Newtonsoft.Json.Linq.JTokenType.String)
+    {
+        var s = value.ToString();
+        return string.IsNullOrEmpty(s) || s == REDACTED_PLACEHOLDER;
+    }
+
+    return false;
 }
 
 /// <summary>

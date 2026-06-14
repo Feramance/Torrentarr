@@ -820,6 +820,16 @@ public class ArrSyncService
         // Save so EF Core assigns EntryId to new album rows
         await _db.SaveChangesAsync(ct);
 
+        // Seed from persisted DB rows so track sync survives empty/partial album API responses.
+        var persistedAlbums = await _db.Albums
+            .Where(a => a.ArrInstance == instanceName)
+            .ToListAsync(ct);
+        foreach (var album in persistedAlbums)
+        {
+            if (album.ArrId > 0)
+                albumEntityByLidarrId[album.ArrId] = album;
+        }
+
         // Compute search metadata for each album using bulk track files (one API call per album)
         foreach (var (lidarrAlbumId, albumEntity) in albumEntityByLidarrId)
         {
@@ -885,6 +895,15 @@ public class ArrSyncService
         {
             _logger.LogDebug("[{Instance}] ArrSyncService: Lidarr {Name} track sync skipped (suspicious empty API response)",
                 instanceName, instanceName);
+            return;
+        }
+
+        var mappableTrackCount = allTracks.Count(t => albumEntityByLidarrId.ContainsKey(t.AlbumId));
+        if (existingTracks.Count > 0 && mappableTrackCount == 0)
+        {
+            _logger.LogWarning(
+                "[{Instance}] ArrSyncService: refusing destructive track sync — API returned {ApiCount} tracks but none map to persisted albums (DB has {DbCount} tracks)",
+                instanceName, allTracks.Count, existingTracks.Count);
             return;
         }
 
