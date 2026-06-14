@@ -444,7 +444,7 @@ public class FreeSpaceService : IFreeSpaceService
         if (_config.Settings.Tagless)
         {
             var dbEntry = _dbContext.TorrentLibrary.AsNoTracking()
-                .FirstOrDefault(t => t.Hash == torrent.Hash);
+                .FirstOrDefault(t => t.Hash == torrent.Hash && t.QbitInstance == torrent.QBitInstanceName);
             return dbEntry != null && tag == FreeSpacePausedTag && dbEntry.FreeSpacePaused;
         }
 

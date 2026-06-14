@@ -820,6 +820,14 @@ public class ArrSyncService
         // Save so EF Core assigns EntryId to new album rows
         await _db.SaveChangesAsync(ct);
 
+        // Keep DB album rows in the Lidarr-ID map so track sync can resolve FKs when the albums
+        // API response was empty or partial (album delete guard may have fired).
+        foreach (var dbAlbum in dbAlbums.Values)
+        {
+            if (dbAlbum.ArrId > 0)
+                albumEntityByLidarrId.TryAdd(dbAlbum.ArrId, dbAlbum);
+        }
+
         // Compute search metadata for each album using bulk track files (one API call per album)
         foreach (var (lidarrAlbumId, albumEntity) in albumEntityByLidarrId)
         {
@@ -885,6 +893,15 @@ public class ArrSyncService
         {
             _logger.LogDebug("[{Instance}] ArrSyncService: Lidarr {Name} track sync skipped (suspicious empty API response)",
                 instanceName, instanceName);
+            return;
+        }
+
+        var mappableTrackCount = allTracks.Count(t => albumEntityByLidarrId.ContainsKey(t.AlbumId));
+        if (existingTracks.Count > 0 && mappableTrackCount == 0)
+        {
+            _logger.LogWarning(
+                "[{Instance}] ArrSyncService: refusing Lidarr track sync — API returned {ApiCount} tracks but none map to known albums",
+                instanceName, allTracks.Count);
             return;
         }
 

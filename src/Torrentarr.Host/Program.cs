@@ -2640,9 +2640,8 @@ static (TorrentarrConfig? updatedConfig, IResult? error) ApplyDottedConfigChange
         if (string.Equals(change.Name, "Settings.ConfigVersion", StringComparison.OrdinalIgnoreCase))
             return (null, Results.Json(new { error = "Cannot modify protected configuration key: Settings.ConfigVersion" }, statusCode: 403));
 
-        if (IsSensitiveDottedKey(change.Name) &&
-            change.Value.Type == Newtonsoft.Json.Linq.JTokenType.String &&
-            change.Value.ToString() == REDACTED_PLACEHOLDER)
+        if (SensitiveConfigHelper.ShouldPreserveExistingSensitiveValue(
+                change.Name, change.Value, SensitiveConfigHelper.GetDottedStringValue(currentObj, change.Name)))
             continue;
 
         var parts = change.Name.Split('.');
@@ -2756,16 +2755,6 @@ static Newtonsoft.Json.Linq.JToken StripSensitiveKeys(Newtonsoft.Json.Linq.JToke
         return result;
     }
     return token.DeepClone();
-}
-
-/// <summary>
-/// Returns true if a dotted config key refers to a sensitive value (e.g. "Radarr-1080.APIKey").
-/// </summary>
-static bool IsSensitiveDottedKey(string dottedKey)
-{
-    if (string.IsNullOrEmpty(dottedKey) || !dottedKey.Contains('.')) return false;
-    var lastPart = dottedKey[(dottedKey.LastIndexOf('.') + 1)..];
-    return System.Text.RegularExpressions.Regex.IsMatch(lastPart, SensitiveKeyPatternRegex, System.Text.RegularExpressions.RegexOptions.IgnoreCase);
 }
 
 /// <summary>

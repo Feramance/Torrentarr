@@ -731,9 +731,8 @@ app.MapPost("/web/config", async (HttpContext ctx, TorrentarrConfig config, Conf
                 return Results.Json(new { error = "Cannot modify protected configuration key: Settings.ConfigVersion" }, statusCode: 403);
 
             // Never overwrite a real secret with the redaction placeholder from the frontend
-            if (IsSensitiveDottedKey(key)
-                && value.Type == Newtonsoft.Json.Linq.JTokenType.String
-                && value.ToString() == "[redacted]")
+            if (SensitiveConfigHelper.ShouldPreserveExistingSensitiveValue(
+                    key, value, SensitiveConfigHelper.GetDottedStringValue(flatConfig, key)))
                 continue;
 
             ApplyDotPathChange(flatConfig, key, value);
@@ -876,6 +875,10 @@ static TorrentarrConfig FlatToConfig(Newtonsoft.Json.Linq.JObject flat, Torrenta
         result.WebUI = webuiObj.ToObject<WebUIConfig>() ?? current.WebUI;
         if (result.WebUI.Token == "[redacted]") result.WebUI.Token = current.WebUI.Token;
         if (result.WebUI.PasswordHash == "[redacted]") result.WebUI.PasswordHash = current.WebUI.PasswordHash;
+        if (string.IsNullOrEmpty(result.WebUI.Token) && !string.IsNullOrEmpty(current.WebUI.Token))
+            result.WebUI.Token = current.WebUI.Token;
+        if (string.IsNullOrEmpty(result.WebUI.PasswordHash) && !string.IsNullOrEmpty(current.WebUI.PasswordHash))
+            result.WebUI.PasswordHash = current.WebUI.PasswordHash;
     }
     else
     {
@@ -1565,13 +1568,6 @@ else
 Log.Information("Torrentarr WebUI starting on {Host}:{Port}",
     builder.Configuration["urls"] ?? "http://localhost:5000",
     "");
-
-static bool IsSensitiveDottedKey(string dottedKey)
-{
-    const string pattern = @"(apikey|api_key|token|password|secret|passkey|credential)";
-    var lastPart = dottedKey.Contains('.') ? dottedKey[(dottedKey.LastIndexOf('.') + 1)..] : dottedKey;
-    return System.Text.RegularExpressions.Regex.IsMatch(lastPart, pattern, System.Text.RegularExpressions.RegexOptions.IgnoreCase);
-}
 
 app.Run();
 

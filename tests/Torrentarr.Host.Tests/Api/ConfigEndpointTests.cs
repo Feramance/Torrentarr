@@ -230,4 +230,23 @@ public class ConfigRedactionTests : IClassFixture<LocalAuthWebApplicationFactory
         });
         loginAfter.StatusCode.Should().Be(HttpStatusCode.OK, "login should still work because [redacted] must not overwrite the real hash");
     }
+
+    /// <summary>Empty PasswordHash in POST /web/config must not clear an existing hash (auth bypass vector).</summary>
+    [Fact]
+    public async Task PostConfig_WithEmptyPasswordHash_DoesNotOverwriteRealHash()
+    {
+        _factory.SetConfigEnv();
+        var client = _factory.CreateClientWithApiToken();
+
+        var payload = new { changes = new Dictionary<string, object> { ["WebUI.PasswordHash"] = "" } };
+        var patchResponse = await client.PostAsJsonAsync("/web/config", payload);
+        patchResponse.StatusCode.Should().Be(HttpStatusCode.OK);
+
+        var loginAfter = await client.PostAsJsonAsync("/web/login", new
+        {
+            username = LocalAuthWebApplicationFactory.TestUsername,
+            password = LocalAuthWebApplicationFactory.TestPassword
+        });
+        loginAfter.StatusCode.Should().Be(HttpStatusCode.OK, "empty PasswordHash must not clear the stored hash");
+    }
 }

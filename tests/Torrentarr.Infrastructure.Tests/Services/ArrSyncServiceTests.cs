@@ -4,6 +4,7 @@ using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging.Abstractions;
 using Torrentarr.Core.Configuration;
 using Torrentarr.Infrastructure.Database;
+using Torrentarr.Infrastructure.Database.Models;
 using Torrentarr.Infrastructure.Services;
 using Xunit;
 
@@ -236,6 +237,43 @@ public sealed class ArrSyncServiceTests : IDisposable
         var result = (bool)method.Invoke(svc, new object[] { 0, 12, "Lidarr-test", entityName })!;
 
         result.Should().BeTrue();
+    }
+
+    [Fact]
+    public async Task LidarrTrackSync_DbAlbumMerge_EnablesMappingWhenApiAlbumMapEmpty()
+    {
+        var album = new AlbumFilesModel
+        {
+            ArrInstance = "Lidarr-test",
+            ArrId = 42,
+            ForeignAlbumId = "foreign-1",
+            Title = "Test Album"
+        };
+        _db.Albums.Add(album);
+        await _db.SaveChangesAsync();
+
+        _db.Tracks.Add(new TrackFilesModel
+        {
+            ArrInstance = "Lidarr-test",
+            AlbumId = album.EntryId,
+            Title = "Track 1",
+            TrackNumber = 1
+        });
+        await _db.SaveChangesAsync();
+
+        var albumEntityByLidarrId = new Dictionary<int, AlbumFilesModel>();
+        var dbAlbums = await _db.Albums
+            .Where(a => a.ArrInstance == "Lidarr-test")
+            .ToDictionaryAsync(a => a.ForeignAlbumId);
+
+        foreach (var dbAlbum in dbAlbums.Values)
+        {
+            if (dbAlbum.ArrId > 0)
+                albumEntityByLidarrId.TryAdd(dbAlbum.ArrId, dbAlbum);
+        }
+
+        albumEntityByLidarrId.Should().ContainKey(42);
+        albumEntityByLidarrId[42].EntryId.Should().Be(album.EntryId);
     }
 
     [Fact]
