@@ -875,7 +875,8 @@ static TorrentarrConfig FlatToConfig(Newtonsoft.Json.Linq.JObject flat, Torrenta
     {
         result.WebUI = webuiObj.ToObject<WebUIConfig>() ?? current.WebUI;
         if (result.WebUI.Token == "[redacted]") result.WebUI.Token = current.WebUI.Token;
-        if (result.WebUI.PasswordHash == "[redacted]") result.WebUI.PasswordHash = current.WebUI.PasswordHash;
+        if (result.WebUI.PasswordHash == "[redacted]" || (string.IsNullOrEmpty(result.WebUI.PasswordHash) && !string.IsNullOrEmpty(current.WebUI.PasswordHash)))
+            result.WebUI.PasswordHash = current.WebUI.PasswordHash;
     }
     else
     {

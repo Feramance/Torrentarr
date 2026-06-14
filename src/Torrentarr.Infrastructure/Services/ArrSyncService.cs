@@ -881,6 +881,31 @@ public class ArrSyncService
             .Where(t => t.ArrInstance == instanceName)
             .ToListAsync(ct);
 
+        // Merge persisted albums so tracks can map when the albums API returned empty/partial
+        // but local rows were preserved by ShouldSkipDestructiveDelete.
+        var persistedAlbums = await _db.Albums
+            .Where(a => a.ArrInstance == instanceName && a.ArrId > 0)
+            .ToListAsync(ct);
+        foreach (var album in persistedAlbums)
+            albumEntityByLidarrId.TryAdd(album.ArrId, album);
+
+        if (ShouldSkipDestructiveDelete(albums.Count, persistedAlbums.Count, instanceName, "albums (track sync)"))
+        {
+            _logger.LogDebug(
+                "[{Instance}] ArrSyncService: Lidarr {Name} track sync skipped (albums API empty but DB has {Count} albums)",
+                instanceName, instanceName, persistedAlbums.Count);
+            return;
+        }
+
+        var unmappableTrackCount = allTracks.Count(t => !albumEntityByLidarrId.ContainsKey(t.AlbumId));
+        if (unmappableTrackCount > 0)
+        {
+            _logger.LogWarning(
+                "[{Instance}] ArrSyncService: refusing Lidarr track sync — {Count} API tracks cannot be mapped to albums",
+                instanceName, unmappableTrackCount);
+            return;
+        }
+
         if (ShouldSkipDestructiveDelete(allTracks.Count, existingTracks.Count, instanceName, "tracks"))
         {
             _logger.LogDebug("[{Instance}] ArrSyncService: Lidarr {Name} track sync skipped (suspicious empty API response)",

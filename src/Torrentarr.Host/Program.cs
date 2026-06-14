@@ -2684,6 +2684,10 @@ static (TorrentarrConfig? updatedConfig, IResult? error) ApplyDottedConfigChange
     if (currentObj["WebUI"] is Newtonsoft.Json.Linq.JObject webuiObj)
         updatedConfig.WebUI = webuiObj.ToObject<WebUIConfig>(serializer) ?? new WebUIConfig();
 
+    // Never clear an existing local-auth password via config API (empty string or omitted).
+    if (string.IsNullOrEmpty(updatedConfig.WebUI.PasswordHash) && !string.IsNullOrEmpty(cfg.WebUI.PasswordHash))
+        updatedConfig.WebUI.PasswordHash = cfg.WebUI.PasswordHash;
+
     foreach (var prop in currentObj.Properties())
     {
         if (prop.Value is not Newtonsoft.Json.Linq.JObject sectionObj) continue;
