@@ -80,4 +80,59 @@ public class TaglessTorrentLibraryHelperTests
         entries[1].QbitInstance.Should().Be("qBit-seedbox");
         entries[1].FreeSpacePaused.Should().BeTrue();
     }
+
+    [Fact]
+    public void HasTaglessTag_ScopedPerQbitInstance_DoesNotBleedAcrossInstances()
+    {
+        using var db = CreateDb();
+        db.TorrentLibrary.AddRange(
+            new()
+            {
+                Hash = "abc123",
+                Category = "radarr",
+                QbitInstance = "qBit",
+                FreeSpacePaused = true,
+                AllowedSeeding = false
+            },
+            new()
+            {
+                Hash = "abc123",
+                Category = "radarr",
+                QbitInstance = "qBit-seedbox",
+                FreeSpacePaused = false,
+                AllowedSeeding = true
+            });
+        db.SaveChanges();
+
+        TaglessTorrentLibraryHelper.HasTaglessTag(
+                db, "abc123", "qBit-seedbox", TaglessTorrentLibraryHelper.FreeSpacePausedTag)
+            .Should().BeFalse("seedbox row is not free-space paused");
+        TaglessTorrentLibraryHelper.HasTaglessTag(
+                db, "abc123", "qBit", TaglessTorrentLibraryHelper.FreeSpacePausedTag)
+            .Should().BeTrue("local row is free-space paused");
+        TaglessTorrentLibraryHelper.HasTaglessTag(
+                db, "abc123", "qBit-seedbox", TaglessTorrentLibraryHelper.AllowedSeedingTag)
+            .Should().BeTrue("seedbox row has allowed seeding");
+        TaglessTorrentLibraryHelper.HasTaglessTag(
+                db, "abc123", "qBit", TaglessTorrentLibraryHelper.AllowedSeedingTag)
+            .Should().BeFalse("local row does not have allowed seeding");
+    }
+
+    [Fact]
+    public void HasTaglessTag_MissingInstanceRow_ReturnsFalse()
+    {
+        using var db = CreateDb();
+        db.TorrentLibrary.Add(new()
+        {
+            Hash = "abc123",
+            Category = "radarr",
+            QbitInstance = "qBit",
+            FreeSpacePaused = true
+        });
+        db.SaveChanges();
+
+        TaglessTorrentLibraryHelper.HasTaglessTag(
+                db, "abc123", "qBit-seedbox", TaglessTorrentLibraryHelper.FreeSpacePausedTag)
+            .Should().BeFalse();
+    }
 }

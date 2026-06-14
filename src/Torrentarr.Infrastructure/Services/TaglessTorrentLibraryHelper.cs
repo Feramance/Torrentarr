@@ -9,6 +9,40 @@ namespace Torrentarr.Infrastructure.Services;
 /// </summary>
 public static class TaglessTorrentLibraryHelper
 {
+    public const string IgnoredTag = "qBitrr-ignored";
+    public const string AllowedSeedingTag = "qBitrr-allowed_seeding";
+    public const string AllowedStalledTag = "qBitrr-allowed_stalled";
+    public const string FreeSpacePausedTag = "qBitrr-free_space_paused";
+
+    /// <summary>
+    /// Read tagless tag state for a torrent row scoped to <paramref name="qbitInstance"/> when set.
+    /// </summary>
+    public static bool HasTaglessTag(
+        TorrentarrDbContext db,
+        string hash,
+        string? qbitInstance,
+        string tag)
+    {
+        if (tag.Equals(IgnoredTag, StringComparison.OrdinalIgnoreCase))
+            return false;
+
+        IQueryable<TorrentLibrary> query = db.TorrentLibrary.AsNoTracking().Where(t => t.Hash == hash);
+        if (!string.IsNullOrEmpty(qbitInstance))
+            query = query.Where(t => t.QbitInstance == qbitInstance);
+
+        var dbEntry = query.FirstOrDefault();
+        if (dbEntry == null)
+            return false;
+
+        return tag switch
+        {
+            FreeSpacePausedTag => dbEntry.FreeSpacePaused,
+            AllowedSeedingTag => dbEntry.AllowedSeeding,
+            AllowedStalledTag => dbEntry.AllowedStalled,
+            _ => false
+        };
+    }
+
     /// <summary>
     /// Set <see cref="TorrentLibrary.FreeSpacePaused"/> in tagless mode.
     /// When pausing, upserts a row if the torrent is not yet in the database — otherwise
