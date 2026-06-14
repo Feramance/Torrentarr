@@ -1,4 +1,5 @@
 using FluentAssertions;
+using Newtonsoft.Json.Linq;
 using Torrentarr.Core.Configuration;
 using Torrentarr.Infrastructure.Services;
 using Xunit;
@@ -146,5 +147,26 @@ public class WebUIAuthHelpersTests
         {
             Environment.SetEnvironmentVariable("TORRENTARR_SETUP_TOKEN", null);
         }
+    }
+
+    [Theory]
+    [InlineData("")]
+    [InlineData("   ")]
+    public void IsAttemptToClearProtectedAuthValue_DetectsClears(string value)
+    {
+        WebUIAuthHelpers.IsAttemptToClearProtectedAuthValue(new JValue(value)).Should().BeTrue();
+    }
+
+    [Fact]
+    public void IsAttemptToClearProtectedAuthValue_NullToken_IsClear()
+    {
+        WebUIAuthHelpers.IsAttemptToClearProtectedAuthValue(JValue.CreateNull()).Should().BeTrue();
+    }
+
+    [Fact]
+    public void IsProtectedAuthDottedKey_MatchesPasswordHash()
+    {
+        WebUIAuthHelpers.IsProtectedAuthDottedKey("WebUI.PasswordHash").Should().BeTrue();
+        WebUIAuthHelpers.IsProtectedAuthDottedKey("Settings.LoopSleepTimer").Should().BeFalse();
     }
 }

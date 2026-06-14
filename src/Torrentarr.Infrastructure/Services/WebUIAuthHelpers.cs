@@ -1,5 +1,6 @@
 using System.Security.Cryptography;
 using System.Text;
+using Newtonsoft.Json.Linq;
 using Torrentarr.Core.Configuration;
 
 namespace Torrentarr.Infrastructure.Services;
@@ -79,4 +80,17 @@ public static class WebUIAuthHelpers
 
         return false;
     }
+
+    /// <summary>
+    /// Returns true for config keys that must not be cleared via the config API once set
+    /// (e.g. WebUI.PasswordHash), which would re-open bootstrap password reset with WebUI.Token.
+    /// </summary>
+    public static bool IsProtectedAuthDottedKey(string dottedKey) =>
+        string.Equals(dottedKey, "WebUI.PasswordHash", StringComparison.OrdinalIgnoreCase);
+
+    /// <summary>True when a config change value would clear a protected field (empty or null).</summary>
+    public static bool IsAttemptToClearProtectedAuthValue(JToken? value) =>
+        value == null
+        || value.Type == JTokenType.Null
+        || (value.Type == JTokenType.String && string.IsNullOrWhiteSpace(value.ToString()));
 }

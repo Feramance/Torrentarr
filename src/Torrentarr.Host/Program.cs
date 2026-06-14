@@ -2160,7 +2160,7 @@ try
             }
             else
             {
-                updatedConfig = Newtonsoft.Json.JsonConvert.DeserializeObject<TorrentarrConfig>(payload.GetRawText());
+                return Results.BadRequest(new { error = "Missing 'changes' field — partial updates required" });
             }
 
             if (updatedConfig == null)
@@ -2639,6 +2639,15 @@ static (TorrentarrConfig? updatedConfig, IResult? error) ApplyDottedConfigChange
     {
         if (string.Equals(change.Name, "Settings.ConfigVersion", StringComparison.OrdinalIgnoreCase))
             return (null, Results.Json(new { error = "Cannot modify protected configuration key: Settings.ConfigVersion" }, statusCode: 403));
+
+        if (WebUIAuthHelpers.IsProtectedAuthDottedKey(change.Name)
+            && !string.IsNullOrEmpty(cfg.WebUI.PasswordHash)
+            && WebUIAuthHelpers.IsAttemptToClearProtectedAuthValue(change.Value))
+        {
+            return (null, Results.Json(
+                new { error = "Cannot clear WebUI.PasswordHash via config API" },
+                statusCode: 403));
+        }
 
         if (IsSensitiveDottedKey(change.Name) &&
             change.Value.Type == Newtonsoft.Json.Linq.JTokenType.String &&

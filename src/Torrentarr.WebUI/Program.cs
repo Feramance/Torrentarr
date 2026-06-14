@@ -730,6 +730,15 @@ app.MapPost("/web/config", async (HttpContext ctx, TorrentarrConfig config, Conf
             if (string.Equals(key, "Settings.ConfigVersion", StringComparison.OrdinalIgnoreCase))
                 return Results.Json(new { error = "Cannot modify protected configuration key: Settings.ConfigVersion" }, statusCode: 403);
 
+            if (WebUIAuthHelpers.IsProtectedAuthDottedKey(key)
+                && !string.IsNullOrEmpty(config.WebUI.PasswordHash)
+                && WebUIAuthHelpers.IsAttemptToClearProtectedAuthValue(value))
+            {
+                return Results.Json(
+                    new { error = "Cannot clear WebUI.PasswordHash via config API" },
+                    statusCode: 403);
+            }
+
             // Never overwrite a real secret with the redaction placeholder from the frontend
             if (IsSensitiveDottedKey(key)
                 && value.Type == Newtonsoft.Json.Linq.JTokenType.String
