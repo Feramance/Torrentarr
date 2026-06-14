@@ -2149,19 +2149,15 @@ try
         try
         {
             var payload = await request.ReadFromJsonAsync<System.Text.Json.JsonElement>();
+            if (!payload.TryGetProperty("changes", out var changesEl))
+                return Results.BadRequest(new { error = "Missing 'changes' field" });
+
             TorrentarrConfig? updatedConfig;
-            if (payload.TryGetProperty("changes", out var changesEl))
-            {
-                var changesObj = Newtonsoft.Json.Linq.JObject.Parse(changesEl.GetRawText());
-                var (mergedConfig, applyError) = ApplyDottedConfigChanges(cfg, changesObj);
-                if (applyError != null)
-                    return applyError;
-                updatedConfig = mergedConfig;
-            }
-            else
-            {
-                updatedConfig = Newtonsoft.Json.JsonConvert.DeserializeObject<TorrentarrConfig>(payload.GetRawText());
-            }
+            var changesObj = Newtonsoft.Json.Linq.JObject.Parse(changesEl.GetRawText());
+            var (mergedConfig, applyError) = ApplyDottedConfigChanges(cfg, changesObj);
+            if (applyError != null)
+                return applyError;
+            updatedConfig = mergedConfig;
 
             if (updatedConfig == null)
                 return Results.BadRequest(new { error = "Invalid config payload" });
@@ -2643,6 +2639,10 @@ static (TorrentarrConfig? updatedConfig, IResult? error) ApplyDottedConfigChange
         if (IsSensitiveDottedKey(change.Name) &&
             change.Value.Type == Newtonsoft.Json.Linq.JTokenType.String &&
             change.Value.ToString() == REDACTED_PLACEHOLDER)
+            continue;
+
+        // PasswordHash is only writable via POST /web/auth/set-password, not config merge.
+        if (string.Equals(change.Name, "WebUI.PasswordHash", StringComparison.OrdinalIgnoreCase))
             continue;
 
         var parts = change.Name.Split('.');

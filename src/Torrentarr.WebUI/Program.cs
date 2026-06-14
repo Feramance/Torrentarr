@@ -736,6 +736,10 @@ app.MapPost("/web/config", async (HttpContext ctx, TorrentarrConfig config, Conf
                 && value.ToString() == "[redacted]")
                 continue;
 
+            // PasswordHash is only writable via POST /web/auth/set-password, not config merge.
+            if (string.Equals(key, "WebUI.PasswordHash", StringComparison.OrdinalIgnoreCase))
+                continue;
+
             ApplyDotPathChange(flatConfig, key, value);
         }
 

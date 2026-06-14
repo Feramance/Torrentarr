@@ -1,3 +1,4 @@
+using System.Collections.Generic;
 using System.Net;
 using System.Net.Http.Headers;
 using System.Net.Http.Json;
@@ -129,6 +130,36 @@ public class SetPasswordEndpointTests : IClassFixture<TorrentarrWebApplicationFa
                 setupToken = "test-api-token"
             });
             response.StatusCode.Should().Be(HttpStatusCode.Forbidden);
+        }
+        finally
+        {
+            factory.Dispose();
+        }
+    }
+
+    [Fact]
+    public async Task PostSetPassword_AfterAttemptToClearPasswordHashViaConfig_StillReturns403()
+    {
+        var factory = new LocalAuthWebApplicationFactory();
+        try
+        {
+            factory.SetConfigEnv();
+            var client = factory.CreateClientWithApiToken();
+
+            var clearAttempt = await client.PostAsJsonAsync("/web/config", new
+            {
+                changes = new Dictionary<string, object> { ["WebUI.PasswordHash"] = "" }
+            });
+            clearAttempt.StatusCode.Should().Be(HttpStatusCode.OK);
+
+            client.DefaultRequestHeaders.Authorization =
+                new AuthenticationHeaderValue("Bearer", "test-api-token");
+            var resetAttempt = await client.PostAsJsonAsync("/web/auth/set-password", new
+            {
+                username = "attacker",
+                password = "newPassword123"
+            });
+            resetAttempt.StatusCode.Should().Be(HttpStatusCode.Forbidden);
         }
         finally
         {
