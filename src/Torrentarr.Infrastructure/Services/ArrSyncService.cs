@@ -881,10 +881,27 @@ public class ArrSyncService
             .Where(t => t.ArrInstance == instanceName)
             .ToListAsync(ct);
 
+        // albumEntityByLidarrId is built from the albums API response only; merge persisted rows so
+        // track sync can still map Lidarr album IDs when album delete was skipped (empty API).
+        foreach (var album in await _db.Albums
+                     .Where(a => a.ArrInstance == instanceName && a.ArrId > 0)
+                     .ToListAsync(ct))
+        {
+            albumEntityByLidarrId.TryAdd(album.ArrId, album);
+        }
+
         if (ShouldSkipDestructiveDelete(allTracks.Count, existingTracks.Count, instanceName, "tracks"))
         {
             _logger.LogDebug("[{Instance}] ArrSyncService: Lidarr {Name} track sync skipped (suspicious empty API response)",
                 instanceName, instanceName);
+            return;
+        }
+
+        if (ShouldSkipTrackSyncWithoutAlbumMapping(albumEntityByLidarrId.Count, existingTracks.Count))
+        {
+            _logger.LogWarning(
+                "[{Instance}] ArrSyncService: refusing destructive track sync — no album mapping available but DB has {Count} track rows",
+                instanceName, existingTracks.Count);
             return;
         }
 
@@ -1311,6 +1328,12 @@ public class ArrSyncService
 
         return false;
     }
+
+    /// <summary>
+    /// Refuse Lidarr track wipe when no album ID mapping exists but local track rows remain.
+    /// </summary>
+    internal static bool ShouldSkipTrackSyncWithoutAlbumMapping(int albumMappingCount, int existingTrackCount)
+        => albumMappingCount == 0 && existingTrackCount > 0;
 
     /// <summary>
     /// §1.7: Scan freshly-synced queue items for entries matching ArrErrorCodesToBlocklist

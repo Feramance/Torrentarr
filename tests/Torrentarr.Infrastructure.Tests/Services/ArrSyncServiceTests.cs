@@ -238,6 +238,16 @@ public sealed class ArrSyncServiceTests : IDisposable
         result.Should().BeTrue();
     }
 
+    [Theory]
+    [InlineData(0, 5, true)]
+    [InlineData(0, 0, false)]
+    [InlineData(3, 5, false)]
+    public void ShouldSkipTrackSyncWithoutAlbumMapping_ReturnsExpected(int albumMapCount, int existingTracks, bool expected)
+    {
+        ArrSyncService.ShouldSkipTrackSyncWithoutAlbumMapping(albumMapCount, existingTracks)
+            .Should().Be(expected);
+    }
+
     [Fact]
     public async Task SyncQueueAsync_UnknownArrType_DoesNotThrow()
     {
