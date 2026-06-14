@@ -708,7 +708,9 @@ public class SeedingService : ISeedingService
                 }
 
                 var imported = await _dbContext.TorrentLibrary
-                    .AnyAsync(t => t.Hash == torrent.Hash && t.Imported, cancellationToken);
+                    .AnyAsync(t => t.Hash == torrent.Hash
+                        && t.QbitInstance == torrent.QBitInstanceName
+                        && t.Imported, cancellationToken);
 
                 if (imported)
                 {
@@ -747,6 +749,9 @@ public class SeedingService : ISeedingService
                     await EnsureTagsExistAsync(client, cancellationToken);
 
                 var torrents = await client.GetTorrentsAsync(category, cancellationToken: cancellationToken);
+                foreach (var t in torrents)
+                    t.QBitInstanceName = instanceName;
+
                 var completedTorrents = torrents.Where(t =>
                     t.Progress >= 1.0 &&
                     !HasTag(t, IgnoredTag) &&
@@ -755,7 +760,6 @@ public class SeedingService : ISeedingService
 
                 foreach (var torrent in completedTorrents)
                 {
-                    torrent.QBitInstanceName = instanceName;
                     try
                     {
                         await UpdateSingleTorrentSeedingTagAsync(client, torrent, cancellationToken);
@@ -851,7 +855,7 @@ public class SeedingService : ISeedingService
             if (_config.Settings.Tagless)
             {
                 await _dbContext.TorrentLibrary
-                    .Where(t => t.Hash == torrent.Hash)
+                    .Where(t => t.Hash == torrent.Hash && t.QbitInstance == torrent.QBitInstanceName)
                     .ExecuteUpdateAsync(s => s.SetProperty(t => t.AllowedSeeding, true), cancellationToken);
             }
             else
@@ -868,7 +872,7 @@ public class SeedingService : ISeedingService
             if (_config.Settings.Tagless)
             {
                 await _dbContext.TorrentLibrary
-                    .Where(t => t.Hash == torrent.Hash)
+                    .Where(t => t.Hash == torrent.Hash && t.QbitInstance == torrent.QBitInstanceName)
                     .ExecuteUpdateAsync(s => s.SetProperty(t => t.AllowedSeeding, false), cancellationToken);
             }
             else
@@ -888,7 +892,7 @@ public class SeedingService : ISeedingService
         if (_config.Settings.Tagless)
         {
             var dbEntry = _dbContext.TorrentLibrary.AsNoTracking()
-                .FirstOrDefault(t => t.Hash == torrent.Hash);
+                .FirstOrDefault(t => t.Hash == torrent.Hash && t.QbitInstance == torrent.QBitInstanceName);
             if (dbEntry == null) return false;
             return tag switch
             {

@@ -230,4 +230,42 @@ public class ConfigRedactionTests : IClassFixture<LocalAuthWebApplicationFactory
         });
         loginAfter.StatusCode.Should().Be(HttpStatusCode.OK, "login should still work because [redacted] must not overwrite the real hash");
     }
+
+    /// <summary>POST /web/config with PasswordHash="" must not clear an existing bcrypt hash (auth bypass).</summary>
+    [Fact]
+    public async Task PostConfig_WithEmptyPasswordHash_DoesNotClearRealHash()
+    {
+        _factory.SetConfigEnv();
+        var client = _factory.CreateClientWithApiToken();
+
+        var payload = new { changes = new Dictionary<string, object> { ["WebUI.PasswordHash"] = "" } };
+        var patchResponse = await client.PostAsJsonAsync("/web/config", payload);
+        patchResponse.StatusCode.Should().Be(HttpStatusCode.OK);
+
+        var loginAfter = await client.PostAsJsonAsync("/web/login", new
+        {
+            username = LocalAuthWebApplicationFactory.TestUsername,
+            password = LocalAuthWebApplicationFactory.TestPassword
+        });
+        loginAfter.StatusCode.Should().Be(HttpStatusCode.OK, "empty PasswordHash must not clear the stored hash");
+    }
+
+    /// <summary>POST /api/config with PasswordHash="" must not clear an existing bcrypt hash.</summary>
+    [Fact]
+    public async Task PostApiConfig_WithEmptyPasswordHash_DoesNotClearRealHash()
+    {
+        _factory.SetConfigEnv();
+        var client = _factory.CreateClientWithApiToken();
+
+        var payload = new { changes = new Dictionary<string, object> { ["WebUI.PasswordHash"] = "" } };
+        var patchResponse = await client.PostAsJsonAsync("/api/config", payload);
+        patchResponse.StatusCode.Should().Be(HttpStatusCode.OK);
+
+        var loginAfter = await client.PostAsJsonAsync("/web/login", new
+        {
+            username = LocalAuthWebApplicationFactory.TestUsername,
+            password = LocalAuthWebApplicationFactory.TestPassword
+        });
+        loginAfter.StatusCode.Should().Be(HttpStatusCode.OK, "empty PasswordHash must not clear the stored hash via /api/config");
+    }
 }

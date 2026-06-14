@@ -2640,6 +2640,9 @@ static (TorrentarrConfig? updatedConfig, IResult? error) ApplyDottedConfigChange
         if (string.Equals(change.Name, "Settings.ConfigVersion", StringComparison.OrdinalIgnoreCase))
             return (null, Results.Json(new { error = "Cannot modify protected configuration key: Settings.ConfigVersion" }, statusCode: 403));
 
+        if (string.Equals(change.Name, "WebUI.PasswordHash", StringComparison.OrdinalIgnoreCase))
+            continue;
+
         if (IsSensitiveDottedKey(change.Name) &&
             change.Value.Type == Newtonsoft.Json.Linq.JTokenType.String &&
             change.Value.ToString() == REDACTED_PLACEHOLDER)

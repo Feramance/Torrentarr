@@ -730,6 +730,10 @@ app.MapPost("/web/config", async (HttpContext ctx, TorrentarrConfig config, Conf
             if (string.Equals(key, "Settings.ConfigVersion", StringComparison.OrdinalIgnoreCase))
                 return Results.Json(new { error = "Cannot modify protected configuration key: Settings.ConfigVersion" }, statusCode: 403);
 
+            // Password changes must go through POST /web/auth/set-password
+            if (string.Equals(key, "WebUI.PasswordHash", StringComparison.OrdinalIgnoreCase))
+                continue;
+
             // Never overwrite a real secret with the redaction placeholder from the frontend
             if (IsSensitiveDottedKey(key)
                 && value.Type == Newtonsoft.Json.Linq.JTokenType.String
