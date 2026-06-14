@@ -736,6 +736,9 @@ app.MapPost("/web/config", async (HttpContext ctx, TorrentarrConfig config, Conf
                 && value.ToString() == "[redacted]")
                 continue;
 
+            if (IsProtectedAuthDottedKey(key))
+                return Results.Json(new { error = $"Cannot modify protected configuration key: {key}" }, statusCode: 403);
+
             ApplyDotPathChange(flatConfig, key, value);
         }
 
@@ -1572,6 +1575,10 @@ static bool IsSensitiveDottedKey(string dottedKey)
     var lastPart = dottedKey.Contains('.') ? dottedKey[(dottedKey.LastIndexOf('.') + 1)..] : dottedKey;
     return System.Text.RegularExpressions.Regex.IsMatch(lastPart, pattern, System.Text.RegularExpressions.RegexOptions.IgnoreCase);
 }
+
+static bool IsProtectedAuthDottedKey(string dottedKey) =>
+    string.Equals(dottedKey, "WebUI.PasswordHash", StringComparison.OrdinalIgnoreCase)
+    || string.Equals(dottedKey, "WebUI.Username", StringComparison.OrdinalIgnoreCase);
 
 app.Run();
 

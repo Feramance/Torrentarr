@@ -2149,19 +2149,14 @@ try
         try
         {
             var payload = await request.ReadFromJsonAsync<System.Text.Json.JsonElement>();
-            TorrentarrConfig? updatedConfig;
-            if (payload.TryGetProperty("changes", out var changesEl))
-            {
-                var changesObj = Newtonsoft.Json.Linq.JObject.Parse(changesEl.GetRawText());
-                var (mergedConfig, applyError) = ApplyDottedConfigChanges(cfg, changesObj);
-                if (applyError != null)
-                    return applyError;
-                updatedConfig = mergedConfig;
-            }
-            else
-            {
-                updatedConfig = Newtonsoft.Json.JsonConvert.DeserializeObject<TorrentarrConfig>(payload.GetRawText());
-            }
+            if (!payload.TryGetProperty("changes", out var changesEl))
+                return Results.BadRequest(new { error = "Missing 'changes' field" });
+
+            var changesObj = Newtonsoft.Json.Linq.JObject.Parse(changesEl.GetRawText());
+            var (mergedConfig, applyError) = ApplyDottedConfigChanges(cfg, changesObj);
+            if (applyError != null)
+                return applyError;
+            var updatedConfig = mergedConfig;
 
             if (updatedConfig == null)
                 return Results.BadRequest(new { error = "Invalid config payload" });
@@ -2645,6 +2640,9 @@ static (TorrentarrConfig? updatedConfig, IResult? error) ApplyDottedConfigChange
             change.Value.ToString() == REDACTED_PLACEHOLDER)
             continue;
 
+        if (IsProtectedAuthDottedKey(change.Name))
+            return (null, Results.Json(new { error = $"Cannot modify protected configuration key: {change.Name}" }, statusCode: 403));
+
         var parts = change.Name.Split('.');
         var rawSectionKey = parts[0];
         var sectionKey = currentObj.Properties()
@@ -2767,6 +2765,13 @@ static bool IsSensitiveDottedKey(string dottedKey)
     var lastPart = dottedKey[(dottedKey.LastIndexOf('.') + 1)..];
     return System.Text.RegularExpressions.Regex.IsMatch(lastPart, SensitiveKeyPatternRegex, System.Text.RegularExpressions.RegexOptions.IgnoreCase);
 }
+
+/// <summary>
+/// Auth credentials must be changed via POST /web/auth/set-password, not config PATCH.
+/// </summary>
+static bool IsProtectedAuthDottedKey(string dottedKey) =>
+    string.Equals(dottedKey, "WebUI.PasswordHash", StringComparison.OrdinalIgnoreCase)
+    || string.Equals(dottedKey, "WebUI.Username", StringComparison.OrdinalIgnoreCase);
 
 /// <summary>
 /// Recursively sets a value in a JObject following a dot-split path array starting at startIndex.

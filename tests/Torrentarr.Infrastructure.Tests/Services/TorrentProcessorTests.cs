@@ -4,6 +4,7 @@ using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging.Abstractions;
 using Torrentarr.Core.Configuration;
 using Torrentarr.Infrastructure.Database;
+using Torrentarr.Infrastructure.Database.Models;
 using Torrentarr.Infrastructure.Services;
 using Xunit;
 
@@ -164,5 +165,34 @@ public sealed class TorrentProcessorTests : IDisposable
         var act = async () => await svc.ImportTorrentAsync("abc123def456");
 
         await act.Should().NotThrowAsync();
+    }
+
+    [Fact]
+    public void HasTag_TaglessMode_ScopesFreeSpacePausedByQbitInstance()
+    {
+        var config = new TorrentarrConfig { Settings = { Tagless = true } };
+        _db.TorrentLibrary.AddRange(
+            new TorrentLibrary { Hash = "abc123", Category = "radarr", QbitInstance = "qBit", FreeSpacePaused = true },
+            new TorrentLibrary { Hash = "abc123", Category = "radarr", QbitInstance = "qBit-seedbox", FreeSpacePaused = false });
+        _db.SaveChanges();
+
+        var svc = CreateProcessor(config);
+        var hasTag = typeof(TorrentProcessor).GetMethod(
+            "HasTag",
+            System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance)!;
+
+        var pausedOnPrimary = (bool)hasTag.Invoke(svc, new object[]
+        {
+            new Torrentarr.Core.Models.TorrentInfo { Hash = "abc123", QBitInstanceName = "qBit" },
+            "qBitrr-free_space_paused"
+        })!;
+        var pausedOnSeedbox = (bool)hasTag.Invoke(svc, new object[]
+        {
+            new Torrentarr.Core.Models.TorrentInfo { Hash = "abc123", QBitInstanceName = "qBit-seedbox" },
+            "qBitrr-free_space_paused"
+        })!;
+
+        pausedOnPrimary.Should().BeTrue();
+        pausedOnSeedbox.Should().BeFalse();
     }
 }

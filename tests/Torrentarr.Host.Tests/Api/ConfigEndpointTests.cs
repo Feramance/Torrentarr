@@ -170,6 +170,14 @@ public class ConfigEndpointTests : IClassFixture<TorrentarrWebApplicationFactory
         afterJson.GetProperty("Settings").GetProperty("LoopSleepTimer").GetInt32().Should().Be(42);
         afterJson.GetProperty("WebUI").GetProperty("Port").GetInt32().Should().Be(originalPort);
     }
+
+    [Fact]
+    public async Task PostApiConfig_WithoutChanges_Returns400()
+    {
+        var client = _factory.CreateClientWithApiToken();
+        var response = await client.PostAsJsonAsync("/api/config", new { Settings = new { LoopSleepTimer = 42 } });
+        response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
+    }
 }
 
 /// <summary>
@@ -229,5 +237,41 @@ public class ConfigRedactionTests : IClassFixture<LocalAuthWebApplicationFactory
             password = LocalAuthWebApplicationFactory.TestPassword
         });
         loginAfter.StatusCode.Should().Be(HttpStatusCode.OK, "login should still work because [redacted] must not overwrite the real hash");
+    }
+
+    [Fact]
+    public async Task PostConfig_WithNewPasswordHash_Returns403()
+    {
+        _factory.SetConfigEnv();
+        var client = _factory.CreateClientWithApiToken();
+        var payload = new
+        {
+            changes = new Dictionary<string, object>
+            {
+                ["WebUI.PasswordHash"] = "$2a$11$attackercontrolledhashvalue"
+            }
+        };
+
+        var response = await client.PostAsJsonAsync("/web/config", payload);
+
+        response.StatusCode.Should().Be(HttpStatusCode.Forbidden);
+    }
+
+    [Fact]
+    public async Task PostApiConfig_WithNewPasswordHash_Returns403()
+    {
+        _factory.SetConfigEnv();
+        var client = _factory.CreateClientWithApiToken();
+        var payload = new
+        {
+            changes = new Dictionary<string, object>
+            {
+                ["WebUI.PasswordHash"] = "$2a$11$attackercontrolledhashvalue"
+            }
+        };
+
+        var response = await client.PostAsJsonAsync("/api/config", payload);
+
+        response.StatusCode.Should().Be(HttpStatusCode.Forbidden);
     }
 }
