@@ -239,6 +239,45 @@ public sealed class ArrSyncServiceTests : IDisposable
     }
 
     [Fact]
+    public void ShouldSkipDestructiveTrackSync_EmptyApiWithExistingRows_ReturnsTrue()
+    {
+        var svc = CreateService();
+        var method = typeof(ArrSyncService).GetMethod(
+            "ShouldSkipDestructiveTrackSync",
+            System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance)!;
+
+        var result = (bool)method.Invoke(svc, new object[] { 0, 8, 0, "Lidarr-test" })!;
+
+        result.Should().BeTrue();
+    }
+
+    [Fact]
+    public void ShouldSkipDestructiveTrackSync_NonEmptyApiWithNoMappableTracks_ReturnsTrue()
+    {
+        var svc = CreateService();
+        var method = typeof(ArrSyncService).GetMethod(
+            "ShouldSkipDestructiveTrackSync",
+            System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance)!;
+
+        var result = (bool)method.Invoke(svc, new object[] { 15, 8, 0, "Lidarr-test" })!;
+
+        result.Should().BeTrue("albums API empty + tracks API non-empty must not wipe SQLite tracks");
+    }
+
+    [Fact]
+    public void ShouldSkipDestructiveTrackSync_MappableTracks_ReturnsFalse()
+    {
+        var svc = CreateService();
+        var method = typeof(ArrSyncService).GetMethod(
+            "ShouldSkipDestructiveTrackSync",
+            System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance)!;
+
+        var result = (bool)method.Invoke(svc, new object[] { 15, 8, 12, "Lidarr-test" })!;
+
+        result.Should().BeFalse();
+    }
+
+    [Fact]
     public async Task SyncQueueAsync_UnknownArrType_DoesNotThrow()
     {
         // The switch has no default case for unknown types — falls through silently.
