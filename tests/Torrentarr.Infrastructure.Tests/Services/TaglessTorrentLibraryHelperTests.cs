@@ -88,13 +88,19 @@ public class TaglessTorrentLibraryHelperTests
         db.TorrentLibrary.AddRange(
             new()
             {
-                Hash = "abc123", Category = "radarr", QbitInstance = "qBit",
-                FreeSpacePaused = true, AllowedSeeding = false
+                Hash = "abc123",
+                Category = "radarr",
+                QbitInstance = "qBit",
+                FreeSpacePaused = true,
+                AllowedSeeding = false
             },
             new()
             {
-                Hash = "abc123", Category = "radarr", QbitInstance = "qBit-seedbox",
-                FreeSpacePaused = false, AllowedSeeding = true
+                Hash = "abc123",
+                Category = "radarr",
+                QbitInstance = "qBit-seedbox",
+                FreeSpacePaused = false,
+                AllowedSeeding = true
             });
         await db.SaveChangesAsync();
 
@@ -118,7 +124,10 @@ public class TaglessTorrentLibraryHelperTests
         await using var db = CreateDb();
         db.TorrentLibrary.Add(new()
         {
-            Hash = "abc123", Category = "radarr", QbitInstance = "qBit", FreeSpacePaused = true
+            Hash = "abc123",
+            Category = "radarr",
+            QbitInstance = "qBit",
+            FreeSpacePaused = true
         });
         await db.SaveChangesAsync();
 
