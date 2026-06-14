@@ -12,12 +12,19 @@ public interface ISeedingService
     /// <summary>
     /// Check if a torrent meets seeding requirements and can be removed
     /// </summary>
-    Task<bool> MeetsSeedingRequirementsAsync(string hash, string category, CancellationToken cancellationToken = default);
+    Task<bool> MeetsSeedingRequirementsAsync(
+        string hash,
+        string category,
+        string? qBitInstanceName = null,
+        CancellationToken cancellationToken = default);
 
     /// <summary>
     /// Get seeding statistics for a torrent. Returns null if the torrent is not found.
     /// </summary>
-    Task<SeedingStats?> GetSeedingStatsAsync(string hash, CancellationToken cancellationToken = default);
+    Task<SeedingStats?> GetSeedingStatsAsync(
+        string hash,
+        string? qBitInstanceName = null,
+        CancellationToken cancellationToken = default);
 
     /// <summary>
     /// Check if torrent is protected by Hit &amp; Run rules

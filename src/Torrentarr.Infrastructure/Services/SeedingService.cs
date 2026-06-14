@@ -90,11 +90,15 @@ public class SeedingService : ISeedingService
     private QBittorrentClient? GetClient(TorrentInfo torrent)
         => _qbitManager.GetClient(torrent.QBitInstanceName);
 
-    public async Task<bool> MeetsSeedingRequirementsAsync(string hash, string category, CancellationToken cancellationToken = default)
+    public async Task<bool> MeetsSeedingRequirementsAsync(
+        string hash,
+        string category,
+        string? qBitInstanceName = null,
+        CancellationToken cancellationToken = default)
     {
         _logger.LogTrace("Checking seeding requirements for hash {Hash} in category {Category}", hash, category);
 
-        var stats = await GetSeedingStatsAsync(hash, cancellationToken);
+        var stats = await GetSeedingStatsAsync(hash, qBitInstanceName, cancellationToken);
 
         if (stats == null)
         {
@@ -144,19 +148,35 @@ public class SeedingService : ISeedingService
         return result;
     }
 
-    public async Task<SeedingStats?> GetSeedingStatsAsync(string hash, CancellationToken cancellationToken = default)
+    public async Task<SeedingStats?> GetSeedingStatsAsync(
+        string hash,
+        string? qBitInstanceName = null,
+        CancellationToken cancellationToken = default)
     {
-        // Search all qBit instances for this hash
         TorrentInfo? torrent = null;
-        foreach (var (instanceName, client) in _qbitManager.GetAllClients())
+        if (!string.IsNullOrEmpty(qBitInstanceName))
         {
-            var torrents = await client.GetTorrentsAsync(cancellationToken: cancellationToken);
-            var found = torrents.FirstOrDefault(t => t.Hash.Equals(hash, StringComparison.OrdinalIgnoreCase));
-            if (found != null)
+            var client = _qbitManager.GetClient(qBitInstanceName);
+            if (client != null)
             {
-                found.QBitInstanceName = instanceName;
-                torrent = found;
-                break;
+                var torrents = await client.GetTorrentsAsync(cancellationToken: cancellationToken);
+                torrent = torrents.FirstOrDefault(t => t.Hash.Equals(hash, StringComparison.OrdinalIgnoreCase));
+                if (torrent != null)
+                    torrent.QBitInstanceName = qBitInstanceName;
+            }
+        }
+        else
+        {
+            foreach (var (instanceName, client) in _qbitManager.GetAllClients())
+            {
+                var torrents = await client.GetTorrentsAsync(cancellationToken: cancellationToken);
+                var found = torrents.FirstOrDefault(t => t.Hash.Equals(hash, StringComparison.OrdinalIgnoreCase));
+                if (found != null)
+                {
+                    found.QBitInstanceName = instanceName;
+                    torrent = found;
+                    break;
+                }
             }
         }
 
@@ -708,7 +728,9 @@ public class SeedingService : ISeedingService
                 }
 
                 var imported = await _dbContext.TorrentLibrary
-                    .AnyAsync(t => t.Hash == torrent.Hash && t.Imported, cancellationToken);
+                    .AnyAsync(t => t.Hash == torrent.Hash
+                        && t.QbitInstance == torrent.QBitInstanceName
+                        && t.Imported, cancellationToken);
 
                 if (imported)
                 {
@@ -843,7 +865,8 @@ public class SeedingService : ISeedingService
         TorrentInfo torrent,
         CancellationToken cancellationToken)
     {
-        var meetsRequirements = await MeetsSeedingRequirementsAsync(torrent.Hash, torrent.Category, cancellationToken);
+        var meetsRequirements = await MeetsSeedingRequirementsAsync(
+            torrent.Hash, torrent.Category, torrent.QBitInstanceName, cancellationToken);
         var hasAllowedSeedingTag = HasTag(torrent, AllowedSeedingTag);
 
         if (meetsRequirements && !hasAllowedSeedingTag)
@@ -851,7 +874,7 @@ public class SeedingService : ISeedingService
             if (_config.Settings.Tagless)
             {
                 await _dbContext.TorrentLibrary
-                    .Where(t => t.Hash == torrent.Hash)
+                    .Where(t => t.Hash == torrent.Hash && t.QbitInstance == torrent.QBitInstanceName)
                     .ExecuteUpdateAsync(s => s.SetProperty(t => t.AllowedSeeding, true), cancellationToken);
             }
             else
@@ -868,7 +891,7 @@ public class SeedingService : ISeedingService
             if (_config.Settings.Tagless)
             {
                 await _dbContext.TorrentLibrary
-                    .Where(t => t.Hash == torrent.Hash)
+                    .Where(t => t.Hash == torrent.Hash && t.QbitInstance == torrent.QBitInstanceName)
                     .ExecuteUpdateAsync(s => s.SetProperty(t => t.AllowedSeeding, false), cancellationToken);
             }
             else
@@ -887,8 +910,8 @@ public class SeedingService : ISeedingService
         // §1.6 Tagless mode: map tag names to TorrentLibrary DB columns
         if (_config.Settings.Tagless)
         {
-            var dbEntry = _dbContext.TorrentLibrary.AsNoTracking()
-                .FirstOrDefault(t => t.Hash == torrent.Hash);
+            var dbEntry = TaglessTorrentLibraryHelper.FindEntry(
+                _dbContext, torrent.Hash, torrent.QBitInstanceName);
             if (dbEntry == null) return false;
             return tag switch
             {

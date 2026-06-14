@@ -10,6 +10,13 @@ namespace Torrentarr.Infrastructure.Services;
 public static class TaglessTorrentLibraryHelper
 {
     /// <summary>
+    /// Look up a tagless TorrentLibrary row scoped to a single qBit instance.
+    /// </summary>
+    public static TorrentLibrary? FindEntry(TorrentarrDbContext db, string hash, string qbitInstance)
+        => db.TorrentLibrary.AsNoTracking()
+            .FirstOrDefault(t => t.Hash == hash && t.QbitInstance == qbitInstance);
+
+    /// <summary>
     /// Set <see cref="TorrentLibrary.FreeSpacePaused"/> in tagless mode.
     /// When pausing, upserts a row if the torrent is not yet in the database — otherwise
     /// the update is a no-op and TorrentProcessor resumes the free-space pause.

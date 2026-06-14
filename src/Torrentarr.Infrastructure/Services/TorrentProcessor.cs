@@ -1001,8 +1001,8 @@ public class TorrentProcessor : ITorrentProcessor
         if (_config.Settings.Tagless)
         {
             if (tag == IgnoredTag) return false;
-            var dbEntry = _dbContext.TorrentLibrary.AsNoTracking()
-                .FirstOrDefault(t => t.Hash == torrent.Hash);
+            var dbEntry = TaglessTorrentLibraryHelper.FindEntry(
+                _dbContext, torrent.Hash, torrent.QBitInstanceName);
             if (dbEntry == null) return false;
             return tag switch
             {

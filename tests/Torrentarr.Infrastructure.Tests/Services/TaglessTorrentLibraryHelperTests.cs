@@ -63,6 +63,20 @@ public class TaglessTorrentLibraryHelperTests
     }
 
     [Fact]
+    public void FindEntry_ScopedPerQbitInstance()
+    {
+        using var db = CreateDb();
+        db.TorrentLibrary.AddRange(
+            new() { Hash = "abc123", Category = "radarr", QbitInstance = "qBit", FreeSpacePaused = true },
+            new() { Hash = "abc123", Category = "radarr", QbitInstance = "qBit-seedbox", FreeSpacePaused = false });
+        db.SaveChanges();
+
+        TaglessTorrentLibraryHelper.FindEntry(db, "abc123", "qBit")!.FreeSpacePaused.Should().BeTrue();
+        TaglessTorrentLibraryHelper.FindEntry(db, "abc123", "qBit-seedbox")!.FreeSpacePaused.Should().BeFalse();
+        TaglessTorrentLibraryHelper.FindEntry(db, "abc123", "missing").Should().BeNull();
+    }
+
+    [Fact]
     public async Task SetFreeSpacePaused_ScopedPerQbitInstance()
     {
         await using var db = CreateDb();
