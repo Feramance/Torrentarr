@@ -266,7 +266,7 @@ public class ArrSyncService
         }
 
         var toDelete = dbQueue.Values.Where(q => !apiQueueIds.Contains(q.QueueId ?? 0)).ToList();
-        if (toDelete.Count > 0)
+        if (toDelete.Count > 0 && !ShouldSkipDestructiveDelete(queueItems.Count, dbQueue.Count, instanceName, "queue"))
             _db.MovieQueue.RemoveRange(toDelete);
 
         await _db.SaveChangesAsync(ct);
@@ -475,7 +475,7 @@ public class ArrSyncService
         }
 
         var toDelete = dbQueue.Values.Where(q => !apiQueueIds.Contains(q.QueueId ?? 0)).ToList();
-        if (toDelete.Count > 0)
+        if (toDelete.Count > 0 && !ShouldSkipDestructiveDelete(queueItems.Count, dbQueue.Count, instanceName, "queue"))
             _db.EpisodeQueue.RemoveRange(toDelete);
 
         await _db.SaveChangesAsync(ct);
@@ -881,6 +881,14 @@ public class ArrSyncService
             .Where(t => t.ArrInstance == instanceName)
             .ToListAsync(ct);
 
+        if (albums.Count == 0 && (dbAlbums.Count > 0 || existingTracks.Count > 0))
+        {
+            _logger.LogWarning(
+                "[{Instance}] ArrSyncService: refusing destructive track sync — albums API returned no items but DB has {AlbumCount} albums and {TrackCount} tracks",
+                instanceName, dbAlbums.Count, existingTracks.Count);
+            return;
+        }
+
         if (ShouldSkipDestructiveDelete(allTracks.Count, existingTracks.Count, instanceName, "tracks"))
         {
             _logger.LogDebug("[{Instance}] ArrSyncService: Lidarr {Name} track sync skipped (suspicious empty API response)",
@@ -954,7 +962,7 @@ public class ArrSyncService
         }
 
         var toDelete = dbQueue.Values.Where(q => !apiQueueIds.Contains(q.QueueId ?? 0)).ToList();
-        if (toDelete.Count > 0)
+        if (toDelete.Count > 0 && !ShouldSkipDestructiveDelete(queueItems.Count, dbQueue.Count, instanceName, "queue"))
             _db.AlbumQueue.RemoveRange(toDelete);
 
         await _db.SaveChangesAsync(ct);

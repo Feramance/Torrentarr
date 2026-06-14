@@ -226,6 +226,7 @@ public sealed class ArrSyncServiceTests : IDisposable
     [Theory]
     [InlineData("artists")]
     [InlineData("albums")]
+    [InlineData("queue")]
     public void ShouldSkipDestructiveDelete_LidarrEntities_EmptyApiWithExistingRows_ReturnsTrue(string entityName)
     {
         var svc = CreateService();

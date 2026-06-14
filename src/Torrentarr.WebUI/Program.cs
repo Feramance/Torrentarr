@@ -730,10 +730,11 @@ app.MapPost("/web/config", async (HttpContext ctx, TorrentarrConfig config, Conf
             if (string.Equals(key, "Settings.ConfigVersion", StringComparison.OrdinalIgnoreCase))
                 return Results.Json(new { error = "Cannot modify protected configuration key: Settings.ConfigVersion" }, statusCode: 403);
 
-            // Never overwrite a real secret with the redaction placeholder from the frontend
+            // Never overwrite a real secret with the redaction placeholder or empty/null from the frontend
             if (IsSensitiveDottedKey(key)
-                && value.Type == Newtonsoft.Json.Linq.JTokenType.String
-                && value.ToString() == "[redacted]")
+                && (value.Type == Newtonsoft.Json.Linq.JTokenType.Null
+                    || (value.Type == Newtonsoft.Json.Linq.JTokenType.String
+                        && (value.ToString() == "[redacted]" || string.IsNullOrEmpty(value.ToString())))))
                 continue;
 
             ApplyDotPathChange(flatConfig, key, value);

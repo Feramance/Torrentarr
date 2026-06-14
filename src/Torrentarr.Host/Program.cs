@@ -2641,8 +2641,9 @@ static (TorrentarrConfig? updatedConfig, IResult? error) ApplyDottedConfigChange
             return (null, Results.Json(new { error = "Cannot modify protected configuration key: Settings.ConfigVersion" }, statusCode: 403));
 
         if (IsSensitiveDottedKey(change.Name) &&
-            change.Value.Type == Newtonsoft.Json.Linq.JTokenType.String &&
-            change.Value.ToString() == REDACTED_PLACEHOLDER)
+            (change.Value.Type == Newtonsoft.Json.Linq.JTokenType.Null ||
+             (change.Value.Type == Newtonsoft.Json.Linq.JTokenType.String &&
+              (change.Value.ToString() == REDACTED_PLACEHOLDER || string.IsNullOrEmpty(change.Value.ToString())))))
             continue;
 
         var parts = change.Name.Split('.');
