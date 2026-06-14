@@ -851,7 +851,7 @@ public class SeedingService : ISeedingService
             if (_config.Settings.Tagless)
             {
                 await _dbContext.TorrentLibrary
-                    .Where(t => t.Hash == torrent.Hash)
+                    .Where(t => t.Hash == torrent.Hash && t.QbitInstance == torrent.QBitInstanceName)
                     .ExecuteUpdateAsync(s => s.SetProperty(t => t.AllowedSeeding, true), cancellationToken);
             }
             else
@@ -868,7 +868,7 @@ public class SeedingService : ISeedingService
             if (_config.Settings.Tagless)
             {
                 await _dbContext.TorrentLibrary
-                    .Where(t => t.Hash == torrent.Hash)
+                    .Where(t => t.Hash == torrent.Hash && t.QbitInstance == torrent.QBitInstanceName)
                     .ExecuteUpdateAsync(s => s.SetProperty(t => t.AllowedSeeding, false), cancellationToken);
             }
             else
@@ -888,7 +888,7 @@ public class SeedingService : ISeedingService
         if (_config.Settings.Tagless)
         {
             var dbEntry = _dbContext.TorrentLibrary.AsNoTracking()
-                .FirstOrDefault(t => t.Hash == torrent.Hash);
+                .FirstOrDefault(t => t.Hash == torrent.Hash && t.QbitInstance == torrent.QBitInstanceName);
             if (dbEntry == null) return false;
             return tag switch
             {
@@ -1141,6 +1141,14 @@ public class SeedingService : ISeedingService
 
             if (removeDead)
             {
+                if (!await HnrAllowsDeleteAsync(torrent, "RemoveDeadTrackers", ct))
+                {
+                    _logger.LogDebug(
+                        "RemoveDeadTrackers: keeping torrent [{Name}] — Hit and Run protection active",
+                        torrent.Name);
+                    return;
+                }
+
                 _logger.LogWarning(
                     "RemoveTrackerWithMessage+RemoveDeadTrackers: deleting torrent [{Name}] — tracker {Url} reported \"{Msg}\"",
                     torrent.Name, tracker.Url, msg);

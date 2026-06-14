@@ -331,6 +331,45 @@ public class SeedingServiceTests
         result.Should().BeTrue();
     }
 
+    [Fact]
+    public void HasTag_TaglessMode_ScopesFreeSpacePausedPerQbitInstance()
+    {
+        const string freeSpacePausedTag = "qBitrr-free_space_paused";
+        var config = new TorrentarrConfig { Settings = { Tagless = true } };
+        var options = new DbContextOptionsBuilder<TorrentarrDbContext>()
+            .UseInMemoryDatabase(Guid.NewGuid().ToString())
+            .Options;
+        using var db = new TorrentarrDbContext(options);
+        db.TorrentLibrary.AddRange(
+            new() { Hash = "abc123", Category = "radarr", QbitInstance = "qBit", FreeSpacePaused = false },
+            new() { Hash = "abc123", Category = "radarr", QbitInstance = "qBit-seedbox", FreeSpacePaused = true });
+        db.SaveChanges();
+
+        var mgr = new QBittorrentConnectionManager(NullLogger<QBittorrentConnectionManager>.Instance);
+        var svc = new SeedingService(
+            NullLogger<SeedingService>.Instance,
+            db,
+            config,
+            mgr);
+
+        var method = typeof(SeedingService).GetMethod(
+            "HasTag",
+            System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance)!;
+
+        var localTorrent = MakeTorrent(1.0, 1.0, 1000);
+        localTorrent.Hash = "abc123";
+        localTorrent.QBitInstanceName = "qBit";
+        var seedboxTorrent = MakeTorrent(1.0, 1.0, 1000);
+        seedboxTorrent.Hash = "abc123";
+        seedboxTorrent.QBitInstanceName = "qBit-seedbox";
+
+        var localPaused = (bool)method.Invoke(svc, new object[] { localTorrent, freeSpacePausedTag })!;
+        var seedboxPaused = (bool)method.Invoke(svc, new object[] { seedboxTorrent, freeSpacePausedTag })!;
+
+        localPaused.Should().BeFalse();
+        seedboxPaused.Should().BeTrue();
+    }
+
     // ── ShouldRemoveTorrentAsync state-based logic ───────────────────────────────
 
     [Fact]

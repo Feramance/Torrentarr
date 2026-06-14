@@ -245,8 +245,17 @@ public class TorrentProcessor : ITorrentProcessor
                     string.Equals(a.Category, libraryEntry.Category, StringComparison.OrdinalIgnoreCase));
                 if (arrCfgForDelete?.Torrent.AutoDelete == true)
                 {
-                    _logger.LogInformation("AutoDelete: removing torrent {Hash} after successful import", hash);
-                    await client.DeleteTorrentsAsync(new List<string> { hash }, deleteFiles: false, cancellationToken);
+                    var hnrAllows = _seedingService == null
+                        || await _seedingService.HnrAllowsDeleteAsync(torrent, "AutoDelete after import", cancellationToken);
+                    if (hnrAllows)
+                    {
+                        _logger.LogInformation("AutoDelete: removing torrent {Hash} after successful import", hash);
+                        await client.DeleteTorrentsAsync(new List<string> { hash }, deleteFiles: false, cancellationToken);
+                    }
+                    else
+                    {
+                        _logger.LogInformation("AutoDelete: keeping torrent {Hash} — Hit and Run protection active", hash);
+                    }
                 }
             }
             else
@@ -1002,7 +1011,7 @@ public class TorrentProcessor : ITorrentProcessor
         {
             if (tag == IgnoredTag) return false;
             var dbEntry = _dbContext.TorrentLibrary.AsNoTracking()
-                .FirstOrDefault(t => t.Hash == torrent.Hash);
+                .FirstOrDefault(t => t.Hash == torrent.Hash && t.QbitInstance == torrent.QBitInstanceName);
             if (dbEntry == null) return false;
             return tag switch
             {
