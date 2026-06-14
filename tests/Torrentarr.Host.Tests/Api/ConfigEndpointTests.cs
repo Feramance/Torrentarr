@@ -172,6 +172,74 @@ public class ConfigEndpointTests : IClassFixture<TorrentarrWebApplicationFactory
     }
 }
 
+[Collection("HostWeb")]
+public class QBitChangeMeConfigEndpointTests : IClassFixture<QBitChangeMeWebApplicationFactory>
+{
+    private readonly QBitChangeMeWebApplicationFactory _factory;
+
+    public QBitChangeMeConfigEndpointTests(QBitChangeMeWebApplicationFactory factory)
+    {
+        _factory = factory;
+    }
+
+    [Fact]
+    public async Task PostConfig_PreservesQBitCategorySeeding_WhenHostIsChangeMe()
+    {
+        var client = _factory.CreateClientWithApiToken();
+        var payload = new
+        {
+            changes = new Dictionary<string, object>
+            {
+                ["Settings.LoopSleepTimer"] = 99
+            }
+        };
+
+        var response = await client.PostAsJsonAsync("/web/config", payload);
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+
+        var saved = await File.ReadAllTextAsync(_factory.TempConfigPath);
+        saved.Should().Contain("[qBit]");
+        saved.Should().Contain("MinSeedRatio = 2.5");
+        saved.Should().Contain("LoopSleepTimer = 99");
+    }
+}
+
+/// <summary>
+/// Host factory with [qBit] Host=CHANGE_ME and customized CategorySeeding (manual TOML edit before host setup).
+/// </summary>
+public sealed class QBitChangeMeWebApplicationFactory : TorrentarrWebApplicationFactory
+{
+    public QBitChangeMeWebApplicationFactory() => RewriteConfigFile();
+
+    protected override string GetTestConfigToml() => """
+        [Settings]
+        ConfigVersion = "6.12.2"
+        LoopSleepTimer = 5
+        FailedCategory = "failed"
+        RecheckCategory = "recheck"
+        PingURLS = ["one.one.one.one"]
+
+        [WebUI]
+        Host = "0.0.0.0"
+        Port = 6969
+        Token = "test-api-token"
+        AuthDisabled = true
+        LocalAuthEnabled = false
+        OIDCEnabled = false
+        LiveArr = false
+
+        [qBit]
+        Host = "CHANGE_ME"
+        Port = 8080
+        UserName = "CHANGE_ME"
+        Password = "CHANGE_ME"
+
+        [qBit.CategorySeeding]
+        MinSeedRatio = 2.5
+        HitAndRunMode = "and"
+        """;
+}
+
 /// <summary>
 /// MT-4: GET /web/config must redact PasswordHash (return "[redacted]" not the bcrypt hash).
 /// MT-5: POST /web/config with {"WebUI.PasswordHash":"[redacted]"} must NOT overwrite the real hash.

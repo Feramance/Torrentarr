@@ -1757,7 +1757,7 @@ public class ConfigurationLoader
 
         // All qBit instances — "qBit" written first (primary), then additional [qBit-XXX]
         var orderedQbit = config.QBitInstances
-            .Where(kv => !string.IsNullOrEmpty(kv.Value.Host) && kv.Value.Host != "CHANGE_ME")
+            .Where(kv => !string.IsNullOrEmpty(kv.Value.Host))
             .OrderBy(kv => kv.Key == "qBit" ? 0 : 1).ThenBy(kv => kv.Key);
 
         foreach (var (name, qbit) in orderedQbit)

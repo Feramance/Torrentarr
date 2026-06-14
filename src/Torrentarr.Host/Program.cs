@@ -2630,7 +2630,7 @@ static (TorrentarrConfig? updatedConfig, IResult? error) ApplyDottedConfigChange
     var currentObj = new Newtonsoft.Json.Linq.JObject();
     currentObj["Settings"] = Newtonsoft.Json.Linq.JObject.FromObject(cfg.Settings, serializer);
     currentObj["WebUI"] = Newtonsoft.Json.Linq.JObject.FromObject(cfg.WebUI, serializer);
-    foreach (var (key, qbit) in cfg.QBitInstances.Where(kv => kv.Value.Host != "CHANGE_ME"))
+    foreach (var (key, qbit) in cfg.QBitInstances)
         currentObj[key] = Newtonsoft.Json.Linq.JObject.FromObject(qbit, serializer);
     foreach (var (key, arr) in cfg.ArrInstances)
         currentObj[key] = Newtonsoft.Json.Linq.JObject.FromObject(arr, serializer);
@@ -2683,6 +2683,9 @@ static (TorrentarrConfig? updatedConfig, IResult? error) ApplyDottedConfigChange
         updatedConfig.Settings = settingsObj.ToObject<SettingsConfig>(serializer) ?? new SettingsConfig();
     if (currentObj["WebUI"] is Newtonsoft.Json.Linq.JObject webuiObj)
         updatedConfig.WebUI = webuiObj.ToObject<WebUIConfig>(serializer) ?? new WebUIConfig();
+
+    updatedConfig.QBitInstances = new Dictionary<string, QBitConfig>(cfg.QBitInstances);
+    updatedConfig.ArrInstances = new Dictionary<string, ArrInstanceConfig>(cfg.ArrInstances);
 
     foreach (var prop in currentObj.Properties())
     {

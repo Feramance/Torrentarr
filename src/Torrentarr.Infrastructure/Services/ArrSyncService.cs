@@ -234,8 +234,7 @@ public class ArrSyncService
     {
         var client = new RadarrClient(cfg.URI, cfg.APIKey);
 
-        var queueResponse = await client.GetQueueAsync(ct: ct);
-        var queueItems = queueResponse.Records;
+        var queueItems = await client.GetAllQueueRecordsAsync(ct);
 
         var dbQueue = await _db.MovieQueue
             .Where(q => q.ArrInstance == instanceName)
@@ -266,7 +265,7 @@ public class ArrSyncService
         }
 
         var toDelete = dbQueue.Values.Where(q => !apiQueueIds.Contains(q.QueueId ?? 0)).ToList();
-        if (toDelete.Count > 0)
+        if (toDelete.Count > 0 && !ShouldSkipDestructiveDelete(queueItems.Count, dbQueue.Count, instanceName, "movie queue"))
             _db.MovieQueue.RemoveRange(toDelete);
 
         await _db.SaveChangesAsync(ct);
@@ -443,8 +442,7 @@ public class ArrSyncService
     {
         var client = new SonarrClient(cfg.URI, cfg.APIKey);
 
-        var queueResponse = await client.GetQueueAsync(ct: ct);
-        var queueItems = queueResponse.Records;
+        var queueItems = await client.GetAllQueueRecordsAsync(ct);
 
         var dbQueue = await _db.EpisodeQueue
             .Where(q => q.ArrInstance == instanceName)
@@ -475,7 +473,7 @@ public class ArrSyncService
         }
 
         var toDelete = dbQueue.Values.Where(q => !apiQueueIds.Contains(q.QueueId ?? 0)).ToList();
-        if (toDelete.Count > 0)
+        if (toDelete.Count > 0 && !ShouldSkipDestructiveDelete(queueItems.Count, dbQueue.Count, instanceName, "episode queue"))
             _db.EpisodeQueue.RemoveRange(toDelete);
 
         await _db.SaveChangesAsync(ct);
@@ -922,8 +920,7 @@ public class ArrSyncService
     {
         var client = new LidarrClient(cfg.URI, cfg.APIKey);
 
-        var queueResponse = await client.GetQueueAsync(ct: ct);
-        var queueItems = queueResponse.Records;
+        var queueItems = await client.GetAllQueueRecordsAsync(ct);
 
         var dbQueue = await _db.AlbumQueue
             .Where(q => q.ArrInstance == instanceName)
@@ -954,7 +951,7 @@ public class ArrSyncService
         }
 
         var toDelete = dbQueue.Values.Where(q => !apiQueueIds.Contains(q.QueueId ?? 0)).ToList();
-        if (toDelete.Count > 0)
+        if (toDelete.Count > 0 && !ShouldSkipDestructiveDelete(queueItems.Count, dbQueue.Count, instanceName, "album queue"))
             _db.AlbumQueue.RemoveRange(toDelete);
 
         await _db.SaveChangesAsync(ct);

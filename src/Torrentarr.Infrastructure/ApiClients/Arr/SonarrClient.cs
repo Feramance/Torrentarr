@@ -199,6 +199,26 @@ public class SonarrClient
     }
 
     /// <summary>
+    /// Fetch all queue pages (Arr APIs paginate at 1000 records by default).
+    /// </summary>
+    public async Task<List<SonarrQueueItem>> GetAllQueueRecordsAsync(CancellationToken ct = default)
+    {
+        const int pageSize = 1000;
+        var records = new List<SonarrQueueItem>();
+        for (var page = 1; ; page++)
+        {
+            var response = await GetQueueAsync(page, pageSize, ct);
+            if (response.Records.Count == 0)
+                break;
+            records.AddRange(response.Records);
+            if (response.TotalRecords > 0 && records.Count >= response.TotalRecords)
+                break;
+        }
+
+        return records;
+    }
+
+    /// <summary>
     /// Trigger manual import scan for downloaded episodes
     /// </summary>
     public async Task<CommandResponse?> TriggerDownloadedEpisodesScanAsync(

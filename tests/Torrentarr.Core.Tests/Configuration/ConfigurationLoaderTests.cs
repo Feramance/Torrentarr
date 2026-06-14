@@ -672,6 +672,40 @@ public class ConfigurationLoaderTests : IDisposable
     }
 
     [Fact]
+    public void SaveConfig_PreservesQBitSectionWithChangeMeHost()
+    {
+        WriteToml("""
+            [Settings]
+            LoopSleepTimer = 5
+
+            [qBit]
+            Host = "CHANGE_ME"
+            Port = 8080
+            UserName = "CHANGE_ME"
+            Password = "CHANGE_ME"
+
+            [qBit.CategorySeeding]
+            MinSeedRatio = 2.5
+            HitAndRunMode = "and"
+            """);
+
+        var loader = new ConfigurationLoader(_tempFilePath);
+        var config = loader.Load();
+        config.Settings.LoopSleepTimer = 10;
+        loader.SaveConfig(config);
+
+        var saved = File.ReadAllText(_tempFilePath);
+        saved.Should().Contain("[qBit]");
+        saved.Should().Contain("Host = \"CHANGE_ME\"");
+        saved.Should().Contain("MinSeedRatio = 2.5");
+
+        var reloaded = new ConfigurationLoader(_tempFilePath).Load();
+        reloaded.QBitInstances.Should().ContainKey("qBit");
+        reloaded.QBitInstances["qBit"].CategorySeeding.MinSeedRatio.Should().Be(2.5);
+        reloaded.Settings.LoopSleepTimer.Should().Be(10);
+    }
+
+    [Fact]
     public void Save_WebUI_WritesAuthBooleans()
     {
         WriteToml("""

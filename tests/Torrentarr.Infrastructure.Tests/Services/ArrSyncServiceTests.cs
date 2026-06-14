@@ -211,6 +211,19 @@ public sealed class ArrSyncServiceTests : IDisposable
     }
 
     [Fact]
+    public void ShouldSkipDestructiveDelete_Queue_EmptyApiWithExistingRows_ReturnsTrue()
+    {
+        var svc = CreateService();
+        var method = typeof(ArrSyncService).GetMethod(
+            "ShouldSkipDestructiveDelete",
+            System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance)!;
+
+        var result = (bool)method.Invoke(svc, new object[] { 0, 3, "Radarr-test", "movie queue" })!;
+
+        result.Should().BeTrue();
+    }
+
+    [Fact]
     public void ShouldSkipDestructiveDelete_Episodes_EmptyApiWithExistingRows_ReturnsTrue()
     {
         var svc = CreateService();
