@@ -354,7 +354,8 @@ public class TorrentProcessor : ITorrentProcessor
         }
         // Branch 2: Ratio/seed limit met AND not leave_alone AND fully downloaded → delete
         // (qBitrr line 6106-6109: remove_torrent and not leave_alone and amount_left==0)
-        else if (removeTorrent && !leaveAlone && torrent.AmountLeft == 0)
+        else if (removeTorrent && !leaveAlone && torrent.AmountLeft == 0
+                 && await IsImportedInDatabaseAsync(torrent.Hash, torrent.QBitInstanceName, ct))
         {
             var hnrAllows = _seedingService == null || await _seedingService.HnrAllowsDeleteAsync(torrent, "ratio/seed limit", ct);
             if (hnrAllows)
@@ -476,7 +477,7 @@ public class TorrentProcessor : ITorrentProcessor
             await ProcessPercentageThresholdAsync(torrent, maxEta, client, stats, ct);
         }
         // Branch 14: Already imported → skip (qBitrr line 6184-6187)
-        else if (await IsImportedInDatabaseAsync(torrent.Hash, ct)
+        else if (await IsImportedInDatabaseAsync(torrent.Hash, torrent.QBitInstanceName, ct)
             && _cache.IsFileFiltered(torrent.Hash))
         {
             _logger.LogTrace("Skipping already-imported torrent: [{Name}]", torrent.Name);
@@ -898,11 +899,11 @@ public class TorrentProcessor : ITorrentProcessor
     /// <summary>
     /// Check if a torrent is marked as imported in the database.
     /// </summary>
-    private async Task<bool> IsImportedInDatabaseAsync(string hash, CancellationToken ct)
+    private async Task<bool> IsImportedInDatabaseAsync(string hash, string qbitInstance, CancellationToken ct)
     {
         var entry = await _dbContext.TorrentLibrary
             .AsNoTracking()
-            .FirstOrDefaultAsync(t => t.Hash == hash, ct);
+            .FirstOrDefaultAsync(t => t.Hash == hash && t.QbitInstance == qbitInstance, ct);
         return entry?.Imported == true;
     }
 
@@ -1001,16 +1002,8 @@ public class TorrentProcessor : ITorrentProcessor
         if (_config.Settings.Tagless)
         {
             if (tag == IgnoredTag) return false;
-            var dbEntry = _dbContext.TorrentLibrary.AsNoTracking()
-                .FirstOrDefault(t => t.Hash == torrent.Hash);
-            if (dbEntry == null) return false;
-            return tag switch
-            {
-                FreeSpacePausedTag => dbEntry.FreeSpacePaused,
-                AllowedSeedingTag => dbEntry.AllowedSeeding,
-                AllowedStalledTag => dbEntry.AllowedStalled,
-                _ => false
-            };
+            return TaglessTorrentLibraryHelper.HasTag(
+                _dbContext, torrent.Hash, torrent.QBitInstanceName, tag);
         }
 
         if (string.IsNullOrEmpty(torrent.Tags))

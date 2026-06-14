@@ -80,4 +80,49 @@ public class TaglessTorrentLibraryHelperTests
         entries[1].QbitInstance.Should().Be("qBit-seedbox");
         entries[1].FreeSpacePaused.Should().BeTrue();
     }
+
+    [Fact]
+    public async Task HasTag_ScopedPerQbitInstance_DoesNotCrossReadOtherInstance()
+    {
+        await using var db = CreateDb();
+        db.TorrentLibrary.AddRange(
+            new()
+            {
+                Hash = "abc123", Category = "radarr", QbitInstance = "qBit",
+                FreeSpacePaused = true, AllowedSeeding = false
+            },
+            new()
+            {
+                Hash = "abc123", Category = "radarr", QbitInstance = "qBit-seedbox",
+                FreeSpacePaused = false, AllowedSeeding = true
+            });
+        await db.SaveChangesAsync();
+
+        TaglessTorrentLibraryHelper.HasTag(
+                db, "abc123", "qBit", TaglessTorrentLibraryHelper.FreeSpacePausedTag)
+            .Should().BeTrue();
+        TaglessTorrentLibraryHelper.HasTag(
+                db, "abc123", "qBit-seedbox", TaglessTorrentLibraryHelper.FreeSpacePausedTag)
+            .Should().BeFalse();
+        TaglessTorrentLibraryHelper.HasTag(
+                db, "abc123", "qBit-seedbox", TaglessTorrentLibraryHelper.AllowedSeedingTag)
+            .Should().BeTrue();
+        TaglessTorrentLibraryHelper.HasTag(
+                db, "abc123", "qBit", TaglessTorrentLibraryHelper.AllowedSeedingTag)
+            .Should().BeFalse();
+    }
+
+    [Fact]
+    public async Task HasTag_UnknownTag_ReturnsFalse()
+    {
+        await using var db = CreateDb();
+        db.TorrentLibrary.Add(new()
+        {
+            Hash = "abc123", Category = "radarr", QbitInstance = "qBit", FreeSpacePaused = true
+        });
+        await db.SaveChangesAsync();
+
+        TaglessTorrentLibraryHelper.HasTag(db, "abc123", "qBit", "qBitrr-ignored")
+            .Should().BeFalse();
+    }
 }

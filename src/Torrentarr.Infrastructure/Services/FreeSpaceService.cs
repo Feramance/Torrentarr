@@ -337,7 +337,7 @@ public class FreeSpaceService : IFreeSpaceService
     {
         var isFreeSpaceDownload = TorrentPolicyHelper.IsFreeSpaceDownloadState(torrent.State);
         var isPausedDownload = TorrentPolicyHelper.IsPausedDownloadStateForFreeSpace(torrent.State);
-        var hasFreeSpaceTag = HasTag(torrent, FreeSpacePausedTag);
+        var hasFreeSpaceTag = HasTag(torrent, instanceName, FreeSpacePausedTag);
 
         _logger.LogTrace("FreeSpace: [{Name}] | State[{State}] | Progress[{Progress:P1}] | Size[{Size}] | AmountLeft[{AmountLeft}] | HasTag[{HasTag}] | Hash[{Hash}]",
             torrent.Name, torrent.State, torrent.Progress, FormatBytes(torrent.Size), FormatBytes(torrent.AmountLeft), hasFreeSpaceTag, torrent.Hash);
@@ -438,14 +438,13 @@ public class FreeSpaceService : IFreeSpaceService
         }
     }
 
-    private bool HasTag(TorrentInfo torrent, string tag)
+    private bool HasTag(TorrentInfo torrent, string instanceName, string tag)
     {
         // §1.6 Tagless: FreeSpacePaused → DB column
         if (_config.Settings.Tagless)
         {
-            var dbEntry = _dbContext.TorrentLibrary.AsNoTracking()
-                .FirstOrDefault(t => t.Hash == torrent.Hash);
-            return dbEntry != null && tag == FreeSpacePausedTag && dbEntry.FreeSpacePaused;
+            return TaglessTorrentLibraryHelper.HasTag(
+                _dbContext, torrent.Hash, instanceName, tag);
         }
 
         if (string.IsNullOrEmpty(torrent.Tags)) return false;
