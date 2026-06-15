@@ -35,5 +35,7 @@ prompt_file: .cursor/automations/torrentarr-pr-triage/prompt.md
 
 ground_truth:
 - docs/audits/pr-triage-2026-06-15.md
+- docs/audits/pr-triage-gh-actions.md
+- scripts/pr-queue.sh
 - AGENTS.md
 - docs/parity/contract-baseline.md
