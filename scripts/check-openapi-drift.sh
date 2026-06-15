@@ -15,14 +15,21 @@ ta = json.load(open(ta_path))
 qb = json.load(open(qb_path))
 ta_paths = set(ta.get("paths", {}))
 qb_paths = set(qb.get("paths", {}))
-# Torrentarr may document a subset; fail only when Torrentarr declares a path qBitrr dropped.
-missing_upstream = sorted(ta_paths - qb_paths)
-if missing_upstream:
-    print("Torrentarr OpenAPI paths not present in qBitrr pin:")
-    for p in missing_upstream:
+
+missing_in_ta = sorted(qb_paths - ta_paths)
+extensions = sorted(ta_paths - qb_paths)
+
+if missing_in_ta:
+    print(f"Torrentarr OpenAPI missing {len(missing_in_ta)} qBitrr path(s):")
+    for p in missing_in_ta:
         print(" ", p)
     sys.exit(1)
-print(f"OK: {len(ta_paths)} Torrentarr paths are a subset of {len(qb_paths)} qBitrr paths.")
+
+print(f"OK: {len(ta_paths)} Torrentarr paths cover all {len(qb_paths)} qBitrr paths.", end="")
+if extensions:
+    print(f" (+{len(extensions)} Torrentarr extensions: {', '.join(extensions)})")
+else:
+    print()
 PY
 
 rm -f "$TMP_QBITRR"

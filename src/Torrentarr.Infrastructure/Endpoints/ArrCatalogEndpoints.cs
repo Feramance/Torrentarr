@@ -3,6 +3,7 @@ using Microsoft.AspNetCore.Http;
 using Microsoft.EntityFrameworkCore;
 using Torrentarr.Core.Configuration;
 using Torrentarr.Infrastructure.Database;
+using Torrentarr.Infrastructure.Database.Models;
 using Torrentarr.Infrastructure.Services;
 
 namespace Torrentarr.Infrastructure.Endpoints;
@@ -35,10 +36,17 @@ public static class ArrCatalogEndpoints
             int? page,
             int? page_size,
             string? q,
-            bool? monitored) =>
+            bool? monitored,
+            bool? missing,
+            string? reason) =>
         {
             var currentPage = page ?? 0;
             var pageSize = Math.Clamp(page_size ?? 50, 1, 1000);
+            var missingOnly = missing == true;
+            var reasonFilter = string.IsNullOrWhiteSpace(reason) || reason.Equals("all", StringComparison.OrdinalIgnoreCase)
+                ? null
+                : reason.Trim();
+
             var (albumCounts, albumTotal, trackCounts) = await rollups.GetLidarrRollupsAsync(category);
 
             var query = db.Artists.Where(a => a.ArrInstance == category);
@@ -47,6 +55,23 @@ public static class ArrCatalogEndpoints
             if (monitored.HasValue)
                 query = query.Where(a => a.Monitored == monitored.Value);
 
+            if (missingOnly || reasonFilter is not null)
+            {
+                var albumQuery = db.Albums.Where(al => al.ArrInstance == category);
+                if (missingOnly)
+                    albumQuery = albumQuery.Where(al => al.Monitored && !al.HasFile);
+                if (reasonFilter is not null)
+                {
+                    if (reasonFilter.Equals("Not being searched", StringComparison.OrdinalIgnoreCase))
+                        albumQuery = albumQuery.Where(al => al.Reason == null || al.Reason == "Not being searched");
+                    else
+                        albumQuery = albumQuery.Where(al => al.Reason == reasonFilter);
+                }
+
+                var artistIds = await albumQuery.Select(al => al.ArtistId).Distinct().ToListAsync();
+                query = query.Where(a => artistIds.Contains(a.EntryId));
+            }
+
             var total = await query.CountAsync();
             var artists = await query
                 .OrderBy(a => a.Title)
@@ -54,9 +79,52 @@ public static class ArrCatalogEndpoints
                 .Take(pageSize)
                 .ToListAsync();
 
-            var artistIds = artists.Select(a => a.EntryId).ToList();
+            if (total == 0 && albumTotal > 0 && (missingOnly || reasonFilter is not null || !string.IsNullOrWhiteSpace(q)))
+            {
+                var albumFallback = db.Albums.Where(al => al.ArrInstance == category);
+                if (!string.IsNullOrWhiteSpace(q))
+                    albumFallback = albumFallback.Where(al => al.ArtistTitle != null && al.ArtistTitle.Contains(q));
+                if (missingOnly)
+                    albumFallback = albumFallback.Where(al => al.Monitored && !al.HasFile);
+                if (reasonFilter is not null)
+                {
+                    if (reasonFilter.Equals("Not being searched", StringComparison.OrdinalIgnoreCase))
+                        albumFallback = albumFallback.Where(al => al.Reason == null || al.Reason == "Not being searched");
+                    else
+                        albumFallback = albumFallback.Where(al => al.Reason == reasonFilter);
+                }
+
+                var grouped = await albumFallback
+                    .GroupBy(al => al.ArtistId)
+                    .Select(g => new
+                    {
+                        ArtistId = g.Key,
+                        Title = g.Min(al => al.ArtistTitle) ?? "",
+                        Monitored = g.Max(al => al.Monitored ? 1 : 0) == 1
+                    })
+                    .ToListAsync();
+
+                if (monitored.HasValue)
+                    grouped = grouped.Where(g => g.Monitored == monitored.Value).ToList();
+
+                total = grouped.Count;
+                artists = grouped
+                    .OrderBy(g => g.Title)
+                    .Skip(currentPage * pageSize)
+                    .Take(pageSize)
+                    .Select(g => new ArtistFilesModel
+                    {
+                        EntryId = g.ArtistId,
+                        Title = g.Title,
+                        Monitored = g.Monitored,
+                        ArrInstance = category
+                    })
+                    .ToList();
+            }
+
+            var artistIdsListed = artists.Select(a => a.EntryId).ToList();
             var albumStats = await db.Albums
-                .Where(al => al.ArrInstance == category && artistIds.Contains(al.ArtistId))
+                .Where(al => al.ArrInstance == category && artistIdsListed.Contains(al.ArtistId))
                 .GroupBy(al => al.ArtistId)
                 .Select(g => new
                 {

@@ -27,7 +27,7 @@ Primary tracking artifacts:
 - **Category paths:** `CategoryPathHelper` + `ConfigValidationHelper` overlap validation on config save; wired into torrent/category matching.
 - **Catalog rollups:** `CatalogRollupService` with qBitrr semantics + 5s TTL; integrated into `/web|api/arr`, Radarr/Sonarr/Lidarr endpoints.
 - **Lidarr artists + thumbnails:** `ArrCatalogEndpoints`, `ArrThumbnailService`, frontend `getLidarrArtists` / `getLidarrArtistDetail`.
-- **OpenAPI:** expanded `docs/assets/openapi.json` (26 paths); `scripts/check-openapi-drift.sh` in CI.
+- **OpenAPI:** full `docs/assets/openapi.json` (72 paths, all qBitrr 5.12.3 paths + 6 Torrentarr extensions); `/api|web/docs` and `/api|web/openapi.json` route aliases; `scripts/check-openapi-drift.sh` and `scripts/generate-openapi-from-qbitrr.py` in CI.
 
 ### Phase 3 — Config schema
 - `ExpectedConfigVersion = 6.12.2` (+1 major vs qBitrr `5.12.2`).
@@ -46,7 +46,7 @@ Backend tests (`dotnet test --filter "Category!=Live"`):
 
 Frontend tests (`cd webui && npx vitest run`): exit code 0 (130 tests).
 
-OpenAPI drift: `bash scripts/check-openapi-drift.sh` — 26 Torrentarr paths ⊆ 66 qBitrr 5.12.3 paths.
+OpenAPI drift: `bash scripts/check-openapi-drift.sh` — 72 Torrentarr paths cover all 66 qBitrr 5.12.3 paths (+6 extensions).
 
 Focused regression checks added/updated:
 

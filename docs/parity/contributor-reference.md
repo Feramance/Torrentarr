@@ -84,6 +84,14 @@ Upstream may ship `repair_database_targeted.py`. Torrentarr does not port that s
 
 ---
 
+## Database locking (`db_lock.py`)
+
+qBitrr uses a cross-process file lock around SQLite access because Arr workers are separate OS processes. Torrentarr runs workers **in-process** (`ArrWorkerManager`, `QBitCategoryWorkerManager`) with WAL mode, scoped `DbContext` instances, and `SaveChangesWithRetryAsync` for transient lock errors. Coordinated recovery after persistent errors is handled by `DatabaseRestartCoordinator` + `DatabaseRestartWatchdogService`.
+
+**Matrix:** `db_lock.py` = intentional-divergence (equivalent outcomes via WAL + in-process isolation + retry/restart). Tests: [`DatabaseRetryExtensions`](https://github.com/Feramance/Torrentarr/blob/master/src/Torrentarr.Infrastructure/Database/DatabaseRetryExtensions.cs), worker integration tests.
+
+---
+
 ## Policy engine test matrix
 
 Maps upstream concepts to CI tests; live qBittorrent still needed for full ordering proof.
@@ -153,7 +161,7 @@ Compare to upstream on the [pinned tag](#upstream-qbitrr-baseline) for **behavio
 
 **Pin:** use the [Upstream baseline](#upstream-qbitrr-baseline) tag when fetching upstream `qBitrr/openapi.json`.
 
-Torrentarr: [docs/assets/openapi.json](../assets/openapi.json), Swagger at `/swagger`. Comparing to upstream is a **drift check**, not a byte-identical merge.
+Torrentarr: [docs/assets/openapi.json](../assets/openapi.json) (72 paths: all qBitrr 5.12.3 paths + Torrentarr extensions), served at `/api/openapi.json` and `/web/openapi.json`; interactive docs at `/api/docs` and `/web/docs`. Regenerate from upstream pin: `python3 scripts/generate-openapi-from-qbitrr.py`. CI drift check: `bash scripts/check-openapi-drift.sh`.
 
 **When** changing WebUI DTOs/controllers: diff paths/methods for `/web/*`, `/api/*`, auth, health.
 

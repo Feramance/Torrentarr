@@ -69,6 +69,24 @@ public class LidarrArtistsEndpointTests : IClassFixture<ArrCatalogWebApplication
     }
 
     [Fact]
+    public async Task GetLidarrArtists_FiltersMissingAlbums()
+    {
+        _factory.SetConfigEnv();
+        using var scope = _factory.Services.CreateScope();
+        var db = scope.ServiceProvider.GetRequiredService<TorrentarrDbContext>();
+        await CatalogTestDataSeeder.SeedLidarrArtistsAsync(db);
+
+        var client = _factory.CreateClientWithApiToken();
+        var response = await client.GetAsync("/web/lidarr/lidarr/artists?missing=true");
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+
+        var json = JsonDocument.Parse(await response.Content.ReadAsStringAsync()).RootElement;
+        json.GetProperty("artists").GetArrayLength().Should().Be(1);
+        json.GetProperty("artists")[0].GetProperty("artist").GetProperty("albumsMissing").GetInt32()
+            .Should().BeGreaterThan(0);
+    }
+
+    [Fact]
     public async Task GetApiLidarrArtists_MirrorsWebShape()
     {
         _factory.SetConfigEnv();

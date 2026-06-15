@@ -516,6 +516,12 @@ try
         timestamp = DateTime.UtcNow
     }));
 
+    // qBitrr parity: curated OpenAPI + Swagger UI aliases
+    app.MapGet("/api/openapi.json", (HttpContext ctx) => CuratedOpenApiDocument.ServeJson(ctx));
+    app.MapGet("/web/openapi.json", (HttpContext ctx) => CuratedOpenApiDocument.ServeJson(ctx));
+    app.MapGet("/api/docs", () => CuratedOpenApiDocument.RedirectToSwagger("/api/openapi.json"));
+    app.MapGet("/web/docs", () => CuratedOpenApiDocument.RedirectToSwagger("/web/openapi.json"));
+
     // ==================== /web/* endpoints ====================
 
     // Web Meta — fetches latest release from GitHub and compares with current version

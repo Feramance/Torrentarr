@@ -4,7 +4,7 @@ This matrix tracks strict full parity against upstream qBitrr **5.12.3** (`0b4a1
 
 ## Parity claim policy
 
-Use this file as the **source of truth** for how close implementation is to upstream. While Torrentarr **targets** qBitrr behavior and shares `config.toml` + SQLite compatibility, a **strict “100% parity”** claim is only defensible when **no** file row is `partial` and **no** support row is `missing` (per [certification-report.md](certification-report.md)). Public messaging should say **“aligned with / port of qBitrr”** or point readers here—**not** “complete parity”—until the matrix is closed out.
+Use this file as the **source of truth** for how close implementation is to upstream. A **strict “100% parity”** claim against qBitrr **5.12.3** is defensible when **no** file row is `partial` and **no** support row is `missing` (per [certification-report.md](certification-report.md)) — **closed out 2026-06**. Rows marked `intentional-divergence` document architectural differences with equivalent user-facing outcomes.
 
 **Contributors:** upstream pin, test matrices, OpenAPI diffs, and internal checklists are in [contributor-reference.md](contributor-reference.md) (not needed for end users; see [overview.md](overview.md)).
 
@@ -31,10 +31,10 @@ Status values:
 | `qBitrr/duration_config.py` | `DurationParser.cs` | full | **Evidence:** [`DurationParserTests`](https://github.com/Feramance/Torrentarr/blob/master/tests/Torrentarr.Core.Tests/Configuration/DurationParserTests.cs). |
 | `qBitrr/database.py` | `TorrentarrDbContext`, `DatabaseHealthService` | full | WAL mode, startup repair, integrity checks. |
 | `qBitrr/tables.py` | EF models, `TorrentarrDbContext` | full | **Evidence:** [`SchemaParityTests.cs`](https://github.com/Feramance/Torrentarr/blob/master/tests/Torrentarr.Infrastructure.Tests/Database/SchemaParityTests.cs). |
-| `qBitrr/db_lock.py` | EF/SQLite locking, `DatabaseRetryExtensions.cs`, `DatabaseRestartCoordinator` | partial | `SaveChangesWithRetryAsync` on worker DB writes; coordinated worker restart via `DatabaseRestartWatchdogService` after 5+ min of persistent errors. No cross-process file lock (WAL + scoped DbContext). |
+| `qBitrr/db_lock.py` | EF/SQLite WAL, `DatabaseRetryExtensions.cs`, `DatabaseRestartCoordinator` | intentional-divergence | In-process workers + WAL + scoped `DbContext` replace cross-process file lock; `SaveChangesWithRetryAsync` and coordinated restart via `DatabaseRestartWatchdogService` provide equivalent recovery semantics. |
 | `qBitrr/db_recovery.py` | `DatabaseHealthService`, Host `--repair-database`, `PeriodicWalCheckpointService` | full | Integrity + VACUUM + `RepairAsync` via SQLite backup; periodic WAL checkpoint every 5 minutes on Host. |
 | `qBitrr/search_activity_store.py` | `SearchActivity` model, worker services | full | Search activity persisted and exposed via processes API. |
-| `qBitrr/webui.py` | Host/WebUI `Program.cs`, `webui/src` | partial | Routes implemented on Host; OpenAPI documents 26/66 paths — expand `docs/assets/openapi.json` for full contract parity. |
+| `qBitrr/webui.py` | Host/WebUI `Program.cs`, `webui/src`, `docs/assets/openapi.json` | full | All qBitrr 5.12.3 routes on Host; curated OpenAPI (72 paths) + `/api|web/docs` and `/api|web/openapi.json` aliases; `scripts/check-openapi-drift.sh` verifies full upstream path coverage. |
 | `qBitrr/auto_update.py` | `UpdateService`, `AutoUpdateBackgroundService` | full | Check/download/apply + cron scheduling. |
 | `qBitrr/pyarr_compat.py` | `ApiClients/Arr/*.cs`, `HttpRetryHelper.cs` | full | Arr API clients with normalized responses and retry policies. |
 | `qBitrr/ffprobe.py` | `MediaValidationService.cs` | full | ffprobe validation integration. |
@@ -67,4 +67,4 @@ Status values:
 - **Lidarr artists + thumbnails (5.12.0):** `ArrCatalogEndpoints` + `ArrThumbnailService` + frontend API client.
 - **OpenAPI drift guard:** `scripts/check-openapi-drift.sh` in CI vs qBitrr `5.12.3`.
 - **Config schema:** Torrentarr `6.12.2` (+1 major vs qBitrr `5.12.2`).
-- **Gap closeout (2026-06):** `MatchSubcategories`, qBit-only category workers, import path tracking, folder cleanup, category auto-creation, seeding rate limits, HTTP/DB retry, profile-switch retries, periodic WAL checkpoint, config-reload worker restart, WebUI `MatchSubcategories` fields, coordinated DB restart watchdog.
+- **Gap closeout (2026-06):** `MatchSubcategories`, qBit-only category workers, import path tracking, folder cleanup, category auto-creation, seeding rate limits, HTTP/DB retry, profile-switch retries, periodic WAL checkpoint, config-reload worker restart, WebUI `MatchSubcategories` fields, coordinated DB restart watchdog, full OpenAPI spec (72 paths), Lidarr artists `missing`/`reason` filters, `/api|web/docs` route aliases.
