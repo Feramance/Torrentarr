@@ -24,7 +24,8 @@ triggers:
 
 tools:
 - comment_on_pr
-  # Do NOT enable approve_pr or request_reviewers until validation is trusted
+  # Optional after testing: enable PR approval on Merge verdict
+  # approve_pr: true
 
 permissions: private  # or team_visible
 

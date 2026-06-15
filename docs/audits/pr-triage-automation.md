@@ -54,7 +54,8 @@ On each PR open or push:
 2. Attempts merge with `master`; resolves conflicts locally when safe
 3. Runs `dotnet build`, `dotnet test --filter "Category!=Live"`, and `npx vitest run` when source changes warrant it
 4. Validates purpose, correctness, tests, hygiene, and overlap with other open PRs
-5. Posts a comment: **Merge** (all gates pass) or **Close** (with reason: conflicts, test failures, duplicate, obsolete, incorrect fix, etc.)
+5. **Takes actions:** `gh pr ready` on Merge drafts, push conflict resolutions, approve when enabled
+6. Posts a comment: **Merge** / **Close** / **Defer** plus **Maintainer commands** (`gh` one-liners from [`pr-triage-gh-actions.md`](pr-triage-gh-actions.md))
 
 ---
 
