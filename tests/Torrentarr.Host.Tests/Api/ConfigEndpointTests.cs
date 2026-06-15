@@ -170,6 +170,17 @@ public class ConfigEndpointTests : IClassFixture<TorrentarrWebApplicationFactory
         afterJson.GetProperty("Settings").GetProperty("LoopSleepTimer").GetInt32().Should().Be(42);
         afterJson.GetProperty("WebUI").GetProperty("Port").GetInt32().Should().Be(originalPort);
     }
+
+    [Fact]
+    public async Task PostApiConfig_WithoutChanges_ReturnsBadRequest()
+    {
+        var client = _factory.CreateClientWithApiToken();
+        var payload = new { Settings = new { LoopSleepTimer = 99 } };
+        var response = await client.PostAsJsonAsync("/api/config", payload);
+        response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
+        var body = await response.Content.ReadAsStringAsync();
+        body.Should().Contain("changes");
+    }
 }
 
 /// <summary>
