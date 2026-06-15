@@ -64,7 +64,7 @@ public static class CategoryOwnershipHelper
         return null;
     }
 
-  public static bool QBitMatchSubcategories(TorrentarrConfig config, string qbitSection)
+    public static bool QBitMatchSubcategories(TorrentarrConfig config, string qbitSection)
     {
         if (config.QBitInstances.TryGetValue(qbitSection, out var qbit))
             return qbit.MatchSubcategories;
