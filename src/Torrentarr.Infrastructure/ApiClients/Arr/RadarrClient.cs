@@ -31,7 +31,7 @@ public class RadarrClient
         var request = new RestRequest("/api/v3/movie", Method.Get);
         AddApiKeyHeader(request);
 
-        var response = await _client.ExecuteAsync(request, ct);
+        var response = await ArrClientResponse.ExecuteAsync(_client, request, ct);
         ArrClientResponse.EnsureSuccess(response, "GET /api/v3/movie");
 
         if (string.IsNullOrEmpty(response.Content))
@@ -48,7 +48,7 @@ public class RadarrClient
         var request = new RestRequest("/api/v3/system/status", Method.Get);
         AddApiKeyHeader(request);
 
-        var response = await _client.ExecuteAsync(request, ct);
+        var response = await ArrClientResponse.ExecuteAsync(_client, request, ct);
 
         if (response.IsSuccessful && !string.IsNullOrEmpty(response.Content))
         {
@@ -66,7 +66,7 @@ public class RadarrClient
         var request = new RestRequest($"/api/v3/movie/{movieId}", Method.Get);
         AddApiKeyHeader(request);
 
-        var response = await _client.ExecuteAsync(request, ct);
+        var response = await ArrClientResponse.ExecuteAsync(_client, request, ct);
 
         if (response.IsSuccessful && !string.IsNullOrEmpty(response.Content))
         {
@@ -92,7 +92,7 @@ public class RadarrClient
 
         request.AddJsonBody(command);
 
-        var response = await _client.ExecuteAsync(request, ct);
+        var response = await ArrClientResponse.ExecuteAsync(_client, request, ct);
         return response.IsSuccessful;
     }
 
@@ -106,7 +106,7 @@ public class RadarrClient
 
         request.AddJsonBody(movie);
 
-        var response = await _client.ExecuteAsync(request, ct);
+        var response = await ArrClientResponse.ExecuteAsync(_client, request, ct);
 
         if (response.IsSuccessful && !string.IsNullOrEmpty(response.Content))
         {
@@ -124,7 +124,7 @@ public class RadarrClient
         var request = new RestRequest("/api/v3/qualityprofile", Method.Get);
         AddApiKeyHeader(request);
 
-        var response = await _client.ExecuteAsync(request, ct);
+        var response = await ArrClientResponse.ExecuteAsync(_client, request, ct);
 
         if (response.IsSuccessful && !string.IsNullOrEmpty(response.Content))
         {
@@ -147,7 +147,7 @@ public class RadarrClient
         request.AddQueryParameter("sortKey", "title");
         request.AddQueryParameter("sortDirection", "ascending");
 
-        var response = await _client.ExecuteAsync(request, ct);
+        var response = await ArrClientResponse.ExecuteAsync(_client, request, ct);
 
         if (response.IsSuccessful && !string.IsNullOrEmpty(response.Content))
         {
@@ -168,7 +168,7 @@ public class RadarrClient
         request.AddQueryParameter("page", page.ToString());
         request.AddQueryParameter("pageSize", pageSize.ToString());
 
-        var response = await _client.ExecuteAsync(request, ct);
+        var response = await ArrClientResponse.ExecuteAsync(_client, request, ct);
         ArrClientResponse.EnsureSuccess(response, "GET /api/v3/queue");
 
         if (string.IsNullOrEmpty(response.Content))
@@ -199,7 +199,7 @@ public class RadarrClient
 
         request.AddJsonBody(command);
 
-        var response = await _client.ExecuteAsync(request, ct);
+        var response = await ArrClientResponse.ExecuteAsync(_client, request, ct);
 
         if (response.IsSuccessful && !string.IsNullOrEmpty(response.Content))
         {
@@ -217,7 +217,7 @@ public class RadarrClient
         var request = new RestRequest("/api/v3/command", Method.Get);
         AddApiKeyHeader(request);
 
-        var response = await _client.ExecuteAsync(request, ct);
+        var response = await ArrClientResponse.ExecuteAsync(_client, request, ct);
 
         if (response.IsSuccessful && !string.IsNullOrEmpty(response.Content))
         {
@@ -235,7 +235,7 @@ public class RadarrClient
         var request = new RestRequest($"/api/v3/moviefile/{movieFileId}", Method.Get);
         AddApiKeyHeader(request);
 
-        var response = await _client.ExecuteAsync(request, ct);
+        var response = await ArrClientResponse.ExecuteAsync(_client, request, ct);
 
         if (response.IsSuccessful && !string.IsNullOrEmpty(response.Content))
         {
@@ -256,7 +256,7 @@ public class RadarrClient
         request.AddQueryParameter("removeFromClient", removeFromClient.ToString().ToLower());
         request.AddQueryParameter("blocklist", blocklist.ToString().ToLower());
 
-        var response = await _client.ExecuteAsync(request, ct);
+        var response = await ArrClientResponse.ExecuteAsync(_client, request, ct);
         return response.IsSuccessful;
     }
 
@@ -271,7 +271,7 @@ public class RadarrClient
         var command = new { name = "RssSync" };
         request.AddJsonBody(command);
 
-        var response = await _client.ExecuteAsync(request, ct);
+        var response = await ArrClientResponse.ExecuteAsync(_client, request, ct);
 
         if (response.IsSuccessful && !string.IsNullOrEmpty(response.Content))
         {
@@ -292,7 +292,7 @@ public class RadarrClient
         var command = new { name = "RefreshMonitoredDownloads" };
         request.AddJsonBody(command);
 
-        var response = await _client.ExecuteAsync(request, ct);
+        var response = await ArrClientResponse.ExecuteAsync(_client, request, ct);
 
         if (response.IsSuccessful && !string.IsNullOrEmpty(response.Content))
         {
@@ -323,7 +323,7 @@ public class RadarrClient
         var request = new RestRequest("/api/v3/customformat", Method.Get);
         AddApiKeyHeader(request);
 
-        var response = await _client.ExecuteAsync(request, ct);
+        var response = await ArrClientResponse.ExecuteAsync(_client, request, ct);
 
         if (response.IsSuccessful && !string.IsNullOrEmpty(response.Content))
         {
@@ -339,7 +339,7 @@ public class RadarrClient
         AddApiKeyHeader(request);
         request.AddQueryParameter("movieId", movieId.ToString());
 
-        var response = await _client.ExecuteAsync(request, ct);
+        var response = await ArrClientResponse.ExecuteAsync(_client, request, ct);
 
         if (response.IsSuccessful && !string.IsNullOrEmpty(response.Content))
         {
@@ -355,7 +355,7 @@ public class RadarrClient
         AddApiKeyHeader(request);
         request.AddQueryParameter("includeMovieImages", "false");
 
-        var response = await _client.ExecuteAsync(request, ct);
+        var response = await ArrClientResponse.ExecuteAsync(_client, request, ct);
 
         if (response.IsSuccessful && !string.IsNullOrEmpty(response.Content))
         {
@@ -371,7 +371,7 @@ public class RadarrClient
         var request = new RestRequest("/api/v3/command", Method.Post);
         AddApiKeyHeader(request);
         request.AddJsonBody(new { name = "RescanMovie" });
-        var response = await _client.ExecuteAsync(request, ct);
+        var response = await ArrClientResponse.ExecuteAsync(_client, request, ct);
         return response.IsSuccessful;
     }
 

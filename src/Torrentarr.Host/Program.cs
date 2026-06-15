@@ -170,6 +170,13 @@ try
     builder.Services.AddScoped<ISearchExecutor, SearchExecutor>();
     builder.Services.AddScoped<QualityProfileSwitcherService>();
     builder.Services.AddSingleton<ITorrentCacheService, TorrentCacheService>();
+    builder.Services.AddSingleton<IImportPathTracker, ImportPathTracker>();
+    builder.Services.AddScoped<IDatabaseHealthService, DatabaseHealthService>();
+    builder.Services.AddScoped<QBitCategoryEnsureService>();
+    builder.Services.AddSingleton<QBitCategoryWorkerManager>();
+    builder.Services.AddHostedService(sp => sp.GetRequiredService<QBitCategoryWorkerManager>());
+    builder.Services.AddHostedService<PeriodicWalCheckpointService>();
+    builder.Services.AddSingleton<IConfigReloader, ConfigReloader>();
     // §6.10 / §1.8: update check + auto-update
     builder.Services.AddSingleton<UpdateService>();
     builder.Services.AddHostedService<AutoUpdateBackgroundService>();
@@ -1288,7 +1295,7 @@ try
     // Web Config Update — frontend sends { changes: { "Section.Key": value, ... } } (dotted keys).
     // ConfigView.tsx flatten()s the hierarchical config into dotted paths before sending only the
     // changed keys.  We apply those changes onto the current in-memory config and save.
-    app.MapPost("/web/config", async (HttpRequest request, TorrentarrConfig cfg, ConfigurationLoader loader) =>
+    app.MapPost("/web/config", async (HttpRequest request, TorrentarrConfig cfg, ConfigurationLoader loader, ArrWorkerManager workerMgr, QBitCategoryWorkerManager qbitCategoryMgr) =>
     {
         try
         {
@@ -1307,7 +1314,7 @@ try
             if (!valid)
                 return Results.BadRequest(new { error = validationError });
 
-            return SaveAndRespondConfigUpdate(cfg, updatedConfig, loader);
+            return await SaveAndRespondConfigUpdate(cfg, updatedConfig, loader, workerMgr, qbitCategoryMgr);
         }
         catch (Exception ex)
         {
@@ -2144,7 +2151,7 @@ try
 
     app.MapGet("/api/config", (TorrentarrConfig cfg) => Results.Ok(cfg));
 
-    app.MapPost("/api/config", async (HttpRequest request, TorrentarrConfig cfg, ConfigurationLoader loader) =>
+    app.MapPost("/api/config", async (HttpRequest request, TorrentarrConfig cfg, ConfigurationLoader loader, ArrWorkerManager workerMgr, QBitCategoryWorkerManager qbitCategoryMgr) =>
     {
         try
         {
@@ -2166,7 +2173,7 @@ try
             if (!valid)
                 return Results.BadRequest(new { error = validationError });
 
-            return SaveAndRespondConfigUpdate(cfg, updatedConfig, loader);
+            return await SaveAndRespondConfigUpdate(cfg, updatedConfig, loader, workerMgr, qbitCategoryMgr);
         }
         catch (Exception ex)
         {
@@ -2710,10 +2717,12 @@ static (TorrentarrConfig? updatedConfig, IResult? error) ApplyDottedConfigChange
     return (updatedConfig, null);
 }
 
-static IResult SaveAndRespondConfigUpdate(
+static async Task<IResult> SaveAndRespondConfigUpdate(
     TorrentarrConfig cfg,
     TorrentarrConfig updatedConfig,
-    ConfigurationLoader loader)
+    ConfigurationLoader loader,
+    ArrWorkerManager? workerMgr = null,
+    QBitCategoryWorkerManager? qbitCategoryMgr = null)
 {
     var passwordHashError = WebUIAuthHelpers.ValidatePasswordHashForConfigApiSave(cfg, updatedConfig);
     if (passwordHashError != null)
@@ -2727,6 +2736,27 @@ static IResult SaveAndRespondConfigUpdate(
     cfg.ArrInstances = updatedConfig.ArrInstances;
     cfg.QBitInstances = updatedConfig.QBitInstances;
     TorrentPolicyHelper.InvalidateMonitoredPolicyCategoriesCache(cfg);
+
+    if (workerMgr != null)
+    {
+        switch (reloadType)
+        {
+            case "full":
+                await workerMgr.RestartAllWorkersAsync();
+                if (qbitCategoryMgr != null)
+                {
+                    foreach (var cat in CategoryOwnershipHelper.GetQBitOnlyManagedCategories(updatedConfig))
+                        await qbitCategoryMgr.RestartCategoryAsync(cat);
+                }
+                break;
+            case "multi_arr":
+            case "single_arr":
+                foreach (var inst in affectedInstancesList)
+                    await workerMgr.RestartWorkerAsync(inst);
+                break;
+        }
+    }
+
     return Results.Ok(new
     {
         status = "ok",

@@ -1,10 +1,14 @@
 using System.Net;
 using RestSharp;
+using Torrentarr.Infrastructure.Http;
 
 namespace Torrentarr.Infrastructure.ApiClients.Arr;
 
 internal static class ArrClientResponse
 {
+    internal static Task<RestResponse> ExecuteAsync(RestClient client, RestRequest request, CancellationToken ct) =>
+        HttpRetryHelper.ExecuteArrAsync(client, request, ct);
+
     internal static void EnsureSuccess(RestResponse response, string operation)
     {
         if (response.ResponseStatus != ResponseStatus.Completed)

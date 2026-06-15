@@ -92,6 +92,8 @@ public class QBitConfig
     public string Password { get; set; } = "CHANGE_ME";
     public string? DownloadPath { get; set; }
     public List<string> ManagedCategories { get; set; } = new();
+    /// <summary>When true, <c>ManagedCategories</c> entries match descendant subcategories (qBitrr parity).</summary>
+    public bool MatchSubcategories { get; set; } = false;
     public List<TrackerConfig> Trackers { get; set; } = new();
     public CategorySeedingConfig CategorySeeding { get; set; } = new();
 }
@@ -194,6 +196,8 @@ public class ArrInstanceConfig
     public string Type { get; set; } = ""; // radarr, sonarr, lidarr
     public bool SearchOnly { get; set; } = false;
     public bool ProcessingOnly { get; set; } = false;
+    /// <summary>Override qBit <c>MatchSubcategories</c> for this Arr instance; null inherits from qBit.</summary>
+    public bool? MatchSubcategories { get; set; }
 
     // Search/processing options
     public bool ReSearch { get; set; } = true;

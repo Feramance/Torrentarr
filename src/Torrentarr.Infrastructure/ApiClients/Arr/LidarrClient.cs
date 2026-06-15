@@ -31,7 +31,7 @@ public class LidarrClient
         var request = new RestRequest("/api/v1/artist", Method.Get);
         AddApiKeyHeader(request);
 
-        var response = await _client.ExecuteAsync(request, ct);
+        var response = await ArrClientResponse.ExecuteAsync(_client, request, ct);
         ArrClientResponse.EnsureSuccess(response, "GET /api/v1/artist");
 
         if (string.IsNullOrEmpty(response.Content))
@@ -48,7 +48,7 @@ public class LidarrClient
         var request = new RestRequest("/api/v1/system/status", Method.Get);
         AddApiKeyHeader(request);
 
-        var response = await _client.ExecuteAsync(request, ct);
+        var response = await ArrClientResponse.ExecuteAsync(_client, request, ct);
 
         if (response.IsSuccessful && !string.IsNullOrEmpty(response.Content))
         {
@@ -66,7 +66,7 @@ public class LidarrClient
         var request = new RestRequest($"/api/v1/artist/{artistId}", Method.Get);
         AddApiKeyHeader(request);
 
-        var response = await _client.ExecuteAsync(request, ct);
+        var response = await ArrClientResponse.ExecuteAsync(_client, request, ct);
 
         if (response.IsSuccessful && !string.IsNullOrEmpty(response.Content))
         {
@@ -87,7 +87,7 @@ public class LidarrClient
         if (artistId.HasValue)
             request.AddQueryParameter("artistId", artistId.Value.ToString());
 
-        var response = await _client.ExecuteAsync(request, ct);
+        var response = await ArrClientResponse.ExecuteAsync(_client, request, ct);
         ArrClientResponse.EnsureSuccess(response, "GET /api/v1/album");
 
         if (string.IsNullOrEmpty(response.Content))
@@ -112,7 +112,7 @@ public class LidarrClient
 
         request.AddJsonBody(command);
 
-        var response = await _client.ExecuteAsync(request, ct);
+        var response = await ArrClientResponse.ExecuteAsync(_client, request, ct);
         return response.IsSuccessful;
     }
 
@@ -132,7 +132,7 @@ public class LidarrClient
 
         request.AddJsonBody(command);
 
-        var response = await _client.ExecuteAsync(request, ct);
+        var response = await ArrClientResponse.ExecuteAsync(_client, request, ct);
         return response.IsSuccessful;
     }
 
@@ -146,7 +146,7 @@ public class LidarrClient
 
         request.AddJsonBody(artist);
 
-        var response = await _client.ExecuteAsync(request, ct);
+        var response = await ArrClientResponse.ExecuteAsync(_client, request, ct);
 
         if (response.IsSuccessful && !string.IsNullOrEmpty(response.Content))
         {
@@ -182,7 +182,7 @@ public class LidarrClient
         request.AddQueryParameter("page", page.ToString());
         request.AddQueryParameter("pageSize", pageSize.ToString());
 
-        var response = await _client.ExecuteAsync(request, ct);
+        var response = await ArrClientResponse.ExecuteAsync(_client, request, ct);
 
         if (response.IsSuccessful && !string.IsNullOrEmpty(response.Content))
         {
@@ -203,7 +203,7 @@ public class LidarrClient
         request.AddQueryParameter("page", page.ToString());
         request.AddQueryParameter("pageSize", pageSize.ToString());
 
-        var response = await _client.ExecuteAsync(request, ct);
+        var response = await ArrClientResponse.ExecuteAsync(_client, request, ct);
         ArrClientResponse.EnsureSuccess(response, "GET /api/v1/queue");
 
         if (string.IsNullOrEmpty(response.Content))
@@ -234,7 +234,7 @@ public class LidarrClient
 
         request.AddJsonBody(command);
 
-        var response = await _client.ExecuteAsync(request, ct);
+        var response = await ArrClientResponse.ExecuteAsync(_client, request, ct);
 
         if (response.IsSuccessful && !string.IsNullOrEmpty(response.Content))
         {
@@ -252,7 +252,7 @@ public class LidarrClient
         var request = new RestRequest("/api/v1/command", Method.Get);
         AddApiKeyHeader(request);
 
-        var response = await _client.ExecuteAsync(request, ct);
+        var response = await ArrClientResponse.ExecuteAsync(_client, request, ct);
 
         if (response.IsSuccessful && !string.IsNullOrEmpty(response.Content))
         {
@@ -270,7 +270,7 @@ public class LidarrClient
         var request = new RestRequest($"/api/v1/trackfile/{trackFileId}", Method.Get);
         AddApiKeyHeader(request);
 
-        var response = await _client.ExecuteAsync(request, ct);
+        var response = await ArrClientResponse.ExecuteAsync(_client, request, ct);
 
         if (response.IsSuccessful && !string.IsNullOrEmpty(response.Content))
         {
@@ -291,7 +291,7 @@ public class LidarrClient
         if (albumId.HasValue)
             request.AddQueryParameter("albumId", albumId.Value.ToString());
 
-        var response = await _client.ExecuteAsync(request, ct);
+        var response = await ArrClientResponse.ExecuteAsync(_client, request, ct);
         ArrClientResponse.EnsureSuccess(response, "GET /api/v1/track");
 
         if (string.IsNullOrEmpty(response.Content))
@@ -311,7 +311,7 @@ public class LidarrClient
         request.AddQueryParameter("removeFromClient", removeFromClient.ToString().ToLower());
         request.AddQueryParameter("blocklist", blocklist.ToString().ToLower());
 
-        var response = await _client.ExecuteAsync(request, ct);
+        var response = await ArrClientResponse.ExecuteAsync(_client, request, ct);
         return response.IsSuccessful;
     }
 
@@ -326,7 +326,7 @@ public class LidarrClient
         var command = new { name = "RssSync" };
         request.AddJsonBody(command);
 
-        var response = await _client.ExecuteAsync(request, ct);
+        var response = await ArrClientResponse.ExecuteAsync(_client, request, ct);
 
         if (response.IsSuccessful && !string.IsNullOrEmpty(response.Content))
         {
@@ -347,7 +347,7 @@ public class LidarrClient
         var command = new { name = "RefreshMonitoredDownloads" };
         request.AddJsonBody(command);
 
-        var response = await _client.ExecuteAsync(request, ct);
+        var response = await ArrClientResponse.ExecuteAsync(_client, request, ct);
 
         if (response.IsSuccessful && !string.IsNullOrEmpty(response.Content))
         {
@@ -365,7 +365,7 @@ public class LidarrClient
         var request = new RestRequest("/api/v1/qualityprofile", Method.Get);
         AddApiKeyHeader(request);
 
-        var response = await _client.ExecuteAsync(request, ct);
+        var response = await ArrClientResponse.ExecuteAsync(_client, request, ct);
 
         if (response.IsSuccessful && !string.IsNullOrEmpty(response.Content))
         {
@@ -381,7 +381,7 @@ public class LidarrClient
         AddApiKeyHeader(request);
         request.AddQueryParameter("albumId", albumId.ToString());
 
-        var response = await _client.ExecuteAsync(request, ct);
+        var response = await ArrClientResponse.ExecuteAsync(_client, request, ct);
 
         if (response.IsSuccessful && !string.IsNullOrEmpty(response.Content))
         {
@@ -397,7 +397,7 @@ public class LidarrClient
         var request = new RestRequest("/api/v1/command", Method.Post);
         AddApiKeyHeader(request);
         request.AddJsonBody(new { name = "RescanArtist" });
-        var response = await _client.ExecuteAsync(request, ct);
+        var response = await ArrClientResponse.ExecuteAsync(_client, request, ct);
         return response.IsSuccessful;
     }
 

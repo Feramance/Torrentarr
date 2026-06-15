@@ -31,7 +31,7 @@ public class SonarrClient
         var request = new RestRequest("/api/v3/series", Method.Get);
         AddApiKeyHeader(request);
 
-        var response = await _client.ExecuteAsync(request, ct);
+        var response = await ArrClientResponse.ExecuteAsync(_client, request, ct);
         ArrClientResponse.EnsureSuccess(response, "GET /api/v3/series");
 
         if (string.IsNullOrEmpty(response.Content))
@@ -48,7 +48,7 @@ public class SonarrClient
         var request = new RestRequest("/api/v3/system/status", Method.Get);
         AddApiKeyHeader(request);
 
-        var response = await _client.ExecuteAsync(request, ct);
+        var response = await ArrClientResponse.ExecuteAsync(_client, request, ct);
 
         if (response.IsSuccessful && !string.IsNullOrEmpty(response.Content))
         {
@@ -66,7 +66,7 @@ public class SonarrClient
         var request = new RestRequest($"/api/v3/series/{seriesId}", Method.Get);
         AddApiKeyHeader(request);
 
-        var response = await _client.ExecuteAsync(request, ct);
+        var response = await ArrClientResponse.ExecuteAsync(_client, request, ct);
 
         if (response.IsSuccessful && !string.IsNullOrEmpty(response.Content))
         {
@@ -86,7 +86,7 @@ public class SonarrClient
         request.AddQueryParameter("seriesId", seriesId.ToString());
         request.AddQueryParameter("includeEpisodeFile", "true");
 
-        var response = await _client.ExecuteAsync(request, ct);
+        var response = await ArrClientResponse.ExecuteAsync(_client, request, ct);
         ArrClientResponse.EnsureSuccess(response, "GET /api/v3/episode");
 
         if (string.IsNullOrEmpty(response.Content))
@@ -111,7 +111,7 @@ public class SonarrClient
 
         request.AddJsonBody(command);
 
-        var response = await _client.ExecuteAsync(request, ct);
+        var response = await ArrClientResponse.ExecuteAsync(_client, request, ct);
         return response.IsSuccessful;
     }
 
@@ -131,7 +131,7 @@ public class SonarrClient
 
         request.AddJsonBody(command);
 
-        var response = await _client.ExecuteAsync(request, ct);
+        var response = await ArrClientResponse.ExecuteAsync(_client, request, ct);
         return response.IsSuccessful;
     }
 
@@ -145,7 +145,7 @@ public class SonarrClient
 
         request.AddJsonBody(series);
 
-        var response = await _client.ExecuteAsync(request, ct);
+        var response = await ArrClientResponse.ExecuteAsync(_client, request, ct);
 
         if (response.IsSuccessful && !string.IsNullOrEmpty(response.Content))
         {
@@ -168,7 +168,7 @@ public class SonarrClient
         request.AddQueryParameter("sortKey", "airDateUtc");
         request.AddQueryParameter("sortDirection", "descending");
 
-        var response = await _client.ExecuteAsync(request, ct);
+        var response = await ArrClientResponse.ExecuteAsync(_client, request, ct);
 
         if (response.IsSuccessful && !string.IsNullOrEmpty(response.Content))
         {
@@ -189,7 +189,7 @@ public class SonarrClient
         request.AddQueryParameter("page", page.ToString());
         request.AddQueryParameter("pageSize", pageSize.ToString());
 
-        var response = await _client.ExecuteAsync(request, ct);
+        var response = await ArrClientResponse.ExecuteAsync(_client, request, ct);
         ArrClientResponse.EnsureSuccess(response, "GET /api/v3/queue");
 
         if (string.IsNullOrEmpty(response.Content))
@@ -220,7 +220,7 @@ public class SonarrClient
 
         request.AddJsonBody(command);
 
-        var response = await _client.ExecuteAsync(request, ct);
+        var response = await ArrClientResponse.ExecuteAsync(_client, request, ct);
 
         if (response.IsSuccessful && !string.IsNullOrEmpty(response.Content))
         {
@@ -238,7 +238,7 @@ public class SonarrClient
         var request = new RestRequest("/api/v3/command", Method.Get);
         AddApiKeyHeader(request);
 
-        var response = await _client.ExecuteAsync(request, ct);
+        var response = await ArrClientResponse.ExecuteAsync(_client, request, ct);
 
         if (response.IsSuccessful && !string.IsNullOrEmpty(response.Content))
         {
@@ -256,7 +256,7 @@ public class SonarrClient
         var request = new RestRequest($"/api/v3/episodefile/{episodeFileId}", Method.Get);
         AddApiKeyHeader(request);
 
-        var response = await _client.ExecuteAsync(request, ct);
+        var response = await ArrClientResponse.ExecuteAsync(_client, request, ct);
 
         if (response.IsSuccessful && !string.IsNullOrEmpty(response.Content))
         {
@@ -277,7 +277,7 @@ public class SonarrClient
         request.AddQueryParameter("removeFromClient", removeFromClient.ToString().ToLower());
         request.AddQueryParameter("blocklist", blocklist.ToString().ToLower());
 
-        var response = await _client.ExecuteAsync(request, ct);
+        var response = await ArrClientResponse.ExecuteAsync(_client, request, ct);
         return response.IsSuccessful;
     }
 
@@ -292,7 +292,7 @@ public class SonarrClient
         var command = new { name = "RssSync" };
         request.AddJsonBody(command);
 
-        var response = await _client.ExecuteAsync(request, ct);
+        var response = await ArrClientResponse.ExecuteAsync(_client, request, ct);
 
         if (response.IsSuccessful && !string.IsNullOrEmpty(response.Content))
         {
@@ -313,7 +313,7 @@ public class SonarrClient
         var command = new { name = "RefreshMonitoredDownloads" };
         request.AddJsonBody(command);
 
-        var response = await _client.ExecuteAsync(request, ct);
+        var response = await ArrClientResponse.ExecuteAsync(_client, request, ct);
 
         if (response.IsSuccessful && !string.IsNullOrEmpty(response.Content))
         {
@@ -344,7 +344,7 @@ public class SonarrClient
         var request = new RestRequest("/api/v3/qualityprofile", Method.Get);
         AddApiKeyHeader(request);
 
-        var response = await _client.ExecuteAsync(request, ct);
+        var response = await ArrClientResponse.ExecuteAsync(_client, request, ct);
 
         if (response.IsSuccessful && !string.IsNullOrEmpty(response.Content))
         {
@@ -360,7 +360,7 @@ public class SonarrClient
         AddApiKeyHeader(request);
         request.AddQueryParameter("seriesId", seriesId.ToString());
 
-        var response = await _client.ExecuteAsync(request, ct);
+        var response = await ArrClientResponse.ExecuteAsync(_client, request, ct);
 
         if (response.IsSuccessful && !string.IsNullOrEmpty(response.Content))
         {
@@ -382,7 +382,7 @@ public class SonarrClient
         var request = new RestRequest("/api/v3/command", Method.Post);
         AddApiKeyHeader(request);
         request.AddJsonBody(new { name = "RescanSeries" });
-        var response = await _client.ExecuteAsync(request, ct);
+        var response = await ArrClientResponse.ExecuteAsync(_client, request, ct);
         return response.IsSuccessful;
     }
 

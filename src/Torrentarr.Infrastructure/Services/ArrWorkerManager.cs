@@ -256,6 +256,20 @@ public class ArrWorkerManager : BackgroundService
             }
         }
 
+        // Ensure qBit category exists and tracker tags are pre-created
+        try
+        {
+            using var initScope = _scopeFactory.CreateScope();
+            var ensure = initScope.ServiceProvider.GetRequiredService<QBitCategoryEnsureService>();
+            await ensure.EnsureCategoryOnAllInstancesAsync(arrCfg.Category, ct);
+            if (initScope.ServiceProvider.GetRequiredService<ISeedingService>() is SeedingService seedingConcrete)
+                await seedingConcrete.EnsureAllTrackerTagsExistAsync(ct);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(ex, "Category/tag initialization failed for {Instance}", instanceName);
+        }
+
         // §2.5: Consecutive error counter for exponential backoff
         int consecutiveErrors = 0;
 
@@ -291,6 +305,7 @@ public class ArrWorkerManager : BackgroundService
                     // (sync then search in the same iteration, gated by SearchRequestsEvery) — no
                     // RestartLoopException path exists here; search always follows sync in-order.
                     _stateManager.Update(searchStateName, s => s.Status = "Syncing database...");
+                    _stateManager.Update(searchStateName, s => s.SearchSummary = "Updating database");
                     await RunSyncAsync(instanceName, ct);
 
                     // §2.6: RSS Sync + Refresh Monitored Downloads (timer-gated)
@@ -474,6 +489,14 @@ public class ArrWorkerManager : BackgroundService
             using var scope = _scopeFactory.CreateScope();
             var processor = scope.ServiceProvider.GetRequiredService<ITorrentProcessor>();
             await processor.ProcessTorrentsAsync(arrCfg.Category, ct);
+
+            var pathTracker = scope.ServiceProvider.GetRequiredService<IImportPathTracker>();
+            var completedRoot = _config.Settings.CompletedDownloadFolder;
+            if (!string.IsNullOrWhiteSpace(completedRoot))
+            {
+                pathTracker.RemoveEmptyPathsUnder(completedRoot);
+                pathTracker.ClearIfFolderEmpty(completedRoot);
+            }
         }
         catch (Exception ex)
         {
