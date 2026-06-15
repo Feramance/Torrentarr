@@ -2684,6 +2684,9 @@ static (TorrentarrConfig? updatedConfig, IResult? error) ApplyDottedConfigChange
     if (currentObj["WebUI"] is Newtonsoft.Json.Linq.JObject webuiObj)
         updatedConfig.WebUI = webuiObj.ToObject<WebUIConfig>(serializer) ?? new WebUIConfig();
 
+    // PasswordHash is only writable via POST /web/auth/set-password, not config merge.
+    updatedConfig.WebUI.PasswordHash = cfg.WebUI.PasswordHash;
+
     foreach (var prop in currentObj.Properties())
     {
         if (prop.Value is not Newtonsoft.Json.Linq.JObject sectionObj) continue;

@@ -267,4 +267,47 @@ public class ConfigRedactionTests : IClassFixture<LocalAuthWebApplicationFactory
         });
         loginAfter.StatusCode.Should().Be(HttpStatusCode.OK, "empty PasswordHash must not clear the real hash");
     }
+
+    /// <summary>Replacing the whole WebUI section with PasswordHash="" must not clear the stored hash.</summary>
+    [Fact]
+    public async Task PostConfig_WithWholeWebUISectionEmptyPasswordHash_DoesNotClearRealHash()
+    {
+        _factory.SetConfigEnv();
+        var client = _factory.CreateClientWithApiToken();
+
+        var loginBefore = await client.PostAsJsonAsync("/web/login", new
+        {
+            username = LocalAuthWebApplicationFactory.TestUsername,
+            password = LocalAuthWebApplicationFactory.TestPassword
+        });
+        loginBefore.StatusCode.Should().Be(HttpStatusCode.OK);
+
+        var payload = new
+        {
+            changes = new Dictionary<string, object>
+            {
+                ["WebUI"] = new Dictionary<string, object>
+                {
+                    ["Host"] = "0.0.0.0",
+                    ["Port"] = 6969,
+                    ["Token"] = "test-api-token",
+                    ["AuthDisabled"] = false,
+                    ["LocalAuthEnabled"] = true,
+                    ["Username"] = "admin",
+                    ["PasswordHash"] = "",
+                    ["OIDCEnabled"] = false,
+                    ["LiveArr"] = false,
+                }
+            }
+        };
+        var patchResponse = await client.PostAsJsonAsync("/web/config", payload);
+        patchResponse.StatusCode.Should().Be(HttpStatusCode.OK);
+
+        var loginAfter = await client.PostAsJsonAsync("/web/login", new
+        {
+            username = LocalAuthWebApplicationFactory.TestUsername,
+            password = LocalAuthWebApplicationFactory.TestPassword
+        });
+        loginAfter.StatusCode.Should().Be(HttpStatusCode.OK, "whole WebUI section with empty PasswordHash must not clear the real hash");
+    }
 }
