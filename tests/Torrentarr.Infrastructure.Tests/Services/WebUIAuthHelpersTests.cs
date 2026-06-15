@@ -147,4 +147,27 @@ public class WebUIAuthHelpersTests
             Environment.SetEnvironmentVariable("TORRENTARR_SETUP_TOKEN", null);
         }
     }
+
+    [Theory]
+    [InlineData("")]
+    [InlineData("new-bcrypt-hash")]
+    public void RejectPasswordHashConfigChange_RejectsDirectWrites(string newValue)
+    {
+        WebUIAuthHelpers.RejectPasswordHashConfigChange("WebUI.PasswordHash", newValue)
+            .Should().NotBeNullOrEmpty();
+    }
+
+    [Fact]
+    public void RejectPasswordHashConfigChange_AllowsRedactedPlaceholder()
+    {
+        WebUIAuthHelpers.RejectPasswordHashConfigChange("WebUI.PasswordHash", WebUIAuthHelpers.RedactedPlaceholder)
+            .Should().BeNull();
+    }
+
+    [Fact]
+    public void RejectPasswordHashConfigChange_IgnoresOtherKeys()
+    {
+        WebUIAuthHelpers.RejectPasswordHashConfigChange("WebUI.Port", "8080")
+            .Should().BeNull();
+    }
 }
