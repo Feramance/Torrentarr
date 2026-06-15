@@ -733,12 +733,14 @@ app.MapPost("/web/config", async (HttpContext ctx, TorrentarrConfig config, Conf
             // Never overwrite a real secret with the redaction placeholder from the frontend
             if (IsSensitiveDottedKey(key)
                 && value.Type == Newtonsoft.Json.Linq.JTokenType.String
-                && value.ToString() == "[redacted]")
+                && value.ToString() == WebUIAuthHelpers.RedactedPlaceholder)
                 continue;
 
-            // PasswordHash is only writable via POST /web/auth/set-password, not config merge.
-            if (string.Equals(key, "WebUI.PasswordHash", StringComparison.OrdinalIgnoreCase))
-                continue;
+            var passwordHashError = WebUIAuthHelpers.RejectPasswordHashConfigChange(
+                key,
+                value.Type == Newtonsoft.Json.Linq.JTokenType.String ? value.ToString() : value.ToString());
+            if (passwordHashError != null)
+                return Results.Json(new { error = passwordHashError }, statusCode: 403);
 
             ApplyDotPathChange(flatConfig, key, value);
         }

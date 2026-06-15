@@ -150,7 +150,7 @@ public class SetPasswordEndpointTests : IClassFixture<TorrentarrWebApplicationFa
             {
                 changes = new Dictionary<string, object> { ["WebUI.PasswordHash"] = "" }
             });
-            clearAttempt.StatusCode.Should().Be(HttpStatusCode.OK);
+            clearAttempt.StatusCode.Should().Be(HttpStatusCode.Forbidden);
 
             client.DefaultRequestHeaders.Authorization =
                 new AuthenticationHeaderValue("Bearer", "test-api-token");

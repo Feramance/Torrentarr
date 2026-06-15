@@ -867,6 +867,13 @@ public class ArrSyncService
         }
         await _db.SaveChangesAsync(ct);
 
+        // When albums API returned empty (delete guarded) but DB still has rows, resolve track FKs from DB.
+        foreach (var album in dbAlbums.Values)
+        {
+            if (album.ArrId > 0)
+                albumEntityByLidarrId.TryAdd(album.ArrId, album);
+        }
+
         // Fetch all tracks at once and group by Lidarr album ID
         List<Track> allTracks;
         try { allTracks = await client.GetTracksAsync(ct: ct); }
@@ -881,9 +888,10 @@ public class ArrSyncService
             .Where(t => t.ArrInstance == instanceName)
             .ToListAsync(ct);
 
-        if (ShouldSkipDestructiveDelete(allTracks.Count, existingTracks.Count, instanceName, "tracks"))
+        var mappableTrackCount = allTracks.Count(t => albumEntityByLidarrId.ContainsKey(t.AlbumId));
+        if (ShouldSkipDestructiveTrackSync(allTracks.Count, existingTracks.Count, mappableTrackCount, instanceName))
         {
-            _logger.LogDebug("[{Instance}] ArrSyncService: Lidarr {Name} track sync skipped (suspicious empty API response)",
+            _logger.LogDebug("[{Instance}] ArrSyncService: Lidarr {Name} track sync skipped (destructive delete refused)",
                 instanceName, instanceName);
             return;
         }
@@ -1305,6 +1313,30 @@ public class ArrSyncService
             _logger.LogWarning(
                 "[{Instance}] ArrSyncService: refusing destructive {Entity} sync — API returned no items but DB has {Count} rows",
                 instanceName, entityName, existingCount);
+            return true;
+        }
+
+        return false;
+    }
+
+    /// <summary>
+    /// Refuse Lidarr track wipe when API tracks cannot be mapped to any known album (e.g. albums API
+    /// returned empty but tracks API did not — would delete all rows and re-insert none).
+    /// </summary>
+    private bool ShouldSkipDestructiveTrackSync(
+        int apiTrackCount,
+        int existingTrackCount,
+        int mappableTrackCount,
+        string instanceName)
+    {
+        if (ShouldSkipDestructiveDelete(apiTrackCount, existingTrackCount, instanceName, "tracks"))
+            return true;
+
+        if (existingTrackCount > 0 && apiTrackCount > 0 && mappableTrackCount == 0)
+        {
+            _logger.LogWarning(
+                "[{Instance}] ArrSyncService: refusing destructive tracks sync — API returned {ApiCount} tracks but none map to known albums",
+                instanceName, apiTrackCount);
             return true;
         }
 

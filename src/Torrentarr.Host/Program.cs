@@ -2641,9 +2641,11 @@ static (TorrentarrConfig? updatedConfig, IResult? error) ApplyDottedConfigChange
             change.Value.ToString() == REDACTED_PLACEHOLDER)
             continue;
 
-        // PasswordHash is only writable via POST /web/auth/set-password, not config merge.
-        if (string.Equals(change.Name, "WebUI.PasswordHash", StringComparison.OrdinalIgnoreCase))
-            continue;
+        var passwordHashError = WebUIAuthHelpers.RejectPasswordHashConfigChange(
+            change.Name,
+            change.Value.Type == Newtonsoft.Json.Linq.JTokenType.String ? change.Value.ToString() : change.Value.ToString());
+        if (passwordHashError != null)
+            return (null, Results.Json(new { error = passwordHashError }, statusCode: 403));
 
         var parts = change.Name.Split('.');
         var rawSectionKey = parts[0];
