@@ -271,6 +271,80 @@ public class ConfigRedactionTests : IClassFixture<LocalAuthWebApplicationFactory
     }
 
     [Fact]
+    public async Task PostApiConfig_FullReplaceWithEmptyPasswordHash_Returns403_AndPreservesLogin()
+    {
+        _factory.SetConfigEnv();
+        var client = _factory.CreateClientWithApiToken();
+
+        var payload = new
+        {
+            Settings = new
+            {
+                ConfigVersion = "6.12.2",
+                LoopSleepTimer = 5,
+                FailedCategory = "failed",
+                RecheckCategory = "recheck",
+                PingURLS = new[] { "one.one.one.one" }
+            },
+            WebUI = new
+            {
+                Host = "0.0.0.0",
+                Port = 6969,
+                Token = "test-api-token",
+                AuthDisabled = false,
+                LocalAuthEnabled = true,
+                OIDCEnabled = false,
+                Username = LocalAuthWebApplicationFactory.TestUsername,
+                PasswordHash = "",
+                LiveArr = false
+            }
+        };
+        var patchResponse = await client.PostAsJsonAsync("/api/config", payload);
+        patchResponse.StatusCode.Should().Be(HttpStatusCode.Forbidden);
+
+        var loginAfter = await client.PostAsJsonAsync("/web/login", new
+        {
+            username = LocalAuthWebApplicationFactory.TestUsername,
+            password = LocalAuthWebApplicationFactory.TestPassword
+        });
+        loginAfter.StatusCode.Should().Be(HttpStatusCode.OK);
+    }
+
+    [Fact]
+    public async Task PostConfig_WithWebUISectionEmptyPasswordHash_Returns403_AndPreservesLogin()
+    {
+        _factory.SetConfigEnv();
+        var client = _factory.CreateClientWithApiToken();
+
+        var getResponse = await client.GetAsync("/web/config");
+        var configJson = JsonDocument.Parse(await getResponse.Content.ReadAsStringAsync()).RootElement;
+        var webui = new Dictionary<string, object?>();
+        foreach (var webuiProp in configJson.GetProperty("WebUI").EnumerateObject())
+        {
+            webui[webuiProp.Name] = webuiProp.NameEquals("PasswordHash")
+                ? ""
+                : webuiProp.Value.ValueKind switch
+                {
+                    JsonValueKind.String => webuiProp.Value.GetString(),
+                    JsonValueKind.Number => webuiProp.Value.GetInt32(),
+                    JsonValueKind.True => true,
+                    JsonValueKind.False => false,
+                    _ => webuiProp.Value.ToString()
+                };
+        }
+
+        var patchResponse = await client.PostAsJsonAsync("/web/config", new { changes = new Dictionary<string, object> { ["WebUI"] = webui } });
+        patchResponse.StatusCode.Should().Be(HttpStatusCode.Forbidden);
+
+        var loginAfter = await client.PostAsJsonAsync("/web/login", new
+        {
+            username = LocalAuthWebApplicationFactory.TestUsername,
+            password = LocalAuthWebApplicationFactory.TestPassword
+        });
+        loginAfter.StatusCode.Should().Be(HttpStatusCode.OK);
+    }
+
+    [Fact]
     public async Task PostConfig_EmptyPasswordHash_CannotBeUsedForAccountTakeoverViaSetPassword()
     {
         _factory.SetConfigEnv();
