@@ -1,0 +1,53 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <title>Torrentarr PR Triage — Create Cursor Automation</title>
+  <style>
+    body { font-family: system-ui, sans-serif; max-width: 52rem; margin: 2rem auto; padding: 0 1rem; line-height: 1.5; }
+    h1 { font-size: 1.4rem; }
+    .primary { display: inline-block; background: #111; color: #fff; padding: 0.75rem 1.25rem; border-radius: 8px; text-decoration: none; font-weight: 600; margin: 0.5rem 0; }
+    .primary:hover { background: #333; }
+    .secondary { display: inline-block; margin-left: 0.5rem; padding: 0.75rem 1.25rem; border: 1px solid #ccc; border-radius: 8px; background: #fff; cursor: pointer; }
+    ol li { margin: 0.35rem 0; }
+    textarea { width: 100%; height: 14rem; font-family: ui-monospace, monospace; font-size: 0.8rem; }
+    .ok { color: #0a0; }
+  </style>
+</head>
+<body>
+  <h1>Torrentarr PR Triage — Cursor Automation</h1>
+  <p>Cursor pre-fills the editor from a marketplace template (PR opened + pushed + PR comment). You swap in the Torrentarr prompt, set the repo, then click <strong>Create</strong>.</p>
+
+  <p>
+    <a class="primary" id="openEditor" href="https://cursor.com/automations/new?templateId=find-vulnerabilities" target="_blank" rel="noopener">
+      Open Automations editor (pre-filled)
+    </a>
+    <button class="secondary" type="button" id="copyPrompt">Copy Torrentarr prompt</button>
+    <span id="copied" class="ok" hidden>Copied!</span>
+  </p>
+
+  <h2>After the editor opens</h2>
+  <ol>
+    <li><strong>Name:</strong> Torrentarr PR Triage</li>
+    <li><strong>Repository:</strong> Feramance/Torrentarr</li>
+    <li><strong>Triggers:</strong> keep PR opened + PR pushed (pre-selected)</li>
+    <li><strong>Tools:</strong> disable <em>Slack</em>; keep <em>Comment on pull request</em> only</li>
+    <li><strong>Instructions:</strong> select all → delete template text → paste copied prompt</li>
+    <li>Leave <strong>disabled</strong>, test on PR #229 or #271, then enable</li>
+  </ol>
+
+  <h2>Prompt (for manual copy)</h2>
+  <textarea id="promptBox" readonly></textarea>
+
+  <script>
+    const PROMPT = "You are triaging a single pull request on **Torrentarr** (`Feramance/Torrentarr`). Your job is to validate whether this PR should be merged, cherry-picked, closed as duplicate, rejected, or deferred \u2014 and post a structured comment on the PR using the **Comment on pull request** tool.\n\n## Required reading (in repo)\n\n1. `AGENTS.md` \u2014 architecture, tests, config rules\n2. Latest `docs/audits/pr-triage-*.md` \u2014 confirmed bugs on master and open-PR winners (ground truth: `docs/audits/pr-triage-2026-06-15.md`)\n3. `docs/parity/contract-baseline.md` \u2014 qBitrr 5.12.3 parity baselines\n\n## Workflow\n\n1. **Diff** the PR against `master`. Ignore lockfile-only changes unless the PR is purely Dependabot.\n2. **Map** changes to bug themes. Skip fixes for bugs already resolved on `master` (see audit \u201cConfirmed bugs on master\u201d).\n3. **Score** five axes:\n   - **B** Bug validity \u2014 does the PR fix a real bug still on master?\n   - **F** Fix correctness \u2014 minimal, correct vs qBitrr parity?\n   - **T** Tests \u2014 meaningful regression tests?\n   - **H** Hygiene \u2014 file count, SDK junk, unrelated docs/CI noise?\n   - **O** Overlap \u2014 duplicate of another open PR or already on master?\n4. **Verdict:** exactly one of: **Implement**, **Cherry-pick**, **Close (duplicate)**, **Reject**, **Defer**.\n5. **Overlap check:** search other open PRs on the same theme; link the winner if this PR is a duplicate.\n6. **Tests** (when PR touches `.cs` or `webui/`):\n   ```bash\n   dotnet restore && dotnet build -c Release\n   dotnet test -c Release --no-build --filter \"Category!=Live\"\n   cd webui && npm ci && npx vitest run\n   ```\n   Skip for trivial Dependabot lockfile-only PRs.\n7. **Do not** approve the PR, request changes via GitHub review, close the PR, or open new PRs.\n\n## Torrentarr-specific checks\n\n- **Tagless mode:** `TorrentLibrary` lookups must use `(Hash, QbitInstance)`, not hash alone (`FreeSpaceService`, `SeedingService`, `TorrentProcessor`).\n- **Arr sync:** destructive deletes must use `ShouldSkipDestructiveDelete` / `ShouldSkipDestructiveTrackSync` \u2014 never wipe DB on empty API responses.\n- **HnR:** `HnrAllowsDeleteAsync` before any torrent delete (removal loop, CF-unmet, ratio/seed paths).\n- **Auth:** `WebUI.PasswordHash` only via `POST /web/auth/set-password`; config APIs must reject direct hash writes/clears.\n- **Config:** `POST /api/config` must use dotted `changes` merge, not full JSON replace.\n- **Hygiene red flags:** `.dotnet/` SDK commits, megabranches (>30 files), >50% parity-doc noise.\n\n## Known winners (2026-06-15 audit \u2014 do not recommend merging duplicates)\n\n| Theme | Winner PR |\n|-------|-----------|\n| Tagless instance scoping | #229 |\n| Config PasswordHash security | #271 |\n| `/api/config` dotted-only | #258 |\n| Lidarr track sync edge case | #243 |\n\n## PR comment format\n\nPost a single comment using this structure:\n\n```markdown\n## PR Triage (Cursor Automation)\n\n**Verdict:** <Implement | Cherry-pick | Close (duplicate) | Reject | Defer>\n\n| Axis | Score | Notes |\n|------|-------|-------|\n| Bug validity | P/F | \u2026 |\n| Fix correctness | P/F | \u2026 |\n| Tests | P/F | \u2026 |\n| Hygiene | P/F | \u2026 |\n| Overlap | P/F | \u2026 |\n\n### Why\n\u2026\n\n### Tests run\n\u2026\n\n### Overlap\nLink to winning PR if duplicate; otherwise \u201cNone\u201d.\n```\n\nIf the PR is a clean **Implement** with no issues, still post the comment with scores \u2014 do not stay silent.\n";
+    document.getElementById('promptBox').value = PROMPT;
+    document.getElementById('copyPrompt').addEventListener('click', async () => {
+      await navigator.clipboard.writeText(PROMPT);
+      const el = document.getElementById('copied');
+      el.hidden = false;
+      setTimeout(() => { el.hidden = true; }, 2000);
+    });
+  </script>
+</body>
+</html>

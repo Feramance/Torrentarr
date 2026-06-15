@@ -1,7 +1,11 @@
 # Torrentarr PR Triage — Cursor Automation definition (repo-managed)
 #
-# Import: cursor.com/automations/new → use settings below, paste prompt from prompt.md
+# Import: run ./scripts/open-pr-triage-automation-editor.sh
+#   → opens cursor.com/automations/new?templateId=find-vulnerabilities (PR triggers + comment tool)
+#   → paste prompt.md, set Feramance/Torrentarr, disable Slack, Create
 # Future: Cursor may auto-discover .cursor/automations/ (see forum feature request)
+
+bootstrap_template_id: find-vulnerabilities  # PR opened + pushed + PR Comment
 #
 # https://cursor.com/docs/cloud-agent/automations
 

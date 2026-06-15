@@ -6,7 +6,9 @@ Repo-managed automation definition for [Cursor Automations](https://cursor.com/d
 |------|---------|
 | [`.cursor/automations/torrentarr-pr-triage/automation.yaml`](../../.cursor/automations/torrentarr-pr-triage/automation.yaml) | Triggers, tools, metadata |
 | [`.cursor/automations/torrentarr-pr-triage/prompt.md`](../../.cursor/automations/torrentarr-pr-triage/prompt.md) | Instructions to paste into dashboard |
+| [`scripts/open-pr-triage-automation-editor.sh`](../../scripts/open-pr-triage-automation-editor.sh) | Opens pre-filled editor URL |
 | [`scripts/print-pr-triage-automation-setup.sh`](../../scripts/print-pr-triage-automation-setup.sh) | Prints setup checklist |
+| [`docs/audits/open-pr-triage-automation.html`](open-pr-triage-automation.html) | Browser launcher + copy prompt |
 
 **Ground truth:** [`pr-triage-2026-06-15.md`](pr-triage-2026-06-15.md). Re-baseline after major `master` merges.
 
@@ -16,19 +18,26 @@ Repo-managed automation definition for [Cursor Automations](https://cursor.com/d
 
 ## Quick setup (5 minutes)
 
+**One click (recommended):** open the pre-filled editor, then paste the prompt:
+
+[**Open Automations editor (pre-filled)**](https://cursor.com/automations/new?templateId=find-vulnerabilities)
+
+Or locally: open [`docs/audits/open-pr-triage-automation.html`](open-pr-triage-automation.html) in a browser (copy prompt + checklist).
+
 ```bash
-./scripts/print-pr-triage-automation-setup.sh
+./scripts/open-pr-triage-automation-editor.sh
 ```
 
-1. Open [cursor.com/automations/new](https://cursor.com/automations/new)
+The bootstrap template `find-vulnerabilities` pre-selects **PR opened**, **PR pushed**, and **PR Comment** — same triggers/tools as this spec. You still replace the template prompt with ours and disable Slack.
+
+1. Click the pre-filled editor link above (sign in to Cursor if prompted)
 2. **Name:** `Torrentarr PR Triage`
-3. **Triggers:** GitHub → `Feramance/Torrentarr` → **Pull request opened** + **Pull request pushed**
-4. **Repository:** `Feramance/Torrentarr`
-5. **Tools:** **Comment on pull request** only (leave approvals off)
-6. **Instructions:** paste entire contents of [`.cursor/automations/torrentarr-pr-triage/prompt.md`](../../.cursor/automations/torrentarr-pr-triage/prompt.md)
-7. Save as **disabled**
-8. **Test** on PR [#229](https://github.com/Feramance/Torrentarr/pull/229) or [#271](https://github.com/Feramance/Torrentarr/pull/271); compare to [`pr-triage-2026-06-15.md`](pr-triage-2026-06-15.md)
-9. **Enable** when satisfied
+3. **Repository:** `Feramance/Torrentarr` (triggers PR opened + pushed should already be set)
+4. **Tools:** disable **Slack**; keep **Comment on pull request** only
+5. **Instructions:** replace template text — paste from [prompt.md](../../.cursor/automations/torrentarr-pr-triage/prompt.md) or use **Copy Torrentarr prompt** in the HTML launcher
+6. Save as **disabled**
+7. **Test** on PR [#229](https://github.com/Feramance/Torrentarr/pull/229) or [#271](https://github.com/Feramance/Torrentarr/pull/271); compare to [`pr-triage-2026-06-15.md`](pr-triage-2026-06-15.md)
+8. **Enable** when satisfied
 
 ---
 
