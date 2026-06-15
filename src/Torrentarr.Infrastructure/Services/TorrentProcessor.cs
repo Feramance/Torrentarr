@@ -273,7 +273,7 @@ public class TorrentProcessor : ITorrentProcessor
             if (result.Success)
             {
                 libraryEntry.Imported = true;
-                await _dbContext.SaveChangesWithRetryAsync(_logger, _restartCoordinator, cancellationToken:cancellationToken);
+                await _dbContext.SaveChangesWithRetryAsync(_logger, _restartCoordinator, cancellationToken: cancellationToken);
                 _logger.LogInformation("Successfully triggered import for torrent {Hash}: {Message}",
                     hash, result.Message);
 
@@ -299,7 +299,7 @@ public class TorrentProcessor : ITorrentProcessor
         {
             _logger.LogWarning("ArrImportService not available, marking as imported without triggering");
             libraryEntry.Imported = true;
-            await _dbContext.SaveChangesWithRetryAsync(_logger, _restartCoordinator, cancellationToken:cancellationToken);
+            await _dbContext.SaveChangesWithRetryAsync(_logger, _restartCoordinator, cancellationToken: cancellationToken);
         }
     }
 
@@ -1014,7 +1014,7 @@ public class TorrentProcessor : ITorrentProcessor
                     case AllowedStalledTag: entry.AllowedStalled = true; break;
                     case FreeSpacePausedTag: entry.FreeSpacePaused = true; break;
                 }
-                await _dbContext.SaveChangesWithRetryAsync(_logger, _restartCoordinator, cancellationToken:ct);
+                await _dbContext.SaveChangesWithRetryAsync(_logger, _restartCoordinator, cancellationToken: ct);
             }
         }
         else
@@ -1040,7 +1040,7 @@ public class TorrentProcessor : ITorrentProcessor
                     case AllowedStalledTag: entry.AllowedStalled = false; break;
                     case FreeSpacePausedTag: entry.FreeSpacePaused = false; break;
                 }
-                await _dbContext.SaveChangesWithRetryAsync(_logger, _restartCoordinator, cancellationToken:ct);
+                await _dbContext.SaveChangesWithRetryAsync(_logger, _restartCoordinator, cancellationToken: ct);
             }
         }
         else
@@ -1134,7 +1134,7 @@ public class TorrentProcessor : ITorrentProcessor
             };
 
             _dbContext.TorrentLibrary.Add(entry);
-            await _dbContext.SaveChangesWithRetryAsync(_logger, _restartCoordinator, cancellationToken:cancellationToken);
+            await _dbContext.SaveChangesWithRetryAsync(_logger, _restartCoordinator, cancellationToken: cancellationToken);
 
             _logger.LogTrace("Added torrent {Hash} to database", torrent.Hash);
         }
@@ -1281,7 +1281,7 @@ public class TorrentProcessor : ITorrentProcessor
             if (entry != null)
             {
                 entry.AllowedStalled = true;
-                await _dbContext.SaveChangesWithRetryAsync(_logger, _restartCoordinator, cancellationToken:ct);
+                await _dbContext.SaveChangesWithRetryAsync(_logger, _restartCoordinator, cancellationToken: ct);
             }
         }
         else
@@ -1302,7 +1302,7 @@ public class TorrentProcessor : ITorrentProcessor
             if (entry != null)
             {
                 entry.AllowedStalled = false;
-                await _dbContext.SaveChangesWithRetryAsync(_logger, _restartCoordinator, cancellationToken:ct);
+                await _dbContext.SaveChangesWithRetryAsync(_logger, _restartCoordinator, cancellationToken: ct);
             }
         }
         else
