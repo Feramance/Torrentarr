@@ -1,12 +1,12 @@
-# Cursor Automation: Torrentarr PR Triage
+# Cursor Automation: Torrentarr PR Validation
 
-Repo-managed automation definition for [Cursor Automations](https://cursor.com/docs/cloud-agent/automations).
+Repo-managed automation that validates pull requests against `master`, checks merge conflicts, runs build/tests, and comments with a **Merge** or **Close** recommendation.
 
 | File | Purpose |
 |------|---------|
 | [`.cursor/automations/torrentarr-pr-triage/automation.yaml`](../../.cursor/automations/torrentarr-pr-triage/automation.yaml) | Triggers, tools, metadata |
 | [`.cursor/automations/torrentarr-pr-triage/prompt.md`](../../.cursor/automations/torrentarr-pr-triage/prompt.md) | Instructions to paste into dashboard |
-| [`scripts/open-pr-triage-automation-editor.sh`](../../scripts/open-pr-triage-automation-editor.sh) | Opens pre-filled editor URL |
+| [`scripts/open-pr-triage-automation-editor.sh`](../../scripts/open-pr-triage-automation-editor.sh) | Opens Automations editor |
 | [`scripts/print-pr-triage-automation-setup.sh`](../../scripts/print-pr-triage-automation-setup.sh) | Prints setup checklist |
 | [`docs/audits/open-pr-triage-automation.html`](open-pr-triage-automation.html) | Browser launcher + copy prompt |
 
@@ -14,30 +14,47 @@ Repo-managed automation definition for [Cursor Automations](https://cursor.com/d
 
 > **Note:** Cursor does not yet auto-import `.cursor/automations/` from the repo. Create the automation once in the dashboard using the files above; the prompt stays version-controlled in git.
 
+This automation is **PR validation and triage**, not a vulnerability scanner.
+
 ---
 
 ## Quick setup (5 minutes)
 
-**One click (recommended):** open the pre-filled editor, then paste the prompt:
+**Open the Automations editor:**
 
-[**Open Automations editor (pre-filled)**](https://cursor.com/automations/new?templateId=find-vulnerabilities)
+[**Create new automation**](https://cursor.com/automations/new)
 
-Or locally: open [`docs/audits/open-pr-triage-automation.html`](open-pr-triage-automation.html) in a browser (copy prompt + checklist).
+Or locally:
 
 ```bash
 ./scripts/open-pr-triage-automation-editor.sh
 ```
 
-The bootstrap template `find-vulnerabilities` pre-selects **PR opened**, **PR pushed**, and **PR Comment** — same triggers/tools as this spec. You still replace the template prompt with ours and disable Slack.
+Or open [`docs/audits/open-pr-triage-automation.html`](open-pr-triage-automation.html) in a browser (copy prompt + checklist).
 
-1. Click the pre-filled editor link above (sign in to Cursor if prompted)
-2. **Name:** `Torrentarr PR Triage`
-3. **Repository:** `Feramance/Torrentarr` (triggers PR opened + pushed should already be set)
-4. **Tools:** disable **Slack**; keep **Comment on pull request** only
-5. **Instructions:** replace template text — paste from [prompt.md](../../.cursor/automations/torrentarr-pr-triage/prompt.md) or use **Copy Torrentarr prompt** in the HTML launcher
-6. Save as **disabled**
-7. **Test** on PR [#229](https://github.com/Feramance/Torrentarr/pull/229) or [#271](https://github.com/Feramance/Torrentarr/pull/271); compare to [`pr-triage-2026-06-15.md`](pr-triage-2026-06-15.md)
-8. **Enable** when satisfied
+### Dashboard steps
+
+1. Sign in at [cursor.com/automations](https://cursor.com/automations) if prompted
+2. **Name:** `Torrentarr PR Validation`
+3. **Repository:** `Feramance/Torrentarr`
+4. **Triggers:** Pull request opened, Pull request pushed
+5. **Tools:** Comment on pull request **only** (no Slack, no approve/request-changes)
+6. **Instructions:** paste from [prompt.md](../../.cursor/automations/torrentarr-pr-triage/prompt.md)
+7. Save as **disabled**
+8. **Test** on PR [#229](https://github.com/Feramance/Torrentarr/pull/229) or [#271](https://github.com/Feramance/Torrentarr/pull/271)
+9. **Enable** when satisfied
+
+---
+
+## What the automation does
+
+On each PR open or push:
+
+1. Fetches `master` and the PR branch
+2. Attempts merge with `master`; resolves conflicts locally when safe
+3. Runs `dotnet build`, `dotnet test --filter "Category!=Live"`, and `npx vitest run` when source changes warrant it
+4. Validates purpose, correctness, tests, hygiene, and overlap with other open PRs
+5. Posts a comment: **Merge** (all gates pass) or **Close** (with reason: conflicts, test failures, duplicate, obsolete, incorrect fix, etc.)
 
 ---
 
@@ -45,10 +62,10 @@ The bootstrap template `find-vulnerabilities` pre-selects **PR opened**, **PR pu
 
 | Setting | Value |
 |---------|-------|
-| **Name** | Torrentarr PR Triage |
-| **Repository** | `Feramance/Torrentarr` (single-repo) |
+| **Name** | Torrentarr PR Validation |
+| **Repository** | `Feramance/Torrentarr` |
 | **Triggers** | Pull request opened, Pull request pushed |
-| **Tools** | Comment on pull request (**only**) |
+| **Tools** | Comment on pull request (only) |
 | **Model** | Default cloud agent |
 | **Permissions** | Private or Team Visible |
 | **Initial state** | Disabled |
@@ -65,10 +82,10 @@ When `prompt.md` changes on `master`, re-copy it into the dashboard Instructions
 
 ## Optional later upgrades
 
+- **CI completed** trigger — re-validate after GitHub Actions finish
 - **Memories** — track cluster winners across runs
-- **Request reviewers** — for high-risk PRs after triage stabilizes
+- **Request reviewers** — for high-risk PRs after validation stabilizes
 - **Scheduled** weekly run — full open-PR inventory
-- **Webhook** — trigger after CI completes
 
 ## Billing
 

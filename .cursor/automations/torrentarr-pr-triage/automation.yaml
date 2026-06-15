@@ -1,16 +1,14 @@
-# Torrentarr PR Triage — Cursor Automation definition (repo-managed)
+# Torrentarr PR Validation — Cursor Automation definition (repo-managed)
 #
-# Import: run ./scripts/open-pr-triage-automation-editor.sh
-#   → opens cursor.com/automations/new?templateId=find-vulnerabilities (PR triggers + comment tool)
-#   → paste prompt.md, set Feramance/Torrentarr, disable Slack, Create
-# Future: Cursor may auto-discover .cursor/automations/ (see forum feature request)
+# Setup: ./scripts/open-pr-triage-automation-editor.sh
+#   → opens cursor.com/automations/new (blank editor)
+#   → paste prompt.md, configure triggers/tools below, Create
+# Future: Cursor may auto-discover .cursor/automations/ (forum feature request)
 
-bootstrap_template_id: find-vulnerabilities  # PR opened + pushed + PR Comment
-#
 # https://cursor.com/docs/cloud-agent/automations
 
-name: torrentarr-pr-triage
-display_name: Torrentarr PR Triage
+name: torrentarr-pr-validation
+display_name: Torrentarr PR Validation
 enabled: false  # start disabled; test on #229 or #271 before enabling
 
 repository:
@@ -26,7 +24,7 @@ triggers:
 
 tools:
 - comment_on_pr
-  # Do NOT enable approve_pr or request_reviewers until triage is validated
+  # Do NOT enable approve_pr or request_reviewers until validation is trusted
 
 permissions: private  # or team_visible
 
