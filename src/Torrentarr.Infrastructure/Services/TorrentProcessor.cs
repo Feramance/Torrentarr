@@ -1002,7 +1002,7 @@ public class TorrentProcessor : ITorrentProcessor
         {
             if (tag == IgnoredTag) return false;
             var dbEntry = _dbContext.TorrentLibrary.AsNoTracking()
-                .FirstOrDefault(t => t.Hash == torrent.Hash);
+                .FirstOrDefault(t => t.Hash == torrent.Hash && t.QbitInstance == torrent.QBitInstanceName);
             if (dbEntry == null) return false;
             return tag switch
             {
