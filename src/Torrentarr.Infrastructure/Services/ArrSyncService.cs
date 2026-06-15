@@ -897,7 +897,6 @@ public class ArrSyncService
         }
 
         _db.Tracks.RemoveRange(existingTracks);
-        await _db.SaveChangesAsync(ct);
 
         var tracksAdded = 0;
         foreach (var track in allTracks)
