@@ -14,14 +14,14 @@ repository:
   branch: master
 
 triggers:
-  - type: github
-    repository: Feramance/Torrentarr
-    events:
-      - pull_request.opened
-      - pull_request.pushed
+- type: github
+  repository: Feramance/Torrentarr
+  events:
+  - pull_request.opened
+  - pull_request.pushed
 
 tools:
-  - comment_on_pr
+- comment_on_pr
   # Do NOT enable approve_pr or request_reviewers until triage is validated
 
 permissions: private  # or team_visible
@@ -31,6 +31,6 @@ model: default
 prompt_file: .cursor/automations/torrentarr-pr-triage/prompt.md
 
 ground_truth:
-  - docs/audits/pr-triage-2026-06-15.md
-  - AGENTS.md
-  - docs/parity/contract-baseline.md
+- docs/audits/pr-triage-2026-06-15.md
+- AGENTS.md
+- docs/parity/contract-baseline.md
