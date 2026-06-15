@@ -7,6 +7,23 @@ namespace Torrentarr.Infrastructure.Services;
 /// <summary>Shared auth helpers for WebUI and Host: constant-time token comparison and public path detection.</summary>
 public static class WebUIAuthHelpers
 {
+    public const string RedactedPlaceholder = "[redacted]";
+
+    /// <summary>
+    /// Config APIs must not accept direct PasswordHash writes (including clearing to empty).
+    /// Returns an error message when the change must be rejected; null when it may proceed.
+    /// </summary>
+    public static string? RejectPasswordHashConfigChange(string dottedKey, string? newValue)
+    {
+        if (!string.Equals(dottedKey, "WebUI.PasswordHash", StringComparison.OrdinalIgnoreCase))
+            return null;
+
+        if (string.Equals(newValue, RedactedPlaceholder, StringComparison.Ordinal))
+            return null;
+
+        return "Password must be changed via POST /web/auth/set-password";
+    }
+
     /// <summary>Constant-time token comparison using SHA-256 hashes to avoid leaking length.</summary>
     public static bool TokenEquals(string? a, string? b)
     {

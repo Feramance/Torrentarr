@@ -230,4 +230,71 @@ public class ConfigRedactionTests : IClassFixture<LocalAuthWebApplicationFactory
         });
         loginAfter.StatusCode.Should().Be(HttpStatusCode.OK, "login should still work because [redacted] must not overwrite the real hash");
     }
+
+    /// <summary>
+    /// Clearing PasswordHash via config API would re-open bootstrap set-password with WebUI.Token only.
+    /// </summary>
+    [Fact]
+    public async Task PostConfig_WithEmptyPasswordHash_Returns403_AndPreservesLogin()
+    {
+        _factory.SetConfigEnv();
+        var client = _factory.CreateClientWithApiToken();
+
+        var payload = new { changes = new Dictionary<string, object> { ["WebUI.PasswordHash"] = "" } };
+        var patchResponse = await client.PostAsJsonAsync("/web/config", payload);
+        patchResponse.StatusCode.Should().Be(HttpStatusCode.Forbidden);
+
+        var loginAfter = await client.PostAsJsonAsync("/web/login", new
+        {
+            username = LocalAuthWebApplicationFactory.TestUsername,
+            password = LocalAuthWebApplicationFactory.TestPassword
+        });
+        loginAfter.StatusCode.Should().Be(HttpStatusCode.OK);
+    }
+
+    [Fact]
+    public async Task PostApiConfig_WithEmptyPasswordHash_Returns403_AndPreservesLogin()
+    {
+        _factory.SetConfigEnv();
+        var client = _factory.CreateClientWithApiToken();
+
+        var payload = new { changes = new Dictionary<string, object> { ["WebUI.PasswordHash"] = "" } };
+        var patchResponse = await client.PostAsJsonAsync("/api/config", payload);
+        patchResponse.StatusCode.Should().Be(HttpStatusCode.Forbidden);
+
+        var loginAfter = await client.PostAsJsonAsync("/web/login", new
+        {
+            username = LocalAuthWebApplicationFactory.TestUsername,
+            password = LocalAuthWebApplicationFactory.TestPassword
+        });
+        loginAfter.StatusCode.Should().Be(HttpStatusCode.OK);
+    }
+
+    [Fact]
+    public async Task PostConfig_EmptyPasswordHash_CannotBeUsedForAccountTakeoverViaSetPassword()
+    {
+        _factory.SetConfigEnv();
+        var client = _factory.CreateClientWithApiToken();
+
+        var clearAttempt = await client.PostAsJsonAsync("/web/config", new
+        {
+            changes = new Dictionary<string, object> { ["WebUI.PasswordHash"] = "" }
+        });
+        clearAttempt.StatusCode.Should().Be(HttpStatusCode.Forbidden);
+
+        var setPasswordAttempt = await client.PostAsJsonAsync("/web/auth/set-password", new
+        {
+            username = "attacker",
+            password = "hijack123",
+            setupToken = "test-api-token"
+        });
+        setPasswordAttempt.StatusCode.Should().Be(HttpStatusCode.Forbidden);
+
+        var loginOriginal = await client.PostAsJsonAsync("/web/login", new
+        {
+            username = LocalAuthWebApplicationFactory.TestUsername,
+            password = LocalAuthWebApplicationFactory.TestPassword
+        });
+        loginOriginal.StatusCode.Should().Be(HttpStatusCode.OK);
+    }
 }
