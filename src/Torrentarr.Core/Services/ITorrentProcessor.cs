@@ -23,12 +23,14 @@ public interface ITorrentProcessor
     /// <summary>
     /// Check if torrent is ready for import to Arr
     /// </summary>
-    Task<bool> IsReadyForImportAsync(string hash, CancellationToken cancellationToken = default);
+    /// <param name="qbitInstance">When set, scopes the DB imported check to this qBit instance.</param>
+    Task<bool> IsReadyForImportAsync(string hash, string? qbitInstance = null, CancellationToken cancellationToken = default);
 
     /// <summary>
     /// Import completed torrent to Arr
     /// </summary>
-    Task ImportTorrentAsync(string hash, CancellationToken cancellationToken = default);
+    /// <param name="qbitInstance">When set, resolves the torrent and DB row on this qBit instance.</param>
+    Task ImportTorrentAsync(string hash, string? qbitInstance = null, CancellationToken cancellationToken = default);
 }
 
 /// <summary>

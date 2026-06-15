@@ -82,6 +82,54 @@ public sealed class TaglessInstanceScopeTests
             .Should().BeTrue();
     }
 
+    [Fact]
+    public void ImportedCheck_ScopedPerQbitInstance()
+    {
+        using var db = CreateDbWithDuplicateHashRows();
+        db.TorrentLibrary.ToList().ForEach(t =>
+        {
+            if (t.QbitInstance == "qBit")
+                t.Imported = true;
+        });
+        db.SaveChanges();
+
+        db.TorrentLibrary.Any(t => t.Hash == "abc123" && t.QbitInstance == "qBit-seedbox" && t.Imported)
+            .Should().BeFalse("seedbox copy must not inherit imported state from primary qBit");
+        db.TorrentLibrary.Any(t => t.Hash == "abc123" && t.QbitInstance == "qBit" && t.Imported)
+            .Should().BeTrue();
+    }
+
+    [Fact]
+    public async Task IsImportedInDatabaseAsync_ScopedPerQbitInstance()
+    {
+        using var db = CreateDbWithDuplicateHashRows();
+        db.TorrentLibrary.Single(t => t.QbitInstance == "qBit").Imported = true;
+        await db.SaveChangesAsync();
+
+        var config = new TorrentarrConfig();
+        var processor = new TorrentProcessor(
+            NullLogger<TorrentProcessor>.Instance,
+            new QBittorrentConnectionManager(NullLogger<QBittorrentConnectionManager>.Instance),
+            db,
+            config,
+            new TorrentCacheService(NullLogger<TorrentCacheService>.Instance));
+
+        var method = typeof(TorrentProcessor).GetMethod(
+            "IsImportedInDatabaseAsync",
+            BindingFlags.NonPublic | BindingFlags.Instance);
+        method.Should().NotBeNull();
+
+        var seedboxImportedTask = (Task<bool>)method!.Invoke(
+            processor,
+            new object[] { "abc123", "qBit-seedbox", CancellationToken.None })!;
+        var primaryImportedTask = (Task<bool>)method.Invoke(
+            processor,
+            new object[] { "abc123", "qBit", CancellationToken.None })!;
+
+        (await seedboxImportedTask).Should().BeFalse();
+        (await primaryImportedTask).Should().BeTrue();
+    }
+
     private static bool InvokeHasTag(
         Type serviceType,
         TorrentarrDbContext db,
