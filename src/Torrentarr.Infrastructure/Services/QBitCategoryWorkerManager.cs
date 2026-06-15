@@ -1,3 +1,4 @@
+using System.Collections.Concurrent;
 using Torrentarr.Core.Configuration;
 using Torrentarr.Core.Services;
 using Torrentarr.Infrastructure.ApiClients.QBittorrent;
@@ -17,29 +18,30 @@ public class QBitCategoryWorkerManager : BackgroundService
     private readonly IServiceScopeFactory _scopeFactory;
     private readonly ProcessStateManager _stateManager;
     private readonly IConnectivityService _connectivityService;
-    private readonly QBittorrentConnectionManager _qbitManager;
 
-    private readonly Dictionary<string, CancellationTokenSource> _workerCts = new(StringComparer.OrdinalIgnoreCase);
-    private readonly List<Task> _workerTasks = new();
+    private readonly ConcurrentDictionary<string, (Task Task, CancellationTokenSource Cts)> _workers =
+        new(StringComparer.OrdinalIgnoreCase);
+
+    private CancellationToken _appStopping = CancellationToken.None;
 
     public QBitCategoryWorkerManager(
         ILogger<QBitCategoryWorkerManager> logger,
         TorrentarrConfig config,
         IServiceScopeFactory scopeFactory,
         ProcessStateManager stateManager,
-        IConnectivityService connectivityService,
-        QBittorrentConnectionManager qbitManager)
+        IConnectivityService connectivityService)
     {
         _logger = logger;
         _config = config;
         _scopeFactory = scopeFactory;
         _stateManager = stateManager;
         _connectivityService = connectivityService;
-        _qbitManager = qbitManager;
     }
 
     protected override async Task ExecuteAsync(CancellationToken stoppingToken)
     {
+        _appStopping = stoppingToken;
+
         foreach (var category in CategoryOwnershipHelper.GetQBitOnlyManagedCategories(_config))
         {
             var stateName = $"qbit-{category}";
@@ -51,13 +53,10 @@ public class QBitCategoryWorkerManager : BackgroundService
                 MetricType = "category",
                 Alive = false
             });
-
-            var cts = CancellationTokenSource.CreateLinkedTokenSource(stoppingToken);
-            _workerCts[category] = cts;
-            _workerTasks.Add(RunCategoryLoopAsync(category, stateName, cts.Token));
+            StartCategoryWorker(category, stoppingToken);
         }
 
-        if (_workerTasks.Count == 0)
+        if (_workers.IsEmpty)
         {
             _logger.LogDebug("No qBit-only managed categories to process");
             try { await Task.Delay(Timeout.Infinite, stoppingToken); }
@@ -65,22 +64,113 @@ public class QBitCategoryWorkerManager : BackgroundService
             return;
         }
 
-        _logger.LogInformation("Started {Count} qBit-only category worker(s)", _workerTasks.Count);
-        try { await Task.WhenAll(_workerTasks); }
+        _logger.LogInformation("Started {Count} qBit-only category worker(s)", _workers.Count);
+        try { await Task.Delay(Timeout.Infinite, stoppingToken); }
         catch (OperationCanceledException) { }
+
+        await StopAllCategoriesAsync();
     }
 
     public async Task RestartCategoryAsync(string category)
     {
-        if (!_workerCts.TryGetValue(category, out var existing))
+        if (!_workers.ContainsKey(category))
+        {
+            StartCategoryWorker(category, _appStopping);
+            return;
+        }
+
+        _logger.LogInformation("Restarting qBit category worker for {Category}", category);
+        var stateName = $"qbit-{category}";
+        _stateManager.Update(stateName, s => { s.Alive = false; s.Rebuilding = true; });
+
+        if (_workers.TryRemove(category, out var old))
+        {
+            old.Cts.Cancel();
+            try { await old.Task.WaitAsync(TimeSpan.FromSeconds(10)); }
+            catch (OperationCanceledException) { }
+            catch (TimeoutException)
+            {
+                _logger.LogWarning("qBit category worker {Category} did not stop within 10s", category);
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "qBit category worker {Category} faulted during shutdown", category);
+            }
+            old.Cts.Dispose();
+        }
+
+        StartCategoryWorker(category, _appStopping);
+    }
+
+    public async Task RestartAllCategoriesAsync()
+    {
+        foreach (var category in _workers.Keys.ToList())
+            await RestartCategoryAsync(category);
+
+        foreach (var category in CategoryOwnershipHelper.GetQBitOnlyManagedCategories(_config))
+        {
+            if (!_workers.ContainsKey(category))
+                StartCategoryWorker(category, _appStopping);
+        }
+    }
+
+    public async Task SyncWorkersWithConfigAsync()
+    {
+        var desired = CategoryOwnershipHelper.GetQBitOnlyManagedCategories(_config).ToHashSet(StringComparer.OrdinalIgnoreCase);
+
+        foreach (var category in desired)
+        {
+            var stateName = $"qbit-{category}";
+            if (_stateManager.GetState(stateName) == null)
+            {
+                _stateManager.Initialize(stateName, new ArrProcessState
+                {
+                    Name = stateName,
+                    Category = category,
+                    Kind = "category",
+                    MetricType = "category",
+                    Alive = false
+                });
+            }
+
+            if (!_workers.ContainsKey(category))
+                StartCategoryWorker(category, _appStopping);
+        }
+
+        foreach (var category in _workers.Keys.ToList())
+        {
+            if (!desired.Contains(category))
+                await StopCategoryAsync(category);
+        }
+    }
+
+    private void StartCategoryWorker(string category, CancellationToken appStopping)
+    {
+        var cts = CancellationTokenSource.CreateLinkedTokenSource(appStopping);
+        var task = Task.Run(() => RunCategoryLoopAsync(category, $"qbit-{category}", cts.Token), CancellationToken.None);
+        _workers[category] = (task, cts);
+    }
+
+    private async Task StopCategoryAsync(string category)
+    {
+        if (!_workers.TryRemove(category, out var worker))
             return;
 
-        existing.Cancel();
-        try { await Task.WhenAny(_workerTasks); } catch { /* ignore */ }
+        worker.Cts.Cancel();
+        try { await worker.Task.WaitAsync(TimeSpan.FromSeconds(10)); }
+        catch (OperationCanceledException) { }
+        catch (TimeoutException) { }
+        catch (Exception ex) { _logger.LogDebug(ex, "qBit category worker {Category} stop error", category); }
+        worker.Cts.Dispose();
 
-        var cts = CancellationTokenSource.CreateLinkedTokenSource(CancellationToken.None);
-        _workerCts[category] = cts;
-        _ = RunCategoryLoopAsync(category, $"qbit-{category}", cts.Token);
+        var stateName = $"qbit-{category}";
+        _stateManager.Update(stateName, s => s.Alive = false);
+    }
+
+    private async Task StopAllCategoriesAsync()
+    {
+        foreach (var category in _workers.Keys.ToList())
+            await StopCategoryAsync(category);
     }
 
     private async Task RunCategoryLoopAsync(string category, string stateName, CancellationToken ct)

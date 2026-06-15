@@ -31,7 +31,7 @@ Status values:
 | `qBitrr/duration_config.py` | `DurationParser.cs` | full | **Evidence:** [`DurationParserTests`](https://github.com/Feramance/Torrentarr/blob/master/tests/Torrentarr.Core.Tests/Configuration/DurationParserTests.cs). |
 | `qBitrr/database.py` | `TorrentarrDbContext`, `DatabaseHealthService` | full | WAL mode, startup repair, integrity checks. |
 | `qBitrr/tables.py` | EF models, `TorrentarrDbContext` | full | **Evidence:** [`SchemaParityTests.cs`](https://github.com/Feramance/Torrentarr/blob/master/tests/Torrentarr.Infrastructure.Tests/Database/SchemaParityTests.cs). |
-| `qBitrr/db_lock.py` | EF/SQLite locking, `DatabaseRetryExtensions.cs` | partial | `SaveChangesWithRetryAsync` for transient errors; no cross-process file lock (WAL + scoped DbContext). Coordinated worker restart after repair not ported. |
+| `qBitrr/db_lock.py` | EF/SQLite locking, `DatabaseRetryExtensions.cs`, `DatabaseRestartCoordinator` | partial | `SaveChangesWithRetryAsync` on worker DB writes; coordinated worker restart via `DatabaseRestartWatchdogService` after 5+ min of persistent errors. No cross-process file lock (WAL + scoped DbContext). |
 | `qBitrr/db_recovery.py` | `DatabaseHealthService`, Host `--repair-database`, `PeriodicWalCheckpointService` | full | Integrity + VACUUM + `RepairAsync` via SQLite backup; periodic WAL checkpoint every 5 minutes on Host. |
 | `qBitrr/search_activity_store.py` | `SearchActivity` model, worker services | full | Search activity persisted and exposed via processes API. |
 | `qBitrr/webui.py` | Host/WebUI `Program.cs`, `webui/src` | partial | Routes implemented on Host; OpenAPI documents 26/66 paths — expand `docs/assets/openapi.json` for full contract parity. |
@@ -67,4 +67,4 @@ Status values:
 - **Lidarr artists + thumbnails (5.12.0):** `ArrCatalogEndpoints` + `ArrThumbnailService` + frontend API client.
 - **OpenAPI drift guard:** `scripts/check-openapi-drift.sh` in CI vs qBitrr `5.12.3`.
 - **Config schema:** Torrentarr `6.12.2` (+1 major vs qBitrr `5.12.2`).
-- **Gap closeout (2026-06):** `MatchSubcategories`, qBit-only category workers, import path tracking, folder cleanup, category auto-creation, seeding rate limits, HTTP/DB retry, profile-switch retries, periodic WAL checkpoint, config-reload worker restart.
+- **Gap closeout (2026-06):** `MatchSubcategories`, qBit-only category workers, import path tracking, folder cleanup, category auto-creation, seeding rate limits, HTTP/DB retry, profile-switch retries, periodic WAL checkpoint, config-reload worker restart, WebUI `MatchSubcategories` fields, coordinated DB restart watchdog.

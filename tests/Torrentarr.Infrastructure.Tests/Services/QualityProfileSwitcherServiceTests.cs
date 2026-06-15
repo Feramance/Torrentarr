@@ -25,7 +25,7 @@ public class QualityProfileSwitcherServiceTests
             .Options;
         var db = new TorrentarrDbContext(options);
         return new QualityProfileSwitcherService(
-            NullLogger<QualityProfileSwitcherService>.Instance, db);
+            NullLogger<QualityProfileSwitcherService>.Instance, db, new DatabaseRestartCoordinator());
     }
 
     // ── ForceResetAllTempProfilesAsync ────────────────────────────────────────

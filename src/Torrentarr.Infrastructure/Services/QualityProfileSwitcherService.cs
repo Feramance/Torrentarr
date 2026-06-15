@@ -15,13 +15,16 @@ public class QualityProfileSwitcherService
 {
     private readonly ILogger<QualityProfileSwitcherService> _logger;
     private readonly TorrentarrDbContext _db;
+    private readonly DatabaseRestartCoordinator _restartCoordinator;
 
     public QualityProfileSwitcherService(
         ILogger<QualityProfileSwitcherService> logger,
-        TorrentarrDbContext db)
+        TorrentarrDbContext db,
+        DatabaseRestartCoordinator restartCoordinator)
     {
         _logger = logger;
         _db = db;
+        _restartCoordinator = restartCoordinator;
     }
 
     // ── Startup ───────────────────────────────────────────────────────────────
@@ -59,7 +62,7 @@ public class QualityProfileSwitcherService
                     movie.OriginalProfileId = null;
                     movie.LastProfileSwitchTime = null;
                 }
-                await _db.SaveChangesAsync(ct);
+                await _db.SaveChangesWithRetryAsync(_logger, _restartCoordinator, cancellationToken: ct);
                 break;
 
             case "sonarr":
@@ -78,7 +81,7 @@ public class QualityProfileSwitcherService
                     s.OriginalProfileId = null;
                     s.LastProfileSwitchTime = null;
                 }
-                await _db.SaveChangesAsync(ct);
+                await _db.SaveChangesWithRetryAsync(_logger, _restartCoordinator, cancellationToken: ct);
                 break;
 
             case "lidarr":
@@ -97,7 +100,7 @@ public class QualityProfileSwitcherService
                     artist.OriginalProfileId = null;
                     artist.LastProfileSwitchTime = null;
                 }
-                await _db.SaveChangesAsync(ct);
+                await _db.SaveChangesWithRetryAsync(_logger, _restartCoordinator, cancellationToken: ct);
                 break;
         }
     }
@@ -147,7 +150,7 @@ public class QualityProfileSwitcherService
                     movie.OriginalProfileId = null;
                     movie.LastProfileSwitchTime = null;
                 }
-                await _db.SaveChangesAsync(ct);
+                await _db.SaveChangesWithRetryAsync(_logger, _restartCoordinator, cancellationToken: ct);
                 break;
 
             case "sonarr":
@@ -169,7 +172,7 @@ public class QualityProfileSwitcherService
                     s.OriginalProfileId = null;
                     s.LastProfileSwitchTime = null;
                 }
-                await _db.SaveChangesAsync(ct);
+                await _db.SaveChangesWithRetryAsync(_logger, _restartCoordinator, cancellationToken: ct);
                 break;
 
             case "lidarr":
@@ -191,7 +194,7 @@ public class QualityProfileSwitcherService
                     artist.OriginalProfileId = null;
                     artist.LastProfileSwitchTime = null;
                 }
-                await _db.SaveChangesAsync(ct);
+                await _db.SaveChangesWithRetryAsync(_logger, _restartCoordinator, cancellationToken: ct);
                 break;
         }
     }
@@ -292,7 +295,7 @@ public class QualityProfileSwitcherService
         }
 
         if (changed)
-            await _db.SaveChangesAsync(ct);
+            await _db.SaveChangesWithRetryAsync(_logger, _restartCoordinator, cancellationToken: ct);
     }
 
     private async Task SwitchSeriesProfilesAsync(
@@ -354,7 +357,7 @@ public class QualityProfileSwitcherService
         }
 
         if (changed)
-            await _db.SaveChangesAsync(ct);
+            await _db.SaveChangesWithRetryAsync(_logger, _restartCoordinator, cancellationToken: ct);
     }
 
     private async Task SwitchArtistProfilesAsync(
@@ -416,7 +419,7 @@ public class QualityProfileSwitcherService
         }
 
         if (changed)
-            await _db.SaveChangesAsync(ct);
+            await _db.SaveChangesWithRetryAsync(_logger, _restartCoordinator, cancellationToken: ct);
     }
 
     // ── Restore helpers ───────────────────────────────────────────────────────

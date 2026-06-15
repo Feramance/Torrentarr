@@ -130,7 +130,8 @@ public sealed class TaglessInstanceScopeTests
                 new QBittorrentConnectionManager(NullLogger<QBittorrentConnectionManager>.Instance),
                 db,
                 config,
-                new TorrentCacheService(NullLogger<TorrentCacheService>.Instance)),
+                new TorrentCacheService(NullLogger<TorrentCacheService>.Instance),
+                new DatabaseRestartCoordinator()),
             nameof(FreeSpaceService) => new FreeSpaceService(
                 NullLogger<FreeSpaceService>.Instance,
                 config,

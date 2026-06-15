@@ -32,7 +32,8 @@ public class ArrMediaServiceTests
         var mockSyncService = new Mock<ArrSyncService>(
             NullLogger<ArrSyncService>.Instance,
             cfg,
-            dbContext);
+            dbContext,
+            new DatabaseRestartCoordinator());
 
         return new ArrMediaService(
             NullLogger<ArrMediaService>.Instance,

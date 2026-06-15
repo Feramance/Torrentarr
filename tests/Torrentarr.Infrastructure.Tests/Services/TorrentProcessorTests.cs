@@ -55,7 +55,8 @@ public sealed class TorrentProcessorTests : IDisposable
             manager,
             _db,
             config,
-            new TorrentCacheService(NullLogger<TorrentCacheService>.Instance));
+            new TorrentCacheService(NullLogger<TorrentCacheService>.Instance),
+            new DatabaseRestartCoordinator());
     }
 
     // ── Constructor ────────────────────────────────────────────────────────────
@@ -230,6 +231,7 @@ public sealed class TorrentProcessorTests : IDisposable
             _db,
             config,
             new TorrentCacheService(NullLogger<TorrentCacheService>.Instance),
+            new DatabaseRestartCoordinator(),
             importMock.Object,
             seedingMock.Object);
 

@@ -154,6 +154,8 @@ try
     builder.Services.AddSingleton(levelSwitch);
     builder.Services.AddSingleton(config);
     builder.Services.AddSingleton(configLoader);
+    builder.Services.AddSingleton<DatabaseRestartCoordinator>();
+    builder.Services.AddHostedService<DatabaseRestartWatchdogService>();
     builder.Services.AddSingleton<QBittorrentConnectionManager>();
     builder.Services.AddSingleton<ProcessStateManager>();
     builder.Services.AddSingleton<IConnectivityService, ConnectivityService>();
@@ -2744,10 +2746,7 @@ static async Task<IResult> SaveAndRespondConfigUpdate(
             case "full":
                 await workerMgr.RestartAllWorkersAsync();
                 if (qbitCategoryMgr != null)
-                {
-                    foreach (var cat in CategoryOwnershipHelper.GetQBitOnlyManagedCategories(updatedConfig))
-                        await qbitCategoryMgr.RestartCategoryAsync(cat);
-                }
+                    await qbitCategoryMgr.SyncWorkersWithConfigAsync();
                 break;
             case "multi_arr":
             case "single_arr":

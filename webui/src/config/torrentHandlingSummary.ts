@@ -291,6 +291,7 @@ export function getQbitTorrentHandlingSummary(
     {},
   );
   const managedCats = get(state, ["ManagedCategories"]) as string[] | undefined;
+  const matchSubcategories = Boolean(get(state, ["MatchSubcategories"]));
   const managedPreview =
     Array.isArray(managedCats) && managedCats.length > 0
       ? managedCats.slice(0, 3).join(", ") +
@@ -312,8 +313,11 @@ export function getQbitTorrentHandlingSummary(
 
   // 1. New / in managed category
   if (managedPreview) {
+    const scope = matchSubcategories
+      ? `When a torrent category matches a managed prefix (Match subcategories is on; e.g. ${managedPreview} matches seed as well as seed/child paths)`
+      : `When a torrent is in a managed category exactly (e.g. ${managedPreview})`;
     const newLine =
-      `When a torrent is in a managed category (e.g. ${managedPreview})` +
+      scope +
       (Number.isFinite(ignoreYounger) && ignoreYounger >= 0
         ? `, it is left alone for the first ${formatSeconds(ignoreYounger)} so it is not treated as stalled.`
         : ".");
@@ -329,7 +333,11 @@ export function getQbitTorrentHandlingSummary(
     blocks.push("Stalled downloads are not removed.");
   } else if (stalledDelayMin === 0) {
     let s = "Stalled downloads are not removed (infinite delay)";
-    if (managedPreview) s += ` in ${managedPreview}`;
+    if (managedPreview) {
+      s += matchSubcategories
+        ? ` for torrents under managed category prefixes (${managedPreview})`
+        : ` in ${managedPreview}`;
+    }
     s += ".";
     if (Number.isFinite(ignoreYounger) && ignoreYounger >= 0) {
       s += ` New torrents are ignored for the first ${formatSeconds(ignoreYounger)}.`;
@@ -337,7 +345,11 @@ export function getQbitTorrentHandlingSummary(
     blocks.push(s);
   } else {
     let s = `If the download stops progressing for ${formatMinutes(stalledDelayMin)}`;
-    if (managedPreview) s += ` in ${managedPreview}`;
+    if (managedPreview) {
+      s += matchSubcategories
+        ? ` for torrents under managed category prefixes (${managedPreview})`
+        : ` in ${managedPreview}`;
+    }
     s += ", Torrentarr removes it.";
     if (Number.isFinite(ignoreYounger) && ignoreYounger >= 0) {
       s += ` New torrents are ignored for the first ${formatSeconds(ignoreYounger)} (not treated as stalled).`;

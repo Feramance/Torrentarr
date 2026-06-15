@@ -41,7 +41,7 @@ public sealed class ArrSyncServiceTests : IDisposable
     private ArrSyncService CreateService(TorrentarrConfig? config = null)
     {
         config ??= new TorrentarrConfig();
-        return new ArrSyncService(NullLogger<ArrSyncService>.Instance, config, _db);
+        return new ArrSyncService(NullLogger<ArrSyncService>.Instance, config, _db, new DatabaseRestartCoordinator());
     }
 
     private static ArrInstanceConfig MakeInstance(string type, string uri = "http://localhost:7878")

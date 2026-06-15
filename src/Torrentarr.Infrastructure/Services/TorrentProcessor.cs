@@ -30,6 +30,7 @@ public class TorrentProcessor : ITorrentProcessor
     private readonly IArrImportService? _importService;
     private readonly ISeedingService? _seedingService;
     private readonly IImportPathTracker? _pathTracker;
+    private readonly DatabaseRestartCoordinator _restartCoordinator;
 
     private readonly HashSet<string> _specialCategories;
 
@@ -39,6 +40,7 @@ public class TorrentProcessor : ITorrentProcessor
         TorrentarrDbContext dbContext,
         TorrentarrConfig config,
         ITorrentCacheService cache,
+        DatabaseRestartCoordinator restartCoordinator,
         IArrImportService? importService = null,
         ISeedingService? seedingService = null,
         IImportPathTracker? pathTracker = null)
@@ -48,6 +50,7 @@ public class TorrentProcessor : ITorrentProcessor
         _dbContext = dbContext;
         _config = config;
         _cache = cache;
+        _restartCoordinator = restartCoordinator;
         _importService = importService;
         _seedingService = seedingService;
         _pathTracker = pathTracker;
@@ -270,7 +273,7 @@ public class TorrentProcessor : ITorrentProcessor
             if (result.Success)
             {
                 libraryEntry.Imported = true;
-                await _dbContext.SaveChangesAsync(cancellationToken);
+                await _dbContext.SaveChangesWithRetryAsync(_logger, _restartCoordinator, cancellationToken:cancellationToken);
                 _logger.LogInformation("Successfully triggered import for torrent {Hash}: {Message}",
                     hash, result.Message);
 
@@ -296,7 +299,7 @@ public class TorrentProcessor : ITorrentProcessor
         {
             _logger.LogWarning("ArrImportService not available, marking as imported without triggering");
             libraryEntry.Imported = true;
-            await _dbContext.SaveChangesAsync(cancellationToken);
+            await _dbContext.SaveChangesWithRetryAsync(_logger, _restartCoordinator, cancellationToken:cancellationToken);
         }
     }
 
@@ -1011,7 +1014,7 @@ public class TorrentProcessor : ITorrentProcessor
                     case AllowedStalledTag: entry.AllowedStalled = true; break;
                     case FreeSpacePausedTag: entry.FreeSpacePaused = true; break;
                 }
-                await _dbContext.SaveChangesAsync(ct);
+                await _dbContext.SaveChangesWithRetryAsync(_logger, _restartCoordinator, cancellationToken:ct);
             }
         }
         else
@@ -1037,7 +1040,7 @@ public class TorrentProcessor : ITorrentProcessor
                     case AllowedStalledTag: entry.AllowedStalled = false; break;
                     case FreeSpacePausedTag: entry.FreeSpacePaused = false; break;
                 }
-                await _dbContext.SaveChangesAsync(ct);
+                await _dbContext.SaveChangesWithRetryAsync(_logger, _restartCoordinator, cancellationToken:ct);
             }
         }
         else
@@ -1131,7 +1134,7 @@ public class TorrentProcessor : ITorrentProcessor
             };
 
             _dbContext.TorrentLibrary.Add(entry);
-            await _dbContext.SaveChangesAsync(cancellationToken);
+            await _dbContext.SaveChangesWithRetryAsync(_logger, _restartCoordinator, cancellationToken:cancellationToken);
 
             _logger.LogTrace("Added torrent {Hash} to database", torrent.Hash);
         }
@@ -1278,7 +1281,7 @@ public class TorrentProcessor : ITorrentProcessor
             if (entry != null)
             {
                 entry.AllowedStalled = true;
-                await _dbContext.SaveChangesAsync(ct);
+                await _dbContext.SaveChangesWithRetryAsync(_logger, _restartCoordinator, cancellationToken:ct);
             }
         }
         else
@@ -1299,7 +1302,7 @@ public class TorrentProcessor : ITorrentProcessor
             if (entry != null)
             {
                 entry.AllowedStalled = false;
-                await _dbContext.SaveChangesAsync(ct);
+                await _dbContext.SaveChangesWithRetryAsync(_logger, _restartCoordinator, cancellationToken:ct);
             }
         }
         else
