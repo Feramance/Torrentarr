@@ -347,10 +347,14 @@ public class TorrentProcessor : ITorrentProcessor
             && !HasTag(torrent, FreeSpacePausedTag)
             && await _importService.IsCustomFormatUnmetAsync(torrent.Hash, category, ct))
         {
-            _logger.LogWarning("Deleting torrent (custom format unmet): [{Name}] | Hash[{Hash}]",
-                torrent.Name, torrent.Hash);
-            await client.DeleteTorrentsAsync(new List<string> { torrent.Hash }, deleteFiles: true, ct);
-            stats.Failed++;
+            var hnrAllows = _seedingService == null || await _seedingService.HnrAllowsDeleteAsync(torrent, "CF unmet deletion", ct);
+            if (hnrAllows)
+            {
+                _logger.LogWarning("Deleting torrent (custom format unmet): [{Name}] | Hash[{Hash}]",
+                    torrent.Name, torrent.Hash);
+                await client.DeleteTorrentsAsync(new List<string> { torrent.Hash }, deleteFiles: true, ct);
+                stats.Failed++;
+            }
         }
         // Branch 2: Ratio/seed limit met AND not leave_alone AND fully downloaded → delete
         // (qBitrr line 6106-6109: remove_torrent and not leave_alone and amount_left==0)
