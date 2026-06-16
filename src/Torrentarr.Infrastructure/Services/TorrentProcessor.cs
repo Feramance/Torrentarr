@@ -156,14 +156,20 @@ public class TorrentProcessor : ITorrentProcessor
         }
     }
 
-    public async Task<bool> IsReadyForImportAsync(string hash, CancellationToken cancellationToken = default)
+    public async Task<bool> IsReadyForImportAsync(string hash, string? qbitInstance = null, CancellationToken cancellationToken = default)
     {
         TorrentInfo? torrent = null;
-        foreach (var (_, c) in _qbitManager.GetAllClients())
+        string? resolvedInstance = qbitInstance;
+        foreach (var (instanceName, c) in _qbitManager.GetAllClients())
         {
             var torrents = await c.GetTorrentsAsync(cancellationToken: cancellationToken);
             var found = torrents.FirstOrDefault(t => t.Hash == hash);
-            if (found != null) { torrent = found; break; }
+            if (found != null)
+            {
+                torrent = found;
+                resolvedInstance ??= instanceName;
+                break;
+            }
         }
 
         if (torrent == null) return false;
@@ -178,26 +184,28 @@ public class TorrentProcessor : ITorrentProcessor
             return false;
         }
 
-        var libraryEntry = await _dbContext.TorrentLibrary
-            .FirstOrDefaultAsync(t => t.Hash == hash, cancellationToken);
+        var libraryEntry = await FindTorrentLibraryEntryAsync(hash, resolvedInstance, cancellationToken);
 
         var notImported = libraryEntry == null || !libraryEntry.Imported;
 
         return isComplete && isSeeding && notImported;
     }
 
-    public async Task ImportTorrentAsync(string hash, CancellationToken cancellationToken = default)
+    public async Task ImportTorrentAsync(string hash, string? qbitInstance = null, CancellationToken cancellationToken = default)
     {
         _logger.LogInformation("Importing torrent {Hash}", hash);
 
         TorrentInfo? torrent = null;
-        string? torrentInstanceName = null;
+        string? torrentInstanceName = qbitInstance;
         foreach (var (instanceName, c) in _qbitManager.GetAllClients())
         {
             var torrents = await c.GetTorrentsAsync(cancellationToken: cancellationToken);
             var found = torrents.FirstOrDefault(t => t.Hash == hash);
             if (found != null)
             {
+                if (torrentInstanceName != null && !string.Equals(torrentInstanceName, instanceName, StringComparison.Ordinal))
+                    continue;
+
                 found.QBitInstanceName = instanceName;
                 torrent = found;
                 torrentInstanceName = instanceName;
@@ -218,8 +226,7 @@ public class TorrentProcessor : ITorrentProcessor
             return;
         }
 
-        var libraryEntry = await _dbContext.TorrentLibrary
-            .FirstOrDefaultAsync(t => t.Hash == hash, cancellationToken);
+        var libraryEntry = await FindTorrentLibraryEntryAsync(hash, torrentInstanceName, cancellationToken);
 
         if (libraryEntry == null)
         {
@@ -479,7 +486,7 @@ public class TorrentProcessor : ITorrentProcessor
             await ProcessPercentageThresholdAsync(torrent, maxEta, client, stats, ct);
         }
         // Branch 14: Already imported → skip (qBitrr line 6184-6187)
-        else if (await IsImportedInDatabaseAsync(torrent.Hash, ct)
+        else if (await IsImportedInDatabaseAsync(torrent.Hash, torrent.QBitInstanceName, ct)
             && _cache.IsFileFiltered(torrent.Hash))
         {
             _logger.LogTrace("Skipping already-imported torrent: [{Name}]", torrent.Name);
@@ -504,11 +511,11 @@ public class TorrentProcessor : ITorrentProcessor
             {
                 _logger.LogTrace("Completed torrent — allowing seeding: [{Name}]", torrent.Name);
             }
-            else if (await IsReadyForImportAsync(torrent.Hash, ct))
+            else if (await IsReadyForImportAsync(torrent.Hash, torrent.QBitInstanceName, ct))
             {
                 _logger.LogDebug("Completed torrent ready for import: [{Name}] | Progress[{Progress:P1}] | Hash[{Hash}]",
                     torrent.Name, torrent.Progress, torrent.Hash);
-                await ImportTorrentAsync(torrent.Hash, ct);
+                await ImportTorrentAsync(torrent.Hash, torrent.QBitInstanceName, ct);
             }
         }
         // Branch 17: Uploading + seeding limits configured → pause if !leave_alone (qBitrr line 6207-6215)
@@ -900,12 +907,27 @@ public class TorrentProcessor : ITorrentProcessor
     /// <summary>
     /// Check if a torrent is marked as imported in the database.
     /// </summary>
-    private async Task<bool> IsImportedInDatabaseAsync(string hash, CancellationToken ct)
+    private async Task<bool> IsImportedInDatabaseAsync(string hash, string? qbitInstance, CancellationToken ct)
     {
-        var entry = await _dbContext.TorrentLibrary
-            .AsNoTracking()
-            .FirstOrDefaultAsync(t => t.Hash == hash, ct);
+        var entry = await FindTorrentLibraryEntryAsync(hash, qbitInstance, ct, asNoTracking: true);
         return entry?.Imported == true;
+    }
+
+    private async Task<TorrentLibrary?> FindTorrentLibraryEntryAsync(
+        string hash,
+        string? qbitInstance,
+        CancellationToken ct,
+        bool asNoTracking = false)
+    {
+        var query = asNoTracking
+            ? _dbContext.TorrentLibrary.AsNoTracking()
+            : _dbContext.TorrentLibrary;
+
+        query = query.Where(t => t.Hash == hash);
+        if (!string.IsNullOrEmpty(qbitInstance))
+            query = query.Where(t => t.QbitInstance == qbitInstance);
+
+        return await query.FirstOrDefaultAsync(ct);
     }
 
     /// <summary>

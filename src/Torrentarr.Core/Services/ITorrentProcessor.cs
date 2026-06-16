@@ -23,12 +23,12 @@ public interface ITorrentProcessor
     /// <summary>
     /// Check if torrent is ready for import to Arr
     /// </summary>
-    Task<bool> IsReadyForImportAsync(string hash, CancellationToken cancellationToken = default);
+    Task<bool> IsReadyForImportAsync(string hash, string? qbitInstance = null, CancellationToken cancellationToken = default);
 
     /// <summary>
     /// Import completed torrent to Arr
     /// </summary>
-    Task ImportTorrentAsync(string hash, CancellationToken cancellationToken = default);
+    Task ImportTorrentAsync(string hash, string? qbitInstance = null, CancellationToken cancellationToken = default);
 }
 
 /// <summary>
