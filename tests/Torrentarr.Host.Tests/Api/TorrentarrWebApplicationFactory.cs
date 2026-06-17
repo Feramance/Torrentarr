@@ -365,6 +365,44 @@ public class LocalAuthNoPasswordWebApplicationFactory : TorrentarrWebApplication
     }
 }
 
+/// <summary>Factory with configured qBit plus a CHANGE_ME placeholder qBit-seedbox stub.</summary>
+public class MultiQBitPlaceholderWebApplicationFactory : TorrentarrWebApplicationFactory
+{
+    public MultiQBitPlaceholderWebApplicationFactory() => RewriteConfigFile();
+
+    protected override string GetTestConfigToml() => """
+        [Settings]
+        ConfigVersion = "6.12.2"
+        LoopSleepTimer = 5
+        FailedCategory = "failed"
+        RecheckCategory = "recheck"
+        PingURLS = ["one.one.one.one"]
+
+        [WebUI]
+        Host = "0.0.0.0"
+        Port = 6969
+        Token = "test-api-token"
+        AuthDisabled = true
+        LocalAuthEnabled = false
+        OIDCEnabled = false
+        LiveArr = false
+
+        [qBit]
+        Host = "localhost"
+        Port = 8080
+        UserName = "admin"
+        Password = "adminpass"
+        ManagedCategories = ["radarr"]
+
+        [qBit-seedbox]
+        Host = "CHANGE_ME"
+        Port = 8080
+        UserName = "CHANGE_ME"
+        Password = "CHANGE_ME"
+        ManagedCategories = []
+        """;
+}
+
 /// <summary>Factory with Radarr, Sonarr, Lidarr, and qBit sections for catalog/validation endpoint tests.</summary>
 public class ArrCatalogWebApplicationFactory : TorrentarrWebApplicationFactory
 {

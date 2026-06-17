@@ -672,6 +672,33 @@ public class ConfigurationLoaderTests : IDisposable
     }
 
     [Fact]
+    public void SaveConfig_PreservesChangeMeQBitPlaceholderSection()
+    {
+        WriteToml("""
+            [Settings]
+            LoopSleepTimer = 5
+
+            [qBit]
+            Host = "localhost"
+            Port = 8080
+
+            [qBit-seedbox]
+            Host = "CHANGE_ME"
+            Port = 8080
+            """);
+
+        var loader = new ConfigurationLoader(_tempFilePath);
+        var config = loader.Load();
+        config.Settings.LoopSleepTimer = 10;
+        loader.SaveConfig(config);
+
+        var reloaded = new ConfigurationLoader(_tempFilePath).Load();
+        reloaded.QBitInstances.Should().ContainKey("qBit-seedbox");
+        reloaded.QBitInstances["qBit-seedbox"].Host.Should().Be("CHANGE_ME");
+        reloaded.Settings.LoopSleepTimer.Should().Be(10);
+    }
+
+    [Fact]
     public void Save_WebUI_WritesAuthBooleans()
     {
         WriteToml("""
