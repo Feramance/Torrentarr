@@ -746,6 +746,10 @@ app.MapPost("/web/config", async (HttpContext ctx, TorrentarrConfig config, Conf
         }
 
         var updatedConfig = FlatToConfig(flatConfig, config);
+        var savePasswordHashError = WebUIAuthHelpers.ValidatePasswordHashForConfigApiSave(config, updatedConfig);
+        if (savePasswordHashError != null)
+            return Results.Json(new { error = savePasswordHashError }, statusCode: 403);
+
         loader.SaveConfig(updatedConfig, reloader.ConfigPath);
         ApplyConfigInPlace(config, updatedConfig);
     }
@@ -1495,6 +1499,10 @@ app.MapPost("/web/config/save", async (TorrentarrConfig updatedConfig, Torrentar
 {
     try
     {
+        var passwordHashError = WebUIAuthHelpers.ValidatePasswordHashForConfigApiSave(config, updatedConfig);
+        if (passwordHashError != null)
+            return Results.Json(new { error = passwordHashError }, statusCode: 403);
+
         loader.SaveConfig(updatedConfig, reloader.ConfigPath);
         ApplyConfigInPlace(config, updatedConfig);
         var reloadSuccess = reloader.ReloadConfig();

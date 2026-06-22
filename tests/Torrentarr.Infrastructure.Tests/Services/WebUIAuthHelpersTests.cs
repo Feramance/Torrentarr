@@ -170,4 +170,34 @@ public class WebUIAuthHelpersTests
         WebUIAuthHelpers.RejectPasswordHashConfigChange("WebUI.Port", "8080")
             .Should().BeNull();
     }
+
+    [Fact]
+    public void ValidatePasswordHashForConfigApiSave_RejectsChangedHash()
+    {
+        var current = new TorrentarrConfig { WebUI = { PasswordHash = "existing-hash" } };
+        var updated = new TorrentarrConfig { WebUI = { PasswordHash = "" } };
+
+        WebUIAuthHelpers.ValidatePasswordHashForConfigApiSave(current, updated)
+            .Should().NotBeNullOrEmpty();
+        updated.WebUI.PasswordHash.Should().Be("");
+    }
+
+    [Fact]
+    public void ValidatePasswordHashForConfigApiSave_RestoresRedactedPlaceholder()
+    {
+        var current = new TorrentarrConfig { WebUI = { PasswordHash = "existing-hash" } };
+        var updated = new TorrentarrConfig { WebUI = { PasswordHash = WebUIAuthHelpers.RedactedPlaceholder } };
+
+        WebUIAuthHelpers.ValidatePasswordHashForConfigApiSave(current, updated).Should().BeNull();
+        updated.WebUI.PasswordHash.Should().Be("existing-hash");
+    }
+
+    [Fact]
+    public void ValidatePasswordHashForConfigApiSave_AllowsUnchangedHash()
+    {
+        var current = new TorrentarrConfig { WebUI = { PasswordHash = "existing-hash" } };
+        var updated = new TorrentarrConfig { WebUI = { PasswordHash = "existing-hash" } };
+
+        WebUIAuthHelpers.ValidatePasswordHashForConfigApiSave(current, updated).Should().BeNull();
+    }
 }

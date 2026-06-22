@@ -21,8 +21,31 @@ public static class WebUIAuthHelpers
         if (string.Equals(newValue, RedactedPlaceholder, StringComparison.Ordinal))
             return null;
 
-        return "Password must be changed via POST /web/auth/set-password";
+        return PasswordHashChangeRejectedMessage;
     }
+
+    /// <summary>
+    /// Config API saves must not change PasswordHash (full replace, section merge, or dotted keys).
+    /// Restores <see cref="RedactedPlaceholder"/> from the current config; rejects any other change.
+    /// </summary>
+    public static string? ValidatePasswordHashForConfigApiSave(TorrentarrConfig current, TorrentarrConfig updated)
+    {
+        var currentHash = current.WebUI.PasswordHash ?? "";
+        var proposedHash = updated.WebUI.PasswordHash ?? "";
+
+        if (proposedHash == RedactedPlaceholder)
+        {
+            updated.WebUI.PasswordHash = currentHash;
+            return null;
+        }
+
+        if (currentHash == proposedHash)
+            return null;
+
+        return PasswordHashChangeRejectedMessage;
+    }
+
+    private const string PasswordHashChangeRejectedMessage = "Password must be changed via POST /web/auth/set-password";
 
     /// <summary>Constant-time token comparison using SHA-256 hashes to avoid leaking length.</summary>
     public static bool TokenEquals(string? a, string? b)

@@ -281,6 +281,44 @@ public class ConfigRedactionTests : IClassFixture<LocalAuthWebApplicationFactory
         loginAfter.StatusCode.Should().Be(HttpStatusCode.OK);
     }
 
+    /// <summary>
+    /// Section-level WebUI replace bypasses dotted-key RejectPasswordHashConfigChange guard.
+    /// Regression: closed PR #276; #271 only blocked WebUI.PasswordHash dotted keys.
+    /// </summary>
+    [Fact]
+    public async Task PostConfig_WithWholeWebUISectionEmptyPasswordHash_Returns403_AndPreservesLogin()
+    {
+        _factory.SetConfigEnv();
+        var client = _factory.CreateClientWithApiToken();
+
+        var getResponse = await client.GetAsync("/web/config");
+        var configJson = JsonDocument.Parse(await getResponse.Content.ReadAsStringAsync()).RootElement;
+        var webui = new Dictionary<string, object?>();
+        foreach (var webuiProp in configJson.GetProperty("WebUI").EnumerateObject())
+        {
+            webui[webuiProp.Name] = webuiProp.NameEquals("PasswordHash")
+                ? ""
+                : webuiProp.Value.ValueKind switch
+                {
+                    JsonValueKind.String => webuiProp.Value.GetString(),
+                    JsonValueKind.Number => webuiProp.Value.GetInt32(),
+                    JsonValueKind.True => true,
+                    JsonValueKind.False => false,
+                    _ => webuiProp.Value.ToString()
+                };
+        }
+
+        var patchResponse = await client.PostAsJsonAsync("/web/config", new { changes = new Dictionary<string, object> { ["WebUI"] = webui } });
+        patchResponse.StatusCode.Should().Be(HttpStatusCode.Forbidden);
+
+        var loginAfter = await client.PostAsJsonAsync("/web/login", new
+        {
+            username = LocalAuthWebApplicationFactory.TestUsername,
+            password = LocalAuthWebApplicationFactory.TestPassword
+        });
+        loginAfter.StatusCode.Should().Be(HttpStatusCode.OK);
+    }
+
     [Fact]
     public async Task PostConfig_EmptyPasswordHash_CannotBeUsedForAccountTakeoverViaSetPassword()
     {

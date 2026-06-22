@@ -2715,6 +2715,10 @@ static IResult SaveAndRespondConfigUpdate(
     TorrentarrConfig updatedConfig,
     ConfigurationLoader loader)
 {
+    var passwordHashError = WebUIAuthHelpers.ValidatePasswordHashForConfigApiSave(cfg, updatedConfig);
+    if (passwordHashError != null)
+        return Results.Json(new { error = passwordHashError }, statusCode: 403);
+
     var (reloadType, affectedInstancesList) = DetermineReloadType(cfg, updatedConfig);
 
     loader.SaveConfig(updatedConfig);
