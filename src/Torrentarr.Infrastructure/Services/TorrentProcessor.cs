@@ -176,6 +176,9 @@ public class TorrentProcessor : ITorrentProcessor
             var found = torrents.FirstOrDefault(t => t.Hash == hash);
             if (found != null)
             {
+                if (resolvedInstance != null && !string.Equals(resolvedInstance, instanceName, StringComparison.Ordinal))
+                    continue;
+
                 torrent = found;
                 resolvedInstance ??= instanceName;
                 break;
