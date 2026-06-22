@@ -15,7 +15,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
     - name: Checkout
-      uses: actions/checkout@v6
+      uses: actions/checkout@v7
 
     - name: Component detection (NuGet)
       uses: actions/component-detection-dependency-submission-action@374343effede691df3a5ffaf36b4e7acab919590

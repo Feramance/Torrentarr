@@ -41,7 +41,7 @@ jobs:
       release_hash: ${{ steps.release_hash.outputs.value }}
     steps:
     - name: Checkout repository
-      uses: actions/checkout@v6
+      uses: actions/checkout@v7
       with:
         fetch-depth: 0
         token: ${{ secrets.GITHUB_TOKEN }}
@@ -117,7 +117,7 @@ jobs:
     - prepare_release
     if: needs.prepare_release.result == 'success'
     steps:
-    - uses: actions/checkout@v6
+    - uses: actions/checkout@v7
       with:
         fetch-depth: 0
         token: ${{ secrets.GITHUB_TOKEN }}
@@ -153,7 +153,7 @@ jobs:
     - create_release
     if: needs.prepare_release.result == 'success'
     steps:
-    - uses: actions/checkout@v6
+    - uses: actions/checkout@v7
       with:
         fetch-depth: 0
     - name: Set .NET version from repo
@@ -219,7 +219,7 @@ jobs:
       uses: ASzc/change-string-case-action@v8
       with:
         string: ${{ github.repository }}
-    - uses: actions/checkout@v6
+    - uses: actions/checkout@v7
       with:
         fetch-depth: 0
     - uses: docker/setup-qemu-action@v4
@@ -264,7 +264,7 @@ jobs:
     - build_and_push_docker
     if: needs.prepare_release.result == 'success'
     steps:
-    - uses: actions/checkout@v6
+    - uses: actions/checkout@v7
       with:
         fetch-depth: 0
         token: ${{ secrets.GITHUB_TOKEN }}
@@ -396,7 +396,7 @@ jobs:
     - build_binaries
     if: needs.prepare_release.result == 'success'
     steps:
-    - uses: actions/checkout@v6
+    - uses: actions/checkout@v7
       with:
         fetch-depth: 0
         token: ${{ secrets.GITHUB_TOKEN }}
