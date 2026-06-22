@@ -152,7 +152,8 @@ public sealed class TaglessInstanceScopeTests
             manager,
             db,
             config,
-            new TorrentCacheService(NullLogger<TorrentCacheService>.Instance));
+            new TorrentCacheService(NullLogger<TorrentCacheService>.Instance),
+            new DatabaseRestartCoordinator());
 
         var ready = await processor.IsReadyForImportAsync(hash, "qBit-seedbox");
 
