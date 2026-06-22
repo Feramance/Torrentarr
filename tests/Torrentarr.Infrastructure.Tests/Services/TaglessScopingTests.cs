@@ -46,7 +46,8 @@ public class TaglessScopingTests
             new QBittorrentConnectionManager(NullLogger<QBittorrentConnectionManager>.Instance),
             db,
             config,
-            new TorrentCacheService(NullLogger<TorrentCacheService>.Instance));
+            new TorrentCacheService(NullLogger<TorrentCacheService>.Instance),
+            new DatabaseRestartCoordinator());
 
         var seedboxTorrent = new TorrentInfo { Hash = "abc", QBitInstanceName = "qBit-seedbox" };
         var primaryTorrent = new TorrentInfo { Hash = "abc", QBitInstanceName = "qBit" };

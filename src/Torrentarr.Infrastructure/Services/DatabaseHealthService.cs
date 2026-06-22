@@ -160,35 +160,62 @@ public class DatabaseHealthService : IDatabaseHealthService
 
     public async Task<bool> RepairAsync(CancellationToken cancellationToken = default)
     {
-        _logger.LogWarning("Attempting database repair via dump/restore...");
+        _logger.LogWarning("Attempting database repair via backup/restore...");
 
         var backupPath = $"{_dbPath}.backup";
         var tempPath = $"{_dbPath}.temp";
 
         try
         {
+            await _dbContext.Database.CloseConnectionAsync();
+
             if (File.Exists(_dbPath))
             {
                 _logger.LogInformation("Creating backup: {BackupPath}", backupPath);
                 File.Copy(_dbPath, backupPath, overwrite: true);
             }
 
-            _logger.LogInformation("Dumping recoverable data from database...");
+            foreach (var suffix in new[] { "-wal", "-shm" })
+            {
+                var sidecar = _dbPath + suffix;
+                if (File.Exists(sidecar))
+                {
+                    try { File.Delete(sidecar); } catch { /* best-effort */ }
+                }
+            }
 
-            var sourceConn = _dbContext.Database.GetDbConnection();
-            await sourceConn.OpenAsync(cancellationToken);
+            if (!File.Exists(_dbPath))
+            {
+                _logger.LogError("Database file not found: {Path}", _dbPath);
+                return false;
+            }
 
-            var tempConn = new SqliteConnection($"Data Source={tempPath}");
-            await tempConn.OpenAsync(cancellationToken);
+            await using (var source = new SqliteConnection($"Data Source={_dbPath};Mode=ReadOnly"))
+            {
+                await source.OpenAsync(cancellationToken);
+                if (File.Exists(tempPath))
+                    File.Delete(tempPath);
 
-            var dumpCommand = sourceConn.CreateCommand();
-            dumpCommand.CommandText = ".dump";
+                await using var dest = new SqliteConnection($"Data Source={tempPath}");
+                await dest.OpenAsync(cancellationToken);
+                source.BackupDatabase(dest);
+            }
 
-            await using var tempCmd = tempConn.CreateCommand();
-            tempCmd.CommandText = dumpCommand.CommandText;
+            await using (var verify = new SqliteConnection($"Data Source={tempPath}"))
+            {
+                await verify.OpenAsync(cancellationToken);
+                await using var cmd = verify.CreateCommand();
+                cmd.CommandText = "PRAGMA integrity_check";
+                var check = (await cmd.ExecuteScalarAsync(cancellationToken))?.ToString();
+                if (check != "ok")
+                {
+                    _logger.LogError("Repaired database failed integrity check: {Result}", check);
+                    return false;
+                }
+            }
 
-            await tempConn.CloseAsync();
-            await sourceConn.CloseAsync();
+            File.Delete(_dbPath);
+            File.Move(tempPath, _dbPath);
 
             _logger.LogInformation("Database repair completed successfully");
             return true;

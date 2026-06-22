@@ -930,6 +930,47 @@ public class SeedingService : ISeedingService
         }
     }
 
+    /// <summary>Pre-create all configured tracker AddTags on every qBit instance (qBitrr qbit_category_manager parity).</summary>
+    public async Task EnsureAllTrackerTagsExistAsync(CancellationToken cancellationToken = default)
+    {
+        var allTags = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        foreach (var q in _config.QBitInstances.Values)
+        {
+            foreach (var t in q.Trackers)
+                foreach (var tag in t.AddTags)
+                    if (!string.IsNullOrWhiteSpace(tag))
+                        allTags.Add(tag.Trim());
+        }
+        foreach (var a in _config.ArrInstances.Values)
+        {
+            foreach (var t in a.Torrent.Trackers)
+                foreach (var tag in t.AddTags)
+                    if (!string.IsNullOrWhiteSpace(tag))
+                        allTags.Add(tag.Trim());
+        }
+
+        if (allTags.Count == 0)
+            return;
+
+        foreach (var (_, client) in _qbitManager.GetAllClients())
+        {
+            try
+            {
+                var existing = await client.GetTagsAsync(cancellationToken);
+                var toCreate = allTags.Where(t => !existing.Contains(t, StringComparer.OrdinalIgnoreCase)).ToList();
+                if (toCreate.Count > 0)
+                {
+                    await client.CreateTagsAsync(toCreate, cancellationToken);
+                    _logger.LogDebug("Pre-created tracker tags on qBit: {Tags}", string.Join(", ", toCreate));
+                }
+            }
+            catch (Exception ex)
+            {
+                _logger.LogWarning(ex, "Failed to pre-create tracker tags");
+            }
+        }
+    }
+
     /// <summary>
     /// Public entry point for tracker actions, callable from TorrentProcessor pre-step.
     /// In qBitrr this runs for EVERY torrent BEFORE the state machine.

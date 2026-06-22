@@ -27,15 +27,18 @@ public class ArrSyncService
     private readonly ILogger<ArrSyncService> _logger;
     private readonly TorrentarrConfig _config;
     private readonly TorrentarrDbContext _db;
+    private readonly DatabaseRestartCoordinator _restartCoordinator;
 
     public ArrSyncService(
         ILogger<ArrSyncService> logger,
         TorrentarrConfig config,
-        TorrentarrDbContext db)
+        TorrentarrDbContext db,
+        DatabaseRestartCoordinator restartCoordinator)
     {
         _logger = logger;
         _config = config;
         _db = db;
+        _restartCoordinator = restartCoordinator;
     }
 
     public async Task SyncAsync(string instanceName, CancellationToken ct = default)
@@ -225,7 +228,7 @@ public class ArrSyncService
         if (toDelete.Count > 0 && !ShouldSkipDestructiveDelete(movies.Count, dbMovies.Count, instanceName, "movies"))
             _db.Movies.RemoveRange(toDelete);
 
-        await _db.SaveChangesAsync(ct);
+        await _db.SaveChangesWithRetryAsync(_logger, _restartCoordinator, cancellationToken: ct);
         _logger.LogDebug("[{Instance}] ArrSyncService: Radarr {Name} synced {Count} movies - Added: {Added}, Updated: {Updated}, Deleted: {Deleted}", instanceName, instanceName, movies.Count, added, updated, toDelete.Count);
         _logger.LogTrace("[{Instance}] Finished updating database for Radarr instance {Name}", instanceName, instanceName);
     }
@@ -269,7 +272,7 @@ public class ArrSyncService
         if (toDelete.Count > 0)
             _db.MovieQueue.RemoveRange(toDelete);
 
-        await _db.SaveChangesAsync(ct);
+        await _db.SaveChangesWithRetryAsync(_logger, _restartCoordinator, cancellationToken: ct);
         _logger.LogDebug("ArrSyncService: Radarr {Name} synced {Count} queue items", instanceName, queueItems.Count);
 
         // §1.7: Scan for ArrErrorCodesToBlocklist matches
@@ -366,7 +369,7 @@ public class ArrSyncService
             _db.Series.RemoveRange(seriesToDelete);
         }
 
-        await _db.SaveChangesAsync(ct);
+        await _db.SaveChangesWithRetryAsync(_logger, _restartCoordinator, cancellationToken: ct);
 
         var episodesAdded = 0;
 
@@ -431,7 +434,7 @@ public class ArrSyncService
                     seriesEntity.Title, ep.SeasonNumber, ep.EpisodeNumber);
             }
 
-            await _db.SaveChangesAsync(ct);
+            await _db.SaveChangesWithRetryAsync(_logger, _restartCoordinator, cancellationToken: ct);
         }
 
         _logger.LogDebug("[{Instance}] ArrSyncService: Sonarr {Name} synced {SeriesCount} series - Series Added: {SeriesAdded}, Updated: {SeriesUpdated}, Deleted: {SeriesDeleted}, Episodes Added: {EpisodesAdded}",
@@ -478,7 +481,7 @@ public class ArrSyncService
         if (toDelete.Count > 0)
             _db.EpisodeQueue.RemoveRange(toDelete);
 
-        await _db.SaveChangesAsync(ct);
+        await _db.SaveChangesWithRetryAsync(_logger, _restartCoordinator, cancellationToken: ct);
         _logger.LogDebug("ArrSyncService: Sonarr {Name} synced {Count} queue items", instanceName, queueItems.Count);
 
         // §1.7: Scan for ArrErrorCodesToBlocklist matches
@@ -637,7 +640,7 @@ public class ArrSyncService
                     .ToListAsync(ct);
                 foreach (var movie in allMovies)
                     movie.IsRequest = requestTmdbIds.Contains(movie.TmdbId);
-                await _db.SaveChangesAsync(ct);
+                await _db.SaveChangesWithRetryAsync(_logger, _restartCoordinator, cancellationToken: ct);
                 _logger.LogDebug("ArrSyncService: marked {Count} movies as requests for {Name}",
                     requestTmdbIds.Count, instanceName);
             }
@@ -652,7 +655,7 @@ public class ArrSyncService
                     .ToListAsync(ct);
                 foreach (var ep in allEps)
                     ep.IsRequest = requestSeriesIds.Contains(ep.SeriesId);
-                await _db.SaveChangesAsync(ct);
+                await _db.SaveChangesWithRetryAsync(_logger, _restartCoordinator, cancellationToken: ct);
                 _logger.LogDebug("ArrSyncService: marked episodes for {Count} requested series for {Name}",
                     requestSeriesIds.Count, instanceName);
             }
@@ -730,7 +733,7 @@ public class ArrSyncService
         if (artistsToDelete.Count > 0 && !ShouldSkipDestructiveDelete(artists.Count, dbArtists.Count, instanceName, "artists"))
             _db.Artists.RemoveRange(artistsToDelete);
 
-        await _db.SaveChangesAsync(ct);
+        await _db.SaveChangesWithRetryAsync(_logger, _restartCoordinator, cancellationToken: ct);
 
         // Fetch all albums at once
         List<LidarrAlbum> albums;
@@ -818,7 +821,7 @@ public class ArrSyncService
         }
 
         // Save so EF Core assigns EntryId to new album rows
-        await _db.SaveChangesAsync(ct);
+        await _db.SaveChangesWithRetryAsync(_logger, _restartCoordinator, cancellationToken: ct);
 
         // Compute search metadata for each album using bulk track files (one API call per album)
         foreach (var (lidarrAlbumId, albumEntity) in albumEntityByLidarrId)
@@ -865,7 +868,7 @@ public class ArrSyncService
             albumEntity.Reason = DetermineReasonWithAvailability(albumEntity.HasFile, albumEntity.QualityMet, albumEntity.CustomFormatMet, isAvailable, searchConfig);
             albumEntity.Searched = DetermineSearched(albumEntity.HasFile, albumEntity.QualityMet, albumEntity.CustomFormatMet, searchConfig);
         }
-        await _db.SaveChangesAsync(ct);
+        await _db.SaveChangesWithRetryAsync(_logger, _restartCoordinator, cancellationToken: ct);
 
         // When albums API returned empty (delete guarded) but DB still has rows, resolve track FKs from DB.
         foreach (var album in dbAlbums.Values)
@@ -919,7 +922,7 @@ public class ArrSyncService
             _logger.LogTrace("DB Insert: Track {Title} added to database (new)", track.Title);
         }
 
-        await _db.SaveChangesAsync(ct);
+        await _db.SaveChangesWithRetryAsync(_logger, _restartCoordinator, cancellationToken: ct);
         _logger.LogDebug("[{Instance}] ArrSyncService: Lidarr {Name} synced - Artists: Added: {ArtistsAdded}, Updated: {ArtistsUpdated}, Deleted: {ArtistsDeleted} | Albums: Added: {AlbumsAdded}, Updated: {AlbumsUpdated}, Deleted: {AlbumsDeleted} | Tracks Added: {TracksAdded}",
             instanceName, instanceName, artistsAdded, artistsUpdated, artistsToDelete.Count, albumsAdded, albumsUpdated, albumsToDelete.Count, tracksAdded);
         _logger.LogTrace("Finished updating database for Lidarr instance {Name}", instanceName);
@@ -964,7 +967,7 @@ public class ArrSyncService
         if (toDelete.Count > 0)
             _db.AlbumQueue.RemoveRange(toDelete);
 
-        await _db.SaveChangesAsync(ct);
+        await _db.SaveChangesWithRetryAsync(_logger, _restartCoordinator, cancellationToken: ct);
         _logger.LogDebug("ArrSyncService: Lidarr {Name} synced {Count} queue items", instanceName, queueItems.Count);
 
         // §1.7: Scan for ArrErrorCodesToBlocklist matches

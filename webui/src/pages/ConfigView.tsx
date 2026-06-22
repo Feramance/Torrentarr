@@ -528,6 +528,13 @@ const QBIT_FIELDS: FieldDefinition[] = [
     },
   },
   {
+    label: "Match subcategories",
+    path: ["MatchSubcategories"],
+    type: "checkbox",
+    description:
+      "When off (default), each managed category must match the qBittorrent category string exactly (use full paths like parent/child). When on, each entry here is a prefix: torrents in child categories (e.g. seed/foo) are included when seed is listed.",
+  },
+  {
     label: "Max Upload Ratio",
     path: ["CategorySeeding", "MaxUploadRatio"],
     type: "number",
@@ -735,6 +742,13 @@ const ARR_GENERAL_FIELDS: FieldDefinition[] = [
       }
       return undefined;
     },
+  },
+  {
+    label: "Match subcategories (override)",
+    path: ["MatchSubcategories"],
+    type: "checkbox",
+    description:
+      "Optional. When set, overrides the qBit instance MatchSubcategories default for this Arr only (explicit true/false wins; omit to inherit from [qBit] / [qBit-*]).",
   },
   { label: "Re-search", path: ["ReSearch"], type: "checkbox" },
   {
@@ -2028,6 +2042,7 @@ export function ConfigView(props?: ConfigViewProps): JSX.Element {
       Port: 8080,
       UserName: "",
       Password: "",
+      MatchSubcategories: false,
     };
     setFormState(
       produce(formState, (draft) => {

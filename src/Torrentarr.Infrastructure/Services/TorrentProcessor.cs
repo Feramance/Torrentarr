@@ -29,6 +29,8 @@ public class TorrentProcessor : ITorrentProcessor
     private readonly ITorrentCacheService _cache;
     private readonly IArrImportService? _importService;
     private readonly ISeedingService? _seedingService;
+    private readonly IImportPathTracker? _pathTracker;
+    private readonly DatabaseRestartCoordinator _restartCoordinator;
 
     private readonly HashSet<string> _specialCategories;
 
@@ -38,16 +40,20 @@ public class TorrentProcessor : ITorrentProcessor
         TorrentarrDbContext dbContext,
         TorrentarrConfig config,
         ITorrentCacheService cache,
+        DatabaseRestartCoordinator restartCoordinator,
         IArrImportService? importService = null,
-        ISeedingService? seedingService = null)
+        ISeedingService? seedingService = null,
+        IImportPathTracker? pathTracker = null)
     {
         _logger = logger;
         _qbitManager = qbitManager;
         _dbContext = dbContext;
         _config = config;
         _cache = cache;
+        _restartCoordinator = restartCoordinator;
         _importService = importService;
         _seedingService = seedingService;
+        _pathTracker = pathTracker;
 
         _specialCategories = new HashSet<string>(StringComparer.OrdinalIgnoreCase)
         {
@@ -83,15 +89,18 @@ public class TorrentProcessor : ITorrentProcessor
                     await EnsureTagsExistAsync(c, cancellationToken);
             }
 
-            // Get all torrents for this category from ALL qBit instances, stamping instance name
-            var torrents = new List<TorrentInfo>();
-            foreach (var (instanceName, c) in allClients)
-            {
-                var instanceTorrents = await c.GetTorrentsAsync(category, cancellationToken: cancellationToken);
-                foreach (var t in instanceTorrents)
-                    t.QBitInstanceName = instanceName;
-                torrents.AddRange(instanceTorrents);
-            }
+            // Gather torrents (MatchSubcategories-aware — qBitrr _get_torrents_from_all_instances)
+            var fetchAll = allClients.ToDictionary(
+                kv => kv.Key,
+                kv => (Func<CancellationToken, Task<List<TorrentInfo>>>)(ct =>
+                    kv.Value.GetTorrentsAsync(cancellationToken: ct)));
+            var fetchByCategory = allClients.ToDictionary(
+                kv => kv.Key,
+                kv => (Func<string, CancellationToken, Task<List<TorrentInfo>>>)(async (cat, ct) =>
+                    await kv.Value.GetTorrentsAsync(cat, cancellationToken: ct)));
+
+            var torrents = await CategoryOwnershipHelper.GatherTorrentsForOwnerAsync(
+                _config, category, fetchAll, fetchByCategory, cancellationToken);
             _logger.LogDebug("Found {Count} torrents in category {Category}", torrents.Count, category);
 
             var stats = new TorrentProcessingStats
@@ -116,6 +125,7 @@ public class TorrentProcessor : ITorrentProcessor
             if (_seedingService != null)
             {
                 await _seedingService.UpdateSeedingTagsAsync(category, cancellationToken);
+                await _seedingService.RemoveCompletedTorrentsAsync(category, cancellationToken);
             }
 
             _logger.LogInformation(
@@ -236,15 +246,39 @@ public class TorrentProcessor : ITorrentProcessor
 
         if (_importService != null)
         {
+            var contentPath = torrent.ContentPath;
+            if (!string.IsNullOrEmpty(contentPath))
+            {
+                if (_pathTracker?.IsHashAlreadyScanned(torrent.Hash) == true)
+                {
+                    _logger.LogTrace("Skipping import — hash already sent to scan: {Hash}", hash);
+                    return;
+                }
+                if (!File.Exists(contentPath))
+                {
+                    _logger.LogWarning("Missing torrent file for import: {Path} ({Hash})", contentPath, hash);
+                    _cache.AddToIgnoreCache(hash, TimeSpan.FromSeconds(_config.Settings.IgnoreTorrentsYoungerThan));
+                    return;
+                }
+                if (_pathTracker?.IsPathAlreadyScanned(contentPath) == true)
+                {
+                    _logger.LogTrace("Skipping import — path already sent to scan: {Path}", contentPath);
+                    return;
+                }
+            }
+
             var result = await _importService.TriggerImportAsync(
                 hash, torrent.ContentPath, libraryEntry.Category, cancellationToken);
 
             if (result.Success)
             {
                 libraryEntry.Imported = true;
-                await _dbContext.SaveChangesAsync(cancellationToken);
+                await _dbContext.SaveChangesWithRetryAsync(_logger, _restartCoordinator, cancellationToken: cancellationToken);
                 _logger.LogInformation("Successfully triggered import for torrent {Hash}: {Message}",
                     hash, result.Message);
+
+                if (!string.IsNullOrEmpty(contentPath))
+                    _pathTracker?.MarkScanned(contentPath, hash);
 
                 // AutoDelete: remove torrent from qBittorrent after successful import
                 var arrCfgForDelete = _config.ArrInstances.Values.FirstOrDefault(a =>
@@ -265,7 +299,7 @@ public class TorrentProcessor : ITorrentProcessor
         {
             _logger.LogWarning("ArrImportService not available, marking as imported without triggering");
             libraryEntry.Imported = true;
-            await _dbContext.SaveChangesAsync(cancellationToken);
+            await _dbContext.SaveChangesWithRetryAsync(_logger, _restartCoordinator, cancellationToken: cancellationToken);
         }
     }
 
@@ -288,9 +322,7 @@ public class TorrentProcessor : ITorrentProcessor
 
         var state = ParseTorrentState(torrent.State);
         var arrCfg = _config.ArrInstances.Values.FirstOrDefault(a =>
-            !string.IsNullOrEmpty(a.Category)
-            && CategoryPathHelper.MatchesConfigured(category, new[] { a.Category }, prefix: true)
-                == CategoryPathHelper.NormalizeCategory(a.Category));
+            CategoryPathHelper.CategoryEquals(a.Category, category));
         var ignoreYoungerThan = arrCfg?.Torrent.IgnoreTorrentsYoungerThan
             ?? _config.Settings.IgnoreTorrentsYoungerThan;
         var timeNow = DateTimeOffset.UtcNow.ToUnixTimeSeconds();
@@ -310,6 +342,7 @@ public class TorrentProcessor : ITorrentProcessor
                  && TorrentPolicyHelper.IsMonitoredPolicyCategory(_config, torrent.Category)))
         {
             await _seedingService.ApplyTrackerActionsForTorrentAsync(torrent, ct);
+            await _seedingService.ApplySeedingLimitsAsync(torrent, ct);
         }
 
         // PRE-STEP 1: Resolve leave_alone / remove_torrent / maxEta (qBitrr: _should_leave_alone)
@@ -485,8 +518,9 @@ public class TorrentProcessor : ITorrentProcessor
         {
             await ProcessPercentageThresholdAsync(torrent, maxEta, client, stats, ct);
         }
-        // Branch 14: Already imported → skip (qBitrr line 6184-6187)
-        else if (await IsImportedInDatabaseAsync(torrent.Hash, torrent.QBitInstanceName, ct)
+        // Branch 14: Already imported or sent to scan → skip (qBitrr line 6184-6187, sent_to_scan_hashes)
+        else if ((_pathTracker?.IsHashAlreadyScanned(torrent.Hash) == true
+                  || await IsImportedInDatabaseAsync(torrent.Hash, torrent.QBitInstanceName, ct))
             && _cache.IsFileFiltered(torrent.Hash))
         {
             _logger.LogTrace("Skipping already-imported torrent: [{Name}]", torrent.Name);
@@ -980,7 +1014,7 @@ public class TorrentProcessor : ITorrentProcessor
                     case AllowedStalledTag: entry.AllowedStalled = true; break;
                     case FreeSpacePausedTag: entry.FreeSpacePaused = true; break;
                 }
-                await _dbContext.SaveChangesAsync(ct);
+                await _dbContext.SaveChangesWithRetryAsync(_logger, _restartCoordinator, cancellationToken: ct);
             }
         }
         else
@@ -1006,7 +1040,7 @@ public class TorrentProcessor : ITorrentProcessor
                     case AllowedStalledTag: entry.AllowedStalled = false; break;
                     case FreeSpacePausedTag: entry.FreeSpacePaused = false; break;
                 }
-                await _dbContext.SaveChangesAsync(ct);
+                await _dbContext.SaveChangesWithRetryAsync(_logger, _restartCoordinator, cancellationToken: ct);
             }
         }
         else
@@ -1100,7 +1134,7 @@ public class TorrentProcessor : ITorrentProcessor
             };
 
             _dbContext.TorrentLibrary.Add(entry);
-            await _dbContext.SaveChangesAsync(cancellationToken);
+            await _dbContext.SaveChangesWithRetryAsync(_logger, _restartCoordinator, cancellationToken: cancellationToken);
 
             _logger.LogTrace("Added torrent {Hash} to database", torrent.Hash);
         }
@@ -1247,7 +1281,7 @@ public class TorrentProcessor : ITorrentProcessor
             if (entry != null)
             {
                 entry.AllowedStalled = true;
-                await _dbContext.SaveChangesAsync(ct);
+                await _dbContext.SaveChangesWithRetryAsync(_logger, _restartCoordinator, cancellationToken: ct);
             }
         }
         else
@@ -1268,7 +1302,7 @@ public class TorrentProcessor : ITorrentProcessor
             if (entry != null)
             {
                 entry.AllowedStalled = false;
-                await _dbContext.SaveChangesAsync(ct);
+                await _dbContext.SaveChangesWithRetryAsync(_logger, _restartCoordinator, cancellationToken: ct);
             }
         }
         else

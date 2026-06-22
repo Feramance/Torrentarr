@@ -526,6 +526,12 @@ public class ConfigurationLoader
                 changed = true;
             }
 
+            if (!qbitTable.ContainsKey("MatchSubcategories"))
+            {
+                qbitTable["MatchSubcategories"] = false;
+                changed = true;
+            }
+
             if (!qbitTable.ContainsKey("CategorySeeding"))
             {
                 var seeding = new TomlTable
@@ -1020,6 +1026,9 @@ public class ConfigurationLoader
         if (table.TryGetValue("ManagedCategories", out var categories) && categories is TomlArray catArray)
             qbit.ManagedCategories = catArray.Select(x => x?.ToString() ?? "").ToList();
 
+        if (table.TryGetValue("MatchSubcategories", out var matchSub))
+            qbit.MatchSubcategories = Convert.ToBoolean(matchSub);
+
         if (table.TryGetValue("CategorySeeding", out var seedingObj) && seedingObj is TomlTable seedingTable)
             qbit.CategorySeeding = ParseCategorySeeding(seedingTable);
 
@@ -1303,6 +1312,9 @@ public class ConfigurationLoader
 
                 if (instanceTable.TryGetValue("ProcessingOnly", out var procOnly))
                     instance.ProcessingOnly = Convert.ToBoolean(procOnly);
+
+                if (instanceTable.TryGetValue("MatchSubcategories", out var matchSub))
+                    instance.MatchSubcategories = Convert.ToBoolean(matchSub);
 
                 if (instanceTable.TryGetValue("ReSearch", out var reSearch))
                     instance.ReSearch = Convert.ToBoolean(reSearch);
@@ -1772,6 +1784,7 @@ public class ConfigurationLoader
             if (!string.IsNullOrEmpty(qbit.DownloadPath))
                 sb.AppendLine($"DownloadPath = \"{qbit.DownloadPath}\"");
             sb.AppendLine($"ManagedCategories = [{string.Join(", ", qbit.ManagedCategories.Select(c => $"\"{c}\""))}]");
+            sb.AppendLine($"MatchSubcategories = {qbit.MatchSubcategories.ToString().ToLower()}");
             if (name == "qBit")
             {
                 sb.AppendLine("# Shared tracker configs inherited by all Arr instances on this qBit instance.");
@@ -1809,6 +1822,8 @@ public class ConfigurationLoader
             sb.AppendLine($"URI = \"{instance.URI}\"");
             sb.AppendLine($"APIKey = \"{instance.APIKey}\"");
             sb.AppendLine($"Category = \"{instance.Category}\"");
+            if (instance.MatchSubcategories.HasValue)
+                sb.AppendLine($"MatchSubcategories = {instance.MatchSubcategories.Value.ToString().ToLower()}");
             sb.AppendLine($"ReSearch = {instance.ReSearch.ToString().ToLower()}");
             sb.AppendLine($"importMode = \"{instance.ImportMode}\"");
             sb.AppendLine($"RssSyncTimer = {instance.RssSyncTimer}");

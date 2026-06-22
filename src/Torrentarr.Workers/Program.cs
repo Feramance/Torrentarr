@@ -144,6 +144,7 @@ try
     });
 
     // Add services
+    builder.Services.AddSingleton<DatabaseRestartCoordinator>();
     builder.Services.AddSingleton<QBittorrentConnectionManager>();
     builder.Services.AddSingleton<ITorrentCacheService, TorrentCacheService>();
     builder.Services.AddSingleton<IMediaValidationService, MediaValidationService>();

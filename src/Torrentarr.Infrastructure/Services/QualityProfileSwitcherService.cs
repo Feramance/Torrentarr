@@ -15,13 +15,16 @@ public class QualityProfileSwitcherService
 {
     private readonly ILogger<QualityProfileSwitcherService> _logger;
     private readonly TorrentarrDbContext _db;
+    private readonly DatabaseRestartCoordinator _restartCoordinator;
 
     public QualityProfileSwitcherService(
         ILogger<QualityProfileSwitcherService> logger,
-        TorrentarrDbContext db)
+        TorrentarrDbContext db,
+        DatabaseRestartCoordinator restartCoordinator)
     {
         _logger = logger;
         _db = db;
+        _restartCoordinator = restartCoordinator;
     }
 
     // ── Startup ───────────────────────────────────────────────────────────────
@@ -54,12 +57,12 @@ public class QualityProfileSwitcherService
                 var radarr = new RadarrClient(arrConfig.URI, arrConfig.APIKey);
                 foreach (var movie in movies)
                 {
-                    await TryRestoreMovieAsync(radarr, movie.ArrId, movie.OriginalProfileId!.Value, instanceName, ct);
+                    await TryRestoreMovieAsync(radarr, movie.ArrId, movie.OriginalProfileId!.Value, instanceName, arrConfig, ct);
                     movie.CurrentProfileId = movie.OriginalProfileId;
                     movie.OriginalProfileId = null;
                     movie.LastProfileSwitchTime = null;
                 }
-                await _db.SaveChangesAsync(ct);
+                await _db.SaveChangesWithRetryAsync(_logger, _restartCoordinator, cancellationToken: ct);
                 break;
 
             case "sonarr":
@@ -73,12 +76,12 @@ public class QualityProfileSwitcherService
                 var sonarr = new SonarrClient(arrConfig.URI, arrConfig.APIKey);
                 foreach (var s in series)
                 {
-                    await TryRestoreSeriesAsync(sonarr, s.ArrId, s.OriginalProfileId!.Value, instanceName, ct);
+                    await TryRestoreSeriesAsync(sonarr, s.ArrId, s.OriginalProfileId!.Value, instanceName, arrConfig, ct);
                     s.CurrentProfileId = s.OriginalProfileId;
                     s.OriginalProfileId = null;
                     s.LastProfileSwitchTime = null;
                 }
-                await _db.SaveChangesAsync(ct);
+                await _db.SaveChangesWithRetryAsync(_logger, _restartCoordinator, cancellationToken: ct);
                 break;
 
             case "lidarr":
@@ -92,12 +95,12 @@ public class QualityProfileSwitcherService
                 var lidarr = new LidarrClient(arrConfig.URI, arrConfig.APIKey);
                 foreach (var artist in artists)
                 {
-                    await TryRestoreArtistAsync(lidarr, artist.ArrId, artist.OriginalProfileId!.Value, instanceName, ct);
+                    await TryRestoreArtistAsync(lidarr, artist.ArrId, artist.OriginalProfileId!.Value, instanceName, arrConfig, ct);
                     artist.CurrentProfileId = artist.OriginalProfileId;
                     artist.OriginalProfileId = null;
                     artist.LastProfileSwitchTime = null;
                 }
-                await _db.SaveChangesAsync(ct);
+                await _db.SaveChangesWithRetryAsync(_logger, _restartCoordinator, cancellationToken: ct);
                 break;
         }
     }
@@ -142,12 +145,12 @@ public class QualityProfileSwitcherService
                 var radarr = new RadarrClient(arrConfig.URI, arrConfig.APIKey);
                 foreach (var movie in expiredMovies)
                 {
-                    await TryRestoreMovieAsync(radarr, movie.ArrId, movie.OriginalProfileId!.Value, instanceName, ct);
+                    await TryRestoreMovieAsync(radarr, movie.ArrId, movie.OriginalProfileId!.Value, instanceName, arrConfig, ct);
                     movie.CurrentProfileId = movie.OriginalProfileId;
                     movie.OriginalProfileId = null;
                     movie.LastProfileSwitchTime = null;
                 }
-                await _db.SaveChangesAsync(ct);
+                await _db.SaveChangesWithRetryAsync(_logger, _restartCoordinator, cancellationToken: ct);
                 break;
 
             case "sonarr":
@@ -164,12 +167,12 @@ public class QualityProfileSwitcherService
                 var sonarr = new SonarrClient(arrConfig.URI, arrConfig.APIKey);
                 foreach (var s in expiredSeries)
                 {
-                    await TryRestoreSeriesAsync(sonarr, s.ArrId, s.OriginalProfileId!.Value, instanceName, ct);
+                    await TryRestoreSeriesAsync(sonarr, s.ArrId, s.OriginalProfileId!.Value, instanceName, arrConfig, ct);
                     s.CurrentProfileId = s.OriginalProfileId;
                     s.OriginalProfileId = null;
                     s.LastProfileSwitchTime = null;
                 }
-                await _db.SaveChangesAsync(ct);
+                await _db.SaveChangesWithRetryAsync(_logger, _restartCoordinator, cancellationToken: ct);
                 break;
 
             case "lidarr":
@@ -186,12 +189,12 @@ public class QualityProfileSwitcherService
                 var lidarr = new LidarrClient(arrConfig.URI, arrConfig.APIKey);
                 foreach (var artist in expiredArtists)
                 {
-                    await TryRestoreArtistAsync(lidarr, artist.ArrId, artist.OriginalProfileId!.Value, instanceName, ct);
+                    await TryRestoreArtistAsync(lidarr, artist.ArrId, artist.OriginalProfileId!.Value, instanceName, arrConfig, ct);
                     artist.CurrentProfileId = artist.OriginalProfileId;
                     artist.OriginalProfileId = null;
                     artist.LastProfileSwitchTime = null;
                 }
-                await _db.SaveChangesAsync(ct);
+                await _db.SaveChangesWithRetryAsync(_logger, _restartCoordinator, cancellationToken: ct);
                 break;
         }
     }
@@ -276,7 +279,11 @@ public class QualityProfileSwitcherService
                 continue;
             }
 
-            var switched = await radarr.UpdateMovieQualityProfileAsync(movie.ArrId, tempProfileId, ct);
+            var switched = await WithProfileSwitchRetryAsync(
+                arrConfig,
+                () => radarr.UpdateMovieQualityProfileAsync(movie.ArrId, tempProfileId, ct),
+                "movie",
+                ct);
             if (switched)
             {
                 _logger.LogInformation("§1.2: Switched movie '{Title}' profile: {From} → {To}", movie.Title, currentProfileName, tempProfileName);
@@ -288,7 +295,7 @@ public class QualityProfileSwitcherService
         }
 
         if (changed)
-            await _db.SaveChangesAsync(ct);
+            await _db.SaveChangesWithRetryAsync(_logger, _restartCoordinator, cancellationToken: ct);
     }
 
     private async Task SwitchSeriesProfilesAsync(
@@ -333,7 +340,11 @@ public class QualityProfileSwitcherService
                 continue;
             }
 
-            var switched = await sonarr.UpdateSeriesQualityProfileAsync(series.ArrId, tempProfileId, ct);
+            var switched = await WithProfileSwitchRetryAsync(
+                arrConfig,
+                () => sonarr.UpdateSeriesQualityProfileAsync(series.ArrId, tempProfileId, ct),
+                "series",
+                ct);
             if (switched)
             {
                 _logger.LogInformation("§1.2: Switched series '{Title}' profile: {From} → {To}",
@@ -346,7 +357,7 @@ public class QualityProfileSwitcherService
         }
 
         if (changed)
-            await _db.SaveChangesAsync(ct);
+            await _db.SaveChangesWithRetryAsync(_logger, _restartCoordinator, cancellationToken: ct);
     }
 
     private async Task SwitchArtistProfilesAsync(
@@ -391,7 +402,11 @@ public class QualityProfileSwitcherService
                 continue;
             }
 
-            var switched = await lidarr.UpdateArtistQualityProfileAsync(artist.ArrId, tempProfileId, ct);
+            var switched = await WithProfileSwitchRetryAsync(
+                arrConfig,
+                () => lidarr.UpdateArtistQualityProfileAsync(artist.ArrId, tempProfileId, ct),
+                "artist",
+                ct);
             if (switched)
             {
                 _logger.LogInformation("§1.2: Switched artist '{Name}' profile: {From} → {To}",
@@ -404,47 +419,77 @@ public class QualityProfileSwitcherService
         }
 
         if (changed)
-            await _db.SaveChangesAsync(ct);
+            await _db.SaveChangesWithRetryAsync(_logger, _restartCoordinator, cancellationToken: ct);
     }
 
     // ── Restore helpers ───────────────────────────────────────────────────────
 
-    private async Task TryRestoreMovieAsync(RadarrClient radarr, int arrId, int originalProfileId, string instanceName, CancellationToken ct)
+    private async Task TryRestoreMovieAsync(RadarrClient radarr, int arrId, int originalProfileId, string instanceName, ArrInstanceConfig arrConfig, CancellationToken ct)
     {
-        try
-        {
-            await radarr.UpdateMovieQualityProfileAsync(arrId, originalProfileId, ct);
-            _logger.LogInformation("§1.2: Restored movie {ArrId} → profileId={ProfileId} for {Instance}", arrId, originalProfileId, instanceName);
-        }
-        catch (Exception ex)
-        {
-            _logger.LogWarning(ex, "§1.2: Failed to restore movie {ArrId} for {Instance}", arrId, instanceName);
-        }
+        await WithProfileSwitchRetryAsync(
+            arrConfig,
+            async () =>
+            {
+                await radarr.UpdateMovieQualityProfileAsync(arrId, originalProfileId, ct);
+                _logger.LogInformation("§1.2: Restored movie {ArrId} → profileId={ProfileId} for {Instance}", arrId, originalProfileId, instanceName);
+                return true;
+            },
+            "movie-restore",
+            ct);
     }
 
-    private async Task TryRestoreSeriesAsync(SonarrClient sonarr, int arrId, int originalProfileId, string instanceName, CancellationToken ct)
+    private async Task TryRestoreSeriesAsync(SonarrClient sonarr, int arrId, int originalProfileId, string instanceName, ArrInstanceConfig arrConfig, CancellationToken ct)
     {
-        try
-        {
-            await sonarr.UpdateSeriesQualityProfileAsync(arrId, originalProfileId, ct);
-            _logger.LogInformation("§1.2: Restored series {ArrId} → profileId={ProfileId} for {Instance}", arrId, originalProfileId, instanceName);
-        }
-        catch (Exception ex)
-        {
-            _logger.LogWarning(ex, "§1.2: Failed to restore series {ArrId} for {Instance}", arrId, instanceName);
-        }
+        await WithProfileSwitchRetryAsync(
+            arrConfig,
+            async () =>
+            {
+                await sonarr.UpdateSeriesQualityProfileAsync(arrId, originalProfileId, ct);
+                _logger.LogInformation("§1.2: Restored series {ArrId} → profileId={ProfileId} for {Instance}", arrId, originalProfileId, instanceName);
+                return true;
+            },
+            "series-restore",
+            ct);
     }
 
-    private async Task TryRestoreArtistAsync(LidarrClient lidarr, int arrId, int originalProfileId, string instanceName, CancellationToken ct)
+    private async Task TryRestoreArtistAsync(LidarrClient lidarr, int arrId, int originalProfileId, string instanceName, ArrInstanceConfig arrConfig, CancellationToken ct)
     {
-        try
+        await WithProfileSwitchRetryAsync(
+            arrConfig,
+            async () =>
+            {
+                await lidarr.UpdateArtistQualityProfileAsync(arrId, originalProfileId, ct);
+                _logger.LogInformation("§1.2: Restored artist {ArrId} → profileId={ProfileId} for {Instance}", arrId, originalProfileId, instanceName);
+                return true;
+            },
+            "artist-restore",
+            ct);
+    }
+
+    private async Task<bool> WithProfileSwitchRetryAsync(
+        ArrInstanceConfig arrConfig,
+        Func<Task<bool>> action,
+        string kind,
+        CancellationToken ct)
+    {
+        var attempts = Math.Max(1, arrConfig.Search.ProfileSwitchRetryAttempts);
+        for (var attempt = 0; attempt < attempts; attempt++)
         {
-            await lidarr.UpdateArtistQualityProfileAsync(arrId, originalProfileId, ct);
-            _logger.LogInformation("§1.2: Restored artist {ArrId} → profileId={ProfileId} for {Instance}", arrId, originalProfileId, instanceName);
+            try
+            {
+                return await action();
+            }
+            catch (Exception ex) when (attempt < attempts - 1)
+            {
+                _logger.LogWarning(ex, "Profile switch retry {Attempt}/{Max} for {Kind}", attempt + 1, attempts, kind);
+                await Task.Delay(TimeSpan.FromSeconds(1), ct);
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Failed to update {Kind} profile after {Attempts} attempts", kind, attempts);
+                return false;
+            }
         }
-        catch (Exception ex)
-        {
-            _logger.LogWarning(ex, "§1.2: Failed to restore artist {ArrId} for {Instance}", arrId, instanceName);
-        }
+        return false;
     }
 }

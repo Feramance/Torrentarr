@@ -31,7 +31,7 @@ public class AvailabilityCheckTests
             .UseInMemoryDatabase(Guid.NewGuid().ToString())
             .Options;
         var dbContext = new TorrentarrDbContext(options);
-        return new ArrSyncService(Logger, new TorrentarrConfig(), dbContext);
+        return new ArrSyncService(Logger, new TorrentarrConfig(), dbContext, new DatabaseRestartCoordinator());
     }
 
     private static bool CallCheckEpisodeAvailability(DateTime? airDateUtc, string episodeTitle)

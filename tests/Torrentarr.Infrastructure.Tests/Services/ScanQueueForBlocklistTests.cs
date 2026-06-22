@@ -32,7 +32,8 @@ public class ScanQueueForBlocklistTests
         return new ArrSyncService(
             NullLogger<ArrSyncService>.Instance,
             new TorrentarrConfig(),
-            new TorrentarrDbContext(options));
+            new TorrentarrDbContext(options),
+            new DatabaseRestartCoordinator());
     }
 
     private static async Task InvokeScanAsync(

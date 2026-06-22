@@ -23,13 +23,15 @@ public class SearchExecutorTests
 
         var switcher = new QualityProfileSwitcherService(
             NullLogger<QualityProfileSwitcherService>.Instance,
-            db);
+            db,
+            new DatabaseRestartCoordinator());
 
         return new SearchExecutor(
             NullLogger<SearchExecutor>.Instance,
             cfg,
             db,
-            switcher);
+            switcher,
+            new DatabaseRestartCoordinator());
     }
 
     private static TorrentarrConfig CreateConfigWithRadarr(int searchLoopDelay = 30, int searchLimit = 5)

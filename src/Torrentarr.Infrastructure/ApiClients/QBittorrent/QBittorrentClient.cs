@@ -2,6 +2,7 @@ using Torrentarr.Core.Models;
 using Newtonsoft.Json;
 using RestSharp;
 using RestSharp.Authenticators;
+using Torrentarr.Infrastructure.Http;
 
 namespace Torrentarr.Infrastructure.ApiClients.QBittorrent;
 
@@ -41,6 +42,9 @@ public class QBittorrentClient
         _client = new RestClient(options);
     }
 
+    private Task<RestResponse> ExecuteAsync(RestRequest request, CancellationToken ct) =>
+        HttpRetryHelper.ExecuteQBitAsync(_client, request, ct);
+
     /// <summary>
     /// Authenticate with qBittorrent
     /// </summary>
@@ -50,7 +54,7 @@ public class QBittorrentClient
         request.AddParameter("username", _username);
         request.AddParameter("password", _password);
 
-        var response = await _client.ExecuteAsync(request, ct);
+        var response = await ExecuteAsync(request, ct);
 
         if (response.IsSuccessful && response.Content == "Ok.")
         {
@@ -74,7 +78,7 @@ public class QBittorrentClient
         var request = new RestRequest("/api/v2/app/version", Method.Get);
         AddAuthCookie(request);
 
-        var response = await _client.ExecuteAsync(request, ct);
+        var response = await ExecuteAsync(request, ct);
         return response.Content ?? "";
     }
 
@@ -91,7 +95,7 @@ public class QBittorrentClient
         if (!string.IsNullOrEmpty(sort))
             request.AddQueryParameter("sort", sort);
 
-        var response = await _client.ExecuteAsync(request, cancellationToken);
+        var response = await ExecuteAsync(request, cancellationToken);
 
         if (response.IsSuccessful && !string.IsNullOrEmpty(response.Content))
         {
@@ -115,7 +119,7 @@ public class QBittorrentClient
         if (!string.IsNullOrEmpty(savePath))
             request.AddParameter("savepath", savePath);
 
-        var response = await _client.ExecuteAsync(request, ct);
+        var response = await ExecuteAsync(request, ct);
         return response.IsSuccessful && response.Content == "Ok.";
     }
 
@@ -130,7 +134,7 @@ public class QBittorrentClient
         request.AddParameter("hashes", string.Join("|", hashes));
         request.AddParameter("deleteFiles", deleteFiles.ToString().ToLower());
 
-        var response = await _client.ExecuteAsync(request, ct);
+        var response = await ExecuteAsync(request, ct);
         return response.IsSuccessful;
     }
 
@@ -144,7 +148,7 @@ public class QBittorrentClient
 
         request.AddParameter("hashes", string.Join("|", hashes));
 
-        var response = await _client.ExecuteAsync(request, ct);
+        var response = await ExecuteAsync(request, ct);
         return response.IsSuccessful;
     }
 
@@ -158,7 +162,7 @@ public class QBittorrentClient
 
         request.AddParameter("hashes", string.Join("|", hashes));
 
-        var response = await _client.ExecuteAsync(request, ct);
+        var response = await ExecuteAsync(request, ct);
         return response.IsSuccessful;
     }
 
@@ -189,7 +193,7 @@ public class QBittorrentClient
         request.AddParameter("hashes", string.Join("|", hashes));
         request.AddParameter("category", category);
 
-        var response = await _client.ExecuteAsync(request, ct);
+        var response = await ExecuteAsync(request, ct);
         return response.IsSuccessful;
     }
 
@@ -201,7 +205,7 @@ public class QBittorrentClient
         var request = new RestRequest("/api/v2/torrents/categories", Method.Get);
         AddAuthCookie(request);
 
-        var response = await _client.ExecuteAsync(request, ct);
+        var response = await ExecuteAsync(request, ct);
 
         if (response.IsSuccessful && !string.IsNullOrEmpty(response.Content))
         {
@@ -223,7 +227,7 @@ public class QBittorrentClient
         request.AddParameter("hashes", string.Join("|", hashes));
         request.AddParameter("tags", string.Join(",", tags));
 
-        var response = await _client.ExecuteAsync(request, ct);
+        var response = await ExecuteAsync(request, ct);
         return response.IsSuccessful;
     }
 
@@ -238,7 +242,7 @@ public class QBittorrentClient
         request.AddParameter("hashes", string.Join("|", hashes));
         request.AddParameter("tags", string.Join(",", tags));
 
-        var response = await _client.ExecuteAsync(request, ct);
+        var response = await ExecuteAsync(request, ct);
         return response.IsSuccessful;
     }
 
@@ -252,7 +256,7 @@ public class QBittorrentClient
 
         request.AddParameter("tags", string.Join(",", tags));
 
-        var response = await _client.ExecuteAsync(request, ct);
+        var response = await ExecuteAsync(request, ct);
         return response.IsSuccessful;
     }
 
@@ -264,7 +268,7 @@ public class QBittorrentClient
         var request = new RestRequest("api/v2/torrents/tags", Method.Get);
         AddAuthCookie(request);
 
-        var response = await _client.ExecuteAsync(request, ct);
+        var response = await ExecuteAsync(request, ct);
 
         if (response.IsSuccessful && !string.IsNullOrEmpty(response.Content))
         {
@@ -283,7 +287,7 @@ public class QBittorrentClient
         AddAuthCookie(request);
         request.AddQueryParameter("hash", hash);
 
-        var response = await _client.ExecuteAsync(request, ct);
+        var response = await ExecuteAsync(request, ct);
 
         if (response.IsSuccessful && !string.IsNullOrEmpty(response.Content))
         {
@@ -302,7 +306,7 @@ public class QBittorrentClient
         AddAuthCookie(request);
         request.AddQueryParameter("hash", hash);
 
-        var response = await _client.ExecuteAsync(request, ct);
+        var response = await ExecuteAsync(request, ct);
 
         if (response.IsSuccessful && !string.IsNullOrEmpty(response.Content))
         {
@@ -322,7 +326,7 @@ public class QBittorrentClient
 
         request.AddParameter("hashes", string.Join("|", hashes));
 
-        var response = await _client.ExecuteAsync(request, ct);
+        var response = await ExecuteAsync(request, ct);
         return response.IsSuccessful;
     }
 
@@ -338,7 +342,7 @@ public class QBittorrentClient
         request.AddParameter("ratioLimit", ratioLimit);
         request.AddParameter("seedingTimeLimit", seedingTimeLimit);
 
-        var response = await _client.ExecuteAsync(request, ct);
+        var response = await ExecuteAsync(request, ct);
         return response.IsSuccessful;
     }
 
@@ -353,7 +357,7 @@ public class QBittorrentClient
         request.AddParameter("hashes", hash);
         request.AddParameter("limit", limit);
 
-        var response = await _client.ExecuteAsync(request, ct);
+        var response = await ExecuteAsync(request, ct);
         return response.IsSuccessful;
     }
 
@@ -368,7 +372,7 @@ public class QBittorrentClient
         request.AddParameter("hashes", hash);
         request.AddParameter("limit", limit);
 
-        var response = await _client.ExecuteAsync(request, ct);
+        var response = await ExecuteAsync(request, ct);
         return response.IsSuccessful;
     }
 
@@ -383,7 +387,7 @@ public class QBittorrentClient
         request.AddParameter("hashes", hash);
         request.AddParameter("value", enabled ? "true" : "false");
 
-        var response = await _client.ExecuteAsync(request, ct);
+        var response = await ExecuteAsync(request, ct);
         return response.IsSuccessful;
     }
 
@@ -395,7 +399,7 @@ public class QBittorrentClient
         var request = new RestRequest("api/v2/torrents/topPrio", Method.Post);
         AddAuthCookie(request);
         request.AddParameter("hashes", hash);
-        var response = await _client.ExecuteAsync(request, ct);
+        var response = await ExecuteAsync(request, ct);
         return response.IsSuccessful;
     }
 
@@ -410,7 +414,7 @@ public class QBittorrentClient
         request.AddParameter("hash", hash);
         request.AddParameter("urls", string.Join("\n", urls));
 
-        var response = await _client.ExecuteAsync(request, ct);
+        var response = await ExecuteAsync(request, ct);
         return response.IsSuccessful;
     }
 
@@ -425,7 +429,7 @@ public class QBittorrentClient
         request.AddParameter("hash", hash);
         request.AddParameter("urls", string.Join("|", urls));
 
-        var response = await _client.ExecuteAsync(request, ct);
+        var response = await ExecuteAsync(request, ct);
         return response.IsSuccessful;
     }
 
@@ -438,7 +442,7 @@ public class QBittorrentClient
         AddAuthCookie(request);
         request.AddQueryParameter("hash", hash);
 
-        var response = await _client.ExecuteAsync(request, ct);
+        var response = await ExecuteAsync(request, ct);
 
         if (response.IsSuccessful && !string.IsNullOrEmpty(response.Content))
         {
@@ -461,7 +465,7 @@ public class QBittorrentClient
         request.AddParameter("id", string.Join("|", fileIds));
         request.AddParameter("priority", priority);
 
-        var response = await _client.ExecuteAsync(request, ct);
+        var response = await ExecuteAsync(request, ct);
         return response.IsSuccessful;
     }
 
@@ -477,7 +481,7 @@ public class QBittorrentClient
         if (!string.IsNullOrEmpty(savePath))
             request.AddParameter("savePath", savePath);
 
-        var response = await _client.ExecuteAsync(request, ct);
+        var response = await ExecuteAsync(request, ct);
         return response.IsSuccessful;
     }
 
@@ -492,7 +496,7 @@ public class QBittorrentClient
         request.AddParameter("category", name);
         request.AddParameter("savePath", savePath);
 
-        var response = await _client.ExecuteAsync(request, ct);
+        var response = await ExecuteAsync(request, ct);
         return response.IsSuccessful;
     }
 
@@ -506,7 +510,7 @@ public class QBittorrentClient
 
         request.AddParameter("categories", name);
 
-        var response = await _client.ExecuteAsync(request, ct);
+        var response = await ExecuteAsync(request, ct);
         return response.IsSuccessful;
     }
 
@@ -518,7 +522,7 @@ public class QBittorrentClient
         var request = new RestRequest("api/v2/transfer/info", Method.Get);
         AddAuthCookie(request);
 
-        var response = await _client.ExecuteAsync(request, ct);
+        var response = await ExecuteAsync(request, ct);
 
         if (response.IsSuccessful && !string.IsNullOrEmpty(response.Content))
         {
@@ -539,7 +543,7 @@ public class QBittorrentClient
         if (rid.HasValue)
             request.AddQueryParameter("rid", rid.Value);
 
-        var response = await _client.ExecuteAsync(request, ct);
+        var response = await ExecuteAsync(request, ct);
 
         if (response.IsSuccessful && !string.IsNullOrEmpty(response.Content))
         {

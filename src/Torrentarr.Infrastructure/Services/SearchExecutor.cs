@@ -14,6 +14,7 @@ public class SearchExecutor : ISearchExecutor
     private readonly TorrentarrConfig _config;
     private readonly TorrentarrDbContext _db;
     private readonly QualityProfileSwitcherService _profileSwitcher;
+    private readonly DatabaseRestartCoordinator _restartCoordinator;
 
     // Cached per-instance Arr clients — created once, reused across calls
     private readonly Dictionary<string, object> _clientCache = new(StringComparer.OrdinalIgnoreCase);
@@ -34,12 +35,14 @@ public class SearchExecutor : ISearchExecutor
         ILogger<SearchExecutor> logger,
         TorrentarrConfig config,
         TorrentarrDbContext db,
-        QualityProfileSwitcherService profileSwitcher)
+        QualityProfileSwitcherService profileSwitcher,
+        DatabaseRestartCoordinator restartCoordinator)
     {
         _logger = logger;
         _config = config;
         _db = db;
         _profileSwitcher = profileSwitcher;
+        _restartCoordinator = restartCoordinator;
     }
 
     public async Task<SearchResult> ExecuteSearchesAsync(
@@ -302,7 +305,7 @@ public class SearchExecutor : ISearchExecutor
                     if (movie != null)
                     {
                         movie.Searched = true;
-                        await _db.SaveChangesAsync(cancellationToken);
+                        await _db.SaveChangesWithRetryAsync(_logger, _restartCoordinator, cancellationToken: cancellationToken);
                     }
                     break;
 
@@ -312,7 +315,7 @@ public class SearchExecutor : ISearchExecutor
                     if (episode != null)
                     {
                         episode.Searched = true;
-                        await _db.SaveChangesAsync(cancellationToken);
+                        await _db.SaveChangesWithRetryAsync(_logger, _restartCoordinator, cancellationToken: cancellationToken);
                     }
                     break;
 
@@ -322,7 +325,7 @@ public class SearchExecutor : ISearchExecutor
                     if (album != null)
                     {
                         album.Searched = true;
-                        await _db.SaveChangesAsync(cancellationToken);
+                        await _db.SaveChangesWithRetryAsync(_logger, _restartCoordinator, cancellationToken: cancellationToken);
                     }
                     break;
             }

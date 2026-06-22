@@ -346,10 +346,12 @@ docker pull feramance/torrentarr:5.5.5
 
 The documentation site embeds an interactive Swagger UI that loads the API spec from `docs/assets/openapi.json`. When you add or change WebUI API endpoints, regenerate this file so the published docs stay in sync:
 
-1. From the repository root, set the export environment variable and run the export test:
+1. **From qBitrr pin (recommended for parity):** `python3 scripts/generate-openapi-from-qbitrr.py` — merges qBitrr `5.12.3` OpenAPI with Torrentarr extension paths, then edit any new route details as needed.
+2. **From running Host (Swashbuckle export):** from the repository root, set the export environment variable and run the export test:
    - **Windows (PowerShell):** `$env:TORRENTARR_EXPORT_OPENAPI='1'; dotnet test tests/Torrentarr.Host.Tests --filter "FullyQualifiedName~ExportOpenApiSpec"`
    - **Linux/macOS:** `TORRENTARR_EXPORT_OPENAPI=1 dotnet test tests/Torrentarr.Host.Tests --filter "FullyQualifiedName~ExportOpenApiSpec"`
-2. Commit the updated `docs/assets/openapi.json` if it changed.
+3. Run `bash scripts/check-openapi-drift.sh` to verify all qBitrr paths are covered.
+4. Commit the updated `docs/assets/openapi.json` if it changed.
 
 Include this step in your release checklist when you have modified API routes.
 
