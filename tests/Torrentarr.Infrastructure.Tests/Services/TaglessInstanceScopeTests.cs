@@ -30,7 +30,8 @@ public sealed class TaglessInstanceScopeTests
                 Category = "radarr",
                 QbitInstance = "qBit",
                 AllowedSeeding = true,
-                FreeSpacePaused = true
+                FreeSpacePaused = true,
+                Imported = true
             },
             new TorrentLibrary
             {
@@ -38,7 +39,8 @@ public sealed class TaglessInstanceScopeTests
                 Category = "radarr",
                 QbitInstance = "qBit-seedbox",
                 AllowedSeeding = false,
-                FreeSpacePaused = false
+                FreeSpacePaused = false,
+                Imported = false
             });
         db.SaveChanges();
         return db;
@@ -80,6 +82,38 @@ public sealed class TaglessInstanceScopeTests
             .Should().BeTrue();
         InvokeHasTag(typeof(FreeSpaceService), db, config, torrent, "qBitrr-free_space_paused")
             .Should().BeTrue();
+    }
+
+    /// <summary>
+    /// Regression: Imported flag must be read per (Hash, QbitInstance), not hash-only.
+    /// Pre-fix, seedbox row was treated as imported when only the qBit row had Imported=true.
+    /// </summary>
+    [Fact]
+    public async Task IsImportedInDatabase_ScopesByQbitInstance()
+    {
+        await using var db = CreateDbWithDuplicateHashRows();
+        var config = new TorrentarrConfig { Settings = { Tagless = true } };
+        var processor = new TorrentProcessor(
+            NullLogger<TorrentProcessor>.Instance,
+            new QBittorrentConnectionManager(NullLogger<QBittorrentConnectionManager>.Instance),
+            db,
+            config,
+            new TorrentCacheService(NullLogger<TorrentCacheService>.Instance));
+
+        var method = typeof(TorrentProcessor).GetMethod(
+            "IsImportedInDatabaseAsync",
+            BindingFlags.NonPublic | BindingFlags.Instance);
+        method.Should().NotBeNull();
+
+        var seedboxImported = await (Task<bool>)method!.Invoke(
+            processor,
+            new object[] { "abc123", "qBit-seedbox", CancellationToken.None })!;
+        var primaryImported = await (Task<bool>)method.Invoke(
+            processor,
+            new object[] { "abc123", "qBit", CancellationToken.None })!;
+
+        seedboxImported.Should().BeFalse("seedbox row is not imported");
+        primaryImported.Should().BeTrue("primary row is imported");
     }
 
     private static bool InvokeHasTag(

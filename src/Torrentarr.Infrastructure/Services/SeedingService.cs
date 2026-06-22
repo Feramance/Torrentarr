@@ -708,7 +708,7 @@ public class SeedingService : ISeedingService
                 }
 
                 var imported = await _dbContext.TorrentLibrary
-                    .AnyAsync(t => t.Hash == torrent.Hash && t.Imported, cancellationToken);
+                    .AnyAsync(t => t.Hash == torrent.Hash && t.QbitInstance == instanceName && t.Imported, cancellationToken);
 
                 if (imported)
                 {
