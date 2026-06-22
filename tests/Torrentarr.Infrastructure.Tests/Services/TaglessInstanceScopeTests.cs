@@ -4,6 +4,7 @@ using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging.Abstractions;
 using Torrentarr.Core.Configuration;
 using Torrentarr.Core.Models;
+using Torrentarr.Infrastructure.ApiClients.QBittorrent;
 using Torrentarr.Infrastructure.Database;
 using Torrentarr.Infrastructure.Database.Models;
 using Torrentarr.Infrastructure.Services;
@@ -115,6 +116,72 @@ public sealed class TaglessInstanceScopeTests
 
         seedboxImported.Should().BeFalse("seedbox row is not imported");
         primaryImported.Should().BeTrue("primary row is imported");
+    }
+
+    /// <summary>
+    /// Regression: IsReadyForImportAsync must read qBit torrent state from the requested instance,
+    /// not the first client that returns a matching hash. Pre-fix, qBit (listed first) could block
+    /// seedbox import when the same hash was still downloading on qBit but complete on seedbox.
+    /// </summary>
+    [Fact]
+    public async Task IsReadyForImportAsync_ScopesQbitClientLookupByInstance()
+    {
+        const string hash = "abc123";
+        var completionOn = DateTimeOffset.UtcNow.AddMinutes(-5).ToUnixTimeSeconds();
+
+        await using var db = CreateDbWithDuplicateHashRows();
+        var config = new TorrentarrConfig { Settings = { Tagless = true } };
+        var manager = new QBittorrentConnectionManager(NullLogger<QBittorrentConnectionManager>.Instance);
+        RegisterStubClient(manager, "qBit", new TorrentInfo
+        {
+            Hash = hash,
+            Progress = 0.5,
+            State = "stalledDL",
+            CompletionOn = 0
+        });
+        RegisterStubClient(manager, "qBit-seedbox", new TorrentInfo
+        {
+            Hash = hash,
+            Progress = 1.0,
+            State = "stalledUP",
+            CompletionOn = completionOn
+        });
+
+        var processor = new TorrentProcessor(
+            NullLogger<TorrentProcessor>.Instance,
+            manager,
+            db,
+            config,
+            new TorrentCacheService(NullLogger<TorrentCacheService>.Instance));
+
+        var ready = await processor.IsReadyForImportAsync(hash, "qBit-seedbox");
+
+        ready.Should().BeTrue("seedbox completion/seeding state must be used, not qBit's incomplete copy");
+    }
+
+    private static void RegisterStubClient(
+        QBittorrentConnectionManager manager,
+        string instanceName,
+        TorrentInfo torrent)
+    {
+        var clientsField = typeof(QBittorrentConnectionManager)
+            .GetField("_clients", BindingFlags.NonPublic | BindingFlags.Instance)!;
+        var clients = (Dictionary<string, QBittorrentClient>)clientsField.GetValue(manager)!;
+        clients[instanceName] = new StubQBittorrentClient([torrent]);
+    }
+
+    private sealed class StubQBittorrentClient : QBittorrentClient
+    {
+        private readonly List<TorrentInfo> _torrents;
+
+        public StubQBittorrentClient(List<TorrentInfo> torrents)
+            : base("127.0.0.1", 1, "u", "p") => _torrents = torrents;
+
+        public override Task<List<TorrentInfo>> GetTorrentsAsync(
+            string? category = null,
+            string? sort = null,
+            CancellationToken cancellationToken = default)
+            => Task.FromResult(_torrents);
     }
 
     private static bool InvokeHasTag(

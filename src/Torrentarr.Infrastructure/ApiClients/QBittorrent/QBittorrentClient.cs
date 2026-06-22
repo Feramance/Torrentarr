@@ -85,7 +85,7 @@ public class QBittorrentClient
     /// <summary>
     /// Get all torrents
     /// </summary>
-    public async Task<List<TorrentInfo>> GetTorrentsAsync(string? category = null, string? sort = null, CancellationToken cancellationToken = default)
+    public virtual async Task<List<TorrentInfo>> GetTorrentsAsync(string? category = null, string? sort = null, CancellationToken cancellationToken = default)
     {
         var request = new RestRequest("/api/v2/torrents/info", Method.Get);
         AddAuthCookie(request);
