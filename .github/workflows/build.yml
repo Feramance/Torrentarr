@@ -44,7 +44,7 @@ jobs:
         echo "DOTNET_SDK_VERSION=$DOTNET_VERSION" >> $GITHUB_ENV
 
     - name: Setup .NET
-      uses: actions/setup-dotnet@v5.3.0
+      uses: actions/setup-dotnet@v5.4.0
       with:
         dotnet-version: ${{ env.DOTNET_SDK_VERSION }}.x
 
@@ -217,7 +217,7 @@ jobs:
         echo "DOTNET_SDK_VERSION=$DOTNET_VERSION" >> $GITHUB_ENV
 
     - name: Setup .NET
-      uses: actions/setup-dotnet@v5.3.0
+      uses: actions/setup-dotnet@v5.4.0
       with:
         dotnet-version: ${{ env.DOTNET_SDK_VERSION }}.x
 
