@@ -90,7 +90,7 @@ public class ConfigurationLoader
         }
 
         var tomlContent = File.ReadAllText(_configPath);
-        var tomlTable = Toml.ToModel(tomlContent);
+        var tomlTable = TomlSerializer.Deserialize<TomlTable>(tomlContent)!;
 
         // Apply config migrations on the raw TOML table before parsing (qBitrr parity)
         var migrated = ApplyConfigMigrations(tomlTable);
@@ -102,7 +102,7 @@ public class ConfigurationLoader
                 var backupPath = _configPath + ".bak";
                 if (File.Exists(_configPath))
                     File.Copy(_configPath, backupPath, overwrite: true);
-                File.WriteAllText(_configPath, Toml.FromModel(tomlTable));
+                File.WriteAllText(_configPath, TomlSerializer.Serialize(tomlTable));
             }
             catch
             {
