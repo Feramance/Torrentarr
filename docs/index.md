@@ -343,7 +343,7 @@ Optimize for private tracker requirements:
 
 ### Current Version
 
-**Latest Release**: v6.12.2 (June 2026)
+**Latest Release**: v6.12.3 (June 2026)
 
 Torrentarr’s **major** version is **intentionally one ahead of [qBitrr](https://github.com/Feramance/qBitrr)’s** (e.g. qBitrr 5.x ↔ Torrentarr 6.x); minor and patch numbers move independently. That rule keeps the two products unambiguous while sharing `config.toml` compatibility. For the short user-facing story, see [qBitrr and Torrentarr (overview)](parity/overview.md). Contributors: [parity matrix](parity/full-parity-matrix.md) and [contributor reference](parity/contributor-reference.md).
 
