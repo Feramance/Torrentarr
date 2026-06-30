@@ -6,12 +6,16 @@ using Xunit;
 
 namespace Torrentarr.Infrastructure.Tests.Services;
 
+[CollectionDefinition(nameof(ConfigReloaderTests), DisableParallelization = true)]
+public sealed class ConfigReloaderTestsCollection;
+
 /// <summary>
 /// Tests for ConfigReloader.
 /// Each test uses a dedicated temp directory so tests are isolated from each
 /// other and from the developer's real config file.  The TORRENTARR_CONFIG
 /// environment variable is saved/restored around each test.
 /// </summary>
+[Collection(nameof(ConfigReloaderTests))]
 public sealed class ConfigReloaderTests : IDisposable
 {
     private readonly string _tempDir;
