@@ -39,6 +39,7 @@ RUN dotnet restore src/Torrentarr.Host/Torrentarr.Host.csproj
 
 # Copy source code
 COPY src/ ./src/
+COPY docs/assets/openapi.json ./docs/assets/openapi.json
 COPY nuget.config ./
 
 # Overlay the built React app from the frontend stage
