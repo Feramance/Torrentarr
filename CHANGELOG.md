@@ -1,5 +1,65 @@
 # Changelog
 
+## v6.12.3 (2026-06-30)
+
+### Bug Fixes
+- [patch] fix(webui): resolve frontend lint and build failures (#319) ([f1a4901](https://github.com/Feramance/Torrentarr/commit/f1a49012bc36164561d626368ce2b0cf4fa16ed3))
+- fix: preserve CHANGE_ME qBit placeholder sections on config save (#282) ([269fb98](https://github.com/Feramance/Torrentarr/commit/269fb988130b4f1b735a98d2062ec4aa27536c4c))
+- fix: gate CF-unmet torrent deletion on HnrAllowsDeleteAsync (#278) ([908ec29](https://github.com/Feramance/Torrentarr/commit/908ec29299b0b118807de8ce9738ebf5ed4a7ed7))
+- fix: v5 import readiness and tagless worker DB scoping (#231) ([4098f75](https://github.com/Feramance/Torrentarr/commit/4098f75e0b0ac042f0316832504bfa31e9d51cd4))
+- fix: block config password bypass, api config wipe, and sync/tagless bugs (#258) ([75c2896](https://github.com/Feramance/Torrentarr/commit/75c289600b735ec860ab72dc3022e39b985e7b71))
+
+### Documentation
+- docs: add PR validation report for 9 open pull requests (#302) ([a88f5d2](https://github.com/Feramance/Torrentarr/commit/a88f5d2922130351cf730ca8089b59da12663304))
+- docs: Cursor Automation spec for PR triage on open/push (#273) ([d1a1f03](https://github.com/Feramance/Torrentarr/commit/d1a1f03e79b7b12f7a2313893244db4a57d6a12f))
+- docs: one-shot PR triage audit report for open pull requests (#272) ([8684eb0](https://github.com/Feramance/Torrentarr/commit/8684eb06126747309af7de7a22a9bca56a57e603))
+
+### Maintenance
+- fix(ci): Docker openapi copy and ConfigReloader test isolation (#318) ([3c2b2bf](https://github.com/Feramance/Torrentarr/commit/3c2b2bf86d8a99d18a2384969a228a8a740ea9a4))
+- Bump Swashbuckle.AspNetCore from 7.2.0 to 10.2.3 (#315) ([ddf9669](https://github.com/Feramance/Torrentarr/commit/ddf96693dd6e2a49ada6b69e174637e99da08467))
+- Bump Tomlyn from 0.17.0 to 2.9.0 (#316) ([23629ed](https://github.com/Feramance/Torrentarr/commit/23629ed2464dd0e744051a907543258b8b9c69e0))
+- build(deps-dev): Bump @types/node from 25.9.3 to 26.0.1 in /webui (#309) ([61fdad3](https://github.com/Feramance/Torrentarr/commit/61fdad318fbca324222e88e13ee806a483ba31e4))
+- Bump xunit.runner.visualstudio from 2.8.2 to 3.1.5 (#317) ([dc339e3](https://github.com/Feramance/Torrentarr/commit/dc339e3ce098d7b678102c42d2eaf596960c28fa))
+- build(deps-dev): Bump typescript-eslint from 8.61.1 to 8.62.0 in /webui (#312) ([2590970](https://github.com/Feramance/Torrentarr/commit/25909706ff9846ceb066088fcf4f5dfa05c216d3))
+- Bump Microsoft.NET.Test.Sdk from 18.4.0 to 18.7.0 (#314) ([1569cfa](https://github.com/Feramance/Torrentarr/commit/1569cfa9ffae61ee2f02ac5e8bb61ae603bb3e1a))
+- build(deps-dev): Bump eslint from 10.5.0 to 10.6.0 in /webui (#311) ([27d21af](https://github.com/Feramance/Torrentarr/commit/27d21af5042a20e26344771ce88b68f9d9754921))
+- Bump Microsoft.NET.Test.Sdk from 18.6.0 to 18.7.0 (#313) ([72939f2](https://github.com/Feramance/Torrentarr/commit/72939f25c5baebc364b39cfa7744430d19787614))
+- build(deps): Bump @mantine/dates from 9.3.2 to 9.4.0 in /webui (#306) ([53aab21](https://github.com/Feramance/Torrentarr/commit/53aab21eca4bbecb542d66820b084a5dda631b4a))
+- build(deps-dev): Bump autoprefixer from 10.5.0 to 10.5.2 in /webui (#310) ([4332927](https://github.com/Feramance/Torrentarr/commit/4332927154d08fe31a5ee4017f35f818975ca0e7))
+- build(deps-dev): Bump vite from 8.0.16 to 8.1.0 in /webui (#308) ([7bfb033](https://github.com/Feramance/Torrentarr/commit/7bfb033f86d6ced9753285464c701a065214e038))
+- build(deps): Bump @mantine/hooks from 9.3.2 to 9.4.0 in /webui (#307) ([5193602](https://github.com/Feramance/Torrentarr/commit/5193602cf6880e43f7ca87bb3186fd9ba9448ee6))
+- build(deps): Bump @mantine/core from 9.3.2 to 9.4.0 in /webui (#305) ([366316e](https://github.com/Feramance/Torrentarr/commit/366316e88fa799922c827a743aaab2bd39097a50))
+- build(deps): Bump actions/setup-dotnet from 5.3.0 to 5.4.0 (#304) ([2e966e7](https://github.com/Feramance/Torrentarr/commit/2e966e79a03f52a1c476909153453d2866a650ac))
+- Delete .cursor directory ([8a0afc8](https://github.com/Feramance/Torrentarr/commit/8a0afc8afcd2ee64e2364225b369dd8095bfc708))
+- fix(multi-qbit): scope IsReadyForImportAsync client lookup by instance (#303) ([8097c8a](https://github.com/Feramance/Torrentarr/commit/8097c8a2177d3b5408881d66ba6fbd0998e9ea0e))
+- Close qBitrr parity gaps: category workers, MatchSubcategories, retries (#280) ([8578a8f](https://github.com/Feramance/Torrentarr/commit/8578a8fb35a4a656afe58afbc626f3c9b38d71c5))
+- Bump Serilog.Sinks.File from 6.0.0 to 7.0.0 (#300) ([a3a6087](https://github.com/Feramance/Torrentarr/commit/a3a6087b8a383717ff933085c0725990cd667ca6))
+- build(deps): bump actions/checkout from 6 to 7 (#285) ([d0b010e](https://github.com/Feramance/Torrentarr/commit/d0b010e1427e95815cf951b769406bfd7783b47e))
+- build(deps): bump react-hook-form from 7.79.0 to 7.80.0 in /webui (#292) ([9094d6d](https://github.com/Feramance/Torrentarr/commit/9094d6d666e2afcd051580bd620c247e73f3d16e))
+- Bump Microsoft.Extensions.Options and Microsoft.Extensions.Options.DataAnnotations (#296) ([83e2393](https://github.com/Feramance/Torrentarr/commit/83e239333e4dc3a42e1d76d9d844e11871df1505))
+- fix(multi-qbit): scope Imported checks by qBit instance (#281) ([8ef62f7](https://github.com/Feramance/Torrentarr/commit/8ef62f7a90661f5396276334516ae1dcbc5b6b17))
+- fix(security): block PasswordHash bypass via whole-WebUI section replace (#283) ([e3845a4](https://github.com/Feramance/Torrentarr/commit/e3845a4e915a519e35795db8c21789dab8e8f563))
+- Bump Polly from 8.6.6 to 8.7.0 (#297) ([23679f3](https://github.com/Feramance/Torrentarr/commit/23679f311089390c176c1d6efb76940c7e6ce76d))
+- Bump Serilog.Sinks.Console from 6.0.0 to 6.1.1 (#299) ([5f86469](https://github.com/Feramance/Torrentarr/commit/5f864691570ef57aedafd8a6850693fc38d4e467))
+- Bump Xunit.SkippableFact from 1.4.13 to 1.5.61 (#301) ([a0f9a60](https://github.com/Feramance/Torrentarr/commit/a0f9a601ef385d628c5a937b7050a0302da5cd33))
+- Bump Serilog from 4.3.0 to 4.3.1 (#298) ([d1e99f9](https://github.com/Feramance/Torrentarr/commit/d1e99f9a4a13653d52e8f94ae349ca0c13299c1e))
+- build(deps): bump @mantine/dates from 9.3.1 to 9.3.2 in /webui (#288) ([8cab217](https://github.com/Feramance/Torrentarr/commit/8cab21774059151e6b5efe0971eb7815eaab8280))
+- Bump Microsoft.Extensions.Http from 10.0.8 to 10.0.9 (#294) ([4c59d01](https://github.com/Feramance/Torrentarr/commit/4c59d0181a84f9d4e7d3c687afd3c0fd75eb4859))
+- build(deps-dev): bump vitest from 4.1.8 to 4.1.9 in /webui (#291) ([6eb6682](https://github.com/Feramance/Torrentarr/commit/6eb6682a96659ae9362029dec50946e923168ce9))
+- build(deps): bump @mantine/core from 9.1.1 to 9.3.2 in /webui (#290) ([140704c](https://github.com/Feramance/Torrentarr/commit/140704cae5efa9a8243ae3345ba2df879ce2e695))
+- build(deps-dev): bump eslint-plugin-react-refresh in /webui (#289) ([bf8ff38](https://github.com/Feramance/Torrentarr/commit/bf8ff383f3039be47e162e0d508ad8577b0b698f))
+- build(deps-dev): bump typescript-eslint from 8.61.0 to 8.61.1 in /webui (#287) ([066f4fa](https://github.com/Feramance/Torrentarr/commit/066f4fae4c3a5c19504d23fa1746edac64045c50))
+- build(deps): bump @mantine/hooks from 9.3.1 to 9.3.2 in /webui (#286) ([34c8e02](https://github.com/Feramance/Torrentarr/commit/34c8e02170385f790fa1eacda2b4c35ca543d63c))
+- build(deps-dev): bump undici (#284) ([e045e4b](https://github.com/Feramance/Torrentarr/commit/e045e4b4593622c75e558cefea466a7a2dec694c))
+- Delete docs/audits directory ([3f2c16f](https://github.com/Feramance/Torrentarr/commit/3f2c16ff9269c3e3c8d0b35d816df73041c87e63))
+- build(deps): bump react-hook-form from 7.76.1 to 7.79.0 in /webui (#239) ([d80525f](https://github.com/Feramance/Torrentarr/commit/d80525fa7497651e791a34fda7ae462e80a060d7))
+- build(deps-dev): bump @tailwindcss/postcss from 4.3.0 to 4.3.1 in /webui (#238) ([db93ab1](https://github.com/Feramance/Torrentarr/commit/db93ab150b91e7e9e68b180260baa88c24496031))
+- build(deps-dev): Bump @vitest/coverage-v8 from 4.1.8 to 4.1.9 in /webui (#234) ([75a91e0](https://github.com/Feramance/Torrentarr/commit/75a91e045518c0226835028f42d0504468a5aedb))
+- fix(sync): guard Lidarr track wipe when albums API is empty (#243) ([1c4c60e](https://github.com/Feramance/Torrentarr/commit/1c4c60e3ffd908c30918aeede31e0dd4e6bc8a87))
+- fix(security): block PasswordHash changes via config API (#271) ([c3a63f2](https://github.com/Feramance/Torrentarr/commit/c3a63f278e63aea92802da17f75cb3a55985ad8c))
+
+---
+
 ## v6.12.2 (2026-06-08)
 
 ### Features
