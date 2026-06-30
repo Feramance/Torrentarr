@@ -254,7 +254,7 @@ export function getArrTorrentHandlingSummary(
         "day",
         "days",
       );
-      const sortNote = Boolean(t.SortTorrents)
+      const sortNote = t.SortTorrents
         ? " **Queue sort** uses this tracker's priority in qBittorrent's download queue when queuing is enabled."
         : "";
       if (mode === "disabled") {
@@ -422,7 +422,7 @@ export function getQbitTorrentHandlingSummary(
         "day",
         "days",
       );
-      const sortNote = Boolean(t.SortTorrents)
+      const sortNote = t.SortTorrents
         ? " **Queue sort** uses this tracker's priority in qBittorrent's download queue when queuing is enabled."
         : "";
       if (mode === "disabled") {

@@ -1229,7 +1229,7 @@ function AppShell(): JSX.Element {
         /* quota exceeded or private mode */
       }
     }
-  }, [meta?.current_version]);
+  }, [meta]);
 
   const handleTriggerUpdate = useCallback(async () => {
     setUpdateBusy(true);

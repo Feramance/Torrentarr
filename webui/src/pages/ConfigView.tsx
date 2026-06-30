@@ -3892,24 +3892,6 @@ function ArrInstanceModal({
   const uriValue = state != null ? get(state, ["URI"]) : undefined;
   const apiKeyValue = state != null ? get(state, ["APIKey"]) : undefined;
 
-  // Clear test state when URI or APIKey changes
-  useEffect(() => {
-    setTestState({ testing: false, result: null });
-    setQualityProfiles([]);
-  }, [uriValue, apiKeyValue]);
-
-  // Auto-test connection when modal opens if credentials exist
-  useEffect(() => {
-    const uri = getValue(["URI"]) as string;
-    const apiKey = getValue(["APIKey"]) as string;
-
-    if (uri && apiKey && !testState.testing && !testState.result) {
-      // Auto-test silently (without toasts)
-      handleTestConnection(true);
-    }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []); // Only run on mount
-
   // Test connection handler
   const handleTestConnection = async (silent = false) => {
     const uri = getValue(["URI"]) as string;
@@ -3964,6 +3946,23 @@ function ArrInstanceModal({
       return false;
     }
   };
+
+  // Clear test state when URI or APIKey changes.
+  useEffect(() => {
+    setTestState({ testing: false, result: null });
+    setQualityProfiles([]);
+  }, [uriValue, apiKeyValue]);
+
+  // Auto-test connection when modal opens if credentials exist.
+  useEffect(() => {
+    const uri = getValue(["URI"]) as string;
+    const apiKey = getValue(["APIKey"]) as string;
+
+    if (uri && apiKey && !testState.testing && !testState.result) {
+      void handleTestConnection(true);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []); // Only run on mount
 
   // Handle save with connection test
   const handleSave = async () => {

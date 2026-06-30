@@ -103,20 +103,6 @@ function numberAndUnitToTotal(
   return num * mult;
 }
 
-function toSuffixed(
-  total: number,
-  baseUnit: "seconds" | "minutes",
-): string | number {
-  if (total < 0) return -1;
-  const unit = bestUnitForTotal(total, baseUnit);
-  const mult =
-    baseUnit === "seconds" ? SUFFIX_TO_SECONDS[unit] : SUFFIX_TO_MINUTES[unit];
-  const n = Math.round(total / mult);
-  if (unit === "s" && baseUnit === "seconds") return n;
-  if (unit === "m" && baseUnit === "minutes") return n;
-  return `${n}${unit}`;
-}
-
 export interface DurationDisplay {
   number: number;
   unit: DurationUnit;
