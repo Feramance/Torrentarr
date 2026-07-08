@@ -275,22 +275,11 @@ public class TorrentProcessor : ITorrentProcessor
 
             if (result.Success)
             {
-                libraryEntry.Imported = true;
-                await _dbContext.SaveChangesWithRetryAsync(_logger, _restartCoordinator, cancellationToken: cancellationToken);
                 _logger.LogInformation("Successfully triggered import for torrent {Hash}: {Message}",
                     hash, result.Message);
 
                 if (!string.IsNullOrEmpty(contentPath))
                     _pathTracker?.MarkScanned(contentPath, hash);
-
-                // AutoDelete: remove torrent from qBittorrent after successful import
-                var arrCfgForDelete = _config.ArrInstances.Values.FirstOrDefault(a =>
-                    string.Equals(a.Category, libraryEntry.Category, StringComparison.OrdinalIgnoreCase));
-                if (arrCfgForDelete?.Torrent.AutoDelete == true)
-                {
-                    _logger.LogInformation("AutoDelete: removing torrent {Hash} after successful import", hash);
-                    await client.DeleteTorrentsAsync(new List<string> { hash }, deleteFiles: false, cancellationToken);
-                }
             }
             else
             {
@@ -521,12 +510,16 @@ public class TorrentProcessor : ITorrentProcessor
         {
             await ProcessPercentageThresholdAsync(torrent, maxEta, client, stats, ct);
         }
-        // Branch 14: Already imported or sent to scan → skip (qBitrr line 6184-6187, sent_to_scan_hashes)
+        // Branch 14: Already imported or sent to scan → skip / finalize confirmed imports
         else if ((_pathTracker?.IsHashAlreadyScanned(torrent.Hash) == true
                   || await IsImportedInDatabaseAsync(torrent.Hash, torrent.QBitInstanceName, ct))
             && _cache.IsFileFiltered(torrent.Hash))
         {
-            _logger.LogTrace("Skipping already-imported torrent: [{Name}]", torrent.Name);
+            var finalizedImport = await TryFinalizeImportedTorrentAsync(torrent, ct);
+            if (finalizedImport)
+                _logger.LogTrace("Skipping already-imported torrent: [{Name}]", torrent.Name);
+            else
+                _logger.LogTrace("Skipping torrent already sent to scan and awaiting Arr completion: [{Name}]", torrent.Name);
         }
         // Branch 15: Error state → recheck (qBitrr line 6191-6192)
         else if (state == TorrentState.Error)
@@ -948,6 +941,59 @@ public class TorrentProcessor : ITorrentProcessor
     {
         var entry = await FindTorrentLibraryEntryAsync(hash, qbitInstance, ct, asNoTracking: true);
         return entry?.Imported == true;
+    }
+
+    private async Task<bool> TryFinalizeImportedTorrentAsync(TorrentInfo torrent, CancellationToken ct)
+    {
+        if (await IsImportedInDatabaseAsync(torrent.Hash, torrent.QBitInstanceName, ct))
+            return true;
+
+        if (_pathTracker?.IsHashAlreadyScanned(torrent.Hash) != true || _importService == null)
+            return false;
+
+        if (!await _importService.IsImportedAsync(torrent.Hash, ct))
+            return false;
+
+        var entry = await FindTorrentLibraryEntryAsync(torrent.Hash, torrent.QBitInstanceName, ct);
+        if (entry == null)
+        {
+            _logger.LogWarning(
+                "Arr reported torrent {Hash} imported, but no TorrentLibrary row exists for qBit instance {Instance}",
+                torrent.Hash, torrent.QBitInstanceName);
+            return false;
+        }
+
+        entry.Imported = true;
+        await _dbContext.SaveChangesWithRetryAsync(_logger, _restartCoordinator, cancellationToken: ct);
+
+        try
+        {
+            await _importService.MarkAsImportedAsync(torrent.Hash, Array.Empty<string>(), ct);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(ex, "Failed to apply imported tag for torrent {Hash}", torrent.Hash);
+        }
+
+        var arrCfgForDelete = _config.ArrInstances.Values.FirstOrDefault(a =>
+            string.Equals(a.Category, entry.Category, StringComparison.OrdinalIgnoreCase));
+        if (arrCfgForDelete?.Torrent.AutoDelete == true)
+        {
+            var client = _qbitManager.GetClient(torrent.QBitInstanceName);
+            if (client == null)
+            {
+                _logger.LogWarning(
+                    "Arr confirmed import for torrent {Hash}, but qBit client {Instance} is unavailable for AutoDelete",
+                    torrent.Hash, torrent.QBitInstanceName);
+            }
+            else
+            {
+                _logger.LogInformation("AutoDelete: removing torrent {Hash} after Arr confirmed import", torrent.Hash);
+                await client.DeleteTorrentsAsync(new List<string> { torrent.Hash }, deleteFiles: false, ct);
+            }
+        }
+
+        return true;
     }
 
     private async Task<TorrentLibrary?> FindTorrentLibraryEntryAsync(

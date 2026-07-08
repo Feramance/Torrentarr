@@ -21,7 +21,7 @@ public class ArrThumbnailServiceTests : IDisposable
         _configPath = Path.Combine(Path.GetTempPath(), $"thumb-test-{Guid.NewGuid():N}.toml");
         File.WriteAllText(_configPath, """
             [Settings]
-            ConfigVersion = "6.12.2"
+            ConfigVersion = "6.12.3"
 
             [WebUI]
             Token = "test"

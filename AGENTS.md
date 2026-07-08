@@ -140,7 +140,7 @@ Key config sections: `[Settings]`, `[WebUI]`, `[qBit]`, `[qBit.CategorySeeding]`
 
 **Cross-instance free space:** `FreeSpaceService` iterates ALL configured qBit instances, gathers torrents from all clients, sorts them globally by `AddedOn` date, and processes the oldest first. `DownloadPath` is checked per-instance for space.
 
-**Config version:** Current `Settings.ConfigVersion` / `ConfigurationLoader.ExpectedConfigVersion` is **`6.12.2`**. That value is the **Torrentarr** schema id — it follows the **+1 major vs qBitrr** release policy (see **What This Project Is** above), not qBitrr’s raw package version. Notable fields: `v5 = true` in `[qBit]` for qBittorrent v5 auth. `HitAndRunMode` is a **string** (`"and"` / `"or"` / `"disabled"`) — not a boolean. Seeding configuration (`HitAndRunMode`, `MinSeedRatio`, `MinSeedingTimeDays`, etc.) lives in `[qBit.CategorySeeding]` per qBit instance — not in `[WebUI]`.
+**Config version:** Current `Settings.ConfigVersion` / `ConfigurationLoader.ExpectedConfigVersion` is **`6.12.3`**. That value is the **Torrentarr** schema id — it follows the **+1 major vs qBitrr** release policy (see **What This Project Is** above), not qBitrr’s raw package version. Notable fields: `HitAndRunMode` is a **string** (`"and"` / `"or"` / `"disabled"`) — not a boolean. Seeding configuration (`HitAndRunMode`, `MinSeedRatio`, `MinSeedingTimeDays`, etc.) lives in `[qBit.CategorySeeding]` per qBit instance — not in `[WebUI]`.
 
 **TOML serialization rule:** Arrays that may contain regex or file extension patterns (e.g., `FileExtensionAllowlist`) must use single-quoted TOML literal strings (`'\.mkv'`) to avoid invalid escape sequences — Tomlyn enforces strict TOML and rejects `\.` in double-quoted strings.
 

@@ -76,7 +76,7 @@ jobs:
     - name: Run .NET tests (non-live)
       run: dotnet test --configuration Release --no-build --verbosity normal --filter "Category!=Live"
 
-    - name: Check OpenAPI drift vs qBitrr 5.12.3
+    - name: Check OpenAPI drift vs qBitrr master
       if: matrix.os == 'ubuntu-latest'
       run: bash scripts/check-openapi-drift.sh docs/assets/openapi.json
 

@@ -6,16 +6,16 @@ Internal notes for **maintainers and contributors** comparing Torrentarr to upst
 
 ## Upstream qBitrr baseline
 
-Torrentarr parity work is diffed against a **pinned** upstream ref so behavior does not float with every `master` commit.
+Torrentarr parity work is diffed against a **pinned** upstream ref during closeout work, but the active audit currently tracks latest qBitrr `master`.
 
 ### Pinned release
 
 | Field | Value |
 | --- | --- |
-| **Branch** | `5.12.3` |
-| **Role** | Default behavioral baseline for policy (`arss.py`), `SortTorrents`, Arr catalog views/rollups, `UrlBase`, subcategory paths, and WebUI/OpenAPI at that line. |
-| **Commit** | `0b4a1119e1c59e664c6bb8654d6e206a81d8db52` (merge of `master` into `5.12.3`, 2026-06-03). Re-verify with `git ls-remote https://github.com/Feramance/qBitrr refs/heads/5.12.3` when bumping the pin. |
-| **Shipped tag baseline** | `v5.12.2` — use branch tip for unreleased `5.12.3` fixes (Lidarr search timer, `UrlBase`). |
+| **Branch** | `master` |
+| **Role** | Active behavioral baseline for the latest-main parity audit. |
+| **Reference release** | `v5.12.10` (latest observed release on `master` during this audit, 2026-07-08). |
+| **Prior closeout pin** | `5.12.3` @ `0b4a1119e1c59e664c6bb8654d6e206a81d8db52` — retained as the previous strict-closeout baseline for historical comparison. |
 
 To move the pin: update this section, re-run the inventories below, and adjust [full-parity-matrix.md](full-parity-matrix.md) / tests as needed.
 
@@ -34,7 +34,7 @@ To move the pin: update this section, re-run the inventories below, and adjust [
 | Public API doc | `docs/webui/api.md` |
 | Operator scripts | `scripts/repair_database.py`, `scripts/repair_database_targeted.py` |
 
-**Browse branch:** [5.12.3 on GitHub](https://github.com/Feramance/qBitrr/tree/5.12.3). **Raw prefix:** `https://raw.githubusercontent.com/Feramance/qBitrr/5.12.3/`
+**Browse branch:** [master on GitHub](https://github.com/Feramance/qBitrr/tree/master). **Raw prefix:** `https://raw.githubusercontent.com/Feramance/qBitrr/master/`
 
 ### Torrentarr mapping (where to look)
 
@@ -125,7 +125,7 @@ Maps upstream concepts to CI tests; live qBittorrent still needed for full order
 
 Compare to upstream on the [pinned tag](#upstream-qbitrr-baseline) for **behavior-affecting** API/UI only (not layout).
 
-- **Routes:** [WebUI `Program.cs`](https://github.com/Feramance/Torrentarr/blob/master/src/Torrentarr.WebUI/Program.cs) + Host vs `webui.py` and [upstream API](https://github.com/Feramance/qBitrr/blob/v5.11.1/docs/webui/api.md).
+- **Routes:** [WebUI `Program.cs`](https://github.com/Feramance/Torrentarr/blob/master/src/Torrentarr.WebUI/Program.cs) + Host vs `webui.py` and the current upstream API docs on `master`.
 - **OpenAPI:** [docs/assets/openapi.json](../assets/openapi.json) vs upstream `qBitrr/openapi.json` — [OpenAPI alignment](#openapi-alignment).
 - **React:** Config (all TOML keys, including `SortTorrents` on trackers), Processes, Logs, Auth — [docs/webui/api.md](../webui/api.md).
 
@@ -161,14 +161,14 @@ Compare to upstream on the [pinned tag](#upstream-qbitrr-baseline) for **behavio
 
 **Pin:** use the [Upstream baseline](#upstream-qbitrr-baseline) tag when fetching upstream `qBitrr/openapi.json`.
 
-Torrentarr: [docs/assets/openapi.json](../assets/openapi.json) (72 paths: all qBitrr 5.12.3 paths + Torrentarr extensions), served at `/api/openapi.json` and `/web/openapi.json`; interactive docs at `/api/docs` and `/web/docs`. Regenerate from upstream pin: `python3 scripts/generate-openapi-from-qbitrr.py`. CI drift check: `bash scripts/check-openapi-drift.sh`.
+Torrentarr: [docs/assets/openapi.json](../assets/openapi.json), served at `/api/openapi.json` and `/web/openapi.json`; interactive docs at `/api/docs` and `/web/docs`. Regenerate from the active upstream baseline with `python3 scripts/generate-openapi-from-qbitrr.py`. CI drift check: `bash scripts/check-openapi-drift.sh` (defaults to qBitrr `master`, overridable with `QBITRR_OPENAPI_REF`).
 
 **When** changing WebUI DTOs/controllers: diff paths/methods for `/web/*`, `/api/*`, auth, health.
 
 **Optional diff:**
 
 ```bash
-curl -sL "https://raw.githubusercontent.com/Feramance/qBitrr/v5.11.1/qBitrr/openapi.json" -o /tmp/qbitrr-openapi.json
+curl -sL "https://raw.githubusercontent.com/Feramance/qBitrr/master/qBitrr/openapi.json" -o /tmp/qbitrr-openapi.json
 # diff with docs/assets/openapi.json (format JSON first for meaningful output)
 ```
 

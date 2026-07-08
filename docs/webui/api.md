@@ -973,7 +973,7 @@ Fetch current configuration from disk.
   "config": { ... },
   "warning": {
     "type": "config_version_mismatch",
-    "message": "Config version mismatch: found 5.8.8, expected 6.12.2.",
+    "message": "Config version mismatch: found 5.8.8, expected 6.12.3.",
     "currentVersion": "5.8.8"
   }
 }

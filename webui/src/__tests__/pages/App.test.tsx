@@ -16,7 +16,7 @@ import App from "../../App";
 import { resetUrlBaseCacheForTests } from "../../api/urlBase";
 
 const metaWithSetup = {
-  current_version: "6.12.2",
+  current_version: "6.12.3",
   auth_required: true,
   local_auth_enabled: true,
   oidc_enabled: false,

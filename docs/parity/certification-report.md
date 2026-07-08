@@ -2,7 +2,7 @@
 
 ## Scope
 
-This report captures the qBitrr **5.12.3** (`0b4a111`) parity closeout pass across config/migrations, database behavior, policy engine, web/API contracts, and docs alignment.
+This report captures Torrentarr's parity status after rebasing the audit from qBitrr **5.12.3** (`0b4a111`) to upstream **latest `master` / v5.12.10**.
 
 Primary tracking artifacts:
 
@@ -11,27 +11,19 @@ Primary tracking artifacts:
 - `docs/parity/contributor-reference.md`
 - `docs/parity/overview.md`
 
-## Implemented in This Pass (5.12.3)
+## Implemented in This Pass
 
-### Phase 0 — Branch hygiene
-- Merged `origin/master` into `tracker-sorter` (dependency bumps only).
-- Re-pinned upstream to qBitrr branch **5.12.3** @ `0b4a111` in `contributor-reference.md`.
+### Phase 0 — Baseline rebasing
+- Rebased the parity audit from qBitrr **5.12.3** to upstream **latest `master` / v5.12.10** in the parity docs and OpenAPI drift tooling.
+- Reclassified parity rows that were still carrying the prior closeout's `full` claim without latest-main verification.
 
 ### Phase 1 — Critical correctness
-- **HnR dead-tracker (#412):** removed bare `"not found"` from `SeedingService`; added `TrackerMessageIndicatesDead` tests.
-- **Auth bootstrap (5.12.2):** `WebUIAuthHelpers.IsSetPasswordAllowed()` requires setup token; LoginPage setup token field; `SetPasswordEndpointTests` updated.
-- **Lidarr search timer:** documented N/A in `ArrWorkerManager` (single-loop architecture).
+- **Import completion parity (`5.12.7`):** `TorrentProcessor` no longer marks torrents imported when the Arr scan is merely queued. It now waits for `IArrImportService.IsImportedAsync()` to confirm the item has left Arr's queue before persisting `Imported = true` and applying the imported tag / AutoDelete follow-up.
 
-### Phase 2 — 5.12.x features
-- **UrlBase:** `WebUI.UrlBase` config, `UrlBaseHelper`, `UsePathBase`, cookie path, `url_base` in meta, frontend `urlBase.ts` + ConfigView field.
-- **Category paths:** `CategoryPathHelper` + `ConfigValidationHelper` overlap validation on config save; wired into torrent/category matching.
-- **Catalog rollups:** `CatalogRollupService` with qBitrr semantics + 5s TTL; integrated into `/web|api/arr`, Radarr/Sonarr/Lidarr endpoints.
-- **Lidarr artists + thumbnails:** `ArrCatalogEndpoints`, `ArrThumbnailService`, frontend `getLidarrArtists` / `getLidarrArtistDetail`.
-- **OpenAPI:** full `docs/assets/openapi.json` (72 paths, all qBitrr 5.12.3 paths + 6 Torrentarr extensions); `/api|web/docs` and `/api|web/openapi.json` route aliases; `scripts/check-openapi-drift.sh` and `scripts/generate-openapi-from-qbitrr.py` in CI.
-
-### Phase 3 — Config schema
-- `ExpectedConfigVersion = 6.12.2` (+1 major vs qBitrr `5.12.2`).
-- Default `Settings.ConfigVersion` updated to `6.12.2`.
+### Phase 2 — Documentation and config baseline
+- `ExpectedConfigVersion` / default config references aligned to **`6.12.3`**.
+- `config.example.toml` now surfaces `MatchSubcategories` in the primary qBit example for parity with upstream config docs.
+- OpenAPI helper scripts and contributor docs now point at latest qBitrr `master` by default instead of the old `5.12.3` pin.
 
 ## Validation Evidence
 
@@ -46,15 +38,12 @@ Backend tests (`dotnet test --filter "Category!=Live"`):
 
 Frontend tests (`cd webui && npx vitest run`): exit code 0 (130 tests).
 
-OpenAPI drift: `bash scripts/check-openapi-drift.sh` — 72 Torrentarr paths cover all 66 qBitrr 5.12.3 paths (+6 extensions).
+OpenAPI drift should now be run against latest upstream `master` (or an explicit `QBITRR_OPENAPI_REF` override) after regenerating `docs/assets/openapi.json`.
 
 Focused regression checks added/updated:
 
-- `SeedingServiceTests` — dead-tracker false positive guard
-- `CategoryPathHelperTests`, `ConfigValidationHelperTests`
-- `CatalogRollupServiceTests`
-- `SetPasswordEndpointTests` — setup token bootstrap
+- `TorrentProcessorTests` — import remains pending until Arr confirms completion; imported state flips only after queue exit
 
 ## Matrix Status
 
-All runtime module rows in `full-parity-matrix.md` are **`full`** or **`intentional-divergence`** as of this pass. Upstream pin: **5.12.3 @ 0b4a111**.
+Latest-main parity is **not yet fully closed**. `full-parity-matrix.md` now marks the still-unreverified latest-main areas as `partial`, especially the broad `arss.py` / `main.py` coverage rows and the latest multi-instance follow-up deltas.

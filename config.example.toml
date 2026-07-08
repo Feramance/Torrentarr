@@ -120,6 +120,9 @@ Password = "adminadmin"
 # Categories managed directly by qBit (not by Arr instances)
 ManagedCategories = []
 
+# When true, managed categories also match nested subcategories
+MatchSubcategories = false
+
 # Global tracker configurations (inherited by all Arr instances)
 Trackers = []
 

@@ -205,7 +205,7 @@ public class SearchExecutor : ISearchExecutor
         return result;
     }
 
-    private object GetOrCreateClient(string instanceName, ArrInstanceConfig arrConfig)
+    protected virtual object GetOrCreateClient(string instanceName, ArrInstanceConfig arrConfig)
     {
         if (_clientCache.TryGetValue(instanceName, out var cached))
             return cached;
@@ -220,7 +220,7 @@ public class SearchExecutor : ISearchExecutor
         return client;
     }
 
-    public async Task<int> GetActiveCommandCountAsync(string instanceName, CancellationToken cancellationToken = default)
+    public virtual async Task<int> GetActiveCommandCountAsync(string instanceName, CancellationToken cancellationToken = default)
     {
         if (!_config.ArrInstances.TryGetValue(instanceName, out var arrConfig))
             return 0;
@@ -254,7 +254,7 @@ public class SearchExecutor : ISearchExecutor
         return activeCommandCount < searchLimit;
     }
 
-    private async Task<bool> TriggerSearchForCandidateAsync(
+    protected virtual async Task<bool> TriggerSearchForCandidateAsync(
         string instanceName,
         ArrInstanceConfig arrConfig,
         SearchCandidate candidate,
@@ -290,7 +290,7 @@ public class SearchExecutor : ISearchExecutor
         }
     }
 
-    private async Task MarkAsSearchedAsync(
+    protected virtual async Task MarkAsSearchedAsync(
         ArrInstanceConfig arrConfig,
         SearchCandidate candidate,
         CancellationToken cancellationToken)

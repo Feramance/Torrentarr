@@ -2,7 +2,7 @@ using System.Text.Json;
 
 namespace Torrentarr.Host;
 
-/// <summary>Serves the curated OpenAPI document shipped with the Host (qBitrr 5.12.3 parity).</summary>
+/// <summary>Serves the curated OpenAPI document shipped with the Host (tracked against qBitrr latest master).</summary>
 public static class CuratedOpenApiDocument
 {
     private static readonly Lazy<string> Json = new(Load);

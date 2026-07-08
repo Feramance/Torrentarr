@@ -1,4 +1,5 @@
 using System.Collections.Generic;
+using System.IO;
 using System.Reflection;
 using FluentAssertions;
 using Microsoft.Data.Sqlite;
@@ -173,6 +174,67 @@ public sealed class TorrentProcessorTests : IDisposable
         await act.Should().NotThrowAsync();
     }
 
+    [Fact]
+    public async Task ImportTorrentAsync_TriggerSuccess_DoesNotMarkImportedUntilArrConfirms()
+    {
+        const string hash = "import-hash";
+        const string instance = "qBit";
+        var tempFile = Path.GetTempFileName();
+        try
+        {
+            _db.TorrentLibrary.Add(new Torrentarr.Infrastructure.Database.Models.TorrentLibrary
+            {
+                Hash = hash,
+                Category = "radarr-hd",
+                QbitInstance = instance,
+                Imported = false
+            });
+            await _db.SaveChangesAsync();
+
+            var config = new TorrentarrConfig();
+            config.ArrInstances["Radarr-HD"] = new ArrInstanceConfig
+            {
+                Category = "radarr-hd",
+                Type = "radarr"
+            };
+
+            var manager = new QBittorrentConnectionManager(
+                NullLogger<QBittorrentConnectionManager>.Instance);
+            RegisterTestClient(manager, instance, new StubQBittorrentClient(new TorrentInfo
+            {
+                Hash = hash,
+                ContentPath = tempFile,
+                QBitInstanceName = instance
+            }));
+
+            var importMock = new Mock<IArrImportService>();
+            importMock
+                .Setup(s => s.TriggerImportAsync(hash, tempFile, "radarr-hd", It.IsAny<CancellationToken>()))
+                .ReturnsAsync(new ImportResult { Success = true, Message = "queued" });
+
+            var pathTracker = new ImportPathTracker();
+            var processor = new TorrentProcessor(
+                NullLogger<TorrentProcessor>.Instance,
+                manager,
+                _db,
+                config,
+                new TorrentCacheService(NullLogger<TorrentCacheService>.Instance),
+                new DatabaseRestartCoordinator(),
+                importMock.Object,
+                pathTracker: pathTracker);
+
+            await processor.ImportTorrentAsync(hash, instance);
+
+            var entry = await _db.TorrentLibrary.SingleAsync(t => t.Hash == hash && t.QbitInstance == instance);
+            entry.Imported.Should().BeFalse("Torrentarr should wait for Arr to confirm the scan succeeded");
+            pathTracker.IsHashAlreadyScanned(hash).Should().BeTrue("successful trigger should still suppress duplicate scans");
+        }
+        finally
+        {
+            File.Delete(tempFile);
+        }
+    }
+
     /// <summary>
     /// Regression: CF-unmet deletion must honor HnR protection (qBitrr _hnr_allows_delete parity).
     /// Pre-fix, Branch 1 deleted immediately and bypassed HnrAllowsDeleteAsync.
@@ -248,6 +310,98 @@ public sealed class TorrentProcessorTests : IDisposable
         stats.Failed.Should().Be(0, "HnR-blocked CF-unmet torrents must not be deleted");
     }
 
+    [Fact]
+    public async Task ProcessSingleTorrentAsync_PendingImport_IsMarkedImportedOnlyAfterArrConfirms()
+    {
+        const string hash = "pending-import-hash";
+        const string category = "radarr-hd";
+        const string instance = "qBit";
+        _db.TorrentLibrary.Add(new Torrentarr.Infrastructure.Database.Models.TorrentLibrary
+        {
+            Hash = hash,
+            Category = category,
+            QbitInstance = instance,
+            Imported = false
+        });
+        await _db.SaveChangesAsync();
+
+        var config = new TorrentarrConfig();
+        config.ArrInstances["Radarr-HD"] = new ArrInstanceConfig
+        {
+            Category = category,
+            Type = "radarr"
+        };
+
+        var importMock = new Mock<IArrImportService>();
+        importMock
+            .SetupSequence(s => s.IsImportedAsync(hash, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(false)
+            .ReturnsAsync(true);
+        importMock
+            .Setup(s => s.MarkAsImportedAsync(hash, It.IsAny<IEnumerable<string>>(), It.IsAny<CancellationToken>()))
+            .Returns(Task.CompletedTask);
+
+        var manager = new QBittorrentConnectionManager(
+            NullLogger<QBittorrentConnectionManager>.Instance);
+        RegisterTestClient(manager, instance, new StubQBittorrentClient(new TorrentInfo
+        {
+            Hash = hash,
+            Name = "Ready For Import",
+            Category = category,
+            State = "uploading",
+            Progress = 1.0,
+            CompletionOn = DateTimeOffset.UtcNow.AddMinutes(-5).ToUnixTimeSeconds(),
+            AddedOn = DateTimeOffset.UtcNow.AddHours(-1).ToUnixTimeSeconds(),
+            AmountLeft = 0,
+            ContentPath = Path.GetTempFileName(),
+            QBitInstanceName = instance
+        }));
+
+        var cache = new TorrentCacheService(NullLogger<TorrentCacheService>.Instance);
+        cache.MarkFileFiltered(hash);
+        var pathTracker = new ImportPathTracker();
+        pathTracker.MarkScanned("/downloads/completed/item", hash);
+
+        var processor = new TorrentProcessor(
+            NullLogger<TorrentProcessor>.Instance,
+            manager,
+            _db,
+            config,
+            cache,
+            new DatabaseRestartCoordinator(),
+            importMock.Object,
+            pathTracker: pathTracker);
+
+        var torrent = new TorrentInfo
+        {
+            Hash = hash,
+            Name = "Ready For Import",
+            Category = category,
+            State = "uploading",
+            Progress = 1.0,
+            CompletionOn = DateTimeOffset.UtcNow.AddMinutes(-5).ToUnixTimeSeconds(),
+            AddedOn = DateTimeOffset.UtcNow.AddHours(-1).ToUnixTimeSeconds(),
+            AmountLeft = 0,
+            ContentPath = "/downloads/completed/item",
+            QBitInstanceName = instance
+        };
+        var stats = new TorrentProcessingStats();
+        var method = typeof(TorrentProcessor).GetMethod(
+            "ProcessSingleTorrentAsync",
+            BindingFlags.NonPublic | BindingFlags.Instance)!;
+
+        await (Task)method.Invoke(processor, new object[] { torrent, category, stats, CancellationToken.None })!;
+        (await _db.TorrentLibrary.SingleAsync(t => t.Hash == hash && t.QbitInstance == instance)).Imported
+            .Should().BeFalse("Arr still reports the item in queue on the first pass");
+
+        await (Task)method.Invoke(processor, new object[] { torrent, category, stats, CancellationToken.None })!;
+        (await _db.TorrentLibrary.SingleAsync(t => t.Hash == hash && t.QbitInstance == instance)).Imported
+            .Should().BeTrue("the database flag should flip only after Arr confirms the scan completed");
+        importMock.Verify(
+            s => s.MarkAsImportedAsync(hash, It.IsAny<IEnumerable<string>>(), It.IsAny<CancellationToken>()),
+            Times.Once);
+    }
+
     private static void RegisterTestClient(
         QBittorrentConnectionManager manager,
         string instanceName,
@@ -257,5 +411,22 @@ public sealed class TorrentProcessorTests : IDisposable
             .GetField("_clients", BindingFlags.NonPublic | BindingFlags.Instance)!;
         var clients = (Dictionary<string, QBittorrentClient>)clientsField.GetValue(manager)!;
         clients[instanceName] = client;
+    }
+
+    private sealed class StubQBittorrentClient : QBittorrentClient
+    {
+        private readonly List<TorrentInfo> _torrents;
+
+        public StubQBittorrentClient(params TorrentInfo[] torrents)
+            : base("127.0.0.1", 1, "u", "p")
+        {
+            _torrents = torrents.ToList();
+        }
+
+        public override Task<List<TorrentInfo>> GetTorrentsAsync(
+            string? category = null,
+            string? sort = null,
+            CancellationToken cancellationToken = default)
+            => Task.FromResult(_torrents);
     }
 }

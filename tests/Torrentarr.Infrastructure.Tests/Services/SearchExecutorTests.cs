@@ -1,5 +1,6 @@
 using FluentAssertions;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Logging.Abstractions;
 using Moq;
 using Torrentarr.Core.Configuration;
@@ -27,6 +28,29 @@ public class SearchExecutorTests
             new DatabaseRestartCoordinator());
 
         return new SearchExecutor(
+            NullLogger<SearchExecutor>.Instance,
+            cfg,
+            db,
+            switcher,
+            new DatabaseRestartCoordinator());
+    }
+
+    private static TestSearchExecutor CreateTestService(
+        TorrentarrConfig? config = null,
+        TorrentarrDbContext? dbContext = null)
+    {
+        var options = new DbContextOptionsBuilder<TorrentarrDbContext>()
+            .UseInMemoryDatabase(Guid.NewGuid().ToString())
+            .Options;
+        var db = dbContext ?? new TorrentarrDbContext(options);
+        var cfg = config ?? new TorrentarrConfig();
+
+        var switcher = new QualityProfileSwitcherService(
+            NullLogger<QualityProfileSwitcherService>.Instance,
+            db,
+            new DatabaseRestartCoordinator());
+
+        return new TestSearchExecutor(
             NullLogger<SearchExecutor>.Instance,
             cfg,
             db,
@@ -121,7 +145,7 @@ public class SearchExecutorTests
     public async Task ExecuteSearchesAsync_OrdersByPriority()
     {
         var config = CreateConfigWithRadarr();
-        var service = CreateService(config);
+        var service = CreateTestService(config);
         var candidates = new List<SearchCandidate>
         {
             new() { ArrId = 1, Title = "Upgrade Movie", Type = "Movie", Priority = 4, Reason = "Upgrade" },
@@ -131,14 +155,15 @@ public class SearchExecutorTests
 
         var result = await service.ExecuteSearchesAsync("Radarr-test", candidates);
 
-        result.SearchedIds.Should().BeEmpty();
+        result.SearchedIds.Should().ContainInOrder(2, 3, 1);
+        service.TriggeredCandidates.Select(c => c.ArrId).Should().ContainInOrder(2, 3, 1);
     }
 
     [Fact]
     public async Task ExecuteSearchesAsync_PrioritizesTodaysReleases()
     {
         var config = CreateConfigWithRadarr();
-        var service = CreateService(config);
+        var service = CreateTestService(config);
         var candidates = new List<SearchCandidate>
         {
             new() { ArrId = 1, Title = "Old Episode", Type = "Episode", Priority = 1, IsTodaysRelease = false },
@@ -147,7 +172,8 @@ public class SearchExecutorTests
 
         var result = await service.ExecuteSearchesAsync("Radarr-test", candidates);
 
-        result.SearchedIds.Should().BeEmpty();
+        result.SearchedIds.Should().ContainInOrder(2, 1);
+        service.TriggeredCandidates.Select(c => c.ArrId).Should().ContainInOrder(2, 1);
     }
 
     [Fact]
@@ -164,7 +190,8 @@ public class SearchExecutorTests
     public async Task ExecuteSearchesAsync_RespectsSearchLimit()
     {
         var config = CreateConfigWithRadarr(searchLoopDelay: 0, searchLimit: 2);
-        var service = CreateService(config);
+        var service = CreateTestService(config);
+        service.ActiveCommandCount = 2;
         var candidates = new List<SearchCandidate>
         {
             new() { ArrId = 1, Title = "Movie 1", Type = "Movie", Priority = 1 },
@@ -175,7 +202,44 @@ public class SearchExecutorTests
         var result = await service.ExecuteSearchesAsync("Radarr-test", candidates);
 
         result.SearchedIds.Should().BeEmpty();
+        service.TriggeredCandidates.Should().BeEmpty();
     }
+}
+
+internal sealed class TestSearchExecutor : SearchExecutor
+{
+    public int ActiveCommandCount { get; set; }
+    public List<SearchCandidate> TriggeredCandidates { get; } = new();
+
+    public TestSearchExecutor(
+        ILogger<SearchExecutor> logger,
+        TorrentarrConfig config,
+        TorrentarrDbContext db,
+        QualityProfileSwitcherService profileSwitcher,
+        DatabaseRestartCoordinator restartCoordinator)
+        : base(logger, config, db, profileSwitcher, restartCoordinator)
+    {
+    }
+
+    public override Task<int> GetActiveCommandCountAsync(string instanceName, CancellationToken cancellationToken = default)
+        => Task.FromResult(ActiveCommandCount);
+
+    protected override Task<bool> TriggerSearchForCandidateAsync(
+        string instanceName,
+        ArrInstanceConfig arrConfig,
+        SearchCandidate candidate,
+        bool useSeriesSearch,
+        CancellationToken cancellationToken)
+    {
+        TriggeredCandidates.Add(candidate);
+        return Task.FromResult(true);
+    }
+
+    protected override Task MarkAsSearchedAsync(
+        ArrInstanceConfig arrConfig,
+        SearchCandidate candidate,
+        CancellationToken cancellationToken)
+        => Task.CompletedTask;
 }
 
 public class SearchCandidateTests

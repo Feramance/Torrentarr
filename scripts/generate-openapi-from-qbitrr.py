@@ -7,7 +7,7 @@ import sys
 import urllib.request
 from copy import deepcopy
 
-QBITRR_REF = "5.12.3"
+QBITRR_REF = "master"
 OUT_PATH = "docs/assets/openapi.json"
 
 EXTENSION_PATHS = {
@@ -133,7 +133,7 @@ EXTENSION_PATHS = {
 
 
 def main() -> int:
-    url = f"https://raw.githubusercontent.com/Feramance/qBitrr/v{QBITRR_REF}/qBitrr/openapi.json"
+    url = f"https://raw.githubusercontent.com/Feramance/qBitrr/{QBITRR_REF}/qBitrr/openapi.json"
     with urllib.request.urlopen(url) as resp:
         spec = json.load(resp)
 

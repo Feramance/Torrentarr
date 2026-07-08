@@ -336,7 +336,7 @@ describe("getMeta", () => {
     server.use(
       http.get("/web/meta", () =>
         HttpResponse.json({
-          current_version: "6.12.2",
+          current_version: "6.12.3",
           latest_version: null,
           update_available: false,
           changelog: null,

@@ -1,8 +1,8 @@
 #!/usr/bin/env bash
-# Compare Torrentarr documented OpenAPI paths against qBitrr 5.12.3 (behavioral drift check).
+# Compare Torrentarr documented OpenAPI paths against qBitrr latest master (behavioral drift check).
 set -euo pipefail
 
-QBITRR_REF="${QBITRR_OPENAPI_REF:-5.12.3}"
+QBITRR_REF="${QBITRR_OPENAPI_REF:-master}"
 TORRENTARR_SPEC="${1:-docs/assets/openapi.json}"
 TMP_QBITRR="$(mktemp)"
 

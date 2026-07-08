@@ -61,7 +61,7 @@ public class TorrentarrWebApplicationFactory : WebApplicationFactory<Program>, I
     // Single-quoted strings are TOML literal strings (no escape processing) — safe for regex patterns.
     protected const string DefaultTestConfigToml = """
         [Settings]
-        ConfigVersion = "6.12.2"
+        ConfigVersion = "6.12.3"
         LoopSleepTimer = 5
         FailedCategory = "failed"
         RecheckCategory = "recheck"
@@ -229,7 +229,7 @@ public class AuthEnabledWebApplicationFactory : TorrentarrWebApplicationFactory
 
     private const string DefaultTestConfigTomlWithAuth = """
         [Settings]
-        ConfigVersion = "6.12.2"
+        ConfigVersion = "6.12.3"
         LoopSleepTimer = 5
         FailedCategory = "failed"
         RecheckCategory = "recheck"
@@ -262,7 +262,7 @@ public class LocalAuthWebApplicationFactory : TorrentarrWebApplicationFactory
         _localAuthConfigPath = Path.GetTempFileName() + ".localauth.toml";
         var toml = $"""
             [Settings]
-            ConfigVersion = "6.12.2"
+            ConfigVersion = "6.12.3"
             LoopSleepTimer = 5
             FailedCategory = "failed"
             RecheckCategory = "recheck"
@@ -317,7 +317,7 @@ public class LocalAuthNoPasswordWebApplicationFactory : TorrentarrWebApplication
 
     private const string TomlContent = """
         [Settings]
-        ConfigVersion = "6.12.2"
+        ConfigVersion = "6.12.3"
         LoopSleepTimer = 5
         FailedCategory = "failed"
         RecheckCategory = "recheck"
@@ -372,7 +372,7 @@ public class MultiQBitPlaceholderWebApplicationFactory : TorrentarrWebApplicatio
 
     protected override string GetTestConfigToml() => """
         [Settings]
-        ConfigVersion = "6.12.2"
+        ConfigVersion = "6.12.3"
         LoopSleepTimer = 5
         FailedCategory = "failed"
         RecheckCategory = "recheck"
@@ -410,7 +410,7 @@ public class ArrCatalogWebApplicationFactory : TorrentarrWebApplicationFactory
 
     protected override string GetTestConfigToml() => """
         [Settings]
-        ConfigVersion = "6.12.2"
+        ConfigVersion = "6.12.3"
         LoopSleepTimer = 5
         FailedCategory = "failed"
         RecheckCategory = "recheck"
@@ -454,7 +454,7 @@ public class UrlBaseWebApplicationFactory : TorrentarrWebApplicationFactory
 
     protected override string GetTestConfigToml() => """
         [Settings]
-        ConfigVersion = "6.12.2"
+        ConfigVersion = "6.12.3"
         LoopSleepTimer = 5
         FailedCategory = "failed"
         RecheckCategory = "recheck"
@@ -479,7 +479,7 @@ public class UrlBaseAuthWebApplicationFactory : TorrentarrWebApplicationFactory
 
     protected override string GetTestConfigToml() => """
         [Settings]
-        ConfigVersion = "6.12.2"
+        ConfigVersion = "6.12.3"
         LoopSleepTimer = 5
         FailedCategory = "failed"
         RecheckCategory = "recheck"
