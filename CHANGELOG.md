@@ -1,5 +1,23 @@
 # Changelog
 
+## v6.12.4 (2026-07-08)
+
+### Bug Fixes
+- [patch] Version bump ([4487e38](https://github.com/Feramance/Torrentarr/commit/4487e38223a20ba0c09ed1636b3a6de95e97c066))
+- Fix Dependabot vulnerability overrides (#320) ([770dc55](https://github.com/Feramance/Torrentarr/commit/770dc5526d3a4138065f17597ccdb736a77a6284))
+
+### Maintenance
+- Align parity with qBitrr latest main and fix import completion semantics. ([f49384b](https://github.com/Feramance/Torrentarr/commit/f49384b17a82a8349dfaeb1215bb3078b0abd1a8))
+- build(deps-dev): Bump postcss from 8.5.15 to 8.5.16 in /webui (#327) ([e94fab5](https://github.com/Feramance/Torrentarr/commit/e94fab5a92d8b9337a283b433fda7c22f3994d0a))
+- build(deps): Bump @mantine/dates from 9.4.0 to 9.4.1 in /webui (#326) ([743a190](https://github.com/Feramance/Torrentarr/commit/743a190d358890b9183a8cb8fcb2350cd448132b))
+- build(deps): Bump @mantine/hooks from 9.4.0 to 9.4.1 in /webui (#324) ([31acb05](https://github.com/Feramance/Torrentarr/commit/31acb05db4b263b7a54fa05f79f884ec638b7bae))
+- build(deps-dev): Bump vite from 8.1.0 to 8.1.3 in /webui (#328) ([24ad435](https://github.com/Feramance/Torrentarr/commit/24ad435fdc00306841a30a3a71f60cc1a40d444e))
+- build(deps): Bump @mantine/core from 9.4.0 to 9.4.1 in /webui (#325) ([14f83eb](https://github.com/Feramance/Torrentarr/commit/14f83ebb4be9ee4b91b7f9d2b4ee1ce184036b6d))
+- build(deps-dev): Bump @types/node from 26.0.1 to 26.1.0 in /webui (#323) ([b4cdb39](https://github.com/Feramance/Torrentarr/commit/b4cdb398423db67c2ebadf8f78428350935114a2))
+- build(deps-dev): Bump tailwindcss from 4.3.1 to 4.3.2 in /webui (#321) ([f97d5b6](https://github.com/Feramance/Torrentarr/commit/f97d5b69e3d598369e0b63bc988f5c7ada4f2c08))
+
+---
+
 ## v6.12.3 (2026-06-30)
 
 ### Bug Fixes
