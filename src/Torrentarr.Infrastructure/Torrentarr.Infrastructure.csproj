@@ -31,7 +31,7 @@
     </PackageReference>
     <PackageReference Include="Polly" Version="8.7.0" />
     <PackageReference Include="FFMpegCore" Version="5.4.0" />
-    <PackageReference Include="Serilog" Version="4.3.1" />
+    <PackageReference Include="Serilog" Version="4.4.0" />
   </ItemGroup>
 
 </Project>
