@@ -162,7 +162,7 @@ jobs:
         DOTNET_VERSION=$(bash scripts/ensure-global-json.sh "${{ github.workspace }}")
         echo "DOTNET_SDK_VERSION=$DOTNET_VERSION" >> $GITHUB_ENV
     - name: Setup Node.js
-      uses: actions/setup-node@v6
+      uses: actions/setup-node@v7
       with:
         node-version: '20'
         cache: npm
