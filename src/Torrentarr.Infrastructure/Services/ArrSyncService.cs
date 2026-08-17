@@ -706,7 +706,7 @@ public class ArrSyncService
         {
             _logger.LogTrace("DB Delete: Artist {Title} removed from database", artist.Title);
         }
-            if (artistsToDelete.Count > 0 && !ShouldSkipDestructiveDelete(artists.Count, dbArtistsList.Count, instanceName, "artists"))
+        if (artistsToDelete.Count > 0 && !ShouldSkipDestructiveDelete(artists.Count, dbArtistsList.Count, instanceName, "artists"))
             _db.Artists.RemoveRange(artistsToDelete);
 
         await _db.SaveChangesWithRetryAsync(_logger, _restartCoordinator, cancellationToken: ct);

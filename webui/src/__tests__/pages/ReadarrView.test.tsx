@@ -208,7 +208,9 @@ describe("ReadarrView – instance sidebar", () => {
         return HttpResponse.json({
           category: "readarr-books",
           author: { id: 2, name: "Ursula K. Le Guin" },
-          books: [{ book: { id: 20, title: "A Wizard of Earthsea", hasFile: true } }],
+          books: [
+            { book: { id: 20, title: "A Wizard of Earthsea", hasFile: true } },
+          ],
         });
       }),
     );
