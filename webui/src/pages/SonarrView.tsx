@@ -1703,109 +1703,120 @@ function SonarrInstanceView({
           <span className="spinner" /> Loading series…
         </div>
       ) : groupSonarr ? (
-        <div className="sonarr-hierarchical-view">
-          {paginatedGroupedData.map((seriesGroup) => {
-            let episodeCount = 0;
-            seriesGroup.subRows.forEach((season) => {
-              episodeCount += season.subRows.length;
-            });
-            // Get instance name from selection
-            const instanceName =
-              instances.find((i) => i.category === selection)?.name ||
-              selection;
-            return (
-              <details key={`${seriesGroup.series}`} className="series-details">
-                <summary className="series-summary">
-                  <span className="series-title">{seriesGroup.series}</span>
-                  <span className="series-instance">({instanceName})</span>
-                  <span className="series-count">
-                    ({episodeCount} episodes)
-                  </span>
-                  {seriesGroup.qualityProfileName ? (
-                    <span className="series-quality">
-                      • {seriesGroup.qualityProfileName}
+        paginatedGroupedData.length > 0 ? (
+          <div className="sonarr-hierarchical-view">
+            {paginatedGroupedData.map((seriesGroup) => {
+              let episodeCount = 0;
+              seriesGroup.subRows.forEach((season) => {
+                episodeCount += season.subRows.length;
+              });
+              // Get instance name from selection
+              const instanceName =
+                instances.find((i) => i.category === selection)?.name ||
+                selection;
+              return (
+                <details
+                  key={`${seriesGroup.series}`}
+                  className="series-details"
+                >
+                  <summary className="series-summary">
+                    <span className="series-title">{seriesGroup.series}</span>
+                    <span className="series-instance">({instanceName})</span>
+                    <span className="series-count">
+                      ({episodeCount} episodes)
                     </span>
-                  ) : null}
-                </summary>
-                <div className="series-content">
-                  {seriesGroup.subRows.map((season) => (
-                    <details
-                      key={`${seriesGroup.series}-${season.seasonNumber}`}
-                      className="season-details"
-                    >
-                      <summary className="season-summary">
-                        <span className="season-title">
-                          Season {season.seasonNumber}
-                        </span>
-                        <span className="season-count">
-                          ({season.subRows.length} episodes)
-                        </span>
-                      </summary>
-                      <div className="season-content">
-                        <div className="episodes-table-wrapper">
-                          <table className="episodes-table">
-                            <thead>
-                              <tr>
-                                <th>Episode</th>
-                                <th>Title</th>
-                                <th>Monitored</th>
-                                <th>Has File</th>
-                                <th>Air Date</th>
-                                <th>Reason</th>
-                              </tr>
-                            </thead>
-                            <tbody>
-                              {season.subRows.map(
-                                (episode: (typeof season.subRows)[number]) => (
-                                  <tr
-                                    key={`${episode.series}-${episode.season}-${episode.episode}`}
-                                  >
-                                    <td data-label="Episode">
-                                      {episode.episode}
-                                    </td>
-                                    <td data-label="Title">{episode.title}</td>
-                                    <td data-label="Monitored">
-                                      <span
-                                        className={`track-status ${episode.monitored ? "available" : "missing"}`}
-                                      >
-                                        {episode.monitored ? "✓" : "✗"}
-                                      </span>
-                                    </td>
-                                    <td data-label="Has File">
-                                      <span
-                                        className={`track-status ${episode.hasFile ? "available" : "missing"}`}
-                                      >
-                                        {episode.hasFile ? "✓" : "✗"}
-                                      </span>
-                                    </td>
-                                    <td data-label="Air Date">
-                                      {episode.airDate || "—"}
-                                    </td>
-                                    <td data-label="Reason">
-                                      {episode.reason ? (
-                                        <span className="table-badge table-badge-reason">
-                                          {episode.reason}
+                    {seriesGroup.qualityProfileName ? (
+                      <span className="series-quality">
+                        • {seriesGroup.qualityProfileName}
+                      </span>
+                    ) : null}
+                  </summary>
+                  <div className="series-content">
+                    {seriesGroup.subRows.map((season) => (
+                      <details
+                        key={`${seriesGroup.series}-${season.seasonNumber}`}
+                        className="season-details"
+                      >
+                        <summary className="season-summary">
+                          <span className="season-title">
+                            Season {season.seasonNumber}
+                          </span>
+                          <span className="season-count">
+                            ({season.subRows.length} episodes)
+                          </span>
+                        </summary>
+                        <div className="season-content">
+                          <div className="episodes-table-wrapper">
+                            <table className="episodes-table">
+                              <thead>
+                                <tr>
+                                  <th>Episode</th>
+                                  <th>Title</th>
+                                  <th>Monitored</th>
+                                  <th>Has File</th>
+                                  <th>Air Date</th>
+                                  <th>Reason</th>
+                                </tr>
+                              </thead>
+                              <tbody>
+                                {season.subRows.map(
+                                  (
+                                    episode: (typeof season.subRows)[number],
+                                  ) => (
+                                    <tr
+                                      key={`${episode.series}-${episode.season}-${episode.episode}`}
+                                    >
+                                      <td data-label="Episode">
+                                        {episode.episode}
+                                      </td>
+                                      <td data-label="Title">
+                                        {episode.title}
+                                      </td>
+                                      <td data-label="Monitored">
+                                        <span
+                                          className={`track-status ${episode.monitored ? "available" : "missing"}`}
+                                        >
+                                          {episode.monitored ? "✓" : "✗"}
                                         </span>
-                                      ) : (
-                                        <span className="table-badge table-badge-reason">
-                                          Not being searched
+                                      </td>
+                                      <td data-label="Has File">
+                                        <span
+                                          className={`track-status ${episode.hasFile ? "available" : "missing"}`}
+                                        >
+                                          {episode.hasFile ? "✓" : "✗"}
                                         </span>
-                                      )}
-                                    </td>
-                                  </tr>
-                                ),
-                              )}
-                            </tbody>
-                          </table>
+                                      </td>
+                                      <td data-label="Air Date">
+                                        {episode.airDate || "—"}
+                                      </td>
+                                      <td data-label="Reason">
+                                        {episode.reason ? (
+                                          <span className="table-badge table-badge-reason">
+                                            {episode.reason}
+                                          </span>
+                                        ) : (
+                                          <span className="table-badge table-badge-reason">
+                                            Not being searched
+                                          </span>
+                                        )}
+                                      </td>
+                                    </tr>
+                                  ),
+                                )}
+                              </tbody>
+                            </table>
+                          </div>
                         </div>
-                      </div>
-                    </details>
-                  ))}
-                </div>
-              </details>
-            );
-          })}
-        </div>
+                      </details>
+                    ))}
+                  </div>
+                </details>
+              );
+            })}
+          </div>
+        ) : (
+          <div className="hint">No series found.</div>
+        )
       ) : !loading &&
         series.length > 0 &&
         filteredEpisodeRows.length === 0 &&
