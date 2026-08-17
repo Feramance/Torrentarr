@@ -529,13 +529,18 @@ public class ArrImportService : IArrImportService
 
     /// <summary>
     /// Per-Arr <c>ImportMode</c> wins; otherwise <see cref="SettingsConfig.ImportMode"/>; otherwise Auto.
+    /// Null/blank means the per-Arr TOML key was omitted — use Settings, not Auto.
     /// </summary>
     internal static string ResolveImportMode(ArrInstanceConfig instance, SettingsConfig settings)
     {
-        if (!string.IsNullOrWhiteSpace(instance.ImportMode))
-            return instance.ImportMode.Trim();
-        if (!string.IsNullOrWhiteSpace(settings.ImportMode))
-            return settings.ImportMode.Trim();
+        var perArr = instance.ImportMode?.Trim();
+        if (!string.IsNullOrEmpty(perArr))
+            return perArr;
+
+        var global = settings.ImportMode?.Trim();
+        if (!string.IsNullOrEmpty(global))
+            return global;
+
         return "Auto";
     }
 }
