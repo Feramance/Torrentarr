@@ -24,6 +24,7 @@ public class ArrCatalogIdentityTests
         var fromCategory = ArrCatalogIdentity.QueryKeys(config, "readarr-books");
         fromCategory.Should().Contain("Readarr-Books");
         fromCategory.Should().Contain("readarr-books");
+        fromCategory.Should().HaveCount(2);
 
         var fromName = ArrCatalogIdentity.QueryKeys(config, "Readarr-Books");
         fromName.Should().Contain("Readarr-Books");

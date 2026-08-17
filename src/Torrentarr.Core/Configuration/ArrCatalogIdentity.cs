@@ -50,7 +50,10 @@ public static class ArrCatalogIdentity
     {
         if (string.IsNullOrWhiteSpace(value))
             return;
-        if (keys.Any(existing => string.Equals(existing, value, StringComparison.OrdinalIgnoreCase)))
+        // Keep original casings. Workers stamp the section key (Readarr-Books);
+        // the UI passes Category (readarr-books). Those can be equal ignore-case
+        // but SQLite ArrInstance compares are ordinal.
+        if (keys.Any(existing => string.Equals(existing, value, StringComparison.Ordinal)))
             return;
         keys.Add(value);
     }

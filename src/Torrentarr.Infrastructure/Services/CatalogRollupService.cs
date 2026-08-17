@@ -207,7 +207,7 @@ public class CatalogRollupService
         => _cache[key] = (DateTime.UtcNow.Add(CacheTtl), snapshot);
 
     private static List<string> Materialize(IReadOnlyList<string> instanceKeys)
-        => instanceKeys.Where(k => !string.IsNullOrWhiteSpace(k)).Distinct(StringComparer.OrdinalIgnoreCase).ToList();
+        => instanceKeys.Where(k => !string.IsNullOrWhiteSpace(k)).Distinct(StringComparer.Ordinal).ToList();
 
     private static string CacheKey(string prefix, IReadOnlyList<string> keys)
         => $"{prefix}:{string.Join("|", keys)}";

@@ -16,9 +16,6 @@ public sealed class ReadarrClientTests : IDisposable
     private readonly Task _loop;
     private string _lastPath = "";
     private string _lastBody = "";
-    private int _statusCode = 200;
-
-    private void SetStatusCode(int statusCode) => _statusCode = statusCode;
 
     public ReadarrClientTests()
     {
@@ -86,10 +83,29 @@ public sealed class ReadarrClientTests : IDisposable
     [Fact]
     public async Task GetSystemInfoAsync_ThrowsOnHttpError()
     {
-        SetStatusCode(401);
-        var client = new ReadarrClient(_baseUrl.TrimEnd('/'), "bad-key");
-        var act = async () => await client.GetSystemInfoAsync();
-        await act.Should().ThrowAsync<ArrApiException>();
+        var port = GetFreePort();
+        var baseUrl = $"http://127.0.0.1:{port}/";
+        using var listener = new HttpListener();
+        listener.Prefixes.Add(baseUrl);
+        listener.Start();
+        var loop = Task.Run(async () =>
+        {
+            var ctx = await listener.GetContextAsync();
+            ctx.Response.StatusCode = 401;
+            ctx.Response.Close();
+        });
+
+        try
+        {
+            var client = new ReadarrClient(baseUrl.TrimEnd('/'), "bad-key");
+            var act = async () => await client.GetSystemInfoAsync();
+            await act.Should().ThrowAsync<ArrApiException>();
+        }
+        finally
+        {
+            listener.Close();
+            try { await loop.WaitAsync(TimeSpan.FromSeconds(2)); } catch { /* listener stopped */ }
+        }
     }
 
     private async Task ListenLoopAsync()
@@ -123,8 +139,7 @@ public sealed class ReadarrClientTests : IDisposable
                 json = """{"id":99}""";
 
             var bytes = Encoding.UTF8.GetBytes(json);
-            ctx.Response.StatusCode = _statusCode;
-            _statusCode = 200;
+            ctx.Response.StatusCode = 200;
             ctx.Response.ContentType = "application/json";
             ctx.Response.ContentLength64 = bytes.Length;
             await ctx.Response.OutputStream.WriteAsync(bytes);
