@@ -1367,6 +1367,8 @@ export function LidarrView({ active }: { active: boolean }): JSX.Element {
         setInstanceData(null);
         setAggRows([]);
         setAggSummary({ available: 0, monitored: 0, missing: 0, total: 0 });
+        setAggLoading(false);
+        setInstanceLoading(false);
         return;
       }
       if (selection === "") {

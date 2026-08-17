@@ -178,6 +178,8 @@ export function SonarrView({ active }: SonarrViewProps): JSX.Element {
         setInstanceData(null);
         setAggRows([]);
         setAggSummary({ available: 0, monitored: 0, missing: 0, total: 0 });
+        setAggLoading(false);
+        setInstanceLoading(false);
         return;
       }
       if (selection === "") {

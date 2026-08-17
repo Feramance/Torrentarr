@@ -71,6 +71,7 @@ export function ReadarrView({ active }: ReadarrViewProps): JSX.Element {
     if (!selected) {
       setAuthors([]);
       setTotal(0);
+      setLoading(false);
       return;
     }
     setLoading(true);

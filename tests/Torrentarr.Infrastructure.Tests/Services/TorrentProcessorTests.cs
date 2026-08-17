@@ -134,7 +134,7 @@ public sealed class TorrentProcessorTests : IDisposable
             Hash = hash,
             Name = "Needs Recheck",
             Category = "recheck",
-            State = "error",
+            State = "uploading",
             QBitInstanceName = "qBit"
         };
         var stats = new TorrentProcessingStats();
