@@ -178,6 +178,34 @@ public class ArrImportServiceTests
         await act.Should().NotThrowAsync();
     }
 
+    /// <summary>
+    /// Regression: Arr queue API failures must not be treated as "imported" (fail-open),
+    /// which would prematurely mark DB rows and run AutoDelete while import is still queued.
+    /// </summary>
+    [Fact]
+    public async Task IsImportedAsync_QueueCheckFails_ReturnsFalse()
+    {
+        var config = new TorrentarrConfig
+        {
+            ArrInstances = new Dictionary<string, ArrInstanceConfig>
+            {
+                ["Radarr-HD"] = new ArrInstanceConfig
+                {
+                    Category = "radarr-hd",
+                    Type = "radarr",
+                    URI = "http://127.0.0.1:1",
+                    APIKey = "invalid"
+                }
+            }
+        };
+
+        var svc = CreateService(config);
+
+        var result = await svc.IsImportedAsync("abc123def4567890123456789012345678901234");
+
+        result.Should().BeFalse("queue polling errors must fail closed, not assume import completed");
+    }
+
     // ── Custom format unmet DB lookup (regression: Arr API ids vs SQLite EntryId) ─
 
     [Fact]
