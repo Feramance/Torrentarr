@@ -157,9 +157,7 @@ public class ConnectivityService : IConnectivityService
             if (IPAddress.TryParse(host, out var ipAddress))
             {
                 hostname = ipAddress.ToString();
-                var authority = ipAddress.AddressFamily == AddressFamily.InterNetworkV6
-                    ? $"[{hostname}]"
-                    : hostname;
+                var authority = ToProbeAuthority(hostname, ipAddress.AddressFamily);
 
                 if (await HttpProbeAsync(new Uri($"https://{authority}"), cancellationToken))
                     return true;
@@ -231,6 +229,12 @@ public class ConnectivityService : IConnectivityService
             return false;
         }
     }
+
+    /// <summary>
+    /// Formats an IP literal for use as a URI authority. IPv6 addresses require brackets.
+    /// </summary>
+    internal static string ToProbeAuthority(string hostname, AddressFamily addressFamily) =>
+        addressFamily == AddressFamily.InterNetworkV6 ? $"[{hostname}]" : hostname;
 
     private static HttpClient CreateProbeClient()
     {

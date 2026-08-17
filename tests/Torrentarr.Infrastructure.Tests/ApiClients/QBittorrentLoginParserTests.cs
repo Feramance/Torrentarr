@@ -74,4 +74,16 @@ public class QBittorrentLoginParserTests
         selected!.Value.Name.Should().Be("SID");
         selected.Value.Value.Should().Be("session");
     }
+
+    [Fact]
+    public void TryAccept_OnlyNonSessionCookie_IsRejected()
+    {
+        var cookies = new[] { new QBittorrentLoginCookie("csrf_token", "not-a-session") };
+
+        var ok = QBittorrentLoginParser.TryAccept(200, "Ok.", cookies, out var header, out var reason);
+
+        ok.Should().BeFalse();
+        header.Should().BeNull();
+        reason.Should().Contain("no SID/QBT_SID");
+    }
 }

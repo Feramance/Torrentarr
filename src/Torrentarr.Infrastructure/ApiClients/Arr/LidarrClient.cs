@@ -49,13 +49,8 @@ public class LidarrClient
         AddApiKeyHeader(request);
 
         var response = await ArrClientResponse.ExecuteAsync(_client, request, ct);
-
-        if (response.IsSuccessful && !string.IsNullOrEmpty(response.Content))
-        {
-            return JsonConvert.DeserializeObject<SystemInfo>(response.Content) ?? new SystemInfo();
-        }
-
-        return new SystemInfo();
+        ArrClientResponse.EnsureSuccess(response, "GET /api/v1/system/status");
+        return JsonConvert.DeserializeObject<SystemInfo>(response.Content) ?? new SystemInfo();
     }
 
     /// <summary>

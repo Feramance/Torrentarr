@@ -1,5 +1,6 @@
 using FluentAssertions;
 using Microsoft.Extensions.Logging.Abstractions;
+using System.Net.Sockets;
 using Torrentarr.Core.Configuration;
 using Torrentarr.Infrastructure.Services;
 using Xunit;
@@ -118,5 +119,19 @@ public class ConnectivityServiceTests
 
         result.Should().BeFalse();
         svc.IsConnected.Should().BeFalse();
+    }
+
+    [Fact]
+    public void ToProbeAuthority_BracketsIPv6Literal()
+    {
+        ConnectivityService.ToProbeAuthority("2001:4860:4860::8888", AddressFamily.InterNetworkV6)
+            .Should().Be("[2001:4860:4860::8888]");
+    }
+
+    [Fact]
+    public void ToProbeAuthority_LeavesIPv4Unbracketed()
+    {
+        ConnectivityService.ToProbeAuthority("1.1.1.1", AddressFamily.InterNetwork)
+            .Should().Be("1.1.1.1");
     }
 }

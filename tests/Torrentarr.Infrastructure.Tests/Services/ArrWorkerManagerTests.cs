@@ -53,6 +53,23 @@ public class ArrWorkerManagerTests
         manager.ShouldRunSearch("Radarr", otherCfg).Should().BeTrue();
     }
 
+    [Theory]
+    [InlineData(null)]
+    [InlineData("")]
+    [InlineData("   ")]
+    public void TryGetKnownArrVersion_EmptyOrWhitespace_IsNotConnected(string? version)
+    {
+        ArrWorkerManager.TryGetKnownArrVersion(version, out var known).Should().BeFalse();
+        known.Should().BeEmpty();
+    }
+
+    [Fact]
+    public void TryGetKnownArrVersion_PresentVersion_IsConnected()
+    {
+        ArrWorkerManager.TryGetKnownArrVersion("  6.0.2  ", out var known).Should().BeTrue();
+        known.Should().Be("6.0.2");
+    }
+
     private sealed class StubConnectivityService : IConnectivityService
     {
         public bool IsConnected => true;

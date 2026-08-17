@@ -2575,8 +2575,11 @@ static async Task<IResult> HandleTestConnection(TestConnectionRequest req, Torre
         }
 
         systemInfo = await getSystemInfo();
+        if (string.IsNullOrWhiteSpace(systemInfo?.Version))
+            return Results.Ok(new { success = false, message = "Connection test failed" });
+
         Log.Information("Arr connection test succeeded for {ArrType} at {Uri}: version {Version}",
-            req.ArrType, uri, systemInfo.Version ?? "unknown");
+            req.ArrType, uri, systemInfo.Version);
 
         // Fetch quality profiles with retry logic for transient errors
         const int maxRetries = 3;
@@ -2596,8 +2599,8 @@ static async Task<IResult> HandleTestConnection(TestConnectionRequest req, Torre
         return Results.Ok(new
         {
             success = true,
-            message = $"Connected to {req.ArrType} {systemInfo!.Version}",
-            systemInfo = new { version = systemInfo.Version ?? "unknown", branch = (string?)null },
+            message = $"Connected to {req.ArrType} {systemInfo.Version}",
+            systemInfo = new { version = systemInfo.Version, branch = (string?)null },
             qualityProfiles = profiles.Select(p => new { id = p.Id, name = p.Name })
         });
     }

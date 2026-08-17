@@ -1311,8 +1311,11 @@ app.MapPost("/web/arr/test-connection", async (HttpContext ctx, TorrentarrConfig
         }
 
         systemInfo = await getSystemInfo();
+        if (string.IsNullOrWhiteSpace(systemInfo?.Version))
+            return Results.Ok(new { success = false, message = "Connection test failed" });
+
         Log.Information("Arr connection test succeeded for {ArrType} at {Uri}: version {Version}",
-            body.ArrType, uri, systemInfo.Version ?? "unknown");
+            body.ArrType, uri, systemInfo.Version);
 
         // Retry logic for quality profile fetching
         const int maxRetries = 3;
@@ -1333,7 +1336,7 @@ app.MapPost("/web/arr/test-connection", async (HttpContext ctx, TorrentarrConfig
         {
             success = true,
             message = $"Connected to {body.ArrType} {systemInfo.Version}",
-            systemInfo = new { version = systemInfo.Version ?? "unknown", branch = (string?)null },
+            systemInfo = new { version = systemInfo.Version, branch = (string?)null },
             qualityProfiles = profiles.Select(p => new { id = p.Id, name = p.Name })
         });
     }

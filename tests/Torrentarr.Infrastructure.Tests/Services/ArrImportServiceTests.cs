@@ -359,6 +359,16 @@ public class ArrImportServiceTests
     }
 
     [Fact]
+    public void ResolveImportMode_FallsBackToSettings_WhenInstanceNull()
+    {
+        var instance = new ArrInstanceConfig();
+        var settings = new SettingsConfig { ImportMode = "Move" };
+
+        instance.ImportMode.Should().BeNull();
+        ArrImportService.ResolveImportMode(instance, settings).Should().Be("Move");
+    }
+
+    [Fact]
     public void ResolveImportMode_DefaultsToAuto_WhenBothBlank()
     {
         var instance = new ArrInstanceConfig { ImportMode = "" };
