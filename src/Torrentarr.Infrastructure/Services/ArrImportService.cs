@@ -92,6 +92,7 @@ public class ArrImportService : IArrImportService
 
         // Check all Arr instances to see if they have this download in their queue
         var instancesChecked = 0;
+        var hadCheckErrors = false;
         foreach (var arrInstance in _config.ArrInstances.Values)
         {
             instancesChecked++;
@@ -116,8 +117,17 @@ public class ArrImportService : IArrImportService
             }
             catch (Exception ex)
             {
+                hadCheckErrors = true;
                 _logger.LogError(ex, "Error checking queue for instance {Category}", arrInstance.Category);
             }
+        }
+
+        if (hadCheckErrors)
+        {
+            _logger.LogWarning(
+                "Could not confirm import status for hash {Hash} after checking {Count} Arr instance(s); treating as not yet imported",
+                hash, instancesChecked);
+            return false;
         }
 
         _logger.LogTrace("Checked {Count} Arr instances, hash {Hash} not in any queue", instancesChecked, hash);
