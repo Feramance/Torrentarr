@@ -197,11 +197,13 @@ Released under the [MIT License](LICENSE).
 
 ## Star History
 
-<picture>
-  <source media="(prefers-color-scheme: dark)" srcset="https://api.star-history.com/svg?repos=Feramance/Torrentarr&type=Date&theme=dark" />
-  <source media="(prefers-color-scheme: light)" srcset="https://api.star-history.com/svg?repos=Feramance/Torrentarr&type=Date" />
-  <img alt="Star History Chart" src="https://api.star-history.com/svg?repos=Feramance/Torrentarr&type=Date" />
-</picture>
+<a href="https://www.star-history.com/?repos=Feramance%2FTorrentarr&type=date&legend=top-left">
+ <picture>
+   <source media="(prefers-color-scheme: dark)" srcset="https://api.star-history.com/chart?repos=Feramance/Torrentarr&type=date&theme=dark&legend=top-left&sealed_token=1rGz4TJ-7OMeeZ2UO-iGz1P-on33zZd0oTU-JM9NHnAYXfepVNa20tDxuU4jeobrwFJquCcNUvVwQH5LQt8E4GLYKjBzFFjH3bYVfUfUS6a7yoG6xx8aZekaqPnfQjwKJXCgfjyuxJMojuqNP1k9xHPg_by3yiNsjr0nUCU3IITo-HdyuoJsVRdxPw5S" />
+   <source media="(prefers-color-scheme: light)" srcset="https://api.star-history.com/chart?repos=Feramance/Torrentarr&type=date&legend=top-left&sealed_token=1rGz4TJ-7OMeeZ2UO-iGz1P-on33zZd0oTU-JM9NHnAYXfepVNa20tDxuU4jeobrwFJquCcNUvVwQH5LQt8E4GLYKjBzFFjH3bYVfUfUS6a7yoG6xx8aZekaqPnfQjwKJXCgfjyuxJMojuqNP1k9xHPg_by3yiNsjr0nUCU3IITo-HdyuoJsVRdxPw5S" />
+   <img alt="Star History Chart" src="https://api.star-history.com/chart?repos=Feramance/Torrentarr&type=date&legend=top-left&sealed_token=1rGz4TJ-7OMeeZ2UO-iGz1P-on33zZd0oTU-JM9NHnAYXfepVNa20tDxuU4jeobrwFJquCcNUvVwQH5LQt8E4GLYKjBzFFjH3bYVfUfUS6a7yoG6xx8aZekaqPnfQjwKJXCgfjyuxJMojuqNP1k9xHPg_by3yiNsjr0nUCU3IITo-HdyuoJsVRdxPw5S" />
+ </picture>
+</a>
 
 ---
 

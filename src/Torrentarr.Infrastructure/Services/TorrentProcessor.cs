@@ -511,9 +511,12 @@ public class TorrentProcessor : ITorrentProcessor
             await ProcessPercentageThresholdAsync(torrent, maxEta, client, stats, ct);
         }
         // Branch 14: Already imported or sent to scan → skip / finalize confirmed imports
-        else if ((_pathTracker?.IsHashAlreadyScanned(torrent.Hash) == true
-                  || await IsImportedInDatabaseAsync(torrent.Hash, torrent.QBitInstanceName, ct))
-            && _cache.IsFileFiltered(torrent.Hash))
+        // Pending imports must finalize even when file filtering never ran (e.g. cross-seed
+        // torrents first seen in a complete/seeding state). Fully imported rows still require
+        // IsFileFiltered so the branch matches qBitrr's sent_to_scan + filtered skip path.
+        else if (_pathTracker?.IsHashAlreadyScanned(torrent.Hash) == true
+                 || (await IsImportedInDatabaseAsync(torrent.Hash, torrent.QBitInstanceName, ct)
+                     && _cache.IsFileFiltered(torrent.Hash)))
         {
             var finalizedImport = await TryFinalizeImportedTorrentAsync(torrent, ct);
             if (finalizedImport)
