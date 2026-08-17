@@ -205,9 +205,9 @@ Total time to library: 20.5 minutes (26% faster)
 
 ### Required Services
 
-- **qBittorrent**: Version 4.1.0+ or 5.x with WebUI enabled
+- **qBittorrent**: Version 4.1.0+ or 5.x (including 5.2) with WebUI enabled
 - **Arr Instance**: At least one of:
-    - Radarr: v3.x, v4.x, v5.x
+    - Radarr: v3.x, v4.x, v5.x, v6.x
     - Sonarr: v3.x, v4.x
     - Lidarr: v1.x, v2.x
     - Readarr: v0.4+
@@ -226,7 +226,8 @@ Total time to library: 20.5 minutes (26% faster)
 
 | Version | Status | Notes |
 |---------|--------|-------|
-| 5.0+ | ✅ Fully Supported | Auto-detected |
+| 5.2+ | ✅ Fully Supported | Session cookie `QBT_SID_*`; HTTP 204 login |
+| 5.0–5.1 | ✅ Fully Supported | Auto-detected |
 | 4.6.x | ✅ Fully Supported | Latest stable |
 | 4.5.x | ✅ Supported | Older stable |
 | 4.1-4.4 | ✅ Supported | Some features limited |
@@ -236,7 +237,8 @@ Total time to library: 20.5 minutes (26% faster)
 
 | Version | Status | Notes |
 |---------|--------|-------|
-| 5.x | ✅ Fully Supported | Latest |
+| 6.x | ✅ Fully Supported | Still uses `/api/v3` |
+| 5.x | ✅ Fully Supported | Stable |
 | 4.x | ✅ Fully Supported | Stable |
 | 3.x | ✅ Supported | Older but functional |
 | < 3.0 | ❌ Not Supported | Upgrade recommended |

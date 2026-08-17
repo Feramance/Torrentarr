@@ -1374,8 +1374,9 @@ public class ConfigurationLoader
             if (instanceTable.TryGetValue("ReSearch", out var reSearch))
                 instance.ReSearch = Convert.ToBoolean(reSearch);
 
-            if (instanceTable.TryGetValue("importMode", out var importMode))
-                instance.ImportMode = importMode?.ToString() ?? "Auto";
+            if (instanceTable.TryGetValue("importMode", out var importMode) ||
+                instanceTable.TryGetValue("ImportMode", out importMode))
+                instance.ImportMode = importMode?.ToString();
 
             if (instanceTable.TryGetValue("RssSyncTimer", out var rssSyncTimer))
                 instance.RssSyncTimer = DurationParser.ParseToMinutes(rssSyncTimer, 1);
@@ -1885,7 +1886,8 @@ public class ConfigurationLoader
             if (instance.MatchSubcategories.HasValue)
                 sb.AppendLine($"MatchSubcategories = {instance.MatchSubcategories.Value.ToString().ToLower()}");
             sb.AppendLine($"ReSearch = {instance.ReSearch.ToString().ToLower()}");
-            sb.AppendLine($"importMode = \"{instance.ImportMode}\"");
+            if (!string.IsNullOrWhiteSpace(instance.ImportMode))
+                sb.AppendLine($"importMode = \"{instance.ImportMode}\"");
             sb.AppendLine($"RssSyncTimer = {instance.RssSyncTimer}");
             sb.AppendLine($"RefreshDownloadsTimer = {instance.RefreshDownloadsTimer}");
             sb.AppendLine($"ArrErrorCodesToBlocklist = [{string.Join(", ", instance.ArrErrorCodesToBlocklist.Select(e => $"\"{EscapeTomlString(e)}\""))}]");
