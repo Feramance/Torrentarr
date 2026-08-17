@@ -763,8 +763,7 @@ OIDCEnabled = false
 Username = ""
 PasswordHash = ""
 LiveArr = true
-GroupSonarr = true
-GroupLidarr = true
+
 Theme = "Dark"
 ViewDensity = "Comfortable"
 
@@ -914,67 +913,9 @@ When `false`:
 
 ---
 
-### GroupSonarr
+### Catalog grouping
 
-```toml
-GroupSonarr = true
-```
-
-**Type:** Boolean
-**Default:** `true`
-
-Group Sonarr episodes by series in the WebUI.
-
-When `true`:
-
-```
-└─ Breaking Bad
-   ├─ S01E01
-   ├─ S01E02
-   └─ S01E03
-```
-
-When `false`:
-
-```
-├─ Breaking Bad S01E01
-├─ Breaking Bad S01E02
-└─ Breaking Bad S01E03
-```
-
-**Recommendation:** `true` for cleaner view.
-
----
-
-### GroupLidarr
-
-```toml
-GroupLidarr = true
-```
-
-**Type:** Boolean
-**Default:** `true`
-
-Group Lidarr albums by artist in the WebUI.
-
-When `true`:
-
-```
-└─ Pink Floyd
-   ├─ The Dark Side of the Moon
-   ├─ The Wall
-   └─ Wish You Were Here
-```
-
-When `false`:
-
-```
-├─ Pink Floyd - The Dark Side of the Moon
-├─ Pink Floyd - The Wall
-└─ Pink Floyd - Wish You Were Here
-```
-
-**Recommendation:** `true` for better organization.
+Sonarr and Lidarr catalogs always browse as series and artist rows (qBitrr 5.14). The obsolete `GroupSonarr` / `GroupLidarr` keys are stripped on load and are not written back.
 
 ---
 

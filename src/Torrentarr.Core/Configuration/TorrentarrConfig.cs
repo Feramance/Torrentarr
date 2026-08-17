@@ -170,8 +170,6 @@ public class WebUIConfig
     /// <summary>For Local auth: only ever store the hash (e.g. BCrypt or Argon2). Never plain password.</summary>
     public string PasswordHash { get; set; } = "";
     public bool LiveArr { get; set; } = true;
-    public bool GroupSonarr { get; set; } = true;
-    public bool GroupLidarr { get; set; } = true;
     public string Theme { get; set; } = "Dark";
     public string ViewDensity { get; set; } = "Comfortable";
     /// <summary>OIDC settings when OIDCEnabled is true. Optional.</summary>

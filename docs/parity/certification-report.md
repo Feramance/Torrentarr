@@ -47,4 +47,4 @@ Focused regression checks added/updated:
 
 ## Matrix Status
 
-Latest-main parity is **not yet fully closed**. `full-parity-matrix.md` keeps 5.12.5–5.12.9 multi-instance rows as `partial`. Do not claim 100% parity while those remain.
+Latest-main user-facing parity is closed against qBitrr **v5.14.3-1**. Remaining `intentional-divergence` rows in `full-parity-matrix.md` are architecture or packaging only (process isolation, WAL vs `db_lock`, fork session sharing, Pathos, placeholder defaultdicts, `setup.py` / CI autofix).

@@ -450,19 +450,7 @@ When enabled, bypasses database cache and fetches live data directly from Arr AP
 LiveArr = false  # Use database cache (recommended)
 ```
 
-### Group Sonarr by Series
-
-**Path**: `Settings.WebUI.GroupSonarr`
-**Type**: `bool`
-**Default**: `true`
-
-Controls default grouping mode for Sonarr view.
-
-**Example**:
-```toml
-[WebUI]
-GroupSonarr = true  # Group by series (default)
-```
+Sonarr and Lidarr catalogs always group by series and artist (the `GroupSonarr` / `GroupLidarr` config keys were removed in qBitrr 5.14).
 
 ---
 

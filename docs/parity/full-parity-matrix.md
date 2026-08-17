@@ -84,6 +84,7 @@ Status values:
 | `5.13` Lidarr LIVE / year-search isolation (#516, #528) | full | Candidate loop failures are isolated so one Arr type cannot kill the worker. |
 | `5.13.0` WebUI empty-state / collapsed qBit categories | full | Catalog/process/qBit views start in a loading state (no empty flash); qBit categories are grouped per instance and collapsed by default. |
 | `5.14.0` Readarr | full | Config, client, DB tables (manual migration on existing files), sync/import/search/profiles, catalog UI (authors + books, no tracks). |
+| `5.14.0` Remove `GroupSonarr` / `GroupLidarr` | full | Migration strips the keys; catalogs always browse as series/artist rows. **Evidence:** [`ConfigurationLoaderTests.Load_Migration_RemovesObsoleteGroupSonarrAndGroupLidarr`](https://github.com/Feramance/Torrentarr/blob/master/tests/Torrentarr.Core.Tests/Configuration/ConfigurationLoaderTests.cs). |
 | `5.14.0` Pathos dedicated-qBit-client gate | intentional-divergence | Python multiprocessing concern; Torrentarr workers already isolate qBit clients. |
 | `5.14.1`–`5.14.3` Readarr allowlist / audiobook save (#550) | full | Type-aware defaults; ebook-only default expansion; WebUI save keeps `.m4b`/`.flac`. |
 | `5.14.2` tracker `-1` merge with Arr/CategorySeeding | full | Unlimited only when no source sets a positive limit. **Evidence:** [`SeedingLimitMergeTests`](https://github.com/Feramance/Torrentarr/blob/master/tests/Torrentarr.Infrastructure.Tests/Services/SeedingLimitMergeTests.cs). |
@@ -100,4 +101,4 @@ Status values:
 - **Readarr authors + books (5.14.0):** `ArrCatalogEndpoints` + `ReadarrView` (no track table).
 - **OpenAPI drift guard:** `scripts/check-openapi-drift.sh` in CI vs qBitrr latest `master` (overrideable via `QBITRR_OPENAPI_REF`).
 - **Config schema:** Torrentarr `6.14.3` (+1 major vs qBitrr `5.14.3` line).
-- **Latest-main follow-up:** import-completion confirmation, multi-instance routing, SkipTLSVerify, Overseerr release-date gating, Docker channels, and 5.12.9 DB maintenance are implemented. Remaining `intentional-divergence` rows are architecture-only (fork sessions, pathos, Python `db_lock`, placeholder defaultdicts, `setup.py` / CI autofix).
+- **Latest-main follow-up:** import-completion confirmation, multi-instance routing, SkipTLSVerify, Overseerr release-date gating, Docker channels, 5.12.9 DB maintenance, and 5.14 catalog grouping (always series/artist rows) are implemented. Remaining `intentional-divergence` rows are architecture-only (fork sessions, pathos, Python `db_lock`, placeholder defaultdicts, `setup.py` / CI autofix).

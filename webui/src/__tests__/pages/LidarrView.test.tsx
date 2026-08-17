@@ -24,7 +24,7 @@ afterAll(() => server.close());
 
 const minimalConfig = {
   Settings: {},
-  WebUI: { LiveArr: false, GroupSonarr: false, GroupLidarr: false },
+    WebUI: { LiveArr: false },
 };
 
 const emptyArrList = { arr: [], ready: true };
@@ -78,8 +78,7 @@ describe("LidarrView – card header", () => {
 
 describe("LidarrView – empty state", () => {
   it("shows 'No tracks found.' when no instances are configured", async () => {
-    // With no instances the component falls into the aggregate view (groupLidarr=false)
-    // which displays "No tracks found." for an empty flat tracks table.
+    // With no instances the aggregate view shows "No tracks found."
     server.use(
       http.get("/web/config", () => HttpResponse.json(minimalConfig)),
       http.post("/web/config", () => HttpResponse.json({})),

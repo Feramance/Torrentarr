@@ -37,8 +37,7 @@ Token = ""
 
 # WebUI-specific display settings
 LiveArr = true        # Enable live Arr instance views
-GroupSonarr = true    # Group Sonarr series by show
-GroupLidarr = true    # Group Lidarr albums by artist
+
 Theme = "Dark"        # Dark | Light | Auto
 ```
 

@@ -342,6 +342,17 @@ public class ConfigurationLoader
             webui.Remove("SecureCookies");
             migrated = true;
         }
+
+        // qBitrr 5.14: browse is always series/artist rows; drop the obsolete toggles.
+        foreach (var obsoleteKey in new[] { "GroupSonarr", "GroupLidarr" })
+        {
+            if (webui.ContainsKey(obsoleteKey))
+            {
+                webui.Remove(obsoleteKey);
+                migrated = true;
+            }
+        }
+
         return migrated;
     }
 
@@ -789,8 +800,6 @@ public class ConfigurationLoader
                 ("Username", ""),
                 ("PasswordHash", ""),
                 ("LiveArr", true),
-                ("GroupSonarr", true),
-                ("GroupLidarr", true),
                 ("Theme", "Dark"),
                 ("ViewDensity", "Comfortable"),
             };
@@ -1298,12 +1307,6 @@ public class ConfigurationLoader
         if (table.TryGetValue("LiveArr", out var liveArr))
             webui.LiveArr = Convert.ToBoolean(liveArr);
 
-        if (table.TryGetValue("GroupSonarr", out var groupSonarr))
-            webui.GroupSonarr = Convert.ToBoolean(groupSonarr);
-
-        if (table.TryGetValue("GroupLidarr", out var groupLidarr))
-            webui.GroupLidarr = Convert.ToBoolean(groupLidarr);
-
         if (table.TryGetValue("Theme", out var theme))
             webui.Theme = theme?.ToString() ?? "Dark";
 
@@ -1726,8 +1729,6 @@ public class ConfigurationLoader
                 Username = "",
                 PasswordHash = "",
                 LiveArr = true,
-                GroupSonarr = true,
-                GroupLidarr = true,
                 Theme = "Dark",
                 ViewDensity = "Comfortable"
             },
@@ -1808,8 +1809,6 @@ public class ConfigurationLoader
         sb.AppendLine($"Username = \"{EscapeTomlString(config.WebUI.Username)}\"");
         sb.AppendLine($"PasswordHash = \"{EscapeTomlString(config.WebUI.PasswordHash)}\"");
         sb.AppendLine($"LiveArr = {config.WebUI.LiveArr.ToString().ToLower()}");
-        sb.AppendLine($"GroupSonarr = {config.WebUI.GroupSonarr.ToString().ToLower()}");
-        sb.AppendLine($"GroupLidarr = {config.WebUI.GroupLidarr.ToString().ToLower()}");
         sb.AppendLine($"Theme = \"{config.WebUI.Theme}\"");
         sb.AppendLine($"ViewDensity = \"{config.WebUI.ViewDensity}\"");
         if (config.WebUI.OIDC != null)

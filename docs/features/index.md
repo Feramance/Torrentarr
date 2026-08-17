@@ -412,11 +412,6 @@ Token = "your-secret-token"
 # Theme
 Theme = "Dark"  # Dark or Light
 
-# Group Sonarr episodes by series
-GroupSonarr = true
-
-# Group Lidarr albums by artist
-GroupLidarr = true
 ```
 
 **Security:**

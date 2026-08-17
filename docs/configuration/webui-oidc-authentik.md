@@ -74,8 +74,7 @@ AuthDisabled = false
 LocalAuthEnabled = false
 OIDCEnabled = true
 LiveArr = true
-GroupSonarr = true
-GroupLidarr = true
+
 Theme = "Dark"
 ViewDensity = "Comfortable"
 

@@ -513,8 +513,6 @@ public class ConfigurationLoaderTests : IDisposable
             Username = ""
             PasswordHash = ""
             LiveArr = true
-            GroupSonarr = true
-            GroupLidarr = true
             Theme = "Dark"
             ViewDensity = "Comfortable"
             """);
@@ -732,6 +730,26 @@ public class ConfigurationLoaderTests : IDisposable
     }
 
     [Fact]
+    public void SaveConfig_DoesNotWriteObsoleteGroupSonarrOrGroupLidarr()
+    {
+        WriteToml("""
+            [Settings]
+            LoopSleepTimer = 5
+
+            [WebUI]
+            LiveArr = true
+            """);
+
+        var loader = new ConfigurationLoader(_tempFilePath);
+        var config = loader.Load();
+        loader.SaveConfig(config);
+
+        var content = File.ReadAllText(_tempFilePath);
+        content.Should().NotContain("GroupSonarr");
+        content.Should().NotContain("GroupLidarr");
+    }
+
+    [Fact]
     public void Load_Migration1_RenamesSecureCookies_ToBehindHttpsProxy()
     {
         WriteToml($"""
@@ -745,6 +763,27 @@ public class ConfigurationLoaderTests : IDisposable
         var config = new ConfigurationLoader(_tempFilePath).Load();
 
         config.WebUI.BehindHttpsProxy.Should().BeTrue();
+    }
+
+    [Fact]
+    public void Load_Migration_RemovesObsoleteGroupSonarrAndGroupLidarr()
+    {
+        WriteToml($"""
+            [Settings]
+            ConfigVersion = "{ConfigurationLoader.ExpectedConfigVersion}"
+
+            [WebUI]
+            Host = "0.0.0.0"
+            GroupSonarr = true
+            GroupLidarr = false
+            """);
+
+        var config = new ConfigurationLoader(_tempFilePath).Load();
+
+        var onDisk = File.ReadAllText(_tempFilePath);
+        onDisk.Should().NotContain("GroupSonarr");
+        onDisk.Should().NotContain("GroupLidarr");
+        config.WebUI.LiveArr.Should().BeTrue();
     }
 
     [Fact]
@@ -764,8 +803,6 @@ public class ConfigurationLoaderTests : IDisposable
             Username = ""
             PasswordHash = ""
             LiveArr = true
-            GroupSonarr = true
-            GroupLidarr = true
             Theme = "Dark"
             ViewDensity = "Comfortable"
             """);

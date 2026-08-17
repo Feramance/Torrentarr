@@ -47,10 +47,6 @@ export const FIELD_TOOLTIPS: Record<string, string> = {
   "WebUI.Token":
     "Optional bearer token required by the WebUI/API. Leave empty to disable authentication.",
   "WebUI.LiveArr": "Enable live updates for Arr views.",
-  "WebUI.GroupSonarr":
-    "Group Sonarr views by series and seasons in collapsible sections.",
-  "WebUI.GroupLidarr":
-    "Group Lidarr views by artist and albums in collapsible sections.",
   "WebUI.Theme": "Choose the visual theme for the WebUI (light or dark).",
   "WebUI.ViewDensity":
     "View density for lists in the WebUI: Comfortable (more spacing) or Compact (more rows on screen).",

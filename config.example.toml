@@ -94,12 +94,6 @@ OIDCEnabled = false
 # Enable live updates for Arr views
 LiveArr = true
 
-# Group Sonarr episodes by series
-GroupSonarr = true
-
-# Group Lidarr albums by artist
-GroupLidarr = true
-
 # WebUI theme (Light or Dark)
 Theme = "Dark"
 

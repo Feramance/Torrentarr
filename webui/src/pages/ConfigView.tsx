@@ -1912,8 +1912,6 @@ export function ConfigView(props?: ConfigViewProps): JSX.Element {
     // Keys that are managed dynamically and should not trigger dirty state
     const liveKeys = new Set([
       "WebUI.LiveArr",
-      "WebUI.GroupSonarr",
-      "WebUI.GroupLidarr",
       "WebUI.Theme",
       "WebUI.ViewDensity",
     ]);
@@ -4371,32 +4369,6 @@ function SimpleConfigModal({
                   </label>
                   <p className="field-description">
                     Enable real-time updates for Arr views
-                  </p>
-                </div>
-                <div className="field">
-                  <label>
-                    <input
-                      type="checkbox"
-                      checked={webUI.groupSonarr}
-                      onChange={(e) => webUI.setGroupSonarr(e.target.checked)}
-                    />{" "}
-                    Group Sonarr by Series
-                  </label>
-                  <p className="field-description">
-                    Group Sonarr episodes by series in views
-                  </p>
-                </div>
-                <div className="field">
-                  <label>
-                    <input
-                      type="checkbox"
-                      checked={webUI.groupLidarr}
-                      onChange={(e) => webUI.setGroupLidarr(e.target.checked)}
-                    />{" "}
-                    Group Lidarr by Artist
-                  </label>
-                  <p className="field-description">
-                    Group Lidarr albums by artist in views
                   </p>
                 </div>
                 <div className="field">

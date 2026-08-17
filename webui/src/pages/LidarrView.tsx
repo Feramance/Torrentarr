@@ -1270,7 +1270,9 @@ export function LidarrView({ active }: { active: boolean }): JSX.Element {
     register,
     clearHandler,
   } = useSearch();
-  const { liveArr, groupLidarr } = useWebUI();
+  const { liveArr } = useWebUI();
+  // qBitrr 5.14: browse is always artist rows (GroupLidarr was removed).
+  const groupLidarr = true;
 
   const [instances, setInstances] = useState<ArrInfo[]>([]);
   const [selection, setSelection] = useState<string | "">("");

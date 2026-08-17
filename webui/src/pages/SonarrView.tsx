@@ -98,7 +98,9 @@ export function SonarrView({ active }: SonarrViewProps): JSX.Element {
     register,
     clearHandler,
   } = useSearch();
-  const { liveArr, groupSonarr } = useWebUI();
+  const { liveArr } = useWebUI();
+  // qBitrr 5.14: browse is always series rows (GroupSonarr was removed).
+  const groupSonarr = true;
 
   const [instances, setInstances] = useState<ArrInfo[]>([]);
   const [selection, setSelection] = useState<string | "">("");
@@ -157,7 +159,7 @@ export function SonarrView({ active }: SonarrViewProps): JSX.Element {
     total: number;
   }>({ available: 0, monitored: 0, missing: 0, total: 0 });
 
-  // LiveArr and GroupSonarr are now loaded via WebUIContext, no need to load config here
+  // LiveArr is loaded via WebUIContext; catalog grouping is always series rows.
 
   const loadInstances = useCallback(async () => {
     try {

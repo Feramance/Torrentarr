@@ -14,21 +14,15 @@ type Theme = "light" | "dark";
 
 interface WebUISettings {
   liveArr: boolean;
-  groupSonarr: boolean;
-  groupLidarr: boolean;
   viewDensity: ViewDensity;
   theme: Theme;
 }
 
 export interface WebUIContextValue {
   liveArr: boolean;
-  groupSonarr: boolean;
-  groupLidarr: boolean;
   viewDensity: ViewDensity;
   theme: Theme;
   setLiveArr: (value: boolean) => void;
-  setGroupSonarr: (value: boolean) => void;
-  setGroupLidarr: (value: boolean) => void;
   setViewDensity: (value: ViewDensity) => void;
   setTheme: (value: Theme) => void;
   loading: boolean;
@@ -44,8 +38,6 @@ export function WebUIProvider({
 }): JSX.Element {
   const [settings, setSettings] = useState<WebUISettings>({
     liveArr: true,
-    groupSonarr: true,
-    groupLidarr: true,
     viewDensity: "comfortable",
     theme: "dark",
   });
@@ -87,8 +79,6 @@ export function WebUIProvider({
 
         setSettings({
           liveArr: webui?.LiveArr === true,
-          groupSonarr: webui?.GroupSonarr === true,
-          groupLidarr: webui?.GroupLidarr === true,
           viewDensity,
           theme,
         });
@@ -121,22 +111,6 @@ export function WebUIProvider({
     (value: boolean) => {
       setSettings((prev) => ({ ...prev, liveArr: value }));
       void saveSettings("LiveArr", value);
-    },
-    [saveSettings],
-  );
-
-  const setGroupSonarr = useCallback(
-    (value: boolean) => {
-      setSettings((prev) => ({ ...prev, groupSonarr: value }));
-      void saveSettings("GroupSonarr", value);
-    },
-    [saveSettings],
-  );
-
-  const setGroupLidarr = useCallback(
-    (value: boolean) => {
-      setSettings((prev) => ({ ...prev, groupLidarr: value }));
-      void saveSettings("GroupLidarr", value);
     },
     [saveSettings],
   );
@@ -178,13 +152,9 @@ export function WebUIProvider({
 
   const value: WebUIContextValue = {
     liveArr: settings.liveArr,
-    groupSonarr: settings.groupSonarr,
-    groupLidarr: settings.groupLidarr,
     viewDensity: settings.viewDensity,
     theme: settings.theme,
     setLiveArr,
-    setGroupSonarr,
-    setGroupLidarr,
     setViewDensity,
     setTheme,
     loading,

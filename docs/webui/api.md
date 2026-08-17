@@ -216,8 +216,6 @@ Get qBittorrent and Arr instance statuses.
   ],
   "webui": {
     "LiveArr": true,
-    "GroupSonarr": true,
-    "GroupLidarr": true,
     "Theme": "Dark",
     "ViewDensity": "Comfortable"
   },
@@ -552,7 +550,6 @@ Get torrent distribution statistics across all categories.
 - Each inner object maps qBit instance names to torrent counts for that category
 
 ---
-
 
 ## Log Endpoints
 
@@ -998,7 +995,6 @@ Fetch current configuration from disk.
     "Port": 6969,
     "Token": "abc123...",
     "LiveArr": false,
-    "GroupSonarr": true,
     "Theme": "Dark"
   },
   "qBit": {
