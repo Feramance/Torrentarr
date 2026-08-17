@@ -7,6 +7,7 @@ using Xunit;
 
 namespace Torrentarr.Infrastructure.Tests.ApiClients;
 
+[Collection("ReadarrClientHttp")]
 public sealed class ReadarrClientTests : IDisposable
 {
     private readonly HttpListener _listener;
@@ -15,6 +16,9 @@ public sealed class ReadarrClientTests : IDisposable
     private readonly Task _loop;
     private string _lastPath = "";
     private string _lastBody = "";
+    private int _statusCode = 200;
+
+    private void SetStatusCode(int statusCode) => _statusCode = statusCode;
 
     public ReadarrClientTests()
     {
@@ -71,6 +75,23 @@ public sealed class ReadarrClientTests : IDisposable
         _lastBody.Should().Contain("10");
     }
 
+    [Fact]
+    public async Task GetSystemInfoAsync_ReturnsVersion()
+    {
+        var client = new ReadarrClient(_baseUrl.TrimEnd('/'), "test-key");
+        var info = await client.GetSystemInfoAsync();
+        info.Version.Should().Be("10.0.0.1");
+    }
+
+    [Fact]
+    public async Task GetSystemInfoAsync_ThrowsOnHttpError()
+    {
+        SetStatusCode(401);
+        var client = new ReadarrClient(_baseUrl.TrimEnd('/'), "bad-key");
+        var act = async () => await client.GetSystemInfoAsync();
+        await act.Should().ThrowAsync<ArrApiException>();
+    }
+
     private async Task ListenLoopAsync()
     {
         while (!_cts.IsCancellationRequested && _listener.IsListening)
@@ -90,7 +111,11 @@ public sealed class ReadarrClientTests : IDisposable
                 _lastBody = await reader.ReadToEndAsync();
 
             var json = "[]";
-            if (_lastPath.StartsWith("/api/v1/author", StringComparison.Ordinal))
+            if (_lastPath.StartsWith("/api/v1/system/status", StringComparison.Ordinal))
+                json = """{"version":"10.0.0.1"}""";
+            else if (_lastPath.StartsWith("/api/v1/qualityprofile", StringComparison.Ordinal))
+                json = """[{"id":1,"name":"Standard"}]""";
+            else if (_lastPath.StartsWith("/api/v1/author", StringComparison.Ordinal))
                 json = """[{"id":1,"authorName":"Ada","monitored":true}]""";
             else if (_lastPath.StartsWith("/api/v1/book", StringComparison.Ordinal))
                 json = """[{"id":10,"title":"Dune","authorId":1,"monitored":true}]""";
@@ -98,7 +123,8 @@ public sealed class ReadarrClientTests : IDisposable
                 json = """{"id":99}""";
 
             var bytes = Encoding.UTF8.GetBytes(json);
-            ctx.Response.StatusCode = 200;
+            ctx.Response.StatusCode = _statusCode;
+            _statusCode = 200;
             ctx.Response.ContentType = "application/json";
             ctx.Response.ContentLength64 = bytes.Length;
             await ctx.Response.OutputStream.WriteAsync(bytes);

@@ -971,9 +971,9 @@ public class ConfigurationLoaderTests : IDisposable
             APIKey = "readarr-key"
             Category = "readarr-books"
 
-            [Readarr-Books.Search]
+            [Readarr-Books.EntrySearch]
             SearchByYear = true
-            SearchMissing = true
+            SearchMissing = false
             """);
 
         var config = new ConfigurationLoader(_tempFilePath).Load();
@@ -982,6 +982,7 @@ public class ConfigurationLoaderTests : IDisposable
         var instance = config.ArrInstances["Readarr-Books"];
         instance.Type.Should().Be("readarr");
         instance.Search.SearchByYear.Should().BeTrue();
+        instance.Search.SearchMissing.Should().BeFalse();
         instance.Torrent.FileExtensionAllowlist.Should().Contain(".m4b");
         instance.Torrent.FileExtensionAllowlist.Should().Contain(".epub");
         instance.Search.Ombi.Should().BeNull();
@@ -1003,7 +1004,7 @@ public class ConfigurationLoaderTests : IDisposable
             [Readarr-Books.Torrent]
             FileExtensionAllowlist = ['.epub', '.m4b', '.flac', '.!qB', '.parts']
 
-            [Readarr-Books.Search]
+            [Readarr-Books.EntrySearch]
             SearchByYear = true
             """);
 

@@ -183,4 +183,33 @@ public class CatalogRollupServiceTests
         lidarrTracks.Available.Should().Be(1);
         readarrBooks.Available.Should().Be(1);
     }
+
+    [Fact]
+    public async Task GetAggregatedTypeCounts_ResolvesSectionKeyWhenCategoryDiffers()
+    {
+        await using var db = CreateDb();
+        db.Books.Add(new BookFilesModel
+        {
+            EntryId = 1,
+            ArrInstance = "Readarr-Books",
+            Monitored = true,
+            HasFile = true,
+            Title = "Dune"
+        });
+        await db.SaveChangesAsync();
+
+        var config = new TorrentarrConfig
+        {
+            ArrInstances = new Dictionary<string, ArrInstanceConfig>
+            {
+                ["Readarr-Books"] = new() { Category = "readarr-books", Type = "readarr" }
+            }
+        };
+
+        var svc = new CatalogRollupService(db);
+        var (_, _, _, readarrBooks) = await svc.GetAggregatedTypeCountsAsync(config);
+
+        readarrBooks.Available.Should().Be(1);
+        readarrBooks.Monitored.Should().Be(1);
+    }
 }

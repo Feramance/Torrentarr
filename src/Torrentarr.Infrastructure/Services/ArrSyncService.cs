@@ -193,6 +193,7 @@ public class ArrSyncService
                 existing.CustomFormatMet = customFormatMet;
                 existing.Reason = reason;
                 existing.Searched = searched;
+                existing.Upgrade = false;
                 _db.Movies.Update(existing);
                 updated++;
                 _logger.LogTrace("DB Update: Movie {Title} (TmdbId: {TmdbId}) updated in database (quality: {Quality}, file: {FileId})", movie.Title, movie.TmdbId, movie.QualityProfileId, movie.MovieFile?.Id ?? 0);
@@ -653,25 +654,35 @@ public class ArrSyncService
 
         var artistProfileById = artists.ToDictionary(a => a.Id, a => a.QualityProfileId);
 
-        // Upsert artists keyed by ArtistName
-        var dbArtists = await _db.Artists
+        var dbArtistsList = await _db.Artists
             .Where(a => a.ArrInstance == instanceName)
-            .ToDictionaryAsync(a => a.Title ?? "", ct);
+            .ToListAsync(ct);
+        var dbArtists = new Dictionary<int, ArtistFilesModel>();
+        foreach (var existing in dbArtistsList)
+        {
+            if (existing.ArrId != 0)
+                dbArtists.TryAdd(existing.ArrId, existing);
+        }
 
-        var apiArtistNames = new HashSet<string>();
+        var apiArtistIds = new HashSet<int>();
         var artistsAdded = 0;
         var artistsUpdated = 0;
 
         foreach (var artist in artists)
         {
             ct.ThrowIfCancellationRequested();
-            apiArtistNames.Add(artist.ArtistName);
-            if (dbArtists.TryGetValue(artist.ArtistName, out var existing))
+            apiArtistIds.Add(artist.Id);
+            if (dbArtists.TryGetValue(artist.Id, out var existing)
+                || (existing = dbArtistsList.FirstOrDefault(a =>
+                    a.ArrId == 0 && string.Equals(a.Title, artist.ArtistName, StringComparison.Ordinal))) != null)
             {
+                existing.Title = artist.ArtistName;
                 existing.Monitored = artist.Monitored;
                 existing.QualityProfileId = artist.QualityProfileId;
+                existing.ArrId = artist.Id;
                 _db.Artists.Update(existing);
                 artistsUpdated++;
+                dbArtists[artist.Id] = existing;
                 _logger.LogTrace("DB Update: Artist {Title} updated in database", artist.ArtistName);
             }
             else
@@ -681,20 +692,21 @@ public class ArrSyncService
                     ArrInstance = instanceName,
                     Title = artist.ArtistName,
                     Monitored = artist.Monitored,
-                    QualityProfileId = artist.QualityProfileId
+                    QualityProfileId = artist.QualityProfileId,
+                    ArrId = artist.Id
                 });
                 artistsAdded++;
                 _logger.LogTrace("DB Insert: Artist {Title} added to database (new)", artist.ArtistName);
             }
         }
-        var artistsToDelete = dbArtists.Values
-            .Where(a => !apiArtistNames.Contains(a.Title ?? ""))
+        var artistsToDelete = dbArtistsList
+            .Where(a => !apiArtistIds.Contains(a.ArrId))
             .ToList();
         foreach (var artist in artistsToDelete)
         {
             _logger.LogTrace("DB Delete: Artist {Title} removed from database", artist.Title);
         }
-        if (artistsToDelete.Count > 0 && !ShouldSkipDestructiveDelete(artists.Count, dbArtists.Count, instanceName, "artists"))
+            if (artistsToDelete.Count > 0 && !ShouldSkipDestructiveDelete(artists.Count, dbArtistsList.Count, instanceName, "artists"))
             _db.Artists.RemoveRange(artistsToDelete);
 
         await _db.SaveChangesWithRetryAsync(_logger, _restartCoordinator, cancellationToken: ct);
@@ -827,6 +839,8 @@ public class ArrSyncService
                 albumEntity.QualityMet = true;
                 albumEntity.CustomFormatMet = true;
             }
+
+            albumEntity.Upgrade = false;
 
             var isAvailable = CheckAlbumAvailability(albumEntity.ReleaseDate, albumEntity.Title ?? "Unknown", _logger);
             albumEntity.Reason = DetermineReasonWithAvailability(albumEntity.HasFile, albumEntity.QualityMet, albumEntity.CustomFormatMet, isAvailable, searchConfig);
@@ -964,26 +978,36 @@ public class ArrSyncService
 
         var authorProfileById = authors.ToDictionary(a => a.Id, a => a.QualityProfileId);
 
-        var dbAuthors = await _db.Authors
+        var dbAuthorsList = await _db.Authors
             .Where(a => a.ArrInstance == instanceName)
-            .ToDictionaryAsync(a => a.Title ?? "", ct);
+            .ToListAsync(ct);
+        var dbAuthors = new Dictionary<int, AuthorFilesModel>();
+        foreach (var existingAuthor in dbAuthorsList)
+        {
+            if (existingAuthor.ArrId != 0)
+                dbAuthors.TryAdd(existingAuthor.ArrId, existingAuthor);
+        }
 
-        var apiAuthorNames = new HashSet<string>();
+        var apiAuthorIds = new HashSet<int>();
         var authorsAdded = 0;
         var authorsUpdated = 0;
 
         foreach (var author in authors)
         {
             ct.ThrowIfCancellationRequested();
-            apiAuthorNames.Add(author.AuthorName);
-            if (dbAuthors.TryGetValue(author.AuthorName, out var existing))
+            apiAuthorIds.Add(author.Id);
+            if (dbAuthors.TryGetValue(author.Id, out var existing)
+                || (existing = dbAuthorsList.FirstOrDefault(a =>
+                    a.ArrId == 0 && string.Equals(a.Title, author.AuthorName, StringComparison.Ordinal))) != null)
             {
+                existing.Title = author.AuthorName;
                 existing.Monitored = author.Monitored;
                 existing.QualityProfileId = author.QualityProfileId;
                 existing.ArrId = author.Id;
                 existing.BookCount = author.Statistics?.BookCount ?? existing.BookCount;
                 _db.Authors.Update(existing);
                 authorsUpdated++;
+                dbAuthors[author.Id] = existing;
             }
             else
             {
@@ -1000,10 +1024,10 @@ public class ArrSyncService
             }
         }
 
-        var authorsToDelete = dbAuthors.Values
-            .Where(a => !apiAuthorNames.Contains(a.Title ?? ""))
+        var authorsToDelete = dbAuthorsList
+            .Where(a => !apiAuthorIds.Contains(a.ArrId))
             .ToList();
-        if (authorsToDelete.Count > 0 && !ShouldSkipDestructiveDelete(authors.Count, dbAuthors.Count, instanceName, "authors"))
+        if (authorsToDelete.Count > 0 && !ShouldSkipDestructiveDelete(authors.Count, dbAuthorsList.Count, instanceName, "authors"))
             _db.Authors.RemoveRange(authorsToDelete);
 
         await _db.SaveChangesWithRetryAsync(_logger, _restartCoordinator, cancellationToken: ct);
@@ -1080,17 +1104,61 @@ public class ArrSyncService
         await _db.SaveChangesWithRetryAsync(_logger, _restartCoordinator, cancellationToken: ct);
 
         var allBooks = await _db.Books.Where(b => b.ArrInstance == instanceName).ToListAsync(ct);
+
+        var filesByBookId = new Dictionary<int, List<ReadarrBookFile>>();
+        var authorIdsWithFiles = allBooks
+            .Where(b => b.HasFile && b.ArrAuthorId > 0)
+            .Select(b => b.ArrAuthorId)
+            .Distinct()
+            .ToList();
+        foreach (var authorId in authorIdsWithFiles)
+        {
+            try
+            {
+                var files = await client.GetBookFilesByAuthorAsync(authorId, ct);
+                foreach (var file in files)
+                {
+                    if (!filesByBookId.TryGetValue(file.BookId, out var list))
+                    {
+                        list = [];
+                        filesByBookId[file.BookId] = list;
+                    }
+                    list.Add(file);
+                }
+            }
+            catch (Exception ex)
+            {
+                _logger.LogDebug(ex, "ArrSyncService: failed to get book files for author {Id}", authorId);
+            }
+        }
+
         foreach (var bookEntity in allBooks)
         {
             authorProfileById.TryGetValue(bookEntity.ArrAuthorId, out var authorProfileId);
             profileDict.TryGetValue(authorProfileId, out var profile);
             var minCfScore = profile?.MinCustomFormatScore ?? 0;
             bookEntity.MinCustomFormatScore = minCfScore;
+            bookEntity.Upgrade = false;
 
             if (bookEntity.HasFile)
             {
-                bookEntity.QualityMet = true;
-                bookEntity.CustomFormatMet = (bookEntity.CustomFormatScore ?? 0) >= minCfScore;
+                if (filesByBookId.TryGetValue(bookEntity.ArrId, out var bookFiles) && bookFiles.Count > 0)
+                {
+                    // qBitrr uses the first book file's customFormatScore (not an average).
+                    bookEntity.CustomFormatScore = bookFiles[0].CustomFormatScore ?? 0;
+                    bookEntity.BookFileId = bookFiles[0].Id > 0 ? bookFiles[0].Id : Math.Max(bookEntity.BookFileId, 1);
+                    bookEntity.QualityMet = !bookFiles.Any(f => f.QualityCutoffNotMet);
+                    bookEntity.CustomFormatMet = (bookEntity.CustomFormatScore ?? 0) >= minCfScore;
+                }
+                else
+                {
+                    // Stats claimed files but none were returned — treat as missing (qBitrr parity).
+                    bookEntity.HasFile = false;
+                    bookEntity.BookFileId = 0;
+                    bookEntity.CustomFormatScore = 0;
+                    bookEntity.QualityMet = true;
+                    bookEntity.CustomFormatMet = true;
+                }
             }
             else
             {
@@ -1412,12 +1480,13 @@ public class ArrSyncService
 
     private static bool DetermineSearched(bool hasFile, bool qualityMet, bool customFormatMet, SearchConfig searchConfig)
     {
+        // qBitrr should_mark_searched: content present and no active quality/CF search applies.
         if (!hasFile)
             return false;
-
-        if (!qualityMet || !customFormatMet)
+        if (searchConfig.QualityUnmetSearch && !qualityMet)
             return false;
-
+        if (searchConfig.CustomFormatUnmetSearch && !customFormatMet)
+            return false;
         return true;
     }
 

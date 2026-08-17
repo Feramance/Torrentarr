@@ -462,9 +462,12 @@ public class ArrMediaService : IArrMediaService
         switch (arrConfig.Type.ToLowerInvariant())
         {
             case "radarr":
-                var movies = await _dbContext.Movies
-                    .Where(m => m.ArrInstance == instanceName && m.Monitored && m.HasFile && !m.Searched)
-                    .ToListAsync(cancellationToken);
+                var moviesQuery = _dbContext.Movies
+                    .Where(m => m.ArrInstance == instanceName && m.Monitored && m.HasFile);
+                moviesQuery = searchConfig.DoUpgradeSearch
+                    ? moviesQuery.Where(m => !m.Upgrade)
+                    : moviesQuery.Where(m => !m.Searched);
+                var movies = await moviesQuery.ToListAsync(cancellationToken);
 
                 foreach (var movie in movies)
                 {
@@ -486,9 +489,12 @@ public class ArrMediaService : IArrMediaService
                 break;
 
             case "sonarr":
-                var episodes = await _dbContext.Episodes
-                    .Where(e => e.ArrInstance == instanceName && e.Monitored == true && e.HasFile && !e.Searched)
-                    .ToListAsync(cancellationToken);
+                var episodesQuery = _dbContext.Episodes
+                    .Where(e => e.ArrInstance == instanceName && e.Monitored == true && e.HasFile);
+                episodesQuery = searchConfig.DoUpgradeSearch
+                    ? episodesQuery.Where(e => !e.Upgrade)
+                    : episodesQuery.Where(e => !e.Searched);
+                var episodes = await episodesQuery.ToListAsync(cancellationToken);
 
                 foreach (var ep in episodes)
                 {
@@ -512,9 +518,12 @@ public class ArrMediaService : IArrMediaService
                 break;
 
             case "lidarr":
-                var albums = await _dbContext.Albums
-                    .Where(a => a.ArrInstance == instanceName && a.Monitored && a.HasFile && !a.Searched)
-                    .ToListAsync(cancellationToken);
+                var albumsQuery = _dbContext.Albums
+                    .Where(a => a.ArrInstance == instanceName && a.Monitored && a.HasFile);
+                albumsQuery = searchConfig.DoUpgradeSearch
+                    ? albumsQuery.Where(a => !a.Upgrade)
+                    : albumsQuery.Where(a => !a.Searched);
+                var albums = await albumsQuery.ToListAsync(cancellationToken);
 
                 foreach (var album in albums)
                 {
@@ -537,9 +546,12 @@ public class ArrMediaService : IArrMediaService
                 break;
 
             case "readarr":
-                var books = await _dbContext.Books
-                    .Where(b => b.ArrInstance == instanceName && b.Monitored && b.HasFile && !b.Searched)
-                    .ToListAsync(cancellationToken);
+                var booksQuery = _dbContext.Books
+                    .Where(b => b.ArrInstance == instanceName && b.Monitored && b.HasFile);
+                booksQuery = searchConfig.DoUpgradeSearch
+                    ? booksQuery.Where(b => !b.Upgrade)
+                    : booksQuery.Where(b => !b.Searched);
+                var books = await booksQuery.ToListAsync(cancellationToken);
 
                 foreach (var book in books)
                 {

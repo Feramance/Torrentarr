@@ -27,7 +27,7 @@ ArrErrorCodesToBlocklist = [
 [Readarr-Books.Torrent]
 FileExtensionAllowlist = ['.epub', '.kepub', '.mobi', '.azw', '.azw3', '.pdf', '.cbz', '.cbr', '.flac', '.ape', '.wavpack', '.wav', '.alac', '.mp2', '.mp3', '.wma', '.m4a', '.m4p', '.m4b', '.aac', '.mp4a', '.ogg', '.oga', '.vorbis', '.!qB', '.parts']
 
-[Readarr-Books.Search]
+[Readarr-Books.EntrySearch]
 SearchMissing = true
 SearchByYear = true
 ```
@@ -68,7 +68,7 @@ WebUI save must keep audiobook extensions; do not replace a Readarr allowlist wi
 
 ## Search
 
-`SearchByYear` is enabled for Readarr (unlike Lidarr). Missing-book search, quality upgrades, and custom-format unmet search follow the same `[….Search]` keys as other Arr types.
+`SearchByYear` is enabled for Readarr (unlike Lidarr). Missing-book search, quality upgrades, and custom-format unmet search follow the same `[….EntrySearch]` keys as other Arr types.
 
 Ombi and Overseerr blocks are omitted for Readarr.
 

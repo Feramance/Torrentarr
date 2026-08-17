@@ -3,6 +3,7 @@ import {
   useCallback,
   useEffect,
   useMemo,
+  useRef,
   useState,
   type JSX,
 } from "react";
@@ -49,6 +50,8 @@ export function ReadarrView({ active }: ReadarrViewProps): JSX.Element {
   const [detail, setDetail] = useState<ReadarrAuthorDetailResponse | null>(
     null,
   );
+  const expandedIdRef = useRef(expandedId);
+  expandedIdRef.current = expandedId;
 
   const readarrInstances = useMemo(
     () => instances.filter((i) => i.type === "readarr"),
@@ -126,10 +129,13 @@ export function ReadarrView({ active }: ReadarrViewProps): JSX.Element {
       return;
     }
     setExpandedId(id);
+    setDetail(null);
     try {
       const res = await getReadarrAuthorDetail(selected, id);
+      if (expandedIdRef.current !== id) return;
       setDetail(res);
     } catch (err) {
+      if (expandedIdRef.current === id) setDetail(null);
       push(
         `Failed to load author: ${err instanceof Error ? err.message : String(err)}`,
         "error",

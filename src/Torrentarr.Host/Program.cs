@@ -926,13 +926,14 @@ try
     });
 
     // Web Radarr Movies
-    app.MapGet("/web/radarr/{category}/movies", async (string category, TorrentarrDbContext db, CatalogRollupService rollups, int? page, int? page_size, string? q, int? year_min, int? year_max, bool? monitored, bool? has_file, bool? quality_met, bool? is_request) =>
+    app.MapGet("/web/radarr/{category}/movies", async (string category, TorrentarrConfig cfg, TorrentarrDbContext db, CatalogRollupService rollups, int? page, int? page_size, string? q, int? year_min, int? year_max, bool? monitored, bool? has_file, bool? quality_met, bool? is_request) =>
     {
+        var keys = ArrCatalogIdentity.QueryKeys(cfg, category);
         var currentPage = page ?? 0;
         var currentPageSize = page_size ?? 50;
         var skip = currentPage * currentPageSize;
 
-        var baseQuery = db.Movies.Where(m => m.ArrInstance == category);
+        var baseQuery = db.Movies.Where(m => keys.Contains(m.ArrInstance));
         var query = baseQuery;
         if (!string.IsNullOrEmpty(q))
             query = query.Where(m => m.Title.Contains(q));
@@ -950,7 +951,7 @@ try
             query = query.Where(m => m.IsRequest == is_request.Value);
 
         var total = await baseQuery.CountAsync();
-        var (rollupCounts, _) = await rollups.GetRadarrRollupsAsync(category);
+        var (rollupCounts, _) = await rollups.GetRadarrRollupsAsync(keys);
 
         var movies = await query
             .OrderBy(m => m.Title)
@@ -994,20 +995,21 @@ try
     });
 
     // Web Sonarr Series — seasons populated from episodes table
-    app.MapGet("/web/sonarr/{category}/series", async (string category, TorrentarrDbContext db, CatalogRollupService rollups, int? page, int? page_size, string? q, int? missing) =>
+    app.MapGet("/web/sonarr/{category}/series", async (string category, TorrentarrConfig cfg, TorrentarrDbContext db, CatalogRollupService rollups, int? page, int? page_size, string? q, int? missing) =>
     {
+        var keys = ArrCatalogIdentity.QueryKeys(cfg, category);
         var currentPage = page ?? 0;
         var currentPageSize = page_size ?? 50;
         var skip = currentPage * currentPageSize;
 
-        var baseQuery = db.Series.Where(s => s.ArrInstance == category);
+        var baseQuery = db.Series.Where(s => keys.Contains(s.ArrInstance));
         var query = baseQuery;
 
         // Apply missing=1 filter: only series that have at least one episode without a file
         if (missing == 1)
         {
             var missingSeriesIds = await db.Episodes
-                .Where(e => e.ArrInstance == category && (e.EpisodeFileId == null || e.EpisodeFileId == 0))
+                .Where(e => keys.Contains(e.ArrInstance) && (e.EpisodeFileId == null || e.EpisodeFileId == 0))
                 .Select(e => e.SeriesId)
                 .Distinct()
                 .ToListAsync();
@@ -1019,7 +1021,7 @@ try
             query = query.Where(s => s.Title != null && s.Title.Contains(q));
 
         var total = await baseQuery.CountAsync();
-        var (episodeRollups, _) = await rollups.GetSonarrRollupsAsync(category);
+        var (episodeRollups, _) = await rollups.GetSonarrRollupsAsync(keys);
 
         var seriesPage = await query
             .OrderBy(s => s.Title)
@@ -1032,7 +1034,7 @@ try
 
         // Load per-season episode counts for this page of series
         var seasonGroups = await db.Episodes
-            .Where(e => e.ArrInstance == category && seriesIds.Contains(e.SeriesId))
+            .Where(e => keys.Contains(e.ArrInstance) && seriesIds.Contains(e.SeriesId))
             .GroupBy(e => new { e.SeriesId, e.SeasonNumber })
             .Select(g => new
             {
@@ -1095,13 +1097,14 @@ try
     });
 
     // Web Lidarr Albums — tracks populated from tracks table
-    app.MapGet("/web/lidarr/{category}/albums", async (string category, TorrentarrDbContext db, CatalogRollupService rollups, int? page, int? page_size, string? q, bool? monitored, bool? has_file, bool? quality_met, bool? is_request, bool? flat_mode) =>
+    app.MapGet("/web/lidarr/{category}/albums", async (string category, TorrentarrConfig cfg, TorrentarrDbContext db, CatalogRollupService rollups, int? page, int? page_size, string? q, bool? monitored, bool? has_file, bool? quality_met, bool? is_request, bool? flat_mode) =>
     {
+        var keys = ArrCatalogIdentity.QueryKeys(cfg, category);
         var currentPage = page ?? 0;
         var currentPageSize = page_size ?? 50;
         var skip = currentPage * currentPageSize;
 
-        var baseQuery = db.Albums.Where(a => a.ArrInstance == category);
+        var baseQuery = db.Albums.Where(a => keys.Contains(a.ArrInstance));
         var query = baseQuery;
         if (!string.IsNullOrEmpty(q))
             query = query.Where(a => a.Title.Contains(q));
@@ -1117,8 +1120,8 @@ try
         // flat_mode=true: return tracks instead of album-grouped response
         if (flat_mode == true)
         {
-            var (_, _, trackRollupsFlat) = await rollups.GetLidarrRollupsAsync(category);
-            var trackBaseQuery = db.Tracks.Where(t => t.ArrInstance == category);
+            var (_, _, trackRollupsFlat) = await rollups.GetLidarrRollupsAsync(keys);
+            var trackBaseQuery = db.Tracks.Where(t => keys.Contains(t.ArrInstance));
             var trackTotal = await trackBaseQuery.CountAsync();
             var trackAvailable = trackRollupsFlat.Available;
             var trackMonitored = trackRollupsFlat.Monitored;
@@ -1154,7 +1157,7 @@ try
         }
 
         var total = await baseQuery.CountAsync();
-        var (albumRollups, _, trackRollups) = await rollups.GetLidarrRollupsAsync(category);
+        var (albumRollups, _, trackRollups) = await rollups.GetLidarrRollupsAsync(keys);
 
         var albumPage = await query
             .OrderBy(a => a.Title)
@@ -1178,7 +1181,7 @@ try
         var albumIds = albumPage.Select(a => a.EntryId).ToList();
 
         var tracksForPage = await db.Tracks
-            .Where(t => t.ArrInstance == category && albumIds.Contains(t.AlbumId))
+            .Where(t => keys.Contains(t.ArrInstance) && albumIds.Contains(t.AlbumId))
             .OrderBy(t => t.TrackNumber)
             .Select(t => new
             {
@@ -1242,13 +1245,14 @@ try
     });
 
     // Web Lidarr Tracks — paginated flat track list for a Lidarr instance
-    app.MapGet("/web/lidarr/{category}/tracks", async (string category, TorrentarrDbContext db, int? page, int? page_size, string? q) =>
+    app.MapGet("/web/lidarr/{category}/tracks", async (string category, TorrentarrConfig cfg, TorrentarrDbContext db, int? page, int? page_size, string? q) =>
     {
+        var keys = ArrCatalogIdentity.QueryKeys(cfg, category);
         var currentPage = page ?? 0;
         var currentPageSize = page_size ?? 50;
         var skip = currentPage * currentPageSize;
 
-        var baseQuery = db.Tracks.Where(t => t.ArrInstance == category);
+        var baseQuery = db.Tracks.Where(t => keys.Contains(t.ArrInstance));
         var query = baseQuery;
         if (!string.IsNullOrEmpty(q))
             query = query.Where(t => t.Title != null && t.Title.Contains(q));
@@ -1832,13 +1836,14 @@ try
         return Results.Ok(new { success = instanceName != null, message = instanceName != null ? $"Restarted {instanceName}" : $"No worker found for category '{section}'" });
     });
 
-    app.MapGet("/api/radarr/{category}/movies", async (string category, TorrentarrDbContext db, CatalogRollupService rollups, int? page, int? page_size, string? q, int? year_min, int? year_max, bool? monitored, bool? has_file, bool? quality_met, bool? is_request) =>
+    app.MapGet("/api/radarr/{category}/movies", async (string category, TorrentarrConfig cfg, TorrentarrDbContext db, CatalogRollupService rollups, int? page, int? page_size, string? q, int? year_min, int? year_max, bool? monitored, bool? has_file, bool? quality_met, bool? is_request) =>
     {
+        var keys = ArrCatalogIdentity.QueryKeys(cfg, category);
         var currentPage = page ?? 0;
         var currentPageSize = page_size ?? 50;
         var skip = currentPage * currentPageSize;
 
-        var baseQuery = db.Movies.Where(m => m.ArrInstance == category);
+        var baseQuery = db.Movies.Where(m => keys.Contains(m.ArrInstance));
         var query = baseQuery;
         if (!string.IsNullOrEmpty(q))
             query = query.Where(m => m.Title.Contains(q));
@@ -1856,7 +1861,7 @@ try
             query = query.Where(m => m.IsRequest == is_request.Value);
 
         var total = await baseQuery.CountAsync();
-        var (rollupCounts, _) = await rollups.GetRadarrRollupsAsync(category);
+        var (rollupCounts, _) = await rollups.GetRadarrRollupsAsync(keys);
 
         var movies = await query
             .OrderBy(m => m.Title)
@@ -1899,19 +1904,20 @@ try
         });
     });
 
-    app.MapGet("/api/sonarr/{category}/series", async (string category, TorrentarrDbContext db, CatalogRollupService rollups, int? page, int? page_size, string? q, int? missing) =>
+    app.MapGet("/api/sonarr/{category}/series", async (string category, TorrentarrConfig cfg, TorrentarrDbContext db, CatalogRollupService rollups, int? page, int? page_size, string? q, int? missing) =>
     {
+        var keys = ArrCatalogIdentity.QueryKeys(cfg, category);
         var currentPage = page ?? 0;
         var currentPageSize = page_size ?? 50;
         var skip = currentPage * currentPageSize;
 
-        var baseQuery = db.Series.Where(s => s.ArrInstance == category);
+        var baseQuery = db.Series.Where(s => keys.Contains(s.ArrInstance));
         var query = baseQuery;
 
         if (missing == 1)
         {
             var missingSeriesIds = await db.Episodes
-                .Where(e => e.ArrInstance == category && (e.EpisodeFileId == null || e.EpisodeFileId == 0))
+                .Where(e => keys.Contains(e.ArrInstance) && (e.EpisodeFileId == null || e.EpisodeFileId == 0))
                 .Select(e => e.SeriesId)
                 .Distinct()
                 .ToListAsync();
@@ -1923,7 +1929,7 @@ try
             query = query.Where(s => s.Title != null && s.Title.Contains(q));
 
         var total = await baseQuery.CountAsync();
-        var (episodeRollupsApi, _) = await rollups.GetSonarrRollupsAsync(category);
+        var (episodeRollupsApi, _) = await rollups.GetSonarrRollupsAsync(keys);
 
         var seriesPage = await query
             .OrderBy(s => s.Title)
@@ -1935,7 +1941,7 @@ try
         var seriesIds = seriesPage.Select(s => s.EntryId).ToList();
 
         var seasonGroups = await db.Episodes
-            .Where(e => e.ArrInstance == category && seriesIds.Contains(e.SeriesId))
+            .Where(e => keys.Contains(e.ArrInstance) && seriesIds.Contains(e.SeriesId))
             .GroupBy(e => new { e.SeriesId, e.SeasonNumber })
             .Select(g => new
             {
@@ -1996,13 +2002,14 @@ try
         });
     });
 
-    app.MapGet("/api/lidarr/{category}/albums", async (string category, TorrentarrDbContext db, CatalogRollupService rollups, int? page, int? page_size, string? q, bool? monitored, bool? has_file, bool? quality_met, bool? is_request, bool? flat_mode) =>
+    app.MapGet("/api/lidarr/{category}/albums", async (string category, TorrentarrConfig cfg, TorrentarrDbContext db, CatalogRollupService rollups, int? page, int? page_size, string? q, bool? monitored, bool? has_file, bool? quality_met, bool? is_request, bool? flat_mode) =>
     {
+        var keys = ArrCatalogIdentity.QueryKeys(cfg, category);
         var currentPage = page ?? 0;
         var currentPageSize = page_size ?? 50;
         var skip = currentPage * currentPageSize;
 
-        var baseQuery = db.Albums.Where(a => a.ArrInstance == category);
+        var baseQuery = db.Albums.Where(a => keys.Contains(a.ArrInstance));
         var query = baseQuery;
         if (!string.IsNullOrEmpty(q))
             query = query.Where(a => a.Title.Contains(q));
@@ -2018,8 +2025,8 @@ try
         // flat_mode=true: return tracks instead of album-grouped response
         if (flat_mode == true)
         {
-            var (_, _, trackRollupsApiFlat) = await rollups.GetLidarrRollupsAsync(category);
-            var trackBaseQuery = db.Tracks.Where(t => t.ArrInstance == category);
+            var (_, _, trackRollupsApiFlat) = await rollups.GetLidarrRollupsAsync(keys);
+            var trackBaseQuery = db.Tracks.Where(t => keys.Contains(t.ArrInstance));
             var trackTotal = await trackBaseQuery.CountAsync();
             var trackAvailable = trackRollupsApiFlat.Available;
             var trackMonitored = trackRollupsApiFlat.Monitored;
@@ -2055,7 +2062,7 @@ try
         }
 
         var total = await baseQuery.CountAsync();
-        var (albumRollupsApi, _, trackRollupsApi) = await rollups.GetLidarrRollupsAsync(category);
+        var (albumRollupsApi, _, trackRollupsApi) = await rollups.GetLidarrRollupsAsync(keys);
 
         var albumPage = await query
             .OrderBy(a => a.Title)
@@ -2079,7 +2086,7 @@ try
         var albumIds = albumPage.Select(a => a.EntryId).ToList();
 
         var tracksForPage = await db.Tracks
-            .Where(t => t.ArrInstance == category && albumIds.Contains(t.AlbumId))
+            .Where(t => keys.Contains(t.ArrInstance) && albumIds.Contains(t.AlbumId))
             .OrderBy(t => t.TrackNumber)
             .Select(t => new
             {
@@ -2142,13 +2149,14 @@ try
         });
     });
 
-    app.MapGet("/api/lidarr/{category}/tracks", async (string category, TorrentarrDbContext db, int? page, int? page_size, string? q) =>
+    app.MapGet("/api/lidarr/{category}/tracks", async (string category, TorrentarrConfig cfg, TorrentarrDbContext db, int? page, int? page_size, string? q) =>
     {
+        var keys = ArrCatalogIdentity.QueryKeys(cfg, category);
         var currentPage = page ?? 0;
         var currentPageSize = page_size ?? 50;
         var skip = currentPage * currentPageSize;
 
-        var baseQuery = db.Tracks.Where(t => t.ArrInstance == category);
+        var baseQuery = db.Tracks.Where(t => keys.Contains(t.ArrInstance));
         var query = baseQuery;
         if (!string.IsNullOrEmpty(q))
             query = query.Where(t => t.Title != null && t.Title.Contains(q));

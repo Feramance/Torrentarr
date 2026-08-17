@@ -207,7 +207,7 @@ ProcessingOnly = false
 [Readarr-Books.Torrent]
 FileExtensionAllowlist = ['.epub', '.kepub', '.mobi', '.azw', '.azw3', '.pdf', '.cbz', '.cbr', '.flac', '.ape', '.wavpack', '.wav', '.alac', '.mp2', '.mp3', '.wma', '.m4a', '.m4p', '.m4b', '.aac', '.mp4a', '.ogg', '.oga', '.vorbis', '.!qB', '.parts']
 
-[Readarr-Books.Search]
+[Readarr-Books.EntrySearch]
 SearchByYear = true
 
 # You can have multiple instances of the same type:

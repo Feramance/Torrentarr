@@ -246,4 +246,44 @@ public class QualityProfileSwitcherServiceTests
 
         await act.Should().NotThrowAsync();
     }
+
+    [Fact]
+    public async Task ForceReset_FailedRestore_KeepsOriginalProfileId()
+    {
+        var options = new DbContextOptionsBuilder<TorrentarrDbContext>()
+            .UseInMemoryDatabase(Guid.NewGuid().ToString())
+            .Options;
+        await using var db = new TorrentarrDbContext(options);
+        db.Authors.Add(new Torrentarr.Infrastructure.Database.Models.AuthorFilesModel
+        {
+            EntryId = 1,
+            ArrInstance = "Readarr-Books",
+            Title = "Ada",
+            ArrId = 42,
+            OriginalProfileId = 7,
+            CurrentProfileId = 99,
+            LastProfileSwitchTime = DateTime.UtcNow.AddHours(-1)
+        });
+        await db.SaveChangesAsync();
+
+        var svc = new QualityProfileSwitcherService(
+            NullLogger<QualityProfileSwitcherService>.Instance, db, new DatabaseRestartCoordinator());
+        var cfg = new ArrInstanceConfig
+        {
+            Type = "readarr",
+            URI = "http://127.0.0.1:1",
+            APIKey = "nope",
+            Search = new SearchConfig
+            {
+                ForceResetTempProfiles = true,
+                ProfileSwitchRetryAttempts = 1
+            }
+        };
+
+        await svc.ForceResetAllTempProfilesAsync("Readarr-Books", cfg);
+
+        var author = await db.Authors.SingleAsync();
+        author.OriginalProfileId.Should().Be(7);
+        author.CurrentProfileId.Should().Be(99);
+    }
 }

@@ -1,6 +1,7 @@
 import React from "react";
 import { describe, it, expect, beforeAll, afterAll, afterEach } from "vitest";
 import { render, screen } from "@testing-library/react";
+import userEvent from "@testing-library/user-event";
 import { http, HttpResponse } from "msw";
 import { setupServer } from "msw/node";
 import type { ReactNode } from "react";
@@ -150,5 +151,77 @@ describe("ReadarrView – instance sidebar", () => {
       screen.getByRole("button", { name: /open in readarr/i }),
     ).toBeInTheDocument();
     expect(screen.queryByText(/tracks/i)).not.toBeInTheDocument();
+  });
+
+  it("ignores stale author-detail responses", async () => {
+    const user = userEvent.setup();
+    let resolveFirst: ((value: unknown) => void) | undefined;
+    const firstGate = new Promise((resolve) => {
+      resolveFirst = resolve;
+    });
+
+    server.use(
+      http.get("/web/config", () => HttpResponse.json(minimalConfig)),
+      http.post("/web/config", () => HttpResponse.json({})),
+      http.get("/web/arr", () => HttpResponse.json(readarrArrList)),
+      http.get("/web/readarr/readarr-books/authors", () =>
+        HttpResponse.json({
+          category: "readarr-books",
+          authors: [
+            {
+              author: {
+                id: 1,
+                name: "Frank Herbert",
+                monitored: true,
+                bookCount: 1,
+                booksAvailable: 1,
+                booksMonitored: 1,
+              },
+            },
+            {
+              author: {
+                id: 2,
+                name: "Ursula K. Le Guin",
+                monitored: true,
+                bookCount: 1,
+                booksAvailable: 1,
+                booksMonitored: 1,
+              },
+            },
+          ],
+          total: 2,
+          page: 0,
+          page_size: 50,
+          counts: { available: 2, monitored: 2, missing: 0 },
+        }),
+      ),
+      http.get("/web/readarr/readarr-books/author/:id", async ({ params }) => {
+        const id = String(params.id);
+        if (id === "1") {
+          await firstGate;
+          return HttpResponse.json({
+            category: "readarr-books",
+            author: { id: 1, name: "Frank Herbert" },
+            books: [{ book: { id: 10, title: "Dune", hasFile: true } }],
+          });
+        }
+        return HttpResponse.json({
+          category: "readarr-books",
+          author: { id: 2, name: "Ursula K. Le Guin" },
+          books: [{ book: { id: 20, title: "A Wizard of Earthsea", hasFile: true } }],
+        });
+      }),
+    );
+
+    renderView();
+    expect(await screen.findByText("Frank Herbert")).toBeInTheDocument();
+
+    await user.click(screen.getByRole("button", { name: "Frank Herbert" }));
+    await user.click(screen.getByRole("button", { name: "Ursula K. Le Guin" }));
+
+    expect(await screen.findByText("A Wizard of Earthsea")).toBeInTheDocument();
+    resolveFirst?.(undefined);
+    await new Promise((r) => setTimeout(r, 50));
+    expect(screen.queryByText("Dune")).not.toBeInTheDocument();
   });
 });

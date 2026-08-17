@@ -1060,13 +1060,14 @@ app.MapGet("/web/logs/{name}/download", (string name, HttpResponse response) =>
 });
 
 // Radarr movies for specific category
-app.MapGet("/web/radarr/{category}/movies", async (string category, TorrentarrDbContext db, int? page, int? pageSize, string? q) =>
+app.MapGet("/web/radarr/{category}/movies", async (string category, TorrentarrConfig cfg, TorrentarrDbContext db, int? page, int? pageSize, string? q) =>
 {
+    var keys = ArrCatalogIdentity.QueryKeys(cfg, category);
     var currentPage = page ?? 1;
     var currentPageSize = pageSize ?? 50;
     var skip = (currentPage - 1) * currentPageSize;
 
-    var allMovies = db.Movies.Where(m => m.ArrInstance == category);
+    var allMovies = db.Movies.Where(m => keys.Contains(m.ArrInstance));
     // §6.3: text search filter
     if (!string.IsNullOrWhiteSpace(q))
         allMovies = allMovies.Where(m => m.Title != null && m.Title.Contains(q));
@@ -1117,13 +1118,14 @@ app.MapGet("/web/radarr/{category}/movies", async (string category, TorrentarrDb
 });
 
 // Sonarr series for specific category
-app.MapGet("/web/sonarr/{category}/series", async (string category, TorrentarrDbContext db, int? page, int? pageSize, string? q, string? missing) =>
+app.MapGet("/web/sonarr/{category}/series", async (string category, TorrentarrConfig cfg, TorrentarrDbContext db, int? page, int? pageSize, string? q, string? missing) =>
 {
+    var keys = ArrCatalogIdentity.QueryKeys(cfg, category);
     var currentPage = page ?? 1;
     var currentPageSize = pageSize ?? 50;
     var skip = (currentPage - 1) * currentPageSize;
 
-    var allSeries = db.Series.Where(s => s.ArrInstance == category);
+    var allSeries = db.Series.Where(s => keys.Contains(s.ArrInstance));
     // §6.3: text search filter
     if (!string.IsNullOrWhiteSpace(q))
         allSeries = allSeries.Where(s => s.Title != null && s.Title.Contains(q));
@@ -1172,13 +1174,14 @@ app.MapGet("/web/sonarr/{category}/series", async (string category, TorrentarrDb
 });
 
 // Lidarr albums for specific category
-app.MapGet("/web/lidarr/{category}/albums", async (string category, TorrentarrDbContext db, int? page, int? pageSize, string? q) =>
+app.MapGet("/web/lidarr/{category}/albums", async (string category, TorrentarrConfig cfg, TorrentarrDbContext db, int? page, int? pageSize, string? q) =>
 {
+    var keys = ArrCatalogIdentity.QueryKeys(cfg, category);
     var currentPage = page ?? 1;
     var currentPageSize = pageSize ?? 50;
     var skip = (currentPage - 1) * currentPageSize;
 
-    var allAlbums = db.Albums.Where(a => a.ArrInstance == category);
+    var allAlbums = db.Albums.Where(a => keys.Contains(a.ArrInstance));
     // §6.3: text search filter (matches artist or album title)
     if (!string.IsNullOrWhiteSpace(q))
         allAlbums = allAlbums.Where(a =>

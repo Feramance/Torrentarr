@@ -231,6 +231,67 @@ public class SearchExecutorTests
         result.SearchedIds.Should().ContainInOrder(1, 2);
         service.TriggeredCandidates.Select(c => c.Type).Should().OnlyContain(t => t == "Book");
     }
+
+    [Fact]
+    public async Task MarkAsSearched_ScopesToArrInstance()
+    {
+        var options = new DbContextOptionsBuilder<TorrentarrDbContext>()
+            .UseInMemoryDatabase(Guid.NewGuid().ToString())
+            .Options;
+        await using var db = new TorrentarrDbContext(options);
+        db.Books.AddRange(
+            new BookFilesModel
+            {
+                EntryId = 1,
+                ArrInstance = "Readarr-Books",
+                Title = "Target",
+                ArrId = 10,
+                Searched = false,
+                Upgrade = false
+            },
+            new BookFilesModel
+            {
+                EntryId = 2,
+                ArrInstance = "Readarr-Comics",
+                Title = "Other instance",
+                ArrId = 10,
+                Searched = false,
+                Upgrade = false
+            });
+        await db.SaveChangesAsync();
+
+        var config = new TorrentarrConfig();
+        config.Settings.SearchLoopDelay = 0;
+        config.ArrInstances["Readarr-Books"] = new ArrInstanceConfig
+        {
+            URI = "http://localhost:8787",
+            APIKey = "test-key",
+            Category = "readarr-books",
+            Type = "readarr",
+            Search = new SearchConfig { SearchLimit = 5 }
+        };
+
+        var service = new TriggerOnlySearchExecutor(
+            NullLogger<SearchExecutor>.Instance,
+            config,
+            db,
+            new QualityProfileSwitcherService(
+                NullLogger<QualityProfileSwitcherService>.Instance,
+                db,
+                new DatabaseRestartCoordinator()),
+            new DatabaseRestartCoordinator());
+
+        await service.ExecuteSearchesAsync("Readarr-Books",
+        [
+            new SearchCandidate { ArrId = 10, Title = "Target", Type = "Book" }
+        ]);
+
+        var books = await db.Books.OrderBy(b => b.EntryId).ToListAsync();
+        books[0].Searched.Should().BeTrue();
+        books[0].Upgrade.Should().BeTrue();
+        books[1].Searched.Should().BeFalse();
+        books[1].Upgrade.Should().BeFalse();
+    }
 }
 
 internal sealed class TestSearchExecutor : SearchExecutor
@@ -263,10 +324,35 @@ internal sealed class TestSearchExecutor : SearchExecutor
     }
 
     protected override Task MarkAsSearchedAsync(
+        string instanceName,
         ArrInstanceConfig arrConfig,
         SearchCandidate candidate,
         CancellationToken cancellationToken)
         => Task.CompletedTask;
+}
+
+internal sealed class TriggerOnlySearchExecutor : SearchExecutor
+{
+    public TriggerOnlySearchExecutor(
+        ILogger<SearchExecutor> logger,
+        TorrentarrConfig config,
+        TorrentarrDbContext db,
+        QualityProfileSwitcherService profileSwitcher,
+        DatabaseRestartCoordinator restartCoordinator)
+        : base(logger, config, db, profileSwitcher, restartCoordinator)
+    {
+    }
+
+    public override Task<int> GetActiveCommandCountAsync(string instanceName, CancellationToken cancellationToken = default)
+        => Task.FromResult(0);
+
+    protected override Task<bool> TriggerSearchForCandidateAsync(
+        string instanceName,
+        ArrInstanceConfig arrConfig,
+        SearchCandidate candidate,
+        bool useSeriesSearch,
+        CancellationToken cancellationToken)
+        => Task.FromResult(true);
 }
 
 public class SearchCandidateTests
