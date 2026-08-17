@@ -1,3 +1,4 @@
+using System.Net;
 using System.Net.Sockets;
 using Torrentarr.Core.Configuration;
 using Torrentarr.Core.Services;
@@ -152,15 +153,29 @@ public class ConnectivityService : IConnectivityService
                 return await HttpProbeAsync(absolute, cancellationToken);
             }
 
-            if (await HttpProbeAsync(new Uri($"https://{host}"), cancellationToken))
-                return true;
-
-            if (await HttpProbeAsync(new Uri($"http://{host}"), cancellationToken))
-                return true;
-
             var hostname = host;
-            if (Uri.TryCreate($"http://{host}", UriKind.Absolute, out var parsed))
-                hostname = parsed.Host;
+            if (IPAddress.TryParse(host, out var ipAddress))
+            {
+                hostname = ipAddress.ToString();
+                var authority = ipAddress.AddressFamily == AddressFamily.InterNetworkV6
+                    ? $"[{hostname}]"
+                    : hostname;
+
+                if (await HttpProbeAsync(new Uri($"https://{authority}"), cancellationToken))
+                    return true;
+                if (await HttpProbeAsync(new Uri($"http://{authority}"), cancellationToken))
+                    return true;
+            }
+            else
+            {
+                if (await HttpProbeAsync(new Uri($"https://{host}"), cancellationToken))
+                    return true;
+                if (await HttpProbeAsync(new Uri($"http://{host}"), cancellationToken))
+                    return true;
+
+                if (Uri.TryCreate($"http://{host}", UriKind.Absolute, out var parsed))
+                    hostname = parsed.Host;
+            }
 
             return await TcpProbeAsync(hostname, 443, cancellationToken)
                 || await TcpProbeAsync(hostname, 80, cancellationToken);
