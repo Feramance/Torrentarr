@@ -1,0 +1,78 @@
+# Bridges GitHub "issue opened" to the Torrentarr Issue Viability Cursor Automation.
+# Cursor has no issue-opened trigger; this workflow adds the cursor-viability label
+# (Issue label changed) and optionally POSTs the automation webhook.
+
+name: Issue viability
+
+on:
+  issues:
+    types:
+    - opened
+
+permissions:
+  issues: write
+
+concurrency:
+  group: issue-viability-${{ github.event.issue.number }}
+  cancel-in-progress: false
+
+jobs:
+  label-and-notify:
+    if: github.event.issue.pull_request == null
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        shell: bash
+    steps:
+    - name: Add cursor-viability label
+      env:
+        GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        ISSUE_NUMBER: ${{ github.event.issue.number }}
+        REPO: ${{ github.repository }}
+      run: |
+        set -euo pipefail
+        if gh issue view "$ISSUE_NUMBER" --repo "$REPO" --json labels --jq '.labels[].name' | grep -Fxq 'cursor-viability'; then
+          echo "Issue already has cursor-viability; skipping label."
+        else
+          gh label create cursor-viability \
+            --repo "$REPO" \
+            --description "Signals the Cursor Issue Viability automation" \
+            --color 1D76DB \
+            --force
+          gh issue edit "$ISSUE_NUMBER" --repo "$REPO" --add-label cursor-viability
+          echo "Added cursor-viability to #$ISSUE_NUMBER."
+        fi
+
+    - name: Notify Cursor automation webhook
+      env:
+        WEBHOOK_URL: ${{ secrets.CURSOR_AUTOMATION_WEBHOOK_URL }}
+        WEBHOOK_KEY: ${{ secrets.CURSOR_AUTOMATION_WEBHOOK_KEY }}
+        ISSUE_NUMBER: ${{ github.event.issue.number }}
+        ISSUE_TITLE: ${{ github.event.issue.title }}
+        ISSUE_BODY: ${{ github.event.issue.body }}
+        ISSUE_URL: ${{ github.event.issue.html_url }}
+        ISSUE_LABELS: ${{ join(github.event.issue.labels.*.name, ',') }}
+      run: |
+        set -euo pipefail
+        if [[ -z "${WEBHOOK_URL}" || -z "${WEBHOOK_KEY}" ]]; then
+          echo "Webhook secrets not set; label bridge only."
+          exit 0
+        fi
+        AUTH="${WEBHOOK_KEY}"
+        if [[ "${AUTH}" != Bearer[[:space:]]* ]]; then
+          AUTH="Bearer ${AUTH}"
+        fi
+        payload="$(jq -n \
+          --arg event "issue_opened" \
+          --arg number "$ISSUE_NUMBER" \
+          --arg title "$ISSUE_TITLE" \
+          --arg body "$ISSUE_BODY" \
+          --arg html_url "$ISSUE_URL" \
+          --arg labels "$ISSUE_LABELS" \
+          '{event:$event,number:$number,title:$title,body:$body,html_url:$html_url,labels:($labels|split(",")|map(select(length>0)))}')"
+        curl --fail --silent --show-error --request POST \
+          --url "$WEBHOOK_URL" \
+          --header "Authorization: ${AUTH}" \
+          --header "Content-Type: application/json" \
+          --data "$payload"
+        echo "Posted issue #$ISSUE_NUMBER to Cursor automation webhook."
