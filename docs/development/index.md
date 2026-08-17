@@ -509,16 +509,17 @@ We follow the [Contributor Covenant Code of Conduct](https://www.contributor-cov
 
 Torrentarr follows [Semantic Versioning](https://semver.org/):
 
-- **MAJOR** - Breaking changes (e.g., 5.0.0 → 6.0.0)
-- **MINOR** - New features, backwards compatible (e.g., 5.1.0 → 5.2.0)
-- **PATCH** - Bug fixes (e.g., 5.1.1 → 5.1.2)
+- **MAJOR** - Breaking changes (e.g., 5.0.0-1 → 6.0.0-1); Torrentarr stays +1 vs qBitrr
+- **MINOR** - New features, backwards compatible (e.g., 6.14.0-1 → 6.15.0-1)
+- **PATCH** - Bug fixes (e.g., 6.14.1-1 → 6.14.2-1)
+- **BUILD** - Weekly dependency / automation releases (e.g., 6.14.3-1 → 6.14.3-2); Docker `:stable` does not move
 
 ### Release Workflow
 
 1. **Prepare release:**
    ```bash
    # Update version
-   bump2version minor  # or major/patch
+   bump2version minor  # or major/patch/build
 
    # Generate changelog
    make changelog

@@ -54,6 +54,18 @@ Then run:
 docker-compose up -d
 ```
 
+## Image tags
+
+| Tag | Use when |
+|-----|----------|
+| `feramance/torrentarr:stable` | Prefer the latest feature/fix release (patch/minor/major only; excludes weekly dependency builds) |
+| `feramance/torrentarr:latest` | Prefer the newest published release, including weekly dependency builds |
+| `feramance/torrentarr:nightly` | Bleeding-edge per-commit builds from `master` |
+| `feramance/torrentarr:vX.Y.Z-N` | Pin an exact version (e.g. `v6.14.3-1`) |
+| `feramance/torrentarr:X.Y.Z-N` | Same pin without `v` (e.g. `6.14.3-1`, Unraid-friendly) |
+
+Most production installs should use `:stable` or a pinned `v…` tag. Use `:latest` if you want weekly dependency builds automatically.
+
 ## Configuration
 
 ### Environment Variables
@@ -156,11 +168,11 @@ services:
 
 | Tag | Description |
 |-----|-------------|
-| `stable` | Latest feature/fix release (recommended for production) |
-| `latest` | Same as `stable` for Torrentarr (no weekly dependency-only builds) |
+| `stable` | Latest feature/fix release (patch/minor/major; recommended for production) |
+| `latest` | Newest published release, including weekly dependency builds |
 | `nightly` | Per-commit development build from `master` |
-| `vX.Y.Z` | Pinned version (e.g. `v6.14.3`) |
-| `6.x.x` | Exact version without `v` (e.g. `6.14.3`, Unraid-friendly) |
+| `vX.Y.Z-N` | Pinned version (e.g. `v6.14.3-1`) |
+| `X.Y.Z-N` | Same pin without `v` (e.g. `6.14.3-1`, Unraid-friendly) |
 
 **Recommended:** Use `:stable` or a pinned `v…` tag for production, `:nightly` for testing new features.
 
@@ -671,7 +683,7 @@ volumes:
 
 **Use specific version tags:**
 ```yaml
-image: feramance/torrentarr:5.5.5  # Not latest
+image: feramance/torrentarr:v6.14.3-1  # Not latest
 ```
 
 ### 3. Limit Log Output

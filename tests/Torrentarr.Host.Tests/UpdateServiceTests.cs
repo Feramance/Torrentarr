@@ -65,4 +65,16 @@ public class UpdateServiceTests
         svc.ApplyState.LastResult.Should().Be("error");
         svc.ApplyState.LastError.Should().Contain("Nightly");
     }
+
+    [Theory]
+    [InlineData("6.14.3-2", "6.14.3-1", true)]
+    [InlineData("6.14.3-1", "6.14.3", true)]
+    [InlineData("6.14.4-1", "6.14.3-9", true)]
+    [InlineData("6.14.3-1", "6.14.3-1", false)]
+    [InlineData("6.14.3-1", "6.14.3-2", false)]
+    [InlineData("v6.14.3-1", "6.14.3-1", false)]
+    public void IsNewerVersion_UnderstandsBuildChannelTags(string latest, string current, bool expected)
+    {
+        UpdateService.IsNewerVersion(latest, current).Should().Be(expected);
+    }
 }

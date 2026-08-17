@@ -88,7 +88,7 @@ Status values:
 | `5.14.0` Pathos dedicated-qBit-client gate | intentional-divergence | Python multiprocessing concern; Torrentarr workers already isolate qBit clients. |
 | `5.14.1`–`5.14.3` Readarr allowlist / audiobook save (#550) | full | Type-aware defaults; ebook-only default expansion; WebUI save keeps `.m4b`/`.flac`. |
 | `5.14.2` tracker `-1` merge with Arr/CategorySeeding | full | Unlimited only when no source sets a positive limit. **Evidence:** [`SeedingLimitMergeTests`](https://github.com/Feramance/Torrentarr/blob/master/tests/Torrentarr.Infrastructure.Tests/Services/SeedingLimitMergeTests.cs). |
-| Docker `stable` / `latest` / `nightly` image channels | full | Release workflow publishes `:latest`, `:stable`, and `v{version}`; master builds publish `:nightly`. |
+| Docker `stable` / `latest` / `nightly` image channels | full | Releases publish `:latest` and `v{version}` (including `-N` build tags). `:stable` is patch/minor/major only. Weekly `release_type=build` does not move `:stable`. Master (non-release) commits publish `:nightly`. |
 | `SkipTLSVerify` on Arr/qBit/Ombi/Overseerr | full | Parsed/saved on every qBit and Arr section plus Ombi/Overseerr; applied to RestSharp and HttpClient. |
 
 ## Critical Functional Parity Hotspots

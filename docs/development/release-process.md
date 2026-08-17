@@ -156,33 +156,42 @@ docker push feramance/torrentarr:latest
 6. Build WebUI (`cd webui && npm ci && npm run build`)
 7. Build Docker image (multi-platform: amd64, arm64)
 8. Push to Docker Hub with tags:
-   - `feramance/torrentarr:v6.14.3`
-   - `feramance/torrentarr:stable`
-   - `feramance/torrentarr:latest`
+   - `feramance/torrentarr:v6.14.3-1`
+   - `feramance/torrentarr:latest` (every release, including weekly dependency builds)
+   - `feramance/torrentarr:stable` (patch/minor/major only; **not** `[build]` / weekly dependency releases)
 9. Create GitHub Release with changelog
 
 ### Nightly Builds
 
-**File:** `.github/workflows/nightly.yml`
+**File:** `.github/workflows/build.yml` (`docker-nightly` job)
 
-**Trigger:** Daily at 00:00 UTC
+**Trigger:** Push to `master` (skips `[patch]`/`[minor]`/`[major]`/`[build]`/`[skip ci]` commits), plus daily schedule
 
 **Output:** `feramance/torrentarr:nightly`
 
 **Purpose:** Test bleeding-edge changes
 
+### Weekly dependency builds
+
+**File:** `.github/workflows/weekly-build.yml`
+
+**Trigger:** Monday 06:00 UTC (and `workflow_dispatch`)
+
+**Behavior:** Merge green non-major Dependabot PRs, then dispatch **Create a Release** with `release_type=build`. That publishes `:latest` and `vX.Y.Z-N` but **does not** move `:stable`.
+
 ## Version Numbering
 
-Torrentarr follows **Semantic Versioning** (semver):
+Torrentarr follows **Semantic Versioning** with a qBitrr-compatible build segment:
 
 ```
-MAJOR.MINOR.PATCH
+MAJOR.MINOR.PATCH-BUILD
 
-5.6.2
-│ │ │
+6.14.3-1
+│ │ │  │
+│ │ │  └─ Build: weekly dependency / automation releases (does not move :stable)
 │ │ └─ Patch: Bug fixes, security fixes
 │ └─── Minor: New features, backward-compatible
-└───── Major: Breaking changes
+└───── Major: Breaking changes (Torrentarr stays +1 vs qBitrr)
 ```
 
 ### Pre-release Versions
@@ -207,11 +216,10 @@ git push origin v5.6.0-rc.1
 
 | Tag | Description | Example |
 |-----|-------------|---------|
-| `latest` | Latest stable release | `5.6.2` |
-| `nightly` | Daily build from master | Today's date |
-| `X.Y.Z` | Specific version | `5.6.2` |
-| `X.Y` | Latest patch in minor | `5.6` → `5.6.2` |
-| `X` | Latest minor in major | `5` → `5.6.2` |
+| `latest` | Newest published release (includes weekly builds) | `6.14.3-1` |
+| `stable` | Latest patch/minor/major (excludes weekly builds) | `6.14.3-1` |
+| `nightly` | Per-commit build from master | HEAD of `master` |
+| `vX.Y.Z-N` | Exact version | `v6.14.3-1` |
 
 ### Multi-Platform Builds
 

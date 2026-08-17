@@ -1,5 +1,6 @@
 using System.Formats.Tar;
 using System.IO.Compression;
+using System.Reflection;
 using System.Runtime.InteropServices;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
@@ -52,7 +53,14 @@ public class UpdateService
 
     public static string GetCurrentVersion()
     {
-        var asm = System.Reflection.Assembly.GetEntryAssembly();
+        var asm = Assembly.GetEntryAssembly();
+        var informational = asm?.GetCustomAttribute<AssemblyInformationalVersionAttribute>()?.InformationalVersion;
+        if (!string.IsNullOrWhiteSpace(informational))
+        {
+            var plus = informational.IndexOf('+');
+            return plus >= 0 ? informational[..plus] : informational;
+        }
+
         var ver = asm?.GetName().Version;
         if (ver == null) return "0.0.0";
         return $"{ver.Major}.{ver.Minor}.{ver.Build}";
@@ -468,11 +476,41 @@ public class UpdateService
         return RuntimeInformation.OSArchitecture == Architecture.Arm64 ? "linux-arm64" : "linux-x64";
     }
 
-    private static bool IsNewerVersion(string latest, string current)
+    internal static bool IsNewerVersion(string latest, string current)
     {
-        if (Version.TryParse(latest, out var l) && Version.TryParse(current, out var c))
-            return l > c;
-        return false;
+        var parsedLatest = ParseReleaseVersion(latest);
+        var parsedCurrent = ParseReleaseVersion(current);
+        if (parsedLatest is null || parsedCurrent is null)
+            return false;
+        return parsedLatest.Value.CompareTo(parsedCurrent.Value) > 0;
+    }
+
+    /// <summary>
+    /// Parse <c>MAJOR.MINOR.PATCH</c> or qBitrr-style <c>MAJOR.MINOR.PATCH-BUILD</c> (optional leading <c>v</c>).
+    /// </summary>
+    internal static (int Major, int Minor, int Patch, int Build)? ParseReleaseVersion(string raw)
+    {
+        if (string.IsNullOrWhiteSpace(raw))
+            return null;
+
+        var s = raw.Trim();
+        if (s.StartsWith('v') || s.StartsWith('V'))
+            s = s[1..];
+
+        var dash = s.IndexOf('-');
+        var core = dash >= 0 ? s[..dash] : s;
+        var build = 0;
+        if (dash >= 0)
+        {
+            var suffix = s[(dash + 1)..];
+            if (!int.TryParse(suffix, out build))
+                return null;
+        }
+
+        if (!Version.TryParse(core, out var v))
+            return null;
+
+        return (v.Major, v.Minor, v.Build, build);
     }
 }
 
