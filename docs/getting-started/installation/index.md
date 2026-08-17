@@ -124,12 +124,12 @@ See the [Development Guide](../../development/index.md) for the full workflow (r
 Regardless of installation method, you'll need:
 
 1. **qBittorrent** - Running and accessible
-   - v4.x or v5.x supported
+   - v4.x or v5.x supported (including 5.2)
    - WebUI enabled
    - Authentication configured
 
 2. **Arr Instance** - At least one of:
-   - Radarr (v3.x, v4.x, v5.x)
+   - Radarr (v3.x, v4.x, v5.x, v6.x)
    - Sonarr (v3.x, v4.x)
    - Lidarr (v1.x, v2.x)
 

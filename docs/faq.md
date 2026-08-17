@@ -20,10 +20,10 @@ Torrentarr solves several common problems:
 
 Torrentarr works with:
 
-- **qBittorrent**: v4.x and v5.x
-- **Radarr**: v3.x and v4.x
+- **qBittorrent**: v4.x and v5.x (including 5.2)
+- **Radarr**: v3.x, v4.x, v5.x, and v6.x
 - **Sonarr**: v3.x and v4.x
-- **Lidarr**: v1.x
+- **Lidarr**: v1.x and v2.x
 - **Runtime**: Self-contained **binary** (no separate .NET install) or **Docker**; **from source** needs a .NET SDK
 - **Platforms**: Linux, macOS, Windows, Docker
 

@@ -158,9 +158,22 @@ services:
 |-----|-------------|
 | `latest` | Latest stable release (recommended) |
 | `nightly` | Latest development build (bleeding edge) |
-| `5.x.x` | Specific version (e.g., `5.5.5`) |
+| `v6.x.x` | Exact version with `v` prefix (e.g. `v6.12.4`) |
+| `6.x.x` | Exact version without `v` (e.g. `6.12.4`, Unraid-friendly) |
 
 **Recommended:** Use `latest` for production, `nightly` for testing new features.
+
+## Unraid
+
+Do **not** reuse the qBitrr Community Applications template as-is. Torrentarr is a different image and listens on **6969** by default (or `[WebUI].Port` in `config.toml`), not qBitrr’s 8080.
+
+1. Add a container with repository `feramance/torrentarr:latest` (or pin `feramance/torrentarr:v6.12.4` / `feramance/torrentarr:6.12.4`).
+2. Map host port **6969** to container **6969** (unless you changed `[WebUI].Port`).
+3. Map `/config` to a persistent appdata path (`TORRENTARR_CONFIG` defaults to `/config/config.toml`).
+4. Put Torrentarr on the **same Docker network** as qBittorrent (for example `qbittorrentvpn`) and your Arr containers so hostnames like `qbittorrentvpn` / `radarr` resolve.
+5. After changing the image tag, **force a pull** (`Pull the image` / recreate) — Unraid will keep an old local image if you only edit the tag field.
+
+qBittorrent 5.2+ is supported. ICMP ping is not required; connectivity uses HTTP/TCP against `Settings.PingURLS`.
 
 ## First Run
 
@@ -638,9 +651,10 @@ services:
 
 ### From Unraid
 
-1. **Add Torrentarr from Community Applications**
-2. **Map paths to match existing setup**
-3. **Import existing config if desired**
+1. Use the Torrentarr image (`feramance/torrentarr:latest` or a version tag). Do not keep the qBitrr CA template ports/image.
+2. Map `/config` and put the container on the same Docker network as qBittorrent and Arr.
+3. Force-pull after changing tags (`v6.12.4` or `6.12.4` both work).
+4. Import existing `config.toml` if desired.
 
 ## Performance Tips
 

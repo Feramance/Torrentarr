@@ -24,7 +24,7 @@ export const FIELD_TOOLTIPS: Record<string, string> = {
   "Settings.IgnoreTorrentsYoungerThan":
     "Ignore torrents younger than this many seconds when evaluating failures.",
   "Settings.PingURLS":
-    "Hostnames used to test for internet connectivity. They are pinged frequently.",
+    "Hostnames or URLs used to test for internet connectivity via HTTP/TCP (ICMP is not used, so Docker/Unraid hosts that block ping still work).",
   "Settings.FFprobeAutoUpdate":
     "Download and update the bundled ffprobe binary automatically.",
   "Settings.AutoUpdateEnabled":
@@ -86,6 +86,8 @@ export const FIELD_TOOLTIPS: Record<string, string> = {
     "qBittorrent category applied by the Servarr instance to its downloads.",
   "ARR.ReSearch":
     "Re-run searches for failed torrents that Torrentarr removes.",
+  "ARR.ImportMode":
+    "Preferred import mode (Move, Copy, or Auto) when Servarr grabs completed files.",
   "ARR.importMode":
     "Preferred import mode (Move, Copy, or Auto) when Servarr grabs completed files.",
   "ARR.RssSyncTimer":

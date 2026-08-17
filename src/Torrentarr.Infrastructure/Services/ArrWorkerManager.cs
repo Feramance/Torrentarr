@@ -241,6 +241,9 @@ public class ArrWorkerManager : BackgroundService
         _stateManager.Update(searchStateName, s => { s.Alive = true; s.Rebuilding = false; s.Status = "Starting..."; });
         _stateManager.Update(torrentStateName, s => { s.Alive = true; s.Rebuilding = false; });
 
+        // Diagnostic only — do not block category init / torrent processing on a hung Arr.
+        _ = ProbeArrVersionAsync(instanceName, arrCfg, ct);
+
         // §1.2: ForceResetTempProfiles — restore any profiles switched in a previous session
         if (arrCfg.Search.UseTempForMissing && arrCfg.Search.ForceResetTempProfiles)
         {
@@ -408,6 +411,64 @@ public class ArrWorkerManager : BackgroundService
         {
             _logger.LogError(ex, "Sync failed for {Instance}", instanceName);
         }
+    }
+
+    private async Task ProbeArrVersionAsync(string instanceName, ArrInstanceConfig arrCfg, CancellationToken ct)
+    {
+        using var probeCts = CancellationTokenSource.CreateLinkedTokenSource(ct);
+        probeCts.CancelAfter(TimeSpan.FromSeconds(5));
+        await LogArrVersionAsync(instanceName, arrCfg, probeCts.Token);
+    }
+
+    private async Task LogArrVersionAsync(string instanceName, ArrInstanceConfig arrCfg, CancellationToken ct)
+    {
+        try
+        {
+            string? version = arrCfg.Type.ToLowerInvariant() switch
+            {
+                "radarr" => (await new RadarrClient(arrCfg.URI, arrCfg.APIKey).GetSystemInfoAsync(ct)).Version,
+                "sonarr" => (await new SonarrClient(arrCfg.URI, arrCfg.APIKey).GetSystemInfoAsync(ct)).Version,
+                "lidarr" => (await new LidarrClient(arrCfg.URI, arrCfg.APIKey).GetSystemInfoAsync(ct)).Version,
+                _ => null
+            };
+            if (!TryGetKnownArrVersion(version, out var knownVersion))
+            {
+                _logger.LogWarning(
+                    "Could not read {Type} version for {Instance} at {Uri} (empty or failed status response)",
+                    arrCfg.Type, instanceName, arrCfg.URI);
+                return;
+            }
+
+            _logger.LogInformation(
+                "Connected to {Type} {Version} for instance {Instance} at {Uri}",
+                arrCfg.Type, knownVersion, instanceName, arrCfg.URI);
+        }
+        catch (OperationCanceledException)
+        {
+            _logger.LogWarning("Could not read {Type} version for {Instance} at {Uri}",
+                arrCfg.Type, instanceName, arrCfg.URI);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(ex, "Could not read {Type} version for {Instance} at {Uri}",
+                arrCfg.Type, instanceName, arrCfg.URI);
+        }
+    }
+
+    /// <summary>
+    /// Returns true when <paramref name="version"/> is a usable Arr version string.
+    /// Empty status responses must not be logged as a successful connection.
+    /// </summary>
+    internal static bool TryGetKnownArrVersion(string? version, out string knownVersion)
+    {
+        if (string.IsNullOrWhiteSpace(version))
+        {
+            knownVersion = string.Empty;
+            return false;
+        }
+
+        knownVersion = version.Trim();
+        return true;
     }
 
     private async Task UpdateCountsAsync(string instanceName, CancellationToken ct)

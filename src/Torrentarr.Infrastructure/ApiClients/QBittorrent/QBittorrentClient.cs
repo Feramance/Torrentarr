@@ -18,6 +18,9 @@ public class QBittorrentClient
     private readonly string _password;
     private string? _cookie;
 
+    /// <summary>Set when <see cref="LoginAsync"/> returns false; includes HTTP status and cookie names.</summary>
+    public string? LastLoginFailure { get; private set; }
+
     public QBittorrentClient(string host, int port, string username, string password)
     {
         _host = host;
@@ -46,29 +49,74 @@ public class QBittorrentClient
         HttpRetryHelper.ExecuteQBitAsync(_client, request, ct);
 
     /// <summary>
-    /// Authenticate with qBittorrent
+    /// Authenticate with qBittorrent.
+    /// Compatible with qBittorrent 4.x/5.1 (<c>200</c> + <c>Ok.</c> + <c>SID</c>) and
+    /// 5.2+ (<c>204</c> empty body + <c>QBT_SID_{port}</c>).
     /// </summary>
     public async Task<bool> LoginAsync(CancellationToken ct = default)
     {
+        LastLoginFailure = null;
         var request = new RestRequest("/api/v2/auth/login", Method.Post);
         request.AddParameter("username", _username);
         request.AddParameter("password", _password);
 
         var response = await ExecuteAsync(request, ct);
+        var cookies = ExtractLoginCookies(response);
 
-        if (response.IsSuccessful && response.Content == "Ok.")
+        if (QBittorrentLoginParser.TryAccept(
+                (int)response.StatusCode,
+                response.Content,
+                cookies,
+                out var cookieHeader,
+                out var failureReason))
         {
-            // Extract cookie from response
-            var cookie = response.Cookies?.FirstOrDefault(c => c.Name == "SID");
-            if (cookie != null)
+            _cookie = cookieHeader;
+            return true;
+        }
+
+        var cookieNames = cookies.Count == 0 ? "(none)" : string.Join(", ", cookies.Select(c => c.Name));
+        var body = string.IsNullOrWhiteSpace(response.Content) ? "(empty)" : TruncateForLog(response.Content.Trim());
+        LastLoginFailure =
+            $"HTTP {(int)response.StatusCode} {response.StatusCode}; body={body}; cookies=[{cookieNames}]; {failureReason}";
+        return false;
+    }
+
+    private static List<QBittorrentLoginCookie> ExtractLoginCookies(RestResponse response)
+    {
+        var cookies = new List<QBittorrentLoginCookie>();
+        if (response.Cookies != null)
+        {
+            foreach (var cookie in response.Cookies.OfType<System.Net.Cookie>())
             {
-                _cookie = $"{cookie.Name}={cookie.Value}";
-                return true;
+                if (!string.IsNullOrEmpty(cookie.Name))
+                    cookies.Add(new QBittorrentLoginCookie(cookie.Name, cookie.Value ?? ""));
             }
         }
 
-        return false;
+        if (cookies.Count == 0 && response.Headers != null)
+        {
+            foreach (var header in response.Headers)
+            {
+                if (!string.Equals(header.Name, "Set-Cookie", StringComparison.OrdinalIgnoreCase))
+                    continue;
+                var raw = header.Value?.ToString();
+                if (string.IsNullOrEmpty(raw))
+                    continue;
+                var firstPart = raw.Split(';', 2)[0];
+                var eq = firstPart.IndexOf('=');
+                if (eq <= 0)
+                    continue;
+                cookies.Add(new QBittorrentLoginCookie(
+                    firstPart[..eq].Trim(),
+                    firstPart[(eq + 1)..].Trim()));
+            }
+        }
+
+        return cookies;
     }
+
+    private static string TruncateForLog(string value, int max = 80)
+        => value.Length <= max ? value : value[..max] + "…";
 
     /// <summary>
     /// Get application version

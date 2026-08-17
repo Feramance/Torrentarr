@@ -245,6 +245,8 @@ jobs:
         tags: |
           type=raw,value=latest
           type=raw,value=v${{ env.VERSION }}
+          type=raw,value=${{ env.VERSION }}
+          type=raw,value=${{ env.VERSION }}
     - name: Build and push Docker images
       uses: docker/build-push-action@v7
       with:

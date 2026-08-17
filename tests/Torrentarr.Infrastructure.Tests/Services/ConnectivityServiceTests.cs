@@ -1,5 +1,7 @@
 using FluentAssertions;
 using Microsoft.Extensions.Logging.Abstractions;
+using System.Net.Sockets;
+using Torrentarr.Core.Configuration;
 using Torrentarr.Infrastructure.Services;
 using Xunit;
 
@@ -7,20 +9,22 @@ namespace Torrentarr.Infrastructure.Tests.Services;
 
 /// <summary>
 /// Tests for ConnectivityService.
-/// Only covers the no-network paths — initial state and the fast-return branch
-/// when no qBittorrent clients are registered (no actual network calls needed).
+/// Network probes are injected so CI never makes real HTTP/TCP calls.
 /// </summary>
 public class ConnectivityServiceTests
 {
-    private static ConnectivityService CreateService()
+    private static ConnectivityService CreateService(
+        TorrentarrConfig? config = null,
+        Func<string, CancellationToken, Task<bool>>? probe = null)
     {
         var manager = new QBittorrentConnectionManager(
             NullLogger<QBittorrentConnectionManager>.Instance);
         return new ConnectivityService(
-            NullLogger<ConnectivityService>.Instance, manager);
+            NullLogger<ConnectivityService>.Instance,
+            manager,
+            config ?? new TorrentarrConfig(),
+            probe);
     }
-
-    // ── Initial state ─────────────────────────────────────────────────────────
 
     [Fact]
     public void InitialState_IsConnected_IsTrue()
@@ -36,13 +40,9 @@ public class ConnectivityServiceTests
         svc.LastChecked.Should().BeNull("no check has been performed yet");
     }
 
-    // ── IsQBittorrentReachableAsync with no clients ───────────────────────────
-
     [Fact]
     public async Task IsQBittorrentReachableAsync_NoClientsRegistered_ReturnsFalse()
     {
-        // With an empty QBittorrentConnectionManager there are no clients to test,
-        // so the method should return false immediately (no network call made).
         var svc = CreateService();
 
         var result = await svc.IsQBittorrentReachableAsync();
@@ -69,5 +69,69 @@ public class ConnectivityServiceTests
         var act = async () => await svc.IsQBittorrentReachableAsync(cts.Token);
 
         await act.Should().NotThrowAsync();
+    }
+
+    [Fact]
+    public void GetPingUrls_UsesSettingsPingURLS()
+    {
+        var config = new TorrentarrConfig
+        {
+            Settings = { PingURLS = ["one.one.one.one", "dns.google.com"] }
+        };
+
+        var svc = CreateService(config);
+
+        svc.GetPingUrls().Should().BeEquivalentTo(new[] { "one.one.one.one", "dns.google.com" });
+    }
+
+    [Fact]
+    public async Task IsConnectedAsync_HttpProbeSuccess_DoesNotRequireQBit()
+    {
+        var probed = new List<string>();
+        var config = new TorrentarrConfig
+        {
+            Settings = { PingURLS = ["one.one.one.one"] }
+        };
+        var svc = CreateService(config, async (host, _) =>
+        {
+            probed.Add(host);
+            await Task.CompletedTask;
+            return host == "one.one.one.one";
+        });
+
+        var result = await svc.IsConnectedAsync();
+
+        result.Should().BeTrue();
+        probed.Should().Contain("one.one.one.one");
+        svc.IsConnected.Should().BeTrue();
+    }
+
+    [Fact]
+    public async Task IsConnectedAsync_AllProbesFail_ReturnsFalse()
+    {
+        var config = new TorrentarrConfig
+        {
+            Settings = { PingURLS = ["example.invalid"] }
+        };
+        var svc = CreateService(config, (_, _) => Task.FromResult(false));
+
+        var result = await svc.IsConnectedAsync();
+
+        result.Should().BeFalse();
+        svc.IsConnected.Should().BeFalse();
+    }
+
+    [Fact]
+    public void ToProbeAuthority_BracketsIPv6Literal()
+    {
+        ConnectivityService.ToProbeAuthority("2001:4860:4860::8888", AddressFamily.InterNetworkV6)
+            .Should().Be("[2001:4860:4860::8888]");
+    }
+
+    [Fact]
+    public void ToProbeAuthority_LeavesIPv4Unbracketed()
+    {
+        ConnectivityService.ToProbeAuthority("1.1.1.1", AddressFamily.InterNetwork)
+            .Should().Be("1.1.1.1");
     }
 }

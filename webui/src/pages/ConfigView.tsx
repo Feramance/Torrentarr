@@ -753,7 +753,7 @@ const ARR_GENERAL_FIELDS: FieldDefinition[] = [
   { label: "Re-search", path: ["ReSearch"], type: "checkbox" },
   {
     label: "Import Mode",
-    path: ["importMode"],
+    path: ["ImportMode"],
     type: "select",
     options: IMPORT_MODE_OPTIONS,
     required: true,
@@ -1732,7 +1732,7 @@ function ensureArrDefaults(type: string): ConfigDocument {
     APIKey: "CHANGE_ME",
     Category: type,
     ReSearch: true,
-    importMode: "Auto",
+    ImportMode: "Auto",
     RssSyncTimer: 5,
     RefreshDownloadsTimer: 5,
     ArrErrorCodesToBlocklist: arrErrorCodes,

@@ -9,6 +9,7 @@ using Torrentarr.Infrastructure.Services;
 using Microsoft.AspNetCore.Authentication;
 using Microsoft.AspNetCore.Authentication.Cookies;
 using Microsoft.AspNetCore.Authentication.OpenIdConnect;
+using Microsoft.AspNetCore.DataProtection;
 using Microsoft.AspNetCore.HttpOverrides;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.OpenApi;
@@ -141,6 +142,12 @@ builder.Services.AddSingleton<IPasswordHasher, BCryptPasswordHasher>();
 builder.Services.AddHttpClient();
 builder.Services.AddScoped<CatalogRollupService>();
 builder.Services.AddScoped<ArrThumbnailService>();
+
+var dataProtectionKeyPath = Path.Combine(basePath, "data-protection-keys");
+Directory.CreateDirectory(dataProtectionKeyPath);
+builder.Services.AddDataProtection()
+    .PersistKeysToFileSystem(new DirectoryInfo(dataProtectionKeyPath))
+    .SetApplicationName("Torrentarr");
 
 var urlBase = UrlBaseHelper.NormalizeUrlBase(configForDI.WebUI.UrlBase);
 
@@ -831,10 +838,10 @@ static Newtonsoft.Json.Linq.JObject BuildFlatConfig(TorrentarrConfig config, boo
     foreach (var (name, arr) in config.ArrInstances)
     {
         var arrObj = Newtonsoft.Json.Linq.JObject.FromObject(arr);
-        // Rename "Search" → "EntrySearch" for TOML compat (frontend uses "EntrySearch" paths)
+        // JsonProperty("EntrySearch") on Search; keep a fallback rename for older payloads
         var searchProp = arrObj.Properties()
             .FirstOrDefault(p => p.Name.Equals("Search", StringComparison.OrdinalIgnoreCase));
-        if (searchProp != null)
+        if (searchProp != null && arrObj["EntrySearch"] == null)
         {
             arrObj["EntrySearch"] = searchProp.Value;
             searchProp.Remove();
@@ -859,9 +866,8 @@ static void RedactFlatField(Newtonsoft.Json.Linq.JObject obj, string key)
     }
 }
 
-// Helper: convert a flat config JObject back to TorrentarrConfig
-// Handles "EntrySearch" → "Search" remapping for Arr instances.
-// Restores redacted sensitive values from the current (in-memory) config.
+// Helper: convert a flat config JObject back to TorrentarrConfig.
+// ArrInstanceConfig.Search is [JsonProperty("EntrySearch")] so the JSON key stays EntrySearch.
 static TorrentarrConfig FlatToConfig(Newtonsoft.Json.Linq.JObject flat, TorrentarrConfig current)
 {
     var result = new TorrentarrConfig();
@@ -906,15 +912,8 @@ static TorrentarrConfig FlatToConfig(Newtonsoft.Json.Linq.JObject flat, Torrenta
             || prop.Name.StartsWith("Sonarr", StringComparison.OrdinalIgnoreCase)
             || prop.Name.StartsWith("Lidarr", StringComparison.OrdinalIgnoreCase))
         {
-            // Rename "EntrySearch" → "Search" before deserializing
             var arrCopy = (Newtonsoft.Json.Linq.JObject)instanceObj.DeepClone();
-            var esProp = arrCopy.Properties()
-                .FirstOrDefault(p => p.Name.Equals("EntrySearch", StringComparison.OrdinalIgnoreCase));
-            if (esProp != null)
-            {
-                arrCopy["Search"] = esProp.Value;
-                esProp.Remove();
-            }
+            // Keep EntrySearch: ArrInstanceConfig.Search is [JsonProperty("EntrySearch")]
             var arr = arrCopy.ToObject<ArrInstanceConfig>() ?? new ArrInstanceConfig();
             if (arr.APIKey == "[redacted]" && current.ArrInstances.TryGetValue(prop.Name, out var existingArr))
                 arr.APIKey = existingArr.APIKey;
@@ -1312,6 +1311,11 @@ app.MapPost("/web/arr/test-connection", async (HttpContext ctx, TorrentarrConfig
         }
 
         systemInfo = await getSystemInfo();
+        if (string.IsNullOrWhiteSpace(systemInfo?.Version))
+            return Results.Ok(new { success = false, message = "Connection test failed" });
+
+        Log.Information("Arr connection test succeeded for {ArrType} at {Uri}: version {Version}",
+            body.ArrType, uri, systemInfo.Version);
 
         // Retry logic for quality profile fetching
         const int maxRetries = 3;
@@ -1332,7 +1336,7 @@ app.MapPost("/web/arr/test-connection", async (HttpContext ctx, TorrentarrConfig
         {
             success = true,
             message = $"Connected to {body.ArrType} {systemInfo.Version}",
-            systemInfo = new { version = systemInfo.Version ?? "unknown", branch = (string?)null },
+            systemInfo = new { version = systemInfo.Version, branch = (string?)null },
             qualityProfiles = profiles.Select(p => new { id = p.Id, name = p.Name })
         });
     }

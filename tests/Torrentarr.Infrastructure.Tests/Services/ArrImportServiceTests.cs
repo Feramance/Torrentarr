@@ -339,4 +339,67 @@ public class ArrImportServiceTests
         buggyLookup!.Title.Should().Be("Wrong Match",
             "EntryId collisions can make CustomFormatUnmet delete the wrong torrent");
     }
+
+    [Fact]
+    public void ResolveImportMode_PrefersInstanceOverSettings()
+    {
+        var instance = new ArrInstanceConfig { ImportMode = "Copy" };
+        var settings = new SettingsConfig { ImportMode = "Move" };
+
+        ArrImportService.ResolveImportMode(instance, settings).Should().Be("Copy");
+    }
+
+    [Fact]
+    public void ResolveImportMode_FallsBackToSettings_WhenInstanceBlank()
+    {
+        var instance = new ArrInstanceConfig { ImportMode = "  " };
+        var settings = new SettingsConfig { ImportMode = "Move" };
+
+        ArrImportService.ResolveImportMode(instance, settings).Should().Be("Move");
+    }
+
+    [Fact]
+    public void ResolveImportMode_FallsBackToSettings_WhenInstanceNull()
+    {
+        var instance = new ArrInstanceConfig();
+        var settings = new SettingsConfig { ImportMode = "Move" };
+
+        instance.ImportMode.Should().BeNull();
+        ArrImportService.ResolveImportMode(instance, settings).Should().Be("Move");
+    }
+
+    [Fact]
+    public void ResolveImportMode_FallsBackToSettings_WhenTomlOmitsPerArrKey()
+    {
+        var path = Path.GetTempFileName();
+        try
+        {
+            File.WriteAllText(path, """
+                [Radarr-Movies]
+                URI = "http://radarr:7878"
+                APIKey = "key"
+                Category = "radarr"
+                """);
+
+            var config = new ConfigurationLoader(path).Load();
+            var instance = config.ArrInstances["Radarr-Movies"];
+            config.Settings.ImportMode = "Move";
+
+            instance.ImportMode.Should().BeNull();
+            ArrImportService.ResolveImportMode(instance, config.Settings).Should().Be("Move");
+        }
+        finally
+        {
+            File.Delete(path);
+        }
+    }
+
+    [Fact]
+    public void ResolveImportMode_DefaultsToAuto_WhenBothBlank()
+    {
+        var instance = new ArrInstanceConfig { ImportMode = "" };
+        var settings = new SettingsConfig { ImportMode = "" };
+
+        ArrImportService.ResolveImportMode(instance, settings).Should().Be("Auto");
+    }
 }

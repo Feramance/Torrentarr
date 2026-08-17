@@ -1,5 +1,6 @@
 using System.Net;
-using System.Net.NetworkInformation;
+using System.Net.Sockets;
+using Torrentarr.Core.Configuration;
 using Torrentarr.Core.Services;
 using Microsoft.Extensions.Logging;
 
@@ -11,9 +12,12 @@ namespace Torrentarr.Infrastructure.Services;
 /// </summary>
 public class ConnectivityService : IConnectivityService
 {
+    private static readonly HttpClient ProbeHttpClient = CreateProbeClient();
+
     private readonly ILogger<ConnectivityService> _logger;
     private readonly QBittorrentConnectionManager _qbitManager;
-    private readonly HashSet<string> _testHosts;
+    private readonly TorrentarrConfig _config;
+    private readonly Func<string, CancellationToken, Task<bool>> _probeAsync;
 
     private volatile bool _isConnected = true;
     private volatile bool _lastCheckedSet = false;
@@ -31,16 +35,22 @@ public class ConnectivityService : IConnectivityService
 
     public ConnectivityService(
         ILogger<ConnectivityService> logger,
-        QBittorrentConnectionManager qbitManager)
+        QBittorrentConnectionManager qbitManager,
+        TorrentarrConfig config)
+        : this(logger, qbitManager, config, probe: null)
+    {
+    }
+
+    internal ConnectivityService(
+        ILogger<ConnectivityService> logger,
+        QBittorrentConnectionManager qbitManager,
+        TorrentarrConfig config,
+        Func<string, CancellationToken, Task<bool>>? probe)
     {
         _logger = logger;
         _qbitManager = qbitManager;
-        _testHosts = new HashSet<string>(StringComparer.OrdinalIgnoreCase)
-        {
-            "8.8.8.8",
-            "1.1.1.1",
-            "9.9.9.9"
-        };
+        _config = config;
+        _probeAsync = probe ?? ProbeHostAsync;
     }
 
     private void SetState(bool connected)
@@ -68,27 +78,26 @@ public class ConnectivityService : IConnectivityService
                 return true;
             }
 
-            _logger.LogTrace("qBittorrent not reachable, checking internet hosts");
-            var hostsChecked = 0;
-            foreach (var host in _testHosts)
+            var pingUrls = GetPingUrls();
+            _logger.LogTrace("qBittorrent not reachable, probing {Count} PingURLS via HTTP/TCP", pingUrls.Count);
+            var failed = new List<string>();
+            foreach (var host in pingUrls)
             {
-                hostsChecked++;
-                _logger.LogTrace("Pinging host {Host} ({Current}/{Total})", host, hostsChecked, _testHosts.Count);
-
-                if (await PingHostAsync(host, cancellationToken))
+                if (await _probeAsync(host, cancellationToken))
                 {
-                    _logger.LogTrace("Ping successful to {Host} - connectivity confirmed", host);
+                    _logger.LogTrace("Probe successful to {Host} - connectivity confirmed", host);
                     SetState(true);
-                    _logger.LogTrace("Internet connectivity confirmed via {Host}", host);
                     return true;
                 }
 
-                _logger.LogTrace("Ping failed to {Host}", host);
+                failed.Add(host);
+                _logger.LogTrace("Probe failed to {Host}", host);
             }
 
-            _logger.LogTrace("All {Count} hosts unreachable - no connectivity", _testHosts.Count);
             SetState(false);
-            _logger.LogWarning("No internet connectivity detected");
+            _logger.LogWarning(
+                "No internet connectivity detected (qBittorrent unreachable; failed probes: {Hosts})",
+                failed.Count == 0 ? "(no PingURLS configured)" : string.Join(", ", failed));
             return false;
         }
         catch (Exception ex)
@@ -119,30 +128,124 @@ public class ConnectivityService : IConnectivityService
         }
     }
 
-    private async Task<bool> PingHostAsync(string host, CancellationToken cancellationToken)
+    internal IReadOnlyList<string> GetPingUrls()
+    {
+        var urls = _config.Settings.PingURLS?
+            .Where(u => !string.IsNullOrWhiteSpace(u))
+            .Select(u => u.Trim())
+            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .ToList() ?? new List<string>();
+        if (urls.Count == 0)
+        {
+            urls.Add("one.one.one.one");
+            urls.Add("dns.google.com");
+        }
+        return urls;
+    }
+
+    private async Task<bool> ProbeHostAsync(string host, CancellationToken cancellationToken)
     {
         try
         {
-            if (!IPAddress.TryParse(host, out var ipAddress))
+            if (Uri.TryCreate(host, UriKind.Absolute, out var absolute) &&
+                (absolute.Scheme == Uri.UriSchemeHttp || absolute.Scheme == Uri.UriSchemeHttps))
             {
-                var addresses = await Dns.GetHostAddressesAsync(host, cancellationToken);
-                ipAddress = addresses.FirstOrDefault();
-
-                if (ipAddress == null)
-                {
-                    return false;
-                }
+                return await HttpProbeAsync(absolute, cancellationToken);
             }
 
-            using var ping = new Ping();
-            var reply = await ping.SendPingAsync(ipAddress, 5000);
+            var hostname = host;
+            if (IPAddress.TryParse(host, out var ipAddress))
+            {
+                hostname = ipAddress.ToString();
+                var authority = ToProbeAuthority(hostname, ipAddress.AddressFamily);
 
-            return reply.Status == IPStatus.Success;
+                if (await HttpProbeAsync(new Uri($"https://{authority}"), cancellationToken))
+                    return true;
+                if (await HttpProbeAsync(new Uri($"http://{authority}"), cancellationToken))
+                    return true;
+            }
+            else
+            {
+                if (await HttpProbeAsync(new Uri($"https://{host}"), cancellationToken))
+                    return true;
+                if (await HttpProbeAsync(new Uri($"http://{host}"), cancellationToken))
+                    return true;
+
+                if (Uri.TryCreate($"http://{host}", UriKind.Absolute, out var parsed))
+                    hostname = parsed.Host;
+            }
+
+            return await TcpProbeAsync(hostname, 443, cancellationToken)
+                || await TcpProbeAsync(hostname, 80, cancellationToken);
         }
         catch (Exception ex)
         {
-            _logger.LogTrace(ex, "Ping failed for host {Host}", host);
+            _logger.LogTrace(ex, "Probe failed for host {Host}", host);
             return false;
         }
+    }
+
+    private static async Task<bool> HttpProbeAsync(Uri uri, CancellationToken cancellationToken)
+    {
+        try
+        {
+            using var request = new HttpRequestMessage(HttpMethod.Head, uri);
+            using var response = await ProbeHttpClient.SendAsync(
+                request, HttpCompletionOption.ResponseHeadersRead, cancellationToken);
+            return true;
+        }
+        catch (HttpRequestException)
+        {
+            try
+            {
+                using var request = new HttpRequestMessage(HttpMethod.Get, uri);
+                using var response = await ProbeHttpClient.SendAsync(
+                    request, HttpCompletionOption.ResponseHeadersRead, cancellationToken);
+                return true;
+            }
+            catch (Exception)
+            {
+                return false;
+            }
+        }
+        catch (TaskCanceledException)
+        {
+            return false;
+        }
+    }
+
+    private static async Task<bool> TcpProbeAsync(string host, int port, CancellationToken cancellationToken)
+    {
+        try
+        {
+            using var client = new TcpClient();
+            using var timeoutCts = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
+            timeoutCts.CancelAfter(TimeSpan.FromSeconds(5));
+            await client.ConnectAsync(host, port, timeoutCts.Token);
+            return client.Connected;
+        }
+        catch
+        {
+            return false;
+        }
+    }
+
+    /// <summary>
+    /// Formats an IP literal for use as a URI authority. IPv6 addresses require brackets.
+    /// </summary>
+    internal static string ToProbeAuthority(string hostname, AddressFamily addressFamily) =>
+        addressFamily == AddressFamily.InterNetworkV6 ? $"[{hostname}]" : hostname;
+
+    private static HttpClient CreateProbeClient()
+    {
+        var handler = new SocketsHttpHandler
+        {
+            AllowAutoRedirect = true,
+            ConnectTimeout = TimeSpan.FromSeconds(5)
+        };
+        return new HttpClient(handler)
+        {
+            Timeout = TimeSpan.FromSeconds(5)
+        };
     }
 }
