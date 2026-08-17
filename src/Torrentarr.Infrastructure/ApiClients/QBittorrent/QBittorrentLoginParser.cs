@@ -56,12 +56,6 @@ internal static class QBittorrentLoginParser
                 return cookie;
         }
 
-        foreach (var cookie in cookies)
-        {
-            if (!string.IsNullOrEmpty(cookie.Name) && !string.IsNullOrEmpty(cookie.Value))
-                return cookie;
-        }
-
         return null;
     }
 }
