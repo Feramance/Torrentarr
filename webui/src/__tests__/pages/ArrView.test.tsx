@@ -24,7 +24,7 @@ afterAll(() => server.close());
 
 const minimalConfig = {
   Settings: {},
-    WebUI: { LiveArr: false },
+  WebUI: { LiveArr: false },
 };
 
 const emptyArrList = { arr: [], ready: true };
