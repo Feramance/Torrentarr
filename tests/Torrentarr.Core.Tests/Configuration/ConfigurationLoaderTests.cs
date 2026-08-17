@@ -459,6 +459,38 @@ public class ConfigurationLoaderTests : IDisposable
     }
 
     [Fact]
+    public void Load_AcceptsPascalCaseImportMode()
+    {
+        WriteToml("""
+            [Radarr-Movies]
+            URI = "http://radarr:7878"
+            APIKey = "key"
+            Category = "radarr"
+            ImportMode = "Copy"
+            """);
+
+        var config = new ConfigurationLoader(_tempFilePath).Load();
+
+        config.ArrInstances["Radarr-Movies"].ImportMode.Should().Be("Copy");
+    }
+
+    [Fact]
+    public void Load_AcceptsCamelCaseImportMode()
+    {
+        WriteToml("""
+            [Radarr-Movies]
+            URI = "http://radarr:7878"
+            APIKey = "key"
+            Category = "radarr"
+            importMode = "Move"
+            """);
+
+        var config = new ConfigurationLoader(_tempFilePath).Load();
+
+        config.ArrInstances["Radarr-Movies"].ImportMode.Should().Be("Move");
+    }
+
+    [Fact]
     public void Load_SkipsMigrations_WhenVersionIsCurrent()
     {
         WriteToml($"""
@@ -828,5 +860,28 @@ public class ConfigurationLoaderTests : IDisposable
             else
                 Environment.SetEnvironmentVariable("QBITRR_SETTINGS_FREE_SPACE", prevAlias);
         }
+    }
+
+    [Fact]
+    public void Load_ParsesImportMode_CamelCaseAndPascalCase()
+    {
+        WriteToml("""
+            [Radarr]
+            URI = "http://radarr:7878"
+            APIKey = "key"
+            Category = "movies"
+            importMode = "Copy"
+
+            [Sonarr]
+            URI = "http://sonarr:8989"
+            APIKey = "key"
+            Category = "tv"
+            ImportMode = "Move"
+            """);
+
+        var config = new ConfigurationLoader(_tempFilePath).Load();
+
+        config.ArrInstances["Radarr"].ImportMode.Should().Be("Copy");
+        config.ArrInstances["Sonarr"].ImportMode.Should().Be("Move");
     }
 }

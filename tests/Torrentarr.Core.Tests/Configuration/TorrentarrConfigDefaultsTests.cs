@@ -129,4 +129,28 @@ public class TorrentarrConfigDefaultsTests
         tracker.HitAndRunPartialSeedRatio.Should().Be(2.0);
         tracker.TrackerUpdateBuffer.Should().Be(300);
     }
+
+    [Fact]
+    public void ArrInstanceConfig_JsonRoundTrip_UsesEntrySearchKey()
+    {
+        var original = new ArrInstanceConfig
+        {
+            ImportMode = "Copy",
+            Search = new SearchConfig
+            {
+                SearchMissing = false,
+                DoUpgradeSearch = true
+            }
+        };
+
+        var json = Newtonsoft.Json.JsonConvert.SerializeObject(original);
+        json.Should().Contain("\"EntrySearch\"");
+        json.Should().NotContain("\"Search\":");
+
+        var roundTrip = Newtonsoft.Json.JsonConvert.DeserializeObject<ArrInstanceConfig>(json);
+        roundTrip.Should().NotBeNull();
+        roundTrip!.ImportMode.Should().Be("Copy");
+        roundTrip.Search.SearchMissing.Should().BeFalse();
+        roundTrip.Search.DoUpgradeSearch.Should().BeTrue();
+    }
 }

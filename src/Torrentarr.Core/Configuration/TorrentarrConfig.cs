@@ -1,4 +1,5 @@
 using System.Collections.Generic;
+using Newtonsoft.Json;
 
 namespace Torrentarr.Core.Configuration;
 
@@ -209,7 +210,8 @@ public class ArrInstanceConfig
     // Torrent processing options (includes Torrent.Trackers and Torrent.SeedingMode)
     public TorrentConfig Torrent { get; set; } = new();
 
-    // Search configuration
+    // Search configuration — JSON/WebUI key matches TOML section [Arr.EntrySearch]
+    [JsonProperty("EntrySearch")]
     public SearchConfig Search { get; set; } = new();
 
     // Instance-level seeding configuration (deprecated, use Torrent.SeedingMode)

@@ -236,6 +236,8 @@ public class ArrWorkerManager : BackgroundService
             arrCfg.Search.CustomFormatUnmetSearch);
         _logger.LogInformation("Search loop initialized successfully, entering main loop");
 
+        await LogArrVersionAsync(instanceName, arrCfg, ct);
+
         LogScriptConfig(instanceName, arrCfg);
 
         _stateManager.Update(searchStateName, s => { s.Alive = true; s.Rebuilding = false; s.Status = "Starting..."; });
@@ -407,6 +409,28 @@ public class ArrWorkerManager : BackgroundService
         catch (Exception ex)
         {
             _logger.LogError(ex, "Sync failed for {Instance}", instanceName);
+        }
+    }
+
+    private async Task LogArrVersionAsync(string instanceName, ArrInstanceConfig arrCfg, CancellationToken ct)
+    {
+        try
+        {
+            string? version = arrCfg.Type.ToLowerInvariant() switch
+            {
+                "radarr" => (await new RadarrClient(arrCfg.URI, arrCfg.APIKey).GetSystemInfoAsync(ct)).Version,
+                "sonarr" => (await new SonarrClient(arrCfg.URI, arrCfg.APIKey).GetSystemInfoAsync(ct)).Version,
+                "lidarr" => (await new LidarrClient(arrCfg.URI, arrCfg.APIKey).GetSystemInfoAsync(ct)).Version,
+                _ => null
+            };
+            _logger.LogInformation(
+                "Connected to {Type} {Version} for instance {Instance} at {Uri}",
+                arrCfg.Type, version ?? "unknown", instanceName, arrCfg.URI);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(ex, "Could not read {Type} version for {Instance} at {Uri}",
+                arrCfg.Type, instanceName, arrCfg.URI);
         }
     }
 

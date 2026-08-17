@@ -37,7 +37,9 @@ public class QBittorrentConnectionManager
             var loginSuccess = await client.LoginAsync(cancellationToken);
             if (!loginSuccess)
             {
-                _logger.LogError("Failed to login to qBittorrent instance '{Name}' at {Host}:{Port}", name, config.Host, config.Port);
+                _logger.LogError(
+                    "Failed to login to qBittorrent instance '{Name}' at {Host}:{Port}. {Detail}",
+                    name, config.Host, config.Port, client.LastLoginFailure ?? "unknown error");
                 return false;
             }
 

@@ -146,6 +146,48 @@ public class ConfigEndpointTests : IClassFixture<TorrentarrWebApplicationFactory
     }
 
     [Fact]
+    public async Task ConfigRoundTrip_PreservesEntrySearchAndImportMode()
+    {
+        var client = _factory.CreateClientWithApiToken();
+        var payload = new
+        {
+            changes = new Dictionary<string, object>
+            {
+                ["Radarr-RoundTrip.URI"] = "http://localhost:7878",
+                ["Radarr-RoundTrip.APIKey"] = "test-key",
+                ["Radarr-RoundTrip.Category"] = "movies-roundtrip",
+                ["Radarr-RoundTrip.Managed"] = true,
+                ["Radarr-RoundTrip.ImportMode"] = "Copy",
+                ["Radarr-RoundTrip.EntrySearch.SearchMissing"] = false,
+                ["Radarr-RoundTrip.EntrySearch.DoUpgradeSearch"] = true
+            }
+        };
+        var post = await client.PostAsync("/web/config", new StringContent(
+            JsonSerializer.Serialize(payload), Encoding.UTF8, "application/json"));
+        post.StatusCode.Should().Be(HttpStatusCode.OK);
+
+        var get = await client.GetAsync("/web/config");
+        get.StatusCode.Should().Be(HttpStatusCode.OK);
+        var json = JsonDocument.Parse(await get.Content.ReadAsStringAsync()).RootElement;
+        json.TryGetProperty("Radarr-RoundTrip", out var arr).Should().BeTrue();
+        arr.GetProperty("ImportMode").GetString().Should().Be("Copy");
+        arr.TryGetProperty("EntrySearch", out var entrySearch).Should().BeTrue("Search must serialize as EntrySearch");
+        arr.TryGetProperty("Search", out _).Should().BeFalse();
+        entrySearch.GetProperty("SearchMissing").GetBoolean().Should().BeFalse();
+        entrySearch.GetProperty("DoUpgradeSearch").GetBoolean().Should().BeTrue();
+
+        var cleanup = new
+        {
+            changes = new Dictionary<string, object?>
+            {
+                ["Radarr-RoundTrip"] = null
+            }
+        };
+        await client.PostAsync("/web/config", new StringContent(
+            JsonSerializer.Serialize(cleanup), Encoding.UTF8, "application/json"));
+    }
+
+    [Fact]
     public async Task PostApiConfig_WithChanges_PreservesUnchangedSections()
     {
         var client = _factory.CreateClientWithApiToken();

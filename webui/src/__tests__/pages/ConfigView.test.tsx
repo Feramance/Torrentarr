@@ -323,3 +323,82 @@ describe("ConfigView – UrlBase field", () => {
     expect(urlBaseInput).toHaveValue("/qbitrr");
   });
 });
+
+describe("ConfigView – Arr Import Mode and Entry Search", () => {
+  it("populates Import Mode and Entry Search from API JSON", async () => {
+    server.use(
+      http.get("/web/config", () =>
+        HttpResponse.json({
+          ...configWithInstances,
+          "Radarr-1080": {
+            ...configWithInstances["Radarr-1080"],
+            ImportMode: "Copy",
+            EntrySearch: {
+              SearchMissing: true,
+              DoUpgradeSearch: true,
+            },
+          },
+        }),
+      ),
+      http.post("/web/config", () => HttpResponse.json(okUpdateResponse)),
+    );
+
+    const user = userEvent.setup();
+    renderConfig();
+
+    await screen.findByText("Radarr-1080");
+    const arrHeader = screen.getByText("Radarr-1080");
+    const card = arrHeader.closest(".card")!;
+    await user.click(within(card).getByRole("button", { name: /configure/i }));
+
+    expect(await screen.findByText("Import Mode")).toBeInTheDocument();
+    const importModeField = screen.getByText("Import Mode").closest(".field")!;
+    expect(within(importModeField).getByText("Copy")).toBeInTheDocument();
+
+    const searchMissing = screen.getByLabelText("Search Missing") as HTMLInputElement;
+    expect(searchMissing.checked).toBe(true);
+  });
+});
+
+describe("ConfigView – Arr Entry Search and Import Mode", () => {
+  it("populates Import Mode and Entry Search from API JSON keys", async () => {
+    server.use(
+      http.get("/web/config", () =>
+        HttpResponse.json({
+          ...configWithInstances,
+          "Radarr-1080": {
+            ...configWithInstances["Radarr-1080"],
+            ImportMode: "Copy",
+            EntrySearch: {
+              SearchMissing: false,
+              DoUpgradeSearch: true,
+            },
+          },
+        }),
+      ),
+      http.post("/web/config", () => HttpResponse.json(okUpdateResponse)),
+      http.post("/web/arr/test-connection", () =>
+        HttpResponse.json({ success: true, message: "ok" }),
+      ),
+    );
+
+    const user = userEvent.setup();
+    renderConfig();
+
+    await screen.findByText("Radarr-1080");
+    const arrHeader = screen.getByText("Radarr-1080");
+    const card = arrHeader.closest(".card")!;
+    await user.click(within(card).getByRole("button", { name: /configure/i }));
+
+    await screen.findByText("Import Mode");
+    const importModeField = screen.getByText("Import Mode").closest(".field")!;
+    expect(within(importModeField).getByText("Copy")).toBeInTheDocument();
+
+    await screen.findByText("Search Missing");
+    const searchMissing = screen.getByLabelText(/search missing/i);
+    expect(searchMissing).not.toBeChecked();
+
+    const upgradeSearch = screen.getByLabelText(/do upgrade search/i);
+    expect(upgradeSearch).toBeChecked();
+  });
+});

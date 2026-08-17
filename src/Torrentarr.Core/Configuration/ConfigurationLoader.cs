@@ -1319,7 +1319,8 @@ public class ConfigurationLoader
                 if (instanceTable.TryGetValue("ReSearch", out var reSearch))
                     instance.ReSearch = Convert.ToBoolean(reSearch);
 
-                if (instanceTable.TryGetValue("importMode", out var importMode))
+                if (instanceTable.TryGetValue("importMode", out var importMode) ||
+                    instanceTable.TryGetValue("ImportMode", out importMode))
                     instance.ImportMode = importMode?.ToString() ?? "Auto";
 
                 if (instanceTable.TryGetValue("RssSyncTimer", out var rssSyncTimer))

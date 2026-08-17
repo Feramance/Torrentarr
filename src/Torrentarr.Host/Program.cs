@@ -11,6 +11,7 @@ using Torrentarr.Host.Sinks;
 using Microsoft.AspNetCore.Authentication;
 using Microsoft.AspNetCore.Authentication.Cookies;
 using Microsoft.AspNetCore.Authentication.OpenIdConnect;
+using Microsoft.AspNetCore.DataProtection;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.OpenApi;
 using Serilog;
@@ -188,6 +189,12 @@ try
     builder.Services.AddHttpClient();
     builder.Services.AddScoped<CatalogRollupService>();
     builder.Services.AddScoped<ArrThumbnailService>();
+
+    var dataProtectionKeyPath = Path.Combine(basePath, "data-protection-keys");
+    Directory.CreateDirectory(dataProtectionKeyPath);
+    builder.Services.AddDataProtection()
+        .PersistKeysToFileSystem(new DirectoryInfo(dataProtectionKeyPath))
+        .SetApplicationName("Torrentarr");
 
     var urlBase = UrlBaseHelper.NormalizeUrlBase(config.WebUI.UrlBase);
     var authBuilder = builder.Services.AddAuthentication(CookieAuthenticationDefaults.AuthenticationScheme)
@@ -2567,8 +2574,9 @@ static async Task<IResult> HandleTestConnection(TestConnectionRequest req, Torre
                 return Results.BadRequest(new { error = $"Invalid arrType: {req.ArrType}" });
         }
 
-        // Get system info to verify connection
         systemInfo = await getSystemInfo();
+        Log.Information("Arr connection test succeeded for {ArrType} at {Uri}: version {Version}",
+            req.ArrType, uri, systemInfo.Version ?? "unknown");
 
         // Fetch quality profiles with retry logic for transient errors
         const int maxRetries = 3;

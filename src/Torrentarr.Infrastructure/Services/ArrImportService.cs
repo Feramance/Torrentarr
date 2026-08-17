@@ -143,7 +143,7 @@ public class ArrImportService : IArrImportService
     {
         var client = new RadarrClient(config.URI, config.APIKey);
 
-        var importMode = _config.Settings.ImportMode ?? "Auto";
+        var importMode = ResolveImportMode(config, _config.Settings);
         var response = await client.TriggerDownloadedMoviesScanAsync(
             contentPath, hash, importMode, cancellationToken);
 
@@ -175,7 +175,7 @@ public class ArrImportService : IArrImportService
     {
         var client = new SonarrClient(config.URI, config.APIKey);
 
-        var importMode = _config.Settings.ImportMode ?? "Auto";
+        var importMode = ResolveImportMode(config, _config.Settings);
         var response = await client.TriggerDownloadedEpisodesScanAsync(
             contentPath, hash, importMode, cancellationToken);
 
@@ -207,7 +207,7 @@ public class ArrImportService : IArrImportService
     {
         var client = new LidarrClient(config.URI, config.APIKey);
 
-        var importMode = _config.Settings.ImportMode ?? "Auto";
+        var importMode = ResolveImportMode(config, _config.Settings);
         var response = await client.TriggerDownloadedAlbumsScanAsync(
             contentPath, hash, importMode, cancellationToken);
 
@@ -525,5 +525,17 @@ public class ArrImportService : IArrImportService
 
         _logger.LogInformation("Blocklisting Lidarr queue item {Id} (hash: {Hash})", record.Id, downloadId);
         return await client.DeleteFromQueueAsync(record.Id, removeFromClient: false, blocklist: true, ct);
+    }
+
+    /// <summary>
+    /// Per-Arr <c>ImportMode</c> wins; otherwise <see cref="SettingsConfig.ImportMode"/>; otherwise Auto.
+    /// </summary>
+    internal static string ResolveImportMode(ArrInstanceConfig instance, SettingsConfig settings)
+    {
+        if (!string.IsNullOrWhiteSpace(instance.ImportMode))
+            return instance.ImportMode.Trim();
+        if (!string.IsNullOrWhiteSpace(settings.ImportMode))
+            return settings.ImportMode.Trim();
+        return "Auto";
     }
 }
