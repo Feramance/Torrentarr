@@ -402,6 +402,83 @@ public sealed class TorrentProcessorTests : IDisposable
             Times.Once);
     }
 
+    /// <summary>
+    /// Regression: torrents first seen in a complete/seeding state never run file filtering (Branch 9),
+    /// but must still finalize after Arr confirms import once the scan was triggered (f49384b).
+    /// </summary>
+    [Fact]
+    public async Task ProcessSingleTorrentAsync_PendingImport_FinalizesWithoutFileFilterWhenArrConfirms()
+    {
+        const string hash = "complete-first-hash";
+        const string category = "radarr-hd";
+        const string instance = "qBit";
+        _db.TorrentLibrary.Add(new Torrentarr.Infrastructure.Database.Models.TorrentLibrary
+        {
+            Hash = hash,
+            Category = category,
+            QbitInstance = instance,
+            Imported = false
+        });
+        await _db.SaveChangesAsync();
+
+        var config = new TorrentarrConfig();
+        config.ArrInstances["Radarr-HD"] = new ArrInstanceConfig
+        {
+            Category = category,
+            Type = "radarr"
+        };
+
+        var importMock = new Mock<IArrImportService>();
+        importMock
+            .Setup(s => s.IsImportedAsync(hash, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(true);
+        importMock
+            .Setup(s => s.MarkAsImportedAsync(hash, It.IsAny<IEnumerable<string>>(), It.IsAny<CancellationToken>()))
+            .Returns(Task.CompletedTask);
+
+        var manager = new QBittorrentConnectionManager(
+            NullLogger<QBittorrentConnectionManager>.Instance);
+        var torrent = new TorrentInfo
+        {
+            Hash = hash,
+            Name = "Cross Seed Complete",
+            Category = category,
+            State = "uploading",
+            Progress = 1.0,
+            CompletionOn = DateTimeOffset.UtcNow.AddMinutes(-5).ToUnixTimeSeconds(),
+            AddedOn = DateTimeOffset.UtcNow.AddHours(-1).ToUnixTimeSeconds(),
+            AmountLeft = 0,
+            ContentPath = "/downloads/completed/item",
+            QBitInstanceName = instance
+        };
+        RegisterTestClient(manager, instance, new StubQBittorrentClient(torrent));
+
+        var cache = new TorrentCacheService(NullLogger<TorrentCacheService>.Instance);
+        var pathTracker = new ImportPathTracker();
+        pathTracker.MarkScanned("/downloads/completed/item", hash);
+
+        var processor = new TorrentProcessor(
+            NullLogger<TorrentProcessor>.Instance,
+            manager,
+            _db,
+            config,
+            cache,
+            new DatabaseRestartCoordinator(),
+            importMock.Object,
+            pathTracker: pathTracker);
+
+        var stats = new TorrentProcessingStats();
+        var method = typeof(TorrentProcessor).GetMethod(
+            "ProcessSingleTorrentAsync",
+            BindingFlags.NonPublic | BindingFlags.Instance)!;
+
+        cache.IsFileFiltered(hash).Should().BeFalse("complete-first torrents skip Branch 9 file filtering");
+
+        await (Task)method.Invoke(processor, new object[] { torrent, category, stats, CancellationToken.None })!;
+        (await _db.TorrentLibrary.SingleAsync(t => t.Hash == hash && t.QbitInstance == instance)).Imported
+            .Should().BeTrue("pending imports must finalize without requiring IsFileFiltered");
+    }
+
     private static void RegisterTestClient(
         QBittorrentConnectionManager manager,
         string instanceName,
