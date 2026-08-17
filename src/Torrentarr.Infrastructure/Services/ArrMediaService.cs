@@ -311,136 +311,136 @@ public class ArrMediaService : IArrMediaService
 
         try
         {
-        // qBitrr §2.12: "today's release" = aired between 25 hours ago and 1 hour ago
-        var todayLower = DateTime.UtcNow.AddHours(-25);
-        var todayUpper = DateTime.UtcNow.AddHours(-1);
+            // qBitrr §2.12: "today's release" = aired between 25 hours ago and 1 hour ago
+            var todayLower = DateTime.UtcNow.AddHours(-25);
+            var todayUpper = DateTime.UtcNow.AddHours(-1);
 
-        switch (arrConfig.Type.ToLowerInvariant())
-        {
-            case "radarr":
-                // §2.10: When Unmonitored=true, include unmonitored items
-                var movies = searchConfig.Unmonitored
-                    ? await _dbContext.Movies
-                        .Where(m => m.ArrInstance == instanceName && !m.Searched)
-                        .ToListAsync(cancellationToken)
-                    : await _dbContext.Movies
-                        .Where(m => m.ArrInstance == instanceName && m.Monitored && !m.Searched)
-                        .ToListAsync(cancellationToken);
+            switch (arrConfig.Type.ToLowerInvariant())
+            {
+                case "radarr":
+                    // §2.10: When Unmonitored=true, include unmonitored items
+                    var movies = searchConfig.Unmonitored
+                        ? await _dbContext.Movies
+                            .Where(m => m.ArrInstance == instanceName && !m.Searched)
+                            .ToListAsync(cancellationToken)
+                        : await _dbContext.Movies
+                            .Where(m => m.ArrInstance == instanceName && m.Monitored && !m.Searched)
+                            .ToListAsync(cancellationToken);
 
-                foreach (var movie in movies)
-                {
-                    var priority = GetReasonPriority(movie.Reason, searchConfig);
-                    if (priority >= 99) continue;
-
-                    candidates.Add(new SearchCandidate
+                    foreach (var movie in movies)
                     {
-                        ArrId = movie.ArrId,
-                        Title = movie.Title,
-                        Type = "Movie",
-                        Reason = movie.Reason ?? "Missing",
-                        Priority = priority,
-                        Year = movie.Year
-                    });
-                }
-                break;
+                        var priority = GetReasonPriority(movie.Reason, searchConfig);
+                        if (priority >= 99) continue;
 
-            case "sonarr":
-                // §2.10: When Unmonitored=true, include unmonitored items
-                var episodes = searchConfig.Unmonitored
-                    ? await _dbContext.Episodes
-                        .Where(e => e.ArrInstance == instanceName && !e.Searched)
-                        .ToListAsync(cancellationToken)
-                    : await _dbContext.Episodes
-                        .Where(e => e.ArrInstance == instanceName && e.Monitored == true && !e.Searched)
-                        .ToListAsync(cancellationToken);
+                        candidates.Add(new SearchCandidate
+                        {
+                            ArrId = movie.ArrId,
+                            Title = movie.Title,
+                            Type = "Movie",
+                            Reason = movie.Reason ?? "Missing",
+                            Priority = priority,
+                            Year = movie.Year
+                        });
+                    }
+                    break;
 
-                foreach (var ep in episodes)
-                {
-                    if (!searchConfig.AlsoSearchSpecials && ep.SeasonNumber == 0)
-                        continue;
+                case "sonarr":
+                    // §2.10: When Unmonitored=true, include unmonitored items
+                    var episodes = searchConfig.Unmonitored
+                        ? await _dbContext.Episodes
+                            .Where(e => e.ArrInstance == instanceName && !e.Searched)
+                            .ToListAsync(cancellationToken)
+                        : await _dbContext.Episodes
+                            .Where(e => e.ArrInstance == instanceName && e.Monitored == true && !e.Searched)
+                            .ToListAsync(cancellationToken);
 
-                    var priority = GetReasonPriority(ep.Reason, searchConfig);
-                    if (priority >= 99) continue;
-
-                    // §2.12: 25h/1h window instead of calendar-day comparison
-                    var isTodaysRelease = searchConfig.PrioritizeTodaysReleases &&
-                        ep.AirDateUtc.HasValue &&
-                        ep.AirDateUtc.Value >= todayLower &&
-                        ep.AirDateUtc.Value <= todayUpper;
-
-                    candidates.Add(new SearchCandidate
+                    foreach (var ep in episodes)
                     {
-                        ArrId = ep.ArrId,
-                        Title = $"{ep.SeriesTitle} S{ep.SeasonNumber:00}E{ep.EpisodeNumber:00}",
-                        Type = "Episode",
-                        Reason = ep.Reason ?? "Missing",
-                        Priority = priority,
-                        SeriesId = ep.ArrSeriesId,
-                        SeasonNumber = ep.SeasonNumber,
-                        EpisodeNumber = ep.EpisodeNumber,
-                        AirDate = ep.AirDateUtc,
-                        IsTodaysRelease = isTodaysRelease
-                    });
-                }
-                break;
+                        if (!searchConfig.AlsoSearchSpecials && ep.SeasonNumber == 0)
+                            continue;
 
-            case "lidarr":
-                // §2.10: When Unmonitored=true, include unmonitored items
-                var albums = searchConfig.Unmonitored
-                    ? await _dbContext.Albums
-                        .Where(a => a.ArrInstance == instanceName && !a.Searched)
-                        .ToListAsync(cancellationToken)
-                    : await _dbContext.Albums
-                        .Where(a => a.ArrInstance == instanceName && a.Monitored && !a.Searched)
-                        .ToListAsync(cancellationToken);
+                        var priority = GetReasonPriority(ep.Reason, searchConfig);
+                        if (priority >= 99) continue;
 
-                foreach (var album in albums)
-                {
-                    var priority = GetReasonPriority(album.Reason, searchConfig);
-                    if (priority >= 99) continue;
+                        // §2.12: 25h/1h window instead of calendar-day comparison
+                        var isTodaysRelease = searchConfig.PrioritizeTodaysReleases &&
+                            ep.AirDateUtc.HasValue &&
+                            ep.AirDateUtc.Value >= todayLower &&
+                            ep.AirDateUtc.Value <= todayUpper;
 
-                    candidates.Add(new SearchCandidate
+                        candidates.Add(new SearchCandidate
+                        {
+                            ArrId = ep.ArrId,
+                            Title = $"{ep.SeriesTitle} S{ep.SeasonNumber:00}E{ep.EpisodeNumber:00}",
+                            Type = "Episode",
+                            Reason = ep.Reason ?? "Missing",
+                            Priority = priority,
+                            SeriesId = ep.ArrSeriesId,
+                            SeasonNumber = ep.SeasonNumber,
+                            EpisodeNumber = ep.EpisodeNumber,
+                            AirDate = ep.AirDateUtc,
+                            IsTodaysRelease = isTodaysRelease
+                        });
+                    }
+                    break;
+
+                case "lidarr":
+                    // §2.10: When Unmonitored=true, include unmonitored items
+                    var albums = searchConfig.Unmonitored
+                        ? await _dbContext.Albums
+                            .Where(a => a.ArrInstance == instanceName && !a.Searched)
+                            .ToListAsync(cancellationToken)
+                        : await _dbContext.Albums
+                            .Where(a => a.ArrInstance == instanceName && a.Monitored && !a.Searched)
+                            .ToListAsync(cancellationToken);
+
+                    foreach (var album in albums)
                     {
-                        ArrId = album.ArrId,
-                        Title = $"{album.ArtistTitle} - {album.Title}",
-                        Type = "Album",
-                        Reason = album.Reason ?? "Missing",
-                        Priority = priority,
-                        ArtistId = album.ArrArtistId,
-                        AlbumId = album.ArrId,
-                        Year = album.ReleaseDate?.Year
-                    });
-                }
-                break;
+                        var priority = GetReasonPriority(album.Reason, searchConfig);
+                        if (priority >= 99) continue;
 
-            case "readarr":
-                var books = searchConfig.Unmonitored
-                    ? await _dbContext.Books
-                        .Where(b => b.ArrInstance == instanceName && !b.Searched)
-                        .ToListAsync(cancellationToken)
-                    : await _dbContext.Books
-                        .Where(b => b.ArrInstance == instanceName && b.Monitored && !b.Searched)
-                        .ToListAsync(cancellationToken);
+                        candidates.Add(new SearchCandidate
+                        {
+                            ArrId = album.ArrId,
+                            Title = $"{album.ArtistTitle} - {album.Title}",
+                            Type = "Album",
+                            Reason = album.Reason ?? "Missing",
+                            Priority = priority,
+                            ArtistId = album.ArrArtistId,
+                            AlbumId = album.ArrId,
+                            Year = album.ReleaseDate?.Year
+                        });
+                    }
+                    break;
 
-                foreach (var book in books)
-                {
-                    var priority = GetReasonPriority(book.Reason, searchConfig);
-                    if (priority >= 99) continue;
+                case "readarr":
+                    var books = searchConfig.Unmonitored
+                        ? await _dbContext.Books
+                            .Where(b => b.ArrInstance == instanceName && !b.Searched)
+                            .ToListAsync(cancellationToken)
+                        : await _dbContext.Books
+                            .Where(b => b.ArrInstance == instanceName && b.Monitored && !b.Searched)
+                            .ToListAsync(cancellationToken);
 
-                    candidates.Add(new SearchCandidate
+                    foreach (var book in books)
                     {
-                        ArrId = book.ArrId,
-                        Title = $"{book.AuthorTitle} - {book.Title}",
-                        Type = "Book",
-                        Reason = book.Reason ?? "Missing",
-                        Priority = priority,
-                        AuthorId = book.ArrAuthorId,
-                        BookId = book.ArrId,
-                        Year = book.ReleaseDate?.Year
-                    });
-                }
-                break;
-        }
+                        var priority = GetReasonPriority(book.Reason, searchConfig);
+                        if (priority >= 99) continue;
+
+                        candidates.Add(new SearchCandidate
+                        {
+                            ArrId = book.ArrId,
+                            Title = $"{book.AuthorTitle} - {book.Title}",
+                            Type = "Book",
+                            Reason = book.Reason ?? "Missing",
+                            Priority = priority,
+                            AuthorId = book.ArrAuthorId,
+                            BookId = book.ArrId,
+                            Year = book.ReleaseDate?.Year
+                        });
+                    }
+                    break;
+            }
 
         }
         catch (Exception ex)
