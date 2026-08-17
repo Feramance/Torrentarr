@@ -1703,6 +1703,7 @@ function SonarrInstanceView({
           <span className="spinner" /> Loading series…
         </div>
       ) : groupSonarr ? (
+        paginatedGroupedData.length > 0 ? (
         <div className="sonarr-hierarchical-view">
           {paginatedGroupedData.map((seriesGroup) => {
             let episodeCount = 0;
@@ -1806,6 +1807,9 @@ function SonarrInstanceView({
             );
           })}
         </div>
+        ) : (
+          <div className="hint">No series found.</div>
+        )
       ) : !loading &&
         series.length > 0 &&
         filteredEpisodeRows.length === 0 &&
