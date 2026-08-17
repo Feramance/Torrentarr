@@ -111,6 +111,44 @@ public sealed class TorrentProcessorTests : IDisposable
     }
 
     [Fact]
+    public async Task ProcessSingleTorrentAsync_RecheckOnMissingOwningClient_DoesNotUseOtherInstance()
+    {
+        const string hash = "recheck-hash-0123456789abcdef0123456789abcdef";
+        var config = new TorrentarrConfig();
+        config.Settings.RecheckCategory = "recheck";
+
+        var manager = new QBittorrentConnectionManager(
+            NullLogger<QBittorrentConnectionManager>.Instance);
+        RegisterTestClient(manager, "qBit-seedbox", new QBittorrentClient("127.0.0.1", 1, "u", "p"));
+
+        var processor = new TorrentProcessor(
+            NullLogger<TorrentProcessor>.Instance,
+            manager,
+            _db,
+            config,
+            new TorrentCacheService(NullLogger<TorrentCacheService>.Instance),
+            new DatabaseRestartCoordinator());
+
+        var torrent = new TorrentInfo
+        {
+            Hash = hash,
+            Name = "Needs Recheck",
+            Category = "recheck",
+            State = "error",
+            QBitInstanceName = "qBit"
+        };
+        var stats = new TorrentProcessingStats();
+        var method = typeof(TorrentProcessor).GetMethod(
+            "ProcessSingleTorrentAsync",
+            BindingFlags.NonPublic | BindingFlags.Instance)!;
+
+        var act = async () => await (Task)method.Invoke(processor, new object[] { torrent, "recheck", stats, CancellationToken.None })!;
+
+        await act.Should().NotThrowAsync();
+        stats.Failed.Should().Be(0);
+    }
+
+    [Fact]
     public async Task ProcessTorrentsAsync_PreCancelledToken_DoesNotThrow()
     {
         var svc = CreateProcessor();

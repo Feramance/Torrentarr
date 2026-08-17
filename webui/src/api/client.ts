@@ -453,6 +453,7 @@ export interface TestConnectionRequest {
   instanceKey?: string;
   uri?: string;
   apiKey?: string;
+  skipTlsVerify?: boolean;
 }
 
 export interface TestConnectionResponse {

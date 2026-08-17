@@ -156,9 +156,8 @@ docker push feramance/torrentarr:latest
 6. Build WebUI (`cd webui && npm ci && npm run build`)
 7. Build Docker image (multi-platform: amd64, arm64)
 8. Push to Docker Hub with tags:
-   - `feramance/torrentarr:5.6.0`
-   - `feramance/torrentarr:5.6`
-   - `feramance/torrentarr:5`
+   - `feramance/torrentarr:v6.14.3`
+   - `feramance/torrentarr:stable`
    - `feramance/torrentarr:latest`
 9. Create GitHub Release with changelog
 

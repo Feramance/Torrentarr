@@ -21,6 +21,9 @@ URI = "http://localhost:8989"
 # Sonarr API Key (Settings > General > Security)
 APIKey = "your-sonarr-api-key"
 
+# If true, do not verify TLS for this Servarr API (HTTPS). Does not affect Overseerr/Ombi.
+SkipTLSVerify = false
+
 # Category applied by Sonarr to torrents in qBittorrent
 # MUST match: Sonarr > Settings > Download Clients > qBittorrent > Category
 Category = "sonarr-tv"

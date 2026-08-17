@@ -143,7 +143,7 @@ public class ArrImportService : IArrImportService
         string contentPath,
         CancellationToken cancellationToken)
     {
-        var client = new RadarrClient(config.URI, config.APIKey);
+        var client = new RadarrClient(config.URI, config.APIKey, config.SkipTLSVerify);
 
         var importMode = _config.Settings.ImportMode ?? "Auto";
         var response = await client.TriggerDownloadedMoviesScanAsync(
@@ -175,7 +175,7 @@ public class ArrImportService : IArrImportService
         string contentPath,
         CancellationToken cancellationToken)
     {
-        var client = new SonarrClient(config.URI, config.APIKey);
+        var client = new SonarrClient(config.URI, config.APIKey, config.SkipTLSVerify);
 
         var importMode = _config.Settings.ImportMode ?? "Auto";
         var response = await client.TriggerDownloadedEpisodesScanAsync(
@@ -207,7 +207,7 @@ public class ArrImportService : IArrImportService
         string contentPath,
         CancellationToken cancellationToken)
     {
-        var client = new LidarrClient(config.URI, config.APIKey);
+        var client = new LidarrClient(config.URI, config.APIKey, config.SkipTLSVerify);
 
         var importMode = _config.Settings.ImportMode ?? "Auto";
         var response = await client.TriggerDownloadedAlbumsScanAsync(
@@ -239,7 +239,7 @@ public class ArrImportService : IArrImportService
         string contentPath,
         CancellationToken cancellationToken)
     {
-        var client = new ReadarrClient(config.URI, config.APIKey);
+        var client = new ReadarrClient(config.URI, config.APIKey, config.SkipTLSVerify);
 
         var importMode = _config.Settings.ImportMode ?? "Auto";
         var response = await client.TriggerDownloadedBooksScanAsync(
@@ -270,7 +270,7 @@ public class ArrImportService : IArrImportService
         string hash,
         CancellationToken cancellationToken)
     {
-        var client = new RadarrClient(config.URI, config.APIKey);
+        var client = new RadarrClient(config.URI, config.APIKey, config.SkipTLSVerify);
         var queue = await client.GetQueueAsync(ct: cancellationToken);
 
         return queue?.Records?.Any(r =>
@@ -283,7 +283,7 @@ public class ArrImportService : IArrImportService
         string hash,
         CancellationToken cancellationToken)
     {
-        var client = new SonarrClient(config.URI, config.APIKey);
+        var client = new SonarrClient(config.URI, config.APIKey, config.SkipTLSVerify);
         var queue = await client.GetQueueAsync(ct: cancellationToken);
 
         return queue?.Records?.Any(r =>
@@ -296,7 +296,7 @@ public class ArrImportService : IArrImportService
         string hash,
         CancellationToken cancellationToken)
     {
-        var client = new LidarrClient(config.URI, config.APIKey);
+        var client = new LidarrClient(config.URI, config.APIKey, config.SkipTLSVerify);
         var queue = await client.GetQueueAsync(ct: cancellationToken);
 
         return queue?.Records?.Any(r =>
@@ -309,7 +309,7 @@ public class ArrImportService : IArrImportService
         string hash,
         CancellationToken cancellationToken)
     {
-        var client = new ReadarrClient(config.URI, config.APIKey);
+        var client = new ReadarrClient(config.URI, config.APIKey, config.SkipTLSVerify);
         var queue = await client.GetQueueAsync(ct: cancellationToken);
 
         return queue?.Records?.Any(r =>
@@ -399,7 +399,7 @@ public class ArrImportService : IArrImportService
 
     private async Task<bool> CheckRadarrCfUnmetAsync(ArrInstanceConfig config, string downloadId, CancellationToken ct)
     {
-        var client = new RadarrClient(config.URI, config.APIKey);
+        var client = new RadarrClient(config.URI, config.APIKey, config.SkipTLSVerify);
         var queue = await client.GetQueueAsync(ct: ct);
         var record = queue.Records.FirstOrDefault(r =>
             string.Equals(r.DownloadId, downloadId, StringComparison.OrdinalIgnoreCase));
@@ -429,7 +429,7 @@ public class ArrImportService : IArrImportService
 
     private async Task<bool> CheckSonarrCfUnmetAsync(ArrInstanceConfig config, string downloadId, CancellationToken ct)
     {
-        var client = new SonarrClient(config.URI, config.APIKey);
+        var client = new SonarrClient(config.URI, config.APIKey, config.SkipTLSVerify);
         var queue = await client.GetQueueAsync(ct: ct);
         var record = queue.Records.FirstOrDefault(r =>
             string.Equals(r.DownloadId, downloadId, StringComparison.OrdinalIgnoreCase));
@@ -479,7 +479,7 @@ public class ArrImportService : IArrImportService
 
     private async Task<bool> CheckLidarrCfUnmetAsync(ArrInstanceConfig config, string downloadId, CancellationToken ct)
     {
-        var client = new LidarrClient(config.URI, config.APIKey);
+        var client = new LidarrClient(config.URI, config.APIKey, config.SkipTLSVerify);
         var queue = await client.GetQueueAsync(ct: ct);
         var record = queue.Records.FirstOrDefault(r =>
             string.Equals(r.DownloadId, downloadId, StringComparison.OrdinalIgnoreCase));
@@ -539,7 +539,7 @@ public class ArrImportService : IArrImportService
 
     private async Task<bool> BlocklistRadarrAsync(ArrInstanceConfig config, string downloadId, CancellationToken ct)
     {
-        var client = new RadarrClient(config.URI, config.APIKey);
+        var client = new RadarrClient(config.URI, config.APIKey, config.SkipTLSVerify);
         var queue = await client.GetQueueAsync(ct: ct);
         var record = queue.Records.FirstOrDefault(r =>
             string.Equals(r.DownloadId, downloadId, StringComparison.OrdinalIgnoreCase));
@@ -552,7 +552,7 @@ public class ArrImportService : IArrImportService
 
     private async Task<bool> BlocklistSonarrAsync(ArrInstanceConfig config, string downloadId, CancellationToken ct)
     {
-        var client = new SonarrClient(config.URI, config.APIKey);
+        var client = new SonarrClient(config.URI, config.APIKey, config.SkipTLSVerify);
         var queue = await client.GetQueueAsync(ct: ct);
         var record = queue.Records.FirstOrDefault(r =>
             string.Equals(r.DownloadId, downloadId, StringComparison.OrdinalIgnoreCase));
@@ -565,7 +565,7 @@ public class ArrImportService : IArrImportService
 
     private async Task<bool> BlocklistLidarrAsync(ArrInstanceConfig config, string downloadId, CancellationToken ct)
     {
-        var client = new LidarrClient(config.URI, config.APIKey);
+        var client = new LidarrClient(config.URI, config.APIKey, config.SkipTLSVerify);
         var queue = await client.GetQueueAsync(ct: ct);
         var record = queue.Records.FirstOrDefault(r =>
             string.Equals(r.DownloadId, downloadId, StringComparison.OrdinalIgnoreCase));
@@ -578,7 +578,7 @@ public class ArrImportService : IArrImportService
 
     private async Task<bool> BlocklistReadarrAsync(ArrInstanceConfig config, string downloadId, CancellationToken ct)
     {
-        var client = new ReadarrClient(config.URI, config.APIKey);
+        var client = new ReadarrClient(config.URI, config.APIKey, config.SkipTLSVerify);
         var queue = await client.GetQueueAsync(ct: ct);
         var record = queue.Records.FirstOrDefault(r =>
             string.Equals(r.DownloadId, downloadId, StringComparison.OrdinalIgnoreCase));
@@ -591,7 +591,7 @@ public class ArrImportService : IArrImportService
 
     private async Task<bool> CheckReadarrCfUnmetAsync(ArrInstanceConfig config, string downloadId, CancellationToken ct)
     {
-        var client = new ReadarrClient(config.URI, config.APIKey);
+        var client = new ReadarrClient(config.URI, config.APIKey, config.SkipTLSVerify);
         var queue = await client.GetQueueAsync(ct: ct);
         var record = queue.Records.FirstOrDefault(r =>
             string.Equals(r.DownloadId, downloadId, StringComparison.OrdinalIgnoreCase));

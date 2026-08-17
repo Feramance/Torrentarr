@@ -139,6 +139,7 @@ builder.Services.AddSingleton(configLoader);
 
 builder.Services.AddSingleton<IPasswordHasher, BCryptPasswordHasher>();
 builder.Services.AddHttpClient();
+builder.Services.AddScoped<IDatabaseHealthService, DatabaseHealthService>();
 builder.Services.AddScoped<CatalogRollupService>();
 builder.Services.AddScoped<ArrThumbnailService>();
 
@@ -234,6 +235,7 @@ else
 }
 
 app.UseAuthentication();
+app.UseArrCatalogDbSafe();
 
 // Auth middleware (same logic as Host): protect /web/* when auth required; API token always required for /api/*
 app.Use(async (context, next) =>
@@ -1266,6 +1268,7 @@ app.MapPost("/web/arr/test-connection", async (HttpContext ctx, TorrentarrConfig
 
         var uri = body.Uri;
         var apiKey = body.ApiKey;
+        var skipTls = body.SkipTlsVerify ?? false;
 
         // When instanceKey is provided, load URI and APIKey from config (e.g. when API key is redacted in UI)
         if (!string.IsNullOrEmpty(body.InstanceKey))
@@ -1278,6 +1281,7 @@ app.MapPost("/web/arr/test-connection", async (HttpContext ctx, TorrentarrConfig
 
             uri = arrCfg.URI;
             apiKey = arrCfg.APIKey;
+            skipTls = body.SkipTlsVerify ?? arrCfg.SkipTLSVerify;
         }
 
         if (string.IsNullOrEmpty(body.ArrType) || string.IsNullOrEmpty(uri) || string.IsNullOrEmpty(apiKey))
@@ -1293,22 +1297,22 @@ app.MapPost("/web/arr/test-connection", async (HttpContext ctx, TorrentarrConfig
         switch (arrType)
         {
             case "radarr":
-                var radarr = new RadarrClient(uri, apiKey);
+                var radarr = new RadarrClient(uri, apiKey, skipTls);
                 getSystemInfo = () => radarr.GetSystemInfoAsync();
                 getProfiles = () => radarr.GetQualityProfilesAsync();
                 break;
             case "sonarr":
-                var sonarr = new SonarrClient(uri, apiKey);
+                var sonarr = new SonarrClient(uri, apiKey, skipTls);
                 getSystemInfo = () => sonarr.GetSystemInfoAsync();
                 getProfiles = () => sonarr.GetQualityProfilesAsync();
                 break;
             case "lidarr":
-                var lidarr = new LidarrClient(uri, apiKey);
+                var lidarr = new LidarrClient(uri, apiKey, skipTls);
                 getSystemInfo = () => lidarr.GetSystemInfoAsync();
                 getProfiles = () => lidarr.GetQualityProfilesAsync();
                 break;
             case "readarr":
-                var readarr = new ReadarrClient(uri, apiKey);
+                var readarr = new ReadarrClient(uri, apiKey, skipTls);
                 getSystemInfo = () => readarr.GetSystemInfoAsync();
                 getProfiles = () => readarr.GetQualityProfilesAsync();
                 break;
@@ -1374,10 +1378,10 @@ app.MapPost("/web/arr/rebuild", async (HttpContext ctx, TorrentarrConfig config)
 
         bool success = arrCfg.Type?.ToLowerInvariant() switch
         {
-            "radarr" => await new RadarrClient(arrCfg.URI, arrCfg.APIKey).RescanAsync(),
-            "sonarr" => await new SonarrClient(arrCfg.URI, arrCfg.APIKey).RescanAsync(),
-            "lidarr" => await new LidarrClient(arrCfg.URI, arrCfg.APIKey).RescanAsync(),
-            "readarr" => await new ReadarrClient(arrCfg.URI, arrCfg.APIKey).RescanAsync(),
+            "radarr" => await new RadarrClient(arrCfg.URI, arrCfg.APIKey, arrCfg.SkipTLSVerify).RescanAsync(),
+            "sonarr" => await new SonarrClient(arrCfg.URI, arrCfg.APIKey, arrCfg.SkipTLSVerify).RescanAsync(),
+            "lidarr" => await new LidarrClient(arrCfg.URI, arrCfg.APIKey, arrCfg.SkipTLSVerify).RescanAsync(),
+            "readarr" => await new ReadarrClient(arrCfg.URI, arrCfg.APIKey, arrCfg.SkipTLSVerify).RescanAsync(),
             _ => false
         };
 
@@ -1402,7 +1406,7 @@ app.MapGet("/web/qbit/categories", async (TorrentarrConfig config) =>
         var liveTorrents = new List<TorrentInfo>();
         try
         {
-            var qbitClient = new QBittorrentClient(qbitCfg.Host, qbitCfg.Port, qbitCfg.UserName, qbitCfg.Password);
+            var qbitClient = new QBittorrentClient(qbitCfg.Host, qbitCfg.Port, qbitCfg.UserName, qbitCfg.Password, qbitCfg.SkipTLSVerify);
             if (await qbitClient.LoginAsync())
                 liveTorrents = await qbitClient.GetTorrentsAsync();
         }
@@ -1587,7 +1591,7 @@ static bool IsSensitiveDottedKey(string dottedKey)
 app.Run();
 
 public record LogLevelRequest(string Level);
-public record ArrTestConnectionRequest(string ArrType, string? Uri, string? ApiKey, string? InstanceKey = null);
+public record ArrTestConnectionRequest(string ArrType, string? Uri, string? ApiKey, string? InstanceKey = null, bool? SkipTlsVerify = null);
 public record ArrRebuildRequest(string ArrInstanceName);
 public record LoginRequest(string? Username, string? Password);
 public record SetPasswordRequest(string? Username, string? Password, string? SetupToken = null);

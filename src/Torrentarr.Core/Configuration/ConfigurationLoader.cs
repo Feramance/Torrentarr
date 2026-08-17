@@ -845,6 +845,7 @@ public class ConfigurationLoader
                 ("Port", (long)8080),
                 ("UserName", "CHANGE_ME"),
                 ("Password", "CHANGE_ME"),
+                ("SkipTLSVerify", false),
             };
             foreach (var (key, defaultVal) in qbitDefaults)
             {
@@ -862,6 +863,13 @@ public class ConfigurationLoader
             if (!ArrSectionHelper.IsArrSection(kvp.Key))
                 continue;
             if (kvp.Value is not TomlTable arrTable) continue;
+
+            if (!arrTable.ContainsKey("SkipTLSVerify"))
+            {
+                arrTable["SkipTLSVerify"] = false;
+                changed = true;
+            }
+
             if (!arrTable.TryGetValue("EntrySearch", out var esObj) || esObj is not TomlTable entrySearch) continue;
 
             var esDefaults = new (string Key, object Default)[]
@@ -884,6 +892,17 @@ public class ConfigurationLoader
             {
                 entrySearch["QualityProfileMappings"] = new TomlTable();
                 changed = true;
+            }
+
+            foreach (var providerKey in new[] { "Ombi", "Overseerr" })
+            {
+                if (!entrySearch.TryGetValue(providerKey, out var providerObj) || providerObj is not TomlTable providerTable)
+                    continue;
+                if (!providerTable.ContainsKey("SkipTLSVerify"))
+                {
+                    providerTable["SkipTLSVerify"] = false;
+                    changed = true;
+                }
             }
         }
 
@@ -1056,6 +1075,9 @@ public class ConfigurationLoader
             qbit.Password = password?.ToString() ?? "CHANGE_ME";
         else
             qbit.Password = "CHANGE_ME";
+
+        if (table.TryGetValue("SkipTLSVerify", out var skipTls))
+            qbit.SkipTLSVerify = Convert.ToBoolean(skipTls);
 
         if (table.TryGetValue("DownloadPath", out var downloadPath))
             qbit.DownloadPath = downloadPath?.ToString();
@@ -1328,6 +1350,9 @@ public class ConfigurationLoader
             if (instanceTable.TryGetValue("APIKey", out var apiKey))
                 instance.APIKey = apiKey?.ToString() ?? "";
 
+            if (instanceTable.TryGetValue("SkipTLSVerify", out var skipTls))
+                instance.SkipTLSVerify = Convert.ToBoolean(skipTls);
+
             if (instanceTable.TryGetValue("Managed", out var managed))
                 instance.Managed = Convert.ToBoolean(managed);
 
@@ -1576,6 +1601,9 @@ public class ConfigurationLoader
         if (table.TryGetValue("ApprovedOnly", out var approvedOnly))
             ombi.ApprovedOnly = Convert.ToBoolean(approvedOnly);
 
+        if (table.TryGetValue("SkipTLSVerify", out var skipTls))
+            ombi.SkipTLSVerify = Convert.ToBoolean(skipTls);
+
         return ombi;
     }
 
@@ -1597,6 +1625,9 @@ public class ConfigurationLoader
 
         if (table.TryGetValue("Is4K", out var is4K))
             overseerr.Is4K = Convert.ToBoolean(is4K);
+
+        if (table.TryGetValue("SkipTLSVerify", out var skipTls))
+            overseerr.SkipTLSVerify = Convert.ToBoolean(skipTls);
 
         return overseerr;
     }
@@ -1809,6 +1840,7 @@ public class ConfigurationLoader
             sb.AppendLine($"Port = {qbit.Port}");
             sb.AppendLine($"UserName = \"{qbit.UserName}\"");
             sb.AppendLine($"Password = \"{qbit.Password}\"");
+            sb.AppendLine($"SkipTLSVerify = {qbit.SkipTLSVerify.ToString().ToLower()}");
             if (!string.IsNullOrEmpty(qbit.DownloadPath))
                 sb.AppendLine($"DownloadPath = \"{qbit.DownloadPath}\"");
             sb.AppendLine($"ManagedCategories = [{string.Join(", ", qbit.ManagedCategories.Select(c => $"\"{c}\""))}]");
@@ -1849,6 +1881,7 @@ public class ConfigurationLoader
             sb.AppendLine($"Managed = {instance.Managed.ToString().ToLower()}");
             sb.AppendLine($"URI = \"{instance.URI}\"");
             sb.AppendLine($"APIKey = \"{instance.APIKey}\"");
+            sb.AppendLine($"SkipTLSVerify = {instance.SkipTLSVerify.ToString().ToLower()}");
             sb.AppendLine($"Category = \"{instance.Category}\"");
             if (instance.MatchSubcategories.HasValue)
                 sb.AppendLine($"MatchSubcategories = {instance.MatchSubcategories.Value.ToString().ToLower()}");
@@ -1936,6 +1969,7 @@ public class ConfigurationLoader
                 sb.AppendLine($"OmbiURI = \"{EscapeTomlString(string.IsNullOrEmpty(ombi.OmbiURI) ? "CHANGE_ME" : ombi.OmbiURI)}\"");
                 sb.AppendLine($"OmbiAPIKey = \"{EscapeTomlString(string.IsNullOrEmpty(ombi.OmbiAPIKey) ? "CHANGE_ME" : ombi.OmbiAPIKey)}\"");
                 sb.AppendLine($"ApprovedOnly = {ombi.ApprovedOnly.ToString().ToLower()}");
+                sb.AppendLine($"SkipTLSVerify = {ombi.SkipTLSVerify.ToString().ToLower()}");
 
                 var overseerr = instance.Search.Overseerr ?? new OverseerrConfig();
                 sb.AppendLine();
@@ -1945,6 +1979,7 @@ public class ConfigurationLoader
                 sb.AppendLine($"OverseerrAPIKey = \"{EscapeTomlString(string.IsNullOrEmpty(overseerr.OverseerrAPIKey) ? "CHANGE_ME" : overseerr.OverseerrAPIKey)}\"");
                 sb.AppendLine($"ApprovedOnly = {overseerr.ApprovedOnly.ToString().ToLower()}");
                 sb.AppendLine($"Is4K = {overseerr.Is4K.ToString().ToLower()}");
+                sb.AppendLine($"SkipTLSVerify = {overseerr.SkipTLSVerify.ToString().ToLower()}");
             }
 
             sb.AppendLine();

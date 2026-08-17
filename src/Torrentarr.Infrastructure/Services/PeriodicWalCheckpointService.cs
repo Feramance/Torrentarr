@@ -6,7 +6,7 @@ using Microsoft.Extensions.Logging;
 namespace Torrentarr.Infrastructure.Services;
 
 /// <summary>
-/// Periodic WAL checkpoint (qBitrr main.py 5-minute interval parity).
+/// Periodic WAL checkpoint + health/repair (qBitrr 5.12.9 <c>maintain_database</c>, 5-minute interval).
 /// </summary>
 public class PeriodicWalCheckpointService : BackgroundService
 {
@@ -24,7 +24,9 @@ public class PeriodicWalCheckpointService : BackgroundService
 
     protected override async Task ExecuteAsync(CancellationToken stoppingToken)
     {
-        _logger.LogInformation("Starting periodic WAL checkpoint service (interval: {Minutes} minutes)", Interval.TotalMinutes);
+        _logger.LogInformation(
+            "Starting periodic database maintenance service (checkpoint + health check, interval: {Minutes} minutes)",
+            Interval.TotalMinutes);
 
         while (!stoppingToken.IsCancellationRequested)
         {
@@ -33,7 +35,8 @@ public class PeriodicWalCheckpointService : BackgroundService
                 await Task.Delay(Interval, stoppingToken);
                 using var scope = _scopeFactory.CreateScope();
                 var dbHealth = scope.ServiceProvider.GetRequiredService<IDatabaseHealthService>();
-                await dbHealth.CheckpointWalAsync(stoppingToken);
+                if (!await dbHealth.MaintainAsync(repairIfUnhealthy: true, stoppingToken))
+                    _logger.LogCritical("Periodic database maintenance detected corruption and repair failed");
             }
             catch (OperationCanceledException) when (stoppingToken.IsCancellationRequested)
             {
@@ -41,7 +44,7 @@ public class PeriodicWalCheckpointService : BackgroundService
             }
             catch (Exception ex)
             {
-                _logger.LogError(ex, "Periodic WAL checkpoint failed");
+                _logger.LogError(ex, "Periodic database maintenance failed");
             }
         }
     }

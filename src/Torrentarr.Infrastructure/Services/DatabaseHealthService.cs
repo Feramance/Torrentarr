@@ -249,6 +249,84 @@ public class DatabaseHealthService : IDatabaseHealthService
         }
     }
 
+    public async Task<bool> BackupAsync(string destPath, CancellationToken cancellationToken = default)
+    {
+        try
+        {
+            if (string.IsNullOrWhiteSpace(_dbPath) || !File.Exists(_dbPath))
+            {
+                _logger.LogError("Database file not found: {Path}", _dbPath);
+                return false;
+            }
+
+            var destDir = Path.GetDirectoryName(destPath);
+            if (!string.IsNullOrEmpty(destDir))
+                Directory.CreateDirectory(destDir);
+
+            await using (var source = new SqliteConnection($"Data Source={_dbPath};Mode=ReadOnly"))
+            {
+                await source.OpenAsync(cancellationToken);
+                if (File.Exists(destPath))
+                    File.Delete(destPath);
+
+                await using var dest = new SqliteConnection($"Data Source={destPath}");
+                await dest.OpenAsync(cancellationToken);
+                source.BackupDatabase(dest);
+            }
+
+            await using (var verify = new SqliteConnection($"Data Source={destPath}"))
+            {
+                await verify.OpenAsync(cancellationToken);
+                await using var cmd = verify.CreateCommand();
+                cmd.CommandText = "PRAGMA quick_check";
+                var check = (await cmd.ExecuteScalarAsync(cancellationToken))?.ToString();
+                if (!string.Equals(check, "ok", StringComparison.OrdinalIgnoreCase))
+                {
+                    _logger.LogError("Backup failed integrity quick_check: {Result}", check);
+                    return false;
+                }
+            }
+
+            _logger.LogInformation("Database backup complete: {Dest} ({Bytes} bytes)", destPath, new FileInfo(destPath).Length);
+            return true;
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Database backup failed");
+            return false;
+        }
+    }
+
+    public async Task<bool> MaintainAsync(bool repairIfUnhealthy = true, CancellationToken cancellationToken = default)
+    {
+        if (string.IsNullOrWhiteSpace(_dbPath) || !File.Exists(_dbPath))
+            return true;
+
+        if (!await CheckpointWalAsync(cancellationToken))
+            _logger.LogWarning("WAL checkpoint failed during database maintenance");
+
+        var health = await CheckHealthAsync(cancellationToken);
+        if (health.IsHealthy)
+        {
+            _logger.LogDebug("Database maintenance: health check passed");
+            return true;
+        }
+
+        _logger.LogError("Database health check failed during maintenance: {Message}", health.Message);
+        if (!repairIfUnhealthy)
+            return false;
+
+        _logger.LogWarning("Attempting automatic database repair during maintenance...");
+        if (await RepairAsync(cancellationToken))
+        {
+            _logger.LogInformation("Database repair during maintenance succeeded");
+            return true;
+        }
+
+        _logger.LogCritical("Database repair during maintenance failed");
+        return false;
+    }
+
     public async Task<DatabaseStats> GetStatsAsync(CancellationToken cancellationToken = default)
     {
         var stats = new DatabaseStats

@@ -949,4 +949,67 @@ public class ConfigurationLoaderTests : IDisposable
         ConfigurationLoader.NormalizeAutoUpdateChannel(null).Should().Be("latest");
         ConfigurationLoader.NormalizeAutoUpdateChannel("").Should().Be("latest");
     }
+
+    [Fact]
+    public void Load_ParsesSkipTLSVerify_OnQBitArrOmbiAndOverseerr()
+    {
+        WriteToml("""
+            [qBit]
+            Host = "qbittorrent.local"
+            SkipTLSVerify = true
+
+            [Radarr-Movies]
+            URI = "https://radarr.local"
+            APIKey = "k"
+            Category = "radarr"
+            SkipTLSVerify = true
+
+            [Radarr-Movies.EntrySearch.Ombi]
+            SearchOmbiRequests = true
+            OmbiURI = "https://ombi.local"
+            OmbiAPIKey = "ok"
+            SkipTLSVerify = true
+
+            [Radarr-Movies.EntrySearch.Overseerr]
+            SearchOverseerrRequests = true
+            OverseerrURI = "https://overseerr.local"
+            OverseerrAPIKey = "os"
+            SkipTLSVerify = true
+            """);
+
+        var config = new ConfigurationLoader(_tempFilePath).Load();
+
+        config.QBitInstances["qBit"].SkipTLSVerify.Should().BeTrue();
+        config.ArrInstances["Radarr-Movies"].SkipTLSVerify.Should().BeTrue();
+        config.ArrInstances["Radarr-Movies"].Search.Ombi!.SkipTLSVerify.Should().BeTrue();
+        config.ArrInstances["Radarr-Movies"].Search.Overseerr!.SkipTLSVerify.Should().BeTrue();
+    }
+
+    [Fact]
+    public void SaveConfig_RoundTripsSkipTLSVerify()
+    {
+        WriteToml("""
+            [qBit]
+            Host = "qbittorrent.local"
+            Port = 8080
+            UserName = "admin"
+            Password = "secret"
+            SkipTLSVerify = true
+
+            [Sonarr-TV]
+            URI = "https://sonarr.local"
+            APIKey = "k"
+            Category = "sonarr"
+            SkipTLSVerify = true
+            """);
+
+        var loader = new ConfigurationLoader(_tempFilePath);
+        var config = loader.Load();
+        loader.SaveConfig(config);
+        var roundTrip = loader.Load();
+
+        roundTrip.QBitInstances["qBit"].SkipTLSVerify.Should().BeTrue();
+        roundTrip.ArrInstances["Sonarr-TV"].SkipTLSVerify.Should().BeTrue();
+        File.ReadAllText(_tempFilePath).Should().Contain("SkipTLSVerify = true");
+    }
 }

@@ -362,6 +362,38 @@ try
         Console.WriteLine($"Integrity check: {result}");
         return result.Equals("ok", StringComparison.OrdinalIgnoreCase) ? 0 : 1;
     }
+    // --backup-database [dest]: online SQLite backup (qBitrr scripts/backup_database.py).
+    if (cmdArgs.Count >= 1 && firstArg == "--backup-database")
+    {
+        if (!File.Exists(dbPath))
+        {
+            Console.Error.WriteLine($"Database not found: {dbPath}");
+            return 1;
+        }
+        var dest = cmdArgs.Count >= 2
+            ? cmdArgs[1]
+            : Path.Combine(Path.GetDirectoryName(dbPath) ?? ".", "backups", $"torrentarr.db.{DateTime.UtcNow:yyyyMMdd}");
+        Directory.CreateDirectory(Path.GetDirectoryName(dest)!);
+        using (var source = new Microsoft.Data.Sqlite.SqliteConnection($"Data Source={dbPath};Mode=ReadOnly"))
+        {
+            source.Open();
+            if (File.Exists(dest))
+                File.Delete(dest);
+            using var destConn = new Microsoft.Data.Sqlite.SqliteConnection($"Data Source={dest}");
+            destConn.Open();
+            source.BackupDatabase(destConn);
+        }
+        using (var verify = new Microsoft.Data.Sqlite.SqliteConnection($"Data Source={dest}"))
+        {
+            verify.Open();
+            using var cmd = verify.CreateCommand();
+            cmd.CommandText = "PRAGMA quick_check;";
+            var check = (cmd.ExecuteScalar() as string) ?? "unknown";
+            Console.WriteLine($"Backup: {dest}");
+            Console.WriteLine($"Integrity quick_check: {check}");
+            return check.Equals("ok", StringComparison.OrdinalIgnoreCase) ? 0 : 1;
+        }
+    }
 
     using (var scope = app.Services.CreateScope())
     {
@@ -401,6 +433,7 @@ try
     app.UseStaticFiles();
 
     app.UseAuthentication();
+    app.UseArrCatalogDbSafe();
 
     // Auth: when required (!AuthDisabled), protect /api/* and /web/* except public paths. Bearer token always works for API.
     app.Use(async (context, next) =>
@@ -2317,6 +2350,7 @@ static async Task<IResult> HandleTestConnection(TestConnectionRequest req, Torre
     {
         var uri = req.Uri;
         var apiKey = req.ApiKey;
+        var skipTls = req.SkipTlsVerify ?? false;
 
         // When instanceKey is provided, load URI and APIKey from config (e.g. when API key is redacted in UI)
         if (!string.IsNullOrEmpty(req.InstanceKey))
@@ -2329,6 +2363,7 @@ static async Task<IResult> HandleTestConnection(TestConnectionRequest req, Torre
 
             uri = arrCfg.URI;
             apiKey = arrCfg.APIKey;
+            skipTls = req.SkipTlsVerify ?? arrCfg.SkipTLSVerify;
         }
 
         if (string.IsNullOrEmpty(req.ArrType) || string.IsNullOrEmpty(uri) || string.IsNullOrEmpty(apiKey))
@@ -2350,22 +2385,22 @@ static async Task<IResult> HandleTestConnection(TestConnectionRequest req, Torre
         switch (arrType)
         {
             case "radarr":
-                var radarr = new Torrentarr.Infrastructure.ApiClients.Arr.RadarrClient(uri, apiKey);
+                var radarr = new Torrentarr.Infrastructure.ApiClients.Arr.RadarrClient(uri, apiKey, skipTls);
                 getSystemInfo = () => radarr.GetSystemInfoAsync();
                 getProfiles = () => radarr.GetQualityProfilesAsync();
                 break;
             case "sonarr":
-                var sonarr = new Torrentarr.Infrastructure.ApiClients.Arr.SonarrClient(uri, apiKey);
+                var sonarr = new Torrentarr.Infrastructure.ApiClients.Arr.SonarrClient(uri, apiKey, skipTls);
                 getSystemInfo = () => sonarr.GetSystemInfoAsync();
                 getProfiles = () => sonarr.GetQualityProfilesAsync();
                 break;
             case "lidarr":
-                var lidarr = new Torrentarr.Infrastructure.ApiClients.Arr.LidarrClient(uri, apiKey);
+                var lidarr = new Torrentarr.Infrastructure.ApiClients.Arr.LidarrClient(uri, apiKey, skipTls);
                 getSystemInfo = () => lidarr.GetSystemInfoAsync();
                 getProfiles = () => lidarr.GetQualityProfilesAsync();
                 break;
             case "readarr":
-                var readarr = new Torrentarr.Infrastructure.ApiClients.Arr.ReadarrClient(uri, apiKey);
+                var readarr = new Torrentarr.Infrastructure.ApiClients.Arr.ReadarrClient(uri, apiKey, skipTls);
                 getSystemInfo = () => readarr.GetSystemInfoAsync();
                 getProfiles = () => readarr.GetQualityProfilesAsync();
                 break;
@@ -3286,7 +3321,8 @@ public record TestConnectionRequest(
     [property: System.Text.Json.Serialization.JsonPropertyName("arrType")] string ArrType,
     [property: System.Text.Json.Serialization.JsonPropertyName("uri")] string? Uri,
     [property: System.Text.Json.Serialization.JsonPropertyName("apiKey")] string? ApiKey,
-    [property: System.Text.Json.Serialization.JsonPropertyName("instanceKey")] string? InstanceKey = null);
+    [property: System.Text.Json.Serialization.JsonPropertyName("instanceKey")] string? InstanceKey = null,
+    [property: System.Text.Json.Serialization.JsonPropertyName("skipTlsVerify")] bool? SkipTlsVerify = null);
 public record LoggerConfigurationRequest(string Level);
 public record LoginRequest(
     [property: System.Text.Json.Serialization.JsonPropertyName("username")] string? Username,

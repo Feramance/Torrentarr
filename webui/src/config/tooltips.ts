@@ -64,6 +64,8 @@ export const FIELD_TOOLTIPS: Record<string, string> = {
   "qBit.UserName": "qBittorrent WebUI username.",
   "qBit.Password":
     "qBittorrent WebUI password. Remove this if authentication is bypassed for the host.",
+  "qBit.SkipTLSVerify":
+    "When true, do not verify the TLS certificate for this qBittorrent WebUI (self-signed certs). Disables MITM protection for that connection.",
 
   Disabled:
     "Disable this qBittorrent instance (headless mode for search-only setups).",
@@ -84,6 +86,8 @@ export const FIELD_TOOLTIPS: Record<string, string> = {
   "ARR.URI":
     "Servarr URL, including protocol and port if needed (for example http://localhost:8989).",
   "ARR.APIKey": "Servarr API key from Settings > General > Security.",
+  "ARR.SkipTLSVerify":
+    "When true, do not verify TLS for this Servarr API (HTTPS). Does not affect Overseerr/Ombi. Disables MITM protection for that connection.",
   "ARR.Category":
     "qBittorrent category applied by the Servarr instance to its downloads.",
   "ARR.ReSearch":

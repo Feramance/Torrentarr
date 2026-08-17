@@ -181,4 +181,11 @@ public sealed class DatabaseHealthServiceTests : IDisposable
 
         await act.Should().NotThrowAsync();
     }
+
+    [Fact]
+    public async Task MaintainAsync_InMemoryDb_ReturnsTrue()
+    {
+        var result = await _svc.MaintainAsync();
+        result.Should().BeTrue();
+    }
 }

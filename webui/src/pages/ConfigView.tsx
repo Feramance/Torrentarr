@@ -511,6 +511,13 @@ const QBIT_FIELDS: FieldDefinition[] = [
   { label: "UserName", path: ["UserName"], type: "text" },
   { label: "Password", path: ["Password"], type: "password", secure: true },
   {
+    label: "Skip TLS Verify",
+    path: ["SkipTLSVerify"],
+    type: "checkbox",
+    description:
+      "When on, do not verify the TLS certificate for this qBittorrent WebUI (self-signed certs). Disables MITM protection for that connection.",
+  },
+  {
     label: "Download Path",
     path: ["DownloadPath"],
     type: "text",
@@ -748,6 +755,13 @@ const ARR_GENERAL_FIELDS: FieldDefinition[] = [
     },
   },
   {
+    label: "Skip TLS Verify",
+    path: ["SkipTLSVerify"],
+    type: "checkbox",
+    description:
+      "When on, do not verify TLS for this Servarr API (HTTPS). Does not affect Overseerr/Ombi. Disables MITM protection for that connection.",
+  },
+  {
     label: "Category",
     path: ["Category"],
     type: "text",
@@ -967,6 +981,11 @@ const ARR_ENTRY_SEARCH_OMBI_FIELDS: FieldDefinition[] = [
     path: ["EntrySearch", "Ombi", "ApprovedOnly"],
     type: "checkbox",
   },
+  {
+    label: "Ombi Skip TLS Verify",
+    path: ["EntrySearch", "Ombi", "SkipTLSVerify"],
+    type: "checkbox",
+  },
 ];
 
 const ARR_ENTRY_SEARCH_OVERSEERR_FIELDS: FieldDefinition[] = [
@@ -989,6 +1008,11 @@ const ARR_ENTRY_SEARCH_OVERSEERR_FIELDS: FieldDefinition[] = [
   {
     label: "Approved Only",
     path: ["EntrySearch", "Overseerr", "ApprovedOnly"],
+    type: "checkbox",
+  },
+  {
+    label: "Overseerr Skip TLS Verify",
+    path: ["EntrySearch", "Overseerr", "SkipTLSVerify"],
     type: "checkbox",
   },
   {
@@ -1681,6 +1705,7 @@ function ensureArrDefaults(type: string): ConfigDocument {
       OmbiURI: "CHANGE_ME",
       OmbiAPIKey: "CHANGE_ME",
       ApprovedOnly: true,
+      SkipTLSVerify: false,
     };
     entrySearch.Overseerr = {
       SearchOverseerrRequests: false,
@@ -1688,6 +1713,7 @@ function ensureArrDefaults(type: string): ConfigDocument {
       OverseerrAPIKey: "CHANGE_ME",
       ApprovedOnly: true,
       Is4K: false,
+      SkipTLSVerify: false,
     };
   }
 
@@ -1737,6 +1763,7 @@ function ensureArrDefaults(type: string): ConfigDocument {
     Managed: true,
     URI: "CHANGE_ME",
     APIKey: "CHANGE_ME",
+    SkipTLSVerify: false,
     Category: type,
     ReSearch: true,
     importMode: "Auto",
@@ -2046,6 +2073,7 @@ export function ConfigView(props?: ConfigViewProps): JSX.Element {
       Port: 8080,
       UserName: "",
       Password: "",
+      SkipTLSVerify: false,
       MatchSubcategories: false,
     };
     setFormState(
@@ -3911,8 +3939,17 @@ function ArrInstanceModal({
     try {
       const result = await testArrConnection(
         isApiKeyRedacted
-          ? { arrType, instanceKey: keyName }
-          : { arrType, uri: uri ?? "", apiKey: apiKey ?? "" },
+          ? {
+              arrType,
+              instanceKey: keyName,
+              skipTlsVerify: Boolean(getValue(["SkipTLSVerify"])),
+            }
+          : {
+              arrType,
+              uri: uri ?? "",
+              apiKey: apiKey ?? "",
+              skipTlsVerify: Boolean(getValue(["SkipTLSVerify"])),
+            },
       );
       setTestState({ testing: false, result });
 

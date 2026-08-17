@@ -2,6 +2,7 @@ using Torrentarr.Core.Configuration;
 using Torrentarr.Infrastructure.ApiClients.Arr;
 using Torrentarr.Infrastructure.Database;
 using Torrentarr.Infrastructure.Database.Models;
+using Torrentarr.Infrastructure.Http;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging;
 
@@ -19,10 +20,8 @@ namespace Torrentarr.Infrastructure.Services;
 public class ArrSyncService
 {
     // Shared static HttpClient — reused across calls to avoid socket exhaustion from per-call instantiation
-    private static readonly System.Net.Http.HttpClient _sharedHttpClient = new()
-    {
-        Timeout = TimeSpan.FromSeconds(10)
-    };
+    private static readonly System.Net.Http.HttpClient _sharedHttpClient = TlsSkipHelper.CreateHttpClient(false);
+    private static readonly System.Net.Http.HttpClient _skipTlsHttpClient = TlsSkipHelper.CreateHttpClient(true);
 
     private readonly ILogger<ArrSyncService> _logger;
     private readonly TorrentarrConfig _config;
@@ -138,7 +137,7 @@ public class ArrSyncService
 
     private async Task SyncRadarrAsync(string instanceName, ArrInstanceConfig cfg, CancellationToken ct)
     {
-        var client = new RadarrClient(cfg.URI, cfg.APIKey);
+        var client = new RadarrClient(cfg.URI, cfg.APIKey, cfg.SkipTLSVerify);
         var searchConfig = cfg.Search;
 
         _logger.LogInformation("Started updating database");
@@ -242,7 +241,7 @@ public class ArrSyncService
 
     private async Task SyncRadarrQueueAsync(string instanceName, ArrInstanceConfig cfg, CancellationToken ct)
     {
-        var client = new RadarrClient(cfg.URI, cfg.APIKey);
+        var client = new RadarrClient(cfg.URI, cfg.APIKey, cfg.SkipTLSVerify);
 
         var queueResponse = await client.GetQueueAsync(ct: ct);
         var queueItems = queueResponse.Records;
@@ -294,7 +293,7 @@ public class ArrSyncService
 
     private async Task SyncSonarrAsync(string instanceName, ArrInstanceConfig cfg, CancellationToken ct)
     {
-        var client = new SonarrClient(cfg.URI, cfg.APIKey);
+        var client = new SonarrClient(cfg.URI, cfg.APIKey, cfg.SkipTLSVerify);
         var searchConfig = cfg.Search;
 
         _logger.LogInformation("Started updating database");
@@ -451,7 +450,7 @@ public class ArrSyncService
 
     private async Task SyncSonarrQueueAsync(string instanceName, ArrInstanceConfig cfg, CancellationToken ct)
     {
-        var client = new SonarrClient(cfg.URI, cfg.APIKey);
+        var client = new SonarrClient(cfg.URI, cfg.APIKey, cfg.SkipTLSVerify);
 
         var queueResponse = await client.GetQueueAsync(ct: ct);
         var queueItems = queueResponse.Records;
@@ -529,7 +528,7 @@ public class ArrSyncService
         var requestTmdbIds = new HashSet<int>();
         var requestTvdbIds = new HashSet<int>();
 
-        var http = _sharedHttpClient;
+        var ombiHttp = ombi?.SkipTLSVerify == true ? _skipTlsHttpClient : _sharedHttpClient;
 
         // ── Ombi ────────────────────────────────────────────────────────────
         if (useOmbi)
@@ -543,7 +542,7 @@ public class ArrSyncService
                     System.Net.Http.HttpMethod.Get,
                     $"{ombi!.OmbiURI.TrimEnd('/')}{endpoint}");
                 req.Headers.Add("ApiKey", ombi.OmbiAPIKey);
-                var resp = await http.SendAsync(req, ct);
+                var resp = await ombiHttp.SendAsync(req, ct);
                 if (resp.IsSuccessStatusCode)
                 {
                     var json = await resp.Content.ReadAsStringAsync(ct);
@@ -582,55 +581,12 @@ public class ArrSyncService
             try
             {
                 var mediaType = arrConfig.Type.Equals("radarr", StringComparison.OrdinalIgnoreCase) ? "movie" : "tv";
-                var filter = overseerr!.ApprovedOnly ? "approved" : "unavailable";
-                var skip = 0;
-                const int take = 100;
-                while (true)
-                {
-                    var req = new System.Net.Http.HttpRequestMessage(
-                        System.Net.Http.HttpMethod.Get,
-                        $"{overseerr.OverseerrURI.TrimEnd('/')}/api/v1/request?take={take}&skip={skip}&sort=added&filter={filter}");
-                    req.Headers.Add("X-Api-Key", overseerr.OverseerrAPIKey);
-                    var resp = await http.SendAsync(req, ct);
-                    if (!resp.IsSuccessStatusCode) break;
-
-                    var json = await resp.Content.ReadAsStringAsync(ct);
-                    // Overseerr response shape varies by version: bare array, {results:[]}, or {data:[]}
-                    List<Newtonsoft.Json.Linq.JObject>? results = null;
-                    var token = Newtonsoft.Json.JsonConvert.DeserializeObject<Newtonsoft.Json.Linq.JToken>(json);
-                    if (token is Newtonsoft.Json.Linq.JArray jarr)
-                        results = jarr.OfType<Newtonsoft.Json.Linq.JObject>().ToList();
-                    else if (token is Newtonsoft.Json.Linq.JObject jobj)
-                        results = (jobj["results"] ?? jobj["data"])?.ToObject<List<Newtonsoft.Json.Linq.JObject>>();
-                    if (results == null || results.Count == 0) break;
-
-                    foreach (var entry in results)
-                    {
-                        if (entry["type"]?.ToObject<string>() != mediaType)
-                            continue;
-                        bool is4k = entry["is4k"]?.ToObject<bool?>() ?? false;
-                        if (is4k != overseerr.Is4K)
-                            continue;
-                        var media = entry["media"] as Newtonsoft.Json.Linq.JObject;
-                        if (media == null) continue;
-
-                        if (mediaType == "movie")
-                        {
-                            var tmdbId = media["tmdbId"]?.ToObject<int?>();
-                            if (tmdbId.HasValue && tmdbId.Value > 0)
-                                requestTmdbIds.Add(tmdbId.Value);
-                        }
-                        else
-                        {
-                            var tvdbId = media["tvdbId"]?.ToObject<int?>();
-                            if (tvdbId.HasValue && tvdbId.Value > 0)
-                                requestTvdbIds.Add(tvdbId.Value);
-                        }
-                    }
-
-                    if (results.Count < take) break;
-                    skip += take;
-                }
+                var fetched = await new OverseerrRequestFetcher(_logger)
+                    .FetchAsync(overseerr!, mediaType, ct);
+                foreach (var id in fetched.TmdbIds)
+                    requestTmdbIds.Add(id);
+                foreach (var id in fetched.TvdbIds)
+                    requestTvdbIds.Add(id);
             }
             catch (Exception ex)
             {
@@ -678,7 +634,7 @@ public class ArrSyncService
 
     private async Task SyncLidarrAsync(string instanceName, ArrInstanceConfig cfg, CancellationToken ct)
     {
-        var client = new LidarrClient(cfg.URI, cfg.APIKey);
+        var client = new LidarrClient(cfg.URI, cfg.APIKey, cfg.SkipTLSVerify);
         var searchConfig = cfg.Search;
 
         _logger.LogInformation("Started updating database");
@@ -938,7 +894,7 @@ public class ArrSyncService
 
     private async Task SyncLidarrQueueAsync(string instanceName, ArrInstanceConfig cfg, CancellationToken ct)
     {
-        var client = new LidarrClient(cfg.URI, cfg.APIKey);
+        var client = new LidarrClient(cfg.URI, cfg.APIKey, cfg.SkipTLSVerify);
 
         var queueResponse = await client.GetQueueAsync(ct: ct);
         var queueItems = queueResponse.Records;
@@ -990,7 +946,7 @@ public class ArrSyncService
 
     private async Task SyncReadarrAsync(string instanceName, ArrInstanceConfig cfg, CancellationToken ct)
     {
-        var client = new ReadarrClient(cfg.URI, cfg.APIKey);
+        var client = new ReadarrClient(cfg.URI, cfg.APIKey, cfg.SkipTLSVerify);
         var searchConfig = cfg.Search;
 
         _logger.LogInformation("Started updating database");
@@ -1155,7 +1111,7 @@ public class ArrSyncService
 
     private async Task SyncReadarrQueueAsync(string instanceName, ArrInstanceConfig cfg, CancellationToken ct)
     {
-        var client = new ReadarrClient(cfg.URI, cfg.APIKey);
+        var client = new ReadarrClient(cfg.URI, cfg.APIKey, cfg.SkipTLSVerify);
 
         var queueResponse = await client.GetQueueAsync(ct: ct);
         var queueItems = queueResponse.Records;

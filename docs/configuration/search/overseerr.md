@@ -67,6 +67,7 @@ OverseerrURI = "http://localhost:5055"
 OverseerrAPIKey = "your-overseerr-api-key"
 ApprovedOnly = true  # Only search approved requests
 Is4K = false  # Standard quality instance
+SkipTLSVerify = false  # Overseerr HTTPS only; independent of Arr SkipTLSVerify
 ```
 
 ### Basic Setup (TV Shows)

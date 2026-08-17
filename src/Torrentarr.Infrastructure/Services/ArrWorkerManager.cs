@@ -424,10 +424,10 @@ public class ArrWorkerManager : BackgroundService
 
             var client = _arrClientCache.GetOrAdd(instanceName, _ => arrCfg.Type.ToLowerInvariant() switch
             {
-                "radarr" => (object)new RadarrClient(arrCfg.URI, arrCfg.APIKey),
-                "sonarr" => new SonarrClient(arrCfg.URI, arrCfg.APIKey),
-                "lidarr" => new LidarrClient(arrCfg.URI, arrCfg.APIKey),
-                "readarr" => new ReadarrClient(arrCfg.URI, arrCfg.APIKey),
+                "radarr" => (object)new RadarrClient(arrCfg.URI, arrCfg.APIKey, arrCfg.SkipTLSVerify),
+                "sonarr" => new SonarrClient(arrCfg.URI, arrCfg.APIKey, arrCfg.SkipTLSVerify),
+                "lidarr" => new LidarrClient(arrCfg.URI, arrCfg.APIKey, arrCfg.SkipTLSVerify),
+                "readarr" => new ReadarrClient(arrCfg.URI, arrCfg.APIKey, arrCfg.SkipTLSVerify),
                 _ => new object()
             });
 
@@ -458,7 +458,7 @@ public class ArrWorkerManager : BackgroundService
                     continue;
 
                 var qbitClient = _qbitClientCache.GetOrAdd(qbitName, _ =>
-                    new QBittorrentClient(qbitCfg.Host, qbitCfg.Port, qbitCfg.UserName, qbitCfg.Password));
+                    new QBittorrentClient(qbitCfg.Host, qbitCfg.Port, qbitCfg.UserName, qbitCfg.Password, qbitCfg.SkipTLSVerify));
                 try
                 {
                     var loginSuccess = await qbitClient.LoginAsync(ct);

@@ -105,7 +105,7 @@ interface ProcessesViewProps {
 
 export function ProcessesView({ active }: ProcessesViewProps): JSX.Element {
   const [processes, setProcesses] = useState<ProcessInfo[]>([]);
-  const [loading, setLoading] = useState(false);
+  const [loading, setLoading] = useState(true);
   const [restartingAll, setRestartingAll] = useState(false);
   const [rebuildingArrs, setRebuildingArrs] = useState(false);
   const [statusData, setStatusData] = useState<StatusResponse | null>(null);

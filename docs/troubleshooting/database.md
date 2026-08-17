@@ -342,6 +342,13 @@ Torrentarr automatically attempts recovery when corruption is detected:
 
     Uses the same database path as the app (e.g. `config/torrentarr.db` or `/config/torrentarr.db` in Docker). Exit code 0 if integrity check passed, 1 otherwise.
 
+    Online backup (safe while Torrentarr is running):
+
+    ```bash
+    torrentarr --backup-database
+    torrentarr --backup-database /config/backups/torrentarr.db.$(date -u +%Y%m%d)
+    ```
+
 === "Method 1: WAL Checkpoint"
     ```bash
     # Stop Torrentarr first

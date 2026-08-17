@@ -211,10 +211,10 @@ public class SearchExecutor : ISearchExecutor
             return cached;
         object client = arrConfig.Type.ToLowerInvariant() switch
         {
-            "radarr" => new RadarrClient(arrConfig.URI, arrConfig.APIKey),
-            "sonarr" => new SonarrClient(arrConfig.URI, arrConfig.APIKey),
-            "lidarr" => new LidarrClient(arrConfig.URI, arrConfig.APIKey),
-            "readarr" => new ReadarrClient(arrConfig.URI, arrConfig.APIKey),
+            "radarr" => new RadarrClient(arrConfig.URI, arrConfig.APIKey, arrConfig.SkipTLSVerify),
+            "sonarr" => new SonarrClient(arrConfig.URI, arrConfig.APIKey, arrConfig.SkipTLSVerify),
+            "lidarr" => new LidarrClient(arrConfig.URI, arrConfig.APIKey, arrConfig.SkipTLSVerify),
+            "readarr" => new ReadarrClient(arrConfig.URI, arrConfig.APIKey, arrConfig.SkipTLSVerify),
             _ => new object()
         };
         _clientCache[instanceName] = client;

@@ -120,6 +120,9 @@ Port = 8080
 UserName = "admin"
 Password = "adminadmin"
 
+# If true, do not verify TLS certificates for HTTPS WebUI (self-signed certs). Disables MITM protection for that connection.
+SkipTLSVerify = false
+
 # Categories managed directly by qBit (not by Arr instances)
 ManagedCategories = []
 
@@ -162,6 +165,9 @@ URI = "http://localhost:7878"
 # Radarr API key (Settings > General > Security)
 APIKey = "your-radarr-api-key"
 
+# If true, do not verify TLS for this Servarr API (HTTPS). Does not affect Overseerr/Ombi.
+SkipTLSVerify = false
+
 # Enable management for this instance
 Managed = true
 
@@ -178,6 +184,7 @@ ProcessingOnly = false
 [Sonarr-TV]
 URI = "http://localhost:8989"
 APIKey = "your-sonarr-api-key"
+SkipTLSVerify = false
 Managed = true
 Category = "sonarr-tv"
 SearchOnly = false
@@ -187,6 +194,7 @@ ProcessingOnly = false
 [Lidarr-Music]
 URI = "http://localhost:8686"
 APIKey = "your-lidarr-api-key"
+SkipTLSVerify = false
 Managed = true
 Category = "lidarr-music"
 SearchOnly = false
@@ -196,6 +204,7 @@ ProcessingOnly = false
 [Readarr-Books]
 URI = "http://localhost:8787"
 APIKey = "your-readarr-api-key"
+SkipTLSVerify = false
 Managed = true
 Category = "readarr-books"
 SearchOnly = false

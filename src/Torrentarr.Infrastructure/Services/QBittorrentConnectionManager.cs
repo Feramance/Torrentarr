@@ -33,7 +33,7 @@ public class QBittorrentConnectionManager
         if (_clients.ContainsKey(name))
             return true;
 
-        var client = new QBittorrentClient(config.Host, config.Port, config.UserName, config.Password);
+        var client = new QBittorrentClient(config.Host, config.Port, config.UserName, config.Password, config.SkipTLSVerify);
 
         try
         {

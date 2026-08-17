@@ -516,7 +516,7 @@ export function RadarrView({ active }: { active: boolean }): JSX.Element {
   );
   const [instancePage, setInstancePage] = useState(0);
   const [instanceQuery, setInstanceQuery] = useState("");
-  const [instanceLoading, setInstanceLoading] = useState(false);
+  const [instanceLoading, setInstanceLoading] = useState(true);
   const [lastUpdated, setLastUpdated] = useState<string | null>(null);
   const [instancePages, setInstancePages] = useState<
     Record<number, RadarrMovie[]>
@@ -535,7 +535,7 @@ export function RadarrView({ active }: { active: boolean }): JSX.Element {
   });
 
   const [aggRows, setAggRows] = useState<RadarrAggRow[]>([]);
-  const [aggLoading, setAggLoading] = useState(false);
+  const [aggLoading, setAggLoading] = useState(true);
   const [aggPage, setAggPage] = useState(0);
   const [aggFilter, setAggFilter] = useState("");
   const [aggUpdated, setAggUpdated] = useState<string | null>(null);

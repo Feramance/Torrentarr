@@ -39,7 +39,7 @@ export function ReadarrView({ active }: ReadarrViewProps): JSX.Element {
   const [authors, setAuthors] = useState<ReadarrAuthorEntry[]>([]);
   const [total, setTotal] = useState(0);
   const [page, setPage] = useState(0);
-  const [loading, setLoading] = useState(false);
+  const [loading, setLoading] = useState(true);
   const [counts, setCounts] = useState({
     available: 0,
     monitored: 0,

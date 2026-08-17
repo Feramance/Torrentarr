@@ -14,6 +14,7 @@ Managed = true
 URI = "http://localhost:8787"
 APIKey = "your-readarr-api-key"
 Category = "readarr-books"
+SkipTLSVerify = false
 ReSearch = true
 ImportMode = "Auto"
 RssSyncTimer = 1

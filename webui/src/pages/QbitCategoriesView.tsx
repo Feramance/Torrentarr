@@ -89,7 +89,7 @@ export function QbitCategoriesView({
   active,
 }: QbitCategoriesViewProps): JSX.Element {
   const [categories, setCategories] = useState<QbitCategory[]>([]);
-  const [loading, setLoading] = useState(false);
+  const [loading, setLoading] = useState(true);
   const { push } = useToast();
   const { liveArr } = useWebUI();
   const isFetching = useRef(false);
@@ -166,6 +166,17 @@ export function QbitCategoriesView({
       arrCount,
       categoryCount: categories.length,
     };
+  }, [categories]);
+
+  const groupedByInstance = useMemo(() => {
+    const map = new Map<string, QbitCategory[]>();
+    for (const cat of categories) {
+      const key = cat.instance || "qBit";
+      const list = map.get(key);
+      if (list) list.push(cat);
+      else map.set(key, [cat]);
+    }
+    return Array.from(map.entries());
   }, [categories]);
 
   // Define table columns
@@ -292,13 +303,20 @@ export function QbitCategoriesView({
             sections or add Arr instances to see categories.
           </div>
         ) : (
-          <StableTable
-            data={categories}
-            columns={columns}
-            getRowKey={(cat) =>
-              `${cat.instance}-${cat.category}-${cat.managedBy}`
-            }
-          />
+          groupedByInstance.map(([instance, cats]) => (
+            <details key={instance} className="qbit-category-group">
+              <summary>
+                {instance} ({cats.length})
+              </summary>
+              <StableTable
+                data={cats}
+                columns={columns}
+                getRowKey={(cat) =>
+                  `${cat.instance}-${cat.category}-${cat.managedBy}`
+                }
+              />
+            </details>
+          ))
         )}
       </div>
     </section>

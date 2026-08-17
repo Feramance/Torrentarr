@@ -61,13 +61,27 @@ public static class DatabaseRetryExtensions
         return await context.SaveChangesAsync(cancellationToken);
     }
 
+    public static bool IsSqliteCorruption(Exception ex)
+    {
+        var current = ex;
+        while (current != null)
+        {
+            var msg = current.Message;
+            if (msg.Contains("disk image is malformed", StringComparison.OrdinalIgnoreCase)
+                || msg.Contains("database disk image is malformed", StringComparison.OrdinalIgnoreCase)
+                || msg.Contains("database corruption", StringComparison.OrdinalIgnoreCase)
+                || msg.Contains("malformed", StringComparison.OrdinalIgnoreCase))
+                return true;
+            current = current.InnerException;
+        }
+        return false;
+    }
+
     private static bool IsRetriable(Exception ex) =>
         ex is DbUpdateException or SqliteException
         && (ex.Message.Contains("database is locked", StringComparison.OrdinalIgnoreCase)
             || ex.Message.Contains("disk I/O", StringComparison.OrdinalIgnoreCase)
             || ex.Message.Contains("malformed", StringComparison.OrdinalIgnoreCase));
 
-    private static bool IsCorruption(Exception ex) =>
-        ex.Message.Contains("malformed", StringComparison.OrdinalIgnoreCase)
-        || ex.Message.Contains("disk I/O", StringComparison.OrdinalIgnoreCase);
+    private static bool IsCorruption(Exception ex) => IsSqliteCorruption(ex);
 }

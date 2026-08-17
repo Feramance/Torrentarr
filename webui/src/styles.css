@@ -2078,6 +2078,18 @@ svg[height] {
   overflow: hidden;
 }
 
+.qbit-category-group {
+  border: 1px solid var(--border, rgba(122, 162, 247, 0.2));
+  border-radius: 12px;
+  padding: 8px 12px;
+}
+
+.qbit-category-group summary {
+  cursor: pointer;
+  font-weight: 600;
+  padding: 8px 4px;
+}
+
 .empty-state::before {
   content: "";
   position: absolute;

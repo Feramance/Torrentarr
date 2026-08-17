@@ -156,11 +156,12 @@ services:
 
 | Tag | Description |
 |-----|-------------|
-| `latest` | Latest stable release (recommended) |
-| `nightly` | Latest development build (bleeding edge) |
-| `5.x.x` | Specific version (e.g., `5.5.5`) |
+| `stable` | Latest feature/fix release (recommended for production) |
+| `latest` | Same as `stable` for Torrentarr (no weekly dependency-only builds) |
+| `nightly` | Per-commit development build from `master` |
+| `vX.Y.Z` | Pinned version (e.g. `v6.14.3`) |
 
-**Recommended:** Use `latest` for production, `nightly` for testing new features.
+**Recommended:** Use `:stable` or a pinned `v…` tag for production, `:nightly` for testing new features.
 
 ## First Run
 

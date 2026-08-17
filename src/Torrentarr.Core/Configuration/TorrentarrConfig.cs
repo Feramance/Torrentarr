@@ -92,6 +92,8 @@ public class QBitConfig
     public int Port { get; set; } = 8080;
     public string UserName { get; set; } = "CHANGE_ME";
     public string Password { get; set; } = "CHANGE_ME";
+    /// <summary>When true, do not verify TLS certificates for this qBittorrent WebUI (self-signed certs).</summary>
+    public bool SkipTLSVerify { get; set; }
     public string? DownloadPath { get; set; }
     public List<string> ManagedCategories { get; set; } = new();
     /// <summary>When true, <c>ManagedCategories</c> entries match descendant subcategories (qBitrr parity).</summary>
@@ -193,6 +195,8 @@ public class ArrInstanceConfig
 {
     public string URI { get; set; } = "";
     public string APIKey { get; set; } = "";
+    /// <summary>When true, do not verify TLS for this Servarr API. Does not affect Overseerr/Ombi.</summary>
+    public bool SkipTLSVerify { get; set; }
     public bool Managed { get; set; } = true;
     public string Category { get; set; } = "";
     public string Type { get; set; } = ""; // radarr, sonarr, lidarr, readarr
@@ -300,6 +304,8 @@ public class OmbiConfig
     public string OmbiURI { get; set; } = "";
     public string OmbiAPIKey { get; set; } = "";
     public bool ApprovedOnly { get; set; } = true;
+    /// <summary>When true, do not verify TLS for Ombi HTTPS calls only.</summary>
+    public bool SkipTLSVerify { get; set; }
 }
 
 public class OverseerrConfig
@@ -309,4 +315,6 @@ public class OverseerrConfig
     public string OverseerrAPIKey { get; set; } = "";
     public bool ApprovedOnly { get; set; } = true;
     public bool Is4K { get; set; } = false;
+    /// <summary>When true, do not verify TLS for Overseerr HTTPS calls only.</summary>
+    public bool SkipTLSVerify { get; set; }
 }
