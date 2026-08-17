@@ -11,22 +11,22 @@ permissions: private
 branch: master
 
 triggers:
-  - type: issue_comment
-    notes: Human comments on non-PR issues. Ignore bots and agent-marked comments.
-    ignore_authors:
-      - cursor
-      - cursor[bot]
-      - github-actions[bot]
-      - dependabot[bot]
-    ignore_body_contains: "<!-- torrentarr-issue-viability -->"
-  - type: issue_label_changed
-    labels:
-      - cursor-viability
-    notes: GitHub Action issue-viability.yml adds this label on issues:opened.
-  - type: webhook
-    notes: Optional fallback when the Issue label changed trigger is unavailable in the Automations UI. Store URL/key as repo secrets CURSOR_AUTOMATION_WEBHOOK_URL and CURSOR_AUTOMATION_WEBHOOK_KEY.
-  - type: workflow_run_completed
-    notes: Repair red CI on PRs this automation opened; request human review when green.
+- type: issue_comment
+  notes: Human comments on non-PR issues. Ignore bots and agent-marked comments.
+  ignore_authors:
+  - cursor
+  - cursor[bot]
+  - github-actions[bot]
+  - dependabot[bot]
+  ignore_body_contains: <!-- torrentarr-issue-viability -->
+- type: issue_label_changed
+  labels:
+  - cursor-viability
+  notes: GitHub Action issue-viability.yml adds this label on issues:opened.
+- type: webhook
+  notes: Optional fallback when the Issue label changed trigger is unavailable in the Automations UI. Store URL/key as repo secrets CURSOR_AUTOMATION_WEBHOOK_URL and CURSOR_AUTOMATION_WEBHOOK_KEY.
+- type: workflow_run_completed
+  notes: Repair red CI on PRs this automation opened; request human review when green.
 
 tools:
   pull_request_creation: true
@@ -37,7 +37,7 @@ tools:
 instructions_file: prompt.md
 
 notes:
-  - Save DISABLED. Test on a sample bug issue before enabling.
-  - Build and Test skips draft PRs; the agent must open ready-for-review PRs.
-  - Cloud Agent CI autofix (up to 10 follow-ups) should stay enabled.
-  - There is no GitHub "issue opened" trigger; the label + optional webhook bridge that.
+- Save DISABLED. Test on a sample bug issue before enabling.
+- Build and Test skips draft PRs; the agent must open ready-for-review PRs.
+- Cloud Agent CI autofix (up to 10 follow-ups) should stay enabled.
+- There is no GitHub "issue opened" trigger; the label + optional webhook bridge that.
