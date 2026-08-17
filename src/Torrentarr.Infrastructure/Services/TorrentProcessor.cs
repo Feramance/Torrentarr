@@ -659,7 +659,7 @@ public class TorrentProcessor : ITorrentProcessor
 
         // Get tracker config for MaxETA override (qBitrr: data_settings.get("max_eta"))
         var trackerCfg = await _seedingService.GetTrackerConfigAsync(torrent, ct);
-        var maxEta = trackerCfg?.MaxETA ?? defaultMaxEta;
+        var maxEta = SeedingLimitMerge.MergeMaxEta(defaultMaxEta, trackerCfg?.MaxETA);
 
         // Check if torrent should be removed (ratio/time limits met)
         // ShouldRemoveTorrentAsync already handles HnR protection for downloading torrents

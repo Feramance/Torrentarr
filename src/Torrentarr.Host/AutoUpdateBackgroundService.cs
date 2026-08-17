@@ -36,6 +36,18 @@ public class AutoUpdateBackgroundService : BackgroundService
             return;
         }
 
+        if (UpdateService.IsSourceBuild())
+        {
+            _logger.LogInformation("AutoUpdateBackgroundService: source/dotnet run build — auto-update disabled");
+            return;
+        }
+
+        var channel = ConfigurationLoader.NormalizeAutoUpdateChannel(_config.Settings.AutoUpdateChannel);
+        if (channel == "nightly")
+        {
+            _logger.LogInformation("AutoUpdateBackgroundService: nightly channel checks only — binaries will not be applied");
+        }
+
         var cron = _config.Settings.AutoUpdateCron ?? "0 3 * * 0";
         _logger.LogInformation("AutoUpdateBackgroundService: Starting with schedule '{Cron}'", cron);
 
@@ -57,7 +69,7 @@ public class AutoUpdateBackgroundService : BackgroundService
                     // Reflect into the anonymous type to read update_available
                     var props = _updateService.BuildMetaResponse().GetType().GetProperty("update_available");
                     var available = props?.GetValue(_updateService.BuildMetaResponse()) is bool b && b;
-                    if (available && !_updateService.ApplyState.InProgress)
+                    if (available && !_updateService.ApplyState.InProgress && _updateService.CanApplyBinaries)
                     {
                         _logger.LogInformation("AutoUpdateBackgroundService: Update available — applying");
                         await _updateService.ApplyUpdateAsync(_lifetime, stoppingToken);

@@ -9,7 +9,7 @@ namespace Torrentarr.Core.Configuration;
 public class ConfigurationLoader
 {
     /// <summary>Expected config schema version (qBitrr parity). Used for validation and mismatch warning.</summary>
-    public const string ExpectedConfigVersion = "6.12.4";
+    public const string ExpectedConfigVersion = "6.14.3";
 
     /// <summary>
     /// TEST USE ONLY. When set by test fixtures, GetDefaultConfigPath() returns this instead of env/defaults.
@@ -137,7 +137,7 @@ public class ConfigurationLoader
             config.WebUI = ParseWebUI(webuiTable);
         }
 
-        // Parse Arr instances (Radarr-*, Sonarr-*, Lidarr-*)
+        // Parse Arr instances (Radarr-*, Sonarr-*, Lidarr-*, Readarr-*)
         config.ArrInstances = ParseArrInstances(tomlTable);
 
         // Apply TORRENTARR_* environment variable overrides (qBitrr parity: QBITRR_* env vars)
@@ -172,6 +172,7 @@ public class ConfigurationLoader
         ApplyEnvBool("TORRENTARR_SETTINGS_FFPROBE_AUTO_UPDATE", "QBITRR_SETTINGS_FFPROBE_AUTO_UPDATE", v => s.FFprobeAutoUpdate = v);
         ApplyEnvBool("TORRENTARR_SETTINGS_AUTO_UPDATE_ENABLED", "QBITRR_SETTINGS_AUTO_UPDATE_ENABLED", v => s.AutoUpdateEnabled = v);
         ApplyEnvString("TORRENTARR_SETTINGS_AUTO_UPDATE_CRON", "QBITRR_SETTINGS_AUTO_UPDATE_CRON", v => s.AutoUpdateCron = v);
+        ApplyEnvString("TORRENTARR_SETTINGS_AUTO_UPDATE_CHANNEL", "QBITRR_SETTINGS_AUTO_UPDATE_CHANNEL", v => s.AutoUpdateChannel = v);
         ApplyEnvList("TORRENTARR_SETTINGS_PING_URLS", "QBITRR_SETTINGS_PING_URLS", v => s.PingURLS = v);
 
         // TORRENTARR_QBIT_* / QBITRR_QBIT_* -> primary qBit instance (config.QBitInstances["qBit"])
@@ -278,6 +279,10 @@ public class ConfigurationLoader
         if (MigrateHnrMode(root))
             changed = true;
 
+        // Migration 7: Expand unmodified Readarr ebook-only allowlists to include audiobook extensions
+        if (MigrateReadarrEbookAllowlist(root))
+            changed = true;
+
         // Validate and fill missing config values with defaults
         if (ValidateAndFillConfig(root))
             changed = true;
@@ -340,6 +345,44 @@ public class ConfigurationLoader
         return migrated;
     }
 
+    public static string NormalizeAutoUpdateChannel(string? value)
+    {
+        var channel = (value ?? "latest").Trim().ToLowerInvariant();
+        return channel is "latest" or "stable" or "nightly" ? channel : "latest";
+    }
+
+    /// <summary>
+    /// Expand unmodified Readarr ebook-only FileExtensionAllowlist defaults to include audiobook extensions.
+    /// Custom allowlists are never changed.
+    /// </summary>
+    private static bool MigrateReadarrEbookAllowlist(TomlTable root)
+    {
+        var changed = false;
+        foreach (var kvp in root)
+        {
+            if (ArrSectionHelper.ArrTypeFromSectionName(kvp.Key) != "readarr")
+                continue;
+            if (kvp.Value is not TomlTable arrTable)
+                continue;
+            if (!arrTable.TryGetValue("Torrent", out var tObj) || tObj is not TomlTable torrentTable)
+                continue;
+            if (!torrentTable.TryGetValue("FileExtensionAllowlist", out var extObj) || extObj is not TomlArray extArray)
+                continue;
+
+            var current = extArray.Select(x => x?.ToString() ?? "").Where(s => s.Length > 0).ToList();
+            if (!ArrSectionHelper.IsUnmodifiedReadarrEbookOnlyAllowlist(current))
+                continue;
+
+            var expanded = new TomlArray();
+            foreach (var ext in ArrSectionHelper.ReadarrAllowlist)
+                expanded.Add(ext);
+            torrentTable["FileExtensionAllowlist"] = expanded;
+            changed = true;
+        }
+
+        return changed;
+    }
+
     /// <summary>
     /// Migration: Convert MainQualityProfile + TempQualityProfile lists to QualityProfileMappings dict.
     /// </summary>
@@ -348,9 +391,7 @@ public class ConfigurationLoader
         var changed = false;
         foreach (var kvp in root)
         {
-            if (!(kvp.Key.StartsWith("Radarr", StringComparison.OrdinalIgnoreCase) ||
-                  kvp.Key.StartsWith("Sonarr", StringComparison.OrdinalIgnoreCase) ||
-                  kvp.Key.StartsWith("Lidarr", StringComparison.OrdinalIgnoreCase)))
+            if (!ArrSectionHelper.IsArrSection(kvp.Key))
                 continue;
             if (kvp.Value is not TomlTable arrTable)
                 continue;
@@ -408,9 +449,7 @@ public class ConfigurationLoader
         // Migrate in all Arr Tracker sections
         foreach (var kvp in root)
         {
-            if (!(kvp.Key.StartsWith("Radarr", StringComparison.OrdinalIgnoreCase) ||
-                  kvp.Key.StartsWith("Sonarr", StringComparison.OrdinalIgnoreCase) ||
-                  kvp.Key.StartsWith("Lidarr", StringComparison.OrdinalIgnoreCase)))
+            if (!ArrSectionHelper.IsArrSection(kvp.Key))
                 continue;
             if (kvp.Value is not TomlTable arrTable) continue;
             if (!arrTable.TryGetValue("Torrent", out var tObj) || tObj is not TomlTable torrentTable) continue;
@@ -576,9 +615,7 @@ public class ConfigurationLoader
         // Step 1: Remove HnR fields from Arr SeedingMode sections + add to Arr tracker entries
         foreach (var kvp in root)
         {
-            if (!(kvp.Key.StartsWith("Radarr", StringComparison.OrdinalIgnoreCase) ||
-                  kvp.Key.StartsWith("Sonarr", StringComparison.OrdinalIgnoreCase) ||
-                  kvp.Key.StartsWith("Lidarr", StringComparison.OrdinalIgnoreCase)))
+            if (!ArrSectionHelper.IsArrSection(kvp.Key))
                 continue;
             if (kvp.Value is not TomlTable arrTable) continue;
             if (!arrTable.TryGetValue("Torrent", out var tObj) || tObj is not TomlTable torrentTable) continue;
@@ -645,9 +682,7 @@ public class ConfigurationLoader
             var promoted = new Dictionary<string, TomlTable>(StringComparer.OrdinalIgnoreCase);
             foreach (var arrKvp in root)
             {
-                if (!(arrKvp.Key.StartsWith("Radarr", StringComparison.OrdinalIgnoreCase) ||
-                      arrKvp.Key.StartsWith("Sonarr", StringComparison.OrdinalIgnoreCase) ||
-                      arrKvp.Key.StartsWith("Lidarr", StringComparison.OrdinalIgnoreCase)))
+                if (!ArrSectionHelper.IsArrSection(arrKvp.Key))
                     continue;
                 if (arrKvp.Value is not TomlTable arrTable) continue;
                 if (!arrTable.TryGetValue("Torrent", out var tObj) || tObj is not TomlTable torrentTable) continue;
@@ -710,6 +745,7 @@ public class ConfigurationLoader
                 ("FFprobeAutoUpdate", true),
                 ("AutoUpdateEnabled", false),
                 ("AutoUpdateCron", "0 3 * * 0"),
+                ("AutoUpdateChannel", "latest"),
                 ("AutoRestartProcesses", true),
                 ("MaxProcessRestarts", (long)5),
                 ("ProcessRestartWindow", (long)300),
@@ -823,9 +859,7 @@ public class ConfigurationLoader
         // --- Arr EntrySearch defaults ---
         foreach (var kvp in root)
         {
-            if (!(kvp.Key.StartsWith("Radarr", StringComparison.OrdinalIgnoreCase) ||
-                  kvp.Key.StartsWith("Sonarr", StringComparison.OrdinalIgnoreCase) ||
-                  kvp.Key.StartsWith("Lidarr", StringComparison.OrdinalIgnoreCase)))
+            if (!ArrSectionHelper.IsArrSection(kvp.Key))
                 continue;
             if (kvp.Value is not TomlTable arrTable) continue;
             if (!arrTable.TryGetValue("EntrySearch", out var esObj) || esObj is not TomlTable entrySearch) continue;
@@ -977,6 +1011,9 @@ public class ConfigurationLoader
 
         if (table.TryGetValue("AutoUpdateCron", out var updateCron))
             settings.AutoUpdateCron = updateCron?.ToString() ?? "0 3 * * 0";
+
+        if (table.TryGetValue("AutoUpdateChannel", out var updateChannel))
+            settings.AutoUpdateChannel = NormalizeAutoUpdateChannel(updateChannel?.ToString());
 
         if (table.TryGetValue("AutoRestartProcesses", out var autoRestart))
             settings.AutoRestartProcesses = Convert.ToBoolean(autoRestart);
@@ -1279,80 +1316,70 @@ public class ConfigurationLoader
             if (kvp.Value is not TomlTable instanceTable)
                 continue;
 
-            var lower = sectionName.ToLowerInvariant();
-            bool isRadarr = lower == "radarr" || lower.StartsWith("radarr-");
-            bool isSonarr = lower == "sonarr" || lower.StartsWith("sonarr-");
-            bool isLidarr = lower == "lidarr" || lower.StartsWith("lidarr-");
+            var arrType = ArrSectionHelper.ArrTypeFromSectionName(sectionName);
+            if (arrType == null)
+                continue;
 
-            if (isRadarr || isSonarr || isLidarr)
-            {
-                var instance = new ArrInstanceConfig();
+            var instance = new ArrInstanceConfig { Type = arrType };
 
-                if (isRadarr)
-                    instance.Type = "radarr";
-                else if (isSonarr)
-                    instance.Type = "sonarr";
-                else if (isLidarr)
-                    instance.Type = "lidarr";
+            if (instanceTable.TryGetValue("URI", out var uri))
+                instance.URI = uri?.ToString() ?? "";
 
-                if (instanceTable.TryGetValue("URI", out var uri))
-                    instance.URI = uri?.ToString() ?? "";
+            if (instanceTable.TryGetValue("APIKey", out var apiKey))
+                instance.APIKey = apiKey?.ToString() ?? "";
 
-                if (instanceTable.TryGetValue("APIKey", out var apiKey))
-                    instance.APIKey = apiKey?.ToString() ?? "";
+            if (instanceTable.TryGetValue("Managed", out var managed))
+                instance.Managed = Convert.ToBoolean(managed);
 
-                if (instanceTable.TryGetValue("Managed", out var managed))
-                    instance.Managed = Convert.ToBoolean(managed);
+            if (instanceTable.TryGetValue("Category", out var category))
+                instance.Category = category?.ToString() ?? "";
 
-                if (instanceTable.TryGetValue("Category", out var category))
-                    instance.Category = category?.ToString() ?? "";
+            if (instanceTable.TryGetValue("SearchOnly", out var searchOnly))
+                instance.SearchOnly = Convert.ToBoolean(searchOnly);
 
-                if (instanceTable.TryGetValue("SearchOnly", out var searchOnly))
-                    instance.SearchOnly = Convert.ToBoolean(searchOnly);
+            if (instanceTable.TryGetValue("ProcessingOnly", out var procOnly))
+                instance.ProcessingOnly = Convert.ToBoolean(procOnly);
 
-                if (instanceTable.TryGetValue("ProcessingOnly", out var procOnly))
-                    instance.ProcessingOnly = Convert.ToBoolean(procOnly);
+            if (instanceTable.TryGetValue("MatchSubcategories", out var matchSub))
+                instance.MatchSubcategories = Convert.ToBoolean(matchSub);
 
-                if (instanceTable.TryGetValue("MatchSubcategories", out var matchSub))
-                    instance.MatchSubcategories = Convert.ToBoolean(matchSub);
+            if (instanceTable.TryGetValue("ReSearch", out var reSearch))
+                instance.ReSearch = Convert.ToBoolean(reSearch);
 
-                if (instanceTable.TryGetValue("ReSearch", out var reSearch))
-                    instance.ReSearch = Convert.ToBoolean(reSearch);
+            if (instanceTable.TryGetValue("importMode", out var importMode))
+                instance.ImportMode = importMode?.ToString() ?? "Auto";
 
-                if (instanceTable.TryGetValue("importMode", out var importMode))
-                    instance.ImportMode = importMode?.ToString() ?? "Auto";
+            if (instanceTable.TryGetValue("RssSyncTimer", out var rssSyncTimer))
+                instance.RssSyncTimer = DurationParser.ParseToMinutes(rssSyncTimer, 1);
 
-                if (instanceTable.TryGetValue("RssSyncTimer", out var rssSyncTimer))
-                    instance.RssSyncTimer = DurationParser.ParseToMinutes(rssSyncTimer, 1);
+            if (instanceTable.TryGetValue("RefreshDownloadsTimer", out var refreshDownloadsTimer))
+                instance.RefreshDownloadsTimer = DurationParser.ParseToMinutes(refreshDownloadsTimer, 1);
 
-                if (instanceTable.TryGetValue("RefreshDownloadsTimer", out var refreshDownloadsTimer))
-                    instance.RefreshDownloadsTimer = DurationParser.ParseToMinutes(refreshDownloadsTimer, 1);
+            if (instanceTable.TryGetValue("ArrErrorCodesToBlocklist", out var arrErrorCodes) && arrErrorCodes is TomlArray errorArray)
+                instance.ArrErrorCodesToBlocklist = errorArray.Select(x => x?.ToString() ?? "").ToList();
 
-                if (instanceTable.TryGetValue("ArrErrorCodesToBlocklist", out var arrErrorCodes) && arrErrorCodes is TomlArray errorArray)
-                    instance.ArrErrorCodesToBlocklist = errorArray.Select(x => x?.ToString() ?? "").ToList();
+            // Parse Torrent section with type-aware allowlist defaults
+            if (instanceTable.TryGetValue("Torrent", out var torrentObj) && torrentObj is TomlTable torrentTable)
+                instance.Torrent = ParseTorrentConfig(torrentTable, arrType);
+            else
+                instance.Torrent.FileExtensionAllowlist = ArrSectionHelper.DefaultFileExtensionAllowlist(arrType).ToList();
 
-                // Parse Torrent section
-                if (instanceTable.TryGetValue("Torrent", out var torrentObj) && torrentObj is TomlTable torrentTable)
-                {
-                    instance.Torrent = ParseTorrentConfig(torrentTable);
-                }
+            // Parse EntrySearch section
+            if (instanceTable.TryGetValue("EntrySearch", out var searchObj) && searchObj is TomlTable searchTable)
+                instance.Search = ParseSearchConfig(searchTable, instance.Type);
 
-                // Parse EntrySearch section
-                if (instanceTable.TryGetValue("EntrySearch", out var searchObj) && searchObj is TomlTable searchTable)
-                {
-                    instance.Search = ParseSearchConfig(searchTable, instance.Type);
-                }
-
-                instances[sectionName] = instance;
-            }
+            instances[sectionName] = instance;
         }
 
         return instances;
     }
 
-    private TorrentConfig ParseTorrentConfig(TomlTable table)
+    private TorrentConfig ParseTorrentConfig(TomlTable table, string? arrType = null)
     {
-        var torrent = new TorrentConfig();
+        var torrent = new TorrentConfig
+        {
+            FileExtensionAllowlist = ArrSectionHelper.DefaultFileExtensionAllowlist(arrType).ToList()
+        };
 
         if (table.TryGetValue("CaseSensitiveMatches", out var caseSensitive))
             torrent.CaseSensitiveMatches = Convert.ToBoolean(caseSensitive);
@@ -1730,6 +1757,7 @@ public class ConfigurationLoader
         sb.AppendLine($"FFprobeAutoUpdate = {config.Settings.FFprobeAutoUpdate.ToString().ToLower()}");
         sb.AppendLine($"AutoUpdateEnabled = {config.Settings.AutoUpdateEnabled.ToString().ToLower()}");
         sb.AppendLine($"AutoUpdateCron = \"{config.Settings.AutoUpdateCron}\"");
+        sb.AppendLine($"AutoUpdateChannel = \"{config.Settings.AutoUpdateChannel}\"");
         sb.AppendLine($"AutoRestartProcesses = {config.Settings.AutoRestartProcesses.ToString().ToLower()}");
         sb.AppendLine($"MaxProcessRestarts = {config.Settings.MaxProcessRestarts}");
         sb.AppendLine($"ProcessRestartWindow = {config.Settings.ProcessRestartWindow}");
@@ -1872,7 +1900,7 @@ public class ConfigurationLoader
             }
             sb.AppendLine($"Unmonitored = {instance.Search.Unmonitored.ToString().ToLower()}");
             sb.AppendLine($"SearchLimit = {instance.Search.SearchLimit}");
-            if (instance.Type != "lidarr")
+            if (ArrSectionHelper.SupportsSearchByYear(instance.Type))
             {
                 sb.AppendLine($"SearchByYear = {instance.Search.SearchByYear.ToString().ToLower()}");
             }
@@ -1898,8 +1926,8 @@ public class ConfigurationLoader
                 sb.AppendLine($"PrioritizeTodaysReleases = {instance.Search.PrioritizeTodaysReleases.ToString().ToLower()}");
             }
 
-            // Ombi section (not for Lidarr)
-            if (instance.Type != "lidarr")
+            // Ombi section (not for Lidarr/Readarr)
+            if (ArrSectionHelper.SupportsRequestIntegration(instance.Type))
             {
                 var ombi = instance.Search.Ombi ?? new OmbiConfig();
                 sb.AppendLine();

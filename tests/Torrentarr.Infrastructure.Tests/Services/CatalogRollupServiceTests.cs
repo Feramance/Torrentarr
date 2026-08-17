@@ -154,21 +154,33 @@ public class CatalogRollupServiceTests
         });
         await db.SaveChangesAsync();
 
+        db.Books.Add(new BookFilesModel
+        {
+            EntryId = 1,
+            ArrInstance = "readarr",
+            Monitored = true,
+            HasFile = true,
+            Title = "Dune"
+        });
+        await db.SaveChangesAsync();
+
         var config = new TorrentarrConfig
         {
             ArrInstances = new Dictionary<string, ArrInstanceConfig>
             {
                 ["Radarr"] = new() { Category = "radarr", Type = "radarr" },
                 ["Sonarr"] = new() { Category = "sonarr", Type = "sonarr" },
-                ["Lidarr"] = new() { Category = "lidarr", Type = "lidarr" }
+                ["Lidarr"] = new() { Category = "lidarr", Type = "lidarr" },
+                ["Readarr"] = new() { Category = "readarr", Type = "readarr" }
             }
         };
 
         var svc = new CatalogRollupService(db);
-        var (radarr, sonarr, lidarrTracks) = await svc.GetAggregatedTypeCountsAsync(config);
+        var (radarr, sonarr, lidarrTracks, readarrBooks) = await svc.GetAggregatedTypeCountsAsync(config);
 
         radarr.Available.Should().Be(1);
         sonarr.Available.Should().Be(1);
         lidarrTracks.Available.Should().Be(1);
+        readarrBooks.Available.Should().Be(1);
     }
 }

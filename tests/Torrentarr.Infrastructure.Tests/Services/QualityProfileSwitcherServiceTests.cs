@@ -50,6 +50,7 @@ public class QualityProfileSwitcherServiceTests
     [InlineData("radarr")]
     [InlineData("sonarr")]
     [InlineData("lidarr")]
+    [InlineData("readarr")]
     public async Task ForceResetAll_ForceResetFalse_AllArrTypes_ReturnQuickly(string arrType)
     {
         var svc = CreateService();
@@ -146,6 +147,7 @@ public class QualityProfileSwitcherServiceTests
     [InlineData("radarr")]
     [InlineData("sonarr")]
     [InlineData("lidarr")]
+    [InlineData("readarr")]
     public async Task RestoreTimedOut_EmptyDb_AllArrTypes_NoItemsToRestore(string arrType)
     {
         // UseTempForMissing=true, timeout>0, empty DB → query returns empty list → no-op

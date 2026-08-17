@@ -286,6 +286,58 @@ export interface LidarrTracksResponse {
   tracks: LidarrTrack[];
 }
 
+export interface ReadarrCounts {
+  available: number;
+  monitored: number;
+  missing?: number;
+  quality_met?: number;
+  requests?: number;
+}
+
+export interface ReadarrAuthorEntry {
+  author: {
+    id: number;
+    arrId?: number;
+    name?: string;
+    monitored?: boolean;
+    qualityProfileName?: string | null;
+    searched?: boolean;
+    bookCount?: number;
+    booksMonitored?: number;
+    booksAvailable?: number;
+    booksMissing?: number;
+  };
+}
+
+export interface ReadarrAuthorsResponse {
+  category: string;
+  counts: ReadarrCounts;
+  book_total?: number;
+  total: number;
+  page: number;
+  page_size: number;
+  authors: ReadarrAuthorEntry[];
+}
+
+export interface ReadarrBook {
+  id?: number;
+  title?: string;
+  authorId?: number;
+  authorName?: string;
+  releaseDate?: string;
+  monitored?: boolean;
+  hasFile?: boolean;
+  reason?: string | null;
+  qualityProfileName?: string | null;
+}
+
+export interface ReadarrAuthorDetailResponse {
+  category: string;
+  counts: ReadarrCounts;
+  author: ReadarrAuthorEntry["author"];
+  books: Array<{ book: ReadarrBook }>;
+}
+
 export interface ConfigVersionWarning {
   type: "config_version_mismatch";
   message: string;
@@ -345,11 +397,6 @@ export interface ConfigUpdateResponse {
   status: string;
   configReloaded: boolean;
   reloadType:
-    | "none"
-    | "frontend"
-    | "webui"
-    | "single_arr"
-    | "multi_arr"
-    | "full";
+    "none" | "frontend" | "webui" | "single_arr" | "multi_arr" | "full";
   affectedInstances: string[];
 }

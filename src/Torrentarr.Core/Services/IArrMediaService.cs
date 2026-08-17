@@ -34,6 +34,7 @@ public class WantedMedia
     public int SeasonNumber { get; set; }
     public int EpisodeNumber { get; set; }
     public int ArtistId { get; set; }
+    public int AuthorId { get; set; }
     public DateTime Added { get; set; }
     public bool Monitored { get; set; }
 }
@@ -58,4 +59,5 @@ public class CustomFormatUnmetItem
     public int? SeasonNumber { get; set; }
     public int? EpisodeNumber { get; set; }
     public int? ArtistId { get; set; }
+    public int? AuthorId { get; set; }
 }

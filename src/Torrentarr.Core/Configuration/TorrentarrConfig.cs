@@ -34,7 +34,7 @@ public class TorrentarrConfig
 
 public class SettingsConfig
 {
-    public string ConfigVersion { get; set; } = "6.12.4";
+    public string ConfigVersion { get; set; } = "6.14.3";
     public string ConsoleLevel { get; set; } = "INFO";
     public bool Logging { get; set; } = true;
     public string CompletedDownloadFolder { get; set; } = "";
@@ -52,6 +52,8 @@ public class SettingsConfig
     public bool FFprobeAutoUpdate { get; set; } = true;
     public bool AutoUpdateEnabled { get; set; } = false;
     public string AutoUpdateCron { get; set; } = "0 3 * * 0";
+    /// <summary>Release channel: latest, stable, or nightly.</summary>
+    public string AutoUpdateChannel { get; set; } = "latest";
     public bool AutoRestartProcesses { get; set; } = true;
     public int MaxProcessRestarts { get; set; } = 5;
     public int ProcessRestartWindow { get; set; } = 300;
@@ -193,7 +195,7 @@ public class ArrInstanceConfig
     public string APIKey { get; set; } = "";
     public bool Managed { get; set; } = true;
     public string Category { get; set; } = "";
-    public string Type { get; set; } = ""; // radarr, sonarr, lidarr
+    public string Type { get; set; } = ""; // radarr, sonarr, lidarr, readarr
     public bool SearchOnly { get; set; } = false;
     public bool ProcessingOnly { get; set; } = false;
     /// <summary>Override qBit <c>MatchSubcategories</c> for this Arr instance; null inherits from qBit.</summary>

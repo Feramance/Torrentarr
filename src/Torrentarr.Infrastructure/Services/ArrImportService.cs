@@ -64,6 +64,7 @@ public class ArrImportService : IArrImportService
                 "radarr" => await TriggerRadarrImportAsync(arrInstance, hash, contentPath, cancellationToken),
                 "sonarr" => await TriggerSonarrImportAsync(arrInstance, hash, contentPath, cancellationToken),
                 "lidarr" => await TriggerLidarrImportAsync(arrInstance, hash, contentPath, cancellationToken),
+                "readarr" => await TriggerReadarrImportAsync(arrInstance, hash, contentPath, cancellationToken),
                 _ => new ImportResult
                 {
                     Success = false,
@@ -106,6 +107,7 @@ public class ArrImportService : IArrImportService
                     "radarr" => await CheckRadarrQueueAsync(arrInstance, hash, cancellationToken),
                     "sonarr" => await CheckSonarrQueueAsync(arrInstance, hash, cancellationToken),
                     "lidarr" => await CheckLidarrQueueAsync(arrInstance, hash, cancellationToken),
+                    "readarr" => await CheckReadarrQueueAsync(arrInstance, hash, cancellationToken),
                     _ => false
                 };
 
@@ -231,6 +233,38 @@ public class ArrImportService : IArrImportService
         };
     }
 
+    private async Task<ImportResult> TriggerReadarrImportAsync(
+        ArrInstanceConfig config,
+        string hash,
+        string contentPath,
+        CancellationToken cancellationToken)
+    {
+        var client = new ReadarrClient(config.URI, config.APIKey);
+
+        var importMode = _config.Settings.ImportMode ?? "Auto";
+        var response = await client.TriggerDownloadedBooksScanAsync(
+            contentPath, hash, importMode, cancellationToken);
+
+        if (response != null)
+        {
+            _logger.LogInformation("Triggered Readarr import command {CommandId} for {Path}",
+                response.Id, contentPath);
+
+            return new ImportResult
+            {
+                Success = true,
+                Message = $"Readarr import command {response.Id} queued",
+                CommandId = response.Id
+            };
+        }
+
+        return new ImportResult
+        {
+            Success = false,
+            Message = "Failed to trigger Readarr import"
+        };
+    }
+
     private async Task<bool> CheckRadarrQueueAsync(
         ArrInstanceConfig config,
         string hash,
@@ -263,6 +297,19 @@ public class ArrImportService : IArrImportService
         CancellationToken cancellationToken)
     {
         var client = new LidarrClient(config.URI, config.APIKey);
+        var queue = await client.GetQueueAsync(ct: cancellationToken);
+
+        return queue?.Records?.Any(r =>
+            r.DownloadId != null &&
+            r.DownloadId.Equals(hash, StringComparison.OrdinalIgnoreCase)) ?? false;
+    }
+
+    private async Task<bool> CheckReadarrQueueAsync(
+        ArrInstanceConfig config,
+        string hash,
+        CancellationToken cancellationToken)
+    {
+        var client = new ReadarrClient(config.URI, config.APIKey);
         var queue = await client.GetQueueAsync(ct: cancellationToken);
 
         return queue?.Records?.Any(r =>
@@ -339,6 +386,7 @@ public class ArrImportService : IArrImportService
                 "radarr" => await CheckRadarrCfUnmetAsync(arrInstance, downloadId, cancellationToken),
                 "sonarr" => await CheckSonarrCfUnmetAsync(arrInstance, downloadId, cancellationToken),
                 "lidarr" => await CheckLidarrCfUnmetAsync(arrInstance, downloadId, cancellationToken),
+                "readarr" => await CheckReadarrCfUnmetAsync(arrInstance, downloadId, cancellationToken),
                 _ => false
             };
         }
@@ -478,6 +526,7 @@ public class ArrImportService : IArrImportService
                 "radarr" => await BlocklistRadarrAsync(arrInstance, downloadId, cancellationToken),
                 "sonarr" => await BlocklistSonarrAsync(arrInstance, downloadId, cancellationToken),
                 "lidarr" => await BlocklistLidarrAsync(arrInstance, downloadId, cancellationToken),
+                "readarr" => await BlocklistReadarrAsync(arrInstance, downloadId, cancellationToken),
                 _ => false
             };
         }
@@ -525,5 +574,43 @@ public class ArrImportService : IArrImportService
 
         _logger.LogInformation("Blocklisting Lidarr queue item {Id} (hash: {Hash})", record.Id, downloadId);
         return await client.DeleteFromQueueAsync(record.Id, removeFromClient: false, blocklist: true, ct);
+    }
+
+    private async Task<bool> BlocklistReadarrAsync(ArrInstanceConfig config, string downloadId, CancellationToken ct)
+    {
+        var client = new ReadarrClient(config.URI, config.APIKey);
+        var queue = await client.GetQueueAsync(ct: ct);
+        var record = queue.Records.FirstOrDefault(r =>
+            string.Equals(r.DownloadId, downloadId, StringComparison.OrdinalIgnoreCase));
+
+        if (record == null) return false;
+
+        _logger.LogInformation("Blocklisting Readarr queue item {Id} (hash: {Hash})", record.Id, downloadId);
+        return await client.DeleteFromQueueAsync(record.Id, removeFromClient: false, blocklist: true, ct);
+    }
+
+    private async Task<bool> CheckReadarrCfUnmetAsync(ArrInstanceConfig config, string downloadId, CancellationToken ct)
+    {
+        var client = new ReadarrClient(config.URI, config.APIKey);
+        var queue = await client.GetQueueAsync(ct: ct);
+        var record = queue.Records.FirstOrDefault(r =>
+            string.Equals(r.DownloadId, downloadId, StringComparison.OrdinalIgnoreCase));
+
+        if (record?.CustomFormatScore == null || record.BookId == null)
+            return false;
+
+        var arrName = _config.ArrInstances.FirstOrDefault(kv =>
+            kv.Value == config).Key ?? "";
+
+        var modelEntry = await _dbContext.Books.AsNoTracking()
+            .FirstOrDefaultAsync(b => b.ArrId == record.BookId && b.ArrInstance == arrName, ct);
+
+        if (modelEntry == null)
+            return false;
+
+        var cfUnmet = record.CustomFormatScore < (modelEntry.CustomFormatScore ?? 0);
+        if (config.Search.ForceMinimumCustomFormat)
+            cfUnmet = cfUnmet && record.CustomFormatScore < (modelEntry.MinCustomFormatScore ?? 0);
+        return cfUnmet;
     }
 }

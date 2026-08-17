@@ -102,10 +102,27 @@ public class QualityProfileSwitcherService
                 }
                 await _db.SaveChangesWithRetryAsync(_logger, _restartCoordinator, cancellationToken: ct);
                 break;
+
+            case "readarr":
+                var authors = await _db.Authors
+                    .Where(a => a.ArrInstance == instanceName && a.OriginalProfileId.HasValue)
+                    .ToListAsync(ct);
+
+                if (authors.Count == 0) break;
+
+                _logger.LogInformation("§1.2 ForceReset: restoring {Count} author profiles for {Instance}", authors.Count, instanceName);
+                var readarr = new ReadarrClient(arrConfig.URI, arrConfig.APIKey);
+                foreach (var author in authors)
+                {
+                    await TryRestoreAuthorAsync(readarr, author.ArrId, author.OriginalProfileId!.Value, instanceName, arrConfig, ct);
+                    author.CurrentProfileId = author.OriginalProfileId;
+                    author.OriginalProfileId = null;
+                    author.LastProfileSwitchTime = null;
+                }
+                await _db.SaveChangesWithRetryAsync(_logger, _restartCoordinator, cancellationToken: ct);
+                break;
         }
     }
-
-    // ── Per-cycle ─────────────────────────────────────────────────────────────
 
     /// <summary>
     /// Restores quality profiles for items whose TempProfileResetTimeoutMinutes has elapsed.
@@ -196,6 +213,28 @@ public class QualityProfileSwitcherService
                 }
                 await _db.SaveChangesWithRetryAsync(_logger, _restartCoordinator, cancellationToken: ct);
                 break;
+
+            case "readarr":
+                var expiredAuthors = await _db.Authors
+                    .Where(a => a.ArrInstance == instanceName
+                             && a.OriginalProfileId.HasValue
+                             && a.LastProfileSwitchTime.HasValue
+                             && a.LastProfileSwitchTime.Value < cutoff)
+                    .ToListAsync(ct);
+
+                if (expiredAuthors.Count == 0) break;
+
+                _logger.LogInformation("§1.2 RestoreTimedOut: restoring {Count} author profiles for {Instance}", expiredAuthors.Count, instanceName);
+                var readarr = new ReadarrClient(arrConfig.URI, arrConfig.APIKey);
+                foreach (var author in expiredAuthors)
+                {
+                    await TryRestoreAuthorAsync(readarr, author.ArrId, author.OriginalProfileId!.Value, instanceName, arrConfig, ct);
+                    author.CurrentProfileId = author.OriginalProfileId;
+                    author.OriginalProfileId = null;
+                    author.LastProfileSwitchTime = null;
+                }
+                await _db.SaveChangesWithRetryAsync(_logger, _restartCoordinator, cancellationToken: ct);
+                break;
         }
     }
 
@@ -234,6 +273,9 @@ public class QualityProfileSwitcherService
                 break;
             case "lidarr":
                 await SwitchArtistProfilesAsync(instanceName, arrConfig, missingCandidates, ct);
+                break;
+            case "readarr":
+                await SwitchAuthorProfilesAsync(instanceName, arrConfig, missingCandidates, ct);
                 break;
         }
     }
@@ -464,6 +506,81 @@ public class QualityProfileSwitcherService
             },
             "artist-restore",
             ct);
+    }
+
+    private async Task TryRestoreAuthorAsync(ReadarrClient readarr, int arrId, int originalProfileId, string instanceName, ArrInstanceConfig arrConfig, CancellationToken ct)
+    {
+        await WithProfileSwitchRetryAsync(
+            arrConfig,
+            async () =>
+            {
+                await readarr.UpdateAuthorQualityProfileAsync(arrId, originalProfileId, ct);
+                _logger.LogInformation("§1.2: Restored author {ArrId} → profileId={ProfileId} for {Instance}", arrId, originalProfileId, instanceName);
+                return true;
+            },
+            "author-restore",
+            ct);
+    }
+
+    private async Task SwitchAuthorProfilesAsync(
+        string instanceName,
+        ArrInstanceConfig arrConfig,
+        List<Core.Services.SearchCandidate> candidates,
+        CancellationToken ct)
+    {
+        var readarr = new ReadarrClient(arrConfig.URI, arrConfig.APIKey);
+        var profiles = await readarr.GetQualityProfilesAsync(ct);
+        var profilesById = profiles.ToDictionary(p => p.Id, p => p.Name);
+        var profilesByName = profiles.ToDictionary(p => p.Name, p => p.Id, StringComparer.OrdinalIgnoreCase);
+
+        var authorIds = candidates
+            .Where(c => c.AuthorId.HasValue)
+            .Select(c => c.AuthorId!.Value)
+            .ToHashSet();
+
+        var authors = await _db.Authors
+            .Where(a => a.ArrInstance == instanceName && authorIds.Contains(a.ArrId))
+            .ToListAsync(ct);
+
+        var changed = false;
+        foreach (var author in authors)
+        {
+            if (author.OriginalProfileId.HasValue)
+                continue;
+
+            if (!author.QualityProfileId.HasValue)
+                continue;
+
+            if (!profilesById.TryGetValue(author.QualityProfileId.Value, out var currentProfileName))
+                continue;
+
+            if (!arrConfig.Search.QualityProfileMappings.TryGetValue(currentProfileName, out var tempProfileName))
+                continue;
+
+            if (!profilesByName.TryGetValue(tempProfileName, out var tempProfileId))
+            {
+                _logger.LogWarning("§1.2: Temp profile '{Name}' not found in Readarr for {Instance}", tempProfileName, instanceName);
+                continue;
+            }
+
+            var switched = await WithProfileSwitchRetryAsync(
+                arrConfig,
+                () => readarr.UpdateAuthorQualityProfileAsync(author.ArrId, tempProfileId, ct),
+                "author",
+                ct);
+            if (switched)
+            {
+                _logger.LogInformation("§1.2: Switched author '{Name}' profile: {From} → {To}",
+                    author.Title ?? author.ArrId.ToString(), currentProfileName, tempProfileName);
+                author.OriginalProfileId = author.QualityProfileId;
+                author.CurrentProfileId = tempProfileId;
+                author.LastProfileSwitchTime = DateTime.UtcNow;
+                changed = true;
+            }
+        }
+
+        if (changed)
+            await _db.SaveChangesWithRetryAsync(_logger, _restartCoordinator, cancellationToken: ct);
     }
 
     private async Task<bool> WithProfileSwitchRetryAsync(

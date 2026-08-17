@@ -53,6 +53,26 @@ public class CatalogRollupService
         return snapshot;
     }
 
+    public async Task<(Counts Books, int BookTotal)> GetReadarrRollupsAsync(string instanceName, CancellationToken ct = default)
+    {
+        var key = $"readarr:{instanceName}";
+        if (TryGetCache(key, out var cached) && cached is (Counts b, int t))
+            return (b, t);
+
+        var books = await _db.Books.Where(x => x.ArrInstance == instanceName).ToListAsync(ct);
+        var monitored = books.Count(x => x.Monitored);
+        var available = books.Count(x => x.Monitored && x.HasFile);
+        var bookCounts = new Counts(
+            available,
+            monitored,
+            Math.Max(monitored - available, 0),
+            books.Count(x => x.QualityMet),
+            books.Count(x => x.IsRequest));
+        var snapshot = (bookCounts, books.Count);
+        SetCache(key, snapshot);
+        return snapshot;
+    }
+
     public async Task<(Counts Movies, int Total)> GetRadarrRollupsAsync(string instanceName, CancellationToken ct = default)
     {
         var key = $"radarr:{instanceName}";
@@ -89,13 +109,14 @@ public class CatalogRollupService
         return snapshot;
     }
 
-    public async Task<(Counts Radarr, Counts Sonarr, Counts LidarrTracks)> GetAggregatedTypeCountsAsync(
+    public async Task<(Counts Radarr, Counts Sonarr, Counts LidarrTracks, Counts ReadarrBooks)> GetAggregatedTypeCountsAsync(
         TorrentarrConfig config,
         CancellationToken ct = default)
     {
         var radarr = new Counts(0, 0, 0);
         var sonarr = new Counts(0, 0, 0);
         var lidarrTracks = new Counts(0, 0, 0);
+        var readarrBooks = new Counts(0, 0, 0);
 
         foreach (var inst in config.ArrInstances.Values)
         {
@@ -113,10 +134,14 @@ public class CatalogRollupService
                     var (_, _, tracks) = await GetLidarrRollupsAsync(inst.Category, ct);
                     lidarrTracks = Merge(lidarrTracks, tracks);
                     break;
+                case "readarr":
+                    var (books, _) = await GetReadarrRollupsAsync(inst.Category, ct);
+                    readarrBooks = Merge(readarrBooks, books);
+                    break;
             }
         }
 
-        return (radarr, sonarr, lidarrTracks);
+        return (radarr, sonarr, lidarrTracks, readarrBooks);
     }
 
     private static Counts Merge(Counts a, Counts b) => new(

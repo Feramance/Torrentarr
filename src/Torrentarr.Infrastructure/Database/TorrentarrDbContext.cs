@@ -20,10 +20,13 @@ public class TorrentarrDbContext : DbContext
     public DbSet<AlbumFilesModel> Albums { get; set; }
     public DbSet<TrackFilesModel> Tracks { get; set; }
     public DbSet<ArtistFilesModel> Artists { get; set; }
+    public DbSet<BookFilesModel> Books { get; set; }
+    public DbSet<AuthorFilesModel> Authors { get; set; }
     public DbSet<TorrentLibrary> TorrentLibrary { get; set; }
     public DbSet<MovieQueueModel> MovieQueue { get; set; }
     public DbSet<EpisodeQueueModel> EpisodeQueue { get; set; }
     public DbSet<AlbumQueueModel> AlbumQueue { get; set; }
+    public DbSet<BookQueueModel> BookQueue { get; set; }
     public DbSet<FilesQueued> FilesQueued { get; set; }
     public DbSet<SearchActivity> SearchActivity { get; set; }
 
@@ -38,10 +41,13 @@ public class TorrentarrDbContext : DbContext
         modelBuilder.Entity<AlbumFilesModel>().ToTable("albumfilesmodel");
         modelBuilder.Entity<TrackFilesModel>().ToTable("trackfilesmodel");
         modelBuilder.Entity<ArtistFilesModel>().ToTable("artistfilesmodel");
+        modelBuilder.Entity<BookFilesModel>().ToTable("bookfilesmodel");
+        modelBuilder.Entity<AuthorFilesModel>().ToTable("authorfilesmodel");
         modelBuilder.Entity<TorrentLibrary>().ToTable("torrentlibrary");
         modelBuilder.Entity<MovieQueueModel>().ToTable("moviequeuemodel");
         modelBuilder.Entity<EpisodeQueueModel>().ToTable("episodequeuemodel");
         modelBuilder.Entity<AlbumQueueModel>().ToTable("albumqueuemodel");
+        modelBuilder.Entity<BookQueueModel>().ToTable("bookqueuemodel");
         modelBuilder.Entity<FilesQueued>().ToTable("filesqueued");
         modelBuilder.Entity<SearchActivity>().ToTable("searchactivity");
 
@@ -60,6 +66,9 @@ public class TorrentarrDbContext : DbContext
         modelBuilder.Entity<MovieQueueModel>().HasIndex(q => q.ArrInstance).HasDatabaseName("idx_arrinstance_moviequeue");
         modelBuilder.Entity<EpisodeQueueModel>().HasIndex(q => q.ArrInstance).HasDatabaseName("idx_arrinstance_episodequeue");
         modelBuilder.Entity<AlbumQueueModel>().HasIndex(q => q.ArrInstance).HasDatabaseName("idx_arrinstance_albumqueue");
+        modelBuilder.Entity<BookFilesModel>().HasIndex(b => b.ArrInstance).HasDatabaseName("idx_arrinstance_books");
+        modelBuilder.Entity<AuthorFilesModel>().HasIndex(a => a.ArrInstance).HasDatabaseName("idx_arrinstance_authors");
+        modelBuilder.Entity<BookQueueModel>().HasIndex(q => q.ArrInstance).HasDatabaseName("idx_arrinstance_bookqueue");
         modelBuilder.Entity<FilesQueued>().HasIndex(f => f.ArrInstance).HasDatabaseName("idx_arrinstance_filesqueued");
     }
 

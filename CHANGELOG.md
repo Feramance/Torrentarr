@@ -1,5 +1,26 @@
 # Changelog
 
+## v6.14.3
+
+Parity jump with qBitrr **v5.14.3-1** (Torrentarr schema **6.14.3**; no 6.13.x release).
+
+### Features
+- Readarr: `[Readarr-*]` config, API client, SQLite tables (including existing DBs), workers, and WebUI authors/books catalog
+- `Settings.AutoUpdateChannel` (`latest` / `stable` / `nightly`); source/`dotnet run` builds never apply binaries
+- Type-aware FileExtensionAllowlist defaults; Readarr ebook-only lists expand to include audiobooks
+
+### Bug Fixes
+- Retry qBit client init in Host and Workers instead of giving up permanently
+- Tracker `-1`/unset no longer wipes positive Arr `SeedingMode` / CategorySeeding limits
+- Isolate Lidarr/year-search candidate failures so one Arr type cannot stop the worker
+- Parse fractional TOML durations (`1.5`, `1.5h`)
+- Skip ffprobe for ebook/comic suffixes
+
+### Documentation
+- Pin parity matrix to qBitrr v5.14.3-1; keep 5.12.5–5.12.9 multi-instance rows as `partial`
+
+---
+
 ## v6.12.4 (2026-07-08)
 
 ### Bug Fixes

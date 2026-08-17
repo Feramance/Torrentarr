@@ -75,6 +75,14 @@ public class MediaValidationService : IMediaValidationService
         }
 
         var extension = Path.GetExtension(filePath);
+        if (ArrSectionHelper.IsEbookOrComicExtension(extension))
+        {
+            result.IsValid = true;
+            result.IsMediaFile = false;
+            _logger.LogTrace("Skipping ffprobe for ebook/comic file: {File}", filePath);
+            return result;
+        }
+
         if (!_mediaExtensions.Contains(extension))
         {
             result.IsValid = true;

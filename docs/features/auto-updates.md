@@ -32,6 +32,9 @@ AutoUpdateEnabled = false
 
 # Cron expression (UTC), 5 fields: minute hour day-of-month month day-of-week
 AutoUpdateCron = "0 3 * * 0"
+
+# Channel: latest (newest GitHub release), stable (newest non-prerelease), nightly (check only)
+AutoUpdateChannel = "latest"
 ```
 
 ### `AutoUpdateEnabled`
@@ -52,6 +55,16 @@ AutoUpdateCron = "0 3 * * *"    # daily 03:00 UTC
 AutoUpdateCron = "0 3 * * 0,3"  # Sun and Wed 03:00 UTC
 AutoUpdateCron = "0 2 1 * *"    # 1st of month 02:00 UTC
 ```
+
+### `AutoUpdateChannel`
+
+**Default:** `"latest"`
+
+- `latest` — newest GitHub release.
+- `stable` — newest non-prerelease.
+- `nightly` — check/log only; binaries are never downloaded or applied.
+
+Auto-update apply is disabled for source/`dotnet run` builds.
 
 ---
 

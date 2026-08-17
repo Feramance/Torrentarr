@@ -1,5 +1,5 @@
 site_name: Torrentarr Documentation
-site_description: Intelligent automation for qBittorrent and *Arr apps (Radarr/Sonarr/Lidarr)
+site_description: Intelligent automation for qBittorrent and *Arr apps (Radarr/Sonarr/Lidarr/Readarr)
 site_author: Feramance
 site_url: https://feramance.github.io/Torrentarr/
 repo_name: Feramance/Torrentarr
@@ -223,6 +223,7 @@ nav:
     - configuration/arr/radarr.md
     - configuration/arr/sonarr.md
     - configuration/arr/lidarr.md
+    - configuration/arr/readarr.md
   - Torrent Settings: configuration/torrents.md
   - Search & Requests:
     - configuration/search/index.md

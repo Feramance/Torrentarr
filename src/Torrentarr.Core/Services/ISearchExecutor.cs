@@ -24,6 +24,8 @@ public class SearchCandidate
     public int? EpisodeNumber { get; set; }
     public int? ArtistId { get; set; }
     public int? AlbumId { get; set; }
+    public int? AuthorId { get; set; }
+    public int? BookId { get; set; }
     public int? Year { get; set; }
     public DateTime? AirDate { get; set; }
     public bool IsTodaysRelease { get; set; }

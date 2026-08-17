@@ -206,6 +206,30 @@ public class ArrImportServiceTests
         result.Should().BeFalse("queue polling errors must fail closed, not assume import completed");
     }
 
+    [Fact]
+    public async Task IsImportedAsync_ReadarrQueueCheckFails_ReturnsFalse()
+    {
+        var config = new TorrentarrConfig
+        {
+            ArrInstances = new Dictionary<string, ArrInstanceConfig>
+            {
+                ["Readarr-Books"] = new ArrInstanceConfig
+                {
+                    Category = "readarr-books",
+                    Type = "readarr",
+                    URI = "http://127.0.0.1:1",
+                    APIKey = "invalid"
+                }
+            }
+        };
+
+        var svc = CreateService(config);
+
+        var result = await svc.IsImportedAsync("abc123def4567890123456789012345678901234");
+
+        result.Should().BeFalse("Readarr queue polling errors must fail closed");
+    }
+
     // ── Custom format unmet DB lookup (regression: Arr API ids vs SQLite EntryId) ─
 
     [Fact]

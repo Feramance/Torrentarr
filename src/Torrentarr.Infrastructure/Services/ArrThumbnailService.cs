@@ -88,6 +88,10 @@ public class ArrThumbnailService
                 .Where(a => a.ArrInstance == category && a.EntryId == entryId)
                 .Select(a => (int?)a.ArrId)
                 .FirstOrDefaultAsync(ct),
+            "readarr_author" or "readarr" => await _db.Authors
+                .Where(a => a.ArrInstance == category && a.EntryId == entryId)
+                .Select(a => (int?)a.ArrId)
+                .FirstOrDefaultAsync(ct),
             _ => null
         };
     }
@@ -110,6 +114,12 @@ public class ArrThumbnailService
             {
                 $"{baseUri}/api/v1/MediaCover/Artist/{arrId}/poster.jpg",
                 $"{baseUri}/api/v1/MediaCover/Artist/{arrId}/poster-250.jpg",
+                $"{baseUri}/api/v1/MediaCover/{arrId}/poster.jpg"
+            },
+            "readarr_author" or "readarr" => new[]
+            {
+                $"{baseUri}/api/v1/MediaCover/Author/{arrId}/poster.jpg",
+                $"{baseUri}/api/v1/MediaCover/Author/{arrId}/poster-250.jpg",
                 $"{baseUri}/api/v1/MediaCover/{arrId}/poster.jpg"
             },
             _ => Array.Empty<string>()

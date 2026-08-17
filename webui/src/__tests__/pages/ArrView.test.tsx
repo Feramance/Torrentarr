@@ -77,6 +77,18 @@ describe("ArrView – routing", () => {
 
     await screen.findByText("Lidarr");
   });
+
+  it("renders ReadarrView (shows 'Readarr' header) when type=readarr", async () => {
+    server.use(
+      http.get("/web/config", () => HttpResponse.json(minimalConfig)),
+      http.post("/web/config", () => HttpResponse.json({})),
+      http.get("/web/arr", () => HttpResponse.json(emptyArrList)),
+    );
+
+    render(<ArrView type="readarr" active={true} />, { wrapper: Wrapper });
+
+    await screen.findByText("Readarr");
+  });
 });
 
 // ── Inactive views ────────────────────────────────────────────────────────────
@@ -113,5 +125,16 @@ describe("ArrView – inactive", () => {
     render(<ArrView type="lidarr" active={false} />, { wrapper: Wrapper });
 
     await screen.findByText("Lidarr");
+  });
+
+  it("renders ReadarrView card frame when type=readarr active=false", async () => {
+    server.use(
+      http.get("/web/config", () => HttpResponse.json(minimalConfig)),
+      http.post("/web/config", () => HttpResponse.json({})),
+    );
+
+    render(<ArrView type="readarr" active={false} />, { wrapper: Wrapper });
+
+    await screen.findByText("Readarr");
   });
 });

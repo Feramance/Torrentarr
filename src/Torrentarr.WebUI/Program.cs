@@ -194,6 +194,7 @@ using (var scope = app.Services.CreateScope())
     var db = scope.ServiceProvider.GetRequiredService<TorrentarrDbContext>();
     db.Database.EnsureCreated();
     db.ConfigureWalMode();
+    ManualSqliteMigrations.Apply(db);
 }
 
 // Configure the HTTP request pipeline
@@ -901,10 +902,7 @@ static TorrentarrConfig FlatToConfig(Newtonsoft.Json.Linq.JObject flat, Torrenta
                 qbit.Password = existingQBit.Password;
             result.QBitInstances[prop.Name] = qbit;
         }
-        else if (isKnownArr
-            || prop.Name.StartsWith("Radarr", StringComparison.OrdinalIgnoreCase)
-            || prop.Name.StartsWith("Sonarr", StringComparison.OrdinalIgnoreCase)
-            || prop.Name.StartsWith("Lidarr", StringComparison.OrdinalIgnoreCase))
+        else if (isKnownArr || ArrSectionHelper.IsArrSection(prop.Name))
         {
             // Rename "EntrySearch" → "Search" before deserializing
             var arrCopy = (Newtonsoft.Json.Linq.JObject)instanceObj.DeepClone();
@@ -916,6 +914,8 @@ static TorrentarrConfig FlatToConfig(Newtonsoft.Json.Linq.JObject flat, Torrenta
                 esProp.Remove();
             }
             var arr = arrCopy.ToObject<ArrInstanceConfig>() ?? new ArrInstanceConfig();
+            if (string.IsNullOrEmpty(arr.Type))
+                arr.Type = ArrSectionHelper.ArrTypeFromSectionName(prop.Name) ?? arr.Type;
             if (arr.APIKey == "[redacted]" && current.ArrInstances.TryGetValue(prop.Name, out var existingArr))
                 arr.APIKey = existingArr.APIKey;
             result.ArrInstances[prop.Name] = arr;
@@ -1307,6 +1307,11 @@ app.MapPost("/web/arr/test-connection", async (HttpContext ctx, TorrentarrConfig
                 getSystemInfo = () => lidarr.GetSystemInfoAsync();
                 getProfiles = () => lidarr.GetQualityProfilesAsync();
                 break;
+            case "readarr":
+                var readarr = new ReadarrClient(uri, apiKey);
+                getSystemInfo = () => readarr.GetSystemInfoAsync();
+                getProfiles = () => readarr.GetQualityProfilesAsync();
+                break;
             default:
                 return Results.Ok(new { success = false, message = $"Invalid arrType: {body.ArrType}" });
         }
@@ -1372,6 +1377,7 @@ app.MapPost("/web/arr/rebuild", async (HttpContext ctx, TorrentarrConfig config)
             "radarr" => await new RadarrClient(arrCfg.URI, arrCfg.APIKey).RescanAsync(),
             "sonarr" => await new SonarrClient(arrCfg.URI, arrCfg.APIKey).RescanAsync(),
             "lidarr" => await new LidarrClient(arrCfg.URI, arrCfg.APIKey).RescanAsync(),
+            "readarr" => await new ReadarrClient(arrCfg.URI, arrCfg.APIKey).RescanAsync(),
             _ => false
         };
 

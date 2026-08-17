@@ -236,7 +236,7 @@ public class SeedingService : ISeedingService
             }
 
             var trackerConfig = await GetTrackerConfigAsync(torrent, cancellationToken);
-            var hnrConfig = trackerConfig != null ? ConvertToCategorySeeding(trackerConfig) : GetSeedingConfig(torrent);
+            var hnrConfig = GetEffectiveSeedingConfig(torrent, trackerConfig);
 
             if (!IsHnREnabled(hnrConfig.HitAndRunMode))
             {
@@ -436,7 +436,7 @@ public class SeedingService : ISeedingService
     public async Task<bool> HnrAllowsDeleteAsync(TorrentInfo torrent, string reason, CancellationToken cancellationToken = default)
     {
         var trackerConfig = await GetTrackerConfigAsync(torrent, cancellationToken);
-        var hnrConfig = trackerConfig != null ? ConvertToCategorySeeding(trackerConfig) : GetSeedingConfig(torrent);
+        var hnrConfig = GetEffectiveSeedingConfig(torrent, trackerConfig);
 
         if (!IsHnREnabled(hnrConfig.HitAndRunMode))
         {
@@ -482,7 +482,7 @@ public class SeedingService : ISeedingService
     public async Task<bool> ShouldRemoveTorrentAsync(TorrentInfo torrent, CancellationToken cancellationToken = default)
     {
         var trackerConfig = await GetTrackerConfigAsync(torrent, cancellationToken);
-        var seedingConfig = trackerConfig != null ? ConvertToCategorySeeding(trackerConfig) : GetSeedingConfig(torrent);
+        var seedingConfig = GetEffectiveSeedingConfig(torrent, trackerConfig);
 
         var removeMode = seedingConfig.RemoveTorrent;
 
@@ -581,20 +581,12 @@ public class SeedingService : ISeedingService
                s.Contains("stopped");
     }
 
-    private CategorySeedingConfig ConvertToCategorySeeding(TrackerConfig tracker)
+    private CategorySeedingConfig GetEffectiveSeedingConfig(TorrentInfo torrent, TrackerConfig? tracker)
     {
-        return new CategorySeedingConfig
-        {
-            MaxUploadRatio = tracker.MaxUploadRatio ?? -1,
-            MaxSeedingTime = tracker.MaxSeedingTime ?? -1,
-            RemoveTorrent = tracker.RemoveTorrent ?? -1,
-            HitAndRunMode = tracker.HitAndRunMode ?? "disabled",
-            MinSeedRatio = tracker.MinSeedRatio ?? 1.0,
-            MinSeedingTimeDays = tracker.MinSeedingTimeDays ?? 0,
-            DownloadRateLimitPerTorrent = tracker.DownloadRateLimit ?? -1,
-            UploadRateLimitPerTorrent = tracker.UploadRateLimit ?? -1,
-            TrackerUpdateBuffer = tracker.TrackerUpdateBuffer ?? 0
-        };
+        var category = GetSeedingConfig(torrent);
+        var arr = _config.ArrInstances.Values
+            .FirstOrDefault(a => string.Equals(a.Category, torrent.Category, StringComparison.OrdinalIgnoreCase));
+        return SeedingLimitMerge.Merge(category, arr?.Torrent.SeedingMode, tracker);
     }
 
     /// <summary>
@@ -805,7 +797,7 @@ public class SeedingService : ISeedingService
         if (client == null) return;
 
         var trackerConfig = await GetTrackerConfigAsync(torrent, cancellationToken);
-        var config = trackerConfig != null ? ConvertToCategorySeeding(trackerConfig) : GetSeedingConfig(torrent);
+        var config = GetEffectiveSeedingConfig(torrent, trackerConfig);
 
         var dlLimit = config.DownloadRateLimitPerTorrent;
         if (dlLimit >= 0)

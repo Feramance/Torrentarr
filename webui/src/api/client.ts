@@ -17,6 +17,8 @@ import type {
   LidarrAlbumsResponse,
   LidarrArtistsResponse,
   LidarrArtistDetailResponse,
+  ReadarrAuthorsResponse,
+  ReadarrAuthorDetailResponse,
   StatusResponse,
   TorrentDistribution,
 } from "./types";
@@ -319,6 +321,32 @@ export async function getLidarrArtistDetail(
   );
 }
 
+export async function getReadarrAuthors(
+  category: string,
+  page: number,
+  pageSize: number,
+  query?: string,
+): Promise<ReadarrAuthorsResponse> {
+  const params = new URLSearchParams();
+  params.set("page", page.toString());
+  params.set("page_size", pageSize.toString());
+  if (query) {
+    params.set("q", query);
+  }
+  return fetchJson<ReadarrAuthorsResponse>(
+    `/web/readarr/${encodeURIComponent(category)}/authors?${params}`,
+  );
+}
+
+export async function getReadarrAuthorDetail(
+  category: string,
+  authorId: number,
+): Promise<ReadarrAuthorDetailResponse> {
+  return fetchJson<ReadarrAuthorDetailResponse>(
+    `/web/readarr/${encodeURIComponent(category)}/author/${authorId}`,
+  );
+}
+
 export async function getLidarrAlbums(
   category: string,
   page: number,
@@ -420,7 +448,7 @@ export async function triggerUpdate(): Promise<void> {
 }
 
 export interface TestConnectionRequest {
-  arrType: "radarr" | "sonarr" | "lidarr";
+  arrType: "radarr" | "sonarr" | "lidarr" | "readarr";
   /** When present, backend uses stored config for this instance (e.g. when API key is redacted). */
   instanceKey?: string;
   uri?: string;

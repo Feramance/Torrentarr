@@ -875,6 +875,62 @@ Browse Lidarr album library from cached database.
 
 ---
 
+### Readarr Authors
+
+Browse Readarr author and book library from the cached database (author → book; no track layer).
+
+**Endpoints**:
+- `GET /web/readarr/<category>/authors`
+- `GET /api/readarr/<category>/authors`
+- `GET /web/readarr/<category>/author/<author_id>`
+- `GET /api/readarr/<category>/author/<author_id>`
+- `GET /web/readarr/<category>/author/<author_id>/thumbnail`
+- `GET /api/readarr/<category>/author/<author_id>/thumbnail`
+
+**Path Parameters**:
+
+- `category` (string, required) - Readarr instance category
+- `author_id` (integer, required for detail/thumbnail)
+
+**Query Parameters** (authors list):
+
+| Parameter | Type | Default | Description |
+|-----------|------|---------|-------------|
+| `q` | string | null | Search query (author or book name) |
+| `page` | integer | 0 | Page number |
+| `page_size` | integer | 50 | Results per page |
+
+**Response** (authors list):
+```json
+{
+  "category": "readarr-books",
+  "counts": {
+    "available": 10,
+    "monitored": 12,
+    "missing": 2
+  },
+  "total": 12,
+  "page": 0,
+  "page_size": 50,
+  "authors": [
+    {
+      "author": {
+        "id": 1,
+        "name": "Frank Herbert",
+        "monitored": true,
+        "bookCount": 6,
+        "booksAvailable": 5,
+        "booksMonitored": 6
+      }
+    }
+  ]
+}
+```
+
+Open in Readarr: `GET /web/arr/<category>/open/author/<id>`.
+
+---
+
 ### List Arr Instances
 
 Get all configured Arr instances.
@@ -973,7 +1029,7 @@ Fetch current configuration from disk.
   "config": { ... },
   "warning": {
     "type": "config_version_mismatch",
-    "message": "Config version mismatch: found 5.8.8, expected 6.12.3.",
+    "message": "Config version mismatch: found 5.8.8, expected 6.14.3.",
     "currentVersion": "5.8.8"
   }
 }

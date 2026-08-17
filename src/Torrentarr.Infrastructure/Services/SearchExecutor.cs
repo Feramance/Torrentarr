@@ -27,7 +27,7 @@ public class SearchExecutor : ISearchExecutor
     private static readonly HashSet<string> SearchCommandNames = new(StringComparer.OrdinalIgnoreCase)
     {
         "MoviesSearch", "MovieSearch", "EpisodeSearch", "SeasonSearch", "SeriesSearch",
-        "AlbumSearch", "ArtistSearch", "MissingMoviesSearch", "MissingEpisodesSearch",
+        "AlbumSearch", "ArtistSearch", "BookSearch", "AuthorSearch", "MissingMoviesSearch", "MissingEpisodesSearch",
         "CutoffUnmetMoviesSearch", "CutoffUnmetEpisodesSearch"
     };
 
@@ -214,6 +214,7 @@ public class SearchExecutor : ISearchExecutor
             "radarr" => new RadarrClient(arrConfig.URI, arrConfig.APIKey),
             "sonarr" => new SonarrClient(arrConfig.URI, arrConfig.APIKey),
             "lidarr" => new LidarrClient(arrConfig.URI, arrConfig.APIKey),
+            "readarr" => new ReadarrClient(arrConfig.URI, arrConfig.APIKey),
             _ => new object()
         };
         _clientCache[instanceName] = client;
@@ -233,6 +234,7 @@ public class SearchExecutor : ISearchExecutor
                 RadarrClient r => await r.GetCommandsAsync(cancellationToken),
                 SonarrClient s => await s.GetCommandsAsync(cancellationToken),
                 LidarrClient l => await l.GetCommandsAsync(cancellationToken),
+                ReadarrClient b => await b.GetCommandsAsync(cancellationToken),
                 _ => new List<CommandStatus>()
             };
 
@@ -278,6 +280,9 @@ public class SearchExecutor : ISearchExecutor
 
                 case LidarrClient lidarrClient:
                     return await lidarrClient.SearchAlbumAsync(new List<int> { candidate.ArrId }, cancellationToken);
+
+                case ReadarrClient readarrClient:
+                    return await readarrClient.SearchBookAsync(new List<int> { candidate.ArrId }, cancellationToken);
 
                 default:
                     return false;
@@ -325,6 +330,16 @@ public class SearchExecutor : ISearchExecutor
                     if (album != null)
                     {
                         album.Searched = true;
+                        await _db.SaveChangesWithRetryAsync(_logger, _restartCoordinator, cancellationToken: cancellationToken);
+                    }
+                    break;
+
+                case "readarr":
+                    var book = await _db.Books
+                        .FirstOrDefaultAsync(b => b.ArrId == candidate.ArrId, cancellationToken);
+                    if (book != null)
+                    {
+                        book.Searched = true;
                         await _db.SaveChangesWithRetryAsync(_logger, _restartCoordinator, cancellationToken: cancellationToken);
                     }
                     break;

@@ -42,10 +42,22 @@ public class DurationParserTests
     }
 
     [Theory]
-    [InlineData(null, 42)]
-    [InlineData("bad", 42)]
-    public void ParseToMinutes_ReturnsFallbackOnInvalid(object? value, int fallback)
+    [InlineData(1.5, 2)]
+    [InlineData("1.5", 2)]
+    [InlineData("1.5h", 5400)]
+    [InlineData("0.5m", 30)]
+    [InlineData("2.0d", 172800)]
+    public void ParseToSeconds_AcceptsFractionalValues(object? value, int expected)
     {
-        DurationParser.ParseToMinutes(value, fallback).Should().Be(fallback);
+        DurationParser.ParseToSeconds(value).Should().Be(expected);
+    }
+
+    [Theory]
+    [InlineData(1.5, 2)]
+    [InlineData("1.5h", 90)]
+    [InlineData("30s", 1)]
+    public void ParseToMinutes_AcceptsFractionalValues(object? value, int expected)
+    {
+        DurationParser.ParseToMinutes(value).Should().Be(expected);
     }
 }

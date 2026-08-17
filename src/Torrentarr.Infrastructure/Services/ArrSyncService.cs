@@ -78,6 +78,10 @@ public class ArrSyncService
                     _logger.LogTrace("[{Instance}] Routing to Lidarr sync handler", instanceName);
                     await SyncLidarrAsync(instanceName, arrConfig, ct);
                     break;
+                case "readarr":
+                    _logger.LogTrace("[{Instance}] Routing to Readarr sync handler", instanceName);
+                    await SyncReadarrAsync(instanceName, arrConfig, ct);
+                    break;
                 default:
                     _logger.LogWarning("[{Instance}] ArrSyncService: unknown type {Type} for {Name}", instanceName, arrConfig.Type, instanceName);
                     break;
@@ -118,6 +122,9 @@ public class ArrSyncService
                     break;
                 case "lidarr":
                     await SyncLidarrQueueAsync(instanceName, arrConfig, ct);
+                    break;
+                case "readarr":
+                    await SyncReadarrQueueAsync(instanceName, arrConfig, ct);
                     break;
             }
         }
@@ -503,8 +510,9 @@ public class ArrSyncService
         if (!_config.ArrInstances.TryGetValue(instanceName, out var arrConfig))
             return;
 
-        if (arrConfig.Type.Equals("lidarr", StringComparison.OrdinalIgnoreCase))
-            return; // Ombi/Overseerr do not support Lidarr
+        if (arrConfig.Type.Equals("lidarr", StringComparison.OrdinalIgnoreCase)
+            || arrConfig.Type.Equals("readarr", StringComparison.OrdinalIgnoreCase))
+            return; // Ombi/Overseerr do not support Lidarr/Readarr
 
         var ombi = arrConfig.Search.Ombi;
         var overseerr = arrConfig.Search.Overseerr;
@@ -976,6 +984,234 @@ public class ArrSyncService
             cfg,
             (id, token) => client.DeleteFromQueueAsync(id, removeFromClient: true, blocklist: true, ct: token),
             ct);
+    }
+
+    // ── Readarr ─────────────────────────────────────────────────────────────
+
+    private async Task SyncReadarrAsync(string instanceName, ArrInstanceConfig cfg, CancellationToken ct)
+    {
+        var client = new ReadarrClient(cfg.URI, cfg.APIKey);
+        var searchConfig = cfg.Search;
+
+        _logger.LogInformation("Started updating database");
+
+        var qualityProfiles = await client.GetQualityProfilesAsync(ct);
+        var profileDict = qualityProfiles.ToDictionary(p => p.Id);
+
+        List<ReadarrAuthor> authors;
+        try { authors = await client.GetAuthorsAsync(ct); }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(ex, "[{Instance}] ArrSyncService: Readarr {Name} unreachable", instanceName, instanceName);
+            return;
+        }
+
+        var authorProfileById = authors.ToDictionary(a => a.Id, a => a.QualityProfileId);
+
+        var dbAuthors = await _db.Authors
+            .Where(a => a.ArrInstance == instanceName)
+            .ToDictionaryAsync(a => a.Title ?? "", ct);
+
+        var apiAuthorNames = new HashSet<string>();
+        var authorsAdded = 0;
+        var authorsUpdated = 0;
+
+        foreach (var author in authors)
+        {
+            ct.ThrowIfCancellationRequested();
+            apiAuthorNames.Add(author.AuthorName);
+            if (dbAuthors.TryGetValue(author.AuthorName, out var existing))
+            {
+                existing.Monitored = author.Monitored;
+                existing.QualityProfileId = author.QualityProfileId;
+                existing.ArrId = author.Id;
+                existing.BookCount = author.Statistics?.BookCount ?? existing.BookCount;
+                _db.Authors.Update(existing);
+                authorsUpdated++;
+            }
+            else
+            {
+                _db.Authors.Add(new AuthorFilesModel
+                {
+                    ArrInstance = instanceName,
+                    Title = author.AuthorName,
+                    Monitored = author.Monitored,
+                    QualityProfileId = author.QualityProfileId,
+                    ArrId = author.Id,
+                    BookCount = author.Statistics?.BookCount ?? 0
+                });
+                authorsAdded++;
+            }
+        }
+
+        var authorsToDelete = dbAuthors.Values
+            .Where(a => !apiAuthorNames.Contains(a.Title ?? ""))
+            .ToList();
+        if (authorsToDelete.Count > 0 && !ShouldSkipDestructiveDelete(authors.Count, dbAuthors.Count, instanceName, "authors"))
+            _db.Authors.RemoveRange(authorsToDelete);
+
+        await _db.SaveChangesWithRetryAsync(_logger, _restartCoordinator, cancellationToken: ct);
+
+        List<ReadarrBook> books;
+        try { books = await client.GetBooksAsync(ct: ct); }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(ex, "[{Instance}] ArrSyncService: Readarr {Name} failed to fetch books", instanceName, instanceName);
+            return;
+        }
+
+        var authorNameById = authors.ToDictionary(a => a.Id, a => a.AuthorName);
+
+        var dbBooks = await _db.Books
+            .Where(b => b.ArrInstance == instanceName)
+            .ToDictionaryAsync(b => b.ForeignBookId, ct);
+
+        var apiForeignIds = new HashSet<string>();
+        var booksAdded = 0;
+        var booksUpdated = 0;
+
+        foreach (var book in books)
+        {
+            ct.ThrowIfCancellationRequested();
+            apiForeignIds.Add(book.ForeignBookId);
+            authorNameById.TryGetValue(book.AuthorId, out var authorName);
+            var bookProfileId = book.QualityProfileId
+                ?? (authorProfileById.TryGetValue(book.AuthorId, out var ap) ? ap : 0);
+            var hasFile = book.Statistics?.BookFileCount > 0;
+
+            if (dbBooks.TryGetValue(book.ForeignBookId, out var existing))
+            {
+                existing.Title = book.Title;
+                existing.Monitored = book.Monitored;
+                existing.ReleaseDate = book.ReleaseDate;
+                existing.AuthorId = book.AuthorId;
+                existing.ArrAuthorId = book.AuthorId;
+                existing.AuthorTitle = authorName;
+                existing.QualityProfileId = bookProfileId;
+                existing.ArrId = book.Id;
+                existing.HasFile = hasFile;
+                existing.BookFileId = hasFile ? Math.Max(existing.BookFileId, 1) : 0;
+                _db.Books.Update(existing);
+                booksUpdated++;
+            }
+            else
+            {
+                _db.Books.Add(new BookFilesModel
+                {
+                    ArrInstance = instanceName,
+                    Title = book.Title,
+                    ForeignBookId = book.ForeignBookId,
+                    Monitored = book.Monitored,
+                    ReleaseDate = book.ReleaseDate,
+                    AuthorId = book.AuthorId,
+                    ArrAuthorId = book.AuthorId,
+                    AuthorTitle = authorName,
+                    QualityProfileId = bookProfileId,
+                    ArrId = book.Id,
+                    HasFile = hasFile,
+                    BookFileId = hasFile ? 1 : 0
+                });
+                booksAdded++;
+            }
+        }
+
+        var booksToDelete = dbBooks.Values
+            .Where(b => !apiForeignIds.Contains(b.ForeignBookId))
+            .ToList();
+        if (booksToDelete.Count > 0 && !ShouldSkipDestructiveDelete(books.Count, dbBooks.Count, instanceName, "books"))
+            _db.Books.RemoveRange(booksToDelete);
+
+        await _db.SaveChangesWithRetryAsync(_logger, _restartCoordinator, cancellationToken: ct);
+
+        var allBooks = await _db.Books.Where(b => b.ArrInstance == instanceName).ToListAsync(ct);
+        foreach (var bookEntity in allBooks)
+        {
+            authorProfileById.TryGetValue(bookEntity.ArrAuthorId, out var authorProfileId);
+            profileDict.TryGetValue(authorProfileId, out var profile);
+            var minCfScore = profile?.MinCustomFormatScore ?? 0;
+            bookEntity.MinCustomFormatScore = minCfScore;
+
+            if (bookEntity.HasFile)
+            {
+                bookEntity.QualityMet = true;
+                bookEntity.CustomFormatMet = (bookEntity.CustomFormatScore ?? 0) >= minCfScore;
+            }
+            else
+            {
+                bookEntity.CustomFormatScore = 0;
+                bookEntity.QualityMet = true;
+                bookEntity.CustomFormatMet = true;
+            }
+
+            var isAvailable = CheckAlbumAvailability(bookEntity.ReleaseDate, bookEntity.Title ?? "Unknown", _logger);
+            bookEntity.Reason = DetermineReasonWithAvailability(bookEntity.HasFile, bookEntity.QualityMet, bookEntity.CustomFormatMet, isAvailable, searchConfig);
+            bookEntity.Searched = DetermineSearched(bookEntity.HasFile, bookEntity.QualityMet, bookEntity.CustomFormatMet, searchConfig);
+        }
+
+        await _db.SaveChangesWithRetryAsync(_logger, _restartCoordinator, cancellationToken: ct);
+        _logger.LogDebug("[{Instance}] ArrSyncService: Readarr {Name} synced - Authors: Added: {AuthorsAdded}, Updated: {AuthorsUpdated}, Deleted: {AuthorsDeleted} | Books: Added: {BooksAdded}, Updated: {BooksUpdated}, Deleted: {BooksDeleted}",
+            instanceName, instanceName, authorsAdded, authorsUpdated, authorsToDelete.Count, booksAdded, booksUpdated, booksToDelete.Count);
+    }
+
+    private async Task SyncReadarrQueueAsync(string instanceName, ArrInstanceConfig cfg, CancellationToken ct)
+    {
+        var client = new ReadarrClient(cfg.URI, cfg.APIKey);
+
+        var queueResponse = await client.GetQueueAsync(ct: ct);
+        var queueItems = queueResponse.Records;
+
+        var dbQueue = await _db.BookQueue
+            .Where(q => q.ArrInstance == instanceName)
+            .ToDictionaryAsync(q => q.QueueId ?? 0, ct);
+
+        var apiQueueIds = new HashSet<int>();
+
+        foreach (var item in queueItems)
+        {
+            if (item.Id <= 0) continue;
+            apiQueueIds.Add(item.Id);
+
+            if (dbQueue.TryGetValue(item.Id, out var existing))
+            {
+                UpdateBookQueueFromReadarrApi(existing, item);
+                _db.BookQueue.Update(existing);
+            }
+            else
+            {
+                var newQueue = new BookQueueModel
+                {
+                    ArrInstance = instanceName,
+                    QueueId = item.Id
+                };
+                UpdateBookQueueFromReadarrApi(newQueue, item);
+                _db.BookQueue.Add(newQueue);
+            }
+        }
+
+        var toDelete = dbQueue.Values.Where(q => !apiQueueIds.Contains(q.QueueId ?? 0)).ToList();
+        if (toDelete.Count > 0)
+            _db.BookQueue.RemoveRange(toDelete);
+
+        await _db.SaveChangesWithRetryAsync(_logger, _restartCoordinator, cancellationToken: ct);
+
+        await ScanQueueForBlocklistAsync(
+            queueItems.Select(i => (i.Id, i.DownloadId, i.TrackedDownloadStatus, i.TrackedDownloadState, i.StatusMessages)),
+            cfg,
+            (id, token) => client.DeleteFromQueueAsync(id, removeFromClient: true, blocklist: true, ct: token),
+            ct);
+    }
+
+    private static void UpdateBookQueueFromReadarrApi(BookQueueModel queue, ReadarrQueueItem item)
+    {
+        queue.QueueId = item.Id;
+        queue.BookId = item.BookId;
+        queue.AuthorId = item.AuthorId;
+        queue.DownloadId = item.DownloadId;
+        queue.Title = item.Title;
+        queue.Status = item.Status;
+        queue.TrackedDownloadStatus = item.TrackedDownloadStatus;
+        queue.TrackedDownloadState = item.TrackedDownloadState;
+        queue.CustomFormatScore = item.CustomFormatScore;
     }
 
     // ── Helper Methods ────────────────────────────────────────────────────────

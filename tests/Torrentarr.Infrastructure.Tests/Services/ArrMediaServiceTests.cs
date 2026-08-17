@@ -5,6 +5,7 @@ using Moq;
 using Torrentarr.Core.Configuration;
 using Torrentarr.Core.Services;
 using Torrentarr.Infrastructure.Database;
+using Torrentarr.Infrastructure.Database.Models;
 using Torrentarr.Infrastructure.Services;
 using Torrentarr.Infrastructure.ApiClients.Arr;
 using Xunit;
@@ -209,6 +210,68 @@ public class ArrMediaServiceTests
         var result = await service.SearchQualityUpgradesAsync("movies-radarr");
 
         result.SearchesTriggered.Should().Be(0);
+    }
+
+    [Fact]
+    public async Task SearchMissingMediaAsync_ReadarrBooks_PassesBookCandidates()
+    {
+        var options = new DbContextOptionsBuilder<TorrentarrDbContext>()
+            .UseInMemoryDatabase(Guid.NewGuid().ToString())
+            .Options;
+        var dbContext = new TorrentarrDbContext(options);
+        dbContext.Books.Add(new BookFilesModel
+        {
+            ArrInstance = "Readarr-Books",
+            ArrId = 7,
+            Title = "Dune",
+            AuthorTitle = "Herbert",
+            Monitored = true,
+            Searched = false,
+            Reason = "Missing",
+            ArrAuthorId = 3
+        });
+        await dbContext.SaveChangesAsync();
+
+        var config = new TorrentarrConfig();
+        config.ArrInstances["Readarr-Books"] = new ArrInstanceConfig
+        {
+            URI = "http://localhost:8787",
+            APIKey = "test-key",
+            Category = "readarr-books",
+            Type = "readarr",
+            Managed = true,
+            Search = new SearchConfig { SearchMissing = true, SearchLimit = 5 }
+        };
+
+        List<SearchCandidate>? captured = null;
+        var mockSearchExecutor = new Mock<ISearchExecutor>();
+        mockSearchExecutor
+            .Setup(x => x.ExecuteSearchesAsync(It.IsAny<string>(), It.IsAny<IEnumerable<SearchCandidate>>(), It.IsAny<CancellationToken>()))
+            .Callback<string, IEnumerable<SearchCandidate>, CancellationToken>((_, c, _) => captured = c.ToList())
+            .ReturnsAsync(new SearchResult { SearchesTriggered = 1, SearchedIds = [7] });
+        mockSearchExecutor.Setup(x => x.GetActiveCommandCountAsync(It.IsAny<string>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(0);
+        mockSearchExecutor.Setup(x => x.CanSearch(It.IsAny<int>(), It.IsAny<int>()))
+            .Returns(true);
+
+        var mockSyncService = new Mock<ArrSyncService>(
+            NullLogger<ArrSyncService>.Instance,
+            config,
+            dbContext,
+            new DatabaseRestartCoordinator());
+
+        var service = new ArrMediaService(
+            NullLogger<ArrMediaService>.Instance,
+            dbContext,
+            config,
+            mockSearchExecutor.Object,
+            mockSyncService.Object);
+
+        var result = await service.SearchMissingMediaAsync("readarr-books");
+
+        result.SearchesTriggered.Should().Be(1);
+        captured.Should().NotBeNull();
+        captured.Should().ContainSingle(c => c.Type == "Book" && c.ArrId == 7 && c.AuthorId == 3);
     }
 }
 

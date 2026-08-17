@@ -204,6 +204,33 @@ public class SearchExecutorTests
         result.SearchedIds.Should().BeEmpty();
         service.TriggeredCandidates.Should().BeEmpty();
     }
+
+    [Fact]
+    public async Task ExecuteSearchesAsync_ReadarrBooks_OrdersAndTriggers()
+    {
+        var config = new TorrentarrConfig();
+        config.Settings.SearchLoopDelay = 1;
+        config.ArrInstances["Readarr-Books"] = new ArrInstanceConfig
+        {
+            URI = "http://localhost:8787",
+            APIKey = "test-key",
+            Category = "readarr-books",
+            Type = "readarr",
+            Managed = true,
+            Search = new SearchConfig { SearchMissing = true, SearchLimit = 5 }
+        };
+        var service = CreateTestService(config);
+        var candidates = new List<SearchCandidate>
+        {
+            new() { ArrId = 2, Title = "Upgrade Book", Type = "Book", Priority = 4, AuthorId = 1, BookId = 2 },
+            new() { ArrId = 1, Title = "Missing Book", Type = "Book", Priority = 1, AuthorId = 1, BookId = 1 }
+        };
+
+        var result = await service.ExecuteSearchesAsync("Readarr-Books", candidates);
+
+        result.SearchedIds.Should().ContainInOrder(1, 2);
+        service.TriggeredCandidates.Select(c => c.Type).Should().OnlyContain(t => t == "Book");
+    }
 }
 
 internal sealed class TestSearchExecutor : SearchExecutor

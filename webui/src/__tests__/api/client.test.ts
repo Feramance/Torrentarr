@@ -14,6 +14,8 @@ import {
   AuthError,
   getLidarrArtists,
   getLidarrArtistDetail,
+  getReadarrAuthors,
+  getReadarrAuthorDetail,
 } from "../../api/client";
 
 const server = setupServer();
@@ -491,6 +493,76 @@ describe("getLidarrArtistDetail", () => {
     );
 
     await expect(getLidarrArtistDetail("lidarr", 999)).rejects.toThrow();
+  });
+});
+
+describe("getReadarrAuthors", () => {
+  it("deserializes authors response and encodes category", async () => {
+    let requestedUrl = "";
+    server.use(
+      http.get("/web/readarr/*/authors", ({ request }) => {
+        requestedUrl = new URL(request.url).pathname;
+        return HttpResponse.json({
+          category: "my readarr",
+          counts: { available: 1, monitored: 2, missing: 1 },
+          total: 1,
+          page: 0,
+          page_size: 25,
+          authors: [
+            {
+              author: {
+                id: 1,
+                name: "Author",
+                monitored: true,
+                bookCount: 2,
+                booksMonitored: 2,
+                booksAvailable: 1,
+              },
+            },
+          ],
+        });
+      }),
+    );
+
+    const result = await getReadarrAuthors("my readarr", 0, 25, "dune");
+
+    expect(requestedUrl).toBe("/web/readarr/my%20readarr/authors");
+    expect(result.authors).toHaveLength(1);
+    expect(result.authors[0].author.name).toBe("Author");
+  });
+
+  it("throws on non-OK response", async () => {
+    server.use(
+      http.get("/web/readarr/*/authors", () =>
+        HttpResponse.json({ error: "bad" }, { status: 500 }),
+      ),
+    );
+
+    await expect(getReadarrAuthors("readarr", 0, 50)).rejects.toThrow();
+  });
+});
+
+describe("getReadarrAuthorDetail", () => {
+  it("deserializes author detail with books and no tracks", async () => {
+    server.use(
+      http.get("/web/readarr/*/author/:id", () =>
+        HttpResponse.json({
+          category: "readarr",
+          counts: { available: 1, monitored: 2, missing: 1 },
+          author: { id: 5, name: "Detail Author", monitored: true },
+          books: [
+            {
+              book: { id: 10, title: "Book", monitored: true, hasFile: true },
+            },
+          ],
+        }),
+      ),
+    );
+
+    const result = await getReadarrAuthorDetail("readarr", 5);
+    expect(result.author.name).toBe("Detail Author");
+    expect(result.books).toHaveLength(1);
+    expect((result.books[0] as { tracks?: unknown }).tracks).toBeUndefined();
   });
 });
 

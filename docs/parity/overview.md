@@ -6,7 +6,7 @@ Torrentarr is a **C# port** of [qBitrr](https://github.com/Feramance/qBitrr) (Py
 
 - **Configuration:** The same `config.toml` format (Torrentarr also reads common paths used by qBitrr; see [Configuration](../configuration/config-file.md)).
 - **Database:** The same **logical** schema for media/queue data; Torrentarr’s file is `torrentarr.db` (not `qbitrr.db`).
-- **Goal:** Match qBitrr’s automation behavior (qBittorrent + Radarr, Sonarr, Lidarr) with compatible settings.
+- **Goal:** Match qBitrr’s automation behavior (qBittorrent + Radarr, Sonarr, Lidarr, Readarr) with compatible settings.
 
 ## What differs (by design)
 

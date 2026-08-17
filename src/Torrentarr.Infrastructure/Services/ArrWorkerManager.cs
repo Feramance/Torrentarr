@@ -427,6 +427,7 @@ public class ArrWorkerManager : BackgroundService
                 "radarr" => (object)new RadarrClient(arrCfg.URI, arrCfg.APIKey),
                 "sonarr" => new SonarrClient(arrCfg.URI, arrCfg.APIKey),
                 "lidarr" => new LidarrClient(arrCfg.URI, arrCfg.APIKey),
+                "readarr" => new ReadarrClient(arrCfg.URI, arrCfg.APIKey),
                 _ => new object()
             });
 
@@ -443,6 +444,11 @@ public class ArrWorkerManager : BackgroundService
             else if (client is LidarrClient lidarr)
             {
                 var queue = await lidarr.GetQueueAsync(ct: ct);
+                queueCount = queue?.TotalRecords ?? 0;
+            }
+            else if (client is ReadarrClient readarr)
+            {
+                var queue = await readarr.GetQueueAsync(ct: ct);
                 queueCount = queue?.TotalRecords ?? 0;
             }
 
@@ -519,6 +525,7 @@ public class ArrWorkerManager : BackgroundService
                 case "radarr": await new Torrentarr.Infrastructure.ApiClients.Arr.RadarrClient(arrCfg.URI, arrCfg.APIKey).RssSyncAsync(ct); break;
                 case "sonarr": await new Torrentarr.Infrastructure.ApiClients.Arr.SonarrClient(arrCfg.URI, arrCfg.APIKey).RssSyncAsync(ct); break;
                 case "lidarr": await new Torrentarr.Infrastructure.ApiClients.Arr.LidarrClient(arrCfg.URI, arrCfg.APIKey).RssSyncAsync(ct); break;
+                case "readarr": await new Torrentarr.Infrastructure.ApiClients.Arr.ReadarrClient(arrCfg.URI, arrCfg.APIKey).RssSyncAsync(ct); break;
             }
             _lastRssSyncTime[instanceName] = DateTime.UtcNow;
         }
@@ -543,6 +550,7 @@ public class ArrWorkerManager : BackgroundService
                 case "radarr": await new Torrentarr.Infrastructure.ApiClients.Arr.RadarrClient(arrCfg.URI, arrCfg.APIKey).RefreshMonitoredDownloadsAsync(ct); break;
                 case "sonarr": await new Torrentarr.Infrastructure.ApiClients.Arr.SonarrClient(arrCfg.URI, arrCfg.APIKey).RefreshMonitoredDownloadsAsync(ct); break;
                 case "lidarr": await new Torrentarr.Infrastructure.ApiClients.Arr.LidarrClient(arrCfg.URI, arrCfg.APIKey).RefreshMonitoredDownloadsAsync(ct); break;
+                case "readarr": await new Torrentarr.Infrastructure.ApiClients.Arr.ReadarrClient(arrCfg.URI, arrCfg.APIKey).RefreshMonitoredDownloadsAsync(ct); break;
             }
             _lastRefreshDownloadsTime[instanceName] = DateTime.UtcNow;
         }
@@ -644,6 +652,11 @@ public class ArrWorkerManager : BackgroundService
                     await db.Albums
                         .Where(a => a.ArrInstance == instanceName && a.Searched)
                         .ExecuteUpdateAsync(s => s.SetProperty(a => a.Searched, false), ct);
+                    break;
+                case "readarr":
+                    await db.Books
+                        .Where(b => b.ArrInstance == instanceName && b.Searched)
+                        .ExecuteUpdateAsync(s => s.SetProperty(b => b.Searched, false), ct);
                     break;
             }
 

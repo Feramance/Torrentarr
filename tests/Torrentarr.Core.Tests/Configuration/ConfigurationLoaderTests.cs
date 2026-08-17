@@ -829,4 +829,124 @@ public class ConfigurationLoaderTests : IDisposable
                 Environment.SetEnvironmentVariable("QBITRR_SETTINGS_FREE_SPACE", prevAlias);
         }
     }
+
+    [Fact]
+    public void Load_ParsesReadarrSection_SearchByYearAndAllowlist()
+    {
+        WriteToml("""
+            [Settings]
+            LoopSleepTimer = 5
+
+            [Readarr-Books]
+            URI = "http://localhost:8787"
+            APIKey = "readarr-key"
+            Category = "readarr-books"
+
+            [Readarr-Books.Search]
+            SearchByYear = true
+            SearchMissing = true
+            """);
+
+        var config = new ConfigurationLoader(_tempFilePath).Load();
+
+        config.ArrInstances.Should().ContainKey("Readarr-Books");
+        var instance = config.ArrInstances["Readarr-Books"];
+        instance.Type.Should().Be("readarr");
+        instance.Search.SearchByYear.Should().BeTrue();
+        instance.Torrent.FileExtensionAllowlist.Should().Contain(".m4b");
+        instance.Torrent.FileExtensionAllowlist.Should().Contain(".epub");
+        instance.Search.Ombi.Should().BeNull();
+        instance.Search.Overseerr.Should().BeNull();
+    }
+
+    [Fact]
+    public void SaveConfig_ReadarrOmitsOmbiAndKeepsSearchByYearAndAudiobookExtensions()
+    {
+        WriteToml("""
+            [Settings]
+            LoopSleepTimer = 5
+
+            [Readarr-Books]
+            URI = "http://localhost:8787"
+            APIKey = "readarr-key"
+            Category = "readarr-books"
+
+            [Readarr-Books.Torrent]
+            FileExtensionAllowlist = ['.epub', '.m4b', '.flac', '.!qB', '.parts']
+
+            [Readarr-Books.Search]
+            SearchByYear = true
+            """);
+
+        var loader = new ConfigurationLoader(_tempFilePath);
+        var config = loader.Load();
+        loader.SaveConfig(config);
+
+        var content = File.ReadAllText(_tempFilePath);
+        content.Should().Contain("SearchByYear = true");
+        content.Should().Contain("'.m4b'");
+        content.Should().NotContain("Ombi");
+        content.Should().NotContain("Overseerr");
+
+        var reloaded = new ConfigurationLoader(_tempFilePath).Load();
+        reloaded.ArrInstances["Readarr-Books"].Torrent.FileExtensionAllowlist.Should().Contain(".m4b");
+        reloaded.ArrInstances["Readarr-Books"].Search.SearchByYear.Should().BeTrue();
+    }
+
+    [Fact]
+    public void Load_MigratesUnmodifiedReadarrEbookAllowlist_LeavesCustomUntouched()
+    {
+        var ebookOnly = string.Join(", ", ArrSectionHelper.ReadarrEbookOnlyAllowlist.Select(e => $"'{e}'"));
+        WriteToml($"""
+            [Settings]
+            ConfigVersion = "6.12.4"
+            LoopSleepTimer = 5
+
+            [Readarr-Books]
+            URI = "http://localhost:8787"
+            APIKey = "key"
+            Category = "readarr-books"
+
+            [Readarr-Books.Torrent]
+            FileExtensionAllowlist = [{ebookOnly}]
+
+            [Readarr-Custom]
+            URI = "http://localhost:8788"
+            APIKey = "key2"
+            Category = "readarr-custom"
+
+            [Readarr-Custom.Torrent]
+            FileExtensionAllowlist = ['.epub', '.custom']
+            """);
+
+        var config = new ConfigurationLoader(_tempFilePath).Load();
+
+        config.ArrInstances["Readarr-Books"].Torrent.FileExtensionAllowlist.Should()
+            .BeEquivalentTo(ArrSectionHelper.ReadarrAllowlist);
+        config.ArrInstances["Readarr-Custom"].Torrent.FileExtensionAllowlist.Should()
+            .Equal(".epub", ".custom");
+    }
+
+    [Theory]
+    [InlineData("latest", "latest")]
+    [InlineData("stable", "stable")]
+    [InlineData("nightly", "nightly")]
+    [InlineData("beta", "latest")]
+    public void Load_NormalizesAutoUpdateChannel(string raw, string expected)
+    {
+        WriteToml($"""
+            [Settings]
+            AutoUpdateChannel = "{raw}"
+            """);
+
+        var config = new ConfigurationLoader(_tempFilePath).Load();
+        config.Settings.AutoUpdateChannel.Should().Be(expected);
+    }
+
+    [Fact]
+    public void NormalizeAutoUpdateChannel_DefaultsMissingToLatest()
+    {
+        ConfigurationLoader.NormalizeAutoUpdateChannel(null).Should().Be("latest");
+        ConfigurationLoader.NormalizeAutoUpdateChannel("").Should().Be("latest");
+    }
 }

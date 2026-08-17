@@ -44,7 +44,7 @@ public class UpdateEndpointTests : IClassFixture<TorrentarrWebApplicationFactory
         json.TryGetProperty("update_available", out var updateAvailable).Should().BeTrue("update_available is required");
         updateAvailable.ValueKind.Should().Be(JsonValueKind.False, "update_available should be bool");
         json.TryGetProperty("installation_type", out var installType).Should().BeTrue("installation_type is required");
-        installType.GetString().Should().Be("binary");
+        installType.GetString().Should().BeOneOf("binary", "source");
         json.TryGetProperty("update_state", out var updateState).Should().BeTrue("update_state is required");
         updateState.TryGetProperty("in_progress", out _).Should().BeTrue("update_state.in_progress is required");
         json.TryGetProperty("repository_url", out _).Should().BeTrue("repository_url is required");

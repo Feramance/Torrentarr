@@ -31,6 +31,8 @@ export const FIELD_TOOLTIPS: Record<string, string> = {
     "Enable the background worker that periodically checks for Torrentarr updates.",
   "Settings.AutoUpdateCron":
     "Cron expression describing when to check for updates (default weekly Sunday at 03:00).",
+  "Settings.AutoUpdateChannel":
+    "Release channel for update checks: latest (newest GitHub release), stable (newest non-prerelease), or nightly (check only; binary apply is disabled).",
   "Settings.AutoRestartProcesses":
     "Automatically restart worker processes that crash unexpectedly. Recommended to keep enabled for reliability.",
   "Settings.MaxProcessRestarts":

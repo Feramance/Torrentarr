@@ -94,6 +94,23 @@ public sealed class ArrSyncServiceTests : IDisposable
     }
 
     [Fact]
+    public async Task SyncAsync_ReadarrChangeMeUri_DoesNotThrow()
+    {
+        var config = new TorrentarrConfig
+        {
+            ArrInstances = new Dictionary<string, ArrInstanceConfig>
+            {
+                ["Readarr-Books"] = MakeInstance("readarr", "CHANGE_ME")
+            }
+        };
+        var svc = CreateService(config);
+
+        var act = async () => await svc.SyncAsync("Readarr-Books");
+
+        await act.Should().NotThrowAsync();
+    }
+
+    [Fact]
     public async Task SyncAsync_UnknownArrType_DoesNotThrow()
     {
         // Switch default branch: logs a warning and returns, no network call.

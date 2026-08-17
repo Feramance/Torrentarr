@@ -8,7 +8,7 @@
 
 [Settings]
 # Internal config schema version - managed automatically
-ConfigVersion = "6.12.4"
+ConfigVersion = "6.14.3"
 
 # Logging level: CRITICAL, ERROR, WARNING, NOTICE, INFO, DEBUG, TRACE
 ConsoleLevel = "INFO"
@@ -60,6 +60,9 @@ AutoUpdateEnabled = false
 
 # Cron schedule for auto-updates (weekly Sunday at 3 AM)
 AutoUpdateCron = "0 3 * * 0"
+
+# Update channel: latest (newest GitHub release), stable (newest non-prerelease), nightly (check only)
+AutoUpdateChannel = "latest"
 
 # Automatically restart crashed worker processes
 AutoRestartProcesses = true
@@ -188,6 +191,21 @@ Managed = true
 Category = "lidarr-music"
 SearchOnly = false
 ProcessingOnly = false
+
+# Example Readarr instance for books (ebook + audiobook allowlist)
+[Readarr-Books]
+URI = "http://localhost:8787"
+APIKey = "your-readarr-api-key"
+Managed = true
+Category = "readarr-books"
+SearchOnly = false
+ProcessingOnly = false
+
+[Readarr-Books.Torrent]
+FileExtensionAllowlist = ['.epub', '.kepub', '.mobi', '.azw', '.azw3', '.pdf', '.cbz', '.cbr', '.flac', '.ape', '.wavpack', '.wav', '.alac', '.mp2', '.mp3', '.wma', '.m4a', '.m4p', '.m4b', '.aac', '.mp4a', '.ogg', '.oga', '.vorbis', '.!qB', '.parts']
+
+[Readarr-Books.Search]
+SearchByYear = true
 
 # You can have multiple instances of the same type:
 # [Radarr-4K]

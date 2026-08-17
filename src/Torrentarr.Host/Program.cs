@@ -368,8 +368,8 @@ try
         var db = scope.ServiceProvider.GetRequiredService<TorrentarrDbContext>();
         db.Database.EnsureCreated();
         db.ConfigureWalMode();
-        // Manual migrations for columns added after initial release
-        ApplyManualMigrations(db);
+        // Manual migrations for columns added after initial release (existing DBs skip EnsureCreated)
+        ManualSqliteMigrations.Apply(db);
     }
 
     app.UseSwagger();
@@ -873,12 +873,13 @@ try
             alive = kvp.Value.URI != "CHANGE_ME"
         }).ToList();
 
-        var (radarr, sonarr, lidarr) = await rollups.GetAggregatedTypeCountsAsync(cfg);
+        var (radarr, sonarr, lidarr, readarr) = await rollups.GetAggregatedTypeCountsAsync(cfg);
         var counts = new
         {
             radarr = new { available = radarr.Available, monitored = radarr.Monitored, missing = radarr.Missing },
             sonarr = new { available = sonarr.Available, monitored = sonarr.Monitored, missing = sonarr.Missing },
-            lidarr = new { available = lidarr.Available, monitored = lidarr.Monitored, missing = lidarr.Missing }
+            lidarr = new { available = lidarr.Available, monitored = lidarr.Monitored, missing = lidarr.Missing },
+            readarr = new { available = readarr.Available, monitored = readarr.Monitored, missing = readarr.Missing }
         };
 
         return Results.Ok(new { arr, ready = true, counts });
@@ -1367,6 +1368,7 @@ try
                 "radarr" => await db.Movies.CountAsync(m => m.ArrInstance == name),
                 "sonarr" => await db.Episodes.CountAsync(e => e.ArrInstance == name),
                 "lidarr" => await db.Tracks.CountAsync(t => t.ArrInstance == name),
+                "readarr" => await db.Books.CountAsync(b => b.ArrInstance == name),
                 _ => 0
             };
             distribution[instanceCfg.Category][name] = count;
@@ -1769,12 +1771,13 @@ try
             alive = kvp.Value.URI != "CHANGE_ME"
         }).ToList();
 
-        var (radarr, sonarr, lidarr) = await rollups.GetAggregatedTypeCountsAsync(cfg);
+        var (radarr, sonarr, lidarr, readarr) = await rollups.GetAggregatedTypeCountsAsync(cfg);
         var counts = new
         {
             radarr = new { available = radarr.Available, monitored = radarr.Monitored, missing = radarr.Missing },
             sonarr = new { available = sonarr.Available, monitored = sonarr.Monitored, missing = sonarr.Missing },
-            lidarr = new { available = lidarr.Available, monitored = lidarr.Monitored, missing = lidarr.Missing }
+            lidarr = new { available = lidarr.Available, monitored = lidarr.Monitored, missing = lidarr.Missing },
+            readarr = new { available = readarr.Available, monitored = readarr.Monitored, missing = readarr.Missing }
         };
 
         return Results.Ok(new { arr, ready = true, counts });
@@ -2222,6 +2225,7 @@ try
                 "radarr" => await db.Movies.CountAsync(m => m.ArrInstance == name),
                 "sonarr" => await db.Episodes.CountAsync(e => e.ArrInstance == name),
                 "lidarr" => await db.Tracks.CountAsync(t => t.ArrInstance == name),
+                "readarr" => await db.Books.CountAsync(b => b.ArrInstance == name),
                 _ => 0
             };
             distribution[instanceCfg.Category][name] = count;
@@ -2248,209 +2252,6 @@ finally
 }
 
 return 0;
-
-// ── Manual DB migrations (columns added after initial EnsureCreated) ──────
-static void ApplyManualMigrations(TorrentarrDbContext db)
-{
-    // Add tvdbid to seriesfilesmodel if it doesn't exist (added in v1.1)
-    AddColumnIfMissing(db, "seriesfilesmodel", "tvdbid", "INTEGER NOT NULL DEFAULT 0");
-
-    // Add availability fields for Radarr (added in logging enhancement)
-    AddColumnIfMissing(db, "moviesfilesmodel", "InCinemas", "TEXT");
-    AddColumnIfMissing(db, "moviesfilesmodel", "DigitalRelease", "TEXT");
-    AddColumnIfMissing(db, "moviesfilesmodel", "PhysicalRelease", "TEXT");
-    AddColumnIfMissing(db, "moviesfilesmodel", "MinimumAvailability", "TEXT");
-
-    // Add availability fields for Sonarr
-    AddColumnIfMissing(db, "episodefilesmodel", "InCinemas", "TEXT");
-    AddColumnIfMissing(db, "episodefilesmodel", "DigitalRelease", "TEXT");
-    AddColumnIfMissing(db, "episodefilesmodel", "PhysicalRelease", "TEXT");
-    AddColumnIfMissing(db, "episodefilesmodel", "MinimumAvailability", "TEXT");
-
-    // Add availability fields for Lidarr
-    AddColumnIfMissing(db, "albumfilesmodel", "InCinemas", "TEXT");
-    AddColumnIfMissing(db, "albumfilesmodel", "DigitalRelease", "TEXT");
-    AddColumnIfMissing(db, "albumfilesmodel", "PhysicalRelease", "TEXT");
-    AddColumnIfMissing(db, "albumfilesmodel", "MinimumAvailability", "TEXT");
-
-    // §5: Search activity table for Processes page (qBitrr parity)
-    CreateTableIfMissing(db, "searchactivity", "CREATE TABLE IF NOT EXISTS searchactivity ( category TEXT NOT NULL PRIMARY KEY, summary TEXT, timestamp TEXT );");
-
-    // qBitrr parity: one-time cleanup of legacy rows with blank ArrInstance (not every startup: avoids repeat DELETE I/O
-    // and preserves operator-visible bad data if a bug reintroduces blank keys).
-    CreateTableIfMissing(
-        db,
-        "torrentarr_manual_migrations",
-        "CREATE TABLE IF NOT EXISTS torrentarr_manual_migrations ( name TEXT NOT NULL PRIMARY KEY );");
-    const string emptyArrInstanceCleanup = "empty_arrinstance_row_cleanup_v1";
-    if (!IsManualMigrationApplied(db, emptyArrInstanceCleanup))
-    {
-        DeleteRowsWithEmptyArrInstance(db, "moviesfilesmodel");
-        DeleteRowsWithEmptyArrInstance(db, "episodefilesmodel");
-        DeleteRowsWithEmptyArrInstance(db, "seriesfilesmodel");
-        DeleteRowsWithEmptyArrInstance(db, "albumfilesmodel");
-        DeleteRowsWithEmptyArrInstance(db, "artistfilesmodel");
-        DeleteRowsWithEmptyArrInstance(db, "trackfilesmodel");
-        DeleteRowsWithEmptyArrInstance(db, "moviequeuemodel");
-        DeleteRowsWithEmptyArrInstance(db, "episodequeuemodel");
-        DeleteRowsWithEmptyArrInstance(db, "albumqueuemodel");
-        DeleteRowsWithEmptyArrInstance(db, "filesqueued");
-        MarkManualMigrationApplied(db, emptyArrInstanceCleanup);
-    }
-
-    // qBitrr parity: ensure ArrInstance indexes exist even on upgraded DBs.
-    CreateIndexIfMissing(db, "idx_arrinstance_movies", "moviesfilesmodel", "arrinstance");
-    CreateIndexIfMissing(db, "idx_arrinstance_episodes", "episodefilesmodel", "arrinstance");
-    CreateIndexIfMissing(db, "idx_arrinstance_series", "seriesfilesmodel", "arrinstance");
-    CreateIndexIfMissing(db, "idx_arrinstance_albums", "albumfilesmodel", "arrinstance");
-    CreateIndexIfMissing(db, "idx_arrinstance_artists", "artistfilesmodel", "arrinstance");
-    CreateIndexIfMissing(db, "idx_arrinstance_tracks", "trackfilesmodel", "arrinstance");
-    CreateIndexIfMissing(db, "idx_arrinstance_moviequeue", "moviequeuemodel", "arrinstance");
-    CreateIndexIfMissing(db, "idx_arrinstance_episodequeue", "episodequeuemodel", "arrinstance");
-    CreateIndexIfMissing(db, "idx_arrinstance_albumqueue", "albumqueuemodel", "arrinstance");
-    CreateIndexIfMissing(db, "idx_arrinstance_filesqueued", "filesqueued", "arrinstance");
-}
-
-static void CreateTableIfMissing(TorrentarrDbContext db, string tableName, string createSql)
-{
-    var conn = db.Database.GetDbConnection();
-    var wasOpen = conn.State == System.Data.ConnectionState.Open;
-    if (!wasOpen) conn.Open();
-    try
-    {
-        using var cmd = conn.CreateCommand();
-        cmd.CommandText = "SELECT name FROM sqlite_master WHERE type='table' AND name=@name;";
-        var p = cmd.CreateParameter();
-        p.ParameterName = "@name";
-        p.Value = tableName;
-        cmd.Parameters.Add(p);
-        var exists = cmd.ExecuteScalar() != null;
-        if (!exists)
-        {
-            using var create = conn.CreateCommand();
-            create.CommandText = createSql;
-            create.ExecuteNonQuery();
-        }
-    }
-    finally
-    {
-        if (!wasOpen) conn.Close();
-    }
-}
-
-static void AddColumnIfMissing(TorrentarrDbContext db, string table, string column, string columnDef)
-{
-    var conn = db.Database.GetDbConnection();
-    var wasOpen = conn.State == System.Data.ConnectionState.Open;
-    if (!wasOpen) conn.Open();
-    try
-    {
-        using var cmd = conn.CreateCommand();
-        cmd.CommandText = $"PRAGMA table_info({table});";
-        using var reader = cmd.ExecuteReader();
-        var columns = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
-        while (reader.Read())
-            columns.Add(reader.GetString(1)); // column 1 = name
-        reader.Close();
-
-        if (!columns.Contains(column))
-        {
-            using var alter = conn.CreateCommand();
-            alter.CommandText = $"ALTER TABLE {table} ADD COLUMN {column} {columnDef};";
-            alter.ExecuteNonQuery();
-        }
-    }
-    finally
-    {
-        if (!wasOpen) conn.Close();
-    }
-}
-
-static void DeleteRowsWithEmptyArrInstance(TorrentarrDbContext db, string table)
-{
-    var conn = db.Database.GetDbConnection();
-    var wasOpen = conn.State == System.Data.ConnectionState.Open;
-    if (!wasOpen) conn.Open();
-    try
-    {
-        using var cmd = conn.CreateCommand();
-        cmd.CommandText = $"DELETE FROM {table} WHERE arrinstance IS NULL OR TRIM(arrinstance)='';";
-        cmd.ExecuteNonQuery();
-    }
-    finally
-    {
-        if (!wasOpen) conn.Close();
-    }
-}
-
-static bool IsManualMigrationApplied(TorrentarrDbContext db, string name)
-{
-    var conn = db.Database.GetDbConnection();
-    var wasOpen = conn.State == System.Data.ConnectionState.Open;
-    if (!wasOpen) conn.Open();
-    try
-    {
-        using var cmd = conn.CreateCommand();
-        cmd.CommandText = "SELECT 1 FROM torrentarr_manual_migrations WHERE name = @name LIMIT 1;";
-        var p = cmd.CreateParameter();
-        p.ParameterName = "@name";
-        p.Value = name;
-        cmd.Parameters.Add(p);
-        return cmd.ExecuteScalar() != null;
-    }
-    finally
-    {
-        if (!wasOpen) conn.Close();
-    }
-}
-
-static void MarkManualMigrationApplied(TorrentarrDbContext db, string name)
-{
-    var conn = db.Database.GetDbConnection();
-    var wasOpen = conn.State == System.Data.ConnectionState.Open;
-    if (!wasOpen) conn.Open();
-    try
-    {
-        using var cmd = conn.CreateCommand();
-        cmd.CommandText = "INSERT INTO torrentarr_manual_migrations (name) VALUES (@name);";
-        var p = cmd.CreateParameter();
-        p.ParameterName = "@name";
-        p.Value = name;
-        cmd.Parameters.Add(p);
-        cmd.ExecuteNonQuery();
-    }
-    finally
-    {
-        if (!wasOpen) conn.Close();
-    }
-}
-
-static void CreateIndexIfMissing(TorrentarrDbContext db, string indexName, string table, string column)
-{
-    var conn = db.Database.GetDbConnection();
-    var wasOpen = conn.State == System.Data.ConnectionState.Open;
-    if (!wasOpen) conn.Open();
-    try
-    {
-        using var cmd = conn.CreateCommand();
-        cmd.CommandText = "SELECT name FROM sqlite_master WHERE type='index' AND name=@name;";
-        var p = cmd.CreateParameter();
-        p.ParameterName = "@name";
-        p.Value = indexName;
-        cmd.Parameters.Add(p);
-        var exists = cmd.ExecuteScalar() != null;
-        if (!exists)
-        {
-            using var create = conn.CreateCommand();
-            create.CommandText = $"CREATE INDEX {indexName} ON {table}({column});";
-            create.ExecuteNonQuery();
-        }
-    }
-    finally
-    {
-        if (!wasOpen) conn.Close();
-    }
-}
 
 // ── Log file helpers ──────────────────────────────────────────────────────
 
@@ -2562,6 +2363,11 @@ static async Task<IResult> HandleTestConnection(TestConnectionRequest req, Torre
                 var lidarr = new Torrentarr.Infrastructure.ApiClients.Arr.LidarrClient(uri, apiKey);
                 getSystemInfo = () => lidarr.GetSystemInfoAsync();
                 getProfiles = () => lidarr.GetQualityProfilesAsync();
+                break;
+            case "readarr":
+                var readarr = new Torrentarr.Infrastructure.ApiClients.Arr.ReadarrClient(uri, apiKey);
+                getSystemInfo = () => readarr.GetSystemInfoAsync();
+                getProfiles = () => readarr.GetQualityProfilesAsync();
                 break;
             default:
                 return Results.BadRequest(new { error = $"Invalid arrType: {req.ArrType}" });
@@ -2696,15 +2502,13 @@ static (TorrentarrConfig? updatedConfig, IResult? error) ApplyDottedConfigChange
     {
         if (prop.Value is not Newtonsoft.Json.Linq.JObject sectionObj) continue;
         var lower = prop.Name.ToLowerInvariant();
-        bool isRadarr = lower == "radarr" || lower.StartsWith("radarr-");
-        bool isSonarr = lower == "sonarr" || lower.StartsWith("sonarr-");
-        bool isLidarr = lower == "lidarr" || lower.StartsWith("lidarr-");
+        var arrType = ArrSectionHelper.ArrTypeFromSectionName(prop.Name);
         bool isQbit = lower == "qbit" || lower.StartsWith("qbit-");
-        if (isRadarr || isSonarr || isLidarr)
+        if (arrType != null)
         {
             var arrConfig = sectionObj.ToObject<ArrInstanceConfig>(serializer) ?? new ArrInstanceConfig();
             if (string.IsNullOrEmpty(arrConfig.Type))
-                arrConfig.Type = isRadarr ? "radarr" : isSonarr ? "sonarr" : "lidarr";
+                arrConfig.Type = arrType;
             updatedConfig.ArrInstances[prop.Name] = arrConfig;
         }
         else if (isQbit)
@@ -2951,20 +2755,9 @@ class ProcessOrchestratorService : BackgroundService
             }
             else
             {
-                var anyConnected = false;
-                foreach (var (name, qbit) in _config.QBitInstances)
-                {
-                    if (!qbit.Disabled && qbit.Host != "CHANGE_ME")
-                    {
-                        var ok = await _qbitManager.InitializeAsync(name, qbit, stoppingToken);
-                        if (ok) anyConnected = true;
-                    }
-                }
-                if (!anyConnected)
-                {
-                    _logger.LogWarning("Failed to connect to any qBittorrent instance. WebUI is still available.");
-                    _qbitConfigured = false;
-                }
+                var connected = await _qbitManager.EnsureAllConnectedAsync(_config.QBitInstances, stoppingToken);
+                if (connected == 0)
+                    _logger.LogWarning("Failed to connect to any qBittorrent instance. WebUI is still available; will retry.");
             }
 
             var initialManaged = TorrentPolicyHelper.GetAllMonitoredPolicyCategories(_config);
@@ -3009,14 +2802,18 @@ class ProcessOrchestratorService : BackgroundService
                 {
                     if (_qbitConfigured)
                     {
-                        await ProcessSpecialCategoriesAsync(stoppingToken);
+                        await _qbitManager.EnsureAllConnectedAsync(_config.QBitInstances, stoppingToken);
+                        if (_qbitManager.IsConnected())
+                        {
+                            await ProcessSpecialCategoriesAsync(stoppingToken);
 
-                        var freeSpaceGuardActive = _freeSpaceEnabled && _minFreeSpaceBytes > 0;
-                        var enableTrackerSort = TorrentPolicyHelper.EnableTrackerSort(_config);
-                        var enableFreeSpace = TorrentPolicyHelper.EnableFreeSpace(_config, freeSpaceGuardActive);
-                        var managedCategories = TorrentPolicyHelper.GetAllMonitoredPolicyCategories(_config);
-                        if (managedCategories.Count > 0 && (enableTrackerSort || enableFreeSpace))
-                            await ProcessTorrentPolicyAsync(managedCategories, enableTrackerSort, enableFreeSpace, stoppingToken);
+                            var freeSpaceGuardActive = _freeSpaceEnabled && _minFreeSpaceBytes > 0;
+                            var enableTrackerSort = TorrentPolicyHelper.EnableTrackerSort(_config);
+                            var enableFreeSpace = TorrentPolicyHelper.EnableFreeSpace(_config, freeSpaceGuardActive);
+                            var managedCategories = TorrentPolicyHelper.GetAllMonitoredPolicyCategories(_config);
+                            if (managedCategories.Count > 0 && (enableTrackerSort || enableFreeSpace))
+                                await ProcessTorrentPolicyAsync(managedCategories, enableTrackerSort, enableFreeSpace, stoppingToken);
+                        }
                     }
                 }
                 catch (Exception ex)

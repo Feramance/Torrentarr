@@ -6,7 +6,7 @@ Welcome to the Torrentarr configuration guide! This section covers all aspects o
 
 - [Configuration File Reference](config-file.md) - Complete `config.toml` reference
 - [qBittorrent Setup](qbittorrent.md) - Configure qBittorrent connection
-- [Arr Instances](arr/index.md) - Configure Radarr, Sonarr, and Lidarr
+- [Arr Instances](arr/index.md) - Configure Radarr, Sonarr, Lidarr, and Readarr
 - [WebUI Authentication](webui-authentication.md) - Browser login (local and OIDC)
 - [OIDC with Authentik](webui-oidc-authentik.md) - Step-by-step Authentik OIDC setup
 

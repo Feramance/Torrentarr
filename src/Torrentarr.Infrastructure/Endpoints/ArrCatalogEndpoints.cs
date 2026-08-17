@@ -19,6 +19,12 @@ public static class ArrCatalogEndpoints
         MapLidarrArtistDetail(app, "/api/lidarr/{category}/artist/{artistId:int}");
         MapThumbnail(app, "/web/lidarr/{category}/artist/{artistId:int}/thumbnail", "lidarr_artist");
         MapThumbnail(app, "/api/lidarr/{category}/artist/{artistId:int}/thumbnail", "lidarr_artist");
+        MapReadarrAuthors(app, "/web/readarr/{category}/authors");
+        MapReadarrAuthors(app, "/api/readarr/{category}/authors");
+        MapReadarrAuthorDetail(app, "/web/readarr/{category}/author/{authorId:int}");
+        MapReadarrAuthorDetail(app, "/api/readarr/{category}/author/{authorId:int}");
+        MapThumbnail(app, "/web/readarr/{category}/author/{authorId:int}/thumbnail", "readarr_author");
+        MapThumbnail(app, "/api/readarr/{category}/author/{authorId:int}/thumbnail", "readarr_author");
         MapThumbnail(app, "/web/radarr/{category}/movie/{id:int}/thumbnail", "radarr");
         MapThumbnail(app, "/api/radarr/{category}/movie/{id:int}/thumbnail", "radarr");
         MapThumbnail(app, "/web/sonarr/{category}/series/{id:int}/thumbnail", "sonarr");
@@ -261,6 +267,175 @@ public static class ArrCatalogEndpoints
         });
     }
 
+    private static void MapReadarrAuthors(WebApplication app, string pattern)
+    {
+        app.MapGet(pattern, async (
+            string category,
+            TorrentarrDbContext db,
+            CatalogRollupService rollups,
+            int? page,
+            int? page_size,
+            string? q,
+            bool? monitored,
+            bool? missing,
+            string? reason) =>
+        {
+            var currentPage = page ?? 0;
+            var pageSize = Math.Clamp(page_size ?? 50, 1, 1000);
+            var missingOnly = missing == true;
+            var reasonFilter = string.IsNullOrWhiteSpace(reason) || reason.Equals("all", StringComparison.OrdinalIgnoreCase)
+                ? null
+                : reason.Trim();
+
+            var (bookCounts, bookTotal) = await rollups.GetReadarrRollupsAsync(category);
+
+            var query = db.Authors.Where(a => a.ArrInstance == category);
+            if (!string.IsNullOrWhiteSpace(q))
+                query = query.Where(a => a.Title != null && a.Title.Contains(q));
+            if (monitored.HasValue)
+                query = query.Where(a => a.Monitored == monitored.Value);
+
+            if (missingOnly || reasonFilter is not null)
+            {
+                var bookQuery = db.Books.Where(b => b.ArrInstance == category);
+                if (missingOnly)
+                    bookQuery = bookQuery.Where(b => b.Monitored && !b.HasFile);
+                if (reasonFilter is not null)
+                {
+                    if (reasonFilter.Equals("Not being searched", StringComparison.OrdinalIgnoreCase))
+                        bookQuery = bookQuery.Where(b => b.Reason == null || b.Reason == "Not being searched");
+                    else
+                        bookQuery = bookQuery.Where(b => b.Reason == reasonFilter);
+                }
+
+                var authorIds = await bookQuery.Select(b => b.AuthorId).Distinct().ToListAsync();
+                query = query.Where(a => authorIds.Contains(a.ArrId));
+            }
+
+            var total = await query.CountAsync();
+            var authors = await query
+                .OrderBy(a => a.Title)
+                .Skip(currentPage * pageSize)
+                .Take(pageSize)
+                .ToListAsync();
+
+            var authorArrIds = authors.Select(a => a.ArrId).ToList();
+            var bookStats = await db.Books
+                .Where(b => b.ArrInstance == category && authorArrIds.Contains(b.ArrAuthorId))
+                .GroupBy(b => b.ArrAuthorId)
+                .Select(g => new
+                {
+                    AuthorId = g.Key,
+                    Monitored = g.Count(b => b.Monitored),
+                    Available = g.Count(b => b.Monitored && b.HasFile)
+                })
+                .ToListAsync();
+
+            var statsByAuthor = bookStats.ToDictionary(x => x.AuthorId);
+
+            return Results.Ok(new
+            {
+                category,
+                counts = new
+                {
+                    available = bookCounts.Available,
+                    monitored = bookCounts.Monitored,
+                    missing = bookCounts.Missing,
+                    quality_met = bookCounts.QualityMet,
+                    requests = bookCounts.Requests
+                },
+                book_total = bookTotal,
+                total,
+                page = currentPage,
+                page_size = pageSize,
+                authors = authors.Select(a =>
+                {
+                    statsByAuthor.TryGetValue(a.ArrId, out var st);
+                    var mon = st?.Monitored ?? 0;
+                    var avail = st?.Available ?? 0;
+                    return new
+                    {
+                        author = new
+                        {
+                            id = a.EntryId,
+                            arrId = a.ArrId,
+                            name = a.Title,
+                            monitored = a.Monitored,
+                            qualityProfileName = a.QualityProfileName,
+                            searched = a.Searched,
+                            bookCount = a.BookCount,
+                            booksMonitored = mon,
+                            booksAvailable = avail,
+                            booksMissing = Math.Max(mon - avail, 0)
+                        }
+                    };
+                })
+            });
+        });
+    }
+
+    private static void MapReadarrAuthorDetail(WebApplication app, string pattern)
+    {
+        app.MapGet(pattern, async (
+            string category,
+            int authorId,
+            TorrentarrDbContext db,
+            CatalogRollupService rollups) =>
+        {
+            var author = await db.Authors
+                .FirstOrDefaultAsync(a => a.ArrInstance == category && a.EntryId == authorId);
+            if (author is null)
+                return Results.NotFound(new { error = "Author not found" });
+
+            var (bookCounts, _) = await rollups.GetReadarrRollupsAsync(category);
+            var books = await db.Books
+                .Where(b => b.ArrInstance == category && b.ArrAuthorId == author.ArrId)
+                .OrderBy(b => b.Title)
+                .ToListAsync();
+
+            return Results.Ok(new
+            {
+                category,
+                counts = new
+                {
+                    available = bookCounts.Available,
+                    monitored = bookCounts.Monitored,
+                    missing = bookCounts.Missing,
+                    quality_met = bookCounts.QualityMet,
+                    requests = bookCounts.Requests
+                },
+                author = new
+                {
+                    id = author.EntryId,
+                    arrId = author.ArrId,
+                    name = author.Title,
+                    monitored = author.Monitored,
+                    qualityProfileName = author.QualityProfileName,
+                    searched = author.Searched,
+                    bookCount = author.BookCount
+                },
+                books = books.Select(b => new
+                {
+                    book = new
+                    {
+                        id = b.EntryId,
+                        title = b.Title,
+                        authorId = b.ArrAuthorId,
+                        authorName = b.AuthorTitle,
+                        monitored = b.Monitored,
+                        hasFile = b.HasFile,
+                        foreignBookId = b.ForeignBookId,
+                        releaseDate = b.ReleaseDate,
+                        qualityMet = b.QualityMet,
+                        reason = b.Reason,
+                        qualityProfileId = b.QualityProfileId,
+                        qualityProfileName = b.QualityProfileName
+                    }
+                })
+            });
+        });
+    }
+
     private static void MapThumbnail(WebApplication app, string pattern, string kind)
     {
         app.MapGet(pattern, async (
@@ -270,7 +445,8 @@ public static class ArrCatalogEndpoints
             CancellationToken ct) =>
         {
             if (!httpContext.Request.RouteValues.TryGetValue("id", out var idObj)
-                && !httpContext.Request.RouteValues.TryGetValue("artistId", out idObj))
+                && !httpContext.Request.RouteValues.TryGetValue("artistId", out idObj)
+                && !httpContext.Request.RouteValues.TryGetValue("authorId", out idObj))
                 return Results.BadRequest();
             if (!int.TryParse(idObj?.ToString(), out var id))
                 return Results.BadRequest();
@@ -306,6 +482,7 @@ public static class ArrCatalogEndpoints
                 "movie" => $"/movie/{slug}",
                 "series" => $"/series/{slug}",
                 "artist" => $"/artist/{slug}",
+                "author" => $"/author/{slug}",
                 _ => null
             };
             if (path is null)
@@ -332,6 +509,10 @@ public static class ArrCatalogEndpoints
                 .Select(s => s.ArrId.ToString())
                 .FirstOrDefaultAsync(),
             "artist" => await db.Artists
+                .Where(a => a.ArrInstance == category && a.EntryId == entryId)
+                .Select(a => a.ArrId.ToString())
+                .FirstOrDefaultAsync(),
+            "author" => await db.Authors
                 .Where(a => a.ArrInstance == category && a.EntryId == entryId)
                 .Select(a => a.ArrId.ToString())
                 .FirstOrDefaultAsync(),

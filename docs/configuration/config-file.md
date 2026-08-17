@@ -70,7 +70,7 @@ The `[Settings]` section contains global configuration that applies to all Torre
 ```toml
 [Settings]
 # Internal config schema version - DO NOT MODIFY
-ConfigVersion = "6.12.3"
+ConfigVersion = "6.14.3"
 
 # Logging
 ConsoleLevel = "INFO"
@@ -106,6 +106,7 @@ FFprobeAutoUpdate = true
 # Auto-updates
 AutoUpdateEnabled = false
 AutoUpdateCron = "0 3 * * 0"
+AutoUpdateChannel = "latest"
 
 # Process management
 AutoRestartProcesses = true
@@ -119,11 +120,11 @@ ProcessRestartDelay = 5
 ### ConfigVersion
 
 ```toml
-ConfigVersion = "6.12.3"
+ConfigVersion = "6.14.3"
 ```
 
 **Type:** String
-**Default:** `"6.12.3"`
+**Default:** `"6.14.3"`
 **Required:** Yes (managed automatically)
 
 Internal configuration schema version. **DO NOT MODIFY** this value manually. Torrentarr uses it to detect when config migrations are needed. Updated automatically when Torrentarr migrates an older config to the current format.
@@ -588,6 +589,28 @@ When `true`:
 
 ---
 
+### AutoUpdateChannel
+
+```toml
+AutoUpdateChannel = "latest"
+```
+
+**Type:** String
+**Default:** `"latest"`
+**Allowed:** `"latest"` | `"stable"` | `"nightly"`
+
+Which GitHub release Torrentarr considers when checking for updates:
+
+- **`latest`** — newest GitHub release (current behavior).
+- **`stable`** — newest non-prerelease.
+- **`nightly`** — check and log only; **do not** download or apply binaries.
+
+Source / `dotnet run` builds never apply binaries (`TORRENTARR_SOURCE_BUILD` / `QBITRR_SOURCE_BUILD`, a `.git` tree, or an unpublished `bin/Debug|Release` entry assembly).
+
+Environment: `TORRENTARR_SETTINGS_AUTO_UPDATE_CHANNEL` (alias `QBITRR_SETTINGS_AUTO_UPDATE_CHANNEL`).
+
+---
+
 ### AutoUpdateCron
 
 ```toml
@@ -1000,6 +1023,7 @@ Arr sections follow the naming pattern `[<Type>-<Name>]`:
 - `[Radarr-Movies]`
 - `[Sonarr-TV]`
 - `[Lidarr-Music]`
+- `[Readarr-Books]`
 
 Each Arr instance has its own section with subsections for:
 
@@ -1014,6 +1038,7 @@ For complete Arr configuration documentation:
 - [Radarr Configuration](arr/radarr.md)
 - [Sonarr Configuration](arr/sonarr.md)
 - [Lidarr Configuration](arr/lidarr.md)
+- [Readarr Configuration](arr/readarr.md)
 
 ---
 
@@ -1200,7 +1225,7 @@ Absolute minimum configuration to get started:
 
 ```toml
 [Settings]
-ConfigVersion = "6.12.3"
+ConfigVersion = "6.14.3"
 CompletedDownloadFolder = "/data/downloads"
 
 [WebUI]
@@ -1325,4 +1350,5 @@ When `Settings.Tagless = true`, Torrentarr emulates tags using database entries 
 - [Radarr Configuration](arr/radarr.md)
 - [Sonarr Configuration](arr/sonarr.md)
 - [Lidarr Configuration](arr/lidarr.md)
+- [Readarr Configuration](arr/readarr.md)
 - [Troubleshooting](../troubleshooting/index.md)

@@ -21,6 +21,14 @@ import { useToast } from "../context/ToastContext";
 import { useWebUI } from "../context/WebUIContext";
 import { getTooltip } from "../config/tooltips";
 import {
+  arrTypeFromSectionName,
+  defaultFileExtensionAllowlist,
+  isArrSection,
+  supportsRequestIntegration,
+  supportsSearchByYear,
+  type KnownArrType,
+} from "../config/arrSections";
+import {
   getArrTorrentHandlingSummary,
   getQbitTorrentHandlingSummary,
 } from "../config/torrentHandlingSummary";
@@ -60,13 +68,7 @@ function simpleMarkdown(md: string): string {
 }
 
 type FieldType =
-  | "text"
-  | "number"
-  | "checkbox"
-  | "password"
-  | "select"
-  | "tags"
-  | "duration";
+  "text" | "number" | "checkbox" | "password" | "select" | "tags" | "duration";
 
 interface ValidationContext {
   root: ConfigDocument;
@@ -104,7 +106,7 @@ interface ValidationError {
   message: string;
 }
 
-const SERVARR_SECTION_REGEX = /(rad|son|lid)arr/i;
+const SERVARR_SECTION_REGEX = /(rad|son|lid|read)arr/i;
 const QBIT_SECTION_REGEX = /^qBit(-.*)?$/i;
 /** Matches backend REDACTED_PLACEHOLDER; when API key equals this, test uses instanceKey. */
 const REDACTED_PLACEHOLDER = "[redacted]";
@@ -362,6 +364,14 @@ const SETTINGS_FIELDS: FieldDefinition[] = [
       }
       return undefined;
     },
+  },
+  {
+    label: "Auto Update Channel",
+    path: ["Settings", "AutoUpdateChannel"],
+    type: "select",
+    options: ["latest", "stable", "nightly"],
+    description:
+      "latest = newest GitHub release; stable = newest non-prerelease; nightly = check only (no binary apply).",
   },
   {
     label: "Auto-Restart Processes",
@@ -1344,9 +1354,8 @@ const ARR_TRACKER_FIELDS: FieldDefinition[] = [
 ];
 
 function getArrFieldSets(arrKey: string) {
-  const lower = arrKey.toLowerCase();
-  const isSonarr = lower.includes("sonarr");
-  const isLidarr = lower.includes("lidarr");
+  const arrType = arrTypeFromSectionName(arrKey);
+  const isSonarr = arrType === "sonarr";
   const generalFields = [...ARR_GENERAL_FIELDS];
   const entryFields = ARR_ENTRY_SEARCH_FIELDS.filter((field) => {
     if (!field.path) {
@@ -1362,17 +1371,16 @@ function getArrFieldSets(arrKey: string) {
         return false;
       }
     }
-    if (isLidarr) {
-      // Lidarr doesn't support SearchByYear (music albums don't have the same year-based search)
+    if (!supportsSearchByYear(arrType)) {
       if (joined === "EntrySearch.SearchByYear") {
         return false;
       }
     }
     return true;
   });
-  // Ombi and Overseerr don't support music requests, so hide them for Lidarr
-  const entryOmbiFields = isLidarr ? [] : [...ARR_ENTRY_SEARCH_OMBI_FIELDS];
-  const entryOverseerrFields = isLidarr
+  const hideRequests = !supportsRequestIntegration(arrType);
+  const entryOmbiFields = hideRequests ? [] : [...ARR_ENTRY_SEARCH_OMBI_FIELDS];
+  const entryOverseerrFields = hideRequests
     ? []
     : [...ARR_ENTRY_SEARCH_OVERSEERR_FIELDS];
   const torrentFields = [...ARR_TORRENT_FIELDS];
@@ -1605,10 +1613,11 @@ function flatten(
 }
 
 function ensureArrDefaults(type: string): ConfigDocument {
-  const lowerType = type.toLowerCase();
-  const isSonarr = lowerType.includes("sonarr");
-  const isRadarr = lowerType.includes("radarr");
-  const isLidarr = lowerType.includes("lidarr");
+  const arrType = arrTypeFromSectionName(type) ?? type.toLowerCase();
+  const isSonarr = arrType === "sonarr";
+  const isRadarr = arrType === "radarr";
+  const isLidarr = arrType === "lidarr";
+  const isReadarr = arrType === "readarr";
 
   const arrErrorCodes = isRadarr
     ? [
@@ -1622,11 +1631,17 @@ function ensureArrDefaults(type: string): ConfigDocument {
           "Not an upgrade for existing album file(s)",
           "Unable to determine if file is a sample",
         ]
-      : [
-          "Not a preferred word upgrade for existing episode file(s)",
-          "Not an upgrade for existing episode file(s)",
-          "Unable to determine if file is a sample",
-        ];
+      : isReadarr
+        ? [
+            "Not an upgrade for existing book file(s)",
+            "Not a preferred word upgrade for existing book file(s)",
+            "Unable to determine if file is a sample",
+          ]
+        : [
+            "Not a preferred word upgrade for existing episode file(s)",
+            "Not an upgrade for existing episode file(s)",
+            "Unable to determine if file is a sample",
+          ];
 
   const entrySearch: Record<string, unknown> = {
     SearchMissing: true,
@@ -1654,19 +1669,21 @@ function ensureArrDefaults(type: string): ConfigDocument {
     entrySearch.PrioritizeTodaysReleases = true;
   }
 
-  entrySearch.Ombi = {
-    SearchOmbiRequests: false,
-    OmbiURI: "CHANGE_ME",
-    OmbiAPIKey: "CHANGE_ME",
-    ApprovedOnly: true,
-  };
-  entrySearch.Overseerr = {
-    SearchOverseerrRequests: false,
-    OverseerrURI: "CHANGE_ME",
-    OverseerrAPIKey: "CHANGE_ME",
-    ApprovedOnly: true,
-    Is4K: false,
-  };
+  if (supportsRequestIntegration(arrType)) {
+    entrySearch.Ombi = {
+      SearchOmbiRequests: false,
+      OmbiURI: "CHANGE_ME",
+      OmbiAPIKey: "CHANGE_ME",
+      ApprovedOnly: true,
+    };
+    entrySearch.Overseerr = {
+      SearchOverseerrRequests: false,
+      OverseerrURI: "CHANGE_ME",
+      OverseerrAPIKey: "CHANGE_ME",
+      ApprovedOnly: true,
+      Is4K: false,
+    };
+  }
 
   const torrent: Record<string, unknown> = {
     CaseSensitiveMatches: false,
@@ -1686,23 +1703,7 @@ function ensureArrDefaults(type: string): ConfigDocument {
       "music video",
       "comandotorrents.com",
     ],
-    FileExtensionAllowlist: isLidarr
-      ? [
-          ".mp3",
-          ".flac",
-          ".m4a",
-          ".aac",
-          ".ogg",
-          ".opus",
-          ".wav",
-          ".ape",
-          ".wma",
-          ".!qB",
-          ".parts",
-          ".log",
-          ".cue",
-        ]
-      : [".mp4", ".mkv", ".sub", ".ass", ".srt", ".!qB", ".parts"],
+    FileExtensionAllowlist: defaultFileExtensionAllowlist(arrType),
     AutoDelete: false,
     IgnoreTorrentsYoungerThan: 600,
     MaximumETA: 604800,
@@ -1789,12 +1790,12 @@ export function ConfigView(props?: ConfigViewProps): JSX.Element {
       const parsed =
         def.type === "tags" && Array.isArray(raw)
           ? raw
-          : def.parse?.(raw as string | boolean) ??
+          : (def.parse?.(raw as string | boolean) ??
             (def.type === "number"
               ? Number(raw) || 0
               : def.type === "checkbox"
                 ? Boolean(raw)
-                : raw);
+                : raw));
 
       setFormState(
         produce(formState, (draft) => {
@@ -1823,7 +1824,7 @@ export function ConfigView(props?: ConfigViewProps): JSX.Element {
   const groupedArrSections = useMemo(() => {
     const groups: Array<{
       label: string;
-      type: "radarr" | "sonarr" | "lidarr" | "other";
+      type: KnownArrType | "other";
       items: Array<[string, ConfigDocument]>;
     }> = [];
     const sorted = [...arrSections].sort((a, b) =>
@@ -1835,24 +1836,26 @@ export function ConfigView(props?: ConfigViewProps): JSX.Element {
     const radarr: Array<[string, ConfigDocument]> = [];
     const sonarr: Array<[string, ConfigDocument]> = [];
     const lidarr: Array<[string, ConfigDocument]> = [];
+    const readarr: Array<[string, ConfigDocument]> = [];
     const others: Array<[string, ConfigDocument]> = [];
     for (const entry of sorted) {
       const [key] = entry;
-      const keyLower = key.toLowerCase();
-      if (keyLower.startsWith("radarr")) {
-        radarr.push(entry);
-      } else if (keyLower.startsWith("sonarr")) {
-        sonarr.push(entry);
-      } else if (keyLower.startsWith("lidarr")) {
-        lidarr.push(entry);
-      } else {
-        others.push(entry);
-      }
+      const type = arrTypeFromSectionName(key);
+      if (type === "radarr") radarr.push(entry);
+      else if (type === "sonarr") sonarr.push(entry);
+      else if (type === "lidarr") lidarr.push(entry);
+      else if (type === "readarr") readarr.push(entry);
+      else others.push(entry);
     }
 
     groups.push({ label: "Radarr Instances", type: "radarr", items: radarr });
     groups.push({ label: "Sonarr Instances", type: "sonarr", items: sonarr });
     groups.push({ label: "Lidarr Instances", type: "lidarr", items: lidarr });
+    groups.push({
+      label: "Readarr Instances",
+      type: "readarr",
+      items: readarr,
+    });
     if (others.length) {
       groups.push({ label: "Other Instances", type: "other", items: others });
     }
@@ -1933,10 +1936,10 @@ export function ConfigView(props?: ConfigViewProps): JSX.Element {
   useEffect(() => {
     const anyModalOpen = Boolean(
       activeArrKey ||
-        activeQbitKey ||
-        isSettingsOpen ||
-        isWebSettingsOpen ||
-        isAuthOpen,
+      activeQbitKey ||
+      isSettingsOpen ||
+      isWebSettingsOpen ||
+      isAuthOpen,
     );
     if (!anyModalOpen) return;
     const handleKeyDown = (event: KeyboardEvent) => {
@@ -1972,7 +1975,7 @@ export function ConfigView(props?: ConfigViewProps): JSX.Element {
   }, [activeArrKey, arrSections]);
 
   const addArrInstance = useCallback(
-    (type: "radarr" | "sonarr" | "lidarr") => {
+    (type: KnownArrType) => {
       if (!formState) return;
       const prefix = type.charAt(0).toUpperCase() + type.slice(1);
       let index = 1;
@@ -1998,12 +2001,7 @@ export function ConfigView(props?: ConfigViewProps): JSX.Element {
   const deleteArrInstance = useCallback(
     (key: string) => {
       if (!formState) return;
-      const keyLower = key.toLowerCase();
-      if (
-        !keyLower.startsWith("radarr") &&
-        !keyLower.startsWith("sonarr") &&
-        !keyLower.startsWith("lidarr")
-      ) {
+      if (!isArrSection(key)) {
         return;
       }
       const confirmed = window.confirm(
@@ -2370,14 +2368,13 @@ export function ConfigView(props?: ConfigViewProps): JSX.Element {
                       </span>
                       {(group.type === "radarr" ||
                         group.type === "sonarr" ||
-                        group.type === "lidarr") && (
+                        group.type === "lidarr" ||
+                        group.type === "readarr") && (
                         <button
                           className="btn small"
                           type="button"
                           onClick={() =>
-                            addArrInstance(
-                              group.type as "radarr" | "sonarr" | "lidarr",
-                            )
+                            addArrInstance(group.type as KnownArrType)
                           }
                         >
                           <IconImage src={AddIcon} />
@@ -2397,7 +2394,8 @@ export function ConfigView(props?: ConfigViewProps): JSX.Element {
                         const canDelete =
                           group.type === "radarr" ||
                           group.type === "sonarr" ||
-                          group.type === "lidarr";
+                          group.type === "lidarr" ||
+                          group.type === "readarr";
                         return (
                           <div
                             className="card config-card config-arr-card"
@@ -3069,7 +3067,7 @@ function FieldGroup({
     // Check if credentials exist (URI and APIKey)
     const hasCredentials = Boolean(
       getValue(state as ConfigDocument, ["URI"]) &&
-        getValue(state as ConfigDocument, ["APIKey"]),
+      getValue(state as ConfigDocument, ["APIKey"]),
     );
     const hasProfiles = qualityProfiles.length > 0;
 
@@ -3291,15 +3289,9 @@ function FieldGroup({
       }
       const tooltip = getTooltip([sectionName]);
 
-      // Determine expected prefix for Arr instances
-      let expectedPrefix: string | undefined;
-      if (sectionName.startsWith("Radarr")) {
-        expectedPrefix = "Radarr";
-      } else if (sectionName.startsWith("Sonarr")) {
-        expectedPrefix = "Sonarr";
-      } else if (sectionName.startsWith("Lidarr")) {
-        expectedPrefix = "Lidarr";
-      }
+      const expectedPrefix = arrTypeFromSectionName(sectionName)
+        ? sectionName.split("-")[0]
+        : undefined;
 
       return (
         <SectionNameField
@@ -3643,11 +3635,11 @@ function SectionNameField({
       }
 
       // Enforce format: (Rad|Son|Lid)arr-.+ (prefix-suffix with at least one character after dash)
-      const formatRegex = /^(Radarr|Sonarr|Lidarr)-.+$/;
+      const formatRegex = /^(Radarr|Sonarr|Lidarr|Readarr)-.+$/;
       if (!formatRegex.test(adjustedName)) {
         // Invalid format - show error and reset
         alert(
-          `Instance name must match format: ${expectedPrefix || "(Rad|Son|Lid)arr"}-(name)\nExample: ${expectedPrefix || "Radarr"}-Movies`,
+          `Instance name must match format: ${expectedPrefix || "(Rad|Son|Lid|Read)arr"}-(name)\nExample: ${expectedPrefix || "Radarr"}-Movies`,
         );
         setValue(currentName);
         return;
@@ -3899,12 +3891,7 @@ function ArrInstanceModal({
     const isApiKeyRedacted = (apiKey ?? "").trim() === REDACTED_PLACEHOLDER;
 
     // Determine Arr type from keyName
-    const keyLower = keyName.toLowerCase();
-    const arrType = keyLower.includes("radarr")
-      ? "radarr"
-      : keyLower.includes("sonarr")
-        ? "sonarr"
-        : "lidarr";
+    const arrType = arrTypeFromSectionName(keyName) ?? "lidarr";
 
     if (!isApiKeyRedacted && (!uri || !apiKey)) {
       if (!silent) {

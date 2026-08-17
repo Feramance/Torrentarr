@@ -171,6 +171,21 @@ public class ArrMediaService : IArrMediaService
                         Monitored = a.Monitored
                     }));
                     break;
+
+                case "readarr":
+                    var books = await _dbContext.Books
+                        .Where(b => b.ArrInstance == instanceName && b.Monitored && !b.HasFile && !b.Searched)
+                        .ToListAsync(cancellationToken);
+                    wanted.AddRange(books.Select(b => new WantedMedia
+                    {
+                        Id = b.ArrId,
+                        ArrId = b.ArrId,
+                        Title = $"{b.AuthorTitle} - {b.Title}",
+                        AuthorId = b.ArrAuthorId,
+                        Year = b.ReleaseDate?.Year ?? 0,
+                        Monitored = b.Monitored
+                    }));
+                    break;
             }
         }
         catch (Exception ex)
@@ -256,6 +271,26 @@ public class ArrMediaService : IArrMediaService
                         });
                     }
                     break;
+
+                case "readarr":
+                    var books = await _dbContext.Books
+                        .Where(b => b.ArrInstance == instanceName && b.Monitored && b.HasFile && !b.CustomFormatMet)
+                        .ToListAsync(cancellationToken);
+                    foreach (var book in books)
+                    {
+                        result.UnmetMedia.Add(new CustomFormatUnmetItem
+                        {
+                            Id = book.ArrId,
+                            Title = $"{book.AuthorTitle} - {book.Title}",
+                            Type = "Book",
+                            CurrentCustomFormatScore = book.CustomFormatScore ?? 0,
+                            MinCustomFormatScore = book.MinCustomFormatScore ?? 0,
+                            QualityProfileId = book.QualityProfileId ?? 0,
+                            QualityProfileName = book.QualityProfileName ?? "",
+                            AuthorId = book.ArrAuthorId
+                        });
+                    }
+                    break;
             }
         }
         catch (Exception ex)
@@ -274,6 +309,8 @@ public class ArrMediaService : IArrMediaService
         var candidates = new List<SearchCandidate>();
         var searchConfig = arrConfig.Search;
 
+        try
+        {
         // qBitrr §2.12: "today's release" = aired between 25 hours ago and 1 hour ago
         var todayLower = DateTime.UtcNow.AddHours(-25);
         var todayUpper = DateTime.UtcNow.AddHours(-1);
@@ -375,6 +412,40 @@ public class ArrMediaService : IArrMediaService
                     });
                 }
                 break;
+
+            case "readarr":
+                var books = searchConfig.Unmonitored
+                    ? await _dbContext.Books
+                        .Where(b => b.ArrInstance == instanceName && !b.Searched)
+                        .ToListAsync(cancellationToken)
+                    : await _dbContext.Books
+                        .Where(b => b.ArrInstance == instanceName && b.Monitored && !b.Searched)
+                        .ToListAsync(cancellationToken);
+
+                foreach (var book in books)
+                {
+                    var priority = GetReasonPriority(book.Reason, searchConfig);
+                    if (priority >= 99) continue;
+
+                    candidates.Add(new SearchCandidate
+                    {
+                        ArrId = book.ArrId,
+                        Title = $"{book.AuthorTitle} - {book.Title}",
+                        Type = "Book",
+                        Reason = book.Reason ?? "Missing",
+                        Priority = priority,
+                        AuthorId = book.ArrAuthorId,
+                        BookId = book.ArrId,
+                        Year = book.ReleaseDate?.Year
+                    });
+                }
+                break;
+        }
+
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Search candidate loop failed for {Instance} — isolating so the worker continues", instanceName);
         }
 
         return candidates;
@@ -461,6 +532,32 @@ public class ArrMediaService : IArrMediaService
                         Priority = priority,
                         ArtistId = album.ArrArtistId,
                         Year = album.ReleaseDate?.Year
+                    });
+                }
+                break;
+
+            case "readarr":
+                var books = await _dbContext.Books
+                    .Where(b => b.ArrInstance == instanceName && b.Monitored && b.HasFile && !b.Searched)
+                    .ToListAsync(cancellationToken);
+
+                foreach (var book in books)
+                {
+                    var priority = GetUpgradePriority(book.QualityMet, book.CustomFormatMet, searchConfig);
+                    if (priority >= 99) continue;
+
+                    var reason = DetermineUpgradeReason(book.QualityMet, book.CustomFormatMet, searchConfig);
+
+                    candidates.Add(new SearchCandidate
+                    {
+                        ArrId = book.ArrId,
+                        Title = $"{book.AuthorTitle} - {book.Title}",
+                        Type = "Book",
+                        Reason = reason,
+                        Priority = priority,
+                        AuthorId = book.ArrAuthorId,
+                        BookId = book.ArrId,
+                        Year = book.ReleaseDate?.Year
                     });
                 }
                 break;

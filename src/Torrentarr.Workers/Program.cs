@@ -229,26 +229,10 @@ class ArrWorkerService : BackgroundService
         _logger.LogInformation("Type: {Type}, URI: {URI}, Category: {Category}",
             _instanceConfig.Type, _instanceConfig.URI, _instanceConfig.Category);
 
-        // Initialize connections to all configured qBit instances
-        var anyConnected = false;
-        foreach (var (name, qbitConfig) in _config.QBitInstances)
-        {
-            try
-            {
-                var ok = await _qbitManager.InitializeAsync(name, qbitConfig, stoppingToken);
-                if (ok) anyConnected = true;
-            }
-            catch (Exception ex)
-            {
-                _logger.LogError(ex, "Error connecting to qBittorrent instance '{Name}'", name);
-            }
-        }
-
-        if (!anyConnected && _config.QBitInstances.Any(q => !q.Value.Disabled))
-        {
-            _logger.LogError("Failed to connect to any qBittorrent instance");
-            return;
-        }
+        // Initialize connections to all configured qBit instances (retry on later loops if this fails)
+        await _qbitManager.EnsureAllConnectedAsync(_config.QBitInstances, stoppingToken);
+        if (!_qbitManager.IsConnected() && _config.QBitInstances.Any(q => !q.Value.Disabled && q.Value.Host != "CHANGE_ME"))
+            _logger.LogWarning("Failed to connect to any qBittorrent instance; will retry each cycle");
 
         try
         {
@@ -256,6 +240,8 @@ class ArrWorkerService : BackgroundService
             {
                 try
                 {
+                    await _qbitManager.EnsureAllConnectedAsync(_config.QBitInstances, stoppingToken);
+
                     // Check for exponential backoff
                     var backoffDelay = GetBackoffDelay();
                     if (backoffDelay > TimeSpan.Zero)
