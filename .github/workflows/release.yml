@@ -76,7 +76,7 @@ jobs:
 
         echo "value=${type}" >> "${GITHUB_OUTPUT}"
     - name: Set up Python
-      uses: actions/setup-python@v6
+      uses: actions/setup-python@v7
       with:
         python-version: '3.12'
     - name: Install bump2version
@@ -162,7 +162,7 @@ jobs:
         DOTNET_VERSION=$(bash scripts/ensure-global-json.sh "${{ github.workspace }}")
         echo "DOTNET_SDK_VERSION=$DOTNET_VERSION" >> $GITHUB_ENV
     - name: Setup Node.js
-      uses: actions/setup-node@v6
+      uses: actions/setup-node@v7
       with:
         node-version: '20'
         cache: npm
@@ -174,7 +174,7 @@ jobs:
       working-directory: webui
       run: npm run build
     - name: Setup .NET
-      uses: actions/setup-dotnet@v5.4.0
+      uses: actions/setup-dotnet@v6.0.0
       with:
         dotnet-version: ${{ env.DOTNET_SDK_VERSION }}.x
     - name: Publish binaries (all RIDs)
@@ -269,7 +269,7 @@ jobs:
         fetch-depth: 0
         token: ${{ secrets.GITHUB_TOKEN }}
     - name: Set up Python
-      uses: actions/setup-python@v6
+      uses: actions/setup-python@v7
       with:
         python-version: '3.12'
     - name: Generate changelog entry

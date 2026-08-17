@@ -44,12 +44,12 @@ jobs:
         echo "DOTNET_SDK_VERSION=$DOTNET_VERSION" >> $GITHUB_ENV
 
     - name: Setup .NET
-      uses: actions/setup-dotnet@v5.4.0
+      uses: actions/setup-dotnet@v6.0.0
       with:
         dotnet-version: ${{ env.DOTNET_SDK_VERSION }}.x
 
     - name: Setup Node.js
-      uses: actions/setup-node@v6
+      uses: actions/setup-node@v7
       with:
         node-version: ${{ matrix.node-version }}
         cache: npm
@@ -217,12 +217,12 @@ jobs:
         echo "DOTNET_SDK_VERSION=$DOTNET_VERSION" >> $GITHUB_ENV
 
     - name: Setup .NET
-      uses: actions/setup-dotnet@v5.4.0
+      uses: actions/setup-dotnet@v6.0.0
       with:
         dotnet-version: ${{ env.DOTNET_SDK_VERSION }}.x
 
     - name: Setup Node.js
-      uses: actions/setup-node@v6
+      uses: actions/setup-node@v7
       with:
         node-version: '20'
         cache: npm
