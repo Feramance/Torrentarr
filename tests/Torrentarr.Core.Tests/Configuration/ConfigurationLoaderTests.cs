@@ -491,6 +491,66 @@ public class ConfigurationLoaderTests : IDisposable
     }
 
     [Fact]
+    public void Load_AbsentImportMode_LeavesNull()
+    {
+        WriteToml("""
+            [Radarr-Movies]
+            URI = "http://radarr:7878"
+            APIKey = "key"
+            Category = "radarr"
+            """);
+
+        var config = new ConfigurationLoader(_tempFilePath).Load();
+
+        config.ArrInstances["Radarr-Movies"].ImportMode.Should().BeNull();
+    }
+
+    [Fact]
+    public void SaveConfig_OmitsImportMode_WhenNull()
+    {
+        WriteToml("""
+            [Settings]
+            LoopSleepTimer = 5
+
+            [Radarr-Movies]
+            URI = "http://radarr:7878"
+            APIKey = "key"
+            Category = "radarr"
+            """);
+
+        var loader = new ConfigurationLoader(_tempFilePath);
+        var config = loader.Load();
+        config.ArrInstances["Radarr-Movies"].ImportMode.Should().BeNull();
+        loader.SaveConfig(config);
+
+        var content = File.ReadAllText(_tempFilePath);
+        content.Should().NotContain("importMode", "absent per-Arr importMode must stay omitted so Settings.ImportMode still applies");
+        content.Should().NotContain("ImportMode");
+    }
+
+    [Fact]
+    public void SaveConfig_WritesImportMode_WhenSet()
+    {
+        WriteToml("""
+            [Settings]
+            LoopSleepTimer = 5
+
+            [Radarr-Movies]
+            URI = "http://radarr:7878"
+            APIKey = "key"
+            Category = "radarr"
+            importMode = "Copy"
+            """);
+
+        var loader = new ConfigurationLoader(_tempFilePath);
+        var config = loader.Load();
+        loader.SaveConfig(config);
+
+        var content = File.ReadAllText(_tempFilePath);
+        content.Should().Contain("importMode = \"Copy\"");
+    }
+
+    [Fact]
     public void Load_SkipsMigrations_WhenVersionIsCurrent()
     {
         WriteToml($"""
