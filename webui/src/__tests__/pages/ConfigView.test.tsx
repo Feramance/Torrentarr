@@ -355,7 +355,9 @@ describe("ConfigView – Arr Import Mode and Entry Search", () => {
     const importModeField = screen.getByText("Import Mode").closest(".field")!;
     expect(within(importModeField).getByText("Copy")).toBeInTheDocument();
 
-    const searchMissing = screen.getByLabelText("Search Missing") as HTMLInputElement;
+    const searchMissing = screen.getByLabelText(
+      "Search Missing",
+    ) as HTMLInputElement;
     expect(searchMissing.checked).toBe(true);
   });
 });
