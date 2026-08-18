@@ -104,5 +104,59 @@ public class ArrMediaServiceSearchByYearTests
         var bookYears = await svc.CollectYearsAsync(
             "Readarr", new ArrInstanceConfig { Type = "readarr" }, CancellationToken.None);
         bookYears.Should().Equal(2018);
+
+        var futureYear = DateTime.UtcNow.Year + 1;
+        db.Episodes.AddRange(
+            new EpisodeFilesModel
+            {
+                Title = "Unmon",
+                ArrInstance = "Sonarr",
+                ArrId = 1,
+                SeriesId = 1,
+                SeasonNumber = 1,
+                EpisodeNumber = 1,
+                Monitored = false,
+                AirDateUtc = new DateTime(1999, 1, 1, 0, 0, 0, DateTimeKind.Utc)
+            },
+            new EpisodeFilesModel
+            {
+                Title = "Mon",
+                ArrInstance = "Sonarr",
+                ArrId = 2,
+                SeriesId = 1,
+                SeasonNumber = 1,
+                EpisodeNumber = 2,
+                Monitored = true,
+                AirDateUtc = new DateTime(2020, 6, 1, 0, 0, 0, DateTimeKind.Utc)
+            },
+            new EpisodeFilesModel
+            {
+                Title = "Future",
+                ArrInstance = "Sonarr",
+                ArrId = 3,
+                SeriesId = 1,
+                SeasonNumber = 2,
+                EpisodeNumber = 1,
+                Monitored = true,
+                AirDateUtc = new DateTime(futureYear, 1, 1, 0, 0, 0, DateTimeKind.Utc)
+            },
+            new EpisodeFilesModel
+            {
+                Title = "NullMon",
+                ArrInstance = "Sonarr",
+                ArrId = 4,
+                SeriesId = 1,
+                SeasonNumber = 1,
+                EpisodeNumber = 3,
+                Monitored = null,
+                AirDateUtc = new DateTime(2010, 1, 1, 0, 0, 0, DateTimeKind.Utc)
+            });
+        await db.SaveChangesAsync();
+
+        var episodeYears = await svc.CollectYearsAsync(
+            "Sonarr",
+            new ArrInstanceConfig { Type = "sonarr", Search = new SearchConfig { SearchInReverse = true } },
+            CancellationToken.None);
+        episodeYears.Should().Equal(2020);
     }
 }

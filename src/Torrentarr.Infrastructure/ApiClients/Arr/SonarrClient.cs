@@ -313,17 +313,10 @@ public class SonarrClient
     }
 
     /// <summary>
-    /// Update series quality profile
+    /// Update series quality profile, preserving unmapped fields via a raw JSON round-trip.
     /// </summary>
-    public async Task<bool> UpdateSeriesQualityProfileAsync(int seriesId, int qualityProfileId, CancellationToken ct = default)
-    {
-        var series = await GetSeriesAsync(seriesId, ct);
-        if (series == null) return false;
-
-        series.QualityProfileId = qualityProfileId;
-        var updated = await UpdateSeriesAsync(series, ct);
-        return updated != null;
-    }
+    public Task<bool> UpdateSeriesQualityProfileAsync(int seriesId, int qualityProfileId, CancellationToken ct = default) =>
+        ArrQualityProfilePut.UpdateAsync(_client, _apiKey, $"/api/v3/series/{seriesId}", qualityProfileId, ct);
 
     /// <summary>
     /// Get quality profiles

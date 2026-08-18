@@ -130,6 +130,44 @@ public sealed class OverseerrRequestFetcherTests : IDisposable
         handler.Paths.Should().Contain("/api/v1/tv/100");
     }
 
+    [Fact]
+    public async Task FetchAsync_DoesNotReuseReleaseCacheAcrossOverseerrHosts()
+    {
+        var handler = new StubHandler
+        {
+            OnSend = req =>
+            {
+                var path = req.RequestUri!.AbsolutePath;
+                var host = req.RequestUri.Host;
+                if (path.EndsWith("/api/v1/request", StringComparison.Ordinal))
+                    return Json("""{"results":[{"type":"movie","is4k":false,"media":{"tmdbId":100}}]}""");
+                if (path.EndsWith("/api/v1/movie/100", StringComparison.Ordinal))
+                {
+                    if (host == "overseerr.test")
+                        return Json("""{"releaseDate":"2020-01-01"}""");
+                    return Json("""{"releaseDate":"2099-01-01"}""");
+                }
+                return Json("{}");
+            }
+        };
+        using var http = new HttpClient(handler);
+        var fetcher = new OverseerrRequestFetcher(NullLogger.Instance, http);
+
+        var released = await fetcher.FetchAsync(
+            new OverseerrConfig { OverseerrURI = "http://overseerr.test", OverseerrAPIKey = "k" },
+            "movie",
+            CancellationToken.None);
+        released.TmdbIds.Should().Equal(100);
+
+        handler.Paths.Clear();
+        var other = await fetcher.FetchAsync(
+            new OverseerrConfig { OverseerrURI = "http://other.overseerr.test", OverseerrAPIKey = "k" },
+            "movie",
+            CancellationToken.None);
+        other.TmdbIds.Should().BeEmpty();
+        handler.Paths.Should().Contain("/api/v1/movie/100");
+    }
+
     private static HttpResponseMessage Json(string body) =>
         new(HttpStatusCode.OK) { Content = new StringContent(body) };
 

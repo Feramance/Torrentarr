@@ -298,4 +298,20 @@ public class ScanQueueForBlocklistTests
         ArrSyncService.ResolveBlocklistedCleanupTarget(Path.DirectorySeparatorChar.ToString(), "etc")
             .Should().BeNull();
     }
+
+    [Fact]
+    public void ResolveBlocklistedCleanupTarget_RejectsInvalidPathCharacters()
+    {
+        var dir = Path.GetFullPath(Path.Combine(Path.GetTempPath(), $"torrentarr-bl-{Guid.NewGuid():N}"));
+        ArrSyncService.ResolveBlocklistedCleanupTarget(dir, "bad\0name").Should().BeNull();
+        var cleanup = () => ArrSyncService.CleanupBlocklistedPath(dir, "bad\0name");
+        cleanup.Should().NotThrow();
+
+        if (OperatingSystem.IsWindows())
+        {
+            ArrSyncService.ResolveBlocklistedCleanupTarget(dir, "Who?").Should().BeNull();
+            var who = () => ArrSyncService.CleanupBlocklistedPath(dir, "Who?");
+            who.Should().NotThrow();
+        }
+    }
 }

@@ -292,17 +292,10 @@ public class RadarrClient
     }
 
     /// <summary>
-    /// Update movie quality profile
+    /// Update movie quality profile, preserving unmapped fields via a raw JSON round-trip.
     /// </summary>
-    public async Task<bool> UpdateMovieQualityProfileAsync(int movieId, int qualityProfileId, CancellationToken ct = default)
-    {
-        var movie = await GetMovieAsync(movieId, ct);
-        if (movie == null) return false;
-
-        movie.QualityProfileId = qualityProfileId;
-        var updated = await UpdateMovieAsync(movie, ct);
-        return updated != null;
-    }
+    public Task<bool> UpdateMovieQualityProfileAsync(int movieId, int qualityProfileId, CancellationToken ct = default) =>
+        ArrQualityProfilePut.UpdateAsync(_client, _apiKey, $"/api/v3/movie/{movieId}", qualityProfileId, ct);
 
     /// <summary>
     /// Get custom formats

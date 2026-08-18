@@ -106,7 +106,7 @@ public sealed class OverseerrRequestFetcher
         DateTime now,
         CancellationToken ct)
     {
-        var cacheKey = $"{mediaType}:{tmdbId}";
+        var cacheKey = ReleaseCacheKey(overseerr, mediaType, tmdbId);
         if (ReleaseDateCache.TryGetValue(cacheKey, out var cached))
             return cached <= now;
 
@@ -138,6 +138,9 @@ public sealed class OverseerrRequestFetcher
             return true;
         }
     }
+
+    internal static string ReleaseCacheKey(OverseerrConfig overseerr, string mediaType, int tmdbId) =>
+        $"{overseerr.OverseerrURI.TrimEnd('/')}:{mediaType}:{tmdbId}";
 
     internal static void ClearCacheForTests() => ReleaseDateCache.Clear();
 }

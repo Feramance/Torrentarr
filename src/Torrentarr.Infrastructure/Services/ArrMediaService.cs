@@ -678,7 +678,7 @@ public class ArrMediaService : IArrMediaService
                     .Select(e => e.AirDateUtc!.Value.Year)
                     .Distinct()
                     .ToListAsync(cancellationToken);
-                years.UnionWith(episodeYears);
+                years.UnionWith(episodeYears.Where(y => y > 0 && y <= nowYear));
                 break;
 
             case "readarr":
