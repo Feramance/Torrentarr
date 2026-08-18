@@ -389,7 +389,12 @@ export function LogsView({ active }: LogsViewProps): JSX.Element {
         {searchMatches.length > 0 && (
           <div
             className="hint"
-            style={{ flexShrink: 0, marginBottom: "8px", maxHeight: "120px", overflow: "auto" }}
+            style={{
+              flexShrink: 0,
+              marginBottom: "8px",
+              maxHeight: "120px",
+              overflow: "auto",
+            }}
           >
             {searchMatches.slice(0, 50).map((match) => (
               <div key={`${match.file}:${match.line}`}>

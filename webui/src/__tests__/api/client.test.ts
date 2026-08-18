@@ -677,7 +677,16 @@ describe("getQbitOverview", () => {
               torrentCount: 1,
               seedingCount: 1,
               truncated: false,
-              torrents: [{ hash: "abc", name: "Movie", size: 1, progress: 1, state: "uploading", category: "radarr" }],
+              torrents: [
+                {
+                  hash: "abc",
+                  name: "Movie",
+                  size: 1,
+                  progress: 1,
+                  state: "uploading",
+                  category: "radarr",
+                },
+              ],
             },
           ],
           ready: true,
@@ -698,7 +707,15 @@ describe("getConfigSchema", () => {
         HttpResponse.json({
           version: 1,
           sections: {
-            WebUI: [{ dotted: "Token", kind: "string", label: "Token", uiExpose: true, sensitive: true }],
+            WebUI: [
+              {
+                dotted: "Token",
+                kind: "string",
+                label: "Token",
+                uiExpose: true,
+                sensitive: true,
+              },
+            ],
           },
         }),
       ),
