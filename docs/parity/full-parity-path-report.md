@@ -65,13 +65,13 @@ flowchart TB
 
 | Area | Status | Notes |
 | --- | --- | --- |
-| OS forks (`pathos`) vs Host `BackgroundService` | **Arch** | Canonical loop: [`ArrWorkerManager.cs`](../../src/Torrentarr.Infrastructure/Services/ArrWorkerManager.cs). [`Torrentarr.Workers`](../../src/Torrentarr.Workers/Program.cs) exists but **Host does not spawn it**. |
+| OS forks (`pathos`) vs Host `BackgroundService` | **Arch** | Canonical loop: [`ArrWorkerManager.cs`](https://github.com/Feramance/Torrentarr/blob/master/src/Torrentarr.Infrastructure/Services/ArrWorkerManager.cs). [`Torrentarr.Workers`](https://github.com/Feramance/Torrentarr/blob/master/src/Torrentarr.Workers/Program.cs) exists but **Host does not spawn it**. |
 | Processes UI rows `{name}-search` / `{name}-torrent` | **Match** | Same surface as qBitrr even though both are in-process tasks. |
 | Docs saying “per-Arr worker processes” | **Match** | [overview.md](overview.md) and [features/process-management.md](../features/process-management.md) describe Host in-process worker **tasks**. |
 | `db_lock.py` | **Arch** | WAL + `SaveChangesWithRetryAsync` + `DatabaseRestartWatchdogService`. |
 | Pathos dedicated-qBit-client gate / placeholder pause-resume queues (5.12.6 / 5.12.8) | **Arch** | Per-torrent `QBitInstanceName` routing; no default client. |
 
-**Host orchestrator** ([`Program.cs`](../../src/Torrentarr.Host/Program.cs) `ProcessOrchestratorService`), each cycle:
+**Host orchestrator** ([`Program.cs`](https://github.com/Feramance/Torrentarr/blob/master/src/Torrentarr.Host/Program.cs) `ProcessOrchestratorService`), each cycle:
 
 1. Connect all qBit instances.
 2. Special categories: delete `FailedCategory`, recheck `RecheckCategory` (age-gated by `Settings.IgnoreTorrentsYoungerThan`).
@@ -142,7 +142,7 @@ flowchart TD
   again -->|yes| reset[Reset Searched and Upgrade flags]
 ```
 
-Implementation: [`ArrWorkerManager.RunSearchAsync`](../../src/Torrentarr.Infrastructure/Services/ArrWorkerManager.cs), [`ArrMediaService`](../../src/Torrentarr.Infrastructure/Services/ArrMediaService.cs), [`SearchExecutor`](../../src/Torrentarr.Infrastructure/Services/SearchExecutor.cs).
+Implementation: [`ArrWorkerManager.RunSearchAsync`](https://github.com/Feramance/Torrentarr/blob/master/src/Torrentarr.Infrastructure/Services/ArrWorkerManager.cs), [`ArrMediaService`](https://github.com/Feramance/Torrentarr/blob/master/src/Torrentarr.Infrastructure/Services/ArrMediaService.cs), [`SearchExecutor`](https://github.com/Feramance/Torrentarr/blob/master/src/Torrentarr.Infrastructure/Services/SearchExecutor.cs).
 
 ### Missing-media candidates (`GetSearchCandidatesAsync`)
 
@@ -195,7 +195,7 @@ This matches qBitrr: `should_mark_searched` does **not** look at `do_upgrade_sea
 
 ## 4. Torrent state machine (every branch)
 
-Source: [`TorrentProcessor.ProcessSingleTorrentAsync`](../../src/Torrentarr.Infrastructure/Services/TorrentProcessor.cs), annotated against qBitrr `_process_single_torrent`.
+Source: [`TorrentProcessor.ProcessSingleTorrentAsync`](https://github.com/Feramance/Torrentarr/blob/master/src/Torrentarr.Infrastructure/Services/TorrentProcessor.cs), annotated against qBitrr `_process_single_torrent`.
 
 ### Pre-steps (every torrent)
 
@@ -263,7 +263,7 @@ After a successful `Downloaded*Scan` (`TriggerImportAsync`), if `Torrent.AutoDel
 
 ## 6. Sync, catalog, database
 
-[`ArrSyncService`](../../src/Torrentarr.Infrastructure/Services/ArrSyncService.cs) per Arr type: media upsert, queue sync, `ArrErrorCodesToBlocklist` scan, destructive-delete guards if the API returns empty against a large local set.
+[`ArrSyncService`](https://github.com/Feramance/Torrentarr/blob/master/src/Torrentarr.Infrastructure/Services/ArrSyncService.cs) per Arr type: media upsert, queue sync, `ArrErrorCodesToBlocklist` scan, destructive-delete guards if the API returns empty against a large local set.
 
 | Type | Identity / scores | Notes |
 | --- | --- | --- |

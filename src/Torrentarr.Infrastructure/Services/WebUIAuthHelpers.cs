@@ -92,7 +92,7 @@ public static class WebUIAuthHelpers
     public static bool IsPublicPath(string path, string method)
     {
         if (path.Equals("/health", StringComparison.OrdinalIgnoreCase)) return true;
-        if (path.Equals("/", StringComparison.OrdinalIgnoreCase)) return true;
+        if (string.IsNullOrEmpty(path) || path.Equals("/", StringComparison.OrdinalIgnoreCase)) return true;
         if (path.Equals("/login", StringComparison.OrdinalIgnoreCase)) return true;
         if (path.StartsWith("/assets/", StringComparison.OrdinalIgnoreCase)) return true;
         if (path.Equals("/favicon.ico", StringComparison.OrdinalIgnoreCase)) return true;

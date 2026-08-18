@@ -1149,6 +1149,28 @@ public class ConfigurationLoader
         return qbit;
     }
 
+    /// <summary>
+    /// Canonical <c>MinSeedingTimeDays</c> wins unless it is the fill-in default 0 and a qBitrr
+    /// alias (<c>MinSeedingTime</c> / <c>MinSeedTime</c>) is present on the same table.
+    /// </summary>
+    private static int? ReadMinSeedingTimeDays(TomlTable table)
+    {
+        var hasCanonical = table.TryGetValue("MinSeedingTimeDays", out var canonical);
+        object? alias = null;
+        var hasAlias = table.TryGetValue("MinSeedingTime", out alias)
+            || table.TryGetValue("MinSeedTime", out alias);
+
+        if (hasCanonical)
+        {
+            var days = Convert.ToInt32(canonical);
+            if (days == 0 && hasAlias)
+                return Convert.ToInt32(alias);
+            return days;
+        }
+
+        return hasAlias ? Convert.ToInt32(alias) : null;
+    }
+
     private TrackerConfig? ParseTrackerConfig(TomlTable? table)
     {
         if (table == null) return null;
@@ -1182,11 +1204,9 @@ public class ConfigurationLoader
         if (table.TryGetValue("MinSeedRatio", out var minRatio))
             tracker.MinSeedRatio = Convert.ToDouble(minRatio);
 
-        if (table.TryGetValue("MinSeedingTime", out var minTime))
-            tracker.MinSeedingTimeDays = Convert.ToInt32(minTime);
-
-        if (table.TryGetValue("MinSeedingTimeDays", out var minSeedingTimeDays))
-            tracker.MinSeedingTimeDays = Convert.ToInt32(minSeedingTimeDays);
+        var trackerMinSeedingDays = ReadMinSeedingTimeDays(table);
+        if (trackerMinSeedingDays.HasValue)
+            tracker.MinSeedingTimeDays = trackerMinSeedingDays;
 
         if (table.TryGetValue("HitAndRunMinimumDownloadPercent", out var hnrMinDlPct))
             tracker.HitAndRunMinimumDownloadPercent = Convert.ToInt32(hnrMinDlPct);
@@ -1252,11 +1272,9 @@ public class ConfigurationLoader
         if (table.TryGetValue("MinSeedRatio", out var minRatio))
             seeding.MinSeedRatio = Convert.ToDouble(minRatio);
 
-        if (table.TryGetValue("MinSeedTime", out var minTime))
-            seeding.MinSeedingTimeDays = Convert.ToInt32(minTime);
-
-        if (table.TryGetValue("MinSeedingTimeDays", out var minSeedingTimeDays))
-            seeding.MinSeedingTimeDays = Convert.ToInt32(minSeedingTimeDays);
+        var seedingMinSeedingDays = ReadMinSeedingTimeDays(table);
+        if (seedingMinSeedingDays.HasValue)
+            seeding.MinSeedingTimeDays = seedingMinSeedingDays.Value;
 
         if (table.TryGetValue("HitAndRunMinimumDownloadPercent", out var hnrMinDlPct))
             seeding.HitAndRunMinimumDownloadPercent = Convert.ToInt32(hnrMinDlPct);
