@@ -55,8 +55,8 @@ public class ArrSectionHelperTests
     [Fact]
     public void DefaultFolderExclusionRegex_IsTypeSpecific()
     {
-        ArrSectionHelper.DefaultFolderExclusionRegex("radarr").Should().Contain(@"\bnc(ed|op)?(\\d+)?\b");
-        ArrSectionHelper.DefaultFolderExclusionRegex("lidarr").Should().NotContain(@"\bnc(ed|op)?(\\d+)?\b");
+        ArrSectionHelper.DefaultFolderExclusionRegex("radarr").Should().Contain(@"\bnc(ed|op)?(\d+)?\b");
+        ArrSectionHelper.DefaultFolderExclusionRegex("lidarr").Should().NotContain(@"\bnc(ed|op)?(\d+)?\b");
         ArrSectionHelper.DefaultFolderExclusionRegex("sonarr", "anime")
             .Should().Contain(@"\bova\b");
     }
@@ -64,9 +64,27 @@ public class ArrSectionHelperTests
     [Fact]
     public void DefaultFileNameExclusionRegex_VideoIncludesNcop()
     {
-        ArrSectionHelper.DefaultFileNameExclusionRegex("sonarr").Should().Contain(@"\bncop\\d+?\b");
-        ArrSectionHelper.DefaultFileNameExclusionRegex("lidarr").Should().NotContain(@"\bncop\\d+?\b");
+        ArrSectionHelper.DefaultFileNameExclusionRegex("sonarr").Should().Contain(@"\bncop\d+?\b");
+        ArrSectionHelper.DefaultFileNameExclusionRegex("lidarr").Should().NotContain(@"\bncop\d+?\b");
         ArrSectionHelper.DefaultFileNameExclusionRegex("readarr").Should().Contain(@"\bsample\b");
+    }
+
+    [Fact]
+    public void DefaultNcopNcedRegexes_MatchDigitSuffixes()
+    {
+        var ignoreCase = System.Text.RegularExpressions.RegexOptions.IgnoreCase;
+        var fileNcop = new System.Text.RegularExpressions.Regex(
+            ArrSectionHelper.DefaultFileNameExclusionRegex("sonarr").First(p => p.Contains("ncop")), ignoreCase);
+        var fileNced = new System.Text.RegularExpressions.Regex(
+            ArrSectionHelper.DefaultFileNameExclusionRegex("sonarr").First(p => p.Contains("nced")), ignoreCase);
+        var folderNc = new System.Text.RegularExpressions.Regex(
+            ArrSectionHelper.DefaultFolderExclusionRegex("radarr").First(p => p.Contains("nc(ed|op)")), ignoreCase);
+
+        fileNcop.IsMatch("Show - NCOP01.mkv").Should().BeTrue();
+        fileNced.IsMatch("Show - NCED02.mkv").Should().BeTrue();
+        folderNc.IsMatch("NCOP").Should().BeTrue();
+        folderNc.IsMatch("NCED03").Should().BeTrue();
+        fileNcop.IsMatch(@"Show - NCOP\d.mkv").Should().BeFalse();
     }
 
     [Fact]

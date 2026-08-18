@@ -426,4 +426,12 @@ public class ArrImportServiceTests
 
         ArrImportService.ResolveImportMode(instance, settings).Should().Be("Auto");
     }
+
+    [Fact]
+    public void ResolveReadarrReSearch_PrefersBookIdThenAuthorId()
+    {
+        ArrImportService.ResolveReadarrReSearch(12, 3).Should().Be(("book", 12));
+        ArrImportService.ResolveReadarrReSearch(null, 3).Should().Be(("author", 3));
+        ArrImportService.ResolveReadarrReSearch(null, null).Should().BeNull();
+    }
 }

@@ -662,7 +662,7 @@ public class ArrMediaService : IArrMediaService
         {
             case "radarr":
                 var movieYears = await _dbContext.Movies.AsNoTracking()
-                    .Where(m => m.ArrInstance == instanceName && m.Year > 0 && m.Year <= nowYear)
+                    .Where(m => m.ArrInstance == instanceName && m.Monitored && m.Year > 0 && m.Year <= nowYear)
                     .Select(m => m.Year)
                     .Distinct()
                     .ToListAsync(cancellationToken);
@@ -671,7 +671,7 @@ public class ArrMediaService : IArrMediaService
 
             case "sonarr":
                 var episodeQuery = _dbContext.Episodes.AsNoTracking()
-                    .Where(e => e.ArrInstance == instanceName && e.AirDateUtc != null);
+                    .Where(e => e.ArrInstance == instanceName && e.Monitored == true && e.AirDateUtc != null);
                 if (!arrConfig.Search.AlsoSearchSpecials)
                     episodeQuery = episodeQuery.Where(e => e.SeasonNumber != 0);
                 var episodeYears = await episodeQuery
@@ -683,7 +683,7 @@ public class ArrMediaService : IArrMediaService
 
             case "readarr":
                 var bookYears = await _dbContext.Books.AsNoTracking()
-                    .Where(b => b.ArrInstance == instanceName && b.ReleaseDate != null)
+                    .Where(b => b.ArrInstance == instanceName && b.Monitored && b.ReleaseDate != null)
                     .Select(b => b.ReleaseDate!.Value.Year)
                     .Distinct()
                     .ToListAsync(cancellationToken);

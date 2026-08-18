@@ -613,12 +613,30 @@ public class ArrImportService : IArrImportService
 
         _logger.LogInformation("Blocklisting Readarr queue item {Id} (hash: {Hash})", record.Id, downloadId);
         var deleted = await client.DeleteFromQueueAsync(record.Id, removeFromClient: false, blocklist: true, ct);
-        if (deleted && config.ReSearch && record.BookId is int bookId)
+        if (deleted && config.ReSearch)
         {
-            _logger.LogInformation("Re-Searching Readarr book {BookId} after blocklist", bookId);
-            await client.SearchBookAsync(new List<int> { bookId }, ct);
+            var reSearch = ResolveReadarrReSearch(record.BookId, record.AuthorId);
+            if (reSearch is ("book", int bookId))
+            {
+                _logger.LogInformation("Re-Searching Readarr book {BookId} after blocklist", bookId);
+                await client.SearchBookAsync(new List<int> { bookId }, ct);
+            }
+            else if (reSearch is ("author", int authorId))
+            {
+                _logger.LogInformation("Re-Searching Readarr author {AuthorId} after blocklist", authorId);
+                await client.SearchAuthorAsync(authorId, ct);
+            }
         }
         return deleted;
+    }
+
+    internal static (string Kind, int Id)? ResolveReadarrReSearch(int? bookId, int? authorId)
+    {
+        if (bookId is int book)
+            return ("book", book);
+        if (authorId is int author)
+            return ("author", author);
+        return null;
     }
 
     private async Task<bool> CheckReadarrCfUnmetAsync(ArrInstanceConfig config, string downloadId, CancellationToken ct)

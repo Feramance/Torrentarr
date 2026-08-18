@@ -288,4 +288,14 @@ public class ScanQueueForBlocklistTests
         ArrSyncService.ResolveBlocklistedCleanupTarget(dir, Path.Combine("folder", "bad.mkv"))
             .Should().Be(expected);
     }
+
+    [Fact]
+    public void ResolveBlocklistedCleanupTarget_RejectsFilesystemRootOutputPath()
+    {
+        var volumeRoot = Path.GetPathRoot(Path.GetFullPath(Path.GetTempPath()));
+        volumeRoot.Should().NotBeNullOrEmpty();
+        ArrSyncService.ResolveBlocklistedCleanupTarget(volumeRoot, "etc").Should().BeNull();
+        ArrSyncService.ResolveBlocklistedCleanupTarget(Path.DirectorySeparatorChar.ToString(), "etc")
+            .Should().BeNull();
+    }
 }

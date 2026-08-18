@@ -837,8 +837,6 @@ public class ConfigurationLoader
                 ("Port", (long)6969),
                 ("Token", ""),
                 ("AuthDisabled", false),
-                // Must match GenerateDefaultConfig / qBitrr: local login is opt-in.
-                ("LocalAuthEnabled", false),
                 ("OIDCEnabled", false),
                 ("BehindHttpsProxy", false),
                 ("UrlBase", ""),
@@ -857,6 +855,18 @@ public class ConfigurationLoader
                     webui[key] = defaultVal;
                     changed = true;
                 }
+            }
+
+            // New installs: LocalAuthEnabled=false (qBitrr opt-in). Existing configs that already
+            // have a password and auth enabled omitted the key when Torrentarr defaulted it to true.
+            if (!webui.ContainsKey("LocalAuthEnabled") && !hasLegacyAuthMode)
+            {
+                var authDisabled = webui.ContainsKey("AuthDisabled") && Convert.ToBoolean(webui["AuthDisabled"]);
+                var hash = webui.TryGetValue("PasswordHash", out var passwordHashVal)
+                    ? passwordHashVal?.ToString() ?? ""
+                    : "";
+                webui["LocalAuthEnabled"] = !authDisabled && !string.IsNullOrWhiteSpace(hash);
+                changed = true;
             }
 
             // Normalize Theme casing
@@ -1373,6 +1383,14 @@ public class ConfigurationLoader
 
         if (table.TryGetValue("PasswordHash", out var passwordHash))
             webui.PasswordHash = passwordHash?.ToString() ?? "";
+
+        if (!table.ContainsKey("LocalAuthEnabled")
+            && !table.ContainsKey("AuthMode")
+            && !webui.AuthDisabled
+            && !string.IsNullOrWhiteSpace(webui.PasswordHash))
+        {
+            webui.LocalAuthEnabled = true;
+        }
 
         if (table.TryGetValue("LiveArr", out var liveArr))
             webui.LiveArr = Convert.ToBoolean(liveArr);
@@ -2100,7 +2118,7 @@ public class ConfigurationLoader
             sb.AppendLine($"MaxSeedingTime = {tracker.MaxSeedingTime ?? -1}");
             sb.AppendLine($"HitAndRunMode = \"{tracker.HitAndRunMode ?? "disabled"}\"");
             sb.AppendLine($"MinSeedRatio = {tracker.MinSeedRatio ?? 1.0}");
-            sb.AppendLine($"MinSeedingTimeDays = {tracker.MinSeedingTimeDays ?? 0}");
+            sb.AppendLine($"MinSeedingTime = {tracker.MinSeedingTimeDays ?? 0}");
             sb.AppendLine($"HitAndRunPartialSeedRatio = {tracker.HitAndRunPartialSeedRatio ?? 1.0}");
             sb.AppendLine($"TrackerUpdateBuffer = {tracker.TrackerUpdateBuffer ?? 0}");
             sb.AppendLine($"HitAndRunMinimumDownloadPercent = {tracker.HitAndRunMinimumDownloadPercent ?? 10}");

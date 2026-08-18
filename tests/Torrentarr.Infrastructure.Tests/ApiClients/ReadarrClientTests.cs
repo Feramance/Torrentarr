@@ -73,6 +73,31 @@ public sealed class ReadarrClientTests : IDisposable
     }
 
     [Fact]
+    public async Task UpdateAuthorQualityProfileAsync_PreservesUnmappedAuthorFields()
+    {
+        var client = new ReadarrClient(_baseUrl.TrimEnd('/'), "test-key");
+        var ok = await client.UpdateAuthorQualityProfileAsync(1, 9);
+
+        ok.Should().BeTrue();
+        _lastPath.Should().StartWith("/api/v1/author/1");
+        _lastBody.Should().Contain("\"qualityProfileId\":9");
+        _lastBody.Should().Contain("\"metadataProfileId\":7");
+        _lastBody.Should().Contain("\"tags\":[3,8]");
+        _lastBody.Should().Contain("\"monitorNewItems\":\"all\"");
+    }
+
+    [Fact]
+    public void ApplyAuthorQualityProfileId_OnlyChangesQualityProfile()
+    {
+        var author = Newtonsoft.Json.Linq.JObject.Parse(
+            """{"id":1,"qualityProfileId":1,"metadataProfileId":7,"tags":[3]}""");
+        ReadarrClient.ApplyAuthorQualityProfileId(author, 4);
+        author.Value<int>("qualityProfileId").Should().Be(4);
+        author.Value<int>("metadataProfileId").Should().Be(7);
+        author["tags"]!.Should().HaveCount(1);
+    }
+
+    [Fact]
     public async Task GetSystemInfoAsync_ReturnsVersion()
     {
         var client = new ReadarrClient(_baseUrl.TrimEnd('/'), "test-key");
@@ -131,6 +156,14 @@ public sealed class ReadarrClientTests : IDisposable
                 json = """{"version":"10.0.0.1"}""";
             else if (_lastPath.StartsWith("/api/v1/qualityprofile", StringComparison.Ordinal))
                 json = """[{"id":1,"name":"Standard"}]""";
+            else if (_lastPath.StartsWith("/api/v1/author/", StringComparison.Ordinal))
+            {
+                if (string.Equals(ctx.Request.HttpMethod, "PUT", StringComparison.OrdinalIgnoreCase)
+                    && !string.IsNullOrEmpty(_lastBody))
+                    json = _lastBody;
+                else
+                    json = """{"id":1,"authorName":"Ada","monitored":true,"qualityProfileId":1,"metadataProfileId":7,"tags":[3,8],"monitorNewItems":"all"}""";
+            }
             else if (_lastPath.StartsWith("/api/v1/author", StringComparison.Ordinal))
                 json = """[{"id":1,"authorName":"Ada","monitored":true}]""";
             else if (_lastPath.StartsWith("/api/v1/book", StringComparison.Ordinal))

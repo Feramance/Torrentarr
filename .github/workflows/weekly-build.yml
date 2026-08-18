@@ -51,7 +51,7 @@ jobs:
 
         for number in "${numbers[@]}"; do
           meta=$(gh pr view "${number}" --repo "${{ github.repository }}" \
-            --json title,labels,mergeable,body,author,headRefName,headRefOid,isCrossRepository,headRepositoryOwner,files \
+            --json title,labels,mergeable,body,author,headRefName,headRefOid,isCrossRepository,headRepositoryOwner,files,changedFiles \
             --jq '{
               title: .title,
               labels: ([.labels[].name] | join(",")),
@@ -62,7 +62,8 @@ jobs:
               headRefOid: .headRefOid,
               isCrossRepository: .isCrossRepository,
               headOwner: .headRepositoryOwner.login,
-              files: ([.files[].path] | join("\n"))
+              files: ([.files[].path] | join("\n")),
+              changedFiles: .changedFiles
             }')
           title=$(echo "${meta}" | jq -r '.title')
           labels=$(echo "${meta}" | jq -r '.labels')
@@ -74,6 +75,8 @@ jobs:
           is_cross=$(echo "${meta}" | jq -r '.isCrossRepository')
           head_owner=$(echo "${meta}" | jq -r '.headOwner')
           files=$(echo "${meta}" | jq -r '.files // ""')
+          changed_files=$(echo "${meta}" | jq -r '.changedFiles // 0')
+          file_count=$(printf '%s\n' "${files}" | grep -c . || true)
 
           echo "Evaluating Dependabot PR #${number}: ${title} (${head_sha})"
 
@@ -101,6 +104,11 @@ jobs:
 
           if echo "${files}" | grep -E '^\.github/(workflows|actions)/'; then
             echo "Skipping PR #${number} (changes GitHub Actions workflow or action files)."
+            continue
+          fi
+
+          if [[ "${changed_files}" -gt "${file_count}" ]]; then
+            echo "Skipping PR #${number}: file list truncated (${file_count}/${changed_files}); cannot verify workflow paths."
             continue
           fi
 

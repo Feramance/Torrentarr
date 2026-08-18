@@ -1722,10 +1722,14 @@ public class ArrSyncService
             return null;
 
         var root = Path.GetFullPath(outputPath);
-        var target = Path.GetFullPath(Path.Combine(root, title));
         var comparison = OperatingSystem.IsWindows()
             ? StringComparison.OrdinalIgnoreCase
             : StringComparison.Ordinal;
+        var volumeRoot = Path.GetPathRoot(root);
+        if (string.IsNullOrEmpty(volumeRoot) || string.Equals(root, volumeRoot, comparison))
+            return null;
+
+        var target = Path.GetFullPath(Path.Combine(root, title));
         var prefix = root.EndsWith(Path.DirectorySeparatorChar)
             ? root
             : root + Path.DirectorySeparatorChar;

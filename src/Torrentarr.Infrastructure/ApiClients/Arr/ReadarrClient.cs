@@ -1,4 +1,5 @@
 using Newtonsoft.Json;
+using Newtonsoft.Json.Linq;
 using RestSharp;
 
 namespace Torrentarr.Infrastructure.ApiClients.Arr;
@@ -109,13 +110,38 @@ public class ReadarrClient
 
     public async Task<bool> UpdateAuthorQualityProfileAsync(int authorId, int qualityProfileId, CancellationToken ct = default)
     {
-        var author = await GetAuthorAsync(authorId, ct);
-        if (author == null)
+        var get = new RestRequest($"/api/v1/author/{authorId}", Method.Get);
+        AddApiKeyHeader(get);
+        var getResponse = await ArrClientResponse.ExecuteAsync(_client, get, ct);
+        if (!getResponse.IsSuccessful || string.IsNullOrEmpty(getResponse.Content))
             return false;
 
-        author.QualityProfileId = qualityProfileId;
-        var updated = await UpdateAuthorAsync(author, ct);
-        return updated != null;
+        JObject author;
+        try
+        {
+            author = JObject.Parse(getResponse.Content);
+        }
+        catch (JsonException)
+        {
+            return false;
+        }
+
+        ApplyAuthorQualityProfileId(author, qualityProfileId);
+
+        var put = new RestRequest($"/api/v1/author/{authorId}", Method.Put);
+        AddApiKeyHeader(put);
+        put.AddStringBody(author.ToString(Formatting.None), DataFormat.Json);
+        var putResponse = await ArrClientResponse.ExecuteAsync(_client, put, ct);
+        return putResponse.IsSuccessful;
+    }
+
+    /// <summary>
+    /// Sets <c>qualityProfileId</c> on a raw Readarr author payload so a PUT keeps
+    /// metadata profile, tags, and other fields that a sparse DTO would drop.
+    /// </summary>
+    internal static void ApplyAuthorQualityProfileId(JObject author, int qualityProfileId)
+    {
+        author["qualityProfileId"] = qualityProfileId;
     }
 
     public async Task<ReadarrQueueResponse> GetQueueAsync(int page = 1, int pageSize = 1000, CancellationToken ct = default)

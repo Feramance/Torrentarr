@@ -139,7 +139,7 @@ MaxUploadRatio = 2.0
 # Maximum seeding time in seconds (-1 = unlimited)
 MaxSeedingTime = 604800
 
-# Remove mode: 0=Never, 1=IfMetUploadLimit, 2=Always
+# Remove mode: -1=Never, 1=Ratio, 2=Time, 3=OR, 4=AND
 RemoveMode = 1
 
 # Enable Hit & Run protection
@@ -148,8 +148,8 @@ HitAndRunMode = "and"
 # Minimum seed ratio for HnR protection
 MinSeedRatio = 1.0
 
-# Minimum seed time for HnR protection (seconds)
-MinSeedTime = 86400
+# Minimum seed time for HnR protection (days)
+MinSeedingTimeDays = 1
 
 # Example Radarr instance for movies
 [Radarr-Movies]

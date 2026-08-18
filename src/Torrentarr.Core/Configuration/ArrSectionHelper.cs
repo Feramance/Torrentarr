@@ -98,7 +98,7 @@ public static class ArrSectionHelper
                 @"\bscreens?\b",
                 @"\bspecials?\b",
                 @"\bova\b",
-                @"\bnc(ed|op)?(\\d+)?\b",
+                @"\bnc(ed|op)?(\d+)?\b",
             ];
         }
 
@@ -118,7 +118,7 @@ public static class ArrSectionHelper
             @"\bfeaturettes?\b",
             @"\bsamples?\b",
             @"\bscreens?\b",
-            @"\bnc(ed|op)?(\\d+)?\b",
+            @"\bnc(ed|op)?(\d+)?\b",
         ];
     }
 
@@ -138,8 +138,8 @@ public static class ArrSectionHelper
 
         return
         [
-            @"\bncop\\d+?\b",
-            @"\bnced\\d+?\b",
+            @"\bncop\d+?\b",
+            @"\bnced\d+?\b",
             @"\bsample\b",
             @"brarbg.com\b",
             @"\btrailer\b",

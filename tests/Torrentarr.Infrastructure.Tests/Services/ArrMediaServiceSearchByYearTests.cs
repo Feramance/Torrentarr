@@ -40,8 +40,8 @@ public class ArrMediaServiceSearchByYearTests
         var cursor = new SearchYearCursor();
         var (svc, db) = Create(cursor);
         db.Movies.AddRange(
-            new MoviesFilesModel { Title = "Old", ArrInstance = "Radarr", Year = 2010, ArrId = 1 },
-            new MoviesFilesModel { Title = "New", ArrInstance = "Radarr", Year = 2020, ArrId = 2 });
+            new MoviesFilesModel { Title = "Old", ArrInstance = "Radarr", Year = 2010, ArrId = 1, Monitored = true },
+            new MoviesFilesModel { Title = "New", ArrInstance = "Radarr", Year = 2020, ArrId = 2, Monitored = true });
         await db.SaveChangesAsync();
 
         var arr = new ArrInstanceConfig { Type = "radarr", Search = new SearchConfig { SearchByYear = true } };
@@ -69,5 +69,40 @@ public class ArrMediaServiceSearchByYearTests
 
         var filtered = await svc.ApplySearchByYearAsync("Lidarr", arr, candidates, CancellationToken.None);
         filtered.Should().HaveCount(2);
+    }
+
+    [Fact]
+    public async Task CollectYears_IgnoresUnmonitoredRows()
+    {
+        var (svc, db) = Create(new SearchYearCursor());
+        db.Movies.AddRange(
+            new MoviesFilesModel { Title = "Unmon", ArrInstance = "Radarr", Year = 1999, ArrId = 1, Monitored = false },
+            new MoviesFilesModel { Title = "Mon", ArrInstance = "Radarr", Year = 2020, ArrId = 2, Monitored = true });
+        db.Books.AddRange(
+            new BookFilesModel
+            {
+                Title = "OldUnmon",
+                ArrInstance = "Readarr",
+                ArrId = 1,
+                Monitored = false,
+                ReleaseDate = new DateTime(2001, 1, 1, 0, 0, 0, DateTimeKind.Utc)
+            },
+            new BookFilesModel
+            {
+                Title = "NewMon",
+                ArrInstance = "Readarr",
+                ArrId = 2,
+                Monitored = true,
+                ReleaseDate = new DateTime(2018, 6, 1, 0, 0, 0, DateTimeKind.Utc)
+            });
+        await db.SaveChangesAsync();
+
+        var movieYears = await svc.CollectYearsAsync(
+            "Radarr", new ArrInstanceConfig { Type = "radarr" }, CancellationToken.None);
+        movieYears.Should().Equal(2020);
+
+        var bookYears = await svc.CollectYearsAsync(
+            "Readarr", new ArrInstanceConfig { Type = "readarr" }, CancellationToken.None);
+        bookYears.Should().Equal(2018);
     }
 }

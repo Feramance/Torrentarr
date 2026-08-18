@@ -37,4 +37,6 @@ public static class MetaForceRateLimiter
             return true;
         }
     }
+
+    internal static void ResetForTests() => Attempts.Clear();
 }

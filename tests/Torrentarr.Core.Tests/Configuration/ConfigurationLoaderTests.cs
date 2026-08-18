@@ -762,6 +762,31 @@ public class ConfigurationLoaderTests : IDisposable
     }
 
     [Fact]
+    public void SaveConfig_WritesTrackerMinSeedingTimeAlias()
+    {
+        WriteToml("""
+            [Settings]
+            LoopSleepTimer = 5
+
+            [qBit]
+            Host = "localhost"
+
+            [[qBit.Trackers]]
+            URI = "https://tracker.example.com/announce"
+            MinSeedingTime = 2
+            """);
+
+        var loader = new ConfigurationLoader(_tempFilePath);
+        var config = loader.Load();
+        loader.SaveConfig(config);
+
+        var content = File.ReadAllText(_tempFilePath);
+        content.Should().Contain("MinSeedingTime = 2");
+        new ConfigurationLoader(_tempFilePath).Load()
+            .QBitInstances["qBit"].Trackers[0].MinSeedingTimeDays.Should().Be(2);
+    }
+
+    [Fact]
     public void SaveConfig_PreservesChangeMeQBitPlaceholderSection()
     {
         WriteToml("""
@@ -819,6 +844,58 @@ public class ConfigurationLoaderTests : IDisposable
 
         config.WebUI.AuthDisabled.Should().BeFalse("new installs get auth enabled by default");
         config.WebUI.LocalAuthEnabled.Should().BeFalse("qBitrr LocalAuthEnabled defaults to false");
+    }
+
+    [Fact]
+    public void Load_OmittedLocalAuthEnabled_KeepsLocalLoginWhenPasswordHashSet()
+    {
+        WriteToml("""
+            [Settings]
+            LoopSleepTimer = 5
+
+            [WebUI]
+            AuthDisabled = false
+            Username = "admin"
+            PasswordHash = "$2a$11$abcdefghijklmnopqrstuuABCDEFGHIJKLMNOPQRSTUV"
+            """);
+
+        var loader = new ConfigurationLoader(_tempFilePath);
+        var config = loader.Load();
+
+        config.WebUI.LocalAuthEnabled.Should().BeTrue();
+        File.ReadAllText(_tempFilePath).Should().Contain("LocalAuthEnabled = true");
+    }
+
+    [Fact]
+    public void Load_OmittedLocalAuthEnabled_StaysFalseWithoutPasswordHash()
+    {
+        WriteToml("""
+            [Settings]
+            LoopSleepTimer = 5
+
+            [WebUI]
+            AuthDisabled = false
+            """);
+
+        var config = new ConfigurationLoader(_tempFilePath).Load();
+        config.WebUI.LocalAuthEnabled.Should().BeFalse();
+    }
+
+    [Fact]
+    public void Load_AuthModeTokenOnly_KeepsLocalAuthDisabledWhenPasswordHashSet()
+    {
+        WriteToml("""
+            [Settings]
+            LoopSleepTimer = 5
+
+            [WebUI]
+            AuthMode = "TokenOnly"
+            PasswordHash = "$2a$11$abcdefghijklmnopqrstuuABCDEFGHIJKLMNOPQRSTUV"
+            """);
+
+        var config = new ConfigurationLoader(_tempFilePath).Load();
+        config.WebUI.AuthDisabled.Should().BeFalse();
+        config.WebUI.LocalAuthEnabled.Should().BeFalse();
     }
 
     [Fact]

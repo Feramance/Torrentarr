@@ -15,7 +15,7 @@ public sealed class OverseerrRequestFetcher
 {
     private static readonly HttpClient VerifyingClient = TlsSkipHelper.CreateHttpClient(false);
     private static readonly HttpClient SkippingClient = TlsSkipHelper.CreateHttpClient(true);
-    private static readonly ConcurrentDictionary<int, DateTime> ReleaseDateCache = new();
+    private static readonly ConcurrentDictionary<string, DateTime> ReleaseDateCache = new();
 
     private readonly ILogger _logger;
     private readonly HttpClient? _httpOverride;
@@ -106,7 +106,8 @@ public sealed class OverseerrRequestFetcher
         DateTime now,
         CancellationToken ct)
     {
-        if (ReleaseDateCache.TryGetValue(tmdbId, out var cached))
+        var cacheKey = $"{mediaType}:{tmdbId}";
+        if (ReleaseDateCache.TryGetValue(cacheKey, out var cached))
             return cached <= now;
 
         try
@@ -128,7 +129,7 @@ public sealed class OverseerrRequestFetcher
                 System.Globalization.DateTimeStyles.AssumeUniversal | System.Globalization.DateTimeStyles.AdjustToUniversal);
             if (date > now)
                 return false;
-            ReleaseDateCache[tmdbId] = date;
+            ReleaseDateCache[cacheKey] = date;
             return true;
         }
         catch (Exception ex)
