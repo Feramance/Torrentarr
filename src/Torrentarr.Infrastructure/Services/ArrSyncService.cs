@@ -1695,12 +1695,12 @@ public class ArrSyncService
 
     internal static void CleanupBlocklistedPath(string? outputPath, string? title)
     {
-        if (string.IsNullOrWhiteSpace(outputPath) || string.IsNullOrWhiteSpace(title))
+        var target = ResolveBlocklistedCleanupTarget(outputPath, title);
+        if (target == null)
             return;
 
         try
         {
-            var target = Path.Combine(outputPath, title);
             if (Directory.Exists(target))
                 Directory.Delete(target, recursive: true);
             else if (File.Exists(target))
@@ -1710,5 +1710,31 @@ public class ArrSyncService
         {
             // qBitrr swallows in-use / permission errors while logging debug.
         }
+    }
+
+    /// <summary>
+    /// Resolves Arr queue outputPath+title to a path that stays under outputPath.
+    /// Rooted titles and <c>..</c> segments that escape the download folder return null.
+    /// </summary>
+    internal static string? ResolveBlocklistedCleanupTarget(string? outputPath, string? title)
+    {
+        if (string.IsNullOrWhiteSpace(outputPath) || string.IsNullOrWhiteSpace(title))
+            return null;
+
+        var root = Path.GetFullPath(outputPath);
+        var target = Path.GetFullPath(Path.Combine(root, title));
+        var comparison = OperatingSystem.IsWindows()
+            ? StringComparison.OrdinalIgnoreCase
+            : StringComparison.Ordinal;
+        var prefix = root.EndsWith(Path.DirectorySeparatorChar)
+            ? root
+            : root + Path.DirectorySeparatorChar;
+
+        if (string.Equals(target, root, comparison))
+            return null;
+        if (!target.StartsWith(prefix, comparison))
+            return null;
+
+        return target;
     }
 }

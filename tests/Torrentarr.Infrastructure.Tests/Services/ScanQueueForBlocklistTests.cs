@@ -258,4 +258,34 @@ public class ScanQueueForBlocklistTests
                 Directory.Delete(dir, recursive: true);
         }
     }
+
+    [Fact]
+    public void ResolveBlocklistedCleanupTarget_RejectsRootedTitle()
+    {
+        var dir = Path.GetFullPath(Path.Combine(Path.GetTempPath(), $"torrentarr-bl-{Guid.NewGuid():N}"));
+        var outside = Path.GetFullPath(Path.Combine(Path.GetTempPath(), $"torrentarr-out-{Guid.NewGuid():N}.txt"));
+
+        ArrSyncService.ResolveBlocklistedCleanupTarget(dir, outside).Should().BeNull();
+        ArrSyncService.ResolveBlocklistedCleanupTarget(dir, Path.DirectorySeparatorChar + "etc" + Path.DirectorySeparatorChar + "passwd")
+            .Should().BeNull();
+    }
+
+    [Fact]
+    public void ResolveBlocklistedCleanupTarget_RejectsParentTraversal()
+    {
+        var dir = Path.GetFullPath(Path.Combine(Path.GetTempPath(), $"torrentarr-bl-{Guid.NewGuid():N}"));
+        ArrSyncService.ResolveBlocklistedCleanupTarget(dir, ".." + Path.DirectorySeparatorChar + "passwd")
+            .Should().BeNull();
+        ArrSyncService.ResolveBlocklistedCleanupTarget(dir, Path.Combine("nested", "..", "..", "passwd"))
+            .Should().BeNull();
+    }
+
+    [Fact]
+    public void ResolveBlocklistedCleanupTarget_AllowsRelativeChild()
+    {
+        var dir = Path.GetFullPath(Path.Combine(Path.GetTempPath(), $"torrentarr-bl-{Guid.NewGuid():N}"));
+        var expected = Path.GetFullPath(Path.Combine(dir, "folder", "bad.mkv"));
+        ArrSyncService.ResolveBlocklistedCleanupTarget(dir, Path.Combine("folder", "bad.mkv"))
+            .Should().Be(expected);
+    }
 }
