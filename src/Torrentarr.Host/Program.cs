@@ -169,6 +169,7 @@ try
     builder.Services.AddScoped<ArrSyncService>();
     builder.Services.AddScoped<IArrImportService, ArrImportService>();
     builder.Services.AddScoped<ISeedingService, SeedingService>();
+    builder.Services.AddSingleton<IMediaValidationService, MediaValidationService>();
     builder.Services.AddScoped<ITorrentProcessor, TorrentProcessor>();
     builder.Services.AddScoped<IArrMediaService, ArrMediaService>();
     builder.Services.AddScoped<ISearchExecutor, SearchExecutor>();

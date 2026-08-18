@@ -30,6 +30,7 @@ public class TorrentProcessor : ITorrentProcessor
     private readonly IArrImportService? _importService;
     private readonly ISeedingService? _seedingService;
     private readonly IImportPathTracker? _pathTracker;
+    private readonly IMediaValidationService? _mediaValidation;
     private readonly DatabaseRestartCoordinator _restartCoordinator;
 
     private readonly HashSet<string> _specialCategories;
@@ -43,7 +44,8 @@ public class TorrentProcessor : ITorrentProcessor
         DatabaseRestartCoordinator restartCoordinator,
         IArrImportService? importService = null,
         ISeedingService? seedingService = null,
-        IImportPathTracker? pathTracker = null)
+        IImportPathTracker? pathTracker = null,
+        IMediaValidationService? mediaValidation = null)
     {
         _logger = logger;
         _qbitManager = qbitManager;
@@ -54,6 +56,7 @@ public class TorrentProcessor : ITorrentProcessor
         _importService = importService;
         _seedingService = seedingService;
         _pathTracker = pathTracker;
+        _mediaValidation = mediaValidation;
 
         _specialCategories = new HashSet<string>(StringComparer.OrdinalIgnoreCase)
         {
@@ -280,6 +283,11 @@ public class TorrentProcessor : ITorrentProcessor
 
                 if (!string.IsNullOrEmpty(contentPath))
                     _pathTracker?.MarkScanned(contentPath, hash);
+
+                var arrCfg = _config.ArrInstances.Values.FirstOrDefault(i =>
+                    i.Category.Equals(libraryEntry.Category, StringComparison.OrdinalIgnoreCase));
+                if (arrCfg?.Torrent.AutoDelete == true && !string.IsNullOrEmpty(contentPath))
+                    await RunPostImportAutoDeleteCleanupAsync(torrent, arrCfg, contentPath, cancellationToken);
             }
             else
             {
@@ -292,6 +300,78 @@ public class TorrentProcessor : ITorrentProcessor
             _logger.LogWarning("ArrImportService not available, marking as imported without triggering");
             libraryEntry.Imported = true;
             await _dbContext.SaveChangesWithRetryAsync(_logger, _restartCoordinator, cancellationToken: cancellationToken);
+        }
+    }
+
+    /// <summary>
+    /// qBitrr folder_cleanup: after Downloaded*Scan, if AutoDelete and the content folder has
+    /// zero valid (probeable) media, blocklist the queue item and delete local files.
+    /// Missing ffprobe and ebook/comic suffixes count as valid. Not FailedCategory.
+    /// </summary>
+    internal async Task RunPostImportAutoDeleteCleanupAsync(
+        TorrentInfo torrent,
+        ArrInstanceConfig arrCfg,
+        string contentPath,
+        CancellationToken ct)
+    {
+        if (!arrCfg.Torrent.AutoDelete || _mediaValidation == null)
+            return;
+
+        var allowlist = arrCfg.Torrent.FileExtensionAllowlist.Count > 0
+            ? (IReadOnlyCollection<string>)arrCfg.Torrent.FileExtensionAllowlist
+            : null;
+
+        var hasValidMedia = false;
+        if (Directory.Exists(contentPath))
+        {
+            var dirResult = await _mediaValidation.ValidateDirectoryAsync(contentPath, ct, allowlist);
+            hasValidMedia = dirResult.HasValidMedia;
+        }
+        else if (File.Exists(contentPath))
+        {
+            if (allowlist != null && !MediaValidationService.MatchesExtensionAllowlist(contentPath, allowlist))
+                hasValidMedia = false;
+            else
+            {
+                var fileResult = await _mediaValidation.ValidateFileAsync(contentPath, ct);
+                hasValidMedia = fileResult.IsValid;
+            }
+        }
+        else
+        {
+            return;
+        }
+
+        if (hasValidMedia)
+            return;
+
+        _logger.LogWarning(
+            "Post-import AutoDelete: no valid media in {Path} for [{Name}] ({Hash}) — blocklisting and deleting files",
+            contentPath, torrent.Name, torrent.Hash);
+
+        if (_importService != null)
+            await _importService.BlocklistAndReSearchAsync(torrent.Hash, torrent.Category, ct);
+
+        TryDeleteLocalContent(contentPath);
+    }
+
+    private void TryDeleteLocalContent(string contentPath)
+    {
+        try
+        {
+            var full = Path.GetFullPath(contentPath);
+            var root = Path.GetPathRoot(full);
+            if (string.Equals(full, root, StringComparison.OrdinalIgnoreCase))
+                return;
+
+            if (Directory.Exists(full))
+                Directory.Delete(full, recursive: true);
+            else if (File.Exists(full))
+                File.Delete(full);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(ex, "Failed to delete local content after AutoDelete cleanup: {Path}", contentPath);
         }
     }
 

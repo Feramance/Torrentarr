@@ -106,12 +106,6 @@ public class ArrMediaService : IArrMediaService
         return await _searchExecutor.ExecuteSearchesAsync(instanceName, candidates, cancellationToken);
     }
 
-    public async Task<bool> IsQualityUpgradeAsync(int arrId, string quality, CancellationToken cancellationToken = default)
-    {
-        await Task.CompletedTask;
-        return false;
-    }
-
     public async Task<List<WantedMedia>> GetWantedMediaAsync(string category, CancellationToken cancellationToken = default)
     {
         var wanted = new List<WantedMedia>();

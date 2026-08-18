@@ -21,7 +21,13 @@ Primary tracking artifacts:
 ### Phase 1 — Critical correctness
 - **Import completion parity (`5.12.7`):** `TorrentProcessor` no longer marks torrents imported when the Arr scan is merely queued. It now waits for `IArrImportService.IsImportedAsync()` to confirm the item has left Arr's queue before persisting `Imported = true` and applying the imported tag / AutoDelete follow-up.
 
-### Phase 2 — Documentation and config baseline
+### Implemented later (qBitrr 5.14.3-1 path-report closeout)
+- Post-import FFprobe AutoDelete cleanup (`folder_cleanup`), Host DI, optional `FFprobeAutoUpdate`.
+- `SearchMissing` master switch for search loop and Ombi/Overseerr request marking.
+- Explicit `loop_completed` (reset `Searched` and `Upgrade`).
+- Lidarr `QualityMet` from `percentOfTracks` + cutoff/`upgradeAllowed`.
+- Removed unused `IsQualityUpgradeAsync`.
+- In-process dual torrent/search tasks in `ArrWorkerManager` (Host does not spawn `Torrentarr.Workers`).
 - `ExpectedConfigVersion` / default config references aligned to **`6.14.3`**.
 - Readarr (`[Readarr-*]`), `AutoUpdateChannel`, fractional durations, qBit init retry, seeding `-1` merge, and existing-DB table creation via `ManualSqliteMigrations`.
 - `config.example.toml` now surfaces `MatchSubcategories` in the primary qBit example for parity with upstream config docs.
@@ -33,18 +39,21 @@ Backend tests (`dotnet test --filter "Category!=Live"`):
 
 | Project | Passed |
 | --- | --- |
-| Torrentarr.Core.Tests | 202 |
-| Torrentarr.Host.Tests | 209 |
-| Torrentarr.Infrastructure.Tests | 425 |
-| **Total** | **836** |
+| Torrentarr.Core.Tests | 218 |
+| Torrentarr.Host.Tests | 218 |
+| Torrentarr.Infrastructure.Tests | 483 |
+| **Total** | **919** |
 
-Frontend tests (`cd webui && npx vitest run`): exit code 0 (167 tests).
+Frontend tests (`cd webui && npx vitest run`): not re-run this pass (no frontend changes). Prior closeout: exit code 0 (167 tests).
 
 OpenAPI drift should now be run against latest upstream `master` (or an explicit `QBITRR_OPENAPI_REF` override) after regenerating `docs/assets/openapi.json`.
 
 Focused regression checks added/updated:
 
-- `TorrentProcessorTests` — import remains pending until Arr confirms completion; imported state flips only after queue exit
+- `TorrentProcessorTests` / `TorrentProcessorAutoDeleteTests` — post-import AutoDelete FFprobe cleanup; import remains pending until Arr confirms completion
+- `ArrWorkerManagerTests` — `SearchMissing` master switch, explicit `loop_completed` reset of Searched+Upgrade, in-process dual loops
+- `ArrSyncServiceTests` — Lidarr `QualityMet` from percentOfTracks + cutoff/`upgradeAllowed`
+- `MediaValidationServiceTests` — missing ffprobe treated as valid; ebook skip; allowlist
 
 ## Matrix Status
 

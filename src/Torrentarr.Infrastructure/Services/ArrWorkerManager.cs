@@ -16,9 +16,9 @@ using Serilog.Context;
 namespace Torrentarr.Infrastructure.Services;
 
 /// <summary>
-/// Background service that manages one async worker per configured Arr instance.
-/// Each worker: syncs DB from Arr API → processes torrents → searches missing media → sleeps.
-/// Workers can be restarted individually via RestartWorkerAsync (called by restart endpoints).
+/// Background service that manages in-process torrent and search tasks per configured Arr instance.
+/// Torrent and search loops run concurrently so search is not blocked behind torrent processing.
+/// Tasks can be restarted individually via RestartWorkerAsync (called by restart endpoints).
 /// </summary>
 public class ArrWorkerManager : BackgroundService
 {
@@ -36,9 +36,11 @@ public class ArrWorkerManager : BackgroundService
         new(StringComparer.OrdinalIgnoreCase);
 
     // §2.6: Per-instance timers for RSS Sync and Refresh Monitored Downloads
-    /// <summary>§1.3: Tracks whether searches were triggered last cycle per instance (for loop-completion detection).</summary>
-    private readonly ConcurrentDictionary<string, bool> _hadSearchesLastCycle =
+    /// <summary>qBitrr loop_completed: candidate list was fully drained on the previous search tick.</summary>
+    private readonly ConcurrentDictionary<string, bool> _loopCompleted =
         new(StringComparer.OrdinalIgnoreCase);
+
+    private int _ffprobeUpdateAttempted;
 
     private readonly ConcurrentDictionary<string, DateTime> _lastRssSyncTime =
         new(StringComparer.OrdinalIgnoreCase);
@@ -234,7 +236,7 @@ public class ArrWorkerManager : BackgroundService
             arrCfg.Search.DoUpgradeSearch,
             arrCfg.Search.QualityUnmetSearch,
             arrCfg.Search.CustomFormatUnmetSearch);
-        _logger.LogInformation("Search loop initialized successfully, entering main loop");
+        _logger.LogInformation("In-process torrent and search tasks initialized, entering loops");
 
         LogScriptConfig(instanceName, arrCfg);
 
@@ -273,115 +275,13 @@ public class ArrWorkerManager : BackgroundService
             _logger.LogWarning(ex, "Category/tag initialization failed for {Instance}", instanceName);
         }
 
-        // §2.5: Consecutive error counter for exponential backoff
-        int consecutiveErrors = 0;
+        await TryUpdateFFprobeAsync(ct);
 
         try
         {
-            while (!ct.IsCancellationRequested)
-            {
-                var loopStart = DateTime.UtcNow;
-
-                try
-                {
-                    // §2.4: Check connectivity before processing; sleep NoInternetSleepTimer on failure
-                    if (!await _connectivityService.IsConnectedAsync(ct))
-                    {
-                        _logger.LogWarning("No internet connectivity detected, skipping cycle. Sleeping {Seconds}s",
-                            _config.Settings.NoInternetSleepTimer);
-                        _stateManager.Update(searchStateName, s => s.Status = "Waiting for connectivity...");
-                        try { await Task.Delay(TimeSpan.FromSeconds(_config.Settings.NoInternetSleepTimer), ct); }
-                        catch (OperationCanceledException) { break; }
-                        continue;
-                    }
-
-                    // 1. Process torrents FIRST (qBitrr pattern: torrent monitoring before DB update)
-                    if (!arrCfg.SearchOnly)
-                    {
-                        _stateManager.Update(searchStateName, s => s.Status = "Processing torrents...");
-                        await RunTorrentProcessingAsync(instanceName, arrCfg, ct);
-                    }
-
-                    // 2. Sync DB from Arr API (after torrent processing, before search)
-                    // qBitrr 5.12.3 resets a separate search-loop timer after db_update() to avoid
-                    // Lidarr search starvation on huge libraries. Torrentarr uses a single worker loop
-                    // (sync then search in the same iteration, gated by SearchRequestsEvery) — no
-                    // RestartLoopException path exists here; search always follows sync in-order.
-                    _stateManager.Update(searchStateName, s => s.Status = "Syncing database...");
-                    _stateManager.Update(searchStateName, s => s.SearchSummary = "Updating database");
-                    await RunSyncAsync(instanceName, ct);
-
-                    // §2.6: RSS Sync + Refresh Monitored Downloads (timer-gated)
-                    await RunRssSyncIfDueAsync(instanceName, arrCfg, ct);
-                    await RunRefreshMonitoredDownloadsIfDueAsync(instanceName, arrCfg, ct);
-
-                    // 3. Search — throttled by SearchRequestsEvery (default 300s)
-                    if (!arrCfg.ProcessingOnly && ShouldRunSearch(instanceName, arrCfg))
-                    {
-                        _stateManager.Update(searchStateName, s => s.Status = "Searching...");
-                        var result = await RunSearchAsync(instanceName, arrCfg, ct);
-                        if (result != null)
-                        {
-                            _stateManager.Update(searchStateName, s =>
-                            {
-                                s.SearchSummary = $"{result.SearchesTriggered} searches triggered ({result.ItemsSearched} items)";
-                                s.SearchTimestamp = DateTime.UtcNow.ToString("o");
-                                s.MetricType = "search";
-                            });
-                            // §5: Persist search activity for Processes page across restarts
-                            try
-                            {
-                                using var scope = _scopeFactory.CreateScope();
-                                var db = scope.ServiceProvider.GetRequiredService<TorrentarrDbContext>();
-                                var existing = await db.SearchActivity.FindAsync([instanceName], ct);
-                                var ts = DateTime.UtcNow.ToString("o");
-                                var summary = $"{result.SearchesTriggered} searches triggered ({result.ItemsSearched} items)";
-                                if (existing != null)
-                                {
-                                    existing.Summary = summary;
-                                    existing.Timestamp = ts;
-                                }
-                                else
-                                    db.SearchActivity.Add(new SearchActivity { Category = instanceName, Summary = summary, Timestamp = ts });
-                                await db.SaveChangesAsync(ct);
-                            }
-                            catch (Exception ex)
-                            {
-                                _logger.LogTrace(ex, "Could not persist search activity for {Instance}", instanceName);
-                            }
-                        }
-                    }
-
-                    // §2.5: Successful cycle — reset backoff counter
-                    consecutiveErrors = 0;
-                }
-                catch (OperationCanceledException)
-                {
-                    break;
-                }
-                catch (Exception ex)
-                {
-                    // §2.5: Exponential backoff: Math.Min(2 × 1.5^n, 30) minutes
-                    consecutiveErrors++;
-                    var backoffMinutes = Math.Min(2.0 * Math.Pow(1.5, consecutiveErrors), 30.0);
-                    _logger.LogError(ex, "Worker loop error #{Count} for {Instance} — backing off {Minutes:F1} min",
-                        consecutiveErrors, instanceName, backoffMinutes);
-                    _stateManager.Update(searchStateName, s => s.Status = $"Error — retrying in {backoffMinutes:F0} min...");
-                    try { await Task.Delay(TimeSpan.FromMinutes(backoffMinutes), ct); }
-                    catch (OperationCanceledException) { break; }
-                    continue; // skip normal LoopSleepTimer sleep
-                }
-
-                // Sleep for remainder of the configured interval
-                var elapsed = (int)(DateTime.UtcNow - loopStart).TotalMilliseconds;
-                var sleepMs = Math.Max(0, _config.Settings.LoopSleepTimer * 1000 - elapsed);
-                if (sleepMs > 0)
-                {
-                    _stateManager.Update(searchStateName, s => s.Status = "Waiting for next cycle...");
-                    try { await Task.Delay(sleepMs, ct); }
-                    catch (OperationCanceledException) { break; }
-                }
-            }
+            await Task.WhenAll(
+                RunTorrentLoopAsync(instanceName, arrCfg, torrentStateName, ct),
+                RunSearchLoopAsync(instanceName, arrCfg, searchStateName, ct));
         }
         catch (OperationCanceledException) { }
         catch (Exception ex)
@@ -396,14 +296,192 @@ public class ArrWorkerManager : BackgroundService
         }
     }
 
-    private async Task RunSyncAsync(string instanceName, CancellationToken ct)
+    private async Task TryUpdateFFprobeAsync(CancellationToken ct)
+    {
+        if (Interlocked.Exchange(ref _ffprobeUpdateAttempted, 1) != 0)
+            return;
+        if (!_config.Settings.FFprobeAutoUpdate)
+            return;
+
+        try
+        {
+            using var scope = _scopeFactory.CreateScope();
+            var media = scope.ServiceProvider.GetService<IMediaValidationService>();
+            if (media == null)
+                return;
+            await media.UpdateFFprobeAsync(ct);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(ex, "FFprobe auto-update failed");
+        }
+    }
+
+    private async Task RunTorrentLoopAsync(
+        string instanceName, ArrInstanceConfig arrCfg, string torrentStateName, CancellationToken ct)
+    {
+        int consecutiveErrors = 0;
+        try
+        {
+            while (!ct.IsCancellationRequested)
+            {
+                var loopStart = DateTime.UtcNow;
+                try
+                {
+                    if (!await _connectivityService.IsConnectedAsync(ct))
+                    {
+                        _logger.LogWarning("No internet connectivity detected, skipping torrent cycle. Sleeping {Seconds}s",
+                            _config.Settings.NoInternetSleepTimer);
+                        _stateManager.Update(torrentStateName, s => s.Status = "Waiting for connectivity...");
+                        try { await Task.Delay(TimeSpan.FromSeconds(_config.Settings.NoInternetSleepTimer), ct); }
+                        catch (OperationCanceledException) { break; }
+                        continue;
+                    }
+
+                    if (!arrCfg.SearchOnly)
+                    {
+                        _stateManager.Update(torrentStateName, s => s.Status = "Processing torrents...");
+                        await RunTorrentProcessingAsync(instanceName, arrCfg, ct);
+                    }
+
+                    await RunRssSyncIfDueAsync(instanceName, arrCfg, ct);
+                    await RunRefreshMonitoredDownloadsIfDueAsync(instanceName, arrCfg, ct);
+                    consecutiveErrors = 0;
+                }
+                catch (OperationCanceledException)
+                {
+                    break;
+                }
+                catch (Exception ex)
+                {
+                    consecutiveErrors++;
+                    var backoffMinutes = Math.Min(2.0 * Math.Pow(1.5, consecutiveErrors), 30.0);
+                    _logger.LogError(ex, "Torrent loop error #{Count} for {Instance} — backing off {Minutes:F1} min",
+                        consecutiveErrors, instanceName, backoffMinutes);
+                    _stateManager.Update(torrentStateName, s => s.Status = $"Error — retrying in {backoffMinutes:F0} min...");
+                    try { await Task.Delay(TimeSpan.FromMinutes(backoffMinutes), ct); }
+                    catch (OperationCanceledException) { break; }
+                    continue;
+                }
+
+                await SleepRemainderAsync(loopStart, torrentStateName, ct);
+            }
+        }
+        catch (OperationCanceledException) { }
+    }
+
+    private async Task RunSearchLoopAsync(
+        string instanceName, ArrInstanceConfig arrCfg, string searchStateName, CancellationToken ct)
+    {
+        int consecutiveErrors = 0;
+        try
+        {
+            while (!ct.IsCancellationRequested)
+            {
+                var loopStart = DateTime.UtcNow;
+                try
+                {
+                    if (!await _connectivityService.IsConnectedAsync(ct))
+                    {
+                        _logger.LogWarning("No internet connectivity detected, skipping search cycle. Sleeping {Seconds}s",
+                            _config.Settings.NoInternetSleepTimer);
+                        _stateManager.Update(searchStateName, s => s.Status = "Waiting for connectivity...");
+                        try { await Task.Delay(TimeSpan.FromSeconds(_config.Settings.NoInternetSleepTimer), ct); }
+                        catch (OperationCanceledException) { break; }
+                        continue;
+                    }
+
+                    _stateManager.Update(searchStateName, s =>
+                    {
+                        s.Status = "Syncing database...";
+                        s.SearchSummary = "Updating database";
+                    });
+                    await RunSyncAsync(instanceName, arrCfg, ct);
+
+                    if (!arrCfg.ProcessingOnly && ShouldRunSearch(instanceName, arrCfg))
+                    {
+                        _stateManager.Update(searchStateName, s => s.Status = "Searching...");
+                        var result = await RunSearchAsync(instanceName, arrCfg, ct);
+                        if (result != null)
+                        {
+                            _stateManager.Update(searchStateName, s =>
+                            {
+                                s.SearchSummary = $"{result.SearchesTriggered} searches triggered ({result.ItemsSearched} items)";
+                                s.SearchTimestamp = DateTime.UtcNow.ToString("o");
+                                s.MetricType = "search";
+                            });
+                            await PersistSearchActivityAsync(instanceName, result, ct);
+                        }
+                    }
+
+                    consecutiveErrors = 0;
+                }
+                catch (OperationCanceledException)
+                {
+                    break;
+                }
+                catch (Exception ex)
+                {
+                    consecutiveErrors++;
+                    var backoffMinutes = Math.Min(2.0 * Math.Pow(1.5, consecutiveErrors), 30.0);
+                    _logger.LogError(ex, "Search loop error #{Count} for {Instance} — backing off {Minutes:F1} min",
+                        consecutiveErrors, instanceName, backoffMinutes);
+                    _stateManager.Update(searchStateName, s => s.Status = $"Error — retrying in {backoffMinutes:F0} min...");
+                    try { await Task.Delay(TimeSpan.FromMinutes(backoffMinutes), ct); }
+                    catch (OperationCanceledException) { break; }
+                    continue;
+                }
+
+                await SleepRemainderAsync(loopStart, searchStateName, ct);
+            }
+        }
+        catch (OperationCanceledException) { }
+    }
+
+    private async Task SleepRemainderAsync(DateTime loopStart, string stateName, CancellationToken ct)
+    {
+        var elapsed = (int)(DateTime.UtcNow - loopStart).TotalMilliseconds;
+        var sleepMs = Math.Max(0, _config.Settings.LoopSleepTimer * 1000 - elapsed);
+        if (sleepMs <= 0)
+            return;
+        _stateManager.Update(stateName, s => s.Status = "Waiting for next cycle...");
+        try { await Task.Delay(sleepMs, ct); }
+        catch (OperationCanceledException) { }
+    }
+
+    private async Task PersistSearchActivityAsync(string instanceName, SearchResult result, CancellationToken ct)
+    {
+        try
+        {
+            using var scope = _scopeFactory.CreateScope();
+            var db = scope.ServiceProvider.GetRequiredService<TorrentarrDbContext>();
+            var existing = await db.SearchActivity.FindAsync([instanceName], ct);
+            var ts = DateTime.UtcNow.ToString("o");
+            var summary = $"{result.SearchesTriggered} searches triggered ({result.ItemsSearched} items)";
+            if (existing != null)
+            {
+                existing.Summary = summary;
+                existing.Timestamp = ts;
+            }
+            else
+                db.SearchActivity.Add(new SearchActivity { Category = instanceName, Summary = summary, Timestamp = ts });
+            await db.SaveChangesAsync(ct);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogTrace(ex, "Could not persist search activity for {Instance}", instanceName);
+        }
+    }
+
+    private async Task RunSyncAsync(string instanceName, ArrInstanceConfig arrCfg, CancellationToken ct)
     {
         try
         {
             using var scope = _scopeFactory.CreateScope();
             var svc = scope.ServiceProvider.GetRequiredService<ArrSyncService>();
             await svc.SyncAsync(instanceName, ct);
-            await svc.MarkRequestsAsync(instanceName, ct);
+            if (arrCfg.Search.SearchMissing)
+                await svc.MarkRequestsAsync(instanceName, ct);
 
             await UpdateCountsAsync(instanceName, ct);
         }
@@ -623,6 +701,9 @@ public class ArrWorkerManager : BackgroundService
 
     internal bool ShouldRunSearch(string instanceName, ArrInstanceConfig arrCfg)
     {
+        if (!arrCfg.Search.SearchMissing)
+            return false;
+
         var interval = TimeSpan.FromSeconds(arrCfg.Search.SearchRequestsEvery);
         var last = _lastSearchTime.GetValueOrDefault(instanceName, DateTime.MinValue);
         if (DateTime.UtcNow - last >= interval)
@@ -633,12 +714,15 @@ public class ArrWorkerManager : BackgroundService
         return false;
     }
 
-    private async Task<SearchResult?> RunSearchAsync(string instanceName, ArrInstanceConfig arrCfg, CancellationToken ct)
+    internal async Task<SearchResult?> RunSearchAsync(string instanceName, ArrInstanceConfig arrCfg, CancellationToken ct)
     {
         try
         {
             using var scope = _scopeFactory.CreateScope();
             var mediaSvc = scope.ServiceProvider.GetRequiredService<IArrMediaService>();
+
+            if (!arrCfg.Search.SearchMissing)
+                return null;
 
             // §1.2: Restore quality profiles that have timed out before starting the search cycle
             if (arrCfg.Search.UseTempForMissing && !arrCfg.Search.KeepTempProfile && arrCfg.Search.TempProfileResetTimeoutMinutes > 0)
@@ -654,32 +738,49 @@ public class ArrWorkerManager : BackgroundService
                 }
             }
 
+            if (arrCfg.Search.SearchAgainOnSearchCompletion &&
+                _loopCompleted.TryGetValue(instanceName, out var prevCompleted) && prevCompleted)
+            {
+                await ResetSearchedFlagAsync(instanceName, arrCfg, ct);
+                _loopCompleted[instanceName] = false;
+            }
+
             SearchResult? result = null;
+            var drainedFlags = new List<bool>();
 
             // §2.7: DoUpgradeSearch is exclusive — when active, skip missing-media search
             if (arrCfg.Search.DoUpgradeSearch)
             {
                 result = await mediaSvc.SearchQualityUpgradesAsync(arrCfg.Category, ct);
+                drainedFlags.Add(result.LoopCompleted);
             }
             else
             {
                 if (arrCfg.Search.SearchMissing)
+                {
                     result = await mediaSvc.SearchMissingMediaAsync(arrCfg.Category, ct);
+                    drainedFlags.Add(result.LoopCompleted);
+                }
 
                 // QualityUnmetSearch / CustomFormatUnmetSearch are always additive (not exclusive)
                 if (arrCfg.Search.QualityUnmetSearch || arrCfg.Search.CustomFormatUnmetSearch)
-                    await mediaSvc.SearchQualityUpgradesAsync(arrCfg.Category, ct);
+                {
+                    var upgradeResult = await mediaSvc.SearchQualityUpgradesAsync(arrCfg.Category, ct);
+                    drainedFlags.Add(upgradeResult.LoopCompleted);
+                    if (result == null)
+                        result = upgradeResult;
+                    else
+                    {
+                        result.SearchesTriggered += upgradeResult.SearchesTriggered;
+                        result.ItemsSearched += upgradeResult.ItemsSearched;
+                    }
+                }
             }
 
-            // §1.3: SearchAgainOnSearchCompletion — reset only on loop completion (qBitrr parity).
-            // In qBitrr, reset happens after loop_completed flag (all candidates processed).
-            // We detect loop completion as: previous cycle had searches, this cycle has none.
-            var hadPrevious = _hadSearchesLastCycle.GetValueOrDefault(instanceName, false);
-            var hasNow = result != null && result.SearchesTriggered > 0;
-            _hadSearchesLastCycle[instanceName] = hasNow;
-
-            if (arrCfg.Search.SearchAgainOnSearchCompletion && hadPrevious && !hasNow)
-                await ResetSearchedFlagAsync(instanceName, arrCfg, ct);
+            var loopCompleted = drainedFlags.Count > 0 && drainedFlags.TrueForAll(f => f);
+            _loopCompleted[instanceName] = loopCompleted;
+            if (result != null)
+                result.LoopCompleted = loopCompleted;
 
             return result;
         }
@@ -690,7 +791,7 @@ public class ArrWorkerManager : BackgroundService
         }
     }
 
-    private async Task ResetSearchedFlagAsync(string instanceName, ArrInstanceConfig arrCfg, CancellationToken ct)
+    internal async Task ResetSearchedFlagAsync(string instanceName, ArrInstanceConfig arrCfg, CancellationToken ct)
     {
         try
         {
@@ -701,27 +802,35 @@ public class ArrWorkerManager : BackgroundService
             {
                 case "radarr":
                     await db.Movies
-                        .Where(m => m.ArrInstance == instanceName && m.Searched)
-                        .ExecuteUpdateAsync(s => s.SetProperty(m => m.Searched, false), ct);
+                        .Where(m => m.ArrInstance == instanceName)
+                        .ExecuteUpdateAsync(s => s
+                            .SetProperty(m => m.Searched, false)
+                            .SetProperty(m => m.Upgrade, false), ct);
                     break;
                 case "sonarr":
                     await db.Episodes
-                        .Where(e => e.ArrInstance == instanceName && e.Searched)
-                        .ExecuteUpdateAsync(s => s.SetProperty(e => e.Searched, false), ct);
+                        .Where(e => e.ArrInstance == instanceName)
+                        .ExecuteUpdateAsync(s => s
+                            .SetProperty(e => e.Searched, false)
+                            .SetProperty(e => e.Upgrade, false), ct);
                     break;
                 case "lidarr":
                     await db.Albums
-                        .Where(a => a.ArrInstance == instanceName && a.Searched)
-                        .ExecuteUpdateAsync(s => s.SetProperty(a => a.Searched, false), ct);
+                        .Where(a => a.ArrInstance == instanceName)
+                        .ExecuteUpdateAsync(s => s
+                            .SetProperty(a => a.Searched, false)
+                            .SetProperty(a => a.Upgrade, false), ct);
                     break;
                 case "readarr":
                     await db.Books
-                        .Where(b => b.ArrInstance == instanceName && b.Searched)
-                        .ExecuteUpdateAsync(s => s.SetProperty(b => b.Searched, false), ct);
+                        .Where(b => b.ArrInstance == instanceName)
+                        .ExecuteUpdateAsync(s => s
+                            .SetProperty(b => b.Searched, false)
+                            .SetProperty(b => b.Upgrade, false), ct);
                     break;
             }
 
-            _logger.LogTrace("SearchAgainOnSearchCompletion: reset Searched=false for {Instance}", instanceName);
+            _logger.LogTrace("SearchAgainOnSearchCompletion: reset Searched and Upgrade for {Instance}", instanceName);
         }
         catch (Exception ex)
         {

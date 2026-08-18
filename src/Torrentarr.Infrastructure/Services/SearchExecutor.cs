@@ -80,6 +80,7 @@ public class SearchExecutor : ISearchExecutor
         if (candidatesList.Count == 0)
         {
             _logger.LogTrace("SearchExecutor: no candidates for {Name}", instanceName);
+            result.LoopCompleted = true;
             return result;
         }
 
@@ -109,11 +110,15 @@ public class SearchExecutor : ISearchExecutor
         var searchedSeriesIds = new HashSet<int>();
 
         var firstSearch = true;
+        var drained = true;
 
         foreach (var candidate in candidatesList)
         {
             if (cancellationToken.IsCancellationRequested)
+            {
+                drained = false;
                 break;
+            }
 
             // §2.11: For Sonarr, if we already triggered a SeriesSearch for this series, skip episode-level
             if (candidate.SeriesId.HasValue && searchedSeriesIds.Contains(candidate.SeriesId.Value))
@@ -129,6 +134,7 @@ public class SearchExecutor : ISearchExecutor
             {
                 _logger.LogTrace("SearchExecutor: command limit reached ({Active}/{Limit}), pausing searches",
                     activeCommands, searchLimit);
+                drained = false;
                 break;
             }
 
@@ -202,6 +208,7 @@ public class SearchExecutor : ISearchExecutor
             }
         }
 
+        result.LoopCompleted = drained;
         return result;
     }
 

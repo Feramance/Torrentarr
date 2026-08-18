@@ -26,7 +26,7 @@ To move the pin: update this section, re-run the inventories below, and adjust [
 | Config model | `qBitrr/config.py`, `qBitrr/gen_config.py`, `qBitrr/config_version.py`, `qBitrr/env_config.py` |
 | Durations | `qBitrr/duration_config.py` |
 | DB schema | `qBitrr/tables.py`, `qBitrr/database.py`, `qBitrr/db_lock.py`, `qBitrr/db_recovery.py` |
-| Core loop + policy | `qBitrr/arss/` (`arr_base.py`, `torrent_*`, `search_handlers.py`, `db_update_handlers.py`, …). The file matrix still lists the old monolithic `qBitrr/arss.py` — see [full-parity-path-report.md](full-parity-path-report.md). |
+| Core loop + policy | `qBitrr/arss/` (`arr_base.py`, `torrent_*`, `search_handlers.py`, `db_update_handlers.py`, …). Mapped in [full-parity-matrix.md](full-parity-matrix.md). |
 | Seeding / trackers | `qBitrr/qbit_category_manager.py`, `qBitrr/arr_tracker_index.py` |
 | Web + API | `qBitrr/webui.py` |
 | OpenAPI (if present on tag) | `qBitrr/openapi.json` |

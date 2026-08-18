@@ -128,6 +128,7 @@ public class SearchExecutorTests
 
         result.SearchesTriggered.Should().Be(0);
         result.SearchedIds.Should().BeEmpty();
+        result.LoopCompleted.Should().BeFalse();
     }
 
     [Fact]
@@ -139,6 +140,7 @@ public class SearchExecutorTests
         var result = await service.ExecuteSearchesAsync("Radarr-test", Enumerable.Empty<SearchCandidate>());
 
         result.SearchesTriggered.Should().Be(0);
+        result.LoopCompleted.Should().BeTrue();
     }
 
     [Fact]
@@ -157,6 +159,7 @@ public class SearchExecutorTests
 
         result.SearchedIds.Should().ContainInOrder(2, 3, 1);
         service.TriggeredCandidates.Select(c => c.ArrId).Should().ContainInOrder(2, 3, 1);
+        result.LoopCompleted.Should().BeTrue();
     }
 
     [Fact]
@@ -203,6 +206,7 @@ public class SearchExecutorTests
 
         result.SearchedIds.Should().BeEmpty();
         service.TriggeredCandidates.Should().BeEmpty();
+        result.LoopCompleted.Should().BeFalse();
     }
 
     [Fact]

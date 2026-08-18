@@ -179,16 +179,6 @@ public class ArrMediaServiceTests
     }
 
     [Fact]
-    public async Task IsQualityUpgradeAsync_ReturnsFalse()
-    {
-        var service = CreateService();
-
-        var result = await service.IsQualityUpgradeAsync(1, "Bluray-1080p");
-
-        result.Should().BeFalse();
-    }
-
-    [Fact]
     public async Task SearchMissingMediaAsync_SearchLoopDelayDisabled_ReturnsEmpty()
     {
         var config = CreateConfigWithRadarr();

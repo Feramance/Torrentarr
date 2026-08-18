@@ -18,31 +18,22 @@ Legend:
 - **Drift** — Torrentarr behavior or docs disagree with qBitrr
 - **Gap** — code missing, unused, or not wired on the production Host path
 
-This report does **not** change runtime behavior. Follow-up work to close real drift is listed in [§10](#10-follow-up-work-not-done-in-this-review).
+This report tracks user-facing paths vs qBitrr. Closed gaps from the follow-up pass are marked **Match**; remaining differences are **Arch** (in-process tasks vs pathos OS forks, WAL vs `db_lock`, weekly-build matching upstream).
 
 ---
 
 ## Matrix vs current upstream layout
 
-[full-parity-matrix.md](full-parity-matrix.md) still maps a **monolithic** `qBitrr/arss.py`. Upstream has split that into `qBitrr/arss/`:
+[full-parity-matrix.md](full-parity-matrix.md) maps the split `qBitrr/arss/` package plus:
 
-- `arr_base.py` (~164KB) — shared Arr manager, loops, torrent processing
-- `torrent_dispatch.py`, `torrent_inspect.py`, `torrent_limits.py`, `torrent_batch.py`, `torrent_policy.py`
-- `search_handlers.py`, `db_update_handlers.py`, `db_queries.py`
-- `request_providers.py`, `placeholder_arr.py`
-- type modules: `radarr.py`, `sonarr.py`, `lidarr.py`, `readarr.py`
-- `manager.py`, `factory.py`, `qbit_side_effects.py`
+- `config_reload_policy.py` → `ConfigReloader`
+- `process_lifecycle.py` → `ArrWorkerManager` / `ProcessStateManager`
+- `quality_profile_helpers.py` → `QualityProfileSwitcherService`
+- `radarr_availability.py` → `MinimumAvailabilityCheck`
+- `qbit_seeding_config.py` → `SeedingLimitMerge`
+- `arr_client.py` → `ApiClients/Arr/*.cs`
 
-qBitrr modules **absent from the matrix**:
-
-- `config_reload_policy.py`
-- `process_lifecycle.py`
-- `quality_profile_helpers.py`
-- `radarr_availability.py`
-- `qbit_seeding_config.py`
-- `arr_client.py`
-
-Torrentarr counterparts exist in spirit (`ConfigReloader`, Host lifecycle, `QualityProfileSwitcherService`, `MinimumAvailabilityCheck`, `SeedingLimitMerge`, Arr HTTP clients) but are not row-tracked.
+`scripts/repair_database_targeted.py` is `intentional-divergence` (Host `--repair-database` is the operator path), matching [contributor-reference.md](contributor-reference.md).
 
 ---
 
@@ -76,7 +67,7 @@ flowchart TB
 | --- | --- | --- |
 | OS forks (`pathos`) vs Host `BackgroundService` | **Arch** | Canonical loop: [`ArrWorkerManager.cs`](../../src/Torrentarr.Infrastructure/Services/ArrWorkerManager.cs). [`Torrentarr.Workers`](../../src/Torrentarr.Workers/Program.cs) exists but **Host does not spawn it**. |
 | Processes UI rows `{name}-search` / `{name}-torrent` | **Match** | Same surface as qBitrr even though both are in-process tasks. |
-| Docs saying “per-Arr worker processes” | **Drift** | [overview.md](overview.md), [features/process-management.md](../features/process-management.md). Code is in-process isolation. |
+| Docs saying “per-Arr worker processes” | **Match** | [overview.md](overview.md) and [features/process-management.md](../features/process-management.md) describe Host in-process worker **tasks**. |
 | `db_lock.py` | **Arch** | WAL + `SaveChangesWithRetryAsync` + `DatabaseRestartWatchdogService`. |
 | Pathos dedicated-qBit-client gate / placeholder pause-resume queues (5.12.6 / 5.12.8) | **Arch** | Per-torrent `QBitInstanceName` routing; no default client. |
 
@@ -100,23 +91,30 @@ Canonical path: `ArrWorkerManager.RunWorkerCoreAsync`.
 3. `ProbeArrVersionAsync` (5s, non-blocking).
 4. If `UseTempForMissing && ForceResetTempProfiles` → `QualityProfileSwitcherService.ForceResetAllTempProfilesAsync`.
 5. `QBitCategoryEnsureService.EnsureCategoryOnAllInstancesAsync` + `SeedingService.EnsureAllTrackerTagsExistAsync`.
+6. If `FFprobeAutoUpdate`, `IMediaValidationService.UpdateFFprobeAsync` once.
 
-### Each iteration
+### Dual in-process loops
+
+Two tasks per Arr instance (joined with `Task.WhenAll`; still one `_workers` entry):
+
+| Loop | Each iteration | Sleep |
+| --- | --- | --- |
+| **Torrent** | connectivity → `ProcessTorrentsAsync` if `!SearchOnly` → RSS / refresh timers | remainder of `LoopSleepTimer` |
+| **Search** | connectivity → `SyncAsync` + `MarkRequestsAsync` (if `SearchMissing`) + counts → `RunSearchAsync` if `ShouldRunSearch` | remainder of `LoopSleepTimer` (search execution still throttled by `SearchRequestsEvery`) |
 
 | Step | Gate | Torrentarr | qBitrr |
 | --- | --- | --- | --- |
-| Connectivity | `PingURLS` fail | sleep `NoInternetSleepTimer`, skip cycle | same idea |
-| Torrents | `!SearchOnly` | `TorrentProcessor.ProcessTorrentsAsync` + import-path cleanup | separate torrent loop |
-| Sync | always | `ArrSyncService.SyncAsync` + `MarkRequestsAsync` + `UpdateCountsAsync` | `db_update` in search/torrent loops; huge Lidarr sync can `RestartLoopException` to unstarve search |
-| RSS | `RssSyncTimer` (default 15 min if ≤0) | Arr `RssSync` command | same |
-| Refresh downloads | `RefreshDownloadsTimer` | `RefreshMonitoredDownloads` | same |
-| Search | `!ProcessingOnly` and `SearchRequestsEvery` elapsed | `RunSearchAsync` | **separate** search process, spawned when `SearchMissing` is true (qBitrr reverted independent spawn) |
-| Backoff | error | `min(2×1.5^n, 30)` minutes | process restart limits |
-| Sleep | remainder of `LoopSleepTimer` | combined loop | two loops |
+| Connectivity | `PingURLS` fail | sleep `NoInternetSleepTimer`, skip that loop’s cycle | same idea |
+| Torrents | `!SearchOnly` | torrent task: `TorrentProcessor.ProcessTorrentsAsync` + import-path cleanup | separate torrent process |
+| Sync | always (search task) | `ArrSyncService.SyncAsync` + `MarkRequestsAsync` if `SearchMissing` + `UpdateCountsAsync` | `db_update` in search/torrent loops |
+| RSS / refresh | timers | torrent task | same commands |
+| Search | `SearchMissing` and `!ProcessingOnly` and `SearchRequestsEvery` elapsed | search task: `RunSearchAsync` | separate search process, spawned when `search_missing` is true |
+| Backoff | error | per-loop `min(2×1.5^n, 30)` minutes | process restart limits |
+| Sleep | remainder of `LoopSleepTimer` | **two tasks** | two OS processes |
 
-**Drift:** Torrentarr has **no** `RestartLoopException` after huge `db_update`. Search always follows sync in the same iteration, gated only by `SearchRequestsEvery`. On giant Lidarr libraries, search is delayed by a full sync.
+**Arch:** no `RestartLoopException` / pathos forks. Search is not blocked behind torrent processing. Sync stays on the search task at `LoopSleepTimer` so it is not deferred to `SearchRequestsEvery`. WAL + `SaveChangesWithRetryAsync` remain the lock equivalent.
 
-**Drift vs docs:** Torrentarr docs (copied from qBitrr) say **`SearchMissing` is the master switch** for all search, Overseerr, and Ombi. Code does **not** check it in `ShouldRunSearch`. `DoUpgradeSearch` / `QualityUnmetSearch` / `CustomFormatUnmetSearch` run even if `SearchMissing=false`. qBitrr `spawn_child_processes` requires `SearchMissing` after the revert of commit `7645b85`.
+**Match:** `SearchMissing` is the master switch for the search loop, upgrade/CF search, and Ombi/Overseerr request marking (`ShouldRunSearch` / `MarkRequestsAsync` / `RunSearchAsync`).
 
 Restart limits (`AutoRestartProcesses`, `MaxProcessRestarts`, `ProcessRestartWindow`, `ProcessRestartDelay`) apply per Arr instance. **Match** with qBitrr process-restart policy, implemented as task restart rather than OS-process restart.
 
@@ -140,8 +138,8 @@ flowchart TD
   add -->|false| done[no missing or unmet search]
   upgrades --> again
   upgrades2 --> again
-  done --> again{SearchAgainOnSearchCompletion and prev had searches and now none}
-  again -->|yes| reset[Reset Searched flags]
+  done --> again{SearchAgainOnSearchCompletion and previous tick LoopCompleted}
+  again -->|yes| reset[Reset Searched and Upgrade flags]
 ```
 
 Implementation: [`ArrWorkerManager.RunSearchAsync`](../../src/Torrentarr.Infrastructure/Services/ArrWorkerManager.cs), [`ArrMediaService`](../../src/Torrentarr.Infrastructure/Services/ArrMediaService.cs), [`SearchExecutor`](../../src/Torrentarr.Infrastructure/Services/SearchExecutor.cs).
@@ -176,23 +174,22 @@ This matches qBitrr: `should_mark_searched` does **not** look at `do_upgrade_sea
 
 ### Requests (Ombi / Overseerr)
 
-- `MarkRequestsAsync` only if `SearchOmbiRequests` / `SearchOverseerrRequests`.
+- `MarkRequestsAsync` only if `SearchMissing` **and** `SearchOmbiRequests` / `SearchOverseerrRequests`.
 - Radarr and Sonarr only (Lidarr/Readarr correctly skipped).
 - Overseerr gates unreleased titles via TMDB (`OverseerrRequestFetcher`, qBitrr 5.12.12).
-- Docs claim `SearchMissing` is required; code marks requests during **sync**, not during search.
 
 ### Temporary quality profiles
 
 - Apply to **all four** Arr types in `QualityProfileSwitcherService`.
-- [features/index.md](../features/index.md) wrongly says Lidarr-only (**Drift**).
 - Restore only after a successful Arr PUT (**Match** with later Codex/qBitrr correctness).
 
-### Stubs
+### SearchAgainOnSearchCompletion
 
-- **Gap:** `ArrMediaService.IsQualityUpgradeAsync` always returns `false`.
-- **Gap:** `ArrSyncService.CalculateLidarrQualityMet` always returns `true` and is unused.
+`SearchExecutor` sets `SearchResult.LoopCompleted` when the candidate list is fully drained (empty set counts as drained; `SearchLimit` / cancel does not). The next search tick, if `SearchAgainOnSearchCompletion && loopCompleted`, resets **both** `Searched` and `Upgrade` for that instance. **Match**
 
-**Drift — SearchAgainOnSearchCompletion:** Torrentarr infers loop end as “previous cycle had searches, this cycle has none.” qBitrr uses an explicit `loop_completed` after draining the candidate list.
+### Lidarr QualityMet
+
+`hasAllTracks` = `statistics.percentOfTracks == 100`. Quality is unmet only if the profile has `cutoff` **and** `upgradeAllowed` and any track file `quality.quality.id < cutoff`. `QualityMet = hasAllTracks && !qualityUnmet`. API errors treat unmet as false. **Match**
 
 ---
 
@@ -237,7 +234,7 @@ complete → 60s grace → `ArrImportService.TriggerImportAsync` → wait until 
 
 ### FFprobe
 
-[`MediaValidationService`](../../src/Torrentarr.Infrastructure/Services/MediaValidationService.cs) implements ffprobe (ebook/comic suffix skip, optional auto-download via `FFprobeAutoUpdate`). It is **not** injected into `TorrentProcessor` and **not** registered in Host DI. Docs describe validate-then-import. **Gap:** FFprobe is dead code on the production Host path.
+After a successful `Downloaded*Scan` (`TriggerImportAsync`), if `Torrent.AutoDelete` and the content path exists, `TorrentProcessor` probes allowlisted files (`ValidateDirectoryAsync`). Zero valid media → Arr queue delete with blacklist + delete local files. Missing ffprobe binary and ebook/comic suffixes count as valid. Not FailedCategory. Host registers `IMediaValidationService`; `FFprobeAutoUpdate` runs once on worker start. **Match** (qBitrr `folder_cleanup`)
 
 ---
 
@@ -312,7 +309,7 @@ complete → 60s grace → `ArrImportService.TriggerImportAsync` → wait until 
 | `SearchBySeries` / today’s window | — | yes | — | — |
 | Year sort (`SearchInReverse`) | yes | yes | yes | yes |
 | `AlsoSearchSpecials` | — | yes | — | — |
-| FFprobe before import | **not wired** | **not wired** | **not wired** | **not wired** |
+| FFprobe after import (`AutoDelete` cleanup) | yes | yes | yes | yes |
 | Catalog UI | movies | series | artists / albums | authors / books (no tracks) |
 | Tagless free-space column | yes (global) | yes | yes | yes |
 | qBit-only `ManagedCategories` | via Host `QBitCategoryWorkerManager` (all instances) | | | |
@@ -321,29 +318,19 @@ complete → 60s grace → `ArrImportService.TriggerImportAsync` → wait until 
 
 ## 9. Honest gap list
 
-The file matrix still marks these areas `full`. Path-level review disagrees:
+Closed in the follow-up pass (now **Match**): ffprobe post-import AutoDelete cleanup, `SearchMissing` master switch, explicit `loop_completed`, Lidarr `QualityMet`, removal of unused `IsQualityUpgradeAsync`, matrix/`arss/` + extra modules, feature/process docs.
 
-1. **Gap — ffprobe:** service unused by Host / `TorrentProcessor`. User-facing “validate before import” is not live.
-2. **Drift — SearchMissing master switch:** docs and qBitrr spawn require it; Torrentarr upgrade/CF search and request marking do not.
-3. **Drift — combined worker loop:** no qBitrr-style search-loop reset after huge sync; Lidarr-sized libraries can delay search by a full sync.
-4. **Drift — SearchAgainOnSearchCompletion:** Torrentarr infers loop end from consecutive cycles; qBitrr uses explicit `loop_completed`.
-5. **Gap — Lidarr quality cutoff:** `CalculateLidarrQualityMet` is a no-op; Lidarr `QualityMet` is not computed from track cutoff the way movies/episodes/books are.
-6. **Gap — `IsQualityUpgradeAsync`:** always false.
-7. **Arch/docs — process model:** in-process vs OS processes; overview still says workers are processes.
-8. **Matrix stale:** `arss.py` vs `qBitrr/arss/*`; missing upstream files in [§ Matrix vs current upstream layout](#matrix-vs-current-upstream-layout); contributor-reference vs matrix disagreement on `repair_database_targeted.py`.
-9. **Doc drift:** [features/index.md](../features/index.md) omits Readarr; temp-profile row is wrong; [certification-report.md](certification-report.md) test counts are stale.
-10. **Workers project:** standalone loop lacks Host sync/RSS/refresh; unused in production Host.
+Remaining:
+
+1. **Arch — process model:** in-process `Task`s vs qBitrr pathos OS forks. User-facing search/torrent rows and restart limits match; Host does **not** spawn `Torrentarr.Workers`.
+2. **Arch — `db_lock.py`:** WAL + `SaveChangesWithRetryAsync` instead of a cross-process file lock.
+3. **Arch — weekly-build / packaging:** Docker/.NET vs pip; weekly Dependabot squash matches qBitrr (shared upstream behavior).
+4. **Workers project:** standalone loop lacks Host sync/RSS/refresh; unused in production Host (`SearchMissing` is still gated there so it does not diverge).
 
 **Intentional (keep):** +1 major version, `torrentarr.db`, Serilog, Docker/.NET vs pip, no `db_lock`, no pathos, no placeholder queues, weekly-build matching qBitrr, OpenAPI generated from qBitrr.
 
 ---
 
-## 10. Follow-up work (not done in this review)
+## 10. Follow-up work
 
-Priority if the next change set is to close real drift:
-
-1. Wire `IMediaValidationService` into import, or document it as unused.
-2. Gate `ShouldRunSearch` / request processing on `SearchMissing`, **or** update Torrentarr docs if independent upgrade search is intended.
-3. Compute Lidarr `QualityMet` from profile cutoff.
-4. Refresh [full-parity-matrix.md](full-parity-matrix.md) to `qBitrr/arss/` and the extra Python modules.
-5. Fix feature docs (Readarr, temp profiles, process model, certification test counts).
+The runtime drift items from the previous review are implemented. Remaining work is documentation hygiene as qBitrr’s `arss/` package continues to split, and keeping test counts in [certification-report.md](certification-report.md) current after each pass.

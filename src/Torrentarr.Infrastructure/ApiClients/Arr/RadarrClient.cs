@@ -492,6 +492,9 @@ public class QualityProfile
     [JsonProperty("cutoff")]
     public int? Cutoff { get; set; }
 
+    [JsonProperty("upgradeAllowed")]
+    public bool UpgradeAllowed { get; set; }
+
     [JsonProperty("items")]
     public List<QualityProfileItem>? Items { get; set; }
 }

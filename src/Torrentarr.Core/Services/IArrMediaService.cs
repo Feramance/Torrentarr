@@ -6,8 +6,6 @@ public interface IArrMediaService
 
     Task<SearchResult> SearchQualityUpgradesAsync(string category, CancellationToken cancellationToken = default);
 
-    Task<bool> IsQualityUpgradeAsync(int arrId, string quality, CancellationToken cancellationToken = default);
-
     Task<List<WantedMedia>> GetWantedMediaAsync(string category, CancellationToken cancellationToken = default);
 
     Task<QualityUpgradeResult> GetCustomFormatUnmetMediaAsync(string category, CancellationToken cancellationToken = default);
@@ -20,6 +18,12 @@ public class SearchResult
     public List<int> SearchedIds { get; set; } = new();
     public List<string> Errors { get; set; } = new();
     public DateTime SearchTime { get; set; } = DateTime.UtcNow;
+
+    /// <summary>
+    /// True when this tick drained the candidate list (qBitrr loop_completed).
+    /// False when SearchLimit/active-command cap left work queued, or the run was cancelled.
+    /// </summary>
+    public bool LoopCompleted { get; set; }
 }
 
 public class WantedMedia

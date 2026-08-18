@@ -510,6 +510,9 @@ public class ArrSyncService
         if (!_config.ArrInstances.TryGetValue(instanceName, out var arrConfig))
             return;
 
+        if (!arrConfig.Search.SearchMissing)
+            return; // qBitrr run_request_search requires search_missing
+
         if (arrConfig.Type.Equals("lidarr", StringComparison.OrdinalIgnoreCase)
             || arrConfig.Type.Equals("readarr", StringComparison.OrdinalIgnoreCase))
             return; // Ombi/Overseerr do not support Lidarr/Readarr
@@ -731,6 +734,7 @@ public class ArrSyncService
         var apiForeignIds = new HashSet<string>();
         // Track Lidarr album ID → EF entity for track sync
         var albumEntityByLidarrId = new Dictionary<int, AlbumFilesModel>();
+        var percentOfTracksByArrId = new Dictionary<int, double>();
         var albumsAdded = 0;
         var albumsUpdated = 0;
 
@@ -738,6 +742,7 @@ public class ArrSyncService
         {
             ct.ThrowIfCancellationRequested();
             apiForeignIds.Add(album.ForeignAlbumId);
+            percentOfTracksByArrId[album.Id] = album.Statistics?.PercentOfTracks ?? 0;
             artistNameById.TryGetValue(album.ArtistId, out var artistName);
             var albumProfileId = album.QualityProfileId
                 ?? (artistProfileById.TryGetValue(album.ArtistId, out var ap) ? ap : 0);
@@ -807,6 +812,8 @@ public class ArrSyncService
             var minCfScore = profile?.MinCustomFormatScore ?? 0;
             albumEntity.MinCustomFormatScore = minCfScore;
 
+            var hasAllTracks = percentOfTracksByArrId.GetValueOrDefault(lidarrAlbumId) == 100;
+
             if (albumEntity.HasFile)
             {
                 try
@@ -815,13 +822,13 @@ public class ArrSyncService
                     if (trackFiles.Count > 0)
                     {
                         albumEntity.CustomFormatScore = trackFiles.Sum(tf => tf.CustomFormatScore ?? 0) / trackFiles.Count;
-                        albumEntity.QualityMet = true;
+                        albumEntity.QualityMet = CalculateLidarrQualityMet(hasAllTracks, profile, trackFiles);
                         albumEntity.CustomFormatMet = albumEntity.CustomFormatScore >= minCfScore;
                     }
                     else
                     {
                         albumEntity.CustomFormatScore = 0;
-                        albumEntity.QualityMet = true;
+                        albumEntity.QualityMet = CalculateLidarrQualityMet(hasAllTracks, profile, trackFiles);
                         albumEntity.CustomFormatMet = true;
                     }
                 }
@@ -829,14 +836,15 @@ public class ArrSyncService
                 {
                     _logger.LogDebug(ex, "ArrSyncService: failed to get track files for album {Id}", lidarrAlbumId);
                     albumEntity.CustomFormatScore = 0;
-                    albumEntity.QualityMet = true;
+                    // API errors → treat quality unmet as false (QualityMet = hasAllTracks)
+                    albumEntity.QualityMet = CalculateLidarrQualityMet(hasAllTracks, profile, trackFiles: null);
                     albumEntity.CustomFormatMet = true;
                 }
             }
             else
             {
                 albumEntity.CustomFormatScore = 0;
-                albumEntity.QualityMet = true;
+                albumEntity.QualityMet = CalculateLidarrQualityMet(hasAllTracks, profile, Array.Empty<TrackFile>());
                 albumEntity.CustomFormatMet = true;
             }
 
@@ -1500,13 +1508,35 @@ public class ArrSyncService
         return true;
     }
 
-    private static bool CalculateLidarrQualityMet(QualityProfile profile, List<Track> tracksWithFiles)
+    /// <summary>
+    /// qBitrr compute_quality_met: hasAllTracks (percentOfTracks == 100) and not quality-unmet.
+    /// Quality is unmet only when the profile has a cutoff, upgradeAllowed, and any track file
+    /// quality id is below cutoff. Null trackFiles (API error) treats unmet as false.
+    /// </summary>
+    internal static bool CalculateLidarrQualityMet(
+        bool hasAllTracks,
+        QualityProfile? profile,
+        IReadOnlyList<TrackFile>? trackFiles)
     {
+        if (!hasAllTracks)
+            return false;
+        if (trackFiles == null)
+            return true;
+        return !IsLidarrQualityUnmet(profile, trackFiles);
+    }
+
+    internal static bool IsLidarrQualityUnmet(QualityProfile? profile, IReadOnlyList<TrackFile> trackFiles)
+    {
+        if (profile == null)
+            return false;
         var cutoffId = profile.Cutoff;
         if (!cutoffId.HasValue || cutoffId.Value <= 0)
-            return true;
+            return false;
+        if (!profile.UpgradeAllowed)
+            return false;
 
-        return true;
+        return trackFiles.Any(tf =>
+            (tf.Quality?.QualityDefinition?.Id ?? int.MaxValue) < cutoffId.Value);
     }
 
     private static void UpdateMovieQueueFromApi(MovieQueueModel queue, QueueItem item)

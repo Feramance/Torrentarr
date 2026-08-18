@@ -409,6 +409,9 @@ class ArrWorkerService : BackgroundService
 
     private bool ShouldRunSearch()
     {
+        if (!_instanceConfig.Search.SearchMissing)
+            return false;
+
         var searchInterval = TimeSpan.FromSeconds(_instanceConfig.Search.SearchRequestsEvery);
 
         if (DateTime.UtcNow - _lastSearchTime >= searchInterval)

@@ -11,7 +11,7 @@ Torrentarr is a **C# port** of [qBitrr](https://github.com/Feramance/qBitrr) (Py
 ## What differs (by design)
 
 - **Product release numbers:** Torrentarr’s **major** version is **one ahead** of qBitrr’s (e.g. qBitrr 5.x, Torrentarr 6.x) so the two products are not confused. Your `config.toml` `ConfigVersion` follows Torrentarr’s schema, not qBitrr’s tag.
-- **How it runs:** Torrentarr uses a .NET **Host** plus **Web UI** and **per-Arr worker** processes, not a single Python process.
+- **How it runs:** Torrentarr uses a .NET **Host** plus **Web UI** and **per-Arr in-process worker tasks** (search and torrent loops), not a single Python process and not OS-forked Arr workers.
 
 ## Do I need the parity matrix?
 
