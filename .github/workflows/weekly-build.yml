@@ -26,6 +26,9 @@ jobs:
         token: ${{ secrets.PAT || secrets.GITHUB_TOKEN }}
         ref: master
 
+    # Extra identity/gating vs qBitrr: require dependabot[bot] + dependabot/ head,
+    # skip workflow/Actions PRs, gate on required checks, pin merge to HEAD SHA.
+    # PAT remains the qBitrr-compatible token for squash-merge + release dispatch.
     - name: Auto-merge green Dependabot PRs
       env:
         GH_TOKEN: ${{ secrets.PAT || secrets.GITHUB_TOKEN }}
@@ -48,14 +51,46 @@ jobs:
 
         for number in "${numbers[@]}"; do
           meta=$(gh pr view "${number}" --repo "${{ github.repository }}" \
-            --json title,labels,mergeable,body \
-            --jq '{title: .title, labels: ([.labels[].name] | join(",")), mergeable: .mergeable, body: .body}')
+            --json title,labels,mergeable,body,author,headRefName,headRefOid,isCrossRepository,headRepositoryOwner,files \
+            --jq '{
+              title: .title,
+              labels: ([.labels[].name] | join(",")),
+              mergeable: .mergeable,
+              body: .body,
+              author: .author.login,
+              headRefName: .headRefName,
+              headRefOid: .headRefOid,
+              isCrossRepository: .isCrossRepository,
+              headOwner: .headRepositoryOwner.login,
+              files: ([.files[].path] | join("\n"))
+            }')
           title=$(echo "${meta}" | jq -r '.title')
           labels=$(echo "${meta}" | jq -r '.labels')
           mergeable=$(echo "${meta}" | jq -r '.mergeable')
           body=$(echo "${meta}" | jq -r '.body // ""')
+          author=$(echo "${meta}" | jq -r '.author')
+          head_ref=$(echo "${meta}" | jq -r '.headRefName')
+          head_sha=$(echo "${meta}" | jq -r '.headRefOid')
+          is_cross=$(echo "${meta}" | jq -r '.isCrossRepository')
+          head_owner=$(echo "${meta}" | jq -r '.headOwner')
+          files=$(echo "${meta}" | jq -r '.files // ""')
 
-          echo "Evaluating Dependabot PR #${number}: ${title}"
+          echo "Evaluating Dependabot PR #${number}: ${title} (${head_sha})"
+
+          if [[ "${author}" != "dependabot[bot]" ]]; then
+            echo "Skipping PR #${number} (author=${author}, expected dependabot[bot])."
+            continue
+          fi
+
+          if [[ "${head_ref}" != dependabot/* ]]; then
+            echo "Skipping PR #${number} (head ref ${head_ref} is not a Dependabot branch)."
+            continue
+          fi
+
+          if [[ "${is_cross}" == "true" && "${head_owner}" != "dependabot" ]]; then
+            echo "Skipping PR #${number} (cross-repo head owner ${head_owner} is not dependabot)."
+            continue
+          fi
 
           if [[ "${body}" == *"version-update:semver-major"* ]] || \
              [[ "${labels}" == *"major"* ]] || \
@@ -64,21 +99,40 @@ jobs:
             continue
           fi
 
+          if echo "${files}" | grep -E '^\.github/(workflows|actions)/'; then
+            echo "Skipping PR #${number} (changes GitHub Actions workflow or action files)."
+            continue
+          fi
+
+          if [[ "${labels}" == *"github_actions"* ]] || \
+             [[ "${labels}" == *"github-actions"* ]]; then
+            echo "Skipping PR #${number} (GitHub Actions ecosystem)."
+            continue
+          fi
+
           if [[ "${mergeable}" != "MERGEABLE" ]]; then
             echo "Skipping PR #${number} (mergeable=${mergeable})."
             continue
           fi
 
-          if ! gh pr checks "${number}" --repo "${{ github.repository }}"; then
-            echo "Skipping PR #${number}: checks not green."
+          if ! gh pr checks "${number}" --repo "${{ github.repository }}" --required; then
+            echo "Skipping PR #${number}: required checks not green."
+            continue
+          fi
+
+          current_sha=$(gh pr view "${number}" --repo "${{ github.repository }}" \
+            --json headRefOid --jq '.headRefOid')
+          if [[ "${current_sha}" != "${head_sha}" ]]; then
+            echo "Skipping PR #${number}: HEAD moved from ${head_sha} to ${current_sha}."
             continue
           fi
 
           if gh pr merge "${number}" \
             --repo "${{ github.repository }}" \
             --squash \
-            --delete-branch; then
-            echo "Merged PR #${number}."
+            --delete-branch \
+            --match-head-commit "${head_sha}"; then
+            echo "Merged PR #${number} at ${head_sha}."
           else
             echo "Could not merge PR #${number}; continuing."
           fi

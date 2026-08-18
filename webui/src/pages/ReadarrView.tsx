@@ -52,6 +52,8 @@ export function ReadarrView({ active }: ReadarrViewProps): JSX.Element {
   );
   const expandedIdRef = useRef(expandedId);
   expandedIdRef.current = expandedId;
+  const detailRequestGen = useRef(0);
+  const detailAbortRef = useRef<AbortController | null>(null);
 
   const readarrInstances = useMemo(
     () => instances.filter((i) => i.type === "readarr"),
@@ -123,21 +125,44 @@ export function ReadarrView({ active }: ReadarrViewProps): JSX.Element {
   }, 30000);
 
   const openAuthor = async (id: number) => {
+    detailAbortRef.current?.abort();
+    detailAbortRef.current = null;
     if (expandedIdRef.current === id) {
+      detailRequestGen.current += 1;
       expandedIdRef.current = null;
       setExpandedId(null);
       setDetail(null);
       return;
     }
+    const requestGen = ++detailRequestGen.current;
+    const ac = new AbortController();
+    detailAbortRef.current = ac;
     expandedIdRef.current = id;
     setExpandedId(id);
     setDetail(null);
     try {
-      const res = await getReadarrAuthorDetail(selected, id);
-      if (expandedIdRef.current !== id) return;
+      const res = await getReadarrAuthorDetail(selected, id, ac.signal);
+      if (
+        ac.signal.aborted ||
+        detailRequestGen.current !== requestGen ||
+        expandedIdRef.current !== id
+      ) {
+        return;
+      }
       setDetail(res);
     } catch (err) {
-      if (expandedIdRef.current === id) setDetail(null);
+      if (
+        ac.signal.aborted ||
+        (err instanceof DOMException && err.name === "AbortError")
+      ) {
+        return;
+      }
+      if (
+        detailRequestGen.current === requestGen &&
+        expandedIdRef.current === id
+      ) {
+        setDetail(null);
+      }
       push(
         `Failed to load author: ${err instanceof Error ? err.message : String(err)}`,
         "error",
@@ -198,8 +223,11 @@ export function ReadarrView({ active }: ReadarrViewProps): JSX.Element {
               type="button"
               className={inst.category === selected ? "active" : ""}
               onClick={() => {
+                detailAbortRef.current?.abort();
+                detailAbortRef.current = null;
                 setSelected(inst.category);
                 setPage(0);
+                detailRequestGen.current += 1;
                 expandedIdRef.current = null;
                 setExpandedId(null);
                 setDetail(null);

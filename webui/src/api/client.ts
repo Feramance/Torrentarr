@@ -134,9 +134,10 @@ async function fetchJson<T>(
   input: RequestInfo | URL,
   init?: RequestInit,
 ): Promise<T> {
-  // Only deduplicate GET requests (safe to share)
+  // Only deduplicate GET requests (safe to share). Skip when a caller-provided
+  // AbortSignal is present so the request is not shared with a later abort.
   const method = init?.method || "GET";
-  if (method === "GET") {
+  if (method === "GET" && !init?.signal) {
     const key = createRequestKey(input, init);
     const existingRequest = inflightRequests.get(key) as Promise<T> | undefined;
 
@@ -387,9 +388,11 @@ export async function getReadarrAuthors(
 export async function getReadarrAuthorDetail(
   category: string,
   authorId: number,
+  signal?: AbortSignal,
 ): Promise<ReadarrAuthorDetailResponse> {
   return fetchJson<ReadarrAuthorDetailResponse>(
     `/web/readarr/${encodeURIComponent(category)}/author/${authorId}`,
+    signal ? { signal } : undefined,
   );
 }
 
