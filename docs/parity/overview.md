@@ -15,7 +15,7 @@ Torrentarr is a **C# port** of [qBitrr](https://github.com/Feramance/qBitrr) (Py
 
 ## Do I need the parity matrix?
 
-**No**, unless you contribute code or need to compare behavior to upstream. Maintainer-facing detail lives in [contributor-reference.md](contributor-reference.md) and the [full parity matrix](full-parity-matrix.md).
+**No**, unless you contribute code or need to compare behavior to upstream. Maintainer-facing detail lives in [contributor-reference.md](contributor-reference.md), the [full parity matrix](full-parity-matrix.md), and the [path-level report](full-parity-path-report.md).
 
 ## More reading
 

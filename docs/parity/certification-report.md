@@ -7,6 +7,7 @@ This report captures Torrentarr's parity status after rebasing the audit from qB
 Primary tracking artifacts:
 
 - `docs/parity/full-parity-matrix.md`
+- `docs/parity/full-parity-path-report.md`
 - `docs/parity/contract-baseline.md`
 - `docs/parity/contributor-reference.md`
 - `docs/parity/overview.md`

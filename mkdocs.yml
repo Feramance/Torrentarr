@@ -279,3 +279,10 @@ nav:
   - Testing: development/testing.md
   - Release Process: development/release-process.md
   - WebUI Development: development/webui.md
+  - qBitrr parity:
+    - parity/overview.md
+    - parity/full-parity-path-report.md
+    - parity/full-parity-matrix.md
+    - parity/contributor-reference.md
+    - parity/certification-report.md
+    - parity/contract-baseline.md

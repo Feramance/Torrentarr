@@ -6,7 +6,7 @@ This matrix tracks the current parity audit against upstream qBitrr **v5.14.3-1*
 
 Use this file as the **source of truth** for how close implementation is to upstream. A strict latest-main parity claim is only defensible when **no** file row is `partial` and **no** support row is `missing`. Rows marked `intentional-divergence` document architectural differences with equivalent user-facing outcomes.
 
-**Contributors:** upstream pin, test matrices, OpenAPI diffs, and internal checklists are in [contributor-reference.md](contributor-reference.md) (not needed for end users; see [overview.md](overview.md)).
+**Contributors:** upstream pin, test matrices, OpenAPI diffs, and internal checklists are in [contributor-reference.md](contributor-reference.md) (not needed for end users; see [overview.md](overview.md)). Path-level feature coverage and known drift vs this file’s `full` rows: [full-parity-path-report.md](full-parity-path-report.md).
 
 Status values:
 

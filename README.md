@@ -171,7 +171,7 @@ npm run build   # Production bundle
 | **Startup Time** | ~2s | ~0.5s |
 | **Process Isolation** | Single process | Multi-process |
 | **Health Checks** | Custom | Built-in |
-| **Upstream alignment** | qBitrr master | C# port [tracked in the parity matrix](docs/parity/full-parity-matrix.md) (not a fixed %) |
+| **Upstream alignment** | qBitrr master | C# port [tracked in the parity matrix](docs/parity/full-parity-matrix.md) and [path report](docs/parity/full-parity-path-report.md) (not a fixed %) |
 
 ## Issues & Support
 
