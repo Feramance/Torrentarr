@@ -281,7 +281,7 @@ export function LogsView({ active }: LogsViewProps): JSX.Element {
                 options={options}
                 value={
                   selected
-                    ? (options.find((o) => o.value === selected) ?? null)
+                    ? options.find((o) => o.value === selected) ?? null
                     : null
                 }
                 onChange={(option) => setSelected(option?.value ?? "")}
