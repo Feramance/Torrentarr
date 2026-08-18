@@ -696,6 +696,8 @@ public class ConfigurationLoader
                     {
                         if (!trackerTable.ContainsKey(field))
                         {
+                            if (field == "MinSeedingTimeDays" && trackerTable.ContainsKey("MinSeedingTime"))
+                                continue;
                             trackerTable[field] = defaultVal;
                             changed = true;
                         }
@@ -997,6 +999,8 @@ public class ConfigurationLoader
                     {
                         if (!trackerTable.ContainsKey(field))
                         {
+                            if (field == "MinSeedingTimeDays" && trackerTable.ContainsKey("MinSeedingTime"))
+                                continue;
                             trackerTable[field] = defaultVal;
                             changed = true;
                         }
@@ -1014,6 +1018,8 @@ public class ConfigurationLoader
                     {
                         if (!trackerTable.ContainsKey(field))
                         {
+                            if (field == "MinSeedingTimeDays" && trackerTable.ContainsKey("MinSeedingTime"))
+                                continue;
                             trackerTable[field] = defaultVal;
                             changed = true;
                         }
