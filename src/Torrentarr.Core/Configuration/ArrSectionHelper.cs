@@ -64,7 +64,7 @@ public static class ArrSectionHelper
     public static readonly string[] LidarrAllowlist =
     [
         ".mp3", ".flac", ".m4a", ".aac", ".ogg", ".opus", ".wav", ".ape", ".wma",
-        ".!qB", ".parts", ".log", ".cue"
+        ".!qB", ".parts"
     ];
 
     public static readonly string[] VideoAllowlist =
@@ -83,6 +83,69 @@ public static class ArrSectionHelper
             return false;
         var ext = extension.StartsWith('.') ? extension : "." + extension;
         return EbookComicExtensions.Contains(ext, StringComparer.OrdinalIgnoreCase);
+    }
+
+    public static IReadOnlyList<string> DefaultFolderExclusionRegex(string? arrType, string? category = null)
+    {
+        var haystack = $"{arrType} {category}".ToLowerInvariant();
+        if (haystack.Contains("anime"))
+        {
+            return
+            [
+                @"\bextras?\b",
+                @"\bfeaturettes?\b",
+                @"\bsamples?\b",
+                @"\bscreens?\b",
+                @"\bspecials?\b",
+                @"\bova\b",
+                @"\bnc(ed|op)?(\\d+)?\b",
+            ];
+        }
+
+        if (haystack.Contains("lidarr") || haystack.Contains("readarr"))
+        {
+            return
+            [
+                @"\bextras?\b",
+                @"\bsamples?\b",
+                @"\bscreens?\b",
+            ];
+        }
+
+        return
+        [
+            @"\bextras?\b",
+            @"\bfeaturettes?\b",
+            @"\bsamples?\b",
+            @"\bscreens?\b",
+            @"\bnc(ed|op)?(\\d+)?\b",
+        ];
+    }
+
+    public static IReadOnlyList<string> DefaultFileNameExclusionRegex(string? arrType, string? category = null)
+    {
+        var haystack = $"{arrType} {category}".ToLowerInvariant();
+        if (haystack.Contains("lidarr") || haystack.Contains("readarr"))
+        {
+            return
+            [
+                @"\bsample\b",
+                @"brarbg.com\b",
+                @"\btrailer\b",
+                "comandotorrents.com",
+            ];
+        }
+
+        return
+        [
+            @"\bncop\\d+?\b",
+            @"\bnced\\d+?\b",
+            @"\bsample\b",
+            @"brarbg.com\b",
+            @"\btrailer\b",
+            "music video",
+            "comandotorrents.com",
+        ];
     }
 
     /// <summary>True when the list matches the original ebook-only default (order-insensitive).</summary>

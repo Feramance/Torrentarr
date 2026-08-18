@@ -93,7 +93,7 @@ public class CategorySeedingConfig
     public int HitAndRunMinimumDownloadPercent { get; set; } = 10;
     public double HitAndRunPartialSeedRatio { get; set; } = 1.0;
     public int TrackerUpdateBuffer { get; set; }
-    public int StalledDelay { get; set; } = 15;
+    public int StalledDelay { get; set; } = -1;
     public int IgnoreTorrentsYoungerThan { get; set; } = 180;
 }
 
@@ -129,7 +129,17 @@ public class WebUIConfig
     public bool AuthDisabled { get; set; }
     public bool BehindHttpsProxy { get; set; }
     public string UrlBase { get; set; } = "";
-    public bool LocalAuthEnabled { get; set; } = true;
+    public bool LocalAuthEnabled { get; set; }
+    /// <summary>
+    /// When AuthDisabled and Host is 0.0.0.0/::, must be true to acknowledge public exposure.
+    /// Null means the key was omitted (legacy warn-only).
+    /// </summary>
+    public bool? AllowInsecureExposure { get; set; }
+    /// <summary>
+    /// When false, GET <c>?token=</c> is ignored. Null (omitted) defaults to true for legacy configs.
+    /// </summary>
+    public bool? AllowInsecureTokenQuery { get; set; }
+    public bool AllowsInsecureTokenQuery => AllowInsecureTokenQuery ?? true;
     public bool OIDCEnabled { get; set; }
     public string Username { get; set; } = "";
     public string PasswordHash { get; set; } = "";

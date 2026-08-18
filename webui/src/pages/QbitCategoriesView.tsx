@@ -6,8 +6,8 @@ import {
   useState,
   type JSX,
 } from "react";
-import { getQbitCategories } from "../api/client";
-import type { QbitCategory } from "../api/types";
+import { getQbitCategories, getQbitOverview } from "../api/client";
+import type { QbitCategory, QbitOverviewCategory } from "../api/types";
 import { useToast } from "../context/ToastContext";
 import { useInterval } from "../hooks/useInterval";
 import { useWebUI } from "../context/WebUIContext";
@@ -89,6 +89,9 @@ export function QbitCategoriesView({
   active,
 }: QbitCategoriesViewProps): JSX.Element {
   const [categories, setCategories] = useState<QbitCategory[]>([]);
+  const [overviewCategories, setOverviewCategories] = useState<
+    QbitOverviewCategory[]
+  >([]);
   const [loading, setLoading] = useState(true);
   const { push } = useToast();
   const { liveArr } = useWebUI();
@@ -108,6 +111,12 @@ export function QbitCategoriesView({
         setCategories((prev) =>
           areCategoriesEqual(prev, data.categories) ? prev : data.categories,
         );
+        try {
+          const overview = await getQbitOverview();
+          setOverviewCategories(overview.categories ?? []);
+        } catch {
+          setOverviewCategories([]);
+        }
       } catch (error) {
         push(
           error instanceof Error
@@ -210,7 +219,18 @@ export function QbitCategoriesView({
       {
         accessorKey: "torrentCount",
         header: "Torrents",
-        cell: (info) => (info.getValue() as number).toLocaleString(),
+        cell: (info) => {
+          const row = info.row.original;
+          const overview = overviewCategories.find(
+            (c) => c.category === row.category && c.instance === row.instance,
+          );
+          const names = overview?.torrents?.map((t) => t.name).filter(Boolean);
+          return (
+            <span title={names?.slice(0, 20).join("\n")}>
+              {(info.getValue() as number).toLocaleString()}
+            </span>
+          );
+        },
         size: 100,
       },
       {
@@ -265,7 +285,7 @@ export function QbitCategoriesView({
         size: 150,
       },
     ],
-    [],
+    [overviewCategories],
   );
 
   return (

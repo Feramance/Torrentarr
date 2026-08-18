@@ -11,18 +11,17 @@ using Xunit;
 namespace Torrentarr.Infrastructure.Tests.Services;
 
 /// <summary>
-/// Tests for ArrSyncService.ScanQueueForBlocklistAsync (§1.7).
-/// The method is private — invoked via reflection following the pattern in AvailabilityCheckTests.
-/// Logic: skip if ArrErrorCodesToBlocklist is empty; skip items whose status != "warning"
-/// or state != "importPending"; blocklist+delete any item whose messages contain a code match.
+/// Tests for ArrSyncService.ScanQueueForBlocklistAsync.
+/// qBitrr: status == completed, trackedDownloadStatus == warning, trackedDownloadState == importPending,
+/// and Arr error messages must match the blocklist exactly (case-sensitive).
 /// </summary>
 public class ScanQueueForBlocklistTests
 {
-    // Alias for the tuple type the private method expects
-    private static (int Id, string? DownloadId, string? TrackedDownloadStatus,
-        string? TrackedDownloadState, List<StatusMessage>? StatusMessages)
-        Item(int id, string? downloadId, string? status, string? state, List<StatusMessage>? msgs)
-        => (id, downloadId, status, state, msgs);
+    private static (int Id, string? DownloadId, string? Status, string? TrackedDownloadStatus,
+        string? TrackedDownloadState, string? OutputPath, List<StatusMessage>? StatusMessages)
+        Item(int id, string? downloadId, string? status, string? trackedStatus, string? state,
+            List<StatusMessage>? msgs, string? outputPath = null)
+        => (id, downloadId, status, trackedStatus, state, outputPath, msgs);
 
     private static ArrSyncService CreateService()
     {
@@ -38,8 +37,8 @@ public class ScanQueueForBlocklistTests
 
     private static async Task InvokeScanAsync(
         ArrSyncService service,
-        IEnumerable<(int Id, string? DownloadId, string? TrackedDownloadStatus,
-            string? TrackedDownloadState, List<StatusMessage>? StatusMessages)> items,
+        IEnumerable<(int Id, string? DownloadId, string? Status, string? TrackedDownloadStatus,
+            string? TrackedDownloadState, string? OutputPath, List<StatusMessage>? StatusMessages)> items,
         ArrInstanceConfig cfg,
         Func<int, CancellationToken, Task<bool>> deleteFromQueue)
     {
@@ -50,15 +49,13 @@ public class ScanQueueForBlocklistTests
             new object?[] { items, cfg, deleteFromQueue, CancellationToken.None })!;
     }
 
-    // ── Early exit: empty blocklist ───────────────────────────────────────────
-
     [Fact]
     public async Task Scan_EmptyBlocklist_NeverCallsDelete()
     {
         var svc = CreateService();
         var deleted = new List<int>();
         var cfg = new ArrInstanceConfig { ArrErrorCodesToBlocklist = [] };
-        var items = new[] { Item(1, "abc", "warning", "importPending",
+        var items = new[] { Item(1, "abc", "completed", "warning", "importPending",
             [new StatusMessage { Messages = ["Corrupt video file"] }]) };
 
         await InvokeScanAsync(svc, items, cfg, (id, _) => { deleted.Add(id); return Task.FromResult(true); });
@@ -66,52 +63,74 @@ public class ScanQueueForBlocklistTests
         deleted.Should().BeEmpty("empty blocklist means scan is skipped entirely");
     }
 
-    // ── Status filter ─────────────────────────────────────────────────────────
-
     [Fact]
-    public async Task Scan_StatusNotWarning_ItemSkipped()
+    public async Task Scan_StatusNotCompleted_ItemSkipped()
     {
         var svc = CreateService();
         var deleted = new List<int>();
-        var cfg = new ArrInstanceConfig { ArrErrorCodesToBlocklist = ["Corrupt"] };
-        var items = new[] { Item(2, "h2", "ok", "importPending",
+        var cfg = new ArrInstanceConfig { ArrErrorCodesToBlocklist = ["Corrupt video file"] };
+        var items = new[] { Item(2, "h2", "downloading", "warning", "importPending",
             [new StatusMessage { Messages = ["Corrupt video file"] }]) };
 
         await InvokeScanAsync(svc, items, cfg, (id, _) => { deleted.Add(id); return Task.FromResult(true); });
 
-        deleted.Should().BeEmpty("status 'ok' is not 'warning' — item is skipped");
+        deleted.Should().BeEmpty("status must be completed");
     }
 
-    // ── State filter ──────────────────────────────────────────────────────────
+    [Fact]
+    public async Task Scan_TrackedStatusNotWarning_ItemSkipped()
+    {
+        var svc = CreateService();
+        var deleted = new List<int>();
+        var cfg = new ArrInstanceConfig { ArrErrorCodesToBlocklist = ["Corrupt video file"] };
+        var items = new[] { Item(2, "h2", "completed", "ok", "importPending",
+            [new StatusMessage { Messages = ["Corrupt video file"] }]) };
+
+        await InvokeScanAsync(svc, items, cfg, (id, _) => { deleted.Add(id); return Task.FromResult(true); });
+
+        deleted.Should().BeEmpty("trackedDownloadStatus must be warning");
+    }
 
     [Fact]
     public async Task Scan_StateNotImportPending_ItemSkipped()
     {
         var svc = CreateService();
         var deleted = new List<int>();
-        var cfg = new ArrInstanceConfig { ArrErrorCodesToBlocklist = ["Corrupt"] };
-        var items = new[] { Item(3, "h3", "warning", "downloading",
+        var cfg = new ArrInstanceConfig { ArrErrorCodesToBlocklist = ["Corrupt video file"] };
+        var items = new[] { Item(3, "h3", "completed", "warning", "downloading",
             [new StatusMessage { Messages = ["Corrupt video file"] }]) };
 
         await InvokeScanAsync(svc, items, cfg, (id, _) => { deleted.Add(id); return Task.FromResult(true); });
 
-        deleted.Should().BeEmpty("state 'downloading' is not 'importPending' — item is skipped");
+        deleted.Should().BeEmpty("state 'downloading' is not 'importPending'");
     }
 
-    // ── Message matching ──────────────────────────────────────────────────────
-
     [Fact]
-    public async Task Scan_MessageContainsCode_DeleteCalled()
+    public async Task Scan_ExactMessageMatch_DeleteCalled()
     {
         var svc = CreateService();
         var deleted = new List<int>();
         var cfg = new ArrInstanceConfig { ArrErrorCodesToBlocklist = ["Corrupt video file"] };
-        var items = new[] { Item(42, "hashX", "warning", "importPending",
-            [new StatusMessage { Messages = ["Corrupt video file or severe data loss"] }]) };
+        var items = new[] { Item(42, "hashX", "completed", "warning", "importPending",
+            [new StatusMessage { Messages = ["Corrupt video file"] }]) };
 
         await InvokeScanAsync(svc, items, cfg, (id, _) => { deleted.Add(id); return Task.FromResult(true); });
 
         deleted.Should().ContainSingle().Which.Should().Be(42);
+    }
+
+    [Fact]
+    public async Task Scan_SubstringMessage_DoesNotMatch()
+    {
+        var svc = CreateService();
+        var deleted = new List<int>();
+        var cfg = new ArrInstanceConfig { ArrErrorCodesToBlocklist = ["Corrupt video file"] };
+        var items = new[] { Item(42, "hashX", "completed", "warning", "importPending",
+            [new StatusMessage { Messages = ["Corrupt video file or severe data loss"] }]) };
+
+        await InvokeScanAsync(svc, items, cfg, (id, _) => { deleted.Add(id); return Task.FromResult(true); });
+
+        deleted.Should().BeEmpty("qBitrr matches error messages exactly, not as substrings");
     }
 
     [Fact]
@@ -120,7 +139,7 @@ public class ScanQueueForBlocklistTests
         var svc = CreateService();
         var deleted = new List<int>();
         var cfg = new ArrInstanceConfig { ArrErrorCodesToBlocklist = ["Corrupt"] };
-        var items = new[] { Item(5, "h5", "warning", "importPending",
+        var items = new[] { Item(5, "h5", "completed", "warning", "importPending",
             [new StatusMessage { Messages = ["No suitable files were found"] }]) };
 
         await InvokeScanAsync(svc, items, cfg, (id, _) => { deleted.Add(id); return Task.FromResult(true); });
@@ -134,7 +153,7 @@ public class ScanQueueForBlocklistTests
         var svc = CreateService();
         var deleted = new List<int>();
         var cfg = new ArrInstanceConfig { ArrErrorCodesToBlocklist = ["Corrupt"] };
-        var items = new[] { Item(6, "h6", "warning", "importPending", null) };
+        var items = new[] { Item(6, "h6", "completed", "warning", "importPending", null) };
 
         await InvokeScanAsync(svc, items, cfg, (id, _) => { deleted.Add(id); return Task.FromResult(true); });
 
@@ -147,7 +166,7 @@ public class ScanQueueForBlocklistTests
         var svc = CreateService();
         var deleted = new List<int>();
         var cfg = new ArrInstanceConfig { ArrErrorCodesToBlocklist = ["Corrupt"] };
-        var items = new[] { Item(7, "h7", "warning", "importPending",
+        var items = new[] { Item(7, "h7", "completed", "warning", "importPending",
             [new StatusMessage { Messages = null }]) };
 
         await InvokeScanAsync(svc, items, cfg, (id, _) => { deleted.Add(id); return Task.FromResult(true); });
@@ -155,24 +174,33 @@ public class ScanQueueForBlocklistTests
         deleted.Should().BeEmpty("null inner Messages list produces no messages to match");
     }
 
-    // ── Case-insensitive matching ──────────────────────────────────────────────
-
     [Fact]
-    public async Task Scan_CaseInsensitiveStatusAndCode_Matches()
+    public async Task Scan_StatusFields_AreCaseInsensitive_CodesAreExact()
     {
         var svc = CreateService();
         var deleted = new List<int>();
-        var cfg = new ArrInstanceConfig { ArrErrorCodesToBlocklist = ["corrupt video"] };
-        var items = new[] { Item(8, "h8", "WARNING", "IMPORTPENDING",
-            [new StatusMessage { Messages = ["CORRUPT VIDEO file detected"] }]) };
+        var cfg = new ArrInstanceConfig { ArrErrorCodesToBlocklist = ["Corrupt video file"] };
+        var items = new[] { Item(8, "h8", "COMPLETED", "WARNING", "IMPORTPENDING",
+            [new StatusMessage { Messages = ["Corrupt video file"] }]) };
 
         await InvokeScanAsync(svc, items, cfg, (id, _) => { deleted.Add(id); return Task.FromResult(true); });
 
-        deleted.Should().ContainSingle().Which.Should().Be(8,
-            "matching is case-insensitive for status, state, and error codes");
+        deleted.Should().ContainSingle().Which.Should().Be(8);
     }
 
-    // ── Multiple items ────────────────────────────────────────────────────────
+    [Fact]
+    public async Task Scan_CodeMatch_IsCaseSensitive()
+    {
+        var svc = CreateService();
+        var deleted = new List<int>();
+        var cfg = new ArrInstanceConfig { ArrErrorCodesToBlocklist = ["Corrupt video file"] };
+        var items = new[] { Item(8, "h8", "completed", "warning", "importPending",
+            [new StatusMessage { Messages = ["corrupt video file"] }]) };
+
+        await InvokeScanAsync(svc, items, cfg, (id, _) => { deleted.Add(id); return Task.FromResult(true); });
+
+        deleted.Should().BeEmpty("error-code membership is case-sensitive");
+    }
 
     [Fact]
     public async Task Scan_MultipleItems_OnlyMatchingOnesDeleted()
@@ -183,20 +211,19 @@ public class ScanQueueForBlocklistTests
 
         var items = new[]
         {
-            Item(10, "h10", "warning", "importPending",
-                [new StatusMessage { Messages = ["Corrupt video"] }]),   // match
-            Item(11, "h11", "warning", "downloading",
-                [new StatusMessage { Messages = ["Corrupt video"] }]),   // wrong state
-            Item(12, "h12", "ok",      "importPending",
-                [new StatusMessage { Messages = ["Corrupt video"] }]),   // wrong status
-            Item(13, "h13", "warning", "importPending",
-                [new StatusMessage { Messages = ["No match here"] }]),   // no code match
+            Item(10, "h10", "completed", "warning", "importPending",
+                [new StatusMessage { Messages = ["Corrupt"] }]),
+            Item(11, "h11", "completed", "warning", "downloading",
+                [new StatusMessage { Messages = ["Corrupt"] }]),
+            Item(12, "h12", "ok", "warning", "importPending",
+                [new StatusMessage { Messages = ["Corrupt"] }]),
+            Item(13, "h13", "completed", "warning", "importPending",
+                [new StatusMessage { Messages = ["No match here"] }]),
         };
 
         await InvokeScanAsync(svc, items, cfg, (id, _) => { deleted.Add(id); return Task.FromResult(true); });
 
-        deleted.Should().ContainSingle().Which.Should().Be(10,
-            "only item 10 passes all filters and has a matching error code");
+        deleted.Should().ContainSingle().Which.Should().Be(10);
     }
 
     [Fact]
@@ -205,12 +232,30 @@ public class ScanQueueForBlocklistTests
         var svc = CreateService();
         var deleted = new List<int>();
         var cfg = new ArrInstanceConfig { ArrErrorCodesToBlocklist = ["CodeA", "CodeB"] };
-        var items = new[] { Item(20, "h20", "warning", "importPending",
-            [new StatusMessage { Messages = ["Contains CodeB here"] }]) };
+        var items = new[] { Item(20, "h20", "completed", "warning", "importPending",
+            [new StatusMessage { Messages = ["CodeB"] }]) };
 
         await InvokeScanAsync(svc, items, cfg, (id, _) => { deleted.Add(id); return Task.FromResult(true); });
 
-        // CodeB matches even though CodeA doesn't — any matching code is sufficient
         deleted.Should().ContainSingle().Which.Should().Be(20);
+    }
+
+    [Fact]
+    public void CleanupBlocklistedPath_DeletesListedFile()
+    {
+        var dir = Path.Combine(Path.GetTempPath(), $"torrentarr-bl-{Guid.NewGuid():N}");
+        Directory.CreateDirectory(dir);
+        var file = Path.Combine(dir, "bad.mkv");
+        File.WriteAllText(file, "x");
+        try
+        {
+            ArrSyncService.CleanupBlocklistedPath(dir, "bad.mkv");
+            File.Exists(file).Should().BeFalse();
+        }
+        finally
+        {
+            if (Directory.Exists(dir))
+                Directory.Delete(dir, recursive: true);
+        }
     }
 }

@@ -210,6 +210,55 @@ public class ArrWorkerManagerTests
     }
 
     [Fact]
+    public async Task RunSearchAsync_SearchAgain_OnlyResetsSearchedTrueRows()
+    {
+        var media = new Mock<IArrMediaService>();
+        media.Setup(m => m.SearchMissingMediaAsync("movies", It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new SearchResult { LoopCompleted = true, SearchesTriggered = 0 });
+        using var harness = WorkerHarness.Create(media.Object);
+        harness.Db.Movies.Add(new MoviesFilesModel
+        {
+            Title = "Already",
+            ArrInstance = "Radarr",
+            Searched = false,
+            Upgrade = true,
+            TmdbId = 2
+        });
+        harness.Db.Movies.Add(new MoviesFilesModel
+        {
+            Title = "Movie",
+            ArrInstance = "Radarr",
+            Searched = true,
+            Upgrade = true,
+            TmdbId = 1
+        });
+        await harness.Db.SaveChangesAsync();
+
+        var cfg = new ArrInstanceConfig
+        {
+            Type = "radarr",
+            Category = "movies",
+            Search = new SearchConfig
+            {
+                SearchMissing = true,
+                SearchAgainOnSearchCompletion = true,
+                SearchRequestsEvery = 1
+            }
+        };
+
+        await harness.Manager.RunSearchAsync("Radarr", cfg, CancellationToken.None);
+        await harness.Manager.RunSearchAsync("Radarr", cfg, CancellationToken.None);
+
+        harness.Db.ChangeTracker.Clear();
+        var kept = harness.Db.Movies.Single(m => m.TmdbId == 2);
+        kept.Searched.Should().BeFalse();
+        kept.Upgrade.Should().BeTrue("qBitrr only resets rows with Searched==true");
+        var reset = harness.Db.Movies.Single(m => m.TmdbId == 1);
+        reset.Searched.Should().BeFalse();
+        reset.Upgrade.Should().BeFalse();
+    }
+
+    [Fact]
     public async Task RunSearchAsync_PartialBatch_DoesNotResetFlags()
     {
         var media = new Mock<IArrMediaService>();

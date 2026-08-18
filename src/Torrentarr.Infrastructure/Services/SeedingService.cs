@@ -876,9 +876,12 @@ public class SeedingService : ISeedingService
 
     private bool HasTag(TorrentInfo torrent, string tag)
     {
-        // §1.6 Tagless mode: map tag names to TorrentLibrary DB columns
+        // §1.6 Tagless mode: map tag names to TorrentLibrary DB columns.
+        // qBitrr still honors the live qBit "qBitrr-ignored" tag in Tagless mode.
         if (_config.Settings.Tagless)
         {
+            if (tag == IgnoredTag)
+                return HasQbitTag(torrent, IgnoredTag);
             var dbEntry = _dbContext.TorrentLibrary.AsNoTracking()
                 .FirstOrDefault(t => t.Hash == torrent.Hash && t.QbitInstance == torrent.QBitInstanceName);
             if (dbEntry == null) return false;
@@ -890,6 +893,11 @@ public class SeedingService : ISeedingService
             };
         }
 
+        return HasQbitTag(torrent, tag);
+    }
+
+    private static bool HasQbitTag(TorrentInfo torrent, string tag)
+    {
         if (string.IsNullOrEmpty(torrent.Tags))
             return false;
 

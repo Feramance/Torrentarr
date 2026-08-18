@@ -87,6 +87,59 @@ export interface QbitCategoriesResponse {
   ready: boolean;
 }
 
+export interface LogSearchMatch {
+  file: string;
+  line: number;
+  text: string;
+  context_before?: string[];
+  context_after?: string[];
+}
+
+export interface LogSearchResponse {
+  query: string;
+  truncated: boolean;
+  matches: LogSearchMatch[];
+  files_searched: string[];
+}
+
+export interface QbitOverviewTorrent {
+  hash: string;
+  name: string;
+  size: number;
+  progress: number;
+  state: string;
+  category: string;
+}
+
+export interface QbitOverviewCategory {
+  category: string;
+  instance: string;
+  managedBy: string;
+  torrentCount: number;
+  seedingCount: number;
+  truncated: boolean;
+  torrents: QbitOverviewTorrent[];
+}
+
+export interface QbitOverviewResponse {
+  instances: string[];
+  categories: QbitOverviewCategory[];
+  ready: boolean;
+}
+
+export interface ConfigSchemaField {
+  dotted: string;
+  kind: string;
+  label: string;
+  uiExpose: boolean;
+  sensitive: boolean;
+}
+
+export interface ConfigSchemaResponse {
+  version: number;
+  sections: Record<string, ConfigSchemaField[]>;
+}
+
 export interface StatusResponse {
   qbit: QbitStatus; // Legacy single-instance (default) for backward compatibility
   qbitInstances: { [instanceName: string]: QbitInstance }; // Multi-instance info

@@ -571,6 +571,9 @@ public class SonarrQueueItem
 
     [JsonProperty("episodeNumber")]
     public int? EpisodeNumber { get; set; }
+
+    [JsonProperty("outputPath")]
+    public string? OutputPath { get; set; }
 }
 
 /// <summary>

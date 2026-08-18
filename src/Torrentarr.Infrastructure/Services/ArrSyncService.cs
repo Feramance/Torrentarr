@@ -284,7 +284,7 @@ public class ArrSyncService
 
         // §1.7: Scan for ArrErrorCodesToBlocklist matches
         await ScanQueueForBlocklistAsync(
-            queueItems.Select(i => (i.Id, i.DownloadId, i.TrackedDownloadStatus, i.TrackedDownloadState, i.StatusMessages)),
+            queueItems.Select(i => (i.Id, i.DownloadId, i.Status, i.TrackedDownloadStatus, i.TrackedDownloadState, i.OutputPath, i.StatusMessages)),
             cfg,
             (id, token) => client.DeleteFromQueueAsync(id, removeFromClient: true, blocklist: true, ct: token),
             ct);
@@ -493,7 +493,7 @@ public class ArrSyncService
 
         // §1.7: Scan for ArrErrorCodesToBlocklist matches
         await ScanQueueForBlocklistAsync(
-            queueItems.Select(i => (i.Id, i.DownloadId, i.TrackedDownloadStatus, i.TrackedDownloadState, i.StatusMessages)),
+            queueItems.Select(i => (i.Id, i.DownloadId, i.Status, i.TrackedDownloadStatus, i.TrackedDownloadState, i.OutputPath, i.StatusMessages)),
             cfg,
             (id, token) => client.DeleteFromQueueAsync(id, removeFromClient: true, blocklist: true, ct: token),
             ct);
@@ -958,7 +958,7 @@ public class ArrSyncService
 
         // §1.7: Scan for ArrErrorCodesToBlocklist matches
         await ScanQueueForBlocklistAsync(
-            queueItems.Select(i => (i.Id, i.DownloadId, i.TrackedDownloadStatus, i.TrackedDownloadState, i.StatusMessages)),
+            queueItems.Select(i => (i.Id, i.DownloadId, i.Status, i.TrackedDownloadStatus, i.TrackedDownloadState, i.OutputPath, i.StatusMessages)),
             cfg,
             (id, token) => client.DeleteFromQueueAsync(id, removeFromClient: true, blocklist: true, ct: token),
             ct);
@@ -1226,7 +1226,7 @@ public class ArrSyncService
         await _db.SaveChangesWithRetryAsync(_logger, _restartCoordinator, cancellationToken: ct);
 
         await ScanQueueForBlocklistAsync(
-            queueItems.Select(i => (i.Id, i.DownloadId, i.TrackedDownloadStatus, i.TrackedDownloadState, i.StatusMessages)),
+            queueItems.Select(i => (i.Id, i.DownloadId, i.Status, i.TrackedDownloadStatus, i.TrackedDownloadState, i.OutputPath, i.StatusMessages)),
             cfg,
             (id, token) => client.DeleteFromQueueAsync(id, removeFromClient: true, blocklist: true, ct: token),
             ct);
@@ -1648,37 +1648,67 @@ public class ArrSyncService
     }
 
     /// <summary>
-    /// §1.7: Scan freshly-synced queue items for entries matching ArrErrorCodesToBlocklist
-    /// and blocklist+delete them from the Arr queue (removeFromClient=true also removes the
-    /// torrent from qBittorrent via Arr's queue deletion API).
+    /// Scan freshly-synced queue items for entries matching ArrErrorCodesToBlocklist
+    /// (qBitrr: status==completed, trackedDownloadStatus==warning, trackedDownloadState==importPending,
+    /// exact message match) and blocklist+delete them, including listed files.
     /// </summary>
     private async Task ScanQueueForBlocklistAsync(
-        IEnumerable<(int Id, string? DownloadId, string? TrackedDownloadStatus, string? TrackedDownloadState, List<StatusMessage>? StatusMessages)> items,
+        IEnumerable<(int Id, string? DownloadId, string? Status, string? TrackedDownloadStatus, string? TrackedDownloadState, string? OutputPath, List<StatusMessage>? StatusMessages)> items,
         ArrInstanceConfig cfg,
         Func<int, CancellationToken, Task<bool>> deleteFromQueue,
         CancellationToken ct)
     {
         if (cfg.ArrErrorCodesToBlocklist.Count == 0) return;
 
-        foreach (var (id, downloadId, status, state, messages) in items)
+        var codes = new HashSet<string>(cfg.ArrErrorCodesToBlocklist);
+
+        foreach (var (id, downloadId, status, trackedStatus, state, outputPath, messages) in items)
         {
-            if (!string.Equals(status, "warning", StringComparison.OrdinalIgnoreCase)) continue;
+            if (!string.Equals(status, "completed", StringComparison.OrdinalIgnoreCase)) continue;
+            if (!string.Equals(trackedStatus, "warning", StringComparison.OrdinalIgnoreCase)) continue;
             if (!string.Equals(state, "importPending", StringComparison.OrdinalIgnoreCase)) continue;
 
-            var allMessages = messages?.SelectMany(m => m.Messages ?? Enumerable.Empty<string>())
-                              ?? Enumerable.Empty<string>();
+            var matched = false;
+            if (messages != null)
+            {
+                foreach (var msg in messages)
+                {
+                    foreach (var line in msg.Messages ?? Enumerable.Empty<string>())
+                    {
+                        if (!codes.Contains(line))
+                            continue;
+                        matched = true;
+                        CleanupBlocklistedPath(outputPath, msg.Title);
+                    }
+                }
+            }
 
-            var matchedCode = allMessages.FirstOrDefault(msg =>
-                cfg.ArrErrorCodesToBlocklist.Any(code =>
-                    msg.Contains(code, StringComparison.OrdinalIgnoreCase)));
-
-            if (matchedCode == null) continue;
+            if (!matched) continue;
 
             _logger.LogWarning(
-                "ArrErrorCodesToBlocklist: blocklisting queue item {Id} (hash: {DownloadId}) — matched: \"{Error}\"",
-                id, downloadId, matchedCode);
+                "ArrErrorCodesToBlocklist: blocklisting queue item {Id} (hash: {DownloadId})",
+                id, downloadId);
 
             await deleteFromQueue(id, ct);
+        }
+    }
+
+    internal static void CleanupBlocklistedPath(string? outputPath, string? title)
+    {
+        if (string.IsNullOrWhiteSpace(outputPath) || string.IsNullOrWhiteSpace(title))
+            return;
+
+        try
+        {
+            var target = Path.Combine(outputPath, title);
+            if (Directory.Exists(target))
+                Directory.Delete(target, recursive: true);
+            else if (File.Exists(target))
+                File.Delete(target);
+        }
+        catch (Exception)
+        {
+            // qBitrr swallows in-use / permission errors while logging debug.
         }
     }
 }

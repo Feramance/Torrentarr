@@ -61,6 +61,7 @@ public class ArrWorkerManager : BackgroundService
     private readonly object _restartLock = new();
 
     private readonly IConnectivityService _connectivityService;
+    private readonly SearchYearCursor _yearCursor;
 
     private CancellationToken _appStopping;
 
@@ -69,13 +70,15 @@ public class ArrWorkerManager : BackgroundService
         IServiceScopeFactory scopeFactory,
         TorrentarrConfig config,
         ProcessStateManager stateManager,
-        IConnectivityService connectivityService)
+        IConnectivityService connectivityService,
+        SearchYearCursor? yearCursor = null)
     {
         _logger = logger;
         _scopeFactory = scopeFactory;
         _config = config;
         _stateManager = stateManager;
         _connectivityService = connectivityService;
+        _yearCursor = yearCursor ?? new SearchYearCursor();
     }
 
     protected override async Task ExecuteAsync(CancellationToken stoppingToken)
@@ -651,8 +654,11 @@ public class ArrWorkerManager : BackgroundService
 
     private async Task RunRssSyncIfDueAsync(string instanceName, ArrInstanceConfig arrCfg, CancellationToken ct)
     {
-        // §2.6: RssSyncTimer is in minutes
-        var interval = TimeSpan.FromMinutes(arrCfg.RssSyncTimer > 0 ? arrCfg.RssSyncTimer : 15);
+        // qBitrr: RssSyncTimer <= 0 disables the command (no 15-minute fallback).
+        if (!IsPeriodicCommandEnabled(arrCfg.RssSyncTimer))
+            return;
+
+        var interval = TimeSpan.FromMinutes(arrCfg.RssSyncTimer);
         var last = _lastRssSyncTime.GetValueOrDefault(instanceName, DateTime.MinValue);
         if (DateTime.UtcNow - last < interval) return;
 
@@ -661,10 +667,10 @@ public class ArrWorkerManager : BackgroundService
             _logger.LogDebug("Triggering RSS sync for {Instance}", instanceName);
             switch (arrCfg.Type.ToLowerInvariant())
             {
-                case "radarr": await new Torrentarr.Infrastructure.ApiClients.Arr.RadarrClient(arrCfg.URI, arrCfg.APIKey).RssSyncAsync(ct); break;
-                case "sonarr": await new Torrentarr.Infrastructure.ApiClients.Arr.SonarrClient(arrCfg.URI, arrCfg.APIKey).RssSyncAsync(ct); break;
-                case "lidarr": await new Torrentarr.Infrastructure.ApiClients.Arr.LidarrClient(arrCfg.URI, arrCfg.APIKey).RssSyncAsync(ct); break;
-                case "readarr": await new Torrentarr.Infrastructure.ApiClients.Arr.ReadarrClient(arrCfg.URI, arrCfg.APIKey).RssSyncAsync(ct); break;
+                case "radarr": await new Torrentarr.Infrastructure.ApiClients.Arr.RadarrClient(arrCfg.URI, arrCfg.APIKey, arrCfg.SkipTLSVerify).RssSyncAsync(ct); break;
+                case "sonarr": await new Torrentarr.Infrastructure.ApiClients.Arr.SonarrClient(arrCfg.URI, arrCfg.APIKey, arrCfg.SkipTLSVerify).RssSyncAsync(ct); break;
+                case "lidarr": await new Torrentarr.Infrastructure.ApiClients.Arr.LidarrClient(arrCfg.URI, arrCfg.APIKey, arrCfg.SkipTLSVerify).RssSyncAsync(ct); break;
+                case "readarr": await new Torrentarr.Infrastructure.ApiClients.Arr.ReadarrClient(arrCfg.URI, arrCfg.APIKey, arrCfg.SkipTLSVerify).RssSyncAsync(ct); break;
             }
             _lastRssSyncTime[instanceName] = DateTime.UtcNow;
         }
@@ -676,8 +682,13 @@ public class ArrWorkerManager : BackgroundService
 
     private async Task RunRefreshMonitoredDownloadsIfDueAsync(string instanceName, ArrInstanceConfig arrCfg, CancellationToken ct)
     {
-        // §2.6: RefreshDownloadsTimer is in minutes
-        var interval = TimeSpan.FromMinutes(arrCfg.RefreshDownloadsTimer > 0 ? arrCfg.RefreshDownloadsTimer : 1);
+        // qBitrr: RefreshDownloadsTimer <= 0 disables; Lidarr does not support RefreshMonitoredDownloads.
+        if (!IsPeriodicCommandEnabled(arrCfg.RefreshDownloadsTimer))
+            return;
+        if (string.Equals(arrCfg.Type, "lidarr", StringComparison.OrdinalIgnoreCase))
+            return;
+
+        var interval = TimeSpan.FromMinutes(arrCfg.RefreshDownloadsTimer);
         var last = _lastRefreshDownloadsTime.GetValueOrDefault(instanceName, DateTime.MinValue);
         if (DateTime.UtcNow - last < interval) return;
 
@@ -686,10 +697,9 @@ public class ArrWorkerManager : BackgroundService
             _logger.LogDebug("Triggering RefreshMonitoredDownloads for {Instance}", instanceName);
             switch (arrCfg.Type.ToLowerInvariant())
             {
-                case "radarr": await new Torrentarr.Infrastructure.ApiClients.Arr.RadarrClient(arrCfg.URI, arrCfg.APIKey).RefreshMonitoredDownloadsAsync(ct); break;
-                case "sonarr": await new Torrentarr.Infrastructure.ApiClients.Arr.SonarrClient(arrCfg.URI, arrCfg.APIKey).RefreshMonitoredDownloadsAsync(ct); break;
-                case "lidarr": await new Torrentarr.Infrastructure.ApiClients.Arr.LidarrClient(arrCfg.URI, arrCfg.APIKey).RefreshMonitoredDownloadsAsync(ct); break;
-                case "readarr": await new Torrentarr.Infrastructure.ApiClients.Arr.ReadarrClient(arrCfg.URI, arrCfg.APIKey).RefreshMonitoredDownloadsAsync(ct); break;
+                case "radarr": await new Torrentarr.Infrastructure.ApiClients.Arr.RadarrClient(arrCfg.URI, arrCfg.APIKey, arrCfg.SkipTLSVerify).RefreshMonitoredDownloadsAsync(ct); break;
+                case "sonarr": await new Torrentarr.Infrastructure.ApiClients.Arr.SonarrClient(arrCfg.URI, arrCfg.APIKey, arrCfg.SkipTLSVerify).RefreshMonitoredDownloadsAsync(ct); break;
+                case "readarr": await new Torrentarr.Infrastructure.ApiClients.Arr.ReadarrClient(arrCfg.URI, arrCfg.APIKey, arrCfg.SkipTLSVerify).RefreshMonitoredDownloadsAsync(ct); break;
             }
             _lastRefreshDownloadsTime[instanceName] = DateTime.UtcNow;
         }
@@ -698,6 +708,9 @@ public class ArrWorkerManager : BackgroundService
             _logger.LogWarning(ex, "RefreshMonitoredDownloads failed for {Instance}", instanceName);
         }
     }
+
+    /// <summary>qBitrr: timer values of 0 or less disable the periodic Arr command.</summary>
+    internal static bool IsPeriodicCommandEnabled(int timerMinutes) => timerMinutes > 0;
 
     internal bool ShouldRunSearch(string instanceName, ArrInstanceConfig arrCfg)
     {
@@ -724,8 +737,10 @@ public class ArrWorkerManager : BackgroundService
             if (!arrCfg.Search.SearchMissing)
                 return null;
 
-            // §1.2: Restore quality profiles that have timed out before starting the search cycle
-            if (arrCfg.Search.UseTempForMissing && !arrCfg.Search.KeepTempProfile && arrCfg.Search.TempProfileResetTimeoutMinutes > 0)
+            // §1.2: Restore quality profiles that have timed out before starting the search cycle.
+            // qBitrr still restores on timeout when KeepTempProfile is true (KeepTemp only skips
+            // immediate restore after a successful search).
+            if (arrCfg.Search.UseTempForMissing && arrCfg.Search.TempProfileResetTimeoutMinutes > 0)
             {
                 try
                 {
@@ -742,6 +757,7 @@ public class ArrWorkerManager : BackgroundService
                 _loopCompleted.TryGetValue(instanceName, out var prevCompleted) && prevCompleted)
             {
                 await ResetSearchedFlagAsync(instanceName, arrCfg, ct);
+                _yearCursor.Reset(instanceName);
                 _loopCompleted[instanceName] = false;
             }
 
@@ -778,6 +794,12 @@ public class ArrWorkerManager : BackgroundService
             }
 
             var loopCompleted = drainedFlags.Count > 0 && drainedFlags.TrueForAll(f => f);
+            if (loopCompleted
+                && SearchYearCursor.ShouldFilter(arrCfg)
+                && _yearCursor.Advance(instanceName))
+            {
+                loopCompleted = false;
+            }
             _loopCompleted[instanceName] = loopCompleted;
             if (result != null)
                 result.LoopCompleted = loopCompleted;
@@ -802,39 +824,159 @@ public class ArrWorkerManager : BackgroundService
             {
                 case "radarr":
                     await db.Movies
-                        .Where(m => m.ArrInstance == instanceName)
+                        .Where(m => m.ArrInstance == instanceName && m.Searched)
                         .ExecuteUpdateAsync(s => s
                             .SetProperty(m => m.Searched, false)
                             .SetProperty(m => m.Upgrade, false), ct);
+                    await PruneOrphansAsync(
+                        instanceName, "movies",
+                        async () =>
+                        {
+                            var client = new RadarrClient(arrCfg.URI, arrCfg.APIKey, arrCfg.SkipTLSVerify);
+                            var movies = await client.GetMoviesAsync(ct);
+                            return movies.Select(m => m.Id).ToList();
+                        },
+                        async ids =>
+                        {
+                            await db.Movies.Where(m => m.ArrInstance == instanceName && !ids.Contains(m.ArrId))
+                                .ExecuteDeleteAsync(ct);
+                        },
+                        ct);
                     break;
                 case "sonarr":
                     await db.Episodes
-                        .Where(e => e.ArrInstance == instanceName)
+                        .Where(e => e.ArrInstance == instanceName && e.Searched)
                         .ExecuteUpdateAsync(s => s
                             .SetProperty(e => e.Searched, false)
                             .SetProperty(e => e.Upgrade, false), ct);
+                    await db.Series
+                        .Where(s => s.ArrInstance == instanceName && s.Searched)
+                        .ExecuteUpdateAsync(s => s
+                            .SetProperty(s => s.Searched, false)
+                            .SetProperty(s => s.Upgrade, false), ct);
+                    await PruneSonarrOrphansAsync(instanceName, arrCfg, db, ct);
                     break;
                 case "lidarr":
                     await db.Albums
-                        .Where(a => a.ArrInstance == instanceName)
+                        .Where(a => a.ArrInstance == instanceName && a.Searched)
                         .ExecuteUpdateAsync(s => s
                             .SetProperty(a => a.Searched, false)
                             .SetProperty(a => a.Upgrade, false), ct);
+                    await PruneOrphansAsync(
+                        instanceName, "albums",
+                        async () =>
+                        {
+                            var client = new LidarrClient(arrCfg.URI, arrCfg.APIKey, arrCfg.SkipTLSVerify);
+                            var albums = await client.GetAlbumsAsync(ct: ct);
+                            return albums.Select(a => a.Id).ToList();
+                        },
+                        async ids =>
+                        {
+                            await db.Albums.Where(a => a.ArrInstance == instanceName && !ids.Contains(a.ArrId))
+                                .ExecuteDeleteAsync(ct);
+                        },
+                        ct);
                     break;
                 case "readarr":
                     await db.Books
-                        .Where(b => b.ArrInstance == instanceName)
+                        .Where(b => b.ArrInstance == instanceName && b.Searched)
                         .ExecuteUpdateAsync(s => s
                             .SetProperty(b => b.Searched, false)
                             .SetProperty(b => b.Upgrade, false), ct);
+                    await PruneOrphansAsync(
+                        instanceName, "books",
+                        async () =>
+                        {
+                            var client = new ReadarrClient(arrCfg.URI, arrCfg.APIKey, arrCfg.SkipTLSVerify);
+                            var books = await client.GetBooksAsync(ct: ct);
+                            return books.Select(b => b.Id).ToList();
+                        },
+                        async ids =>
+                        {
+                            await db.Books.Where(b => b.ArrInstance == instanceName && !ids.Contains(b.ArrId))
+                                .ExecuteDeleteAsync(ct);
+                        },
+                        ct);
                     break;
             }
 
-            _logger.LogTrace("SearchAgainOnSearchCompletion: reset Searched and Upgrade for {Instance}", instanceName);
+            _logger.LogTrace("SearchAgainOnSearchCompletion: reset Searched==true rows for {Instance}", instanceName);
         }
         catch (Exception ex)
         {
             _logger.LogWarning(ex, "Failed to reset Searched flag for {Instance}", instanceName);
+        }
+    }
+
+    private async Task PruneOrphansAsync(
+        string instanceName,
+        string entityLabel,
+        Func<Task<List<int>>> collectIds,
+        Func<List<int>, Task> deleteMissing,
+        CancellationToken ct)
+    {
+        try
+        {
+            var ids = await collectIds();
+            if (ids.Count == 0)
+            {
+                _logger.LogWarning(
+                    "{Instance}: No {Entity} returned from Arr API during reset; skipping DB prune to prevent data loss",
+                    instanceName, entityLabel);
+                return;
+            }
+
+            await deleteMissing(ids);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(ex, "{Instance}: failed to prune orphan {Entity} during SearchAgain reset", instanceName, entityLabel);
+        }
+    }
+
+    private async Task PruneSonarrOrphansAsync(
+        string instanceName,
+        ArrInstanceConfig arrCfg,
+        TorrentarrDbContext db,
+        CancellationToken ct)
+    {
+        try
+        {
+            var client = new SonarrClient(arrCfg.URI, arrCfg.APIKey, arrCfg.SkipTLSVerify);
+            var series = await client.GetSeriesAsync(ct);
+            var seriesIds = series.Select(s => s.Id).ToList();
+            if (seriesIds.Count == 0)
+            {
+                _logger.LogWarning(
+                    "{Instance}: No series returned from Arr API during reset; skipping DB prune to prevent data loss",
+                    instanceName);
+                return;
+            }
+
+            await db.Series.Where(s => s.ArrInstance == instanceName && !seriesIds.Contains(s.ArrId))
+                .ExecuteDeleteAsync(ct);
+
+            var episodeIds = new List<int>();
+            foreach (var sid in seriesIds)
+            {
+                var episodes = await client.GetEpisodesAsync(sid, ct);
+                episodeIds.AddRange(episodes.Select(e => e.Id));
+            }
+
+            if (episodeIds.Count == 0)
+            {
+                _logger.LogWarning(
+                    "{Instance}: No episodes returned from Arr API during reset; skipping episode prune to prevent data loss",
+                    instanceName);
+                return;
+            }
+
+            await db.Episodes.Where(e => e.ArrInstance == instanceName && !episodeIds.Contains(e.ArrId))
+                .ExecuteDeleteAsync(ct);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(ex, "{Instance}: failed to prune orphan Sonarr rows during SearchAgain reset", instanceName);
         }
     }
 

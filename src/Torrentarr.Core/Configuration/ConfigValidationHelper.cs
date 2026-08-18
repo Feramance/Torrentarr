@@ -69,13 +69,31 @@ public static class ConfigValidationHelper
         return (true, null);
     }
 
+    /// <summary>
+    /// Refuse AuthDisabled on a public bind when AllowInsecureExposure is explicitly false.
+    /// Omitted key (legacy) is allowed — Host logs a warning at startup instead.
+    /// </summary>
+    public static (bool Ok, string? Error) ValidateInsecureExposure(TorrentarrConfig config)
+    {
+        if (!config.WebUI.AuthDisabled)
+            return (true, null);
+        var host = config.WebUI.Host?.Trim() ?? "";
+        if (host is not ("0.0.0.0" or "::" or "[::]"))
+            return (true, null);
+        if (config.WebUI.AllowInsecureExposure != false)
+            return (true, null);
+        return (false,
+            "AllowInsecureExposure must be true when AuthDisabled is true and Host is 0.0.0.0 or ::");
+    }
+
     public static (bool Ok, string? Error) ValidateAll(TorrentarrConfig config)
     {
         foreach (var check in new Func<TorrentarrConfig, (bool, string?)>[]
         {
             ValidateArrCategoryPaths,
             ValidateManagedCategoryPaths,
-            ValidateArrManagedCategoryOverlap
+            ValidateArrManagedCategoryOverlap,
+            ValidateInsecureExposure
         })
         {
             var (ok, error) = check(config);

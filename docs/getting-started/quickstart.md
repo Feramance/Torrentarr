@@ -303,7 +303,7 @@ UserName = "admin"
 Password = "secure-password-here"
 
 [Settings]
-FFprobeAutoUpdate = true  # Validate files before import
+FFprobeAutoUpdate = true  # Download ffprobe for post-import AutoDelete checks
 
 # Radarr for 4K movies
 [Radarr-4K]

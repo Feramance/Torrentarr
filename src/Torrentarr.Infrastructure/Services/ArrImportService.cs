@@ -504,7 +504,7 @@ public class ArrImportService : IArrImportService
 
     /// <summary>
     /// Blocklist a torrent in the Arr queue (removeFromClient=false, blocklist=true).
-    /// The Arr will then automatically re-search for a replacement.
+    /// When <see cref="ArrInstanceConfig.ReSearch"/> is true, also fire Arr *Search for the media.
     /// </summary>
     public async Task<bool> BlocklistAndReSearchAsync(string hash, string category, CancellationToken cancellationToken = default)
     {
@@ -547,7 +547,13 @@ public class ArrImportService : IArrImportService
         if (record == null) return false;
 
         _logger.LogInformation("Blocklisting Radarr queue item {Id} (hash: {Hash})", record.Id, downloadId);
-        return await client.DeleteFromQueueAsync(record.Id, removeFromClient: false, blocklist: true, ct);
+        var deleted = await client.DeleteFromQueueAsync(record.Id, removeFromClient: false, blocklist: true, ct);
+        if (deleted && config.ReSearch && record.MovieId is int movieId)
+        {
+            _logger.LogInformation("Re-Searching Radarr movie {MovieId} after blocklist", movieId);
+            await client.SearchMovieAsync(movieId, ct);
+        }
+        return deleted;
     }
 
     private async Task<bool> BlocklistSonarrAsync(ArrInstanceConfig config, string downloadId, CancellationToken ct)
@@ -560,7 +566,21 @@ public class ArrImportService : IArrImportService
         if (record == null) return false;
 
         _logger.LogInformation("Blocklisting Sonarr queue item {Id} (hash: {Hash})", record.Id, downloadId);
-        return await client.DeleteFromQueueAsync(record.Id, removeFromClient: false, blocklist: true, ct);
+        var deleted = await client.DeleteFromQueueAsync(record.Id, removeFromClient: false, blocklist: true, ct);
+        if (deleted && config.ReSearch)
+        {
+            if (record.SeriesId is int seriesId)
+            {
+                _logger.LogInformation("Re-Searching Sonarr series {SeriesId} after blocklist", seriesId);
+                await client.SearchSeriesAsync(seriesId, ct);
+            }
+            else if (record.EpisodeId is int episodeId)
+            {
+                _logger.LogInformation("Re-Searching Sonarr episode {EpisodeId} after blocklist", episodeId);
+                await client.SearchEpisodeAsync(new List<int> { episodeId }, ct);
+            }
+        }
+        return deleted;
     }
 
     private async Task<bool> BlocklistLidarrAsync(ArrInstanceConfig config, string downloadId, CancellationToken ct)
@@ -573,7 +593,13 @@ public class ArrImportService : IArrImportService
         if (record == null) return false;
 
         _logger.LogInformation("Blocklisting Lidarr queue item {Id} (hash: {Hash})", record.Id, downloadId);
-        return await client.DeleteFromQueueAsync(record.Id, removeFromClient: false, blocklist: true, ct);
+        var deleted = await client.DeleteFromQueueAsync(record.Id, removeFromClient: false, blocklist: true, ct);
+        if (deleted && config.ReSearch && record.AlbumId is int albumId)
+        {
+            _logger.LogInformation("Re-Searching Lidarr album {AlbumId} after blocklist", albumId);
+            await client.SearchAlbumAsync(new List<int> { albumId }, ct);
+        }
+        return deleted;
     }
 
     private async Task<bool> BlocklistReadarrAsync(ArrInstanceConfig config, string downloadId, CancellationToken ct)
@@ -586,7 +612,13 @@ public class ArrImportService : IArrImportService
         if (record == null) return false;
 
         _logger.LogInformation("Blocklisting Readarr queue item {Id} (hash: {Hash})", record.Id, downloadId);
-        return await client.DeleteFromQueueAsync(record.Id, removeFromClient: false, blocklist: true, ct);
+        var deleted = await client.DeleteFromQueueAsync(record.Id, removeFromClient: false, blocklist: true, ct);
+        if (deleted && config.ReSearch && record.BookId is int bookId)
+        {
+            _logger.LogInformation("Re-Searching Readarr book {BookId} after blocklist", bookId);
+            await client.SearchBookAsync(new List<int> { bookId }, ct);
+        }
+        return deleted;
     }
 
     private async Task<bool> CheckReadarrCfUnmetAsync(ArrInstanceConfig config, string downloadId, CancellationToken ct)

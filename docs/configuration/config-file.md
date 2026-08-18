@@ -1002,11 +1002,13 @@ cp config.example.toml ~/config/config.toml
 To point Torrentarr at a specific config file (e.g. in Docker):
 
 ```bash
-# Path to config.toml file
+# Path to config.toml file (QBITRR_CONFIG is also accepted)
 export TORRENTARR_CONFIG=/config/config.toml
 ```
 
-Torrentarr does not support per-setting environment variable overrides; use `config.toml` or the WebUI Config Editor for all other settings. See [Environment Variables](environment.md).
+`TORRENTARR_OVERRIDES_DATA_PATH` (alias `QBITRR_OVERRIDES_DATA_PATH`) overrides the database/logs directory. `TORRENTARR_OVERRIDES_SEARCH_ONLY` / `TORRENTARR_OVERRIDES_PROCESSING_ONLY` (and `QBITRR_*` aliases) force search-only or processing-only mode.
+
+Torrentarr also supports a small set of `TORRENTARR_SETTINGS_*` / `TORRENTARR_QBIT_*` env overrides (with `QBITRR_*` aliases). See [Environment Variables](environment.md).
 
 ---
 

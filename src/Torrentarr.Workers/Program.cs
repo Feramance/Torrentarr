@@ -156,6 +156,7 @@ try
     builder.Services.AddScoped<IArrImportService, ArrImportService>();
     builder.Services.AddScoped<IDatabaseHealthService, DatabaseHealthService>();
     builder.Services.AddSingleton<IConnectivityService, ConnectivityService>();
+    builder.Services.AddSingleton<SearchYearCursor>();
 
     builder.Services.AddHostedService<ArrWorkerService>();
 

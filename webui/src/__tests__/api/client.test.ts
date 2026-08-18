@@ -16,6 +16,9 @@ import {
   getLidarrArtistDetail,
   getReadarrAuthors,
   getReadarrAuthorDetail,
+  searchLogs,
+  getQbitOverview,
+  getConfigSchema,
 } from "../../api/client";
 
 const server = setupServer();
@@ -628,5 +631,81 @@ describe("AuthError", () => {
   it("code is undefined when not provided", () => {
     const err = new AuthError("msg");
     expect(err.code).toBeUndefined();
+  });
+});
+
+describe("searchLogs", () => {
+  it("deserializes log search matches", async () => {
+    server.use(
+      http.get("/web/logs/All.log/search", ({ request }) => {
+        const url = new URL(request.url);
+        expect(url.searchParams.get("q")).toBe("error");
+        return HttpResponse.json({
+          query: "error",
+          truncated: false,
+          matches: [
+            {
+              file: "All.log",
+              line: 2,
+              text: "error: boom",
+              context_before: [],
+              context_after: [],
+            },
+          ],
+          files_searched: ["All.log"],
+        });
+      }),
+    );
+
+    const result = await searchLogs("All.log", "error");
+    expect(result.matches).toHaveLength(1);
+    expect(result.matches[0].text).toContain("error");
+  });
+});
+
+describe("getQbitOverview", () => {
+  it("deserializes overview categories", async () => {
+    server.use(
+      http.get("/web/qbit/overview", () =>
+        HttpResponse.json({
+          instances: ["qBit"],
+          categories: [
+            {
+              category: "radarr",
+              instance: "qBit",
+              managedBy: "arr",
+              torrentCount: 1,
+              seedingCount: 1,
+              truncated: false,
+              torrents: [{ hash: "abc", name: "Movie", size: 1, progress: 1, state: "uploading", category: "radarr" }],
+            },
+          ],
+          ready: true,
+        }),
+      ),
+    );
+
+    const result = await getQbitOverview();
+    expect(result.ready).toBe(true);
+    expect(result.categories[0].torrents[0].name).toBe("Movie");
+  });
+});
+
+describe("getConfigSchema", () => {
+  it("deserializes schema version and sections", async () => {
+    server.use(
+      http.get("/web/config/schema", () =>
+        HttpResponse.json({
+          version: 1,
+          sections: {
+            WebUI: [{ dotted: "Token", kind: "string", label: "Token", uiExpose: true, sensitive: true }],
+          },
+        }),
+      ),
+    );
+
+    const result = await getConfigSchema();
+    expect(result.version).toBe(1);
+    expect(result.sections.WebUI[0].dotted).toBe("Token");
   });
 });

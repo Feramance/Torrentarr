@@ -1,3 +1,4 @@
+using Microsoft.AspNetCore.Http;
 using FluentAssertions;
 using Torrentarr.Core.Configuration;
 using Torrentarr.Infrastructure.Services;
@@ -199,5 +200,46 @@ public class WebUIAuthHelpersTests
         var updated = new TorrentarrConfig { WebUI = { PasswordHash = "existing-hash" } };
 
         WebUIAuthHelpers.ValidatePasswordHashForConfigApiSave(current, updated).Should().BeNull();
+    }
+
+    [Fact]
+    public void CheckInsecureExposure_AllowsLegacyOmittedKey()
+    {
+        var webUi = new WebUIConfig { AuthDisabled = true, Host = "0.0.0.0", AllowInsecureExposure = null };
+        WebUIAuthHelpers.CheckInsecureExposure(webUi).Should().BeNull();
+    }
+
+    [Fact]
+    public void CheckInsecureExposure_RefusesExplicitFalseOnPublicBind()
+    {
+        var webUi = new WebUIConfig { AuthDisabled = true, Host = "0.0.0.0", AllowInsecureExposure = false };
+        WebUIAuthHelpers.CheckInsecureExposure(webUi).Should().NotBeNullOrEmpty();
+    }
+
+    [Fact]
+    public void CheckInsecureExposure_AllowsExplicitTrue()
+    {
+        var webUi = new WebUIConfig { AuthDisabled = true, Host = "0.0.0.0", AllowInsecureExposure = true };
+        WebUIAuthHelpers.CheckInsecureExposure(webUi).Should().BeNull();
+    }
+
+    [Fact]
+    public void TryGetQueryToken_ReturnsNullWhenDisabled()
+    {
+        var ctx = new DefaultHttpContext();
+        ctx.Request.Method = "GET";
+        ctx.Request.QueryString = new QueryString("?token=abc");
+        var webUi = new WebUIConfig { AllowInsecureTokenQuery = false };
+        WebUIAuthHelpers.TryGetQueryToken(ctx.Request, webUi).Should().BeNull();
+    }
+
+    [Fact]
+    public void TryGetQueryToken_ReturnsTokenWhenAllowed()
+    {
+        var ctx = new DefaultHttpContext();
+        ctx.Request.Method = "GET";
+        ctx.Request.QueryString = new QueryString("?token=abc");
+        var webUi = new WebUIConfig { AllowInsecureTokenQuery = true };
+        WebUIAuthHelpers.TryGetQueryToken(ctx.Request, webUi).Should().Be("abc");
     }
 }

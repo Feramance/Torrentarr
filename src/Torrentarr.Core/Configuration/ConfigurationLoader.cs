@@ -31,7 +31,7 @@ public class ConfigurationLoader
             return TestConfigPathOverride;
 
         // Allow test harnesses and Docker to override the config path via an environment variable
-        var envOverride = Environment.GetEnvironmentVariable("TORRENTARR_CONFIG");
+        var envOverride = ReadConfigPathEnv();
         if (!string.IsNullOrEmpty(envOverride))
             return envOverride;
 
@@ -65,7 +65,11 @@ public class ConfigurationLoader
     /// </summary>
     public static string GetDataDirectoryPath()
     {
-        var envOverride = Environment.GetEnvironmentVariable("TORRENTARR_CONFIG");
+        var dataOverride = ReadEnv("TORRENTARR_OVERRIDES_DATA_PATH", "QBITRR_OVERRIDES_DATA_PATH");
+        if (!string.IsNullOrEmpty(dataOverride))
+            return Path.GetFullPath(dataOverride);
+
+        var envOverride = ReadConfigPathEnv();
         if (!string.IsNullOrEmpty(envOverride))
         {
             if (envOverride.StartsWith("/config", StringComparison.Ordinal))
@@ -175,6 +179,8 @@ public class ConfigurationLoader
         ApplyEnvString("TORRENTARR_SETTINGS_AUTO_UPDATE_CHANNEL", "QBITRR_SETTINGS_AUTO_UPDATE_CHANNEL", v => s.AutoUpdateChannel = v);
         ApplyEnvList("TORRENTARR_SETTINGS_PING_URLS", "QBITRR_SETTINGS_PING_URLS", v => s.PingURLS = v);
 
+        ApplyOverridesSearchProcessing(config);
+
         // TORRENTARR_QBIT_* / QBITRR_QBIT_* -> primary qBit instance (config.QBitInstances["qBit"])
         if (config.QBitInstances.TryGetValue("qBit", out var qbit))
         {
@@ -187,6 +193,43 @@ public class ConfigurationLoader
 
         var webui = config.WebUI;
         ApplyEnvString("TORRENTARR_WEBUI_URL_BASE", "QBITRR_WEBUI_URL_BASE", v => webui.UrlBase = UrlBaseHelper.NormalizeUrlBase(v));
+    }
+
+    private static string? ReadConfigPathEnv() =>
+        ReadEnv("TORRENTARR_CONFIG", "QBITRR_CONFIG");
+
+    /// <summary>
+    /// qBitrr <c>QBITRR_OVERRIDES_SEARCH_ONLY</c> / <c>_PROCESSING_ONLY</c>: force all Arr instances
+    /// into search-only (and disable qBit) or processing-only.
+    /// </summary>
+    private static void ApplyOverridesSearchProcessing(TorrentarrConfig config)
+    {
+        var searchOnly = ReadEnv("TORRENTARR_OVERRIDES_SEARCH_ONLY", "QBITRR_OVERRIDES_SEARCH_ONLY");
+        var processingOnly = ReadEnv("TORRENTARR_OVERRIDES_PROCESSING_ONLY", "QBITRR_OVERRIDES_PROCESSING_ONLY");
+
+        if (IsEnvTruthy(searchOnly))
+        {
+            foreach (var instance in config.ArrInstances.Values)
+                instance.SearchOnly = true;
+            foreach (var qbit in config.QBitInstances.Values)
+                qbit.Disabled = true;
+        }
+
+        if (IsEnvTruthy(processingOnly))
+        {
+            foreach (var instance in config.ArrInstances.Values)
+                instance.ProcessingOnly = true;
+        }
+    }
+
+    private static bool IsEnvTruthy(string? value)
+    {
+        if (string.IsNullOrWhiteSpace(value))
+            return false;
+        return value.Equals("1", StringComparison.OrdinalIgnoreCase)
+            || value.Equals("true", StringComparison.OrdinalIgnoreCase)
+            || value.Equals("yes", StringComparison.OrdinalIgnoreCase)
+            || value.Equals("on", StringComparison.OrdinalIgnoreCase);
     }
 
     private static string? ReadEnv(string primaryEnvName, string? aliasEnvName)
@@ -792,8 +835,8 @@ public class ConfigurationLoader
                 ("Port", (long)6969),
                 ("Token", ""),
                 ("AuthDisabled", false),
-                // Must match <see cref="GenerateDefaultConfig"/>: when auth is required, local login is the default path.
-                ("LocalAuthEnabled", true),
+                // Must match GenerateDefaultConfig / qBitrr: local login is opt-in.
+                ("LocalAuthEnabled", false),
                 ("OIDCEnabled", false),
                 ("BehindHttpsProxy", false),
                 ("UrlBase", ""),
@@ -1142,6 +1185,9 @@ public class ConfigurationLoader
         if (table.TryGetValue("MinSeedingTime", out var minTime))
             tracker.MinSeedingTimeDays = Convert.ToInt32(minTime);
 
+        if (table.TryGetValue("MinSeedingTimeDays", out var minSeedingTimeDays))
+            tracker.MinSeedingTimeDays = Convert.ToInt32(minSeedingTimeDays);
+
         if (table.TryGetValue("HitAndRunMinimumDownloadPercent", out var hnrMinDlPct))
             tracker.HitAndRunMinimumDownloadPercent = Convert.ToInt32(hnrMinDlPct);
 
@@ -1222,7 +1268,7 @@ public class ConfigurationLoader
             seeding.TrackerUpdateBuffer = DurationParser.ParseToSeconds(trackerUpdateBuffer, 0);
 
         if (table.TryGetValue("StalledDelay", out var stalledDelay))
-            seeding.StalledDelay = DurationParser.ParseToMinutes(stalledDelay, 15);
+            seeding.StalledDelay = DurationParser.ParseToMinutes(stalledDelay, -1);
 
         if (table.TryGetValue("IgnoreTorrentsYoungerThan", out var ignoreYounger))
             seeding.IgnoreTorrentsYoungerThan = DurationParser.ParseToSeconds(ignoreYounger, 180);
@@ -1307,6 +1353,12 @@ public class ConfigurationLoader
         if (table.TryGetValue("LiveArr", out var liveArr))
             webui.LiveArr = Convert.ToBoolean(liveArr);
 
+        if (table.TryGetValue("AllowInsecureExposure", out var allowInsecureExposure))
+            webui.AllowInsecureExposure = Convert.ToBoolean(allowInsecureExposure);
+
+        if (table.TryGetValue("AllowInsecureTokenQuery", out var allowInsecureTokenQuery))
+            webui.AllowInsecureTokenQuery = Convert.ToBoolean(allowInsecureTokenQuery);
+
         if (table.TryGetValue("Theme", out var theme))
             webui.Theme = theme?.ToString() ?? "Dark";
 
@@ -1387,11 +1439,15 @@ public class ConfigurationLoader
             if (instanceTable.TryGetValue("ArrErrorCodesToBlocklist", out var arrErrorCodes) && arrErrorCodes is TomlArray errorArray)
                 instance.ArrErrorCodesToBlocklist = errorArray.Select(x => x?.ToString() ?? "").ToList();
 
-            // Parse Torrent section with type-aware allowlist defaults
+            // Parse Torrent section with type-aware allowlist / exclusion defaults
             if (instanceTable.TryGetValue("Torrent", out var torrentObj) && torrentObj is TomlTable torrentTable)
-                instance.Torrent = ParseTorrentConfig(torrentTable, arrType);
+                instance.Torrent = ParseTorrentConfig(torrentTable, arrType, instance.Category);
             else
+            {
                 instance.Torrent.FileExtensionAllowlist = ArrSectionHelper.DefaultFileExtensionAllowlist(arrType).ToList();
+                instance.Torrent.FolderExclusionRegex = ArrSectionHelper.DefaultFolderExclusionRegex(arrType, instance.Category).ToList();
+                instance.Torrent.FileNameExclusionRegex = ArrSectionHelper.DefaultFileNameExclusionRegex(arrType, instance.Category).ToList();
+            }
 
             // Parse EntrySearch section
             if (instanceTable.TryGetValue("EntrySearch", out var searchObj) && searchObj is TomlTable searchTable)
@@ -1403,11 +1459,13 @@ public class ConfigurationLoader
         return instances;
     }
 
-    private TorrentConfig ParseTorrentConfig(TomlTable table, string? arrType = null)
+    private TorrentConfig ParseTorrentConfig(TomlTable table, string? arrType = null, string? category = null)
     {
         var torrent = new TorrentConfig
         {
-            FileExtensionAllowlist = ArrSectionHelper.DefaultFileExtensionAllowlist(arrType).ToList()
+            FileExtensionAllowlist = ArrSectionHelper.DefaultFileExtensionAllowlist(arrType).ToList(),
+            FolderExclusionRegex = ArrSectionHelper.DefaultFolderExclusionRegex(arrType, category).ToList(),
+            FileNameExclusionRegex = ArrSectionHelper.DefaultFileNameExclusionRegex(arrType, category).ToList()
         };
 
         if (table.TryGetValue("CaseSensitiveMatches", out var caseSensitive))
@@ -1716,7 +1774,7 @@ public class ConfigurationLoader
                 ProcessRestartDelay = 5
             },
             // QBit is intentionally omitted from default config — user adds it via WebUI
-            // New installs get auth enabled by default; user must set username/password on first access.
+            // New installs: auth required, local login opt-in (qBitrr LocalAuthEnabled=false).
             WebUI = new WebUIConfig
             {
                 Host = "0.0.0.0",
@@ -1725,7 +1783,9 @@ public class ConfigurationLoader
                 AuthDisabled = false,
                 BehindHttpsProxy = false,
                 UrlBase = "",
-                LocalAuthEnabled = true,
+                LocalAuthEnabled = false,
+                AllowInsecureExposure = false,
+                AllowInsecureTokenQuery = false,
                 OIDCEnabled = false,
                 Username = "",
                 PasswordHash = "",
@@ -1806,6 +1866,10 @@ public class ConfigurationLoader
         sb.AppendLine($"UrlBase = \"{EscapeTomlString(config.WebUI.UrlBase)}\"");
         sb.AppendLine($"AuthDisabled = {config.WebUI.AuthDisabled.ToString().ToLower()}");
         sb.AppendLine($"LocalAuthEnabled = {config.WebUI.LocalAuthEnabled.ToString().ToLower()}");
+        if (config.WebUI.AllowInsecureExposure.HasValue)
+            sb.AppendLine($"AllowInsecureExposure = {config.WebUI.AllowInsecureExposure.Value.ToString().ToLower()}");
+        if (config.WebUI.AllowInsecureTokenQuery.HasValue)
+            sb.AppendLine($"AllowInsecureTokenQuery = {config.WebUI.AllowInsecureTokenQuery.Value.ToString().ToLower()}");
         sb.AppendLine($"OIDCEnabled = {config.WebUI.OIDCEnabled.ToString().ToLower()}");
         sb.AppendLine($"Username = \"{EscapeTomlString(config.WebUI.Username)}\"");
         sb.AppendLine($"PasswordHash = \"{EscapeTomlString(config.WebUI.PasswordHash)}\"");
@@ -2012,7 +2076,7 @@ public class ConfigurationLoader
             sb.AppendLine($"MaxSeedingTime = {tracker.MaxSeedingTime ?? -1}");
             sb.AppendLine($"HitAndRunMode = \"{tracker.HitAndRunMode ?? "disabled"}\"");
             sb.AppendLine($"MinSeedRatio = {tracker.MinSeedRatio ?? 1.0}");
-            sb.AppendLine($"MinSeedingTime = {tracker.MinSeedingTimeDays ?? 0}"); // TOML key is MinSeedingTime (qBitrr compat)
+            sb.AppendLine($"MinSeedingTimeDays = {tracker.MinSeedingTimeDays ?? 0}");
             sb.AppendLine($"HitAndRunPartialSeedRatio = {tracker.HitAndRunPartialSeedRatio ?? 1.0}");
             sb.AppendLine($"TrackerUpdateBuffer = {tracker.TrackerUpdateBuffer ?? 0}");
             sb.AppendLine($"HitAndRunMinimumDownloadPercent = {tracker.HitAndRunMinimumDownloadPercent ?? 10}");

@@ -133,12 +133,27 @@ if (string.IsNullOrEmpty(configForDI.WebUI.Token))
     Log.Information("Generated and persisted API token (Token was empty)");
 }
 
+var insecureExposure = WebUIAuthHelpers.CheckInsecureExposure(configForDI.WebUI);
+if (insecureExposure != null)
+{
+    Log.Fatal(insecureExposure);
+    Environment.Exit(1);
+}
+if (configForDI.WebUI.AuthDisabled && WebUIAuthHelpers.IsPublicBindHost(configForDI.WebUI.Host)
+    && configForDI.WebUI.AllowInsecureExposure is null)
+{
+    Log.Warning(
+        "WebUI.AllowInsecureExposure is unset (legacy config). All API and WebUI actions are available without credentials on {Host}. Set AllowInsecureExposure = true to acknowledge this, bind Host to 127.0.0.1, or set AuthDisabled = false.",
+        configForDI.WebUI.Host);
+}
+
 builder.Services.AddSingleton(configForDI);
 
 builder.Services.AddSingleton<IConfigReloader, ConfigReloader>();
 builder.Services.AddSingleton(configLoader);
 
 builder.Services.AddSingleton<IPasswordHasher, BCryptPasswordHasher>();
+builder.Services.AddSingleton<QBittorrentConnectionManager>();
 builder.Services.AddHttpClient();
 builder.Services.AddScoped<IDatabaseHealthService, DatabaseHealthService>();
 builder.Services.AddScoped<CatalogRollupService>();
@@ -264,8 +279,8 @@ app.Use(async (context, next) =>
         var authHeader = context.Request.Headers.Authorization.FirstOrDefault();
         if (authHeader?.StartsWith("Bearer ", StringComparison.OrdinalIgnoreCase) == true)
             providedToken = authHeader["Bearer ".Length..];
-        else if (context.Request.Query.ContainsKey("token") && context.Request.Method == "GET")
-            providedToken = context.Request.Query["token"];
+        else if (WebUIAuthHelpers.TryGetQueryToken(context.Request, cfg.WebUI) is { } queryToken)
+            providedToken = queryToken;
         if (string.IsNullOrEmpty(providedToken) || !WebUIAuthHelpers.TokenEquals(providedToken, configuredToken))
         {
             context.Response.StatusCode = 401;
@@ -296,8 +311,8 @@ app.Use(async (context, next) =>
         var authHeader = context.Request.Headers.Authorization.FirstOrDefault();
         if (authHeader?.StartsWith("Bearer ", StringComparison.OrdinalIgnoreCase) == true)
             providedToken = authHeader["Bearer ".Length..];
-        else if (context.Request.Query.ContainsKey("token") && context.Request.Method == "GET")
-            providedToken = context.Request.Query["token"];
+        else if (WebUIAuthHelpers.TryGetQueryToken(context.Request, cfg.WebUI) is { } queryToken)
+            providedToken = queryToken;
         if (!string.IsNullOrEmpty(providedToken) && WebUIAuthHelpers.TokenEquals(providedToken, configuredTokenWeb))
         {
             var identity = new ClaimsIdentity("Bearer");
@@ -1057,6 +1072,33 @@ app.MapGet("/web/logs/{name}/download", (string name, HttpResponse response) =>
 
     response.Headers["Content-Disposition"] = $"attachment; filename=\"{safeName}\"";
     return Results.File(fullLogFile, "application/octet-stream", safeName);
+});
+
+app.MapGet("/web/logs/{name}/search", (string name, HttpRequest request) =>
+{
+    if (!IsValidLogFileName(name))
+        return Results.BadRequest(new { error = "Invalid log file name" });
+    return LogFileApi.SearchFromRequest(logsPath, name, request);
+});
+
+app.MapGet("/web/logs/{name}/stream", async (string name, HttpContext ctx) =>
+{
+    if (!IsValidLogFileName(name))
+    {
+        ctx.Response.StatusCode = StatusCodes.Status400BadRequest;
+        await ctx.Response.WriteAsJsonAsync(new { error = "Invalid log file name" });
+        return;
+    }
+    await LogFileApi.StreamAsync(ctx, logsPath, name, ctx.RequestAborted);
+});
+
+app.MapGet("/web/config/schema", () => Results.Ok(ConfigSchemaBuilder.Build()));
+app.MapGet("/api/config/schema", () => Results.Ok(ConfigSchemaBuilder.Build()));
+
+app.MapGet("/web/qbit/overview", async (HttpRequest request, TorrentarrConfig cfg, QBittorrentConnectionManager qbitManager) =>
+{
+    var instance = request.Query["instance"].FirstOrDefault();
+    return Results.Ok(await QbitOverviewBuilder.BuildAsync(cfg, qbitManager, instance));
 });
 
 // Radarr movies for specific category

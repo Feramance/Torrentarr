@@ -8,6 +8,10 @@
   </PropertyGroup>
 
   <ItemGroup>
+    <FrameworkReference Include="Microsoft.AspNetCore.App" />
+  </ItemGroup>
+
+  <ItemGroup>
     <ProjectReference Include="..\..\src\Torrentarr.Core\Torrentarr.Core.csproj" />
     <ProjectReference Include="..\..\src\Torrentarr.Infrastructure\Torrentarr.Infrastructure.csproj" />
   </ItemGroup>

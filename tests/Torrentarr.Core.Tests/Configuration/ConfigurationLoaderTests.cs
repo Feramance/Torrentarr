@@ -387,9 +387,9 @@ public class ConfigurationLoaderTests : IDisposable
         config.WebUI.Theme.Should().Be("Dark");
         config.WebUI.ViewDensity.Should().Be("Comfortable");
         config.WebUI.LiveArr.Should().BeTrue();
-        // Filled WebUI auth defaults must match GenerateDefaultConfig: require auth with local login, not a lockout.
+        // Filled WebUI auth defaults must match GenerateDefaultConfig / qBitrr: auth on, local login opt-in.
         config.WebUI.AuthDisabled.Should().BeFalse();
-        config.WebUI.LocalAuthEnabled.Should().BeTrue();
+        config.WebUI.LocalAuthEnabled.Should().BeFalse();
         config.WebUI.OIDCEnabled.Should().BeFalse();
     }
 
@@ -818,7 +818,7 @@ public class ConfigurationLoaderTests : IDisposable
         var config = ConfigurationLoader.GenerateDefaultConfig();
 
         config.WebUI.AuthDisabled.Should().BeFalse("new installs get auth enabled by default");
-        config.WebUI.LocalAuthEnabled.Should().BeTrue("new installs get local auth enabled by default");
+        config.WebUI.LocalAuthEnabled.Should().BeFalse("qBitrr LocalAuthEnabled defaults to false");
     }
 
     [Fact]
@@ -1164,5 +1164,119 @@ public class ConfigurationLoaderTests : IDisposable
 
         config.ArrInstances["Radarr"].ImportMode.Should().Be("Copy");
         config.ArrInstances["Sonarr"].ImportMode.Should().Be("Move");
+    }
+
+    [Fact]
+    public void Load_ParsesTrackerMinSeedingTimeDays()
+    {
+        WriteToml("""
+            [Settings]
+            LoopSleepTimer = 5
+
+            [qBit]
+            Host = "localhost"
+
+            [[qBit.Trackers]]
+            URI = "https://tracker.example.com/announce"
+            MinSeedingTimeDays = 4
+            """);
+
+        var config = new ConfigurationLoader(_tempFilePath).Load();
+        config.QBitInstances["qBit"].Trackers[0].MinSeedingTimeDays.Should().Be(4);
+    }
+
+    [Fact]
+    public void Load_ParsesTrackerMinSeedingTime_LegacyKey()
+    {
+        WriteToml("""
+            [Settings]
+            LoopSleepTimer = 5
+
+            [qBit]
+            Host = "localhost"
+
+            [[qBit.Trackers]]
+            URI = "https://tracker.example.com/announce"
+            MinSeedingTime = 2
+            """);
+
+        var config = new ConfigurationLoader(_tempFilePath).Load();
+        config.QBitInstances["qBit"].Trackers[0].MinSeedingTimeDays.Should().Be(2);
+    }
+
+    [Fact]
+    public void Load_OverridesSearchOnly_DisablesQbitAndSetsSearchOnly()
+    {
+        WriteToml("""
+            [Settings]
+            LoopSleepTimer = 5
+
+            [qBit]
+            Host = "localhost"
+            Disabled = false
+
+            [Radarr]
+            URI = "http://radarr:7878"
+            APIKey = "key"
+            Category = "movies"
+            SearchOnly = false
+            """);
+
+        var prev = Environment.GetEnvironmentVariable("TORRENTARR_OVERRIDES_SEARCH_ONLY");
+        Environment.SetEnvironmentVariable("TORRENTARR_OVERRIDES_SEARCH_ONLY", "true");
+        try
+        {
+            var config = new ConfigurationLoader(_tempFilePath).Load();
+            config.ArrInstances["Radarr"].SearchOnly.Should().BeTrue();
+            config.QBitInstances["qBit"].Disabled.Should().BeTrue();
+        }
+        finally
+        {
+            Environment.SetEnvironmentVariable("TORRENTARR_OVERRIDES_SEARCH_ONLY", prev);
+        }
+    }
+
+    [Fact]
+    public void Load_OverridesProcessingOnly_SetsProcessingOnly()
+    {
+        WriteToml("""
+            [Settings]
+            LoopSleepTimer = 5
+
+            [Radarr]
+            URI = "http://radarr:7878"
+            APIKey = "key"
+            Category = "movies"
+            """);
+
+        var prev = Environment.GetEnvironmentVariable("QBITRR_OVERRIDES_PROCESSING_ONLY");
+        Environment.SetEnvironmentVariable("QBITRR_OVERRIDES_PROCESSING_ONLY", "1");
+        try
+        {
+            var config = new ConfigurationLoader(_tempFilePath).Load();
+            config.ArrInstances["Radarr"].ProcessingOnly.Should().BeTrue();
+        }
+        finally
+        {
+            Environment.SetEnvironmentVariable("QBITRR_OVERRIDES_PROCESSING_ONLY", prev);
+        }
+    }
+
+    [Fact]
+    public void Load_ParsesAllowInsecureFlags()
+    {
+        WriteToml("""
+            [Settings]
+            LoopSleepTimer = 5
+
+            [WebUI]
+            AllowInsecureExposure = true
+            AllowInsecureTokenQuery = false
+            """);
+
+        var config = new ConfigurationLoader(_tempFilePath).Load();
+        config.WebUI.AllowInsecureExposure.Should().BeTrue();
+        config.WebUI.AllowInsecureTokenQuery.Should().BeFalse();
+        config.WebUI.AllowsInsecureTokenQuery.Should().BeFalse();
     }
 }

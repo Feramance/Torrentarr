@@ -11,6 +11,7 @@ import equal from "fast-deep-equal";
 import { get, set } from "lodash-es";
 import {
   getConfig,
+  getConfigSchema,
   updateConfig,
   testArrConnection,
   setPassword,
@@ -1797,6 +1798,7 @@ export function ConfigView(props?: ConfigViewProps): JSX.Element {
     setLoading(true);
     try {
       const config = await getConfig();
+      void getConfigSchema().catch(() => null);
       setOriginalConfig(config);
       // Deep clone config for form state (immer will handle immutability from here)
       setFormState(config ? JSON.parse(JSON.stringify(config)) : null);

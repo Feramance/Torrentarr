@@ -44,7 +44,7 @@
 - **Instant imports** – trigger downloads scans the moment torrents finish
 - **Stalled torrent detection** – identify and handle stuck/slow downloads
 - **Failed download handling** – automatically blacklist and re-search
-- **FFprobe verification** – validate media files before import
+- **FFprobe verification** – validate media files after Arr import when AutoDelete is on
 - **Smart file filtering** – exclude samples, extras, trailers
 
 ### 🔍 Automated Search & Request Integration

@@ -1,5 +1,6 @@
 using System.Security.Cryptography;
 using System.Text;
+using Microsoft.AspNetCore.Http;
 using Torrentarr.Core.Configuration;
 
 namespace Torrentarr.Infrastructure.Services;
@@ -58,9 +59,38 @@ public static class WebUIAuthHelpers
     }
 
     /// <summary>Returns true if the path and method are allowed without authentication (login page, assets, health, web/login, web/logout, set-password, OIDC).</summary>
+    public static bool IsPublicBindHost(string? host) =>
+        host is "0.0.0.0" or "::" or "[::]";
+
+    /// <summary>
+    /// qBitrr: when AuthDisabled + public bind and AllowInsecureExposure is explicitly false, refuse.
+    /// Missing key (null) is legacy warn-only.
+    /// </summary>
+    public static string? CheckInsecureExposure(WebUIConfig webUi)
+    {
+        if (!webUi.AuthDisabled || !IsPublicBindHost(webUi.Host))
+            return null;
+        if (webUi.AllowInsecureExposure is null or true)
+            return null;
+        return
+            $"WebUI authentication is disabled while listening on a public interface ({webUi.Host}) " +
+            "and WebUI.AllowInsecureExposure is false. Set AllowInsecureExposure = true to acknowledge " +
+            "that the full admin API is reachable without credentials; bind WebUI.Host to 127.0.0.1; " +
+            "or set AuthDisabled = false.";
+    }
+
+    public static string? TryGetQueryToken(HttpRequest request, WebUIConfig webUi)
+    {
+        if (!webUi.AllowsInsecureTokenQuery)
+            return null;
+        if (request.Method != "GET" || !request.Query.ContainsKey("token"))
+            return null;
+        return request.Query["token"];
+    }
+
+    /// <summary>Returns true if the path and method are allowed without authentication (login page, assets, health, web/login, web/logout, set-password, OIDC).</summary>
     public static bool IsPublicPath(string path, string method)
     {
-        if (string.IsNullOrEmpty(path)) return true;
         if (path.Equals("/health", StringComparison.OrdinalIgnoreCase)) return true;
         if (path.Equals("/", StringComparison.OrdinalIgnoreCase)) return true;
         if (path.Equals("/login", StringComparison.OrdinalIgnoreCase)) return true;

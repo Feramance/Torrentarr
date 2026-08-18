@@ -86,7 +86,7 @@ public class QualityProfileSwitcherServiceTests
     public async Task RestoreTimedOut_KeepTempProfileTrue_ReturnWithoutError()
     {
         var svc = CreateService();
-        // KeepTempProfile=true → profiles should never be restored
+        // KeepTempProfile=true skips immediate restore after search; timeout restore still runs.
         var cfg = new ArrInstanceConfig
         {
             Type = "radarr",

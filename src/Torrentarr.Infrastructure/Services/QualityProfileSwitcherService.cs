@@ -130,7 +130,7 @@ public class QualityProfileSwitcherService
 
     /// <summary>
     /// Restores quality profiles for items whose TempProfileResetTimeoutMinutes has elapsed.
-    /// If KeepTempProfile = true, nothing is restored (profiles stay until manually reset).
+    /// KeepTempProfile skips immediate restore after a search; timeout reset still applies (qBitrr).
     /// </summary>
     public async Task RestoreTimedOutProfilesAsync(
         string instanceName,
@@ -138,9 +138,6 @@ public class QualityProfileSwitcherService
         CancellationToken ct = default)
     {
         if (!arrConfig.Search.UseTempForMissing)
-            return;
-
-        if (arrConfig.Search.KeepTempProfile)
             return;
 
         var timeoutMinutes = arrConfig.Search.TempProfileResetTimeoutMinutes;

@@ -120,6 +120,20 @@ try
         return 1;
     }
 
+    var insecureExposure = WebUIAuthHelpers.CheckInsecureExposure(config.WebUI);
+    if (insecureExposure != null)
+    {
+        Log.Fatal(insecureExposure);
+        return 1;
+    }
+    if (config.WebUI.AuthDisabled && WebUIAuthHelpers.IsPublicBindHost(config.WebUI.Host)
+        && config.WebUI.AllowInsecureExposure is null)
+    {
+        Log.Warning(
+            "WebUI.AllowInsecureExposure is unset (legacy config). All API and WebUI actions are available without credentials on {Host}. Set AllowInsecureExposure = true to acknowledge this, bind Host to 127.0.0.1, or set AuthDisabled = false.",
+            config.WebUI.Host);
+    }
+
     if (config.Settings.ConsoleLevel != null)
     {
         levelSwitch.MinimumLevel = config.Settings.ConsoleLevel.ToUpperInvariant() switch
@@ -163,6 +177,7 @@ try
     builder.Services.AddSingleton<IConnectivityService, ConnectivityService>();
     // ArrWorkerManager registered as both singleton and IHostedService so it's injectable in endpoints
     builder.Services.AddSingleton<ArrWorkerManager>();
+    builder.Services.AddSingleton<SearchYearCursor>();
     builder.Services.AddHostedService(sp => sp.GetRequiredService<ArrWorkerManager>());
     builder.Services.AddHostedService<ProcessOrchestratorService>();
     // Scoped services (one per request / scope)
@@ -463,8 +478,8 @@ try
             var authHeader = context.Request.Headers.Authorization.FirstOrDefault();
             if (authHeader?.StartsWith("Bearer ", StringComparison.OrdinalIgnoreCase) == true)
                 providedToken = authHeader["Bearer ".Length..];
-            else if (context.Request.Query.ContainsKey("token") && context.Request.Method == "GET")
-                providedToken = context.Request.Query["token"]; // Prefer Authorization: Bearer; query token can leak via Referer or server logs
+            else if (WebUIAuthHelpers.TryGetQueryToken(context.Request, cfg.WebUI) is { } queryToken)
+                providedToken = queryToken;
             if (string.IsNullOrEmpty(providedToken) || !WebUIAuthHelpers.TokenEquals(providedToken, configuredToken))
             {
                 context.Response.StatusCode = 401;
@@ -498,8 +513,8 @@ try
             var authHeader = context.Request.Headers.Authorization.FirstOrDefault();
             if (authHeader?.StartsWith("Bearer ", StringComparison.OrdinalIgnoreCase) == true)
                 providedToken = authHeader["Bearer ".Length..];
-            else if (context.Request.Query.ContainsKey("token") && context.Request.Method == "GET")
-                providedToken = context.Request.Query["token"]; // Prefer Authorization: Bearer; query token can leak via Referer or server logs
+            else if (WebUIAuthHelpers.TryGetQueryToken(context.Request, cfg.WebUI) is { } queryToken)
+                providedToken = queryToken;
 
             if (!string.IsNullOrEmpty(providedToken) && WebUIAuthHelpers.TokenEquals(providedToken, webToken))
             {
@@ -534,6 +549,19 @@ try
 
     static bool IsAuthRequired(TorrentarrConfig c) => !c.WebUI.AuthDisabled;
 
+    static bool MetaForceAllowed(HttpContext ctx, TorrentarrConfig cfg)
+    {
+        if (ctx.User?.Identity?.IsAuthenticated == true)
+            return true;
+        var authHeader = ctx.Request.Headers.Authorization.FirstOrDefault();
+        if (authHeader?.StartsWith("Bearer ", StringComparison.OrdinalIgnoreCase) == true
+            && !string.IsNullOrEmpty(cfg.WebUI.Token)
+            && WebUIAuthHelpers.TokenEquals(authHeader["Bearer ".Length..], cfg.WebUI.Token))
+            return true;
+        var ip = ctx.Connection.RemoteIpAddress?.ToString() ?? "unknown";
+        return MetaForceRateLimiter.TryAcquire($"meta-force:{ip}");
+    }
+
     app.MapControllers();
     app.MapArrCatalogEndpoints();
 
@@ -558,9 +586,12 @@ try
 
     // Web Meta — fetches latest release from GitHub and compares with current version
     // §6.10: GET /web/meta — version info + update state + auth flags (MetaResponse-compatible)
-    app.MapGet("/web/meta", async (UpdateService updater, TorrentarrConfig cfg, int? force) =>
+    app.MapGet("/web/meta", async (HttpContext ctx, UpdateService updater, TorrentarrConfig cfg, int? force) =>
     {
-        await updater.CheckForUpdateAsync(forceRefresh: force.GetValueOrDefault() != 0);
+        var forceRefresh = force.GetValueOrDefault() != 0;
+        if (forceRefresh && !MetaForceAllowed(ctx, cfg))
+            return Results.Json(new { error = "rate_limited", message = "Too many force refresh requests" }, statusCode: 429);
+        await updater.CheckForUpdateAsync(forceRefresh: forceRefresh);
         return Results.Ok(updater.BuildMetaResponse(cfg.WebUI));
     });
 
@@ -901,6 +932,32 @@ try
         if (!File.Exists(logFile))
             return Results.NotFound();
         return Results.File(logFile, "text/plain", name);
+    });
+
+    app.MapGet("/web/logs/{name}/search", (string name, HttpRequest request) =>
+    {
+        if (!IsValidLogFileName(name))
+            return Results.BadRequest(new { error = "Invalid log file name" });
+        return LogFileApi.SearchFromRequest(logsPath, name, request);
+    });
+
+    app.MapGet("/web/logs/{name}/stream", async (string name, HttpContext ctx) =>
+    {
+        if (!IsValidLogFileName(name))
+        {
+            ctx.Response.StatusCode = StatusCodes.Status400BadRequest;
+            await ctx.Response.WriteAsJsonAsync(new { error = "Invalid log file name" });
+            return;
+        }
+        await LogFileApi.StreamAsync(ctx, logsPath, name, ctx.RequestAborted);
+    });
+
+    app.MapGet("/web/config/schema", () => Results.Ok(ConfigSchemaBuilder.Build()));
+
+    app.MapGet("/web/qbit/overview", async (HttpRequest request, TorrentarrConfig cfg, QBittorrentConnectionManager qbitManager) =>
+    {
+        var instance = request.Query["instance"].FirstOrDefault();
+        return Results.Ok(await QbitOverviewBuilder.BuildAsync(cfg, qbitManager, instance));
     });
 
     // Web Arr List
@@ -1663,9 +1720,12 @@ try
 
     // ==================== /api/* endpoints (Bearer token protected via middleware) ====================
 
-    app.MapGet("/api/meta", async (UpdateService updater, int? force) =>
+    app.MapGet("/api/meta", async (HttpContext ctx, UpdateService updater, TorrentarrConfig cfg, int? force) =>
     {
-        await updater.CheckForUpdateAsync(forceRefresh: force.GetValueOrDefault() != 0);
+        var forceRefresh = force.GetValueOrDefault() != 0;
+        if (forceRefresh && !MetaForceAllowed(ctx, cfg))
+            return Results.Json(new { error = "rate_limited", message = "Too many force refresh requests" }, statusCode: 429);
+        await updater.CheckForUpdateAsync(forceRefresh: forceRefresh);
         return Results.Ok(updater.BuildMetaResponse());
     });
 
@@ -1805,6 +1865,26 @@ try
             return Results.NotFound();
         return Results.File(logFile, "text/plain", name);
     });
+
+    app.MapGet("/api/logs/{name}/search", (string name, HttpRequest request) =>
+    {
+        if (!IsValidLogFileName(name))
+            return Results.BadRequest(new { error = "Invalid log file name" });
+        return LogFileApi.SearchFromRequest(logsPath, name, request);
+    });
+
+    app.MapGet("/api/logs/{name}/stream", async (string name, HttpContext ctx) =>
+    {
+        if (!IsValidLogFileName(name))
+        {
+            ctx.Response.StatusCode = StatusCodes.Status400BadRequest;
+            await ctx.Response.WriteAsJsonAsync(new { error = "Invalid log file name" });
+            return;
+        }
+        await LogFileApi.StreamAsync(ctx, logsPath, name, ctx.RequestAborted);
+    });
+
+    app.MapGet("/api/config/schema", () => Results.Ok(ConfigSchemaBuilder.Build()));
 
     app.MapGet("/api/arr", async (TorrentarrConfig cfg, CatalogRollupService rollups) =>
     {

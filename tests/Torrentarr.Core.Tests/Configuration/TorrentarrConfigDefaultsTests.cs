@@ -49,6 +49,9 @@ public class TorrentarrConfigDefaultsTests
         config.WebUI.Port.Should().Be(6969);
         config.WebUI.Theme.Should().Be("Dark");
         config.WebUI.LiveArr.Should().BeTrue();
+        config.WebUI.LocalAuthEnabled.Should().BeFalse();
+        config.WebUI.AllowInsecureTokenQuery.Should().BeNull();
+        config.WebUI.AllowsInsecureTokenQuery.Should().BeTrue("omitted key is legacy-allow");
     }
 
     [Fact]
@@ -94,6 +97,7 @@ public class TorrentarrConfigDefaultsTests
         categorySeeding.HitAndRunMinimumDownloadPercent.Should().Be(10);
         categorySeeding.HitAndRunPartialSeedRatio.Should().Be(1.0);
         categorySeeding.TrackerUpdateBuffer.Should().Be(0);
+        categorySeeding.StalledDelay.Should().Be(-1);
     }
 
     [Fact]

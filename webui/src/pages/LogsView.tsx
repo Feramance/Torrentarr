@@ -11,8 +11,10 @@ import {
   getLogDownloadUrl,
   getLogs,
   getLogTail,
+  searchLogs,
   type LogFileInfo,
 } from "../api/client";
+import type { LogSearchMatch } from "../api/types";
 import { useToast } from "../context/ToastContext";
 import { useInterval } from "../hooks/useInterval";
 import { IconImage } from "../components/IconImage";
@@ -112,6 +114,9 @@ export function LogsView({ active }: LogsViewProps): JSX.Element {
   const [follow, setFollow] = useState(true);
   const [loadingList, setLoadingList] = useState(false);
   const [loadingContent, setLoadingContent] = useState(false);
+  const [searchQuery, setSearchQuery] = useState("");
+  const [searchMatches, setSearchMatches] = useState<LogSearchMatch[]>([]);
+  const [searching, setSearching] = useState(false);
   // Track whether the browser tab/window is visible to pause polling when hidden
   const [pageVisible, setPageVisible] = useState(!document.hidden);
   // Track theme for reactive Select styling
@@ -202,6 +207,25 @@ export function LogsView({ active }: LogsViewProps): JSX.Element {
     },
     [selected, push, describeError],
   );
+
+  const runSearch = useCallback(async () => {
+    if (!selected || !searchQuery.trim()) {
+      setSearchMatches([]);
+      return;
+    }
+    setSearching(true);
+    try {
+      const result = await searchLogs(selected, searchQuery.trim());
+      setSearchMatches(result.matches ?? []);
+      if ((result.matches ?? []).length === 0) {
+        push("No log matches", "info");
+      }
+    } catch (error) {
+      push(describeError(error, `Failed to search ${selected}`), "error");
+    } finally {
+      setSearching(false);
+    }
+  }, [selected, searchQuery, push, describeError]);
 
   // Reset and reload whenever the selected file changes
   useEffect(() => {
@@ -336,6 +360,44 @@ export function LogsView({ active }: LogsViewProps): JSX.Element {
             </div>
           </div>
         </div>
+        <div className="row" style={{ flexShrink: 0, marginBottom: "12px" }}>
+          <div className="col field">
+            <label htmlFor="log-search">Search</label>
+            <input
+              id="log-search"
+              type="search"
+              value={searchQuery}
+              onChange={(event) => setSearchQuery(event.target.value)}
+              onKeyDown={(event) => {
+                if (event.key === "Enter") void runSearch();
+              }}
+              placeholder="Find in log…"
+              disabled={!selected}
+            />
+          </div>
+          <div className="col field">
+            <label>&nbsp;</label>
+            <button
+              className="btn ghost"
+              onClick={() => void runSearch()}
+              disabled={!selected || !searchQuery.trim() || searching}
+            >
+              Search logs
+            </button>
+          </div>
+        </div>
+        {searchMatches.length > 0 && (
+          <div
+            className="hint"
+            style={{ flexShrink: 0, marginBottom: "8px", maxHeight: "120px", overflow: "auto" }}
+          >
+            {searchMatches.slice(0, 50).map((match) => (
+              <div key={`${match.file}:${match.line}`}>
+                {match.file}:{match.line} {match.text}
+              </div>
+            ))}
+          </div>
+        )}
         <div
           style={{
             flex: 1,

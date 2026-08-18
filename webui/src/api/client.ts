@@ -21,6 +21,9 @@ import type {
   ReadarrAuthorDetailResponse,
   StatusResponse,
   TorrentDistribution,
+  LogSearchResponse,
+  QbitOverviewResponse,
+  ConfigSchemaResponse,
 } from "./types";
 
 export type { LogFileInfo };
@@ -214,6 +217,21 @@ export async function getQbitCategories(): Promise<QbitCategoriesResponse> {
   return fetchJson<QbitCategoriesResponse>("/web/qbit/categories");
 }
 
+export async function getQbitOverview(
+  instance?: string,
+): Promise<QbitOverviewResponse> {
+  const params = new URLSearchParams();
+  if (instance) params.set("instance", instance);
+  const query = params.toString();
+  return fetchJson<QbitOverviewResponse>(
+    `/web/qbit/overview${query ? `?${query}` : ""}`,
+  );
+}
+
+export async function getConfigSchema(): Promise<ConfigSchemaResponse> {
+  return fetchJson<ConfigSchemaResponse>("/web/config/schema");
+}
+
 export async function getProcesses(): Promise<ProcessesResponse> {
   return fetchJson<ProcessesResponse>("/web/processes");
 }
@@ -255,6 +273,34 @@ export async function getLogTail(name: string): Promise<string> {
 
 export function getLogDownloadUrl(name: string): string {
   return webPath(`/web/logs/${encodeURIComponent(name)}/download`);
+}
+
+export function getLogStreamUrl(name: string): string {
+  return webPath(`/web/logs/${encodeURIComponent(name)}/stream`);
+}
+
+export async function searchLogs(
+  name: string,
+  query: string,
+  options?: {
+    caseSensitive?: boolean;
+    regex?: boolean;
+    maxMatches?: number;
+    context?: number;
+    includeRotated?: boolean;
+  },
+): Promise<LogSearchResponse> {
+  const params = new URLSearchParams();
+  params.set("q", query);
+  if (options?.caseSensitive) params.set("case", "1");
+  if (options?.regex) params.set("regex", "1");
+  if (options?.maxMatches != null)
+    params.set("max_matches", String(options.maxMatches));
+  if (options?.context != null) params.set("context", String(options.context));
+  if (options?.includeRotated === false) params.set("include_rotated", "0");
+  return fetchJson<LogSearchResponse>(
+    `/web/logs/${encodeURIComponent(name)}/search?${params}`,
+  );
 }
 
 export async function getArrList(): Promise<ArrListResponse> {

@@ -378,6 +378,9 @@ public class ReadarrQueueItem
 
     [JsonProperty("statusMessages")]
     public List<StatusMessage>? StatusMessages { get; set; }
+
+    [JsonProperty("outputPath")]
+    public string? OutputPath { get; set; }
 }
 
 public class ReadarrBookFile

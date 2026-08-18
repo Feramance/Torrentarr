@@ -47,7 +47,26 @@ public class ArrSectionHelperTests
         ArrSectionHelper.DefaultFileExtensionAllowlist("readarr").Should().Contain(".m4b");
         ArrSectionHelper.DefaultFileExtensionAllowlist("readarr").Should().Contain(".epub");
         ArrSectionHelper.DefaultFileExtensionAllowlist("lidarr").Should().Contain(".flac");
+        ArrSectionHelper.DefaultFileExtensionAllowlist("lidarr").Should().NotContain(".log");
+        ArrSectionHelper.DefaultFileExtensionAllowlist("lidarr").Should().NotContain(".cue");
         ArrSectionHelper.DefaultFileExtensionAllowlist("radarr").Should().Contain(".mkv");
+    }
+
+    [Fact]
+    public void DefaultFolderExclusionRegex_IsTypeSpecific()
+    {
+        ArrSectionHelper.DefaultFolderExclusionRegex("radarr").Should().Contain(@"\bnc(ed|op)?(\\d+)?\b");
+        ArrSectionHelper.DefaultFolderExclusionRegex("lidarr").Should().NotContain(@"\bnc(ed|op)?(\\d+)?\b");
+        ArrSectionHelper.DefaultFolderExclusionRegex("sonarr", "anime")
+            .Should().Contain(@"\bova\b");
+    }
+
+    [Fact]
+    public void DefaultFileNameExclusionRegex_VideoIncludesNcop()
+    {
+        ArrSectionHelper.DefaultFileNameExclusionRegex("sonarr").Should().Contain(@"\bncop\\d+?\b");
+        ArrSectionHelper.DefaultFileNameExclusionRegex("lidarr").Should().NotContain(@"\bncop\\d+?\b");
+        ArrSectionHelper.DefaultFileNameExclusionRegex("readarr").Should().Contain(@"\bsample\b");
     }
 
     [Fact]

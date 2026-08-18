@@ -550,6 +550,9 @@ public class LidarrQueueItem
 
     [JsonProperty("statusMessages")]
     public List<StatusMessage>? StatusMessages { get; set; }
+
+    [JsonProperty("outputPath")]
+    public string? OutputPath { get; set; }
 }
 
 /// <summary>

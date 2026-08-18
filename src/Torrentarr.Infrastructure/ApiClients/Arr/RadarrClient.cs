@@ -590,6 +590,9 @@ public class QueueItem
 
     [JsonProperty("downloadClientHasPostImportCategory")]
     public bool? DownloadClientHasPostImportCategory { get; set; }
+
+    [JsonProperty("outputPath")]
+    public string? OutputPath { get; set; }
 }
 
 public class StatusMessage

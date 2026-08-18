@@ -1187,10 +1187,12 @@ public class TorrentProcessor : ITorrentProcessor
 
     private bool HasTag(TorrentInfo torrent, string tag)
     {
-        // §1.6 Tagless mode: map tags to TorrentLibrary DB columns; IgnoredTag has no DB equivalent → false
+        // §1.6 Tagless mode: map tags to TorrentLibrary DB columns.
+        // qBitrr still honors the live qBit "qBitrr-ignored" tag in Tagless mode.
         if (_config.Settings.Tagless)
         {
-            if (tag == IgnoredTag) return false;
+            if (tag == IgnoredTag)
+                return HasQbitTag(torrent, IgnoredTag);
             var dbEntry = _dbContext.TorrentLibrary.AsNoTracking()
                 .FirstOrDefault(t => t.Hash == torrent.Hash && t.QbitInstance == torrent.QBitInstanceName);
             if (dbEntry == null) return false;
@@ -1203,6 +1205,11 @@ public class TorrentProcessor : ITorrentProcessor
             };
         }
 
+        return HasQbitTag(torrent, tag);
+    }
+
+    private static bool HasQbitTag(TorrentInfo torrent, string tag)
+    {
         if (string.IsNullOrEmpty(torrent.Tags))
             return false;
 

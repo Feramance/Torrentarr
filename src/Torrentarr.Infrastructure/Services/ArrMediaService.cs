@@ -13,6 +13,7 @@ public class ArrMediaService : IArrMediaService
     private readonly TorrentarrConfig _config;
     private readonly ISearchExecutor _searchExecutor;
     private readonly ArrSyncService _syncService;
+    private readonly SearchYearCursor _yearCursor;
 
     private static readonly Dictionary<string, int> ReasonPriority = new(StringComparer.OrdinalIgnoreCase)
     {
@@ -29,13 +30,15 @@ public class ArrMediaService : IArrMediaService
         TorrentarrDbContext dbContext,
         TorrentarrConfig config,
         ISearchExecutor searchExecutor,
-        ArrSyncService syncService)
+        ArrSyncService syncService,
+        SearchYearCursor? yearCursor = null)
     {
         _logger = logger;
         _dbContext = dbContext;
         _config = config;
         _searchExecutor = searchExecutor;
         _syncService = syncService;
+        _yearCursor = yearCursor ?? new SearchYearCursor();
     }
 
     public async Task<SearchResult> SearchMissingMediaAsync(string category, CancellationToken cancellationToken = default)
@@ -66,6 +69,7 @@ public class ArrMediaService : IArrMediaService
 
         _logger.LogTrace("Getting search candidates for {Name}", instanceName);
         var candidates = await GetSearchCandidatesAsync(instanceName, arrInstance, cancellationToken);
+        candidates = await ApplySearchByYearAsync(instanceName, arrInstance, candidates, cancellationToken);
         _logger.LogTrace("Found {Count} search candidates", candidates.Count);
 
         _logger.LogTrace("Executing searches for {Count} candidates", candidates.Count);
@@ -102,6 +106,7 @@ public class ArrMediaService : IArrMediaService
         _logger.LogInformation("Searching for quality upgrades in {Category}", category);
 
         var candidates = await GetUpgradeCandidatesAsync(instanceName, arrInstance, cancellationToken);
+        candidates = await ApplySearchByYearAsync(instanceName, arrInstance, candidates, cancellationToken);
 
         return await _searchExecutor.ExecuteSearchesAsync(instanceName, candidates, cancellationToken);
     }
@@ -373,6 +378,7 @@ public class ArrMediaService : IArrMediaService
                             SeasonNumber = ep.SeasonNumber,
                             EpisodeNumber = ep.EpisodeNumber,
                             AirDate = ep.AirDateUtc,
+                            Year = ep.AirDateUtc?.Year,
                             IsTodaysRelease = isTodaysRelease
                         });
                     }
@@ -506,7 +512,8 @@ public class ArrMediaService : IArrMediaService
                         Priority = priority,
                         SeriesId = ep.ArrSeriesId,
                         SeasonNumber = ep.SeasonNumber,
-                        EpisodeNumber = ep.EpisodeNumber
+                        EpisodeNumber = ep.EpisodeNumber,
+                        Year = ep.AirDateUtc?.Year
                     });
                 }
                 break;
@@ -618,5 +625,72 @@ public class ArrMediaService : IArrMediaService
             return "Quality";
 
         return "None";
+    }
+
+    internal async Task<List<SearchCandidate>> ApplySearchByYearAsync(
+        string instanceName,
+        ArrInstanceConfig arrConfig,
+        List<SearchCandidate> candidates,
+        CancellationToken cancellationToken)
+    {
+        if (!SearchYearCursor.ShouldFilter(arrConfig) || candidates.Count == 0)
+            return candidates;
+
+        var years = await CollectYearsAsync(instanceName, arrConfig, cancellationToken);
+        var currentYear = _yearCursor.CurrentYear(instanceName, arrConfig, years);
+        if (currentYear is null)
+        {
+            _logger.LogDebug("SearchByYear enabled for {Instance} but no years available; skipping year filter", instanceName);
+            return candidates;
+        }
+
+        _logger.LogDebug("SearchByYear: {Instance} current year {Year}", instanceName, currentYear);
+        return candidates
+            .Where(c => c.IsTodaysRelease || c.Year == currentYear)
+            .ToList();
+    }
+
+    internal async Task<List<int>> CollectYearsAsync(
+        string instanceName,
+        ArrInstanceConfig arrConfig,
+        CancellationToken cancellationToken)
+    {
+        var nowYear = DateTime.UtcNow.Year;
+        var years = new HashSet<int>();
+
+        switch (arrConfig.Type.ToLowerInvariant())
+        {
+            case "radarr":
+                var movieYears = await _dbContext.Movies.AsNoTracking()
+                    .Where(m => m.ArrInstance == instanceName && m.Year > 0 && m.Year <= nowYear)
+                    .Select(m => m.Year)
+                    .Distinct()
+                    .ToListAsync(cancellationToken);
+                years.UnionWith(movieYears);
+                break;
+
+            case "sonarr":
+                var episodeQuery = _dbContext.Episodes.AsNoTracking()
+                    .Where(e => e.ArrInstance == instanceName && e.AirDateUtc != null);
+                if (!arrConfig.Search.AlsoSearchSpecials)
+                    episodeQuery = episodeQuery.Where(e => e.SeasonNumber != 0);
+                var episodeYears = await episodeQuery
+                    .Select(e => e.AirDateUtc!.Value.Year)
+                    .Distinct()
+                    .ToListAsync(cancellationToken);
+                years.UnionWith(episodeYears);
+                break;
+
+            case "readarr":
+                var bookYears = await _dbContext.Books.AsNoTracking()
+                    .Where(b => b.ArrInstance == instanceName && b.ReleaseDate != null)
+                    .Select(b => b.ReleaseDate!.Value.Year)
+                    .Distinct()
+                    .ToListAsync(cancellationToken);
+                years.UnionWith(bookYears.Where(y => y > 0 && y <= nowYear));
+                break;
+        }
+
+        return SearchYearCursor.OrderYears(years, arrConfig.Search.SearchInReverse);
     }
 }
