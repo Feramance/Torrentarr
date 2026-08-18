@@ -69,13 +69,7 @@ function simpleMarkdown(md: string): string {
 }
 
 type FieldType =
-  | "text"
-  | "number"
-  | "checkbox"
-  | "password"
-  | "select"
-  | "tags"
-  | "duration";
+  "text" | "number" | "checkbox" | "password" | "select" | "tags" | "duration";
 
 interface ValidationContext {
   root: ConfigDocument;
@@ -1825,12 +1819,12 @@ export function ConfigView(props?: ConfigViewProps): JSX.Element {
       const parsed =
         def.type === "tags" && Array.isArray(raw)
           ? raw
-          : def.parse?.(raw as string | boolean) ??
+          : (def.parse?.(raw as string | boolean) ??
             (def.type === "number"
               ? Number(raw) || 0
               : def.type === "checkbox"
                 ? Boolean(raw)
-                : raw);
+                : raw));
 
       setFormState(
         produce(formState, (draft) => {
@@ -1969,10 +1963,10 @@ export function ConfigView(props?: ConfigViewProps): JSX.Element {
   useEffect(() => {
     const anyModalOpen = Boolean(
       activeArrKey ||
-        activeQbitKey ||
-        isSettingsOpen ||
-        isWebSettingsOpen ||
-        isAuthOpen,
+      activeQbitKey ||
+      isSettingsOpen ||
+      isWebSettingsOpen ||
+      isAuthOpen,
     );
     if (!anyModalOpen) return;
     const handleKeyDown = (event: KeyboardEvent) => {
@@ -3101,7 +3095,7 @@ function FieldGroup({
     // Check if credentials exist (URI and APIKey)
     const hasCredentials = Boolean(
       getValue(state as ConfigDocument, ["URI"]) &&
-        getValue(state as ConfigDocument, ["APIKey"]),
+      getValue(state as ConfigDocument, ["APIKey"]),
     );
     const hasProfiles = qualityProfiles.length > 0;
 

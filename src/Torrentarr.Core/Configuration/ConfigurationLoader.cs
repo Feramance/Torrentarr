@@ -696,6 +696,8 @@ public class ConfigurationLoader
                     {
                         if (!trackerTable.ContainsKey(field))
                         {
+                            if (field == "MinSeedingTimeDays" && trackerTable.ContainsKey("MinSeedingTime"))
+                                continue;
                             trackerTable[field] = defaultVal;
                             changed = true;
                         }
@@ -997,6 +999,8 @@ public class ConfigurationLoader
                     {
                         if (!trackerTable.ContainsKey(field))
                         {
+                            if (field == "MinSeedingTimeDays" && trackerTable.ContainsKey("MinSeedingTime"))
+                                continue;
                             trackerTable[field] = defaultVal;
                             changed = true;
                         }
@@ -1014,6 +1018,8 @@ public class ConfigurationLoader
                     {
                         if (!trackerTable.ContainsKey(field))
                         {
+                            if (field == "MinSeedingTimeDays" && trackerTable.ContainsKey("MinSeedingTime"))
+                                continue;
                             trackerTable[field] = defaultVal;
                             changed = true;
                         }
@@ -1182,11 +1188,10 @@ public class ConfigurationLoader
         if (table.TryGetValue("MinSeedRatio", out var minRatio))
             tracker.MinSeedRatio = Convert.ToDouble(minRatio);
 
-        if (table.TryGetValue("MinSeedingTime", out var minTime))
-            tracker.MinSeedingTimeDays = Convert.ToInt32(minTime);
-
         if (table.TryGetValue("MinSeedingTimeDays", out var minSeedingTimeDays))
             tracker.MinSeedingTimeDays = Convert.ToInt32(minSeedingTimeDays);
+        else if (table.TryGetValue("MinSeedingTime", out var minTime))
+            tracker.MinSeedingTimeDays = Convert.ToInt32(minTime);
 
         if (table.TryGetValue("HitAndRunMinimumDownloadPercent", out var hnrMinDlPct))
             tracker.HitAndRunMinimumDownloadPercent = Convert.ToInt32(hnrMinDlPct);

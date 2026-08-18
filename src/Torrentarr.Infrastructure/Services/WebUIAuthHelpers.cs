@@ -91,8 +91,8 @@ public static class WebUIAuthHelpers
     /// <summary>Returns true if the path and method are allowed without authentication (login page, assets, health, web/login, web/logout, set-password, OIDC).</summary>
     public static bool IsPublicPath(string path, string method)
     {
+        if (string.IsNullOrEmpty(path) || path.Equals("/", StringComparison.OrdinalIgnoreCase)) return true;
         if (path.Equals("/health", StringComparison.OrdinalIgnoreCase)) return true;
-        if (path.Equals("/", StringComparison.OrdinalIgnoreCase)) return true;
         if (path.Equals("/login", StringComparison.OrdinalIgnoreCase)) return true;
         if (path.StartsWith("/assets/", StringComparison.OrdinalIgnoreCase)) return true;
         if (path.Equals("/favicon.ico", StringComparison.OrdinalIgnoreCase)) return true;
