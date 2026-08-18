@@ -1,7 +1,6 @@
 import React from "react";
 import { describe, it, expect, beforeAll, afterAll, afterEach } from "vitest";
-import { render, screen } from "@testing-library/react";
-import userEvent from "@testing-library/user-event";
+import { fireEvent, render, screen } from "@testing-library/react";
 import { http, HttpResponse } from "msw";
 import { setupServer } from "msw/node";
 import type { ReactNode } from "react";
@@ -154,7 +153,6 @@ describe("ReadarrView – instance sidebar", () => {
   });
 
   it("ignores stale author-detail responses", async () => {
-    const user = userEvent.setup();
     let resolveFirst: ((value: unknown) => void) | undefined;
     const firstGate = new Promise((resolve) => {
       resolveFirst = resolve;
@@ -218,8 +216,9 @@ describe("ReadarrView – instance sidebar", () => {
     renderView();
     expect(await screen.findByText("Frank Herbert")).toBeInTheDocument();
 
-    await user.click(screen.getByRole("button", { name: "Frank Herbert" }));
-    await user.click(screen.getByRole("button", { name: "Ursula K. Le Guin" }));
+    // Same-tick clicks: B can resolve before React re-renders from A.
+    fireEvent.click(screen.getByRole("button", { name: "Frank Herbert" }));
+    fireEvent.click(screen.getByRole("button", { name: "Ursula K. Le Guin" }));
 
     expect(await screen.findByText("A Wizard of Earthsea")).toBeInTheDocument();
     resolveFirst?.(undefined);

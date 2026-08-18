@@ -123,11 +123,13 @@ export function ReadarrView({ active }: ReadarrViewProps): JSX.Element {
   }, 30000);
 
   const openAuthor = async (id: number) => {
-    if (expandedId === id) {
+    if (expandedIdRef.current === id) {
+      expandedIdRef.current = null;
       setExpandedId(null);
       setDetail(null);
       return;
     }
+    expandedIdRef.current = id;
     setExpandedId(id);
     setDetail(null);
     try {
@@ -198,7 +200,9 @@ export function ReadarrView({ active }: ReadarrViewProps): JSX.Element {
               onClick={() => {
                 setSelected(inst.category);
                 setPage(0);
+                expandedIdRef.current = null;
                 setExpandedId(null);
+                setDetail(null);
               }}
             >
               {inst.name}

@@ -1138,7 +1138,6 @@ public class ArrSyncService
             profileDict.TryGetValue(authorProfileId, out var profile);
             var minCfScore = profile?.MinCustomFormatScore ?? 0;
             bookEntity.MinCustomFormatScore = minCfScore;
-            bookEntity.Upgrade = false;
 
             if (bookEntity.HasFile)
             {
@@ -1169,7 +1168,7 @@ public class ArrSyncService
 
             var isAvailable = CheckAlbumAvailability(bookEntity.ReleaseDate, bookEntity.Title ?? "Unknown", _logger);
             bookEntity.Reason = DetermineReasonWithAvailability(bookEntity.HasFile, bookEntity.QualityMet, bookEntity.CustomFormatMet, isAvailable, searchConfig);
-            bookEntity.Searched = DetermineSearched(bookEntity.HasFile, bookEntity.QualityMet, bookEntity.CustomFormatMet, searchConfig);
+            ApplySyncedSearchFlags(bookEntity, searchConfig);
         }
 
         await _db.SaveChangesWithRetryAsync(_logger, _restartCoordinator, cancellationToken: ct);
@@ -1478,9 +1477,20 @@ public class ArrSyncService
         return true;
     }
 
+    /// <summary>
+    /// Resets Upgrade so DoUpgradeSearch can select the book again (qBitrr sync), then sets
+    /// Searched from should_mark_searched. Upgrade eligibility is the Upgrade flag, not Searched.
+    /// </summary>
+    private static void ApplySyncedSearchFlags(BookFilesModel book, SearchConfig searchConfig)
+    {
+        book.Upgrade = false;
+        book.Searched = DetermineSearched(book.HasFile, book.QualityMet, book.CustomFormatMet, searchConfig);
+    }
+
     private static bool DetermineSearched(bool hasFile, bool qualityMet, bool customFormatMet, SearchConfig searchConfig)
     {
         // qBitrr should_mark_searched: content present and no active quality/CF search applies.
+        // DoUpgradeSearch is intentionally ignored here; upgrade loops use the Upgrade flag.
         if (!hasFile)
             return false;
         if (searchConfig.QualityUnmetSearch && !qualityMet)

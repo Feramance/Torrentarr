@@ -273,6 +273,83 @@ public class ArrMediaServiceTests
         captured.Should().NotBeNull();
         captured.Should().ContainSingle(c => c.Type == "Book" && c.ArrId == 7 && c.AuthorId == 3);
     }
+
+    [Fact]
+    public async Task SearchQualityUpgradesAsync_Readarr_DoUpgradeSearch_IncludesSearchedButNotUpgradedBooks()
+    {
+        var options = new DbContextOptionsBuilder<TorrentarrDbContext>()
+            .UseInMemoryDatabase(Guid.NewGuid().ToString())
+            .Options;
+        var dbContext = new TorrentarrDbContext(options);
+        dbContext.Books.AddRange(
+            new BookFilesModel
+            {
+                ArrInstance = "Readarr-Books",
+                ArrId = 7,
+                Title = "Dune",
+                AuthorTitle = "Herbert",
+                Monitored = true,
+                HasFile = true,
+                Searched = true,
+                Upgrade = false,
+                ArrAuthorId = 3
+            },
+            new BookFilesModel
+            {
+                ArrInstance = "Readarr-Books",
+                ArrId = 8,
+                Title = "Children of Dune",
+                AuthorTitle = "Herbert",
+                Monitored = true,
+                HasFile = true,
+                Searched = true,
+                Upgrade = true,
+                ArrAuthorId = 3
+            });
+        await dbContext.SaveChangesAsync();
+
+        var config = new TorrentarrConfig();
+        config.ArrInstances["Readarr-Books"] = new ArrInstanceConfig
+        {
+            URI = "http://localhost:8787",
+            APIKey = "test-key",
+            Category = "readarr-books",
+            Type = "readarr",
+            Managed = true,
+            Search = new SearchConfig { DoUpgradeSearch = true, SearchLimit = 5 }
+        };
+
+        List<SearchCandidate>? captured = null;
+        var mockSearchExecutor = new Mock<ISearchExecutor>();
+        mockSearchExecutor
+            .Setup(x => x.ExecuteSearchesAsync(It.IsAny<string>(), It.IsAny<IEnumerable<SearchCandidate>>(), It.IsAny<CancellationToken>()))
+            .Callback<string, IEnumerable<SearchCandidate>, CancellationToken>((_, c, _) => captured = c.ToList())
+            .ReturnsAsync(new SearchResult { SearchesTriggered = 1, SearchedIds = [7] });
+        mockSearchExecutor.Setup(x => x.GetActiveCommandCountAsync(It.IsAny<string>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(0);
+        mockSearchExecutor.Setup(x => x.CanSearch(It.IsAny<int>(), It.IsAny<int>()))
+            .Returns(true);
+
+        var mockSyncService = new Mock<ArrSyncService>(
+            NullLogger<ArrSyncService>.Instance,
+            config,
+            dbContext,
+            new DatabaseRestartCoordinator());
+
+        var service = new ArrMediaService(
+            NullLogger<ArrMediaService>.Instance,
+            dbContext,
+            config,
+            mockSearchExecutor.Object,
+            mockSyncService.Object);
+
+        var result = await service.SearchQualityUpgradesAsync("readarr-books");
+
+        result.SearchesTriggered.Should().Be(1);
+        captured.Should().NotBeNull();
+        captured.Should().ContainSingle(c => c.Type == "Book" && c.ArrId == 7 && c.AuthorId == 3);
+        captured.Should().NotContain(c => c.ArrId == 8);
+    }
 }
 
 public class CustomFormatScoringTests
