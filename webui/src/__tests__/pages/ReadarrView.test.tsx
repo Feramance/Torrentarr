@@ -279,9 +279,7 @@ describe("ReadarrView – instance sidebar", () => {
           return HttpResponse.json({
             category: "readarr-books",
             author: { id: 1, name: "Frank Herbert" },
-            books: [
-              { book: { id: 11, title: "Dune Messiah", hasFile: true } },
-            ],
+            books: [{ book: { id: 11, title: "Dune Messiah", hasFile: true } }],
           });
         }
         return HttpResponse.json({
