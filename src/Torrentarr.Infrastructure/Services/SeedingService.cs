@@ -480,11 +480,12 @@ public class SeedingService : ISeedingService
     /// Check if torrent meets removal conditions based on RemoveMode.
     /// Matches qBitrr's _should_remove_torrent() / torrent_limit_check (5.14.4 stalledUP clock).
     /// RemoveMode: -1=Never, 1=Ratio only, 2=Time only, 3=OR, 4=AND
-    /// HnR uses actual seeding_time / ratio and can block stalled-upload deletion.
+    /// When HnR is enabled, returns false until real seeding_time / ratio obligations are met.
+    /// Callers should trust this result and not repeat <see cref="HnrAllowsDeleteAsync"/>.
     /// </summary>
     public async Task<bool> ShouldRemoveTorrentAsync(TorrentInfo torrent, CancellationToken cancellationToken = default)
     {
-        _stalledUploads.Touch(torrent.Hash, IsStalledUploadState(torrent.State));
+        _stalledUploads.Touch(torrent.QBitInstanceName, torrent.Hash, IsStalledUploadState(torrent.State));
 
         var trackerConfig = await GetTrackerConfigAsync(torrent, cancellationToken);
         var seedingConfig = GetEffectiveSeedingConfig(torrent, trackerConfig);
@@ -503,7 +504,7 @@ public class SeedingService : ISeedingService
 
         var ratioMet = ratioLimit > 0 && torrent.Ratio >= ratioLimit;
         var seedingTimeMet = timeLimit > 0 && torrent.SeedingTime >= timeLimit;
-        var idleMet = timeLimit > 0 && _stalledUploads.IdleMeets(torrent.Hash, timeLimit);
+        var idleMet = timeLimit > 0 && _stalledUploads.IdleMeets(torrent.QBitInstanceName, torrent.Hash, timeLimit);
         var timeMet = seedingTimeMet || idleMet;
 
         if (idleMet && !seedingTimeMet)
@@ -526,10 +527,10 @@ public class SeedingService : ISeedingService
             };
         }
 
-        if (shouldRemove && !await HnrAllowsDeleteAsync(torrent, "seeding limit", cancellationToken))
-            return false;
+        if (shouldRemove)
+            return await HnrAllowsDeleteAsync(torrent, "seeding limit", cancellationToken);
 
-        return shouldRemove;
+        return false;
     }
 
     /// <summary>
@@ -696,14 +697,6 @@ public class SeedingService : ISeedingService
                     continue;
                 }
 
-                if (!await HnrAllowsDeleteAsync(torrent, "removal criteria", cancellationToken))
-                {
-                    _logger.LogDebug("H&R: Keeping torrent [{Name}] - Hit and Run protection active | Ratio[{Ratio:F2}] | SeedingTime[{SeedingTime}s]",
-                        torrent.Name, torrent.Ratio, torrent.SeedingTime);
-                    result.TorrentsProtected++;
-                    continue;
-                }
-
                 var imported = await _dbContext.TorrentLibrary
                     .AnyAsync(t => t.Hash == torrent.Hash && t.QbitInstance == instanceName && t.Imported, cancellationToken);
 
@@ -712,7 +705,7 @@ public class SeedingService : ISeedingService
                     var deleted = await client.DeleteTorrentsAsync(new List<string> { torrent.Hash }, deleteFiles: false, cancellationToken);
                     if (deleted)
                     {
-                        _stalledUploads.Evict(torrent.Hash);
+                        _stalledUploads.Evict(instanceName, torrent.Hash);
                         result.TorrentsRemoved++;
                         result.RemovedHashes.Add(torrent.Hash);
                         _logger.LogInformation("H&R Remove: [{Name}] | Reason[Removal criteria met] | Ratio[{Ratio:F2}] | SeedingTime[{SeedingTime}s] | Hash[{Hash}]",
@@ -1191,8 +1184,9 @@ public class SeedingService : ISeedingService
                 _logger.LogWarning(
                     "RemoveTrackerWithMessage+RemoveDeadTrackers: deleting torrent [{Name}] — tracker {Url} reported \"{Msg}\"",
                     torrent.Name, tracker.Url, msg);
-                await client.DeleteTorrentsAsync(new List<string> { torrent.Hash }, deleteFiles: false, ct);
-                _stalledUploads.Evict(torrent.Hash);
+                var deleted = await client.DeleteTorrentsAsync(new List<string> { torrent.Hash }, deleteFiles: false, ct);
+                if (deleted)
+                    _stalledUploads.Evict(torrent.QBitInstanceName, torrent.Hash);
                 return; // torrent deleted; stop processing trackers
             }
             else

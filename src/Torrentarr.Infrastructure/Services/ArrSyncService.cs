@@ -88,9 +88,14 @@ public class ArrSyncService
 
             _logger.LogTrace("[{Instance}] Sync completed for {Name}", instanceName, instanceName);
         }
+        catch (OperationCanceledException)
+        {
+            throw;
+        }
         catch (Exception ex)
         {
             _logger.LogError(ex, "[{Instance}] ArrSyncService: error syncing {Type} instance {Name}", instanceName, arrConfig.Type, instanceName);
+            throw;
         }
     }
 

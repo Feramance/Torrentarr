@@ -462,6 +462,31 @@ public class SeedingServiceTests
         (await svc.ShouldRemoveTorrentAsync(torrent)).Should().BeFalse();
     }
 
+    [Fact]
+    public async Task ShouldRemoveTorrentAsync_SameHashDifferentInstances_IndependentClocks()
+    {
+        var config = TimeOnlySeedingConfig(limitSeconds: 60);
+        config.QBitInstances["qBit-seedbox"] = new QBitConfig
+        {
+            CategorySeeding = config.QBitInstances["qBit"].CategorySeeding
+        };
+        var time = new ManualTimeProvider(DateTimeOffset.UnixEpoch);
+        var tracker = new StalledUploadTracker(time);
+        var svc = CreateService(config, tracker);
+
+        var local = StalledTorrent(seedingTime: 0);
+        local.QBitInstanceName = "qBit";
+        var seedbox = StalledTorrent(seedingTime: 0);
+        seedbox.QBitInstanceName = "qBit-seedbox";
+
+        (await svc.ShouldRemoveTorrentAsync(local)).Should().BeFalse();
+        time.Advance(TimeSpan.FromSeconds(60));
+        (await svc.ShouldRemoveTorrentAsync(seedbox)).Should().BeFalse();
+        (await svc.ShouldRemoveTorrentAsync(local)).Should().BeTrue();
+        time.Advance(TimeSpan.FromSeconds(60));
+        (await svc.ShouldRemoveTorrentAsync(seedbox)).Should().BeTrue();
+    }
+
     private static TorrentarrConfig TimeOnlySeedingConfig(int limitSeconds)
     {
         var config = new TorrentarrConfig();

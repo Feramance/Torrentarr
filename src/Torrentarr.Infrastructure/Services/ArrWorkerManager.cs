@@ -488,9 +488,14 @@ public class ArrWorkerManager : BackgroundService
 
             await UpdateCountsAsync(instanceName, ct);
         }
+        catch (OperationCanceledException)
+        {
+            throw;
+        }
         catch (Exception ex)
         {
             _logger.LogError(ex, "Sync failed for {Instance}", instanceName);
+            throw;
         }
     }
 
