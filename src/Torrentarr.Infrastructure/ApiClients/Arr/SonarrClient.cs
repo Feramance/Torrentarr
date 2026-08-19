@@ -11,16 +11,10 @@ public class SonarrClient
     private readonly RestClient _client;
     private readonly string _apiKey;
 
-    public SonarrClient(string baseUrl, string apiKey)
+    public SonarrClient(string baseUrl, string apiKey, bool skipTlsVerify = false)
     {
         _apiKey = apiKey;
-
-        var options = new RestClientOptions(baseUrl.TrimEnd('/'))
-        {
-            Timeout = TimeSpan.FromSeconds(30)
-        };
-
-        _client = new RestClient(options);
+        _client = new RestClient(Torrentarr.Infrastructure.Http.TlsSkipHelper.CreateRestOptions(baseUrl, skipTlsVerify));
     }
 
     /// <summary>
@@ -319,17 +313,10 @@ public class SonarrClient
     }
 
     /// <summary>
-    /// Update series quality profile
+    /// Update series quality profile, preserving unmapped fields via a raw JSON round-trip.
     /// </summary>
-    public async Task<bool> UpdateSeriesQualityProfileAsync(int seriesId, int qualityProfileId, CancellationToken ct = default)
-    {
-        var series = await GetSeriesAsync(seriesId, ct);
-        if (series == null) return false;
-
-        series.QualityProfileId = qualityProfileId;
-        var updated = await UpdateSeriesAsync(series, ct);
-        return updated != null;
-    }
+    public Task<bool> UpdateSeriesQualityProfileAsync(int seriesId, int qualityProfileId, CancellationToken ct = default) =>
+        ArrQualityProfilePut.UpdateAsync(_client, _apiKey, $"/api/v3/series/{seriesId}", qualityProfileId, ct);
 
     /// <summary>
     /// Get quality profiles
@@ -577,6 +564,9 @@ public class SonarrQueueItem
 
     [JsonProperty("episodeNumber")]
     public int? EpisodeNumber { get; set; }
+
+    [JsonProperty("outputPath")]
+    public string? OutputPath { get; set; }
 }
 
 /// <summary>

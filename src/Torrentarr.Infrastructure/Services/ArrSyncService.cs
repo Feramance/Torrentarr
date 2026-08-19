@@ -2,6 +2,7 @@ using Torrentarr.Core.Configuration;
 using Torrentarr.Infrastructure.ApiClients.Arr;
 using Torrentarr.Infrastructure.Database;
 using Torrentarr.Infrastructure.Database.Models;
+using Torrentarr.Infrastructure.Http;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging;
 
@@ -19,10 +20,8 @@ namespace Torrentarr.Infrastructure.Services;
 public class ArrSyncService
 {
     // Shared static HttpClient — reused across calls to avoid socket exhaustion from per-call instantiation
-    private static readonly System.Net.Http.HttpClient _sharedHttpClient = new()
-    {
-        Timeout = TimeSpan.FromSeconds(10)
-    };
+    private static readonly System.Net.Http.HttpClient _sharedHttpClient = TlsSkipHelper.CreateHttpClient(false);
+    private static readonly System.Net.Http.HttpClient _skipTlsHttpClient = TlsSkipHelper.CreateHttpClient(true);
 
     private readonly ILogger<ArrSyncService> _logger;
     private readonly TorrentarrConfig _config;
@@ -78,6 +77,10 @@ public class ArrSyncService
                     _logger.LogTrace("[{Instance}] Routing to Lidarr sync handler", instanceName);
                     await SyncLidarrAsync(instanceName, arrConfig, ct);
                     break;
+                case "readarr":
+                    _logger.LogTrace("[{Instance}] Routing to Readarr sync handler", instanceName);
+                    await SyncReadarrAsync(instanceName, arrConfig, ct);
+                    break;
                 default:
                     _logger.LogWarning("[{Instance}] ArrSyncService: unknown type {Type} for {Name}", instanceName, arrConfig.Type, instanceName);
                     break;
@@ -119,6 +122,9 @@ public class ArrSyncService
                 case "lidarr":
                     await SyncLidarrQueueAsync(instanceName, arrConfig, ct);
                     break;
+                case "readarr":
+                    await SyncReadarrQueueAsync(instanceName, arrConfig, ct);
+                    break;
             }
         }
         catch (Exception ex)
@@ -131,7 +137,7 @@ public class ArrSyncService
 
     private async Task SyncRadarrAsync(string instanceName, ArrInstanceConfig cfg, CancellationToken ct)
     {
-        var client = new RadarrClient(cfg.URI, cfg.APIKey);
+        var client = new RadarrClient(cfg.URI, cfg.APIKey, cfg.SkipTLSVerify);
         var searchConfig = cfg.Search;
 
         _logger.LogInformation("Started updating database");
@@ -187,6 +193,7 @@ public class ArrSyncService
                 existing.CustomFormatMet = customFormatMet;
                 existing.Reason = reason;
                 existing.Searched = searched;
+                existing.Upgrade = false;
                 _db.Movies.Update(existing);
                 updated++;
                 _logger.LogTrace("DB Update: Movie {Title} (TmdbId: {TmdbId}) updated in database (quality: {Quality}, file: {FileId})", movie.Title, movie.TmdbId, movie.QualityProfileId, movie.MovieFile?.Id ?? 0);
@@ -235,7 +242,7 @@ public class ArrSyncService
 
     private async Task SyncRadarrQueueAsync(string instanceName, ArrInstanceConfig cfg, CancellationToken ct)
     {
-        var client = new RadarrClient(cfg.URI, cfg.APIKey);
+        var client = new RadarrClient(cfg.URI, cfg.APIKey, cfg.SkipTLSVerify);
 
         var queueResponse = await client.GetQueueAsync(ct: ct);
         var queueItems = queueResponse.Records;
@@ -277,7 +284,7 @@ public class ArrSyncService
 
         // §1.7: Scan for ArrErrorCodesToBlocklist matches
         await ScanQueueForBlocklistAsync(
-            queueItems.Select(i => (i.Id, i.DownloadId, i.TrackedDownloadStatus, i.TrackedDownloadState, i.StatusMessages)),
+            queueItems.Select(i => (i.Id, i.DownloadId, i.Status, i.TrackedDownloadStatus, i.TrackedDownloadState, i.OutputPath, i.StatusMessages)),
             cfg,
             (id, token) => client.DeleteFromQueueAsync(id, removeFromClient: true, blocklist: true, ct: token),
             ct);
@@ -287,7 +294,7 @@ public class ArrSyncService
 
     private async Task SyncSonarrAsync(string instanceName, ArrInstanceConfig cfg, CancellationToken ct)
     {
-        var client = new SonarrClient(cfg.URI, cfg.APIKey);
+        var client = new SonarrClient(cfg.URI, cfg.APIKey, cfg.SkipTLSVerify);
         var searchConfig = cfg.Search;
 
         _logger.LogInformation("Started updating database");
@@ -444,7 +451,7 @@ public class ArrSyncService
 
     private async Task SyncSonarrQueueAsync(string instanceName, ArrInstanceConfig cfg, CancellationToken ct)
     {
-        var client = new SonarrClient(cfg.URI, cfg.APIKey);
+        var client = new SonarrClient(cfg.URI, cfg.APIKey, cfg.SkipTLSVerify);
 
         var queueResponse = await client.GetQueueAsync(ct: ct);
         var queueItems = queueResponse.Records;
@@ -486,7 +493,7 @@ public class ArrSyncService
 
         // §1.7: Scan for ArrErrorCodesToBlocklist matches
         await ScanQueueForBlocklistAsync(
-            queueItems.Select(i => (i.Id, i.DownloadId, i.TrackedDownloadStatus, i.TrackedDownloadState, i.StatusMessages)),
+            queueItems.Select(i => (i.Id, i.DownloadId, i.Status, i.TrackedDownloadStatus, i.TrackedDownloadState, i.OutputPath, i.StatusMessages)),
             cfg,
             (id, token) => client.DeleteFromQueueAsync(id, removeFromClient: true, blocklist: true, ct: token),
             ct);
@@ -503,8 +510,12 @@ public class ArrSyncService
         if (!_config.ArrInstances.TryGetValue(instanceName, out var arrConfig))
             return;
 
-        if (arrConfig.Type.Equals("lidarr", StringComparison.OrdinalIgnoreCase))
-            return; // Ombi/Overseerr do not support Lidarr
+        if (!arrConfig.Search.SearchMissing)
+            return; // qBitrr run_request_search requires search_missing
+
+        if (arrConfig.Type.Equals("lidarr", StringComparison.OrdinalIgnoreCase)
+            || arrConfig.Type.Equals("readarr", StringComparison.OrdinalIgnoreCase))
+            return; // Ombi/Overseerr do not support Lidarr/Readarr
 
         var ombi = arrConfig.Search.Ombi;
         var overseerr = arrConfig.Search.Overseerr;
@@ -521,7 +532,7 @@ public class ArrSyncService
         var requestTmdbIds = new HashSet<int>();
         var requestTvdbIds = new HashSet<int>();
 
-        var http = _sharedHttpClient;
+        var ombiHttp = ombi?.SkipTLSVerify == true ? _skipTlsHttpClient : _sharedHttpClient;
 
         // ── Ombi ────────────────────────────────────────────────────────────
         if (useOmbi)
@@ -535,7 +546,7 @@ public class ArrSyncService
                     System.Net.Http.HttpMethod.Get,
                     $"{ombi!.OmbiURI.TrimEnd('/')}{endpoint}");
                 req.Headers.Add("ApiKey", ombi.OmbiAPIKey);
-                var resp = await http.SendAsync(req, ct);
+                var resp = await ombiHttp.SendAsync(req, ct);
                 if (resp.IsSuccessStatusCode)
                 {
                     var json = await resp.Content.ReadAsStringAsync(ct);
@@ -574,55 +585,12 @@ public class ArrSyncService
             try
             {
                 var mediaType = arrConfig.Type.Equals("radarr", StringComparison.OrdinalIgnoreCase) ? "movie" : "tv";
-                var filter = overseerr!.ApprovedOnly ? "approved" : "unavailable";
-                var skip = 0;
-                const int take = 100;
-                while (true)
-                {
-                    var req = new System.Net.Http.HttpRequestMessage(
-                        System.Net.Http.HttpMethod.Get,
-                        $"{overseerr.OverseerrURI.TrimEnd('/')}/api/v1/request?take={take}&skip={skip}&sort=added&filter={filter}");
-                    req.Headers.Add("X-Api-Key", overseerr.OverseerrAPIKey);
-                    var resp = await http.SendAsync(req, ct);
-                    if (!resp.IsSuccessStatusCode) break;
-
-                    var json = await resp.Content.ReadAsStringAsync(ct);
-                    // Overseerr response shape varies by version: bare array, {results:[]}, or {data:[]}
-                    List<Newtonsoft.Json.Linq.JObject>? results = null;
-                    var token = Newtonsoft.Json.JsonConvert.DeserializeObject<Newtonsoft.Json.Linq.JToken>(json);
-                    if (token is Newtonsoft.Json.Linq.JArray jarr)
-                        results = jarr.OfType<Newtonsoft.Json.Linq.JObject>().ToList();
-                    else if (token is Newtonsoft.Json.Linq.JObject jobj)
-                        results = (jobj["results"] ?? jobj["data"])?.ToObject<List<Newtonsoft.Json.Linq.JObject>>();
-                    if (results == null || results.Count == 0) break;
-
-                    foreach (var entry in results)
-                    {
-                        if (entry["type"]?.ToObject<string>() != mediaType)
-                            continue;
-                        bool is4k = entry["is4k"]?.ToObject<bool?>() ?? false;
-                        if (is4k != overseerr.Is4K)
-                            continue;
-                        var media = entry["media"] as Newtonsoft.Json.Linq.JObject;
-                        if (media == null) continue;
-
-                        if (mediaType == "movie")
-                        {
-                            var tmdbId = media["tmdbId"]?.ToObject<int?>();
-                            if (tmdbId.HasValue && tmdbId.Value > 0)
-                                requestTmdbIds.Add(tmdbId.Value);
-                        }
-                        else
-                        {
-                            var tvdbId = media["tvdbId"]?.ToObject<int?>();
-                            if (tvdbId.HasValue && tvdbId.Value > 0)
-                                requestTvdbIds.Add(tvdbId.Value);
-                        }
-                    }
-
-                    if (results.Count < take) break;
-                    skip += take;
-                }
+                var fetched = await new OverseerrRequestFetcher(_logger)
+                    .FetchAsync(overseerr!, mediaType, ct);
+                foreach (var id in fetched.TmdbIds)
+                    requestTmdbIds.Add(id);
+                foreach (var id in fetched.TvdbIds)
+                    requestTvdbIds.Add(id);
             }
             catch (Exception ex)
             {
@@ -670,7 +638,7 @@ public class ArrSyncService
 
     private async Task SyncLidarrAsync(string instanceName, ArrInstanceConfig cfg, CancellationToken ct)
     {
-        var client = new LidarrClient(cfg.URI, cfg.APIKey);
+        var client = new LidarrClient(cfg.URI, cfg.APIKey, cfg.SkipTLSVerify);
         var searchConfig = cfg.Search;
 
         _logger.LogInformation("Started updating database");
@@ -689,25 +657,35 @@ public class ArrSyncService
 
         var artistProfileById = artists.ToDictionary(a => a.Id, a => a.QualityProfileId);
 
-        // Upsert artists keyed by ArtistName
-        var dbArtists = await _db.Artists
+        var dbArtistsList = await _db.Artists
             .Where(a => a.ArrInstance == instanceName)
-            .ToDictionaryAsync(a => a.Title ?? "", ct);
+            .ToListAsync(ct);
+        var dbArtists = new Dictionary<int, ArtistFilesModel>();
+        foreach (var existing in dbArtistsList)
+        {
+            if (existing.ArrId != 0)
+                dbArtists.TryAdd(existing.ArrId, existing);
+        }
 
-        var apiArtistNames = new HashSet<string>();
+        var apiArtistIds = new HashSet<int>();
         var artistsAdded = 0;
         var artistsUpdated = 0;
 
         foreach (var artist in artists)
         {
             ct.ThrowIfCancellationRequested();
-            apiArtistNames.Add(artist.ArtistName);
-            if (dbArtists.TryGetValue(artist.ArtistName, out var existing))
+            apiArtistIds.Add(artist.Id);
+            if (dbArtists.TryGetValue(artist.Id, out var existing)
+                || (existing = dbArtistsList.FirstOrDefault(a =>
+                    a.ArrId == 0 && string.Equals(a.Title, artist.ArtistName, StringComparison.Ordinal))) != null)
             {
+                existing.Title = artist.ArtistName;
                 existing.Monitored = artist.Monitored;
                 existing.QualityProfileId = artist.QualityProfileId;
+                existing.ArrId = artist.Id;
                 _db.Artists.Update(existing);
                 artistsUpdated++;
+                dbArtists[artist.Id] = existing;
                 _logger.LogTrace("DB Update: Artist {Title} updated in database", artist.ArtistName);
             }
             else
@@ -717,20 +695,21 @@ public class ArrSyncService
                     ArrInstance = instanceName,
                     Title = artist.ArtistName,
                     Monitored = artist.Monitored,
-                    QualityProfileId = artist.QualityProfileId
+                    QualityProfileId = artist.QualityProfileId,
+                    ArrId = artist.Id
                 });
                 artistsAdded++;
                 _logger.LogTrace("DB Insert: Artist {Title} added to database (new)", artist.ArtistName);
             }
         }
-        var artistsToDelete = dbArtists.Values
-            .Where(a => !apiArtistNames.Contains(a.Title ?? ""))
+        var artistsToDelete = dbArtistsList
+            .Where(a => !apiArtistIds.Contains(a.ArrId))
             .ToList();
         foreach (var artist in artistsToDelete)
         {
             _logger.LogTrace("DB Delete: Artist {Title} removed from database", artist.Title);
         }
-        if (artistsToDelete.Count > 0 && !ShouldSkipDestructiveDelete(artists.Count, dbArtists.Count, instanceName, "artists"))
+        if (artistsToDelete.Count > 0 && !ShouldSkipDestructiveDelete(artists.Count, dbArtistsList.Count, instanceName, "artists"))
             _db.Artists.RemoveRange(artistsToDelete);
 
         await _db.SaveChangesWithRetryAsync(_logger, _restartCoordinator, cancellationToken: ct);
@@ -755,6 +734,7 @@ public class ArrSyncService
         var apiForeignIds = new HashSet<string>();
         // Track Lidarr album ID → EF entity for track sync
         var albumEntityByLidarrId = new Dictionary<int, AlbumFilesModel>();
+        var percentOfTracksByArrId = new Dictionary<int, double>();
         var albumsAdded = 0;
         var albumsUpdated = 0;
 
@@ -762,6 +742,7 @@ public class ArrSyncService
         {
             ct.ThrowIfCancellationRequested();
             apiForeignIds.Add(album.ForeignAlbumId);
+            percentOfTracksByArrId[album.Id] = album.Statistics?.PercentOfTracks ?? 0;
             artistNameById.TryGetValue(album.ArtistId, out var artistName);
             var albumProfileId = album.QualityProfileId
                 ?? (artistProfileById.TryGetValue(album.ArtistId, out var ap) ? ap : 0);
@@ -831,6 +812,8 @@ public class ArrSyncService
             var minCfScore = profile?.MinCustomFormatScore ?? 0;
             albumEntity.MinCustomFormatScore = minCfScore;
 
+            var hasAllTracks = percentOfTracksByArrId.GetValueOrDefault(lidarrAlbumId) == 100;
+
             if (albumEntity.HasFile)
             {
                 try
@@ -839,13 +822,13 @@ public class ArrSyncService
                     if (trackFiles.Count > 0)
                     {
                         albumEntity.CustomFormatScore = trackFiles.Sum(tf => tf.CustomFormatScore ?? 0) / trackFiles.Count;
-                        albumEntity.QualityMet = true;
+                        albumEntity.QualityMet = CalculateLidarrQualityMet(hasAllTracks, profile, trackFiles);
                         albumEntity.CustomFormatMet = albumEntity.CustomFormatScore >= minCfScore;
                     }
                     else
                     {
                         albumEntity.CustomFormatScore = 0;
-                        albumEntity.QualityMet = true;
+                        albumEntity.QualityMet = CalculateLidarrQualityMet(hasAllTracks, profile, trackFiles);
                         albumEntity.CustomFormatMet = true;
                     }
                 }
@@ -853,16 +836,19 @@ public class ArrSyncService
                 {
                     _logger.LogDebug(ex, "ArrSyncService: failed to get track files for album {Id}", lidarrAlbumId);
                     albumEntity.CustomFormatScore = 0;
-                    albumEntity.QualityMet = true;
+                    // API errors → treat quality unmet as false (QualityMet = hasAllTracks)
+                    albumEntity.QualityMet = CalculateLidarrQualityMet(hasAllTracks, profile, trackFiles: null);
                     albumEntity.CustomFormatMet = true;
                 }
             }
             else
             {
                 albumEntity.CustomFormatScore = 0;
-                albumEntity.QualityMet = true;
+                albumEntity.QualityMet = CalculateLidarrQualityMet(hasAllTracks, profile, Array.Empty<TrackFile>());
                 albumEntity.CustomFormatMet = true;
             }
+
+            albumEntity.Upgrade = false;
 
             var isAvailable = CheckAlbumAvailability(albumEntity.ReleaseDate, albumEntity.Title ?? "Unknown", _logger);
             albumEntity.Reason = DetermineReasonWithAvailability(albumEntity.HasFile, albumEntity.QualityMet, albumEntity.CustomFormatMet, isAvailable, searchConfig);
@@ -930,7 +916,7 @@ public class ArrSyncService
 
     private async Task SyncLidarrQueueAsync(string instanceName, ArrInstanceConfig cfg, CancellationToken ct)
     {
-        var client = new LidarrClient(cfg.URI, cfg.APIKey);
+        var client = new LidarrClient(cfg.URI, cfg.APIKey, cfg.SkipTLSVerify);
 
         var queueResponse = await client.GetQueueAsync(ct: ct);
         var queueItems = queueResponse.Records;
@@ -972,10 +958,291 @@ public class ArrSyncService
 
         // §1.7: Scan for ArrErrorCodesToBlocklist matches
         await ScanQueueForBlocklistAsync(
-            queueItems.Select(i => (i.Id, i.DownloadId, i.TrackedDownloadStatus, i.TrackedDownloadState, i.StatusMessages)),
+            queueItems.Select(i => (i.Id, i.DownloadId, i.Status, i.TrackedDownloadStatus, i.TrackedDownloadState, i.OutputPath, i.StatusMessages)),
             cfg,
             (id, token) => client.DeleteFromQueueAsync(id, removeFromClient: true, blocklist: true, ct: token),
             ct);
+    }
+
+    // ── Readarr ─────────────────────────────────────────────────────────────
+
+    private async Task SyncReadarrAsync(string instanceName, ArrInstanceConfig cfg, CancellationToken ct)
+    {
+        var client = new ReadarrClient(cfg.URI, cfg.APIKey, cfg.SkipTLSVerify);
+        var searchConfig = cfg.Search;
+
+        _logger.LogInformation("Started updating database");
+
+        var qualityProfiles = await client.GetQualityProfilesAsync(ct);
+        var profileDict = qualityProfiles.ToDictionary(p => p.Id);
+
+        List<ReadarrAuthor> authors;
+        try { authors = await client.GetAuthorsAsync(ct); }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(ex, "[{Instance}] ArrSyncService: Readarr {Name} unreachable", instanceName, instanceName);
+            return;
+        }
+
+        var authorProfileById = authors.ToDictionary(a => a.Id, a => a.QualityProfileId);
+
+        var dbAuthorsList = await _db.Authors
+            .Where(a => a.ArrInstance == instanceName)
+            .ToListAsync(ct);
+        var dbAuthors = new Dictionary<int, AuthorFilesModel>();
+        foreach (var existingAuthor in dbAuthorsList)
+        {
+            if (existingAuthor.ArrId != 0)
+                dbAuthors.TryAdd(existingAuthor.ArrId, existingAuthor);
+        }
+
+        var apiAuthorIds = new HashSet<int>();
+        var authorsAdded = 0;
+        var authorsUpdated = 0;
+
+        foreach (var author in authors)
+        {
+            ct.ThrowIfCancellationRequested();
+            apiAuthorIds.Add(author.Id);
+            if (dbAuthors.TryGetValue(author.Id, out var existing)
+                || (existing = dbAuthorsList.FirstOrDefault(a =>
+                    a.ArrId == 0 && string.Equals(a.Title, author.AuthorName, StringComparison.Ordinal))) != null)
+            {
+                existing.Title = author.AuthorName;
+                existing.Monitored = author.Monitored;
+                existing.QualityProfileId = author.QualityProfileId;
+                existing.ArrId = author.Id;
+                existing.BookCount = author.Statistics?.BookCount ?? existing.BookCount;
+                _db.Authors.Update(existing);
+                authorsUpdated++;
+                dbAuthors[author.Id] = existing;
+            }
+            else
+            {
+                _db.Authors.Add(new AuthorFilesModel
+                {
+                    ArrInstance = instanceName,
+                    Title = author.AuthorName,
+                    Monitored = author.Monitored,
+                    QualityProfileId = author.QualityProfileId,
+                    ArrId = author.Id,
+                    BookCount = author.Statistics?.BookCount ?? 0
+                });
+                authorsAdded++;
+            }
+        }
+
+        var authorsToDelete = dbAuthorsList
+            .Where(a => !apiAuthorIds.Contains(a.ArrId))
+            .ToList();
+        if (authorsToDelete.Count > 0 && !ShouldSkipDestructiveDelete(authors.Count, dbAuthorsList.Count, instanceName, "authors"))
+            _db.Authors.RemoveRange(authorsToDelete);
+
+        await _db.SaveChangesWithRetryAsync(_logger, _restartCoordinator, cancellationToken: ct);
+
+        List<ReadarrBook> books;
+        try { books = await client.GetBooksAsync(ct: ct); }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(ex, "[{Instance}] ArrSyncService: Readarr {Name} failed to fetch books", instanceName, instanceName);
+            return;
+        }
+
+        var authorNameById = authors.ToDictionary(a => a.Id, a => a.AuthorName);
+
+        var dbBooks = await _db.Books
+            .Where(b => b.ArrInstance == instanceName)
+            .ToDictionaryAsync(b => b.ForeignBookId, ct);
+
+        var apiForeignIds = new HashSet<string>();
+        var booksAdded = 0;
+        var booksUpdated = 0;
+
+        foreach (var book in books)
+        {
+            ct.ThrowIfCancellationRequested();
+            apiForeignIds.Add(book.ForeignBookId);
+            authorNameById.TryGetValue(book.AuthorId, out var authorName);
+            var bookProfileId = book.QualityProfileId
+                ?? (authorProfileById.TryGetValue(book.AuthorId, out var ap) ? ap : 0);
+            var hasFile = book.Statistics?.BookFileCount > 0;
+
+            if (dbBooks.TryGetValue(book.ForeignBookId, out var existing))
+            {
+                existing.Title = book.Title;
+                existing.Monitored = book.Monitored;
+                existing.ReleaseDate = book.ReleaseDate;
+                existing.AuthorId = book.AuthorId;
+                existing.ArrAuthorId = book.AuthorId;
+                existing.AuthorTitle = authorName;
+                existing.QualityProfileId = bookProfileId;
+                existing.ArrId = book.Id;
+                existing.HasFile = hasFile;
+                existing.BookFileId = hasFile ? Math.Max(existing.BookFileId, 1) : 0;
+                _db.Books.Update(existing);
+                booksUpdated++;
+            }
+            else
+            {
+                _db.Books.Add(new BookFilesModel
+                {
+                    ArrInstance = instanceName,
+                    Title = book.Title,
+                    ForeignBookId = book.ForeignBookId,
+                    Monitored = book.Monitored,
+                    ReleaseDate = book.ReleaseDate,
+                    AuthorId = book.AuthorId,
+                    ArrAuthorId = book.AuthorId,
+                    AuthorTitle = authorName,
+                    QualityProfileId = bookProfileId,
+                    ArrId = book.Id,
+                    HasFile = hasFile,
+                    BookFileId = hasFile ? 1 : 0
+                });
+                booksAdded++;
+            }
+        }
+
+        var booksToDelete = dbBooks.Values
+            .Where(b => !apiForeignIds.Contains(b.ForeignBookId))
+            .ToList();
+        if (booksToDelete.Count > 0 && !ShouldSkipDestructiveDelete(books.Count, dbBooks.Count, instanceName, "books"))
+            _db.Books.RemoveRange(booksToDelete);
+
+        await _db.SaveChangesWithRetryAsync(_logger, _restartCoordinator, cancellationToken: ct);
+
+        var allBooks = await _db.Books.Where(b => b.ArrInstance == instanceName).ToListAsync(ct);
+
+        var filesByBookId = new Dictionary<int, List<ReadarrBookFile>>();
+        var authorIdsWithFiles = allBooks
+            .Where(b => b.HasFile && b.ArrAuthorId > 0)
+            .Select(b => b.ArrAuthorId)
+            .Distinct()
+            .ToList();
+        foreach (var authorId in authorIdsWithFiles)
+        {
+            try
+            {
+                var files = await client.GetBookFilesByAuthorAsync(authorId, ct);
+                foreach (var file in files)
+                {
+                    if (!filesByBookId.TryGetValue(file.BookId, out var list))
+                    {
+                        list = [];
+                        filesByBookId[file.BookId] = list;
+                    }
+                    list.Add(file);
+                }
+            }
+            catch (Exception ex)
+            {
+                _logger.LogDebug(ex, "ArrSyncService: failed to get book files for author {Id}", authorId);
+            }
+        }
+
+        foreach (var bookEntity in allBooks)
+        {
+            authorProfileById.TryGetValue(bookEntity.ArrAuthorId, out var authorProfileId);
+            profileDict.TryGetValue(authorProfileId, out var profile);
+            var minCfScore = profile?.MinCustomFormatScore ?? 0;
+            bookEntity.MinCustomFormatScore = minCfScore;
+
+            if (bookEntity.HasFile)
+            {
+                if (filesByBookId.TryGetValue(bookEntity.ArrId, out var bookFiles) && bookFiles.Count > 0)
+                {
+                    // qBitrr uses the first book file's customFormatScore (not an average).
+                    bookEntity.CustomFormatScore = bookFiles[0].CustomFormatScore ?? 0;
+                    bookEntity.BookFileId = bookFiles[0].Id > 0 ? bookFiles[0].Id : Math.Max(bookEntity.BookFileId, 1);
+                    bookEntity.QualityMet = !bookFiles.Any(f => f.QualityCutoffNotMet);
+                    bookEntity.CustomFormatMet = (bookEntity.CustomFormatScore ?? 0) >= minCfScore;
+                }
+                else
+                {
+                    // Stats claimed files but none were returned — treat as missing (qBitrr parity).
+                    bookEntity.HasFile = false;
+                    bookEntity.BookFileId = 0;
+                    bookEntity.CustomFormatScore = 0;
+                    bookEntity.QualityMet = true;
+                    bookEntity.CustomFormatMet = true;
+                }
+            }
+            else
+            {
+                bookEntity.CustomFormatScore = 0;
+                bookEntity.QualityMet = true;
+                bookEntity.CustomFormatMet = true;
+            }
+
+            var isAvailable = CheckAlbumAvailability(bookEntity.ReleaseDate, bookEntity.Title ?? "Unknown", _logger);
+            bookEntity.Reason = DetermineReasonWithAvailability(bookEntity.HasFile, bookEntity.QualityMet, bookEntity.CustomFormatMet, isAvailable, searchConfig);
+            ApplySyncedSearchFlags(bookEntity, searchConfig);
+        }
+
+        await _db.SaveChangesWithRetryAsync(_logger, _restartCoordinator, cancellationToken: ct);
+        _logger.LogDebug("[{Instance}] ArrSyncService: Readarr {Name} synced - Authors: Added: {AuthorsAdded}, Updated: {AuthorsUpdated}, Deleted: {AuthorsDeleted} | Books: Added: {BooksAdded}, Updated: {BooksUpdated}, Deleted: {BooksDeleted}",
+            instanceName, instanceName, authorsAdded, authorsUpdated, authorsToDelete.Count, booksAdded, booksUpdated, booksToDelete.Count);
+    }
+
+    private async Task SyncReadarrQueueAsync(string instanceName, ArrInstanceConfig cfg, CancellationToken ct)
+    {
+        var client = new ReadarrClient(cfg.URI, cfg.APIKey, cfg.SkipTLSVerify);
+
+        var queueResponse = await client.GetQueueAsync(ct: ct);
+        var queueItems = queueResponse.Records;
+
+        var dbQueue = await _db.BookQueue
+            .Where(q => q.ArrInstance == instanceName)
+            .ToDictionaryAsync(q => q.QueueId ?? 0, ct);
+
+        var apiQueueIds = new HashSet<int>();
+
+        foreach (var item in queueItems)
+        {
+            if (item.Id <= 0) continue;
+            apiQueueIds.Add(item.Id);
+
+            if (dbQueue.TryGetValue(item.Id, out var existing))
+            {
+                UpdateBookQueueFromReadarrApi(existing, item);
+                _db.BookQueue.Update(existing);
+            }
+            else
+            {
+                var newQueue = new BookQueueModel
+                {
+                    ArrInstance = instanceName,
+                    QueueId = item.Id
+                };
+                UpdateBookQueueFromReadarrApi(newQueue, item);
+                _db.BookQueue.Add(newQueue);
+            }
+        }
+
+        var toDelete = dbQueue.Values.Where(q => !apiQueueIds.Contains(q.QueueId ?? 0)).ToList();
+        if (toDelete.Count > 0)
+            _db.BookQueue.RemoveRange(toDelete);
+
+        await _db.SaveChangesWithRetryAsync(_logger, _restartCoordinator, cancellationToken: ct);
+
+        await ScanQueueForBlocklistAsync(
+            queueItems.Select(i => (i.Id, i.DownloadId, i.Status, i.TrackedDownloadStatus, i.TrackedDownloadState, i.OutputPath, i.StatusMessages)),
+            cfg,
+            (id, token) => client.DeleteFromQueueAsync(id, removeFromClient: true, blocklist: true, ct: token),
+            ct);
+    }
+
+    private static void UpdateBookQueueFromReadarrApi(BookQueueModel queue, ReadarrQueueItem item)
+    {
+        queue.QueueId = item.Id;
+        queue.BookId = item.BookId;
+        queue.AuthorId = item.AuthorId;
+        queue.DownloadId = item.DownloadId;
+        queue.Title = item.Title;
+        queue.Status = item.Status;
+        queue.TrackedDownloadStatus = item.TrackedDownloadStatus;
+        queue.TrackedDownloadState = item.TrackedDownloadState;
+        queue.CustomFormatScore = item.CustomFormatScore;
     }
 
     // ── Helper Methods ────────────────────────────────────────────────────────
@@ -1218,24 +1485,58 @@ public class ArrSyncService
         return true;
     }
 
+    /// <summary>
+    /// Resets Upgrade so DoUpgradeSearch can select the book again (qBitrr sync), then sets
+    /// Searched from should_mark_searched. Upgrade eligibility is the Upgrade flag, not Searched.
+    /// </summary>
+    private static void ApplySyncedSearchFlags(BookFilesModel book, SearchConfig searchConfig)
+    {
+        book.Upgrade = false;
+        book.Searched = DetermineSearched(book.HasFile, book.QualityMet, book.CustomFormatMet, searchConfig);
+    }
+
     private static bool DetermineSearched(bool hasFile, bool qualityMet, bool customFormatMet, SearchConfig searchConfig)
     {
+        // qBitrr should_mark_searched: content present and no active quality/CF search applies.
+        // DoUpgradeSearch is intentionally ignored here; upgrade loops use the Upgrade flag.
         if (!hasFile)
             return false;
-
-        if (!qualityMet || !customFormatMet)
+        if (searchConfig.QualityUnmetSearch && !qualityMet)
             return false;
-
+        if (searchConfig.CustomFormatUnmetSearch && !customFormatMet)
+            return false;
         return true;
     }
 
-    private static bool CalculateLidarrQualityMet(QualityProfile profile, List<Track> tracksWithFiles)
+    /// <summary>
+    /// qBitrr compute_quality_met: hasAllTracks (percentOfTracks == 100) and not quality-unmet.
+    /// Quality is unmet only when the profile has a cutoff, upgradeAllowed, and any track file
+    /// quality id is below cutoff. Null trackFiles (API error) treats unmet as false.
+    /// </summary>
+    internal static bool CalculateLidarrQualityMet(
+        bool hasAllTracks,
+        QualityProfile? profile,
+        IReadOnlyList<TrackFile>? trackFiles)
     {
+        if (!hasAllTracks)
+            return false;
+        if (trackFiles == null)
+            return true;
+        return !IsLidarrQualityUnmet(profile, trackFiles);
+    }
+
+    internal static bool IsLidarrQualityUnmet(QualityProfile? profile, IReadOnlyList<TrackFile> trackFiles)
+    {
+        if (profile == null)
+            return false;
         var cutoffId = profile.Cutoff;
         if (!cutoffId.HasValue || cutoffId.Value <= 0)
-            return true;
+            return false;
+        if (!profile.UpgradeAllowed)
+            return false;
 
-        return true;
+        return trackFiles.Any(tf =>
+            (tf.Quality?.QualityDefinition?.Id ?? int.MaxValue) < cutoffId.Value);
     }
 
     private static void UpdateMovieQueueFromApi(MovieQueueModel queue, QueueItem item)
@@ -1347,37 +1648,124 @@ public class ArrSyncService
     }
 
     /// <summary>
-    /// §1.7: Scan freshly-synced queue items for entries matching ArrErrorCodesToBlocklist
-    /// and blocklist+delete them from the Arr queue (removeFromClient=true also removes the
-    /// torrent from qBittorrent via Arr's queue deletion API).
+    /// Scan freshly-synced queue items for entries matching ArrErrorCodesToBlocklist
+    /// (qBitrr: status==completed, trackedDownloadStatus==warning, trackedDownloadState==importPending,
+    /// exact message match) and blocklist+delete them, including listed files.
     /// </summary>
     private async Task ScanQueueForBlocklistAsync(
-        IEnumerable<(int Id, string? DownloadId, string? TrackedDownloadStatus, string? TrackedDownloadState, List<StatusMessage>? StatusMessages)> items,
+        IEnumerable<(int Id, string? DownloadId, string? Status, string? TrackedDownloadStatus, string? TrackedDownloadState, string? OutputPath, List<StatusMessage>? StatusMessages)> items,
         ArrInstanceConfig cfg,
         Func<int, CancellationToken, Task<bool>> deleteFromQueue,
         CancellationToken ct)
     {
         if (cfg.ArrErrorCodesToBlocklist.Count == 0) return;
 
-        foreach (var (id, downloadId, status, state, messages) in items)
+        var codes = new HashSet<string>(cfg.ArrErrorCodesToBlocklist);
+
+        foreach (var (id, downloadId, status, trackedStatus, state, outputPath, messages) in items)
         {
-            if (!string.Equals(status, "warning", StringComparison.OrdinalIgnoreCase)) continue;
+            if (!string.Equals(status, "completed", StringComparison.OrdinalIgnoreCase)) continue;
+            if (!string.Equals(trackedStatus, "warning", StringComparison.OrdinalIgnoreCase)) continue;
             if (!string.Equals(state, "importPending", StringComparison.OrdinalIgnoreCase)) continue;
 
-            var allMessages = messages?.SelectMany(m => m.Messages ?? Enumerable.Empty<string>())
-                              ?? Enumerable.Empty<string>();
+            var matched = false;
+            if (messages != null)
+            {
+                foreach (var msg in messages)
+                {
+                    foreach (var line in msg.Messages ?? Enumerable.Empty<string>())
+                    {
+                        if (!codes.Contains(line))
+                            continue;
+                        matched = true;
+                        CleanupBlocklistedPath(outputPath, msg.Title);
+                    }
+                }
+            }
 
-            var matchedCode = allMessages.FirstOrDefault(msg =>
-                cfg.ArrErrorCodesToBlocklist.Any(code =>
-                    msg.Contains(code, StringComparison.OrdinalIgnoreCase)));
-
-            if (matchedCode == null) continue;
+            if (!matched) continue;
 
             _logger.LogWarning(
-                "ArrErrorCodesToBlocklist: blocklisting queue item {Id} (hash: {DownloadId}) — matched: \"{Error}\"",
-                id, downloadId, matchedCode);
+                "ArrErrorCodesToBlocklist: blocklisting queue item {Id} (hash: {DownloadId})",
+                id, downloadId);
 
             await deleteFromQueue(id, ct);
         }
+    }
+
+    internal static void CleanupBlocklistedPath(string? outputPath, string? title)
+    {
+        var target = ResolveBlocklistedCleanupTarget(outputPath, title);
+        if (target == null)
+            return;
+
+        try
+        {
+            if (Directory.Exists(target))
+                Directory.Delete(target, recursive: true);
+            else if (File.Exists(target))
+                File.Delete(target);
+        }
+        catch (Exception)
+        {
+            // qBitrr swallows in-use / permission errors while logging debug.
+        }
+    }
+
+    /// <summary>
+    /// Resolves Arr queue outputPath+title to a path that stays under outputPath.
+    /// Rooted titles, <c>..</c> escapes, and OS-invalid filename characters return null.
+    /// </summary>
+    internal static string? ResolveBlocklistedCleanupTarget(string? outputPath, string? title)
+    {
+        if (string.IsNullOrWhiteSpace(outputPath) || string.IsNullOrWhiteSpace(title))
+            return null;
+
+        // Path.GetFullPath does not throw for '?' / '*' on current Windows/.NET,
+        // but those characters cannot be deleted as a literal file and must not
+        // abort ScanQueueForBlocklistAsync.
+        if (TitleHasInvalidFileNameCharacters(title))
+            return null;
+
+        try
+        {
+            var root = Path.GetFullPath(outputPath);
+            var comparison = OperatingSystem.IsWindows()
+                ? StringComparison.OrdinalIgnoreCase
+                : StringComparison.Ordinal;
+            var volumeRoot = Path.GetPathRoot(root);
+            if (string.IsNullOrEmpty(volumeRoot) || string.Equals(root, volumeRoot, comparison))
+                return null;
+
+            var target = Path.GetFullPath(Path.Combine(root, title));
+            var prefix = root.EndsWith(Path.DirectorySeparatorChar)
+                ? root
+                : root + Path.DirectorySeparatorChar;
+
+            if (string.Equals(target, root, comparison))
+                return null;
+            if (!target.StartsWith(prefix, comparison))
+                return null;
+
+            return target;
+        }
+        catch (Exception)
+        {
+            return null;
+        }
+    }
+
+    private static bool TitleHasInvalidFileNameCharacters(string title)
+    {
+        var invalid = Path.GetInvalidFileNameChars();
+        foreach (var segment in title.Split('/', '\\'))
+        {
+            if (segment.Length == 0)
+                continue;
+            if (segment.IndexOfAny(invalid) >= 0)
+                return true;
+        }
+
+        return false;
     }
 }

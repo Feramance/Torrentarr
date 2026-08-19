@@ -17,7 +17,8 @@ With Torrentarr's instant imports:
 
 1. qBittorrent finishes downloading
 2. **Torrentarr detects completion instantly** (within seconds)
-3. Torrentarr validates files (optional FFprobe check)
+3. Torrentarr triggers Arr import (`Downloaded*Scan`)
+4. If `Torrent.AutoDelete` is on, FFprobe probes allowlisted files after import
 4. **Torrentarr tells Arr to import immediately**
 5. Media appears in library within seconds
 
@@ -66,7 +67,7 @@ Torrent is considered complete when:
 
 **3. File Validation (Optional)**
 
-If FFprobe is enabled, Torrentarr validates files before import:
+If `Torrent.AutoDelete` is on, Torrentarr probes allowlisted files after Arr import:
 
 ```toml
 [Settings]

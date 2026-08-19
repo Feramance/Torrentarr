@@ -1,6 +1,6 @@
 # qBitrr parity: contributor reference
 
-Internal notes for **maintainers and contributors** comparing Torrentarr to upstream [qBitrr](https://github.com/Feramance/qBitrr). End users: see [overview.md](overview.md) instead. Row-level status: [full-parity-matrix.md](full-parity-matrix.md).
+Internal notes for **maintainers and contributors** comparing Torrentarr to upstream [qBitrr](https://github.com/Feramance/qBitrr). End users: see [overview.md](overview.md) instead. Row-level status: [full-parity-matrix.md](full-parity-matrix.md). Feature and logical-path audit: [full-parity-path-report.md](full-parity-path-report.md).
 
 ---
 
@@ -14,8 +14,8 @@ Torrentarr parity work is diffed against a **pinned** upstream ref during closeo
 | --- | --- |
 | **Branch** | `master` |
 | **Role** | Active behavioral baseline for the latest-main parity audit. |
-| **Reference release** | `v5.12.10` (latest observed release on `master` during this audit, 2026-07-08). |
-| **Prior closeout pin** | `5.12.3` @ `0b4a1119e1c59e664c6bb8654d6e206a81d8db52` — retained as the previous strict-closeout baseline for historical comparison. |
+| **Reference release** | `v5.14.3-1` (qBitrr `EXPECTED_CONFIG_VERSION = "5.14.3"`). |
+| **Prior closeout pin** | `v5.12.10` — retained as the previous audit baseline. |
 
 To move the pin: update this section, re-run the inventories below, and adjust [full-parity-matrix.md](full-parity-matrix.md) / tests as needed.
 
@@ -26,7 +26,7 @@ To move the pin: update this section, re-run the inventories below, and adjust [
 | Config model | `qBitrr/config.py`, `qBitrr/gen_config.py`, `qBitrr/config_version.py`, `qBitrr/env_config.py` |
 | Durations | `qBitrr/duration_config.py` |
 | DB schema | `qBitrr/tables.py`, `qBitrr/database.py`, `qBitrr/db_lock.py`, `qBitrr/db_recovery.py` |
-| Core loop + policy | `qBitrr/arss.py` |
+| Core loop + policy | `qBitrr/arss/` (`arr_base.py`, `torrent_*`, `search_handlers.py`, `db_update_handlers.py`, …). Mapped in [full-parity-matrix.md](full-parity-matrix.md). |
 | Seeding / trackers | `qBitrr/qbit_category_manager.py`, `qBitrr/arr_tracker_index.py` |
 | Web + API | `qBitrr/webui.py` |
 | OpenAPI (if present on tag) | `qBitrr/openapi.json` |

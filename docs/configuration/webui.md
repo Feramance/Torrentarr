@@ -44,10 +44,6 @@ OIDCEnabled = false
 # Live updates
 LiveArr = true
 
-# Group settings
-GroupSonarr = true
-GroupLidarr = true
-
 # Default theme
 Theme = "Dark"
 ```
@@ -235,67 +231,9 @@ LiveArr = false  # Reduce load
 
 ---
 
-## GroupSonarr
+## Catalog grouping
 
-```toml
-GroupSonarr = true
-```
-
-**Type:** Boolean
-**Default:** `true`
-
-Group Sonarr episodes by series in the WebUI.
-
-**When true (grouped):**
-
-```
-└─ Breaking Bad
-   ├─ S01E01 - Pilot
-   ├─ S01E02 - Cat's in the Bag
-   └─ S01E03 - ...and the Bag's in the River
-```
-
-**When false (flat list):**
-
-```
-├─ Breaking Bad S01E01 - Pilot
-├─ Breaking Bad S01E02 - Cat's in the Bag
-└─ Breaking Bad S01E03 - ...and the Bag's in the River
-```
-
-**Recommendation:** `true` for better organization.
-
----
-
-## GroupLidarr
-
-```toml
-GroupLidarr = true
-```
-
-**Type:** Boolean
-**Default:** `true`
-
-Group Lidarr albums by artist in the WebUI.
-
-**When true (grouped):**
-
-```
-└─ Pink Floyd
-   ├─ The Dark Side of the Moon
-   ├─ The Wall
-   └─ Wish You Were Here
-```
-
-**When false (flat list):**
-
-```
-├─ Pink Floyd - The Dark Side of the Moon
-├─ Pink Floyd - The Wall
-└─ Pink Floyd - Wish You Were Here
-```
-
-**Recommendation:** `true` for better navigation.
+Sonarr catalogs always show series rows; Lidarr catalogs always show artist rows. This matches qBitrr 5.14 (the `GroupSonarr` / `GroupLidarr` toggles were removed). Existing configs that still contain those keys have them stripped on load.
 
 ---
 
@@ -348,8 +286,7 @@ Port = 6969
 Token = ""  # Auto-generated at startup if empty
 AuthDisabled = true
 LiveArr = true
-GroupSonarr = true
-GroupLidarr = true
+
 Theme = "Dark"
 ViewDensity = "Comfortable"
 ```
@@ -369,8 +306,7 @@ Port = 6969
 Token = "a1b2c3d4e5f6g7h8i9j0k1l2m3n4o5p6"
 AuthDisabled = true
 LiveArr = true
-GroupSonarr = true
-GroupLidarr = true
+
 Theme = "Dark"
 ViewDensity = "Comfortable"
 ```
@@ -394,8 +330,7 @@ OIDCEnabled = false
 Username = "admin"
 # PasswordHash set via login page "Set password" or POST /web/auth/set-password
 LiveArr = true
-GroupSonarr = true
-GroupLidarr = true
+
 Theme = "Dark"
 ViewDensity = "Comfortable"
 ```
@@ -415,8 +350,7 @@ AuthDisabled = false
 LocalAuthEnabled = false
 OIDCEnabled = true
 LiveArr = true
-GroupSonarr = true
-GroupLidarr = true
+
 Theme = "Dark"
 ViewDensity = "Comfortable"
 
@@ -441,8 +375,7 @@ Host = "127.0.0.1"
 Port = 6969
 Token = ""  # Reverse proxy handles auth
 LiveArr = true
-GroupSonarr = true
-GroupLidarr = true
+
 Theme = "Dark"
 ViewDensity = "Comfortable"
 ```
@@ -469,8 +402,7 @@ Host = "0.0.0.0"
 Port = 6969
 Token = ""
 LiveArr = false  # Disable auto-refresh
-GroupSonarr = false  # Flat lists
-GroupLidarr = false  # Flat lists
+
 Theme = "Dark"
 ```
 
@@ -714,21 +646,15 @@ For more authentication troubleshooting, see [WebUI Authentication](webui-authen
    LiveArr = false
    ```
 
-2. **Disable grouping:**
-   ```toml
-   GroupSonarr = false
-   GroupLidarr = false
-   ```
-
-3. **Check resource usage:**
+2. **Check resource usage:**
    ```bash
    docker stats torrentarr
    htop
    ```
 
-4. **Clear browser cache**
+3. **Clear browser cache**
 
-5. **Reduce log retention:**
+4. **Reduce log retention:**
    - Fewer logs = faster log view
    - Consider log rotation
 
@@ -834,8 +760,6 @@ docker restart torrentarr
 ```toml
 [WebUI]
 LiveArr = false  # Disable auto-refresh
-GroupSonarr = false  # Faster rendering
-GroupLidarr = false  # Faster rendering
 ```
 
 **In WebUI:**
@@ -852,8 +776,7 @@ Host = "127.0.0.1"
 Port = 6969
 Token = ""
 LiveArr = false
-GroupSonarr = false
-GroupLidarr = false
+
 Theme = "Dark"  # Lower power on OLED
 ```
 

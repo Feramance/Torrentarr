@@ -31,6 +31,8 @@ export const FIELD_TOOLTIPS: Record<string, string> = {
     "Enable the background worker that periodically checks for Torrentarr updates.",
   "Settings.AutoUpdateCron":
     "Cron expression describing when to check for updates (default weekly Sunday at 03:00).",
+  "Settings.AutoUpdateChannel":
+    "Release channel for update checks: latest (newest GitHub release), stable (newest non-prerelease), or nightly (check only; binary apply is disabled).",
   "Settings.AutoRestartProcesses":
     "Automatically restart worker processes that crash unexpectedly. Recommended to keep enabled for reliability.",
   "Settings.MaxProcessRestarts":
@@ -45,10 +47,6 @@ export const FIELD_TOOLTIPS: Record<string, string> = {
   "WebUI.Token":
     "Optional bearer token required by the WebUI/API. Leave empty to disable authentication.",
   "WebUI.LiveArr": "Enable live updates for Arr views.",
-  "WebUI.GroupSonarr":
-    "Group Sonarr views by series and seasons in collapsible sections.",
-  "WebUI.GroupLidarr":
-    "Group Lidarr views by artist and albums in collapsible sections.",
   "WebUI.Theme": "Choose the visual theme for the WebUI (light or dark).",
   "WebUI.ViewDensity":
     "View density for lists in the WebUI: Comfortable (more spacing) or Compact (more rows on screen).",
@@ -62,6 +60,8 @@ export const FIELD_TOOLTIPS: Record<string, string> = {
   "qBit.UserName": "qBittorrent WebUI username.",
   "qBit.Password":
     "qBittorrent WebUI password. Remove this if authentication is bypassed for the host.",
+  "qBit.SkipTLSVerify":
+    "When true, do not verify the TLS certificate for this qBittorrent WebUI (self-signed certs). Disables MITM protection for that connection.",
 
   Disabled:
     "Disable this qBittorrent instance (headless mode for search-only setups).",
@@ -82,6 +82,8 @@ export const FIELD_TOOLTIPS: Record<string, string> = {
   "ARR.URI":
     "Servarr URL, including protocol and port if needed (for example http://localhost:8989).",
   "ARR.APIKey": "Servarr API key from Settings > General > Security.",
+  "ARR.SkipTLSVerify":
+    "When true, do not verify TLS for this Servarr API (HTTPS). Does not affect Overseerr/Ombi. Disables MITM protection for that connection.",
   "ARR.Category":
     "qBittorrent category applied by the Servarr instance to its downloads.",
   "ARR.ReSearch":

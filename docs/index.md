@@ -4,7 +4,7 @@
   <img src="assets/logov2-clean.svg" alt="Torrentarr Logo" width="200"/>
 </div>
 
-**Torrentarr** is the intelligent glue between qBittorrent and the *Arr ecosystem (Radarr, Sonarr, Lidarr). It monitors torrent health, triggers instant imports when downloads complete, automates quality upgrades, manages disk space, integrates with request systems (Overseerr/Ombi), and provides a modern React dashboard for complete visibility and control.
+**Torrentarr** is the intelligent glue between qBittorrent and the *Arr ecosystem (Radarr, Sonarr, Lidarr, Readarr). It monitors torrent health, triggers instant imports when downloads complete, automates quality upgrades, manages disk space, integrates with request systems (Overseerr/Ombi), and provides a modern React dashboard for complete visibility and control.
 
 [![GitHub release](https://img.shields.io/github/v/release/Feramance/Torrentarr)](https://github.com/Feramance/Torrentarr/releases)
 [![Docker Pulls](https://img.shields.io/docker/pulls/feramance/torrentarr.svg?cacheSeconds=3600)](https://hub.docker.com/r/feramance/torrentarr)
@@ -44,7 +44,7 @@
 - **Instant imports** – trigger downloads scans the moment torrents finish
 - **Stalled torrent detection** – identify and handle stuck/slow downloads
 - **Failed download handling** – automatically blacklist and re-search
-- **FFprobe verification** – validate media files before import
+- **FFprobe verification** – validate media files after Arr import when AutoDelete is on
 - **Smart file filtering** – exclude samples, extras, trailers
 
 ### 🔍 Automated Search & Request Integration
@@ -210,6 +210,7 @@ Total time to library: 20.5 minutes (26% faster)
     - Radarr: v3.x, v4.x, v5.x, v6.x
     - Sonarr: v3.x, v4.x
     - Lidarr: v1.x, v2.x
+    - Readarr: v0.4+
 
 ### Optional Services
 
@@ -345,7 +346,7 @@ Optimize for private tracker requirements:
 
 ### Current Version
 
-**Latest Release**: v6.12.5 (June 2026)
+**Latest Release**: v6.14.3-1
 
 Torrentarr’s **major** version is **intentionally one ahead of [qBitrr](https://github.com/Feramance/qBitrr)’s** (e.g. qBitrr 5.x ↔ Torrentarr 6.x); minor and patch numbers move independently. That rule keeps the two products unambiguous while sharing `config.toml` compatibility. For the short user-facing story, see [qBitrr and Torrentarr (overview)](parity/overview.md). Contributors: [parity matrix](parity/full-parity-matrix.md) and [contributor reference](parity/contributor-reference.md).
 

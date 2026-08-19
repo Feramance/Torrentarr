@@ -6,8 +6,8 @@ import {
   useState,
   type JSX,
 } from "react";
-import { getQbitCategories } from "../api/client";
-import type { QbitCategory } from "../api/types";
+import { getQbitCategories, getQbitOverview } from "../api/client";
+import type { QbitCategory, QbitOverviewCategory } from "../api/types";
 import { useToast } from "../context/ToastContext";
 import { useInterval } from "../hooks/useInterval";
 import { useWebUI } from "../context/WebUIContext";
@@ -89,7 +89,10 @@ export function QbitCategoriesView({
   active,
 }: QbitCategoriesViewProps): JSX.Element {
   const [categories, setCategories] = useState<QbitCategory[]>([]);
-  const [loading, setLoading] = useState(false);
+  const [overviewCategories, setOverviewCategories] = useState<
+    QbitOverviewCategory[]
+  >([]);
+  const [loading, setLoading] = useState(true);
   const { push } = useToast();
   const { liveArr } = useWebUI();
   const isFetching = useRef(false);
@@ -108,6 +111,12 @@ export function QbitCategoriesView({
         setCategories((prev) =>
           areCategoriesEqual(prev, data.categories) ? prev : data.categories,
         );
+        try {
+          const overview = await getQbitOverview();
+          setOverviewCategories(overview.categories ?? []);
+        } catch {
+          setOverviewCategories([]);
+        }
       } catch (error) {
         push(
           error instanceof Error
@@ -168,6 +177,17 @@ export function QbitCategoriesView({
     };
   }, [categories]);
 
+  const groupedByInstance = useMemo(() => {
+    const map = new Map<string, QbitCategory[]>();
+    for (const cat of categories) {
+      const key = cat.instance || "qBit";
+      const list = map.get(key);
+      if (list) list.push(cat);
+      else map.set(key, [cat]);
+    }
+    return Array.from(map.entries());
+  }, [categories]);
+
   // Define table columns
   const columns = useMemo<ColumnDef<QbitCategory>[]>(
     () => [
@@ -199,7 +219,18 @@ export function QbitCategoriesView({
       {
         accessorKey: "torrentCount",
         header: "Torrents",
-        cell: (info) => (info.getValue() as number).toLocaleString(),
+        cell: (info) => {
+          const row = info.row.original;
+          const overview = overviewCategories.find(
+            (c) => c.category === row.category && c.instance === row.instance,
+          );
+          const names = overview?.torrents?.map((t) => t.name).filter(Boolean);
+          return (
+            <span title={names?.slice(0, 20).join("\n")}>
+              {(info.getValue() as number).toLocaleString()}
+            </span>
+          );
+        },
         size: 100,
       },
       {
@@ -254,7 +285,7 @@ export function QbitCategoriesView({
         size: 150,
       },
     ],
-    [],
+    [overviewCategories],
   );
 
   return (
@@ -292,13 +323,20 @@ export function QbitCategoriesView({
             sections or add Arr instances to see categories.
           </div>
         ) : (
-          <StableTable
-            data={categories}
-            columns={columns}
-            getRowKey={(cat) =>
-              `${cat.instance}-${cat.category}-${cat.managedBy}`
-            }
-          />
+          groupedByInstance.map(([instance, cats]) => (
+            <details key={instance} className="qbit-category-group">
+              <summary>
+                {instance} ({cats.length})
+              </summary>
+              <StableTable
+                data={cats}
+                columns={columns}
+                getRowKey={(cat) =>
+                  `${cat.instance}-${cat.category}-${cat.managedBy}`
+                }
+              />
+            </details>
+          ))
         )}
       </div>
     </section>

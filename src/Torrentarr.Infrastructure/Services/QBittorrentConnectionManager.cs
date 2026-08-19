@@ -30,7 +30,10 @@ public class QBittorrentConnectionManager
             return false;
         }
 
-        var client = new QBittorrentClient(config.Host, config.Port, config.UserName, config.Password);
+        if (_clients.ContainsKey(name))
+            return true;
+
+        var client = new QBittorrentClient(config.Host, config.Port, config.UserName, config.Password, config.SkipTLSVerify);
 
         try
         {
@@ -57,6 +60,25 @@ public class QBittorrentConnectionManager
             _logger.LogError(ex, "Error connecting to qBittorrent instance '{Name}' at {Host}:{Port}", name, config.Host, config.Port);
             return false;
         }
+    }
+
+    /// <summary>
+    /// Connect any configured instances that are not yet connected (startup recovery).
+    /// </summary>
+    public async Task<int> EnsureAllConnectedAsync(
+        IEnumerable<KeyValuePair<string, QBitConfig>> instances,
+        CancellationToken cancellationToken = default)
+    {
+        var connected = 0;
+        foreach (var (name, config) in instances)
+        {
+            if (config.Disabled || config.Host == "CHANGE_ME")
+                continue;
+            if (await InitializeAsync(name, config, cancellationToken))
+                connected++;
+        }
+
+        return connected;
     }
 
     /// <summary>

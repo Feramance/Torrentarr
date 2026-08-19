@@ -8,7 +8,7 @@
 
 [Settings]
 # Internal config schema version - managed automatically
-ConfigVersion = "6.12.5"
+ConfigVersion = "6.14.3"
 
 # Logging level: CRITICAL, ERROR, WARNING, NOTICE, INFO, DEBUG, TRACE
 ConsoleLevel = "INFO"
@@ -61,6 +61,9 @@ AutoUpdateEnabled = false
 # Cron schedule for auto-updates (weekly Sunday at 3 AM)
 AutoUpdateCron = "0 3 * * 0"
 
+# Update channel: latest (newest GitHub release), stable (newest non-prerelease), nightly (check only)
+AutoUpdateChannel = "latest"
+
 # Automatically restart crashed worker processes
 AutoRestartProcesses = true
 
@@ -91,12 +94,6 @@ OIDCEnabled = false
 # Enable live updates for Arr views
 LiveArr = true
 
-# Group Sonarr episodes by series
-GroupSonarr = true
-
-# Group Lidarr albums by artist
-GroupLidarr = true
-
 # WebUI theme (Light or Dark)
 Theme = "Dark"
 
@@ -116,6 +113,9 @@ Port = 8080
 # qBittorrent authentication
 UserName = "admin"
 Password = "adminadmin"
+
+# If true, do not verify TLS certificates for HTTPS WebUI (self-signed certs). Disables MITM protection for that connection.
+SkipTLSVerify = false
 
 # Categories managed directly by qBit (not by Arr instances)
 ManagedCategories = []
@@ -139,7 +139,7 @@ MaxUploadRatio = 2.0
 # Maximum seeding time in seconds (-1 = unlimited)
 MaxSeedingTime = 604800
 
-# Remove mode: 0=Never, 1=IfMetUploadLimit, 2=Always
+# Remove mode: -1=Never, 1=Ratio, 2=Time, 3=OR, 4=AND
 RemoveMode = 1
 
 # Enable Hit & Run protection
@@ -148,8 +148,8 @@ HitAndRunMode = "and"
 # Minimum seed ratio for HnR protection
 MinSeedRatio = 1.0
 
-# Minimum seed time for HnR protection (seconds)
-MinSeedTime = 86400
+# Minimum seed time for HnR protection (days)
+MinSeedingTimeDays = 1
 
 # Example Radarr instance for movies
 [Radarr-Movies]
@@ -158,6 +158,9 @@ URI = "http://localhost:7878"
 
 # Radarr API key (Settings > General > Security)
 APIKey = "your-radarr-api-key"
+
+# If true, do not verify TLS for this Servarr API (HTTPS). Does not affect Overseerr/Ombi.
+SkipTLSVerify = false
 
 # Enable management for this instance
 Managed = true
@@ -175,6 +178,7 @@ ProcessingOnly = false
 [Sonarr-TV]
 URI = "http://localhost:8989"
 APIKey = "your-sonarr-api-key"
+SkipTLSVerify = false
 Managed = true
 Category = "sonarr-tv"
 SearchOnly = false
@@ -184,10 +188,27 @@ ProcessingOnly = false
 [Lidarr-Music]
 URI = "http://localhost:8686"
 APIKey = "your-lidarr-api-key"
+SkipTLSVerify = false
 Managed = true
 Category = "lidarr-music"
 SearchOnly = false
 ProcessingOnly = false
+
+# Example Readarr instance for books (ebook + audiobook allowlist)
+[Readarr-Books]
+URI = "http://localhost:8787"
+APIKey = "your-readarr-api-key"
+SkipTLSVerify = false
+Managed = true
+Category = "readarr-books"
+SearchOnly = false
+ProcessingOnly = false
+
+[Readarr-Books.Torrent]
+FileExtensionAllowlist = ['.epub', '.kepub', '.mobi', '.azw', '.azw3', '.pdf', '.cbz', '.cbr', '.flac', '.ape', '.wavpack', '.wav', '.alac', '.mp2', '.mp3', '.wma', '.m4a', '.m4p', '.m4b', '.aac', '.mp4a', '.ogg', '.oga', '.vorbis', '.!qB', '.parts']
+
+[Readarr-Books.EntrySearch]
+SearchByYear = true
 
 # You can have multiple instances of the same type:
 # [Radarr-4K]

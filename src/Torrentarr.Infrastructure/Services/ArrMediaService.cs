@@ -13,6 +13,7 @@ public class ArrMediaService : IArrMediaService
     private readonly TorrentarrConfig _config;
     private readonly ISearchExecutor _searchExecutor;
     private readonly ArrSyncService _syncService;
+    private readonly SearchYearCursor _yearCursor;
 
     private static readonly Dictionary<string, int> ReasonPriority = new(StringComparer.OrdinalIgnoreCase)
     {
@@ -29,13 +30,15 @@ public class ArrMediaService : IArrMediaService
         TorrentarrDbContext dbContext,
         TorrentarrConfig config,
         ISearchExecutor searchExecutor,
-        ArrSyncService syncService)
+        ArrSyncService syncService,
+        SearchYearCursor? yearCursor = null)
     {
         _logger = logger;
         _dbContext = dbContext;
         _config = config;
         _searchExecutor = searchExecutor;
         _syncService = syncService;
+        _yearCursor = yearCursor ?? new SearchYearCursor();
     }
 
     public async Task<SearchResult> SearchMissingMediaAsync(string category, CancellationToken cancellationToken = default)
@@ -66,6 +69,7 @@ public class ArrMediaService : IArrMediaService
 
         _logger.LogTrace("Getting search candidates for {Name}", instanceName);
         var candidates = await GetSearchCandidatesAsync(instanceName, arrInstance, cancellationToken);
+        candidates = await ApplySearchByYearAsync(instanceName, arrInstance, candidates, cancellationToken);
         _logger.LogTrace("Found {Count} search candidates", candidates.Count);
 
         _logger.LogTrace("Executing searches for {Count} candidates", candidates.Count);
@@ -102,14 +106,9 @@ public class ArrMediaService : IArrMediaService
         _logger.LogInformation("Searching for quality upgrades in {Category}", category);
 
         var candidates = await GetUpgradeCandidatesAsync(instanceName, arrInstance, cancellationToken);
+        candidates = await ApplySearchByYearAsync(instanceName, arrInstance, candidates, cancellationToken);
 
         return await _searchExecutor.ExecuteSearchesAsync(instanceName, candidates, cancellationToken);
-    }
-
-    public async Task<bool> IsQualityUpgradeAsync(int arrId, string quality, CancellationToken cancellationToken = default)
-    {
-        await Task.CompletedTask;
-        return false;
     }
 
     public async Task<List<WantedMedia>> GetWantedMediaAsync(string category, CancellationToken cancellationToken = default)
@@ -169,6 +168,21 @@ public class ArrMediaService : IArrMediaService
                         Title = $"{a.ArtistTitle} - {a.Title}",
                         ArtistId = a.ArrArtistId,
                         Monitored = a.Monitored
+                    }));
+                    break;
+
+                case "readarr":
+                    var books = await _dbContext.Books
+                        .Where(b => b.ArrInstance == instanceName && b.Monitored && !b.HasFile && !b.Searched)
+                        .ToListAsync(cancellationToken);
+                    wanted.AddRange(books.Select(b => new WantedMedia
+                    {
+                        Id = b.ArrId,
+                        ArrId = b.ArrId,
+                        Title = $"{b.AuthorTitle} - {b.Title}",
+                        AuthorId = b.ArrAuthorId,
+                        Year = b.ReleaseDate?.Year ?? 0,
+                        Monitored = b.Monitored
                     }));
                     break;
             }
@@ -256,6 +270,26 @@ public class ArrMediaService : IArrMediaService
                         });
                     }
                     break;
+
+                case "readarr":
+                    var books = await _dbContext.Books
+                        .Where(b => b.ArrInstance == instanceName && b.Monitored && b.HasFile && !b.CustomFormatMet)
+                        .ToListAsync(cancellationToken);
+                    foreach (var book in books)
+                    {
+                        result.UnmetMedia.Add(new CustomFormatUnmetItem
+                        {
+                            Id = book.ArrId,
+                            Title = $"{book.AuthorTitle} - {book.Title}",
+                            Type = "Book",
+                            CurrentCustomFormatScore = book.CustomFormatScore ?? 0,
+                            MinCustomFormatScore = book.MinCustomFormatScore ?? 0,
+                            QualityProfileId = book.QualityProfileId ?? 0,
+                            QualityProfileName = book.QualityProfileName ?? "",
+                            AuthorId = book.ArrAuthorId
+                        });
+                    }
+                    break;
             }
         }
         catch (Exception ex)
@@ -274,107 +308,144 @@ public class ArrMediaService : IArrMediaService
         var candidates = new List<SearchCandidate>();
         var searchConfig = arrConfig.Search;
 
-        // qBitrr §2.12: "today's release" = aired between 25 hours ago and 1 hour ago
-        var todayLower = DateTime.UtcNow.AddHours(-25);
-        var todayUpper = DateTime.UtcNow.AddHours(-1);
-
-        switch (arrConfig.Type.ToLowerInvariant())
+        try
         {
-            case "radarr":
-                // §2.10: When Unmonitored=true, include unmonitored items
-                var movies = searchConfig.Unmonitored
-                    ? await _dbContext.Movies
-                        .Where(m => m.ArrInstance == instanceName && !m.Searched)
-                        .ToListAsync(cancellationToken)
-                    : await _dbContext.Movies
-                        .Where(m => m.ArrInstance == instanceName && m.Monitored && !m.Searched)
-                        .ToListAsync(cancellationToken);
+            // qBitrr §2.12: "today's release" = aired between 25 hours ago and 1 hour ago
+            var todayLower = DateTime.UtcNow.AddHours(-25);
+            var todayUpper = DateTime.UtcNow.AddHours(-1);
 
-                foreach (var movie in movies)
-                {
-                    var priority = GetReasonPriority(movie.Reason, searchConfig);
-                    if (priority >= 99) continue;
+            switch (arrConfig.Type.ToLowerInvariant())
+            {
+                case "radarr":
+                    // §2.10: When Unmonitored=true, include unmonitored items
+                    var movies = searchConfig.Unmonitored
+                        ? await _dbContext.Movies
+                            .Where(m => m.ArrInstance == instanceName && !m.Searched)
+                            .ToListAsync(cancellationToken)
+                        : await _dbContext.Movies
+                            .Where(m => m.ArrInstance == instanceName && m.Monitored && !m.Searched)
+                            .ToListAsync(cancellationToken);
 
-                    candidates.Add(new SearchCandidate
+                    foreach (var movie in movies)
                     {
-                        ArrId = movie.ArrId,
-                        Title = movie.Title,
-                        Type = "Movie",
-                        Reason = movie.Reason ?? "Missing",
-                        Priority = priority,
-                        Year = movie.Year
-                    });
-                }
-                break;
+                        var priority = GetReasonPriority(movie.Reason, searchConfig);
+                        if (priority >= 99) continue;
 
-            case "sonarr":
-                // §2.10: When Unmonitored=true, include unmonitored items
-                var episodes = searchConfig.Unmonitored
-                    ? await _dbContext.Episodes
-                        .Where(e => e.ArrInstance == instanceName && !e.Searched)
-                        .ToListAsync(cancellationToken)
-                    : await _dbContext.Episodes
-                        .Where(e => e.ArrInstance == instanceName && e.Monitored == true && !e.Searched)
-                        .ToListAsync(cancellationToken);
+                        candidates.Add(new SearchCandidate
+                        {
+                            ArrId = movie.ArrId,
+                            Title = movie.Title,
+                            Type = "Movie",
+                            Reason = movie.Reason ?? "Missing",
+                            Priority = priority,
+                            Year = movie.Year
+                        });
+                    }
+                    break;
 
-                foreach (var ep in episodes)
-                {
-                    if (!searchConfig.AlsoSearchSpecials && ep.SeasonNumber == 0)
-                        continue;
+                case "sonarr":
+                    // §2.10: When Unmonitored=true, include unmonitored items
+                    var episodes = searchConfig.Unmonitored
+                        ? await _dbContext.Episodes
+                            .Where(e => e.ArrInstance == instanceName && !e.Searched)
+                            .ToListAsync(cancellationToken)
+                        : await _dbContext.Episodes
+                            .Where(e => e.ArrInstance == instanceName && e.Monitored == true && !e.Searched)
+                            .ToListAsync(cancellationToken);
 
-                    var priority = GetReasonPriority(ep.Reason, searchConfig);
-                    if (priority >= 99) continue;
-
-                    // §2.12: 25h/1h window instead of calendar-day comparison
-                    var isTodaysRelease = searchConfig.PrioritizeTodaysReleases &&
-                        ep.AirDateUtc.HasValue &&
-                        ep.AirDateUtc.Value >= todayLower &&
-                        ep.AirDateUtc.Value <= todayUpper;
-
-                    candidates.Add(new SearchCandidate
+                    foreach (var ep in episodes)
                     {
-                        ArrId = ep.ArrId,
-                        Title = $"{ep.SeriesTitle} S{ep.SeasonNumber:00}E{ep.EpisodeNumber:00}",
-                        Type = "Episode",
-                        Reason = ep.Reason ?? "Missing",
-                        Priority = priority,
-                        SeriesId = ep.ArrSeriesId,
-                        SeasonNumber = ep.SeasonNumber,
-                        EpisodeNumber = ep.EpisodeNumber,
-                        AirDate = ep.AirDateUtc,
-                        IsTodaysRelease = isTodaysRelease
-                    });
-                }
-                break;
+                        if (!searchConfig.AlsoSearchSpecials && ep.SeasonNumber == 0)
+                            continue;
 
-            case "lidarr":
-                // §2.10: When Unmonitored=true, include unmonitored items
-                var albums = searchConfig.Unmonitored
-                    ? await _dbContext.Albums
-                        .Where(a => a.ArrInstance == instanceName && !a.Searched)
-                        .ToListAsync(cancellationToken)
-                    : await _dbContext.Albums
-                        .Where(a => a.ArrInstance == instanceName && a.Monitored && !a.Searched)
-                        .ToListAsync(cancellationToken);
+                        var priority = GetReasonPriority(ep.Reason, searchConfig);
+                        if (priority >= 99) continue;
 
-                foreach (var album in albums)
-                {
-                    var priority = GetReasonPriority(album.Reason, searchConfig);
-                    if (priority >= 99) continue;
+                        // §2.12: 25h/1h window instead of calendar-day comparison
+                        var isTodaysRelease = searchConfig.PrioritizeTodaysReleases &&
+                            ep.AirDateUtc.HasValue &&
+                            ep.AirDateUtc.Value >= todayLower &&
+                            ep.AirDateUtc.Value <= todayUpper;
 
-                    candidates.Add(new SearchCandidate
+                        candidates.Add(new SearchCandidate
+                        {
+                            ArrId = ep.ArrId,
+                            Title = $"{ep.SeriesTitle} S{ep.SeasonNumber:00}E{ep.EpisodeNumber:00}",
+                            Type = "Episode",
+                            Reason = ep.Reason ?? "Missing",
+                            Priority = priority,
+                            SeriesId = ep.ArrSeriesId,
+                            SeasonNumber = ep.SeasonNumber,
+                            EpisodeNumber = ep.EpisodeNumber,
+                            AirDate = ep.AirDateUtc,
+                            Year = ep.AirDateUtc?.Year,
+                            IsTodaysRelease = isTodaysRelease
+                        });
+                    }
+                    break;
+
+                case "lidarr":
+                    // §2.10: When Unmonitored=true, include unmonitored items
+                    var albums = searchConfig.Unmonitored
+                        ? await _dbContext.Albums
+                            .Where(a => a.ArrInstance == instanceName && !a.Searched)
+                            .ToListAsync(cancellationToken)
+                        : await _dbContext.Albums
+                            .Where(a => a.ArrInstance == instanceName && a.Monitored && !a.Searched)
+                            .ToListAsync(cancellationToken);
+
+                    foreach (var album in albums)
                     {
-                        ArrId = album.ArrId,
-                        Title = $"{album.ArtistTitle} - {album.Title}",
-                        Type = "Album",
-                        Reason = album.Reason ?? "Missing",
-                        Priority = priority,
-                        ArtistId = album.ArrArtistId,
-                        AlbumId = album.ArrId,
-                        Year = album.ReleaseDate?.Year
-                    });
-                }
-                break;
+                        var priority = GetReasonPriority(album.Reason, searchConfig);
+                        if (priority >= 99) continue;
+
+                        candidates.Add(new SearchCandidate
+                        {
+                            ArrId = album.ArrId,
+                            Title = $"{album.ArtistTitle} - {album.Title}",
+                            Type = "Album",
+                            Reason = album.Reason ?? "Missing",
+                            Priority = priority,
+                            ArtistId = album.ArrArtistId,
+                            AlbumId = album.ArrId,
+                            Year = album.ReleaseDate?.Year
+                        });
+                    }
+                    break;
+
+                case "readarr":
+                    var books = searchConfig.Unmonitored
+                        ? await _dbContext.Books
+                            .Where(b => b.ArrInstance == instanceName && !b.Searched)
+                            .ToListAsync(cancellationToken)
+                        : await _dbContext.Books
+                            .Where(b => b.ArrInstance == instanceName && b.Monitored && !b.Searched)
+                            .ToListAsync(cancellationToken);
+
+                    foreach (var book in books)
+                    {
+                        var priority = GetReasonPriority(book.Reason, searchConfig);
+                        if (priority >= 99) continue;
+
+                        candidates.Add(new SearchCandidate
+                        {
+                            ArrId = book.ArrId,
+                            Title = $"{book.AuthorTitle} - {book.Title}",
+                            Type = "Book",
+                            Reason = book.Reason ?? "Missing",
+                            Priority = priority,
+                            AuthorId = book.ArrAuthorId,
+                            BookId = book.ArrId,
+                            Year = book.ReleaseDate?.Year
+                        });
+                    }
+                    break;
+            }
+
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Search candidate loop failed for {Instance} — isolating so the worker continues", instanceName);
         }
 
         return candidates;
@@ -391,9 +462,12 @@ public class ArrMediaService : IArrMediaService
         switch (arrConfig.Type.ToLowerInvariant())
         {
             case "radarr":
-                var movies = await _dbContext.Movies
-                    .Where(m => m.ArrInstance == instanceName && m.Monitored && m.HasFile && !m.Searched)
-                    .ToListAsync(cancellationToken);
+                var moviesQuery = _dbContext.Movies
+                    .Where(m => m.ArrInstance == instanceName && m.Monitored && m.HasFile);
+                moviesQuery = searchConfig.DoUpgradeSearch
+                    ? moviesQuery.Where(m => !m.Upgrade)
+                    : moviesQuery.Where(m => !m.Searched);
+                var movies = await moviesQuery.ToListAsync(cancellationToken);
 
                 foreach (var movie in movies)
                 {
@@ -415,9 +489,12 @@ public class ArrMediaService : IArrMediaService
                 break;
 
             case "sonarr":
-                var episodes = await _dbContext.Episodes
-                    .Where(e => e.ArrInstance == instanceName && e.Monitored == true && e.HasFile && !e.Searched)
-                    .ToListAsync(cancellationToken);
+                var episodesQuery = _dbContext.Episodes
+                    .Where(e => e.ArrInstance == instanceName && e.Monitored == true && e.HasFile);
+                episodesQuery = searchConfig.DoUpgradeSearch
+                    ? episodesQuery.Where(e => !e.Upgrade)
+                    : episodesQuery.Where(e => !e.Searched);
+                var episodes = await episodesQuery.ToListAsync(cancellationToken);
 
                 foreach (var ep in episodes)
                 {
@@ -435,15 +512,19 @@ public class ArrMediaService : IArrMediaService
                         Priority = priority,
                         SeriesId = ep.ArrSeriesId,
                         SeasonNumber = ep.SeasonNumber,
-                        EpisodeNumber = ep.EpisodeNumber
+                        EpisodeNumber = ep.EpisodeNumber,
+                        Year = ep.AirDateUtc?.Year
                     });
                 }
                 break;
 
             case "lidarr":
-                var albums = await _dbContext.Albums
-                    .Where(a => a.ArrInstance == instanceName && a.Monitored && a.HasFile && !a.Searched)
-                    .ToListAsync(cancellationToken);
+                var albumsQuery = _dbContext.Albums
+                    .Where(a => a.ArrInstance == instanceName && a.Monitored && a.HasFile);
+                albumsQuery = searchConfig.DoUpgradeSearch
+                    ? albumsQuery.Where(a => !a.Upgrade)
+                    : albumsQuery.Where(a => !a.Searched);
+                var albums = await albumsQuery.ToListAsync(cancellationToken);
 
                 foreach (var album in albums)
                 {
@@ -461,6 +542,35 @@ public class ArrMediaService : IArrMediaService
                         Priority = priority,
                         ArtistId = album.ArrArtistId,
                         Year = album.ReleaseDate?.Year
+                    });
+                }
+                break;
+
+            case "readarr":
+                var booksQuery = _dbContext.Books
+                    .Where(b => b.ArrInstance == instanceName && b.Monitored && b.HasFile);
+                booksQuery = searchConfig.DoUpgradeSearch
+                    ? booksQuery.Where(b => !b.Upgrade)
+                    : booksQuery.Where(b => !b.Searched);
+                var books = await booksQuery.ToListAsync(cancellationToken);
+
+                foreach (var book in books)
+                {
+                    var priority = GetUpgradePriority(book.QualityMet, book.CustomFormatMet, searchConfig);
+                    if (priority >= 99) continue;
+
+                    var reason = DetermineUpgradeReason(book.QualityMet, book.CustomFormatMet, searchConfig);
+
+                    candidates.Add(new SearchCandidate
+                    {
+                        ArrId = book.ArrId,
+                        Title = $"{book.AuthorTitle} - {book.Title}",
+                        Type = "Book",
+                        Reason = reason,
+                        Priority = priority,
+                        AuthorId = book.ArrAuthorId,
+                        BookId = book.ArrId,
+                        Year = book.ReleaseDate?.Year
                     });
                 }
                 break;
@@ -515,5 +625,72 @@ public class ArrMediaService : IArrMediaService
             return "Quality";
 
         return "None";
+    }
+
+    internal async Task<List<SearchCandidate>> ApplySearchByYearAsync(
+        string instanceName,
+        ArrInstanceConfig arrConfig,
+        List<SearchCandidate> candidates,
+        CancellationToken cancellationToken)
+    {
+        if (!SearchYearCursor.ShouldFilter(arrConfig) || candidates.Count == 0)
+            return candidates;
+
+        var years = await CollectYearsAsync(instanceName, arrConfig, cancellationToken);
+        var currentYear = _yearCursor.CurrentYear(instanceName, arrConfig, years);
+        if (currentYear is null)
+        {
+            _logger.LogDebug("SearchByYear enabled for {Instance} but no years available; skipping year filter", instanceName);
+            return candidates;
+        }
+
+        _logger.LogDebug("SearchByYear: {Instance} current year {Year}", instanceName, currentYear);
+        return candidates
+            .Where(c => c.IsTodaysRelease || c.Year == currentYear)
+            .ToList();
+    }
+
+    internal async Task<List<int>> CollectYearsAsync(
+        string instanceName,
+        ArrInstanceConfig arrConfig,
+        CancellationToken cancellationToken)
+    {
+        var nowYear = DateTime.UtcNow.Year;
+        var years = new HashSet<int>();
+
+        switch (arrConfig.Type.ToLowerInvariant())
+        {
+            case "radarr":
+                var movieYears = await _dbContext.Movies.AsNoTracking()
+                    .Where(m => m.ArrInstance == instanceName && m.Monitored && m.Year > 0 && m.Year <= nowYear)
+                    .Select(m => m.Year)
+                    .Distinct()
+                    .ToListAsync(cancellationToken);
+                years.UnionWith(movieYears);
+                break;
+
+            case "sonarr":
+                var episodeQuery = _dbContext.Episodes.AsNoTracking()
+                    .Where(e => e.ArrInstance == instanceName && e.Monitored == true && e.AirDateUtc != null);
+                if (!arrConfig.Search.AlsoSearchSpecials)
+                    episodeQuery = episodeQuery.Where(e => e.SeasonNumber != 0);
+                var episodeYears = await episodeQuery
+                    .Select(e => e.AirDateUtc!.Value.Year)
+                    .Distinct()
+                    .ToListAsync(cancellationToken);
+                years.UnionWith(episodeYears.Where(y => y > 0 && y <= nowYear));
+                break;
+
+            case "readarr":
+                var bookYears = await _dbContext.Books.AsNoTracking()
+                    .Where(b => b.ArrInstance == instanceName && b.Monitored && b.ReleaseDate != null)
+                    .Select(b => b.ReleaseDate!.Value.Year)
+                    .Distinct()
+                    .ToListAsync(cancellationToken);
+                years.UnionWith(bookYears.Where(y => y > 0 && y <= nowYear));
+                break;
+        }
+
+        return SearchYearCursor.OrderYears(years, arrConfig.Search.SearchInReverse);
     }
 }

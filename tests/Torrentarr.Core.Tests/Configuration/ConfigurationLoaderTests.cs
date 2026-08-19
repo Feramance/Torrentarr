@@ -387,9 +387,9 @@ public class ConfigurationLoaderTests : IDisposable
         config.WebUI.Theme.Should().Be("Dark");
         config.WebUI.ViewDensity.Should().Be("Comfortable");
         config.WebUI.LiveArr.Should().BeTrue();
-        // Filled WebUI auth defaults must match GenerateDefaultConfig: require auth with local login, not a lockout.
+        // Filled WebUI auth defaults must match GenerateDefaultConfig / qBitrr: auth on, local login opt-in.
         config.WebUI.AuthDisabled.Should().BeFalse();
-        config.WebUI.LocalAuthEnabled.Should().BeTrue();
+        config.WebUI.LocalAuthEnabled.Should().BeFalse();
         config.WebUI.OIDCEnabled.Should().BeFalse();
     }
 
@@ -605,8 +605,6 @@ public class ConfigurationLoaderTests : IDisposable
             Username = ""
             PasswordHash = ""
             LiveArr = true
-            GroupSonarr = true
-            GroupLidarr = true
             Theme = "Dark"
             ViewDensity = "Comfortable"
             """);
@@ -764,6 +762,31 @@ public class ConfigurationLoaderTests : IDisposable
     }
 
     [Fact]
+    public void SaveConfig_WritesTrackerMinSeedingTimeAlias()
+    {
+        WriteToml("""
+            [Settings]
+            LoopSleepTimer = 5
+
+            [qBit]
+            Host = "localhost"
+
+            [[qBit.Trackers]]
+            URI = "https://tracker.example.com/announce"
+            MinSeedingTime = 2
+            """);
+
+        var loader = new ConfigurationLoader(_tempFilePath);
+        var config = loader.Load();
+        loader.SaveConfig(config);
+
+        var content = File.ReadAllText(_tempFilePath);
+        content.Should().Contain("MinSeedingTime = 2");
+        new ConfigurationLoader(_tempFilePath).Load()
+            .QBitInstances["qBit"].Trackers[0].MinSeedingTimeDays.Should().Be(2);
+    }
+
+    [Fact]
     public void SaveConfig_PreservesChangeMeQBitPlaceholderSection()
     {
         WriteToml("""
@@ -820,7 +843,79 @@ public class ConfigurationLoaderTests : IDisposable
         var config = ConfigurationLoader.GenerateDefaultConfig();
 
         config.WebUI.AuthDisabled.Should().BeFalse("new installs get auth enabled by default");
-        config.WebUI.LocalAuthEnabled.Should().BeTrue("new installs get local auth enabled by default");
+        config.WebUI.LocalAuthEnabled.Should().BeFalse("qBitrr LocalAuthEnabled defaults to false");
+    }
+
+    [Fact]
+    public void Load_OmittedLocalAuthEnabled_KeepsLocalLoginWhenPasswordHashSet()
+    {
+        WriteToml("""
+            [Settings]
+            LoopSleepTimer = 5
+
+            [WebUI]
+            AuthDisabled = false
+            Username = "admin"
+            PasswordHash = "$2a$11$abcdefghijklmnopqrstuuABCDEFGHIJKLMNOPQRSTUV"
+            """);
+
+        var loader = new ConfigurationLoader(_tempFilePath);
+        var config = loader.Load();
+
+        config.WebUI.LocalAuthEnabled.Should().BeTrue();
+        File.ReadAllText(_tempFilePath).Should().Contain("LocalAuthEnabled = true");
+    }
+
+    [Fact]
+    public void Load_OmittedLocalAuthEnabled_StaysFalseWithoutPasswordHash()
+    {
+        WriteToml("""
+            [Settings]
+            LoopSleepTimer = 5
+
+            [WebUI]
+            AuthDisabled = false
+            """);
+
+        var config = new ConfigurationLoader(_tempFilePath).Load();
+        config.WebUI.LocalAuthEnabled.Should().BeFalse();
+    }
+
+    [Fact]
+    public void Load_AuthModeTokenOnly_KeepsLocalAuthDisabledWhenPasswordHashSet()
+    {
+        WriteToml("""
+            [Settings]
+            LoopSleepTimer = 5
+
+            [WebUI]
+            AuthMode = "TokenOnly"
+            PasswordHash = "$2a$11$abcdefghijklmnopqrstuuABCDEFGHIJKLMNOPQRSTUV"
+            """);
+
+        var config = new ConfigurationLoader(_tempFilePath).Load();
+        config.WebUI.AuthDisabled.Should().BeFalse();
+        config.WebUI.LocalAuthEnabled.Should().BeFalse();
+    }
+
+    [Fact]
+    public void SaveConfig_DoesNotWriteObsoleteGroupSonarrOrGroupLidarr()
+    {
+        WriteToml("""
+            [Settings]
+            LoopSleepTimer = 5
+
+            [WebUI]
+            LiveArr = true
+            """);
+
+        var loader = new ConfigurationLoader(_tempFilePath);
+        var config = loader.Load();
+        loader.SaveConfig(config);
+
+        var content = File.ReadAllText(_tempFilePath);
+        content.Should().NotContain("GroupSonarr");
+        content.Should().NotContain("GroupLidarr");
     }
 
     [Fact]
@@ -840,6 +935,27 @@ public class ConfigurationLoaderTests : IDisposable
     }
 
     [Fact]
+    public void Load_Migration_RemovesObsoleteGroupSonarrAndGroupLidarr()
+    {
+        WriteToml($"""
+            [Settings]
+            ConfigVersion = "{ConfigurationLoader.ExpectedConfigVersion}"
+
+            [WebUI]
+            Host = "0.0.0.0"
+            GroupSonarr = true
+            GroupLidarr = false
+            """);
+
+        var config = new ConfigurationLoader(_tempFilePath).Load();
+
+        var onDisk = File.ReadAllText(_tempFilePath);
+        onDisk.Should().NotContain("GroupSonarr");
+        onDisk.Should().NotContain("GroupLidarr");
+        config.WebUI.LiveArr.Should().BeTrue();
+    }
+
+    [Fact]
     public void Load_DoesNotDowngradeConfigVersionWhenNewerThanExpected_AfterValidateAndFill()
     {
         WriteToml("""
@@ -856,8 +972,6 @@ public class ConfigurationLoaderTests : IDisposable
             Username = ""
             PasswordHash = ""
             LiveArr = true
-            GroupSonarr = true
-            GroupLidarr = true
             Theme = "Dark"
             ViewDensity = "Comfortable"
             """);
@@ -923,6 +1037,190 @@ public class ConfigurationLoaderTests : IDisposable
     }
 
     [Fact]
+    public void Load_ParsesReadarrSection_SearchByYearAndAllowlist()
+    {
+        WriteToml("""
+            [Settings]
+            LoopSleepTimer = 5
+
+            [Readarr-Books]
+            URI = "http://localhost:8787"
+            APIKey = "readarr-key"
+            Category = "readarr-books"
+
+            [Readarr-Books.EntrySearch]
+            SearchByYear = true
+            SearchMissing = false
+            """);
+
+        var config = new ConfigurationLoader(_tempFilePath).Load();
+
+        config.ArrInstances.Should().ContainKey("Readarr-Books");
+        var instance = config.ArrInstances["Readarr-Books"];
+        instance.Type.Should().Be("readarr");
+        instance.Search.SearchByYear.Should().BeTrue();
+        instance.Search.SearchMissing.Should().BeFalse();
+        instance.Torrent.FileExtensionAllowlist.Should().Contain(".m4b");
+        instance.Torrent.FileExtensionAllowlist.Should().Contain(".epub");
+        instance.Search.Ombi.Should().BeNull();
+        instance.Search.Overseerr.Should().BeNull();
+    }
+
+    [Fact]
+    public void SaveConfig_ReadarrOmitsOmbiAndKeepsSearchByYearAndAudiobookExtensions()
+    {
+        WriteToml("""
+            [Settings]
+            LoopSleepTimer = 5
+
+            [Readarr-Books]
+            URI = "http://localhost:8787"
+            APIKey = "readarr-key"
+            Category = "readarr-books"
+
+            [Readarr-Books.Torrent]
+            FileExtensionAllowlist = ['.epub', '.m4b', '.flac', '.!qB', '.parts']
+
+            [Readarr-Books.EntrySearch]
+            SearchByYear = true
+            """);
+
+        var loader = new ConfigurationLoader(_tempFilePath);
+        var config = loader.Load();
+        loader.SaveConfig(config);
+
+        var content = File.ReadAllText(_tempFilePath);
+        content.Should().Contain("SearchByYear = true");
+        content.Should().Contain("'.m4b'");
+        content.Should().NotContain("Ombi");
+        content.Should().NotContain("Overseerr");
+
+        var reloaded = new ConfigurationLoader(_tempFilePath).Load();
+        reloaded.ArrInstances["Readarr-Books"].Torrent.FileExtensionAllowlist.Should().Contain(".m4b");
+        reloaded.ArrInstances["Readarr-Books"].Search.SearchByYear.Should().BeTrue();
+    }
+
+    [Fact]
+    public void Load_MigratesUnmodifiedReadarrEbookAllowlist_LeavesCustomUntouched()
+    {
+        var ebookOnly = string.Join(", ", ArrSectionHelper.ReadarrEbookOnlyAllowlist.Select(e => $"'{e}'"));
+        WriteToml($"""
+            [Settings]
+            ConfigVersion = "6.12.4"
+            LoopSleepTimer = 5
+
+            [Readarr-Books]
+            URI = "http://localhost:8787"
+            APIKey = "key"
+            Category = "readarr-books"
+
+            [Readarr-Books.Torrent]
+            FileExtensionAllowlist = [{ebookOnly}]
+
+            [Readarr-Custom]
+            URI = "http://localhost:8788"
+            APIKey = "key2"
+            Category = "readarr-custom"
+
+            [Readarr-Custom.Torrent]
+            FileExtensionAllowlist = ['.epub', '.custom']
+            """);
+
+        var config = new ConfigurationLoader(_tempFilePath).Load();
+
+        config.ArrInstances["Readarr-Books"].Torrent.FileExtensionAllowlist.Should()
+            .BeEquivalentTo(ArrSectionHelper.ReadarrAllowlist);
+        config.ArrInstances["Readarr-Custom"].Torrent.FileExtensionAllowlist.Should()
+            .Equal(".epub", ".custom");
+    }
+
+    [Theory]
+    [InlineData("latest", "latest")]
+    [InlineData("stable", "stable")]
+    [InlineData("nightly", "nightly")]
+    [InlineData("beta", "latest")]
+    public void Load_NormalizesAutoUpdateChannel(string raw, string expected)
+    {
+        WriteToml($"""
+            [Settings]
+            AutoUpdateChannel = "{raw}"
+            """);
+
+        var config = new ConfigurationLoader(_tempFilePath).Load();
+        config.Settings.AutoUpdateChannel.Should().Be(expected);
+    }
+
+    [Fact]
+    public void NormalizeAutoUpdateChannel_DefaultsMissingToLatest()
+    {
+        ConfigurationLoader.NormalizeAutoUpdateChannel(null).Should().Be("latest");
+        ConfigurationLoader.NormalizeAutoUpdateChannel("").Should().Be("latest");
+    }
+
+    [Fact]
+    public void Load_ParsesSkipTLSVerify_OnQBitArrOmbiAndOverseerr()
+    {
+        WriteToml("""
+            [qBit]
+            Host = "qbittorrent.local"
+            SkipTLSVerify = true
+
+            [Radarr-Movies]
+            URI = "https://radarr.local"
+            APIKey = "k"
+            Category = "radarr"
+            SkipTLSVerify = true
+
+            [Radarr-Movies.EntrySearch.Ombi]
+            SearchOmbiRequests = true
+            OmbiURI = "https://ombi.local"
+            OmbiAPIKey = "ok"
+            SkipTLSVerify = true
+
+            [Radarr-Movies.EntrySearch.Overseerr]
+            SearchOverseerrRequests = true
+            OverseerrURI = "https://overseerr.local"
+            OverseerrAPIKey = "os"
+            SkipTLSVerify = true
+            """);
+
+        var config = new ConfigurationLoader(_tempFilePath).Load();
+
+        config.QBitInstances["qBit"].SkipTLSVerify.Should().BeTrue();
+        config.ArrInstances["Radarr-Movies"].SkipTLSVerify.Should().BeTrue();
+        config.ArrInstances["Radarr-Movies"].Search.Ombi!.SkipTLSVerify.Should().BeTrue();
+        config.ArrInstances["Radarr-Movies"].Search.Overseerr!.SkipTLSVerify.Should().BeTrue();
+    }
+
+    [Fact]
+    public void SaveConfig_RoundTripsSkipTLSVerify()
+    {
+        WriteToml("""
+            [qBit]
+            Host = "qbittorrent.local"
+            Port = 8080
+            UserName = "admin"
+            Password = "secret"
+            SkipTLSVerify = true
+
+            [Sonarr-TV]
+            URI = "https://sonarr.local"
+            APIKey = "k"
+            Category = "sonarr"
+            SkipTLSVerify = true
+            """);
+
+        var loader = new ConfigurationLoader(_tempFilePath);
+        var config = loader.Load();
+        loader.SaveConfig(config);
+        var roundTrip = loader.Load();
+
+        roundTrip.QBitInstances["qBit"].SkipTLSVerify.Should().BeTrue();
+        roundTrip.ArrInstances["Sonarr-TV"].SkipTLSVerify.Should().BeTrue();
+        File.ReadAllText(_tempFilePath).Should().Contain("SkipTLSVerify = true");
+    }
+
+    [Fact]
     public void Load_ParsesImportMode_CamelCaseAndPascalCase()
     {
         WriteToml("""
@@ -943,5 +1241,177 @@ public class ConfigurationLoaderTests : IDisposable
 
         config.ArrInstances["Radarr"].ImportMode.Should().Be("Copy");
         config.ArrInstances["Sonarr"].ImportMode.Should().Be("Move");
+    }
+
+    [Fact]
+    public void Load_ParsesTrackerMinSeedingTimeDays()
+    {
+        WriteToml("""
+            [Settings]
+            LoopSleepTimer = 5
+
+            [qBit]
+            Host = "localhost"
+
+            [[qBit.Trackers]]
+            URI = "https://tracker.example.com/announce"
+            MinSeedingTimeDays = 4
+            """);
+
+        var config = new ConfigurationLoader(_tempFilePath).Load();
+        config.QBitInstances["qBit"].Trackers[0].MinSeedingTimeDays.Should().Be(4);
+    }
+
+    [Fact]
+    public void Load_ParsesTrackerMinSeedingTime_LegacyKey()
+    {
+        WriteToml("""
+            [Settings]
+            LoopSleepTimer = 5
+
+            [qBit]
+            Host = "localhost"
+
+            [[qBit.Trackers]]
+            URI = "https://tracker.example.com/announce"
+            MinSeedingTime = 2
+            """);
+
+        var config = new ConfigurationLoader(_tempFilePath).Load();
+        config.QBitInstances["qBit"].Trackers[0].MinSeedingTimeDays.Should().Be(2);
+    }
+
+    [Fact]
+    public void Load_CategorySeedingMinSeedTimeSeconds_ConvertsToDays()
+    {
+        WriteToml("""
+            [Settings]
+            LoopSleepTimer = 5
+
+            [qBit]
+            Host = "localhost"
+
+            [qBit.CategorySeeding]
+            MinSeedTime = 86400
+            """);
+
+        var loader = new ConfigurationLoader(_tempFilePath);
+        var config = loader.Load();
+
+        config.QBitInstances["qBit"].CategorySeeding.MinSeedingTimeDays.Should().Be(1);
+        File.ReadAllText(_tempFilePath).Should().NotContain("MinSeedingTimeDays = 0");
+    }
+
+    [Fact]
+    public void Load_ExplicitZeroMinSeedingTimeDays_WinsOverMinSeedTimeAlias()
+    {
+        WriteToml("""
+            [Settings]
+            LoopSleepTimer = 5
+
+            [qBit]
+            Host = "localhost"
+
+            [qBit.CategorySeeding]
+            MinSeedingTimeDays = 0
+            MinSeedTime = 86400
+            """);
+
+        var config = new ConfigurationLoader(_tempFilePath).Load();
+        config.QBitInstances["qBit"].CategorySeeding.MinSeedingTimeDays.Should().Be(0);
+    }
+
+    [Fact]
+    public void Load_CategorySeedingMinSeedingTime_IsDays()
+    {
+        WriteToml("""
+            [Settings]
+            LoopSleepTimer = 5
+
+            [qBit]
+            Host = "localhost"
+
+            [qBit.CategorySeeding]
+            MinSeedingTime = 3
+            """);
+
+        var config = new ConfigurationLoader(_tempFilePath).Load();
+        config.QBitInstances["qBit"].CategorySeeding.MinSeedingTimeDays.Should().Be(3);
+    }
+
+    [Fact]
+    public void Load_OverridesSearchOnly_DisablesQbitAndSetsSearchOnly()
+    {
+        WriteToml("""
+            [Settings]
+            LoopSleepTimer = 5
+
+            [qBit]
+            Host = "localhost"
+            Disabled = false
+
+            [Radarr]
+            URI = "http://radarr:7878"
+            APIKey = "key"
+            Category = "movies"
+            SearchOnly = false
+            """);
+
+        var prev = Environment.GetEnvironmentVariable("TORRENTARR_OVERRIDES_SEARCH_ONLY");
+        Environment.SetEnvironmentVariable("TORRENTARR_OVERRIDES_SEARCH_ONLY", "true");
+        try
+        {
+            var config = new ConfigurationLoader(_tempFilePath).Load();
+            config.ArrInstances["Radarr"].SearchOnly.Should().BeTrue();
+            config.QBitInstances["qBit"].Disabled.Should().BeTrue();
+        }
+        finally
+        {
+            Environment.SetEnvironmentVariable("TORRENTARR_OVERRIDES_SEARCH_ONLY", prev);
+        }
+    }
+
+    [Fact]
+    public void Load_OverridesProcessingOnly_SetsProcessingOnly()
+    {
+        WriteToml("""
+            [Settings]
+            LoopSleepTimer = 5
+
+            [Radarr]
+            URI = "http://radarr:7878"
+            APIKey = "key"
+            Category = "movies"
+            """);
+
+        var prev = Environment.GetEnvironmentVariable("QBITRR_OVERRIDES_PROCESSING_ONLY");
+        Environment.SetEnvironmentVariable("QBITRR_OVERRIDES_PROCESSING_ONLY", "1");
+        try
+        {
+            var config = new ConfigurationLoader(_tempFilePath).Load();
+            config.ArrInstances["Radarr"].ProcessingOnly.Should().BeTrue();
+        }
+        finally
+        {
+            Environment.SetEnvironmentVariable("QBITRR_OVERRIDES_PROCESSING_ONLY", prev);
+        }
+    }
+
+    [Fact]
+    public void Load_ParsesAllowInsecureFlags()
+    {
+        WriteToml("""
+            [Settings]
+            LoopSleepTimer = 5
+
+            [WebUI]
+            AllowInsecureExposure = true
+            AllowInsecureTokenQuery = false
+            """);
+
+        var config = new ConfigurationLoader(_tempFilePath).Load();
+        config.WebUI.AllowInsecureExposure.Should().BeTrue();
+        config.WebUI.AllowInsecureTokenQuery.Should().BeFalse();
+        config.WebUI.AllowsInsecureTokenQuery.Should().BeFalse();
     }
 }

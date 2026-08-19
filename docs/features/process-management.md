@@ -1,16 +1,16 @@
 # Process Management
 
-Torrentarr uses a multiprocessing architecture where each Arr instance (Radarr, Sonarr, Lidarr) runs in a separate process. This design ensures isolation, fault tolerance, and efficient resource utilization. The process management system automatically monitors and restarts failed processes to maintain high availability.
+Torrentarr runs Arr automation as **in-process worker tasks** inside `Torrentarr.Host`. Each Arr instance gets a search task and a torrent task (the WebUI still shows `{name}-search` / `{name}-torrent` rows). Tasks are isolated from each other with their own loops and restart limits so a stuck torrent loop does not block search. This is the .NET equivalent of qBitrr’s multiprocessing design — Host does **not** spawn `Torrentarr.Workers` as OS processes.
 
 ## Overview
 
 Torrentarr's process management provides:
 
-- **Process Isolation**: Each Arr instance runs independently
-- **Automatic Restart**: Failed processes are automatically restarted
+- **Task isolation**: Search and torrent loops run concurrently per Arr instance
+- **Automatic Restart**: Failed tasks are automatically restarted
 - **Restart Limits**: Prevents infinite restart loops
-- **Real-Time Monitoring**: Track process status via WebUI or logs
-- **Graceful Shutdown**: Clean termination of all processes
+- **Real-Time Monitoring**: Track task status via WebUI or logs
+- **Graceful Shutdown**: Clean cancellation of all worker tasks
 
 ---
 
@@ -19,31 +19,29 @@ Torrentarr's process management provides:
 ### Process Structure
 
 ```
-Torrentarr Main Process
-├── WebUI Process (Flask + Waitress)
-├── Radarr Manager Process
-│   └── Event Loop (health checks, imports, searches)
-├── Sonarr Manager Process
-│   └── Event Loop (health checks, imports, searches)
-├── Lidarr Manager Process
-│   └── Event Loop (health checks, imports, searches)
-└── Background Threads
-    ├── Auto-Update Thread
-    ├── Network Monitor Thread
-    └── FFprobe Downloader Thread
+Torrentarr.Host
+├── Web UI (Kestrel, always online)
+├── Per-Arr ArrWorkerManager tasks
+│   ├── Radarr search task + torrent task
+│   ├── Sonarr search task + torrent task
+│   ├── Lidarr search task + torrent task
+│   └── Readarr search task + torrent task
+├── QBit-only category tasks
+├── Free space / failed / recheck orchestrator
+└── Auto-update background service
 ```
 
-### Why Multiprocessing?
+### Why in-process tasks?
 
 **Benefits:**
-- ✅ **Isolation**: One Arr failure doesn't affect others
-- ✅ **Parallelism**: True parallel execution on multi-core systems
-- ✅ **Resource Management**: Each process has dedicated resources
-- ✅ **Crash Recovery**: Individual processes can restart without affecting the main process
+- ✅ **Isolation of loops**: Search is not blocked behind torrent processing
+- ✅ **WebUI stays up**: Host does not die if a worker task faults
+- ✅ **Shared WAL database**: SQLite retry replaces qBitrr’s cross-process `db_lock`
+- ✅ **Crash recovery**: Individual instance tasks restart without recycling the Host
 
-**Trade-offs:**
-- ⚠️ Higher memory usage (each process has its own Python interpreter)
-- ⚠️ Inter-process communication overhead (minimal in Torrentarr's design)
+**Trade-offs vs qBitrr pathos forks:**
+- ⚠️ Not a separate OS process per Arr instance (intentional architecture)
+- ⚠️ `Torrentarr.Workers` exists for a standalone entry point but is unused by Host
 
 ---
 

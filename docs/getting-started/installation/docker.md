@@ -54,6 +54,18 @@ Then run:
 docker-compose up -d
 ```
 
+## Image tags
+
+| Tag | Use when |
+|-----|----------|
+| `feramance/torrentarr:stable` | Prefer the latest feature/fix release (patch/minor/major only; excludes weekly dependency builds) |
+| `feramance/torrentarr:latest` | Prefer the newest published release, including weekly dependency builds |
+| `feramance/torrentarr:nightly` | Bleeding-edge per-commit builds from `master` |
+| `feramance/torrentarr:vX.Y.Z-N` | Pin an exact version (e.g. `v6.14.3-1`) |
+| `feramance/torrentarr:X.Y.Z-N` | Same pin without `v` (e.g. `6.14.3-1`, Unraid-friendly) |
+
+Most production installs should use `:stable` or a pinned `v…` tag. Use `:latest` if you want weekly dependency builds automatically.
+
 ## Configuration
 
 ### Environment Variables
@@ -156,18 +168,19 @@ services:
 
 | Tag | Description |
 |-----|-------------|
-| `latest` | Latest stable release (recommended) |
-| `nightly` | Latest development build (bleeding edge) |
-| `v6.x.x` | Exact version with `v` prefix (e.g. `v6.12.4`) |
-| `6.x.x` | Exact version without `v` (e.g. `6.12.4`, Unraid-friendly) |
+| `stable` | Latest feature/fix release (patch/minor/major; recommended for production) |
+| `latest` | Newest published release, including weekly dependency builds |
+| `nightly` | Per-commit development build from `master` |
+| `vX.Y.Z-N` | Pinned version (e.g. `v6.14.3-1`) |
+| `X.Y.Z-N` | Same pin without `v` (e.g. `6.14.3-1`, Unraid-friendly) |
 
-**Recommended:** Use `latest` for production, `nightly` for testing new features.
+**Recommended:** Use `:stable` or a pinned `v…` tag for production, `:nightly` for testing new features.
 
 ## Unraid
 
 Do **not** reuse the qBitrr Community Applications template as-is. Torrentarr is a different image and listens on **6969** by default (or `[WebUI].Port` in `config.toml`), not qBitrr’s 8080.
 
-1. Add a container with repository `feramance/torrentarr:latest` (or pin `feramance/torrentarr:v6.12.4` / `feramance/torrentarr:6.12.4`).
+1. Add a container with repository `feramance/torrentarr:latest` (or pin `feramance/torrentarr:v6.14.3` / `feramance/torrentarr:6.14.3`).
 2. Map host port **6969** to container **6969** (unless you changed `[WebUI].Port`).
 3. Map `/config` to a persistent appdata path (`TORRENTARR_CONFIG` defaults to `/config/config.toml`).
 4. Put Torrentarr on the **same Docker network** as qBittorrent (for example `qbittorrentvpn`) and your Arr containers so hostnames like `qbittorrentvpn` / `radarr` resolve.
@@ -670,7 +683,7 @@ volumes:
 
 **Use specific version tags:**
 ```yaml
-image: feramance/torrentarr:5.5.5  # Not latest
+image: feramance/torrentarr:v6.14.3-1  # Not latest
 ```
 
 ### 3. Limit Log Output

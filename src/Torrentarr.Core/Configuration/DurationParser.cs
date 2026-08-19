@@ -1,18 +1,19 @@
+using System.Globalization;
 using System.Text.RegularExpressions;
 
 namespace Torrentarr.Core.Configuration;
 
 /// <summary>
-/// Parses human-friendly duration strings (e.g. "5m", "7d", "48h", "1w") into seconds or minutes.
+/// Parses human-friendly duration strings (e.g. "5m", "7d", "48h", "1w", "1.5h") into seconds or minutes.
 /// Backwards compatible: plain integers are returned as-is.
-/// Matches qBitrr's duration_config.py behaviour.
+/// Matches qBitrr's duration_config.py behaviour, including TOML floats.
 /// </summary>
 public static class DurationParser
 {
-    private static readonly Regex DurationPattern = new(@"^\s*(-?\d+)\s*([sSmMhHdDwW]?)\s*$", RegexOptions.Compiled);
+    private static readonly Regex DurationPattern = new(@"^\s*(-?\d+(?:\.\d+)?)\s*([sSmMhHdDwW]?)\s*$", RegexOptions.Compiled);
 
     // Suffix → multiplier (to seconds)
-    private static readonly Dictionary<char, long> SuffixToSeconds = new()
+    private static readonly Dictionary<char, double> SuffixToSeconds = new()
     {
         ['s'] = 1,
         ['m'] = 60,
@@ -34,16 +35,15 @@ public static class DurationParser
     };
 
     /// <summary>
-    /// Parse a config value to seconds. Accepts int (as-is), or string with optional suffix.
+    /// Parse a config value to seconds. Accepts int (as-is), TOML float, or string with optional suffix.
     /// Suffixes: s=seconds, m=minutes, h=hours, d=days, w=weeks, M=months (30 days).
     /// Plain number or unsuffixed string is treated as seconds (backwards compatibility).
     /// </summary>
     public static int ParseToSeconds(object? value, int fallback = -1)
     {
         if (value == null) return fallback;
-        if (value is int i) return i;
-        if (value is long l) return (int)l;
-        if (value is double d && d == Math.Truncate(d)) return (int)d;
+        if (TryGetDouble(value, out var numeric) && numeric.HasValue)
+            return ToIntSeconds(numeric.Value);
 
         var s = value.ToString()?.Trim();
         if (string.IsNullOrEmpty(s)) return fallback;
@@ -51,19 +51,20 @@ public static class DurationParser
         var match = DurationPattern.Match(s);
         if (!match.Success)
         {
-            return int.TryParse(s, out var parsed) ? parsed : fallback;
+            return double.TryParse(s, NumberStyles.Float, CultureInfo.InvariantCulture, out var parsed)
+                ? ToIntSeconds(parsed)
+                : fallback;
         }
 
-        var num = long.Parse(match.Groups[1].Value);
+        var num = double.Parse(match.Groups[1].Value, CultureInfo.InvariantCulture);
         var rawSuffix = match.Groups[2].Value;
 
         if (string.IsNullOrEmpty(rawSuffix))
-            return (int)num; // No suffix → treat as seconds
+            return ToIntSeconds(num);
 
-        // Uppercase M = month, everything else normalize to lowercase
         var suffixKey = rawSuffix == "M" ? 'M' : char.ToLowerInvariant(rawSuffix[0]);
         var mult = SuffixToSeconds.GetValueOrDefault(suffixKey, 1);
-        return (int)(num * mult);
+        return ToIntSeconds(num * mult);
     }
 
     /// <summary>
@@ -73,9 +74,8 @@ public static class DurationParser
     public static int ParseToMinutes(object? value, int fallback = -1)
     {
         if (value == null) return fallback;
-        if (value is int i) return i;
-        if (value is long l) return (int)l;
-        if (value is double d && d == Math.Truncate(d)) return (int)d;
+        if (TryGetDouble(value, out var numeric) && numeric.HasValue)
+            return ToIntMinutes(numeric.Value);
 
         var s = value.ToString()?.Trim();
         if (string.IsNullOrEmpty(s)) return fallback;
@@ -83,19 +83,48 @@ public static class DurationParser
         var match = DurationPattern.Match(s);
         if (!match.Success)
         {
-            return int.TryParse(s, out var parsed) ? parsed : fallback;
+            return double.TryParse(s, NumberStyles.Float, CultureInfo.InvariantCulture, out var parsed)
+                ? ToIntMinutes(parsed)
+                : fallback;
         }
 
-        var num = long.Parse(match.Groups[1].Value);
+        var num = double.Parse(match.Groups[1].Value, CultureInfo.InvariantCulture);
         var rawSuffix = match.Groups[2].Value;
 
         if (string.IsNullOrEmpty(rawSuffix))
-            return (int)num; // No suffix → treat as minutes
+            return ToIntMinutes(num);
 
         var suffixKey = rawSuffix == "M" ? 'M' : char.ToLowerInvariant(rawSuffix[0]);
         var mult = SuffixToMinutes.GetValueOrDefault(suffixKey, 1);
-        var minutes = num * mult;
+        return ToIntMinutes(num * mult);
+    }
+
+    private static bool TryGetDouble(object value, out double? result)
+    {
+        result = value switch
+        {
+            int i => i,
+            long l => l,
+            float f => f,
+            double d => d,
+            decimal m => (double)m,
+            _ => null
+        };
+        return result.HasValue;
+    }
+
+    private static int ToIntSeconds(double value)
+    {
+        if (double.IsNaN(value) || double.IsInfinity(value))
+            return -1;
+        return (int)Math.Round(value, MidpointRounding.AwayFromZero);
+    }
+
+    private static int ToIntMinutes(double minutes)
+    {
+        if (double.IsNaN(minutes) || double.IsInfinity(minutes))
+            return -1;
         if (minutes > 0 && minutes < 1) return 1; // Round up sub-minute values
-        return (int)minutes;
+        return (int)Math.Round(minutes, MidpointRounding.AwayFromZero);
     }
 }

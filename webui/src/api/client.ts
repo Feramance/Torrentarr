@@ -17,8 +17,13 @@ import type {
   LidarrAlbumsResponse,
   LidarrArtistsResponse,
   LidarrArtistDetailResponse,
+  ReadarrAuthorsResponse,
+  ReadarrAuthorDetailResponse,
   StatusResponse,
   TorrentDistribution,
+  LogSearchResponse,
+  QbitOverviewResponse,
+  ConfigSchemaResponse,
 } from "./types";
 
 export type { LogFileInfo };
@@ -129,9 +134,10 @@ async function fetchJson<T>(
   input: RequestInfo | URL,
   init?: RequestInit,
 ): Promise<T> {
-  // Only deduplicate GET requests (safe to share)
+  // Only deduplicate GET requests (safe to share). Skip when a caller-provided
+  // AbortSignal is present so the request is not shared with a later abort.
   const method = init?.method || "GET";
-  if (method === "GET") {
+  if (method === "GET" && !init?.signal) {
     const key = createRequestKey(input, init);
     const existingRequest = inflightRequests.get(key) as Promise<T> | undefined;
 
@@ -212,6 +218,21 @@ export async function getQbitCategories(): Promise<QbitCategoriesResponse> {
   return fetchJson<QbitCategoriesResponse>("/web/qbit/categories");
 }
 
+export async function getQbitOverview(
+  instance?: string,
+): Promise<QbitOverviewResponse> {
+  const params = new URLSearchParams();
+  if (instance) params.set("instance", instance);
+  const query = params.toString();
+  return fetchJson<QbitOverviewResponse>(
+    `/web/qbit/overview${query ? `?${query}` : ""}`,
+  );
+}
+
+export async function getConfigSchema(): Promise<ConfigSchemaResponse> {
+  return fetchJson<ConfigSchemaResponse>("/web/config/schema");
+}
+
 export async function getProcesses(): Promise<ProcessesResponse> {
   return fetchJson<ProcessesResponse>("/web/processes");
 }
@@ -253,6 +274,34 @@ export async function getLogTail(name: string): Promise<string> {
 
 export function getLogDownloadUrl(name: string): string {
   return webPath(`/web/logs/${encodeURIComponent(name)}/download`);
+}
+
+export function getLogStreamUrl(name: string): string {
+  return webPath(`/web/logs/${encodeURIComponent(name)}/stream`);
+}
+
+export async function searchLogs(
+  name: string,
+  query: string,
+  options?: {
+    caseSensitive?: boolean;
+    regex?: boolean;
+    maxMatches?: number;
+    context?: number;
+    includeRotated?: boolean;
+  },
+): Promise<LogSearchResponse> {
+  const params = new URLSearchParams();
+  params.set("q", query);
+  if (options?.caseSensitive) params.set("case", "1");
+  if (options?.regex) params.set("regex", "1");
+  if (options?.maxMatches != null)
+    params.set("max_matches", String(options.maxMatches));
+  if (options?.context != null) params.set("context", String(options.context));
+  if (options?.includeRotated === false) params.set("include_rotated", "0");
+  return fetchJson<LogSearchResponse>(
+    `/web/logs/${encodeURIComponent(name)}/search?${params}`,
+  );
 }
 
 export async function getArrList(): Promise<ArrListResponse> {
@@ -316,6 +365,34 @@ export async function getLidarrArtistDetail(
 ): Promise<LidarrArtistDetailResponse> {
   return fetchJson<LidarrArtistDetailResponse>(
     `/web/lidarr/${encodeURIComponent(category)}/artist/${artistId}`,
+  );
+}
+
+export async function getReadarrAuthors(
+  category: string,
+  page: number,
+  pageSize: number,
+  query?: string,
+): Promise<ReadarrAuthorsResponse> {
+  const params = new URLSearchParams();
+  params.set("page", page.toString());
+  params.set("page_size", pageSize.toString());
+  if (query) {
+    params.set("q", query);
+  }
+  return fetchJson<ReadarrAuthorsResponse>(
+    `/web/readarr/${encodeURIComponent(category)}/authors?${params}`,
+  );
+}
+
+export async function getReadarrAuthorDetail(
+  category: string,
+  authorId: number,
+  signal?: AbortSignal,
+): Promise<ReadarrAuthorDetailResponse> {
+  return fetchJson<ReadarrAuthorDetailResponse>(
+    `/web/readarr/${encodeURIComponent(category)}/author/${authorId}`,
+    signal ? { signal } : undefined,
   );
 }
 
@@ -420,11 +497,12 @@ export async function triggerUpdate(): Promise<void> {
 }
 
 export interface TestConnectionRequest {
-  arrType: "radarr" | "sonarr" | "lidarr";
+  arrType: "radarr" | "sonarr" | "lidarr" | "readarr";
   /** When present, backend uses stored config for this instance (e.g. when API key is redacted). */
   instanceKey?: string;
   uri?: string;
   apiKey?: string;
+  skipTlsVerify?: boolean;
 }
 
 export interface TestConnectionResponse {

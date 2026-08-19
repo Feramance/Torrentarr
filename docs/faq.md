@@ -131,9 +131,9 @@ These must match in:
 
 Torrentarr monitors qBittorrent for completed torrents. When a download finishes:
 
-1. Torrentarr validates the files (optional FFprobe check)
-2. Triggers `DownloadedMoviesScan` or `DownloadedEpisodesScan` in the Arr instance
-3. Arr imports the files immediately (no waiting for periodic scan)
+1. Torrentarr triggers Arr `Downloaded*Scan`
+2. If `Torrent.AutoDelete` is on, Torrentarr runs FFprobe on allowlisted files
+3. Valid media stays; a folder with zero valid files is blocklisted and deleted
 
 ### What is MaxETA?
 
@@ -395,12 +395,12 @@ Options for `RemoveTorrent`:
 
 ### How does FFprobe validation work?
 
-FFprobe validates media files before import:
+FFprobe validates media files after Arr import when `Torrent.AutoDelete` is on:
 
 1. **Download completes** in qBittorrent
-2. **Torrentarr runs FFprobe** to check file integrity
-3. **If valid**: Trigger import to Arr
-4. **If invalid**: Mark as failed, blacklist, re-search
+2. **Torrentarr triggers Arr import** (`Downloaded*Scan`)
+3. **FFprobe probes allowlisted files**
+4. **If none are valid**: blocklist the queue item and delete local files
 
 Benefits:
 - Prevents importing corrupt files
@@ -663,7 +663,7 @@ Quick reference for common terms used throughout Torrentarr documentation.
 | **Custom Format (CF)** | Radarr/Sonarr scoring rules for release preferences |
 | **ETA** | Estimated Time of Arrival — predicted download completion time |
 | **Event Loop** | Continuous process monitoring torrents per *Arr instance |
-| **FFprobe** | Media file analysis tool for validating downloads before import |
+| **FFprobe** | Media file analysis tool for validating downloads after Arr import (AutoDelete cleanup) |
 | **Hash** | Unique 40-character hexadecimal torrent identifier |
 | **Health Check** | Monitoring torrent status to detect stalled/failed downloads |
 | **Instant Import** | Triggering Arr import immediately when download completes |

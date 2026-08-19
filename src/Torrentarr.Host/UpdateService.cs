@@ -1,5 +1,6 @@
 using System.Formats.Tar;
 using System.IO.Compression;
+using System.Reflection;
 using System.Runtime.InteropServices;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
@@ -15,6 +16,7 @@ namespace Torrentarr.Host;
 public class UpdateService
 {
     private readonly ILogger<UpdateService> _logger;
+    private readonly TorrentarrConfig _config;
 
     // Cached check result — refreshed at most once per hour
     private DateTime _lastChecked = DateTime.MinValue;
@@ -31,20 +33,34 @@ public class UpdateService
 
     private const string RepoOwner = "Feramance";
     private const string RepoName = "Torrentarr";
-    private const string GithubApiUrl = $"https://api.github.com/repos/{RepoOwner}/{RepoName}/releases/latest";
+    private const string GithubLatestUrl = $"https://api.github.com/repos/{RepoOwner}/{RepoName}/releases/latest";
+    private const string GithubReleasesUrl = $"https://api.github.com/repos/{RepoOwner}/{RepoName}/releases";
     public const string RepositoryUrl = $"https://github.com/{RepoOwner}/{RepoName}";
 
     /// <summary>State of any in-progress or last completed apply operation.</summary>
     public UpdateApplyState ApplyState { get; } = new();
 
-    public UpdateService(ILogger<UpdateService> logger)
+    public UpdateService(ILogger<UpdateService> logger, TorrentarrConfig config)
     {
         _logger = logger;
+        _config = config;
     }
+
+    public string AutoUpdateChannel =>
+        ConfigurationLoader.NormalizeAutoUpdateChannel(_config.Settings.AutoUpdateChannel);
+
+    public bool CanApplyBinaries => !IsSourceBuild() && AutoUpdateChannel != "nightly";
 
     public static string GetCurrentVersion()
     {
-        var asm = System.Reflection.Assembly.GetEntryAssembly();
+        var asm = Assembly.GetEntryAssembly();
+        var informational = asm?.GetCustomAttribute<AssemblyInformationalVersionAttribute>()?.InformationalVersion;
+        if (!string.IsNullOrWhiteSpace(informational))
+        {
+            var plus = informational.IndexOf('+');
+            return plus >= 0 ? informational[..plus] : informational;
+        }
+
         var ver = asm?.GetName().Version;
         if (ver == null) return "0.0.0";
         return $"{ver.Major}.{ver.Minor}.{ver.Build}";
@@ -77,43 +93,16 @@ public class UpdateService
                 http.DefaultRequestHeaders.Add("User-Agent", $"{RepoName}/{currentVersion}");
                 http.Timeout = TimeSpan.FromSeconds(10);
 
-                var response = await http.GetAsync(GithubApiUrl, ct);
-                if (!response.IsSuccessStatusCode)
+                var channel = AutoUpdateChannel;
+                var release = await FetchReleaseForChannelAsync(http, channel, ct);
+                if (release == null)
                 {
-                    _checkError = $"GitHub API returned {(int)response.StatusCode}";
+                    _checkError = "GitHub API returned no matching release";
                     _lastChecked = DateTime.UtcNow;
                     return;
                 }
 
-                var json = await response.Content.ReadAsStringAsync(ct);
-                var release = JObject.Parse(json);
-
-                var latestTag = release["tag_name"]?.ToObject<string>() ?? currentVersion;
-                _latestVersion = latestTag.TrimStart('v');
-                _updateAvailable = IsNewerVersion(_latestVersion, currentVersion);
-                _changelog = release["body"]?.ToObject<string>();
-                _changelogUrl = release["html_url"]?.ToObject<string>();
-                _checkError = null;
-
-                // Find the asset that matches the current platform
-                var assets = release["assets"] as JArray;
-                var asset = assets?.FirstOrDefault(a =>
-                    a["name"]?.ToObject<string>()?.Contains(assetPattern, StringComparison.OrdinalIgnoreCase) == true);
-
-                if (asset != null)
-                {
-                    _binaryDownloadUrl = asset["browser_download_url"]?.ToObject<string>();
-                    _binaryDownloadName = asset["name"]?.ToObject<string>();
-                    _binaryDownloadSize = asset["size"]?.ToObject<long?>();
-                    _binaryDownloadError = null;
-                }
-                else
-                {
-                    _binaryDownloadUrl = null;
-                    _binaryDownloadName = null;
-                    _binaryDownloadSize = null;
-                    _binaryDownloadError = $"No asset found for platform: {assetPattern}";
-                }
+                ApplyReleaseMetadata(release, currentVersion, assetPattern, allowBinary: channel != "nightly" && !IsSourceBuild());
             }
             catch (Exception ex)
             {
@@ -157,7 +146,7 @@ public class UpdateService
                 last_checked = _lastChecked == DateTime.MinValue ? (string?)null : _lastChecked.ToString("o"),
                 error = _checkError,
                 update_state = updateState,
-                installation_type = "binary",
+                installation_type = IsSourceBuild() ? "source" : "binary",
                 binary_download_url = _binaryDownloadUrl,
                 binary_download_name = _binaryDownloadName,
                 binary_download_size = _binaryDownloadSize,
@@ -179,7 +168,7 @@ public class UpdateService
             last_checked = _lastChecked == DateTime.MinValue ? (string?)null : _lastChecked.ToString("o"),
             error = _checkError,
             update_state = updateState,
-            installation_type = "binary",
+            installation_type = IsSourceBuild() ? "source" : "binary",
             binary_download_url = _binaryDownloadUrl,
             binary_download_name = _binaryDownloadName,
             binary_download_size = _binaryDownloadSize,
@@ -203,6 +192,22 @@ public class UpdateService
     {
         if (ApplyState.InProgress)
             return Task.CompletedTask;
+
+        if (IsSourceBuild())
+        {
+            ApplyState.LastResult = "error";
+            ApplyState.LastError = "Auto-update is disabled for source / dotnet run builds.";
+            ApplyState.CompletedAt = DateTime.UtcNow;
+            return Task.CompletedTask;
+        }
+
+        if (AutoUpdateChannel == "nightly")
+        {
+            ApplyState.LastResult = "error";
+            ApplyState.LastError = "Nightly channel does not download or apply binaries.";
+            ApplyState.CompletedAt = DateTime.UtcNow;
+            return Task.CompletedTask;
+        }
 
         if (string.IsNullOrEmpty(_binaryDownloadUrl))
         {
@@ -357,6 +362,111 @@ public class UpdateService
         catch { /* best-effort — chmod may not exist on some platforms */ }
     }
 
+    internal static bool IsSourceBuild()
+    {
+        var env = Environment.GetEnvironmentVariable("TORRENTARR_SOURCE_BUILD")
+                  ?? Environment.GetEnvironmentVariable("QBITRR_SOURCE_BUILD");
+        if (string.Equals(env, "1", StringComparison.OrdinalIgnoreCase)
+            || string.Equals(env, "true", StringComparison.OrdinalIgnoreCase))
+            return true;
+
+        var location = System.Reflection.Assembly.GetEntryAssembly()?.Location ?? "";
+        var sep = Path.DirectorySeparatorChar;
+        if (location.Contains($"{sep}bin{sep}Debug{sep}", StringComparison.OrdinalIgnoreCase)
+            || location.Contains($"{sep}bin{sep}Release{sep}", StringComparison.OrdinalIgnoreCase))
+            return true;
+
+        return HasGitDirectory(Directory.GetCurrentDirectory())
+               || HasGitDirectory(AppContext.BaseDirectory);
+    }
+
+    private static bool HasGitDirectory(string? start)
+    {
+        var dir = start;
+        for (var i = 0; i < 6 && !string.IsNullOrEmpty(dir); i++)
+        {
+            if (Directory.Exists(Path.Combine(dir, ".git")))
+                return true;
+            dir = Path.GetDirectoryName(dir);
+        }
+        return false;
+    }
+
+    private async Task<JObject?> FetchReleaseForChannelAsync(HttpClient http, string channel, CancellationToken ct)
+    {
+        if (channel == "latest")
+        {
+            var response = await http.GetAsync(GithubLatestUrl, ct);
+            if (!response.IsSuccessStatusCode)
+            {
+                _checkError = $"GitHub API returned {(int)response.StatusCode}";
+                return null;
+            }
+            var json = await response.Content.ReadAsStringAsync(ct);
+            return JObject.Parse(json);
+        }
+
+        var listResponse = await http.GetAsync(GithubReleasesUrl, ct);
+        if (!listResponse.IsSuccessStatusCode)
+        {
+            _checkError = $"GitHub API returned {(int)listResponse.StatusCode}";
+            return null;
+        }
+
+        var listJson = await listResponse.Content.ReadAsStringAsync(ct);
+        var releases = JArray.Parse(listJson);
+        foreach (var item in releases.OfType<JObject>())
+        {
+            var prerelease = item["prerelease"]?.ToObject<bool>() ?? false;
+            var tag = item["tag_name"]?.ToObject<string>();
+            if (SkipReleaseForChannel(channel, prerelease, tag))
+                continue;
+            return item;
+        }
+
+        return null;
+    }
+
+    private void ApplyReleaseMetadata(JObject release, string currentVersion, string assetPattern, bool allowBinary)
+    {
+        var latestTag = release["tag_name"]?.ToObject<string>() ?? currentVersion;
+        _latestVersion = latestTag.TrimStart('v');
+        _updateAvailable = IsNewerVersion(_latestVersion, currentVersion);
+        _changelog = release["body"]?.ToObject<string>();
+        _changelogUrl = release["html_url"]?.ToObject<string>();
+        _checkError = null;
+
+        if (!allowBinary)
+        {
+            _binaryDownloadUrl = null;
+            _binaryDownloadName = null;
+            _binaryDownloadSize = null;
+            _binaryDownloadError = AutoUpdateChannel == "nightly"
+                ? "Nightly channel does not download or apply binaries"
+                : "Source builds cannot apply binary updates";
+            return;
+        }
+
+        var assets = release["assets"] as JArray;
+        var asset = assets?.FirstOrDefault(a =>
+            a["name"]?.ToObject<string>()?.Contains(assetPattern, StringComparison.OrdinalIgnoreCase) == true);
+
+        if (asset != null)
+        {
+            _binaryDownloadUrl = asset["browser_download_url"]?.ToObject<string>();
+            _binaryDownloadName = asset["name"]?.ToObject<string>();
+            _binaryDownloadSize = asset["size"]?.ToObject<long?>();
+            _binaryDownloadError = null;
+        }
+        else
+        {
+            _binaryDownloadUrl = null;
+            _binaryDownloadName = null;
+            _binaryDownloadSize = null;
+            _binaryDownloadError = $"No asset found for platform: {assetPattern}";
+        }
+    }
+
     private static string GetAssetPattern()
     {
         if (RuntimeInformation.IsOSPlatform(OSPlatform.Windows))
@@ -367,11 +477,64 @@ public class UpdateService
         return RuntimeInformation.OSArchitecture == Architecture.Arm64 ? "linux-arm64" : "linux-x64";
     }
 
-    private static bool IsNewerVersion(string latest, string current)
+    /// <summary>
+    /// <c>stable</c> matches Docker <c>:stable</c>: skip GitHub prereleases and weekly
+    /// dependency builds (<c>MAJOR.MINOR.PATCH-N</c> where <c>N &gt; 1</c>).
+    /// Patch/minor/major releases use <c>-1</c> (or no suffix) and remain eligible.
+    /// </summary>
+    internal static bool SkipReleaseForChannel(string channel, bool prerelease, string? tagName)
     {
-        if (Version.TryParse(latest, out var l) && Version.TryParse(current, out var c))
-            return l > c;
-        return false;
+        if (!string.Equals(channel, "stable", StringComparison.OrdinalIgnoreCase))
+            return false;
+        return prerelease || IsWeeklyBuildTag(tagName);
+    }
+
+    /// <summary>
+    /// Weekly <c>release_type=build</c> increments the numeric suffix
+    /// (<c>6.14.3-1</c> → <c>6.14.3-2</c>). First-of-line tags (<c>6.14.3</c> / <c>6.14.3-1</c>)
+    /// are patch/minor/major and must not be skipped on <c>stable</c>.
+    /// </summary>
+    internal static bool IsWeeklyBuildTag(string? tag)
+    {
+        var parsed = ParseReleaseVersion(tag ?? "");
+        return parsed is { Build: > 1 };
+    }
+
+    internal static bool IsNewerVersion(string latest, string current)
+    {
+        var parsedLatest = ParseReleaseVersion(latest);
+        var parsedCurrent = ParseReleaseVersion(current);
+        if (parsedLatest is null || parsedCurrent is null)
+            return false;
+        return parsedLatest.Value.CompareTo(parsedCurrent.Value) > 0;
+    }
+
+    /// <summary>
+    /// Parse <c>MAJOR.MINOR.PATCH</c> or qBitrr-style <c>MAJOR.MINOR.PATCH-BUILD</c> (optional leading <c>v</c>).
+    /// </summary>
+    internal static (int Major, int Minor, int Patch, int Build)? ParseReleaseVersion(string raw)
+    {
+        if (string.IsNullOrWhiteSpace(raw))
+            return null;
+
+        var s = raw.Trim();
+        if (s.StartsWith('v') || s.StartsWith('V'))
+            s = s[1..];
+
+        var dash = s.IndexOf('-');
+        var core = dash >= 0 ? s[..dash] : s;
+        var build = 0;
+        if (dash >= 0)
+        {
+            var suffix = s[(dash + 1)..];
+            if (!int.TryParse(suffix, out build))
+                return null;
+        }
+
+        if (!Version.TryParse(core, out var v))
+            return null;
+
+        return (v.Major, v.Minor, v.Build, build);
     }
 }
 

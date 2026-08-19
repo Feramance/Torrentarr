@@ -27,7 +27,7 @@ public class SearchExecutor : ISearchExecutor
     private static readonly HashSet<string> SearchCommandNames = new(StringComparer.OrdinalIgnoreCase)
     {
         "MoviesSearch", "MovieSearch", "EpisodeSearch", "SeasonSearch", "SeriesSearch",
-        "AlbumSearch", "ArtistSearch", "MissingMoviesSearch", "MissingEpisodesSearch",
+        "AlbumSearch", "ArtistSearch", "BookSearch", "AuthorSearch", "MissingMoviesSearch", "MissingEpisodesSearch",
         "CutoffUnmetMoviesSearch", "CutoffUnmetEpisodesSearch"
     };
 
@@ -80,6 +80,7 @@ public class SearchExecutor : ISearchExecutor
         if (candidatesList.Count == 0)
         {
             _logger.LogTrace("SearchExecutor: no candidates for {Name}", instanceName);
+            result.LoopCompleted = true;
             return result;
         }
 
@@ -109,17 +110,21 @@ public class SearchExecutor : ISearchExecutor
         var searchedSeriesIds = new HashSet<int>();
 
         var firstSearch = true;
+        var drained = true;
 
         foreach (var candidate in candidatesList)
         {
             if (cancellationToken.IsCancellationRequested)
+            {
+                drained = false;
                 break;
+            }
 
             // §2.11: For Sonarr, if we already triggered a SeriesSearch for this series, skip episode-level
             if (candidate.SeriesId.HasValue && searchedSeriesIds.Contains(candidate.SeriesId.Value))
             {
                 // Mark all episodes from this series as searched (series search covers them)
-                await MarkAsSearchedAsync(arrConfig, candidate, cancellationToken);
+                await MarkAsSearchedAsync(instanceName, arrConfig, candidate, cancellationToken);
                 result.SearchedIds.Add(candidate.ArrId);
                 continue;
             }
@@ -129,6 +134,7 @@ public class SearchExecutor : ISearchExecutor
             {
                 _logger.LogTrace("SearchExecutor: command limit reached ({Active}/{Limit}), pausing searches",
                     activeCommands, searchLimit);
+                drained = false;
                 break;
             }
 
@@ -186,7 +192,7 @@ public class SearchExecutor : ISearchExecutor
                 {
                     result.SearchesTriggered++;
                     result.SearchedIds.Add(candidate.ArrId);
-                    await MarkAsSearchedAsync(arrConfig, candidate, cancellationToken);
+                    await MarkAsSearchedAsync(instanceName, arrConfig, candidate, cancellationToken);
                     if (useSeriesSearch && candidate.SeriesId.HasValue)
                         searchedSeriesIds.Add(candidate.SeriesId.Value);
                 }
@@ -202,6 +208,7 @@ public class SearchExecutor : ISearchExecutor
             }
         }
 
+        result.LoopCompleted = drained;
         return result;
     }
 
@@ -211,9 +218,10 @@ public class SearchExecutor : ISearchExecutor
             return cached;
         object client = arrConfig.Type.ToLowerInvariant() switch
         {
-            "radarr" => new RadarrClient(arrConfig.URI, arrConfig.APIKey),
-            "sonarr" => new SonarrClient(arrConfig.URI, arrConfig.APIKey),
-            "lidarr" => new LidarrClient(arrConfig.URI, arrConfig.APIKey),
+            "radarr" => new RadarrClient(arrConfig.URI, arrConfig.APIKey, arrConfig.SkipTLSVerify),
+            "sonarr" => new SonarrClient(arrConfig.URI, arrConfig.APIKey, arrConfig.SkipTLSVerify),
+            "lidarr" => new LidarrClient(arrConfig.URI, arrConfig.APIKey, arrConfig.SkipTLSVerify),
+            "readarr" => new ReadarrClient(arrConfig.URI, arrConfig.APIKey, arrConfig.SkipTLSVerify),
             _ => new object()
         };
         _clientCache[instanceName] = client;
@@ -233,6 +241,7 @@ public class SearchExecutor : ISearchExecutor
                 RadarrClient r => await r.GetCommandsAsync(cancellationToken),
                 SonarrClient s => await s.GetCommandsAsync(cancellationToken),
                 LidarrClient l => await l.GetCommandsAsync(cancellationToken),
+                ReadarrClient b => await b.GetCommandsAsync(cancellationToken),
                 _ => new List<CommandStatus>()
             };
 
@@ -279,6 +288,9 @@ public class SearchExecutor : ISearchExecutor
                 case LidarrClient lidarrClient:
                     return await lidarrClient.SearchAlbumAsync(new List<int> { candidate.ArrId }, cancellationToken);
 
+                case ReadarrClient readarrClient:
+                    return await readarrClient.SearchBookAsync(new List<int> { candidate.ArrId }, cancellationToken);
+
                 default:
                     return false;
             }
@@ -291,6 +303,7 @@ public class SearchExecutor : ISearchExecutor
     }
 
     protected virtual async Task MarkAsSearchedAsync(
+        string instanceName,
         ArrInstanceConfig arrConfig,
         SearchCandidate candidate,
         CancellationToken cancellationToken)
@@ -301,30 +314,44 @@ public class SearchExecutor : ISearchExecutor
             {
                 case "radarr":
                     var movie = await _db.Movies
-                        .FirstOrDefaultAsync(m => m.ArrId == candidate.ArrId, cancellationToken);
+                        .FirstOrDefaultAsync(m => m.ArrId == candidate.ArrId && m.ArrInstance == instanceName, cancellationToken);
                     if (movie != null)
                     {
                         movie.Searched = true;
+                        movie.Upgrade = true;
                         await _db.SaveChangesWithRetryAsync(_logger, _restartCoordinator, cancellationToken: cancellationToken);
                     }
                     break;
 
                 case "sonarr":
                     var episode = await _db.Episodes
-                        .FirstOrDefaultAsync(e => e.ArrId == candidate.ArrId, cancellationToken);
+                        .FirstOrDefaultAsync(e => e.ArrId == candidate.ArrId && e.ArrInstance == instanceName, cancellationToken);
                     if (episode != null)
                     {
                         episode.Searched = true;
+                        episode.Upgrade = true;
                         await _db.SaveChangesWithRetryAsync(_logger, _restartCoordinator, cancellationToken: cancellationToken);
                     }
                     break;
 
                 case "lidarr":
                     var album = await _db.Albums
-                        .FirstOrDefaultAsync(a => a.ArrId == candidate.ArrId, cancellationToken);
+                        .FirstOrDefaultAsync(a => a.ArrId == candidate.ArrId && a.ArrInstance == instanceName, cancellationToken);
                     if (album != null)
                     {
                         album.Searched = true;
+                        album.Upgrade = true;
+                        await _db.SaveChangesWithRetryAsync(_logger, _restartCoordinator, cancellationToken: cancellationToken);
+                    }
+                    break;
+
+                case "readarr":
+                    var book = await _db.Books
+                        .FirstOrDefaultAsync(b => b.ArrId == candidate.ArrId && b.ArrInstance == instanceName, cancellationToken);
+                    if (book != null)
+                    {
+                        book.Searched = true;
+                        book.Upgrade = true;
                         await _db.SaveChangesWithRetryAsync(_logger, _restartCoordinator, cancellationToken: cancellationToken);
                     }
                     break;

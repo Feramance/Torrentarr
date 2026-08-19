@@ -19,6 +19,12 @@ public static class ArrCatalogEndpoints
         MapLidarrArtistDetail(app, "/api/lidarr/{category}/artist/{artistId:int}");
         MapThumbnail(app, "/web/lidarr/{category}/artist/{artistId:int}/thumbnail", "lidarr_artist");
         MapThumbnail(app, "/api/lidarr/{category}/artist/{artistId:int}/thumbnail", "lidarr_artist");
+        MapReadarrAuthors(app, "/web/readarr/{category}/authors");
+        MapReadarrAuthors(app, "/api/readarr/{category}/authors");
+        MapReadarrAuthorDetail(app, "/web/readarr/{category}/author/{authorId:int}");
+        MapReadarrAuthorDetail(app, "/api/readarr/{category}/author/{authorId:int}");
+        MapThumbnail(app, "/web/readarr/{category}/author/{authorId:int}/thumbnail", "readarr_author");
+        MapThumbnail(app, "/api/readarr/{category}/author/{authorId:int}/thumbnail", "readarr_author");
         MapThumbnail(app, "/web/radarr/{category}/movie/{id:int}/thumbnail", "radarr");
         MapThumbnail(app, "/api/radarr/{category}/movie/{id:int}/thumbnail", "radarr");
         MapThumbnail(app, "/web/sonarr/{category}/series/{id:int}/thumbnail", "sonarr");
@@ -31,6 +37,7 @@ public static class ArrCatalogEndpoints
     {
         app.MapGet(pattern, async (
             string category,
+            TorrentarrConfig cfg,
             TorrentarrDbContext db,
             CatalogRollupService rollups,
             int? page,
@@ -40,6 +47,7 @@ public static class ArrCatalogEndpoints
             bool? missing,
             string? reason) =>
         {
+            var keys = ArrCatalogIdentity.QueryKeys(cfg, category);
             var currentPage = page ?? 0;
             var pageSize = Math.Clamp(page_size ?? 50, 1, 1000);
             var missingOnly = missing == true;
@@ -47,9 +55,9 @@ public static class ArrCatalogEndpoints
                 ? null
                 : reason.Trim();
 
-            var (albumCounts, albumTotal, trackCounts) = await rollups.GetLidarrRollupsAsync(category);
+            var (albumCounts, albumTotal, trackCounts) = await rollups.GetLidarrRollupsAsync(keys);
 
-            var query = db.Artists.Where(a => a.ArrInstance == category);
+            var query = db.Artists.Where(a => keys.Contains(a.ArrInstance));
             if (!string.IsNullOrWhiteSpace(q))
                 query = query.Where(a => a.Title != null && a.Title.Contains(q));
             if (monitored.HasValue)
@@ -57,7 +65,7 @@ public static class ArrCatalogEndpoints
 
             if (missingOnly || reasonFilter is not null)
             {
-                var albumQuery = db.Albums.Where(al => al.ArrInstance == category);
+                var albumQuery = db.Albums.Where(al => keys.Contains(al.ArrInstance));
                 if (missingOnly)
                     albumQuery = albumQuery.Where(al => al.Monitored && !al.HasFile);
                 if (reasonFilter is not null)
@@ -81,7 +89,7 @@ public static class ArrCatalogEndpoints
 
             if (total == 0 && albumTotal > 0 && (missingOnly || reasonFilter is not null || !string.IsNullOrWhiteSpace(q)))
             {
-                var albumFallback = db.Albums.Where(al => al.ArrInstance == category);
+                var albumFallback = db.Albums.Where(al => keys.Contains(al.ArrInstance));
                 if (!string.IsNullOrWhiteSpace(q))
                     albumFallback = albumFallback.Where(al => al.ArtistTitle != null && al.ArtistTitle.Contains(q));
                 if (missingOnly)
@@ -124,7 +132,7 @@ public static class ArrCatalogEndpoints
 
             var artistIdsListed = artists.Select(a => a.EntryId).ToList();
             var albumStats = await db.Albums
-                .Where(al => al.ArrInstance == category && artistIdsListed.Contains(al.ArtistId))
+                .Where(al => keys.Contains(al.ArrInstance) && artistIdsListed.Contains(al.ArtistId))
                 .GroupBy(al => al.ArtistId)
                 .Select(g => new
                 {
@@ -186,23 +194,25 @@ public static class ArrCatalogEndpoints
         app.MapGet(pattern, async (
             string category,
             int artistId,
+            TorrentarrConfig cfg,
             TorrentarrDbContext db,
             CatalogRollupService rollups) =>
         {
+            var keys = ArrCatalogIdentity.QueryKeys(cfg, category);
             var artist = await db.Artists
-                .FirstOrDefaultAsync(a => a.ArrInstance == category && a.EntryId == artistId);
+                .FirstOrDefaultAsync(a => keys.Contains(a.ArrInstance) && a.EntryId == artistId);
             if (artist is null)
                 return Results.NotFound(new { error = "Artist not found" });
 
-            var (albumCounts, _, trackCounts) = await rollups.GetLidarrRollupsAsync(category);
+            var (albumCounts, _, trackCounts) = await rollups.GetLidarrRollupsAsync(keys);
             var albums = await db.Albums
-                .Where(al => al.ArrInstance == category && al.ArtistId == artistId)
+                .Where(al => keys.Contains(al.ArrInstance) && al.ArtistId == artistId)
                 .OrderBy(al => al.Title)
                 .ToListAsync();
 
             var albumIds = albums.Select(a => a.EntryId).ToList();
             var tracks = await db.Tracks
-                .Where(t => t.ArrInstance == category && albumIds.Contains(t.AlbumId))
+                .Where(t => keys.Contains(t.ArrInstance) && albumIds.Contains(t.AlbumId))
                 .ToListAsync();
 
             return Results.Ok(new
@@ -261,6 +271,179 @@ public static class ArrCatalogEndpoints
         });
     }
 
+    private static void MapReadarrAuthors(WebApplication app, string pattern)
+    {
+        app.MapGet(pattern, async (
+            string category,
+            TorrentarrConfig cfg,
+            TorrentarrDbContext db,
+            CatalogRollupService rollups,
+            int? page,
+            int? page_size,
+            string? q,
+            bool? monitored,
+            bool? missing,
+            string? reason) =>
+        {
+            var keys = ArrCatalogIdentity.QueryKeys(cfg, category);
+            var currentPage = page ?? 0;
+            var pageSize = Math.Clamp(page_size ?? 50, 1, 1000);
+            var missingOnly = missing == true;
+            var reasonFilter = string.IsNullOrWhiteSpace(reason) || reason.Equals("all", StringComparison.OrdinalIgnoreCase)
+                ? null
+                : reason.Trim();
+
+            var (bookCounts, bookTotal) = await rollups.GetReadarrRollupsAsync(keys);
+
+            var query = db.Authors.Where(a => keys.Contains(a.ArrInstance));
+            if (!string.IsNullOrWhiteSpace(q))
+                query = query.Where(a => a.Title != null && a.Title.Contains(q));
+            if (monitored.HasValue)
+                query = query.Where(a => a.Monitored == monitored.Value);
+
+            if (missingOnly || reasonFilter is not null)
+            {
+                var bookQuery = db.Books.Where(b => keys.Contains(b.ArrInstance));
+                if (missingOnly)
+                    bookQuery = bookQuery.Where(b => b.Monitored && !b.HasFile);
+                if (reasonFilter is not null)
+                {
+                    if (reasonFilter.Equals("Not being searched", StringComparison.OrdinalIgnoreCase))
+                        bookQuery = bookQuery.Where(b => b.Reason == null || b.Reason == "Not being searched");
+                    else
+                        bookQuery = bookQuery.Where(b => b.Reason == reasonFilter);
+                }
+
+                var authorIds = await bookQuery.Select(b => b.AuthorId).Distinct().ToListAsync();
+                query = query.Where(a => authorIds.Contains(a.ArrId));
+            }
+
+            var total = await query.CountAsync();
+            var authors = await query
+                .OrderBy(a => a.Title)
+                .Skip(currentPage * pageSize)
+                .Take(pageSize)
+                .ToListAsync();
+
+            var authorArrIds = authors.Select(a => a.ArrId).ToList();
+            var bookStats = await db.Books
+                .Where(b => keys.Contains(b.ArrInstance) && authorArrIds.Contains(b.ArrAuthorId))
+                .GroupBy(b => b.ArrAuthorId)
+                .Select(g => new
+                {
+                    AuthorId = g.Key,
+                    Monitored = g.Count(b => b.Monitored),
+                    Available = g.Count(b => b.Monitored && b.HasFile)
+                })
+                .ToListAsync();
+
+            var statsByAuthor = bookStats.ToDictionary(x => x.AuthorId);
+
+            return Results.Ok(new
+            {
+                category,
+                counts = new
+                {
+                    available = bookCounts.Available,
+                    monitored = bookCounts.Monitored,
+                    missing = bookCounts.Missing,
+                    quality_met = bookCounts.QualityMet,
+                    requests = bookCounts.Requests
+                },
+                book_total = bookTotal,
+                total,
+                page = currentPage,
+                page_size = pageSize,
+                authors = authors.Select(a =>
+                {
+                    statsByAuthor.TryGetValue(a.ArrId, out var st);
+                    var mon = st?.Monitored ?? 0;
+                    var avail = st?.Available ?? 0;
+                    return new
+                    {
+                        author = new
+                        {
+                            id = a.EntryId,
+                            arrId = a.ArrId,
+                            name = a.Title,
+                            monitored = a.Monitored,
+                            qualityProfileName = a.QualityProfileName,
+                            searched = a.Searched,
+                            bookCount = a.BookCount,
+                            booksMonitored = mon,
+                            booksAvailable = avail,
+                            booksMissing = Math.Max(mon - avail, 0)
+                        }
+                    };
+                })
+            });
+        });
+    }
+
+    private static void MapReadarrAuthorDetail(WebApplication app, string pattern)
+    {
+        app.MapGet(pattern, async (
+            string category,
+            int authorId,
+            TorrentarrConfig cfg,
+            TorrentarrDbContext db,
+            CatalogRollupService rollups) =>
+        {
+            var keys = ArrCatalogIdentity.QueryKeys(cfg, category);
+            var author = await db.Authors
+                .FirstOrDefaultAsync(a => keys.Contains(a.ArrInstance) && a.EntryId == authorId);
+            if (author is null)
+                return Results.NotFound(new { error = "Author not found" });
+
+            var (bookCounts, _) = await rollups.GetReadarrRollupsAsync(keys);
+            var books = await db.Books
+                .Where(b => keys.Contains(b.ArrInstance) && b.ArrAuthorId == author.ArrId)
+                .OrderBy(b => b.Title)
+                .ToListAsync();
+
+            return Results.Ok(new
+            {
+                category,
+                counts = new
+                {
+                    available = bookCounts.Available,
+                    monitored = bookCounts.Monitored,
+                    missing = bookCounts.Missing,
+                    quality_met = bookCounts.QualityMet,
+                    requests = bookCounts.Requests
+                },
+                author = new
+                {
+                    id = author.EntryId,
+                    arrId = author.ArrId,
+                    name = author.Title,
+                    monitored = author.Monitored,
+                    qualityProfileName = author.QualityProfileName,
+                    searched = author.Searched,
+                    bookCount = author.BookCount
+                },
+                books = books.Select(b => new
+                {
+                    book = new
+                    {
+                        id = b.EntryId,
+                        title = b.Title,
+                        authorId = b.ArrAuthorId,
+                        authorName = b.AuthorTitle,
+                        monitored = b.Monitored,
+                        hasFile = b.HasFile,
+                        foreignBookId = b.ForeignBookId,
+                        releaseDate = b.ReleaseDate,
+                        qualityMet = b.QualityMet,
+                        reason = b.Reason,
+                        qualityProfileId = b.QualityProfileId,
+                        qualityProfileName = b.QualityProfileName
+                    }
+                })
+            });
+        });
+    }
+
     private static void MapThumbnail(WebApplication app, string pattern, string kind)
     {
         app.MapGet(pattern, async (
@@ -270,7 +453,8 @@ public static class ArrCatalogEndpoints
             CancellationToken ct) =>
         {
             if (!httpContext.Request.RouteValues.TryGetValue("id", out var idObj)
-                && !httpContext.Request.RouteValues.TryGetValue("artistId", out idObj))
+                && !httpContext.Request.RouteValues.TryGetValue("artistId", out idObj)
+                && !httpContext.Request.RouteValues.TryGetValue("authorId", out idObj))
                 return Results.BadRequest();
             if (!int.TryParse(idObj?.ToString(), out var id))
                 return Results.BadRequest();
@@ -291,13 +475,16 @@ public static class ArrCatalogEndpoints
             TorrentarrConfig cfg,
             TorrentarrDbContext db) =>
         {
-            var instance = cfg.ArrInstances.Values
-                .FirstOrDefault(a => CategoryPathHelper.CategoryEquals(a.Category, category));
-            if (instance is null || string.IsNullOrWhiteSpace(instance.URI))
+            var instance = cfg.ArrInstances
+                .FirstOrDefault(kvp =>
+                    string.Equals(kvp.Key, category, StringComparison.OrdinalIgnoreCase)
+                    || CategoryPathHelper.CategoryEquals(kvp.Value.Category, category));
+            if (string.IsNullOrEmpty(instance.Key) || string.IsNullOrWhiteSpace(instance.Value.URI))
                 return Results.NotFound(new { error = "Unknown section" });
 
-            var baseUri = instance.URI.TrimEnd('/');
-            var slug = await ResolveOpenSlugAsync(kind, category, entryId, db);
+            var keys = ArrCatalogIdentity.QueryKeys(instance);
+            var baseUri = instance.Value.URI.TrimEnd('/');
+            var slug = await ResolveOpenSlugAsync(kind, keys, entryId, db);
             if (slug is null)
                 return Results.NotFound(new { error = "Item not found" });
 
@@ -306,6 +493,7 @@ public static class ArrCatalogEndpoints
                 "movie" => $"/movie/{slug}",
                 "series" => $"/series/{slug}",
                 "artist" => $"/artist/{slug}",
+                "author" => $"/author/{slug}",
                 _ => null
             };
             if (path is null)
@@ -317,22 +505,26 @@ public static class ArrCatalogEndpoints
 
     private static async Task<string?> ResolveOpenSlugAsync(
         string kind,
-        string category,
+        List<string> keys,
         int entryId,
         TorrentarrDbContext db)
     {
         return kind.ToLowerInvariant() switch
         {
             "movie" => await db.Movies
-                .Where(m => m.ArrInstance == category && m.EntryId == entryId)
+                .Where(m => keys.Contains(m.ArrInstance) && m.EntryId == entryId)
                 .Select(m => m.ArrId.ToString())
                 .FirstOrDefaultAsync(),
             "series" => await db.Series
-                .Where(s => s.ArrInstance == category && s.EntryId == entryId)
+                .Where(s => keys.Contains(s.ArrInstance) && s.EntryId == entryId)
                 .Select(s => s.ArrId.ToString())
                 .FirstOrDefaultAsync(),
             "artist" => await db.Artists
-                .Where(a => a.ArrInstance == category && a.EntryId == entryId)
+                .Where(a => keys.Contains(a.ArrInstance) && a.EntryId == entryId)
+                .Select(a => a.ArrId.ToString())
+                .FirstOrDefaultAsync(),
+            "author" => await db.Authors
+                .Where(a => keys.Contains(a.ArrInstance) && a.EntryId == entryId)
                 .Select(a => a.ArrId.ToString())
                 .FirstOrDefaultAsync(),
             _ => null

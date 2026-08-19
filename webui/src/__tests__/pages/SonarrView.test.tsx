@@ -24,7 +24,7 @@ afterAll(() => server.close());
 
 const minimalConfig = {
   Settings: {},
-  WebUI: { LiveArr: false, GroupSonarr: false, GroupLidarr: false },
+  WebUI: { LiveArr: false },
 };
 
 const emptyArrList = { arr: [], ready: true };
@@ -76,9 +76,7 @@ describe("SonarrView – card header", () => {
 
 describe("SonarrView – empty state", () => {
   it("shows 'No series found.' when no instances are configured", async () => {
-    // WebUIContext defaults groupSonarr=true; after config loads (GroupSonarr:false)
-    // the flat aggregate view renders "No series found.". Allow extra time for the
-    // config fetch + state update under CPU load from parallel test workers.
+    // Catalog grouping is always series rows; empty aggregate still shows this hint.
     server.use(
       http.get("/web/config", () => HttpResponse.json(minimalConfig)),
       http.post("/web/config", () => HttpResponse.json({})),
@@ -173,7 +171,7 @@ describe("SonarrView – instance sidebar", () => {
 
     renderView();
 
-    // When episodes load (groupSonarr=false → flat table), the "Title" column header appears
+    // Grouped series view includes an episode Title column.
     await screen.findByText("Title", {}, { timeout: 5000 });
     expect(screen.queryByText("No series found.")).not.toBeInTheDocument();
   });

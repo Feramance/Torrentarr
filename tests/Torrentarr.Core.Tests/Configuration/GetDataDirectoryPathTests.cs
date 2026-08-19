@@ -10,17 +10,29 @@ namespace Torrentarr.Core.Tests.Configuration;
 public sealed class GetDataDirectoryPathTests : IDisposable
 {
     private readonly string? _originalTorrentarrConfig;
+    private readonly string? _originalQbitrrConfig;
     private readonly string? _originalOverride;
+    private readonly string? _originalDataOverride;
+    private readonly string? _originalQbitrrDataOverride;
 
     public GetDataDirectoryPathTests()
     {
         _originalTorrentarrConfig = Environment.GetEnvironmentVariable("TORRENTARR_CONFIG");
+        _originalQbitrrConfig = Environment.GetEnvironmentVariable("QBITRR_CONFIG");
         _originalOverride = ConfigurationLoader.TestConfigPathOverride;
+        _originalDataOverride = Environment.GetEnvironmentVariable("TORRENTARR_OVERRIDES_DATA_PATH");
+        _originalQbitrrDataOverride = Environment.GetEnvironmentVariable("QBITRR_OVERRIDES_DATA_PATH");
+        Environment.SetEnvironmentVariable("TORRENTARR_OVERRIDES_DATA_PATH", null);
+        Environment.SetEnvironmentVariable("QBITRR_OVERRIDES_DATA_PATH", null);
+        Environment.SetEnvironmentVariable("QBITRR_CONFIG", null);
     }
 
     public void Dispose()
     {
         Environment.SetEnvironmentVariable("TORRENTARR_CONFIG", _originalTorrentarrConfig);
+        Environment.SetEnvironmentVariable("QBITRR_CONFIG", _originalQbitrrConfig);
+        Environment.SetEnvironmentVariable("TORRENTARR_OVERRIDES_DATA_PATH", _originalDataOverride);
+        Environment.SetEnvironmentVariable("QBITRR_OVERRIDES_DATA_PATH", _originalQbitrrDataOverride);
         ConfigurationLoader.TestConfigPathOverride = _originalOverride;
     }
 
@@ -71,6 +83,26 @@ public sealed class GetDataDirectoryPathTests : IDisposable
         }
         finally
         {
+            if (Directory.Exists(dir))
+                Directory.Delete(dir, recursive: true);
+        }
+    }
+
+    [Fact]
+    public void GetDataDirectoryPath_UsesOverridesDataPath()
+    {
+        var dir = Path.Combine(Path.GetTempPath(), $"torrentarr-ov-{Guid.NewGuid():N}");
+        Directory.CreateDirectory(dir);
+        Environment.SetEnvironmentVariable("TORRENTARR_OVERRIDES_DATA_PATH", dir);
+        Environment.SetEnvironmentVariable("TORRENTARR_CONFIG", "/config/foo.toml");
+        ConfigurationLoader.TestConfigPathOverride = null;
+        try
+        {
+            ConfigurationLoader.GetDataDirectoryPath().Should().Be(Path.GetFullPath(dir));
+        }
+        finally
+        {
+            Environment.SetEnvironmentVariable("TORRENTARR_OVERRIDES_DATA_PATH", null);
             if (Directory.Exists(dir))
                 Directory.Delete(dir, recursive: true);
         }

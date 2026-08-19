@@ -11,16 +11,10 @@ public class LidarrClient
     private readonly RestClient _client;
     private readonly string _apiKey;
 
-    public LidarrClient(string baseUrl, string apiKey)
+    public LidarrClient(string baseUrl, string apiKey, bool skipTlsVerify = false)
     {
         _apiKey = apiKey;
-
-        var options = new RestClientOptions(baseUrl.TrimEnd('/'))
-        {
-            Timeout = TimeSpan.FromSeconds(30)
-        };
-
-        _client = new RestClient(options);
+        _client = new RestClient(Torrentarr.Infrastructure.Http.TlsSkipHelper.CreateRestOptions(baseUrl, skipTlsVerify));
     }
 
     /// <summary>
@@ -152,19 +146,11 @@ public class LidarrClient
     }
 
     /// <summary>
-    /// Update an artist's quality profile (§1.2 UseTempForMissing).
-    /// Fetches the artist, swaps qualityProfileId, then PUTs it back.
+    /// Update an artist's quality profile (§1.2 UseTempForMissing), preserving unmapped fields
+    /// via a raw JSON round-trip.
     /// </summary>
-    public async Task<bool> UpdateArtistQualityProfileAsync(int artistId, int qualityProfileId, CancellationToken ct = default)
-    {
-        var artist = await GetArtistAsync(artistId, ct);
-        if (artist == null)
-            return false;
-
-        artist.QualityProfileId = qualityProfileId;
-        var updated = await UpdateArtistAsync(artist, ct);
-        return updated != null;
-    }
+    public Task<bool> UpdateArtistQualityProfileAsync(int artistId, int qualityProfileId, CancellationToken ct = default) =>
+        ArrQualityProfilePut.UpdateAsync(_client, _apiKey, $"/api/v1/artist/{artistId}", qualityProfileId, ct);
 
     /// <summary>
     /// Get wanted/missing albums
@@ -556,6 +542,9 @@ public class LidarrQueueItem
 
     [JsonProperty("statusMessages")]
     public List<StatusMessage>? StatusMessages { get; set; }
+
+    [JsonProperty("outputPath")]
+    public string? OutputPath { get; set; }
 }
 
 /// <summary>

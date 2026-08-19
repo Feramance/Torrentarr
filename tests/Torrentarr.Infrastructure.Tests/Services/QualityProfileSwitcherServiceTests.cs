@@ -50,6 +50,7 @@ public class QualityProfileSwitcherServiceTests
     [InlineData("radarr")]
     [InlineData("sonarr")]
     [InlineData("lidarr")]
+    [InlineData("readarr")]
     public async Task ForceResetAll_ForceResetFalse_AllArrTypes_ReturnQuickly(string arrType)
     {
         var svc = CreateService();
@@ -85,7 +86,7 @@ public class QualityProfileSwitcherServiceTests
     public async Task RestoreTimedOut_KeepTempProfileTrue_ReturnWithoutError()
     {
         var svc = CreateService();
-        // KeepTempProfile=true → profiles should never be restored
+        // KeepTempProfile=true skips immediate restore after search; timeout restore still runs.
         var cfg = new ArrInstanceConfig
         {
             Type = "radarr",
@@ -146,6 +147,7 @@ public class QualityProfileSwitcherServiceTests
     [InlineData("radarr")]
     [InlineData("sonarr")]
     [InlineData("lidarr")]
+    [InlineData("readarr")]
     public async Task RestoreTimedOut_EmptyDb_AllArrTypes_NoItemsToRestore(string arrType)
     {
         // UseTempForMissing=true, timeout>0, empty DB → query returns empty list → no-op
@@ -243,5 +245,45 @@ public class QualityProfileSwitcherServiceTests
             "sonarr", cfg, Enumerable.Empty<SearchCandidate>());
 
         await act.Should().NotThrowAsync();
+    }
+
+    [Fact]
+    public async Task ForceReset_FailedRestore_KeepsOriginalProfileId()
+    {
+        var options = new DbContextOptionsBuilder<TorrentarrDbContext>()
+            .UseInMemoryDatabase(Guid.NewGuid().ToString())
+            .Options;
+        await using var db = new TorrentarrDbContext(options);
+        db.Authors.Add(new Torrentarr.Infrastructure.Database.Models.AuthorFilesModel
+        {
+            EntryId = 1,
+            ArrInstance = "Readarr-Books",
+            Title = "Ada",
+            ArrId = 42,
+            OriginalProfileId = 7,
+            CurrentProfileId = 99,
+            LastProfileSwitchTime = DateTime.UtcNow.AddHours(-1)
+        });
+        await db.SaveChangesAsync();
+
+        var svc = new QualityProfileSwitcherService(
+            NullLogger<QualityProfileSwitcherService>.Instance, db, new DatabaseRestartCoordinator());
+        var cfg = new ArrInstanceConfig
+        {
+            Type = "readarr",
+            URI = "http://127.0.0.1:1",
+            APIKey = "nope",
+            Search = new SearchConfig
+            {
+                ForceResetTempProfiles = true,
+                ProfileSwitchRetryAttempts = 1
+            }
+        };
+
+        await svc.ForceResetAllTempProfilesAsync("Readarr-Books", cfg);
+
+        var author = await db.Authors.SingleAsync();
+        author.OriginalProfileId.Should().Be(7);
+        author.CurrentProfileId.Should().Be(99);
     }
 }

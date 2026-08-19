@@ -21,6 +21,9 @@ URI = "http://localhost:7878"
 # Radarr API Key (Settings > General > Security)
 APIKey = "your-radarr-api-key"
 
+# If true, do not verify TLS for this Servarr API (HTTPS). Does not affect Overseerr/Ombi.
+SkipTLSVerify = false
+
 # Category applied by Radarr to torrents in qBittorrent
 # MUST match: Radarr > Settings > Download Clients > qBittorrent > Category
 Category = "radarr-movies"

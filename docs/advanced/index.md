@@ -107,7 +107,7 @@ AutoDelete = false  # Never auto-delete
 
 ### Media Validation
 
-Torrentarr can validate media files before import:
+Torrentarr can validate media files after Arr import (when `Torrent.AutoDelete` is on):
 
 ```toml
 [Settings]
@@ -116,7 +116,7 @@ FFprobePath = "/usr/bin/ffprobe"
 ```
 
 **Benefits:**
-- Detect corrupt files before import
+- Detect corrupt files after import so AutoDelete can remove them
 - Verify codec compatibility
 - Check for audio/video tracks
 - Validate container format

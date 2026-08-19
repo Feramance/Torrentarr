@@ -2,6 +2,7 @@ using System.Diagnostics;
 using System.IO.Compression;
 using System.Runtime.InteropServices;
 using System.Text.Json;
+using System.Text.RegularExpressions;
 using Torrentarr.Core.Configuration;
 using Torrentarr.Core.Services;
 using Microsoft.Extensions.Logging;
@@ -75,6 +76,14 @@ public class MediaValidationService : IMediaValidationService
         }
 
         var extension = Path.GetExtension(filePath);
+        if (ArrSectionHelper.IsEbookOrComicExtension(extension))
+        {
+            result.IsValid = true;
+            result.IsMediaFile = false;
+            _logger.LogTrace("Skipping ffprobe for ebook/comic file: {File}", filePath);
+            return result;
+        }
+
         if (!_mediaExtensions.Contains(extension))
         {
             result.IsValid = true;
@@ -124,7 +133,10 @@ public class MediaValidationService : IMediaValidationService
         return result;
     }
 
-    public async Task<DirectoryValidationResult> ValidateDirectoryAsync(string directoryPath, CancellationToken cancellationToken = default)
+    public async Task<DirectoryValidationResult> ValidateDirectoryAsync(
+        string directoryPath,
+        CancellationToken cancellationToken = default,
+        IReadOnlyCollection<string>? extensionAllowlist = null)
     {
         var result = new DirectoryValidationResult { DirectoryPath = directoryPath };
 
@@ -148,12 +160,17 @@ public class MediaValidationService : IMediaValidationService
             if (extension.Equals(".parts", StringComparison.OrdinalIgnoreCase))
                 continue;
 
+            if (extensionAllowlist != null && extensionAllowlist.Count > 0 &&
+                !MatchesExtensionAllowlist(file, extensionAllowlist))
+                continue;
+
             var validationResult = await ValidateFileAsync(file, cancellationToken);
             result.Results.Add(validationResult);
 
-            if (validationResult.IsValid && validationResult.IsMediaFile)
+            // qBitrr folder_cleanup: ebooks/comics and missing-ffprobe count as valid
+            if (validationResult.IsValid)
                 result.ValidFiles++;
-            else if (!validationResult.IsValid)
+            else
                 result.InvalidFiles++;
         }
 
@@ -161,6 +178,32 @@ public class MediaValidationService : IMediaValidationService
             directoryPath, result.ValidFiles, result.TotalFiles);
 
         return result;
+    }
+
+    internal static bool MatchesExtensionAllowlist(string filePath, IReadOnlyCollection<string> allowlist)
+    {
+        var ext = Path.GetExtension(filePath);
+        var name = Path.GetFileName(filePath);
+        foreach (var allowed in allowlist)
+        {
+            if (string.IsNullOrWhiteSpace(allowed))
+                continue;
+            if (string.Equals(allowed, ext, StringComparison.OrdinalIgnoreCase))
+                return true;
+            var dotted = allowed.StartsWith('.') ? allowed : "." + allowed;
+            if (string.Equals(dotted, ext, StringComparison.OrdinalIgnoreCase))
+                return true;
+            try
+            {
+                if (Regex.IsMatch(name, allowed, RegexOptions.IgnoreCase))
+                    return true;
+            }
+            catch (ArgumentException)
+            {
+                // skip invalid regex patterns
+            }
+        }
+        return false;
     }
 
     public async Task<bool> UpdateFFprobeAsync(CancellationToken cancellationToken = default)

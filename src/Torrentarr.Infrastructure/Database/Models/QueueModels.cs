@@ -253,6 +253,89 @@ public class AlbumQueueModel
 }
 
 /// <summary>
+/// Book queue model - stores download queue info from Readarr + matching qBittorrent data
+/// </summary>
+[Table("bookqueuemodel")]
+public class BookQueueModel
+{
+    [Key]
+    [Column("entryid")]
+    public int EntryId { get; set; }
+
+    [Column("completed")]
+    public bool Completed { get; set; }
+
+    [Column("arrinstance")]
+    public string ArrInstance { get; set; } = "";
+
+    [Column("queueid")]
+    public int? QueueId { get; set; }
+
+    [Column("bookid")]
+    public int? BookId { get; set; }
+
+    [Column("authorid")]
+    public int? AuthorId { get; set; }
+
+    [Column("downloadid")]
+    public string? DownloadId { get; set; }
+
+    [Column("title")]
+    public string? Title { get; set; }
+
+    [Column("authortitle")]
+    public string? AuthorTitle { get; set; }
+
+    [Column("status")]
+    public string? Status { get; set; }
+
+    [Column("trackeddownloadstatus")]
+    public string? TrackedDownloadStatus { get; set; }
+
+    [Column("trackeddownloadstate")]
+    public string? TrackedDownloadState { get; set; }
+
+    [Column("customformatscore")]
+    public int? CustomFormatScore { get; set; }
+
+    [Column("quality")]
+    public string? Quality { get; set; }
+
+    [Column("size")]
+    public long? Size { get; set; }
+
+    [Column("timeleft")]
+    public string? TimeLeft { get; set; }
+
+    [Column("estimatedcompletiontime")]
+    public DateTime? EstimatedCompletionTime { get; set; }
+
+    [Column("added")]
+    public DateTime? Added { get; set; }
+
+    [Column("torrentname")]
+    public string? TorrentName { get; set; }
+
+    [Column("torrenthash")]
+    public string? TorrentHash { get; set; }
+
+    [Column("torrentcategory")]
+    public string? TorrentCategory { get; set; }
+
+    [Column("torrentstate")]
+    public string? TorrentState { get; set; }
+
+    [Column("torrentprogress")]
+    public double? TorrentProgress { get; set; }
+
+    [Column("torrentcontentpath")]
+    public string? TorrentContentPath { get; set; }
+
+    [Column("torrentdownloadpath")]
+    public string? TorrentDownloadPath { get; set; }
+}
+
+/// <summary>
 /// Files queued model matching qBitrr's Peewee schema
 /// </summary>
 [Table("filesqueued")]

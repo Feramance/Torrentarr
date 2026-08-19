@@ -16,9 +16,13 @@ public interface IMediaValidationService
     Task<MediaValidationResult> ValidateFileAsync(string filePath, CancellationToken cancellationToken = default);
 
     /// <summary>
-    /// Validate all media files in a directory
+    /// Validate media files in a directory. When <paramref name="extensionAllowlist"/> is set,
+    /// only those suffixes are probed (qBitrr folder_cleanup).
     /// </summary>
-    Task<DirectoryValidationResult> ValidateDirectoryAsync(string directoryPath, CancellationToken cancellationToken = default);
+    Task<DirectoryValidationResult> ValidateDirectoryAsync(
+        string directoryPath,
+        CancellationToken cancellationToken = default,
+        IReadOnlyCollection<string>? extensionAllowlist = null);
 
     /// <summary>
     /// Download/update ffprobe binary

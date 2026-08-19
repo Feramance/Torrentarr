@@ -1,6 +1,6 @@
 # Features Overview
 
-Torrentarr provides intelligent automation and monitoring for your media management setup, bridging the gap between qBittorrent and the Arr stack (Radarr/Sonarr/Lidarr).
+Torrentarr provides intelligent automation and monitoring for your media management setup, bridging the gap between qBittorrent and the Arr stack (Radarr/Sonarr/Lidarr/Readarr).
 
 ---
 
@@ -14,7 +14,7 @@ Continuous torrent health checks with automatic failure detection and recovery.
 
 - **Stalled torrent detection** - Automatically identifies and handles stuck downloads
 - **Slow torrent handling** - Monitors download speeds and ETA thresholds
-- **File validation** - Uses FFprobe to verify media file integrity
+- **File validation** - After import is triggered, FFprobe can verify media when `AutoDelete` is on
 - **Tracker monitoring** - Detects dead or unreachable trackers
 - **Smart removal** - Protects near-complete downloads from accidental deletion
 
@@ -37,8 +37,8 @@ Trigger imports in your Arr instances as soon as downloads complete, without wai
 
 1. qBittorrent finishes downloading a file
 2. Torrentarr detects completion instantly
-3. Torrentarr validates files with FFprobe (optional)
-4. Torrentarr tells Arr to import the specific download
+3. Torrentarr tells Arr to import the specific download (`Downloaded*Scan`)
+4. If `Torrent.AutoDelete` is on, FFprobe probes allowlisted files; a folder with zero valid media is blocklisted and deleted
 5. Arr processes import immediately
 6. Media appears in your library
 
@@ -165,7 +165,7 @@ ForceMinimumCustomFormat = false
 
 ### 🎭 Temporary Quality Profiles
 
-Temporarily lower quality requirements for missing media, then upgrade later.
+Temporarily lower quality requirements for missing media, then upgrade later. Temp profiles apply to **Radarr, Sonarr, Lidarr, and Readarr**.
 
 **Use case:** You want FLAC music, but you'll accept MP3 for now to avoid missing content.
 
@@ -343,7 +343,7 @@ AutoUpdateCron = "0 3 * * 0"  # Sundays at 3:00 AM
 
 ### 📝 Process Management
 
-Automatic restart of crashed worker processes with configurable limits.
+Automatic restart of crashed Arr worker **tasks** with configurable limits.
 
 **Configuration:**
 
@@ -412,11 +412,6 @@ Token = "your-secret-token"
 # Theme
 Theme = "Dark"  # Dark or Light
 
-# Group Sonarr episodes by series
-GroupSonarr = true
-
-# Group Lidarr albums by artist
-GroupLidarr = true
 ```
 
 **Security:**
@@ -431,15 +426,14 @@ curl -H "Authorization: Bearer your-secret-token" http://localhost:6969/api/proc
 
 ### 📊 FFprobe File Validation
 
-Verify media file integrity using FFprobe before import.
+After Arr import is triggered, if `Torrent.AutoDelete` is enabled, Torrentarr probes allowlisted files in the content folder (qBitrr `folder_cleanup`). This does **not** block the Arr scan.
 
 **What it checks:**
 
-- File is playable
-- Video/audio codecs are valid
-- Duration is reasonable
-- No corruption detected
-- Streams are accessible
+- File is playable (when ffprobe is present)
+- Ebook/comic suffixes skip probe and count as valid
+- Missing ffprobe binary is treated as valid
+- Zero valid media after probe → Arr queue delete with blacklist and local files removed
 
 **Configuration:**
 
@@ -447,21 +441,24 @@ Verify media file integrity using FFprobe before import.
 [Settings]
 # Auto-download FFprobe binary
 FFprobeAutoUpdate = true
+
+[Radarr-Movies.Torrent]
+AutoDelete = true
 ```
 
 **Workflow:**
 
 1. Torrent completes download
-2. Torrentarr scans for media files
-3. FFprobe validates each file
-4. ✅ Valid files → Trigger import
-5. ❌ Invalid files → Mark as failed, re-search
+2. Torrentarr triggers Arr `Downloaded*Scan`
+3. If AutoDelete is on, FFprobe probes allowlisted files
+4. ✅ At least one valid file → leave content in place
+5. ❌ Zero valid media → blocklist + delete local files
 
 **Benefits:**
 
-- Prevents importing fake/sample files
-- Detects corruption early
-- Saves time (no manual verification)
+- Cleans folders that contain no real media after import
+- Detects fake/sample-only downloads
+- Ebook libraries are not failed by probe
 - Reduces manual intervention
 
 ---
@@ -490,21 +487,21 @@ Tagless = false  # Set to true to enable
 
 ## Feature Comparison
 
-| Feature | Radarr | Sonarr | Lidarr |
-|---------|--------|--------|--------|
-| Health Monitoring | ✅ | ✅ | ✅ |
-| Instant Imports | ✅ | ✅ | ✅ |
-| Automated Re-searching | ✅ | ✅ | ✅ |
-| Missing Content Search | ✅ | ✅ | ✅ |
-| Quality Upgrades | ✅ | ✅ | ✅ |
-| Temporary Profiles | ❌ | ❌ | ✅ |
-| Request Integration | ✅ | ✅ | ❌ |
-| Smart Seeding | ✅ | ✅ | ✅ |
-| Per-Tracker Settings | ✅ | ✅ | ✅ |
-| Hit and Run Protection | ✅ | ✅ | ✅ |
-| FFprobe Validation | ✅ | ✅ | ✅ |
-| Search by Year | ✅ | ✅ | ❌ |
-| Search Specials | ❌ | ✅ | ❌ |
+| Feature | Radarr | Sonarr | Lidarr | Readarr |
+|---------|--------|--------|--------|---------|
+| Health Monitoring | ✅ | ✅ | ✅ | ✅ |
+| Instant Imports | ✅ | ✅ | ✅ | ✅ |
+| Automated Re-searching | ✅ | ✅ | ✅ | ✅ |
+| Missing Content Search | ✅ | ✅ | ✅ | ✅ |
+| Quality Upgrades | ✅ | ✅ | ✅ | ✅ |
+| Temporary Profiles | ✅ | ✅ | ✅ | ✅ |
+| Request Integration | ✅ | ✅ | ❌ | ❌ |
+| Smart Seeding | ✅ | ✅ | ✅ | ✅ |
+| Per-Tracker Settings | ✅ | ✅ | ✅ | ✅ |
+| Hit and Run Protection | ✅ | ✅ | ✅ | ✅ |
+| FFprobe Validation | ✅ | ✅ | ✅ | ✅ |
+| Search by Year | ✅ | ✅ | ❌ | ✅ |
+| Search Specials | ❌ | ✅ | ❌ | ❌ |
 
 ---
 

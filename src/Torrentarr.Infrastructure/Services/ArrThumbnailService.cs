@@ -37,11 +37,14 @@ public class ArrThumbnailService
         int entryId,
         CancellationToken ct = default)
     {
-        var instance = _config.ArrInstances.Values
-            .FirstOrDefault(a => CategoryPathHelper.CategoryEquals(a.Category, category));
-        if (instance is null || string.IsNullOrWhiteSpace(instance.URI))
+        var instance = _config.ArrInstances
+            .FirstOrDefault(kvp =>
+                string.Equals(kvp.Key, category, StringComparison.OrdinalIgnoreCase)
+                || CategoryPathHelper.CategoryEquals(kvp.Value.Category, category));
+        if (string.IsNullOrEmpty(instance.Key) || string.IsNullOrWhiteSpace(instance.Value.URI))
             return null;
 
+        var keys = ArrCatalogIdentity.QueryKeys(instance);
         var cacheKey = $"{arrType}:{category}:{entryId}";
         var cachePath = Path.Combine(_cacheDir, Sha256Hex(cacheKey)[..40] + ".bin");
         var etagPath = cachePath + ".etag";
@@ -52,14 +55,14 @@ public class ArrThumbnailService
             return (bytes, mime);
         }
 
-        var arrId = await ResolveArrIdAsync(arrType, category, entryId, ct);
+        var arrId = await ResolveArrIdAsync(arrType, keys, entryId, ct);
         if (arrId is null)
             return null;
 
-        var candidates = BuildCandidateUrls(instance.URI.TrimEnd('/'), arrType, arrId.Value);
+        var candidates = BuildCandidateUrls(instance.Value.URI.TrimEnd('/'), arrType, arrId.Value);
         foreach (var url in candidates)
         {
-            var fetched = await TryFetchSameHostAsync(url, instance.URI, instance.APIKey, ct);
+            var fetched = await TryFetchSameHostAsync(url, instance.Value.URI, instance.Value.APIKey, ct);
             if (fetched is null)
                 continue;
 
@@ -72,20 +75,24 @@ public class ArrThumbnailService
         return null;
     }
 
-    private async Task<int?> ResolveArrIdAsync(string arrType, string category, int entryId, CancellationToken ct)
+    private async Task<int?> ResolveArrIdAsync(string arrType, List<string> keys, int entryId, CancellationToken ct)
     {
         return arrType.ToLowerInvariant() switch
         {
             "radarr" => await _db.Movies
-                .Where(m => m.ArrInstance == category && m.EntryId == entryId)
+                .Where(m => keys.Contains(m.ArrInstance) && m.EntryId == entryId)
                 .Select(m => (int?)m.ArrId)
                 .FirstOrDefaultAsync(ct),
             "sonarr" => await _db.Series
-                .Where(s => s.ArrInstance == category && s.EntryId == entryId)
+                .Where(s => keys.Contains(s.ArrInstance) && s.EntryId == entryId)
                 .Select(s => (int?)s.ArrId)
                 .FirstOrDefaultAsync(ct),
             "lidarr_artist" or "lidarr" => await _db.Artists
-                .Where(a => a.ArrInstance == category && a.EntryId == entryId)
+                .Where(a => keys.Contains(a.ArrInstance) && a.EntryId == entryId)
+                .Select(a => (int?)a.ArrId)
+                .FirstOrDefaultAsync(ct),
+            "readarr_author" or "readarr" => await _db.Authors
+                .Where(a => keys.Contains(a.ArrInstance) && a.EntryId == entryId)
                 .Select(a => (int?)a.ArrId)
                 .FirstOrDefaultAsync(ct),
             _ => null
@@ -110,6 +117,12 @@ public class ArrThumbnailService
             {
                 $"{baseUri}/api/v1/MediaCover/Artist/{arrId}/poster.jpg",
                 $"{baseUri}/api/v1/MediaCover/Artist/{arrId}/poster-250.jpg",
+                $"{baseUri}/api/v1/MediaCover/{arrId}/poster.jpg"
+            },
+            "readarr_author" or "readarr" => new[]
+            {
+                $"{baseUri}/api/v1/MediaCover/Author/{arrId}/poster.jpg",
+                $"{baseUri}/api/v1/MediaCover/Author/{arrId}/poster-250.jpg",
                 $"{baseUri}/api/v1/MediaCover/{arrId}/poster.jpg"
             },
             _ => Array.Empty<string>()

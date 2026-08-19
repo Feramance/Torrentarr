@@ -6,7 +6,7 @@ Welcome to the Torrentarr configuration guide! This section covers all aspects o
 
 - [Configuration File Reference](config-file.md) - Complete `config.toml` reference
 - [qBittorrent Setup](qbittorrent.md) - Configure qBittorrent connection
-- [Arr Instances](arr/index.md) - Configure Radarr, Sonarr, and Lidarr
+- [Arr Instances](arr/index.md) - Configure Radarr, Sonarr, Lidarr, and Readarr
 - [WebUI Authentication](webui-authentication.md) - Browser login (local and OIDC)
 - [OIDC with Authentik](webui-oidc-authentik.md) - Step-by-step Authentik OIDC setup
 
@@ -237,8 +237,13 @@ Configure Torrentarr via environment variables:
 **Common variables:**
 ```bash
 TORRENTARR_CONFIG=/custom/path/config.toml
+# qBitrr alias
+QBITRR_CONFIG=/custom/path/config.toml
+TORRENTARR_OVERRIDES_DATA_PATH=/data
+TORRENTARR_OVERRIDES_SEARCH_ONLY=true
+TORRENTARR_OVERRIDES_PROCESSING_ONLY=true
 ```
-Torrentarr only supports the config file path via `TORRENTARR_CONFIG`; per-key env overrides are not supported.
+`QBITRR_CONFIG` is accepted as an alias for `TORRENTARR_CONFIG`. `*_OVERRIDES_SEARCH_ONLY` forces every Arr instance into search-only mode and disables all qBit instances; `*_OVERRIDES_PROCESSING_ONLY` sets `ProcessingOnly` on every Arr instance. See [Environment Variables](environment.md).
 
 #### 2. Logging Configuration
 

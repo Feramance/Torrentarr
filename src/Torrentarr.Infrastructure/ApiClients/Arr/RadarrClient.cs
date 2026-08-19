@@ -11,16 +11,10 @@ public class RadarrClient
     private readonly RestClient _client;
     private readonly string _apiKey;
 
-    public RadarrClient(string baseUrl, string apiKey)
+    public RadarrClient(string baseUrl, string apiKey, bool skipTlsVerify = false)
     {
         _apiKey = apiKey;
-
-        var options = new RestClientOptions(baseUrl.TrimEnd('/'))
-        {
-            Timeout = TimeSpan.FromSeconds(30)
-        };
-
-        _client = new RestClient(options);
+        _client = new RestClient(Torrentarr.Infrastructure.Http.TlsSkipHelper.CreateRestOptions(baseUrl, skipTlsVerify));
     }
 
     /// <summary>
@@ -298,17 +292,10 @@ public class RadarrClient
     }
 
     /// <summary>
-    /// Update movie quality profile
+    /// Update movie quality profile, preserving unmapped fields via a raw JSON round-trip.
     /// </summary>
-    public async Task<bool> UpdateMovieQualityProfileAsync(int movieId, int qualityProfileId, CancellationToken ct = default)
-    {
-        var movie = await GetMovieAsync(movieId, ct);
-        if (movie == null) return false;
-
-        movie.QualityProfileId = qualityProfileId;
-        var updated = await UpdateMovieAsync(movie, ct);
-        return updated != null;
-    }
+    public Task<bool> UpdateMovieQualityProfileAsync(int movieId, int qualityProfileId, CancellationToken ct = default) =>
+        ArrQualityProfilePut.UpdateAsync(_client, _apiKey, $"/api/v3/movie/{movieId}", qualityProfileId, ct);
 
     /// <summary>
     /// Get custom formats
@@ -498,6 +485,9 @@ public class QualityProfile
     [JsonProperty("cutoff")]
     public int? Cutoff { get; set; }
 
+    [JsonProperty("upgradeAllowed")]
+    public bool UpgradeAllowed { get; set; }
+
     [JsonProperty("items")]
     public List<QualityProfileItem>? Items { get; set; }
 }
@@ -593,6 +583,9 @@ public class QueueItem
 
     [JsonProperty("downloadClientHasPostImportCategory")]
     public bool? DownloadClientHasPostImportCategory { get; set; }
+
+    [JsonProperty("outputPath")]
+    public string? OutputPath { get; set; }
 }
 
 public class StatusMessage

@@ -24,7 +24,7 @@ afterAll(() => server.close());
 
 const minimalConfig = {
   Settings: {},
-  WebUI: { LiveArr: false, GroupSonarr: false, GroupLidarr: false },
+  WebUI: { LiveArr: false },
 };
 
 const minimalMeta = () =>

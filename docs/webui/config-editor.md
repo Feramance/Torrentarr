@@ -98,7 +98,6 @@ AutoUpdateCron = "0 3 * * 0"
 - **WebUI Port**: Port number (default: `6969`, range: 1-65535)
 - **WebUI Token**: Optional bearer token for API/UI authentication (auto-generated if empty)
 - **Live Arr**: Enable real-time Arr data (bypasses database cache, increases API load)
-- **Group Sonarr by Series**: Group episodes by series and seasons in collapsible sections
 - **Theme**: Visual theme (`Light` or `Dark`) — **changes apply immediately**
 
 **Example**:
@@ -108,7 +107,7 @@ Host = "0.0.0.0"
 Port = 6969
 Token = "abc123def456..."
 LiveArr = false
-GroupSonarr = true
+
 Theme = "Dark"
 ```
 
@@ -623,7 +622,7 @@ The backend uses **intelligent reload detection** to minimize disruption:
 
 | Change Type | Reload Type | Behavior |
 |-------------|-------------|----------|
-| **Frontend-only** (`WebUI.Theme`, `WebUI.LiveArr`, `WebUI.GroupSonarr`) | `frontend` | No reload (changes apply in browser) |
+| **Frontend-only** (`WebUI.Theme`, `WebUI.LiveArr`) | `frontend` | No reload (changes apply in browser) |
 | **WebUI Server** (`WebUI.Host`, `WebUI.Port`, `WebUI.Token`) | `webui` | Restart WebUI server (brief downtime) |
 | **Single Arr Instance** (e.g., `Radarr-4K.*`) | `single_arr` | Reload only that Arr instance |
 | **Multiple Arr Instances** (e.g., `Radarr-4K.*` + `Sonarr-TV.*`) | `multi_arr` | Reload each affected instance sequentially |

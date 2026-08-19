@@ -61,7 +61,7 @@ public class TorrentarrWebApplicationFactory : WebApplicationFactory<Program>, I
     // Single-quoted strings are TOML literal strings (no escape processing) — safe for regex patterns.
     protected const string DefaultTestConfigToml = """
         [Settings]
-        ConfigVersion = "6.12.3"
+        ConfigVersion = "6.14.3"
         LoopSleepTimer = 5
         FailedCategory = "failed"
         RecheckCategory = "recheck"
@@ -229,7 +229,7 @@ public class AuthEnabledWebApplicationFactory : TorrentarrWebApplicationFactory
 
     private const string DefaultTestConfigTomlWithAuth = """
         [Settings]
-        ConfigVersion = "6.12.3"
+        ConfigVersion = "6.14.3"
         LoopSleepTimer = 5
         FailedCategory = "failed"
         RecheckCategory = "recheck"
@@ -262,7 +262,7 @@ public class LocalAuthWebApplicationFactory : TorrentarrWebApplicationFactory
         _localAuthConfigPath = Path.GetTempFileName() + ".localauth.toml";
         var toml = $"""
             [Settings]
-            ConfigVersion = "6.12.3"
+            ConfigVersion = "6.14.3"
             LoopSleepTimer = 5
             FailedCategory = "failed"
             RecheckCategory = "recheck"
@@ -317,7 +317,7 @@ public class LocalAuthNoPasswordWebApplicationFactory : TorrentarrWebApplication
 
     private const string TomlContent = """
         [Settings]
-        ConfigVersion = "6.12.3"
+        ConfigVersion = "6.14.3"
         LoopSleepTimer = 5
         FailedCategory = "failed"
         RecheckCategory = "recheck"
@@ -372,7 +372,7 @@ public class MultiQBitPlaceholderWebApplicationFactory : TorrentarrWebApplicatio
 
     protected override string GetTestConfigToml() => """
         [Settings]
-        ConfigVersion = "6.12.3"
+        ConfigVersion = "6.14.3"
         LoopSleepTimer = 5
         FailedCategory = "failed"
         RecheckCategory = "recheck"
@@ -410,7 +410,7 @@ public class ArrCatalogWebApplicationFactory : TorrentarrWebApplicationFactory
 
     protected override string GetTestConfigToml() => """
         [Settings]
-        ConfigVersion = "6.12.3"
+        ConfigVersion = "6.14.3"
         LoopSleepTimer = 5
         FailedCategory = "failed"
         RecheckCategory = "recheck"
@@ -444,6 +444,11 @@ public class ArrCatalogWebApplicationFactory : TorrentarrWebApplicationFactory
         URI = "http://lidarr:8686"
         APIKey = "lidarr-key"
         Category = "lidarr"
+
+        [Readarr-Books]
+        URI = "http://readarr:8787"
+        APIKey = "readarr-key"
+        Category = "readarr-books"
         """;
 }
 
@@ -454,7 +459,7 @@ public class UrlBaseWebApplicationFactory : TorrentarrWebApplicationFactory
 
     protected override string GetTestConfigToml() => """
         [Settings]
-        ConfigVersion = "6.12.3"
+        ConfigVersion = "6.14.3"
         LoopSleepTimer = 5
         FailedCategory = "failed"
         RecheckCategory = "recheck"
@@ -479,7 +484,7 @@ public class UrlBaseAuthWebApplicationFactory : TorrentarrWebApplicationFactory
 
     protected override string GetTestConfigToml() => """
         [Settings]
-        ConfigVersion = "6.12.3"
+        ConfigVersion = "6.14.3"
         LoopSleepTimer = 5
         FailedCategory = "failed"
         RecheckCategory = "recheck"
@@ -510,6 +515,8 @@ public static class CatalogTestDataSeeder
         db.Episodes.RemoveRange(db.Episodes);
         db.Series.RemoveRange(db.Series);
         db.Movies.RemoveRange(db.Movies);
+        db.Books.RemoveRange(db.Books);
+        db.Authors.RemoveRange(db.Authors);
         await db.SaveChangesAsync();
     }
 
@@ -640,6 +647,45 @@ public static class CatalogTestDataSeeder
                 Monitored = true,
                 HasFile = false,
                 Title = "Track 2"
+            });
+        await db.SaveChangesAsync();
+    }
+
+    public static async Task SeedReadarrAuthorsAsync(TorrentarrDbContext db, string instance = "Readarr-Books", bool clearFirst = true)
+    {
+        if (clearFirst)
+            await ClearCatalogDataAsync(db);
+        db.Authors.Add(new Torrentarr.Infrastructure.Database.Models.AuthorFilesModel
+        {
+            EntryId = 1,
+            ArrInstance = instance,
+            Title = "Frank Herbert",
+            Monitored = true,
+            ArrId = 701,
+            BookCount = 2
+        });
+        db.Books.AddRange(
+            new Torrentarr.Infrastructure.Database.Models.BookFilesModel
+            {
+                EntryId = 10,
+                ArrInstance = instance,
+                Title = "Dune",
+                Monitored = true,
+                HasFile = true,
+                ArrId = 801,
+                ArrAuthorId = 701,
+                AuthorId = 701
+            },
+            new Torrentarr.Infrastructure.Database.Models.BookFilesModel
+            {
+                EntryId = 11,
+                ArrInstance = instance,
+                Title = "Dune Messiah",
+                Monitored = true,
+                HasFile = false,
+                ArrId = 802,
+                ArrAuthorId = 701,
+                AuthorId = 701
             });
         await db.SaveChangesAsync();
     }

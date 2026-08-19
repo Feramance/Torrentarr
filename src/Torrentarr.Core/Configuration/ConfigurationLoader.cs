@@ -9,7 +9,7 @@ namespace Torrentarr.Core.Configuration;
 public class ConfigurationLoader
 {
     /// <summary>Expected config schema version (qBitrr parity). Used for validation and mismatch warning.</summary>
-    public const string ExpectedConfigVersion = "6.12.5";
+    public const string ExpectedConfigVersion = "6.14.3";
 
     /// <summary>
     /// TEST USE ONLY. When set by test fixtures, GetDefaultConfigPath() returns this instead of env/defaults.
@@ -31,7 +31,7 @@ public class ConfigurationLoader
             return TestConfigPathOverride;
 
         // Allow test harnesses and Docker to override the config path via an environment variable
-        var envOverride = Environment.GetEnvironmentVariable("TORRENTARR_CONFIG");
+        var envOverride = ReadConfigPathEnv();
         if (!string.IsNullOrEmpty(envOverride))
             return envOverride;
 
@@ -65,7 +65,11 @@ public class ConfigurationLoader
     /// </summary>
     public static string GetDataDirectoryPath()
     {
-        var envOverride = Environment.GetEnvironmentVariable("TORRENTARR_CONFIG");
+        var dataOverride = ReadEnv("TORRENTARR_OVERRIDES_DATA_PATH", "QBITRR_OVERRIDES_DATA_PATH");
+        if (!string.IsNullOrEmpty(dataOverride))
+            return Path.GetFullPath(dataOverride);
+
+        var envOverride = ReadConfigPathEnv();
         if (!string.IsNullOrEmpty(envOverride))
         {
             if (envOverride.StartsWith("/config", StringComparison.Ordinal))
@@ -137,7 +141,7 @@ public class ConfigurationLoader
             config.WebUI = ParseWebUI(webuiTable);
         }
 
-        // Parse Arr instances (Radarr-*, Sonarr-*, Lidarr-*)
+        // Parse Arr instances (Radarr-*, Sonarr-*, Lidarr-*, Readarr-*)
         config.ArrInstances = ParseArrInstances(tomlTable);
 
         // Apply TORRENTARR_* environment variable overrides (qBitrr parity: QBITRR_* env vars)
@@ -172,7 +176,10 @@ public class ConfigurationLoader
         ApplyEnvBool("TORRENTARR_SETTINGS_FFPROBE_AUTO_UPDATE", "QBITRR_SETTINGS_FFPROBE_AUTO_UPDATE", v => s.FFprobeAutoUpdate = v);
         ApplyEnvBool("TORRENTARR_SETTINGS_AUTO_UPDATE_ENABLED", "QBITRR_SETTINGS_AUTO_UPDATE_ENABLED", v => s.AutoUpdateEnabled = v);
         ApplyEnvString("TORRENTARR_SETTINGS_AUTO_UPDATE_CRON", "QBITRR_SETTINGS_AUTO_UPDATE_CRON", v => s.AutoUpdateCron = v);
+        ApplyEnvString("TORRENTARR_SETTINGS_AUTO_UPDATE_CHANNEL", "QBITRR_SETTINGS_AUTO_UPDATE_CHANNEL", v => s.AutoUpdateChannel = v);
         ApplyEnvList("TORRENTARR_SETTINGS_PING_URLS", "QBITRR_SETTINGS_PING_URLS", v => s.PingURLS = v);
+
+        ApplyOverridesSearchProcessing(config);
 
         // TORRENTARR_QBIT_* / QBITRR_QBIT_* -> primary qBit instance (config.QBitInstances["qBit"])
         if (config.QBitInstances.TryGetValue("qBit", out var qbit))
@@ -186,6 +193,43 @@ public class ConfigurationLoader
 
         var webui = config.WebUI;
         ApplyEnvString("TORRENTARR_WEBUI_URL_BASE", "QBITRR_WEBUI_URL_BASE", v => webui.UrlBase = UrlBaseHelper.NormalizeUrlBase(v));
+    }
+
+    private static string? ReadConfigPathEnv() =>
+        ReadEnv("TORRENTARR_CONFIG", "QBITRR_CONFIG");
+
+    /// <summary>
+    /// qBitrr <c>QBITRR_OVERRIDES_SEARCH_ONLY</c> / <c>_PROCESSING_ONLY</c>: force all Arr instances
+    /// into search-only (and disable qBit) or processing-only.
+    /// </summary>
+    private static void ApplyOverridesSearchProcessing(TorrentarrConfig config)
+    {
+        var searchOnly = ReadEnv("TORRENTARR_OVERRIDES_SEARCH_ONLY", "QBITRR_OVERRIDES_SEARCH_ONLY");
+        var processingOnly = ReadEnv("TORRENTARR_OVERRIDES_PROCESSING_ONLY", "QBITRR_OVERRIDES_PROCESSING_ONLY");
+
+        if (IsEnvTruthy(searchOnly))
+        {
+            foreach (var instance in config.ArrInstances.Values)
+                instance.SearchOnly = true;
+            foreach (var qbit in config.QBitInstances.Values)
+                qbit.Disabled = true;
+        }
+
+        if (IsEnvTruthy(processingOnly))
+        {
+            foreach (var instance in config.ArrInstances.Values)
+                instance.ProcessingOnly = true;
+        }
+    }
+
+    private static bool IsEnvTruthy(string? value)
+    {
+        if (string.IsNullOrWhiteSpace(value))
+            return false;
+        return value.Equals("1", StringComparison.OrdinalIgnoreCase)
+            || value.Equals("true", StringComparison.OrdinalIgnoreCase)
+            || value.Equals("yes", StringComparison.OrdinalIgnoreCase)
+            || value.Equals("on", StringComparison.OrdinalIgnoreCase);
     }
 
     private static string? ReadEnv(string primaryEnvName, string? aliasEnvName)
@@ -278,6 +322,10 @@ public class ConfigurationLoader
         if (MigrateHnrMode(root))
             changed = true;
 
+        // Migration 7: Expand unmodified Readarr ebook-only allowlists to include audiobook extensions
+        if (MigrateReadarrEbookAllowlist(root))
+            changed = true;
+
         // Validate and fill missing config values with defaults
         if (ValidateAndFillConfig(root))
             changed = true;
@@ -337,7 +385,56 @@ public class ConfigurationLoader
             webui.Remove("SecureCookies");
             migrated = true;
         }
+
+        // qBitrr 5.14: browse is always series/artist rows; drop the obsolete toggles.
+        foreach (var obsoleteKey in new[] { "GroupSonarr", "GroupLidarr" })
+        {
+            if (webui.ContainsKey(obsoleteKey))
+            {
+                webui.Remove(obsoleteKey);
+                migrated = true;
+            }
+        }
+
         return migrated;
+    }
+
+    public static string NormalizeAutoUpdateChannel(string? value)
+    {
+        var channel = (value ?? "latest").Trim().ToLowerInvariant();
+        return channel is "latest" or "stable" or "nightly" ? channel : "latest";
+    }
+
+    /// <summary>
+    /// Expand unmodified Readarr ebook-only FileExtensionAllowlist defaults to include audiobook extensions.
+    /// Custom allowlists are never changed.
+    /// </summary>
+    private static bool MigrateReadarrEbookAllowlist(TomlTable root)
+    {
+        var changed = false;
+        foreach (var kvp in root)
+        {
+            if (ArrSectionHelper.ArrTypeFromSectionName(kvp.Key) != "readarr")
+                continue;
+            if (kvp.Value is not TomlTable arrTable)
+                continue;
+            if (!arrTable.TryGetValue("Torrent", out var tObj) || tObj is not TomlTable torrentTable)
+                continue;
+            if (!torrentTable.TryGetValue("FileExtensionAllowlist", out var extObj) || extObj is not TomlArray extArray)
+                continue;
+
+            var current = extArray.Select(x => x?.ToString() ?? "").Where(s => s.Length > 0).ToList();
+            if (!ArrSectionHelper.IsUnmodifiedReadarrEbookOnlyAllowlist(current))
+                continue;
+
+            var expanded = new TomlArray();
+            foreach (var ext in ArrSectionHelper.ReadarrAllowlist)
+                expanded.Add(ext);
+            torrentTable["FileExtensionAllowlist"] = expanded;
+            changed = true;
+        }
+
+        return changed;
     }
 
     /// <summary>
@@ -348,9 +445,7 @@ public class ConfigurationLoader
         var changed = false;
         foreach (var kvp in root)
         {
-            if (!(kvp.Key.StartsWith("Radarr", StringComparison.OrdinalIgnoreCase) ||
-                  kvp.Key.StartsWith("Sonarr", StringComparison.OrdinalIgnoreCase) ||
-                  kvp.Key.StartsWith("Lidarr", StringComparison.OrdinalIgnoreCase)))
+            if (!ArrSectionHelper.IsArrSection(kvp.Key))
                 continue;
             if (kvp.Value is not TomlTable arrTable)
                 continue;
@@ -408,9 +503,7 @@ public class ConfigurationLoader
         // Migrate in all Arr Tracker sections
         foreach (var kvp in root)
         {
-            if (!(kvp.Key.StartsWith("Radarr", StringComparison.OrdinalIgnoreCase) ||
-                  kvp.Key.StartsWith("Sonarr", StringComparison.OrdinalIgnoreCase) ||
-                  kvp.Key.StartsWith("Lidarr", StringComparison.OrdinalIgnoreCase)))
+            if (!ArrSectionHelper.IsArrSection(kvp.Key))
                 continue;
             if (kvp.Value is not TomlTable arrTable) continue;
             if (!arrTable.TryGetValue("Torrent", out var tObj) || tObj is not TomlTable torrentTable) continue;
@@ -576,9 +669,7 @@ public class ConfigurationLoader
         // Step 1: Remove HnR fields from Arr SeedingMode sections + add to Arr tracker entries
         foreach (var kvp in root)
         {
-            if (!(kvp.Key.StartsWith("Radarr", StringComparison.OrdinalIgnoreCase) ||
-                  kvp.Key.StartsWith("Sonarr", StringComparison.OrdinalIgnoreCase) ||
-                  kvp.Key.StartsWith("Lidarr", StringComparison.OrdinalIgnoreCase)))
+            if (!ArrSectionHelper.IsArrSection(kvp.Key))
                 continue;
             if (kvp.Value is not TomlTable arrTable) continue;
             if (!arrTable.TryGetValue("Torrent", out var tObj) || tObj is not TomlTable torrentTable) continue;
@@ -603,7 +694,7 @@ public class ConfigurationLoader
                 {
                     foreach (var (field, defaultVal) in hnrDefaults)
                     {
-                        if (!trackerTable.ContainsKey(field))
+                        if (ShouldFillHnrField(trackerTable, field))
                         {
                             trackerTable[field] = defaultVal;
                             changed = true;
@@ -624,7 +715,7 @@ public class ConfigurationLoader
 
             foreach (var (field, defaultVal) in hnrDefaults)
             {
-                if (!catSeeding.ContainsKey(field))
+                if (ShouldFillHnrField(catSeeding, field))
                 {
                     catSeeding[field] = defaultVal;
                     changed = true;
@@ -645,9 +736,7 @@ public class ConfigurationLoader
             var promoted = new Dictionary<string, TomlTable>(StringComparer.OrdinalIgnoreCase);
             foreach (var arrKvp in root)
             {
-                if (!(arrKvp.Key.StartsWith("Radarr", StringComparison.OrdinalIgnoreCase) ||
-                      arrKvp.Key.StartsWith("Sonarr", StringComparison.OrdinalIgnoreCase) ||
-                      arrKvp.Key.StartsWith("Lidarr", StringComparison.OrdinalIgnoreCase)))
+                if (!ArrSectionHelper.IsArrSection(arrKvp.Key))
                     continue;
                 if (arrKvp.Value is not TomlTable arrTable) continue;
                 if (!arrTable.TryGetValue("Torrent", out var tObj) || tObj is not TomlTable torrentTable) continue;
@@ -710,6 +799,7 @@ public class ConfigurationLoader
                 ("FFprobeAutoUpdate", true),
                 ("AutoUpdateEnabled", false),
                 ("AutoUpdateCron", "0 3 * * 0"),
+                ("AutoUpdateChannel", "latest"),
                 ("AutoRestartProcesses", true),
                 ("MaxProcessRestarts", (long)5),
                 ("ProcessRestartWindow", (long)300),
@@ -745,16 +835,12 @@ public class ConfigurationLoader
                 ("Port", (long)6969),
                 ("Token", ""),
                 ("AuthDisabled", false),
-                // Must match <see cref="GenerateDefaultConfig"/>: when auth is required, local login is the default path.
-                ("LocalAuthEnabled", true),
                 ("OIDCEnabled", false),
                 ("BehindHttpsProxy", false),
                 ("UrlBase", ""),
                 ("Username", ""),
                 ("PasswordHash", ""),
                 ("LiveArr", true),
-                ("GroupSonarr", true),
-                ("GroupLidarr", true),
                 ("Theme", "Dark"),
                 ("ViewDensity", "Comfortable"),
             };
@@ -767,6 +853,18 @@ public class ConfigurationLoader
                     webui[key] = defaultVal;
                     changed = true;
                 }
+            }
+
+            // New installs: LocalAuthEnabled=false (qBitrr opt-in). Existing configs that already
+            // have a password and auth enabled omitted the key when Torrentarr defaulted it to true.
+            if (!webui.ContainsKey("LocalAuthEnabled") && !hasLegacyAuthMode)
+            {
+                var authDisabled = webui.ContainsKey("AuthDisabled") && Convert.ToBoolean(webui["AuthDisabled"]);
+                var hash = webui.TryGetValue("PasswordHash", out var passwordHashVal)
+                    ? passwordHashVal?.ToString() ?? ""
+                    : "";
+                webui["LocalAuthEnabled"] = !authDisabled && !string.IsNullOrWhiteSpace(hash);
+                changed = true;
             }
 
             // Normalize Theme casing
@@ -809,6 +907,7 @@ public class ConfigurationLoader
                 ("Port", (long)8080),
                 ("UserName", "CHANGE_ME"),
                 ("Password", "CHANGE_ME"),
+                ("SkipTLSVerify", false),
             };
             foreach (var (key, defaultVal) in qbitDefaults)
             {
@@ -823,11 +922,16 @@ public class ConfigurationLoader
         // --- Arr EntrySearch defaults ---
         foreach (var kvp in root)
         {
-            if (!(kvp.Key.StartsWith("Radarr", StringComparison.OrdinalIgnoreCase) ||
-                  kvp.Key.StartsWith("Sonarr", StringComparison.OrdinalIgnoreCase) ||
-                  kvp.Key.StartsWith("Lidarr", StringComparison.OrdinalIgnoreCase)))
+            if (!ArrSectionHelper.IsArrSection(kvp.Key))
                 continue;
             if (kvp.Value is not TomlTable arrTable) continue;
+
+            if (!arrTable.ContainsKey("SkipTLSVerify"))
+            {
+                arrTable["SkipTLSVerify"] = false;
+                changed = true;
+            }
+
             if (!arrTable.TryGetValue("EntrySearch", out var esObj) || esObj is not TomlTable entrySearch) continue;
 
             var esDefaults = new (string Key, object Default)[]
@@ -850,6 +954,17 @@ public class ConfigurationLoader
             {
                 entrySearch["QualityProfileMappings"] = new TomlTable();
                 changed = true;
+            }
+
+            foreach (var providerKey in new[] { "Ombi", "Overseerr" })
+            {
+                if (!entrySearch.TryGetValue(providerKey, out var providerObj) || providerObj is not TomlTable providerTable)
+                    continue;
+                if (!providerTable.ContainsKey("SkipTLSVerify"))
+                {
+                    providerTable["SkipTLSVerify"] = false;
+                    changed = true;
+                }
             }
         }
 
@@ -875,7 +990,7 @@ public class ConfigurationLoader
             {
                 foreach (var (field, defaultVal) in hnrDefaults)
                 {
-                    if (!catSeeding.ContainsKey(field))
+                    if (ShouldFillHnrField(catSeeding, field))
                     {
                         catSeeding[field] = defaultVal;
                         changed = true;
@@ -890,7 +1005,7 @@ public class ConfigurationLoader
                 {
                     foreach (var (field, defaultVal) in hnrDefaults)
                     {
-                        if (!trackerTable.ContainsKey(field))
+                        if (ShouldFillHnrField(trackerTable, field))
                         {
                             trackerTable[field] = defaultVal;
                             changed = true;
@@ -907,7 +1022,7 @@ public class ConfigurationLoader
                 {
                     foreach (var (field, defaultVal) in hnrDefaults)
                     {
-                        if (!trackerTable.ContainsKey(field))
+                        if (ShouldFillHnrField(trackerTable, field))
                         {
                             trackerTable[field] = defaultVal;
                             changed = true;
@@ -978,6 +1093,9 @@ public class ConfigurationLoader
         if (table.TryGetValue("AutoUpdateCron", out var updateCron))
             settings.AutoUpdateCron = updateCron?.ToString() ?? "0 3 * * 0";
 
+        if (table.TryGetValue("AutoUpdateChannel", out var updateChannel))
+            settings.AutoUpdateChannel = NormalizeAutoUpdateChannel(updateChannel?.ToString());
+
         if (table.TryGetValue("AutoRestartProcesses", out var autoRestart))
             settings.AutoRestartProcesses = Convert.ToBoolean(autoRestart);
 
@@ -1020,6 +1138,9 @@ public class ConfigurationLoader
         else
             qbit.Password = "CHANGE_ME";
 
+        if (table.TryGetValue("SkipTLSVerify", out var skipTls))
+            qbit.SkipTLSVerify = Convert.ToBoolean(skipTls);
+
         if (table.TryGetValue("DownloadPath", out var downloadPath))
             qbit.DownloadPath = downloadPath?.ToString();
 
@@ -1037,6 +1158,38 @@ public class ConfigurationLoader
 
         return qbit;
     }
+
+    /// <summary>
+    /// Canonical <c>MinSeedingTimeDays</c> wins when present, including explicit <c>0</c>.
+    /// qBitrr <c>MinSeedingTime</c> is days; legacy <c>MinSeedTime</c> values of 86400+ are seconds.
+    /// </summary>
+    private static int? ReadMinSeedingTimeDays(TomlTable table)
+    {
+        if (table.TryGetValue("MinSeedingTimeDays", out var canonical))
+            return Convert.ToInt32(canonical);
+
+        if (table.TryGetValue("MinSeedingTime", out var minSeedingTime))
+            return Convert.ToInt32(minSeedingTime);
+
+        if (table.TryGetValue("MinSeedTime", out var minSeedTime))
+            return ConvertMinSeedTimeAliasToDays(minSeedTime);
+
+        return null;
+    }
+
+    private static int ConvertMinSeedTimeAliasToDays(object? alias)
+    {
+        var value = Convert.ToInt32(alias);
+        // Historic CategorySeeding MinSeedTime was often seconds (86400 = 1 day).
+        return value >= 86400 ? value / 86400 : value;
+    }
+
+    private static bool HasMinSeedingTimeAlias(TomlTable table) =>
+        table.ContainsKey("MinSeedingTime") || table.ContainsKey("MinSeedTime");
+
+    private static bool ShouldFillHnrField(TomlTable table, string field) =>
+        !table.ContainsKey(field)
+        && (field != "MinSeedingTimeDays" || !HasMinSeedingTimeAlias(table));
 
     private TrackerConfig? ParseTrackerConfig(TomlTable? table)
     {
@@ -1071,8 +1224,9 @@ public class ConfigurationLoader
         if (table.TryGetValue("MinSeedRatio", out var minRatio))
             tracker.MinSeedRatio = Convert.ToDouble(minRatio);
 
-        if (table.TryGetValue("MinSeedingTime", out var minTime))
-            tracker.MinSeedingTimeDays = Convert.ToInt32(minTime);
+        var trackerMinSeedingDays = ReadMinSeedingTimeDays(table);
+        if (trackerMinSeedingDays.HasValue)
+            tracker.MinSeedingTimeDays = trackerMinSeedingDays;
 
         if (table.TryGetValue("HitAndRunMinimumDownloadPercent", out var hnrMinDlPct))
             tracker.HitAndRunMinimumDownloadPercent = Convert.ToInt32(hnrMinDlPct);
@@ -1138,11 +1292,9 @@ public class ConfigurationLoader
         if (table.TryGetValue("MinSeedRatio", out var minRatio))
             seeding.MinSeedRatio = Convert.ToDouble(minRatio);
 
-        if (table.TryGetValue("MinSeedTime", out var minTime))
-            seeding.MinSeedingTimeDays = Convert.ToInt32(minTime);
-
-        if (table.TryGetValue("MinSeedingTimeDays", out var minSeedingTimeDays))
-            seeding.MinSeedingTimeDays = Convert.ToInt32(minSeedingTimeDays);
+        var seedingMinSeedingDays = ReadMinSeedingTimeDays(table);
+        if (seedingMinSeedingDays.HasValue)
+            seeding.MinSeedingTimeDays = seedingMinSeedingDays.Value;
 
         if (table.TryGetValue("HitAndRunMinimumDownloadPercent", out var hnrMinDlPct))
             seeding.HitAndRunMinimumDownloadPercent = Convert.ToInt32(hnrMinDlPct);
@@ -1154,7 +1306,7 @@ public class ConfigurationLoader
             seeding.TrackerUpdateBuffer = DurationParser.ParseToSeconds(trackerUpdateBuffer, 0);
 
         if (table.TryGetValue("StalledDelay", out var stalledDelay))
-            seeding.StalledDelay = DurationParser.ParseToMinutes(stalledDelay, 15);
+            seeding.StalledDelay = DurationParser.ParseToMinutes(stalledDelay, -1);
 
         if (table.TryGetValue("IgnoreTorrentsYoungerThan", out var ignoreYounger))
             seeding.IgnoreTorrentsYoungerThan = DurationParser.ParseToSeconds(ignoreYounger, 180);
@@ -1236,14 +1388,22 @@ public class ConfigurationLoader
         if (table.TryGetValue("PasswordHash", out var passwordHash))
             webui.PasswordHash = passwordHash?.ToString() ?? "";
 
+        if (!table.ContainsKey("LocalAuthEnabled")
+            && !table.ContainsKey("AuthMode")
+            && !webui.AuthDisabled
+            && !string.IsNullOrWhiteSpace(webui.PasswordHash))
+        {
+            webui.LocalAuthEnabled = true;
+        }
+
         if (table.TryGetValue("LiveArr", out var liveArr))
             webui.LiveArr = Convert.ToBoolean(liveArr);
 
-        if (table.TryGetValue("GroupSonarr", out var groupSonarr))
-            webui.GroupSonarr = Convert.ToBoolean(groupSonarr);
+        if (table.TryGetValue("AllowInsecureExposure", out var allowInsecureExposure))
+            webui.AllowInsecureExposure = Convert.ToBoolean(allowInsecureExposure);
 
-        if (table.TryGetValue("GroupLidarr", out var groupLidarr))
-            webui.GroupLidarr = Convert.ToBoolean(groupLidarr);
+        if (table.TryGetValue("AllowInsecureTokenQuery", out var allowInsecureTokenQuery))
+            webui.AllowInsecureTokenQuery = Convert.ToBoolean(allowInsecureTokenQuery);
 
         if (table.TryGetValue("Theme", out var theme))
             webui.Theme = theme?.ToString() ?? "Dark";
@@ -1279,81 +1439,80 @@ public class ConfigurationLoader
             if (kvp.Value is not TomlTable instanceTable)
                 continue;
 
-            var lower = sectionName.ToLowerInvariant();
-            bool isRadarr = lower == "radarr" || lower.StartsWith("radarr-");
-            bool isSonarr = lower == "sonarr" || lower.StartsWith("sonarr-");
-            bool isLidarr = lower == "lidarr" || lower.StartsWith("lidarr-");
+            var arrType = ArrSectionHelper.ArrTypeFromSectionName(sectionName);
+            if (arrType == null)
+                continue;
 
-            if (isRadarr || isSonarr || isLidarr)
+            var instance = new ArrInstanceConfig { Type = arrType };
+
+            if (instanceTable.TryGetValue("URI", out var uri))
+                instance.URI = uri?.ToString() ?? "";
+
+            if (instanceTable.TryGetValue("APIKey", out var apiKey))
+                instance.APIKey = apiKey?.ToString() ?? "";
+
+            if (instanceTable.TryGetValue("SkipTLSVerify", out var skipTls))
+                instance.SkipTLSVerify = Convert.ToBoolean(skipTls);
+
+            if (instanceTable.TryGetValue("Managed", out var managed))
+                instance.Managed = Convert.ToBoolean(managed);
+
+            if (instanceTable.TryGetValue("Category", out var category))
+                instance.Category = category?.ToString() ?? "";
+
+            if (instanceTable.TryGetValue("SearchOnly", out var searchOnly))
+                instance.SearchOnly = Convert.ToBoolean(searchOnly);
+
+            if (instanceTable.TryGetValue("ProcessingOnly", out var procOnly))
+                instance.ProcessingOnly = Convert.ToBoolean(procOnly);
+
+            if (instanceTable.TryGetValue("MatchSubcategories", out var matchSub))
+                instance.MatchSubcategories = Convert.ToBoolean(matchSub);
+
+            if (instanceTable.TryGetValue("ReSearch", out var reSearch))
+                instance.ReSearch = Convert.ToBoolean(reSearch);
+
+            if (instanceTable.TryGetValue("importMode", out var importMode) ||
+                instanceTable.TryGetValue("ImportMode", out importMode))
+                instance.ImportMode = importMode?.ToString();
+
+            if (instanceTable.TryGetValue("RssSyncTimer", out var rssSyncTimer))
+                instance.RssSyncTimer = DurationParser.ParseToMinutes(rssSyncTimer, 1);
+
+            if (instanceTable.TryGetValue("RefreshDownloadsTimer", out var refreshDownloadsTimer))
+                instance.RefreshDownloadsTimer = DurationParser.ParseToMinutes(refreshDownloadsTimer, 1);
+
+            if (instanceTable.TryGetValue("ArrErrorCodesToBlocklist", out var arrErrorCodes) && arrErrorCodes is TomlArray errorArray)
+                instance.ArrErrorCodesToBlocklist = errorArray.Select(x => x?.ToString() ?? "").ToList();
+
+            // Parse Torrent section with type-aware allowlist / exclusion defaults
+            if (instanceTable.TryGetValue("Torrent", out var torrentObj) && torrentObj is TomlTable torrentTable)
+                instance.Torrent = ParseTorrentConfig(torrentTable, arrType, instance.Category);
+            else
             {
-                var instance = new ArrInstanceConfig();
-
-                if (isRadarr)
-                    instance.Type = "radarr";
-                else if (isSonarr)
-                    instance.Type = "sonarr";
-                else if (isLidarr)
-                    instance.Type = "lidarr";
-
-                if (instanceTable.TryGetValue("URI", out var uri))
-                    instance.URI = uri?.ToString() ?? "";
-
-                if (instanceTable.TryGetValue("APIKey", out var apiKey))
-                    instance.APIKey = apiKey?.ToString() ?? "";
-
-                if (instanceTable.TryGetValue("Managed", out var managed))
-                    instance.Managed = Convert.ToBoolean(managed);
-
-                if (instanceTable.TryGetValue("Category", out var category))
-                    instance.Category = category?.ToString() ?? "";
-
-                if (instanceTable.TryGetValue("SearchOnly", out var searchOnly))
-                    instance.SearchOnly = Convert.ToBoolean(searchOnly);
-
-                if (instanceTable.TryGetValue("ProcessingOnly", out var procOnly))
-                    instance.ProcessingOnly = Convert.ToBoolean(procOnly);
-
-                if (instanceTable.TryGetValue("MatchSubcategories", out var matchSub))
-                    instance.MatchSubcategories = Convert.ToBoolean(matchSub);
-
-                if (instanceTable.TryGetValue("ReSearch", out var reSearch))
-                    instance.ReSearch = Convert.ToBoolean(reSearch);
-
-                if (instanceTable.TryGetValue("importMode", out var importMode) ||
-                    instanceTable.TryGetValue("ImportMode", out importMode))
-                    instance.ImportMode = importMode?.ToString();
-
-                if (instanceTable.TryGetValue("RssSyncTimer", out var rssSyncTimer))
-                    instance.RssSyncTimer = DurationParser.ParseToMinutes(rssSyncTimer, 1);
-
-                if (instanceTable.TryGetValue("RefreshDownloadsTimer", out var refreshDownloadsTimer))
-                    instance.RefreshDownloadsTimer = DurationParser.ParseToMinutes(refreshDownloadsTimer, 1);
-
-                if (instanceTable.TryGetValue("ArrErrorCodesToBlocklist", out var arrErrorCodes) && arrErrorCodes is TomlArray errorArray)
-                    instance.ArrErrorCodesToBlocklist = errorArray.Select(x => x?.ToString() ?? "").ToList();
-
-                // Parse Torrent section
-                if (instanceTable.TryGetValue("Torrent", out var torrentObj) && torrentObj is TomlTable torrentTable)
-                {
-                    instance.Torrent = ParseTorrentConfig(torrentTable);
-                }
-
-                // Parse EntrySearch section
-                if (instanceTable.TryGetValue("EntrySearch", out var searchObj) && searchObj is TomlTable searchTable)
-                {
-                    instance.Search = ParseSearchConfig(searchTable, instance.Type);
-                }
-
-                instances[sectionName] = instance;
+                instance.Torrent.FileExtensionAllowlist = ArrSectionHelper.DefaultFileExtensionAllowlist(arrType).ToList();
+                instance.Torrent.FolderExclusionRegex = ArrSectionHelper.DefaultFolderExclusionRegex(arrType, instance.Category).ToList();
+                instance.Torrent.FileNameExclusionRegex = ArrSectionHelper.DefaultFileNameExclusionRegex(arrType, instance.Category).ToList();
             }
+
+            // Parse EntrySearch section
+            if (instanceTable.TryGetValue("EntrySearch", out var searchObj) && searchObj is TomlTable searchTable)
+                instance.Search = ParseSearchConfig(searchTable, instance.Type);
+
+            instances[sectionName] = instance;
         }
 
         return instances;
     }
 
-    private TorrentConfig ParseTorrentConfig(TomlTable table)
+    private TorrentConfig ParseTorrentConfig(TomlTable table, string? arrType = null, string? category = null)
     {
-        var torrent = new TorrentConfig();
+        var torrent = new TorrentConfig
+        {
+            FileExtensionAllowlist = ArrSectionHelper.DefaultFileExtensionAllowlist(arrType).ToList(),
+            FolderExclusionRegex = ArrSectionHelper.DefaultFolderExclusionRegex(arrType, category).ToList(),
+            FileNameExclusionRegex = ArrSectionHelper.DefaultFileNameExclusionRegex(arrType, category).ToList()
+        };
 
         if (table.TryGetValue("CaseSensitiveMatches", out var caseSensitive))
             torrent.CaseSensitiveMatches = Convert.ToBoolean(caseSensitive);
@@ -1550,6 +1709,9 @@ public class ConfigurationLoader
         if (table.TryGetValue("ApprovedOnly", out var approvedOnly))
             ombi.ApprovedOnly = Convert.ToBoolean(approvedOnly);
 
+        if (table.TryGetValue("SkipTLSVerify", out var skipTls))
+            ombi.SkipTLSVerify = Convert.ToBoolean(skipTls);
+
         return ombi;
     }
 
@@ -1571,6 +1733,9 @@ public class ConfigurationLoader
 
         if (table.TryGetValue("Is4K", out var is4K))
             overseerr.Is4K = Convert.ToBoolean(is4K);
+
+        if (table.TryGetValue("SkipTLSVerify", out var skipTls))
+            overseerr.SkipTLSVerify = Convert.ToBoolean(skipTls);
 
         return overseerr;
     }
@@ -1655,7 +1820,7 @@ public class ConfigurationLoader
                 ProcessRestartDelay = 5
             },
             // QBit is intentionally omitted from default config — user adds it via WebUI
-            // New installs get auth enabled by default; user must set username/password on first access.
+            // New installs: auth required, local login opt-in (qBitrr LocalAuthEnabled=false).
             WebUI = new WebUIConfig
             {
                 Host = "0.0.0.0",
@@ -1664,13 +1829,13 @@ public class ConfigurationLoader
                 AuthDisabled = false,
                 BehindHttpsProxy = false,
                 UrlBase = "",
-                LocalAuthEnabled = true,
+                LocalAuthEnabled = false,
+                AllowInsecureExposure = false,
+                AllowInsecureTokenQuery = false,
                 OIDCEnabled = false,
                 Username = "",
                 PasswordHash = "",
                 LiveArr = true,
-                GroupSonarr = true,
-                GroupLidarr = true,
                 Theme = "Dark",
                 ViewDensity = "Comfortable"
             },
@@ -1731,6 +1896,7 @@ public class ConfigurationLoader
         sb.AppendLine($"FFprobeAutoUpdate = {config.Settings.FFprobeAutoUpdate.ToString().ToLower()}");
         sb.AppendLine($"AutoUpdateEnabled = {config.Settings.AutoUpdateEnabled.ToString().ToLower()}");
         sb.AppendLine($"AutoUpdateCron = \"{config.Settings.AutoUpdateCron}\"");
+        sb.AppendLine($"AutoUpdateChannel = \"{config.Settings.AutoUpdateChannel}\"");
         sb.AppendLine($"AutoRestartProcesses = {config.Settings.AutoRestartProcesses.ToString().ToLower()}");
         sb.AppendLine($"MaxProcessRestarts = {config.Settings.MaxProcessRestarts}");
         sb.AppendLine($"ProcessRestartWindow = {config.Settings.ProcessRestartWindow}");
@@ -1746,12 +1912,14 @@ public class ConfigurationLoader
         sb.AppendLine($"UrlBase = \"{EscapeTomlString(config.WebUI.UrlBase)}\"");
         sb.AppendLine($"AuthDisabled = {config.WebUI.AuthDisabled.ToString().ToLower()}");
         sb.AppendLine($"LocalAuthEnabled = {config.WebUI.LocalAuthEnabled.ToString().ToLower()}");
+        if (config.WebUI.AllowInsecureExposure.HasValue)
+            sb.AppendLine($"AllowInsecureExposure = {config.WebUI.AllowInsecureExposure.Value.ToString().ToLower()}");
+        if (config.WebUI.AllowInsecureTokenQuery.HasValue)
+            sb.AppendLine($"AllowInsecureTokenQuery = {config.WebUI.AllowInsecureTokenQuery.Value.ToString().ToLower()}");
         sb.AppendLine($"OIDCEnabled = {config.WebUI.OIDCEnabled.ToString().ToLower()}");
         sb.AppendLine($"Username = \"{EscapeTomlString(config.WebUI.Username)}\"");
         sb.AppendLine($"PasswordHash = \"{EscapeTomlString(config.WebUI.PasswordHash)}\"");
         sb.AppendLine($"LiveArr = {config.WebUI.LiveArr.ToString().ToLower()}");
-        sb.AppendLine($"GroupSonarr = {config.WebUI.GroupSonarr.ToString().ToLower()}");
-        sb.AppendLine($"GroupLidarr = {config.WebUI.GroupLidarr.ToString().ToLower()}");
         sb.AppendLine($"Theme = \"{config.WebUI.Theme}\"");
         sb.AppendLine($"ViewDensity = \"{config.WebUI.ViewDensity}\"");
         if (config.WebUI.OIDC != null)
@@ -1782,6 +1950,7 @@ public class ConfigurationLoader
             sb.AppendLine($"Port = {qbit.Port}");
             sb.AppendLine($"UserName = \"{qbit.UserName}\"");
             sb.AppendLine($"Password = \"{qbit.Password}\"");
+            sb.AppendLine($"SkipTLSVerify = {qbit.SkipTLSVerify.ToString().ToLower()}");
             if (!string.IsNullOrEmpty(qbit.DownloadPath))
                 sb.AppendLine($"DownloadPath = \"{qbit.DownloadPath}\"");
             sb.AppendLine($"ManagedCategories = [{string.Join(", ", qbit.ManagedCategories.Select(c => $"\"{c}\""))}]");
@@ -1822,6 +1991,7 @@ public class ConfigurationLoader
             sb.AppendLine($"Managed = {instance.Managed.ToString().ToLower()}");
             sb.AppendLine($"URI = \"{instance.URI}\"");
             sb.AppendLine($"APIKey = \"{instance.APIKey}\"");
+            sb.AppendLine($"SkipTLSVerify = {instance.SkipTLSVerify.ToString().ToLower()}");
             sb.AppendLine($"Category = \"{instance.Category}\"");
             if (instance.MatchSubcategories.HasValue)
                 sb.AppendLine($"MatchSubcategories = {instance.MatchSubcategories.Value.ToString().ToLower()}");
@@ -1874,7 +2044,7 @@ public class ConfigurationLoader
             }
             sb.AppendLine($"Unmonitored = {instance.Search.Unmonitored.ToString().ToLower()}");
             sb.AppendLine($"SearchLimit = {instance.Search.SearchLimit}");
-            if (instance.Type != "lidarr")
+            if (ArrSectionHelper.SupportsSearchByYear(instance.Type))
             {
                 sb.AppendLine($"SearchByYear = {instance.Search.SearchByYear.ToString().ToLower()}");
             }
@@ -1900,8 +2070,8 @@ public class ConfigurationLoader
                 sb.AppendLine($"PrioritizeTodaysReleases = {instance.Search.PrioritizeTodaysReleases.ToString().ToLower()}");
             }
 
-            // Ombi section (not for Lidarr)
-            if (instance.Type != "lidarr")
+            // Ombi section (not for Lidarr/Readarr)
+            if (ArrSectionHelper.SupportsRequestIntegration(instance.Type))
             {
                 var ombi = instance.Search.Ombi ?? new OmbiConfig();
                 sb.AppendLine();
@@ -1910,6 +2080,7 @@ public class ConfigurationLoader
                 sb.AppendLine($"OmbiURI = \"{EscapeTomlString(string.IsNullOrEmpty(ombi.OmbiURI) ? "CHANGE_ME" : ombi.OmbiURI)}\"");
                 sb.AppendLine($"OmbiAPIKey = \"{EscapeTomlString(string.IsNullOrEmpty(ombi.OmbiAPIKey) ? "CHANGE_ME" : ombi.OmbiAPIKey)}\"");
                 sb.AppendLine($"ApprovedOnly = {ombi.ApprovedOnly.ToString().ToLower()}");
+                sb.AppendLine($"SkipTLSVerify = {ombi.SkipTLSVerify.ToString().ToLower()}");
 
                 var overseerr = instance.Search.Overseerr ?? new OverseerrConfig();
                 sb.AppendLine();
@@ -1919,6 +2090,7 @@ public class ConfigurationLoader
                 sb.AppendLine($"OverseerrAPIKey = \"{EscapeTomlString(string.IsNullOrEmpty(overseerr.OverseerrAPIKey) ? "CHANGE_ME" : overseerr.OverseerrAPIKey)}\"");
                 sb.AppendLine($"ApprovedOnly = {overseerr.ApprovedOnly.ToString().ToLower()}");
                 sb.AppendLine($"Is4K = {overseerr.Is4K.ToString().ToLower()}");
+                sb.AppendLine($"SkipTLSVerify = {overseerr.SkipTLSVerify.ToString().ToLower()}");
             }
 
             sb.AppendLine();
@@ -1950,7 +2122,7 @@ public class ConfigurationLoader
             sb.AppendLine($"MaxSeedingTime = {tracker.MaxSeedingTime ?? -1}");
             sb.AppendLine($"HitAndRunMode = \"{tracker.HitAndRunMode ?? "disabled"}\"");
             sb.AppendLine($"MinSeedRatio = {tracker.MinSeedRatio ?? 1.0}");
-            sb.AppendLine($"MinSeedingTime = {tracker.MinSeedingTimeDays ?? 0}"); // TOML key is MinSeedingTime (qBitrr compat)
+            sb.AppendLine($"MinSeedingTime = {tracker.MinSeedingTimeDays ?? 0}");
             sb.AppendLine($"HitAndRunPartialSeedRatio = {tracker.HitAndRunPartialSeedRatio ?? 1.0}");
             sb.AppendLine($"TrackerUpdateBuffer = {tracker.TrackerUpdateBuffer ?? 0}");
             sb.AppendLine($"HitAndRunMinimumDownloadPercent = {tracker.HitAndRunMinimumDownloadPercent ?? 10}");

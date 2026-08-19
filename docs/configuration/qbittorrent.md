@@ -21,6 +21,10 @@ Port = 8080
 # qBittorrent WebUI Authentication
 UserName = "admin"
 Password = "your-password"
+
+# If true, do not verify TLS certificates for HTTPS WebUI (self-signed certs).
+# Disables MITM protection for that connection — use only on trusted networks.
+SkipTLSVerify = false
 ```
 
 !!! tip "Finding qBittorrent Settings"

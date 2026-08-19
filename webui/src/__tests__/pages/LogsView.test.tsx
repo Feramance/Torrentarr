@@ -112,6 +112,14 @@ describe("LogsView – control buttons", () => {
     await screen.findByText("Auto-scroll");
     expect(screen.getByRole("checkbox")).toBeInTheDocument();
   });
+
+  it("renders the Search logs control", async () => {
+    server.use(http.get("/web/logs", () => HttpResponse.json({ files: [] })));
+
+    renderView();
+
+    await screen.findByRole("button", { name: /search logs/i });
+  });
 });
 
 // ── File list loaded ──────────────────────────────────────────────────────────

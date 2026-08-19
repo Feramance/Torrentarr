@@ -70,7 +70,7 @@ The `[Settings]` section contains global configuration that applies to all Torre
 ```toml
 [Settings]
 # Internal config schema version - DO NOT MODIFY
-ConfigVersion = "6.12.3"
+ConfigVersion = "6.14.3"
 
 # Logging
 ConsoleLevel = "INFO"
@@ -106,6 +106,7 @@ FFprobeAutoUpdate = true
 # Auto-updates
 AutoUpdateEnabled = false
 AutoUpdateCron = "0 3 * * 0"
+AutoUpdateChannel = "latest"
 
 # Process management
 AutoRestartProcesses = true
@@ -119,11 +120,11 @@ ProcessRestartDelay = 5
 ### ConfigVersion
 
 ```toml
-ConfigVersion = "6.12.3"
+ConfigVersion = "6.14.3"
 ```
 
 **Type:** String
-**Default:** `"6.12.3"`
+**Default:** `"6.14.3"`
 **Required:** Yes (managed automatically)
 
 Internal configuration schema version. **DO NOT MODIFY** this value manually. Torrentarr uses it to detect when config migrations are needed. Updated automatically when Torrentarr migrates an older config to the current format.
@@ -588,6 +589,28 @@ When `true`:
 
 ---
 
+### AutoUpdateChannel
+
+```toml
+AutoUpdateChannel = "latest"
+```
+
+**Type:** String
+**Default:** `"latest"`
+**Allowed:** `"latest"` | `"stable"` | `"nightly"`
+
+Which GitHub release Torrentarr considers when checking for updates:
+
+- **`latest`** — newest GitHub release, including weekly dependency `[build]` tags.
+- **`stable`** — newest patch/minor/major release (skips prereleases and weekly `X.Y.Z-N` builds with `N > 1`; same rule as Docker `:stable`). `X.Y.Z` and `X.Y.Z-1` stay eligible.
+- **`nightly`** — check and log only; **do not** download or apply binaries.
+
+Source / `dotnet run` builds never apply binaries (`TORRENTARR_SOURCE_BUILD` / `QBITRR_SOURCE_BUILD`, a `.git` tree, or an unpublished `bin/Debug|Release` entry assembly).
+
+Environment: `TORRENTARR_SETTINGS_AUTO_UPDATE_CHANNEL` (alias `QBITRR_SETTINGS_AUTO_UPDATE_CHANNEL`).
+
+---
+
 ### AutoUpdateCron
 
 ```toml
@@ -740,8 +763,7 @@ OIDCEnabled = false
 Username = ""
 PasswordHash = ""
 LiveArr = true
-GroupSonarr = true
-GroupLidarr = true
+
 Theme = "Dark"
 ViewDensity = "Comfortable"
 
@@ -891,67 +913,9 @@ When `false`:
 
 ---
 
-### GroupSonarr
+### Catalog grouping
 
-```toml
-GroupSonarr = true
-```
-
-**Type:** Boolean
-**Default:** `true`
-
-Group Sonarr episodes by series in the WebUI.
-
-When `true`:
-
-```
-└─ Breaking Bad
-   ├─ S01E01
-   ├─ S01E02
-   └─ S01E03
-```
-
-When `false`:
-
-```
-├─ Breaking Bad S01E01
-├─ Breaking Bad S01E02
-└─ Breaking Bad S01E03
-```
-
-**Recommendation:** `true` for cleaner view.
-
----
-
-### GroupLidarr
-
-```toml
-GroupLidarr = true
-```
-
-**Type:** Boolean
-**Default:** `true`
-
-Group Lidarr albums by artist in the WebUI.
-
-When `true`:
-
-```
-└─ Pink Floyd
-   ├─ The Dark Side of the Moon
-   ├─ The Wall
-   └─ Wish You Were Here
-```
-
-When `false`:
-
-```
-├─ Pink Floyd - The Dark Side of the Moon
-├─ Pink Floyd - The Wall
-└─ Pink Floyd - Wish You Were Here
-```
-
-**Recommendation:** `true` for better organization.
+Sonarr and Lidarr catalogs always browse as series and artist rows (qBitrr 5.14). The obsolete `GroupSonarr` / `GroupLidarr` keys are stripped on load and are not written back.
 
 ---
 
@@ -1000,6 +964,7 @@ Arr sections follow the naming pattern `[<Type>-<Name>]`:
 - `[Radarr-Movies]`
 - `[Sonarr-TV]`
 - `[Lidarr-Music]`
+- `[Readarr-Books]`
 
 Each Arr instance has its own section with subsections for:
 
@@ -1014,6 +979,7 @@ For complete Arr configuration documentation:
 - [Radarr Configuration](arr/radarr.md)
 - [Sonarr Configuration](arr/sonarr.md)
 - [Lidarr Configuration](arr/lidarr.md)
+- [Readarr Configuration](arr/readarr.md)
 
 ---
 
@@ -1036,11 +1002,13 @@ cp config.example.toml ~/config/config.toml
 To point Torrentarr at a specific config file (e.g. in Docker):
 
 ```bash
-# Path to config.toml file
+# Path to config.toml file (QBITRR_CONFIG is also accepted)
 export TORRENTARR_CONFIG=/config/config.toml
 ```
 
-Torrentarr does not support per-setting environment variable overrides; use `config.toml` or the WebUI Config Editor for all other settings. See [Environment Variables](environment.md).
+`TORRENTARR_OVERRIDES_DATA_PATH` (alias `QBITRR_OVERRIDES_DATA_PATH`) overrides the database/logs directory. `TORRENTARR_OVERRIDES_SEARCH_ONLY` / `TORRENTARR_OVERRIDES_PROCESSING_ONLY` (and `QBITRR_*` aliases) force search-only or processing-only mode.
+
+Torrentarr also supports a small set of `TORRENTARR_SETTINGS_*` / `TORRENTARR_QBIT_*` env overrides (with `QBITRR_*` aliases). See [Environment Variables](environment.md).
 
 ---
 
@@ -1200,7 +1168,7 @@ Absolute minimum configuration to get started:
 
 ```toml
 [Settings]
-ConfigVersion = "6.12.3"
+ConfigVersion = "6.14.3"
 CompletedDownloadFolder = "/data/downloads"
 
 [WebUI]
@@ -1325,4 +1293,5 @@ When `Settings.Tagless = true`, Torrentarr emulates tags using database entries 
 - [Radarr Configuration](arr/radarr.md)
 - [Sonarr Configuration](arr/sonarr.md)
 - [Lidarr Configuration](arr/lidarr.md)
+- [Readarr Configuration](arr/readarr.md)
 - [Troubleshooting](../troubleshooting/index.md)

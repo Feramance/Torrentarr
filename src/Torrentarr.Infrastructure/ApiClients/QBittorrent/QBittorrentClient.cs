@@ -21,7 +21,7 @@ public class QBittorrentClient
     /// <summary>Set when <see cref="LoginAsync"/> returns false; includes HTTP status and cookie names.</summary>
     public string? LastLoginFailure { get; private set; }
 
-    public QBittorrentClient(string host, int port, string username, string password)
+    public QBittorrentClient(string host, int port, string username, string password, bool skipTlsVerify = false)
     {
         _host = host;
         _port = port;
@@ -37,12 +37,7 @@ public class QBittorrentClient
         else
             baseUrl = $"http://{host}:{port}";
 
-        var options = new RestClientOptions(baseUrl)
-        {
-            Timeout = TimeSpan.FromSeconds(30)
-        };
-
-        _client = new RestClient(options);
+        _client = new RestClient(TlsSkipHelper.CreateRestOptions(baseUrl, skipTlsVerify));
     }
 
     private Task<RestResponse> ExecuteAsync(RestRequest request, CancellationToken ct) =>

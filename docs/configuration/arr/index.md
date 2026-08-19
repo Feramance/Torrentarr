@@ -1,6 +1,6 @@
 ﻿# Arr Instance Configuration
 
-Torrentarr integrates with Radarr, Sonarr, and Lidarr to automate torrent management for your media library.
+Torrentarr integrates with Radarr, Sonarr, Lidarr, and Readarr to automate torrent management for your media library.
 
 ## Supported Arr Applications
 
@@ -39,6 +39,18 @@ Torrentarr integrates with Radarr, Sonarr, and Lidarr to automate torrent manage
 - Metadata-driven organization
 
 **Configuration:** See [Lidarr Configuration Guide](lidarr.md)
+
+### Readarr (Books)
+
+[Readarr](readarr.md) manages your book and audiobook library.
+
+**Features:**
+- Author and book monitoring (no track layer)
+- Search by book year
+- Ebook + audiobook allowlists
+- Quality upgrades on authors
+
+**Configuration:** See [Readarr Configuration Guide](readarr.md)
 
 ## General Configuration
 

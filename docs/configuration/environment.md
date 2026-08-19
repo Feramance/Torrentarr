@@ -6,7 +6,7 @@ Torrentarr supports a config path override plus section-level environment overri
 
 ## Config file path override
 
-**Variable:** `TORRENTARR_CONFIG`
+**Variable:** `TORRENTARR_CONFIG` (alias: `QBITRR_CONFIG`)
 **Purpose:** Path to the `config.toml` file (or its directory, depending on deployment).
 **Used by:** All Torrentarr processes (Host, WebUI, Workers).
 
@@ -88,6 +88,14 @@ For compatibility with qBitrr-style deployments, equivalent `QBITRR_*` aliases a
 - `TORRENTARR_QBIT_PASSWORD`
 
 When both `TORRENTARR_*` and `QBITRR_*` variants are present for the same key, `TORRENTARR_*` takes precedence.
+
+### Runtime mode overrides
+
+These force process-wide behaviour (qBitrr `QBITRR_OVERRIDES_*` aliases are accepted):
+
+- `TORRENTARR_OVERRIDES_DATA_PATH` / `QBITRR_OVERRIDES_DATA_PATH` — directory for `torrentarr.db` and logs
+- `TORRENTARR_OVERRIDES_SEARCH_ONLY` / `QBITRR_OVERRIDES_SEARCH_ONLY` — set `SearchOnly` on every Arr instance and disable all qBit instances (`true`/`1`/`yes`/`on`)
+- `TORRENTARR_OVERRIDES_PROCESSING_ONLY` / `QBITRR_OVERRIDES_PROCESSING_ONLY` — set `ProcessingOnly` on every Arr instance
 
 ---
 

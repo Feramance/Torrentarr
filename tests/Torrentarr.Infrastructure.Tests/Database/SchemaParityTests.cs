@@ -41,7 +41,8 @@ public class SchemaParityTests
         // Must stay aligned with OnModelCreating table names in TorrentarrDbContext (qBitrr schema).
         var expected = new[]
         {
-            "albumfilesmodel", "albumqueuemodel", "artistfilesmodel", "episodefilesmodel", "episodequeuemodel",
+            "albumfilesmodel", "albumqueuemodel", "artistfilesmodel", "authorfilesmodel", "bookfilesmodel", "bookqueuemodel",
+            "episodefilesmodel", "episodequeuemodel",
             "filesqueued", "moviequeuemodel", "moviesfilesmodel", "searchactivity", "seriesfilesmodel", "torrentlibrary",
             "trackfilesmodel"
         };

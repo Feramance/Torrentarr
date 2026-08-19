@@ -92,7 +92,16 @@ jobs:
     name: Build and push Docker image (nightly)
     needs: build
     runs-on: ubuntu-latest
-    if: (github.event_name == 'push' && (github.ref == 'refs/heads/master' || github.ref == 'refs/heads/main')) || github.event_name == 'schedule' || github.event_name == 'workflow_dispatch'
+    if: >
+      (
+        github.event_name == 'push' &&
+        (github.ref == 'refs/heads/master' || github.ref == 'refs/heads/main') &&
+        !startsWith(github.event.head_commit.message, '[patch]') &&
+        !startsWith(github.event.head_commit.message, '[minor]') &&
+        !startsWith(github.event.head_commit.message, '[major]') &&
+        !startsWith(github.event.head_commit.message, '[build]') &&
+        !startsWith(github.event.head_commit.message, '[skip ci]')
+      ) || github.event_name == 'schedule' || github.event_name == 'workflow_dispatch'
     permissions:
       packages: write
       contents: read

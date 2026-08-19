@@ -26,6 +26,16 @@ public interface IDatabaseHealthService
     Task<bool> RepairAsync(CancellationToken cancellationToken = default);
 
     /// <summary>
+    /// Online SQLite backup to <paramref name="destPath"/> (qBitrr <c>backup_database.py</c>).
+    /// </summary>
+    Task<bool> BackupAsync(string destPath, CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Periodic maintenance: WAL checkpoint, health check, optional repair (qBitrr 5.12.9).
+    /// </summary>
+    Task<bool> MaintainAsync(bool repairIfUnhealthy = true, CancellationToken cancellationToken = default);
+
+    /// <summary>
     /// Get database statistics (size, WAL size, page count)
     /// </summary>
     Task<DatabaseStats> GetStatsAsync(CancellationToken cancellationToken = default);

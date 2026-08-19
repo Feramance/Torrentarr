@@ -19,7 +19,7 @@ public class TorrentarrConfig
 
 public class SettingsConfig
 {
-    public string ConfigVersion { get; set; } = "6.12.5";
+    public string ConfigVersion { get; set; } = "6.14.3";
     public string ConsoleLevel { get; set; } = "INFO";
     public bool Logging { get; set; } = true;
     public string CompletedDownloadFolder { get; set; } = "";
@@ -37,6 +37,8 @@ public class SettingsConfig
     public bool FFprobeAutoUpdate { get; set; } = true;
     public bool AutoUpdateEnabled { get; set; } = false;
     public string AutoUpdateCron { get; set; } = "0 3 * * 0";
+    /// <summary>Release channel: latest, stable, or nightly.</summary>
+    public string AutoUpdateChannel { get; set; } = "latest";
     public bool AutoRestartProcesses { get; set; } = true;
     public int MaxProcessRestarts { get; set; } = 5;
     public int ProcessRestartWindow { get; set; } = 300;
@@ -69,6 +71,8 @@ public class QBitConfig
     public int Port { get; set; } = 8080;
     public string UserName { get; set; } = "CHANGE_ME";
     public string Password { get; set; } = "CHANGE_ME";
+    /// <summary>When true, do not verify TLS certificates for this qBittorrent WebUI (self-signed certs).</summary>
+    public bool SkipTLSVerify { get; set; }
     public string? DownloadPath { get; set; }
     public List<string> ManagedCategories { get; set; } = new();
     public bool MatchSubcategories { get; set; }
@@ -89,7 +93,7 @@ public class CategorySeedingConfig
     public int HitAndRunMinimumDownloadPercent { get; set; } = 10;
     public double HitAndRunPartialSeedRatio { get; set; } = 1.0;
     public int TrackerUpdateBuffer { get; set; }
-    public int StalledDelay { get; set; } = 15;
+    public int StalledDelay { get; set; } = -1;
     public int IgnoreTorrentsYoungerThan { get; set; } = 180;
 }
 
@@ -125,13 +129,21 @@ public class WebUIConfig
     public bool AuthDisabled { get; set; }
     public bool BehindHttpsProxy { get; set; }
     public string UrlBase { get; set; } = "";
-    public bool LocalAuthEnabled { get; set; } = true;
+    public bool LocalAuthEnabled { get; set; }
+    /// <summary>
+    /// When AuthDisabled and Host is 0.0.0.0/::, must be true to acknowledge public exposure.
+    /// Null means the key was omitted (legacy warn-only).
+    /// </summary>
+    public bool? AllowInsecureExposure { get; set; }
+    /// <summary>
+    /// When false, GET <c>?token=</c> is ignored. Null (omitted) defaults to true for legacy configs.
+    /// </summary>
+    public bool? AllowInsecureTokenQuery { get; set; }
+    public bool AllowsInsecureTokenQuery => AllowInsecureTokenQuery ?? true;
     public bool OIDCEnabled { get; set; }
     public string Username { get; set; } = "";
     public string PasswordHash { get; set; } = "";
     public bool LiveArr { get; set; } = true;
-    public bool GroupSonarr { get; set; } = true;
-    public bool GroupLidarr { get; set; } = true;
     public string Theme { get; set; } = "Dark";
     public string ViewDensity { get; set; } = "Comfortable";
     public OIDCConfig? OIDC { get; set; }
@@ -151,11 +163,14 @@ public class ArrInstanceConfig
 {
     public string URI { get; set; } = "";
     public string APIKey { get; set; } = "";
+    /// <summary>When true, do not verify TLS for this Servarr API. Does not affect Overseerr/Ombi.</summary>
+    public bool SkipTLSVerify { get; set; }
     public bool Managed { get; set; } = true;
     public string Category { get; set; } = "";
-    public string Type { get; set; } = "";
-    public bool SearchOnly { get; set; }
-    public bool ProcessingOnly { get; set; }
+    public string Type { get; set; } = ""; // radarr, sonarr, lidarr, readarr
+    public bool SearchOnly { get; set; } = false;
+    public bool ProcessingOnly { get; set; } = false;
+    /// <summary>Override qBit <c>MatchSubcategories</c> for this Arr instance; null inherits from qBit.</summary>
     public bool? MatchSubcategories { get; set; }
     public bool ReSearch { get; set; } = true;
     public string? ImportMode { get; set; }
@@ -238,6 +253,8 @@ public class OmbiConfig
     public string OmbiURI { get; set; } = "";
     public string OmbiAPIKey { get; set; } = "";
     public bool ApprovedOnly { get; set; } = true;
+    /// <summary>When true, do not verify TLS for Ombi HTTPS calls only.</summary>
+    public bool SkipTLSVerify { get; set; }
 }
 
 public class OverseerrConfig
@@ -246,5 +263,7 @@ public class OverseerrConfig
     public string OverseerrURI { get; set; } = "";
     public string OverseerrAPIKey { get; set; } = "";
     public bool ApprovedOnly { get; set; } = true;
-    public bool Is4K { get; set; }
+    public bool Is4K { get; set; } = false;
+    /// <summary>When true, do not verify TLS for Overseerr HTTPS calls only.</summary>
+    public bool SkipTLSVerify { get; set; }
 }

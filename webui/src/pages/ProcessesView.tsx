@@ -105,7 +105,7 @@ interface ProcessesViewProps {
 
 export function ProcessesView({ active }: ProcessesViewProps): JSX.Element {
   const [processes, setProcesses] = useState<ProcessInfo[]>([]);
-  const [loading, setLoading] = useState(false);
+  const [loading, setLoading] = useState(true);
   const [restartingAll, setRestartingAll] = useState(false);
   const [rebuildingArrs, setRebuildingArrs] = useState(false);
   const [statusData, setStatusData] = useState<StatusResponse | null>(null);
@@ -269,6 +269,8 @@ export function ProcessesView({ active }: ProcessesViewProps): JSX.Element {
         return "Sonarr";
       if (category.includes("lidarr") || name.includes("lidarr"))
         return "Lidarr";
+      if (category.includes("readarr") || name.includes("readarr"))
+        return "Readarr";
       if (
         category.includes("qbit") ||
         category.includes("qbittorrent") ||
@@ -285,6 +287,7 @@ export function ProcessesView({ active }: ProcessesViewProps): JSX.Element {
     const hasRadarr = arrs.some((arr) => arr.type === "radarr");
     const hasSonarr = arrs.some((arr) => arr.type === "sonarr");
     const hasLidarr = arrs.some((arr) => arr.type === "lidarr");
+    const hasReadarr = arrs.some((arr) => arr.type === "readarr");
 
     processes.forEach((proc) => {
       const app = classifyApp(proc);
@@ -293,6 +296,7 @@ export function ProcessesView({ active }: ProcessesViewProps): JSX.Element {
       if (app === "Radarr" && !hasRadarr) return;
       if (app === "Sonarr" && !hasSonarr) return;
       if (app === "Lidarr" && !hasLidarr) return;
+      if (app === "Readarr" && !hasReadarr) return;
 
       if (!appBuckets.has(app)) appBuckets.set(app, new Map());
       const instances = appBuckets.get(app)!;

@@ -85,6 +85,25 @@ public sealed class TaglessInstanceScopeTests
             .Should().BeTrue();
     }
 
+    [Fact]
+    public void HasTag_TaglessMode_HonorsLiveQbitrrIgnoredTag()
+    {
+        using var db = CreateDbWithDuplicateHashRows();
+        var config = new TorrentarrConfig { Settings = { Tagless = true } };
+        var torrent = new TorrentInfo
+        {
+            Hash = "abc123",
+            QBitInstanceName = "qBit-seedbox",
+            Tags = "qBitrr-ignored, other"
+        };
+
+        InvokeHasTag(typeof(TorrentProcessor), db, config, torrent, "qBitrr-ignored").Should().BeTrue();
+        InvokeHasTag(typeof(SeedingService), db, config, torrent, "qBitrr-ignored").Should().BeTrue();
+
+        torrent.Tags = "other";
+        InvokeHasTag(typeof(TorrentProcessor), db, config, torrent, "qBitrr-ignored").Should().BeFalse();
+    }
+
     /// <summary>
     /// Regression: Imported flag must be read per (Hash, QbitInstance), not hash-only.
     /// Pre-fix, seedbox row was treated as imported when only the qBit row had Imported=true.

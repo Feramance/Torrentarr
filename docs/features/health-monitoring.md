@@ -457,8 +457,8 @@ FFprobeAutoUpdate = true
 1. 📥 Torrent completes download
 2. 🔍 Torrentarr scans media files
 3. 🎬 FFprobe validates each file
-4. ✅ If valid → Trigger import
-5. ❌ If invalid → Mark as failed, blacklist, re-search
+4. ✅ If valid → leave content in place
+5. ❌ If invalid → Arr queue delete with blacklist and local files removed
 
 ---
 
@@ -766,7 +766,7 @@ graph LR
 
 ## FFprobe Media Validation
 
-FFprobe (part of the FFmpeg project) provides detailed media file analysis. Torrentarr uses it to validate downloaded files before importing them to Arr instances, preventing corrupt or invalid files from entering your library.
+FFprobe (part of the FFmpeg project) provides detailed media file analysis. Torrentarr uses it to validate downloaded files after Arr import when `Torrent.AutoDelete` is on, so folders with no real media can be blocklisted and deleted.
 
 ### Configuration
 

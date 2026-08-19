@@ -57,6 +57,7 @@ import LogsIcon from "./icons/log.svg";
 import RadarrIcon from "./icons/radarr.svg";
 import SonarrIcon from "./icons/sonarr.svg";
 import LidarrIcon from "./icons/lidarr.svg";
+import ReadarrIcon from "./icons/readarr.svg";
 import QbitIcon from "./icons/qbittorrent.svg";
 import ConfigIcon from "./icons/gear.svg";
 import LogoIcon from "./icons/logov2-clean.svg";
@@ -67,6 +68,7 @@ type Tab =
   | "radarr"
   | "sonarr"
   | "lidarr"
+  | "readarr"
   | "qbittorrent"
   | "config";
 
@@ -960,7 +962,7 @@ function AppShell(): JSX.Element {
       }
 
       // Number keys 1-7 for tab switching
-      if (event.key >= "1" && event.key <= "7" && !isMod) {
+      if (event.key >= "1" && event.key <= "8" && !isMod) {
         event.preventDefault();
         const tabIndex = parseInt(event.key) - 1;
         const tabIds: Tab[] = [
@@ -969,6 +971,7 @@ function AppShell(): JSX.Element {
           "radarr",
           "sonarr",
           "lidarr",
+          "readarr",
           "qbittorrent",
           "config",
         ];
@@ -1156,6 +1159,7 @@ function AppShell(): JSX.Element {
       { id: "radarr", label: "Radarr", icon: RadarrIcon },
       { id: "sonarr", label: "Sonarr", icon: SonarrIcon },
       { id: "lidarr", label: "Lidarr", icon: LidarrIcon },
+      { id: "readarr", label: "Readarr", icon: ReadarrIcon },
       { id: "qbittorrent", label: "qBittorrent", icon: QbitIcon },
       { id: "config", label: "Config", icon: ConfigIcon },
     ],
@@ -1397,6 +1401,9 @@ function AppShell(): JSX.Element {
             )}
             {activeTab === "lidarr" && (
               <ArrView key={`lidarr-${reloadKey}`} type="lidarr" active />
+            )}
+            {activeTab === "readarr" && (
+              <ArrView key={`readarr-${reloadKey}`} type="readarr" active />
             )}
             {activeTab === "qbittorrent" && (
               <QbitCategoriesView key={`qbittorrent-${reloadKey}`} active />

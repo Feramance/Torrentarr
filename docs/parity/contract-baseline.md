@@ -97,6 +97,7 @@ Required parity guarantees:
 Parity claim gate:
 
 - Every qBitrr Python file in `docs/parity/full-parity-matrix.md` has a final status with evidence.
+- Path-level feature coverage and documented drift live in [full-parity-path-report.md](full-parity-path-report.md).
 - Critical behavior paths are covered by deterministic automated tests.
 - API/OpenAPI and migration fixtures are snapshot-verified in CI.
 - Docs describe implemented behavior with no known drift.

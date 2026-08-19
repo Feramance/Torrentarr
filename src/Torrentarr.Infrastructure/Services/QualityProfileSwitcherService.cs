@@ -54,10 +54,11 @@ public class QualityProfileSwitcherService
                 if (movies.Count == 0) break;
 
                 _logger.LogInformation("§1.2 ForceReset: restoring {Count} movie profiles for {Instance}", movies.Count, instanceName);
-                var radarr = new RadarrClient(arrConfig.URI, arrConfig.APIKey);
+                var radarr = new RadarrClient(arrConfig.URI, arrConfig.APIKey, arrConfig.SkipTLSVerify);
                 foreach (var movie in movies)
                 {
-                    await TryRestoreMovieAsync(radarr, movie.ArrId, movie.OriginalProfileId!.Value, instanceName, arrConfig, ct);
+                    if (!await TryRestoreMovieAsync(radarr, movie.ArrId, movie.OriginalProfileId!.Value, instanceName, arrConfig, ct))
+                        continue;
                     movie.CurrentProfileId = movie.OriginalProfileId;
                     movie.OriginalProfileId = null;
                     movie.LastProfileSwitchTime = null;
@@ -73,10 +74,11 @@ public class QualityProfileSwitcherService
                 if (series.Count == 0) break;
 
                 _logger.LogInformation("§1.2 ForceReset: restoring {Count} series profiles for {Instance}", series.Count, instanceName);
-                var sonarr = new SonarrClient(arrConfig.URI, arrConfig.APIKey);
+                var sonarr = new SonarrClient(arrConfig.URI, arrConfig.APIKey, arrConfig.SkipTLSVerify);
                 foreach (var s in series)
                 {
-                    await TryRestoreSeriesAsync(sonarr, s.ArrId, s.OriginalProfileId!.Value, instanceName, arrConfig, ct);
+                    if (!await TryRestoreSeriesAsync(sonarr, s.ArrId, s.OriginalProfileId!.Value, instanceName, arrConfig, ct))
+                        continue;
                     s.CurrentProfileId = s.OriginalProfileId;
                     s.OriginalProfileId = null;
                     s.LastProfileSwitchTime = null;
@@ -92,24 +94,43 @@ public class QualityProfileSwitcherService
                 if (artists.Count == 0) break;
 
                 _logger.LogInformation("§1.2 ForceReset: restoring {Count} artist profiles for {Instance}", artists.Count, instanceName);
-                var lidarr = new LidarrClient(arrConfig.URI, arrConfig.APIKey);
+                var lidarr = new LidarrClient(arrConfig.URI, arrConfig.APIKey, arrConfig.SkipTLSVerify);
                 foreach (var artist in artists)
                 {
-                    await TryRestoreArtistAsync(lidarr, artist.ArrId, artist.OriginalProfileId!.Value, instanceName, arrConfig, ct);
+                    if (!await TryRestoreArtistAsync(lidarr, artist.ArrId, artist.OriginalProfileId!.Value, instanceName, arrConfig, ct))
+                        continue;
                     artist.CurrentProfileId = artist.OriginalProfileId;
                     artist.OriginalProfileId = null;
                     artist.LastProfileSwitchTime = null;
                 }
                 await _db.SaveChangesWithRetryAsync(_logger, _restartCoordinator, cancellationToken: ct);
                 break;
+
+            case "readarr":
+                var authors = await _db.Authors
+                    .Where(a => a.ArrInstance == instanceName && a.OriginalProfileId.HasValue)
+                    .ToListAsync(ct);
+
+                if (authors.Count == 0) break;
+
+                _logger.LogInformation("§1.2 ForceReset: restoring {Count} author profiles for {Instance}", authors.Count, instanceName);
+                var readarr = new ReadarrClient(arrConfig.URI, arrConfig.APIKey, arrConfig.SkipTLSVerify);
+                foreach (var author in authors)
+                {
+                    if (!await TryRestoreAuthorAsync(readarr, author.ArrId, author.OriginalProfileId!.Value, instanceName, arrConfig, ct))
+                        continue;
+                    author.CurrentProfileId = author.OriginalProfileId;
+                    author.OriginalProfileId = null;
+                    author.LastProfileSwitchTime = null;
+                }
+                await _db.SaveChangesWithRetryAsync(_logger, _restartCoordinator, cancellationToken: ct);
+                break;
         }
     }
 
-    // ── Per-cycle ─────────────────────────────────────────────────────────────
-
     /// <summary>
     /// Restores quality profiles for items whose TempProfileResetTimeoutMinutes has elapsed.
-    /// If KeepTempProfile = true, nothing is restored (profiles stay until manually reset).
+    /// KeepTempProfile skips immediate restore after a search; timeout reset still applies (qBitrr).
     /// </summary>
     public async Task RestoreTimedOutProfilesAsync(
         string instanceName,
@@ -117,9 +138,6 @@ public class QualityProfileSwitcherService
         CancellationToken ct = default)
     {
         if (!arrConfig.Search.UseTempForMissing)
-            return;
-
-        if (arrConfig.Search.KeepTempProfile)
             return;
 
         var timeoutMinutes = arrConfig.Search.TempProfileResetTimeoutMinutes;
@@ -142,10 +160,11 @@ public class QualityProfileSwitcherService
 
                 _logger.LogInformation("§1.2 RestoreTimedOut: restoring {Count} movie profiles for {Instance} (timeout={Timeout}min)",
                     expiredMovies.Count, instanceName, timeoutMinutes);
-                var radarr = new RadarrClient(arrConfig.URI, arrConfig.APIKey);
+                var radarr = new RadarrClient(arrConfig.URI, arrConfig.APIKey, arrConfig.SkipTLSVerify);
                 foreach (var movie in expiredMovies)
                 {
-                    await TryRestoreMovieAsync(radarr, movie.ArrId, movie.OriginalProfileId!.Value, instanceName, arrConfig, ct);
+                    if (!await TryRestoreMovieAsync(radarr, movie.ArrId, movie.OriginalProfileId!.Value, instanceName, arrConfig, ct))
+                        continue;
                     movie.CurrentProfileId = movie.OriginalProfileId;
                     movie.OriginalProfileId = null;
                     movie.LastProfileSwitchTime = null;
@@ -164,10 +183,11 @@ public class QualityProfileSwitcherService
                 if (expiredSeries.Count == 0) break;
 
                 _logger.LogInformation("§1.2 RestoreTimedOut: restoring {Count} series profiles for {Instance}", expiredSeries.Count, instanceName);
-                var sonarr = new SonarrClient(arrConfig.URI, arrConfig.APIKey);
+                var sonarr = new SonarrClient(arrConfig.URI, arrConfig.APIKey, arrConfig.SkipTLSVerify);
                 foreach (var s in expiredSeries)
                 {
-                    await TryRestoreSeriesAsync(sonarr, s.ArrId, s.OriginalProfileId!.Value, instanceName, arrConfig, ct);
+                    if (!await TryRestoreSeriesAsync(sonarr, s.ArrId, s.OriginalProfileId!.Value, instanceName, arrConfig, ct))
+                        continue;
                     s.CurrentProfileId = s.OriginalProfileId;
                     s.OriginalProfileId = null;
                     s.LastProfileSwitchTime = null;
@@ -186,13 +206,37 @@ public class QualityProfileSwitcherService
                 if (expiredArtists.Count == 0) break;
 
                 _logger.LogInformation("§1.2 RestoreTimedOut: restoring {Count} artist profiles for {Instance}", expiredArtists.Count, instanceName);
-                var lidarr = new LidarrClient(arrConfig.URI, arrConfig.APIKey);
+                var lidarr = new LidarrClient(arrConfig.URI, arrConfig.APIKey, arrConfig.SkipTLSVerify);
                 foreach (var artist in expiredArtists)
                 {
-                    await TryRestoreArtistAsync(lidarr, artist.ArrId, artist.OriginalProfileId!.Value, instanceName, arrConfig, ct);
+                    if (!await TryRestoreArtistAsync(lidarr, artist.ArrId, artist.OriginalProfileId!.Value, instanceName, arrConfig, ct))
+                        continue;
                     artist.CurrentProfileId = artist.OriginalProfileId;
                     artist.OriginalProfileId = null;
                     artist.LastProfileSwitchTime = null;
+                }
+                await _db.SaveChangesWithRetryAsync(_logger, _restartCoordinator, cancellationToken: ct);
+                break;
+
+            case "readarr":
+                var expiredAuthors = await _db.Authors
+                    .Where(a => a.ArrInstance == instanceName
+                             && a.OriginalProfileId.HasValue
+                             && a.LastProfileSwitchTime.HasValue
+                             && a.LastProfileSwitchTime.Value < cutoff)
+                    .ToListAsync(ct);
+
+                if (expiredAuthors.Count == 0) break;
+
+                _logger.LogInformation("§1.2 RestoreTimedOut: restoring {Count} author profiles for {Instance}", expiredAuthors.Count, instanceName);
+                var readarr = new ReadarrClient(arrConfig.URI, arrConfig.APIKey, arrConfig.SkipTLSVerify);
+                foreach (var author in expiredAuthors)
+                {
+                    if (!await TryRestoreAuthorAsync(readarr, author.ArrId, author.OriginalProfileId!.Value, instanceName, arrConfig, ct))
+                        continue;
+                    author.CurrentProfileId = author.OriginalProfileId;
+                    author.OriginalProfileId = null;
+                    author.LastProfileSwitchTime = null;
                 }
                 await _db.SaveChangesWithRetryAsync(_logger, _restartCoordinator, cancellationToken: ct);
                 break;
@@ -235,6 +279,9 @@ public class QualityProfileSwitcherService
             case "lidarr":
                 await SwitchArtistProfilesAsync(instanceName, arrConfig, missingCandidates, ct);
                 break;
+            case "readarr":
+                await SwitchAuthorProfilesAsync(instanceName, arrConfig, missingCandidates, ct);
+                break;
         }
     }
 
@@ -246,7 +293,7 @@ public class QualityProfileSwitcherService
         List<Core.Services.SearchCandidate> candidates,
         CancellationToken ct)
     {
-        var radarr = new RadarrClient(arrConfig.URI, arrConfig.APIKey);
+        var radarr = new RadarrClient(arrConfig.URI, arrConfig.APIKey, arrConfig.SkipTLSVerify);
         var profiles = await radarr.GetQualityProfilesAsync(ct);
         // Build id→name and name→id maps for resolution
         var profilesById = profiles.ToDictionary(p => p.Id, p => p.Name);
@@ -304,7 +351,7 @@ public class QualityProfileSwitcherService
         List<Core.Services.SearchCandidate> candidates,
         CancellationToken ct)
     {
-        var sonarr = new SonarrClient(arrConfig.URI, arrConfig.APIKey);
+        var sonarr = new SonarrClient(arrConfig.URI, arrConfig.APIKey, arrConfig.SkipTLSVerify);
         var profiles = await sonarr.GetQualityProfilesAsync(ct);
         var profilesById = profiles.ToDictionary(p => p.Id, p => p.Name);
         var profilesByName = profiles.ToDictionary(p => p.Name, p => p.Id, StringComparer.OrdinalIgnoreCase);
@@ -367,7 +414,7 @@ public class QualityProfileSwitcherService
         CancellationToken ct)
     {
         // Lidarr quality profiles are on the artist, not the album
-        var lidarr = new LidarrClient(arrConfig.URI, arrConfig.APIKey);
+        var lidarr = new LidarrClient(arrConfig.URI, arrConfig.APIKey, arrConfig.SkipTLSVerify);
         var profiles = await lidarr.GetQualityProfilesAsync(ct);
         var profilesById = profiles.ToDictionary(p => p.Id, p => p.Name);
         var profilesByName = profiles.ToDictionary(p => p.Name, p => p.Id, StringComparer.OrdinalIgnoreCase);
@@ -424,46 +471,125 @@ public class QualityProfileSwitcherService
 
     // ── Restore helpers ───────────────────────────────────────────────────────
 
-    private async Task TryRestoreMovieAsync(RadarrClient radarr, int arrId, int originalProfileId, string instanceName, ArrInstanceConfig arrConfig, CancellationToken ct)
+    private Task<bool> TryRestoreMovieAsync(RadarrClient radarr, int arrId, int originalProfileId, string instanceName, ArrInstanceConfig arrConfig, CancellationToken ct)
     {
-        await WithProfileSwitchRetryAsync(
+        return WithProfileSwitchRetryAsync(
             arrConfig,
             async () =>
             {
-                await radarr.UpdateMovieQualityProfileAsync(arrId, originalProfileId, ct);
-                _logger.LogInformation("§1.2: Restored movie {ArrId} → profileId={ProfileId} for {Instance}", arrId, originalProfileId, instanceName);
-                return true;
+                var ok = await radarr.UpdateMovieQualityProfileAsync(arrId, originalProfileId, ct);
+                if (ok)
+                    _logger.LogInformation("§1.2: Restored movie {ArrId} → profileId={ProfileId} for {Instance}", arrId, originalProfileId, instanceName);
+                return ok;
             },
             "movie-restore",
             ct);
     }
 
-    private async Task TryRestoreSeriesAsync(SonarrClient sonarr, int arrId, int originalProfileId, string instanceName, ArrInstanceConfig arrConfig, CancellationToken ct)
+    private Task<bool> TryRestoreSeriesAsync(SonarrClient sonarr, int arrId, int originalProfileId, string instanceName, ArrInstanceConfig arrConfig, CancellationToken ct)
     {
-        await WithProfileSwitchRetryAsync(
+        return WithProfileSwitchRetryAsync(
             arrConfig,
             async () =>
             {
-                await sonarr.UpdateSeriesQualityProfileAsync(arrId, originalProfileId, ct);
-                _logger.LogInformation("§1.2: Restored series {ArrId} → profileId={ProfileId} for {Instance}", arrId, originalProfileId, instanceName);
-                return true;
+                var ok = await sonarr.UpdateSeriesQualityProfileAsync(arrId, originalProfileId, ct);
+                if (ok)
+                    _logger.LogInformation("§1.2: Restored series {ArrId} → profileId={ProfileId} for {Instance}", arrId, originalProfileId, instanceName);
+                return ok;
             },
             "series-restore",
             ct);
     }
 
-    private async Task TryRestoreArtistAsync(LidarrClient lidarr, int arrId, int originalProfileId, string instanceName, ArrInstanceConfig arrConfig, CancellationToken ct)
+    private Task<bool> TryRestoreArtistAsync(LidarrClient lidarr, int arrId, int originalProfileId, string instanceName, ArrInstanceConfig arrConfig, CancellationToken ct)
     {
-        await WithProfileSwitchRetryAsync(
+        return WithProfileSwitchRetryAsync(
             arrConfig,
             async () =>
             {
-                await lidarr.UpdateArtistQualityProfileAsync(arrId, originalProfileId, ct);
-                _logger.LogInformation("§1.2: Restored artist {ArrId} → profileId={ProfileId} for {Instance}", arrId, originalProfileId, instanceName);
-                return true;
+                var ok = await lidarr.UpdateArtistQualityProfileAsync(arrId, originalProfileId, ct);
+                if (ok)
+                    _logger.LogInformation("§1.2: Restored artist {ArrId} → profileId={ProfileId} for {Instance}", arrId, originalProfileId, instanceName);
+                return ok;
             },
             "artist-restore",
             ct);
+    }
+
+    private Task<bool> TryRestoreAuthorAsync(ReadarrClient readarr, int arrId, int originalProfileId, string instanceName, ArrInstanceConfig arrConfig, CancellationToken ct)
+    {
+        return WithProfileSwitchRetryAsync(
+            arrConfig,
+            async () =>
+            {
+                var ok = await readarr.UpdateAuthorQualityProfileAsync(arrId, originalProfileId, ct);
+                if (ok)
+                    _logger.LogInformation("§1.2: Restored author {ArrId} → profileId={ProfileId} for {Instance}", arrId, originalProfileId, instanceName);
+                return ok;
+            },
+            "author-restore",
+            ct);
+    }
+
+    private async Task SwitchAuthorProfilesAsync(
+        string instanceName,
+        ArrInstanceConfig arrConfig,
+        List<Core.Services.SearchCandidate> candidates,
+        CancellationToken ct)
+    {
+        var readarr = new ReadarrClient(arrConfig.URI, arrConfig.APIKey, arrConfig.SkipTLSVerify);
+        var profiles = await readarr.GetQualityProfilesAsync(ct);
+        var profilesById = profiles.ToDictionary(p => p.Id, p => p.Name);
+        var profilesByName = profiles.ToDictionary(p => p.Name, p => p.Id, StringComparer.OrdinalIgnoreCase);
+
+        var authorIds = candidates
+            .Where(c => c.AuthorId.HasValue)
+            .Select(c => c.AuthorId!.Value)
+            .ToHashSet();
+
+        var authors = await _db.Authors
+            .Where(a => a.ArrInstance == instanceName && authorIds.Contains(a.ArrId))
+            .ToListAsync(ct);
+
+        var changed = false;
+        foreach (var author in authors)
+        {
+            if (author.OriginalProfileId.HasValue)
+                continue;
+
+            if (!author.QualityProfileId.HasValue)
+                continue;
+
+            if (!profilesById.TryGetValue(author.QualityProfileId.Value, out var currentProfileName))
+                continue;
+
+            if (!arrConfig.Search.QualityProfileMappings.TryGetValue(currentProfileName, out var tempProfileName))
+                continue;
+
+            if (!profilesByName.TryGetValue(tempProfileName, out var tempProfileId))
+            {
+                _logger.LogWarning("§1.2: Temp profile '{Name}' not found in Readarr for {Instance}", tempProfileName, instanceName);
+                continue;
+            }
+
+            var switched = await WithProfileSwitchRetryAsync(
+                arrConfig,
+                () => readarr.UpdateAuthorQualityProfileAsync(author.ArrId, tempProfileId, ct),
+                "author",
+                ct);
+            if (switched)
+            {
+                _logger.LogInformation("§1.2: Switched author '{Name}' profile: {From} → {To}",
+                    author.Title ?? author.ArrId.ToString(), currentProfileName, tempProfileName);
+                author.OriginalProfileId = author.QualityProfileId;
+                author.CurrentProfileId = tempProfileId;
+                author.LastProfileSwitchTime = DateTime.UtcNow;
+                changed = true;
+            }
+        }
+
+        if (changed)
+            await _db.SaveChangesWithRetryAsync(_logger, _restartCoordinator, cancellationToken: ct);
     }
 
     private async Task<bool> WithProfileSwitchRetryAsync(

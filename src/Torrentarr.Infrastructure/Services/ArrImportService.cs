@@ -64,6 +64,7 @@ public class ArrImportService : IArrImportService
                 "radarr" => await TriggerRadarrImportAsync(arrInstance, hash, contentPath, cancellationToken),
                 "sonarr" => await TriggerSonarrImportAsync(arrInstance, hash, contentPath, cancellationToken),
                 "lidarr" => await TriggerLidarrImportAsync(arrInstance, hash, contentPath, cancellationToken),
+                "readarr" => await TriggerReadarrImportAsync(arrInstance, hash, contentPath, cancellationToken),
                 _ => new ImportResult
                 {
                     Success = false,
@@ -106,6 +107,7 @@ public class ArrImportService : IArrImportService
                     "radarr" => await CheckRadarrQueueAsync(arrInstance, hash, cancellationToken),
                     "sonarr" => await CheckSonarrQueueAsync(arrInstance, hash, cancellationToken),
                     "lidarr" => await CheckLidarrQueueAsync(arrInstance, hash, cancellationToken),
+                    "readarr" => await CheckReadarrQueueAsync(arrInstance, hash, cancellationToken),
                     _ => false
                 };
 
@@ -141,7 +143,7 @@ public class ArrImportService : IArrImportService
         string contentPath,
         CancellationToken cancellationToken)
     {
-        var client = new RadarrClient(config.URI, config.APIKey);
+        var client = new RadarrClient(config.URI, config.APIKey, config.SkipTLSVerify);
 
         var importMode = ResolveImportMode(config, _config.Settings);
         var response = await client.TriggerDownloadedMoviesScanAsync(
@@ -173,7 +175,7 @@ public class ArrImportService : IArrImportService
         string contentPath,
         CancellationToken cancellationToken)
     {
-        var client = new SonarrClient(config.URI, config.APIKey);
+        var client = new SonarrClient(config.URI, config.APIKey, config.SkipTLSVerify);
 
         var importMode = ResolveImportMode(config, _config.Settings);
         var response = await client.TriggerDownloadedEpisodesScanAsync(
@@ -205,7 +207,7 @@ public class ArrImportService : IArrImportService
         string contentPath,
         CancellationToken cancellationToken)
     {
-        var client = new LidarrClient(config.URI, config.APIKey);
+        var client = new LidarrClient(config.URI, config.APIKey, config.SkipTLSVerify);
 
         var importMode = ResolveImportMode(config, _config.Settings);
         var response = await client.TriggerDownloadedAlbumsScanAsync(
@@ -231,12 +233,44 @@ public class ArrImportService : IArrImportService
         };
     }
 
+    private async Task<ImportResult> TriggerReadarrImportAsync(
+        ArrInstanceConfig config,
+        string hash,
+        string contentPath,
+        CancellationToken cancellationToken)
+    {
+        var client = new ReadarrClient(config.URI, config.APIKey, config.SkipTLSVerify);
+
+        var importMode = ResolveImportMode(config, _config.Settings);
+        var response = await client.TriggerDownloadedBooksScanAsync(
+            contentPath, hash, importMode, cancellationToken);
+
+        if (response != null)
+        {
+            _logger.LogInformation("Triggered Readarr import command {CommandId} for {Path}",
+                response.Id, contentPath);
+
+            return new ImportResult
+            {
+                Success = true,
+                Message = $"Readarr import command {response.Id} queued",
+                CommandId = response.Id
+            };
+        }
+
+        return new ImportResult
+        {
+            Success = false,
+            Message = "Failed to trigger Readarr import"
+        };
+    }
+
     private async Task<bool> CheckRadarrQueueAsync(
         ArrInstanceConfig config,
         string hash,
         CancellationToken cancellationToken)
     {
-        var client = new RadarrClient(config.URI, config.APIKey);
+        var client = new RadarrClient(config.URI, config.APIKey, config.SkipTLSVerify);
         var queue = await client.GetQueueAsync(ct: cancellationToken);
 
         return queue?.Records?.Any(r =>
@@ -249,7 +283,7 @@ public class ArrImportService : IArrImportService
         string hash,
         CancellationToken cancellationToken)
     {
-        var client = new SonarrClient(config.URI, config.APIKey);
+        var client = new SonarrClient(config.URI, config.APIKey, config.SkipTLSVerify);
         var queue = await client.GetQueueAsync(ct: cancellationToken);
 
         return queue?.Records?.Any(r =>
@@ -262,7 +296,20 @@ public class ArrImportService : IArrImportService
         string hash,
         CancellationToken cancellationToken)
     {
-        var client = new LidarrClient(config.URI, config.APIKey);
+        var client = new LidarrClient(config.URI, config.APIKey, config.SkipTLSVerify);
+        var queue = await client.GetQueueAsync(ct: cancellationToken);
+
+        return queue?.Records?.Any(r =>
+            r.DownloadId != null &&
+            r.DownloadId.Equals(hash, StringComparison.OrdinalIgnoreCase)) ?? false;
+    }
+
+    private async Task<bool> CheckReadarrQueueAsync(
+        ArrInstanceConfig config,
+        string hash,
+        CancellationToken cancellationToken)
+    {
+        var client = new ReadarrClient(config.URI, config.APIKey, config.SkipTLSVerify);
         var queue = await client.GetQueueAsync(ct: cancellationToken);
 
         return queue?.Records?.Any(r =>
@@ -339,6 +386,7 @@ public class ArrImportService : IArrImportService
                 "radarr" => await CheckRadarrCfUnmetAsync(arrInstance, downloadId, cancellationToken),
                 "sonarr" => await CheckSonarrCfUnmetAsync(arrInstance, downloadId, cancellationToken),
                 "lidarr" => await CheckLidarrCfUnmetAsync(arrInstance, downloadId, cancellationToken),
+                "readarr" => await CheckReadarrCfUnmetAsync(arrInstance, downloadId, cancellationToken),
                 _ => false
             };
         }
@@ -351,7 +399,7 @@ public class ArrImportService : IArrImportService
 
     private async Task<bool> CheckRadarrCfUnmetAsync(ArrInstanceConfig config, string downloadId, CancellationToken ct)
     {
-        var client = new RadarrClient(config.URI, config.APIKey);
+        var client = new RadarrClient(config.URI, config.APIKey, config.SkipTLSVerify);
         var queue = await client.GetQueueAsync(ct: ct);
         var record = queue.Records.FirstOrDefault(r =>
             string.Equals(r.DownloadId, downloadId, StringComparison.OrdinalIgnoreCase));
@@ -381,7 +429,7 @@ public class ArrImportService : IArrImportService
 
     private async Task<bool> CheckSonarrCfUnmetAsync(ArrInstanceConfig config, string downloadId, CancellationToken ct)
     {
-        var client = new SonarrClient(config.URI, config.APIKey);
+        var client = new SonarrClient(config.URI, config.APIKey, config.SkipTLSVerify);
         var queue = await client.GetQueueAsync(ct: ct);
         var record = queue.Records.FirstOrDefault(r =>
             string.Equals(r.DownloadId, downloadId, StringComparison.OrdinalIgnoreCase));
@@ -431,7 +479,7 @@ public class ArrImportService : IArrImportService
 
     private async Task<bool> CheckLidarrCfUnmetAsync(ArrInstanceConfig config, string downloadId, CancellationToken ct)
     {
-        var client = new LidarrClient(config.URI, config.APIKey);
+        var client = new LidarrClient(config.URI, config.APIKey, config.SkipTLSVerify);
         var queue = await client.GetQueueAsync(ct: ct);
         var record = queue.Records.FirstOrDefault(r =>
             string.Equals(r.DownloadId, downloadId, StringComparison.OrdinalIgnoreCase));
@@ -456,7 +504,7 @@ public class ArrImportService : IArrImportService
 
     /// <summary>
     /// Blocklist a torrent in the Arr queue (removeFromClient=false, blocklist=true).
-    /// The Arr will then automatically re-search for a replacement.
+    /// When <see cref="ArrInstanceConfig.ReSearch"/> is true, also fire Arr *Search for the media.
     /// </summary>
     public async Task<bool> BlocklistAndReSearchAsync(string hash, string category, CancellationToken cancellationToken = default)
     {
@@ -478,6 +526,7 @@ public class ArrImportService : IArrImportService
                 "radarr" => await BlocklistRadarrAsync(arrInstance, downloadId, cancellationToken),
                 "sonarr" => await BlocklistSonarrAsync(arrInstance, downloadId, cancellationToken),
                 "lidarr" => await BlocklistLidarrAsync(arrInstance, downloadId, cancellationToken),
+                "readarr" => await BlocklistReadarrAsync(arrInstance, downloadId, cancellationToken),
                 _ => false
             };
         }
@@ -490,7 +539,7 @@ public class ArrImportService : IArrImportService
 
     private async Task<bool> BlocklistRadarrAsync(ArrInstanceConfig config, string downloadId, CancellationToken ct)
     {
-        var client = new RadarrClient(config.URI, config.APIKey);
+        var client = new RadarrClient(config.URI, config.APIKey, config.SkipTLSVerify);
         var queue = await client.GetQueueAsync(ct: ct);
         var record = queue.Records.FirstOrDefault(r =>
             string.Equals(r.DownloadId, downloadId, StringComparison.OrdinalIgnoreCase));
@@ -498,12 +547,18 @@ public class ArrImportService : IArrImportService
         if (record == null) return false;
 
         _logger.LogInformation("Blocklisting Radarr queue item {Id} (hash: {Hash})", record.Id, downloadId);
-        return await client.DeleteFromQueueAsync(record.Id, removeFromClient: false, blocklist: true, ct);
+        var deleted = await client.DeleteFromQueueAsync(record.Id, removeFromClient: false, blocklist: true, ct);
+        if (deleted && config.ReSearch && record.MovieId is int movieId)
+        {
+            _logger.LogInformation("Re-Searching Radarr movie {MovieId} after blocklist", movieId);
+            await client.SearchMovieAsync(movieId, ct);
+        }
+        return deleted;
     }
 
     private async Task<bool> BlocklistSonarrAsync(ArrInstanceConfig config, string downloadId, CancellationToken ct)
     {
-        var client = new SonarrClient(config.URI, config.APIKey);
+        var client = new SonarrClient(config.URI, config.APIKey, config.SkipTLSVerify);
         var queue = await client.GetQueueAsync(ct: ct);
         var record = queue.Records.FirstOrDefault(r =>
             string.Equals(r.DownloadId, downloadId, StringComparison.OrdinalIgnoreCase));
@@ -511,12 +566,26 @@ public class ArrImportService : IArrImportService
         if (record == null) return false;
 
         _logger.LogInformation("Blocklisting Sonarr queue item {Id} (hash: {Hash})", record.Id, downloadId);
-        return await client.DeleteFromQueueAsync(record.Id, removeFromClient: false, blocklist: true, ct);
+        var deleted = await client.DeleteFromQueueAsync(record.Id, removeFromClient: false, blocklist: true, ct);
+        if (deleted && config.ReSearch)
+        {
+            if (record.SeriesId is int seriesId)
+            {
+                _logger.LogInformation("Re-Searching Sonarr series {SeriesId} after blocklist", seriesId);
+                await client.SearchSeriesAsync(seriesId, ct);
+            }
+            else if (record.EpisodeId is int episodeId)
+            {
+                _logger.LogInformation("Re-Searching Sonarr episode {EpisodeId} after blocklist", episodeId);
+                await client.SearchEpisodeAsync(new List<int> { episodeId }, ct);
+            }
+        }
+        return deleted;
     }
 
     private async Task<bool> BlocklistLidarrAsync(ArrInstanceConfig config, string downloadId, CancellationToken ct)
     {
-        var client = new LidarrClient(config.URI, config.APIKey);
+        var client = new LidarrClient(config.URI, config.APIKey, config.SkipTLSVerify);
         var queue = await client.GetQueueAsync(ct: ct);
         var record = queue.Records.FirstOrDefault(r =>
             string.Equals(r.DownloadId, downloadId, StringComparison.OrdinalIgnoreCase));
@@ -524,7 +593,75 @@ public class ArrImportService : IArrImportService
         if (record == null) return false;
 
         _logger.LogInformation("Blocklisting Lidarr queue item {Id} (hash: {Hash})", record.Id, downloadId);
-        return await client.DeleteFromQueueAsync(record.Id, removeFromClient: false, blocklist: true, ct);
+        var deleted = await client.DeleteFromQueueAsync(record.Id, removeFromClient: false, blocklist: true, ct);
+        if (deleted && config.ReSearch && record.AlbumId is int albumId)
+        {
+            _logger.LogInformation("Re-Searching Lidarr album {AlbumId} after blocklist", albumId);
+            await client.SearchAlbumAsync(new List<int> { albumId }, ct);
+        }
+        return deleted;
+    }
+
+    private async Task<bool> BlocklistReadarrAsync(ArrInstanceConfig config, string downloadId, CancellationToken ct)
+    {
+        var client = new ReadarrClient(config.URI, config.APIKey, config.SkipTLSVerify);
+        var queue = await client.GetQueueAsync(ct: ct);
+        var record = queue.Records.FirstOrDefault(r =>
+            string.Equals(r.DownloadId, downloadId, StringComparison.OrdinalIgnoreCase));
+
+        if (record == null) return false;
+
+        _logger.LogInformation("Blocklisting Readarr queue item {Id} (hash: {Hash})", record.Id, downloadId);
+        var deleted = await client.DeleteFromQueueAsync(record.Id, removeFromClient: false, blocklist: true, ct);
+        if (deleted && config.ReSearch)
+        {
+            var reSearch = ResolveReadarrReSearch(record.BookId, record.AuthorId);
+            if (reSearch is ("book", int bookId))
+            {
+                _logger.LogInformation("Re-Searching Readarr book {BookId} after blocklist", bookId);
+                await client.SearchBookAsync(new List<int> { bookId }, ct);
+            }
+            else if (reSearch is ("author", int authorId))
+            {
+                _logger.LogInformation("Re-Searching Readarr author {AuthorId} after blocklist", authorId);
+                await client.SearchAuthorAsync(authorId, ct);
+            }
+        }
+        return deleted;
+    }
+
+    internal static (string Kind, int Id)? ResolveReadarrReSearch(int? bookId, int? authorId)
+    {
+        if (bookId is int book)
+            return ("book", book);
+        if (authorId is int author)
+            return ("author", author);
+        return null;
+    }
+
+    private async Task<bool> CheckReadarrCfUnmetAsync(ArrInstanceConfig config, string downloadId, CancellationToken ct)
+    {
+        var client = new ReadarrClient(config.URI, config.APIKey, config.SkipTLSVerify);
+        var queue = await client.GetQueueAsync(ct: ct);
+        var record = queue.Records.FirstOrDefault(r =>
+            string.Equals(r.DownloadId, downloadId, StringComparison.OrdinalIgnoreCase));
+
+        if (record?.CustomFormatScore == null || record.BookId == null)
+            return false;
+
+        var arrName = _config.ArrInstances.FirstOrDefault(kv =>
+            kv.Value == config).Key ?? "";
+
+        var modelEntry = await _dbContext.Books.AsNoTracking()
+            .FirstOrDefaultAsync(b => b.ArrId == record.BookId && b.ArrInstance == arrName, ct);
+
+        if (modelEntry == null)
+            return false;
+
+        var cfUnmet = record.CustomFormatScore < (modelEntry.CustomFormatScore ?? 0);
+        if (config.Search.ForceMinimumCustomFormat)
+            cfUnmet = cfUnmet && record.CustomFormatScore < (modelEntry.MinCustomFormatScore ?? 0);
+        return cfUnmet;
     }
 
     /// <summary>

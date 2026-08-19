@@ -14,6 +14,11 @@ import {
   AuthError,
   getLidarrArtists,
   getLidarrArtistDetail,
+  getReadarrAuthors,
+  getReadarrAuthorDetail,
+  searchLogs,
+  getQbitOverview,
+  getConfigSchema,
 } from "../../api/client";
 
 const server = setupServer();
@@ -494,6 +499,76 @@ describe("getLidarrArtistDetail", () => {
   });
 });
 
+describe("getReadarrAuthors", () => {
+  it("deserializes authors response and encodes category", async () => {
+    let requestedUrl = "";
+    server.use(
+      http.get("/web/readarr/*/authors", ({ request }) => {
+        requestedUrl = new URL(request.url).pathname;
+        return HttpResponse.json({
+          category: "my readarr",
+          counts: { available: 1, monitored: 2, missing: 1 },
+          total: 1,
+          page: 0,
+          page_size: 25,
+          authors: [
+            {
+              author: {
+                id: 1,
+                name: "Author",
+                monitored: true,
+                bookCount: 2,
+                booksMonitored: 2,
+                booksAvailable: 1,
+              },
+            },
+          ],
+        });
+      }),
+    );
+
+    const result = await getReadarrAuthors("my readarr", 0, 25, "dune");
+
+    expect(requestedUrl).toBe("/web/readarr/my%20readarr/authors");
+    expect(result.authors).toHaveLength(1);
+    expect(result.authors[0].author.name).toBe("Author");
+  });
+
+  it("throws on non-OK response", async () => {
+    server.use(
+      http.get("/web/readarr/*/authors", () =>
+        HttpResponse.json({ error: "bad" }, { status: 500 }),
+      ),
+    );
+
+    await expect(getReadarrAuthors("readarr", 0, 50)).rejects.toThrow();
+  });
+});
+
+describe("getReadarrAuthorDetail", () => {
+  it("deserializes author detail with books and no tracks", async () => {
+    server.use(
+      http.get("/web/readarr/*/author/:id", () =>
+        HttpResponse.json({
+          category: "readarr",
+          counts: { available: 1, monitored: 2, missing: 1 },
+          author: { id: 5, name: "Detail Author", monitored: true },
+          books: [
+            {
+              book: { id: 10, title: "Book", monitored: true, hasFile: true },
+            },
+          ],
+        }),
+      ),
+    );
+
+    const result = await getReadarrAuthorDetail("readarr", 5);
+    expect(result.author.name).toBe("Detail Author");
+    expect(result.books).toHaveLength(1);
+    expect((result.books[0] as { tracks?: unknown }).tracks).toBeUndefined();
+  });
+});
+
 // ── setPassword ───────────────────────────────────────────────────────────────
 
 describe("setPassword", () => {
@@ -556,5 +631,98 @@ describe("AuthError", () => {
   it("code is undefined when not provided", () => {
     const err = new AuthError("msg");
     expect(err.code).toBeUndefined();
+  });
+});
+
+describe("searchLogs", () => {
+  it("deserializes log search matches", async () => {
+    server.use(
+      http.get("/web/logs/All.log/search", ({ request }) => {
+        const url = new URL(request.url);
+        expect(url.searchParams.get("q")).toBe("error");
+        return HttpResponse.json({
+          query: "error",
+          truncated: false,
+          matches: [
+            {
+              file: "All.log",
+              line: 2,
+              text: "error: boom",
+              context_before: [],
+              context_after: [],
+            },
+          ],
+          files_searched: ["All.log"],
+        });
+      }),
+    );
+
+    const result = await searchLogs("All.log", "error");
+    expect(result.matches).toHaveLength(1);
+    expect(result.matches[0].text).toContain("error");
+  });
+});
+
+describe("getQbitOverview", () => {
+  it("deserializes overview categories", async () => {
+    server.use(
+      http.get("/web/qbit/overview", () =>
+        HttpResponse.json({
+          instances: ["qBit"],
+          categories: [
+            {
+              category: "radarr",
+              instance: "qBit",
+              managedBy: "arr",
+              torrentCount: 1,
+              seedingCount: 1,
+              truncated: false,
+              torrents: [
+                {
+                  hash: "abc",
+                  name: "Movie",
+                  size: 1,
+                  progress: 1,
+                  state: "uploading",
+                  category: "radarr",
+                },
+              ],
+            },
+          ],
+          ready: true,
+        }),
+      ),
+    );
+
+    const result = await getQbitOverview();
+    expect(result.ready).toBe(true);
+    expect(result.categories[0].torrents[0].name).toBe("Movie");
+  });
+});
+
+describe("getConfigSchema", () => {
+  it("deserializes schema version and sections", async () => {
+    server.use(
+      http.get("/web/config/schema", () =>
+        HttpResponse.json({
+          version: 1,
+          sections: {
+            WebUI: [
+              {
+                dotted: "Token",
+                kind: "string",
+                label: "Token",
+                uiExpose: true,
+                sensitive: true,
+              },
+            ],
+          },
+        }),
+      ),
+    );
+
+    const result = await getConfigSchema();
+    expect(result.version).toBe(1);
+    expect(result.sections.WebUI[0].dotted).toBe("Token");
   });
 });

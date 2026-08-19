@@ -87,6 +87,59 @@ export interface QbitCategoriesResponse {
   ready: boolean;
 }
 
+export interface LogSearchMatch {
+  file: string;
+  line: number;
+  text: string;
+  context_before?: string[];
+  context_after?: string[];
+}
+
+export interface LogSearchResponse {
+  query: string;
+  truncated: boolean;
+  matches: LogSearchMatch[];
+  files_searched: string[];
+}
+
+export interface QbitOverviewTorrent {
+  hash: string;
+  name: string;
+  size: number;
+  progress: number;
+  state: string;
+  category: string;
+}
+
+export interface QbitOverviewCategory {
+  category: string;
+  instance: string;
+  managedBy: string;
+  torrentCount: number;
+  seedingCount: number;
+  truncated: boolean;
+  torrents: QbitOverviewTorrent[];
+}
+
+export interface QbitOverviewResponse {
+  instances: string[];
+  categories: QbitOverviewCategory[];
+  ready: boolean;
+}
+
+export interface ConfigSchemaField {
+  dotted: string;
+  kind: string;
+  label: string;
+  uiExpose: boolean;
+  sensitive: boolean;
+}
+
+export interface ConfigSchemaResponse {
+  version: number;
+  sections: Record<string, ConfigSchemaField[]>;
+}
+
 export interface StatusResponse {
   qbit: QbitStatus; // Legacy single-instance (default) for backward compatibility
   qbitInstances: { [instanceName: string]: QbitInstance }; // Multi-instance info
@@ -284,6 +337,58 @@ export interface LidarrTracksResponse {
   page: number;
   page_size: number;
   tracks: LidarrTrack[];
+}
+
+export interface ReadarrCounts {
+  available: number;
+  monitored: number;
+  missing?: number;
+  quality_met?: number;
+  requests?: number;
+}
+
+export interface ReadarrAuthorEntry {
+  author: {
+    id: number;
+    arrId?: number;
+    name?: string;
+    monitored?: boolean;
+    qualityProfileName?: string | null;
+    searched?: boolean;
+    bookCount?: number;
+    booksMonitored?: number;
+    booksAvailable?: number;
+    booksMissing?: number;
+  };
+}
+
+export interface ReadarrAuthorsResponse {
+  category: string;
+  counts: ReadarrCounts;
+  book_total?: number;
+  total: number;
+  page: number;
+  page_size: number;
+  authors: ReadarrAuthorEntry[];
+}
+
+export interface ReadarrBook {
+  id?: number;
+  title?: string;
+  authorId?: number;
+  authorName?: string;
+  releaseDate?: string;
+  monitored?: boolean;
+  hasFile?: boolean;
+  reason?: string | null;
+  qualityProfileName?: string | null;
+}
+
+export interface ReadarrAuthorDetailResponse {
+  category: string;
+  counts: ReadarrCounts;
+  author: ReadarrAuthorEntry["author"];
+  books: Array<{ book: ReadarrBook }>;
 }
 
 export interface ConfigVersionWarning {
