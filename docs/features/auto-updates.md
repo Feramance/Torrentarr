@@ -61,7 +61,7 @@ AutoUpdateCron = "0 2 1 * *"    # 1st of month 02:00 UTC
 **Default:** `"latest"`
 
 - `latest` — newest GitHub release, including weekly dependency `[build]` tags.
-- `stable` — newest patch/minor/major release (skips prereleases and weekly `X.Y.Z-N` builds; same rule as Docker `:stable`).
+- `stable` — newest patch/minor/major release (skips prereleases and weekly `X.Y.Z-N` builds with `N > 1`; same rule as Docker `:stable`). `X.Y.Z` and `X.Y.Z-1` stay eligible.
 - `nightly` — check/log only; binaries are never downloaded or applied.
 
 Auto-update apply is disabled for source/`dotnet run` builds.

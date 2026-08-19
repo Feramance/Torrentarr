@@ -479,7 +479,8 @@ public class UpdateService
 
     /// <summary>
     /// <c>stable</c> matches Docker <c>:stable</c>: skip GitHub prereleases and weekly
-    /// <c>MAJOR.MINOR.PATCH-BUILD</c> tags (e.g. <c>6.14.3-2</c>).
+    /// dependency builds (<c>MAJOR.MINOR.PATCH-N</c> where <c>N &gt; 1</c>).
+    /// Patch/minor/major releases use <c>-1</c> (or no suffix) and remain eligible.
     /// </summary>
     internal static bool SkipReleaseForChannel(string channel, bool prerelease, string? tagName)
     {
@@ -489,13 +490,14 @@ public class UpdateService
     }
 
     /// <summary>
-    /// Weekly dependency builds use a numeric <c>-N</c> suffix (<c>6.14.3-2</c>), not
-    /// <c>6.14.3</c> patch/minor/major tags.
+    /// Weekly <c>release_type=build</c> increments the numeric suffix
+    /// (<c>6.14.3-1</c> → <c>6.14.3-2</c>). First-of-line tags (<c>6.14.3</c> / <c>6.14.3-1</c>)
+    /// are patch/minor/major and must not be skipped on <c>stable</c>.
     /// </summary>
     internal static bool IsWeeklyBuildTag(string? tag)
     {
         var parsed = ParseReleaseVersion(tag ?? "");
-        return parsed is { Build: > 0 };
+        return parsed is { Build: > 1 };
     }
 
     internal static bool IsNewerVersion(string latest, string current)

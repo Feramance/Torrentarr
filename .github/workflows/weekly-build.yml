@@ -5,6 +5,11 @@ on:
     # Monday 06:00 UTC
   - cron: 0 6 * * 1
   workflow_dispatch:
+    inputs:
+      dispatch_build_release:
+        description: After merging Dependabot PRs, dispatch Create a Release (build). Off by default so scheduled runs never publish.
+        type: boolean
+        default: false
 
 permissions:
   contents: write
@@ -16,7 +21,7 @@ defaults:
 
 jobs:
   weekly_build:
-    name: Merge Dependabot PRs and release build
+    name: Merge Dependabot PRs and optionally release build
     runs-on: ubuntu-latest
     steps:
     - name: Checkout repository
@@ -27,14 +32,17 @@ jobs:
         ref: master
 
     # Extra identity/gating vs qBitrr: require dependabot[bot] + dependabot/ head,
-    # skip workflow/Actions PRs, gate on required checks, pin merge to HEAD SHA.
-    # PAT remains the qBitrr-compatible token for squash-merge + release dispatch.
+    # skip CI/Docker/scripts/build-config PRs, gate on required checks, pin merge
+    # to HEAD SHA. Scheduled runs merge only; publishing a [build] release requires
+    # an explicit workflow_dispatch input.
     - name: Auto-merge green Dependabot PRs
+      id: merge_dependabot
       env:
         GH_TOKEN: ${{ secrets.PAT || secrets.GITHUB_TOKEN }}
       run: |
         set -euo pipefail
 
+        merged_any=false
         mapfile -t numbers < <(
           gh pr list \
             --repo "${{ github.repository }}" \
@@ -46,6 +54,7 @@ jobs:
 
         if [[ ${#numbers[@]} -eq 0 ]]; then
           echo "No open Dependabot PRs."
+          echo "merged=false" >> "${GITHUB_OUTPUT}"
           exit 0
         fi
 
@@ -102,13 +111,14 @@ jobs:
             continue
           fi
 
-          if echo "${files}" | grep -E '^\.github/(workflows|actions)/'; then
-            echo "Skipping PR #${number} (changes GitHub Actions workflow or action files)."
+          if echo "${files}" | grep -qE '^(\.github/|scripts/)' || \
+             echo "${files}" | grep -qE '^(Dockerfile|docker-compose[^/]*\.ya?ml|build\.(sh|bat)|Directory\.Build\.props|global\.json|nuget\.config)$'; then
+            echo "Skipping PR #${number} (changes CI, Docker, scripts, or build-config files)."
             continue
           fi
 
           if [[ "${changed_files}" -gt "${file_count}" ]]; then
-            echo "Skipping PR #${number}: file list truncated (${file_count}/${changed_files}); cannot verify workflow paths."
+            echo "Skipping PR #${number}: file list truncated (${file_count}/${changed_files}); cannot verify paths."
             continue
           fi
 
@@ -141,10 +151,13 @@ jobs:
             --delete-branch \
             --match-head-commit "${head_sha}"; then
             echo "Merged PR #${number} at ${head_sha}."
+            merged_any=true
           else
             echo "Could not merge PR #${number}; continuing."
           fi
         done
+
+        echo "merged=${merged_any}" >> "${GITHUB_OUTPUT}"
 
     - name: Refresh master
       run: |
@@ -156,6 +169,19 @@ jobs:
       id: should_release
       run: |
         set -euo pipefail
+
+        if [[ "${{ github.event_name }}" != "workflow_dispatch" ]] || \
+           [[ "${{ github.event.inputs.dispatch_build_release || 'false' }}" != "true" ]]; then
+          echo "release=false" >> "${GITHUB_OUTPUT}"
+          echo "Skipping build release (scheduled runs merge only; set dispatch_build_release on workflow_dispatch)."
+          exit 0
+        fi
+
+        if [[ "${{ steps.merge_dependabot.outputs.merged }}" != "true" ]]; then
+          echo "release=false" >> "${GITHUB_OUTPUT}"
+          echo "No Dependabot PRs were merged in this run; skipping build release."
+          exit 0
+        fi
 
         last_tag=$(git tag -l 'v*' --sort=-version:refname | head -n1 || true)
         if [[ -z "${last_tag}" ]]; then

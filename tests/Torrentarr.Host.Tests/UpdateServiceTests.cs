@@ -68,7 +68,8 @@ public class UpdateServiceTests
 
     [Theory]
     [InlineData("v6.14.3-2", true)]
-    [InlineData("6.14.3-1", true)]
+    [InlineData("6.14.3-9", true)]
+    [InlineData("6.14.3-1", false)]
     [InlineData("6.14.3", false)]
     [InlineData("v6.14.3", false)]
     [InlineData("6.14.3-rc.1", false)]
@@ -81,8 +82,9 @@ public class UpdateServiceTests
     [Theory]
     [InlineData("latest", false, "6.14.3-2", false)]
     [InlineData("stable", false, "6.14.3-2", true)]
+    [InlineData("stable", false, "6.14.3-1", false)]
     [InlineData("stable", false, "v6.14.3", false)]
-    [InlineData("stable", true, "v6.14.3", true)]
+    [InlineData("stable", true, "v6.14.3-1", true)]
     [InlineData("nightly", true, "6.14.3-2", false)]
     public void SkipReleaseForChannel_StableSkipsPrereleaseAndWeeklyBuilds(
         string channel, bool prerelease, string tag, bool skip)

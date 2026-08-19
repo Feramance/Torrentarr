@@ -177,7 +177,7 @@ docker push feramance/torrentarr:latest
 
 **Trigger:** Monday 06:00 UTC (and `workflow_dispatch`)
 
-**Behavior:** Merge green non-major Dependabot PRs, then dispatch **Create a Release** with `release_type=build`. That publishes `:latest` and `vX.Y.Z-N` but **does not** move `:stable`.
+**Behavior:** Merge green non-major Dependabot PRs that do not touch CI, Docker, scripts, or build-config files. Scheduled runs **do not** publish a release. Dispatching with `dispatch_build_release=true` after a merge can start **Create a Release** with `release_type=build` (`:latest` / `vX.Y.Z-N`, **not** `:stable`).
 
 ## Version Numbering
 
@@ -188,7 +188,7 @@ MAJOR.MINOR.PATCH-BUILD
 
 6.14.3-1
 │ │ │  │
-│ │ │  └─ Build: weekly dependency / automation releases (does not move :stable)
+│ │ │  └─ Build: 1 = first release of this X.Y.Z (eligible for :stable); N>1 = weekly dependency builds (do not move :stable)
 │ │ └─ Patch: Bug fixes, security fixes
 │ └─── Minor: New features, backward-compatible
 └───── Major: Breaking changes (Torrentarr stays +1 vs qBitrr)
@@ -216,8 +216,8 @@ git push origin v5.6.0-rc.1
 
 | Tag | Description | Example |
 |-----|-------------|---------|
-| `latest` | Newest published release (includes weekly builds) | `6.14.3-1` |
-| `stable` | Latest patch/minor/major (excludes weekly builds) | `6.14.3-1` |
+| `latest` | Newest published release (includes weekly builds) | `6.14.3-2` |
+| `stable` | Latest patch/minor/major (excludes weekly `N>1` builds) | `6.14.3-1` |
 | `nightly` | Per-commit build from master | HEAD of `master` |
 | `vX.Y.Z-N` | Exact version | `v6.14.3-1` |
 
