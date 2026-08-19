@@ -2,6 +2,7 @@ using FluentAssertions;
 using Microsoft.Data.Sqlite;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Logging.Abstractions;
 using Moq;
 using Torrentarr.Core.Configuration;
@@ -424,10 +425,10 @@ public class ArrWorkerManagerTests
                 config.ArrInstances["Radarr"] = new ArrInstanceConfig
                 {
                     Managed = true,
-                    URI = "CHANGE_ME",
+                    URI = "http://127.0.0.1:1",
                     APIKey = "test",
                     Category = "movies",
-                    Type = "radarr",
+                    Type = "mock",
                     Search = new SearchConfig { SearchMissing = true, SearchRequestsEvery = 1 }
                 };
             }
