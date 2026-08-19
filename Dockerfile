@@ -53,7 +53,7 @@ RUN dotnet publish src/Torrentarr.Host/Torrentarr.Host.csproj \
 
 # Stage 3: Runtime Image
 FROM mcr.microsoft.com/dotnet/aspnet:10.0 AS runtime
-ARG VERSION="6.14.3-1"
+ARG VERSION="6.14.4-1"
 LABEL Name="Torrentarr"
 LABEL Maintainer="feramance"
 LABEL Version="${VERSION}"
