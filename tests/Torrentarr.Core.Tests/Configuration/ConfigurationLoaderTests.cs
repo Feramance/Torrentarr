@@ -1282,6 +1282,64 @@ public class ConfigurationLoaderTests : IDisposable
     }
 
     [Fact]
+    public void Load_CategorySeedingMinSeedTimeSeconds_ConvertsToDays()
+    {
+        WriteToml("""
+            [Settings]
+            LoopSleepTimer = 5
+
+            [qBit]
+            Host = "localhost"
+
+            [qBit.CategorySeeding]
+            MinSeedTime = 86400
+            """);
+
+        var loader = new ConfigurationLoader(_tempFilePath);
+        var config = loader.Load();
+
+        config.QBitInstances["qBit"].CategorySeeding.MinSeedingTimeDays.Should().Be(1);
+        File.ReadAllText(_tempFilePath).Should().NotContain("MinSeedingTimeDays = 0");
+    }
+
+    [Fact]
+    public void Load_ExplicitZeroMinSeedingTimeDays_WinsOverMinSeedTimeAlias()
+    {
+        WriteToml("""
+            [Settings]
+            LoopSleepTimer = 5
+
+            [qBit]
+            Host = "localhost"
+
+            [qBit.CategorySeeding]
+            MinSeedingTimeDays = 0
+            MinSeedTime = 86400
+            """);
+
+        var config = new ConfigurationLoader(_tempFilePath).Load();
+        config.QBitInstances["qBit"].CategorySeeding.MinSeedingTimeDays.Should().Be(0);
+    }
+
+    [Fact]
+    public void Load_CategorySeedingMinSeedingTime_IsDays()
+    {
+        WriteToml("""
+            [Settings]
+            LoopSleepTimer = 5
+
+            [qBit]
+            Host = "localhost"
+
+            [qBit.CategorySeeding]
+            MinSeedingTime = 3
+            """);
+
+        var config = new ConfigurationLoader(_tempFilePath).Load();
+        config.QBitInstances["qBit"].CategorySeeding.MinSeedingTimeDays.Should().Be(3);
+    }
+
+    [Fact]
     public void Load_OverridesSearchOnly_DisablesQbitAndSetsSearchOnly()
     {
         WriteToml("""

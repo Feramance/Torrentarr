@@ -694,10 +694,8 @@ public class ConfigurationLoader
                 {
                     foreach (var (field, defaultVal) in hnrDefaults)
                     {
-                        if (!trackerTable.ContainsKey(field))
+                        if (ShouldFillHnrField(trackerTable, field))
                         {
-                            if (field == "MinSeedingTimeDays" && trackerTable.ContainsKey("MinSeedingTime"))
-                                continue;
                             trackerTable[field] = defaultVal;
                             changed = true;
                         }
@@ -717,7 +715,7 @@ public class ConfigurationLoader
 
             foreach (var (field, defaultVal) in hnrDefaults)
             {
-                if (!catSeeding.ContainsKey(field))
+                if (ShouldFillHnrField(catSeeding, field))
                 {
                     catSeeding[field] = defaultVal;
                     changed = true;
@@ -992,7 +990,7 @@ public class ConfigurationLoader
             {
                 foreach (var (field, defaultVal) in hnrDefaults)
                 {
-                    if (!catSeeding.ContainsKey(field))
+                    if (ShouldFillHnrField(catSeeding, field))
                     {
                         catSeeding[field] = defaultVal;
                         changed = true;
@@ -1007,10 +1005,8 @@ public class ConfigurationLoader
                 {
                     foreach (var (field, defaultVal) in hnrDefaults)
                     {
-                        if (!trackerTable.ContainsKey(field))
+                        if (ShouldFillHnrField(trackerTable, field))
                         {
-                            if (field == "MinSeedingTimeDays" && trackerTable.ContainsKey("MinSeedingTime"))
-                                continue;
                             trackerTable[field] = defaultVal;
                             changed = true;
                         }
@@ -1026,10 +1022,8 @@ public class ConfigurationLoader
                 {
                     foreach (var (field, defaultVal) in hnrDefaults)
                     {
-                        if (!trackerTable.ContainsKey(field))
+                        if (ShouldFillHnrField(trackerTable, field))
                         {
-                            if (field == "MinSeedingTimeDays" && trackerTable.ContainsKey("MinSeedingTime"))
-                                continue;
                             trackerTable[field] = defaultVal;
                             changed = true;
                         }
@@ -1166,26 +1160,36 @@ public class ConfigurationLoader
     }
 
     /// <summary>
-    /// Canonical <c>MinSeedingTimeDays</c> wins unless it is the fill-in default 0 and a qBitrr
-    /// alias (<c>MinSeedingTime</c> / <c>MinSeedTime</c>) is present on the same table.
+    /// Canonical <c>MinSeedingTimeDays</c> wins when present, including explicit <c>0</c>.
+    /// qBitrr <c>MinSeedingTime</c> is days; legacy <c>MinSeedTime</c> values of 86400+ are seconds.
     /// </summary>
     private static int? ReadMinSeedingTimeDays(TomlTable table)
     {
-        var hasCanonical = table.TryGetValue("MinSeedingTimeDays", out var canonical);
-        object? alias = null;
-        var hasAlias = table.TryGetValue("MinSeedingTime", out alias)
-            || table.TryGetValue("MinSeedTime", out alias);
+        if (table.TryGetValue("MinSeedingTimeDays", out var canonical))
+            return Convert.ToInt32(canonical);
 
-        if (hasCanonical)
-        {
-            var days = Convert.ToInt32(canonical);
-            if (days == 0 && hasAlias)
-                return Convert.ToInt32(alias);
-            return days;
-        }
+        if (table.TryGetValue("MinSeedingTime", out var minSeedingTime))
+            return Convert.ToInt32(minSeedingTime);
 
-        return hasAlias ? Convert.ToInt32(alias) : null;
+        if (table.TryGetValue("MinSeedTime", out var minSeedTime))
+            return ConvertMinSeedTimeAliasToDays(minSeedTime);
+
+        return null;
     }
+
+    private static int ConvertMinSeedTimeAliasToDays(object? alias)
+    {
+        var value = Convert.ToInt32(alias);
+        // Historic CategorySeeding MinSeedTime was often seconds (86400 = 1 day).
+        return value >= 86400 ? value / 86400 : value;
+    }
+
+    private static bool HasMinSeedingTimeAlias(TomlTable table) =>
+        table.ContainsKey("MinSeedingTime") || table.ContainsKey("MinSeedTime");
+
+    private static bool ShouldFillHnrField(TomlTable table, string field) =>
+        !table.ContainsKey(field)
+        && (field != "MinSeedingTimeDays" || !HasMinSeedingTimeAlias(table));
 
     private TrackerConfig? ParseTrackerConfig(TomlTable? table)
     {

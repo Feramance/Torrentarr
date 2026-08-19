@@ -67,6 +67,30 @@ public class UpdateServiceTests
     }
 
     [Theory]
+    [InlineData("v6.14.3-2", true)]
+    [InlineData("6.14.3-1", true)]
+    [InlineData("6.14.3", false)]
+    [InlineData("v6.14.3", false)]
+    [InlineData("6.14.3-rc.1", false)]
+    [InlineData("", false)]
+    public void IsWeeklyBuildTag_DetectsNumericBuildSuffix(string tag, bool expected)
+    {
+        UpdateService.IsWeeklyBuildTag(tag).Should().Be(expected);
+    }
+
+    [Theory]
+    [InlineData("latest", false, "6.14.3-2", false)]
+    [InlineData("stable", false, "6.14.3-2", true)]
+    [InlineData("stable", false, "v6.14.3", false)]
+    [InlineData("stable", true, "v6.14.3", true)]
+    [InlineData("nightly", true, "6.14.3-2", false)]
+    public void SkipReleaseForChannel_StableSkipsPrereleaseAndWeeklyBuilds(
+        string channel, bool prerelease, string tag, bool skip)
+    {
+        UpdateService.SkipReleaseForChannel(channel, prerelease, tag).Should().Be(skip);
+    }
+
+    [Theory]
     [InlineData("6.14.3-2", "6.14.3-1", true)]
     [InlineData("6.14.3-1", "6.14.3", true)]
     [InlineData("6.14.4-1", "6.14.3-9", true)]

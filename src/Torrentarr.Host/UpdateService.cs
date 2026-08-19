@@ -418,7 +418,8 @@ public class UpdateService
         foreach (var item in releases.OfType<JObject>())
         {
             var prerelease = item["prerelease"]?.ToObject<bool>() ?? false;
-            if (channel == "stable" && prerelease)
+            var tag = item["tag_name"]?.ToObject<string>();
+            if (SkipReleaseForChannel(channel, prerelease, tag))
                 continue;
             return item;
         }
@@ -474,6 +475,27 @@ public class UpdateService
             return RuntimeInformation.OSArchitecture == Architecture.Arm64 ? "osx-arm64" : "osx-x64";
         // Linux
         return RuntimeInformation.OSArchitecture == Architecture.Arm64 ? "linux-arm64" : "linux-x64";
+    }
+
+    /// <summary>
+    /// <c>stable</c> matches Docker <c>:stable</c>: skip GitHub prereleases and weekly
+    /// <c>MAJOR.MINOR.PATCH-BUILD</c> tags (e.g. <c>6.14.3-2</c>).
+    /// </summary>
+    internal static bool SkipReleaseForChannel(string channel, bool prerelease, string? tagName)
+    {
+        if (!string.Equals(channel, "stable", StringComparison.OrdinalIgnoreCase))
+            return false;
+        return prerelease || IsWeeklyBuildTag(tagName);
+    }
+
+    /// <summary>
+    /// Weekly dependency builds use a numeric <c>-N</c> suffix (<c>6.14.3-2</c>), not
+    /// <c>6.14.3</c> patch/minor/major tags.
+    /// </summary>
+    internal static bool IsWeeklyBuildTag(string? tag)
+    {
+        var parsed = ParseReleaseVersion(tag ?? "");
+        return parsed is { Build: > 0 };
     }
 
     internal static bool IsNewerVersion(string latest, string current)

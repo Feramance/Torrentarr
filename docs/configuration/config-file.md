@@ -601,8 +601,8 @@ AutoUpdateChannel = "latest"
 
 Which GitHub release Torrentarr considers when checking for updates:
 
-- **`latest`** — newest GitHub release (current behavior).
-- **`stable`** — newest non-prerelease.
+- **`latest`** — newest GitHub release, including weekly dependency `[build]` tags.
+- **`stable`** — newest patch/minor/major release (skips prereleases and weekly `X.Y.Z-N` builds; same rule as Docker `:stable`).
 - **`nightly`** — check and log only; **do not** download or apply binaries.
 
 Source / `dotnet run` builds never apply binaries (`TORRENTARR_SOURCE_BUILD` / `QBITRR_SOURCE_BUILD`, a `.git` tree, or an unpublished `bin/Debug|Release` entry assembly).
