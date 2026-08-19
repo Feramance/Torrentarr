@@ -424,7 +424,7 @@ public class ArrWorkerManagerTests
                 config.ArrInstances["Radarr"] = new ArrInstanceConfig
                 {
                     Managed = true,
-                    URI = "http://localhost:7878",
+                    URI = "CHANGE_ME",
                     APIKey = "test",
                     Category = "movies",
                     Type = "radarr",
@@ -443,6 +443,9 @@ public class ArrWorkerManagerTests
             services.AddSingleton<IArrMediaService>(media);
             services.AddSingleton<ITorrentProcessor>(torrentProcessor);
             services.AddSingleton<IImportPathTracker>(new StubImportPathTracker());
+            services.AddSingleton<ILogger<ArrSyncService>>(NullLogger<ArrSyncService>.Instance);
+            services.AddSingleton(new DatabaseRestartCoordinator());
+            services.AddScoped<ArrSyncService>();
             var provider = services.BuildServiceProvider();
 
             var manager = new ArrWorkerManager(
