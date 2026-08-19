@@ -307,6 +307,16 @@ public class ScanQueueForBlocklistTests
         var cleanup = () => ArrSyncService.CleanupBlocklistedPath(dir, "bad\0name");
         cleanup.Should().NotThrow();
 
+        foreach (var ch in Path.GetInvalidFileNameChars())
+        {
+            if (ch is '/' or '\\' or '\0')
+                continue;
+
+            ArrSyncService.ResolveBlocklistedCleanupTarget(dir, "file" + ch + "name").Should().BeNull();
+            var del = () => ArrSyncService.CleanupBlocklistedPath(dir, "file" + ch + "name");
+            del.Should().NotThrow();
+        }
+
         if (OperatingSystem.IsWindows())
         {
             ArrSyncService.ResolveBlocklistedCleanupTarget(dir, "Who?").Should().BeNull();

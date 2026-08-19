@@ -1714,11 +1714,17 @@ public class ArrSyncService
 
     /// <summary>
     /// Resolves Arr queue outputPath+title to a path that stays under outputPath.
-    /// Rooted titles and <c>..</c> segments that escape the download folder return null.
+    /// Rooted titles, <c>..</c> escapes, and OS-invalid filename characters return null.
     /// </summary>
     internal static string? ResolveBlocklistedCleanupTarget(string? outputPath, string? title)
     {
         if (string.IsNullOrWhiteSpace(outputPath) || string.IsNullOrWhiteSpace(title))
+            return null;
+
+        // Path.GetFullPath does not throw for '?' / '*' on current Windows/.NET,
+        // but those characters cannot be deleted as a literal file and must not
+        // abort ScanQueueForBlocklistAsync.
+        if (TitleHasInvalidFileNameCharacters(title))
             return null;
 
         try
@@ -1745,9 +1751,21 @@ public class ArrSyncService
         }
         catch (Exception)
         {
-            // Invalid path characters (e.g. '?' on Windows, NUL anywhere) must not
-            // abort the rest of ScanQueueForBlocklistAsync.
             return null;
         }
+    }
+
+    private static bool TitleHasInvalidFileNameCharacters(string title)
+    {
+        var invalid = Path.GetInvalidFileNameChars();
+        foreach (var segment in title.Split('/', '\\'))
+        {
+            if (segment.Length == 0)
+                continue;
+            if (segment.IndexOfAny(invalid) >= 0)
+                return true;
+        }
+
+        return false;
     }
 }
