@@ -1,5 +1,13 @@
 # Changelog
 
+## v6.14.4
+
+Parity with qBitrr **v5.14.4-1** (Torrentarr schema **6.14.4**).
+
+### Bug Fixes
+- `MaxSeedingTime` is also met after Torrentarr has observed qBittorrent `stalledUP` for that many seconds (not `last_activity`). The first stalled loop never removes; leaving `stalledUP` or restarting Torrentarr resets the clock. Hit & Run still uses actual `seeding_time` / ratio and can block deletion of a long-stalled seed.
+- Unmapped Arr HTTP errors (including 415 on Sonarr `GET /api/v3/episode`) skip that series instead of killing the worker. Transport failures abort remaining series. If every series episode fetch fails, sync is not treated as complete and the search loop backs off. SearchAgain episode prune skips when any series fetch fails so the library is not mass-deleted.
+
 ## v6.14.3
 
 Parity jump with qBitrr **v5.14.3-1** (Torrentarr schema **6.14.3**; no 6.13.x release).

@@ -14,7 +14,7 @@ Torrentarr parity work is diffed against a **pinned** upstream ref during closeo
 | --- | --- |
 | **Branch** | `master` |
 | **Role** | Active behavioral baseline for the latest-main parity audit. |
-| **Reference release** | `v5.14.3-1` (qBitrr `EXPECTED_CONFIG_VERSION = "5.14.3"`). |
+| **Reference release** | `v5.14.4-1` (qBitrr `EXPECTED_CONFIG_VERSION = "5.14.4"`). |
 | **Prior closeout pin** | `v5.12.10` — retained as the previous audit baseline. |
 
 To move the pin: update this section, re-run the inventories below, and adjust [full-parity-matrix.md](full-parity-matrix.md) / tests as needed.

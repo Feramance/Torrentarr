@@ -32,4 +32,30 @@ internal static class ArrClientResponse
             statusCode != 0 ? (HttpStatusCode)statusCode : null,
             response.ErrorMessage);
     }
+
+    /// <summary>
+    /// pyarr-unmapped HTTP 4xx/5xx (including 415) that should skip one series, not kill the worker.
+    /// </summary>
+    internal static bool IsArrHttpError(Exception ex)
+    {
+        if (ex is ArrApiException { StatusCode: { } code })
+        {
+            var n = (int)code;
+            return n is >= 400 and <= 599;
+        }
+        return false;
+    }
+
+    /// <summary>
+    /// Connectivity / incomplete HTTP that should abort remaining series fetches.
+    /// </summary>
+    internal static bool IsArrTransportError(Exception ex)
+        => ex is HttpRequestException or TimeoutException
+           || (ex is ArrApiException api && api.StatusCode is null);
+
+    internal static void RaiseIfAllEpisodeFetchesFailed(int attempted, int failed, Exception? lastFailure)
+    {
+        if (attempted > 0 && failed == attempted && lastFailure != null)
+            throw lastFailure;
+    }
 }

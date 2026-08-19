@@ -312,7 +312,13 @@ The #1 reason Torrentarr doesn't process torrents is **mismatched categories**.
 
    If you see "Search loop crashed", check the full traceback above that line.
 
-4. **Common mistake - SearchLoopDelay:**
+4. **HTTP 415 / unmapped Arr errors during Sonarr episode fetch:**
+
+   Older qBitrr builds could log `Search loop crashed unexpectedly ... Exception: (415, '')` while loading years (`episode.get` for `SearchByYear`). Torrentarr loads years from the local DB, but the same HTTP 415 on `GET /api/v3/episode` during Sonarr sync used to skip only that series (and still can). Instance-wide connectivity failures abort remaining series. If every series episode fetch fails, sync is not treated as complete and the search loop backs off.
+
+   An empty 415 body often comes from a reverse proxy or WAF on `GET /api/v3/episode`. Test that URL with `X-Api-Key` from the same network as Torrentarr. Workaround: set `SearchByYear = false` for that Sonarr section.
+
+5. **Common mistake - SearchLoopDelay:**
 
    Note: `SearchLoopDelay` controls the delay **between individual searches** in a batch, not whether searches run.
    ```toml
@@ -320,11 +326,11 @@ The #1 reason Torrentarr doesn't process torrents is **mismatched categories**.
    SearchLoopDelay = -1  # -1 = uses default 30s between each search
    ```
 
-5. **Verify Arr has missing media:**
+6. **Verify Arr has missing media:**
    - Open Radarr/Sonarr → **Wanted** → **Missing**
    - If empty, there's nothing to search for
 
-6. **Check indexer connectivity:**
+7. **Check indexer connectivity:**
    - In Arr instance: **System** → **Status**
    - Ensure indexers are enabled and reachable
 

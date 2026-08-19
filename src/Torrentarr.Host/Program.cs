@@ -178,6 +178,7 @@ try
     // ArrWorkerManager registered as both singleton and IHostedService so it's injectable in endpoints
     builder.Services.AddSingleton<ArrWorkerManager>();
     builder.Services.AddSingleton<SearchYearCursor>();
+    builder.Services.AddSingleton<StalledUploadTracker>();
     builder.Services.AddHostedService(sp => sp.GetRequiredService<ArrWorkerManager>());
     builder.Services.AddHostedService<ProcessOrchestratorService>();
     // Scoped services (one per request / scope)

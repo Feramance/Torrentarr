@@ -2,7 +2,7 @@
 
 ## Scope
 
-This report captures Torrentarr's parity status after rebasing the audit from qBitrr **v5.12.10** to **v5.14.3-1**. Torrentarr schema is **6.14.3**.
+This report captures Torrentarr's parity status after rebasing the audit from qBitrr **v5.12.10** through **v5.14.4-1**. Torrentarr schema is **6.14.4**.
 
 Primary tracking artifacts:
 
@@ -33,6 +33,11 @@ Primary tracking artifacts:
 - `config.example.toml` now surfaces `MatchSubcategories` in the primary qBit example for parity with upstream config docs.
 - OpenAPI helper scripts and contributor docs now point at latest qBitrr `master` by default instead of the old `5.12.3` pin.
 
+### Implemented later (qBitrr 5.14.4-1)
+- Stalled-upload `MaxSeedingTime` clock (`stalledUP` observation, not `last_activity`); HnR still uses real `seeding_time` / ratio.
+- Per-series Sonarr episode HTTP skip (including 415); transport abort; all-fail rethrow so ingest is not marked complete.
+- `ExpectedConfigVersion` / default config references aligned to **`6.14.4`**.
+
 ## Validation Evidence
 
 Backend tests (`dotnet test --filter "Category!=Live"`):
@@ -57,4 +62,4 @@ Focused regression checks added/updated:
 
 ## Matrix Status
 
-Latest-main user-facing parity is closed against qBitrr **v5.14.3-1**. Remaining `intentional-divergence` rows in `full-parity-matrix.md` are architecture or packaging only (process isolation, WAL vs `db_lock`, fork session sharing, Pathos, placeholder defaultdicts, `setup.py` / CI autofix).
+Latest-main user-facing parity is closed against qBitrr **v5.14.4-1**. Remaining `intentional-divergence` rows in `full-parity-matrix.md` are architecture or packaging only (process isolation, WAL vs `db_lock`, fork session sharing, Pathos, placeholder defaultdicts, `setup.py` / CI autofix).

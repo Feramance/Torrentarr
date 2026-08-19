@@ -157,6 +157,7 @@ try
     builder.Services.AddScoped<IDatabaseHealthService, DatabaseHealthService>();
     builder.Services.AddSingleton<IConnectivityService, ConnectivityService>();
     builder.Services.AddSingleton<SearchYearCursor>();
+    builder.Services.AddSingleton<StalledUploadTracker>();
 
     builder.Services.AddHostedService<ArrWorkerService>();
 
