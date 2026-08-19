@@ -1,5 +1,12 @@
 # Changelog
 
+## v6.14.4-1 (2026-08-19)
+
+### Bug Fixes
+- [patch] qBitrr 5.14.3 parity: SearchByYear, ReSearch, WebUI schema/logs (#388) ([e5db230](https://github.com/Feramance/Torrentarr/commit/e5db2303108be89cdf2f8cb0c8eebce90e72d629))
+
+---
+
 ## v6.14.3
 
 Parity jump with qBitrr **v5.14.3-1** (Torrentarr schema **6.14.3**; no 6.13.x release).
