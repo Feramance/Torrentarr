@@ -1,6 +1,6 @@
 # Full Parity Matrix (qBitrr -> Torrentarr)
 
-This matrix tracks the current parity audit against upstream qBitrr **v5.14.3-1** (`EXPECTED_CONFIG_VERSION = "5.14.3"`). Torrentarr’s matching schema is **6.14.3** (+1 major). There is no Torrentarr 6.13.x release; configs on `6.12.*` migrate forward in one jump.
+This matrix tracks the current parity audit against upstream qBitrr **v5.14.4-1** (`EXPECTED_CONFIG_VERSION = "5.14.4"`). Torrentarr’s matching schema is **6.14.4** (+1 major). There is no Torrentarr 6.13.x release; configs on `6.12.*` migrate forward in one jump.
 
 ## Parity claim policy
 
@@ -31,8 +31,8 @@ Status values:
 | `qBitrr/qbit_category_manager.py` | `QBitCategoryWorkerManager.cs`, `SeedingService.cs`, `CategoryOwnershipHelper.cs` | full | **Evidence:** qBit-only `ManagedCategories` workers; `MatchSubcategories`; rate limits via `ApplySeedingLimitsAsync`; [`CategoryOwnershipHelperTests`](https://github.com/Feramance/Torrentarr/blob/master/tests/Torrentarr.Core.Tests/Configuration/CategoryOwnershipHelperTests.cs). |
 | `qBitrr/arr_tracker_index.py` | `SeedingService.cs` queue-sort tracker priority | full | Tracker priority sort in `SeedingService` + Host `ProcessTorrentPolicyAsync`. |
 | `qBitrr/config.py` | `TorrentarrConfig.cs`, `ConfigurationLoader.cs` | full | Key-by-key TOML parity including `MatchSubcategories`; `UrlBase`, `BehindHttpsProxy`, env aliases; hot reload restarts workers on Host. |
-| `qBitrr/gen_config.py` | `ConfigurationLoader.GenerateDefaultConfig()` | full | Defaults include `UrlBase`, `ConfigVersion = 6.14.3`, `AutoUpdateChannel`, `[Readarr-*]`. |
-| `qBitrr/config_version.py` | `ConfigurationLoader.ValidateConfigVersion()` | full | `ExpectedConfigVersion = 6.14.3`; migration on load. |
+| `qBitrr/gen_config.py` | `ConfigurationLoader.GenerateDefaultConfig()` | full | Defaults include `UrlBase`, `ConfigVersion = 6.14.4`, `AutoUpdateChannel`, `[Readarr-*]`. |
+| `qBitrr/config_version.py` | `ConfigurationLoader.ValidateConfigVersion()` | full | `ExpectedConfigVersion = 6.14.4`; migration on load. |
 | `qBitrr/env_config.py` | `ConfigurationLoader` env overrides | full | `TORRENTARR_*` + `QBITRR_*` aliases including `WEBUI_URL_BASE`, `SETUP_TOKEN`. |
 | `qBitrr/duration_config.py` | `DurationParser.cs` | full | Integer and fractional TOML durations (`1.5`, `1.5h`). **Evidence:** [`DurationParserTests`](https://github.com/Feramance/Torrentarr/blob/master/tests/Torrentarr.Core.Tests/Configuration/DurationParserTests.cs). |
 | `qBitrr/database.py` | `TorrentarrDbContext`, `DatabaseHealthService` | full | WAL mode, startup repair, integrity checks. |
@@ -78,7 +78,7 @@ Status values:
 | `5.12.9` further fixes | full | Periodic DB maintain (checkpoint + health + repair), Arr catalog 503 on corruption, Host `--backup-database`. Cross-process `db_lock` wrapping is architecture-only. |
 | `5.12.10` qBit session sharing across forked workers | intentional-divergence | qBitrr fix addresses forked Python workers. Torrentarr uses separate .NET clients/caches rather than inherited fork state, so the exact bug class does not apply. |
 
-## Latest-Main Delta Audit (5.12.11 -> 5.14.3)
+## Latest-Main Delta Audit (5.12.11 -> 5.14.4)
 
 | Upstream delta | Torrentarr status | Notes |
 | --- | --- | --- |
@@ -94,6 +94,8 @@ Status values:
 | `5.14.0` Pathos dedicated-qBit-client gate | intentional-divergence | Python multiprocessing concern; Torrentarr workers already isolate qBit clients. |
 | `5.14.1`–`5.14.3` Readarr allowlist / audiobook save (#550) | full | Type-aware defaults; ebook-only default expansion; WebUI save keeps `.m4b`/`.flac`. |
 | `5.14.2` tracker `-1` merge with Arr/CategorySeeding | full | Unlimited only when no source sets a positive limit. **Evidence:** [`SeedingLimitMergeTests`](https://github.com/Feramance/Torrentarr/blob/master/tests/Torrentarr.Infrastructure.Tests/Services/SeedingLimitMergeTests.cs). |
+| `5.14.4` stalledUP MaxSeedingTime clock (#559) | full | `StalledUploadTracker` singleton; first `stalledUP` loop never removes; leaving stalled or restarting resets the clock; HnR uses real `seeding_time` / ratio. **Evidence:** [`SeedingServiceTests`](https://github.com/Feramance/Torrentarr/blob/master/tests/Torrentarr.Infrastructure.Tests/Services/SeedingServiceTests.cs), [`StalledUploadTrackerTests`](https://github.com/Feramance/Torrentarr/blob/master/tests/Torrentarr.Infrastructure.Tests/Services/StalledUploadTrackerTests.cs). |
+| `5.14.4` Sonarr episode HTTP skip/backoff (#558) | full | Per-series 4xx/5xx skip; transport abort; all-fail rethrow on ingest; prune fail-closed if any episode fetch fails. **Evidence:** [`ArrClientResponseTests`](https://github.com/Feramance/Torrentarr/blob/master/tests/Torrentarr.Infrastructure.Tests/ApiClients/ArrClientResponseTests.cs), [`ArrSeriesEpisodeFetchTests`](https://github.com/Feramance/Torrentarr/blob/master/tests/Torrentarr.Infrastructure.Tests/Services/ArrSeriesEpisodeFetchTests.cs). |
 | Docker `stable` / `latest` / `nightly` image channels | full | Releases publish `:latest` and `v{version}` (including `-N` build tags). `:stable` is patch/minor/major only. Weekly `release_type=build` does not move `:stable`. Master (non-release) commits publish `:nightly`. |
 | `SkipTLSVerify` on Arr/qBit/Ombi/Overseerr | full | Parsed/saved on every qBit and Arr section plus Ombi/Overseerr; applied to RestSharp and HttpClient. |
 
@@ -106,5 +108,5 @@ Status values:
 - **Lidarr artists + thumbnails (5.12.0):** `ArrCatalogEndpoints` + `ArrThumbnailService` + frontend API client.
 - **Readarr authors + books (5.14.0):** `ArrCatalogEndpoints` + `ReadarrView` (no track table).
 - **OpenAPI drift guard:** `scripts/check-openapi-drift.sh` in CI vs qBitrr latest `master` (overrideable via `QBITRR_OPENAPI_REF`).
-- **Config schema:** Torrentarr `6.14.3` (+1 major vs qBitrr `5.14.3` line).
+- **Config schema:** Torrentarr `6.14.4` (+1 major vs qBitrr `5.14.4` line).
 - **Latest-main follow-up:** import-completion confirmation, multi-instance routing, SkipTLSVerify, Overseerr release-date gating, Docker channels, 5.12.9 DB maintenance, 5.14 catalog grouping (always series/artist rows), SearchMissing master switch, explicit `loop_completed`, Lidarr quality cutoff, post-import FFprobe AutoDelete cleanup, and in-process dual loops are implemented. Remaining `intentional-divergence` rows are architecture or packaging only (fork sessions, pathos, Python `db_lock`, placeholder defaultdicts, targeted repair script, `setup.py` / CI autofix).

@@ -16,7 +16,7 @@ namespace Torrentarr.Infrastructure.Tests.Services;
 /// </summary>
 public class SeedingServiceTests
 {
-    private static SeedingService CreateService(TorrentarrConfig? config = null)
+    private static SeedingService CreateService(TorrentarrConfig? config = null, StalledUploadTracker? stalled = null)
     {
         var options = new DbContextOptionsBuilder<TorrentarrDbContext>()
             .UseInMemoryDatabase(Guid.NewGuid().ToString())
@@ -27,7 +27,8 @@ public class SeedingServiceTests
             NullLogger<SeedingService>.Instance,
             dbContext,
             config ?? new TorrentarrConfig(),
-            mgr);
+            mgr,
+            stalled);
     }
 
     // ── ExtractTrackerHost ─────────────────────────────────────────────────────
@@ -375,6 +376,125 @@ public class SeedingServiceTests
         var result = await svc.ShouldRemoveTorrentAsync(torrent);
 
         result.Should().BeTrue();
+    }
+
+    [Fact]
+    public void IsUploadingState_StalledUp_IsTrue()
+    {
+        SeedingService.IsUploadingState("stalledUP").Should().BeTrue();
+        SeedingService.IsStalledUploadState("stalledUP").Should().BeTrue();
+        SeedingService.IsStalledUploadState("uploading").Should().BeFalse();
+    }
+
+    [Fact]
+    public async Task ShouldRemoveTorrentAsync_FirstStalledUploadLoop_DoesNotMeetTimeLimit()
+    {
+        var config = TimeOnlySeedingConfig(limitSeconds: 60);
+        var time = new ManualTimeProvider(DateTimeOffset.UnixEpoch);
+        var svc = CreateService(config, new StalledUploadTracker(time));
+        var torrent = StalledTorrent(seedingTime: 0);
+
+        var result = await svc.ShouldRemoveTorrentAsync(torrent);
+
+        result.Should().BeFalse();
+    }
+
+    [Fact]
+    public async Task ShouldRemoveTorrentAsync_StalledUploadIdle_MeetsTimeLimit()
+    {
+        var config = TimeOnlySeedingConfig(limitSeconds: 60);
+        var time = new ManualTimeProvider(DateTimeOffset.UnixEpoch);
+        var tracker = new StalledUploadTracker(time);
+        var svc = CreateService(config, tracker);
+        var torrent = StalledTorrent(seedingTime: 0);
+
+        (await svc.ShouldRemoveTorrentAsync(torrent)).Should().BeFalse();
+        time.Advance(TimeSpan.FromSeconds(60));
+        (await svc.ShouldRemoveTorrentAsync(torrent)).Should().BeTrue();
+    }
+
+    [Fact]
+    public async Task ShouldRemoveTorrentAsync_LeavingStalledUpload_ResetsClock()
+    {
+        var config = TimeOnlySeedingConfig(limitSeconds: 60);
+        var time = new ManualTimeProvider(DateTimeOffset.UnixEpoch);
+        var svc = CreateService(config, new StalledUploadTracker(time));
+        var torrent = StalledTorrent(seedingTime: 0);
+
+        (await svc.ShouldRemoveTorrentAsync(torrent)).Should().BeFalse();
+        time.Advance(TimeSpan.FromSeconds(30));
+        torrent.State = "pausedUP";
+        (await svc.ShouldRemoveTorrentAsync(torrent)).Should().BeFalse();
+        torrent.State = "stalledUP";
+        time.Advance(TimeSpan.FromSeconds(30));
+        (await svc.ShouldRemoveTorrentAsync(torrent)).Should().BeFalse();
+        time.Advance(TimeSpan.FromSeconds(60));
+        (await svc.ShouldRemoveTorrentAsync(torrent)).Should().BeTrue();
+    }
+
+    [Fact]
+    public async Task ShouldRemoveTorrentAsync_SeedingTimeStillMeetsWithoutStall()
+    {
+        var config = TimeOnlySeedingConfig(limitSeconds: 60);
+        var svc = CreateService(config);
+        var torrent = MakeTorrent(1.0, 0, 120);
+        torrent.State = "uploading";
+        torrent.QBitInstanceName = "qBit";
+
+        (await svc.ShouldRemoveTorrentAsync(torrent)).Should().BeTrue();
+    }
+
+    [Fact]
+    public async Task ShouldRemoveTorrentAsync_StalledIdle_HnRUnmet_BlocksRemoval()
+    {
+        var config = TimeOnlySeedingConfig(limitSeconds: 60);
+        config.QBitInstances["qBit"].CategorySeeding.HitAndRunMode = "or";
+        config.QBitInstances["qBit"].CategorySeeding.MinSeedRatio = 2.0;
+        config.QBitInstances["qBit"].CategorySeeding.MinSeedingTimeDays = 7;
+        var time = new ManualTimeProvider(DateTimeOffset.UnixEpoch);
+        var svc = CreateService(config, new StalledUploadTracker(time));
+        var torrent = StalledTorrent(seedingTime: 0);
+        torrent.Ratio = 0.1;
+        torrent.Progress = 1.0;
+
+        (await svc.ShouldRemoveTorrentAsync(torrent)).Should().BeFalse();
+        time.Advance(TimeSpan.FromSeconds(60));
+        (await svc.ShouldRemoveTorrentAsync(torrent)).Should().BeFalse();
+    }
+
+    private static TorrentarrConfig TimeOnlySeedingConfig(int limitSeconds)
+    {
+        var config = new TorrentarrConfig();
+        config.QBitInstances["qBit"] = new QBitConfig
+        {
+            CategorySeeding = new CategorySeedingConfig
+            {
+                RemoveTorrent = 2,
+                MaxSeedingTime = limitSeconds,
+                HitAndRunMode = "disabled"
+            }
+        };
+        return config;
+    }
+
+    private static TorrentInfo StalledTorrent(long seedingTime)
+    {
+        var torrent = MakeTorrent(1.0, 0, seedingTime);
+        torrent.State = "stalledUP";
+        torrent.QBitInstanceName = "qBit";
+        torrent.Hash = "stalled-hash";
+        return torrent;
+    }
+
+    private sealed class ManualTimeProvider : TimeProvider
+    {
+        private DateTimeOffset _utcNow;
+
+        public ManualTimeProvider(DateTimeOffset utcNow) => _utcNow = utcNow;
+
+        public override DateTimeOffset GetUtcNow() => _utcNow;
+
+        public void Advance(TimeSpan delta) => _utcNow += delta;
     }
 
     [Fact]

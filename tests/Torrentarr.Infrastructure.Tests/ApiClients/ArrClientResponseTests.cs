@@ -40,4 +40,43 @@ public sealed class ArrClientResponseTests
 
         act.Should().NotThrow();
     }
+
+    [Fact]
+    public void IsArrHttpError_TrueFor415()
+    {
+        var ex = new ArrApiException("failed", HttpStatusCode.UnsupportedMediaType, "");
+        ArrClientResponse.IsArrHttpError(ex).Should().BeTrue();
+        ArrClientResponse.IsArrTransportError(ex).Should().BeFalse();
+    }
+
+    [Fact]
+    public void IsArrTransportError_TrueForHttpRequestException()
+    {
+        var ex = new HttpRequestException("connection refused");
+        ArrClientResponse.IsArrTransportError(ex).Should().BeTrue();
+        ArrClientResponse.IsArrHttpError(ex).Should().BeFalse();
+    }
+
+    [Fact]
+    public void IsArrTransportError_TrueWhenStatusMissing()
+    {
+        var ex = new ArrApiException("timed out", statusCode: null, "Error");
+        ArrClientResponse.IsArrTransportError(ex).Should().BeTrue();
+        ArrClientResponse.IsArrHttpError(ex).Should().BeFalse();
+    }
+
+    [Fact]
+    public void RaiseIfAllEpisodeFetchesFailed_ThrowsWhenEverySeriesFailed()
+    {
+        var last = new ArrApiException("415", HttpStatusCode.UnsupportedMediaType, "");
+        var act = () => ArrClientResponse.RaiseIfAllEpisodeFetchesFailed(3, 3, last);
+        act.Should().Throw<ArrApiException>().Which.Should().BeSameAs(last);
+    }
+
+    [Fact]
+    public void RaiseIfAllEpisodeFetchesFailed_NoOpWhenSomeSucceeded()
+    {
+        var act = () => ArrClientResponse.RaiseIfAllEpisodeFetchesFailed(3, 1, new Exception("x"));
+        act.Should().NotThrow();
+    }
 }
