@@ -37,6 +37,25 @@ public class ArrWorkerManagerTests
     }
 
     [Fact]
+    public void IsWorkerCancellation_ReturnsFalse_ForRequestTimeout()
+    {
+        using var workerCts = new CancellationTokenSource();
+        var timeout = new TaskCanceledException("request timed out");
+
+        ArrWorkerManager.IsWorkerCancellation(timeout, workerCts.Token).Should().BeFalse();
+    }
+
+    [Fact]
+    public void IsWorkerCancellation_ReturnsTrue_WhenWorkerIsStopping()
+    {
+        using var workerCts = new CancellationTokenSource();
+        workerCts.Cancel();
+        var cancellation = new OperationCanceledException(workerCts.Token);
+
+        ArrWorkerManager.IsWorkerCancellation(cancellation, workerCts.Token).Should().BeTrue();
+    }
+
+    [Fact]
     public void ShouldRunSearch_ReturnsFalse_WithinInterval()
     {
         var manager = CreateManager();

@@ -147,13 +147,7 @@ public class ArrSyncService
 
         _logger.LogInformation("Started updating database");
 
-        List<RadarrMovie> movies;
-        try { movies = await client.GetMoviesAsync(ct); }
-        catch (Exception ex)
-        {
-            _logger.LogWarning(ex, "[{Instance}] ArrSyncService: Radarr {Name} unreachable", instanceName, instanceName);
-            return;
-        }
+        var movies = await client.GetMoviesAsync(ct);
 
         var profiles = await client.GetQualityProfilesAsync(ct);
         var profileDict = profiles.ToDictionary(p => p.Id);
@@ -304,13 +298,7 @@ public class ArrSyncService
 
         _logger.LogInformation("Started updating database");
 
-        List<SonarrSeries> seriesList;
-        try { seriesList = await client.GetSeriesAsync(ct); }
-        catch (Exception ex)
-        {
-            _logger.LogWarning(ex, "[{Instance}] ArrSyncService: Sonarr {Name} unreachable", instanceName, instanceName);
-            return;
-        }
+        var seriesList = await client.GetSeriesAsync(ct);
 
         var profiles = await client.GetQualityProfilesAsync(ct);
         var profileDict = profiles.ToDictionary(p => p.Id);
