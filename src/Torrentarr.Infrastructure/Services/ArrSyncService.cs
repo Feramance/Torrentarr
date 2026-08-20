@@ -88,7 +88,7 @@ public class ArrSyncService
 
             _logger.LogTrace("[{Instance}] Sync completed for {Name}", instanceName, instanceName);
         }
-        catch (OperationCanceledException)
+        catch (OperationCanceledException) when (ct.IsCancellationRequested)
         {
             throw;
         }
@@ -394,7 +394,11 @@ public class ArrSyncService
             attempted++;
             List<SonarrEpisode> episodes;
             try { episodes = await client.GetEpisodesAsync(sonarrId, ct); }
-            catch (Exception ex) when (ex is not OperationCanceledException)
+            catch (OperationCanceledException) when (ct.IsCancellationRequested)
+            {
+                throw;
+            }
+            catch (Exception ex)
             {
                 if (!ArrSeriesEpisodeFetch.ShouldSkipSeries(ex))
                     throw;
@@ -1786,3 +1790,4 @@ public class ArrSyncService
         return false;
     }
 }
+

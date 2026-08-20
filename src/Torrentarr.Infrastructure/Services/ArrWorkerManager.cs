@@ -351,7 +351,7 @@ public class ArrWorkerManager : BackgroundService
                     await RunRefreshMonitoredDownloadsIfDueAsync(instanceName, arrCfg, ct);
                     consecutiveErrors = 0;
                 }
-                catch (OperationCanceledException)
+                catch (OperationCanceledException) when (ct.IsCancellationRequested)
                 {
                     break;
                 }
@@ -419,7 +419,7 @@ public class ArrWorkerManager : BackgroundService
 
                     consecutiveErrors = 0;
                 }
-                catch (OperationCanceledException)
+                catch (OperationCanceledException) when (ct.IsCancellationRequested)
                 {
                     break;
                 }
@@ -488,7 +488,7 @@ public class ArrWorkerManager : BackgroundService
 
             await UpdateCountsAsync(instanceName, ct);
         }
-        catch (OperationCanceledException)
+        catch (OperationCanceledException) when (ct.IsCancellationRequested)
         {
             throw;
         }
@@ -1068,3 +1068,4 @@ public class ArrWorkerManager : BackgroundService
         _logger.LogDebug("Script Config:  Category={Category}", arrCfg.Category);
     }
 }
+

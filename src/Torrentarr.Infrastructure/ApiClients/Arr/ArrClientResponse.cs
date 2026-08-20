@@ -50,7 +50,7 @@ internal static class ArrClientResponse
     /// Connectivity / incomplete HTTP that should abort remaining series fetches.
     /// </summary>
     internal static bool IsArrTransportError(Exception ex)
-        => ex is HttpRequestException or TimeoutException
+        => ex is HttpRequestException or TimeoutException or TaskCanceledException
            || (ex is ArrApiException api && api.StatusCode is null);
 
     internal static void RaiseIfAllEpisodeFetchesFailed(int attempted, int failed, Exception? lastFailure)
@@ -59,3 +59,4 @@ internal static class ArrClientResponse
             throw lastFailure;
     }
 }
+

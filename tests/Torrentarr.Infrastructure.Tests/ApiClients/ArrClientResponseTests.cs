@@ -58,6 +58,14 @@ public sealed class ArrClientResponseTests
     }
 
     [Fact]
+    public void IsArrTransportError_TrueForTaskCanceledTimeout()
+    {
+        var ex = new TaskCanceledException("request timed out");
+        ArrClientResponse.IsArrTransportError(ex).Should().BeTrue();
+        ArrClientResponse.IsArrHttpError(ex).Should().BeFalse();
+    }
+
+    [Fact]
     public void IsArrTransportError_TrueWhenStatusMissing()
     {
         var ex = new ArrApiException("timed out", statusCode: null, "Error");
@@ -80,3 +88,4 @@ public sealed class ArrClientResponseTests
         act.Should().NotThrow();
     }
 }
+
