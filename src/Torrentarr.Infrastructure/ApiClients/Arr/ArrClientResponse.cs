@@ -1,4 +1,5 @@
 using System.Net;
+using Newtonsoft.Json;
 using RestSharp;
 using Torrentarr.Infrastructure.Http;
 
@@ -31,6 +32,14 @@ internal static class ArrClientResponse
             $"Arr API {operation} failed: HTTP {status}",
             statusCode != 0 ? (HttpStatusCode)statusCode : null,
             response.ErrorMessage);
+    }
+
+    internal static T DeserializeOrDefault<T>(string? content) where T : new()
+    {
+        if (string.IsNullOrWhiteSpace(content))
+            return new T();
+
+        return JsonConvert.DeserializeObject<T>(content) ?? new T();
     }
 
     /// <summary>

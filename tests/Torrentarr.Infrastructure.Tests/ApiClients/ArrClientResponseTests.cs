@@ -41,6 +41,26 @@ public sealed class ArrClientResponseTests
         act.Should().NotThrow();
     }
 
+    [Theory]
+    [InlineData(null)]
+    [InlineData("")]
+    [InlineData("   ")]
+    public void DeserializeOrDefault_ReturnsDefaultForMissingContent(string? content)
+    {
+        var result = ArrClientResponse.DeserializeOrDefault<SystemInfo>(content);
+
+        result.Should().NotBeNull();
+        result.Version.Should().BeEmpty();
+    }
+
+    [Fact]
+    public void DeserializeOrDefault_DeserializesContent()
+    {
+        var result = ArrClientResponse.DeserializeOrDefault<SystemInfo>("{\"version\":\"4.0.0\"}");
+
+        result.Version.Should().Be("4.0.0");
+    }
+
     [Fact]
     public void IsArrHttpError_TrueFor415()
     {

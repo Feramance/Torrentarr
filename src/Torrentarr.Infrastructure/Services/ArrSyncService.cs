@@ -1674,7 +1674,7 @@ public class ArrSyncService
     /// exact message match) and blocklist+delete them, including listed files.
     /// </summary>
     private async Task ScanQueueForBlocklistAsync(
-        IEnumerable<(int Id, string? DownloadId, string? Status, string? TrackedDownloadStatus, string? TrackedDownloadState, string? OutputPath, List<StatusMessage>? StatusMessages)> items,
+        IEnumerable<(int Id, string? DownloadId, string Status, string? TrackedDownloadStatus, string? TrackedDownloadState, string? OutputPath, List<StatusMessage>? StatusMessages)> items,
         ArrInstanceConfig cfg,
         Func<int, CancellationToken, Task<bool>> deleteFromQueue,
         CancellationToken ct)
