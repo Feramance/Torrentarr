@@ -1,5 +1,16 @@
 # Changelog
 
+## v6.14.5-1 (2026-08-20)
+
+### Bug Fixes
+- fix: keep Arr timeouts in worker backoff (#390) ([fb0c981](https://github.com/Feramance/Torrentarr/commit/fb0c9810dda646c83477c19a1acd3d850217f554))
+- fix: keep Arr timeouts in worker backoff (#390) ([5375472](https://github.com/Feramance/Torrentarr/commit/5375472f3916f40296bec4d8fdb5aa060517f603))
+
+### Maintenance
+- qBitrr 5.14.4-1 parity: stalledUP MaxSeedingTime clock and Sonarr HTTP skip (#389) ([4b0e910](https://github.com/Feramance/Torrentarr/commit/4b0e9100f667f0b795fb5115b836642881d688cd))
+
+---
+
 ## v6.14.4-1 (2026-08-19)
 
 Parity with qBitrr **v5.14.4-1** (Torrentarr schema **6.14.4**).
