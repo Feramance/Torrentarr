@@ -88,9 +88,14 @@ public class ArrSyncService
 
             _logger.LogTrace("[{Instance}] Sync completed for {Name}", instanceName, instanceName);
         }
+        catch (OperationCanceledException)
+        {
+            throw;
+        }
         catch (Exception ex)
         {
             _logger.LogError(ex, "[{Instance}] ArrSyncService: error syncing {Type} instance {Name}", instanceName, arrConfig.Type, instanceName);
+            throw;
         }
     }
 
@@ -379,15 +384,25 @@ public class ArrSyncService
         await _db.SaveChangesWithRetryAsync(_logger, _restartCoordinator, cancellationToken: ct);
 
         var episodesAdded = 0;
+        var attempted = 0;
+        var failed = 0;
+        Exception? lastFailure = null;
 
         foreach (var (sonarrId, seriesEntity) in entityBySonarrId)
         {
             ct.ThrowIfCancellationRequested();
+            attempted++;
             List<SonarrEpisode> episodes;
             try { episodes = await client.GetEpisodesAsync(sonarrId, ct); }
-            catch (Exception ex)
+            catch (Exception ex) when (ex is not OperationCanceledException)
             {
-                _logger.LogWarning(ex, "ArrSyncService: failed to get episodes for series {Id}", sonarrId);
+                if (!ArrSeriesEpisodeFetch.ShouldSkipSeries(ex))
+                    throw;
+                _logger.LogWarning(ex,
+                    "Skipping series {Id} ({Title}) during DB update: {Message}",
+                    sonarrId, seriesEntity.Title, ex.Message);
+                failed++;
+                lastFailure = ex;
                 continue;
             }
 
@@ -443,6 +458,8 @@ public class ArrSyncService
 
             await _db.SaveChangesWithRetryAsync(_logger, _restartCoordinator, cancellationToken: ct);
         }
+
+        ArrClientResponse.RaiseIfAllEpisodeFetchesFailed(attempted, failed, lastFailure);
 
         _logger.LogDebug("[{Instance}] ArrSyncService: Sonarr {Name} synced {SeriesCount} series - Series Added: {SeriesAdded}, Updated: {SeriesUpdated}, Deleted: {SeriesDeleted}, Episodes Added: {EpisodesAdded}",
             instanceName, instanceName, seriesList.Count, seriesAdded, seriesUpdated, seriesToDelete.Count, episodesAdded);

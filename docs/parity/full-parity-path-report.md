@@ -4,8 +4,8 @@ End-to-end review of **every user-facing feature and logical path**, compared to
 
 | Field | Value |
 | --- | --- |
-| **qBitrr baseline** | v5.14.3-1 / current `master` (`EXPECTED_CONFIG_VERSION = 5.14.3`) |
-| **Torrentarr** | product 6.14.3-1, schema **6.14.3** (+1 major) |
+| **qBitrr baseline** | v5.14.4-1 / current `master` (`EXPECTED_CONFIG_VERSION = 5.14.4`) |
+| **Torrentarr** | product 6.14.4-1, schema **6.14.4** (+1 major) |
 | **Contracts** | same `config.toml` format; same logical SQLite schema; DB file is `torrentarr.db` |
 | **Row-level file map** | [full-parity-matrix.md](full-parity-matrix.md) |
 | **Contributor pin / tests** | [contributor-reference.md](contributor-reference.md) |

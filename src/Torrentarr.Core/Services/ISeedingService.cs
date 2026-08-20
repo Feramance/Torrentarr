@@ -56,7 +56,8 @@ public interface ISeedingService
     /// <summary>
     /// Check if torrent meets removal conditions based on RemoveMode.
     /// Matches qBitrr's _should_remove_torrent() exactly.
-    /// RemoveMode: -1=Never, 1=Ratio only, 2=Time only, 3=OR, 4=AND
+    /// RemoveMode: -1=Never, 1=Ratio only, 2=Time only, 3=OR, 4=AND.
+    /// Includes HnR: when enabled, false until real seeding_time / ratio obligations are met.
     /// </summary>
     Task<bool> ShouldRemoveTorrentAsync(TorrentInfo torrent, CancellationToken cancellationToken = default);
 

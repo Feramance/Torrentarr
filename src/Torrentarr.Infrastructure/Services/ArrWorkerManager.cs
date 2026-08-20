@@ -488,9 +488,14 @@ public class ArrWorkerManager : BackgroundService
 
             await UpdateCountsAsync(instanceName, ct);
         }
+        catch (OperationCanceledException)
+        {
+            throw;
+        }
         catch (Exception ex)
         {
             _logger.LogError(ex, "Sync failed for {Instance}", instanceName);
+            throw;
         }
     }
 
@@ -956,11 +961,23 @@ public class ArrWorkerManager : BackgroundService
             await db.Series.Where(s => s.ArrInstance == instanceName && !seriesIds.Contains(s.ArrId))
                 .ExecuteDeleteAsync(ct);
 
-            var episodeIds = new List<int>();
-            foreach (var sid in seriesIds)
+            var (skipEpisodePrune, episodeIds) = await ArrSeriesEpisodeFetch.CollectEpisodeIdsAsync(
+                seriesIds,
+                async (sid, token) =>
+                {
+                    var episodes = await client.GetEpisodesAsync(sid, token);
+                    return (IReadOnlyList<int>)episodes.Select(e => e.Id).ToList();
+                },
+                _logger,
+                instanceName,
+                ct);
+
+            if (skipEpisodePrune)
             {
-                var episodes = await client.GetEpisodesAsync(sid, ct);
-                episodeIds.AddRange(episodes.Select(e => e.Id));
+                _logger.LogWarning(
+                    "{Instance}: skipped episode prune because one or more series episode fetches failed",
+                    instanceName);
+                return;
             }
 
             if (episodeIds.Count == 0)

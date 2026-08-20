@@ -32,6 +32,7 @@ public class TorrentProcessor : ITorrentProcessor
     private readonly IImportPathTracker? _pathTracker;
     private readonly IMediaValidationService? _mediaValidation;
     private readonly DatabaseRestartCoordinator _restartCoordinator;
+    private readonly StalledUploadTracker? _stalledUploads;
 
     private readonly HashSet<string> _specialCategories;
 
@@ -45,7 +46,8 @@ public class TorrentProcessor : ITorrentProcessor
         IArrImportService? importService = null,
         ISeedingService? seedingService = null,
         IImportPathTracker? pathTracker = null,
-        IMediaValidationService? mediaValidation = null)
+        IMediaValidationService? mediaValidation = null,
+        StalledUploadTracker? stalledUploads = null)
     {
         _logger = logger;
         _qbitManager = qbitManager;
@@ -57,6 +59,7 @@ public class TorrentProcessor : ITorrentProcessor
         _seedingService = seedingService;
         _pathTracker = pathTracker;
         _mediaValidation = mediaValidation;
+        _stalledUploads = stalledUploads;
 
         _specialCategories = new HashSet<string>(StringComparer.OrdinalIgnoreCase)
         {
@@ -463,7 +466,7 @@ public class TorrentProcessor : ITorrentProcessor
             {
                 _logger.LogWarning("Deleting torrent (custom format unmet): [{Name}] | Hash[{Hash}]",
                     torrent.Name, torrent.Hash);
-                await client.DeleteTorrentsAsync(new List<string> { torrent.Hash }, deleteFiles: true, ct);
+                await DeleteTorrentFromClientAsync(client, torrent, deleteFiles: true, ct);
                 stats.Failed++;
             }
         }
@@ -471,21 +474,17 @@ public class TorrentProcessor : ITorrentProcessor
         // (qBitrr line 6106-6109: remove_torrent and not leave_alone and amount_left==0)
         else if (removeTorrent && !leaveAlone && torrent.AmountLeft == 0)
         {
-            var hnrAllows = _seedingService == null || await _seedingService.HnrAllowsDeleteAsync(torrent, "ratio/seed limit", ct);
-            if (hnrAllows)
-            {
-                _logger.LogWarning("Deleting torrent (ratio/seed limit reached): [{Name}] | Ratio[{Ratio:F2}] | SeedingTime[{SeedTime}s] | Hash[{Hash}]",
-                    torrent.Name, torrent.Ratio, torrent.SeedingTime, torrent.Hash);
-                await client.DeleteTorrentsAsync(new List<string> { torrent.Hash }, deleteFiles: true, ct);
-                stats.Failed++;
-            }
+            _logger.LogWarning("Deleting torrent (ratio/seed limit reached): [{Name}] | Ratio[{Ratio:F2}] | SeedingTime[{SeedTime}s] | Hash[{Hash}]",
+                torrent.Name, torrent.Ratio, torrent.SeedingTime, torrent.Hash);
+            await DeleteTorrentFromClientAsync(client, torrent, deleteFiles: true, ct);
+            stats.Failed++;
         }
         // Branch 3: Failed category → delete (qBitrr line 6110-6112)
         // No HnR check — manually failed torrents are always deleted immediately (qBitrr parity)
         else if (torrent.Category.Equals(_config.Settings.FailedCategory, StringComparison.OrdinalIgnoreCase))
         {
             _logger.LogWarning("Deleting manually failed torrent: [{Name}] | Hash[{Hash}]", torrent.Name, torrent.Hash);
-            await client.DeleteTorrentsAsync(new List<string> { torrent.Hash }, deleteFiles: true, ct);
+            await DeleteTorrentFromClientAsync(client, torrent, deleteFiles: true, ct);
             stats.Failed++;
         }
         // Branch 4: Recheck category → recheck (qBitrr line 6113-6115)
@@ -499,7 +498,7 @@ public class TorrentProcessor : ITorrentProcessor
         {
             _logger.LogInformation("Deleting torrent with missing files: [{Name}] | State[{State}] | Hash[{Hash}]",
                 torrent.Name, torrent.State, torrent.Hash);
-            await client.DeleteTorrentsAsync(new List<string> { torrent.Hash }, deleteFiles: false, ct);
+            await DeleteTorrentFromClientAsync(client, torrent, deleteFiles: false, ct);
             stats.Failed++;
         }
         // Branch 6: Ignored states → skip (qBitrr line 6119-6120: is_ignored_state)
@@ -666,7 +665,7 @@ public class TorrentProcessor : ITorrentProcessor
             var hnrAllows = _seedingService == null || await _seedingService.HnrAllowsDeleteAsync(torrent, "slow torrent deletion", ct);
             if (hnrAllows)
             {
-                await client.DeleteTorrentsAsync(new List<string> { torrent.Hash }, deleteFiles: true, ct);
+                await DeleteTorrentFromClientAsync(client, torrent, deleteFiles: true, ct);
                 stats.Failed++;
             }
         }
@@ -731,6 +730,8 @@ public class TorrentProcessor : ITorrentProcessor
         if (_seedingService == null)
             return (true, defaultMaxEta, false);
 
+        _stalledUploads?.Touch(torrent.QBitInstanceName, torrent.Hash, SeedingService.IsStalledUploadState(torrent.State));
+
         // Super seeding or forced upload → always leave alone (qBitrr: lines 5809-5810)
         if (torrent.SuperSeeding || state == TorrentState.ForcedUploading)
             return (true, -1, false);
@@ -741,8 +742,7 @@ public class TorrentProcessor : ITorrentProcessor
         var trackerCfg = await _seedingService.GetTrackerConfigAsync(torrent, ct);
         var maxEta = SeedingLimitMerge.MergeMaxEta(defaultMaxEta, trackerCfg?.MaxETA);
 
-        // Check if torrent should be removed (ratio/time limits met)
-        // ShouldRemoveTorrentAsync already handles HnR protection for downloading torrents
+        // Check if torrent should be removed (ratio/time limits met, including stalledUP idle)
         var shouldRemove = await _seedingService.ShouldRemoveTorrentAsync(torrent, ct);
 
         // leave_alone = NOT (isUploading AND shouldRemove) — qBitrr line 5862-5864
@@ -770,6 +770,14 @@ public class TorrentProcessor : ITorrentProcessor
         }
 
         return (leaveAlone, maxEta, shouldRemove);
+    }
+
+    private async Task DeleteTorrentFromClientAsync(
+        QBittorrentClient client, TorrentInfo torrent, bool deleteFiles, CancellationToken ct)
+    {
+        var deleted = await client.DeleteTorrentsAsync(new List<string> { torrent.Hash }, deleteFiles, ct);
+        if (deleted)
+            _stalledUploads?.Evict(torrent.QBitInstanceName, torrent.Hash);
     }
 
     // ========================================================================================
@@ -881,7 +889,7 @@ public class TorrentProcessor : ITorrentProcessor
             {
                 _logger.LogWarning("Deleting stalled torrent ({Reason}): [{Name}] | Availability[{Avail:P1}] | Hash[{Hash}]",
                     reason, torrent.Name, torrent.Availability, torrent.Hash);
-                await client.DeleteTorrentsAsync(new List<string> { torrent.Hash }, deleteFiles: true, ct);
+                await DeleteTorrentFromClientAsync(client, torrent, deleteFiles: true, ct);
                 stats.Failed++;
             }
         }
@@ -911,7 +919,7 @@ public class TorrentProcessor : ITorrentProcessor
             {
                 _logger.LogWarning("Deleting stale high-percentage torrent: [{Name}] | Progress[{Progress:P1}] | Hash[{Hash}]",
                     torrent.Name, torrent.Progress, torrent.Hash);
-                await client.DeleteTorrentsAsync(new List<string> { torrent.Hash }, deleteFiles: true, ct);
+                await DeleteTorrentFromClientAsync(client, torrent, deleteFiles: true, ct);
                 stats.Failed++;
             }
         }
@@ -1072,7 +1080,7 @@ public class TorrentProcessor : ITorrentProcessor
             else
             {
                 _logger.LogInformation("AutoDelete: removing torrent {Hash} after Arr confirmed import", torrent.Hash);
-                await client.DeleteTorrentsAsync(new List<string> { torrent.Hash }, deleteFiles: false, ct);
+                await DeleteTorrentFromClientAsync(client, torrent, deleteFiles: false, ct);
             }
         }
 
@@ -1346,7 +1354,7 @@ public class TorrentProcessor : ITorrentProcessor
             _logger.LogWarning(
                 "All {Total} files excluded in [{Name}] ({Hash}) — deleting torrent",
                 files.Count, torrent.Name, torrent.Hash);
-            await client.DeleteTorrentsAsync(new List<string> { torrent.Hash }, deleteFiles: true, ct);
+            await DeleteTorrentFromClientAsync(client, torrent, deleteFiles: true, ct);
             return true;
         }
 

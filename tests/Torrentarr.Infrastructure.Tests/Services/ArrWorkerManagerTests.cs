@@ -2,6 +2,7 @@ using FluentAssertions;
 using Microsoft.Data.Sqlite;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Logging.Abstractions;
 using Moq;
 using Torrentarr.Core.Configuration;
@@ -424,10 +425,10 @@ public class ArrWorkerManagerTests
                 config.ArrInstances["Radarr"] = new ArrInstanceConfig
                 {
                     Managed = true,
-                    URI = "http://localhost:7878",
+                    URI = "http://127.0.0.1:1",
                     APIKey = "test",
                     Category = "movies",
-                    Type = "radarr",
+                    Type = "mock",
                     Search = new SearchConfig { SearchMissing = true, SearchRequestsEvery = 1 }
                 };
             }
@@ -443,6 +444,9 @@ public class ArrWorkerManagerTests
             services.AddSingleton<IArrMediaService>(media);
             services.AddSingleton<ITorrentProcessor>(torrentProcessor);
             services.AddSingleton<IImportPathTracker>(new StubImportPathTracker());
+            services.AddSingleton<ILogger<ArrSyncService>>(NullLogger<ArrSyncService>.Instance);
+            services.AddSingleton(new DatabaseRestartCoordinator());
+            services.AddScoped<ArrSyncService>();
             var provider = services.BuildServiceProvider();
 
             var manager = new ArrWorkerManager(
