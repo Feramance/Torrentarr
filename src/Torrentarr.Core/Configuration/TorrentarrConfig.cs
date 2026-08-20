@@ -19,7 +19,7 @@ public class TorrentarrConfig
 
 public class SettingsConfig
 {
-    public string ConfigVersion { get; set; } = "6.14.4";
+    public string ConfigVersion { get; set; } = "6.14.5";
     public string ConsoleLevel { get; set; } = "INFO";
     public bool Logging { get; set; } = true;
     public string CompletedDownloadFolder { get; set; } = "";
