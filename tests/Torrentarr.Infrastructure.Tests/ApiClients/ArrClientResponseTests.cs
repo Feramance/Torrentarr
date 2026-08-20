@@ -88,4 +88,3 @@ public sealed class ArrClientResponseTests
         act.Should().NotThrow();
     }
 }
-

@@ -59,4 +59,3 @@ internal static class ArrClientResponse
             throw lastFailure;
     }
 }
-

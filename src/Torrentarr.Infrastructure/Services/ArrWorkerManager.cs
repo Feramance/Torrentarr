@@ -1068,4 +1068,3 @@ public class ArrWorkerManager : BackgroundService
         _logger.LogDebug("Script Config:  Category={Category}", arrCfg.Category);
     }
 }
-
