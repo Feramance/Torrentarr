@@ -1,4 +1,5 @@
 using System.Net;
+using Newtonsoft.Json;
 using RestSharp;
 using Torrentarr.Infrastructure.Http;
 
@@ -33,6 +34,14 @@ internal static class ArrClientResponse
             response.ErrorMessage);
     }
 
+    internal static T DeserializeOrDefault<T>(string? content) where T : new()
+    {
+        if (string.IsNullOrWhiteSpace(content))
+            return new T();
+
+        return JsonConvert.DeserializeObject<T>(content) ?? new T();
+    }
+
     /// <summary>
     /// pyarr-unmapped HTTP 4xx/5xx (including 415) that should skip one series, not kill the worker.
     /// </summary>
@@ -50,7 +59,7 @@ internal static class ArrClientResponse
     /// Connectivity / incomplete HTTP that should abort remaining series fetches.
     /// </summary>
     internal static bool IsArrTransportError(Exception ex)
-        => ex is HttpRequestException or TimeoutException
+        => ex is HttpRequestException or TimeoutException or TaskCanceledException
            || (ex is ArrApiException api && api.StatusCode is null);
 
     internal static void RaiseIfAllEpisodeFetchesFailed(int attempted, int failed, Exception? lastFailure)

@@ -41,6 +41,26 @@ public sealed class ArrClientResponseTests
         act.Should().NotThrow();
     }
 
+    [Theory]
+    [InlineData(null)]
+    [InlineData("")]
+    [InlineData("   ")]
+    public void DeserializeOrDefault_ReturnsDefaultForMissingContent(string? content)
+    {
+        var result = ArrClientResponse.DeserializeOrDefault<SystemInfo>(content);
+
+        result.Should().NotBeNull();
+        result.Version.Should().BeNull();
+    }
+
+    [Fact]
+    public void DeserializeOrDefault_DeserializesContent()
+    {
+        var result = ArrClientResponse.DeserializeOrDefault<SystemInfo>("{\"version\":\"4.0.0\"}");
+
+        result.Version.Should().Be("4.0.0");
+    }
+
     [Fact]
     public void IsArrHttpError_TrueFor415()
     {
@@ -53,6 +73,14 @@ public sealed class ArrClientResponseTests
     public void IsArrTransportError_TrueForHttpRequestException()
     {
         var ex = new HttpRequestException("connection refused");
+        ArrClientResponse.IsArrTransportError(ex).Should().BeTrue();
+        ArrClientResponse.IsArrHttpError(ex).Should().BeFalse();
+    }
+
+    [Fact]
+    public void IsArrTransportError_TrueForTaskCanceledTimeout()
+    {
+        var ex = new TaskCanceledException("request timed out");
         ArrClientResponse.IsArrTransportError(ex).Should().BeTrue();
         ArrClientResponse.IsArrHttpError(ex).Should().BeFalse();
     }

@@ -39,7 +39,7 @@ public class ReadarrClient
 
         var response = await ArrClientResponse.ExecuteAsync(_client, request, ct);
         ArrClientResponse.EnsureSuccess(response, "GET /api/v1/system/status");
-        return JsonConvert.DeserializeObject<SystemInfo>(response.Content ?? "") ?? new SystemInfo();
+        return ArrClientResponse.DeserializeOrDefault<SystemInfo>(response.Content);
     }
 
     public async Task<ReadarrAuthor?> GetAuthorAsync(int authorId, CancellationToken ct = default)

@@ -351,7 +351,7 @@ public class ArrWorkerManager : BackgroundService
                     await RunRefreshMonitoredDownloadsIfDueAsync(instanceName, arrCfg, ct);
                     consecutiveErrors = 0;
                 }
-                catch (OperationCanceledException)
+                catch (OperationCanceledException ex) when (IsWorkerCancellation(ex, ct))
                 {
                     break;
                 }
@@ -419,7 +419,7 @@ public class ArrWorkerManager : BackgroundService
 
                     consecutiveErrors = 0;
                 }
-                catch (OperationCanceledException)
+                catch (OperationCanceledException ex) when (IsWorkerCancellation(ex, ct))
                 {
                     break;
                 }
@@ -488,7 +488,7 @@ public class ArrWorkerManager : BackgroundService
 
             await UpdateCountsAsync(instanceName, ct);
         }
-        catch (OperationCanceledException)
+        catch (OperationCanceledException ex) when (IsWorkerCancellation(ex, ct))
         {
             throw;
         }
@@ -498,6 +498,9 @@ public class ArrWorkerManager : BackgroundService
             throw;
         }
     }
+
+    internal static bool IsWorkerCancellation(OperationCanceledException _, CancellationToken ct)
+        => ct.IsCancellationRequested;
 
     private async Task ProbeArrVersionAsync(string instanceName, ArrInstanceConfig arrCfg, CancellationToken ct)
     {
@@ -811,10 +814,14 @@ public class ArrWorkerManager : BackgroundService
 
             return result;
         }
+        catch (OperationCanceledException ex) when (IsWorkerCancellation(ex, ct))
+        {
+            throw;
+        }
         catch (Exception ex)
         {
             _logger.LogError(ex, "Search failed for {Instance}: {Message}", instanceName, ex.Message);
-            return null;
+            throw;
         }
     }
 

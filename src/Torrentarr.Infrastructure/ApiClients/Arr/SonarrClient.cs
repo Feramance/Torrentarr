@@ -44,7 +44,7 @@ public class SonarrClient
 
         var response = await ArrClientResponse.ExecuteAsync(_client, request, ct);
         ArrClientResponse.EnsureSuccess(response, "GET /api/v3/system/status");
-        return JsonConvert.DeserializeObject<SystemInfo>(response.Content) ?? new SystemInfo();
+        return ArrClientResponse.DeserializeOrDefault<SystemInfo>(response.Content);
     }
 
     /// <summary>
