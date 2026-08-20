@@ -154,6 +154,25 @@ public class ArrWorkerManagerTests
     }
 
     [Fact]
+    public async Task RunSearchAsync_RequestTimeout_PropagatesToLoopBackoff()
+    {
+        var media = new Mock<IArrMediaService>();
+        media.Setup(m => m.SearchMissingMediaAsync("movies", It.IsAny<CancellationToken>()))
+            .ThrowsAsync(new TaskCanceledException("request timed out"));
+        using var harness = WorkerHarness.Create(media.Object);
+        var cfg = new ArrInstanceConfig
+        {
+            Type = "radarr",
+            Category = "movies",
+            Search = new SearchConfig { SearchMissing = true, SearchRequestsEvery = 1 }
+        };
+
+        var act = () => harness.Manager.RunSearchAsync("Radarr", cfg, CancellationToken.None);
+
+        await act.Should().ThrowAsync<TaskCanceledException>();
+    }
+
+    [Fact]
     public async Task RunSearchAsync_DrainedWithSearchAgain_ResetsSearchedAndUpgradeOnNextTick()
     {
         var media = new Mock<IArrMediaService>();

@@ -50,7 +50,7 @@ public sealed class ArrClientResponseTests
         var result = ArrClientResponse.DeserializeOrDefault<SystemInfo>(content);
 
         result.Should().NotBeNull();
-        result.Version.Should().BeEmpty();
+        result.Version.Should().BeNull();
     }
 
     [Fact]

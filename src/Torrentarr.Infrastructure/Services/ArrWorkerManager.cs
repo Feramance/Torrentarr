@@ -814,10 +814,14 @@ public class ArrWorkerManager : BackgroundService
 
             return result;
         }
+        catch (OperationCanceledException ex) when (IsWorkerCancellation(ex, ct))
+        {
+            throw;
+        }
         catch (Exception ex)
         {
             _logger.LogError(ex, "Search failed for {Instance}: {Message}", instanceName, ex.Message);
-            return null;
+            throw;
         }
     }
 
