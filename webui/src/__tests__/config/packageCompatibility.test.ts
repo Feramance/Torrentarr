@@ -24,13 +24,81 @@ const packageLock = JSON.parse(
   readFileSync(new URL("../../../package-lock.json", import.meta.url), "utf8"),
 ) as PackageLock;
 
-function minimumNodeMajor(engineRange: string): number {
-  const match = engineRange.match(/>=\s*(\d+)/);
+interface SemanticVersion {
+  major: number;
+  minor: number;
+  patch: number;
+}
+
+interface VersionInterval {
+  minimum: SemanticVersion;
+  maximum?: SemanticVersion;
+}
+
+function compareVersions(
+  left: SemanticVersion,
+  right: SemanticVersion,
+): number {
+  return (
+    left.major - right.major ||
+    left.minor - right.minor ||
+    left.patch - right.patch
+  );
+}
+
+function parseVersion(version: string): SemanticVersion {
+  const match = version.match(/^(\d+)(?:\.(\d+))?(?:\.(\d+))?$/);
   if (!match) {
-    throw new Error(`Unsupported Node engine range: ${engineRange}`);
+    throw new Error(`Unsupported semantic version: ${version}`);
   }
 
-  return Number(match[1]);
+  return {
+    major: Number(match[1]),
+    minor: Number(match[2] ?? 0),
+    patch: Number(match[3] ?? 0),
+  };
+}
+
+function parseNodeRange(engineRange: string): VersionInterval[] {
+  const intervals = engineRange.split("||").map((alternative) => {
+    const match = alternative
+      .trim()
+      .match(/^(\^|>=)\s*v?(\d+(?:\.\d+){0,2})$/);
+    if (!match) {
+      throw new Error(`Unsupported Node engine range: ${engineRange}`);
+    }
+
+    const minimum = parseVersion(match[2]);
+    return {
+      minimum,
+      maximum:
+        match[1] === "^"
+          ? { major: minimum.major + 1, minor: 0, patch: 0 }
+          : undefined,
+    };
+  });
+
+  return intervals.sort((left, right) =>
+    compareVersions(left.minimum, right.minimum),
+  );
+}
+
+function isNodeRangeSubset(
+  candidateRange: string,
+  supportedRange: string,
+): boolean {
+  const candidateIntervals = parseNodeRange(candidateRange);
+  const supportedIntervals = parseNodeRange(supportedRange);
+
+  return candidateIntervals.every((candidate) =>
+    supportedIntervals.some(
+      (supported) =>
+        compareVersions(supported.minimum, candidate.minimum) <= 0 &&
+        (supported.maximum === undefined ||
+          (candidate.maximum !== undefined &&
+            compareVersions(supported.maximum, candidate.maximum) >= 0)),
+    ),
+  );
 }
 
 function majorVersion(versionRange: string): number {
@@ -58,9 +126,26 @@ describe("development dependency compatibility", () => {
     ).toBeGreaterThanOrEqual(7);
     expect(majorVersion(lockedDependency.version!)).toBeGreaterThanOrEqual(7);
     expect(dependencyNodeEngine).toBeDefined();
-    expect(minimumNodeMajor(dependencyNodeEngine!)).toBeLessThanOrEqual(
-      minimumNodeMajor(projectNodeEngine),
+    expect(isNodeRangeSubset(projectNodeEngine, dependencyNodeEngine!)).toBe(
+      true,
     );
+  });
+
+  it("advertises only Node versions supported by direct development dependencies", () => {
+    const projectNodeEngine = packageManifest.engines.node;
+
+    for (const dependencyName of Object.keys(packageManifest.devDependencies)) {
+      const dependencyNodeEngine =
+        packageLock.packages[`node_modules/${dependencyName}`].engines?.node;
+      if (!dependencyNodeEngine) {
+        continue;
+      }
+
+      expect(
+        isNodeRangeSubset(projectNodeEngine, dependencyNodeEngine),
+        `${dependencyName} must support the complete project Node range`,
+      ).toBe(true);
+    }
   });
 
   it("runs CI workflows on a compatible Node version", () => {
@@ -68,7 +153,9 @@ describe("development dependency compatibility", () => {
       "../../../../.github/workflows/",
       import.meta.url,
     );
-    const projectNodeMajor = minimumNodeMajor(packageManifest.engines.node);
+    const projectNodeMajor = parseNodeRange(
+      packageManifest.engines.node,
+    )[0].minimum.major;
 
     for (const workflowName of readdirSync(workflowsDirectory)) {
       const workflow = readFileSync(
