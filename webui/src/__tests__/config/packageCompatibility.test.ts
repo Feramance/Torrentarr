@@ -23,6 +23,11 @@ const packageManifest = JSON.parse(
 const packageLock = JSON.parse(
   readFileSync(new URL("../../../package-lock.json", import.meta.url), "utf8"),
 ) as PackageLock;
+const repositoryRoot = new URL("../../../../", import.meta.url);
+
+function readRepositoryFile(path: string): string {
+  return readFileSync(new URL(path, repositoryRoot), "utf8");
+}
 
 interface SemanticVersion {
   major: number;
@@ -179,4 +184,44 @@ describe("development dependency compatibility", () => {
       }
     }
   });
+});
+
+describe("supported Node prerequisites", () => {
+  const supportedRangeDescription = "Node.js 22.13+ (22.x) or 24+";
+  const buildScripts = ["build.sh", "build.bat"];
+
+  it.each(buildScripts)(
+    "%s rejects Node versions outside the package engine range",
+    (scriptName) => {
+      const script = readRepositoryFile(scriptName);
+      const versionCheck = script.match(
+        /node -e "([^"]*process\.versions\.node[^"]*)"/,
+      );
+
+      expect(
+        versionCheck,
+        `${scriptName} must validate the Node version`,
+      ).not.toBeNull();
+      expect(versionCheck![1]).toContain(
+        "process.exit((major === 22 && minor >= 13) || major >= 24 ? 0 : 1)",
+      );
+      expect(script.indexOf(versionCheck![0])).toBeLessThan(
+        script.indexOf("npm install"),
+      );
+      expect(script.replaceAll("^(", "(").replaceAll("^)", ")")).toContain(
+        supportedRangeDescription,
+      );
+      expect(script).not.toMatch(/Node\.js 18/);
+    },
+  );
+
+  it.each(["CONTRIBUTING.md", "docs/development/index.md"])(
+    "%s documents the package engine range",
+    (documentationPath) => {
+      const documentation = readRepositoryFile(documentationPath);
+
+      expect(documentation).toContain(supportedRangeDescription);
+      expect(documentation).not.toMatch(/Node\.js 18\+/);
+    },
+  );
 });

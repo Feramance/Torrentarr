@@ -20,7 +20,14 @@ if %ERRORLEVEL% NEQ 0 (
 
 where node >nul 2>nul
 if %ERRORLEVEL% NEQ 0 (
-    echo Error: Node.js not found. Please install Node.js 18 or later.
+    echo Error: Node.js not found. Please install Node.js 22.13+ ^(22.x^) or 24+.
+    exit /b 1
+)
+
+node -e "const [major, minor] = process.versions.node.split('.').map(Number); process.exit((major === 22 && minor >= 13) || major >= 24 ? 0 : 1);"
+if %ERRORLEVEL% NEQ 0 (
+    for /f "delims=" %%V in ('node --version 2^>nul') do set "NODE_VERSION=%%V"
+    echo Error: Unsupported Node.js version !NODE_VERSION!. Please install Node.js 22.13+ ^(22.x^) or 24+.
     exit /b 1
 )
 
