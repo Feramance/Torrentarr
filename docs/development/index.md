@@ -24,7 +24,7 @@ For WebUI development with hot reload, see [WebUI Development](webui.md).
 ### Prerequisites
 
 - **.NET 8.0+ SDK** - Backend and tooling
-- **Node.js 18+** - For WebUI development
+- **Node.js 22.13+ (22.x) or 24+** - For WebUI development
 - **Git** - Version control
 
 ### Repository Structure
