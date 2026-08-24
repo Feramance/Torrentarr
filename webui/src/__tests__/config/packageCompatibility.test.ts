@@ -61,9 +61,7 @@ function parseVersion(version: string): SemanticVersion {
 
 function parseNodeRange(engineRange: string): VersionInterval[] {
   const intervals = engineRange.split("||").map((alternative) => {
-    const match = alternative
-      .trim()
-      .match(/^(\^|>=)\s*v?(\d+(?:\.\d+){0,2})$/);
+    const match = alternative.trim().match(/^(\^|>=)\s*v?(\d+(?:\.\d+){0,2})$/);
     if (!match) {
       throw new Error(`Unsupported Node engine range: ${engineRange}`);
     }
@@ -153,9 +151,8 @@ describe("development dependency compatibility", () => {
       "../../../../.github/workflows/",
       import.meta.url,
     );
-    const projectNodeMajor = parseNodeRange(
-      packageManifest.engines.node,
-    )[0].minimum.major;
+    const projectNodeMajor = parseNodeRange(packageManifest.engines.node)[0]
+      .minimum.major;
 
     for (const workflowName of readdirSync(workflowsDirectory)) {
       const workflow = readFileSync(
