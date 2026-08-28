@@ -21,8 +21,15 @@ jobs:
     - name: Checkout
       uses: actions/checkout@v7
       with:
-        token: ${{ secrets.GITHUB_TOKEN }}
         fetch-depth: 0
+        persist-credentials: false
+
+    - name: Verify checkout credentials are not persisted
+      run: |
+        if git config --local --name-only --get-regexp '^http\..*\.extraheader$'; then
+          echo "Checkout left an HTTP authentication header in the repository config." >&2
+          exit 1
+        fi
 
     - name: Set up Python
       uses: actions/setup-python@v7
@@ -44,15 +51,25 @@ jobs:
           echo "has_changes=false" >> "$GITHUB_OUTPUT"
         fi
 
-    - name: Commit and push fixes
+    - name: Commit fixes
       if: steps.changes.outputs.has_changes == 'true'
       run: |
         git config user.name "github-actions[bot]"
         git config user.email "github-actions[bot]@users.noreply.github.com"
         git add -A
         git commit -m "[pre-commit] auto fixes from pre-commit hooks" -m "for more information, see https://pre-commit.ci"
+
+    - name: Push fixes
+      if: steps.changes.outputs.has_changes == 'true'
+      env:
+        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      run: |
+        GIT_CONFIG_COUNT=1
+        GIT_CONFIG_KEY_0=http.https://github.com/.extraheader
+        GIT_CONFIG_VALUE_0="AUTHORIZATION: basic $(printf 'x-access-token:%s' "$GITHUB_TOKEN" | base64 | tr -d '\n')"
+        export GIT_CONFIG_COUNT GIT_CONFIG_KEY_0 GIT_CONFIG_VALUE_0
         for i in 1 2 3; do
-          git push && break
+          git push origin "HEAD:${GITHUB_REF_NAME}" && break
           echo "Push failed (attempt $i/3), retrying in 10s..."
           sleep 10
         done
