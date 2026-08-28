@@ -11,52 +11,56 @@ public class PreCommitAutofixWorkflowTests
         var workflow = GetWorkflowText();
 
         workflow.Should().Contain("  push:\n    branches:\n    - '**'");
-        workflow.Should().Contain("startsWith(github.ref, 'refs/heads/')");
+        workflow.Should().Contain("if: github.event.deleted == false && startsWith(github.ref, 'refs/heads/')");
         workflow.Should().NotContain("tags-ignore");
     }
 
     [Fact]
-    public void PushStep_UsesBranchRefspecAndFailsAfterRetries()
+    public void Workflow_DoesNotRunForDeletedBranchPushes()
     {
         var workflow = GetWorkflowText();
 
-        workflow.Should().Contain("git push origin \"HEAD:refs/heads/${GITHUB_REF_NAME}\"");
-        workflow.Should().Contain(
-            "            /usr/bin/git push origin \"HEAD:refs/heads/${GITHUB_REF_NAME}\"; then\n" +
-            "            exit 0\n" +
-            "          fi");
-        workflow.Should().Contain("        echo \"Push failed after 3 attempts.\" >&2\n        exit 1");
-        workflow.Should().NotContain("git push origin \"HEAD:${GITHUB_REF_NAME}\" && break");
+        workflow.Should().Contain("github.event.deleted == false");
     }
 
     [Fact]
-    public void AutofixAndPush_RunInSeparateJobsWithScopedPermissions()
+    public void Autofixes_ArePublishedForReviewWithoutWritePermissions()
     {
         var workflow = GetWorkflowText();
 
         workflow.Should().Contain("permissions:\n  contents: read");
-        workflow.Should().Contain("  commit-autofixes:\n    needs: pre-commit-autofix");
-        workflow.Should().Contain("    permissions:\n      contents: write");
         workflow.Should().Contain("persist-credentials: false");
-        workflow.Should().Contain("Patch modifies a file outside the triggering push");
-        workflow.Should().Contain("Workflow files require manual review");
-        workflow.Should().Contain("-c core.hooksPath=/dev/null");
-        workflow.Should().NotContain("git add -A");
+        workflow.Should().Contain("uses: actions/upload-artifact@");
+        workflow.Should().NotContain("contents: write");
+        workflow.Should().NotContain("git push");
+        workflow.Should().NotContain("commit-autofixes:");
+    }
+
+    [Fact]
+    public void FormatterHooks_UseExpectedUpdatedRevisions()
+    {
+        var config = GetRepositoryFileText(".pre-commit-config.yaml");
+
+        config.Should().Contain("rev: v2.16.0");
+        config.Should().Contain("rev: v4.0.0-alpha.8");
     }
 
     private static string GetWorkflowText()
+        => GetRepositoryFileText(Path.Combine(".github", "workflows", "pre-commit-autofix.yml"));
+
+    private static string GetRepositoryFileText(string relativePath)
     {
         var directory = new DirectoryInfo(AppContext.BaseDirectory);
 
         while (directory != null)
         {
-            var candidate = Path.Combine(directory.FullName, ".github", "workflows", "pre-commit-autofix.yml");
+            var candidate = Path.Combine(directory.FullName, relativePath);
             if (File.Exists(candidate))
                 return File.ReadAllText(candidate).ReplaceLineEndings("\n");
 
             directory = directory.Parent;
         }
 
-        throw new FileNotFoundException("Could not locate .github/workflows/pre-commit-autofix.yml.");
+        throw new FileNotFoundException($"Could not locate {relativePath}.");
     }
 }

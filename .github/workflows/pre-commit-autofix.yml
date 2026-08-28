@@ -1,6 +1,6 @@
-# Auto-fix and commit pre-commit changes when a commit wasn't pre-processed (any branch).
+# Run pre-commit and publish any fixes as a patch for review.
 
-name: Pre-commit auto-fix and commit
+name: Pre-commit auto-fix patch
 
 on:
   push:
@@ -13,10 +13,7 @@ permissions:
 jobs:
   pre-commit-autofix:
     runs-on: ubuntu-latest
-    # Skip when this workflow already created the commit (avoid loop)
-    if: startsWith(github.ref, 'refs/heads/') && (github.event_name != 'push' || github.event.head_commit.message == null || !startsWith(github.event.head_commit.message, '[pre-commit] auto fixes'))
-    outputs:
-      has_changes: ${{ steps.changes.outputs.has_changes }}
+    if: github.event.deleted == false && startsWith(github.ref, 'refs/heads/')
     steps:
     - name: Checkout without write credentials
       uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
@@ -53,93 +50,3 @@ jobs:
         path: pre-commit.patch
         if-no-files-found: error
         retention-days: 1
-
-  commit-autofixes:
-    needs: pre-commit-autofix
-    if: needs.pre-commit-autofix.outputs.has_changes == 'true'
-    runs-on: ubuntu-latest
-    permissions:
-      contents: write
-    steps:
-    - name: Fresh checkout without persisted credentials
-      uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
-      with:
-        fetch-depth: 0
-        persist-credentials: false
-        ref: ${{ github.sha }}
-
-    - name: Download patch
-      uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
-      with:
-        name: pre-commit-patch-${{ github.run_id }}-${{ github.run_attempt }}
-
-    - name: Validate, commit, and push patch
-      env:
-        BEFORE_SHA: ${{ github.event.before }}
-        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-      run: |
-        set -euo pipefail
-
-        /usr/bin/git apply --check --index pre-commit.patch
-        /usr/bin/git apply --index pre-commit.patch
-
-        if [ -n "$(/usr/bin/git diff --cached --summary)" ]; then
-          echo "Patch adds, deletes, renames, or changes the mode of a file." >&2
-          exit 1
-        fi
-
-        declare -A pushed_paths=()
-        if [[ "$BEFORE_SHA" =~ ^0+$ ]]; then
-          while IFS= read -r -d '' path; do
-            pushed_paths["$path"]=1
-          done < <(/usr/bin/git diff-tree --no-commit-id --name-only -r -z "$GITHUB_SHA")
-        else
-          while IFS= read -r -d '' path; do
-            pushed_paths["$path"]=1
-          done < <(/usr/bin/git diff --name-only -z "$BEFORE_SHA" "$GITHUB_SHA")
-        fi
-
-        while IFS= read -r -d '' path; do
-          if [[ -z "${pushed_paths[$path]+x}" ]]; then
-            echo "Patch modifies a file outside the triggering push: $path" >&2
-            exit 1
-          fi
-          if [[ "$path" == .github/workflows/* ]]; then
-            echo "Workflow files require manual review and cannot be auto-committed: $path" >&2
-            exit 1
-          fi
-        done < <(/usr/bin/git diff --cached --name-only -z)
-
-        trusted_home="${RUNNER_TEMP}/pre-commit-push-home"
-        /usr/bin/mkdir -p "$trusted_home"
-        /usr/bin/env -i \
-          PATH=/usr/bin:/bin \
-          HOME="$trusted_home" \
-          GIT_CONFIG_NOSYSTEM=1 \
-          /usr/bin/git -c core.hooksPath=/dev/null \
-          -c user.name="github-actions[bot]" \
-          -c user.email="github-actions[bot]@users.noreply.github.com" \
-          commit -m "[pre-commit] auto fixes from pre-commit hooks" \
-          -m "for more information, see https://pre-commit.ci"
-
-        auth_header="AUTHORIZATION: basic $(printf 'x-access-token:%s' "$GITHUB_TOKEN" | base64 | tr -d '\n')"
-        for i in 1 2 3; do
-          if /usr/bin/env -i \
-            PATH=/usr/bin:/bin \
-            HOME="$trusted_home" \
-            GIT_CONFIG_NOSYSTEM=1 \
-            GIT_CONFIG_COUNT=2 \
-            GIT_CONFIG_KEY_0=core.hooksPath \
-            GIT_CONFIG_VALUE_0=/dev/null \
-            GIT_CONFIG_KEY_1=http.https://github.com/.extraheader \
-            GIT_CONFIG_VALUE_1="$auth_header" \
-            /usr/bin/git push origin "HEAD:refs/heads/${GITHUB_REF_NAME}"; then
-            exit 0
-          fi
-          if [ "$i" -lt 3 ]; then
-            echo "Push failed (attempt $i/3), retrying in 10s..."
-            sleep 10
-          fi
-        done
-        echo "Push failed after 3 attempts." >&2
-        exit 1
