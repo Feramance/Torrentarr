@@ -104,6 +104,20 @@ function isNodeRangeSubset(
   );
 }
 
+function isNodeVersionSupported(
+  version: string,
+  supportedRange: string,
+): boolean {
+  const candidate = parseVersion(version);
+
+  return parseNodeRange(supportedRange).some(
+    (supported) =>
+      compareVersions(supported.minimum, candidate) <= 0 &&
+      (supported.maximum === undefined ||
+        compareVersions(candidate, supported.maximum) < 0),
+  );
+}
+
 function majorVersion(versionRange: string): number {
   const match = versionRange.match(/\d+/);
   if (!match) {
@@ -156,9 +170,6 @@ describe("development dependency compatibility", () => {
       "../../../../.github/workflows/",
       import.meta.url,
     );
-    const projectNodeMajor = parseNodeRange(packageManifest.engines.node)[0]
-      .minimum.major;
-
     for (const workflowName of readdirSync(workflowsDirectory)) {
       const workflow = readFileSync(
         new URL(workflowName, workflowsDirectory),
@@ -168,19 +179,24 @@ describe("development dependency compatibility", () => {
         continue;
       }
 
-      const configuredNodeMajors = [
-        ...workflow.matchAll(/\bnode-version:\s*(?:\[\s*)?["']?(\d+)/g),
-      ].map((match) => Number(match[1]));
+      const configuredNodeVersions = [
+        ...workflow.matchAll(
+          /\bnode-version:\s*(?:\[\s*)?["']?(\d+(?:\.\d+){0,2})/g,
+        ),
+      ].map((match) => match[1]);
 
       expect(
-        configuredNodeMajors,
+        configuredNodeVersions,
         `${workflowName} must declare a concrete Node version`,
       ).not.toHaveLength(0);
-      for (const configuredNodeMajor of configuredNodeMajors) {
+      for (const configuredNodeVersion of configuredNodeVersions) {
         expect(
-          configuredNodeMajor,
-          `${workflowName} must support the project's Node baseline`,
-        ).toBeGreaterThanOrEqual(projectNodeMajor);
+          isNodeVersionSupported(
+            configuredNodeVersion,
+            packageManifest.engines.node,
+          ),
+          `${workflowName} configures Node ${configuredNodeVersion}, which must satisfy ${packageManifest.engines.node}`,
+        ).toBe(true);
       }
     }
   });
