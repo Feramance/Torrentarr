@@ -1,10 +1,25 @@
 {
-  "default_branch": "master",
-  "trusted_dependency_bots": [
-    "dependabot[bot]",
-    "pre-commit-ci[bot]"
+  "ci_paths": [
+    ".github/workflows/**",
+    ".github/actions/**",
+    ".github/scripts/**"
   ],
-  "managed_app_bot_login": "feramance-n8n-codex-pr-automation[bot]",
+  "default_branch": "master",
+  "dependency_companion_files": [
+    "CHANGELOG.md",
+    ".github/dependabot.yml",
+    ".github/workflows/*.yml",
+    ".github/workflows/*.yaml"
+  ],
+  "dependency_files": [
+    "**/*.csproj",
+    "Directory.Build.props",
+    "global.json",
+    "nuget.config",
+    "webui/package.json",
+    "webui/package-lock.json",
+    ".pre-commit-config.yaml"
+  ],
   "documentation_paths": [
     "docs/**",
     "mkdocs.yml",
@@ -12,20 +27,32 @@
     "README.md",
     "CHANGELOG.md"
   ],
-  "test_paths": [
-    "tests/**",
-    "webui/src/**/*.test.*",
-    "webui/src/**/*.spec.*"
+  "generated_file_patterns": [
+    "docs/assets/openapi.json",
+    "webui/src/generated/**"
   ],
-  "ci_paths": [
+  "large_change_file_count": 40,
+  "managed_app_bot_login": "feramance-n8n-codex-pr-automation[bot]",
+  "public_api_paths": [
+    "src/**/Controllers/**",
+    "src/**/Contracts/**",
+    "docs/assets/openapi.json"
+  ],
+  "security_sensitive_paths": [
     ".github/workflows/**",
-    ".github/actions/**",
-    ".github/scripts/**"
+    "src/**/Auth/**",
+    "src/**/Security/**",
+    "Dockerfile*"
   ],
   "source_paths": [
     "src/**",
     "webui/src/**",
     "webui/public/**"
+  ],
+  "test_paths": [
+    "tests/**",
+    "webui/src/**/*.test.*",
+    "webui/src/**/*.spec.*"
   ],
   "tooling_paths": [
     "scripts/**",
@@ -37,35 +64,8 @@
     "Dockerfile*",
     "docker-compose*.yml"
   ],
-  "dependency_files": [
-    "**/*.csproj",
-    "Directory.Build.props",
-    "global.json",
-    "nuget.config",
-    "webui/package.json",
-    "webui/package-lock.json",
-    ".pre-commit-config.yaml"
-  ],
-  "dependency_companion_files": [
-    "CHANGELOG.md",
-    ".github/dependabot.yml",
-    ".github/workflows/*.yml",
-    ".github/workflows/*.yaml"
-  ],
-  "generated_file_patterns": [
-    "docs/assets/openapi.json",
-    "webui/src/generated/**"
-  ],
-  "security_sensitive_paths": [
-    ".github/workflows/**",
-    "src/**/Auth/**",
-    "src/**/Security/**",
-    "Dockerfile*"
-  ],
-  "public_api_paths": [
-    "src/**/Controllers/**",
-    "src/**/Contracts/**",
-    "docs/assets/openapi.json"
-  ],
-  "large_change_file_count": 40
+  "trusted_dependency_bots": [
+    "dependabot[bot]",
+    "pre-commit-ci[bot]"
+  ]
 }
