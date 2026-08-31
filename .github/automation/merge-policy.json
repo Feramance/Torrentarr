@@ -55,6 +55,14 @@
     {
       "app_slug": "github-actions",
       "pattern": "^build \\(.*\\)$"
+    },
+    {
+      "app_slug": "github-actions",
+      "pattern": "^Build and push Docker image \\(PR\\)$"
+    },
+    {
+      "app_slug": "github-actions",
+      "pattern": "^Analyze \\(.*\\)$"
     }
   ],
   "schema_version": 1
