@@ -15,7 +15,6 @@ defaults:
 
 permissions:
   contents: read
-  packages: write
 
 env:
   PROJECT_NAME: Torrentarr
@@ -162,7 +161,7 @@ jobs:
     name: Build and push Docker image (PR)
     needs: build
     runs-on: ubuntu-latest
-    if: github.event_name == 'pull_request'
+    if: github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name == github.repository
     permissions:
       packages: write
       contents: read
@@ -243,7 +242,7 @@ jobs:
 
     - name: Lint frontend code
       working-directory: webui
-      run: npm run lint || true
+      run: npm run lint
 
     - name: Format check .NET code
-      run: dotnet format --verify-no-changes --verbosity diagnostic || true
+      run: dotnet format --verify-no-changes --verbosity diagnostic
