@@ -64,6 +64,24 @@ class DigestTests(unittest.TestCase):
             ["bug"],
         )
 
+    def test_current_base_sha_reads_live_target_ref(self) -> None:
+        class RecordingAPI:
+            def __init__(self) -> None:
+                self.paths = []
+
+            def request(self, method: str, path: str, payload=None):
+                self.paths.append((method, path, payload))
+                return {"object": {"sha": "c" * 40}}
+
+        value = pull("Update dependency")
+        value["base"]["ref"] = "release/v1"
+        api = RecordingAPI()
+        self.assertEqual(classifier.current_base_sha(api, value), "c" * 40)
+        self.assertEqual(
+            api.paths,
+            [("GET", "/git/ref/heads/release%2Fv1", None)],
+        )
+
 
 class LabelProvisioningTests(unittest.TestCase):
     def test_classification_labels_replace_stale_managed_labels(self) -> None:

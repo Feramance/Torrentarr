@@ -194,6 +194,7 @@ def pr_digest_input(
     labels: Sequence[str],
     linked_issues: Sequence[Mapping[str, Any]],
     classification_policy_digest: str,
+    base_sha: str,
 ) -> dict[str, Any]:
     """Build the canonical pull-request digest payload."""
     normalized_files = [
@@ -220,7 +221,7 @@ def pr_digest_input(
         },
         "base": {
             "ref": str((pull.get("base") or {}).get("ref") or ""),
-            "sha": str((pull.get("base") or {}).get("sha") or ""),
+            "sha": base_sha,
         },
         "head": {
             "ref": str((pull.get("head") or {}).get("ref") or ""),
@@ -744,12 +745,26 @@ def finish_check(
     )
 
 
+def current_base_sha(api: GitHubAPI, pull: Mapping[str, Any]) -> str:
+    """Resolve the current target-branch head rather than the PR's historical base."""
+    base_ref = str((pull.get("base") or {}).get("ref") or "")
+    if not base_ref:
+        raise ValueError("pull request base ref is missing")
+    encoded_ref = urllib.parse.quote(base_ref, safe="")
+    response = api.request("GET", f"/git/ref/heads/{encoded_ref}")
+    base_sha = str((response.get("object") or {}).get("sha") or "")
+    if not re.fullmatch(r"[0-9a-f]{40}", base_sha):
+        raise ValueError("current pull request base SHA is missing or invalid")
+    return base_sha
+
+
 def classify_live_pr(api: GitHubAPI, number: int, policy: Mapping[str, Any]) -> None:
     """Fetch, classify, and persist one pull-request contract and head check."""
     pull = api.request("GET", f"/pulls/{number}")
     head_sha = str((pull.get("head") or {}).get("sha") or "")
     check_id = create_check(api, head_sha, "pending")
     try:
+        base_sha = current_base_sha(api, pull)
         files = api.pages(f"/pulls/{number}/files")
         labels = labels_from_item(pull)
         links = []
@@ -763,7 +778,9 @@ def classify_live_pr(api: GitHubAPI, number: int, policy: Mapping[str, Any]) -> 
         category, evidence = classify_pr(pull, files, labels, links, policy, override)
         policy_hash = policy_digest(policy)
         source = digest(
-            pr_digest_input(api.repository, pull, files, labels, links, policy_hash)
+            pr_digest_input(
+                api.repository, pull, files, labels, links, policy_hash, base_sha
+            )
         )
         flags = determine_flags(
             pull, files, policy, f"{pull.get('title') or ''}\n{pull.get('body') or ''}"
@@ -774,7 +791,7 @@ def classify_live_pr(api: GitHubAPI, number: int, policy: Mapping[str, Any]) -> 
             flags,
             source,
             policy_hash,
-            str((pull.get("base") or {}).get("sha") or ""),
+            base_sha,
             head_sha,
             evidence,
         )
