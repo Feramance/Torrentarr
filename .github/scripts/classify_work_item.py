@@ -363,7 +363,9 @@ def classify_pr(
         mapped = "bug_fix" if linked == "bug" else linked
         if mapped in PR_CATEGORIES:
             return mapped, ["trusted_n8n_issue_handoff"]
-    if author in policy["trusted_dependency_bots"] and dependency_only(paths, policy, files):
+    if author in policy["trusted_dependency_bots"] and dependency_only(
+        paths, policy, files
+    ):
         return "package_update", ["trusted_dependency_bot", "dependency_only_files"]
     lower_labels = {label.lower() for label in labels}
     if dependency_only(paths, policy, files):
@@ -433,6 +435,15 @@ def determine_flags(
     return sorted(flags)
 
 
+class GitHubAPIError(RuntimeError):
+    """GitHub REST failure with a machine-readable status and response body."""
+
+    def __init__(self, method: str, url: str, status: int, detail: str) -> None:
+        super().__init__(f"GitHub API {method} {url} failed: {status} {detail}")
+        self.status = status
+        self.detail = detail
+
+
 class GitHubAPI:
     """Small authenticated GitHub REST client with pagination."""
 
@@ -457,9 +468,7 @@ class GitHubAPI:
                 return json.loads(raw) if raw else None
         except urllib.error.HTTPError as error:
             detail = error.read().decode("utf-8", errors="replace")
-            raise RuntimeError(
-                f"GitHub API {method} {url} failed: {error.code} {detail}"
-            ) from error
+            raise GitHubAPIError(method, url, error.code, detail) from error
 
     def pages(self, path: str) -> list[Any]:
         """Read all pages from a list endpoint."""
@@ -554,7 +563,16 @@ def ensure_labels(api: GitHubAPI) -> None:
                 "PATCH", f"/labels/{urllib.parse.quote(name, safe='')}", payload
             )
         else:
-            api.request("POST", "/labels", payload)
+            try:
+                api.request("POST", "/labels", payload)
+            except GitHubAPIError as error:
+                # Concurrent runs can all observe a missing label. If another
+                # run wins creation, converge by updating the created label.
+                if error.status != 422 or '"already_exists"' not in error.detail:
+                    raise
+                api.request(
+                    "PATCH", f"/labels/{urllib.parse.quote(name, safe='')}", payload
+                )
 
 
 def update_classification_labels(

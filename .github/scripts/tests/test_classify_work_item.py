@@ -65,6 +65,47 @@ class DigestTests(unittest.TestCase):
         )
 
 
+class LabelProvisioningTests(unittest.TestCase):
+    def test_concurrent_create_converges_to_patch(self) -> None:
+        class RacingAPI:
+            def __init__(self) -> None:
+                self.calls = []
+                self.raced = False
+
+            def pages(self, _path: str) -> list:
+                return []
+
+            def request(self, method: str, path: str, payload=None):
+                self.calls.append((method, path, payload))
+                if method == "POST" and not self.raced:
+                    self.raced = True
+                    raise classifier.GitHubAPIError(
+                        method,
+                        "https://api.github.test/labels",
+                        422,
+                        '{"errors":[{"code":"already_exists"}]}',
+                    )
+                return None
+
+        api = RacingAPI()
+        classifier.ensure_labels(api)
+        self.assertEqual(api.calls[0][0], "POST")
+        self.assertEqual(api.calls[1][0], "PATCH")
+
+    def test_non_conflict_create_failure_is_not_hidden(self) -> None:
+        class FailingAPI:
+            def pages(self, _path: str) -> list:
+                return []
+
+            def request(self, method: str, _path: str, payload=None):
+                raise classifier.GitHubAPIError(
+                    method, "https://api.github.test", 403, "denied"
+                )
+
+        with self.assertRaises(classifier.GitHubAPIError):
+            classifier.ensure_labels(FailingAPI())
+
+
 class IssueTests(unittest.TestCase):
     def issue(self, title: str, body: str, labels: list[str]) -> dict:
         return {
@@ -130,7 +171,9 @@ class PullRequestTests(unittest.TestCase):
 
     def test_workflow_action_version_bump_is_package_update(self) -> None:
         files = changed(".github/workflows/ci.yml")
-        files[0]["patch"] = "@@ -1 +1 @@\n- uses: actions/checkout@v4\n+ uses: actions/checkout@v5"
+        files[0][
+            "patch"
+        ] = "@@ -1 +1 @@\n- uses: actions/checkout@v4\n+ uses: actions/checkout@v5"
         self.assertEqual(
             self.classify(pull("bump checkout", "dependabot[bot]"), files),
             "package_update",
@@ -138,7 +181,9 @@ class PullRequestTests(unittest.TestCase):
 
     def test_broad_workflow_edit_is_not_package_update(self) -> None:
         files = changed(".github/workflows/ci.yml", "webui/package-lock.json")
-        files[0]["patch"] = "@@ -1 +1 @@\n- permissions: read-all\n+ permissions: write-all"
+        files[0][
+            "patch"
+        ] = "@@ -1 +1 @@\n- permissions: read-all\n+ permissions: write-all"
         self.assertNotEqual(
             self.classify(pull("bump", "dependabot[bot]"), files),
             "package_update",
