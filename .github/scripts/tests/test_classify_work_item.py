@@ -478,6 +478,7 @@ class WorkflowSecurityTests(unittest.TestCase):
         ).read_text()
         self.assertIn("issue_comment:", workflow)
         self.assertIn("!github.event.issue.pull_request", workflow)
+        self.assertIn("github.event.comment.user.type != 'Bot'", workflow)
 
 
 if __name__ == "__main__":
