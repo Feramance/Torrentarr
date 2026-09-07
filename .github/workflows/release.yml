@@ -21,8 +21,10 @@ defaults:
     shell: bash
 
 permissions:
+  actions: write
   contents: write
   packages: write
+  pull-requests: write
 
 env:
   PROJECT_NAME: Torrentarr
@@ -46,7 +48,7 @@ jobs:
       uses: actions/checkout@v7
       with:
         fetch-depth: 0
-        token: ${{ secrets.PAT || secrets.GITHUB_TOKEN }}
+        token: ${{ github.token }}
     - name: Determine release type
       id: release_type
       env:
@@ -106,12 +108,55 @@ jobs:
         VERSION=$(grep -oP '<Version>\K[^<]+' Directory.Build.props)
         echo "value=${VERSION}" >> "${GITHUB_OUTPUT}"
         echo "New version: ${VERSION}"
-    - name: Commit version bump
-      uses: stefanzweifel/git-auto-commit-action@v7
-      with:
-        commit_message: '[skip ci] Bump version to v${{ steps.version.outputs.value }}'
-        commit_user_name: ${{ github.actor }}
-        commit_user_email: ${{ github.actor }}@users.noreply.github.com
+    - name: Merge version bump through classification gate
+      env:
+        GH_TOKEN: ${{ github.token }}
+        VERSION: ${{ steps.version.outputs.value }}
+      run: |
+        set -euo pipefail
+
+        BRANCH="automation/release-v${VERSION}-version"
+        TITLE="chore: bump version to v${VERSION}"
+
+        git config user.name "${GITHUB_ACTOR}"
+        git config user.email "${GITHUB_ACTOR}@users.noreply.github.com"
+        git checkout -B "${BRANCH}"
+        git add -A
+        git commit -m "[skip ci] Bump version to v${VERSION}"
+        git push --force-with-lease origin "${BRANCH}"
+
+        PR_NUMBER=$(gh pr list --repo "${GITHUB_REPOSITORY}" --head "${BRANCH}" --base master --state open --json number --jq '.[0].number // empty')
+        if [ -z "${PR_NUMBER}" ]; then
+          PR_URL=$(gh pr create \
+            --repo "${GITHUB_REPOSITORY}" \
+            --base master \
+            --head "${BRANCH}" \
+            --title "${TITLE}" \
+            --body "Automated release version bump for v${VERSION}. This PR is created so protected-branch classification can run before the release commit reaches master.")
+          PR_NUMBER="${PR_URL##*/}"
+        fi
+
+        gh workflow run classify-prs.yml \
+          --repo "${GITHUB_REPOSITORY}" \
+          -f "pr_number=${PR_NUMBER}"
+
+        merged=false
+        for attempt in $(seq 1 120); do
+          if gh pr merge "${PR_NUMBER}" --repo "${GITHUB_REPOSITORY}" --squash --delete-branch; then
+            merged=true
+            break
+          fi
+          echo "PR #${PR_NUMBER} is still waiting for required checks; retrying..."
+          sleep 5
+        done
+
+        if [ "${merged}" != "true" ]; then
+          echo "Timed out waiting for release version PR #${PR_NUMBER} to pass required checks." >&2
+          exit 1
+        fi
+
+        git fetch origin master
+        git checkout -B master origin/master
     - name: Capture release hash
       id: release_hash
       run: |
@@ -129,11 +174,11 @@ jobs:
     - uses: actions/checkout@v7
       with:
         fetch-depth: 0
-        token: ${{ secrets.GITHUB_TOKEN }}
+        token: ${{ github.token }}
     - name: Check if release exists
       id: check_release
       env:
-        GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        GH_TOKEN: ${{ github.token }}
       run: |
         TAG="v${{ needs.prepare_release.outputs.new_version }}"
         if gh release view "${TAG}" --repo ${{ github.repository }} >/dev/null 2>&1; then
@@ -147,7 +192,7 @@ jobs:
       if: steps.check_release.outputs.exists != 'true'
       uses: softprops/action-gh-release@v3
       with:
-        token: ${{ secrets.GITHUB_TOKEN }}
+        token: ${{ github.token }}
         tag_name: v${{ needs.prepare_release.outputs.new_version }}
         name: v${{ needs.prepare_release.outputs.new_version }}
         draft: true
@@ -205,7 +250,7 @@ jobs:
     - name: Upload binaries to release
       uses: softprops/action-gh-release@v3
       with:
-        token: ${{ secrets.GITHUB_TOKEN }}
+        token: ${{ github.token }}
         tag_name: v${{ needs.prepare_release.outputs.new_version }}
         files: |
           release/torrentarr-linux-x64
@@ -244,7 +289,7 @@ jobs:
       with:
         registry: ghcr.io
         username: ${{ github.actor }}
-        password: ${{ secrets.GITHUB_TOKEN }}
+        password: ${{ github.token }}
     - name: Extract Docker metadata
       id: meta
       uses: docker/metadata-action@v6
@@ -281,7 +326,7 @@ jobs:
     - uses: actions/checkout@v7
       with:
         fetch-depth: 0
-        token: ${{ secrets.PAT || secrets.GITHUB_TOKEN }}
+        token: ${{ github.token }}
     - name: Set up Python
       uses: actions/setup-python@v7
       with:
@@ -396,12 +441,57 @@ jobs:
         git stash
         git pull --rebase origin master
         git stash pop || true
-    - name: Commit changelog updates
-      uses: stefanzweifel/git-auto-commit-action@v7
-      with:
-        commit_message: '[skip ci] Update changelog for v${{ needs.prepare_release.outputs.new_version }}'
-        commit_user_name: ${{ github.actor }}
-        commit_user_email: ${{ github.actor }}@users.noreply.github.com
+    - name: Merge changelog through classification gate
+      env:
+        GH_TOKEN: ${{ github.token }}
+        VERSION: ${{ needs.prepare_release.outputs.new_version }}
+      run: |
+        set -euo pipefail
+
+        if git diff --quiet -- CHANGELOG.md; then
+          echo "No changelog changes to commit."
+          exit 0
+        fi
+
+        BRANCH="automation/release-v${VERSION}-changelog"
+        TITLE="chore: update changelog for v${VERSION}"
+
+        git config user.name "${GITHUB_ACTOR}"
+        git config user.email "${GITHUB_ACTOR}@users.noreply.github.com"
+        git checkout -B "${BRANCH}"
+        git add CHANGELOG.md
+        git commit -m "[skip ci] Update changelog for v${VERSION}"
+        git push --force-with-lease origin "${BRANCH}"
+
+        PR_NUMBER=$(gh pr list --repo "${GITHUB_REPOSITORY}" --head "${BRANCH}" --base master --state open --json number --jq '.[0].number // empty')
+        if [ -z "${PR_NUMBER}" ]; then
+          PR_URL=$(gh pr create \
+            --repo "${GITHUB_REPOSITORY}" \
+            --base master \
+            --head "${BRANCH}" \
+            --title "${TITLE}" \
+            --body "Automated changelog update for v${VERSION}. This PR is created so protected-branch classification can run before the changelog commit reaches master.")
+          PR_NUMBER="${PR_URL##*/}"
+        fi
+
+        gh workflow run classify-prs.yml \
+          --repo "${GITHUB_REPOSITORY}" \
+          -f "pr_number=${PR_NUMBER}"
+
+        merged=false
+        for attempt in $(seq 1 120); do
+          if gh pr merge "${PR_NUMBER}" --repo "${GITHUB_REPOSITORY}" --squash --delete-branch; then
+            merged=true
+            break
+          fi
+          echo "PR #${PR_NUMBER} is still waiting for required checks; retrying..."
+          sleep 5
+        done
+
+        if [ "${merged}" != "true" ]; then
+          echo "Timed out waiting for changelog PR #${PR_NUMBER} to pass required checks." >&2
+          exit 1
+        fi
 
   publish_release:
     name: Publish GitHub release
@@ -415,13 +505,13 @@ jobs:
     - uses: actions/checkout@v7
       with:
         fetch-depth: 0
-        token: ${{ secrets.GITHUB_TOKEN }}
+        token: ${{ github.token }}
     - name: Pull latest changelog updates
       run: git pull origin master
     - name: Extract release notes from changelog
       id: extract_notes
       env:
-        GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        GH_TOKEN: ${{ github.token }}
         VERSION: ${{ needs.prepare_release.outputs.new_version }}
       run: |
         TAG="v${VERSION}"
@@ -455,7 +545,7 @@ jobs:
         fi
     - name: Publish release
       env:
-        GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        GH_TOKEN: ${{ github.token }}
       run: |
         TAG="v${{ needs.prepare_release.outputs.new_version }}"
         gh release edit "${TAG}" --draft=false --latest --repo ${{ github.repository }}
