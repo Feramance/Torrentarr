@@ -28,24 +28,31 @@ jobs:
         from pathlib import Path
 
         path = Path('.github/workflows/release.yml')
-        content = path.read_text(encoding='utf-8')
+        lines = path.read_text(encoding='utf-8').splitlines(keepends=True)
 
-        replacements = {
-            """    - name: Checkout repository\n      uses: actions/checkout@v7\n      with:\n        fetch-depth: 0\n        token: ${{ secrets.GITHUB_TOKEN }}\n    - name: Determine release type\n""":
-            """    - name: Checkout repository\n      uses: actions/checkout@v7\n      with:\n        fetch-depth: 0\n        token: ${{ secrets.PAT || secrets.GITHUB_TOKEN }}\n    - name: Determine release type\n""",
-            """  changelog:\n    name: Generate changelog and release notes\n    runs-on: ubuntu-latest\n    needs:\n    - prepare_release\n    - build_and_push_docker\n    if: needs.prepare_release.result == 'success'\n    steps:\n    - uses: actions/checkout@v7\n      with:\n        fetch-depth: 0\n        token: ${{ secrets.GITHUB_TOKEN }}\n""":
-            """  changelog:\n    name: Generate changelog and release notes\n    runs-on: ubuntu-latest\n    needs:\n    - prepare_release\n    - build_and_push_docker\n    if: needs.prepare_release.result == 'success'\n    steps:\n    - uses: actions/checkout@v7\n      with:\n        fetch-depth: 0\n        token: ${{ secrets.PAT || secrets.GITHUB_TOKEN }}\n""",
-            """  publish_release:\n    name: Publish GitHub release\n    runs-on: ubuntu-latest\n    needs:\n    - prepare_release\n    - changelog\n    - build_binaries\n    if: needs.prepare_release.result == 'success'\n    steps:\n    - uses: actions/checkout@v7\n      with:\n        fetch-depth: 0\n        token: ${{ secrets.GITHUB_TOKEN }}\n""":
-            """  publish_release:\n    name: Publish GitHub release\n    runs-on: ubuntu-latest\n    needs:\n    - prepare_release\n    - changelog\n    - build_binaries\n    if: needs.prepare_release.result == 'success'\n    steps:\n    - uses: actions/checkout@v7\n      with:\n        fetch-depth: 0\n        token: ${{ secrets.PAT || secrets.GITHUB_TOKEN }}\n""",
-        }
+        target = 'token: $' + '{{ secrets.GITHUB_TOKEN }}'
+        replacement = 'token: $' + '{{ secrets.PAT || secrets.GITHUB_TOKEN }}'
+        protected_jobs = {'prepare_release', 'changelog', 'publish_release'}
+        current_job = None
+        replaced = 0
+        output = []
 
-        for old, new in replacements.items():
-            count = content.count(old)
-            if count != 1:
-                raise SystemExit(f'Expected exactly one match for release auth block; found {count}')
-            content = content.replace(old, new, 1)
+        for line in lines:
+            if line.startswith('  ') and not line.startswith('    ') and line.rstrip().endswith(':'):
+                current_job = line.strip()[:-1]
 
-        path.write_text(content, encoding='utf-8')
+            if current_job in protected_jobs and line.strip() == target:
+                indent = line[:len(line) - len(line.lstrip())]
+                newline = '\n' if line.endswith('\n') else ''
+                output.append(f'{indent}{replacement}{newline}')
+                replaced += 1
+            else:
+                output.append(line)
+
+        if replaced != 3:
+            raise SystemExit(f'Expected to replace 3 protected release checkout tokens; replaced {replaced}')
+
+        path.write_text(''.join(output), encoding='utf-8')
         PYEOF
 
         rm -f .github/workflows/patch-release-protected-push-auth.yml
