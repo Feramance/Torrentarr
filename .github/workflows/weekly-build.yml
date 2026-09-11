@@ -3,17 +3,18 @@ name: Weekly Build Release
 on:
   schedule:
     # Monday 06:00 UTC
-  - cron: 0 6 * * 1
+    - cron: '0 6 * * 1'
   workflow_dispatch:
     inputs:
       dispatch_build_release:
-        description: After merging Dependabot PRs, dispatch Create a Release (build). Off by default so scheduled runs never publish.
+        description: After merging Dependabot PRs, dispatch Create a Release (build).
         type: boolean
         default: false
 
 permissions:
   contents: write
   pull-requests: write
+  actions: write
 
 defaults:
   run:
@@ -24,187 +25,134 @@ jobs:
     name: Merge Dependabot PRs and optionally release build
     runs-on: ubuntu-latest
     steps:
-    - name: Checkout repository
-      uses: actions/checkout@v7
-      with:
-        fetch-depth: 0
-        token: ${{ secrets.PAT || secrets.GITHUB_TOKEN }}
-        ref: master
+      - name: Checkout repository
+        uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+          token: ${{ secrets.PAT || secrets.GITHUB_TOKEN }}
+          ref: master
 
-    # Extra identity/gating vs qBitrr: require dependabot[bot] + dependabot/ head,
-    # skip CI/Docker/scripts/build-config PRs, gate on required checks, pin merge
-    # to HEAD SHA. Scheduled runs merge only; publishing a [build] release requires
-    # an explicit workflow_dispatch input.
-    - name: Auto-merge green Dependabot PRs
-      id: merge_dependabot
-      env:
-        GH_TOKEN: ${{ secrets.PAT || secrets.GITHUB_TOKEN }}
-      run: |
-        set -euo pipefail
+      - name: Auto-merge green Dependabot PRs
+        id: merge_dependabot
+        env:
+          GH_TOKEN: ${{ secrets.PAT || secrets.GITHUB_TOKEN }}
+        run: |
+          set -euo pipefail
 
-        merged_any=false
-        mapfile -t numbers < <(
-          gh pr list \
-            --repo "${{ github.repository }}" \
-            --state open \
-            --author "app/dependabot" \
-            --json number \
-            --jq '.[].number'
-        )
+          merged_any=false
+          mapfile -t numbers < <(
+            gh pr list --repo "${{ github.repository }}" --state open --author "app/dependabot" --json number --jq '.[].number'
+          )
 
-        if [[ ${#numbers[@]} -eq 0 ]]; then
-          echo "No open Dependabot PRs."
-          echo "merged=false" >> "${GITHUB_OUTPUT}"
-          exit 0
-        fi
-
-        for number in "${numbers[@]}"; do
-          meta=$(gh pr view "${number}" --repo "${{ github.repository }}" \
-            --json title,labels,mergeable,body,author,headRefName,headRefOid,isCrossRepository,headRepositoryOwner,files,changedFiles \
-            --jq '{
-              title: .title,
-              labels: ([.labels[].name] | join(",")),
-              mergeable: .mergeable,
-              body: .body,
-              author: .author.login,
-              headRefName: .headRefName,
-              headRefOid: .headRefOid,
-              isCrossRepository: .isCrossRepository,
-              headOwner: .headRepositoryOwner.login,
-              files: ([.files[].path] | join("\n")),
-              changedFiles: .changedFiles
-            }')
-          title=$(echo "${meta}" | jq -r '.title')
-          labels=$(echo "${meta}" | jq -r '.labels')
-          mergeable=$(echo "${meta}" | jq -r '.mergeable')
-          body=$(echo "${meta}" | jq -r '.body // ""')
-          author=$(echo "${meta}" | jq -r '.author')
-          head_ref=$(echo "${meta}" | jq -r '.headRefName')
-          head_sha=$(echo "${meta}" | jq -r '.headRefOid')
-          is_cross=$(echo "${meta}" | jq -r '.isCrossRepository')
-          head_owner=$(echo "${meta}" | jq -r '.headOwner')
-          files=$(echo "${meta}" | jq -r '.files // ""')
-          changed_files=$(echo "${meta}" | jq -r '.changedFiles // 0')
-          file_count=$(printf '%s\n' "${files}" | grep -c . || true)
-
-          echo "Evaluating Dependabot PR #${number}: ${title} (${head_sha})"
-
-          if [[ "${author}" != "dependabot[bot]" ]]; then
-            echo "Skipping PR #${number} (author=${author}, expected dependabot[bot])."
-            continue
+          if [[ ${#numbers[@]} -eq 0 ]]; then
+            echo "No open Dependabot PRs."
+            echo "merged=false" >> "${GITHUB_OUTPUT}"
+            exit 0
           fi
 
-          if [[ "${head_ref}" != dependabot/* ]]; then
-            echo "Skipping PR #${number} (head ref ${head_ref} is not a Dependabot branch)."
-            continue
+          for number in "${numbers[@]}"; do
+            meta=$(gh pr view "${number}" --repo "${{ github.repository }}" \
+              --json title,labels,mergeable,body,author,headRefName,headRefOid,isCrossRepository,headRepositoryOwner,files,changedFiles \
+              --jq '{title:.title,labels:([.labels[].name]|join(",")),mergeable:.mergeable,body:.body,author:.author.login,headRefName:.headRefName,headRefOid:.headRefOid,isCrossRepository:.isCrossRepository,headOwner:.headRepositoryOwner.login,files:([.files[].path]|join("\n")),changedFiles:.changedFiles}')
+            title=$(echo "${meta}" | jq -r '.title')
+            labels=$(echo "${meta}" | jq -r '.labels')
+            mergeable=$(echo "${meta}" | jq -r '.mergeable')
+            body=$(echo "${meta}" | jq -r '.body // ""')
+            author=$(echo "${meta}" | jq -r '.author')
+            head_ref=$(echo "${meta}" | jq -r '.headRefName')
+            head_sha=$(echo "${meta}" | jq -r '.headRefOid')
+            is_cross=$(echo "${meta}" | jq -r '.isCrossRepository')
+            head_owner=$(echo "${meta}" | jq -r '.headOwner')
+            files=$(echo "${meta}" | jq -r '.files // ""')
+            changed_files=$(echo "${meta}" | jq -r '.changedFiles // 0')
+            file_count=$(printf '%s\n' "${files}" | grep -c . || true)
+
+            echo "Evaluating Dependabot PR #${number}: ${title} (${head_sha})"
+            if [[ "${author}" != "dependabot[bot]" ]]; then echo "Skipping PR #${number} (author=${author})."; continue; fi
+            if [[ "${head_ref}" != dependabot/* ]]; then echo "Skipping PR #${number} (head ref ${head_ref})."; continue; fi
+            if [[ "${is_cross}" == "true" && "${head_owner}" != "dependabot" ]]; then echo "Skipping PR #${number} (cross-repo owner ${head_owner})."; continue; fi
+            if [[ "${body}" == *"version-update:semver-major"* ]] || [[ "${labels}" == *"major"* ]] || [[ "${labels}" == *"breaking"* ]]; then echo "Skipping PR #${number} (major/breaking update)."; continue; fi
+            if echo "${files}" | grep -qE '^(\.github/|scripts/)' || echo "${files}" | grep -qE '^(Dockerfile|docker-compose[^/]*\.ya?ml|build\.(sh|bat)|Directory\.Build\.props|global\.json|nuget\.config)$'; then echo "Skipping PR #${number} (CI, Docker, scripts, or build-config)."; continue; fi
+            if [[ "${changed_files}" -gt "${file_count}" ]]; then echo "Skipping PR #${number}: file list truncated."; continue; fi
+            if [[ "${labels}" == *"github_actions"* ]] || [[ "${labels}" == *"github-actions"* ]]; then echo "Skipping PR #${number} (GitHub Actions ecosystem)."; continue; fi
+            if [[ "${mergeable}" != "MERGEABLE" ]]; then echo "Skipping PR #${number} (mergeable=${mergeable})."; continue; fi
+            if ! gh pr checks "${number}" --repo "${{ github.repository }}" --required; then echo "Skipping PR #${number}: required checks not green."; continue; fi
+
+            current_sha=$(gh pr view "${number}" --repo "${{ github.repository }}" --json headRefOid --jq '.headRefOid')
+            if [[ "${current_sha}" != "${head_sha}" ]]; then echo "Skipping PR #${number}: HEAD moved."; continue; fi
+            if gh pr merge "${number}" --repo "${{ github.repository }}" --squash --delete-branch --match-head-commit "${head_sha}"; then
+              echo "Merged PR #${number} at ${head_sha}."
+              merged_any=true
+            else
+              echo "Could not merge PR #${number}; continuing."
+            fi
+          done
+
+          echo "merged=${merged_any}" >> "${GITHUB_OUTPUT}"
+
+      - name: Refresh master
+        run: |
+          git fetch origin master
+          git checkout master
+          git reset --hard origin/master
+
+      - name: Decide whether to release a build
+        id: should_release
+        run: |
+          set -euo pipefail
+
+          if [[ "${{ github.event_name }}" == "workflow_dispatch" ]] && [[ "${{ github.event.inputs.dispatch_build_release || 'false' }}" != "true" ]]; then
+            echo "release=false" >> "${GITHUB_OUTPUT}"
+            echo "Skipping build release (manual dispatch opted out)."
+            exit 0
           fi
 
-          if [[ "${is_cross}" == "true" && "${head_owner}" != "dependabot" ]]; then
-            echo "Skipping PR #${number} (cross-repo head owner ${head_owner} is not dependabot)."
-            continue
+          last_tag=$(git tag -l 'v*' --sort=-version:refname | head -n1 || true)
+          if [[ -z "${last_tag}" ]]; then
+            echo "Cannot determine an unreleased range without a previous release tag." >&2
+            echo "release=false" >> "${GITHUB_OUTPUT}"
+            exit 1
           fi
 
-          if [[ "${body}" == *"version-update:semver-major"* ]] || \
-             [[ "${labels}" == *"major"* ]] || \
-             [[ "${labels}" == *"breaking"* ]]; then
-            echo "Skipping PR #${number} (major/breaking update)."
-            continue
+          count=$(git rev-list --count "${last_tag}..HEAD")
+          echo "Commits since ${last_tag}: ${count}"
+          if [[ "${count}" -eq 0 ]]; then
+            echo "release=false" >> "${GITHUB_OUTPUT}"
+            echo "No commits since last release; skipping build release."
+            exit 0
           fi
 
-          if echo "${files}" | grep -qE '^(\.github/|scripts/)' || \
-             echo "${files}" | grep -qE '^(Dockerfile|docker-compose[^/]*\.ya?ml|build\.(sh|bat)|Directory\.Build\.props|global\.json|nuget\.config)$'; then
-            echo "Skipping PR #${number} (changes CI, Docker, scripts, or build-config files)."
-            continue
+          while IFS= read -r subject; do
+            case "${subject}" in
+              "[patch]"*|"[minor]"*|"[major]"*)
+                echo "Unreleased commit requires its own release: ${subject}" >&2
+                echo "release=false" >> "${GITHUB_OUTPUT}"
+                exit 1
+                ;;
+            esac
+          done < <(git log --format='%s' "${last_tag}..HEAD")
+
+          invalid_paths=()
+          while IFS= read -r path; do
+            case "${path}" in
+              .github/*|package.json|*/package.json|package-lock.json|*/package-lock.json|pnpm-lock.yaml|*/pnpm-lock.yaml|yarn.lock|*/yarn.lock|bun.lockb|*/bun.lockb|*.csproj|Directory.Packages.props|packages.lock.json|*/packages.lock.json|requirements*.txt|*/requirements*.txt|pyproject.toml|*/pyproject.toml|poetry.lock|*/poetry.lock|uv.lock|*/uv.lock|Pipfile|*/Pipfile|Pipfile.lock|*/Pipfile.lock|go.mod|*/go.mod|go.sum|*/go.sum|Cargo.toml|*/Cargo.toml|Cargo.lock|*/Cargo.lock|composer.json|*/composer.json|composer.lock|*/composer.lock|Gemfile.lock|*/Gemfile.lock) ;;
+              *) invalid_paths+=("${path}") ;;
+            esac
+          done < <(git diff --name-only "${last_tag}..HEAD")
+
+          if [[ ${#invalid_paths[@]} -gt 0 ]]; then
+            printf 'Unreleased non-dependency/non-automation paths:\n%s\n' "${invalid_paths[@]}" >&2
+            echo "release=false" >> "${GITHUB_OUTPUT}"
+            exit 1
           fi
 
-          if [[ "${changed_files}" -gt "${file_count}" ]]; then
-            echo "Skipping PR #${number}: file list truncated (${file_count}/${changed_files}); cannot verify paths."
-            continue
-          fi
-
-          if [[ "${labels}" == *"github_actions"* ]] || \
-             [[ "${labels}" == *"github-actions"* ]]; then
-            echo "Skipping PR #${number} (GitHub Actions ecosystem)."
-            continue
-          fi
-
-          if [[ "${mergeable}" != "MERGEABLE" ]]; then
-            echo "Skipping PR #${number} (mergeable=${mergeable})."
-            continue
-          fi
-
-          if ! gh pr checks "${number}" --repo "${{ github.repository }}" --required; then
-            echo "Skipping PR #${number}: required checks not green."
-            continue
-          fi
-
-          current_sha=$(gh pr view "${number}" --repo "${{ github.repository }}" \
-            --json headRefOid --jq '.headRefOid')
-          if [[ "${current_sha}" != "${head_sha}" ]]; then
-            echo "Skipping PR #${number}: HEAD moved from ${head_sha} to ${current_sha}."
-            continue
-          fi
-
-          if gh pr merge "${number}" \
-            --repo "${{ github.repository }}" \
-            --squash \
-            --delete-branch \
-            --match-head-commit "${head_sha}"; then
-            echo "Merged PR #${number} at ${head_sha}."
-            merged_any=true
-          else
-            echo "Could not merge PR #${number}; continuing."
-          fi
-        done
-
-        echo "merged=${merged_any}" >> "${GITHUB_OUTPUT}"
-
-    - name: Refresh master
-      run: |
-        git fetch origin master
-        git checkout master
-        git reset --hard origin/master
-
-    - name: Decide whether to release a build
-      id: should_release
-      run: |
-        set -euo pipefail
-
-        if [[ "${{ github.event_name }}" != "workflow_dispatch" ]] || \
-           [[ "${{ github.event.inputs.dispatch_build_release || 'false' }}" != "true" ]]; then
-          echo "release=false" >> "${GITHUB_OUTPUT}"
-          echo "Skipping build release (scheduled runs merge only; set dispatch_build_release on workflow_dispatch)."
-          exit 0
-        fi
-
-        if [[ "${{ steps.merge_dependabot.outputs.merged }}" != "true" ]]; then
-          echo "release=false" >> "${GITHUB_OUTPUT}"
-          echo "No Dependabot PRs were merged in this run; skipping build release."
-          exit 0
-        fi
-
-        last_tag=$(git tag -l 'v*' --sort=-version:refname | head -n1 || true)
-        if [[ -z "${last_tag}" ]]; then
-          echo "No previous release tags found; will release."
           echo "release=true" >> "${GITHUB_OUTPUT}"
-          exit 0
-        fi
 
-        count=$(git rev-list --count "${last_tag}..HEAD")
-        echo "Commits since ${last_tag}: ${count}"
-        if [[ "${count}" -gt 0 ]]; then
-          echo "release=true" >> "${GITHUB_OUTPUT}"
-        else
-          echo "release=false" >> "${GITHUB_OUTPUT}"
-          echo "No commits since last release; skipping build release."
-        fi
-
-    - name: Dispatch build release
-      if: steps.should_release.outputs.release == 'true'
-      env:
-        GH_TOKEN: ${{ secrets.PAT || secrets.GITHUB_TOKEN }}
-      run: |
-        gh workflow run "Create a Release" \
-          --repo "${{ github.repository }}" \
-          -f release_type=build
-        echo "Dispatched Create a Release with release_type=build"
+      - name: Dispatch build release
+        if: steps.should_release.outputs.release == 'true'
+        env:
+          GH_TOKEN: ${{ secrets.PAT || secrets.GITHUB_TOKEN }}
+        run: |
+          set -euo pipefail
+          gh workflow run "Create a Release" --repo "${{ github.repository }}" -f release_type=build
+          echo "Dispatched Create a Release with release_type=build"
