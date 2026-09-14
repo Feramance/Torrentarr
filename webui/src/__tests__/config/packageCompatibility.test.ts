@@ -1,4 +1,5 @@
 import { readdirSync, readFileSync } from "node:fs";
+import { resolve } from "node:path";
 import { describe, expect, it } from "vitest";
 
 interface PackageManifest {
@@ -18,15 +19,15 @@ interface PackageLock {
 }
 
 const packageManifest = JSON.parse(
-  readFileSync(new URL("../../../package.json", import.meta.url), "utf8"),
+  readFileSync(resolve(process.cwd(), "package.json"), "utf8"),
 ) as PackageManifest;
 const packageLock = JSON.parse(
-  readFileSync(new URL("../../../package-lock.json", import.meta.url), "utf8"),
+  readFileSync(resolve(process.cwd(), "package-lock.json"), "utf8"),
 ) as PackageLock;
-const repositoryRoot = new URL("../../../../", import.meta.url);
+const repositoryRoot = resolve(process.cwd(), "..");
 
 function readRepositoryFile(path: string): string {
-  return readFileSync(new URL(path, repositoryRoot), "utf8");
+  return readFileSync(resolve(repositoryRoot, path), "utf8");
 }
 
 interface SemanticVersion {
@@ -166,13 +167,10 @@ describe("development dependency compatibility", () => {
   });
 
   it("runs CI workflows on a compatible Node version", () => {
-    const workflowsDirectory = new URL(
-      "../../../../.github/workflows/",
-      import.meta.url,
-    );
+    const workflowsDirectory = resolve(repositoryRoot, ".github/workflows");
     for (const workflowName of readdirSync(workflowsDirectory)) {
       const workflow = readFileSync(
-        new URL(workflowName, workflowsDirectory),
+        resolve(workflowsDirectory, workflowName),
         "utf8",
       );
       if (!workflow.includes("actions/setup-node@")) {
