@@ -25,7 +25,13 @@ if ! command -v dotnet &> /dev/null; then
 fi
 
 if ! command -v node &> /dev/null; then
-    echo -e "${RED}Error: Node.js not found. Please install Node.js 18 or later.${NC}"
+    echo -e "${RED}Error: Node.js not found. Please install Node.js 22.13+ (22.x) or 24+.${NC}"
+    exit 1
+fi
+
+if ! node -e "const [major, minor] = process.versions.node.split('.').map(Number); process.exit((major === 22 && minor >= 13) || major >= 24 ? 0 : 1);"; then
+    NODE_VERSION=$(node --version 2>/dev/null || echo "unknown")
+    echo -e "${RED}Error: Unsupported Node.js version ${NODE_VERSION}. Please install Node.js 22.13+ (22.x) or 24+.${NC}"
     exit 1
 fi
 
