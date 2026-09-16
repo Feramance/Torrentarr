@@ -201,7 +201,7 @@ describe("development dependency compatibility", () => {
 });
 
 describe("supported Node prerequisites", () => {
-  const supportedRangeDescription = "Node.js 22.13+ (22.x) or 24+";
+  const supportedRangeDescription = "Node.js 22.22.2+ (22.x), 24.15+, or 26+";
   const buildScripts = ["build.sh", "build.bat"];
 
   it.each(buildScripts)(
@@ -217,7 +217,7 @@ describe("supported Node prerequisites", () => {
         `${scriptName} must validate the Node version`,
       ).not.toBeNull();
       expect(versionCheck![1]).toContain(
-        "process.exit((major === 22 && minor >= 13) || major >= 24 ? 0 : 1)",
+        "process.exit((major === 22 && (minor > 22 || (minor === 22 && patch >= 2))) || (major === 24 && (minor > 15 || (minor === 15 && patch >= 0))) || major >= 26 ? 0 : 1)",
       );
       expect(script.indexOf(versionCheck![0])).toBeLessThan(
         script.indexOf("npm install"),
