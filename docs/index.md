@@ -16,25 +16,25 @@
   <div class="feature-card">
     <h3>🚀 Getting Started</h3>
     <p>Install Torrentarr and get your first torrent monitored in minutes.</p>
-    <a href="getting-started/index.md">Get Started →</a>
+    <a href="getting-started/">Get Started →</a>
   </div>
 
   <div class="feature-card">
     <h3>⚙️ Configuration</h3>
     <p>Configure qBittorrent, Arr instances, and fine-tune your automation.</p>
-    <a href="configuration/index.md">Configure →</a>
+    <a href="configuration/">Configure →</a>
   </div>
 
   <div class="feature-card">
     <h3>✨ Features</h3>
     <p>Explore health monitoring, automated search, quality upgrades, and more.</p>
-    <a href="features/index.md">Explore Features →</a>
+    <a href="features/">Explore Features →</a>
   </div>
 
   <div class="feature-card">
     <h3>🔧 Troubleshooting</h3>
     <p>Resolve common issues and optimize your Torrentarr installation.</p>
-    <a href="troubleshooting/index.md">Troubleshoot →</a>
+    <a href="troubleshooting/">Troubleshoot →</a>
   </div>
 </div>
 
@@ -346,7 +346,7 @@ Optimize for private tracker requirements:
 
 ### Current Version
 
-**Latest Release**: v6.14.5-1
+**Latest Release**: v6.14.6-1
 
 Torrentarr’s **major** version is **intentionally one ahead of [qBitrr](https://github.com/Feramance/qBitrr)’s** (e.g. qBitrr 5.x ↔ Torrentarr 6.x); minor and patch numbers move independently. That rule keeps the two products unambiguous while sharing `config.toml` compatibility. For the short user-facing story, see [qBitrr and Torrentarr (overview)](parity/overview.md). Contributors: [parity matrix](parity/full-parity-matrix.md) and [contributor reference](parity/contributor-reference.md).
 
