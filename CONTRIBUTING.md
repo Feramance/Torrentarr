@@ -76,7 +76,7 @@ Enhancement suggestions are tracked as GitHub issues. When creating an enhanceme
 ### Prerequisites
 
 - .NET 10.0 SDK or later
-- Node.js 22.13+ (22.x) or 24+ (for frontend)
+- Node.js 22.22.2+ (22.x), 24.15+, or 26+ (for frontend)
 - Docker (optional)
 - Git
 - IDE: Visual Studio 2022, Rider, or VS Code
