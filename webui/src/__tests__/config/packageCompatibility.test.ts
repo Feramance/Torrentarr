@@ -201,8 +201,7 @@ describe("development dependency compatibility", () => {
 });
 
 describe("supported Node prerequisites", () => {
-  const supportedRangeDescription =
-    "Node.js 22.22.2+ (22.x), 24.15+, or 26+";
+  const supportedRangeDescription = "Node.js 22.22.2+ (22.x), 24.15+, or 26+";
   const buildScripts = ["build.sh", "build.bat"];
 
   it.each(buildScripts)(
