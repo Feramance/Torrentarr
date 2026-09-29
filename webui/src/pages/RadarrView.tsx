@@ -11,12 +11,14 @@ import {
 import { getArrList, getRadarrMovies, restartArr } from "../api/client";
 import { StableTable } from "../components/StableTable";
 import {
-  useReactTable,
-  getCoreRowModel,
-  getSortedRowModel,
   flexRender,
   type ColumnDef,
 } from "@tanstack/react-table";
+import {
+  useLegacyTable,
+  getCoreRowModel,
+  getSortedRowModel,
+} from "@tanstack/react-table/legacy";
 import type { ArrInfo, RadarrMovie, RadarrMoviesResponse } from "../api/types";
 import { useToast } from "../context/ToastContext";
 import { useSearch } from "../context/SearchContext";
@@ -363,7 +365,7 @@ const RadarrInstanceView = memo(function RadarrInstanceView({
 
   // TanStack Table returns unstable function refs; React Compiler skips memoization by design
   /* eslint-disable-next-line react-hooks/incompatible-library */
-  const table = useReactTable({
+  const table = useLegacyTable({
     data: reasonFilteredMovies.slice(
       page * pageSize,
       page * pageSize + pageSize,
