@@ -10,13 +10,13 @@ import {
 } from "react";
 import { getArrList, getRadarrMovies, restartArr } from "../api/client";
 import { StableTable } from "../components/StableTable";
+import { flexRender } from "@tanstack/react-table";
 import {
-  useReactTable,
+  useLegacyTable,
   getCoreRowModel,
   getSortedRowModel,
-  flexRender,
-  type ColumnDef,
-} from "@tanstack/react-table";
+  type LegacyColumnDef,
+} from "@tanstack/react-table/legacy";
 import type { ArrInfo, RadarrMovie, RadarrMoviesResponse } from "../api/types";
 import { useToast } from "../context/ToastContext";
 import { useSearch } from "../context/SearchContext";
@@ -74,7 +74,7 @@ const RadarrAggregateView = memo(function RadarrAggregateView({
   instanceCount,
   isAggFiltered = false,
 }: RadarrAggregateViewProps): JSX.Element {
-  const columns = useMemo<ColumnDef<RadarrAggRow>[]>(
+  const columns = useMemo<LegacyColumnDef<RadarrAggRow>[]>(
     () => [
       ...(instanceCount > 1
         ? [
@@ -289,7 +289,7 @@ const RadarrInstanceView = memo(function RadarrInstanceView({
   const isFiltered = reasonFilter !== "all" || onlyMissing;
   const filteredCount = reasonFilteredMovies.length;
 
-  const columns = useMemo<ColumnDef<RadarrMovie>[]>(
+  const columns = useMemo<LegacyColumnDef<RadarrMovie>[]>(
     () => [
       {
         accessorKey: "title",
@@ -363,7 +363,7 @@ const RadarrInstanceView = memo(function RadarrInstanceView({
 
   // TanStack Table returns unstable function refs; React Compiler skips memoization by design
   /* eslint-disable-next-line react-hooks/incompatible-library */
-  const table = useReactTable({
+  const table = useLegacyTable({
     data: reasonFilteredMovies.slice(
       page * pageSize,
       page * pageSize + pageSize,

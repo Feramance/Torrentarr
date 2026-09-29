@@ -1,7 +1,7 @@
 import React from "react";
 import { describe, it, expect } from "vitest";
 import { render, screen } from "@testing-library/react";
-import type { ColumnDef } from "@tanstack/react-table";
+import type { LegacyColumnDef } from "@tanstack/react-table/legacy";
 import { StableTable } from "../../components/StableTable";
 
 // ── Shared fixtures ────────────────────────────────────────────────────────────
@@ -11,7 +11,7 @@ interface Item {
   name: string;
 }
 
-const columns: ColumnDef<Item, unknown>[] = [
+const columns: LegacyColumnDef<Item, unknown>[] = [
   {
     id: "id",
     header: "ID",
@@ -148,7 +148,7 @@ describe("StableTable – DOM structure", () => {
 
 describe("StableTable – custom cell renderer", () => {
   it("renders output from a custom cell function", () => {
-    const customColumns: ColumnDef<Item, unknown>[] = [
+    const customColumns: LegacyColumnDef<Item, unknown>[] = [
       {
         id: "badge",
         header: "Badge",
@@ -165,7 +165,7 @@ describe("StableTable – custom cell renderer", () => {
   });
 
   it("renders JSX from a custom cell function", () => {
-    const customColumns: ColumnDef<Item, unknown>[] = [
+    const customColumns: LegacyColumnDef<Item, unknown>[] = [
       {
         id: "pill",
         header: "Status",

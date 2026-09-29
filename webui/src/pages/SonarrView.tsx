@@ -8,15 +8,15 @@ import {
   type JSX,
 } from "react";
 import { getArrList, getSonarrSeries, restartArr } from "../api/client";
+import { flexRender } from "@tanstack/react-table";
 import {
-  useReactTable,
+  useLegacyTable,
   getCoreRowModel,
   getSortedRowModel,
   getPaginationRowModel,
   getExpandedRowModel,
-  flexRender,
-  type ColumnDef,
-} from "@tanstack/react-table";
+  type LegacyColumnDef,
+} from "@tanstack/react-table/legacy";
 import type {
   ArrInfo,
   SonarrEpisode,
@@ -1046,7 +1046,7 @@ function SonarrAggregateView({
   const tableData = groupSonarr ? groupedPageRows : flatPageRows;
 
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const groupedColumns = useMemo<ColumnDef<any>[]>(
+  const groupedColumns = useMemo<LegacyColumnDef<any>[]>(
     () => [
       {
         accessorKey: "title",
@@ -1114,7 +1114,7 @@ function SonarrAggregateView({
   );
 
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const flatColumns = useMemo<ColumnDef<any>[]>(
+  const flatColumns = useMemo<LegacyColumnDef<any>[]>(
     () => [
       ...(instanceCount > 1
         ? [
@@ -1207,14 +1207,14 @@ function SonarrAggregateView({
   const columns = groupSonarr ? groupedColumns : flatColumns;
 
   // eslint-disable-next-line react-hooks/incompatible-library
-  const groupedTable = useReactTable({
+  const groupedTable = useLegacyTable({
     data: tableData,
     columns,
     getCoreRowModel: getCoreRowModel(),
     getExpandedRowModel: getExpandedRowModel(),
   });
 
-  const flatTable = useReactTable({
+  const flatTable = useLegacyTable({
     data: tableData,
     columns,
     getCoreRowModel: getCoreRowModel(),
