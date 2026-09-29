@@ -1,6 +1,9 @@
 import { memo } from "react";
-import { flexRender, type ColumnDef } from "@tanstack/react-table";
-import { useLegacyTable, getCoreRowModel   type LegacyColumnDef,
+import { flexRender } from "@tanstack/react-table";
+import {
+  useLegacyTable,
+  getCoreRowModel,
+  type LegacyColumnDef,
 } from "@tanstack/react-table/legacy";
 
 interface StableTableProps<TData extends object> {
