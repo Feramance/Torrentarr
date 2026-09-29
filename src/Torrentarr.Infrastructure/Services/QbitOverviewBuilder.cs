@@ -1,4 +1,5 @@
 using Torrentarr.Core.Configuration;
+using Torrentarr.Core.Interfaces;
 using Torrentarr.Core.Models;
 using Torrentarr.Infrastructure.ApiClients.QBittorrent;
 
@@ -11,7 +12,7 @@ public static class QbitOverviewBuilder
 
     public static async Task<object> BuildAsync(
         TorrentarrConfig cfg,
-        QBittorrentConnectionManager qbitManager,
+        ITorrentClientRegistry qbitManager,
         string? instanceFilter,
         CancellationToken ct = default)
     {
@@ -36,20 +37,7 @@ public static class QbitOverviewBuilder
                 continue;
 
             var client = qbitManager.GetClient(instanceName);
-            if (client == null)
-            {
-                try
-                {
-                    var created = new QBittorrentClient(qbit.Host, qbit.Port, qbit.UserName, qbit.Password, qbit.SkipTLSVerify);
-                    if (!await created.LoginAsync(ct))
-                        continue;
-                    client = created;
-                }
-                catch
-                {
-                    continue;
-                }
-            }
+            if (client == null) continue;
 
             List<TorrentInfo> torrents;
             try

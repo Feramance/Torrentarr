@@ -1,4 +1,5 @@
 using Torrentarr.Core.Configuration;
+using Torrentarr.Core.Interfaces;
 using Torrentarr.Core.Models;
 using Torrentarr.Core.Services;
 using Torrentarr.Infrastructure.ApiClients.Arr;
@@ -153,7 +154,9 @@ builder.Services.AddSingleton<IConfigReloader, ConfigReloader>();
 builder.Services.AddSingleton(configLoader);
 
 builder.Services.AddSingleton<IPasswordHasher, BCryptPasswordHasher>();
-builder.Services.AddSingleton<QBittorrentConnectionManager>();
+builder.Services.AddSingleton<ITorrentClientFactory, QBittorrentTorrentClientFactory>();
+builder.Services.AddSingleton<TorrentClientRegistry>();
+builder.Services.AddSingleton<ITorrentClientRegistry>(sp => sp.GetRequiredService<TorrentClientRegistry>());
 builder.Services.AddHttpClient();
 builder.Services.AddScoped<IDatabaseHealthService, DatabaseHealthService>();
 builder.Services.AddScoped<CatalogRollupService>();
@@ -1095,10 +1098,11 @@ app.MapGet("/web/logs/{name}/stream", async (string name, HttpContext ctx) =>
 app.MapGet("/web/config/schema", () => Results.Ok(ConfigSchemaBuilder.Build()));
 app.MapGet("/api/config/schema", () => Results.Ok(ConfigSchemaBuilder.Build()));
 
-app.MapGet("/web/qbit/overview", async (HttpRequest request, TorrentarrConfig cfg, QBittorrentConnectionManager qbitManager) =>
+app.MapGet("/web/qbit/overview", async (HttpRequest request, TorrentarrConfig cfg, ITorrentClientRegistry clientRegistry, CancellationToken ct) =>
 {
     var instance = request.Query["instance"].FirstOrDefault();
-    return Results.Ok(await QbitOverviewBuilder.BuildAsync(cfg, qbitManager, instance));
+    await clientRegistry.EnsureAllConnectedAsync(cfg.GetAllTorrentClients(), ct);
+    return Results.Ok(await QbitOverviewBuilder.BuildAsync(cfg, clientRegistry, instance, ct));
 });
 
 // Radarr movies for specific category
@@ -1443,21 +1447,24 @@ app.MapPost("/web/arr/rebuild", async (HttpContext ctx, TorrentarrConfig config)
 });
 
 // §6.5: qBit categories — seeding config + live torrent stats per category
-app.MapGet("/web/qbit/categories", async (TorrentarrConfig config) =>
+app.MapGet("/web/qbit/categories", async (TorrentarrConfig config, ITorrentClientRegistry clientRegistry, CancellationToken ct) =>
 {
     var categories = new List<object>();
 
-    foreach (var (qbitName, qbitCfg) in config.QBitInstances)
+    var clients = config.GetAllTorrentClients();
+    await clientRegistry.EnsureAllConnectedAsync(clients, ct);
+
+    foreach (var (qbitName, qbitCfg) in clients)
     {
-        if (qbitCfg.Disabled || qbitCfg.Host == "CHANGE_ME") continue;
+        if (qbitCfg.Disabled || !string.Equals(qbitCfg.Type, "qbittorrent", StringComparison.OrdinalIgnoreCase)) continue;
 
         // Fetch live torrent list from this qBit instance
         var liveTorrents = new List<TorrentInfo>();
         try
         {
-            var qbitClient = new QBittorrentClient(qbitCfg.Host, qbitCfg.Port, qbitCfg.UserName, qbitCfg.Password, qbitCfg.SkipTLSVerify);
-            if (await qbitClient.LoginAsync())
-                liveTorrents = await qbitClient.GetTorrentsAsync();
+            var client = clientRegistry.GetClient(qbitName);
+            if (client != null && clientRegistry.IsConnected(qbitName))
+                liveTorrents = await client.GetTorrentsAsync(cancellationToken: ct);
         }
         catch { /* live stats unavailable — return zeros */ }
 

@@ -24,6 +24,9 @@ const QbitCategoriesView = lazy(() =>
     default: module.QbitCategoriesView,
   })),
 );
+const MaintenanceView = lazy(() =>
+  import("./pages/MaintenanceView").then((module) => ({ default: module.MaintenanceView })),
+);
 const ConfigView = lazy(() =>
   import("./pages/ConfigView").then((module) => ({
     default: module.ConfigView,
@@ -70,6 +73,7 @@ type Tab =
   | "lidarr"
   | "readarr"
   | "qbittorrent"
+  | "maintenance"
   | "config";
 
 class ErrorBoundary extends React.Component<
@@ -961,8 +965,8 @@ function AppShell(): JSX.Element {
         return;
       }
 
-      // Number keys 1-7 for tab switching
-      if (event.key >= "1" && event.key <= "8" && !isMod) {
+      // Number keys 1-9 for tab switching
+      if (event.key >= "1" && event.key <= "9" && !isMod) {
         event.preventDefault();
         const tabIndex = parseInt(event.key) - 1;
         const tabIds: Tab[] = [
@@ -973,6 +977,7 @@ function AppShell(): JSX.Element {
           "lidarr",
           "readarr",
           "qbittorrent",
+          "maintenance",
           "config",
         ];
         if (tabIndex < tabIds.length) {
@@ -1160,7 +1165,8 @@ function AppShell(): JSX.Element {
       { id: "sonarr", label: "Sonarr", icon: SonarrIcon },
       { id: "lidarr", label: "Lidarr", icon: LidarrIcon },
       { id: "readarr", label: "Readarr", icon: ReadarrIcon },
-      { id: "qbittorrent", label: "qBittorrent", icon: QbitIcon },
+      { id: "qbittorrent", label: "Torrent Clients", icon: QbitIcon },
+      { id: "maintenance", label: "Maintenance", icon: ConfigIcon },
       { id: "config", label: "Config", icon: ConfigIcon },
     ],
     [],
@@ -1408,6 +1414,7 @@ function AppShell(): JSX.Element {
             {activeTab === "qbittorrent" && (
               <QbitCategoriesView key={`qbittorrent-${reloadKey}`} active />
             )}
+            {activeTab === "maintenance" && <MaintenanceView />}
             {activeTab === "config" && (
               <ConfigView key="config" onDirtyChange={setConfigDirty} />
             )}

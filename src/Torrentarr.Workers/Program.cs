@@ -1,6 +1,8 @@
 using Microsoft.Extensions.Logging;
 using Torrentarr.Core.Configuration;
+using Torrentarr.Core.Interfaces;
 using Torrentarr.Core.Services;
+using Torrentarr.Infrastructure.ApiClients.QBittorrent;
 using Torrentarr.Infrastructure.Database;
 using Torrentarr.Infrastructure.Services;
 using Microsoft.EntityFrameworkCore;
@@ -146,6 +148,9 @@ try
     // Add services
     builder.Services.AddSingleton<DatabaseRestartCoordinator>();
     builder.Services.AddSingleton<QBittorrentConnectionManager>();
+    builder.Services.AddSingleton<ITorrentClientFactory, QBittorrentTorrentClientFactory>();
+    builder.Services.AddSingleton<TorrentClientRegistry>();
+    builder.Services.AddSingleton<ITorrentClientRegistry>(sp => sp.GetRequiredService<TorrentClientRegistry>());
     builder.Services.AddSingleton<ITorrentCacheService, TorrentCacheService>();
     builder.Services.AddSingleton<IMediaValidationService, MediaValidationService>();
     builder.Services.AddScoped<ITorrentProcessor, TorrentProcessor>();

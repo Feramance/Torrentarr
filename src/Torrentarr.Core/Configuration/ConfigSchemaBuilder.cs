@@ -11,6 +11,7 @@ public static class ConfigSchemaBuilder
             ["Settings"] = SettingsFields(),
             ["WebUI"] = WebUiFields(),
             ["qBit"] = QbitFields(),
+            ["TorrentClient"] = TorrentClientFields(),
             ["Arr"] = ArrFields()
         }
     };
@@ -56,6 +57,24 @@ public static class ConfigSchemaBuilder
         Field("SkipTLSVerify", "bool", "Skip TLS Verify"),
         Field("CategorySeeding.StalledDelay", "duration", "Stalled Delay"),
         Field("CategorySeeding.MinSeedingTimeDays", "int", "Min Seeding Time (days)"),
+    ];
+
+    private static List<object> TorrentClientFields() =>
+    [
+        Field("Type", "string", "Client Type"),
+        Field("Disabled", "bool", "Disabled"),
+        Field("Host", "string", "Host"),
+        Field("Port", "int", "Port"),
+        Field("UserName", "string", "Username"),
+        Field("Password", "string", "Password", sensitive: true),
+        Field("Maintenance.Enabled", "bool", "Maintenance Enabled"),
+        Field("Maintenance.Scope", "select", "Maintenance Scope"),
+        Field("Maintenance.Schedule", "string", "Maintenance Schedule"),
+        Field("Maintenance.Armed", "bool", "Maintenance Armed"),
+        Field("Maintenance.PlanTtlMinutes", "int", "Preview TTL (minutes)"),
+        Field("Maintenance.PathMappings", "list", "Path Mappings"),
+        Field("Maintenance.SharePolicies", "list", "Share Policies"),
+        Field("Maintenance.Notifications", "list", "Notifications"),
     ];
 
     private static List<object> ArrFields() =>

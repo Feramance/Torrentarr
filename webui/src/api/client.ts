@@ -24,6 +24,11 @@ import type {
   LogSearchResponse,
   QbitOverviewResponse,
   ConfigSchemaResponse,
+  TorrentClientInfo,
+  MaintenanceOperation,
+  MaintenancePlan,
+  MaintenanceRunSummary,
+  MaintenanceStatus,
 } from "./types";
 
 export type { LogFileInfo };
@@ -608,3 +613,32 @@ export async function getLidarrTracks(
     `/web/lidarr/${encodeURIComponent(category)}/tracks?${params}`,
   );
 }
+
+export const getTorrentClients = (): Promise<TorrentClientInfo[]> =>
+  fetchJson<TorrentClientInfo[]>("/web/torrent-clients");
+
+export const getMaintenanceStatus = (): Promise<MaintenanceStatus> =>
+  fetchJson<MaintenanceStatus>("/web/maintenance/status");
+
+export const getMaintenanceHistory = (): Promise<MaintenanceRunSummary[]> =>
+  fetchJson<MaintenanceRunSummary[]>("/web/maintenance/history");
+
+export const previewMaintenance = (clientInstanceIds: string[], operations: MaintenanceOperation[]): Promise<MaintenancePlan> =>
+  fetchJson<MaintenancePlan>("/web/maintenance/preview", {
+    method: "POST", headers: JSON_HEADERS, body: JSON.stringify({ clientInstanceIds, operations }),
+  });
+
+export const applyMaintenance = (planId: string): Promise<MaintenanceRunSummary> =>
+  fetchJson<MaintenanceRunSummary>("/web/maintenance/apply", {
+    method: "POST", headers: JSON_HEADERS, body: JSON.stringify({ planId }),
+  });
+
+export const armMaintenance = (planId: string, clientInstanceIds: string[]): Promise<MaintenanceStatus> =>
+  fetchJson<MaintenanceStatus>("/web/maintenance/arm", {
+    method: "POST", headers: JSON_HEADERS, body: JSON.stringify({ planId, clientInstanceIds }),
+  });
+
+export const maintenanceCommand = (command: "disarm" | "run" | "cancel", clientInstanceIds: string[] = []): Promise<MaintenanceStatus | MaintenanceRunSummary> =>
+  fetchJson(`/web/maintenance/${command}`, {
+    method: "POST", headers: JSON_HEADERS, body: JSON.stringify({ clientInstanceIds }),
+  });

@@ -1,5 +1,6 @@
 using System.Text.RegularExpressions;
 using Torrentarr.Core.Configuration;
+using Torrentarr.Core.Interfaces;
 using Torrentarr.Core.Models;
 using Torrentarr.Core.Services;
 using Torrentarr.Infrastructure.ApiClients.QBittorrent;
@@ -23,7 +24,7 @@ public class TorrentProcessor : ITorrentProcessor
     private const string HnrActiveTag = "qBitrr-hnr_active";
 
     private readonly ILogger<TorrentProcessor> _logger;
-    private readonly QBittorrentConnectionManager _qbitManager;
+    private readonly ITorrentClientRegistry _qbitManager;
     private readonly TorrentarrDbContext _dbContext;
     private readonly TorrentarrConfig _config;
     private readonly ITorrentCacheService _cache;
@@ -33,12 +34,13 @@ public class TorrentProcessor : ITorrentProcessor
     private readonly IMediaValidationService? _mediaValidation;
     private readonly DatabaseRestartCoordinator _restartCoordinator;
     private readonly StalledUploadTracker? _stalledUploads;
+    private readonly ISafeDeletionService? _safeDeletion;
 
     private readonly HashSet<string> _specialCategories;
 
     public TorrentProcessor(
         ILogger<TorrentProcessor> logger,
-        QBittorrentConnectionManager qbitManager,
+        ITorrentClientRegistry qbitManager,
         TorrentarrDbContext dbContext,
         TorrentarrConfig config,
         ITorrentCacheService cache,
@@ -47,7 +49,8 @@ public class TorrentProcessor : ITorrentProcessor
         ISeedingService? seedingService = null,
         IImportPathTracker? pathTracker = null,
         IMediaValidationService? mediaValidation = null,
-        StalledUploadTracker? stalledUploads = null)
+        StalledUploadTracker? stalledUploads = null,
+        ISafeDeletionService? safeDeletion = null)
     {
         _logger = logger;
         _qbitManager = qbitManager;
@@ -60,6 +63,7 @@ public class TorrentProcessor : ITorrentProcessor
         _pathTracker = pathTracker;
         _mediaValidation = mediaValidation;
         _stalledUploads = stalledUploads;
+        _safeDeletion = safeDeletion;
 
         _specialCategories = new HashSet<string>(StringComparer.OrdinalIgnoreCase)
         {
@@ -773,9 +777,12 @@ public class TorrentProcessor : ITorrentProcessor
     }
 
     private async Task DeleteTorrentFromClientAsync(
-        QBittorrentClient client, TorrentInfo torrent, bool deleteFiles, CancellationToken ct)
+        ITorrentClient client, TorrentInfo torrent, bool deleteFiles, CancellationToken ct)
     {
-        var deleted = await client.DeleteTorrentsAsync(new List<string> { torrent.Hash }, deleteFiles, ct);
+        var deleted = deleteFiles
+            ? _safeDeletion != null && (await _safeDeletion.RemoveTorrentAsync(
+                torrent.ClientInstanceId, torrent.Hash, removeContent: true, ct: ct)).Success
+            : await client.DeleteTorrentsAsync(new List<string> { torrent.Hash }, false, ct);
         if (deleted)
             _stalledUploads?.Evict(torrent.QBitInstanceName, torrent.Hash);
     }
@@ -874,7 +881,7 @@ public class TorrentProcessor : ITorrentProcessor
     /// </summary>
     private async Task ProcessStalledTorrentAsync(
         TorrentInfo torrent, string reason,
-        QBittorrentClient client, ArrInstanceConfig? arrCfg,
+        ITorrentClient client, ArrInstanceConfig? arrCfg,
         TorrentProcessingStats stats, long timeNow, CancellationToken ct)
     {
         var ignoreYoungerThan = arrCfg?.Torrent.IgnoreTorrentsYoungerThan
@@ -909,7 +916,7 @@ public class TorrentProcessor : ITorrentProcessor
     /// </summary>
     private async Task ProcessPercentageThresholdAsync(
         TorrentInfo torrent, int maxEta,
-        QBittorrentClient client, TorrentProcessingStats stats, CancellationToken ct)
+        ITorrentClient client, TorrentProcessingStats stats, CancellationToken ct)
     {
         // qBitrr line 5284: only delete if maxEta > 0 AND last_activity is stale
         if (maxEta > 0 && torrent.LastActivity < DateTimeOffset.UtcNow.ToUnixTimeSeconds() - maxEta)
@@ -1140,7 +1147,7 @@ public class TorrentProcessor : ITorrentProcessor
     /// <summary>
     /// Add a tag to a torrent (respects tagless mode).
     /// </summary>
-    private async Task AddTagAsync(TorrentInfo torrent, QBittorrentClient client, string tag, CancellationToken ct)
+    private async Task AddTagAsync(TorrentInfo torrent, ITorrentClient client, string tag, CancellationToken ct)
     {
         if (_config.Settings.Tagless)
         {
@@ -1166,7 +1173,7 @@ public class TorrentProcessor : ITorrentProcessor
     /// <summary>
     /// Remove a tag from a torrent (respects tagless mode).
     /// </summary>
-    private async Task RemoveTagAsync(TorrentInfo torrent, QBittorrentClient client, string tag, CancellationToken ct)
+    private async Task RemoveTagAsync(TorrentInfo torrent, ITorrentClient client, string tag, CancellationToken ct)
     {
         if (_config.Settings.Tagless)
         {
@@ -1228,7 +1235,7 @@ public class TorrentProcessor : ITorrentProcessor
         return tags.Contains(tag, StringComparer.OrdinalIgnoreCase);
     }
 
-    private async Task EnsureTagsExistAsync(QBittorrentClient client, CancellationToken cancellationToken)
+    private async Task EnsureTagsExistAsync(ITorrentClient client, CancellationToken cancellationToken)
     {
         try
         {
@@ -1323,7 +1330,7 @@ public class TorrentProcessor : ITorrentProcessor
     private async Task<bool> ApplyFileFilterAsync(
         TorrentInfo torrent,
         ArrInstanceConfig arrCfg,
-        QBittorrentClient client,
+        ITorrentClient client,
         CancellationToken ct)
     {
         var cfg = arrCfg.Torrent;
@@ -1419,7 +1426,7 @@ public class TorrentProcessor : ITorrentProcessor
     /// <summary>
     /// Add qBitrr-allowed_stalled tag (or set DB column in tagless mode).
     /// </summary>
-    private async Task AddStalledTagAsync(TorrentInfo torrent, QBittorrentClient client, CancellationToken ct)
+    private async Task AddStalledTagAsync(TorrentInfo torrent, ITorrentClient client, CancellationToken ct)
     {
         if (_config.Settings.Tagless)
         {
@@ -1440,7 +1447,7 @@ public class TorrentProcessor : ITorrentProcessor
     /// <summary>
     /// Remove qBitrr-allowed_stalled tag (or clear DB column in tagless mode).
     /// </summary>
-    private async Task RemoveStalledTagAsync(TorrentInfo torrent, QBittorrentClient client, CancellationToken ct)
+    private async Task RemoveStalledTagAsync(TorrentInfo torrent, ITorrentClient client, CancellationToken ct)
     {
         if (_config.Settings.Tagless)
         {
