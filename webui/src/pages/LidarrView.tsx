@@ -9,12 +9,14 @@ import {
 } from "react";
 import { getArrList, getLidarrAlbums, restartArr } from "../api/client";
 import {
-  useReactTable,
-  getCoreRowModel,
-  getSortedRowModel,
   flexRender,
   type ColumnDef,
 } from "@tanstack/react-table";
+import {
+  useLegacyTable,
+  getCoreRowModel,
+  getSortedRowModel,
+} from "@tanstack/react-table/legacy";
 import type {
   ArrInfo,
   LidarrAlbumEntry,
@@ -331,7 +333,7 @@ function LidarrAggregateView({
 
   // TanStack Table returns unstable function refs; React Compiler skips memoization by design
   /* eslint-disable-next-line react-hooks/incompatible-library */
-  const flatTable = useReactTable({
+  const flatTable = useLegacyTable({
     data: flatPageRows,
     columns: flatColumns,
     getCoreRowModel: getCoreRowModel(),
@@ -925,7 +927,7 @@ function LidarrInstanceView({
 
   // TanStack Table returns unstable function refs; React Compiler skips memoization by design
   /* eslint-disable-next-line react-hooks/incompatible-library */
-  const table = useReactTable({
+  const table = useLegacyTable({
     data: paginatedAlbums,
     columns,
     getCoreRowModel: getCoreRowModel(),
