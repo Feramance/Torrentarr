@@ -15,6 +15,7 @@ import {
   getSortedRowModel,
   getPaginationRowModel,
   getExpandedRowModel,
+  type LegacyColumnDef,
 } from "@tanstack/react-table/legacy";
 import type {
   ArrInfo,
@@ -1045,7 +1046,7 @@ function SonarrAggregateView({
   const tableData = groupSonarr ? groupedPageRows : flatPageRows;
 
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const groupedColumns = useMemo<ColumnDef<any>[]>(
+  const groupedColumns = useMemo<LegacyColumnDef<any>[]>(
     () => [
       {
         accessorKey: "title",
@@ -1113,7 +1114,7 @@ function SonarrAggregateView({
   );
 
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const flatColumns = useMemo<ColumnDef<any>[]>(
+  const flatColumns = useMemo<LegacyColumnDef<any>[]>(
     () => [
       ...(instanceCount > 1
         ? [
