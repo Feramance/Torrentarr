@@ -15,6 +15,7 @@ import {
   useLegacyTable,
   getCoreRowModel,
   getSortedRowModel,
+  type LegacyColumnDef,
 } from "@tanstack/react-table/legacy";
 import type { ArrInfo, RadarrMovie, RadarrMoviesResponse } from "../api/types";
 import { useToast } from "../context/ToastContext";
@@ -73,7 +74,7 @@ const RadarrAggregateView = memo(function RadarrAggregateView({
   instanceCount,
   isAggFiltered = false,
 }: RadarrAggregateViewProps): JSX.Element {
-  const columns = useMemo<ColumnDef<RadarrAggRow>[]>(
+  const columns = useMemo<LegacyColumnDef<RadarrAggRow>[]>(
     () => [
       ...(instanceCount > 1
         ? [
@@ -288,7 +289,7 @@ const RadarrInstanceView = memo(function RadarrInstanceView({
   const isFiltered = reasonFilter !== "all" || onlyMissing;
   const filteredCount = reasonFilteredMovies.length;
 
-  const columns = useMemo<ColumnDef<RadarrMovie>[]>(
+  const columns = useMemo<LegacyColumnDef<RadarrMovie>[]>(
     () => [
       {
         accessorKey: "title",
