@@ -13,6 +13,7 @@ import {
   useLegacyTable,
   getCoreRowModel,
   getSortedRowModel,
+  type LegacyColumnDef,
 } from "@tanstack/react-table/legacy";
 import type {
   ArrInfo,
@@ -228,7 +229,7 @@ function LidarrAggregateView({
     return trackRows.slice(start, end);
   }, [trackRows, page]);
 
-  const flatColumns = useMemo<ColumnDef<LidarrTrackRow>[]>(
+  const flatColumns = useMemo<LegacyColumnDef<LidarrTrackRow>[]>(
     () => [
       ...(instanceCount > 1
         ? [
@@ -784,7 +785,7 @@ function LidarrInstanceView({
     return result;
   }, [reasonFilteredAlbums]);
 
-  const columns = useMemo<ColumnDef<LidarrAlbumEntry>[]>(
+  const columns = useMemo<LegacyColumnDef<LidarrAlbumEntry>[]>(
     () => [
       {
         id: "title",
