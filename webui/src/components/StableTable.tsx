@@ -1,14 +1,15 @@
 import { memo } from "react";
 import { flexRender, type ColumnDef } from "@tanstack/react-table";
-import { useLegacyTable, getCoreRowModel } from "@tanstack/react-table/legacy";
+import { useLegacyTable, getCoreRowModel   type LegacyColumnDef,
+} from "@tanstack/react-table/legacy";
 
-interface StableTableProps<TData> {
+interface StableTableProps<TData extends object> {
   data: TData[];
-  columns: ColumnDef<TData, unknown>[];
+  columns: LegacyColumnDef<TData, unknown>[];
   getRowKey?: (row: TData) => string;
 }
 
-function StableTableInner<TData>({
+function StableTableInner<TData extends object>({
   data,
   columns,
   getRowKey,
