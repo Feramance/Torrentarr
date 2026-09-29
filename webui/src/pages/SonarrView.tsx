@@ -8,10 +8,7 @@ import {
   type JSX,
 } from "react";
 import { getArrList, getSonarrSeries, restartArr } from "../api/client";
-import {
-  flexRender,
-  type ColumnDef,
-} from "@tanstack/react-table";
+import { flexRender, type ColumnDef } from "@tanstack/react-table";
 import {
   useLegacyTable,
   getCoreRowModel,

@@ -10,10 +10,7 @@ import {
 } from "react";
 import { getArrList, getRadarrMovies, restartArr } from "../api/client";
 import { StableTable } from "../components/StableTable";
-import {
-  flexRender,
-  type ColumnDef,
-} from "@tanstack/react-table";
+import { flexRender, type ColumnDef } from "@tanstack/react-table";
 import {
   useLegacyTable,
   getCoreRowModel,
