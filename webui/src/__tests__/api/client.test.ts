@@ -709,11 +709,18 @@ describe("getConfigSchema", () => {
           sections: {
             WebUI: [
               {
-                dotted: "Token",
-                kind: "string",
+                section: "WebUI",
+                path: ["Token"],
+                key: "Token",
+                kind: "password",
                 label: "Token",
+                default: "",
+                comments: "API token",
+                required: false,
+                secure: true,
                 uiExpose: true,
-                sensitive: true,
+                applyLive: false,
+                requiresRestart: true,
               },
             ],
           },
@@ -723,6 +730,7 @@ describe("getConfigSchema", () => {
 
     const result = await getConfigSchema();
     expect(result.version).toBe(1);
-    expect(result.sections.WebUI[0].dotted).toBe("Token");
+    expect(result.sections.WebUI[0].key).toBe("Token");
+    expect(result.sections.WebUI[0].secure).toBe(true);
   });
 });

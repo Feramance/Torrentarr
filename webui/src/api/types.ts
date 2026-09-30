@@ -128,11 +128,26 @@ export interface QbitOverviewResponse {
 }
 
 export interface ConfigSchemaField {
-  dotted: string;
+  section: string;
+  path: string[];
+  key: string;
   kind: string;
   label: string;
+  default: unknown;
+  comments: string | string[];
+  required: boolean;
+  secure: boolean;
   uiExpose: boolean;
-  sensitive: boolean;
+  applyLive: boolean | null;
+  requiresRestart: boolean | null;
+  options?: string[];
+  description?: string;
+  placeholder?: string;
+  nativeUnit?: "seconds" | "minutes";
+  allowNegative?: boolean;
+  minimum?: number;
+  maximum?: number;
+  arrKinds?: string[];
 }
 
 export interface ConfigSchemaResponse {
@@ -450,11 +465,6 @@ export interface ConfigUpdateResponse {
   status: string;
   configReloaded: boolean;
   reloadType:
-    | "none"
-    | "frontend"
-    | "webui"
-    | "single_arr"
-    | "multi_arr"
-    | "full";
+    "none" | "frontend" | "webui" | "single_arr" | "multi_arr" | "full";
   affectedInstances: string[];
 }

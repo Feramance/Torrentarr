@@ -57,10 +57,49 @@ public class SeedingService : ISeedingService
         _stalledUploads = stalledUploads ?? new StalledUploadTracker();
     }
 
-    /// <summary>Returns the seeding config for whichever qBit instance the torrent belongs to.</summary>
+    /// <summary>Returns the seeding config for the owning qBit instance with category overrides applied.</summary>
     private CategorySeedingConfig GetSeedingConfig(TorrentInfo torrent)
-        => _config.QBitInstances.GetValueOrDefault(torrent.QBitInstanceName)?.CategorySeeding
-           ?? new CategorySeedingConfig();
+    {
+        var qbit = _config.QBitInstances.GetValueOrDefault(torrent.QBitInstanceName);
+        var baseConfig = qbit?.CategorySeeding ?? new CategorySeedingConfig();
+        return ApplyCategoryOverride(baseConfig, torrent.Category, qbit?.MatchSubcategories ?? false);
+    }
+
+    internal static CategorySeedingConfig ApplyCategoryOverride(
+        CategorySeedingConfig baseConfig,
+        string? category,
+        bool matchSubcategories)
+    {
+        if (string.IsNullOrWhiteSpace(category) || baseConfig.Categories.Count == 0)
+            return baseConfig;
+
+        var names = baseConfig.Categories.Where(item => !string.IsNullOrWhiteSpace(item.Name))
+            .Select(item => item.Name).ToList();
+        var match = CategoryPathHelper.MatchesConfigured(category, names, prefix: matchSubcategories)
+            ?? CategoryPathHelper.MatchesConfigured(category, names, prefix: false);
+        var categoryOverride = baseConfig.Categories.FirstOrDefault(item =>
+            string.Equals(item.Name, match, StringComparison.OrdinalIgnoreCase));
+        if (categoryOverride == null)
+            return baseConfig;
+
+        return new CategorySeedingConfig
+        {
+            DownloadRateLimitPerTorrent = categoryOverride.DownloadRateLimitPerTorrent ?? baseConfig.DownloadRateLimitPerTorrent,
+            UploadRateLimitPerTorrent = categoryOverride.UploadRateLimitPerTorrent ?? baseConfig.UploadRateLimitPerTorrent,
+            MaxUploadRatio = categoryOverride.MaxUploadRatio ?? baseConfig.MaxUploadRatio,
+            MaxSeedingTime = categoryOverride.MaxSeedingTime ?? baseConfig.MaxSeedingTime,
+            RemoveTorrent = categoryOverride.RemoveTorrent ?? baseConfig.RemoveTorrent,
+            HitAndRunMode = categoryOverride.HitAndRunMode ?? baseConfig.HitAndRunMode,
+            MinSeedRatio = categoryOverride.MinSeedRatio ?? baseConfig.MinSeedRatio,
+            MinSeedingTimeDays = categoryOverride.MinSeedingTimeDays ?? baseConfig.MinSeedingTimeDays,
+            HitAndRunMinimumDownloadPercent = categoryOverride.HitAndRunMinimumDownloadPercent ?? baseConfig.HitAndRunMinimumDownloadPercent,
+            HitAndRunPartialSeedRatio = categoryOverride.HitAndRunPartialSeedRatio ?? baseConfig.HitAndRunPartialSeedRatio,
+            TrackerUpdateBuffer = categoryOverride.TrackerUpdateBuffer ?? baseConfig.TrackerUpdateBuffer,
+            StalledDelay = categoryOverride.StalledDelay ?? baseConfig.StalledDelay,
+            IgnoreTorrentsYoungerThan = categoryOverride.IgnoreTorrentsYoungerThan ?? baseConfig.IgnoreTorrentsYoungerThan,
+            Categories = baseConfig.Categories
+        };
+    }
 
     /// <summary>
     /// §3.3: Returns the merged tracker list: qBit-level as base, Arr-level overrides on host collision.

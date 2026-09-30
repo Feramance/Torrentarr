@@ -30,6 +30,7 @@ repos:
   - id: prettier
     types_or: [javascript, jsx, ts, tsx, json, css, markdown]
     files: ^webui/
+    exclude: ^webui/src/config/configFields\.generated\.ts$
     additional_dependencies:
     - prettier@3.2.5
 - repo: local

@@ -9,7 +9,7 @@ namespace Torrentarr.Core.Configuration;
 public class ConfigurationLoader
 {
     /// <summary>Expected config schema version (qBitrr parity). Used for validation and mismatch warning.</summary>
-    public const string ExpectedConfigVersion = "6.14.4";
+    public const string ExpectedConfigVersion = "6.14.5";
 
     /// <summary>
     /// TEST USE ONLY. When set by test fixtures, GetDefaultConfigPath() returns this instead of env/defaults.
@@ -1311,7 +1311,54 @@ public class ConfigurationLoader
         if (table.TryGetValue("IgnoreTorrentsYoungerThan", out var ignoreYounger))
             seeding.IgnoreTorrentsYoungerThan = DurationParser.ParseToSeconds(ignoreYounger, 180);
 
+        if (table.TryGetValue("Categories", out var categoriesObj))
+        {
+            seeding.Categories = GetTrackerTables(categoriesObj)
+                .Select(ParseCategorySeedingOverride)
+                .Where(category => category != null)
+                .Cast<CategorySeedingCategoryOverride>()
+                .ToList();
+        }
+
         return seeding;
+    }
+
+    private CategorySeedingCategoryOverride? ParseCategorySeedingOverride(TomlTable table)
+    {
+        var category = new CategorySeedingCategoryOverride();
+        if (table.TryGetValue("Name", out var name))
+            category.Name = name?.ToString()?.Trim() ?? "";
+        if (string.IsNullOrWhiteSpace(category.Name))
+            return null;
+
+        if (table.TryGetValue("DownloadRateLimitPerTorrent", out var downloadLimit))
+            category.DownloadRateLimitPerTorrent = Convert.ToInt32(downloadLimit);
+        if (table.TryGetValue("UploadRateLimitPerTorrent", out var uploadLimit))
+            category.UploadRateLimitPerTorrent = Convert.ToInt32(uploadLimit);
+        if (table.TryGetValue("MaxUploadRatio", out var maxRatio))
+            category.MaxUploadRatio = Convert.ToDouble(maxRatio);
+        if (table.TryGetValue("MaxSeedingTime", out var maxTime))
+            category.MaxSeedingTime = DurationParser.ParseToSeconds(maxTime);
+        if (table.TryGetValue("RemoveTorrent", out var removeTorrent))
+            category.RemoveTorrent = Convert.ToInt32(removeTorrent);
+        else if (table.TryGetValue("RemoveMode", out var removeMode))
+            category.RemoveTorrent = Convert.ToInt32(removeMode);
+        if (table.TryGetValue("HitAndRunMode", out var hnrMode))
+            category.HitAndRunMode = ParseHitAndRunMode(hnrMode);
+        if (table.TryGetValue("MinSeedRatio", out var minRatio))
+            category.MinSeedRatio = Convert.ToDouble(minRatio);
+        category.MinSeedingTimeDays = ReadMinSeedingTimeDays(table);
+        if (table.TryGetValue("HitAndRunMinimumDownloadPercent", out var hnrMinimum))
+            category.HitAndRunMinimumDownloadPercent = Convert.ToInt32(hnrMinimum);
+        if (table.TryGetValue("HitAndRunPartialSeedRatio", out var partialRatio))
+            category.HitAndRunPartialSeedRatio = Convert.ToDouble(partialRatio);
+        if (table.TryGetValue("TrackerUpdateBuffer", out var updateBuffer))
+            category.TrackerUpdateBuffer = DurationParser.ParseToSeconds(updateBuffer, 0);
+        if (table.TryGetValue("StalledDelay", out var stalledDelayOverride))
+            category.StalledDelay = DurationParser.ParseToMinutes(stalledDelayOverride, -1);
+        if (table.TryGetValue("IgnoreTorrentsYoungerThan", out var ignoreOverride))
+            category.IgnoreTorrentsYoungerThan = DurationParser.ParseToSeconds(ignoreOverride, 180);
+        return category;
     }
 
     private WebUIConfig ParseWebUI(TomlTable table)
@@ -1980,6 +2027,25 @@ public class ConfigurationLoader
             sb.AppendLine($"TrackerUpdateBuffer = {qbit.CategorySeeding.TrackerUpdateBuffer}");
             sb.AppendLine($"StalledDelay = {qbit.CategorySeeding.StalledDelay}");
             sb.AppendLine($"IgnoreTorrentsYoungerThan = {qbit.CategorySeeding.IgnoreTorrentsYoungerThan}");
+            foreach (var category in qbit.CategorySeeding.Categories.Where(category => !string.IsNullOrWhiteSpace(category.Name)))
+            {
+                sb.AppendLine();
+                sb.AppendLine($"[[{name}.CategorySeeding.Categories]]");
+                sb.AppendLine($"Name = \"{EscapeTomlString(category.Name)}\"");
+                if (category.DownloadRateLimitPerTorrent.HasValue) sb.AppendLine($"DownloadRateLimitPerTorrent = {category.DownloadRateLimitPerTorrent.Value}");
+                if (category.UploadRateLimitPerTorrent.HasValue) sb.AppendLine($"UploadRateLimitPerTorrent = {category.UploadRateLimitPerTorrent.Value}");
+                if (category.MaxUploadRatio.HasValue) sb.AppendLine($"MaxUploadRatio = {category.MaxUploadRatio.Value}");
+                if (category.MaxSeedingTime.HasValue) sb.AppendLine($"MaxSeedingTime = {category.MaxSeedingTime.Value}");
+                if (category.RemoveTorrent.HasValue) sb.AppendLine($"RemoveTorrent = {category.RemoveTorrent.Value}");
+                if (category.HitAndRunMode != null) sb.AppendLine($"HitAndRunMode = \"{EscapeTomlString(category.HitAndRunMode)}\"");
+                if (category.MinSeedRatio.HasValue) sb.AppendLine($"MinSeedRatio = {category.MinSeedRatio.Value}");
+                if (category.MinSeedingTimeDays.HasValue) sb.AppendLine($"MinSeedingTimeDays = {category.MinSeedingTimeDays.Value}");
+                if (category.HitAndRunMinimumDownloadPercent.HasValue) sb.AppendLine($"HitAndRunMinimumDownloadPercent = {category.HitAndRunMinimumDownloadPercent.Value}");
+                if (category.HitAndRunPartialSeedRatio.HasValue) sb.AppendLine($"HitAndRunPartialSeedRatio = {category.HitAndRunPartialSeedRatio.Value}");
+                if (category.TrackerUpdateBuffer.HasValue) sb.AppendLine($"TrackerUpdateBuffer = {category.TrackerUpdateBuffer.Value}");
+                if (category.StalledDelay.HasValue) sb.AppendLine($"StalledDelay = {category.StalledDelay.Value}");
+                if (category.IgnoreTorrentsYoungerThan.HasValue) sb.AppendLine($"IgnoreTorrentsYoungerThan = {category.IgnoreTorrentsYoungerThan.Value}");
+            }
             sb.AppendLine();
         }
 

@@ -61,6 +61,39 @@ public class ConfigurationLoaderTests : IDisposable
     }
 
     [Fact]
+    public void LoadAndSave_PreservesPerCategorySeedingOverrides()
+    {
+        WriteToml("""
+            [Settings]
+            ConfigVersion = "6.14.5"
+
+            [qBit]
+            MatchSubcategories = true
+
+            [qBit.CategorySeeding]
+            MaxUploadRatio = 1.0
+
+            [[qBit.CategorySeeding.Categories]]
+            Name = "movies"
+            MaxUploadRatio = 3.5
+            MaxSeedingTime = "2h"
+            HitAndRunMode = "or"
+            """);
+
+        var loader = new ConfigurationLoader(_tempFilePath);
+        var config = loader.Load();
+        var category = config.QBitInstances["qBit"].CategorySeeding.Categories.Should().ContainSingle().Subject;
+        category.Name.Should().Be("movies");
+        category.MaxUploadRatio.Should().Be(3.5);
+        category.MaxSeedingTime.Should().Be(7200);
+        category.HitAndRunMode.Should().Be("or");
+
+        loader.SaveConfig(config);
+        var reloaded = loader.Load().QBitInstances["qBit"].CategorySeeding.Categories.Should().ContainSingle().Subject;
+        reloaded.Should().BeEquivalentTo(category);
+    }
+
+    [Fact]
     public void Load_ParsesMultipleArrInstances()
     {
         WriteToml("""

@@ -19,7 +19,7 @@ public class TorrentarrConfig
 
 public class SettingsConfig
 {
-    public string ConfigVersion { get; set; } = "6.14.4";
+    public string ConfigVersion { get; set; } = "6.14.5";
     public string ConsoleLevel { get; set; } = "INFO";
     public bool Logging { get; set; } = true;
     public string CompletedDownloadFolder { get; set; } = "";
@@ -95,6 +95,25 @@ public class CategorySeedingConfig
     public int TrackerUpdateBuffer { get; set; }
     public int StalledDelay { get; set; } = -1;
     public int IgnoreTorrentsYoungerThan { get; set; } = 180;
+    public List<CategorySeedingCategoryOverride> Categories { get; set; } = new();
+}
+
+public class CategorySeedingCategoryOverride
+{
+    public string Name { get; set; } = "";
+    public int? DownloadRateLimitPerTorrent { get; set; }
+    public int? UploadRateLimitPerTorrent { get; set; }
+    public double? MaxUploadRatio { get; set; }
+    public int? MaxSeedingTime { get; set; }
+    public int? RemoveTorrent { get; set; }
+    public string? HitAndRunMode { get; set; }
+    public double? MinSeedRatio { get; set; }
+    public int? MinSeedingTimeDays { get; set; }
+    public int? HitAndRunMinimumDownloadPercent { get; set; }
+    public double? HitAndRunPartialSeedRatio { get; set; }
+    public int? TrackerUpdateBuffer { get; set; }
+    public int? StalledDelay { get; set; }
+    public int? IgnoreTorrentsYoungerThan { get; set; }
 }
 
 public class TrackerConfig
