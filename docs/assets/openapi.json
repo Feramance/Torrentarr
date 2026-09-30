@@ -148,9 +148,9 @@
     }
   },
   "info": {
-    "description": "API for qBittorrent + Arr automation (Torrentarr \u2014 C# port of qBitrr). Aligned with qBitrr master. When WebUI.AuthDisabled is false, most routes require a Bearer token (WebUI.Token) or a valid browser session after login. Interactive docs: GET /web/docs or GET /api/docs.",
     "title": "Torrentarr API",
-    "version": "v1"
+    "version": "v1",
+    "description": "API for qBittorrent + Arr automation (Torrentarr \u2014 C# port of qBitrr). Aligned with qBitrr v5.14.5-1. When WebUI.AuthDisabled is false, most routes require a Bearer token (WebUI.Token) or a valid browser session after login. Interactive docs: GET /web/docs or GET /api/docs."
   },
   "openapi": "3.0.3",
   "paths": {
@@ -277,56 +277,6 @@
           }
         ],
         "summary": "Test Arr connection",
-        "tags": [
-          "WebUI"
-        ]
-      }
-    },
-    "/api/arr/{category}/open/{kind}/{entryId}": {
-      "get": {
-        "parameters": [
-          {
-            "in": "path",
-            "name": "category",
-            "required": true,
-            "schema": {
-              "type": "string"
-            }
-          },
-          {
-            "in": "path",
-            "name": "kind",
-            "required": true,
-            "schema": {
-              "type": "string"
-            }
-          },
-          {
-            "in": "path",
-            "name": "entryId",
-            "required": true,
-            "schema": {
-              "type": "integer"
-            }
-          }
-        ],
-        "responses": {
-          "302": {
-            "description": "Redirect to Arr"
-          },
-          "401": {
-            "$ref": "#/components/responses/Unauthorized"
-          },
-          "404": {
-            "description": "Not found"
-          }
-        },
-        "security": [
-          {
-            "bearerAuth": []
-          }
-        ],
-        "summary": "Redirect to Arr UI for movie/series/artist/author (/api)",
         "tags": [
           "WebUI"
         ]
@@ -844,66 +794,6 @@
           }
         ],
         "summary": "Lidarr artists catalog (/api)",
-        "tags": [
-          "WebUI"
-        ]
-      }
-    },
-    "/api/lidarr/{category}/tracks": {
-      "get": {
-        "parameters": [
-          {
-            "in": "path",
-            "name": "category",
-            "required": true,
-            "schema": {
-              "type": "string"
-            }
-          },
-          {
-            "in": "query",
-            "name": "q",
-            "schema": {
-              "type": "string"
-            }
-          },
-          {
-            "in": "query",
-            "name": "page",
-            "schema": {
-              "type": "integer"
-            }
-          },
-          {
-            "in": "query",
-            "name": "page_size",
-            "schema": {
-              "type": "integer"
-            }
-          }
-        ],
-        "responses": {
-          "200": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "additionalProperties": true,
-                  "type": "object"
-                }
-              }
-            },
-            "description": "OK"
-          },
-          "401": {
-            "$ref": "#/components/responses/Unauthorized"
-          }
-        },
-        "security": [
-          {
-            "bearerAuth": []
-          }
-        ],
-        "summary": "Lidarr tracks browse (/api)",
         "tags": [
           "WebUI"
         ]
@@ -1465,35 +1355,6 @@
         ]
       }
     },
-    "/api/qbit/categories": {
-      "get": {
-        "responses": {
-          "200": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "additionalProperties": true,
-                  "type": "object"
-                }
-              }
-            },
-            "description": "OK"
-          },
-          "401": {
-            "$ref": "#/components/responses/Unauthorized"
-          }
-        },
-        "security": [
-          {
-            "bearerAuth": []
-          }
-        ],
-        "summary": "qBittorrent managed categories (/api)",
-        "tags": [
-          "WebUI"
-        ]
-      }
-    },
     "/api/radarr/{category}/movie/{id}/thumbnail": {
       "get": {
         "operationId": "api_radarr_movie_thumbnail",
@@ -1661,6 +1522,7 @@
     },
     "/api/readarr/{category}/author/{author_id}": {
       "get": {
+        "operationId": "api_readarr_author_detail",
         "parameters": [
           {
             "in": "path",
@@ -1693,6 +1555,9 @@
           },
           "401": {
             "$ref": "#/components/responses/Unauthorized"
+          },
+          "404": {
+            "description": "Author not found"
           }
         },
         "security": [
@@ -1700,7 +1565,7 @@
             "bearerAuth": []
           }
         ],
-        "summary": "Readarr author detail with books (/api)",
+        "summary": "Readarr author with books (/api)",
         "tags": [
           "WebUI"
         ]
@@ -1708,6 +1573,7 @@
     },
     "/api/readarr/{category}/author/{author_id}/thumbnail": {
       "get": {
+        "operationId": "api_readarr_author_thumbnail",
         "parameters": [
           {
             "in": "path",
@@ -1724,17 +1590,36 @@
             "schema": {
               "type": "integer"
             }
+          },
+          {
+            "in": "query",
+            "name": "token",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
           }
         ],
         "responses": {
           "200": {
-            "description": "Image"
+            "content": {
+              "image/*": {
+                "schema": {
+                  "format": "binary",
+                  "type": "string"
+                }
+              }
+            },
+            "description": "Cached author image bytes"
+          },
+          "304": {
+            "description": "Not modified (If-None-Match)"
           },
           "401": {
             "$ref": "#/components/responses/Unauthorized"
           },
           "404": {
-            "description": "Not found"
+            "description": "Author or image not found"
           }
         },
         "security": [
@@ -1750,6 +1635,7 @@
     },
     "/api/readarr/{category}/authors": {
       "get": {
+        "operationId": "api_readarr_authors",
         "parameters": [
           {
             "in": "path",
@@ -1779,6 +1665,29 @@
             "schema": {
               "type": "integer"
             }
+          },
+          {
+            "in": "query",
+            "name": "monitored",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "description": "Restrict to authors with at least one monitored book whose file is missing.",
+            "in": "query",
+            "name": "missing",
+            "schema": {
+              "type": "boolean"
+            }
+          },
+          {
+            "description": "Restrict to authors with at least one book whose Reason matches. Accepts Missing, Quality, CustomFormat, Upgrade, or 'Not being searched' (also matches NULL).",
+            "in": "query",
+            "name": "reason",
+            "schema": {
+              "type": "string"
+            }
           }
         ],
         "responses": {
@@ -1802,7 +1711,7 @@
             "bearerAuth": []
           }
         ],
-        "summary": "Readarr authors browse (/api)",
+        "summary": "Readarr authors catalog (/api)",
         "tags": [
           "WebUI"
         ]
@@ -2264,56 +2173,6 @@
           }
         ],
         "summary": "Test Arr connection",
-        "tags": [
-          "WebUI"
-        ]
-      }
-    },
-    "/web/arr/{category}/open/{kind}/{entryId}": {
-      "get": {
-        "parameters": [
-          {
-            "in": "path",
-            "name": "category",
-            "required": true,
-            "schema": {
-              "type": "string"
-            }
-          },
-          {
-            "in": "path",
-            "name": "kind",
-            "required": true,
-            "schema": {
-              "type": "string"
-            }
-          },
-          {
-            "in": "path",
-            "name": "entryId",
-            "required": true,
-            "schema": {
-              "type": "integer"
-            }
-          }
-        ],
-        "responses": {
-          "302": {
-            "description": "Redirect to Arr"
-          },
-          "401": {
-            "$ref": "#/components/responses/Unauthorized"
-          },
-          "404": {
-            "description": "Not found"
-          }
-        },
-        "security": [
-          {
-            "bearerAuth": []
-          }
-        ],
-        "summary": "Redirect to Arr UI for movie/series/artist/author (/web)",
         "tags": [
           "WebUI"
         ]
@@ -2892,66 +2751,6 @@
           }
         ],
         "summary": "Lidarr artists catalog (/web)",
-        "tags": [
-          "WebUI"
-        ]
-      }
-    },
-    "/web/lidarr/{category}/tracks": {
-      "get": {
-        "parameters": [
-          {
-            "in": "path",
-            "name": "category",
-            "required": true,
-            "schema": {
-              "type": "string"
-            }
-          },
-          {
-            "in": "query",
-            "name": "q",
-            "schema": {
-              "type": "string"
-            }
-          },
-          {
-            "in": "query",
-            "name": "page",
-            "schema": {
-              "type": "integer"
-            }
-          },
-          {
-            "in": "query",
-            "name": "page_size",
-            "schema": {
-              "type": "integer"
-            }
-          }
-        ],
-        "responses": {
-          "200": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "additionalProperties": true,
-                  "type": "object"
-                }
-              }
-            },
-            "description": "OK"
-          },
-          "401": {
-            "$ref": "#/components/responses/Unauthorized"
-          }
-        },
-        "security": [
-          {
-            "bearerAuth": []
-          }
-        ],
-        "summary": "Lidarr tracks browse (/web)",
         "tags": [
           "WebUI"
         ]
@@ -3816,6 +3615,7 @@
     },
     "/web/readarr/{category}/author/{author_id}": {
       "get": {
+        "operationId": "web_readarr_author_detail",
         "parameters": [
           {
             "in": "path",
@@ -3848,6 +3648,9 @@
           },
           "401": {
             "$ref": "#/components/responses/Unauthorized"
+          },
+          "404": {
+            "description": "Author not found"
           }
         },
         "security": [
@@ -3855,7 +3658,7 @@
             "bearerAuth": []
           }
         ],
-        "summary": "Readarr author detail with books (/web)",
+        "summary": "Readarr author with books (/web)",
         "tags": [
           "WebUI"
         ]
@@ -3863,6 +3666,7 @@
     },
     "/web/readarr/{category}/author/{author_id}/thumbnail": {
       "get": {
+        "operationId": "web_readarr_author_thumbnail",
         "parameters": [
           {
             "in": "path",
@@ -3879,17 +3683,36 @@
             "schema": {
               "type": "integer"
             }
+          },
+          {
+            "in": "query",
+            "name": "token",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
           }
         ],
         "responses": {
           "200": {
-            "description": "Image"
+            "content": {
+              "image/*": {
+                "schema": {
+                  "format": "binary",
+                  "type": "string"
+                }
+              }
+            },
+            "description": "Cached author image bytes"
+          },
+          "304": {
+            "description": "Not modified (If-None-Match)"
           },
           "401": {
             "$ref": "#/components/responses/Unauthorized"
           },
           "404": {
-            "description": "Not found"
+            "description": "Author or image not found"
           }
         },
         "security": [
@@ -3905,6 +3728,7 @@
     },
     "/web/readarr/{category}/authors": {
       "get": {
+        "operationId": "web_readarr_authors",
         "parameters": [
           {
             "in": "path",
@@ -3934,6 +3758,29 @@
             "schema": {
               "type": "integer"
             }
+          },
+          {
+            "in": "query",
+            "name": "monitored",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "description": "Restrict to authors with at least one monitored book whose file is missing.",
+            "in": "query",
+            "name": "missing",
+            "schema": {
+              "type": "boolean"
+            }
+          },
+          {
+            "description": "Restrict to authors with at least one book whose Reason matches. Accepts Missing, Quality, CustomFormat, Upgrade, or 'Not being searched' (also matches NULL).",
+            "in": "query",
+            "name": "reason",
+            "schema": {
+              "type": "string"
+            }
           }
         ],
         "responses": {
@@ -3957,7 +3804,7 @@
             "bearerAuth": []
           }
         ],
-        "summary": "Readarr authors browse (/web)",
+        "summary": "Readarr authors catalog (/web)",
         "tags": [
           "WebUI"
         ]
@@ -4155,35 +4002,6 @@
         ]
       }
     },
-    "/web/torrents/distribution": {
-      "get": {
-        "responses": {
-          "200": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "additionalProperties": true,
-                  "type": "object"
-                }
-              }
-            },
-            "description": "OK"
-          },
-          "401": {
-            "$ref": "#/components/responses/Unauthorized"
-          }
-        },
-        "security": [
-          {
-            "bearerAuth": []
-          }
-        ],
-        "summary": "Torrent distribution by category (/web)",
-        "tags": [
-          "WebUI"
-        ]
-      }
-    },
     "/web/update": {
       "post": {
         "operationId": "web_update",
@@ -4212,6 +4030,284 @@
         "tags": [
           "WebUI"
         ]
+      }
+    },
+    "/api/qbit/categories": {
+      "get": {
+        "summary": "qBittorrent managed categories (/api)",
+        "tags": [
+          "WebUI"
+        ],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "additionalProperties": true
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          }
+        }
+      }
+    },
+    "/web/torrents/distribution": {
+      "get": {
+        "summary": "Torrent distribution by category (/web)",
+        "tags": [
+          "WebUI"
+        ],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "additionalProperties": true
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          }
+        }
+      }
+    },
+    "/web/lidarr/{category}/tracks": {
+      "get": {
+        "summary": "Lidarr tracks browse (/web)",
+        "tags": [
+          "WebUI"
+        ],
+        "parameters": [
+          {
+            "name": "category",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "q",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "page",
+            "in": "query",
+            "schema": {
+              "type": "integer"
+            }
+          },
+          {
+            "name": "page_size",
+            "in": "query",
+            "schema": {
+              "type": "integer"
+            }
+          }
+        ],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "additionalProperties": true
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          }
+        }
+      }
+    },
+    "/api/lidarr/{category}/tracks": {
+      "get": {
+        "summary": "Lidarr tracks browse (/api)",
+        "tags": [
+          "WebUI"
+        ],
+        "parameters": [
+          {
+            "name": "category",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "q",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "page",
+            "in": "query",
+            "schema": {
+              "type": "integer"
+            }
+          },
+          {
+            "name": "page_size",
+            "in": "query",
+            "schema": {
+              "type": "integer"
+            }
+          }
+        ],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "additionalProperties": true
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          }
+        }
+      }
+    },
+    "/web/arr/{category}/open/{kind}/{entryId}": {
+      "get": {
+        "summary": "Redirect to Arr UI for movie/series/artist/author (/web)",
+        "tags": [
+          "WebUI"
+        ],
+        "parameters": [
+          {
+            "name": "category",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "kind",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "entryId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "integer"
+            }
+          }
+        ],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "responses": {
+          "302": {
+            "description": "Redirect to Arr"
+          },
+          "404": {
+            "description": "Not found"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          }
+        }
+      }
+    },
+    "/api/arr/{category}/open/{kind}/{entryId}": {
+      "get": {
+        "summary": "Redirect to Arr UI for movie/series/artist/author (/api)",
+        "tags": [
+          "WebUI"
+        ],
+        "parameters": [
+          {
+            "name": "category",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "kind",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "entryId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "integer"
+            }
+          }
+        ],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "responses": {
+          "302": {
+            "description": "Redirect to Arr"
+          },
+          "404": {
+            "description": "Not found"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          }
+        }
       }
     }
   },
