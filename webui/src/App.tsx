@@ -835,6 +835,9 @@ function LoginPage({
 
 function AppShell(): JSX.Element {
   const [activeTab, setActiveTab] = useState<Tab>("processes");
+  const [visitedTabs, setVisitedTabs] = useState<Set<Tab>>(
+    () => new Set<Tab>(["processes"]),
+  );
   const [configDirty, setConfigDirty] = useState(false);
   const { push } = useToast();
   const { setValue: setSearchValue } = useSearch();
@@ -854,6 +857,15 @@ function AppShell(): JSX.Element {
   const [showWelcomeChangelog, setShowWelcomeChangelog] = useState(false);
   const [showAlreadyUpToDateModal, setShowAlreadyUpToDateModal] =
     useState(false);
+
+  useEffect(() => {
+    setVisitedTabs((current) => {
+      if (current.has(activeTab)) return current;
+      const next = new Set(current);
+      next.add(activeTab);
+      return next;
+    });
+  }, [activeTab]);
 
   const refreshMeta = useCallback(
     async (options?: {
@@ -1386,30 +1398,80 @@ function AppShell(): JSX.Element {
           ))}
         </nav>
         <Suspense fallback={<div className="loading">Loading...</div>}>
-          <div key={activeTab} className="view-transition">
-            {activeTab === "processes" && (
-              <ProcessesView key={`processes-${reloadKey}`} active />
+          <div className="view-transition">
+            {visitedTabs.has("processes") && (
+              <section
+                hidden={activeTab !== "processes"}
+                data-tab-panel="processes"
+              >
+                <ProcessesView
+                  key={`processes-${reloadKey}`}
+                  active={activeTab === "processes"}
+                />
+              </section>
             )}
-            {activeTab === "logs" && (
-              <LogsView key={`logs-${reloadKey}`} active />
+            {visitedTabs.has("logs") && (
+              <section hidden={activeTab !== "logs"} data-tab-panel="logs">
+                <LogsView
+                  key={`logs-${reloadKey}`}
+                  active={activeTab === "logs"}
+                />
+              </section>
             )}
-            {activeTab === "radarr" && (
-              <ArrView key={`radarr-${reloadKey}`} type="radarr" active />
+            {visitedTabs.has("radarr") && (
+              <section hidden={activeTab !== "radarr"} data-tab-panel="radarr">
+                <ArrView
+                  key={`radarr-${reloadKey}`}
+                  type="radarr"
+                  active={activeTab === "radarr"}
+                />
+              </section>
             )}
-            {activeTab === "sonarr" && (
-              <ArrView key={`sonarr-${reloadKey}`} type="sonarr" active />
+            {visitedTabs.has("sonarr") && (
+              <section hidden={activeTab !== "sonarr"} data-tab-panel="sonarr">
+                <ArrView
+                  key={`sonarr-${reloadKey}`}
+                  type="sonarr"
+                  active={activeTab === "sonarr"}
+                />
+              </section>
             )}
-            {activeTab === "lidarr" && (
-              <ArrView key={`lidarr-${reloadKey}`} type="lidarr" active />
+            {visitedTabs.has("lidarr") && (
+              <section hidden={activeTab !== "lidarr"} data-tab-panel="lidarr">
+                <ArrView
+                  key={`lidarr-${reloadKey}`}
+                  type="lidarr"
+                  active={activeTab === "lidarr"}
+                />
+              </section>
             )}
-            {activeTab === "readarr" && (
-              <ArrView key={`readarr-${reloadKey}`} type="readarr" active />
+            {visitedTabs.has("readarr") && (
+              <section
+                hidden={activeTab !== "readarr"}
+                data-tab-panel="readarr"
+              >
+                <ArrView
+                  key={`readarr-${reloadKey}`}
+                  type="readarr"
+                  active={activeTab === "readarr"}
+                />
+              </section>
             )}
-            {activeTab === "qbittorrent" && (
-              <QbitCategoriesView key={`qbittorrent-${reloadKey}`} active />
+            {visitedTabs.has("qbittorrent") && (
+              <section
+                hidden={activeTab !== "qbittorrent"}
+                data-tab-panel="qbittorrent"
+              >
+                <QbitCategoriesView
+                  key={`qbittorrent-${reloadKey}`}
+                  active={activeTab === "qbittorrent"}
+                />
+              </section>
             )}
-            {activeTab === "config" && (
-              <ConfigView key="config" onDirtyChange={setConfigDirty} />
+            {visitedTabs.has("config") && (
+              <section hidden={activeTab !== "config"} data-tab-panel="config">
+                <ConfigView key="config" onDirtyChange={setConfigDirty} />
+              </section>
             )}
           </div>
         </Suspense>

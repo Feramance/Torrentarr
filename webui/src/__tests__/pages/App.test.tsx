@@ -28,12 +28,23 @@ vi.mock("../../api/client", async (importOriginal) => {
   return {
     ...actual,
     getMeta: vi.fn(async () => metaWithSetup),
+    getToken: vi.fn(async () => "test-token"),
     login: vi.fn(),
     setPassword: vi.fn(async () => ({ success: true })),
   };
 });
 
-import { AuthError, getMeta, login, setPassword } from "../../api/client";
+vi.mock("../../pages/ConfigView", () => ({
+  ConfigView: () => <input aria-label="mock config value" />,
+}));
+
+import {
+  AuthError,
+  getMeta,
+  getToken,
+  login,
+  setPassword,
+} from "../../api/client";
 
 const server = setupServer();
 
@@ -42,8 +53,38 @@ afterEach(() => {
   server.resetHandlers();
   resetUrlBaseCacheForTests();
   vi.mocked(getMeta).mockResolvedValue(metaWithSetup);
+  vi.mocked(getToken).mockResolvedValue("test-token");
   vi.mocked(login).mockReset();
   vi.mocked(setPassword).mockResolvedValue({ success: true });
+});
+
+describe("App tab lifecycle", () => {
+  it("keeps visited tab state mounted while navigating", async () => {
+    vi.stubGlobal("location", {
+      pathname: "/ui/",
+      replace: vi.fn(),
+      reload: vi.fn(),
+    } as unknown as Location);
+    vi.mocked(getMeta).mockResolvedValue({
+      current_version: "6.14.5",
+      auth_required: false,
+      local_auth_enabled: false,
+      oidc_enabled: false,
+      setup_required: false,
+    });
+    const user = userEvent.setup();
+
+    render(<App />);
+    await user.click(await screen.findByRole("button", { name: /config/i }));
+    const input = await screen.findByLabelText("mock config value");
+    await user.type(input, "unsaved value");
+    await user.click(screen.getByRole("button", { name: /processes/i }));
+    await user.click(screen.getByRole("button", { name: /config/i }));
+
+    expect(screen.getByLabelText("mock config value")).toHaveValue(
+      "unsaved value",
+    );
+  });
 });
 afterAll(() => server.close());
 
