@@ -465,6 +465,11 @@ export interface ConfigUpdateResponse {
   status: string;
   configReloaded: boolean;
   reloadType:
-    "none" | "frontend" | "webui" | "single_arr" | "multi_arr" | "full";
+    | "none"
+    | "frontend"
+    | "webui"
+    | "single_arr"
+    | "multi_arr"
+    | "full";
   affectedInstances: string[];
 }
