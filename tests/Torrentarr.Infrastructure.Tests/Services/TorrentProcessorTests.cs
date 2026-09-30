@@ -273,6 +273,54 @@ public sealed class TorrentProcessorTests : IDisposable
         }
     }
 
+    [Fact]
+    public async Task ImportTorrentAsync_DirectoryContentPath_TriggersArrImport()
+    {
+        const string hash = "directory-import-hash";
+        const string instance = "qBit";
+        var directory = Directory.CreateTempSubdirectory("torrentarr-import-");
+        try
+        {
+            _db.TorrentLibrary.Add(new Torrentarr.Infrastructure.Database.Models.TorrentLibrary
+            {
+                Hash = hash,
+                Category = "radarr-hd",
+                QbitInstance = instance,
+                Imported = false
+            });
+            await _db.SaveChangesAsync();
+            var config = new TorrentarrConfig();
+            config.ArrInstances["Radarr-HD"] = new ArrInstanceConfig { Category = "radarr-hd", Type = "radarr" };
+            var manager = new QBittorrentConnectionManager(NullLogger<QBittorrentConnectionManager>.Instance);
+            RegisterTestClient(manager, instance, new StubQBittorrentClient(new TorrentInfo
+            {
+                Hash = hash,
+                ContentPath = directory.FullName,
+                QBitInstanceName = instance
+            }));
+            var imports = new Mock<IArrImportService>();
+            imports.Setup(service => service.TriggerImportAsync(hash, directory.FullName, "radarr-hd", It.IsAny<CancellationToken>()))
+                .ReturnsAsync(new ImportResult { Success = true, Message = "queued" });
+            var processor = new TorrentProcessor(
+                NullLogger<TorrentProcessor>.Instance,
+                manager,
+                _db,
+                config,
+                new TorrentCacheService(NullLogger<TorrentCacheService>.Instance),
+                new DatabaseRestartCoordinator(),
+                imports.Object,
+                pathTracker: new ImportPathTracker());
+
+            await processor.ImportTorrentAsync(hash, instance);
+
+            imports.VerifyAll();
+        }
+        finally
+        {
+            directory.Delete(recursive: true);
+        }
+    }
+
     /// <summary>
     /// Regression: CF-unmet deletion must honor HnR protection (qBitrr _hnr_allows_delete parity).
     /// Pre-fix, Branch 1 deleted immediately and bypassed HnrAllowsDeleteAsync.
@@ -515,6 +563,54 @@ public sealed class TorrentProcessorTests : IDisposable
         await (Task)method.Invoke(processor, new object[] { torrent, category, stats, CancellationToken.None })!;
         (await _db.TorrentLibrary.SingleAsync(t => t.Hash == hash && t.QbitInstance == instance)).Imported
             .Should().BeTrue("pending imports must finalize without requiring IsFileFiltered");
+    }
+
+    [Fact]
+    public async Task ProcessSingleTorrentAsync_CompleteOnFirstObservation_IsInspectedAndMarkedFiltered()
+    {
+        const string hash = "complete-on-startup-hash";
+        const string category = "radarr-hd";
+        const string instance = "qBit";
+        var config = new TorrentarrConfig();
+        config.ArrInstances["Radarr-HD"] = new ArrInstanceConfig
+        {
+            Category = category,
+            Type = "radarr",
+            Torrent =
+            {
+                FolderExclusionRegex = [],
+                FileNameExclusionRegex = [],
+                FileExtensionAllowlist = []
+            }
+        };
+        var torrent = new TorrentInfo
+        {
+            Hash = hash,
+            Name = "Complete at startup",
+            Category = category,
+            State = "uploading",
+            Progress = 1,
+            AmountLeft = 0,
+            AddedOn = DateTimeOffset.UtcNow.AddHours(-1).ToUnixTimeSeconds(),
+            CompletionOn = DateTimeOffset.UtcNow.AddMinutes(-5).ToUnixTimeSeconds(),
+            ContentPath = "/downloads/complete",
+            QBitInstanceName = instance
+        };
+        var manager = new QBittorrentConnectionManager(NullLogger<QBittorrentConnectionManager>.Instance);
+        RegisterTestClient(manager, instance, new StubQBittorrentClient(torrent));
+        var cache = new TorrentCacheService(NullLogger<TorrentCacheService>.Instance);
+        var processor = new TorrentProcessor(
+            NullLogger<TorrentProcessor>.Instance,
+            manager,
+            _db,
+            config,
+            cache,
+            new DatabaseRestartCoordinator());
+        var method = typeof(TorrentProcessor).GetMethod("ProcessSingleTorrentAsync", BindingFlags.NonPublic | BindingFlags.Instance)!;
+
+        await (Task)method.Invoke(processor, [torrent, category, new TorrentProcessingStats(), CancellationToken.None])!;
+
+        cache.IsFileFiltered(hash).Should().BeTrue();
     }
 
     private static void RegisterTestClient(

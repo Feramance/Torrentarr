@@ -1,4 +1,5 @@
 using System.Text.RegularExpressions;
+using System.Collections.Concurrent;
 using Torrentarr.Core.Configuration;
 using Torrentarr.Core.Models;
 using Torrentarr.Core.Services;
@@ -33,6 +34,8 @@ public class TorrentProcessor : ITorrentProcessor
     private readonly IMediaValidationService? _mediaValidation;
     private readonly DatabaseRestartCoordinator _restartCoordinator;
     private readonly StalledUploadTracker? _stalledUploads;
+    private readonly ConcurrentDictionary<string, DateTimeOffset> _allowlistWarningCache = new(StringComparer.OrdinalIgnoreCase);
+    private static readonly TimeSpan AllowlistWarningLifetime = TimeSpan.FromMinutes(5);
 
     private readonly HashSet<string> _specialCategories;
 
@@ -263,7 +266,7 @@ public class TorrentProcessor : ITorrentProcessor
                     _logger.LogTrace("Skipping import — hash already sent to scan: {Hash}", hash);
                     return;
                 }
-                if (!File.Exists(contentPath))
+                if (!File.Exists(contentPath) && !Directory.Exists(contentPath))
                 {
                     _logger.LogWarning("Missing torrent file for import: {Path} ({Hash})", contentPath, hash);
                     _cache.AddToIgnoreCache(hash, TimeSpan.FromSeconds(_config.Settings.IgnoreTorrentsYoungerThan));
@@ -531,9 +534,10 @@ public class TorrentProcessor : ITorrentProcessor
         {
             if (arrCfg != null)
             {
-                var wasDeleted = await ApplyFileFilterAsync(torrent, arrCfg, client, ct);
-                _cache.MarkFileFiltered(torrent.Hash);
-                if (wasDeleted) return;
+                var filterResult = await ApplyFileFilterAsync(torrent, arrCfg, client, completed: false, ct);
+                if (filterResult.Deleted) return;
+                if (filterResult.Ready)
+                    _cache.MarkFileFiltered(torrent.Hash);
             }
             else
             {
@@ -619,6 +623,14 @@ public class TorrentProcessor : ITorrentProcessor
             && torrent.CompletionOn < timeNow - 60)
         {
             stats.Completed++;
+            if (arrCfg != null && !_cache.IsFileFiltered(torrent.Hash))
+            {
+                var filterResult = await ApplyFileFilterAsync(torrent, arrCfg, client, completed: true, ct);
+                if (filterResult.Deleted || !filterResult.Ready)
+                    return;
+
+                _cache.MarkFileFiltered(torrent.Hash);
+            }
             if (leaveAlone || state == TorrentState.ForcedUploading)
             {
                 _logger.LogTrace("Completed torrent — allowing seeding: [{Name}]", torrent.Name);
@@ -692,9 +704,10 @@ public class TorrentProcessor : ITorrentProcessor
                 // Not yet filtered — apply file filter
                 if (arrCfg != null)
                 {
-                    var wasDeleted = await ApplyFileFilterAsync(torrent, arrCfg, client, ct);
-                    _cache.MarkFileFiltered(torrent.Hash);
-                    if (wasDeleted) return;
+                    var filterResult = await ApplyFileFilterAsync(torrent, arrCfg, client, completed: false, ct);
+                    if (filterResult.Deleted) return;
+                    if (filterResult.Ready)
+                        _cache.MarkFileFiltered(torrent.Hash);
                 }
             }
         }
@@ -1318,12 +1331,15 @@ public class TorrentProcessor : ITorrentProcessor
     /// <summary>
     /// §2.1: Apply file filtering to a downloading torrent.
     /// Sets excluded files to priority 0; deletes torrent if all files are excluded.
-    /// Returns true if the torrent was deleted.
+    /// For completed torrents, disallowed files must be absent before import. When AutoDelete
+    /// is enabled only torrent-owned paths are removed. The result is not ready when qBittorrent
+    /// rejects a priority update or disallowed files remain, so the next processing cycle retries.
     /// </summary>
-    private async Task<bool> ApplyFileFilterAsync(
+    private async Task<FileFilterResult> ApplyFileFilterAsync(
         TorrentInfo torrent,
         ArrInstanceConfig arrCfg,
         QBittorrentClient client,
+        bool completed,
         CancellationToken ct)
     {
         var cfg = arrCfg.Torrent;
@@ -1332,39 +1348,148 @@ public class TorrentProcessor : ITorrentProcessor
         if (cfg.FolderExclusionRegex.Count == 0 &&
             cfg.FileNameExclusionRegex.Count == 0 &&
             cfg.FileExtensionAllowlist.Count == 0)
-            return false;
+            return FileFilterResult.ReadyResult;
 
         var files = await client.GetTorrentFilesAsync(torrent.Hash, ct);
         if (files.Count == 0)
-            return false;
+            return FileFilterResult.PendingResult;
 
         var regexOptions = cfg.CaseSensitiveMatches ? RegexOptions.None : RegexOptions.IgnoreCase;
 
-        var excludedIds = files
+        var meaningfulFiles = files.Where(f => !IsIgnoredAuxiliaryFile(f.Name)).ToList();
+        var excludedFiles = meaningfulFiles
             .Where(f => ShouldExcludeFile(f.Name, cfg, regexOptions))
-            .Select(f => f.Index)
-            .ToArray();
+            .ToList();
+        var excludedIds = excludedFiles.Select(f => f.Index).ToArray();
+        var allowedCount = meaningfulFiles.Count - excludedFiles.Count;
 
-        if (excludedIds.Length == 0)
-            return false;
-
-        // If ALL files are excluded, delete the torrent entirely
-        if (excludedIds.Length >= files.Count)
+        if (allowedCount == 0)
         {
+            WarnAllowlistBlocked(torrent, "no allowed files remain");
+            var hnrAllows = _seedingService == null ||
+                await _seedingService.HnrAllowsDeleteAsync(torrent, "all files excluded by import allowlist", ct);
+            if (!hnrAllows)
+                return FileFilterResult.PendingResult;
+
             _logger.LogWarning(
                 "All {Total} files excluded in [{Name}] ({Hash}) — deleting torrent",
-                files.Count, torrent.Name, torrent.Hash);
+                meaningfulFiles.Count, torrent.Name, torrent.Hash);
             await DeleteTorrentFromClientAsync(client, torrent, deleteFiles: true, ct);
-            return true;
+            return FileFilterResult.DeletedResult;
         }
+
+        if (excludedIds.Length == 0)
+            return FileFilterResult.ReadyResult;
 
         // Set excluded files to priority 0 (do not download)
         _logger.LogDebug(
             "File filter: setting {Excluded}/{Total} files to priority 0 in [{Name}]: {Files}",
             excludedIds.Length, files.Count, torrent.Name,
             string.Join(", ", files.Where(f => excludedIds.Contains(f.Index)).Select(f => f.Name)));
-        await client.SetFilePriorityAsync(torrent.Hash, excludedIds, 0, ct);
-        return false;
+        bool priorityAccepted;
+        try
+        {
+            priorityAccepted = await client.SetFilePriorityAsync(torrent.Hash, excludedIds, 0, ct);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(ex, "qBittorrent rejected file filtering for [{Name}] ({Hash}); will retry", torrent.Name, torrent.Hash);
+            return FileFilterResult.PendingResult;
+        }
+
+        if (!priorityAccepted)
+        {
+            _logger.LogWarning("qBittorrent did not accept file filtering for [{Name}] ({Hash}); will retry", torrent.Name, torrent.Hash);
+            return FileFilterResult.PendingResult;
+        }
+
+        if (!completed)
+            return FileFilterResult.ReadyResult;
+
+        if (cfg.AutoDelete)
+        {
+            foreach (var file in excludedFiles)
+                TryDeleteTorrentOwnedFile(torrent, file.Name);
+
+            var remaining = excludedFiles.Where(f => TorrentOwnedFileExists(torrent, f.Name)).ToList();
+            if (remaining.Count == 0)
+                return FileFilterResult.ReadyResult;
+        }
+
+        WarnAllowlistBlocked(torrent, $"{excludedIds.Length} disallowed file(s) remain");
+        return FileFilterResult.PendingResult;
+    }
+
+    private void WarnAllowlistBlocked(TorrentInfo torrent, string reason)
+    {
+        var now = DateTimeOffset.UtcNow;
+        if (_allowlistWarningCache.TryGetValue(torrent.Hash, out var last) && now - last < AllowlistWarningLifetime)
+            return;
+
+        _allowlistWarningCache[torrent.Hash] = now;
+        _logger.LogWarning("Import blocked by file allowlist for [{Name}] ({Hash}): {Reason}", torrent.Name, torrent.Hash, reason);
+    }
+
+    private void TryDeleteTorrentOwnedFile(TorrentInfo torrent, string relativePath)
+    {
+        try
+        {
+            var path = ResolveTorrentOwnedPath(torrent, relativePath);
+            if (File.Exists(path))
+                File.Delete(path);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(ex, "Unable to delete disallowed torrent file {Path} for {Hash}", relativePath, torrent.Hash);
+        }
+    }
+
+    private static bool TorrentOwnedFileExists(TorrentInfo torrent, string relativePath)
+    {
+        try
+        {
+            return File.Exists(ResolveTorrentOwnedPath(torrent, relativePath));
+        }
+        catch
+        {
+            // An unsafe or malformed path must remain blocked; it must never be treated as deleted.
+            return true;
+        }
+    }
+
+    private static string ResolveTorrentOwnedPath(TorrentInfo torrent, string relativePath)
+    {
+        var normalized = relativePath.Replace('\\', Path.DirectorySeparatorChar).Replace('/', Path.DirectorySeparatorChar);
+        if (File.Exists(torrent.ContentPath) || (!Directory.Exists(torrent.ContentPath) && Path.HasExtension(torrent.ContentPath)))
+            return Path.GetFullPath(torrent.ContentPath);
+
+        var root = !string.IsNullOrWhiteSpace(torrent.ContentPath) ? torrent.ContentPath : torrent.SavePath;
+        var rootName = Path.GetFileName(Path.TrimEndingDirectorySeparator(root));
+        var parts = normalized.Split(Path.DirectorySeparatorChar, StringSplitOptions.RemoveEmptyEntries);
+        if (parts.Length > 1 && string.Equals(parts[0], rootName, StringComparison.OrdinalIgnoreCase))
+            normalized = Path.Combine(parts.Skip(1).ToArray());
+
+        var fullRoot = Path.GetFullPath(root);
+        var fullPath = Path.GetFullPath(Path.Combine(fullRoot, normalized));
+        if (!fullPath.StartsWith(fullRoot + Path.DirectorySeparatorChar, StringComparison.OrdinalIgnoreCase))
+            throw new InvalidOperationException("Torrent file path escapes its content directory.");
+        return fullPath;
+    }
+
+    private static bool IsIgnoredAuxiliaryFile(string path)
+    {
+        var name = Path.GetFileName(path.Replace('\\', '/'));
+        return name.Equals("desktop.ini", StringComparison.OrdinalIgnoreCase)
+            || name.Equals(".DS_Store", StringComparison.OrdinalIgnoreCase)
+            || name.Equals(".parts", StringComparison.OrdinalIgnoreCase)
+            || name.EndsWith(".parts", StringComparison.OrdinalIgnoreCase);
+    }
+
+    private readonly record struct FileFilterResult(bool Ready, bool Deleted)
+    {
+        public static FileFilterResult ReadyResult => new(true, false);
+        public static FileFilterResult PendingResult => new(false, false);
+        public static FileFilterResult DeletedResult => new(false, true);
     }
 
     /// <summary>
