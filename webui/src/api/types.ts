@@ -470,9 +470,16 @@ export interface TorrentClientInfo {
 }
 
 export type MaintenanceOperation =
-  | "OrphanScan" | "HardlinkAudit" | "UnregisteredCleanup"
-  | "CategoryReconcile" | "AutomaticManagement" | "PrivateTagging"
-  | "TrackerErrorTagging" | "RepairPaused" | "SharePolicy" | "RecycleRetention";
+  | "OrphanScan"
+  | "HardlinkAudit"
+  | "UnregisteredCleanup"
+  | "CategoryReconcile"
+  | "AutomaticManagement"
+  | "PrivateTagging"
+  | "TrackerErrorTagging"
+  | "RepairPaused"
+  | "SharePolicy"
+  | "RecycleRetention";
 
 export interface MaintenanceAction {
   id: string;

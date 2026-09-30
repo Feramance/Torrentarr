@@ -25,7 +25,9 @@ const QbitCategoriesView = lazy(() =>
   })),
 );
 const MaintenanceView = lazy(() =>
-  import("./pages/MaintenanceView").then((module) => ({ default: module.MaintenanceView })),
+  import("./pages/MaintenanceView").then((module) => ({
+    default: module.MaintenanceView,
+  })),
 );
 const ConfigView = lazy(() =>
   import("./pages/ConfigView").then((module) => ({

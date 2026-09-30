@@ -623,22 +623,41 @@ export const getMaintenanceStatus = (): Promise<MaintenanceStatus> =>
 export const getMaintenanceHistory = (): Promise<MaintenanceRunSummary[]> =>
   fetchJson<MaintenanceRunSummary[]>("/web/maintenance/history");
 
-export const previewMaintenance = (clientInstanceIds: string[], operations: MaintenanceOperation[]): Promise<MaintenancePlan> =>
+export const previewMaintenance = (
+  clientInstanceIds: string[],
+  operations: MaintenanceOperation[],
+): Promise<MaintenancePlan> =>
   fetchJson<MaintenancePlan>("/web/maintenance/preview", {
-    method: "POST", headers: JSON_HEADERS, body: JSON.stringify({ clientInstanceIds, operations }),
+    method: "POST",
+    headers: JSON_HEADERS,
+    body: JSON.stringify({ clientInstanceIds, operations }),
   });
 
-export const applyMaintenance = (planId: string): Promise<MaintenanceRunSummary> =>
+export const applyMaintenance = (
+  planId: string,
+): Promise<MaintenanceRunSummary> =>
   fetchJson<MaintenanceRunSummary>("/web/maintenance/apply", {
-    method: "POST", headers: JSON_HEADERS, body: JSON.stringify({ planId }),
+    method: "POST",
+    headers: JSON_HEADERS,
+    body: JSON.stringify({ planId }),
   });
 
-export const armMaintenance = (planId: string, clientInstanceIds: string[]): Promise<MaintenanceStatus> =>
+export const armMaintenance = (
+  planId: string,
+  clientInstanceIds: string[],
+): Promise<MaintenanceStatus> =>
   fetchJson<MaintenanceStatus>("/web/maintenance/arm", {
-    method: "POST", headers: JSON_HEADERS, body: JSON.stringify({ planId, clientInstanceIds }),
+    method: "POST",
+    headers: JSON_HEADERS,
+    body: JSON.stringify({ planId, clientInstanceIds }),
   });
 
-export const maintenanceCommand = (command: "disarm" | "run" | "cancel", clientInstanceIds: string[] = []): Promise<MaintenanceStatus | MaintenanceRunSummary> =>
+export const maintenanceCommand = (
+  command: "disarm" | "run" | "cancel",
+  clientInstanceIds: string[] = [],
+): Promise<MaintenanceStatus | MaintenanceRunSummary> =>
   fetchJson(`/web/maintenance/${command}`, {
-    method: "POST", headers: JSON_HEADERS, body: JSON.stringify({ clientInstanceIds }),
+    method: "POST",
+    headers: JSON_HEADERS,
+    body: JSON.stringify({ clientInstanceIds }),
   });
