@@ -66,7 +66,7 @@ public class ConfigurationLoaderTests : IDisposable
     {
         WriteToml("""
             [Settings]
-            ConfigVersion = "6.14.5"
+            ConfigVersion = "6.14.6"
 
             [qBit]
             MatchSubcategories = true
@@ -99,7 +99,7 @@ public class ConfigurationLoaderTests : IDisposable
     {
         WriteToml("""
             [Settings]
-            ConfigVersion = "6.14.5"
+            ConfigVersion = "6.14.6"
 
             [qBit.CategorySeeding]
 

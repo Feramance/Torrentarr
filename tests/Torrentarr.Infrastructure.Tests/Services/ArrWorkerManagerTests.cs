@@ -37,6 +37,25 @@ public class ArrWorkerManagerTests
     }
 
     [Fact]
+    public void IsWorkerCancellation_ReturnsFalse_ForRequestTimeout()
+    {
+        using var workerCts = new CancellationTokenSource();
+        var timeout = new TaskCanceledException("request timed out");
+
+        ArrWorkerManager.IsWorkerCancellation(timeout, workerCts.Token).Should().BeFalse();
+    }
+
+    [Fact]
+    public void IsWorkerCancellation_ReturnsTrue_WhenWorkerIsStopping()
+    {
+        using var workerCts = new CancellationTokenSource();
+        workerCts.Cancel();
+        var cancellation = new OperationCanceledException(workerCts.Token);
+
+        ArrWorkerManager.IsWorkerCancellation(cancellation, workerCts.Token).Should().BeTrue();
+    }
+
+    [Fact]
     public void ShouldRunSearch_ReturnsFalse_WithinInterval()
     {
         var manager = CreateManager();
@@ -132,6 +151,25 @@ public class ArrWorkerManagerTests
         result!.SearchesTriggered.Should().Be(1);
         result.LoopCompleted.Should().BeTrue();
         media.Verify(m => m.SearchMissingMediaAsync("movies", It.IsAny<CancellationToken>()), Times.Once);
+    }
+
+    [Fact]
+    public async Task RunSearchAsync_RequestTimeout_PropagatesToLoopBackoff()
+    {
+        var media = new Mock<IArrMediaService>();
+        media.Setup(m => m.SearchMissingMediaAsync("movies", It.IsAny<CancellationToken>()))
+            .ThrowsAsync(new TaskCanceledException("request timed out"));
+        using var harness = WorkerHarness.Create(media.Object);
+        var cfg = new ArrInstanceConfig
+        {
+            Type = "radarr",
+            Category = "movies",
+            Search = new SearchConfig { SearchMissing = true, SearchRequestsEvery = 1 }
+        };
+
+        var act = () => harness.Manager.RunSearchAsync("Radarr", cfg, CancellationToken.None);
+
+        await act.Should().ThrowAsync<TaskCanceledException>();
     }
 
     [Fact]

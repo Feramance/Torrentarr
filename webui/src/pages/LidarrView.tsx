@@ -8,13 +8,13 @@ import {
   type JSX,
 } from "react";
 import { getArrList, getLidarrAlbums, restartArr } from "../api/client";
+import { flexRender } from "@tanstack/react-table";
 import {
-  useReactTable,
+  useLegacyTable,
   getCoreRowModel,
   getSortedRowModel,
-  flexRender,
-  type ColumnDef,
-} from "@tanstack/react-table";
+  type LegacyColumnDef,
+} from "@tanstack/react-table/legacy";
 import type {
   ArrInfo,
   LidarrAlbumEntry,
@@ -229,7 +229,7 @@ function LidarrAggregateView({
     return trackRows.slice(start, end);
   }, [trackRows, page]);
 
-  const flatColumns = useMemo<ColumnDef<LidarrTrackRow>[]>(
+  const flatColumns = useMemo<LegacyColumnDef<LidarrTrackRow>[]>(
     () => [
       ...(instanceCount > 1
         ? [
@@ -331,7 +331,7 @@ function LidarrAggregateView({
 
   // TanStack Table returns unstable function refs; React Compiler skips memoization by design
   /* eslint-disable-next-line react-hooks/incompatible-library */
-  const flatTable = useReactTable({
+  const flatTable = useLegacyTable({
     data: flatPageRows,
     columns: flatColumns,
     getCoreRowModel: getCoreRowModel(),
@@ -785,7 +785,7 @@ function LidarrInstanceView({
     return result;
   }, [reasonFilteredAlbums]);
 
-  const columns = useMemo<ColumnDef<LidarrAlbumEntry>[]>(
+  const columns = useMemo<LegacyColumnDef<LidarrAlbumEntry>[]>(
     () => [
       {
         id: "title",
@@ -925,7 +925,7 @@ function LidarrInstanceView({
 
   // TanStack Table returns unstable function refs; React Compiler skips memoization by design
   /* eslint-disable-next-line react-hooks/incompatible-library */
-  const table = useReactTable({
+  const table = useLegacyTable({
     data: paginatedAlbums,
     columns,
     getCoreRowModel: getCoreRowModel(),

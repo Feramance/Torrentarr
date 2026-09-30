@@ -2,7 +2,7 @@
 
 ## Scope
 
-This report captures Torrentarr's parity status after rebasing the audit from qBitrr **v5.12.10** through **v5.14.5-1**. Torrentarr schema is **6.14.5**.
+This report captures Torrentarr's parity status after rebasing the audit from qBitrr **v5.12.10** through **v5.14.5-1**. Torrentarr schema is **6.14.6**.
 
 Primary tracking artifacts:
 
@@ -44,7 +44,7 @@ Primary tracking artifacts:
 ### Implemented later (qBitrr 5.14.4-1)
 - Stalled-upload `MaxSeedingTime` clock (`stalledUP` observation, not `last_activity`); HnR still uses real `seeding_time` / ratio.
 - Per-series Sonarr episode HTTP skip (including 415); transport abort; all-fail rethrow so ingest is not marked complete.
-- `ExpectedConfigVersion` / default config references aligned to **`6.14.5`**.
+- `ExpectedConfigVersion` / default config references aligned to **`6.14.6`**.
 
 ## Validation Evidence
 

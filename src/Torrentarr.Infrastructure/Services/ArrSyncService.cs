@@ -88,7 +88,7 @@ public class ArrSyncService
 
             _logger.LogTrace("[{Instance}] Sync completed for {Name}", instanceName, instanceName);
         }
-        catch (OperationCanceledException)
+        catch (OperationCanceledException) when (ct.IsCancellationRequested)
         {
             throw;
         }
@@ -147,13 +147,7 @@ public class ArrSyncService
 
         _logger.LogInformation("Started updating database");
 
-        List<RadarrMovie> movies;
-        try { movies = await client.GetMoviesAsync(ct); }
-        catch (Exception ex)
-        {
-            _logger.LogWarning(ex, "[{Instance}] ArrSyncService: Radarr {Name} unreachable", instanceName, instanceName);
-            return;
-        }
+        var movies = await client.GetMoviesAsync(ct);
 
         var profiles = await client.GetQualityProfilesAsync(ct);
         var profileDict = profiles.ToDictionary(p => p.Id);
@@ -304,13 +298,7 @@ public class ArrSyncService
 
         _logger.LogInformation("Started updating database");
 
-        List<SonarrSeries> seriesList;
-        try { seriesList = await client.GetSeriesAsync(ct); }
-        catch (Exception ex)
-        {
-            _logger.LogWarning(ex, "[{Instance}] ArrSyncService: Sonarr {Name} unreachable", instanceName, instanceName);
-            return;
-        }
+        var seriesList = await client.GetSeriesAsync(ct);
 
         var profiles = await client.GetQualityProfilesAsync(ct);
         var profileDict = profiles.ToDictionary(p => p.Id);
@@ -394,7 +382,11 @@ public class ArrSyncService
             attempted++;
             List<SonarrEpisode> episodes;
             try { episodes = await client.GetEpisodesAsync(sonarrId, ct); }
-            catch (Exception ex) when (ex is not OperationCanceledException)
+            catch (OperationCanceledException) when (ct.IsCancellationRequested)
+            {
+                throw;
+            }
+            catch (Exception ex)
             {
                 if (!ArrSeriesEpisodeFetch.ShouldSkipSeries(ex))
                     throw;
@@ -664,13 +656,7 @@ public class ArrSyncService
         var profileDict = qualityProfiles.ToDictionary(p => p.Id);
 
         // Fetch artists
-        List<LidarrArtist> artists;
-        try { artists = await client.GetArtistsAsync(ct); }
-        catch (Exception ex)
-        {
-            _logger.LogWarning(ex, "[{Instance}] ArrSyncService: Lidarr {Name} unreachable", instanceName, instanceName);
-            return;
-        }
+        var artists = await client.GetArtistsAsync(ct);
 
         var artistProfileById = artists.ToDictionary(a => a.Id, a => a.QualityProfileId);
 
@@ -732,13 +718,7 @@ public class ArrSyncService
         await _db.SaveChangesWithRetryAsync(_logger, _restartCoordinator, cancellationToken: ct);
 
         // Fetch all albums at once
-        List<LidarrAlbum> albums;
-        try { albums = await client.GetAlbumsAsync(ct: ct); }
-        catch (Exception ex)
-        {
-            _logger.LogWarning(ex, "[{Instance}] ArrSyncService: Lidarr {Name} failed to fetch albums", instanceName, instanceName);
-            return;
-        }
+        var albums = await client.GetAlbumsAsync(ct: ct);
 
         // Build artist name lookup from what we fetched
         var artistNameById = artists.ToDictionary(a => a.Id, a => a.ArtistName);
@@ -881,13 +861,7 @@ public class ArrSyncService
         }
 
         // Fetch all tracks at once and group by Lidarr album ID
-        List<Track> allTracks;
-        try { allTracks = await client.GetTracksAsync(ct: ct); }
-        catch (Exception ex)
-        {
-            _logger.LogWarning(ex, "[{Instance}] ArrSyncService: Lidarr {Name} failed to fetch tracks", instanceName, instanceName);
-            return;
-        }
+        var allTracks = await client.GetTracksAsync(ct: ct);
 
         // Clear all existing tracks for this instance then re-insert
         var existingTracks = await _db.Tracks
@@ -993,13 +967,7 @@ public class ArrSyncService
         var qualityProfiles = await client.GetQualityProfilesAsync(ct);
         var profileDict = qualityProfiles.ToDictionary(p => p.Id);
 
-        List<ReadarrAuthor> authors;
-        try { authors = await client.GetAuthorsAsync(ct); }
-        catch (Exception ex)
-        {
-            _logger.LogWarning(ex, "[{Instance}] ArrSyncService: Readarr {Name} unreachable", instanceName, instanceName);
-            return;
-        }
+        var authors = await client.GetAuthorsAsync(ct);
 
         var authorProfileById = authors.ToDictionary(a => a.Id, a => a.QualityProfileId);
 
@@ -1057,13 +1025,7 @@ public class ArrSyncService
 
         await _db.SaveChangesWithRetryAsync(_logger, _restartCoordinator, cancellationToken: ct);
 
-        List<ReadarrBook> books;
-        try { books = await client.GetBooksAsync(ct: ct); }
-        catch (Exception ex)
-        {
-            _logger.LogWarning(ex, "[{Instance}] ArrSyncService: Readarr {Name} failed to fetch books", instanceName, instanceName);
-            return;
-        }
+        var books = await client.GetBooksAsync(ct: ct);
 
         var authorNameById = authors.ToDictionary(a => a.Id, a => a.AuthorName);
 
@@ -1670,7 +1632,7 @@ public class ArrSyncService
     /// exact message match) and blocklist+delete them, including listed files.
     /// </summary>
     private async Task ScanQueueForBlocklistAsync(
-        IEnumerable<(int Id, string? DownloadId, string? Status, string? TrackedDownloadStatus, string? TrackedDownloadState, string? OutputPath, List<StatusMessage>? StatusMessages)> items,
+        IEnumerable<(int Id, string? DownloadId, string Status, string? TrackedDownloadStatus, string? TrackedDownloadState, string? OutputPath, List<StatusMessage>? StatusMessages)> items,
         ArrInstanceConfig cfg,
         Func<int, CancellationToken, Task<bool>> deleteFromQueue,
         CancellationToken ct)

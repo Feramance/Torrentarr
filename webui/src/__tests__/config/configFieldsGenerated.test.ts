@@ -23,6 +23,6 @@ describe("generated config schema", () => {
     const version = CONFIG_SCHEMA.sections.Settings.find(
       (field) => field.key === "ConfigVersion",
     );
-    expect(version?.default).toBe("6.14.5");
+    expect(version?.default).toBe("6.14.6");
   });
 });

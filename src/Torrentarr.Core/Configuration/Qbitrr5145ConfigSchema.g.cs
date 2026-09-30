@@ -6,7 +6,7 @@ internal static class Qbitrr5145ConfigSchema
 {
     internal static readonly IReadOnlyList<ConfigSchemaField> Settings =
     [
-        new("Settings", new[] { "ConfigVersion" }, "ConfigVersion", "Config Version", "text", "6.14.5", new[] { "Internal config schema version - DO NOT MODIFY", "This is managed automatically by qBitrr for config migrations" }, false, false, false, false, true),
+        new("Settings", new[] { "ConfigVersion" }, "ConfigVersion", "Config Version", "text", "6.14.6", new[] { "Internal config schema version - DO NOT MODIFY", "This is managed automatically by qBitrr for config migrations" }, false, false, false, false, true),
         new("Settings", new[] { "ConsoleLevel" }, "ConsoleLevel", "Console Level", "select", "INFO", "Level of logging; One of CRITICAL, ERROR, WARNING, NOTICE, INFO, DEBUG, TRACE", true, false, true, true, false, options: new[] { "CRITICAL", "ERROR", "WARNING", "NOTICE", "INFO", "DEBUG", "TRACE" }),
         new("Settings", new[] { "Logging" }, "Logging", "Logging", "checkbox", true, "Enable logging to files", false, false, true, false, true),
         new("Settings", new[] { "CompletedDownloadFolder" }, "CompletedDownloadFolder", "Completed Download Folder", "text", "CHANGE_ME", "Folder where your completed downloads are put into. Can be found in qBitTorrent -> Options -> Downloads -> Default Save Path (Please note, replace all '\\' with '/')", true, false, true, true, false),

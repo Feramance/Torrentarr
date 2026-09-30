@@ -1,6 +1,6 @@
 import React from "react";
 import { describe, it, expect, beforeAll, afterAll, afterEach } from "vitest";
-import { render, screen } from "@testing-library/react";
+import { render, screen, waitFor } from "@testing-library/react";
 import { http, HttpResponse } from "msw";
 import { setupServer } from "msw/node";
 import type { ReactNode } from "react";
@@ -186,9 +186,12 @@ describe("RadarrView – instance sidebar", () => {
 
     renderView();
 
-    // Table columns always appear when movies are loaded
+    // Table columns always appear when movies are loaded; the empty state can
+    // still be mounted briefly while the async fetch resolves on slower runners.
     await screen.findByText("Title", {}, { timeout: 8000 });
-    expect(screen.queryByText("No movies found.")).not.toBeInTheDocument();
+    await waitFor(() => {
+      expect(screen.queryByText("No movies found.")).not.toBeInTheDocument();
+    });
   }, 10000);
 });
 

@@ -12,7 +12,7 @@ import { useToast } from "../context/ToastContext";
 import { useInterval } from "../hooks/useInterval";
 import { useWebUI } from "../context/WebUIContext";
 import { StableTable } from "../components/StableTable";
-import { type ColumnDef } from "@tanstack/react-table";
+import type { LegacyColumnDef } from "@tanstack/react-table/legacy";
 import { IconImage } from "../components/IconImage";
 import RefreshIcon from "../icons/refresh-arrow.svg";
 
@@ -189,7 +189,7 @@ export function QbitCategoriesView({
   }, [categories]);
 
   // Define table columns
-  const columns = useMemo<ColumnDef<QbitCategory>[]>(
+  const columns = useMemo<LegacyColumnDef<QbitCategory>[]>(
     () => [
       {
         accessorKey: "category",

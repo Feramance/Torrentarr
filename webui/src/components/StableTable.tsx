@@ -1,25 +1,25 @@
 import { memo } from "react";
+import { flexRender } from "@tanstack/react-table";
 import {
-  useReactTable,
+  useLegacyTable,
   getCoreRowModel,
-  flexRender,
-  type ColumnDef,
-} from "@tanstack/react-table";
+  type LegacyColumnDef,
+} from "@tanstack/react-table/legacy";
 
-interface StableTableProps<TData> {
+interface StableTableProps<TData extends object> {
   data: TData[];
-  columns: ColumnDef<TData, unknown>[];
+  columns: LegacyColumnDef<TData, unknown>[];
   getRowKey?: (row: TData) => string;
 }
 
-function StableTableInner<TData>({
+function StableTableInner<TData extends object>({
   data,
   columns,
   getRowKey,
 }: StableTableProps<TData>) {
   // TanStack Table returns unstable function refs; React Compiler skips memoization by design
   /* eslint-disable-next-line react-hooks/incompatible-library */
-  const table = useReactTable({
+  const table = useLegacyTable({
     data,
     columns,
     getCoreRowModel: getCoreRowModel(),
