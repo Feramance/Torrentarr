@@ -5,7 +5,9 @@ from __future__ import annotations
 
 import json
 import sys
+from copy import deepcopy
 from pathlib import Path
+from typing import Any
 
 HTTP_METHODS = {"get", "put", "post", "delete", "patch", "head", "options", "trace"}
 TORRENTARR_EXTENSIONS = {
@@ -35,8 +37,56 @@ def parameters(spec: dict, path_item: dict, operation: dict) -> dict[tuple[str, 
     return result
 
 
-def response_media(response: dict) -> set[str]:
-    return set(response.get("content", {}))
+def resolve_local_refs(spec: dict, value: Any, stack: tuple[str, ...] = ()) -> Any:
+    """Resolve local OpenAPI references so payload schemas can be compared by value."""
+    if isinstance(value, list):
+        return [resolve_local_refs(spec, item, stack) for item in value]
+    if not isinstance(value, dict):
+        return value
+
+    reference = value.get("$ref")
+    if isinstance(reference, str) and reference.startswith("#/"):
+        if reference in stack:
+            return {"$recursiveRef": len(stack) - stack.index(reference)}
+        target: Any = spec
+        try:
+            for segment in reference[2:].split("/"):
+                segment = segment.replace("~1", "/").replace("~0", "~")
+                target = target[segment]
+        except (KeyError, TypeError):
+            return deepcopy(value)
+        resolved = resolve_local_refs(spec, target, (*stack, reference))
+        siblings = {key: item for key, item in value.items() if key != "$ref"}
+        if siblings and isinstance(resolved, dict):
+            return {**resolved, **resolve_local_refs(spec, siblings, stack)}
+        return resolved
+
+    return {key: resolve_local_refs(spec, item, stack) for key, item in value.items()}
+
+
+def content(spec: dict, container: dict) -> dict:
+    resolved = resolve_local_refs(spec, container)
+    return resolved.get("content", {}) if isinstance(resolved, dict) else {}
+
+
+def compare_content_schemas(
+    errors: list[str],
+    torrentarr_spec: dict,
+    torrentarr_container: dict,
+    qbitrr_spec: dict,
+    qbitrr_container: dict,
+    context: str,
+    missing_media_message: str,
+) -> None:
+    qb_content = content(qbitrr_spec, qbitrr_container)
+    ta_content = content(torrentarr_spec, torrentarr_container)
+    for media in sorted(set(qb_content) - set(ta_content)):
+        errors.append(missing_media_message.format(media=media))
+    for media in sorted(set(qb_content) & set(ta_content)):
+        qb_schema = resolve_local_refs(qbitrr_spec, qb_content[media].get("schema"))
+        ta_schema = resolve_local_refs(torrentarr_spec, ta_content[media].get("schema"))
+        if qb_schema != ta_schema:
+            errors.append(f"{context} schema differs for {media}")
 
 
 def compare(torrentarr: dict, qbitrr: dict, allowed_extensions: set[str] | None = None) -> list[str]:
@@ -71,15 +121,43 @@ def compare(torrentarr: dict, qbitrr: dict, allowed_extensions: set[str] | None 
                 elif required_parameter.get("required", False) and not ta_parameters[key].get("required", False):
                     errors.append(f"parameter {key[0]}:{key[1]} is not required on {method.upper()} {path}")
 
+            qb_request = qb_operation.get("requestBody")
+            ta_request = ta_operation.get("requestBody")
+            if qb_request is not None:
+                if ta_request is None:
+                    errors.append(f"missing request body on {method.upper()} {path}")
+                else:
+                    resolved_qb_request = resolve_local_refs(qbitrr, qb_request)
+                    resolved_ta_request = resolve_local_refs(torrentarr, ta_request)
+                    qb_required = isinstance(resolved_qb_request, dict) and resolved_qb_request.get("required", False)
+                    ta_required = isinstance(resolved_ta_request, dict) and resolved_ta_request.get("required", False)
+                    if qb_required and not ta_required:
+                        errors.append(f"request body is not required on {method.upper()} {path}")
+                    compare_content_schemas(
+                        errors,
+                        torrentarr,
+                        ta_request,
+                        qbitrr,
+                        qb_request,
+                        f"request body on {method.upper()} {path}",
+                        f"missing request body media {{media}} on {method.upper()} {path}",
+                    )
+
             qb_responses = qb_operation.get("responses", {})
             ta_responses = ta_operation.get("responses", {})
             for status, qb_response in qb_responses.items():
                 if status not in ta_responses:
                     errors.append(f"missing response {status} on {method.upper()} {path}")
                     continue
-                missing_media = response_media(qb_response) - response_media(ta_responses[status])
-                for media in sorted(missing_media):
-                    errors.append(f"missing response media {status}:{media} on {method.upper()} {path}")
+                compare_content_schemas(
+                    errors,
+                    torrentarr,
+                    ta_responses[status],
+                    qbitrr,
+                    qb_response,
+                    f"response {status} on {method.upper()} {path}",
+                    f"missing response media {status}:{{media}} on {method.upper()} {path}",
+                )
     return errors
 
 
