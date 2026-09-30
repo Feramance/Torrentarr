@@ -102,12 +102,30 @@ public class TorrentCacheServiceTests
         svc.SetCategory("h1", "radarr");
         svc.SetName("h1", "Movie");
         svc.AddToIgnoreCache("h1", TimeSpan.FromHours(1));
+        svc.MarkFilePrioritiesApplied("h1");
+        svc.MarkFileFiltered("h1");
 
         svc.Clear();
 
         svc.GetCategory("h1").Should().BeNull();
         svc.GetName("h1").Should().BeNull();
         svc.IsInIgnoreCache("h1").Should().BeFalse();
+        svc.AreFilePrioritiesApplied("h1").Should().BeFalse();
+        svc.IsFileFiltered("h1").Should().BeFalse();
+    }
+
+    [Fact]
+    public void DownloadPrioritiesAndCompletedInspection_AreTrackedSeparately()
+    {
+        var svc = CreateService();
+
+        svc.MarkFilePrioritiesApplied("h1");
+
+        svc.AreFilePrioritiesApplied("h1").Should().BeTrue();
+        svc.IsFileFiltered("h1").Should().BeFalse();
+
+        svc.MarkFileFiltered("h1");
+        svc.IsFileFiltered("h1").Should().BeTrue();
     }
 
     [Fact]

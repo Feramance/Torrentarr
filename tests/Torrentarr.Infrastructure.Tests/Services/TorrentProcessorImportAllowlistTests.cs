@@ -93,11 +93,40 @@ public sealed class TorrentProcessorImportAllowlistTests : IDisposable
     [Fact]
     public async Task CompletedTorrent_WithoutAutoDelete_BlocksImportWhileDisallowedFileRemains()
     {
-        var client = new FileClient([TorrentFile(0, "Movie/movie.mkv"), TorrentFile(1, "Movie/sample.txt")]);
+        var root = Directory.CreateTempSubdirectory("torrentarr-no-delete-");
+        try
+        {
+            var content = Directory.CreateDirectory(Path.Combine(root.FullName, "Movie"));
+            await File.WriteAllTextAsync(Path.Combine(content.FullName, "sample.txt"), "sample");
+            var client = new FileClient([TorrentFile(0, "Movie/movie.mkv"), TorrentFile(1, "Movie/sample.txt")]);
 
-        var result = await ApplyAsync(CreateProcessor(), Torrent("/downloads/Movie"), Config(autoDelete: false), client, completed: true);
+            var result = await ApplyAsync(CreateProcessor(), Torrent(content.FullName), Config(autoDelete: false), client, completed: true);
 
-        Ready(result).Should().BeFalse();
+            Ready(result).Should().BeFalse();
+        }
+        finally
+        {
+            root.Delete(recursive: true);
+        }
+    }
+
+    [Fact]
+    public async Task CompletedTorrent_WithoutAutoDelete_IsReadyWhenDisallowedFileWasNeverWritten()
+    {
+        var root = Directory.CreateTempSubdirectory("torrentarr-no-file-");
+        try
+        {
+            var content = Directory.CreateDirectory(Path.Combine(root.FullName, "Movie"));
+            var client = new FileClient([TorrentFile(0, "Movie/movie.mkv"), TorrentFile(1, "Movie/sample.txt")]);
+
+            var result = await ApplyAsync(CreateProcessor(), Torrent(content.FullName), Config(autoDelete: false), client, completed: true);
+
+            Ready(result).Should().BeTrue();
+        }
+        finally
+        {
+            root.Delete(recursive: true);
+        }
     }
 
     [Fact]
@@ -195,6 +224,35 @@ public sealed class TorrentProcessorImportAllowlistTests : IDisposable
 
             Ready(result).Should().BeFalse();
             File.Exists(outside).Should().BeTrue();
+        }
+        finally
+        {
+            root.Delete(recursive: true);
+        }
+    }
+
+    [Fact]
+    public async Task AutoDelete_IntermediateSymlink_RemainsBlockedAndDoesNotDeleteTarget()
+    {
+        if (OperatingSystem.IsWindows())
+            return;
+
+        var root = Directory.CreateTempSubdirectory("torrentarr-symlink-");
+        try
+        {
+            var content = Directory.CreateDirectory(Path.Combine(root.FullName, "Movie"));
+            var outside = Directory.CreateDirectory(Path.Combine(root.FullName, "outside"));
+            var target = Path.Combine(outside.FullName, "sample.txt");
+            await File.WriteAllTextAsync(target, "keep");
+            Directory.CreateSymbolicLink(Path.Combine(content.FullName, "linked"), outside.FullName);
+            var client = new FileClient([
+                TorrentFile(0, "Movie/movie.mkv"),
+                TorrentFile(1, "Movie/linked/sample.txt")]);
+
+            var result = await ApplyAsync(CreateProcessor(), Torrent(content.FullName), Config(autoDelete: true), client, completed: true);
+
+            Ready(result).Should().BeFalse();
+            File.Exists(target).Should().BeTrue();
         }
         finally
         {

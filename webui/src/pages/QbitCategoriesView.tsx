@@ -144,7 +144,7 @@ export function QbitCategoriesView({
     () => {
       void load(false);
     },
-    liveArr ? 1000 : null,
+    active && liveArr ? 1000 : null,
   );
 
   const handleRefresh = useCallback(() => {

@@ -14,9 +14,12 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - name: Compare OpenAPI with qBitrr master
+        continue-on-error: true
         env:
           QBITRR_OPENAPI_REF: master
-        run: bash scripts/check-openapi-drift.sh docs/assets/openapi.json 2>&1 | tee qbitrr-master-drift.txt
+        run: |
+          set -o pipefail
+          bash scripts/check-openapi-drift.sh docs/assets/openapi.json 2>&1 | tee qbitrr-master-drift.txt
       - name: Upload drift report
         if: always()
         uses: actions/upload-artifact@v4

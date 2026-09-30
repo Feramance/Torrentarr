@@ -1,4 +1,5 @@
 using FluentAssertions;
+using System.Globalization;
 using Torrentarr.Core.Configuration;
 using Xunit;
 
@@ -91,6 +92,42 @@ public class ConfigurationLoaderTests : IDisposable
         loader.SaveConfig(config);
         var reloaded = loader.Load().QBitInstances["qBit"].CategorySeeding.Categories.Should().ContainSingle().Subject;
         reloaded.Should().BeEquivalentTo(category);
+    }
+
+    [Fact]
+    public void SaveConfig_FormatsCategoryRatiosWithInvariantCulture()
+    {
+        WriteToml("""
+            [Settings]
+            ConfigVersion = "6.14.5"
+
+            [qBit.CategorySeeding]
+
+            [[qBit.CategorySeeding.Categories]]
+            Name = "movies"
+            MaxUploadRatio = 3.5
+            MinSeedRatio = 1.25
+            HitAndRunPartialSeedRatio = 0.75
+            """);
+
+        var loader = new ConfigurationLoader(_tempFilePath);
+        var config = loader.Load();
+        var originalCulture = CultureInfo.CurrentCulture;
+        try
+        {
+            CultureInfo.CurrentCulture = CultureInfo.GetCultureInfo("fr-FR");
+            loader.SaveConfig(config);
+        }
+        finally
+        {
+            CultureInfo.CurrentCulture = originalCulture;
+        }
+
+        var saved = File.ReadAllText(_tempFilePath);
+        saved.Should().Contain("MaxUploadRatio = 3.5");
+        saved.Should().Contain("MinSeedRatio = 1.25");
+        saved.Should().Contain("HitAndRunPartialSeedRatio = 0.75");
+        loader.Load().QBitInstances["qBit"].CategorySeeding.Categories.Should().ContainSingle();
     }
 
     [Fact]

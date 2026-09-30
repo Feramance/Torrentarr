@@ -1475,7 +1475,12 @@ app.MapGet("/web/qbit/categories", async (TorrentarrConfig config) =>
                 ? seedingTorrents.Average(t => t.SeedingTime) / 86400.0
                 : 0.0;
 
-            var seeding = qbitCfg.CategorySeeding;
+            var seeding = SeedingService.ApplyCategoryOverride(
+                qbitCfg.CategorySeeding, cat, qbitCfg.MatchSubcategories);
+            var arrSeedingMode = config.ArrInstances.Values
+                .FirstOrDefault(a => string.Equals(a.Category, cat, StringComparison.OrdinalIgnoreCase))
+                ?.Torrent.SeedingMode;
+            seeding = SeedingLimitMerge.Merge(seeding, arrSeedingMode, tracker: null);
             categories.Add(new
             {
                 category = cat,

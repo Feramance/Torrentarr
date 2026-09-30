@@ -688,24 +688,11 @@ try
 
                         var managedBy = arrCategorySet.Contains(catName) ? "arr" : "qbit";
 
-                        double maxRatio = primaryQbit.CategorySeeding.MaxUploadRatio;
-                        int maxTime = primaryQbit.CategorySeeding.MaxSeedingTime;
-                        int removeMode = primaryQbit.CategorySeeding.RemoveTorrent;
-                        int dlLimit = primaryQbit.CategorySeeding.DownloadRateLimitPerTorrent;
-                        int ulLimit = primaryQbit.CategorySeeding.UploadRateLimitPerTorrent;
-
+                        var effectiveSeeding = SeedingService.ApplyCategoryOverride(
+                            primaryQbit.CategorySeeding, catName, primaryQbit.MatchSubcategories);
                         if (arrCategoryToConfig.TryGetValue(catName, out var arrInstCfg))
-                        {
-                            var sm = arrInstCfg.Torrent?.SeedingMode;
-                            if (sm != null)
-                            {
-                                maxRatio = sm.MaxUploadRatio;
-                                maxTime = sm.MaxSeedingTime;
-                                removeMode = sm.RemoveTorrent;
-                                dlLimit = sm.DownloadRateLimitPerTorrent;
-                                ulLimit = sm.UploadRateLimitPerTorrent;
-                            }
-                        }
+                            effectiveSeeding = SeedingLimitMerge.Merge(
+                                effectiveSeeding, arrInstCfg.Torrent?.SeedingMode, tracker: null);
 
                         categories.Add(new
                         {
@@ -720,11 +707,11 @@ try
                             avgSeedingTime = torrentsInCat.Count > 0 ? torrentsInCat.Average(t => (double)t.SeedingTime) : 0.0,
                             seedingConfig = new
                             {
-                                maxRatio,
-                                maxTime,
-                                removeMode,
-                                downloadLimit = dlLimit,
-                                uploadLimit = ulLimit
+                                maxRatio = effectiveSeeding.MaxUploadRatio,
+                                maxTime = effectiveSeeding.MaxSeedingTime,
+                                removeMode = effectiveSeeding.RemoveTorrent,
+                                downloadLimit = effectiveSeeding.DownloadRateLimitPerTorrent,
+                                uploadLimit = effectiveSeeding.UploadRateLimitPerTorrent
                             }
                         });
                     }
@@ -745,6 +732,11 @@ try
 
                 foreach (var catName in instCfg.ManagedCategories)
                 {
+                    var effectiveSeeding = SeedingService.ApplyCategoryOverride(
+                        instCfg.CategorySeeding, catName, instCfg.MatchSubcategories);
+                    if (arrCategoryToConfig.TryGetValue(catName, out var arrInstCfg))
+                        effectiveSeeding = SeedingLimitMerge.Merge(
+                            effectiveSeeding, arrInstCfg.Torrent?.SeedingMode, tracker: null);
                     var torrentsInCat = addlTorrents.Where(t =>
                             CategoryPathHelper.MatchesConfigured(t.Category, new[] { catName }, prefix: true)
                                 == CategoryPathHelper.NormalizeCategory(catName)).ToList();
@@ -764,11 +756,11 @@ try
                         avgSeedingTime = torrentsInCat.Count > 0 ? torrentsInCat.Average(t => (double)t.SeedingTime) : 0.0,
                         seedingConfig = new
                         {
-                            maxRatio = instCfg.CategorySeeding.MaxUploadRatio,
-                            maxTime = instCfg.CategorySeeding.MaxSeedingTime,
-                            removeMode = instCfg.CategorySeeding.RemoveTorrent,
-                            downloadLimit = instCfg.CategorySeeding.DownloadRateLimitPerTorrent,
-                            uploadLimit = instCfg.CategorySeeding.UploadRateLimitPerTorrent
+                            maxRatio = effectiveSeeding.MaxUploadRatio,
+                            maxTime = effectiveSeeding.MaxSeedingTime,
+                            removeMode = effectiveSeeding.RemoveTorrent,
+                            downloadLimit = effectiveSeeding.DownloadRateLimitPerTorrent,
+                            uploadLimit = effectiveSeeding.UploadRateLimitPerTorrent
                         }
                     });
                 }
@@ -1639,24 +1631,11 @@ try
 
                         var managedBy = arrCategorySet.Contains(catName) ? "arr" : "qbit";
 
-                        double maxRatio = primaryQbit2.CategorySeeding.MaxUploadRatio;
-                        int maxTime = primaryQbit2.CategorySeeding.MaxSeedingTime;
-                        int removeMode = primaryQbit2.CategorySeeding.RemoveTorrent;
-                        int dlLimit = primaryQbit2.CategorySeeding.DownloadRateLimitPerTorrent;
-                        int ulLimit = primaryQbit2.CategorySeeding.UploadRateLimitPerTorrent;
-
+                        var effectiveSeeding = SeedingService.ApplyCategoryOverride(
+                            primaryQbit2.CategorySeeding, catName, primaryQbit2.MatchSubcategories);
                         if (arrCategoryToConfig.TryGetValue(catName, out var arrInstCfg))
-                        {
-                            var sm = arrInstCfg.Torrent?.SeedingMode;
-                            if (sm != null)
-                            {
-                                maxRatio = sm.MaxUploadRatio;
-                                maxTime = sm.MaxSeedingTime;
-                                removeMode = sm.RemoveTorrent;
-                                dlLimit = sm.DownloadRateLimitPerTorrent;
-                                ulLimit = sm.UploadRateLimitPerTorrent;
-                            }
-                        }
+                            effectiveSeeding = SeedingLimitMerge.Merge(
+                                effectiveSeeding, arrInstCfg.Torrent?.SeedingMode, tracker: null);
 
                         categories.Add(new
                         {
@@ -1668,7 +1647,14 @@ try
                             totalSize = torrentsInCat.Sum(t => t.Size),
                             avgRatio = torrentsInCat.Count > 0 ? torrentsInCat.Average(t => t.Ratio) : 0.0,
                             avgSeedingTime = torrentsInCat.Count > 0 ? torrentsInCat.Average(t => (double)t.SeedingTime) : 0.0,
-                            seedingConfig = new { maxRatio, maxTime, removeMode, downloadLimit = dlLimit, uploadLimit = ulLimit }
+                            seedingConfig = new
+                            {
+                                maxRatio = effectiveSeeding.MaxUploadRatio,
+                                maxTime = effectiveSeeding.MaxSeedingTime,
+                                removeMode = effectiveSeeding.RemoveTorrent,
+                                downloadLimit = effectiveSeeding.DownloadRateLimitPerTorrent,
+                                uploadLimit = effectiveSeeding.UploadRateLimitPerTorrent
+                            }
                         });
                     }
                 }
@@ -1686,6 +1672,11 @@ try
                 var addlTorrents = await addlClient.GetTorrentsAsync();
                 foreach (var catName in instCfg.ManagedCategories)
                 {
+                    var effectiveSeeding = SeedingService.ApplyCategoryOverride(
+                        instCfg.CategorySeeding, catName, instCfg.MatchSubcategories);
+                    if (arrCategoryToConfig.TryGetValue(catName, out var arrInstCfg))
+                        effectiveSeeding = SeedingLimitMerge.Merge(
+                            effectiveSeeding, arrInstCfg.Torrent?.SeedingMode, tracker: null);
                     var torrentsInCat = addlTorrents.Where(t =>
                             CategoryPathHelper.MatchesConfigured(t.Category, new[] { catName }, prefix: true)
                                 == CategoryPathHelper.NormalizeCategory(catName)).ToList();
@@ -1704,11 +1695,11 @@ try
                         avgSeedingTime = torrentsInCat.Count > 0 ? torrentsInCat.Average(t => (double)t.SeedingTime) : 0.0,
                         seedingConfig = new
                         {
-                            maxRatio = instCfg.CategorySeeding.MaxUploadRatio,
-                            maxTime = instCfg.CategorySeeding.MaxSeedingTime,
-                            removeMode = instCfg.CategorySeeding.RemoveTorrent,
-                            downloadLimit = instCfg.CategorySeeding.DownloadRateLimitPerTorrent,
-                            uploadLimit = instCfg.CategorySeeding.UploadRateLimitPerTorrent
+                            maxRatio = effectiveSeeding.MaxUploadRatio,
+                            maxTime = effectiveSeeding.MaxSeedingTime,
+                            removeMode = effectiveSeeding.RemoveTorrent,
+                            downloadLimit = effectiveSeeding.DownloadRateLimitPerTorrent,
+                            uploadLimit = effectiveSeeding.UploadRateLimitPerTorrent
                         }
                     });
                 }

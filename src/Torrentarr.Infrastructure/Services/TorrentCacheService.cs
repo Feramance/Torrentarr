@@ -13,6 +13,7 @@ public class TorrentCacheService : ITorrentCacheService
     private readonly Dictionary<string, string> _categoryCache = new(StringComparer.OrdinalIgnoreCase);
     private readonly Dictionary<string, string> _nameCache = new(StringComparer.OrdinalIgnoreCase);
     private readonly Dictionary<string, DateTime> _ignoreCache = new(StringComparer.OrdinalIgnoreCase);
+    private readonly HashSet<string> _filePrioritiesAppliedHashes = new(StringComparer.OrdinalIgnoreCase);
     private readonly HashSet<string> _fileFilteredHashes = new(StringComparer.OrdinalIgnoreCase);
     private readonly object _lock = new();
     private DateTime _lastFullClearUtc = DateTime.MinValue;
@@ -91,6 +92,22 @@ public class TorrentCacheService : ITorrentCacheService
         }
     }
 
+    public bool AreFilePrioritiesApplied(string hash)
+    {
+        lock (_lock)
+        {
+            return _filePrioritiesAppliedHashes.Contains(hash);
+        }
+    }
+
+    public void MarkFilePrioritiesApplied(string hash)
+    {
+        lock (_lock)
+        {
+            _filePrioritiesAppliedHashes.Add(hash);
+        }
+    }
+
     public bool IsFileFiltered(string hash)
     {
         lock (_lock)
@@ -114,6 +131,7 @@ public class TorrentCacheService : ITorrentCacheService
             _categoryCache.Clear();
             _nameCache.Clear();
             _ignoreCache.Clear();
+            _filePrioritiesAppliedHashes.Clear();
             _fileFilteredHashes.Clear();
             _lastFullClearUtc = DateTime.UtcNow;
             _logger.LogTrace("All caches cleared");
@@ -130,6 +148,7 @@ public class TorrentCacheService : ITorrentCacheService
                 _categoryCache.Clear();
                 _nameCache.Clear();
                 _ignoreCache.Clear();
+                _filePrioritiesAppliedHashes.Clear();
                 _fileFilteredHashes.Clear();
                 _lastFullClearUtc = now;
                 _logger.LogInformation("Periodic full cache clear (every {Hours}h) to bound memory growth", (int)FullClearInterval.TotalHours);

@@ -41,6 +41,16 @@ public interface ITorrentCacheService
     void RemoveFromIgnoreCache(string hash);
 
     /// <summary>
+    /// Check if download-phase file priorities have already been applied to this torrent hash.
+    /// </summary>
+    bool AreFilePrioritiesApplied(string hash);
+
+    /// <summary>
+    /// Mark a torrent hash as having its download-phase file priorities applied.
+    /// </summary>
+    void MarkFilePrioritiesApplied(string hash);
+
+    /// <summary>
     /// Clear all caches
     /// </summary>
     void Clear();
@@ -51,12 +61,12 @@ public interface ITorrentCacheService
     void CleanExpired();
 
     /// <summary>
-    /// Check if file filtering has already been applied to this torrent hash this session.
+    /// Check if completed-file filtering has confirmed this torrent is safe to import.
     /// </summary>
     bool IsFileFiltered(string hash);
 
     /// <summary>
-    /// Mark a torrent hash as having file filtering already applied.
+    /// Mark a torrent hash as having passed completed-file filtering.
     /// </summary>
     void MarkFileFiltered(string hash);
 }

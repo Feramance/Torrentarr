@@ -530,17 +530,18 @@ public class TorrentProcessor : ITorrentProcessor
         // Branch 9: Downloading + not yet file-filtered → file filter (qBitrr line 6141-6147)
         else if (IsActiveDownloadingState(state)
             && state != TorrentState.MetadataDownloading
-            && !_cache.IsFileFiltered(torrent.Hash))
+            && !_cache.AreFilePrioritiesApplied(torrent.Hash))
         {
             if (arrCfg != null)
             {
                 var filterResult = await ApplyFileFilterAsync(torrent, arrCfg, client, completed: false, ct);
                 if (filterResult.Deleted) return;
                 if (filterResult.Ready)
-                    _cache.MarkFileFiltered(torrent.Hash);
+                    _cache.MarkFilePrioritiesApplied(torrent.Hash);
             }
             else
             {
+                _cache.MarkFilePrioritiesApplied(torrent.Hash);
                 _cache.MarkFileFiltered(torrent.Hash);
             }
         }
@@ -589,7 +590,7 @@ public class TorrentProcessor : ITorrentProcessor
             && !HasTag(torrent, IgnoredTag)
             && !HasTag(torrent, FreeSpacePausedTag)
             && !stalledIgnore
-            && _cache.IsFileFiltered(torrent.Hash))
+            && _cache.AreFilePrioritiesApplied(torrent.Hash))
         {
             await ProcessPercentageThresholdAsync(torrent, maxEta, client, stats, ct);
         }
@@ -686,7 +687,7 @@ public class TorrentProcessor : ITorrentProcessor
         {
             if (timeNow > torrent.AddedOn + ignoreYoungerThan
                 && torrent.Availability < 1
-                && _cache.IsFileFiltered(torrent.Hash)
+                && _cache.AreFilePrioritiesApplied(torrent.Hash)
                 && !HasTag(torrent, IgnoredTag)
                 && !HasTag(torrent, FreeSpacePausedTag)
                 && !stalledIgnore)
@@ -694,7 +695,7 @@ public class TorrentProcessor : ITorrentProcessor
                 // Unavailable torrent past age gate → mark for deletion
                 await ProcessStalledTorrentAsync(torrent, "Unavailable", client, arrCfg, stats, timeNow, ct);
             }
-            else if (_cache.IsFileFiltered(torrent.Hash))
+            else if (_cache.AreFilePrioritiesApplied(torrent.Hash))
             {
                 // Already filtered, skip
                 _logger.LogTrace("Already cleaned up: [{Name}]", torrent.Name);
@@ -707,7 +708,7 @@ public class TorrentProcessor : ITorrentProcessor
                     var filterResult = await ApplyFileFilterAsync(torrent, arrCfg, client, completed: false, ct);
                     if (filterResult.Deleted) return;
                     if (filterResult.Ready)
-                        _cache.MarkFileFiltered(torrent.Hash);
+                        _cache.MarkFilePrioritiesApplied(torrent.Hash);
                 }
             }
         }
@@ -834,7 +835,7 @@ public class TorrentProcessor : ITorrentProcessor
         var isStalledState = (state is TorrentState.MetadataDownloading or TorrentState.StalledDownloading)
             && !isIgnored && !isFreeSpacePaused;
         var isUnavailableDownloading = torrent.Availability < 1
-            && _cache.IsFileFiltered(torrent.Hash)
+            && _cache.AreFilePrioritiesApplied(torrent.Hash)
             && state == TorrentState.Downloading
             && !isIgnored && !isFreeSpacePaused;
 
@@ -1410,13 +1411,13 @@ public class TorrentProcessor : ITorrentProcessor
         {
             foreach (var file in excludedFiles)
                 TryDeleteTorrentOwnedFile(torrent, file.Name);
-
-            var remaining = excludedFiles.Where(f => TorrentOwnedFileExists(torrent, f.Name)).ToList();
-            if (remaining.Count == 0)
-                return FileFilterResult.ReadyResult;
         }
 
-        WarnAllowlistBlocked(torrent, $"{excludedIds.Length} disallowed file(s) remain");
+        var remaining = excludedFiles.Where(f => TorrentOwnedFileExists(torrent, f.Name)).ToList();
+        if (remaining.Count == 0)
+            return FileFilterResult.ReadyResult;
+
+        WarnAllowlistBlocked(torrent, $"{remaining.Count} disallowed file(s) remain");
         return FileFilterResult.PendingResult;
     }
 
@@ -1471,8 +1472,20 @@ public class TorrentProcessor : ITorrentProcessor
 
         var fullRoot = Path.GetFullPath(root);
         var fullPath = Path.GetFullPath(Path.Combine(fullRoot, normalized));
-        if (!fullPath.StartsWith(fullRoot + Path.DirectorySeparatorChar, StringComparison.OrdinalIgnoreCase))
+        var pathComparison = OperatingSystem.IsWindows()
+            ? StringComparison.OrdinalIgnoreCase
+            : StringComparison.Ordinal;
+        if (!fullPath.StartsWith(fullRoot + Path.DirectorySeparatorChar, pathComparison))
             throw new InvalidOperationException("Torrent file path escapes its content directory.");
+
+        var parent = Path.GetDirectoryName(fullPath);
+        while (!string.IsNullOrEmpty(parent) && !string.Equals(parent, fullRoot, pathComparison))
+        {
+            if (Directory.Exists(parent) && File.GetAttributes(parent).HasFlag(FileAttributes.ReparsePoint))
+                throw new InvalidOperationException("Torrent file path traverses a symbolic link or reparse point.");
+            parent = Path.GetDirectoryName(parent);
+        }
+
         return fullPath;
     }
 

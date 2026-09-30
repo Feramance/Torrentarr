@@ -65,7 +65,7 @@ public class SeedingService : ISeedingService
         return ApplyCategoryOverride(baseConfig, torrent.Category, qbit?.MatchSubcategories ?? false);
     }
 
-    internal static CategorySeedingConfig ApplyCategoryOverride(
+    public static CategorySeedingConfig ApplyCategoryOverride(
         CategorySeedingConfig baseConfig,
         string? category,
         bool matchSubcategories)
@@ -78,7 +78,7 @@ public class SeedingService : ISeedingService
         var match = CategoryPathHelper.MatchesConfigured(category, names, prefix: matchSubcategories)
             ?? CategoryPathHelper.MatchesConfigured(category, names, prefix: false);
         var categoryOverride = baseConfig.Categories.FirstOrDefault(item =>
-            string.Equals(item.Name, match, StringComparison.OrdinalIgnoreCase));
+            string.Equals(CategoryPathHelper.NormalizeCategory(item.Name), match, StringComparison.OrdinalIgnoreCase));
         if (categoryOverride == null)
             return baseConfig;
 

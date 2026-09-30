@@ -74,6 +74,19 @@ public class SeedingServiceTests
             .MaxUploadRatio.Should().Be(3.0);
     }
 
+    [Fact]
+    public void CategoryOverride_NormalizesConfiguredCategoryName()
+    {
+        var baseConfig = new CategorySeedingConfig
+        {
+            MaxUploadRatio = 1.0,
+            Categories = [new CategorySeedingCategoryOverride { Name = " tv // 4k ", MaxUploadRatio = 3.0 }]
+        };
+
+        SeedingService.ApplyCategoryOverride(baseConfig, "tv/4k", matchSubcategories: false)
+            .MaxUploadRatio.Should().Be(3.0);
+    }
+
     // ── ExtractTrackerHost ─────────────────────────────────────────────────────
 
     [Theory]

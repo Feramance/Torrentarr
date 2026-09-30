@@ -2034,14 +2034,14 @@ public class ConfigurationLoader
                 sb.AppendLine($"Name = \"{EscapeTomlString(category.Name)}\"");
                 if (category.DownloadRateLimitPerTorrent.HasValue) sb.AppendLine($"DownloadRateLimitPerTorrent = {category.DownloadRateLimitPerTorrent.Value}");
                 if (category.UploadRateLimitPerTorrent.HasValue) sb.AppendLine($"UploadRateLimitPerTorrent = {category.UploadRateLimitPerTorrent.Value}");
-                if (category.MaxUploadRatio.HasValue) sb.AppendLine($"MaxUploadRatio = {category.MaxUploadRatio.Value}");
+                if (category.MaxUploadRatio.HasValue) sb.AppendLine(FormattableString.Invariant($"MaxUploadRatio = {category.MaxUploadRatio.Value}"));
                 if (category.MaxSeedingTime.HasValue) sb.AppendLine($"MaxSeedingTime = {category.MaxSeedingTime.Value}");
                 if (category.RemoveTorrent.HasValue) sb.AppendLine($"RemoveTorrent = {category.RemoveTorrent.Value}");
                 if (category.HitAndRunMode != null) sb.AppendLine($"HitAndRunMode = \"{EscapeTomlString(category.HitAndRunMode)}\"");
-                if (category.MinSeedRatio.HasValue) sb.AppendLine($"MinSeedRatio = {category.MinSeedRatio.Value}");
+                if (category.MinSeedRatio.HasValue) sb.AppendLine(FormattableString.Invariant($"MinSeedRatio = {category.MinSeedRatio.Value}"));
                 if (category.MinSeedingTimeDays.HasValue) sb.AppendLine($"MinSeedingTimeDays = {category.MinSeedingTimeDays.Value}");
                 if (category.HitAndRunMinimumDownloadPercent.HasValue) sb.AppendLine($"HitAndRunMinimumDownloadPercent = {category.HitAndRunMinimumDownloadPercent.Value}");
-                if (category.HitAndRunPartialSeedRatio.HasValue) sb.AppendLine($"HitAndRunPartialSeedRatio = {category.HitAndRunPartialSeedRatio.Value}");
+                if (category.HitAndRunPartialSeedRatio.HasValue) sb.AppendLine(FormattableString.Invariant($"HitAndRunPartialSeedRatio = {category.HitAndRunPartialSeedRatio.Value}"));
                 if (category.TrackerUpdateBuffer.HasValue) sb.AppendLine($"TrackerUpdateBuffer = {category.TrackerUpdateBuffer.Value}");
                 if (category.StalledDelay.HasValue) sb.AppendLine($"StalledDelay = {category.StalledDelay.Value}");
                 if (category.IgnoreTorrentsYoungerThan.HasValue) sb.AppendLine($"IgnoreTorrentsYoungerThan = {category.IgnoreTorrentsYoungerThan.Value}");
