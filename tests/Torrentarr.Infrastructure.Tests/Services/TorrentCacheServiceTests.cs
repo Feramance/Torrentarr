@@ -143,6 +143,20 @@ public class TorrentCacheServiceTests
     }
 
     [Fact]
+    public void FileFilterStates_PreserveInstanceCaseButIgnoreHashCase()
+    {
+        var svc = CreateService();
+
+        svc.MarkFilePrioritiesApplied("qBit-A", "SHARED-HASH");
+        svc.MarkFileFiltered("qBit-A", "SHARED-HASH");
+
+        svc.AreFilePrioritiesApplied("qBit-A", "shared-hash").Should().BeTrue();
+        svc.IsFileFiltered("qBit-A", "shared-hash").Should().BeTrue();
+        svc.AreFilePrioritiesApplied("qBit-a", "shared-hash").Should().BeFalse();
+        svc.IsFileFiltered("qBit-a", "shared-hash").Should().BeFalse();
+    }
+
+    [Fact]
     public void AllowlistWarnings_AreThrottledPerInstanceAndHash()
     {
         var svc = CreateService();

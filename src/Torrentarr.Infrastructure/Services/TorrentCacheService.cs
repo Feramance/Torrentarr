@@ -13,9 +13,9 @@ public class TorrentCacheService : ITorrentCacheService
     private readonly Dictionary<string, string> _categoryCache = new(StringComparer.OrdinalIgnoreCase);
     private readonly Dictionary<string, string> _nameCache = new(StringComparer.OrdinalIgnoreCase);
     private readonly Dictionary<string, DateTime> _ignoreCache = new(StringComparer.OrdinalIgnoreCase);
-    private readonly HashSet<string> _filePrioritiesAppliedHashes = new(StringComparer.OrdinalIgnoreCase);
-    private readonly HashSet<string> _fileFilteredHashes = new(StringComparer.OrdinalIgnoreCase);
-    private readonly Dictionary<string, DateTimeOffset> _allowlistWarningCache = new(StringComparer.OrdinalIgnoreCase);
+    private readonly HashSet<string> _filePrioritiesAppliedHashes = new(StringComparer.Ordinal);
+    private readonly HashSet<string> _fileFilteredHashes = new(StringComparer.Ordinal);
+    private readonly Dictionary<string, DateTimeOffset> _allowlistWarningCache = new(StringComparer.Ordinal);
     private readonly object _lock = new();
     private DateTime _lastFullClearUtc = DateTime.MinValue;
     private static readonly TimeSpan FullClearInterval = TimeSpan.FromHours(24);
@@ -200,7 +200,7 @@ public class TorrentCacheService : ITorrentCacheService
     }
 
     private static string FileStateKey(string qBitInstanceName, string hash) =>
-        string.Concat(qBitInstanceName, "\0", hash);
+        string.Concat(qBitInstanceName, "\0", hash.ToUpperInvariant());
 
     public TorrentCacheStats GetStats()
     {

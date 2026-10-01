@@ -110,6 +110,29 @@ public sealed class TorrentProcessorImportAllowlistTests : IDisposable
     }
 
     [Fact]
+    public async Task CompletedTorrent_DoesNotResubmitPriorityAlreadySetToZero()
+    {
+        var root = Directory.CreateTempSubdirectory("torrentarr-priority-zero-");
+        try
+        {
+            var content = Directory.CreateDirectory(Path.Combine(root.FullName, "Movie"));
+            await File.WriteAllTextAsync(Path.Combine(content.FullName, "sample.txt"), "sample");
+            var excluded = TorrentFile(1, "Movie/sample.txt");
+            excluded.Priority = 0;
+            var client = new FileClient([TorrentFile(0, "Movie/movie.mkv"), excluded]);
+
+            var result = await ApplyAsync(CreateProcessor(), Torrent(content.FullName), Config(autoDelete: false), client, completed: true);
+
+            Ready(result).Should().BeFalse();
+            client.PriorityCalls.Should().Be(0);
+        }
+        finally
+        {
+            root.Delete(recursive: true);
+        }
+    }
+
+    [Fact]
     public async Task CompletedTorrent_WithoutAutoDelete_IsReadyWhenDisallowedFileWasNeverWritten()
     {
         var root = Directory.CreateTempSubdirectory("torrentarr-no-file-");
@@ -158,6 +181,33 @@ public sealed class TorrentProcessorImportAllowlistTests : IDisposable
         Deleted(result).Should().BeFalse();
         client.PriorityCalls.Should().Be(1);
         seeding.VerifyAll();
+    }
+
+    [Fact]
+    public async Task PartialExclusion_WhenHnrBlocksCleanup_DoesNotDeleteExcludedFile()
+    {
+        var root = Directory.CreateTempSubdirectory("torrentarr-hnr-cleanup-");
+        try
+        {
+            var content = Directory.CreateDirectory(Path.Combine(root.FullName, "Movie"));
+            var excludedPath = Path.Combine(content.FullName, "sample.txt");
+            await File.WriteAllTextAsync(excludedPath, "sample");
+            var torrent = Torrent(content.FullName);
+            var seeding = new Mock<ISeedingService>();
+            seeding.Setup(s => s.HnrAllowsDeleteAsync(torrent, "excluded file cleanup by import allowlist", It.IsAny<CancellationToken>()))
+                .ReturnsAsync(false);
+            var client = new FileClient([TorrentFile(0, "Movie/movie.mkv"), TorrentFile(1, "Movie/sample.txt")]);
+
+            var result = await ApplyAsync(CreateProcessor(seeding.Object), torrent, Config(autoDelete: true), client, completed: true);
+
+            Ready(result).Should().BeFalse();
+            File.Exists(excludedPath).Should().BeTrue();
+            seeding.VerifyAll();
+        }
+        finally
+        {
+            root.Delete(recursive: true);
+        }
     }
 
     [Fact]
@@ -309,7 +359,7 @@ public sealed class TorrentProcessorImportAllowlistTests : IDisposable
         QBitInstanceName = "qBit"
     };
 
-    private static TorrentFile TorrentFile(int index, string name) => new() { Index = index, Name = name };
+    private static TorrentFile TorrentFile(int index, string name) => new() { Index = index, Name = name, Priority = 1 };
 
     private static async Task<object> ApplyAsync(
         TorrentProcessor processor,

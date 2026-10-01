@@ -1366,20 +1366,24 @@ public class TorrentProcessor : ITorrentProcessor
             .Where(f => ShouldExcludeFile(f.Name, cfg, regexOptions))
             .ToList();
         var excludedIds = excludedFiles.Select(f => f.Index).ToArray();
+        var prioritiesToApply = excludedFiles
+            .Where(f => f.Priority != 0)
+            .Select(f => f.Index)
+            .ToArray();
         var allowedCount = meaningfulFiles.Count - excludedFiles.Count;
 
-        if (excludedIds.Length > 0)
+        if (prioritiesToApply.Length > 0)
         {
             // Set excluded files to priority 0 (do not download), including when H&R
             // prevents deletion of a torrent whose every meaningful file is excluded.
             _logger.LogDebug(
                 "File filter: setting {Excluded}/{Total} files to priority 0 in [{Name}]: {Files}",
-                excludedIds.Length, files.Count, torrent.Name,
-                string.Join(", ", files.Where(f => excludedIds.Contains(f.Index)).Select(f => f.Name)));
+                prioritiesToApply.Length, files.Count, torrent.Name,
+                string.Join(", ", files.Where(f => prioritiesToApply.Contains(f.Index)).Select(f => f.Name)));
             bool priorityAccepted;
             try
             {
-                priorityAccepted = await client.SetFilePriorityAsync(torrent.Hash, excludedIds, 0, ct);
+                priorityAccepted = await client.SetFilePriorityAsync(torrent.Hash, prioritiesToApply, 0, ct);
             }
             catch (Exception ex)
             {
@@ -1421,13 +1425,23 @@ public class TorrentProcessor : ITorrentProcessor
             return FileFilterResult.PendingResult;
         }
 
-        if (cfg.AutoDelete)
+        var remaining = excludedFiles.Where(f => TorrentOwnedFileExists(torrent, f.Name)).ToList();
+        if (cfg.AutoDelete && remaining.Count > 0)
         {
-            foreach (var file in excludedFiles)
+            var hnrAllows = _seedingService == null ||
+                await _seedingService.HnrAllowsDeleteAsync(torrent, "excluded file cleanup by import allowlist", ct);
+            if (!hnrAllows)
+            {
+                WarnAllowlistBlocked(torrent, "H&R obligations prevent excluded file cleanup");
+                return FileFilterResult.PendingResult;
+            }
+
+            foreach (var file in remaining)
                 TryDeleteTorrentOwnedFile(torrent, file.Name);
+
+            remaining = excludedFiles.Where(f => TorrentOwnedFileExists(torrent, f.Name)).ToList();
         }
 
-        var remaining = excludedFiles.Where(f => TorrentOwnedFileExists(torrent, f.Name)).ToList();
         if (remaining.Count == 0)
             return FileFilterResult.ReadyResult;
 
