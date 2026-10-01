@@ -108,6 +108,20 @@ def normalized_security(spec: dict, operation: dict) -> list[dict]:
     return sorted(normalized, key=lambda item: json.dumps(item, sort_keys=True, separators=(",", ":")))
 
 
+def referenced_security_schemes(spec: dict, operation: dict) -> dict[str, Any]:
+    """Resolve definitions for schemes used by the operation's effective requirements."""
+    scheme_names = {
+        name
+        for requirement in normalized_security(spec, operation)
+        for name in requirement
+    }
+    definitions = spec.get("components", {}).get("securitySchemes", {})
+    return {
+        name: resolve_local_refs(spec, definitions.get(name))
+        for name in sorted(scheme_names)
+    }
+
+
 def resolved_schema(spec: dict, container: dict) -> Any:
     return normalize_schema(resolve_local_refs(spec, container.get("schema")))
 
@@ -169,8 +183,14 @@ def compare(torrentarr: dict, qbitrr: dict, allowed_extensions: set[str] | None 
                 continue
             qb_operation = qb_item[method]
             ta_operation = ta_item[method]
-            if normalized_security(qbitrr, qb_operation) != normalized_security(torrentarr, ta_operation):
+            qb_security = normalized_security(qbitrr, qb_operation)
+            ta_security = normalized_security(torrentarr, ta_operation)
+            if qb_security != ta_security:
                 errors.append(f"security differs on {method.upper()} {path}")
+            elif referenced_security_schemes(
+                qbitrr, qb_operation
+            ) != referenced_security_schemes(torrentarr, ta_operation):
+                errors.append(f"security scheme definitions differ on {method.upper()} {path}")
             qb_parameters = parameters(qbitrr, qb_item, qb_operation)
             ta_parameters = parameters(torrentarr, ta_item, ta_operation)
             for key, required_parameter in qb_parameters.items():

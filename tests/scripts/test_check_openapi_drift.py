@@ -469,6 +469,51 @@ class OpenApiDriftTests(unittest.TestCase):
 
         self.assertIn("security differs on GET /web/items", result)
 
+    def test_compares_referenced_security_scheme_definitions(self):
+        operation = {
+            "security": [{"bearerAuth": []}],
+            "responses": {"200": {}},
+        }
+        upstream = document(
+            {"/web/items": {"get": operation}},
+            {
+                "securitySchemes": {
+                    "bearerAuth": {"type": "http", "scheme": "bearer"},
+                    "unused": {"type": "apiKey", "in": "header", "name": "X-Unused"},
+                }
+            },
+        )
+        torrentarr = document(
+            {"/web/items": {"get": operation}},
+            {
+                "securitySchemes": {
+                    "bearerAuth": {"type": "apiKey", "in": "cookie", "name": "token"},
+                    "unused": {"type": "http", "scheme": "basic"},
+                }
+            },
+        )
+
+        result = module.compare(torrentarr, upstream, set())
+
+        self.assertIn("security scheme definitions differ on GET /web/items", result)
+
+    def test_ignores_unreferenced_security_scheme_differences(self):
+        operation = {"responses": {"200": {}}}
+        upstream = document(
+            {"/web/items": {"get": operation}},
+            {"securitySchemes": {"unused": {"type": "http", "scheme": "basic"}}},
+        )
+        torrentarr = document(
+            {"/web/items": {"get": operation}},
+            {
+                "securitySchemes": {
+                    "unused": {"type": "apiKey", "in": "query", "name": "token"}
+                }
+            },
+        )
+
+        self.assertEqual(module.compare(torrentarr, upstream, set()), [])
+
 
 if __name__ == "__main__":
     unittest.main()
