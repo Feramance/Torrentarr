@@ -839,6 +839,7 @@ function AppShell(): JSX.Element {
     () => new Set<Tab>(["processes"]),
   );
   const [configDirty, setConfigDirty] = useState(false);
+  const [configViewKey, setConfigViewKey] = useState(0);
   const { push } = useToast();
   const { setValue: setSearchValue } = useSearch();
   const { viewDensity, setViewDensity } = useWebUI();
@@ -1387,6 +1388,8 @@ function AppShell(): JSX.Element {
                   if (!shouldLeave) {
                     return;
                   }
+                  setConfigDirty(false);
+                  setConfigViewKey((current) => current + 1);
                 }
                 setActiveTab(tab.id);
                 setSearchValue("");
@@ -1470,7 +1473,10 @@ function AppShell(): JSX.Element {
             )}
             {visitedTabs.has("config") && (
               <section hidden={activeTab !== "config"} data-tab-panel="config">
-                <ConfigView key="config" onDirtyChange={setConfigDirty} />
+                <ConfigView
+                  key={`config-${configViewKey}`}
+                  onDirtyChange={setConfigDirty}
+                />
               </section>
             )}
           </div>

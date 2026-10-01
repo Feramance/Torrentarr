@@ -271,6 +271,35 @@ class OpenApiDriftTests(unittest.TestCase):
 
             self.assertIn("parameter query:q requiredness differs on GET /web/items", result)
 
+    def test_rejects_only_torrentarr_only_required_parameters(self):
+        upstream_operation = {"responses": {"200": {}}}
+        required_torrentarr_operation = {
+            "parameters": [
+                {"in": "query", "name": "required", "required": True, "schema": {"type": "string"}}
+            ],
+            "responses": {"200": {}},
+        }
+        optional_torrentarr_operation = {
+            "parameters": [
+                {"in": "query", "name": "optional", "required": False, "schema": {"type": "string"}}
+            ],
+            "responses": {"200": {}},
+        }
+
+        required_result = module.compare(
+            document({"/web/items": {"get": required_torrentarr_operation}}),
+            document({"/web/items": {"get": upstream_operation}}),
+            set(),
+        )
+        optional_result = module.compare(
+            document({"/web/items": {"get": optional_torrentarr_operation}}),
+            document({"/web/items": {"get": upstream_operation}}),
+            set(),
+        )
+
+        self.assertIn("unexpected required parameter query:required on GET /web/items", required_result)
+        self.assertEqual(optional_result, [])
+
     def test_accepts_reordered_required_and_enum_schema_values(self):
         upstream_schema = {
             "type": "object",

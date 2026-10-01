@@ -172,6 +172,11 @@ def compare(torrentarr: dict, qbitrr: dict, allowed_extensions: set[str] | None 
                 ta_schema = resolved_schema(torrentarr, torrentarr_parameter)
                 if qb_schema != ta_schema:
                     errors.append(f"parameter {key[0]}:{key[1]} schema differs on {method.upper()} {path}")
+            for key in sorted(set(ta_parameters) - set(qb_parameters)):
+                if ta_parameters[key].get("required", False):
+                    errors.append(
+                        f"unexpected required parameter {key[0]}:{key[1]} on {method.upper()} {path}"
+                    )
 
             qb_request = qb_operation.get("requestBody")
             ta_request = ta_operation.get("requestBody")

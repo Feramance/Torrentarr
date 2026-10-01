@@ -73,7 +73,12 @@ function areCategoriesEqual(a: QbitCategory[], b: QbitCategory[]): boolean {
       catA.totalSize !== catB.totalSize ||
       catA.avgRatio !== catB.avgRatio ||
       catA.avgSeedingTime !== catB.avgSeedingTime ||
-      catA.managedBy !== catB.managedBy
+      catA.managedBy !== catB.managedBy ||
+      catA.seedingConfig?.maxRatio !== catB.seedingConfig?.maxRatio ||
+      catA.seedingConfig?.maxTime !== catB.seedingConfig?.maxTime ||
+      catA.seedingConfig?.removeMode !== catB.seedingConfig?.removeMode ||
+      catA.seedingConfig?.downloadLimit !== catB.seedingConfig?.downloadLimit ||
+      catA.seedingConfig?.uploadLimit !== catB.seedingConfig?.uploadLimit
     ) {
       return false;
     }
@@ -260,9 +265,10 @@ export function QbitCategoriesView({
       {
         id: "maxRatio",
         header: "Max Ratio",
-        accessorFn: (row) => row.seedingConfig.maxRatio,
+        accessorFn: (row) => row.seedingConfig?.maxRatio ?? null,
         cell: (info) => {
-          const val = info.getValue() as number;
+          const val = info.getValue() as number | null;
+          if (val === null) return "Mixed";
           return val === -1 ? "Disabled" : val.toFixed(2);
         },
         size: 100,
@@ -270,9 +276,10 @@ export function QbitCategoriesView({
       {
         id: "maxTime",
         header: "Max Time",
-        accessorFn: (row) => row.seedingConfig.maxTime,
+        accessorFn: (row) => row.seedingConfig?.maxTime ?? null,
         cell: (info) => {
-          const val = info.getValue() as number;
+          const val = info.getValue() as number | null;
+          if (val === null) return "Mixed";
           return val === -1 ? "Disabled" : formatTime(val);
         },
         size: 120,
@@ -280,8 +287,11 @@ export function QbitCategoriesView({
       {
         id: "removeMode",
         header: "Remove Mode",
-        accessorFn: (row) => row.seedingConfig.removeMode,
-        cell: (info) => getRemoveModeText(info.getValue() as number),
+        accessorFn: (row) => row.seedingConfig?.removeMode ?? null,
+        cell: (info) => {
+          const val = info.getValue() as number | null;
+          return val === null ? "Mixed" : getRemoveModeText(val);
+        },
         size: 150,
       },
     ],

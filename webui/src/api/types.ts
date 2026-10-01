@@ -79,7 +79,7 @@ export interface QbitCategory {
   totalSize: number;
   avgRatio: number;
   avgSeedingTime: number;
-  seedingConfig: QbitCategorySeedingConfig;
+  seedingConfig: QbitCategorySeedingConfig | null;
 }
 
 export interface QbitCategoriesResponse {
