@@ -175,16 +175,14 @@ def compare(torrentarr: dict, qbitrr: dict, allowed_extensions: set[str] | None 
 
             qb_request = qb_operation.get("requestBody")
             ta_request = ta_operation.get("requestBody")
+            resolved_qb_request = resolve_local_refs(qbitrr, qb_request) if qb_request is not None else None
+            resolved_ta_request = resolve_local_refs(torrentarr, ta_request) if ta_request is not None else None
+            qb_required = isinstance(resolved_qb_request, dict) and resolved_qb_request.get("required", False)
+            ta_required = isinstance(resolved_ta_request, dict) and resolved_ta_request.get("required", False)
             if qb_request is not None:
                 if ta_request is None:
                     errors.append(f"missing request body on {method.upper()} {path}")
                 else:
-                    resolved_qb_request = resolve_local_refs(qbitrr, qb_request)
-                    resolved_ta_request = resolve_local_refs(torrentarr, ta_request)
-                    qb_required = isinstance(resolved_qb_request, dict) and resolved_qb_request.get("required", False)
-                    ta_required = isinstance(resolved_ta_request, dict) and resolved_ta_request.get("required", False)
-                    if qb_required and not ta_required:
-                        errors.append(f"request body is not required on {method.upper()} {path}")
                     compare_content_schemas(
                         errors,
                         torrentarr,
@@ -194,6 +192,8 @@ def compare(torrentarr: dict, qbitrr: dict, allowed_extensions: set[str] | None 
                         f"request body on {method.upper()} {path}",
                         f"missing request body media {{media}} on {method.upper()} {path}",
                     )
+            if qb_required != ta_required:
+                errors.append(f"request body requiredness differs on {method.upper()} {path}")
 
             qb_responses = qb_operation.get("responses", {})
             ta_responses = ta_operation.get("responses", {})

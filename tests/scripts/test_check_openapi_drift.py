@@ -94,9 +94,99 @@ class OpenApiDriftTests(unittest.TestCase):
 
         result = "\n".join(module.compare(torrentarr, upstream, set()))
 
-        self.assertIn("request body is not required on POST /web/items", result)
+        self.assertIn("request body requiredness differs on POST /web/items", result)
         self.assertIn("request body on POST /web/items schema differs for application/json", result)
         self.assertIn("response 200 on POST /web/items schema differs for application/json", result)
+
+    def test_reports_request_body_requiredness_differences_in_both_directions(self):
+        for upstream_required, torrentarr_required in ((True, False), (False, True)):
+            with self.subTest(
+                upstream_required=upstream_required,
+                torrentarr_required=torrentarr_required,
+            ):
+                upstream_operation = {
+                    "requestBody": {
+                        "required": upstream_required,
+                        "content": {"application/json": {}},
+                    },
+                    "responses": {"200": {}},
+                }
+                torrentarr_operation = {
+                    "requestBody": {
+                        "required": torrentarr_required,
+                        "content": {"application/json": {}},
+                    },
+                    "responses": {"200": {}},
+                }
+
+                result = module.compare(
+                    document({"/web/items": {"post": torrentarr_operation}}),
+                    document({"/web/items": {"post": upstream_operation}}),
+                    set(),
+                )
+
+                self.assertIn("request body requiredness differs on POST /web/items", result)
+
+    def test_treats_missing_request_body_as_optional_for_requiredness(self):
+        upstream_operation = {"responses": {"200": {}}}
+        required_torrentarr_operation = {
+            "requestBody": {"required": True, "content": {"application/json": {}}},
+            "responses": {"200": {}},
+        }
+        optional_torrentarr_operation = {
+            "requestBody": {"content": {"application/json": {}}},
+            "responses": {"200": {}},
+        }
+
+        required_result = module.compare(
+            document({"/web/items": {"post": required_torrentarr_operation}}),
+            document({"/web/items": {"post": upstream_operation}}),
+            set(),
+        )
+        optional_result = module.compare(
+            document({"/web/items": {"post": optional_torrentarr_operation}}),
+            document({"/web/items": {"post": upstream_operation}}),
+            set(),
+        )
+
+        self.assertIn("request body requiredness differs on POST /web/items", required_result)
+        self.assertEqual(optional_result, [])
+
+    def test_preserves_missing_request_body_error(self):
+        upstream_operation = {
+            "requestBody": {"content": {"application/json": {}}},
+            "responses": {"200": {}},
+        }
+        torrentarr_operation = {"responses": {"200": {}}}
+
+        result = module.compare(
+            document({"/web/items": {"post": torrentarr_operation}}),
+            document({"/web/items": {"post": upstream_operation}}),
+            set(),
+        )
+
+        self.assertIn("missing request body on POST /web/items", result)
+        self.assertNotIn("request body requiredness differs on POST /web/items", result)
+
+    def test_accepts_matching_request_body_requiredness(self):
+        for required in (False, True):
+            with self.subTest(required=required):
+                operation = {
+                    "requestBody": {
+                        "required": required,
+                        "content": {"application/json": {}},
+                    },
+                    "responses": {"200": {}},
+                }
+
+                self.assertEqual(
+                    module.compare(
+                        document({"/web/items": {"post": operation}}),
+                        document({"/web/items": {"post": operation}}),
+                        set(),
+                    ),
+                    [],
+                )
 
     def test_accepts_equivalent_schemas_with_different_reference_names(self):
         upstream = document(
