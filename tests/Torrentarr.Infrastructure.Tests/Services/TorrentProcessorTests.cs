@@ -444,7 +444,7 @@ public sealed class TorrentProcessorTests : IDisposable
         }));
 
         var cache = new TorrentCacheService(NullLogger<TorrentCacheService>.Instance);
-        cache.MarkFileFiltered(hash);
+        cache.MarkFileFiltered(instance, hash);
         var pathTracker = new ImportPathTracker();
         pathTracker.MarkScanned("/downloads/completed/item", hash);
 
@@ -558,7 +558,7 @@ public sealed class TorrentProcessorTests : IDisposable
             "ProcessSingleTorrentAsync",
             BindingFlags.NonPublic | BindingFlags.Instance)!;
 
-        cache.IsFileFiltered(hash).Should().BeFalse("complete-first torrents skip Branch 9 file filtering");
+        cache.IsFileFiltered(instance, hash).Should().BeFalse("complete-first torrents skip Branch 9 file filtering");
 
         await (Task)method.Invoke(processor, new object[] { torrent, category, stats, CancellationToken.None })!;
         (await _db.TorrentLibrary.SingleAsync(t => t.Hash == hash && t.QbitInstance == instance)).Imported
@@ -610,7 +610,73 @@ public sealed class TorrentProcessorTests : IDisposable
 
         await (Task)method.Invoke(processor, [torrent, category, new TorrentProcessingStats(), CancellationToken.None])!;
 
-        cache.IsFileFiltered(hash).Should().BeTrue();
+        cache.IsFileFiltered(instance, hash).Should().BeTrue();
+    }
+
+    [Fact]
+    public void ResolveStalledSettings_UsesQBitCategoryOverrideForQBitManagedTorrent()
+    {
+        var config = new TorrentarrConfig
+        {
+            QBitInstances =
+            {
+                ["seedbox"] = new QBitConfig
+                {
+                    CategorySeeding = new CategorySeedingConfig
+                    {
+                        StalledDelay = 30,
+                        IgnoreTorrentsYoungerThan = 300,
+                        Categories =
+                        [
+                            new CategorySeedingCategoryOverride
+                            {
+                                Name = " movies ",
+                                StalledDelay = 7,
+                                IgnoreTorrentsYoungerThan = 42
+                            }
+                        ]
+                    }
+                }
+            }
+        };
+        var torrent = new TorrentInfo
+        {
+            QBitInstanceName = "seedbox",
+            Category = "movies"
+        };
+
+        var result = TorrentProcessor.ResolveStalledSettings(config, torrent, arrConfig: null);
+
+        result.StalledDelay.Should().Be(7);
+        result.IgnoreTorrentsYoungerThan.Should().Be(42);
+    }
+
+    [Fact]
+    public void ResolveStalledSettings_PrefersArrTorrentSettings()
+    {
+        var config = new TorrentarrConfig
+        {
+            QBitInstances =
+            {
+                ["qBit"] = new QBitConfig
+                {
+                    CategorySeeding = new CategorySeedingConfig
+                    {
+                        StalledDelay = 30,
+                        IgnoreTorrentsYoungerThan = 300
+                    }
+                }
+            }
+        };
+        var torrent = new TorrentInfo { QBitInstanceName = "qBit", Category = "radarr" };
+        var arr = new ArrInstanceConfig();
+        arr.Torrent.StalledDelay = 12;
+        arr.Torrent.IgnoreTorrentsYoungerThan = 120;
+
+        var result = TorrentProcessor.ResolveStalledSettings(config, torrent, arr);
+
+        result.StalledDelay.Should().Be(12);
+        result.IgnoreTorrentsYoungerThan.Should().Be(120);
     }
 
     private static void RegisterTestClient(

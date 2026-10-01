@@ -1,5 +1,4 @@
 using System.Text.RegularExpressions;
-using System.Collections.Concurrent;
 using Torrentarr.Core.Configuration;
 using Torrentarr.Core.Models;
 using Torrentarr.Core.Services;
@@ -34,7 +33,6 @@ public class TorrentProcessor : ITorrentProcessor
     private readonly IMediaValidationService? _mediaValidation;
     private readonly DatabaseRestartCoordinator _restartCoordinator;
     private readonly StalledUploadTracker? _stalledUploads;
-    private readonly ConcurrentDictionary<string, DateTimeOffset> _allowlistWarningCache = new(StringComparer.OrdinalIgnoreCase);
     private static readonly TimeSpan AllowlistWarningLifetime = TimeSpan.FromMinutes(5);
 
     private readonly HashSet<string> _specialCategories;
@@ -401,8 +399,8 @@ public class TorrentProcessor : ITorrentProcessor
         var state = ParseTorrentState(torrent.State);
         var arrCfg = _config.ArrInstances.Values.FirstOrDefault(a =>
             CategoryPathHelper.CategoryEquals(a.Category, category));
-        var ignoreYoungerThan = arrCfg?.Torrent.IgnoreTorrentsYoungerThan
-            ?? _config.Settings.IgnoreTorrentsYoungerThan;
+        var stalledSettings = ResolveStalledSettings(_config, torrent, arrCfg);
+        var ignoreYoungerThan = stalledSettings.IgnoreTorrentsYoungerThan;
         var timeNow = DateTimeOffset.UtcNow.ToUnixTimeSeconds();
 
         // Cache torrent metadata
@@ -433,7 +431,14 @@ public class TorrentProcessor : ITorrentProcessor
         var stalledIgnore = false;
         if (state is TorrentState.MetadataDownloading or TorrentState.StalledDownloading or TorrentState.Downloading)
         {
-            stalledIgnore = await StalledCheckAsync(torrent, state, arrCfg, timeNow, ct);
+            stalledIgnore = await StalledCheckAsync(
+                torrent,
+                state,
+                arrCfg,
+                stalledSettings.StalledDelay,
+                stalledSettings.IgnoreTorrentsYoungerThan,
+                timeNow,
+                ct);
         }
 
         // If ignored via tag: clean up seeding/free-space tags and skip (qBitrr: lines 6094-6098)
@@ -525,24 +530,26 @@ public class TorrentProcessor : ITorrentProcessor
             && !HasTag(torrent, FreeSpacePausedTag)
             && !stalledIgnore)
         {
-            await ProcessStalledTorrentAsync(torrent, "Stalled State", client, arrCfg, stats, timeNow, ct);
+            await ProcessStalledTorrentAsync(
+                torrent, "Stalled State", client, stats,
+                stalledSettings.IgnoreTorrentsYoungerThan, timeNow, ct);
         }
         // Branch 9: Downloading + not yet file-filtered → file filter (qBitrr line 6141-6147)
         else if (IsActiveDownloadingState(state)
             && state != TorrentState.MetadataDownloading
-            && !_cache.AreFilePrioritiesApplied(torrent.Hash))
+            && !_cache.AreFilePrioritiesApplied(torrent.QBitInstanceName, torrent.Hash))
         {
             if (arrCfg != null)
             {
                 var filterResult = await ApplyFileFilterAsync(torrent, arrCfg, client, completed: false, ct);
                 if (filterResult.Deleted) return;
                 if (filterResult.Ready)
-                    _cache.MarkFilePrioritiesApplied(torrent.Hash);
+                    _cache.MarkFilePrioritiesApplied(torrent.QBitInstanceName, torrent.Hash);
             }
             else
             {
-                _cache.MarkFilePrioritiesApplied(torrent.Hash);
-                _cache.MarkFileFiltered(torrent.Hash);
+                _cache.MarkFilePrioritiesApplied(torrent.QBitInstanceName, torrent.Hash);
+                _cache.MarkFileFiltered(torrent.QBitInstanceName, torrent.Hash);
             }
         }
         // Branch 10: In timed ignore cache → resume if stopped, else skip (qBitrr line 6148-6163)
@@ -590,7 +597,7 @@ public class TorrentProcessor : ITorrentProcessor
             && !HasTag(torrent, IgnoredTag)
             && !HasTag(torrent, FreeSpacePausedTag)
             && !stalledIgnore
-            && _cache.AreFilePrioritiesApplied(torrent.Hash))
+            && _cache.AreFilePrioritiesApplied(torrent.QBitInstanceName, torrent.Hash))
         {
             await ProcessPercentageThresholdAsync(torrent, maxEta, client, stats, ct);
         }
@@ -600,7 +607,7 @@ public class TorrentProcessor : ITorrentProcessor
         // IsFileFiltered so the branch matches qBitrr's sent_to_scan + filtered skip path.
         else if (_pathTracker?.IsHashAlreadyScanned(torrent.Hash) == true
                  || (await IsImportedInDatabaseAsync(torrent.Hash, torrent.QBitInstanceName, ct)
-                     && _cache.IsFileFiltered(torrent.Hash)))
+                     && _cache.IsFileFiltered(torrent.QBitInstanceName, torrent.Hash)))
         {
             var finalizedImport = await TryFinalizeImportedTorrentAsync(torrent, ct);
             if (finalizedImport)
@@ -624,13 +631,13 @@ public class TorrentProcessor : ITorrentProcessor
             && torrent.CompletionOn < timeNow - 60)
         {
             stats.Completed++;
-            if (arrCfg != null && !_cache.IsFileFiltered(torrent.Hash))
+            if (arrCfg != null && !_cache.IsFileFiltered(torrent.QBitInstanceName, torrent.Hash))
             {
                 var filterResult = await ApplyFileFilterAsync(torrent, arrCfg, client, completed: true, ct);
                 if (filterResult.Deleted || !filterResult.Ready)
                     return;
 
-                _cache.MarkFileFiltered(torrent.Hash);
+                _cache.MarkFileFiltered(torrent.QBitInstanceName, torrent.Hash);
             }
             if (leaveAlone || state == TorrentState.ForcedUploading)
             {
@@ -650,7 +657,7 @@ public class TorrentProcessor : ITorrentProcessor
             && torrent.AddedOn > 0
             && !string.IsNullOrEmpty(torrent.ContentPath)
             && GetRemoveMode(torrent, arrCfg) != -1
-            && _cache.IsFileFiltered(torrent.Hash))
+            && _cache.IsFileFiltered(torrent.QBitInstanceName, torrent.Hash))
         {
             if (leaveAlone || state == TorrentState.ForcedUploading)
             {
@@ -687,15 +694,17 @@ public class TorrentProcessor : ITorrentProcessor
         {
             if (timeNow > torrent.AddedOn + ignoreYoungerThan
                 && torrent.Availability < 1
-                && _cache.AreFilePrioritiesApplied(torrent.Hash)
+                && _cache.AreFilePrioritiesApplied(torrent.QBitInstanceName, torrent.Hash)
                 && !HasTag(torrent, IgnoredTag)
                 && !HasTag(torrent, FreeSpacePausedTag)
                 && !stalledIgnore)
             {
                 // Unavailable torrent past age gate → mark for deletion
-                await ProcessStalledTorrentAsync(torrent, "Unavailable", client, arrCfg, stats, timeNow, ct);
+                await ProcessStalledTorrentAsync(
+                    torrent, "Unavailable", client, stats,
+                    stalledSettings.IgnoreTorrentsYoungerThan, timeNow, ct);
             }
-            else if (_cache.AreFilePrioritiesApplied(torrent.Hash))
+            else if (_cache.AreFilePrioritiesApplied(torrent.QBitInstanceName, torrent.Hash))
             {
                 // Already filtered, skip
                 _logger.LogTrace("Already cleaned up: [{Name}]", torrent.Name);
@@ -708,7 +717,7 @@ public class TorrentProcessor : ITorrentProcessor
                     var filterResult = await ApplyFileFilterAsync(torrent, arrCfg, client, completed: false, ct);
                     if (filterResult.Deleted) return;
                     if (filterResult.Ready)
-                        _cache.MarkFilePrioritiesApplied(torrent.Hash);
+                        _cache.MarkFilePrioritiesApplied(torrent.QBitInstanceName, torrent.Hash);
                 }
             }
         }
@@ -806,13 +815,11 @@ public class TorrentProcessor : ITorrentProcessor
         TorrentInfo torrent,
         TorrentState state,
         ArrInstanceConfig? arrCfg,
+        int stalledDelay,
+        int ignoreYoungerThan,
         long timeNow,
         CancellationToken ct)
     {
-        var stalledDelay = arrCfg?.Torrent.StalledDelay ?? 15;
-        var ignoreYoungerThan = arrCfg?.Torrent.IgnoreTorrentsYoungerThan
-            ?? _config.Settings.IgnoreTorrentsYoungerThan;
-
         // If stalled delay is disabled (< 0): stalled_ignore = False (process immediately)
         if (stalledDelay < 0)
             return false;
@@ -835,7 +842,7 @@ public class TorrentProcessor : ITorrentProcessor
         var isStalledState = (state is TorrentState.MetadataDownloading or TorrentState.StalledDownloading)
             && !isIgnored && !isFreeSpacePaused;
         var isUnavailableDownloading = torrent.Availability < 1
-            && _cache.AreFilePrioritiesApplied(torrent.Hash)
+            && _cache.AreFilePrioritiesApplied(torrent.QBitInstanceName, torrent.Hash)
             && state == TorrentState.Downloading
             && !isIgnored && !isFreeSpacePaused;
 
@@ -888,12 +895,9 @@ public class TorrentProcessor : ITorrentProcessor
     /// </summary>
     private async Task ProcessStalledTorrentAsync(
         TorrentInfo torrent, string reason,
-        QBittorrentClient client, ArrInstanceConfig? arrCfg,
-        TorrentProcessingStats stats, long timeNow, CancellationToken ct)
+        QBittorrentClient client, TorrentProcessingStats stats,
+        int ignoreYoungerThan, long timeNow, CancellationToken ct)
     {
-        var ignoreYoungerThan = arrCfg?.Torrent.IgnoreTorrentsYoungerThan
-            ?? _config.Settings.IgnoreTorrentsYoungerThan;
-
         // qBitrr line 5247-5252: only delete if added AND last_activity are both past the age threshold
         if (torrent.AddedOn < timeNow - ignoreYoungerThan
             && torrent.LastActivity < timeNow - ignoreYoungerThan)
@@ -1424,11 +1428,40 @@ public class TorrentProcessor : ITorrentProcessor
     private void WarnAllowlistBlocked(TorrentInfo torrent, string reason)
     {
         var now = DateTimeOffset.UtcNow;
-        if (_allowlistWarningCache.TryGetValue(torrent.Hash, out var last) && now - last < AllowlistWarningLifetime)
+        if (!_cache.ShouldLogAllowlistWarning(
+                torrent.QBitInstanceName,
+                torrent.Hash,
+                now,
+                AllowlistWarningLifetime))
+        {
             return;
+        }
 
-        _allowlistWarningCache[torrent.Hash] = now;
         _logger.LogWarning("Import blocked by file allowlist for [{Name}] ({Hash}): {Reason}", torrent.Name, torrent.Hash, reason);
+    }
+
+    internal static (int StalledDelay, int IgnoreTorrentsYoungerThan) ResolveStalledSettings(
+        TorrentarrConfig config,
+        TorrentInfo torrent,
+        ArrInstanceConfig? arrConfig)
+    {
+        if (arrConfig != null)
+        {
+            return (
+                arrConfig.Torrent.StalledDelay,
+                arrConfig.Torrent.IgnoreTorrentsYoungerThan);
+        }
+
+        if (config.QBitInstances.TryGetValue(torrent.QBitInstanceName, out var qBitConfig))
+        {
+            var effective = SeedingService.ApplyCategoryOverride(
+                qBitConfig.CategorySeeding,
+                torrent.Category,
+                qBitConfig.MatchSubcategories);
+            return (effective.StalledDelay, effective.IgnoreTorrentsYoungerThan);
+        }
+
+        return (15, config.Settings.IgnoreTorrentsYoungerThan);
     }
 
     private void TryDeleteTorrentOwnedFile(TorrentInfo torrent, string relativePath)

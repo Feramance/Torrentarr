@@ -1,5 +1,4 @@
 using System.Reflection;
-using System.Collections.Concurrent;
 using FluentAssertions;
 using Microsoft.Data.Sqlite;
 using Microsoft.EntityFrameworkCore;
@@ -167,19 +166,19 @@ public sealed class TorrentProcessorImportAllowlistTests : IDisposable
         var seeding = new Mock<ISeedingService>();
         seeding.Setup(s => s.HnrAllowsDeleteAsync(torrent, It.IsAny<string>(), It.IsAny<CancellationToken>()))
             .ReturnsAsync(false);
-        var processor = CreateProcessor(seeding.Object);
+        var cache = new TorrentCacheService(NullLogger<TorrentCacheService>.Instance);
+        var firstProcessor = CreateProcessor(seeding.Object, cache);
+        var secondProcessor = CreateProcessor(seeding.Object, cache);
         var client = new FileClient([TorrentFile(0, "Movie/sample.txt")]);
-        var cacheField = typeof(TorrentProcessor).GetField("_allowlistWarningCache", BindingFlags.NonPublic | BindingFlags.Instance)!;
-        var warnings = (ConcurrentDictionary<string, DateTimeOffset>)cacheField.GetValue(processor)!;
+        var started = DateTimeOffset.UtcNow;
 
-        await ApplyAsync(processor, torrent, Config(autoDelete: false), client, completed: true);
-        var first = warnings[torrent.Hash];
-        await ApplyAsync(processor, torrent, Config(autoDelete: false), client, completed: true);
-        warnings[torrent.Hash].Should().Be(first);
+        await ApplyAsync(firstProcessor, torrent, Config(autoDelete: false), client, completed: true);
+        cache.ShouldLogAllowlistWarning("qBit", torrent.Hash, started.AddMinutes(1), TimeSpan.FromMinutes(5))
+            .Should().BeFalse();
 
-        warnings[torrent.Hash] = DateTimeOffset.UtcNow.AddMinutes(-6);
-        await ApplyAsync(processor, torrent, Config(autoDelete: false), client, completed: true);
-        warnings[torrent.Hash].Should().BeAfter(first);
+        await ApplyAsync(secondProcessor, torrent, Config(autoDelete: false), client, completed: true);
+        cache.ShouldLogAllowlistWarning("qBit", torrent.Hash, started.AddMinutes(6), TimeSpan.FromMinutes(5))
+            .Should().BeTrue();
     }
 
     [Fact]
@@ -260,12 +259,14 @@ public sealed class TorrentProcessorImportAllowlistTests : IDisposable
         }
     }
 
-    private TorrentProcessor CreateProcessor(ISeedingService? seeding = null) => new(
+    private TorrentProcessor CreateProcessor(
+        ISeedingService? seeding = null,
+        ITorrentCacheService? cache = null) => new(
         NullLogger<TorrentProcessor>.Instance,
         new QBittorrentConnectionManager(NullLogger<QBittorrentConnectionManager>.Instance),
         _db,
         new TorrentarrConfig(),
-        new TorrentCacheService(NullLogger<TorrentCacheService>.Instance),
+        cache ?? new TorrentCacheService(NullLogger<TorrentCacheService>.Instance),
         new DatabaseRestartCoordinator(),
         seedingService: seeding);
 
