@@ -156,7 +156,25 @@ public sealed class TorrentProcessorImportAllowlistTests : IDisposable
 
         Ready(result).Should().BeFalse();
         Deleted(result).Should().BeFalse();
+        client.PriorityCalls.Should().Be(1);
         seeding.VerifyAll();
+    }
+
+    [Fact]
+    public async Task CompletedTorrent_WhenStorageIsUnavailable_RemainsPending()
+    {
+        var unavailableRoot = Path.Combine(Path.GetTempPath(), $"torrentarr-offline-{Guid.NewGuid():N}");
+        var torrent = Torrent(Path.Combine(unavailableRoot, "Movie"));
+        torrent.SavePath = unavailableRoot;
+        var client = new FileClient([
+            TorrentFile(0, "Movie/movie.mkv"),
+            TorrentFile(1, "Movie/sample.txt")]);
+
+        var result = await ApplyAsync(
+            CreateProcessor(), torrent, Config(autoDelete: false), client, completed: true);
+
+        Ready(result).Should().BeFalse();
+        Directory.Exists(unavailableRoot).Should().BeFalse();
     }
 
     [Fact]

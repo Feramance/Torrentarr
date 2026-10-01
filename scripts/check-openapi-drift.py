@@ -69,6 +69,22 @@ def content(spec: dict, container: dict) -> dict:
     return resolved.get("content", {}) if isinstance(resolved, dict) else {}
 
 
+def normalize_schema(value: Any, parent_key: str | None = None) -> Any:
+    """Normalize unordered schema keywords while preserving literal array order."""
+    if isinstance(value, dict):
+        return {key: normalize_schema(item, key) for key, item in value.items()}
+    if isinstance(value, list):
+        normalized = [normalize_schema(item) for item in value]
+        if parent_key in {"required", "enum"}:
+            return sorted(normalized, key=lambda item: json.dumps(item, sort_keys=True, separators=(",", ":")))
+        return normalized
+    return value
+
+
+def resolved_schema(spec: dict, container: dict) -> Any:
+    return normalize_schema(resolve_local_refs(spec, container.get("schema")))
+
+
 def compare_content_schemas(
     errors: list[str],
     torrentarr_spec: dict,
@@ -83,8 +99,8 @@ def compare_content_schemas(
     for media in sorted(set(qb_content) - set(ta_content)):
         errors.append(missing_media_message.format(media=media))
     for media in sorted(set(qb_content) & set(ta_content)):
-        qb_schema = resolve_local_refs(qbitrr_spec, qb_content[media].get("schema"))
-        ta_schema = resolve_local_refs(torrentarr_spec, ta_content[media].get("schema"))
+        qb_schema = resolved_schema(qbitrr_spec, qb_content[media])
+        ta_schema = resolved_schema(torrentarr_spec, ta_content[media])
         if qb_schema != ta_schema:
             errors.append(f"{context} schema differs for {media}")
 
@@ -118,8 +134,15 @@ def compare(torrentarr: dict, qbitrr: dict, allowed_extensions: set[str] | None 
             for key, required_parameter in qb_parameters.items():
                 if key not in ta_parameters:
                     errors.append(f"missing parameter {key[0]}:{key[1]} on {method.upper()} {path}")
-                elif required_parameter.get("required", False) and not ta_parameters[key].get("required", False):
+                    continue
+
+                torrentarr_parameter = ta_parameters[key]
+                if required_parameter.get("required", False) and not torrentarr_parameter.get("required", False):
                     errors.append(f"parameter {key[0]}:{key[1]} is not required on {method.upper()} {path}")
+                qb_schema = resolved_schema(qbitrr, required_parameter)
+                ta_schema = resolved_schema(torrentarr, torrentarr_parameter)
+                if qb_schema != ta_schema:
+                    errors.append(f"parameter {key[0]}:{key[1]} schema differs on {method.upper()} {path}")
 
             qb_request = qb_operation.get("requestBody")
             ta_request = ta_operation.get("requestBody")

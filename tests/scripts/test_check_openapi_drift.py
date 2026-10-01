@@ -138,6 +138,75 @@ class OpenApiDriftTests(unittest.TestCase):
 
         self.assertEqual(module.compare(torrentarr, upstream, set()), [])
 
+    def test_reports_parameter_schema_differences(self):
+        upstream_operation = {
+            "parameters": [
+                {"in": "query", "name": "page", "schema": {"type": "integer", "format": "int32"}}
+            ],
+            "responses": {"200": {}},
+        }
+        torrentarr_operation = {
+            "parameters": [{"in": "query", "name": "page", "schema": {"type": "string"}}],
+            "responses": {"200": {}},
+        }
+
+        result = module.compare(
+            document({"/web/items": {"get": torrentarr_operation}}),
+            document({"/web/items": {"get": upstream_operation}}),
+            set(),
+        )
+
+        self.assertIn("parameter query:page schema differs on GET /web/items", result)
+
+    def test_accepts_reordered_required_and_enum_schema_values(self):
+        upstream_schema = {
+            "type": "object",
+            "required": ["id", "kind"],
+            "properties": {
+                "kind": {"type": "string", "enum": ["movie", "series"]},
+                "coordinates": {"type": "array", "default": [1, 2]},
+            },
+        }
+        torrentarr_schema = {
+            "type": "object",
+            "required": ["kind", "id"],
+            "properties": {
+                "kind": {"type": "string", "enum": ["series", "movie"]},
+                "coordinates": {"type": "array", "default": [1, 2]},
+            },
+        }
+
+        upstream = document({
+            "/web/items": {
+                "get": {"responses": {"200": {"content": {"application/json": {"schema": upstream_schema}}}}}
+            }
+        })
+        torrentarr = document({
+            "/web/items": {
+                "get": {"responses": {"200": {"content": {"application/json": {"schema": torrentarr_schema}}}}}
+            }
+        })
+
+        self.assertEqual(module.compare(torrentarr, upstream, set()), [])
+
+    def test_preserves_order_for_literal_array_values(self):
+        upstream_schema = {"type": "array", "default": [1, 2]}
+        torrentarr_schema = {"type": "array", "default": [2, 1]}
+        upstream = document({
+            "/web/items": {
+                "get": {"responses": {"200": {"content": {"application/json": {"schema": upstream_schema}}}}}
+            }
+        })
+        torrentarr = document({
+            "/web/items": {
+                "get": {"responses": {"200": {"content": {"application/json": {"schema": torrentarr_schema}}}}}
+            }
+        })
+
+        result = module.compare(torrentarr, upstream, set())
+
+        self.assertIn("response 200 on GET /web/items schema differs for application/json", result)
+
 
 if __name__ == "__main__":
     unittest.main()

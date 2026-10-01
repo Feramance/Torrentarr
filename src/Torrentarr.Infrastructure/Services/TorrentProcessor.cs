@@ -1368,6 +1368,32 @@ public class TorrentProcessor : ITorrentProcessor
         var excludedIds = excludedFiles.Select(f => f.Index).ToArray();
         var allowedCount = meaningfulFiles.Count - excludedFiles.Count;
 
+        if (excludedIds.Length > 0)
+        {
+            // Set excluded files to priority 0 (do not download), including when H&R
+            // prevents deletion of a torrent whose every meaningful file is excluded.
+            _logger.LogDebug(
+                "File filter: setting {Excluded}/{Total} files to priority 0 in [{Name}]: {Files}",
+                excludedIds.Length, files.Count, torrent.Name,
+                string.Join(", ", files.Where(f => excludedIds.Contains(f.Index)).Select(f => f.Name)));
+            bool priorityAccepted;
+            try
+            {
+                priorityAccepted = await client.SetFilePriorityAsync(torrent.Hash, excludedIds, 0, ct);
+            }
+            catch (Exception ex)
+            {
+                _logger.LogWarning(ex, "qBittorrent rejected file filtering for [{Name}] ({Hash}); will retry", torrent.Name, torrent.Hash);
+                return FileFilterResult.PendingResult;
+            }
+
+            if (!priorityAccepted)
+            {
+                _logger.LogWarning("qBittorrent did not accept file filtering for [{Name}] ({Hash}); will retry", torrent.Name, torrent.Hash);
+                return FileFilterResult.PendingResult;
+            }
+        }
+
         if (allowedCount == 0)
         {
             WarnAllowlistBlocked(torrent, "no allowed files remain");
@@ -1386,30 +1412,14 @@ public class TorrentProcessor : ITorrentProcessor
         if (excludedIds.Length == 0)
             return FileFilterResult.ReadyResult;
 
-        // Set excluded files to priority 0 (do not download)
-        _logger.LogDebug(
-            "File filter: setting {Excluded}/{Total} files to priority 0 in [{Name}]: {Files}",
-            excludedIds.Length, files.Count, torrent.Name,
-            string.Join(", ", files.Where(f => excludedIds.Contains(f.Index)).Select(f => f.Name)));
-        bool priorityAccepted;
-        try
-        {
-            priorityAccepted = await client.SetFilePriorityAsync(torrent.Hash, excludedIds, 0, ct);
-        }
-        catch (Exception ex)
-        {
-            _logger.LogWarning(ex, "qBittorrent rejected file filtering for [{Name}] ({Hash}); will retry", torrent.Name, torrent.Hash);
-            return FileFilterResult.PendingResult;
-        }
-
-        if (!priorityAccepted)
-        {
-            _logger.LogWarning("qBittorrent did not accept file filtering for [{Name}] ({Hash}); will retry", torrent.Name, torrent.Hash);
-            return FileFilterResult.PendingResult;
-        }
-
         if (!completed)
             return FileFilterResult.ReadyResult;
+
+        if (!TorrentStorageAvailable(torrent))
+        {
+            WarnAllowlistBlocked(torrent, "content storage is unavailable");
+            return FileFilterResult.PendingResult;
+        }
 
         if (cfg.AutoDelete)
         {
@@ -1489,6 +1499,17 @@ public class TorrentProcessor : ITorrentProcessor
             // An unsafe or malformed path must remain blocked; it must never be treated as deleted.
             return true;
         }
+    }
+
+    private static bool TorrentStorageAvailable(TorrentInfo torrent)
+    {
+        if (!string.IsNullOrWhiteSpace(torrent.ContentPath)
+            && (File.Exists(torrent.ContentPath) || Directory.Exists(torrent.ContentPath)))
+        {
+            return true;
+        }
+
+        return !string.IsNullOrWhiteSpace(torrent.SavePath) && Directory.Exists(torrent.SavePath);
     }
 
     private static string ResolveTorrentOwnedPath(TorrentInfo torrent, string relativePath)
