@@ -528,6 +528,7 @@ public class TorrentProcessor : ITorrentProcessor
         else if (state is TorrentState.MetadataDownloading or TorrentState.StalledDownloading
             && !HasTag(torrent, IgnoredTag)
             && !HasTag(torrent, FreeSpacePausedTag)
+            && StalledHandlingEnabled(stalledSettings.StalledDelay)
             && !stalledIgnore)
         {
             await ProcessStalledTorrentAsync(
@@ -697,6 +698,7 @@ public class TorrentProcessor : ITorrentProcessor
                 && _cache.AreFilePrioritiesApplied(torrent.QBitInstanceName, torrent.Hash)
                 && !HasTag(torrent, IgnoredTag)
                 && !HasTag(torrent, FreeSpacePausedTag)
+                && StalledHandlingEnabled(stalledSettings.StalledDelay)
                 && !stalledIgnore)
             {
                 // Unavailable torrent past age gate → mark for deletion
@@ -820,7 +822,7 @@ public class TorrentProcessor : ITorrentProcessor
         long timeNow,
         CancellationToken ct)
     {
-        // If stalled delay is disabled (< 0): stalled_ignore = False (process immediately)
+        // Deletion branches separately suppress stalled handling when this is disabled.
         if (stalledDelay < 0)
             return false;
 
@@ -1419,7 +1421,7 @@ public class TorrentProcessor : ITorrentProcessor
         if (!completed)
             return FileFilterResult.ReadyResult;
 
-        if (!TorrentStorageAvailable(torrent))
+        if (!TorrentStorageAvailable(torrent, meaningfulFiles))
         {
             WarnAllowlistBlocked(torrent, "content storage is unavailable");
             return FileFilterResult.PendingResult;
@@ -1488,6 +1490,8 @@ public class TorrentProcessor : ITorrentProcessor
         return (15, config.Settings.IgnoreTorrentsYoungerThan);
     }
 
+    internal static bool StalledHandlingEnabled(int stalledDelay) => stalledDelay >= 0;
+
     private void TryDeleteTorrentOwnedFile(TorrentInfo torrent, string relativePath)
     {
         try
@@ -1515,12 +1519,29 @@ public class TorrentProcessor : ITorrentProcessor
         }
     }
 
-    private static bool TorrentStorageAvailable(TorrentInfo torrent)
+    private static bool TorrentStorageAvailable(
+        TorrentInfo torrent,
+        IReadOnlyCollection<TorrentFile> expectedFiles)
     {
-        if (!string.IsNullOrWhiteSpace(torrent.ContentPath))
-            return File.Exists(torrent.ContentPath) || Directory.Exists(torrent.ContentPath);
+        var rootExists = !string.IsNullOrWhiteSpace(torrent.ContentPath)
+            ? File.Exists(torrent.ContentPath) || Directory.Exists(torrent.ContentPath)
+            : !string.IsNullOrWhiteSpace(torrent.SavePath) && Directory.Exists(torrent.SavePath);
+        if (!rootExists)
+            return false;
 
-        return !string.IsNullOrWhiteSpace(torrent.SavePath) && Directory.Exists(torrent.SavePath);
+        return expectedFiles.Any(file => TorrentOwnedFileAccessible(torrent, file.Name));
+    }
+
+    private static bool TorrentOwnedFileAccessible(TorrentInfo torrent, string relativePath)
+    {
+        try
+        {
+            return File.Exists(ResolveTorrentOwnedPath(torrent, relativePath));
+        }
+        catch
+        {
+            return false;
+        }
     }
 
     private static string ResolveTorrentOwnedPath(TorrentInfo torrent, string relativePath)

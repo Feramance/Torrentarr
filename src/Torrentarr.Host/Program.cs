@@ -679,16 +679,15 @@ try
 
                     foreach (var catName in monitoredForDefault)
                     {
-                        var torrentsInCat = allTorrents.Where(t =>
-                            CategoryPathHelper.MatchesConfigured(t.Category, new[] { catName }, prefix: true)
-                                == CategoryPathHelper.NormalizeCategory(catName)).ToList();
+                        var torrentsInCat = CategorySeedingApiResolver.SelectAggregateTorrents(
+                            allTorrents, catName, primaryQbit.MatchSubcategories);
                         var seedingTorrents = torrentsInCat.Where(t =>
                             t.State.Contains("seeding", StringComparison.OrdinalIgnoreCase) ||
                             t.State.Equals("uploading", StringComparison.OrdinalIgnoreCase)).ToList();
 
                         var managedBy = arrCategorySet.Contains(catName) ? "arr" : "qbit";
 
-                        var effectiveSeeding = Program.ResolveAggregateSeedingConfig(
+                        var effectiveSeeding = CategorySeedingApiResolver.ResolveAggregate(
                             cfg, primaryQbit, catName, torrentsInCat);
 
                         categories.Add(new
@@ -722,13 +721,12 @@ try
 
                 foreach (var catName in instCfg.ManagedCategories)
                 {
-                    var torrentsInCat = addlTorrents.Where(t =>
-                            CategoryPathHelper.MatchesConfigured(t.Category, new[] { catName }, prefix: true)
-                                == CategoryPathHelper.NormalizeCategory(catName)).ToList();
+                    var torrentsInCat = CategorySeedingApiResolver.SelectAggregateTorrents(
+                        addlTorrents, catName, instCfg.MatchSubcategories);
                     var seedingTorrents = torrentsInCat.Where(t =>
                         t.State.Contains("seeding", StringComparison.OrdinalIgnoreCase) ||
                         t.State.Equals("uploading", StringComparison.OrdinalIgnoreCase)).ToList();
-                    var effectiveSeeding = Program.ResolveAggregateSeedingConfig(
+                    var effectiveSeeding = CategorySeedingApiResolver.ResolveAggregate(
                         cfg, instCfg, catName, torrentsInCat);
 
                     categories.Add(new
@@ -1602,16 +1600,15 @@ try
                     var allTorrents = await client.GetTorrentsAsync();
                     foreach (var catName in monitoredForDefault)
                     {
-                        var torrentsInCat = allTorrents.Where(t =>
-                            CategoryPathHelper.MatchesConfigured(t.Category, new[] { catName }, prefix: true)
-                                == CategoryPathHelper.NormalizeCategory(catName)).ToList();
+                        var torrentsInCat = CategorySeedingApiResolver.SelectAggregateTorrents(
+                            allTorrents, catName, primaryQbit2.MatchSubcategories);
                         var seedingTorrents = torrentsInCat.Where(t =>
                             t.State.Contains("seeding", StringComparison.OrdinalIgnoreCase) ||
                             t.State.Equals("uploading", StringComparison.OrdinalIgnoreCase)).ToList();
 
                         var managedBy = arrCategorySet.Contains(catName) ? "arr" : "qbit";
 
-                        var effectiveSeeding = Program.ResolveAggregateSeedingConfig(
+                        var effectiveSeeding = CategorySeedingApiResolver.ResolveAggregate(
                             cfg, primaryQbit2, catName, torrentsInCat);
 
                         categories.Add(new
@@ -1642,13 +1639,12 @@ try
                 var addlTorrents = await addlClient.GetTorrentsAsync();
                 foreach (var catName in instCfg.ManagedCategories)
                 {
-                    var torrentsInCat = addlTorrents.Where(t =>
-                            CategoryPathHelper.MatchesConfigured(t.Category, new[] { catName }, prefix: true)
-                                == CategoryPathHelper.NormalizeCategory(catName)).ToList();
+                    var torrentsInCat = CategorySeedingApiResolver.SelectAggregateTorrents(
+                        addlTorrents, catName, instCfg.MatchSubcategories);
                     var seedingTorrents = torrentsInCat.Where(t =>
                         t.State.Contains("seeding", StringComparison.OrdinalIgnoreCase) ||
                         t.State.Equals("uploading", StringComparison.OrdinalIgnoreCase)).ToList();
-                    var effectiveSeeding = Program.ResolveAggregateSeedingConfig(
+                    var effectiveSeeding = CategorySeedingApiResolver.ResolveAggregate(
                         cfg, instCfg, catName, torrentsInCat);
                     categories.Add(new
                     {
@@ -3387,49 +3383,6 @@ public record SetPasswordRequest(
 // Make Program accessible to test projects (WebApplicationFactory<Program>)
 public partial class Program
 {
-    internal sealed record CategorySeedingApiConfig(
-        double MaxRatio,
-        int MaxTime,
-        int RemoveMode,
-        int DownloadLimit,
-        int UploadLimit);
-
-    internal static CategorySeedingApiConfig? ResolveAggregateSeedingConfig(
-        TorrentarrConfig config,
-        QBitConfig qbitConfig,
-        string configuredCategory,
-        IReadOnlyCollection<TorrentInfo> torrents)
-    {
-        var actualCategories = torrents
-            .Select(torrent => torrent.Category)
-            .Where(category => !string.IsNullOrWhiteSpace(category))
-            .Distinct(StringComparer.Ordinal)
-            .ToList();
-        if (actualCategories.Count == 0)
-            actualCategories.Add(configuredCategory);
-
-        CategorySeedingApiConfig Resolve(string category)
-        {
-            var effective = SeedingService.ApplyCategoryOverride(
-                qbitConfig.CategorySeeding, category, qbitConfig.MatchSubcategories);
-            var arrSeedingMode = config.ArrInstances.Values
-                .FirstOrDefault(arr => string.Equals(arr.Category, category, StringComparison.OrdinalIgnoreCase))
-                ?.Torrent.SeedingMode;
-            effective = SeedingLimitMerge.Merge(effective, arrSeedingMode, tracker: null);
-            return new CategorySeedingApiConfig(
-                effective.MaxUploadRatio,
-                effective.MaxSeedingTime,
-                effective.RemoveTorrent,
-                effective.DownloadRateLimitPerTorrent,
-                effective.UploadRateLimitPerTorrent);
-        }
-
-        var first = Resolve(actualCategories[0]);
-        return actualCategories.Skip(1).All(category => Resolve(category) == first)
-            ? first
-            : null;
-    }
-
     /// <summary>Result that does nothing when executed; used after ChallengeAsync() has already written the redirect.</summary>
     sealed class NoOpAfterChallengeResult : IResult
     {

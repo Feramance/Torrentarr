@@ -679,6 +679,13 @@ public sealed class TorrentProcessorTests : IDisposable
         result.IgnoreTorrentsYoungerThan.Should().Be(120);
     }
 
+    [Fact]
+    public void StalledHandlingEnabled_NegativeDelaySuppressesStalledProcessing()
+    {
+        TorrentProcessor.StalledHandlingEnabled(-1).Should().BeFalse();
+        TorrentProcessor.StalledHandlingEnabled(0).Should().BeTrue();
+    }
+
     private static void RegisterTestClient(
         QBittorrentConnectionManager manager,
         string instanceName,

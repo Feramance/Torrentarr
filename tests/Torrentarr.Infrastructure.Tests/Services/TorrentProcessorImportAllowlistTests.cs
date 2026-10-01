@@ -133,12 +133,32 @@ public sealed class TorrentProcessorImportAllowlistTests : IDisposable
     }
 
     [Fact]
-    public async Task CompletedTorrent_WithoutAutoDelete_IsReadyWhenDisallowedFileWasNeverWritten()
+    public async Task CompletedTorrent_WhenContentDirectoryIsEmpty_RemainsPending()
     {
         var root = Directory.CreateTempSubdirectory("torrentarr-no-file-");
         try
         {
             var content = Directory.CreateDirectory(Path.Combine(root.FullName, "Movie"));
+            var client = new FileClient([TorrentFile(0, "Movie/movie.mkv"), TorrentFile(1, "Movie/sample.txt")]);
+
+            var result = await ApplyAsync(CreateProcessor(), Torrent(content.FullName), Config(autoDelete: false), client, completed: true);
+
+            Ready(result).Should().BeFalse();
+        }
+        finally
+        {
+            root.Delete(recursive: true);
+        }
+    }
+
+    [Fact]
+    public async Task CompletedTorrent_WithoutAutoDelete_IsReadyWhenAllowedFileExistsAndDisallowedFileWasNeverWritten()
+    {
+        var root = Directory.CreateTempSubdirectory("torrentarr-no-disallowed-file-");
+        try
+        {
+            var content = Directory.CreateDirectory(Path.Combine(root.FullName, "Movie"));
+            await File.WriteAllTextAsync(Path.Combine(content.FullName, "movie.mkv"), "video");
             var client = new FileClient([TorrentFile(0, "Movie/movie.mkv"), TorrentFile(1, "Movie/sample.txt")]);
 
             var result = await ApplyAsync(CreateProcessor(), Torrent(content.FullName), Config(autoDelete: false), client, completed: true);

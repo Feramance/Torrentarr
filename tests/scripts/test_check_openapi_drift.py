@@ -248,6 +248,89 @@ class OpenApiDriftTests(unittest.TestCase):
 
         self.assertIn("parameter query:page schema differs on GET /web/items", result)
 
+    def test_compares_effective_parameter_serialization(self):
+        upstream_operation = {
+            "parameters": [
+                {
+                    "in": "query",
+                    "name": "tag",
+                    "schema": {"type": "array", "items": {"type": "string"}},
+                }
+            ],
+            "responses": {"200": {}},
+        }
+        matching_operation = {
+            "parameters": [
+                {
+                    "in": "query",
+                    "name": "tag",
+                    "style": "form",
+                    "explode": True,
+                    "schema": {"type": "array", "items": {"type": "string"}},
+                }
+            ],
+            "responses": {"200": {}},
+        }
+        mismatching_operation = {
+            "parameters": [
+                {
+                    "in": "query",
+                    "name": "tag",
+                    "style": "form",
+                    "explode": False,
+                    "schema": {"type": "array", "items": {"type": "string"}},
+                }
+            ],
+            "responses": {"200": {}},
+        }
+
+        matching_result = module.compare(
+            document({"/web/items": {"get": matching_operation}}),
+            document({"/web/items": {"get": upstream_operation}}),
+            set(),
+        )
+        mismatching_result = module.compare(
+            document({"/web/items": {"get": mismatching_operation}}),
+            document({"/web/items": {"get": upstream_operation}}),
+            set(),
+        )
+
+        self.assertEqual(matching_result, [])
+        self.assertIn("parameter query:tag on GET /web/items serialization differs", mismatching_result)
+
+    def test_compares_parameter_content_schemas(self):
+        upstream_operation = {
+            "parameters": [
+                {
+                    "in": "query",
+                    "name": "filter",
+                    "content": {"application/json": {"schema": {"type": "object"}}},
+                }
+            ],
+            "responses": {"200": {}},
+        }
+        torrentarr_operation = {
+            "parameters": [
+                {
+                    "in": "query",
+                    "name": "filter",
+                    "content": {"application/json": {"schema": {"type": "string"}}},
+                }
+            ],
+            "responses": {"200": {}},
+        }
+
+        result = module.compare(
+            document({"/web/items": {"get": torrentarr_operation}}),
+            document({"/web/items": {"get": upstream_operation}}),
+            set(),
+        )
+
+        self.assertIn(
+            "parameter query:filter on GET /web/items schema differs for application/json",
+            result,
+        )
+
     def test_reports_parameter_requiredness_differences_in_both_directions(self):
         for upstream_required, torrentarr_required in ((True, False), (False, True)):
             upstream_operation = {

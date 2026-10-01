@@ -112,6 +112,19 @@ def resolved_schema(spec: dict, container: dict) -> Any:
     return normalize_schema(resolve_local_refs(spec, container.get("schema")))
 
 
+def normalized_parameter_serialization(parameter: dict) -> dict[str, Any]:
+    """Return effective Parameter Object wire-serialization settings."""
+    location = parameter.get("in")
+    default_style = "form" if location in {"query", "cookie"} else "simple"
+    style = parameter.get("style", default_style)
+    return {
+        "style": style,
+        "explode": parameter.get("explode", style == "form"),
+        "allowReserved": parameter.get("allowReserved", False) if location == "query" else False,
+        "allowEmptyValue": parameter.get("allowEmptyValue", False) if location == "query" else False,
+    }
+
+
 def compare_content_schemas(
     errors: list[str],
     torrentarr_spec: dict,
@@ -168,10 +181,30 @@ def compare(torrentarr: dict, qbitrr: dict, allowed_extensions: set[str] | None 
                 torrentarr_parameter = ta_parameters[key]
                 if required_parameter.get("required", False) != torrentarr_parameter.get("required", False):
                     errors.append(f"parameter {key[0]}:{key[1]} requiredness differs on {method.upper()} {path}")
-                qb_schema = resolved_schema(qbitrr, required_parameter)
-                ta_schema = resolved_schema(torrentarr, torrentarr_parameter)
-                if qb_schema != ta_schema:
-                    errors.append(f"parameter {key[0]}:{key[1]} schema differs on {method.upper()} {path}")
+                qb_content = content(qbitrr, required_parameter)
+                ta_content = content(torrentarr, torrentarr_parameter)
+                parameter_context = f"parameter {key[0]}:{key[1]} on {method.upper()} {path}"
+                if bool(qb_content) != bool(ta_content):
+                    errors.append(f"{parameter_context} representation differs")
+                elif qb_content:
+                    compare_content_schemas(
+                        errors,
+                        torrentarr,
+                        torrentarr_parameter,
+                        qbitrr,
+                        required_parameter,
+                        parameter_context,
+                        f"{parameter_context} is missing media type {{media}}",
+                    )
+                else:
+                    qb_serialization = normalized_parameter_serialization(required_parameter)
+                    ta_serialization = normalized_parameter_serialization(torrentarr_parameter)
+                    if qb_serialization != ta_serialization:
+                        errors.append(f"{parameter_context} serialization differs")
+                    qb_schema = resolved_schema(qbitrr, required_parameter)
+                    ta_schema = resolved_schema(torrentarr, torrentarr_parameter)
+                    if qb_schema != ta_schema:
+                        errors.append(f"parameter {key[0]}:{key[1]} schema differs on {method.upper()} {path}")
             for key in sorted(set(ta_parameters) - set(qb_parameters)):
                 if ta_parameters[key].get("required", False):
                     errors.append(
