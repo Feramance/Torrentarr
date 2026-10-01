@@ -87,6 +87,23 @@ public class SeedingServiceTests
             .MaxUploadRatio.Should().Be(3.0);
     }
 
+    [Fact]
+    public void CategoryOverride_PreservesCaseSensitiveCategoryIdentity()
+    {
+        var baseConfig = new CategorySeedingConfig
+        {
+            MaxUploadRatio = 1.0,
+            Categories =
+            [
+                new CategorySeedingCategoryOverride { Name = "movies", MaxUploadRatio = 2.0 },
+                new CategorySeedingCategoryOverride { Name = "Movies", MaxUploadRatio = 3.0 }
+            ]
+        };
+
+        SeedingService.ApplyCategoryOverride(baseConfig, "Movies", matchSubcategories: false)
+            .MaxUploadRatio.Should().Be(3.0);
+    }
+
     // ── ExtractTrackerHost ─────────────────────────────────────────────────────
 
     [Theory]

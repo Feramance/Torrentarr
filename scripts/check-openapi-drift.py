@@ -69,16 +69,43 @@ def content(spec: dict, container: dict) -> dict:
     return resolved.get("content", {}) if isinstance(resolved, dict) else {}
 
 
-def normalize_schema(value: Any, parent_key: str | None = None) -> Any:
-    """Normalize unordered schema keywords while preserving literal array order."""
-    if isinstance(value, dict):
-        return {key: normalize_schema(item, key) for key, item in value.items()}
-    if isinstance(value, list):
-        normalized = [normalize_schema(item) for item in value]
-        if parent_key in {"required", "enum"}:
-            return sorted(normalized, key=lambda item: json.dumps(item, sort_keys=True, separators=(",", ":")))
-        return normalized
-    return value
+def normalize_schema(value: Any) -> Any:
+    """Normalize unordered schema keywords without rewriting literal values."""
+    if not isinstance(value, dict):
+        return value
+
+    normalized = deepcopy(value)
+    if isinstance(normalized.get("required"), list):
+        normalized["required"] = sorted(normalized["required"])
+    if isinstance(normalized.get("enum"), list):
+        normalized["enum"] = sorted(
+            normalized["enum"],
+            key=lambda item: json.dumps(item, sort_keys=True, separators=(",", ":")),
+        )
+
+    for key in ("items", "additionalProperties", "not", "if", "then", "else", "contains"):
+        if isinstance(normalized.get(key), dict):
+            normalized[key] = normalize_schema(normalized[key])
+    for key in ("allOf", "anyOf", "oneOf", "prefixItems"):
+        if isinstance(normalized.get(key), list):
+            normalized[key] = [normalize_schema(item) for item in normalized[key]]
+    for key in ("properties", "patternProperties", "dependentSchemas"):
+        if isinstance(normalized.get(key), dict):
+            normalized[key] = {
+                name: normalize_schema(schema) for name, schema in normalized[key].items()
+            }
+
+    return normalized
+
+
+def normalized_security(spec: dict, operation: dict) -> list[dict]:
+    """Return effective security requirements with order-insensitive alternatives and scopes."""
+    security = operation["security"] if "security" in operation else spec.get("security", [])
+    normalized = [
+        {name: sorted(scopes) for name, scopes in requirement.items()}
+        for requirement in security
+    ]
+    return sorted(normalized, key=lambda item: json.dumps(item, sort_keys=True, separators=(",", ":")))
 
 
 def resolved_schema(spec: dict, container: dict) -> Any:
@@ -129,6 +156,8 @@ def compare(torrentarr: dict, qbitrr: dict, allowed_extensions: set[str] | None 
                 continue
             qb_operation = qb_item[method]
             ta_operation = ta_item[method]
+            if normalized_security(qbitrr, qb_operation) != normalized_security(torrentarr, ta_operation):
+                errors.append(f"security differs on {method.upper()} {path}")
             qb_parameters = parameters(qbitrr, qb_item, qb_operation)
             ta_parameters = parameters(torrentarr, ta_item, ta_operation)
             for key, required_parameter in qb_parameters.items():
@@ -137,8 +166,8 @@ def compare(torrentarr: dict, qbitrr: dict, allowed_extensions: set[str] | None 
                     continue
 
                 torrentarr_parameter = ta_parameters[key]
-                if required_parameter.get("required", False) and not torrentarr_parameter.get("required", False):
-                    errors.append(f"parameter {key[0]}:{key[1]} is not required on {method.upper()} {path}")
+                if required_parameter.get("required", False) != torrentarr_parameter.get("required", False):
+                    errors.append(f"parameter {key[0]}:{key[1]} requiredness differs on {method.upper()} {path}")
                 qb_schema = resolved_schema(qbitrr, required_parameter)
                 ta_schema = resolved_schema(torrentarr, torrentarr_parameter)
                 if qb_schema != ta_schema:

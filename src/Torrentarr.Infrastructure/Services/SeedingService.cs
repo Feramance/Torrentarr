@@ -78,7 +78,7 @@ public class SeedingService : ISeedingService
         var match = CategoryPathHelper.MatchesConfigured(category, names, prefix: matchSubcategories)
             ?? CategoryPathHelper.MatchesConfigured(category, names, prefix: false);
         var categoryOverride = baseConfig.Categories.FirstOrDefault(item =>
-            string.Equals(CategoryPathHelper.NormalizeCategory(item.Name), match, StringComparison.OrdinalIgnoreCase));
+            string.Equals(CategoryPathHelper.NormalizeCategory(item.Name), match, StringComparison.Ordinal));
         if (categoryOverride == null)
             return baseConfig;
 

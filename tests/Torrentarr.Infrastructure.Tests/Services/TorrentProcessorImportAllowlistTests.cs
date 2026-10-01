@@ -228,6 +228,29 @@ public sealed class TorrentProcessorImportAllowlistTests : IDisposable
     }
 
     [Fact]
+    public async Task CompletedTorrent_WhenContentRootIsMissingButSavePathExists_RemainsPending()
+    {
+        var saveRoot = Directory.CreateTempSubdirectory("torrentarr-empty-mount-");
+        try
+        {
+            var torrent = Torrent(Path.Combine(saveRoot.FullName, "Movie"));
+            torrent.SavePath = saveRoot.FullName;
+            var client = new FileClient([
+                TorrentFile(0, "Movie/movie.mkv"),
+                TorrentFile(1, "Movie/sample.txt")]);
+
+            var result = await ApplyAsync(
+                CreateProcessor(), torrent, Config(autoDelete: false), client, completed: true);
+
+            Ready(result).Should().BeFalse();
+        }
+        finally
+        {
+            saveRoot.Delete(recursive: true);
+        }
+    }
+
+    [Fact]
     public async Task AllowlistWarning_IsDeduplicatedForFiveMinutesThenExpires()
     {
         var torrent = Torrent("/downloads/Movie");
@@ -317,6 +340,35 @@ public sealed class TorrentProcessorImportAllowlistTests : IDisposable
                 TorrentFile(1, "Movie/linked/sample.txt")]);
 
             var result = await ApplyAsync(CreateProcessor(), Torrent(content.FullName), Config(autoDelete: true), client, completed: true);
+
+            Ready(result).Should().BeFalse();
+            File.Exists(target).Should().BeTrue();
+        }
+        finally
+        {
+            root.Delete(recursive: true);
+        }
+    }
+
+    [Fact]
+    public async Task AutoDelete_ContentRootSymlink_RemainsBlockedAndDoesNotDeleteTarget()
+    {
+        if (OperatingSystem.IsWindows())
+            return;
+
+        var root = Directory.CreateTempSubdirectory("torrentarr-root-symlink-");
+        try
+        {
+            var outside = Directory.CreateDirectory(Path.Combine(root.FullName, "outside"));
+            var target = Path.Combine(outside.FullName, "sample.txt");
+            await File.WriteAllTextAsync(target, "keep");
+            var contentLink = Path.Combine(root.FullName, "Movie");
+            Directory.CreateSymbolicLink(contentLink, outside.FullName);
+            var client = new FileClient([
+                TorrentFile(0, "Movie/movie.mkv"),
+                TorrentFile(1, "Movie/sample.txt")]);
+
+            var result = await ApplyAsync(CreateProcessor(), Torrent(contentLink), Config(autoDelete: true), client, completed: true);
 
             Ready(result).Should().BeFalse();
             File.Exists(target).Should().BeTrue();

@@ -158,6 +158,29 @@ class OpenApiDriftTests(unittest.TestCase):
 
         self.assertIn("parameter query:page schema differs on GET /web/items", result)
 
+    def test_reports_parameter_requiredness_differences_in_both_directions(self):
+        for upstream_required, torrentarr_required in ((True, False), (False, True)):
+            upstream_operation = {
+                "parameters": [
+                    {"in": "query", "name": "q", "required": upstream_required, "schema": {"type": "string"}}
+                ],
+                "responses": {"200": {}},
+            }
+            torrentarr_operation = {
+                "parameters": [
+                    {"in": "query", "name": "q", "required": torrentarr_required, "schema": {"type": "string"}}
+                ],
+                "responses": {"200": {}},
+            }
+
+            result = module.compare(
+                document({"/web/items": {"get": torrentarr_operation}}),
+                document({"/web/items": {"get": upstream_operation}}),
+                set(),
+            )
+
+            self.assertIn("parameter query:q requiredness differs on GET /web/items", result)
+
     def test_accepts_reordered_required_and_enum_schema_values(self):
         upstream_schema = {
             "type": "object",
@@ -206,6 +229,43 @@ class OpenApiDriftTests(unittest.TestCase):
         result = module.compare(torrentarr, upstream, set())
 
         self.assertIn("response 200 on GET /web/items schema differs for application/json", result)
+
+    def test_preserves_required_array_order_inside_object_enum_literals(self):
+        upstream_schema = {
+            "type": "object",
+            "enum": [{"required": ["id", "name"]}],
+        }
+        torrentarr_schema = {
+            "type": "object",
+            "enum": [{"required": ["name", "id"]}],
+        }
+        upstream = document({
+            "/web/items": {
+                "get": {"responses": {"200": {"content": {"application/json": {"schema": upstream_schema}}}}}
+            }
+        })
+        torrentarr = document({
+            "/web/items": {
+                "get": {"responses": {"200": {"content": {"application/json": {"schema": torrentarr_schema}}}}}
+            }
+        })
+
+        result = module.compare(torrentarr, upstream, set())
+
+        self.assertIn("response 200 on GET /web/items schema differs for application/json", result)
+
+    def test_compares_effective_operation_security(self):
+        upstream = document({
+            "/web/items": {"get": {"responses": {"200": {}}}}
+        })
+        upstream["security"] = [{"bearerAuth": []}]
+        torrentarr = document({
+            "/web/items": {"get": {"security": [], "responses": {"200": {}}}}
+        })
+
+        result = module.compare(torrentarr, upstream, set())
+
+        self.assertIn("security differs on GET /web/items", result)
 
 
 if __name__ == "__main__":

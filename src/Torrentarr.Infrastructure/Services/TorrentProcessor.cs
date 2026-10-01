@@ -1517,11 +1517,8 @@ public class TorrentProcessor : ITorrentProcessor
 
     private static bool TorrentStorageAvailable(TorrentInfo torrent)
     {
-        if (!string.IsNullOrWhiteSpace(torrent.ContentPath)
-            && (File.Exists(torrent.ContentPath) || Directory.Exists(torrent.ContentPath)))
-        {
-            return true;
-        }
+        if (!string.IsNullOrWhiteSpace(torrent.ContentPath))
+            return File.Exists(torrent.ContentPath) || Directory.Exists(torrent.ContentPath);
 
         return !string.IsNullOrWhiteSpace(torrent.SavePath) && Directory.Exists(torrent.SavePath);
     }
@@ -1529,7 +1526,13 @@ public class TorrentProcessor : ITorrentProcessor
     private static string ResolveTorrentOwnedPath(TorrentInfo torrent, string relativePath)
     {
         var normalized = relativePath.Replace('\\', Path.DirectorySeparatorChar).Replace('/', Path.DirectorySeparatorChar);
-        if (File.Exists(torrent.ContentPath) || (!Directory.Exists(torrent.ContentPath) && Path.HasExtension(torrent.ContentPath)))
+        if (File.Exists(torrent.ContentPath))
+        {
+            if (File.GetAttributes(torrent.ContentPath).HasFlag(FileAttributes.ReparsePoint))
+                throw new InvalidOperationException("Torrent content path is a symbolic link or reparse point.");
+            return Path.GetFullPath(torrent.ContentPath);
+        }
+        if (!Directory.Exists(torrent.ContentPath) && Path.HasExtension(torrent.ContentPath))
             return Path.GetFullPath(torrent.ContentPath);
 
         var root = !string.IsNullOrWhiteSpace(torrent.ContentPath) ? torrent.ContentPath : torrent.SavePath;
@@ -1539,6 +1542,8 @@ public class TorrentProcessor : ITorrentProcessor
             normalized = Path.Combine(parts.Skip(1).ToArray());
 
         var fullRoot = Path.GetFullPath(root);
+        if (Directory.Exists(fullRoot) && File.GetAttributes(fullRoot).HasFlag(FileAttributes.ReparsePoint))
+            throw new InvalidOperationException("Torrent content root is a symbolic link or reparse point.");
         var fullPath = Path.GetFullPath(Path.Combine(fullRoot, normalized));
         var pathComparison = OperatingSystem.IsWindows()
             ? StringComparison.OrdinalIgnoreCase

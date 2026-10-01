@@ -54,7 +54,6 @@ public static class ArrCatalogEndpoints
             var reasonFilter = string.IsNullOrWhiteSpace(reason) || reason.Equals("all", StringComparison.OrdinalIgnoreCase)
                 ? null
                 : reason.Trim();
-
             var (albumCounts, albumTotal, trackCounts) = await rollups.GetLidarrRollupsAsync(keys);
 
             var query = db.Artists.Where(a => keys.Contains(a.ArrInstance));
@@ -189,6 +188,12 @@ public static class ArrCatalogEndpoints
         });
     }
 
+    private static bool CoerceQBitrrBoolean(string value) =>
+        value.Length > 0 &&
+        !value.Equals("0", StringComparison.OrdinalIgnoreCase) &&
+        !value.Equals("false", StringComparison.OrdinalIgnoreCase) &&
+        !value.Equals("none", StringComparison.OrdinalIgnoreCase);
+
     private static void MapLidarrArtistDetail(WebApplication app, string pattern)
     {
         app.MapGet(pattern, async (
@@ -278,10 +283,10 @@ public static class ArrCatalogEndpoints
             TorrentarrConfig cfg,
             TorrentarrDbContext db,
             CatalogRollupService rollups,
+            HttpRequest request,
             int? page,
             int? page_size,
             string? q,
-            bool? monitored,
             bool? missing,
             string? reason) =>
         {
@@ -292,6 +297,9 @@ public static class ArrCatalogEndpoints
             var reasonFilter = string.IsNullOrWhiteSpace(reason) || reason.Equals("all", StringComparison.OrdinalIgnoreCase)
                 ? null
                 : reason.Trim();
+            bool? monitored = request.Query.TryGetValue("monitored", out var monitoredValue)
+                ? CoerceQBitrrBoolean(monitoredValue.ToString())
+                : null;
 
             var (bookCounts, bookTotal) = await rollups.GetReadarrRollupsAsync(keys);
 
