@@ -168,7 +168,9 @@ export function MaintenanceView(): JSX.Element {
             className="btn"
             disabled={busy || status?.running || selected.length === 0}
             onClick={() => {
-              if (window.confirm("Run maintenance now for the selected clients?"))
+              if (
+                window.confirm("Run maintenance now for the selected clients?")
+              )
                 void act(() => maintenanceCommand("run", selected));
             }}
           >
