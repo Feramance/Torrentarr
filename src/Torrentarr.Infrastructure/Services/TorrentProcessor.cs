@@ -1364,16 +1364,17 @@ public class TorrentProcessor : ITorrentProcessor
         var regexOptions = cfg.CaseSensitiveMatches ? RegexOptions.None : RegexOptions.IgnoreCase;
 
         var meaningfulFiles = files.Where(f => !IsIgnoredAuxiliaryFile(f.Name)).ToList();
-        var excludedFiles = meaningfulFiles
-            .Where(f => ShouldExcludeFile(f.Name, cfg, regexOptions))
-            .ToList();
+        var excludedFiles = new List<TorrentFile>();
+        var allowedFiles = new List<TorrentFile>();
+        foreach (var file in meaningfulFiles)
+        {
+            (ShouldExcludeFile(file.Name, cfg, regexOptions) ? excludedFiles : allowedFiles).Add(file);
+        }
         var excludedIds = excludedFiles.Select(f => f.Index).ToArray();
         var prioritiesToApply = excludedFiles
             .Where(f => f.Priority != 0)
             .Select(f => f.Index)
             .ToArray();
-        var allowedCount = meaningfulFiles.Count - excludedFiles.Count;
-
         if (prioritiesToApply.Length > 0)
         {
             // Set excluded files to priority 0 (do not download), including when H&R
@@ -1400,7 +1401,7 @@ public class TorrentProcessor : ITorrentProcessor
             }
         }
 
-        if (allowedCount == 0)
+        if (allowedFiles.Count == 0)
         {
             WarnAllowlistBlocked(torrent, "no allowed files remain");
             var hnrAllows = _seedingService == null ||
@@ -1421,7 +1422,7 @@ public class TorrentProcessor : ITorrentProcessor
         if (!completed)
             return FileFilterResult.ReadyResult;
 
-        if (!TorrentStorageAvailable(torrent, meaningfulFiles))
+        if (!TorrentStorageAvailable(torrent, allowedFiles))
         {
             WarnAllowlistBlocked(torrent, "content storage is unavailable");
             return FileFilterResult.PendingResult;

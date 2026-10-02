@@ -1914,11 +1914,12 @@ function ensureArrDefaults(type: string): ConfigDocument {
 }
 
 interface ConfigViewProps {
+  active?: boolean;
   onDirtyChange?: (dirty: boolean) => void;
 }
 
 export function ConfigView(props?: ConfigViewProps): JSX.Element {
-  const { onDirtyChange } = props ?? {};
+  const { active = true, onDirtyChange } = props ?? {};
   const { push } = useToast();
   const [originalConfig, setOriginalConfig] = useState<ConfigDocument | null>(
     null,
@@ -2135,6 +2136,7 @@ export function ConfigView(props?: ConfigViewProps): JSX.Element {
   }, [onDirtyChange]);
 
   useEffect(() => {
+    if (!active) return;
     const anyModalOpen = Boolean(
       activeArrKey ||
         activeQbitKey ||
@@ -2161,6 +2163,7 @@ export function ConfigView(props?: ConfigViewProps): JSX.Element {
       style.overflow = originalOverflow;
     };
   }, [
+    active,
     activeArrKey,
     activeQbitKey,
     isSettingsOpen,

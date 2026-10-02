@@ -90,6 +90,28 @@ public sealed class TorrentProcessorImportAllowlistTests : IDisposable
     }
 
     [Fact]
+    public async Task CompletedTorrent_AutoDelete_WaitsWhenAllowedFileIsUnavailable()
+    {
+        var root = Directory.CreateTempSubdirectory("torrentarr-allowed-unavailable-");
+        try
+        {
+            var content = Directory.CreateDirectory(Path.Combine(root.FullName, "Movie"));
+            var disallowed = Path.Combine(content.FullName, "sample.txt");
+            await File.WriteAllTextAsync(disallowed, "sample");
+            var client = new FileClient([TorrentFile(0, "Movie/movie.mkv"), TorrentFile(1, "Movie/sample.txt")]);
+
+            var result = await ApplyAsync(CreateProcessor(), Torrent(content.FullName), Config(autoDelete: true), client, completed: true);
+
+            Ready(result).Should().BeFalse();
+            File.Exists(disallowed).Should().BeTrue("cleanup must wait for accessible allowed content");
+        }
+        finally
+        {
+            root.Delete(recursive: true);
+        }
+    }
+
+    [Fact]
     public async Task CompletedTorrent_WithoutAutoDelete_BlocksImportWhileDisallowedFileRemains()
     {
         var root = Directory.CreateTempSubdirectory("torrentarr-no-delete-");
@@ -210,6 +232,7 @@ public sealed class TorrentProcessorImportAllowlistTests : IDisposable
         try
         {
             var content = Directory.CreateDirectory(Path.Combine(root.FullName, "Movie"));
+            await File.WriteAllTextAsync(Path.Combine(content.FullName, "movie.mkv"), "video");
             var excludedPath = Path.Combine(content.FullName, "sample.txt");
             await File.WriteAllTextAsync(excludedPath, "sample");
             var torrent = Torrent(content.FullName);

@@ -1483,6 +1483,7 @@ function AppShell(): JSX.Element {
               <section hidden={activeTab !== "config"} data-tab-panel="config">
                 <ConfigView
                   key={`config-${configViewKey}`}
+                  active={activeTab === "config"}
                   onDirtyChange={setConfigDirty}
                 />
               </section>
