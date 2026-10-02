@@ -412,8 +412,23 @@ public sealed class MaintenanceCoordinator : BackgroundService, IMaintenanceCoor
         if (action.TorrentHash != null)
         {
             var current = await client.GetTorrentsAsync(cancellationToken: ct);
-            if (!current.Any(t => t.Hash.Equals(action.TorrentHash, StringComparison.OrdinalIgnoreCase)))
+            var torrent = current.FirstOrDefault(t => t.Hash.Equals(action.TorrentHash, StringComparison.OrdinalIgnoreCase));
+            if (torrent == null)
                 return "Torrent state changed after preview; the torrent no longer exists.";
+            if (action.Destructive)
+            {
+                torrent.ClientInstanceId = action.ClientInstanceId;
+                var cfg = _config.GetTorrentClient(action.ClientInstanceId);
+                if (cfg == null) return "Torrent client configuration was removed after preview.";
+                if (torrent.AddedOn <= 0 || DateTimeOffset.UtcNow - DateTimeOffset.FromUnixTimeSeconds(torrent.AddedOn)
+                    < TimeSpan.FromMinutes(cfg.Maintenance.MinimumTorrentAgeMinutes))
+                    return "Torrent is younger than the configured maintenance safety window.";
+                var inventory = await _inventory.BuildAsync([action.ClientInstanceId], ct);
+                var item = inventory.Torrents.FirstOrDefault(i => i.Torrent.Hash.Equals(action.TorrentHash, StringComparison.OrdinalIgnoreCase));
+                if (item == null) return "Torrent inventory changed after preview.";
+                var hnr = HnrBlocked(cfg, item);
+                if (hnr != null) return hnr;
+            }
         }
         foreach (var capability in action.RequiredCapabilities)
         {
@@ -455,7 +470,10 @@ public sealed class MaintenanceCoordinator : BackgroundService, IMaintenanceCoor
             foreach (var file in Directory.EnumerateFiles(mapping.LocalPath, "*", SearchOption.AllDirectories))
             {
                 if (yielded >= cfg.Maintenance.Orphans.MaxFilesPerRun) yield break;
-                if (file.Contains($"{Path.DirectorySeparatorChar}.torrentarr-recycle{Path.DirectorySeparatorChar}", StringComparison.OrdinalIgnoreCase)) continue;
+                var recycleRoot = cfg.Maintenance.RecycleBin.Path;
+                if (string.IsNullOrWhiteSpace(recycleRoot) && cfg.Maintenance.PathMappings.Count > 0)
+                    recycleRoot = Path.Combine(cfg.Maintenance.PathMappings[0].LocalPath, ".torrentarr-recycle");
+                if (!string.IsNullOrWhiteSpace(recycleRoot) && _paths.IsSafeDescendant(file, recycleRoot)) continue;
                 if (referenced.Contains(Path.GetFullPath(file))) continue;
                 var relative = Path.GetRelativePath(mapping.LocalPath, file);
                 if (cfg.Maintenance.Orphans.ExcludePatterns.Any(pattern => FileSystemName.MatchesSimpleExpression(pattern, relative, OperatingSystem.IsWindows()))) continue;
@@ -532,6 +550,7 @@ public sealed class MaintenanceCoordinator : BackgroundService, IMaintenanceCoor
                 ClientInstanceId = id,
                 TorrentHash = item.Torrent.Hash,
                 TorrentName = item.Torrent.Name,
+                Bytes = item.Files.Sum(f => f.File.Size),
                 Reason = $"Tracker reports torrent as unregistered: {tracker.Msg}",
                 RequiredCapabilities = ["contentDeletion"],
                 Destructive = true
@@ -698,6 +717,7 @@ public sealed class MaintenanceCoordinator : BackgroundService, IMaintenanceCoor
                 TorrentName = item.Torrent.Name,
                 Reason = $"Matched share policy '{policy.Name}'." + (shared ? " Shared content will be preserved." : ""),
                 Arguments = policy.UploadLimitKiB.HasValue ? new() { ["limitKiB"] = policy.UploadLimitKiB.Value.ToString() } : new(),
+                Bytes = item.Files.Sum(f => f.File.Size),
                 Destructive = kind is MaintenanceActionKind.RecycleContent or MaintenanceActionKind.DeleteContent,
                 BlockedReason = kind == MaintenanceActionKind.SetUploadLimit && !policy.UploadLimitKiB.HasValue
                     ? "Throttle policy requires UploadLimitKiB."

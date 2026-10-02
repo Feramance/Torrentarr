@@ -150,7 +150,7 @@ try
         Log.Information("Log level set to {Level} from config ConsoleLevel", levelSwitch.MinimumLevel);
     }
 
-    if (!config.QBitInstances.Values.Any(q => q.Host != "CHANGE_ME" && q.UserName != "CHANGE_ME" && q.Password != "CHANGE_ME"))
+    if (!config.GetAllTorrentClients().Values.Any(q => q.Host != "CHANGE_ME" && q.UserName != "CHANGE_ME" && q.Password != "CHANGE_ME"))
     {
         Log.Warning("qBittorrent is not configured. Please configure via WebUI at http://localhost:{Port}", config.WebUI.Port);
         Log.Warning("Or edit the config file at: {Path}", ConfigurationLoader.GetDefaultConfigPath());

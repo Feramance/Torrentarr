@@ -101,13 +101,35 @@ public sealed class SafeDeletionService : ISafeDeletionService
         await BackupResumeDataAsync(client, hash, clientInstanceId, cfg, ct);
 
         var moved = 0L;
-        foreach (var source in CollapseRoots(localFiles))
+        var movedPaths = new List<(string Source, string Destination)>();
+        try
         {
-            var validation = ValidateSource(source, cfg);
-            if (validation != null) return new(false, true, moved, validation);
-            var destination = BuildRecycleDestination(source, clientInstanceId, item.Torrent.Category, cfg);
-            moved += await MoveToRecycleAsync(source, destination, ct);
-            RemoveEmptyParents(Path.GetDirectoryName(source), cfg);
+            foreach (var source in CollapseRoots(localFiles))
+            {
+                var validation = ValidateSource(source, cfg);
+                if (validation != null) return new(false, true, moved, validation);
+                var destination = BuildRecycleDestination(source, clientInstanceId, item.Torrent.Category, cfg);
+                moved += await MoveToRecycleAsync(source, destination, ct);
+                movedPaths.Add((source, destination));
+                RemoveEmptyParents(Path.GetDirectoryName(source), cfg);
+            }
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+        {
+            foreach (var (source, destination) in movedPaths.AsEnumerable().Reverse())
+            {
+                try
+                {
+                    Directory.CreateDirectory(Path.GetDirectoryName(source)!);
+                    if (Directory.Exists(destination)) Directory.Move(destination, source);
+                    else if (File.Exists(destination)) File.Move(destination, source);
+                }
+                catch (Exception rollbackEx)
+                {
+                    _logger.LogError(rollbackEx, "Unable to roll back recycle move {Destination} to {Source}", destination, source);
+                }
+            }
+            return new(false, true, 0, $"Recycle operation rolled back: {ex.Message}");
         }
 
         var deleted = await client.DeleteTorrentsAsync([hash], false, ct);
