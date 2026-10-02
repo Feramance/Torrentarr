@@ -63,5 +63,21 @@ printf '%s\n' "$index" | grep -q '<html'
 asset=$(printf '%s\n' "$index" | sed -n 's/.*src="\(\/assets\/[^" ]*\.js\)".*/\1/p' | head -n 1)
 test -n "$asset"
 curl --fail --silent --location "$base_url$asset" >/dev/null
+
+validate_json() {
+  if command -v node >/dev/null 2>&1; then
+    node -e 'JSON.parse(require("fs").readFileSync(0, "utf8"));'
+  elif command -v pwsh >/dev/null 2>&1; then
+    pwsh -NoLogo -NoProfile -NonInteractive \
+      -Command '$json = [Console]::In.ReadToEnd(); $null = $json | ConvertFrom-Json'
+  elif command -v powershell.exe >/dev/null 2>&1; then
+    powershell.exe -NoLogo -NoProfile -NonInteractive \
+      -Command '$json = [Console]::In.ReadToEnd(); $null = $json | ConvertFrom-Json'
+  else
+    echo "No JSON validation runtime found (node, pwsh, or powershell.exe)" >&2
+    return 127
+  fi
+}
+
 curl --fail --silent -H 'Authorization: Bearer standalone-smoke-token' \
-  "$base_url/api/openapi.json" | node -e 'JSON.parse(require("fs").readFileSync(0, "utf8"));'
+  "$base_url/api/openapi.json" | validate_json
