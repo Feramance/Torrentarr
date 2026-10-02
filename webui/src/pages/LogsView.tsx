@@ -181,8 +181,8 @@ export function LogsView({ active }: LogsViewProps): JSX.Element {
   }, [describeError, push]);
 
   useEffect(() => {
-    void loadList();
-  }, [loadList]);
+    if (active) void loadList();
+  }, [active, loadList]);
 
   const fetchLogContent = useCallback(
     async (showLoading: boolean = false) => {

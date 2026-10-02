@@ -1470,9 +1470,8 @@ app.MapGet("/web/qbit/categories", async (TorrentarrConfig config, ITorrentClien
 
         foreach (var cat in qbitCfg.ManagedCategories)
         {
-            var catTorrents = liveTorrents
-                .Where(t => string.Equals(t.Category, cat, StringComparison.OrdinalIgnoreCase))
-                .ToList();
+            var catTorrents = CategorySeedingApiResolver.SelectAggregateTorrents(
+                liveTorrents, cat, qbitCfg.MatchSubcategories);
             var seedingTorrents = catTorrents
                 .Where(t => t.State.Contains("upload", StringComparison.OrdinalIgnoreCase) ||
                              t.State.Contains("seeding", StringComparison.OrdinalIgnoreCase))
@@ -1482,7 +1481,8 @@ app.MapGet("/web/qbit/categories", async (TorrentarrConfig config, ITorrentClien
                 ? seedingTorrents.Average(t => t.SeedingTime) / 86400.0
                 : 0.0;
 
-            var seeding = qbitCfg.CategorySeeding;
+            var effectiveSeeding = CategorySeedingApiResolver.ResolveAggregatePolicy(
+                config, qbitName, qbitCfg, cat, catTorrents);
             categories.Add(new
             {
                 category = cat,
@@ -1494,16 +1494,16 @@ app.MapGet("/web/qbit/categories", async (TorrentarrConfig config, ITorrentClien
                 totalSize = catTorrents.Sum(t => t.Size),
                 avgRatio,
                 avgSeedingTimeDays,
-                seedingConfig = new
+                seedingConfig = effectiveSeeding == null ? null : new
                 {
-                    maxRatio = seeding.MaxUploadRatio,
-                    maxTime = seeding.MaxSeedingTime,
-                    removeMode = seeding.RemoveTorrent,
-                    hitAndRunMode = seeding.HitAndRunMode,
-                    minSeedRatio = seeding.MinSeedRatio,
-                    minSeedingTimeDays = seeding.MinSeedingTimeDays,
-                    downloadLimit = seeding.DownloadRateLimitPerTorrent,
-                    uploadLimit = seeding.UploadRateLimitPerTorrent
+                    effectiveSeeding.MaxRatio,
+                    effectiveSeeding.MaxTime,
+                    effectiveSeeding.RemoveMode,
+                    effectiveSeeding.HitAndRunMode,
+                    effectiveSeeding.MinSeedRatio,
+                    effectiveSeeding.MinSeedingTimeDays,
+                    effectiveSeeding.DownloadLimit,
+                    effectiveSeeding.UploadLimit
                 }
             });
         }

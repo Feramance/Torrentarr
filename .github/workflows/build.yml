@@ -61,6 +61,13 @@ jobs:
       working-directory: webui
       run: npm ci
 
+    - name: Check generated config schema
+      run: dotnet run --project tools/Torrentarr.ConfigSchemaGenerator/Torrentarr.ConfigSchemaGenerator.csproj -- --check
+
+    - name: Test parity tooling
+      if: matrix.os == 'ubuntu-latest'
+      run: python3 -m unittest tests/scripts/test_check_openapi_drift.py
+
     - name: Run frontend tests
       working-directory: webui
       run: npm test -- --run
@@ -75,7 +82,7 @@ jobs:
     - name: Run .NET tests (non-live)
       run: dotnet test --configuration Release --no-build --verbosity normal --filter "Category!=Live"
 
-    - name: Check OpenAPI drift vs qBitrr master
+    - name: Check OpenAPI parity vs qBitrr v5.14.5-1
       if: matrix.os == 'ubuntu-latest'
       run: bash scripts/check-openapi-drift.sh docs/assets/openapi.json
 

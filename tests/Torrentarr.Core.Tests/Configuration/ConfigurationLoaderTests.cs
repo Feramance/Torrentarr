@@ -1,4 +1,5 @@
 using FluentAssertions;
+using System.Globalization;
 using Torrentarr.Core.Configuration;
 using Xunit;
 
@@ -58,6 +59,75 @@ public class ConfigurationLoaderTests : IDisposable
         config.QBitInstances["qBit"].Port.Should().Be(8090);
         config.QBitInstances["qBit"].CategorySeeding.MaxUploadRatio.Should().BeApproximately(2.5, 0.001);
         config.QBitInstances["qBit"].CategorySeeding.HitAndRunMode.Should().Be("and"); // legacy true → "and"
+    }
+
+    [Fact]
+    public void LoadAndSave_PreservesPerCategorySeedingOverrides()
+    {
+        WriteToml("""
+            [Settings]
+            ConfigVersion = "6.14.6"
+
+            [qBit]
+            MatchSubcategories = true
+
+            [qBit.CategorySeeding]
+            MaxUploadRatio = 1.0
+
+            [[qBit.CategorySeeding.Categories]]
+            Name = "movies"
+            MaxUploadRatio = 3.5
+            MaxSeedingTime = "2h"
+            HitAndRunMode = "or"
+            """);
+
+        var loader = new ConfigurationLoader(_tempFilePath);
+        var config = loader.Load();
+        var category = config.QBitInstances["qBit"].CategorySeeding.Categories.Should().ContainSingle().Subject;
+        category.Name.Should().Be("movies");
+        category.MaxUploadRatio.Should().Be(3.5);
+        category.MaxSeedingTime.Should().Be(7200);
+        category.HitAndRunMode.Should().Be("or");
+
+        loader.SaveConfig(config);
+        var reloaded = loader.Load().QBitInstances["qBit"].CategorySeeding.Categories.Should().ContainSingle().Subject;
+        reloaded.Should().BeEquivalentTo(category);
+    }
+
+    [Fact]
+    public void SaveConfig_FormatsCategoryRatiosWithInvariantCulture()
+    {
+        WriteToml("""
+            [Settings]
+            ConfigVersion = "6.14.6"
+
+            [qBit.CategorySeeding]
+
+            [[qBit.CategorySeeding.Categories]]
+            Name = "movies"
+            MaxUploadRatio = 3.5
+            MinSeedRatio = 1.25
+            HitAndRunPartialSeedRatio = 0.75
+            """);
+
+        var loader = new ConfigurationLoader(_tempFilePath);
+        var config = loader.Load();
+        var originalCulture = CultureInfo.CurrentCulture;
+        try
+        {
+            CultureInfo.CurrentCulture = CultureInfo.GetCultureInfo("fr-FR");
+            loader.SaveConfig(config);
+        }
+        finally
+        {
+            CultureInfo.CurrentCulture = originalCulture;
+        }
+
+        var saved = File.ReadAllText(_tempFilePath);
+        saved.Should().Contain("MaxUploadRatio = 3.5");
+        saved.Should().Contain("MinSeedRatio = 1.25");
+        saved.Should().Contain("HitAndRunPartialSeedRatio = 0.75");
+        loader.Load().QBitInstances["qBit"].CategorySeeding.Categories.Should().ContainSingle();
     }
 
     [Fact]

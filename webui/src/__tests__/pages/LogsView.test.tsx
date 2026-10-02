@@ -8,7 +8,7 @@ import {
   afterAll,
   afterEach,
 } from "vitest";
-import { render, screen } from "@testing-library/react";
+import { render, screen, waitFor } from "@testing-library/react";
 import { http, HttpResponse } from "msw";
 import { setupServer } from "msw/node";
 import type { ReactNode } from "react";
@@ -125,6 +125,24 @@ describe("LogsView – control buttons", () => {
 // ── File list loaded ──────────────────────────────────────────────────────────
 
 describe("LogsView – with files", () => {
+  it("refreshes the file list when the retained view becomes active again", async () => {
+    let requests = 0;
+    server.use(
+      http.get("/web/logs", () => {
+        requests += 1;
+        return HttpResponse.json({ files: [] });
+      }),
+    );
+
+    const view = renderView();
+    await waitFor(() => expect(requests).toBe(1));
+
+    view.rerender(<LogsView active={false} />);
+    view.rerender(<LogsView active />);
+
+    await waitFor(() => expect(requests).toBe(2));
+  });
+
   it("renders LazyLog when log content is available", async () => {
     server.use(
       http.get("/web/logs", () =>

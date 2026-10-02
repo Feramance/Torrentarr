@@ -273,6 +273,54 @@ public sealed class TorrentProcessorTests : IDisposable
         }
     }
 
+    [Fact]
+    public async Task ImportTorrentAsync_DirectoryContentPath_TriggersArrImport()
+    {
+        const string hash = "directory-import-hash";
+        const string instance = "qBit";
+        var directory = Directory.CreateTempSubdirectory("torrentarr-import-");
+        try
+        {
+            _db.TorrentLibrary.Add(new Torrentarr.Infrastructure.Database.Models.TorrentLibrary
+            {
+                Hash = hash,
+                Category = "radarr-hd",
+                QbitInstance = instance,
+                Imported = false
+            });
+            await _db.SaveChangesAsync();
+            var config = new TorrentarrConfig();
+            config.ArrInstances["Radarr-HD"] = new ArrInstanceConfig { Category = "radarr-hd", Type = "radarr" };
+            var manager = new QBittorrentConnectionManager(NullLogger<QBittorrentConnectionManager>.Instance);
+            RegisterTestClient(manager, instance, new StubQBittorrentClient(new TorrentInfo
+            {
+                Hash = hash,
+                ContentPath = directory.FullName,
+                QBitInstanceName = instance
+            }));
+            var imports = new Mock<IArrImportService>();
+            imports.Setup(service => service.TriggerImportAsync(hash, directory.FullName, "radarr-hd", It.IsAny<CancellationToken>()))
+                .ReturnsAsync(new ImportResult { Success = true, Message = "queued" });
+            var processor = new TorrentProcessor(
+                NullLogger<TorrentProcessor>.Instance,
+                manager,
+                _db,
+                config,
+                new TorrentCacheService(NullLogger<TorrentCacheService>.Instance),
+                new DatabaseRestartCoordinator(),
+                imports.Object,
+                pathTracker: new ImportPathTracker());
+
+            await processor.ImportTorrentAsync(hash, instance);
+
+            imports.VerifyAll();
+        }
+        finally
+        {
+            directory.Delete(recursive: true);
+        }
+    }
+
     /// <summary>
     /// Regression: CF-unmet deletion must honor HnR protection (qBitrr _hnr_allows_delete parity).
     /// Pre-fix, Branch 1 deleted immediately and bypassed HnrAllowsDeleteAsync.
@@ -396,7 +444,7 @@ public sealed class TorrentProcessorTests : IDisposable
         }));
 
         var cache = new TorrentCacheService(NullLogger<TorrentCacheService>.Instance);
-        cache.MarkFileFiltered(hash);
+        cache.MarkFileFiltered(instance, hash);
         var pathTracker = new ImportPathTracker();
         pathTracker.MarkScanned("/downloads/completed/item", hash);
 
@@ -510,11 +558,132 @@ public sealed class TorrentProcessorTests : IDisposable
             "ProcessSingleTorrentAsync",
             BindingFlags.NonPublic | BindingFlags.Instance)!;
 
-        cache.IsFileFiltered(hash).Should().BeFalse("complete-first torrents skip Branch 9 file filtering");
+        cache.IsFileFiltered(instance, hash).Should().BeFalse("complete-first torrents skip Branch 9 file filtering");
 
         await (Task)method.Invoke(processor, new object[] { torrent, category, stats, CancellationToken.None })!;
         (await _db.TorrentLibrary.SingleAsync(t => t.Hash == hash && t.QbitInstance == instance)).Imported
             .Should().BeTrue("pending imports must finalize without requiring IsFileFiltered");
+    }
+
+    [Fact]
+    public async Task ProcessSingleTorrentAsync_CompleteOnFirstObservation_IsInspectedAndMarkedFiltered()
+    {
+        const string hash = "complete-on-startup-hash";
+        const string category = "radarr-hd";
+        const string instance = "qBit";
+        var config = new TorrentarrConfig();
+        config.ArrInstances["Radarr-HD"] = new ArrInstanceConfig
+        {
+            Category = category,
+            Type = "radarr",
+            Torrent =
+            {
+                FolderExclusionRegex = [],
+                FileNameExclusionRegex = [],
+                FileExtensionAllowlist = []
+            }
+        };
+        var torrent = new TorrentInfo
+        {
+            Hash = hash,
+            Name = "Complete at startup",
+            Category = category,
+            State = "uploading",
+            Progress = 1,
+            AmountLeft = 0,
+            AddedOn = DateTimeOffset.UtcNow.AddHours(-1).ToUnixTimeSeconds(),
+            CompletionOn = DateTimeOffset.UtcNow.AddMinutes(-5).ToUnixTimeSeconds(),
+            ContentPath = "/downloads/complete",
+            QBitInstanceName = instance
+        };
+        var manager = new QBittorrentConnectionManager(NullLogger<QBittorrentConnectionManager>.Instance);
+        RegisterTestClient(manager, instance, new StubQBittorrentClient(torrent));
+        var cache = new TorrentCacheService(NullLogger<TorrentCacheService>.Instance);
+        var processor = new TorrentProcessor(
+            NullLogger<TorrentProcessor>.Instance,
+            manager,
+            _db,
+            config,
+            cache,
+            new DatabaseRestartCoordinator());
+        var method = typeof(TorrentProcessor).GetMethod("ProcessSingleTorrentAsync", BindingFlags.NonPublic | BindingFlags.Instance)!;
+
+        await (Task)method.Invoke(processor, [torrent, category, new TorrentProcessingStats(), CancellationToken.None])!;
+
+        cache.IsFileFiltered(instance, hash).Should().BeTrue();
+    }
+
+    [Fact]
+    public void ResolveStalledSettings_UsesQBitCategoryOverrideForQBitManagedTorrent()
+    {
+        var config = new TorrentarrConfig
+        {
+            QBitInstances =
+            {
+                ["seedbox"] = new QBitConfig
+                {
+                    CategorySeeding = new CategorySeedingConfig
+                    {
+                        StalledDelay = 30,
+                        IgnoreTorrentsYoungerThan = 300,
+                        Categories =
+                        [
+                            new CategorySeedingCategoryOverride
+                            {
+                                Name = " movies ",
+                                StalledDelay = 7,
+                                IgnoreTorrentsYoungerThan = 42
+                            }
+                        ]
+                    }
+                }
+            }
+        };
+        var torrent = new TorrentInfo
+        {
+            QBitInstanceName = "seedbox",
+            Category = "movies"
+        };
+
+        var result = TorrentProcessor.ResolveStalledSettings(config, torrent, arrConfig: null);
+
+        result.StalledDelay.Should().Be(7);
+        result.IgnoreTorrentsYoungerThan.Should().Be(42);
+    }
+
+    [Fact]
+    public void ResolveStalledSettings_PrefersArrTorrentSettings()
+    {
+        var config = new TorrentarrConfig
+        {
+            QBitInstances =
+            {
+                ["qBit"] = new QBitConfig
+                {
+                    CategorySeeding = new CategorySeedingConfig
+                    {
+                        StalledDelay = 30,
+                        IgnoreTorrentsYoungerThan = 300
+                    }
+                }
+            }
+        };
+        var torrent = new TorrentInfo { QBitInstanceName = "qBit", Category = "radarr" };
+        var arr = new ArrInstanceConfig();
+        arr.Torrent.StalledDelay = 12;
+        arr.Torrent.IgnoreTorrentsYoungerThan = 120;
+
+        var result = TorrentProcessor.ResolveStalledSettings(config, torrent, arr);
+
+        result.StalledDelay.Should().Be(12);
+        result.IgnoreTorrentsYoungerThan.Should().Be(120);
+    }
+
+    [Fact]
+    public void StalledHandlingEnabled_NegativeDelaySuppressesStalledProcessing()
+    {
+        TorrentProcessor.StalledHandlingEnabled(-1).Should().BeFalse();
+        TorrentProcessor.StalledHandlingEnabled(0).Should().BeTrue();
     }
 
     private static void RegisterTestClient(

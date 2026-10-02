@@ -1,5 +1,33 @@
 # Changelog
 
+## v6.15.0-1 (2026-10-02)
+
+### Features
+- [minor] qBitrr v5.14.5-1 behavioral parity (#457) ([361c04d](https://github.com/Feramance/Torrentarr/commit/361c04df648f2c2d1ac836b725e328b6dcf3ce80))
+
+### Maintenance
+- Bump Microsoft.AspNetCore.Authentication.OpenIdConnect from 10.0.11 to 10.0.12 ([bf66b22](https://github.com/Feramance/Torrentarr/commit/bf66b22970e7aa5514f2bc416eacbd4aa9e78a7c))
+- Bump Microsoft.AspNetCore.Authentication.OpenIdConnect from 10.0.11 to 10.0.12 (#455) ([f051a57](https://github.com/Feramance/Torrentarr/commit/f051a576734ba50a6abfeda7ba973ef6985969c5))
+- build(deps): bump @tanstack/react-table from 8.21.3 to 9.2.4 in /webui (#438) ([217a4f3](https://github.com/Feramance/Torrentarr/commit/217a4f384ac8634b8b3c74cedced67b5c82f6c3f))
+- Bump Microsoft.EntityFrameworkCore from 10.0.11 to 10.0.12 (#452) ([dd15edd](https://github.com/Feramance/Torrentarr/commit/dd15edd63d94f5eefc09ee24a48b60fe86598b10))
+- Bump Microsoft.AspNetCore.SpaServices.Extensions from 10.0.11 to 10.0.12 ([edbd8a4](https://github.com/Feramance/Torrentarr/commit/edbd8a450ee0834e93bfee259df65bd60ed550dd))
+- build(deps): bump @mantine/core from 9.5.1 to 9.6.2 in /webui ([216780a](https://github.com/Feramance/Torrentarr/commit/216780ab5dfa49de82cf606e4b6b7e7a46886160))
+- build(deps-dev): bump @vitejs/plugin-react from 6.1.0 to 6.1.1 in /webui ([eb37ef1](https://github.com/Feramance/Torrentarr/commit/eb37ef1e9d5096b88787b3f9660eea868264d90f))
+- build(deps-dev): bump @testing-library/dom from 10.4.1 to 10.4.2 in /webui ([eeaca24](https://github.com/Feramance/Torrentarr/commit/eeaca24f094fcf41eee12d635548af158174e5f4))
+- build(deps-dev): bump jsdom from 30.0.1 to 30.1.1 in /webui ([b215698](https://github.com/Feramance/Torrentarr/commit/b215698bbd92ceefb53dd53d3137039ce96f8859))
+- build(deps-dev): bump vite from 8.2.2 to 8.3.0 in /webui ([d99d74a](https://github.com/Feramance/Torrentarr/commit/d99d74a0f58f4a8293843fb1a1224f24796b540b))
+- Bump Microsoft.AspNetCore.Mvc.NewtonsoftJson from 10.0.11 to 10.0.12 ([e5330ab](https://github.com/Feramance/Torrentarr/commit/e5330ab76cbcdcd4299edf30b3532042c4ad87c2))
+- build(deps): bump @mantine/dates from 9.5.1 to 9.6.1 in /webui ([74c5688](https://github.com/Feramance/Torrentarr/commit/74c56880517b11fdac8f878189149c84f3712d72))
+- Bump FFMpegCore from 5.4.0 to 5.5.0 ([a54298d](https://github.com/Feramance/Torrentarr/commit/a54298d22e562793627054503f422bce3c11b2b1))
+- build(deps): bump @mantine/hooks from 9.5.2 to 9.6.1 in /webui ([7d3cfea](https://github.com/Feramance/Torrentarr/commit/7d3cfeaf02748819e8d9fc42acb76fcd50ec3c64))
+- Bump FluentAssertions from 8.10.0 to 8.11.0 ([7550b00](https://github.com/Feramance/Torrentarr/commit/7550b007a2caac3ce1e8e5260b19019acb9bf4e5))
+- build(deps-dev): bump typescript-eslint from 8.68.0 to 8.70.0 in /webui ([e3fed5b](https://github.com/Feramance/Torrentarr/commit/e3fed5b8549a600adcdb2b07a9a8d54f090806b1))
+- build: align Node version with jsdom 30 ([1c4f143](https://github.com/Feramance/Torrentarr/commit/1c4f14399eaf40962210742f0be65d80dd740772))
+- build(deps-dev): bump jsdom from 29.1.1 to 30.0.1 in /webui ([146fce7](https://github.com/Feramance/Torrentarr/commit/146fce778883547e600606859bdf73f1f030d6ad))
+- build(deps-dev): Bump @testing-library/jest-dom from 6.9.1 to 7.0.1 in /webui (#400) ([0e107c8](https://github.com/Feramance/Torrentarr/commit/0e107c8c0e7035a5631f2306f8ff1fc907b854a2))
+
+---
+
 ## v6.14.6-1 (2026-09-11)
 
 ---

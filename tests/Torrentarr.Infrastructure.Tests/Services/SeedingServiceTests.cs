@@ -31,6 +31,79 @@ public class SeedingServiceTests
             stalled);
     }
 
+    [Fact]
+    public void CategoryOverride_ReplacesOnlyExplicitValues()
+    {
+        var baseConfig = new CategorySeedingConfig
+        {
+            MaxUploadRatio = 1.5,
+            MaxSeedingTime = 3600,
+            HitAndRunMode = "and",
+            MinSeedRatio = 2.0,
+            Categories =
+            [
+                new CategorySeedingCategoryOverride
+                {
+                    Name = "movies",
+                    MaxUploadRatio = 4.0,
+                    HitAndRunMode = "or"
+                }
+            ]
+        };
+
+        var effective = SeedingService.ApplyCategoryOverride(baseConfig, "movies", matchSubcategories: false);
+
+        effective.MaxUploadRatio.Should().Be(4.0);
+        effective.HitAndRunMode.Should().Be("or");
+        effective.MaxSeedingTime.Should().Be(3600);
+        effective.MinSeedRatio.Should().Be(2.0);
+    }
+
+    [Fact]
+    public void CategoryOverride_MatchesDescendantOnlyWhenEnabled()
+    {
+        var baseConfig = new CategorySeedingConfig
+        {
+            MaxUploadRatio = 1.0,
+            Categories = [new CategorySeedingCategoryOverride { Name = "tv", MaxUploadRatio = 3.0 }]
+        };
+
+        SeedingService.ApplyCategoryOverride(baseConfig, "tv/4k", matchSubcategories: false)
+            .Should().BeSameAs(baseConfig);
+        SeedingService.ApplyCategoryOverride(baseConfig, "tv/4k", matchSubcategories: true)
+            .MaxUploadRatio.Should().Be(3.0);
+    }
+
+    [Fact]
+    public void CategoryOverride_NormalizesConfiguredCategoryName()
+    {
+        var baseConfig = new CategorySeedingConfig
+        {
+            MaxUploadRatio = 1.0,
+            Categories = [new CategorySeedingCategoryOverride { Name = " tv // 4k ", MaxUploadRatio = 3.0 }]
+        };
+
+        SeedingService.ApplyCategoryOverride(baseConfig, "tv/4k", matchSubcategories: false)
+            .MaxUploadRatio.Should().Be(3.0);
+    }
+
+    [Fact]
+    public void CategoryOverride_PreservesCaseSensitiveCategoryIdentity()
+    {
+        var baseConfig = new CategorySeedingConfig
+        {
+            MaxUploadRatio = 1.0,
+            Categories =
+            [
+                new CategorySeedingCategoryOverride { Name = "movies", MaxUploadRatio = 2.0 },
+                new CategorySeedingCategoryOverride { Name = "Movies", MaxUploadRatio = 3.0 }
+            ]
+        };
+
+        SeedingService.ApplyCategoryOverride(baseConfig, "Movies", matchSubcategories: false)
+            .MaxUploadRatio.Should().Be(3.0);
+    }
+
     // ── ExtractTrackerHost ─────────────────────────────────────────────────────
 
     [Theory]

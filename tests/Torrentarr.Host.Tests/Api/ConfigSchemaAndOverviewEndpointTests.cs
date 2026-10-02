@@ -26,7 +26,20 @@ public class ConfigSchemaAndOverviewEndpointTests : IClassFixture<TorrentarrWebA
         using var json = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
         json.RootElement.GetProperty("version").GetInt32().Should().Be(1);
         json.RootElement.GetProperty("sections").TryGetProperty("WebUI", out _).Should().BeTrue();
+        json.RootElement.GetProperty("sections").TryGetProperty("TorrentClient", out _).Should().BeTrue();
         json.RootElement.GetProperty("sections").TryGetProperty("Arr", out _).Should().BeTrue();
+        json.RootElement.GetProperty("sections").EnumerateObject()
+            .Sum(section => section.Value.GetArrayLength()).Should().Be(138);
+    }
+
+    [Fact]
+    public async Task ConfigSchema_WebAndApiAliasesReturnIdenticalContracts()
+    {
+        var client = _factory.CreateClientWithApiToken();
+        var web = JsonDocument.Parse(await client.GetStringAsync("/web/config/schema"));
+        var api = JsonDocument.Parse(await client.GetStringAsync("/api/config/schema"));
+
+        JsonElement.DeepEquals(web.RootElement, api.RootElement).Should().BeTrue();
     }
 
     [Fact]

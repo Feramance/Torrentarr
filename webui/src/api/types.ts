@@ -79,7 +79,7 @@ export interface QbitCategory {
   totalSize: number;
   avgRatio: number;
   avgSeedingTime: number;
-  seedingConfig: QbitCategorySeedingConfig;
+  seedingConfig: QbitCategorySeedingConfig | null;
 }
 
 export interface QbitCategoriesResponse {
@@ -128,11 +128,26 @@ export interface QbitOverviewResponse {
 }
 
 export interface ConfigSchemaField {
-  dotted: string;
+  section: string;
+  path: string[];
+  key: string;
   kind: string;
   label: string;
+  default: unknown;
+  comments: string | string[];
+  required: boolean;
+  secure: boolean;
   uiExpose: boolean;
-  sensitive: boolean;
+  applyLive: boolean | null;
+  requiresRestart: boolean | null;
+  options?: string[];
+  description?: string;
+  placeholder?: string;
+  nativeUnit?: "seconds" | "minutes";
+  allowNegative?: boolean;
+  minimum?: number;
+  maximum?: number;
+  arrKinds?: string[];
 }
 
 export interface ConfigSchemaResponse {

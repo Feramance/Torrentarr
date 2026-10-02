@@ -28,12 +28,55 @@ vi.mock("../../api/client", async (importOriginal) => {
   return {
     ...actual,
     getMeta: vi.fn(async () => metaWithSetup),
+    getToken: vi.fn(async () => "test-token"),
     login: vi.fn(),
     setPassword: vi.fn(async () => ({ success: true })),
   };
 });
 
-import { AuthError, getMeta, login, setPassword } from "../../api/client";
+vi.mock("../../pages/ConfigView", () => ({
+  ConfigView: ({
+    active = true,
+    onDirtyChange,
+  }: {
+    active?: boolean;
+    onDirtyChange?: (dirty: boolean) => void;
+  }) => {
+    const [value, setValue] = React.useState("");
+    const [modalOpen, setModalOpen] = React.useState(false);
+    React.useEffect(() => {
+      if (!active || !modalOpen) return;
+      const originalOverflow = document.body.style.overflow;
+      document.body.style.overflow = "hidden";
+      return () => {
+        document.body.style.overflow = originalOverflow;
+      };
+    }, [active, modalOpen]);
+    return (
+      <>
+        <input
+          aria-label="mock config value"
+          value={value}
+          onChange={(event) => setValue(event.target.value)}
+        />
+        <button type="button" onClick={() => onDirtyChange?.(true)}>
+          Mark config dirty
+        </button>
+        <button type="button" onClick={() => setModalOpen(true)}>
+          Open config modal
+        </button>
+      </>
+    );
+  },
+}));
+
+import {
+  AuthError,
+  getMeta,
+  getToken,
+  login,
+  setPassword,
+} from "../../api/client";
 
 const server = setupServer();
 
@@ -42,8 +85,98 @@ afterEach(() => {
   server.resetHandlers();
   resetUrlBaseCacheForTests();
   vi.mocked(getMeta).mockResolvedValue(metaWithSetup);
+  vi.mocked(getToken).mockResolvedValue("test-token");
   vi.mocked(login).mockReset();
   vi.mocked(setPassword).mockResolvedValue({ success: true });
+});
+
+describe("App tab lifecycle", () => {
+  it("releases the Config modal scroll lock when changing tabs", async () => {
+    vi.stubGlobal("location", {
+      pathname: "/ui/",
+      replace: vi.fn(),
+      reload: vi.fn(),
+    } as unknown as Location);
+    vi.mocked(getMeta).mockResolvedValue({
+      current_version: "6.14.5",
+      auth_required: false,
+      local_auth_enabled: false,
+      oidc_enabled: false,
+      setup_required: false,
+    });
+    const user = userEvent.setup();
+
+    render(<App />);
+    await user.click(await screen.findByRole("button", { name: /config/i }));
+    await user.click(
+      await screen.findByRole("button", { name: /open config modal/i }),
+    );
+    expect(document.body.style.overflow).toBe("hidden");
+
+    await user.click(screen.getByRole("button", { name: /processes/i }));
+
+    expect(document.body.style.overflow).toBe("");
+  });
+
+  it("reloads clean config state when reactivating the tab", async () => {
+    vi.stubGlobal("location", {
+      pathname: "/ui/",
+      replace: vi.fn(),
+      reload: vi.fn(),
+    } as unknown as Location);
+    vi.mocked(getMeta).mockResolvedValue({
+      current_version: "6.14.5",
+      auth_required: false,
+      local_auth_enabled: false,
+      oidc_enabled: false,
+      setup_required: false,
+    });
+    const user = userEvent.setup();
+
+    render(<App />);
+    await user.click(await screen.findByRole("button", { name: /config/i }));
+    const input = await screen.findByLabelText("mock config value");
+    await user.type(input, "unsaved value");
+    await user.click(screen.getByRole("button", { name: /processes/i }));
+    await user.click(screen.getByRole("button", { name: /config/i }));
+
+    expect(screen.getByLabelText("mock config value")).toHaveValue("");
+  });
+
+  it("discards retained config edits after confirmed navigation", async () => {
+    vi.stubGlobal("location", {
+      pathname: "/ui/",
+      replace: vi.fn(),
+      reload: vi.fn(),
+    } as unknown as Location);
+    vi.mocked(getMeta).mockResolvedValue({
+      current_version: "6.14.5",
+      auth_required: false,
+      local_auth_enabled: false,
+      oidc_enabled: false,
+      setup_required: false,
+    });
+    const confirm = vi.spyOn(window, "confirm").mockReturnValue(true);
+    const user = userEvent.setup();
+
+    render(<App />);
+    await user.click(await screen.findByRole("button", { name: /config/i }));
+    await user.type(
+      await screen.findByLabelText("mock config value"),
+      "discard me",
+    );
+    await user.click(
+      screen.getByRole("button", { name: /mark config dirty/i }),
+    );
+    await user.click(screen.getByRole("button", { name: /processes/i }));
+    await user.click(screen.getByRole("button", { name: /config/i }));
+
+    expect(confirm).toHaveBeenCalledWith(
+      "You have unsaved configuration changes. Leave without saving?",
+    );
+    expect(screen.getByLabelText("mock config value")).toHaveValue("");
+    confirm.mockRestore();
+  });
 });
 afterAll(() => server.close());
 

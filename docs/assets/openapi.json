@@ -148,7 +148,7 @@
     }
   },
   "info": {
-    "description": "API for qBittorrent + Arr automation (Torrentarr \u2014 C# port of qBitrr). Aligned with qBitrr master. When WebUI.AuthDisabled is false, most routes require a Bearer token (WebUI.Token) or a valid browser session after login. Interactive docs: GET /web/docs or GET /api/docs.",
+    "description": "API for qBittorrent + Arr automation (Torrentarr \u2014 C# port of qBitrr). Aligned with qBitrr v5.14.5-1. When WebUI.AuthDisabled is false, most routes require a Bearer token (WebUI.Token) or a valid browser session after login. Interactive docs: GET /web/docs or GET /api/docs.",
     "title": "Torrentarr API",
     "version": "v1"
   },
@@ -1661,6 +1661,7 @@
     },
     "/api/readarr/{category}/author/{author_id}": {
       "get": {
+        "operationId": "api_readarr_author_detail",
         "parameters": [
           {
             "in": "path",
@@ -1693,6 +1694,9 @@
           },
           "401": {
             "$ref": "#/components/responses/Unauthorized"
+          },
+          "404": {
+            "description": "Author not found"
           }
         },
         "security": [
@@ -1700,7 +1704,7 @@
             "bearerAuth": []
           }
         ],
-        "summary": "Readarr author detail with books (/api)",
+        "summary": "Readarr author with books (/api)",
         "tags": [
           "WebUI"
         ]
@@ -1708,6 +1712,7 @@
     },
     "/api/readarr/{category}/author/{author_id}/thumbnail": {
       "get": {
+        "operationId": "api_readarr_author_thumbnail",
         "parameters": [
           {
             "in": "path",
@@ -1724,17 +1729,36 @@
             "schema": {
               "type": "integer"
             }
+          },
+          {
+            "in": "query",
+            "name": "token",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
           }
         ],
         "responses": {
           "200": {
-            "description": "Image"
+            "content": {
+              "image/*": {
+                "schema": {
+                  "format": "binary",
+                  "type": "string"
+                }
+              }
+            },
+            "description": "Cached author image bytes"
+          },
+          "304": {
+            "description": "Not modified (If-None-Match)"
           },
           "401": {
             "$ref": "#/components/responses/Unauthorized"
           },
           "404": {
-            "description": "Not found"
+            "description": "Author or image not found"
           }
         },
         "security": [
@@ -1750,6 +1774,7 @@
     },
     "/api/readarr/{category}/authors": {
       "get": {
+        "operationId": "api_readarr_authors",
         "parameters": [
           {
             "in": "path",
@@ -1779,6 +1804,29 @@
             "schema": {
               "type": "integer"
             }
+          },
+          {
+            "in": "query",
+            "name": "monitored",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "description": "Restrict to authors with at least one monitored book whose file is missing.",
+            "in": "query",
+            "name": "missing",
+            "schema": {
+              "type": "boolean"
+            }
+          },
+          {
+            "description": "Restrict to authors with at least one book whose Reason matches. Accepts Missing, Quality, CustomFormat, Upgrade, or 'Not being searched' (also matches NULL).",
+            "in": "query",
+            "name": "reason",
+            "schema": {
+              "type": "string"
+            }
           }
         ],
         "responses": {
@@ -1802,7 +1850,7 @@
             "bearerAuth": []
           }
         ],
-        "summary": "Readarr authors browse (/api)",
+        "summary": "Readarr authors catalog (/api)",
         "tags": [
           "WebUI"
         ]
@@ -3816,6 +3864,7 @@
     },
     "/web/readarr/{category}/author/{author_id}": {
       "get": {
+        "operationId": "web_readarr_author_detail",
         "parameters": [
           {
             "in": "path",
@@ -3848,6 +3897,9 @@
           },
           "401": {
             "$ref": "#/components/responses/Unauthorized"
+          },
+          "404": {
+            "description": "Author not found"
           }
         },
         "security": [
@@ -3855,7 +3907,7 @@
             "bearerAuth": []
           }
         ],
-        "summary": "Readarr author detail with books (/web)",
+        "summary": "Readarr author with books (/web)",
         "tags": [
           "WebUI"
         ]
@@ -3863,6 +3915,7 @@
     },
     "/web/readarr/{category}/author/{author_id}/thumbnail": {
       "get": {
+        "operationId": "web_readarr_author_thumbnail",
         "parameters": [
           {
             "in": "path",
@@ -3879,17 +3932,36 @@
             "schema": {
               "type": "integer"
             }
+          },
+          {
+            "in": "query",
+            "name": "token",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
           }
         ],
         "responses": {
           "200": {
-            "description": "Image"
+            "content": {
+              "image/*": {
+                "schema": {
+                  "format": "binary",
+                  "type": "string"
+                }
+              }
+            },
+            "description": "Cached author image bytes"
+          },
+          "304": {
+            "description": "Not modified (If-None-Match)"
           },
           "401": {
             "$ref": "#/components/responses/Unauthorized"
           },
           "404": {
-            "description": "Not found"
+            "description": "Author or image not found"
           }
         },
         "security": [
@@ -3905,6 +3977,7 @@
     },
     "/web/readarr/{category}/authors": {
       "get": {
+        "operationId": "web_readarr_authors",
         "parameters": [
           {
             "in": "path",
@@ -3934,6 +4007,29 @@
             "schema": {
               "type": "integer"
             }
+          },
+          {
+            "in": "query",
+            "name": "monitored",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "description": "Restrict to authors with at least one monitored book whose file is missing.",
+            "in": "query",
+            "name": "missing",
+            "schema": {
+              "type": "boolean"
+            }
+          },
+          {
+            "description": "Restrict to authors with at least one book whose Reason matches. Accepts Missing, Quality, CustomFormat, Upgrade, or 'Not being searched' (also matches NULL).",
+            "in": "query",
+            "name": "reason",
+            "schema": {
+              "type": "string"
+            }
           }
         ],
         "responses": {
@@ -3957,7 +4053,7 @@
             "bearerAuth": []
           }
         ],
-        "summary": "Readarr authors browse (/web)",
+        "summary": "Readarr authors catalog (/web)",
         "tags": [
           "WebUI"
         ]

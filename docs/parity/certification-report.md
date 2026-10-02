@@ -2,7 +2,7 @@
 
 ## Scope
 
-This report captures Torrentarr's parity status after rebasing the audit from qBitrr **v5.12.10** through **v5.14.4-1**. Torrentarr schema is **6.14.4**.
+This report captures Torrentarr's parity status after rebasing the audit from qBitrr **v5.12.10** through **v5.14.5-1**. Torrentarr schema is **6.14.6**.
 
 Primary tracking artifacts:
 
@@ -13,6 +13,14 @@ Primary tracking artifacts:
 - `docs/parity/overview.md`
 
 ## Implemented in This Pass
+
+### qBitrr 5.14.5-1 closeout
+
+- New Arr imports are gated by torrent-owned file allowlist inspection, including torrents completed before startup.
+- Failed qBittorrent priority changes remain pending instead of being cached as filtered.
+- The full 124-field schema is served from a shared C# registry and generates the checked-in frontend inventory.
+- Stable OpenAPI certification checks operations, required parameters, response statuses, and media types; `master` drift runs separately on a schedule.
+- Per-category qBittorrent seeding overrides are parsed, saved, and applied with subcategory-aware matching.
 
 ### Phase 0 — Baseline rebasing
 - Rebased the parity audit from qBitrr **v5.12.10** to **v5.14.3-1**.
@@ -36,7 +44,7 @@ Primary tracking artifacts:
 ### Implemented later (qBitrr 5.14.4-1)
 - Stalled-upload `MaxSeedingTime` clock (`stalledUP` observation, not `last_activity`); HnR still uses real `seeding_time` / ratio.
 - Per-series Sonarr episode HTTP skip (including 415); transport abort; all-fail rethrow so ingest is not marked complete.
-- `ExpectedConfigVersion` / default config references aligned to **`6.14.4`**.
+- `ExpectedConfigVersion` / default config references aligned to **`6.14.6`**.
 
 ## Validation Evidence
 
@@ -62,4 +70,4 @@ Focused regression checks added/updated:
 
 ## Matrix Status
 
-Latest-main user-facing parity is closed against qBitrr **v5.14.4-1**. Remaining `intentional-divergence` rows in `full-parity-matrix.md` are architecture or packaging only (process isolation, WAL vs `db_lock`, fork session sharing, Pathos, placeholder defaultdicts, `setup.py` / CI autofix).
+Latest-main user-facing parity is closed against qBitrr **v5.14.5-1**. Remaining `intentional-divergence` rows in `full-parity-matrix.md` are architecture or packaging only (process isolation, WAL vs `db_lock`, fork session sharing, Pathos, placeholder defaultdicts, `setup.py` / CI autofix).

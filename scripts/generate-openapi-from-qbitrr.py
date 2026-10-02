@@ -3,11 +3,12 @@
 from __future__ import annotations
 
 import json
+import os
 import sys
 import urllib.request
 from copy import deepcopy
 
-QBITRR_REF = "master"
+QBITRR_REF = os.environ.get("QBITRR_OPENAPI_REF", "v5.14.5-1")
 OUT_PATH = "docs/assets/openapi.json"
 
 EXTENSION_PATHS = {
@@ -124,130 +125,6 @@ EXTENSION_PATHS = {
             "security": [{"bearerAuth": []}],
             "responses": {
                 "302": {"description": "Redirect to Arr"},
-                "404": {"description": "Not found"},
-                "401": {"$ref": "#/components/responses/Unauthorized"},
-            },
-        }
-    },
-    "/web/readarr/{category}/authors": {
-        "get": {
-            "summary": "Readarr authors browse (/web)",
-            "tags": ["WebUI"],
-            "parameters": [
-                {"name": "category", "in": "path", "required": True, "schema": {"type": "string"}},
-                {"name": "q", "in": "query", "schema": {"type": "string"}},
-                {"name": "page", "in": "query", "schema": {"type": "integer"}},
-                {"name": "page_size", "in": "query", "schema": {"type": "integer"}},
-            ],
-            "security": [{"bearerAuth": []}],
-            "responses": {
-                "200": {
-                    "description": "OK",
-                    "content": {
-                        "application/json": {
-                            "schema": {"type": "object", "additionalProperties": True}
-                        }
-                    },
-                },
-                "401": {"$ref": "#/components/responses/Unauthorized"},
-            },
-        }
-    },
-    "/api/readarr/{category}/authors": {
-        "get": {
-            "summary": "Readarr authors browse (/api)",
-            "tags": ["WebUI"],
-            "parameters": [
-                {"name": "category", "in": "path", "required": True, "schema": {"type": "string"}},
-                {"name": "q", "in": "query", "schema": {"type": "string"}},
-                {"name": "page", "in": "query", "schema": {"type": "integer"}},
-                {"name": "page_size", "in": "query", "schema": {"type": "integer"}},
-            ],
-            "security": [{"bearerAuth": []}],
-            "responses": {
-                "200": {
-                    "description": "OK",
-                    "content": {
-                        "application/json": {
-                            "schema": {"type": "object", "additionalProperties": True}
-                        }
-                    },
-                },
-                "401": {"$ref": "#/components/responses/Unauthorized"},
-            },
-        }
-    },
-    "/web/readarr/{category}/author/{author_id}": {
-        "get": {
-            "summary": "Readarr author detail with books (/web)",
-            "tags": ["WebUI"],
-            "parameters": [
-                {"name": "category", "in": "path", "required": True, "schema": {"type": "string"}},
-                {"name": "author_id", "in": "path", "required": True, "schema": {"type": "integer"}},
-            ],
-            "security": [{"bearerAuth": []}],
-            "responses": {
-                "200": {
-                    "description": "OK",
-                    "content": {
-                        "application/json": {
-                            "schema": {"type": "object", "additionalProperties": True}
-                        }
-                    },
-                },
-                "401": {"$ref": "#/components/responses/Unauthorized"},
-            },
-        }
-    },
-    "/api/readarr/{category}/author/{author_id}": {
-        "get": {
-            "summary": "Readarr author detail with books (/api)",
-            "tags": ["WebUI"],
-            "parameters": [
-                {"name": "category", "in": "path", "required": True, "schema": {"type": "string"}},
-                {"name": "author_id", "in": "path", "required": True, "schema": {"type": "integer"}},
-            ],
-            "security": [{"bearerAuth": []}],
-            "responses": {
-                "200": {
-                    "description": "OK",
-                    "content": {
-                        "application/json": {
-                            "schema": {"type": "object", "additionalProperties": True}
-                        }
-                    },
-                },
-                "401": {"$ref": "#/components/responses/Unauthorized"},
-            },
-        }
-    },
-    "/web/readarr/{category}/author/{author_id}/thumbnail": {
-        "get": {
-            "summary": "Readarr author thumbnail (/web)",
-            "tags": ["WebUI"],
-            "parameters": [
-                {"name": "category", "in": "path", "required": True, "schema": {"type": "string"}},
-                {"name": "author_id", "in": "path", "required": True, "schema": {"type": "integer"}},
-            ],
-            "security": [{"bearerAuth": []}],
-            "responses": {
-                "200": {"description": "Image"},
-                "404": {"description": "Not found"},
-                "401": {"$ref": "#/components/responses/Unauthorized"},
-            },
-        }
-    },
-    "/api/readarr/{category}/author/{author_id}/thumbnail": {
-        "get": {
-            "summary": "Readarr author thumbnail (/api)",
-            "tags": ["WebUI"],
-            "parameters": [
-                {"name": "category", "in": "path", "required": True, "schema": {"type": "string"}},
-                {"name": "author_id", "in": "path", "required": True, "schema": {"type": "integer"}},
-            ],
-            "security": [{"bearerAuth": []}],
-            "responses": {
-                "200": {"description": "Image"},
                 "404": {"description": "Not found"},
                 "401": {"$ref": "#/components/responses/Unauthorized"},
             },

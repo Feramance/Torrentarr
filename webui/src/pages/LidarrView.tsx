@@ -1734,7 +1734,7 @@ export function LidarrView({ active }: { active: boolean }): JSX.Element {
         void loadAggregate({ showLoading: false });
       }
     },
-    selection === "aggregate" && liveArr ? 1000 : null,
+    active && selection === "aggregate" && liveArr ? 1000 : null,
   );
 
   useEffect(() => {
