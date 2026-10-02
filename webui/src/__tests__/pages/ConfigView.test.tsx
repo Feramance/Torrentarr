@@ -259,6 +259,73 @@ describe("ConfigView – addQbitInstance behaviour", () => {
 // ── UrlBase field ─────────────────────────────────────────────────────────────
 
 describe("ConfigView – UrlBase field", () => {
+  it("renders API schema fields that are marked for UI exposure", async () => {
+    server.use(
+      http.get("/web/config", () =>
+        HttpResponse.json({
+          ...configQbitOnly,
+          WebUI: {
+            ...configQbitOnly.WebUI,
+            AllowInsecureExposure: false,
+            HiddenSchemaField: false,
+          },
+        }),
+      ),
+      http.get("/web/config/schema", () =>
+        HttpResponse.json({
+          version: 1,
+          sections: {
+            WebUI: [
+              {
+                section: "WebUI",
+                path: ["AllowInsecureExposure"],
+                key: "AllowInsecureExposure",
+                label: "Allow Insecure Exposure",
+                kind: "checkbox",
+                default: false,
+                comments: "Acknowledge an intentionally public bind.",
+                required: false,
+                secure: false,
+                uiExpose: true,
+                applyLive: false,
+                requiresRestart: true,
+              },
+              {
+                section: "WebUI",
+                path: ["HiddenSchemaField"],
+                key: "HiddenSchemaField",
+                label: "Hidden Schema Field",
+                kind: "checkbox",
+                default: false,
+                comments: "Not intended for the editor.",
+                required: false,
+                secure: false,
+                uiExpose: false,
+                applyLive: false,
+                requiresRestart: true,
+              },
+            ],
+          },
+        }),
+      ),
+    );
+
+    const user = userEvent.setup();
+    renderConfig();
+
+    const webSettingsCard = (await screen.findByText("Web Settings")).closest(
+      ".card",
+    )!;
+    await user.click(
+      within(webSettingsCard).getByRole("button", { name: /configure/i }),
+    );
+
+    expect(
+      await screen.findByLabelText("Allow Insecure Exposure"),
+    ).toBeInTheDocument();
+    expect(screen.queryByText("Hidden Schema Field")).not.toBeInTheDocument();
+  });
+
   it("renders Url Base field in Web Settings modal", async () => {
     server.use(
       http.get("/web/config", () => HttpResponse.json(configQbitOnly)),

@@ -31,7 +31,7 @@ public class ArrThumbnailService
         Directory.CreateDirectory(_cacheDir);
     }
 
-    public async Task<(byte[] Bytes, string ContentType)?> GetThumbnailAsync(
+    public async Task<(byte[] Bytes, string ContentType, string ETag)?> GetThumbnailAsync(
         string arrType,
         string category,
         int entryId,
@@ -52,7 +52,8 @@ public class ArrThumbnailService
         {
             var bytes = await File.ReadAllBytesAsync(cachePath, ct);
             var mime = GuessMime(bytes);
-            return (bytes, mime);
+            var etag = await ReadOrCreateETagAsync(etagPath, bytes, ct);
+            return (bytes, mime, etag);
         }
 
         var arrId = await ResolveArrIdAsync(arrType, keys, entryId, ct);
@@ -69,10 +70,27 @@ public class ArrThumbnailService
             await File.WriteAllBytesAsync(cachePath, fetched.Value.Bytes, ct);
             var etag = Convert.ToHexString(SHA256.HashData(fetched.Value.Bytes)).ToLowerInvariant();
             await File.WriteAllTextAsync(etagPath, etag, ct);
-            return fetched;
+            return (fetched.Value.Bytes, fetched.Value.ContentType, etag);
         }
 
         return null;
+    }
+
+    private static async Task<string> ReadOrCreateETagAsync(
+        string etagPath,
+        byte[] bytes,
+        CancellationToken ct)
+    {
+        if (File.Exists(etagPath))
+        {
+            var cached = (await File.ReadAllTextAsync(etagPath, ct)).Trim();
+            if (!string.IsNullOrEmpty(cached))
+                return cached;
+        }
+
+        var etag = Convert.ToHexString(SHA256.HashData(bytes)).ToLowerInvariant();
+        await File.WriteAllTextAsync(etagPath, etag, ct);
+        return etag;
     }
 
     private async Task<int?> ResolveArrIdAsync(string arrType, List<string> keys, int entryId, CancellationToken ct)

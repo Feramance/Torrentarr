@@ -17,7 +17,12 @@ import {
   setPassword,
   type TestConnectionResponse,
 } from "../api/client";
-import type { ConfigDocument } from "../api/types";
+import type {
+  ConfigDocument,
+  ConfigSchemaField,
+  ConfigSchemaResponse,
+} from "../api/types";
+import { CONFIG_SCHEMA } from "../config/configFields.generated";
 import { useToast } from "../context/ToastContext";
 import { useWebUI } from "../context/WebUIContext";
 import { getTooltip } from "../config/tooltips";
@@ -106,6 +111,90 @@ interface FieldDefinition {
   nativeUnit?: "seconds" | "minutes";
   /** Allow -1 (e.g. disabled) */
   allowNegative?: boolean;
+}
+
+const FALLBACK_CONFIG_SCHEMA = CONFIG_SCHEMA as unknown as ConfigSchemaResponse;
+
+const SUPPORTED_SCHEMA_FIELD_TYPES = new Set<FieldType>([
+  "text",
+  "number",
+  "checkbox",
+  "password",
+  "select",
+  "tags",
+  "duration",
+]);
+
+function schemaDescription(field: ConfigSchemaField): string | undefined {
+  if (field.description) return field.description;
+  if (Array.isArray(field.comments)) return field.comments.join(" ");
+  return field.comments || undefined;
+}
+
+function schemaFieldToDefinition(
+  field: ConfigSchemaField,
+  pathPrefix: string[] = [],
+): FieldDefinition | null {
+  if (
+    !field.uiExpose ||
+    !SUPPORTED_SCHEMA_FIELD_TYPES.has(field.kind as FieldType)
+  ) {
+    return null;
+  }
+
+  const validate =
+    field.minimum === undefined && field.maximum === undefined
+      ? undefined
+      : (value: unknown): string | undefined => {
+          if (value === null || value === undefined || value === "") {
+            return undefined;
+          }
+          const number = typeof value === "number" ? value : Number(value);
+          if (!Number.isFinite(number)) return undefined;
+          if (field.minimum !== undefined && number < field.minimum) {
+            return `${field.label} must be at least ${field.minimum}.`;
+          }
+          if (field.maximum !== undefined && number > field.maximum) {
+            return `${field.label} must be at most ${field.maximum}.`;
+          }
+          return undefined;
+        };
+
+  return {
+    label: field.label,
+    path: [...pathPrefix, ...field.path],
+    type: field.kind as FieldType,
+    options: field.options ? [...field.options] : undefined,
+    placeholder: field.placeholder,
+    description: schemaDescription(field),
+    secure: field.secure,
+    required: field.required,
+    nativeUnit: field.nativeUnit,
+    allowNegative: field.allowNegative,
+    validate,
+  };
+}
+
+function mergeSchemaFields(
+  handwritten: FieldDefinition[],
+  schemaFields: ConfigSchemaField[],
+  pathPrefix: string[] = [],
+): FieldDefinition[] {
+  const paths = new Set(
+    handwritten
+      .filter((field) => field.path)
+      .map((field) => field.path!.join(".").toLowerCase()),
+  );
+  const merged = [...handwritten];
+  for (const schemaField of schemaFields) {
+    const field = schemaFieldToDefinition(schemaField, pathPrefix);
+    if (!field?.path) continue;
+    const path = field.path.join(".").toLowerCase();
+    if (paths.has(path)) continue;
+    paths.add(path);
+    merged.push(field);
+  }
+  return merged;
 }
 
 interface ValidationError {
@@ -1384,7 +1473,10 @@ const ARR_TRACKER_FIELDS: FieldDefinition[] = [
   },
 ];
 
-function getArrFieldSets(arrKey: string) {
+function getArrFieldSets(
+  arrKey: string,
+  schemaFields: ConfigSchemaField[] = [],
+) {
   const arrType = arrTypeFromSectionName(arrKey);
   const isSonarr = arrType === "sonarr";
   const generalFields = [...ARR_GENERAL_FIELDS];
@@ -1417,6 +1509,45 @@ function getArrFieldSets(arrKey: string) {
   const torrentFields = [...ARR_TORRENT_FIELDS];
   const seedingFields = [...ARR_SEEDING_FIELDS];
   const trackerFields = [...ARR_TRACKER_FIELDS];
+  const existingPaths = new Set(
+    [
+      ...generalFields,
+      ...entryFields,
+      ...entryOmbiFields,
+      ...entryOverseerrFields,
+      ...torrentFields,
+      ...seedingFields,
+    ]
+      .filter((field) => field.path)
+      .map((field) => field.path!.join(".").toLowerCase()),
+  );
+  for (const schemaField of schemaFields) {
+    if (
+      schemaField.arrKinds?.length &&
+      (!arrType || !schemaField.arrKinds.includes(arrType))
+    ) {
+      continue;
+    }
+    const field = schemaFieldToDefinition(schemaField);
+    if (!field?.path) continue;
+    const path = field.path.join(".");
+    const normalizedPath = path.toLowerCase();
+    if (existingPaths.has(normalizedPath)) continue;
+    existingPaths.add(normalizedPath);
+    if (path.startsWith("EntrySearch.Ombi.")) {
+      entryOmbiFields.push(field);
+    } else if (path.startsWith("EntrySearch.Overseerr.")) {
+      entryOverseerrFields.push(field);
+    } else if (path.startsWith("EntrySearch.")) {
+      entryFields.push(field);
+    } else if (path.startsWith("Torrent.SeedingMode.")) {
+      seedingFields.push(field);
+    } else if (path.startsWith("Torrent.")) {
+      torrentFields.push(field);
+    } else {
+      generalFields.push(field);
+    }
+  }
   return {
     generalFields,
     entryFields,
@@ -1538,12 +1669,18 @@ function validateFieldGroup(
 
 function validateFormState(
   formState: ConfigDocument | null,
+  fields: {
+    settings: FieldDefinition[];
+    webUI: FieldDefinition[];
+    qBit: FieldDefinition[];
+    arrSchema: ConfigSchemaField[];
+  },
 ): ValidationError[] {
   if (!formState) return [];
   const errors: ValidationError[] = [];
   const rootContext: ValidationContext = { root: formState };
-  validateFieldGroup(errors, SETTINGS_FIELDS, formState, [], rootContext);
-  validateFieldGroup(errors, WEB_SETTINGS_FIELDS, formState, [], rootContext);
+  validateFieldGroup(errors, fields.settings, formState, [], rootContext);
+  validateFieldGroup(errors, fields.webUI, formState, [], rootContext);
 
   for (const [key, value] of Object.entries(formState)) {
     if (QBIT_SECTION_REGEX.test(key) && value && typeof value === "object") {
@@ -1553,7 +1690,7 @@ function validateFormState(
         section,
         sectionKey: key,
       };
-      validateFieldGroup(errors, QBIT_FIELDS, section, [key], sectionContext);
+      validateFieldGroup(errors, fields.qBit, section, [key], sectionContext);
     } else if (
       SERVARR_SECTION_REGEX.test(key) &&
       value &&
@@ -1565,7 +1702,7 @@ function validateFormState(
         section,
         sectionKey: key,
       };
-      const fieldSets = getArrFieldSets(key);
+      const fieldSets = getArrFieldSets(key, fields.arrSchema);
       validateFieldGroup(
         errors,
         fieldSets.generalFields,
@@ -1787,6 +1924,9 @@ export function ConfigView(props?: ConfigViewProps): JSX.Element {
     null,
   );
   const [formState, setFormState] = useState<ConfigDocument | null>(null);
+  const [configSchema, setConfigSchema] = useState<ConfigSchemaResponse>(
+    FALLBACK_CONFIG_SCHEMA,
+  );
   const [loading, setLoading] = useState(false);
   const [saving, setSaving] = useState(false);
   // Track section renames to ensure old sections are fully deleted
@@ -1797,8 +1937,11 @@ export function ConfigView(props?: ConfigViewProps): JSX.Element {
   const loadConfig = useCallback(async () => {
     setLoading(true);
     try {
+      const schemaRequest = getConfigSchema().catch(
+        () => FALLBACK_CONFIG_SCHEMA,
+      );
       const config = await getConfig();
-      void getConfigSchema().catch(() => null);
+      setConfigSchema(await schemaRequest);
       setOriginalConfig(config);
       // Deep clone config for form state (immer will handle immutability from here)
       setFormState(config ? JSON.parse(JSON.stringify(config)) : null);
@@ -1817,6 +1960,31 @@ export function ConfigView(props?: ConfigViewProps): JSX.Element {
   useEffect(() => {
     void loadConfig();
   }, [loadConfig]);
+
+  const settingsFields = useMemo(
+    () =>
+      mergeSchemaFields(SETTINGS_FIELDS, configSchema.sections.Settings ?? [], [
+        "Settings",
+      ]),
+    [configSchema],
+  );
+  const webUIFields = useMemo(
+    () =>
+      mergeSchemaFields(
+        WEB_SETTINGS_FIELDS,
+        configSchema.sections.WebUI ?? [],
+        ["WebUI"],
+      ),
+    [configSchema],
+  );
+  const qbitFields = useMemo(
+    () => mergeSchemaFields(QBIT_FIELDS, configSchema.sections.qBit ?? []),
+    [configSchema],
+  );
+  const arrSchemaFields = useMemo(
+    () => configSchema.sections.Arr ?? [],
+    [configSchema],
+  );
 
   const handleFieldChange = useCallback(
     (path: string[], def: FieldDefinition, raw: unknown) => {
@@ -2184,7 +2352,12 @@ export function ConfigView(props?: ConfigViewProps): JSX.Element {
     if (!formState) return;
     setSaving(true);
     try {
-      const validationErrors = validateFormState(formState);
+      const validationErrors = validateFormState(formState, {
+        settings: settingsFields,
+        webUI: webUIFields,
+        qBit: qbitFields,
+        arrSchema: arrSchemaFields,
+      });
       if (validationErrors.length) {
         const formatted = validationErrors
           .map((error) => `${error.path.join(".")}: ${error.message}`)
@@ -2271,7 +2444,17 @@ export function ConfigView(props?: ConfigViewProps): JSX.Element {
     } finally {
       setSaving(false);
     }
-  }, [formState, originalConfig, loadConfig, push, pendingRenames]);
+  }, [
+    formState,
+    originalConfig,
+    loadConfig,
+    push,
+    pendingRenames,
+    settingsFields,
+    webUIFields,
+    qbitFields,
+    arrSchemaFields,
+  ]);
 
   if (loading || !formState) {
     return (
@@ -2498,6 +2681,7 @@ export function ConfigView(props?: ConfigViewProps): JSX.Element {
       {activeArrKey && formState ? (
         <ArrInstanceModal
           keyName={activeArrKey}
+          schemaFields={arrSchemaFields}
           state={(formState[activeArrKey] as ConfigDocument) ?? null}
           onChange={handleFieldChange}
           onRename={handleRenameSection}
@@ -2507,7 +2691,7 @@ export function ConfigView(props?: ConfigViewProps): JSX.Element {
       {isSettingsOpen ? (
         <SimpleConfigModal
           title="Settings"
-          fields={SETTINGS_FIELDS}
+          fields={settingsFields}
           state={formState}
           basePath={[]}
           onChange={handleFieldChange}
@@ -2517,7 +2701,7 @@ export function ConfigView(props?: ConfigViewProps): JSX.Element {
       {isWebSettingsOpen ? (
         <SimpleConfigModal
           title="Web Settings"
-          fields={WEB_SETTINGS_FIELDS}
+          fields={webUIFields}
           state={formState}
           basePath={[]}
           onChange={handleFieldChange}
@@ -2540,6 +2724,7 @@ export function ConfigView(props?: ConfigViewProps): JSX.Element {
       {activeQbitKey && formState ? (
         <QbitInstanceModal
           keyName={activeQbitKey}
+          fields={qbitFields}
           state={(formState[activeQbitKey] as ConfigDocument) ?? null}
           onChange={handleFieldChange}
           onRename={handleRenameQbitSection}
@@ -3874,6 +4059,7 @@ function SecureField({
 
 interface ArrInstanceModalProps {
   keyName: string;
+  schemaFields: ConfigSchemaField[];
   state: ConfigDocument | ConfigDocument[keyof ConfigDocument] | null;
   onChange: (path: string[], def: FieldDefinition, value: unknown) => void;
   onRename: (oldName: string, newName: string) => void;
@@ -3882,6 +4068,7 @@ interface ArrInstanceModalProps {
 
 function ArrInstanceModal({
   keyName,
+  schemaFields,
   state,
   onChange,
   onRename,
@@ -3895,7 +4082,7 @@ function ArrInstanceModal({
     torrentFields,
     seedingFields,
     trackerFields,
-  } = getArrFieldSets(keyName);
+  } = getArrFieldSets(keyName, schemaFields);
   const { push } = useToast();
 
   // State for test connection
@@ -4205,6 +4392,7 @@ function ArrInstanceModal({
 
 interface QbitInstanceModalProps {
   keyName: string;
+  fields: FieldDefinition[];
   state: ConfigDocument | ConfigDocument[keyof ConfigDocument] | null;
   onChange: (path: string[], def: FieldDefinition, value: unknown) => void;
   onRename: (oldName: string, newName: string) => void;
@@ -4213,6 +4401,7 @@ interface QbitInstanceModalProps {
 
 function QbitInstanceModal({
   keyName,
+  fields,
   state,
   onChange,
   onRename,
@@ -4270,7 +4459,7 @@ function QbitInstanceModal({
           </div>
           <FieldGroup
             title={null}
-            fields={QBIT_FIELDS}
+            fields={fields}
             state={state}
             basePath={[]}
             onChange={(path, def, value) =>

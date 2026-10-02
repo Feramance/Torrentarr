@@ -470,7 +470,27 @@ public static class ArrCatalogEndpoints
             var result = await thumbnails.GetThumbnailAsync(kind, category, id, ct);
             if (result is null)
                 return Results.NotFound();
+            var etag = $"\"{result.Value.ETag.Trim().Trim('"')}\"";
+            httpContext.Response.Headers["ETag"] = etag;
+            if (MatchesIfNoneMatch(httpContext.Request.Headers["If-None-Match"].ToString(), etag))
+                return Results.StatusCode(StatusCodes.Status304NotModified);
             return Results.File(result.Value.Bytes, result.Value.ContentType);
+        });
+    }
+
+    private static bool MatchesIfNoneMatch(string headerValue, string etag)
+    {
+        if (string.IsNullOrWhiteSpace(headerValue))
+            return false;
+
+        return headerValue.Split(',').Any(candidate =>
+        {
+            var value = candidate.Trim();
+            if (value == "*")
+                return true;
+            if (value.StartsWith("W/", StringComparison.OrdinalIgnoreCase))
+                value = value[2..].TrimStart();
+            return string.Equals(value, etag, StringComparison.Ordinal);
         });
     }
 
