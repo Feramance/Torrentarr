@@ -479,7 +479,7 @@ public class QBittorrentClient
     /// <summary>
     /// Get files in a torrent
     /// </summary>
-    public async Task<List<TorrentFile>> GetTorrentFilesAsync(string hash, CancellationToken ct = default)
+    public virtual async Task<List<TorrentFile>> GetTorrentFilesAsync(string hash, CancellationToken ct = default)
     {
         var request = new RestRequest("api/v2/torrents/files", Method.Get);
         AddAuthCookie(request);
@@ -500,7 +500,7 @@ public class QBittorrentClient
     /// Priority 0 = do not download; 1 = normal; 6 = high; 7 = maximum.
     /// POST /api/v2/torrents/filePrio
     /// </summary>
-    public async Task<bool> SetFilePriorityAsync(string hash, int[] fileIds, int priority, CancellationToken ct = default)
+    public virtual async Task<bool> SetFilePriorityAsync(string hash, int[] fileIds, int priority, CancellationToken ct = default)
     {
         var request = new RestRequest("api/v2/torrents/filePrio", Method.Post);
         AddAuthCookie(request);

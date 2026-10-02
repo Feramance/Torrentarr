@@ -102,12 +102,71 @@ public class TorrentCacheServiceTests
         svc.SetCategory("h1", "radarr");
         svc.SetName("h1", "Movie");
         svc.AddToIgnoreCache("h1", TimeSpan.FromHours(1));
+        svc.MarkFilePrioritiesApplied("qBit", "h1");
+        svc.MarkFileFiltered("qBit", "h1");
 
         svc.Clear();
 
         svc.GetCategory("h1").Should().BeNull();
         svc.GetName("h1").Should().BeNull();
         svc.IsInIgnoreCache("h1").Should().BeFalse();
+        svc.AreFilePrioritiesApplied("qBit", "h1").Should().BeFalse();
+        svc.IsFileFiltered("qBit", "h1").Should().BeFalse();
+    }
+
+    [Fact]
+    public void DownloadPrioritiesAndCompletedInspection_AreTrackedSeparately()
+    {
+        var svc = CreateService();
+
+        svc.MarkFilePrioritiesApplied("qBit", "h1");
+
+        svc.AreFilePrioritiesApplied("qBit", "h1").Should().BeTrue();
+        svc.IsFileFiltered("qBit", "h1").Should().BeFalse();
+
+        svc.MarkFileFiltered("qBit", "h1");
+        svc.IsFileFiltered("qBit", "h1").Should().BeTrue();
+    }
+
+    [Fact]
+    public void FileFilterStates_AreScopedToQBitInstance()
+    {
+        var svc = CreateService();
+
+        svc.MarkFilePrioritiesApplied("qBit-a", "shared-hash");
+        svc.MarkFileFiltered("qBit-a", "shared-hash");
+
+        svc.AreFilePrioritiesApplied("qBit-a", "shared-hash").Should().BeTrue();
+        svc.IsFileFiltered("qBit-a", "shared-hash").Should().BeTrue();
+        svc.AreFilePrioritiesApplied("qBit-b", "shared-hash").Should().BeFalse();
+        svc.IsFileFiltered("qBit-b", "shared-hash").Should().BeFalse();
+    }
+
+    [Fact]
+    public void FileFilterStates_PreserveInstanceCaseButIgnoreHashCase()
+    {
+        var svc = CreateService();
+
+        svc.MarkFilePrioritiesApplied("qBit-A", "SHARED-HASH");
+        svc.MarkFileFiltered("qBit-A", "SHARED-HASH");
+
+        svc.AreFilePrioritiesApplied("qBit-A", "shared-hash").Should().BeTrue();
+        svc.IsFileFiltered("qBit-A", "shared-hash").Should().BeTrue();
+        svc.AreFilePrioritiesApplied("qBit-a", "shared-hash").Should().BeFalse();
+        svc.IsFileFiltered("qBit-a", "shared-hash").Should().BeFalse();
+    }
+
+    [Fact]
+    public void AllowlistWarnings_AreThrottledPerInstanceAndHash()
+    {
+        var svc = CreateService();
+        var now = DateTimeOffset.UtcNow;
+        var throttle = TimeSpan.FromMinutes(5);
+
+        svc.ShouldLogAllowlistWarning("qBit-a", "shared-hash", now, throttle).Should().BeTrue();
+        svc.ShouldLogAllowlistWarning("qBit-a", "shared-hash", now.AddMinutes(1), throttle).Should().BeFalse();
+        svc.ShouldLogAllowlistWarning("qBit-b", "shared-hash", now.AddMinutes(1), throttle).Should().BeTrue();
+        svc.ShouldLogAllowlistWarning("qBit-a", "shared-hash", now.AddMinutes(6), throttle).Should().BeTrue();
     }
 
     [Fact]

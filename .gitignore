@@ -91,3 +91,7 @@ PublishProfiles/
 *.pubxml
 *.publishproj
 site/
+
+# Python tooling caches
+__pycache__/
+*.py[cod]

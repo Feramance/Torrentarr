@@ -160,6 +160,23 @@ describe("QbitCategoriesView – data rendering", () => {
     // maxRatio = -1 → "Disabled"
     expect(screen.getAllByText("Disabled").length).toBeGreaterThanOrEqual(1);
   });
+
+  it("shows mixed limits when an aggregate has multiple effective policies", async () => {
+    server.use(
+      http.get("/web/config", () => HttpResponse.json(baseConfig)),
+      http.get("/web/qbit/categories", () =>
+        HttpResponse.json({
+          categories: [{ ...singleQbitCategory, seedingConfig: null }],
+          ready: true,
+        }),
+      ),
+    );
+
+    renderView();
+
+    await screen.findByText("autobrr");
+    expect(screen.getAllByText("Mixed")).toHaveLength(3);
+  });
 });
 
 // ── summary stats ─────────────────────────────────────────────────────────────

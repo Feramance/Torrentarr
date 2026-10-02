@@ -54,6 +54,32 @@ public class ArrThumbnailEndpointTests : IClassFixture<ArrCatalogWebApplicationF
 
         response.StatusCode.Should().Be(HttpStatusCode.OK);
         response.Content.Headers.ContentType!.MediaType.Should().StartWith("image/");
+        response.Headers.ETag.Should().NotBeNull();
+    }
+
+    [Theory]
+    [InlineData("/web/readarr/readarr-books/author/9876/thumbnail")]
+    [InlineData("/api/readarr/readarr-books/author/9876/thumbnail")]
+    public async Task GetThumbnail_MatchingIfNoneMatch_Returns304(string path)
+    {
+        _factory.SetConfigEnv();
+        var cacheDir = Path.Combine(ConfigurationLoader.GetDataDirectoryPath(), "cache", "thumbnails");
+        Directory.CreateDirectory(cacheDir);
+        var cacheKey = "readarr_author:readarr-books:9876";
+        var cachePath = Path.Combine(cacheDir, Sha256Hex(cacheKey)[..40] + ".bin");
+        await File.WriteAllBytesAsync(cachePath, [0xFF, 0xD8, 0xFF, 0xD9]);
+
+        var client = _factory.CreateClientWithApiToken();
+        var initial = await client.GetAsync(path);
+        initial.StatusCode.Should().Be(HttpStatusCode.OK);
+        initial.Headers.ETag.Should().NotBeNull();
+
+        using var request = new HttpRequestMessage(HttpMethod.Get, path);
+        request.Headers.IfNoneMatch.Add(initial.Headers.ETag!);
+        var conditional = await client.SendAsync(request);
+
+        conditional.StatusCode.Should().Be(HttpStatusCode.NotModified);
+        conditional.Headers.ETag.Should().Be(initial.Headers.ETag);
     }
 
     private static string Sha256Hex(string input)

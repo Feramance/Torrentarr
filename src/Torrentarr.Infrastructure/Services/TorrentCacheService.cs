@@ -13,7 +13,9 @@ public class TorrentCacheService : ITorrentCacheService
     private readonly Dictionary<string, string> _categoryCache = new(StringComparer.OrdinalIgnoreCase);
     private readonly Dictionary<string, string> _nameCache = new(StringComparer.OrdinalIgnoreCase);
     private readonly Dictionary<string, DateTime> _ignoreCache = new(StringComparer.OrdinalIgnoreCase);
-    private readonly HashSet<string> _fileFilteredHashes = new(StringComparer.OrdinalIgnoreCase);
+    private readonly HashSet<string> _filePrioritiesAppliedHashes = new(StringComparer.Ordinal);
+    private readonly HashSet<string> _fileFilteredHashes = new(StringComparer.Ordinal);
+    private readonly Dictionary<string, DateTimeOffset> _allowlistWarningCache = new(StringComparer.Ordinal);
     private readonly object _lock = new();
     private DateTime _lastFullClearUtc = DateTime.MinValue;
     private static readonly TimeSpan FullClearInterval = TimeSpan.FromHours(24);
@@ -91,19 +93,55 @@ public class TorrentCacheService : ITorrentCacheService
         }
     }
 
-    public bool IsFileFiltered(string hash)
+    public bool AreFilePrioritiesApplied(string qBitInstanceName, string hash)
     {
         lock (_lock)
         {
-            return _fileFilteredHashes.Contains(hash);
+            return _filePrioritiesAppliedHashes.Contains(FileStateKey(qBitInstanceName, hash));
         }
     }
 
-    public void MarkFileFiltered(string hash)
+    public void MarkFilePrioritiesApplied(string qBitInstanceName, string hash)
     {
         lock (_lock)
         {
-            _fileFilteredHashes.Add(hash);
+            _filePrioritiesAppliedHashes.Add(FileStateKey(qBitInstanceName, hash));
+        }
+    }
+
+    public bool IsFileFiltered(string qBitInstanceName, string hash)
+    {
+        lock (_lock)
+        {
+            return _fileFilteredHashes.Contains(FileStateKey(qBitInstanceName, hash));
+        }
+    }
+
+    public void MarkFileFiltered(string qBitInstanceName, string hash)
+    {
+        lock (_lock)
+        {
+            _fileFilteredHashes.Add(FileStateKey(qBitInstanceName, hash));
+        }
+    }
+
+    public bool ShouldLogAllowlistWarning(
+        string qBitInstanceName,
+        string hash,
+        DateTimeOffset timestamp,
+        TimeSpan throttlePeriod)
+    {
+        lock (_lock)
+        {
+            var key = FileStateKey(qBitInstanceName, hash);
+            if (_allowlistWarningCache.TryGetValue(key, out var last)
+                && timestamp - last < throttlePeriod)
+            {
+                return false;
+            }
+
+            _allowlistWarningCache[key] = timestamp;
+            return true;
         }
     }
 
@@ -114,7 +152,9 @@ public class TorrentCacheService : ITorrentCacheService
             _categoryCache.Clear();
             _nameCache.Clear();
             _ignoreCache.Clear();
+            _filePrioritiesAppliedHashes.Clear();
             _fileFilteredHashes.Clear();
+            _allowlistWarningCache.Clear();
             _lastFullClearUtc = DateTime.UtcNow;
             _logger.LogTrace("All caches cleared");
         }
@@ -130,7 +170,9 @@ public class TorrentCacheService : ITorrentCacheService
                 _categoryCache.Clear();
                 _nameCache.Clear();
                 _ignoreCache.Clear();
+                _filePrioritiesAppliedHashes.Clear();
                 _fileFilteredHashes.Clear();
+                _allowlistWarningCache.Clear();
                 _lastFullClearUtc = now;
                 _logger.LogInformation("Periodic full cache clear (every {Hours}h) to bound memory growth", (int)FullClearInterval.TotalHours);
             }
@@ -156,6 +198,9 @@ public class TorrentCacheService : ITorrentCacheService
             }
         }
     }
+
+    private static string FileStateKey(string qBitInstanceName, string hash) =>
+        string.Concat(qBitInstanceName, "\0", hash.ToUpperInvariant());
 
     public TorrentCacheStats GetStats()
     {
