@@ -802,8 +802,8 @@ public sealed class MaintenanceCoordinator : BackgroundService, IMaintenanceCoor
     {
         var effective = SeedingService.ApplyCategoryOverride(cfg.CategorySeeding, item.Torrent.Category, cfg.MatchSubcategories);
         if (effective.HitAndRunMode is not null && !effective.HitAndRunMode.Equals("disabled", StringComparison.OrdinalIgnoreCase)
-            && item.Torrent.Progress < (effective.HitAndRunMinimumDownloadPercent ?? 10) / 100.0
-            && item.Torrent.Ratio < (effective.HitAndRunPartialSeedRatio ?? 1.0))
+            && item.Torrent.Progress < effective.HitAndRunMinimumDownloadPercent / 100.0
+            && item.Torrent.Ratio < effective.HitAndRunPartialSeedRatio)
             return "Partial-download H&R obligations are not met.";
         var rules = cfg.Trackers.Count > 0 ? cfg.Trackers : new List<TrackerConfig>();
         if (rules.Count == 0)
