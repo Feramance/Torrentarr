@@ -303,6 +303,11 @@ try
 
     var app = builder.Build();
 
+    // Prefer physical files for development, with the embedded SPA as the standalone fallback.
+    app.Environment.WebRootFileProvider = EmbeddedWebAssets.Create(
+        app.Environment,
+        typeof(Program).Assembly);
+
     if (config.WebUI.BehindHttpsProxy)
     {
         app.UseForwardedHeaders(new ForwardedHeadersOptions
@@ -316,15 +321,14 @@ try
         app.UsePathBase(urlBase);
 
     // First-run hint: Host wwwroot is build output; API still works without the SPA bundle.
-    var webRoot = app.Environment.WebRootPath;
-    if (!string.IsNullOrEmpty(webRoot))
+    var webRoot = app.Environment.WebRootFileProvider;
+    if (webRoot != null)
     {
-        var indexFile = Path.Combine(webRoot, "index.html");
-        if (!File.Exists(indexFile))
+        var indexFile = webRoot.GetFileInfo("index.html");
+        if (!indexFile.Exists)
         {
             Log.Warning(
-                "Web UI bundle not found at {Index}. Run ./build.sh or build webui and publish to wwwroot for the full SPA. API and Swagger (/swagger) are still available.",
-                indexFile);
+                "Web UI bundle was not found in the physical or embedded web root. Run ./build.sh or build webui for the full SPA.");
         }
     }
 
@@ -455,6 +459,25 @@ try
         await next(context);
     });
     app.UseStaticFiles();
+
+    // Serve the SPA entry point from either the physical or embedded provider.
+    // Middleware avoids exposing /ui and /ui/ as conflicting Swagger actions.
+    app.Use(async (context, next) =>
+    {
+        if (context.Request.Path.Equals("/ui/", StringComparison.OrdinalIgnoreCase))
+        {
+            var index = app.Environment.WebRootFileProvider.GetFileInfo("index.html");
+            if (index.Exists)
+            {
+                context.Response.ContentType = "text/html";
+                await using var stream = index.CreateReadStream();
+                await stream.CopyToAsync(context.Response.Body);
+                return;
+            }
+        }
+
+        await next(context);
+    });
 
     app.UseAuthentication();
     app.UseArrCatalogDbSafe();
