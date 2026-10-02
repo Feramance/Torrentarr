@@ -1,5 +1,7 @@
 using System.Collections.Generic;
 using Newtonsoft.Json;
+using Tomlyn.Serialization;
+using System.Text.Json.Serialization;
 
 namespace Torrentarr.Core.Configuration;
 
@@ -92,6 +94,9 @@ public class QBitConfig : TorrentClientInstanceConfig
 public class MaintenanceConfig
 {
     public bool Enabled { get; set; }
+    [TomlIgnore]
+    [Newtonsoft.Json.JsonIgnore]
+    [System.Text.Json.Serialization.JsonIgnore]
     public bool Armed { get; set; }
     public string Scope { get; set; } = "managed";
     public string Schedule { get; set; } = "*/15 * * * *";
@@ -165,7 +170,7 @@ public class UnregisteredMaintenanceConfig
     public bool CompletedOnly { get; set; }
     public List<string> Messages { get; set; } = new()
     {
-        "unregistered torrent", "torrent not registered", "not found", "not authorized"
+        "unregistered torrent", "torrent not registered", "torrent not found", "torrent not authorized"
     };
 }
 

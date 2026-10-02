@@ -18,7 +18,9 @@ public static class CronSchedule
     {
         var candidate = new DateTimeOffset(fromUtc.UtcDateTime.AddMinutes(1), TimeSpan.Zero);
         candidate = candidate.AddSeconds(-candidate.Second).AddMilliseconds(-candidate.Millisecond);
-        for (var i = 0; i < 366 * 24 * 60; i++, candidate = candidate.AddMinutes(1))
+        // A one-year horizon rejects valid sparse schedules such as Feb 29.
+        // Five years covers the full leap-year cycle while keeping lookups bounded.
+        for (var i = 0; i < 5 * 366 * 24 * 60; i++, candidate = candidate.AddMinutes(1))
             if (Matches(expression, candidate.UtcDateTime)) return candidate;
         return null;
     }

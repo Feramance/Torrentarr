@@ -1,3 +1,4 @@
+using System.Collections.Concurrent;
 using Torrentarr.Core.Configuration;
 using Torrentarr.Core.Interfaces;
 using Torrentarr.Infrastructure.ApiClients.QBittorrent;
@@ -12,8 +13,8 @@ namespace Torrentarr.Infrastructure.Services;
 public class QBittorrentConnectionManager : ITorrentClientRegistry
 {
     private readonly ILogger<QBittorrentConnectionManager> _logger;
-    private readonly Dictionary<string, QBittorrentClient> _clients = new();
-    private readonly Dictionary<string, DateTime> _lastConnected = new();
+    private readonly ConcurrentDictionary<string, QBittorrentClient> _clients = new(StringComparer.OrdinalIgnoreCase);
+    private readonly ConcurrentDictionary<string, DateTime> _lastConnected = new(StringComparer.OrdinalIgnoreCase);
     private readonly IReadOnlyDictionary<string, ITorrentClientFactory> _factories;
 
     public QBittorrentConnectionManager(
@@ -56,7 +57,7 @@ public class QBittorrentConnectionManager : ITorrentClientRegistry
             _logger.LogInformation("Connected to qBittorrent instance '{Name}' {Version} at {Host}:{Port}",
                 name, version, config.Host, config.Port);
 
-            _clients[name] = client;
+            _clients.TryAdd(name, client);
             _lastConnected[name] = DateTime.UtcNow;
 
             return true;
@@ -98,7 +99,7 @@ public class QBittorrentConnectionManager : ITorrentClientRegistry
         try
         {
             if (!await client.LoginAsync(cancellationToken)) return false;
-            _clients[name] = (QBittorrentClient)client;
+            _clients.TryAdd(name, (QBittorrentClient)client);
             _lastConnected[name] = DateTime.UtcNow;
             _logger.LogInformation("Connected torrent client '{Name}' ({Type}) {Version}",
                 name, config.Type, await client.GetVersionAsync(cancellationToken));
@@ -158,13 +159,13 @@ public class QBittorrentConnectionManager : ITorrentClientRegistry
     /// </summary>
     public IReadOnlyDictionary<string, QBittorrentClient> GetAllClients()
     {
-        return _clients;
+        return new Dictionary<string, QBittorrentClient>(_clients, StringComparer.OrdinalIgnoreCase);
     }
 
     ITorrentClient? ITorrentClientRegistry.GetClient(string instanceId) => GetClient(instanceId);
 
     IReadOnlyDictionary<string, ITorrentClient> ITorrentClientRegistry.GetAllClients()
-        => _clients.ToDictionary(pair => pair.Key, pair => (ITorrentClient)pair.Value);
+        => _clients.ToDictionary(pair => pair.Key, pair => (ITorrentClient)pair.Value, StringComparer.OrdinalIgnoreCase);
 
     /// <summary>
     /// Returns true if any qBit instance is connected.
@@ -209,7 +210,7 @@ public sealed class TorrentClientRegistry : ITorrentClientRegistry
 {
     private readonly ILogger<TorrentClientRegistry> _logger;
     private readonly IReadOnlyDictionary<string, ITorrentClientFactory> _factories;
-    private readonly Dictionary<string, ITorrentClient> _clients = new(StringComparer.OrdinalIgnoreCase);
+    private readonly ConcurrentDictionary<string, ITorrentClient> _clients = new(StringComparer.OrdinalIgnoreCase);
 
     public TorrentClientRegistry(
         ILogger<TorrentClientRegistry> logger,
@@ -232,7 +233,7 @@ public sealed class TorrentClientRegistry : ITorrentClientRegistry
         try
         {
             if (!await client.LoginAsync(ct)) return false;
-            _clients[name] = client;
+            _clients.TryAdd(name, client);
             _logger.LogInformation("Connected torrent client '{Name}' ({Type}) {Version}",
                 name, config.Type, await client.GetVersionAsync(ct));
             return true;
@@ -253,7 +254,8 @@ public sealed class TorrentClientRegistry : ITorrentClientRegistry
     }
 
     public ITorrentClient? GetClient(string instanceId) => _clients.GetValueOrDefault(instanceId);
-    public IReadOnlyDictionary<string, ITorrentClient> GetAllClients() => _clients;
+    public IReadOnlyDictionary<string, ITorrentClient> GetAllClients()
+        => new Dictionary<string, ITorrentClient>(_clients, StringComparer.OrdinalIgnoreCase);
     public bool IsConnected() => _clients.Count > 0;
     public bool IsConnected(string instanceId) => _clients.ContainsKey(instanceId);
 }

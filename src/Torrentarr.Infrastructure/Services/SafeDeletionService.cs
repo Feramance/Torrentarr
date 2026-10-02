@@ -39,15 +39,30 @@ public sealed class SafeDeletionService : ISafeDeletionService
         if (client == null || cfg == null)
             return new(false, true, 0, "Torrent client is disconnected or unconfigured.");
 
-        var inventory = await _inventory.BuildAsync(ct: ct);
-        var item = inventory.Torrents.FirstOrDefault(t =>
-            t.Torrent.ClientInstanceId.Equals(clientInstanceId, StringComparison.OrdinalIgnoreCase)
-            && t.Torrent.Hash.Equals(hash, StringComparison.OrdinalIgnoreCase));
-        if (item == null) return new(false, true, 0, "Torrent no longer exists.");
         if (!removeContent)
             return await client.DeleteTorrentsAsync([hash], false, ct)
                 ? new(true, true, 0)
                 : new(false, true, 0, "Torrent client rejected removal.");
+
+        // Preserve legacy failed-torrent cleanup for installations that have no
+        // optional maintenance mappings, but only through the client's explicit
+        // content-deletion capability and with recycling disabled.
+        if (cfg.Maintenance.PathMappings.Count == 0 && !cfg.Maintenance.RecycleBin.Enabled)
+        {
+            if (!client.Capabilities.ContentDeletion)
+                return new(false, true, 0, "No path mapping is configured and the client cannot delete content safely.");
+            return await client.DeleteTorrentsAsync([hash], true, ct)
+                ? new(true, false, 0)
+                : new(false, true, 0, "Torrent client rejected legacy content deletion.");
+        }
+
+        var inventory = await _inventory.BuildAsync(ct: ct);
+        if (inventory.Warnings.Count > 0)
+            return new(false, true, 0, $"Content deletion blocked because inventory is incomplete: {string.Join("; ", inventory.Warnings)}");
+        var item = inventory.Torrents.FirstOrDefault(t =>
+            t.Torrent.ClientInstanceId.Equals(clientInstanceId, StringComparison.OrdinalIgnoreCase)
+            && t.Torrent.Hash.Equals(hash, StringComparison.OrdinalIgnoreCase));
+        if (item == null) return new(false, true, 0, "Torrent no longer exists.");
 
         var localFiles = item.Files.Select(f => f.LocalPath).Where(p => p != null).Cast<string>().ToList();
         if (localFiles.Count == 0 || item.Files.Any(f => f.LocalPath == null))
@@ -70,7 +85,10 @@ public sealed class SafeDeletionService : ISafeDeletionService
                 : new(false, true, 0, "Torrent client rejected cross-seed-safe removal.");
         }
 
-        if (permanent || !cfg.Maintenance.RecycleBin.Enabled)
+        if (!cfg.Maintenance.RecycleBin.Enabled)
+            return new(false, true, 0, "Recycle-bin content removal is disabled; refusing destructive deletion.");
+
+        if (permanent)
         {
             if (!client.Capabilities.ContentDeletion)
                 return new(false, true, 0, "Torrent client does not support content deletion.");
@@ -119,13 +137,14 @@ public sealed class SafeDeletionService : ISafeDeletionService
 
         var cutoff = DateTime.UtcNow.AddDays(-cfg.Maintenance.RecycleBin.RetentionDays);
         var deleted = 0;
-        foreach (var path in Directory.EnumerateFileSystemEntries(root))
+        foreach (var path in Directory.EnumerateFileSystemEntries(root, "*", SearchOption.AllDirectories))
         {
             ct.ThrowIfCancellationRequested();
+            if (Directory.Exists(path)) continue;
             var modified = File.GetLastWriteTimeUtc(path);
             if (modified > cutoff) continue;
             if ((File.GetAttributes(path) & FileAttributes.ReparsePoint) != 0) continue;
-            if (Directory.Exists(path)) Directory.Delete(path, true); else File.Delete(path);
+            File.Delete(path);
             deleted++;
         }
         return Task.FromResult(deleted);
@@ -156,7 +175,12 @@ public sealed class SafeDeletionService : ISafeDeletionService
         if (cfg.Maintenance.RecycleBin.SplitByCategory) root = Path.Combine(root, Sanitize(category));
         Directory.CreateDirectory(root);
         var timestamp = DateTime.UtcNow.ToString("yyyyMMddHHmmssfff");
-        return Path.Combine(root, $"{timestamp}-{Path.GetFileName(source)}");
+        var baseName = $"{timestamp}-{Path.GetFileName(source)}";
+        var destination = Path.Combine(root, baseName);
+        var suffix = 0;
+        while (File.Exists(destination) || Directory.Exists(destination))
+            destination = Path.Combine(root, $"{timestamp}-{++suffix}-{Path.GetFileName(source)}");
+        return destination;
     }
 
     private static string ResolveRecycleRoot(TorrentClientInstanceConfig cfg)

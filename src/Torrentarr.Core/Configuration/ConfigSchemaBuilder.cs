@@ -36,7 +36,6 @@ public static class ConfigSchemaBuilder
         Field("Maintenance.Scope", "select", "Maintenance Scope", "managed",
             options: ["managed", "all", "explicit"]),
         Field("Maintenance.Schedule", "text", "Maintenance Schedule", "*/15 * * * *"),
-        Field("Maintenance.Armed", "checkbox", "Maintenance Armed", false),
         Field("Maintenance.PlanTtlMinutes", "number", "Preview TTL (minutes)", 30, minimum: 1),
         Field("Maintenance.PathMappings", "tags", "Path Mappings", Array.Empty<string>()),
         Field("Maintenance.SharePolicies", "tags", "Share Policies", Array.Empty<string>()),

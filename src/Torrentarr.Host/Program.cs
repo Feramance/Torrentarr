@@ -265,6 +265,8 @@ try
             options.SerializerSettings.NullValueHandling = Newtonsoft.Json.NullValueHandling.Include;
             options.SerializerSettings.DateTimeZoneHandling = Newtonsoft.Json.DateTimeZoneHandling.Utc;
         });
+    builder.Services.ConfigureHttpJsonOptions(options =>
+        options.SerializerOptions.Converters.Add(new System.Text.Json.Serialization.JsonStringEnumConverter()));
 
     builder.Services.AddEndpointsApiExplorer();
     builder.Services.AddSwaggerGen(c =>
@@ -3053,7 +3055,7 @@ class ProcessOrchestratorService : BackgroundService
         }
 
         // Fall back to qBit download paths (Docker mounts torrents separately from /config)
-        foreach (var (_, qbit) in _config.QBitInstances)
+        foreach (var (_, qbit) in _config.GetAllTorrentClients())
         {
             if (qbit.Disabled)
                 continue;

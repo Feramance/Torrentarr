@@ -32,10 +32,12 @@ public sealed class MaintenanceNotificationService : BackgroundService, IMainten
     {
         await foreach (var item in _events.Reader.ReadAllAsync(stoppingToken))
         {
-            var sinks = _config.GetAllTorrentClients().Values.SelectMany(c => c.Maintenance.Notifications)
+            var sinks = _config.GetAllTorrentClients()
+                .Where(pair => item.ClientInstanceId == null || pair.Key.Equals(item.ClientInstanceId, StringComparison.OrdinalIgnoreCase))
+                .SelectMany(pair => pair.Value.Maintenance.Notifications)
                 .Where(s => s.Enabled && Uri.TryCreate(s.Url, UriKind.Absolute, out _)).ToList();
             foreach (var sink in sinks)
-                _ = DeliverAsync(sink, item, stoppingToken);
+                await DeliverAsync(sink, item, stoppingToken);
         }
     }
 

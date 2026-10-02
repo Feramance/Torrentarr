@@ -137,7 +137,7 @@ export function MaintenanceView(): JSX.Element {
         <div className="actions" style={{ marginTop: "1rem" }}>
           <button
             className="btn primary"
-            disabled={busy || selected.length === 0}
+            disabled={busy || selected.length === 0 || selectedOps.length === 0}
             onClick={() =>
               void act(async () =>
                 setPlan(await previewMaintenance(selected, selectedOps)),
@@ -166,8 +166,11 @@ export function MaintenanceView(): JSX.Element {
           </button>
           <button
             className="btn"
-            disabled={busy || status?.running}
-            onClick={() => void act(() => maintenanceCommand("run", selected))}
+            disabled={busy || status?.running || selected.length === 0}
+            onClick={() => {
+              if (window.confirm("Run maintenance now for the selected clients?"))
+                void act(() => maintenanceCommand("run", selected));
+            }}
           >
             Run now
           </button>

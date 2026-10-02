@@ -144,10 +144,11 @@ public class ConfigurationLoader
         // remain first-class and are deliberately not rewritten into this form on save.
         if (tomlTable.TryGetValue("TorrentClient", out var clientObj) && clientObj is TomlTable clientTable)
         {
+            config.TorrentClients = new Dictionary<string, TorrentClientInstanceConfig>(StringComparer.OrdinalIgnoreCase);
             foreach (var (id, value) in clientTable)
             {
                 if (value is not TomlTable instanceTable) continue;
-                if (config.QBitInstances.ContainsKey(id))
+                if (config.QBitInstances.Keys.Any(existing => existing.Equals(id, StringComparison.OrdinalIgnoreCase)))
                     throw new InvalidDataException($"Torrent client instance '{id}' is declared in both legacy and canonical sections.");
                 var instance = TomlSerializer.Deserialize<TorrentClientInstanceConfig>(
                     TomlSerializer.Serialize(instanceTable)) ?? new TorrentClientInstanceConfig();

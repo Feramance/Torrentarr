@@ -157,6 +157,12 @@ builder.Services.AddSingleton<IPasswordHasher, BCryptPasswordHasher>();
 builder.Services.AddSingleton<ITorrentClientFactory, QBittorrentTorrentClientFactory>();
 builder.Services.AddSingleton<TorrentClientRegistry>();
 builder.Services.AddSingleton<ITorrentClientRegistry>(sp => sp.GetRequiredService<TorrentClientRegistry>());
+builder.Services.AddSingleton<IPathMappingService, PathMappingService>();
+builder.Services.AddSingleton<ITorrentInventoryService, TorrentInventoryService>();
+builder.Services.AddSingleton<IHardlinkInspector, HardlinkInspector>();
+builder.Services.AddSingleton<ISafeDeletionService, SafeDeletionService>();
+builder.Services.AddSingleton<IMaintenanceNotificationService, MaintenanceNotificationService>();
+builder.Services.AddSingleton<IMaintenanceCoordinator, MaintenanceCoordinator>();
 builder.Services.AddHttpClient();
 builder.Services.AddScoped<IDatabaseHealthService, DatabaseHealthService>();
 builder.Services.AddScoped<CatalogRollupService>();
@@ -795,6 +801,7 @@ static void ApplyConfigInPlace(TorrentarrConfig target, TorrentarrConfig source)
     target.WebUI = source.WebUI;
     target.ArrInstances = source.ArrInstances;
     target.QBitInstances = source.QBitInstances;
+    target.TorrentClients = source.TorrentClients;
     TorrentPolicyHelper.InvalidateMonitoredPolicyCategoriesCache(target);
 }
 
@@ -856,6 +863,12 @@ static Newtonsoft.Json.Linq.JObject BuildFlatConfig(TorrentarrConfig config, boo
         flat[name] = qbitObj;
     }
 
+    var canonical = Newtonsoft.Json.Linq.JObject.FromObject(config.TorrentClients);
+    if (redactSensitive)
+        foreach (var property in canonical.Properties().OfType<Newtonsoft.Json.Linq.JProperty>())
+            if (property.Value is Newtonsoft.Json.Linq.JObject clientObj) RedactFlatField(clientObj, "Password");
+    flat["TorrentClient"] = canonical;
+
     foreach (var (name, arr) in config.ArrInstances)
     {
         var arrObj = Newtonsoft.Json.Linq.JObject.FromObject(arr);
@@ -911,11 +924,24 @@ static TorrentarrConfig FlatToConfig(Newtonsoft.Json.Linq.JObject flat, Torrenta
     }
 
     result.QBitInstances = new Dictionary<string, QBitConfig>(current.QBitInstances);
+    result.TorrentClients = current.TorrentClients.ToDictionary(p => p.Key, p => p.Value, StringComparer.OrdinalIgnoreCase);
     result.ArrInstances = new Dictionary<string, ArrInstanceConfig>(current.ArrInstances);
 
     foreach (var prop in flat.Properties())
     {
         if (prop.Name is "Settings" or "WebUI") continue;
+        if (prop.Name.Equals("TorrentClient", StringComparison.OrdinalIgnoreCase)
+            && prop.Value is Newtonsoft.Json.Linq.JObject clientsObj)
+        {
+            foreach (var clientProp in clientsObj.Properties())
+            {
+                var client = clientProp.Value.ToObject<TorrentClientInstanceConfig>() ?? new TorrentClientInstanceConfig();
+                if (client.Password == "[redacted]" && current.TorrentClients.TryGetValue(clientProp.Name, out var existing))
+                    client.Password = existing.Password;
+                result.TorrentClients[clientProp.Name] = client;
+            }
+            continue;
+        }
         if (prop.Value is not Newtonsoft.Json.Linq.JObject instanceObj) continue;
 
         bool isKnownQBit = current.QBitInstances.ContainsKey(prop.Name);
@@ -1097,6 +1123,44 @@ app.MapGet("/web/logs/{name}/stream", async (string name, HttpContext ctx) =>
 
 app.MapGet("/web/config/schema", () => Results.Ok(ConfigSchemaBuilder.Build()));
 app.MapGet("/api/config/schema", () => Results.Ok(ConfigSchemaBuilder.Build()));
+
+app.MapGet("/web/torrent-clients", async (ITorrentClientRegistry registry, TorrentarrConfig cfg) =>
+{
+    var clients = new List<object>();
+    foreach (var (id, clientCfg) in cfg.GetAllTorrentClients())
+    {
+        var client = registry.GetClient(id);
+        string? version = null;
+        if (client != null) { try { version = await client.GetVersionAsync(); } catch { } }
+        clients.Add(new { id, QbitInstance = id, type = clientCfg.Type, connected = client != null, version,
+            capabilities = client?.Capabilities ?? TorrentClientCapabilities.None, managedCategories = clientCfg.ManagedCategories });
+    }
+    return Results.Ok(clients);
+});
+app.MapGet("/web/maintenance/status", (IMaintenanceCoordinator maintenance) => Results.Ok(maintenance.GetStatus()));
+app.MapGet("/web/maintenance/history", (IMaintenanceCoordinator maintenance, int? limit) => Results.Ok(maintenance.GetHistory(limit ?? 50)));
+app.MapPost("/web/maintenance/preview", async (MaintenancePreviewRequest request, IMaintenanceCoordinator maintenance, CancellationToken ct) => Results.Ok(await maintenance.PreviewAsync(request, ct)));
+app.MapPost("/web/maintenance/apply", async (MaintenanceApplyRequest request, IMaintenanceCoordinator maintenance, CancellationToken ct) =>
+{
+    try { return Results.Ok(await maintenance.ApplyAsync(request.PlanId, ct)); }
+    catch (KeyNotFoundException ex) { return Results.NotFound(new { error = ex.Message }); }
+    catch (InvalidOperationException ex) { return Results.Conflict(new { error = ex.Message }); }
+});
+app.MapPost("/web/maintenance/arm", async (MaintenanceArmRequest request, IMaintenanceCoordinator maintenance, CancellationToken ct) =>
+{
+    try { await maintenance.ArmAsync(request, ct); return Results.Ok(maintenance.GetStatus()); }
+    catch (KeyNotFoundException ex) { return Results.NotFound(new { error = ex.Message }); }
+    catch (InvalidOperationException ex) { return Results.Conflict(new { error = ex.Message }); }
+});
+app.MapPost("/web/maintenance/disarm", (MaintenanceClientsRequest request, IMaintenanceCoordinator maintenance) =>
+{ maintenance.Disarm(request.ClientInstanceIds); return Results.Ok(maintenance.GetStatus()); });
+app.MapPost("/web/maintenance/run", async (MaintenanceClientsRequest request, IMaintenanceCoordinator maintenance, CancellationToken ct) =>
+{
+    try { return Results.Ok(await maintenance.RunAsync(request.ClientInstanceIds.Count == 0 ? null : request.ClientInstanceIds, "manual", ct)); }
+    catch (InvalidOperationException ex) { return Results.Conflict(new { error = ex.Message }); }
+});
+app.MapPost("/web/maintenance/cancel", (IMaintenanceCoordinator maintenance) =>
+{ maintenance.Cancel(); return Results.Ok(maintenance.GetStatus()); });
 
 app.MapGet("/web/qbit/overview", async (HttpRequest request, TorrentarrConfig cfg, ITorrentClientRegistry clientRegistry, CancellationToken ct) =>
 {

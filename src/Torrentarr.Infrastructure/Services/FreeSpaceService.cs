@@ -91,9 +91,9 @@ public class FreeSpaceService : IFreeSpaceService
         if (!string.IsNullOrWhiteSpace(_config.Settings.FreeSpaceFolder))
             pathsToCheck.Add(("FreeSpaceFolder", _config.Settings.FreeSpaceFolder));
 
-        _logger.LogTrace("Checking {Count} qBit instances for free space", _config.QBitInstances.Count);
+        _logger.LogTrace("Checking {Count} torrent clients for free space", _config.GetAllTorrentClients().Count);
 
-        foreach (var (instanceName, qbitConfig) in _config.QBitInstances)
+        foreach (var (instanceName, qbitConfig) in _config.GetAllTorrentClients())
         {
             if (qbitConfig.Disabled)
             {

@@ -61,7 +61,7 @@ public class SeedingService : ISeedingService
     /// <summary>Returns the seeding config for the owning qBit instance with category overrides applied.</summary>
     private CategorySeedingConfig GetSeedingConfig(TorrentInfo torrent)
     {
-        var qbit = _config.QBitInstances.GetValueOrDefault(torrent.QBitInstanceName);
+        var qbit = _config.GetTorrentClient(torrent.QBitInstanceName);
         var baseConfig = qbit?.CategorySeeding ?? new CategorySeedingConfig();
         return ApplyCategoryOverride(baseConfig, torrent.Category, qbit?.MatchSubcategories ?? false);
     }
@@ -108,7 +108,7 @@ public class SeedingService : ISeedingService
     /// </summary>
     private List<TrackerConfig> GetTrackerList(TorrentInfo torrent)
     {
-        var qbitTrackers = _config.QBitInstances.GetValueOrDefault(torrent.QBitInstanceName)?.Trackers
+        var qbitTrackers = _config.GetTorrentClient(torrent.QBitInstanceName)?.Trackers
                            ?? new List<TrackerConfig>();
 
         // Find the Arr instance that manages this torrent's category
