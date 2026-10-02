@@ -159,13 +159,20 @@ public sealed class SafeDeletionService : ISafeDeletionService
 
         var cutoff = DateTime.UtcNow.AddDays(-cfg.Maintenance.RecycleBin.RetentionDays);
         var deleted = 0;
-        foreach (var path in Directory.EnumerateFileSystemEntries(root, "*", SearchOption.AllDirectories))
+        var options = new EnumerationOptions
+        {
+            RecurseSubdirectories = true,
+            AttributesToSkip = FileAttributes.ReparsePoint,
+            IgnoreInaccessible = true
+        };
+        foreach (var path in Directory.EnumerateFileSystemEntries(root, "*", options))
         {
             ct.ThrowIfCancellationRequested();
             if (Directory.Exists(path)) continue;
             var modified = File.GetLastWriteTimeUtc(path);
             if (modified > cutoff) continue;
             if ((File.GetAttributes(path) & FileAttributes.ReparsePoint) != 0) continue;
+            var bytes = new FileInfo(path).Length;
             File.Delete(path);
             deleted++;
         }

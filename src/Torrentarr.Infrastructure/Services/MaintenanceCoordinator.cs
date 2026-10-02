@@ -408,7 +408,8 @@ public sealed class MaintenanceCoordinator : BackgroundService, IMaintenanceCoor
             case MaintenanceActionKind.EnableSuperSeeding:
                 return Result(await client.SetSuperSeedingAsync(action.TorrentHash!, true, ct));
             case MaintenanceActionKind.DeleteExpiredRecycleItem:
-                return new SafeDeletionResult(true, false, await _deletion.CleanupExpiredAsync(action.ClientInstanceId, ct));
+                await _deletion.CleanupExpiredAsync(action.ClientInstanceId, ct);
+                return new SafeDeletionResult(true, false, 0);
             default:
                 return new SafeDeletionResult(false, true, 0, $"Unsupported maintenance action {action.Kind}.");
         }
@@ -418,6 +419,16 @@ public sealed class MaintenanceCoordinator : BackgroundService, IMaintenanceCoor
     {
         var client = _registry.GetClient(action.ClientInstanceId);
         if (client == null) return "Torrent client disconnected after preview.";
+        if (action.Kind == MaintenanceActionKind.QuarantineFile && action.Path != null)
+        {
+            var inventory = await _inventory.BuildAsync(null, ct);
+            var normalized = Path.GetFullPath(action.Path);
+            if (inventory.LocalPathReferences.Keys.Any(path =>
+                    path.Equals(normalized, OperatingSystem.IsWindows() ? StringComparison.OrdinalIgnoreCase : StringComparison.Ordinal)
+                    || path.StartsWith(normalized.TrimEnd(Path.DirectorySeparatorChar) + Path.DirectorySeparatorChar,
+                        OperatingSystem.IsWindows() ? StringComparison.OrdinalIgnoreCase : StringComparison.Ordinal)))
+                return "File is no longer orphaned; a torrent now references this path.";
+        }
         if (action.TorrentHash != null)
         {
             var current = await client.GetTorrentsAsync(cancellationToken: ct);
@@ -790,6 +801,10 @@ public sealed class MaintenanceCoordinator : BackgroundService, IMaintenanceCoor
     private static string? HnrBlocked(TorrentClientInstanceConfig cfg, TorrentInventoryItem item)
     {
         var effective = SeedingService.ApplyCategoryOverride(cfg.CategorySeeding, item.Torrent.Category, cfg.MatchSubcategories);
+        if (effective.HitAndRunMode is not null && !effective.HitAndRunMode.Equals("disabled", StringComparison.OrdinalIgnoreCase)
+            && item.Torrent.Progress < (effective.HitAndRunMinimumDownloadPercent ?? 10) / 100.0
+            && item.Torrent.Ratio < (effective.HitAndRunPartialSeedRatio ?? 1.0))
+            return "Partial-download H&R obligations are not met.";
         var rules = cfg.Trackers.Count > 0 ? cfg.Trackers : new List<TrackerConfig>();
         if (rules.Count == 0)
         {

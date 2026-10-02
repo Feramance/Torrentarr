@@ -240,8 +240,8 @@ class ArrWorkerService : BackgroundService
             _instanceConfig.Type, _instanceConfig.URI, _instanceConfig.Category);
 
         // Initialize connections to all configured qBit instances (retry on later loops if this fails)
-        await _qbitManager.EnsureAllConnectedAsync(_config.QBitInstances, stoppingToken);
-        if (!_qbitManager.IsConnected() && _config.QBitInstances.Any(q => !q.Value.Disabled && q.Value.Host != "CHANGE_ME"))
+        await _qbitManager.EnsureAllConnectedAsync(_config.GetAllTorrentClients(), stoppingToken);
+        if (!_qbitManager.IsConnected() && _config.GetAllTorrentClients().Any(q => !q.Value.Disabled && q.Value.Host != "CHANGE_ME"))
             _logger.LogWarning("Failed to connect to any qBittorrent instance; will retry each cycle");
 
         try
@@ -250,7 +250,7 @@ class ArrWorkerService : BackgroundService
             {
                 try
                 {
-                    await _qbitManager.EnsureAllConnectedAsync(_config.QBitInstances, stoppingToken);
+                    await _qbitManager.EnsureAllConnectedAsync(_config.GetAllTorrentClients(), stoppingToken);
 
                     // Check for exponential backoff
                     var backoffDelay = GetBackoffDelay();

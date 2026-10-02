@@ -19,7 +19,7 @@ public static class QbitOverviewBuilder
         var filter = (instanceFilter ?? "").Trim();
         var includeAll = string.IsNullOrEmpty(filter) || filter.Equals("all", StringComparison.OrdinalIgnoreCase);
 
-        var instanceNames = cfg.QBitInstances.Keys
+        var instanceNames = cfg.GetAllTorrentClients().Keys
             .Where(name => includeAll || name.Equals(filter, StringComparison.OrdinalIgnoreCase))
             .ToList();
 
@@ -31,7 +31,8 @@ public static class QbitOverviewBuilder
         var categories = new List<object>();
         foreach (var instanceName in instanceNames)
         {
-            if (!cfg.QBitInstances.TryGetValue(instanceName, out var qbit))
+            var qbit = cfg.GetTorrentClient(instanceName);
+            if (qbit == null)
                 continue;
             if (qbit.Host == "CHANGE_ME" || string.IsNullOrEmpty(qbit.Host))
                 continue;
