@@ -172,7 +172,6 @@ public sealed class SafeDeletionService : ISafeDeletionService
             var modified = File.GetLastWriteTimeUtc(path);
             if (modified > cutoff) continue;
             if ((File.GetAttributes(path) & FileAttributes.ReparsePoint) != 0) continue;
-            var bytes = new FileInfo(path).Length;
             File.Delete(path);
             deleted++;
         }
