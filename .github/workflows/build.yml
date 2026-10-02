@@ -79,6 +79,32 @@ jobs:
     - name: Build .NET solution
       run: dotnet build --configuration Release --no-restore
 
+    - name: Publish and smoke-test standalone executable
+      env:
+        RUNNER_OS_NAME: ${{ runner.os }}
+        RUNNER_ARCH_NAME: ${{ runner.arch }}
+      run: |
+        case "$RUNNER_OS_NAME/$RUNNER_ARCH_NAME" in
+          Linux/X64) RUNNER_RID=linux-x64 ;;
+          Linux/ARM64) RUNNER_RID=linux-arm64 ;;
+          Windows/X64) RUNNER_RID=win-x64 ;;
+          macOS/X64) RUNNER_RID=osx-x64 ;;
+          macOS/ARM64) RUNNER_RID=osx-arm64 ;;
+          *) echo "Unsupported runner: $RUNNER_OS_NAME/$RUNNER_ARCH_NAME" >&2; exit 1 ;;
+        esac
+        dotnet publish src/Torrentarr.Host/Torrentarr.Host.csproj \
+          --configuration Release \
+          --runtime "$RUNNER_RID" \
+          --self-contained true \
+          --output "$RUNNER_TEMP/torrentarr-standalone"
+        file_count=$(find "$RUNNER_TEMP/torrentarr-standalone" -mindepth 1 -maxdepth 1 -type f | wc -l)
+        test "$file_count" -eq 1
+        if [[ "$RUNNER_RID" == win-* ]]; then
+          bash scripts/smoke-standalone.sh "$RUNNER_TEMP/torrentarr-standalone/Torrentarr.Host.exe"
+        else
+          bash scripts/smoke-standalone.sh "$RUNNER_TEMP/torrentarr-standalone/Torrentarr.Host"
+        fi
+
     - name: Run .NET tests (non-live)
       run: dotnet test --configuration Release --no-build --verbosity normal --filter "Category!=Live"
 
@@ -219,7 +245,7 @@ jobs:
 
   lint:
     runs-on: ubuntu-latest
-    if: github.event_name == 'push' || github.event_name == 'pull_request'
+    if: github.event_name != 'pull_request' || github.event.pull_request.draft == false
 
     steps:
     - name: Checkout code
