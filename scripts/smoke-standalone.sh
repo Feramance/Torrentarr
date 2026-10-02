@@ -64,4 +64,4 @@ asset=$(printf '%s\n' "$index" | sed -n 's/.*src="\(\/assets\/[^" ]*\.js\)".*/\1
 test -n "$asset"
 curl --fail --silent --location "$base_url$asset" >/dev/null
 curl --fail --silent -H 'Authorization: Bearer standalone-smoke-token' \
-  "$base_url/api/openapi.json" | python3 -c 'import json, sys; json.load(sys.stdin)'
+  "$base_url/api/openapi.json" | node -e 'JSON.parse(require("fs").readFileSync(0, "utf8"));'

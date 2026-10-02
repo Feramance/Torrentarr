@@ -370,7 +370,9 @@ public class UpdateService
             || string.Equals(env, "true", StringComparison.OrdinalIgnoreCase))
             return true;
 
-        var location = System.Reflection.Assembly.GetEntryAssembly()?.Location ?? "";
+        // Assembly.Location is empty for assemblies bundled into a single-file app.
+        // AppContext.BaseDirectory remains available in both bundled and source builds.
+        var location = AppContext.BaseDirectory;
         var sep = Path.DirectorySeparatorChar;
         if (location.Contains($"{sep}bin{sep}Debug{sep}", StringComparison.OrdinalIgnoreCase)
             || location.Contains($"{sep}bin{sep}Release{sep}", StringComparison.OrdinalIgnoreCase))
