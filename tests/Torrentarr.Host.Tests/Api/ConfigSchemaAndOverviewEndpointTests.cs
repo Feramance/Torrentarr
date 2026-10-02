@@ -29,7 +29,7 @@ public class ConfigSchemaAndOverviewEndpointTests : IClassFixture<TorrentarrWebA
         json.RootElement.GetProperty("sections").TryGetProperty("TorrentClient", out _).Should().BeTrue();
         json.RootElement.GetProperty("sections").TryGetProperty("Arr", out _).Should().BeTrue();
         json.RootElement.GetProperty("sections").EnumerateObject()
-            .Sum(section => section.Value.GetArrayLength()).Should().Be(138);
+            .Sum(section => section.Value.GetArrayLength()).Should().Be(137);
     }
 
     [Fact]

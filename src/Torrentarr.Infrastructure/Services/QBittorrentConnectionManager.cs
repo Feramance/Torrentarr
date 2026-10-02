@@ -13,7 +13,10 @@ namespace Torrentarr.Infrastructure.Services;
 public class QBittorrentConnectionManager : ITorrentClientRegistry
 {
     private readonly ILogger<QBittorrentConnectionManager> _logger;
-    private readonly ConcurrentDictionary<string, QBittorrentClient> _clients = new(StringComparer.OrdinalIgnoreCase);
+    // A regular dictionary is kept behind a lock so existing reflection-based
+    // integrations remain compatible while snapshots stay race-free.
+    private readonly Dictionary<string, QBittorrentClient> _clients = new(StringComparer.OrdinalIgnoreCase);
+    private readonly object _clientsLock = new();
     private readonly ConcurrentDictionary<string, DateTime> _lastConnected = new(StringComparer.OrdinalIgnoreCase);
     private readonly IReadOnlyDictionary<string, ITorrentClientFactory> _factories;
 
@@ -37,8 +40,7 @@ public class QBittorrentConnectionManager : ITorrentClientRegistry
             return false;
         }
 
-        if (_clients.ContainsKey(name))
-            return true;
+        lock (_clientsLock) if (_clients.ContainsKey(name)) return true;
 
         var client = (QBittorrentClient)_factories["qbittorrent"].Create(name, config);
 
@@ -57,7 +59,7 @@ public class QBittorrentConnectionManager : ITorrentClientRegistry
             _logger.LogInformation("Connected to qBittorrent instance '{Name}' {Version} at {Host}:{Port}",
                 name, version, config.Host, config.Port);
 
-            _clients.TryAdd(name, client);
+            lock (_clientsLock) _clients[name] = client;
             _lastConnected[name] = DateTime.UtcNow;
 
             return true;
@@ -94,12 +96,12 @@ public class QBittorrentConnectionManager : ITorrentClientRegistry
             Maintenance = config.Maintenance
         };
         if (compatible.Disabled) return false;
-        if (_clients.ContainsKey(name)) return true;
+        lock (_clientsLock) if (_clients.ContainsKey(name)) return true;
         var client = factory.Create(name, compatible);
         try
         {
             if (!await client.LoginAsync(cancellationToken)) return false;
-            _clients.TryAdd(name, (QBittorrentClient)client);
+            lock (_clientsLock) _clients[name] = (QBittorrentClient)client;
             _lastConnected[name] = DateTime.UtcNow;
             _logger.LogInformation("Connected torrent client '{Name}' ({Type}) {Version}",
                 name, config.Type, await client.GetVersionAsync(cancellationToken));
@@ -151,7 +153,7 @@ public class QBittorrentConnectionManager : ITorrentClientRegistry
     /// </summary>
     public QBittorrentClient? GetClient(string instanceName)
     {
-        return _clients.TryGetValue(instanceName, out var client) ? client : null;
+        lock (_clientsLock) return _clients.TryGetValue(instanceName, out var client) ? client : null;
     }
 
     /// <summary>
@@ -159,20 +161,20 @@ public class QBittorrentConnectionManager : ITorrentClientRegistry
     /// </summary>
     public IReadOnlyDictionary<string, QBittorrentClient> GetAllClients()
     {
-        return new Dictionary<string, QBittorrentClient>(_clients, StringComparer.OrdinalIgnoreCase);
+        lock (_clientsLock) return new Dictionary<string, QBittorrentClient>(_clients, StringComparer.OrdinalIgnoreCase);
     }
 
     ITorrentClient? ITorrentClientRegistry.GetClient(string instanceId) => GetClient(instanceId);
 
     IReadOnlyDictionary<string, ITorrentClient> ITorrentClientRegistry.GetAllClients()
-        => _clients.ToDictionary(pair => pair.Key, pair => (ITorrentClient)pair.Value, StringComparer.OrdinalIgnoreCase);
+        => GetAllClients().ToDictionary(pair => pair.Key, pair => (ITorrentClient)pair.Value, StringComparer.OrdinalIgnoreCase);
 
     /// <summary>
     /// Returns true if any qBit instance is connected.
     /// </summary>
     public bool IsConnected()
     {
-        return _clients.Count > 0;
+        lock (_clientsLock) return _clients.Count > 0;
     }
 
     /// <summary>
@@ -180,7 +182,7 @@ public class QBittorrentConnectionManager : ITorrentClientRegistry
     /// </summary>
     public bool IsConnected(string instanceName)
     {
-        return _clients.ContainsKey(instanceName);
+        lock (_clientsLock) return _clients.ContainsKey(instanceName);
     }
 
     /// <summary>
@@ -190,7 +192,7 @@ public class QBittorrentConnectionManager : ITorrentClientRegistry
     {
         var info = new Dictionary<string, ConnectionInfo>();
 
-        foreach (var (name, _) in _clients)
+        foreach (var (name, _) in GetAllClients())
         {
             info[name] = new ConnectionInfo
             {
