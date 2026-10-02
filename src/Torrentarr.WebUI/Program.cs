@@ -1132,8 +1132,16 @@ app.MapGet("/web/torrent-clients", async (ITorrentClientRegistry registry, Torre
         var client = registry.GetClient(id);
         string? version = null;
         if (client != null) { try { version = await client.GetVersionAsync(); } catch { } }
-        clients.Add(new { id, QbitInstance = id, type = clientCfg.Type, connected = client != null, version,
-            capabilities = client?.Capabilities ?? TorrentClientCapabilities.None, managedCategories = clientCfg.ManagedCategories });
+        clients.Add(new
+        {
+            id,
+            QbitInstance = id,
+            type = clientCfg.Type,
+            connected = client != null,
+            version,
+            capabilities = client?.Capabilities ?? TorrentClientCapabilities.None,
+            managedCategories = clientCfg.ManagedCategories
+        });
     }
     return Results.Ok(clients);
 });

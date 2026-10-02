@@ -1376,23 +1376,6 @@ export const CONFIG_SCHEMA = {
         "section": "TorrentClient",
         "path": [
           "Maintenance",
-          "Armed"
-        ],
-        "key": "Maintenance.Armed",
-        "label": "Maintenance Armed",
-        "kind": "checkbox",
-        "default": false,
-        "comments": "Torrentarr client-neutral torrent maintenance setting.",
-        "required": false,
-        "secure": false,
-        "uiExpose": true,
-        "applyLive": false,
-        "requiresRestart": true
-      },
-      {
-        "section": "TorrentClient",
-        "path": [
-          "Maintenance",
           "PlanTtlMinutes"
         ],
         "key": "Maintenance.PlanTtlMinutes",
