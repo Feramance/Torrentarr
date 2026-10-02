@@ -98,6 +98,58 @@ class OpenApiDriftTests(unittest.TestCase):
         self.assertIn("request body on POST /web/items schema differs for application/json", result)
         self.assertIn("response 200 on POST /web/items schema differs for application/json", result)
 
+    def test_compares_response_headers_through_references(self):
+        upstream = document(
+            {
+                "/web/items": {
+                    "post": {
+                        "responses": {
+                            "201": {"$ref": "#/components/responses/Created"}
+                        }
+                    }
+                }
+            },
+            {
+                "responses": {
+                    "Created": {
+                        "headers": {
+                            "Location": {"$ref": "#/components/headers/Location"},
+                            "X-Page": {"schema": {"type": "integer"}},
+                        }
+                    }
+                },
+                "headers": {
+                    "Location": {"schema": {"type": "string", "format": "uri"}}
+                },
+            },
+        )
+        torrentarr = document(
+            {
+                "/web/items": {
+                    "post": {
+                        "responses": {
+                            "201": {
+                                "headers": {
+                                    "location": {"schema": {"type": "integer"}}
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        )
+
+        result = module.compare(torrentarr, upstream, set())
+
+        self.assertIn(
+            "response header location on response 201 on POST /web/items schema differs",
+            result,
+        )
+        self.assertIn(
+            "missing response header x-page on response 201 on POST /web/items",
+            result,
+        )
+
     def test_reports_request_body_requiredness_differences_in_both_directions(self):
         for upstream_required, torrentarr_required in ((True, False), (False, True)):
             with self.subTest(

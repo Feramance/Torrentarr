@@ -52,7 +52,8 @@ public class CategorySeedingApiConfigTests
             new() { Category = "tv/4k" }
         };
 
-        var result = CategorySeedingApiResolver.ResolveAggregate(config, qbitConfig, "tv", torrents);
+        var result = CategorySeedingApiResolver.ResolveAggregate(
+            config, "qBit", qbitConfig, "tv", torrents);
 
         result.Should().BeNull();
     }
@@ -79,9 +80,69 @@ public class CategorySeedingApiConfigTests
         };
         var torrents = new List<TorrentInfo> { new() { Category = "tv/4k" } };
 
-        var result = CategorySeedingApiResolver.ResolveAggregate(config, qbitConfig, "tv", torrents);
+        var result = CategorySeedingApiResolver.ResolveAggregate(
+            config, "qBit", qbitConfig, "tv", torrents);
 
         result.Should().NotBeNull();
         result!.MaxRatio.Should().Be(4.0);
+    }
+
+    [Fact]
+    public void ResolveAggregateSeedingConfig_PreservesCaseDistinctChildPolicies()
+    {
+        var config = new TorrentarrConfig();
+        var qbitConfig = new QBitConfig
+        {
+            MatchSubcategories = true,
+            CategorySeeding = new CategorySeedingConfig
+            {
+                Categories =
+                [
+                    new CategorySeedingCategoryOverride
+                    {
+                        Name = "tv/Movies",
+                        MaxUploadRatio = 2.0
+                    },
+                    new CategorySeedingCategoryOverride
+                    {
+                        Name = "tv/movies",
+                        MaxUploadRatio = 3.0
+                    }
+                ]
+            }
+        };
+        var torrents = new List<TorrentInfo>
+        {
+            new() { Category = "tv/Movies" },
+            new() { Category = "tv/movies" }
+        };
+
+        var result = CategorySeedingApiResolver.ResolveAggregate(
+            config, "qBit", qbitConfig, "tv", torrents);
+
+        result.Should().BeNull();
+    }
+
+    [Fact]
+    public void ResolveAggregateSeedingConfig_RetainsParentArrPolicyForChildAggregate()
+    {
+        var config = new TorrentarrConfig();
+        var qbitConfig = new QBitConfig { MatchSubcategories = true };
+        config.QBitInstances["qBit"] = qbitConfig;
+        config.ArrInstances["Sonarr"] = new ArrInstanceConfig
+        {
+            Category = "tv",
+            Torrent =
+            {
+                SeedingMode = new SeedingModeConfig { MaxUploadRatio = 9.0 }
+            }
+        };
+        var torrents = new List<TorrentInfo> { new() { Category = "tv/4k" } };
+
+        var result = CategorySeedingApiResolver.ResolveAggregate(
+            config, "qBit", qbitConfig, "tv", torrents);
+
+        result.Should().NotBeNull();
+        result!.MaxRatio.Should().Be(9.0);
     }
 }

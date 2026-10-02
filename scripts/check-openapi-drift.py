@@ -159,6 +159,66 @@ def compare_content_schemas(
             errors.append(f"{context} schema differs for {media}")
 
 
+def response_headers(spec: dict, response: dict) -> dict[str, dict]:
+    """Return resolved response headers keyed case-insensitively."""
+    resolved = resolve_local_refs(spec, response)
+    if not isinstance(resolved, dict):
+        return {}
+    return {
+        name.lower(): resolve_local_refs(spec, header)
+        for name, header in resolved.get("headers", {}).items()
+    }
+
+
+def compare_response_headers(
+    errors: list[str],
+    torrentarr_spec: dict,
+    torrentarr_response: dict,
+    qbitrr_spec: dict,
+    qbitrr_response: dict,
+    context: str,
+) -> None:
+    qb_headers = response_headers(qbitrr_spec, qbitrr_response)
+    ta_headers = response_headers(torrentarr_spec, torrentarr_response)
+    for name in sorted(set(qb_headers) - set(ta_headers)):
+        errors.append(f"missing response header {name} on {context}")
+    for name in sorted(set(qb_headers) & set(ta_headers)):
+        qb_header = qb_headers[name]
+        ta_header = ta_headers[name]
+        if qb_header.get("required", False) != ta_header.get("required", False):
+            errors.append(f"response header {name} requiredness differs on {context}")
+        qb_content = content(qbitrr_spec, qb_header)
+        ta_content = content(torrentarr_spec, ta_header)
+        header_context = f"response header {name} on {context}"
+        if bool(qb_content) != bool(ta_content):
+            errors.append(f"{header_context} representation differs")
+        elif qb_content:
+            compare_content_schemas(
+                errors,
+                torrentarr_spec,
+                ta_header,
+                qbitrr_spec,
+                qb_header,
+                header_context,
+                f"{header_context} is missing media type {{media}}",
+            )
+        else:
+            qb_serialization = {
+                "style": qb_header.get("style", "simple"),
+                "explode": qb_header.get("explode", False),
+            }
+            ta_serialization = {
+                "style": ta_header.get("style", "simple"),
+                "explode": ta_header.get("explode", False),
+            }
+            if qb_serialization != ta_serialization:
+                errors.append(f"{header_context} serialization differs")
+            if resolved_schema(qbitrr_spec, qb_header) != resolved_schema(
+                torrentarr_spec, ta_header
+            ):
+                errors.append(f"{header_context} schema differs")
+
+
 def compare(torrentarr: dict, qbitrr: dict, allowed_extensions: set[str] | None = None) -> list[str]:
     errors: list[str] = []
     allowed_extensions = TORRENTARR_EXTENSIONS if allowed_extensions is None else allowed_extensions
@@ -267,6 +327,14 @@ def compare(torrentarr: dict, qbitrr: dict, allowed_extensions: set[str] | None 
                     qb_response,
                     f"response {status} on {method.upper()} {path}",
                     f"missing response media {status}:{{media}} on {method.upper()} {path}",
+                )
+                compare_response_headers(
+                    errors,
+                    torrentarr,
+                    ta_responses[status],
+                    qbitrr,
+                    qb_response,
+                    f"response {status} on {method.upper()} {path}",
                 )
     return errors
 

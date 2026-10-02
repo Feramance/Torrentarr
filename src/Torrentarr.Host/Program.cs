@@ -688,7 +688,7 @@ try
                         var managedBy = arrCategorySet.Contains(catName) ? "arr" : "qbit";
 
                         var effectiveSeeding = CategorySeedingApiResolver.ResolveAggregate(
-                            cfg, primaryQbit, catName, torrentsInCat);
+                            cfg, "qBit", primaryQbit, catName, torrentsInCat);
 
                         categories.Add(new
                         {
@@ -727,7 +727,7 @@ try
                         t.State.Contains("seeding", StringComparison.OrdinalIgnoreCase) ||
                         t.State.Equals("uploading", StringComparison.OrdinalIgnoreCase)).ToList();
                     var effectiveSeeding = CategorySeedingApiResolver.ResolveAggregate(
-                        cfg, instCfg, catName, torrentsInCat);
+                        cfg, instName, instCfg, catName, torrentsInCat);
 
                     categories.Add(new
                     {
@@ -1609,7 +1609,7 @@ try
                         var managedBy = arrCategorySet.Contains(catName) ? "arr" : "qbit";
 
                         var effectiveSeeding = CategorySeedingApiResolver.ResolveAggregate(
-                            cfg, primaryQbit2, catName, torrentsInCat);
+                            cfg, "qBit", primaryQbit2, catName, torrentsInCat);
 
                         categories.Add(new
                         {
@@ -1645,7 +1645,7 @@ try
                         t.State.Contains("seeding", StringComparison.OrdinalIgnoreCase) ||
                         t.State.Equals("uploading", StringComparison.OrdinalIgnoreCase)).ToList();
                     var effectiveSeeding = CategorySeedingApiResolver.ResolveAggregate(
-                        cfg, instCfg, catName, torrentsInCat);
+                        cfg, instName, instCfg, catName, torrentsInCat);
                     categories.Add(new
                     {
                         category = catName,

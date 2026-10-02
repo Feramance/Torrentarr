@@ -34,11 +34,13 @@ public static class CategorySeedingApiResolver
 
     public static CategorySeedingApiConfig? ResolveAggregate(
         TorrentarrConfig config,
+        string qbitSection,
         QBitConfig qbitConfig,
         string configuredCategory,
         IReadOnlyCollection<TorrentInfo> torrents)
     {
-        var policy = ResolveAggregatePolicy(config, qbitConfig, configuredCategory, torrents);
+        var policy = ResolveAggregatePolicy(
+            config, qbitSection, qbitConfig, configuredCategory, torrents);
         return policy == null
             ? null
             : new CategorySeedingApiConfig(
@@ -51,6 +53,7 @@ public static class CategorySeedingApiResolver
 
     public static CategorySeedingApiPolicy? ResolveAggregatePolicy(
         TorrentarrConfig config,
+        string qbitSection,
         QBitConfig qbitConfig,
         string configuredCategory,
         IReadOnlyCollection<TorrentInfo> torrents)
@@ -58,7 +61,7 @@ public static class CategorySeedingApiResolver
         var actualCategories = torrents
             .Select(torrent => torrent.Category)
             .Where(category => !string.IsNullOrWhiteSpace(category))
-            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .Distinct(StringComparer.Ordinal)
             .ToList();
         if (actualCategories.Count == 0)
             actualCategories.Add(configuredCategory);
@@ -67,8 +70,11 @@ public static class CategorySeedingApiResolver
         {
             var effective = SeedingService.ApplyCategoryOverride(
                 qbitConfig.CategorySeeding, category, qbitConfig.MatchSubcategories);
+            var ownerCategory = CategoryOwnershipHelper.ResolveOwningCategory(
+                config, category, qbitSection) ?? configuredCategory;
             var arrSeedingMode = config.ArrInstances.Values
-                .FirstOrDefault(arr => string.Equals(arr.Category, category, StringComparison.OrdinalIgnoreCase))
+                .FirstOrDefault(arr => CategoryPathHelper.CategoryEquals(
+                    arr.Category, ownerCategory))
                 ?.Torrent.SeedingMode;
             effective = SeedingLimitMerge.Merge(effective, arrSeedingMode, tracker: null);
             return new CategorySeedingApiPolicy(

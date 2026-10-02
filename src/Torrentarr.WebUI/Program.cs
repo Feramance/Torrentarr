@@ -1475,7 +1475,7 @@ app.MapGet("/web/qbit/categories", async (TorrentarrConfig config) =>
                 : 0.0;
 
             var effectiveSeeding = CategorySeedingApiResolver.ResolveAggregatePolicy(
-                config, qbitCfg, cat, catTorrents);
+                config, qbitName, qbitCfg, cat, catTorrents);
             categories.Add(new
             {
                 category = cat,

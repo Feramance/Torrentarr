@@ -1391,6 +1391,14 @@ function AppShell(): JSX.Element {
                   setConfigDirty(false);
                   setConfigViewKey((current) => current + 1);
                 }
+                if (
+                  tab.id === "config" &&
+                  activeTab !== "config" &&
+                  visitedTabs.has("config") &&
+                  !configDirty
+                ) {
+                  setConfigViewKey((current) => current + 1);
+                }
                 setActiveTab(tab.id);
                 setSearchValue("");
               }}

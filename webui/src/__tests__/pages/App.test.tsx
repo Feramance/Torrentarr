@@ -77,7 +77,7 @@ afterEach(() => {
 });
 
 describe("App tab lifecycle", () => {
-  it("keeps visited tab state mounted while navigating", async () => {
+  it("reloads clean config state when reactivating the tab", async () => {
     vi.stubGlobal("location", {
       pathname: "/ui/",
       replace: vi.fn(),
@@ -99,9 +99,7 @@ describe("App tab lifecycle", () => {
     await user.click(screen.getByRole("button", { name: /processes/i }));
     await user.click(screen.getByRole("button", { name: /config/i }));
 
-    expect(screen.getByLabelText("mock config value")).toHaveValue(
-      "unsaved value",
-    );
+    expect(screen.getByLabelText("mock config value")).toHaveValue("");
   });
 
   it("discards retained config edits after confirmed navigation", async () => {
