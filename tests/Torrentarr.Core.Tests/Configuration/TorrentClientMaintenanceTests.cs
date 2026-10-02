@@ -17,7 +17,10 @@ public sealed class TorrentClientMaintenanceTests
             config.QBitInstances["qBit"] = new QBitConfig { Host = "legacy", UserName = "u", Password = "p" };
             config.TorrentClients["seedbox"] = new TorrentClientInstanceConfig
             {
-                Type = "qbittorrent", Host = "canonical", UserName = "u", Password = "p",
+                Type = "qbittorrent",
+                Host = "canonical",
+                UserName = "u",
+                Password = "p",
                 Maintenance = new MaintenanceConfig
                 {
                     Enabled = true,
