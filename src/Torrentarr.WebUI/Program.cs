@@ -60,6 +60,8 @@ builder.Services.AddControllers()
         options.SerializerSettings.NullValueHandling = Newtonsoft.Json.NullValueHandling.Include;
         options.SerializerSettings.DateTimeZoneHandling = Newtonsoft.Json.DateTimeZoneHandling.Utc;
     });
+builder.Services.ConfigureHttpJsonOptions(options =>
+    options.SerializerOptions.Converters.Add(new System.Text.Json.Serialization.JsonStringEnumConverter()));
 
 // Add OpenAPI/Swagger
 builder.Services.AddEndpointsApiExplorer();
@@ -859,14 +861,14 @@ static Newtonsoft.Json.Linq.JObject BuildFlatConfig(TorrentarrConfig config, boo
     foreach (var (name, qbit) in config.QBitInstances)
     {
         var qbitObj = Newtonsoft.Json.Linq.JObject.FromObject(qbit);
-        if (redactSensitive) RedactFlatField(qbitObj, "Password");
+        if (redactSensitive) RedactSensitiveFields(qbitObj);
         flat[name] = qbitObj;
     }
 
     var canonical = Newtonsoft.Json.Linq.JObject.FromObject(config.TorrentClients);
     if (redactSensitive)
         foreach (var property in canonical.Properties().OfType<Newtonsoft.Json.Linq.JProperty>())
-            if (property.Value is Newtonsoft.Json.Linq.JObject clientObj) RedactFlatField(clientObj, "Password");
+            if (property.Value is Newtonsoft.Json.Linq.JObject clientObj) RedactSensitiveFields(clientObj);
     flat["TorrentClient"] = canonical;
 
     foreach (var (name, arr) in config.ArrInstances)
@@ -897,6 +899,32 @@ static void RedactFlatField(Newtonsoft.Json.Linq.JObject obj, string key)
         && prop.Value.ToString() != "CHANGE_ME")
     {
         prop.Value = "[redacted]";
+    }
+}
+
+static void RedactSensitiveFields(Newtonsoft.Json.Linq.JToken token)
+{
+    if (token is Newtonsoft.Json.Linq.JObject obj)
+    {
+        foreach (var property in obj.Properties().ToList())
+        {
+            if (property.Value.Type == Newtonsoft.Json.Linq.JTokenType.String
+                && (property.Name.Equals("Password", StringComparison.OrdinalIgnoreCase)
+                    || property.Name.Equals("Token", StringComparison.OrdinalIgnoreCase)
+                    || property.Name.Equals("APIKey", StringComparison.OrdinalIgnoreCase)))
+            {
+                if (!string.IsNullOrWhiteSpace(property.Value.ToString()) && property.Value.ToString() != "CHANGE_ME")
+                    property.Value = "[redacted]";
+            }
+            else
+            {
+                RedactSensitiveFields(property.Value);
+            }
+        }
+    }
+    else if (token is Newtonsoft.Json.Linq.JArray array)
+    {
+        foreach (var item in array) RedactSensitiveFields(item);
     }
 }
 
@@ -936,8 +964,11 @@ static TorrentarrConfig FlatToConfig(Newtonsoft.Json.Linq.JObject flat, Torrenta
             foreach (var clientProp in clientsObj.Properties())
             {
                 var client = clientProp.Value.ToObject<TorrentClientInstanceConfig>() ?? new TorrentClientInstanceConfig();
-                if (client.Password == "[redacted]" && current.TorrentClients.TryGetValue(clientProp.Name, out var existing))
-                    client.Password = existing.Password;
+                if (current.TorrentClients.TryGetValue(clientProp.Name, out var existing))
+                {
+                    if (client.Password == "[redacted]") client.Password = existing.Password;
+                    RestoreNotificationTokens(client, existing);
+                }
                 result.TorrentClients[clientProp.Name] = client;
             }
             continue;
@@ -950,8 +981,11 @@ static TorrentarrConfig FlatToConfig(Newtonsoft.Json.Linq.JObject flat, Torrenta
         if (isKnownQBit || (!isKnownArr && prop.Name.StartsWith("qBit", StringComparison.OrdinalIgnoreCase)))
         {
             var qbit = instanceObj.ToObject<QBitConfig>() ?? new QBitConfig();
-            if (qbit.Password == "[redacted]" && current.QBitInstances.TryGetValue(prop.Name, out var existingQBit))
-                qbit.Password = existingQBit.Password;
+            if (current.QBitInstances.TryGetValue(prop.Name, out var existingQBit))
+            {
+                if (qbit.Password == "[redacted]") qbit.Password = existingQBit.Password;
+                RestoreNotificationTokens(qbit, existingQBit);
+            }
             result.QBitInstances[prop.Name] = qbit;
         }
         else if (isKnownArr || ArrSectionHelper.IsArrSection(prop.Name))
@@ -968,6 +1002,16 @@ static TorrentarrConfig FlatToConfig(Newtonsoft.Json.Linq.JObject flat, Torrenta
     }
 
     return result;
+}
+
+static void RestoreNotificationTokens(TorrentClientInstanceConfig target, TorrentClientInstanceConfig source)
+{
+    var sourceByUrl = source.Maintenance.Notifications
+        .Where(n => !string.IsNullOrWhiteSpace(n.Url))
+        .ToDictionary(n => n.Url, StringComparer.OrdinalIgnoreCase);
+    foreach (var notification in target.Maintenance.Notifications)
+        if (notification.Token == "[redacted]" && sourceByUrl.TryGetValue(notification.Url, out var existing))
+            notification.Token = existing.Token;
 }
 
 // Processes endpoint - list all processes with status

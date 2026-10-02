@@ -35,7 +35,10 @@ public sealed class MaintenanceNotificationService : BackgroundService, IMainten
             var sinks = _config.GetAllTorrentClients()
                 .Where(pair => item.ClientInstanceId == null || pair.Key.Equals(item.ClientInstanceId, StringComparison.OrdinalIgnoreCase))
                 .SelectMany(pair => pair.Value.Maintenance.Notifications)
-                .Where(s => s.Enabled && Uri.TryCreate(s.Url, UriKind.Absolute, out _)).ToList();
+                .Where(s => s.Enabled
+                    && Uri.TryCreate(s.Url, UriKind.Absolute, out var uri)
+                    && (string.IsNullOrWhiteSpace(s.Token) || uri.Scheme.Equals(Uri.UriSchemeHttps, StringComparison.OrdinalIgnoreCase)))
+                .ToList();
             foreach (var sink in sinks)
                 await DeliverAsync(sink, item, stoppingToken);
         }

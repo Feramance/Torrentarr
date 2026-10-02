@@ -20,7 +20,9 @@ public sealed class PathMappingService : IPathMappingService
             .FirstOrDefault();
         if (match == null) return null;
 
-        var suffix = clientPath[match.Prefix.Length..].TrimStart('/', '\\');
+        var normalizedClientPath = clientPath.Replace('\\', '/');
+        var normalizedPrefix = match.Prefix.Replace('\\', '/');
+        var suffix = normalizedClientPath[normalizedPrefix.Length..].TrimStart('/');
         var root = Path.GetFullPath(match.Mapping.LocalPath);
         var candidate = Path.GetFullPath(Path.Combine(root, suffix.Replace('/', Path.DirectorySeparatorChar)));
         return IsSafeDescendant(candidate, root) ? candidate : null;

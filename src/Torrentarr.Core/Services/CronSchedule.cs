@@ -11,7 +11,7 @@ public static class CronSchedule
             && MatchField(parts[1], utcNow.Hour, 0, 23)
             && MatchField(parts[2], utcNow.Day, 1, 31)
             && MatchField(parts[3], utcNow.Month, 1, 12)
-            && MatchField(parts[4], (int)utcNow.DayOfWeek, 0, 6);
+            && MatchDayOfWeek(parts[4], (int)utcNow.DayOfWeek);
     }
 
     public static DateTimeOffset? Next(string expression, DateTimeOffset fromUtc)
@@ -28,6 +28,9 @@ public static class CronSchedule
     private static bool MatchField(string field, int value, int minimum, int maximum)
         => field.Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
             .Any(part => MatchPart(part, value, minimum, maximum));
+
+    private static bool MatchDayOfWeek(string field, int value)
+        => MatchField(field, value, 0, 7) || (value == 0 && MatchField(field, 7, 0, 7));
 
     private static bool MatchPart(string part, int value, int minimum, int maximum)
     {

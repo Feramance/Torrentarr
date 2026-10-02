@@ -272,20 +272,6 @@ public sealed class MaintenanceCoordinator : BackgroundService, IMaintenanceCoor
     {
         var locks = plan.ClientInstanceIds.OrderBy(x => x, StringComparer.OrdinalIgnoreCase)
             .Select(id => _instanceLocks.GetOrAdd(id, _ => new SemaphoreSlim(1, 1))).ToList();
-        var acquired = new List<SemaphoreSlim>(locks.Count);
-        try
-        {
-            foreach (var gate in locks)
-            {
-                await gate.WaitAsync(outerCt);
-                acquired.Add(gate);
-            }
-        }
-        catch
-        {
-            foreach (var gate in acquired) gate.Release();
-            throw;
-        }
         using var linked = CancellationTokenSource.CreateLinkedTokenSource(outerCt);
         var run = new MaintenanceRunSummary
         {
@@ -298,6 +284,29 @@ public sealed class MaintenanceCoordinator : BackgroundService, IMaintenanceCoor
             if (_current != null) throw new InvalidOperationException("A maintenance run is already active.");
             _current = run;
             _activeCancellation = linked;
+        }
+
+        var acquired = new List<SemaphoreSlim>(locks.Count);
+        try
+        {
+            foreach (var gate in locks)
+            {
+                await gate.WaitAsync(outerCt);
+                acquired.Add(gate);
+            }
+        }
+        catch
+        {
+            lock (_stateLock)
+            {
+                if (ReferenceEquals(_current, run))
+                {
+                    _current = null;
+                    _activeCancellation = null;
+                }
+            }
+            foreach (var gate in acquired) gate.Release();
+            throw;
         }
 
         try
