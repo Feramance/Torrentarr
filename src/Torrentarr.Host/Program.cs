@@ -697,7 +697,8 @@ try
     // Web Status — matches TypeScript StatusResponse (no extra webui field)
     app.MapGet("/web/status", async (TorrentarrConfig cfg, ITorrentClientRegistry qbitManager) =>
     {
-        var primaryQbit = (cfg.QBitInstances.GetValueOrDefault("qBit") ?? new QBitConfig());
+        var primaryName = cfg.GetAllTorrentClients().Keys.FirstOrDefault() ?? "qBit";
+        var primaryQbit = cfg.GetTorrentClient(primaryName) ?? new QBitConfig();
         var qbitConfigured = primaryQbit.Host != "CHANGE_ME" && !string.IsNullOrEmpty(primaryQbit.Host);
         var qbitAlive = qbitConfigured && qbitManager.IsConnected();
 
@@ -754,13 +755,14 @@ try
     app.MapGet("/web/qbit/categories", async (ITorrentClientRegistry qbitManager, TorrentarrConfig cfg) =>
     {
         var categories = new List<object>();
+        var primaryName = cfg.GetAllTorrentClients().Keys.FirstOrDefault() ?? "qBit";
 
         // Build Arr-managed category lookup: category name → ArrInstanceConfig
         var arrCategoryToConfig = cfg.ArrInstances
             .Where(kvp => !string.IsNullOrEmpty(kvp.Value.Category))
             .ToDictionary(kvp => kvp.Value.Category!, kvp => kvp.Value, StringComparer.OrdinalIgnoreCase);
 
-        var primaryQbit = (cfg.QBitInstances.GetValueOrDefault("qBit") ?? new QBitConfig());
+        var primaryQbit = cfg.GetTorrentClient(primaryName) ?? new QBitConfig();
         var qbitManagedSet = new HashSet<string>(primaryQbit.ManagedCategories, StringComparer.OrdinalIgnoreCase);
         var arrCategorySet = new HashSet<string>(arrCategoryToConfig.Keys, StringComparer.OrdinalIgnoreCase);
         // Only show ManagedCategories from qBit config - not Arr categories
@@ -770,7 +772,7 @@ try
         {
             try
             {
-                var client = qbitManager.GetAllClients().Values.FirstOrDefault();
+                var client = qbitManager.GetClient(primaryName) ?? qbitManager.GetAllClients().Values.FirstOrDefault();
                 if (client != null)
                 {
                     var allTorrents = await client.GetTorrentsAsync();
@@ -786,13 +788,13 @@ try
                         var managedBy = arrCategorySet.Contains(catName) ? "arr" : "qbit";
 
                         var effectiveSeeding = CategorySeedingApiResolver.ResolveAggregate(
-                            cfg, "qBit", primaryQbit, catName, torrentsInCat);
+                            cfg, primaryName, primaryQbit, catName, torrentsInCat);
 
                         categories.Add(new
                         {
                             category = catName,
                             // Always the qBit instance name — ProcessesView matches on this field
-                            instance = "qBit",
+                            instance = primaryName,
                             managedBy,
                             torrentCount = torrentsInCat.Count,
                             seedingCount = seedingTorrents.Count,

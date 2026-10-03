@@ -448,6 +448,19 @@ public sealed class MaintenanceCoordinator : BackgroundService, IMaintenanceCoor
                 if (item == null) return "Torrent inventory changed after preview.";
                 var hnr = HnrBlocked(cfg, item);
                 if (hnr != null) return hnr;
+                if (action.Reason.StartsWith("Tracker reports torrent as unregistered:", StringComparison.OrdinalIgnoreCase)
+                    && !item.Trackers.Any(t => cfg.Maintenance.Unregistered.Messages.Any(m => t.Msg.Contains(m, StringComparison.OrdinalIgnoreCase))))
+                    return "Torrent is no longer reported as unregistered.";
+                if (action.Reason.StartsWith("Matched share policy '", StringComparison.OrdinalIgnoreCase))
+                {
+                    const string prefix = "Matched share policy '";
+                    var start = prefix.Length;
+                    var end = action.Reason.IndexOf("'.", start, StringComparison.Ordinal);
+                    var name = end > start ? action.Reason[start..end] : string.Empty;
+                    var policy = cfg.Maintenance.SharePolicies.FirstOrDefault(p => p.Name.Equals(name, StringComparison.OrdinalIgnoreCase));
+                    if (policy == null || !Matches(policy, item) || !ReachedMaximum(policy, item.Torrent))
+                        return "Share-policy eligibility changed after preview.";
+                }
             }
         }
         foreach (var capability in action.RequiredCapabilities)
@@ -766,11 +779,10 @@ public sealed class MaintenanceCoordinator : BackgroundService, IMaintenanceCoor
     private static bool PathBoundaryMatch(string candidate, string prefix)
     {
         if (string.IsNullOrWhiteSpace(prefix)) return false;
-        var fullCandidate = Path.GetFullPath(candidate);
-        var fullPrefix = Path.GetFullPath(prefix).TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar);
+        var fullCandidate = candidate.Replace('\\', '/').TrimEnd('/');
+        var fullPrefix = prefix.Replace('\\', '/').TrimEnd('/');
         return fullCandidate.Equals(fullPrefix, StringComparison.OrdinalIgnoreCase)
-            || fullCandidate.StartsWith(fullPrefix + Path.DirectorySeparatorChar, StringComparison.OrdinalIgnoreCase)
-            || fullCandidate.StartsWith(fullPrefix + Path.AltDirectorySeparatorChar, StringComparison.OrdinalIgnoreCase);
+            || fullCandidate.StartsWith(fullPrefix + "/", StringComparison.OrdinalIgnoreCase);
     }
 
     private static HashSet<string> SplitTags(string tags)

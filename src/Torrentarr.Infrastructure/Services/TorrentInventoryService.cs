@@ -63,6 +63,8 @@ public sealed class TorrentInventoryService : ITorrentInventoryService
                         {
                             var clientPath = CombineClientPath(torrent.SavePath, file.Name);
                             var localPath = _paths.MapToLocal(clientPath, clientConfig.Maintenance.PathMappings);
+                            if (localPath == null)
+                                result.Warnings.Add($"[{instanceId}] File path '{clientPath}' could not be mapped to a local path.");
                             item.Files.Add(new TorrentFileInventoryItem
                             {
                                 File = file,

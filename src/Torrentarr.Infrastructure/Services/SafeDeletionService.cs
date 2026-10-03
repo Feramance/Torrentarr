@@ -133,9 +133,21 @@ public sealed class SafeDeletionService : ISafeDeletionService
         }
 
         var deleted = await client.DeleteTorrentsAsync([hash], false, ct);
-        return deleted
-            ? new(true, false, moved)
-            : new(false, false, moved, "Content was recycled, but the torrent client rejected removal.");
+        if (deleted) return new(true, false, moved);
+        foreach (var (source, destination) in movedPaths.AsEnumerable().Reverse())
+        {
+            try
+            {
+                Directory.CreateDirectory(Path.GetDirectoryName(source)!);
+                if (Directory.Exists(destination)) Directory.Move(destination, source);
+                else if (File.Exists(destination)) File.Move(destination, source);
+            }
+            catch (Exception rollbackEx)
+            {
+                _logger.LogError(rollbackEx, "Unable to roll back rejected recycle move {Destination} to {Source}", destination, source);
+            }
+        }
+        return new(false, false, 0, "Torrent client rejected removal; recycled content was rolled back.");
     }
 
     public async Task<SafeDeletionResult> QuarantineFileAsync(string clientInstanceId, string localPath, CancellationToken ct = default)
@@ -154,6 +166,8 @@ public sealed class SafeDeletionService : ISafeDeletionService
         var cfg = _config.GetTorrentClient(clientInstanceId);
         if (cfg == null || !cfg.Maintenance.RecycleBin.Enabled) return Task.FromResult(0);
         var root = ResolveRecycleRoot(cfg);
+        if (cfg.Maintenance.RecycleBin.SplitByClient)
+            root = Path.Combine(root, Sanitize(clientInstanceId));
         if (!Directory.Exists(root)) return Task.FromResult(0);
         if ((File.GetAttributes(root) & FileAttributes.ReparsePoint) != 0) return Task.FromResult(0);
 
@@ -249,6 +263,13 @@ public sealed class SafeDeletionService : ISafeDeletionService
         var bytes = Directory.Exists(destination)
             ? Directory.EnumerateFiles(destination, "*", SearchOption.AllDirectories).Sum(f => new FileInfo(f).Length)
             : new FileInfo(destination).Length;
+        try
+        {
+            var stamp = DateTime.UtcNow;
+            if (Directory.Exists(destination)) Directory.SetLastWriteTimeUtc(destination, stamp);
+            else File.SetLastWriteTimeUtc(destination, stamp);
+        }
+        catch (IOException) { }
         _logger.LogInformation("Moved {Source} to recycle bin {Destination}", source, destination);
         return bytes;
     }
