@@ -1,4 +1,5 @@
 using Torrentarr.Core.Configuration;
+using Torrentarr.Core.Interfaces;
 using Torrentarr.Core.Models;
 using Torrentarr.Core.Services;
 using Torrentarr.Infrastructure.ApiClients.QBittorrent;
@@ -40,14 +41,14 @@ public class SeedingService : ISeedingService
     private readonly ILogger<SeedingService> _logger;
     private readonly TorrentarrDbContext _dbContext;
     private readonly TorrentarrConfig _config;
-    private readonly QBittorrentConnectionManager _qbitManager;
+    private readonly ITorrentClientRegistry _qbitManager;
     private readonly StalledUploadTracker _stalledUploads;
 
     public SeedingService(
         ILogger<SeedingService> logger,
         TorrentarrDbContext dbContext,
         TorrentarrConfig config,
-        QBittorrentConnectionManager qbitManager,
+        ITorrentClientRegistry qbitManager,
         StalledUploadTracker? stalledUploads = null)
     {
         _logger = logger;
@@ -60,7 +61,7 @@ public class SeedingService : ISeedingService
     /// <summary>Returns the seeding config for the owning qBit instance with category overrides applied.</summary>
     private CategorySeedingConfig GetSeedingConfig(TorrentInfo torrent)
     {
-        var qbit = _config.QBitInstances.GetValueOrDefault(torrent.QBitInstanceName);
+        var qbit = _config.GetTorrentClient(torrent.QBitInstanceName);
         var baseConfig = qbit?.CategorySeeding ?? new CategorySeedingConfig();
         return ApplyCategoryOverride(baseConfig, torrent.Category, qbit?.MatchSubcategories ?? false);
     }
@@ -107,7 +108,7 @@ public class SeedingService : ISeedingService
     /// </summary>
     private List<TrackerConfig> GetTrackerList(TorrentInfo torrent)
     {
-        var qbitTrackers = _config.QBitInstances.GetValueOrDefault(torrent.QBitInstanceName)?.Trackers
+        var qbitTrackers = _config.GetTorrentClient(torrent.QBitInstanceName)?.Trackers
                            ?? new List<TrackerConfig>();
 
         // Find the Arr instance that manages this torrent's category
@@ -129,7 +130,7 @@ public class SeedingService : ISeedingService
     }
 
     /// <summary>Returns the connected client for whichever qBit instance the torrent belongs to.</summary>
-    private QBittorrentClient? GetClient(TorrentInfo torrent)
+    private ITorrentClient? GetClient(TorrentInfo torrent)
         => _qbitManager.GetClient(torrent.QBitInstanceName);
 
     public async Task<bool> MeetsSeedingRequirementsAsync(string hash, string category, CancellationToken cancellationToken = default)
@@ -702,7 +703,7 @@ public class SeedingService : ISeedingService
         }
 
         // Gather completed torrents from all qBit instances for this category
-        var completedByInstance = new List<(string instanceName, QBittorrentClient client, TorrentInfo torrent)>();
+        var completedByInstance = new List<(string instanceName, ITorrentClient client, TorrentInfo torrent)>();
         foreach (var (instanceName, client) in allClients)
         {
             var torrents = await client.GetTorrentsAsync(category, cancellationToken: cancellationToken);
@@ -869,7 +870,7 @@ public class SeedingService : ISeedingService
     }
 
     private async Task UpdateSingleTorrentSeedingTagAsync(
-        QBittorrentClient client,
+        ITorrentClient client,
         TorrentInfo torrent,
         CancellationToken cancellationToken)
     {
@@ -946,7 +947,7 @@ public class SeedingService : ISeedingService
         return tags.Contains(tag, StringComparer.OrdinalIgnoreCase);
     }
 
-    private async Task EnsureTagsExistAsync(QBittorrentClient client, CancellationToken cancellationToken)
+    private async Task EnsureTagsExistAsync(ITorrentClient client, CancellationToken cancellationToken)
     {
         try
         {
@@ -1090,7 +1091,7 @@ public class SeedingService : ISeedingService
     /// Iterates the merged tracker list and applies each action for the trackers that match/don't match.
     /// </summary>
     private async Task ApplyTrackerActionsAsync(
-        QBittorrentClient client,
+        ITorrentClient client,
         TorrentInfo torrent,
         CancellationToken ct)
     {
@@ -1179,7 +1180,7 @@ public class SeedingService : ISeedingService
     /// Checks both Arr-level SeedingMode and TorrentConfig lists.
     /// </summary>
     private async Task ProcessTrackerMessagesAsync(
-        QBittorrentClient client,
+        ITorrentClient client,
         TorrentInfo torrent,
         CancellationToken ct)
     {

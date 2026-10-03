@@ -1,4 +1,5 @@
 using Torrentarr.Core.Configuration;
+using Torrentarr.Core.Interfaces;
 using Torrentarr.Core.Models;
 using Torrentarr.Infrastructure.ApiClients.QBittorrent;
 
@@ -11,14 +12,14 @@ public static class QbitOverviewBuilder
 
     public static async Task<object> BuildAsync(
         TorrentarrConfig cfg,
-        QBittorrentConnectionManager qbitManager,
+        ITorrentClientRegistry qbitManager,
         string? instanceFilter,
         CancellationToken ct = default)
     {
         var filter = (instanceFilter ?? "").Trim();
         var includeAll = string.IsNullOrEmpty(filter) || filter.Equals("all", StringComparison.OrdinalIgnoreCase);
 
-        var instanceNames = cfg.QBitInstances.Keys
+        var instanceNames = cfg.GetAllTorrentClients().Keys
             .Where(name => includeAll || name.Equals(filter, StringComparison.OrdinalIgnoreCase))
             .ToList();
 
@@ -30,26 +31,14 @@ public static class QbitOverviewBuilder
         var categories = new List<object>();
         foreach (var instanceName in instanceNames)
         {
-            if (!cfg.QBitInstances.TryGetValue(instanceName, out var qbit))
+            var qbit = cfg.GetTorrentClient(instanceName);
+            if (qbit == null)
                 continue;
             if (qbit.Host == "CHANGE_ME" || string.IsNullOrEmpty(qbit.Host))
                 continue;
 
             var client = qbitManager.GetClient(instanceName);
-            if (client == null)
-            {
-                try
-                {
-                    var created = new QBittorrentClient(qbit.Host, qbit.Port, qbit.UserName, qbit.Password, qbit.SkipTLSVerify);
-                    if (!await created.LoginAsync(ct))
-                        continue;
-                    client = created;
-                }
-                catch
-                {
-                    continue;
-                }
-            }
+            if (client == null) continue;
 
             List<TorrentInfo> torrents;
             try

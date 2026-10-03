@@ -3,6 +3,11 @@ using Tomlyn.Model;
 
 namespace Torrentarr.Core.Configuration;
 
+internal sealed class TorrentClientConfigDocument
+{
+    public Dictionary<string, TorrentClientInstanceConfig> TorrentClient { get; init; } = new();
+}
+
 /// <summary>
 /// Loads configuration from TOML files with backwards compatibility for qBitrr config.toml
 /// </summary>
@@ -135,6 +140,23 @@ public class ConfigurationLoader
             }
         }
 
+        // Canonical client-neutral sections: [TorrentClient.<id>]. Legacy qBit sections
+        // remain first-class and are deliberately not rewritten into this form on save.
+        if (tomlTable.TryGetValue("TorrentClient", out var clientObj) && clientObj is TomlTable clientTable)
+        {
+            config.TorrentClients = new Dictionary<string, TorrentClientInstanceConfig>(StringComparer.OrdinalIgnoreCase);
+            foreach (var (id, value) in clientTable)
+            {
+                if (value is not TomlTable instanceTable) continue;
+                if (config.QBitInstances.Keys.Any(existing => existing.Equals(id, StringComparison.OrdinalIgnoreCase)))
+                    throw new InvalidDataException($"Torrent client instance '{id}' is declared in both legacy and canonical sections.");
+                var instance = TomlSerializer.Deserialize<TorrentClientInstanceConfig>(
+                    TomlSerializer.Serialize(instanceTable)) ?? new TorrentClientInstanceConfig();
+                instance.LegacySection = false;
+                config.TorrentClients[id] = instance;
+            }
+        }
+
         // Parse WebUI section
         if (tomlTable.TryGetValue("WebUI", out var webuiObj) && webuiObj is TomlTable webuiTable)
         {
@@ -189,6 +211,19 @@ public class ConfigurationLoader
             ApplyEnvInt("TORRENTARR_QBIT_PORT", "QBITRR_QBIT_PORT", v => qbit.Port = v);
             ApplyEnvString("TORRENTARR_QBIT_USERNAME", "QBITRR_QBIT_USERNAME", v => qbit.UserName = v);
             ApplyEnvString("TORRENTARR_QBIT_PASSWORD", "QBITRR_QBIT_PASSWORD", v => qbit.Password = v);
+        }
+
+        // Neutral overrides are intentionally available only for explicitly named
+        // canonical instances, preventing accidental changes to legacy qBit sections.
+        foreach (var (id, client) in config.TorrentClients)
+        {
+            var prefix = "TORRENTARR_CLIENT_" + string.Concat(id.Select(c => char.IsLetterOrDigit(c) ? char.ToUpperInvariant(c) : '_')) + "_";
+            ApplyEnvString(prefix + "TYPE", null, v => client.Type = v);
+            ApplyEnvBool(prefix + "DISABLED", null, v => client.Disabled = v);
+            ApplyEnvString(prefix + "HOST", null, v => client.Host = v);
+            ApplyEnvInt(prefix + "PORT", null, v => client.Port = v);
+            ApplyEnvString(prefix + "USERNAME", null, v => client.UserName = v);
+            ApplyEnvString(prefix + "PASSWORD", null, v => client.Password = v);
         }
 
         var webui = config.WebUI;
@@ -1156,6 +1191,10 @@ public class ConfigurationLoader
         if (table.TryGetValue("Trackers", out var trackersObj))
             qbit.Trackers = GetTrackerTables(trackersObj).Select(t => ParseTrackerConfig(t)).Where(t => t != null).ToList()!;
 
+        if (table.TryGetValue("Maintenance", out var maintenanceObj) && maintenanceObj is TomlTable maintenanceTable)
+            qbit.Maintenance = TomlSerializer.Deserialize<MaintenanceConfig>(
+                TomlSerializer.Serialize(maintenanceTable)) ?? new MaintenanceConfig();
+
         return qbit;
     }
 
@@ -2047,6 +2086,14 @@ public class ConfigurationLoader
                 if (category.IgnoreTorrentsYoungerThan.HasValue) sb.AppendLine($"IgnoreTorrentsYoungerThan = {category.IgnoreTorrentsYoungerThan.Value}");
             }
             sb.AppendLine();
+            AppendMaintenanceSection(sb, name, qbit.Maintenance);
+        }
+
+        if (config.TorrentClients.Count > 0)
+        {
+            var canonical = new TorrentClientConfigDocument { TorrentClient = config.TorrentClients };
+            sb.AppendLine(TomlSerializer.Serialize(canonical).Trim());
+            sb.AppendLine();
         }
 
         // Arr instances
@@ -2224,6 +2271,23 @@ public class ConfigurationLoader
     /// <summary>
     /// Escape special characters for TOML string values
     /// </summary>
+    private static void AppendMaintenanceSection(
+        System.Text.StringBuilder sb, string parent, MaintenanceConfig maintenance)
+    {
+        sb.AppendLine($"[{parent}.Maintenance]");
+        foreach (var rawLine in TomlSerializer.Serialize(maintenance).Split('\n'))
+        {
+            var line = rawLine.TrimEnd('\r');
+            if (line.StartsWith("[[", StringComparison.Ordinal))
+                sb.AppendLine($"[[{parent}.Maintenance.{line[2..]}");
+            else if (line.StartsWith("[", StringComparison.Ordinal))
+                sb.AppendLine($"[{parent}.Maintenance.{line[1..]}");
+            else
+                sb.AppendLine(line);
+        }
+        sb.AppendLine();
+    }
+
     private static string EscapeTomlString(string value)
     {
         return value.Replace("\\", "\\\\").Replace("\"", "\\\"");

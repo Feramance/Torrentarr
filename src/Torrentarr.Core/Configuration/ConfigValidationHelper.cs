@@ -1,3 +1,5 @@
+using Torrentarr.Core.Services;
+
 namespace Torrentarr.Core.Configuration;
 
 /// <summary>Config validation helpers (qBitrr category_paths.py overlap parity).</summary>
@@ -22,7 +24,7 @@ public static class ConfigValidationHelper
 
     public static (bool Ok, string? Error) ValidateManagedCategoryPaths(TorrentarrConfig config)
     {
-        foreach (var (_, qbit) in config.QBitInstances)
+        foreach (var (_, qbit) in config.GetAllTorrentClients())
         {
             var conflicts = CategoryPathHelper.FindOverlapConflicts(qbit.ManagedCategories);
             if (conflicts.Count > 0)
@@ -42,7 +44,7 @@ public static class ConfigValidationHelper
             .Where(c => !string.IsNullOrWhiteSpace(c))
             .ToList();
 
-        foreach (var (_, qbit) in config.QBitInstances)
+        foreach (var (_, qbit) in config.GetAllTorrentClients())
         {
             foreach (var managed in qbit.ManagedCategories)
             {
@@ -86,6 +88,28 @@ public static class ConfigValidationHelper
             "AllowInsecureExposure must be true when AuthDisabled is true and Host is 0.0.0.0 or ::");
     }
 
+    public static (bool Ok, string? Error) ValidateTorrentClients(TorrentarrConfig config)
+    {
+        var duplicate = config.QBitInstances.Keys.Intersect(config.TorrentClients.Keys, StringComparer.OrdinalIgnoreCase).FirstOrDefault();
+        if (duplicate != null) return (false, $"Torrent client instance '{duplicate}' is declared in both legacy and canonical sections.");
+        foreach (var (id, client) in config.GetAllTorrentClients())
+        {
+            if (string.IsNullOrWhiteSpace(client.Type)) return (false, $"Torrent client '{id}' requires a Type.");
+            if (client.Maintenance.Scope is not ("managed" or "all" or "explicit"))
+                return (false, $"Torrent client '{id}' has invalid maintenance scope '{client.Maintenance.Scope}'.");
+            if (client.Maintenance.PlanTtlMinutes <= 0)
+                return (false, $"Torrent client '{id}' maintenance PlanTtlMinutes must be positive.");
+            if (CronSchedule.Next(client.Maintenance.Schedule, DateTimeOffset.UtcNow) == null)
+                return (false, $"Torrent client '{id}' has an invalid maintenance schedule.");
+            var duplicateMapping = client.Maintenance.PathMappings
+                .GroupBy(m => m.ClientPath.TrimEnd('/', '\\'), StringComparer.OrdinalIgnoreCase)
+                .FirstOrDefault(group => group.Count() > 1)?.Key;
+            if (duplicateMapping != null)
+                return (false, $"Torrent client '{id}' has duplicate path mapping '{duplicateMapping}'.");
+        }
+        return (true, null);
+    }
+
     public static (bool Ok, string? Error) ValidateAll(TorrentarrConfig config)
     {
         foreach (var check in new Func<TorrentarrConfig, (bool, string?)>[]
@@ -93,7 +117,8 @@ public static class ConfigValidationHelper
             ValidateArrCategoryPaths,
             ValidateManagedCategoryPaths,
             ValidateArrManagedCategoryOverlap,
-            ValidateInsecureExposure
+            ValidateInsecureExposure,
+            ValidateTorrentClients
         })
         {
             var (ok, error) = check(config);

@@ -1,4 +1,5 @@
 using Torrentarr.Core.Configuration;
+using Torrentarr.Core.Interfaces;
 using Torrentarr.Core.Services;
 using Torrentarr.Infrastructure.ApiClients.Arr;
 using Torrentarr.Infrastructure.ApiClients.QBittorrent;
@@ -12,13 +13,13 @@ public class ArrImportService : IArrImportService
 {
     private readonly ILogger<ArrImportService> _logger;
     private readonly TorrentarrConfig _config;
-    private readonly QBittorrentConnectionManager _qbitManager;
+    private readonly ITorrentClientRegistry _qbitManager;
     private readonly TorrentarrDbContext _dbContext;
 
     public ArrImportService(
         ILogger<ArrImportService> logger,
         TorrentarrConfig config,
-        QBittorrentConnectionManager qbitManager,
+        ITorrentClientRegistry qbitManager,
         TorrentarrDbContext dbContext)
     {
         _logger = logger;

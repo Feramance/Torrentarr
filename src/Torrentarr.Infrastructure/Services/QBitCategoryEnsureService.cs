@@ -1,4 +1,6 @@
 using Torrentarr.Core.Configuration;
+using Torrentarr.Core.Interfaces;
+using Torrentarr.Core.Models;
 using Torrentarr.Infrastructure.ApiClients.QBittorrent;
 using Microsoft.Extensions.Logging;
 
@@ -11,12 +13,12 @@ public class QBitCategoryEnsureService
 {
     private readonly ILogger<QBitCategoryEnsureService> _logger;
     private readonly TorrentarrConfig _config;
-    private readonly QBittorrentConnectionManager _qbitManager;
+    private readonly ITorrentClientRegistry _qbitManager;
 
     public QBitCategoryEnsureService(
         ILogger<QBitCategoryEnsureService> logger,
         TorrentarrConfig config,
-        QBittorrentConnectionManager qbitManager)
+        ITorrentClientRegistry qbitManager)
     {
         _logger = logger;
         _config = config;
@@ -66,7 +68,7 @@ public class QBitCategoryEnsureService
                         _logger.LogInformation(
                             "Created category '{Category}' on instance '{Instance}' (save_path={Path})",
                             parent, instanceName, savePath);
-                        categories[parent] = new CategoryInfo { Name = parent, SavePath = savePath };
+                        categories[parent] = new TorrentClientCategory { Name = parent, SavePath = savePath };
                     }
                 }
             }
