@@ -680,10 +680,43 @@ public sealed class TorrentProcessorTests : IDisposable
     }
 
     [Fact]
-    public void StalledHandlingEnabled_NegativeDelaySuppressesStalledProcessing()
+    public void StalledHandlingEnabled_NegativeDelayRepresentsInfiniteGrace()
     {
         TorrentProcessor.StalledHandlingEnabled(-1).Should().BeFalse();
         TorrentProcessor.StalledHandlingEnabled(0).Should().BeTrue();
+    }
+
+    [Fact]
+    public async Task StalledCheck_UsesNewSentinelsAndMetadataAddedOnClock()
+    {
+        var config = new TorrentarrConfig();
+        config.Settings.Tagless = true;
+        var processor = CreateProcessor(config);
+        var now = DateTimeOffset.UtcNow.ToUnixTimeSeconds();
+        var torrent = new TorrentInfo
+        {
+            Hash = "stalled-check-hash",
+            Name = "stalled",
+            AddedOn = now - 1200,
+            LastActivity = now - 10,
+            Availability = 0,
+            QBitInstanceName = "qBit",
+            State = "forcedMetaDL"
+        };
+
+        var check = typeof(TorrentProcessor).GetMethod(
+            "StalledCheckAsync", BindingFlags.NonPublic | BindingFlags.Instance)!;
+
+        var infinite = await (Task<bool>)check.Invoke(processor,
+            [torrent, TorrentState.ForcedMetaDL, null, -1, 60, now, CancellationToken.None])!;
+        var immediate = await (Task<bool>)check.Invoke(processor,
+            [torrent, TorrentState.ForcedMetaDL, null, 0, 60, now, CancellationToken.None])!;
+        var positive = await (Task<bool>)check.Invoke(processor,
+            [torrent, TorrentState.ForcedMetaDL, null, 15, 60, now, CancellationToken.None])!;
+
+        infinite.Should().BeTrue();
+        immediate.Should().BeFalse();
+        positive.Should().BeFalse("metadata stall age is based on AddedOn, not LastActivity");
     }
 
     private static void RegisterTestClient(

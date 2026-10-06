@@ -1,6 +1,6 @@
 # Full Parity Matrix (qBitrr -> Torrentarr)
 
-This matrix tracks the current parity audit against upstream qBitrr **v5.14.5-1** (`EXPECTED_CONFIG_VERSION = "5.14.5"`). Torrentarr’s current schema is **6.14.6** under the +1-major product policy; minor and patch versions are independent. There is no Torrentarr 6.13.x release; configs on `6.12.*` migrate forward in one jump.
+This matrix tracks the current parity audit against upstream qBitrr **v5.14.6-1** (`EXPECTED_CONFIG_VERSION = "5.14.6"`). Torrentarr’s current schema is **6.15.2** under the +1-major product policy; minor and patch versions are independent.
 
 ## Parity claim policy
 

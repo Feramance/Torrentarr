@@ -11,7 +11,7 @@ export const CONFIG_SCHEMA = {
         "key": "ConfigVersion",
         "label": "Config Version",
         "kind": "text",
-        "default": "6.14.6",
+        "default": "6.15.2",
         "comments": [
           "Internal config schema version - DO NOT MODIFY",
           "This is managed automatically by qBitrr for config migrations"
@@ -1189,7 +1189,7 @@ export const CONFIG_SCHEMA = {
         "label": "Stalled Delay",
         "kind": "duration",
         "default": -1,
-        "comments": "Maximum time stalled downloads can sit before removal, in minutes (-1 = disabled, 0 = infinite).",
+        "comments": "Stalled cleanup grace period in minutes (-1 = infinite, 0 = immediate cleanup).",
         "required": false,
         "secure": false,
         "uiExpose": true,
@@ -2426,7 +2426,7 @@ export const CONFIG_SCHEMA = {
         "label": "Stalled Delay",
         "kind": "duration",
         "default": 15,
-        "comments": "Maximum allowed time for allowed stalled torrents in minutes (-1 = Disabled, 0 = Infinite)",
+        "comments": "Stalled cleanup grace period in minutes (-1 = Infinite, 0 = immediate cleanup)",
         "required": false,
         "secure": false,
         "uiExpose": true,

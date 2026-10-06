@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-QBITRR_REF="${QBITRR_OPENAPI_REF:-v5.14.5-1}"
+QBITRR_REF="${QBITRR_OPENAPI_REF:-v5.14.6-1}"
 TORRENTARR_SPEC="${1:-docs/assets/openapi.json}"
 TMP_QBITRR="$(mktemp)"
 trap 'rm -f "$TMP_QBITRR"' EXIT

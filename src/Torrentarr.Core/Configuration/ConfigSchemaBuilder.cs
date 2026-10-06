@@ -3,7 +3,7 @@ using System.Text.Json.Serialization;
 namespace Torrentarr.Core.Configuration;
 
 /// <summary>
-/// qBitrr 5.14.5 configuration registry used by the schema API and WebUI code generation.
+/// qBitrr 5.14.6 configuration registry used by the schema API and WebUI code generation.
 /// Torrentarr keeps the same schema contract while applying its +1 major version policy.
 /// </summary>
 public static class ConfigSchemaBuilder
@@ -17,11 +17,11 @@ public static class ConfigSchemaBuilder
     public static IReadOnlyDictionary<string, IReadOnlyList<ConfigSchemaField>> Sections { get; } =
         new Dictionary<string, IReadOnlyList<ConfigSchemaField>>
         {
-            ["Settings"] = Qbitrr5145ConfigSchema.Settings,
-            ["WebUI"] = Qbitrr5145ConfigSchema.WebUI,
-            ["qBit"] = Qbitrr5145ConfigSchema.qBit,
+            ["Settings"] = Qbitrr5146ConfigSchema.Settings,
+            ["WebUI"] = Qbitrr5146ConfigSchema.WebUI,
+            ["qBit"] = Qbitrr5146ConfigSchema.qBit,
             ["TorrentClient"] = TorrentClientFields(),
-            ["Arr"] = Qbitrr5145ConfigSchema.Arr
+            ["Arr"] = Qbitrr5146ConfigSchema.Arr
         };
 
     private static IReadOnlyList<ConfigSchemaField> TorrentClientFields() =>

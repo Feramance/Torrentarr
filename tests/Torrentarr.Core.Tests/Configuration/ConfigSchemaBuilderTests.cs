@@ -29,7 +29,7 @@ public class ConfigSchemaBuilderTests
         var configVersion = json.GetProperty("sections").GetProperty("Settings")
             .EnumerateArray().Single(field => field.GetProperty("key").GetString() == "ConfigVersion");
 
-        configVersion.GetProperty("default").GetString().Should().Be("6.14.6");
+        configVersion.GetProperty("default").GetString().Should().Be("6.15.2");
         configVersion.TryGetProperty("path", out _).Should().BeTrue();
         configVersion.TryGetProperty("secure", out _).Should().BeTrue();
         configVersion.TryGetProperty("requiresRestart", out _).Should().BeTrue();

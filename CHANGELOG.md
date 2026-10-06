@@ -1,5 +1,12 @@
 # Changelog
 
+## v6.15.2-1 (2026-10-06)
+
+### Bug Fixes
+- Match qBitrr v5.14.6 stalled-delay sentinel semantics: `-1` is infinite grace and `0` is immediate cleanup.
+- Migrate legacy `StalledDelay` values with a backup while preserving qBitrr 5.14.6+ configs.
+- Keep independent percentage and slow-download cleanup active during infinite stalled grace.
+
 ## v6.15.1-1 (2026-10-03)
 
 ---
