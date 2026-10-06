@@ -92,6 +92,14 @@ docker run --rm --env PUID=not-a-number --volume "${config_dir}:/config" "${imag
 }
 grep -q 'PUID must be a numeric ID' "${state_dir}/invalid-output"
 
+docker run --rm --env PUID=4294967295 --volume "${config_dir}:/config" "${image}" --version \
+    >"${state_dir}/out-of-range-output" 2>&1 && {
+    cat "${state_dir}/out-of-range-output"
+    echo "Out-of-range PUID unexpectedly succeeded" >&2
+    exit 1
+}
+grep -q 'PUID must be no greater than 4294967294' "${state_dir}/out-of-range-output"
+
 readonly_dir="${state_dir}/readonly"
 mkdir -p "${readonly_dir}"
 docker run --rm --env "PUID=${uid}" --env "PGID=${gid}" \
