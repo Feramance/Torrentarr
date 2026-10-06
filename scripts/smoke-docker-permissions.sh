@@ -1,5 +1,6 @@
 #!/usr/bin/env bash
 set -euo pipefail
+set -x
 
 image="${1:-torrentarr:permission-smoke}"
 container="torrentarr-permission-smoke-$$"
