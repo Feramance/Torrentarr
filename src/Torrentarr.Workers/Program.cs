@@ -1,6 +1,8 @@
 using Microsoft.Extensions.Logging;
 using Torrentarr.Core.Configuration;
+using Torrentarr.Core.Interfaces;
 using Torrentarr.Core.Services;
+using Torrentarr.Infrastructure.ApiClients.QBittorrent;
 using Torrentarr.Infrastructure.Database;
 using Torrentarr.Infrastructure.Services;
 using Microsoft.EntityFrameworkCore;
@@ -146,6 +148,9 @@ try
     // Add services
     builder.Services.AddSingleton<DatabaseRestartCoordinator>();
     builder.Services.AddSingleton<QBittorrentConnectionManager>();
+    builder.Services.AddSingleton<ITorrentClientFactory, QBittorrentTorrentClientFactory>();
+    builder.Services.AddSingleton<TorrentClientRegistry>();
+    builder.Services.AddSingleton<ITorrentClientRegistry>(sp => sp.GetRequiredService<QBittorrentConnectionManager>());
     builder.Services.AddSingleton<ITorrentCacheService, TorrentCacheService>();
     builder.Services.AddSingleton<IMediaValidationService, MediaValidationService>();
     builder.Services.AddScoped<ITorrentProcessor, TorrentProcessor>();
@@ -156,6 +161,9 @@ try
     builder.Services.AddScoped<IArrImportService, ArrImportService>();
     builder.Services.AddScoped<IDatabaseHealthService, DatabaseHealthService>();
     builder.Services.AddSingleton<IConnectivityService, ConnectivityService>();
+    builder.Services.AddSingleton<IPathMappingService, PathMappingService>();
+    builder.Services.AddSingleton<ITorrentInventoryService, TorrentInventoryService>();
+    builder.Services.AddSingleton<ISafeDeletionService, SafeDeletionService>();
     builder.Services.AddSingleton<SearchYearCursor>();
     builder.Services.AddSingleton<StalledUploadTracker>();
 
@@ -232,8 +240,8 @@ class ArrWorkerService : BackgroundService
             _instanceConfig.Type, _instanceConfig.URI, _instanceConfig.Category);
 
         // Initialize connections to all configured qBit instances (retry on later loops if this fails)
-        await _qbitManager.EnsureAllConnectedAsync(_config.QBitInstances, stoppingToken);
-        if (!_qbitManager.IsConnected() && _config.QBitInstances.Any(q => !q.Value.Disabled && q.Value.Host != "CHANGE_ME"))
+        await _qbitManager.EnsureAllConnectedAsync(_config.GetAllTorrentClients(), stoppingToken);
+        if (!_qbitManager.IsConnected() && _config.GetAllTorrentClients().Any(q => !q.Value.Disabled && q.Value.Host != "CHANGE_ME"))
             _logger.LogWarning("Failed to connect to any qBittorrent instance; will retry each cycle");
 
         try
@@ -242,7 +250,7 @@ class ArrWorkerService : BackgroundService
             {
                 try
                 {
-                    await _qbitManager.EnsureAllConnectedAsync(_config.QBitInstances, stoppingToken);
+                    await _qbitManager.EnsureAllConnectedAsync(_config.GetAllTorrentClients(), stoppingToken);
 
                     // Check for exponential backoff
                     var backoffDelay = GetBackoffDelay();

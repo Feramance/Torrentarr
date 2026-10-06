@@ -1,4 +1,5 @@
 using Torrentarr.Core.Configuration;
+using Torrentarr.Core.Interfaces;
 using Torrentarr.Core.Models;
 using Torrentarr.Core.Services;
 using Torrentarr.Infrastructure.ApiClients.Arr;
@@ -59,6 +60,8 @@ builder.Services.AddControllers()
         options.SerializerSettings.NullValueHandling = Newtonsoft.Json.NullValueHandling.Include;
         options.SerializerSettings.DateTimeZoneHandling = Newtonsoft.Json.DateTimeZoneHandling.Utc;
     });
+builder.Services.ConfigureHttpJsonOptions(options =>
+    options.SerializerOptions.Converters.Add(new System.Text.Json.Serialization.JsonStringEnumConverter()));
 
 // Add OpenAPI/Swagger
 builder.Services.AddEndpointsApiExplorer();
@@ -153,7 +156,15 @@ builder.Services.AddSingleton<IConfigReloader, ConfigReloader>();
 builder.Services.AddSingleton(configLoader);
 
 builder.Services.AddSingleton<IPasswordHasher, BCryptPasswordHasher>();
-builder.Services.AddSingleton<QBittorrentConnectionManager>();
+builder.Services.AddSingleton<ITorrentClientFactory, QBittorrentTorrentClientFactory>();
+builder.Services.AddSingleton<TorrentClientRegistry>();
+builder.Services.AddSingleton<ITorrentClientRegistry>(sp => sp.GetRequiredService<TorrentClientRegistry>());
+builder.Services.AddSingleton<IPathMappingService, PathMappingService>();
+builder.Services.AddSingleton<ITorrentInventoryService, TorrentInventoryService>();
+builder.Services.AddSingleton<IHardlinkInspector, HardlinkInspector>();
+builder.Services.AddSingleton<ISafeDeletionService, SafeDeletionService>();
+builder.Services.AddSingleton<IMaintenanceNotificationService, MaintenanceNotificationService>();
+builder.Services.AddSingleton<IMaintenanceCoordinator, MaintenanceCoordinator>();
 builder.Services.AddHttpClient();
 builder.Services.AddScoped<IDatabaseHealthService, DatabaseHealthService>();
 builder.Services.AddScoped<CatalogRollupService>();
@@ -792,6 +803,7 @@ static void ApplyConfigInPlace(TorrentarrConfig target, TorrentarrConfig source)
     target.WebUI = source.WebUI;
     target.ArrInstances = source.ArrInstances;
     target.QBitInstances = source.QBitInstances;
+    target.TorrentClients = source.TorrentClients;
     TorrentPolicyHelper.InvalidateMonitoredPolicyCategoriesCache(target);
 }
 
@@ -849,9 +861,15 @@ static Newtonsoft.Json.Linq.JObject BuildFlatConfig(TorrentarrConfig config, boo
     foreach (var (name, qbit) in config.QBitInstances)
     {
         var qbitObj = Newtonsoft.Json.Linq.JObject.FromObject(qbit);
-        if (redactSensitive) RedactFlatField(qbitObj, "Password");
+        if (redactSensitive) RedactSensitiveFields(qbitObj);
         flat[name] = qbitObj;
     }
+
+    var canonical = Newtonsoft.Json.Linq.JObject.FromObject(config.TorrentClients);
+    if (redactSensitive)
+        foreach (var property in canonical.Properties().OfType<Newtonsoft.Json.Linq.JProperty>())
+            if (property.Value is Newtonsoft.Json.Linq.JObject clientObj) RedactSensitiveFields(clientObj);
+    flat["TorrentClient"] = canonical;
 
     foreach (var (name, arr) in config.ArrInstances)
     {
@@ -884,6 +902,32 @@ static void RedactFlatField(Newtonsoft.Json.Linq.JObject obj, string key)
     }
 }
 
+static void RedactSensitiveFields(Newtonsoft.Json.Linq.JToken token)
+{
+    if (token is Newtonsoft.Json.Linq.JObject obj)
+    {
+        foreach (var property in obj.Properties().ToList())
+        {
+            if (property.Value.Type == Newtonsoft.Json.Linq.JTokenType.String
+                && (property.Name.Equals("Password", StringComparison.OrdinalIgnoreCase)
+                    || property.Name.Equals("Token", StringComparison.OrdinalIgnoreCase)
+                    || property.Name.Equals("APIKey", StringComparison.OrdinalIgnoreCase)))
+            {
+                if (!string.IsNullOrWhiteSpace(property.Value.ToString()) && property.Value.ToString() != "CHANGE_ME")
+                    property.Value = "[redacted]";
+            }
+            else
+            {
+                RedactSensitiveFields(property.Value);
+            }
+        }
+    }
+    else if (token is Newtonsoft.Json.Linq.JArray array)
+    {
+        foreach (var item in array) RedactSensitiveFields(item);
+    }
+}
+
 // Helper: convert a flat config JObject back to TorrentarrConfig.
 // ArrInstanceConfig.Search is [JsonProperty("EntrySearch")] so the JSON key stays EntrySearch.
 static TorrentarrConfig FlatToConfig(Newtonsoft.Json.Linq.JObject flat, TorrentarrConfig current)
@@ -908,11 +952,27 @@ static TorrentarrConfig FlatToConfig(Newtonsoft.Json.Linq.JObject flat, Torrenta
     }
 
     result.QBitInstances = new Dictionary<string, QBitConfig>(current.QBitInstances);
+    result.TorrentClients = current.TorrentClients.ToDictionary(p => p.Key, p => p.Value, StringComparer.OrdinalIgnoreCase);
     result.ArrInstances = new Dictionary<string, ArrInstanceConfig>(current.ArrInstances);
 
     foreach (var prop in flat.Properties())
     {
         if (prop.Name is "Settings" or "WebUI") continue;
+        if (prop.Name.Equals("TorrentClient", StringComparison.OrdinalIgnoreCase)
+            && prop.Value is Newtonsoft.Json.Linq.JObject clientsObj)
+        {
+            foreach (var clientProp in clientsObj.Properties())
+            {
+                var client = clientProp.Value.ToObject<TorrentClientInstanceConfig>() ?? new TorrentClientInstanceConfig();
+                if (current.TorrentClients.TryGetValue(clientProp.Name, out var existing))
+                {
+                    if (client.Password == "[redacted]") client.Password = existing.Password;
+                    RestoreNotificationTokens(client, existing);
+                }
+                result.TorrentClients[clientProp.Name] = client;
+            }
+            continue;
+        }
         if (prop.Value is not Newtonsoft.Json.Linq.JObject instanceObj) continue;
 
         bool isKnownQBit = current.QBitInstances.ContainsKey(prop.Name);
@@ -921,8 +981,11 @@ static TorrentarrConfig FlatToConfig(Newtonsoft.Json.Linq.JObject flat, Torrenta
         if (isKnownQBit || (!isKnownArr && prop.Name.StartsWith("qBit", StringComparison.OrdinalIgnoreCase)))
         {
             var qbit = instanceObj.ToObject<QBitConfig>() ?? new QBitConfig();
-            if (qbit.Password == "[redacted]" && current.QBitInstances.TryGetValue(prop.Name, out var existingQBit))
-                qbit.Password = existingQBit.Password;
+            if (current.QBitInstances.TryGetValue(prop.Name, out var existingQBit))
+            {
+                if (qbit.Password == "[redacted]") qbit.Password = existingQBit.Password;
+                RestoreNotificationTokens(qbit, existingQBit);
+            }
             result.QBitInstances[prop.Name] = qbit;
         }
         else if (isKnownArr || ArrSectionHelper.IsArrSection(prop.Name))
@@ -939,6 +1002,16 @@ static TorrentarrConfig FlatToConfig(Newtonsoft.Json.Linq.JObject flat, Torrenta
     }
 
     return result;
+}
+
+static void RestoreNotificationTokens(TorrentClientInstanceConfig target, TorrentClientInstanceConfig source)
+{
+    var sourceByUrl = source.Maintenance.Notifications
+        .Where(n => !string.IsNullOrWhiteSpace(n.Url))
+        .ToDictionary(n => n.Url, StringComparer.OrdinalIgnoreCase);
+    foreach (var notification in target.Maintenance.Notifications)
+        if (notification.Token == "[redacted]" && sourceByUrl.TryGetValue(notification.Url, out var existing))
+            notification.Token = existing.Token;
 }
 
 // Processes endpoint - list all processes with status
@@ -1095,10 +1168,57 @@ app.MapGet("/web/logs/{name}/stream", async (string name, HttpContext ctx) =>
 app.MapGet("/web/config/schema", () => Results.Ok(ConfigSchemaBuilder.Build()));
 app.MapGet("/api/config/schema", () => Results.Ok(ConfigSchemaBuilder.Build()));
 
-app.MapGet("/web/qbit/overview", async (HttpRequest request, TorrentarrConfig cfg, QBittorrentConnectionManager qbitManager) =>
+app.MapGet("/web/torrent-clients", async (ITorrentClientRegistry registry, TorrentarrConfig cfg) =>
+{
+    var clients = new List<object>();
+    foreach (var (id, clientCfg) in cfg.GetAllTorrentClients())
+    {
+        var client = registry.GetClient(id);
+        string? version = null;
+        if (client != null) { try { version = await client.GetVersionAsync(); } catch { } }
+        clients.Add(new
+        {
+            id,
+            QbitInstance = id,
+            type = clientCfg.Type,
+            connected = client != null,
+            version,
+            capabilities = client?.Capabilities ?? TorrentClientCapabilities.None,
+            managedCategories = clientCfg.ManagedCategories
+        });
+    }
+    return Results.Ok(clients);
+});
+app.MapGet("/web/maintenance/status", (IMaintenanceCoordinator maintenance) => Results.Ok(maintenance.GetStatus()));
+app.MapGet("/web/maintenance/history", (IMaintenanceCoordinator maintenance, int? limit) => Results.Ok(maintenance.GetHistory(limit ?? 50)));
+app.MapPost("/web/maintenance/preview", async (MaintenancePreviewRequest request, IMaintenanceCoordinator maintenance, CancellationToken ct) => Results.Ok(await maintenance.PreviewAsync(request, ct)));
+app.MapPost("/web/maintenance/apply", async (MaintenanceApplyRequest request, IMaintenanceCoordinator maintenance, CancellationToken ct) =>
+{
+    try { return Results.Ok(await maintenance.ApplyAsync(request.PlanId, ct)); }
+    catch (KeyNotFoundException ex) { return Results.NotFound(new { error = ex.Message }); }
+    catch (InvalidOperationException ex) { return Results.Conflict(new { error = ex.Message }); }
+});
+app.MapPost("/web/maintenance/arm", async (MaintenanceArmRequest request, IMaintenanceCoordinator maintenance, CancellationToken ct) =>
+{
+    try { await maintenance.ArmAsync(request, ct); return Results.Ok(maintenance.GetStatus()); }
+    catch (KeyNotFoundException ex) { return Results.NotFound(new { error = ex.Message }); }
+    catch (InvalidOperationException ex) { return Results.Conflict(new { error = ex.Message }); }
+});
+app.MapPost("/web/maintenance/disarm", (MaintenanceClientsRequest request, IMaintenanceCoordinator maintenance) =>
+{ maintenance.Disarm(request.ClientInstanceIds); return Results.Ok(maintenance.GetStatus()); });
+app.MapPost("/web/maintenance/run", async (MaintenanceClientsRequest request, IMaintenanceCoordinator maintenance, CancellationToken ct) =>
+{
+    try { return Results.Ok(await maintenance.RunAsync(request.ClientInstanceIds.Count == 0 ? null : request.ClientInstanceIds, "manual", ct)); }
+    catch (InvalidOperationException ex) { return Results.Conflict(new { error = ex.Message }); }
+});
+app.MapPost("/web/maintenance/cancel", (IMaintenanceCoordinator maintenance) =>
+{ maintenance.Cancel(); return Results.Ok(maintenance.GetStatus()); });
+
+app.MapGet("/web/qbit/overview", async (HttpRequest request, TorrentarrConfig cfg, ITorrentClientRegistry clientRegistry, CancellationToken ct) =>
 {
     var instance = request.Query["instance"].FirstOrDefault();
-    return Results.Ok(await QbitOverviewBuilder.BuildAsync(cfg, qbitManager, instance));
+    await clientRegistry.EnsureAllConnectedAsync(cfg.GetAllTorrentClients(), ct);
+    return Results.Ok(await QbitOverviewBuilder.BuildAsync(cfg, clientRegistry, instance, ct));
 });
 
 // Radarr movies for specific category
@@ -1443,21 +1563,24 @@ app.MapPost("/web/arr/rebuild", async (HttpContext ctx, TorrentarrConfig config)
 });
 
 // §6.5: qBit categories — seeding config + live torrent stats per category
-app.MapGet("/web/qbit/categories", async (TorrentarrConfig config) =>
+app.MapGet("/web/qbit/categories", async (TorrentarrConfig config, ITorrentClientRegistry clientRegistry, CancellationToken ct) =>
 {
     var categories = new List<object>();
 
-    foreach (var (qbitName, qbitCfg) in config.QBitInstances)
+    var clients = config.GetAllTorrentClients();
+    await clientRegistry.EnsureAllConnectedAsync(clients, ct);
+
+    foreach (var (qbitName, qbitCfg) in clients)
     {
-        if (qbitCfg.Disabled || qbitCfg.Host == "CHANGE_ME") continue;
+        if (qbitCfg.Disabled || !string.Equals(qbitCfg.Type, "qbittorrent", StringComparison.OrdinalIgnoreCase)) continue;
 
         // Fetch live torrent list from this qBit instance
         var liveTorrents = new List<TorrentInfo>();
         try
         {
-            var qbitClient = new QBittorrentClient(qbitCfg.Host, qbitCfg.Port, qbitCfg.UserName, qbitCfg.Password, qbitCfg.SkipTLSVerify);
-            if (await qbitClient.LoginAsync())
-                liveTorrents = await qbitClient.GetTorrentsAsync();
+            var client = clientRegistry.GetClient(qbitName);
+            if (client != null && clientRegistry.IsConnected(qbitName))
+                liveTorrents = await client.GetTorrentsAsync(cancellationToken: ct);
         }
         catch { /* live stats unavailable — return zeros */ }
 

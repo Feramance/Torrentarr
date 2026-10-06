@@ -1217,6 +1217,231 @@ export const CONFIG_SCHEMA = {
         "nativeUnit": "seconds"
       }
     ],
+    "TorrentClient": [
+      {
+        "section": "TorrentClient",
+        "path": [
+          "Type"
+        ],
+        "key": "Type",
+        "label": "Client Type",
+        "kind": "text",
+        "default": "qbittorrent",
+        "comments": "Torrentarr client-neutral torrent maintenance setting.",
+        "required": false,
+        "secure": false,
+        "uiExpose": true,
+        "applyLive": false,
+        "requiresRestart": true
+      },
+      {
+        "section": "TorrentClient",
+        "path": [
+          "Disabled"
+        ],
+        "key": "Disabled",
+        "label": "Disabled",
+        "kind": "checkbox",
+        "default": false,
+        "comments": "Torrentarr client-neutral torrent maintenance setting.",
+        "required": false,
+        "secure": false,
+        "uiExpose": true,
+        "applyLive": false,
+        "requiresRestart": true
+      },
+      {
+        "section": "TorrentClient",
+        "path": [
+          "Host"
+        ],
+        "key": "Host",
+        "label": "Host",
+        "kind": "text",
+        "default": "CHANGE_ME",
+        "comments": "Torrentarr client-neutral torrent maintenance setting.",
+        "required": false,
+        "secure": false,
+        "uiExpose": true,
+        "applyLive": false,
+        "requiresRestart": true
+      },
+      {
+        "section": "TorrentClient",
+        "path": [
+          "Port"
+        ],
+        "key": "Port",
+        "label": "Port",
+        "kind": "number",
+        "default": 8080,
+        "comments": "Torrentarr client-neutral torrent maintenance setting.",
+        "required": false,
+        "secure": false,
+        "uiExpose": true,
+        "applyLive": false,
+        "requiresRestart": true,
+        "minimum": 1,
+        "maximum": 65535
+      },
+      {
+        "section": "TorrentClient",
+        "path": [
+          "UserName"
+        ],
+        "key": "UserName",
+        "label": "Username",
+        "kind": "text",
+        "default": "CHANGE_ME",
+        "comments": "Torrentarr client-neutral torrent maintenance setting.",
+        "required": false,
+        "secure": false,
+        "uiExpose": true,
+        "applyLive": false,
+        "requiresRestart": true
+      },
+      {
+        "section": "TorrentClient",
+        "path": [
+          "Password"
+        ],
+        "key": "Password",
+        "label": "Password",
+        "kind": "password",
+        "default": "CHANGE_ME",
+        "comments": "Torrentarr client-neutral torrent maintenance setting.",
+        "required": false,
+        "secure": true,
+        "uiExpose": true,
+        "applyLive": false,
+        "requiresRestart": true
+      },
+      {
+        "section": "TorrentClient",
+        "path": [
+          "Maintenance",
+          "Enabled"
+        ],
+        "key": "Maintenance.Enabled",
+        "label": "Maintenance Enabled",
+        "kind": "checkbox",
+        "default": false,
+        "comments": "Torrentarr client-neutral torrent maintenance setting.",
+        "required": false,
+        "secure": false,
+        "uiExpose": true,
+        "applyLive": false,
+        "requiresRestart": true
+      },
+      {
+        "section": "TorrentClient",
+        "path": [
+          "Maintenance",
+          "Scope"
+        ],
+        "key": "Maintenance.Scope",
+        "label": "Maintenance Scope",
+        "kind": "select",
+        "default": "managed",
+        "comments": "Torrentarr client-neutral torrent maintenance setting.",
+        "required": false,
+        "secure": false,
+        "uiExpose": true,
+        "applyLive": false,
+        "requiresRestart": true,
+        "options": [
+          "managed",
+          "all",
+          "explicit"
+        ]
+      },
+      {
+        "section": "TorrentClient",
+        "path": [
+          "Maintenance",
+          "Schedule"
+        ],
+        "key": "Maintenance.Schedule",
+        "label": "Maintenance Schedule",
+        "kind": "text",
+        "default": "*/15 * * * *",
+        "comments": "Torrentarr client-neutral torrent maintenance setting.",
+        "required": false,
+        "secure": false,
+        "uiExpose": true,
+        "applyLive": false,
+        "requiresRestart": true
+      },
+      {
+        "section": "TorrentClient",
+        "path": [
+          "Maintenance",
+          "PlanTtlMinutes"
+        ],
+        "key": "Maintenance.PlanTtlMinutes",
+        "label": "Preview TTL (minutes)",
+        "kind": "number",
+        "default": 30,
+        "comments": "Torrentarr client-neutral torrent maintenance setting.",
+        "required": false,
+        "secure": false,
+        "uiExpose": true,
+        "applyLive": false,
+        "requiresRestart": true,
+        "minimum": 1
+      },
+      {
+        "section": "TorrentClient",
+        "path": [
+          "Maintenance",
+          "PathMappings"
+        ],
+        "key": "Maintenance.PathMappings",
+        "label": "Path Mappings",
+        "kind": "tags",
+        "default": [],
+        "comments": "Torrentarr client-neutral torrent maintenance setting.",
+        "required": false,
+        "secure": false,
+        "uiExpose": true,
+        "applyLive": false,
+        "requiresRestart": true
+      },
+      {
+        "section": "TorrentClient",
+        "path": [
+          "Maintenance",
+          "SharePolicies"
+        ],
+        "key": "Maintenance.SharePolicies",
+        "label": "Share Policies",
+        "kind": "tags",
+        "default": [],
+        "comments": "Torrentarr client-neutral torrent maintenance setting.",
+        "required": false,
+        "secure": false,
+        "uiExpose": true,
+        "applyLive": false,
+        "requiresRestart": true
+      },
+      {
+        "section": "TorrentClient",
+        "path": [
+          "Maintenance",
+          "Notifications"
+        ],
+        "key": "Maintenance.Notifications",
+        "label": "Notifications",
+        "kind": "tags",
+        "default": [],
+        "comments": "Torrentarr client-neutral torrent maintenance setting.",
+        "required": false,
+        "secure": false,
+        "uiExpose": true,
+        "applyLive": false,
+        "requiresRestart": true
+      }
+    ],
     "Arr": [
       {
         "section": "Arr",

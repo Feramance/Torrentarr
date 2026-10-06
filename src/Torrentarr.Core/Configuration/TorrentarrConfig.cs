@@ -1,5 +1,7 @@
 using System.Collections.Generic;
 using Newtonsoft.Json;
+using Tomlyn.Serialization;
+using System.Text.Json.Serialization;
 
 namespace Torrentarr.Core.Configuration;
 
@@ -12,6 +14,7 @@ public class TorrentarrConfig
     internal object MonitoredPolicyCategoriesCacheLock { get; } = new();
     public SettingsConfig Settings { get; set; } = new();
     public Dictionary<string, QBitConfig> QBitInstances { get; set; } = new();
+    public Dictionary<string, TorrentClientInstanceConfig> TorrentClients { get; set; } = new();
     public WebUIConfig WebUI { get; set; } = new();
     public Dictionary<string, ArrInstanceConfig> ArrInstances { get; set; } = new();
     public List<ArrInstanceConfig> Arrs => ArrInstances.Values.ToList();
@@ -19,7 +22,7 @@ public class TorrentarrConfig
 
 public class SettingsConfig
 {
-    public string ConfigVersion { get; set; } = "6.15.0";
+    public string ConfigVersion { get; set; } = "6.15.1";
     public string ConsoleLevel { get; set; } = "INFO";
     public bool Logging { get; set; } = true;
     public string CompletedDownloadFolder { get; set; } = "";
@@ -64,8 +67,10 @@ public class TrackerRule
     public int Priority { get; set; }
 }
 
-public class QBitConfig
+public class TorrentClientInstanceConfig
 {
+    public string Type { get; set; } = "qbittorrent";
+    public bool LegacySection { get; set; }
     public bool Disabled { get; set; }
     public string Host { get; set; } = "CHANGE_ME";
     public int Port { get; set; } = 8080;
@@ -78,6 +83,148 @@ public class QBitConfig
     public bool MatchSubcategories { get; set; }
     public List<TrackerConfig> Trackers { get; set; } = new();
     public CategorySeedingConfig CategorySeeding { get; set; } = new();
+    public MaintenanceConfig Maintenance { get; set; } = new();
+}
+
+public class QBitConfig : TorrentClientInstanceConfig
+{
+    public QBitConfig() => LegacySection = true;
+}
+
+public class MaintenanceConfig
+{
+    public bool Enabled { get; set; }
+    [TomlIgnore]
+    [Newtonsoft.Json.JsonIgnore]
+    [System.Text.Json.Serialization.JsonIgnore]
+    public bool Armed { get; set; }
+    public string Scope { get; set; } = "managed";
+    public string Schedule { get; set; } = "*/15 * * * *";
+    public int PlanTtlMinutes { get; set; } = 30;
+    public int MinimumTorrentAgeMinutes { get; set; } = 10;
+    public List<string> ExplicitCategories { get; set; } = new();
+    public List<string> ExcludedCategories { get; set; } = new();
+    public List<string> ExcludedTags { get; set; } = new();
+    public List<PathMappingConfig> PathMappings { get; set; } = new();
+    public RecycleBinConfig RecycleBin { get; set; } = new();
+    public OrphanMaintenanceConfig Orphans { get; set; } = new();
+    public HardlinkMaintenanceConfig Hardlinks { get; set; } = new();
+    public UnregisteredMaintenanceConfig Unregistered { get; set; } = new();
+    public RepairMaintenanceConfig Repair { get; set; } = new();
+    public AutomaticManagementConfig AutomaticManagement { get; set; } = new();
+    public List<CategoryMappingConfig> CategoryMappings { get; set; } = new();
+    public List<CategoryTransitionConfig> CategoryTransitions { get; set; } = new();
+    public List<TrackerAssignmentConfig> TrackerAssignments { get; set; } = new();
+    public List<SharePolicyConfig> SharePolicies { get; set; } = new();
+    public List<MaintenanceNotificationConfig> Notifications { get; set; } = new();
+}
+
+public class MaintenanceNotificationConfig
+{
+    public bool Enabled { get; set; }
+    public string Type { get; set; } = "webhook";
+    public string Url { get; set; } = "";
+    public string Token { get; set; } = "";
+    public int MaxAttempts { get; set; } = 3;
+}
+
+public class PathMappingConfig
+{
+    public string ClientPath { get; set; } = "";
+    public string LocalPath { get; set; } = "";
+}
+
+public class RecycleBinConfig
+{
+    public bool Enabled { get; set; } = true;
+    public string Path { get; set; } = "";
+    public int RetentionDays { get; set; } = 30;
+    public int MaxTorrentMovesPerRun { get; set; } = 10;
+    public bool SplitByClient { get; set; } = true;
+    public bool SplitByCategory { get; set; }
+    public string ResumeDataPath { get; set; } = "";
+}
+
+public class OrphanMaintenanceConfig
+{
+    public bool Enabled { get; set; }
+    public int MinimumAgeMinutes { get; set; } = 60;
+    public int MaxFilesPerRun { get; set; } = 50;
+    public List<string> ExcludePatterns { get; set; } = new();
+}
+
+public class HardlinkMaintenanceConfig
+{
+    public bool Enabled { get; set; }
+    public string Tag { get; set; } = "noHL";
+    public bool CountLinksInsideRoot { get; set; }
+    public List<string> Categories { get; set; } = new();
+    public List<string> ExcludedTags { get; set; } = new();
+}
+
+public class UnregisteredMaintenanceConfig
+{
+    public bool Enabled { get; set; }
+    public int GraceMinutes { get; set; } = 10;
+    public int MaxPerTrackerPerRun { get; set; } = 10;
+    public bool CompletedOnly { get; set; }
+    public List<string> Messages { get; set; } = new()
+    {
+        "unregistered torrent", "torrent not registered", "torrent not found", "torrent not authorized"
+    };
+}
+
+public class RepairMaintenanceConfig
+{
+    public bool Enabled { get; set; }
+    public int MaxPerRun { get; set; } = 10;
+}
+
+public class AutomaticManagementConfig
+{
+    public bool Enabled { get; set; }
+    public List<string> IgnoredTags { get; set; } = new();
+    public string PrivateTag { get; set; } = "";
+    public string TrackerErrorTag { get; set; } = "issue";
+}
+
+public class CategoryMappingConfig
+{
+    public string ClientPath { get; set; } = "";
+    public string Category { get; set; } = "";
+}
+
+public class CategoryTransitionConfig
+{
+    public string From { get; set; } = "";
+    public string To { get; set; } = "";
+    public int DelayMinutes { get; set; }
+}
+
+public class TrackerAssignmentConfig
+{
+    public string TrackerContains { get; set; } = "";
+    public string Category { get; set; } = "";
+    public List<string> Tags { get; set; } = new();
+}
+
+public class SharePolicyConfig
+{
+    public string Name { get; set; } = "";
+    public int Priority { get; set; }
+    public List<string> Categories { get; set; } = new();
+    public List<string> Tags { get; set; } = new();
+    public List<string> Trackers { get; set; } = new();
+    public string CompletionState { get; set; } = "completed";
+    public string Privacy { get; set; } = "any";
+    public double? MaximumRatio { get; set; }
+    public int? MaximumSeedingMinutes { get; set; }
+    public int? MaximumInactiveMinutes { get; set; }
+    public int MinimumSeedCount { get; set; }
+    public int MinimumSeedingMinutes { get; set; }
+    public int? UploadLimitKiB { get; set; }
+    public string Action { get; set; } = "stop";
+    public string WaitingTag { get; set; } = "maintenance-waiting";
 }
 
 public class CategorySeedingConfig

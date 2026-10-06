@@ -26,9 +26,10 @@ public class ConfigSchemaAndOverviewEndpointTests : IClassFixture<TorrentarrWebA
         using var json = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
         json.RootElement.GetProperty("version").GetInt32().Should().Be(1);
         json.RootElement.GetProperty("sections").TryGetProperty("WebUI", out _).Should().BeTrue();
+        json.RootElement.GetProperty("sections").TryGetProperty("TorrentClient", out _).Should().BeTrue();
         json.RootElement.GetProperty("sections").TryGetProperty("Arr", out _).Should().BeTrue();
         json.RootElement.GetProperty("sections").EnumerateObject()
-            .Sum(section => section.Value.GetArrayLength()).Should().Be(124);
+            .Sum(section => section.Value.GetArrayLength()).Should().Be(137);
     }
 
     [Fact]

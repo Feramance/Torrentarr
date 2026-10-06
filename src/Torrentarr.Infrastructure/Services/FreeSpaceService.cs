@@ -1,4 +1,5 @@
 using Torrentarr.Core.Configuration;
+using Torrentarr.Core.Interfaces;
 using Torrentarr.Core.Models;
 using Torrentarr.Core.Services;
 using Torrentarr.Infrastructure.ApiClients.QBittorrent;
@@ -20,7 +21,7 @@ public class FreeSpaceService : IFreeSpaceService
 
     private readonly ILogger<FreeSpaceService> _logger;
     private readonly TorrentarrConfig _config;
-    private readonly QBittorrentConnectionManager _qbitManager;
+    private readonly ITorrentClientRegistry _qbitManager;
     private readonly TorrentarrDbContext _dbContext;
     private long _currentFreeSpace;
     private long _minFreeSpaceBytes;
@@ -28,7 +29,7 @@ public class FreeSpaceService : IFreeSpaceService
     public FreeSpaceService(
         ILogger<FreeSpaceService> logger,
         TorrentarrConfig config,
-        QBittorrentConnectionManager qbitManager,
+        ITorrentClientRegistry qbitManager,
         TorrentarrDbContext dbContext)
     {
         _logger = logger;
@@ -90,9 +91,9 @@ public class FreeSpaceService : IFreeSpaceService
         if (!string.IsNullOrWhiteSpace(_config.Settings.FreeSpaceFolder))
             pathsToCheck.Add(("FreeSpaceFolder", _config.Settings.FreeSpaceFolder));
 
-        _logger.LogTrace("Checking {Count} qBit instances for free space", _config.QBitInstances.Count);
+        _logger.LogTrace("Checking {Count} torrent clients for free space", _config.GetAllTorrentClients().Count);
 
-        foreach (var (instanceName, qbitConfig) in _config.QBitInstances)
+        foreach (var (instanceName, qbitConfig) in _config.GetAllTorrentClients())
         {
             if (qbitConfig.Disabled)
             {
@@ -255,7 +256,7 @@ public class FreeSpaceService : IFreeSpaceService
         _logger.LogTrace("Starting free space processing for category {Category}", category);
 
         // Gather torrents from all qBit instances, stamping instance name
-        var allTorrents = new List<(string instanceName, QBittorrentClient client, TorrentInfo torrent)>();
+        var allTorrents = new List<(string instanceName, ITorrentClient client, TorrentInfo torrent)>();
         var clientCount = _qbitManager.GetAllClients().Count;
         _logger.LogTrace("Fetching torrents from {Count} qBit instances", clientCount);
 
@@ -331,7 +332,7 @@ public class FreeSpaceService : IFreeSpaceService
 
     private async Task ProcessSingleTorrentSpaceAsync(
         string instanceName,
-        QBittorrentClient client,
+        ITorrentClient client,
         TorrentInfo torrent,
         CancellationToken cancellationToken)
     {
@@ -456,7 +457,7 @@ public class FreeSpaceService : IFreeSpaceService
 
     /// <summary>§1.6: Set or clear FreeSpacePaused — uses qBit tag or DB column based on Tagless setting.</summary>
     private async Task SetFreeSpacePausedTagAsync(
-        QBittorrentClient client, TorrentInfo torrent, string instanceName, bool paused, CancellationToken ct)
+        ITorrentClient client, TorrentInfo torrent, string instanceName, bool paused, CancellationToken ct)
     {
         if (_config.Settings.Tagless)
         {
@@ -473,7 +474,7 @@ public class FreeSpaceService : IFreeSpaceService
         }
     }
 
-    private async Task EnsureTagsExistAsync(QBittorrentClient client, CancellationToken cancellationToken)
+    private async Task EnsureTagsExistAsync(ITorrentClient client, CancellationToken cancellationToken)
     {
         if (_config.Settings.Tagless) return; // §1.6: no tags in Tagless mode
         try

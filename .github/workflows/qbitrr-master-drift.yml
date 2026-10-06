@@ -12,7 +12,7 @@ jobs:
   audit:
     runs-on: ubuntu-latest
     steps:
-    - uses: actions/checkout@v4
+    - uses: actions/checkout@v7
     - name: Compare OpenAPI with qBitrr master
       continue-on-error: true
       env:
@@ -22,7 +22,7 @@ jobs:
         bash scripts/check-openapi-drift.sh docs/assets/openapi.json 2>&1 | tee qbitrr-master-drift.txt
     - name: Upload drift report
       if: always()
-      uses: actions/upload-artifact@v4
+      uses: actions/upload-artifact@v7
       with:
         name: qbitrr-master-drift
         path: qbitrr-master-drift.txt
