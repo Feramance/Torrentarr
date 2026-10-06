@@ -164,9 +164,13 @@ export function getArrTorrentHandlingSummary(
 
   // 2. If the download stalls
   if (!Number.isFinite(stalledDelayMin) || stalledDelayMin < 0) {
-    blocks.push("Stalled downloads have infinite grace and are not removed through stalled handling.");
+    blocks.push(
+      "Stalled downloads have infinite grace and are not removed through stalled handling.",
+    );
   } else if (stalledDelayMin === 0) {
-    blocks.push("Stalled downloads are cleaned up immediately after the age gate.");
+    blocks.push(
+      "Stalled downloads are cleaned up immediately after the age gate.",
+    );
   } else {
     blocks.push(
       `If the download stops progressing for ${formatMinutes(stalledDelayMin)}, it is treated as stalled and will be removed after that delay. ` +
@@ -330,7 +334,9 @@ export function getQbitTorrentHandlingSummary(
 
   // 2. If the download stalls
   if (!Number.isFinite(stalledDelayMin) || stalledDelayMin < 0) {
-    blocks.push("Stalled downloads have infinite grace and are not removed through stalled handling.");
+    blocks.push(
+      "Stalled downloads have infinite grace and are not removed through stalled handling.",
+    );
   } else if (stalledDelayMin === 0) {
     let s = "Stalled downloads are cleaned up immediately after the age gate";
     if (managedPreview) {
