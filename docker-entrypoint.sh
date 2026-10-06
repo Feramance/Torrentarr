@@ -47,9 +47,18 @@ if [ "$(id -u)" -eq 0 ]; then
 
     # Only the application state volume is normalized. Media/download mounts
     # can be large and are commonly shared with qBittorrent and the Arrs.
-    if [ "${PUID}" -ne 0 ]; then
+    if [ "${PUID}" -ne 0 ] || [ "${PGID}" -ne 0 ]; then
         if ! chown -R "${PUID}:${PGID}" /config; then
             echo "Torrentarr: warning: unable to apply ${PUID}:${PGID} ownership to all of /config; existing files may still require host-side permission repair." >&2
+        fi
+    fi
+
+    # /data is a declared volume used by the documented download layouts. Fix
+    # only its mountpoint so bind-mounted media trees are never traversed.
+    mkdir -p /data
+    if [ "${PUID}" -ne 0 ] || [ "${PGID}" -ne 0 ]; then
+        if ! chown "${PUID}:${PGID}" /data; then
+            echo "Torrentarr: warning: unable to apply ${PUID}:${PGID} ownership to /data; host-side permission repair may be required." >&2
         fi
     fi
 
@@ -60,8 +69,7 @@ if [ "$(id -u)" -eq 0 ]; then
 
     # tini runs as the requested identity, so the application and all of its
     # children receive signals correctly without retaining root privileges.
-    export HOME=/config
-    exec gosu "${PUID}:${PGID}" /usr/bin/tini -- "$@"
+    exec gosu "${PUID}:${PGID}" env HOME=/config /usr/bin/tini -- "$@"
 fi
 
 # An explicit Docker `user:` override means the entrypoint cannot chown the

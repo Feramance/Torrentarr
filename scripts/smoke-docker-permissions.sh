@@ -50,7 +50,7 @@ ids="$(docker exec "${container}" sh -c "awk '/^Uid:/{u=\$2} /^Gid:/{g=\$2} END{
     exit 1
 }
 
-for path in /config /config/config.toml /config/torrentarr.db /config/logs /config/data-protection-keys; do
+for path in /config /config/config.toml /config/torrentarr.db /config/logs /config/data-protection-keys /data; do
     docker exec "${container}" test -e "${path}"
     owner="$(docker exec "${container}" stat -c '%u:%g' "${path}")"
     [[ "${owner}" == "${uid}:${gid}" ]] || {
