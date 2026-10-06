@@ -473,3 +473,76 @@ export interface ConfigUpdateResponse {
     | "full";
   affectedInstances: string[];
 }
+
+export interface TorrentClientInfo {
+  id: string;
+  QbitInstance: string;
+  type: string;
+  connected: boolean;
+  version: string | null;
+  capabilities: Record<string, boolean>;
+  managedCategories: string[];
+}
+
+export type MaintenanceOperation =
+  | "OrphanScan"
+  | "HardlinkAudit"
+  | "UnregisteredCleanup"
+  | "CategoryReconcile"
+  | "AutomaticManagement"
+  | "PrivateTagging"
+  | "TrackerErrorTagging"
+  | "RepairPaused"
+  | "SharePolicy"
+  | "RecycleRetention";
+
+export interface MaintenanceAction {
+  id: string;
+  kind: string;
+  clientInstanceId: string;
+  torrentHash?: string;
+  torrentName?: string;
+  path?: string;
+  bytes: number;
+  reason: string;
+  destructive: boolean;
+  blockedReason?: string;
+  requiredCapabilities: string[];
+}
+
+export interface MaintenancePlan {
+  planId: string;
+  expiresAt: string;
+  configurationFingerprint: string;
+  clientInstanceIds: string[];
+  operations: MaintenanceOperation[];
+  actions: MaintenanceAction[];
+  warnings: string[];
+  criticalErrors: string[];
+  candidateCount: number;
+  blockedCount: number;
+  candidateBytes: number;
+}
+
+export interface MaintenanceRunSummary {
+  runId: string;
+  startedAt: string;
+  completedAt?: string;
+  trigger: string;
+  clientInstanceIds: string[];
+  planned: number;
+  applied: number;
+  skipped: number;
+  failed: number;
+  bytesMoved: number;
+  result: string;
+  errors: string[];
+}
+
+export interface MaintenanceStatus {
+  running: boolean;
+  currentRun?: MaintenanceRunSummary;
+  lastRun?: MaintenanceRunSummary;
+  armed: Record<string, boolean>;
+  nextScheduledRun: Record<string, string | null>;
+}

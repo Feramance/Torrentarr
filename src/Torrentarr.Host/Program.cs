@@ -1,4 +1,5 @@
 using Torrentarr.Core.Configuration;
+using Torrentarr.Core.Interfaces;
 using Torrentarr.Core.Models;
 using Torrentarr.Core.Services;
 using Torrentarr.Infrastructure.ApiClients.Arr;
@@ -149,7 +150,7 @@ try
         Log.Information("Log level set to {Level} from config ConsoleLevel", levelSwitch.MinimumLevel);
     }
 
-    if (!config.QBitInstances.Values.Any(q => q.Host != "CHANGE_ME" && q.UserName != "CHANGE_ME" && q.Password != "CHANGE_ME"))
+    if (!config.GetAllTorrentClients().Values.Any(q => q.Host != "CHANGE_ME" && q.UserName != "CHANGE_ME" && q.Password != "CHANGE_ME"))
     {
         Log.Warning("qBittorrent is not configured. Please configure via WebUI at http://localhost:{Port}", config.WebUI.Port);
         Log.Warning("Or edit the config file at: {Path}", ConfigurationLoader.GetDefaultConfigPath());
@@ -172,7 +173,19 @@ try
     builder.Services.AddSingleton(configLoader);
     builder.Services.AddSingleton<DatabaseRestartCoordinator>();
     builder.Services.AddHostedService<DatabaseRestartWatchdogService>();
-    builder.Services.AddSingleton<QBittorrentConnectionManager>();
+    builder.Services.AddSingleton<ITorrentClientFactory, QBittorrentTorrentClientFactory>();
+    builder.Services.AddSingleton<TorrentClientRegistry>();
+    builder.Services.AddSingleton<ITorrentClientRegistry>(sp => sp.GetRequiredService<TorrentClientRegistry>());
+    builder.Services.AddSingleton<IPathMappingService, PathMappingService>();
+    builder.Services.AddSingleton<IHardlinkInspector, HardlinkInspector>();
+    builder.Services.AddSingleton<ITorrentInventoryService, TorrentInventoryService>();
+    builder.Services.AddSingleton<ISafeDeletionService, SafeDeletionService>();
+    builder.Services.AddSingleton<MaintenanceNotificationService>();
+    builder.Services.AddSingleton<IMaintenanceNotificationService>(sp => sp.GetRequiredService<MaintenanceNotificationService>());
+    builder.Services.AddHostedService(sp => sp.GetRequiredService<MaintenanceNotificationService>());
+    builder.Services.AddSingleton<MaintenanceCoordinator>();
+    builder.Services.AddSingleton<IMaintenanceCoordinator>(sp => sp.GetRequiredService<MaintenanceCoordinator>());
+    builder.Services.AddHostedService(sp => sp.GetRequiredService<MaintenanceCoordinator>());
     builder.Services.AddSingleton<ProcessStateManager>();
     builder.Services.AddSingleton<IConnectivityService, ConnectivityService>();
     // ArrWorkerManager registered as both singleton and IHostedService so it's injectable in endpoints
@@ -252,6 +265,8 @@ try
             options.SerializerSettings.NullValueHandling = Newtonsoft.Json.NullValueHandling.Include;
             options.SerializerSettings.DateTimeZoneHandling = Newtonsoft.Json.DateTimeZoneHandling.Utc;
         });
+    builder.Services.ConfigureHttpJsonOptions(options =>
+        options.SerializerOptions.Converters.Add(new System.Text.Json.Serialization.JsonStringEnumConverter()));
 
     builder.Services.AddEndpointsApiExplorer();
     builder.Services.AddSwaggerGen(c =>
@@ -606,6 +621,66 @@ try
     app.MapGet("/api/docs", () => CuratedOpenApiDocument.RedirectToSwagger("/api/openapi.json"));
     app.MapGet("/web/docs", () => CuratedOpenApiDocument.RedirectToSwagger("/web/openapi.json"));
 
+    foreach (var prefix in new[] { "/api", "/web" })
+    {
+        app.MapGet(prefix + "/torrent-clients", async (ITorrentClientRegistry registry, TorrentarrConfig cfg) =>
+        {
+            var clients = new List<object>();
+            foreach (var (id, clientCfg) in cfg.GetAllTorrentClients())
+            {
+                var client = registry.GetClient(id);
+                string? version = null;
+                if (client != null)
+                {
+                    try { version = await client.GetVersionAsync(); } catch { /* reflected by connection state */ }
+                }
+                clients.Add(new
+                {
+                    id,
+                    QbitInstance = id,
+                    type = clientCfg.Type,
+                    connected = client != null,
+                    version,
+                    capabilities = client?.Capabilities ?? TorrentClientCapabilities.None,
+                    managedCategories = clientCfg.ManagedCategories
+                });
+            }
+            return Results.Ok(clients);
+        });
+        app.MapGet(prefix + "/maintenance/status", (IMaintenanceCoordinator maintenance) => Results.Ok(maintenance.GetStatus()));
+        app.MapGet(prefix + "/maintenance/history", (IMaintenanceCoordinator maintenance, int? limit) =>
+            Results.Ok(maintenance.GetHistory(limit ?? 50)));
+        app.MapPost(prefix + "/maintenance/preview", async (MaintenancePreviewRequest request, IMaintenanceCoordinator maintenance, CancellationToken ct) =>
+            Results.Ok(await maintenance.PreviewAsync(request, ct)));
+        app.MapPost(prefix + "/maintenance/apply", async (MaintenanceApplyRequest request, IMaintenanceCoordinator maintenance, CancellationToken ct) =>
+        {
+            try { return Results.Ok(await maintenance.ApplyAsync(request.PlanId, ct)); }
+            catch (KeyNotFoundException ex) { return Results.NotFound(new { error = ex.Message }); }
+            catch (InvalidOperationException ex) { return Results.Conflict(new { error = ex.Message }); }
+        });
+        app.MapPost(prefix + "/maintenance/arm", async (MaintenanceArmRequest request, IMaintenanceCoordinator maintenance, CancellationToken ct) =>
+        {
+            try { await maintenance.ArmAsync(request, ct); return Results.Ok(maintenance.GetStatus()); }
+            catch (KeyNotFoundException ex) { return Results.NotFound(new { error = ex.Message }); }
+            catch (InvalidOperationException ex) { return Results.Conflict(new { error = ex.Message }); }
+        });
+        app.MapPost(prefix + "/maintenance/disarm", (MaintenanceClientsRequest request, IMaintenanceCoordinator maintenance) =>
+        {
+            maintenance.Disarm(request.ClientInstanceIds);
+            return Results.Ok(maintenance.GetStatus());
+        });
+        app.MapPost(prefix + "/maintenance/run", async (MaintenanceClientsRequest request, IMaintenanceCoordinator maintenance, CancellationToken ct) =>
+        {
+            try { return Results.Ok(await maintenance.RunAsync(request.ClientInstanceIds.Count == 0 ? null : request.ClientInstanceIds, ct: ct)); }
+            catch (InvalidOperationException ex) { return Results.Conflict(new { error = ex.Message }); }
+        });
+        app.MapPost(prefix + "/maintenance/cancel", (IMaintenanceCoordinator maintenance) =>
+        {
+            maintenance.Cancel();
+            return Results.Accepted();
+        });
+    }
+
     // ==================== /web/* endpoints ====================
 
     // Web Meta — fetches latest release from GitHub and compares with current version
@@ -620,9 +695,10 @@ try
     });
 
     // Web Status — matches TypeScript StatusResponse (no extra webui field)
-    app.MapGet("/web/status", async (TorrentarrConfig cfg, QBittorrentConnectionManager qbitManager) =>
+    app.MapGet("/web/status", async (TorrentarrConfig cfg, ITorrentClientRegistry qbitManager) =>
     {
-        var primaryQbit = (cfg.QBitInstances.GetValueOrDefault("qBit") ?? new QBitConfig());
+        var primaryName = cfg.GetAllTorrentClients().Keys.FirstOrDefault() ?? "qBit";
+        var primaryQbit = cfg.GetTorrentClient(primaryName) ?? new QBitConfig();
         var qbitConfigured = primaryQbit.Host != "CHANGE_ME" && !string.IsNullOrEmpty(primaryQbit.Host);
         var qbitAlive = qbitConfigured && qbitManager.IsConnected();
 
@@ -676,16 +752,17 @@ try
     //   • each Arr instance's Category (Arr-managed)
     // The "instance" field is always the qBit instance name (never the Arr instance name)
     // so that ProcessesView can match categories to the correct qBit process card.
-    app.MapGet("/web/qbit/categories", async (QBittorrentConnectionManager qbitManager, TorrentarrConfig cfg) =>
+    app.MapGet("/web/qbit/categories", async (ITorrentClientRegistry qbitManager, TorrentarrConfig cfg) =>
     {
         var categories = new List<object>();
+        var primaryName = cfg.GetAllTorrentClients().Keys.FirstOrDefault() ?? "qBit";
 
         // Build Arr-managed category lookup: category name → ArrInstanceConfig
         var arrCategoryToConfig = cfg.ArrInstances
             .Where(kvp => !string.IsNullOrEmpty(kvp.Value.Category))
             .ToDictionary(kvp => kvp.Value.Category!, kvp => kvp.Value, StringComparer.OrdinalIgnoreCase);
 
-        var primaryQbit = (cfg.QBitInstances.GetValueOrDefault("qBit") ?? new QBitConfig());
+        var primaryQbit = cfg.GetTorrentClient(primaryName) ?? new QBitConfig();
         var qbitManagedSet = new HashSet<string>(primaryQbit.ManagedCategories, StringComparer.OrdinalIgnoreCase);
         var arrCategorySet = new HashSet<string>(arrCategoryToConfig.Keys, StringComparer.OrdinalIgnoreCase);
         // Only show ManagedCategories from qBit config - not Arr categories
@@ -695,7 +772,7 @@ try
         {
             try
             {
-                var client = qbitManager.GetAllClients().Values.FirstOrDefault();
+                var client = qbitManager.GetClient(primaryName) ?? qbitManager.GetAllClients().Values.FirstOrDefault();
                 if (client != null)
                 {
                     var allTorrents = await client.GetTorrentsAsync();
@@ -711,13 +788,13 @@ try
                         var managedBy = arrCategorySet.Contains(catName) ? "arr" : "qbit";
 
                         var effectiveSeeding = CategorySeedingApiResolver.ResolveAggregate(
-                            cfg, "qBit", primaryQbit, catName, torrentsInCat);
+                            cfg, primaryName, primaryQbit, catName, torrentsInCat);
 
                         categories.Add(new
                         {
                             category = catName,
                             // Always the qBit instance name — ProcessesView matches on this field
-                            instance = "qBit",
+                            instance = primaryName,
                             managedBy,
                             torrentCount = torrentsInCat.Count,
                             seedingCount = seedingTorrents.Count,
@@ -773,7 +850,7 @@ try
     });
 
     // Web Processes — reads live state from ProcessStateManager + qBit connection status
-    app.MapGet("/web/processes", async (ProcessStateManager stateMgr, TorrentarrConfig cfg, QBittorrentConnectionManager qbitMgr) =>
+    app.MapGet("/web/processes", async (ProcessStateManager stateMgr, TorrentarrConfig cfg, ITorrentClientRegistry qbitMgr) =>
     {
         var processes = stateMgr.GetAll().Select(s => new
         {
@@ -948,7 +1025,7 @@ try
 
     app.MapGet("/web/config/schema", () => Results.Ok(ConfigSchemaBuilder.Build()));
 
-    app.MapGet("/web/qbit/overview", async (HttpRequest request, TorrentarrConfig cfg, QBittorrentConnectionManager qbitManager) =>
+    app.MapGet("/web/qbit/overview", async (HttpRequest request, TorrentarrConfig cfg, ITorrentClientRegistry qbitManager) =>
     {
         var instance = request.Query["instance"].FirstOrDefault();
         return Results.Ok(await QbitOverviewBuilder.BuildAsync(cfg, qbitManager, instance));
@@ -1368,6 +1445,7 @@ try
         flat["WebUI"] = cfg.WebUI;
         foreach (var (key, qbit) in cfg.QBitInstances.Where(kv => kv.Value.Host != "CHANGE_ME"))
             flat[key] = qbit;
+        flat["TorrentClient"] = cfg.TorrentClients;
         foreach (var (key, arr) in cfg.ArrInstances)
             flat[key] = arr;
 
@@ -1600,7 +1678,7 @@ try
     });
 
     // Web Qbit Categories (api mirror — same logic as /web/qbit/categories, token-protected)
-    app.MapGet("/api/qbit/categories", async (QBittorrentConnectionManager qbitManager, TorrentarrConfig cfg) =>
+    app.MapGet("/api/qbit/categories", async (ITorrentClientRegistry qbitManager, TorrentarrConfig cfg) =>
     {
         var categories = new List<object>();
 
@@ -1700,7 +1778,7 @@ try
         return Results.Ok(updater.BuildMetaResponse());
     });
 
-    app.MapGet("/api/status", async (TorrentarrConfig cfg, QBittorrentConnectionManager qbitManager) =>
+    app.MapGet("/api/status", async (TorrentarrConfig cfg, ITorrentClientRegistry qbitManager) =>
     {
         var apiPrimaryQbit = (cfg.QBitInstances.GetValueOrDefault("qBit") ?? new QBitConfig());
         var qbitConfigured = apiPrimaryQbit.Host != "CHANGE_ME" && !string.IsNullOrEmpty(apiPrimaryQbit.Host);
@@ -2251,7 +2329,11 @@ try
         });
     });
 
-    app.MapGet("/api/config", (TorrentarrConfig cfg) => Results.Ok(cfg));
+    app.MapGet("/api/config", (TorrentarrConfig cfg) =>
+    {
+        var token = Newtonsoft.Json.Linq.JObject.FromObject(cfg);
+        return Results.Content(StripSensitiveKeys(token).ToString(Newtonsoft.Json.Formatting.None), "application/json");
+    });
 
     app.MapPost("/api/config", async (HttpRequest request, TorrentarrConfig cfg, ConfigurationLoader loader, ArrWorkerManager workerMgr, QBitCategoryWorkerManager qbitCategoryMgr) =>
     {
@@ -2546,6 +2628,7 @@ static (TorrentarrConfig? updatedConfig, IResult? error) ApplyDottedConfigChange
     currentObj["WebUI"] = Newtonsoft.Json.Linq.JObject.FromObject(cfg.WebUI, serializer);
     foreach (var (key, qbit) in cfg.QBitInstances)
         currentObj[key] = Newtonsoft.Json.Linq.JObject.FromObject(qbit, serializer);
+    currentObj["TorrentClient"] = Newtonsoft.Json.Linq.JObject.FromObject(cfg.TorrentClients, serializer);
     foreach (var (key, arr) in cfg.ArrInstances)
         currentObj[key] = Newtonsoft.Json.Linq.JObject.FromObject(arr, serializer);
 
@@ -2603,9 +2686,13 @@ static (TorrentarrConfig? updatedConfig, IResult? error) ApplyDottedConfigChange
         updatedConfig.Settings = settingsObj.ToObject<SettingsConfig>(serializer) ?? new SettingsConfig();
     if (currentObj["WebUI"] is Newtonsoft.Json.Linq.JObject webuiObj)
         updatedConfig.WebUI = webuiObj.ToObject<WebUIConfig>(serializer) ?? new WebUIConfig();
+    if (currentObj["TorrentClient"] is Newtonsoft.Json.Linq.JObject torrentClientObj)
+        updatedConfig.TorrentClients = torrentClientObj.ToObject<Dictionary<string, TorrentClientInstanceConfig>>(serializer)
+            ?? new Dictionary<string, TorrentClientInstanceConfig>();
 
     foreach (var prop in currentObj.Properties())
     {
+        if (prop.Name.Equals("TorrentClient", StringComparison.OrdinalIgnoreCase)) continue;
         if (prop.Value is not Newtonsoft.Json.Linq.JObject sectionObj) continue;
         var lower = prop.Name.ToLowerInvariant();
         var arrType = ArrSectionHelper.ArrTypeFromSectionName(prop.Name);
@@ -2639,11 +2726,19 @@ static async Task<IResult> SaveAndRespondConfigUpdate(
 
     var (reloadType, affectedInstancesList) = DetermineReloadType(cfg, updatedConfig);
 
+    if (Newtonsoft.Json.JsonConvert.SerializeObject(cfg.GetAllTorrentClients())
+        != Newtonsoft.Json.JsonConvert.SerializeObject(updatedConfig.GetAllTorrentClients()))
+    {
+        foreach (var client in updatedConfig.GetAllTorrentClients().Values)
+            client.Maintenance.Armed = false;
+    }
+
     loader.SaveConfig(updatedConfig);
     cfg.Settings = updatedConfig.Settings;
     cfg.WebUI = updatedConfig.WebUI;
     cfg.ArrInstances = updatedConfig.ArrInstances;
     cfg.QBitInstances = updatedConfig.QBitInstances;
+    cfg.TorrentClients = updatedConfig.TorrentClients;
     TorrentPolicyHelper.InvalidateMonitoredPolicyCategoriesCache(cfg);
 
     if (workerMgr != null)
@@ -2753,7 +2848,8 @@ static (string reloadType, List<string> affectedInstances) DetermineReloadType(
     var serialize = (object? o) => Newtonsoft.Json.JsonConvert.SerializeObject(o);
 
     // QBit instance changes → full reload (requires process restart)
-    bool hasQBitChanges = serialize(oldCfg.QBitInstances) != serialize(newCfg.QBitInstances);
+    bool hasQBitChanges = serialize(oldCfg.QBitInstances) != serialize(newCfg.QBitInstances)
+        || serialize(oldCfg.TorrentClients) != serialize(newCfg.TorrentClients);
 
     // Settings changes → webui reload (workers pick up changes at next cycle)
     bool hasSettingsChanges = serialize(oldCfg.Settings) != serialize(newCfg.Settings);
@@ -2797,9 +2893,10 @@ class ProcessOrchestratorService : BackgroundService
 {
     private readonly ILogger<ProcessOrchestratorService> _logger;
     private readonly TorrentarrConfig _config;
-    private readonly QBittorrentConnectionManager _qbitManager;
+    private readonly ITorrentClientRegistry _qbitManager;
     private readonly IServiceScopeFactory _scopeFactory;
     private readonly ProcessStateManager _stateManager;
+    private readonly ISafeDeletionService _safeDeletion;
     private long _currentFreeSpace;
     private long _minFreeSpaceBytes;
     private string? _freeSpaceFolder;
@@ -2809,15 +2906,17 @@ class ProcessOrchestratorService : BackgroundService
     public ProcessOrchestratorService(
         ILogger<ProcessOrchestratorService> logger,
         TorrentarrConfig config,
-        QBittorrentConnectionManager qbitManager,
+        ITorrentClientRegistry qbitManager,
         IServiceScopeFactory scopeFactory,
-        ProcessStateManager stateManager)
+        ProcessStateManager stateManager,
+        ISafeDeletionService safeDeletion)
     {
         _logger = logger;
         _config = config;
         _qbitManager = qbitManager;
         _scopeFactory = scopeFactory;
         _stateManager = stateManager;
+        _safeDeletion = safeDeletion;
         // §8: Respect Settings.FreeSpace string ("-1" = disabled, "10G"/"500M" = threshold)
         var freeSpaceBytes = ParseFreeSpaceString(_config.Settings.FreeSpace);
         if (freeSpaceBytes < 0)
@@ -2830,7 +2929,7 @@ class ProcessOrchestratorService : BackgroundService
             _freeSpaceEnabled = true;
             _minFreeSpaceBytes = freeSpaceBytes;
         }
-        _qbitConfigured = config.QBitInstances.Values.Any(q =>
+        _qbitConfigured = config.GetAllTorrentClients().Values.Any(q =>
             !q.Disabled && q.Host != "CHANGE_ME" && q.UserName != "CHANGE_ME" && q.Password != "CHANGE_ME");
     }
 
@@ -2861,7 +2960,7 @@ class ProcessOrchestratorService : BackgroundService
             }
             else
             {
-                var connected = await _qbitManager.EnsureAllConnectedAsync(_config.QBitInstances, stoppingToken);
+                var connected = await _qbitManager.EnsureAllConnectedAsync(_config.GetAllTorrentClients(), stoppingToken);
                 if (connected == 0)
                     _logger.LogWarning("Failed to connect to any qBittorrent instance. WebUI is still available; will retry.");
             }
@@ -2908,7 +3007,7 @@ class ProcessOrchestratorService : BackgroundService
                 {
                     if (_qbitConfigured)
                     {
-                        await _qbitManager.EnsureAllConnectedAsync(_config.QBitInstances, stoppingToken);
+                        await _qbitManager.EnsureAllConnectedAsync(_config.GetAllTorrentClients(), stoppingToken);
                         if (_qbitManager.IsConnected())
                         {
                             await ProcessSpecialCategoriesAsync(stoppingToken);
@@ -2958,7 +3057,7 @@ class ProcessOrchestratorService : BackgroundService
         }
 
         // Fall back to qBit download paths (Docker mounts torrents separately from /config)
-        foreach (var (_, qbit) in _config.QBitInstances)
+        foreach (var (_, qbit) in _config.GetAllTorrentClients())
         {
             if (qbit.Disabled)
                 continue;
@@ -2998,7 +3097,9 @@ class ProcessOrchestratorService : BackgroundService
                         }
                     }
                     _logger.LogWarning("[{Instance}] Deleting failed torrent: {Name}", instanceName, torrent.Name);
-                    await client.DeleteTorrentsAsync(new List<string> { torrent.Hash }, deleteFiles: true, cancellationToken);
+                    var deletion = await _safeDeletion.RemoveTorrentAsync(instanceName, torrent.Hash, removeContent: true, ct: cancellationToken);
+                    if (!deletion.Success)
+                        _logger.LogWarning("[{Instance}] Safe deletion skipped for {Name}: {Reason}", instanceName, torrent.Name, deletion.Error);
                 }
 
                 var recheckTorrents = await client.GetTorrentsAsync(_config.Settings.RecheckCategory, cancellationToken: cancellationToken);
@@ -3138,7 +3239,7 @@ class ProcessOrchestratorService : BackgroundService
             _currentFreeSpace = driveInfo.AvailableFreeSpace - _minFreeSpaceBytes;
 
             // Gather torrents from ALL qBit instances across all managed categories.
-            var allTorrents = new List<(string instanceName, QBittorrentClient client, TorrentInfo torrent)>();
+            var allTorrents = new List<(string instanceName, ITorrentClient client, TorrentInfo torrent)>();
             foreach (var (instanceName, client) in _qbitManager.GetAllClients())
             {
                 foreach (var category in managedCategories)
@@ -3280,7 +3381,7 @@ class ProcessOrchestratorService : BackgroundService
     }
 
     private async Task ProcessSingleTorrentSpaceAsync(
-        string instanceName, QBittorrentClient client, TorrentInfo torrent, TorrentarrDbContext? dbContext, int[]? pausedCountRef, CancellationToken cancellationToken)
+        string instanceName, ITorrentClient client, TorrentInfo torrent, TorrentarrDbContext? dbContext, int[]? pausedCountRef, CancellationToken cancellationToken)
     {
         const string freeSpacePausedTag = "qBitrr-free_space_paused";
         var tagless = _config.Settings.Tagless;

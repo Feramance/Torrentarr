@@ -1,6 +1,7 @@
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
 using Torrentarr.Core.Configuration;
+using Torrentarr.Core.Services;
 
 namespace Torrentarr.Host;
 
@@ -58,7 +59,7 @@ public class AutoUpdateBackgroundService : BackgroundService
         while (!stoppingToken.IsCancellationRequested)
         {
             var now = DateTime.UtcNow;
-            if (MatchesCron(cron, now))
+            if (CronSchedule.Matches(cron, now))
             {
                 _logger.LogInformation("AutoUpdateBackgroundService: Cron matched at {Time}, checking for update", now);
                 try
@@ -90,39 +91,5 @@ public class AutoUpdateBackgroundService : BackgroundService
     /// Supports: literal values, '*' wildcard, comma-separated lists, and ranges (a-b).
     /// </summary>
     internal static bool MatchesCron(string cron, DateTime utcNow)
-    {
-        var parts = cron.Trim().Split(' ', StringSplitOptions.RemoveEmptyEntries);
-        if (parts.Length != 5) return false;
-
-        // Cron fields: minute  hour  day-of-month  month  day-of-week (0=Sunday)
-        return MatchField(parts[0], utcNow.Minute)
-            && MatchField(parts[1], utcNow.Hour)
-            && MatchField(parts[2], utcNow.Day)
-            && MatchField(parts[3], utcNow.Month)
-            && MatchField(parts[4], (int)utcNow.DayOfWeek);
-    }
-
-    private static bool MatchField(string field, int value)
-    {
-        if (field == "*") return true;
-
-        // Comma-separated list: "1,3,5"
-        if (field.Contains(','))
-            return field.Split(',').Any(p => MatchSingleField(p.Trim(), value));
-
-        return MatchSingleField(field, value);
-    }
-
-    private static bool MatchSingleField(string field, int value)
-    {
-        // Range: "1-5"
-        if (field.Contains('-'))
-        {
-            var bounds = field.Split('-');
-            if (bounds.Length == 2 && int.TryParse(bounds[0], out var lo) && int.TryParse(bounds[1], out var hi))
-                return value >= lo && value <= hi;
-            return false;
-        }
-        return int.TryParse(field, out var n) && n == value;
-    }
+        => CronSchedule.Matches(cron, utcNow);
 }

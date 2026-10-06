@@ -1,6 +1,7 @@
 using System.Net;
 using System.Net.Sockets;
 using Torrentarr.Core.Configuration;
+using Torrentarr.Core.Interfaces;
 using Torrentarr.Core.Services;
 using Microsoft.Extensions.Logging;
 
@@ -15,7 +16,7 @@ public class ConnectivityService : IConnectivityService
     private static readonly HttpClient ProbeHttpClient = CreateProbeClient();
 
     private readonly ILogger<ConnectivityService> _logger;
-    private readonly QBittorrentConnectionManager _qbitManager;
+    private readonly ITorrentClientRegistry _qbitManager;
     private readonly TorrentarrConfig _config;
     private readonly Func<string, CancellationToken, Task<bool>> _probeAsync;
 
@@ -35,7 +36,7 @@ public class ConnectivityService : IConnectivityService
 
     public ConnectivityService(
         ILogger<ConnectivityService> logger,
-        QBittorrentConnectionManager qbitManager,
+        ITorrentClientRegistry qbitManager,
         TorrentarrConfig config)
         : this(logger, qbitManager, config, probe: null)
     {
@@ -43,7 +44,7 @@ public class ConnectivityService : IConnectivityService
 
     internal ConnectivityService(
         ILogger<ConnectivityService> logger,
-        QBittorrentConnectionManager qbitManager,
+        ITorrentClientRegistry qbitManager,
         TorrentarrConfig config,
         Func<string, CancellationToken, Task<bool>>? probe)
     {

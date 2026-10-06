@@ -1,4 +1,5 @@
 using Torrentarr.Core.Models;
+using Torrentarr.Core.Interfaces;
 using Newtonsoft.Json;
 using RestSharp;
 using RestSharp.Authenticators;
@@ -9,7 +10,7 @@ namespace Torrentarr.Infrastructure.ApiClients.QBittorrent;
 /// <summary>
 /// qBittorrent WebUI API client using RestSharp
 /// </summary>
-public class QBittorrentClient
+public class QBittorrentClient : ITorrentClient
 {
     private readonly RestClient _client;
     private readonly string _host;
@@ -18,11 +19,16 @@ public class QBittorrentClient
     private readonly string _password;
     private string? _cookie;
 
+    public TorrentClientIdentity Identity { get; }
+    public TorrentClientCapabilities Capabilities => TorrentClientCapabilities.QBittorrent;
+    public string? LastConnectionFailure => LastLoginFailure;
+
     /// <summary>Set when <see cref="LoginAsync"/> returns false; includes HTTP status and cookie names.</summary>
     public string? LastLoginFailure { get; private set; }
 
-    public QBittorrentClient(string host, int port, string username, string password, bool skipTlsVerify = false)
+    public QBittorrentClient(string host, int port, string username, string password, bool skipTlsVerify = false, string instanceId = "qBit")
     {
+        Identity = new TorrentClientIdentity(instanceId, "qbittorrent");
         _host = host;
         _port = port;
         _username = username;
@@ -434,6 +440,16 @@ public class QBittorrentClient
         return response.IsSuccessful;
     }
 
+    public async Task<bool> SetAutomaticManagementAsync(List<string> hashes, bool enabled, CancellationToken ct = default)
+    {
+        var request = new RestRequest("api/v2/torrents/setAutoManagement", Method.Post);
+        AddAuthCookie(request);
+        request.AddParameter("hashes", string.Join("|", hashes));
+        request.AddParameter("enable", enabled.ToString().ToLowerInvariant());
+        var response = await ExecuteAsync(request, ct);
+        return response.IsSuccessful;
+    }
+
     /// <summary>
     /// Move a torrent to top priority in qBittorrent queue ordering.
     /// </summary>
@@ -603,6 +619,89 @@ public class QBittorrentClient
             request.AddHeader("Cookie", _cookie);
         }
     }
+
+    async Task<Dictionary<string, TorrentClientCategory>> ITorrentClient.GetCategoriesAsync(CancellationToken ct)
+        => (await GetCategoriesAsync(ct)).ToDictionary(
+            pair => pair.Key,
+            pair => new TorrentClientCategory { Name = pair.Value.Name, SavePath = pair.Value.SavePath });
+
+    async Task<TorrentPropertiesRecord?> ITorrentClient.GetTorrentPropertiesAsync(string hash, CancellationToken ct)
+    {
+        var value = await GetTorrentPropertiesAsync(hash, ct);
+        if (value == null) return null;
+        return new TorrentPropertiesRecord
+        {
+            SavePath = value.SavePath,
+            CreationDate = value.CreationDate,
+            PieceSize = value.PieceSize,
+            Comment = value.Comment,
+            TotalWasted = value.TotalWasted,
+            TotalUploaded = value.TotalUploaded,
+            TotalDownloaded = value.TotalDownloaded,
+            UpLimit = value.UpLimit,
+            DlLimit = value.DlLimit,
+            TimeElapsed = value.TimeElapsed,
+            SeedingTime = value.SeedingTime,
+            NbConnections = value.NbConnections,
+            ShareRatio = value.ShareRatio,
+            AdditionDate = value.AdditionDate,
+            CompletionDate = value.CompletionDate
+        };
+    }
+
+    async Task<List<TorrentFileRecord>> ITorrentClient.GetTorrentFilesAsync(string hash, CancellationToken ct)
+        => (await GetTorrentFilesAsync(hash, ct)).Select(value => new TorrentFileRecord
+        {
+            Index = value.Index,
+            Name = value.Name,
+            Size = value.Size,
+            Progress = value.Progress,
+            Priority = value.Priority,
+            IsSeed = value.IsSeed,
+            PieceRange = value.PieceRange,
+            Availability = value.Availability
+        }).ToList();
+
+    async Task<TorrentTransferRecord?> ITorrentClient.GetTransferInfoAsync(CancellationToken ct)
+    {
+        var value = await GetTransferInfoAsync(ct);
+        if (value == null) return null;
+        return new TorrentTransferRecord
+        {
+            DownloadSpeed = value.DownloadSpeed,
+            DownloadedData = value.DownloadedData,
+            UploadSpeed = value.UploadSpeed,
+            UploadedData = value.UploadedData,
+            DownloadRateLimit = value.DownloadRateLimit,
+            UploadRateLimit = value.UploadRateLimit,
+            DhtNodes = value.DhtNodes,
+            ConnectionStatus = value.ConnectionStatus,
+            FreeSpaceOnDisk = value.FreeSpaceOnDisk,
+            TotalPeerConnections = value.TotalPeerConnections
+        };
+    }
+
+    async Task<TorrentClientSnapshot?> ITorrentClient.GetMainDataAsync(long? revision, CancellationToken ct)
+    {
+        var value = await GetMainDataAsync(revision, ct);
+        if (value == null) return null;
+        return new TorrentClientSnapshot
+        {
+            Revision = value.Rid,
+            FullUpdate = value.FullUpdate,
+            Torrents = value.Torrents,
+            TorrentsRemoved = value.TorrentsRemoved,
+            Categories = value.Categories?.ToDictionary(
+                pair => pair.Key,
+                pair => new TorrentClientCategory { Name = pair.Value.Name, SavePath = pair.Value.SavePath }),
+            CategoriesRemoved = value.CategoriesRemoved,
+            Tags = value.Tags,
+            TagsRemoved = value.TagsRemoved
+        };
+    }
+
+    public Task<IReadOnlyDictionary<string, byte[]>> ExportResumeDataAsync(string hash, CancellationToken ct = default)
+        => Task.FromResult<IReadOnlyDictionary<string, byte[]>>(new Dictionary<string, byte[]>());
 }
 
 /// <summary>

@@ -10,15 +10,16 @@ public class ConfigSchemaBuilderTests
     [Fact]
     public void Registry_MatchesPinnedQbitrr5145Inventory()
     {
-        ConfigSchemaBuilder.Sections.Keys.Should().BeEquivalentTo(["Settings", "WebUI", "qBit", "Arr"]);
+        ConfigSchemaBuilder.Sections.Keys.Should().BeEquivalentTo(["Settings", "WebUI", "qBit", "TorrentClient", "Arr"]);
         var fields = ConfigSchemaBuilder.Sections.SelectMany(section => section.Value).ToList();
 
-        fields.Should().HaveCount(124);
+        fields.Where(field => field.section != "TorrentClient").Should().HaveCount(124);
         fields.Select(field => $"{field.section}.{field.key}").Should().OnlyHaveUniqueItems();
         fields.Should().Contain(field => field.section == "Arr" && field.key == "Torrent.FileExtensionAllowlist");
         fields.Should().Contain(field => field.section == "Arr" && field.arrKinds != null && field.arrKinds.Contains("readarr"));
         fields.Should().Contain(field => field.section == "WebUI" && field.key.StartsWith("OIDC.") && field.secure);
         fields.Should().Contain(field => field.section == "qBit" && field.key == "CategorySeeding.HitAndRunMode");
+        fields.Should().Contain(field => field.section == "TorrentClient" && field.key == "Maintenance.Enabled");
     }
 
     [Fact]

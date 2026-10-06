@@ -6,7 +6,12 @@ import {
 
 describe("generated config schema", () => {
   it("contains the pinned qBitrr 5.14.5 field inventory", () => {
-    expect(CONFIG_SCHEMA_FIELD_COUNT).toBe(124);
+    const qbitrrFieldCount = Object.entries(CONFIG_SCHEMA.sections)
+      .filter(([section]) => section !== "TorrentClient")
+      .reduce((total, [, fields]) => total + fields.length, 0);
+
+    expect(qbitrrFieldCount).toBe(124);
+    expect(CONFIG_SCHEMA_FIELD_COUNT).toBe(137);
     expect(
       CONFIG_SCHEMA.sections.Arr.some(
         (field) => field.key === "Torrent.FileExtensionAllowlist",
@@ -15,6 +20,11 @@ describe("generated config schema", () => {
     expect(
       CONFIG_SCHEMA.sections.Arr.some(
         (field) => "arrKinds" in field && field.arrKinds.includes("readarr"),
+      ),
+    ).toBe(true);
+    expect(
+      CONFIG_SCHEMA.sections.TorrentClient.some(
+        (field) => field.key === "Maintenance.Enabled",
       ),
     ).toBe(true);
   });
