@@ -22,7 +22,7 @@ validate_id() {
     normalized="$(printf '%s' "${value}" | sed 's/^0*//')"
     [ -n "${normalized}" ] || normalized=0
     if [ "${#normalized}" -gt 10 ] || {
-        [ "${#normalized}" -eq 10 ] && [ "${normalized}" \> 4294967294 ];
+        [ "${#normalized}" -eq 10 ] && [ "${normalized}" -gt 4294967294 ];
     }; then
         echo "Torrentarr: ${name} must be no greater than 4294967294 (received '${value}')." >&2
         exit 1
