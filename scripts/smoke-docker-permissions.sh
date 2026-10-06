@@ -1,6 +1,5 @@
 #!/usr/bin/env bash
 set -euo pipefail
-set -x
 
 image="${1:-torrentarr:permission-smoke}"
 container="torrentarr-permission-smoke-$$"
@@ -126,6 +125,6 @@ docker run --rm --env "PUID=${uid}" --env "PGID=${gid}" \
     echo "Read-only /config unexpectedly succeeded" >&2
     exit 1
 }
-grep -q '/config is not writable' "${state_dir}/readonly-output"
+grep -q 'config/data directories are not writable' "${state_dir}/readonly-output"
 
 echo "Docker permission smoke test passed for ${uid}:${gid}"
