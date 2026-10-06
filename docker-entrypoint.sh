@@ -69,4 +69,5 @@ fi
 if [ "$(id -u)" -ne "${PUID}" ]; then
     echo "Torrentarr: running as Docker user $(id -u):$(id -g); PUID/PGID are ignored because the container is already non-root." >&2
 fi
+export HOME=/config
 exec /usr/bin/tini -- "$@"

@@ -5,13 +5,15 @@ image="${1:-torrentarr:permission-smoke}"
 container="torrentarr-permission-smoke-$$"
 state_dir="$(mktemp -d)"
 config_dir="${state_dir}/config"
+host_uid="$(id -u)"
+host_gid="$(id -g)"
 mkdir -p "${config_dir}"
 
 cleanup() {
     docker rm -f "${container}" >/dev/null 2>&1 || true
     docker run --rm --user 0:0 --entrypoint /bin/sh \
         -v "${state_dir}:/cleanup" "${image}" \
-        -c 'chown -R 0:0 /cleanup' >/dev/null 2>&1 || true
+        -c "chown -R ${host_uid}:${host_gid} /cleanup" >/dev/null 2>&1 || true
     rm -rf "${state_dir}"
 }
 trap cleanup EXIT
@@ -88,7 +90,7 @@ docker run --rm --env PUID=not-a-number --volume "${config_dir}:/config" "${imag
     echo "Invalid PUID unexpectedly succeeded" >&2
     exit 1
 }
-grep -q 'PUID must be a numeric user ID' "${state_dir}/invalid-output"
+grep -q 'PUID must be a numeric ID' "${state_dir}/invalid-output"
 
 readonly_dir="${state_dir}/readonly"
 mkdir -p "${readonly_dir}"
