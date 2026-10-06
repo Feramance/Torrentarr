@@ -43,32 +43,37 @@ else
 fi
 
 if [ "$(id -u)" -eq 0 ]; then
-    mkdir -p /config
-
-    data_dir=/config
-    if [ -n "${TORRENTARR_OVERRIDES_DATA_PATH:-}" ]; then
-        data_dir="${TORRENTARR_OVERRIDES_DATA_PATH}"
-    elif [ -n "${TORRENTARR_CONFIG:-}" ]; then
+    config_dir=/config
+    if [ -n "${TORRENTARR_CONFIG:-}" ]; then
         case "${TORRENTARR_CONFIG}" in
             /config|/config/*)
-                data_dir=/config
                 ;;
             */*)
-                data_dir="${TORRENTARR_CONFIG%/*}"
+                config_dir="${TORRENTARR_CONFIG%/*}"
                 ;;
         esac
     fi
-    if [ "${data_dir}" = "/" ]; then
-        echo "Torrentarr: data directory must not be the filesystem root." >&2
+    [ -n "${config_dir}" ] || config_dir=.
+    mkdir -p "${config_dir}"
+
+    data_override="${TORRENTARR_OVERRIDES_DATA_PATH:-${QBITRR_OVERRIDES_DATA_PATH:-}}"
+    data_dir="${data_override:-${config_dir}}"
+    mkdir -p "${data_dir}"
+
+    # Canonicalize before the root guard and recursive ownership repair. This
+    # prevents values such as /state/.. or a relative .. from escaping it.
+    config_dir="$(readlink -f -- "${config_dir}")"
+    data_dir="$(readlink -f -- "${data_dir}")"
+    if [ "${config_dir}" = "/" ] || [ "${data_dir}" = "/" ]; then
+        echo "Torrentarr: config and data directories must not resolve to the filesystem root." >&2
         exit 1
     fi
-    mkdir -p "${data_dir}"
 
     # Only the application state volume is normalized. Media/download mounts
     # can be large and are commonly shared with qBittorrent and the Arrs.
     if [ "${PUID}" -ne 0 ] || [ "${PGID}" -ne 0 ]; then
-        if ! chown -R "${PUID}:${PGID}" /config; then
-            echo "Torrentarr: warning: unable to apply ${PUID}:${PGID} ownership to all of /config; existing files may still require host-side permission repair." >&2
+        if ! chown -R "${PUID}:${PGID}" "${config_dir}"; then
+            echo "Torrentarr: warning: unable to apply ${PUID}:${PGID} ownership to all of ${config_dir}; existing files may still require host-side permission repair." >&2
         fi
     fi
 
@@ -81,14 +86,14 @@ if [ "$(id -u)" -eq 0 ]; then
         fi
     fi
 
-    if [ "${data_dir}" != "/config" ] && { [ "${PUID}" -ne 0 ] || [ "${PGID}" -ne 0 ]; }; then
+    if [ "${data_dir}" != "${config_dir}" ] && { [ "${PUID}" -ne 0 ] || [ "${PGID}" -ne 0 ]; }; then
         if ! chown -R "${PUID}:${PGID}" "${data_dir}"; then
             echo "Torrentarr: warning: unable to apply ${PUID}:${PGID} ownership to ${data_dir}; host-side permission repair may be required." >&2
         fi
     fi
 
-    if ! gosu "${PUID}:${PGID}" test -w "${data_dir}"; then
-        echo "Torrentarr: ${data_dir} is not writable by ${PUID}:${PGID}. Set PUID/PGID to the owner of the mounted data directory or fix its permissions." >&2
+    if ! gosu "${PUID}:${PGID}" test -w "${config_dir}" || ! gosu "${PUID}:${PGID}" test -w "${data_dir}"; then
+        echo "Torrentarr: config/data directories are not writable by ${PUID}:${PGID}. Set PUID/PGID to the owner of the mounted directories or fix their permissions." >&2
         exit 1
     fi
 
