@@ -62,8 +62,8 @@ if [ "$(id -u)" -eq 0 ]; then
 
     # Canonicalize before the root guard and recursive ownership repair. This
     # prevents values such as /state/.. or a relative .. from escaping it.
-    config_dir="$(readlink -f -- "${config_dir}")"
-    data_dir="$(readlink -f -- "${data_dir}")"
+    config_dir="$(readlink -f "${config_dir}")"
+    data_dir="$(readlink -f "${data_dir}")"
     if [ "${config_dir}" = "/" ] || [ "${data_dir}" = "/" ]; then
         echo "Torrentarr: config and data directories must not resolve to the filesystem root." >&2
         exit 1
