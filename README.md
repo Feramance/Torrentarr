@@ -26,6 +26,8 @@
 ```bash
 docker run -d \
   --name torrentarr \
+  -e PUID=1000 \
+  -e PGID=1000 \
   -e TZ=America/New_York \
   -p 6969:6969 \
   -v /path/to/appdata/torrentarr:/config \
@@ -42,6 +44,8 @@ services:
     container_name: torrentarr
     restart: unless-stopped
     environment:
+      PUID: 1000
+      PGID: 1000
       TZ: America/New_York
     ports:
       - "6969:6969"

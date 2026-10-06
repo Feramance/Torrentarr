@@ -1,0 +1,104 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+image="${1:-torrentarr:permission-smoke}"
+container="torrentarr-permission-smoke-$$"
+state_dir="$(mktemp -d)"
+config_dir="${state_dir}/config"
+mkdir -p "${config_dir}"
+
+cleanup() {
+    docker rm -f "${container}" >/dev/null 2>&1 || true
+    docker run --rm --user 0:0 --entrypoint /bin/sh \
+        -v "${state_dir}:/cleanup" "${image}" \
+        -c 'chown -R 0:0 /cleanup' >/dev/null 2>&1 || true
+    rm -rf "${state_dir}"
+}
+trap cleanup EXIT
+
+if [[ "${TORRENTARR_SMOKE_SKIP_BUILD:-0}" != "1" ]]; then
+    docker build --tag "${image}" .
+fi
+
+uid=12345
+gid=12346
+docker run --detach --name "${container}" \
+    --env "PUID=${uid}" \
+    --env "PGID=${gid}" \
+    --volume "${config_dir}:/config" \
+    "${image}" >/dev/null
+
+ready=0
+for _ in $(seq 1 60); do
+    if docker exec "${container}" curl --fail --silent http://127.0.0.1:6969/health >/dev/null 2>&1; then
+        ready=1
+        break
+    fi
+    sleep 1
+done
+if [[ "${ready}" != "1" ]]; then
+    docker logs "${container}"
+    echo "Docker permission smoke test: /health did not become ready" >&2
+    exit 1
+fi
+
+ids="$(docker exec "${container}" sh -c "awk '/^Uid:/{u=\$2} /^Gid:/{g=\$2} END{print u \" \" g}' /proc/1/status")"
+[[ "${ids}" == "${uid} ${gid}" ]] || {
+    echo "Expected PID 1 to run as ${uid}:${gid}, got ${ids}" >&2
+    exit 1
+}
+
+for path in /config /config/config.toml /config/torrentarr.db /config/logs /config/data-protection-keys; do
+    docker exec "${container}" test -e "${path}"
+    owner="$(docker exec "${container}" stat -c '%u:%g' "${path}")"
+    [[ "${owner}" == "${uid}:${gid}" ]] || {
+        echo "Expected ${path} to be owned by ${uid}:${gid}, got ${owner}" >&2
+        exit 1
+    }
+done
+
+docker restart "${container}" >/dev/null
+restarted_ready=0
+for _ in $(seq 1 60); do
+    if docker exec "${container}" curl --fail --silent http://127.0.0.1:6969/health >/dev/null 2>&1; then
+        restarted_ready=1
+        break
+    fi
+    sleep 1
+done
+if [[ "${restarted_ready}" != "1" ]]; then
+    docker logs "${container}"
+    echo "Docker permission smoke test: restart lost /health" >&2
+    exit 1
+fi
+
+version_output="$(docker run --rm "${image}" --version)"
+[[ -n "${version_output}" ]]
+
+generated_dir="${state_dir}/generated"
+mkdir -p "${generated_dir}"
+docker run --rm --env "PUID=${uid}" --env "PGID=${gid}" \
+    --volume "${generated_dir}:/config" "${image}" --gen-config >/dev/null
+test -s "${generated_dir}/config.toml"
+
+docker rm -f "${container}" >/dev/null
+docker run --rm --env PUID=not-a-number --volume "${config_dir}:/config" "${image}" --version \
+    >"${state_dir}/invalid-output" 2>&1 && {
+    cat "${state_dir}/invalid-output"
+    echo "Invalid PUID unexpectedly succeeded" >&2
+    exit 1
+}
+grep -q 'PUID must be a numeric user ID' "${state_dir}/invalid-output"
+
+readonly_dir="${state_dir}/readonly"
+mkdir -p "${readonly_dir}"
+docker run --rm --env "PUID=${uid}" --env "PGID=${gid}" \
+    --volume "${readonly_dir}:/config:ro" "${image}" --version \
+    >"${state_dir}/readonly-output" 2>&1 && {
+    cat "${state_dir}/readonly-output"
+    echo "Read-only /config unexpectedly succeeded" >&2
+    exit 1
+}
+grep -q '/config is not writable' "${state_dir}/readonly-output"
+
+echo "Docker permission smoke test passed for ${uid}:${gid}"

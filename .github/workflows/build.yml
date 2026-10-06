@@ -121,6 +121,19 @@ jobs:
         path: src/*/bin/Release/
         retention-days: 7
 
+  docker-permissions:
+    name: Docker permission smoke test
+    needs: build
+    runs-on: ubuntu-latest
+    if: github.event_name != 'pull_request' || github.event.pull_request.draft == false
+
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v7
+
+    - name: Run Docker permission smoke test
+      run: bash scripts/smoke-docker-permissions.sh
+
   docker-nightly:
     name: Build and push Docker image (nightly)
     needs: build

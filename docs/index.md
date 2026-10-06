@@ -101,6 +101,8 @@
     ```bash
     docker run -d \
       --name torrentarr \
+      -e PUID=1000 \
+      -e PGID=1000 \
       -p 6969:6969 \
       -v /path/to/config:/config \
       feramance/torrentarr:latest
@@ -113,6 +115,9 @@
       torrentarr:
         image: feramance/torrentarr:latest
         container_name: torrentarr
+        environment:
+          PUID: 1000
+          PGID: 1000
         ports:
           - "6969:6969"
         volumes:
