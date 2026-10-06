@@ -45,6 +45,25 @@ fi
 if [ "$(id -u)" -eq 0 ]; then
     mkdir -p /config
 
+    data_dir=/config
+    if [ -n "${TORRENTARR_OVERRIDES_DATA_PATH:-}" ]; then
+        data_dir="${TORRENTARR_OVERRIDES_DATA_PATH}"
+    elif [ -n "${TORRENTARR_CONFIG:-}" ]; then
+        case "${TORRENTARR_CONFIG}" in
+            /config|/config/*)
+                data_dir=/config
+                ;;
+            */*)
+                data_dir="${TORRENTARR_CONFIG%/*}"
+                ;;
+        esac
+    fi
+    if [ "${data_dir}" = "/" ]; then
+        echo "Torrentarr: data directory must not be the filesystem root." >&2
+        exit 1
+    fi
+    mkdir -p "${data_dir}"
+
     # Only the application state volume is normalized. Media/download mounts
     # can be large and are commonly shared with qBittorrent and the Arrs.
     if [ "${PUID}" -ne 0 ] || [ "${PGID}" -ne 0 ]; then
@@ -62,8 +81,14 @@ if [ "$(id -u)" -eq 0 ]; then
         fi
     fi
 
-    if ! gosu "${PUID}:${PGID}" test -w /config; then
-        echo "Torrentarr: /config is not writable by ${PUID}:${PGID}. Set PUID/PGID to the owner of the mounted config directory or fix its permissions." >&2
+    if [ "${data_dir}" != "/config" ] && { [ "${PUID}" -ne 0 ] || [ "${PGID}" -ne 0 ]; }; then
+        if ! chown -R "${PUID}:${PGID}" "${data_dir}"; then
+            echo "Torrentarr: warning: unable to apply ${PUID}:${PGID} ownership to ${data_dir}; host-side permission repair may be required." >&2
+        fi
+    fi
+
+    if ! gosu "${PUID}:${PGID}" test -w "${data_dir}"; then
+        echo "Torrentarr: ${data_dir} is not writable by ${PUID}:${PGID}. Set PUID/PGID to the owner of the mounted data directory or fix its permissions." >&2
         exit 1
     fi
 
