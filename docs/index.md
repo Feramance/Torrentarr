@@ -101,8 +101,8 @@
     ```bash
     docker run -d \
       --name torrentarr \
-      -e PUID=1000 \
-      -e PGID=1000 \
+      -e PUID="$(id -u)" \
+      -e PGID="$(id -g)" \
       -p 6969:6969 \
       -v /path/to/config:/config \
       feramance/torrentarr:latest
@@ -116,6 +116,7 @@
         image: feramance/torrentarr:latest
         container_name: torrentarr
         environment:
+          # Replace with the owner IDs of the host directory mounted at /config.
           PUID: 1000
           PGID: 1000
         ports:

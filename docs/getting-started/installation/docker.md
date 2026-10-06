@@ -78,8 +78,10 @@ Most production installs should use `:stable` or a pinned `v…` tag. Use `:late
 | `TZ` | `UTC` | Timezone (e.g., `America/New_York`, `Europe/London`) |
 
 `PUID` and `PGID` should match the host user and group that own the directory
-mounted at `/config` (`id -u` and `id -g` on Linux). The image repairs ownership
-inside `/config` at startup, then runs Torrentarr as that non-root identity. Do
+mounted at `/config` (`id -u` and `id -g` on Linux). The image attempts to repair
+ownership inside `/config` at startup, then runs Torrentarr as that non-root identity. If
+the host filesystem rejects part of the repair, existing files may still require
+host-side permission changes. Do
 not use a `user:` override unless you intentionally want Docker to provide the
 runtime identity itself; a non-root override prevents the entrypoint from
 repairing ownership.

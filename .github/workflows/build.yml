@@ -130,13 +130,17 @@ jobs:
     steps:
     - name: Checkout code
       uses: actions/checkout@v7
+      with:
+        persist-credentials: false
 
     - name: Run Docker permission smoke test
       run: bash scripts/smoke-docker-permissions.sh
 
   docker-nightly:
     name: Build and push Docker image (nightly)
-    needs: build
+    needs:
+    - build
+    - docker-permissions
     runs-on: ubuntu-latest
     if: >
       (
@@ -206,7 +210,9 @@ jobs:
 
   docker-pr:
     name: Build and push Docker image (PR)
-    needs: build
+    needs:
+    - build
+    - docker-permissions
     runs-on: ubuntu-latest
     if: github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name == github.repository
     permissions:

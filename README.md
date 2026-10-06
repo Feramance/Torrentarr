@@ -26,8 +26,8 @@
 ```bash
 docker run -d \
   --name torrentarr \
-  -e PUID=1000 \
-  -e PGID=1000 \
+  -e PUID="$(id -u)" \
+  -e PGID="$(id -g)" \
   -e TZ=America/New_York \
   -p 6969:6969 \
   -v /path/to/appdata/torrentarr:/config \
@@ -44,6 +44,7 @@ services:
     container_name: torrentarr
     restart: unless-stopped
     environment:
+      # Replace with the owner IDs of the host directory mounted at /config.
       PUID: 1000
       PGID: 1000
       TZ: America/New_York
