@@ -51,7 +51,11 @@ ids="$(docker exec "${container}" sh -c "awk '/^Uid:/{u=\$2} /^Gid:/{g=\$2} END{
 }
 
 for path in /config /config/config.toml /config/torrentarr.db /config/logs /config/data-protection-keys /data; do
-    docker exec "${container}" test -e "${path}"
+    docker exec "${container}" test -e "${path}" || {
+        docker logs "${container}"
+        echo "Expected ${path} to exist" >&2
+        exit 1
+    }
     owner="$(docker exec "${container}" stat -c '%u:%g' "${path}")"
     [[ "${owner}" == "${uid}:${gid}" ]] || {
         echo "Expected ${path} to be owned by ${uid}:${gid}, got ${owner}" >&2
