@@ -8,7 +8,7 @@ import sys
 import urllib.request
 from copy import deepcopy
 
-QBITRR_REF = os.environ.get("QBITRR_OPENAPI_REF", "v5.14.5-1")
+QBITRR_REF = os.environ.get("QBITRR_OPENAPI_REF", "v5.14.6-1")
 OUT_PATH = "docs/assets/openapi.json"
 
 EXTENSION_PATHS = {

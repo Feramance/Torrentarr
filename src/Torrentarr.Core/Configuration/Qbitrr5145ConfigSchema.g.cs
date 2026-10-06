@@ -2,11 +2,11 @@
 #nullable enable
 namespace Torrentarr.Core.Configuration;
 
-internal static class Qbitrr5145ConfigSchema
+internal static class Qbitrr5146ConfigSchema
 {
     internal static readonly IReadOnlyList<ConfigSchemaField> Settings =
     [
-        new("Settings", new[] { "ConfigVersion" }, "ConfigVersion", "Config Version", "text", "6.14.6", new[] { "Internal config schema version - DO NOT MODIFY", "This is managed automatically by qBitrr for config migrations" }, false, false, false, false, true),
+        new("Settings", new[] { "ConfigVersion" }, "ConfigVersion", "Config Version", "text", "6.15.2", new[] { "Internal config schema version - DO NOT MODIFY", "This is managed automatically by qBitrr for config migrations" }, false, false, false, false, true),
         new("Settings", new[] { "ConsoleLevel" }, "ConsoleLevel", "Console Level", "select", "INFO", "Level of logging; One of CRITICAL, ERROR, WARNING, NOTICE, INFO, DEBUG, TRACE", true, false, true, true, false, options: new[] { "CRITICAL", "ERROR", "WARNING", "NOTICE", "INFO", "DEBUG", "TRACE" }),
         new("Settings", new[] { "Logging" }, "Logging", "Logging", "checkbox", true, "Enable logging to files", false, false, true, false, true),
         new("Settings", new[] { "CompletedDownloadFolder" }, "CompletedDownloadFolder", "Completed Download Folder", "text", "CHANGE_ME", "Folder where your completed downloads are put into. Can be found in qBitTorrent -> Options -> Downloads -> Default Save Path (Please note, replace all '\\' with '/')", true, false, true, true, false),
@@ -77,7 +77,7 @@ internal static class Qbitrr5145ConfigSchema
         new("qBit", new[] { "CategorySeeding", "HitAndRunMinimumDownloadPercent" }, "CategorySeeding.HitAndRunMinimumDownloadPercent", "Hit and Run Minimum Download Percent", "number", 10, "Minimum download percentage before a torrent is considered for HnR (0-100, default 10)", false, false, true, false, false, minimum: 0, maximum: 100),
         new("qBit", new[] { "CategorySeeding", "HitAndRunPartialSeedRatio" }, "CategorySeeding.HitAndRunPartialSeedRatio", "Hit and Run Partial Seed Ratio", "number", 1.0, "Minimum ratio for partial downloads (>=HitAndRunMinimumDownloadPercent% but <100% complete)", false, false, true, false, false),
         new("qBit", new[] { "CategorySeeding", "TrackerUpdateBuffer" }, "CategorySeeding.TrackerUpdateBuffer", "Tracker Update Buffer", "duration", 0, "Extra seconds buffer for tracker stats lag (0 = disabled)", false, false, true, false, false, nativeUnit: "seconds"),
-        new("qBit", new[] { "CategorySeeding", "StalledDelay" }, "CategorySeeding.StalledDelay", "Stalled Delay", "duration", -1, "Maximum time stalled downloads can sit before removal, in minutes (-1 = disabled, 0 = infinite).", false, false, true, false, false, nativeUnit: "minutes", allowNegative: true),
+        new("qBit", new[] { "CategorySeeding", "StalledDelay" }, "CategorySeeding.StalledDelay", "Stalled Delay", "duration", -1, "Stalled cleanup grace period in minutes (-1 = infinite, 0 = immediate cleanup).", false, false, true, false, false, nativeUnit: "minutes", allowNegative: true),
         new("qBit", new[] { "CategorySeeding", "IgnoreTorrentsYoungerThan" }, "CategorySeeding.IgnoreTorrentsYoungerThan", "Ignore Torrents Younger Than", "duration", 180, "Ignore torrents younger than this (seconds). Stalled removal also requires last_activity older than this.", false, false, true, false, false, nativeUnit: "seconds"),
     ];
 
@@ -133,7 +133,7 @@ internal static class Qbitrr5145ConfigSchema
         new("Arr", new[] { "Torrent", "MaximumETA" }, "Torrent.MaximumETA", "Maximum ETA", "duration", -1, new[] { "Maximum allowed remaining ETA for torrent completion (in seconds: 3600 = 1 Hour)", "A positive tracker MaximumETA overrides this value; tracker -1/unset does not clear this limit", "Unlimited only when neither this setting nor a matched tracker sets a positive MaximumETA" }, false, false, true, null, null, nativeUnit: "seconds", allowNegative: true),
         new("Arr", new[] { "Torrent", "MaximumDeletablePercentage" }, "Torrent.MaximumDeletablePercentage", "Maximum Deletable Percentage", "number", 0.99d, "Do not delete torrents with higher completion percentage than this setting (0.5 = 50%, 1.0 = 100%)", false, false, true, null, null, minimum: 0, maximum: 1),
         new("Arr", new[] { "Torrent", "DoNotRemoveSlow" }, "Torrent.DoNotRemoveSlow", "Do Not Remove Slow", "checkbox", true, "Ignore slow torrents.", false, false, true, null, null),
-        new("Arr", new[] { "Torrent", "StalledDelay" }, "Torrent.StalledDelay", "Stalled Delay", "duration", 15, "Maximum allowed time for allowed stalled torrents in minutes (-1 = Disabled, 0 = Infinite)", false, false, true, null, null, nativeUnit: "minutes", allowNegative: true),
+        new("Arr", new[] { "Torrent", "StalledDelay" }, "Torrent.StalledDelay", "Stalled Delay", "duration", 15, "Stalled cleanup grace period in minutes (-1 = Infinite, 0 = immediate cleanup)", false, false, true, null, null, nativeUnit: "minutes", allowNegative: true),
         new("Arr", new[] { "Torrent", "ReSearchStalled" }, "Torrent.ReSearchStalled", "Re-Search Stalled", "checkbox", false, "Re-search stalled torrents when StalledDelay is enabled and you want to re-search before removing the stalled torrent, or only after the torrent is removed.", false, false, true, null, null),
         new("Arr", new[] { "Torrent", "SeedingMode", "DownloadRateLimitPerTorrent" }, "Torrent.SeedingMode.DownloadRateLimitPerTorrent", "Download Rate Limit", "number", -1, new[] { "Set the maximum allowed download rate for torrents", "Set this value to -1 to disabled it", "Note that if you set the DownloadRateLimit on a tracker basis that value is favoured over this value" }, false, false, true, null, null, allowNegative: true),
         new("Arr", new[] { "Torrent", "SeedingMode", "UploadRateLimitPerTorrent" }, "Torrent.SeedingMode.UploadRateLimitPerTorrent", "Upload Rate Limit", "number", -1, new[] { "Set the maximum allowed upload rate for torrents", "Set this value to -1 to disabled it", "Note that if you set the UploadRateLimit on a tracker basis that value is favoured over this value" }, false, false, true, null, null, allowNegative: true),

@@ -368,7 +368,7 @@ Configure how Torrentarr evaluates and manages torrents.
 - **Maximum ETA (s)**: Torrents with ETA above this are considered stalled (default: 604800 = 7 days)
 - **Maximum Deletable Percentage**: Upper bound completion % for deletion (0.99 = 99%)
 - **Do Not Remove Slow**: Ignore slow torrents when pruning
-- **Stalled Delay (min)**: Minutes to allow stalled torrents before action (-1 = disabled, 0 = infinite)
+- **Stalled Delay (min)**: Minutes to allow stalled torrents before action (-1 = infinite grace, 0 = immediate cleanup)
 - **Re-search Stalled**: Re-run searches for stalled torrents
 
 **Tracker Management**:

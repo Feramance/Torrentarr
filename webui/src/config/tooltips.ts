@@ -169,7 +169,7 @@ export const FIELD_TOOLTIPS: Record<string, string> = {
     "Upper bound for completion percentage when deciding to delete a torrent.",
   "Torrent.DoNotRemoveSlow": "Ignore slow torrents when pruning.",
   "Torrent.StalledDelay":
-    "Minutes to allow stalled torrents before taking action (-1 disables, 0 is infinite).",
+    "Minutes to allow stalled torrents before taking action (-1 is infinite grace, 0 is immediate cleanup).",
   "Torrent.ReSearchStalled":
     "Re-run searches for stalled torrents before or after removal depending on configuration.",
   "Torrent.RemoveDeadTrackers": "Remove trackers flagged as dead.",
@@ -199,7 +199,7 @@ export const FIELD_TOOLTIPS: Record<string, string> = {
   "CategorySeeding.TrackerUpdateBuffer":
     "Extra seconds buffer for tracker stats lag in managed categories.",
   "CategorySeeding.StalledDelay":
-    "Minutes to allow stalled torrents in managed categories before taking action.",
+    "Minutes to allow stalled torrents in managed categories before taking action (-1 is infinite grace, 0 is immediate cleanup).",
   "CategorySeeding.IgnoreTorrentsYoungerThan":
     "Ignore torrents younger than this many seconds in managed categories when evaluating failures.",
   HitAndRunMode:
