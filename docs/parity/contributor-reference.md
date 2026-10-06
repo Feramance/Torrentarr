@@ -161,7 +161,7 @@ Compare to upstream on the [pinned tag](#upstream-qbitrr-baseline) for **behavio
 
 **Pin:** use the [Upstream baseline](#upstream-qbitrr-baseline) tag when fetching upstream `qBitrr/openapi.json`.
 
-Torrentarr: [docs/assets/openapi.json](../assets/openapi.json), served at `/api/openapi.json` and `/web/openapi.json`; interactive docs at `/api/docs` and `/web/docs`. Regenerate from the stable upstream baseline with `python3 scripts/generate-openapi-from-qbitrr.py`. CI drift check: `bash scripts/check-openapi-drift.sh` defaults to `v5.14.5-1`; set `QBITRR_OPENAPI_REF=master` only for the scheduled drift audit.
+Torrentarr: [docs/assets/openapi.json](../assets/openapi.json), served at `/api/openapi.json` and `/web/openapi.json`; interactive docs at `/api/docs` and `/web/docs`. Regenerate from the stable upstream baseline with `python3 scripts/generate-openapi-from-qbitrr.py`. CI drift check: `bash scripts/check-openapi-drift.sh` defaults to `v5.14.6-1`; set `QBITRR_OPENAPI_REF=master` only for the scheduled drift audit.
 
 **When** changing WebUI DTOs/controllers: diff paths/methods for `/web/*`, `/api/*`, auth, health.
 

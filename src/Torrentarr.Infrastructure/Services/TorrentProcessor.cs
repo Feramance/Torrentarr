@@ -887,7 +887,7 @@ public class TorrentProcessor : ITorrentProcessor
 
                 // If ReSearchStalled is enabled, blocklist + re-search via Arr API
                 // (qBitrr: process_entries([torrent.hash]) + _process_failed_individual)
-                if (arrCfg?.Torrent.ReSearchStalled == true && _importService != null)
+                if (stalledDelay != -1 && arrCfg?.Torrent.ReSearchStalled == true && _importService != null)
                 {
                     _logger.LogDebug("Stalled torrent [{Name}] — ReSearchStalled enabled; blocklisting + re-search",
                         torrent.Name);
