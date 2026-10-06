@@ -28,7 +28,11 @@ docker run --detach --name "${container}" \
     --env "PUID=${uid}" \
     --env "PGID=${gid}" \
     --volume "${config_dir}:/config" \
-    "${image}" >/dev/null
+    "${image}" >"${state_dir}/container-id" 2>"${state_dir}/startup-error" || {
+    cat "${state_dir}/startup-error"
+    echo "Docker permission smoke test: container failed to start" >&2
+    exit 1
+}
 
 ready=0
 for _ in $(seq 1 60); do
