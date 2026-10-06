@@ -426,33 +426,18 @@ public class ConfigurationLoader
     private static bool SwapStalledDelayValues(TomlTable table)
     {
         var changed = false;
-        if (table.TryGetValue("StalledDelay", out var value))
+        if (table.TryGetValue("StalledDelay", out var value)
+            && value?.ToString()?.Trim() == "0")
         {
-            var normalized = value?.ToString()?.Trim();
-            if (normalized == "0")
-            {
-                table["StalledDelay"] = -1;
-                changed = true;
-            }
+            table["StalledDelay"] = -1;
+            changed = true;
         }
 
-        foreach (var itemValue in table.Values)
+        if (table.TryGetValue("Categories", out var categoriesObj)
+            && categoriesObj is TomlTableArray categories)
         {
-            if (itemValue is TomlTable child)
-                changed |= SwapStalledDelayValues(child);
-            else if (itemValue is TomlTableArray tableArray)
-            {
-                foreach (var childItem in tableArray)
-                    changed |= SwapStalledDelayValues(childItem);
-            }
-            else if (itemValue is TomlArray array)
-            {
-                foreach (var item in array)
-                {
-                    if (item is TomlTable childItem)
-                        changed |= SwapStalledDelayValues(childItem);
-                }
-            }
+            foreach (var category in categories)
+                changed |= SwapStalledDelayValues(category);
         }
 
         return changed;

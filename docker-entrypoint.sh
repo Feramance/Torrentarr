@@ -60,6 +60,11 @@ if [ "$(id -u)" -eq 0 ]; then
     data_dir="${data_override:-${config_dir}}"
     mkdir -p "${data_dir}"
 
+    needs_chown=1
+    if [ "${PUID}" -eq 0 ] && [ "${PGID}" -eq 0 ]; then
+        needs_chown=0
+    fi
+
     # Canonicalize before the root guard and recursive ownership repair. This
     # prevents values such as /state/.. or a relative .. from escaping it.
     config_dir="$(readlink -f "${config_dir}")"
@@ -71,7 +76,7 @@ if [ "$(id -u)" -eq 0 ]; then
 
     # Only the application state volume is normalized. Media/download mounts
     # can be large and are commonly shared with qBittorrent and the Arrs.
-    if [ "${PUID}" -ne 0 ] || [ "${PGID}" -ne 0 ]; then
+    if [ "${needs_chown}" -eq 1 ]; then
         if ! chown -R "${PUID}:${PGID}" "${config_dir}"; then
             echo "Torrentarr: warning: unable to apply ${PUID}:${PGID} ownership to all of ${config_dir}; existing files may still require host-side permission repair." >&2
         fi
@@ -80,13 +85,13 @@ if [ "$(id -u)" -eq 0 ]; then
     # /data is a declared volume used by the documented download layouts. Fix
     # only its mountpoint so bind-mounted media trees are never traversed.
     mkdir -p /data
-    if [ "${PUID}" -ne 0 ] || [ "${PGID}" -ne 0 ]; then
+    if [ "${needs_chown}" -eq 1 ]; then
         if ! chown "${PUID}:${PGID}" /data; then
             echo "Torrentarr: warning: unable to apply ${PUID}:${PGID} ownership to /data; host-side permission repair may be required." >&2
         fi
     fi
 
-    if [ "${data_dir}" != "${config_dir}" ] && { [ "${PUID}" -ne 0 ] || [ "${PGID}" -ne 0 ]; }; then
+    if [ "${data_dir}" != "${config_dir}" ] && [ "${needs_chown}" -eq 1 ]; then
         if ! chown -R "${PUID}:${PGID}" "${data_dir}"; then
             echo "Torrentarr: warning: unable to apply ${PUID}:${PGID} ownership to ${data_dir}; host-side permission repair may be required." >&2
         fi
