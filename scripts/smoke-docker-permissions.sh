@@ -48,7 +48,11 @@ if [[ "${ready}" != "1" ]]; then
     exit 1
 fi
 
-ids="$(docker exec "${container}" sh -c "awk '/^Uid:/{u=\$2} /^Gid:/{g=\$2} END{print u \" \" g}' /proc/1/status")"
+ids="$(docker exec "${container}" sh -c "awk '/^Uid:/{u=\$2} /^Gid:/{g=\$2} END{print u \" \" g}' /proc/1/status")" || {
+    docker logs "${container}"
+    echo "Docker permission smoke test: unable to inspect PID 1 identity" >&2
+    exit 1
+}
 [[ "${ids}" == "${uid} ${gid}" ]] || {
     echo "Expected PID 1 to run as ${uid}:${gid}, got ${ids}" >&2
     exit 1
@@ -60,7 +64,11 @@ for path in /config /config/config.toml /config/torrentarr.db /config/logs /conf
         echo "Expected ${path} to exist" >&2
         exit 1
     }
-    owner="$(docker exec "${container}" stat -c '%u:%g' "${path}")"
+    owner="$(docker exec "${container}" stat -c '%u:%g' "${path}")" || {
+        docker logs "${container}"
+        echo "Docker permission smoke test: unable to inspect ${path}" >&2
+        exit 1
+    }
     [[ "${owner}" == "${uid}:${gid}" ]] || {
         echo "Expected ${path} to be owned by ${uid}:${gid}, got ${owner}" >&2
         exit 1
