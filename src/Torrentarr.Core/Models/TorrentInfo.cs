@@ -60,7 +60,15 @@ public class TorrentInfo
     /// Not from JSON — set by the code that fetches the torrent from a specific qBit client.
     /// </summary>
     [JsonIgnore]
-    public string QBitInstanceName { get; set; } = "qBit";
+    public string ClientInstanceId { get; set; } = "qBit";
+
+    [JsonIgnore]
+    [Obsolete("Use ClientInstanceId. This alias is retained for qBitrr compatibility.")]
+    public string QBitInstanceName
+    {
+        get => ClientInstanceId;
+        set => ClientInstanceId = value;
+    }
 
     [JsonProperty("content_path")]
     public string ContentPath { get; set; } = "";
@@ -79,6 +87,12 @@ public class TorrentInfo
 
     [JsonProperty("super_seeding")]
     public bool SuperSeeding { get; set; }
+
+    [JsonProperty("private")]
+    public bool? IsPrivate { get; set; }
+
+    [JsonProperty("num_complete")]
+    public int CompletePeers { get; set; }
 
     /// <summary>
     /// Check if torrent state indicates uploading/seeding.

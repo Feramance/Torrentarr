@@ -1,6 +1,7 @@
 using System.Collections.Concurrent;
 using Torrentarr.Core;
 using Torrentarr.Core.Configuration;
+using Torrentarr.Core.Interfaces;
 using Torrentarr.Core.Services;
 using Torrentarr.Infrastructure.ApiClients.Arr;
 using Torrentarr.Infrastructure.ApiClients.QBittorrent;
@@ -52,8 +53,9 @@ public class ArrWorkerManager : BackgroundService
         new(StringComparer.OrdinalIgnoreCase);
 
     // Cached QBit clients for count polling — keyed by qBit instance name
-    private readonly ConcurrentDictionary<string, QBittorrentClient> _qbitClientCache =
+    private readonly ConcurrentDictionary<string, ITorrentClient> _qbitClientCache =
         new(StringComparer.OrdinalIgnoreCase);
+    private readonly ITorrentClientFactory _torrentClientFactory;
 
     // §4: Process restart limits (qBitrr parity): per-instance restart timestamps for rate limiting
     private readonly ConcurrentDictionary<string, List<DateTime>> _restartTimestamps =
@@ -71,7 +73,8 @@ public class ArrWorkerManager : BackgroundService
         TorrentarrConfig config,
         ProcessStateManager stateManager,
         IConnectivityService connectivityService,
-        SearchYearCursor? yearCursor = null)
+        SearchYearCursor? yearCursor = null,
+        ITorrentClientFactory? torrentClientFactory = null)
     {
         _logger = logger;
         _scopeFactory = scopeFactory;
@@ -79,6 +82,7 @@ public class ArrWorkerManager : BackgroundService
         _stateManager = stateManager;
         _connectivityService = connectivityService;
         _yearCursor = yearCursor ?? new SearchYearCursor();
+        _torrentClientFactory = torrentClientFactory ?? new QBittorrentTorrentClientFactory();
     }
 
     protected override async Task ExecuteAsync(CancellationToken stoppingToken)
@@ -602,13 +606,15 @@ public class ArrWorkerManager : BackgroundService
                 queueCount = queue?.TotalRecords ?? 0;
             }
 
-            foreach (var (qbitName, qbitCfg) in _config.QBitInstances)
+            foreach (var (qbitName, qbitCfg) in _config.GetAllTorrentClients())
             {
                 if (qbitCfg.Disabled || qbitCfg.Host == "CHANGE_ME")
                     continue;
 
+                if (!qbitCfg.Type.Equals(_torrentClientFactory.Type, StringComparison.OrdinalIgnoreCase))
+                    continue;
                 var qbitClient = _qbitClientCache.GetOrAdd(qbitName, _ =>
-                    new QBittorrentClient(qbitCfg.Host, qbitCfg.Port, qbitCfg.UserName, qbitCfg.Password, qbitCfg.SkipTLSVerify));
+                    _torrentClientFactory.Create(qbitName, qbitCfg));
                 try
                 {
                     var loginSuccess = await qbitClient.LoginAsync(ct);

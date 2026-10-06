@@ -35,7 +35,7 @@ public static class CategorySeedingApiResolver
     public static CategorySeedingApiConfig? ResolveAggregate(
         TorrentarrConfig config,
         string qbitSection,
-        QBitConfig qbitConfig,
+        TorrentClientInstanceConfig qbitConfig,
         string configuredCategory,
         IReadOnlyCollection<TorrentInfo> torrents)
     {
@@ -54,7 +54,7 @@ public static class CategorySeedingApiResolver
     public static CategorySeedingApiPolicy? ResolveAggregatePolicy(
         TorrentarrConfig config,
         string qbitSection,
-        QBitConfig qbitConfig,
+        TorrentClientInstanceConfig qbitConfig,
         string configuredCategory,
         IReadOnlyCollection<TorrentInfo> torrents)
     {
