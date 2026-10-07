@@ -339,8 +339,7 @@ function useSonarrInstancePipeline(
             "error",
           );
         }
-        if (gen === fetchGenRef.current)
-          setEmptyStateReady(true);
+        if (gen === fetchGenRef.current) setEmptyStateReady(true);
       } finally {
         if (showLoading && gen === fetchGenRef.current) setLoading(false);
       }

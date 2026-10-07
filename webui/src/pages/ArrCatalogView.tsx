@@ -54,7 +54,9 @@ export function ArrCatalogView({
       },
       (error: unknown) => {
         if (!cancelled)
-          setLoadError(error instanceof Error ? error.message : "Failed to load catalog");
+          setLoadError(
+            error instanceof Error ? error.message : "Failed to load catalog",
+          );
       },
     );
     return () => {
@@ -63,7 +65,10 @@ export function ArrCatalogView({
   }, [kind]);
 
   if (!loaded || loaded.kind !== kind) {
-    if (loadError) return <div className="hint">{loadError} — reload the page to retry.</div>;
+    if (loadError)
+      return (
+        <div className="hint">{loadError} — reload the page to retry.</div>
+      );
     return <div className="hint">Loading catalog…</div>;
   }
 

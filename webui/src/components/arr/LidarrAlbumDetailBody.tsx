@@ -85,7 +85,8 @@ export function LidarrAlbumDetailBody({
               {tracks.map((track) => {
                 const rawTrackReason = (track as { reason?: unknown }).reason;
                 const trackReason =
-                  typeof rawTrackReason === "string" && rawTrackReason.trim() !== ""
+                  typeof rawTrackReason === "string" &&
+                  rawTrackReason.trim() !== ""
                     ? rawTrackReason.trim()
                     : reason ?? null;
                 return (
