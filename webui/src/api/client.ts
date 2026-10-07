@@ -368,23 +368,29 @@ export async function getLidarrArtists(
 }
 
 export function getRadarrOpenMovieUrl(
-  _category: string,
-  _id: number,
+  category: string,
+  id: number,
 ): string | null {
+  void category;
+  void id;
   return null;
 }
 
 export function getSonarrOpenSeriesUrl(
-  _category: string,
-  _id: number,
+  category: string,
+  id: number,
 ): string | null {
+  void category;
+  void id;
   return null;
 }
 
 export function getLidarrOpenArtistUrl(
-  _category: string,
-  _id: number,
+  category: string,
+  id: number,
 ): string | null {
+  void category;
+  void id;
   return null;
 }
 

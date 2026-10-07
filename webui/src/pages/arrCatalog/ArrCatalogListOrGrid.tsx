@@ -94,6 +94,9 @@ export function ArrCatalogListOrGrid<TRow extends Hashable>({
   iconGridRef,
   renderIconTile,
 }: ArrCatalogListOrGridProps<TRow>): JSX.Element | null {
+  void rowOrder;
+  void rowsStore;
+  void onRowSelect;
   if (!rows.length) {
     return null;
   }
