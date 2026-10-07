@@ -14,7 +14,7 @@ internal sealed class TorrentClientConfigDocument
 public class ConfigurationLoader
 {
     /// <summary>Expected config schema version (qBitrr parity). Used for validation and mismatch warning.</summary>
-    public const string ExpectedConfigVersion = "6.15.1";
+    public const string ExpectedConfigVersion = "6.15.2";
 
     /// <summary>
     /// TEST USE ONLY. When set by test fixtures, GetDefaultConfigPath() returns this instead of env/defaults.
@@ -357,6 +357,11 @@ public class ConfigurationLoader
         if (MigrateHnrMode(root))
             changed = true;
 
+        // qBitrr 5.14.6 changed StalledDelay sentinels: -1 is infinite grace,
+        // 0 is immediate cleanup. Swap legacy values once before parsing.
+        if (MigrateStalledDelaySentinels(root, currentVersion))
+            changed = true;
+
         // Migration 7: Expand unmodified Readarr ebook-only allowlists to include audiobook extensions
         if (MigrateReadarrEbookAllowlist(root))
             changed = true;
@@ -377,6 +382,61 @@ public class ConfigurationLoader
                 // Version-only bump must persist; otherwise needsMigration stays true every startup.
                 changed = true;
             }
+        }
+
+        return changed;
+    }
+
+    private static bool MigrateStalledDelaySentinels(TomlTable root, Version currentVersion)
+    {
+        // qBitrr configs use the 5.x version namespace; Torrentarr configs use
+        // the +1 major 6.x namespace. Do not reinterpret an already-migrated
+        // qBitrr 5.14.6+ config imported into Torrentarr.
+        var legacy = currentVersion.Major == 5
+            ? currentVersion < new Version(5, 14, 6)
+            : currentVersion < new Version(6, 15, 2);
+        if (!legacy)
+            return false;
+
+        var changed = false;
+        foreach (var (name, value) in root)
+        {
+            if (value is not TomlTable section)
+                continue;
+
+            if (ArrSectionHelper.IsArrSection(name)
+                && section.TryGetValue("Torrent", out var torrentObj)
+                && torrentObj is TomlTable torrent)
+            {
+                changed |= SwapStalledDelayValues(torrent);
+            }
+
+            if ((name.Equals("qBit", StringComparison.OrdinalIgnoreCase)
+                 || name.StartsWith("qBit-", StringComparison.OrdinalIgnoreCase))
+                && section.TryGetValue("CategorySeeding", out var seedingObj)
+                && seedingObj is TomlTable seeding)
+            {
+                changed |= SwapStalledDelayValues(seeding);
+            }
+        }
+
+        return changed;
+    }
+
+    private static bool SwapStalledDelayValues(TomlTable table)
+    {
+        var changed = false;
+        if (table.TryGetValue("StalledDelay", out var value)
+            && value?.ToString()?.Trim() == "0")
+        {
+            table["StalledDelay"] = -1;
+            changed = true;
+        }
+
+        if (table.TryGetValue("Categories", out var categoriesObj))
+        {
+            foreach (var category in GetTrackerTables(categoriesObj))
+                changed |= SwapStalledDelayValues(category);
         }
 
         return changed;

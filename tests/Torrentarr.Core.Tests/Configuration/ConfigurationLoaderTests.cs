@@ -62,6 +62,50 @@ public class ConfigurationLoaderTests : IDisposable
     }
 
     [Fact]
+    public void Load_MigratesLegacyStalledDelaySentinels_AndPreservesBackup()
+    {
+        WriteToml("""
+            [Settings]
+            ConfigVersion = "6.15.1"
+
+            [qBit.CategorySeeding]
+            StalledDelay = "-1"
+
+            [[qBit.CategorySeeding.Categories]]
+            Name = "movies"
+            StalledDelay = 0
+
+            [Radarr-Movies.Torrent]
+            StalledDelay = 0
+            """);
+
+        var config = new ConfigurationLoader(_tempFilePath).Load();
+
+        config.QBitInstances["qBit"].CategorySeeding.StalledDelay.Should().Be(-1);
+        config.QBitInstances["qBit"].CategorySeeding.Categories.Should().ContainSingle()
+            .Which.StalledDelay.Should().Be(-1);
+        config.ArrInstances["Radarr-Movies"].Torrent.StalledDelay.Should().Be(-1);
+        File.Exists(_tempFilePath + ".bak").Should().BeTrue();
+        File.ReadAllText(_tempFilePath).Should().Contain("ConfigVersion = \"6.15.2\"");
+    }
+
+    [Fact]
+    public void Load_DoesNotRemigrateQbitrr5146Config()
+    {
+        WriteToml("""
+            [Settings]
+            ConfigVersion = "5.14.6"
+
+            [Radarr-Movies.Torrent]
+            StalledDelay = -1
+            """);
+
+        var config = new ConfigurationLoader(_tempFilePath).Load();
+
+        config.ArrInstances["Radarr-Movies"].Torrent.StalledDelay.Should().Be(-1);
+    }
+
+    [Fact]
     public void LoadAndSave_PreservesPerCategorySeedingOverrides()
     {
         WriteToml("""

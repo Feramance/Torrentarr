@@ -33,26 +33,32 @@ docker-compose up -d torrentarr
 
 #### 2. Permission Issues
 
-**Error:** `PermissionError: [Errno 13] Permission denied: '/config/config.toml'`
+**Error:** `UnauthorizedAccessException` or `Permission denied` for a file under `/config`
 
 **Solution:**
 
 ```bash
-# Fix permissions (Torrentarr runs as UID 1000 by default)
-sudo chown -R 1000:1000 /path/to/config
-sudo chmod -R 755 /path/to/config
+# Match the host account used by the container environment.
+id -u
+id -g
 ```
 
-**Or specify custom UID/GID:**
+Set those values on the container:
 
 ```yaml
 services:
   torrentarr:
     image: feramance/torrentarr:latest
-    user: "1001:1001"  # Your user's UID:GID
+    environment:
+      - PUID=1000  # replace with the output of `id -u`
+      - PGID=1000  # replace with the output of `id -g`
     volumes:
       - /path/to/config:/config
 ```
+
+The entrypoint repairs `/config` ownership before starting Torrentarr. If the
+volume is read-only or the filesystem rejects `chown`, fix the host mount
+permissions or choose IDs that already have write access.
 
 #### 3. Invalid TOML Syntax
 
@@ -431,7 +437,10 @@ services:
   torrentarr:
     image: feramance/torrentarr:latest
     container_name: torrentarr
-    user: "1000:1000"
+    environment:
+      - PUID=1000
+      - PGID=1000
+      - TZ=America/New_York
     volumes:
       - ./torrentarr/config:/config
       - /mnt/storage:/data

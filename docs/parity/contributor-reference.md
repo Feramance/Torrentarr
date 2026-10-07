@@ -14,7 +14,7 @@ Torrentarr parity work is diffed against a **pinned** upstream ref during closeo
 | --- | --- |
 | **Branch** | `master` |
 | **Role** | Active behavioral baseline for the latest-main parity audit. |
-| **Reference release** | `v5.14.5-1` (qBitrr `EXPECTED_CONFIG_VERSION = "5.14.5"`). |
+| **Reference release** | `v5.14.6-1` (qBitrr `EXPECTED_CONFIG_VERSION = "5.14.6"`). |
 | **Prior closeout pin** | `v5.12.10` — retained as the previous audit baseline. |
 
 To move the pin: update this section, re-run the inventories below, and adjust [full-parity-matrix.md](full-parity-matrix.md) / tests as needed.
@@ -161,7 +161,7 @@ Compare to upstream on the [pinned tag](#upstream-qbitrr-baseline) for **behavio
 
 **Pin:** use the [Upstream baseline](#upstream-qbitrr-baseline) tag when fetching upstream `qBitrr/openapi.json`.
 
-Torrentarr: [docs/assets/openapi.json](../assets/openapi.json), served at `/api/openapi.json` and `/web/openapi.json`; interactive docs at `/api/docs` and `/web/docs`. Regenerate from the stable upstream baseline with `python3 scripts/generate-openapi-from-qbitrr.py`. CI drift check: `bash scripts/check-openapi-drift.sh` defaults to `v5.14.5-1`; set `QBITRR_OPENAPI_REF=master` only for the scheduled drift audit.
+Torrentarr: [docs/assets/openapi.json](../assets/openapi.json), served at `/api/openapi.json` and `/web/openapi.json`; interactive docs at `/api/docs` and `/web/docs`. Regenerate from the stable upstream baseline with `python3 scripts/generate-openapi-from-qbitrr.py`. CI drift check: `bash scripts/check-openapi-drift.sh` defaults to `v5.14.6-1`; set `QBITRR_OPENAPI_REF=master` only for the scheduled drift audit.
 
 **When** changing WebUI DTOs/controllers: diff paths/methods for `/web/*`, `/api/*`, auth, health.
 

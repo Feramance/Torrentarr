@@ -432,7 +432,8 @@ public class TorrentProcessor : ITorrentProcessor
         // PRE-STEP 2: Stalled check for MetaDL / StalledDL / Downloading states
         // (qBitrr: _stalled_check — runs before the state machine)
         var stalledIgnore = false;
-        if (state is TorrentState.MetadataDownloading or TorrentState.StalledDownloading or TorrentState.Downloading)
+        if (state is TorrentState.MetadataDownloading or TorrentState.ForcedMetaDL
+            or TorrentState.StalledDownloading or TorrentState.Downloading)
         {
             stalledIgnore = await StalledCheckAsync(
                 torrent,
@@ -528,7 +529,8 @@ public class TorrentProcessor : ITorrentProcessor
             await client.ResumeTorrentsAsync(new List<string> { torrent.Hash }, ct);
         }
         // Branch 8: Stalled DL / MetaDL + not stalled_ignore → stalled processing (qBitrr line 6134-6140)
-        else if (state is TorrentState.MetadataDownloading or TorrentState.StalledDownloading
+        else if (state is TorrentState.MetadataDownloading or TorrentState.ForcedMetaDL
+            or TorrentState.StalledDownloading
             && !HasTag(torrent, IgnoredTag)
             && !HasTag(torrent, FreeSpacePausedTag)
             && StalledHandlingEnabled(stalledSettings.StalledDelay)
@@ -600,7 +602,7 @@ public class TorrentProcessor : ITorrentProcessor
             && !IsCompleteState(state)
             && !HasTag(torrent, IgnoredTag)
             && !HasTag(torrent, FreeSpacePausedTag)
-            && !stalledIgnore
+            && (!stalledIgnore || (stalledSettings.StalledDelay == -1 && IsDownloadState(state)))
             && _cache.AreFilePrioritiesApplied(torrent.QBitInstanceName, torrent.Hash))
         {
             await ProcessPercentageThresholdAsync(torrent, maxEta, client, stats, ct);
@@ -682,7 +684,7 @@ public class TorrentProcessor : ITorrentProcessor
             && !(arrCfg?.Torrent.DoNotRemoveSlow ?? true)
             && !HasTag(torrent, IgnoredTag)
             && !HasTag(torrent, FreeSpacePausedTag)
-            && !stalledIgnore)
+            && (!stalledIgnore || (stalledSettings.StalledDelay == -1 && IsDownloadState(state))))
         {
             _logger.LogWarning("Deleting slow torrent (ETA {Eta}s > MaxETA {Max}s): [{Name}] ({Hash})",
                 torrent.Eta, maxEta, torrent.Name, torrent.Hash);
@@ -828,9 +830,18 @@ public class TorrentProcessor : ITorrentProcessor
         long timeNow,
         CancellationToken ct)
     {
-        // Deletion branches separately suppress stalled handling when this is disabled.
-        if (stalledDelay < 0)
+        // -1 is infinite grace; 0 means immediate cleanup. Both are enabled
+        // stalled modes under qBitrr's v5.14.6 contract.
+        if (stalledDelay == 0)
+        {
+            if (HasTag(torrent, AllowedStalledTag))
+            {
+                var client = _qbitManager.GetClient(torrent.QBitInstanceName);
+                if (client != null)
+                    await RemoveStalledTagAsync(torrent, client, ct);
+            }
             return false;
+        }
 
         var stalledDelaySeconds = stalledDelay * 60;
 
@@ -847,17 +858,21 @@ public class TorrentProcessor : ITorrentProcessor
         var isIgnored = HasTag(torrent, IgnoredTag);
         var isFreeSpacePaused = HasTag(torrent, FreeSpacePausedTag);
 
-        var isStalledState = (state is TorrentState.MetadataDownloading or TorrentState.StalledDownloading)
+        var isStalledState = (state is TorrentState.MetadataDownloading or TorrentState.ForcedMetaDL
+            or TorrentState.StalledDownloading)
             && !isIgnored && !isFreeSpacePaused;
         var isUnavailableDownloading = torrent.Availability < 1
             && _cache.AreFilePrioritiesApplied(torrent.QBitInstanceName, torrent.Hash)
             && state == TorrentState.Downloading
             && !isIgnored && !isFreeSpacePaused;
 
-        if ((isStalledState || isUnavailableDownloading) && stalledDelay >= 0)
+        if (isStalledState || isUnavailableDownloading)
         {
             // Stalled delay expired → stalled_ignore = False (let the state machine handle deletion)
-            if (stalledDelay > 0 && timeNow >= torrent.LastActivity + stalledDelaySeconds)
+            var stallReference = state is TorrentState.MetadataDownloading or TorrentState.ForcedMetaDL
+                ? torrent.AddedOn
+                : torrent.LastActivity;
+            if (stalledDelay > 0 && timeNow >= stallReference + stalledDelaySeconds)
             {
                 _logger.LogTrace("Stalled delay expired for [{Name}]", torrent.Name);
                 return false;
@@ -872,7 +887,7 @@ public class TorrentProcessor : ITorrentProcessor
 
                 // If ReSearchStalled is enabled, blocklist + re-search via Arr API
                 // (qBitrr: process_entries([torrent.hash]) + _process_failed_individual)
-                if (arrCfg?.Torrent.ReSearchStalled == true && _importService != null)
+                if (stalledDelay >= 0 && arrCfg?.Torrent.ReSearchStalled == true && _importService != null)
                 {
                     _logger.LogDebug("Stalled torrent [{Name}] — ReSearchStalled enabled; blocklisting + re-search",
                         torrent.Name);
@@ -1006,6 +1021,9 @@ public class TorrentProcessor : ITorrentProcessor
             or TorrentState.ForcedDownloading
             or TorrentState.MetadataDownloading;
     }
+
+    private static bool IsDownloadState(TorrentState state) => state is
+        TorrentState.Downloading or TorrentState.StalledDownloading or TorrentState.ForcedDownloading;
 
     /// <summary>
     /// Returns true if the state is an uploading/seeding state.

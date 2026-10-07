@@ -339,7 +339,7 @@ DoNotRemoveSlow = true
 
 ### StalledDelay
 
-**Type:** Integer (minutes) or `-1` (disabled)
+**Type:** Integer (minutes), `-1` (infinite grace), or `0` (immediate cleanup)
 **Default:** `15` minutes
 
 Maximum time a torrent can remain stalled before removal.
@@ -356,8 +356,8 @@ StalledDelay = 30  # 30 minutes
 
 **Values:**
 
-- `-1` = Disabled (never remove stalled torrents)
-- `0` = Infinite (mark as stalled but never remove)
+- `-1` = Infinite grace (never remove through stalled handling)
+- `0` = Immediate cleanup (no recovery grace period)
 - `> 0` = Minutes until removal
 
 **Examples:**
@@ -751,9 +751,9 @@ MaxSeedingTime = 172800  # 48 hours (more patient)
 
 **Check:**
 
-1. **StalledDelay disabled:**
+1. **Stalled cleanup disabled (infinite grace):**
    ```toml
-   StalledDelay = -1  # Never removes stalled torrents
+   StalledDelay = -1  # Infinite grace; never removes stalled torrents
    ```
 
 2. **DoNotRemoveSlow enabled:**

@@ -109,7 +109,7 @@ jobs:
     - name: Run .NET tests (non-live)
       run: dotnet test --configuration Release --no-build --verbosity normal --filter "Category!=Live"
 
-    - name: Check OpenAPI parity vs qBitrr v5.14.5-1
+    - name: Check OpenAPI parity vs qBitrr v5.14.6-1
       if: matrix.os == 'ubuntu-latest'
       run: bash scripts/check-openapi-drift.sh docs/assets/openapi.json
 
@@ -121,9 +121,28 @@ jobs:
         path: src/*/bin/Release/
         retention-days: 7
 
+  docker-permissions:
+    name: Docker permission smoke test
+    needs: build
+    runs-on: ubuntu-latest
+    if: github.event_name != 'pull_request' || github.event.pull_request.draft == false
+
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v7
+      with:
+        repository: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name || github.repository }}
+        ref: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || ((github.event_name == 'schedule' || github.event_name == 'workflow_dispatch') && format('refs/heads/{0}', github.event.repository.default_branch) || github.sha) }}
+        persist-credentials: false
+
+    - name: Run Docker permission smoke test
+      run: bash scripts/smoke-docker-permissions.sh
+
   docker-nightly:
     name: Build and push Docker image (nightly)
-    needs: build
+    needs:
+    - build
+    - docker-permissions
     runs-on: ubuntu-latest
     if: >
       (
@@ -193,7 +212,9 @@ jobs:
 
   docker-pr:
     name: Build and push Docker image (PR)
-    needs: build
+    needs:
+    - build
+    - docker-permissions
     runs-on: ubuntu-latest
     if: github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name == github.repository
     permissions:
