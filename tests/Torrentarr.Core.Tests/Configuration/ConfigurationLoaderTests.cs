@@ -66,14 +66,14 @@ public class ConfigurationLoaderTests : IDisposable
     {
         WriteToml("""
             [Settings]
-            ConfigVersion = "6.15.1"
+            ConfigVersion = "6.14.5"
 
             [qBit.CategorySeeding]
             StalledDelay = "-1"
 
             [[qBit.CategorySeeding.Categories]]
             Name = "movies"
-            StalledDelay = 0
+            StalledDelay = "0m"
 
             [Radarr-Movies.Torrent]
             StalledDelay = 0
@@ -86,7 +86,7 @@ public class ConfigurationLoaderTests : IDisposable
             .Which.StalledDelay.Should().Be(-1);
         config.ArrInstances["Radarr-Movies"].Torrent.StalledDelay.Should().Be(-1);
         File.Exists(_tempFilePath + ".bak").Should().BeTrue();
-        File.ReadAllText(_tempFilePath).Should().Contain("ConfigVersion = \"6.15.2\"");
+        File.ReadAllText(_tempFilePath).Should().Contain("ConfigVersion = \"6.14.6\"");
     }
 
     [Fact]
@@ -110,7 +110,7 @@ public class ConfigurationLoaderTests : IDisposable
     {
         WriteToml("""
             [Settings]
-            ConfigVersion = "6.15.1"
+            ConfigVersion = "6.14.5"
 
             [Radarr-Movies.Torrent]
             StalledDelay = -1

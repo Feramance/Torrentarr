@@ -407,17 +407,13 @@ public class ConfigurationLoader
             if (ArrSectionHelper.IsArrSection(name)
                 && section.TryGetValue("Torrent", out var torrentObj)
                 && torrentObj is TomlTable torrent)
-            {
                 changed |= SwapStalledDelayValues(torrent);
-            }
 
             if ((name.Equals("qBit", StringComparison.OrdinalIgnoreCase)
                  || name.StartsWith("qBit-", StringComparison.OrdinalIgnoreCase))
                 && section.TryGetValue("CategorySeeding", out var seedingObj)
                 && seedingObj is TomlTable seeding)
-            {
                 changed |= SwapStalledDelayValues(seeding);
-            }
         }
 
         return changed;
@@ -428,23 +424,30 @@ public class ConfigurationLoader
         var changed = false;
         if (table.TryGetValue("StalledDelay", out var value))
         {
-            var normalized = value?.ToString()?.Trim();
-            if (normalized == "0")
+            var parsed = DurationParser.ParseToMinutes(value, int.MinValue);
+            if (parsed == 0)
             {
                 table["StalledDelay"] = -1;
                 changed = true;
             }
-            else if (normalized == "-1")
+            else if (parsed == -1)
             {
                 table["StalledDelay"] = 0;
                 changed = true;
             }
         }
 
-        if (table.TryGetValue("Categories", out var categoriesObj))
+        foreach (var itemValue in table.Values)
         {
-            foreach (var category in GetTrackerTables(categoriesObj))
-                changed |= SwapStalledDelayValues(category);
+            if (itemValue is TomlTable child)
+                changed |= SwapStalledDelayValues(child);
+            else if (itemValue is TomlTableArray tableArray)
+                foreach (var childItem in tableArray)
+                    changed |= SwapStalledDelayValues(childItem);
+            else if (itemValue is TomlArray array)
+                foreach (var item in array)
+                    if (item is TomlTable childItem)
+                        changed |= SwapStalledDelayValues(childItem);
         }
 
         return changed;

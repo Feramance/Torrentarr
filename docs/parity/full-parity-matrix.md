@@ -1,6 +1,6 @@
 # Full Parity Matrix (qBitrr -> Torrentarr)
 
-This matrix tracks the current parity audit against upstream qBitrr master commit **329e604e4e8512b1e32ba86e61920e1ae1e07a65** (schema **5.14.6**). Torrentarr’s current schema is **6.15.2** under the +1-major product policy; minor and patch versions are independent.
+This matrix tracks the current parity audit against upstream qBitrr master commit **329e604e4e8512b1e32ba86e61920e1ae1e07a65** (schema **5.14.6**). Torrentarr’s current schema is **6.14.6** under the +1-major product policy; minor and patch versions are independent.
 
 ## Parity claim policy
 
@@ -110,5 +110,5 @@ Status values:
 - **Lidarr artists + thumbnails (5.12.0):** `ArrCatalogEndpoints` + `ArrThumbnailService` + frontend API client.
 - **Readarr authors + books (5.14.0):** `ArrCatalogEndpoints` + `ReadarrView` (no track table).
 - **OpenAPI drift guard:** release CI is pinned to qBitrr `v5.14.6-1`; a separate scheduled workflow audits `master` and uploads its report.
-- **Config schema:** Torrentarr `6.15.2` under the +1-major policy; this audit targets qBitrr master `329e604` / schema `5.14.6`.
+- **Config schema:** Torrentarr `6.14.6` under the +1-major policy; this audit targets qBitrr master `329e604` / schema `5.14.6`.
 - **Latest-main follow-up:** import-completion confirmation, multi-instance routing, SkipTLSVerify, Overseerr release-date gating, Docker channels, 5.12.9 DB maintenance, 5.14 catalog grouping (always series/artist rows), SearchMissing master switch, explicit `loop_completed`, Lidarr quality cutoff, post-import FFprobe AutoDelete cleanup, and in-process dual loops are implemented. Remaining `intentional-divergence` rows are architecture or packaging only (fork sessions, pathos, Python `db_lock`, placeholder defaultdicts, targeted repair script, `setup.py` / CI autofix).

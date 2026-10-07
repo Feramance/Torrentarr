@@ -538,7 +538,9 @@ public class TorrentProcessor : ITorrentProcessor
         {
             await ProcessStalledTorrentAsync(
                 torrent, "Stalled State", client, stats,
-                stalledSettings.IgnoreTorrentsYoungerThan, timeNow, ct);
+                stalledSettings.IgnoreTorrentsYoungerThan, timeNow, ct,
+                reSearchStalled: arrCfg?.Torrent.ReSearchStalled == true,
+                metadataStall: state is TorrentState.MetadataDownloading or TorrentState.ForcedMetaDL);
         }
         // Branch 9: Downloading + not yet file-filtered → file filter (qBitrr line 6141-6147)
         else if (IsActiveDownloadingState(state)
@@ -602,7 +604,11 @@ public class TorrentProcessor : ITorrentProcessor
             && !IsCompleteState(state)
             && !HasTag(torrent, IgnoredTag)
             && !HasTag(torrent, FreeSpacePausedTag)
-            && (!stalledIgnore || (stalledSettings.StalledDelay == -1 && IsDownloadState(state)))
+            && (!stalledIgnore || (stalledSettings.StalledDelay == -1
+                && timeNow > torrent.AddedOn + stalledSettings.IgnoreTorrentsYoungerThan
+                && IsDownloadState(state)))
+            && maxEta > 0
+            && torrent.LastActivity < timeNow - maxEta
             && _cache.AreFilePrioritiesApplied(torrent.QBitInstanceName, torrent.Hash))
         {
             await ProcessPercentageThresholdAsync(torrent, maxEta, client, stats, ct);
@@ -709,7 +715,8 @@ public class TorrentProcessor : ITorrentProcessor
                 // Unavailable torrent past age gate → mark for deletion
                 await ProcessStalledTorrentAsync(
                     torrent, "Unavailable", client, stats,
-                    stalledSettings.IgnoreTorrentsYoungerThan, timeNow, ct);
+                    stalledSettings.IgnoreTorrentsYoungerThan, timeNow, ct,
+                    reSearchStalled: arrCfg?.Torrent.ReSearchStalled == true);
             }
             else if (_cache.AreFilePrioritiesApplied(torrent.QBitInstanceName, torrent.Hash))
             {
@@ -832,17 +839,6 @@ public class TorrentProcessor : ITorrentProcessor
     {
         // -1 is infinite grace; 0 means immediate cleanup. Both are enabled
         // stalled modes under qBitrr's v5.14.6 contract.
-        if (stalledDelay == 0)
-        {
-            if (HasTag(torrent, AllowedStalledTag))
-            {
-                var client = _qbitManager.GetClient(torrent.QBitInstanceName);
-                if (client != null)
-                    await RemoveStalledTagAsync(torrent, client, ct);
-            }
-            return false;
-        }
-
         var stalledDelaySeconds = stalledDelay * 60;
 
         // Too young → stalled_ignore = True (qBitrr line 5984)
@@ -868,6 +864,17 @@ public class TorrentProcessor : ITorrentProcessor
 
         if (isStalledState || isUnavailableDownloading)
         {
+            if (stalledDelay == 0)
+            {
+                if (HasTag(torrent, AllowedStalledTag))
+                {
+                    var client = _qbitManager.GetClient(torrent.QBitInstanceName);
+                    if (client != null)
+                        await RemoveStalledTagAsync(torrent, client, ct);
+                }
+                return false;
+            }
+
             // Stalled delay expired → stalled_ignore = False (let the state machine handle deletion)
             var stallReference = state is TorrentState.MetadataDownloading or TorrentState.ForcedMetaDL
                 ? torrent.AddedOn
@@ -919,15 +926,19 @@ public class TorrentProcessor : ITorrentProcessor
     private async Task ProcessStalledTorrentAsync(
         TorrentInfo torrent, string reason,
         ITorrentClient client, TorrentProcessingStats stats,
-        int ignoreYoungerThan, long timeNow, CancellationToken ct)
+        int ignoreYoungerThan, long timeNow, CancellationToken ct,
+        bool reSearchStalled = false, bool metadataStall = false)
     {
-        // qBitrr line 5247-5252: only delete if added AND last_activity are both past the age threshold
-        if (torrent.AddedOn < timeNow - ignoreYoungerThan
-            && torrent.LastActivity < timeNow - ignoreYoungerThan)
+        var ageEligible = torrent.AddedOn < timeNow - ignoreYoungerThan
+            && (metadataStall || torrent.LastActivity < timeNow - ignoreYoungerThan);
+        if (ageEligible)
         {
             var hnrAllows = _seedingService == null || await _seedingService.HnrAllowsDeleteAsync(torrent, reason, ct);
             if (hnrAllows)
             {
+                if (reSearchStalled && _importService != null)
+                    await _importService.BlocklistAndReSearchAsync(torrent.Hash, torrent.Category, ct);
+
                 _logger.LogWarning("Deleting stalled torrent ({Reason}): [{Name}] | Availability[{Avail:P1}] | Hash[{Hash}]",
                     reason, torrent.Name, torrent.Availability, torrent.Hash);
                 await DeleteTorrentFromClientAsync(client, torrent, deleteFiles: true, ct);
