@@ -428,13 +428,13 @@ public class ConfigurationLoader
         var changed = false;
         if (table.TryGetValue("StalledDelay", out var value))
         {
-            var normalized = value?.ToString()?.Trim();
-            if (normalized == "-1")
+            var parsed = DurationParser.ParseToMinutes(value, int.MinValue);
+            if (parsed == -1)
             {
                 table["StalledDelay"] = 0;
                 changed = true;
             }
-            else if (normalized == "0")
+            else if (parsed == 0)
             {
                 table["StalledDelay"] = -1;
                 changed = true;
