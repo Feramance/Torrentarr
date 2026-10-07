@@ -19,8 +19,16 @@ export function estimateIconGridColumns(containerWidthPx: number): number {
 /**
  * Round ``desired`` to the nearest multiple of ``columns`` (at least one full row).
  */
-export function roundPageSizeToIconGridRows(desired: number, columns: number): number {
-  if (!Number.isFinite(desired) || desired < 1 || !Number.isFinite(columns) || columns < 1) {
+export function roundPageSizeToIconGridRows(
+  desired: number,
+  columns: number,
+): number {
+  if (
+    !Number.isFinite(desired) ||
+    desired < 1 ||
+    !Number.isFinite(columns) ||
+    columns < 1
+  ) {
     return desired;
   }
   const rounded = Math.round(desired / columns) * columns;

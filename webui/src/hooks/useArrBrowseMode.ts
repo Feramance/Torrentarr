@@ -23,7 +23,7 @@ export function useArrBrowseMode(appKey: "radarr" | "sonarr" | "lidarr"): {
 } {
   const storageKey = `torrentarr.arrBrowseMode.${appKey}`;
   const [mode, setModeState] = useState<ArrBrowseMode>(() =>
-    readStored(storageKey)
+    readStored(storageKey),
   );
 
   const setMode = useCallback(
@@ -35,7 +35,7 @@ export function useArrBrowseMode(appKey: "radarr" | "sonarr" | "lidarr"): {
         // ignore
       }
     },
-    [storageKey]
+    [storageKey],
   );
 
   return { mode, setMode };

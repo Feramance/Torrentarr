@@ -21,7 +21,11 @@ vi.mock("../../components/StableTable", () => ({
   }) => (
     <div data-testid="stable-table">
       {rowOrder.map((key) => (
-        <button key={key} type="button" onClick={() => onRowClick({ id: key, title: key })}>
+        <button
+          key={key}
+          type="button"
+          onClick={() => onRowClick({ id: key, title: key })}
+        >
           {key}
         </button>
       ))}
@@ -55,7 +59,9 @@ function makeStore(rows: TestRow[]): RowsStore<TestRow> {
   } as unknown as RowsStore<TestRow>;
 }
 
-const columns: ColumnDef<TestRow, unknown>[] = [{ accessorKey: "title", header: "Title" }];
+const columns: ColumnDef<TestRow, unknown>[] = [
+  { accessorKey: "title", header: "Title" },
+];
 const sampleRows: TestRow[] = [
   { id: "a", title: "Alpha" },
   { id: "b", title: "Beta" },

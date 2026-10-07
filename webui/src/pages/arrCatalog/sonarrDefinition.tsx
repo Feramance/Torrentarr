@@ -53,7 +53,11 @@ import {
   filterSeriesEntriesForMissing,
   filterSeriesEntryByReason,
 } from "./sonarrCatalogModes";
-import { categoryForInstanceLabel, softCapCachedPages, visibleRowsForCachedPage } from "./utils";
+import {
+  categoryForInstanceLabel,
+  softCapCachedPages,
+  visibleRowsForCachedPage,
+} from "./utils";
 
 const SONARR_PAGE_SIZE = 25;
 
@@ -125,9 +129,7 @@ function seriesEntryToGroup(
   };
 }
 
-function sonarrMonitoredEpisodeProgress(
-  group: SonarrSeriesGroup,
-): JSX.Element {
+function sonarrMonitoredEpisodeProgress(group: SonarrSeriesGroup): JSX.Element {
   const mon = group.episodes.filter((e) => e.monitored);
   const total = mon.length;
   const available = mon.filter((e) => e.hasFile).length;
@@ -199,7 +201,8 @@ function useSonarrInstancePipeline(
   const [emptyStateReady, setEmptyStateReady] = useState(false);
   const [lastUpdated, setLastUpdated] = useState<string | null>(null);
 
-  const { pagesRef, keyRef, wipePages } = useCatalogPageCache<SonarrSeriesEntry>();
+  const { pagesRef, keyRef, wipePages } =
+    useCatalogPageCache<SonarrSeriesEntry>();
   const emptyTracker = useCatalogEmptyStateTracker();
   const filtersRef = useRef(filters);
   filtersRef.current = filters;
@@ -209,10 +212,9 @@ function useSonarrInstancePipeline(
   const rowsStoreOpts = useMemo(
     () => ({
       getKey: sonarrGroupRowKey,
-      hashFields:
-        SONARR_GROUP_HASH_FIELDS as unknown as ReadonlyArray<
-          keyof SonarrSeriesGroupRow & string
-        >,
+      hashFields: SONARR_GROUP_HASH_FIELDS as unknown as ReadonlyArray<
+        keyof SonarrSeriesGroupRow & string
+      >,
     }),
     [],
   );
@@ -384,13 +386,18 @@ function useSonarrInstancePipeline(
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [selection]);
 
-  useCatalogSearchRegistration(active, selection, registerSearchHandler, (term) => {
-    setPage(0);
-    void fetchInstanceRef.current(selection!, 0, term, {
-      showLoading: true,
-      missingOnly: filtersRef.current.onlyMissing,
-    });
-  });
+  useCatalogSearchRegistration(
+    active,
+    selection,
+    registerSearchHandler,
+    (term) => {
+      setPage(0);
+      void fetchInstanceRef.current(selection!, 0, term, {
+        showLoading: true,
+        missingOnly: filtersRef.current.onlyMissing,
+      });
+    },
+  );
 
   // Background polling.
   useInterval(
@@ -559,8 +566,7 @@ const SONARR_INSTANCE_COLUMNS: ColumnDef<SonarrSeriesGroupRow>[] = [
   {
     accessorKey: "qualityProfileName" as const,
     header: "Quality profile",
-    cell: (info) =>
-      (info.getValue() as string | null | undefined) || "—",
+    cell: (info) => (info.getValue() as string | null | undefined) || "—",
   },
   {
     id: "reason",
@@ -586,7 +592,9 @@ const SONARR_AGG_COLUMNS_MULTI: ColumnDef<SonarrSeriesGroupRow>[] = [
 function getSonarrAggColumns(
   instanceCount: number,
 ): ColumnDef<SonarrSeriesGroupRow>[] {
-  return instanceCount > 1 ? SONARR_AGG_COLUMNS_MULTI : SONARR_AGG_COLUMNS_SINGLE;
+  return instanceCount > 1
+    ? SONARR_AGG_COLUMNS_MULTI
+    : SONARR_AGG_COLUMNS_SINGLE;
 }
 
 export const SONARR_DEFINITION: ArrCatalogDefinition<
@@ -622,9 +630,7 @@ export const SONARR_DEFINITION: ArrCatalogDefinition<
     }),
     mapSlice: (response, instanceLabel, push) => {
       (response.series ?? []).forEach((entry) => {
-        push(
-          seriesEntryToGroup(entry, instanceLabel) as SonarrSeriesGroupRow,
-        );
+        push(seriesEntryToGroup(entry, instanceLabel) as SonarrSeriesGroupRow);
       });
     },
     summarize: (rows) => summarizeGroupEpisodes(rows),
@@ -818,7 +824,8 @@ function SonarrAggregateBody({
       {summary.total.toLocaleString(undefined, { maximumFractionDigits: 0 })}
       {isAggFiltered && total < summary.total ? (
         <>
-          {" "}• <strong>Filtered series:</strong>{" "}
+          {" "}
+          • <strong>Filtered series:</strong>{" "}
           {total.toLocaleString(undefined, { maximumFractionDigits: 0 })}
         </>
       ) : null}
@@ -826,7 +833,10 @@ function SonarrAggregateBody({
   );
 
   const showCatalogEmptyHint =
-    !effectiveLoading && total === 0 && summary.total === 0 && instanceCount > 0;
+    !effectiveLoading &&
+    total === 0 &&
+    summary.total === 0 &&
+    instanceCount > 0;
 
   return (
     <ArrCatalogStandardBody
@@ -900,8 +910,7 @@ function SonarrInstanceBody({
   refresh,
   filters,
 }: SonarrInstanceBodyProps): JSX.Element {
-  const waitingForStableEmpty =
-    !emptyStateReady && visibleRows.length === 0;
+  const waitingForStableEmpty = !emptyStateReady && visibleRows.length === 0;
   const effectiveLoading = loading || waitingForStableEmpty;
   const totalEpisodes = useMemo(
     () => visibleRows.reduce((acc, g) => acc + g.episodes.length, 0),

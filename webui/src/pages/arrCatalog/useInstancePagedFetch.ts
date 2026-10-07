@@ -138,10 +138,16 @@ export function useInstancePagedFetch<
     }),
     [adapter.getRowKey, adapter.hashFields],
   );
-  const pageSyncRef = useRef<RowsStoreSnapshot<TInstRow>>(createEmptyRowsSnapshot());
+  const pageSyncRef = useRef<RowsStoreSnapshot<TInstRow>>(
+    createEmptyRowsSnapshot(),
+  );
   const syncPageRows = useCallback(
     (incoming: TInstRow[]) => {
-      const result = syncRowsSnapshot(pageSyncRef.current, incoming, pageSyncOpts as never);
+      const result = syncRowsSnapshot(
+        pageSyncRef.current,
+        incoming,
+        pageSyncOpts as never,
+      );
       pageSyncRef.current = result.snapshot;
       return {
         hasChanges: result.changeKind !== "noop",
@@ -203,10 +209,7 @@ export function useInstancePagedFetch<
           requestQuery,
           currentFilters,
         );
-        if (
-          gen !== fetchGenRef.current ||
-          selectionRef.current !== category
-        ) {
+        if (gen !== fetchGenRef.current || selectionRef.current !== category) {
           return;
         }
         setLatestResponse(response);
@@ -279,7 +282,9 @@ export function useInstancePagedFetch<
         // Background Live polls must stay silent; only toast user-visible loads.
         if (showLoading) {
           pushToast(
-            error instanceof Error ? error.message : adapter.errorMessage(category),
+            error instanceof Error
+              ? error.message
+              : adapter.errorMessage(category),
             "error",
           );
         }
@@ -337,10 +342,15 @@ export function useInstancePagedFetch<
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [selection]);
 
-  useCatalogSearchRegistration(active, selection, registerSearchHandler, (term) => {
-    setPage(0);
-    void fetchInstanceRef.current(selection!, 0, term, { showLoading: true });
-  });
+  useCatalogSearchRegistration(
+    active,
+    selection,
+    registerSearchHandler,
+    (term) => {
+      setPage(0);
+      void fetchInstanceRef.current(selection!, 0, term, { showLoading: true });
+    },
+  );
 
   // Background polling.
   useInterval(
@@ -362,14 +372,19 @@ export function useInstancePagedFetch<
     shellParams.browseMode,
     iconInstancePageSize,
     () => {
-      void fetchInstanceRef.current(selection!, page, query, { showLoading: false });
+      void fetchInstanceRef.current(selection!, page, query, {
+        showLoading: false,
+      });
     },
   );
 
   // Display the current server page from the cache. `keepAllPages` only warms
   // flip-back; it must not concat + absolute-slice (breaks after soft-cap drops
   // early pages). Lidarr keeps a single page; Radarr filters that page client-side.
-  const allRows = useMemo<ReadonlyArray<TInstRow>>(() => pages[page] ?? [], [pages, page]);
+  const allRows = useMemo<ReadonlyArray<TInstRow>>(
+    () => pages[page] ?? [],
+    [pages, page],
+  );
 
   const filteredRows = useMemo<ReadonlyArray<TInstRow>>(() => {
     return visibleRowsForCachedPage(pages, page, (rows) => {

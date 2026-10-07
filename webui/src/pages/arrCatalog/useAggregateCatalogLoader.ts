@@ -1,10 +1,4 @@
-import {
-  useCallback,
-  useEffect,
-  useMemo,
-  useRef,
-  useState,
-} from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { ArrInfo } from "../../api/types";
 import {
   AGGREGATE_FETCH_CHUNK_SIZE,
@@ -44,7 +38,12 @@ interface UseAggregateCatalogLoaderParams<
   readonly filters: TFilters;
   /** Default filter state — used to skip filter/sort copies when unchanged. */
   readonly initialFilters: TFilters;
-  readonly adapter: ArrCatalogAggregateAdapter<TAggRow, TAggResp, TFilters, TRollup>;
+  readonly adapter: ArrCatalogAggregateAdapter<
+    TAggRow,
+    TAggResp,
+    TFilters,
+    TRollup
+  >;
   readonly aggregatePageSize: number;
   readonly pushToast: (
     message: string,
@@ -110,7 +109,9 @@ export function useAggregateCatalogLoader<
   const [page, setPage] = useState(0);
   const [aggFilter, setAggFilter] = useState("");
   const [updated, setUpdated] = useState<string | null>(null);
-  const [summary, setSummary] = useState<ArrCatalogSummary>(adapter.initialSummary);
+  const [summary, setSummary] = useState<ArrCatalogSummary>(
+    adapter.initialSummary,
+  );
   const debouncedSearch = useDebounce(aggFilter, 300);
 
   const aggFetchGenRef = useRef(0);
@@ -131,10 +132,16 @@ export function useAggregateCatalogLoader<
     }),
     [adapter.getRowKey, adapter.hashFields],
   );
-  const fullListSyncRef = useRef<RowsStoreSnapshot<TAggRow>>(createEmptyRowsSnapshot());
+  const fullListSyncRef = useRef<RowsStoreSnapshot<TAggRow>>(
+    createEmptyRowsSnapshot(),
+  );
   const syncFullList = useCallback(
     (incoming: TAggRow[]) => {
-      const result = syncRowsSnapshot(fullListSyncRef.current, incoming, fullListSyncOpts as never);
+      const result = syncRowsSnapshot(
+        fullListSyncRef.current,
+        incoming,
+        fullListSyncOpts as never,
+      );
       fullListSyncRef.current = result.snapshot;
       return {
         hasChanges: result.changeKind !== "noop",

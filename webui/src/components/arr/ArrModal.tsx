@@ -49,6 +49,6 @@ export function ArrModal({
         <div className="modal-body">{children}</div>
       </div>
     </div>,
-    document.body
+    document.body,
   );
 }

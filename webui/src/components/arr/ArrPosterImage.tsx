@@ -172,7 +172,9 @@ export function ArrPosterImage({
   if (failed) {
     return (
       <div
-        className={className ? `arr-poster-fallback ${className}` : "arr-poster-fallback"}
+        className={
+          className ? `arr-poster-fallback ${className}` : "arr-poster-fallback"
+        }
         aria-hidden
       />
     );
@@ -181,7 +183,11 @@ export function ArrPosterImage({
   return (
     <div
       ref={rootRef}
-      className={loaded ? "arr-poster-image-wrap arr-poster-image-wrap--ready" : "arr-poster-image-wrap"}
+      className={
+        loaded
+          ? "arr-poster-image-wrap arr-poster-image-wrap--ready"
+          : "arr-poster-image-wrap"
+      }
     >
       {!released ? (
         <div className={fallbackCls.join(" ")} aria-hidden />
@@ -191,13 +197,20 @@ export function ArrPosterImage({
             key={`${src}-${attempt}`}
             src={displaySrc}
             alt={alt}
-            className={[className, "arr-poster-layer"].filter(Boolean).join(" ")}
+            className={[className, "arr-poster-layer"]
+              .filter(Boolean)
+              .join(" ")}
             decoding="async"
             onLoad={onImgLoad}
             onError={onImgError}
           />
           {!loaded && (
-            <div className={[...fallbackCls, "arr-poster-fallback--overlay"].join(" ")} aria-hidden />
+            <div
+              className={[...fallbackCls, "arr-poster-fallback--overlay"].join(
+                " ",
+              )}
+              aria-hidden
+            />
           )}
         </>
       )}

@@ -19,11 +19,7 @@ export const ArrCatalogIconTile = memo(function ArrCatalogIconTile({
   children,
 }: ArrCatalogIconTileProps): JSX.Element {
   return (
-    <button
-      type="button"
-      className="arr-movie-tile card"
-      onClick={onClick}
-    >
+    <button type="button" className="arr-movie-tile card" onClick={onClick}>
       {posterSrc ? (
         <ArrPosterImage
           className="arr-movie-tile__poster"
@@ -31,7 +27,10 @@ export const ArrCatalogIconTile = memo(function ArrCatalogIconTile({
           alt=""
         />
       ) : (
-        <div className="arr-movie-tile__poster arr-poster-fallback" aria-hidden />
+        <div
+          className="arr-movie-tile__poster arr-poster-fallback"
+          aria-hidden
+        />
       )}
       <div className="arr-movie-tile__meta">{children}</div>
     </button>

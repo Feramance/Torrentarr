@@ -31,7 +31,8 @@ export function LidarrAlbumDetailBody({
   const monitored = album?.["monitored"] as boolean | undefined;
   const hasFile = album?.["hasFile"] as boolean | undefined;
   const reason = album?.["reason"] as string | null | undefined;
-  const qProf = (album?.["qualityProfileName"] as string | null | undefined) ?? "—";
+  const qProf =
+    (album?.["qualityProfileName"] as string | null | undefined) ?? "—";
   const tracks: LidarrTrack[] = entry.tracks || [];
   const totals = entry.totals;
 
@@ -43,9 +44,7 @@ export function LidarrAlbumDetailBody({
         <dt>Artist</dt>
         <dd>{artist}</dd>
         <dt>Release</dt>
-        <dd>
-          {release ? new Date(release).toLocaleDateString() : "—"}
-        </dd>
+        <dd>{release ? new Date(release).toLocaleDateString() : "—"}</dd>
         <dt>Monitored</dt>
         <dd>
           <ArrMonitoredBadge monitored={Boolean(monitored)} />
@@ -64,7 +63,8 @@ export function LidarrAlbumDetailBody({
           <>
             <dt>Track totals</dt>
             <dd>
-              {totals.available ?? 0} available / {totals.monitored ?? 0} monitored
+              {totals.available ?? 0} available / {totals.monitored ?? 0}{" "}
+              monitored
             </dd>
           </>
         ) : null}
@@ -88,24 +88,27 @@ export function LidarrAlbumDetailBody({
                     ? track.reason.trim()
                     : reason ?? null;
                 return (
-                <tr
-                  key={`${albumId ?? "a"}-${track.id ?? track.trackNumber}-${track.title}`}
-                  className={track.hasFile ? "track-available" : "track-missing"}
-                >
-                  <td data-label="#">{track.trackNumber ?? "—"}</td>
-                  <td data-label="Title">{track.title ?? "—"}</td>
-                  <td data-label="Duration">
-                    {track.duration != null && Number.isFinite(Number(track.duration))
-                      ? formatTrackDurationSeconds(Number(track.duration))
-                      : "—"}
-                  </td>
-                  <td data-label="Has File">
-                    <ArrHasFileBadge hasFile={Boolean(track.hasFile)} />
-                  </td>
-                  <td data-label="Reason">
-                    <ArrReasonBadge reason={trackReason} />
-                  </td>
-                </tr>
+                  <tr
+                    key={`${albumId ?? "a"}-${track.id ?? track.trackNumber}-${track.title}`}
+                    className={
+                      track.hasFile ? "track-available" : "track-missing"
+                    }
+                  >
+                    <td data-label="#">{track.trackNumber ?? "—"}</td>
+                    <td data-label="Title">{track.title ?? "—"}</td>
+                    <td data-label="Duration">
+                      {track.duration != null &&
+                      Number.isFinite(Number(track.duration))
+                        ? formatTrackDurationSeconds(Number(track.duration))
+                        : "—"}
+                    </td>
+                    <td data-label="Has File">
+                      <ArrHasFileBadge hasFile={Boolean(track.hasFile)} />
+                    </td>
+                    <td data-label="Reason">
+                      <ArrReasonBadge reason={trackReason} />
+                    </td>
+                  </tr>
                 );
               })}
             </tbody>

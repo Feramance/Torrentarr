@@ -18,9 +18,9 @@ export interface StandardArrFilterState extends Record<string, unknown> {
  * Shared Status + Search Reason filter controls used by Radarr, Sonarr, and Lidarr.
  * Filter application differs per Arr type; this only unifies the toolbar UI spec.
  */
-export function createStandardArrFilters<TFilters extends StandardArrFilterState>(
-  allItemsLabel: string,
-): ReadonlyArray<ArrCatalogFilterSelectSpec<TFilters>> {
+export function createStandardArrFilters<
+  TFilters extends StandardArrFilterState,
+>(allItemsLabel: string): ReadonlyArray<ArrCatalogFilterSelectSpec<TFilters>> {
   return [
     {
       id: "status",

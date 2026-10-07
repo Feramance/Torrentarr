@@ -85,7 +85,12 @@ describe("useCatalogSearchRegistration", () => {
     const onSearch = vi.fn();
 
     renderHook(() =>
-      useCatalogSearchRegistration(true, "Radarr", registerSearchHandler, onSearch),
+      useCatalogSearchRegistration(
+        true,
+        "Radarr",
+        registerSearchHandler,
+        onSearch,
+      ),
     );
     expect(registerSearchHandler).toHaveBeenCalledTimes(1);
     expect(onSearch).toHaveBeenCalledWith("query");
@@ -107,7 +112,12 @@ describe("useCatalogSearchRegistration", () => {
   it("skips registration when inactive", () => {
     const registerSearchHandler = vi.fn(() => () => undefined);
     renderHook(() =>
-      useCatalogSearchRegistration(false, "Radarr", registerSearchHandler, vi.fn()),
+      useCatalogSearchRegistration(
+        false,
+        "Radarr",
+        registerSearchHandler,
+        vi.fn(),
+      ),
     );
     expect(registerSearchHandler).not.toHaveBeenCalled();
   });

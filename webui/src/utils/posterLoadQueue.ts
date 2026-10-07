@@ -18,7 +18,10 @@ let posterQueueActive = 0;
 const posterQueueWaiting: Subscriber[] = [];
 
 function pumpPosterQueue(): void {
-  while (posterQueueActive < POSTER_QUEUE_MAX_CONCURRENT && posterQueueWaiting.length > 0) {
+  while (
+    posterQueueActive < POSTER_QUEUE_MAX_CONCURRENT &&
+    posterQueueWaiting.length > 0
+  ) {
     posterQueueActive += 1;
     const subscriber = posterQueueWaiting.shift();
     if (!subscriber) {

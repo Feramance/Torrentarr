@@ -29,18 +29,26 @@ describe("getRadarrCatalogDefinition", () => {
 
 describe("getArrCatalogDefinition", () => {
   it("routes sonarr to the series-grouped definition", () => {
-    expect(getArrCatalogDefinition("sonarr")).toBe(getSonarrCatalogDefinition());
+    expect(getArrCatalogDefinition("sonarr")).toBe(
+      getSonarrCatalogDefinition(),
+    );
     expect(getArrCatalogDefinition("sonarr").searchPlaceholder).toBe(
       "Filter series or episodes",
     );
   });
 
   it("routes lidarr to the artist-grouped definition", () => {
-    expect(getArrCatalogDefinition("lidarr")).toBe(getLidarrCatalogDefinition());
-    expect(getArrCatalogDefinition("lidarr").searchPlaceholder).toBe("Filter artists");
+    expect(getArrCatalogDefinition("lidarr")).toBe(
+      getLidarrCatalogDefinition(),
+    );
+    expect(getArrCatalogDefinition("lidarr").searchPlaceholder).toBe(
+      "Filter artists",
+    );
   });
 
   it("routes radarr to getRadarrCatalogDefinition", () => {
-    expect(getArrCatalogDefinition("radarr")).toBe(getRadarrCatalogDefinition());
+    expect(getArrCatalogDefinition("radarr")).toBe(
+      getRadarrCatalogDefinition(),
+    );
   });
 });

@@ -80,7 +80,9 @@ describe("ArrPosterImage retries", () => {
       await Promise.resolve();
     });
 
-    expect(container.querySelector(".arr-poster-image-wrap--ready")).toBeTruthy();
+    expect(
+      container.querySelector(".arr-poster-image-wrap--ready"),
+    ).toBeTruthy();
     expect(screen.queryByRole("img", { hidden: true })).toBeTruthy();
   });
 
@@ -96,19 +98,25 @@ describe("ArrPosterImage retries", () => {
     await act(async () => {
       await vi.advanceTimersByTimeAsync(150);
     });
-    expect(container.querySelector("img")?.getAttribute("src")).toContain("_retry=1");
+    expect(container.querySelector("img")?.getAttribute("src")).toContain(
+      "_retry=1",
+    );
 
     fireImgError(container);
     await act(async () => {
       await vi.advanceTimersByTimeAsync(300);
     });
-    expect(container.querySelector("img")?.getAttribute("src")).toContain("_retry=2");
+    expect(container.querySelector("img")?.getAttribute("src")).toContain(
+      "_retry=2",
+    );
 
     fireImgError(container);
     await act(async () => {
       await vi.advanceTimersByTimeAsync(600);
     });
-    expect(container.querySelector("img")?.getAttribute("src")).toContain("_retry=3");
+    expect(container.querySelector("img")?.getAttribute("src")).toContain(
+      "_retry=3",
+    );
 
     fireImgError(container);
     expect(container.querySelector("img")).toBeNull();

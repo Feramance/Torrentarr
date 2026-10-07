@@ -81,13 +81,9 @@ function ArrCatalogDetailModalHostInner<
     instanceFresh: (instanceFresh ?? null) as TInstRow | null,
     aggregateFresh: (aggregateFresh ?? null) as TAggRow | null,
     instanceSeed:
-      selection.source === "instance"
-        ? (selection.seed as TInstSeed)
-        : null,
+      selection.source === "instance" ? (selection.seed as TInstSeed) : null,
     aggregateSeed:
-      selection.source === "aggregate"
-        ? (selection.seed as TAggSeed)
-        : null,
+      selection.source === "aggregate" ? (selection.seed as TAggSeed) : null,
   });
 
   const extras = selection.extras ?? {};

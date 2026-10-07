@@ -28,18 +28,28 @@ export function useCatalogEmptyStateTracker(): CatalogEmptyStateTracker {
     stableEmptyStreakRef.current = 0;
   };
 
-  return { sawNonEmptyRef, stableEmptyStreakRef, noteCatalogData, resetEmptyState };
+  return {
+    sawNonEmptyRef,
+    stableEmptyStreakRef,
+    noteCatalogData,
+    resetEmptyState,
+  };
 }
 
 /** Returns true once empty responses look stable (not a warm-up flash). */
 export function isEmptyStateReady(
-  tracker: Pick<CatalogEmptyStateTracker, "sawNonEmptyRef" | "stableEmptyStreakRef">,
+  tracker: Pick<
+    CatalogEmptyStateTracker,
+    "sawNonEmptyRef" | "stableEmptyStreakRef"
+  >,
   hasCatalogData: boolean,
 ): boolean {
   if (hasCatalogData) {
     return true;
   }
-  return tracker.sawNonEmptyRef.current || tracker.stableEmptyStreakRef.current >= 2;
+  return (
+    tracker.sawNonEmptyRef.current || tracker.stableEmptyStreakRef.current >= 2
+  );
 }
 
 /** Page cache keyed by resolved page index — shared by flat + Sonarr pipelines. */

@@ -1,7 +1,4 @@
-import type {
-  SonarrSeason,
-  SonarrSeriesEntry,
-} from "../../api/types";
+import type { SonarrSeason, SonarrSeriesEntry } from "../../api/types";
 
 export function filterSeriesEntriesForMissing(
   seriesEntries: SonarrSeriesEntry[],

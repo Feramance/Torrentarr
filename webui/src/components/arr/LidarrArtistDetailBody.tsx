@@ -19,7 +19,9 @@ export function LidarrArtistDetailBody({
   /** Sidebar label for this Arr instance (matches Sonarr detail hint line). */
   instanceLabel?: string | null;
 }): JSX.Element {
-  const [payload, setPayload] = useState<LidarrArtistDetailResponse | null>(null);
+  const [payload, setPayload] = useState<LidarrArtistDetailResponse | null>(
+    null,
+  );
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
@@ -32,7 +34,7 @@ export function LidarrArtistDetailBody({
         if (!cancelled) {
           setError(e instanceof Error ? e.message : "Failed to load artist");
         }
-      }
+      },
     );
     return () => {
       cancelled = true;
@@ -56,7 +58,8 @@ export function LidarrArtistDetailBody({
     typeof a?.["id"] === "number"
       ? lidarrArtistThumbnailUrl(category, artistId)
       : null;
-  const profileName = (a?.["qualityProfileName"] as string | null | undefined) ?? null;
+  const profileName =
+    (a?.["qualityProfileName"] as string | null | undefined) ?? null;
   const hintLabel =
     instanceLabel != null && String(instanceLabel).trim() !== ""
       ? String(instanceLabel).trim()
@@ -64,12 +67,17 @@ export function LidarrArtistDetailBody({
 
   const albums = payload.albums ?? [];
   const openUrl =
-    artistId > 0 && category ? getLidarrOpenArtistUrl(category, artistId) : null;
+    artistId > 0 && category
+      ? getLidarrOpenArtistUrl(category, artistId)
+      : null;
 
   return (
     <div className="arr-detail-radarr">
       <ArrExternalLink href={openUrl} arrName="Lidarr" />
-      <ArrInstanceHint instanceLabel={hintLabel} qualityProfileName={profileName} />
+      <ArrInstanceHint
+        instanceLabel={hintLabel}
+        qualityProfileName={profileName}
+      />
 
       <div
         className="arr-detail-radarr__poster-row"
@@ -116,7 +124,10 @@ export function LidarrArtistDetailBody({
                   {trackCount > 0 ? ` (${trackCount} tracks)` : null}
                 </summary>
                 <div style={{ marginTop: 8 }}>
-                  <LidarrAlbumDetailBody entry={albumEntry} category={category} />
+                  <LidarrAlbumDetailBody
+                    entry={albumEntry}
+                    category={category}
+                  />
                 </div>
               </details>
             );

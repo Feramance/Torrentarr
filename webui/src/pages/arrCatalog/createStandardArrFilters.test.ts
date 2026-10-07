@@ -1,5 +1,8 @@
 import { describe, expect, it } from "vitest";
-import { createStandardArrFilters, type StandardArrFilterState } from "./createStandardArrFilters";
+import {
+  createStandardArrFilters,
+  type StandardArrFilterState,
+} from "./createStandardArrFilters";
 
 interface TestFilters extends StandardArrFilterState {
   onlyMissing: boolean;
@@ -26,10 +29,13 @@ describe("createStandardArrFilters", () => {
 
   it("uses the provided all-items label", () => {
     expect(filters[0]?.options[0]?.label).toBe("All Movies");
-    expect(createStandardArrFilters<TestFilters>("All Episodes")[0]?.options[0]
-      ?.label).toBe("All Episodes");
-    expect(createStandardArrFilters<TestFilters>("All Albums")[0]?.options[0]
-      ?.label).toBe("All Albums");
+    expect(
+      createStandardArrFilters<TestFilters>("All Episodes")[0]?.options[0]
+        ?.label,
+    ).toBe("All Episodes");
+    expect(
+      createStandardArrFilters<TestFilters>("All Albums")[0]?.options[0]?.label,
+    ).toBe("All Albums");
   });
 
   it("maps onlyMissing to status select value", () => {
@@ -41,16 +47,10 @@ describe("createStandardArrFilters", () => {
       "missing",
     );
     expect(
-      status?.setValue(
-        { onlyMissing: false, reasonFilter: "all" },
-        "missing",
-      ),
+      status?.setValue({ onlyMissing: false, reasonFilter: "all" }, "missing"),
     ).toEqual({ onlyMissing: true, reasonFilter: "all" });
     expect(
-      status?.setValue(
-        { onlyMissing: true, reasonFilter: "Quality" },
-        "all",
-      ),
+      status?.setValue({ onlyMissing: true, reasonFilter: "Quality" }, "all"),
     ).toEqual({ onlyMissing: false, reasonFilter: "Quality" });
   });
 
@@ -60,10 +60,7 @@ describe("createStandardArrFilters", () => {
       reason?.getValue({ onlyMissing: false, reasonFilter: "Quality" }),
     ).toBe("Quality");
     expect(
-      reason?.setValue(
-        { onlyMissing: false, reasonFilter: "all" },
-        "Upgrade",
-      ),
+      reason?.setValue({ onlyMissing: false, reasonFilter: "all" }, "Upgrade"),
     ).toEqual({ onlyMissing: false, reasonFilter: "Upgrade" });
   });
 

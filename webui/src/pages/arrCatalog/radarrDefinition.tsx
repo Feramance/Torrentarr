@@ -70,9 +70,7 @@ function radarrFilterRows<T extends RadarrMovie>(
   }
   if (filters.reasonFilter !== "all") {
     if (filters.reasonFilter === "Not being searched") {
-      out = out.filter(
-        (m) => m.reason === "Not being searched" || !m.reason,
-      );
+      out = out.filter((m) => m.reason === "Not being searched" || !m.reason);
     } else {
       out = out.filter((m) => m.reason === filters.reasonFilter);
     }
@@ -87,9 +85,7 @@ const RADARR_INSTANCE_COLUMNS: ColumnDef<RadarrInstanceRow>[] = [
   {
     accessorKey: "monitored",
     header: "Monitored",
-    cell: (info) => (
-      <ArrMonitoredBadge monitored={Boolean(info.getValue())} />
-    ),
+    cell: (info) => <ArrMonitoredBadge monitored={Boolean(info.getValue())} />,
     size: 120,
   },
   {
@@ -130,7 +126,9 @@ const RADARR_AGG_COLUMNS_MULTI: ColumnDef<RadarrAggRow>[] = [
 ];
 
 function getRadarrAggColumns(instanceCount: number): ColumnDef<RadarrAggRow>[] {
-  return instanceCount > 1 ? RADARR_AGG_COLUMNS_MULTI : RADARR_AGG_COLUMNS_SINGLE;
+  return instanceCount > 1
+    ? RADARR_AGG_COLUMNS_MULTI
+    : RADARR_AGG_COLUMNS_SINGLE;
 }
 
 function radarrInstanceRowKey(row: RadarrInstanceRow): string {
@@ -213,31 +211,32 @@ export const RADARR_DEFINITION: ArrCatalogDefinition<
     },
   },
   useInstancePipeline: (params) =>
-    useInstancePagedFetch<RadarrInstanceRow, RadarrMoviesResponse, RadarrFilters>(
-      params,
-      {
-        basePageSize: RADARR_PAGE_SIZE,
-        getRowKey: radarrInstanceRowKey,
-        hashFields: RADARR_HASH_FIELDS as unknown as ReadonlyArray<
-          keyof RadarrInstanceRow & string
-        >,
-        buildKey: ({ category, query }) => `${category}::${query}`,
-        fetchPage: (category, page, pageSize, query) =>
-          getRadarrMovies(category, page, pageSize, query),
-        extractPage: (response) => ({
-          rows: (response.movies ?? []).map((movie) => ({
-            ...movie,
-            __instance: response.category ?? "",
-          })) as ReadonlyArray<RadarrInstanceRow>,
-          page: response.page ?? 0,
-          pageSize: response.page_size ?? RADARR_PAGE_SIZE,
-          total: response.total ?? (response.movies ?? []).length,
-        }),
-        keepAllPages: true,
-        filterRows: (rows, filters) => radarrFilterRows(rows, filters),
-        errorMessage: (category) => `Failed to load ${category} movies`,
-      },
-    ),
+    useInstancePagedFetch<
+      RadarrInstanceRow,
+      RadarrMoviesResponse,
+      RadarrFilters
+    >(params, {
+      basePageSize: RADARR_PAGE_SIZE,
+      getRowKey: radarrInstanceRowKey,
+      hashFields: RADARR_HASH_FIELDS as unknown as ReadonlyArray<
+        keyof RadarrInstanceRow & string
+      >,
+      buildKey: ({ category, query }) => `${category}::${query}`,
+      fetchPage: (category, page, pageSize, query) =>
+        getRadarrMovies(category, page, pageSize, query),
+      extractPage: (response) => ({
+        rows: (response.movies ?? []).map((movie) => ({
+          ...movie,
+          __instance: response.category ?? "",
+        })) as ReadonlyArray<RadarrInstanceRow>,
+        page: response.page ?? 0,
+        pageSize: response.page_size ?? RADARR_PAGE_SIZE,
+        total: response.total ?? (response.movies ?? []).length,
+      }),
+      keepAllPages: true,
+      filterRows: (rows, filters) => radarrFilterRows(rows, filters),
+      errorMessage: (category) => `Failed to load ${category} movies`,
+    }),
   buildAggregateSelection: (row, instances) => ({
     id: radarrAggRowKey(row),
     source: "aggregate",
@@ -270,12 +269,8 @@ export const RADARR_DEFINITION: ArrCatalogDefinition<
       category={String(extras.category ?? "")}
     />
   ),
-  renderAggregateBody: (props) => (
-    <RadarrAggregateBody {...props} />
-  ),
-  renderInstanceBody: (props) => (
-    <RadarrInstanceBody {...props} />
-  ),
+  renderAggregateBody: (props) => <RadarrAggregateBody {...props} />,
+  renderInstanceBody: (props) => <RadarrInstanceBody {...props} />,
 };
 
 export function getRadarrCatalogDefinition(): AnyArrCatalogDefinition {
@@ -359,25 +354,35 @@ function RadarrAggregateBody({
       {lastUpdated ? `(updated ${lastUpdated})` : ""}
       <br />
       <strong>Available:</strong>{" "}
-      {summary.available.toLocaleString(undefined, { maximumFractionDigits: 0 })}{" "}
+      {summary.available.toLocaleString(undefined, {
+        maximumFractionDigits: 0,
+      })}{" "}
       • <strong>Monitored:</strong>{" "}
-      {summary.monitored.toLocaleString(undefined, { maximumFractionDigits: 0 })}{" "}
+      {summary.monitored.toLocaleString(undefined, {
+        maximumFractionDigits: 0,
+      })}{" "}
       • <strong>Missing:</strong>{" "}
       {summary.missing.toLocaleString(undefined, { maximumFractionDigits: 0 })}{" "}
       • <strong>Total:</strong>{" "}
       {summary.total.toLocaleString(undefined, { maximumFractionDigits: 0 })}
       {isAggFiltered && total < summary.total ? (
         <>
-          {" "}• <strong>Filtered:</strong>{" "}
+          {" "}
+          • <strong>Filtered:</strong>{" "}
           {total.toLocaleString(undefined, { maximumFractionDigits: 0 })} of{" "}
-          {summary.total.toLocaleString(undefined, { maximumFractionDigits: 0 })}
+          {summary.total.toLocaleString(undefined, {
+            maximumFractionDigits: 0,
+          })}
         </>
       ) : null}
     </>
   );
 
   const showCatalogEmptyHint =
-    !effectiveLoading && total === 0 && summary.total === 0 && instanceCount > 0;
+    !effectiveLoading &&
+    total === 0 &&
+    summary.total === 0 &&
+    instanceCount > 0;
 
   return (
     <ArrCatalogStandardBody
@@ -471,8 +476,7 @@ function RadarrInstanceBody({
     },
     [category, onRowSelect],
   );
-  const waitingForStableEmpty =
-    !emptyStateReady && visibleRows.length === 0;
+  const waitingForStableEmpty = !emptyStateReady && visibleRows.length === 0;
   const effectiveLoading = loading || waitingForStableEmpty;
   const summaryLine = (
     <>

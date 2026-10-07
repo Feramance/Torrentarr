@@ -16,7 +16,7 @@ function movedBeyondThreshold(
   startX: number,
   startY: number,
   endX: number,
-  endY: number
+  endY: number,
 ): boolean {
   return (
     Math.abs(endX - startX) > MOVE_THRESHOLD_PX ||
@@ -44,7 +44,7 @@ function installSafeClickTracking(): void {
       pointerDownPoint = { x: event.clientX, y: event.clientY };
       pointerDragged = false;
     },
-    true
+    true,
   );
 
   document.addEventListener(
@@ -58,13 +58,13 @@ function installSafeClickTracking(): void {
           pointerDownPoint.x,
           pointerDownPoint.y,
           event.clientX,
-          event.clientY
+          event.clientY,
         )
       ) {
         pointerDragged = true;
       }
     },
-    true
+    true,
   );
 
   document.addEventListener(
@@ -72,7 +72,7 @@ function installSafeClickTracking(): void {
     () => {
       resetPointerSession();
     },
-    true
+    true,
   );
 }
 
@@ -90,7 +90,7 @@ function shouldIgnoreClick(event: MouseEvent | PointerEvent): boolean {
         pointerDownPoint.x,
         pointerDownPoint.y,
         event.clientX,
-        event.clientY
+        event.clientY,
       )
     ) {
       return true;
@@ -109,7 +109,7 @@ function shouldIgnoreClick(event: MouseEvent | PointerEvent): boolean {
 
 /** Wrap a click handler so selection/drag-induced clicks are ignored. */
 function createSafeClickHandler(
-  handler: (event: MouseEvent<HTMLElement>) => void
+  handler: (event: MouseEvent<HTMLElement>) => void,
 ): (event: MouseEvent<HTMLElement>) => void {
   installSafeClickTracking();
   return (event) => {
@@ -121,7 +121,9 @@ function createSafeClickHandler(
 }
 
 /** Wrap a zero-arg click handler (modal close, tab switch, etc.). */
-export function safeClick(handler: () => void): (event: MouseEvent<HTMLElement>) => void {
+export function safeClick(
+  handler: () => void,
+): (event: MouseEvent<HTMLElement>) => void {
   return createSafeClickHandler(() => {
     handler();
   });
@@ -162,7 +164,7 @@ export function useSafeBackdropClose(onClose: () => void): {
             startPoint.current.x,
             startPoint.current.y,
             event.clientX,
-            event.clientY
+            event.clientY,
           )
         ) {
           startPoint.current = null;
@@ -172,7 +174,7 @@ export function useSafeBackdropClose(onClose: () => void): {
       startPoint.current = null;
       onClose();
     },
-    [onClose]
+    [onClose],
   );
 
   return { onPointerDown, onPointerUp };

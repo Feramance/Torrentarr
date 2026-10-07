@@ -28,12 +28,16 @@ export type SonarrSeriesGroup = {
 };
 
 function sortEpisodes(a: SonarrEpisodeRow, b: SonarrEpisodeRow): number {
-  const s = String(a.season).localeCompare(String(b.season), undefined, { numeric: true });
+  const s = String(a.season).localeCompare(String(b.season), undefined, {
+    numeric: true,
+  });
   if (s !== 0) return s;
   const ea = Number(a.episode);
   const eb = Number(b.episode);
   if (Number.isFinite(ea) && Number.isFinite(eb)) return ea - eb;
-  return String(a.episode).localeCompare(String(b.episode), undefined, { numeric: true });
+  return String(a.episode).localeCompare(String(b.episode), undefined, {
+    numeric: true,
+  });
 }
 
 export function SonarrSeriesGroupDetailBody({
@@ -58,7 +62,7 @@ export function SonarrSeriesGroupDetailBody({
       arr.sort(sortEpisodes);
     }
     return Array.from(m.entries()).sort(([a], [b]) =>
-      a.localeCompare(b, undefined, { numeric: true })
+      a.localeCompare(b, undefined, { numeric: true }),
     );
   }, [group.episodes]);
 
@@ -92,9 +96,7 @@ export function SonarrSeriesGroupDetailBody({
               </thead>
               <tbody>
                 {eps.map((ep) => (
-                  <tr
-                    key={`${ep.season}-${ep.episode}-${ep.title}`}
-                  >
+                  <tr key={`${ep.season}-${ep.episode}-${ep.title}`}>
                     <td data-label="Episode">{ep.episode}</td>
                     <td data-label="Title">{ep.title}</td>
                     <td data-label="Monitored">

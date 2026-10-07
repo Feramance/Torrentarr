@@ -18,38 +18,36 @@ export interface InstanceChunkPageResult {
  * the raw response so callers can fold rollup counts (Lidarr's `counts` / `album_total`)
  * into their state without an extra call.
  */
-export async function forEachInstanceChunkedPages<TResp = unknown>(
-  options: {
-    readonly instances: readonly ArrInfo[];
-    readonly chunk: number;
-    readonly gen: number;
-    readonly genRef: { readonly current: number };
-    fetchSlice: (
-      category: string,
-      pageIdx: number,
-      chunkSize: number
-    ) => Promise<
-      InstanceChunkPageResult & {
-        readonly slice: readonly unknown[];
-        readonly response: TResp;
-      }
-    >;
-    onSlice: (
-      slice: readonly unknown[],
-      instanceLabel: string,
-      response: TResp,
-    ) => void;
-    /**
-     * Called once per instance when the first page metadata is known. Receives
-     * `total` (may be undefined) and the raw response (for rollup callbacks).
-     */
-    onInstanceFirstPage?: (
-      total: number | undefined,
-      response: TResp,
-      instanceLabel: string,
-    ) => void;
-  }
-): Promise<void> {
+export async function forEachInstanceChunkedPages<TResp = unknown>(options: {
+  readonly instances: readonly ArrInfo[];
+  readonly chunk: number;
+  readonly gen: number;
+  readonly genRef: { readonly current: number };
+  fetchSlice: (
+    category: string,
+    pageIdx: number,
+    chunkSize: number,
+  ) => Promise<
+    InstanceChunkPageResult & {
+      readonly slice: readonly unknown[];
+      readonly response: TResp;
+    }
+  >;
+  onSlice: (
+    slice: readonly unknown[],
+    instanceLabel: string,
+    response: TResp,
+  ) => void;
+  /**
+   * Called once per instance when the first page metadata is known. Receives
+   * `total` (may be undefined) and the raw response (for rollup callbacks).
+   */
+  onInstanceFirstPage?: (
+    total: number | undefined,
+    response: TResp,
+    instanceLabel: string,
+  ) => void;
+}): Promise<void> {
   const {
     instances,
     chunk,

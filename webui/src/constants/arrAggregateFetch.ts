@@ -11,9 +11,10 @@ export const AGG_FALLBACK_AGGREGATE_PAGES_MAX = 100000;
 export function pagesFromAggregateTotal(
   totalUnknown: unknown,
   pageSizeFromResponse?: unknown,
-  chunkFallback: number = AGGREGATE_FETCH_CHUNK_SIZE
+  chunkFallback: number = AGGREGATE_FETCH_CHUNK_SIZE,
 ): number | null {
-  if (typeof totalUnknown !== "number" || Number.isNaN(totalUnknown)) return null;
+  if (typeof totalUnknown !== "number" || Number.isNaN(totalUnknown))
+    return null;
   const psRaw =
     typeof pageSizeFromResponse === "number" && pageSizeFromResponse > 0
       ? pageSizeFromResponse

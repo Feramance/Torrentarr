@@ -57,10 +57,10 @@ export function visibleRowsForCachedPage<T>(
  */
 export function categoryForInstanceLabel(
   instances: ArrInfo[],
-  label: string
+  label: string,
 ): string {
   const inst = instances.find(
-    (i) => (i.name || i.category) === label || i.category === label
+    (i) => (i.name || i.category) === label || i.category === label,
   );
   return inst?.category ?? instances[0]?.category ?? "";
 }
@@ -71,7 +71,7 @@ export function categoryForInstanceLabel(
  */
 export function reconcileArrCatalogSelection(
   filtered: ArrInfo[],
-  current: string | "aggregate" | ""
+  current: string | "aggregate" | "",
 ): string | "aggregate" {
   if (!filtered.length) {
     return "aggregate";

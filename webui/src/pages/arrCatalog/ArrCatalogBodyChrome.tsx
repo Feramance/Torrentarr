@@ -117,9 +117,7 @@ export function ArrCatalogPagination({
         <button
           className="btn"
           type="button"
-          onClick={() =>
-            onPageChange(Math.min(totalPages - 1, page + 1))
-          }
+          onClick={() => onPageChange(Math.min(totalPages - 1, page + 1))}
           disabled={page >= totalPages - 1 || loading}
         >
           Next

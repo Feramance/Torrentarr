@@ -20,7 +20,11 @@ const opts: RowsStoreOptions<Row> = {
 describe("syncRowsSnapshot", () => {
   it("returns noop and same snapshot reference when nothing changed", () => {
     const prev = createEmptyRowsSnapshot<Row>();
-    const first = syncRowsSnapshot(prev, [{ id: "1", title: "A", score: 1 }], opts);
+    const first = syncRowsSnapshot(
+      prev,
+      [{ id: "1", title: "A", score: 1 }],
+      opts,
+    );
     const second = syncRowsSnapshot(
       first.snapshot,
       [{ id: "1", title: "A", score: 1 }],

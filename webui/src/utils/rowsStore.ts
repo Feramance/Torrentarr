@@ -21,11 +21,7 @@
  * can subscribe to a single id without rerunning the diff for every update.
  */
 
-import {
-  createItemHash,
-  detectChanges,
-  type Hashable,
-} from "./dataSync";
+import { createItemHash, detectChanges, type Hashable } from "./dataSync";
 
 export type RowsChangeKind = "noop" | "update-only" | "add-remove";
 
@@ -51,7 +47,9 @@ export interface RowsSyncResult<T extends Hashable> {
   removed: string[];
 }
 
-export function createEmptyRowsSnapshot<T extends Hashable>(): RowsStoreSnapshot<T> {
+export function createEmptyRowsSnapshot<
+  T extends Hashable,
+>(): RowsStoreSnapshot<T> {
   return {
     rowOrder: [],
     rowsById: new Map<string, T>(),
@@ -99,8 +97,7 @@ export function syncRowsSnapshot<T extends Hashable>(
     };
   }
 
-  const hasAddRemove =
-    changes.added.length > 0 || changes.removed.length > 0;
+  const hasAddRemove = changes.added.length > 0 || changes.removed.length > 0;
 
   // We always rebuild the maps so React sees a new reference on `rowsById` /
   // `rowVersionsById` / `rowHashesById` (those are the things the row-level subscribers
@@ -185,7 +182,8 @@ export class RowsStore<T extends Hashable> {
     // Fire per-row listeners only for ids whose version actually ticked.
     const touchedIds = new Set<string>();
     for (const item of result.added) touchedIds.add(this.options.getKey(item));
-    for (const item of result.updated) touchedIds.add(this.options.getKey(item));
+    for (const item of result.updated)
+      touchedIds.add(this.options.getKey(item));
     for (const id of result.removed) touchedIds.add(id);
     if (touchedIds.size > 0) this.notifyRows(touchedIds);
 

@@ -23,9 +23,7 @@ export function RadarrMovieDetailBody({
   const openUrl =
     id != null && category ? getRadarrOpenMovieUrl(category, id) : null;
   const poster =
-    id != null && category
-      ? radarrMovieThumbnailUrl(category, id)
-      : null;
+    id != null && category ? radarrMovieThumbnailUrl(category, id) : null;
   const reason = movie.reason as string | null | undefined;
   return (
     <div className="arr-detail-radarr">

@@ -6,13 +6,21 @@ interface ArrExternalLinkProps {
 }
 
 /** Shared "Open in *Arr" action link for detail modals. */
-export function ArrExternalLink({ href, arrName }: ArrExternalLinkProps): JSX.Element | null {
+export function ArrExternalLink({
+  href,
+  arrName,
+}: ArrExternalLinkProps): JSX.Element | null {
   if (!href) {
     return null;
   }
   return (
     <div className="arr-detail-actions">
-      <a className="btn small outline" href={href} target="_blank" rel="noreferrer">
+      <a
+        className="btn small outline"
+        href={href}
+        target="_blank"
+        rel="noreferrer"
+      >
         Open in {arrName}
       </a>
     </div>
@@ -33,7 +41,9 @@ export function ArrInstanceHint({
     instanceLabel != null && String(instanceLabel).trim() !== ""
       ? String(instanceLabel).trim()
       : null;
-  const profileName = qualityProfileName?.trim() ? qualityProfileName.trim() : null;
+  const profileName = qualityProfileName?.trim()
+    ? qualityProfileName.trim()
+    : null;
   if (hintLabel == null && !profileName) {
     return null;
   }

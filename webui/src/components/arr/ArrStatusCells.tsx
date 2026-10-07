@@ -10,9 +10,7 @@ export function ArrMonitoredBadge({
   readonly monitored: boolean;
 }): JSX.Element {
   return (
-    <span
-      className={`table-badge ${monitored ? "monitored" : "unmonitored"}`}
-    >
+    <span className={`table-badge ${monitored ? "monitored" : "unmonitored"}`}>
       {monitored ? "Monitored" : "Unmonitored"}
     </span>
   );

@@ -101,8 +101,9 @@ export function ArrCatalogShell<
   const [instances, setInstances] = useState<ArrInfo[]>([]);
   const [selection, setSelection] = useState<string | "aggregate" | "">("");
   const [filters, setFilters] = useState<TFilters>(definition.initialFilters);
-  const [modalSelection, setModalSelection] =
-    useState<ArrCatalogModalSelection<TInstSeed | TAggSeed> | null>(null);
+  const [modalSelection, setModalSelection] = useState<ArrCatalogModalSelection<
+    TInstSeed | TAggSeed
+  > | null>(null);
 
   const selectionRef = useRef<string | "aggregate" | "">(selection);
   selectionRef.current = selection;
@@ -140,10 +141,8 @@ export function ArrCatalogShell<
   );
 
   const pushToast = useCallback(
-    (
-      message: string,
-      kind?: "info" | "success" | "warning" | "error",
-    ) => push(message, kind ?? "info"),
+    (message: string, kind?: "info" | "success" | "warning" | "error") =>
+      push(message, kind ?? "info"),
     [push],
   );
 
@@ -219,8 +218,7 @@ export function ArrCatalogShell<
   const instanceLabel = useMemo(() => {
     if (!selection || selection === "aggregate") return "";
     return (
-      instances.find((i) => i.category === selection)?.name ||
-      String(selection)
+      instances.find((i) => i.category === selection)?.name || String(selection)
     );
   }, [instances, selection]);
 

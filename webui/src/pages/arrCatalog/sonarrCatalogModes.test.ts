@@ -63,7 +63,9 @@ describe("filterSeriesEntriesForMissing", () => {
         },
       },
     };
-    expect(filterSeriesEntriesForMissing([onlyAvailable], true)).toHaveLength(0);
+    expect(filterSeriesEntriesForMissing([onlyAvailable], true)).toHaveLength(
+      0,
+    );
   });
 });
 

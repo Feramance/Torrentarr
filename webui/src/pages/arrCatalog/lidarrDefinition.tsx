@@ -17,7 +17,11 @@ import { lidarrArtistThumbnailUrl } from "../../utils/arrThumbnailUrl";
 import { ArrCatalogIconTile } from "./ArrCatalogIconTile";
 import { ArrCatalogStandardBody } from "./ArrCatalogStandardBody";
 import { createStandardArrFilters } from "./createStandardArrFilters";
-import type { ArrCatalogDefinition, ArrCatalogSummary, AnyArrCatalogDefinition } from "./definition";
+import type {
+  ArrCatalogDefinition,
+  ArrCatalogSummary,
+  AnyArrCatalogDefinition,
+} from "./definition";
 import { useInstancePagedFetch } from "./useInstancePagedFetch";
 import { categoryForInstanceLabel } from "./utils";
 import type { RowsStore } from "../../utils/rowsStore";
@@ -54,7 +58,9 @@ const LIDARR_AGG_HASH_FIELDS = ["__instance", "artist"] as const;
  * Ensure each browse row is `{ artist: { id, name, ... } }` and coerce numeric ids.
  * Handles flat rows or legacy `Title` if the API shape ever diverges.
  */
-function normalizeLidarrBrowseRows(raw: readonly unknown[]): LidarrInstanceRow[] {
+function normalizeLidarrBrowseRows(
+  raw: readonly unknown[],
+): LidarrInstanceRow[] {
   const out: LidarrInstanceRow[] = [];
   for (const item of raw) {
     if (!item || typeof item !== "object") continue;
@@ -108,9 +114,7 @@ function lidarrAggRowKey(row: LidarrAggRow): string {
   return `${row.__instance}::${lidarrArtistKey(artist)}`;
 }
 
-function lidarrArtistTileStats(
-  artist: Record<string, unknown>,
-): JSX.Element {
+function lidarrArtistTileStats(artist: Record<string, unknown>): JSX.Element {
   const monA = artist["albumsMonitored"];
   const availA = artist["albumsAvailable"];
   const missA = artist["albumsMissing"];
@@ -206,9 +210,7 @@ const LIDARR_INSTANCE_COLUMNS: ColumnDef<LidarrInstanceRow>[] = [
     header: "Quality profile",
     cell: ({ row }) => {
       const a = row.original.artist as Record<string, unknown>;
-      return (
-        (a?.["qualityProfileName"] as string | null | undefined) || "—"
-      );
+      return (a?.["qualityProfileName"] as string | null | undefined) || "—";
     },
   },
   {
@@ -237,7 +239,9 @@ const LIDARR_AGG_COLUMNS_MULTI: ColumnDef<LidarrAggRow>[] = [
 ];
 
 function getLidarrAggColumns(instanceCount: number): ColumnDef<LidarrAggRow>[] {
-  return instanceCount > 1 ? LIDARR_AGG_COLUMNS_MULTI : LIDARR_AGG_COLUMNS_SINGLE;
+  return instanceCount > 1
+    ? LIDARR_AGG_COLUMNS_MULTI
+    : LIDARR_AGG_COLUMNS_SINGLE;
 }
 
 const LIDARR_INITIAL_ROLLUP: LidarrRollup = {
@@ -459,10 +463,9 @@ export const LIDARR_DEFINITION: ArrCatalogDefinition<
     return (aggregateFresh ?? aggregateSeed) as LidarrAggRow;
   },
   getModalTitle: (liveRow, extras) => {
-    const a =
-      (liveRow as LidarrInstanceRow | LidarrAggRow).artist as
-        | Record<string, unknown>
-        | undefined;
+    const a = (liveRow as LidarrInstanceRow | LidarrAggRow).artist as
+      | Record<string, unknown>
+      | undefined;
     return String(a?.["name"] ?? extras.artistId ?? "Artist");
   },
   getModalMaxWidth: () => 720,
@@ -561,13 +564,13 @@ function LidarrAggregateBody({
   const effectiveLoading = loading || waitingForStableEmpty;
   const summaryLine = (
     <>
-      Artist grid below: one tile or row per artist (same idea as Sonarr series).
-      Album figures are catalog rollups, not the browse rows.{" "}
+      Artist grid below: one tile or row per artist (same idea as Sonarr
+      series). Album figures are catalog rollups, not the browse rows.{" "}
       {lastUpdated ? `(updated ${lastUpdated})` : ""}
       <br />
       <strong>Artists in catalog:</strong>{" "}
-      {summary.total.toLocaleString(undefined, { maximumFractionDigits: 0 })}{" "}
-      • <strong>Album catalog — available:</strong>{" "}
+      {summary.total.toLocaleString(undefined, { maximumFractionDigits: 0 })} •{" "}
+      <strong>Album catalog — available:</strong>{" "}
       {summary.available.toLocaleString(undefined, {
         maximumFractionDigits: 0,
       })}{" "}
@@ -579,7 +582,8 @@ function LidarrAggregateBody({
       {summary.missing.toLocaleString(undefined, { maximumFractionDigits: 0 })}
       {typeof summary.rollupTotalAlbumsHint === "number" ? (
         <>
-          {" "}• <strong>Album rows (SQLite):</strong>{" "}
+          {" "}
+          • <strong>Album rows (SQLite):</strong>{" "}
           {summary.rollupTotalAlbumsHint.toLocaleString(undefined, {
             maximumFractionDigits: 0,
           })}
@@ -587,7 +591,8 @@ function LidarrAggregateBody({
       ) : null}
       {isAggFiltered && total < summary.total ? (
         <>
-          {" "}• <strong>Filtered artists:</strong>{" "}
+          {" "}
+          • <strong>Filtered artists:</strong>{" "}
           {total.toLocaleString(undefined, { maximumFractionDigits: 0 })}
         </>
       ) : null}
@@ -691,8 +696,7 @@ function LidarrInstanceBody({
     },
     [category, onRowSelect],
   );
-  const waitingForStableEmpty =
-    !emptyStateReady && visibleRows.length === 0;
+  const waitingForStableEmpty = !emptyStateReady && visibleRows.length === 0;
   const effectiveLoading = loading || waitingForStableEmpty;
   const summaryLine = (
     <>

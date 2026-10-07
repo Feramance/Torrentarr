@@ -44,10 +44,7 @@ export interface ArrCatalogFilterSelectSpec<
   /** Convert filter state to the option string used by the `<select>` value. */
   readonly getValue: (filters: TFilters) => string;
   /** Apply the selected option back into the filter state. */
-  readonly setValue: (
-    prev: TFilters,
-    nextOption: string,
-  ) => TFilters;
+  readonly setValue: (prev: TFilters, nextOption: string) => TFilters;
 }
 
 /**
@@ -89,10 +86,7 @@ export interface ArrCatalogAggregateAdapter<
     push: (row: TAggRow) => void,
   ) => void;
   /** Optional per-instance rollup update on the first page of each instance. */
-  readonly accumulateRollup?: (
-    prev: TRollup,
-    response: TAggResp,
-  ) => TRollup;
+  readonly accumulateRollup?: (prev: TRollup, response: TAggResp) => TRollup;
   /** Build the summary line from the merged row list + accumulated rollup. */
   readonly summarize: (
     rows: ReadonlyArray<TAggRow>,
@@ -109,9 +103,7 @@ export interface ArrCatalogAggregateAdapter<
     debouncedSearch: string,
   ) => ReadonlyArray<TAggRow>;
   /** Optional client-side sort (e.g. Lidarr instance->name asc). */
-  readonly sortRows?: (
-    rows: ReadonlyArray<TAggRow>,
-  ) => ReadonlyArray<TAggRow>;
+  readonly sortRows?: (rows: ReadonlyArray<TAggRow>) => ReadonlyArray<TAggRow>;
 }
 
 /**
@@ -184,7 +176,9 @@ export interface ArrCatalogInstancePipelineParams<
  * Render context passed to per-Arr render slots. Includes everything the slot might
  * need to display rows, run an action, or wire pagination.
  */
-export interface ArrCatalogRenderContext<TFilters extends Record<string, unknown>> {
+export interface ArrCatalogRenderContext<
+  TFilters extends Record<string, unknown>,
+> {
   readonly instances: ReadonlyArray<ArrInfo>;
   readonly instanceCount: number;
   readonly browseMode: "list" | "icon";
@@ -322,7 +316,10 @@ export interface ArrCatalogDefinition<
     readonly instanceSeed: TInstSeed | null;
     readonly aggregateSeed: TAggSeed | null;
   }) => TLiveRow;
-  readonly getModalTitle: (liveRow: TLiveRow, extras: Record<string, unknown>) => string;
+  readonly getModalTitle: (
+    liveRow: TLiveRow,
+    extras: Record<string, unknown>,
+  ) => string;
   readonly getModalMaxWidth: () => number;
   readonly renderModalBody: (
     props: ArrCatalogModalRenderProps<TLiveRow, TInstSeed | TAggSeed>,

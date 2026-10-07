@@ -20,7 +20,9 @@ describe("withPosterRetryParam", () => {
   });
 
   it("preserves and replaces existing query params", () => {
-    expect(withPosterRetryParam("/thumb?foo=1&_retry=9", 1)).toBe("/thumb?foo=1&_retry=1");
+    expect(withPosterRetryParam("/thumb?foo=1&_retry=9", 1)).toBe(
+      "/thumb?foo=1&_retry=1",
+    );
   });
 });
 

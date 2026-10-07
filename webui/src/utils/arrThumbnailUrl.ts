@@ -9,7 +9,7 @@ import { webPath } from "../api/urlBase";
 
 export function radarrMovieThumbnailUrl(
   category: string,
-  entryId: number
+  entryId: number,
 ): string {
   const c = encodeURIComponent(category);
   return webPath(`/web/radarr/${c}/movie/${entryId}/thumbnail`);
@@ -17,7 +17,7 @@ export function radarrMovieThumbnailUrl(
 
 export function sonarrSeriesThumbnailUrl(
   category: string,
-  entryId: number
+  entryId: number,
 ): string {
   const c = encodeURIComponent(category);
   return webPath(`/web/sonarr/${c}/series/${entryId}/thumbnail`);
@@ -25,7 +25,7 @@ export function sonarrSeriesThumbnailUrl(
 
 export function lidarrArtistThumbnailUrl(
   category: string,
-  artistId: number
+  artistId: number,
 ): string {
   const c = encodeURIComponent(category);
   return webPath(`/web/lidarr/${c}/artist/${artistId}/thumbnail`);

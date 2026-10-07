@@ -1,9 +1,4 @@
-import {
-  useCallback,
-  useMemo,
-  useState,
-  useSyncExternalStore,
-} from "react";
+import { useCallback, useMemo, useState, useSyncExternalStore } from "react";
 import {
   RowsStore,
   type RowsStoreOptions,
@@ -58,7 +53,10 @@ export function useRowsStore<T extends Hashable>(
 
   const sync = useCallback((incoming: T[]) => store.sync(incoming), [store]);
   const reset = useCallback(() => store.reset(), [store]);
-  const replace = useCallback((incoming: T[]) => store.replace(incoming), [store]);
+  const replace = useCallback(
+    (incoming: T[]) => store.replace(incoming),
+    [store],
+  );
 
   return { snapshot, sync, reset, replace, store };
 }
