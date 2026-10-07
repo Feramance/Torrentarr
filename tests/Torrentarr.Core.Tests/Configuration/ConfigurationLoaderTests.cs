@@ -73,7 +73,7 @@ public class ConfigurationLoaderTests : IDisposable
 
             [[qBit.CategorySeeding.Categories]]
             Name = "movies"
-            StalledDelay = 0
+            StalledDelay = "0m"
 
             [Radarr-Movies.Torrent]
             StalledDelay = 0

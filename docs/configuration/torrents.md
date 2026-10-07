@@ -753,7 +753,7 @@ MaxSeedingTime = 172800  # 48 hours (more patient)
 
 1. **Stalled cleanup disabled (infinite grace):**
    ```toml
-   StalledDelay = -1  # Infinite grace; never removes stalled torrents
+   StalledDelay = -1  # Infinite stalled grace; other cleanup rules may still remove torrents
    ```
 
 2. **DoNotRemoveSlow enabled:**

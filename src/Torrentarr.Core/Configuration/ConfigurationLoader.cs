@@ -392,10 +392,9 @@ public class ConfigurationLoader
         // qBitrr configs use the 5.x version namespace; Torrentarr configs use
         // the +1 major 6.x namespace. Do not reinterpret an already-migrated
         // qBitrr 5.14.6+ config imported into Torrentarr.
-        var legacy = currentVersion.Major == 5
-            ? currentVersion < new Version(5, 14, 6)
-            : currentVersion < new Version(6, 15, 2);
-        if (!legacy)
+        var qbitrrLegacy = currentVersion.Major == 5 && currentVersion < new Version(5, 14, 6);
+        var torrentarrLegacy = currentVersion.Major != 5 && currentVersion < new Version(6, 15, 2);
+        if (!qbitrrLegacy && !torrentarrLegacy)
             return false;
 
         var changed = false;
@@ -408,7 +407,7 @@ public class ConfigurationLoader
                 && section.TryGetValue("Torrent", out var torrentObj)
                 && torrentObj is TomlTable torrent)
             {
-                changed |= SwapStalledDelayValues(torrent);
+                changed |= SwapStalledDelayValues(torrent, qbitrrLegacy);
             }
 
             if ((name.Equals("qBit", StringComparison.OrdinalIgnoreCase)
@@ -416,27 +415,48 @@ public class ConfigurationLoader
                 && section.TryGetValue("CategorySeeding", out var seedingObj)
                 && seedingObj is TomlTable seeding)
             {
-                changed |= SwapStalledDelayValues(seeding);
+                changed |= SwapStalledDelayValues(seeding, qbitrrLegacy);
             }
         }
 
         return changed;
     }
 
-    private static bool SwapStalledDelayValues(TomlTable table)
+    private static bool SwapStalledDelayValues(TomlTable table, bool swapDisabledSentinel)
     {
         var changed = false;
-        if (table.TryGetValue("StalledDelay", out var value)
-            && value?.ToString()?.Trim() == "0")
+        if (table.TryGetValue("StalledDelay", out var value))
         {
-            table["StalledDelay"] = -1;
-            changed = true;
+            var parsed = DurationParser.ParseToMinutes(value, int.MinValue);
+            if (swapDisabledSentinel && parsed == -1)
+            {
+                table["StalledDelay"] = 0;
+                changed = true;
+            }
+            else if (parsed == 0)
+            {
+                table["StalledDelay"] = -1;
+                changed = true;
+            }
         }
 
-        if (table.TryGetValue("Categories", out var categoriesObj))
+        foreach (var itemValue in table.Values)
         {
-            foreach (var category in GetTrackerTables(categoriesObj))
-                changed |= SwapStalledDelayValues(category);
+            if (itemValue is TomlTable child)
+                changed |= SwapStalledDelayValues(child, swapDisabledSentinel);
+            else if (itemValue is TomlTableArray tableArray)
+            {
+                foreach (var childItem in tableArray)
+                    changed |= SwapStalledDelayValues(childItem, swapDisabledSentinel);
+            }
+            else if (itemValue is TomlArray array)
+            {
+                foreach (var item in array)
+                {
+                    if (item is TomlTable childItem)
+                        changed |= SwapStalledDelayValues(childItem, swapDisabledSentinel);
+                }
+            }
         }
 
         return changed;
