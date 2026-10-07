@@ -103,6 +103,11 @@ public sealed class WorkerProcessSupervisor : BackgroundService, IProcessOrchest
     public Task RestartWorkerAsync(string processName) => RestartProcessAsync(processName);
     public async Task RestartAllWorkersAsync()
     {
+        string[] running;
+        lock (_gate) running = _processes.Keys.ToArray();
+        foreach (var name in running)
+            if (!_config.ArrInstances.TryGetValue(name, out var current) || !IsEligible(current))
+                await StopWorkerAsync(name, CancellationToken.None);
         foreach (var (name, config) in _config.ArrInstances)
             if (IsEligible(config))
                 await RestartProcessAsync(name);
@@ -117,10 +122,20 @@ public sealed class WorkerProcessSupervisor : BackgroundService, IProcessOrchest
             {
                 var heartbeat = StatusPath(name);
                 var lastHeartbeat = File.Exists(heartbeat) ? File.GetLastWriteTimeUtc(heartbeat) : (DateTime?)null;
+                var restartRequested = false;
+                if (File.Exists(heartbeat))
+                {
+                    try
+                    {
+                        using var doc = JsonDocument.Parse(File.ReadAllText(heartbeat));
+                        restartRequested = doc.RootElement.TryGetProperty("restartRequested", out var value) && value.GetBoolean();
+                    }
+                    catch { }
+                }
                 var started = process.StartTime.ToUniversalTime();
                 var alive = !process.HasExited && (DateTime.UtcNow - started < TimeSpan.FromSeconds(15)
                     || (lastHeartbeat != null && lastHeartbeat >= started && DateTime.UtcNow - lastHeartbeat < TimeSpan.FromSeconds(15)));
-                result[name] = new ProcessStatus { Name = name, Kind = "worker", ProcessId = alive ? process.Id : null, IsAlive = alive, LastHeartbeat = lastHeartbeat };
+                result[name] = new ProcessStatus { Name = name, Kind = "worker", ProcessId = alive ? process.Id : null, IsAlive = alive, LastHeartbeat = lastHeartbeat, RestartRequested = restartRequested };
             }
             foreach (var (name, config) in _config.ArrInstances)
                 if (IsEligible(config) && !result.ContainsKey(name))
@@ -133,6 +148,7 @@ public sealed class WorkerProcessSupervisor : BackgroundService, IProcessOrchest
     {
         lock (_gate)
         {
+            if (_stopping) return;
             if (_processes.TryGetValue(instanceName, out var existing) && !existing.HasExited) return;
             var start = ResolveWorkerStartInfo(instanceName);
             var process = Process.Start(start);
@@ -173,6 +189,8 @@ public sealed class WorkerProcessSupervisor : BackgroundService, IProcessOrchest
             if (!_restartTimes.TryGetValue(instanceName, out var times))
                 _restartTimes[instanceName] = times = new List<DateTime>();
             times.RemoveAll(t => now - t > TimeSpan.FromSeconds(_config.Settings.ProcessRestartWindow));
+            if (times.Count == 0)
+                _restartCounts.Remove(instanceName);
             if (times.Count >= _config.Settings.MaxProcessRestarts)
             {
                 _logger.LogWarning("Restart limit reached for {Instance}", instanceName);
@@ -185,18 +203,19 @@ public sealed class WorkerProcessSupervisor : BackgroundService, IProcessOrchest
 
     private void MonitorWorkers()
     {
-        KeyValuePair<string, Process>[] processes;
-        lock (_gate) processes = _processes.ToArray();
-        foreach (var (name, process) in processes)
+        lock (_gate)
         {
-            if (process.HasExited)
-                continue;
-            var path = StatusPath(name);
-            if (File.Exists(path) && DateTime.UtcNow - process.StartTime.ToUniversalTime() >= TimeSpan.FromSeconds(15)
-                && DateTime.UtcNow - File.GetLastWriteTimeUtc(path) > TimeSpan.FromSeconds(15))
+            foreach (var (name, process) in _processes)
             {
-                _logger.LogWarning("Worker {Instance} heartbeat is stale; terminating it", name);
-                try { process.Kill(true); } catch { }
+                if (process.HasExited)
+                    continue;
+                var path = StatusPath(name);
+                if (File.Exists(path) && DateTime.UtcNow - process.StartTime.ToUniversalTime() >= TimeSpan.FromSeconds(15)
+                    && DateTime.UtcNow - File.GetLastWriteTimeUtc(path) > TimeSpan.FromSeconds(15))
+                {
+                    _logger.LogWarning("Worker {Instance} heartbeat is stale; terminating it", name);
+                    try { process.Kill(true); } catch { }
+                }
             }
         }
     }
@@ -219,6 +238,7 @@ public sealed class WorkerProcessSupervisor : BackgroundService, IProcessOrchest
     private static ProcessStartInfo Build(string executable, string instance, string? workingDirectory, string? dll = null)
     {
         var info = new ProcessStartInfo(executable) { WorkingDirectory = workingDirectory ?? AppContext.BaseDirectory, UseShellExecute = false, RedirectStandardInput = true, RedirectStandardOutput = false, RedirectStandardError = false };
+        info.Environment["TORRENTARR_CONFIG"] = Path.GetFullPath(ConfigurationLoader.GetDefaultConfigPath());
         if (dll != null) info.ArgumentList.Add(dll);
         info.ArgumentList.Add("--instance");
         info.ArgumentList.Add(instance);

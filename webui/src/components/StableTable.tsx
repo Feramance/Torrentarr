@@ -10,12 +10,14 @@ interface StableTableProps<TData extends object> {
   data: TData[];
   columns: LegacyColumnDef<TData, unknown>[];
   getRowKey?: (row: TData) => string;
+  onRowClick?: (row: TData) => void;
 }
 
 function StableTableInner<TData extends object>({
   data,
   columns,
   getRowKey,
+  onRowClick,
 }: StableTableProps<TData>) {
   // TanStack Table returns unstable function refs; React Compiler skips memoization by design
   /* eslint-disable-next-line react-hooks/incompatible-library */
@@ -48,7 +50,7 @@ function StableTableInner<TData extends object>({
           {table.getRowModel().rows.map((row) => {
             const stableKey = getRowKey ? getRowKey(row.original) : row.id;
             return (
-              <tr key={stableKey}>
+              <tr key={stableKey} onClick={() => onRowClick?.(row.original)}>
                 {row.getVisibleCells().map((cell) => (
                   <td
                     key={cell.id}

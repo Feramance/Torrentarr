@@ -246,21 +246,48 @@ jobs:
             -p:CopyOutputSymbolsToPublishDirectory=false \
             -p:IsTransformWebConfigDisabled=true \
             -p:StaticWebAssetsEnabled=false \
-            -o "./dist/$rid"
+            -o "./dist/$rid/host"
+          dotnet publish src/Torrentarr.Workers/Torrentarr.Workers.csproj \
+            -c Release \
+            -r "$rid" \
+            --self-contained true \
+            -p:PublishSingleFile=true \
+            -p:IncludeNativeLibrariesForSelfExtract=true \
+            -p:DebugType=embedded \
+            -p:DebugSymbols=false \
+            -p:CopyOutputSymbolsToPublishDirectory=false \
+            -p:IsTransformWebConfigDisabled=true \
+            -p:StaticWebAssetsEnabled=false \
+            -o "./dist/$rid/worker"
         done
         for rid in linux-x64 linux-arm64 win-x64 osx-x64 osx-arm64; do
-          file_count=$(find "dist/$rid" -mindepth 1 -maxdepth 1 -type f | wc -l)
-          if [ "$file_count" -ne 1 ]; then
-            echo "Expected exactly one file for $rid, found $file_count" >&2
-            find "dist/$rid" -mindepth 1 -maxdepth 1 -print >&2
+          for component in host worker; do
+            file_count=$(find "dist/$rid/$component" -mindepth 1 -maxdepth 1 -type f | wc -l)
+            if [ "$file_count" -ne 1 ]; then
+              echo "Expected exactly one $component file for $rid, found $file_count" >&2
+              find "dist/$rid/$component" -mindepth 1 -maxdepth 1 -print >&2
+              exit 1
+            fi
+          done
+          if [ ! -f "dist/$rid/host/Torrentarr.Host" ] && [ ! -f "dist/$rid/host/Torrentarr.Host.exe" ]; then
+            echo "Host binary missing for $rid" >&2
             exit 1
           fi
         done
-        cp dist/linux-x64/Torrentarr.Host release/torrentarr-linux-x64
-        cp dist/linux-arm64/Torrentarr.Host release/torrentarr-linux-arm64
-        cp dist/win-x64/Torrentarr.Host.exe release/torrentarr-windows-x64.exe
-        cp dist/osx-x64/Torrentarr.Host release/torrentarr-macos-x64
-        cp dist/osx-arm64/Torrentarr.Host release/torrentarr-macos-arm64
+        for rid in linux-x64 linux-arm64 win-x64 osx-x64 osx-arm64; do
+          case "$rid" in
+            linux-x64) host_name=linux-x64; worker_name=linux-x64 ;;
+            linux-arm64) host_name=linux-arm64; worker_name=linux-arm64 ;;
+            win-x64) host_name=windows-x64.exe; worker_name=windows-x64.exe ;;
+            osx-x64) host_name=macos-x64; worker_name=osx-x64 ;;
+            osx-arm64) host_name=macos-arm64; worker_name=osx-arm64 ;;
+          esac
+          host_source="dist/$rid/host/Torrentarr.Host"
+          worker_source="dist/$rid/worker/Torrentarr.Workers"
+          [ "$rid" = win-x64 ] && host_source+=".exe" && worker_source+=".exe"
+          cp "$host_source" "release/torrentarr-$host_name"
+          cp "$worker_source" "release/torrentarr-workers-$worker_name"
+        done
     - name: Smoke-test Linux standalone binary
       run: bash scripts/smoke-standalone.sh release/torrentarr-linux-x64 6969
     - name: Upload binaries to release
@@ -274,6 +301,11 @@ jobs:
           release/torrentarr-windows-x64.exe
           release/torrentarr-macos-x64
           release/torrentarr-macos-arm64
+          release/torrentarr-workers-linux-x64
+          release/torrentarr-workers-linux-arm64
+          release/torrentarr-workers-windows-x64
+          release/torrentarr-workers-osx-x64
+          release/torrentarr-workers-osx-arm64
 
   build_and_push_docker:
     name: Build and push Docker images

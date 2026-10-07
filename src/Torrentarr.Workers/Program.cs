@@ -165,10 +165,12 @@ try
     builder.Services.AddScoped<ISeedingService, SeedingService>();
     builder.Services.AddScoped<IArrImportService, ArrImportService>();
     builder.Services.AddScoped<IDatabaseHealthService, DatabaseHealthService>();
+    builder.Services.AddScoped<QBitCategoryEnsureService>();
     builder.Services.AddSingleton<IConnectivityService, ConnectivityService>();
     builder.Services.AddSingleton<IPathMappingService, PathMappingService>();
     builder.Services.AddSingleton<ITorrentInventoryService, TorrentInventoryService>();
     builder.Services.AddSingleton<ISafeDeletionService, SafeDeletionService>();
+    builder.Services.AddSingleton<IImportPathTracker, ImportPathTracker>();
     builder.Services.AddSingleton<SearchYearCursor>();
     builder.Services.AddSingleton<StalledUploadTracker>();
 
@@ -178,13 +180,14 @@ try
 
     _ = Task.Run(async () =>
     {
+        var restartCoordinator = host.Services.GetRequiredService<DatabaseRestartCoordinator>();
         while (statusPath != null)
         {
             var tmp = statusPath + ".tmp";
             var statusDirectory = Path.GetDirectoryName(statusPath);
             if (!string.IsNullOrEmpty(statusDirectory))
                 Directory.CreateDirectory(statusDirectory);
-            await File.WriteAllTextAsync(tmp, System.Text.Json.JsonSerializer.Serialize(new { version = 1, instance = instanceName, pid = Environment.ProcessId, heartbeat = DateTimeOffset.UtcNow }));
+            await File.WriteAllTextAsync(tmp, System.Text.Json.JsonSerializer.Serialize(new { version = 1, instance = instanceName, pid = Environment.ProcessId, heartbeat = DateTimeOffset.UtcNow, restartRequested = restartCoordinator.RestartRequested }));
             File.Move(tmp, statusPath, true);
             await Task.Delay(TimeSpan.FromSeconds(5));
         }
@@ -236,6 +239,10 @@ class ArrWorkerService : BackgroundService
     private readonly IServiceProvider _serviceProvider;
     private readonly QBittorrentConnectionManager _qbitManager;
     private readonly IConnectivityService _connectivityService;
+    private readonly SearchYearCursor _yearCursor;
+    private DateTime _lastHealthCheck = DateTime.MinValue;
+    private DateTime _lastRssSync = DateTime.MinValue;
+    private DateTime _lastRefreshDownloads = DateTime.MinValue;
 
     private int _consecutiveErrors = 0;
     private DateTime _lastErrorTime = DateTime.MinValue;
@@ -255,7 +262,8 @@ class ArrWorkerService : BackgroundService
         WorkerContext context,
         IServiceProvider serviceProvider,
         QBittorrentConnectionManager qbitManager,
-        IConnectivityService connectivityService)
+        IConnectivityService connectivityService,
+        SearchYearCursor yearCursor)
     {
         _logger = logger;
         _config = config;
@@ -264,6 +272,7 @@ class ArrWorkerService : BackgroundService
         _serviceProvider = serviceProvider;
         _qbitManager = qbitManager;
         _connectivityService = connectivityService;
+        _yearCursor = yearCursor;
     }
 
     protected override async Task ExecuteAsync(CancellationToken stoppingToken)
@@ -276,6 +285,8 @@ class ArrWorkerService : BackgroundService
         await _qbitManager.EnsureAllConnectedAsync(_config.GetAllTorrentClients(), stoppingToken);
         if (!_qbitManager.IsConnected() && _config.GetAllTorrentClients().Any(q => !q.Value.Disabled && q.Value.Host != "CHANGE_ME"))
             _logger.LogWarning("Failed to connect to any qBittorrent instance; will retry each cycle");
+
+        await InitializeAsync(stoppingToken);
 
         try
         {
@@ -377,13 +388,22 @@ class ArrWorkerService : BackgroundService
 
         // Clean expired cache entries
         cacheService.CleanExpired();
-        await syncService.SyncAsync(_context.InstanceName, cancellationToken);
+        try
+        {
+            await syncService.SyncAsync(_context.InstanceName, cancellationToken);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(ex, "Arr sync failed; continuing torrent processing for {Instance}", _context.InstanceName);
+        }
         if (_instanceConfig.Search.SearchMissing)
             await syncService.MarkRequestsAsync(_context.InstanceName, cancellationToken);
+        await RunPeriodicCommandsAsync(cancellationToken);
 
         // Periodic database health check (every 10 iterations)
-        if (DateTime.UtcNow.Minute % 10 == 0)
+        if (DateTime.UtcNow - _lastHealthCheck >= TimeSpan.FromMinutes(10))
         {
+            _lastHealthCheck = DateTime.UtcNow;
             var healthResult = await dbHealthService.CheckHealthAsync(cancellationToken);
             if (!healthResult.IsHealthy)
             {
@@ -422,9 +442,12 @@ class ArrWorkerService : BackgroundService
         }
 
         // Search (if configured and on search cycle)
+        SearchResult? searchResult = null;
         if (!_instanceConfig.ProcessingOnly && ShouldRunSearch())
         {
-            SearchResult? searchResult = null;
+            if (_instanceConfig.Search.UseTempForMissing && _instanceConfig.Search.TempProfileResetTimeoutMinutes > 0)
+                await scope.ServiceProvider.GetRequiredService<QualityProfileSwitcherService>()
+                    .RestoreTimedOutProfilesAsync(_context.InstanceName, _instanceConfig, cancellationToken);
 
             // §2.7: DoUpgradeSearch is exclusive — when active, skip missing-media search
             if (_instanceConfig.Search.DoUpgradeSearch)
@@ -449,6 +472,51 @@ class ArrWorkerService : BackgroundService
                     if (upgradeResult.SearchesTriggered > 0)
                         _logger.LogInformation("Triggered {Count} searches for quality upgrades", upgradeResult.SearchesTriggered);
                 }
+            }
+        }
+
+        if (searchResult?.LoopCompleted == true && SearchYearCursor.ShouldFilter(_instanceConfig))
+            _yearCursor.Advance(_context.InstanceName);
+    }
+
+    private async Task InitializeAsync(CancellationToken cancellationToken)
+    {
+        using var scope = _serviceProvider.CreateScope();
+        var ensure = scope.ServiceProvider.GetRequiredService<QBitCategoryEnsureService>();
+        await ensure.EnsureCategoryOnAllInstancesAsync(_instanceConfig.Category, cancellationToken);
+        if (scope.ServiceProvider.GetRequiredService<ISeedingService>() is SeedingService seeding)
+            await seeding.EnsureAllTrackerTagsExistAsync(cancellationToken);
+        if (_instanceConfig.Search.UseTempForMissing && _instanceConfig.Search.ForceResetTempProfiles)
+            await scope.ServiceProvider.GetRequiredService<QualityProfileSwitcherService>()
+                .ForceResetAllTempProfilesAsync(_context.InstanceName, _instanceConfig, cancellationToken);
+        if (_config.Settings.FFprobeAutoUpdate)
+            await scope.ServiceProvider.GetRequiredService<IMediaValidationService>()
+                .UpdateFFprobeAsync(cancellationToken);
+    }
+
+    private async Task RunPeriodicCommandsAsync(CancellationToken cancellationToken)
+    {
+        var now = DateTime.UtcNow;
+        if (_instanceConfig.RssSyncTimer > 0 && now - _lastRssSync >= TimeSpan.FromMinutes(_instanceConfig.RssSyncTimer))
+        {
+            _lastRssSync = now;
+            switch (_instanceConfig.Type.ToLowerInvariant())
+            {
+                case "radarr": await new Torrentarr.Infrastructure.ApiClients.Arr.RadarrClient(_instanceConfig.URI, _instanceConfig.APIKey, _instanceConfig.SkipTLSVerify).RssSyncAsync(cancellationToken); break;
+                case "sonarr": await new Torrentarr.Infrastructure.ApiClients.Arr.SonarrClient(_instanceConfig.URI, _instanceConfig.APIKey, _instanceConfig.SkipTLSVerify).RssSyncAsync(cancellationToken); break;
+                case "lidarr": await new Torrentarr.Infrastructure.ApiClients.Arr.LidarrClient(_instanceConfig.URI, _instanceConfig.APIKey, _instanceConfig.SkipTLSVerify).RssSyncAsync(cancellationToken); break;
+                case "readarr": await new Torrentarr.Infrastructure.ApiClients.Arr.ReadarrClient(_instanceConfig.URI, _instanceConfig.APIKey, _instanceConfig.SkipTLSVerify).RssSyncAsync(cancellationToken); break;
+            }
+        }
+        if (_instanceConfig.RefreshDownloadsTimer > 0
+            && !string.Equals(_instanceConfig.Type, "lidarr", StringComparison.OrdinalIgnoreCase)
+            && now - _lastRefreshDownloads >= TimeSpan.FromMinutes(_instanceConfig.RefreshDownloadsTimer))
+        {
+            _lastRefreshDownloads = now;
+            switch (_instanceConfig.Type.ToLowerInvariant())
+            {
+                case "radarr": await new Torrentarr.Infrastructure.ApiClients.Arr.RadarrClient(_instanceConfig.URI, _instanceConfig.APIKey, _instanceConfig.SkipTLSVerify).RefreshMonitoredDownloadsAsync(cancellationToken); break;
+                case "sonarr": await new Torrentarr.Infrastructure.ApiClients.Arr.SonarrClient(_instanceConfig.URI, _instanceConfig.APIKey, _instanceConfig.SkipTLSVerify).RefreshMonitoredDownloadsAsync(cancellationToken); break;
             }
         }
     }

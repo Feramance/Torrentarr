@@ -395,8 +395,7 @@ public class ConfigurationLoader
         var swapBoth = currentVersion.Major == 5
             ? currentVersion < new Version(5, 14, 6)
             : currentVersion < new Version(6, 14, 6);
-        var rewriteBug = currentVersion == new Version(6, 15, 2);
-        if (!swapBoth && !rewriteBug)
+        if (!swapBoth)
             return false;
 
         var changed = false;
@@ -408,19 +407,19 @@ public class ConfigurationLoader
             if (ArrSectionHelper.IsArrSection(name)
                 && section.TryGetValue("Torrent", out var torrentObj)
                 && torrentObj is TomlTable torrent)
-                changed |= SwapStalledDelayValues(torrent, swapBoth, rewriteBug);
+                changed |= SwapStalledDelayValues(torrent, swapBoth);
 
             if ((name.Equals("qBit", StringComparison.OrdinalIgnoreCase)
                  || name.StartsWith("qBit-", StringComparison.OrdinalIgnoreCase))
                 && section.TryGetValue("CategorySeeding", out var seedingObj)
                 && seedingObj is TomlTable seeding)
-                changed |= SwapStalledDelayValues(seeding, swapBoth, rewriteBug);
+                changed |= SwapStalledDelayValues(seeding, swapBoth);
         }
 
         return changed;
     }
 
-    private static bool SwapStalledDelayValues(TomlTable table, bool swapBoth, bool rewriteBug)
+    private static bool SwapStalledDelayValues(TomlTable table, bool swapBoth)
     {
         var changed = false;
         if (table.TryGetValue("StalledDelay", out var value))
@@ -431,7 +430,7 @@ public class ConfigurationLoader
                 table["StalledDelay"] = -1;
                 changed = true;
             }
-            else if ((swapBoth || rewriteBug) && parsed == -1)
+            else if (swapBoth && parsed == -1)
             {
                 table["StalledDelay"] = 0;
                 changed = true;
@@ -441,14 +440,14 @@ public class ConfigurationLoader
         foreach (var itemValue in table.Values)
         {
             if (itemValue is TomlTable child)
-                changed |= SwapStalledDelayValues(child, swapBoth, rewriteBug);
+                changed |= SwapStalledDelayValues(child, swapBoth);
             else if (itemValue is TomlTableArray tableArray)
                 foreach (var childItem in tableArray)
-                    changed |= SwapStalledDelayValues(childItem, swapBoth, rewriteBug);
+                    changed |= SwapStalledDelayValues(childItem, swapBoth);
             else if (itemValue is TomlArray array)
                 foreach (var item in array)
                     if (item is TomlTable childItem)
-                        changed |= SwapStalledDelayValues(childItem, swapBoth, rewriteBug);
+                        changed |= SwapStalledDelayValues(childItem, swapBoth);
         }
 
         return changed;

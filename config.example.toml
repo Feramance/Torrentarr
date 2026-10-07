@@ -88,7 +88,7 @@ Token = "your-secure-token-here"
 
 # Authentication: AuthDisabled=true (default) = no login; false = require login (Local and/or OIDC). See docs/configuration/webui-authentication.md
 AuthDisabled = false
-LocalAuthEnabled = false
+LocalAuthEnabled = true
 OIDCEnabled = false
 
 # Enable live updates for Arr views

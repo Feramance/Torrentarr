@@ -96,7 +96,6 @@ export function ArrCatalogListOrGrid<TRow extends Hashable>({
 }: ArrCatalogListOrGridProps<TRow>): JSX.Element | null {
   void rowOrder;
   void rowsStore;
-  void onRowSelect;
   if (!rows.length) {
     return null;
   }
@@ -105,14 +104,22 @@ export function ArrCatalogListOrGrid<TRow extends Hashable>({
       data: TRow[];
       columns: LegacyColumnDef<TRow, unknown>[];
       getRowKey: (row: TRow) => string;
+      onRowClick: (row: TRow) => void;
     }>;
     return (
-      <StoreTable data={[...rows]} columns={columns} getRowKey={getRowKey} />
+      <StoreTable
+        data={[...rows]}
+        columns={columns}
+        getRowKey={getRowKey}
+        onRowClick={onRowSelect}
+      />
     );
   }
   return (
     <div className="arr-icon-grid" ref={iconGridRef}>
-      {rows.map((row) => renderIconTile(row))}
+      {rows.map((row) => (
+        <React.Fragment key={getRowKey(row)}>{renderIconTile(row)}</React.Fragment>
+      ))}
     </div>
   );
 }

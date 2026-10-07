@@ -1012,6 +1012,7 @@ export function RadarrView({ active }: { active: boolean }): JSX.Element {
     const pages = Object.keys(instancePages)
       .map(Number)
       .sort((a, b) => a - b);
+    if (!pages.length) return instanceData?.movies ?? [];
     const rows: RadarrMovie[] = [];
     pages.forEach((pg) => {
       if (instancePages[pg]) {
@@ -1019,7 +1020,7 @@ export function RadarrView({ active }: { active: boolean }): JSX.Element {
       }
     });
     return rows;
-  }, [instancePages]);
+  }, [instanceData, instancePages]);
 
   const handleRestart = useCallback(async () => {
     if (!selection || selection === "aggregate") return;

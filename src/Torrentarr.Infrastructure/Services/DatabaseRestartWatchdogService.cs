@@ -38,8 +38,9 @@ public class DatabaseRestartWatchdogService : BackgroundService
 
                 try
                 {
-                    foreach (var name in (await _arrWorkers.GetProcessStatusAsync()).Keys)
-                        await _arrWorkers.RestartProcessAsync(name);
+                    foreach (var status in (await _arrWorkers.GetProcessStatusAsync()).Values)
+                        if (status.RestartRequested || status.IsAlive)
+                            await _arrWorkers.RestartProcessAsync(status.Name);
                     await _qbitCategoryWorkers.RestartAllCategoriesAsync();
                 }
                 catch (Exception ex)

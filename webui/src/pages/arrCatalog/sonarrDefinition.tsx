@@ -341,7 +341,7 @@ function useSonarrInstancePipeline(
         }
         if (gen === fetchGenRef.current) setEmptyStateReady(true);
       } finally {
-        if (showLoading && gen === fetchGenRef.current) setLoading(false);
+        if (gen === fetchGenRef.current) setLoading(false);
       }
     },
     [pushToast, roundPageSize],
