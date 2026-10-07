@@ -57,7 +57,10 @@ function StableTableInner<TData extends object>({
                 aria-label={onRowClick ? `Select row ${stableKey}` : undefined}
                 onClick={() => onRowClick?.(row.original)}
                 onKeyDown={(event) => {
-                  if (onRowClick && (event.key === "Enter" || event.key === " ")) {
+                  if (
+                    onRowClick &&
+                    (event.key === "Enter" || event.key === " ")
+                  ) {
                     event.preventDefault();
                     onRowClick(row.original);
                   }
