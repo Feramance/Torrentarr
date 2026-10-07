@@ -81,7 +81,7 @@ public class ConfigurationLoaderTests : IDisposable
 
         var config = new ConfigurationLoader(_tempFilePath).Load();
 
-        config.QBitInstances["qBit"].CategorySeeding.StalledDelay.Should().Be(0);
+        config.QBitInstances["qBit"].CategorySeeding.StalledDelay.Should().Be(-1);
         config.QBitInstances["qBit"].CategorySeeding.Categories.Should().ContainSingle()
             .Which.StalledDelay.Should().Be(-1);
         config.ArrInstances["Radarr-Movies"].Torrent.StalledDelay.Should().Be(-1);

@@ -538,7 +538,9 @@ public class TorrentProcessor : ITorrentProcessor
         {
             await ProcessStalledTorrentAsync(
                 torrent, "Stalled State", client, stats,
-                stalledSettings.IgnoreTorrentsYoungerThan, timeNow, ct);
+                stalledSettings.IgnoreTorrentsYoungerThan, timeNow, ct,
+                reSearchStalled: arrCfg?.Torrent.ReSearchStalled == true,
+                metadataStall: state is TorrentState.MetadataDownloading or TorrentState.ForcedMetaDL);
         }
         // Branch 9: Downloading + not yet file-filtered → file filter (qBitrr line 6141-6147)
         else if (IsActiveDownloadingState(state)
@@ -863,9 +865,6 @@ public class TorrentProcessor : ITorrentProcessor
         {
             if (stalledDelay == 0)
             {
-                if (arrCfg?.Torrent.ReSearchStalled == true && _importService != null)
-                    await _importService.BlocklistAndReSearchAsync(torrent.Hash, torrent.Category, ct);
-
                 if (HasTag(torrent, AllowedStalledTag))
                 {
                     var client = _qbitManager.GetClient(torrent.QBitInstanceName);
@@ -892,14 +891,6 @@ public class TorrentProcessor : ITorrentProcessor
                 if (client != null)
                     await AddStalledTagAsync(torrent, client, ct);
 
-                // If ReSearchStalled is enabled, blocklist + re-search via Arr API
-                // (qBitrr: process_entries([torrent.hash]) + _process_failed_individual)
-                if (stalledDelay != -1 && arrCfg?.Torrent.ReSearchStalled == true && _importService != null)
-                {
-                    _logger.LogDebug("Stalled torrent [{Name}] — ReSearchStalled enabled; blocklisting + re-search",
-                        torrent.Name);
-                    await _importService.BlocklistAndReSearchAsync(torrent.Hash, torrent.Category, ct);
-                }
             }
             return true; // within delay, stalled_ignore = True
         }
@@ -926,15 +917,19 @@ public class TorrentProcessor : ITorrentProcessor
     private async Task ProcessStalledTorrentAsync(
         TorrentInfo torrent, string reason,
         ITorrentClient client, TorrentProcessingStats stats,
-        int ignoreYoungerThan, long timeNow, CancellationToken ct)
+        int ignoreYoungerThan, long timeNow, CancellationToken ct,
+        bool reSearchStalled = false, bool metadataStall = false)
     {
-        // qBitrr line 5247-5252: only delete if added AND last_activity are both past the age threshold
-        if (torrent.AddedOn < timeNow - ignoreYoungerThan
-            && torrent.LastActivity < timeNow - ignoreYoungerThan)
+        var ageEligible = torrent.AddedOn < timeNow - ignoreYoungerThan
+            && (metadataStall || torrent.LastActivity < timeNow - ignoreYoungerThan);
+        if (ageEligible)
         {
             var hnrAllows = _seedingService == null || await _seedingService.HnrAllowsDeleteAsync(torrent, reason, ct);
             if (hnrAllows)
             {
+                if (reSearchStalled && _importService != null)
+                    await _importService.BlocklistAndReSearchAsync(torrent.Hash, torrent.Category, ct);
+
                 _logger.LogWarning("Deleting stalled torrent ({Reason}): [{Name}] | Availability[{Avail:P1}] | Hash[{Hash}]",
                     reason, torrent.Name, torrent.Availability, torrent.Hash);
                 await DeleteTorrentFromClientAsync(client, torrent, deleteFiles: true, ct);
