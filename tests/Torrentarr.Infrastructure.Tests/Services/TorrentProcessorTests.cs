@@ -708,11 +708,11 @@ public sealed class TorrentProcessorTests : IDisposable
             "StalledCheckAsync", BindingFlags.NonPublic | BindingFlags.Instance)!;
 
         var infinite = await (Task<bool>)check.Invoke(processor,
-            [torrent, TorrentState.ForcedMetaDL, null, -1, 60, now, CancellationToken.None])!;
+            [torrent, TorrentState.ForcedMetaDL, -1, 60, now, CancellationToken.None])!;
         var immediate = await (Task<bool>)check.Invoke(processor,
-            [torrent, TorrentState.ForcedMetaDL, null, 0, 60, now, CancellationToken.None])!;
+            [torrent, TorrentState.ForcedMetaDL, 0, 60, now, CancellationToken.None])!;
         var positive = await (Task<bool>)check.Invoke(processor,
-            [torrent, TorrentState.ForcedMetaDL, null, 15, 60, now, CancellationToken.None])!;
+            [torrent, TorrentState.ForcedMetaDL, 15, 60, now, CancellationToken.None])!;
 
         infinite.Should().BeTrue();
         immediate.Should().BeFalse();

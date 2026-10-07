@@ -438,7 +438,6 @@ public class TorrentProcessor : ITorrentProcessor
             stalledIgnore = await StalledCheckAsync(
                 torrent,
                 state,
-                arrCfg,
                 stalledSettings.StalledDelay,
                 stalledSettings.IgnoreTorrentsYoungerThan,
                 timeNow,
@@ -831,7 +830,6 @@ public class TorrentProcessor : ITorrentProcessor
     private async Task<bool> StalledCheckAsync(
         TorrentInfo torrent,
         TorrentState state,
-        ArrInstanceConfig? arrCfg,
         int stalledDelay,
         int ignoreYoungerThan,
         long timeNow,
