@@ -60,25 +60,27 @@ LABEL Version="${VERSION}"
 LABEL org.opencontainers.image.source=https://github.com/feramance/torrentarr
 WORKDIR /app
 
-# Install runtime dependencies
+# The entrypoint needs root briefly to reconcile ownership of a bind-mounted
+# /config directory before dropping to PUID:PGID.
+USER root
+
+# Install runtime dependencies and the privilege-drop/init helpers used by the
+# PUID/PGID entrypoint.
 RUN apt-get update && \
     apt-get install -y --no-install-recommends \
     curl \
-    ca-certificates && \
+    ca-certificates \
+    gosu \
+    tini && \
     rm -rf /var/lib/apt/lists/*
-
-# Create non-root user (UID 1001; the aspnet base image reserves UID 1000 for its own 'app' user)
-RUN useradd -m -u 1001 torrentarr && \
-    mkdir -p /config /data && \
-    chown -R torrentarr:torrentarr /config /data && \
-    mkdir -p /config /data && \
-    chown -R torrentarr:torrentarr /config /data
 
 # Copy published application from build stage
 COPY --from=backend-build /app/publish ./
 
-# Switch to non-root user
-USER torrentarr
+# The entrypoint starts as root only long enough to reconcile /config, then
+# drops to the requested PUID:PGID before starting the application.
+COPY docker-entrypoint.sh /usr/local/bin/torrentarr-entrypoint.sh
+RUN chmod 0755 /usr/local/bin/torrentarr-entrypoint.sh
 
 # Set environment variables
 ENV ASPNETCORE_ENVIRONMENT=Production \
@@ -98,5 +100,6 @@ HEALTHCHECK --interval=30s --timeout=10s --start-period=40s --retries=3 \
 # Volume mounts
 VOLUME ["/config", "/data"]
 
-# Run the Host orchestrator
-ENTRYPOINT ["/app/Torrentarr.Host"]
+# Run the Host orchestrator through the PUID/PGID-aware entrypoint.
+ENTRYPOINT ["/usr/local/bin/torrentarr-entrypoint.sh"]
+CMD ["/app/Torrentarr.Host"]

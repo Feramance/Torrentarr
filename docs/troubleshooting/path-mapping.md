@@ -825,8 +825,14 @@ services:
     user: "1000:1000"
 
   torrentarr:
-    user: "1000:1000"
+    environment:
+      - PUID=1000
+      - PGID=1000
 ```
+
+Torrentarr applies these IDs to its `/config` state volume at startup. Keep the
+download/media mounts shared with the Arr containers, but do not rely on
+Torrentarr to recursively change their ownership.
 
 **Fix existing files:**
 
