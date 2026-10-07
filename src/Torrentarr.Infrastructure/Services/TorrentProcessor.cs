@@ -898,7 +898,9 @@ public class TorrentProcessor : ITorrentProcessor
                 {
                     _logger.LogDebug("Stalled torrent [{Name}] — ReSearchStalled enabled; blocklisting + re-search",
                         torrent.Name);
-                    await _importService.BlocklistAndReSearchAsync(torrent.Hash, torrent.Category, ct);
+                    var retried = await _importService.BlocklistAndReSearchAsync(torrent.Hash, arrCfg.Category, ct);
+                    if (!retried && client != null)
+                        await RemoveStalledTagAsync(torrent, client, ct);
                 }
             }
             return true; // within delay, stalled_ignore = True

@@ -14,7 +14,7 @@ internal sealed class TorrentClientConfigDocument
 public class ConfigurationLoader
 {
     /// <summary>Expected config schema version (qBitrr parity). Used for validation and mismatch warning.</summary>
-    public const string ExpectedConfigVersion = "6.14.6";
+    public const string ExpectedConfigVersion = "6.15.2";
 
     /// <summary>
     /// TEST USE ONLY. When set by test fixtures, GetDefaultConfigPath() returns this instead of env/defaults.
@@ -390,12 +390,13 @@ public class ConfigurationLoader
     private static bool MigrateStalledDelaySentinels(TomlTable root, Version currentVersion)
     {
         // qBitrr configs use the 5.x version namespace; Torrentarr configs use
-        // the +1 major 6.x namespace. Do not reinterpret an already-migrated
-        // qBitrr 5.14.6+ config imported into Torrentarr.
-        var legacy = currentVersion.Major == 5
+        // the +1 major 6.x namespace. Configs at 6.15.2 need the one-time
+        // correction for the previous loader rewrite.
+        var swapBoth = currentVersion.Major == 5
             ? currentVersion < new Version(5, 14, 6)
             : currentVersion < new Version(6, 14, 6);
-        if (!legacy)
+        var rewriteBug = currentVersion == new Version(6, 15, 2);
+        if (!swapBoth && !rewriteBug)
             return false;
 
         var changed = false;
@@ -407,30 +408,30 @@ public class ConfigurationLoader
             if (ArrSectionHelper.IsArrSection(name)
                 && section.TryGetValue("Torrent", out var torrentObj)
                 && torrentObj is TomlTable torrent)
-                changed |= SwapStalledDelayValues(torrent);
+                changed |= SwapStalledDelayValues(torrent, swapBoth, rewriteBug);
 
             if ((name.Equals("qBit", StringComparison.OrdinalIgnoreCase)
                  || name.StartsWith("qBit-", StringComparison.OrdinalIgnoreCase))
                 && section.TryGetValue("CategorySeeding", out var seedingObj)
                 && seedingObj is TomlTable seeding)
-                changed |= SwapStalledDelayValues(seeding);
+                changed |= SwapStalledDelayValues(seeding, swapBoth, rewriteBug);
         }
 
         return changed;
     }
 
-    private static bool SwapStalledDelayValues(TomlTable table)
+    private static bool SwapStalledDelayValues(TomlTable table, bool swapBoth, bool rewriteBug)
     {
         var changed = false;
         if (table.TryGetValue("StalledDelay", out var value))
         {
             var parsed = DurationParser.ParseToMinutes(value, int.MinValue);
-            if (parsed == 0)
+            if (swapBoth && parsed == 0)
             {
                 table["StalledDelay"] = -1;
                 changed = true;
             }
-            else if (parsed == -1)
+            else if ((swapBoth || rewriteBug) && parsed == -1)
             {
                 table["StalledDelay"] = 0;
                 changed = true;
@@ -440,14 +441,14 @@ public class ConfigurationLoader
         foreach (var itemValue in table.Values)
         {
             if (itemValue is TomlTable child)
-                changed |= SwapStalledDelayValues(child);
+                changed |= SwapStalledDelayValues(child, swapBoth, rewriteBug);
             else if (itemValue is TomlTableArray tableArray)
                 foreach (var childItem in tableArray)
-                    changed |= SwapStalledDelayValues(childItem);
+                    changed |= SwapStalledDelayValues(childItem, swapBoth, rewriteBug);
             else if (itemValue is TomlArray array)
                 foreach (var item in array)
                     if (item is TomlTable childItem)
-                        changed |= SwapStalledDelayValues(childItem);
+                        changed |= SwapStalledDelayValues(childItem, swapBoth, rewriteBug);
         }
 
         return changed;

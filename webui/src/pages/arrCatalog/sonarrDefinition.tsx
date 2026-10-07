@@ -208,6 +208,9 @@ function useSonarrInstancePipeline(
   filtersRef.current = filters;
   const prevSelectionRef = useRef<string | null>(selection);
   const prevOnlyMissingRef = useRef(filters.onlyMissing);
+  const fetchGenRef = useRef(0);
+  const selectionRef = useRef(selection);
+  selectionRef.current = selection;
 
   const rowsStoreOpts = useMemo(
     () => ({
@@ -231,6 +234,7 @@ function useSonarrInstancePipeline(
     ) => {
       const showLoading = options.showLoading ?? true;
       const useMissing = options.missingOnly ?? filtersRef.current.onlyMissing;
+      const gen = ++fetchGenRef.current;
       if (showLoading) setLoading(true);
       try {
         const key = `${category}::${requestQuery}::${
@@ -259,6 +263,8 @@ function useSonarrInstancePipeline(
             missingOnly: useMissing,
           },
         );
+        if (gen !== fetchGenRef.current || selectionRef.current !== category)
+          return;
         const resolvedPage = res.page ?? effectivePageIdx;
         const resolvedPageSize = res.page_size ?? ps;
         const total = res.total ?? (res.series ?? []).length;
@@ -333,8 +339,10 @@ function useSonarrInstancePipeline(
             "error",
           );
         }
+        if (gen === fetchGenRef.current)
+          setEmptyStateReady(true);
       } finally {
-        if (showLoading) setLoading(false);
+        if (showLoading && gen === fetchGenRef.current) setLoading(false);
       }
     },
     [pushToast, roundPageSize],

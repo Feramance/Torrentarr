@@ -48,8 +48,12 @@ if [ "$(id -u)" -eq 0 ]; then
         case "${TORRENTARR_CONFIG}" in
             /config|/config/*)
                 ;;
-            *)
+            /*)
                 config_dir="$(dirname -- "${TORRENTARR_CONFIG}")"
+                ;;
+            *)
+                echo "Torrentarr: TORRENTARR_CONFIG must be an absolute path." >&2
+                exit 1
                 ;;
         esac
     fi

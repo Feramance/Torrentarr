@@ -43,20 +43,27 @@ export function ArrCatalogView({
     kind: ArrCatalogKind;
     definition: AnyArrCatalogDefinition;
   } | null>(null);
+  const [loadError, setLoadError] = useState<string | null>(null);
 
   useEffect(() => {
     let cancelled = false;
-    void loadArrCatalogDefinition(kind).then((def) => {
-      if (!cancelled) {
-        setLoaded({ kind, definition: def });
-      }
-    });
+    setLoadError(null);
+    void loadArrCatalogDefinition(kind).then(
+      (def) => {
+        if (!cancelled) setLoaded({ kind, definition: def });
+      },
+      (error: unknown) => {
+        if (!cancelled)
+          setLoadError(error instanceof Error ? error.message : "Failed to load catalog");
+      },
+    );
     return () => {
       cancelled = true;
     };
   }, [kind]);
 
   if (!loaded || loaded.kind !== kind) {
+    if (loadError) return <div className="hint">{loadError} — reload the page to retry.</div>;
     return <div className="hint">Loading catalog…</div>;
   }
 

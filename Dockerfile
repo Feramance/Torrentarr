@@ -36,6 +36,7 @@ COPY Directory.Build.props ./
 
 # Restore only the Host project and its transitive dependencies
 RUN dotnet restore src/Torrentarr.Host/Torrentarr.Host.csproj
+RUN dotnet restore src/Torrentarr.Workers/Torrentarr.Workers.csproj
 
 # Copy source code
 COPY src/ ./src/

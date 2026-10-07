@@ -86,7 +86,7 @@ public class ConfigurationLoaderTests : IDisposable
             .Which.StalledDelay.Should().Be(-1);
         config.ArrInstances["Radarr-Movies"].Torrent.StalledDelay.Should().Be(-1);
         File.Exists(_tempFilePath + ".bak").Should().BeTrue();
-        File.ReadAllText(_tempFilePath).Should().Contain("ConfigVersion = \"6.14.6\"");
+        File.ReadAllText(_tempFilePath).Should().Contain("ConfigVersion = \"6.15.2\"");
     }
 
     [Fact]

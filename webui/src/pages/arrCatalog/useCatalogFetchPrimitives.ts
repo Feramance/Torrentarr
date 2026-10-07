@@ -77,14 +77,16 @@ export function useCatalogSearchRegistration(
   registerSearchHandler: (handler: (term: string) => void) => () => void,
   onSearch: (term: string) => void,
 ): void {
+  const onSearchRef = useRef(onSearch);
+  onSearchRef.current = onSearch;
   useEffect(() => {
     if (!active) return;
     const handler = (term: string) => {
       if (!selection) return;
-      onSearch(term);
+      onSearchRef.current(term);
     };
     return registerSearchHandler(handler);
-  }, [active, selection, registerSearchHandler, onSearch]);
+  }, [active, selection, registerSearchHandler]);
 }
 
 /** Refetch when icon-grid page size changes (resize-driven column count). */
@@ -95,7 +97,11 @@ export function useCatalogIconGridRefetch(
   iconInstancePageSize: number,
   refetch: () => void,
 ): void {
+  const prevSizeRef = useRef(iconInstancePageSize);
   useEffect(() => {
+    const sizeChanged = prevSizeRef.current !== iconInstancePageSize;
+    prevSizeRef.current = iconInstancePageSize;
+    if (!sizeChanged) return;
     if (!active) return;
     if (!selection) return;
     if (browseMode !== "icon") return;

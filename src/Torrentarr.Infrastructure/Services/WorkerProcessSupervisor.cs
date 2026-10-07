@@ -58,29 +58,46 @@ public sealed class WorkerProcessSupervisor : BackgroundService, IProcessOrchest
     private async Task StopWorkersAsync(CancellationToken cancellationToken)
     {
         _stopping = true;
-        Process[] processes;
-        lock (_gate) processes = _processes.Values.ToArray();
-        foreach (var process in processes)
+        string[] names;
+        lock (_gate) names = _processes.Keys.ToArray();
+        foreach (var name in names)
+            await StopWorkerAsync(name, cancellationToken);
+        lock (_gate)
+            _processes.Clear();
+    }
+
+    private async Task StopWorkerAsync(string instanceName, CancellationToken cancellationToken)
+    {
+        Process? process;
+        lock (_gate)
         {
-            try
-            {
-                if (!process.HasExited)
-                {
-                    await process.StandardInput.WriteLineAsync("shutdown");
-                    await process.WaitForExitAsync(cancellationToken).WaitAsync(TimeSpan.FromSeconds(10), cancellationToken);
-                }
-            }
-            catch { try { if (!process.HasExited) process.Kill(true); } catch { } }
-            process.Dispose();
+            _processes.Remove(instanceName, out process);
         }
-        lock (_gate) _processes.Clear();
+        if (process == null)
+            return;
+
+        try
+        {
+            if (!process.HasExited)
+            {
+                await process.StandardInput.WriteLineAsync("shutdown");
+                await process.WaitForExitAsync(cancellationToken).WaitAsync(TimeSpan.FromSeconds(10), cancellationToken);
+            }
+        }
+        catch
+        {
+            try { if (!process.HasExited) process.Kill(true); } catch { }
+        }
+        process.Dispose();
     }
 
     public async Task RestartProcessAsync(string processName, CancellationToken cancellationToken = default)
     {
-        StopWorker(processName);
-        await Task.Yield();
-        if (!cancellationToken.IsCancellationRequested) StartWorker(processName);
+        await StopWorkerAsync(processName, cancellationToken);
+        if (!cancellationToken.IsCancellationRequested
+            && _config.ArrInstances.TryGetValue(processName, out var config)
+            && IsEligible(config))
+            StartWorker(processName);
     }
 
     public Task RestartWorkerAsync(string processName) => RestartProcessAsync(processName);
@@ -95,14 +112,19 @@ public sealed class WorkerProcessSupervisor : BackgroundService, IProcessOrchest
     {
         var result = new Dictionary<string, ProcessStatus>(StringComparer.OrdinalIgnoreCase);
         lock (_gate)
-        foreach (var (name, process) in _processes)
         {
-            var heartbeat = StatusPath(name);
-            var lastHeartbeat = File.Exists(heartbeat) ? File.GetLastWriteTimeUtc(heartbeat) : (DateTime?)null;
-            var started = process.StartTime.ToUniversalTime();
-            var alive = !process.HasExited && (DateTime.UtcNow - started < TimeSpan.FromSeconds(15)
-                || (lastHeartbeat != null && lastHeartbeat >= started && DateTime.UtcNow - lastHeartbeat < TimeSpan.FromSeconds(15)));
-            result[name] = new ProcessStatus { Name = name, Kind = "worker", ProcessId = alive ? process.Id : null, IsAlive = alive, LastHeartbeat = lastHeartbeat };
+            foreach (var (name, process) in _processes)
+            {
+                var heartbeat = StatusPath(name);
+                var lastHeartbeat = File.Exists(heartbeat) ? File.GetLastWriteTimeUtc(heartbeat) : (DateTime?)null;
+                var started = process.StartTime.ToUniversalTime();
+                var alive = !process.HasExited && (DateTime.UtcNow - started < TimeSpan.FromSeconds(15)
+                    || (lastHeartbeat != null && lastHeartbeat >= started && DateTime.UtcNow - lastHeartbeat < TimeSpan.FromSeconds(15)));
+                result[name] = new ProcessStatus { Name = name, Kind = "worker", ProcessId = alive ? process.Id : null, IsAlive = alive, LastHeartbeat = lastHeartbeat };
+            }
+            foreach (var (name, config) in _config.ArrInstances)
+                if (IsEligible(config) && !result.ContainsKey(name))
+                    result[name] = new ProcessStatus { Name = name, Kind = "worker", IsAlive = false };
         }
         return Task.FromResult(result);
     }
@@ -163,7 +185,9 @@ public sealed class WorkerProcessSupervisor : BackgroundService, IProcessOrchest
 
     private void MonitorWorkers()
     {
-        foreach (var (name, process) in _processes.ToArray())
+        KeyValuePair<string, Process>[] processes;
+        lock (_gate) processes = _processes.ToArray();
+        foreach (var (name, process) in processes)
         {
             if (process.HasExited)
                 continue;
@@ -174,16 +198,6 @@ public sealed class WorkerProcessSupervisor : BackgroundService, IProcessOrchest
                 _logger.LogWarning("Worker {Instance} heartbeat is stale; terminating it", name);
                 try { process.Kill(true); } catch { }
             }
-        }
-    }
-
-    private void StopWorker(string instanceName)
-    {
-        lock (_gate)
-        {
-            if (!_processes.Remove(instanceName, out var process)) return;
-            try { if (!process.HasExited) process.Kill(true); } catch { }
-            process.Dispose();
         }
     }
 

@@ -320,12 +320,11 @@ export const LIDARR_DEFINITION: ArrCatalogDefinition<
       };
     },
     summarize: (rows, rollup) => {
-      const total = rows.length > 0 ? rows.length : rollup.monitored;
       return {
         available: rollup.available,
         monitored: rollup.monitored,
         missing: rollup.missing,
-        total,
+        total: rows.length,
         rollupTotalAlbumsHint: rollup.rollupTotalAlbumsHint,
       };
     },

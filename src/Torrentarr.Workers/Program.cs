@@ -181,7 +181,9 @@ try
         while (statusPath != null)
         {
             var tmp = statusPath + ".tmp";
-            Directory.CreateDirectory(Path.GetDirectoryName(statusPath)!);
+            var statusDirectory = Path.GetDirectoryName(statusPath);
+            if (!string.IsNullOrEmpty(statusDirectory))
+                Directory.CreateDirectory(statusDirectory);
             await File.WriteAllTextAsync(tmp, System.Text.Json.JsonSerializer.Serialize(new { version = 1, instance = instanceName, pid = Environment.ProcessId, heartbeat = DateTimeOffset.UtcNow }));
             File.Move(tmp, statusPath, true);
             await Task.Delay(TimeSpan.FromSeconds(5));
