@@ -16,6 +16,11 @@ using Serilog.Events;
 var instanceName = args.Contains("--instance") && args.Length > Array.IndexOf(args, "--instance") + 1
     ? args[Array.IndexOf(args, "--instance") + 1]
     : "Unknown";
+var statusPath = args.Contains("--status-path") && args.Length > Array.IndexOf(args, "--status-path") + 1
+    ? args[Array.IndexOf(args, "--status-path") + 1]
+    : null;
+var parentPid = args.Contains("--parent-pid") && args.Length > Array.IndexOf(args, "--parent-pid") + 1
+    && int.TryParse(args[Array.IndexOf(args, "--parent-pid") + 1], out var parsedParentPid) ? parsedParentPid : 0;
 
 // Data directory: aligned with resolved config path (see ConfigurationLoader.GetDataDirectoryPath)
 var basePath = ConfigurationLoader.GetDataDirectoryPath();
@@ -149,7 +154,6 @@ try
     builder.Services.AddSingleton<DatabaseRestartCoordinator>();
     builder.Services.AddSingleton<QBittorrentConnectionManager>();
     builder.Services.AddSingleton<ITorrentClientFactory, QBittorrentTorrentClientFactory>();
-    builder.Services.AddSingleton<TorrentClientRegistry>();
     builder.Services.AddSingleton<ITorrentClientRegistry>(sp => sp.GetRequiredService<QBittorrentConnectionManager>());
     builder.Services.AddSingleton<ITorrentCacheService, TorrentCacheService>();
     builder.Services.AddSingleton<IMediaValidationService, MediaValidationService>();
@@ -170,6 +174,32 @@ try
     builder.Services.AddHostedService<ArrWorkerService>();
 
     var host = builder.Build();
+
+    _ = Task.Run(async () =>
+    {
+        while (statusPath != null)
+        {
+            var tmp = statusPath + ".tmp";
+            Directory.CreateDirectory(Path.GetDirectoryName(statusPath)!);
+            await File.WriteAllTextAsync(tmp, System.Text.Json.JsonSerializer.Serialize(new { version = 1, instance = instanceName, pid = Environment.ProcessId, heartbeat = DateTimeOffset.UtcNow }));
+            File.Move(tmp, statusPath, true);
+            await Task.Delay(TimeSpan.FromSeconds(5));
+        }
+    });
+    _ = Task.Run(async () =>
+    {
+        if (Console.IsInputRedirected && (await Console.In.ReadLineAsync())?.Trim().Equals("shutdown", StringComparison.OrdinalIgnoreCase) == true)
+            Environment.Exit(0);
+    });
+    _ = Task.Run(async () =>
+    {
+        while (parentPid > 0)
+        {
+            try { System.Diagnostics.Process.GetProcessById(parentPid); }
+            catch { Environment.Exit(0); }
+            await Task.Delay(TimeSpan.FromSeconds(5));
+        }
+    });
 
     await host.RunAsync();
 

@@ -50,6 +50,10 @@ RUN dotnet publish src/Torrentarr.Host/Torrentarr.Host.csproj \
     -c Release \
     -o /app/publish \
     --no-restore
+RUN dotnet publish src/Torrentarr.Workers/Torrentarr.Workers.csproj \
+    -c Release \
+    -o /app/publish \
+    --no-restore
 
 # Stage 3: Runtime Image
 FROM mcr.microsoft.com/dotnet/aspnet:10.0 AS runtime

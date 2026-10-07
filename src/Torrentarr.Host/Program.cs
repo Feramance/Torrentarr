@@ -174,8 +174,8 @@ try
     builder.Services.AddSingleton<DatabaseRestartCoordinator>();
     builder.Services.AddHostedService<DatabaseRestartWatchdogService>();
     builder.Services.AddSingleton<ITorrentClientFactory, QBittorrentTorrentClientFactory>();
-    builder.Services.AddSingleton<TorrentClientRegistry>();
-    builder.Services.AddSingleton<ITorrentClientRegistry>(sp => sp.GetRequiredService<TorrentClientRegistry>());
+    builder.Services.AddSingleton<QBittorrentConnectionManager>();
+    builder.Services.AddSingleton<ITorrentClientRegistry>(sp => sp.GetRequiredService<QBittorrentConnectionManager>());
     builder.Services.AddSingleton<IPathMappingService, PathMappingService>();
     builder.Services.AddSingleton<IHardlinkInspector, HardlinkInspector>();
     builder.Services.AddSingleton<ITorrentInventoryService, TorrentInventoryService>();
@@ -188,11 +188,12 @@ try
     builder.Services.AddHostedService(sp => sp.GetRequiredService<MaintenanceCoordinator>());
     builder.Services.AddSingleton<ProcessStateManager>();
     builder.Services.AddSingleton<IConnectivityService, ConnectivityService>();
-    // ArrWorkerManager registered as both singleton and IHostedService so it's injectable in endpoints
-    builder.Services.AddSingleton<ArrWorkerManager>();
+    // Arr workers run out-of-process so a worker crash cannot take down WebUI.
+    builder.Services.AddSingleton<WorkerProcessSupervisor>();
+    builder.Services.AddSingleton<IProcessOrchestrator>(sp => sp.GetRequiredService<WorkerProcessSupervisor>());
     builder.Services.AddSingleton<SearchYearCursor>();
     builder.Services.AddSingleton<StalledUploadTracker>();
-    builder.Services.AddHostedService(sp => sp.GetRequiredService<ArrWorkerManager>());
+    builder.Services.AddHostedService(sp => sp.GetRequiredService<WorkerProcessSupervisor>());
     builder.Services.AddHostedService<ProcessOrchestratorService>();
     // Scoped services (one per request / scope)
     builder.Services.AddScoped<ArrSyncService>();
@@ -850,7 +851,7 @@ try
     });
 
     // Web Processes — reads live state from ProcessStateManager + qBit connection status
-    app.MapGet("/web/processes", async (ProcessStateManager stateMgr, TorrentarrConfig cfg, ITorrentClientRegistry qbitMgr) =>
+    app.MapGet("/web/processes", async (ProcessStateManager stateMgr, TorrentarrConfig cfg, ITorrentClientRegistry qbitMgr, WorkerProcessSupervisor workers) =>
     {
         var processes = stateMgr.GetAll().Select(s => new
         {
@@ -921,11 +922,14 @@ try
             });
         }
 
+        foreach (var status in (await workers.GetProcessStatusAsync()).Values)
+            processes.Add(new { category = cfg.ArrInstances.GetValueOrDefault(status.Name)?.Category ?? status.Name, name = status.Name, kind = status.Kind, pid = status.ProcessId, alive = status.IsAlive, rebuilding = false, searchSummary = (string?)null, searchTimestamp = (string?)null, queueCount = (int?)null, categoryCount = (int?)null, metricType = (string?)null, status = status.IsAlive ? "Running" : "Stopped" });
+
         return Results.Ok(new { processes });
     });
 
     // Web Restart Process — stops and restarts the named instance worker (kind is advisory; one loop per Arr)
-    app.MapPost("/web/processes/{category}/{kind}/restart", async (string category, string kind, TorrentarrConfig cfg, ArrWorkerManager workerMgr) =>
+    app.MapPost("/web/processes/{category}/{kind}/restart", async (string category, string kind, TorrentarrConfig cfg, WorkerProcessSupervisor workerMgr) =>
     {
         var kindNorm = (kind ?? "").Trim().ToLowerInvariant();
         if (kindNorm != "search" && kindNorm != "torrent" && kindNorm != "category" && kindNorm != "arr")
@@ -939,14 +943,14 @@ try
     });
 
     // Web Restart All Processes
-    app.MapPost("/web/processes/restart_all", async (TorrentarrConfig cfg, ArrWorkerManager workerMgr) =>
+    app.MapPost("/web/processes/restart_all", async (TorrentarrConfig cfg, WorkerProcessSupervisor workerMgr) =>
     {
         await workerMgr.RestartAllWorkersAsync();
         return Results.Ok(new { status = "restarted", restarted = cfg.ArrInstances.Keys.ToArray() });
     });
 
     // Web Arr Rebuild — same shape as RestartResponse
-    app.MapPost("/web/arr/rebuild", async (TorrentarrConfig cfg, ArrWorkerManager workerMgr) =>
+    app.MapPost("/web/arr/rebuild", async (TorrentarrConfig cfg, WorkerProcessSupervisor workerMgr) =>
     {
         await workerMgr.RestartAllWorkersAsync();
         return Results.Ok(new { status = "restarted", restarted = cfg.ArrInstances.Keys.ToArray() });
@@ -1426,7 +1430,7 @@ try
     });
 
     // Web Arr Restart
-    app.MapPost("/web/arr/{category}/restart", async (string category, TorrentarrConfig cfg, ArrWorkerManager workerMgr) =>
+    app.MapPost("/web/arr/{category}/restart", async (string category, TorrentarrConfig cfg, WorkerProcessSupervisor workerMgr) =>
     {
         var instanceName = cfg.ArrInstances
             .FirstOrDefault(kv => kv.Value.Category.Equals(category, StringComparison.OrdinalIgnoreCase)).Key;
@@ -1469,7 +1473,7 @@ try
     // Web Config Update — frontend sends { changes: { "Section.Key": value, ... } } (dotted keys).
     // ConfigView.tsx flatten()s the hierarchical config into dotted paths before sending only the
     // changed keys.  We apply those changes onto the current in-memory config and save.
-    app.MapPost("/web/config", async (HttpRequest request, TorrentarrConfig cfg, ConfigurationLoader loader, ArrWorkerManager workerMgr, QBitCategoryWorkerManager qbitCategoryMgr) =>
+    app.MapPost("/web/config", async (HttpRequest request, TorrentarrConfig cfg, ConfigurationLoader loader, WorkerProcessSupervisor workerMgr, QBitCategoryWorkerManager qbitCategoryMgr) =>
     {
         try
         {
@@ -1845,7 +1849,7 @@ try
         return Results.Ok(new { processes });
     });
 
-    app.MapPost("/api/processes/{category}/{kind}/restart", async (string category, string kind, TorrentarrConfig cfg, ArrWorkerManager workerMgr) =>
+    app.MapPost("/api/processes/{category}/{kind}/restart", async (string category, string kind, TorrentarrConfig cfg, WorkerProcessSupervisor workerMgr) =>
     {
         var kindNorm = (kind ?? "").Trim().ToLowerInvariant();
         if (kindNorm != "search" && kindNorm != "torrent" && kindNorm != "category" && kindNorm != "arr")
@@ -1858,13 +1862,13 @@ try
         return Results.Ok(new { status = "restarted", restarted = instanceName != null ? new[] { instanceName } : Array.Empty<string>() });
     });
 
-    app.MapPost("/api/processes/restart_all", async (TorrentarrConfig cfg, ArrWorkerManager workerMgr) =>
+    app.MapPost("/api/processes/restart_all", async (TorrentarrConfig cfg, WorkerProcessSupervisor workerMgr) =>
     {
         await workerMgr.RestartAllWorkersAsync();
         return Results.Ok(new { status = "restarted", restarted = cfg.ArrInstances.Keys.ToArray() });
     });
 
-    app.MapPost("/api/arr/rebuild", async (TorrentarrConfig cfg, ArrWorkerManager workerMgr) =>
+    app.MapPost("/api/arr/rebuild", async (TorrentarrConfig cfg, WorkerProcessSupervisor workerMgr) =>
     {
         await workerMgr.RestartAllWorkersAsync();
         return Results.Ok(new { status = "restarted", restarted = cfg.ArrInstances.Keys.ToArray() });
@@ -1957,7 +1961,7 @@ try
         return Results.Ok(new { arr, ready = true, counts });
     });
 
-    app.MapPost("/api/arr/{section}/restart", async (string section, TorrentarrConfig cfg, ArrWorkerManager workerMgr) =>
+    app.MapPost("/api/arr/{section}/restart", async (string section, TorrentarrConfig cfg, WorkerProcessSupervisor workerMgr) =>
     {
         var instanceName = cfg.ArrInstances
             .FirstOrDefault(kv => kv.Value.Category.Equals(section, StringComparison.OrdinalIgnoreCase)).Key;
@@ -2335,7 +2339,7 @@ try
         return Results.Content(StripSensitiveKeys(token).ToString(Newtonsoft.Json.Formatting.None), "application/json");
     });
 
-    app.MapPost("/api/config", async (HttpRequest request, TorrentarrConfig cfg, ConfigurationLoader loader, ArrWorkerManager workerMgr, QBitCategoryWorkerManager qbitCategoryMgr) =>
+    app.MapPost("/api/config", async (HttpRequest request, TorrentarrConfig cfg, ConfigurationLoader loader, WorkerProcessSupervisor workerMgr, QBitCategoryWorkerManager qbitCategoryMgr) =>
     {
         try
         {
@@ -2717,7 +2721,7 @@ static async Task<IResult> SaveAndRespondConfigUpdate(
     TorrentarrConfig cfg,
     TorrentarrConfig updatedConfig,
     ConfigurationLoader loader,
-    ArrWorkerManager? workerMgr = null,
+    WorkerProcessSupervisor? workerMgr = null,
     QBitCategoryWorkerManager? qbitCategoryMgr = null)
 {
     var passwordHashError = WebUIAuthHelpers.ValidatePasswordHashForConfigApiSave(cfg, updatedConfig);

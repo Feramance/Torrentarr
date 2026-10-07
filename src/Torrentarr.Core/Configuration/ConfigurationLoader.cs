@@ -426,11 +426,19 @@ public class ConfigurationLoader
     private static bool SwapStalledDelayValues(TomlTable table)
     {
         var changed = false;
-        if (table.TryGetValue("StalledDelay", out var value)
-            && value?.ToString()?.Trim() == "0")
+        if (table.TryGetValue("StalledDelay", out var value))
         {
-            table["StalledDelay"] = -1;
-            changed = true;
+            var normalized = value?.ToString()?.Trim();
+            if (normalized == "0")
+            {
+                table["StalledDelay"] = -1;
+                changed = true;
+            }
+            else if (normalized == "-1")
+            {
+                table["StalledDelay"] = 0;
+                changed = true;
+            }
         }
 
         if (table.TryGetValue("Categories", out var categoriesObj))

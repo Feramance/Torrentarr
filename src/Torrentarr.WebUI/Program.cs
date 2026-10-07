@@ -157,8 +157,8 @@ builder.Services.AddSingleton(configLoader);
 
 builder.Services.AddSingleton<IPasswordHasher, BCryptPasswordHasher>();
 builder.Services.AddSingleton<ITorrentClientFactory, QBittorrentTorrentClientFactory>();
-builder.Services.AddSingleton<TorrentClientRegistry>();
-builder.Services.AddSingleton<ITorrentClientRegistry>(sp => sp.GetRequiredService<TorrentClientRegistry>());
+builder.Services.AddSingleton<QBittorrentConnectionManager>();
+builder.Services.AddSingleton<ITorrentClientRegistry>(sp => sp.GetRequiredService<QBittorrentConnectionManager>());
 builder.Services.AddSingleton<IPathMappingService, PathMappingService>();
 builder.Services.AddSingleton<ITorrentInventoryService, TorrentInventoryService>();
 builder.Services.AddSingleton<IHardlinkInspector, HardlinkInspector>();
@@ -1042,21 +1042,13 @@ app.MapGet("/web/processes", (TorrentarrConfig config) =>
 // Restart specific process
 app.MapPost("/web/processes/{category}/{kind}/restart", (string category, string kind) =>
 {
-    return Results.Ok(new
-    {
-        success = true,
-        message = $"Restart requested for {kind} in {category}"
-    });
+    return Results.Problem("worker supervisor unavailable", statusCode: StatusCodes.Status503ServiceUnavailable);
 });
 
 // Restart all processes
 app.MapPost("/web/processes/restart_all", () =>
 {
-    return Results.Ok(new
-    {
-        success = true,
-        message = "Restart requested for all processes"
-    });
+    return Results.Problem("worker supervisor unavailable", statusCode: StatusCodes.Status503ServiceUnavailable);
 });
 
 // Validates that a log file name is a plain filename ending in .log with no path components (matches Host).
@@ -1418,7 +1410,7 @@ app.MapGet("/web/arr", (TorrentarrConfig config) =>
 // Restart a specific Arr worker
 app.MapPost("/web/arr/{category}/restart", (string category) =>
 {
-    return Results.Ok(new { status = "ok", restarted = new[] { category } });
+    return Results.Problem("worker supervisor unavailable", statusCode: StatusCodes.Status503ServiceUnavailable);
 });
 
 // Test Arr connection and return quality profiles + system info

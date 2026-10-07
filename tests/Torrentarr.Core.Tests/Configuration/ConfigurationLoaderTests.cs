@@ -81,7 +81,7 @@ public class ConfigurationLoaderTests : IDisposable
 
         var config = new ConfigurationLoader(_tempFilePath).Load();
 
-        config.QBitInstances["qBit"].CategorySeeding.StalledDelay.Should().Be(-1);
+        config.QBitInstances["qBit"].CategorySeeding.StalledDelay.Should().Be(0);
         config.QBitInstances["qBit"].CategorySeeding.Categories.Should().ContainSingle()
             .Which.StalledDelay.Should().Be(-1);
         config.ArrInstances["Radarr-Movies"].Torrent.StalledDelay.Should().Be(-1);
@@ -103,6 +103,22 @@ public class ConfigurationLoaderTests : IDisposable
         var config = new ConfigurationLoader(_tempFilePath).Load();
 
         config.ArrInstances["Radarr-Movies"].Torrent.StalledDelay.Should().Be(-1);
+    }
+
+    [Fact]
+    public void Load_MigratesBothSentinelsExactlyOnce()
+    {
+        WriteToml("""
+            [Settings]
+            ConfigVersion = "6.15.1"
+
+            [Radarr-Movies.Torrent]
+            StalledDelay = -1
+            """);
+
+        var loader = new ConfigurationLoader(_tempFilePath);
+        loader.Load().ArrInstances["Radarr-Movies"].Torrent.StalledDelay.Should().Be(0);
+        loader.Load().ArrInstances["Radarr-Movies"].Torrent.StalledDelay.Should().Be(0);
     }
 
     [Fact]
