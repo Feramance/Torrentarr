@@ -11,17 +11,10 @@ import {
 } from "./ArrCatalogListOrGrid";
 
 vi.mock("../../components/StableTable", () => ({
-  StableTable: ({
-    data,
-  }: {
-    data: Array<{ id: string; title: string }>;
-  }) => (
+  StableTable: ({ data }: { data: Array<{ id: string; title: string }> }) => (
     <div data-testid="stable-table">
       {data.map((row) => (
-        <button
-          key={row.id}
-          type="button"
-        >
+        <button key={row.id} type="button">
           {row.id}
         </button>
       ))}

@@ -367,15 +367,24 @@ export async function getLidarrArtists(
   );
 }
 
-export function getRadarrOpenMovieUrl(_category: string, _id: number): string | null {
+export function getRadarrOpenMovieUrl(
+  _category: string,
+  _id: number,
+): string | null {
   return null;
 }
 
-export function getSonarrOpenSeriesUrl(_category: string, _id: number): string | null {
+export function getSonarrOpenSeriesUrl(
+  _category: string,
+  _id: number,
+): string | null {
   return null;
 }
 
-export function getLidarrOpenArtistUrl(_category: string, _id: number): string | null {
+export function getLidarrOpenArtistUrl(
+  _category: string,
+  _id: number,
+): string | null {
   return null;
 }
 

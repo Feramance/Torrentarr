@@ -104,11 +104,7 @@ export function ArrCatalogListOrGrid<TRow extends Hashable>({
       getRowKey: (row: TRow) => string;
     }>;
     return (
-      <StoreTable
-        data={[...rows]}
-        columns={columns}
-        getRowKey={getRowKey}
-      />
+      <StoreTable data={[...rows]} columns={columns} getRowKey={getRowKey} />
     );
   }
   return (

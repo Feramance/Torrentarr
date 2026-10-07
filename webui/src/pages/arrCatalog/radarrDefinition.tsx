@@ -125,7 +125,9 @@ const RADARR_AGG_COLUMNS_MULTI: LegacyColumnDef<RadarrAggRow>[] = [
   ...RADARR_AGG_COLUMNS_SINGLE,
 ];
 
-function getRadarrAggColumns(instanceCount: number): LegacyColumnDef<RadarrAggRow>[] {
+function getRadarrAggColumns(
+  instanceCount: number,
+): LegacyColumnDef<RadarrAggRow>[] {
   return instanceCount > 1
     ? RADARR_AGG_COLUMNS_MULTI
     : RADARR_AGG_COLUMNS_SINGLE;

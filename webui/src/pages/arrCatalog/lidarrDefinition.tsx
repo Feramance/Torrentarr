@@ -238,7 +238,9 @@ const LIDARR_AGG_COLUMNS_MULTI: LegacyColumnDef<LidarrAggRow>[] = [
   ...LIDARR_AGG_COLUMNS_SINGLE,
 ];
 
-function getLidarrAggColumns(instanceCount: number): LegacyColumnDef<LidarrAggRow>[] {
+function getLidarrAggColumns(
+  instanceCount: number,
+): LegacyColumnDef<LidarrAggRow>[] {
   return instanceCount > 1
     ? LIDARR_AGG_COLUMNS_MULTI
     : LIDARR_AGG_COLUMNS_SINGLE;
