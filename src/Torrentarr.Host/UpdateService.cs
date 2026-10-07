@@ -451,7 +451,10 @@ public class UpdateService
 
         var assets = release["assets"] as JArray;
         var asset = assets?.FirstOrDefault(a =>
-            a["name"]?.ToObject<string>()?.Contains(assetPattern, StringComparison.OrdinalIgnoreCase) == true);
+            a["name"]?.ToObject<string>() is { } name
+            && name.StartsWith("torrentarr-", StringComparison.OrdinalIgnoreCase)
+            && !name.StartsWith("torrentarr-workers-", StringComparison.OrdinalIgnoreCase)
+            && name.Contains(assetPattern, StringComparison.OrdinalIgnoreCase));
 
         if (asset != null)
         {

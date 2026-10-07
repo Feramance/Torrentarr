@@ -48,6 +48,7 @@ export function ArrPosterImage({
   const loadIdRef = useRef(0);
   const attemptRef = useRef(0);
   const retryTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const retryEnqueueCancelRef = useRef<(() => void) | null>(null);
   const cancelledRef = useRef(false);
   // Held while the slot is checked out; called when the image network settles (load/error/
   // unmount) so we never pin the queue past the lifetime of this poster.
@@ -79,6 +80,8 @@ export function ArrPosterImage({
     loadIdRef.current += 1;
     attemptRef.current = 0;
     clearRetryTimer();
+    retryEnqueueCancelRef.current?.();
+    retryEnqueueCancelRef.current = null;
     // Reset load state when the poster URL changes (new row / retry base src).
     // eslint-disable-next-line react-hooks/set-state-in-effect -- intentional reset on src identity change
     setLoaded(false);
@@ -92,6 +95,8 @@ export function ArrPosterImage({
     return () => {
       cancelledRef.current = true;
       clearRetryTimer();
+      retryEnqueueCancelRef.current?.();
+      retryEnqueueCancelRef.current = null;
     };
   }, [src]);
 
@@ -113,6 +118,8 @@ export function ArrPosterImage({
     return () => {
       cancelledRef.current = true;
       clearRetryTimer();
+      retryEnqueueCancelRef.current?.();
+      retryEnqueueCancelRef.current = null;
       if (releaseSlotRef.current) {
         releaseSlotRef.current();
         releaseSlotRef.current = null;
@@ -143,7 +150,7 @@ export function ArrPosterImage({
       const next = current + 1;
       attemptRef.current = next;
       setAttempt(next);
-      enqueueLoad();
+      retryEnqueueCancelRef.current = enqueueLoad();
     }, delay);
   };
 

@@ -30,17 +30,17 @@ public class DatabaseRestartWatchdogService : BackgroundService
     {
         while (!stoppingToken.IsCancellationRequested)
         {
-            var hostRestartRequested = _coordinator.RestartRequested;
+            var restartRequest = _coordinator.GetRestartRequest();
             try
             {
                 var statuses = await _arrWorkers.GetProcessStatusAsync();
-                if (hostRestartRequested)
+                if (restartRequest.Requested)
                 {
                     _logger.LogCritical("Database restart signal detected — restarting all workers for coordinated recovery");
-                    _coordinator.ClearRestartRequest();
-                    foreach (var status in statuses.Values.Where(s => s.IsAlive || s.RestartRequested))
+                    foreach (var status in statuses.Values)
                         await _arrWorkers.RestartProcessAsync(status.Name);
                     await _qbitCategoryWorkers.RestartAllCategoriesAsync();
+                    _coordinator.ClearRestartRequest(restartRequest.Version);
                 }
                 else
                 {

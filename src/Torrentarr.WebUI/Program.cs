@@ -1312,6 +1312,7 @@ app.MapGet("/web/sonarr/{category}/series", async (string category, TorrentarrCo
                 s.ArrInstance
             },
             arrSeriesId = s.ArrId,
+            arrInstance = s.ArrInstance,
             totals = new { available = s.Searched ? 1 : 0, monitored = s.Monitored == true ? 1 : 0 },
             seasons = new Dictionary<string, object>()
         })
@@ -1334,7 +1335,7 @@ app.MapGet("/web/sonarr/{category}/series", async (string category, TorrentarrCo
             s.series,
             s.totals,
             seasons = episodes
-                .Where(e => e.ArrSeriesId == s.arrSeriesId)
+                .Where(e => e.ArrInstance == s.arrInstance && e.ArrSeriesId == s.arrSeriesId)
                 .GroupBy(e => e.SeasonNumber)
                 .ToDictionary(
                     g => g.Key.ToString(),

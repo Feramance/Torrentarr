@@ -45,6 +45,7 @@ const RADARR_HASH_FIELDS = [
   "hasFile",
   "monitored",
   "reason",
+  "qualityProfileName",
 ] as const;
 
 const RADARR_AGG_HASH_FIELDS = [
@@ -54,6 +55,7 @@ const RADARR_AGG_HASH_FIELDS = [
   "hasFile",
   "monitored",
   "reason",
+  "qualityProfileName",
 ] as const;
 
 function normalizeRadarrMovieId(value: unknown): number | undefined {

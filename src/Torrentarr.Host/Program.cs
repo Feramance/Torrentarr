@@ -2747,6 +2747,8 @@ static async Task<IResult> SaveAndRespondConfigUpdate(
 
     if (workerMgr != null)
     {
+        var settingsChanged = Newtonsoft.Json.JsonConvert.SerializeObject(cfg.Settings)
+            != Newtonsoft.Json.JsonConvert.SerializeObject(updatedConfig.Settings);
         switch (reloadType)
         {
             case "full":
@@ -2758,6 +2760,9 @@ static async Task<IResult> SaveAndRespondConfigUpdate(
             case "single_arr":
                 foreach (var inst in affectedInstancesList)
                     await workerMgr.RestartWorkerAsync(inst);
+                break;
+            case "webui" when settingsChanged:
+                await workerMgr.RestartAllWorkersAsync();
                 break;
         }
     }
@@ -2855,7 +2860,7 @@ static (string reloadType, List<string> affectedInstances) DetermineReloadType(
     bool hasQBitChanges = serialize(oldCfg.QBitInstances) != serialize(newCfg.QBitInstances)
         || serialize(oldCfg.TorrentClients) != serialize(newCfg.TorrentClients);
 
-    // Settings changes → webui reload (workers pick up changes at next cycle)
+    // Settings changes → webui reload; the isolated workers need a restart to load them.
     bool hasSettingsChanges = serialize(oldCfg.Settings) != serialize(newCfg.Settings);
 
     // WebUI connection fields (host/port/token) → webui restart

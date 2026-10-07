@@ -360,7 +360,7 @@ export async function getLidarrArtists(
   if (query) {
     params.set("q", query);
   }
-  if (options?.missingOnly) params.set("missing", "1");
+  if (options?.missingOnly) params.set("missing", "true");
   if (options?.reasonFilter) params.set("reason", options.reasonFilter);
   return fetchJson<LidarrArtistsResponse>(
     `/web/lidarr/${encodeURIComponent(category)}/artists?${params}`,

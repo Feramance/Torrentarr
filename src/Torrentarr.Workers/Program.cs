@@ -243,6 +243,7 @@ class ArrWorkerService : BackgroundService
     private DateTime _lastHealthCheck = DateTime.MinValue;
     private DateTime _lastRssSync = DateTime.MinValue;
     private DateTime _lastRefreshDownloads = DateTime.MinValue;
+    private bool _searchLoopCompleted;
 
     private int _consecutiveErrors = 0;
     private DateTime _lastErrorTime = DateTime.MinValue;
@@ -286,9 +287,11 @@ class ArrWorkerService : BackgroundService
         if (!_qbitManager.IsConnected() && _config.GetAllTorrentClients().Any(q => !q.Value.Disabled && q.Value.Host != "CHANGE_ME"))
             _logger.LogWarning("Failed to connect to any qBittorrent instance; will retry each cycle");
 
+        var initialized = false;
         try
         {
             await InitializeAsync(stoppingToken);
+            initialized = true;
         }
         catch (OperationCanceledException) when (stoppingToken.IsCancellationRequested)
         {
@@ -306,6 +309,12 @@ class ArrWorkerService : BackgroundService
                 try
                 {
                     await _qbitManager.EnsureAllConnectedAsync(_config.GetAllTorrentClients(), stoppingToken);
+
+                    if (!initialized)
+                    {
+                        await InitializeAsync(stoppingToken);
+                        initialized = true;
+                    }
 
                     // Check for exponential backoff
                     var backoffDelay = GetBackoffDelay();
@@ -391,6 +400,12 @@ class ArrWorkerService : BackgroundService
         var dbHealthService = scope.ServiceProvider.GetRequiredService<IDatabaseHealthService>();
         var cacheService = scope.ServiceProvider.GetRequiredService<ITorrentCacheService>();
         var syncService = scope.ServiceProvider.GetRequiredService<ArrSyncService>();
+
+        if (_searchLoopCompleted && _instanceConfig.Search.SearchAgainOnSearchCompletion)
+        {
+            await ResetSearchedFlagsAsync(scope.ServiceProvider.GetRequiredService<TorrentarrDbContext>(), cancellationToken);
+            _searchLoopCompleted = false;
+        }
 
         // NOTE: Free space management and special categories (failed, recheck) are handled
         // GLOBALLY by the Host orchestrator - not per-worker. This matches qBitrr's design where:
@@ -505,17 +520,48 @@ class ArrWorkerService : BackgroundService
             }
         }
 
-        if (searchResult?.LoopCompleted == true && SearchYearCursor.ShouldFilter(_instanceConfig))
-            _yearCursor.Advance(_context.InstanceName);
+        if (searchResult?.LoopCompleted == true)
+        {
+            _searchLoopCompleted = true;
+            if (SearchYearCursor.ShouldFilter(_instanceConfig))
+                _yearCursor.Advance(_context.InstanceName);
+        }
+    }
+
+    private async Task ResetSearchedFlagsAsync(TorrentarrDbContext db, CancellationToken ct)
+    {
+        switch (_instanceConfig.Type.ToLowerInvariant())
+        {
+            case "radarr":
+                await db.Movies.Where(x => x.ArrInstance == _context.InstanceName && x.Searched)
+                    .ExecuteUpdateAsync(s => s.SetProperty(x => x.Searched, false).SetProperty(x => x.Upgrade, false), ct);
+                break;
+            case "sonarr":
+                await db.Episodes.Where(x => x.ArrInstance == _context.InstanceName && x.Searched)
+                    .ExecuteUpdateAsync(s => s.SetProperty(x => x.Searched, false).SetProperty(x => x.Upgrade, false), ct);
+                await db.Series.Where(x => x.ArrInstance == _context.InstanceName && x.Searched)
+                    .ExecuteUpdateAsync(s => s.SetProperty(x => x.Searched, false).SetProperty(x => x.Upgrade, false), ct);
+                break;
+            case "lidarr":
+                await db.Albums.Where(x => x.ArrInstance == _context.InstanceName && x.Searched)
+                    .ExecuteUpdateAsync(s => s.SetProperty(x => x.Searched, false).SetProperty(x => x.Upgrade, false), ct);
+                break;
+            case "readarr":
+                await db.Books.Where(x => x.ArrInstance == _context.InstanceName && x.Searched)
+                    .ExecuteUpdateAsync(s => s.SetProperty(x => x.Searched, false).SetProperty(x => x.Upgrade, false), ct);
+                break;
+        }
     }
 
     private async Task InitializeAsync(CancellationToken cancellationToken)
     {
         using var scope = _serviceProvider.CreateScope();
         var ensure = scope.ServiceProvider.GetRequiredService<QBitCategoryEnsureService>();
-        await ensure.EnsureCategoryOnAllInstancesAsync(_instanceConfig.Category, cancellationToken);
+        if (!await ensure.EnsureCategoryOnAllInstancesAsync(_instanceConfig.Category, cancellationToken))
+            throw new InvalidOperationException("Category setup failed on one or more qBittorrent instances");
         if (scope.ServiceProvider.GetRequiredService<ISeedingService>() is SeedingService seeding)
-            await seeding.EnsureAllTrackerTagsExistAsync(cancellationToken);
+            if (!await seeding.EnsureAllTrackerTagsExistAsync(cancellationToken))
+                throw new InvalidOperationException("Tracker tag setup failed on one or more qBittorrent instances");
         if (_instanceConfig.Search.UseTempForMissing && _instanceConfig.Search.ForceResetTempProfiles)
             await scope.ServiceProvider.GetRequiredService<QualityProfileSwitcherService>()
                 .ForceResetAllTempProfilesAsync(_context.InstanceName, _instanceConfig, cancellationToken);
@@ -529,25 +575,36 @@ class ArrWorkerService : BackgroundService
         var now = DateTime.UtcNow;
         if (_instanceConfig.RssSyncTimer > 0 && now - _lastRssSync >= TimeSpan.FromMinutes(_instanceConfig.RssSyncTimer))
         {
-            switch (_instanceConfig.Type.ToLowerInvariant())
+            try
             {
-                case "radarr": await new Torrentarr.Infrastructure.ApiClients.Arr.RadarrClient(_instanceConfig.URI, _instanceConfig.APIKey, _instanceConfig.SkipTLSVerify).RssSyncAsync(cancellationToken); break;
-                case "sonarr": await new Torrentarr.Infrastructure.ApiClients.Arr.SonarrClient(_instanceConfig.URI, _instanceConfig.APIKey, _instanceConfig.SkipTLSVerify).RssSyncAsync(cancellationToken); break;
-                case "lidarr": await new Torrentarr.Infrastructure.ApiClients.Arr.LidarrClient(_instanceConfig.URI, _instanceConfig.APIKey, _instanceConfig.SkipTLSVerify).RssSyncAsync(cancellationToken); break;
-                case "readarr": await new Torrentarr.Infrastructure.ApiClients.Arr.ReadarrClient(_instanceConfig.URI, _instanceConfig.APIKey, _instanceConfig.SkipTLSVerify).RssSyncAsync(cancellationToken); break;
-            }
+                switch (_instanceConfig.Type.ToLowerInvariant())
+                {
+                    case "radarr": await new Torrentarr.Infrastructure.ApiClients.Arr.RadarrClient(_instanceConfig.URI, _instanceConfig.APIKey, _instanceConfig.SkipTLSVerify).RssSyncAsync(cancellationToken); break;
+                    case "sonarr": await new Torrentarr.Infrastructure.ApiClients.Arr.SonarrClient(_instanceConfig.URI, _instanceConfig.APIKey, _instanceConfig.SkipTLSVerify).RssSyncAsync(cancellationToken); break;
+                    case "lidarr": await new Torrentarr.Infrastructure.ApiClients.Arr.LidarrClient(_instanceConfig.URI, _instanceConfig.APIKey, _instanceConfig.SkipTLSVerify).RssSyncAsync(cancellationToken); break;
+                    case "readarr": await new Torrentarr.Infrastructure.ApiClients.Arr.ReadarrClient(_instanceConfig.URI, _instanceConfig.APIKey, _instanceConfig.SkipTLSVerify).RssSyncAsync(cancellationToken); break;
+                }
             _lastRssSync = now;
+            }
+            catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested) { throw; }
+            catch (Exception ex) { _logger.LogWarning(ex, "RSS sync failed for {Instance}", _context.InstanceName); }
         }
         if (_instanceConfig.RefreshDownloadsTimer > 0
             && !string.Equals(_instanceConfig.Type, "lidarr", StringComparison.OrdinalIgnoreCase)
             && now - _lastRefreshDownloads >= TimeSpan.FromMinutes(_instanceConfig.RefreshDownloadsTimer))
         {
-            switch (_instanceConfig.Type.ToLowerInvariant())
+            try
             {
-                case "radarr": await new Torrentarr.Infrastructure.ApiClients.Arr.RadarrClient(_instanceConfig.URI, _instanceConfig.APIKey, _instanceConfig.SkipTLSVerify).RefreshMonitoredDownloadsAsync(cancellationToken); break;
-                case "sonarr": await new Torrentarr.Infrastructure.ApiClients.Arr.SonarrClient(_instanceConfig.URI, _instanceConfig.APIKey, _instanceConfig.SkipTLSVerify).RefreshMonitoredDownloadsAsync(cancellationToken); break;
+                switch (_instanceConfig.Type.ToLowerInvariant())
+                {
+                    case "radarr": await new Torrentarr.Infrastructure.ApiClients.Arr.RadarrClient(_instanceConfig.URI, _instanceConfig.APIKey, _instanceConfig.SkipTLSVerify).RefreshMonitoredDownloadsAsync(cancellationToken); break;
+                    case "sonarr": await new Torrentarr.Infrastructure.ApiClients.Arr.SonarrClient(_instanceConfig.URI, _instanceConfig.APIKey, _instanceConfig.SkipTLSVerify).RefreshMonitoredDownloadsAsync(cancellationToken); break;
+                }
             }
             _lastRefreshDownloads = now;
+            }
+            catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested) { throw; }
+            catch (Exception ex) { _logger.LogWarning(ex, "Download refresh failed for {Instance}", _context.InstanceName); }
         }
     }
 

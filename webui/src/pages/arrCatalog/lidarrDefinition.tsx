@@ -121,27 +121,22 @@ function lidarrArtistTileStats(artist: Record<string, unknown>): JSX.Element {
   const monT = artist["tracksMonitored"];
   const availT = artist["tracksAvailable"];
   const missT = artist["tracksMissing"];
-  if (
-    typeof monA === "number" &&
-    typeof availA === "number" &&
-    typeof missA === "number" &&
-    typeof monT === "number" &&
-    typeof availT === "number" &&
-    typeof missT === "number"
-  ) {
+  if (typeof monA === "number" && typeof availA === "number" && typeof missA === "number") {
     return (
       <div className="arr-movie-tile__stats arr-movie-tile__stats--lidarr-artist">
         <ArrMiniProgress label="Albums" available={availA} missing={missA} />
-        <ArrMiniProgress label="Tracks" available={availT} missing={missT} />
+        {typeof monT === "number" && typeof availT === "number" && typeof missT === "number" ? (
+          <ArrMiniProgress label="Tracks" available={availT} missing={missT} />
+        ) : null}
       </div>
     );
   }
-  const albums = Number(artist?.["albumCount"] ?? 0);
-  const tracks = Number(artist?.["trackTotalCount"] ?? 0);
+  const albums = Number(artist?.["albumCount"] ?? NaN);
+  const tracks = Number(artist?.["trackTotalCount"] ?? NaN);
   return (
     <div className="arr-movie-tile__stats arr-movie-tile__stats--lidarr-artist">
-      <div>{albums.toLocaleString()} albums</div>
-      <div>{tracks.toLocaleString()} tracks</div>
+      {Number.isFinite(albums) ? <div>{albums.toLocaleString()} albums</div> : null}
+      {Number.isFinite(tracks) ? <div>{tracks.toLocaleString()} tracks</div> : null}
     </div>
   );
 }
@@ -192,7 +187,7 @@ const LIDARR_INSTANCE_COLUMNS: LegacyColumnDef<LidarrInstanceRow>[] = [
           />
         );
       }
-      return Number(a?.["trackTotalCount"] ?? 0).toLocaleString();
+      return a?.["trackTotalCount"] == null ? "—" : Number(a["trackTotalCount"]).toLocaleString();
     },
     size: 140,
   },

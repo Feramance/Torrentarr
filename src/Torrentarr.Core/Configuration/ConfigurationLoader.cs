@@ -389,12 +389,9 @@ public class ConfigurationLoader
 
     private static bool MigrateStalledDelaySentinels(TomlTable root, Version currentVersion)
     {
-        // qBitrr configs use the 5.x version namespace; Torrentarr configs use
-        // the +1 major 6.x namespace. Configs at 6.15.2 need the one-time
-        // correction for the previous loader rewrite.
-        var swapBoth = currentVersion.Major == 5
-            ? currentVersion < new Version(5, 14, 6)
-            : currentVersion < new Version(6, 14, 6);
+        // Only qBitrr 5.x configs use the old sentinel meaning. Torrentarr 6.x
+        // configs already use -1 for disabled stalled handling.
+        var swapBoth = currentVersion.Major == 5 && currentVersion < new Version(5, 14, 6);
         if (!swapBoth)
             return false;
 

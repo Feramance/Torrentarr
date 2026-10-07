@@ -166,7 +166,7 @@ public static class ArrCatalogEndpoints
                 page_size = pageSize,
                 artists = artists.Select(a =>
                 {
-                    statsByArtist.TryGetValue(a.EntryId, out var st);
+                    statsByArtist.TryGetValue(a.ArrId, out var st);
                     var mon = st?.Monitored ?? 0;
                     var avail = st?.Available ?? 0;
                     return new
@@ -548,7 +548,7 @@ public static class ArrCatalogEndpoints
                 .Select(s => s.ArrId.ToString())
                 .FirstOrDefaultAsync(),
             "artist" => await db.Artists
-                .Where(a => keys.Contains(a.ArrInstance) && a.EntryId == entryId)
+                .Where(a => keys.Contains(a.ArrInstance) && a.ArrId == entryId)
                 .Select(a => a.ArrId.ToString())
                 .FirstOrDefaultAsync(),
             "author" => await db.Authors

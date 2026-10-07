@@ -10,8 +10,11 @@ public class DatabaseRestartCoordinator
     private DateTime _firstErrorTime;
     private DateTime _lastErrorTime;
     private volatile bool _restartRequested;
+    private long _restartVersion;
 
     public bool RestartRequested => _restartRequested;
+
+    public (bool Requested, long Version) GetRestartRequest() => (_restartRequested, Interlocked.Read(ref _restartVersion));
 
     public void RecordDatabaseError()
     {
@@ -28,7 +31,10 @@ public class DatabaseRestartCoordinator
             _lastErrorTime = now;
 
             if (now - _firstErrorTime > TimeSpan.FromMinutes(5))
+            {
                 _restartRequested = true;
+                Interlocked.Increment(ref _restartVersion);
+            }
         }
     }
 
@@ -40,5 +46,12 @@ public class DatabaseRestartCoordinator
         }
     }
 
-    public void ClearRestartRequest() => _restartRequested = false;
+    public void ClearRestartRequest(long version)
+    {
+        lock (_lock)
+        {
+            if (_restartVersion == version)
+                _restartRequested = false;
+        }
+    }
 }
