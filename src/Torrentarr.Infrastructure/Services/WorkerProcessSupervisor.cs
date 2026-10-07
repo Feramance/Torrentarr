@@ -150,12 +150,22 @@ public sealed class WorkerProcessSupervisor : BackgroundService, IProcessOrchest
         {
             if (_stopping) return;
             if (_processes.TryGetValue(instanceName, out var existing) && !existing.HasExited) return;
-            var start = ResolveWorkerStartInfo(instanceName);
-            var process = Process.Start(start);
-            if (process == null) throw new InvalidOperationException($"Unable to start worker for {instanceName}");
-            process.EnableRaisingEvents = true;
-            process.Exited += (_, _) => _ = RestartAfterCrashAsync(instanceName, process);
-            _processes[instanceName] = process;
+            try
+            {
+                var process = Process.Start(ResolveWorkerStartInfo(instanceName));
+                if (process == null)
+                {
+                    _logger.LogError("Unable to start worker for {Instance}", instanceName);
+                    return;
+                }
+                process.EnableRaisingEvents = true;
+                process.Exited += (_, _) => _ = RestartAfterCrashAsync(instanceName, process);
+                _processes[instanceName] = process;
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Unable to start worker for {Instance}", instanceName);
+            }
         }
     }
 

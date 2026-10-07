@@ -2879,7 +2879,7 @@ static (string reloadType, List<string> affectedInstances) DetermineReloadType(
     }
     affectedArr.Sort();
 
-    if (hasQBitChanges || hasSettingsChanges)
+    if (hasQBitChanges)
         return ("full", newCfg.ArrInstances.Keys.OrderBy(k => k).ToList());
     if (affectedArr.Count > 0)
         return (affectedArr.Count > 1 ? "multi_arr" : "single_arr", affectedArr);
