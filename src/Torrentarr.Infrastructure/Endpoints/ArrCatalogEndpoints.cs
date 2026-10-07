@@ -76,7 +76,7 @@ public static class ArrCatalogEndpoints
                 }
 
                 var artistIds = await albumQuery.Select(al => al.ArtistId).Distinct().ToListAsync();
-                query = query.Where(a => artistIds.Contains(a.EntryId));
+                query = query.Where(a => artistIds.Contains(a.ArrId));
             }
 
             var total = await query.CountAsync();
@@ -121,7 +121,7 @@ public static class ArrCatalogEndpoints
                     .Take(pageSize)
                     .Select(g => new ArtistFilesModel
                     {
-                        EntryId = g.ArtistId,
+                        ArrId = g.ArtistId,
                         Title = g.Title,
                         Monitored = g.Monitored,
                         ArrInstance = category
@@ -129,7 +129,7 @@ public static class ArrCatalogEndpoints
                     .ToList();
             }
 
-            var artistIdsListed = artists.Select(a => a.EntryId).ToList();
+            var artistIdsListed = artists.Select(a => a.ArrId).ToList();
             var albumStats = await db.Albums
                 .Where(al => keys.Contains(al.ArrInstance) && artistIdsListed.Contains(al.ArtistId))
                 .GroupBy(al => al.ArtistId)
@@ -173,7 +173,7 @@ public static class ArrCatalogEndpoints
                     {
                         artist = new
                         {
-                            id = a.EntryId,
+                            id = a.ArrId,
                             name = a.Title,
                             monitored = a.Monitored,
                             qualityProfileName = a.QualityProfileName,
@@ -205,7 +205,7 @@ public static class ArrCatalogEndpoints
         {
             var keys = ArrCatalogIdentity.QueryKeys(cfg, category);
             var artist = await db.Artists
-                .FirstOrDefaultAsync(a => keys.Contains(a.ArrInstance) && a.EntryId == artistId);
+                .FirstOrDefaultAsync(a => keys.Contains(a.ArrInstance) && a.ArrId == artistId);
             if (artist is null)
                 return Results.NotFound(new { error = "Artist not found" });
 
@@ -239,7 +239,7 @@ public static class ArrCatalogEndpoints
                 },
                 artist = new
                 {
-                    id = artist.EntryId,
+                        id = artist.ArrId,
                     name = artist.Title,
                     monitored = artist.Monitored,
                     qualityProfileName = artist.QualityProfileName,

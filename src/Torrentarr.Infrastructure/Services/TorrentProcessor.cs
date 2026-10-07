@@ -892,16 +892,6 @@ public class TorrentProcessor : ITorrentProcessor
                 if (client != null)
                     await AddStalledTagAsync(torrent, client, ct);
 
-                // If ReSearchStalled is enabled, blocklist + re-search via Arr API
-                // (qBitrr: process_entries([torrent.hash]) + _process_failed_individual)
-                if (stalledDelay >= 0 && arrCfg?.Torrent.ReSearchStalled == true && _importService != null)
-                {
-                    _logger.LogDebug("Stalled torrent [{Name}] — ReSearchStalled enabled; blocklisting + re-search",
-                        torrent.Name);
-                    var retried = await _importService.BlocklistAndReSearchAsync(torrent.Hash, arrCfg.Category, ct);
-                    if (!retried && client != null)
-                        await RemoveStalledTagAsync(torrent, client, ct);
-                }
             }
             return true; // within delay, stalled_ignore = True
         }

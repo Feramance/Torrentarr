@@ -409,7 +409,18 @@ class ArrWorkerService : BackgroundService
         }
         if (_instanceConfig.Search.SearchMissing)
             await syncService.MarkRequestsAsync(_context.InstanceName, cancellationToken);
-        await RunPeriodicCommandsAsync(cancellationToken);
+        try
+        {
+            await RunPeriodicCommandsAsync(cancellationToken);
+        }
+        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+        {
+            throw;
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(ex, "Periodic Arr command failed; continuing torrent processing for {Instance}", _context.InstanceName);
+        }
 
         // Periodic database health check (every 10 iterations)
         if (DateTime.UtcNow - _lastHealthCheck >= TimeSpan.FromMinutes(10))
@@ -518,7 +529,6 @@ class ArrWorkerService : BackgroundService
         var now = DateTime.UtcNow;
         if (_instanceConfig.RssSyncTimer > 0 && now - _lastRssSync >= TimeSpan.FromMinutes(_instanceConfig.RssSyncTimer))
         {
-            _lastRssSync = now;
             switch (_instanceConfig.Type.ToLowerInvariant())
             {
                 case "radarr": await new Torrentarr.Infrastructure.ApiClients.Arr.RadarrClient(_instanceConfig.URI, _instanceConfig.APIKey, _instanceConfig.SkipTLSVerify).RssSyncAsync(cancellationToken); break;
@@ -526,17 +536,18 @@ class ArrWorkerService : BackgroundService
                 case "lidarr": await new Torrentarr.Infrastructure.ApiClients.Arr.LidarrClient(_instanceConfig.URI, _instanceConfig.APIKey, _instanceConfig.SkipTLSVerify).RssSyncAsync(cancellationToken); break;
                 case "readarr": await new Torrentarr.Infrastructure.ApiClients.Arr.ReadarrClient(_instanceConfig.URI, _instanceConfig.APIKey, _instanceConfig.SkipTLSVerify).RssSyncAsync(cancellationToken); break;
             }
+            _lastRssSync = now;
         }
         if (_instanceConfig.RefreshDownloadsTimer > 0
             && !string.Equals(_instanceConfig.Type, "lidarr", StringComparison.OrdinalIgnoreCase)
             && now - _lastRefreshDownloads >= TimeSpan.FromMinutes(_instanceConfig.RefreshDownloadsTimer))
         {
-            _lastRefreshDownloads = now;
             switch (_instanceConfig.Type.ToLowerInvariant())
             {
                 case "radarr": await new Torrentarr.Infrastructure.ApiClients.Arr.RadarrClient(_instanceConfig.URI, _instanceConfig.APIKey, _instanceConfig.SkipTLSVerify).RefreshMonitoredDownloadsAsync(cancellationToken); break;
                 case "sonarr": await new Torrentarr.Infrastructure.ApiClients.Arr.SonarrClient(_instanceConfig.URI, _instanceConfig.APIKey, _instanceConfig.SkipTLSVerify).RefreshMonitoredDownloadsAsync(cancellationToken); break;
             }
+            _lastRefreshDownloads = now;
         }
     }
 

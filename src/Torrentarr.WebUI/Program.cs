@@ -1311,9 +1311,15 @@ app.MapGet("/web/sonarr/{category}/series", async (string category, TorrentarrCo
                 s.ArrId,
                 s.ArrInstance
             },
+            arrSeriesId = s.ArrId,
             totals = new { available = s.Searched ? 1 : 0, monitored = s.Monitored == true ? 1 : 0 },
             seasons = new Dictionary<string, object>()
         })
+        .ToListAsync();
+
+    var seriesIds = seriesItems.Select(s => s.arrSeriesId).ToList();
+    var episodes = await db.Episodes
+        .Where(e => keys.Contains(e.ArrInstance) && seriesIds.Contains(e.ArrSeriesId))
         .ToListAsync();
 
     return Results.Ok(new
@@ -1323,7 +1329,28 @@ app.MapGet("/web/sonarr/{category}/series", async (string category, TorrentarrCo
         page = currentPage,
         page_size = currentPageSize,
         counts = new { available = monitoredCount, monitored = monitoredCount, missing = missingSeriesCount, quality_met = qualityMetSeriesCount, requests = 0 },
-        series = seriesItems
+        series = seriesItems.Select(s => new
+        {
+            s.series,
+            s.totals,
+            seasons = episodes
+                .Where(e => e.ArrSeriesId == s.arrSeriesId)
+                .GroupBy(e => e.SeasonNumber)
+                .ToDictionary(
+                    g => g.Key.ToString(),
+                    g => (object)new
+                    {
+                        episodes = g.Select(e => new
+                        {
+                            episodeNumber = e.EpisodeNumber,
+                            title = e.Title,
+                            monitored = e.Monitored,
+                            hasFile = e.HasFile,
+                            airDateUtc = e.AirDateUtc,
+                            reason = e.Reason
+                        })
+                    })
+        })
     });
 });
 

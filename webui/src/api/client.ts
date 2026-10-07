@@ -371,27 +371,21 @@ export function getRadarrOpenMovieUrl(
   category: string,
   id: number,
 ): string | null {
-  void category;
-  void id;
-  return null;
+  return webPath(`/web/arr/${encodeURIComponent(category)}/open/movie/${id}`);
 }
 
 export function getSonarrOpenSeriesUrl(
   category: string,
   id: number,
 ): string | null {
-  void category;
-  void id;
-  return null;
+  return webPath(`/web/arr/${encodeURIComponent(category)}/open/series/${id}`);
 }
 
 export function getLidarrOpenArtistUrl(
   category: string,
   id: number,
 ): string | null {
-  void category;
-  void id;
-  return null;
+  return webPath(`/web/arr/${encodeURIComponent(category)}/open/artist/${id}`);
 }
 
 export async function getLidarrArtistDetail(
