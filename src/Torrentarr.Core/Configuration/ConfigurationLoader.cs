@@ -433,10 +433,9 @@ public class ConfigurationLoader
             changed = true;
         }
 
-        if (table.TryGetValue("Categories", out var categoriesObj)
-            && categoriesObj is TomlTableArray categories)
+        if (table.TryGetValue("Categories", out var categoriesObj))
         {
-            foreach (var category in categories)
+            foreach (var category in GetTrackerTables(categoriesObj))
                 changed |= SwapStalledDelayValues(category);
         }
 
