@@ -239,7 +239,7 @@ public static class ArrCatalogEndpoints
                 },
                 artist = new
                 {
-                        id = artist.ArrId,
+                    id = artist.ArrId,
                     name = artist.Title,
                     monitored = artist.Monitored,
                     qualityProfileName = artist.QualityProfileName,

@@ -48,7 +48,7 @@ export function isEmptyStateReady(
     return true;
   }
   return (
-    tracker.sawNonEmptyRef.current || tracker.stableEmptyStreakRef.current >= 1
+    tracker.sawNonEmptyRef.current || tracker.stableEmptyStreakRef.current >= 2
   );
 }
 

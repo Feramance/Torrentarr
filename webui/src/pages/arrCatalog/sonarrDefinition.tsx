@@ -280,7 +280,7 @@ function useSonarrInstancePipeline(
           setEmptyStateReady((prev) => (prev ? prev : true));
         } else {
           emptyTracker.noteCatalogData(false);
-          const ready = isEmptyStateReady(emptyTracker, false);
+          const ready = !polling || isEmptyStateReady(emptyTracker, false);
           setEmptyStateReady((prev) => (prev === ready ? prev : ready));
         }
 

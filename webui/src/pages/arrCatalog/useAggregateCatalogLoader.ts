@@ -19,10 +19,7 @@ import type {
   ArrCatalogSummary,
 } from "./definition";
 import { forEachInstanceChunkedPages } from "./forEachInstanceChunkedPages";
-import {
-  isEmptyStateReady,
-  useCatalogEmptyStateTracker,
-} from "./useCatalogFetchPrimitives";
+import { useCatalogEmptyStateTracker } from "./useCatalogFetchPrimitives";
 
 interface UseAggregateCatalogLoaderParams<
   TAggRow extends Hashable,
@@ -303,7 +300,7 @@ export function useAggregateCatalogLoader<
           setEmptyStateReady((prev) => (prev ? prev : true));
         } else {
           emptyTracker.noteCatalogData(false);
-          const ready = isEmptyStateReady(emptyTracker, false);
+          const ready = true;
           setEmptyStateReady((prev) => (prev === ready ? prev : ready));
         }
 
