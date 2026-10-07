@@ -715,7 +715,8 @@ public class TorrentProcessor : ITorrentProcessor
                 // Unavailable torrent past age gate → mark for deletion
                 await ProcessStalledTorrentAsync(
                     torrent, "Unavailable", client, stats,
-                    stalledSettings.IgnoreTorrentsYoungerThan, timeNow, ct);
+                    stalledSettings.IgnoreTorrentsYoungerThan, timeNow, ct,
+                    reSearchStalled: arrCfg?.Torrent.ReSearchStalled == true);
             }
             else if (_cache.AreFilePrioritiesApplied(torrent.QBitInstanceName, torrent.Hash))
             {
