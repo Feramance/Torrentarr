@@ -118,7 +118,9 @@ export function ArrCatalogListOrGrid<TRow extends Hashable>({
   return (
     <div className="arr-icon-grid" ref={iconGridRef}>
       {rows.map((row) => (
-        <React.Fragment key={getRowKey(row)}>{renderIconTile(row)}</React.Fragment>
+        <React.Fragment key={getRowKey(row)}>
+          {renderIconTile(row)}
+        </React.Fragment>
       ))}
     </div>
   );
