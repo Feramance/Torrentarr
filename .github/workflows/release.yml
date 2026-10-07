@@ -303,7 +303,7 @@ jobs:
           release/torrentarr-macos-arm64
           release/torrentarr-workers-linux-x64
           release/torrentarr-workers-linux-arm64
-          release/torrentarr-workers-windows-x64
+          release/torrentarr-workers-windows-x64.exe
           release/torrentarr-workers-osx-x64
           release/torrentarr-workers-osx-arm64
 

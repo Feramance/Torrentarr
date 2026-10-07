@@ -1,4 +1,5 @@
 using System.Diagnostics;
+using System.Runtime.InteropServices;
 using System.Text.Json;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
@@ -237,6 +238,16 @@ public sealed class WorkerProcessSupervisor : BackgroundService, IProcessOrchest
             return Build(configured, instanceName, Path.GetDirectoryName(configured));
 
         var baseDir = AppContext.BaseDirectory;
+        var releaseName = RuntimeInformation.ProcessArchitecture switch
+        {
+            Architecture.Arm64 when OperatingSystem.IsLinux() => "linux-arm64",
+            Architecture.Arm64 => "osx-arm64",
+            _ when OperatingSystem.IsWindows() => "windows-x64.exe",
+            _ when OperatingSystem.IsMacOS() => "osx-x64",
+            _ => "linux-x64"
+        };
+        var releasedWorker = Path.Combine(baseDir, $"torrentarr-workers-{releaseName}");
+        if (File.Exists(releasedWorker)) return Build(releasedWorker, instanceName, baseDir);
         var executable = Path.Combine(baseDir, OperatingSystem.IsWindows() ? "Torrentarr.Workers.exe" : "Torrentarr.Workers");
         if (File.Exists(executable)) return Build(executable, instanceName, baseDir);
         var dll = Path.Combine(baseDir, "Torrentarr.Workers.dll");

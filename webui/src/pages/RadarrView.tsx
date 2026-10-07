@@ -686,6 +686,7 @@ export function RadarrView({ active }: { active: boolean }): JSX.Element {
           RADARR_PAGE_SIZE,
           query,
         );
+        if (instanceKeyRef.current !== key) return;
         setInstanceData(response);
         const resolvedPage = response.page ?? page;
         setInstancePage(resolvedPage);
@@ -853,6 +854,7 @@ export function RadarrView({ active }: { active: boolean }): JSX.Element {
     if (!selection || selection === "aggregate") return;
     instancePagesRef.current = {};
     setInstancePages({});
+    setInstanceData(null);
     setInstanceTotalPages(1);
     setInstancePage(0);
     const query = globalSearchRef.current;

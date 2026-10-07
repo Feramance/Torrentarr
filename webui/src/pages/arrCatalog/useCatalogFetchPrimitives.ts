@@ -47,9 +47,7 @@ export function isEmptyStateReady(
   if (hasCatalogData) {
     return true;
   }
-  return (
-    tracker.sawNonEmptyRef.current || tracker.stableEmptyStreakRef.current >= 2
-  );
+  return tracker.sawNonEmptyRef.current || tracker.stableEmptyStreakRef.current >= 1;
 }
 
 /** Page cache keyed by resolved page index — shared by flat + Sonarr pipelines. */

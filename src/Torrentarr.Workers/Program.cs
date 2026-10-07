@@ -286,7 +286,18 @@ class ArrWorkerService : BackgroundService
         if (!_qbitManager.IsConnected() && _config.GetAllTorrentClients().Any(q => !q.Value.Disabled && q.Value.Host != "CHANGE_ME"))
             _logger.LogWarning("Failed to connect to any qBittorrent instance; will retry each cycle");
 
-        await InitializeAsync(stoppingToken);
+        try
+        {
+            await InitializeAsync(stoppingToken);
+        }
+        catch (OperationCanceledException) when (stoppingToken.IsCancellationRequested)
+        {
+            throw;
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Worker initialization failed; continuing into the processing loop");
+        }
 
         try
         {
@@ -469,6 +480,14 @@ class ArrWorkerService : BackgroundService
                 if (_instanceConfig.Search.QualityUnmetSearch || _instanceConfig.Search.CustomFormatUnmetSearch)
                 {
                     var upgradeResult = await arrMediaService.SearchQualityUpgradesAsync(_instanceConfig.Category, cancellationToken);
+                    if (searchResult == null)
+                        searchResult = upgradeResult;
+                    else
+                    {
+                        searchResult.SearchesTriggered += upgradeResult.SearchesTriggered;
+                        searchResult.ItemsSearched += upgradeResult.ItemsSearched;
+                        searchResult.LoopCompleted &= upgradeResult.LoopCompleted;
+                    }
                     if (upgradeResult.SearchesTriggered > 0)
                         _logger.LogInformation("Triggered {Count} searches for quality upgrades", upgradeResult.SearchesTriggered);
                 }
