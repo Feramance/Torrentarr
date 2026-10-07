@@ -1,4 +1,4 @@
-import type { ColumnDef } from "@tanstack/react-table";
+import type { LegacyColumnDef } from "@tanstack/react-table/legacy";
 import { useCallback, useMemo, type JSX } from "react";
 import { getRadarrMovies } from "../../api/client";
 import type {
@@ -79,7 +79,7 @@ function radarrFilterRows<T extends RadarrMovie>(
 }
 
 /** Module-level column defs — stable identity across renders for StableTable memo. */
-const RADARR_INSTANCE_COLUMNS: ColumnDef<RadarrInstanceRow>[] = [
+const RADARR_INSTANCE_COLUMNS: LegacyColumnDef<RadarrInstanceRow>[] = [
   { accessorKey: "title", header: "Title", cell: (info) => info.getValue() },
   { accessorKey: "year", header: "Year", size: 80 },
   {
@@ -114,9 +114,9 @@ const RADARR_INSTANCE_COLUMNS: ColumnDef<RadarrInstanceRow>[] = [
 ];
 
 const RADARR_AGG_COLUMNS_SINGLE =
-  RADARR_INSTANCE_COLUMNS as ColumnDef<RadarrAggRow>[];
+  RADARR_INSTANCE_COLUMNS as LegacyColumnDef<RadarrAggRow>[];
 
-const RADARR_AGG_COLUMNS_MULTI: ColumnDef<RadarrAggRow>[] = [
+const RADARR_AGG_COLUMNS_MULTI: LegacyColumnDef<RadarrAggRow>[] = [
   {
     accessorKey: "__instance",
     header: "Instance",
@@ -125,7 +125,7 @@ const RADARR_AGG_COLUMNS_MULTI: ColumnDef<RadarrAggRow>[] = [
   ...RADARR_AGG_COLUMNS_SINGLE,
 ];
 
-function getRadarrAggColumns(instanceCount: number): ColumnDef<RadarrAggRow>[] {
+function getRadarrAggColumns(instanceCount: number): LegacyColumnDef<RadarrAggRow>[] {
   return instanceCount > 1
     ? RADARR_AGG_COLUMNS_MULTI
     : RADARR_AGG_COLUMNS_SINGLE;

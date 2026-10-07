@@ -1,4 +1,4 @@
-import type { ColumnDef } from "@tanstack/react-table";
+import type { LegacyColumnDef } from "@tanstack/react-table/legacy";
 import {
   useCallback,
   useEffect,
@@ -539,7 +539,7 @@ function sonarrSeriesReason(group: SonarrSeriesGroupRow): string | null {
 }
 
 /** Module-level column defs — stable identity across renders for StableTable memo. */
-const SONARR_INSTANCE_COLUMNS: ColumnDef<SonarrSeriesGroupRow>[] = [
+const SONARR_INSTANCE_COLUMNS: LegacyColumnDef<SonarrSeriesGroupRow>[] = [
   {
     accessorKey: "series" as const,
     header: "Series",
@@ -587,7 +587,7 @@ const SONARR_INSTANCE_COLUMNS: ColumnDef<SonarrSeriesGroupRow>[] = [
 
 const SONARR_AGG_COLUMNS_SINGLE = SONARR_INSTANCE_COLUMNS;
 
-const SONARR_AGG_COLUMNS_MULTI: ColumnDef<SonarrSeriesGroupRow>[] = [
+const SONARR_AGG_COLUMNS_MULTI: LegacyColumnDef<SonarrSeriesGroupRow>[] = [
   {
     accessorKey: "instance" as const,
     header: "Instance",
@@ -598,7 +598,7 @@ const SONARR_AGG_COLUMNS_MULTI: ColumnDef<SonarrSeriesGroupRow>[] = [
 
 function getSonarrAggColumns(
   instanceCount: number,
-): ColumnDef<SonarrSeriesGroupRow>[] {
+): LegacyColumnDef<SonarrSeriesGroupRow>[] {
   return instanceCount > 1
     ? SONARR_AGG_COLUMNS_MULTI
     : SONARR_AGG_COLUMNS_SINGLE;

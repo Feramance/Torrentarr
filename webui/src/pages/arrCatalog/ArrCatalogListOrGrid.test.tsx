@@ -1,6 +1,6 @@
 import { cleanup, render, screen } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import type { ColumnDef } from "@tanstack/react-table";
+import type { LegacyColumnDef } from "@tanstack/react-table/legacy";
 import type { Hashable } from "../../utils/dataSync";
 import type { RowsStore } from "../../utils/rowsStore";
 import {
@@ -12,21 +12,17 @@ import {
 
 vi.mock("../../components/StableTable", () => ({
   StableTable: ({
-    rowOrder,
-    onRowClick,
+    data,
   }: {
-    rowOrder: readonly string[];
-    onRowClick: (row: { id: string; title: string }) => void;
-    rowsStore: unknown;
+    data: Array<{ id: string; title: string }>;
   }) => (
     <div data-testid="stable-table">
-      {rowOrder.map((key) => (
+      {data.map((row) => (
         <button
-          key={key}
+          key={row.id}
           type="button"
-          onClick={() => onRowClick({ id: key, title: key })}
         >
-          {key}
+          {row.id}
         </button>
       ))}
     </div>
@@ -59,7 +55,7 @@ function makeStore(rows: TestRow[]): RowsStore<TestRow> {
   } as unknown as RowsStore<TestRow>;
 }
 
-const columns: ColumnDef<TestRow, unknown>[] = [
+const columns: LegacyColumnDef<TestRow, unknown>[] = [
   { accessorKey: "title", header: "Title" },
 ];
 const sampleRows: TestRow[] = [

@@ -251,6 +251,7 @@ export interface SonarrSeriesResponse {
 export interface LidarrCounts {
   available: number;
   monitored: number;
+  missing?: number;
 }
 
 export interface LidarrTrack {
@@ -319,8 +320,12 @@ export interface LidarrArtistEntry {
     albumsMonitored?: number;
     albumsAvailable?: number;
     albumsMissing?: number;
+    albumCount?: number;
+    trackTotalCount?: number;
   };
 }
+
+export type LidarrArtistBrowseEntry = LidarrArtistEntry;
 
 export interface LidarrArtistsResponse {
   category: string;

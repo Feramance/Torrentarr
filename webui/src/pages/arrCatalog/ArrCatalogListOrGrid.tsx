@@ -1,6 +1,6 @@
 import type { JSX, ReactNode, RefCallback } from "react";
 import React from "react";
-import type { ColumnDef } from "@tanstack/react-table";
+import type { LegacyColumnDef } from "@tanstack/react-table/legacy";
 import { StableTable } from "../../components/StableTable";
 import type { Hashable } from "../../utils/dataSync";
 import type { RowsStore } from "../../utils/rowsStore";
@@ -75,7 +75,7 @@ interface ArrCatalogListOrGridProps<TRow extends Hashable> {
   readonly rows: ReadonlyArray<TRow>;
   readonly rowOrder: ReadonlyArray<string>;
   readonly rowsStore: RowsStore<TRow>;
-  readonly columns: ColumnDef<TRow, unknown>[];
+  readonly columns: LegacyColumnDef<TRow, unknown>[];
   readonly getRowKey: (row: TRow) => string;
   readonly onRowSelect: (row: TRow) => void;
   readonly iconGridRef: RefCallback<HTMLElement | null>;
@@ -99,19 +99,15 @@ export function ArrCatalogListOrGrid<TRow extends Hashable>({
   }
   if (browseMode === "list") {
     const StoreTable = StableTable as React.ComponentType<{
-      rowsStore: RowsStore<TRow>;
-      rowOrder: readonly string[];
-      columns: ColumnDef<TRow, unknown>[];
+      data: TRow[];
+      columns: LegacyColumnDef<TRow, unknown>[];
       getRowKey: (row: TRow) => string;
-      onRowClick: (row: TRow) => void;
     }>;
     return (
       <StoreTable
-        rowsStore={rowsStore}
-        rowOrder={rowOrder}
+        data={[...rows]}
         columns={columns}
         getRowKey={getRowKey}
-        onRowClick={onRowSelect}
       />
     );
   }

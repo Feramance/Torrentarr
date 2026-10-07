@@ -1,9 +1,9 @@
-import type { ColumnDef } from "@tanstack/react-table";
+import type { LegacyColumnDef } from "@tanstack/react-table/legacy";
 import { useCallback, useMemo, type JSX, type RefCallback } from "react";
 import { getLidarrArtists } from "../../api/client";
 import type {
   ArrInfo,
-  LidarrArtistBrowseEntry,
+  LidarrArtistEntry,
   LidarrArtistsResponse,
 } from "../../api/types";
 import { ArrMiniProgress } from "../../components/arr/ArrMiniProgress";
@@ -33,9 +33,9 @@ interface LidarrFilters extends Record<string, unknown> {
   readonly reasonFilter: string;
 }
 
-type LidarrInstanceRow = LidarrArtistBrowseEntry & Record<string, unknown>;
+type LidarrInstanceRow = LidarrArtistEntry & Record<string, unknown>;
 
-interface LidarrAggRow extends LidarrArtistBrowseEntry {
+interface LidarrAggRow extends LidarrArtistEntry {
   __instance: string;
   [key: string]: unknown;
 }
@@ -147,7 +147,7 @@ function lidarrArtistTileStats(artist: Record<string, unknown>): JSX.Element {
 }
 
 /** Module-level column defs — stable identity across renders for StableTable memo. */
-const LIDARR_INSTANCE_COLUMNS: ColumnDef<LidarrInstanceRow>[] = [
+const LIDARR_INSTANCE_COLUMNS: LegacyColumnDef<LidarrInstanceRow>[] = [
   {
     id: "artist",
     header: "Artist",
@@ -227,9 +227,9 @@ const LIDARR_INSTANCE_COLUMNS: ColumnDef<LidarrInstanceRow>[] = [
 ];
 
 const LIDARR_AGG_COLUMNS_SINGLE =
-  LIDARR_INSTANCE_COLUMNS as ColumnDef<LidarrAggRow>[];
+  LIDARR_INSTANCE_COLUMNS as LegacyColumnDef<LidarrAggRow>[];
 
-const LIDARR_AGG_COLUMNS_MULTI: ColumnDef<LidarrAggRow>[] = [
+const LIDARR_AGG_COLUMNS_MULTI: LegacyColumnDef<LidarrAggRow>[] = [
   {
     id: "instance",
     header: "Instance",
@@ -238,7 +238,7 @@ const LIDARR_AGG_COLUMNS_MULTI: ColumnDef<LidarrAggRow>[] = [
   ...LIDARR_AGG_COLUMNS_SINGLE,
 ];
 
-function getLidarrAggColumns(instanceCount: number): ColumnDef<LidarrAggRow>[] {
+function getLidarrAggColumns(instanceCount: number): LegacyColumnDef<LidarrAggRow>[] {
   return instanceCount > 1
     ? LIDARR_AGG_COLUMNS_MULTI
     : LIDARR_AGG_COLUMNS_SINGLE;
@@ -256,7 +256,7 @@ export const LIDARR_DEFINITION: ArrCatalogDefinition<
   LidarrInstanceRow,
   LidarrAggRow,
   LidarrFilters,
-  LidarrArtistBrowseEntry,
+  LidarrArtistEntry,
   LidarrAggRow,
   LidarrInstanceRow | LidarrAggRow,
   LidarrArtistsResponse,
@@ -441,7 +441,7 @@ export const LIDARR_DEFINITION: ArrCatalogDefinition<
     return {
       id: idKey,
       source: "instance",
-      seed: row as LidarrArtistBrowseEntry,
+      seed: row as LidarrArtistEntry,
       extras: {
         artistId: aid,
         category: selectionCategory,

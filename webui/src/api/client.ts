@@ -352,6 +352,7 @@ export async function getLidarrArtists(
   page: number,
   pageSize: number,
   query?: string,
+  options?: { missingOnly?: boolean; reasonFilter?: string | null },
 ): Promise<LidarrArtistsResponse> {
   const params = new URLSearchParams();
   params.set("page", page.toString());
@@ -359,9 +360,23 @@ export async function getLidarrArtists(
   if (query) {
     params.set("q", query);
   }
+  if (options?.missingOnly) params.set("missing", "1");
+  if (options?.reasonFilter) params.set("reason", options.reasonFilter);
   return fetchJson<LidarrArtistsResponse>(
     `/web/lidarr/${encodeURIComponent(category)}/artists?${params}`,
   );
+}
+
+export function getRadarrOpenMovieUrl(_category: string, _id: number): string | null {
+  return null;
+}
+
+export function getSonarrOpenSeriesUrl(_category: string, _id: number): string | null {
+  return null;
+}
+
+export function getLidarrOpenArtistUrl(_category: string, _id: number): string | null {
+  return null;
 }
 
 export async function getLidarrArtistDetail(

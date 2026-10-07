@@ -1,4 +1,4 @@
-import type { ColumnDef } from "@tanstack/react-table";
+import type { LegacyColumnDef } from "@tanstack/react-table/legacy";
 import type { JSX, ReactNode, RefCallback } from "react";
 import type { Hashable } from "../../utils/dataSync";
 import type { RowsStore } from "../../utils/rowsStore";
@@ -34,7 +34,7 @@ export interface ArrCatalogStandardBodyProps<TRow extends Hashable> {
   readonly rows: ReadonlyArray<TRow>;
   readonly rowOrder: ReadonlyArray<string>;
   readonly rowsStore: RowsStore<TRow>;
-  readonly columns: ColumnDef<TRow, unknown>[];
+  readonly columns: LegacyColumnDef<TRow, unknown>[];
   readonly getRowKey: (row: TRow) => string;
   readonly onRowSelect: (row: TRow) => void;
   readonly iconGridRef: RefCallback<HTMLElement | null>;
