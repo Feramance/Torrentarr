@@ -1,5 +1,6 @@
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
+using Torrentarr.Core.Interfaces;
 
 namespace Torrentarr.Infrastructure.Services;
 
@@ -10,13 +11,13 @@ public class DatabaseRestartWatchdogService : BackgroundService
 {
     private readonly ILogger<DatabaseRestartWatchdogService> _logger;
     private readonly DatabaseRestartCoordinator _coordinator;
-    private readonly ArrWorkerManager _arrWorkers;
+    private readonly IProcessOrchestrator _arrWorkers;
     private readonly QBitCategoryWorkerManager _qbitCategoryWorkers;
 
     public DatabaseRestartWatchdogService(
         ILogger<DatabaseRestartWatchdogService> logger,
         DatabaseRestartCoordinator coordinator,
-        ArrWorkerManager arrWorkers,
+        IProcessOrchestrator arrWorkers,
         QBitCategoryWorkerManager qbitCategoryWorkers)
     {
         _logger = logger;
@@ -37,7 +38,8 @@ public class DatabaseRestartWatchdogService : BackgroundService
 
                 try
                 {
-                    await _arrWorkers.RestartAllWorkersAsync();
+                    foreach (var name in (await _arrWorkers.GetProcessStatusAsync()).Keys)
+                        await _arrWorkers.RestartProcessAsync(name);
                     await _qbitCategoryWorkers.RestartAllCategoriesAsync();
                 }
                 catch (Exception ex)

@@ -48,8 +48,8 @@ if [ "$(id -u)" -eq 0 ]; then
         case "${TORRENTARR_CONFIG}" in
             /config|/config/*)
                 ;;
-            */*)
-                config_dir="${TORRENTARR_CONFIG%/*}"
+            *)
+                config_dir="$(dirname -- "${TORRENTARR_CONFIG}")"
                 ;;
         esac
     fi

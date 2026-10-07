@@ -160,6 +160,7 @@ try
     builder.Services.AddScoped<ITorrentProcessor, TorrentProcessor>();
     builder.Services.AddScoped<ArrSyncService>();
     builder.Services.AddScoped<ISearchExecutor, SearchExecutor>();
+    builder.Services.AddScoped<QualityProfileSwitcherService>();
     builder.Services.AddScoped<IArrMediaService, ArrMediaService>();
     builder.Services.AddScoped<ISeedingService, SeedingService>();
     builder.Services.AddScoped<IArrImportService, ArrImportService>();
@@ -189,14 +190,14 @@ try
     _ = Task.Run(async () =>
     {
         if (Console.IsInputRedirected && (await Console.In.ReadLineAsync())?.Trim().Equals("shutdown", StringComparison.OrdinalIgnoreCase) == true)
-            Environment.Exit(0);
+            host.Services.GetRequiredService<IHostApplicationLifetime>().StopApplication();
     });
     _ = Task.Run(async () =>
     {
         while (parentPid > 0)
         {
             try { System.Diagnostics.Process.GetProcessById(parentPid); }
-            catch { Environment.Exit(0); }
+            catch { host.Services.GetRequiredService<IHostApplicationLifetime>().StopApplication(); break; }
             await Task.Delay(TimeSpan.FromSeconds(5));
         }
     });
@@ -365,6 +366,7 @@ class ArrWorkerService : BackgroundService
         var seedingService = scope.ServiceProvider.GetRequiredService<ISeedingService>();
         var dbHealthService = scope.ServiceProvider.GetRequiredService<IDatabaseHealthService>();
         var cacheService = scope.ServiceProvider.GetRequiredService<ITorrentCacheService>();
+        var syncService = scope.ServiceProvider.GetRequiredService<ArrSyncService>();
 
         // NOTE: Free space management and special categories (failed, recheck) are handled
         // GLOBALLY by the Host orchestrator - not per-worker. This matches qBitrr's design where:
@@ -373,6 +375,9 @@ class ArrWorkerService : BackgroundService
 
         // Clean expired cache entries
         cacheService.CleanExpired();
+        await syncService.SyncAsync(_context.InstanceName, cancellationToken);
+        if (_instanceConfig.Search.SearchMissing)
+            await syncService.MarkRequestsAsync(_context.InstanceName, cancellationToken);
 
         // Periodic database health check (every 10 iterations)
         if (DateTime.UtcNow.Minute % 10 == 0)
@@ -396,7 +401,8 @@ class ArrWorkerService : BackgroundService
         }
 
         // Process all torrents for this category (excluding special categories which are handled globally)
-        await torrentProcessor.ProcessTorrentsAsync(_instanceConfig.Category, cancellationToken);
+        if (!_instanceConfig.SearchOnly)
+            await torrentProcessor.ProcessTorrentsAsync(_instanceConfig.Category, cancellationToken);
 
         // Manage seeding rules and remove completed torrents
         if (!_instanceConfig.SearchOnly)

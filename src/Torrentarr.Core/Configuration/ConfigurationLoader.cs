@@ -14,7 +14,7 @@ internal sealed class TorrentClientConfigDocument
 public class ConfigurationLoader
 {
     /// <summary>Expected config schema version (qBitrr parity). Used for validation and mismatch warning.</summary>
-    public const string ExpectedConfigVersion = "6.15.2";
+    public const string ExpectedConfigVersion = "6.14.6";
 
     /// <summary>
     /// TEST USE ONLY. When set by test fixtures, GetDefaultConfigPath() returns this instead of env/defaults.
@@ -394,7 +394,7 @@ public class ConfigurationLoader
         // qBitrr 5.14.6+ config imported into Torrentarr.
         var legacy = currentVersion.Major == 5
             ? currentVersion < new Version(5, 14, 6)
-            : currentVersion < new Version(6, 15, 2);
+            : currentVersion < new Version(6, 14, 6);
         if (!legacy)
             return false;
 
