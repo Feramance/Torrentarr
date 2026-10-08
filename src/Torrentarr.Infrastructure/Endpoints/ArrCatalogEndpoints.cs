@@ -142,6 +142,19 @@ public static class ArrCatalogEndpoints
                 .ToListAsync();
 
             var statsByArtist = albumStats.ToDictionary(x => x.ArtistId);
+            var trackStatsByArtist = await db.Tracks
+                .Where(t => keys.Contains(t.ArrInstance))
+                .Join(db.Albums.Where(a => keys.Contains(a.ArrInstance)), t => t.AlbumId, a => a.EntryId,
+                    (t, a) => new { a.ArtistId, t.Monitored, t.HasFile })
+                .Where(x => artistIdsListed.Contains(x.ArtistId))
+                .GroupBy(x => x.ArtistId)
+                .Select(g => new
+                {
+                    ArtistId = g.Key,
+                    Monitored = g.Count(x => x.Monitored),
+                    Available = g.Count(x => x.Monitored && x.HasFile)
+                })
+                .ToDictionaryAsync(x => x.ArtistId);
 
             return Results.Ok(new
             {
@@ -169,6 +182,9 @@ public static class ArrCatalogEndpoints
                     statsByArtist.TryGetValue(a.ArrId, out var st);
                     var mon = st?.Monitored ?? 0;
                     var avail = st?.Available ?? 0;
+                    trackStatsByArtist.TryGetValue(a.ArrId, out var trackStats);
+                    var trackMon = trackStats?.Monitored ?? 0;
+                    var trackAvail = trackStats?.Available ?? 0;
                     return new
                     {
                         artist = new
@@ -180,7 +196,10 @@ public static class ArrCatalogEndpoints
                             searched = a.Searched,
                             albumsMonitored = mon,
                             albumsAvailable = avail,
-                            albumsMissing = Math.Max(mon - avail, 0)
+                            albumsMissing = Math.Max(mon - avail, 0),
+                            tracksMonitored = trackMon,
+                            tracksAvailable = trackAvail,
+                            tracksMissing = Math.Max(trackMon - trackAvail, 0)
                         }
                     };
                 })
