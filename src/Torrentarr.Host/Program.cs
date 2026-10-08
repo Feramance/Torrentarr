@@ -923,7 +923,7 @@ try
         }
 
         foreach (var status in (await workers.GetProcessStatusAsync()).Values)
-            processes.Add(new { category = cfg.ArrInstances.GetValueOrDefault(status.Name)?.Category ?? status.Name, name = status.Name, kind = status.Kind, pid = status.ProcessId, alive = status.IsAlive, rebuilding = false, searchSummary = (string?)null, searchTimestamp = (string?)null, queueCount = (int?)null, categoryCount = (int?)null, metricType = (string?)null, status = status.IsAlive ? "Running" : "Stopped" });
+            processes.Add(new { category = cfg.ArrInstances.GetValueOrDefault(status.Name)?.Category ?? status.Name, name = status.Name, kind = status.Kind, pid = status.ProcessId, alive = status.IsAlive, rebuilding = false, searchSummary = (string?)null, searchTimestamp = (string?)null, queueCount = (int?)null, categoryCount = (int?)null, metricType = (string?)null, status = status.IsAlive ? "Running" : "Stopped", restartKey = status.Name });
 
         return Results.Ok(new { processes });
     });
@@ -935,7 +935,7 @@ try
         if (kindNorm != "search" && kindNorm != "torrent" && kindNorm != "category" && kindNorm != "arr")
             return Results.BadRequest(new { error = "kind must be search, torrent, category, or arr" });
 
-        var instanceName = cfg.ArrInstances
+        var instanceName = cfg.ArrInstances.ContainsKey(category) ? category : cfg.ArrInstances
             .FirstOrDefault(kv => kv.Value.Category.Equals(category, StringComparison.OrdinalIgnoreCase)).Key;
         if (instanceName != null)
             await workerMgr.RestartWorkerAsync(instanceName);
@@ -957,7 +957,7 @@ try
     });
 
     // Web Log Level — actually changes the Serilog level at runtime
-    app.MapPost("/web/loglevel", (LoggerConfigurationRequest req, LoggingLevelSwitch ls) =>
+    app.MapPost("/web/loglevel", (LoggerConfigurationRequest req, LoggingLevelSwitch ls, TorrentarrConfig cfg) =>
     {
         ls.MinimumLevel = req.Level?.ToUpperInvariant() switch
         {
@@ -967,6 +967,8 @@ try
             "CRITICAL" or "FATAL" => LogEventLevel.Fatal,
             _ => LogEventLevel.Information
         };
+        foreach (var instanceName in cfg.ArrInstances.Keys)
+            File.WriteAllText(Path.Combine(logsPath, $"worker-{instanceName}.loglevel"), ls.MinimumLevel.ToString());
         return Results.Ok(new { success = true, level = ls.MinimumLevel.ToString() });
     });
 
@@ -1432,7 +1434,7 @@ try
     // Web Arr Restart
     app.MapPost("/web/arr/{category}/restart", async (string category, TorrentarrConfig cfg, WorkerProcessSupervisor workerMgr) =>
     {
-        var instanceName = cfg.ArrInstances
+        var instanceName = cfg.ArrInstances.ContainsKey(category) ? category : cfg.ArrInstances
             .FirstOrDefault(kv => kv.Value.Category.Equals(category, StringComparison.OrdinalIgnoreCase)).Key;
         if (instanceName != null)
             await workerMgr.RestartWorkerAsync(instanceName);
@@ -1524,6 +1526,8 @@ try
             download_url = (string?)t.GetProperty("binary_download_url")?.GetValue(meta),
             download_name = (string?)t.GetProperty("binary_download_name")?.GetValue(meta),
             download_size = (long?)t.GetProperty("binary_download_size")?.GetValue(meta),
+            worker_download_url = (string?)t.GetProperty("worker_download_url")?.GetValue(meta),
+            worker_download_name = (string?)t.GetProperty("worker_download_name")?.GetValue(meta),
             error = (string?)t.GetProperty("binary_download_error")?.GetValue(meta)
         });
     });
@@ -1830,7 +1834,7 @@ try
         });
     });
 
-    app.MapGet("/api/processes", (ProcessStateManager stateMgr) =>
+    app.MapGet("/api/processes", async (ProcessStateManager stateMgr, TorrentarrConfig cfg, WorkerProcessSupervisor workers) =>
     {
         var processes = stateMgr.GetAll().Select(s => new
         {
@@ -1845,7 +1849,9 @@ try
             queueCount = s.QueueCount,
             categoryCount = s.CategoryCount,
             metricType = s.MetricType
-        }).ToList();
+        }).ToList<object>();
+        foreach (var status in (await workers.GetProcessStatusAsync()).Values)
+            processes.Add(new { category = cfg.ArrInstances.GetValueOrDefault(status.Name)?.Category ?? status.Name, name = status.Name, kind = status.Kind, pid = status.ProcessId, alive = status.IsAlive, rebuilding = false, searchSummary = (string?)null, searchTimestamp = (string?)null, queueCount = (int?)null, categoryCount = (int?)null, metricType = (string?)null, status = status.IsAlive ? "Running" : "Stopped", restartKey = status.Name });
         return Results.Ok(new { processes });
     });
 
@@ -1855,7 +1861,7 @@ try
         if (kindNorm != "search" && kindNorm != "torrent" && kindNorm != "category" && kindNorm != "arr")
             return Results.BadRequest(new { error = "kind must be search, torrent, category, or arr" });
 
-        var instanceName = cfg.ArrInstances
+        var instanceName = cfg.ArrInstances.ContainsKey(category) ? category : cfg.ArrInstances
             .FirstOrDefault(kv => kv.Value.Category.Equals(category, StringComparison.OrdinalIgnoreCase)).Key;
         if (instanceName != null)
             await workerMgr.RestartWorkerAsync(instanceName);
@@ -1874,7 +1880,7 @@ try
         return Results.Ok(new { status = "restarted", restarted = cfg.ArrInstances.Keys.ToArray() });
     });
 
-    app.MapPost("/api/loglevel", (LoggerConfigurationRequest req, LoggingLevelSwitch ls) =>
+    app.MapPost("/api/loglevel", (LoggerConfigurationRequest req, LoggingLevelSwitch ls, TorrentarrConfig cfg) =>
     {
         ls.MinimumLevel = req.Level?.ToUpperInvariant() switch
         {
@@ -1884,6 +1890,8 @@ try
             "CRITICAL" or "FATAL" => LogEventLevel.Fatal,
             _ => LogEventLevel.Information
         };
+        foreach (var instanceName in cfg.ArrInstances.Keys)
+            File.WriteAllText(Path.Combine(logsPath, $"worker-{instanceName}.loglevel"), ls.MinimumLevel.ToString());
         return Results.Ok(new { success = true, level = ls.MinimumLevel.ToString() });
     });
 
@@ -2388,6 +2396,8 @@ try
             download_url = (string?)t.GetProperty("binary_download_url")?.GetValue(meta),
             download_name = (string?)t.GetProperty("binary_download_name")?.GetValue(meta),
             download_size = (long?)t.GetProperty("binary_download_size")?.GetValue(meta),
+            worker_download_url = (string?)t.GetProperty("worker_download_url")?.GetValue(meta),
+            worker_download_name = (string?)t.GetProperty("worker_download_name")?.GetValue(meta),
             error = (string?)t.GetProperty("binary_download_error")?.GetValue(meta)
         });
     });

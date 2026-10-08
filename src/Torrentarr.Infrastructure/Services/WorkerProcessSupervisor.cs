@@ -175,8 +175,9 @@ public sealed class WorkerProcessSupervisor : BackgroundService, IProcessOrchest
         var count = 0;
         lock (_gate)
         {
-            if (_processes.TryGetValue(instanceName, out var current) && ReferenceEquals(current, process))
-                _processes.Remove(instanceName);
+            if (!_processes.TryGetValue(instanceName, out var current) || !ReferenceEquals(current, process))
+                return;
+            _processes.Remove(instanceName);
             count = _restartCounts.TryGetValue(instanceName, out var previous) ? previous + 1 : 1;
             _restartCounts[instanceName] = count;
         }

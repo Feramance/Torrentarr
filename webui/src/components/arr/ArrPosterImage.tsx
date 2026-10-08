@@ -19,6 +19,16 @@ interface ArrPosterImageProps {
   className?: string;
 }
 
+function getToken(): string | null {
+  try {
+    return localStorage.getItem("token") || localStorage.getItem("webui-token") ||
+      sessionStorage.getItem("token") || sessionStorage.getItem("webui-token") ||
+      sessionStorage.getItem("webui_token");
+  } catch {
+    return null;
+  }
+}
+
 async function finalizePosterDisplay(img: HTMLImageElement): Promise<void> {
   try {
     await img.decode();
@@ -44,11 +54,13 @@ export function ArrPosterImage({
   const [released, setReleased] = useState(false);
   const [loaded, setLoaded] = useState(false);
   const [attempt, setAttempt] = useState(0);
+  const [blobSrc, setBlobSrc] = useState<string | null>(null);
   const rootRef = useRef<HTMLDivElement>(null);
   const loadIdRef = useRef(0);
   const attemptRef = useRef(0);
   const retryTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const retryEnqueueCancelRef = useRef<(() => void) | null>(null);
+  const blobUrlRef = useRef<string | null>(null);
   const cancelledRef = useRef(false);
   // Held while the slot is checked out; called when the image network settles (load/error/
   // unmount) so we never pin the queue past the lifetime of this poster.
@@ -75,6 +87,9 @@ export function ArrPosterImage({
     });
   };
 
+  const displaySrc = withPosterRetryParam(src, attempt);
+  const token = getToken();
+
   useEffect(() => {
     cancelledRef.current = false;
     loadIdRef.current += 1;
@@ -86,11 +101,16 @@ export function ArrPosterImage({
     // eslint-disable-next-line react-hooks/set-state-in-effect -- intentional reset on src identity change
     setLoaded(false);
     setFailed(false);
+    setBlobSrc(null);
     setReleased(false);
     setAttempt(0);
     if (releaseSlotRef.current) {
       releaseSlotRef.current();
       releaseSlotRef.current = null;
+    }
+    if (blobUrlRef.current) {
+      URL.revokeObjectURL(blobUrlRef.current);
+      blobUrlRef.current = null;
     }
     return () => {
       cancelledRef.current = true;
@@ -124,6 +144,7 @@ export function ArrPosterImage({
         releaseSlotRef.current();
         releaseSlotRef.current = null;
       }
+      if (blobUrlRef.current) URL.revokeObjectURL(blobUrlRef.current);
     };
   }, []);
 
@@ -154,6 +175,33 @@ export function ArrPosterImage({
     }, delay);
   };
 
+  useEffect(() => {
+    if (!released || !token) return;
+    const controller = new AbortController();
+    void fetch(displaySrc, {
+      credentials: "include",
+      headers: { Authorization: `Bearer ${token}` },
+      signal: controller.signal,
+    })
+      .then((response) => {
+        if (!response.ok) throw new Error(`Thumbnail request failed: ${response.status}`);
+        return response.blob();
+      })
+      .then((blob) => {
+        if (controller.signal.aborted) return;
+        const url = URL.createObjectURL(blob);
+        if (blobUrlRef.current) URL.revokeObjectURL(blobUrlRef.current);
+        blobUrlRef.current = url;
+        setBlobSrc(url);
+      })
+      .catch(() => {
+        if (!controller.signal.aborted) scheduleRetry();
+      });
+    return () => controller.abort();
+    // scheduleRetry intentionally uses the current render's retry state.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [displaySrc, released, token]);
+
   const onImgLoad = (ev: SyntheticEvent<HTMLImageElement>) => {
     const token = loadIdRef.current;
     const img = ev.currentTarget;
@@ -173,8 +221,6 @@ export function ArrPosterImage({
     }
     scheduleRetry();
   };
-
-  const displaySrc = withPosterRetryParam(src, attempt);
 
   if (failed) {
     return (
@@ -196,13 +242,13 @@ export function ArrPosterImage({
           : "arr-poster-image-wrap"
       }
     >
-      {!released ? (
+      {!released || (token && !blobSrc) ? (
         <div className={fallbackCls.join(" ")} aria-hidden />
       ) : (
         <>
           <img
             key={`${src}-${attempt}`}
-            src={displaySrc}
+            src={blobSrc ?? displaySrc}
             alt={alt}
             className={[className, "arr-poster-layer"]
               .filter(Boolean)

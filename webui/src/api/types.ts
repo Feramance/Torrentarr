@@ -13,6 +13,7 @@ export interface ProcessInfo {
   categoryCount?: number;
   metricType?: string;
   status?: string;
+  restartKey?: string;
 }
 
 export interface ProcessesResponse {

@@ -28,6 +28,8 @@ public class UpdateService
     private string? _binaryDownloadName;
     private long? _binaryDownloadSize;
     private string? _binaryDownloadError;
+    private string? _workerDownloadUrl;
+    private string? _workerDownloadName;
     private string? _checkError;
     private readonly SemaphoreSlim _checkLock = new(1, 1);
 
@@ -151,6 +153,8 @@ public class UpdateService
                 binary_download_name = _binaryDownloadName,
                 binary_download_size = _binaryDownloadSize,
                 binary_download_error = _binaryDownloadError,
+                worker_download_url = _workerDownloadUrl,
+                worker_download_name = _workerDownloadName,
                 platform = Environment.OSVersion.Platform.ToString(),
                 runtime = $".NET {Environment.Version}"
             };
@@ -173,6 +177,8 @@ public class UpdateService
             binary_download_name = _binaryDownloadName,
             binary_download_size = _binaryDownloadSize,
             binary_download_error = _binaryDownloadError,
+            worker_download_url = _workerDownloadUrl,
+            worker_download_name = _workerDownloadName,
             platform = Environment.OSVersion.Platform.ToString(),
             runtime = $".NET {Environment.Version}",
             auth_required = !webUi.AuthDisabled,
@@ -209,7 +215,7 @@ public class UpdateService
             return Task.CompletedTask;
         }
 
-        if (string.IsNullOrEmpty(_binaryDownloadUrl))
+        if (string.IsNullOrEmpty(_binaryDownloadUrl) || string.IsNullOrEmpty(_workerDownloadUrl))
         {
             ApplyState.LastResult = "error";
             ApplyState.LastError = "No binary download URL available — run update check first.";
@@ -247,6 +253,15 @@ public class UpdateService
                     await response.Content.CopyToAsync(fs, ct);
                 }
 
+                var workerName = _workerDownloadName ?? "worker-update";
+                var workerPath = Path.Combine(tempDir, workerName);
+                using (var response = await http.GetAsync(_workerDownloadUrl, HttpCompletionOption.ResponseHeadersRead, ct))
+                {
+                    response.EnsureSuccessStatusCode();
+                    using var fs = File.Create(workerPath);
+                    await response.Content.CopyToAsync(fs, ct);
+                }
+
                 _logger.LogInformation("UpdateService: Extracting {Archive}", archiveName);
 
                 var extractDir = Path.Combine(tempDir, "extracted");
@@ -265,8 +280,9 @@ public class UpdateService
                 }
                 else
                 {
-                    throw new NotSupportedException($"Unsupported archive format: {archiveName}");
+                    File.Copy(archivePath, Path.Combine(extractDir, archiveName), overwrite: true);
                 }
+                File.Copy(workerPath, Path.Combine(extractDir, workerName), overwrite: true);
 
                 if (RuntimeInformation.IsOSPlatform(OSPlatform.Windows))
                     ApplyWindowsUpdate(currentExe, currentDir, extractDir);
@@ -304,6 +320,8 @@ public class UpdateService
             var dest = Path.Combine(currentDir, relative);
             Directory.CreateDirectory(Path.GetDirectoryName(dest)!);
             File.Copy(file, dest, overwrite: true);
+            if (Path.GetFileName(file).StartsWith("torrentarr-workers-", StringComparison.OrdinalIgnoreCase))
+                await MakeExecutableAsync(dest);
         }
 
         // Ensure the main executable is marked as executable
@@ -443,6 +461,8 @@ public class UpdateService
             _binaryDownloadUrl = null;
             _binaryDownloadName = null;
             _binaryDownloadSize = null;
+            _workerDownloadUrl = null;
+            _workerDownloadName = null;
             _binaryDownloadError = AutoUpdateChannel == "nightly"
                 ? "Nightly channel does not download or apply binaries"
                 : "Source builds cannot apply binary updates";
@@ -455,13 +475,19 @@ public class UpdateService
             && name.StartsWith("torrentarr-", StringComparison.OrdinalIgnoreCase)
             && !name.StartsWith("torrentarr-workers-", StringComparison.OrdinalIgnoreCase)
             && name.Contains(assetPattern, StringComparison.OrdinalIgnoreCase));
+        var workerAsset = assets?.FirstOrDefault(a =>
+            a["name"]?.ToObject<string>() is { } name
+            && name.StartsWith("torrentarr-workers-", StringComparison.OrdinalIgnoreCase)
+            && name.Contains(GetWorkerAssetPattern(), StringComparison.OrdinalIgnoreCase));
 
-        if (asset != null)
+        if (asset != null && workerAsset != null)
         {
             _binaryDownloadUrl = asset["browser_download_url"]?.ToObject<string>();
             _binaryDownloadName = asset["name"]?.ToObject<string>();
             _binaryDownloadSize = asset["size"]?.ToObject<long?>();
             _binaryDownloadError = null;
+            _workerDownloadUrl = workerAsset["browser_download_url"]?.ToObject<string>();
+            _workerDownloadName = workerAsset["name"]?.ToObject<string>();
         }
         else
         {
@@ -469,6 +495,8 @@ public class UpdateService
             _binaryDownloadName = null;
             _binaryDownloadSize = null;
             _binaryDownloadError = $"No asset found for platform: {assetPattern}";
+            _workerDownloadUrl = null;
+            _workerDownloadName = null;
         }
     }
 
@@ -477,10 +505,14 @@ public class UpdateService
         if (RuntimeInformation.IsOSPlatform(OSPlatform.Windows))
             return RuntimeInformation.OSArchitecture == Architecture.Arm64 ? "win-arm64" : "win-x64";
         if (RuntimeInformation.IsOSPlatform(OSPlatform.OSX))
-            return RuntimeInformation.OSArchitecture == Architecture.Arm64 ? "osx-arm64" : "osx-x64";
+            return RuntimeInformation.OSArchitecture == Architecture.Arm64 ? "macos-arm64" : "macos-x64";
         // Linux
         return RuntimeInformation.OSArchitecture == Architecture.Arm64 ? "linux-arm64" : "linux-x64";
     }
+
+    private static string GetWorkerAssetPattern() => RuntimeInformation.IsOSPlatform(OSPlatform.OSX)
+        ? RuntimeInformation.OSArchitecture == Architecture.Arm64 ? "osx-arm64" : "osx-x64"
+        : GetAssetPattern();
 
     /// <summary>
     /// <c>stable</c> matches Docker <c>:stable</c>: skip GitHub prereleases and weekly

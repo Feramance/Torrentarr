@@ -558,10 +558,10 @@ class ArrWorkerService : BackgroundService
         using var scope = _serviceProvider.CreateScope();
         var ensure = scope.ServiceProvider.GetRequiredService<QBitCategoryEnsureService>();
         if (!await ensure.EnsureCategoryOnAllInstancesAsync(_instanceConfig.Category, cancellationToken))
-            throw new InvalidOperationException("Category setup failed on one or more qBittorrent instances");
+            _logger.LogWarning("Category setup failed on one or more qBittorrent instances; continuing with available clients");
         if (scope.ServiceProvider.GetRequiredService<ISeedingService>() is SeedingService seeding)
             if (!await seeding.EnsureAllTrackerTagsExistAsync(cancellationToken))
-                throw new InvalidOperationException("Tracker tag setup failed on one or more qBittorrent instances");
+                _logger.LogWarning("Tracker tag setup failed on one or more qBittorrent instances; continuing with available clients");
         if (_instanceConfig.Search.UseTempForMissing && _instanceConfig.Search.ForceResetTempProfiles)
             await scope.ServiceProvider.GetRequiredService<QualityProfileSwitcherService>()
                 .ForceResetAllTempProfilesAsync(_context.InstanceName, _instanceConfig, cancellationToken);
