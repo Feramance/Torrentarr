@@ -218,7 +218,7 @@ export function ArrCatalogShell<
   const instanceLabel = useMemo(() => {
     if (!selection || selection === "aggregate") return "";
     return (
-      instances.find((i) => i.category === selection)?.name || String(selection)
+      instances.find((i) => (i.name || i.category) === selection)?.name || String(selection)
     );
   }, [instances, selection]);
 
@@ -304,12 +304,12 @@ export function ArrCatalogShell<
             {instances.map((inst) => (
               <button
                 type="button"
-                key={inst.category}
+                key={inst.name || inst.category}
                 className={`btn ghost ${
-                  selection === inst.category ? "active" : ""
+                  selection === (inst.name || inst.category) ? "active" : ""
                 }`}
                 onClick={() => {
-                  setSelection(inst.category);
+                  setSelection(inst.name || inst.category);
                   setGlobalSearch("");
                 }}
               >
@@ -331,7 +331,10 @@ export function ArrCatalogShell<
                   </option>
                 )}
                 {instances.map((inst) => (
-                  <option key={inst.category} value={inst.category}>
+                  <option
+                    key={inst.name || inst.category}
+                    value={inst.name || inst.category}
+                  >
                     {inst.name || inst.category}
                   </option>
                 ))}

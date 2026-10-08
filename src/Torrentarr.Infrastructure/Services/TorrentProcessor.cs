@@ -928,8 +928,12 @@ public class TorrentProcessor : ITorrentProcessor
             var hnrAllows = _seedingService == null || await _seedingService.HnrAllowsDeleteAsync(torrent, reason, ct);
             if (hnrAllows)
             {
-                if (reSearchStalled && _importService != null)
-                    await _importService.BlocklistAndReSearchAsync(torrent.Hash, torrent.Category, ct);
+                if (reSearchStalled && _importService != null
+                    && !await _importService.BlocklistAndReSearchAsync(torrent.Hash, torrent.Category, ct))
+                {
+                    _logger.LogWarning("Unable to re-search stalled torrent; keeping it for a later retry: [{Name}]", torrent.Name);
+                    return;
+                }
 
                 _logger.LogWarning("Deleting stalled torrent ({Reason}): [{Name}] | Availability[{Avail:P1}] | Hash[{Hash}]",
                     reason, torrent.Name, torrent.Availability, torrent.Hash);

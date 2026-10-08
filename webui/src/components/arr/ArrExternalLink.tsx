@@ -1,4 +1,4 @@
-import type { JSX } from "react";
+import type { JSX, MouseEvent } from "react";
 
 interface ArrExternalLinkProps {
   readonly href: string | null;
@@ -13,6 +13,16 @@ export function ArrExternalLink({
   if (!href) {
     return null;
   }
+  const openAuthenticated = async (event: MouseEvent<HTMLAnchorElement>) => {
+    const token = localStorage.getItem("token");
+    if (!token) return;
+    event.preventDefault();
+    const response = await fetch(href, {
+      credentials: "include",
+      headers: { Authorization: `Bearer ${token}` },
+    });
+    if (response.ok || response.redirected) window.open(response.url, "_blank", "noopener,noreferrer");
+  };
   return (
     <div className="arr-detail-actions">
       <a
@@ -20,6 +30,7 @@ export function ArrExternalLink({
         href={href}
         target="_blank"
         rel="noreferrer"
+        onClick={openAuthenticated}
       >
         Open in {arrName}
       </a>

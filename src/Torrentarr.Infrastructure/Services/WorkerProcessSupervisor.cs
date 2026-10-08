@@ -221,8 +221,8 @@ public sealed class WorkerProcessSupervisor : BackgroundService, IProcessOrchest
                 if (process.HasExited)
                     continue;
                 var path = StatusPath(name);
-                if (File.Exists(path) && DateTime.UtcNow - process.StartTime.ToUniversalTime() >= TimeSpan.FromSeconds(15)
-                    && DateTime.UtcNow - File.GetLastWriteTimeUtc(path) > TimeSpan.FromSeconds(15))
+                if (DateTime.UtcNow - process.StartTime.ToUniversalTime() >= TimeSpan.FromSeconds(15)
+                    && (!File.Exists(path) || DateTime.UtcNow - File.GetLastWriteTimeUtc(path) > TimeSpan.FromSeconds(15)))
                 {
                     _logger.LogWarning("Worker {Instance} heartbeat is stale; terminating it", name);
                     try { process.Kill(true); } catch { }

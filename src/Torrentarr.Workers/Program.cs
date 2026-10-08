@@ -187,8 +187,15 @@ try
             var statusDirectory = Path.GetDirectoryName(statusPath);
             if (!string.IsNullOrEmpty(statusDirectory))
                 Directory.CreateDirectory(statusDirectory);
-            await File.WriteAllTextAsync(tmp, System.Text.Json.JsonSerializer.Serialize(new { version = 1, instance = instanceName, pid = Environment.ProcessId, heartbeat = DateTimeOffset.UtcNow, restartRequested = restartCoordinator.RestartRequested }));
-            File.Move(tmp, statusPath, true);
+            try
+            {
+                await File.WriteAllTextAsync(tmp, System.Text.Json.JsonSerializer.Serialize(new { version = 1, instance = instanceName, pid = Environment.ProcessId, heartbeat = DateTimeOffset.UtcNow, restartRequested = restartCoordinator.RestartRequested }));
+                File.Move(tmp, statusPath, true);
+            }
+            catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+            {
+                Log.Warning(ex, "Unable to write worker status for {Instance}", instanceName);
+            }
             await Task.Delay(TimeSpan.FromSeconds(5));
         }
     });
@@ -584,7 +591,7 @@ class ArrWorkerService : BackgroundService
                     case "lidarr": await new Torrentarr.Infrastructure.ApiClients.Arr.LidarrClient(_instanceConfig.URI, _instanceConfig.APIKey, _instanceConfig.SkipTLSVerify).RssSyncAsync(cancellationToken); break;
                     case "readarr": await new Torrentarr.Infrastructure.ApiClients.Arr.ReadarrClient(_instanceConfig.URI, _instanceConfig.APIKey, _instanceConfig.SkipTLSVerify).RssSyncAsync(cancellationToken); break;
                 }
-            _lastRssSync = now;
+                _lastRssSync = now;
             }
             catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested) { throw; }
             catch (Exception ex) { _logger.LogWarning(ex, "RSS sync failed for {Instance}", _context.InstanceName); }
@@ -600,8 +607,7 @@ class ArrWorkerService : BackgroundService
                     case "radarr": await new Torrentarr.Infrastructure.ApiClients.Arr.RadarrClient(_instanceConfig.URI, _instanceConfig.APIKey, _instanceConfig.SkipTLSVerify).RefreshMonitoredDownloadsAsync(cancellationToken); break;
                     case "sonarr": await new Torrentarr.Infrastructure.ApiClients.Arr.SonarrClient(_instanceConfig.URI, _instanceConfig.APIKey, _instanceConfig.SkipTLSVerify).RefreshMonitoredDownloadsAsync(cancellationToken); break;
                 }
-            }
-            _lastRefreshDownloads = now;
+                _lastRefreshDownloads = now;
             }
             catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested) { throw; }
             catch (Exception ex) { _logger.LogWarning(ex, "Download refresh failed for {Instance}", _context.InstanceName); }
