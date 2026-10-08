@@ -21,7 +21,8 @@ export function ArrExternalLink({
       credentials: "include",
       headers: { Authorization: `Bearer ${token}` },
     });
-    if (response.ok || response.redirected) window.open(response.url, "_blank", "noopener,noreferrer");
+    if (response.ok || response.redirected)
+      window.open(response.url, "_blank", "noopener,noreferrer");
   };
   return (
     <div className="arr-detail-actions">

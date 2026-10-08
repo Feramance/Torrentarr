@@ -62,7 +62,13 @@ export function categoryForInstanceLabel(
   const inst = instances.find(
     (i) => (i.name || i.category) === label || i.category === label,
   );
-  return inst?.name || inst?.category || instances[0]?.name || instances[0]?.category || "";
+  return (
+    inst?.name ||
+    inst?.category ||
+    instances[0]?.name ||
+    instances[0]?.category ||
+    ""
+  );
 }
 
 /**

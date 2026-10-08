@@ -218,7 +218,8 @@ export function ArrCatalogShell<
   const instanceLabel = useMemo(() => {
     if (!selection || selection === "aggregate") return "";
     return (
-      instances.find((i) => (i.name || i.category) === selection)?.name || String(selection)
+      instances.find((i) => (i.name || i.category) === selection)?.name ||
+      String(selection)
     );
   }, [instances, selection]);
 
