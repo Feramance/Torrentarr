@@ -130,12 +130,12 @@ export function useAggregateCatalogLoader<
     [adapter.getRowKey, adapter.hashFields],
   );
   const fullListSyncRef = useRef<RowsStoreSnapshot<TAggRow> | null>(
-    createEmptyRowsSnapshot(),
+    createEmptyRowsSnapshot<TAggRow>(),
   );
   const syncFullList = useCallback(
     (incoming: TAggRow[]) => {
       const result = syncRowsSnapshot(
-        fullListSyncRef.current ?? createEmptyRowsSnapshot(),
+        fullListSyncRef.current ?? createEmptyRowsSnapshot<TAggRow>(),
         incoming,
         fullListSyncOpts as never,
       );
@@ -207,7 +207,7 @@ export function useAggregateCatalogLoader<
     async (options?: { showLoading?: boolean }) => {
       if (!instances.length) {
         setRows([]);
-        fullListSyncRef.current = createEmptyRowsSnapshot();
+        fullListSyncRef.current = createEmptyRowsSnapshot<TAggRow>();
         setSummary(adapter.initialSummary);
         setEmptyStateReady(true);
         return;
