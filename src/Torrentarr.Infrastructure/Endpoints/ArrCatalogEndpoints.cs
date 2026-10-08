@@ -76,7 +76,7 @@ public static class ArrCatalogEndpoints
                 }
 
                 var artistIds = await albumQuery.Select(al => al.ArtistId).Distinct().ToListAsync();
-                query = query.Where(a => artistIds.Contains(a.ArrId));
+                query = query.Where(a => artistIds.Contains(a.ArrId) || artistIds.Contains(a.EntryId));
             }
 
             var total = await query.CountAsync();
@@ -129,7 +129,7 @@ public static class ArrCatalogEndpoints
                     .ToList();
             }
 
-            var artistIdsListed = artists.Select(a => a.ArrId).ToList();
+            var artistIdsListed = artists.Select(a => a.ArrId).Concat(artists.Select(a => a.EntryId)).Distinct().ToList();
             var albumStats = await db.Albums
                 .Where(al => keys.Contains(al.ArrInstance) && artistIdsListed.Contains(al.ArtistId))
                 .GroupBy(al => al.ArtistId)
@@ -180,9 +180,13 @@ public static class ArrCatalogEndpoints
                 artists = artists.Select(a =>
                 {
                     statsByArtist.TryGetValue(a.ArrId, out var st);
+                    if (st is null)
+                        statsByArtist.TryGetValue(a.EntryId, out st);
                     var mon = st?.Monitored ?? 0;
                     var avail = st?.Available ?? 0;
                     trackStatsByArtist.TryGetValue(a.ArrId, out var trackStats);
+                    if (trackStats is null)
+                        trackStatsByArtist.TryGetValue(a.EntryId, out trackStats);
                     var trackMon = trackStats?.Monitored ?? 0;
                     var trackAvail = trackStats?.Available ?? 0;
                     return new
@@ -224,13 +228,14 @@ public static class ArrCatalogEndpoints
         {
             var keys = ArrCatalogIdentity.QueryKeys(cfg, category);
             var artist = await db.Artists
-                .FirstOrDefaultAsync(a => keys.Contains(a.ArrInstance) && a.ArrId == artistId);
+                .FirstOrDefaultAsync(a => keys.Contains(a.ArrInstance) && (a.ArrId == artistId || a.EntryId == artistId));
             if (artist is null)
                 return Results.NotFound(new { error = "Artist not found" });
 
             var (albumCounts, _, trackCounts) = await rollups.GetLidarrRollupsAsync(keys);
+            var artistIds = new[] { artist.ArrId, artist.EntryId };
             var albums = await db.Albums
-                .Where(al => keys.Contains(al.ArrInstance) && al.ArtistId == artistId)
+                .Where(al => keys.Contains(al.ArrInstance) && artistIds.Contains(al.ArtistId))
                 .OrderBy(al => al.Title)
                 .ToListAsync();
 
@@ -520,7 +525,8 @@ public static class ArrCatalogEndpoints
             string kind,
             int entryId,
             TorrentarrConfig cfg,
-            TorrentarrDbContext db) =>
+            TorrentarrDbContext db,
+            HttpContext httpContext) =>
         {
             var instance = cfg.ArrInstances
                 .FirstOrDefault(kvp =>
@@ -546,7 +552,11 @@ public static class ArrCatalogEndpoints
             if (path is null)
                 return Results.BadRequest(new { error = "Unknown kind" });
 
-            return Results.Redirect($"{baseUri}{path}");
+            var destination = $"{baseUri}{path}";
+            return httpContext.Request.Headers.TryGetValue("X-Requested-With", out var requestedWith)
+                && string.Equals(requestedWith, "XMLHttpRequest", StringComparison.OrdinalIgnoreCase)
+                ? Results.Ok(new { url = destination })
+                : Results.Redirect(destination);
         });
     }
 
@@ -567,7 +577,7 @@ public static class ArrCatalogEndpoints
                 .Select(s => s.ArrId.ToString())
                 .FirstOrDefaultAsync(),
             "artist" => await db.Artists
-                .Where(a => keys.Contains(a.ArrInstance) && a.ArrId == entryId)
+                .Where(a => keys.Contains(a.ArrInstance) && (a.ArrId == entryId || a.EntryId == entryId))
                 .Select(a => a.ArrId.ToString())
                 .FirstOrDefaultAsync(),
             "author" => await db.Authors

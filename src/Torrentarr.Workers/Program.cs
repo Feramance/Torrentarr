@@ -403,7 +403,6 @@ class ArrWorkerService : BackgroundService
         using var scope = _serviceProvider.CreateScope();
         var torrentProcessor = scope.ServiceProvider.GetRequiredService<ITorrentProcessor>();
         var arrMediaService = scope.ServiceProvider.GetRequiredService<IArrMediaService>();
-        var seedingService = scope.ServiceProvider.GetRequiredService<ISeedingService>();
         var dbHealthService = scope.ServiceProvider.GetRequiredService<IDatabaseHealthService>();
         var cacheService = scope.ServiceProvider.GetRequiredService<ITorrentCacheService>();
         var syncService = scope.ServiceProvider.GetRequiredService<ArrSyncService>();
@@ -470,19 +469,13 @@ class ArrWorkerService : BackgroundService
         if (!_instanceConfig.SearchOnly)
             await torrentProcessor.ProcessTorrentsAsync(_instanceConfig.Category, cancellationToken);
 
-        // Manage seeding rules and remove completed torrents
-        if (!_instanceConfig.SearchOnly)
+        if (!_instanceConfig.SearchOnly
+            && !string.IsNullOrWhiteSpace(_config.Settings.CompletedDownloadFolder)
+            && _config.Settings.CompletedDownloadFolder != "CHANGE_ME")
         {
-            var removalResult = await seedingService.RemoveCompletedTorrentsAsync(_instanceConfig.Category, cancellationToken);
-            if (removalResult.TorrentsRemoved > 0)
-            {
-                _logger.LogInformation("Removed {Count} completed torrents that met seeding requirements",
-                    removalResult.TorrentsRemoved);
-            }
-            if (removalResult.TorrentsProtected > 0)
-            {
-                _logger.LogTrace("{Count} torrents protected by H&R rules", removalResult.TorrentsProtected);
-            }
+            var pathTracker = scope.ServiceProvider.GetRequiredService<IImportPathTracker>();
+            pathTracker.RemoveEmptyPathsUnder(_config.Settings.CompletedDownloadFolder);
+            pathTracker.ClearIfFolderEmpty(_config.Settings.CompletedDownloadFolder);
         }
 
         // Search (if configured and on search cycle)
@@ -572,9 +565,6 @@ class ArrWorkerService : BackgroundService
         if (_instanceConfig.Search.UseTempForMissing && _instanceConfig.Search.ForceResetTempProfiles)
             await scope.ServiceProvider.GetRequiredService<QualityProfileSwitcherService>()
                 .ForceResetAllTempProfilesAsync(_context.InstanceName, _instanceConfig, cancellationToken);
-        if (_config.Settings.FFprobeAutoUpdate)
-            await scope.ServiceProvider.GetRequiredService<IMediaValidationService>()
-                .UpdateFFprobeAsync(cancellationToken);
     }
 
     private async Task RunPeriodicCommandsAsync(CancellationToken cancellationToken)

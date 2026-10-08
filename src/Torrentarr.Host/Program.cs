@@ -2729,6 +2729,8 @@ static async Task<IResult> SaveAndRespondConfigUpdate(
         return Results.Json(new { error = passwordHashError }, statusCode: 403);
 
     var (reloadType, affectedInstancesList) = DetermineReloadType(cfg, updatedConfig);
+    var settingsChanged = Newtonsoft.Json.JsonConvert.SerializeObject(cfg.Settings)
+        != Newtonsoft.Json.JsonConvert.SerializeObject(updatedConfig.Settings);
 
     if (Newtonsoft.Json.JsonConvert.SerializeObject(cfg.GetAllTorrentClients())
         != Newtonsoft.Json.JsonConvert.SerializeObject(updatedConfig.GetAllTorrentClients()))
@@ -2747,8 +2749,6 @@ static async Task<IResult> SaveAndRespondConfigUpdate(
 
     if (workerMgr != null)
     {
-        var settingsChanged = Newtonsoft.Json.JsonConvert.SerializeObject(cfg.Settings)
-            != Newtonsoft.Json.JsonConvert.SerializeObject(updatedConfig.Settings);
         switch (reloadType)
         {
             case "full":

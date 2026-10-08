@@ -19,10 +19,15 @@ export function ArrExternalLink({
     event.preventDefault();
     const response = await fetch(href, {
       credentials: "include",
-      headers: { Authorization: `Bearer ${token}` },
+      headers: {
+        Authorization: `Bearer ${token}`,
+        "X-Requested-With": "XMLHttpRequest",
+      },
     });
-    if (response.ok || response.redirected)
-      window.open(response.url, "_blank", "noopener,noreferrer");
+    if (response.ok) {
+      const result = (await response.json()) as { url?: string };
+      if (result.url) window.open(result.url, "_blank", "noopener,noreferrer");
+    }
   };
   return (
     <div className="arr-detail-actions">

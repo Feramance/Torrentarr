@@ -66,7 +66,7 @@ public class ConfigurationLoaderTests : IDisposable
     {
         WriteToml("""
             [Settings]
-            ConfigVersion = "6.14.5"
+            ConfigVersion = "5.14.5"
 
             [qBit.CategorySeeding]
             StalledDelay = "-1"
@@ -110,7 +110,7 @@ public class ConfigurationLoaderTests : IDisposable
     {
         WriteToml("""
             [Settings]
-            ConfigVersion = "6.14.5"
+            ConfigVersion = "5.14.5"
 
             [Radarr-Movies.Torrent]
             StalledDelay = -1

@@ -65,7 +65,7 @@ export async function forEachInstanceChunkedPages<TResp = unknown>(options: {
     let pageIdx = 0;
 
     while (true) {
-      const res = await fetchSlice(inst.category, pageIdx, chunk);
+      const res = await fetchSlice(inst.name || inst.category, pageIdx, chunk);
       if (gen !== genRef.current) {
         return;
       }
