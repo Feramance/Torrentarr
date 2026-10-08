@@ -21,9 +21,13 @@ interface ArrPosterImageProps {
 
 function getToken(): string | null {
   try {
-    return localStorage.getItem("token") || localStorage.getItem("webui-token") ||
-      sessionStorage.getItem("token") || sessionStorage.getItem("webui-token") ||
-      sessionStorage.getItem("webui_token");
+    return (
+      localStorage.getItem("token") ||
+      localStorage.getItem("webui-token") ||
+      sessionStorage.getItem("token") ||
+      sessionStorage.getItem("webui-token") ||
+      sessionStorage.getItem("webui_token")
+    );
   } catch {
     return null;
   }
@@ -184,7 +188,8 @@ export function ArrPosterImage({
       signal: controller.signal,
     })
       .then((response) => {
-        if (!response.ok) throw new Error(`Thumbnail request failed: ${response.status}`);
+        if (!response.ok)
+          throw new Error(`Thumbnail request failed: ${response.status}`);
         return response.blob();
       })
       .then((blob) => {

@@ -338,7 +338,9 @@ export function ProcessesView({ active }: ProcessesViewProps): JSX.Element {
     async (items: ProcessInfo[]) => {
       try {
         await Promise.all(
-          items.map((item) => restartProcess(item.restartKey ?? item.category, item.kind)),
+          items.map((item) =>
+            restartProcess(item.restartKey ?? item.category, item.kind),
+          ),
         );
         push(`Restarted ${items[0]?.name ?? "group"}`, "success");
         void load();
@@ -508,7 +510,12 @@ export function ProcessesView({ active }: ProcessesViewProps): JSX.Element {
                   <div className="process-chip__actions">
                     <button
                       className="btn small"
-                      onClick={() => handleRestart(item.restartKey ?? item.category, item.kind)}
+                      onClick={() =>
+                        handleRestart(
+                          item.restartKey ?? item.category,
+                          item.kind,
+                        )
+                      }
                     >
                       Restart
                     </button>
