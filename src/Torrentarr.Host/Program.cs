@@ -2435,6 +2435,18 @@ try
     Log.Information("Torrentarr WebUI starting on http://localhost:{Port}", config.WebUI.Port);
     Log.Information("Access the WebUI at: http://localhost:{Port}", config.WebUI.Port);
 
+    if (config.Settings.FFprobeAutoUpdate)
+    {
+        try
+        {
+            await app.Services.GetRequiredService<IMediaValidationService>().UpdateFFprobeAsync();
+        }
+        catch (Exception ex)
+        {
+            Log.Warning(ex, "FFprobe auto-update failed");
+        }
+    }
+
     await app.RunAsync();
 }
 catch (Exception ex)

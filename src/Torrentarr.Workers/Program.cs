@@ -596,6 +596,7 @@ class ArrWorkerService : BackgroundService
                 {
                     case "radarr": await new Torrentarr.Infrastructure.ApiClients.Arr.RadarrClient(_instanceConfig.URI, _instanceConfig.APIKey, _instanceConfig.SkipTLSVerify).RefreshMonitoredDownloadsAsync(cancellationToken); break;
                     case "sonarr": await new Torrentarr.Infrastructure.ApiClients.Arr.SonarrClient(_instanceConfig.URI, _instanceConfig.APIKey, _instanceConfig.SkipTLSVerify).RefreshMonitoredDownloadsAsync(cancellationToken); break;
+                    case "readarr": await new Torrentarr.Infrastructure.ApiClients.Arr.ReadarrClient(_instanceConfig.URI, _instanceConfig.APIKey, _instanceConfig.SkipTLSVerify).RefreshMonitoredDownloadsAsync(cancellationToken); break;
                 }
                 _lastRefreshDownloads = now;
             }

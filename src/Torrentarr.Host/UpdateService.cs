@@ -318,6 +318,9 @@ public class UpdateService
         {
             var relative = Path.GetRelativePath(extractDir, file);
             var dest = Path.Combine(currentDir, relative);
+            if (Path.GetFileName(file).StartsWith("torrentarr-", StringComparison.OrdinalIgnoreCase)
+                && !Path.GetFileName(file).StartsWith("torrentarr-workers-", StringComparison.OrdinalIgnoreCase))
+                dest = currentExe;
             Directory.CreateDirectory(Path.GetDirectoryName(dest)!);
             File.Copy(file, dest, overwrite: true);
             if (Path.GetFileName(file).StartsWith("torrentarr-workers-", StringComparison.OrdinalIgnoreCase))
