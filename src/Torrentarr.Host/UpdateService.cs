@@ -320,7 +320,13 @@ public class UpdateService
             var dest = Path.Combine(currentDir, relative);
             if (Path.GetFileName(file).StartsWith("torrentarr-", StringComparison.OrdinalIgnoreCase)
                 && !Path.GetFileName(file).StartsWith("torrentarr-workers-", StringComparison.OrdinalIgnoreCase))
-                dest = currentExe;
+            {
+                var stagedExe = currentExe + ".new";
+                File.Copy(file, stagedExe, overwrite: true);
+                await MakeExecutableAsync(stagedExe);
+                File.Move(stagedExe, currentExe, overwrite: true);
+                continue;
+            }
             Directory.CreateDirectory(Path.GetDirectoryName(dest)!);
             File.Copy(file, dest, overwrite: true);
             if (Path.GetFileName(file).StartsWith("torrentarr-workers-", StringComparison.OrdinalIgnoreCase))

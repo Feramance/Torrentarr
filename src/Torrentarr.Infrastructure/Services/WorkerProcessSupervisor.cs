@@ -159,9 +159,9 @@ public sealed class WorkerProcessSupervisor : BackgroundService, IProcessOrchest
                     _logger.LogError("Unable to start worker for {Instance}", instanceName);
                     return;
                 }
-                process.EnableRaisingEvents = true;
                 process.Exited += (_, _) => _ = RestartAfterCrashAsync(instanceName, process);
                 _processes[instanceName] = process;
+                process.EnableRaisingEvents = true;
             }
             catch (Exception ex)
             {

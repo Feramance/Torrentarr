@@ -83,12 +83,12 @@ export function reconcileArrCatalogSelection(
     return "aggregate";
   }
   if (filtered.length === 1) {
-    return filtered[0].category;
+    return filtered[0].name || filtered[0].category;
   }
   if (current === "" || current === "aggregate") {
     return "aggregate";
   }
-  if (!filtered.some((arr) => arr.category === current)) {
+  if (!filtered.some((arr) => (arr.name || arr.category) === current)) {
     return "aggregate";
   }
   return current;

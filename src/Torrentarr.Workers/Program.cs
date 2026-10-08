@@ -92,6 +92,7 @@ _ = Task.Run(async () =>
                 };
                 levelSwitch.MinimumLevel = newLevel;
                 Log.Information("Log level changed to {Level} via file", level);
+                File.Delete(logLevelFilePath);
             }
         }
         catch (OperationCanceledException)
@@ -164,7 +165,6 @@ try
     builder.Services.AddScoped<IArrMediaService, ArrMediaService>();
     builder.Services.AddScoped<ISeedingService, SeedingService>();
     builder.Services.AddScoped<IArrImportService, ArrImportService>();
-    builder.Services.AddScoped<IDatabaseHealthService, DatabaseHealthService>();
     builder.Services.AddScoped<QBitCategoryEnsureService>();
     builder.Services.AddSingleton<IConnectivityService, ConnectivityService>();
     builder.Services.AddSingleton<IPathMappingService, PathMappingService>();
@@ -247,10 +247,10 @@ class ArrWorkerService : BackgroundService
     private readonly QBittorrentConnectionManager _qbitManager;
     private readonly IConnectivityService _connectivityService;
     private readonly SearchYearCursor _yearCursor;
-    private DateTime _lastHealthCheck = DateTime.MinValue;
     private DateTime _lastRssSync = DateTime.MinValue;
     private DateTime _lastRefreshDownloads = DateTime.MinValue;
     private bool _searchLoopCompleted;
+    private volatile bool _initialized;
 
     private int _consecutiveErrors = 0;
     private DateTime _lastErrorTime = DateTime.MinValue;
@@ -294,11 +294,10 @@ class ArrWorkerService : BackgroundService
         if (!_qbitManager.IsConnected() && _config.GetAllTorrentClients().Any(q => !q.Value.Disabled && q.Value.Host != "CHANGE_ME"))
             _logger.LogWarning("Failed to connect to any qBittorrent instance; will retry each cycle");
 
-        var initialized = false;
         try
         {
             await InitializeAsync(stoppingToken);
-            initialized = true;
+            _initialized = true;
         }
         catch (OperationCanceledException) when (stoppingToken.IsCancellationRequested)
         {
@@ -309,58 +308,61 @@ class ArrWorkerService : BackgroundService
             _logger.LogError(ex, "Worker initialization failed; continuing into the processing loop");
         }
 
-        try
+        try { await Task.WhenAll(RunTorrentLoopAsync(stoppingToken), RunSearchLoopAsync(stoppingToken)); }
+        catch (OperationCanceledException) when (stoppingToken.IsCancellationRequested) { }
+    }
+
+    private async Task RunTorrentLoopAsync(CancellationToken cancellationToken)
+    {
+        while (!cancellationToken.IsCancellationRequested)
         {
-            while (!stoppingToken.IsCancellationRequested)
+            try
             {
-                try
+                await _qbitManager.EnsureAllConnectedAsync(_config.GetAllTorrentClients(), cancellationToken);
+                if (!_initialized)
                 {
-                    await _qbitManager.EnsureAllConnectedAsync(_config.GetAllTorrentClients(), stoppingToken);
-
-                    if (!initialized)
-                    {
-                        await InitializeAsync(stoppingToken);
-                        initialized = true;
-                    }
-
-                    // Check for exponential backoff
-                    var backoffDelay = GetBackoffDelay();
-                    if (backoffDelay > TimeSpan.Zero)
-                    {
-                        _logger.LogWarning("In exponential backoff mode, waiting {Delay} before next attempt", backoffDelay);
-                        await Task.Delay(backoffDelay, stoppingToken);
-                        continue;
-                    }
-
-                    // §2.4: Check internet connectivity, sleep NoInternetSleepTimer on failure
-                    if (!await _connectivityService.IsConnectedAsync(stoppingToken))
-                    {
-                        _logger.LogWarning("No internet connectivity, skipping processing cycle. Sleeping {Seconds}s",
-                            _config.Settings.NoInternetSleepTimer);
-                        await Task.Delay(TimeSpan.FromSeconds(_config.Settings.NoInternetSleepTimer), stoppingToken);
-                        continue;
-                    }
-
-                    await ProcessTorrentsAsync(stoppingToken);
-
-                    // Reset error counter on successful processing
+                    await InitializeAsync(cancellationToken);
+                    _initialized = true;
+                }
+                var backoffDelay = GetBackoffDelay();
+                if (backoffDelay > TimeSpan.Zero)
+                {
+                    await Task.Delay(backoffDelay, cancellationToken);
+                    continue;
+                }
+                if (await _connectivityService.IsConnectedAsync(cancellationToken))
+                {
+                    await ProcessTorrentsAsync(cancellationToken);
                     _consecutiveErrors = 0;
                 }
-                catch (Exception ex)
-                {
-                    _logger.LogError(ex, "Error processing torrents for {Instance}", _context.InstanceName);
-                    HandleProcessingError();
-                }
-
-                // Sleep for configured interval
-                var sleepTime = TimeSpan.FromSeconds(_config.Settings.LoopSleepTimer);
-                _logger.LogTrace("Sleeping for {Seconds} seconds", sleepTime.TotalSeconds);
-                await Task.Delay(sleepTime, stoppingToken);
             }
+            catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested) { break; }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Error processing torrents for {Instance}", _context.InstanceName);
+                HandleProcessingError();
+            }
+            await Task.Delay(TimeSpan.FromSeconds(_config.Settings.LoopSleepTimer), cancellationToken);
         }
-        catch (OperationCanceledException)
+    }
+
+    private async Task RunSearchLoopAsync(CancellationToken cancellationToken)
+    {
+        while (!cancellationToken.IsCancellationRequested)
         {
-            _logger.LogInformation("Worker for {Instance} shutting down gracefully", _context.InstanceName);
+            try
+            {
+                if (!_initialized)
+                {
+                    await Task.Delay(TimeSpan.FromSeconds(_config.Settings.LoopSleepTimer), cancellationToken);
+                    continue;
+                }
+                if (await _connectivityService.IsConnectedAsync(cancellationToken))
+                    await ProcessSearchAsync(cancellationToken);
+            }
+            catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested) { break; }
+            catch (Exception ex) { _logger.LogError(ex, "Error searching for {Instance}", _context.InstanceName); }
+            await Task.Delay(TimeSpan.FromSeconds(_config.Settings.LoopSleepTimer), cancellationToken);
         }
     }
 
@@ -402,16 +404,7 @@ class ArrWorkerService : BackgroundService
         // Create a scope for scoped services (DbContext, TorrentProcessor, etc.)
         using var scope = _serviceProvider.CreateScope();
         var torrentProcessor = scope.ServiceProvider.GetRequiredService<ITorrentProcessor>();
-        var arrMediaService = scope.ServiceProvider.GetRequiredService<IArrMediaService>();
-        var dbHealthService = scope.ServiceProvider.GetRequiredService<IDatabaseHealthService>();
         var cacheService = scope.ServiceProvider.GetRequiredService<ITorrentCacheService>();
-        var syncService = scope.ServiceProvider.GetRequiredService<ArrSyncService>();
-
-        if (_searchLoopCompleted && _instanceConfig.Search.SearchAgainOnSearchCompletion)
-        {
-            await ResetSearchedFlagsAsync(scope.ServiceProvider.GetRequiredService<TorrentarrDbContext>(), cancellationToken);
-            _searchLoopCompleted = false;
-        }
 
         // NOTE: Free space management and special categories (failed, recheck) are handled
         // GLOBALLY by the Host orchestrator - not per-worker. This matches qBitrr's design where:
@@ -420,16 +413,6 @@ class ArrWorkerService : BackgroundService
 
         // Clean expired cache entries
         cacheService.CleanExpired();
-        try
-        {
-            await syncService.SyncAsync(_context.InstanceName, cancellationToken);
-        }
-        catch (Exception ex)
-        {
-            _logger.LogWarning(ex, "Arr sync failed; continuing torrent processing for {Instance}", _context.InstanceName);
-        }
-        if (_instanceConfig.Search.SearchMissing)
-            await syncService.MarkRequestsAsync(_context.InstanceName, cancellationToken);
         try
         {
             await RunPeriodicCommandsAsync(cancellationToken);
@@ -441,28 +424,6 @@ class ArrWorkerService : BackgroundService
         catch (Exception ex)
         {
             _logger.LogWarning(ex, "Periodic Arr command failed; continuing torrent processing for {Instance}", _context.InstanceName);
-        }
-
-        // Periodic database health check (every 10 iterations)
-        if (DateTime.UtcNow - _lastHealthCheck >= TimeSpan.FromMinutes(10))
-        {
-            _lastHealthCheck = DateTime.UtcNow;
-            var healthResult = await dbHealthService.CheckHealthAsync(cancellationToken);
-            if (!healthResult.IsHealthy)
-            {
-                _logger.LogWarning("Database health check failed: {Message}", healthResult.Message);
-
-                // Try WAL checkpoint first
-                var checkpointed = await dbHealthService.CheckpointWalAsync(cancellationToken);
-                if (!checkpointed)
-                {
-                    _logger.LogError("Database recovery failed, worker may experience issues");
-                }
-            }
-            else
-            {
-                _logger.LogTrace("Database health check passed");
-            }
         }
 
         // Process all torrents for this category (excluding special categories which are handled globally)
@@ -478,7 +439,23 @@ class ArrWorkerService : BackgroundService
             pathTracker.ClearIfFolderEmpty(_config.Settings.CompletedDownloadFolder);
         }
 
-        // Search (if configured and on search cycle)
+    }
+
+    private async Task ProcessSearchAsync(CancellationToken cancellationToken)
+    {
+        using var scope = _serviceProvider.CreateScope();
+        var syncService = scope.ServiceProvider.GetRequiredService<ArrSyncService>();
+        var arrMediaService = scope.ServiceProvider.GetRequiredService<IArrMediaService>();
+        if (_searchLoopCompleted && _instanceConfig.Search.SearchAgainOnSearchCompletion)
+        {
+            await ResetSearchedFlagsAsync(scope.ServiceProvider.GetRequiredService<TorrentarrDbContext>(), cancellationToken);
+            _searchLoopCompleted = false;
+        }
+        try { await syncService.SyncAsync(_context.InstanceName, cancellationToken); }
+        catch (Exception ex) { _logger.LogWarning(ex, "Arr sync failed for {Instance}", _context.InstanceName); }
+        if (_instanceConfig.Search.SearchMissing)
+            await syncService.MarkRequestsAsync(_context.InstanceName, cancellationToken);
+
         SearchResult? searchResult = null;
         if (!_instanceConfig.ProcessingOnly && ShouldRunSearch())
         {

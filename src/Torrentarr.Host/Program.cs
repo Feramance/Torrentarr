@@ -212,6 +212,7 @@ try
     builder.Services.AddHostedService(sp => sp.GetRequiredService<QBitCategoryWorkerManager>());
     builder.Services.AddHostedService<PeriodicWalCheckpointService>();
     builder.Services.AddSingleton<IConfigReloader, ConfigReloader>();
+    builder.Services.AddHostedService<FfprobeAutoUpdateService>();
     // §6.10 / §1.8: update check + auto-update
     builder.Services.AddSingleton<UpdateService>();
     builder.Services.AddHostedService<AutoUpdateBackgroundService>();
@@ -1167,19 +1168,29 @@ try
 
         var seriesIds = seriesPage.Select(s => s.EntryId).ToList();
 
-        // Load per-season episode counts for this page of series
-        var seasonGroups = await db.Episodes
+        var episodes = await db.Episodes
             .Where(e => keys.Contains(e.ArrInstance) && seriesIds.Contains(e.SeriesId))
-            .GroupBy(e => new { e.SeriesId, e.SeasonNumber })
-            .Select(g => new
+            .Select(e => new
             {
-                g.Key.SeriesId,
-                g.Key.SeasonNumber,
-                TotalCount = g.Count(),
-                HasFileCount = g.Count(e => e.EpisodeFileId != null && e.EpisodeFileId != 0),
-                MonitoredCount = g.Count(e => e.Monitored == true)
+                e.SeriesId,
+                e.SeasonNumber,
+                e.EpisodeNumber,
+                e.Title,
+                e.Monitored,
+                e.EpisodeFileId,
+                e.AirDateUtc,
+                e.Reason
             })
             .ToListAsync();
+        var seasonGroups = episodes.GroupBy(e => new { e.SeriesId, e.SeasonNumber }).Select(g => new
+        {
+            g.Key.SeriesId,
+            g.Key.SeasonNumber,
+            TotalCount = g.Count(),
+            HasFileCount = g.Count(e => e.EpisodeFileId != null && e.EpisodeFileId != 0),
+            MonitoredCount = g.Count(e => e.Monitored == true),
+            Episodes = g.Select(e => new { episodeNumber = e.EpisodeNumber, title = e.Title, monitored = e.Monitored, hasFile = e.EpisodeFileId != null && e.EpisodeFileId != 0, airDateUtc = e.AirDateUtc, reason = e.Reason }).ToArray()
+        }).ToList();
 
         var seriesList = seriesPage.Select(s =>
         {
@@ -1188,7 +1199,6 @@ try
             var seriesMonitored = seriesSeasonGroups.Sum(g => g.MonitoredCount);
             var seriesTotal = seriesSeasonGroups.Sum(g => g.TotalCount);
 
-            // SonarrSeason: { monitored: number, available: number, missing?: number, episodes: [] }
             var seasons = seriesSeasonGroups
                 .ToDictionary(
                     g => g.SeasonNumber.ToString(),
@@ -1197,7 +1207,7 @@ try
                         monitored = g.MonitoredCount,
                         available = g.HasFileCount,
                         missing = g.TotalCount - g.HasFileCount,
-                        episodes = Array.Empty<object>()
+                        episodes = g.Episodes
                     });
 
             return new
@@ -2082,18 +2092,29 @@ try
 
         var seriesIds = seriesPage.Select(s => s.EntryId).ToList();
 
-        var seasonGroups = await db.Episodes
+        var episodes = await db.Episodes
             .Where(e => keys.Contains(e.ArrInstance) && seriesIds.Contains(e.SeriesId))
-            .GroupBy(e => new { e.SeriesId, e.SeasonNumber })
-            .Select(g => new
+            .Select(e => new
             {
-                g.Key.SeriesId,
-                g.Key.SeasonNumber,
-                TotalCount = g.Count(),
-                HasFileCount = g.Count(e => e.EpisodeFileId != null && e.EpisodeFileId != 0),
-                MonitoredCount = g.Count(e => e.Monitored == true)
+                e.SeriesId,
+                e.SeasonNumber,
+                e.EpisodeNumber,
+                e.Title,
+                e.Monitored,
+                e.EpisodeFileId,
+                e.AirDateUtc,
+                e.Reason
             })
             .ToListAsync();
+        var seasonGroups = episodes.GroupBy(e => new { e.SeriesId, e.SeasonNumber }).Select(g => new
+        {
+            g.Key.SeriesId,
+            g.Key.SeasonNumber,
+            TotalCount = g.Count(),
+            HasFileCount = g.Count(e => e.EpisodeFileId != null && e.EpisodeFileId != 0),
+            MonitoredCount = g.Count(e => e.Monitored == true),
+            Episodes = g.Select(e => new { episodeNumber = e.EpisodeNumber, title = e.Title, monitored = e.Monitored, hasFile = e.EpisodeFileId != null && e.EpisodeFileId != 0, airDateUtc = e.AirDateUtc, reason = e.Reason }).ToArray()
+        }).ToList();
 
         var seriesList = seriesPage.Select(s =>
         {
@@ -2110,7 +2131,7 @@ try
                         monitored = g.MonitoredCount,
                         available = g.HasFileCount,
                         missing = g.TotalCount - g.HasFileCount,
-                        episodes = Array.Empty<object>()
+                        episodes = g.Episodes
                     });
 
             return new
@@ -2434,18 +2455,6 @@ try
 
     Log.Information("Torrentarr WebUI starting on http://localhost:{Port}", config.WebUI.Port);
     Log.Information("Access the WebUI at: http://localhost:{Port}", config.WebUI.Port);
-
-    if (config.Settings.FFprobeAutoUpdate)
-    {
-        try
-        {
-            await app.Services.GetRequiredService<IMediaValidationService>().UpdateFFprobeAsync();
-        }
-        catch (Exception ex)
-        {
-            Log.Warning(ex, "FFprobe auto-update failed");
-        }
-    }
 
     await app.RunAsync();
 }

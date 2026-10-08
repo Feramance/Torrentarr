@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
   KEEP_ALL_PAGES_SOFT_CAP,
+  reconcileArrCatalogSelection,
   softCapCachedPages,
   visibleRowsForCachedPage,
 } from "./utils";
@@ -17,6 +18,17 @@ describe("softCapCachedPages", () => {
         .map(Number)
         .sort((a, b) => a - b),
     ).toEqual([4, 5, 6, 7, 8, 9, 10, 11]);
+  });
+});
+
+describe("reconcileArrCatalogSelection", () => {
+  it("keeps the unique section name when instances share a category", () => {
+    expect(
+      reconcileArrCatalogSelection(
+        [{ name: "Radarr-4K", category: "movies", type: "radarr" }],
+        "",
+      ),
+    ).toBe("Radarr-4K");
   });
 });
 

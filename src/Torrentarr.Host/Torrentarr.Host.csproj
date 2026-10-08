@@ -3,6 +3,7 @@
   <ItemGroup>
     <ProjectReference Include="..\Torrentarr.Core\Torrentarr.Core.csproj" />
     <ProjectReference Include="..\Torrentarr.Infrastructure\Torrentarr.Infrastructure.csproj" />
+    <ProjectReference Include="..\Torrentarr.Workers\Torrentarr.Workers.csproj" ReferenceOutputAssembly="false" />
   </ItemGroup>
 
   <PropertyGroup>

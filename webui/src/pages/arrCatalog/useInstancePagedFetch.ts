@@ -425,7 +425,7 @@ export function useInstancePagedFetch<
       setPage(next);
       if (selection) {
         void fetchInstanceRef.current(selection, next, query, {
-          showLoading: false,
+          showLoading: true,
         });
       }
     },
