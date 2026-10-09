@@ -385,7 +385,7 @@ function useSonarrInstancePipeline(
       },
     );
     // eslint-disable-next-line react-hooks/exhaustive-deps -- `page` excluded; refetch via setPage handler.
-  }, [active, selection, filters.onlyMissing]);
+  }, [active, selection, filters.onlyMissing, filters.reasonFilter]);
 
   // Reset row store on selection change.
   useEffect(() => {

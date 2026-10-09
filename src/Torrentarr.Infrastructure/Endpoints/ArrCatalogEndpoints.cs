@@ -233,9 +233,12 @@ public static class ArrCatalogEndpoints
                 return Results.NotFound(new { error = "Artist not found" });
 
             var (albumCounts, _, trackCounts) = await rollups.GetLidarrRollupsAsync(keys);
-            var albumArtistId = artist.ArrId != 0 ? artist.ArrId : artist.EntryId;
+            var artistIds = new[] { artist.ArrId, artist.EntryId }
+                .Where(id => id != 0)
+                .Distinct()
+                .ToList();
             var albums = await db.Albums
-                .Where(al => keys.Contains(al.ArrInstance) && al.ArtistId == albumArtistId)
+                .Where(al => keys.Contains(al.ArrInstance) && artistIds.Contains(al.ArtistId))
                 .OrderBy(al => al.Title)
                 .ToListAsync();
 

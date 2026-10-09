@@ -933,8 +933,8 @@ try
     app.MapPost("/web/processes/{category}/{kind}/restart", async (string category, string kind, TorrentarrConfig cfg, WorkerProcessSupervisor workerMgr) =>
     {
         var kindNorm = (kind ?? "").Trim().ToLowerInvariant();
-        if (kindNorm != "search" && kindNorm != "torrent" && kindNorm != "category" && kindNorm != "arr")
-            return Results.BadRequest(new { error = "kind must be search, torrent, category, or arr" });
+        if (kindNorm != "search" && kindNorm != "torrent" && kindNorm != "category" && kindNorm != "arr" && kindNorm != "worker")
+            return Results.BadRequest(new { error = "kind must be search, torrent, category, arr, or worker" });
 
         var instanceName = cfg.ArrInstances.ContainsKey(category) ? category : cfg.ArrInstances
             .FirstOrDefault(kv => kv.Value.Category.Equals(category, StringComparison.OrdinalIgnoreCase)).Key;
@@ -1879,8 +1879,8 @@ try
     app.MapPost("/api/processes/{category}/{kind}/restart", async (string category, string kind, TorrentarrConfig cfg, WorkerProcessSupervisor workerMgr) =>
     {
         var kindNorm = (kind ?? "").Trim().ToLowerInvariant();
-        if (kindNorm != "search" && kindNorm != "torrent" && kindNorm != "category" && kindNorm != "arr")
-            return Results.BadRequest(new { error = "kind must be search, torrent, category, or arr" });
+        if (kindNorm != "search" && kindNorm != "torrent" && kindNorm != "category" && kindNorm != "arr" && kindNorm != "worker")
+            return Results.BadRequest(new { error = "kind must be search, torrent, category, arr, or worker" });
 
         var instanceName = cfg.ArrInstances.ContainsKey(category) ? category : cfg.ArrInstances
             .FirstOrDefault(kv => kv.Value.Category.Equals(category, StringComparison.OrdinalIgnoreCase)).Key;

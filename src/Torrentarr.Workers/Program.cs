@@ -251,6 +251,7 @@ class ArrWorkerService : BackgroundService
     private DateTime _lastRefreshDownloads = DateTime.MinValue;
     private bool _searchLoopCompleted;
     private volatile bool _initialized;
+    private bool _qbitSetupComplete;
 
     private int _consecutiveErrors = 0;
     private DateTime _lastErrorTime = DateTime.MinValue;
@@ -330,6 +331,10 @@ class ArrWorkerService : BackgroundService
                 {
                     await InitializeAsync(cancellationToken);
                     _initialized = true;
+                }
+                else if (!_qbitSetupComplete)
+                {
+                    _qbitSetupComplete = await EnsureQBitSetupAsync(cancellationToken);
                 }
                 var backoffDelay = GetBackoffDelay();
                 if (backoffDelay > TimeSpan.Zero)
@@ -582,16 +587,34 @@ class ArrWorkerService : BackgroundService
 
     private async Task InitializeAsync(CancellationToken cancellationToken)
     {
-        using var scope = _serviceProvider.CreateScope();
-        var ensure = scope.ServiceProvider.GetRequiredService<QBitCategoryEnsureService>();
-        if (!await ensure.EnsureCategoryOnAllInstancesAsync(_instanceConfig.Category, cancellationToken))
-            _logger.LogWarning("Category setup failed on one or more qBittorrent instances; continuing with available clients");
-        if (scope.ServiceProvider.GetRequiredService<ISeedingService>() is SeedingService seeding)
-            if (!await seeding.EnsureAllTrackerTagsExistAsync(cancellationToken))
-                _logger.LogWarning("Tracker tag setup failed on one or more qBittorrent instances; continuing with available clients");
+        _qbitSetupComplete = await EnsureQBitSetupAsync(cancellationToken);
         if (_instanceConfig.Search.UseTempForMissing && _instanceConfig.Search.ForceResetTempProfiles)
+        {
+            using var scope = _serviceProvider.CreateScope();
             await scope.ServiceProvider.GetRequiredService<QualityProfileSwitcherService>()
                 .ForceResetAllTempProfilesAsync(_context.InstanceName, _instanceConfig, cancellationToken);
+        }
+    }
+
+    private async Task<bool> EnsureQBitSetupAsync(CancellationToken cancellationToken)
+    {
+        using var scope = _serviceProvider.CreateScope();
+        var ensure = scope.ServiceProvider.GetRequiredService<QBitCategoryEnsureService>();
+        var categoriesReady = await ensure.EnsureCategoryOnAllInstancesAsync(_instanceConfig.Category, cancellationToken);
+        if (!categoriesReady)
+            _logger.LogWarning("Category setup failed on one or more qBittorrent instances; continuing with available clients");
+        var tagsReady = true;
+        if (scope.ServiceProvider.GetRequiredService<ISeedingService>() is SeedingService seeding)
+        {
+            tagsReady = await seeding.EnsureAllTrackerTagsExistAsync(cancellationToken);
+            if (!tagsReady)
+                _logger.LogWarning("Tracker tag setup failed on one or more qBittorrent instances; continuing with available clients");
+        }
+
+        var allConfiguredClientsConnected = _config.GetAllTorrentClients()
+            .Where(q => !q.Value.Disabled && q.Value.Host != "CHANGE_ME")
+            .All(q => _qbitManager.IsConnected(q.Key));
+        return categoriesReady && tagsReady && allConfiguredClientsConnected;
     }
 
     private async Task RunPeriodicCommandsAsync(CancellationToken cancellationToken)
