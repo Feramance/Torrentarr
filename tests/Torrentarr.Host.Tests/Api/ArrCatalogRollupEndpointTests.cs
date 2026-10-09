@@ -74,6 +74,22 @@ public class ArrCatalogRollupEndpointTests : IClassFixture<ArrCatalogWebApplicat
     }
 
     [Fact]
+    public async Task GetSonarrSeries_FiltersByReasonBeforePaging()
+    {
+        _factory.SetConfigEnv();
+        using var scope = _factory.Services.CreateScope();
+        var db = scope.ServiceProvider.GetRequiredService<TorrentarrDbContext>();
+        await CatalogTestDataSeeder.SeedSonarrEpisodesAsync(db);
+
+        var client = _factory.CreateClientWithApiToken();
+        var response = await client.GetAsync("/web/sonarr/sonarr/series?reason=Missing");
+
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+        var json = JsonDocument.Parse(await response.Content.ReadAsStringAsync()).RootElement;
+        json.GetProperty("total").GetInt32().Should().Be(1);
+    }
+
+    [Fact]
     public async Task GetLidarrAlbums_ReturnsRollupCounts()
     {
         _factory.SetConfigEnv();

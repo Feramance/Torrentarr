@@ -1131,7 +1131,7 @@ try
     });
 
     // Web Sonarr Series — seasons populated from episodes table
-    app.MapGet("/web/sonarr/{category}/series", async (string category, TorrentarrConfig cfg, TorrentarrDbContext db, CatalogRollupService rollups, int? page, int? page_size, string? q, int? missing) =>
+    app.MapGet("/web/sonarr/{category}/series", async (string category, TorrentarrConfig cfg, TorrentarrDbContext db, CatalogRollupService rollups, int? page, int? page_size, string? q, int? missing, string? reason) =>
     {
         var keys = ArrCatalogIdentity.QueryKeys(cfg, category);
         var currentPage = page ?? 0;
@@ -1141,15 +1141,26 @@ try
         var baseQuery = db.Series.Where(s => keys.Contains(s.ArrInstance));
         var query = baseQuery;
 
-        // Apply missing=1 filter: only series that have at least one episode without a file
-        if (missing == 1)
+        var reasonFilter = string.IsNullOrWhiteSpace(reason) || reason.Equals("all", StringComparison.OrdinalIgnoreCase)
+            ? null
+            : reason.Trim();
+        if (missing == 1 || reasonFilter is not null)
         {
-            var missingSeriesIds = await db.Episodes
-                .Where(e => keys.Contains(e.ArrInstance) && (e.EpisodeFileId == null || e.EpisodeFileId == 0))
+            var episodeQuery = db.Episodes.Where(e => keys.Contains(e.ArrInstance));
+            if (missing == 1)
+                episodeQuery = episodeQuery.Where(e => e.EpisodeFileId == null || e.EpisodeFileId == 0);
+            if (reasonFilter is not null)
+            {
+                if (reasonFilter.Equals("Not being searched", StringComparison.OrdinalIgnoreCase))
+                    episodeQuery = episodeQuery.Where(e => e.Reason == null || e.Reason == "Not being searched");
+                else
+                    episodeQuery = episodeQuery.Where(e => e.Reason == reasonFilter);
+            }
+            var seriesIdsWithMatchingEpisodes = await episodeQuery
                 .Select(e => e.SeriesId)
                 .Distinct()
                 .ToListAsync();
-            baseQuery = baseQuery.Where(s => missingSeriesIds.Contains(s.EntryId));
+            baseQuery = baseQuery.Where(s => seriesIdsWithMatchingEpisodes.Contains(s.EntryId));
             query = baseQuery;
         }
 
@@ -2056,7 +2067,7 @@ try
         });
     });
 
-    app.MapGet("/api/sonarr/{category}/series", async (string category, TorrentarrConfig cfg, TorrentarrDbContext db, CatalogRollupService rollups, int? page, int? page_size, string? q, int? missing) =>
+    app.MapGet("/api/sonarr/{category}/series", async (string category, TorrentarrConfig cfg, TorrentarrDbContext db, CatalogRollupService rollups, int? page, int? page_size, string? q, int? missing, string? reason) =>
     {
         var keys = ArrCatalogIdentity.QueryKeys(cfg, category);
         var currentPage = page ?? 0;
@@ -2066,14 +2077,26 @@ try
         var baseQuery = db.Series.Where(s => keys.Contains(s.ArrInstance));
         var query = baseQuery;
 
-        if (missing == 1)
+        var reasonFilter = string.IsNullOrWhiteSpace(reason) || reason.Equals("all", StringComparison.OrdinalIgnoreCase)
+            ? null
+            : reason.Trim();
+        if (missing == 1 || reasonFilter is not null)
         {
-            var missingSeriesIds = await db.Episodes
-                .Where(e => keys.Contains(e.ArrInstance) && (e.EpisodeFileId == null || e.EpisodeFileId == 0))
+            var episodeQuery = db.Episodes.Where(e => keys.Contains(e.ArrInstance));
+            if (missing == 1)
+                episodeQuery = episodeQuery.Where(e => e.EpisodeFileId == null || e.EpisodeFileId == 0);
+            if (reasonFilter is not null)
+            {
+                if (reasonFilter.Equals("Not being searched", StringComparison.OrdinalIgnoreCase))
+                    episodeQuery = episodeQuery.Where(e => e.Reason == null || e.Reason == "Not being searched");
+                else
+                    episodeQuery = episodeQuery.Where(e => e.Reason == reasonFilter);
+            }
+            var seriesIdsWithMatchingEpisodes = await episodeQuery
                 .Select(e => e.SeriesId)
                 .Distinct()
                 .ToListAsync();
-            baseQuery = baseQuery.Where(s => missingSeriesIds.Contains(s.EntryId));
+            baseQuery = baseQuery.Where(s => seriesIdsWithMatchingEpisodes.Contains(s.EntryId));
             query = baseQuery;
         }
 

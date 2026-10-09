@@ -237,9 +237,8 @@ function useSonarrInstancePipeline(
       const gen = ++fetchGenRef.current;
       if (showLoading) setLoading(true);
       try {
-        const key = `${category}::${requestQuery}::${
-          useMissing ? "missing" : "all"
-        }`;
+        const reason = filtersRef.current.reasonFilter;
+        const key = `${category}::${requestQuery}::${useMissing ? "missing" : "all"}::${reason}`;
         const keyChanged = keyRef.current !== key;
         if (keyChanged) {
           keyRef.current = key;
@@ -261,6 +260,7 @@ function useSonarrInstancePipeline(
           requestQuery,
           {
             missingOnly: useMissing,
+            reasonFilter: reason,
           },
         );
         if (gen !== fetchGenRef.current || selectionRef.current !== category)

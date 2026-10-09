@@ -254,6 +254,8 @@ class ArrWorkerService : BackgroundService
 
     private int _consecutiveErrors = 0;
     private DateTime _lastErrorTime = DateTime.MinValue;
+    private int _consecutiveSearchErrors = 0;
+    private DateTime _lastSearchErrorTime = DateTime.MinValue;
     private readonly List<TimeSpan> _backoffDelays = new()
     {
         TimeSpan.FromMinutes(2),
@@ -318,6 +320,11 @@ class ArrWorkerService : BackgroundService
         {
             try
             {
+                if (!await _connectivityService.IsConnectedAsync(cancellationToken))
+                {
+                    await Task.Delay(TimeSpan.FromSeconds(_config.Settings.NoInternetSleepTimer), cancellationToken);
+                    continue;
+                }
                 await _qbitManager.EnsureAllConnectedAsync(_config.GetAllTorrentClients(), cancellationToken);
                 if (!_initialized)
                 {
@@ -330,11 +337,8 @@ class ArrWorkerService : BackgroundService
                     await Task.Delay(backoffDelay, cancellationToken);
                     continue;
                 }
-                if (await _connectivityService.IsConnectedAsync(cancellationToken))
-                {
-                    await ProcessTorrentsAsync(cancellationToken);
-                    _consecutiveErrors = 0;
-                }
+                await ProcessTorrentsAsync(cancellationToken);
+                _consecutiveErrors = 0;
             }
             catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested) { break; }
             catch (Exception ex)
@@ -357,11 +361,26 @@ class ArrWorkerService : BackgroundService
                     await Task.Delay(TimeSpan.FromSeconds(_config.Settings.LoopSleepTimer), cancellationToken);
                     continue;
                 }
-                if (await _connectivityService.IsConnectedAsync(cancellationToken))
-                    await ProcessSearchAsync(cancellationToken);
+                if (!await _connectivityService.IsConnectedAsync(cancellationToken))
+                {
+                    await Task.Delay(TimeSpan.FromSeconds(_config.Settings.NoInternetSleepTimer), cancellationToken);
+                    continue;
+                }
+                var backoffDelay = GetSearchBackoffDelay();
+                if (backoffDelay > TimeSpan.Zero)
+                {
+                    await Task.Delay(backoffDelay, cancellationToken);
+                    continue;
+                }
+                await ProcessSearchAsync(cancellationToken);
+                _consecutiveSearchErrors = 0;
             }
             catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested) { break; }
-            catch (Exception ex) { _logger.LogError(ex, "Error searching for {Instance}", _context.InstanceName); }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Error searching for {Instance}", _context.InstanceName);
+                HandleSearchError();
+            }
             await Task.Delay(TimeSpan.FromSeconds(_config.Settings.LoopSleepTimer), cancellationToken);
         }
     }
@@ -395,6 +414,25 @@ class ArrWorkerService : BackgroundService
         _lastErrorTime = DateTime.UtcNow;
         _logger.LogWarning("Processing error #{Count}, next backoff delay will be approximately {Delay}",
             _consecutiveErrors, _backoffDelays[Math.Min(_consecutiveErrors - 1, _backoffDelays.Count - 1)]);
+    }
+
+    private TimeSpan GetSearchBackoffDelay()
+    {
+        if (_consecutiveSearchErrors > 0 && DateTime.UtcNow - _lastSearchErrorTime > TimeSpan.FromMinutes(5))
+            _consecutiveSearchErrors = 0;
+        if (_consecutiveSearchErrors == 0)
+            return TimeSpan.Zero;
+        var delay = _backoffDelays[Math.Min(_consecutiveSearchErrors - 1, _backoffDelays.Count - 1)];
+        var remaining = delay - (DateTime.UtcNow - _lastSearchErrorTime);
+        return remaining > TimeSpan.Zero ? remaining : TimeSpan.Zero;
+    }
+
+    private void HandleSearchError()
+    {
+        _consecutiveSearchErrors++;
+        _lastSearchErrorTime = DateTime.UtcNow;
+        _logger.LogWarning("Search error #{Count}, next backoff delay will be approximately {Delay}",
+            _consecutiveSearchErrors, _backoffDelays[Math.Min(_consecutiveSearchErrors - 1, _backoffDelays.Count - 1)]);
     }
 
     private async Task ProcessTorrentsAsync(CancellationToken cancellationToken)
@@ -451,8 +489,7 @@ class ArrWorkerService : BackgroundService
             await ResetSearchedFlagsAsync(scope.ServiceProvider.GetRequiredService<TorrentarrDbContext>(), cancellationToken);
             _searchLoopCompleted = false;
         }
-        try { await syncService.SyncAsync(_context.InstanceName, cancellationToken); }
-        catch (Exception ex) { _logger.LogWarning(ex, "Arr sync failed for {Instance}", _context.InstanceName); }
+        await syncService.SyncAsync(_context.InstanceName, cancellationToken);
         if (_instanceConfig.Search.SearchMissing)
             await syncService.MarkRequestsAsync(_context.InstanceName, cancellationToken);
 

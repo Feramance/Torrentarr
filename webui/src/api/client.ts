@@ -333,7 +333,7 @@ export async function getSonarrSeries(
   page: number,
   pageSize: number,
   q: string,
-  options?: { missingOnly?: boolean },
+  options?: { missingOnly?: boolean; reasonFilter?: string | null },
 ): Promise<SonarrSeriesResponse> {
   const params = new URLSearchParams();
   params.set("page", String(page));
@@ -342,6 +342,7 @@ export async function getSonarrSeries(
   if (options?.missingOnly) {
     params.set("missing", "1");
   }
+  if (options?.reasonFilter) params.set("reason", options.reasonFilter);
   return fetchJson<SonarrSeriesResponse>(
     `/web/sonarr/${encodeURIComponent(category)}/series?${params}`,
   );

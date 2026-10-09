@@ -206,6 +206,7 @@ export function useAggregateCatalogLoader<
   const loadAggregate = useCallback(
     async (options?: { showLoading?: boolean }) => {
       if (!instances.length) {
+        aggFetchGenRef.current += 1;
         setRows([]);
         fullListSyncRef.current = createEmptyRowsSnapshot<TAggRow>();
         setSummary(adapter.initialSummary);

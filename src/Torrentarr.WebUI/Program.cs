@@ -1272,7 +1272,7 @@ app.MapGet("/web/radarr/{category}/movies", async (string category, TorrentarrCo
 });
 
 // Sonarr series for specific category
-app.MapGet("/web/sonarr/{category}/series", async (string category, TorrentarrConfig cfg, TorrentarrDbContext db, int? page, int? pageSize, string? q, string? missing) =>
+app.MapGet("/web/sonarr/{category}/series", async (string category, TorrentarrConfig cfg, TorrentarrDbContext db, int? page, int? pageSize, string? q, string? missing, string? reason) =>
 {
     var keys = ArrCatalogIdentity.QueryKeys(cfg, category);
     var currentPage = page ?? 1;
@@ -1286,6 +1286,18 @@ app.MapGet("/web/sonarr/{category}/series", async (string category, TorrentarrCo
     // missing=1: only return series that have unaired/missing episodes
     if (missing == "1")
         allSeries = allSeries.Where(s => !s.Searched);
+    if (!string.IsNullOrWhiteSpace(reason) && !reason.Equals("all", StringComparison.OrdinalIgnoreCase))
+    {
+        var notBeingSearched = reason.Equals("Not being searched", StringComparison.OrdinalIgnoreCase);
+        var matchingSeriesIds = db.Episodes
+            .Where(e => keys.Contains(e.ArrInstance)
+                && (notBeingSearched
+                    ? e.Reason == null || e.Reason == "Not being searched"
+                    : e.Reason == reason))
+            .Select(e => e.ArrSeriesId)
+            .Distinct();
+        allSeries = allSeries.Where(s => matchingSeriesIds.Contains(s.ArrId));
+    }
     var totalSeries = await allSeries.CountAsync();
     var monitoredCount = await allSeries.CountAsync(s => s.Monitored == true);
     // §6.4: additional aggregate counts (SeriesFilesModel has no IsRequest/QualityMet; use Searched/Upgrade as proxies)

@@ -591,6 +591,7 @@ public static class CatalogTestDataSeeder
                 SeriesId = 1,
                 Monitored = true,
                 EpisodeFileId = 0,
+                Reason = "Missing",
                 ArrId = 302
             });
         await db.SaveChangesAsync();
