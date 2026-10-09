@@ -334,8 +334,6 @@ export function useAggregateCatalogLoader<
         if (gen !== aggFetchGenRef.current) {
           return;
         }
-        setRows([]);
-        setSummary(adapter.initialSummary);
         setEmptyStateReady(true);
         // Background Live polls must stay silent; only toast user-visible loads.
         if (showLoading) {

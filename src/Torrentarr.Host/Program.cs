@@ -2803,7 +2803,13 @@ static async Task<IResult> SaveAndRespondConfigUpdate(
 
     if (workerMgr != null)
     {
-        switch (reloadType)
+        if (settingsChanged)
+        {
+            await workerMgr.RestartAllWorkersAsync();
+            if (reloadType == "full" && qbitCategoryMgr != null)
+                await qbitCategoryMgr.SyncWorkersWithConfigAsync();
+        }
+        else switch (reloadType)
         {
             case "full":
                 await workerMgr.RestartAllWorkersAsync();
@@ -2814,9 +2820,6 @@ static async Task<IResult> SaveAndRespondConfigUpdate(
             case "single_arr":
                 foreach (var inst in affectedInstancesList)
                     await workerMgr.RestartWorkerAsync(inst);
-                break;
-            case "webui" when settingsChanged:
-                await workerMgr.RestartAllWorkersAsync();
                 break;
         }
     }

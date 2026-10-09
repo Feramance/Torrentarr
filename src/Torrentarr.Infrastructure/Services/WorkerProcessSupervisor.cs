@@ -178,6 +178,13 @@ public sealed class WorkerProcessSupervisor : BackgroundService, IProcessOrchest
             if (!_processes.TryGetValue(instanceName, out var current) || !ReferenceEquals(current, process))
                 return;
             _processes.Remove(instanceName);
+            var now = DateTime.UtcNow;
+            if (_restartTimes.TryGetValue(instanceName, out var times))
+            {
+                times.RemoveAll(t => now - t > TimeSpan.FromSeconds(_config.Settings.ProcessRestartWindow));
+                if (times.Count == 0)
+                    _restartCounts.Remove(instanceName);
+            }
             count = _restartCounts.TryGetValue(instanceName, out var previous) ? previous + 1 : 1;
             _restartCounts[instanceName] = count;
         }
