@@ -106,6 +106,22 @@ public class ConfigurationLoaderTests : IDisposable
     }
 
     [Fact]
+    public void Load_MigratesTorrentarrLegacyDisabledStalledDelay()
+    {
+        WriteToml("""
+            [Settings]
+            ConfigVersion = "6.14.6"
+
+            [Radarr-Movies.Torrent]
+            StalledDelay = 0
+            """);
+
+        var config = new ConfigurationLoader(_tempFilePath).Load();
+
+        config.ArrInstances["Radarr-Movies"].Torrent.StalledDelay.Should().Be(-1);
+    }
+
+    [Fact]
     public void Load_MigratesBothSentinelsExactlyOnce()
     {
         WriteToml("""

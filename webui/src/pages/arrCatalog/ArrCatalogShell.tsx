@@ -105,6 +105,10 @@ export function ArrCatalogShell<
     TInstSeed | TAggSeed
   > | null>(null);
 
+  useEffect(() => {
+    if (!active) setModalSelection(null);
+  }, [active]);
+
   const selectionRef = useRef<string | "aggregate" | "">(selection);
   selectionRef.current = selection;
   const globalSearchRef = useRef(globalSearch);

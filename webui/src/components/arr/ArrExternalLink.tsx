@@ -17,16 +17,24 @@ export function ArrExternalLink({
     const token = localStorage.getItem("token");
     if (!token) return;
     event.preventDefault();
-    const response = await fetch(href, {
-      credentials: "include",
-      headers: {
-        Authorization: `Bearer ${token}`,
-        "X-Requested-With": "XMLHttpRequest",
-      },
-    });
-    if (response.ok) {
-      const result = (await response.json()) as { url?: string };
-      if (result.url) window.open(result.url, "_blank", "noopener,noreferrer");
+    const target = window.open("", "_blank");
+    if (!target) return;
+    target.opener = null;
+    try {
+      const response = await fetch(href, {
+        credentials: "include",
+        headers: {
+          Authorization: `Bearer ${token}`,
+          "X-Requested-With": "XMLHttpRequest",
+        },
+      });
+      const result = response.ok
+        ? ((await response.json()) as { url?: string })
+        : null;
+      if (result?.url) target.location.assign(result.url);
+      else target.close();
+    } catch {
+      target.close();
     }
   };
   return (

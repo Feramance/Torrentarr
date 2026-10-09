@@ -389,10 +389,10 @@ public class ConfigurationLoader
 
     private static bool MigrateStalledDelaySentinels(TomlTable root, Version currentVersion)
     {
-        // Only qBitrr 5.x configs use the old sentinel meaning. Torrentarr 6.x
-        // configs already use -1 for disabled stalled handling.
         var swapBoth = currentVersion.Major == 5 && currentVersion < new Version(5, 14, 6);
-        if (!swapBoth)
+        var migrateZeroToDisabled = swapBoth
+            || currentVersion.Major == 6 && currentVersion < new Version(6, 15, 2);
+        if (!migrateZeroToDisabled)
             return false;
 
         var changed = false;
@@ -404,25 +404,25 @@ public class ConfigurationLoader
             if (ArrSectionHelper.IsArrSection(name)
                 && section.TryGetValue("Torrent", out var torrentObj)
                 && torrentObj is TomlTable torrent)
-                changed |= SwapStalledDelayValues(torrent, swapBoth);
+                changed |= SwapStalledDelayValues(torrent, swapBoth, migrateZeroToDisabled);
 
             if ((name.Equals("qBit", StringComparison.OrdinalIgnoreCase)
                  || name.StartsWith("qBit-", StringComparison.OrdinalIgnoreCase))
                 && section.TryGetValue("CategorySeeding", out var seedingObj)
                 && seedingObj is TomlTable seeding)
-                changed |= SwapStalledDelayValues(seeding, swapBoth);
+                changed |= SwapStalledDelayValues(seeding, swapBoth, migrateZeroToDisabled);
         }
 
         return changed;
     }
 
-    private static bool SwapStalledDelayValues(TomlTable table, bool swapBoth)
+    private static bool SwapStalledDelayValues(TomlTable table, bool swapBoth, bool migrateZeroToDisabled)
     {
         var changed = false;
         if (table.TryGetValue("StalledDelay", out var value))
         {
             var parsed = DurationParser.ParseToMinutes(value, int.MinValue);
-            if (swapBoth && parsed == 0)
+            if (migrateZeroToDisabled && parsed == 0)
             {
                 table["StalledDelay"] = -1;
                 changed = true;
@@ -437,14 +437,14 @@ public class ConfigurationLoader
         foreach (var itemValue in table.Values)
         {
             if (itemValue is TomlTable child)
-                changed |= SwapStalledDelayValues(child, swapBoth);
+                changed |= SwapStalledDelayValues(child, swapBoth, migrateZeroToDisabled);
             else if (itemValue is TomlTableArray tableArray)
                 foreach (var childItem in tableArray)
-                    changed |= SwapStalledDelayValues(childItem, swapBoth);
+                    changed |= SwapStalledDelayValues(childItem, swapBoth, migrateZeroToDisabled);
             else if (itemValue is TomlArray array)
                 foreach (var item in array)
                     if (item is TomlTable childItem)
-                        changed |= SwapStalledDelayValues(childItem, swapBoth);
+                        changed |= SwapStalledDelayValues(childItem, swapBoth, migrateZeroToDisabled);
         }
 
         return changed;

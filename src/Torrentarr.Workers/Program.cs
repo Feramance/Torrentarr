@@ -497,8 +497,21 @@ class ArrWorkerService : BackgroundService
         if (!_instanceConfig.ProcessingOnly && ShouldRunSearch())
         {
             if (_instanceConfig.Search.UseTempForMissing && _instanceConfig.Search.TempProfileResetTimeoutMinutes > 0)
-                await scope.ServiceProvider.GetRequiredService<QualityProfileSwitcherService>()
-                    .RestoreTimedOutProfilesAsync(_context.InstanceName, _instanceConfig, cancellationToken);
+            {
+                try
+                {
+                    await scope.ServiceProvider.GetRequiredService<QualityProfileSwitcherService>()
+                        .RestoreTimedOutProfilesAsync(_context.InstanceName, _instanceConfig, cancellationToken);
+                }
+                catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+                {
+                    throw;
+                }
+                catch (Exception ex)
+                {
+                    _logger.LogWarning(ex, "Failed to restore timed-out temporary profiles for {Instance}; continuing search", _context.InstanceName);
+                }
+            }
 
             // §2.7: DoUpgradeSearch is exclusive — when active, skip missing-media search
             if (_instanceConfig.Search.DoUpgradeSearch)
@@ -536,9 +549,9 @@ class ArrWorkerService : BackgroundService
 
         if (searchResult?.LoopCompleted == true)
         {
-            _searchLoopCompleted = true;
-            if (SearchYearCursor.ShouldFilter(_instanceConfig))
-                _yearCursor.Advance(_context.InstanceName);
+            var hasMoreYears = SearchYearCursor.ShouldFilter(_instanceConfig)
+                && _yearCursor.Advance(_context.InstanceName);
+            _searchLoopCompleted = !hasMoreYears;
         }
     }
 
