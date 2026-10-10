@@ -2808,18 +2808,21 @@ static async Task<IResult> SaveAndRespondConfigUpdate(
             if (reloadType == "full" && qbitCategoryMgr != null)
                 await qbitCategoryMgr.SyncWorkersWithConfigAsync();
         }
-        else switch (reloadType)
+        else
         {
-            case "full":
-                await workerMgr.RestartAllWorkersAsync();
-                if (qbitCategoryMgr != null)
-                    await qbitCategoryMgr.SyncWorkersWithConfigAsync();
-                break;
-            case "multi_arr":
-            case "single_arr":
-                foreach (var inst in affectedInstancesList)
-                    await workerMgr.RestartWorkerAsync(inst);
-                break;
+            switch (reloadType)
+            {
+                case "full":
+                    await workerMgr.RestartAllWorkersAsync();
+                    if (qbitCategoryMgr != null)
+                        await qbitCategoryMgr.SyncWorkersWithConfigAsync();
+                    break;
+                case "multi_arr":
+                case "single_arr":
+                    foreach (var inst in affectedInstancesList)
+                        await workerMgr.RestartWorkerAsync(inst);
+                    break;
+            }
         }
     }
 
