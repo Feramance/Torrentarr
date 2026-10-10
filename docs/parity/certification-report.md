@@ -2,7 +2,7 @@
 
 ## Scope
 
-This report captures Torrentarr's parity status after rebasing the audit from qBitrr **v5.12.10** through **v5.14.5-1**. Torrentarr schema is **6.14.6**.
+This report captures Torrentarr's parity status against qBitrr master commit **329e604e4e8512b1e32ba86e61920e1ae1e07a65** (schema **5.14.6**). Torrentarr schema is **6.15.2**.
 
 Primary tracking artifacts:
 
@@ -70,4 +70,4 @@ Focused regression checks added/updated:
 
 ## Matrix Status
 
-Latest-main user-facing parity is closed against qBitrr **v5.14.5-1**. Remaining `intentional-divergence` rows in `full-parity-matrix.md` are architecture or packaging only (process isolation, WAL vs `db_lock`, fork session sharing, Pathos, placeholder defaultdicts, `setup.py` / CI autofix).
+Latest-main user-facing parity is closed against qBitrr master commit **329e604**. Remaining `intentional-divergence` rows in `full-parity-matrix.md` are architecture or packaging only.

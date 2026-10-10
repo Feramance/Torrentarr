@@ -32,15 +32,17 @@ Download pre-built executables for Linux, macOS, or Windows. Self-contained buil
 **Best for:**
 
 - Native installs without Docker
-- Simple single-file deployment
+- Host and companion worker deployment
 - Systems where Docker isn't available
 - Quick testing without building from source
 
 **Get Started:** [Binary Installation Guide →](binary.md)
 
 ```bash
-# Linux/macOS (x64 example)
+# Linux (x64 example)
 curl -L -o torrentarr https://github.com/Feramance/Torrentarr/releases/latest/download/torrentarr-linux-x64
+curl -fL -o torrentarr-workers-linux-x64 https://github.com/Feramance/Torrentarr/releases/latest/download/torrentarr-workers-linux-x64
+chmod +x torrentarr-workers-linux-x64
 chmod +x torrentarr
 ./torrentarr
 ```

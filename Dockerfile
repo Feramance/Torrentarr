@@ -36,6 +36,7 @@ COPY Directory.Build.props ./
 
 # Restore only the Host project and its transitive dependencies
 RUN dotnet restore src/Torrentarr.Host/Torrentarr.Host.csproj
+RUN dotnet restore src/Torrentarr.Workers/Torrentarr.Workers.csproj
 
 # Copy source code
 COPY src/ ./src/
@@ -47,6 +48,10 @@ COPY --from=frontend-build /app/src/Torrentarr.Host/wwwroot ./src/Torrentarr.Hos
 
 # Build and publish
 RUN dotnet publish src/Torrentarr.Host/Torrentarr.Host.csproj \
+    -c Release \
+    -o /app/publish \
+    --no-restore
+RUN dotnet publish src/Torrentarr.Workers/Torrentarr.Workers.csproj \
     -c Release \
     -o /app/publish \
     --no-restore

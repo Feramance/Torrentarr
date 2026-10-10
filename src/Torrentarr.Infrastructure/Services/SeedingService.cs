@@ -970,7 +970,7 @@ public class SeedingService : ISeedingService
     }
 
     /// <summary>Pre-create all configured tracker AddTags on every qBit instance (qBitrr qbit_category_manager parity).</summary>
-    public async Task EnsureAllTrackerTagsExistAsync(CancellationToken cancellationToken = default)
+    public async Task<bool> EnsureAllTrackerTagsExistAsync(CancellationToken cancellationToken = default)
     {
         var allTags = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
         foreach (var q in _config.QBitInstances.Values)
@@ -989,8 +989,9 @@ public class SeedingService : ISeedingService
         }
 
         if (allTags.Count == 0)
-            return;
+            return true;
 
+        var succeeded = true;
         foreach (var (_, client) in _qbitManager.GetAllClients())
         {
             try
@@ -999,15 +1000,19 @@ public class SeedingService : ISeedingService
                 var toCreate = allTags.Where(t => !existing.Contains(t, StringComparer.OrdinalIgnoreCase)).ToList();
                 if (toCreate.Count > 0)
                 {
-                    await client.CreateTagsAsync(toCreate, cancellationToken);
-                    _logger.LogDebug("Pre-created tracker tags on qBit: {Tags}", string.Join(", ", toCreate));
+                    if (await client.CreateTagsAsync(toCreate, cancellationToken))
+                        _logger.LogDebug("Pre-created tracker tags on qBit: {Tags}", string.Join(", ", toCreate));
+                    else
+                        succeeded = false;
                 }
             }
             catch (Exception ex)
             {
+                succeeded = false;
                 _logger.LogWarning(ex, "Failed to pre-create tracker tags");
             }
         }
+        return succeeded;
     }
 
     /// <summary>

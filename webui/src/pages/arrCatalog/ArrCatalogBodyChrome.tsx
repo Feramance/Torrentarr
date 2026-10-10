@@ -1,0 +1,128 @@
+import { type JSX, type ReactNode } from "react";
+import { IconImage } from "../../components/IconImage";
+import { useWebUI } from "../../context/WebUIContext";
+import RefreshIcon from "../../icons/refresh-arrow.svg";
+
+interface ArrCatalogBodyChromeProps {
+  /** Top-row hint / counts — already includes "(updated …)" tail when relevant. */
+  readonly summaryLine: ReactNode;
+  /** Refresh handler wired to the toolbar button. */
+  readonly onRefresh: () => void;
+  /** True while a load is in flight (disables the refresh button). */
+  readonly loading: boolean;
+  /** Loading spinner copy (e.g. `"Loading Radarr library…"`). */
+  readonly loadingHint: string;
+  /** When false during load, overlay is opaque so empty body does not bleed through. */
+  readonly hasRows: boolean;
+  /** Body content: list table, icon grid, or empty-state copy. */
+  readonly children: ReactNode;
+  /** Optional pagination footer below the body. */
+  readonly footer?: ReactNode;
+}
+
+/**
+ * Shared "body chrome" — the summary header row + refresh button + spinner + body
+ * slot used by all three Arrs.  Keeps the per-Arr render slot focused on the parts
+ * that genuinely differ (counts copy, columns, tile content).
+ */
+export function ArrCatalogBodyChrome({
+  summaryLine,
+  onRefresh,
+  loading,
+  loadingHint,
+  hasRows,
+  children,
+  footer,
+}: ArrCatalogBodyChromeProps): JSX.Element {
+  const { liveArr } = useWebUI();
+  const overlayClassName =
+    loading && !hasRows
+      ? "arr-catalog-body__overlay arr-catalog-body__overlay--solid loading"
+      : "arr-catalog-body__overlay loading";
+
+  return (
+    <div className="stack animate-fade-in">
+      <div className="row" style={{ justifyContent: "space-between" }}>
+        <div className="arr-catalog-summary">
+          <div className="arr-catalog-summary__line">{summaryLine}</div>
+          {!liveArr ? (
+            <span
+              className="badge arr-live-off-badge"
+              title="Enable Live in the app bar for automatic refreshes"
+            >
+              Live updates off
+            </span>
+          ) : null}
+        </div>
+        <button
+          className="btn ghost"
+          type="button"
+          onClick={onRefresh}
+          disabled={loading}
+        >
+          <IconImage src={RefreshIcon} />
+          Refresh
+        </button>
+      </div>
+      <div className="arr-catalog-body">
+        {children}
+        {loading ? (
+          <div className={overlayClassName}>
+            <span className="spinner" /> {loadingHint}
+          </div>
+        ) : null}
+      </div>
+      {footer}
+    </div>
+  );
+}
+
+interface ArrCatalogPaginationProps {
+  readonly page: number;
+  readonly totalPages: number;
+  readonly total: number;
+  readonly itemNoun: string;
+  readonly pageSize: number;
+  readonly loading: boolean;
+  readonly onPageChange: (page: number) => void;
+}
+
+/**
+ * Shared pagination footer with Prev / Next buttons + "Page X of Y (N items · page size Z)".
+ */
+export function ArrCatalogPagination({
+  page,
+  totalPages,
+  total,
+  itemNoun,
+  pageSize,
+  loading,
+  onPageChange,
+}: ArrCatalogPaginationProps): JSX.Element {
+  return (
+    <div className="pagination">
+      <div>
+        Page {page + 1} of {totalPages} ({total.toLocaleString()} {itemNoun} ·
+        page size {pageSize})
+      </div>
+      <div className="inline">
+        <button
+          className="btn"
+          type="button"
+          onClick={() => onPageChange(Math.max(0, page - 1))}
+          disabled={page === 0 || loading}
+        >
+          Prev
+        </button>
+        <button
+          className="btn"
+          type="button"
+          onClick={() => onPageChange(Math.min(totalPages - 1, page + 1))}
+          disabled={page >= totalPages - 1 || loading}
+        >
+          Next
+        </button>
+      </div>
+    </div>
+  );
+}

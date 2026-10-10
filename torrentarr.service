@@ -1,0 +1,42 @@
+[Unit]
+Description=Torrentarr - Radarr/Sonarr/Lidarr Torrent Manager
+Documentation=https://feramance.github.io/Torrentarr/
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=torrentarr
+Group=torrentarr
+WorkingDirectory=/opt/torrentarr
+
+# Main process (release binary installed to /usr/local/bin/torrentarr)
+ExecStart=/usr/local/bin/torrentarr
+
+# Environment variables
+Environment="TORRENTARR_CONFIG=/opt/torrentarr/config/config.toml"
+
+# Restart policy
+# always: Restart on any exit (crash, update, manual restart)
+# on-failure: Only restart on error exit codes
+Restart=always
+RestartSec=5
+
+# Resource limits (adjust as needed)
+# LimitNOFILE=65536
+# MemoryMax=2G
+
+# Logging
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=torrentarr
+
+# Security hardening (optional, adjust as needed)
+# NoNewPrivileges=true
+# PrivateTmp=true
+# ProtectSystem=strict
+# ProtectHome=true
+# ReadWritePaths=/opt/torrentarr
+
+[Install]
+WantedBy=multi-user.target

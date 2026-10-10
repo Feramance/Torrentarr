@@ -591,6 +591,7 @@ public static class CatalogTestDataSeeder
                 SeriesId = 1,
                 Monitored = true,
                 EpisodeFileId = 0,
+                Reason = "Missing",
                 ArrId = 302
             });
         await db.SaveChangesAsync();
@@ -613,7 +614,7 @@ public static class CatalogTestDataSeeder
             {
                 EntryId = 10,
                 ArrInstance = instance,
-                ArtistId = 1,
+                ArtistId = 401,
                 Title = "Album A",
                 Monitored = true,
                 HasFile = true,
@@ -623,7 +624,7 @@ public static class CatalogTestDataSeeder
             {
                 EntryId = 11,
                 ArrInstance = instance,
-                ArtistId = 1,
+                ArtistId = 401,
                 Title = "Album B",
                 Monitored = true,
                 HasFile = false,

@@ -174,8 +174,8 @@ try
     builder.Services.AddSingleton<DatabaseRestartCoordinator>();
     builder.Services.AddHostedService<DatabaseRestartWatchdogService>();
     builder.Services.AddSingleton<ITorrentClientFactory, QBittorrentTorrentClientFactory>();
-    builder.Services.AddSingleton<TorrentClientRegistry>();
-    builder.Services.AddSingleton<ITorrentClientRegistry>(sp => sp.GetRequiredService<TorrentClientRegistry>());
+    builder.Services.AddSingleton<QBittorrentConnectionManager>();
+    builder.Services.AddSingleton<ITorrentClientRegistry>(sp => sp.GetRequiredService<QBittorrentConnectionManager>());
     builder.Services.AddSingleton<IPathMappingService, PathMappingService>();
     builder.Services.AddSingleton<IHardlinkInspector, HardlinkInspector>();
     builder.Services.AddSingleton<ITorrentInventoryService, TorrentInventoryService>();
@@ -188,11 +188,12 @@ try
     builder.Services.AddHostedService(sp => sp.GetRequiredService<MaintenanceCoordinator>());
     builder.Services.AddSingleton<ProcessStateManager>();
     builder.Services.AddSingleton<IConnectivityService, ConnectivityService>();
-    // ArrWorkerManager registered as both singleton and IHostedService so it's injectable in endpoints
-    builder.Services.AddSingleton<ArrWorkerManager>();
+    // Arr workers run out-of-process so a worker crash cannot take down WebUI.
+    builder.Services.AddSingleton<WorkerProcessSupervisor>();
+    builder.Services.AddSingleton<IProcessOrchestrator>(sp => sp.GetRequiredService<WorkerProcessSupervisor>());
     builder.Services.AddSingleton<SearchYearCursor>();
     builder.Services.AddSingleton<StalledUploadTracker>();
-    builder.Services.AddHostedService(sp => sp.GetRequiredService<ArrWorkerManager>());
+    builder.Services.AddHostedService(sp => sp.GetRequiredService<WorkerProcessSupervisor>());
     builder.Services.AddHostedService<ProcessOrchestratorService>();
     // Scoped services (one per request / scope)
     builder.Services.AddScoped<ArrSyncService>();
@@ -217,6 +218,12 @@ try
 
     builder.Services.AddSingleton<IPasswordHasher, BCryptPasswordHasher>();
     builder.Services.AddHttpClient();
+    builder.Services.AddHttpClient("ArrOpen").ConfigurePrimaryHttpMessageHandler(() => new HttpClientHandler { AllowAutoRedirect = false });
+    builder.Services.AddHttpClient("ArrOpenSkipTls").ConfigurePrimaryHttpMessageHandler(() => new HttpClientHandler
+    {
+        AllowAutoRedirect = false,
+        ServerCertificateCustomValidationCallback = HttpClientHandler.DangerousAcceptAnyServerCertificateValidator
+    });
     builder.Services.AddScoped<CatalogRollupService>();
     builder.Services.AddScoped<ArrThumbnailService>();
 
@@ -850,7 +857,7 @@ try
     });
 
     // Web Processes — reads live state from ProcessStateManager + qBit connection status
-    app.MapGet("/web/processes", async (ProcessStateManager stateMgr, TorrentarrConfig cfg, ITorrentClientRegistry qbitMgr) =>
+    app.MapGet("/web/processes", async (ProcessStateManager stateMgr, TorrentarrConfig cfg, ITorrentClientRegistry qbitMgr, WorkerProcessSupervisor workers) =>
     {
         var processes = stateMgr.GetAll().Select(s => new
         {
@@ -921,17 +928,20 @@ try
             });
         }
 
+        foreach (var status in (await workers.GetProcessStatusAsync()).Values)
+            processes.Add(new { category = cfg.ArrInstances.GetValueOrDefault(status.Name)?.Category ?? status.Name, name = status.Name, kind = status.Kind, pid = status.ProcessId, alive = status.IsAlive, rebuilding = false, searchSummary = status.SearchSummary, searchTimestamp = status.SearchTimestamp, queueCount = status.QueueCount, categoryCount = status.CategoryCount, metricType = status.MetricType, status = status.IsAlive ? "Running" : "Stopped", restartKey = status.Name });
+
         return Results.Ok(new { processes });
     });
 
     // Web Restart Process — stops and restarts the named instance worker (kind is advisory; one loop per Arr)
-    app.MapPost("/web/processes/{category}/{kind}/restart", async (string category, string kind, TorrentarrConfig cfg, ArrWorkerManager workerMgr) =>
+    app.MapPost("/web/processes/{category}/{kind}/restart", async (string category, string kind, TorrentarrConfig cfg, WorkerProcessSupervisor workerMgr) =>
     {
         var kindNorm = (kind ?? "").Trim().ToLowerInvariant();
-        if (kindNorm != "search" && kindNorm != "torrent" && kindNorm != "category" && kindNorm != "arr")
-            return Results.BadRequest(new { error = "kind must be search, torrent, category, or arr" });
+        if (kindNorm != "search" && kindNorm != "torrent" && kindNorm != "category" && kindNorm != "arr" && kindNorm != "worker")
+            return Results.BadRequest(new { error = "kind must be search, torrent, category, arr, or worker" });
 
-        var instanceName = cfg.ArrInstances
+        var instanceName = cfg.ArrInstances.ContainsKey(category) ? category : cfg.ArrInstances
             .FirstOrDefault(kv => kv.Value.Category.Equals(category, StringComparison.OrdinalIgnoreCase)).Key;
         if (instanceName != null)
             await workerMgr.RestartWorkerAsync(instanceName);
@@ -939,21 +949,21 @@ try
     });
 
     // Web Restart All Processes
-    app.MapPost("/web/processes/restart_all", async (TorrentarrConfig cfg, ArrWorkerManager workerMgr) =>
+    app.MapPost("/web/processes/restart_all", async (TorrentarrConfig cfg, WorkerProcessSupervisor workerMgr) =>
     {
         await workerMgr.RestartAllWorkersAsync();
         return Results.Ok(new { status = "restarted", restarted = cfg.ArrInstances.Keys.ToArray() });
     });
 
     // Web Arr Rebuild — same shape as RestartResponse
-    app.MapPost("/web/arr/rebuild", async (TorrentarrConfig cfg, ArrWorkerManager workerMgr) =>
+    app.MapPost("/web/arr/rebuild", async (TorrentarrConfig cfg, WorkerProcessSupervisor workerMgr) =>
     {
         await workerMgr.RestartAllWorkersAsync();
         return Results.Ok(new { status = "restarted", restarted = cfg.ArrInstances.Keys.ToArray() });
     });
 
     // Web Log Level — actually changes the Serilog level at runtime
-    app.MapPost("/web/loglevel", (LoggerConfigurationRequest req, LoggingLevelSwitch ls) =>
+    app.MapPost("/web/loglevel", (LoggerConfigurationRequest req, LoggingLevelSwitch ls, TorrentarrConfig cfg) =>
     {
         ls.MinimumLevel = req.Level?.ToUpperInvariant() switch
         {
@@ -963,6 +973,8 @@ try
             "CRITICAL" or "FATAL" => LogEventLevel.Fatal,
             _ => LogEventLevel.Information
         };
+        foreach (var instanceName in cfg.ArrInstances.Keys)
+            File.WriteAllText(Path.Combine(logsPath, $"worker-{instanceName}.loglevel"), ls.MinimumLevel.ToString());
         return Results.Ok(new { success = true, level = ls.MinimumLevel.ToString() });
     });
 
@@ -1124,7 +1136,7 @@ try
     });
 
     // Web Sonarr Series — seasons populated from episodes table
-    app.MapGet("/web/sonarr/{category}/series", async (string category, TorrentarrConfig cfg, TorrentarrDbContext db, CatalogRollupService rollups, int? page, int? page_size, string? q, int? missing) =>
+    app.MapGet("/web/sonarr/{category}/series", async (string category, TorrentarrConfig cfg, TorrentarrDbContext db, CatalogRollupService rollups, int? page, int? page_size, string? q, int? missing, string? reason) =>
     {
         var keys = ArrCatalogIdentity.QueryKeys(cfg, category);
         var currentPage = page ?? 0;
@@ -1134,15 +1146,26 @@ try
         var baseQuery = db.Series.Where(s => keys.Contains(s.ArrInstance));
         var query = baseQuery;
 
-        // Apply missing=1 filter: only series that have at least one episode without a file
-        if (missing == 1)
+        var reasonFilter = string.IsNullOrWhiteSpace(reason) || reason.Equals("all", StringComparison.OrdinalIgnoreCase)
+            ? null
+            : reason.Trim();
+        if (missing == 1 || reasonFilter is not null)
         {
-            var missingSeriesIds = await db.Episodes
-                .Where(e => keys.Contains(e.ArrInstance) && (e.EpisodeFileId == null || e.EpisodeFileId == 0))
+            var episodeQuery = db.Episodes.Where(e => keys.Contains(e.ArrInstance));
+            if (missing == 1)
+                episodeQuery = episodeQuery.Where(e => e.EpisodeFileId == null || e.EpisodeFileId == 0);
+            if (reasonFilter is not null)
+            {
+                if (reasonFilter.Equals("Not being searched", StringComparison.OrdinalIgnoreCase))
+                    episodeQuery = episodeQuery.Where(e => e.Reason == null || e.Reason == "Not being searched");
+                else
+                    episodeQuery = episodeQuery.Where(e => e.Reason == reasonFilter);
+            }
+            var seriesIdsWithMatchingEpisodes = await episodeQuery
                 .Select(e => e.SeriesId)
                 .Distinct()
                 .ToListAsync();
-            baseQuery = baseQuery.Where(s => missingSeriesIds.Contains(s.EntryId));
+            baseQuery = baseQuery.Where(s => seriesIdsWithMatchingEpisodes.Contains(s.EntryId));
             query = baseQuery;
         }
 
@@ -1161,19 +1184,29 @@ try
 
         var seriesIds = seriesPage.Select(s => s.EntryId).ToList();
 
-        // Load per-season episode counts for this page of series
-        var seasonGroups = await db.Episodes
+        var episodes = await db.Episodes
             .Where(e => keys.Contains(e.ArrInstance) && seriesIds.Contains(e.SeriesId))
-            .GroupBy(e => new { e.SeriesId, e.SeasonNumber })
-            .Select(g => new
+            .Select(e => new
             {
-                g.Key.SeriesId,
-                g.Key.SeasonNumber,
-                TotalCount = g.Count(),
-                HasFileCount = g.Count(e => e.EpisodeFileId != null && e.EpisodeFileId != 0),
-                MonitoredCount = g.Count(e => e.Monitored == true)
+                e.SeriesId,
+                e.SeasonNumber,
+                e.EpisodeNumber,
+                e.Title,
+                e.Monitored,
+                e.EpisodeFileId,
+                e.AirDateUtc,
+                e.Reason
             })
             .ToListAsync();
+        var seasonGroups = episodes.GroupBy(e => new { e.SeriesId, e.SeasonNumber }).Select(g => new
+        {
+            g.Key.SeriesId,
+            g.Key.SeasonNumber,
+            TotalCount = g.Count(),
+            HasFileCount = g.Count(e => e.EpisodeFileId != null && e.EpisodeFileId != 0),
+            MonitoredCount = g.Count(e => e.Monitored == true),
+            Episodes = g.Select(e => new { episodeNumber = e.EpisodeNumber, title = e.Title, monitored = e.Monitored, hasFile = e.EpisodeFileId != null && e.EpisodeFileId != 0, airDateUtc = e.AirDateUtc, reason = e.Reason }).ToArray()
+        }).ToList();
 
         var seriesList = seriesPage.Select(s =>
         {
@@ -1182,7 +1215,6 @@ try
             var seriesMonitored = seriesSeasonGroups.Sum(g => g.MonitoredCount);
             var seriesTotal = seriesSeasonGroups.Sum(g => g.TotalCount);
 
-            // SonarrSeason: { monitored: number, available: number, missing?: number, episodes: [] }
             var seasons = seriesSeasonGroups
                 .ToDictionary(
                     g => g.SeasonNumber.ToString(),
@@ -1191,7 +1223,7 @@ try
                         monitored = g.MonitoredCount,
                         available = g.HasFileCount,
                         missing = g.TotalCount - g.HasFileCount,
-                        episodes = Array.Empty<object>()
+                        episodes = g.Episodes
                     });
 
             return new
@@ -1426,9 +1458,9 @@ try
     });
 
     // Web Arr Restart
-    app.MapPost("/web/arr/{category}/restart", async (string category, TorrentarrConfig cfg, ArrWorkerManager workerMgr) =>
+    app.MapPost("/web/arr/{category}/restart", async (string category, TorrentarrConfig cfg, WorkerProcessSupervisor workerMgr) =>
     {
-        var instanceName = cfg.ArrInstances
+        var instanceName = cfg.ArrInstances.ContainsKey(category) ? category : cfg.ArrInstances
             .FirstOrDefault(kv => kv.Value.Category.Equals(category, StringComparison.OrdinalIgnoreCase)).Key;
         if (instanceName != null)
             await workerMgr.RestartWorkerAsync(instanceName);
@@ -1469,7 +1501,7 @@ try
     // Web Config Update — frontend sends { changes: { "Section.Key": value, ... } } (dotted keys).
     // ConfigView.tsx flatten()s the hierarchical config into dotted paths before sending only the
     // changed keys.  We apply those changes onto the current in-memory config and save.
-    app.MapPost("/web/config", async (HttpRequest request, TorrentarrConfig cfg, ConfigurationLoader loader, ArrWorkerManager workerMgr, QBitCategoryWorkerManager qbitCategoryMgr) =>
+    app.MapPost("/web/config", async (HttpRequest request, TorrentarrConfig cfg, ConfigurationLoader loader, WorkerProcessSupervisor workerMgr, QBitCategoryWorkerManager qbitCategoryMgr) =>
     {
         try
         {
@@ -1520,6 +1552,8 @@ try
             download_url = (string?)t.GetProperty("binary_download_url")?.GetValue(meta),
             download_name = (string?)t.GetProperty("binary_download_name")?.GetValue(meta),
             download_size = (long?)t.GetProperty("binary_download_size")?.GetValue(meta),
+            worker_download_url = (string?)t.GetProperty("worker_download_url")?.GetValue(meta),
+            worker_download_name = (string?)t.GetProperty("worker_download_name")?.GetValue(meta),
             error = (string?)t.GetProperty("binary_download_error")?.GetValue(meta)
         });
     });
@@ -1826,7 +1860,7 @@ try
         });
     });
 
-    app.MapGet("/api/processes", (ProcessStateManager stateMgr) =>
+    app.MapGet("/api/processes", async (ProcessStateManager stateMgr, TorrentarrConfig cfg, WorkerProcessSupervisor workers) =>
     {
         var processes = stateMgr.GetAll().Select(s => new
         {
@@ -1841,36 +1875,38 @@ try
             queueCount = s.QueueCount,
             categoryCount = s.CategoryCount,
             metricType = s.MetricType
-        }).ToList();
+        }).ToList<object>();
+        foreach (var status in (await workers.GetProcessStatusAsync()).Values)
+            processes.Add(new { category = cfg.ArrInstances.GetValueOrDefault(status.Name)?.Category ?? status.Name, name = status.Name, kind = status.Kind, pid = status.ProcessId, alive = status.IsAlive, rebuilding = false, searchSummary = status.SearchSummary, searchTimestamp = status.SearchTimestamp, queueCount = status.QueueCount, categoryCount = status.CategoryCount, metricType = status.MetricType, status = status.IsAlive ? "Running" : "Stopped", restartKey = status.Name });
         return Results.Ok(new { processes });
     });
 
-    app.MapPost("/api/processes/{category}/{kind}/restart", async (string category, string kind, TorrentarrConfig cfg, ArrWorkerManager workerMgr) =>
+    app.MapPost("/api/processes/{category}/{kind}/restart", async (string category, string kind, TorrentarrConfig cfg, WorkerProcessSupervisor workerMgr) =>
     {
         var kindNorm = (kind ?? "").Trim().ToLowerInvariant();
-        if (kindNorm != "search" && kindNorm != "torrent" && kindNorm != "category" && kindNorm != "arr")
-            return Results.BadRequest(new { error = "kind must be search, torrent, category, or arr" });
+        if (kindNorm != "search" && kindNorm != "torrent" && kindNorm != "category" && kindNorm != "arr" && kindNorm != "worker")
+            return Results.BadRequest(new { error = "kind must be search, torrent, category, arr, or worker" });
 
-        var instanceName = cfg.ArrInstances
+        var instanceName = cfg.ArrInstances.ContainsKey(category) ? category : cfg.ArrInstances
             .FirstOrDefault(kv => kv.Value.Category.Equals(category, StringComparison.OrdinalIgnoreCase)).Key;
         if (instanceName != null)
             await workerMgr.RestartWorkerAsync(instanceName);
         return Results.Ok(new { status = "restarted", restarted = instanceName != null ? new[] { instanceName } : Array.Empty<string>() });
     });
 
-    app.MapPost("/api/processes/restart_all", async (TorrentarrConfig cfg, ArrWorkerManager workerMgr) =>
+    app.MapPost("/api/processes/restart_all", async (TorrentarrConfig cfg, WorkerProcessSupervisor workerMgr) =>
     {
         await workerMgr.RestartAllWorkersAsync();
         return Results.Ok(new { status = "restarted", restarted = cfg.ArrInstances.Keys.ToArray() });
     });
 
-    app.MapPost("/api/arr/rebuild", async (TorrentarrConfig cfg, ArrWorkerManager workerMgr) =>
+    app.MapPost("/api/arr/rebuild", async (TorrentarrConfig cfg, WorkerProcessSupervisor workerMgr) =>
     {
         await workerMgr.RestartAllWorkersAsync();
         return Results.Ok(new { status = "restarted", restarted = cfg.ArrInstances.Keys.ToArray() });
     });
 
-    app.MapPost("/api/loglevel", (LoggerConfigurationRequest req, LoggingLevelSwitch ls) =>
+    app.MapPost("/api/loglevel", (LoggerConfigurationRequest req, LoggingLevelSwitch ls, TorrentarrConfig cfg) =>
     {
         ls.MinimumLevel = req.Level?.ToUpperInvariant() switch
         {
@@ -1880,6 +1916,8 @@ try
             "CRITICAL" or "FATAL" => LogEventLevel.Fatal,
             _ => LogEventLevel.Information
         };
+        foreach (var instanceName in cfg.ArrInstances.Keys)
+            File.WriteAllText(Path.Combine(logsPath, $"worker-{instanceName}.loglevel"), ls.MinimumLevel.ToString());
         return Results.Ok(new { success = true, level = ls.MinimumLevel.ToString() });
     });
 
@@ -1957,7 +1995,7 @@ try
         return Results.Ok(new { arr, ready = true, counts });
     });
 
-    app.MapPost("/api/arr/{section}/restart", async (string section, TorrentarrConfig cfg, ArrWorkerManager workerMgr) =>
+    app.MapPost("/api/arr/{section}/restart", async (string section, TorrentarrConfig cfg, WorkerProcessSupervisor workerMgr) =>
     {
         var instanceName = cfg.ArrInstances
             .FirstOrDefault(kv => kv.Value.Category.Equals(section, StringComparison.OrdinalIgnoreCase)).Key;
@@ -2034,7 +2072,7 @@ try
         });
     });
 
-    app.MapGet("/api/sonarr/{category}/series", async (string category, TorrentarrConfig cfg, TorrentarrDbContext db, CatalogRollupService rollups, int? page, int? page_size, string? q, int? missing) =>
+    app.MapGet("/api/sonarr/{category}/series", async (string category, TorrentarrConfig cfg, TorrentarrDbContext db, CatalogRollupService rollups, int? page, int? page_size, string? q, int? missing, string? reason) =>
     {
         var keys = ArrCatalogIdentity.QueryKeys(cfg, category);
         var currentPage = page ?? 0;
@@ -2044,14 +2082,26 @@ try
         var baseQuery = db.Series.Where(s => keys.Contains(s.ArrInstance));
         var query = baseQuery;
 
-        if (missing == 1)
+        var reasonFilter = string.IsNullOrWhiteSpace(reason) || reason.Equals("all", StringComparison.OrdinalIgnoreCase)
+            ? null
+            : reason.Trim();
+        if (missing == 1 || reasonFilter is not null)
         {
-            var missingSeriesIds = await db.Episodes
-                .Where(e => keys.Contains(e.ArrInstance) && (e.EpisodeFileId == null || e.EpisodeFileId == 0))
+            var episodeQuery = db.Episodes.Where(e => keys.Contains(e.ArrInstance));
+            if (missing == 1)
+                episodeQuery = episodeQuery.Where(e => e.EpisodeFileId == null || e.EpisodeFileId == 0);
+            if (reasonFilter is not null)
+            {
+                if (reasonFilter.Equals("Not being searched", StringComparison.OrdinalIgnoreCase))
+                    episodeQuery = episodeQuery.Where(e => e.Reason == null || e.Reason == "Not being searched");
+                else
+                    episodeQuery = episodeQuery.Where(e => e.Reason == reasonFilter);
+            }
+            var seriesIdsWithMatchingEpisodes = await episodeQuery
                 .Select(e => e.SeriesId)
                 .Distinct()
                 .ToListAsync();
-            baseQuery = baseQuery.Where(s => missingSeriesIds.Contains(s.EntryId));
+            baseQuery = baseQuery.Where(s => seriesIdsWithMatchingEpisodes.Contains(s.EntryId));
             query = baseQuery;
         }
 
@@ -2070,18 +2120,29 @@ try
 
         var seriesIds = seriesPage.Select(s => s.EntryId).ToList();
 
-        var seasonGroups = await db.Episodes
+        var episodes = await db.Episodes
             .Where(e => keys.Contains(e.ArrInstance) && seriesIds.Contains(e.SeriesId))
-            .GroupBy(e => new { e.SeriesId, e.SeasonNumber })
-            .Select(g => new
+            .Select(e => new
             {
-                g.Key.SeriesId,
-                g.Key.SeasonNumber,
-                TotalCount = g.Count(),
-                HasFileCount = g.Count(e => e.EpisodeFileId != null && e.EpisodeFileId != 0),
-                MonitoredCount = g.Count(e => e.Monitored == true)
+                e.SeriesId,
+                e.SeasonNumber,
+                e.EpisodeNumber,
+                e.Title,
+                e.Monitored,
+                e.EpisodeFileId,
+                e.AirDateUtc,
+                e.Reason
             })
             .ToListAsync();
+        var seasonGroups = episodes.GroupBy(e => new { e.SeriesId, e.SeasonNumber }).Select(g => new
+        {
+            g.Key.SeriesId,
+            g.Key.SeasonNumber,
+            TotalCount = g.Count(),
+            HasFileCount = g.Count(e => e.EpisodeFileId != null && e.EpisodeFileId != 0),
+            MonitoredCount = g.Count(e => e.Monitored == true),
+            Episodes = g.Select(e => new { episodeNumber = e.EpisodeNumber, title = e.Title, monitored = e.Monitored, hasFile = e.EpisodeFileId != null && e.EpisodeFileId != 0, airDateUtc = e.AirDateUtc, reason = e.Reason }).ToArray()
+        }).ToList();
 
         var seriesList = seriesPage.Select(s =>
         {
@@ -2098,7 +2159,7 @@ try
                         monitored = g.MonitoredCount,
                         available = g.HasFileCount,
                         missing = g.TotalCount - g.HasFileCount,
-                        episodes = Array.Empty<object>()
+                        episodes = g.Episodes
                     });
 
             return new
@@ -2335,7 +2396,7 @@ try
         return Results.Content(StripSensitiveKeys(token).ToString(Newtonsoft.Json.Formatting.None), "application/json");
     });
 
-    app.MapPost("/api/config", async (HttpRequest request, TorrentarrConfig cfg, ConfigurationLoader loader, ArrWorkerManager workerMgr, QBitCategoryWorkerManager qbitCategoryMgr) =>
+    app.MapPost("/api/config", async (HttpRequest request, TorrentarrConfig cfg, ConfigurationLoader loader, WorkerProcessSupervisor workerMgr, QBitCategoryWorkerManager qbitCategoryMgr) =>
     {
         try
         {
@@ -2384,6 +2445,8 @@ try
             download_url = (string?)t.GetProperty("binary_download_url")?.GetValue(meta),
             download_name = (string?)t.GetProperty("binary_download_name")?.GetValue(meta),
             download_size = (long?)t.GetProperty("binary_download_size")?.GetValue(meta),
+            worker_download_url = (string?)t.GetProperty("worker_download_url")?.GetValue(meta),
+            worker_download_name = (string?)t.GetProperty("worker_download_name")?.GetValue(meta),
             error = (string?)t.GetProperty("binary_download_error")?.GetValue(meta)
         });
     });
@@ -2717,7 +2780,7 @@ static async Task<IResult> SaveAndRespondConfigUpdate(
     TorrentarrConfig cfg,
     TorrentarrConfig updatedConfig,
     ConfigurationLoader loader,
-    ArrWorkerManager? workerMgr = null,
+    WorkerProcessSupervisor? workerMgr = null,
     QBitCategoryWorkerManager? qbitCategoryMgr = null)
 {
     var passwordHashError = WebUIAuthHelpers.ValidatePasswordHashForConfigApiSave(cfg, updatedConfig);
@@ -2725,6 +2788,8 @@ static async Task<IResult> SaveAndRespondConfigUpdate(
         return Results.Json(new { error = passwordHashError }, statusCode: 403);
 
     var (reloadType, affectedInstancesList) = DetermineReloadType(cfg, updatedConfig);
+    var settingsChanged = Newtonsoft.Json.JsonConvert.SerializeObject(cfg.Settings)
+        != Newtonsoft.Json.JsonConvert.SerializeObject(updatedConfig.Settings);
 
     if (Newtonsoft.Json.JsonConvert.SerializeObject(cfg.GetAllTorrentClients())
         != Newtonsoft.Json.JsonConvert.SerializeObject(updatedConfig.GetAllTorrentClients()))
@@ -2743,18 +2808,27 @@ static async Task<IResult> SaveAndRespondConfigUpdate(
 
     if (workerMgr != null)
     {
-        switch (reloadType)
+        if (settingsChanged)
         {
-            case "full":
-                await workerMgr.RestartAllWorkersAsync();
-                if (qbitCategoryMgr != null)
-                    await qbitCategoryMgr.SyncWorkersWithConfigAsync();
-                break;
-            case "multi_arr":
-            case "single_arr":
-                foreach (var inst in affectedInstancesList)
-                    await workerMgr.RestartWorkerAsync(inst);
-                break;
+            await workerMgr.RestartAllWorkersAsync();
+            if (reloadType == "full" && qbitCategoryMgr != null)
+                await qbitCategoryMgr.SyncWorkersWithConfigAsync();
+        }
+        else
+        {
+            switch (reloadType)
+            {
+                case "full":
+                    await workerMgr.RestartAllWorkersAsync();
+                    if (qbitCategoryMgr != null)
+                        await qbitCategoryMgr.SyncWorkersWithConfigAsync();
+                    break;
+                case "multi_arr":
+                case "single_arr":
+                    foreach (var inst in affectedInstancesList)
+                        await workerMgr.RestartWorkerAsync(inst);
+                    break;
+            }
         }
     }
 
@@ -2851,7 +2925,7 @@ static (string reloadType, List<string> affectedInstances) DetermineReloadType(
     bool hasQBitChanges = serialize(oldCfg.QBitInstances) != serialize(newCfg.QBitInstances)
         || serialize(oldCfg.TorrentClients) != serialize(newCfg.TorrentClients);
 
-    // Settings changes → webui reload (workers pick up changes at next cycle)
+    // Settings changes → webui reload; the isolated workers need a restart to load them.
     bool hasSettingsChanges = serialize(oldCfg.Settings) != serialize(newCfg.Settings);
 
     // WebUI connection fields (host/port/token) → webui restart

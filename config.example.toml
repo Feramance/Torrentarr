@@ -87,8 +87,8 @@ Port = 6969
 Token = "your-secure-token-here"
 
 # Authentication: AuthDisabled=true (default) = no login; false = require login (Local and/or OIDC). See docs/configuration/webui-authentication.md
-AuthDisabled = true
-LocalAuthEnabled = false
+AuthDisabled = false
+LocalAuthEnabled = true
 OIDCEnabled = false
 
 # Enable live updates for Arr views
@@ -140,7 +140,7 @@ MaxUploadRatio = 2.0
 MaxSeedingTime = 604800
 
 # Remove mode: -1=Never, 1=Ratio, 2=Time, 3=OR, 4=AND
-RemoveMode = 1
+RemoveTorrent = -1
 
 # Enable Hit & Run protection
 HitAndRunMode = "and"

@@ -8,6 +8,63 @@ namespace Torrentarr.Host.Tests;
 
 public class UpdateServiceTests
 {
+    [Fact]
+    public void AssetPatterns_MatchPublishedNames()
+    {
+        UpdateService.GetAssetPattern(System.Runtime.InteropServices.OSPlatform.Windows, System.Runtime.InteropServices.Architecture.X64).Should().Be("windows-x64");
+        UpdateService.GetAssetPattern(System.Runtime.InteropServices.OSPlatform.OSX, System.Runtime.InteropServices.Architecture.Arm64).Should().Be("macos-arm64");
+        UpdateService.GetAssetPattern(System.Runtime.InteropServices.OSPlatform.Linux, System.Runtime.InteropServices.Architecture.X64).Should().Be("linux-x64");
+    }
+
+    [Fact]
+    public void WindowsUpdate_UsesInstalledHostNameAndWaitsForPid()
+    {
+        var dir = Path.Combine(Path.GetTempPath(), $"torrentarr-windows-update-test-{Guid.NewGuid():N}");
+        Directory.CreateDirectory(dir);
+        try
+        {
+            File.WriteAllText(Path.Combine(dir, "torrentarr-windows-x64.exe"), "host");
+            File.WriteAllText(Path.Combine(dir, "torrentarr-workers-windows-x64.exe"), "worker");
+            var script = UpdateService.PrepareWindowsUpdateScript(Path.Combine(dir, "custom.exe"), dir, dir, 12345);
+            File.ReadAllText(Path.Combine(dir, "custom.exe")).Should().Be("host");
+            File.Exists(Path.Combine(dir, "torrentarr-workers-windows-x64.exe")).Should().BeTrue();
+            script.Should().Contain("PID eq 12345").And.Contain("findstr /c:\"12345\"");
+            script.Should().Contain("|| exit /b 1");
+        }
+        finally { Directory.Delete(dir, true); }
+    }
+
+    [Fact]
+    public async Task UnixUpdate_ReplacesRunningWorkerByRename()
+    {
+        if (!OperatingSystem.IsLinux()) return;
+        var dir = Path.Combine(Path.GetTempPath(), $"torrentarr-update-test-{Guid.NewGuid():N}");
+        var extracted = Path.Combine(dir, "extracted");
+        Directory.CreateDirectory(extracted);
+        var worker = Path.Combine(dir, "torrentarr-workers-linux-x64");
+        File.Copy("/bin/sleep", worker);
+        File.SetUnixFileMode(worker, UnixFileMode.UserRead | UnixFileMode.UserWrite | UnixFileMode.UserExecute);
+        using var process = System.Diagnostics.Process.Start(worker, "60")!;
+        try
+        {
+            var host = Path.Combine(dir, "torrentarr");
+            await File.WriteAllTextAsync(host, "old host");
+            await File.WriteAllTextAsync(Path.Combine(extracted, "torrentarr-linux-x64"), "new host");
+            await File.WriteAllTextAsync(Path.Combine(extracted, Path.GetFileName(worker)), "new worker");
+            await UpdateService.ApplyUnixUpdateAsync(host, dir, extracted);
+            (await File.ReadAllTextAsync(worker)).Should().Be("new worker");
+            (await File.ReadAllTextAsync(host)).Should().Be("new host");
+            process.HasExited.Should().BeFalse();
+            File.GetUnixFileMode(worker).Should().HaveFlag(UnixFileMode.UserExecute);
+        }
+        finally
+        {
+            if (!process.HasExited) process.Kill();
+            await process.WaitForExitAsync();
+            Directory.Delete(dir, true);
+        }
+    }
+
     [Theory]
     [InlineData("latest", "latest")]
     [InlineData("stable", "stable")]

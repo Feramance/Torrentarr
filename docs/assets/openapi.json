@@ -148,7 +148,7 @@
     }
   },
   "info": {
-    "description": "API for qBittorrent + Arr automation (Torrentarr \u2014 C# port of qBitrr). Aligned with qBitrr v5.14.5-1. When WebUI.AuthDisabled is false, most routes require a Bearer token (WebUI.Token) or a valid browser session after login. Interactive docs: GET /web/docs or GET /api/docs.",
+    "description": "API for qBittorrent + Arr automation (Torrentarr \u2014 C# port of qBitrr). Aligned with qBitrr v5.14.6-1, master commit 329e604e4e8512b1e32ba86e61920e1ae1e07a65. When WebUI.AuthDisabled is false, most routes require a Bearer token (WebUI.Token) or a valid browser session after login. Interactive docs: GET /web/docs or GET /api/docs.",
     "title": "Torrentarr API",
     "version": "v1"
   },

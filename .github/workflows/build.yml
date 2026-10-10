@@ -97,8 +97,16 @@ jobs:
           --runtime "$RUNNER_RID" \
           --self-contained true \
           --output "$RUNNER_TEMP/torrentarr-standalone"
-        file_count=$(find "$RUNNER_TEMP/torrentarr-standalone" -mindepth 1 -maxdepth 1 -type f | wc -l)
-        test "$file_count" -eq 1
+        dotnet publish src/Torrentarr.Workers/Torrentarr.Workers.csproj \
+          --configuration Release \
+          --runtime "$RUNNER_RID" \
+          --self-contained true \
+          --output "$RUNNER_TEMP/torrentarr-standalone"
+        if [[ "$RUNNER_RID" == win-* ]]; then
+          test -f "$RUNNER_TEMP/torrentarr-standalone/Torrentarr.Workers.exe"
+        else
+          test -x "$RUNNER_TEMP/torrentarr-standalone/Torrentarr.Workers"
+        fi
         if [[ "$RUNNER_RID" == win-* ]]; then
           pwsh -NoLogo -NoProfile -NonInteractive -File scripts/smoke-standalone.ps1 \
             -Binary "$RUNNER_TEMP/torrentarr-standalone/Torrentarr.Host.exe"

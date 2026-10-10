@@ -686,6 +686,7 @@ export function RadarrView({ active }: { active: boolean }): JSX.Element {
           RADARR_PAGE_SIZE,
           query,
         );
+        if (instanceKeyRef.current !== key) return;
         setInstanceData(response);
         const resolvedPage = response.page ?? page;
         setInstancePage(resolvedPage);
@@ -853,6 +854,7 @@ export function RadarrView({ active }: { active: boolean }): JSX.Element {
     if (!selection || selection === "aggregate") return;
     instancePagesRef.current = {};
     setInstancePages({});
+    setInstanceData(null);
     setInstanceTotalPages(1);
     setInstancePage(0);
     const query = globalSearchRef.current;
@@ -1012,6 +1014,7 @@ export function RadarrView({ active }: { active: boolean }): JSX.Element {
     const pages = Object.keys(instancePages)
       .map(Number)
       .sort((a, b) => a - b);
+    if (!pages.length) return instanceData?.movies ?? [];
     const rows: RadarrMovie[] = [];
     pages.forEach((pg) => {
       if (instancePages[pg]) {
@@ -1019,7 +1022,7 @@ export function RadarrView({ active }: { active: boolean }): JSX.Element {
       }
     });
     return rows;
-  }, [instancePages]);
+  }, [instanceData, instancePages]);
 
   const handleRestart = useCallback(async () => {
     if (!selection || selection === "aggregate") return;

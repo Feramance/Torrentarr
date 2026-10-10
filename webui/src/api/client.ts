@@ -333,7 +333,7 @@ export async function getSonarrSeries(
   page: number,
   pageSize: number,
   q: string,
-  options?: { missingOnly?: boolean },
+  options?: { missingOnly?: boolean; reasonFilter?: string | null },
 ): Promise<SonarrSeriesResponse> {
   const params = new URLSearchParams();
   params.set("page", String(page));
@@ -342,6 +342,7 @@ export async function getSonarrSeries(
   if (options?.missingOnly) {
     params.set("missing", "1");
   }
+  if (options?.reasonFilter) params.set("reason", options.reasonFilter);
   return fetchJson<SonarrSeriesResponse>(
     `/web/sonarr/${encodeURIComponent(category)}/series?${params}`,
   );
@@ -352,6 +353,7 @@ export async function getLidarrArtists(
   page: number,
   pageSize: number,
   query?: string,
+  options?: { missingOnly?: boolean; reasonFilter?: string | null },
 ): Promise<LidarrArtistsResponse> {
   const params = new URLSearchParams();
   params.set("page", page.toString());
@@ -359,9 +361,32 @@ export async function getLidarrArtists(
   if (query) {
     params.set("q", query);
   }
+  if (options?.missingOnly) params.set("missing", "true");
+  if (options?.reasonFilter) params.set("reason", options.reasonFilter);
   return fetchJson<LidarrArtistsResponse>(
     `/web/lidarr/${encodeURIComponent(category)}/artists?${params}`,
   );
+}
+
+export function getRadarrOpenMovieUrl(
+  category: string,
+  id: number,
+): string | null {
+  return webPath(`/web/arr/${encodeURIComponent(category)}/open/movie/${id}`);
+}
+
+export function getSonarrOpenSeriesUrl(
+  category: string,
+  id: number,
+): string | null {
+  return webPath(`/web/arr/${encodeURIComponent(category)}/open/series/${id}`);
+}
+
+export function getLidarrOpenArtistUrl(
+  category: string,
+  id: number,
+): string | null {
+  return webPath(`/web/arr/${encodeURIComponent(category)}/open/artist/${id}`);
 }
 
 export async function getLidarrArtistDetail(

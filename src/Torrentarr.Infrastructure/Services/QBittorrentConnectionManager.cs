@@ -98,10 +98,15 @@ public class QBittorrentConnectionManager : ITorrentClientRegistry
         if (compatible.Disabled) return false;
         lock (_clientsLock) if (_clients.ContainsKey(name)) return true;
         var client = factory.Create(name, compatible);
+        if (client is not QBittorrentClient qbitClient)
+        {
+            _logger.LogError("Torrent client adapter '{Type}' must currently derive from QBittorrentClient", config.Type);
+            return false;
+        }
         try
         {
             if (!await client.LoginAsync(cancellationToken)) return false;
-            lock (_clientsLock) _clients[name] = (QBittorrentClient)client;
+            lock (_clientsLock) _clients[name] = qbitClient;
             _lastConnected[name] = DateTime.UtcNow;
             _logger.LogInformation("Connected torrent client '{Name}' ({Type}) {Version}",
                 name, config.Type, await client.GetVersionAsync(cancellationToken));
@@ -206,61 +211,6 @@ public class QBittorrentConnectionManager : ITorrentClientRegistry
     }
 }
 
-
-/// <summary>Client-neutral registry. Adapters are selected exclusively by their declared type.</summary>
-public sealed class TorrentClientRegistry : ITorrentClientRegistry
-{
-    private readonly ILogger<TorrentClientRegistry> _logger;
-    private readonly IReadOnlyDictionary<string, ITorrentClientFactory> _factories;
-    private readonly ConcurrentDictionary<string, ITorrentClient> _clients = new(StringComparer.OrdinalIgnoreCase);
-
-    public TorrentClientRegistry(
-        ILogger<TorrentClientRegistry> logger,
-        IEnumerable<ITorrentClientFactory> factories)
-    {
-        _logger = logger;
-        _factories = factories.ToDictionary(factory => factory.Type, StringComparer.OrdinalIgnoreCase);
-    }
-
-    public async Task<bool> InitializeAsync(string name, TorrentClientInstanceConfig config, CancellationToken ct = default)
-    {
-        if (config.Disabled) return false;
-        if (_clients.ContainsKey(name)) return true;
-        if (!_factories.TryGetValue(config.Type, out var factory))
-        {
-            _logger.LogError("No adapter is registered for torrent client type '{Type}'", config.Type);
-            return false;
-        }
-        var client = factory.Create(name, config);
-        try
-        {
-            if (!await client.LoginAsync(ct)) return false;
-            _clients.TryAdd(name, client);
-            _logger.LogInformation("Connected torrent client '{Name}' ({Type}) {Version}",
-                name, config.Type, await client.GetVersionAsync(ct));
-            return true;
-        }
-        catch (Exception ex)
-        {
-            _logger.LogError(ex, "Error connecting torrent client '{Name}' ({Type})", name, config.Type);
-            return false;
-        }
-    }
-
-    public async Task<int> EnsureAllConnectedAsync(IEnumerable<KeyValuePair<string, TorrentClientInstanceConfig>> instances, CancellationToken ct = default)
-    {
-        var connected = 0;
-        foreach (var (name, config) in instances)
-            if (!config.Disabled && config.Host != "CHANGE_ME" && await InitializeAsync(name, config, ct)) connected++;
-        return connected;
-    }
-
-    public ITorrentClient? GetClient(string instanceId) => _clients.GetValueOrDefault(instanceId);
-    public IReadOnlyDictionary<string, ITorrentClient> GetAllClients()
-        => new Dictionary<string, ITorrentClient>(_clients, StringComparer.OrdinalIgnoreCase);
-    public bool IsConnected() => _clients.Count > 0;
-    public bool IsConnected(string instanceId) => _clients.ContainsKey(instanceId);
-}
 
 public class ConnectionInfo
 {
