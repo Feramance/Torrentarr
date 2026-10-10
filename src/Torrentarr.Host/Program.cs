@@ -212,7 +212,6 @@ try
     builder.Services.AddHostedService(sp => sp.GetRequiredService<QBitCategoryWorkerManager>());
     builder.Services.AddHostedService<PeriodicWalCheckpointService>();
     builder.Services.AddSingleton<IConfigReloader, ConfigReloader>();
-    builder.Services.AddHostedService<FfprobeAutoUpdateService>();
     // §6.10 / §1.8: update check + auto-update
     builder.Services.AddSingleton<UpdateService>();
     builder.Services.AddHostedService<AutoUpdateBackgroundService>();
@@ -924,7 +923,7 @@ try
         }
 
         foreach (var status in (await workers.GetProcessStatusAsync()).Values)
-            processes.Add(new { category = cfg.ArrInstances.GetValueOrDefault(status.Name)?.Category ?? status.Name, name = status.Name, kind = status.Kind, pid = status.ProcessId, alive = status.IsAlive, rebuilding = false, searchSummary = (string?)null, searchTimestamp = (string?)null, queueCount = (int?)null, categoryCount = (int?)null, metricType = (string?)null, status = status.IsAlive ? "Running" : "Stopped", restartKey = status.Name });
+            processes.Add(new { category = cfg.ArrInstances.GetValueOrDefault(status.Name)?.Category ?? status.Name, name = status.Name, kind = status.Kind, pid = status.ProcessId, alive = status.IsAlive, rebuilding = false, searchSummary = status.SearchSummary, searchTimestamp = status.SearchTimestamp, queueCount = status.QueueCount, categoryCount = status.CategoryCount, metricType = status.MetricType, status = status.IsAlive ? "Running" : "Stopped", restartKey = status.Name });
 
         return Results.Ok(new { processes });
     });
@@ -1872,7 +1871,7 @@ try
             metricType = s.MetricType
         }).ToList<object>();
         foreach (var status in (await workers.GetProcessStatusAsync()).Values)
-            processes.Add(new { category = cfg.ArrInstances.GetValueOrDefault(status.Name)?.Category ?? status.Name, name = status.Name, kind = status.Kind, pid = status.ProcessId, alive = status.IsAlive, rebuilding = false, searchSummary = (string?)null, searchTimestamp = (string?)null, queueCount = (int?)null, categoryCount = (int?)null, metricType = (string?)null, status = status.IsAlive ? "Running" : "Stopped", restartKey = status.Name });
+            processes.Add(new { category = cfg.ArrInstances.GetValueOrDefault(status.Name)?.Category ?? status.Name, name = status.Name, kind = status.Kind, pid = status.ProcessId, alive = status.IsAlive, rebuilding = false, searchSummary = status.SearchSummary, searchTimestamp = status.SearchTimestamp, queueCount = status.QueueCount, categoryCount = status.CategoryCount, metricType = status.MetricType, status = status.IsAlive ? "Running" : "Stopped", restartKey = status.Name });
         return Results.Ok(new { processes });
     });
 

@@ -40,4 +40,9 @@ public class ProcessStatus
     public DateTime? LastHeartbeat { get; set; }
     public int RestartCount { get; set; }
     public bool RestartRequested { get; set; }
+    public string? SearchSummary { get; set; }
+    public string? SearchTimestamp { get; set; }
+    public int? QueueCount { get; set; }
+    public int? CategoryCount { get; set; }
+    public string? MetricType { get; set; }
 }

@@ -21,6 +21,7 @@ var statusPath = args.Contains("--status-path") && args.Length > Array.IndexOf(a
     : null;
 var parentPid = args.Contains("--parent-pid") && args.Length > Array.IndexOf(args, "--parent-pid") + 1
     && int.TryParse(args[Array.IndexOf(args, "--parent-pid") + 1], out var parsedParentPid) ? parsedParentPid : 0;
+var runtimeMetrics = new WorkerRuntimeMetrics();
 
 // Data directory: aligned with resolved config path (see ConfigurationLoader.GetDataDirectoryPath)
 var basePath = ConfigurationLoader.GetDataDirectoryPath();
@@ -143,6 +144,7 @@ try
     builder.Services.AddSerilog();
     builder.Services.AddSingleton(config);
     builder.Services.AddSingleton(instanceConfig);
+    builder.Services.AddSingleton(runtimeMetrics);
     builder.Services.AddSingleton(new WorkerContext { InstanceName = instanceName });
 
     // Add database context - use same dbPath as defined at startup
@@ -189,7 +191,19 @@ try
                 Directory.CreateDirectory(statusDirectory);
             try
             {
-                await File.WriteAllTextAsync(tmp, System.Text.Json.JsonSerializer.Serialize(new { version = 1, instance = instanceName, pid = Environment.ProcessId, heartbeat = DateTimeOffset.UtcNow, restartRequested = restartCoordinator.RestartRequested }));
+                await File.WriteAllTextAsync(tmp, System.Text.Json.JsonSerializer.Serialize(new
+                {
+                    version = 1,
+                    instance = instanceName,
+                    pid = Environment.ProcessId,
+                    heartbeat = DateTimeOffset.UtcNow,
+                    restartRequested = restartCoordinator.RestartRequested,
+                    searchSummary = runtimeMetrics.SearchSummary,
+                    searchTimestamp = runtimeMetrics.SearchTimestamp,
+                    queueCount = runtimeMetrics.QueueCount,
+                    categoryCount = runtimeMetrics.CategoryCount,
+                    metricType = runtimeMetrics.MetricType
+                }));
                 File.Move(tmp, statusPath, true);
             }
             catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
@@ -247,6 +261,7 @@ class ArrWorkerService : BackgroundService
     private readonly QBittorrentConnectionManager _qbitManager;
     private readonly IConnectivityService _connectivityService;
     private readonly SearchYearCursor _yearCursor;
+    private readonly WorkerRuntimeMetrics _runtimeMetrics;
     private DateTime _lastRssSync = DateTime.MinValue;
     private DateTime _lastRefreshDownloads = DateTime.MinValue;
     private bool _searchLoopCompleted;
@@ -274,7 +289,8 @@ class ArrWorkerService : BackgroundService
         IServiceProvider serviceProvider,
         QBittorrentConnectionManager qbitManager,
         IConnectivityService connectivityService,
-        SearchYearCursor yearCursor)
+        SearchYearCursor yearCursor,
+        WorkerRuntimeMetrics runtimeMetrics)
     {
         _logger = logger;
         _config = config;
@@ -284,6 +300,7 @@ class ArrWorkerService : BackgroundService
         _qbitManager = qbitManager;
         _connectivityService = connectivityService;
         _yearCursor = yearCursor;
+        _runtimeMetrics = runtimeMetrics;
     }
 
     protected override async Task ExecuteAsync(CancellationToken stoppingToken)
@@ -473,6 +490,33 @@ class ArrWorkerService : BackgroundService
         if (!_instanceConfig.SearchOnly)
             await torrentProcessor.ProcessTorrentsAsync(_instanceConfig.Category, cancellationToken);
 
+        try
+        {
+            var categoryCount = 0;
+            foreach (var client in _qbitManager.GetAllClients().Values)
+                try { categoryCount += (await client.GetTorrentsAsync(_instanceConfig.Category, cancellationToken: cancellationToken)).Count; }
+                catch { }
+            _runtimeMetrics.CategoryCount = categoryCount;
+
+            var db = scope.ServiceProvider.GetRequiredService<TorrentarrDbContext>();
+            _runtimeMetrics.QueueCount = _instanceConfig.Type.ToLowerInvariant() switch
+            {
+                "radarr" => await db.MovieQueue.CountAsync(q => q.ArrInstance == _context.InstanceName, cancellationToken),
+                "sonarr" => await db.EpisodeQueue.CountAsync(q => q.ArrInstance == _context.InstanceName, cancellationToken),
+                "lidarr" => await db.AlbumQueue.CountAsync(q => q.ArrInstance == _context.InstanceName, cancellationToken),
+                "readarr" => await db.BookQueue.CountAsync(q => q.ArrInstance == _context.InstanceName, cancellationToken),
+                _ => null
+            };
+        }
+        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+        {
+            throw;
+        }
+        catch (Exception ex)
+        {
+            _logger.LogDebug(ex, "Unable to update process metrics for {Instance}", _context.InstanceName);
+        }
+
         if (!_instanceConfig.SearchOnly
             && !string.IsNullOrWhiteSpace(_config.Settings.CompletedDownloadFolder)
             && _config.Settings.CompletedDownloadFolder != "CHANGE_ME")
@@ -558,6 +602,11 @@ class ArrWorkerService : BackgroundService
                 && _yearCursor.Advance(_context.InstanceName);
             _searchLoopCompleted = !hasMoreYears;
         }
+        _runtimeMetrics.SearchSummary = searchResult == null
+            ? "Idle"
+            : $"{searchResult.SearchesTriggered} searches triggered ({searchResult.ItemsSearched} items)";
+        _runtimeMetrics.SearchTimestamp = DateTimeOffset.UtcNow.ToString("O");
+        _runtimeMetrics.MetricType = "search";
     }
 
     private async Task ResetSearchedFlagsAsync(TorrentarrDbContext db, CancellationToken ct)
@@ -591,8 +640,19 @@ class ArrWorkerService : BackgroundService
         if (_instanceConfig.Search.UseTempForMissing && _instanceConfig.Search.ForceResetTempProfiles)
         {
             using var scope = _serviceProvider.CreateScope();
-            await scope.ServiceProvider.GetRequiredService<QualityProfileSwitcherService>()
-                .ForceResetAllTempProfilesAsync(_context.InstanceName, _instanceConfig, cancellationToken);
+            try
+            {
+                await scope.ServiceProvider.GetRequiredService<QualityProfileSwitcherService>()
+                    .ForceResetAllTempProfilesAsync(_context.InstanceName, _instanceConfig, cancellationToken);
+            }
+            catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+            {
+                throw;
+            }
+            catch (Exception ex)
+            {
+                _logger.LogWarning(ex, "ForceResetTempProfiles failed for {Instance}; continuing worker startup", _context.InstanceName);
+            }
         }
     }
 
@@ -672,4 +732,13 @@ class ArrWorkerService : BackgroundService
 
         return false;
     }
+}
+
+sealed class WorkerRuntimeMetrics
+{
+    public string? SearchSummary { get; set; }
+    public string? SearchTimestamp { get; set; }
+    public int? QueueCount { get; set; }
+    public int? CategoryCount { get; set; }
+    public string? MetricType { get; set; }
 }

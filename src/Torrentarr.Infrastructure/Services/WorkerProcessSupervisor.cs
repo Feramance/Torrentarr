@@ -5,6 +5,7 @@ using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
 using Torrentarr.Core.Configuration;
 using Torrentarr.Core.Interfaces;
+using Torrentarr.Core.Services;
 
 namespace Torrentarr.Infrastructure.Services;
 
@@ -13,20 +14,26 @@ public sealed class WorkerProcessSupervisor : BackgroundService, IProcessOrchest
 {
     private readonly TorrentarrConfig _config;
     private readonly ILogger<WorkerProcessSupervisor> _logger;
+    private readonly IMediaValidationService _mediaValidation;
     private readonly Dictionary<string, Process> _processes = new(StringComparer.OrdinalIgnoreCase);
     private readonly Dictionary<string, int> _restartCounts = new(StringComparer.OrdinalIgnoreCase);
     private readonly Dictionary<string, List<DateTime>> _restartTimes = new(StringComparer.OrdinalIgnoreCase);
     private volatile bool _stopping;
     private readonly object _gate = new();
 
-    public WorkerProcessSupervisor(TorrentarrConfig config, ILogger<WorkerProcessSupervisor> logger)
+    public WorkerProcessSupervisor(
+        TorrentarrConfig config,
+        ILogger<WorkerProcessSupervisor> logger,
+        IMediaValidationService mediaValidation)
     {
         _config = config;
         _logger = logger;
+        _mediaValidation = mediaValidation;
     }
 
     protected override async Task ExecuteAsync(CancellationToken stoppingToken)
     {
+        await EnsureFFprobeUpdatedAsync(stoppingToken);
         StartWorkers();
         try
         {
@@ -52,7 +59,11 @@ public sealed class WorkerProcessSupervisor : BackgroundService, IProcessOrchest
                 StartWorker(name);
     }
 
-    async Task IProcessOrchestrator.StartAsync(CancellationToken cancellationToken) { StartWorkers(); await Task.CompletedTask; }
+    async Task IProcessOrchestrator.StartAsync(CancellationToken cancellationToken)
+    {
+        await EnsureFFprobeUpdatedAsync(cancellationToken);
+        StartWorkers();
+    }
 
     async Task IProcessOrchestrator.StopAsync(CancellationToken cancellationToken) => await StopWorkersAsync(cancellationToken);
 
@@ -102,6 +113,25 @@ public sealed class WorkerProcessSupervisor : BackgroundService, IProcessOrchest
     }
 
     public Task RestartWorkerAsync(string processName) => RestartProcessAsync(processName);
+
+    private async Task EnsureFFprobeUpdatedAsync(CancellationToken cancellationToken)
+    {
+        if (!_config.Settings.FFprobeAutoUpdate)
+            return;
+
+        try
+        {
+            await _mediaValidation.UpdateFFprobeAsync(cancellationToken);
+        }
+        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+        {
+            throw;
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(ex, "FFprobe auto-update failed before worker startup");
+        }
+    }
     public async Task RestartAllWorkersAsync()
     {
         string[] running;
@@ -124,19 +154,29 @@ public sealed class WorkerProcessSupervisor : BackgroundService, IProcessOrchest
                 var heartbeat = StatusPath(name);
                 var lastHeartbeat = File.Exists(heartbeat) ? File.GetLastWriteTimeUtc(heartbeat) : (DateTime?)null;
                 var restartRequested = false;
+                string? searchSummary = null;
+                string? searchTimestamp = null;
+                int? queueCount = null;
+                int? categoryCount = null;
+                string? metricType = null;
                 if (File.Exists(heartbeat))
                 {
                     try
                     {
                         using var doc = JsonDocument.Parse(File.ReadAllText(heartbeat));
                         restartRequested = doc.RootElement.TryGetProperty("restartRequested", out var value) && value.GetBoolean();
+                        searchSummary = doc.RootElement.TryGetProperty("searchSummary", out var summary) ? summary.GetString() : null;
+                        searchTimestamp = doc.RootElement.TryGetProperty("searchTimestamp", out var timestamp) ? timestamp.GetString() : null;
+                        queueCount = doc.RootElement.TryGetProperty("queueCount", out var queue) && queue.ValueKind == JsonValueKind.Number ? queue.GetInt32() : null;
+                        categoryCount = doc.RootElement.TryGetProperty("categoryCount", out var category) && category.ValueKind == JsonValueKind.Number ? category.GetInt32() : null;
+                        metricType = doc.RootElement.TryGetProperty("metricType", out var metric) ? metric.GetString() : null;
                     }
                     catch { }
                 }
                 var started = process.StartTime.ToUniversalTime();
                 var alive = !process.HasExited && (DateTime.UtcNow - started < TimeSpan.FromSeconds(15)
                     || (lastHeartbeat != null && lastHeartbeat >= started && DateTime.UtcNow - lastHeartbeat < TimeSpan.FromSeconds(15)));
-                result[name] = new ProcessStatus { Name = name, Kind = "worker", ProcessId = alive ? process.Id : null, IsAlive = alive, LastHeartbeat = lastHeartbeat, RestartRequested = restartRequested };
+                result[name] = new ProcessStatus { Name = name, Kind = "worker", ProcessId = alive ? process.Id : null, IsAlive = alive, LastHeartbeat = lastHeartbeat, RestartRequested = restartRequested, SearchSummary = searchSummary, SearchTimestamp = searchTimestamp, QueueCount = queueCount, CategoryCount = categoryCount, MetricType = metricType };
             }
             foreach (var (name, config) in _config.ArrInstances)
                 if (IsEligible(config) && !result.ContainsKey(name))
