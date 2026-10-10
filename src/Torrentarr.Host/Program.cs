@@ -218,6 +218,12 @@ try
 
     builder.Services.AddSingleton<IPasswordHasher, BCryptPasswordHasher>();
     builder.Services.AddHttpClient();
+    builder.Services.AddHttpClient("ArrOpen").ConfigurePrimaryHttpMessageHandler(() => new HttpClientHandler { AllowAutoRedirect = false });
+    builder.Services.AddHttpClient("ArrOpenSkipTls").ConfigurePrimaryHttpMessageHandler(() => new HttpClientHandler
+    {
+        AllowAutoRedirect = false,
+        ServerCertificateCustomValidationCallback = HttpClientHandler.DangerousAcceptAnyServerCertificateValidator
+    });
     builder.Services.AddScoped<CatalogRollupService>();
     builder.Services.AddScoped<ArrThumbnailService>();
 

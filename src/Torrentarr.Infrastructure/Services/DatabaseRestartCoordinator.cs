@@ -14,7 +14,10 @@ public class DatabaseRestartCoordinator
 
     public bool RestartRequested => _restartRequested;
 
-    public (bool Requested, long Version) GetRestartRequest() => (_restartRequested, Interlocked.Read(ref _restartVersion));
+    public (bool Requested, long Version) GetRestartRequest()
+    {
+        lock (_lock) return (_restartRequested, _restartVersion);
+    }
 
     public void RecordDatabaseError()
     {

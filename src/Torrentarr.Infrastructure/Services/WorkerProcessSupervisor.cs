@@ -34,6 +34,7 @@ public sealed class WorkerProcessSupervisor : BackgroundService, IProcessOrchest
     protected override async Task ExecuteAsync(CancellationToken stoppingToken)
     {
         await EnsureFFprobeUpdatedAsync(stoppingToken);
+        stoppingToken.ThrowIfCancellationRequested();
         StartWorkers();
         try
         {
@@ -62,6 +63,7 @@ public sealed class WorkerProcessSupervisor : BackgroundService, IProcessOrchest
     async Task IProcessOrchestrator.StartAsync(CancellationToken cancellationToken)
     {
         await EnsureFFprobeUpdatedAsync(cancellationToken);
+        cancellationToken.ThrowIfCancellationRequested();
         StartWorkers();
     }
 
@@ -279,13 +281,13 @@ public sealed class WorkerProcessSupervisor : BackgroundService, IProcessOrchest
         }
     }
 
-    private static ProcessStartInfo ResolveWorkerStartInfo(string instanceName)
+    internal static ProcessStartInfo ResolveWorkerStartInfo(string instanceName, string? baseDirectory = null)
     {
         var configured = Environment.GetEnvironmentVariable("TORRENTARR_WORKER_PATH");
         if (!string.IsNullOrWhiteSpace(configured))
-            return Build(configured, instanceName, Path.GetDirectoryName(configured));
+            return Build(configured, instanceName);
 
-        var baseDir = AppContext.BaseDirectory;
+        var baseDir = baseDirectory ?? AppContext.BaseDirectory;
         var releaseName = RuntimeInformation.ProcessArchitecture switch
         {
             Architecture.Arm64 when OperatingSystem.IsLinux() => "linux-arm64",
@@ -295,18 +297,21 @@ public sealed class WorkerProcessSupervisor : BackgroundService, IProcessOrchest
             _ => "linux-x64"
         };
         var releasedWorker = Path.Combine(baseDir, $"torrentarr-workers-{releaseName}");
-        if (File.Exists(releasedWorker)) return Build(releasedWorker, instanceName, baseDir);
+        if (File.Exists(releasedWorker)) return Build(releasedWorker, instanceName);
         var executable = Path.Combine(baseDir, OperatingSystem.IsWindows() ? "Torrentarr.Workers.exe" : "Torrentarr.Workers");
-        if (File.Exists(executable)) return Build(executable, instanceName, baseDir);
         var dll = Path.Combine(baseDir, "Torrentarr.Workers.dll");
-        if (File.Exists(dll)) return Build("dotnet", instanceName, baseDir, dll);
-        var devDll = Path.GetFullPath(Path.Combine(baseDir, "..", "..", "..", "..", "Torrentarr.Workers", "bin", "Debug", "net10.0", "Torrentarr.Workers.dll"));
-        return Build(File.Exists(devDll) ? "dotnet" : "Torrentarr.Workers", instanceName, Path.GetDirectoryName(devDll), File.Exists(devDll) ? devDll : null);
+        // A source project reference copies the apphost but can omit its DLL.
+        if (File.Exists(executable) && (File.Exists(dll) || !File.Exists(Path.Combine(baseDir, "Torrentarr.Workers.runtimeconfig.json"))))
+            return Build(executable, instanceName);
+        if (File.Exists(dll)) return Build("dotnet", instanceName, dll);
+        var configuration = new DirectoryInfo(baseDir).Parent?.Name == "Release" ? "Release" : "Debug";
+        var devDll = Path.GetFullPath(Path.Combine(baseDir, "..", "..", "..", "..", "Torrentarr.Workers", "bin", configuration, "net10.0", "Torrentarr.Workers.dll"));
+        return Build(File.Exists(devDll) ? "dotnet" : "Torrentarr.Workers", instanceName, File.Exists(devDll) ? devDll : null);
     }
 
-    private static ProcessStartInfo Build(string executable, string instance, string? workingDirectory, string? dll = null)
+    private static ProcessStartInfo Build(string executable, string instance, string? dll = null)
     {
-        var info = new ProcessStartInfo(executable) { WorkingDirectory = workingDirectory ?? AppContext.BaseDirectory, UseShellExecute = false, RedirectStandardInput = true, RedirectStandardOutput = false, RedirectStandardError = false };
+        var info = new ProcessStartInfo(executable) { WorkingDirectory = Directory.GetCurrentDirectory(), UseShellExecute = false, RedirectStandardInput = true, RedirectStandardOutput = false, RedirectStandardError = false };
         info.Environment["TORRENTARR_CONFIG"] = Path.GetFullPath(ConfigurationLoader.GetDefaultConfigPath());
         if (dll != null) info.ArgumentList.Add(dll);
         info.ArgumentList.Add("--instance");

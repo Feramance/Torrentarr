@@ -1000,8 +1000,10 @@ public class SeedingService : ISeedingService
                 var toCreate = allTags.Where(t => !existing.Contains(t, StringComparer.OrdinalIgnoreCase)).ToList();
                 if (toCreate.Count > 0)
                 {
-                    await client.CreateTagsAsync(toCreate, cancellationToken);
-                    _logger.LogDebug("Pre-created tracker tags on qBit: {Tags}", string.Join(", ", toCreate));
+                    if (await client.CreateTagsAsync(toCreate, cancellationToken))
+                        _logger.LogDebug("Pre-created tracker tags on qBit: {Tags}", string.Join(", ", toCreate));
+                    else
+                        succeeded = false;
                 }
             }
             catch (Exception ex)

@@ -76,7 +76,7 @@ public static class ArrCatalogEndpoints
                 }
 
                 var artistIds = await albumQuery.Select(al => al.ArtistId).Distinct().ToListAsync();
-                query = query.Where(a => artistIds.Contains(a.ArrId) || artistIds.Contains(a.EntryId));
+                query = query.Where(a => artistIds.Contains(a.ArrId));
             }
 
             var total = await query.CountAsync();
@@ -129,7 +129,7 @@ public static class ArrCatalogEndpoints
                     .ToList();
             }
 
-            var artistIdsListed = artists.Select(a => a.ArrId).Concat(artists.Select(a => a.EntryId)).Distinct().ToList();
+            var artistIdsListed = artists.Select(a => a.ArrId).Distinct().ToList();
             var albumStats = await db.Albums
                 .Where(al => keys.Contains(al.ArrInstance) && artistIdsListed.Contains(al.ArtistId))
                 .GroupBy(al => al.ArtistId)
@@ -180,13 +180,9 @@ public static class ArrCatalogEndpoints
                 artists = artists.Select(a =>
                 {
                     statsByArtist.TryGetValue(a.ArrId, out var st);
-                    if (st is null)
-                        statsByArtist.TryGetValue(a.EntryId, out st);
                     var mon = st?.Monitored ?? 0;
                     var avail = st?.Available ?? 0;
                     trackStatsByArtist.TryGetValue(a.ArrId, out var trackStats);
-                    if (trackStats is null)
-                        trackStatsByArtist.TryGetValue(a.EntryId, out trackStats);
                     var trackMon = trackStats?.Monitored ?? 0;
                     var trackAvail = trackStats?.Available ?? 0;
                     return new
@@ -228,17 +224,13 @@ public static class ArrCatalogEndpoints
         {
             var keys = ArrCatalogIdentity.QueryKeys(cfg, category);
             var artist = await db.Artists
-                .FirstOrDefaultAsync(a => keys.Contains(a.ArrInstance) && (a.ArrId == artistId || a.EntryId == artistId));
+                .FirstOrDefaultAsync(a => keys.Contains(a.ArrInstance) && a.ArrId == artistId);
             if (artist is null)
                 return Results.NotFound(new { error = "Artist not found" });
 
             var (albumCounts, _, trackCounts) = await rollups.GetLidarrRollupsAsync(keys);
-            var artistIds = new[] { artist.ArrId, artist.EntryId }
-                .Where(id => id != 0)
-                .Distinct()
-                .ToList();
             var albums = await db.Albums
-                .Where(al => keys.Contains(al.ArrInstance) && artistIds.Contains(al.ArtistId))
+                .Where(al => keys.Contains(al.ArrInstance) && al.ArtistId == artist.ArrId)
                 .OrderBy(al => al.Title)
                 .ToListAsync();
 
@@ -529,7 +521,8 @@ public static class ArrCatalogEndpoints
             int entryId,
             TorrentarrConfig cfg,
             TorrentarrDbContext db,
-            HttpContext httpContext) =>
+            HttpContext httpContext,
+            IHttpClientFactory httpClientFactory) =>
         {
             var instance = cfg.ArrInstances
                 .FirstOrDefault(kvp =>
@@ -540,11 +533,38 @@ public static class ArrCatalogEndpoints
 
             var keys = ArrCatalogIdentity.QueryKeys(instance);
             var baseUri = instance.Value.URI.TrimEnd('/');
-            var slug = await ResolveOpenSlugAsync(kind, keys, entryId, db);
-            if (slug is null)
+            var arrId = await ResolveOpenArrIdAsync(kind, keys, entryId, db);
+            if (arrId is null)
                 return Results.NotFound(new { error = "Item not found" });
 
-            var path = kind.ToLowerInvariant() switch
+            kind = kind.ToLowerInvariant();
+            var expectedType = kind switch { "movie" => "radarr", "series" => "sonarr", "artist" => "lidarr", "author" => "readarr", _ => null };
+            if (!string.Equals(instance.Value.Type, expectedType, StringComparison.OrdinalIgnoreCase))
+                return Results.NotFound(new { error = "Item kind does not match section" });
+
+            string? slug;
+            try
+            {
+                using var client = httpClientFactory.CreateClient(instance.Value.SkipTLSVerify ? "ArrOpenSkipTls" : "ArrOpen");
+                client.Timeout = TimeSpan.FromSeconds(20);
+                var apiVersion = kind is "movie" or "series" ? "v3" : "v1";
+                using var request = new HttpRequestMessage(HttpMethod.Get, $"{baseUri}/api/{apiVersion}/{kind}/{arrId}");
+                request.Headers.Add("X-Api-Key", instance.Value.APIKey);
+                using var response = await client.SendAsync(request, httpContext.RequestAborted);
+                if (!response.IsSuccessStatusCode)
+                    return Results.NotFound(new { error = "Arr item unavailable" });
+                using var json = System.Text.Json.JsonDocument.Parse(await response.Content.ReadAsStringAsync(httpContext.RequestAborted));
+                var field = kind switch { "artist" => "foreignArtistId", "author" => "foreignAuthorId", _ => "titleSlug" };
+                slug = json.RootElement.ValueKind == System.Text.Json.JsonValueKind.Object && json.RootElement.TryGetProperty(field, out var value) && value.ValueKind == System.Text.Json.JsonValueKind.String ? value.GetString() : null;
+            }
+            catch (Exception ex) when (ex is HttpRequestException or System.Text.Json.JsonException || ex is OperationCanceledException && !httpContext.RequestAborted.IsCancellationRequested)
+            {
+                return Results.Problem("Unable to resolve Arr item", statusCode: StatusCodes.Status502BadGateway);
+            }
+            if (string.IsNullOrWhiteSpace(slug))
+                return Results.NotFound(new { error = "Arr route identifier unavailable" });
+            slug = Uri.EscapeDataString(slug);
+            var path = kind switch
             {
                 "movie" => $"/movie/{slug}",
                 "series" => $"/series/{slug}",
@@ -563,7 +583,7 @@ public static class ArrCatalogEndpoints
         });
     }
 
-    private static async Task<string?> ResolveOpenSlugAsync(
+    private static async Task<string?> ResolveOpenArrIdAsync(
         string kind,
         List<string> keys,
         int entryId,
@@ -580,7 +600,7 @@ public static class ArrCatalogEndpoints
                 .Select(s => s.ArrId.ToString())
                 .FirstOrDefaultAsync(),
             "artist" => await db.Artists
-                .Where(a => keys.Contains(a.ArrInstance) && (a.ArrId == entryId || a.EntryId == entryId))
+                .Where(a => keys.Contains(a.ArrInstance) && a.ArrId == entryId)
                 .Select(a => a.ArrId.ToString())
                 .FirstOrDefaultAsync(),
             "author" => await db.Authors

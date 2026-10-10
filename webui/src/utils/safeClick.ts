@@ -70,7 +70,7 @@ function installSafeClickTracking(): void {
   document.addEventListener(
     "click",
     () => {
-      resetPointerSession();
+      queueMicrotask(resetPointerSession);
     },
     true,
   );

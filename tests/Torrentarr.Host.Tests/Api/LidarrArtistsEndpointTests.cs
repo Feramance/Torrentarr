@@ -50,7 +50,7 @@ public class LidarrArtistsEndpointTests : IClassFixture<ArrCatalogWebApplication
         await CatalogTestDataSeeder.SeedLidarrArtistsAsync(db);
 
         var client = _factory.CreateClientWithApiToken();
-        var response = await client.GetAsync("/web/lidarr/lidarr/artist/1");
+        var response = await client.GetAsync("/web/lidarr/lidarr/artist/401");
         response.StatusCode.Should().Be(HttpStatusCode.OK);
 
         var json = JsonDocument.Parse(await response.Content.ReadAsStringAsync()).RootElement;
@@ -84,6 +84,37 @@ public class LidarrArtistsEndpointTests : IClassFixture<ArrCatalogWebApplication
         json.GetProperty("artists").GetArrayLength().Should().Be(1);
         json.GetProperty("artists")[0].GetProperty("artist").GetProperty("albumsMissing").GetInt32()
             .Should().BeGreaterThan(0);
+    }
+
+    [Fact]
+    public async Task GetLidarrArtistDetail_DoesNotMixLocalAndArrIds()
+    {
+        _factory.SetConfigEnv();
+        using var scope = _factory.Services.CreateScope();
+        var db = scope.ServiceProvider.GetRequiredService<TorrentarrDbContext>();
+        await CatalogTestDataSeeder.SeedLidarrArtistsAsync(db);
+        db.Artists.Add(new Torrentarr.Infrastructure.Database.Models.ArtistFilesModel
+        {
+            EntryId = 401,
+            ArrId = 402,
+            ArrInstance = "lidarr",
+            Title = "Other artist"
+        });
+        db.Albums.Add(new Torrentarr.Infrastructure.Database.Models.AlbumFilesModel
+        {
+            EntryId = 12,
+            ArrId = 503,
+            ArtistId = 1,
+            ArrInstance = "lidarr",
+            Title = "Unrelated album"
+        });
+        await db.SaveChangesAsync();
+        using var client = _factory.CreateClientWithApiToken();
+        var response = await client.GetAsync("/web/lidarr/lidarr/artist/401");
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+        var json = JsonDocument.Parse(await response.Content.ReadAsStringAsync()).RootElement;
+        json.GetProperty("artist").GetProperty("name").GetString().Should().Be("Artist One");
+        json.GetProperty("albums").GetArrayLength().Should().Be(2);
     }
 
     [Fact]

@@ -32,6 +32,8 @@ Visit the [GitHub Releases page](https://github.com/Feramance/Torrentarr/release
     ```bash
     # Download latest release
     curl -L -o torrentarr https://github.com/Feramance/Torrentarr/releases/latest/download/torrentarr-linux-x64
+    curl -fL -o torrentarr-workers-linux-x64 https://github.com/Feramance/Torrentarr/releases/latest/download/torrentarr-workers-linux-x64
+    chmod +x torrentarr-workers-linux-x64
 
     # Make executable
     chmod +x torrentarr
@@ -45,6 +47,8 @@ Visit the [GitHub Releases page](https://github.com/Feramance/Torrentarr/release
     ```bash
     # Download latest release
     curl -L -o torrentarr https://github.com/Feramance/Torrentarr/releases/latest/download/torrentarr-linux-arm64
+    curl -fL -o torrentarr-workers-linux-arm64 https://github.com/Feramance/Torrentarr/releases/latest/download/torrentarr-workers-linux-arm64
+    chmod +x torrentarr-workers-linux-arm64
 
     # Make executable
     chmod +x torrentarr
@@ -58,6 +62,8 @@ Visit the [GitHub Releases page](https://github.com/Feramance/Torrentarr/release
     ```bash
     # Download latest release
     curl -L -o torrentarr https://github.com/Feramance/Torrentarr/releases/latest/download/torrentarr-macos-x64
+    curl -fL -o torrentarr-workers-osx-x64 https://github.com/Feramance/Torrentarr/releases/latest/download/torrentarr-workers-osx-x64
+    chmod +x torrentarr-workers-osx-x64
 
     # Make executable
     chmod +x torrentarr
@@ -71,6 +77,8 @@ Visit the [GitHub Releases page](https://github.com/Feramance/Torrentarr/release
     ```bash
     # Download latest release
     curl -L -o torrentarr https://github.com/Feramance/Torrentarr/releases/latest/download/torrentarr-macos-arm64
+    curl -fL -o torrentarr-workers-osx-arm64 https://github.com/Feramance/Torrentarr/releases/latest/download/torrentarr-workers-osx-arm64
+    chmod +x torrentarr-workers-osx-arm64
 
     # Make executable
     chmod +x torrentarr
@@ -84,10 +92,13 @@ Visit the [GitHub Releases page](https://github.com/Feramance/Torrentarr/release
     ```powershell
     # Download with PowerShell
     Invoke-WebRequest -Uri https://github.com/Feramance/Torrentarr/releases/latest/download/torrentarr-windows-x64.exe -OutFile torrentarr.exe
+    Invoke-WebRequest -Uri https://github.com/Feramance/Torrentarr/releases/latest/download/torrentarr-workers-windows-x64.exe -OutFile torrentarr-workers-windows-x64.exe
 
     # Run
     .\torrentarr.exe
     ```
+
+Download **both the Host and matching worker from the same release**. Keep the worker beside the Host with its release filename. Both executables are required for Arr processing.
 
 ## Installation
 
@@ -100,10 +111,15 @@ Use `torrentarr-linux-x64` for Intel/AMD 64-bit, or `torrentarr-linux-arm64` for
    # For x64 (Intel/AMD)
    sudo curl -L -o /usr/local/bin/torrentarr \
      https://github.com/Feramance/Torrentarr/releases/latest/download/torrentarr-linux-x64
+     sudo curl -fL -o /usr/local/bin/torrentarr-workers-linux-x64 https://github.com/Feramance/Torrentarr/releases/latest/download/torrentarr-workers-linux-x64
+     sudo chmod +x /usr/local/bin/torrentarr-workers-linux-x64
 
    # For ARM64
    # sudo curl -L -o /usr/local/bin/torrentarr \
    #   https://github.com/Feramance/Torrentarr/releases/latest/download/torrentarr-linux-arm64
+   # sudo curl -fL -o /usr/local/bin/torrentarr-workers-linux-arm64 \
+   #   https://github.com/Feramance/Torrentarr/releases/latest/download/torrentarr-workers-linux-arm64
+   # sudo chmod +x /usr/local/bin/torrentarr-workers-linux-arm64
 
    sudo chmod +x /usr/local/bin/torrentarr
    ```
@@ -122,14 +138,16 @@ Use `torrentarr-macos-x64` for Intel or `torrentarr-macos-arm64` for Apple Silic
    # For Intel
    curl -L -o ~/Downloads/torrentarr \
      https://github.com/Feramance/Torrentarr/releases/latest/download/torrentarr-macos-x64
+     curl -fL -o ~/Downloads/torrentarr-workers-osx-x64 https://github.com/Feramance/Torrentarr/releases/latest/download/torrentarr-workers-osx-x64
+     chmod +x ~/Downloads/torrentarr-workers-osx-x64
 
-   # For Apple Silicon use: .../torrentarr-macos-arm64
+   # For Apple Silicon use torrentarr-macos-arm64 and torrentarr-workers-osx-arm64.
    chmod +x ~/Downloads/torrentarr
    ```
 
 2. **Move to Applications (optional):**
    ```bash
-   sudo mv ~/Downloads/torrentarr /usr/local/bin/
+   sudo mv ~/Downloads/torrentarr ~/Downloads/torrentarr-workers-osx-* /usr/local/bin/
    ```
 
 3. **First run (security prompt):**
@@ -144,11 +162,12 @@ Use `torrentarr-macos-x64` for Intel or `torrentarr-macos-arm64` for Apple Silic
 
 ### Windows
 
-1. **Download** `torrentarr-windows-x64.exe` from releases
+1. **Download** `torrentarr-windows-x64.exe` and `torrentarr-workers-windows-x64.exe` from the same release
 
 2. **Move to a permanent location:**
    ```
    C:\Program Files\Torrentarr\torrentarr.exe
+   C:\Program Files\Torrentarr\torrentarr-workers-windows-x64.exe
    ```
 
 3. **Run:**
@@ -292,7 +311,7 @@ launchctl load ~/Library/LaunchAgents/com.torrentarr.plist
 
 ## Updating
 
-You can update by downloading a new release and replacing the binary. If enabled, the WebUI can also download and apply a GitHub release binary for the current platform (see [Auto-updates](../../features/auto-updates.md)).
+You can update by downloading a new release and replacing both the Host and matching worker. If enabled, the WebUI can also download and apply a GitHub release binary for the current platform (see [Auto-updates](../../features/auto-updates.md)).
 
 ### Linux/macOS
 
@@ -305,6 +324,8 @@ sudo mv /usr/local/bin/torrentarr /usr/local/bin/torrentarr.bak
 # Download latest (example for Linux x64; use torrentarr-linux-arm64 for ARM64, or torrentarr-macos-* for macOS)
 sudo curl -L -o /usr/local/bin/torrentarr \
   https://github.com/Feramance/Torrentarr/releases/latest/download/torrentarr-linux-x64
+  sudo curl -fL -o /usr/local/bin/torrentarr-workers-linux-x64 https://github.com/Feramance/Torrentarr/releases/latest/download/torrentarr-workers-linux-x64
+  sudo chmod +x /usr/local/bin/torrentarr-workers-linux-x64
 
 sudo chmod +x /usr/local/bin/torrentarr
 
@@ -315,8 +336,8 @@ sudo systemctl restart torrentarr  # if using systemd
 ### Windows
 
 1. Stop Torrentarr (or the service)
-2. Download new `torrentarr-windows-x64.exe`
-3. Replace old file
+2. Download new `torrentarr-windows-x64.exe` and matching `torrentarr-workers-windows-x64.exe`
+3. Replace both old files
 4. Start Torrentarr again
 
 ## Troubleshooting
@@ -398,7 +419,7 @@ This is normal for .NET self-contained single-file binaries.
 ### ✅ Advantages
 
 - No Python installation required
-- Single file distribution
+- Two executable distribution
 - Easy to deploy
 - Consistent across systems
 - No dependency conflicts
@@ -427,7 +448,14 @@ dotnet publish src/Torrentarr.Host \
   -p:PublishSingleFile=true \
   --output ./dist
 
-# Binary in dist/
+dotnet publish src/Torrentarr.Workers \
+  --configuration Release \
+  --runtime linux-x64 \
+  --self-contained true \
+  -p:PublishSingleFile=true \
+  --output ./dist
+
+# Host and worker in dist/
 ls dist/
 ```
 

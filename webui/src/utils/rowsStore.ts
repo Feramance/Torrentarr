@@ -87,7 +87,12 @@ export function syncRowsSnapshot<T extends Hashable>(
   };
   const changes = detectChanges(detectInput, incoming, getKey, hashFields);
 
-  if (!changes.hasChanges) {
+  const incomingOrder = incoming.map(getKey);
+  const orderChanged =
+    incomingOrder.length !== prev.rowOrder.length ||
+    incomingOrder.some((id, index) => id !== prev.rowOrder[index]);
+
+  if (!changes.hasChanges && !orderChanged) {
     return {
       snapshot: prev,
       changeKind: "noop",
@@ -97,7 +102,8 @@ export function syncRowsSnapshot<T extends Hashable>(
     };
   }
 
-  const hasAddRemove = changes.added.length > 0 || changes.removed.length > 0;
+  const hasAddRemove =
+    changes.added.length > 0 || changes.removed.length > 0 || orderChanged;
 
   // We always rebuild the maps so React sees a new reference on `rowsById` /
   // `rowVersionsById` / `rowHashesById` (those are the things the row-level subscribers
@@ -130,7 +136,7 @@ export function syncRowsSnapshot<T extends Hashable>(
   let nextRowOrder = prev.rowOrder;
   if (hasAddRemove) {
     // Use the incoming order so the table shows the same ordering the API returned.
-    nextRowOrder = incoming.map((item) => getKey(item));
+    nextRowOrder = incomingOrder;
   }
 
   const snapshot: RowsStoreSnapshot<T> = {
@@ -203,7 +209,6 @@ export class RowsStore<T extends Hashable> {
 
   /** Replace state with a fresh snapshot (used by aggregate views that rebuild from many sources). */
   replace = (incoming: T[]): RowsSyncResult<T> => {
-    this.snapshot = createEmptyRowsSnapshot<T>();
     return this.sync(incoming);
   };
 

@@ -166,6 +166,12 @@ builder.Services.AddSingleton<ISafeDeletionService, SafeDeletionService>();
 builder.Services.AddSingleton<IMaintenanceNotificationService, MaintenanceNotificationService>();
 builder.Services.AddSingleton<IMaintenanceCoordinator, MaintenanceCoordinator>();
 builder.Services.AddHttpClient();
+builder.Services.AddHttpClient("ArrOpen").ConfigurePrimaryHttpMessageHandler(() => new HttpClientHandler { AllowAutoRedirect = false });
+builder.Services.AddHttpClient("ArrOpenSkipTls").ConfigurePrimaryHttpMessageHandler(() => new HttpClientHandler
+{
+    AllowAutoRedirect = false,
+    ServerCertificateCustomValidationCallback = HttpClientHandler.DangerousAcceptAnyServerCertificateValidator
+});
 builder.Services.AddScoped<IDatabaseHealthService, DatabaseHealthService>();
 builder.Services.AddScoped<CatalogRollupService>();
 builder.Services.AddScoped<ArrThumbnailService>();

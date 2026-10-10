@@ -71,6 +71,8 @@ public class QBitCategoryEnsureService
                             parent, instanceName, savePath);
                         categories[parent] = new TorrentClientCategory { Name = parent, SavePath = savePath };
                     }
+                    else
+                        succeeded = false;
                 }
             }
             catch (Exception ex)

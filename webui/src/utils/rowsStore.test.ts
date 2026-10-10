@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import type { Hashable } from "./dataSync";
 import {
+  RowsStore,
   createEmptyRowsSnapshot,
   syncRowsSnapshot,
   type RowsStoreOptions,
@@ -67,5 +68,29 @@ describe("syncRowsSnapshot", () => {
     expect(next.changeKind).toBe("add-remove");
     expect(next.added).toHaveLength(1);
     expect(next.snapshot.rowOrder).not.toBe(seeded.snapshot.rowOrder);
+  });
+});
+
+describe("row order and replacement", () => {
+  it("applies server ordering even when membership and contents are unchanged", () => {
+    const rows: Row[] = [
+      { id: "1", title: "A", score: 1 },
+      { id: "2", title: "B", score: 2 },
+    ];
+    const first = syncRowsSnapshot(createEmptyRowsSnapshot<Row>(), rows, opts);
+    const next = syncRowsSnapshot(first.snapshot, [...rows].reverse(), opts);
+    expect(next.snapshot.rowOrder).toEqual(["2", "1"]);
+    expect(next.changeKind).toBe("add-remove");
+    expect(next.snapshot.rowVersionsById.get("1")).toBe(1);
+  });
+
+  it("notifies removed rows when replacing with an empty list", () => {
+    const store = new RowsStore<Row>(opts);
+    store.sync([{ id: "1", title: "A", score: 1 }]);
+    let notified = 0;
+    store.subscribeRow("1", () => notified++);
+    store.replace([]);
+    expect(notified).toBe(1);
+    expect(store.getRow("1")).toBeUndefined();
   });
 });

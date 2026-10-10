@@ -1,4 +1,4 @@
-import type { ReactNode } from "react";
+import { useEffect, useRef, type ReactNode } from "react";
 import type { JSX } from "react";
 import { createPortal } from "react-dom";
 import { IconImage } from "../IconImage";
@@ -19,6 +19,12 @@ export function ArrModal({
   maxWidth = 560,
 }: ArrModalProps): JSX.Element {
   const backdropHandlers = useSafeBackdropClose(onClose);
+  const dialogRef = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    const previousFocus = document.activeElement as HTMLElement | null;
+    dialogRef.current?.querySelector("button")?.focus();
+    return () => previousFocus?.focus();
+  }, []);
 
   return createPortal(
     <div
@@ -29,6 +35,26 @@ export function ArrModal({
     >
       <div
         className="modal"
+        ref={dialogRef}
+        onKeyDown={(event) => {
+          if (event.key === "Escape") {
+            event.preventDefault();
+            onClose();
+          } else if (event.key === "Tab") {
+            const controls = event.currentTarget.querySelectorAll<HTMLElement>(
+              'button:not([disabled]), a[href], input:not([disabled]):not([type="hidden"]), select:not([disabled]), textarea:not([disabled]), [tabindex="0"]',
+            );
+            const first = controls[0];
+            const last = controls[controls.length - 1];
+            if (event.shiftKey && document.activeElement === first) {
+              event.preventDefault();
+              last?.focus();
+            } else if (!event.shiftKey && document.activeElement === last) {
+              event.preventDefault();
+              first?.focus();
+            }
+          }
+        }}
         style={{ maxWidth }}
         role="dialog"
         aria-modal="true"

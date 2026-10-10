@@ -31,7 +31,7 @@ Directory.CreateDirectory(basePath);
 Directory.CreateDirectory(logsPath);
 
 // Mutable level switch — lets log level be changed at runtime via file
-var levelSwitch = new LoggingLevelSwitch(LogEventLevel.Debug);
+var levelSwitch = new LoggingLevelSwitch(LogEventLevel.Information);
 
 // Configure Serilog - write to .config/logs/ with process metadata enrichment
 Log.Logger = new LoggerConfiguration()
@@ -120,6 +120,15 @@ try
     try
     {
         config = configLoader.Load();
+        levelSwitch.MinimumLevel = config.Settings.ConsoleLevel?.Trim().ToUpperInvariant() switch
+        {
+            "TRACE" or "VERBOSE" => LogEventLevel.Verbose,
+            "DEBUG" => LogEventLevel.Debug,
+            "WARNING" or "WARN" => LogEventLevel.Warning,
+            "ERROR" => LogEventLevel.Error,
+            "CRITICAL" or "FATAL" => LogEventLevel.Fatal,
+            _ => LogEventLevel.Information
+        };
         Log.Information("Configuration loaded successfully");
     }
     catch (FileNotFoundException ex)
@@ -336,6 +345,7 @@ class ArrWorkerService : BackgroundService
     {
         while (!cancellationToken.IsCancellationRequested)
         {
+            var cycleStart = System.Diagnostics.Stopwatch.GetTimestamp();
             try
             {
                 if (!await _connectivityService.IsConnectedAsync(cancellationToken))
@@ -368,7 +378,9 @@ class ArrWorkerService : BackgroundService
                 _logger.LogError(ex, "Error processing torrents for {Instance}", _context.InstanceName);
                 HandleProcessingError();
             }
-            await Task.Delay(TimeSpan.FromSeconds(_config.Settings.LoopSleepTimer), cancellationToken);
+            var remaining = GetLoopDelay(_config.Settings.LoopSleepTimer, System.Diagnostics.Stopwatch.GetElapsedTime(cycleStart));
+            if (remaining > TimeSpan.Zero)
+                await Task.Delay(remaining, cancellationToken);
         }
     }
 
@@ -376,6 +388,7 @@ class ArrWorkerService : BackgroundService
     {
         while (!cancellationToken.IsCancellationRequested)
         {
+            var cycleStart = System.Diagnostics.Stopwatch.GetTimestamp();
             try
             {
                 if (!_initialized)
@@ -403,9 +416,14 @@ class ArrWorkerService : BackgroundService
                 _logger.LogError(ex, "Error searching for {Instance}", _context.InstanceName);
                 HandleSearchError();
             }
-            await Task.Delay(TimeSpan.FromSeconds(_config.Settings.LoopSleepTimer), cancellationToken);
+            var remaining = GetLoopDelay(_config.Settings.LoopSleepTimer, System.Diagnostics.Stopwatch.GetElapsedTime(cycleStart));
+            if (remaining > TimeSpan.Zero)
+                await Task.Delay(remaining, cancellationToken);
         }
     }
+
+    internal static TimeSpan GetLoopDelay(int seconds, TimeSpan elapsed) =>
+        TimeSpan.FromSeconds(seconds) > elapsed ? TimeSpan.FromSeconds(seconds) - elapsed : TimeSpan.Zero;
 
     private TimeSpan GetBackoffDelay()
     {
@@ -602,11 +620,7 @@ class ArrWorkerService : BackgroundService
                 && _yearCursor.Advance(_context.InstanceName);
             _searchLoopCompleted = !hasMoreYears;
         }
-        _runtimeMetrics.SearchSummary = searchResult == null
-            ? "Idle"
-            : $"{searchResult.SearchesTriggered} searches triggered ({searchResult.ItemsSearched} items)";
-        _runtimeMetrics.SearchTimestamp = DateTimeOffset.UtcNow.ToString("O");
-        _runtimeMetrics.MetricType = "search";
+        _runtimeMetrics.RecordSearch(searchResult);
     }
 
     private async Task ResetSearchedFlagsAsync(TorrentarrDbContext db, CancellationToken ct)
@@ -736,6 +750,14 @@ class ArrWorkerService : BackgroundService
 
 sealed class WorkerRuntimeMetrics
 {
+    public void RecordSearch(SearchResult? result)
+    {
+        if (result == null) return;
+        SearchSummary = $"{result.SearchesTriggered} searches triggered ({result.ItemsSearched} items)";
+        SearchTimestamp = DateTimeOffset.UtcNow.ToString("O");
+        MetricType = "search";
+    }
+
     public string? SearchSummary { get; set; }
     public string? SearchTimestamp { get; set; }
     public int? QueueCount { get; set; }

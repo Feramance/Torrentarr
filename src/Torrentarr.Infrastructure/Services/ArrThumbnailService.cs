@@ -106,7 +106,7 @@ public class ArrThumbnailService
                 .Select(s => (int?)s.ArrId)
                 .FirstOrDefaultAsync(ct),
             "lidarr_artist" or "lidarr" => await _db.Artists
-                .Where(a => keys.Contains(a.ArrInstance) && (a.ArrId == entryId || a.EntryId == entryId))
+                .Where(a => keys.Contains(a.ArrInstance) && a.ArrId == entryId)
                 .Select(a => (int?)a.ArrId)
                 .FirstOrDefaultAsync(ct),
             "readarr_author" or "readarr" => await _db.Authors
