@@ -391,7 +391,8 @@ public class ConfigurationLoader
     {
         var swapBoth = currentVersion.Major == 5 && currentVersion < new Version(5, 14, 6);
         var migrateZeroToDisabled = swapBoth
-            || currentVersion.Major == 6 && currentVersion < new Version(6, 15, 2);
+            || currentVersion.Major == 6 && currentVersion < new Version(6, 15, 2)
+            || currentVersion == new Version(0, 0, 1);
         if (!migrateZeroToDisabled)
             return false;
 

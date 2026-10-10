@@ -122,6 +122,19 @@ public class ConfigurationLoaderTests : IDisposable
     }
 
     [Fact]
+    public void Load_MigratesVersionlessDisabledStalledDelay()
+    {
+        WriteToml("""
+            [qBit.CategorySeeding]
+            StalledDelay = 0
+            """);
+
+        var config = new ConfigurationLoader(_tempFilePath).Load();
+
+        config.QBitInstances["qBit"].CategorySeeding.StalledDelay.Should().Be(-1);
+    }
+
+    [Fact]
     public void Load_MigratesBothSentinelsExactlyOnce()
     {
         WriteToml("""
