@@ -101,6 +101,8 @@ jobs:
           --configuration Release \
           --runtime "$RUNNER_RID" \
           --self-contained true \
+          -p:PublishSingleFile=true \
+          -p:IncludeNativeLibrariesForSelfExtract=true \
           --output "$RUNNER_TEMP/torrentarr-standalone"
         if [[ "$RUNNER_RID" == win-* ]]; then
           test -f "$RUNNER_TEMP/torrentarr-standalone/Torrentarr.Workers.exe"
@@ -109,9 +111,10 @@ jobs:
         fi
         if [[ "$RUNNER_RID" == win-* ]]; then
           pwsh -NoLogo -NoProfile -NonInteractive -File scripts/smoke-standalone.ps1 \
-            -Binary "$RUNNER_TEMP/torrentarr-standalone/Torrentarr.Host.exe"
+            -Binary "$RUNNER_TEMP/torrentarr-standalone/Torrentarr.Host.exe" \
+            -WorkerBinary "$RUNNER_TEMP/torrentarr-standalone/Torrentarr.Workers.exe"
         else
-          bash scripts/smoke-standalone.sh "$RUNNER_TEMP/torrentarr-standalone/Torrentarr.Host"
+          bash scripts/smoke-standalone.sh "$RUNNER_TEMP/torrentarr-standalone/Torrentarr.Host" 6969 "$RUNNER_TEMP/torrentarr-standalone/Torrentarr.Workers"
         fi
 
     - name: Run .NET tests (non-live)

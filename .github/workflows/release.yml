@@ -289,7 +289,7 @@ jobs:
           cp "$worker_source" "release/torrentarr-workers-$worker_name"
         done
     - name: Smoke-test Linux standalone binary
-      run: bash scripts/smoke-standalone.sh release/torrentarr-linux-x64 6969
+      run: bash scripts/smoke-standalone.sh release/torrentarr-linux-x64 6969 release/torrentarr-workers-linux-x64
     - name: Upload binaries to release
       uses: softprops/action-gh-release@v3
       with:

@@ -45,4 +45,5 @@ public class ProcessStatus
     public int? QueueCount { get; set; }
     public int? CategoryCount { get; set; }
     public string? MetricType { get; set; }
+    public string? Status { get; set; }
 }

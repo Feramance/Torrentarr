@@ -85,7 +85,12 @@ export function ArrPosterImage({
   };
 
   const enqueueLoad = () => {
+    const generation = loadIdRef.current;
     return enqueuePosterReveal((release) => {
+      if (cancelledRef.current || generation !== loadIdRef.current) {
+        release();
+        return;
+      }
       releaseSlotRef.current = release;
       setReleased(true);
     });
@@ -165,6 +170,12 @@ export function ArrPosterImage({
       return;
     }
     releaseSlot();
+    loadIdRef.current += 1;
+    setBlobSrc(null);
+    if (blobUrlRef.current) {
+      URL.revokeObjectURL(blobUrlRef.current);
+      blobUrlRef.current = null;
+    }
     setReleased(false);
     setLoaded(false);
     const delay = posterRetryBackoffMs(current);
@@ -182,6 +193,7 @@ export function ArrPosterImage({
   useEffect(() => {
     if (!released || !token) return;
     const controller = new AbortController();
+    const generation = loadIdRef.current;
     void fetch(displaySrc, {
       credentials: "include",
       headers: { Authorization: `Bearer ${token}` },
@@ -193,32 +205,37 @@ export function ArrPosterImage({
         return response.blob();
       })
       .then((blob) => {
-        if (controller.signal.aborted) return;
+        if (controller.signal.aborted || generation !== loadIdRef.current)
+          return;
         const url = URL.createObjectURL(blob);
         if (blobUrlRef.current) URL.revokeObjectURL(blobUrlRef.current);
         blobUrlRef.current = url;
         setBlobSrc(url);
       })
       .catch(() => {
-        if (!controller.signal.aborted) scheduleRetry();
+        if (!controller.signal.aborted && generation === loadIdRef.current)
+          scheduleRetry();
       });
     return () => controller.abort();
     // scheduleRetry intentionally uses the current render's retry state.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [displaySrc, released, token]);
 
+  const imageGeneration = loadIdRef.current;
   const onImgLoad = (ev: SyntheticEvent<HTMLImageElement>) => {
-    const token = loadIdRef.current;
+    if (cancelledRef.current || imageGeneration !== loadIdRef.current) return;
+    const token = imageGeneration;
     const img = ev.currentTarget;
     releaseSlot();
     void finalizePosterDisplay(img).then(() => {
-      if (token === loadIdRef.current) {
+      if (!cancelledRef.current && token === loadIdRef.current) {
         setLoaded(true);
       }
     });
   };
 
   const onImgError = () => {
+    if (cancelledRef.current || imageGeneration !== loadIdRef.current) return;
     if (attemptRef.current >= POSTER_MAX_RETRIES) {
       setFailed(true);
       releaseSlot();

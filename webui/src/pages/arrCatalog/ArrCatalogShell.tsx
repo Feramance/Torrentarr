@@ -324,8 +324,11 @@ export function ArrCatalogShell<
           </aside>
           <div className="pane">
             <div className="field mobile-instance-select">
-              <label>Instance</label>
+              <label htmlFor={`${definition.kind}-catalog-instance`}>
+                Instance
+              </label>
               <select
+                id={`${definition.kind}-catalog-instance`}
                 value={selection || "aggregate"}
                 onChange={handleInstanceSelection}
                 disabled={!instances.length}
@@ -354,8 +357,11 @@ export function ArrCatalogShell<
               }}
             >
               <div className="col field" style={{ flex: "1 1 200px" }}>
-                <label>Search</label>
+                <label htmlFor={`${definition.kind}-catalog-search`}>
+                  Search
+                </label>
                 <input
+                  id={`${definition.kind}-catalog-search`}
                   placeholder={definition.searchPlaceholder}
                   value={globalSearch}
                   onChange={(event) => setGlobalSearch(event.target.value)}
@@ -374,8 +380,11 @@ export function ArrCatalogShell<
                       minWidth: `${control.minWidth ?? 140}px`,
                     }}
                   >
-                    <label>{control.label}</label>
+                    <label htmlFor={`${definition.kind}-catalog-${control.id}`}>
+                      {control.label}
+                    </label>
                     <select
+                      id={`${definition.kind}-catalog-${control.id}`}
                       value={control.getValue(filters)}
                       onChange={(event) =>
                         setFilters((prev) =>
@@ -393,7 +402,7 @@ export function ArrCatalogShell<
                 );
               })}
               <div className="field" style={{ flex: "0 0 auto" }}>
-                <label>View</label>
+                <span>View</span>
                 <ArrBrowseModeToggle
                   mode={browseMode}
                   onChange={setBrowseMode}

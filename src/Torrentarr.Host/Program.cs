@@ -929,7 +929,7 @@ try
         }
 
         foreach (var status in (await workers.GetProcessStatusAsync()).Values)
-            processes.Add(new { category = cfg.ArrInstances.GetValueOrDefault(status.Name)?.Category ?? status.Name, name = status.Name, kind = status.Kind, pid = status.ProcessId, alive = status.IsAlive, rebuilding = false, searchSummary = status.SearchSummary, searchTimestamp = status.SearchTimestamp, queueCount = status.QueueCount, categoryCount = status.CategoryCount, metricType = status.MetricType, status = status.IsAlive ? "Running" : "Stopped", restartKey = status.Name });
+            processes.Add(new { category = cfg.ArrInstances.GetValueOrDefault(status.Name)?.Category ?? status.Name, name = status.Name, kind = status.Kind, pid = status.ProcessId, alive = status.IsAlive, rebuilding = false, searchSummary = status.SearchSummary, searchTimestamp = status.SearchTimestamp, queueCount = status.QueueCount, categoryCount = status.CategoryCount, metricType = status.MetricType, status = status.Status ?? (status.IsAlive ? "Running" : "Stopped"), restartKey = status.Name });
 
         return Results.Ok(new { processes });
     });
@@ -1877,7 +1877,7 @@ try
             metricType = s.MetricType
         }).ToList<object>();
         foreach (var status in (await workers.GetProcessStatusAsync()).Values)
-            processes.Add(new { category = cfg.ArrInstances.GetValueOrDefault(status.Name)?.Category ?? status.Name, name = status.Name, kind = status.Kind, pid = status.ProcessId, alive = status.IsAlive, rebuilding = false, searchSummary = status.SearchSummary, searchTimestamp = status.SearchTimestamp, queueCount = status.QueueCount, categoryCount = status.CategoryCount, metricType = status.MetricType, status = status.IsAlive ? "Running" : "Stopped", restartKey = status.Name });
+            processes.Add(new { category = cfg.ArrInstances.GetValueOrDefault(status.Name)?.Category ?? status.Name, name = status.Name, kind = status.Kind, pid = status.ProcessId, alive = status.IsAlive, rebuilding = false, searchSummary = status.SearchSummary, searchTimestamp = status.SearchTimestamp, queueCount = status.QueueCount, categoryCount = status.CategoryCount, metricType = status.MetricType, status = status.Status ?? (status.IsAlive ? "Running" : "Stopped"), restartKey = status.Name });
         return Results.Ok(new { processes });
     });
 

@@ -35,6 +35,8 @@ beforeEach(() => {
 afterEach(() => {
   cleanup();
   vi.useRealTimers();
+  vi.unstubAllGlobals();
+  localStorage.removeItem("token");
 });
 
 function fireImgError(container: HTMLElement): void {
@@ -140,5 +142,72 @@ describe("ArrPosterImage retries", () => {
     });
 
     expect(enqueueMock.mock.calls.length).toBe(enqueuesBefore);
+  });
+  it("refetches authenticated posters after an image error and revokes the bad blob", async () => {
+    vi.useFakeTimers();
+    localStorage.setItem("token", "test-token");
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValue({ ok: true, blob: async () => new Blob(["poster"]) });
+    const revoke = vi.fn();
+    vi.stubGlobal("fetch", fetchMock);
+    vi.stubGlobal(
+      "URL",
+      class extends URL {
+        static createObjectURL = vi
+          .fn()
+          .mockReturnValueOnce("blob:bad")
+          .mockReturnValue("blob:good");
+        static revokeObjectURL = revoke;
+      },
+    );
+    const { container } = render(<ArrPosterImage src="/poster" alt="Movie" />);
+    await act(async () => {
+      await Promise.resolve();
+    });
+    expect(container.querySelector("img")?.getAttribute("src")).toBe(
+      "blob:bad",
+    );
+    fireImgError(container);
+    expect(revoke).toHaveBeenCalledWith("blob:bad");
+    expect(container.querySelector("img")).toBeNull();
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(150);
+    });
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+    expect(fetchMock.mock.calls[1][0]).toBe("/poster?_retry=1");
+    expect(fetchMock.mock.calls[1][1].headers.Authorization).toBe(
+      "Bearer test-token",
+    );
+    expect(container.querySelector("img")?.getAttribute("src")).toBe(
+      "blob:good",
+    );
+    fireImgLoad(container);
+    await act(async () => {
+      await Promise.resolve();
+    });
+    expect(
+      container.querySelector(".arr-poster-image-wrap--ready"),
+    ).toBeTruthy();
+  });
+
+  it("ignores a stale decode after the failed image has begun retrying", async () => {
+    vi.useFakeTimers();
+    let finishDecode!: () => void;
+    Object.defineProperty(window.HTMLImageElement.prototype, "decode", {
+      configurable: true,
+      value: () =>
+        new Promise<void>((resolve) => {
+          finishDecode = resolve;
+        }),
+    });
+    const { container } = render(<ArrPosterImage src="/poster" alt="Movie" />);
+    fireImgLoad(container);
+    fireImgError(container);
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(150);
+      finishDecode();
+    });
+    expect(container.querySelector(".arr-poster-image-wrap--ready")).toBeNull();
   });
 });

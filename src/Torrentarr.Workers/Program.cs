@@ -1,6 +1,7 @@
 using Microsoft.Extensions.Logging;
 using Torrentarr.Core.Configuration;
 using Torrentarr.Core.Interfaces;
+using Torrentarr.Core.Models;
 using Torrentarr.Core.Services;
 using Torrentarr.Infrastructure.ApiClients.QBittorrent;
 using Torrentarr.Infrastructure.Database;
@@ -71,7 +72,7 @@ Log.Logger = new LoggerConfiguration()
 // Monitor for log level changes via file
 var logLevelFilePath = Path.Combine(logsPath, $"worker-{instanceName}.loglevel");
 var logWatcherCts = new CancellationTokenSource();
-_ = Task.Run(async () =>
+var logWatcherTask = Task.Run(async () =>
 {
     while (!logWatcherCts.Token.IsCancellationRequested)
     {
@@ -109,8 +110,35 @@ _ = Task.Run(async () =>
     }
 }, logWatcherCts.Token);
 
+using var monitorCts = new CancellationTokenSource();
+var monitorTasks = new List<Task>();
+var restartCoordinator = new DatabaseRestartCoordinator();
 try
 {
+    if (statusPath != null)
+        monitorTasks.Add(Task.Run(async () =>
+        {
+            try
+            {
+                while (!monitorCts.IsCancellationRequested)
+                {
+                    try
+                    {
+                        var directory = Path.GetDirectoryName(statusPath);
+                        if (!string.IsNullOrEmpty(directory)) Directory.CreateDirectory(directory);
+                        await File.WriteAllTextAsync(statusPath + ".tmp", System.Text.Json.JsonSerializer.Serialize(
+                            runtimeMetrics.Snapshot(instanceName, restartCoordinator.RestartRequested), WorkerHeartbeat.JsonOptions), monitorCts.Token);
+                        File.Move(statusPath + ".tmp", statusPath, true);
+                    }
+                    catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+                    {
+                        Log.Warning(ex, "Unable to write worker status for {Instance}", instanceName);
+                    }
+                    await Task.Delay(TimeSpan.FromSeconds(5), monitorCts.Token);
+                }
+            }
+            catch (OperationCanceledException) when (monitorCts.IsCancellationRequested) { }
+        }));
     Log.Information("Torrentarr Worker starting for instance: {Instance}", instanceName);
 
     // Load configuration
@@ -163,7 +191,7 @@ try
     });
 
     // Add services
-    builder.Services.AddSingleton<DatabaseRestartCoordinator>();
+    builder.Services.AddSingleton(restartCoordinator);
     builder.Services.AddSingleton<QBittorrentConnectionManager>();
     builder.Services.AddSingleton<ITorrentClientFactory, QBittorrentTorrentClientFactory>();
     builder.Services.AddSingleton<ITorrentClientRegistry>(sp => sp.GetRequiredService<QBittorrentConnectionManager>());
@@ -187,55 +215,38 @@ try
 
     builder.Services.AddHostedService<ArrWorkerService>();
 
-    var host = builder.Build();
+    using var host = builder.Build();
 
-    _ = Task.Run(async () =>
+    await ArrWorkerService.LoadSearchActivityAsync(host.Services, instanceName, runtimeMetrics, Log.Logger, monitorCts.Token);
+    var lifetime = host.Services.GetRequiredService<IHostApplicationLifetime>();
+    using var stoppingRegistration = lifetime.ApplicationStopping.Register(monitorCts.Cancel);
+    using var input = new StreamReader(Console.OpenStandardInput());
+    monitorTasks.Add(Task.Run(async () =>
     {
-        var restartCoordinator = host.Services.GetRequiredService<DatabaseRestartCoordinator>();
-        while (statusPath != null)
+        try
         {
-            var tmp = statusPath + ".tmp";
-            var statusDirectory = Path.GetDirectoryName(statusPath);
-            if (!string.IsNullOrEmpty(statusDirectory))
-                Directory.CreateDirectory(statusDirectory);
-            try
+            if (Console.IsInputRedirected && (await input.ReadLineAsync(monitorCts.Token))?.Trim().Equals("shutdown", StringComparison.OrdinalIgnoreCase) == true)
+                lifetime.StopApplication();
+        }
+        catch (OperationCanceledException) when (monitorCts.IsCancellationRequested) { }
+    }));
+    monitorTasks.Add(Task.Run(async () =>
+    {
+        try
+        {
+            while (parentPid > 0 && !monitorCts.IsCancellationRequested)
             {
-                await File.WriteAllTextAsync(tmp, System.Text.Json.JsonSerializer.Serialize(new
+                try
                 {
-                    version = 1,
-                    instance = instanceName,
-                    pid = Environment.ProcessId,
-                    heartbeat = DateTimeOffset.UtcNow,
-                    restartRequested = restartCoordinator.RestartRequested,
-                    searchSummary = runtimeMetrics.SearchSummary,
-                    searchTimestamp = runtimeMetrics.SearchTimestamp,
-                    queueCount = runtimeMetrics.QueueCount,
-                    categoryCount = runtimeMetrics.CategoryCount,
-                    metricType = runtimeMetrics.MetricType
-                }));
-                File.Move(tmp, statusPath, true);
+                    using var parent = System.Diagnostics.Process.GetProcessById(parentPid);
+                    if (parent.HasExited) { lifetime.StopApplication(); break; }
+                }
+                catch (ArgumentException) { lifetime.StopApplication(); break; }
+                await Task.Delay(TimeSpan.FromSeconds(5), monitorCts.Token);
             }
-            catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
-            {
-                Log.Warning(ex, "Unable to write worker status for {Instance}", instanceName);
-            }
-            await Task.Delay(TimeSpan.FromSeconds(5));
         }
-    });
-    _ = Task.Run(async () =>
-    {
-        if (Console.IsInputRedirected && (await Console.In.ReadLineAsync())?.Trim().Equals("shutdown", StringComparison.OrdinalIgnoreCase) == true)
-            host.Services.GetRequiredService<IHostApplicationLifetime>().StopApplication();
-    });
-    _ = Task.Run(async () =>
-    {
-        while (parentPid > 0)
-        {
-            try { System.Diagnostics.Process.GetProcessById(parentPid); }
-            catch { host.Services.GetRequiredService<IHostApplicationLifetime>().StopApplication(); break; }
-            await Task.Delay(TimeSpan.FromSeconds(5));
-        }
-    });
+        catch (OperationCanceledException) when (monitorCts.IsCancellationRequested) { }
+    }));
 
     await host.RunAsync();
 
@@ -249,6 +260,10 @@ catch (Exception ex)
 }
 finally
 {
+    monitorCts.Cancel();
+    logWatcherCts.Cancel();
+    await Task.WhenAll(monitorTasks.Append(logWatcherTask));
+    logWatcherCts.Dispose();
     await Log.CloseAndFlushAsync();
 }
 
@@ -318,20 +333,15 @@ class ArrWorkerService : BackgroundService
         _logger.LogInformation("Type: {Type}, URI: {URI}, Category: {Category}",
             _instanceConfig.Type, _instanceConfig.URI, _instanceConfig.Category);
 
-        // Initialize connections to all configured qBit instances (retry on later loops if this fails)
-        await _qbitManager.EnsureAllConnectedAsync(_config.GetAllTorrentClients(), stoppingToken);
-        if (!_qbitManager.IsConnected() && _config.GetAllTorrentClients().Any(q => !q.Value.Disabled && q.Value.Host != "CHANGE_ME"))
-            _logger.LogWarning("Failed to connect to any qBittorrent instance; will retry each cycle");
-
+        using var initialization = CancellationTokenSource.CreateLinkedTokenSource(stoppingToken);
+        initialization.CancelAfter(WorkerLoopProgress.CycleTimeout);
         try
         {
-            await InitializeAsync(stoppingToken);
+            await _qbitManager.EnsureAllConnectedAsync(_config.GetAllTorrentClients(), initialization.Token);
+            await InitializeAsync(initialization.Token);
             _initialized = true;
         }
-        catch (OperationCanceledException) when (stoppingToken.IsCancellationRequested)
-        {
-            throw;
-        }
+        catch (OperationCanceledException) when (stoppingToken.IsCancellationRequested) { throw; }
         catch (Exception ex)
         {
             _logger.LogError(ex, "Worker initialization failed; continuing into the processing loop");
@@ -346,41 +356,46 @@ class ArrWorkerService : BackgroundService
         while (!cancellationToken.IsCancellationRequested)
         {
             var cycleStart = System.Diagnostics.Stopwatch.GetTimestamp();
+            using var cycle = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
+            cycle.CancelAfter(WorkerLoopProgress.CycleTimeout);
+            _runtimeMetrics.Torrent = new("Running", DateTimeOffset.UtcNow, LastSuccess: _runtimeMetrics.Torrent.LastSuccess);
             try
             {
-                if (!await _connectivityService.IsConnectedAsync(cancellationToken))
+                if (!await _connectivityService.IsConnectedAsync(cycle.Token))
                 {
-                    await Task.Delay(TimeSpan.FromSeconds(_config.Settings.NoInternetSleepTimer), cancellationToken);
+                    await SleepLoopAsync("Torrent", "Waiting for connectivity", TimeSpan.FromSeconds(_config.Settings.NoInternetSleepTimer), cancellationToken);
                     continue;
                 }
-                await _qbitManager.EnsureAllConnectedAsync(_config.GetAllTorrentClients(), cancellationToken);
+                await _qbitManager.EnsureAllConnectedAsync(_config.GetAllTorrentClients(), cycle.Token);
                 if (!_initialized)
                 {
-                    await InitializeAsync(cancellationToken);
+                    await InitializeAsync(cycle.Token);
                     _initialized = true;
                 }
                 else if (!_qbitSetupComplete)
                 {
-                    _qbitSetupComplete = await EnsureQBitSetupAsync(cancellationToken);
+                    _qbitSetupComplete = await EnsureQBitSetupAsync(cycle.Token);
                 }
                 var backoffDelay = GetBackoffDelay();
                 if (backoffDelay > TimeSpan.Zero)
                 {
-                    await Task.Delay(backoffDelay, cancellationToken);
+                    await SleepLoopAsync("Torrent", "Backoff", backoffDelay, cancellationToken);
                     continue;
                 }
-                await ProcessTorrentsAsync(cancellationToken);
+                await ProcessTorrentsAsync(cycle.Token);
                 _consecutiveErrors = 0;
+                _runtimeMetrics.Torrent = _runtimeMetrics.Torrent with { LastSuccess = DateTimeOffset.UtcNow };
             }
             catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested) { break; }
             catch (Exception ex)
             {
+                _runtimeMetrics.Torrent = new(cycle.IsCancellationRequested ? "Timed out" : "Error", DateTimeOffset.UtcNow, LastSuccess: _runtimeMetrics.Torrent.LastSuccess);
                 _logger.LogError(ex, "Error processing torrents for {Instance}", _context.InstanceName);
                 HandleProcessingError();
             }
             var remaining = GetLoopDelay(_config.Settings.LoopSleepTimer, System.Diagnostics.Stopwatch.GetElapsedTime(cycleStart));
             if (remaining > TimeSpan.Zero)
-                await Task.Delay(remaining, cancellationToken);
+                await SleepLoopAsync("Torrent", "Sleeping", remaining, cancellationToken);
         }
     }
 
@@ -389,37 +404,50 @@ class ArrWorkerService : BackgroundService
         while (!cancellationToken.IsCancellationRequested)
         {
             var cycleStart = System.Diagnostics.Stopwatch.GetTimestamp();
+            using var cycle = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
+            cycle.CancelAfter(WorkerLoopProgress.CycleTimeout);
+            _runtimeMetrics.Search = new("Running", DateTimeOffset.UtcNow, LastSuccess: _runtimeMetrics.Search.LastSuccess);
             try
             {
                 if (!_initialized)
                 {
-                    await Task.Delay(TimeSpan.FromSeconds(_config.Settings.LoopSleepTimer), cancellationToken);
+                    await SleepLoopAsync("Search", "Initializing", TimeSpan.FromSeconds(_config.Settings.LoopSleepTimer), cancellationToken);
                     continue;
                 }
-                if (!await _connectivityService.IsConnectedAsync(cancellationToken))
+                if (!await _connectivityService.IsConnectedAsync(cycle.Token))
                 {
-                    await Task.Delay(TimeSpan.FromSeconds(_config.Settings.NoInternetSleepTimer), cancellationToken);
+                    await SleepLoopAsync("Search", "Waiting for connectivity", TimeSpan.FromSeconds(_config.Settings.NoInternetSleepTimer), cancellationToken);
                     continue;
                 }
                 var backoffDelay = GetSearchBackoffDelay();
                 if (backoffDelay > TimeSpan.Zero)
                 {
-                    await Task.Delay(backoffDelay, cancellationToken);
+                    await SleepLoopAsync("Search", "Backoff", backoffDelay, cancellationToken);
                     continue;
                 }
-                await ProcessSearchAsync(cancellationToken);
+                await ProcessSearchAsync(cycle.Token);
                 _consecutiveSearchErrors = 0;
+                _runtimeMetrics.Search = _runtimeMetrics.Search with { LastSuccess = DateTimeOffset.UtcNow };
             }
             catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested) { break; }
             catch (Exception ex)
             {
+                _runtimeMetrics.Search = new(cycle.IsCancellationRequested ? "Timed out" : "Error", DateTimeOffset.UtcNow, LastSuccess: _runtimeMetrics.Search.LastSuccess);
                 _logger.LogError(ex, "Error searching for {Instance}", _context.InstanceName);
                 HandleSearchError();
             }
             var remaining = GetLoopDelay(_config.Settings.LoopSleepTimer, System.Diagnostics.Stopwatch.GetElapsedTime(cycleStart));
             if (remaining > TimeSpan.Zero)
-                await Task.Delay(remaining, cancellationToken);
+                await SleepLoopAsync("Search", "Sleeping", remaining, cancellationToken);
         }
+    }
+
+    private async Task SleepLoopAsync(string loop, string phase, TimeSpan delay, CancellationToken ct)
+    {
+        var now = DateTimeOffset.UtcNow;
+        if (loop == "Torrent") _runtimeMetrics.Torrent = new(phase, now, now + delay, _runtimeMetrics.Torrent.LastSuccess);
+        else _runtimeMetrics.Search = new(phase, now, now + delay, _runtimeMetrics.Search.LastSuccess);
+        await Task.Delay(delay, ct);
     }
 
     internal static TimeSpan GetLoopDelay(int seconds, TimeSpan elapsed) =>
@@ -475,7 +503,7 @@ class ArrWorkerService : BackgroundService
             _consecutiveSearchErrors, _backoffDelays[Math.Min(_consecutiveSearchErrors - 1, _backoffDelays.Count - 1)]);
     }
 
-    private async Task ProcessTorrentsAsync(CancellationToken cancellationToken)
+    internal async Task ProcessTorrentsAsync(CancellationToken cancellationToken)
     {
         _logger.LogTrace("Processing torrents for {Instance}", _context.InstanceName);
 
@@ -546,7 +574,7 @@ class ArrWorkerService : BackgroundService
 
     }
 
-    private async Task ProcessSearchAsync(CancellationToken cancellationToken)
+    internal async Task ProcessSearchAsync(CancellationToken cancellationToken)
     {
         using var scope = _serviceProvider.CreateScope();
         var syncService = scope.ServiceProvider.GetRequiredService<ArrSyncService>();
@@ -621,6 +649,39 @@ class ArrWorkerService : BackgroundService
             _searchLoopCompleted = !hasMoreYears;
         }
         _runtimeMetrics.RecordSearch(searchResult);
+        if (searchResult != null)
+        {
+            try
+            {
+                var db = scope.ServiceProvider.GetRequiredService<TorrentarrDbContext>();
+                var activity = await db.SearchActivity.FindAsync([_context.InstanceName], cancellationToken);
+                if (activity == null)
+                {
+                    activity = new Torrentarr.Infrastructure.Database.Models.SearchActivity { Category = _context.InstanceName };
+                    db.SearchActivity.Add(activity);
+                }
+                activity.Summary = _runtimeMetrics.SearchSummary!;
+                activity.Timestamp = _runtimeMetrics.SearchTimestamp!;
+                await db.SaveChangesWithRetryAsync(_logger, scope.ServiceProvider.GetRequiredService<DatabaseRestartCoordinator>(), cancellationToken: cancellationToken);
+            }
+            catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested) { throw; }
+            catch (Exception ex) { _logger.LogWarning(ex, "Unable to persist search activity for {Instance}", _context.InstanceName); }
+        }
+    }
+
+    internal static async Task LoadSearchActivityAsync(IServiceProvider services, string instance, WorkerRuntimeMetrics metrics, Serilog.ILogger logger, CancellationToken ct)
+    {
+        try
+        {
+            using var scope = services.CreateScope();
+            var db = scope.ServiceProvider.GetRequiredService<TorrentarrDbContext>();
+            var activity = await db.SearchActivity.FindAsync([instance], ct);
+            metrics.SearchSummary = activity?.Summary;
+            metrics.SearchTimestamp = activity?.Timestamp;
+            metrics.MetricType = activity == null ? null : "search";
+        }
+        catch (OperationCanceledException) when (ct.IsCancellationRequested) { throw; }
+        catch (Exception ex) { logger.Warning(ex, "Unable to restore search activity for {Instance}", instance); }
     }
 
     private async Task ResetSearchedFlagsAsync(TorrentarrDbContext db, CancellationToken ct)
@@ -731,7 +792,7 @@ class ArrWorkerService : BackgroundService
 
     private DateTime _lastSearchTime = DateTime.MinValue;
 
-    private bool ShouldRunSearch()
+    internal bool ShouldRunSearch()
     {
         if (!_instanceConfig.Search.SearchMissing)
             return false;
@@ -750,6 +811,25 @@ class ArrWorkerService : BackgroundService
 
 sealed class WorkerRuntimeMetrics
 {
+    private WorkerLoopProgress _torrent = new("Initializing", DateTimeOffset.UtcNow);
+    private WorkerLoopProgress _search = new("Initializing", DateTimeOffset.UtcNow);
+    public WorkerLoopProgress Torrent { get => Volatile.Read(ref _torrent); set => Volatile.Write(ref _torrent, value); }
+    public WorkerLoopProgress Search { get => Volatile.Read(ref _search); set => Volatile.Write(ref _search, value); }
+    public WorkerHeartbeat Snapshot(string instance, bool restartRequested) => new()
+    {
+        Instance = instance,
+        Pid = Environment.ProcessId,
+        Heartbeat = DateTimeOffset.UtcNow,
+        RestartRequested = restartRequested,
+        SearchSummary = SearchSummary,
+        SearchTimestamp = SearchTimestamp,
+        QueueCount = QueueCount,
+        CategoryCount = CategoryCount,
+        MetricType = MetricType,
+        Torrent = Torrent,
+        Search = Search
+    };
+
     public void RecordSearch(SearchResult? result)
     {
         if (result == null) return;
