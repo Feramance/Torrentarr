@@ -72,8 +72,8 @@ export interface UseInstancePagedFetchAdapter<
    */
   readonly isCatalogEmpty?: (response: TResp) => boolean;
   /**
-   * Optional client-side filter applied after fetch (Radarr applies status / reason
-   * to the cached pages before pagination). When omitted, all rows are surfaced.
+   * Optional client-side filter applied to the current cached server page.
+   * When omitted, all rows are surfaced.
    */
   readonly filterRows?: (
     rows: ReadonlyArray<TInstRow>,
@@ -380,7 +380,7 @@ export function useInstancePagedFetch<
 
   // Display the current server page from the cache. `keepAllPages` only warms
   // flip-back; it must not concat + absolute-slice (breaks after soft-cap drops
-  // early pages). Lidarr keeps a single page; Radarr filters that page client-side.
+  // early pages). Lidarr keeps a single page; Radarr retains pages for flip-back.
   const allRows = useMemo<ReadonlyArray<TInstRow>>(
     () => pages[page] ?? [],
     [pages, page],

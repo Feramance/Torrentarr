@@ -318,11 +318,14 @@ export async function getRadarrMovies(
   page: number,
   pageSize: number,
   q: string,
+  options?: { missingOnly?: boolean; reasonFilter?: string | null },
 ): Promise<RadarrMoviesResponse> {
   const params = new URLSearchParams();
   params.set("page", String(page));
   params.set("page_size", String(pageSize));
   if (q) params.set("q", q);
+  if (options?.missingOnly) params.set("has_file", "false");
+  if (options?.reasonFilter) params.set("reason", options.reasonFilter);
   return fetchJson<RadarrMoviesResponse>(
     `/web/radarr/${encodeURIComponent(category)}/movies?${params}`,
   );

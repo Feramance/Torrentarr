@@ -1,3 +1,4 @@
+using System.ComponentModel;
 using System.Diagnostics;
 using System.Runtime.InteropServices;
 using System.Text.Json;
@@ -234,7 +235,11 @@ public sealed class WorkerProcessSupervisor : BackgroundService, IProcessOrchest
                 Status = !alive ? "Timed out" : heartbeat?.DescribeProgress() ?? "Initializing"
             };
         }
-        catch (InvalidOperationException) { return new ProcessStatus { Name = name, Kind = "worker", IsAlive = false, Status = "Stopped" }; }
+        // The child can exit between HasExited and reading OS process metadata.
+        catch (Exception ex) when (ex is InvalidOperationException or Win32Exception)
+        {
+            return new ProcessStatus { Name = name, Kind = "worker", IsAlive = false, Status = "Stopped" };
+        }
     }
 
     private void StartWorker(string instanceName)

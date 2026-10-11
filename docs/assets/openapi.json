@@ -1558,6 +1558,7 @@
     },
     "/api/radarr/{category}/movies": {
       "get": {
+        "description": "Total reflects all active filters; counts remain full-library rollups.",
         "operationId": "api_radarr_movies",
         "parameters": [
           {
@@ -1629,6 +1630,15 @@
             "name": "is_request",
             "schema": {
               "type": "boolean"
+            }
+          },
+          {
+            "description": "Filter before pagination by search reason. Not being searched includes null and empty reasons; all or an empty value disables this filter.",
+            "in": "query",
+            "name": "reason",
+            "required": false,
+            "schema": {
+              "type": "string"
             }
           }
         ],
@@ -3761,6 +3771,7 @@
     },
     "/web/radarr/{category}/movies": {
       "get": {
+        "description": "Total reflects all active filters; counts remain full-library rollups.",
         "operationId": "web_radarr_movies",
         "parameters": [
           {
@@ -3832,6 +3843,15 @@
             "name": "is_request",
             "schema": {
               "type": "boolean"
+            }
+          },
+          {
+            "description": "Filter before pagination by search reason. Not being searched includes null and empty reasons; all or an empty value disables this filter.",
+            "in": "query",
+            "name": "reason",
+            "required": false,
+            "schema": {
+              "type": "string"
             }
           }
         ],

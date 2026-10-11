@@ -232,21 +232,34 @@ it("paginates, searches, filters missing movies, and opens details in the active
       requests.push(url);
       const page = Number(url.searchParams.get("page"));
       const query = url.searchParams.get("q");
+      const all = Array.from({ length: 51 }, (_, i) => ({
+        id: i + 1,
+        title: i === 0 ? "First page" : i === 50 ? "Second page" : `Movie ${i}`,
+        monitored: true,
+        hasFile: i < 50,
+        reason: i === 50 ? "Missing" : "Quality",
+      }));
+      all.push({
+        id: 52,
+        title: "Wanted",
+        monitored: true,
+        hasFile: false,
+        reason: "Upgrade",
+      });
+      const filtered = all.filter(
+        (movie) =>
+          (!query || movie.title.includes(query)) &&
+          (url.searchParams.get("has_file") !== "false" || !movie.hasFile) &&
+          (!url.searchParams.get("reason") ||
+            url.searchParams.get("reason") === "all" ||
+            movie.reason === url.searchParams.get("reason")),
+      );
       return HttpResponse.json({
-        movies: query
-          ? [{ id: 3, title: "Wanted", monitored: true, hasFile: false }]
-          : [
-              {
-                id: page + 1,
-                title: page ? "Second page" : "First page",
-                monitored: true,
-                hasFile: true,
-              },
-            ],
-        total: query ? 1 : 51,
+        movies: filtered.slice(page * 50, (page + 1) * 50),
+        total: filtered.length,
         page,
         page_size: 50,
-        counts: { available: 50, monitored: 51 },
+        counts: { available: 50, monitored: 52 },
       });
     }),
   );
@@ -255,6 +268,29 @@ it("paginates, searches, filters missing movies, and opens details in the active
   await screen.findByText("First page");
   fireEvent.click(screen.getByRole("button", { name: "Next" }));
   await screen.findByText("Second page");
+  fireEvent.change(screen.getByLabelText("Status"), {
+    target: { value: "missing" },
+  });
+  await waitFor(() =>
+    expect(requests.at(-1)?.searchParams.get("has_file")).toBe("false"),
+  );
+  await screen.findByText("Wanted");
+  expect(requests.at(-1)?.searchParams.get("page")).toBe("0");
+  expect(
+    screen.queryByRole("button", { name: "Next" }),
+  ).not.toBeInTheDocument();
+  fireEvent.change(screen.getByLabelText("Search Reason"), {
+    target: { value: "Missing" },
+  });
+  await waitFor(() =>
+    expect(requests.at(-1)?.searchParams.get("reason")).toBe("Missing"),
+  );
+  await waitFor(() =>
+    expect(screen.queryByText("Wanted")).not.toBeInTheDocument(),
+  );
+  fireEvent.change(screen.getByLabelText("Search Reason"), {
+    target: { value: "all" },
+  });
   fireEvent.change(screen.getByLabelText("Search"), {
     target: { value: "Wanted" },
   });
@@ -270,6 +306,13 @@ it("paginates, searches, filters missing movies, and opens details in the active
   expect(within(dialog).getByText("Wanted")).toBeInTheDocument();
   fireEvent.click(within(dialog).getByRole("button", { name: "Close" }));
   expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
+  fireEvent.change(screen.getByLabelText("Search"), {
+    target: { value: "absent" },
+  });
+  await screen.findByText("No movies match the current filters.");
+  expect(
+    screen.queryByText("No movies in the local catalog."),
+  ).not.toBeInTheDocument();
 });
 
 // ── Inactive view ─────────────────────────────────────────────────────────────

@@ -579,11 +579,6 @@ class ArrWorkerService : BackgroundService
         using var scope = _serviceProvider.CreateScope();
         var syncService = scope.ServiceProvider.GetRequiredService<ArrSyncService>();
         var arrMediaService = scope.ServiceProvider.GetRequiredService<IArrMediaService>();
-        if (_searchLoopCompleted && _instanceConfig.Search.SearchAgainOnSearchCompletion)
-        {
-            await ResetSearchedFlagsAsync(scope.ServiceProvider.GetRequiredService<TorrentarrDbContext>(), cancellationToken);
-            _searchLoopCompleted = false;
-        }
         await syncService.SyncAsync(_context.InstanceName, cancellationToken);
         if (_instanceConfig.Search.SearchMissing)
             await syncService.MarkRequestsAsync(_context.InstanceName, cancellationToken);
@@ -606,6 +601,12 @@ class ArrWorkerService : BackgroundService
                 {
                     _logger.LogWarning(ex, "Failed to restore timed-out temporary profiles for {Instance}; continuing search", _context.InstanceName);
                 }
+            }
+
+            if (_searchLoopCompleted && _instanceConfig.Search.SearchAgainOnSearchCompletion)
+            {
+                await ResetSearchedFlagsAsync(scope.ServiceProvider.GetRequiredService<TorrentarrDbContext>(), cancellationToken);
+                _searchLoopCompleted = false;
             }
 
             // §2.7: DoUpgradeSearch is exclusive — when active, skip missing-media search

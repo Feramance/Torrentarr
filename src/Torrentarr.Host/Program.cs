@@ -610,6 +610,7 @@ try
 
     app.MapControllers();
     app.MapArrCatalogEndpoints();
+    app.MapRadarrMoviesEndpoints();
 
     // Home redirect: / → /ui
     app.MapGet("/", () => Results.Redirect(string.IsNullOrEmpty(urlBase) ? "/ui" : $"{urlBase}/ui"));
@@ -1066,74 +1067,6 @@ try
         return Results.Ok(new { arr, ready = true, counts });
     });
 
-    // Web Radarr Movies
-    app.MapGet("/web/radarr/{category}/movies", async (string category, TorrentarrConfig cfg, TorrentarrDbContext db, CatalogRollupService rollups, int? page, int? page_size, string? q, int? year_min, int? year_max, bool? monitored, bool? has_file, bool? quality_met, bool? is_request) =>
-    {
-        var keys = ArrCatalogIdentity.QueryKeys(cfg, category);
-        var currentPage = page ?? 0;
-        var currentPageSize = page_size ?? 50;
-        var skip = currentPage * currentPageSize;
-
-        var baseQuery = db.Movies.Where(m => keys.Contains(m.ArrInstance));
-        var query = baseQuery;
-        if (!string.IsNullOrEmpty(q))
-            query = query.Where(m => m.Title.Contains(q));
-        if (year_min.HasValue)
-            query = query.Where(m => m.Year >= year_min.Value);
-        if (year_max.HasValue)
-            query = query.Where(m => m.Year <= year_max.Value);
-        if (monitored.HasValue)
-            query = query.Where(m => m.Monitored == monitored.Value);
-        if (has_file.HasValue)
-            query = query.Where(m => has_file.Value ? m.MovieFileId != 0 : m.MovieFileId == 0);
-        if (quality_met.HasValue)
-            query = query.Where(m => m.QualityMet == quality_met.Value);
-        if (is_request.HasValue)
-            query = query.Where(m => m.IsRequest == is_request.Value);
-
-        var total = await baseQuery.CountAsync();
-        var (rollupCounts, _) = await rollups.GetRadarrRollupsAsync(keys);
-
-        var movies = await query
-            .OrderBy(m => m.Title)
-            .Skip(skip)
-            .Take(currentPageSize)
-            .Select(m => new
-            {
-                id = m.EntryId,
-                title = m.Title,
-                year = m.Year,
-                monitored = m.Monitored,
-                hasFile = m.MovieFileId != 0,
-                qualityMet = m.QualityMet,
-                isRequest = m.IsRequest,
-                upgrade = m.Upgrade,
-                customFormatScore = m.CustomFormatScore,
-                minCustomFormatScore = m.MinCustomFormatScore,
-                customFormatMet = m.CustomFormatMet,
-                reason = m.Reason,
-                qualityProfileId = m.QualityProfileId,
-                qualityProfileName = m.QualityProfileName
-            })
-            .ToListAsync();
-
-        return Results.Ok(new
-        {
-            category,
-            counts = new
-            {
-                available = rollupCounts.Available,
-                monitored = rollupCounts.Monitored,
-                missing = rollupCounts.Missing,
-                quality_met = rollupCounts.QualityMet,
-                requests = rollupCounts.Requests
-            },
-            total,
-            page = currentPage,
-            page_size = currentPageSize,
-            movies
-        });
-    });
 
     // Web Sonarr Series — seasons populated from episodes table
     app.MapGet("/web/sonarr/{category}/series", async (string category, TorrentarrConfig cfg, TorrentarrDbContext db, CatalogRollupService rollups, int? page, int? page_size, string? q, int? missing, string? reason) =>
@@ -2004,73 +1937,7 @@ try
         return Results.Ok(new { success = instanceName != null, message = instanceName != null ? $"Restarted {instanceName}" : $"No worker found for category '{section}'" });
     });
 
-    app.MapGet("/api/radarr/{category}/movies", async (string category, TorrentarrConfig cfg, TorrentarrDbContext db, CatalogRollupService rollups, int? page, int? page_size, string? q, int? year_min, int? year_max, bool? monitored, bool? has_file, bool? quality_met, bool? is_request) =>
-    {
-        var keys = ArrCatalogIdentity.QueryKeys(cfg, category);
-        var currentPage = page ?? 0;
-        var currentPageSize = page_size ?? 50;
-        var skip = currentPage * currentPageSize;
 
-        var baseQuery = db.Movies.Where(m => keys.Contains(m.ArrInstance));
-        var query = baseQuery;
-        if (!string.IsNullOrEmpty(q))
-            query = query.Where(m => m.Title.Contains(q));
-        if (year_min.HasValue)
-            query = query.Where(m => m.Year >= year_min.Value);
-        if (year_max.HasValue)
-            query = query.Where(m => m.Year <= year_max.Value);
-        if (monitored.HasValue)
-            query = query.Where(m => m.Monitored == monitored.Value);
-        if (has_file.HasValue)
-            query = query.Where(m => has_file.Value ? m.MovieFileId != 0 : m.MovieFileId == 0);
-        if (quality_met.HasValue)
-            query = query.Where(m => m.QualityMet == quality_met.Value);
-        if (is_request.HasValue)
-            query = query.Where(m => m.IsRequest == is_request.Value);
-
-        var total = await baseQuery.CountAsync();
-        var (rollupCounts, _) = await rollups.GetRadarrRollupsAsync(keys);
-
-        var movies = await query
-            .OrderBy(m => m.Title)
-            .Skip(skip)
-            .Take(currentPageSize)
-            .Select(m => new
-            {
-                id = m.EntryId,
-                title = m.Title,
-                year = m.Year,
-                monitored = m.Monitored,
-                hasFile = m.MovieFileId != 0,
-                qualityMet = m.QualityMet,
-                isRequest = m.IsRequest,
-                upgrade = m.Upgrade,
-                customFormatScore = m.CustomFormatScore,
-                minCustomFormatScore = m.MinCustomFormatScore,
-                customFormatMet = m.CustomFormatMet,
-                reason = m.Reason,
-                qualityProfileId = m.QualityProfileId,
-                qualityProfileName = m.QualityProfileName
-            })
-            .ToListAsync();
-
-        return Results.Ok(new
-        {
-            category,
-            counts = new
-            {
-                available = rollupCounts.Available,
-                monitored = rollupCounts.Monitored,
-                missing = rollupCounts.Missing,
-                quality_met = rollupCounts.QualityMet,
-                requests = rollupCounts.Requests
-            },
-            total,
-            page = currentPage,
-            page_size = currentPageSize,
-            movies
-        });
-    });
 
     app.MapGet("/api/sonarr/{category}/series", async (string category, TorrentarrConfig cfg, TorrentarrDbContext db, CatalogRollupService rollups, int? page, int? page_size, string? q, int? missing, string? reason) =>
     {

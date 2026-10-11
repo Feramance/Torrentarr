@@ -121,7 +121,7 @@ public class WorkerLifecycleTests
         var orchestrator = (IProcessOrchestrator)supervisor;
         try
         {
-            for (var attempt = 0; attempt < 20; attempt++)
+            for (var attempt = 0; attempt < 100; attempt++)
             {
                 await supervisor.RestartProcessAsync("Radarr");
                 await supervisor.GetProcessStatusAsync();

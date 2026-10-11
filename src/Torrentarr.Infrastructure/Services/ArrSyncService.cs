@@ -175,6 +175,8 @@ public class ArrSyncService
 
             if (dbMovies.TryGetValue(movie.TmdbId, out var existing))
             {
+                var unchanged = (existing.HasFile, existing.Monitored, existing.QualityProfileId, existing.QualityMet, existing.CustomFormatMet, existing.Reason)
+                    == (movie.HasFile, movie.Monitored, (int?)movie.QualityProfileId, qualityMet, customFormatMet, reason);
                 existing.Title = movie.Title;
                 existing.Monitored = movie.Monitored;
                 existing.Year = movie.Year;
@@ -191,8 +193,7 @@ public class ArrSyncService
                 existing.MinCustomFormatScore = minCfScore;
                 existing.CustomFormatMet = customFormatMet;
                 existing.Reason = reason;
-                existing.Searched = searched;
-                existing.Upgrade = false;
+                (existing.Searched, existing.Upgrade) = SyncedSearchFlags(searched, unchanged, existing.Searched, existing.Upgrade);
                 _db.Movies.Update(existing);
                 updated++;
                 _logger.LogTrace("DB Update: Movie {Title} (TmdbId: {TmdbId}) updated in database (quality: {Quality}, file: {FileId})", movie.Title, movie.TmdbId, movie.QualityProfileId, movie.MovieFile?.Id ?? 0);
@@ -405,6 +406,7 @@ public class ArrSyncService
             if (ShouldSkipDestructiveDelete(episodes.Count, existingEps.Count, instanceName, "episodes"))
                 continue;
 
+            var previousEpisodes = existingEps.ToDictionary(e => e.ArrId);
             _db.Episodes.RemoveRange(existingEps);
 
             var seriesProfileId = seriesProfileById.GetValueOrDefault(sonarrId);
@@ -419,6 +421,12 @@ public class ArrSyncService
                 var isAvailable = CheckEpisodeAvailability(ep.AirDateUtc, ep.Title ?? "Unknown", _logger);
                 var reason = DetermineReasonWithAvailability(ep.HasFile, qualityMet, customFormatMet, isAvailable, searchConfig);
                 var searched = DetermineSearched(ep.HasFile, qualityMet, customFormatMet, searchConfig);
+
+                var previous = previousEpisodes.GetValueOrDefault(ep.Id);
+                var unchanged = previous is not null
+                    && (previous.HasFile, previous.Monitored == true, previous.QualityProfileId, previous.QualityMet, previous.CustomFormatMet, previous.Reason)
+                        == (ep.HasFile, ep.Monitored, (int?)seriesProfileId, qualityMet, customFormatMet, reason);
+                var flags = SyncedSearchFlags(searched, unchanged, previous?.Searched ?? false, previous?.Upgrade ?? false);
 
                 _db.Episodes.Add(new EpisodeFilesModel
                 {
@@ -441,7 +449,9 @@ public class ArrSyncService
                     MinCustomFormatScore = minCfScore,
                     CustomFormatMet = customFormatMet,
                     Reason = reason,
-                    Searched = searched
+                    QualityProfileId = seriesProfileId,
+                    Searched = flags.Searched,
+                    Upgrade = flags.Upgrade
                 });
                 episodesAdded++;
                 _logger.LogTrace("DB Insert: Episode {SeriesTitle} S{SeasonNumber:D2}E{EpisodeNumber:D2} added to database (new)",
@@ -727,6 +737,8 @@ public class ArrSyncService
         var dbAlbums = await _db.Albums
             .Where(a => a.ArrInstance == instanceName)
             .ToDictionaryAsync(a => a.ForeignAlbumId, ct);
+        var previousAlbums = dbAlbums.ToDictionary(pair => pair.Key, pair =>
+            (Eligibility: (pair.Value.HasFile, pair.Value.Monitored, pair.Value.QualityProfileId, pair.Value.QualityMet, pair.Value.CustomFormatMet, pair.Value.Reason), pair.Value.Searched, pair.Value.Upgrade));
 
         var apiForeignIds = new HashSet<string>();
         // Track Lidarr album ID → EF entity for track sync
@@ -845,11 +857,13 @@ public class ArrSyncService
                 albumEntity.CustomFormatMet = true;
             }
 
-            albumEntity.Upgrade = false;
-
             var isAvailable = CheckAlbumAvailability(albumEntity.ReleaseDate, albumEntity.Title ?? "Unknown", _logger);
             albumEntity.Reason = DetermineReasonWithAvailability(albumEntity.HasFile, albumEntity.QualityMet, albumEntity.CustomFormatMet, isAvailable, searchConfig);
-            albumEntity.Searched = DetermineSearched(albumEntity.HasFile, albumEntity.QualityMet, albumEntity.CustomFormatMet, searchConfig);
+            var unchanged = previousAlbums.TryGetValue(albumEntity.ForeignAlbumId, out var previous)
+                && previous.Eligibility == (albumEntity.HasFile, albumEntity.Monitored, albumEntity.QualityProfileId, albumEntity.QualityMet, albumEntity.CustomFormatMet, albumEntity.Reason);
+            (albumEntity.Searched, albumEntity.Upgrade) = SyncedSearchFlags(
+                DetermineSearched(albumEntity.HasFile, albumEntity.QualityMet, albumEntity.CustomFormatMet, searchConfig),
+                unchanged, previous.Searched, previous.Upgrade);
         }
         await _db.SaveChangesWithRetryAsync(_logger, _restartCoordinator, cancellationToken: ct);
 
@@ -1032,6 +1046,8 @@ public class ArrSyncService
         var dbBooks = await _db.Books
             .Where(b => b.ArrInstance == instanceName)
             .ToDictionaryAsync(b => b.ForeignBookId, ct);
+        var previousBooks = dbBooks.ToDictionary(pair => pair.Key, pair =>
+            (Eligibility: (pair.Value.HasFile, pair.Value.Monitored, pair.Value.QualityProfileId, pair.Value.QualityMet, pair.Value.CustomFormatMet, pair.Value.Reason), pair.Value.Searched, pair.Value.Upgrade));
 
         var apiForeignIds = new HashSet<string>();
         var booksAdded = 0;
@@ -1155,7 +1171,11 @@ public class ArrSyncService
 
             var isAvailable = CheckAlbumAvailability(bookEntity.ReleaseDate, bookEntity.Title ?? "Unknown", _logger);
             bookEntity.Reason = DetermineReasonWithAvailability(bookEntity.HasFile, bookEntity.QualityMet, bookEntity.CustomFormatMet, isAvailable, searchConfig);
-            ApplySyncedSearchFlags(bookEntity, searchConfig);
+            var unchanged = previousBooks.TryGetValue(bookEntity.ForeignBookId, out var previous)
+                && previous.Eligibility == (bookEntity.HasFile, bookEntity.Monitored, bookEntity.QualityProfileId, bookEntity.QualityMet, bookEntity.CustomFormatMet, bookEntity.Reason);
+            (bookEntity.Searched, bookEntity.Upgrade) = SyncedSearchFlags(
+                DetermineSearched(bookEntity.HasFile, bookEntity.QualityMet, bookEntity.CustomFormatMet, searchConfig),
+                unchanged, previous.Searched, previous.Upgrade);
         }
 
         await _db.SaveChangesWithRetryAsync(_logger, _restartCoordinator, cancellationToken: ct);
@@ -1464,15 +1484,9 @@ public class ArrSyncService
         return true;
     }
 
-    /// <summary>
-    /// Resets Upgrade so DoUpgradeSearch can select the book again (qBitrr sync), then sets
-    /// Searched from should_mark_searched. Upgrade eligibility is the Upgrade flag, not Searched.
-    /// </summary>
-    private static void ApplySyncedSearchFlags(BookFilesModel book, SearchConfig searchConfig)
-    {
-        book.Upgrade = false;
-        book.Searched = DetermineSearched(book.HasFile, book.QualityMet, book.CustomFormatMet, searchConfig);
-    }
+    // Sync updates eligibility; unchanged items keep progress until the worker starts another search loop.
+    private static (bool Searched, bool Upgrade) SyncedSearchFlags(bool searched, bool unchanged, bool previousSearched, bool previousUpgrade)
+        => (searched || (unchanged && previousSearched), unchanged && previousUpgrade);
 
     private static bool DetermineSearched(bool hasFile, bool qualityMet, bool customFormatMet, SearchConfig searchConfig)
     {

@@ -112,7 +112,7 @@ export function useAggregateCatalogLoader<
   const debouncedSearch = useDebounce(aggFilter, 300);
 
   const aggFetchGenRef = useRef(0);
-  const aggActiveLoadsRef = useRef(0);
+  const aggActiveLoadGenRef = useRef<number | null>(null);
   const aggRequestKeyRef = useRef("");
   const emptyTracker = useCatalogEmptyStateTracker();
   const filtersRef = useRef(filters);
@@ -207,6 +207,8 @@ export function useAggregateCatalogLoader<
     async (options?: { showLoading?: boolean }) => {
       if (!instances.length) {
         aggFetchGenRef.current += 1;
+        aggActiveLoadGenRef.current = null;
+        setLoading(false);
         setRows([]);
         fullListSyncRef.current = createEmptyRowsSnapshot<TAggRow>();
         setSummary(adapter.initialSummary);
@@ -215,7 +217,7 @@ export function useAggregateCatalogLoader<
       }
       const showLoading = options?.showLoading ?? true;
       const gen = ++aggFetchGenRef.current;
-      aggActiveLoadsRef.current += 1;
+      aggActiveLoadGenRef.current = gen;
       const requestKey = JSON.stringify({
         instances: [...instances]
           .map((instance) => instance.category)
@@ -345,7 +347,9 @@ export function useAggregateCatalogLoader<
           );
         }
       } finally {
-        aggActiveLoadsRef.current -= 1;
+        if (aggActiveLoadGenRef.current === gen) {
+          aggActiveLoadGenRef.current = null;
+        }
         if (gen === aggFetchGenRef.current) {
           setLoading(false);
         }
@@ -382,7 +386,7 @@ export function useAggregateCatalogLoader<
       if (
         selection === "aggregate" &&
         liveArr &&
-        aggActiveLoadsRef.current === 0
+        aggActiveLoadGenRef.current === null
       ) {
         void loadAggregate({ showLoading: false });
       }

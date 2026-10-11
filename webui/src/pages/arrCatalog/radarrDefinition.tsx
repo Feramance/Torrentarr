@@ -214,8 +214,8 @@ export const RADARR_DEFINITION: ArrCatalogDefinition<
       return radarrFilterRows<RadarrAggRow>(filtered, filters);
     },
   },
-  useInstancePipeline: (params) =>
-    useInstancePagedFetch<
+  useInstancePipeline: (params) => {
+    const state = useInstancePagedFetch<
       RadarrInstanceRow,
       RadarrMoviesResponse,
       RadarrFilters
@@ -225,9 +225,18 @@ export const RADARR_DEFINITION: ArrCatalogDefinition<
       hashFields: RADARR_HASH_FIELDS as unknown as ReadonlyArray<
         keyof RadarrInstanceRow & string
       >,
-      buildKey: ({ category, query }) => `${category}::${query}`,
-      fetchPage: (category, page, pageSize, query) =>
-        getRadarrMovies(category, page, pageSize, query),
+      buildKey: ({ category, query, filters }) =>
+        JSON.stringify([
+          category,
+          query,
+          filters.onlyMissing,
+          filters.reasonFilter,
+        ]),
+      fetchPage: (category, page, pageSize, query, filters) =>
+        getRadarrMovies(category, page, pageSize, query, {
+          missingOnly: filters.onlyMissing,
+          reasonFilter: filters.reasonFilter,
+        }),
       extractPage: (response) => ({
         rows: (response.movies ?? []).map((movie) => ({
           ...movie,
@@ -238,9 +247,17 @@ export const RADARR_DEFINITION: ArrCatalogDefinition<
         total: response.total ?? (response.movies ?? []).length,
       }),
       keepAllPages: true,
-      filterRows: (rows, filters) => radarrFilterRows(rows, filters),
       errorMessage: (category) => `Failed to load ${category} movies`,
-    }),
+    });
+    return {
+      ...state,
+      showCatalogEmptyHint:
+        state.showCatalogEmptyHint &&
+        !params.filters.onlyMissing &&
+        params.filters.reasonFilter === "all" &&
+        !params.globalSearchRef.current,
+    };
+  },
   buildAggregateSelection: (row, instances) => ({
     id: radarrAggRowKey(row),
     source: "aggregate",

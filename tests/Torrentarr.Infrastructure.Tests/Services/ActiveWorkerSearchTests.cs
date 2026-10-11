@@ -63,7 +63,7 @@ public class ActiveWorkerSearchTests
     }
 
     [Fact]
-    public async Task CompletedLoop_ResetsOnlyThisInstancesSearchedFlagsOnNextCycle()
+    public async Task CompletedLoop_PreservesFlagsUntilSearchDue_AndResetsOnlyThisInstance()
     {
         var config = new ArrInstanceConfig
         {
@@ -73,7 +73,7 @@ public class ActiveWorkerSearchTests
             {
                 SearchMissing = true,
                 SearchAgainOnSearchCompletion = true,
-                SearchRequestsEvery = 0
+                SearchRequestsEvery = 3600
             }
         };
         using var harness = new Harness(config, sqlite: true);
@@ -84,11 +84,65 @@ public class ActiveWorkerSearchTests
             .ReturnsAsync(new SearchResult { LoopCompleted = true });
         await harness.Worker.ProcessSearchAsync(CancellationToken.None);
         await harness.Worker.ProcessSearchAsync(CancellationToken.None);
+        harness.Media.Verify(m => m.SearchMissingMediaAsync("movies", It.IsAny<CancellationToken>()), Times.Once);
+        harness.Db.ChangeTracker.Clear();
+        (await harness.Db.Movies.SingleAsync(m => m.ArrInstance == "Radarr")).Searched.Should().BeTrue();
+        (await harness.Db.Movies.SingleAsync(m => m.ArrInstance == "Radarr")).Upgrade.Should().BeTrue();
+        using var restarted = harness.CreateWorker(config);
+        await restarted.ProcessSearchAsync(CancellationToken.None);
+        harness.Db.ChangeTracker.Clear();
+        (await harness.Db.Movies.SingleAsync(m => m.ArrInstance == "Radarr")).Searched.Should().BeTrue();
+        config.ProcessingOnly = true;
+        config.Search.SearchRequestsEvery = 0;
+        await harness.Worker.ProcessSearchAsync(CancellationToken.None);
+        config.ProcessingOnly = false;
+        config.Search.SearchMissing = false;
+        await harness.Worker.ProcessSearchAsync(CancellationToken.None);
+        harness.Db.ChangeTracker.Clear();
+        (await harness.Db.Movies.SingleAsync(m => m.ArrInstance == "Radarr")).Searched.Should().BeTrue();
+        config.Search.SearchMissing = true;
+        await harness.Worker.ProcessSearchAsync(CancellationToken.None);
         harness.Db.ChangeTracker.Clear();
         var own = await harness.Db.Movies.SingleAsync(m => m.ArrInstance == "Radarr");
         own.Searched.Should().BeFalse();
         own.Upgrade.Should().BeFalse();
         (await harness.Db.Movies.SingleAsync(m => m.ArrInstance == "Other")).Searched.Should().BeTrue();
+        (await harness.Db.Movies.SingleAsync(m => m.ArrInstance == "Other")).Upgrade.Should().BeTrue();
+    }
+
+    [Fact]
+    public async Task CompletedLoop_WithSuccessfulSync_PreservesProgressDuringThrottleAndRestart()
+    {
+        using var api = new ArrSyncStub();
+        var config = new ArrInstanceConfig
+        {
+            Type = "radarr",
+            Category = "movies",
+            URI = api.Url,
+            Search = new SearchConfig { SearchMissing = true, SearchAgainOnSearchCompletion = true, SearchRequestsEvery = 3600 }
+        };
+        using var harness = new Harness(config, sqlite: true, skipSync: false);
+        var calls = 0;
+        harness.Media.Setup(m => m.SearchMissingMediaAsync("movies", It.IsAny<CancellationToken>()))
+            .Returns(async () =>
+            {
+                if (++calls > 1)
+                    (await harness.Db.Movies.AsNoTracking().SingleAsync()).Searched.Should().BeTrue();
+                await harness.Db.Movies.ExecuteUpdateAsync(s => s.SetProperty(m => m.Searched, true).SetProperty(m => m.Upgrade, true));
+                harness.Db.ChangeTracker.Clear();
+                return new SearchResult { LoopCompleted = true };
+            });
+        await harness.Worker.ProcessSearchAsync(CancellationToken.None);
+        await harness.Worker.ProcessSearchAsync(CancellationToken.None);
+        harness.Media.Verify(m => m.SearchMissingMediaAsync("movies", It.IsAny<CancellationToken>()), Times.Once);
+        harness.Db.ChangeTracker.Clear();
+        (await harness.Db.Movies.SingleAsync()).Searched.Should().BeTrue();
+        (await harness.Db.Movies.SingleAsync()).Upgrade.Should().BeTrue();
+        using var restarted = harness.CreateWorker(config);
+        await restarted.ProcessSearchAsync(CancellationToken.None);
+        harness.Db.ChangeTracker.Clear();
+        (await harness.Db.Movies.SingleAsync()).Searched.Should().BeTrue();
+        (await harness.Db.Movies.SingleAsync()).Upgrade.Should().BeTrue();
     }
 
     private sealed class Harness : IDisposable
@@ -98,11 +152,11 @@ public class ActiveWorkerSearchTests
         public ServiceProvider Provider { get; }
         public TorrentarrDbContext Db { get; }
         public ArrWorkerService Worker { get; }
-        public Harness(ArrInstanceConfig instance, bool sqlite = false)
+        public Harness(ArrInstanceConfig instance, bool sqlite = false, bool skipSync = true)
         {
             var config = new TorrentarrConfig();
             config.ArrInstances["Radarr"] = instance;
-            instance.URI = ""; // No external sync; exercise the active search cycle against local state.
+            if (skipSync) instance.URI = ""; // Other tests isolate the search cycle from sync.
             var options = new DbContextOptionsBuilder<TorrentarrDbContext>();
             if (sqlite) options.UseSqlite("Data Source=:memory:");
             else options.UseInMemoryDatabase(Guid.NewGuid().ToString());
@@ -115,11 +169,13 @@ public class ActiveWorkerSearchTests
             services.AddSingleton(Microsoft.Extensions.Logging.Abstractions.NullLogger<ArrSyncService>.Instance as Microsoft.Extensions.Logging.ILogger<ArrSyncService>);
             services.AddScoped<ArrSyncService>();
             Provider = services.BuildServiceProvider();
-            Worker = new ArrWorkerService(NullLogger<ArrWorkerService>.Instance, config, instance,
+            Worker = CreateWorker(instance);
+        }
+        public ArrWorkerService CreateWorker(ArrInstanceConfig instance) =>
+            new(NullLogger<ArrWorkerService>.Instance, Provider.GetRequiredService<TorrentarrConfig>(), instance,
                 new WorkerContext { InstanceName = "Radarr" }, Provider,
                 new QBittorrentConnectionManager(NullLogger<QBittorrentConnectionManager>.Instance),
                 Mock.Of<IConnectivityService>(), new SearchYearCursor(), Metrics);
-        }
         public void Dispose() { Worker.Dispose(); Provider.Dispose(); Db.Dispose(); }
     }
 }

@@ -1220,24 +1220,28 @@ app.MapGet("/web/qbit/overview", async (HttpRequest request, TorrentarrConfig cf
 });
 
 // Radarr movies for specific category
-app.MapGet("/web/radarr/{category}/movies", async (string category, TorrentarrConfig cfg, TorrentarrDbContext db, int? page, int? pageSize, string? q) =>
+app.MapGet("/web/radarr/{category}/movies", async (string category, TorrentarrConfig cfg, TorrentarrDbContext db, int? page, int? pageSize, int? page_size, string? q, bool? has_file, string? reason) =>
 {
     var keys = ArrCatalogIdentity.QueryKeys(cfg, category);
-    var currentPage = page ?? 1;
-    var currentPageSize = pageSize ?? 50;
-    var skip = (currentPage - 1) * currentPageSize;
+    var currentPage = page ?? 0;
+    var currentPageSize = page_size ?? pageSize ?? 50;
+    var skip = currentPage * currentPageSize;
 
-    var allMovies = db.Movies.Where(m => keys.Contains(m.ArrInstance));
+    var baseQuery = db.Movies.Where(m => keys.Contains(m.ArrInstance));
+    var allMovies = baseQuery;
     // §6.3: text search filter
     if (!string.IsNullOrWhiteSpace(q))
         allMovies = allMovies.Where(m => m.Title != null && m.Title.Contains(q));
+    if (has_file.HasValue)
+        allMovies = allMovies.Where(m => m.HasFile == has_file.Value);
+    allMovies = ArrCatalogEndpoints.FilterRadarrMoviesByReason(allMovies, reason);
     var totalMovies = await allMovies.CountAsync();
-    var monitoredCount = await allMovies.CountAsync(m => m.Monitored);
-    var availableCount = await allMovies.CountAsync(m => m.HasFile);
+    var monitoredCount = await baseQuery.CountAsync(m => m.Monitored);
+    var availableCount = await baseQuery.CountAsync(m => m.HasFile);
     // §6.4: additional aggregate counts
-    var missingCount = await allMovies.CountAsync(m => !m.HasFile && m.Monitored);
-    var qualityMetCount = await allMovies.CountAsync(m => m.QualityMet);
-    var requestsCount = await allMovies.CountAsync(m => m.IsRequest);
+    var missingCount = await baseQuery.CountAsync(m => !m.HasFile && m.Monitored);
+    var qualityMetCount = await baseQuery.CountAsync(m => m.QualityMet);
+    var requestsCount = await baseQuery.CountAsync(m => m.IsRequest);
 
     var movies = await allMovies
         .OrderByDescending(m => m.Year)
@@ -1811,3 +1815,6 @@ sealed class NoOpAfterChallengeResult : IResult
     public static readonly NoOpAfterChallengeResult Instance = new();
     public Task ExecuteAsync(HttpContext ctx) => Task.CompletedTask;
 }
+
+// Expose the standalone entry point to endpoint integration tests.
+public partial class Program { }

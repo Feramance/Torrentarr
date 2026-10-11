@@ -11,6 +11,12 @@ namespace Torrentarr.Infrastructure.Endpoints;
 /// <summary>Arr catalog browse endpoints (qBitrr 5.12.0 parity): artists, thumbnails, deep links.</summary>
 public static class ArrCatalogEndpoints
 {
+    public static void MapRadarrMoviesEndpoints(this WebApplication app)
+    {
+        MapRadarrMovies(app, "/web/radarr/{category}/movies");
+        MapRadarrMovies(app, "/api/radarr/{category}/movies");
+    }
+
     public static void MapArrCatalogEndpoints(this WebApplication app)
     {
         MapLidarrArtists(app, "/web/lidarr/{category}/artists");
@@ -31,6 +37,89 @@ public static class ArrCatalogEndpoints
         MapThumbnail(app, "/api/sonarr/{category}/series/{id:int}/thumbnail", "sonarr");
         MapArrOpen(app, "/web/arr/{category}/open/{kind}/{entryId:int}");
         MapArrOpen(app, "/api/arr/{category}/open/{kind}/{entryId:int}");
+    }
+
+    public static IQueryable<MoviesFilesModel> FilterRadarrMoviesByReason(IQueryable<MoviesFilesModel> query, string? reason)
+    {
+        var reasonFilter = string.IsNullOrWhiteSpace(reason) || reason.Equals("all", StringComparison.OrdinalIgnoreCase)
+            ? null
+            : reason.Trim();
+        if (reasonFilter is null) return query;
+        return reasonFilter.Equals("Not being searched", StringComparison.OrdinalIgnoreCase)
+            ? query.Where(m => m.Reason == null || m.Reason == "" || m.Reason == "Not being searched")
+            : query.Where(m => m.Reason == reasonFilter);
+    }
+
+    private static void MapRadarrMovies(WebApplication app, string pattern)
+    {
+        app.MapGet(pattern, async (string category, TorrentarrConfig cfg, TorrentarrDbContext db, CatalogRollupService rollups, int? page, int? page_size, string? q, int? year_min, int? year_max, bool? monitored, bool? has_file, bool? quality_met, bool? is_request, string? reason) =>
+        {
+            var keys = ArrCatalogIdentity.QueryKeys(cfg, category);
+            var currentPage = page ?? 0;
+            var currentPageSize = page_size ?? 50;
+            var skip = currentPage * currentPageSize;
+
+            var query = db.Movies.Where(m => keys.Contains(m.ArrInstance));
+            if (!string.IsNullOrEmpty(q))
+                query = query.Where(m => m.Title.Contains(q));
+            if (year_min.HasValue)
+                query = query.Where(m => m.Year >= year_min.Value);
+            if (year_max.HasValue)
+                query = query.Where(m => m.Year <= year_max.Value);
+            if (monitored.HasValue)
+                query = query.Where(m => m.Monitored == monitored.Value);
+            if (has_file.HasValue)
+                query = query.Where(m => has_file.Value ? m.MovieFileId != 0 : m.MovieFileId == 0);
+            if (quality_met.HasValue)
+                query = query.Where(m => m.QualityMet == quality_met.Value);
+            if (is_request.HasValue)
+                query = query.Where(m => m.IsRequest == is_request.Value);
+
+            query = FilterRadarrMoviesByReason(query, reason);
+
+            var total = await query.CountAsync();
+            var (rollupCounts, _) = await rollups.GetRadarrRollupsAsync(keys);
+
+            var movies = await query
+                .OrderBy(m => m.Title)
+                .Skip(skip)
+                .Take(currentPageSize)
+                .Select(m => new
+                {
+                    id = m.EntryId,
+                    title = m.Title,
+                    year = m.Year,
+                    monitored = m.Monitored,
+                    hasFile = m.MovieFileId != 0,
+                    qualityMet = m.QualityMet,
+                    isRequest = m.IsRequest,
+                    upgrade = m.Upgrade,
+                    customFormatScore = m.CustomFormatScore,
+                    minCustomFormatScore = m.MinCustomFormatScore,
+                    customFormatMet = m.CustomFormatMet,
+                    reason = m.Reason,
+                    qualityProfileId = m.QualityProfileId,
+                    qualityProfileName = m.QualityProfileName
+                })
+                .ToListAsync();
+
+            return Results.Ok(new
+            {
+                category,
+                counts = new
+                {
+                    available = rollupCounts.Available,
+                    monitored = rollupCounts.Monitored,
+                    missing = rollupCounts.Missing,
+                    quality_met = rollupCounts.QualityMet,
+                    requests = rollupCounts.Requests
+                },
+                total,
+                page = currentPage,
+                page_size = currentPageSize,
+                movies
+            });
+        });
     }
 
     private static void MapLidarrArtists(WebApplication app, string pattern)
