@@ -11,6 +11,12 @@ namespace Torrentarr.Infrastructure.Endpoints;
 /// <summary>Arr catalog browse endpoints (qBitrr 5.12.0 parity): artists, thumbnails, deep links.</summary>
 public static class ArrCatalogEndpoints
 {
+    public static void MapRadarrMoviesEndpoints(this WebApplication app)
+    {
+        MapRadarrMovies(app, "/web/radarr/{category}/movies");
+        MapRadarrMovies(app, "/api/radarr/{category}/movies");
+    }
+
     public static void MapArrCatalogEndpoints(this WebApplication app)
     {
         MapLidarrArtists(app, "/web/lidarr/{category}/artists");
@@ -31,6 +37,89 @@ public static class ArrCatalogEndpoints
         MapThumbnail(app, "/api/sonarr/{category}/series/{id:int}/thumbnail", "sonarr");
         MapArrOpen(app, "/web/arr/{category}/open/{kind}/{entryId:int}");
         MapArrOpen(app, "/api/arr/{category}/open/{kind}/{entryId:int}");
+    }
+
+    public static IQueryable<MoviesFilesModel> FilterRadarrMoviesByReason(IQueryable<MoviesFilesModel> query, string? reason)
+    {
+        var reasonFilter = string.IsNullOrWhiteSpace(reason) || reason.Equals("all", StringComparison.OrdinalIgnoreCase)
+            ? null
+            : reason.Trim();
+        if (reasonFilter is null) return query;
+        return reasonFilter.Equals("Not being searched", StringComparison.OrdinalIgnoreCase)
+            ? query.Where(m => m.Reason == null || m.Reason == "" || m.Reason == "Not being searched")
+            : query.Where(m => m.Reason == reasonFilter);
+    }
+
+    private static void MapRadarrMovies(WebApplication app, string pattern)
+    {
+        app.MapGet(pattern, async (string category, TorrentarrConfig cfg, TorrentarrDbContext db, CatalogRollupService rollups, int? page, int? page_size, string? q, int? year_min, int? year_max, bool? monitored, bool? has_file, bool? quality_met, bool? is_request, string? reason) =>
+        {
+            var keys = ArrCatalogIdentity.QueryKeys(cfg, category);
+            var currentPage = page ?? 0;
+            var currentPageSize = page_size ?? 50;
+            var skip = currentPage * currentPageSize;
+
+            var query = db.Movies.Where(m => keys.Contains(m.ArrInstance));
+            if (!string.IsNullOrEmpty(q))
+                query = query.Where(m => m.Title.Contains(q));
+            if (year_min.HasValue)
+                query = query.Where(m => m.Year >= year_min.Value);
+            if (year_max.HasValue)
+                query = query.Where(m => m.Year <= year_max.Value);
+            if (monitored.HasValue)
+                query = query.Where(m => m.Monitored == monitored.Value);
+            if (has_file.HasValue)
+                query = query.Where(m => has_file.Value ? m.MovieFileId != 0 : m.MovieFileId == 0);
+            if (quality_met.HasValue)
+                query = query.Where(m => m.QualityMet == quality_met.Value);
+            if (is_request.HasValue)
+                query = query.Where(m => m.IsRequest == is_request.Value);
+
+            query = FilterRadarrMoviesByReason(query, reason);
+
+            var total = await query.CountAsync();
+            var (rollupCounts, _) = await rollups.GetRadarrRollupsAsync(keys);
+
+            var movies = await query
+                .OrderBy(m => m.Title)
+                .Skip(skip)
+                .Take(currentPageSize)
+                .Select(m => new
+                {
+                    id = m.EntryId,
+                    title = m.Title,
+                    year = m.Year,
+                    monitored = m.Monitored,
+                    hasFile = m.MovieFileId != 0,
+                    qualityMet = m.QualityMet,
+                    isRequest = m.IsRequest,
+                    upgrade = m.Upgrade,
+                    customFormatScore = m.CustomFormatScore,
+                    minCustomFormatScore = m.MinCustomFormatScore,
+                    customFormatMet = m.CustomFormatMet,
+                    reason = m.Reason,
+                    qualityProfileId = m.QualityProfileId,
+                    qualityProfileName = m.QualityProfileName
+                })
+                .ToListAsync();
+
+            return Results.Ok(new
+            {
+                category,
+                counts = new
+                {
+                    available = rollupCounts.Available,
+                    monitored = rollupCounts.Monitored,
+                    missing = rollupCounts.Missing,
+                    quality_met = rollupCounts.QualityMet,
+                    requests = rollupCounts.Requests
+                },
+                total,
+                page = currentPage,
+                page_size = currentPageSize,
+                movies
+            });
+        });
     }
 
     private static void MapLidarrArtists(WebApplication app, string pattern)
@@ -76,7 +165,7 @@ public static class ArrCatalogEndpoints
                 }
 
                 var artistIds = await albumQuery.Select(al => al.ArtistId).Distinct().ToListAsync();
-                query = query.Where(a => artistIds.Contains(a.EntryId));
+                query = query.Where(a => artistIds.Contains(a.ArrId));
             }
 
             var total = await query.CountAsync();
@@ -121,7 +210,7 @@ public static class ArrCatalogEndpoints
                     .Take(pageSize)
                     .Select(g => new ArtistFilesModel
                     {
-                        EntryId = g.ArtistId,
+                        ArrId = g.ArtistId,
                         Title = g.Title,
                         Monitored = g.Monitored,
                         ArrInstance = category
@@ -129,7 +218,7 @@ public static class ArrCatalogEndpoints
                     .ToList();
             }
 
-            var artistIdsListed = artists.Select(a => a.EntryId).ToList();
+            var artistIdsListed = artists.Select(a => a.ArrId).Distinct().ToList();
             var albumStats = await db.Albums
                 .Where(al => keys.Contains(al.ArrInstance) && artistIdsListed.Contains(al.ArtistId))
                 .GroupBy(al => al.ArtistId)
@@ -142,6 +231,19 @@ public static class ArrCatalogEndpoints
                 .ToListAsync();
 
             var statsByArtist = albumStats.ToDictionary(x => x.ArtistId);
+            var trackStatsByArtist = await db.Tracks
+                .Where(t => keys.Contains(t.ArrInstance))
+                .Join(db.Albums.Where(a => keys.Contains(a.ArrInstance)), t => t.AlbumId, a => a.EntryId,
+                    (t, a) => new { a.ArtistId, t.Monitored, t.HasFile })
+                .Where(x => artistIdsListed.Contains(x.ArtistId))
+                .GroupBy(x => x.ArtistId)
+                .Select(g => new
+                {
+                    ArtistId = g.Key,
+                    Monitored = g.Count(x => x.Monitored),
+                    Available = g.Count(x => x.Monitored && x.HasFile)
+                })
+                .ToDictionaryAsync(x => x.ArtistId);
 
             return Results.Ok(new
             {
@@ -166,21 +268,27 @@ public static class ArrCatalogEndpoints
                 page_size = pageSize,
                 artists = artists.Select(a =>
                 {
-                    statsByArtist.TryGetValue(a.EntryId, out var st);
+                    statsByArtist.TryGetValue(a.ArrId, out var st);
                     var mon = st?.Monitored ?? 0;
                     var avail = st?.Available ?? 0;
+                    trackStatsByArtist.TryGetValue(a.ArrId, out var trackStats);
+                    var trackMon = trackStats?.Monitored ?? 0;
+                    var trackAvail = trackStats?.Available ?? 0;
                     return new
                     {
                         artist = new
                         {
-                            id = a.EntryId,
+                            id = a.ArrId,
                             name = a.Title,
                             monitored = a.Monitored,
                             qualityProfileName = a.QualityProfileName,
                             searched = a.Searched,
                             albumsMonitored = mon,
                             albumsAvailable = avail,
-                            albumsMissing = Math.Max(mon - avail, 0)
+                            albumsMissing = Math.Max(mon - avail, 0),
+                            tracksMonitored = trackMon,
+                            tracksAvailable = trackAvail,
+                            tracksMissing = Math.Max(trackMon - trackAvail, 0)
                         }
                     };
                 })
@@ -205,13 +313,13 @@ public static class ArrCatalogEndpoints
         {
             var keys = ArrCatalogIdentity.QueryKeys(cfg, category);
             var artist = await db.Artists
-                .FirstOrDefaultAsync(a => keys.Contains(a.ArrInstance) && a.EntryId == artistId);
+                .FirstOrDefaultAsync(a => keys.Contains(a.ArrInstance) && a.ArrId == artistId);
             if (artist is null)
                 return Results.NotFound(new { error = "Artist not found" });
 
             var (albumCounts, _, trackCounts) = await rollups.GetLidarrRollupsAsync(keys);
             var albums = await db.Albums
-                .Where(al => keys.Contains(al.ArrInstance) && al.ArtistId == artistId)
+                .Where(al => keys.Contains(al.ArrInstance) && al.ArtistId == artist.ArrId)
                 .OrderBy(al => al.Title)
                 .ToListAsync();
 
@@ -239,7 +347,7 @@ public static class ArrCatalogEndpoints
                 },
                 artist = new
                 {
-                    id = artist.EntryId,
+                    id = artist.ArrId,
                     name = artist.Title,
                     monitored = artist.Monitored,
                     qualityProfileName = artist.QualityProfileName,
@@ -501,7 +609,9 @@ public static class ArrCatalogEndpoints
             string kind,
             int entryId,
             TorrentarrConfig cfg,
-            TorrentarrDbContext db) =>
+            TorrentarrDbContext db,
+            HttpContext httpContext,
+            IHttpClientFactory httpClientFactory) =>
         {
             var instance = cfg.ArrInstances
                 .FirstOrDefault(kvp =>
@@ -512,11 +622,38 @@ public static class ArrCatalogEndpoints
 
             var keys = ArrCatalogIdentity.QueryKeys(instance);
             var baseUri = instance.Value.URI.TrimEnd('/');
-            var slug = await ResolveOpenSlugAsync(kind, keys, entryId, db);
-            if (slug is null)
+            var arrId = await ResolveOpenArrIdAsync(kind, keys, entryId, db);
+            if (arrId is null)
                 return Results.NotFound(new { error = "Item not found" });
 
-            var path = kind.ToLowerInvariant() switch
+            kind = kind.ToLowerInvariant();
+            var expectedType = kind switch { "movie" => "radarr", "series" => "sonarr", "artist" => "lidarr", "author" => "readarr", _ => null };
+            if (!string.Equals(instance.Value.Type, expectedType, StringComparison.OrdinalIgnoreCase))
+                return Results.NotFound(new { error = "Item kind does not match section" });
+
+            string? slug;
+            try
+            {
+                using var client = httpClientFactory.CreateClient(instance.Value.SkipTLSVerify ? "ArrOpenSkipTls" : "ArrOpen");
+                client.Timeout = TimeSpan.FromSeconds(20);
+                var apiVersion = kind is "movie" or "series" ? "v3" : "v1";
+                using var request = new HttpRequestMessage(HttpMethod.Get, $"{baseUri}/api/{apiVersion}/{kind}/{arrId}");
+                request.Headers.Add("X-Api-Key", instance.Value.APIKey);
+                using var response = await client.SendAsync(request, httpContext.RequestAborted);
+                if (!response.IsSuccessStatusCode)
+                    return Results.NotFound(new { error = "Arr item unavailable" });
+                using var json = System.Text.Json.JsonDocument.Parse(await response.Content.ReadAsStringAsync(httpContext.RequestAborted));
+                var field = kind switch { "artist" => "foreignArtistId", "author" => "foreignAuthorId", _ => "titleSlug" };
+                slug = json.RootElement.ValueKind == System.Text.Json.JsonValueKind.Object && json.RootElement.TryGetProperty(field, out var value) && value.ValueKind == System.Text.Json.JsonValueKind.String ? value.GetString() : null;
+            }
+            catch (Exception ex) when (ex is HttpRequestException or System.Text.Json.JsonException || ex is OperationCanceledException && !httpContext.RequestAborted.IsCancellationRequested)
+            {
+                return Results.Problem("Unable to resolve Arr item", statusCode: StatusCodes.Status502BadGateway);
+            }
+            if (string.IsNullOrWhiteSpace(slug))
+                return Results.NotFound(new { error = "Arr route identifier unavailable" });
+            slug = Uri.EscapeDataString(slug);
+            var path = kind switch
             {
                 "movie" => $"/movie/{slug}",
                 "series" => $"/series/{slug}",
@@ -527,11 +664,15 @@ public static class ArrCatalogEndpoints
             if (path is null)
                 return Results.BadRequest(new { error = "Unknown kind" });
 
-            return Results.Redirect($"{baseUri}{path}");
+            var destination = $"{baseUri}{path}";
+            return httpContext.Request.Headers.TryGetValue("X-Requested-With", out var requestedWith)
+                && string.Equals(requestedWith, "XMLHttpRequest", StringComparison.OrdinalIgnoreCase)
+                ? Results.Ok(new { url = destination })
+                : Results.Redirect(destination);
         });
     }
 
-    private static async Task<string?> ResolveOpenSlugAsync(
+    private static async Task<string?> ResolveOpenArrIdAsync(
         string kind,
         List<string> keys,
         int entryId,
@@ -548,7 +689,7 @@ public static class ArrCatalogEndpoints
                 .Select(s => s.ArrId.ToString())
                 .FirstOrDefaultAsync(),
             "artist" => await db.Artists
-                .Where(a => keys.Contains(a.ArrInstance) && a.EntryId == entryId)
+                .Where(a => keys.Contains(a.ArrInstance) && a.ArrId == entryId)
                 .Select(a => a.ArrId.ToString())
                 .FirstOrDefaultAsync(),
             "author" => await db.Authors

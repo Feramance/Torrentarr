@@ -16,7 +16,7 @@
     "strict": true,
     "target": "ES2022",
     "tsBuildInfoFile": "./node_modules/.tmp/tsconfig.app.tsbuildinfo",
-    "types": ["vite/client"],
+    "types": ["vite/client", "@testing-library/jest-dom"],
     "useDefineForClassFields": true,
     "verbatimModuleSyntax": true
   },

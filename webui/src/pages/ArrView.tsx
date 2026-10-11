@@ -1,7 +1,5 @@
 import { type JSX } from "react";
-import { RadarrView } from "./RadarrView";
-import { SonarrView } from "./SonarrView";
-import { LidarrView } from "./LidarrView";
+import { ArrCatalogView } from "./ArrCatalogView";
 import { ReadarrView } from "./ReadarrView";
 
 interface ArrViewProps {
@@ -11,13 +9,13 @@ interface ArrViewProps {
 
 export function ArrView({ type, active }: ArrViewProps): JSX.Element {
   if (type === "radarr") {
-    return <RadarrView active={active} />;
+    return <ArrCatalogView kind="radarr" active={active} />;
   }
   if (type === "lidarr") {
-    return <LidarrView active={active} />;
+    return <ArrCatalogView kind="lidarr" active={active} />;
   }
   if (type === "readarr") {
     return <ReadarrView active={active} />;
   }
-  return <SonarrView active={active} />;
+  return <ArrCatalogView kind="sonarr" active={active} />;
 }

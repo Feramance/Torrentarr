@@ -130,6 +130,8 @@
 
     ```bash
     curl -L -o torrentarr https://github.com/Feramance/Torrentarr/releases/latest/download/torrentarr-linux-x64
+    curl -fL -o torrentarr-workers-linux-x64 https://github.com/Feramance/Torrentarr/releases/latest/download/torrentarr-workers-linux-x64
+    chmod +x torrentarr-workers-linux-x64
     chmod +x torrentarr
     ./torrentarr
     ```

@@ -4,7 +4,7 @@ import { render, screen } from "@testing-library/react";
 import { http, HttpResponse } from "msw";
 import { setupServer } from "msw/node";
 import type { ReactNode } from "react";
-import { SonarrView } from "../../pages/SonarrView";
+import { ArrCatalogView } from "../../pages/ArrCatalogView";
 import { ToastProvider } from "../../context/ToastContext";
 import { WebUIProvider } from "../../context/WebUIContext";
 import { SearchProvider } from "../../context/SearchContext";
@@ -53,12 +53,15 @@ function Wrapper({ children }: { children: ReactNode }) {
 }
 
 function renderView(active = true) {
-  return render(<SonarrView active={active} />, { wrapper: Wrapper });
+  localStorage.setItem("torrentarr.arrBrowseMode.sonarr", "list");
+  return render(<ArrCatalogView kind="sonarr" active={active} />, {
+    wrapper: Wrapper,
+  });
 }
 
 // ── Card header ───────────────────────────────────────────────────────────────
 
-describe("SonarrView – card header", () => {
+describe("Sonarr catalog – card header", () => {
   it("renders the Sonarr card header", async () => {
     server.use(
       http.get("/web/config", () => HttpResponse.json(minimalConfig)),
@@ -74,7 +77,7 @@ describe("SonarrView – card header", () => {
 
 // ── Empty state ───────────────────────────────────────────────────────────────
 
-describe("SonarrView – empty state", () => {
+describe("Sonarr catalog – empty state", () => {
   it("shows 'No series found.' when no instances are configured", async () => {
     // Catalog grouping is always series rows; empty aggregate still shows this hint.
     server.use(
@@ -93,26 +96,30 @@ describe("SonarrView – empty state", () => {
       http.get("/web/config", () => HttpResponse.json(minimalConfig)),
       http.post("/web/config", () => HttpResponse.json({})),
       http.get("/web/arr", () => HttpResponse.json(sonarrArrList)),
-      http.get("/web/sonarr/sonarr-hd/series", () =>
+      http.get("/web/sonarr/Sonarr%20HD/series", () =>
         HttpResponse.json(emptySeriesResponse),
       ),
     );
 
     renderView();
 
-    await screen.findByText("No series found.", {}, { timeout: 5000 });
+    await screen.findByText(
+      "No series rows in the local catalog yet.",
+      {},
+      { timeout: 5000 },
+    );
   });
 });
 
 // ── Single instance ───────────────────────────────────────────────────────────
 
-describe("SonarrView – instance sidebar", () => {
+describe("Sonarr catalog – instance sidebar", () => {
   it("shows instance button in sidebar when one sonarr instance is configured", async () => {
     server.use(
       http.get("/web/config", () => HttpResponse.json(minimalConfig)),
       http.post("/web/config", () => HttpResponse.json({})),
       http.get("/web/arr", () => HttpResponse.json(sonarrArrList)),
-      http.get("/web/sonarr/sonarr-hd/series", () =>
+      http.get("/web/sonarr/Sonarr%20HD/series", () =>
         HttpResponse.json(emptySeriesResponse),
       ),
     );
@@ -134,7 +141,7 @@ describe("SonarrView – instance sidebar", () => {
       http.get("/web/config", () => HttpResponse.json(minimalConfig)),
       http.post("/web/config", () => HttpResponse.json({})),
       http.get("/web/arr", () => HttpResponse.json(sonarrArrList)),
-      http.get("/web/sonarr/sonarr-hd/series", () =>
+      http.get("/web/sonarr/Sonarr%20HD/series", () =>
         HttpResponse.json({
           series: [
             {
@@ -172,14 +179,14 @@ describe("SonarrView – instance sidebar", () => {
     renderView();
 
     // Grouped series view includes an episode Title column.
-    await screen.findByText("Title", {}, { timeout: 5000 });
+    await screen.findByText("Breaking Bad", {}, { timeout: 5000 });
     expect(screen.queryByText("No series found.")).not.toBeInTheDocument();
   });
 });
 
 // ── Inactive view ─────────────────────────────────────────────────────────────
 
-describe("SonarrView – inactive", () => {
+describe("Sonarr catalog – inactive", () => {
   it("renders card frame when active=false", async () => {
     server.use(
       http.get("/web/config", () => HttpResponse.json(minimalConfig)),
