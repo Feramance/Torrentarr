@@ -109,10 +109,9 @@ public class StandaloneRadarrEndpointTests
                 services.AddDbContext<TorrentarrDbContext>(options => options.UseSqlite(_connection));
             });
         }
-        protected override void Dispose(bool disposing)
+        public override async ValueTask DisposeAsync()
         {
-            base.Dispose(disposing);
-            if (!disposing) return;
+            await base.DisposeAsync();
             _connection.Dispose();
             Environment.SetEnvironmentVariable("TORRENTARR_CONFIG", _previousConfig);
             ConfigurationLoader.TestConfigPathOverride = _previousOverride;

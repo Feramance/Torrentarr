@@ -46,7 +46,7 @@ Log.Logger = new LoggerConfiguration()
         retainedFileCountLimit: 7)
     .CreateLogger();
 
-builder.Host.UseSerilog();
+builder.Host.UseSerilog(dispose: true);
 
 // Register LoggingLevelSwitch so endpoints can change log level at runtime
 builder.Services.AddSingleton(levelSwitch);
