@@ -1,10 +1,10 @@
 import React from "react";
 import { describe, it, expect, beforeAll, afterAll, afterEach } from "vitest";
-import { render, screen, waitFor } from "@testing-library/react";
+import { render, screen } from "@testing-library/react";
 import { http, HttpResponse } from "msw";
 import { setupServer } from "msw/node";
 import type { ReactNode } from "react";
-import { LidarrView } from "../../pages/LidarrView";
+import { ArrCatalogView } from "../../pages/ArrCatalogView";
 import { ToastProvider } from "../../context/ToastContext";
 import { WebUIProvider } from "../../context/WebUIContext";
 import { SearchProvider } from "../../context/SearchContext";
@@ -34,10 +34,10 @@ const lidarrArrList = {
   ready: true,
 };
 
-// LidarrAlbumsResponse: albums is LidarrAlbumEntry[] — each entry has a nested `album` object
-const emptyAlbumsResponse = {
+// Artist browse responses wrap each artist in an entry.
+const emptyArtistsResponse = {
   category: "lidarr-hd",
-  albums: [],
+  artists: [],
   total: 0,
   page: 0,
   page_size: 50,
@@ -55,12 +55,15 @@ function Wrapper({ children }: { children: ReactNode }) {
 }
 
 function renderView(active = true) {
-  return render(<LidarrView active={active} />, { wrapper: Wrapper });
+  localStorage.setItem("torrentarr.arrBrowseMode.lidarr", "list");
+  return render(<ArrCatalogView kind="lidarr" active={active} />, {
+    wrapper: Wrapper,
+  });
 }
 
 // ── Card header ───────────────────────────────────────────────────────────────
 
-describe("LidarrView – card header", () => {
+describe("Lidarr catalog – card header", () => {
   it("renders the Lidarr card header", async () => {
     server.use(
       http.get("/web/config", () => HttpResponse.json(minimalConfig)),
@@ -70,15 +73,15 @@ describe("LidarrView – card header", () => {
 
     renderView();
 
-    await screen.findByText("Lidarr");
+    await screen.findByText("Lidarr", {}, { timeout: 10000 });
   });
 });
 
 // ── Empty state (no instances) ────────────────────────────────────────────────
 
-describe("LidarrView – empty state", () => {
-  it("shows 'No tracks found.' when no instances are configured", async () => {
-    // With no instances the aggregate view shows "No tracks found."
+describe("Lidarr catalog – empty state", () => {
+  it("shows 'No artists match the current filters.' when no instances are configured", async () => {
+    // With no instances the aggregate view shows "No artists match the current filters."
     server.use(
       http.get("/web/config", () => HttpResponse.json(minimalConfig)),
       http.post("/web/config", () => HttpResponse.json({})),
@@ -87,35 +90,39 @@ describe("LidarrView – empty state", () => {
 
     renderView();
 
-    await screen.findByText("No tracks found.");
+    await screen.findByText("No artists match the current filters.");
   });
 
-  it("shows 'No albums found.' when instance returns empty album list", async () => {
+  it("shows 'No artists in the local catalog.' when instance returns empty artist list", async () => {
     server.use(
       http.get("/web/config", () => HttpResponse.json(minimalConfig)),
       http.post("/web/config", () => HttpResponse.json({})),
       http.get("/web/arr", () => HttpResponse.json(lidarrArrList)),
-      http.get("/web/lidarr/lidarr-hd/albums", () =>
-        HttpResponse.json(emptyAlbumsResponse),
+      http.get("/web/lidarr/Lidarr%20HD/artists", () =>
+        HttpResponse.json(emptyArtistsResponse),
       ),
     );
 
     renderView();
 
-    await screen.findByText("No albums found.", {}, { timeout: 10000 });
+    await screen.findByText(
+      "No artists in the local catalog.",
+      {},
+      { timeout: 10000 },
+    );
   }, 12000);
 });
 
 // ── Single instance ───────────────────────────────────────────────────────────
 
-describe("LidarrView – instance sidebar", () => {
+describe("Lidarr catalog – instance sidebar", () => {
   it("shows instance button in sidebar when one lidarr instance is configured", async () => {
     server.use(
       http.get("/web/config", () => HttpResponse.json(minimalConfig)),
       http.post("/web/config", () => HttpResponse.json({})),
       http.get("/web/arr", () => HttpResponse.json(lidarrArrList)),
-      http.get("/web/lidarr/lidarr-hd/albums", () =>
-        HttpResponse.json(emptyAlbumsResponse),
+      http.get("/web/lidarr/Lidarr%20HD/artists", () =>
+        HttpResponse.json(emptyArtistsResponse),
       ),
     );
 
@@ -130,30 +137,27 @@ describe("LidarrView – instance sidebar", () => {
     expect(btn).toBeInTheDocument();
   });
 
-  it("shows albums table when albums are returned", async () => {
+  it("shows artist rows when artists are returned", async () => {
     // LidarrAlbumsResponse.albums contains LidarrAlbumEntry objects:
-    // each entry has { album: { artistName, title, ... }, totals, tracks }
+    // each entry has { artist: { artistName, title, ... }, totals, tracks }
     server.use(
       http.get("/web/config", () => HttpResponse.json(minimalConfig)),
       http.post("/web/config", () => HttpResponse.json({})),
       http.get("/web/arr", () => HttpResponse.json(lidarrArrList)),
-      http.get("/web/lidarr/lidarr-hd/albums", () =>
+      http.get("/web/lidarr/Lidarr%20HD/artists", () =>
         HttpResponse.json({
           category: "lidarr-hd",
-          albums: [
+          artists: [
             {
-              album: {
+              artist: {
                 id: 1,
-                title: "OK Computer",
-                artistName: "Radiohead",
-                releaseDate: "1997-05-21",
+                name: "Radiohead",
+                albumCount: 1,
+                trackTotalCount: 10,
                 monitored: true,
-                hasFile: true,
                 reason: null,
                 qualityProfileName: "Lossless",
               },
-              totals: { available: 10, monitored: 10, missing: 0 },
-              tracks: [],
             },
           ],
           total: 1,
@@ -174,17 +178,13 @@ describe("LidarrView – instance sidebar", () => {
       { timeout: 5000 },
     );
     expect(btn).toBeInTheDocument();
-    await waitFor(
-      () =>
-        expect(screen.queryByText("No albums found.")).not.toBeInTheDocument(),
-      { timeout: 8000 },
-    );
+    await screen.findByText("Radiohead");
   });
 });
 
 // ── Inactive view ─────────────────────────────────────────────────────────────
 
-describe("LidarrView – inactive", () => {
+describe("Lidarr catalog – inactive", () => {
   it("renders card frame when active=false", async () => {
     server.use(
       http.get("/web/config", () => HttpResponse.json(minimalConfig)),
@@ -193,6 +193,6 @@ describe("LidarrView – inactive", () => {
 
     renderView(false);
 
-    await screen.findByText("Lidarr");
+    await screen.findByText("Lidarr", {}, { timeout: 10000 });
   });
 });

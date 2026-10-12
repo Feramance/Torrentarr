@@ -1,5 +1,31 @@
 # Changelog
 
+## v6.16.0-1 (2026-10-11)
+
+### Features
+- [minor] Implement qBitrr parity and worker isolation (#480) ([ea993b6](https://github.com/Feramance/Torrentarr/commit/ea993b67840f84fa671eb48ef9331ab3ee7dc682))
+- Add client-neutral torrent maintenance ([6118662](https://github.com/Feramance/Torrentarr/commit/6118662888bd43ba0b984f2fa244936b829625c6))
+
+### Bug Fixes
+- fix: align qBitrr 5.14.6 stalled delay semantics (#478) ([469cfe0](https://github.com/Feramance/Torrentarr/commit/469cfe06c3fb7a2c695212d8bb7f599aa28fc3a1))
+
+### Maintenance
+- fix(docker): honor PUID and PGID settings (#477) ([373e073](https://github.com/Feramance/Torrentarr/commit/373e073829744335e8b3880e77c66f0c6bd7255f))
+- Bump Microsoft.Extensions.Configuration and Microsoft.Extensions.Configuration.Binder (#472) ([823307a](https://github.com/Feramance/Torrentarr/commit/823307a2611c547963125d634270857bbe775248))
+- Bump Microsoft.Extensions.FileProviders.Embedded from 10.0.10 to 10.0.12 ([e71cc2c](https://github.com/Feramance/Torrentarr/commit/e71cc2ca1b8bb198299419f5b450e3b44dff461c))
+- Bump Microsoft.Extensions.Options and Microsoft.Extensions.Options.DataAnnotations ([62ae6ab](https://github.com/Feramance/Torrentarr/commit/62ae6abd16c9bc57eb40472093a39c40409b59c8))
+- build(deps): bump actions/checkout from 4 to 7 ([fd67c55](https://github.com/Feramance/Torrentarr/commit/fd67c55be9792163673345aee5637f98d4719308))
+- build(deps): bump actions/upload-artifact from 4 to 7 ([1b40c82](https://github.com/Feramance/Torrentarr/commit/1b40c821b149d89eca7f066affd4f2156489656a))
+- build(deps-dev): bump typescript-eslint from 8.70.0 to 8.71.0 in /webui ([93e0d73](https://github.com/Feramance/Torrentarr/commit/93e0d732e1ce425c6264e52b584af87aff7c41de))
+- Bump Microsoft.Extensions.Hosting from 10.0.11 to 10.0.12 ([4d2ece9](https://github.com/Feramance/Torrentarr/commit/4d2ece9657980f048a0db4ec59d676d478282535))
+- Bump coverlet.collector from 10.0.1 to 10.1.0 ([bbcaf8d](https://github.com/Feramance/Torrentarr/commit/bbcaf8d30f8f730e82253fdbb5a6f0be7f693536))
+- build(deps-dev): bump globals from 17.12.0 to 17.13.0 in /webui ([aa2efed](https://github.com/Feramance/Torrentarr/commit/aa2efedb70dee499f43111b664140d6bacd7e227))
+- build(deps): bump @mantine/core from 9.6.2 to 9.6.3 in /webui ([caf65c1](https://github.com/Feramance/Torrentarr/commit/caf65c1d96af267c91585b51dde1cf58bf88ce4f))
+- build(deps-dev): bump autoprefixer from 10.5.4 to 10.6.1 in /webui ([0cdd046](https://github.com/Feramance/Torrentarr/commit/0cdd0468460e4ded3da9d10c63fd0c41aacf88bc))
+- build(deps-dev): bump @types/node from 26.4.0 to 26.6.3 in /webui ([8ef9b45](https://github.com/Feramance/Torrentarr/commit/8ef9b45e4b8c00ad911009b474ec2308f2fd6557))
+
+---
+
 ## v6.15.2-1 (2026-10-06)
 
 ### Bug Fixes

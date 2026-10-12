@@ -6,6 +6,7 @@ using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
 using Newtonsoft.Json.Linq;
 using Torrentarr.Core.Configuration;
+using Torrentarr.Infrastructure.Services;
 
 namespace Torrentarr.Host;
 
@@ -17,6 +18,7 @@ public class UpdateService
 {
     private readonly ILogger<UpdateService> _logger;
     private readonly TorrentarrConfig _config;
+    private readonly WorkerProcessSupervisor? _workers;
 
     // Cached check result — refreshed at most once per hour
     private DateTime _lastChecked = DateTime.MinValue;
@@ -28,6 +30,8 @@ public class UpdateService
     private string? _binaryDownloadName;
     private long? _binaryDownloadSize;
     private string? _binaryDownloadError;
+    private string? _workerDownloadUrl;
+    private string? _workerDownloadName;
     private string? _checkError;
     private readonly SemaphoreSlim _checkLock = new(1, 1);
 
@@ -40,11 +44,28 @@ public class UpdateService
     /// <summary>State of any in-progress or last completed apply operation.</summary>
     public UpdateApplyState ApplyState { get; } = new();
 
-    public UpdateService(ILogger<UpdateService> logger, TorrentarrConfig config)
+    public UpdateService(ILogger<UpdateService> logger, TorrentarrConfig config, WorkerProcessSupervisor? workers = null)
     {
         _logger = logger;
         _config = config;
+        _workers = workers;
+        if (OperatingSystem.IsWindows())
+        {
+            try
+            {
+                var saved = System.Text.Json.JsonSerializer.Deserialize<UpdateApplyState>(File.ReadAllText(UpdateResultPath));
+                if (saved != null)
+                {
+                    ApplyState.LastResult = saved.LastResult;
+                    ApplyState.LastError = saved.LastError;
+                    ApplyState.CompletedAt = saved.CompletedAt;
+                }
+            }
+            catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or System.Text.Json.JsonException) { }
+        }
     }
+
+    private static string UpdateResultPath => Path.Combine(ConfigurationLoader.GetDataDirectoryPath(), "update-result.json");
 
     public string AutoUpdateChannel =>
         ConfigurationLoader.NormalizeAutoUpdateChannel(_config.Settings.AutoUpdateChannel);
@@ -151,6 +172,8 @@ public class UpdateService
                 binary_download_name = _binaryDownloadName,
                 binary_download_size = _binaryDownloadSize,
                 binary_download_error = _binaryDownloadError,
+                worker_download_url = _workerDownloadUrl,
+                worker_download_name = _workerDownloadName,
                 platform = Environment.OSVersion.Platform.ToString(),
                 runtime = $".NET {Environment.Version}"
             };
@@ -173,6 +196,8 @@ public class UpdateService
             binary_download_name = _binaryDownloadName,
             binary_download_size = _binaryDownloadSize,
             binary_download_error = _binaryDownloadError,
+            worker_download_url = _workerDownloadUrl,
+            worker_download_name = _workerDownloadName,
             platform = Environment.OSVersion.Platform.ToString(),
             runtime = $".NET {Environment.Version}",
             auth_required = !webUi.AuthDisabled,
@@ -209,7 +234,7 @@ public class UpdateService
             return Task.CompletedTask;
         }
 
-        if (string.IsNullOrEmpty(_binaryDownloadUrl))
+        if (string.IsNullOrEmpty(_binaryDownloadUrl) || string.IsNullOrEmpty(_workerDownloadUrl))
         {
             ApplyState.LastResult = "error";
             ApplyState.LastError = "No binary download URL available — run update check first.";
@@ -223,12 +248,15 @@ public class UpdateService
 
         _ = Task.Run(async () =>
         {
+            string? tempDir = null;
+            var helperStarted = false;
+            var workersStopped = false;
             try
             {
                 var currentExe = System.Diagnostics.Process.GetCurrentProcess().MainModule?.FileName
                     ?? throw new InvalidOperationException("Cannot determine current executable path");
                 var currentDir = Path.GetDirectoryName(currentExe)!;
-                var tempDir = Path.Combine(Path.GetTempPath(), $"torrentarr-update-{Guid.NewGuid():N}");
+                tempDir = Path.Combine(Path.GetTempPath(), $"torrentarr-update-{Guid.NewGuid():N}");
                 Directory.CreateDirectory(tempDir);
 
                 _logger.LogInformation("UpdateService: Downloading {Url}", _binaryDownloadUrl);
@@ -244,6 +272,15 @@ public class UpdateService
                 {
                     response.EnsureSuccessStatusCode();
                     using var fs = File.Create(archivePath);
+                    await response.Content.CopyToAsync(fs, ct);
+                }
+
+                var workerName = _workerDownloadName ?? "worker-update";
+                var workerPath = Path.Combine(tempDir, workerName);
+                using (var response = await http.GetAsync(_workerDownloadUrl, HttpCompletionOption.ResponseHeadersRead, ct))
+                {
+                    response.EnsureSuccessStatusCode();
+                    using var fs = File.Create(workerPath);
                     await response.Content.CopyToAsync(fs, ct);
                 }
 
@@ -265,101 +302,216 @@ public class UpdateService
                 }
                 else
                 {
-                    throw new NotSupportedException($"Unsupported archive format: {archiveName}");
+                    File.Copy(archivePath, Path.Combine(extractDir, archiveName), overwrite: true);
                 }
+                File.Copy(workerPath, Path.Combine(extractDir, workerName), overwrite: true);
 
-                if (RuntimeInformation.IsOSPlatform(OSPlatform.Windows))
-                    ApplyWindowsUpdate(currentExe, currentDir, extractDir);
+                if (OperatingSystem.IsWindows())
+                {
+                    var workerPids = _workers == null ? Array.Empty<int>() : (await _workers.GetProcessStatusAsync()).Values
+                        .Where(s => s.ProcessId.HasValue).Select(s => s.ProcessId!.Value).ToArray();
+                    if (_workers != null)
+                    {
+                        workersStopped = true;
+                        await ((Torrentarr.Core.Interfaces.IProcessOrchestrator)_workers).StopAsync(CancellationToken.None);
+                    }
+                    ApplyWindowsUpdate(currentExe, currentDir, extractDir, workerPids);
+                    helperStarted = true;
+                    ApplyState.LastResult = "pending";
+                }
                 else
+                {
                     await ApplyUnixUpdateAsync(currentExe, currentDir, extractDir);
-
-                ApplyState.LastResult = "success";
+                    ApplyState.LastResult = "success";
+                    ApplyState.CompletedAt = DateTime.UtcNow;
+                    ApplyState.InProgress = false;
+                }
                 ApplyState.LastError = null;
-                ApplyState.CompletedAt = DateTime.UtcNow;
-                ApplyState.InProgress = false;
 
-                _logger.LogInformation("UpdateService: Update applied — stopping application for restart");
+                _logger.LogInformation("UpdateService: Update staged or applied — stopping application for restart");
                 await Task.Delay(500, CancellationToken.None);
                 lifetime.StopApplication();
             }
             catch (Exception ex)
             {
+                if (workersStopped && !helperStarted && _workers != null)
+                    try { await ((Torrentarr.Core.Interfaces.IProcessOrchestrator)_workers).StartAsync(CancellationToken.None); }
+                    catch (Exception restartError) { _logger.LogError(restartError, "Unable to resume workers after failed update"); }
                 _logger.LogError(ex, "UpdateService: Update failed");
                 ApplyState.InProgress = false;
                 ApplyState.LastResult = "error";
                 ApplyState.LastError = ex.Message;
                 ApplyState.CompletedAt = DateTime.UtcNow;
             }
+            finally
+            {
+                if (!helperStarted && tempDir != null)
+                    try { Directory.Delete(tempDir, true); }
+                    catch (Exception ex) when (ex is IOException or UnauthorizedAccessException) { _logger.LogWarning(ex, "Unable to remove update staging directory"); }
+            }
         }, CancellationToken.None);
 
         return Task.CompletedTask;
     }
 
-    private static async Task ApplyUnixUpdateAsync(string currentExe, string currentDir, string extractDir)
-    {
-        // Copy all files from the extracted archive into the current directory
-        foreach (var file in Directory.GetFiles(extractDir, "*", SearchOption.AllDirectories))
-        {
-            var relative = Path.GetRelativePath(extractDir, file);
-            var dest = Path.Combine(currentDir, relative);
-            Directory.CreateDirectory(Path.GetDirectoryName(dest)!);
-            File.Copy(file, dest, overwrite: true);
-        }
+    private sealed record UpdateTarget(string Source, string Destination, string Staged, string Backup, bool Existed);
 
-        // Ensure the main executable is marked as executable
-        var exeName = Path.GetFileName(currentExe);
-        var destExe = Path.Combine(currentDir, exeName);
-        if (File.Exists(destExe))
-            await MakeExecutableAsync(destExe);
+    private static List<UpdateTarget> ResolveUpdateTargets(string currentExe, string currentDir, string extractDir, string? configuredWorker)
+    {
+        var host = Directory.GetFiles(extractDir, "torrentarr-*").Single(file => !Path.GetFileName(file).StartsWith("torrentarr-workers-", StringComparison.OrdinalIgnoreCase));
+        var worker = Directory.GetFiles(extractDir, "torrentarr-workers-*").Single();
+        configuredWorker ??= Environment.GetEnvironmentVariable("TORRENTARR_WORKER_PATH");
+        var workerDestination = string.IsNullOrWhiteSpace(configuredWorker)
+            ? Path.Combine(currentDir, Path.GetFileName(worker)) : Path.GetFullPath(configuredWorker);
+        var comparer = OperatingSystem.IsWindows() ? StringComparison.OrdinalIgnoreCase : StringComparison.Ordinal;
+        if (workerDestination.EndsWith(".dll", StringComparison.OrdinalIgnoreCase)
+            || !string.IsNullOrWhiteSpace(configuredWorker) && !File.Exists(workerDestination)
+            || string.Equals(Path.GetFullPath(currentExe), Path.GetFullPath(workerDestination), comparer))
+            throw new InvalidOperationException("The configured worker must be an existing executable distinct from the Host; DLL overrides cannot receive binary updates.");
+        var suffix = Guid.NewGuid().ToString("N");
+        // Install the worker first; rollback restores the pair if installing the Host fails.
+        return new[] { (worker, workerDestination), (host, currentExe) }
+            .Select(pair => new UpdateTarget(pair.Item1, pair.Item2, pair.Item2 + ".new-" + suffix, pair.Item2 + ".bak-" + suffix, File.Exists(pair.Item2))).ToList();
     }
 
-    private static void ApplyWindowsUpdate(string currentExe, string currentDir, string extractDir)
-    {
-        // On Windows we cannot overwrite the running .exe, so we write a helper batch script
-        // that waits for this process to exit, then copies the new files and restarts.
-        var scriptPath = Path.Combine(Path.GetTempPath(), "torrentarr-update.bat");
-        var pid = Environment.ProcessId;
-
-        // Build the script content using a verbatim string for clarity
-        var script =
-            $"""
-            @echo off
-            :wait
-            tasklist /fi "PID eq {pid}" 2>nul | findstr /i "torrentarr" >nul
-            if not errorlevel 1 (
-                timeout /t 1 /nobreak >nul
-                goto :wait
-            )
-            xcopy /Y /E /I "{extractDir}\*" "{currentDir}\"
-            start "" "{currentExe}"
-            del "%~f0"
-            """;
-
-        File.WriteAllText(scriptPath, script);
-        System.Diagnostics.Process.Start(new System.Diagnostics.ProcessStartInfo
-        {
-            FileName = "cmd.exe",
-            Arguments = $"/c start /min \"\" \"{scriptPath}\"",
-            UseShellExecute = false,
-            CreateNoWindow = true
-        });
-    }
-
-    private static async Task MakeExecutableAsync(string path)
+    private static void StageUpdate(List<UpdateTarget> targets, bool unix)
     {
         try
         {
-            using var chmod = System.Diagnostics.Process.Start(new System.Diagnostics.ProcessStartInfo
+            foreach (var target in targets)
             {
-                FileName = "chmod",
-                Arguments = $"+x \"{path}\"",
+                File.Copy(target.Source, target.Staged, overwrite: false);
+                if (unix && !OperatingSystem.IsWindows()) File.SetUnixFileMode(target.Staged, File.GetUnixFileMode(target.Source) | UnixFileMode.UserExecute | UnixFileMode.GroupExecute | UnixFileMode.OtherExecute);
+                if (target.Existed) File.Copy(target.Destination, target.Backup, overwrite: false);
+            }
+        }
+        catch
+        {
+            foreach (var target in targets)
+            {
+                File.Delete(target.Staged);
+                File.Delete(target.Backup);
+            }
+            throw;
+        }
+    }
+
+    internal static Task ApplyUnixUpdateAsync(string currentExe, string currentDir, string extractDir, string? configuredWorker = null)
+    {
+        var targets = ResolveUpdateTargets(currentExe, currentDir, extractDir, configuredWorker);
+        StageUpdate(targets, unix: true);
+        var installed = new List<UpdateTarget>();
+        var recovered = true;
+        try
+        {
+            foreach (var target in targets)
+            {
+                File.Move(target.Staged, target.Destination, overwrite: true);
+                installed.Add(target);
+            }
+        }
+        catch
+        {
+            foreach (var target in installed.AsEnumerable().Reverse())
+            {
+                try
+                {
+                    if (target.Existed) File.Move(target.Backup, target.Destination, overwrite: true);
+                    else File.Delete(target.Destination);
+                }
+                catch { recovered = false; }
+            }
+            if (!recovered) throw new IOException("Update rollback failed; recovery copies remain beside the installed executables");
+            throw;
+        }
+        finally
+        {
+            foreach (var target in targets)
+            {
+                File.Delete(target.Staged);
+                if (recovered) File.Delete(target.Backup);
+            }
+        }
+        return Task.CompletedTask;
+    }
+
+    private static void ApplyWindowsUpdate(string currentExe, string currentDir, string extractDir, int[] workerPids)
+    {
+        var targets = ResolveUpdateTargets(currentExe, currentDir, extractDir, null);
+        StageUpdate(targets, unix: false);
+        var script = BuildWindowsUpdateScript(currentExe, Path.GetDirectoryName(extractDir)!, Environment.ProcessId, workerPids, UpdateResultPath, targets);
+        try
+        {
+            var encoded = Convert.ToBase64String(System.Text.Encoding.Unicode.GetBytes(script));
+            using var helper = System.Diagnostics.Process.Start(new System.Diagnostics.ProcessStartInfo
+            {
+                FileName = "powershell.exe",
+                ArgumentList = { "-NoProfile", "-NonInteractive", "-EncodedCommand", encoded },
                 UseShellExecute = false,
                 CreateNoWindow = true
-            });
-            if (chmod != null)
-                await chmod.WaitForExitAsync();
+            }) ?? throw new InvalidOperationException("Unable to start the Windows update helper");
         }
-        catch { /* best-effort — chmod may not exist on some platforms */ }
+        catch
+        {
+            foreach (var target in targets) { File.Delete(target.Staged); File.Delete(target.Backup); }
+            throw;
+        }
+    }
+
+    internal static string PrepareWindowsUpdateScript(string currentExe, string currentDir, string extractDir, int pid,
+        int[]? workerPids = null, string? configuredWorker = null, string? resultPath = null)
+    {
+        var targets = ResolveUpdateTargets(currentExe, currentDir, extractDir, configuredWorker);
+        StageUpdate(targets, unix: false);
+        return BuildWindowsUpdateScript(currentExe, extractDir, pid, workerPids, resultPath ?? UpdateResultPath, targets);
+    }
+
+    private static string BuildWindowsUpdateScript(string currentExe, string cleanupDirectory, int pid, int[]? workerPids,
+        string resultPath, List<UpdateTarget> targets)
+    {
+        static string Quote(string value) => "'" + value.Replace("'", "''", StringComparison.Ordinal) + "'";
+        var targetObjects = string.Join(",\n", targets.Select(t =>
+            $"@{{Destination={Quote(t.Destination)};Staged={Quote(t.Staged)};Backup={Quote(t.Backup)};Existed=${t.Existed.ToString().ToLowerInvariant()}}}"));
+        var pids = string.Join(",", (workerPids ?? []).Append(pid).Distinct());
+        return $$"""
+            $ErrorActionPreference = 'Stop'
+            $targets = @({{targetObjects}})
+            $resultPath = {{Quote(resultPath)}}
+            $installed = @()
+            $recovered = $true
+            $result = @{LastResult='error';LastError=$null;CompletedAt=$null}
+            try {
+                $processes = @(Get-Process -Id {{pids}} -ErrorAction SilentlyContinue)
+                foreach ($process in $processes) { $process.WaitForExit() }
+                foreach ($target in $targets) {
+                    Move-Item -LiteralPath $target.Staged -Destination $target.Destination -Force
+                    $installed += $target
+                }
+                $result.LastResult = 'success'
+            } catch {
+                $result.LastError = $_.Exception.Message
+                [array]::Reverse($installed)
+                foreach ($target in $installed) {
+                    try {
+                        if ($target.Existed) { Move-Item -LiteralPath $target.Backup -Destination $target.Destination -Force }
+                        else { Remove-Item -LiteralPath $target.Destination -Force }
+                    } catch { $recovered = $false; $result.LastError += '; rollback: ' + $_.Exception.Message }
+                }
+            } finally {
+                try {
+                $result.CompletedAt = [DateTime]::UtcNow.ToString('o')
+                [IO.Directory]::CreateDirectory([IO.Path]::GetDirectoryName($resultPath)) | Out-Null
+                $result | ConvertTo-Json | Set-Content -LiteralPath $resultPath -Encoding UTF8
+                foreach ($target in $targets) {
+                    Remove-Item -LiteralPath $target.Staged -Force -ErrorAction SilentlyContinue
+                    if ($recovered) { Remove-Item -LiteralPath $target.Backup -Force -ErrorAction SilentlyContinue }
+                }
+                Remove-Item -LiteralPath {{Quote(cleanupDirectory)}} -Recurse -Force -ErrorAction SilentlyContinue
+                } finally {
+                    Start-Process -FilePath {{Quote(currentExe)}} -WorkingDirectory {{Quote(Directory.GetCurrentDirectory())}}
+                }
+            }
+            """;
     }
 
     internal static bool IsSourceBuild()
@@ -443,6 +595,8 @@ public class UpdateService
             _binaryDownloadUrl = null;
             _binaryDownloadName = null;
             _binaryDownloadSize = null;
+            _workerDownloadUrl = null;
+            _workerDownloadName = null;
             _binaryDownloadError = AutoUpdateChannel == "nightly"
                 ? "Nightly channel does not download or apply binaries"
                 : "Source builds cannot apply binary updates";
@@ -451,14 +605,23 @@ public class UpdateService
 
         var assets = release["assets"] as JArray;
         var asset = assets?.FirstOrDefault(a =>
-            a["name"]?.ToObject<string>()?.Contains(assetPattern, StringComparison.OrdinalIgnoreCase) == true);
+            a["name"]?.ToObject<string>() is { } name
+            && name.StartsWith("torrentarr-", StringComparison.OrdinalIgnoreCase)
+            && !name.StartsWith("torrentarr-workers-", StringComparison.OrdinalIgnoreCase)
+            && name.Contains(assetPattern, StringComparison.OrdinalIgnoreCase));
+        var workerAsset = assets?.FirstOrDefault(a =>
+            a["name"]?.ToObject<string>() is { } name
+            && name.StartsWith("torrentarr-workers-", StringComparison.OrdinalIgnoreCase)
+            && name.Contains(GetWorkerAssetPattern(), StringComparison.OrdinalIgnoreCase));
 
-        if (asset != null)
+        if (asset != null && workerAsset != null)
         {
             _binaryDownloadUrl = asset["browser_download_url"]?.ToObject<string>();
             _binaryDownloadName = asset["name"]?.ToObject<string>();
             _binaryDownloadSize = asset["size"]?.ToObject<long?>();
             _binaryDownloadError = null;
+            _workerDownloadUrl = workerAsset["browser_download_url"]?.ToObject<string>();
+            _workerDownloadName = workerAsset["name"]?.ToObject<string>();
         }
         else
         {
@@ -466,18 +629,22 @@ public class UpdateService
             _binaryDownloadName = null;
             _binaryDownloadSize = null;
             _binaryDownloadError = $"No asset found for platform: {assetPattern}";
+            _workerDownloadUrl = null;
+            _workerDownloadName = null;
         }
     }
 
-    private static string GetAssetPattern()
+    private static string GetAssetPattern() => GetAssetPattern(
+        OperatingSystem.IsWindows() ? OSPlatform.Windows : OperatingSystem.IsMacOS() ? OSPlatform.OSX : OSPlatform.Linux,
+        RuntimeInformation.ProcessArchitecture);
+
+    internal static string GetAssetPattern(OSPlatform platform, Architecture architecture)
     {
-        if (RuntimeInformation.IsOSPlatform(OSPlatform.Windows))
-            return RuntimeInformation.OSArchitecture == Architecture.Arm64 ? "win-arm64" : "win-x64";
-        if (RuntimeInformation.IsOSPlatform(OSPlatform.OSX))
-            return RuntimeInformation.OSArchitecture == Architecture.Arm64 ? "osx-arm64" : "osx-x64";
-        // Linux
-        return RuntimeInformation.OSArchitecture == Architecture.Arm64 ? "linux-arm64" : "linux-x64";
+        var os = platform == OSPlatform.Windows ? "windows" : platform == OSPlatform.OSX ? "macos" : "linux";
+        return $"{os}-{(architecture == Architecture.Arm64 ? "arm64" : "x64")}";
     }
+
+    private static string GetWorkerAssetPattern() => GetAssetPattern().Replace("macos-", "osx-", StringComparison.Ordinal);
 
     /// <summary>
     /// <c>stable</c> matches Docker <c>:stable</c>: skip GitHub prereleases and weekly
@@ -544,7 +711,7 @@ public class UpdateService
 public class UpdateApplyState
 {
     public bool InProgress { get; set; }
-    /// <summary>"success" | "error" | null</summary>
+    /// <summary>"pending" | "success" | "error" | null</summary>
     public string? LastResult { get; set; }
     public string? LastError { get; set; }
     public DateTime? CompletedAt { get; set; }
