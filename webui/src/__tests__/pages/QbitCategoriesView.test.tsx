@@ -1,6 +1,15 @@
 import React from "react";
-import { describe, it, expect, beforeAll, afterAll, afterEach } from "vitest";
-import { render, screen } from "@testing-library/react";
+import {
+  describe,
+  it,
+  expect,
+  beforeAll,
+  afterAll,
+  afterEach,
+  vi,
+} from "vitest";
+import { act, render, screen } from "@testing-library/react";
+import * as api from "../../api/client";
 import { http, HttpResponse } from "msw";
 import { setupServer } from "msw/node";
 import type { ReactNode } from "react";
@@ -37,6 +46,29 @@ function renderView(active = true) {
 // ── empty state ──────────────────────────────────────────────────────────────
 
 describe("QbitCategoriesView – empty state", () => {
+  it("ignores a categories response after unmount", async () => {
+    let resolve!: (
+      value: Awaited<ReturnType<typeof api.getQbitCategories>>,
+    ) => void;
+    const categories = vi.spyOn(api, "getQbitCategories").mockImplementation(
+      () =>
+        new Promise((done) => {
+          resolve = done;
+        }),
+    );
+    const overview = vi.spyOn(api, "getQbitOverview");
+    server.use(http.get("/web/config", () => HttpResponse.json(baseConfig)));
+    try {
+      const { unmount } = renderView();
+      unmount();
+      await act(async () => resolve({ categories: [], ready: true }));
+      expect(overview).not.toHaveBeenCalled();
+    } finally {
+      categories.mockRestore();
+      overview.mockRestore();
+    }
+  });
+
   it("shows empty-state message when no categories are returned", async () => {
     server.use(
       http.get("/web/config", () => HttpResponse.json(baseConfig)),
