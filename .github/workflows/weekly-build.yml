@@ -98,22 +98,36 @@ jobs:
 
     - name: Decide whether to release a build
       id: should_release
+      env:
+        GH_TOKEN: ${{ secrets.PAT || secrets.GITHUB_TOKEN }}
+        EVENT_NAME: ${{ github.event_name }}
+        DISPATCH_BUILD_RELEASE: ${{ github.event.inputs.dispatch_build_release || 'false' }}
       run: |
         set -euo pipefail
 
-        if [[ "${{ github.event_name }}" == "workflow_dispatch" ]] && [[ "${{ github.event.inputs.dispatch_build_release || 'false' }}" != "true" ]]; then
+        if [[ "${EVENT_NAME}" == "workflow_dispatch" ]] && [[ "${DISPATCH_BUILD_RELEASE}" != "true" ]]; then
           echo "release=false" >> "${GITHUB_OUTPUT}"
           echo "Skipping build release (manual dispatch opted out)."
           exit 0
         fi
 
-        last_tag=$(git tag -l 'v*' --sort=-version:refname | head -n1 || true)
-        if [[ -z "${last_tag}" ]]; then
-          echo "Cannot determine an unreleased range without a previous release tag." >&2
+        releases=$(gh api --paginate "repos/${GITHUB_REPOSITORY}/releases")
+        last_release=$(printf '%s' "${releases}" | jq -sc '[.[][] | select(.draft == false and .published_at != null)] | max_by(.published_at)')
+        if [[ "${last_release}" == "null" ]]; then
           echo "release=false" >> "${GITHUB_OUTPUT}"
-          exit 1
+          echo "No published release to use as a baseline; skipping build release."
+          exit 0
         fi
 
+        published_at=$(printf '%s' "${last_release}" | jq -r '.published_at')
+        age=$(( $(date -u +%s) - $(date -u -d "${published_at}" +%s) ))
+        if [[ "${age}" -le 604800 ]]; then
+          echo "release=false" >> "${GITHUB_OUTPUT}"
+          echo "Last release is not more than seven days old; skipping build release."
+          exit 0
+        fi
+
+        last_tag=$(printf '%s' "${last_release}" | jq -r '.tag_name')
         count=$(git rev-list --count "${last_tag}..HEAD")
         echo "Commits since ${last_tag}: ${count}"
         if [[ "${count}" -eq 0 ]]; then
@@ -122,37 +136,92 @@ jobs:
           exit 0
         fi
 
+        subjects=$(git log --format='%s' "${last_tag}..HEAD")
         while IFS= read -r subject; do
           case "${subject}" in
             "[patch]"*|"[minor]"*|"[major]"*)
-              echo "Unreleased commit requires its own release: ${subject}" >&2
+              echo "Skipping build release: unreleased commit requires its own release: ${subject}"
               echo "release=false" >> "${GITHUB_OUTPUT}"
-              exit 1
+              exit 0
               ;;
           esac
-        done < <(git log --format='%s' "${last_tag}..HEAD")
+        done <<< "${subjects}"
 
+        paths=$(git diff --name-only "${last_tag}..HEAD")
         invalid_paths=()
+        eligible_paths=0
         while IFS= read -r path; do
           case "${path}" in
-            .github/*|package.json|*/package.json|package-lock.json|*/package-lock.json|pnpm-lock.yaml|*/pnpm-lock.yaml|yarn.lock|*/yarn.lock|bun.lockb|*/bun.lockb|*.csproj|Directory.Packages.props|packages.lock.json|*/packages.lock.json|requirements*.txt|*/requirements*.txt|pyproject.toml|*/pyproject.toml|poetry.lock|*/poetry.lock|uv.lock|*/uv.lock|Pipfile|*/Pipfile|Pipfile.lock|*/Pipfile.lock|go.mod|*/go.mod|go.sum|*/go.sum|Cargo.toml|*/Cargo.toml|Cargo.lock|*/Cargo.lock|composer.json|*/composer.json|composer.lock|*/composer.lock|Gemfile.lock|*/Gemfile.lock) ;;
+            ""|CHANGELOG.md) continue ;;
+            .github/*|package.json|*/package.json|package-lock.json|*/package-lock.json|pnpm-lock.yaml|*/pnpm-lock.yaml|yarn.lock|*/yarn.lock|bun.lockb|*/bun.lockb|*.csproj|Directory.Packages.props|packages.lock.json|*/packages.lock.json|requirements*.txt|*/requirements*.txt|pyproject.toml|*/pyproject.toml|poetry.lock|*/poetry.lock|uv.lock|*/uv.lock|Pipfile|*/Pipfile|Pipfile.lock|*/Pipfile.lock|go.mod|*/go.mod|go.sum|*/go.sum|Cargo.toml|*/Cargo.toml|Cargo.lock|*/Cargo.lock|composer.json|*/composer.json|composer.lock|*/composer.lock|Gemfile.lock|*/Gemfile.lock) eligible_paths=$((eligible_paths + 1)) ;;
             *) invalid_paths+=("${path}") ;;
           esac
-        done < <(git diff --name-only "${last_tag}..HEAD")
+        done <<< "${paths}"
 
         if [[ ${#invalid_paths[@]} -gt 0 ]]; then
-          printf 'Unreleased non-dependency/non-automation paths:\n%s\n' "${invalid_paths[@]}" >&2
+          printf 'Skipping build release: unreleased non-dependency/non-automation paths:\n%s\n' "${invalid_paths[@]}"
           echo "release=false" >> "${GITHUB_OUTPUT}"
-          exit 1
+          exit 0
+        fi
+
+        if [[ "${eligible_paths}" -eq 0 ]]; then
+          echo "release=false" >> "${GITHUB_OUTPUT}"
+          echo "No dependency/automation changes since last release; skipping build release."
+          exit 0
         fi
 
         echo "release=true" >> "${GITHUB_OUTPUT}"
 
-    - name: Dispatch build release
+    - name: Wait for passing Build and Test
+      id: build_tests
       if: steps.should_release.outputs.release == 'true'
       env:
         GH_TOKEN: ${{ secrets.PAT || secrets.GITHUB_TOKEN }}
       run: |
         set -euo pipefail
+        sha=$(git rev-parse HEAD)
+        echo "sha=${sha}" >> "${GITHUB_OUTPUT}"
+
+        for attempt in $(seq 0 60); do
+          runs=$(gh run list --repo "${GITHUB_REPOSITORY}" --workflow build.yml \
+            --branch master --commit "${sha}" --limit 100 \
+            --json databaseId,headSha,headBranch,event,status,conclusion)
+          latest=$(printf '%s' "${runs}" | jq -c --arg sha "${sha}" \
+            '[.[] | select(.headSha == $sha and .headBranch == "master" and (.event == "push" or .event == "schedule" or .event == "workflow_dispatch"))] | max_by(.databaseId)')
+          if [[ "${latest}" == "null" ]]; then
+            echo "Skipping build release: no Build and Test run for master at ${sha}."
+            break
+          fi
+          status=$(printf '%s' "${latest}" | jq -r '.status')
+          conclusion=$(printf '%s' "${latest}" | jq -r '.conclusion')
+          if [[ "${status}" == "completed" ]]; then
+            if [[ "${conclusion}" == "success" ]]; then
+              echo "passed=true" >> "${GITHUB_OUTPUT}"
+              echo "Build and Test passed for ${sha}."
+              exit 0
+            fi
+            echo "Skipping build release: Build and Test concluded ${conclusion} for ${sha}."
+            break
+          fi
+          if [[ "${attempt}" -eq 60 ]]; then
+            echo "Skipping build release: Build and Test did not finish within 30 minutes for ${sha}."
+            break
+          fi
+          echo "Waiting for Build and Test (${status}) for ${sha}."
+          sleep 30
+        done
+        echo "passed=false" >> "${GITHUB_OUTPUT}"
+
+    - name: Dispatch build release
+      if: steps.should_release.outputs.release == 'true' && steps.build_tests.outputs.passed == 'true'
+      env:
+        GH_TOKEN: ${{ secrets.PAT || secrets.GITHUB_TOKEN }}
+      run: |
+        set -euo pipefail
+        current_sha=$(git ls-remote origin refs/heads/master | cut -f1)
+        if [[ "${current_sha}" != "${{ steps.build_tests.outputs.sha }}" ]]; then
+          echo "Skipping build release: master moved since Build and Test was checked."
+          exit 0
+        fi
         gh workflow run "Create a Release" --repo "${{ github.repository }}" -f release_type=build
         echo "Dispatched Create a Release with release_type=build"

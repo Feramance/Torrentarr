@@ -69,8 +69,18 @@ Windows x64, and macOS x64/ARM64. Torrentarr does not publish to PyPI.
 
 The weekly workflow runs Monday at 06:00 UTC and can also be dispatched manually.
 It merges eligible green Dependabot PRs and dispatches a build release when the
-unreleased range passes its dependency/automation checks. Manual runs must select
-`dispatch_build_release=true` to request a release.
+most recently published release (including prereleases, excluding drafts) is more
+than seven days old and the unreleased range passes its dependency/automation
+checks. The latest **Build and Test** run for the exact refreshed `master` commit
+must also succeed, including all platform builds, frontend and non-live .NET tests,
+and other workflow checks. Pending CI is polled every 30 seconds for up to 30
+minutes; missing, failed, cancelled, or timed-out CI skips release dispatch.
+If `master` moves before dispatch, the release is skipped.
+Changelog-only changes and ineligible ranges are successful skips.
+Dependabot merging continues regardless of release age. Manual runs must select
+`dispatch_build_release=true` to request a release and obey the same age and CI gates.
+If there is no published release, the weekly workflow skips release dispatch;
+use **Create a Release** to create the initial release.
 
 ## Release checklist
 
