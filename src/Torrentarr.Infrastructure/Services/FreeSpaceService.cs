@@ -371,7 +371,7 @@ public class FreeSpaceService : IFreeSpaceService
 
                 _logger.LogTrace("FreeSpace: [{Instance}] Setting FreeSpacePaused on torrent {Hash}", instanceName, torrent.Hash);
                 await SetFreeSpacePausedTagAsync(client, torrent, instanceName, true, cancellationToken);
-                if (!_config.Settings.Tagless)
+                if (!_config.Settings.Tagless && client.Capabilities.Tags)
                     await client.RemoveTagsAsync(new List<string> { torrent.Hash }, new List<string> { AllowedSeedingTag }, cancellationToken);
                 _logger.LogTrace("FreeSpace: [{Instance}] Pausing torrent {Hash}", instanceName, torrent.Hash);
                 await client.PauseTorrentAsync(torrent.Hash, cancellationToken);
@@ -388,7 +388,7 @@ public class FreeSpaceService : IFreeSpaceService
 
                 _logger.LogTrace("FreeSpace: [{Instance}] Maintaining FreeSpacePaused on torrent {Hash}", instanceName, torrent.Hash);
                 await SetFreeSpacePausedTagAsync(client, torrent, instanceName, true, cancellationToken);
-                if (!_config.Settings.Tagless)
+                if (!_config.Settings.Tagless && client.Capabilities.Tags)
                     await client.RemoveTagsAsync(new List<string> { torrent.Hash }, new List<string> { AllowedSeedingTag }, cancellationToken);
             }
             else if (!isPausedDownload && freeSpaceTest >= 0)
@@ -416,7 +416,7 @@ public class FreeSpaceService : IFreeSpaceService
                 _currentFreeSpace = freeSpaceTest;
                 _logger.LogTrace("FreeSpace: [{Instance}] Clearing FreeSpacePaused on torrent {Hash}", instanceName, torrent.Hash);
                 await SetFreeSpacePausedTagAsync(client, torrent, instanceName, false, cancellationToken);
-                if (!_config.Settings.Tagless)
+                if (!_config.Settings.Tagless && client.Capabilities.Tags)
                     await client.AddTagsAsync(new List<string> { torrent.Hash }, new List<string> { AllowedSeedingTag }, cancellationToken);
                 _logger.LogTrace("FreeSpace: [{Instance}] Resuming torrent {Hash}", instanceName, torrent.Hash);
                 await client.ResumeTorrentAsync(torrent.Hash, cancellationToken);
@@ -442,7 +442,7 @@ public class FreeSpaceService : IFreeSpaceService
     private bool HasTag(TorrentInfo torrent, string tag)
     {
         // §1.6 Tagless: FreeSpacePaused → DB column
-        if (_config.Settings.Tagless)
+        if (_config.Settings.Tagless || _qbitManager.GetClient(torrent.QBitInstanceName)?.Capabilities.Tags == false)
         {
             var dbEntry = _dbContext.TorrentLibrary.AsNoTracking()
                 .FirstOrDefault(t => t.Hash == torrent.Hash && t.QbitInstance == torrent.QBitInstanceName);
@@ -459,7 +459,7 @@ public class FreeSpaceService : IFreeSpaceService
     private async Task SetFreeSpacePausedTagAsync(
         ITorrentClient client, TorrentInfo torrent, string instanceName, bool paused, CancellationToken ct)
     {
-        if (_config.Settings.Tagless)
+        if (_config.Settings.Tagless || _qbitManager.GetClient(torrent.QBitInstanceName)?.Capabilities.Tags == false)
         {
             await TaglessTorrentLibraryHelper.SetFreeSpacePausedAsync(
                 _dbContext, torrent.Hash, torrent.Category, instanceName, paused, ct);
@@ -476,7 +476,7 @@ public class FreeSpaceService : IFreeSpaceService
 
     private async Task EnsureTagsExistAsync(ITorrentClient client, CancellationToken cancellationToken)
     {
-        if (_config.Settings.Tagless) return; // §1.6: no tags in Tagless mode
+        if (_config.Settings.Tagless || !client.Capabilities.Tags) return; // §1.6: no tags in Tagless mode
         try
         {
             var existingTags = await client.GetTagsAsync(cancellationToken);

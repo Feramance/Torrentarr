@@ -41,6 +41,7 @@ public class WorkerSetupTests
     public async Task Setup_PropagatesRejectedCategoryAndTagCreation(bool accepted)
     {
         var client = new Mock<ITorrentClient>();
+        client.SetupGet(c => c.Capabilities).Returns(TorrentClientCapabilities.QBittorrent);
         client.Setup(x => x.GetCategoriesAsync(It.IsAny<CancellationToken>())).ReturnsAsync(new Dictionary<string, TorrentClientCategory>());
         client.Setup(x => x.CreateCategoryAsync(It.IsAny<string>(), It.IsAny<string>(), It.IsAny<CancellationToken>())).ReturnsAsync(accepted);
         client.Setup(x => x.GetTagsAsync(It.IsAny<CancellationToken>())).ReturnsAsync(new List<string>());

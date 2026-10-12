@@ -293,7 +293,7 @@ public class ArrImportServiceTests
         var svc = CreateService();
 
         var act = async () =>
-            await svc.MarkAsImportedAsync("abc123", Array.Empty<string>());
+            await svc.MarkAsImportedAsync("qBit", "abc123", Array.Empty<string>());
 
         await act.Should().NotThrowAsync();
     }
@@ -304,7 +304,7 @@ public class ArrImportServiceTests
         var svc = CreateService();
 
         var act = async () =>
-            await svc.MarkAsImportedAsync("abc123", new[] { "custom-tag" });
+            await svc.MarkAsImportedAsync("qBit", "abc123", new[] { "custom-tag" });
 
         await act.Should().NotThrowAsync();
     }
@@ -317,7 +317,7 @@ public class ArrImportServiceTests
         var svc = CreateService();
 
         var act = async () =>
-            await svc.MarkAsImportedAsync("abc123", Enumerable.Empty<string>());
+            await svc.MarkAsImportedAsync("qBit", "abc123", Enumerable.Empty<string>());
 
         await act.Should().NotThrowAsync();
     }

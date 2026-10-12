@@ -25,50 +25,50 @@ public class TorrentCacheService : ITorrentCacheService
         _logger = logger;
     }
 
-    public string? GetCategory(string hash)
+    public string? GetCategory(string instanceId, string hash)
     {
         lock (_lock)
         {
-            return _categoryCache.TryGetValue(hash, out var category) ? category : null;
+            return _categoryCache.TryGetValue(FileStateKey(instanceId, hash), out var category) ? category : null;
         }
     }
 
-    public void SetCategory(string hash, string category)
+    public void SetCategory(string instanceId, string hash, string category)
     {
         lock (_lock)
         {
-            _categoryCache[hash] = category;
+            _categoryCache[FileStateKey(instanceId, hash)] = category;
         }
     }
 
-    public string? GetName(string hash)
+    public string? GetName(string instanceId, string hash)
     {
         lock (_lock)
         {
-            return _nameCache.TryGetValue(hash, out var name) ? name : null;
+            return _nameCache.TryGetValue(FileStateKey(instanceId, hash), out var name) ? name : null;
         }
     }
 
-    public void SetName(string hash, string name)
+    public void SetName(string instanceId, string hash, string name)
     {
         lock (_lock)
         {
-            _nameCache[hash] = name;
+            _nameCache[FileStateKey(instanceId, hash)] = name;
         }
     }
 
-    public bool IsInIgnoreCache(string hash)
+    public bool IsInIgnoreCache(string instanceId, string hash)
     {
         lock (_lock)
         {
-            if (!_ignoreCache.TryGetValue(hash, out var expiry))
+            if (!_ignoreCache.TryGetValue(FileStateKey(instanceId, hash), out var expiry))
             {
                 return false;
             }
 
             if (DateTime.UtcNow > expiry)
             {
-                _ignoreCache.Remove(hash);
+                _ignoreCache.Remove(FileStateKey(instanceId, hash));
                 return false;
             }
 
@@ -76,20 +76,20 @@ public class TorrentCacheService : ITorrentCacheService
         }
     }
 
-    public void AddToIgnoreCache(string hash, TimeSpan duration)
+    public void AddToIgnoreCache(string instanceId, string hash, TimeSpan duration)
     {
         lock (_lock)
         {
-            _ignoreCache[hash] = DateTime.UtcNow.Add(duration);
+            _ignoreCache[FileStateKey(instanceId, hash)] = DateTime.UtcNow.Add(duration);
             _logger.LogTrace("Added {Hash} to ignore cache for {Duration}", hash, duration);
         }
     }
 
-    public void RemoveFromIgnoreCache(string hash)
+    public void RemoveFromIgnoreCache(string instanceId, string hash)
     {
         lock (_lock)
         {
-            _ignoreCache.Remove(hash);
+            _ignoreCache.Remove(FileStateKey(instanceId, hash));
         }
     }
 
@@ -200,7 +200,7 @@ public class TorrentCacheService : ITorrentCacheService
     }
 
     private static string FileStateKey(string qBitInstanceName, string hash) =>
-        string.Concat(qBitInstanceName, "\0", hash.ToUpperInvariant());
+        string.Concat(qBitInstanceName.ToUpperInvariant(), "\0", hash.ToUpperInvariant());
 
     public TorrentCacheStats GetStats()
     {

@@ -265,7 +265,7 @@ public sealed class TorrentProcessorTests : IDisposable
 
             var entry = await _db.TorrentLibrary.SingleAsync(t => t.Hash == hash && t.QbitInstance == instance);
             entry.Imported.Should().BeFalse("Torrentarr should wait for Arr to confirm the scan succeeded");
-            pathTracker.IsHashAlreadyScanned(hash).Should().BeTrue("successful trigger should still suppress duplicate scans");
+            pathTracker.IsHashAlreadyScanned("qBit", hash).Should().BeTrue("successful trigger should still suppress duplicate scans");
         }
         finally
         {
@@ -424,7 +424,7 @@ public sealed class TorrentProcessorTests : IDisposable
             .ReturnsAsync(false)
             .ReturnsAsync(true);
         importMock
-            .Setup(s => s.MarkAsImportedAsync(hash, It.IsAny<IEnumerable<string>>(), It.IsAny<CancellationToken>()))
+            .Setup(s => s.MarkAsImportedAsync("qBit", hash, It.IsAny<IEnumerable<string>>(), It.IsAny<CancellationToken>()))
             .Returns(Task.CompletedTask);
 
         var manager = new QBittorrentConnectionManager(
@@ -446,7 +446,7 @@ public sealed class TorrentProcessorTests : IDisposable
         var cache = new TorrentCacheService(NullLogger<TorrentCacheService>.Instance);
         cache.MarkFileFiltered(instance, hash);
         var pathTracker = new ImportPathTracker();
-        pathTracker.MarkScanned("/downloads/completed/item", hash);
+        pathTracker.MarkScanned("qBit", "/downloads/completed/item", hash);
 
         var processor = new TorrentProcessor(
             NullLogger<TorrentProcessor>.Instance,
@@ -484,7 +484,7 @@ public sealed class TorrentProcessorTests : IDisposable
         (await _db.TorrentLibrary.SingleAsync(t => t.Hash == hash && t.QbitInstance == instance)).Imported
             .Should().BeTrue("the database flag should flip only after Arr confirms the scan completed");
         importMock.Verify(
-            s => s.MarkAsImportedAsync(hash, It.IsAny<IEnumerable<string>>(), It.IsAny<CancellationToken>()),
+            s => s.MarkAsImportedAsync("qBit", hash, It.IsAny<IEnumerable<string>>(), It.IsAny<CancellationToken>()),
             Times.Once);
     }
 
@@ -519,7 +519,7 @@ public sealed class TorrentProcessorTests : IDisposable
             .Setup(s => s.IsImportedAsync(hash, It.IsAny<CancellationToken>()))
             .ReturnsAsync(true);
         importMock
-            .Setup(s => s.MarkAsImportedAsync(hash, It.IsAny<IEnumerable<string>>(), It.IsAny<CancellationToken>()))
+            .Setup(s => s.MarkAsImportedAsync("qBit", hash, It.IsAny<IEnumerable<string>>(), It.IsAny<CancellationToken>()))
             .Returns(Task.CompletedTask);
 
         var manager = new QBittorrentConnectionManager(
@@ -541,7 +541,7 @@ public sealed class TorrentProcessorTests : IDisposable
 
         var cache = new TorrentCacheService(NullLogger<TorrentCacheService>.Instance);
         var pathTracker = new ImportPathTracker();
-        pathTracker.MarkScanned("/downloads/completed/item", hash);
+        pathTracker.MarkScanned("qBit", "/downloads/completed/item", hash);
 
         var processor = new TorrentProcessor(
             NullLogger<TorrentProcessor>.Instance,
@@ -726,7 +726,7 @@ public sealed class TorrentProcessorTests : IDisposable
     {
         var clientsField = typeof(QBittorrentConnectionManager)
             .GetField("_clients", BindingFlags.NonPublic | BindingFlags.Instance)!;
-        var clients = (Dictionary<string, QBittorrentClient>)clientsField.GetValue(manager)!;
+        var clients = (Dictionary<string, Torrentarr.Core.Interfaces.ITorrentClient>)clientsField.GetValue(manager)!;
         clients[instanceName] = client;
     }
 

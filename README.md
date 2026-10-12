@@ -74,6 +74,7 @@ Access the WebUI at `http://<host>:6969/ui` after startup.
 
 ## Key Features
 
+- **Optional torrent maintenance** – Preview and arm category, repair, share-policy, and file cleanup actions with ownership and H&R safeguards. [Maintenance guide](docs/features/torrent-maintenance.md).
 - **Multi-qBittorrent Support** – Manage torrents across multiple qBittorrent instances for load balancing, redundancy, and VPN isolation
 - **Torrent Health Monitoring** – Detect stalled/failed downloads, auto-blacklist, trigger re-searches
 - **Automated Search** – Missing media, quality upgrades, custom format scoring

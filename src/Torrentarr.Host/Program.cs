@@ -720,9 +720,9 @@ try
 
         // Build qBit instances dict from QBitInstances (all named instances)
         var qbitInstances = new Dictionary<string, object>();
-        foreach (var (name, qbit) in cfg.QBitInstances)
+        foreach (var (name, qbit) in cfg.GetAllTorrentClients())
         {
-            var alive = name == "qBit" ? qbitAlive : qbitManager.IsConnected(name);
+            var alive = !qbit.Disabled && qbitManager.IsConnected(name);
             string? ver = name == "qBit" ? qbitVersion : null;
             if (alive && name != "qBit")
             {
@@ -780,7 +780,7 @@ try
         {
             try
             {
-                var client = qbitManager.GetClient(primaryName) ?? qbitManager.GetAllClients().Values.FirstOrDefault();
+                var client = qbitManager.GetClient(primaryName);
                 if (client != null)
                 {
                     var allTorrents = await client.GetTorrentsAsync();
@@ -818,7 +818,7 @@ try
         }
 
         // Additional qBit instances — only their own ManagedCategories are monitored
-        foreach (var (instName, instCfg) in cfg.QBitInstances.Where(q => q.Key != "qBit" && q.Value.Host != "CHANGE_ME"))
+        foreach (var (instName, instCfg) in cfg.GetAllTorrentClients().Where(q => !q.Key.Equals(primaryName, StringComparison.OrdinalIgnoreCase) && q.Value.Host != "CHANGE_ME"))
         {
             if (instCfg.ManagedCategories.Count == 0) continue;
             try
@@ -877,11 +877,11 @@ try
         }).ToList<object>();
 
         // Add a process card for each configured qBit instance
-        foreach (var (instanceName, qbit) in cfg.QBitInstances.Where(q => q.Value.Host != "CHANGE_ME"))
+        foreach (var (instanceName, qbit) in cfg.GetAllTorrentClients().Where(q => q.Value.Host != "CHANGE_ME"))
         {
             // Use IsConnected() (no params) for "qBit" to match the special case in /web/status
             // This returns true if ANY qBit client is connected
-            var isConnected = instanceName == "qBit" ? qbitMgr.IsConnected() : qbitMgr.IsConnected(instanceName);
+            var isConnected = !qbit.Disabled && qbitMgr.IsConnected(instanceName);
 
             int? totalCount = null;
             int? seedingCount = null;
@@ -891,9 +891,7 @@ try
                 try
                 {
                     // For "qBit", get any client; for named instances, get by name
-                    var client = instanceName == "qBit"
-                        ? qbitMgr.GetAllClients().Values.FirstOrDefault()
-                        : qbitMgr.GetClient(instanceName);
+                    var client = qbitMgr.GetClient(instanceName);
 
                     if (client != null)
                     {
@@ -1434,7 +1432,7 @@ try
     // Web Config Update — frontend sends { changes: { "Section.Key": value, ... } } (dotted keys).
     // ConfigView.tsx flatten()s the hierarchical config into dotted paths before sending only the
     // changed keys.  We apply those changes onto the current in-memory config and save.
-    app.MapPost("/web/config", async (HttpRequest request, TorrentarrConfig cfg, ConfigurationLoader loader, WorkerProcessSupervisor workerMgr, QBitCategoryWorkerManager qbitCategoryMgr) =>
+    app.MapPost("/web/config", async (HttpRequest request, TorrentarrConfig cfg, ConfigurationLoader loader, WorkerProcessSupervisor workerMgr, QBitCategoryWorkerManager qbitCategoryMgr, ITorrentClientRegistry registry) =>
     {
         try
         {
@@ -1453,7 +1451,7 @@ try
             if (!valid)
                 return Results.BadRequest(new { error = validationError });
 
-            return await SaveAndRespondConfigUpdate(cfg, updatedConfig, loader, workerMgr, qbitCategoryMgr);
+            return await SaveAndRespondConfigUpdate(cfg, updatedConfig, loader, workerMgr, qbitCategoryMgr, registry);
         }
         catch (Exception ex)
         {
@@ -1648,12 +1646,13 @@ try
     app.MapGet("/api/qbit/categories", async (ITorrentClientRegistry qbitManager, TorrentarrConfig cfg) =>
     {
         var categories = new List<object>();
+        var primaryName = cfg.GetAllTorrentClients().Keys.FirstOrDefault() ?? "qBit";
 
         var arrCategoryToConfig = cfg.ArrInstances
             .Where(kvp => !string.IsNullOrEmpty(kvp.Value.Category))
             .ToDictionary(kvp => kvp.Value.Category!, kvp => kvp.Value, StringComparer.OrdinalIgnoreCase);
 
-        var primaryQbit2 = (cfg.QBitInstances.GetValueOrDefault("qBit") ?? new QBitConfig());
+        var primaryQbit2 = (cfg.GetTorrentClient(primaryName) ?? new QBitConfig());
         var qbitManagedSet = new HashSet<string>(primaryQbit2.ManagedCategories, StringComparer.OrdinalIgnoreCase);
         var arrCategorySet = new HashSet<string>(arrCategoryToConfig.Keys, StringComparer.OrdinalIgnoreCase);
         var monitoredForDefault = new HashSet<string>(qbitManagedSet.Union(arrCategorySet), StringComparer.OrdinalIgnoreCase);
@@ -1662,7 +1661,7 @@ try
         {
             try
             {
-                var client = qbitManager.GetAllClients().Values.FirstOrDefault();
+                var client = qbitManager.GetClient(primaryName);
                 if (client != null)
                 {
                     var allTorrents = await client.GetTorrentsAsync();
@@ -1677,12 +1676,12 @@ try
                         var managedBy = arrCategorySet.Contains(catName) ? "arr" : "qbit";
 
                         var effectiveSeeding = CategorySeedingApiResolver.ResolveAggregate(
-                            cfg, "qBit", primaryQbit2, catName, torrentsInCat);
+                            cfg, primaryName, primaryQbit2, catName, torrentsInCat);
 
                         categories.Add(new
                         {
                             category = catName,
-                            instance = "qBit",
+                            instance = primaryName,
                             managedBy,
                             torrentCount = torrentsInCat.Count,
                             seedingCount = seedingTorrents.Count,
@@ -1697,7 +1696,7 @@ try
             catch { }
         }
 
-        foreach (var (instName, instCfg) in cfg.QBitInstances.Where(q => q.Key != "qBit" && q.Value.Host != "CHANGE_ME"))
+        foreach (var (instName, instCfg) in cfg.GetAllTorrentClients().Where(q => !q.Key.Equals(primaryName, StringComparison.OrdinalIgnoreCase) && q.Value.Host != "CHANGE_ME"))
         {
             if (instCfg.ManagedCategories.Count == 0) continue;
             try
@@ -1747,7 +1746,7 @@ try
 
     app.MapGet("/api/status", async (TorrentarrConfig cfg, ITorrentClientRegistry qbitManager) =>
     {
-        var apiPrimaryQbit = (cfg.QBitInstances.GetValueOrDefault("qBit") ?? new QBitConfig());
+        var apiPrimaryQbit = (cfg.GetTorrentClient("qBit") ?? cfg.GetAllTorrentClients().Values.FirstOrDefault() ?? new QBitConfig());
         var qbitConfigured = apiPrimaryQbit.Host != "CHANGE_ME" && !string.IsNullOrEmpty(apiPrimaryQbit.Host);
         var qbitAlive = qbitConfigured && qbitManager.IsConnected();
 
@@ -1760,9 +1759,9 @@ try
         }
 
         var qbitInstances2 = new Dictionary<string, object>();
-        foreach (var (name2, qbit2) in cfg.QBitInstances)
+        foreach (var (name2, qbit2) in cfg.GetAllTorrentClients())
         {
-            var alive2 = name2 == "qBit" ? qbitAlive : qbitManager.IsConnected(name2);
+            var alive2 = !qbit2.Disabled && qbitManager.IsConnected(name2);
             string? ver2 = name2 == "qBit" ? qbitVersion : null;
             if (alive2 && name2 != "qBit")
             {
@@ -2263,7 +2262,7 @@ try
         return Results.Content(StripSensitiveKeys(token).ToString(Newtonsoft.Json.Formatting.None), "application/json");
     });
 
-    app.MapPost("/api/config", async (HttpRequest request, TorrentarrConfig cfg, ConfigurationLoader loader, WorkerProcessSupervisor workerMgr, QBitCategoryWorkerManager qbitCategoryMgr) =>
+    app.MapPost("/api/config", async (HttpRequest request, TorrentarrConfig cfg, ConfigurationLoader loader, WorkerProcessSupervisor workerMgr, QBitCategoryWorkerManager qbitCategoryMgr, ITorrentClientRegistry registry) =>
     {
         try
         {
@@ -2285,7 +2284,7 @@ try
             if (!valid)
                 return Results.BadRequest(new { error = validationError });
 
-            return await SaveAndRespondConfigUpdate(cfg, updatedConfig, loader, workerMgr, qbitCategoryMgr);
+            return await SaveAndRespondConfigUpdate(cfg, updatedConfig, loader, workerMgr, qbitCategoryMgr, registry);
         }
         catch (Exception ex)
         {
@@ -2648,7 +2647,7 @@ static async Task<IResult> SaveAndRespondConfigUpdate(
     TorrentarrConfig updatedConfig,
     ConfigurationLoader loader,
     WorkerProcessSupervisor? workerMgr = null,
-    QBitCategoryWorkerManager? qbitCategoryMgr = null)
+    QBitCategoryWorkerManager? qbitCategoryMgr = null, ITorrentClientRegistry? registry = null)
 {
     var passwordHashError = WebUIAuthHelpers.ValidatePasswordHashForConfigApiSave(cfg, updatedConfig);
     if (passwordHashError != null)
@@ -2672,6 +2671,7 @@ static async Task<IResult> SaveAndRespondConfigUpdate(
     cfg.QBitInstances = updatedConfig.QBitInstances;
     cfg.TorrentClients = updatedConfig.TorrentClients;
     TorrentPolicyHelper.InvalidateMonitoredPolicyCategoriesCache(cfg);
+    if (reloadType == "full" && registry != null) await registry.ReconcileAsync(cfg.GetAllTorrentClients(), connect: false);
 
     if (workerMgr != null)
     {
@@ -3061,7 +3061,7 @@ class ProcessOrchestratorService : BackgroundService
                         }
                     }
                     _logger.LogInformation("[{Instance}] Re-checking torrent: {Name}", instanceName, torrent.Name);
-                    await client.RecheckTorrentsAsync(new List<string> { torrent.Hash }, cancellationToken);
+                    if (client.Capabilities.Recheck) await client.RecheckTorrentsAsync(new List<string> { torrent.Hash }, cancellationToken);
                 }
             }
             catch (Exception ex)

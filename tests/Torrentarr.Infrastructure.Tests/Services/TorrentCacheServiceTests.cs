@@ -14,18 +14,18 @@ public class TorrentCacheServiceTests
     public void SetCategory_GetCategory_RoundTrip()
     {
         var svc = CreateService();
-        svc.SetCategory("abc123", "radarr");
+        svc.SetCategory("qBit", "abc123", "radarr");
 
-        svc.GetCategory("abc123").Should().Be("radarr");
+        svc.GetCategory("qBit", "abc123").Should().Be("radarr");
     }
 
     [Fact]
     public void SetName_GetName_RoundTrip()
     {
         var svc = CreateService();
-        svc.SetName("abc123", "My Movie (2023)");
+        svc.SetName("qBit", "abc123", "My Movie (2023)");
 
-        svc.GetName("abc123").Should().Be("My Movie (2023)");
+        svc.GetName("qBit", "abc123").Should().Be("My Movie (2023)");
     }
 
     [Fact]
@@ -33,7 +33,7 @@ public class TorrentCacheServiceTests
     {
         var svc = CreateService();
 
-        svc.GetCategory("unknown-hash").Should().BeNull();
+        svc.GetCategory("qBit", "unknown-hash").Should().BeNull();
     }
 
     [Fact]
@@ -41,7 +41,7 @@ public class TorrentCacheServiceTests
     {
         var svc = CreateService();
 
-        svc.GetName("unknown-hash").Should().BeNull();
+        svc.GetName("qBit", "unknown-hash").Should().BeNull();
     }
 
     [Fact]
@@ -49,36 +49,36 @@ public class TorrentCacheServiceTests
     {
         var svc = CreateService();
 
-        svc.IsInIgnoreCache("nope").Should().BeFalse();
+        svc.IsInIgnoreCache("qBit", "nope").Should().BeFalse();
     }
 
     [Fact]
     public void AddToIgnoreCache_WithZeroDuration_ExpiresImmediately()
     {
         var svc = CreateService();
-        svc.AddToIgnoreCache("abc123", TimeSpan.Zero);
+        svc.AddToIgnoreCache("qBit", "abc123", TimeSpan.Zero);
 
         // Zero duration means it expires at or before now
-        svc.IsInIgnoreCache("abc123").Should().BeFalse();
+        svc.IsInIgnoreCache("qBit", "abc123").Should().BeFalse();
     }
 
     [Fact]
     public void AddToIgnoreCache_WithLongDuration_PresentBeforeExpiry()
     {
         var svc = CreateService();
-        svc.AddToIgnoreCache("abc123", TimeSpan.FromHours(1));
+        svc.AddToIgnoreCache("qBit", "abc123", TimeSpan.FromHours(1));
 
-        svc.IsInIgnoreCache("abc123").Should().BeTrue();
+        svc.IsInIgnoreCache("qBit", "abc123").Should().BeTrue();
     }
 
     [Fact]
     public void RemoveFromIgnoreCache_RemovesEntry()
     {
         var svc = CreateService();
-        svc.AddToIgnoreCache("abc123", TimeSpan.FromHours(1));
-        svc.RemoveFromIgnoreCache("abc123");
+        svc.AddToIgnoreCache("qBit", "abc123", TimeSpan.FromHours(1));
+        svc.RemoveFromIgnoreCache("qBit", "abc123");
 
-        svc.IsInIgnoreCache("abc123").Should().BeFalse();
+        svc.IsInIgnoreCache("qBit", "abc123").Should().BeFalse();
     }
 
     [Fact]
@@ -86,30 +86,30 @@ public class TorrentCacheServiceTests
     {
         var svc = CreateService();
         // Add one that expires immediately and one that doesn't
-        svc.AddToIgnoreCache("expired", TimeSpan.Zero);
-        svc.AddToIgnoreCache("alive", TimeSpan.FromHours(1));
+        svc.AddToIgnoreCache("qBit", "expired", TimeSpan.Zero);
+        svc.AddToIgnoreCache("qBit", "alive", TimeSpan.FromHours(1));
 
         svc.CleanExpired();
 
-        svc.IsInIgnoreCache("expired").Should().BeFalse();
-        svc.IsInIgnoreCache("alive").Should().BeTrue();
+        svc.IsInIgnoreCache("qBit", "expired").Should().BeFalse();
+        svc.IsInIgnoreCache("qBit", "alive").Should().BeTrue();
     }
 
     [Fact]
     public void Clear_WipesAllCaches()
     {
         var svc = CreateService();
-        svc.SetCategory("h1", "radarr");
-        svc.SetName("h1", "Movie");
-        svc.AddToIgnoreCache("h1", TimeSpan.FromHours(1));
+        svc.SetCategory("qBit", "h1", "radarr");
+        svc.SetName("qBit", "h1", "Movie");
+        svc.AddToIgnoreCache("qBit", "h1", TimeSpan.FromHours(1));
         svc.MarkFilePrioritiesApplied("qBit", "h1");
         svc.MarkFileFiltered("qBit", "h1");
 
         svc.Clear();
 
-        svc.GetCategory("h1").Should().BeNull();
-        svc.GetName("h1").Should().BeNull();
-        svc.IsInIgnoreCache("h1").Should().BeFalse();
+        svc.GetCategory("qBit", "h1").Should().BeNull();
+        svc.GetName("qBit", "h1").Should().BeNull();
+        svc.IsInIgnoreCache("qBit", "h1").Should().BeFalse();
         svc.AreFilePrioritiesApplied("qBit", "h1").Should().BeFalse();
         svc.IsFileFiltered("qBit", "h1").Should().BeFalse();
     }
@@ -143,7 +143,7 @@ public class TorrentCacheServiceTests
     }
 
     [Fact]
-    public void FileFilterStates_PreserveInstanceCaseButIgnoreHashCase()
+    public void FileFilterStates_IgnoreInstanceAndHashCase()
     {
         var svc = CreateService();
 
@@ -152,8 +152,8 @@ public class TorrentCacheServiceTests
 
         svc.AreFilePrioritiesApplied("qBit-A", "shared-hash").Should().BeTrue();
         svc.IsFileFiltered("qBit-A", "shared-hash").Should().BeTrue();
-        svc.AreFilePrioritiesApplied("qBit-a", "shared-hash").Should().BeFalse();
-        svc.IsFileFiltered("qBit-a", "shared-hash").Should().BeFalse();
+        svc.AreFilePrioritiesApplied("qBit-a", "shared-hash").Should().BeTrue();
+        svc.IsFileFiltered("qBit-a", "shared-hash").Should().BeTrue();
     }
 
     [Fact]
@@ -173,10 +173,10 @@ public class TorrentCacheServiceTests
     public void GetStats_ReturnsCorrectCounts()
     {
         var svc = CreateService();
-        svc.SetCategory("h1", "radarr");
-        svc.SetCategory("h2", "sonarr");
-        svc.SetName("h1", "Movie 1");
-        svc.AddToIgnoreCache("h3", TimeSpan.FromHours(1));
+        svc.SetCategory("qBit", "h1", "radarr");
+        svc.SetCategory("qBit", "h2", "sonarr");
+        svc.SetName("qBit", "h1", "Movie 1");
+        svc.AddToIgnoreCache("qBit", "h3", TimeSpan.FromHours(1));
 
         var stats = svc.GetStats();
 
@@ -192,8 +192,8 @@ public class TorrentCacheServiceTests
 
         var tasks = Enumerable.Range(0, 50).Select(i => Task.Run(() =>
         {
-            svc.SetCategory($"hash-{i}", $"cat-{i}");
-            svc.SetName($"hash-{i}", $"name-{i}");
+            svc.SetCategory("qBit", $"hash-{i}", $"cat-{i}");
+            svc.SetName("qBit", $"hash-{i}", $"name-{i}");
         }));
 
         await Task.WhenAll(tasks);

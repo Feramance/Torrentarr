@@ -57,6 +57,7 @@ public interface ITorrentClientRegistry
     Task<int> EnsureAllConnectedAsync(IEnumerable<KeyValuePair<string, TorrentClientInstanceConfig>> instances, CancellationToken ct = default);
     ITorrentClient? GetClient(string instanceId);
     IReadOnlyDictionary<string, ITorrentClient> GetAllClients();
+    Task<int> ReconcileAsync(IEnumerable<KeyValuePair<string, TorrentClientInstanceConfig>> instances, bool connect = true, CancellationToken ct = default);
     bool IsConnected();
     bool IsConnected(string instanceId);
 }

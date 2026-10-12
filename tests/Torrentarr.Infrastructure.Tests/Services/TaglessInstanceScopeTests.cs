@@ -186,7 +186,7 @@ public sealed class TaglessInstanceScopeTests
     {
         var clientsField = typeof(QBittorrentConnectionManager)
             .GetField("_clients", BindingFlags.NonPublic | BindingFlags.Instance)!;
-        var clients = (Dictionary<string, QBittorrentClient>)clientsField.GetValue(manager)!;
+        var clients = (Dictionary<string, Torrentarr.Core.Interfaces.ITorrentClient>)clientsField.GetValue(manager)!;
         clients[instanceName] = new StubQBittorrentClient([torrent]);
     }
 

@@ -66,6 +66,8 @@ public interface ISeedingService
     /// Fetches tracker metadata and checks HnR. Returns true if deletion is allowed.
     /// Matches qBitrr's _hnr_allows_delete() exactly.
     /// </summary>
+    bool HnrAllowsDelete(TorrentInfo torrent, IReadOnlyList<TorrentTracker> torrentTrackers);
+
     Task<bool> HnrAllowsDeleteAsync(TorrentInfo torrent, string reason, CancellationToken cancellationToken = default);
 
     /// <summary>

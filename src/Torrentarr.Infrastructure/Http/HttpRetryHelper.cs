@@ -42,7 +42,7 @@ public static class HttpRetryHelper
                     .Handle<HttpRequestException>()
                     .Handle<TaskCanceledException>(ex => !ex.CancellationToken.IsCancellationRequested)
                     .HandleResult(r =>
-                        r.ResponseStatus != ResponseStatus.Completed
+                        (r.ResponseStatus != ResponseStatus.Completed && (int)r.StatusCode == 0)
                         || r.StatusCode is HttpStatusCode.RequestTimeout
                             or HttpStatusCode.TooManyRequests
                             or HttpStatusCode.BadGateway

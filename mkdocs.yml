@@ -248,6 +248,7 @@ nav:
   - Disk Space Management: features/disk-space.md
   - Auto Updates: features/auto-updates.md
   - Process Management: features/process-management.md
+  - Torrent Maintenance: features/torrent-maintenance.md
 
 - Web UI:
   - webui/index.md

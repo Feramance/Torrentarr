@@ -1,6 +1,7 @@
 using Torrentarr.Core.Configuration;
 using Microsoft.Extensions.Logging;
 using Torrentarr.Core.Interfaces;
+using Torrentarr.Core.Models;
 using Torrentarr.Core.Services;
 
 namespace Torrentarr.Infrastructure.Services;
@@ -27,12 +28,13 @@ public sealed class SafeDeletionService : ISafeDeletionService
         _logger = logger;
     }
 
-    public async Task<SafeDeletionResult> RemoveTorrentAsync(
-        string clientInstanceId,
-        string hash,
-        bool removeContent,
-        bool permanent = false,
-        CancellationToken ct = default)
+    public Task<SafeDeletionResult> RemoveTorrentAsync(string clientInstanceId, string hash, bool removeContent, bool permanent = false, CancellationToken ct = default)
+        => RemoveAsync(clientInstanceId, hash, removeContent, null, permanent, ct);
+
+    public Task<SafeDeletionResult> RemoveMaintenanceTorrentAsync(string clientInstanceId, string hash, bool removeContent, TorrentInventory inventory, bool permanent = false, CancellationToken ct = default)
+        => RemoveAsync(clientInstanceId, hash, removeContent, inventory, permanent, ct);
+
+    private async Task<SafeDeletionResult> RemoveAsync(string clientInstanceId, string hash, bool removeContent, TorrentInventory? validatedInventory, bool permanent, CancellationToken ct)
     {
         var client = _registry.GetClient(clientInstanceId);
         var cfg = _config.GetTorrentClient(clientInstanceId);
@@ -47,7 +49,7 @@ public sealed class SafeDeletionService : ISafeDeletionService
         // Preserve legacy failed-torrent cleanup for installations that have no
         // optional maintenance mappings, but only through the client's explicit
         // content-deletion capability and with recycling disabled.
-        if (cfg.Maintenance.PathMappings.Count == 0 && !cfg.Maintenance.RecycleBin.Enabled)
+        if (validatedInventory == null && cfg.Maintenance.PathMappings.Count == 0 && !cfg.Maintenance.RecycleBin.Enabled)
         {
             if (!client.Capabilities.ContentDeletion)
                 return new(false, true, 0, "No path mapping is configured and the client cannot delete content safely.");
@@ -56,8 +58,8 @@ public sealed class SafeDeletionService : ISafeDeletionService
                 : new(false, true, 0, "Torrent client rejected legacy content deletion.");
         }
 
-        var inventory = await _inventory.BuildAsync(ct: ct);
-        if (inventory.Warnings.Count > 0)
+        var inventory = validatedInventory ?? await _inventory.BuildAsync(ct: ct);
+        if (!inventory.IsComplete)
             return new(false, true, 0, $"Content deletion blocked because inventory is incomplete: {string.Join("; ", inventory.Warnings)}");
         var item = inventory.Torrents.FirstOrDefault(t =>
             t.Torrent.ClientInstanceId.Equals(clientInstanceId, StringComparison.OrdinalIgnoreCase)
@@ -102,52 +104,49 @@ public sealed class SafeDeletionService : ISafeDeletionService
 
         var moved = 0L;
         var movedPaths = new List<(string Source, string Destination)>();
+        var removalAttempted = false;
+        var removalRejected = false;
         try
         {
             foreach (var source in CollapseRoots(localFiles))
             {
                 var validation = ValidateSource(source, cfg);
-                if (validation != null) return new(false, true, moved, validation);
+                if (validation != null) throw new IOException(validation);
                 var destination = BuildRecycleDestination(source, clientInstanceId, item.Torrent.Category, cfg);
                 moved += await MoveToRecycleAsync(source, destination, ct);
                 movedPaths.Add((source, destination));
                 RemoveEmptyParents(Path.GetDirectoryName(source), cfg);
             }
+            ct.ThrowIfCancellationRequested();
+            removalAttempted = true;
+            if (!await client.DeleteTorrentsAsync([hash], false, ct))
+            {
+                removalRejected = true;
+                throw new IOException("Torrent client rejected removal.");
+            }
+            return new(true, false, moved);
         }
-        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+        catch (Exception ex)
         {
+            var errors = new List<string>();
             foreach (var (source, destination) in movedPaths.AsEnumerable().Reverse())
             {
                 try
                 {
+                    if (File.Exists(source) || Directory.Exists(source)) throw new IOException("Source path was recreated; refusing to overwrite it.");
                     Directory.CreateDirectory(Path.GetDirectoryName(source)!);
-                    if (Directory.Exists(destination)) Directory.Move(destination, source);
-                    else if (File.Exists(destination)) File.Move(destination, source);
+                    await MoveToRecycleAsync(destination, source, CancellationToken.None);
                 }
                 catch (Exception rollbackEx)
                 {
-                    _logger.LogError(rollbackEx, "Unable to roll back recycle move {Destination} to {Source}", destination, source);
+                    errors.Add($"Unable to restore {destination} to {source}: {rollbackEx.Message}");
+                    _logger.LogError(rollbackEx, "Unable to restore recycled content {Destination} to {Source}", destination, source);
                 }
             }
-            return new(false, true, 0, $"Recycle operation rolled back: {ex.Message}");
+            var uncertain = removalAttempted && !removalRejected ? " Remote removal outcome is uncertain." : "";
+            return new(false, errors.Count == 0, errors.Count == 0 ? 0 : moved,
+                $"Recycle failed: {ex.Message}.{uncertain}" + (errors.Count == 0 ? " Moved content restored." : " " + string.Join("; ", errors)));
         }
-
-        var deleted = await client.DeleteTorrentsAsync([hash], false, ct);
-        if (deleted) return new(true, false, moved);
-        foreach (var (source, destination) in movedPaths.AsEnumerable().Reverse())
-        {
-            try
-            {
-                Directory.CreateDirectory(Path.GetDirectoryName(source)!);
-                if (Directory.Exists(destination)) Directory.Move(destination, source);
-                else if (File.Exists(destination)) File.Move(destination, source);
-            }
-            catch (Exception rollbackEx)
-            {
-                _logger.LogError(rollbackEx, "Unable to roll back rejected recycle move {Destination} to {Source}", destination, source);
-            }
-        }
-        return new(false, false, 0, "Torrent client rejected removal; recycled content was rolled back.");
     }
 
     public async Task<SafeDeletionResult> QuarantineFileAsync(string clientInstanceId, string localPath, CancellationToken ct = default)
@@ -243,21 +242,40 @@ public sealed class SafeDeletionService : ISafeDeletionService
         }
         catch (IOException)
         {
-            if (Directory.Exists(source))
+            var copied = false;
+            try
             {
-                await CopyDirectoryAsync(source, destination, ct);
-                Directory.Delete(source, true);
+                if (Directory.Exists(source))
+                {
+                    await CopyDirectoryAsync(source, destination, ct);
+                    foreach (var file in Directory.EnumerateFiles(source, "*", SearchOption.AllDirectories))
+                        if (new FileInfo(file).Length != new FileInfo(Path.Combine(destination, Path.GetRelativePath(source, file))).Length)
+                            throw new IOException("Recycle directory copy verification failed.");
+                    ct.ThrowIfCancellationRequested();
+                    copied = true;
+                    Directory.Delete(source, true);
+                }
+                else
+                {
+                    Directory.CreateDirectory(Path.GetDirectoryName(destination)!);
+                    await using (var input = File.OpenRead(source))
+                    await using (var output = new FileStream(destination, FileMode.CreateNew, FileAccess.Write, FileShare.None))
+                    {
+                        await input.CopyToAsync(output, ct);
+                        await output.FlushAsync(ct);
+                    }
+                    if (new FileInfo(source).Length != new FileInfo(destination).Length)
+                        throw new IOException("Recycle copy verification failed.");
+                    ct.ThrowIfCancellationRequested();
+                    File.Delete(source);
+                }
             }
-            else
+            catch
             {
-                Directory.CreateDirectory(Path.GetDirectoryName(destination)!);
-                await using var input = File.OpenRead(source);
-                await using var output = File.Create(destination);
-                await input.CopyToAsync(output, ct);
-                await output.FlushAsync(ct);
-                if (new FileInfo(source).Length != new FileInfo(destination).Length)
-                    throw new IOException("Recycle copy verification failed.");
-                File.Delete(source);
+                if (copied) throw new IOException($"Source removal failed; copied content preserved at {destination}.");
+                if (File.Exists(source) && File.Exists(destination)) File.Delete(destination);
+                else if (Directory.Exists(source) && Directory.Exists(destination)) Directory.Delete(destination, true);
+                throw;
             }
         }
         var bytes = Directory.Exists(destination)

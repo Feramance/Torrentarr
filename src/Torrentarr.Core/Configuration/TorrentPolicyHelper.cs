@@ -10,27 +10,18 @@ namespace Torrentarr.Core.Configuration;
 /// </summary>
 public static class TorrentPolicyHelper
 {
-    public static bool HasAnyQBitSection(TorrentarrConfig config) =>
-        config.QBitInstances.Keys.Any(k =>
-            string.Equals(k, "qBit", StringComparison.OrdinalIgnoreCase)
-            || k.StartsWith("qBit-", StringComparison.OrdinalIgnoreCase));
+    public static bool HasAnyQBitSection(TorrentarrConfig config) => config.GetAllTorrentClients().Count > 0;
 
-    /// <summary>
-    /// Mirrors qBitrr <c>get_effective_qbit_disabled()</c> (no qBit sections, or primary <c>[qBit].Disabled</c>).
-    /// </summary>
+    /// <summary>All torrent clients have equal status; a disabled legacy qBit section does not disable other clients.</summary>
     public static bool IsEffectiveQBitDisabled(TorrentarrConfig config)
-    {
-        if (!HasAnyQBitSection(config))
-            return true;
-        return config.QBitInstances.TryGetValue("qBit", out var primary) && primary.Disabled;
-    }
+        => !config.GetAllTorrentClients().Values.Any(client => !client.Disabled);
 
     /// <summary>
     /// <c>Arr.global_sort_torrents_enabled()</c> — any merged tracker has <c>SortTorrents</c>.
     /// </summary>
     public static bool GlobalSortTorrentsEnabled(TorrentarrConfig config)
     {
-        foreach (var q in config.QBitInstances.Values)
+        foreach (var q in config.GetAllTorrentClients().Values)
         {
             if (q.Trackers.Any(t => t.SortTorrents))
                 return true;
@@ -79,7 +70,7 @@ public static class TorrentPolicyHelper
             }
         }
 
-        foreach (var q in config.QBitInstances.Values)
+        foreach (var q in config.GetAllTorrentClients().Values)
             Accumulate(q.Trackers);
         foreach (var a in config.ArrInstances.Values)
             Accumulate(a.Torrent.Trackers);
@@ -183,7 +174,7 @@ public static class TorrentPolicyHelper
                     set.Add(a.Category);
             }
 
-            foreach (var q in config.QBitInstances.Values)
+            foreach (var q in config.GetAllTorrentClients().Values)
             {
                 if (q.ManagedCategories == null) continue;
                 foreach (var c in q.ManagedCategories)

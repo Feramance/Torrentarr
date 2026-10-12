@@ -262,7 +262,7 @@ public class TorrentProcessor : ITorrentProcessor
             var contentPath = torrent.ContentPath;
             if (!string.IsNullOrEmpty(contentPath))
             {
-                if (_pathTracker?.IsHashAlreadyScanned(torrent.Hash) == true)
+                if (_pathTracker?.IsHashAlreadyScanned(torrent.QBitInstanceName, torrent.Hash) == true)
                 {
                     _logger.LogTrace("Skipping import — hash already sent to scan: {Hash}", hash);
                     return;
@@ -270,10 +270,10 @@ public class TorrentProcessor : ITorrentProcessor
                 if (!File.Exists(contentPath) && !Directory.Exists(contentPath))
                 {
                     _logger.LogWarning("Missing torrent file for import: {Path} ({Hash})", contentPath, hash);
-                    _cache.AddToIgnoreCache(hash, TimeSpan.FromSeconds(_config.Settings.IgnoreTorrentsYoungerThan));
+                    _cache.AddToIgnoreCache(torrent.QBitInstanceName, hash, TimeSpan.FromSeconds(_config.Settings.IgnoreTorrentsYoungerThan));
                     return;
                 }
-                if (_pathTracker?.IsPathAlreadyScanned(contentPath) == true)
+                if (_pathTracker?.IsPathAlreadyScanned(torrent.QBitInstanceName, contentPath) == true)
                 {
                     _logger.LogTrace("Skipping import — path already sent to scan: {Path}", contentPath);
                     return;
@@ -289,7 +289,7 @@ public class TorrentProcessor : ITorrentProcessor
                     hash, result.Message);
 
                 if (!string.IsNullOrEmpty(contentPath))
-                    _pathTracker?.MarkScanned(contentPath, hash);
+                    _pathTracker?.MarkScanned(torrent.QBitInstanceName, contentPath, hash);
 
                 var arrCfg = _config.ArrInstances.Values.FirstOrDefault(i =>
                     i.Category.Equals(libraryEntry.Category, StringComparison.OrdinalIgnoreCase));
@@ -407,8 +407,8 @@ public class TorrentProcessor : ITorrentProcessor
         var timeNow = DateTimeOffset.UtcNow.ToUnixTimeSeconds();
 
         // Cache torrent metadata
-        _cache.SetCategory(torrent.Hash, torrent.Category);
-        _cache.SetName(torrent.Hash, torrent.Name);
+        _cache.SetCategory(torrent.QBitInstanceName, torrent.Hash, torrent.Category);
+        _cache.SetName(torrent.QBitInstanceName, torrent.Hash, torrent.Name);
 
         // Ensure torrent exists in database
         await EnsureTorrentInDatabaseAsync(torrent, category, ct);
@@ -449,7 +449,7 @@ public class TorrentProcessor : ITorrentProcessor
         if (HasTag(torrent, IgnoredTag))
         {
             var ignClient = _qbitManager.GetClient(torrent.QBitInstanceName);
-            if (ignClient != null && !_config.Settings.Tagless)
+            if (ignClient?.Capabilities.Tags == true && !_config.Settings.Tagless)
                 await ignClient.RemoveTagsAsync(new List<string> { torrent.Hash },
                     new List<string> { AllowedSeedingTag, FreeSpacePausedTag }, ct);
             stats.Ignored++;
@@ -503,7 +503,7 @@ public class TorrentProcessor : ITorrentProcessor
         else if (torrent.Category.Equals(_config.Settings.RecheckCategory, StringComparison.OrdinalIgnoreCase))
         {
             _logger.LogInformation("Re-checking manually set torrent: [{Name}] | Hash[{Hash}]", torrent.Name, torrent.Hash);
-            await client.RecheckTorrentsAsync(new List<string> { torrent.Hash }, ct);
+            if (client.Capabilities.Recheck) await client.RecheckTorrentsAsync(new List<string> { torrent.Hash }, ct);
         }
         // Branch 5: Missing files → delete from client, no blacklist (qBitrr line 6116-6118)
         else if (IsMissingFilesTorrent(torrent, state))
@@ -561,7 +561,7 @@ public class TorrentProcessor : ITorrentProcessor
             }
         }
         // Branch 10: In timed ignore cache → resume if stopped, else skip (qBitrr line 6148-6163)
-        else if (_cache.IsInIgnoreCache(torrent.Hash))
+        else if (_cache.IsInIgnoreCache(torrent.QBitInstanceName, torrent.Hash))
         {
             if (torrent.IsStopped
                 && !HasTag(torrent, FreeSpacePausedTag)
@@ -596,7 +596,7 @@ public class TorrentProcessor : ITorrentProcessor
         {
             _logger.LogDebug("Resuming incomplete paused download: [{Name}] | Progress[{Progress:P1}] | Hash[{Hash}]",
                 torrent.Name, torrent.Progress, torrent.Hash);
-            _cache.AddToIgnoreCache(torrent.Hash, TimeSpan.FromSeconds(ignoreYoungerThan));
+            _cache.AddToIgnoreCache(torrent.QBitInstanceName, torrent.Hash, TimeSpan.FromSeconds(ignoreYoungerThan));
             await client.ResumeTorrentsAsync(new List<string> { torrent.Hash }, ct);
         }
         // Branch 13: Percentage threshold — high progress, not complete, already filtered (qBitrr line 6174-6181)
@@ -617,7 +617,7 @@ public class TorrentProcessor : ITorrentProcessor
         // Pending imports must finalize even when file filtering never ran (e.g. cross-seed
         // torrents first seen in a complete/seeding state). Fully imported rows still require
         // IsFileFiltered so the branch matches qBitrr's sent_to_scan + filtered skip path.
-        else if (_pathTracker?.IsHashAlreadyScanned(torrent.Hash) == true
+        else if (_pathTracker?.IsHashAlreadyScanned(torrent.QBitInstanceName, torrent.Hash) == true
                  || (await IsImportedInDatabaseAsync(torrent.Hash, torrent.QBitInstanceName, ct)
                      && _cache.IsFileFiltered(torrent.QBitInstanceName, torrent.Hash)))
         {
@@ -631,7 +631,7 @@ public class TorrentProcessor : ITorrentProcessor
         else if (state == TorrentState.Error)
         {
             _logger.LogInformation("Re-checking errored torrent: [{Name}] | Hash[{Hash}]", torrent.Name, torrent.Hash);
-            await client.RecheckTorrentsAsync(new List<string> { torrent.Hash }, ct);
+            if (client.Capabilities.Recheck) await client.RecheckTorrentsAsync(new List<string> { torrent.Hash }, ct);
         }
         // Branch 16: Fully completed (60s grace period) → trigger import (qBitrr line 6196-6205)
         // Python: if leave_alone → allow seeding; elif not tagged qBitrr-imported → dispatch to import_torrents
@@ -1065,15 +1065,10 @@ public class TorrentProcessor : ITorrentProcessor
     private int GetRemoveMode(TorrentInfo torrent, ArrInstanceConfig? arrCfg)
     {
         // Check qBit instance's CategorySeeding config first
-        var qbitCfg = _config.QBitInstances.GetValueOrDefault(torrent.QBitInstanceName);
-        if (qbitCfg?.CategorySeeding?.RemoveTorrent != null)
-            return qbitCfg.CategorySeeding.RemoveTorrent;
-
-        // Then check Arr instance's SeedingMode
-        if (arrCfg?.Torrent.SeedingMode?.RemoveTorrent != null)
-            return arrCfg.Torrent.SeedingMode.RemoveTorrent;
-
-        return -1; // Default: never remove
+        var qbitCfg = _config.GetTorrentClient(torrent.QBitInstanceName);
+        var category = SeedingService.ApplyCategoryOverride(
+            qbitCfg?.CategorySeeding ?? new CategorySeedingConfig(), torrent.Category, qbitCfg?.MatchSubcategories ?? false);
+        return SeedingLimitMerge.Merge(category, arrCfg?.Torrent.SeedingMode, null).RemoveTorrent;
     }
 
     /// <summary>
@@ -1090,7 +1085,7 @@ public class TorrentProcessor : ITorrentProcessor
         if (await IsImportedInDatabaseAsync(torrent.Hash, torrent.QBitInstanceName, ct))
             return true;
 
-        if (_pathTracker?.IsHashAlreadyScanned(torrent.Hash) != true || _importService == null)
+        if (_pathTracker?.IsHashAlreadyScanned(torrent.QBitInstanceName, torrent.Hash) != true || _importService == null)
             return false;
 
         if (!await _importService.IsImportedAsync(torrent.Hash, ct))
@@ -1110,7 +1105,7 @@ public class TorrentProcessor : ITorrentProcessor
 
         try
         {
-            await _importService.MarkAsImportedAsync(torrent.Hash, Array.Empty<string>(), ct);
+            await _importService.MarkAsImportedAsync(torrent.QBitInstanceName, torrent.Hash, Array.Empty<string>(), ct);
         }
         catch (Exception ex)
         {
@@ -1193,7 +1188,7 @@ public class TorrentProcessor : ITorrentProcessor
     /// </summary>
     private async Task AddTagAsync(TorrentInfo torrent, ITorrentClient client, string tag, CancellationToken ct)
     {
-        if (_config.Settings.Tagless)
+        if (_config.Settings.Tagless || _qbitManager.GetClient(torrent.QBitInstanceName)?.Capabilities.Tags == false)
         {
             var entry = await _dbContext.TorrentLibrary
                 .FirstOrDefaultAsync(t => t.Hash == torrent.Hash && t.QbitInstance == torrent.QBitInstanceName, ct);
@@ -1219,7 +1214,7 @@ public class TorrentProcessor : ITorrentProcessor
     /// </summary>
     private async Task RemoveTagAsync(TorrentInfo torrent, ITorrentClient client, string tag, CancellationToken ct)
     {
-        if (_config.Settings.Tagless)
+        if (_config.Settings.Tagless || _qbitManager.GetClient(torrent.QBitInstanceName)?.Capabilities.Tags == false)
         {
             var entry = await _dbContext.TorrentLibrary
                 .FirstOrDefaultAsync(t => t.Hash == torrent.Hash && t.QbitInstance == torrent.QBitInstanceName, ct);
@@ -1248,7 +1243,7 @@ public class TorrentProcessor : ITorrentProcessor
     {
         // §1.6 Tagless mode: map tags to TorrentLibrary DB columns.
         // qBitrr still honors the live qBit "qBitrr-ignored" tag in Tagless mode.
-        if (_config.Settings.Tagless)
+        if (_config.Settings.Tagless || _qbitManager.GetClient(torrent.QBitInstanceName)?.Capabilities.Tags == false)
         {
             if (tag == IgnoredTag)
                 return HasQbitTag(torrent, IgnoredTag);
@@ -1281,6 +1276,7 @@ public class TorrentProcessor : ITorrentProcessor
 
     private async Task EnsureTagsExistAsync(ITorrentClient client, CancellationToken cancellationToken)
     {
+        if (!client.Capabilities.Tags) return;
         try
         {
             var existingTags = await client.GetTagsAsync(cancellationToken);
@@ -1510,7 +1506,7 @@ public class TorrentProcessor : ITorrentProcessor
                 arrConfig.Torrent.IgnoreTorrentsYoungerThan);
         }
 
-        if (config.QBitInstances.TryGetValue(torrent.QBitInstanceName, out var qBitConfig))
+        if (config.GetAllTorrentClients().TryGetValue(torrent.QBitInstanceName, out var qBitConfig))
         {
             var effective = SeedingService.ApplyCategoryOverride(
                 qBitConfig.CategorySeeding,
@@ -1685,7 +1681,7 @@ public class TorrentProcessor : ITorrentProcessor
     /// </summary>
     private async Task AddStalledTagAsync(TorrentInfo torrent, ITorrentClient client, CancellationToken ct)
     {
-        if (_config.Settings.Tagless)
+        if (_config.Settings.Tagless || _qbitManager.GetClient(torrent.QBitInstanceName)?.Capabilities.Tags == false)
         {
             var entry = await _dbContext.TorrentLibrary
                 .FirstOrDefaultAsync(t => t.Hash == torrent.Hash && t.QbitInstance == torrent.QBitInstanceName, ct);
@@ -1706,7 +1702,7 @@ public class TorrentProcessor : ITorrentProcessor
     /// </summary>
     private async Task RemoveStalledTagAsync(TorrentInfo torrent, ITorrentClient client, CancellationToken ct)
     {
-        if (_config.Settings.Tagless)
+        if (_config.Settings.Tagless || _qbitManager.GetClient(torrent.QBitInstanceName)?.Capabilities.Tags == false)
         {
             var entry = await _dbContext.TorrentLibrary
                 .FirstOrDefaultAsync(t => t.Hash == torrent.Hash && t.QbitInstance == torrent.QBitInstanceName, ct);

@@ -520,12 +520,12 @@ app.MapGet("/web/status", async (TorrentarrDbContext db, TorrentarrConfig config
     {
         qbit = new
         {
-            alive = !(config.QBitInstances.GetValueOrDefault("qBit") ?? new QBitConfig()).Disabled,
-            host = (config.QBitInstances.GetValueOrDefault("qBit") ?? new QBitConfig()).Host,
-            port = (config.QBitInstances.GetValueOrDefault("qBit") ?? new QBitConfig()).Port,
+            alive = !(config.GetTorrentClient("qBit") ?? config.GetAllTorrentClients().Values.FirstOrDefault() ?? new QBitConfig()).Disabled,
+            host = (config.GetTorrentClient("qBit") ?? config.GetAllTorrentClients().Values.FirstOrDefault() ?? new QBitConfig()).Host,
+            port = (config.GetTorrentClient("qBit") ?? config.GetAllTorrentClients().Values.FirstOrDefault() ?? new QBitConfig()).Port,
             version = (string?)null
         },
-        qbitInstances = config.QBitInstances.ToDictionary(
+        qbitInstances = config.GetAllTorrentClients().ToDictionary(
             kv => kv.Key,
             kv => (object)new { alive = !kv.Value.Disabled, host = kv.Value.Host, port = kv.Value.Port, version = (string?)null }),
         arrs = config.ArrInstances.Select(kvp => new
@@ -681,7 +681,7 @@ app.MapGet("/web/config", (TorrentarrConfig config) =>
 
 // §6.8: POST /web/config — partial config changes with reload-type detection
 // Accepts { "changes": { "Section.Key": value, ... } }, saves and returns reloadType
-app.MapPost("/web/config", async (HttpContext ctx, TorrentarrConfig config, ConfigurationLoader loader, IConfigReloader reloader) =>
+app.MapPost("/web/config", async (HttpContext ctx, TorrentarrConfig config, ConfigurationLoader loader, IConfigReloader reloader, ITorrentClientRegistry registry) =>
 {
     Newtonsoft.Json.Linq.JObject? body = null;
     try
@@ -785,6 +785,7 @@ app.MapPost("/web/config", async (HttpContext ctx, TorrentarrConfig config, Conf
 
         loader.SaveConfig(updatedConfig, reloader.ConfigPath);
         ApplyConfigInPlace(config, updatedConfig);
+        await registry.ReconcileAsync(config.GetAllTorrentClients(), connect: false);
     }
     catch (Exception ex)
     {
@@ -1677,7 +1678,7 @@ app.MapGet("/web/config/full", (TorrentarrConfig config, IConfigReloader reloade
         configPath = reloader.ConfigPath,
         settings = config.Settings,
         webui = config.WebUI,
-        qbitInstances = config.QBitInstances.ToDictionary(
+        qbitInstances = config.GetAllTorrentClients().ToDictionary(
             kv => kv.Key,
             kv => new
             {
@@ -1710,7 +1711,7 @@ app.MapPost("/web/config/reload", (IConfigReloader reloader) =>
         : Results.BadRequest(new { success = false, message = "Failed to reload configuration" });
 });
 
-app.MapPost("/web/config/save", async (TorrentarrConfig updatedConfig, TorrentarrConfig config, ConfigurationLoader loader, IConfigReloader reloader) =>
+app.MapPost("/web/config/save", async (TorrentarrConfig updatedConfig, TorrentarrConfig config, ConfigurationLoader loader, IConfigReloader reloader, ITorrentClientRegistry registry) =>
 {
     try
     {
@@ -1720,6 +1721,7 @@ app.MapPost("/web/config/save", async (TorrentarrConfig updatedConfig, Torrentar
 
         loader.SaveConfig(updatedConfig, reloader.ConfigPath);
         ApplyConfigInPlace(config, updatedConfig);
+        await registry.ReconcileAsync(config.GetAllTorrentClients(), connect: false);
         var reloadSuccess = reloader.ReloadConfig();
 
         return reloadSuccess

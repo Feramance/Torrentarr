@@ -45,7 +45,7 @@ public sealed class MaintenanceAction
     public Dictionary<string, string> Arguments { get; init; } = new();
     public List<string> RequiredCapabilities { get; init; } = new();
     public bool Destructive { get; init; }
-    public string? BlockedReason { get; init; }
+    public string? BlockedReason { get; set; }
 }
 
 public sealed class MaintenancePlan
@@ -140,7 +140,9 @@ public sealed record TorrentClientView(
 
 public sealed class TorrentInventory
 {
+    public bool IsComplete => Warnings.Count == 0;
+    public HashSet<string> InspectedClients { get; init; } = new(StringComparer.OrdinalIgnoreCase);
     public List<TorrentInventoryItem> Torrents { get; init; } = new();
-    public Dictionary<string, List<TorrentInventoryItem>> LocalPathReferences { get; init; } = new();
+    public Dictionary<string, List<TorrentInventoryItem>> LocalPathReferences { get; init; } = new(OperatingSystem.IsWindows() ? StringComparer.OrdinalIgnoreCase : StringComparer.Ordinal);
     public List<string> Warnings { get; init; } = new();
 }
