@@ -32,6 +32,18 @@ public class ProcessRestartEndpointTests : IClassFixture<TorrentarrWebApplicatio
         response.StatusCode.Should().Be(HttpStatusCode.OK);
     }
 
+    [Theory]
+    [InlineData("/web/processes/radarr/worker/restart")]
+    [InlineData("/api/processes/radarr/worker/restart")]
+    public async Task PostProcessRestart_AcceptsWorkerKind(string path)
+    {
+        var client = _factory.CreateClientWithApiToken();
+
+        var response = await client.PostAsync(path, null);
+
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+    }
+
     [Fact]
     public async Task PostProcessRestart_ResponseHasStatusField()
     {

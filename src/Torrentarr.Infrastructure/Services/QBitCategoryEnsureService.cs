@@ -25,11 +25,11 @@ public class QBitCategoryEnsureService
         _qbitManager = qbitManager;
     }
 
-    public async Task EnsureCategoryOnAllInstancesAsync(string category, CancellationToken ct = default)
+    public async Task<bool> EnsureCategoryOnAllInstancesAsync(string category, CancellationToken ct = default)
     {
         var leaf = CategoryPathHelper.NormalizeCategory(category);
         if (string.IsNullOrEmpty(leaf))
-            return;
+            return true;
 
         var prefixPaths = CategoryPathHelper.CategoryParents(leaf);
         if (prefixPaths.Count == 0)
@@ -38,6 +38,7 @@ public class QBitCategoryEnsureService
             prefixPaths = prefixPaths.Append(leaf).ToList();
 
         var completedRoot = ResolveCompletedRoot();
+        var succeeded = true;
 
         foreach (var (instanceName, client) in _qbitManager.GetAllClients())
         {
@@ -70,13 +71,17 @@ public class QBitCategoryEnsureService
                             parent, instanceName, savePath);
                         categories[parent] = new TorrentClientCategory { Name = parent, SavePath = savePath };
                     }
+                    else
+                        succeeded = false;
                 }
             }
             catch (Exception ex)
             {
+                succeeded = false;
                 _logger.LogWarning(ex, "Failed ensuring category '{Category}' on instance '{Instance}'", leaf, instanceName);
             }
         }
+        return succeeded;
     }
 
     private string ResolveCompletedRoot()

@@ -563,7 +563,7 @@ docker ps | grep radarr
 Yes! Installation options:
 
 1. **Docker Desktop**: Recommended for Windows
-2. **Binary**: Download `torrentarr-windows-x64.exe` from [GitHub Releases](https://github.com/Feramance/Torrentarr/releases)
+2. **Binary**: Download `torrentarr-windows-x64.exe` and `torrentarr-workers-windows-x64.exe` into the same directory from [GitHub Releases](https://github.com/Feramance/Torrentarr/releases)
 
 **Note:** Use Docker or binary; from source requires the .NET SDK.
 

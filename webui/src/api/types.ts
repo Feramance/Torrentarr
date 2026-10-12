@@ -13,6 +13,7 @@ export interface ProcessInfo {
   categoryCount?: number;
   metricType?: string;
   status?: string;
+  restartKey?: string;
 }
 
 export interface ProcessesResponse {
@@ -251,6 +252,7 @@ export interface SonarrSeriesResponse {
 export interface LidarrCounts {
   available: number;
   monitored: number;
+  missing?: number;
 }
 
 export interface LidarrTrack {
@@ -319,8 +321,12 @@ export interface LidarrArtistEntry {
     albumsMonitored?: number;
     albumsAvailable?: number;
     albumsMissing?: number;
+    albumCount?: number;
+    trackTotalCount?: number;
   };
 }
+
+export type LidarrArtistBrowseEntry = LidarrArtistEntry;
 
 export interface LidarrArtistsResponse {
   category: string;

@@ -42,7 +42,7 @@ function Wrapper({ children }: { children: ReactNode }) {
 // ── Routing ───────────────────────────────────────────────────────────────────
 
 describe("ArrView – routing", () => {
-  it("renders RadarrView (shows 'Radarr' header) when type=radarr", async () => {
+  it("renders Radarr catalog (shows 'Radarr' header) when type=radarr", async () => {
     server.use(
       http.get("/web/config", () => HttpResponse.json(minimalConfig)),
       http.post("/web/config", () => HttpResponse.json({})),
@@ -54,7 +54,7 @@ describe("ArrView – routing", () => {
     await screen.findByText("Radarr");
   });
 
-  it("renders SonarrView (shows 'Sonarr' header) when type=sonarr", async () => {
+  it("renders Sonarr catalog (shows 'Sonarr' header) when type=sonarr", async () => {
     server.use(
       http.get("/web/config", () => HttpResponse.json(minimalConfig)),
       http.post("/web/config", () => HttpResponse.json({})),
@@ -66,7 +66,7 @@ describe("ArrView – routing", () => {
     await screen.findByText("Sonarr");
   });
 
-  it("renders LidarrView (shows 'Lidarr' header) when type=lidarr", async () => {
+  it("renders Lidarr catalog (shows 'Lidarr' header) when type=lidarr", async () => {
     server.use(
       http.get("/web/config", () => HttpResponse.json(minimalConfig)),
       http.post("/web/config", () => HttpResponse.json({})),
@@ -94,7 +94,7 @@ describe("ArrView – routing", () => {
 // ── Inactive views ────────────────────────────────────────────────────────────
 
 describe("ArrView – inactive", () => {
-  it("renders RadarrView card frame when type=radarr active=false", async () => {
+  it("renders Radarr catalog card frame when type=radarr active=false", async () => {
     server.use(
       http.get("/web/config", () => HttpResponse.json(minimalConfig)),
       http.post("/web/config", () => HttpResponse.json({})),
@@ -105,7 +105,7 @@ describe("ArrView – inactive", () => {
     await screen.findByText("Radarr");
   });
 
-  it("renders SonarrView card frame when type=sonarr active=false", async () => {
+  it("renders Sonarr catalog card frame when type=sonarr active=false", async () => {
     server.use(
       http.get("/web/config", () => HttpResponse.json(minimalConfig)),
       http.post("/web/config", () => HttpResponse.json({})),
@@ -116,7 +116,7 @@ describe("ArrView – inactive", () => {
     await screen.findByText("Sonarr");
   });
 
-  it("renders LidarrView card frame when type=lidarr active=false", async () => {
+  it("renders Lidarr catalog card frame when type=lidarr active=false", async () => {
     server.use(
       http.get("/web/config", () => HttpResponse.json(minimalConfig)),
       http.post("/web/config", () => HttpResponse.json({})),
