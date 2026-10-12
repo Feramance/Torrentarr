@@ -189,19 +189,7 @@ public class SeedingService : ISeedingService
 
     public async Task<SeedingStats?> GetSeedingStatsAsync(string hash, CancellationToken cancellationToken = default)
     {
-        // Search all qBit instances for this hash
-        TorrentInfo? torrent = null;
-        foreach (var (instanceName, client) in _qbitManager.GetAllClients())
-        {
-            var torrents = await client.GetTorrentsAsync(cancellationToken: cancellationToken);
-            var found = torrents.FirstOrDefault(t => t.Hash.Equals(hash, StringComparison.OrdinalIgnoreCase));
-            if (found != null)
-            {
-                found.QBitInstanceName = instanceName;
-                torrent = found;
-                break;
-            }
-        }
+        var torrent = await TorrentClientLookup.FindAsync(_qbitManager, hash, null, _logger, cancellationToken);
 
         if (torrent == null)
         {
@@ -265,13 +253,7 @@ public class SeedingService : ISeedingService
     {
         try
         {
-            TorrentInfo? torrent = null;
-            foreach (var (instanceName, client) in _qbitManager.GetAllClients())
-            {
-                var torrents = await client.GetTorrentsAsync(cancellationToken: cancellationToken);
-                var found = torrents.FirstOrDefault(t => t.Hash.Equals(hash, StringComparison.OrdinalIgnoreCase));
-                if (found != null) { found.QBitInstanceName = instanceName; torrent = found; break; }
-            }
+            var torrent = await TorrentClientLookup.FindAsync(_qbitManager, hash, null, _logger, cancellationToken);
 
             if (torrent == null)
             {
@@ -302,7 +284,7 @@ public class SeedingService : ISeedingService
                 TrackerUpdateBuffer = hnrConfig.TrackerUpdateBuffer
             }, cancellationToken);
         }
-        catch (Exception ex)
+        catch (Exception ex) when (ex is not OperationCanceledException and not InvalidOperationException)
         {
             _logger.LogError(ex, "Error checking H&R protection for torrent {Hash}", hash);
             return true;
@@ -327,7 +309,7 @@ public class SeedingService : ISeedingService
             var torrentTrackers = await client.GetTorrentTrackersAsync(torrent.Hash, cancellationToken);
             return SelectTrackerConfig(trackers, torrentTrackers);
         }
-        catch (Exception ex)
+        catch (Exception ex) when (ex is not OperationCanceledException)
         {
             _logger.LogWarning(ex, "Error getting tracker config for torrent {Hash}", torrent.Hash);
             return null;
@@ -431,7 +413,7 @@ public class SeedingService : ISeedingService
                 }
             }
         }
-        catch (Exception ex)
+        catch (Exception ex) when (ex is not OperationCanceledException)
         {
             _logger.LogWarning(ex, "Error checking if tracker is dead for torrent {Hash}", torrent.Hash);
         }
@@ -702,7 +684,14 @@ public class SeedingService : ISeedingService
         var completedByInstance = new List<(string instanceName, ITorrentClient client, TorrentInfo torrent)>();
         foreach (var (instanceName, client) in allClients)
         {
-            var torrents = await client.GetTorrentsAsync(category, cancellationToken: cancellationToken);
+            List<TorrentInfo> torrents;
+            try { torrents = await client.GetTorrentsAsync(category, cancellationToken: cancellationToken); }
+            catch (Exception ex) when (ex is not OperationCanceledException)
+            {
+                _logger.LogWarning(ex, "Unable to read torrent client {Instance}", instanceName);
+                result.Errors.Add($"{instanceName}: torrent enumeration failed.");
+                continue;
+            }
             foreach (var t in torrents)
             {
                 if (t.State.Contains("up", StringComparison.OrdinalIgnoreCase) ||
@@ -754,7 +743,7 @@ public class SeedingService : ISeedingService
                     result.TorrentsProtected++;
                 }
             }
-            catch (Exception ex)
+            catch (Exception ex) when (ex is not OperationCanceledException)
             {
                 _logger.LogError(ex, "[{Instance}] Error processing torrent {Hash} for removal", instanceName, torrent.Hash);
                 result.Errors.Add($"{torrent.Name}: {ex.Message}");
@@ -787,7 +776,7 @@ public class SeedingService : ISeedingService
                     {
                         await UpdateSingleTorrentSeedingTagAsync(client, torrent, cancellationToken);
                     }
-                    catch (Exception ex)
+                    catch (Exception ex) when (ex is not OperationCanceledException)
                     {
                         _logger.LogError(ex, "Error updating seeding tag for torrent {Hash}", torrent.Hash);
                     }
@@ -801,7 +790,7 @@ public class SeedingService : ISeedingService
                     {
                         await ApplyTrackerActionsAsync(client, torrent, cancellationToken);
                     }
-                    catch (Exception ex)
+                    catch (Exception ex) when (ex is not OperationCanceledException)
                     {
                         _logger.LogError(ex, "Error applying tracker actions for {Hash}", torrent.Hash);
                     }
@@ -809,13 +798,13 @@ public class SeedingService : ISeedingService
                     {
                         await ProcessTrackerMessagesAsync(client, torrent, cancellationToken);
                     }
-                    catch (Exception ex)
+                    catch (Exception ex) when (ex is not OperationCanceledException)
                     {
                         _logger.LogError(ex, "Error processing tracker messages for {Hash}", torrent.Hash);
                     }
                 }
             }
-            catch (Exception ex)
+            catch (Exception ex) when (ex is not OperationCanceledException)
             {
                 _logger.LogError(ex, "Error updating seeding tags for instance '{Instance}' category {Category}", instanceName, category);
             }
@@ -843,7 +832,7 @@ public class SeedingService : ISeedingService
                 await client.SetDownloadLimitAsync(torrent.Hash, limitBytes, cancellationToken);
                 _logger.LogTrace("Set download limit for '{Name}': {Limit} KB/s", torrent.Name, dlLimit);
             }
-            catch (Exception ex)
+            catch (Exception ex) when (ex is not OperationCanceledException)
             {
                 _logger.LogError(ex, "Failed to set download limit for '{Name}'", torrent.Name);
             }
@@ -858,7 +847,7 @@ public class SeedingService : ISeedingService
                 await client.SetUploadLimitAsync(torrent.Hash, limitBytes, cancellationToken);
                 _logger.LogTrace("Set upload limit for '{Name}': {Limit} KB/s", torrent.Name, ulLimit);
             }
-            catch (Exception ex)
+            catch (Exception ex) when (ex is not OperationCanceledException)
             {
                 _logger.LogError(ex, "Failed to set upload limit for '{Name}'", torrent.Name);
             }
@@ -960,7 +949,7 @@ public class SeedingService : ISeedingService
                 _logger.LogTrace("Created tags: {Tags}", string.Join(", ", tagsToCreate));
             }
         }
-        catch (Exception ex)
+        catch (Exception ex) when (ex is not OperationCanceledException)
         {
             _logger.LogWarning(ex, "Failed to ensure tags exist");
         }
@@ -1004,7 +993,7 @@ public class SeedingService : ISeedingService
                         succeeded = false;
                 }
             }
-            catch (Exception ex)
+            catch (Exception ex) when (ex is not OperationCanceledException)
             {
                 succeeded = false;
                 _logger.LogWarning(ex, "Failed to pre-create tracker tags");
@@ -1026,7 +1015,7 @@ public class SeedingService : ISeedingService
         {
             await ApplyTrackerActionsAsync(client, torrent, cancellationToken);
         }
-        catch (Exception ex)
+        catch (Exception ex) when (ex is not OperationCanceledException)
         {
             _logger.LogError(ex, "Error applying tracker actions for {Hash}", torrent.Hash);
         }
@@ -1035,7 +1024,7 @@ public class SeedingService : ISeedingService
         {
             await ProcessTrackerMessagesAsync(client, torrent, cancellationToken);
         }
-        catch (Exception ex)
+        catch (Exception ex) when (ex is not OperationCanceledException)
         {
             _logger.LogError(ex, "Error processing tracker messages for {Hash}", torrent.Hash);
         }
@@ -1049,7 +1038,7 @@ public class SeedingService : ISeedingService
             var cfg = await GetTrackerConfigAsync(torrent, cancellationToken);
             return cfg?.Priority ?? -100;
         }
-        catch (Exception ex)
+        catch (Exception ex) when (ex is not OperationCanceledException)
         {
             _logger.LogDebug(ex, "Queue sort announce priority failed for {Hash}", torrent.Hash);
             return -100;
@@ -1105,7 +1094,7 @@ public class SeedingService : ISeedingService
 
         List<TorrentTracker> torrentTrackers;
         try { torrentTrackers = await client.GetTorrentTrackersAsync(torrent.Hash, ct); }
-        catch (Exception ex)
+        catch (Exception ex) when (ex is not OperationCanceledException)
         {
             _logger.LogWarning(ex, "ApplyTrackerActions: failed to get trackers for {Hash}", torrent.Hash);
             return;

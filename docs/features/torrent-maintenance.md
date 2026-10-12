@@ -6,6 +6,11 @@ subcategory matching, seeding rules, and stalled-download settings. Instance
 names identify torrents alongside their hashes; the same hash on two clients
 has independent ignore and import state.
 
+All client instances are equal. Configuration order and the name `qBit` confer no
+priority. Status uses `qbitInstances` only, and categories are evaluated for every
+client. Hash-only operations reject matches on more than one client and incomplete
+lookups. Specify an instance when another client is unavailable.
+
 qBittorrent is the shipped adapter. The client registry accepts independent
 `ITorrentClient` implementations supplied by registered factories, but this does
 not add support for another client product by itself. Optional actions are gated
@@ -17,7 +22,8 @@ Saving connection changes removes the old connection before responding. Disabled
 deleted, and placeholder clients are removed from active snapshots. The existing
 connection loop retries enabled clients; Arr workers restart with the saved
 configuration. A failed replacement stays unavailable instead of using the old
-endpoint. A remote request already dispatched before the save may still finish.
+endpoint. A remote request already dispatched before the save may still finish. Old client
+references reject subsequent requests; disposal waits for active requests to finish.
 
 ## Preview, arm, and apply
 

@@ -25,18 +25,16 @@ public class StatusEndpointTests : IClassFixture<TorrentarrWebApplicationFactory
         response.StatusCode.Should().Be(HttpStatusCode.OK);
     }
 
-    [Fact]
-    public async Task GetStatus_QbitAlive_False_WhenNotConfigured()
+    [Theory]
+    [InlineData("/web/status")]
+    [InlineData("/api/status")]
+    public async Task GetStatus_OnlyExposesNamedInstances(string path)
     {
-        // Default config has Host = "CHANGE_ME", so qBit won't be alive
-        var client = _factory.CreateClientWithApiToken();
-
-        var response = await client.GetAsync("/web/status");
-        var body = await response.Content.ReadAsStringAsync();
-        var json = JsonDocument.Parse(body).RootElement;
-
-        var qbit = json.GetProperty("qbit");
-        qbit.GetProperty("alive").GetBoolean().Should().BeFalse();
+        var response = await _factory.CreateClientWithApiToken().GetAsync(path);
+        response.EnsureSuccessStatusCode();
+        var json = JsonDocument.Parse(await response.Content.ReadAsStringAsync()).RootElement;
+        json.TryGetProperty("qbit", out _).Should().BeFalse();
+        json.GetProperty("qbitInstances").EnumerateObject().Should().BeEmpty();
     }
 
     [Fact]

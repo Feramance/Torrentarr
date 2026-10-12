@@ -51,6 +51,17 @@ public class QBittorrentClient : ITorrentClient, IDisposable
     private Task<RestResponse> ExecuteAsync(RestRequest request, CancellationToken ct) =>
         HttpRetryHelper.ExecuteQBitAsync(_client, request, ct);
 
+    private async Task<RestResponse> ExecuteInventoryAsync(RestRequest request, CancellationToken ct)
+    {
+        var response = await ExecuteAsync(request, ct);
+        if (response.StatusCode == System.Net.HttpStatusCode.Forbidden && await LoginAsync(ct))
+        {
+            request.AddOrUpdateHeader("Cookie", _cookie!);
+            response = await ExecuteAsync(request, ct);
+        }
+        return response;
+    }
+
     private static List<T> ReadInventoryList<T>(RestResponse response)
     {
         if (!response.IsSuccessful)
@@ -145,6 +156,8 @@ public class QBittorrentClient : ITorrentClient, IDisposable
         AddAuthCookie(request);
 
         var response = await ExecuteAsync(request, ct);
+        if (!response.IsSuccessful)
+            throw new HttpRequestException($"Torrent version request failed (HTTP {(int)response.StatusCode}).", null, response.StatusCode);
         return response.Content ?? "";
     }
 
@@ -161,7 +174,7 @@ public class QBittorrentClient : ITorrentClient, IDisposable
         if (!string.IsNullOrEmpty(sort))
             request.AddQueryParameter("sort", sort);
 
-        var response = await ExecuteAsync(request, cancellationToken);
+        var response = await ExecuteInventoryAsync(request, cancellationToken);
         cancellationToken.ThrowIfCancellationRequested();
 
         return ReadInventoryList<TorrentInfo>(response);
@@ -349,7 +362,7 @@ public class QBittorrentClient : ITorrentClient, IDisposable
         AddAuthCookie(request);
         request.AddQueryParameter("hash", hash);
 
-        var response = await ExecuteAsync(request, ct);
+        var response = await ExecuteInventoryAsync(request, ct);
         ct.ThrowIfCancellationRequested();
 
         return ReadInventoryList<TorrentTracker>(response);
@@ -510,7 +523,7 @@ public class QBittorrentClient : ITorrentClient, IDisposable
         AddAuthCookie(request);
         request.AddQueryParameter("hash", hash);
 
-        var response = await ExecuteAsync(request, ct);
+        var response = await ExecuteInventoryAsync(request, ct);
         ct.ThrowIfCancellationRequested();
 
         return ReadInventoryList<TorrentFile>(response);

@@ -2258,13 +2258,6 @@ export function ConfigView(props?: ConfigViewProps): JSX.Element {
   const deleteQbitInstance = useCallback(
     (key: string) => {
       if (!formState) return;
-      if (key === "qBit") {
-        push(
-          "The default qBit instance cannot be deleted. You can disable it via the Disabled setting.",
-          "error",
-        );
-        return;
-      }
       const confirmed = window.confirm(
         `Delete ${key}? This action cannot be undone.`,
       );
@@ -2322,13 +2315,6 @@ export function ConfigView(props?: ConfigViewProps): JSX.Element {
       if (!formState) return;
       const newName = rawNewName.trim();
       if (!newName || newName === oldName) {
-        return;
-      }
-      if (oldName === "qBit" && newName !== "qBit") {
-        push(
-          "Cannot rename the default qBit instance. Create a new instance instead.",
-          "error",
-        );
         return;
       }
       if (formState[newName]) {
@@ -2524,17 +2510,9 @@ export function ConfigView(props?: ConfigViewProps): JSX.Element {
                   const disabled = getValue(value as ConfigDocument, [
                     "Disabled",
                   ]);
-                  const isDefault = key === "qBit";
                   return (
                     <div className="card config-card config-arr-card" key={key}>
-                      <div className="card-header">
-                        {key}
-                        {isDefault && (
-                          <span style={{ marginLeft: "8px", opacity: 0.6 }}>
-                            (Default)
-                          </span>
-                        )}
-                      </div>
+                      <div className="card-header">{key}</div>
                       <div className="card-body">
                         <dl className="config-arr-summary">
                           <div className="config-arr-summary__item">
@@ -3831,9 +3809,9 @@ function SectionNameField({
     const isQbitInstance = QBIT_SECTION_REGEX.test(currentName);
 
     if (isQbitInstance) {
-      // qBit instances must follow qBit-NAME format (or just "qBit" for default)
+      // qBit instances must follow qBit-NAME format (or the legacy name "qBit")
       if (trimmed === "qBit") {
-        // Allow default name
+        // Allow the literal legacy name
         adjustedName = "qBit";
       } else if (!trimmed.startsWith("qBit-")) {
         // If user entered something without the prefix, prepend it
@@ -4410,8 +4388,6 @@ function QbitInstanceModal({
   onRename,
   onClose,
 }: QbitInstanceModalProps): JSX.Element {
-  const isDefault = keyName === "qBit";
-
   return (
     <div className="modal-backdrop" role="presentation">
       <div
@@ -4424,11 +4400,6 @@ function QbitInstanceModal({
         <div className="modal-header">
           <h2 id="qbit-instance-modal-title">
             Configure <code>{keyName}</code>
-            {isDefault && (
-              <span style={{ marginLeft: "8px", opacity: 0.6 }}>
-                (Default Instance)
-              </span>
-            )}
           </h2>
           <button className="btn ghost" type="button" onClick={onClose}>
             <IconImage src={CloseIcon} />
@@ -4468,7 +4439,7 @@ function QbitInstanceModal({
             onChange={(path, def, value) =>
               onChange([keyName, ...path], def, value)
             }
-            onRenameSection={isDefault ? undefined : onRename}
+            onRenameSection={onRename}
             sectionKey={keyName}
             defaultOpen
           />
@@ -4483,12 +4454,6 @@ function QbitInstanceModal({
             defaultOpen={false}
             qbitTrackers
           />
-          {isDefault && (
-            <div className="alert info" style={{ marginTop: "16px" }}>
-              This is the default qBittorrent instance (required). To add
-              additional instances, use the "Add Instance" button.
-            </div>
-          )}
         </div>
         <div className="modal-footer">
           <button className="btn primary" type="button" onClick={onClose}>

@@ -38,7 +38,7 @@ Primary tracking artifacts:
 - In-process dual torrent/search tasks in `ArrWorkerManager` (Host does not spawn `Torrentarr.Workers`).
 - `ExpectedConfigVersion` / default config references aligned to **`6.14.3`**.
 - Readarr (`[Readarr-*]`), `AutoUpdateChannel`, fractional durations, qBit init retry, seeding `-1` merge, and existing-DB table creation via `ManualSqliteMigrations`.
-- `config.example.toml` now surfaces `MatchSubcategories` in the primary qBit example for parity with upstream config docs.
+- `config.example.toml` now surfaces `MatchSubcategories` in the legacy `[qBit]` example for parity with upstream config docs.
 - OpenAPI helper scripts and contributor docs now point at latest qBitrr `master` by default instead of the old `5.12.3` pin.
 
 ### Implemented later (qBitrr 5.14.4-1)

@@ -177,6 +177,9 @@ Cache-Control: no-cache, no-store, must-revalidate
 
 ### System Status
 
+The legacy `qbit` field has been removed from `/web/status` and `/api/status`.
+Consumers must read `qbitInstances[instanceName]`; no client is selected implicitly.
+
 Get qBittorrent and Arr instance statuses.
 
 **Endpoints**:
@@ -186,14 +189,8 @@ Get qBittorrent and Arr instance statuses.
 **Response**:
 ```json
 {
-  "qbit": {
-    "alive": true,
-    "host": "localhost",
-    "port": 8080,
-    "version": "4.6.0"
-  },
   "qbitInstances": {
-    "default": {
+    "qBit": {
       "alive": true,
       "host": "localhost",
       "port": 8080,
@@ -225,8 +222,7 @@ Get qBittorrent and Arr instance statuses.
 
 **Fields**:
 
-- `qbit` - Legacy single-instance qBittorrent info (for backward compatibility)
-- `qbitInstances` - Multi-instance qBittorrent info keyed by instance name
+- `qbitInstances` - Client status keyed by instance name; all instances are equal
 - `arrs[].alive` - Arr instance process health (checks both search and torrent processes)
 - `webui` - WebUI configuration settings
 - `ready` - Overall system ready state

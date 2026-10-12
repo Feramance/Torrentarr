@@ -29,7 +29,8 @@ public sealed class TorrentClientIsolationTests
         var manager = new QBittorrentConnectionManager(NullLogger<QBittorrentConnectionManager>.Instance, [factory.Object]);
         var cfg = new TorrentClientInstanceConfig { Type = "fake", Host = "fixture" };
         await Task.WhenAll(Enumerable.Range(0, 10).Select(_ => manager.InitializeAsync("one", cfg)));
-        manager.GetClient("ONE").Should().BeSameAs(client.Object);
+        (await manager.GetClient("ONE")!.GetVersionAsync()).Should().Be("fake-1");
+        manager.GetClient("ONE").Should().BeSameAs(manager.GetAllClients()["one"]);
         factory.Verify(f => f.Create(It.IsAny<string>(), It.IsAny<TorrentClientInstanceConfig>()), Times.Once);
     }
 
@@ -43,6 +44,7 @@ public sealed class TorrentClientIsolationTests
     public async Task ConnectionChange_ReplacesClient(string changed)
     {
         var oldClient = Client(); var newClient = Client();
+        newClient.Setup(c => c.GetVersionAsync(It.IsAny<CancellationToken>())).ReturnsAsync("fake-2");
         var factory = new Mock<ITorrentClientFactory>();
         factory.SetupGet(f => f.Type).Returns("fake");
         factory.SetupSequence(f => f.Create(It.IsAny<string>(), It.IsAny<TorrentClientInstanceConfig>()))
@@ -63,7 +65,7 @@ public sealed class TorrentClientIsolationTests
             case "type": cfg.Type = "other"; break;
         }
         await manager.ReconcileAsync(new Dictionary<string, TorrentClientInstanceConfig> { ["one"] = cfg });
-        manager.GetClient("one").Should().BeSameAs(newClient.Object);
+        (await manager.GetClient("one")!.GetVersionAsync()).Should().Be("fake-2");
     }
 
     [Theory]
@@ -174,4 +176,34 @@ public sealed class TorrentClientIsolationTests
         tracker.IsHashAlreadyScanned("one", "abc").Should().BeFalse();
         tracker.IsHashAlreadyScanned("two", "abc").Should().BeTrue();
     }
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task Reconciliation_RevokesReferencesButWaitsForActiveRequests(bool requestFails)
+    {
+        var client = Client();
+        var disposable = client.As<IDisposable>();
+        var pending = new TaskCompletionSource<List<TorrentInfo>>(TaskCreationOptions.RunContinuationsAsynchronously);
+        client.Setup(c => c.GetTorrentsAsync(null, null, It.IsAny<CancellationToken>())).Returns(pending.Task);
+        var factory = new Mock<ITorrentClientFactory>();
+        factory.SetupGet(f => f.Type).Returns("fake");
+        factory.Setup(f => f.Create(It.IsAny<string>(), It.IsAny<TorrentClientInstanceConfig>())).Returns(client.Object);
+        var manager = new QBittorrentConnectionManager(NullLogger<QBittorrentConnectionManager>.Instance, [factory.Object]);
+        await manager.InitializeAsync("one", new TorrentClientInstanceConfig { Type = "fake", Host = "fixture" });
+        var retained = manager.GetAllClients()["one"];
+        var active = retained.GetTorrentsAsync();
+        await manager.ReconcileAsync([], connect: false);
+        manager.GetClient("one").Should().BeNull();
+        disposable.Verify(c => c.Dispose(), Times.Never);
+        await FluentActions.Awaiting(() => retained.DeleteTorrentsAsync(["abc"], true)).Should().ThrowAsync<ObjectDisposedException>();
+        client.Verify(c => c.DeleteTorrentsAsync(It.IsAny<List<string>>(), It.IsAny<bool>(), It.IsAny<CancellationToken>()), Times.Never);
+        if (requestFails)
+        {
+            pending.SetException(new HttpRequestException());
+            await FluentActions.Awaiting(() => active).Should().ThrowAsync<HttpRequestException>();
+        }
+        else { pending.SetResult([]); await active; }
+        disposable.Verify(c => c.Dispose(), Times.Once);
+    }
+
 }

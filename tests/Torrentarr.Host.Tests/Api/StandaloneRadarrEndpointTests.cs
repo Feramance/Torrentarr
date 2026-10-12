@@ -10,6 +10,9 @@ using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
 using Microsoft.Extensions.Hosting;
 using Torrentarr.Core.Configuration;
+using Torrentarr.Core.Models;
+using Torrentarr.Core.Services;
+using System.Net.Http.Json;
 using Torrentarr.Infrastructure.Database;
 using Torrentarr.Infrastructure.Database.Models;
 using Xunit;
@@ -70,6 +73,29 @@ public class StandaloneRadarrEndpointTests
         filtered.GetProperty("counts").GetProperty("missing").GetInt32().Should().Be(5);
         (await Get("page=0&page_size=50&q=absent")).GetProperty("total").GetInt32().Should().Be(0);
         (await Get("page=0&pageSize=2")).GetProperty("movies").GetArrayLength().Should().Be(2);
+    }
+
+    [Fact]
+    public async Task StandaloneMaintenance_PreviewAndApplyUseRegisteredSeedingService()
+    {
+        await using var factory = new StandaloneFactory();
+        var client = factory.CreateClient();
+        var config = factory.Services.GetRequiredService<TorrentarrConfig>();
+        config.TorrentClients["one"] = new() { Host = "fixture", Maintenance = new() { Enabled = true, Armed = true } };
+        var response = await client.PostAsJsonAsync("/web/maintenance/preview", new MaintenancePreviewRequest());
+        response.EnsureSuccessStatusCode();
+        var plan = await response.Content.ReadFromJsonAsync<JsonElement>();
+        using var scope = factory.Services.CreateScope();
+        scope.ServiceProvider.GetRequiredService<ISeedingService>().Should().NotBeNull();
+        // A disconnected client blocks preview, so exercise apply with a valid empty plan instead.
+        config.TorrentClients.Clear();
+        var maintenance = factory.Services.GetRequiredService<IMaintenanceCoordinator>();
+        var empty = await maintenance.PreviewAsync(new MaintenancePreviewRequest());
+        var applied = await client.PostAsJsonAsync("/web/maintenance/apply", new MaintenanceApplyRequest { PlanId = empty.PlanId });
+        applied.EnsureSuccessStatusCode();
+        plan.GetProperty("planId").GetString().Should().NotBeNullOrWhiteSpace();
+        var status = await client.GetFromJsonAsync<JsonElement>("/web/status");
+        status.TryGetProperty("qbit", out _).Should().BeFalse();
     }
 
     private sealed class StandaloneFactory : WebApplicationFactory<Standalone::Program>

@@ -68,7 +68,7 @@ public class QBittorrentConnectionManager : ITorrentClientRegistry
             var version = await client.GetVersionAsync(ct);
             lock (_clientsLock)
             {
-                _clients[name] = client;
+                _clients[name] = new RegisteredTorrentClient(client);
                 _settings[name] = settings;
                 _lastConnected[name] = DateTime.UtcNow;
             }

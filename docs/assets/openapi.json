@@ -1991,13 +1991,57 @@
     },
     "/api/status": {
       "get": {
+        "description": "All clients are equal. Read qbitInstances by instance name; the legacy qbit field has been removed.",
         "operationId": "api_status",
         "responses": {
           "200": {
             "content": {
               "application/json": {
                 "schema": {
-                  "additionalProperties": true,
+                  "properties": {
+                    "arrs": {
+                      "items": {
+                        "additionalProperties": true,
+                        "type": "object"
+                      },
+                      "type": "array"
+                    },
+                    "qbitInstances": {
+                      "additionalProperties": {
+                        "properties": {
+                          "alive": {
+                            "type": "boolean"
+                          },
+                          "host": {
+                            "type": "string"
+                          },
+                          "port": {
+                            "type": "integer"
+                          },
+                          "version": {
+                            "nullable": true,
+                            "type": "string"
+                          }
+                        },
+                        "required": [
+                          "alive",
+                          "host",
+                          "port",
+                          "version"
+                        ],
+                        "type": "object"
+                      },
+                      "type": "object"
+                    },
+                    "ready": {
+                      "type": "boolean"
+                    }
+                  },
+                  "required": [
+                    "qbitInstances",
+                    "arrs",
+                    "ready"
+                  ],
                   "type": "object"
                 }
               }
@@ -4204,13 +4248,57 @@
     },
     "/web/status": {
       "get": {
+        "description": "All clients are equal. Read qbitInstances by instance name; the legacy qbit field has been removed.",
         "operationId": "web_status",
         "responses": {
           "200": {
             "content": {
               "application/json": {
                 "schema": {
-                  "additionalProperties": true,
+                  "properties": {
+                    "arrs": {
+                      "items": {
+                        "additionalProperties": true,
+                        "type": "object"
+                      },
+                      "type": "array"
+                    },
+                    "qbitInstances": {
+                      "additionalProperties": {
+                        "properties": {
+                          "alive": {
+                            "type": "boolean"
+                          },
+                          "host": {
+                            "type": "string"
+                          },
+                          "port": {
+                            "type": "integer"
+                          },
+                          "version": {
+                            "nullable": true,
+                            "type": "string"
+                          }
+                        },
+                        "required": [
+                          "alive",
+                          "host",
+                          "port",
+                          "version"
+                        ],
+                        "type": "object"
+                      },
+                      "type": "object"
+                    },
+                    "ready": {
+                      "type": "boolean"
+                    }
+                  },
+                  "required": [
+                    "qbitInstances",
+                    "arrs",
+                    "ready"
+                  ],
                   "type": "object"
                 }
               }

@@ -1,8 +1,11 @@
 import importlib.util
 import pathlib
 import unittest
+import sys
+from copy import deepcopy
 
 SCRIPT = pathlib.Path(__file__).parents[2] / "scripts" / "check-openapi-drift.py"
+sys.path.insert(0, str(SCRIPT.parent))
 spec = importlib.util.spec_from_file_location("openapi_drift", SCRIPT)
 module = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(module)
@@ -13,6 +16,16 @@ def document(paths, components=None):
 
 
 class OpenApiDriftTests(unittest.TestCase):
+    def test_accepts_only_the_declared_named_client_status_contract(self):
+        for route in ("/web/status", "/api/status"):
+            def status(schema):
+                return document({route: {"get": {"responses": {"200": {"content": {"application/json": {"schema": schema}}}}}}})
+            upstream = status({"type": "object", "additionalProperties": True})
+            self.assertEqual(module.compare(status(module.STATUS_SCHEMA), upstream, set()), [])
+            changed = deepcopy(module.STATUS_SCHEMA)
+            changed["properties"]["qbitInstances"]["additionalProperties"]["properties"]["alive"] = {"type": "string"}
+            self.assertIn("schema differs", "\n".join(module.compare(status(changed), upstream, set())))
+
     def test_accepts_matching_required_operation_contract(self):
         operation = {
             "parameters": [{"in": "query", "name": "q", "required": True}],

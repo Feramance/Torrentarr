@@ -33,7 +33,7 @@ const okUpdateResponse = {
   affectedInstances: [],
 };
 
-// Config with qBit (default) + qBit-1 + one Radarr instance
+// Config with qBit + qBit-1 + one Radarr instance
 const configWithInstances = {
   Settings: { LoopSleepTimer: 5, FailedCategory: "failed" },
   WebUI: { Port: 6969, Theme: "Dark", LiveArr: false },
@@ -47,7 +47,7 @@ const configWithInstances = {
   },
 };
 
-// Config with only the default qBit instance
+// Config with only the qBit instance
 const configQbitOnly = {
   Settings: { LoopSleepTimer: 5 },
   WebUI: { Port: 6969, LiveArr: false },
@@ -72,7 +72,7 @@ function renderConfig() {
 // ── delete button rendering ───────────────────────────────────────────────────
 
 describe("ConfigView – delete button rendering", () => {
-  it("renders a Delete button for the default qBit instance", async () => {
+  it("renders a Delete button for the qBit instance", async () => {
     server.use(
       http.get("/web/config", () => HttpResponse.json(configWithInstances)),
       http.post("/web/config", () => HttpResponse.json(okUpdateResponse)),
@@ -82,7 +82,7 @@ describe("ConfigView – delete button rendering", () => {
 
     // Wait for config to load by checking for a known card header
     await screen.findByText("qBit");
-    // Find the card that contains "qBit" (Default) and confirm its delete button
+    // Find the card that contains "qBit" and confirm its delete button
     const qbitHeader = screen.getByText("qBit");
     const card = qbitHeader.closest(".card")!;
     expect(
@@ -126,13 +126,13 @@ describe("ConfigView – delete button rendering", () => {
 // ── deleteQbitInstance logic ──────────────────────────────────────────────────
 
 describe("ConfigView – deleteQbitInstance behaviour", () => {
-  it("clicking Delete on the default qBit shows error toast and does not call window.confirm", async () => {
+  it("confirms and removes qBit just like any other instance", async () => {
     server.use(
       http.get("/web/config", () => HttpResponse.json(configWithInstances)),
       http.post("/web/config", () => HttpResponse.json(okUpdateResponse)),
     );
 
-    const confirmSpy = vi.spyOn(window, "confirm");
+    const confirmSpy = vi.spyOn(window, "confirm").mockReturnValue(true);
     const user = userEvent.setup();
 
     renderConfig();
@@ -144,9 +144,11 @@ describe("ConfigView – deleteQbitInstance behaviour", () => {
 
     await user.click(deleteBtn);
 
-    expect(confirmSpy).not.toHaveBeenCalled();
-    // Toast with error message should appear
-    await screen.findByText(/cannot be deleted/i);
+    expect(confirmSpy).toHaveBeenCalledWith(
+      "Delete qBit? This action cannot be undone.",
+    );
+    expect(screen.queryByText("qBit")).not.toBeInTheDocument();
+    expect(screen.getByText("qBit-1")).toBeInTheDocument();
   });
 
   it("clicking Delete on qBit-1 calls window.confirm", async () => {
@@ -192,8 +194,74 @@ describe("ConfigView – deleteQbitInstance behaviour", () => {
 
     // Card for qBit-1 should be gone
     expect(screen.queryByText("qBit-1")).not.toBeInTheDocument();
-    // Default qBit card should still be present
+    // Other qBit card should still be present
     expect(screen.getByText("qBit")).toBeInTheDocument();
+  });
+});
+
+describe("ConfigView – equal client names", () => {
+  it("renames qBit and saves the old section removal", async () => {
+    let changes: Record<string, unknown> = {};
+    server.use(
+      http.get("/web/config", () =>
+        HttpResponse.json({
+          ...configQbitOnly,
+          Settings: {
+            ...configQbitOnly.Settings,
+            ConsoleLevel: "INFO",
+            CompletedDownloadFolder: "/downloads",
+            FreeSpace: "10G",
+            FreeSpaceFolder: "/downloads",
+            NoInternetSleepTimer: 60,
+            SearchLoopDelay: -1,
+            IgnoreTorrentsYoungerThan: 0,
+            AutoUpdateCron: "0 0 * * *",
+            AutoUpdateChannel: "latest",
+            MaxProcessRestarts: 5,
+            ProcessRestartWindow: 3600,
+            ProcessRestartDelay: 5,
+          },
+          WebUI: { ...configQbitOnly.WebUI, Host: "localhost" },
+          qBit: {
+            ...configQbitOnly.qBit,
+            CategorySeeding: {
+              MaxUploadRatio: 0,
+              DownloadRateLimitPerTorrent: -1,
+              UploadRateLimitPerTorrent: -1,
+              HitAndRunMode: "disabled",
+            },
+          },
+        }),
+      ),
+      http.post("/web/config", async ({ request }) => {
+        changes = (
+          (await request.json()) as { changes: Record<string, unknown> }
+        ).changes;
+        return HttpResponse.json(okUpdateResponse);
+      }),
+    );
+    const user = userEvent.setup();
+    renderConfig();
+    const header = await screen.findByText("qBit");
+    expect(screen.queryByText("(Default)")).not.toBeInTheDocument();
+    await user.click(
+      within(header.closest(".card")!).getByRole("button", {
+        name: /configure/i,
+      }),
+    );
+    const dialog = screen.getByRole("dialog");
+    const name = within(dialog).getByPlaceholderText("qBit-seedbox");
+    await user.clear(name);
+    await user.type(name, "qBit-renamed{Enter}");
+    await user.click(
+      within(screen.getByRole("dialog")).getByRole("button", { name: /done/i }),
+    );
+    await user.click(
+      screen.getByRole("button", { name: /save \+ live reload/i }),
+    );
+    await screen.findByText(/configuration saved/i);
+    expect(changes["qBit.Host"]).toBeNull();
+    expect(changes["qBit-renamed.Host"]).toBe("localhost");
   });
 });
 

@@ -10,6 +10,8 @@ namespace Torrentarr.Infrastructure.Tests.ApiClients;
 public sealed class QBittorrentInventoryResponseTests
 {
     [Theory]
+    [InlineData(403, "", "version")]
+    [InlineData(503, "secret-response", "version")]
     [InlineData(403, "", "torrents")]
     [InlineData(403, "", "files")]
     [InlineData(503, "secret-response", "files")]
@@ -30,6 +32,41 @@ public sealed class QBittorrentInventoryResponseTests
     [InlineData("trackers")]
     public async Task SuccessfulEmptyArray_IsAccepted(string operation)
         => await Request(200, "[]", operation, async action => await action());
+
+    [Theory]
+    [InlineData("torrents")]
+    [InlineData("files")]
+    [InlineData("trackers")]
+    public async Task ExpiredSession_ReauthenticatesAndRetriesInventoryOnce(string operation)
+    {
+        using var socket = new TcpListener(IPAddress.Loopback, 0);
+        socket.Start(); var port = ((IPEndPoint)socket.LocalEndpoint).Port; socket.Stop();
+        using var listener = new HttpListener();
+        listener.Prefixes.Add($"http://127.0.0.1:{port}/"); listener.Start();
+        var paths = new List<string>();
+        var server = Task.Run(async () =>
+        {
+            for (var i = 0; i < 3; i++)
+            {
+                var request = await listener.GetContextAsync().WaitAsync(TimeSpan.FromSeconds(10));
+                paths.Add(request.Request.Url!.AbsolutePath);
+                request.Response.StatusCode = i == 0 ? 403 : 200;
+                if (i == 1) request.Response.Headers.Add("Set-Cookie", "SID=renewed; Path=/");
+                if (i == 2) request.Request.Headers["Cookie"].Should().Contain("SID=renewed");
+                var bytes = Encoding.UTF8.GetBytes(i == 1 ? "Ok." : "[]");
+                request.Response.ContentLength64 = bytes.Length;
+                await request.Response.OutputStream.WriteAsync(bytes);
+                request.Response.Close();
+            }
+        });
+        using var client = new QBittorrentClient("127.0.0.1", port, "u", "p");
+        if (operation == "files") await client.GetTorrentFilesAsync("abc");
+        else if (operation == "trackers") await client.GetTorrentTrackersAsync("abc");
+        else await client.GetTorrentsAsync();
+        await server.WaitAsync(TimeSpan.FromSeconds(10));
+        paths[1].Should().Be("/api/v2/auth/login");
+        paths[2].Should().Be(paths[0]);
+    }
 
     private static async Task Request(int status, string body, string operation, Func<Func<Task>, Task> verify)
     {
@@ -59,6 +96,8 @@ public sealed class QBittorrentInventoryResponseTests
         var client = new QBittorrentClient("127.0.0.1", port, "u", "p");
         Func<Task> action = operation switch
         {
+            "version" => async () => { await client.GetVersionAsync(); }
+            ,
             "files" => async () => { (await client.GetTorrentFilesAsync("abc")).Should().BeEmpty(); }
             ,
             "trackers" => async () => { (await client.GetTorrentTrackersAsync("abc")).Should().BeEmpty(); }
@@ -71,6 +110,6 @@ public sealed class QBittorrentInventoryResponseTests
             cancellation.Cancel();
             await server.WaitAsync(TimeSpan.FromSeconds(5));
         }
-        requests.Should().Be(status == 503 ? 4 : 1);
+        requests.Should().Be(status == 503 ? 4 : status == 403 && operation != "version" ? 2 : 1);
     }
 }

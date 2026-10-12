@@ -165,6 +165,7 @@ builder.Services.AddSingleton<IHardlinkInspector, HardlinkInspector>();
 builder.Services.AddSingleton<ISafeDeletionService, SafeDeletionService>();
 builder.Services.AddSingleton<IMaintenanceNotificationService, MaintenanceNotificationService>();
 builder.Services.AddSingleton<IMaintenanceCoordinator, MaintenanceCoordinator>();
+builder.Services.AddScoped<ISeedingService, SeedingService>();
 builder.Services.AddHttpClient();
 builder.Services.AddHttpClient("ArrOpen").ConfigurePrimaryHttpMessageHandler(() => new HttpClientHandler { AllowAutoRedirect = false });
 builder.Services.AddHttpClient("ArrOpenSkipTls").ConfigurePrimaryHttpMessageHandler(() => new HttpClientHandler
@@ -510,7 +511,7 @@ app.MapGet("/web/loglevel", (LoggingLevelSwitch ls) =>
 });
 
 // Status endpoint
-app.MapGet("/web/status", async (TorrentarrDbContext db, TorrentarrConfig config) =>
+app.MapGet("/web/status", async (TorrentarrDbContext db, TorrentarrConfig config, ITorrentClientRegistry registry, CancellationToken ct) =>
 {
     var movieCount = await db.Movies.CountAsync();
     var episodeCount = await db.Episodes.CountAsync();
@@ -518,16 +519,7 @@ app.MapGet("/web/status", async (TorrentarrDbContext db, TorrentarrConfig config
 
     return Results.Ok(new
     {
-        qbit = new
-        {
-            alive = !(config.GetTorrentClient("qBit") ?? config.GetAllTorrentClients().Values.FirstOrDefault() ?? new QBitConfig()).Disabled,
-            host = (config.GetTorrentClient("qBit") ?? config.GetAllTorrentClients().Values.FirstOrDefault() ?? new QBitConfig()).Host,
-            port = (config.GetTorrentClient("qBit") ?? config.GetAllTorrentClients().Values.FirstOrDefault() ?? new QBitConfig()).Port,
-            version = (string?)null
-        },
-        qbitInstances = config.GetAllTorrentClients().ToDictionary(
-            kv => kv.Key,
-            kv => (object)new { alive = !kv.Value.Disabled, host = kv.Value.Host, port = kv.Value.Port, version = (string?)null }),
+        qbitInstances = await TorrentClientApiBuilder.StatusAsync(config, registry, ct),
         arrs = config.ArrInstances.Select(kvp => new
         {
             category = kvp.Value.Category,
@@ -1606,68 +1598,10 @@ app.MapPost("/web/arr/rebuild", async (HttpContext ctx, TorrentarrConfig config)
 });
 
 // §6.5: qBit categories — seeding config + live torrent stats per category
-app.MapGet("/web/qbit/categories", async (TorrentarrConfig config, ITorrentClientRegistry clientRegistry, CancellationToken ct) =>
+app.MapGet("/web/qbit/categories", async (TorrentarrConfig config, ITorrentClientRegistry registry, CancellationToken ct) =>
 {
-    var categories = new List<object>();
-
-    var clients = config.GetAllTorrentClients();
-    await clientRegistry.EnsureAllConnectedAsync(clients, ct);
-
-    foreach (var (qbitName, qbitCfg) in clients)
-    {
-        if (qbitCfg.Disabled || !string.Equals(qbitCfg.Type, "qbittorrent", StringComparison.OrdinalIgnoreCase)) continue;
-
-        // Fetch live torrent list from this qBit instance
-        var liveTorrents = new List<TorrentInfo>();
-        try
-        {
-            var client = clientRegistry.GetClient(qbitName);
-            if (client != null && clientRegistry.IsConnected(qbitName))
-                liveTorrents = await client.GetTorrentsAsync(cancellationToken: ct);
-        }
-        catch { /* live stats unavailable — return zeros */ }
-
-        foreach (var cat in qbitCfg.ManagedCategories)
-        {
-            var catTorrents = CategorySeedingApiResolver.SelectAggregateTorrents(
-                liveTorrents, cat, qbitCfg.MatchSubcategories);
-            var seedingTorrents = catTorrents
-                .Where(t => t.State.Contains("upload", StringComparison.OrdinalIgnoreCase) ||
-                             t.State.Contains("seeding", StringComparison.OrdinalIgnoreCase))
-                .ToList();
-            var avgRatio = catTorrents.Count > 0 ? catTorrents.Average(t => t.Ratio) : 0.0;
-            var avgSeedingTimeDays = seedingTorrents.Count > 0
-                ? seedingTorrents.Average(t => t.SeedingTime) / 86400.0
-                : 0.0;
-
-            var effectiveSeeding = CategorySeedingApiResolver.ResolveAggregatePolicy(
-                config, qbitName, qbitCfg, cat, catTorrents);
-            categories.Add(new
-            {
-                category = cat,
-                instance = qbitName,
-                managedBy = config.ArrInstances.Values.Any(a =>
-                    string.Equals(a.Category, cat, StringComparison.OrdinalIgnoreCase)) ? "arr" : "qbit",
-                torrentCount = catTorrents.Count,
-                seedingCount = seedingTorrents.Count,
-                totalSize = catTorrents.Sum(t => t.Size),
-                avgRatio,
-                avgSeedingTimeDays,
-                seedingConfig = effectiveSeeding == null ? null : new
-                {
-                    effectiveSeeding.MaxRatio,
-                    effectiveSeeding.MaxTime,
-                    effectiveSeeding.RemoveMode,
-                    effectiveSeeding.HitAndRunMode,
-                    effectiveSeeding.MinSeedRatio,
-                    effectiveSeeding.MinSeedingTimeDays,
-                    effectiveSeeding.DownloadLimit,
-                    effectiveSeeding.UploadLimit
-                }
-            });
-        }
-    }
-
+    await registry.EnsureAllConnectedAsync(config.GetAllTorrentClients(), ct);
+    var categories = await TorrentClientApiBuilder.CategoriesAsync(config, registry, extendedPolicy: true, ct: ct);
     return Results.Ok(new { categories, ready = true });
 });
 

@@ -72,6 +72,16 @@ public class TorrentProcessor : ITorrentProcessor
         };
     }
 
+    private async Task<List<TorrentInfo>> ReadClientTorrentsAsync(string id, ITorrentClient client, string? category, CancellationToken ct)
+    {
+        try { return await client.GetTorrentsAsync(category, cancellationToken: ct); }
+        catch (Exception ex) when (ex is not OperationCanceledException)
+        {
+            _logger.LogWarning(ex, "Unable to read torrent client {Instance}", id);
+            return [];
+        }
+    }
+
     public async Task ProcessTorrentsAsync(string category, CancellationToken cancellationToken = default)
     {
         _logger.LogTrace("Starting torrent processing for category {Category}", category);
@@ -103,11 +113,11 @@ public class TorrentProcessor : ITorrentProcessor
             var fetchAll = allClients.ToDictionary(
                 kv => kv.Key,
                 kv => (Func<CancellationToken, Task<List<TorrentInfo>>>)(ct =>
-                    kv.Value.GetTorrentsAsync(cancellationToken: ct)));
+                    ReadClientTorrentsAsync(kv.Key, kv.Value, null, ct)));
             var fetchByCategory = allClients.ToDictionary(
                 kv => kv.Key,
                 kv => (Func<string, CancellationToken, Task<List<TorrentInfo>>>)(async (cat, ct) =>
-                    await kv.Value.GetTorrentsAsync(cat, cancellationToken: ct)));
+                    await ReadClientTorrentsAsync(kv.Key, kv.Value, cat, ct)));
 
             var torrents = await CategoryOwnershipHelper.GatherTorrentsForOwnerAsync(
                 _config, category, fetchAll, fetchByCategory, cancellationToken);
@@ -124,7 +134,7 @@ public class TorrentProcessor : ITorrentProcessor
                 {
                     await ProcessSingleTorrentAsync(torrent, category, stats, cancellationToken);
                 }
-                catch (Exception ex)
+                catch (Exception ex) when (ex is not OperationCanceledException)
                 {
                     _logger.LogError(ex, "Error processing torrent {Hash} ({Name})",
                         torrent.Hash, torrent.Name);
@@ -142,7 +152,7 @@ public class TorrentProcessor : ITorrentProcessor
                 "Processed {Total} torrents in {Category}: {Downloading} downloading, {Completed} completed, {Seeding} seeding, {Failed} failed, {Ignored} ignored",
                 stats.TotalTorrents, category, stats.Downloading, stats.Completed, stats.Seeding, stats.Failed, stats.Ignored);
         }
-        catch (Exception ex)
+        catch (Exception ex) when (ex is not OperationCanceledException)
         {
             _logger.LogError(ex, "Error processing torrents for category {Category}", category);
         }
@@ -157,18 +167,7 @@ public class TorrentProcessor : ITorrentProcessor
 
     public async Task ProcessTorrentAsync(string hash, CancellationToken cancellationToken = default)
     {
-        TorrentInfo? torrent = null;
-        foreach (var (instanceName, c) in _qbitManager.GetAllClients())
-        {
-            var torrents = await c.GetTorrentsAsync(cancellationToken: cancellationToken);
-            var found = torrents.FirstOrDefault(t => t.Hash == hash);
-            if (found != null)
-            {
-                found.QBitInstanceName = instanceName;
-                torrent = found;
-                break;
-            }
-        }
+        var torrent = await TorrentClientLookup.FindAsync(_qbitManager, hash, null, _logger, cancellationToken);
 
         if (torrent != null)
         {
@@ -178,22 +177,8 @@ public class TorrentProcessor : ITorrentProcessor
 
     public async Task<bool> IsReadyForImportAsync(string hash, string? qbitInstance = null, CancellationToken cancellationToken = default)
     {
-        TorrentInfo? torrent = null;
-        string? resolvedInstance = qbitInstance;
-        foreach (var (instanceName, c) in _qbitManager.GetAllClients())
-        {
-            var torrents = await c.GetTorrentsAsync(cancellationToken: cancellationToken);
-            var found = torrents.FirstOrDefault(t => t.Hash == hash);
-            if (found != null)
-            {
-                if (resolvedInstance != null && !string.Equals(resolvedInstance, instanceName, StringComparison.Ordinal))
-                    continue;
-
-                torrent = found;
-                resolvedInstance ??= instanceName;
-                break;
-            }
-        }
+        var torrent = await TorrentClientLookup.FindAsync(_qbitManager, hash, qbitInstance, _logger, cancellationToken);
+        var resolvedInstance = torrent?.ClientInstanceId;
 
         if (torrent == null) return false;
 
@@ -218,23 +203,8 @@ public class TorrentProcessor : ITorrentProcessor
     {
         _logger.LogInformation("Importing torrent {Hash}", hash);
 
-        TorrentInfo? torrent = null;
-        string? torrentInstanceName = qbitInstance;
-        foreach (var (instanceName, c) in _qbitManager.GetAllClients())
-        {
-            var torrents = await c.GetTorrentsAsync(cancellationToken: cancellationToken);
-            var found = torrents.FirstOrDefault(t => t.Hash == hash);
-            if (found != null)
-            {
-                if (torrentInstanceName != null && !string.Equals(torrentInstanceName, instanceName, StringComparison.Ordinal))
-                    continue;
-
-                found.QBitInstanceName = instanceName;
-                torrent = found;
-                torrentInstanceName = instanceName;
-                break;
-            }
-        }
+        var torrent = await TorrentClientLookup.FindAsync(_qbitManager, hash, qbitInstance, _logger, cancellationToken);
+        var torrentInstanceName = torrent?.ClientInstanceId;
 
         if (torrent == null)
         {
@@ -376,7 +346,7 @@ public class TorrentProcessor : ITorrentProcessor
             else if (File.Exists(full))
                 File.Delete(full);
         }
-        catch (Exception ex)
+        catch (Exception ex) when (ex is not OperationCanceledException)
         {
             _logger.LogWarning(ex, "Failed to delete local content after AutoDelete cleanup: {Path}", contentPath);
         }
@@ -1107,7 +1077,7 @@ public class TorrentProcessor : ITorrentProcessor
         {
             await _importService.MarkAsImportedAsync(torrent.QBitInstanceName, torrent.Hash, Array.Empty<string>(), ct);
         }
-        catch (Exception ex)
+        catch (Exception ex) when (ex is not OperationCanceledException)
         {
             _logger.LogWarning(ex, "Failed to apply imported tag for torrent {Hash}", torrent.Hash);
         }
@@ -1300,7 +1270,7 @@ public class TorrentProcessor : ITorrentProcessor
                 _logger.LogTrace("Created tags: {Tags}", string.Join(", ", tagsToCreate));
             }
         }
-        catch (Exception ex)
+        catch (Exception ex) when (ex is not OperationCanceledException)
         {
             _logger.LogWarning(ex, "Failed to ensure tags exist");
         }
@@ -1415,7 +1385,7 @@ public class TorrentProcessor : ITorrentProcessor
             {
                 priorityAccepted = await client.SetFilePriorityAsync(torrent.Hash, prioritiesToApply, 0, ct);
             }
-            catch (Exception ex)
+            catch (Exception ex) when (ex is not OperationCanceledException)
             {
                 _logger.LogWarning(ex, "qBittorrent rejected file filtering for [{Name}] ({Hash}); will retry", torrent.Name, torrent.Hash);
                 return FileFilterResult.PendingResult;
@@ -1528,7 +1498,7 @@ public class TorrentProcessor : ITorrentProcessor
             if (File.Exists(path))
                 File.Delete(path);
         }
-        catch (Exception ex)
+        catch (Exception ex) when (ex is not OperationCanceledException)
         {
             _logger.LogWarning(ex, "Unable to delete disallowed torrent file {Path} for {Hash}", relativePath, torrent.Hash);
         }

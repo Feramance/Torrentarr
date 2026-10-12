@@ -703,45 +703,11 @@ try
     });
 
     // Web Status — matches TypeScript StatusResponse (no extra webui field)
-    app.MapGet("/web/status", async (TorrentarrConfig cfg, ITorrentClientRegistry qbitManager) =>
+    app.MapGet("/web/status", async (TorrentarrConfig cfg, ITorrentClientRegistry registry, CancellationToken ct) =>
     {
-        var primaryName = cfg.GetAllTorrentClients().Keys.FirstOrDefault() ?? "qBit";
-        var primaryQbit = cfg.GetTorrentClient(primaryName) ?? new QBitConfig();
-        var qbitConfigured = primaryQbit.Host != "CHANGE_ME" && !string.IsNullOrEmpty(primaryQbit.Host);
-        var qbitAlive = qbitConfigured && qbitManager.IsConnected();
-
-        string? qbitVersion = null;
-        if (qbitAlive)
-        {
-            var client = qbitManager.GetAllClients().Values.FirstOrDefault();
-            if (client != null)
-                try { qbitVersion = await client.GetVersionAsync(); } catch { /* best-effort */ }
-        }
-
-        // Build qBit instances dict from QBitInstances (all named instances)
-        var qbitInstances = new Dictionary<string, object>();
-        foreach (var (name, qbit) in cfg.GetAllTorrentClients())
-        {
-            var alive = !qbit.Disabled && qbitManager.IsConnected(name);
-            string? ver = name == "qBit" ? qbitVersion : null;
-            if (alive && name != "qBit")
-            {
-                var addlClient = qbitManager.GetClient(name);
-                if (addlClient != null)
-                    try { ver = await addlClient.GetVersionAsync(); } catch { /* best-effort */ }
-            }
-            qbitInstances[name] = new { alive, host = qbit.Host, port = qbit.Port, version = ver };
-        }
-
+        var qbitInstances = await TorrentClientApiBuilder.StatusAsync(cfg, registry, ct);
         return Results.Ok(new
         {
-            qbit = new
-            {
-                alive = qbitAlive,
-                host = qbitConfigured ? primaryQbit.Host : (string?)null,
-                port = qbitConfigured ? (int?)primaryQbit.Port : null,
-                version = qbitVersion
-            },
             qbitInstances,
             arrs = cfg.ArrInstances.Select(kvp => new
             {
@@ -760,100 +726,9 @@ try
     //   • each Arr instance's Category (Arr-managed)
     // The "instance" field is always the qBit instance name (never the Arr instance name)
     // so that ProcessesView can match categories to the correct qBit process card.
-    app.MapGet("/web/qbit/categories", async (ITorrentClientRegistry qbitManager, TorrentarrConfig cfg) =>
+    app.MapGet("/web/qbit/categories", async (ITorrentClientRegistry registry, TorrentarrConfig cfg, CancellationToken ct) =>
     {
-        var categories = new List<object>();
-        var primaryName = cfg.GetAllTorrentClients().Keys.FirstOrDefault() ?? "qBit";
-
-        // Build Arr-managed category lookup: category name → ArrInstanceConfig
-        var arrCategoryToConfig = cfg.ArrInstances
-            .Where(kvp => !string.IsNullOrEmpty(kvp.Value.Category))
-            .ToDictionary(kvp => kvp.Value.Category!, kvp => kvp.Value, StringComparer.OrdinalIgnoreCase);
-
-        var primaryQbit = cfg.GetTorrentClient(primaryName) ?? new QBitConfig();
-        var qbitManagedSet = new HashSet<string>(primaryQbit.ManagedCategories, StringComparer.OrdinalIgnoreCase);
-        var arrCategorySet = new HashSet<string>(arrCategoryToConfig.Keys, StringComparer.OrdinalIgnoreCase);
-        // Only show ManagedCategories from qBit config - not Arr categories
-        var monitoredForDefault = qbitManagedSet;
-
-        if (primaryQbit.Host != "CHANGE_ME" && monitoredForDefault.Count > 0)
-        {
-            try
-            {
-                var client = qbitManager.GetClient(primaryName);
-                if (client != null)
-                {
-                    var allTorrents = await client.GetTorrentsAsync();
-
-                    foreach (var catName in monitoredForDefault)
-                    {
-                        var torrentsInCat = CategorySeedingApiResolver.SelectAggregateTorrents(
-                            allTorrents, catName, primaryQbit.MatchSubcategories);
-                        var seedingTorrents = torrentsInCat.Where(t =>
-                            t.State.Contains("seeding", StringComparison.OrdinalIgnoreCase) ||
-                            t.State.Equals("uploading", StringComparison.OrdinalIgnoreCase)).ToList();
-
-                        var managedBy = arrCategorySet.Contains(catName) ? "arr" : "qbit";
-
-                        var effectiveSeeding = CategorySeedingApiResolver.ResolveAggregate(
-                            cfg, primaryName, primaryQbit, catName, torrentsInCat);
-
-                        categories.Add(new
-                        {
-                            category = catName,
-                            // Always the qBit instance name — ProcessesView matches on this field
-                            instance = primaryName,
-                            managedBy,
-                            torrentCount = torrentsInCat.Count,
-                            seedingCount = seedingTorrents.Count,
-                            totalSize = torrentsInCat.Sum(t => t.Size),
-                            avgRatio = torrentsInCat.Count > 0 ? torrentsInCat.Average(t => t.Ratio) : 0.0,
-                            avgSeedingTime = torrentsInCat.Count > 0 ? torrentsInCat.Average(t => (double)t.SeedingTime) : 0.0,
-                            seedingConfig = effectiveSeeding
-                        });
-                    }
-                }
-            }
-            catch { /* qBit not reachable */ }
-        }
-
-        // Additional qBit instances — only their own ManagedCategories are monitored
-        foreach (var (instName, instCfg) in cfg.GetAllTorrentClients().Where(q => !q.Key.Equals(primaryName, StringComparison.OrdinalIgnoreCase) && q.Value.Host != "CHANGE_ME"))
-        {
-            if (instCfg.ManagedCategories.Count == 0) continue;
-            try
-            {
-                var addlClient = qbitManager.GetClient(instName);
-                if (addlClient == null) continue;
-                var addlTorrents = await addlClient.GetTorrentsAsync();
-
-                foreach (var catName in instCfg.ManagedCategories)
-                {
-                    var torrentsInCat = CategorySeedingApiResolver.SelectAggregateTorrents(
-                        addlTorrents, catName, instCfg.MatchSubcategories);
-                    var seedingTorrents = torrentsInCat.Where(t =>
-                        t.State.Contains("seeding", StringComparison.OrdinalIgnoreCase) ||
-                        t.State.Equals("uploading", StringComparison.OrdinalIgnoreCase)).ToList();
-                    var effectiveSeeding = CategorySeedingApiResolver.ResolveAggregate(
-                        cfg, instName, instCfg, catName, torrentsInCat);
-
-                    categories.Add(new
-                    {
-                        category = catName,
-                        instance = instName,
-                        managedBy = "qbit",
-                        torrentCount = torrentsInCat.Count,
-                        seedingCount = seedingTorrents.Count,
-                        totalSize = torrentsInCat.Sum(t => t.Size),
-                        avgRatio = torrentsInCat.Count > 0 ? torrentsInCat.Average(t => t.Ratio) : 0.0,
-                        avgSeedingTime = torrentsInCat.Count > 0 ? torrentsInCat.Average(t => (double)t.SeedingTime) : 0.0,
-                        seedingConfig = effectiveSeeding
-                    });
-                }
-            }
-            catch { /* additional qBit instance not reachable */ }
-        }
-
+        var categories = await TorrentClientApiBuilder.CategoriesAsync(cfg, registry, ct: ct);
         return Results.Ok(new { categories, ready = true });
     });
 
@@ -879,8 +754,6 @@ try
         // Add a process card for each configured qBit instance
         foreach (var (instanceName, qbit) in cfg.GetAllTorrentClients().Where(q => q.Value.Host != "CHANGE_ME"))
         {
-            // Use IsConnected() (no params) for "qBit" to match the special case in /web/status
-            // This returns true if ANY qBit client is connected
             var isConnected = !qbit.Disabled && qbitMgr.IsConnected(instanceName);
 
             int? totalCount = null;
@@ -890,7 +763,6 @@ try
             {
                 try
                 {
-                    // For "qBit", get any client; for named instances, get by name
                     var client = qbitMgr.GetClient(instanceName);
 
                     if (client != null)
@@ -1643,93 +1515,9 @@ try
     });
 
     // Web Qbit Categories (api mirror — same logic as /web/qbit/categories, token-protected)
-    app.MapGet("/api/qbit/categories", async (ITorrentClientRegistry qbitManager, TorrentarrConfig cfg) =>
+    app.MapGet("/api/qbit/categories", async (ITorrentClientRegistry registry, TorrentarrConfig cfg, CancellationToken ct) =>
     {
-        var categories = new List<object>();
-        var primaryName = cfg.GetAllTorrentClients().Keys.FirstOrDefault() ?? "qBit";
-
-        var arrCategoryToConfig = cfg.ArrInstances
-            .Where(kvp => !string.IsNullOrEmpty(kvp.Value.Category))
-            .ToDictionary(kvp => kvp.Value.Category!, kvp => kvp.Value, StringComparer.OrdinalIgnoreCase);
-
-        var primaryQbit2 = (cfg.GetTorrentClient(primaryName) ?? new QBitConfig());
-        var qbitManagedSet = new HashSet<string>(primaryQbit2.ManagedCategories, StringComparer.OrdinalIgnoreCase);
-        var arrCategorySet = new HashSet<string>(arrCategoryToConfig.Keys, StringComparer.OrdinalIgnoreCase);
-        var monitoredForDefault = new HashSet<string>(qbitManagedSet.Union(arrCategorySet), StringComparer.OrdinalIgnoreCase);
-
-        if (primaryQbit2.Host != "CHANGE_ME" && monitoredForDefault.Count > 0)
-        {
-            try
-            {
-                var client = qbitManager.GetClient(primaryName);
-                if (client != null)
-                {
-                    var allTorrents = await client.GetTorrentsAsync();
-                    foreach (var catName in monitoredForDefault)
-                    {
-                        var torrentsInCat = CategorySeedingApiResolver.SelectAggregateTorrents(
-                            allTorrents, catName, primaryQbit2.MatchSubcategories);
-                        var seedingTorrents = torrentsInCat.Where(t =>
-                            t.State.Contains("seeding", StringComparison.OrdinalIgnoreCase) ||
-                            t.State.Equals("uploading", StringComparison.OrdinalIgnoreCase)).ToList();
-
-                        var managedBy = arrCategorySet.Contains(catName) ? "arr" : "qbit";
-
-                        var effectiveSeeding = CategorySeedingApiResolver.ResolveAggregate(
-                            cfg, primaryName, primaryQbit2, catName, torrentsInCat);
-
-                        categories.Add(new
-                        {
-                            category = catName,
-                            instance = primaryName,
-                            managedBy,
-                            torrentCount = torrentsInCat.Count,
-                            seedingCount = seedingTorrents.Count,
-                            totalSize = torrentsInCat.Sum(t => t.Size),
-                            avgRatio = torrentsInCat.Count > 0 ? torrentsInCat.Average(t => t.Ratio) : 0.0,
-                            avgSeedingTime = torrentsInCat.Count > 0 ? torrentsInCat.Average(t => (double)t.SeedingTime) : 0.0,
-                            seedingConfig = effectiveSeeding
-                        });
-                    }
-                }
-            }
-            catch { }
-        }
-
-        foreach (var (instName, instCfg) in cfg.GetAllTorrentClients().Where(q => !q.Key.Equals(primaryName, StringComparison.OrdinalIgnoreCase) && q.Value.Host != "CHANGE_ME"))
-        {
-            if (instCfg.ManagedCategories.Count == 0) continue;
-            try
-            {
-                var addlClient = qbitManager.GetClient(instName);
-                if (addlClient == null) continue;
-                var addlTorrents = await addlClient.GetTorrentsAsync();
-                foreach (var catName in instCfg.ManagedCategories)
-                {
-                    var torrentsInCat = CategorySeedingApiResolver.SelectAggregateTorrents(
-                        addlTorrents, catName, instCfg.MatchSubcategories);
-                    var seedingTorrents = torrentsInCat.Where(t =>
-                        t.State.Contains("seeding", StringComparison.OrdinalIgnoreCase) ||
-                        t.State.Equals("uploading", StringComparison.OrdinalIgnoreCase)).ToList();
-                    var effectiveSeeding = CategorySeedingApiResolver.ResolveAggregate(
-                        cfg, instName, instCfg, catName, torrentsInCat);
-                    categories.Add(new
-                    {
-                        category = catName,
-                        instance = instName,
-                        managedBy = "qbit",
-                        torrentCount = torrentsInCat.Count,
-                        seedingCount = seedingTorrents.Count,
-                        totalSize = torrentsInCat.Sum(t => t.Size),
-                        avgRatio = torrentsInCat.Count > 0 ? torrentsInCat.Average(t => t.Ratio) : 0.0,
-                        avgSeedingTime = torrentsInCat.Count > 0 ? torrentsInCat.Average(t => (double)t.SeedingTime) : 0.0,
-                        seedingConfig = effectiveSeeding
-                    });
-                }
-            }
-            catch { }
-        }
-
+        var categories = await TorrentClientApiBuilder.CategoriesAsync(cfg, registry, ct: ct);
         return Results.Ok(new { categories, ready = true });
     });
 
@@ -1744,43 +1532,12 @@ try
         return Results.Ok(updater.BuildMetaResponse());
     });
 
-    app.MapGet("/api/status", async (TorrentarrConfig cfg, ITorrentClientRegistry qbitManager) =>
+    app.MapGet("/api/status", async (TorrentarrConfig cfg, ITorrentClientRegistry registry, CancellationToken ct) =>
     {
-        var apiPrimaryQbit = (cfg.GetTorrentClient("qBit") ?? cfg.GetAllTorrentClients().Values.FirstOrDefault() ?? new QBitConfig());
-        var qbitConfigured = apiPrimaryQbit.Host != "CHANGE_ME" && !string.IsNullOrEmpty(apiPrimaryQbit.Host);
-        var qbitAlive = qbitConfigured && qbitManager.IsConnected();
-
-        string? qbitVersion = null;
-        if (qbitAlive)
-        {
-            var client = qbitManager.GetAllClients().Values.FirstOrDefault();
-            if (client != null)
-                try { qbitVersion = await client.GetVersionAsync(); } catch { /* best-effort */ }
-        }
-
-        var qbitInstances2 = new Dictionary<string, object>();
-        foreach (var (name2, qbit2) in cfg.GetAllTorrentClients())
-        {
-            var alive2 = !qbit2.Disabled && qbitManager.IsConnected(name2);
-            string? ver2 = name2 == "qBit" ? qbitVersion : null;
-            if (alive2 && name2 != "qBit")
-            {
-                var addlClient2 = qbitManager.GetClient(name2);
-                if (addlClient2 != null)
-                    try { ver2 = await addlClient2.GetVersionAsync(); } catch { /* best-effort */ }
-            }
-            qbitInstances2[name2] = new { alive = alive2, host = qbit2.Host, port = qbit2.Port, version = ver2 };
-        }
+        var qbitInstances = await TorrentClientApiBuilder.StatusAsync(cfg, registry, ct);
         return Results.Ok(new
         {
-            qbit = new
-            {
-                alive = qbitAlive,
-                host = qbitConfigured ? apiPrimaryQbit.Host : (string?)null,
-                port = qbitConfigured ? (int?)apiPrimaryQbit.Port : null,
-                version = qbitVersion
-            },
-            qbitInstances = qbitInstances2,
+            qbitInstances,
             arrs = cfg.ArrInstances.Select(kvp => new
             {
                 category = kvp.Value.Category,

@@ -203,7 +203,7 @@ public class ConfigurationLoader
 
         ApplyOverridesSearchProcessing(config);
 
-        // TORRENTARR_QBIT_* / QBITRR_QBIT_* -> primary qBit instance (config.QBitInstances["qBit"])
+        // TORRENTARR_QBIT_* / QBITRR_QBIT_* -> literal legacy qBit section (config.QBitInstances["qBit"])
         if (config.QBitInstances.TryGetValue("qBit", out var qbit))
         {
             ApplyEnvBool("TORRENTARR_QBIT_DISABLED", "QBITRR_QBIT_DISABLED", v => qbit.Disabled = v);
@@ -2091,11 +2091,11 @@ public class ConfigurationLoader
         }
         sb.AppendLine();
 
-        // All qBit instances — "qBit" written first (primary), then additional [qBit-XXX].
+        // Write all legacy client sections in name order.
         // Include CHANGE_ME placeholders so multi-instance stubs survive WebUI round-trips.
         var orderedQbit = config.QBitInstances
             .Where(kv => !string.IsNullOrEmpty(kv.Value.Host))
-            .OrderBy(kv => kv.Key == "qBit" ? 0 : 1).ThenBy(kv => kv.Key);
+            .OrderBy(kv => kv.Key, StringComparer.OrdinalIgnoreCase);
 
         foreach (var (name, qbit) in orderedQbit)
         {

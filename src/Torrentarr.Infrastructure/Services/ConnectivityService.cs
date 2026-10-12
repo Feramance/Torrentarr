@@ -101,7 +101,7 @@ public class ConnectivityService : IConnectivityService
                 failed.Count == 0 ? "(no PingURLS configured)" : string.Join(", ", failed));
             return false;
         }
-        catch (Exception ex)
+        catch (Exception ex) when (ex is not OperationCanceledException)
         {
             _logger.LogError(ex, "Error checking internet connectivity");
             SetState(false);
@@ -111,22 +111,20 @@ public class ConnectivityService : IConnectivityService
 
     public async Task<bool> IsQBittorrentReachableAsync(CancellationToken cancellationToken = default)
     {
-        try
+        foreach (var (id, client) in _qbitManager.GetAllClients())
         {
-            var client = _qbitManager.GetAllClients().Values.FirstOrDefault();
-            if (client == null)
+            cancellationToken.ThrowIfCancellationRequested();
+            try
             {
-                return false;
+                var version = await client.GetVersionAsync(cancellationToken);
+                if (!string.IsNullOrEmpty(version)) return true;
             }
-
-            var version = await client.GetVersionAsync(cancellationToken);
-            return !string.IsNullOrEmpty(version);
+            catch (Exception ex) when (ex is not OperationCanceledException)
+            {
+                _logger.LogTrace(ex, "Torrent client {Instance} not reachable", id);
+            }
         }
-        catch (Exception ex)
-        {
-            _logger.LogTrace(ex, "qBittorrent not reachable");
-            return false;
-        }
+        return false;
     }
 
     internal IReadOnlyList<string> GetPingUrls()
@@ -179,7 +177,7 @@ public class ConnectivityService : IConnectivityService
             return await TcpProbeAsync(hostname, 443, cancellationToken)
                 || await TcpProbeAsync(hostname, 80, cancellationToken);
         }
-        catch (Exception ex)
+        catch (Exception ex) when (ex is not OperationCanceledException)
         {
             _logger.LogTrace(ex, "Probe failed for host {Host}", host);
             return false;
