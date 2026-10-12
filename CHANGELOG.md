@@ -1,5 +1,29 @@
 # Changelog
 
+## v6.16.1-1 (2026-10-12)
+
+### Bug Fixes
+- fix: release through classified PRs with built-in token ([ed7958b](https://github.com/Feramance/Torrentarr/commit/ed7958ba79860360876c25a59ff0af88e31a9b24))
+- fix: keep release tests out of classifier discovery ([02f334e](https://github.com/Feramance/Torrentarr/commit/02f334e529c0cb6a7372154bb9907fb39617c843))
+- fix: align release automation with qBitrr signed commits ([997aa0b](https://github.com/Feramance/Torrentarr/commit/997aa0b0cf37da1932d708201c6c5f4c15b60683))
+- Fix migration version assertion and categories unmount handling ([0a354ab](https://github.com/Feramance/Torrentarr/commit/0a354ab30d11afe44efcc804996613295be75d7f))
+
+### Maintenance
+- Bump Polly from 8.7.0 to 8.8.0 ([0528bf6](https://github.com/Feramance/Torrentarr/commit/0528bf685628fe77ce95516d775617627a6f56ea))
+- build(deps): bump @tanstack/react-table from 9.2.4 to 9.2.8 in /webui ([4c7445e](https://github.com/Feramance/Torrentarr/commit/4c7445eddb2bdc6517946c0be7a97c83d4c8ff2d))
+- build(deps-dev): bump @vitejs/plugin-react from 6.1.1 to 6.1.2 in /webui ([bcc1f0b](https://github.com/Feramance/Torrentarr/commit/bcc1f0b58e32026ac37b5e750ba549ac5e4d128c))
+- build(deps-dev): bump @vitejs/plugin-react from 6.1.1 to 6.1.2 in /webui ([5dea9c4](https://github.com/Feramance/Torrentarr/commit/5dea9c41561a1e5e6cfefc48c93548fdd1a86505))
+- build(deps-dev): bump @vitest/coverage-v8 from 4.1.11 to 5.0.3 in /webui ([0d65949](https://github.com/Feramance/Torrentarr/commit/0d65949ce471e067e8c01ee23abd59ceddc1b895))
+- build(deps-dev): bump @vitest/coverage-v8 from 4.1.11 to 5.0.3 in /webui ([2776d79](https://github.com/Feramance/Torrentarr/commit/2776d79f2a7d8881ea671a81000a44aff5cdbe4a))
+- build(deps-dev): bump postcss from 8.5.28 to 8.5.29 in /webui ([3946583](https://github.com/Feramance/Torrentarr/commit/39465838c03ed0222a8965f0e46e33dd86189a2a))
+- build(deps-dev): bump source-map-js ([0346783](https://github.com/Feramance/Torrentarr/commit/0346783dd984637e751c7875cc22b3c82cb494fe))
+- Bump xunit.runner.visualstudio from 4.0.0 to 4.0.1 ([5588f12](https://github.com/Feramance/Torrentarr/commit/5588f12d647e41228df9c740a12cf4bb4cad80d4))
+- Bump Swashbuckle.AspNetCore from 10.2.3 to 10.3.0 ([e027441](https://github.com/Feramance/Torrentarr/commit/e027441ecb8db56a9032b4f9b703853e4b941871))
+- Bump Moq from 4.20.72 to 4.21.0 ([4c8fafc](https://github.com/Feramance/Torrentarr/commit/4c8fafc7a475f0329786f7acd53f1ddedc090c9f))
+- Bump Microsoft.NET.Test.Sdk from 18.9.0 to 18.10.1 ([477741c](https://github.com/Feramance/Torrentarr/commit/477741c1ccef63b892bc9e27b130dd0b03bc18c2))
+
+---
+
 ## v6.16.0-1 (2026-10-11)
 
 ### Features
