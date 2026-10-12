@@ -8,6 +8,114 @@ namespace Torrentarr.Host.Tests;
 
 public class UpdateServiceTests
 {
+    [Fact]
+    public void AssetPatterns_MatchPublishedNames()
+    {
+        UpdateService.GetAssetPattern(System.Runtime.InteropServices.OSPlatform.Windows, System.Runtime.InteropServices.Architecture.X64).Should().Be("windows-x64");
+        UpdateService.GetAssetPattern(System.Runtime.InteropServices.OSPlatform.OSX, System.Runtime.InteropServices.Architecture.Arm64).Should().Be("macos-arm64");
+        UpdateService.GetAssetPattern(System.Runtime.InteropServices.OSPlatform.Linux, System.Runtime.InteropServices.Architecture.X64).Should().Be("linux-x64");
+    }
+
+    [Fact]
+    public void WindowsUpdate_UsesInstalledHostNameAndWaitsForPid()
+    {
+        var dir = Path.Combine(Path.GetTempPath(), $"torrentarr-windows-update-test-{Guid.NewGuid():N}");
+        Directory.CreateDirectory(dir);
+        try
+        {
+            File.WriteAllText(Path.Combine(dir, "torrentarr-windows-x64.exe"), "host");
+            File.WriteAllText(Path.Combine(dir, "torrentarr-workers-windows-x64.exe"), "worker");
+            var script = UpdateService.PrepareWindowsUpdateScript(Path.Combine(dir, "custom.exe"), dir, dir, 12345, [6789]);
+            File.Exists(Path.Combine(dir, "custom.exe")).Should().BeFalse();
+            Directory.GetFiles(dir, "custom.exe.new-*").Should().ContainSingle();
+            File.Exists(Path.Combine(dir, "torrentarr-workers-windows-x64.exe")).Should().BeTrue();
+            script.Should().Contain("Get-Process -Id 6789,12345").And.Contain("$process.WaitForExit()");
+            script.Should().Contain("LastResult='error'").And.Contain("$result.LastResult = 'success'");
+        }
+        finally { Directory.Delete(dir, true); }
+    }
+
+    [Fact]
+    public async Task UnixUpdate_ReplacesRunningWorkerByRename()
+    {
+        if (!OperatingSystem.IsLinux()) return;
+        var dir = Path.Combine(Path.GetTempPath(), $"torrentarr-update-test-{Guid.NewGuid():N}");
+        var extracted = Path.Combine(dir, "extracted");
+        Directory.CreateDirectory(extracted);
+        var worker = Path.Combine(dir, "torrentarr-workers-linux-x64");
+        File.Copy("/bin/sleep", worker);
+        File.SetUnixFileMode(worker, UnixFileMode.UserRead | UnixFileMode.UserWrite | UnixFileMode.UserExecute);
+        using var process = System.Diagnostics.Process.Start(worker, "60")!;
+        try
+        {
+            var host = Path.Combine(dir, "torrentarr");
+            await File.WriteAllTextAsync(host, "old host");
+            await File.WriteAllTextAsync(Path.Combine(extracted, "torrentarr-linux-x64"), "new host");
+            await File.WriteAllTextAsync(Path.Combine(extracted, Path.GetFileName(worker)), "new worker");
+            await UpdateService.ApplyUnixUpdateAsync(host, dir, extracted);
+            (await File.ReadAllTextAsync(worker)).Should().Be("new worker");
+            (await File.ReadAllTextAsync(host)).Should().Be("new host");
+            process.HasExited.Should().BeFalse();
+            File.GetUnixFileMode(worker).Should().HaveFlag(UnixFileMode.UserExecute);
+        }
+        finally
+        {
+            if (!process.HasExited) process.Kill();
+            await process.WaitForExitAsync();
+            Directory.Delete(dir, true);
+        }
+    }
+
+    [Fact]
+    public async Task UnixUpdate_UsesCustomWorkerPath_AndRestoresItIfHostReplacementFails()
+    {
+        if (OperatingSystem.IsWindows()) return;
+        var dir = Path.Combine(Path.GetTempPath(), $"torrentarr-update-pair-{Guid.NewGuid():N}");
+        var extracted = Path.Combine(dir, "download");
+        Directory.CreateDirectory(extracted);
+        var worker = Path.Combine(dir, "custom worker");
+        var host = Path.Combine(dir, "host");
+        try
+        {
+            File.WriteAllText(worker, "old worker");
+            Directory.CreateDirectory(host); // Force replacement to fail after staging both downloads.
+            File.WriteAllText(Path.Combine(extracted, "torrentarr-linux-x64"), "new host");
+            File.WriteAllText(Path.Combine(extracted, "torrentarr-workers-linux-x64"), "new worker");
+            await FluentActions.Awaiting(() => UpdateService.ApplyUnixUpdateAsync(host, dir, extracted, worker)).Should().ThrowAsync<IOException>();
+            File.ReadAllText(worker).Should().Be("old worker");
+            Directory.GetFiles(dir, "*.bak-*").Should().BeEmpty();
+            Directory.Delete(host);
+            File.WriteAllText(host, "old host");
+            await UpdateService.ApplyUnixUpdateAsync(host, dir, extracted, worker);
+            File.ReadAllText(worker).Should().Be("new worker");
+            File.ReadAllText(host).Should().Be("new host");
+            File.Exists(Path.Combine(dir, "torrentarr-workers-linux-x64")).Should().BeFalse();
+        }
+        finally { Directory.Delete(dir, true); }
+    }
+
+    [Theory]
+    [InlineData("worker.dll")]
+    [InlineData("missing-worker")]
+    [InlineData("host")]
+    public async Task Update_RejectsUnsupportedOverridesBeforeChangingHost(string overrideName)
+    {
+        var dir = Path.Combine(Path.GetTempPath(), $"torrentarr-update-invalid-{Guid.NewGuid():N}");
+        Directory.CreateDirectory(dir);
+        try
+        {
+            var host = Path.Combine(dir, "host");
+            File.WriteAllText(host, "old host");
+            File.WriteAllText(Path.Combine(dir, "worker.dll"), "dll");
+            File.WriteAllText(Path.Combine(dir, "torrentarr-linux-x64"), "new host");
+            File.WriteAllText(Path.Combine(dir, "torrentarr-workers-linux-x64"), "new worker");
+            await FluentActions.Awaiting(() => UpdateService.ApplyUnixUpdateAsync(host, dir, dir, Path.Combine(dir, overrideName))).Should().ThrowAsync<InvalidOperationException>();
+            File.ReadAllText(host).Should().Be("old host");
+            Directory.GetFiles(dir, "*.new-*").Should().BeEmpty();
+        }
+        finally { Directory.Delete(dir, true); }
+    }
+
     [Theory]
     [InlineData("latest", "latest")]
     [InlineData("stable", "stable")]

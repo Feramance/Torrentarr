@@ -17,6 +17,8 @@ sudo useradd -r -s /bin/bash -d /opt/torrentarr -m torrentarr
 # Install binary to shared path (x64 example — use torrentarr-linux-arm64 on ARM64)
 sudo curl -L -o /usr/local/bin/torrentarr \
   https://github.com/Feramance/Torrentarr/releases/latest/download/torrentarr-linux-x64
+  sudo curl -fL -o /usr/local/bin/torrentarr-workers-linux-x64 https://github.com/Feramance/Torrentarr/releases/latest/download/torrentarr-workers-linux-x64
+  sudo chmod +x /usr/local/bin/torrentarr-workers-linux-x64
 sudo chmod +x /usr/local/bin/torrentarr
 
 # Create directories
@@ -52,6 +54,8 @@ Install the [release binary](binary.md) to a shared path accessible by the servi
 # Linux x64 (use torrentarr-linux-arm64 on ARM64)
 sudo curl -L -o /usr/local/bin/torrentarr \
   https://github.com/Feramance/Torrentarr/releases/latest/download/torrentarr-linux-x64
+  sudo curl -fL -o /usr/local/bin/torrentarr-workers-linux-x64 https://github.com/Feramance/Torrentarr/releases/latest/download/torrentarr-workers-linux-x64
+  sudo chmod +x /usr/local/bin/torrentarr-workers-linux-x64
 sudo chmod +x /usr/local/bin/torrentarr
 ```
 

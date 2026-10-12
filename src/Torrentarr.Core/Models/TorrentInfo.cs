@@ -63,7 +63,7 @@ public class TorrentInfo
     public string ClientInstanceId { get; set; } = "qBit";
 
     [JsonIgnore]
-    [Obsolete("Use ClientInstanceId. This alias is retained for qBitrr compatibility.")]
+    // qBitrr compatibility alias; runtime code uses ClientInstanceId.
     public string QBitInstanceName
     {
         get => ClientInstanceId;

@@ -11,6 +11,7 @@
     <ProjectReference Include="..\..\src\Torrentarr.Core\Torrentarr.Core.csproj" />
     <ProjectReference Include="..\..\src\Torrentarr.Infrastructure\Torrentarr.Infrastructure.csproj" />
     <ProjectReference Include="..\..\src\Torrentarr.Host\Torrentarr.Host.csproj" />
+    <ProjectReference Include="..\..\src\Torrentarr.WebUI\Torrentarr.WebUI.csproj" Aliases="Standalone" />
   </ItemGroup>
 
   <ItemGroup>

@@ -130,6 +130,8 @@
 
     ```bash
     curl -L -o torrentarr https://github.com/Feramance/Torrentarr/releases/latest/download/torrentarr-linux-x64
+    curl -fL -o torrentarr-workers-linux-x64 https://github.com/Feramance/Torrentarr/releases/latest/download/torrentarr-workers-linux-x64
+    chmod +x torrentarr-workers-linux-x64
     chmod +x torrentarr
     ./torrentarr
     ```
@@ -352,7 +354,7 @@ Optimize for private tracker requirements:
 
 ### Current Version
 
-**Latest Release**: v6.15.2-1
+**Latest Release**: v6.16.0-1
 
 Torrentarr’s **major** version is **intentionally one ahead of [qBitrr](https://github.com/Feramance/qBitrr)’s** (e.g. qBitrr 5.x ↔ Torrentarr 6.x); minor and patch numbers move independently. That rule keeps the two products unambiguous while sharing `config.toml` compatibility. For the short user-facing story, see [qBitrr and Torrentarr (overview)](parity/overview.md). Contributors: [parity matrix](parity/full-parity-matrix.md) and [contributor reference](parity/contributor-reference.md).
 
