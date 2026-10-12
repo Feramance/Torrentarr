@@ -21,6 +21,8 @@ defaults:
     shell: bash
 
 permissions:
+  actions: write
+  pull-requests: write
   contents: write
   packages: write
 
@@ -42,22 +44,12 @@ jobs:
       new_version: ${{ steps.version.outputs.value }}
       release_hash: ${{ steps.release_hash.outputs.value }}
     steps:
-    - name: Check release credentials
-      env:
-        RELEASE_PAT: ${{ secrets.PAT }}
-        RELEASE_GPG_KEY: ${{ secrets.GPG_PRIVATE_KEY }}
-      run: |
-        set -euo pipefail
-        if [[ -z "${RELEASE_PAT}" || -z "${RELEASE_GPG_KEY}" ]]; then
-          echo "Release requires PAT and GPG_PRIVATE_KEY secrets (and PASSPHRASE for a protected key)." >&2
-          exit 1
-        fi
     - name: Checkout repository
       uses: actions/checkout@v7
       with:
         fetch-depth: 0
         ref: master
-        token: ${{ secrets.PAT }}
+        token: ${{ github.token }}
     - name: Determine release type
       id: release_type
       env:
@@ -117,30 +109,59 @@ jobs:
         VERSION=$(grep -oP '<Version>\K[^<]+' Directory.Build.props)
         echo "value=${VERSION}" >> "${GITHUB_OUTPUT}"
         echo "New version: ${VERSION}"
-    - name: Import GPG key
-      id: import_gpg
-      uses: crazy-max/ghaction-import-gpg@v7.0.0
-      with:
-        gpg_private_key: ${{ secrets.GPG_PRIVATE_KEY }}
-        passphrase: ${{ secrets.PASSPHRASE }}
-        git_user_signingkey: true
-        git_commit_gpgsign: true
-    - name: Commit version bump
+    - name: Merge version bump through classification gate
+      id: release_hash
       env:
+        GH_TOKEN: ${{ github.token }}
         VERSION: ${{ steps.version.outputs.value }}
-        GIT_AUTHOR_NAME: ${{ steps.import_gpg.outputs.name }}
-        GIT_AUTHOR_EMAIL: ${{ steps.import_gpg.outputs.email }}
-        GIT_COMMITTER_NAME: ${{ steps.import_gpg.outputs.name }}
-        GIT_COMMITTER_EMAIL: ${{ steps.import_gpg.outputs.email }}
       run: |
         set -euo pipefail
+
+        BRANCH="automation/release-v${VERSION}-version"
+        TITLE="chore: bump version to v${VERSION}"
+
+        git config user.name "${GITHUB_ACTOR}"
+        git config user.email "${GITHUB_ACTOR}@users.noreply.github.com"
+        git checkout -B "${BRANCH}"
         git add .bumpversion.cfg Directory.Build.props Dockerfile docs/index.md src/Torrentarr.Core/Configuration/TorrentarrConfig.cs src/Torrentarr.Core/Configuration/ConfigurationLoader.cs config.example.toml
-        git commit -S -m "[skip ci] Bump version to v${VERSION}"
-        git push origin HEAD:master
-    - name: Capture release hash
-      id: release_hash
-      run: |
-        HASH=$(git rev-parse HEAD)
+        git commit -m "[skip ci] Bump version to v${VERSION}"
+        git push origin "${BRANCH}"
+
+        PR_NUMBER=$(gh pr list --repo "${GITHUB_REPOSITORY}" --head "${BRANCH}" --base master --state open --json number --jq '.[0].number // empty')
+        if [ -z "${PR_NUMBER}" ]; then
+          PR_URL=$(gh pr create \
+            --repo "${GITHUB_REPOSITORY}" \
+            --base master \
+            --head "${BRANCH}" \
+            --title "${TITLE}" \
+            --body "Automated release version bump for v${VERSION}. This PR is created so protected-branch classification can run before the release commit reaches master.")
+          PR_NUMBER="${PR_URL##*/}"
+        fi
+
+        gh workflow run classify-prs.yml \
+          --repo "${GITHUB_REPOSITORY}" \
+          -f "pr_number=${PR_NUMBER}"
+
+        merged=false
+        for attempt in $(seq 1 120); do
+          if gh pr merge "${PR_NUMBER}" --repo "${GITHUB_REPOSITORY}" --squash --delete-branch; then
+            merged=true
+            break
+          fi
+          echo "PR #${PR_NUMBER} is still waiting for required checks; retrying..."
+          sleep 5
+        done
+
+        if [ "${merged}" != "true" ]; then
+          echo "Timed out waiting for release version PR #${PR_NUMBER} to pass required checks." >&2
+          exit 1
+        fi
+
+        HASH=$(gh pr view "${PR_NUMBER}" --repo "${GITHUB_REPOSITORY}" --json mergeCommit --jq '.mergeCommit.oid')
+        if [[ ! "${HASH}" =~ ^[0-9a-f]{40}$ ]]; then
+          echo "Could not resolve the merged release commit." >&2
+          exit 1
+        fi
         echo "value=${HASH}" >> "${GITHUB_OUTPUT}"
         echo "Release hash: ${HASH}"
 
@@ -155,7 +176,7 @@ jobs:
       with:
         fetch-depth: 0
         ref: ${{ needs.prepare_release.outputs.release_hash }}
-        token: ${{ secrets.PAT }}
+        token: ${{ github.token }}
     - name: Check if release exists
       id: check_release
       env:
@@ -173,7 +194,7 @@ jobs:
       if: steps.check_release.outputs.exists != 'true'
       uses: softprops/action-gh-release@v3
       with:
-        token: ${{ secrets.PAT }}
+        token: ${{ github.token }}
         target_commitish: ${{ needs.prepare_release.outputs.release_hash }}
         tag_name: v${{ needs.prepare_release.outputs.new_version }}
         name: v${{ needs.prepare_release.outputs.new_version }}
@@ -276,7 +297,7 @@ jobs:
     - name: Upload binaries to release
       uses: softprops/action-gh-release@v3
       with:
-        token: ${{ secrets.PAT }}
+        token: ${{ github.token }}
         target_commitish: ${{ needs.prepare_release.outputs.release_hash }}
         tag_name: v${{ needs.prepare_release.outputs.new_version }}
         files: |
@@ -358,7 +379,7 @@ jobs:
       with:
         fetch-depth: 0
         ref: ${{ needs.prepare_release.outputs.release_hash }}
-        token: ${{ secrets.PAT }}
+        token: ${{ github.token }}
     - name: Set up Python
       uses: actions/setup-python@v7
       with:
@@ -469,32 +490,59 @@ jobs:
                     f.write(new_content)
                 print(f"Generated changelog for v{version}")
         PYEOF
-    - name: Import GPG key
-      id: import_gpg
-      uses: crazy-max/ghaction-import-gpg@v7.0.0
-      with:
-        gpg_private_key: ${{ secrets.GPG_PRIVATE_KEY }}
-        passphrase: ${{ secrets.PASSPHRASE }}
-        git_user_signingkey: true
-        git_commit_gpgsign: true
-    - name: Commit changelog
+    - name: Merge changelog through classification gate
       env:
+        GH_TOKEN: ${{ github.token }}
         VERSION: ${{ needs.prepare_release.outputs.new_version }}
-        GIT_AUTHOR_NAME: ${{ steps.import_gpg.outputs.name }}
-        GIT_AUTHOR_EMAIL: ${{ steps.import_gpg.outputs.email }}
-        GIT_COMMITTER_NAME: ${{ steps.import_gpg.outputs.name }}
-        GIT_COMMITTER_EMAIL: ${{ steps.import_gpg.outputs.email }}
       run: |
         set -euo pipefail
+
         if git diff --quiet -- CHANGELOG.md; then
           echo "No changelog changes to commit."
           exit 0
         fi
+
+        BRANCH="automation/release-v${VERSION}-changelog"
+        TITLE="chore: update changelog for v${VERSION}"
+
+        git config user.name "${GITHUB_ACTOR}"
+        git config user.email "${GITHUB_ACTOR}@users.noreply.github.com"
+        git checkout -B "${BRANCH}"
         git add CHANGELOG.md
-        git commit -S -m "[skip ci] Update changelog for v${VERSION}"
+        git commit -m "[skip ci] Update changelog for v${VERSION}"
         git fetch origin master
-        git rebase --gpg-sign origin/master
-        git push origin HEAD:master
+        git rebase origin/master
+        git push origin "${BRANCH}"
+
+        PR_NUMBER=$(gh pr list --repo "${GITHUB_REPOSITORY}" --head "${BRANCH}" --base master --state open --json number --jq '.[0].number // empty')
+        if [ -z "${PR_NUMBER}" ]; then
+          PR_URL=$(gh pr create \
+            --repo "${GITHUB_REPOSITORY}" \
+            --base master \
+            --head "${BRANCH}" \
+            --title "${TITLE}" \
+            --body "Automated changelog update for v${VERSION}. This PR is created so protected-branch classification can run before the changelog commit reaches master.")
+          PR_NUMBER="${PR_URL##*/}"
+        fi
+
+        gh workflow run classify-prs.yml \
+          --repo "${GITHUB_REPOSITORY}" \
+          -f "pr_number=${PR_NUMBER}"
+
+        merged=false
+        for attempt in $(seq 1 120); do
+          if gh pr merge "${PR_NUMBER}" --repo "${GITHUB_REPOSITORY}" --squash --delete-branch; then
+            merged=true
+            break
+          fi
+          echo "PR #${PR_NUMBER} is still waiting for required checks; retrying..."
+          sleep 5
+        done
+
+        if [ "${merged}" != "true" ]; then
+          echo "Timed out waiting for changelog PR #${PR_NUMBER} to pass required checks." >&2
+          exit 1
+        fi
 
   publish_release:
     name: Publish GitHub release
@@ -509,7 +557,7 @@ jobs:
       with:
         fetch-depth: 0
         ref: ${{ needs.prepare_release.outputs.release_hash }}
-        token: ${{ secrets.PAT }}
+        token: ${{ github.token }}
     - name: Read committed changelog
       run: |
         git fetch origin master

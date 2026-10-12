@@ -1,8 +1,8 @@
 # Release Process
 
 Torrentarr releases are prepared and published by **Create a Release** in
-`.github/workflows/release.yml`. Version bumps and changelog updates are signed
-commits pushed directly to `master`, following qBitrr's release approach.
+`.github/workflows/release.yml`. Version bumps and changelog updates reach
+`master` through classification-gated pull requests using the built-in GitHub token.
 
 ## Starting a release
 
@@ -25,29 +25,25 @@ while a build release increments it.
 
 ## Credentials and branch rules
 
-Configure these repository Actions secrets:
+Enable **Allow GitHub Actions to create and approve pull requests** in the
+repository's Actions settings. The workflow uses `github.token` with contents,
+pull-request, actions, and package write permissions; no PAT or GPG secrets are
+required. Keep `DOCKERHUB_USERNAME` and `DOCKERHUB_TOKEN` configured for Docker Hub.
 
-- `PAT`: a token with repository contents write access, belonging to an account
-  permitted to push directly to `master` under the repository's branch rules.
-- `GPG_PRIVATE_KEY`: that account's signing key, with its public key registered
-  on GitHub.
-- `PASSPHRASE`: the signing key's passphrase, if the key is protected.
-- `DOCKERHUB_USERNAME` and `DOCKERHUB_TOKEN`: Docker Hub publishing credentials.
-
-Release automation does not open classification PRs. Ordinary PR classification
-is unchanged. If branch rules require all updates through PRs, configure a
-permitted release account before running this workflow. Missing credentials,
-signing errors, conflicts, and rejected pushes stop the release; it does not
-force-push or bypass commit hooks.
+Release PRs explicitly dispatch the classifier because built-in-token pushes do
+not trigger ordinary PR workflows. Both PRs must pass required checks before
+merging. Conflicts, rejected pushes, and merge timeouts stop the release.
+Branch protection remains unchanged; the workflow never force-pushes `master`
+or bypasses commit hooks.
 
 ## Release stages
 
-1. Bump version fields and push a signed `[skip ci]` version commit.
-2. Capture its full SHA and create a GitHub release draft targeting that commit.
+1. Bump version fields, open a release PR, dispatch classification, and wait for its merge.
+2. Capture the merged PR commit's full SHA and create a GitHub release draft targeting that commit.
 3. Build the WebUI, standalone Host and Worker binaries, and Docker images from
    that exact SHA. Run the Linux standalone smoke check and upload binaries.
-4. Generate changelog notes through the captured revision, then push a signed
-   `[skip ci]` changelog commit rebased onto current `master`. Conflicts fail.
+4. Generate changelog notes through the captured revision, rebase the changelog
+   branch onto current `master`, and merge its PR after classification succeeds.
 5. Read the committed changelog and publish the draft only after binaries,
    Docker images, and changelog jobs succeed.
 
@@ -83,7 +79,7 @@ Before releasing:
 - Run `dotnet test --filter "Category!=Live"` and `npx vitest run` in `webui/`.
 - Confirm required build checks pass and no critical issues remain.
 - Update documentation and regenerate OpenAPI when API routes change.
-- Confirm release credentials and direct-push branch permissions.
+- Confirm Actions can create PRs and Docker Hub credentials are configured.
 
 After releasing:
 

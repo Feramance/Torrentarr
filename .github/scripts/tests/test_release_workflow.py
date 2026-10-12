@@ -61,13 +61,51 @@ class ReleaseWorkflowTests(unittest.TestCase):
             )
             self.assertNotEqual(result.returncode, 0)
 
-    def test_missing_credentials_fail(self):
-        result = run_script(
-            step("prepare_release", "Check release credentials")["run"], ROOT,
-            RELEASE_PAT="", RELEASE_GPG_KEY="",
-        )
-        self.assertNotEqual(result.returncode, 0)
-        self.assertIn("Release requires", result.stderr)
+    def test_release_prs_dispatch_classification_and_fail_on_merge_timeout(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            for command, script in {
+                "git": '#!/bin/sh\n[ "$1" = diff ] && exit 1\nexit 0\n',
+                "seq": "#!/bin/sh\necho 1\n",
+                "sleep": "#!/bin/sh\nexit 0\n",
+                "gh": """#!/bin/sh
+echo "$*" >> "$CALL_LOG"
+case "$1 $2" in
+  "pr list") echo 42 ;;
+  "pr merge") exit "$MERGE_STATUS" ;;
+  "pr view") printf '%040d\n' 1 ;;
+esac
+""",
+            }.items():
+                target = root / command
+                target.write_text(script)
+                target.chmod(0o755)
+            for job, name in (
+                ("prepare_release", "Merge version bump through classification gate"),
+                ("changelog", "Merge changelog through classification gate"),
+            ):
+                for status in ("0", "1"):
+                    with self.subTest(job=job, merge_status=status):
+                        log = root / "calls"
+                        log.write_text("")
+                        output = root / "output"
+                        output.write_text("")
+                        result = run_script(
+                            step(job, name)["run"], directory,
+                            PATH=f"{directory}:{os.environ['PATH']}",
+                            CALL_LOG=str(log), MERGE_STATUS=status, VERSION="1.2.3-1",
+                            GITHUB_ACTOR="test", GITHUB_REPOSITORY="test/repo",
+                            GITHUB_OUTPUT=str(output),
+                        )
+                        self.assertIn("workflow run classify-prs.yml", log.read_text())
+                        self.assertIn("pr merge 42", log.read_text())
+                        if status == "0":
+                            self.assertEqual(result.returncode, 0, result.stderr)
+                            if job == "prepare_release":
+                                self.assertIn("value=" + "0" * 39 + "1", output.read_text())
+                        else:
+                            self.assertNotEqual(result.returncode, 0)
+                            self.assertIn("Timed out", result.stderr)
 
     def test_all_bumps_keep_version_fields_consistent(self):
         config = configparser.ConfigParser(interpolation=None)
@@ -161,7 +199,12 @@ class ReleaseWorkflowTests(unittest.TestCase):
         for job in JOBS.values():
             self.assertNotIn("always()", job.get("if", ""))
         content = (ROOT / ".github/workflows/release.yml").read_text()
-        self.assertNotIn("gh pr ", content)
+        self.assertNotIn("secrets.PAT", content)
+        self.assertNotIn("GPG", content)
+        self.assertNotIn("git commit -S", content)
+        self.assertNotIn("--gpg-sign", content)
+        self.assertEqual(WORKFLOW["permissions"]["actions"], "write")
+        self.assertEqual(WORKFLOW["permissions"]["pull-requests"], "write")
         self.assertNotIn("--force", content)
         self.assertNotIn("--no-verify", content)
 
