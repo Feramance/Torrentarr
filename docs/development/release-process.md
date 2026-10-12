@@ -1,353 +1,99 @@
 # Release Process
 
-Torrentarr uses automated releases via GitHub Actions. This document describes the release workflow for maintainers.
-
-## Versioning vs qBitrr
-
-Torrentarr **keeps its major version one ahead of [qBitrr](https://github.com/Feramance/qBitrr)** (e.g. qBitrr is 5.x while Torrentarr is 6.x). Minor and patch bumps are decided independently for each project. When cutting a Torrentarr release, confirm the major still matches this policy relative to the upstream line you are tracking.
-
-## Release Workflow
-
-### 1. Version Bumping
-
-Torrentarr uses **version in .NET project files** (e.g. `Directory.Build.props` or the main Host project). Update the version there, then create a tag:
-
-```bash
-# Example: set Version to 5.6.0 in project file, then:
-git tag -a v5.6.0 -m "Release v5.6.0"
-git push origin v5.6.0
-```
-
-**What to update:**
-- `Directory.Build.props` or main project `Version` / `AssemblyVersion` / `FileVersion`
-- Changelog / release notes as needed
-
-### 2. Changelog Generation
-
-Torrentarr uses **gren** (GitHub Release Notes generator):
-
-```bash
-# Generate release notes from commits
-gren release --override
-
-# Or manually edit CHANGELOG.md
-```
-
-**Changelog format:**
-
-```markdown
-## [5.6.0] - 2024-12-09
-
-### Added
-- New feature X
-- New feature Y
-
-### Changed
-- Updated behavior of Z
-- Improved performance of W
-
-### Fixed
-- Bug fix A
-- Bug fix B
-
-### Security
-- Security fix C
-```
-
-### 3. Create Release
-
-#### Option A: Automated (Recommended)
-
-```bash
-# 1. Update version in project file(s)
-# 2. Push to master, then create and push tag
-git tag -a v5.6.0 -m "Release v5.6.0"
-git push origin v5.6.0
-
-# GitHub Actions automatically:
-#    - Builds .NET and WebUI
-#    - Runs tests
-#    - Builds Docker image
-#    - Pushes to Docker Hub
-#    - Creates GitHub Release
-```
-
-#### Option B: Manual
-
-```bash
-# 1. Create tag
-git tag -a v5.6.0 -m "Release v5.6.0"
-git push origin v5.6.0
-
-# 2. Build (see build.sh / build.bat or dotnet build + webui build)
-./build.sh   # or build.bat on Windows
-
-# 3. Build Docker image
-docker build -t feramance/torrentarr:5.6.0 .
-docker build -t feramance/torrentarr:latest .
-
-# 4. Push to Docker Hub
-docker push feramance/torrentarr:5.6.0
-docker push feramance/torrentarr:latest
-
-# 5. Create GitHub Release manually and attach binaries if desired
-```
-
-## Release Types
-
-### Patch Release (5.5.4 → 5.5.5)
-
-**When:** Bug fixes only, no new features
-
-**Process:**
-1. Merge bug fix PRs to `master`
-2. Update version in project file(s)
-3. Tag and push
-
-**Example commits:**
-- `fix(radarr): resolve import path issue`
-- `fix(webui): correct API token validation`
-
-### Minor Release (5.5.5 → 5.6.0)
-
-**When:** New features, backward-compatible changes
-
-**Process:**
-1. Merge feature PRs to `master`
-2. Update version and documentation
-3. Tag and push
-
-**Example commits:**
-- `feat(lidarr): add Lidarr v2.0 support`
-- `feat(webui): add dark mode toggle`
-
-### Major Release (5.6.0 → 6.0.0)
-
-**When:** Breaking changes, major features
-
-**Process:**
-1. Create `v6-dev` branch for development
-2. Merge all v6 features
-3. Update documentation
-4. Test thoroughly
-5. Merge to `master`
-6. Update version and tag
-7. Write migration guide
-
-**Example commits:**
-- `feat!: replace SQLite with PostgreSQL`
-- `refactor!: new configuration schema`
-
-## CI/CD Pipelines
-
-### Release Workflow
-
-**File:** `.github/workflows/release.yml` (or equivalent)
-
-**Triggers:**
-- Push tags matching `v*.*.*`
-
-**Steps:**
-1. Checkout code
-2. Set up .NET (e.g. dotnet-version: '10.0.x')
-3. Set up Node for WebUI build
-4. Restore and build .NET
-5. Run tests (`dotnet test --filter "Category!=Live"`)
-6. Build WebUI (`cd webui && npm ci && npm run build`)
-7. Build Docker image (multi-platform: amd64, arm64)
-8. Push to Docker Hub with tags:
-   - `feramance/torrentarr:v6.14.3-1`
-   - `feramance/torrentarr:latest` (every release, including weekly dependency builds)
-   - `feramance/torrentarr:stable` (patch/minor/major only; **not** `[build]` / weekly dependency releases)
-9. Create GitHub Release with changelog
-
-### Nightly Builds
-
-**File:** `.github/workflows/build.yml` (`docker-nightly` job)
-
-**Trigger:** Push to `master` (skips `[patch]`/`[minor]`/`[major]`/`[build]`/`[skip ci]` commits), plus daily schedule
-
-**Output:** `feramance/torrentarr:nightly`
-
-**Purpose:** Test bleeding-edge changes
-
-### Weekly dependency builds
-
-**File:** `.github/workflows/weekly-build.yml`
-
-**Trigger:** Monday 06:00 UTC (and `workflow_dispatch`)
-
-**Behavior:** Merge green non-major Dependabot PRs that do not touch CI, Docker, scripts, or build-config files. Scheduled runs **do not** publish a release. Dispatching with `dispatch_build_release=true` after a merge can start **Create a Release** with `release_type=build` (`:latest` / `vX.Y.Z-N`, **not** `:stable`).
-
-## Version Numbering
-
-Torrentarr follows **Semantic Versioning** with a qBitrr-compatible build segment:
-
-```
-MAJOR.MINOR.PATCH-BUILD
-
-6.14.3-1
-│ │ │  │
-│ │ │  └─ Build: 1 = first release of this X.Y.Z (eligible for :stable); N>1 = weekly dependency builds (do not move :stable)
-│ │ └─ Patch: Bug fixes, security fixes
-│ └─── Minor: New features, backward-compatible
-└───── Major: Breaking changes (Torrentarr stays +1 vs qBitrr)
-```
-
-### Pre-release Versions
-
-```
-5.6.0-alpha.1  # Alpha release
-5.6.0-beta.1   # Beta release
-5.6.0-rc.1     # Release candidate
-```
-
-**Create pre-release:**
-
-```bash
-# Tag manually
-git tag v5.6.0-rc.1
-git push origin v5.6.0-rc.1
-```
-
-## Docker Image Tags
-
-### Tag Strategy
-
-| Tag | Description | Example |
-|-----|-------------|---------|
-| `latest` | Newest published release (includes weekly builds) | `6.14.3-2` |
-| `stable` | Latest patch/minor/major (excludes weekly `N>1` builds) | `6.14.3-1` |
-| `nightly` | Per-commit build from master | HEAD of `master` |
-| `vX.Y.Z-N` | Exact version | `v6.14.3-1` |
-
-### Multi-Platform Builds
-
-Torrentarr supports multiple architectures:
-
-- `linux/amd64` - x86_64 (most common)
-- `linux/arm64` - ARM 64-bit (Raspberry Pi 4, Apple Silicon)
-- `linux/arm/v7` - ARM 32-bit (older Raspberry Pi)
-
-**Build command:**
-
-```bash
-docker buildx build \
-  --platform linux/amd64,linux/arm64,linux/arm/v7 \
-  -t feramance/torrentarr:5.6.0 \
-  --push \
-  .
-```
-
-## PyPI Publishing
-
-Torrentarr does **not** publish to PyPI; it is a .NET application. Distribution is via GitHub Releases (binaries), Docker Hub, and optionally NuGet (e.g. as a dotnet global tool). Skip any PyPI-related steps.
-
-## Post-Release
-
-### 1. Verify Release
-
-```bash
-# Check Docker Hub
-docker pull feramance/torrentarr:5.6.0
-
-# Check GitHub Release
-# Visit: https://github.com/Feramance/Torrentarr/releases
-```
-
-### 2. Update Documentation
-
-Ensure docs are deployed:
-
-- GitHub Pages: https://feramance.github.io/Torrentarr/
-- Docker Hub: Update description if needed
-
-### 3. Announce Release
-
-- GitHub Discussions: Post announcement
-- Discord/Community: Share release notes
-- Reddit: Post in relevant subreddits (r/radarr, r/sonarr)
-
-### 4. Monitor Issues
-
-Watch for issues related to new release:
-- GitHub Issues
-- Discord messages
-- Reddit comments
-
-## Hotfix Process
-
-For critical bugs in production:
-
-**1. Create hotfix branch:**
-
-```bash
-git checkout -b hotfix/5.6.1 v5.6.0
-```
-
-**2. Fix the bug:**
-
-```bash
-# Make minimal changes
-git commit -m "fix(critical): resolve data loss issue"
-```
-
-**3. Test thoroughly**
-
-**4. Release:**
-
-```bash
-# Update version to 5.6.1 in project file(s)
-git tag -a v5.6.1 -m "Hotfix v5.6.1"
-git push origin hotfix/5.6.1 --tags
-```
-
-**5. Merge back:**
-
-```bash
-# Merge to master
-git checkout master
-git merge --no-ff hotfix/5.6.1
-git push origin master
-```
-
-## Release Checklist
+Torrentarr releases are prepared and published by **Create a Release** in
+`.github/workflows/release.yml`. Version bumps and changelog updates are signed
+commits pushed directly to `master`, following qBitrr's release approach.
+
+## Starting a release
+
+Run **Actions → Create a Release → Run workflow**, selecting `patch`, `minor`,
+`major`, or `build` (default: `patch`). Preparation always checks out `master`.
+
+Alternatively, push a commit to `master` whose message starts with `[patch]`,
+`[minor]`, `[major]`, or `[build]`. Other pushes do not prepare a release.
+Pushing a tag alone does not trigger this workflow.
+
+The workflow uses `.bumpversion.cfg` to update the release version in
+`Directory.Build.props`, Dockerfile, and documentation, and the numeric config
+version in the config models and example. It also synchronizes assembly and file
+versions. Do not manually bump these fields or create a tag before running it.
+
+Torrentarr keeps its major version one ahead of qBitrr's; minor and patch versions
+are independent. Confirm that policy before selecting a major bump. Versions use
+`MAJOR.MINOR.PATCH-BUILD`; patch/minor/major bumps reset the build segment to 1,
+while a build release increments it.
+
+## Credentials and branch rules
+
+Configure these repository Actions secrets:
+
+- `PAT`: a token with repository contents write access, belonging to an account
+  permitted to push directly to `master` under the repository's branch rules.
+- `GPG_PRIVATE_KEY`: that account's signing key, with its public key registered
+  on GitHub.
+- `PASSPHRASE`: the signing key's passphrase, if the key is protected.
+- `DOCKERHUB_USERNAME` and `DOCKERHUB_TOKEN`: Docker Hub publishing credentials.
+
+Release automation does not open classification PRs. Ordinary PR classification
+is unchanged. If branch rules require all updates through PRs, configure a
+permitted release account before running this workflow. Missing credentials,
+signing errors, conflicts, and rejected pushes stop the release; it does not
+force-push or bypass commit hooks.
+
+## Release stages
+
+1. Bump version fields and push a signed `[skip ci]` version commit.
+2. Capture its full SHA and create a GitHub release draft targeting that commit.
+3. Build the WebUI, standalone Host and Worker binaries, and Docker images from
+   that exact SHA. Run the Linux standalone smoke check and upload binaries.
+4. Generate changelog notes through the captured revision, then push a signed
+   `[skip ci]` changelog commit rebased onto current `master`. Conflicts fail.
+5. Read the committed changelog and publish the draft only after binaries,
+   Docker images, and changelog jobs succeed.
+
+Release runs are serialized. A failure can leave a bumped version, draft release,
+or already-pushed Docker images; inspect the failed run before retrying.
+The release workflow does not run the full unit-test suites: verify the regular
+build checks before releasing.
+
+## Distribution
+
+Docker images are published to Docker Hub and GHCR for `linux/amd64` and
+`linux/arm64`:
+
+| Tag | Updated by |
+| --- | --- |
+| `latest` | Every release |
+| `stable` | Patch, minor, and major releases |
+| `vX.Y.Z-N` and `X.Y.Z-N` | That exact release |
+| `nightly` | The separate nightly workflow |
+
+GitHub Releases contain standalone Host and Worker binaries for Linux x64/ARM64,
+Windows x64, and macOS x64/ARM64. Torrentarr does not publish to PyPI.
+
+The weekly workflow runs Monday at 06:00 UTC and can also be dispatched manually.
+It merges eligible green Dependabot PRs and dispatches a build release when the
+unreleased range passes its dependency/automation checks. Manual runs must select
+`dispatch_build_release=true` to request a release.
+
+## Release checklist
 
 Before releasing:
 
-- [ ] All tests pass (`dotnet test --filter "Category!=Live"`, WebUI tests if applicable)
-- [ ] Documentation updated
-- [ ] Changelog generated
-- [ ] Version bumped in project file(s)
-- [ ] Tag created and pushed
-- [ ] No open critical issues
+- Run `dotnet test --filter "Category!=Live"` and `npx vitest run` in `webui/`.
+- Confirm required build checks pass and no critical issues remain.
+- Update documentation and regenerate OpenAPI when API routes change.
+- Confirm release credentials and direct-push branch permissions.
 
 After releasing:
 
-- [ ] Docker images pushed
-- [ ] GitHub Release created (with binaries if applicable)
-- [ ] Documentation deployed
-- [ ] Announcement posted
-- [ ] Monitor for issues
+- Verify the GitHub release, notes, and binary downloads.
+- Pull the exact Docker version and check its reported version.
+- Verify documentation deployment and monitor reported issues.
 
-## Rollback Procedure
-
-If a release has critical issues:
-
-**1. Pull Docker images:**
-
-```bash
-# Users can rollback
-docker pull feramance/torrentarr:5.5.5
-```
-
-**2. Yank PyPI package:** N/A — Torrentarr does not publish to PyPI.
-
-**3. Create hotfix release:**
-
-```bash
-# Fix issue and release 5.6.1
-```
+For a hotfix, merge the tested fix into `master` and dispatch a patch release.
+Users can roll back by downloading an earlier release or selecting its exact
+Docker tag; do not overwrite published version tags.
 
 ## Regenerating the OpenAPI spec
 
