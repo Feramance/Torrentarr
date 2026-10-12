@@ -101,6 +101,14 @@ export function QbitCategoriesView({
   const { push } = useToast();
   const { liveArr } = useWebUI();
   const isFetching = useRef(false);
+  const mounted = useRef(false);
+
+  useEffect(() => {
+    mounted.current = true;
+    return () => {
+      mounted.current = false;
+    };
+  }, []);
 
   const load = useCallback(
     async (showLoading = true) => {
@@ -113,16 +121,19 @@ export function QbitCategoriesView({
       }
       try {
         const data = await getQbitCategories();
+        if (!mounted.current) return;
         setCategories((prev) =>
           areCategoriesEqual(prev, data.categories) ? prev : data.categories,
         );
         try {
           const overview = await getQbitOverview();
+          if (!mounted.current) return;
           setOverviewCategories(overview.categories ?? []);
         } catch {
-          setOverviewCategories([]);
+          if (mounted.current) setOverviewCategories([]);
         }
       } catch (error) {
+        if (!mounted.current) return;
         push(
           error instanceof Error
             ? error.message
@@ -131,7 +142,7 @@ export function QbitCategoriesView({
         );
       } finally {
         isFetching.current = false;
-        if (showLoading) {
+        if (showLoading && mounted.current) {
           setLoading(false);
         }
       }
