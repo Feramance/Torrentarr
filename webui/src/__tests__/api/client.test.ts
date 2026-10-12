@@ -3,6 +3,7 @@ import { resetUrlBaseCacheForTests } from "../../api/urlBase";
 import { http, HttpResponse } from "msw";
 import { setupServer } from "msw/node";
 import {
+  getRadarrMovies,
   getQbitCategories,
   getStatus,
   getConfig,
@@ -733,4 +734,29 @@ describe("getConfigSchema", () => {
     expect(result.sections.WebUI[0].key).toBe("Token");
     expect(result.sections.WebUI[0].secure).toBe(true);
   });
+});
+
+it("sends Radarr filters without changing the existing call signature", async () => {
+  const urls: URL[] = [];
+  server.use(
+    http.get("/web/radarr/movies/movies", ({ request }) => {
+      urls.push(new URL(request.url));
+      return HttpResponse.json({
+        movies: [],
+        total: 0,
+        page: 0,
+        page_size: 50,
+      });
+    }),
+  );
+  await getRadarrMovies("movies", 0, 50, "");
+  await getRadarrMovies("movies", 0, 50, "Wanted", {
+    missingOnly: true,
+    reasonFilter: "Missing",
+  });
+  expect(urls[0].searchParams.has("has_file")).toBe(false);
+  expect(urls[0].searchParams.has("reason")).toBe(false);
+  expect(urls[1].searchParams.get("has_file")).toBe("false");
+  expect(urls[1].searchParams.get("reason")).toBe("Missing");
+  expect(urls[1].searchParams.get("q")).toBe("Wanted");
 });

@@ -36,6 +36,7 @@ COPY Directory.Build.props ./
 
 # Restore only the Host project and its transitive dependencies
 RUN dotnet restore src/Torrentarr.Host/Torrentarr.Host.csproj
+RUN dotnet restore src/Torrentarr.Workers/Torrentarr.Workers.csproj
 
 # Copy source code
 COPY src/ ./src/
@@ -50,10 +51,14 @@ RUN dotnet publish src/Torrentarr.Host/Torrentarr.Host.csproj \
     -c Release \
     -o /app/publish \
     --no-restore
+RUN dotnet publish src/Torrentarr.Workers/Torrentarr.Workers.csproj \
+    -c Release \
+    -o /app/publish \
+    --no-restore
 
 # Stage 3: Runtime Image
 FROM mcr.microsoft.com/dotnet/aspnet:10.0 AS runtime
-ARG VERSION="6.15.2-1"
+ARG VERSION="6.16.0-1"
 LABEL Name="Torrentarr"
 LABEL Maintainer="feramance"
 LABEL Version="${VERSION}"

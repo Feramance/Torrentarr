@@ -46,7 +46,7 @@ Log.Logger = new LoggerConfiguration()
         retainedFileCountLimit: 7)
     .CreateLogger();
 
-builder.Host.UseSerilog();
+builder.Host.UseSerilog(dispose: true);
 
 // Register LoggingLevelSwitch so endpoints can change log level at runtime
 builder.Services.AddSingleton(levelSwitch);
@@ -157,8 +157,8 @@ builder.Services.AddSingleton(configLoader);
 
 builder.Services.AddSingleton<IPasswordHasher, BCryptPasswordHasher>();
 builder.Services.AddSingleton<ITorrentClientFactory, QBittorrentTorrentClientFactory>();
-builder.Services.AddSingleton<TorrentClientRegistry>();
-builder.Services.AddSingleton<ITorrentClientRegistry>(sp => sp.GetRequiredService<TorrentClientRegistry>());
+builder.Services.AddSingleton<QBittorrentConnectionManager>();
+builder.Services.AddSingleton<ITorrentClientRegistry>(sp => sp.GetRequiredService<QBittorrentConnectionManager>());
 builder.Services.AddSingleton<IPathMappingService, PathMappingService>();
 builder.Services.AddSingleton<ITorrentInventoryService, TorrentInventoryService>();
 builder.Services.AddSingleton<IHardlinkInspector, HardlinkInspector>();
@@ -166,6 +166,12 @@ builder.Services.AddSingleton<ISafeDeletionService, SafeDeletionService>();
 builder.Services.AddSingleton<IMaintenanceNotificationService, MaintenanceNotificationService>();
 builder.Services.AddSingleton<IMaintenanceCoordinator, MaintenanceCoordinator>();
 builder.Services.AddHttpClient();
+builder.Services.AddHttpClient("ArrOpen").ConfigurePrimaryHttpMessageHandler(() => new HttpClientHandler { AllowAutoRedirect = false });
+builder.Services.AddHttpClient("ArrOpenSkipTls").ConfigurePrimaryHttpMessageHandler(() => new HttpClientHandler
+{
+    AllowAutoRedirect = false,
+    ServerCertificateCustomValidationCallback = HttpClientHandler.DangerousAcceptAnyServerCertificateValidator
+});
 builder.Services.AddScoped<IDatabaseHealthService, DatabaseHealthService>();
 builder.Services.AddScoped<CatalogRollupService>();
 builder.Services.AddScoped<ArrThumbnailService>();
@@ -1042,21 +1048,13 @@ app.MapGet("/web/processes", (TorrentarrConfig config) =>
 // Restart specific process
 app.MapPost("/web/processes/{category}/{kind}/restart", (string category, string kind) =>
 {
-    return Results.Ok(new
-    {
-        success = true,
-        message = $"Restart requested for {kind} in {category}"
-    });
+    return Results.Problem("worker supervisor unavailable", statusCode: StatusCodes.Status503ServiceUnavailable);
 });
 
 // Restart all processes
 app.MapPost("/web/processes/restart_all", () =>
 {
-    return Results.Ok(new
-    {
-        success = true,
-        message = "Restart requested for all processes"
-    });
+    return Results.Problem("worker supervisor unavailable", statusCode: StatusCodes.Status503ServiceUnavailable);
 });
 
 // Validates that a log file name is a plain filename ending in .log with no path components (matches Host).
@@ -1222,24 +1220,28 @@ app.MapGet("/web/qbit/overview", async (HttpRequest request, TorrentarrConfig cf
 });
 
 // Radarr movies for specific category
-app.MapGet("/web/radarr/{category}/movies", async (string category, TorrentarrConfig cfg, TorrentarrDbContext db, int? page, int? pageSize, string? q) =>
+app.MapGet("/web/radarr/{category}/movies", async (string category, TorrentarrConfig cfg, TorrentarrDbContext db, int? page, int? pageSize, int? page_size, string? q, bool? has_file, string? reason) =>
 {
     var keys = ArrCatalogIdentity.QueryKeys(cfg, category);
-    var currentPage = page ?? 1;
-    var currentPageSize = pageSize ?? 50;
-    var skip = (currentPage - 1) * currentPageSize;
+    var currentPage = page ?? 0;
+    var currentPageSize = page_size ?? pageSize ?? 50;
+    var skip = currentPage * currentPageSize;
 
-    var allMovies = db.Movies.Where(m => keys.Contains(m.ArrInstance));
+    var baseQuery = db.Movies.Where(m => keys.Contains(m.ArrInstance));
+    var allMovies = baseQuery;
     // §6.3: text search filter
     if (!string.IsNullOrWhiteSpace(q))
         allMovies = allMovies.Where(m => m.Title != null && m.Title.Contains(q));
+    if (has_file.HasValue)
+        allMovies = allMovies.Where(m => m.HasFile == has_file.Value);
+    allMovies = ArrCatalogEndpoints.FilterRadarrMoviesByReason(allMovies, reason);
     var totalMovies = await allMovies.CountAsync();
-    var monitoredCount = await allMovies.CountAsync(m => m.Monitored);
-    var availableCount = await allMovies.CountAsync(m => m.HasFile);
+    var monitoredCount = await baseQuery.CountAsync(m => m.Monitored);
+    var availableCount = await baseQuery.CountAsync(m => m.HasFile);
     // §6.4: additional aggregate counts
-    var missingCount = await allMovies.CountAsync(m => !m.HasFile && m.Monitored);
-    var qualityMetCount = await allMovies.CountAsync(m => m.QualityMet);
-    var requestsCount = await allMovies.CountAsync(m => m.IsRequest);
+    var missingCount = await baseQuery.CountAsync(m => !m.HasFile && m.Monitored);
+    var qualityMetCount = await baseQuery.CountAsync(m => m.QualityMet);
+    var requestsCount = await baseQuery.CountAsync(m => m.IsRequest);
 
     var movies = await allMovies
         .OrderByDescending(m => m.Year)
@@ -1280,7 +1282,7 @@ app.MapGet("/web/radarr/{category}/movies", async (string category, TorrentarrCo
 });
 
 // Sonarr series for specific category
-app.MapGet("/web/sonarr/{category}/series", async (string category, TorrentarrConfig cfg, TorrentarrDbContext db, int? page, int? pageSize, string? q, string? missing) =>
+app.MapGet("/web/sonarr/{category}/series", async (string category, TorrentarrConfig cfg, TorrentarrDbContext db, int? page, int? pageSize, string? q, string? missing, string? reason) =>
 {
     var keys = ArrCatalogIdentity.QueryKeys(cfg, category);
     var currentPage = page ?? 1;
@@ -1294,6 +1296,18 @@ app.MapGet("/web/sonarr/{category}/series", async (string category, TorrentarrCo
     // missing=1: only return series that have unaired/missing episodes
     if (missing == "1")
         allSeries = allSeries.Where(s => !s.Searched);
+    if (!string.IsNullOrWhiteSpace(reason) && !reason.Equals("all", StringComparison.OrdinalIgnoreCase))
+    {
+        var notBeingSearched = reason.Equals("Not being searched", StringComparison.OrdinalIgnoreCase);
+        var matchingSeriesIds = db.Episodes
+            .Where(e => keys.Contains(e.ArrInstance)
+                && (notBeingSearched
+                    ? e.Reason == null || e.Reason == "Not being searched"
+                    : e.Reason == reason))
+            .Select(e => e.ArrSeriesId)
+            .Distinct();
+        allSeries = allSeries.Where(s => matchingSeriesIds.Contains(s.ArrId));
+    }
     var totalSeries = await allSeries.CountAsync();
     var monitoredCount = await allSeries.CountAsync(s => s.Monitored == true);
     // §6.4: additional aggregate counts (SeriesFilesModel has no IsRequest/QualityMet; use Searched/Upgrade as proxies)
@@ -1319,9 +1333,16 @@ app.MapGet("/web/sonarr/{category}/series", async (string category, TorrentarrCo
                 s.ArrId,
                 s.ArrInstance
             },
+            arrSeriesId = s.ArrId,
+            arrInstance = s.ArrInstance,
             totals = new { available = s.Searched ? 1 : 0, monitored = s.Monitored == true ? 1 : 0 },
             seasons = new Dictionary<string, object>()
         })
+        .ToListAsync();
+
+    var seriesIds = seriesItems.Select(s => s.arrSeriesId).ToList();
+    var episodes = await db.Episodes
+        .Where(e => keys.Contains(e.ArrInstance) && seriesIds.Contains(e.ArrSeriesId))
         .ToListAsync();
 
     return Results.Ok(new
@@ -1331,7 +1352,28 @@ app.MapGet("/web/sonarr/{category}/series", async (string category, TorrentarrCo
         page = currentPage,
         page_size = currentPageSize,
         counts = new { available = monitoredCount, monitored = monitoredCount, missing = missingSeriesCount, quality_met = qualityMetSeriesCount, requests = 0 },
-        series = seriesItems
+        series = seriesItems.Select(s => new
+        {
+            s.series,
+            s.totals,
+            seasons = episodes
+                .Where(e => e.ArrInstance == s.arrInstance && e.ArrSeriesId == s.arrSeriesId)
+                .GroupBy(e => e.SeasonNumber)
+                .ToDictionary(
+                    g => g.Key.ToString(),
+                    g => (object)new
+                    {
+                        episodes = g.Select(e => new
+                        {
+                            episodeNumber = e.EpisodeNumber,
+                            title = e.Title,
+                            monitored = e.Monitored,
+                            hasFile = e.HasFile,
+                            airDateUtc = e.AirDateUtc,
+                            reason = e.Reason
+                        })
+                    })
+        })
     });
 });
 
@@ -1418,7 +1460,7 @@ app.MapGet("/web/arr", (TorrentarrConfig config) =>
 // Restart a specific Arr worker
 app.MapPost("/web/arr/{category}/restart", (string category) =>
 {
-    return Results.Ok(new { status = "ok", restarted = new[] { category } });
+    return Results.Problem("worker supervisor unavailable", statusCode: StatusCodes.Status503ServiceUnavailable);
 });
 
 // Test Arr connection and return quality profiles + system info
@@ -1773,3 +1815,6 @@ sealed class NoOpAfterChallengeResult : IResult
     public static readonly NoOpAfterChallengeResult Instance = new();
     public Task ExecuteAsync(HttpContext ctx) => Task.CompletedTask;
 }
+
+// Expose the standalone entry point to endpoint integration tests.
+public partial class Program { }

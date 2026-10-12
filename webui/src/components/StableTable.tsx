@@ -10,12 +10,14 @@ interface StableTableProps<TData extends object> {
   data: TData[];
   columns: LegacyColumnDef<TData, unknown>[];
   getRowKey?: (row: TData) => string;
+  onRowClick?: (row: TData) => void;
 }
 
 function StableTableInner<TData extends object>({
   data,
   columns,
   getRowKey,
+  onRowClick,
 }: StableTableProps<TData>) {
   // TanStack Table returns unstable function refs; React Compiler skips memoization by design
   /* eslint-disable-next-line react-hooks/incompatible-library */
@@ -48,7 +50,22 @@ function StableTableInner<TData extends object>({
           {table.getRowModel().rows.map((row) => {
             const stableKey = getRowKey ? getRowKey(row.original) : row.id;
             return (
-              <tr key={stableKey}>
+              <tr
+                key={stableKey}
+                tabIndex={onRowClick ? 0 : undefined}
+                role={onRowClick ? "button" : undefined}
+                aria-label={onRowClick ? `Select row ${stableKey}` : undefined}
+                onClick={() => onRowClick?.(row.original)}
+                onKeyDown={(event) => {
+                  if (
+                    onRowClick &&
+                    (event.key === "Enter" || event.key === " ")
+                  ) {
+                    event.preventDefault();
+                    onRowClick(row.original);
+                  }
+                }}
+              >
                 {row.getVisibleCells().map((cell) => (
                   <td
                     key={cell.id}
@@ -67,8 +84,10 @@ function StableTableInner<TData extends object>({
 }
 
 export const StableTable = memo(StableTableInner, (prevProps, nextProps) => {
-  // Only re-render if data reference changed
   return (
-    prevProps.data === nextProps.data && prevProps.columns === nextProps.columns
+    prevProps.data === nextProps.data &&
+    prevProps.columns === nextProps.columns &&
+    prevProps.getRowKey === nextProps.getRowKey &&
+    prevProps.onRowClick === nextProps.onRowClick
   );
 }) as typeof StableTableInner;
