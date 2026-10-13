@@ -64,9 +64,9 @@ jobs:
     - name: Check generated config schema
       run: dotnet run --project tools/Torrentarr.ConfigSchemaGenerator/Torrentarr.ConfigSchemaGenerator.csproj -- --check
 
-    - name: Test parity tooling
+    - name: Test workflow and parity tooling
       if: matrix.os == 'ubuntu-latest'
-      run: python3 -m unittest tests/scripts/test_check_openapi_drift.py
+      run: python3 -m unittest discover -s tests/scripts -p 'test_*.py'
 
     - name: Run frontend tests
       working-directory: webui
