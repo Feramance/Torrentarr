@@ -100,6 +100,30 @@ public class EqualTorrentClientTests
         processorSeeding.Verify(s => s.UpdateSeedingTagsAsync("movies", It.IsAny<CancellationToken>()), Times.Once);
     }
 
+    [Theory]
+    [InlineData(true)]
+    [InlineData(false)]
+    public async Task SeedingTags_UseOwningClientWhenOtherClientFailsOrHasSameHash(bool offline)
+    {
+        var first = Client("one", new TorrentInfo { Hash = "abc", Category = "movies", Progress = 1 });
+        var second = Client("two", new TorrentInfo { Hash = "abc", Category = "movies", Progress = 1 });
+        if (offline)
+            second.Setup(c => c.GetTorrentsAsync(It.IsAny<string?>(), It.IsAny<string?>(), It.IsAny<CancellationToken>()))
+                .ThrowsAsync(new HttpRequestException());
+        var registry = Registry(("two", second), ("one", first));
+        using var db = new TorrentarrDbContext(new DbContextOptionsBuilder<TorrentarrDbContext>().UseInMemoryDatabase(Guid.NewGuid().ToString()).Options);
+        var config = new TorrentarrConfig();
+        config.TorrentClients["one"] = new() { Host = "fixture" };
+        config.TorrentClients["two"] = new() { Host = "fixture" };
+        var seeding = new SeedingService(NullLogger<SeedingService>.Instance, db, config, registry.Object);
+        await seeding.UpdateSeedingTagsAsync("movies");
+        first.Verify(c => c.AddTagsAsync(It.Is<List<string>>(h => h.Contains("abc")),
+            It.Is<List<string>>(tags => tags.Contains("qBitrr-allowed_seeding")), It.IsAny<CancellationToken>()), Times.Once);
+        if (!offline)
+            second.Verify(c => c.AddTagsAsync(It.Is<List<string>>(h => h.Contains("abc")),
+                It.Is<List<string>>(tags => tags.Contains("qBitrr-allowed_seeding")), It.IsAny<CancellationToken>()), Times.Once);
+    }
+
     [Fact]
     public async Task NamedLookup_OnlyReadsNamedClient_AndHashOnlyLookupRejectsAmbiguity()
     {

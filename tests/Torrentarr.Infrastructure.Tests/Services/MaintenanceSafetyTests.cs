@@ -257,6 +257,104 @@ public sealed class MaintenanceSafetyTests : IDisposable
         result.ContentPreserved.Should().BeTrue();
         File.ReadAllText(Path.Combine(_root, "movie.mkv")).Should().Be("data");
         if (cancelled) result.Error.Should().Contain("uncertain");
+        _client.Verify(c => c.PauseTorrentsAsync(It.IsAny<List<string>>(), It.IsAny<CancellationToken>()), Times.Never);
+        _client.Verify(c => c.ResumeTorrentsAsync(It.IsAny<List<string>>(), It.IsAny<CancellationToken>()), Times.Never);
+    }
+
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task RecycleMove_CollisionPreservesBothPaths(bool directory)
+    {
+        var source = Path.Combine(_root, "original");
+        var destination = Path.Combine(_root, "recreated");
+        if (directory)
+        {
+            Directory.CreateDirectory(source);
+            Directory.CreateDirectory(destination);
+        }
+        var sourceFile = directory ? Path.Combine(source, "file") : source;
+        var destinationFile = directory ? Path.Combine(destination, "file") : destination;
+        File.WriteAllText(sourceFile, "original data");
+        File.WriteAllText(destinationFile, "new data");
+        var move = typeof(SafeDeletionService).GetMethod("MoveToRecycleAsync",
+            System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.NonPublic)!;
+        await FluentActions.Awaiting(() => (Task<long>)move.Invoke(_deletion, [source, destination, CancellationToken.None])!)
+            .Should().ThrowAsync<IOException>();
+        File.ReadAllText(sourceFile).Should().Be("original data");
+        File.ReadAllText(destinationFile).Should().Be("new data");
+        Directory.EnumerateFileSystemEntries(_root, "*.partial").Should().BeEmpty();
+    }
+
+    [Theory]
+    [InlineData(true)]
+    [InlineData(false)]
+    public async Task Recycling_StopsActiveTorrentBeforeMoving_AndResumesAfterRejectedRemoval(bool accepted)
+    {
+        var torrent = AddTorrent();
+        torrent.Progress = 0.5;
+        torrent.State = "downloading";
+        _client.Setup(c => c.PauseTorrentsAsync(It.IsAny<List<string>>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(() =>
+            {
+                File.ReadAllText(Path.Combine(_root, "movie.mkv")).Should().Be("data");
+                if (accepted) torrent.State = "stoppedDL";
+                return accepted;
+            });
+        _client.Setup(c => c.DeleteTorrentsAsync(It.IsAny<List<string>>(), false, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(() =>
+            {
+                torrent.IsStopped.Should().BeTrue();
+                File.Exists(Path.Combine(_root, "movie.mkv")).Should().BeFalse();
+                return false;
+            });
+        _client.Setup(c => c.ResumeTorrentsAsync(It.IsAny<List<string>>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(() =>
+            {
+                File.ReadAllText(Path.Combine(_root, "movie.mkv")).Should().Be("data");
+                return true;
+            });
+        var result = await _deletion.RemoveMaintenanceTorrentAsync("one", "abc", true, await _inventory.BuildAsync());
+        result.Success.Should().BeFalse();
+        result.ContentPreserved.Should().BeTrue();
+        File.ReadAllText(Path.Combine(_root, "movie.mkv")).Should().Be("data");
+        _client.Verify(c => c.DeleteTorrentsAsync(It.IsAny<List<string>>(), false, It.IsAny<CancellationToken>()), accepted ? Times.Once() : Times.Never());
+        _client.Verify(c => c.ResumeTorrentsAsync(It.IsAny<List<string>>(), It.IsAny<CancellationToken>()), accepted ? Times.Once() : Times.Never());
+    }
+
+    [Fact]
+    public async Task Recycling_DoesNotMoveFilesUntilPauseIsConfirmed()
+    {
+        var torrent = AddTorrent();
+        torrent.State = "downloading";
+        using var cancellation = new CancellationTokenSource();
+        _client.Setup(c => c.PauseTorrentsAsync(It.IsAny<List<string>>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(() => { cancellation.Cancel(); return true; });
+        var result = await _deletion.RemoveMaintenanceTorrentAsync("one", "abc", true, await _inventory.BuildAsync(), ct: cancellation.Token);
+        result.Success.Should().BeFalse();
+        File.ReadAllText(Path.Combine(_root, "movie.mkv")).Should().Be("data");
+        _client.Verify(c => c.DeleteTorrentsAsync(It.IsAny<List<string>>(), It.IsAny<bool>(), It.IsAny<CancellationToken>()), Times.Never);
+        _client.Verify(c => c.ResumeTorrentsAsync(It.IsAny<List<string>>(), It.IsAny<CancellationToken>()), Times.Once);
+    }
+
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task Recycling_DoesNotResumeAfterSuccessfulOrUncertainRemoval(bool uncertain)
+    {
+        var torrent = AddTorrent();
+        torrent.State = "uploading";
+        _client.Setup(c => c.PauseTorrentsAsync(It.IsAny<List<string>>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(() => { torrent.State = "pausedUP"; return true; });
+        if (uncertain)
+            _client.Setup(c => c.DeleteTorrentsAsync(It.IsAny<List<string>>(), false, It.IsAny<CancellationToken>()))
+                .ThrowsAsync(new HttpRequestException());
+        var result = await _deletion.RemoveMaintenanceTorrentAsync("one", "abc", true, await _inventory.BuildAsync());
+        result.Success.Should().Be(!uncertain);
+        result.ContentPreserved.Should().Be(uncertain);
+        File.Exists(Path.Combine(_root, "movie.mkv")).Should().Be(uncertain);
+        if (uncertain) result.Error.Should().Contain("uncertain");
+        _client.Verify(c => c.ResumeTorrentsAsync(It.IsAny<List<string>>(), It.IsAny<CancellationToken>()), Times.Never);
     }
 
     [Fact]

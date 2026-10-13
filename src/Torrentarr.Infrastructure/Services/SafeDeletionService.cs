@@ -106,8 +106,26 @@ public sealed class SafeDeletionService : ISafeDeletionService
         var movedPaths = new List<(string Source, string Destination)>();
         var removalAttempted = false;
         var removalRejected = false;
+        var pausedForRecycle = false;
         try
         {
+            var current = (await client.GetTorrentsAsync(cancellationToken: ct))
+                .FirstOrDefault(t => t.Hash.Equals(hash, StringComparison.OrdinalIgnoreCase))
+                ?? throw new IOException("Torrent no longer exists.");
+            if (!current.IsStopped && !current.State.Contains("paused", StringComparison.OrdinalIgnoreCase))
+            {
+                if (!await client.PauseTorrentsAsync([hash], ct)) throw new IOException("Torrent client rejected pause.");
+                pausedForRecycle = true;
+                for (var attempt = 0; ; attempt++)
+                {
+                    current = (await client.GetTorrentsAsync(cancellationToken: ct))
+                        .FirstOrDefault(t => t.Hash.Equals(hash, StringComparison.OrdinalIgnoreCase))
+                        ?? throw new IOException("Torrent disappeared while pausing.");
+                    if (current.IsStopped || current.State.Contains("paused", StringComparison.OrdinalIgnoreCase)) break;
+                    if (attempt >= 49) throw new IOException("Torrent did not stop; refusing to recycle active files.");
+                    await Task.Delay(100, ct);
+                }
+            }
             foreach (var source in CollapseRoots(localFiles))
             {
                 var validation = ValidateSource(source, cfg);
@@ -143,8 +161,18 @@ public sealed class SafeDeletionService : ISafeDeletionService
                     _logger.LogError(rollbackEx, "Unable to restore recycled content {Destination} to {Source}", destination, source);
                 }
             }
+            var restored = errors.Count == 0;
+            if (pausedForRecycle && restored && (!removalAttempted || removalRejected))
+            {
+                try
+                {
+                    if (!await client.ResumeTorrentsAsync([hash], CancellationToken.None))
+                        errors.Add("Content restored, but torrent client rejected resume.");
+                }
+                catch (Exception resumeEx) { errors.Add($"Content restored, but resume failed: {resumeEx.Message}"); }
+            }
             var uncertain = removalAttempted && !removalRejected ? " Remote removal outcome is uncertain." : "";
-            return new(false, errors.Count == 0, errors.Count == 0 ? 0 : moved,
+            return new(false, restored, restored ? 0 : moved,
                 $"Recycle failed: {ex.Message}.{uncertain}" + (errors.Count == 0 ? " Moved content restored." : " " + string.Join("; ", errors)));
         }
     }
@@ -242,16 +270,19 @@ public sealed class SafeDeletionService : ISafeDeletionService
         }
         catch (IOException)
         {
+            // Publish a private copy with a non-overwriting move; collisions never own the destination.
+            var temporary = destination + "." + Guid.NewGuid().ToString("N") + ".partial";
             var copied = false;
             try
             {
                 if (Directory.Exists(source))
                 {
-                    await CopyDirectoryAsync(source, destination, ct);
+                    await CopyDirectoryAsync(source, temporary, ct);
                     foreach (var file in Directory.EnumerateFiles(source, "*", SearchOption.AllDirectories))
-                        if (new FileInfo(file).Length != new FileInfo(Path.Combine(destination, Path.GetRelativePath(source, file))).Length)
+                        if (new FileInfo(file).Length != new FileInfo(Path.Combine(temporary, Path.GetRelativePath(source, file))).Length)
                             throw new IOException("Recycle directory copy verification failed.");
                     ct.ThrowIfCancellationRequested();
+                    Directory.Move(temporary, destination);
                     copied = true;
                     Directory.Delete(source, true);
                 }
@@ -259,23 +290,28 @@ public sealed class SafeDeletionService : ISafeDeletionService
                 {
                     Directory.CreateDirectory(Path.GetDirectoryName(destination)!);
                     await using (var input = File.OpenRead(source))
-                    await using (var output = new FileStream(destination, FileMode.CreateNew, FileAccess.Write, FileShare.None))
+                    await using (var output = new FileStream(temporary, FileMode.CreateNew, FileAccess.Write, FileShare.None))
                     {
                         await input.CopyToAsync(output, ct);
                         await output.FlushAsync(ct);
                     }
-                    if (new FileInfo(source).Length != new FileInfo(destination).Length)
+                    if (new FileInfo(source).Length != new FileInfo(temporary).Length)
                         throw new IOException("Recycle copy verification failed.");
                     ct.ThrowIfCancellationRequested();
+                    File.Move(temporary, destination);
+                    copied = true;
                     File.Delete(source);
                 }
             }
             catch
             {
                 if (copied) throw new IOException($"Source removal failed; copied content preserved at {destination}.");
-                if (File.Exists(source) && File.Exists(destination)) File.Delete(destination);
-                else if (Directory.Exists(source) && Directory.Exists(destination)) Directory.Delete(destination, true);
                 throw;
+            }
+            finally
+            {
+                if (File.Exists(temporary)) File.Delete(temporary);
+                else if (Directory.Exists(temporary)) Directory.Delete(temporary, true);
             }
         }
         var bytes = Directory.Exists(destination)

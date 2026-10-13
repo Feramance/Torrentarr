@@ -10,6 +10,8 @@ using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
 using Microsoft.Extensions.Hosting;
 using Torrentarr.Core.Configuration;
+using Torrentarr.Core.Interfaces;
+using Moq;
 using Torrentarr.Core.Models;
 using Torrentarr.Core.Services;
 using System.Net.Http.Json;
@@ -96,6 +98,74 @@ public class StandaloneRadarrEndpointTests
         plan.GetProperty("planId").GetString().Should().NotBeNullOrWhiteSpace();
         var status = await client.GetFromJsonAsync<JsonElement>("/web/status");
         status.TryGetProperty("qbit", out _).Should().BeFalse();
+    }
+
+    [Fact]
+    public async Task StandaloneStatus_ConnectsClientsBeforeFirstStatusResponse()
+    {
+        await using var factory = new StandaloneFactory();
+        var adapter = new Mock<ITorrentClient>();
+        adapter.Setup(c => c.LoginAsync(It.IsAny<CancellationToken>())).ReturnsAsync(true);
+        adapter.Setup(c => c.GetVersionAsync(It.IsAny<CancellationToken>())).ReturnsAsync("fixture-version");
+        var adapterFactory = new Mock<ITorrentClientFactory>();
+        adapterFactory.SetupGet(f => f.Type).Returns("qbittorrent");
+        adapterFactory.Setup(f => f.Create(It.IsAny<string>(), It.IsAny<TorrentClientInstanceConfig>())).Returns(adapter.Object);
+        await using var configured = factory.WithWebHostBuilder(builder => builder.ConfigureServices(services =>
+        {
+            services.RemoveAll<ITorrentClientFactory>();
+            services.AddSingleton(adapterFactory.Object);
+        }));
+        var client = configured.CreateClient();
+        var config = configured.Services.GetRequiredService<TorrentarrConfig>();
+        config.QBitInstances.Clear();
+        config.TorrentClients["one"] = new() { Host = "fixture" };
+        var status = await client.GetFromJsonAsync<JsonElement>("/web/status");
+        var instance = status.GetProperty("qbitInstances").GetProperty("one");
+        instance.GetProperty("alive").GetBoolean().Should().BeTrue();
+        instance.GetProperty("version").GetString().Should().Be("fixture-version");
+        adapter.Verify(c => c.LoginAsync(It.IsAny<CancellationToken>()), Times.Once);
+    }
+
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task StandaloneConfig_RenameRemovesOldSectionAndPreservesOtherInstances(bool wholeSection)
+    {
+        await using var factory = new StandaloneFactory();
+        var client = factory.CreateClient();
+        var config = factory.Services.GetRequiredService<TorrentarrConfig>();
+        config.QBitInstances["qBit"] = new() { Host = "old", Disabled = true, Password = "secret" };
+        config.QBitInstances["qBit-other"] = new() { Host = "other", Password = "other-secret" };
+        config.TorrentClients["canonical"] = new() { Host = "canonical" };
+        var flat = await client.GetFromJsonAsync<JsonElement>("/web/config");
+        var changes = new Dictionary<string, object?> { ["qBit-renamed"] = flat.GetProperty("qBit").Clone() };
+        void RemoveFields(JsonElement value, string prefix)
+        {
+            foreach (var field in value.EnumerateObject())
+                if (field.Value.ValueKind == JsonValueKind.Object) RemoveFields(field.Value, prefix + "." + field.Name);
+                else changes[prefix + "." + field.Name] = null;
+        }
+        if (wholeSection) changes["qBit"] = null;
+        else RemoveFields(flat.GetProperty("qBit"), "qBit");
+        changes["qBit-renamed.Password"] = "secret";
+        var response = await client.PostAsJsonAsync("/web/config", new { changes });
+        response.EnsureSuccessStatusCode();
+        var saved = new ConfigurationLoader(factory.Services.GetRequiredService<IConfigReloader>().ConfigPath).Load();
+        saved.QBitInstances.Should().NotContainKey("qBit");
+        saved.QBitInstances["qBit-renamed"].Host.Should().Be("old");
+        saved.QBitInstances["qBit-renamed"].Disabled.Should().BeTrue();
+        saved.QBitInstances["qBit-other"].Password.Should().Be("other-secret");
+        saved.TorrentClients.Should().ContainKey("canonical");
+        saved.ArrInstances.Should().ContainKey("Radarr");
+        var deleted = await client.PostAsJsonAsync("/web/config", new
+        {
+            changes = new Dictionary<string, object?> { ["qBit-renamed"] = null, ["TorrentClient.canonical"] = null }
+        });
+        deleted.EnsureSuccessStatusCode();
+        saved = new ConfigurationLoader(factory.Services.GetRequiredService<IConfigReloader>().ConfigPath).Load();
+        saved.QBitInstances.Should().NotContainKey("qBit-renamed");
+        saved.TorrentClients.Should().NotContainKey("canonical");
+        saved.QBitInstances.Should().ContainKey("qBit-other");
     }
 
     private sealed class StandaloneFactory : WebApplicationFactory<Standalone::Program>

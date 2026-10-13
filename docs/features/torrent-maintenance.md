@@ -69,10 +69,13 @@ that cannot expose ownership changes must force fresh file enumeration.
 
 ## Recycling and cancellation
 
-Recycling validates sources before moving content and removes the torrent only
+Recycling pauses active torrents and confirms they have stopped before moving
+content. It validates sources before moving content and removes the torrent only
 after moves succeed. Failed validation, cancellation, exceptions, and rejected
 client removal trigger rollback of completed moves. Rollback runs independently
-of the cancelled request and does not overwrite a recreated source.
+of the cancelled request and does not overwrite or delete a recreated source.
+After successful rollback, a torrent paused by recycling is resumed when removal
+was rejected or never attempted. An uncertain removal outcome leaves it paused.
 
 If restoration fails, the run reports the original and recycled paths. Preserve
 those recycled files and recover them manually before retention cleanup. A

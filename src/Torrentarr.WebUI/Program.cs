@@ -513,6 +513,7 @@ app.MapGet("/web/loglevel", (LoggingLevelSwitch ls) =>
 // Status endpoint
 app.MapGet("/web/status", async (TorrentarrDbContext db, TorrentarrConfig config, ITorrentClientRegistry registry, CancellationToken ct) =>
 {
+    await registry.EnsureAllConnectedAsync(config.GetAllTorrentClients(), ct);
     var movieCount = await db.Movies.CountAsync();
     var episodeCount = await db.Episodes.CountAsync();
     var torrentCount = await db.TorrentLibrary.CountAsync();
@@ -668,7 +669,7 @@ app.MapGet("/web/stats", async (TorrentarrDbContext db) =>
 app.MapGet("/web/config", (TorrentarrConfig config) =>
 {
     var flat = BuildFlatConfig(config, redactSensitive: true);
-    return Results.Ok(flat);
+    return Results.Content(flat.ToString(Newtonsoft.Json.Formatting.None), "application/json");
 });
 
 // §6.8: POST /web/config — partial config changes with reload-type detection
@@ -770,6 +771,9 @@ app.MapPost("/web/config", async (HttpContext ctx, TorrentarrConfig config, Conf
             ApplyDotPathChange(flatConfig, key, value);
         }
 
+        foreach (var empty in flatConfig.Descendants().OfType<Newtonsoft.Json.Linq.JObject>().Reverse().ToList())
+            if (!empty.HasValues && empty.Parent is Newtonsoft.Json.Linq.JProperty property) property.Remove();
+
         var updatedConfig = FlatToConfig(flatConfig, config);
         var savePasswordHashError = WebUIAuthHelpers.ValidatePasswordHashForConfigApiSave(config, updatedConfig);
         if (savePasswordHashError != null)
@@ -825,6 +829,7 @@ static void ApplyDotPathChange(Newtonsoft.Json.Linq.JObject root, string dotPath
         }
         else
         {
+            if (value.Type == Newtonsoft.Json.Linq.JTokenType.Null) return;
             // Create missing intermediate object
             var newObj = new Newtonsoft.Json.Linq.JObject();
             current[seg] = newObj;
@@ -835,7 +840,9 @@ static void ApplyDotPathChange(Newtonsoft.Json.Linq.JObject root, string dotPath
     var leafKey = segments[^1];
     var existingProp = current.Properties()
         .FirstOrDefault(p => p.Name.Equals(leafKey, StringComparison.OrdinalIgnoreCase));
-    if (existingProp != null)
+    if (value.Type == Newtonsoft.Json.Linq.JTokenType.Null)
+        existingProp?.Remove();
+    else if (existingProp != null)
         existingProp.Value = value;
     else
         current[leafKey] = value;
@@ -949,10 +956,6 @@ static TorrentarrConfig FlatToConfig(Newtonsoft.Json.Linq.JObject flat, Torrenta
     {
         result.WebUI = current.WebUI;
     }
-
-    result.QBitInstances = new Dictionary<string, QBitConfig>(current.QBitInstances);
-    result.TorrentClients = current.TorrentClients.ToDictionary(p => p.Key, p => p.Value, StringComparer.OrdinalIgnoreCase);
-    result.ArrInstances = new Dictionary<string, ArrInstanceConfig>(current.ArrInstances);
 
     foreach (var prop in flat.Properties())
     {

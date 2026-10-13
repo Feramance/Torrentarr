@@ -133,11 +133,14 @@ public class SeedingService : ISeedingService
     private ITorrentClient? GetClient(TorrentInfo torrent)
         => _qbitManager.GetClient(torrent.QBitInstanceName);
 
-    public async Task<bool> MeetsSeedingRequirementsAsync(string hash, string category, CancellationToken cancellationToken = default)
+    public Task<bool> MeetsSeedingRequirementsAsync(string hash, string category, CancellationToken cancellationToken = default)
+        => MeetsSeedingRequirementsAsync(hash, category, null, cancellationToken);
+
+    private async Task<bool> MeetsSeedingRequirementsAsync(string hash, string category, string? instanceId, CancellationToken cancellationToken)
     {
         _logger.LogTrace("Checking seeding requirements for hash {Hash} in category {Category}", hash, category);
 
-        var stats = await GetSeedingStatsAsync(hash, cancellationToken);
+        var stats = await GetSeedingStatsAsync(hash, instanceId, cancellationToken);
 
         if (stats == null)
         {
@@ -187,9 +190,12 @@ public class SeedingService : ISeedingService
         return result;
     }
 
-    public async Task<SeedingStats?> GetSeedingStatsAsync(string hash, CancellationToken cancellationToken = default)
+    public Task<SeedingStats?> GetSeedingStatsAsync(string hash, CancellationToken cancellationToken = default)
+        => GetSeedingStatsAsync(hash, null, cancellationToken);
+
+    private async Task<SeedingStats?> GetSeedingStatsAsync(string hash, string? instanceId, CancellationToken cancellationToken)
     {
-        var torrent = await TorrentClientLookup.FindAsync(_qbitManager, hash, null, _logger, cancellationToken);
+        var torrent = await TorrentClientLookup.FindAsync(_qbitManager, hash, instanceId, _logger, cancellationToken);
 
         if (torrent == null)
         {
@@ -859,7 +865,7 @@ public class SeedingService : ISeedingService
         TorrentInfo torrent,
         CancellationToken cancellationToken)
     {
-        var meetsRequirements = await MeetsSeedingRequirementsAsync(torrent.Hash, torrent.Category, cancellationToken);
+        var meetsRequirements = await MeetsSeedingRequirementsAsync(torrent.Hash, torrent.Category, torrent.QBitInstanceName, cancellationToken);
         var hasAllowedSeedingTag = HasTag(torrent, AllowedSeedingTag);
 
         if (meetsRequirements && !hasAllowedSeedingTag)
