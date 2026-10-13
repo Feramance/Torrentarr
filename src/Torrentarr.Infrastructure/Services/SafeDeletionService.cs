@@ -131,7 +131,12 @@ public sealed class SafeDeletionService : ISafeDeletionService
                 var validation = ValidateSource(source, cfg);
                 if (validation != null) throw new IOException(validation);
                 var destination = BuildRecycleDestination(source, clientInstanceId, item.Torrent.Category, cfg);
-                moved += await MoveToRecycleAsync(source, destination, ct);
+                try { moved += await MoveToRecycleAsync(source, destination, ct); }
+                catch (RecyclePublishedException)
+                {
+                    movedPaths.Add((source, destination));
+                    throw;
+                }
                 movedPaths.Add((source, destination));
                 RemoveEmptyParents(Path.GetDirectoryName(source), cfg);
             }
@@ -261,6 +266,9 @@ public sealed class SafeDeletionService : ISafeDeletionService
         return Path.Combine(Path.GetFullPath(mapping.LocalPath), ".torrentarr-recycle");
     }
 
+    private sealed class RecyclePublishedException(string destination)
+        : IOException($"Source removal failed; copied content preserved at {destination}.");
+
     private async Task<long> MoveToRecycleAsync(string source, string destination, CancellationToken ct)
     {
         ct.ThrowIfCancellationRequested();
@@ -305,7 +313,7 @@ public sealed class SafeDeletionService : ISafeDeletionService
             }
             catch
             {
-                if (copied) throw new IOException($"Source removal failed; copied content preserved at {destination}.");
+                if (copied) throw new RecyclePublishedException(destination);
                 throw;
             }
             finally

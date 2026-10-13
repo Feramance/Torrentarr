@@ -748,6 +748,8 @@ app.MapPost("/web/config", async (HttpContext ctx, TorrentarrConfig config, Conf
     try
     {
         // Build flat TOML-like config, apply changes, convert back to TorrentarrConfig
+        ConfigRenameHelper.PreserveSecrets(config, changesToken, body?["renames"] as Newtonsoft.Json.Linq.JObject);
+        changes = changesToken.Properties().ToDictionary(p => p.Name, p => p.Value);
         var flatConfig = BuildFlatConfig(config, redactSensitive: false);
 
         foreach (var (key, value) in changes)

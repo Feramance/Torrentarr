@@ -134,7 +134,13 @@ public class StandaloneRadarrEndpointTests
         await using var factory = new StandaloneFactory();
         var client = factory.CreateClient();
         var config = factory.Services.GetRequiredService<TorrentarrConfig>();
-        config.QBitInstances["qBit"] = new() { Host = "old", Disabled = true, Password = "secret" };
+        config.QBitInstances["qBit"] = new()
+        {
+            Host = "old",
+            Disabled = true,
+            Password = "secret",
+            Maintenance = new() { Notifications = [new() { Url = "https://notify.example", Token = "notify-secret" }] }
+        };
         config.QBitInstances["qBit-other"] = new() { Host = "other", Password = "other-secret" };
         config.TorrentClients["canonical"] = new() { Host = "canonical" };
         var flat = await client.GetFromJsonAsync<JsonElement>("/web/config");
@@ -147,13 +153,18 @@ public class StandaloneRadarrEndpointTests
         }
         if (wholeSection) changes["qBit"] = null;
         else RemoveFields(flat.GetProperty("qBit"), "qBit");
-        changes["qBit-renamed.Password"] = "secret";
-        var response = await client.PostAsJsonAsync("/web/config", new { changes });
+        var response = await client.PostAsJsonAsync("/web/config", new
+        {
+            changes,
+            renames = new Dictionary<string, string> { ["qBit"] = "qBit-renamed" }
+        });
         response.EnsureSuccessStatusCode();
         var saved = new ConfigurationLoader(factory.Services.GetRequiredService<IConfigReloader>().ConfigPath).Load();
         saved.QBitInstances.Should().NotContainKey("qBit");
         saved.QBitInstances["qBit-renamed"].Host.Should().Be("old");
         saved.QBitInstances["qBit-renamed"].Disabled.Should().BeTrue();
+        saved.QBitInstances["qBit-renamed"].Password.Should().Be("secret");
+        saved.QBitInstances["qBit-renamed"].Maintenance.Notifications.Single().Token.Should().Be("notify-secret");
         saved.QBitInstances["qBit-other"].Password.Should().Be("other-secret");
         saved.TorrentClients.Should().ContainKey("canonical");
         saved.ArrInstances.Should().ContainKey("Radarr");

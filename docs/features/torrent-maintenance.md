@@ -24,13 +24,15 @@ connection loop retries enabled clients; Arr workers restart with the saved
 configuration. A failed replacement stays unavailable instead of using the old
 endpoint. A remote request already dispatched before the save may still finish. Old client
 references reject subsequent requests; disposal waits for active requests to finish.
+Client renames preserve stored passwords and notification tokens.
 
 ## Preview, arm, and apply
 
 Maintenance remains opt-in. Preview first, explicitly arm the selected instances,
 then apply the returned plan. Changing configuration invalidates the preview and
 disarms maintenance. Apply checks enabled/armed state and the configuration
-fingerprint between actions. Disarming stops subsequent actions.
+fingerprint between actions, including unselected clients used for file ownership.
+Disarming stops subsequent actions.
 
 Apply reevaluates each action from current torrent state. This includes scope
 exclusions, minimum age, H&R obligations, tracker state, policy priority, minimum

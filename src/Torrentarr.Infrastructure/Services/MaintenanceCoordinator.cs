@@ -170,7 +170,7 @@ public sealed class MaintenanceCoordinator : BackgroundService, IMaintenanceCoor
         var plan = new MaintenancePlan
         {
             ExpiresAt = DateTimeOffset.UtcNow.AddMinutes(Math.Max(1, expiryMinutes)),
-            ConfigurationFingerprint = Fingerprint(ids),
+            ConfigurationFingerprint = Fingerprint(),
             ClientInstanceIds = ids,
             Operations = operations,
             Actions = actions,
@@ -196,7 +196,7 @@ public sealed class MaintenanceCoordinator : BackgroundService, IMaintenanceCoor
                 throw new InvalidOperationException("Maintenance must be explicitly armed after preview before applying mutations.");
             if (!CryptographicOperations.FixedTimeEquals(
                     Encoding.UTF8.GetBytes(plan.ConfigurationFingerprint),
-                    Encoding.UTF8.GetBytes(Fingerprint(plan.ClientInstanceIds))))
+                    Encoding.UTF8.GetBytes(Fingerprint())))
                 throw new InvalidOperationException("Maintenance configuration changed after preview.");
             plan.Consumed = true;
         }
@@ -209,7 +209,7 @@ public sealed class MaintenanceCoordinator : BackgroundService, IMaintenanceCoor
             || plan.Consumed
             || plan.ExpiresAt <= DateTimeOffset.UtcNow
             || plan.CriticalErrors.Count > 0
-            || plan.ConfigurationFingerprint != Fingerprint(plan.ClientInstanceIds))
+            || plan.ConfigurationFingerprint != Fingerprint())
             throw new InvalidOperationException("A current successful preview is required before arming maintenance.");
         var selected = request.ClientInstanceIds.Count > 0 ? request.ClientInstanceIds : plan.ClientInstanceIds;
         var outside = selected.Where(id => !plan.ClientInstanceIds.Contains(id, StringComparer.OrdinalIgnoreCase)).ToList();
@@ -352,7 +352,7 @@ public sealed class MaintenanceCoordinator : BackgroundService, IMaintenanceCoor
                 {
                     var cfg = _config.GetTorrentClient(action.ClientInstanceId);
                     if (cfg?.Maintenance.Enabled != true || !cfg.Maintenance.Armed
-                        || plan.ConfigurationFingerprint != Fingerprint(plan.ClientInstanceIds))
+                        || plan.ConfigurationFingerprint != Fingerprint())
                         throw new OperationCanceledException("Maintenance was disarmed or configuration changed.");
                     inventory = await _inventory.RefreshAsync(inventory, action.ClientInstanceId, action.TorrentHash, linked.Token);
                     var staleReason = await RevalidateActionAsync(action, inventory, seeding, linked.Token);
@@ -632,7 +632,6 @@ public sealed class MaintenanceCoordinator : BackgroundService, IMaintenanceCoor
                 Bytes = item.Files.Sum(f => f.File.Size),
                 Reason = "Tracker reports torrent as unregistered.",
                 Arguments = new() { ["tracker"] = Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(tracker.Url))) },
-                RequiredCapabilities = ["contentDeletion"],
                 Destructive = true
             };
         }
@@ -857,9 +856,9 @@ public sealed class MaintenanceCoordinator : BackgroundService, IMaintenanceCoor
             && DateTimeOffset.UtcNow - DateTimeOffset.FromUnixTimeSeconds(torrent.LastActivity) >= TimeSpan.FromMinutes(policy.MaximumInactiveMinutes.Value);
     }
 
-    private string Fingerprint(IEnumerable<string> ids)
+    private string Fingerprint()
     {
-        var selected = ids.OrderBy(x => x, StringComparer.OrdinalIgnoreCase)
+        var selected = _config.GetAllTorrentClients().Keys.OrderBy(x => x, StringComparer.OrdinalIgnoreCase)
             .ToDictionary(id => id, id =>
             {
                 var token = Newtonsoft.Json.Linq.JObject.FromObject(

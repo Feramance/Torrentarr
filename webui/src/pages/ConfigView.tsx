@@ -2302,7 +2302,14 @@ export function ConfigView(props?: ConfigViewProps): JSX.Element {
         }),
       );
       // Track this rename to ensure old section is fully deleted on save
-      setPendingRenames((prev) => new Map(prev).set(oldName, newName));
+      setPendingRenames((prev) => {
+        const next = new Map(prev);
+        const original =
+          [...next].find(([, name]) => name === oldName)?.[0] ?? oldName;
+        if (original === newName) next.delete(original);
+        else next.set(original, newName);
+        return next;
+      });
       if (activeArrKey === oldName) {
         setActiveArrKey(newName);
       }
@@ -2329,7 +2336,14 @@ export function ConfigView(props?: ConfigViewProps): JSX.Element {
         }),
       );
       // Track this rename to ensure old section is fully deleted on save
-      setPendingRenames((prev) => new Map(prev).set(oldName, newName));
+      setPendingRenames((prev) => {
+        const next = new Map(prev);
+        const original =
+          [...next].find(([, name]) => name === oldName)?.[0] ?? oldName;
+        if (original === newName) next.delete(original);
+        else next.set(original, newName);
+        return next;
+      });
       if (activeQbitKey === oldName) {
         setActiveQbitKey(newName);
       }
@@ -2391,7 +2405,15 @@ export function ConfigView(props?: ConfigViewProps): JSX.Element {
         return;
       }
       const { configReloaded, reloadType, affectedInstances } =
-        await updateConfig({ changes });
+        await updateConfig({
+          changes,
+          renames: Object.fromEntries(
+            [...pendingRenames].filter(
+              ([oldName, newName]) =>
+                originalConfig?.[oldName] && formState[newName],
+            ),
+          ),
+        });
 
       // Build appropriate success message
       let message = "Configuration saved";

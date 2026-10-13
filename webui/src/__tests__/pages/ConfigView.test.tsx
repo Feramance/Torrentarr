@@ -200,69 +200,81 @@ describe("ConfigView – deleteQbitInstance behaviour", () => {
 });
 
 describe("ConfigView – equal client names", () => {
-  it("renames qBit and saves the old section removal", async () => {
-    let changes: Record<string, unknown> = {};
-    server.use(
-      http.get("/web/config", () =>
-        HttpResponse.json({
-          ...configQbitOnly,
-          Settings: {
-            ...configQbitOnly.Settings,
-            ConsoleLevel: "INFO",
-            CompletedDownloadFolder: "/downloads",
-            FreeSpace: "10G",
-            FreeSpaceFolder: "/downloads",
-            NoInternetSleepTimer: 60,
-            SearchLoopDelay: -1,
-            IgnoreTorrentsYoungerThan: 0,
-            AutoUpdateCron: "0 0 * * *",
-            AutoUpdateChannel: "latest",
-            MaxProcessRestarts: 5,
-            ProcessRestartWindow: 3600,
-            ProcessRestartDelay: 5,
-          },
-          WebUI: { ...configQbitOnly.WebUI, Host: "localhost" },
-          qBit: {
-            ...configQbitOnly.qBit,
-            CategorySeeding: {
-              MaxUploadRatio: 0,
-              DownloadRateLimitPerTorrent: -1,
-              UploadRateLimitPerTorrent: -1,
-              HitAndRunMode: "disabled",
+  it.each([["qBit-renamed"], ["qBit-middle", "qBit-renamed"]])(
+    "renames qBit through %j and saves the old section removal",
+    async (...names) => {
+      let changes: Record<string, unknown> = {};
+      let renames: Record<string, string> = {};
+      server.use(
+        http.get("/web/config", () =>
+          HttpResponse.json({
+            ...configQbitOnly,
+            Settings: {
+              ...configQbitOnly.Settings,
+              ConsoleLevel: "INFO",
+              CompletedDownloadFolder: "/downloads",
+              FreeSpace: "10G",
+              FreeSpaceFolder: "/downloads",
+              NoInternetSleepTimer: 60,
+              SearchLoopDelay: -1,
+              IgnoreTorrentsYoungerThan: 0,
+              AutoUpdateCron: "0 0 * * *",
+              AutoUpdateChannel: "latest",
+              MaxProcessRestarts: 5,
+              ProcessRestartWindow: 3600,
+              ProcessRestartDelay: 5,
             },
-          },
+            WebUI: { ...configQbitOnly.WebUI, Host: "localhost" },
+            qBit: {
+              ...configQbitOnly.qBit,
+              CategorySeeding: {
+                MaxUploadRatio: 0,
+                DownloadRateLimitPerTorrent: -1,
+                UploadRateLimitPerTorrent: -1,
+                HitAndRunMode: "disabled",
+              },
+            },
+          }),
+        ),
+        http.post("/web/config", async ({ request }) => {
+          const payload = (await request.json()) as {
+            changes: Record<string, unknown>;
+            renames: Record<string, string>;
+          };
+          changes = payload.changes;
+          renames = payload.renames;
+          return HttpResponse.json(okUpdateResponse);
         }),
-      ),
-      http.post("/web/config", async ({ request }) => {
-        changes = (
-          (await request.json()) as { changes: Record<string, unknown> }
-        ).changes;
-        return HttpResponse.json(okUpdateResponse);
-      }),
-    );
-    const user = userEvent.setup();
-    renderConfig();
-    const header = await screen.findByText("qBit");
-    expect(screen.queryByText("(Default)")).not.toBeInTheDocument();
-    await user.click(
-      within(header.closest(".card")!).getByRole("button", {
-        name: /configure/i,
-      }),
-    );
-    const dialog = screen.getByRole("dialog");
-    const name = within(dialog).getByPlaceholderText("qBit-seedbox");
-    await user.clear(name);
-    await user.type(name, "qBit-renamed{Enter}");
-    await user.click(
-      within(screen.getByRole("dialog")).getByRole("button", { name: /done/i }),
-    );
-    await user.click(
-      screen.getByRole("button", { name: /save \+ live reload/i }),
-    );
-    await screen.findByText(/configuration saved/i);
-    expect(changes["qBit.Host"]).toBeNull();
-    expect(changes["qBit-renamed.Host"]).toBe("localhost");
-  });
+      );
+      const user = userEvent.setup();
+      renderConfig();
+      const header = await screen.findByText("qBit");
+      expect(screen.queryByText("(Default)")).not.toBeInTheDocument();
+      await user.click(
+        within(header.closest(".card")!).getByRole("button", {
+          name: /configure/i,
+        }),
+      );
+      const dialog = screen.getByRole("dialog");
+      for (const newName of names) {
+        const name = within(dialog).getByPlaceholderText("qBit-seedbox");
+        await user.clear(name);
+        await user.type(name, `${newName}{Enter}`);
+      }
+      await user.click(
+        within(screen.getByRole("dialog")).getByRole("button", {
+          name: /done/i,
+        }),
+      );
+      await user.click(
+        screen.getByRole("button", { name: /save \+ live reload/i }),
+      );
+      await screen.findByText(/configuration saved/i);
+      expect(changes["qBit.Host"]).toBeNull();
+      expect(changes["qBit-renamed.Host"]).toBe("localhost");
+      expect(renames).toEqual({ qBit: "qBit-renamed" });
+    },
+  );
 });
 
 // ── addQbitInstance logic ──────────────────────────────────────────────────────

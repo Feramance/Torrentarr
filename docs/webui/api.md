@@ -1050,6 +1050,11 @@ Apply changes to configuration and trigger reload.
 
 **Dotted Key Format**: Use dot notation for nested keys (e.g., `Radarr-4K.Torrent.AutoDelete`).
 
+**Renaming sections**: Send an optional `renames` map alongside `changes`
+(e.g., `"renames": { "qBit": "qBit-seedbox" }`). Include the old section
+deletions and new section values in `changes`. This preserves stored passwords
+and notification tokens when the new values contain `[redacted]` placeholders.
+
 **Deletion**: Set value to `null` to delete key:
 ```json
 {

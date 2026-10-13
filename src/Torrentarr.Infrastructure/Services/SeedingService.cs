@@ -372,7 +372,9 @@ public class SeedingService : ISeedingService
         var effective = GetEffectiveSeedingConfig(torrent, tracker);
         if (!IsHnREnabled(effective.HitAndRunMode)) return true;
         var host = ExtractTrackerHost(tracker?.Uri ?? "");
-        if (host != null && torrentTrackers.Any(t => ExtractTrackerHost(t.Url) == host && TrackerMessageIndicatesDead(t.Msg))) return true;
+        if (!string.IsNullOrEmpty(host) && torrentTrackers.Any(t =>
+            string.Equals(ExtractTrackerHost(t.Url), host, StringComparison.OrdinalIgnoreCase)
+            && TrackerMessageIndicatesDead(t.Msg))) return true;
         return IsHnRSafeToRemove(torrent, new TrackerConfig
         {
             HitAndRunMode = effective.HitAndRunMode,

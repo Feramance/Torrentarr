@@ -1313,6 +1313,8 @@ try
                 return Results.BadRequest(new { error = "Missing 'changes' field" });
 
             var changesObj = Newtonsoft.Json.Linq.JObject.Parse(changesEl.GetRawText());
+            ConfigRenameHelper.PreserveSecrets(cfg, changesObj, payload.TryGetProperty("renames", out var renamesEl)
+                ? Newtonsoft.Json.Linq.JObject.Parse(renamesEl.GetRawText()) : null);
             var (updatedConfig, applyError) = ApplyDottedConfigChanges(cfg, changesObj);
             if (applyError != null)
                 return applyError;
@@ -2029,6 +2031,8 @@ try
 
             TorrentarrConfig? updatedConfig;
             var changesObj = Newtonsoft.Json.Linq.JObject.Parse(changesEl.GetRawText());
+            ConfigRenameHelper.PreserveSecrets(cfg, changesObj, payload.TryGetProperty("renames", out var renamesEl)
+                ? Newtonsoft.Json.Linq.JObject.Parse(renamesEl.GetRawText()) : null);
             var (mergedConfig, applyError) = ApplyDottedConfigChanges(cfg, changesObj);
             if (applyError != null)
                 return applyError;

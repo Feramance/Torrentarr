@@ -1,4 +1,5 @@
 using FluentAssertions;
+using Microsoft.Extensions.DependencyInjection;
 using System.Net;
 using System.Net.Http.Json;
 using System.Text;
@@ -15,6 +16,40 @@ public class ConfigEndpointTests : IClassFixture<TorrentarrWebApplicationFactory
     public ConfigEndpointTests(TorrentarrWebApplicationFactory factory)
     {
         _factory = factory;
+    }
+
+    [Theory]
+    [InlineData("/web/config")]
+    [InlineData("/api/config")]
+    public async Task RenameClient_PreservesPasswordAndNotificationToken(string endpoint)
+    {
+        var client = _factory.CreateClientWithApiToken();
+        using var scope = _factory.Services.CreateScope();
+        var config = scope.ServiceProvider.GetRequiredService<Torrentarr.Core.Configuration.TorrentarrConfig>();
+        config.QBitInstances["qBit-before"] = new()
+        {
+            Host = "fixture",
+            Disabled = true,
+            Password = "secret",
+            Maintenance = new() { Notifications = [new() { Url = "https://notify.example", Token = "notify-secret" }] }
+        };
+        var response = await client.PostAsJsonAsync(endpoint, new
+        {
+            renames = new Dictionary<string, string> { ["qBit-before"] = "qBit-after" },
+            changes = new Dictionary<string, object?>
+            {
+                ["qBit-before"] = null,
+                ["qBit-after.Host"] = "fixture",
+                ["qBit-after.Disabled"] = true,
+                ["qBit-after.Password"] = "[redacted]",
+                ["qBit-after.Maintenance.Notifications"] = new[] { new { Url = "https://notify.example", Token = "[redacted]" } }
+            }
+        });
+        response.EnsureSuccessStatusCode();
+        config.QBitInstances.Should().NotContainKey("qBit-before");
+        config.QBitInstances["qBit-after"].Password.Should().Be("secret");
+        config.QBitInstances["qBit-after"].Maintenance.Notifications.Single().Token.Should().Be("notify-secret");
+        config.QBitInstances.Remove("qBit-after");
     }
 
     [Fact]
