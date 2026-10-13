@@ -37,6 +37,7 @@ public sealed class QBittorrentInventoryResponseTests
     [InlineData("torrents")]
     [InlineData("files")]
     [InlineData("trackers")]
+    [InlineData("version")]
     public async Task ExpiredSession_ReauthenticatesAndRetriesInventoryOnce(string operation)
     {
         using var socket = new TcpListener(IPAddress.Loopback, 0);
@@ -53,14 +54,15 @@ public sealed class QBittorrentInventoryResponseTests
                 request.Response.StatusCode = i == 0 ? 403 : 200;
                 if (i == 1) request.Response.Headers.Add("Set-Cookie", "SID=renewed; Path=/");
                 if (i == 2) request.Request.Headers["Cookie"].Should().Contain("SID=renewed");
-                var bytes = Encoding.UTF8.GetBytes(i == 1 ? "Ok." : "[]");
+                var bytes = Encoding.UTF8.GetBytes(i == 1 ? "Ok." : operation == "version" ? "v5.1.0" : "[]");
                 request.Response.ContentLength64 = bytes.Length;
                 await request.Response.OutputStream.WriteAsync(bytes);
                 request.Response.Close();
             }
         });
         using var client = new QBittorrentClient("127.0.0.1", port, "u", "p");
-        if (operation == "files") await client.GetTorrentFilesAsync("abc");
+        if (operation == "version") (await client.GetVersionAsync()).Should().Be("v5.1.0");
+        else if (operation == "files") await client.GetTorrentFilesAsync("abc");
         else if (operation == "trackers") await client.GetTorrentTrackersAsync("abc");
         else await client.GetTorrentsAsync();
         await server.WaitAsync(TimeSpan.FromSeconds(10));
@@ -110,6 +112,6 @@ public sealed class QBittorrentInventoryResponseTests
             cancellation.Cancel();
             await server.WaitAsync(TimeSpan.FromSeconds(5));
         }
-        requests.Should().Be(status == 503 ? 4 : status == 403 && operation != "version" ? 2 : 1);
+        requests.Should().Be(status == 503 ? 4 : status == 403 ? 2 : 1);
     }
 }

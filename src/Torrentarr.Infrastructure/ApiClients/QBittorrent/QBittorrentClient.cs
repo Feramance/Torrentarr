@@ -155,7 +155,7 @@ public class QBittorrentClient : ITorrentClient, IDisposable
         var request = new RestRequest("/api/v2/app/version", Method.Get);
         AddAuthCookie(request);
 
-        var response = await ExecuteAsync(request, ct);
+        var response = await ExecuteInventoryAsync(request, ct);
         if (!response.IsSuccessful)
             throw new HttpRequestException($"Torrent version request failed (HTTP {(int)response.StatusCode}).", null, response.StatusCode);
         return response.Content ?? "";

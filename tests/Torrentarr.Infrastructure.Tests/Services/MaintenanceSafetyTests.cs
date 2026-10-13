@@ -107,6 +107,25 @@ public sealed class MaintenanceSafetyTests : IDisposable
         return await _maintenance.ApplyAsync(plan.PlanId);
     }
 
+    [Theory]
+    [InlineData("https://example.org/announce", true)]
+    [InlineData("https://TRACKER.example.org/announce", true)]
+    [InlineData("https://notexample.org/announce", false)]
+    [InlineData("https://example.org.evil.test/announce", false)]
+    public async Task DeadTracker_BypassUsesSameHostMatchingAsTrackerSelection(string url, bool allowed)
+    {
+        var torrent = AddTorrent();
+        ClientConfig.CategorySeeding = new() { HitAndRunMode = "and", MinSeedRatio = 10, MinSeedingTimeDays = 10 };
+        var tracker = new TrackerConfig { Uri = "https://example.org", HitAndRunMode = "and", MinSeedRatio = 10, MinSeedingTimeDays = 10 };
+        ClientConfig.Trackers = [tracker];
+        var trackers = new List<TorrentTracker> { new() { Url = url, Msg = "unregistered torrent" } };
+        _client.Setup(c => c.GetTorrentTrackersAsync("abc", It.IsAny<CancellationToken>())).ReturnsAsync(trackers);
+
+        _seeding.HnrAllowsDelete(torrent, trackers).Should().Be(allowed);
+        (await _seeding.HnrAllowsDeleteAsync(torrent, "cleanup")).Should().Be(allowed);
+        (await _seeding.IsTrackerDeadAsync(torrent, tracker)).Should().Be(allowed);
+    }
+
     [Fact]
     public async Task InventoryFailure_BlocksOrphanPreview()
     {

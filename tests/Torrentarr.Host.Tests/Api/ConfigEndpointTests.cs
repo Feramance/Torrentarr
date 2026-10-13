@@ -33,23 +33,30 @@ public class ConfigEndpointTests : IClassFixture<TorrentarrWebApplicationFactory
             Password = "secret",
             Maintenance = new() { Notifications = [new() { Url = "https://notify.example", Token = "notify-secret" }] }
         };
-        var response = await client.PostAsJsonAsync(endpoint, new
+        try
         {
-            renames = new Dictionary<string, string> { ["qBit-before"] = "qBit-after" },
-            changes = new Dictionary<string, object?>
+            var response = await client.PostAsJsonAsync(endpoint, new
             {
-                ["qBit-before"] = null,
-                ["qBit-after.Host"] = "fixture",
-                ["qBit-after.Disabled"] = true,
-                ["qBit-after.Password"] = "[redacted]",
-                ["qBit-after.Maintenance.Notifications"] = new[] { new { Url = "https://notify.example", Token = "[redacted]" } }
-            }
-        });
-        response.EnsureSuccessStatusCode();
-        config.QBitInstances.Should().NotContainKey("qBit-before");
-        config.QBitInstances["qBit-after"].Password.Should().Be("secret");
-        config.QBitInstances["qBit-after"].Maintenance.Notifications.Single().Token.Should().Be("notify-secret");
-        config.QBitInstances.Remove("qBit-after");
+                renames = new Dictionary<string, string> { ["qBit-before"] = "qBit-after" },
+                changes = new Dictionary<string, object?>
+                {
+                    ["qBit-before"] = null,
+                    ["qBit-after.Host"] = "fixture",
+                    ["qBit-after.Disabled"] = true,
+                    ["qBit-after.Password"] = "[redacted]",
+                    ["qBit-after.Maintenance.Notifications"] = new[] { new { Url = "https://notify.example", Token = "[redacted]" } }
+                }
+            });
+            response.EnsureSuccessStatusCode();
+            config.QBitInstances.Should().NotContainKey("qBit-before");
+            config.QBitInstances["qBit-after"].Password.Should().Be("secret");
+            config.QBitInstances["qBit-after"].Maintenance.Notifications.Single().Token.Should().Be("notify-secret");
+        }
+        finally
+        {
+            config.QBitInstances.Remove("qBit-before");
+            config.QBitInstances.Remove("qBit-after");
+        }
     }
 
     [Fact]

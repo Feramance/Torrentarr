@@ -2944,10 +2944,17 @@ class ProcessOrchestratorService : BackgroundService
             var allTorrents = new List<(string instanceName, ITorrentClient client, TorrentInfo torrent)>();
             foreach (var (instanceName, client) in _qbitManager.GetAllClients())
             {
-                foreach (var category in managedCategories)
+                try
                 {
-                    var torrents = await client.GetTorrentsAsync(category, "priority", cancellationToken);
-                    allTorrents.AddRange(torrents.Select(t => (instanceName, client, t)));
+                    foreach (var category in managedCategories)
+                    {
+                        var torrents = await client.GetTorrentsAsync(category, "priority", cancellationToken);
+                        allTorrents.AddRange(torrents.Select(t => (instanceName, client, t)));
+                    }
+                }
+                catch (Exception ex) when (ex is not OperationCanceledException)
+                {
+                    _logger.LogWarning(ex, "[{Instance}] FreeSpace: unable to enumerate torrents", instanceName);
                 }
             }
 

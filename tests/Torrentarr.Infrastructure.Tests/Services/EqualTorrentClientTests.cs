@@ -124,6 +124,33 @@ public class EqualTorrentClientTests
                 It.Is<List<string>>(tags => tags.Contains("qBitrr-allowed_seeding")), It.IsAny<CancellationToken>()), Times.Once);
     }
 
+    [Theory]
+    [InlineData(true)]
+    [InlineData(false)]
+    public async Task SeedingTags_ExcludeOwningClientsDatabasePausedTorrent(bool tagless)
+    {
+        var client = Client("named");
+        client.SetupGet(c => c.Capabilities).Returns(TorrentClientCapabilities.QBittorrent with { Tags = tagless });
+        client.Setup(c => c.GetTorrentsAsync(It.IsAny<string?>(), It.IsAny<string?>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(() => [new TorrentInfo { Hash = "abc", Category = "movies", Progress = 1 }]);
+        client.Setup(c => c.GetTorrentTrackersAsync(It.IsAny<string>(), It.IsAny<CancellationToken>())).ReturnsAsync([]);
+        var registry = Registry(("named", client));
+        var config = new TorrentarrConfig();
+        config.Settings.Tagless = tagless;
+        config.TorrentClients["named"] = new() { Host = "fixture" };
+        using var db = new TorrentarrDbContext(new DbContextOptionsBuilder<TorrentarrDbContext>().UseSqlite("Data Source=:memory:").Options);
+        await db.Database.OpenConnectionAsync();
+        await db.Database.EnsureCreatedAsync();
+        db.TorrentLibrary.Add(new() { Hash = "abc", Category = "movies", QbitInstance = "named", FreeSpacePaused = true });
+        await db.SaveChangesAsync();
+        var seeding = new SeedingService(NullLogger<SeedingService>.Instance, db, config, registry.Object);
+
+        await seeding.UpdateSeedingTagsAsync("movies");
+
+        (await db.TorrentLibrary.AsNoTracking().SingleAsync()).AllowedSeeding.Should().BeFalse();
+        client.Verify(c => c.GetTorrentsAsync(It.IsAny<string?>(), It.IsAny<string?>(), It.IsAny<CancellationToken>()), Times.Once);
+    }
+
     [Fact]
     public async Task NamedLookup_OnlyReadsNamedClient_AndHashOnlyLookupRejectsAmbiguity()
     {
