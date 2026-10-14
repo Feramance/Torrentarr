@@ -2404,7 +2404,7 @@ export function ConfigView(props?: ConfigViewProps): JSX.Element {
         setSaving(false);
         return;
       }
-      const { configReloaded, reloadType, affectedInstances } =
+      const { configReloaded, reloadType, affectedInstances, warning } =
         await updateConfig({
           changes,
           renames: Object.fromEntries(
@@ -2417,7 +2417,9 @@ export function ConfigView(props?: ConfigViewProps): JSX.Element {
 
       // Build appropriate success message
       let message = "Configuration saved";
-      if (reloadType === "full") {
+      if (warning) {
+        message = warning;
+      } else if (reloadType === "full") {
         message += " • All instances reloaded";
       } else if (reloadType === "multi_arr" && affectedInstances?.length) {
         message += ` • Reloaded ${affectedInstances.length} instances: ${affectedInstances.join(", ")}`;
@@ -2428,7 +2430,7 @@ export function ConfigView(props?: ConfigViewProps): JSX.Element {
       } else if (reloadType === "frontend") {
         message += " • Theme/display settings updated";
       }
-      push(message, "success");
+      push(message, warning ? "error" : "success");
 
       // Only clear browser cache if backend reloaded (non-frontend-only changes)
       if (configReloaded && "caches" in window) {

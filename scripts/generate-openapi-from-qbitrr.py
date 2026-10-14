@@ -154,6 +154,14 @@ def main() -> int:
         ),
     }
     spec["paths"].update(EXTENSION_PATHS)
+    spec["components"]["schemas"]["ConfigUpdateResponse"]["properties"]["warning"] = {
+        "type": "string", "nullable": True,
+        "description": "Configuration was saved, but client or worker activation failed."
+    }
+    for path in ("/web/config", "/api/config"):
+        spec["paths"][path]["post"]["responses"]["409"] = {
+            "description": "Configuration is busy or an interrupted rename requires recovery."
+        }
     for path in ("/web/status", "/api/status"):
         operation = spec["paths"][path]["get"]
         operation["description"] = "All clients are equal. Read qbitInstances by instance name; the legacy qbit field has been removed."

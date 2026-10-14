@@ -153,12 +153,19 @@ public class StandaloneRadarrEndpointTests
         }
         if (wholeSection) changes["qBit"] = null;
         else RemoveFields(flat.GetProperty("qBit"), "qBit");
+        using var scope = factory.Services.CreateScope();
+        var db = scope.ServiceProvider.GetRequiredService<TorrentarrDbContext>();
+        db.TorrentLibrary.Add(new() { Hash = "rename-state", QbitInstance = "qBit", Imported = true, FreeSpacePaused = true });
+        await db.SaveChangesAsync();
         var response = await client.PostAsJsonAsync("/web/config", new
         {
             changes,
             renames = new Dictionary<string, string> { ["qBit"] = "qBit-renamed" }
         });
         response.EnsureSuccessStatusCode();
+        var state = await db.TorrentLibrary.AsNoTracking().SingleAsync(t => t.Hash == "rename-state");
+        state.QbitInstance.Should().Be("qBit-renamed"); state.Imported.Should().BeTrue(); state.FreeSpacePaused.Should().BeTrue();
+
         var saved = new ConfigurationLoader(factory.Services.GetRequiredService<IConfigReloader>().ConfigPath).Load();
         saved.QBitInstances.Should().NotContainKey("qBit");
         saved.QBitInstances["qBit-renamed"].Host.Should().Be("old");

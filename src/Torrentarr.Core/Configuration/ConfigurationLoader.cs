@@ -24,6 +24,7 @@ public class ConfigurationLoader
     public static string? TestConfigPathOverride { get; set; }
 
     private readonly string _configPath;
+    public string ConfigPath => _configPath;
 
     public ConfigurationLoader(string? configPath = null)
     {
@@ -68,13 +69,15 @@ public class ConfigurationLoader
     /// the directory of <c>TORRENTARR_CONFIG</c> when set to a file path, or the directory of
     /// <see cref="GetDefaultConfigPath"/> otherwise (not <c>cwd/config</c> when config resolves elsewhere).
     /// </summary>
-    public static string GetDataDirectoryPath()
+    public static string GetDataDirectoryPath() => GetDataDirectoryPath(null);
+
+    public static string GetDataDirectoryPath(string? configPath)
     {
         var dataOverride = ReadEnv("TORRENTARR_OVERRIDES_DATA_PATH", "QBITRR_OVERRIDES_DATA_PATH");
         if (!string.IsNullOrEmpty(dataOverride))
             return Path.GetFullPath(dataOverride);
 
-        var envOverride = ReadConfigPathEnv();
+        var envOverride = configPath ?? ReadConfigPathEnv();
         if (!string.IsNullOrEmpty(envOverride))
         {
             if (envOverride.StartsWith("/config", StringComparison.Ordinal))
@@ -108,10 +111,11 @@ public class ConfigurationLoader
             try
             {
                 // Write back the migrated TOML and create a backup
+                using var mutation = ConfigMutationGuard.EnterMutation(_configPath);
                 var backupPath = _configPath + ".bak";
                 if (File.Exists(_configPath))
                     File.Copy(_configPath, backupPath, overwrite: true);
-                File.WriteAllText(_configPath, TomlSerializer.Serialize(tomlTable));
+                ConfigMutationGuard.WriteAtomic(_configPath, TomlSerializer.Serialize(tomlTable));
             }
             catch
             {
@@ -2011,16 +2015,16 @@ public class ConfigurationLoader
     /// </summary>
     public void SaveConfig(TorrentarrConfig config, string? path = null)
     {
-        var filePath = path ?? _configPath;
-        var directory = Path.GetDirectoryName(filePath);
+        var filePath = Path.GetFullPath(path ?? _configPath);
+        using var mutation = ConfigMutationGuard.EnterMutation(filePath);
+        ConfigMutationGuard.WriteAtomic(filePath, SerializeConfig(config));
+    }
 
-        if (!string.IsNullOrEmpty(directory) && !Directory.Exists(directory))
-        {
-            Directory.CreateDirectory(directory);
-        }
-
-        var tomlContent = GenerateTomlContent(config);
-        File.WriteAllText(filePath, tomlContent);
+    public string SerializeConfig(TorrentarrConfig config)
+    {
+        var toml = GenerateTomlContent(config);
+        TomlSerializer.Deserialize<TomlTable>(toml);
+        return toml;
     }
 
     private string GenerateTomlContent(TorrentarrConfig config)

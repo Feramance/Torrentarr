@@ -257,6 +257,11 @@ public sealed class SafeDeletionService : ISafeDeletionService
         return destination;
     }
 
+    public static string? ClientRecycleDirectory(TorrentClientInstanceConfig cfg, string instanceId)
+        => !cfg.Maintenance.RecycleBin.SplitByClient
+            || string.IsNullOrWhiteSpace(cfg.Maintenance.RecycleBin.Path) && cfg.Maintenance.PathMappings.Count == 0
+            ? null : Path.Combine(ResolveRecycleRoot(cfg), Sanitize(instanceId));
+
     private static string ResolveRecycleRoot(TorrentClientInstanceConfig cfg)
     {
         if (!string.IsNullOrWhiteSpace(cfg.Maintenance.RecycleBin.Path))

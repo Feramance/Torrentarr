@@ -200,11 +200,18 @@ describe("ConfigView – deleteQbitInstance behaviour", () => {
 });
 
 describe("ConfigView – equal client names", () => {
-  it.each([["qBit-renamed"], ["qBit-middle", "qBit-renamed"]])(
-    "renames qBit through %j and saves the old section removal",
-    async (...names) => {
+  it.each([
+    [["qBit-renamed"], "ok"],
+    [["qBit-middle", "qBit-renamed"], "ok"],
+    [["qBit-renamed"], "retry"],
+    [["qBit-renamed"], "warning"],
+    [["qBit-renamed", "qBit"], "back"],
+  ] as const)(
+    "renames qBit through %j with save outcome %s",
+    async (names, outcome) => {
       let changes: Record<string, unknown> = {};
       let renames: Record<string, string> = {};
+      let saves = 0;
       server.use(
         http.get("/web/config", () =>
           HttpResponse.json({
@@ -243,7 +250,22 @@ describe("ConfigView – equal client names", () => {
           };
           changes = payload.changes;
           renames = payload.renames;
-          return HttpResponse.json(okUpdateResponse);
+          saves++;
+          if (outcome === "retry" && saves === 1)
+            return HttpResponse.json(
+              {
+                error:
+                  "Configuration is busy. Retry when processing completes.",
+              },
+              { status: 409 },
+            );
+          return HttpResponse.json({
+            ...okUpdateResponse,
+            warning:
+              outcome === "warning"
+                ? "Configuration saved, but workers failed to restart"
+                : null,
+          });
         }),
       );
       const user = userEvent.setup();
@@ -269,7 +291,33 @@ describe("ConfigView – equal client names", () => {
       await user.click(
         screen.getByRole("button", { name: /save \+ live reload/i }),
       );
-      await screen.findByText(/configuration saved/i);
+      if (outcome === "retry") {
+        await screen.findByText(/configuration is busy/i);
+        await user.click(
+          screen.getByRole("button", { name: /save \+ live reload/i }),
+        );
+      }
+      await screen.findByText(
+        outcome === "back"
+          ? /no changes detected|configuration saved/i
+          : /configuration saved/i,
+      );
+      if (outcome === "back") {
+        expect(renames).toEqual({});
+        expect(changes["qBit.Host"]).not.toBeNull();
+        return;
+      }
+      if (outcome === "warning") {
+        expect(
+          screen.getByText(
+            "Configuration saved, but workers failed to restart",
+          ),
+        ).toBeInTheDocument();
+        expect(
+          screen.queryByText(/all instances reloaded/i),
+        ).not.toBeInTheDocument();
+      }
+      if (outcome === "retry") expect(saves).toBe(2);
       expect(changes["qBit.Host"]).toBeNull();
       expect(changes["qBit-renamed.Host"]).toBe("localhost");
       expect(renames).toEqual({ qBit: "qBit-renamed" });

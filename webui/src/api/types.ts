@@ -461,6 +461,7 @@ export interface MetaResponse {
 }
 
 export interface ConfigUpdateResponse {
+  warning?: string | null;
   status: string;
   configReloaded: boolean;
   reloadType:

@@ -57,6 +57,8 @@ public sealed class StalledUploadTracker
         return (_time.GetUtcNow() - since).TotalSeconds >= limitSeconds;
     }
 
+    public void Clear() => _since.Clear();
+
     public void Evict(string? instanceName, params string?[] hashes)
     {
         foreach (var hash in hashes)

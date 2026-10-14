@@ -11,8 +11,15 @@ public class ImportPathTracker : IImportPathTracker
     private static string Instance(string id) => id.ToUpperInvariant();
     private static string PathKey(string path) => OperatingSystem.IsWindows() ? path.ToUpperInvariant() : path;
 
-    public bool IsPathAlreadyScanned(string instanceId, string normalizedPath) =>
-        !string.IsNullOrEmpty(normalizedPath) && _scanned.ContainsKey((Instance(instanceId), PathKey(normalizedPath)));
+    public bool IsPathAlreadyScanned(string instanceId, string normalizedPath)
+    {
+        lock (_gate) return !string.IsNullOrEmpty(normalizedPath) && _scanned.ContainsKey((Instance(instanceId), PathKey(normalizedPath)));
+    }
+
+    public void Clear()
+    {
+        lock (_gate) { _scanned.Clear(); _hashes.Clear(); }
+    }
 
     public bool IsHashAlreadyScanned(string instanceId, string hash)
     {

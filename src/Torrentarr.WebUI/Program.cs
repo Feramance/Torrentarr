@@ -110,6 +110,10 @@ builder.Services.AddDbContext<TorrentarrDbContext>(options =>
     options.UseSqlite($"Data Source={dbPath}");
 });
 
+if (File.Exists(ConfigurationLoader.GetDefaultConfigPath() + ".rename.json"))
+    HostConfigOwnership.RequireStandaloneOwnership(ConfigurationLoader.GetDefaultConfigPath());
+await InstanceRenamePersistence.RecoverAsync(ConfigurationLoader.GetDefaultConfigPath(), dbPath);
+
 // Add Configuration Loader — load once and use for both DI and OIDC registration
 var configLoader = new ConfigurationLoader();
 TorrentarrConfig configForDI = new();
@@ -129,6 +133,7 @@ catch (Exception ex)
 }
 if (string.IsNullOrEmpty(configForDI.WebUI.Token))
 {
+    using var ownership = HostConfigOwnership.Acquire(configLoader.ConfigPath);
     var tokenBytes = new byte[32];
     RandomNumberGenerator.Fill(tokenBytes);
     configForDI.WebUI.Token = Convert.ToBase64String(tokenBytes);
@@ -228,6 +233,7 @@ if (configForDI.WebUI.BehindHttpsProxy)
 
 if (!string.IsNullOrEmpty(urlBase))
     app.UsePathBase(urlBase);
+app.UseConfigMutationGuard(ConfigurationLoader.GetDefaultConfigPath());
 
 // Ensure database is created and configure WAL mode
 using (var scope = app.Services.CreateScope())
@@ -674,7 +680,7 @@ app.MapGet("/web/config", (TorrentarrConfig config) =>
 
 // §6.8: POST /web/config — partial config changes with reload-type detection
 // Accepts { "changes": { "Section.Key": value, ... } }, saves and returns reloadType
-app.MapPost("/web/config", async (HttpContext ctx, TorrentarrConfig config, ConfigurationLoader loader, IConfigReloader reloader, ITorrentClientRegistry registry) =>
+app.MapPost("/web/config", async (HttpContext ctx, TorrentarrConfig config, ConfigurationLoader loader, IConfigReloader reloader, ITorrentClientRegistry registry, TorrentarrDbContext db) =>
 {
     Newtonsoft.Json.Linq.JObject? body = null;
     try
@@ -781,7 +787,8 @@ app.MapPost("/web/config", async (HttpContext ctx, TorrentarrConfig config, Conf
         if (savePasswordHashError != null)
             return Results.Json(new { error = savePasswordHashError }, statusCode: 403);
 
-        loader.SaveConfig(updatedConfig, reloader.ConfigPath);
+        await InstanceRenamePersistence.SaveAsync(config, updatedConfig, body?["renames"] as Newtonsoft.Json.Linq.JObject,
+            loader, db, reloader.ConfigPath);
         ApplyConfigInPlace(config, updatedConfig);
         await registry.ReconcileAsync(config.GetAllTorrentClients(), connect: false);
     }
@@ -1650,7 +1657,7 @@ app.MapPost("/web/config/reload", (IConfigReloader reloader) =>
         : Results.BadRequest(new { success = false, message = "Failed to reload configuration" });
 });
 
-app.MapPost("/web/config/save", async (TorrentarrConfig updatedConfig, TorrentarrConfig config, ConfigurationLoader loader, IConfigReloader reloader, ITorrentClientRegistry registry) =>
+app.MapPost("/web/config/save", async (TorrentarrConfig updatedConfig, TorrentarrConfig config, ConfigurationLoader loader, IConfigReloader reloader, ITorrentClientRegistry registry, TorrentarrDbContext db) =>
 {
     try
     {
@@ -1658,7 +1665,7 @@ app.MapPost("/web/config/save", async (TorrentarrConfig updatedConfig, Torrentar
         if (passwordHashError != null)
             return Results.Json(new { error = passwordHashError }, statusCode: 403);
 
-        loader.SaveConfig(updatedConfig, reloader.ConfigPath);
+        await InstanceRenamePersistence.SaveAsync(config, updatedConfig, null, loader, db, reloader.ConfigPath);
         ApplyConfigInPlace(config, updatedConfig);
         await registry.ReconcileAsync(config.GetAllTorrentClients(), connect: false);
         var reloadSuccess = reloader.ReloadConfig();

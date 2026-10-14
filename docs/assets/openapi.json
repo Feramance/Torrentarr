@@ -48,6 +48,11 @@
           "status": {
             "example": "ok",
             "type": "string"
+          },
+          "warning": {
+            "description": "Configuration was saved, but client or worker activation failed.",
+            "nullable": true,
+            "type": "string"
           }
         },
         "required": [
@@ -489,6 +494,9 @@
           },
           "401": {
             "$ref": "#/components/responses/Unauthorized"
+          },
+          "409": {
+            "description": "Configuration is busy or an interrupted rename requires recovery."
           }
         },
         "security": [
@@ -2639,6 +2647,9 @@
           },
           "401": {
             "$ref": "#/components/responses/Unauthorized"
+          },
+          "409": {
+            "description": "Configuration is busy or an interrupted rename requires recovery."
           }
         },
         "security": [

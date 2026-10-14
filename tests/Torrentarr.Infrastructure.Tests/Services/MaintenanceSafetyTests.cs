@@ -154,7 +154,24 @@ public sealed class MaintenanceSafetyTests : IDisposable
     public async Task RequiredClientUnavailable_BlocksOwnership(bool disabled)
     {
         _config.TorrentClients["two"] = new() { Host = "other", Disabled = disabled };
-        (await _inventory.BuildAsync()).IsComplete.Should().Be(disabled);
+        (await _inventory.BuildAsync()).IsComplete.Should().BeFalse();
+    }
+
+    [Fact]
+    public async Task DisabledOwner_BlocksOrphanMovesWithoutConnectingIt()
+    {
+        ClientConfig.Maintenance.Orphans.Enabled = true;
+        ClientConfig.Maintenance.Orphans.MinimumAgeMinutes = 0;
+        File.WriteAllText(Path.Combine(_root, "orphan.mkv"), "other client's data");
+        _config.TorrentClients["disabled"] = new() { Host = "fixture", Disabled = true };
+        var inventory = await _inventory.BuildAsync();
+        inventory.IsComplete.Should().BeFalse();
+        inventory.Warnings.Should().Contain(w => w.Contains("Disabled client ownership"));
+        var plan = await Preview(MaintenanceOperation.OrphanScan);
+        plan.CriticalErrors.Should().NotBeEmpty();
+        await FluentActions.Awaiting(() => _maintenance.ApplyAsync(plan.PlanId)).Should().ThrowAsync<InvalidOperationException>();
+        File.ReadAllText(Path.Combine(_root, "orphan.mkv")).Should().Be("other client's data");
+        _registry.Verify(r => r.GetClient("disabled"), Times.Never);
     }
 
     [Fact]

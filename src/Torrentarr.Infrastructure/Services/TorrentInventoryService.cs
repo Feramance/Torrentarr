@@ -25,7 +25,13 @@ public sealed class TorrentInventoryService(
         var old = previous?.Torrents.ToDictionary(i => (i.Torrent.ClientInstanceId.ToUpperInvariant(), i.Torrent.Hash.ToUpperInvariant()));
         foreach (var (id, cfg) in config.GetAllTorrentClients())
         {
-            if (cfg.Disabled || cfg.Host == "CHANGE_ME" || (selected is { Count: > 0 } && !selected.Contains(id))) continue;
+            if (string.IsNullOrWhiteSpace(cfg.Host) || cfg.Host == "CHANGE_ME") continue;
+            if (cfg.Disabled)
+            {
+                result.Warnings.Add($"[{id}] Disabled client ownership is unknown.");
+                continue;
+            }
+            if (selected is { Count: > 0 } && !selected.Contains(id)) continue;
             var client = registry.GetClient(id);
             if (client == null)
             {

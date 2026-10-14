@@ -16,6 +16,24 @@ def document(paths, components=None):
 
 
 class OpenApiDriftTests(unittest.TestCase):
+    def test_config_warning_is_optional_and_cannot_hide_other_drift(self):
+        for route in ("/web/config", "/api/config"):
+            upstream = document({route: {"post": {"responses": {"200": {"content": {"application/json": {"schema": {
+                "type": "object", "properties": {"status": {"type": "string"}}, "required": ["status"]
+            }}}}}}}})
+            local = deepcopy(upstream)
+            schema = local["paths"][route]["post"]["responses"]["200"]["content"]["application/json"]["schema"]
+            schema["properties"]["warning"] = {"type": "string", "nullable": True, "description": "Saved but activation failed"}
+            self.assertEqual(module.compare(local, upstream, set()), [])
+            schema["required"].append("warning")
+            self.assertTrue(module.compare(local, upstream, set()))
+            schema["required"].remove("warning")
+            schema["properties"]["status"] = {"type": "integer"}
+            self.assertTrue(module.compare(local, upstream, set()))
+            schema["properties"]["status"] = {"type": "string"}
+            schema["properties"]["warning"] = "malformed"
+            self.assertTrue(module.compare(local, upstream, set()))
+
     def test_accepts_only_the_declared_named_client_status_contract(self):
         for route in ("/web/status", "/api/status"):
             def status(schema):

@@ -24,7 +24,24 @@ connection loop retries enabled clients; Arr workers restart with the saved
 configuration. A failed replacement stays unavailable instead of using the old
 endpoint. A remote request already dispatched before the save may still finish. Old client
 references reject subsequent requests; disposal waits for active requests to finish.
-Client renames preserve stored passwords and notification tokens.
+Client renames preserve stored passwords, notification tokens, and persisted torrent
+state, including import, seeding, and free-space pause markers. Arr renames retain
+media and queue associations. Existing recycle directories split by client are
+renamed within the same root; change the recycle root in a separate save. Exported
+resume-data filenames and historical logs keep their original instance names.
+
+Only one Host may manage a data directory at a time. If Host is running, save configuration
+through its WebUI; a separately launched standalone WebUI rejects config/password
+writes for that config. Worker cycles also participate in config coordination.
+
+Renames briefly stop workers. Conflicting names or stored destination state are
+rejected rather than merged. Active processing can return HTTP 409; retry after
+it finishes. Configuration and SQLite changes use a recovery record beside config
+(`config.toml.rename.json`). Startup recovers it before normal configuration loading
+or worker startup. Do not delete this record after an interrupted save. If config
+was externally edited during recovery, startup stops until the expected config is
+restored. A post-save activation warning means config was saved but workers or
+clients need attention; resubmitting the rename is unnecessary.
 
 ## Preview, arm, and apply
 
@@ -47,7 +64,10 @@ and the supported dead-tracker bypass.
 ## File ownership and deletion
 
 New destructive maintenance requires validated local path mappings and complete
-file ownership across every enabled, configured client. An unavailable client,
+file ownership across every configured client with a real endpoint. A disabled
+client still has unknown remote ownership and blocks destructive maintenance;
+disabling management does not mean its torrents or shared files disappeared.
+An unavailable client,
 failed enumeration, unmapped file, or unsupported file enumeration blocks
 ownership-dependent changes. HTTP errors are failures, not empty inventories.
 An empty successful torrent list is valid.
@@ -87,3 +107,12 @@ destructive removal automatically.
 
 Rollback covers observable failures and cancellation, not a process crash or
 power loss. There is no persistent transaction journal.
+
+## Free-space failure handling
+
+Each client contributes one complete torrent list. Failed, unavailable, or disabled
+clients make the pass incomplete: healthy downloads can still be paused, but no
+download resumes. Active downloads outside the managed category also reserve
+space. Planned resumes wait until all protective pauses succeed. A failed or
+rejected pause withholds resumes until a later successful pass. Clients without
+tag support use instance-scoped SQLite pause markers.

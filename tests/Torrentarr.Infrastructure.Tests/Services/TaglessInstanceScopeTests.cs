@@ -235,6 +235,10 @@ public sealed class TaglessInstanceScopeTests
 
         var method = serviceType.GetMethod("HasTag", BindingFlags.NonPublic | BindingFlags.Instance);
         method.Should().NotBeNull();
-        return (bool)method!.Invoke(service, new object[] { torrent, tag })!;
+        var arguments = serviceType == typeof(FreeSpaceService)
+            ? new object[] { torrent, tag, Moq.Mock.Of<Torrentarr.Core.Interfaces.ITorrentClient>(
+                c => c.Capabilities == TorrentClientCapabilities.QBittorrent), torrent.QBitInstanceName }
+            : new object[] { torrent, tag };
+        return (bool)method!.Invoke(service, arguments)!;
     }
 }

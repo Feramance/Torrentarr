@@ -512,6 +512,7 @@ public class ArrWorkerManagerTests
 
     private sealed class StubImportPathTracker : IImportPathTracker
     {
+        public void Clear() { }
         public bool IsPathAlreadyScanned(string instanceId, string normalizedPath) => false;
         public bool IsHashAlreadyScanned(string instanceId, string hash) => false;
         public void MarkScanned(string instanceId, string normalizedPath, string hash) { }

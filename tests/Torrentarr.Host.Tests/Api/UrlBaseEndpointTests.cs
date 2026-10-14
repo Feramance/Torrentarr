@@ -1,6 +1,7 @@
 using FluentAssertions;
 using Microsoft.AspNetCore.Mvc.Testing;
 using System.Net;
+using System.Net.Http.Json;
 using System.Text.Json;
 using Xunit;
 
@@ -20,6 +21,20 @@ public class UrlBaseEndpointTests : IClassFixture<UrlBaseWebApplicationFactory>
     public void FactoryConfig_IncludesUrlBase()
     {
         File.ReadAllText(_factory.TempConfigPath).Should().Contain("UrlBase = \"torrentarr\"");
+    }
+
+    [Fact]
+    public async Task ConfigSave_UnderUrlBase_UsesMutationGuard()
+    {
+        _factory.SetConfigEnv();
+        var client = _factory.CreateClientWithPathBase("/torrentarr");
+        var original = File.ReadAllText(_factory.TempConfigPath);
+        try
+        {
+            var response = await client.PostAsJsonAsync("/web/config", new { changes = new { } });
+            response.StatusCode.Should().Be(HttpStatusCode.OK);
+        }
+        finally { File.WriteAllText(_factory.TempConfigPath, original); }
     }
 
     [Fact]

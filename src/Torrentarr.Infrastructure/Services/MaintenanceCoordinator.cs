@@ -77,6 +77,7 @@ public sealed class MaintenanceCoordinator : BackgroundService, IMaintenanceCoor
 
     public async Task<MaintenancePlan> PreviewAsync(MaintenancePreviewRequest request, CancellationToken ct = default)
     {
+        using var processing = ConfigMutationGuard.EnterProcessing();
         PrunePlans();
         using var scope = _scopes.CreateScope();
         var seeding = scope.ServiceProvider.GetRequiredService<ISeedingService>();
@@ -293,6 +294,7 @@ public sealed class MaintenanceCoordinator : BackgroundService, IMaintenanceCoor
 
     private async Task<MaintenanceRunSummary> ApplyPlanAsync(MaintenancePlan plan, string trigger, CancellationToken outerCt)
     {
+        using var processing = ConfigMutationGuard.EnterProcessing();
         var locks = plan.ClientInstanceIds.OrderBy(x => x, StringComparer.OrdinalIgnoreCase)
             .Select(id => _instanceLocks.GetOrAdd(id, _ => new SemaphoreSlim(1, 1))).ToList();
         using var linked = CancellationTokenSource.CreateLinkedTokenSource(outerCt);
