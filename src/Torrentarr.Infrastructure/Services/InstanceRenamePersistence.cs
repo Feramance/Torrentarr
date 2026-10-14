@@ -148,7 +148,7 @@ public static class InstanceRenamePersistence
         else if (digest == journal.NewDigest)
         {
             await using var connection = new SqliteConnection(new SqliteConnectionStringBuilder
-            { DataSource = databasePath, Mode = SqliteOpenMode.ReadWrite }.ToString());
+            { DataSource = databasePath, Mode = SqliteOpenMode.ReadWrite, Pooling = false }.ToString());
             await connection.OpenAsync();
             await using var transaction = await connection.BeginTransactionAsync();
             foreach (var move in journal.Directories)

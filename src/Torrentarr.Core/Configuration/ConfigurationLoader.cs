@@ -80,7 +80,7 @@ public class ConfigurationLoader
         var envOverride = configPath ?? ReadConfigPathEnv();
         if (!string.IsNullOrEmpty(envOverride))
         {
-            if (envOverride.StartsWith("/config", StringComparison.Ordinal))
+            if (envOverride.StartsWith("/config/", StringComparison.Ordinal))
                 return "/config";
             var fullConfig = Path.GetFullPath(envOverride);
             return Path.GetDirectoryName(fullConfig)
@@ -250,8 +250,8 @@ public class ConfigurationLoader
         {
             foreach (var instance in config.ArrInstances.Values)
                 instance.SearchOnly = true;
-            foreach (var qbit in config.QBitInstances.Values)
-                qbit.Disabled = true;
+            foreach (var client in config.GetAllTorrentClients().Values)
+                client.Disabled = true;
         }
 
         if (IsEnvTruthy(processingOnly))

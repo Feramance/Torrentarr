@@ -13,7 +13,7 @@ namespace Torrentarr.Infrastructure.Tests.Services;
 
 public sealed class InstanceRenamePersistenceTests : IDisposable
 {
-    private readonly string _root = Path.Combine(Path.GetTempPath(), "rename-" + Guid.NewGuid().ToString("N"));
+    private readonly string _root = Path.Combine(AppContext.BaseDirectory, "rename-" + Guid.NewGuid().ToString("N"));
     private readonly TorrentarrDbContext _db;
     private readonly ConfigurationLoader _loader;
     private readonly TorrentarrConfig _before = new();
@@ -153,6 +153,37 @@ public sealed class InstanceRenamePersistenceTests : IDisposable
         File.Exists(ConfigPath + ".rename.json").Should().BeFalse();
     }
 
+    [SkippableFact]
+    public async Task RecycleSymlinkAncestor_IsStillRejected()
+    {
+        Skip.If(OperatingSystem.IsWindows(), "Creating symlinks requires Windows privileges.");
+        var target = Path.Combine(_root, "real-recycle");
+        Directory.CreateDirectory(Path.Combine(target, "qBit-before"));
+        var link = Path.Combine(_root, "linked-recycle");
+        Directory.CreateSymbolicLink(link, target);
+        _before.QBitInstances["qBit-before"].Maintenance.RecycleBin.Path = link;
+        _after.QBitInstances["qBit-after"].Maintenance.RecycleBin.Path = link;
+        await FluentActions.Awaiting(() => InstanceRenamePersistence.SaveAsync(_before, _after, _renames, _loader, _db))
+            .Should().ThrowAsync<IOException>().WithMessage("*symlink*");
+        Directory.Exists(Path.Combine(target, "qBit-before")).Should().BeTrue();
+        Directory.Exists(Path.Combine(target, "qBit-after")).Should().BeFalse();
+    }
+
+    [SkippableFact]
+    public void AtomicConfigWrite_CreatesPrivateFilesAndPreservesExistingMode()
+    {
+        if (OperatingSystem.IsWindows())
+        {
+            Skip.If(true, "Unix file permissions only.");
+            return;
+        }
+        File.GetUnixFileMode(ConfigPath).Should().Be(UnixFileMode.UserRead | UnixFileMode.UserWrite);
+        var mode = UnixFileMode.UserRead | UnixFileMode.UserWrite | UnixFileMode.GroupRead;
+        File.SetUnixFileMode(ConfigPath, mode);
+        _loader.SaveConfig(_after);
+        File.GetUnixFileMode(ConfigPath).Should().Be(mode);
+    }
+
     [Fact]
     public async Task SuspensionFailure_PrecedesAllPersistenceChanges()
     {
@@ -184,6 +215,7 @@ public sealed class InstanceRenamePersistenceTests : IDisposable
         (await _db.TorrentLibrary.AsNoTracking().SingleAsync(t => t.Id == 1)).QbitInstance.Should().Be(published ? "qBit-after" : "qBit-before");
         File.ReadAllText(Path.Combine(published ? newDirectory : oldDirectory, "file")).Should().Be("data");
         File.Exists(ConfigPath + ".rename.json").Should().BeFalse();
+        using var exclusive = new FileStream(DbPath, FileMode.Open, FileAccess.ReadWrite, FileShare.None);
     }
 
     [Fact]

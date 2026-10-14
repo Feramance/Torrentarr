@@ -37,6 +37,32 @@ public class ConfigRenameHelperTests
         config.QBitInstances["qBit"].Password.Should().Be("password");
     }
 
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public void CanonicalRename_RestoresNestedSecretsAndKeepsExplicitPassword(bool dotted)
+    {
+        var config = new TorrentarrConfig();
+        config.TorrentClients["old"] = new()
+        {
+            Password = "secret",
+            Maintenance = new()
+            { Notifications = [new() { Url = "https://notify.example", Token = "notify-secret" }] }
+        };
+        var section = JObject.FromObject(config.TorrentClients["old"], Newtonsoft.Json.JsonSerializer.Create(new Newtonsoft.Json.JsonSerializerSettings
+        { ContractResolver = new Newtonsoft.Json.Serialization.CamelCasePropertyNamesContractResolver() }));
+        section["password"] = "[redacted]";
+        section["maintenance"]!["notifications"]![0]!["token"] = "[redacted]";
+        var changes = dotted ? new JObject { ["TorrentClient.new"] = section }
+            : new JObject { ["TorrentClient"] = new JObject { ["new"] = section } };
+        ConfigRenameHelper.PreserveSecrets(config, changes, new JObject { ["old"] = "new" });
+        changes["TorrentClient.new.Password"]!.Value<string>().Should().Be("secret");
+        section["maintenance"]!["notifications"]![0]!["token"]!.Value<string>().Should().Be("notify-secret");
+        changes["TorrentClient.new.Password"] = "replacement";
+        ConfigRenameHelper.PreserveSecrets(config, changes, new JObject { ["old"] = "new" });
+        changes["TorrentClient.new.Password"]!.Value<string>().Should().Be("replacement");
+    }
+
     [Fact]
     public void ArrRename_PreservesExistingApiKey()
     {

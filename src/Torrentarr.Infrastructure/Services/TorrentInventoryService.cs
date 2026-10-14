@@ -13,16 +13,14 @@ public sealed class TorrentInventoryService(
     ILogger<TorrentInventoryService> logger) : ITorrentInventoryService
 {
     public Task<TorrentInventory> BuildAsync(IEnumerable<string>? instanceIds = null, CancellationToken ct = default)
-        => ReadAsync(null, instanceIds?.ToHashSet(StringComparer.OrdinalIgnoreCase), null, null, ct);
+        => ReadAsync(instanceIds?.ToHashSet(StringComparer.OrdinalIgnoreCase), ct);
 
     public Task<TorrentInventory> RefreshAsync(TorrentInventory previous, string? candidateInstance = null, string? candidateHash = null, CancellationToken ct = default)
-        => ReadAsync(previous.IsComplete ? previous : null, null, candidateInstance, candidateHash, ct);
+        => ReadAsync(null, ct);
 
-    private async Task<TorrentInventory> ReadAsync(TorrentInventory? previous, HashSet<string>? selected,
-        string? candidateInstance, string? candidateHash, CancellationToken ct)
+    private async Task<TorrentInventory> ReadAsync(HashSet<string>? selected, CancellationToken ct)
     {
         var result = new TorrentInventory();
-        var old = previous?.Torrents.ToDictionary(i => (i.Torrent.ClientInstanceId.ToUpperInvariant(), i.Torrent.Hash.ToUpperInvariant()));
         foreach (var (id, cfg) in config.GetAllTorrentClients())
         {
             if (string.IsNullOrWhiteSpace(cfg.Host) || cfg.Host == "CHANGE_ME") continue;
@@ -50,31 +48,17 @@ public sealed class TorrentInventoryService(
                 {
                     torrent.ClientInstanceId = id;
                     var item = new TorrentInventoryItem { Torrent = torrent, Client = new(client.Identity, client.Capabilities) };
-                    var cached = old?.GetValueOrDefault((id.ToUpperInvariant(), torrent.Hash.ToUpperInvariant()));
-                    var candidate = id.Equals(candidateInstance, StringComparison.OrdinalIgnoreCase)
-                        && torrent.Hash.Equals(candidateHash, StringComparison.OrdinalIgnoreCase);
-                    // shortcut: reuse files only while exposed ownership metadata is unchanged; adapters with hidden renames must force refresh.
-                    if (!candidate && cached != null && cached.Client.Identity == client.Identity
-                        && cached.Torrent.SavePath == torrent.SavePath && cached.Torrent.ContentPath == torrent.ContentPath
-                        && cached.Torrent.Name == torrent.Name && cached.Torrent.Size == torrent.Size)
+                    var files = client.Capabilities.FileEnumeration ? await client.GetTorrentFilesAsync(torrent.Hash, ct) : [];
+                    if (files.Count == 0 && torrent.Size > 0)
+                        result.Warnings.Add($"[{id}] File ownership is unavailable for torrent {torrent.Hash}.");
+                    foreach (var file in files)
                     {
-                        item.Files.AddRange(cached.Files);
-                        item.Trackers.AddRange(cached.Trackers);
+                        var clientPath = torrent.SavePath.TrimEnd('/', '\\') + "/" + file.Name.TrimStart('/', '\\');
+                        var localPath = paths.MapToLocal(clientPath, cfg.Maintenance.PathMappings);
+                        if (localPath == null) result.Warnings.Add($"[{id}] A torrent file could not be mapped locally.");
+                        item.Files.Add(new() { File = file, ClientPath = clientPath, LocalPath = localPath });
                     }
-                    else
-                    {
-                        var files = client.Capabilities.FileEnumeration ? await client.GetTorrentFilesAsync(torrent.Hash, ct) : [];
-                        if (files.Count == 0 && torrent.Size > 0)
-                            result.Warnings.Add($"[{id}] File ownership is unavailable for torrent {torrent.Hash}.");
-                        foreach (var file in files)
-                        {
-                            var clientPath = torrent.SavePath.TrimEnd('/', '\\') + "/" + file.Name.TrimStart('/', '\\');
-                            var localPath = paths.MapToLocal(clientPath, cfg.Maintenance.PathMappings);
-                            if (localPath == null) result.Warnings.Add($"[{id}] A torrent file could not be mapped locally.");
-                            item.Files.Add(new() { File = file, ClientPath = clientPath, LocalPath = localPath });
-                        }
-                        item.Trackers.AddRange(await client.GetTorrentTrackersAsync(torrent.Hash, ct));
-                    }
+                    item.Trackers.AddRange(await client.GetTorrentTrackersAsync(torrent.Hash, ct));
                     result.Torrents.Add(item);
                 }
                 result.InspectedClients.Add(id);

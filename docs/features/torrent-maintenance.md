@@ -78,16 +78,13 @@ not use the unmapped content-deletion fallback retained for legacy lifecycle
 cleanup. Existing failed-category lifecycle cleanup remains compatible when
 maintenance mappings and recycling are absent.
 
-Apply keeps an inventory only for the current run. Before each destructive action
-it polls all required clients for membership and location changes. New or relocated
-torrents receive fresh file enumeration, and torrent-removal candidates receive
-fresh file and tracker checks. Unchanged non-candidate file ownership is reused.
+Before each destructive action, apply re-enumerates every required client's torrent
+files and trackers, including owners whose top-level torrent metadata is unchanged.
 A failed refresh cannot authorize a move using an older inventory.
 
-Polling cannot make client updates and filesystem moves atomic. External file
-renames that do not change exposed ownership metadata cannot be detected by
-inventory reuse; avoid concurrent file renames during maintenance. An adapter
-that cannot expose ownership changes must force fresh file enumeration.
+Polling cannot make client updates and filesystem moves atomic. Avoid concurrent
+external file renames during maintenance: a change after the final ownership check
+can still race a filesystem operation.
 
 ## Recycling and cancellation
 

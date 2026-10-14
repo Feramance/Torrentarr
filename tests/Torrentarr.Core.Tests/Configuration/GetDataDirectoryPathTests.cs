@@ -36,6 +36,18 @@ public sealed class GetDataDirectoryPathTests : IDisposable
         ConfigurationLoader.TestConfigPathOverride = _originalOverride;
     }
 
+    [Theory]
+    [InlineData("/configuration/config.toml", "/configuration")]
+    [InlineData("/config-backup/config.toml", "/config-backup")]
+    [InlineData("/config/nested/config.toml", "/config")]
+    public void ExplicitAndEnvironmentPaths_RespectDockerDirectoryBoundary(string path, string expected)
+    {
+        expected = expected == "/config" ? expected : Path.GetFullPath(expected);
+        ConfigurationLoader.GetDataDirectoryPath(path).Should().Be(expected);
+        Environment.SetEnvironmentVariable("TORRENTARR_CONFIG", path);
+        ConfigurationLoader.GetDataDirectoryPath().Should().Be(expected);
+    }
+
     [Fact]
     public void GetDataDirectoryPath_UsesTestConfigPathOverrideDirectory_WhenEnvNotSet()
     {

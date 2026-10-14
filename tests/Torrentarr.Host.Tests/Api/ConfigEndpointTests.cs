@@ -21,20 +21,25 @@ public class ConfigEndpointTests : IClassFixture<TorrentarrWebApplicationFactory
     }
 
     [Theory]
-    [InlineData("/web/config")]
-    [InlineData("/api/config")]
-    public async Task RenameClient_PreservesPasswordAndNotificationToken(string endpoint)
+    [InlineData("/web/config", false)]
+    [InlineData("/web/config", true)]
+    [InlineData("/api/config", false)]
+    [InlineData("/api/config", true)]
+    public async Task RenameClient_PreservesPasswordAndNotificationToken(string endpoint, bool canonical)
     {
         var client = _factory.CreateClientWithApiToken();
         using var scope = _factory.Services.CreateScope();
         var config = scope.ServiceProvider.GetRequiredService<Torrentarr.Core.Configuration.TorrentarrConfig>();
-        config.QBitInstances["qBit-before"] = new()
+        var prefix = canonical ? "TorrentClient." : "";
+        var source = new Torrentarr.Core.Configuration.QBitConfig()
         {
             Host = "fixture",
             Disabled = true,
             Password = "secret",
             Maintenance = new() { Notifications = [new() { Url = "https://notify.example", Token = "notify-secret" }] }
         };
+        if (canonical) config.TorrentClients["qBit-before"] = source;
+        else config.QBitInstances["qBit-before"] = source;
         var db = scope.ServiceProvider.GetRequiredService<TorrentarrDbContext>();
         db.TorrentLibrary.Add(new()
         {
@@ -53,11 +58,11 @@ public class ConfigEndpointTests : IClassFixture<TorrentarrWebApplicationFactory
                 renames = new Dictionary<string, string> { ["qBit-before"] = "qBit-after" },
                 changes = new Dictionary<string, object?>
                 {
-                    ["qBit-before"] = null,
-                    ["qBit-after.Host"] = "fixture",
-                    ["qBit-after.Disabled"] = true,
-                    ["qBit-after.Password"] = "[redacted]",
-                    ["qBit-after.Maintenance.Notifications"] = new[] { new { Url = "https://notify.example", Token = "[redacted]" } }
+                    [prefix + "qBit-before"] = null,
+                    [prefix + "qBit-after.Host"] = "fixture",
+                    [prefix + "qBit-after.Disabled"] = true,
+                    [prefix + "qBit-after.Password"] = "[redacted]",
+                    [prefix + "qBit-after.Maintenance.Notifications"] = new[] { new { Url = "https://notify.example", Token = "[redacted]" } }
                 }
             });
             response.EnsureSuccessStatusCode();
@@ -65,15 +70,18 @@ public class ConfigEndpointTests : IClassFixture<TorrentarrWebApplicationFactory
             state.QbitInstance.Should().Be("qBit-after");
             state.Imported.Should().BeTrue(); state.AllowedSeeding.Should().BeTrue();
             state.AllowedStalled.Should().BeTrue(); state.FreeSpacePaused.Should().BeTrue();
-            config.QBitInstances.Should().NotContainKey("qBit-before");
-            config.QBitInstances["qBit-after"].Password.Should().Be("secret");
-            config.QBitInstances["qBit-after"].Maintenance.Notifications.Single().Token.Should().Be("notify-secret");
+            var clients = Torrentarr.Core.Configuration.TorrentClientConfigExtensions.GetAllTorrentClients(config);
+            clients.Should().NotContainKey("qBit-before");
+            clients["qBit-after"].Password.Should().Be("secret");
+            clients["qBit-after"].Maintenance.Notifications.Single().Token.Should().Be("notify-secret");
         }
         finally
         {
             await db.TorrentLibrary.Where(t => t.Hash == "rename-state").ExecuteDeleteAsync();
             config.QBitInstances.Remove("qBit-before");
             config.QBitInstances.Remove("qBit-after");
+            config.TorrentClients.Remove("qBit-before");
+            config.TorrentClients.Remove("qBit-after");
         }
     }
 

@@ -200,6 +200,21 @@ public sealed class MaintenanceSafetyTests : IDisposable
     }
 
     [Fact]
+    public async Task OrphanApply_RechecksFileRenameWithUnchangedTorrentMetadata()
+    {
+        ClientConfig.Maintenance.Orphans.Enabled = true;
+        ClientConfig.Maintenance.Orphans.MinimumAgeMinutes = 0;
+        AddTorrent("owner", "original.mkv");
+        var path = Path.Combine(_root, "orphan.mkv");
+        File.WriteAllText(path, "data");
+        var plan = await Preview(MaintenanceOperation.OrphanScan);
+        plan.CandidateCount.Should().Be(1);
+        _files["owner"] = [new() { Name = "orphan.mkv", Size = 4 }];
+        (await Apply(plan)).Skipped.Should().Be(1);
+        File.Exists(path).Should().BeTrue();
+    }
+
+    [Fact]
     public void CategoryHnr_WithUnrelatedTracker_IsStillProtected()
     {
         var torrent = AddTorrent(); torrent.Ratio = 0.2;
@@ -522,14 +537,17 @@ public sealed class MaintenanceSafetyTests : IDisposable
     }
 
     [Fact]
-    public async Task InventoryRefresh_ReusesUnchangedFilesButRefreshesCandidateAndNewOwners()
+    public async Task InventoryRefresh_ReenumeratesUnchangedMetadataAndNewOwners()
     {
         AddTorrent();
         var inventory = await _inventory.BuildAsync();
-        for (var i = 0; i < 100; i++) inventory = await _inventory.RefreshAsync(inventory);
-        _client.Verify(c => c.GetTorrentFilesAsync("abc", It.IsAny<CancellationToken>()), Times.Once);
-        inventory = await _inventory.RefreshAsync(inventory, "one", "abc");
+        _files["abc"] = [new() { Name = "renamed.mkv", Size = 4 }];
+        inventory = await _inventory.RefreshAsync(inventory);
+        inventory.LocalPathReferences.Should().ContainKey(Path.Combine(_root, "renamed.mkv"));
+        inventory.LocalPathReferences.Should().NotContainKey(Path.Combine(_root, "movie.mkv"));
         _client.Verify(c => c.GetTorrentFilesAsync("abc", It.IsAny<CancellationToken>()), Times.Exactly(2));
+        inventory = await _inventory.RefreshAsync(inventory, "one", "abc");
+        _client.Verify(c => c.GetTorrentFilesAsync("abc", It.IsAny<CancellationToken>()), Times.Exactly(3));
         AddTorrent("new", "new.mkv");
         inventory = await _inventory.RefreshAsync(inventory);
         inventory.LocalPathReferences.Should().ContainKey(Path.Combine(_root, "new.mkv"));
@@ -548,7 +566,7 @@ public sealed class MaintenanceSafetyTests : IDisposable
     }
 
     [Fact]
-    public async Task LargeInventory_DoesNotEnumerateEveryFileForEachOrphan()
+    public async Task LargeInventory_ReenumeratesEveryOwnerBeforeApply()
     {
         for (var i = 0; i < 1000; i++)
         {
@@ -557,11 +575,11 @@ public sealed class MaintenanceSafetyTests : IDisposable
             _files[hash] = [new() { Name = hash, Size = 4 }];
         }
         var inventory = await _inventory.BuildAsync();
-        for (var i = 0; i < 100; i++) inventory = await _inventory.RefreshAsync(inventory);
+        inventory = await _inventory.RefreshAsync(inventory);
         inventory.IsComplete.Should().BeTrue();
-        _client.Verify(c => c.GetTorrentFilesAsync(It.IsAny<string>(), It.IsAny<CancellationToken>()), Times.Exactly(1000));
-        _client.Verify(c => c.GetTorrentTrackersAsync(It.IsAny<string>(), It.IsAny<CancellationToken>()), Times.Exactly(1000));
-        _client.Verify(c => c.GetTorrentsAsync(It.IsAny<string?>(), It.IsAny<string?>(), It.IsAny<CancellationToken>()), Times.Exactly(101));
+        _client.Verify(c => c.GetTorrentFilesAsync(It.IsAny<string>(), It.IsAny<CancellationToken>()), Times.Exactly(2000));
+        _client.Verify(c => c.GetTorrentTrackersAsync(It.IsAny<string>(), It.IsAny<CancellationToken>()), Times.Exactly(2000));
+        _client.Verify(c => c.GetTorrentsAsync(It.IsAny<string?>(), It.IsAny<string?>(), It.IsAny<CancellationToken>()), Times.Exactly(2));
     }
 
     [Fact]

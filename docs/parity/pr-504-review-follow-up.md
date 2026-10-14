@@ -57,3 +57,27 @@ Live services and Windows/macOS runtime behavior require their own environment/C
 - Script tests: 37 passed. OpenAPI compatibility: 82 upstream paths and 84 operations covered.
 - Generated config schema is current; changed C# formatting/platform analysis and `git diff --check` passed.
 - NuGet vulnerability metadata could not be fetched during the schema check; schema validation itself passed.
+
+## Review 5516134288 follow-up
+
+All five findings in the [Codex review](https://github.com/Feramance/Torrentarr/pull/504#pullrequestreview-5516134288) were verified as valid.
+
+- File ownership is re-enumerated for every required client before each destructive action; an orphan regression changes an existing owner's filename without changing torrent metadata and confirms the file stays untouched.
+- Search-only environment overrides disable both legacy and canonical torrent clients; the loader regression checks the effective processing-disabled policy.
+- Docker data-path detection requires the `/config/` segment boundary; explicit and environment paths under `/configuration` and `/config-backup` retain their own directories.
+- Failed rename suspension restores Arr workers and already-stopped categories. A timed-out category keeps its slot until it exits, then cleans up and restarts; the timeout regression verifies no replacement starts early.
+- Canonical renames preserve passwords and notification tokens in dotted and nested changes. Core tests and both Host config endpoints plus standalone integration cover secret preservation and persisted state migration.
+
+Fresh ownership checks increase API calls during maintenance. External changes after the final check can still race filesystem actions; clients and local files do not share a transaction.
+
+### CI failure follow-up
+
+- macOS recovery fixtures now live beneath the test assembly rather than the symlinked system temporary directory. Production symlink checks remain strict and have a dedicated rejection regression.
+- Recovery SQLite connections disable pooling so disposal releases database handles on Windows. Interrupted-recovery regressions immediately reopen the database with exclusive sharing.
+- Atomic config writes create Unix temporary files with owner-only permissions before writing; existing destination permissions remain preserved.
+- CodeQL alert 5 reports cleartext storage sourced from the `PasswordHash` TOML field. This field is an existing password hash: both password endpoints generate BCrypt hashes, and config APIs reject hash replacement. The alert has not been dismissed or suppressed; remote CodeQL still needs review.
+
+Final local verification for this follow-up: Release build passed with zero warnings/errors;
+1,303 non-live .NET tests passed (259 Core, 296 Host, 748 Infrastructure);
+changed C# formatting/analyzers and `git diff --check` passed.
+Windows/macOS CI reruns, live integrations, and a fresh CodeQL analysis were not run locally.

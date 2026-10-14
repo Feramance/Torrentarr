@@ -2437,11 +2437,13 @@ static async Task<IResult> SaveAndRespondConfigUpdate(
     }
 
     var suspended = false;
+    var suspensionStarted = false;
     try
     {
         if (db != null)
             await InstanceRenamePersistence.SaveAsync(cfg, updatedConfig, renames, loader, db, suspend: async () =>
             {
+                suspensionStarted = true;
                 if (workerMgr != null) await ((IProcessOrchestrator)workerMgr).StopAsync(CancellationToken.None);
                 if (qbitCategoryMgr != null) await qbitCategoryMgr.SuspendAsync();
                 suspended = true;
@@ -2450,10 +2452,10 @@ static async Task<IResult> SaveAndRespondConfigUpdate(
     }
     catch
     {
-        if (suspended && !File.Exists(loader.ConfigPath + ".rename.json"))
+        if (suspensionStarted && !File.Exists(loader.ConfigPath + ".rename.json"))
         {
             if (workerMgr != null) await ((IProcessOrchestrator)workerMgr).StartAsync(CancellationToken.None);
-            if (qbitCategoryMgr != null) await qbitCategoryMgr.RestartAllCategoriesAsync();
+            if (qbitCategoryMgr != null) await qbitCategoryMgr.SyncWorkersWithConfigAsync();
         }
         throw;
     }

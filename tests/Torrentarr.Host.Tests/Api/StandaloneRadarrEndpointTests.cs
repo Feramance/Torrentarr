@@ -186,6 +186,48 @@ public class StandaloneRadarrEndpointTests
         saved.QBitInstances.Should().ContainKey("qBit-other");
     }
 
+    [Fact]
+    public async Task StandaloneConfig_CanonicalRenamePreservesSecretsAndStoredState()
+    {
+        await using var factory = new StandaloneFactory();
+        var client = factory.CreateClient();
+        var config = factory.Services.GetRequiredService<TorrentarrConfig>();
+        config.TorrentClients["old"] = new()
+        {
+            Host = "fixture",
+            Disabled = true,
+            Password = "secret",
+            Maintenance = new() { Notifications = [new() { Url = "https://notify.example", Token = "notify-secret" }] }
+        };
+        using var scope = factory.Services.CreateScope();
+        var db = scope.ServiceProvider.GetRequiredService<TorrentarrDbContext>();
+        db.TorrentLibrary.Add(new() { Hash = "canonical-rename", QbitInstance = "old", FreeSpacePaused = true });
+        await db.SaveChangesAsync();
+        var response = await client.PostAsJsonAsync("/web/config", new
+        {
+            renames = new Dictionary<string, string> { ["old"] = "renamed" },
+            changes = new Dictionary<string, object?>
+            {
+                ["TorrentClient.old"] = null,
+                ["TorrentClient.renamed"] = new
+                {
+                    Host = "fixture",
+                    Disabled = true,
+                    Password = "[redacted]",
+                    Maintenance = new { Notifications = new[] { new { Url = "https://notify.example", Token = "[redacted]" } } }
+                }
+            }
+        });
+        response.EnsureSuccessStatusCode();
+        var saved = new ConfigurationLoader(factory.Services.GetRequiredService<IConfigReloader>().ConfigPath).Load();
+        saved.TorrentClients.Should().NotContainKey("old");
+        saved.TorrentClients["renamed"].Password.Should().Be("secret");
+        saved.TorrentClients["renamed"].Maintenance.Notifications.Single().Token.Should().Be("notify-secret");
+        var state = await db.TorrentLibrary.AsNoTracking().SingleAsync(t => t.Hash == "canonical-rename");
+        state.QbitInstance.Should().Be("renamed");
+        state.FreeSpacePaused.Should().BeTrue();
+    }
+
     private sealed class StandaloneFactory : WebApplicationFactory<Standalone::Program>
     {
         private readonly string _directory = Path.Combine(Path.GetTempPath(), "standalone-radarr-" + Guid.NewGuid());
