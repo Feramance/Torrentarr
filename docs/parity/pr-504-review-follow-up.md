@@ -75,9 +75,24 @@ Fresh ownership checks increase API calls during maintenance. External changes a
 - macOS recovery fixtures now live beneath the test assembly rather than the symlinked system temporary directory. Production symlink checks remain strict and have a dedicated rejection regression.
 - Recovery SQLite connections disable pooling so disposal releases database handles on Windows. Interrupted-recovery regressions immediately reopen the database with exclusive sharing.
 - Atomic config writes create Unix temporary files with owner-only permissions before writing; existing destination permissions remain preserved.
-- CodeQL alert 5 reports cleartext storage sourced from the `PasswordHash` TOML field. This field is an existing password hash: both password endpoints generate BCrypt hashes, and config APIs reject hash replacement. The alert has not been dismissed or suppressed; remote CodeQL still needs review.
+- CodeQL alert 5 reports cleartext storage sourced from the `PasswordHash` TOML field. This field is an existing password hash: both password endpoints generate BCrypt hashes, and config APIs reject hash replacement. The alert was dismissed as a verified false positive with explicit user approval; the subsequent C# and JavaScript/TypeScript CodeQL analyses passed.
 
 Final local verification for this follow-up: Release build passed with zero warnings/errors;
 1,303 non-live .NET tests passed (259 Core, 296 Host, 748 Infrastructure);
 changed C# formatting/analyzers and `git diff --check` passed.
 Windows/macOS CI reruns, live integrations, and a fresh CodeQL analysis were not run locally.
+
+## Review 5518734178 follow-up
+
+Both findings in the [Codex review](https://github.com/Feramance/Torrentarr/pull/504#pullrequestreview-5518734178) were verified as valid.
+
+- [Ambiguous deletion failures](https://github.com/Feramance/Torrentarr/pull/504#discussion_r4271456125): the qBittorrent delete adapter returns false only for explicit non-retryable HTTP rejections and throws for uncertain outcomes. Delete requests bypass automatic retries so a later response cannot hide a prior ambiguous attempt. HTTP regressions cover success, rejections, retryable errors and incomplete responses; recycling regressions verify rollback preserves content without resuming after uncertain removal or cancellation.
+- [Stale pause markers](https://github.com/Feramance/Torrentarr/pull/504#discussion_r4271456141): Host and shared free-space services use the same resume/cleanup helper. Cleanup failures attempt an uncancelled compensating pause; active-download passes retry stale-marker cleanup even under low space. Tag and SQLite regressions cover cleanup failure, rejected compensation, recovery, and later manual pauses.
+- Related behavior: both free-space loops leave already manually paused downloads unmarked when space is insufficient. Service and Host regressions verify they remain paused when space returns.
+
+An uncertain remote removal is reported for manual reconciliation; it is not automatically retried. If compensating pause also fails, stale-marker cleanup retries on the next successful active-download pass.
+
+Local verification for review 5518734178: Release build passed with zero warnings/errors;
+1,322 non-live .NET tests passed (259 Core, 298 Host, 765 Infrastructure), including
+106 targeted regressions. Changed C# formatting/analyzers and `git diff --check` passed.
+Live services, Windows/macOS runtime checks and a new remote CI run remain unverified.

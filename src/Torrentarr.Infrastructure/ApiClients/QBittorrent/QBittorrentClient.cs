@@ -209,8 +209,15 @@ public class QBittorrentClient : ITorrentClient, IDisposable
         request.AddParameter("hashes", string.Join("|", hashes));
         request.AddParameter("deleteFiles", deleteFiles.ToString().ToLower());
 
-        var response = await ExecuteAsync(request, ct);
-        return response.IsSuccessful;
+        // A retry could hide whether an earlier delete reached the server.
+        var response = await _client.ExecuteAsync(request, ct);
+        if (response.IsSuccessful) return true;
+        ct.ThrowIfCancellationRequested();
+        if ((int)response.StatusCode is >= 400 and < 500
+            && response.StatusCode is not System.Net.HttpStatusCode.RequestTimeout and not System.Net.HttpStatusCode.TooManyRequests)
+            return false;
+        throw new HttpRequestException($"Remote removal outcome is uncertain (HTTP {(int)response.StatusCode}).",
+            response.ErrorException, response.StatusCode);
     }
 
     /// <summary>

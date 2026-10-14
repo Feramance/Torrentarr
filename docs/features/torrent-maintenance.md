@@ -86,6 +86,14 @@ Polling cannot make client updates and filesystem moves atomic. Avoid concurrent
 external file renames during maintenance: a change after the final ownership check
 can still race a filesystem operation.
 
+## Free-space pause markers
+
+The free-space manager resumes only downloads carrying its own pause marker.
+Manually paused downloads remain unmarked even when disk space is low. If a
+resume succeeds but marker cleanup fails, the manager attempts to pause the
+same torrent again without using the cancelled request token. Active downloads
+retry stale-marker cleanup on later passes, including when space is still low.
+
 ## Recycling and cancellation
 
 Recycling pauses active torrents and confirms they have stopped before moving
@@ -95,6 +103,8 @@ client removal trigger rollback of completed moves. Rollback runs independently
 of the cancelled request and does not overwrite or delete a recreated source.
 After successful rollback, a torrent paused by recycling is resumed when removal
 was rejected or never attempted. An uncertain removal outcome leaves it paused.
+Delete requests are not retried automatically: a lost response, timeout, or
+retryable HTTP error may mean the server already removed the torrent record.
 
 If restoration fails, the run reports the original and recycled paths. Preserve
 those recycled files and recover them manually before retention cleanup. A

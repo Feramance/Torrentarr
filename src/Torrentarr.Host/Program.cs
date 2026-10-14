@@ -3166,6 +3166,16 @@ class ProcessOrchestratorService : BackgroundService
             hasFreeSpaceTag = torrent.Tags?.Contains(freeSpacePausedTag) == true;
         }
 
+        if (isFreeSpaceDownload && !isPausedDownload && hasFreeSpaceTag)
+        {
+            if (tagless && dbContext != null)
+                await TaglessTorrentLibraryHelper.SetFreeSpacePausedAsync(
+                    dbContext, torrent.Hash, torrent.Category, instanceName, paused: false, cancellationToken);
+            else if (!await client.RemoveTagsAsync([torrent.Hash], [freeSpacePausedTag], cancellationToken))
+                throw new IOException("Torrent client rejected free-space marker cleanup.");
+            if (pausedCountRef != null) pausedCountRef[0]--;
+        }
+
         if (isFreeSpaceDownload)
         {
             var freeSpaceTest = _currentFreeSpace - torrent.AmountLeft;
@@ -3189,7 +3199,7 @@ class ProcessOrchestratorService : BackgroundService
                 if (!await client.PauseTorrentAsync(torrent.Hash, cancellationToken))
                     throw new IOException("Torrent client rejected free-space pause.");
             }
-            else if (isPausedDownload && freeSpaceTest < 0)
+            else if (isPausedDownload && freeSpaceTest < 0 && hasFreeSpaceTag)
             {
                 _logger.LogInformation(
                     "FreeSpace: Keeping paused (insufficient space) | Torrent: {Name} | Available: {Available} | Needed: {Needed} | Deficit: {Deficit}",
@@ -3208,15 +3218,15 @@ class ProcessOrchestratorService : BackgroundService
                 _currentFreeSpace = freeSpaceTest;
                 resumes.Add(async () =>
                 {
-                    if (!await client.ResumeTorrentAsync(torrent.Hash, cancellationToken))
-                        throw new IOException("Torrent client rejected free-space resume.");
-
-                    // §1.6: tagless — clear DB column; else remove qBit tag
-                    if (tagless && dbContext != null)
-                        await TaglessTorrentLibraryHelper.SetFreeSpacePausedAsync(
-                            dbContext, torrent.Hash, torrent.Category, instanceName, paused: false, CancellationToken.None);
-                    else if (!await client.RemoveTagsAsync(new List<string> { torrent.Hash }, new List<string> { freeSpacePausedTag }, CancellationToken.None))
-                        throw new IOException("Torrent client rejected free-space marker update.");
+                    await FreeSpaceInventory.ResumeAndClearMarkerAsync(client, torrent.Hash, async () =>
+                    {
+                        // §1.6: tagless — clear DB column; else remove qBit tag
+                        if (tagless && dbContext != null)
+                            await TaglessTorrentLibraryHelper.SetFreeSpacePausedAsync(
+                                dbContext, torrent.Hash, torrent.Category, instanceName, paused: false, CancellationToken.None);
+                        else if (!await client.RemoveTagsAsync(new List<string> { torrent.Hash }, new List<string> { freeSpacePausedTag }, CancellationToken.None))
+                            throw new IOException("Torrent client rejected free-space marker update.");
+                    }, cancellationToken);
                     if (pausedCountRef != null) pausedCountRef[0]--;
                 });
             }

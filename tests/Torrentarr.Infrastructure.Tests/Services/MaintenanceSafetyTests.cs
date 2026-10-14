@@ -469,6 +469,25 @@ public sealed class MaintenanceSafetyTests : IDisposable
         _client.Verify(c => c.ResumeTorrentsAsync(It.IsAny<List<string>>(), It.IsAny<CancellationToken>()), accepted ? Times.Once() : Times.Never());
     }
 
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task Recycling_UncertainRemovalRestoresContentButNeverResumes(bool cancelled)
+    {
+        var torrent = AddTorrent();
+        torrent.Progress = 0.5; torrent.State = "downloading";
+        _client.Setup(c => c.PauseTorrentsAsync(It.IsAny<List<string>>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(() => { torrent.State = "stoppedDL"; return true; });
+        _client.Setup(c => c.DeleteTorrentsAsync(It.IsAny<List<string>>(), false, It.IsAny<CancellationToken>()))
+            .ThrowsAsync(cancelled ? new OperationCanceledException() : new HttpRequestException("response lost"));
+        var result = await _deletion.RemoveMaintenanceTorrentAsync("one", "abc", true, await _inventory.BuildAsync());
+        result.Success.Should().BeFalse(); result.ContentPreserved.Should().BeTrue();
+        result.Error.Should().Contain("Remote removal outcome is uncertain");
+        result.Error.Should().NotContain("rejected removal");
+        File.ReadAllText(Path.Combine(_root, "movie.mkv")).Should().Be("data");
+        _client.Verify(c => c.ResumeTorrentsAsync(It.IsAny<List<string>>(), It.IsAny<CancellationToken>()), Times.Never);
+    }
+
     [Fact]
     public async Task Recycling_DoesNotMoveFilesUntilPauseIsConfirmed()
     {

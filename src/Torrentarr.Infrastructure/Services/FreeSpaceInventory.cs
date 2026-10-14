@@ -12,6 +12,19 @@ public sealed class FreeSpaceInventory
     public List<FreeSpaceTorrent> Torrents { get; } = [];
     public bool Complete { get; private set; } = true;
 
+    public static async Task ResumeAndClearMarkerAsync(ITorrentClient client, string hash, Func<Task> clearMarker, CancellationToken ct)
+    {
+        if (!await client.ResumeTorrentAsync(hash, ct))
+            throw new IOException("Torrent client rejected free-space resume.");
+        try { await clearMarker(); }
+        catch (Exception ex)
+        {
+            if (!await client.PauseTorrentAsync(hash, CancellationToken.None))
+                throw new IOException("Free-space marker cleanup failed and restoring the paused state was rejected.", ex);
+            throw;
+        }
+    }
+
     public static async Task<FreeSpaceInventory> ReadAsync(TorrentarrConfig config, ITorrentClientRegistry registry,
         ILogger logger, CancellationToken ct)
     {

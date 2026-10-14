@@ -70,6 +70,26 @@ public sealed class QBittorrentInventoryResponseTests
         paths[2].Should().Be(paths[0]);
     }
 
+    [Theory]
+    [InlineData(200)]
+    [InlineData(400)]
+    [InlineData(401)]
+    [InlineData(403)]
+    [InlineData(408)]
+    [InlineData(429)]
+    [InlineData(500)]
+    [InlineData(503)]
+    [InlineData(-1)]
+    public async Task Delete_DistinguishesRejectionFromUncertainOutcomeWithoutRetry(int status)
+    {
+        await Request(status, "", "delete", async action =>
+        {
+            if (status is 200 or 400 or 401 or 403) await action();
+            else (await FluentActions.Awaiting(action).Should().ThrowAsync<HttpRequestException>())
+                .Which.Message.Should().Contain("outcome is uncertain");
+        });
+    }
+
     private static async Task Request(int status, string body, string operation, Func<Func<Task>, Task> verify)
     {
         var socket = new TcpListener(IPAddress.Loopback, 0);
@@ -86,6 +106,14 @@ public sealed class QBittorrentInventoryResponseTests
                 {
                     var request = await listener.GetContextAsync().WaitAsync(cancellation.Token);
                     Interlocked.Increment(ref requests);
+                    if (status == -1)
+                    {
+                        request.Response.ContentLength64 = 100;
+                        await request.Response.OutputStream.WriteAsync(new byte[] { 1 });
+                        await request.Response.OutputStream.FlushAsync();
+                        request.Response.Abort();
+                        continue;
+                    }
                     request.Response.StatusCode = status;
                     var bytes = Encoding.UTF8.GetBytes(body);
                     request.Response.ContentLength64 = bytes.Length;
@@ -95,9 +123,11 @@ public sealed class QBittorrentInventoryResponseTests
             }
             catch (OperationCanceledException) { }
         });
-        var client = new QBittorrentClient("127.0.0.1", port, "u", "p");
+        using var client = new QBittorrentClient("127.0.0.1", port, "u", "p");
         Func<Task> action = operation switch
         {
+            "delete" => async () => { (await client.DeleteTorrentsAsync(["abc"])).Should().Be(status == 200); }
+            ,
             "version" => async () => { await client.GetVersionAsync(); }
             ,
             "files" => async () => { (await client.GetTorrentFilesAsync("abc")).Should().BeEmpty(); }
@@ -112,6 +142,6 @@ public sealed class QBittorrentInventoryResponseTests
             cancellation.Cancel();
             await server.WaitAsync(TimeSpan.FromSeconds(5));
         }
-        requests.Should().Be(status == 503 ? 4 : status == 403 ? 2 : 1);
+        requests.Should().Be(operation == "delete" ? 1 : status == 503 ? 4 : status == 403 ? 2 : 1);
     }
 }

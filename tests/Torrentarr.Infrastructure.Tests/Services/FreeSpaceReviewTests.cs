@@ -139,5 +139,60 @@ public sealed class FreeSpaceReviewTests : IDisposable
         (await _db.TorrentLibrary.AsNoTracking().SingleAsync()).FreeSpacePaused.Should().BeTrue();
     }
 
+    [Theory]
+    [InlineData(true, true)]
+    [InlineData(true, false)]
+    [InlineData(false, true)]
+    [InlineData(false, false)]
+    public async Task MarkerCleanupFailure_RestoresPauseOrClearsMarkerOnNextActivePass(bool tags, bool restorePause)
+    {
+        var torrent = new TorrentInfo
+        {
+            Hash = "abc",
+            Category = "movies",
+            State = "pausedDL",
+            Tags = "qBitrr-free_space_paused",
+            AmountLeft = 1
+        };
+        var client = Client("named", tags, torrent);
+        _db.TorrentLibrary.Add(new() { Hash = "abc", QbitInstance = "named", FreeSpacePaused = true });
+        await _db.SaveChangesAsync();
+        if (!tags) await _db.Database.ExecuteSqlRawAsync("CREATE TRIGGER reject_clear BEFORE UPDATE ON torrentlibrary WHEN NEW.freespacepaused=0 BEGIN SELECT RAISE(ABORT, 'rejected'); END;");
+        var rejectClear = true;
+        client.Setup(c => c.RemoveTagsAsync(It.IsAny<List<string>>(), It.IsAny<List<string>>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(() => { if (rejectClear) return false; torrent.Tags = ""; return true; });
+        client.Setup(c => c.ResumeTorrentAsync("abc", It.IsAny<CancellationToken>()))
+            .ReturnsAsync(() => { torrent.State = "downloading"; return true; });
+        client.Setup(c => c.PauseTorrentAsync("abc", It.IsAny<CancellationToken>()))
+            .ReturnsAsync(() => { if (restorePause) torrent.State = "pausedDL"; return restorePause; });
+        (await Service().ResumeDownloadsIfSpaceAvailableAsync()).Should().BeFalse();
+        torrent.State.Should().Be(restorePause ? "pausedDL" : "downloading");
+        client.Verify(c => c.PauseTorrentAsync("abc", It.Is<CancellationToken>(ct => !ct.CanBeCanceled)), Times.Once);
+        if (!tags) (await _db.TorrentLibrary.AsNoTracking().SingleAsync()).FreeSpacePaused.Should().BeTrue();
+        rejectClear = false;
+        if (!tags) await _db.Database.ExecuteSqlRawAsync("DROP TRIGGER reject_clear");
+        await Service().ResumeDownloadsIfSpaceAvailableAsync();
+        if (!tags) (await _db.TorrentLibrary.AsNoTracking().SingleAsync()).FreeSpacePaused.Should().BeFalse();
+        else torrent.Tags.Should().BeEmpty();
+        torrent.State = "pausedDL";
+        (await Service().ResumeDownloadsIfSpaceAvailableAsync()).Should().BeFalse();
+        client.Verify(c => c.ResumeTorrentAsync("abc", It.IsAny<CancellationToken>()), Times.Exactly(restorePause ? 2 : 1));
+    }
+
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task ManualPauseDuringLowSpace_IsNeverMarkedOrAutomaticallyResumed(bool tags)
+    {
+        var client = Client("named", tags, new TorrentInfo { Hash = "abc", State = "pausedDL", Category = "movies", AmountLeft = 1 });
+        _config.Settings.FreeSpace = long.MaxValue.ToString();
+        await Service().ProcessTorrentsForSpaceAsync("movies");
+        client.Verify(c => c.AddTagsAsync(It.IsAny<List<string>>(), It.IsAny<List<string>>(), It.IsAny<CancellationToken>()), Times.Never);
+        (await _db.TorrentLibrary.CountAsync()).Should().Be(0);
+        _config.Settings.FreeSpace = "1";
+        (await Service().ResumeDownloadsIfSpaceAvailableAsync()).Should().BeFalse();
+        client.Verify(c => c.ResumeTorrentAsync(It.IsAny<string>(), It.IsAny<CancellationToken>()), Times.Never);
+    }
+
     public void Dispose() => _db.Dispose();
 }
