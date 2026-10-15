@@ -93,7 +93,9 @@ can still race a filesystem operation.
 ## Free-space pause markers
 
 The free-space manager resumes only downloads carrying its own pause marker.
-Manually paused downloads remain unmarked even when disk space is low. If a
+Manually paused downloads remain unmarked even when disk space is low. A rejected
+pause rolls back its newly applied marker without using the cancelled request
+token; cleanup failures are reported. If a
 resume succeeds but marker cleanup fails, the manager attempts to pause the
 same torrent again without using the cancelled request token. Active downloads
 retry stale-marker cleanup on later passes, including when space is still low.

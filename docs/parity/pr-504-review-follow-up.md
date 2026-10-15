@@ -111,3 +111,16 @@ Local verification for review 5519505864: Release build passed with zero warning
 1,340 non-live .NET tests passed (263 Core, 298 Host, 779 Infrastructure).
 Changed C# formatting/analyzers and `git diff --check` passed. Live services and
 Windows/macOS runtime checks were not run locally.
+
+## Review 5529269550 follow-up
+
+Both findings in the [Codex review](https://github.com/Feramance/Torrentarr/pull/504#pullrequestreview-5529269550) were verified as valid.
+
+- Free-space pause rejection now rolls back its marker using uncancelled cleanup. The shared helper covers bulk pauses, category processing, and Host processing; Host increments its pause count only after acceptance. Tag/database regressions verify a subsequent manual pause is never resumed. Exceptions with uncertain pause outcomes retain their markers; failed rollback is reported explicitly.
+- Help now exits before config loading, recovery, logging, database setup or ownership acquisition. The same early-exit path handles version/source/license aliases. Extra arguments to informational commands exit with an error instead of falling through to an unlocked Host startup.
+- Real-process CLI regressions hold an ownership lock and provide invalid TOML plus a pending recovery record. Every informational alias and malformed invocation exits promptly without creating logs, changing config or touching recovery state.
+
+Local verification for review 5529269550: Release build passed with zero warnings/errors;
+1,360 non-live .NET tests passed (263 Core, 312 Host, 785 Infrastructure).
+Changed C# formatting/analyzers and `git diff --check` passed. Live services and
+Windows/macOS runtime checks were not run locally.

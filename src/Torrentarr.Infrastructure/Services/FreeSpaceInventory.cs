@@ -12,6 +12,14 @@ public sealed class FreeSpaceInventory
     public List<FreeSpaceTorrent> Torrents { get; } = [];
     public bool Complete { get; private set; } = true;
 
+    public static async Task PauseAndRollbackMarkerAsync(ITorrentClient client, string hash, Func<Task> clearMarker, CancellationToken ct)
+    {
+        if (await client.PauseTorrentAsync(hash, ct)) return;
+        try { await clearMarker(); }
+        catch (Exception ex) { throw new IOException("Free-space pause was rejected and marker rollback failed.", ex); }
+        throw new IOException("Torrent client rejected free-space pause; pause marker rolled back.");
+    }
+
     public static async Task ResumeAndClearMarkerAsync(ITorrentClient client, string hash, Func<Task> clearMarker, CancellationToken ct)
     {
         if (!await client.ResumeTorrentAsync(hash, ct))

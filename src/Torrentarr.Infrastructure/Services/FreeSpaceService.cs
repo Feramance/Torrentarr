@@ -178,8 +178,8 @@ public class FreeSpaceService : IFreeSpaceService
             if (!TorrentPolicyHelper.IsFreeSpaceDownloadState(item.Torrent.State)
                 || TorrentPolicyHelper.IsPausedDownloadStateForFreeSpace(item.Torrent.State)) return;
             await SetFreeSpacePausedTagAsync(item.Client, item.Torrent, item.InstanceName, true, cancellationToken);
-            if (!await item.Client.PauseTorrentAsync(item.Torrent.Hash, cancellationToken))
-                throw new IOException("Torrent client rejected free-space pause.");
+            await FreeSpaceInventory.PauseAndRollbackMarkerAsync(item.Client, item.Torrent.Hash,
+                () => SetFreeSpacePausedTagAsync(item.Client, item.Torrent, item.InstanceName, false, CancellationToken.None), cancellationToken);
             paused = true;
         }, _logger, cancellationToken);
         return paused;
@@ -288,8 +288,8 @@ public class FreeSpaceService : IFreeSpaceService
                 if (!_config.Settings.Tagless && client.Capabilities.Tags)
                     await client.RemoveTagsAsync(new List<string> { torrent.Hash }, new List<string> { AllowedSeedingTag }, cancellationToken);
                 _logger.LogTrace("FreeSpace: [{Instance}] Pausing torrent {Hash}", instanceName, torrent.Hash);
-                if (!await client.PauseTorrentAsync(torrent.Hash, cancellationToken))
-                    throw new IOException("Torrent client rejected free-space pause.");
+                await FreeSpaceInventory.PauseAndRollbackMarkerAsync(client, torrent.Hash,
+                    () => SetFreeSpacePausedTagAsync(client, torrent, instanceName, false, CancellationToken.None), cancellationToken);
             }
             else if (isPausedDownload && freeSpaceTest < 0 && hasFreeSpaceTag)
             {

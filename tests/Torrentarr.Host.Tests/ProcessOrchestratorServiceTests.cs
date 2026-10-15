@@ -155,4 +155,38 @@ public class ProcessOrchestratorServiceTests
         client.Verify(c => c.ResumeTorrentAsync("abc", It.IsAny<CancellationToken>()), Times.Exactly(2));
     }
 
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task FreeSpace_RejectedPauseRemovesMarkerBeforeLaterManualPause(bool tags)
+    {
+        using var db = new TorrentarrDbContext(new DbContextOptionsBuilder<TorrentarrDbContext>().UseSqlite("Data Source=:memory:").Options);
+        await db.Database.OpenConnectionAsync(); await db.Database.EnsureCreatedAsync();
+        using var provider = new ServiceCollection().AddSingleton(db).BuildServiceProvider();
+        var torrent = new TorrentInfo { Hash = "abc", Category = "movies", State = "downloading", AmountLeft = 1 };
+        var client = new Mock<ITorrentClient>();
+        client.SetupGet(c => c.Capabilities).Returns(TorrentClientCapabilities.QBittorrent with { Tags = tags });
+        client.Setup(c => c.GetTorrentsAsync(It.IsAny<string?>(), It.IsAny<string?>(), It.IsAny<CancellationToken>())).ReturnsAsync([torrent]);
+        client.Setup(c => c.AddTagsAsync(It.IsAny<List<string>>(), It.IsAny<List<string>>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(() => { torrent.Tags = "qBitrr-free_space_paused"; return true; });
+        client.Setup(c => c.RemoveTagsAsync(It.IsAny<List<string>>(), It.IsAny<List<string>>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(() => { torrent.Tags = ""; return true; });
+        client.Setup(c => c.PauseTorrentAsync("abc", It.IsAny<CancellationToken>())).ReturnsAsync(false);
+        var registry = new Mock<ITorrentClientRegistry>();
+        registry.Setup(r => r.GetAllClients()).Returns(new Dictionary<string, ITorrentClient> { ["named"] = client.Object });
+        using var service = new ProcessOrchestratorService(NullLogger<ProcessOrchestratorService>.Instance,
+            new TorrentarrConfig(), registry.Object, provider.GetRequiredService<IServiceScopeFactory>(), new ProcessStateManager(), Mock.Of<ISafeDeletionService>());
+        const BindingFlags flags = BindingFlags.Instance | BindingFlags.NonPublic;
+        typeof(ProcessOrchestratorService).GetField("_freeSpaceFolder", flags)!.SetValue(service, Path.GetTempPath());
+        typeof(ProcessOrchestratorService).GetField("_minFreeSpaceBytes", flags)!.SetValue(service, long.MaxValue);
+        var process = typeof(ProcessOrchestratorService).GetMethod("ProcessFreeSpaceManagerAsync", flags)!;
+        await (Task)process.Invoke(service, [new HashSet<string> { "movies" }, CancellationToken.None])!;
+        if (!tags) (await db.TorrentLibrary.AsNoTracking().SingleAsync()).FreeSpacePaused.Should().BeFalse();
+        else torrent.Tags.Should().BeEmpty();
+        torrent.State = "pausedDL";
+        typeof(ProcessOrchestratorService).GetField("_minFreeSpaceBytes", flags)!.SetValue(service, 1L);
+        await (Task)process.Invoke(service, [new HashSet<string> { "movies" }, CancellationToken.None])!;
+        client.Verify(c => c.ResumeTorrentAsync(It.IsAny<string>(), It.IsAny<CancellationToken>()), Times.Never);
+    }
+
 }

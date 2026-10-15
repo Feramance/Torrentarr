@@ -21,16 +21,60 @@ using Serilog.Events;
 using System.Security.Claims;
 using System.Security.Cryptography;
 
+// Informational commands exit before configuration, logging or ownership initialization.
+var cmdArgs = Environment.GetCommandLineArgs().Skip(1).ToList();
+var firstArg = cmdArgs.Count > 0 ? cmdArgs[0].Trim().ToLowerInvariant() : "";
+
+if (firstArg is "--help" or "-h" or "--version" or "-v" or "--source" or "-s" or "--license" or "-l")
+{
+    if (cmdArgs.Count != 1)
+    {
+        Console.Error.WriteLine("Informational commands do not accept additional arguments.");
+        return 1;
+    }
+    if (firstArg is "--help" or "-h")
+    {
+        Console.WriteLine("Usage: Torrentarr.Host [option]");
+        Console.WriteLine("  --help, -h           Show this help and exit.");
+        Console.WriteLine("  --version, -v        Show version and exit.");
+        Console.WriteLine("  --source, -s         Show source URL and exit.");
+        Console.WriteLine("  --license, -l        Show license and exit.");
+        Console.WriteLine("  --gen-config, -gc    Generate default configuration.");
+        Console.WriteLine("  --repair-database    Repair the database.");
+        Console.WriteLine("  --backup-database [destination]  Back up the database.");
+        return 0;
+    }
+    // --version / -v: print version and exit (qBitrr parity)
+    if (firstArg is "--version" or "-v")
+    {
+        Console.WriteLine($"Torrentarr {UpdateService.GetCurrentVersion()}");
+        return 0;
+    }
+
+    // --license / -l: print license and exit (qBitrr parity)
+    if (firstArg is "--license" or "-l")
+    {
+        Console.WriteLine("Torrentarr is licensed under the MIT License.");
+        Console.WriteLine("Copyright (c) 2024-2026 Torrentarr contributors.");
+        Console.WriteLine("See https://github.com/Feramance/Torrentarr/blob/master/LICENSE for the full text.");
+        return 0;
+    }
+
+    // --source / -s: print source code URL and exit (qBitrr parity)
+    if (firstArg is "--source" or "-s")
+    {
+        Console.WriteLine("https://github.com/Feramance/Torrentarr");
+        return 0;
+    }
+
+}
+
 // Data directory: aligned with resolved config path (see ConfigurationLoader.GetDataDirectoryPath)
 var basePath = ConfigurationLoader.GetDataDirectoryPath();
 var logsPath = Path.Combine(basePath, "logs");
 var dbPath = Path.Combine(basePath, "torrentarr.db");
 Directory.CreateDirectory(basePath);
 Directory.CreateDirectory(logsPath);
-
-// CLI args (checked after host is built so WebApplicationFactory gets an IHost)
-var cmdArgs = Environment.GetCommandLineArgs().Skip(1).ToList();
-var firstArg = cmdArgs.Count > 0 ? cmdArgs[0].Trim().ToLowerInvariant() : "";
 
 // Config web: placeholder for redacted secrets; must be in scope before any handler that uses it
 const string REDACTED_PLACEHOLDER = "[redacted]";
@@ -91,11 +135,10 @@ try
 {
     Log.Information("Torrentarr starting...");
 
-    var readOnlyCli = firstArg is "--version" or "-v" or "--source" or "-s" or "--license" or "-l" or "--help" or "-h";
     // TestServer clones share a fixture config; the existing test override never applies in production.
-    using var ownership = readOnlyCli || ConfigurationLoader.TestConfigPathOverride != null
+    using var ownership = ConfigurationLoader.TestConfigPathOverride != null
         ? null : HostConfigOwnership.Acquire(ConfigurationLoader.GetDefaultConfigPath());
-    if (!readOnlyCli) await InstanceRenamePersistence.RecoverAsync(ConfigurationLoader.GetDefaultConfigPath(), dbPath);
+    await InstanceRenamePersistence.RecoverAsync(ConfigurationLoader.GetDefaultConfigPath(), dbPath);
 
     // Load configuration
     var configLoader = new ConfigurationLoader();
@@ -360,29 +403,6 @@ try
             Log.Warning(
                 "Web UI bundle was not found in the physical or embedded web root. Run ./build.sh or build webui for the full SPA.");
         }
-    }
-
-    // --version / -v: print version and exit (qBitrr parity)
-    if (cmdArgs.Count == 1 && (firstArg == "--version" || firstArg == "-v"))
-    {
-        Console.WriteLine($"Torrentarr {UpdateService.GetCurrentVersion()}");
-        return 0;
-    }
-
-    // --license / -l: print license and exit (qBitrr parity)
-    if (cmdArgs.Count == 1 && (firstArg == "--license" || firstArg == "-l"))
-    {
-        Console.WriteLine("Torrentarr is licensed under the MIT License.");
-        Console.WriteLine("Copyright (c) 2024-2026 Torrentarr contributors.");
-        Console.WriteLine("See https://github.com/Feramance/Torrentarr/blob/master/LICENSE for the full text.");
-        return 0;
-    }
-
-    // --source / -s: print source code URL and exit (qBitrr parity)
-    if (cmdArgs.Count == 1 && (firstArg == "--source" || firstArg == "-s"))
-    {
-        Console.WriteLine("https://github.com/Feramance/Torrentarr");
-        return 0;
     }
 
     // --gen-config / -gc: write default config and exit (qBitrr parity). Run after Build() so WebApplicationFactory gets an IHost.
@@ -3195,9 +3215,15 @@ class ProcessOrchestratorService : BackgroundService
                         dbContext, torrent.Hash, torrent.Category, instanceName, paused: true, cancellationToken);
                 else if (!await client.AddTagsAsync(new List<string> { torrent.Hash }, new List<string> { freeSpacePausedTag }, cancellationToken))
                     throw new IOException("Torrent client rejected free-space marker update.");
+                await FreeSpaceInventory.PauseAndRollbackMarkerAsync(client, torrent.Hash, async () =>
+                {
+                    if (tagless && dbContext != null)
+                        await TaglessTorrentLibraryHelper.SetFreeSpacePausedAsync(
+                            dbContext, torrent.Hash, torrent.Category, instanceName, paused: false, CancellationToken.None);
+                    else if (!await client.RemoveTagsAsync([torrent.Hash], [freeSpacePausedTag], CancellationToken.None))
+                        throw new IOException("Torrent client rejected free-space marker rollback.");
+                }, cancellationToken);
                 if (pausedCountRef != null) pausedCountRef[0]++;
-                if (!await client.PauseTorrentAsync(torrent.Hash, cancellationToken))
-                    throw new IOException("Torrent client rejected free-space pause.");
             }
             else if (isPausedDownload && freeSpaceTest < 0 && hasFreeSpaceTag)
             {

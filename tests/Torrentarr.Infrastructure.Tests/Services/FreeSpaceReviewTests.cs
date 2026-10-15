@@ -194,5 +194,58 @@ public sealed class FreeSpaceReviewTests : IDisposable
         client.Verify(c => c.ResumeTorrentAsync(It.IsAny<string>(), It.IsAny<CancellationToken>()), Times.Never);
     }
 
+    [Theory]
+    [InlineData(false, false)]
+    [InlineData(true, false)]
+    [InlineData(false, true)]
+    [InlineData(true, true)]
+    public async Task RejectedPause_RollsBackMarkerAndDoesNotClaimLaterManualPause(bool tags, bool bulk)
+    {
+        var torrent = new TorrentInfo { Hash = "abc", Category = "movies", State = "downloading", AmountLeft = 1 };
+        var client = Client("named", tags, torrent);
+        client.Setup(c => c.AddTagsAsync(It.IsAny<List<string>>(), It.IsAny<List<string>>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync((List<string> _, List<string> values, CancellationToken _) => { if (values.Contains("qBitrr-free_space_paused")) torrent.Tags = "qBitrr-free_space_paused"; return true; });
+        client.Setup(c => c.RemoveTagsAsync(It.IsAny<List<string>>(), It.IsAny<List<string>>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync((List<string> _, List<string> values, CancellationToken _) => { if (values.Contains("qBitrr-free_space_paused")) torrent.Tags = ""; return true; });
+        client.Setup(c => c.PauseTorrentAsync("abc", It.IsAny<CancellationToken>())).ReturnsAsync(false);
+        _config.Settings.FreeSpace = long.MaxValue.ToString();
+        if (bulk) (await Service().PauseDownloadsIfLowSpaceAsync()).Should().BeFalse();
+        else await Service().ProcessTorrentsForSpaceAsync("movies");
+        if (tags)
+        {
+            torrent.Tags.Should().BeEmpty();
+            client.Verify(c => c.RemoveTagsAsync(It.IsAny<List<string>>(), It.Is<List<string>>(values => values.Contains("qBitrr-free_space_paused")),
+                It.Is<CancellationToken>(ct => !ct.CanBeCanceled)), Times.Once);
+        }
+        else (await _db.TorrentLibrary.AsNoTracking().SingleAsync()).FreeSpacePaused.Should().BeFalse();
+        torrent.State = "pausedDL";
+        _config.Settings.FreeSpace = "1";
+        (await Service().ResumeDownloadsIfSpaceAvailableAsync()).Should().BeFalse();
+        client.Verify(c => c.ResumeTorrentAsync(It.IsAny<string>(), It.IsAny<CancellationToken>()), Times.Never);
+    }
+
+    [Fact]
+    public async Task UncertainPause_RetainsMarkerForSafety()
+    {
+        var torrent = new TorrentInfo { Hash = "abc", Category = "movies", State = "downloading", AmountLeft = 1 };
+        var client = Client("named", false, torrent);
+        client.Setup(c => c.PauseTorrentAsync("abc", It.IsAny<CancellationToken>())).ThrowsAsync(new HttpRequestException("response lost"));
+        _config.Settings.FreeSpace = long.MaxValue.ToString();
+        (await Service().PauseDownloadsIfLowSpaceAsync()).Should().BeFalse();
+        (await _db.TorrentLibrary.AsNoTracking().SingleAsync()).FreeSpacePaused.Should().BeTrue();
+    }
+
+    [Fact]
+    public async Task RejectedPause_ReportsMarkerRollbackFailure()
+    {
+        var client = new Mock<ITorrentClient>();
+        client.Setup(c => c.PauseTorrentAsync("abc", It.IsAny<CancellationToken>())).ReturnsAsync(false);
+        var result = await FluentActions.Awaiting(() => FreeSpaceInventory.PauseAndRollbackMarkerAsync(client.Object, "abc",
+            () => throw new IOException("marker unavailable"), CancellationToken.None))
+            .Should().ThrowAsync<IOException>().WithMessage("*marker rollback failed*");
+        result.Which.InnerException!.Message.Should().Be("marker unavailable");
+        client.Verify(c => c.ResumeTorrentAsync(It.IsAny<string>(), It.IsAny<CancellationToken>()), Times.Never);
+    }
+
     public void Dispose() => _db.Dispose();
 }
