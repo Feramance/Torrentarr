@@ -77,21 +77,14 @@ public class ConfigurationLoader
         if (!string.IsNullOrEmpty(dataOverride))
             return Path.GetFullPath(dataOverride);
 
-        var envOverride = configPath ?? ReadConfigPathEnv();
-        if (!string.IsNullOrEmpty(envOverride))
-        {
-            if (envOverride.StartsWith("/config/", StringComparison.Ordinal))
-                return "/config";
-            var fullConfig = Path.GetFullPath(envOverride);
-            return Path.GetDirectoryName(fullConfig)
-                ?? Path.Combine(Directory.GetCurrentDirectory(), "config");
-        }
-
-        var cfgPath = GetDefaultConfigPath();
-        var dir = Path.GetDirectoryName(Path.GetFullPath(cfgPath));
-        return !string.IsNullOrEmpty(dir)
-            ? dir
-            : Path.Combine(Directory.GetCurrentDirectory(), "config");
+        var resolved = Path.GetFullPath(configPath ?? GetDefaultConfigPath());
+        var envOverride = ReadConfigPathEnv();
+        var comparison = OperatingSystem.IsWindows() ? StringComparison.OrdinalIgnoreCase : StringComparison.Ordinal;
+        if (!string.IsNullOrEmpty(envOverride) && envOverride.StartsWith("/config/", StringComparison.Ordinal)
+            && resolved.Equals(Path.GetFullPath(envOverride), comparison)
+            && resolved.StartsWith(Path.GetFullPath("/config").TrimEnd(Path.DirectorySeparatorChar) + Path.DirectorySeparatorChar, comparison))
+            return "/config";
+        return Path.GetDirectoryName(resolved) ?? Path.Combine(Directory.GetCurrentDirectory(), "config");
     }
 
     public TorrentarrConfig Load()

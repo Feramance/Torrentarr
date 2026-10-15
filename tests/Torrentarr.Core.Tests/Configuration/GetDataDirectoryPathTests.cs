@@ -39,13 +39,27 @@ public sealed class GetDataDirectoryPathTests : IDisposable
     [Theory]
     [InlineData("/configuration/config.toml", "/configuration")]
     [InlineData("/config-backup/config.toml", "/config-backup")]
-    [InlineData("/config/nested/config.toml", "/config")]
-    public void ExplicitAndEnvironmentPaths_RespectDockerDirectoryBoundary(string path, string expected)
+    [InlineData("/config/nested/config.toml", "/config/nested")]
+    [InlineData("/config/.config/config.toml", "/config/.config")]
+    public void ExplicitAndDiscoveredPaths_UseTheirOwnDirectory(string path, string expected)
     {
-        expected = expected == "/config" ? expected : Path.GetFullPath(expected);
-        ConfigurationLoader.GetDataDirectoryPath(path).Should().Be(expected);
-        Environment.SetEnvironmentVariable("TORRENTARR_CONFIG", path);
-        ConfigurationLoader.GetDataDirectoryPath().Should().Be(expected);
+        Environment.SetEnvironmentVariable("TORRENTARR_CONFIG", null);
+        ConfigurationLoader.TestConfigPathOverride = path;
+        ConfigurationLoader.GetDataDirectoryPath(path).Should().Be(Path.GetFullPath(expected));
+        ConfigurationLoader.GetDataDirectoryPath().Should().Be(Path.GetFullPath(expected));
+    }
+
+    [Theory]
+    [InlineData("TORRENTARR_CONFIG")]
+    [InlineData("QBITRR_CONFIG")]
+    public void EnvironmentSelectedDockerPath_UsesSameDataDirectoryForOwnership(string variable)
+    {
+        Environment.SetEnvironmentVariable("TORRENTARR_CONFIG", null);
+        ConfigurationLoader.TestConfigPathOverride = null;
+        Environment.SetEnvironmentVariable(variable, "/config/.config/config.toml");
+        ConfigurationLoader.GetDataDirectoryPath().Should().Be("/config");
+        ConfigurationLoader.GetDataDirectoryPath(ConfigurationLoader.GetDefaultConfigPath()).Should().Be("/config");
+        ConfigurationLoader.GetDataDirectoryPath("/config/other/config.toml").Should().Be(Path.GetFullPath("/config/other"));
     }
 
     [Fact]
@@ -100,21 +114,24 @@ public sealed class GetDataDirectoryPathTests : IDisposable
         }
     }
 
-    [Fact]
-    public void GetDataDirectoryPath_UsesOverridesDataPath()
+    [Theory]
+    [InlineData("TORRENTARR_OVERRIDES_DATA_PATH")]
+    [InlineData("QBITRR_OVERRIDES_DATA_PATH")]
+    public void GetDataDirectoryPath_UsesOverridesDataPath(string variable)
     {
         var dir = Path.Combine(Path.GetTempPath(), $"torrentarr-ov-{Guid.NewGuid():N}");
         Directory.CreateDirectory(dir);
-        Environment.SetEnvironmentVariable("TORRENTARR_OVERRIDES_DATA_PATH", dir);
+        Environment.SetEnvironmentVariable(variable, dir);
         Environment.SetEnvironmentVariable("TORRENTARR_CONFIG", "/config/foo.toml");
         ConfigurationLoader.TestConfigPathOverride = null;
         try
         {
             ConfigurationLoader.GetDataDirectoryPath().Should().Be(Path.GetFullPath(dir));
+            ConfigurationLoader.GetDataDirectoryPath("/other/config.toml").Should().Be(Path.GetFullPath(dir));
         }
         finally
         {
-            Environment.SetEnvironmentVariable("TORRENTARR_OVERRIDES_DATA_PATH", null);
+            Environment.SetEnvironmentVariable(variable, null);
             if (Directory.Exists(dir))
                 Directory.Delete(dir, recursive: true);
         }

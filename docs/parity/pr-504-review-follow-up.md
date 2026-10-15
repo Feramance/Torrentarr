@@ -96,3 +96,18 @@ Local verification for review 5518734178: Release build passed with zero warning
 1,322 non-live .NET tests passed (259 Core, 298 Host, 765 Infrastructure), including
 106 targeted regressions. Changed C# formatting/analyzers and `git diff --check` passed.
 Live services, Windows/macOS runtime checks and a new remote CI run remain unverified.
+
+## Review 5519505864 follow-up
+
+All three findings in the [Codex review](https://github.com/Feramance/Torrentarr/pull/504#pullrequestreview-5519505864) were verified as valid.
+
+- Docker data-directory collapsing now requires the active config environment override to select the same resolved file. Explicit and discovered paths retain their own parent directories; ownership locks and the database/log directory agree. Regressions cover discovered `/config/.config/config.toml`, unrelated explicit paths, both environment aliases, and data-directory overrides.
+- Arr rename transactions now include `searchactivity.category`. Summary/timestamp preservation, unrelated rows, case-insensitive collisions, rollback, interrupted recovery, and existing journal compatibility are covered without changing the journal or database schema.
+- Non-destructive actions refresh only the current candidate's metadata/files/trackers. Full ownership refreshes remain mandatory for quarantine, recycling and content deletion, selected by action kind. Retention uses live filesystem checks. Request-count tests cover 100-action category and tagging runs and unrelated clients; stale-candidate, mixed-plan, file-rename and retention regressions preserve safety.
+
+Candidate checks still fetch the owning client's torrent list because the client interface has no hash-filtered listing. Remote file/tracker request counts grow linearly for non-destructive runs; destructive runs retain complete ownership refresh costs.
+
+Local verification for review 5519505864: Release build passed with zero warnings/errors;
+1,340 non-live .NET tests passed (263 Core, 298 Host, 779 Infrastructure).
+Changed C# formatting/analyzers and `git diff --check` passed. Live services and
+Windows/macOS runtime checks were not run locally.

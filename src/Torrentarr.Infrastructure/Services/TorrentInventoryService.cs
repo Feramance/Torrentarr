@@ -18,7 +18,10 @@ public sealed class TorrentInventoryService(
     public Task<TorrentInventory> RefreshAsync(TorrentInventory previous, string? candidateInstance = null, string? candidateHash = null, CancellationToken ct = default)
         => ReadAsync(null, ct);
 
-    private async Task<TorrentInventory> ReadAsync(HashSet<string>? selected, CancellationToken ct)
+    public Task<TorrentInventory> RefreshCandidateAsync(string instanceId, string hash, CancellationToken ct = default)
+        => ReadAsync(new HashSet<string>(StringComparer.OrdinalIgnoreCase) { instanceId }, ct, hash);
+
+    private async Task<TorrentInventory> ReadAsync(HashSet<string>? selected, CancellationToken ct, string? candidateHash = null)
     {
         var result = new TorrentInventory();
         foreach (var (id, cfg) in config.GetAllTorrentClients())
@@ -46,6 +49,7 @@ public sealed class TorrentInventoryService(
                 var torrents = await client.GetTorrentsAsync(cancellationToken: ct);
                 foreach (var torrent in torrents)
                 {
+                    if (candidateHash != null && !torrent.Hash.Equals(candidateHash, StringComparison.OrdinalIgnoreCase)) continue;
                     torrent.ClientInstanceId = id;
                     var item = new TorrentInventoryItem { Torrent = torrent, Client = new(client.Identity, client.Capabilities) };
                     var files = client.Capabilities.FileEnumeration ? await client.GetTorrentFilesAsync(torrent.Hash, ct) : [];

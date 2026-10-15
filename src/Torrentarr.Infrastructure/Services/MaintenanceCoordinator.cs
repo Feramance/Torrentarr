@@ -356,7 +356,10 @@ public sealed class MaintenanceCoordinator : BackgroundService, IMaintenanceCoor
                     if (cfg?.Maintenance.Enabled != true || !cfg.Maintenance.Armed
                         || plan.ConfigurationFingerprint != Fingerprint())
                         throw new OperationCanceledException("Maintenance was disarmed or configuration changed.");
-                    inventory = await _inventory.RefreshAsync(inventory, action.ClientInstanceId, action.TorrentHash, linked.Token);
+                    if (action.Kind is MaintenanceActionKind.QuarantineFile or MaintenanceActionKind.RecycleContent or MaintenanceActionKind.DeleteContent)
+                        inventory = await _inventory.RefreshAsync(inventory, ct: linked.Token);
+                    else if (action.TorrentHash != null)
+                        inventory = await _inventory.RefreshCandidateAsync(action.ClientInstanceId, action.TorrentHash, linked.Token);
                     var staleReason = await RevalidateActionAsync(action, inventory, seeding, linked.Token);
                     if (action.Kind is MaintenanceActionKind.RecycleContent or MaintenanceActionKind.DeleteContent
                         && movedByClient.GetValueOrDefault(action.ClientInstanceId) >= cfg.Maintenance.RecycleBin.MaxTorrentMovesPerRun)

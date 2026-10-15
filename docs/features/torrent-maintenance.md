@@ -78,9 +78,13 @@ not use the unmapped content-deletion fallback retained for legacy lifecycle
 cleanup. Existing failed-category lifecycle cleanup remains compatible when
 maintenance mappings and recycling are absent.
 
-Before each destructive action, apply re-enumerates every required client's torrent
+Before each file-moving or content-deleting action, apply re-enumerates every required client's torrent
 files and trackers, including owners whose top-level torrent metadata is unchanged.
-A failed refresh cannot authorize a move using an older inventory.
+A failed refresh cannot authorize a move using an older inventory. Non-destructive
+operations refresh only the current torrent on its owning client, including its
+files and trackers, before checking eligibility. Retention cleanup rechecks the
+recycled files directly. Initial inventory collection still covers all required clients; candidate
+snapshots never authorize content movement or deletion.
 
 Polling cannot make client updates and filesystem moves atomic. Avoid concurrent
 external file renames during maintenance: a change after the final ownership check

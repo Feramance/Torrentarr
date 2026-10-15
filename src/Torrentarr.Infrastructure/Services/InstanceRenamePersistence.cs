@@ -16,9 +16,11 @@ public static class InstanceRenamePersistence
     internal sealed record StateMove(string Table, string Column, string Source, string Destination, List<long> Rows);
     internal sealed record DirectoryMove(string Source, string Destination);
     internal sealed record Journal(string OldDigest, string NewDigest, List<StateMove> State, List<DirectoryMove> Directories, string? DatabasePath = null);
-    private static readonly string[] ArrTables = ["torrentlibrary", "moviesfilesmodel", "episodefilesmodel", "seriesfilesmodel",
+    private static readonly (string Table, string Column)[] ArrStateColumns =
+        [.. new[] { "torrentlibrary", "moviesfilesmodel", "episodefilesmodel", "seriesfilesmodel",
         "albumfilesmodel", "trackfilesmodel", "artistfilesmodel", "bookfilesmodel", "authorfilesmodel",
-        "moviequeuemodel", "episodequeuemodel", "albumqueuemodel", "bookqueuemodel", "filesqueued"];
+        "moviequeuemodel", "episodequeuemodel", "albumqueuemodel", "bookqueuemodel", "filesqueued" }
+            .Select(table => (table, "arrinstance")), ("searchactivity", "category")];
     private static string Digest(byte[] bytes) => Convert.ToHexString(SHA256.HashData(bytes));
 
     public static void Validate(TorrentarrConfig current, TorrentarrConfig updated, JObject? renames)
@@ -80,9 +82,8 @@ public static class InstanceRenamePersistence
             {
                 var destination = rename.Value.Value<string>()!;
                 var client = current.GetTorrentClient(rename.Name);
-                foreach (var table in client != null ? new[] { "torrentlibrary" } : ArrTables)
+                foreach (var (table, column) in client != null ? [("torrentlibrary", "qbitinstance")] : ArrStateColumns)
                 {
-                    var column = client != null ? "qbitinstance" : "arrinstance";
                     if (!await TableExistsAsync(connection, transaction, table, ct)) continue;
                     if ((await RowsAsync(connection, transaction, table, column, destination, ct)).Count != 0)
                         throw new ArgumentException($"Stored state already exists for rename destination '{destination}'.");
@@ -214,7 +215,7 @@ public static class InstanceRenamePersistence
     {
         foreach (var move in journal.State)
         {
-            if (!(move.Column == "arrinstance" && ArrTables.Contains(move.Table)
+            if (!(ArrStateColumns.Contains((move.Table, move.Column))
                 || move.Column == "qbitinstance" && move.Table == "torrentlibrary"))
                 throw new InvalidOperationException("Invalid rename recovery table.");
             foreach (var row in move.Rows)

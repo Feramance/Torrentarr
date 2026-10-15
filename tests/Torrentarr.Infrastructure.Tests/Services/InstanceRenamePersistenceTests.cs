@@ -72,6 +72,8 @@ public sealed class InstanceRenamePersistenceTests : IDisposable
             type.ClrType.GetProperty("ArrInstance")!.SetValue(entity, "Radarr-before");
             _db.Add(entity);
         }
+        _db.SearchActivity.Add(new() { Category = "Radarr-before", Summary = "Last search", Timestamp = "2026-10-15T10:00:00Z" });
+        _db.SearchActivity.Add(new() { Category = "other", Summary = "Other search" });
         await _db.SaveChangesAsync();
         var renames = new JObject { ["Radarr-before"] = "Radarr-after" };
         await InstanceRenamePersistence.SaveAsync(_before, _after, renames, _loader, _db);
@@ -82,7 +84,13 @@ public sealed class InstanceRenamePersistenceTests : IDisposable
             command.CommandText = $"SELECT COUNT(*) FROM {type.GetTableName()} WHERE arrinstance='Radarr-after'";
             Convert.ToInt64(await command.ExecuteScalarAsync()).Should().Be(1, type.GetTableName());
         }
+        var activity = await _db.SearchActivity.AsNoTracking().SingleAsync(a => a.Category == "Radarr-after");
+        activity.Summary.Should().Be("Last search");
+        activity.Timestamp.Should().Be("2026-10-15T10:00:00Z");
+        (await _db.SearchActivity.AsNoTracking().SingleAsync(a => a.Category == "other")).Summary.Should().Be("Other search");
+        (await _db.SearchActivity.AnyAsync(a => a.Category == "Radarr-before")).Should().BeFalse();
     }
+
 
     [Theory]
     [InlineData("qBit-after")]
@@ -216,6 +224,60 @@ public sealed class InstanceRenamePersistenceTests : IDisposable
         File.ReadAllText(Path.Combine(published ? newDirectory : oldDirectory, "file")).Should().Be("data");
         File.Exists(ConfigPath + ".rename.json").Should().BeFalse();
         using var exclusive = new FileStream(DbPath, FileMode.Open, FileAccess.ReadWrite, FileShare.None);
+    }
+
+    [Theory]
+    [InlineData(false, false)]
+    [InlineData(true, false)]
+    [InlineData(true, true)]
+    public async Task SearchActivity_RecoversInterruptedRename(bool published, bool committed)
+    {
+        _db.SearchActivity.Add(new() { Category = committed ? "Radarr-after" : "Radarr-before", Summary = "summary", Timestamp = "timestamp" });
+        await _db.SaveChangesAsync();
+        using var command = _db.Database.GetDbConnection().CreateCommand();
+        await _db.Database.OpenConnectionAsync();
+        command.CommandText = "SELECT rowid FROM searchactivity";
+        var rowid = Convert.ToInt64(await command.ExecuteScalarAsync());
+        var oldDigest = Digest();
+        _loader.SaveConfig(_after);
+        var newDigest = Digest();
+        if (!published) _loader.SaveConfig(_before);
+        WriteJournal(new(oldDigest, newDigest, [new("searchactivity", "category", "Radarr-before", "Radarr-after", [rowid])], []));
+        await InstanceRenamePersistence.RecoverAsync(ConfigPath, DbPath);
+        await InstanceRenamePersistence.RecoverAsync(ConfigPath, DbPath);
+        var activity = await _db.SearchActivity.AsNoTracking().SingleAsync();
+        activity.Category.Should().Be(published ? "Radarr-after" : "Radarr-before");
+        activity.Summary.Should().Be("summary"); activity.Timestamp.Should().Be("timestamp");
+    }
+
+    [Fact]
+    public async Task SearchActivityUpdateFailure_RollsBackAllArrState()
+    {
+        _before.ArrInstances["Radarr-before"] = new(); _after.ArrInstances["Radarr-after"] = new();
+        _db.SearchActivity.Add(new() { Category = "Radarr-before", Summary = "retained" });
+        await _db.SaveChangesAsync();
+        await _db.Database.ExecuteSqlRawAsync("UPDATE torrentlibrary SET arrinstance='Radarr-before' WHERE id=1");
+        await _db.Database.ExecuteSqlRawAsync("CREATE TRIGGER reject_activity BEFORE UPDATE ON searchactivity BEGIN SELECT RAISE(ABORT, 'rejected'); END;");
+        var original = File.ReadAllText(ConfigPath);
+        await FluentActions.Awaiting(() => InstanceRenamePersistence.SaveAsync(_before, _after,
+            new JObject { ["Radarr-before"] = "Radarr-after" }, _loader, _db)).Should().ThrowAsync<Microsoft.Data.Sqlite.SqliteException>();
+        (await _db.SearchActivity.AsNoTracking().SingleAsync()).Category.Should().Be("Radarr-before");
+        (await _db.TorrentLibrary.AsNoTracking().SingleAsync(t => t.Id == 1)).ArrInstance.Should().Be("Radarr-before");
+        File.ReadAllText(ConfigPath).Should().Be(original);
+        File.Exists(ConfigPath + ".rename.json").Should().BeFalse();
+    }
+
+    [Fact]
+    public async Task SearchActivityDestinationCollision_RejectsWithoutChangingConfig()
+    {
+        _before.ArrInstances["Radarr-before"] = new(); _after.ArrInstances["Radarr-after"] = new();
+        _db.SearchActivity.Add(new() { Category = "RADARR-AFTER", Summary = "retained" });
+        await _db.SaveChangesAsync();
+        var original = File.ReadAllText(ConfigPath);
+        await FluentActions.Awaiting(() => InstanceRenamePersistence.SaveAsync(_before, _after,
+            new JObject { ["Radarr-before"] = "Radarr-after" }, _loader, _db)).Should().ThrowAsync<ArgumentException>();
+        File.ReadAllText(ConfigPath).Should().Be(original);
+        (await _db.SearchActivity.AsNoTracking().SingleAsync()).Summary.Should().Be("retained");
     }
 
     [Fact]

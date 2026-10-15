@@ -601,6 +601,103 @@ public sealed class MaintenanceSafetyTests : IDisposable
         _client.Verify(c => c.GetTorrentsAsync(It.IsAny<string?>(), It.IsAny<string?>(), It.IsAny<CancellationToken>()), Times.Exactly(2));
     }
 
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task ManyNonDestructiveActions_RefreshOnlyEachCandidate(bool tagging)
+    {
+        const int count = 100;
+        for (var i = 0; i < count; i++) AddTorrent("hash-" + i, "file-" + i + ".mkv").IsPrivate = true;
+        ClientConfig.Maintenance.CategoryMappings = [new() { ClientPath = "/downloads", Category = "other" }];
+        ClientConfig.Maintenance.AutomaticManagement.PrivateTag = "private";
+        _client.Setup(c => c.SetCategoryAsync(It.IsAny<List<string>>(), It.IsAny<string>(), It.IsAny<CancellationToken>())).ReturnsAsync(true);
+        _client.Setup(c => c.AddTagsAsync(It.IsAny<List<string>>(), It.IsAny<List<string>>(), It.IsAny<CancellationToken>())).ReturnsAsync(true);
+        var other = new Mock<ITorrentClient>();
+        _config.TorrentClients["other"] = new() { Host = "fixture" };
+        other.SetupGet(c => c.Identity).Returns(new TorrentClientIdentity("other", "fake"));
+        other.SetupGet(c => c.Capabilities).Returns(TorrentClientCapabilities.QBittorrent);
+        other.Setup(c => c.GetTorrentsAsync(It.IsAny<string?>(), It.IsAny<string?>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync([new() { Hash = "unrelated", Size = 0 }]);
+        other.Setup(c => c.GetTorrentFilesAsync(It.IsAny<string>(), It.IsAny<CancellationToken>())).ReturnsAsync([]);
+        other.Setup(c => c.GetTorrentTrackersAsync(It.IsAny<string>(), It.IsAny<CancellationToken>())).ReturnsAsync([]);
+        _registry.Setup(r => r.GetClient("other")).Returns(other.Object);
+        var plan = await Preview(tagging ? MaintenanceOperation.PrivateTagging : MaintenanceOperation.CategoryReconcile);
+        plan.CandidateCount.Should().Be(count);
+        _client.Invocations.Clear();
+        other.Invocations.Clear();
+        var run = await Apply(plan);
+        run.Applied.Should().Be(count);
+        other.Verify(c => c.GetTorrentsAsync(It.IsAny<string?>(), It.IsAny<string?>(), It.IsAny<CancellationToken>()), Times.Once);
+        other.Verify(c => c.GetTorrentFilesAsync(It.IsAny<string>(), It.IsAny<CancellationToken>()), Times.Once);
+        other.Verify(c => c.GetTorrentTrackersAsync(It.IsAny<string>(), It.IsAny<CancellationToken>()), Times.Once);
+        _client.Verify(c => c.GetTorrentFilesAsync(It.IsAny<string>(), It.IsAny<CancellationToken>()), Times.Exactly(count * 2));
+        _client.Verify(c => c.GetTorrentTrackersAsync(It.IsAny<string>(), It.IsAny<CancellationToken>()), Times.Exactly(count * 2));
+        _client.Verify(c => c.GetTorrentsAsync(It.IsAny<string?>(), It.IsAny<string?>(), It.IsAny<CancellationToken>()), Times.Exactly(count + 1));
+    }
+
+    [Theory]
+    [InlineData("removed")]
+    [InlineData("scope")]
+    [InlineData("tracker")]
+    [InlineData("capability")]
+    public async Task CandidateRefresh_StillRejectsStaleActions(string change)
+    {
+        var torrent = AddTorrent();
+        ClientConfig.Maintenance.Scope = "explicit";
+        ClientConfig.Maintenance.ExplicitCategories = ["movies"];
+        if (change == "tracker")
+        {
+            ClientConfig.Maintenance.TrackerAssignments = [new() { TrackerContains = "tracker.example", Category = "other" }];
+            _client.Setup(c => c.GetTorrentTrackersAsync("abc", It.IsAny<CancellationToken>())).ReturnsAsync([new() { Url = "https://tracker.example/announce", Status = 2 }]);
+        }
+        else ClientConfig.Maintenance.CategoryMappings = [new() { ClientPath = "/downloads", Category = "other" }];
+        var plan = await Preview(MaintenanceOperation.CategoryReconcile);
+        plan.CandidateCount.Should().Be(1);
+        if (change == "removed") _torrents.Clear();
+        if (change == "scope") torrent.Category = "outside";
+        if (change == "tracker") _client.Setup(c => c.GetTorrentTrackersAsync("abc", It.IsAny<CancellationToken>())).ReturnsAsync([]);
+        if (change == "capability") _client.SetupGet(c => c.Capabilities).Returns(TorrentClientCapabilities.QBittorrent with { Categories = false });
+        (await Apply(plan)).Applied.Should().Be(0);
+        _client.Verify(c => c.SetCategoryAsync(It.IsAny<List<string>>(), It.IsAny<string>(), It.IsAny<CancellationToken>()), Times.Never);
+    }
+
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task Retention_RechecksFilesystemWithoutRefreshingTorrentInventory(bool refreshed)
+    {
+        AddTorrent();
+        var directory = Path.Combine(_root, ".recycle", "one");
+        Directory.CreateDirectory(directory);
+        var path = Path.Combine(directory, "expired");
+        File.WriteAllText(path, "data");
+        File.SetLastWriteTimeUtc(path, DateTime.UtcNow.AddDays(-60));
+        var plan = await Preview(MaintenanceOperation.RecycleRetention);
+        if (refreshed) File.SetLastWriteTimeUtc(path, DateTime.UtcNow);
+        _client.Invocations.Clear();
+        (await Apply(plan)).Applied.Should().Be(1);
+        File.Exists(path).Should().Be(refreshed);
+        _client.Verify(c => c.GetTorrentsAsync(It.IsAny<string?>(), It.IsAny<string?>(), It.IsAny<CancellationToken>()), Times.Once);
+    }
+
+    [Fact]
+    public async Task MixedPlan_RefreshesAllOwnersBeforeOrphanMove()
+    {
+        AddTorrent("owner", "owned.mkv");
+        var orphan = Path.Combine(_root, "orphan.mkv");
+        File.WriteAllText(orphan, "data");
+        ClientConfig.Maintenance.Orphans.Enabled = true;
+        ClientConfig.Maintenance.Orphans.MinimumAgeMinutes = 0;
+        ClientConfig.Maintenance.CategoryMappings = [new() { ClientPath = "/downloads", Category = "other" }];
+        var plan = await _maintenance.PreviewAsync(new() { ClientInstanceIds = ["one"], Operations = [MaintenanceOperation.CategoryReconcile, MaintenanceOperation.OrphanScan] });
+        plan.CandidateCount.Should().Be(2);
+        _files["owner"] = [new() { Name = "orphan.mkv", Size = 4 }];
+        _client.Setup(c => c.SetCategoryAsync(It.IsAny<List<string>>(), It.IsAny<string>(), It.IsAny<CancellationToken>())).ReturnsAsync(true);
+        var run = await Apply(plan);
+        run.Skipped.Should().Be(1); run.Applied.Should().Be(1);
+        File.Exists(orphan).Should().BeTrue();
+    }
+
     [Fact]
     public async Task HigherPriorityPolicyWithSameName_DoesNotReplacePreviewedAction()
     {

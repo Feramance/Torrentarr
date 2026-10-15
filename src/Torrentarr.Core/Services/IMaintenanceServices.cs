@@ -13,6 +13,8 @@ public interface IPathMappingService
 public interface ITorrentInventoryService
 {
     Task<TorrentInventory> BuildAsync(IEnumerable<string>? instanceIds = null, CancellationToken ct = default);
+    /// <summary>Refreshes one torrent for eligibility checks; does not establish global file ownership.</summary>
+    Task<TorrentInventory> RefreshCandidateAsync(string instanceId, string hash, CancellationToken ct = default);
     Task<TorrentInventory> RefreshAsync(TorrentInventory previous, string? candidateInstance = null, string? candidateHash = null, CancellationToken ct = default);
 }
 
