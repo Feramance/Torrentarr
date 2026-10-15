@@ -1,5 +1,27 @@
 # Changelog
 
+## v6.17.0-1 (2026-10-15)
+
+### Bug Fixes
+- Fix data path provenance, Arr history renames and maintenance refresh cost ([6b39381](https://github.com/Feramance/Torrentarr/commit/6b39381ce74e2374f9bb1ddfe3fb07deac041979))
+- Fix maintenance ownership and rename recovery review findings ([ffc7a2e](https://github.com/Feramance/Torrentarr/commit/ffc7a2e1073fe1f0b11c509aff6223c4b85afcba))
+- Fix frontend dependency denial-of-service vulnerabilities ([a77c4ca](https://github.com/Feramance/Torrentarr/commit/a77c4ca2c9f62042cba677f35aaff61ee73c342c))
+- Fix PR review findings in config renames and free-space safety ([4505ddd](https://github.com/Feramance/Torrentarr/commit/4505ddd0017e71f3d3da2a51e82f5a3f9201551f))
+- fix: isolate client failures and align seeding safety checks ([01e862d](https://github.com/Feramance/Torrentarr/commit/01e862df53e998de8c9326284955d240314fc860))
+- fix: resolve maintenance safety and client rename review findings ([da085e6](https://github.com/Feramance/Torrentarr/commit/da085e6dc72edbdf809f130c037cb1f16b740d92))
+- fix: address maintenance safety and standalone client review findings ([208b4ea](https://github.com/Feramance/Torrentarr/commit/208b4ea16e24454d2ec64a7a7c4a14df656f9bcf))
+- fix: gate weekly releases on age and passing CI ([8318c70](https://github.com/Feramance/Torrentarr/commit/8318c707632dfa7ff7df22889c012e8c6089da83))
+- fix: treat torrent clients equally and isolate request failures ([8640ff0](https://github.com/Feramance/Torrentarr/commit/8640ff04db29dffe2e6e80b63094815871a362a4))
+- fix: embed UI manifest in Docker publishes ([7ea3ad7](https://github.com/Feramance/Torrentarr/commit/7ea3ad77719553d20e24a1683c3c258f89af358c))
+- fix: harden maintenance and complete torrent client routing ([4d41158](https://github.com/Feramance/Torrentarr/commit/4d41158b5e15cac391c82f29e48d2d5011455a95))
+
+### Maintenance
+- Ignore disabled free-space clients and allow reload migrations ([c3262ca](https://github.com/Feramance/Torrentarr/commit/c3262cace12820c23af6663ccafa1035dd8906f9))
+- Roll back rejected pause markers and exit informational commands early ([09feccf](https://github.com/Feramance/Torrentarr/commit/09feccfad75e7e65a8b4d945caa07e4ca1b2f006))
+- Preserve uncertain deletions and recover free-space pause markers ([9627940](https://github.com/Feramance/Torrentarr/commit/962794053238dacdb3d85ce6e53dbfc71e5dfe2f))
+
+---
+
 ## v6.16.1-1 (2026-10-12)
 
 ### Bug Fixes
