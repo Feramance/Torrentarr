@@ -80,7 +80,6 @@ describe("getStatus", () => {
     server.use(
       http.get("/web/status", () =>
         HttpResponse.json({
-          qbit: { alive: false, host: null, port: null, version: null },
           qbitInstances: {},
           arrs: [],
           ready: true,
@@ -90,7 +89,7 @@ describe("getStatus", () => {
 
     const result = await getStatus();
 
-    expect(result.qbit.alive).toBe(false);
+    expect(result.qbitInstances).toEqual({});
     expect(result.arrs).toHaveLength(0);
   });
 });

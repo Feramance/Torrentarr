@@ -3,6 +3,7 @@ using System.IO.Enumeration;
 using System.Security.Cryptography;
 using System.Text;
 using Microsoft.Extensions.Hosting;
+using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
 using Newtonsoft.Json;
 using Torrentarr.Core.Configuration;
@@ -22,6 +23,7 @@ public sealed class MaintenanceCoordinator : BackgroundService, IMaintenanceCoor
     private readonly ISafeDeletionService _deletion;
     private readonly IMaintenanceNotificationService _notifications;
     private readonly ILogger<MaintenanceCoordinator> _logger;
+    private readonly IServiceScopeFactory _scopes;
     private readonly ConcurrentDictionary<string, MaintenancePlan> _plans = new();
     private readonly ConcurrentDictionary<string, SemaphoreSlim> _instanceLocks = new(StringComparer.OrdinalIgnoreCase);
     private readonly List<MaintenanceRunSummary> _history = new();
@@ -38,7 +40,7 @@ public sealed class MaintenanceCoordinator : BackgroundService, IMaintenanceCoor
         IHardlinkInspector hardlinks,
         ISafeDeletionService deletion,
         IMaintenanceNotificationService notifications,
-        ILogger<MaintenanceCoordinator> logger)
+        ILogger<MaintenanceCoordinator> logger, IServiceScopeFactory scopes)
     {
         _config = config;
         _registry = registry;
@@ -48,6 +50,7 @@ public sealed class MaintenanceCoordinator : BackgroundService, IMaintenanceCoor
         _deletion = deletion;
         _notifications = notifications;
         _logger = logger;
+        _scopes = scopes;
         LoadHistory();
     }
 
@@ -74,7 +77,10 @@ public sealed class MaintenanceCoordinator : BackgroundService, IMaintenanceCoor
 
     public async Task<MaintenancePlan> PreviewAsync(MaintenancePreviewRequest request, CancellationToken ct = default)
     {
+        using var processing = ConfigMutationGuard.EnterProcessing();
         PrunePlans();
+        using var scope = _scopes.CreateScope();
+        var seeding = scope.ServiceProvider.GetRequiredService<ISeedingService>();
         var allConfigs = _config.GetAllTorrentClients();
         var ids = request.ClientInstanceIds.Count > 0
             ? request.ClientInstanceIds.Distinct(StringComparer.OrdinalIgnoreCase).ToList()
@@ -100,15 +106,19 @@ public sealed class MaintenanceCoordinator : BackgroundService, IMaintenanceCoor
 
         // References must always include every connected client: selected IDs limit
         // actions, not ownership discovery for shared download roots.
-        var inventory = await _inventory.BuildAsync(
-            operations.Contains(MaintenanceOperation.OrphanScan) ? null : ids, ct);
+        var inventory = await _inventory.BuildAsync(ct: ct);
         warnings.AddRange(inventory.Warnings);
-        if (operations.Contains(MaintenanceOperation.OrphanScan))
-        {
-            foreach (var id in allConfigs.Keys)
-                if (_registry.GetClient(id) == null)
-                    critical.Add($"[{id}] Torrent client is disconnected; orphan actions are blocked.");
+        if (operations.Contains(MaintenanceOperation.OrphanScan) && ids.Any(id => allConfigs.GetValueOrDefault(id)?.Maintenance.Orphans.Enabled == true)
+            && !inventory.IsComplete)
             critical.AddRange(inventory.Warnings.Select(w => $"Orphan inventory incomplete: {w}"));
+
+        void AddActions(MaintenanceOperation operation, IEnumerable<MaintenanceAction> candidates)
+        {
+            foreach (var action in candidates)
+            {
+                action.Arguments["operation"] = operation.ToString();
+                actions.Add(action);
+            }
         }
         foreach (var id in ids)
         {
@@ -120,23 +130,23 @@ public sealed class MaintenanceCoordinator : BackgroundService, IMaintenanceCoor
                 && IsInScope(t.Torrent, cfg)).ToList();
 
             if (operations.Contains(MaintenanceOperation.OrphanScan) && cfg.Maintenance.Orphans.Enabled)
-                actions.AddRange(PlanOrphans(id, cfg, inventory));
+                AddActions(MaintenanceOperation.OrphanScan, PlanOrphans(id, cfg, inventory));
             if (operations.Contains(MaintenanceOperation.HardlinkAudit) && cfg.Maintenance.Hardlinks.Enabled)
-                actions.AddRange(await PlanHardlinksAsync(id, cfg, client, items, ct));
+                AddActions(MaintenanceOperation.HardlinkAudit, await PlanHardlinksAsync(id, cfg, client, items, ct));
             if (operations.Contains(MaintenanceOperation.UnregisteredCleanup) && cfg.Maintenance.Unregistered.Enabled)
-                actions.AddRange(PlanUnregistered(id, cfg, items));
+                AddActions(MaintenanceOperation.UnregisteredCleanup, PlanUnregistered(id, cfg, items, seeding));
             if (operations.Contains(MaintenanceOperation.CategoryReconcile))
-                actions.AddRange(PlanCategories(id, cfg, client, items));
+                AddActions(MaintenanceOperation.CategoryReconcile, PlanCategories(id, cfg, client, items));
             if (operations.Contains(MaintenanceOperation.AutomaticManagement))
-                actions.AddRange(PlanAutomaticManagement(id, cfg, client, items));
+                AddActions(MaintenanceOperation.AutomaticManagement, PlanAutomaticManagement(id, cfg, client, items));
             if (operations.Contains(MaintenanceOperation.PrivateTagging))
-                actions.AddRange(PlanPrivateTags(id, cfg, client, items));
+                AddActions(MaintenanceOperation.PrivateTagging, PlanPrivateTags(id, cfg, client, items));
             if (operations.Contains(MaintenanceOperation.TrackerErrorTagging))
-                actions.AddRange(PlanTrackerErrorTags(id, cfg, client, items));
+                AddActions(MaintenanceOperation.TrackerErrorTagging, PlanTrackerErrorTags(id, cfg, client, items));
             if (operations.Contains(MaintenanceOperation.RepairPaused) && cfg.Maintenance.Repair.Enabled)
-                actions.AddRange(PlanRepair(id, cfg, client, items));
+                AddActions(MaintenanceOperation.RepairPaused, PlanRepair(id, cfg, client, items));
             if (operations.Contains(MaintenanceOperation.SharePolicy))
-                actions.AddRange(PlanSharePolicies(id, cfg, client, items, inventory));
+                AddActions(MaintenanceOperation.SharePolicy, PlanSharePolicies(id, cfg, client, items, inventory, seeding));
             if (operations.Contains(MaintenanceOperation.RecycleRetention) && cfg.Maintenance.RecycleBin.Enabled)
                 actions.Add(new MaintenanceAction
                 {
@@ -147,10 +157,21 @@ public sealed class MaintenanceCoordinator : BackgroundService, IMaintenanceCoor
                 });
         }
 
+        for (var index = 0; index < actions.Count; index++)
+        {
+            var action = actions[index];
+            if (action.Kind is not (MaintenanceActionKind.QuarantineFile or MaintenanceActionKind.RecycleContent or MaintenanceActionKind.DeleteContent)) continue;
+            var cfg = allConfigs[action.ClientInstanceId];
+            var blocked = !inventory.IsComplete ? "File ownership inventory is incomplete."
+                : cfg.Maintenance.PathMappings.Count == 0 ? "Maintenance requires local path mappings."
+                : !cfg.Maintenance.RecycleBin.Enabled ? "Maintenance recycling is disabled." : null;
+            if (blocked != null) action.BlockedReason = blocked;
+        }
+
         var plan = new MaintenancePlan
         {
             ExpiresAt = DateTimeOffset.UtcNow.AddMinutes(Math.Max(1, expiryMinutes)),
-            ConfigurationFingerprint = Fingerprint(ids),
+            ConfigurationFingerprint = Fingerprint(),
             ClientInstanceIds = ids,
             Operations = operations,
             Actions = actions,
@@ -167,16 +188,19 @@ public sealed class MaintenanceCoordinator : BackgroundService, IMaintenanceCoor
     public async Task<MaintenanceRunSummary> ApplyAsync(string planId, CancellationToken ct = default)
     {
         if (!_plans.TryGetValue(planId, out var plan)) throw new KeyNotFoundException("Maintenance plan was not found.");
-        if (plan.Consumed) throw new InvalidOperationException("Maintenance plan has already been consumed.");
-        if (plan.ExpiresAt <= DateTimeOffset.UtcNow) throw new InvalidOperationException("Maintenance plan has expired.");
-        if (plan.CriticalErrors.Count > 0) throw new InvalidOperationException("Maintenance plan contains critical validation errors.");
-        if (plan.ClientInstanceIds.Any(id => !(_config.GetTorrentClient(id)?.Maintenance.Armed ?? false)))
-            throw new InvalidOperationException("Maintenance must be explicitly armed after preview before applying mutations.");
-        if (!CryptographicOperations.FixedTimeEquals(
-                Encoding.UTF8.GetBytes(plan.ConfigurationFingerprint),
-                Encoding.UTF8.GetBytes(Fingerprint(plan.ClientInstanceIds))))
-            throw new InvalidOperationException("Maintenance configuration changed after preview.");
-        plan.Consumed = true;
+        lock (plan)
+        {
+            if (plan.Consumed) throw new InvalidOperationException("Maintenance plan has already been consumed.");
+            if (plan.ExpiresAt <= DateTimeOffset.UtcNow) throw new InvalidOperationException("Maintenance plan has expired.");
+            if (plan.CriticalErrors.Count > 0) throw new InvalidOperationException("Maintenance plan contains critical validation errors.");
+            if (plan.ClientInstanceIds.Any(id => !(_config.GetTorrentClient(id)?.Maintenance.Armed ?? false)))
+                throw new InvalidOperationException("Maintenance must be explicitly armed after preview before applying mutations.");
+            if (!CryptographicOperations.FixedTimeEquals(
+                    Encoding.UTF8.GetBytes(plan.ConfigurationFingerprint),
+                    Encoding.UTF8.GetBytes(Fingerprint())))
+                throw new InvalidOperationException("Maintenance configuration changed after preview.");
+            plan.Consumed = true;
+        }
         return await ApplyPlanAsync(plan, "apply", ct);
     }
 
@@ -186,7 +210,7 @@ public sealed class MaintenanceCoordinator : BackgroundService, IMaintenanceCoor
             || plan.Consumed
             || plan.ExpiresAt <= DateTimeOffset.UtcNow
             || plan.CriticalErrors.Count > 0
-            || plan.ConfigurationFingerprint != Fingerprint(plan.ClientInstanceIds))
+            || plan.ConfigurationFingerprint != Fingerprint())
             throw new InvalidOperationException("A current successful preview is required before arming maintenance.");
         var selected = request.ClientInstanceIds.Count > 0 ? request.ClientInstanceIds : plan.ClientInstanceIds;
         var outside = selected.Where(id => !plan.ClientInstanceIds.Contains(id, StringComparer.OrdinalIgnoreCase)).ToList();
@@ -270,6 +294,7 @@ public sealed class MaintenanceCoordinator : BackgroundService, IMaintenanceCoor
 
     private async Task<MaintenanceRunSummary> ApplyPlanAsync(MaintenancePlan plan, string trigger, CancellationToken outerCt)
     {
+        using var processing = ConfigMutationGuard.EnterProcessing();
         var locks = plan.ClientInstanceIds.OrderBy(x => x, StringComparer.OrdinalIgnoreCase)
             .Select(id => _instanceLocks.GetOrAdd(id, _ => new SemaphoreSlim(1, 1))).ToList();
         using var linked = CancellationTokenSource.CreateLinkedTokenSource(outerCt);
@@ -311,6 +336,11 @@ public sealed class MaintenanceCoordinator : BackgroundService, IMaintenanceCoor
 
         try
         {
+            using var scope = _scopes.CreateScope();
+            var seeding = scope.ServiceProvider.GetRequiredService<ISeedingService>();
+            var inventory = await _inventory.BuildAsync(ct: linked.Token);
+            var movedByClient = new Dictionary<string, int>(StringComparer.OrdinalIgnoreCase);
+            var unregisteredByTracker = new Dictionary<(string Client, string Tracker), int>();
             foreach (var action in plan.Actions)
             {
                 linked.Token.ThrowIfCancellationRequested();
@@ -322,17 +352,34 @@ public sealed class MaintenanceCoordinator : BackgroundService, IMaintenanceCoor
                 }
                 try
                 {
-                    var staleReason = await RevalidateActionAsync(action, linked.Token);
+                    var cfg = _config.GetTorrentClient(action.ClientInstanceId);
+                    if (cfg?.Maintenance.Enabled != true || !cfg.Maintenance.Armed
+                        || plan.ConfigurationFingerprint != Fingerprint())
+                        throw new OperationCanceledException("Maintenance was disarmed or configuration changed.");
+                    if (action.Kind is MaintenanceActionKind.QuarantineFile or MaintenanceActionKind.RecycleContent or MaintenanceActionKind.DeleteContent)
+                        inventory = await _inventory.RefreshAsync(inventory, ct: linked.Token);
+                    else if (action.TorrentHash != null)
+                        inventory = await _inventory.RefreshCandidateAsync(action.ClientInstanceId, action.TorrentHash, linked.Token);
+                    var staleReason = await RevalidateActionAsync(action, inventory, seeding, linked.Token);
+                    if (action.Kind is MaintenanceActionKind.RecycleContent or MaintenanceActionKind.DeleteContent
+                        && movedByClient.GetValueOrDefault(action.ClientInstanceId) >= cfg.Maintenance.RecycleBin.MaxTorrentMovesPerRun)
+                        staleReason = "Per-run content move limit reached.";
+                    var trackerKey = (action.ClientInstanceId.ToUpperInvariant(), action.Arguments.GetValueOrDefault("tracker", ""));
+                    if (trackerKey.Item2.Length > 0 && unregisteredByTracker.GetValueOrDefault(trackerKey) >= cfg.Maintenance.Unregistered.MaxPerTrackerPerRun)
+                        staleReason = "Per-tracker cleanup limit reached.";
                     if (staleReason != null)
                     {
                         run.Skipped++;
                         _notifications.Publish(new("skipped-unsafe-action", DateTimeOffset.UtcNow, action.ClientInstanceId, staleReason, action));
                         continue;
                     }
-                    var result = await ApplyActionAsync(action, linked.Token);
+                    var result = await ApplyActionAsync(action, inventory, linked.Token);
                     if (result.Success)
                     {
                         run.Applied++;
+                        if (trackerKey.Item2.Length > 0) unregisteredByTracker[trackerKey] = unregisteredByTracker.GetValueOrDefault(trackerKey) + 1;
+                        if (action.Kind is MaintenanceActionKind.RecycleContent or MaintenanceActionKind.DeleteContent)
+                            movedByClient[action.ClientInstanceId] = movedByClient.GetValueOrDefault(action.ClientInstanceId) + 1;
                         run.BytesMoved += result.BytesMoved;
                         _notifications.Publish(new(EventType(action), DateTimeOffset.UtcNow, action.ClientInstanceId, action.Reason, action));
                     }
@@ -341,6 +388,7 @@ public sealed class MaintenanceCoordinator : BackgroundService, IMaintenanceCoor
                         run.Failed++;
                         run.Errors.Add(result.Error ?? $"Action {action.Id} failed.");
                     }
+                    linked.Token.ThrowIfCancellationRequested();
                 }
                 catch (Exception ex) when (ex is not OperationCanceledException)
                 {
@@ -375,7 +423,7 @@ public sealed class MaintenanceCoordinator : BackgroundService, IMaintenanceCoor
         return run;
     }
 
-    private async Task<SafeDeletionResult> ApplyActionAsync(MaintenanceAction action, CancellationToken ct)
+    private async Task<SafeDeletionResult> ApplyActionAsync(MaintenanceAction action, TorrentInventory inventory, CancellationToken ct)
     {
         var client = _registry.GetClient(action.ClientInstanceId)
             ?? throw new InvalidOperationException("Torrent client disconnected before apply.");
@@ -398,11 +446,11 @@ public sealed class MaintenanceCoordinator : BackgroundService, IMaintenanceCoor
             case MaintenanceActionKind.Stop:
                 return Result(await client.PauseTorrentsAsync([action.TorrentHash!], ct));
             case MaintenanceActionKind.RemoveTorrent:
-                return await _deletion.RemoveTorrentAsync(action.ClientInstanceId, action.TorrentHash!, false, ct: ct);
+                return await _deletion.RemoveMaintenanceTorrentAsync(action.ClientInstanceId, action.TorrentHash!, false, inventory, ct: ct);
             case MaintenanceActionKind.RecycleContent:
-                return await _deletion.RemoveTorrentAsync(action.ClientInstanceId, action.TorrentHash!, true, ct: ct);
+                return await _deletion.RemoveMaintenanceTorrentAsync(action.ClientInstanceId, action.TorrentHash!, true, inventory, ct: ct);
             case MaintenanceActionKind.DeleteContent:
-                return await _deletion.RemoveTorrentAsync(action.ClientInstanceId, action.TorrentHash!, true, permanent: true, ct: ct);
+                return await _deletion.RemoveMaintenanceTorrentAsync(action.ClientInstanceId, action.TorrentHash!, true, inventory, permanent: true, ct: ct);
             case MaintenanceActionKind.SetUploadLimit:
                 return Result(await client.SetUploadLimitAsync(action.TorrentHash!, long.Parse(action.Arguments["limitKiB"]) * 1024, ct));
             case MaintenanceActionKind.EnableSuperSeeding:
@@ -415,53 +463,56 @@ public sealed class MaintenanceCoordinator : BackgroundService, IMaintenanceCoor
         }
     }
 
-    private async Task<string?> RevalidateActionAsync(MaintenanceAction action, CancellationToken ct)
+    private async Task<string?> RevalidateActionAsync(MaintenanceAction action, TorrentInventory inventory, ISeedingService seeding, CancellationToken ct)
     {
         var client = _registry.GetClient(action.ClientInstanceId);
-        if (client == null) return "Torrent client disconnected after preview.";
+        var cfg = _config.GetTorrentClient(action.ClientInstanceId);
+        if (client == null || cfg == null || cfg.Disabled) return "Torrent client is unavailable.";
+        if (action.Kind is MaintenanceActionKind.QuarantineFile or MaintenanceActionKind.RecycleContent or MaintenanceActionKind.DeleteContent)
+        {
+            if (!inventory.IsComplete) return "File ownership inventory is incomplete.";
+            if (cfg.Maintenance.PathMappings.Count == 0 || !cfg.Maintenance.RecycleBin.Enabled)
+                return "Mapped maintenance recycling is not enabled.";
+        }
         if (action.Kind == MaintenanceActionKind.QuarantineFile && action.Path != null)
         {
-            var inventory = await _inventory.BuildAsync(null, ct);
             var normalized = Path.GetFullPath(action.Path);
-            if (inventory.LocalPathReferences.Keys.Any(path =>
-                    path.Equals(normalized, OperatingSystem.IsWindows() ? StringComparison.OrdinalIgnoreCase : StringComparison.Ordinal)
-                    || path.StartsWith(normalized.TrimEnd(Path.DirectorySeparatorChar) + Path.DirectorySeparatorChar,
-                        OperatingSystem.IsWindows() ? StringComparison.OrdinalIgnoreCase : StringComparison.Ordinal)))
-                return "File is no longer orphaned; a torrent now references this path.";
+            var comparer = OperatingSystem.IsWindows() ? StringComparison.OrdinalIgnoreCase : StringComparison.Ordinal;
+            if (inventory.LocalPathReferences.Keys.Any(path => path.Equals(normalized, comparer)
+                || path.StartsWith(normalized.TrimEnd(Path.DirectorySeparatorChar) + Path.DirectorySeparatorChar, comparer)))
+                return "File is no longer orphaned.";
+            if (!cfg.Maintenance.Orphans.Enabled || !File.Exists(normalized)
+                || File.GetLastWriteTimeUtc(normalized) > DateTime.UtcNow.AddMinutes(-cfg.Maintenance.Orphans.MinimumAgeMinutes))
+                return "Orphan eligibility changed after preview.";
+            var mapping = cfg.Maintenance.PathMappings.FirstOrDefault(m => _paths.IsSafeDescendant(normalized, m.LocalPath));
+            if (mapping == null || cfg.Maintenance.Orphans.ExcludePatterns.Any(pattern => FileSystemName.MatchesSimpleExpression(
+                pattern, Path.GetRelativePath(mapping.LocalPath, normalized), OperatingSystem.IsWindows())))
+                return "Orphan path is excluded or outside configured roots.";
         }
         if (action.TorrentHash != null)
         {
-            var current = await client.GetTorrentsAsync(cancellationToken: ct);
-            var torrent = current.FirstOrDefault(t => t.Hash.Equals(action.TorrentHash, StringComparison.OrdinalIgnoreCase));
-            if (torrent == null)
-                return "Torrent state changed after preview; the torrent no longer exists.";
-            if (action.Destructive)
+            var item = inventory.Torrents.FirstOrDefault(i => i.Torrent.ClientInstanceId.Equals(action.ClientInstanceId, StringComparison.OrdinalIgnoreCase)
+                && i.Torrent.Hash.Equals(action.TorrentHash, StringComparison.OrdinalIgnoreCase));
+            if (item == null || !IsInScope(item.Torrent, cfg)) return "Torrent no longer exists or is outside maintenance scope.";
+            if (!Enum.TryParse<MaintenanceOperation>(action.Arguments.GetValueOrDefault("operation"), out var operation))
+                return "Action has no valid preview operation.";
+            IEnumerable<MaintenanceAction> candidates = operation switch
             {
-                torrent.ClientInstanceId = action.ClientInstanceId;
-                var cfg = _config.GetTorrentClient(action.ClientInstanceId);
-                if (cfg == null) return "Torrent client configuration was removed after preview.";
-                if (torrent.AddedOn <= 0 || DateTimeOffset.UtcNow - DateTimeOffset.FromUnixTimeSeconds(torrent.AddedOn)
-                    < TimeSpan.FromMinutes(cfg.Maintenance.MinimumTorrentAgeMinutes))
-                    return "Torrent is younger than the configured maintenance safety window.";
-                var inventory = await _inventory.BuildAsync([action.ClientInstanceId], ct);
-                var item = inventory.Torrents.FirstOrDefault(i => i.Torrent.Hash.Equals(action.TorrentHash, StringComparison.OrdinalIgnoreCase));
-                if (item == null) return "Torrent inventory changed after preview.";
-                var hnr = HnrBlocked(cfg, item);
-                if (hnr != null) return hnr;
-                if (action.Reason.StartsWith("Tracker reports torrent as unregistered:", StringComparison.OrdinalIgnoreCase)
-                    && !item.Trackers.Any(t => cfg.Maintenance.Unregistered.Messages.Any(m => t.Msg.Contains(m, StringComparison.OrdinalIgnoreCase))))
-                    return "Torrent is no longer reported as unregistered.";
-                if (action.Reason.StartsWith("Matched share policy '", StringComparison.OrdinalIgnoreCase))
-                {
-                    const string prefix = "Matched share policy '";
-                    var start = prefix.Length;
-                    var end = action.Reason.IndexOf("'.", start, StringComparison.Ordinal);
-                    var name = end > start ? action.Reason[start..end] : string.Empty;
-                    var policy = cfg.Maintenance.SharePolicies.FirstOrDefault(p => p.Name.Equals(name, StringComparison.OrdinalIgnoreCase));
-                    if (policy == null || !Matches(policy, item) || !ReachedMaximum(policy, item.Torrent))
-                        return "Share-policy eligibility changed after preview.";
-                }
-            }
+                MaintenanceOperation.HardlinkAudit when cfg.Maintenance.Hardlinks.Enabled => await PlanHardlinksAsync(action.ClientInstanceId, cfg, client, [item], ct),
+                MaintenanceOperation.UnregisteredCleanup when cfg.Maintenance.Unregistered.Enabled => PlanUnregistered(action.ClientInstanceId, cfg, [item], seeding),
+                MaintenanceOperation.CategoryReconcile => PlanCategories(action.ClientInstanceId, cfg, client, [item]),
+                MaintenanceOperation.AutomaticManagement => PlanAutomaticManagement(action.ClientInstanceId, cfg, client, [item]),
+                MaintenanceOperation.PrivateTagging => PlanPrivateTags(action.ClientInstanceId, cfg, client, [item]),
+                MaintenanceOperation.TrackerErrorTagging => PlanTrackerErrorTags(action.ClientInstanceId, cfg, client, [item]),
+                MaintenanceOperation.RepairPaused when cfg.Maintenance.Repair.Enabled => PlanRepair(action.ClientInstanceId, cfg, client, [item]),
+                MaintenanceOperation.SharePolicy => PlanSharePolicies(action.ClientInstanceId, cfg, client, [item], inventory, seeding),
+                _ => []
+            };
+            var candidate = candidates.FirstOrDefault(c => c.Kind == action.Kind
+                && c.Arguments.Count == action.Arguments.Count - 1
+                && c.Arguments.All(p => action.Arguments.GetValueOrDefault(p.Key) == p.Value));
+            if (candidate == null) return "Action eligibility changed after preview.";
+            if (candidate.BlockedReason != null) return candidate.BlockedReason;
         }
         foreach (var capability in action.RequiredCapabilities)
         {
@@ -561,14 +612,14 @@ public sealed class MaintenanceCoordinator : BackgroundService, IMaintenanceCoor
         return actions;
     }
 
-    private static IEnumerable<MaintenanceAction> PlanUnregistered(string id, TorrentClientInstanceConfig cfg, IEnumerable<TorrentInventoryItem> items)
+    private static IEnumerable<MaintenanceAction> PlanUnregistered(string id, TorrentClientInstanceConfig cfg, IEnumerable<TorrentInventoryItem> items, ISeedingService seeding)
     {
         var perTracker = new Dictionary<string, int>(StringComparer.OrdinalIgnoreCase);
         var total = 0;
         foreach (var item in items)
         {
             if (cfg.Maintenance.Unregistered.CompletedOnly && item.Torrent.Progress < 1) continue;
-            if (HnrBlocked(cfg, item) != null) continue;
+            if (!seeding.HnrAllowsDelete(item.Torrent, item.Trackers)) continue;
             if (item.Torrent.AddedOn > 0 && DateTimeOffset.UtcNow - DateTimeOffset.FromUnixTimeSeconds(item.Torrent.AddedOn) < TimeSpan.FromMinutes(cfg.Maintenance.Unregistered.GraceMinutes)) continue;
             var tracker = item.Trackers.FirstOrDefault(t => cfg.Maintenance.Unregistered.Messages.Any(message => t.Msg.Contains(message, StringComparison.OrdinalIgnoreCase)));
             if (tracker == null) continue;
@@ -584,8 +635,8 @@ public sealed class MaintenanceCoordinator : BackgroundService, IMaintenanceCoor
                 TorrentHash = item.Torrent.Hash,
                 TorrentName = item.Torrent.Name,
                 Bytes = item.Files.Sum(f => f.File.Size),
-                Reason = $"Tracker reports torrent as unregistered: {tracker.Msg}",
-                RequiredCapabilities = ["contentDeletion"],
+                Reason = "Tracker reports torrent as unregistered.",
+                Arguments = new() { ["tracker"] = Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(tracker.Url))) },
                 Destructive = true
             };
         }
@@ -614,7 +665,7 @@ public sealed class MaintenanceCoordinator : BackgroundService, IMaintenanceCoor
             {
                 if (!string.IsNullOrWhiteSpace(assignment.Category)
                     && !item.Torrent.Category.Equals(assignment.Category, StringComparison.OrdinalIgnoreCase))
-                    yield return CategoryAction(id, item, assignment.Category, "Tracker assignment selected this category.");
+                    yield return CategoryAction(id, item, assignment.Category, "Tracker assignment selected this category.", client.Capabilities.Categories ? null : "Client does not support categories.");
                 var existing = SplitTags(item.Torrent.Tags);
                 foreach (var tag in assignment.Tags.Where(tag => !existing.Contains(tag)))
                     yield return TagAction(id, item, tag, "Tracker assignment selected this tag.",
@@ -705,7 +756,7 @@ public sealed class MaintenanceCoordinator : BackgroundService, IMaintenanceCoor
 
     private static IEnumerable<MaintenanceAction> PlanSharePolicies(
         string id, TorrentClientInstanceConfig cfg, ITorrentClient client,
-        IEnumerable<TorrentInventoryItem> items, TorrentInventory inventory)
+        IEnumerable<TorrentInventoryItem> items, TorrentInventory inventory, ISeedingService seeding)
     {
         var destructivePlanned = 0;
         foreach (var item in items)
@@ -715,7 +766,7 @@ public sealed class MaintenanceCoordinator : BackgroundService, IMaintenanceCoor
             var shared = item.Files.Any(f => f.LocalPath != null
                 && inventory.LocalPathReferences.TryGetValue(Path.GetFullPath(f.LocalPath), out var owners)
                 && owners.Count > 1);
-            var safety = HnrBlocked(cfg, item) ?? (policy.MinimumSeedCount > item.Torrent.CompletePeers
+            var safety = (seeding.HnrAllowsDelete(item.Torrent, item.Trackers) ? null : "H&R obligations are not met.") ?? (policy.MinimumSeedCount > item.Torrent.CompletePeers
                 ? $"Seed count {item.Torrent.CompletePeers} is below minimum {policy.MinimumSeedCount}."
                 : item.Torrent.SeedingTime < policy.MinimumSeedingMinutes * 60L
                     ? "Minimum seeding time has not been reached."
@@ -749,7 +800,7 @@ public sealed class MaintenanceCoordinator : BackgroundService, IMaintenanceCoor
                 TorrentHash = item.Torrent.Hash,
                 TorrentName = item.Torrent.Name,
                 Reason = $"Matched share policy '{policy.Name}'." + (shared ? " Shared content will be preserved." : ""),
-                Arguments = policy.UploadLimitKiB.HasValue ? new() { ["limitKiB"] = policy.UploadLimitKiB.Value.ToString() } : new(),
+                Arguments = policy.UploadLimitKiB.HasValue ? new() { ["policy"] = cfg.Maintenance.SharePolicies.IndexOf(policy).ToString(System.Globalization.CultureInfo.InvariantCulture), ["limitKiB"] = policy.UploadLimitKiB.Value.ToString() } : new() { ["policy"] = cfg.Maintenance.SharePolicies.IndexOf(policy).ToString(System.Globalization.CultureInfo.InvariantCulture) },
                 Bytes = item.Files.Sum(f => f.File.Size),
                 Destructive = kind is MaintenanceActionKind.RecycleContent or MaintenanceActionKind.DeleteContent,
                 BlockedReason = kind == MaintenanceActionKind.SetUploadLimit && !policy.UploadLimitKiB.HasValue
@@ -810,47 +861,17 @@ public sealed class MaintenanceCoordinator : BackgroundService, IMaintenanceCoor
             && DateTimeOffset.UtcNow - DateTimeOffset.FromUnixTimeSeconds(torrent.LastActivity) >= TimeSpan.FromMinutes(policy.MaximumInactiveMinutes.Value);
     }
 
-    private static string? HnrBlocked(TorrentClientInstanceConfig cfg, TorrentInventoryItem item)
+    private string Fingerprint()
     {
-        var effective = SeedingService.ApplyCategoryOverride(cfg.CategorySeeding, item.Torrent.Category, cfg.MatchSubcategories);
-        if (effective.HitAndRunMode is not null && !effective.HitAndRunMode.Equals("disabled", StringComparison.OrdinalIgnoreCase)
-            && item.Torrent.Progress < effective.HitAndRunMinimumDownloadPercent / 100.0
-            && item.Torrent.Ratio < effective.HitAndRunPartialSeedRatio)
-            return "Partial-download H&R obligations are not met.";
-        var rules = cfg.Trackers.Count > 0 ? cfg.Trackers : new List<TrackerConfig>();
-        if (rules.Count == 0)
-        {
-            if (effective.HitAndRunMode is not null && !effective.HitAndRunMode.Equals("disabled", StringComparison.OrdinalIgnoreCase))
-            {
-                var ratioMet = effective.MinSeedRatio <= 0 || item.Torrent.Ratio >= effective.MinSeedRatio;
-                var timeMet = effective.MinSeedingTimeDays <= 0 || item.Torrent.SeedingTime >= effective.MinSeedingTimeDays * 86400L;
-                var met = effective.HitAndRunMode.Equals("and", StringComparison.OrdinalIgnoreCase) ? ratioMet && timeMet : ratioMet || timeMet;
-                if (!met) return "Category H&R obligations are not met.";
-            }
-            return null;
-        }
-        foreach (var tracker in rules.Where(t => item.Trackers.Any(actual => actual.Url.Contains(t.Uri, StringComparison.OrdinalIgnoreCase))))
-        {
-            if (string.IsNullOrWhiteSpace(tracker.HitAndRunMode) || tracker.HitAndRunMode.Equals("disabled", StringComparison.OrdinalIgnoreCase)) continue;
-            var ratioMet = !tracker.MinSeedRatio.HasValue || item.Torrent.Ratio >= tracker.MinSeedRatio.Value;
-            var timeMet = !tracker.MinSeedingTimeDays.HasValue || item.Torrent.SeedingTime >= tracker.MinSeedingTimeDays.Value * 86400L;
-            var met = tracker.HitAndRunMode.Equals("and", StringComparison.OrdinalIgnoreCase) ? ratioMet && timeMet : ratioMet || timeMet;
-            if (!met) return $"H&R obligations for tracker '{tracker.Name ?? tracker.Uri}' are not met.";
-        }
-        return null;
-    }
-
-    private string Fingerprint(IEnumerable<string> ids)
-    {
-        var selected = ids.OrderBy(x => x, StringComparer.OrdinalIgnoreCase)
+        var selected = _config.GetAllTorrentClients().Keys.OrderBy(x => x, StringComparer.OrdinalIgnoreCase)
             .ToDictionary(id => id, id =>
             {
                 var token = Newtonsoft.Json.Linq.JObject.FromObject(
-                    _config.GetTorrentClient(id)?.Maintenance ?? new MaintenanceConfig());
-                token.Remove(nameof(MaintenanceConfig.Armed));
+                    _config.GetTorrentClient(id) ?? new TorrentClientInstanceConfig());
+                (token[nameof(TorrentClientInstanceConfig.Maintenance)] as Newtonsoft.Json.Linq.JObject)?.Remove(nameof(MaintenanceConfig.Armed));
                 return token;
             });
-        return Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(JsonConvert.SerializeObject(selected))));
+        return Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(JsonConvert.SerializeObject(new { Clients = selected, Arr = _config.ArrInstances }))));
     }
 
     private void PrunePlans()

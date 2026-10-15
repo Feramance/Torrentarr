@@ -13,6 +13,7 @@ public interface ITorrentClient
     Task<string> GetVersionAsync(CancellationToken ct = default);
     Task<List<TorrentInfo>> GetTorrentsAsync(string? category = null, string? sort = null, CancellationToken cancellationToken = default);
     Task<bool> AddTorrentAsync(string url, string? category = null, string? savePath = null, CancellationToken ct = default);
+    /// <summary>Returns false for a definite rejection; throws when the remote removal outcome is uncertain.</summary>
     Task<bool> DeleteTorrentsAsync(List<string> hashes, bool deleteFiles = false, CancellationToken ct = default);
     Task<bool> PauseTorrentsAsync(List<string> hashes, CancellationToken ct = default);
     Task<bool> ResumeTorrentsAsync(List<string> hashes, CancellationToken ct = default);
@@ -57,6 +58,7 @@ public interface ITorrentClientRegistry
     Task<int> EnsureAllConnectedAsync(IEnumerable<KeyValuePair<string, TorrentClientInstanceConfig>> instances, CancellationToken ct = default);
     ITorrentClient? GetClient(string instanceId);
     IReadOnlyDictionary<string, ITorrentClient> GetAllClients();
+    Task<int> ReconcileAsync(IEnumerable<KeyValuePair<string, TorrentClientInstanceConfig>> instances, bool connect = true, CancellationToken ct = default);
     bool IsConnected();
     bool IsConnected(string instanceId);
 }

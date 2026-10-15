@@ -1,8 +1,11 @@
 import importlib.util
 import pathlib
 import unittest
+import sys
+from copy import deepcopy
 
 SCRIPT = pathlib.Path(__file__).parents[2] / "scripts" / "check-openapi-drift.py"
+sys.path.insert(0, str(SCRIPT.parent))
 spec = importlib.util.spec_from_file_location("openapi_drift", SCRIPT)
 module = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(module)
@@ -13,6 +16,34 @@ def document(paths, components=None):
 
 
 class OpenApiDriftTests(unittest.TestCase):
+    def test_config_warning_is_optional_and_cannot_hide_other_drift(self):
+        for route in ("/web/config", "/api/config"):
+            upstream = document({route: {"post": {"responses": {"200": {"content": {"application/json": {"schema": {
+                "type": "object", "properties": {"status": {"type": "string"}}, "required": ["status"]
+            }}}}}}}})
+            local = deepcopy(upstream)
+            schema = local["paths"][route]["post"]["responses"]["200"]["content"]["application/json"]["schema"]
+            schema["properties"]["warning"] = {"type": "string", "nullable": True, "description": "Saved but activation failed"}
+            self.assertEqual(module.compare(local, upstream, set()), [])
+            schema["required"].append("warning")
+            self.assertTrue(module.compare(local, upstream, set()))
+            schema["required"].remove("warning")
+            schema["properties"]["status"] = {"type": "integer"}
+            self.assertTrue(module.compare(local, upstream, set()))
+            schema["properties"]["status"] = {"type": "string"}
+            schema["properties"]["warning"] = "malformed"
+            self.assertTrue(module.compare(local, upstream, set()))
+
+    def test_accepts_only_the_declared_named_client_status_contract(self):
+        for route in ("/web/status", "/api/status"):
+            def status(schema):
+                return document({route: {"get": {"responses": {"200": {"content": {"application/json": {"schema": schema}}}}}}})
+            upstream = status({"type": "object", "additionalProperties": True})
+            self.assertEqual(module.compare(status(module.STATUS_SCHEMA), upstream, set()), [])
+            changed = deepcopy(module.STATUS_SCHEMA)
+            changed["properties"]["qbitInstances"]["additionalProperties"]["properties"]["alive"] = {"type": "string"}
+            self.assertIn("schema differs", "\n".join(module.compare(status(changed), upstream, set())))
+
     def test_accepts_matching_required_operation_contract(self):
         operation = {
             "parameters": [{"in": "query", "name": "q", "required": True}],

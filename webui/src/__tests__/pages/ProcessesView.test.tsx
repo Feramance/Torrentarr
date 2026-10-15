@@ -14,7 +14,6 @@ afterEach(() => server.resetHandlers());
 afterAll(() => server.close());
 
 const emptyStatus = {
-  qbit: { alive: false, host: null, port: null, version: null },
   qbitInstances: {},
   arrs: [],
   ready: true,

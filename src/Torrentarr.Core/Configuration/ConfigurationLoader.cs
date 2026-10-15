@@ -24,6 +24,7 @@ public class ConfigurationLoader
     public static string? TestConfigPathOverride { get; set; }
 
     private readonly string _configPath;
+    public string ConfigPath => _configPath;
 
     public ConfigurationLoader(string? configPath = null)
     {
@@ -68,27 +69,22 @@ public class ConfigurationLoader
     /// the directory of <c>TORRENTARR_CONFIG</c> when set to a file path, or the directory of
     /// <see cref="GetDefaultConfigPath"/> otherwise (not <c>cwd/config</c> when config resolves elsewhere).
     /// </summary>
-    public static string GetDataDirectoryPath()
+    public static string GetDataDirectoryPath() => GetDataDirectoryPath(null);
+
+    public static string GetDataDirectoryPath(string? configPath)
     {
         var dataOverride = ReadEnv("TORRENTARR_OVERRIDES_DATA_PATH", "QBITRR_OVERRIDES_DATA_PATH");
         if (!string.IsNullOrEmpty(dataOverride))
             return Path.GetFullPath(dataOverride);
 
+        var resolved = Path.GetFullPath(configPath ?? GetDefaultConfigPath());
         var envOverride = ReadConfigPathEnv();
-        if (!string.IsNullOrEmpty(envOverride))
-        {
-            if (envOverride.StartsWith("/config", StringComparison.Ordinal))
-                return "/config";
-            var fullConfig = Path.GetFullPath(envOverride);
-            return Path.GetDirectoryName(fullConfig)
-                ?? Path.Combine(Directory.GetCurrentDirectory(), "config");
-        }
-
-        var cfgPath = GetDefaultConfigPath();
-        var dir = Path.GetDirectoryName(Path.GetFullPath(cfgPath));
-        return !string.IsNullOrEmpty(dir)
-            ? dir
-            : Path.Combine(Directory.GetCurrentDirectory(), "config");
+        var comparison = OperatingSystem.IsWindows() ? StringComparison.OrdinalIgnoreCase : StringComparison.Ordinal;
+        if (!string.IsNullOrEmpty(envOverride) && envOverride.StartsWith("/config/", StringComparison.Ordinal)
+            && resolved.Equals(Path.GetFullPath(envOverride), comparison)
+            && resolved.StartsWith(Path.GetFullPath("/config").TrimEnd(Path.DirectorySeparatorChar) + Path.DirectorySeparatorChar, comparison))
+            return "/config";
+        return Path.GetDirectoryName(resolved) ?? Path.Combine(Directory.GetCurrentDirectory(), "config");
     }
 
     public TorrentarrConfig Load()
@@ -108,10 +104,11 @@ public class ConfigurationLoader
             try
             {
                 // Write back the migrated TOML and create a backup
+                using var mutation = ConfigMutationGuard.EnterMutation(_configPath);
                 var backupPath = _configPath + ".bak";
                 if (File.Exists(_configPath))
                     File.Copy(_configPath, backupPath, overwrite: true);
-                File.WriteAllText(_configPath, TomlSerializer.Serialize(tomlTable));
+                ConfigMutationGuard.WriteAtomic(_configPath, TomlSerializer.Serialize(tomlTable));
             }
             catch
             {
@@ -203,7 +200,7 @@ public class ConfigurationLoader
 
         ApplyOverridesSearchProcessing(config);
 
-        // TORRENTARR_QBIT_* / QBITRR_QBIT_* -> primary qBit instance (config.QBitInstances["qBit"])
+        // TORRENTARR_QBIT_* / QBITRR_QBIT_* -> literal legacy qBit section (config.QBitInstances["qBit"])
         if (config.QBitInstances.TryGetValue("qBit", out var qbit))
         {
             ApplyEnvBool("TORRENTARR_QBIT_DISABLED", "QBITRR_QBIT_DISABLED", v => qbit.Disabled = v);
@@ -246,8 +243,8 @@ public class ConfigurationLoader
         {
             foreach (var instance in config.ArrInstances.Values)
                 instance.SearchOnly = true;
-            foreach (var qbit in config.QBitInstances.Values)
-                qbit.Disabled = true;
+            foreach (var client in config.GetAllTorrentClients().Values)
+                client.Disabled = true;
         }
 
         if (IsEnvTruthy(processingOnly))
@@ -2011,16 +2008,16 @@ public class ConfigurationLoader
     /// </summary>
     public void SaveConfig(TorrentarrConfig config, string? path = null)
     {
-        var filePath = path ?? _configPath;
-        var directory = Path.GetDirectoryName(filePath);
+        var filePath = Path.GetFullPath(path ?? _configPath);
+        using var mutation = ConfigMutationGuard.EnterMutation(filePath);
+        ConfigMutationGuard.WriteAtomic(filePath, SerializeConfig(config));
+    }
 
-        if (!string.IsNullOrEmpty(directory) && !Directory.Exists(directory))
-        {
-            Directory.CreateDirectory(directory);
-        }
-
-        var tomlContent = GenerateTomlContent(config);
-        File.WriteAllText(filePath, tomlContent);
+    public string SerializeConfig(TorrentarrConfig config)
+    {
+        var toml = GenerateTomlContent(config);
+        TomlSerializer.Deserialize<TomlTable>(toml);
+        return toml;
     }
 
     private string GenerateTomlContent(TorrentarrConfig config)
@@ -2091,11 +2088,11 @@ public class ConfigurationLoader
         }
         sb.AppendLine();
 
-        // All qBit instances — "qBit" written first (primary), then additional [qBit-XXX].
+        // Write all legacy client sections in name order.
         // Include CHANGE_ME placeholders so multi-instance stubs survive WebUI round-trips.
         var orderedQbit = config.QBitInstances
             .Where(kv => !string.IsNullOrEmpty(kv.Value.Host))
-            .OrderBy(kv => kv.Key == "qBit" ? 0 : 1).ThenBy(kv => kv.Key);
+            .OrderBy(kv => kv.Key, StringComparer.OrdinalIgnoreCase);
 
         foreach (var (name, qbit) in orderedQbit)
         {

@@ -8,37 +8,37 @@ public interface ITorrentCacheService
     /// <summary>
     /// Get cached category for a torrent hash
     /// </summary>
-    string? GetCategory(string hash);
+    string? GetCategory(string instanceId, string hash);
 
     /// <summary>
     /// Set cached category for a torrent hash
     /// </summary>
-    void SetCategory(string hash, string category);
+    void SetCategory(string instanceId, string hash, string category);
 
     /// <summary>
     /// Get cached name for a torrent hash
     /// </summary>
-    string? GetName(string hash);
+    string? GetName(string instanceId, string hash);
 
     /// <summary>
     /// Set cached name for a torrent hash
     /// </summary>
-    void SetName(string hash, string name);
+    void SetName(string instanceId, string hash, string name);
 
     /// <summary>
     /// Check if hash is in the timed ignore cache
     /// </summary>
-    bool IsInIgnoreCache(string hash);
+    bool IsInIgnoreCache(string instanceId, string hash);
 
     /// <summary>
     /// Add hash to timed ignore cache
     /// </summary>
-    void AddToIgnoreCache(string hash, TimeSpan duration);
+    void AddToIgnoreCache(string instanceId, string hash, TimeSpan duration);
 
     /// <summary>
     /// Remove hash from ignore cache
     /// </summary>
-    void RemoveFromIgnoreCache(string hash);
+    void RemoveFromIgnoreCache(string instanceId, string hash);
 
     /// <summary>
     /// Check if download-phase file priorities have already been applied to this torrent hash.

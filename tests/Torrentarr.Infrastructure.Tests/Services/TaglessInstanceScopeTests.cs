@@ -186,7 +186,7 @@ public sealed class TaglessInstanceScopeTests
     {
         var clientsField = typeof(QBittorrentConnectionManager)
             .GetField("_clients", BindingFlags.NonPublic | BindingFlags.Instance)!;
-        var clients = (Dictionary<string, QBittorrentClient>)clientsField.GetValue(manager)!;
+        var clients = (Dictionary<string, Torrentarr.Core.Interfaces.ITorrentClient>)clientsField.GetValue(manager)!;
         clients[instanceName] = new StubQBittorrentClient([torrent]);
     }
 
@@ -235,6 +235,10 @@ public sealed class TaglessInstanceScopeTests
 
         var method = serviceType.GetMethod("HasTag", BindingFlags.NonPublic | BindingFlags.Instance);
         method.Should().NotBeNull();
-        return (bool)method!.Invoke(service, new object[] { torrent, tag })!;
+        var arguments = serviceType == typeof(FreeSpaceService)
+            ? new object[] { torrent, tag, Moq.Mock.Of<Torrentarr.Core.Interfaces.ITorrentClient>(
+                c => c.Capabilities == TorrentClientCapabilities.QBittorrent), torrent.QBitInstanceName }
+            : new object[] { torrent, tag };
+        return (bool)method!.Invoke(service, arguments)!;
     }
 }

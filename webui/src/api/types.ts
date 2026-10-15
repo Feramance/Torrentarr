@@ -41,13 +41,6 @@ export interface ArrListResponse {
   ready?: boolean;
 }
 
-export interface QbitStatus {
-  alive: boolean;
-  host: string | null;
-  port: number | null;
-  version: string | null;
-}
-
 export interface QbitInstance {
   alive: boolean;
   host: string;
@@ -157,7 +150,6 @@ export interface ConfigSchemaResponse {
 }
 
 export interface StatusResponse {
-  qbit: QbitStatus; // Legacy single-instance (default) for backward compatibility
   qbitInstances: { [instanceName: string]: QbitInstance }; // Multi-instance info
   arrs: ArrInfo[];
   ready?: boolean;
@@ -429,6 +421,7 @@ export type ConfigDocument = Record<string, unknown>;
 
 export interface ConfigUpdatePayload {
   changes: Record<string, unknown>;
+  renames?: Record<string, string>;
 }
 
 export interface UpdateState {
@@ -468,6 +461,7 @@ export interface MetaResponse {
 }
 
 export interface ConfigUpdateResponse {
+  warning?: string | null;
   status: string;
   configReloaded: boolean;
   reloadType:

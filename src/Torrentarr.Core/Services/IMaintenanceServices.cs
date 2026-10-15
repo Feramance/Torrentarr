@@ -13,6 +13,9 @@ public interface IPathMappingService
 public interface ITorrentInventoryService
 {
     Task<TorrentInventory> BuildAsync(IEnumerable<string>? instanceIds = null, CancellationToken ct = default);
+    /// <summary>Refreshes one torrent for eligibility checks; does not establish global file ownership.</summary>
+    Task<TorrentInventory> RefreshCandidateAsync(string instanceId, string hash, CancellationToken ct = default);
+    Task<TorrentInventory> RefreshAsync(TorrentInventory previous, string? candidateInstance = null, string? candidateHash = null, CancellationToken ct = default);
 }
 
 public interface IHardlinkInspector
@@ -23,6 +26,7 @@ public interface IHardlinkInspector
 public interface ISafeDeletionService
 {
     Task<SafeDeletionResult> RemoveTorrentAsync(string clientInstanceId, string hash, bool removeContent, bool permanent = false, CancellationToken ct = default);
+    Task<SafeDeletionResult> RemoveMaintenanceTorrentAsync(string clientInstanceId, string hash, bool removeContent, TorrentInventory inventory, bool permanent = false, CancellationToken ct = default);
     Task<SafeDeletionResult> QuarantineFileAsync(string clientInstanceId, string localPath, CancellationToken ct = default);
     Task<int> CleanupExpiredAsync(string clientInstanceId, CancellationToken ct = default);
 }

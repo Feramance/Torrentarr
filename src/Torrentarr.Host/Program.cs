@@ -21,16 +21,60 @@ using Serilog.Events;
 using System.Security.Claims;
 using System.Security.Cryptography;
 
+// Informational commands exit before configuration, logging or ownership initialization.
+var cmdArgs = Environment.GetCommandLineArgs().Skip(1).ToList();
+var firstArg = cmdArgs.Count > 0 ? cmdArgs[0].Trim().ToLowerInvariant() : "";
+
+if (firstArg is "--help" or "-h" or "--version" or "-v" or "--source" or "-s" or "--license" or "-l")
+{
+    if (cmdArgs.Count != 1)
+    {
+        Console.Error.WriteLine("Informational commands do not accept additional arguments.");
+        return 1;
+    }
+    if (firstArg is "--help" or "-h")
+    {
+        Console.WriteLine("Usage: Torrentarr.Host [option]");
+        Console.WriteLine("  --help, -h           Show this help and exit.");
+        Console.WriteLine("  --version, -v        Show version and exit.");
+        Console.WriteLine("  --source, -s         Show source URL and exit.");
+        Console.WriteLine("  --license, -l        Show license and exit.");
+        Console.WriteLine("  --gen-config, -gc    Generate default configuration.");
+        Console.WriteLine("  --repair-database    Repair the database.");
+        Console.WriteLine("  --backup-database [destination]  Back up the database.");
+        return 0;
+    }
+    // --version / -v: print version and exit (qBitrr parity)
+    if (firstArg is "--version" or "-v")
+    {
+        Console.WriteLine($"Torrentarr {UpdateService.GetCurrentVersion()}");
+        return 0;
+    }
+
+    // --license / -l: print license and exit (qBitrr parity)
+    if (firstArg is "--license" or "-l")
+    {
+        Console.WriteLine("Torrentarr is licensed under the MIT License.");
+        Console.WriteLine("Copyright (c) 2024-2026 Torrentarr contributors.");
+        Console.WriteLine("See https://github.com/Feramance/Torrentarr/blob/master/LICENSE for the full text.");
+        return 0;
+    }
+
+    // --source / -s: print source code URL and exit (qBitrr parity)
+    if (firstArg is "--source" or "-s")
+    {
+        Console.WriteLine("https://github.com/Feramance/Torrentarr");
+        return 0;
+    }
+
+}
+
 // Data directory: aligned with resolved config path (see ConfigurationLoader.GetDataDirectoryPath)
 var basePath = ConfigurationLoader.GetDataDirectoryPath();
 var logsPath = Path.Combine(basePath, "logs");
 var dbPath = Path.Combine(basePath, "torrentarr.db");
 Directory.CreateDirectory(basePath);
 Directory.CreateDirectory(logsPath);
-
-// CLI args (checked after host is built so WebApplicationFactory gets an IHost)
-var cmdArgs = Environment.GetCommandLineArgs().Skip(1).ToList();
-var firstArg = cmdArgs.Count > 0 ? cmdArgs[0].Trim().ToLowerInvariant() : "";
 
 // Config web: placeholder for redacted secrets; must be in scope before any handler that uses it
 const string REDACTED_PLACEHOLDER = "[redacted]";
@@ -90,6 +134,11 @@ Log.Logger = new LoggerConfiguration()
 try
 {
     Log.Information("Torrentarr starting...");
+
+    // TestServer clones share a fixture config; the existing test override never applies in production.
+    using var ownership = ConfigurationLoader.TestConfigPathOverride != null
+        ? null : HostConfigOwnership.Acquire(ConfigurationLoader.GetDefaultConfigPath());
+    await InstanceRenamePersistence.RecoverAsync(ConfigurationLoader.GetDefaultConfigPath(), dbPath);
 
     // Load configuration
     var configLoader = new ConfigurationLoader();
@@ -324,6 +373,7 @@ try
     });
 
     var app = builder.Build();
+    if (ownership != null) app.Lifetime.ApplicationStopped.Register(ownership.Dispose);
 
     // Prefer physical files for development, with the embedded SPA as the standalone fallback.
     app.Environment.WebRootFileProvider = EmbeddedWebAssets.Create(
@@ -341,6 +391,7 @@ try
 
     if (!string.IsNullOrEmpty(urlBase))
         app.UsePathBase(urlBase);
+    app.UseConfigMutationGuard(ConfigurationLoader.GetDefaultConfigPath(), host: true);
 
     // First-run hint: Host wwwroot is build output; API still works without the SPA bundle.
     var webRoot = app.Environment.WebRootFileProvider;
@@ -352,29 +403,6 @@ try
             Log.Warning(
                 "Web UI bundle was not found in the physical or embedded web root. Run ./build.sh or build webui for the full SPA.");
         }
-    }
-
-    // --version / -v: print version and exit (qBitrr parity)
-    if (cmdArgs.Count == 1 && (firstArg == "--version" || firstArg == "-v"))
-    {
-        Console.WriteLine($"Torrentarr {UpdateService.GetCurrentVersion()}");
-        return 0;
-    }
-
-    // --license / -l: print license and exit (qBitrr parity)
-    if (cmdArgs.Count == 1 && (firstArg == "--license" || firstArg == "-l"))
-    {
-        Console.WriteLine("Torrentarr is licensed under the MIT License.");
-        Console.WriteLine("Copyright (c) 2024-2026 Torrentarr contributors.");
-        Console.WriteLine("See https://github.com/Feramance/Torrentarr/blob/master/LICENSE for the full text.");
-        return 0;
-    }
-
-    // --source / -s: print source code URL and exit (qBitrr parity)
-    if (cmdArgs.Count == 1 && (firstArg == "--source" || firstArg == "-s"))
-    {
-        Console.WriteLine("https://github.com/Feramance/Torrentarr");
-        return 0;
     }
 
     // --gen-config / -gc: write default config and exit (qBitrr parity). Run after Build() so WebApplicationFactory gets an IHost.
@@ -703,45 +731,11 @@ try
     });
 
     // Web Status — matches TypeScript StatusResponse (no extra webui field)
-    app.MapGet("/web/status", async (TorrentarrConfig cfg, ITorrentClientRegistry qbitManager) =>
+    app.MapGet("/web/status", async (TorrentarrConfig cfg, ITorrentClientRegistry registry, CancellationToken ct) =>
     {
-        var primaryName = cfg.GetAllTorrentClients().Keys.FirstOrDefault() ?? "qBit";
-        var primaryQbit = cfg.GetTorrentClient(primaryName) ?? new QBitConfig();
-        var qbitConfigured = primaryQbit.Host != "CHANGE_ME" && !string.IsNullOrEmpty(primaryQbit.Host);
-        var qbitAlive = qbitConfigured && qbitManager.IsConnected();
-
-        string? qbitVersion = null;
-        if (qbitAlive)
-        {
-            var client = qbitManager.GetAllClients().Values.FirstOrDefault();
-            if (client != null)
-                try { qbitVersion = await client.GetVersionAsync(); } catch { /* best-effort */ }
-        }
-
-        // Build qBit instances dict from QBitInstances (all named instances)
-        var qbitInstances = new Dictionary<string, object>();
-        foreach (var (name, qbit) in cfg.QBitInstances)
-        {
-            var alive = name == "qBit" ? qbitAlive : qbitManager.IsConnected(name);
-            string? ver = name == "qBit" ? qbitVersion : null;
-            if (alive && name != "qBit")
-            {
-                var addlClient = qbitManager.GetClient(name);
-                if (addlClient != null)
-                    try { ver = await addlClient.GetVersionAsync(); } catch { /* best-effort */ }
-            }
-            qbitInstances[name] = new { alive, host = qbit.Host, port = qbit.Port, version = ver };
-        }
-
+        var qbitInstances = await TorrentClientApiBuilder.StatusAsync(cfg, registry, ct);
         return Results.Ok(new
         {
-            qbit = new
-            {
-                alive = qbitAlive,
-                host = qbitConfigured ? primaryQbit.Host : (string?)null,
-                port = qbitConfigured ? (int?)primaryQbit.Port : null,
-                version = qbitVersion
-            },
             qbitInstances,
             arrs = cfg.ArrInstances.Select(kvp => new
             {
@@ -760,100 +754,9 @@ try
     //   • each Arr instance's Category (Arr-managed)
     // The "instance" field is always the qBit instance name (never the Arr instance name)
     // so that ProcessesView can match categories to the correct qBit process card.
-    app.MapGet("/web/qbit/categories", async (ITorrentClientRegistry qbitManager, TorrentarrConfig cfg) =>
+    app.MapGet("/web/qbit/categories", async (ITorrentClientRegistry registry, TorrentarrConfig cfg, CancellationToken ct) =>
     {
-        var categories = new List<object>();
-        var primaryName = cfg.GetAllTorrentClients().Keys.FirstOrDefault() ?? "qBit";
-
-        // Build Arr-managed category lookup: category name → ArrInstanceConfig
-        var arrCategoryToConfig = cfg.ArrInstances
-            .Where(kvp => !string.IsNullOrEmpty(kvp.Value.Category))
-            .ToDictionary(kvp => kvp.Value.Category!, kvp => kvp.Value, StringComparer.OrdinalIgnoreCase);
-
-        var primaryQbit = cfg.GetTorrentClient(primaryName) ?? new QBitConfig();
-        var qbitManagedSet = new HashSet<string>(primaryQbit.ManagedCategories, StringComparer.OrdinalIgnoreCase);
-        var arrCategorySet = new HashSet<string>(arrCategoryToConfig.Keys, StringComparer.OrdinalIgnoreCase);
-        // Only show ManagedCategories from qBit config - not Arr categories
-        var monitoredForDefault = qbitManagedSet;
-
-        if (primaryQbit.Host != "CHANGE_ME" && monitoredForDefault.Count > 0)
-        {
-            try
-            {
-                var client = qbitManager.GetClient(primaryName) ?? qbitManager.GetAllClients().Values.FirstOrDefault();
-                if (client != null)
-                {
-                    var allTorrents = await client.GetTorrentsAsync();
-
-                    foreach (var catName in monitoredForDefault)
-                    {
-                        var torrentsInCat = CategorySeedingApiResolver.SelectAggregateTorrents(
-                            allTorrents, catName, primaryQbit.MatchSubcategories);
-                        var seedingTorrents = torrentsInCat.Where(t =>
-                            t.State.Contains("seeding", StringComparison.OrdinalIgnoreCase) ||
-                            t.State.Equals("uploading", StringComparison.OrdinalIgnoreCase)).ToList();
-
-                        var managedBy = arrCategorySet.Contains(catName) ? "arr" : "qbit";
-
-                        var effectiveSeeding = CategorySeedingApiResolver.ResolveAggregate(
-                            cfg, primaryName, primaryQbit, catName, torrentsInCat);
-
-                        categories.Add(new
-                        {
-                            category = catName,
-                            // Always the qBit instance name — ProcessesView matches on this field
-                            instance = primaryName,
-                            managedBy,
-                            torrentCount = torrentsInCat.Count,
-                            seedingCount = seedingTorrents.Count,
-                            totalSize = torrentsInCat.Sum(t => t.Size),
-                            avgRatio = torrentsInCat.Count > 0 ? torrentsInCat.Average(t => t.Ratio) : 0.0,
-                            avgSeedingTime = torrentsInCat.Count > 0 ? torrentsInCat.Average(t => (double)t.SeedingTime) : 0.0,
-                            seedingConfig = effectiveSeeding
-                        });
-                    }
-                }
-            }
-            catch { /* qBit not reachable */ }
-        }
-
-        // Additional qBit instances — only their own ManagedCategories are monitored
-        foreach (var (instName, instCfg) in cfg.QBitInstances.Where(q => q.Key != "qBit" && q.Value.Host != "CHANGE_ME"))
-        {
-            if (instCfg.ManagedCategories.Count == 0) continue;
-            try
-            {
-                var addlClient = qbitManager.GetClient(instName);
-                if (addlClient == null) continue;
-                var addlTorrents = await addlClient.GetTorrentsAsync();
-
-                foreach (var catName in instCfg.ManagedCategories)
-                {
-                    var torrentsInCat = CategorySeedingApiResolver.SelectAggregateTorrents(
-                        addlTorrents, catName, instCfg.MatchSubcategories);
-                    var seedingTorrents = torrentsInCat.Where(t =>
-                        t.State.Contains("seeding", StringComparison.OrdinalIgnoreCase) ||
-                        t.State.Equals("uploading", StringComparison.OrdinalIgnoreCase)).ToList();
-                    var effectiveSeeding = CategorySeedingApiResolver.ResolveAggregate(
-                        cfg, instName, instCfg, catName, torrentsInCat);
-
-                    categories.Add(new
-                    {
-                        category = catName,
-                        instance = instName,
-                        managedBy = "qbit",
-                        torrentCount = torrentsInCat.Count,
-                        seedingCount = seedingTorrents.Count,
-                        totalSize = torrentsInCat.Sum(t => t.Size),
-                        avgRatio = torrentsInCat.Count > 0 ? torrentsInCat.Average(t => t.Ratio) : 0.0,
-                        avgSeedingTime = torrentsInCat.Count > 0 ? torrentsInCat.Average(t => (double)t.SeedingTime) : 0.0,
-                        seedingConfig = effectiveSeeding
-                    });
-                }
-            }
-            catch { /* additional qBit instance not reachable */ }
-        }
-
+        var categories = await TorrentClientApiBuilder.CategoriesAsync(cfg, registry, ct: ct);
         return Results.Ok(new { categories, ready = true });
     });
 
@@ -877,11 +780,9 @@ try
         }).ToList<object>();
 
         // Add a process card for each configured qBit instance
-        foreach (var (instanceName, qbit) in cfg.QBitInstances.Where(q => q.Value.Host != "CHANGE_ME"))
+        foreach (var (instanceName, qbit) in cfg.GetAllTorrentClients().Where(q => q.Value.Host != "CHANGE_ME"))
         {
-            // Use IsConnected() (no params) for "qBit" to match the special case in /web/status
-            // This returns true if ANY qBit client is connected
-            var isConnected = instanceName == "qBit" ? qbitMgr.IsConnected() : qbitMgr.IsConnected(instanceName);
+            var isConnected = !qbit.Disabled && qbitMgr.IsConnected(instanceName);
 
             int? totalCount = null;
             int? seedingCount = null;
@@ -890,10 +791,7 @@ try
             {
                 try
                 {
-                    // For "qBit", get any client; for named instances, get by name
-                    var client = instanceName == "qBit"
-                        ? qbitMgr.GetAllClients().Values.FirstOrDefault()
-                        : qbitMgr.GetClient(instanceName);
+                    var client = qbitMgr.GetClient(instanceName);
 
                     if (client != null)
                     {
@@ -1434,7 +1332,7 @@ try
     // Web Config Update — frontend sends { changes: { "Section.Key": value, ... } } (dotted keys).
     // ConfigView.tsx flatten()s the hierarchical config into dotted paths before sending only the
     // changed keys.  We apply those changes onto the current in-memory config and save.
-    app.MapPost("/web/config", async (HttpRequest request, TorrentarrConfig cfg, ConfigurationLoader loader, WorkerProcessSupervisor workerMgr, QBitCategoryWorkerManager qbitCategoryMgr) =>
+    app.MapPost("/web/config", async (HttpRequest request, TorrentarrConfig cfg, ConfigurationLoader loader, WorkerProcessSupervisor workerMgr, QBitCategoryWorkerManager qbitCategoryMgr, ITorrentClientRegistry registry, TorrentarrDbContext db, IServiceProvider services) =>
     {
         try
         {
@@ -1443,6 +1341,9 @@ try
                 return Results.BadRequest(new { error = "Missing 'changes' field" });
 
             var changesObj = Newtonsoft.Json.Linq.JObject.Parse(changesEl.GetRawText());
+            var renames = payload.TryGetProperty("renames", out var renamesEl)
+                ? Newtonsoft.Json.Linq.JObject.Parse(renamesEl.GetRawText()) : null;
+            ConfigRenameHelper.PreserveSecrets(cfg, changesObj, renames);
             var (updatedConfig, applyError) = ApplyDottedConfigChanges(cfg, changesObj);
             if (applyError != null)
                 return applyError;
@@ -1453,7 +1354,7 @@ try
             if (!valid)
                 return Results.BadRequest(new { error = validationError });
 
-            return await SaveAndRespondConfigUpdate(cfg, updatedConfig, loader, workerMgr, qbitCategoryMgr);
+            return await SaveAndRespondConfigUpdate(cfg, updatedConfig, loader, workerMgr, qbitCategoryMgr, registry, db, services, renames);
         }
         catch (Exception ex)
         {
@@ -1645,92 +1546,9 @@ try
     });
 
     // Web Qbit Categories (api mirror — same logic as /web/qbit/categories, token-protected)
-    app.MapGet("/api/qbit/categories", async (ITorrentClientRegistry qbitManager, TorrentarrConfig cfg) =>
+    app.MapGet("/api/qbit/categories", async (ITorrentClientRegistry registry, TorrentarrConfig cfg, CancellationToken ct) =>
     {
-        var categories = new List<object>();
-
-        var arrCategoryToConfig = cfg.ArrInstances
-            .Where(kvp => !string.IsNullOrEmpty(kvp.Value.Category))
-            .ToDictionary(kvp => kvp.Value.Category!, kvp => kvp.Value, StringComparer.OrdinalIgnoreCase);
-
-        var primaryQbit2 = (cfg.QBitInstances.GetValueOrDefault("qBit") ?? new QBitConfig());
-        var qbitManagedSet = new HashSet<string>(primaryQbit2.ManagedCategories, StringComparer.OrdinalIgnoreCase);
-        var arrCategorySet = new HashSet<string>(arrCategoryToConfig.Keys, StringComparer.OrdinalIgnoreCase);
-        var monitoredForDefault = new HashSet<string>(qbitManagedSet.Union(arrCategorySet), StringComparer.OrdinalIgnoreCase);
-
-        if (primaryQbit2.Host != "CHANGE_ME" && monitoredForDefault.Count > 0)
-        {
-            try
-            {
-                var client = qbitManager.GetAllClients().Values.FirstOrDefault();
-                if (client != null)
-                {
-                    var allTorrents = await client.GetTorrentsAsync();
-                    foreach (var catName in monitoredForDefault)
-                    {
-                        var torrentsInCat = CategorySeedingApiResolver.SelectAggregateTorrents(
-                            allTorrents, catName, primaryQbit2.MatchSubcategories);
-                        var seedingTorrents = torrentsInCat.Where(t =>
-                            t.State.Contains("seeding", StringComparison.OrdinalIgnoreCase) ||
-                            t.State.Equals("uploading", StringComparison.OrdinalIgnoreCase)).ToList();
-
-                        var managedBy = arrCategorySet.Contains(catName) ? "arr" : "qbit";
-
-                        var effectiveSeeding = CategorySeedingApiResolver.ResolveAggregate(
-                            cfg, "qBit", primaryQbit2, catName, torrentsInCat);
-
-                        categories.Add(new
-                        {
-                            category = catName,
-                            instance = "qBit",
-                            managedBy,
-                            torrentCount = torrentsInCat.Count,
-                            seedingCount = seedingTorrents.Count,
-                            totalSize = torrentsInCat.Sum(t => t.Size),
-                            avgRatio = torrentsInCat.Count > 0 ? torrentsInCat.Average(t => t.Ratio) : 0.0,
-                            avgSeedingTime = torrentsInCat.Count > 0 ? torrentsInCat.Average(t => (double)t.SeedingTime) : 0.0,
-                            seedingConfig = effectiveSeeding
-                        });
-                    }
-                }
-            }
-            catch { }
-        }
-
-        foreach (var (instName, instCfg) in cfg.QBitInstances.Where(q => q.Key != "qBit" && q.Value.Host != "CHANGE_ME"))
-        {
-            if (instCfg.ManagedCategories.Count == 0) continue;
-            try
-            {
-                var addlClient = qbitManager.GetClient(instName);
-                if (addlClient == null) continue;
-                var addlTorrents = await addlClient.GetTorrentsAsync();
-                foreach (var catName in instCfg.ManagedCategories)
-                {
-                    var torrentsInCat = CategorySeedingApiResolver.SelectAggregateTorrents(
-                        addlTorrents, catName, instCfg.MatchSubcategories);
-                    var seedingTorrents = torrentsInCat.Where(t =>
-                        t.State.Contains("seeding", StringComparison.OrdinalIgnoreCase) ||
-                        t.State.Equals("uploading", StringComparison.OrdinalIgnoreCase)).ToList();
-                    var effectiveSeeding = CategorySeedingApiResolver.ResolveAggregate(
-                        cfg, instName, instCfg, catName, torrentsInCat);
-                    categories.Add(new
-                    {
-                        category = catName,
-                        instance = instName,
-                        managedBy = "qbit",
-                        torrentCount = torrentsInCat.Count,
-                        seedingCount = seedingTorrents.Count,
-                        totalSize = torrentsInCat.Sum(t => t.Size),
-                        avgRatio = torrentsInCat.Count > 0 ? torrentsInCat.Average(t => t.Ratio) : 0.0,
-                        avgSeedingTime = torrentsInCat.Count > 0 ? torrentsInCat.Average(t => (double)t.SeedingTime) : 0.0,
-                        seedingConfig = effectiveSeeding
-                    });
-                }
-            }
-            catch { }
-        }
-
+        var categories = await TorrentClientApiBuilder.CategoriesAsync(cfg, registry, ct: ct);
         return Results.Ok(new { categories, ready = true });
     });
 
@@ -1745,43 +1563,12 @@ try
         return Results.Ok(updater.BuildMetaResponse());
     });
 
-    app.MapGet("/api/status", async (TorrentarrConfig cfg, ITorrentClientRegistry qbitManager) =>
+    app.MapGet("/api/status", async (TorrentarrConfig cfg, ITorrentClientRegistry registry, CancellationToken ct) =>
     {
-        var apiPrimaryQbit = (cfg.QBitInstances.GetValueOrDefault("qBit") ?? new QBitConfig());
-        var qbitConfigured = apiPrimaryQbit.Host != "CHANGE_ME" && !string.IsNullOrEmpty(apiPrimaryQbit.Host);
-        var qbitAlive = qbitConfigured && qbitManager.IsConnected();
-
-        string? qbitVersion = null;
-        if (qbitAlive)
-        {
-            var client = qbitManager.GetAllClients().Values.FirstOrDefault();
-            if (client != null)
-                try { qbitVersion = await client.GetVersionAsync(); } catch { /* best-effort */ }
-        }
-
-        var qbitInstances2 = new Dictionary<string, object>();
-        foreach (var (name2, qbit2) in cfg.QBitInstances)
-        {
-            var alive2 = name2 == "qBit" ? qbitAlive : qbitManager.IsConnected(name2);
-            string? ver2 = name2 == "qBit" ? qbitVersion : null;
-            if (alive2 && name2 != "qBit")
-            {
-                var addlClient2 = qbitManager.GetClient(name2);
-                if (addlClient2 != null)
-                    try { ver2 = await addlClient2.GetVersionAsync(); } catch { /* best-effort */ }
-            }
-            qbitInstances2[name2] = new { alive = alive2, host = qbit2.Host, port = qbit2.Port, version = ver2 };
-        }
+        var qbitInstances = await TorrentClientApiBuilder.StatusAsync(cfg, registry, ct);
         return Results.Ok(new
         {
-            qbit = new
-            {
-                alive = qbitAlive,
-                host = qbitConfigured ? apiPrimaryQbit.Host : (string?)null,
-                port = qbitConfigured ? (int?)apiPrimaryQbit.Port : null,
-                version = qbitVersion
-            },
-            qbitInstances = qbitInstances2,
+            qbitInstances,
             arrs = cfg.ArrInstances.Select(kvp => new
             {
                 category = kvp.Value.Category,
@@ -2263,7 +2050,7 @@ try
         return Results.Content(StripSensitiveKeys(token).ToString(Newtonsoft.Json.Formatting.None), "application/json");
     });
 
-    app.MapPost("/api/config", async (HttpRequest request, TorrentarrConfig cfg, ConfigurationLoader loader, WorkerProcessSupervisor workerMgr, QBitCategoryWorkerManager qbitCategoryMgr) =>
+    app.MapPost("/api/config", async (HttpRequest request, TorrentarrConfig cfg, ConfigurationLoader loader, WorkerProcessSupervisor workerMgr, QBitCategoryWorkerManager qbitCategoryMgr, ITorrentClientRegistry registry, TorrentarrDbContext db, IServiceProvider services) =>
     {
         try
         {
@@ -2273,6 +2060,9 @@ try
 
             TorrentarrConfig? updatedConfig;
             var changesObj = Newtonsoft.Json.Linq.JObject.Parse(changesEl.GetRawText());
+            var renames = payload.TryGetProperty("renames", out var renamesEl)
+                ? Newtonsoft.Json.Linq.JObject.Parse(renamesEl.GetRawText()) : null;
+            ConfigRenameHelper.PreserveSecrets(cfg, changesObj, renames);
             var (mergedConfig, applyError) = ApplyDottedConfigChanges(cfg, changesObj);
             if (applyError != null)
                 return applyError;
@@ -2285,7 +2075,7 @@ try
             if (!valid)
                 return Results.BadRequest(new { error = validationError });
 
-            return await SaveAndRespondConfigUpdate(cfg, updatedConfig, loader, workerMgr, qbitCategoryMgr);
+            return await SaveAndRespondConfigUpdate(cfg, updatedConfig, loader, workerMgr, qbitCategoryMgr, registry, db, services, renames);
         }
         catch (Exception ex)
         {
@@ -2648,7 +2438,8 @@ static async Task<IResult> SaveAndRespondConfigUpdate(
     TorrentarrConfig updatedConfig,
     ConfigurationLoader loader,
     WorkerProcessSupervisor? workerMgr = null,
-    QBitCategoryWorkerManager? qbitCategoryMgr = null)
+    QBitCategoryWorkerManager? qbitCategoryMgr = null, ITorrentClientRegistry? registry = null,
+    TorrentarrDbContext? db = null, IServiceProvider? services = null, Newtonsoft.Json.Linq.JObject? renames = null)
 {
     var passwordHashError = WebUIAuthHelpers.ValidatePasswordHashForConfigApiSave(cfg, updatedConfig);
     if (passwordHashError != null)
@@ -2665,46 +2456,99 @@ static async Task<IResult> SaveAndRespondConfigUpdate(
             client.Maintenance.Armed = false;
     }
 
-    loader.SaveConfig(updatedConfig);
+    var suspended = false;
+    var suspensionStarted = false;
+    try
+    {
+        if (db != null)
+            await InstanceRenamePersistence.SaveAsync(cfg, updatedConfig, renames, loader, db, suspend: async () =>
+            {
+                suspensionStarted = true;
+                if (workerMgr != null) await ((IProcessOrchestrator)workerMgr).StopAsync(CancellationToken.None);
+                if (qbitCategoryMgr != null) await qbitCategoryMgr.SuspendAsync();
+                suspended = true;
+            });
+        else loader.SaveConfig(updatedConfig);
+    }
+    catch
+    {
+        if (suspensionStarted && !File.Exists(loader.ConfigPath + ".rename.json"))
+        {
+            if (workerMgr != null) await ((IProcessOrchestrator)workerMgr).StartAsync(CancellationToken.None);
+            if (qbitCategoryMgr != null) await qbitCategoryMgr.SyncWorkersWithConfigAsync();
+        }
+        throw;
+    }
     cfg.Settings = updatedConfig.Settings;
     cfg.WebUI = updatedConfig.WebUI;
     cfg.ArrInstances = updatedConfig.ArrInstances;
     cfg.QBitInstances = updatedConfig.QBitInstances;
     cfg.TorrentClients = updatedConfig.TorrentClients;
     TorrentPolicyHelper.InvalidateMonitoredPolicyCategoriesCache(cfg);
-
-    if (workerMgr != null)
+    string? warning = null;
+    try
     {
-        if (settingsChanged)
+        if (suspended)
         {
-            await workerMgr.RestartAllWorkersAsync();
-            if (reloadType == "full" && qbitCategoryMgr != null)
-                await qbitCategoryMgr.SyncWorkersWithConfigAsync();
+            services?.GetService<ITorrentCacheService>()?.Clear();
+            services?.GetService<IImportPathTracker>()?.Clear();
+            services?.GetService<StalledUploadTracker>()?.Clear();
         }
-        else
+        if (reloadType == "full" && registry != null) await registry.ReconcileAsync(cfg.GetAllTorrentClients(), connect: false);
+
+        if (workerMgr != null)
         {
-            switch (reloadType)
+            if (suspended)
             {
-                case "full":
-                    await workerMgr.RestartAllWorkersAsync();
-                    if (qbitCategoryMgr != null)
-                        await qbitCategoryMgr.SyncWorkersWithConfigAsync();
-                    break;
-                case "multi_arr":
-                case "single_arr":
-                    foreach (var inst in affectedInstancesList)
-                        await workerMgr.RestartWorkerAsync(inst);
-                    break;
+                await ((IProcessOrchestrator)workerMgr).StartAsync(CancellationToken.None);
+                if (qbitCategoryMgr != null) await qbitCategoryMgr.SyncWorkersWithConfigAsync();
+            }
+            else if (settingsChanged)
+            {
+                await workerMgr.RestartAllWorkersAsync();
+                if (reloadType == "full" && qbitCategoryMgr != null)
+                    await qbitCategoryMgr.SyncWorkersWithConfigAsync();
+            }
+            else
+            {
+                switch (reloadType)
+                {
+                    case "full":
+                        await workerMgr.RestartAllWorkersAsync();
+                        if (qbitCategoryMgr != null)
+                            await qbitCategoryMgr.SyncWorkersWithConfigAsync();
+                        break;
+                    case "multi_arr":
+                    case "single_arr":
+                        foreach (var inst in affectedInstancesList)
+                            await workerMgr.RestartWorkerAsync(inst);
+                        break;
+                }
             }
         }
+
+        if (workerMgr != null && (suspended || settingsChanged || reloadType is "full" or "single_arr" or "multi_arr"))
+        {
+            var statuses = await workerMgr.GetProcessStatusAsync();
+            var unavailable = statuses.Where(s => !s.Value.IsAlive).Select(s => s.Key).ToList();
+            if (unavailable.Count > 0)
+                warning = "Configuration saved, but these workers are not running: " + string.Join(", ", unavailable);
+        }
+
+    }
+    catch (Exception ex)
+    {
+        warning = "Configuration saved, but restarting workers or reconciling clients failed: " + ex.Message;
+        services?.GetService<ILogger<Program>>()?.LogError(ex, "Configuration saved but activation failed");
     }
 
     return Results.Ok(new
     {
         status = "ok",
-        configReloaded = reloadType != "none" && reloadType != "frontend",
+        configReloaded = warning == null && reloadType != "none" && reloadType != "frontend",
         reloadType,
-        affectedInstances = affectedInstancesList
+        affectedInstances = affectedInstancesList,
+        warning
     });
 }
 
@@ -3014,6 +2858,7 @@ class ProcessOrchestratorService : BackgroundService
 
     private async Task ProcessSpecialCategoriesAsync(CancellationToken cancellationToken)
     {
+        using var processing = ConfigMutationGuard.EnterProcessing();
         int totalFailed = 0;
         int totalRecheck = 0;
         foreach (var (instanceName, client) in _qbitManager.GetAllClients())
@@ -3061,7 +2906,7 @@ class ProcessOrchestratorService : BackgroundService
                         }
                     }
                     _logger.LogInformation("[{Instance}] Re-checking torrent: {Name}", instanceName, torrent.Name);
-                    await client.RecheckTorrentsAsync(new List<string> { torrent.Hash }, cancellationToken);
+                    if (client.Capabilities.Recheck) await client.RecheckTorrentsAsync(new List<string> { torrent.Hash }, cancellationToken);
                 }
             }
             catch (Exception ex)
@@ -3082,6 +2927,7 @@ class ProcessOrchestratorService : BackgroundService
         bool enableFreeSpace,
         CancellationToken cancellationToken)
     {
+        using var processing = ConfigMutationGuard.EnterProcessing();
         IServiceScope? policyScope = null;
         try
         {
@@ -3165,7 +3011,7 @@ class ProcessOrchestratorService : BackgroundService
         // §1.6: tagless mode needs a DB scope to read/write FreeSpacePaused column
         IServiceScope? scope = null;
         TorrentarrDbContext? dbContext = null;
-        if (_config.Settings.Tagless)
+        if (_config.Settings.Tagless || _qbitManager.GetAllClients().Values.Any(c => !c.Capabilities.Tags))
         {
             scope = _scopeFactory.CreateScope();
             dbContext = scope.ServiceProvider.GetRequiredService<TorrentarrDbContext>();
@@ -3179,36 +3025,33 @@ class ProcessOrchestratorService : BackgroundService
             var driveInfo = new DriveInfo(_freeSpaceFolder);
             _currentFreeSpace = driveInfo.AvailableFreeSpace - _minFreeSpaceBytes;
 
-            // Gather torrents from ALL qBit instances across all managed categories.
-            var allTorrents = new List<(string instanceName, ITorrentClient client, TorrentInfo torrent)>();
-            foreach (var (instanceName, client) in _qbitManager.GetAllClients())
-            {
-                foreach (var category in managedCategories)
-                {
-                    var torrents = await client.GetTorrentsAsync(category, "priority", cancellationToken);
-                    allTorrents.AddRange(torrents.Select(t => (instanceName, client, t)));
-                }
-            }
+            var inventory = await FreeSpaceInventory.ReadAsync(_config, _qbitManager, _logger, cancellationToken);
+            var allTorrents = inventory.Torrents;
+            _currentFreeSpace -= inventory.UnmanagedRemaining(t => managedCategories.Contains(t.Category));
 
             int[]? pausedCountRef = null;
             if (!_config.Settings.Tagless)
             {
-                pausedCount = allTorrents.Count(t => t.torrent.Tags?.Contains(freeSpacePausedTag) == true);
+                pausedCount = allTorrents.Count(t => t.Torrent.Tags?.Contains(freeSpacePausedTag) == true);
                 pausedCountRef = new int[] { pausedCount };
             }
 
-            foreach (var (instanceName, client, torrent) in allTorrents
-                .Select(x => (x.instanceName, x.client, x.torrent, key: TorrentPolicyHelper.TorrentQueuePositionSortKey(x.torrent)))
-                .OrderBy(x => x.key.InactiveQueueGroup)
-                .ThenBy(x => x.key.Nq)
-                .ThenBy(x => x.torrent.AddedOn)
-                .Select(x => (x.instanceName, x.client, x.torrent)))
-                await ProcessSingleTorrentSpaceAsync(instanceName, client, torrent, dbContext, pausedCountRef, cancellationToken);
+            var ordered = allTorrents.Where(t => managedCategories.Contains(t.Torrent.Category))
+                .OrderBy(t => TorrentPolicyHelper.TorrentQueuePositionSortKey(t.Torrent).InactiveQueueGroup)
+                .ThenBy(t => TorrentPolicyHelper.TorrentQueuePositionSortKey(t.Torrent).Nq)
+                .ThenBy(t => t.Torrent.AddedOn);
+            await inventory.ApplyAsync(ordered, (item, resumes) => ProcessSingleTorrentSpaceAsync(
+                item.InstanceName, item.Client, item.Torrent, dbContext,
+                _config.Settings.Tagless || !item.Client.Capabilities.Tags ? null : pausedCountRef,
+                resumes, cancellationToken), _logger, cancellationToken);
 
-            if (_config.Settings.Tagless && dbContext != null)
-                pausedCount = await dbContext.TorrentLibrary.CountAsync(t => t.FreeSpacePaused, cancellationToken);
-            else if (pausedCountRef != null)
-                pausedCount = pausedCountRef[0];
+            pausedCount = pausedCountRef?[0] ?? 0;
+            if (dbContext != null)
+            {
+                var taglessIds = allTorrents.Where(t => _config.Settings.Tagless || !t.Client.Capabilities.Tags)
+                    .Select(t => t.InstanceName).Distinct().ToList();
+                pausedCount += await dbContext.TorrentLibrary.CountAsync(t => t.FreeSpacePaused && taglessIds.Contains(t.QbitInstance), cancellationToken);
+            }
 
             _stateManager.Update("FreeSpaceManager", s =>
             {
@@ -3217,7 +3060,7 @@ class ProcessOrchestratorService : BackgroundService
                 s.Alive = _freeSpaceEnabled && _minFreeSpaceBytes > 0 && !string.IsNullOrEmpty(_freeSpaceFolder);
             });
         }
-        catch (Exception ex)
+        catch (Exception ex) when (ex is not OperationCanceledException)
         {
             _logger.LogError(ex, "Error in free space manager");
         }
@@ -3322,10 +3165,10 @@ class ProcessOrchestratorService : BackgroundService
     }
 
     private async Task ProcessSingleTorrentSpaceAsync(
-        string instanceName, ITorrentClient client, TorrentInfo torrent, TorrentarrDbContext? dbContext, int[]? pausedCountRef, CancellationToken cancellationToken)
+        string instanceName, ITorrentClient client, TorrentInfo torrent, TorrentarrDbContext? dbContext, int[]? pausedCountRef, List<Func<Task>>? resumes, CancellationToken cancellationToken)
     {
         const string freeSpacePausedTag = "qBitrr-free_space_paused";
-        var tagless = _config.Settings.Tagless;
+        var tagless = _config.Settings.Tagless || !client.Capabilities.Tags;
 
         var isFreeSpaceDownload = TorrentPolicyHelper.IsFreeSpaceDownloadState(torrent.State);
         var isPausedDownload = TorrentPolicyHelper.IsPausedDownloadStateForFreeSpace(torrent.State);
@@ -3341,6 +3184,16 @@ class ProcessOrchestratorService : BackgroundService
         else
         {
             hasFreeSpaceTag = torrent.Tags?.Contains(freeSpacePausedTag) == true;
+        }
+
+        if (isFreeSpaceDownload && !isPausedDownload && hasFreeSpaceTag)
+        {
+            if (tagless && dbContext != null)
+                await TaglessTorrentLibraryHelper.SetFreeSpacePausedAsync(
+                    dbContext, torrent.Hash, torrent.Category, instanceName, paused: false, cancellationToken);
+            else if (!await client.RemoveTagsAsync([torrent.Hash], [freeSpacePausedTag], cancellationToken))
+                throw new IOException("Torrent client rejected free-space marker cleanup.");
+            if (pausedCountRef != null) pausedCountRef[0]--;
         }
 
         if (isFreeSpaceDownload)
@@ -3360,12 +3213,19 @@ class ProcessOrchestratorService : BackgroundService
                 if (tagless && dbContext != null)
                     await TaglessTorrentLibraryHelper.SetFreeSpacePausedAsync(
                         dbContext, torrent.Hash, torrent.Category, instanceName, paused: true, cancellationToken);
-                else
-                    await client.AddTagsAsync(new List<string> { torrent.Hash }, new List<string> { freeSpacePausedTag }, cancellationToken);
+                else if (!await client.AddTagsAsync(new List<string> { torrent.Hash }, new List<string> { freeSpacePausedTag }, cancellationToken))
+                    throw new IOException("Torrent client rejected free-space marker update.");
+                await FreeSpaceInventory.PauseAndRollbackMarkerAsync(client, torrent.Hash, async () =>
+                {
+                    if (tagless && dbContext != null)
+                        await TaglessTorrentLibraryHelper.SetFreeSpacePausedAsync(
+                            dbContext, torrent.Hash, torrent.Category, instanceName, paused: false, CancellationToken.None);
+                    else if (!await client.RemoveTagsAsync([torrent.Hash], [freeSpacePausedTag], CancellationToken.None))
+                        throw new IOException("Torrent client rejected free-space marker rollback.");
+                }, cancellationToken);
                 if (pausedCountRef != null) pausedCountRef[0]++;
-                await client.PauseTorrentAsync(torrent.Hash, cancellationToken);
             }
-            else if (isPausedDownload && freeSpaceTest < 0)
+            else if (isPausedDownload && freeSpaceTest < 0 && hasFreeSpaceTag)
             {
                 _logger.LogInformation(
                     "FreeSpace: Keeping paused (insufficient space) | Torrent: {Name} | Available: {Available} | Needed: {Needed} | Deficit: {Deficit}",
@@ -3373,23 +3233,28 @@ class ProcessOrchestratorService : BackgroundService
                 if (tagless && dbContext != null)
                     await TaglessTorrentLibraryHelper.SetFreeSpacePausedAsync(
                         dbContext, torrent.Hash, torrent.Category, instanceName, paused: true, cancellationToken);
-                else
-                    await client.AddTagsAsync(new List<string> { torrent.Hash }, new List<string> { freeSpacePausedTag }, cancellationToken);
+                else if (!await client.AddTagsAsync(new List<string> { torrent.Hash }, new List<string> { freeSpacePausedTag }, cancellationToken))
+                    throw new IOException("Torrent client rejected free-space marker update.");
             }
-            else if (isPausedDownload && freeSpaceTest >= 0 && hasFreeSpaceTag)
+            else if (isPausedDownload && freeSpaceTest >= 0 && hasFreeSpaceTag && resumes != null)
             {
                 _logger.LogInformation(
                     "FreeSpace: Resuming download (space available) | Torrent: {Name} | Available: {Available} | Space after: {SpaceAfter}",
                     torrent.Name, FormatBytes(_currentFreeSpace), FormatBytes(freeSpaceTest));
                 _currentFreeSpace = freeSpaceTest;
-                // §1.6: tagless — clear DB column; else remove qBit tag
-                if (tagless && dbContext != null)
-                    await TaglessTorrentLibraryHelper.SetFreeSpacePausedAsync(
-                        dbContext, torrent.Hash, torrent.Category, instanceName, paused: false, cancellationToken);
-                else
-                    await client.RemoveTagsAsync(new List<string> { torrent.Hash }, new List<string> { freeSpacePausedTag }, cancellationToken);
-                if (pausedCountRef != null) pausedCountRef[0]--;
-                await client.ResumeTorrentAsync(torrent.Hash, cancellationToken);
+                resumes.Add(async () =>
+                {
+                    await FreeSpaceInventory.ResumeAndClearMarkerAsync(client, torrent.Hash, async () =>
+                    {
+                        // §1.6: tagless — clear DB column; else remove qBit tag
+                        if (tagless && dbContext != null)
+                            await TaglessTorrentLibraryHelper.SetFreeSpacePausedAsync(
+                                dbContext, torrent.Hash, torrent.Category, instanceName, paused: false, CancellationToken.None);
+                        else if (!await client.RemoveTagsAsync(new List<string> { torrent.Hash }, new List<string> { freeSpacePausedTag }, CancellationToken.None))
+                            throw new IOException("Torrent client rejected free-space marker update.");
+                    }, cancellationToken);
+                    if (pausedCountRef != null) pausedCountRef[0]--;
+                });
             }
             else if (!isPausedDownload && freeSpaceTest >= 0)
             {
@@ -3409,8 +3274,8 @@ class ProcessOrchestratorService : BackgroundService
             if (tagless && dbContext != null)
                 await TaglessTorrentLibraryHelper.SetFreeSpacePausedAsync(
                     dbContext, torrent.Hash, torrent.Category, instanceName, paused: false, cancellationToken);
-            else
-                await client.RemoveTagsAsync(new List<string> { torrent.Hash }, new List<string> { freeSpacePausedTag }, cancellationToken);
+            else if (!await client.RemoveTagsAsync(new List<string> { torrent.Hash }, new List<string> { freeSpacePausedTag }, cancellationToken))
+                throw new IOException("Torrent client rejected free-space marker update.");
             if (pausedCountRef != null) pausedCountRef[0]--;
         }
     }

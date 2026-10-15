@@ -1509,6 +1509,10 @@ public class ConfigurationLoaderTests : IDisposable
             Host = "localhost"
             Disabled = false
 
+            [TorrentClient.canonical]
+            Host = "localhost"
+            Disabled = false
+
             [Radarr]
             URI = "http://radarr:7878"
             APIKey = "key"
@@ -1523,6 +1527,8 @@ public class ConfigurationLoaderTests : IDisposable
             var config = new ConfigurationLoader(_tempFilePath).Load();
             config.ArrInstances["Radarr"].SearchOnly.Should().BeTrue();
             config.QBitInstances["qBit"].Disabled.Should().BeTrue();
+            config.TorrentClients["canonical"].Disabled.Should().BeTrue();
+            TorrentPolicyHelper.IsEffectiveQBitDisabled(config).Should().BeTrue();
         }
         finally
         {

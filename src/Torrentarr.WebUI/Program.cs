@@ -110,6 +110,10 @@ builder.Services.AddDbContext<TorrentarrDbContext>(options =>
     options.UseSqlite($"Data Source={dbPath}");
 });
 
+if (File.Exists(ConfigurationLoader.GetDefaultConfigPath() + ".rename.json"))
+    HostConfigOwnership.RequireStandaloneOwnership(ConfigurationLoader.GetDefaultConfigPath());
+await InstanceRenamePersistence.RecoverAsync(ConfigurationLoader.GetDefaultConfigPath(), dbPath);
+
 // Add Configuration Loader — load once and use for both DI and OIDC registration
 var configLoader = new ConfigurationLoader();
 TorrentarrConfig configForDI = new();
@@ -129,6 +133,7 @@ catch (Exception ex)
 }
 if (string.IsNullOrEmpty(configForDI.WebUI.Token))
 {
+    using var ownership = HostConfigOwnership.Acquire(configLoader.ConfigPath);
     var tokenBytes = new byte[32];
     RandomNumberGenerator.Fill(tokenBytes);
     configForDI.WebUI.Token = Convert.ToBase64String(tokenBytes);
@@ -165,6 +170,7 @@ builder.Services.AddSingleton<IHardlinkInspector, HardlinkInspector>();
 builder.Services.AddSingleton<ISafeDeletionService, SafeDeletionService>();
 builder.Services.AddSingleton<IMaintenanceNotificationService, MaintenanceNotificationService>();
 builder.Services.AddSingleton<IMaintenanceCoordinator, MaintenanceCoordinator>();
+builder.Services.AddScoped<ISeedingService, SeedingService>();
 builder.Services.AddHttpClient();
 builder.Services.AddHttpClient("ArrOpen").ConfigurePrimaryHttpMessageHandler(() => new HttpClientHandler { AllowAutoRedirect = false });
 builder.Services.AddHttpClient("ArrOpenSkipTls").ConfigurePrimaryHttpMessageHandler(() => new HttpClientHandler
@@ -227,6 +233,7 @@ if (configForDI.WebUI.BehindHttpsProxy)
 
 if (!string.IsNullOrEmpty(urlBase))
     app.UsePathBase(urlBase);
+app.UseConfigMutationGuard(ConfigurationLoader.GetDefaultConfigPath());
 
 // Ensure database is created and configure WAL mode
 using (var scope = app.Services.CreateScope())
@@ -510,24 +517,16 @@ app.MapGet("/web/loglevel", (LoggingLevelSwitch ls) =>
 });
 
 // Status endpoint
-app.MapGet("/web/status", async (TorrentarrDbContext db, TorrentarrConfig config) =>
+app.MapGet("/web/status", async (TorrentarrDbContext db, TorrentarrConfig config, ITorrentClientRegistry registry, CancellationToken ct) =>
 {
+    await registry.EnsureAllConnectedAsync(config.GetAllTorrentClients(), ct);
     var movieCount = await db.Movies.CountAsync();
     var episodeCount = await db.Episodes.CountAsync();
     var torrentCount = await db.TorrentLibrary.CountAsync();
 
     return Results.Ok(new
     {
-        qbit = new
-        {
-            alive = !(config.QBitInstances.GetValueOrDefault("qBit") ?? new QBitConfig()).Disabled,
-            host = (config.QBitInstances.GetValueOrDefault("qBit") ?? new QBitConfig()).Host,
-            port = (config.QBitInstances.GetValueOrDefault("qBit") ?? new QBitConfig()).Port,
-            version = (string?)null
-        },
-        qbitInstances = config.QBitInstances.ToDictionary(
-            kv => kv.Key,
-            kv => (object)new { alive = !kv.Value.Disabled, host = kv.Value.Host, port = kv.Value.Port, version = (string?)null }),
+        qbitInstances = await TorrentClientApiBuilder.StatusAsync(config, registry, ct),
         arrs = config.ArrInstances.Select(kvp => new
         {
             category = kvp.Value.Category,
@@ -676,12 +675,12 @@ app.MapGet("/web/stats", async (TorrentarrDbContext db) =>
 app.MapGet("/web/config", (TorrentarrConfig config) =>
 {
     var flat = BuildFlatConfig(config, redactSensitive: true);
-    return Results.Ok(flat);
+    return Results.Content(flat.ToString(Newtonsoft.Json.Formatting.None), "application/json");
 });
 
 // §6.8: POST /web/config — partial config changes with reload-type detection
 // Accepts { "changes": { "Section.Key": value, ... } }, saves and returns reloadType
-app.MapPost("/web/config", async (HttpContext ctx, TorrentarrConfig config, ConfigurationLoader loader, IConfigReloader reloader) =>
+app.MapPost("/web/config", async (HttpContext ctx, TorrentarrConfig config, ConfigurationLoader loader, IConfigReloader reloader, ITorrentClientRegistry registry, TorrentarrDbContext db) =>
 {
     Newtonsoft.Json.Linq.JObject? body = null;
     try
@@ -755,6 +754,8 @@ app.MapPost("/web/config", async (HttpContext ctx, TorrentarrConfig config, Conf
     try
     {
         // Build flat TOML-like config, apply changes, convert back to TorrentarrConfig
+        ConfigRenameHelper.PreserveSecrets(config, changesToken, body?["renames"] as Newtonsoft.Json.Linq.JObject);
+        changes = changesToken.Properties().ToDictionary(p => p.Name, p => p.Value);
         var flatConfig = BuildFlatConfig(config, redactSensitive: false);
 
         foreach (var (key, value) in changes)
@@ -778,13 +779,18 @@ app.MapPost("/web/config", async (HttpContext ctx, TorrentarrConfig config, Conf
             ApplyDotPathChange(flatConfig, key, value);
         }
 
+        foreach (var empty in flatConfig.Descendants().OfType<Newtonsoft.Json.Linq.JObject>().Reverse().ToList())
+            if (!empty.HasValues && empty.Parent is Newtonsoft.Json.Linq.JProperty property) property.Remove();
+
         var updatedConfig = FlatToConfig(flatConfig, config);
         var savePasswordHashError = WebUIAuthHelpers.ValidatePasswordHashForConfigApiSave(config, updatedConfig);
         if (savePasswordHashError != null)
             return Results.Json(new { error = savePasswordHashError }, statusCode: 403);
 
-        loader.SaveConfig(updatedConfig, reloader.ConfigPath);
+        await InstanceRenamePersistence.SaveAsync(config, updatedConfig, body?["renames"] as Newtonsoft.Json.Linq.JObject,
+            loader, db, reloader.ConfigPath);
         ApplyConfigInPlace(config, updatedConfig);
+        await registry.ReconcileAsync(config.GetAllTorrentClients(), connect: false);
     }
     catch (Exception ex)
     {
@@ -832,6 +838,7 @@ static void ApplyDotPathChange(Newtonsoft.Json.Linq.JObject root, string dotPath
         }
         else
         {
+            if (value.Type == Newtonsoft.Json.Linq.JTokenType.Null) return;
             // Create missing intermediate object
             var newObj = new Newtonsoft.Json.Linq.JObject();
             current[seg] = newObj;
@@ -842,7 +849,9 @@ static void ApplyDotPathChange(Newtonsoft.Json.Linq.JObject root, string dotPath
     var leafKey = segments[^1];
     var existingProp = current.Properties()
         .FirstOrDefault(p => p.Name.Equals(leafKey, StringComparison.OrdinalIgnoreCase));
-    if (existingProp != null)
+    if (value.Type == Newtonsoft.Json.Linq.JTokenType.Null)
+        existingProp?.Remove();
+    else if (existingProp != null)
         existingProp.Value = value;
     else
         current[leafKey] = value;
@@ -956,10 +965,6 @@ static TorrentarrConfig FlatToConfig(Newtonsoft.Json.Linq.JObject flat, Torrenta
     {
         result.WebUI = current.WebUI;
     }
-
-    result.QBitInstances = new Dictionary<string, QBitConfig>(current.QBitInstances);
-    result.TorrentClients = current.TorrentClients.ToDictionary(p => p.Key, p => p.Value, StringComparer.OrdinalIgnoreCase);
-    result.ArrInstances = new Dictionary<string, ArrInstanceConfig>(current.ArrInstances);
 
     foreach (var prop in flat.Properties())
     {
@@ -1605,68 +1610,10 @@ app.MapPost("/web/arr/rebuild", async (HttpContext ctx, TorrentarrConfig config)
 });
 
 // §6.5: qBit categories — seeding config + live torrent stats per category
-app.MapGet("/web/qbit/categories", async (TorrentarrConfig config, ITorrentClientRegistry clientRegistry, CancellationToken ct) =>
+app.MapGet("/web/qbit/categories", async (TorrentarrConfig config, ITorrentClientRegistry registry, CancellationToken ct) =>
 {
-    var categories = new List<object>();
-
-    var clients = config.GetAllTorrentClients();
-    await clientRegistry.EnsureAllConnectedAsync(clients, ct);
-
-    foreach (var (qbitName, qbitCfg) in clients)
-    {
-        if (qbitCfg.Disabled || !string.Equals(qbitCfg.Type, "qbittorrent", StringComparison.OrdinalIgnoreCase)) continue;
-
-        // Fetch live torrent list from this qBit instance
-        var liveTorrents = new List<TorrentInfo>();
-        try
-        {
-            var client = clientRegistry.GetClient(qbitName);
-            if (client != null && clientRegistry.IsConnected(qbitName))
-                liveTorrents = await client.GetTorrentsAsync(cancellationToken: ct);
-        }
-        catch { /* live stats unavailable — return zeros */ }
-
-        foreach (var cat in qbitCfg.ManagedCategories)
-        {
-            var catTorrents = CategorySeedingApiResolver.SelectAggregateTorrents(
-                liveTorrents, cat, qbitCfg.MatchSubcategories);
-            var seedingTorrents = catTorrents
-                .Where(t => t.State.Contains("upload", StringComparison.OrdinalIgnoreCase) ||
-                             t.State.Contains("seeding", StringComparison.OrdinalIgnoreCase))
-                .ToList();
-            var avgRatio = catTorrents.Count > 0 ? catTorrents.Average(t => t.Ratio) : 0.0;
-            var avgSeedingTimeDays = seedingTorrents.Count > 0
-                ? seedingTorrents.Average(t => t.SeedingTime) / 86400.0
-                : 0.0;
-
-            var effectiveSeeding = CategorySeedingApiResolver.ResolveAggregatePolicy(
-                config, qbitName, qbitCfg, cat, catTorrents);
-            categories.Add(new
-            {
-                category = cat,
-                instance = qbitName,
-                managedBy = config.ArrInstances.Values.Any(a =>
-                    string.Equals(a.Category, cat, StringComparison.OrdinalIgnoreCase)) ? "arr" : "qbit",
-                torrentCount = catTorrents.Count,
-                seedingCount = seedingTorrents.Count,
-                totalSize = catTorrents.Sum(t => t.Size),
-                avgRatio,
-                avgSeedingTimeDays,
-                seedingConfig = effectiveSeeding == null ? null : new
-                {
-                    effectiveSeeding.MaxRatio,
-                    effectiveSeeding.MaxTime,
-                    effectiveSeeding.RemoveMode,
-                    effectiveSeeding.HitAndRunMode,
-                    effectiveSeeding.MinSeedRatio,
-                    effectiveSeeding.MinSeedingTimeDays,
-                    effectiveSeeding.DownloadLimit,
-                    effectiveSeeding.UploadLimit
-                }
-            });
-        }
-    }
-
+    await registry.EnsureAllConnectedAsync(config.GetAllTorrentClients(), ct);
+    var categories = await TorrentClientApiBuilder.CategoriesAsync(config, registry, extendedPolicy: true, ct: ct);
     return Results.Ok(new { categories, ready = true });
 });
 
@@ -1677,7 +1624,7 @@ app.MapGet("/web/config/full", (TorrentarrConfig config, IConfigReloader reloade
         configPath = reloader.ConfigPath,
         settings = config.Settings,
         webui = config.WebUI,
-        qbitInstances = config.QBitInstances.ToDictionary(
+        qbitInstances = config.GetAllTorrentClients().ToDictionary(
             kv => kv.Key,
             kv => new
             {
@@ -1710,7 +1657,7 @@ app.MapPost("/web/config/reload", (IConfigReloader reloader) =>
         : Results.BadRequest(new { success = false, message = "Failed to reload configuration" });
 });
 
-app.MapPost("/web/config/save", async (TorrentarrConfig updatedConfig, TorrentarrConfig config, ConfigurationLoader loader, IConfigReloader reloader) =>
+app.MapPost("/web/config/save", async (TorrentarrConfig updatedConfig, TorrentarrConfig config, ConfigurationLoader loader, IConfigReloader reloader, ITorrentClientRegistry registry, TorrentarrDbContext db) =>
 {
     try
     {
@@ -1718,8 +1665,9 @@ app.MapPost("/web/config/save", async (TorrentarrConfig updatedConfig, Torrentar
         if (passwordHashError != null)
             return Results.Json(new { error = passwordHashError }, statusCode: 403);
 
-        loader.SaveConfig(updatedConfig, reloader.ConfigPath);
+        await InstanceRenamePersistence.SaveAsync(config, updatedConfig, null, loader, db, reloader.ConfigPath);
         ApplyConfigInPlace(config, updatedConfig);
+        await registry.ReconcileAsync(config.GetAllTorrentClients(), connect: false);
         var reloadSuccess = reloader.ReloadConfig();
 
         return reloadSuccess

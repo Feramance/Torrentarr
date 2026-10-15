@@ -1,4 +1,7 @@
 using FluentAssertions;
+using Microsoft.Extensions.DependencyInjection;
+using Microsoft.EntityFrameworkCore;
+using Torrentarr.Infrastructure.Database;
 using System.Net;
 using System.Net.Http.Json;
 using System.Text;
@@ -15,6 +18,85 @@ public class ConfigEndpointTests : IClassFixture<TorrentarrWebApplicationFactory
     public ConfigEndpointTests(TorrentarrWebApplicationFactory factory)
     {
         _factory = factory;
+    }
+
+    [Theory]
+    [InlineData("/web/config", false)]
+    [InlineData("/web/config", true)]
+    [InlineData("/api/config", false)]
+    [InlineData("/api/config", true)]
+    public async Task RenameClient_PreservesPasswordAndNotificationToken(string endpoint, bool canonical)
+    {
+        var client = _factory.CreateClientWithApiToken();
+        using var scope = _factory.Services.CreateScope();
+        var config = scope.ServiceProvider.GetRequiredService<Torrentarr.Core.Configuration.TorrentarrConfig>();
+        var prefix = canonical ? "TorrentClient." : "";
+        var source = new Torrentarr.Core.Configuration.QBitConfig()
+        {
+            Host = "fixture",
+            Disabled = true,
+            Password = "secret",
+            Maintenance = new() { Notifications = [new() { Url = "https://notify.example", Token = "notify-secret" }] }
+        };
+        if (canonical) config.TorrentClients["qBit-before"] = source;
+        else config.QBitInstances["qBit-before"] = source;
+        var db = scope.ServiceProvider.GetRequiredService<TorrentarrDbContext>();
+        db.TorrentLibrary.Add(new()
+        {
+            Hash = "rename-state",
+            QbitInstance = "qBit-before",
+            Imported = true,
+            AllowedSeeding = true,
+            AllowedStalled = true,
+            FreeSpacePaused = true
+        });
+        await db.SaveChangesAsync();
+        try
+        {
+            var response = await client.PostAsJsonAsync(endpoint, new
+            {
+                renames = new Dictionary<string, string> { ["qBit-before"] = "qBit-after" },
+                changes = new Dictionary<string, object?>
+                {
+                    [prefix + "qBit-before"] = null,
+                    [prefix + "qBit-after.Host"] = "fixture",
+                    [prefix + "qBit-after.Disabled"] = true,
+                    [prefix + "qBit-after.Password"] = "[redacted]",
+                    [prefix + "qBit-after.Maintenance.Notifications"] = new[] { new { Url = "https://notify.example", Token = "[redacted]" } }
+                }
+            });
+            response.EnsureSuccessStatusCode();
+            var state = await db.TorrentLibrary.AsNoTracking().SingleAsync(t => t.Hash == "rename-state");
+            state.QbitInstance.Should().Be("qBit-after");
+            state.Imported.Should().BeTrue(); state.AllowedSeeding.Should().BeTrue();
+            state.AllowedStalled.Should().BeTrue(); state.FreeSpacePaused.Should().BeTrue();
+            var clients = Torrentarr.Core.Configuration.TorrentClientConfigExtensions.GetAllTorrentClients(config);
+            clients.Should().NotContainKey("qBit-before");
+            clients["qBit-after"].Password.Should().Be("secret");
+            clients["qBit-after"].Maintenance.Notifications.Single().Token.Should().Be("notify-secret");
+        }
+        finally
+        {
+            await db.TorrentLibrary.Where(t => t.Hash == "rename-state").ExecuteDeleteAsync();
+            config.QBitInstances.Remove("qBit-before");
+            config.QBitInstances.Remove("qBit-after");
+            config.TorrentClients.Remove("qBit-before");
+            config.TorrentClients.Remove("qBit-after");
+        }
+    }
+
+    [Theory]
+    [InlineData("/web/config")]
+    [InlineData("/api/config")]
+    [InlineData("/WEB/CONFIG/")]
+    [InlineData("/web/auth/set-password")]
+    public async Task ConfigurationWrites_Return409DuringProcessing(string endpoint)
+    {
+        var client = _factory.CreateClientWithApiToken();
+        var loader = _factory.Services.GetRequiredService<Torrentarr.Core.Configuration.ConfigurationLoader>();
+        using var processing = Torrentarr.Core.Configuration.ConfigMutationGuard.EnterProcessing(loader.ConfigPath);
+        var response = await client.PostAsJsonAsync(endpoint, new { changes = new { }, username = "user", password = "password" });
+        response.StatusCode.Should().Be(HttpStatusCode.Conflict);
     }
 
     [Fact]

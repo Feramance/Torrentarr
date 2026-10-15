@@ -10,7 +10,7 @@ public interface IArrImportService
 
     Task<bool> IsImportedAsync(string hash, CancellationToken cancellationToken = default);
 
-    Task MarkAsImportedAsync(string hash, IEnumerable<string> tags, CancellationToken cancellationToken = default);
+    Task MarkAsImportedAsync(string instanceId, string hash, IEnumerable<string> tags, CancellationToken cancellationToken = default);
 
     /// <summary>
     /// Check if a torrent's custom format score is unmet per Arr queue data.

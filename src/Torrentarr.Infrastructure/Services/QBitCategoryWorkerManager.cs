@@ -116,6 +116,9 @@ public class QBitCategoryWorkerManager : BackgroundService
 
     public async Task SyncWorkersWithConfigAsync()
     {
+        foreach (var (category, worker) in _workers.ToArray())
+            if (worker.Task.IsCompleted && _workers.TryRemove(new KeyValuePair<string, (Task Task, CancellationTokenSource Cts)>(category, worker)))
+                worker.Cts.Dispose();
         var desired = CategoryOwnershipHelper.GetQBitOnlyManagedCategories(_config).ToHashSet(StringComparer.OrdinalIgnoreCase);
 
         foreach (var category in desired)
@@ -146,25 +149,57 @@ public class QBitCategoryWorkerManager : BackgroundService
 
     private void StartCategoryWorker(string category, CancellationToken appStopping)
     {
-        var cts = CancellationTokenSource.CreateLinkedTokenSource(appStopping);
-        var task = Task.Run(() => RunCategoryLoopAsync(category, $"qbit-{category}", cts.Token), CancellationToken.None);
-        _workers[category] = (task, cts);
+        lock (_workers)
+        {
+            if (_workers.ContainsKey(category)) return;
+            var cts = CancellationTokenSource.CreateLinkedTokenSource(appStopping);
+            Task task;
+            using (ExecutionContext.SuppressFlow())
+                task = Task.Run(() => RunCategoryLoopAsync(category, $"qbit-{category}", cts.Token), CancellationToken.None);
+            _workers[category] = (task, cts);
+        }
     }
 
-    private async Task StopCategoryAsync(string category)
+    private async Task StopCategoryAsync(string category, bool strict = false)
     {
-        if (!_workers.TryRemove(category, out var worker))
+        if (!_workers.TryGetValue(category, out var worker))
             return;
 
         worker.Cts.Cancel();
         try { await worker.Task.WaitAsync(TimeSpan.FromSeconds(10)); }
         catch (OperationCanceledException) { }
-        catch (TimeoutException) { }
+        catch (TimeoutException) { if (strict) throw; }
         catch (Exception ex) { _logger.LogDebug(ex, "qBit category worker {Category} stop error", category); }
+        _workers.TryRemove(category, out _);
         worker.Cts.Dispose();
 
         var stateName = $"qbit-{category}";
         _stateManager.Update(stateName, s => s.Alive = false);
+    }
+
+    public async Task SuspendAsync()
+    {
+        try
+        {
+            foreach (var category in _workers.Keys.ToList()) await StopCategoryAsync(category, strict: true);
+        }
+        catch
+        {
+            foreach (var (category, worker) in _workers.ToArray())
+                if (worker.Cts.IsCancellationRequested)
+                    using (ExecutionContext.SuppressFlow())
+                        _ = Task.Run(async () =>
+                        {
+                            try { await worker.Task; }
+                            catch (Exception ex) { _logger.LogDebug(ex, "Category {Category} exited after failed suspension", category); }
+                            if (_workers.TryRemove(new KeyValuePair<string, (Task Task, CancellationTokenSource Cts)>(category, worker)))
+                                worker.Cts.Dispose();
+                            if (!_appStopping.IsCancellationRequested)
+                                await SyncWorkersWithConfigAsync();
+                        });
+            await SyncWorkersWithConfigAsync();
+            throw;
+        }
     }
 
     private async Task StopAllCategoriesAsync()
@@ -179,11 +214,7 @@ public class QBitCategoryWorkerManager : BackgroundService
 
         try
         {
-            using var initScope = _scopeFactory.CreateScope();
-            var ensure = initScope.ServiceProvider.GetRequiredService<QBitCategoryEnsureService>();
-            await ensure.EnsureCategoryOnAllInstancesAsync(category, ct);
-            await EnsureTrackerTagsAsync(initScope, ct);
-
+            var initialized = false;
             while (!ct.IsCancellationRequested)
             {
                 var loopStart = DateTime.UtcNow;
@@ -196,6 +227,15 @@ public class QBitCategoryWorkerManager : BackgroundService
                         continue;
                     }
 
+                    using var processing = ConfigMutationGuard.EnterProcessing();
+                    if (!initialized)
+                    {
+                        using var initScope = _scopeFactory.CreateScope();
+                        var ensure = initScope.ServiceProvider.GetRequiredService<QBitCategoryEnsureService>();
+                        await ensure.EnsureCategoryOnAllInstancesAsync(category, ct);
+                        await EnsureTrackerTagsAsync(initScope, ct);
+                        initialized = true;
+                    }
                     _stateManager.Update(stateName, s => s.Status = "Processing torrents...");
                     using var scope = _scopeFactory.CreateScope();
                     var processor = scope.ServiceProvider.GetRequiredService<ITorrentProcessor>();
@@ -216,6 +256,7 @@ public class QBitCategoryWorkerManager : BackgroundService
                 {
                     break;
                 }
+                catch (ConfigurationBusyException) { }
                 catch (Exception ex)
                 {
                     _logger.LogError(ex, "Error in qBit category worker for {Category}", category);

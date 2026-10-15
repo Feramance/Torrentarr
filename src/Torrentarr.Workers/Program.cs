@@ -28,6 +28,9 @@ var runtimeMetrics = new WorkerRuntimeMetrics();
 var basePath = ConfigurationLoader.GetDataDirectoryPath();
 var logsPath = Path.Combine(basePath, "logs");
 var dbPath = Path.Combine(basePath, "torrentarr.db");
+ConfigMutationGuard.EnableProcessCoordination(ConfigurationLoader.GetDefaultConfigPath());
+if (File.Exists(ConfigurationLoader.GetDefaultConfigPath() + ".rename.json"))
+    throw new InvalidOperationException("Start Host or standalone WebUI to recover the pending instance rename before running workers.");
 Directory.CreateDirectory(basePath);
 Directory.CreateDirectory(logsPath);
 
@@ -147,7 +150,19 @@ try
 
     try
     {
-        config = configLoader.Load();
+        for (var attempt = 0; ; attempt++)
+        {
+            try
+            {
+                using var startupRead = ConfigMutationGuard.EnterProcessing(configLoader.ConfigPath);
+                config = configLoader.Load();
+                break;
+            }
+            catch (ConfigurationBusyException) when (attempt < 39)
+            {
+                await Task.Delay(250, monitorCts.Token);
+            }
+        }
         levelSwitch.MinimumLevel = config.Settings.ConsoleLevel?.Trim().ToUpperInvariant() switch
         {
             "TRACE" or "VERBOSE" => LogEventLevel.Verbose,
@@ -366,6 +381,7 @@ class ArrWorkerService : BackgroundService
                     await SleepLoopAsync("Torrent", "Waiting for connectivity", TimeSpan.FromSeconds(_config.Settings.NoInternetSleepTimer), cancellationToken);
                     continue;
                 }
+                using var processing = ConfigMutationGuard.EnterProcessing();
                 await _qbitManager.EnsureAllConnectedAsync(_config.GetAllTorrentClients(), cycle.Token);
                 if (!_initialized)
                 {
@@ -379,6 +395,7 @@ class ArrWorkerService : BackgroundService
                 var backoffDelay = GetBackoffDelay();
                 if (backoffDelay > TimeSpan.Zero)
                 {
+                    processing.Dispose();
                     await SleepLoopAsync("Torrent", "Backoff", backoffDelay, cancellationToken);
                     continue;
                 }
@@ -387,6 +404,7 @@ class ArrWorkerService : BackgroundService
                 _runtimeMetrics.Torrent = _runtimeMetrics.Torrent with { LastSuccess = DateTimeOffset.UtcNow };
             }
             catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested) { break; }
+            catch (ConfigurationBusyException) { }
             catch (Exception ex)
             {
                 _runtimeMetrics.Torrent = new(cycle.IsCancellationRequested ? "Timed out" : "Error", DateTimeOffset.UtcNow, LastSuccess: _runtimeMetrics.Torrent.LastSuccess);
@@ -425,11 +443,13 @@ class ArrWorkerService : BackgroundService
                     await SleepLoopAsync("Search", "Backoff", backoffDelay, cancellationToken);
                     continue;
                 }
+                using var processing = ConfigMutationGuard.EnterProcessing();
                 await ProcessSearchAsync(cycle.Token);
                 _consecutiveSearchErrors = 0;
                 _runtimeMetrics.Search = _runtimeMetrics.Search with { LastSuccess = DateTimeOffset.UtcNow };
             }
             catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested) { break; }
+            catch (ConfigurationBusyException) { }
             catch (Exception ex)
             {
                 _runtimeMetrics.Search = new(cycle.IsCancellationRequested ? "Timed out" : "Error", DateTimeOffset.UtcNow, LastSuccess: _runtimeMetrics.Search.LastSuccess);

@@ -16,6 +16,13 @@ public class EmbeddedWebAssetEndpointTests : IClassFixture<TorrentarrWebApplicat
     }
 
     [Fact]
+    public void HostAssembly_ContainsManifestWithoutRuntimeIdentifier()
+    {
+        typeof(Program).Assembly.GetManifestResourceNames()
+            .Should().Contain("Microsoft.Extensions.FileProviders.Embedded.Manifest.xml");
+    }
+
+    [Fact]
     public async Task UiRoute_ServesEmbeddedIndexAndAsset()
     {
         var client = _factory.CreateClient();

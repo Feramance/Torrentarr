@@ -1,6 +1,6 @@
 # Environment Variables
 
-Torrentarr supports a config path override plus section-level environment overrides for `Settings` and primary `qBit` fields.
+Torrentarr supports a config path override plus section-level environment overrides for `Settings` and literal `[qBit]` section fields.
 
 ---
 
@@ -55,7 +55,7 @@ The first existing file wins. If none exist, a new default config is created at 
 Torrentarr reads the following environment variables at load time:
 
 - `TORRENTARR_SETTINGS_*` for `Settings` keys.
-- `TORRENTARR_QBIT_*` for primary `qBit` connection keys.
+- `TORRENTARR_QBIT_*` for literal `[qBit]` section connection keys.
 
 For compatibility with qBitrr-style deployments, equivalent `QBITRR_*` aliases are also accepted for these keys.
 
@@ -79,7 +79,7 @@ For compatibility with qBitrr-style deployments, equivalent `QBITRR_*` aliases a
 - `TORRENTARR_SETTINGS_AUTO_UPDATE_CRON`
 - `TORRENTARR_SETTINGS_PING_URLS` (comma-separated list)
 
-### Supported primary `qBit` overrides
+### Supported literal `[qBit]` section overrides
 
 - `TORRENTARR_QBIT_DISABLED`
 - `TORRENTARR_QBIT_HOST`

@@ -170,41 +170,18 @@ public class FreeSpaceService : IFreeSpaceService
 
     public async Task<bool> PauseDownloadsIfLowSpaceAsync(CancellationToken cancellationToken = default)
     {
-        var stats = await GetFreeSpaceStatsAsync(cancellationToken);
-        if (!stats.BelowThreshold) return false;
-
+        if (!(await GetFreeSpaceStatsAsync(cancellationToken)).BelowThreshold) return false;
+        var inventory = await FreeSpaceInventory.ReadAsync(_config, _qbitManager, _logger, cancellationToken);
         var paused = false;
-        foreach (var (instanceName, client) in _qbitManager.GetAllClients())
+        await inventory.ApplyAsync(inventory.Torrents, async (item, _) =>
         {
-            try
-            {
-                var torrents = await client.GetTorrentsAsync(cancellationToken: cancellationToken);
-                var downloading = torrents.Where(t =>
-                    t.State.Contains("downloading", StringComparison.OrdinalIgnoreCase) ||
-                    t.State.Contains("stalledDL", StringComparison.OrdinalIgnoreCase)
-                ).ToList();
-
-                foreach (var torrent in downloading)
-                {
-                    try
-                    {
-                        await SetFreeSpacePausedTagAsync(client, torrent, instanceName, true, cancellationToken);
-                        await client.PauseTorrentAsync(torrent.Hash, cancellationToken);
-                        _logger.LogInformation("FreeSpace: [{Instance}] Paused torrent due to low space: {Name}", instanceName, torrent.Name);
-                        paused = true;
-                    }
-                    catch (Exception ex)
-                    {
-                        _logger.LogError(ex, "FreeSpace: [{Instance}] Failed to pause torrent {Hash}", instanceName, torrent.Hash);
-                    }
-                }
-            }
-            catch (Exception ex)
-            {
-                _logger.LogError(ex, "FreeSpace: [{Instance}] Error pausing downloads due to low space", instanceName);
-            }
-        }
-
+            if (!TorrentPolicyHelper.IsFreeSpaceDownloadState(item.Torrent.State)
+                || TorrentPolicyHelper.IsPausedDownloadStateForFreeSpace(item.Torrent.State)) return;
+            await SetFreeSpacePausedTagAsync(item.Client, item.Torrent, item.InstanceName, true, cancellationToken);
+            await FreeSpaceInventory.PauseAndRollbackMarkerAsync(item.Client, item.Torrent.Hash,
+                () => SetFreeSpacePausedTagAsync(item.Client, item.Torrent, item.InstanceName, false, CancellationToken.None), cancellationToken);
+            paused = true;
+        }, _logger, cancellationToken);
         return paused;
     }
 
@@ -212,38 +189,19 @@ public class FreeSpaceService : IFreeSpaceService
     {
         var stats = await GetFreeSpaceStatsAsync(cancellationToken);
         if (stats.BelowThreshold) return false;
-
+        var inventory = await FreeSpaceInventory.ReadAsync(_config, _qbitManager, _logger, cancellationToken);
+        _currentFreeSpace = stats.FreeBytes - _minFreeSpaceBytes;
         var resumed = false;
-        foreach (var (instanceName, client) in _qbitManager.GetAllClients())
+        await inventory.ApplyAsync(inventory.Torrents.OrderBy(t => t.Torrent.AddedOn), async (item, resumes) =>
         {
-            try
+            var before = resumes?.Count ?? 0;
+            await ProcessSingleTorrentSpaceAsync(item.InstanceName, item.Client, item.Torrent, resumes, cancellationToken);
+            if (resumes != null && resumes.Count > before)
             {
-                var torrents = await client.GetTorrentsAsync(cancellationToken: cancellationToken);
-                var paused = torrents.Where(t =>
-                    t.State.Contains("pausedDL", StringComparison.OrdinalIgnoreCase)
-                ).ToList();
-
-                foreach (var torrent in paused)
-                {
-                    try
-                    {
-                        await SetFreeSpacePausedTagAsync(client, torrent, instanceName, false, cancellationToken);
-                        await client.ResumeTorrentAsync(torrent.Hash, cancellationToken);
-                        _logger.LogInformation("FreeSpace: [{Instance}] Resumed torrent: {Name}", instanceName, torrent.Name);
-                        resumed = true;
-                    }
-                    catch (Exception ex)
-                    {
-                        _logger.LogError(ex, "FreeSpace: [{Instance}] Failed to resume torrent {Hash}", instanceName, torrent.Hash);
-                    }
-                }
+                var resume = resumes[^1];
+                resumes[^1] = async () => { await resume(); resumed = true; };
             }
-            catch (Exception ex)
-            {
-                _logger.LogError(ex, "FreeSpace: [{Instance}] Error resuming downloads", instanceName);
-            }
-        }
-
+        }, _logger, cancellationToken);
         return resumed;
     }
 
@@ -255,46 +213,14 @@ public class FreeSpaceService : IFreeSpaceService
     {
         _logger.LogTrace("Starting free space processing for category {Category}", category);
 
-        // Gather torrents from all qBit instances, stamping instance name
-        var allTorrents = new List<(string instanceName, ITorrentClient client, TorrentInfo torrent)>();
-        var clientCount = _qbitManager.GetAllClients().Count;
-        _logger.LogTrace("Fetching torrents from {Count} qBit instances", clientCount);
-
-        foreach (var (instanceName, client) in _qbitManager.GetAllClients())
-        {
-            try
-            {
-                _logger.LogTrace("FreeSpace: [{Instance}] Ensuring tags exist", instanceName);
-                await EnsureTagsExistAsync(client, cancellationToken);
-
-                _logger.LogTrace("FreeSpace: [{Instance}] Fetching torrents for category {Category}", instanceName, category);
-                var torrents = await client.GetTorrentsAsync(category, cancellationToken: cancellationToken);
-                _logger.LogTrace("FreeSpace: [{Instance}] Found {Count} torrents", instanceName, torrents.Count);
-
-                foreach (var t in torrents)
-                {
-                    t.QBitInstanceName = instanceName;
-                    allTorrents.Add((instanceName, client, t));
-                }
-            }
-            catch (Exception ex)
-            {
-                _logger.LogError(ex, "FreeSpace: [{Instance}] Error fetching torrents for space processing", instanceName);
-            }
-        }
-
-        _logger.LogTrace("Total torrents gathered: {Count}", allTorrents.Count);
-
-        if (allTorrents.Count == 0)
-        {
-            _logger.LogTrace("No torrents to process for free space");
-            return;
-        }
+        var inventory = await FreeSpaceInventory.ReadAsync(_config, _qbitManager, _logger, cancellationToken);
+        var allTorrents = inventory.Torrents;
 
         // Get current free space (most constrained drive across all instances)
         _logger.LogTrace("Getting free space stats");
         var stats = await GetFreeSpaceStatsAsync(cancellationToken);
-        _currentFreeSpace = stats.FreeBytes - _minFreeSpaceBytes;
+        _currentFreeSpace = stats.FreeBytes - _minFreeSpaceBytes
+            - inventory.UnmanagedRemaining(t => t.Category == category);
 
         _logger.LogTrace(
             "Processing torrents for space across {Count} qBit instance(s) | Available: {Available} | Threshold: {Threshold} | Usable: {Usable}",
@@ -306,45 +232,33 @@ public class FreeSpaceService : IFreeSpaceService
         _logger.LogTrace("Free space: Available={Available}, Threshold={Threshold}, Usable={Usable}",
             FormatBytes(stats.FreeBytes), FormatBytes(_minFreeSpaceBytes), FormatBytes(_currentFreeSpace));
 
-        // Sort globally by added date — older torrents get priority to keep downloading
-        _logger.LogTrace("Sorting {Count} torrents by added date", allTorrents.Count);
-        var sorted = allTorrents.OrderBy(x => x.torrent.AddedOn).ToList();
-
-        _logger.LogTrace("Processing {Count} torrents in order of oldest first", sorted.Count);
-        var processedCount = 0;
-        foreach (var (instanceName, client, torrent) in sorted)
+        var sorted = allTorrents.Where(t => t.Torrent.Category == category).OrderBy(t => t.Torrent.AddedOn);
+        await inventory.ApplyAsync(sorted, async (item, resumes) =>
         {
-            try
-            {
-                _logger.LogTrace("FreeSpace: [{Instance}] Processing torrent {Name} (Added: {Added})",
-                    instanceName, torrent.Name, torrent.AddedOn);
-                await ProcessSingleTorrentSpaceAsync(instanceName, client, torrent, cancellationToken);
-                processedCount++;
-            }
-            catch (Exception ex)
-            {
-                _logger.LogError(ex, "FreeSpace: [{Instance}] Error processing torrent {Hash} for space", instanceName, torrent.Hash);
-            }
-        }
-
-        _logger.LogTrace("Free space processing complete. Processed {Processed} of {Total} torrents", processedCount, sorted.Count);
+            await EnsureTagsExistAsync(item.Client, cancellationToken);
+            await ProcessSingleTorrentSpaceAsync(item.InstanceName, item.Client, item.Torrent, resumes, cancellationToken);
+        }, _logger, cancellationToken);
     }
 
     private async Task ProcessSingleTorrentSpaceAsync(
         string instanceName,
         ITorrentClient client,
         TorrentInfo torrent,
+        List<Func<Task>>? resumes,
         CancellationToken cancellationToken)
     {
         var isFreeSpaceDownload = TorrentPolicyHelper.IsFreeSpaceDownloadState(torrent.State);
         var isPausedDownload = TorrentPolicyHelper.IsPausedDownloadStateForFreeSpace(torrent.State);
-        var hasFreeSpaceTag = HasTag(torrent, FreeSpacePausedTag);
+        var hasFreeSpaceTag = HasTag(torrent, FreeSpacePausedTag, client, instanceName);
 
         _logger.LogTrace("FreeSpace: [{Name}] | State[{State}] | Progress[{Progress:P1}] | Size[{Size}] | AmountLeft[{AmountLeft}] | HasTag[{HasTag}] | Hash[{Hash}]",
             torrent.Name, torrent.State, torrent.Progress, FormatBytes(torrent.Size), FormatBytes(torrent.AmountLeft), hasFreeSpaceTag, torrent.Hash);
 
         _logger.LogTrace("FreeSpace: [{Instance}] Torrent {Name}: State={State}, IsFreeSpaceDownload={IsDl}, IsPausedDownload={IsPausedDl}, HasFreeSpaceTag={HasTag}",
             instanceName, torrent.Name, torrent.State, isFreeSpaceDownload, isPausedDownload, hasFreeSpaceTag);
+
+        if (isFreeSpaceDownload && !isPausedDownload && hasFreeSpaceTag)
+            await SetFreeSpacePausedTagAsync(client, torrent, instanceName, false, cancellationToken);
 
         if (isFreeSpaceDownload)
         {
@@ -371,12 +285,13 @@ public class FreeSpaceService : IFreeSpaceService
 
                 _logger.LogTrace("FreeSpace: [{Instance}] Setting FreeSpacePaused on torrent {Hash}", instanceName, torrent.Hash);
                 await SetFreeSpacePausedTagAsync(client, torrent, instanceName, true, cancellationToken);
-                if (!_config.Settings.Tagless)
+                if (!_config.Settings.Tagless && client.Capabilities.Tags)
                     await client.RemoveTagsAsync(new List<string> { torrent.Hash }, new List<string> { AllowedSeedingTag }, cancellationToken);
                 _logger.LogTrace("FreeSpace: [{Instance}] Pausing torrent {Hash}", instanceName, torrent.Hash);
-                await client.PauseTorrentAsync(torrent.Hash, cancellationToken);
+                await FreeSpaceInventory.PauseAndRollbackMarkerAsync(client, torrent.Hash,
+                    () => SetFreeSpacePausedTagAsync(client, torrent, instanceName, false, CancellationToken.None), cancellationToken);
             }
-            else if (isPausedDownload && freeSpaceTest < 0)
+            else if (isPausedDownload && freeSpaceTest < 0 && hasFreeSpaceTag)
             {
                 _logger.LogInformation(
                     "FreeSpace: [{Instance}] Keeping paused [{Name}] | Available[{Available}] | Needed[{Needed}] | Deficit[{Deficit}] | Hash[{Hash}]",
@@ -388,7 +303,7 @@ public class FreeSpaceService : IFreeSpaceService
 
                 _logger.LogTrace("FreeSpace: [{Instance}] Maintaining FreeSpacePaused on torrent {Hash}", instanceName, torrent.Hash);
                 await SetFreeSpacePausedTagAsync(client, torrent, instanceName, true, cancellationToken);
-                if (!_config.Settings.Tagless)
+                if (!_config.Settings.Tagless && client.Capabilities.Tags)
                     await client.RemoveTagsAsync(new List<string> { torrent.Hash }, new List<string> { AllowedSeedingTag }, cancellationToken);
             }
             else if (!isPausedDownload && freeSpaceTest >= 0)
@@ -401,10 +316,8 @@ public class FreeSpaceService : IFreeSpaceService
                     torrent.Hash);
 
                 _currentFreeSpace = freeSpaceTest;
-                _logger.LogTrace("FreeSpace: [{Instance}] Clearing FreeSpacePaused on torrent {Hash}", instanceName, torrent.Hash);
-                await SetFreeSpacePausedTagAsync(client, torrent, instanceName, false, cancellationToken);
             }
-            else if (isPausedDownload && freeSpaceTest >= 0 && hasFreeSpaceTag)
+            else if (isPausedDownload && freeSpaceTest >= 0 && hasFreeSpaceTag && resumes != null)
             {
                 _logger.LogInformation(
                     "FreeSpace: [{Instance}] Resuming download [{Name}] | Available[{Available}] | SpaceAfter[{SpaceAfter}] | Hash[{Hash}]",
@@ -414,12 +327,15 @@ public class FreeSpaceService : IFreeSpaceService
                     torrent.Hash);
 
                 _currentFreeSpace = freeSpaceTest;
-                _logger.LogTrace("FreeSpace: [{Instance}] Clearing FreeSpacePaused on torrent {Hash}", instanceName, torrent.Hash);
-                await SetFreeSpacePausedTagAsync(client, torrent, instanceName, false, cancellationToken);
-                if (!_config.Settings.Tagless)
-                    await client.AddTagsAsync(new List<string> { torrent.Hash }, new List<string> { AllowedSeedingTag }, cancellationToken);
-                _logger.LogTrace("FreeSpace: [{Instance}] Resuming torrent {Hash}", instanceName, torrent.Hash);
-                await client.ResumeTorrentAsync(torrent.Hash, cancellationToken);
+                resumes.Add(async () =>
+                {
+                    _logger.LogTrace("FreeSpace: [{Instance}] Clearing FreeSpacePaused on torrent {Hash}", instanceName, torrent.Hash);
+                    if (!_config.Settings.Tagless && client.Capabilities.Tags)
+                        await client.AddTagsAsync(new List<string> { torrent.Hash }, new List<string> { AllowedSeedingTag }, cancellationToken);
+                    _logger.LogTrace("FreeSpace: [{Instance}] Resuming torrent {Hash}", instanceName, torrent.Hash);
+                    await FreeSpaceInventory.ResumeAndClearMarkerAsync(client, torrent.Hash,
+                        () => SetFreeSpacePausedTagAsync(client, torrent, instanceName, false, CancellationToken.None), cancellationToken);
+                });
             }
         }
         else if (!isFreeSpaceDownload && hasFreeSpaceTag)
@@ -439,13 +355,13 @@ public class FreeSpaceService : IFreeSpaceService
         }
     }
 
-    private bool HasTag(TorrentInfo torrent, string tag)
+    private bool HasTag(TorrentInfo torrent, string tag, ITorrentClient client, string instanceName)
     {
         // §1.6 Tagless: FreeSpacePaused → DB column
-        if (_config.Settings.Tagless)
+        if (_config.Settings.Tagless || !client.Capabilities.Tags)
         {
             var dbEntry = _dbContext.TorrentLibrary.AsNoTracking()
-                .FirstOrDefault(t => t.Hash == torrent.Hash && t.QbitInstance == torrent.QBitInstanceName);
+                .FirstOrDefault(t => t.Hash == torrent.Hash && t.QbitInstance == instanceName);
             return dbEntry != null && tag == FreeSpacePausedTag && dbEntry.FreeSpacePaused;
         }
 
@@ -459,24 +375,23 @@ public class FreeSpaceService : IFreeSpaceService
     private async Task SetFreeSpacePausedTagAsync(
         ITorrentClient client, TorrentInfo torrent, string instanceName, bool paused, CancellationToken ct)
     {
-        if (_config.Settings.Tagless)
+        if (_config.Settings.Tagless || !client.Capabilities.Tags)
         {
             await TaglessTorrentLibraryHelper.SetFreeSpacePausedAsync(
                 _dbContext, torrent.Hash, torrent.Category, instanceName, paused, ct);
         }
-        else if (paused)
-        {
-            await client.AddTagsAsync(new List<string> { torrent.Hash }, new List<string> { FreeSpacePausedTag }, ct);
-        }
         else
         {
-            await client.RemoveTagsAsync(new List<string> { torrent.Hash }, new List<string> { FreeSpacePausedTag }, ct);
+            var accepted = paused
+                ? await client.AddTagsAsync([torrent.Hash], [FreeSpacePausedTag], ct)
+                : await client.RemoveTagsAsync([torrent.Hash], [FreeSpacePausedTag], ct);
+            if (!accepted) throw new IOException("Torrent client rejected free-space marker update.");
         }
     }
 
     private async Task EnsureTagsExistAsync(ITorrentClient client, CancellationToken cancellationToken)
     {
-        if (_config.Settings.Tagless) return; // §1.6: no tags in Tagless mode
+        if (_config.Settings.Tagless || !client.Capabilities.Tags) return; // §1.6: no tags in Tagless mode
         try
         {
             var existingTags = await client.GetTagsAsync(cancellationToken);
@@ -490,7 +405,7 @@ public class FreeSpaceService : IFreeSpaceService
             if (tagsToCreate.Count > 0)
                 await client.CreateTagsAsync(tagsToCreate, cancellationToken);
         }
-        catch (Exception ex)
+        catch (Exception ex) when (ex is not OperationCanceledException)
         {
             _logger.LogWarning(ex, "Failed to ensure tags exist");
         }

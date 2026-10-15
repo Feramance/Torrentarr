@@ -318,52 +318,15 @@ public class ArrImportService : IArrImportService
             r.DownloadId.Equals(hash, StringComparison.OrdinalIgnoreCase)) ?? false;
     }
 
-    public async Task MarkAsImportedAsync(string hash, IEnumerable<string> tags, CancellationToken cancellationToken = default)
+    public async Task MarkAsImportedAsync(string instanceId, string hash, IEnumerable<string> tags, CancellationToken cancellationToken = default)
     {
+        var client = _qbitManager.GetClient(instanceId);
+        if (client == null || !client.Capabilities.Tags) return;
         var tagList = tags.ToList();
-        if (tagList.Count == 0)
-        {
-            tagList.Add("qbitrr-imported");
-        }
-
-        _logger.LogTrace("Marking hash {Hash} as imported with tags {Tags}", hash, string.Join(", ", tagList));
-        _logger.LogInformation("Adding import tags to torrent {Hash}: {Tags}", hash, string.Join(", ", tagList));
-
-        var instancesAttempted = 0;
-        foreach (var (instanceName, _) in _config.QBitInstances)
-        {
-            instancesAttempted++;
-            _logger.LogTrace("Attempting to add tags to {Hash} in qBit instance {Instance}", hash, instanceName);
-
-            try
-            {
-                var client = _qbitManager.GetClient(instanceName);
-                if (client == null)
-                {
-                    _logger.LogTrace("No client available for instance {Instance}, skipping", instanceName);
-                    continue;
-                }
-
-                _logger.LogTrace("Creating tags {Tags} in {Instance}", string.Join(", ", tagList), instanceName);
-                await client.CreateTagsAsync(tagList, cancellationToken);
-
-                _logger.LogTrace("Adding tags {Tags} to torrent {Hash}", string.Join(", ", tagList), hash);
-                var success = await client.AddTagsAsync(new List<string> { hash }, tagList, cancellationToken);
-
-                if (success)
-                {
-                    _logger.LogDebug("Successfully added tags to {Hash} in {Instance}", hash, instanceName);
-                    _logger.LogTrace("Successfully marked {Hash} as imported", hash);
-                    return;
-                }
-            }
-            catch (Exception ex)
-            {
-                _logger.LogWarning(ex, "Failed to add tags to {Hash} in {Instance}", hash, instanceName);
-            }
-        }
-
-        _logger.LogWarning("Could not add import tags to torrent {Hash} - tried {Count} instances", hash, instancesAttempted);
+        if (tagList.Count == 0) tagList.Add("qbitrr-imported");
+        if (!await client.CreateTagsAsync(tagList, cancellationToken)
+            || !await client.AddTagsAsync([hash], tagList, cancellationToken))
+            _logger.LogWarning("Could not add import tags to torrent {Hash} on {Instance}", hash, instanceId);
     }
 
     /// <summary>

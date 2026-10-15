@@ -6,6 +6,7 @@ from __future__ import annotations
 import json
 import sys
 from copy import deepcopy
+from openapi_status import STATUS_SCHEMA
 from pathlib import Path
 from typing import Any
 
@@ -155,6 +156,17 @@ def compare_content_schemas(
     for media in sorted(set(qb_content) & set(ta_content)):
         qb_schema = resolved_schema(qbitrr_spec, qb_content[media])
         ta_schema = resolved_schema(torrentarr_spec, ta_content[media])
+        if (context in {"response 200 on GET /web/status", "response 200 on GET /api/status"}
+                and media == "application/json" and qb_schema == {"type": "object", "additionalProperties": True}
+                and ta_schema == normalize_schema(STATUS_SCHEMA)):
+            continue  # Intentional removal of the upstream single-client status field.
+        if (context in {"response 200 on POST /web/config", "response 200 on POST /api/config"}
+                and media == "application/json" and "warning" not in qb_schema.get("properties", {})
+                and isinstance(ta_schema.get("properties", {}).get("warning"), dict)
+                and {key: value for key, value in ta_schema.get("properties", {}).get("warning", {}).items()
+                     if key != "description"} == {"type": "string", "nullable": True}
+                and "warning" not in ta_schema.get("required", [])):
+            ta_schema["properties"].pop("warning")  # Optional activation warning preserves the upstream payload.
         if qb_schema != ta_schema:
             errors.append(f"{context} schema differs for {media}")
 

@@ -14,11 +14,11 @@ End-to-end review of **every user-facing feature and logical path**, compared to
 Legend:
 
 - **Match** — same user-facing outcome as qBitrr
-- **Arch** — differs because of .NET Host / in-process workers; outcome is equivalent by design
+- **Arch** — differs because of .NET Host / isolated workers; outcome is equivalent by design
 - **Drift** — Torrentarr behavior or docs disagree with qBitrr
 - **Gap** — code missing, unused, or not wired on the production Host path
 
-This report tracks user-facing paths vs qBitrr. Closed gaps from the follow-up pass are marked **Match**; remaining differences are **Arch** (in-process tasks vs pathos OS forks, WAL vs `db_lock`, weekly-build matching upstream).
+This report tracks user-facing paths vs qBitrr. Closed gaps from the follow-up pass are marked **Match**; remaining differences are **Arch** (isolated .NET workers vs pathos OS forks, WAL vs `db_lock`, weekly-build matching upstream).
 
 ---
 
@@ -37,6 +37,15 @@ This report tracks user-facing paths vs qBitrr. Closed gaps from the follow-up p
 
 ---
 
+## Torrentarr-specific maintenance
+
+Optional maintenance and canonical `[TorrentClient.<id>]` sections extend the
+qBitrr baseline. See [torrent maintenance](../features/torrent-maintenance.md) for
+strict mapped ownership, shared H&R checks, apply-time revalidation, recycling
+rollback, and the retained legacy lifecycle deletion fallback. qBittorrent remains
+the only shipped adapter. The Host runs isolated Arr worker processes through
+`WorkerProcessSupervisor`.
+
 ## 1. Process topology
 
 ```mermaid
@@ -52,11 +61,12 @@ flowchart TB
   end
   subgraph torrentarr [Torrentarr NET]
     Host[Torrentarr.Host]
-    ArrWM[ArrWorkerManager in-process]
+    ArrWM[WorkerProcessSupervisor]
     QBitWM[QBitCategoryWorkerManager]
     Policy[ProcessOrchestratorService]
     AutoUp[AutoUpdateBackgroundService]
     Host --> ArrWM
+    ArrWM --> Workers[Torrentarr.Workers per Arr]
     Host --> QBitWM
     Host --> Policy
     Host --> AutoUp
@@ -65,9 +75,9 @@ flowchart TB
 
 | Area | Status | Notes |
 | --- | --- | --- |
-| OS forks (`pathos`) vs Host `BackgroundService` | **Arch** | Canonical loop: [`ArrWorkerManager.cs`](https://github.com/Feramance/Torrentarr/blob/master/src/Torrentarr.Infrastructure/Services/ArrWorkerManager.cs). [`Torrentarr.Workers`](https://github.com/Feramance/Torrentarr/blob/master/src/Torrentarr.Workers/Program.cs) exists but **Host does not spawn it**. |
-| Processes UI rows `{name}-search` / `{name}-torrent` | **Match** | Same surface as qBitrr even though both are in-process tasks. |
-| Docs saying “per-Arr worker processes” | **Match** | [overview.md](overview.md) and [features/process-management.md](../features/process-management.md) describe Host in-process worker **tasks**. |
+| OS forks (`pathos`) vs Host `BackgroundService` | **Arch** | Host uses `WorkerProcessSupervisor` to spawn a separate `Torrentarr.Workers` process per Arr instance. |
+| Processes UI rows `{name}-search` / `{name}-torrent` | **Match** | Same surface as qBitrr; each Arr process hosts search and torrent tasks. |
+| Docs saying “per-Arr worker processes” | **Match** | [overview.md](overview.md) and [features/process-management.md](../features/process-management.md) describe isolated worker processes. |
 | `db_lock.py` | **Arch** | WAL + `SaveChangesWithRetryAsync` + `DatabaseRestartWatchdogService`. |
 | Pathos dedicated-qBit-client gate / placeholder pause-resume queues (5.12.6 / 5.12.8) | **Arch** | Per-torrent `QBitInstanceName` routing; no default client. |
 
@@ -82,7 +92,7 @@ flowchart TB
 
 ## 2. Per-Arr worker loop (every feature gate)
 
-Canonical path: `ArrWorkerManager.RunWorkerCoreAsync`.
+Production path: `Torrentarr.Workers/Program.cs`; Host owns worker lifecycle through `WorkerProcessSupervisor`.
 
 ### Startup (once)
 
@@ -316,16 +326,16 @@ After a successful `Downloaded*Scan` (`TriggerImportAsync`), if `Torrent.AutoDel
 
 ---
 
-## 9. Honest gap list
+## 9. Architecture differences
 
 Closed in the follow-up pass (now **Match**): ffprobe post-import AutoDelete cleanup, `SearchMissing` master switch, explicit `loop_completed`, Lidarr `QualityMet`, removal of unused `IsQualityUpgradeAsync`, matrix/`arss/` + extra modules, feature/process docs.
 
 Remaining:
 
-1. **Arch — process model:** in-process `Task`s vs qBitrr pathos OS forks. User-facing search/torrent rows and restart limits match; Host does **not** spawn `Torrentarr.Workers`.
+1. **Arch — process model:** isolated .NET worker processes vs qBitrr pathos OS forks. User-facing search/torrent rows and restart limits match.
 2. **Arch — `db_lock.py`:** WAL + `SaveChangesWithRetryAsync` instead of a cross-process file lock.
 3. **Arch — weekly-build / packaging:** Docker/.NET vs pip; weekly Dependabot squash matches qBitrr (shared upstream behavior).
-4. **Workers project:** standalone loop lacks Host sync/RSS/refresh; unused in production Host (`SearchMissing` is still gated there so it does not diverge).
+4. **Workers project:** production per-Arr worker entry point; Host provides supervision and global torrent policy.
 
 **Intentional (keep):** +1 major version, `torrentarr.db`, Serilog, Docker/.NET vs pip, no `db_lock`, no pathos, no placeholder queues, weekly-build matching qBitrr, OpenAPI generated from qBitrr.
 

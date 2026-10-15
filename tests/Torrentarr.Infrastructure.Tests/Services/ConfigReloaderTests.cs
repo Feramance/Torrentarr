@@ -1,6 +1,7 @@
 using FluentAssertions;
 using Microsoft.Extensions.Logging.Abstractions;
 using Torrentarr.Core.Services;
+using Torrentarr.Core.Configuration;
 using Torrentarr.Infrastructure.Services;
 using Xunit;
 
@@ -128,6 +129,40 @@ public sealed class ConfigReloaderTests : IDisposable
     }
 
     // ── ReloadConfig – success paths ──────────────────────────────────────────
+
+    [Fact]
+    public void ReloadConfig_PersistsMigrationsAndBackup_AndReleasesWriterBeforeEvent()
+    {
+        File.WriteAllText(_configPath, MinimalToml);
+        using var reloader = CreateReloader(_configPath);
+        var notified = false;
+        reloader.ConfigReloaded += (_, args) =>
+        {
+            args.Success.Should().BeTrue();
+            ConfigMutationGuard.OwnsMutation(_configPath).Should().BeFalse();
+            using var processing = ConfigMutationGuard.EnterProcessing(_configPath);
+            notified = true;
+        };
+
+        reloader.ReloadConfig().Should().BeTrue();
+
+        notified.Should().BeTrue();
+        File.ReadAllText(_configPath + ".bak").Should().Be(MinimalToml);
+        File.ReadAllText(_configPath).Should().Contain(ConfigurationLoader.ExpectedConfigVersion);
+    }
+
+    [Fact]
+    public void ReloadConfig_WhileProcessing_ReturnsFalseWithoutChangingFile()
+    {
+        File.WriteAllText(_configPath, MinimalToml);
+        using var reloader = CreateReloader(_configPath);
+        using var processing = ConfigMutationGuard.EnterProcessing(_configPath);
+
+        reloader.ReloadConfig().Should().BeFalse();
+
+        File.ReadAllText(_configPath).Should().Be(MinimalToml);
+        File.Exists(_configPath + ".bak").Should().BeFalse();
+    }
 
     [Fact]
     public void ReloadConfig_WhenConfigFileExists_ReturnsTrue()

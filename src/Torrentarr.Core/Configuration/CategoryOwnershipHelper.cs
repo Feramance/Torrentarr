@@ -38,7 +38,7 @@ public static class CategoryOwnershipHelper
             .ToHashSet(StringComparer.OrdinalIgnoreCase);
 
         var result = new List<string>();
-        foreach (var (_, qbit) in config.QBitInstances)
+        foreach (var (_, qbit) in config.GetAllTorrentClients())
         {
             foreach (var raw in qbit.ManagedCategories)
             {
@@ -66,7 +66,7 @@ public static class CategoryOwnershipHelper
 
     public static bool QBitMatchSubcategories(TorrentarrConfig config, string qbitSection)
     {
-        if (config.QBitInstances.TryGetValue(qbitSection, out var qbit))
+        if (config.GetAllTorrentClients().TryGetValue(qbitSection, out var qbit))
             return qbit.MatchSubcategories;
         return false;
     }
@@ -113,7 +113,7 @@ public static class CategoryOwnershipHelper
         if (qbitSection != null)
             return QBitMatchSubcategories(config, qbitSection);
 
-        return config.QBitInstances.Values.Any(q => q.MatchSubcategories);
+        return config.GetAllTorrentClients().Values.Any(q => q.MatchSubcategories);
     }
 
     /// <summary>

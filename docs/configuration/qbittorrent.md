@@ -297,7 +297,7 @@ With multi-instance support, you can configure multiple qBittorrent instances an
 
 ### Configuration Syntax
 
-All qBittorrent instances are treated equally — there is no mandatory "primary" instance. By convention `[qBit]` is the name for the main instance, but you can name them anything that follows the `[qBit]` or `[qBit-NAME]` pattern:
+All qBittorrent instances are treated equally. `[qBit]` is an ordinary legacy name; it can be renamed or deleted like any other instance. Legacy names follow the `[qBit]` or `[qBit-NAME]` pattern:
 
 ```toml
 [qBit]  # Main instance (conventional name, not special in code)

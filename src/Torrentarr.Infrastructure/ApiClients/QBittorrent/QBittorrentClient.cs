@@ -10,7 +10,7 @@ namespace Torrentarr.Infrastructure.ApiClients.QBittorrent;
 /// <summary>
 /// qBittorrent WebUI API client using RestSharp
 /// </summary>
-public class QBittorrentClient : ITorrentClient
+public class QBittorrentClient : ITorrentClient, IDisposable
 {
     private readonly RestClient _client;
     private readonly string _host;
@@ -46,8 +46,36 @@ public class QBittorrentClient : ITorrentClient
         _client = new RestClient(TlsSkipHelper.CreateRestOptions(baseUrl, skipTlsVerify));
     }
 
+    public void Dispose() => _client.Dispose();
+
     private Task<RestResponse> ExecuteAsync(RestRequest request, CancellationToken ct) =>
         HttpRetryHelper.ExecuteQBitAsync(_client, request, ct);
+
+    private async Task<RestResponse> ExecuteInventoryAsync(RestRequest request, CancellationToken ct)
+    {
+        var response = await ExecuteAsync(request, ct);
+        if (response.StatusCode == System.Net.HttpStatusCode.Forbidden && await LoginAsync(ct))
+        {
+            request.AddOrUpdateHeader("Cookie", _cookie!);
+            response = await ExecuteAsync(request, ct);
+        }
+        return response;
+    }
+
+    private static List<T> ReadInventoryList<T>(RestResponse response)
+    {
+        if (!response.IsSuccessful)
+            throw new HttpRequestException($"Torrent inventory request failed (HTTP {(int)response.StatusCode}).", null, response.StatusCode);
+        try
+        {
+            return JsonConvert.DeserializeObject<List<T>>(response.Content ?? "")
+                ?? throw new JsonSerializationException("Missing inventory array.");
+        }
+        catch (JsonException)
+        {
+            throw new HttpRequestException("Torrent inventory response is not a valid array.");
+        }
+    }
 
     /// <summary>
     /// Authenticate with qBittorrent.
@@ -127,7 +155,9 @@ public class QBittorrentClient : ITorrentClient
         var request = new RestRequest("/api/v2/app/version", Method.Get);
         AddAuthCookie(request);
 
-        var response = await ExecuteAsync(request, ct);
+        var response = await ExecuteInventoryAsync(request, ct);
+        if (!response.IsSuccessful)
+            throw new HttpRequestException($"Torrent version request failed (HTTP {(int)response.StatusCode}).", null, response.StatusCode);
         return response.Content ?? "";
     }
 
@@ -144,14 +174,10 @@ public class QBittorrentClient : ITorrentClient
         if (!string.IsNullOrEmpty(sort))
             request.AddQueryParameter("sort", sort);
 
-        var response = await ExecuteAsync(request, cancellationToken);
+        var response = await ExecuteInventoryAsync(request, cancellationToken);
+        cancellationToken.ThrowIfCancellationRequested();
 
-        if (response.IsSuccessful && !string.IsNullOrEmpty(response.Content))
-        {
-            return JsonConvert.DeserializeObject<List<TorrentInfo>>(response.Content) ?? new List<TorrentInfo>();
-        }
-
-        return new List<TorrentInfo>();
+        return ReadInventoryList<TorrentInfo>(response);
     }
 
     /// <summary>
@@ -183,8 +209,15 @@ public class QBittorrentClient : ITorrentClient
         request.AddParameter("hashes", string.Join("|", hashes));
         request.AddParameter("deleteFiles", deleteFiles.ToString().ToLower());
 
-        var response = await ExecuteAsync(request, ct);
-        return response.IsSuccessful;
+        // A retry could hide whether an earlier delete reached the server.
+        var response = await _client.ExecuteAsync(request, ct);
+        if (response.IsSuccessful) return true;
+        ct.ThrowIfCancellationRequested();
+        if ((int)response.StatusCode is >= 400 and < 500
+            && response.StatusCode is not System.Net.HttpStatusCode.RequestTimeout and not System.Net.HttpStatusCode.TooManyRequests)
+            return false;
+        throw new HttpRequestException($"Remote removal outcome is uncertain (HTTP {(int)response.StatusCode}).",
+            response.ErrorException, response.StatusCode);
     }
 
     /// <summary>
@@ -336,14 +369,10 @@ public class QBittorrentClient : ITorrentClient
         AddAuthCookie(request);
         request.AddQueryParameter("hash", hash);
 
-        var response = await ExecuteAsync(request, ct);
+        var response = await ExecuteInventoryAsync(request, ct);
+        ct.ThrowIfCancellationRequested();
 
-        if (response.IsSuccessful && !string.IsNullOrEmpty(response.Content))
-        {
-            return JsonConvert.DeserializeObject<List<TorrentTracker>>(response.Content) ?? new List<TorrentTracker>();
-        }
-
-        return new List<TorrentTracker>();
+        return ReadInventoryList<TorrentTracker>(response);
     }
 
     /// <summary>
@@ -501,14 +530,10 @@ public class QBittorrentClient : ITorrentClient
         AddAuthCookie(request);
         request.AddQueryParameter("hash", hash);
 
-        var response = await ExecuteAsync(request, ct);
+        var response = await ExecuteInventoryAsync(request, ct);
+        ct.ThrowIfCancellationRequested();
 
-        if (response.IsSuccessful && !string.IsNullOrEmpty(response.Content))
-        {
-            return JsonConvert.DeserializeObject<List<TorrentFile>>(response.Content) ?? new List<TorrentFile>();
-        }
-
-        return new List<TorrentFile>();
+        return ReadInventoryList<TorrentFile>(response);
     }
 
     /// <summary>

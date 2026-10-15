@@ -177,6 +177,9 @@ Cache-Control: no-cache, no-store, must-revalidate
 
 ### System Status
 
+The legacy `qbit` field has been removed from `/web/status` and `/api/status`.
+Consumers must read `qbitInstances[instanceName]`; no client is selected implicitly.
+
 Get qBittorrent and Arr instance statuses.
 
 **Endpoints**:
@@ -186,14 +189,8 @@ Get qBittorrent and Arr instance statuses.
 **Response**:
 ```json
 {
-  "qbit": {
-    "alive": true,
-    "host": "localhost",
-    "port": 8080,
-    "version": "4.6.0"
-  },
   "qbitInstances": {
-    "default": {
+    "qBit": {
       "alive": true,
       "host": "localhost",
       "port": 8080,
@@ -225,8 +222,7 @@ Get qBittorrent and Arr instance statuses.
 
 **Fields**:
 
-- `qbit` - Legacy single-instance qBittorrent info (for backward compatibility)
-- `qbitInstances` - Multi-instance qBittorrent info keyed by instance name
+- `qbitInstances` - Client status keyed by instance name; all instances are equal
 - `arrs[].alive` - Arr instance process health (checks both search and torrent processes)
 - `webui` - WebUI configuration settings
 - `ready` - Overall system ready state
@@ -1053,6 +1049,18 @@ Apply changes to configuration and trigger reload.
 ```
 
 **Dotted Key Format**: Use dot notation for nested keys (e.g., `Radarr-4K.Torrent.AutoDelete`).
+
+**Renaming sections**: Send an optional `renames` map alongside `changes`
+(e.g., `"renames": { "qBit": "qBit-seedbox" }`). Include the old section
+deletions and new section values in `changes`. This preserves stored passwords
+and notification tokens when the new values contain `[redacted]` placeholders,
+and migrates persisted instance state. Destinations must be unused in both config
+and stored state; rename chains, cycles, and case-only renames are rejected. HTTP
+`409` means processing or another config save is active, or rename recovery is
+pending. Retry after processing finishes; pending recovery runs at startup.
+A successful response may include an optional `warning` string if config was saved
+but worker restart or client reconciliation failed. The saved rename should not
+be submitted again.
 
 **Deletion**: Set value to `null` to delete key:
 ```json

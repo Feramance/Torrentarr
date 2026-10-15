@@ -33,11 +33,13 @@ public class ConfigReloader : IConfigReloader, IDisposable
             _watcher = new FileSystemWatcher(directory)
             {
                 Filter = fileName,
-                NotifyFilter = NotifyFilters.LastWrite | NotifyFilters.Size,
+                NotifyFilter = NotifyFilters.LastWrite | NotifyFilters.Size | NotifyFilters.FileName,
                 EnableRaisingEvents = false
             };
 
             _watcher.Changed += OnConfigFileChanged;
+            _watcher.Created += OnConfigFileChanged;
+            _watcher.Renamed += OnConfigFileChanged;
         }
     }
 
@@ -67,7 +69,9 @@ public class ConfigReloader : IConfigReloader, IDisposable
             {
                 _logger.LogInformation("ConfigReloader: reloading configuration from {Path}", ConfigPath);
 
-                var newConfig = _loader.Load();
+                // Loading may persist migrations; release the writer before notifying subscribers.
+                using (ConfigMutationGuard.EnterMutation(ConfigPath))
+                    _loader.Load();
 
                 var args = new ConfigReloadedEventArgs
                 {

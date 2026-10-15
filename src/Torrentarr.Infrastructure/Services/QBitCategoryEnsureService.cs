@@ -37,11 +37,12 @@ public class QBitCategoryEnsureService
         else if (!prefixPaths.Contains(leaf, StringComparer.Ordinal))
             prefixPaths = prefixPaths.Append(leaf).ToList();
 
-        var completedRoot = ResolveCompletedRoot();
+
         var succeeded = true;
 
         foreach (var (instanceName, client) in _qbitManager.GetAllClients())
         {
+            if (!client.Capabilities.Categories) continue;
             try
             {
                 var categories = await client.GetCategoriesAsync(ct);
@@ -60,7 +61,7 @@ public class QBitCategoryEnsureService
                     }
                     else
                     {
-                        savePath = Path.Combine(completedRoot, parent.Replace('/', Path.DirectorySeparatorChar));
+                        savePath = Path.Combine(ResolveCompletedRoot(instanceName), parent.Replace('/', Path.DirectorySeparatorChar));
                     }
 
                     var created = await client.CreateCategoryAsync(parent, savePath, ct);
@@ -84,13 +85,13 @@ public class QBitCategoryEnsureService
         return succeeded;
     }
 
-    private string ResolveCompletedRoot()
+    private string ResolveCompletedRoot(string instanceName)
     {
         var folder = _config.Settings.CompletedDownloadFolder;
         if (!string.IsNullOrWhiteSpace(folder) && folder != "CHANGE_ME" && Directory.Exists(folder))
             return folder;
 
-        foreach (var (_, qbit) in _config.QBitInstances)
+        foreach (var qbit in new[] { _config.GetTorrentClient(instanceName) }.OfType<TorrentClientInstanceConfig>())
         {
             if (!string.IsNullOrWhiteSpace(qbit.DownloadPath) && qbit.DownloadPath != "CHANGE_ME"
                 && Directory.Exists(qbit.DownloadPath))

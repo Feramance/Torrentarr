@@ -5,9 +5,10 @@ namespace Torrentarr.Core.Services;
 /// </summary>
 public interface IImportPathTracker
 {
-    bool IsPathAlreadyScanned(string normalizedPath);
-    bool IsHashAlreadyScanned(string hash);
-    void MarkScanned(string normalizedPath, string hash);
+    bool IsPathAlreadyScanned(string instanceId, string normalizedPath);
+    bool IsHashAlreadyScanned(string instanceId, string hash);
+    void Clear();
+    void MarkScanned(string instanceId, string normalizedPath, string hash);
     void RemoveEmptyPathsUnder(string completedFolderRoot);
     void ClearIfFolderEmpty(string completedFolderRoot);
 }
