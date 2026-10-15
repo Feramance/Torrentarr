@@ -27,6 +27,8 @@ public sealed class SonarrApiDiscoveryTests : IDisposable
     private string? _discoveryJson;
     private string? _statusJson;
     private bool _failWrites;
+    private bool _enumDeleteContract;
+    private (bool Remove, bool Blocklist)? _deletion;
     private string? _queueJson;
     private readonly string _key = Guid.NewGuid().ToString();
 
@@ -98,6 +100,24 @@ public sealed class SonarrApiDiscoveryTests : IDisposable
         deletion.Path.Should().Contain(version == "v5"
             ? $"removalMethod={(remove ? "removeFromClient" : "ignore")}&blocklistMethod={(blocklist ? "blocklistAndSearch" : "doNotBlocklist")}"
             : $"removeFromClient={remove.ToString().ToLowerInvariant()}&blocklist={blocklist.ToString().ToLowerInvariant()}");
+    }
+
+    [Theory]
+    [InlineData(false, false, false)]
+    [InlineData(false, false, true)]
+    [InlineData(false, true, false)]
+    [InlineData(false, true, true)]
+    [InlineData(true, false, false)]
+    [InlineData(true, false, true)]
+    [InlineData(true, true, false)]
+    [InlineData(true, true, true)]
+    public async Task Delete_PreservesIntentForBothReleasedV5Contracts(bool enums, bool remove, bool blocklist)
+    {
+        _enumDeleteContract = enums;
+        _statusJson = enums ? "{\"version\":\"5.0.0.2608\"}" : "{\"version\":\"5.0.0.2569\"}";
+        (await new SonarrClient(_url, _key).DeleteFromQueueAsync(1, remove, blocklist)).Should().BeTrue();
+        _deletion.Should().Be((remove, blocklist));
+        _requests.Count(r => r.Method == "DELETE").Should().Be(1);
     }
 
     [Fact]
@@ -259,6 +279,21 @@ public sealed class SonarrApiDiscoveryTests : IDisposable
                 : relative.EndsWith("/series/1") ? "{\"id\":1,\"qualityProfileId\":1,\"tags\":[7]}"
                 : relative.EndsWith("/series") || relative.Contains("/episodefile?") || relative.EndsWith("/qualityprofile") || relative.EndsWith("/command") && ctx.Request.HttpMethod == "GET" ? "[]" : "{}";
             ctx.Response.StatusCode = relative == "" ? _discoveryStatus : relative.EndsWith("/system/status") ? _statusCode : _failWrites && ctx.Request.HttpMethod == "DELETE" ? 400 : 200;
+            if (ctx.Request.HttpMethod == "DELETE" && !_failWrites)
+            {
+                var query = ctx.Request.QueryString;
+                if (_enumDeleteContract)
+                {
+                    if (query["removalMethod"] == null || query["blocklistMethod"] == null)
+                        ctx.Response.StatusCode = 400;
+                    else
+                        _deletion = (query["removalMethod"] == "removeFromClient", query["blocklistMethod"] != "doNotBlocklist");
+                }
+                else
+                {
+                    _deletion = (query["removeFromClient"] != "false", query["blocklist"] == "true");
+                }
+            }
             var bytes = Encoding.UTF8.GetBytes(json);
             ctx.Response.ContentType = "application/json";
             ctx.Response.ContentLength64 = bytes.Length;

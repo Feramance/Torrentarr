@@ -270,15 +270,13 @@ public class SonarrClient
         var request = await CreateRequestAsync($"queue/{id}", Method.Delete, ct);
         AddApiKeyHeader(request);
 
+        request.AddQueryParameter("removeFromClient", removeFromClient.ToString().ToLowerInvariant());
+        request.AddQueryParameter("blocklist", blocklist.ToString().ToLowerInvariant());
+        // Sonarr 5.0.0.2569 binds booleans; 5.0.0.2608 binds enums and ignores the booleans.
         if (request.Resource.Contains("/v5/"))
         {
             request.AddQueryParameter("removalMethod", removeFromClient ? "removeFromClient" : "ignore");
             request.AddQueryParameter("blocklistMethod", blocklist ? "blocklistAndSearch" : "doNotBlocklist");
-        }
-        else
-        {
-            request.AddQueryParameter("removeFromClient", removeFromClient.ToString().ToLowerInvariant());
-            request.AddQueryParameter("blocklist", blocklist.ToString().ToLowerInvariant());
         }
 
         var response = await ArrClientResponse.ExecuteAsync(_client, request, ct);
