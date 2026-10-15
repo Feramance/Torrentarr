@@ -520,7 +520,7 @@ public class ArrWorkerManager : BackgroundService
             string? version = arrCfg.Type.ToLowerInvariant() switch
             {
                 "radarr" => (await new RadarrClient(arrCfg.URI, arrCfg.APIKey).GetSystemInfoAsync(ct)).Version,
-                "sonarr" => (await new SonarrClient(arrCfg.URI, arrCfg.APIKey).GetSystemInfoAsync(ct)).Version,
+                "sonarr" => (await new SonarrClient(arrCfg.URI, arrCfg.APIKey, arrCfg.SkipTLSVerify).GetSystemInfoAsync(ct)).Version,
                 "lidarr" => (await new LidarrClient(arrCfg.URI, arrCfg.APIKey).GetSystemInfoAsync(ct)).Version,
                 _ => null
             };

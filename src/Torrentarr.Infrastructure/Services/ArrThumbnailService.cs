@@ -60,7 +60,14 @@ public class ArrThumbnailService
         if (arrId is null)
             return null;
 
-        var candidates = BuildCandidateUrls(instance.Value.URI.TrimEnd('/'), arrType, arrId.Value);
+        var sonarrApiVersion = "v3";
+        if (arrType.Equals("sonarr", StringComparison.OrdinalIgnoreCase))
+        {
+            using var discoveryClient = _httpClientFactory.CreateClient(instance.Value.SkipTLSVerify ? "ArrOpenSkipTls" : "ArrOpen");
+            sonarrApiVersion = (await SonarrApiDiscovery.ResolveAsync(instance.Value.URI, instance.Value.APIKey,
+                instance.Value.SkipTLSVerify, ct, discoveryClient)).ApiVersion;
+        }
+        var candidates = BuildCandidateUrls(instance.Value.URI.TrimEnd('/'), arrType, arrId.Value, sonarrApiVersion);
         foreach (var url in candidates)
         {
             var fetched = await TryFetchSameHostAsync(url, instance.Value.URI, instance.Value.APIKey, ct);
@@ -117,7 +124,7 @@ public class ArrThumbnailService
         };
     }
 
-    private static IEnumerable<string> BuildCandidateUrls(string baseUri, string arrType, int arrId)
+    private static IEnumerable<string> BuildCandidateUrls(string baseUri, string arrType, int arrId, string sonarrApiVersion)
     {
         return arrType.ToLowerInvariant() switch
         {
@@ -129,7 +136,7 @@ public class ArrThumbnailService
             "sonarr" => new[]
             {
                 $"{baseUri}/MediaCover/{arrId}/poster.jpg",
-                $"{baseUri}/api/v3/MediaCover/{arrId}/poster.jpg"
+                $"{baseUri}/api/{sonarrApiVersion}/MediaCover/{arrId}/poster.jpg"
             },
             "lidarr_artist" or "lidarr" => new[]
             {

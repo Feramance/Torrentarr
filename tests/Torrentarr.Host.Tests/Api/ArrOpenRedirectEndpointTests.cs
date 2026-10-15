@@ -2,6 +2,7 @@ using FluentAssertions;
 using Microsoft.Extensions.DependencyInjection;
 using System.Net;
 using Torrentarr.Infrastructure.Database;
+using Torrentarr.Infrastructure.Services;
 using Xunit;
 
 namespace Torrentarr.Host.Tests.Api;
@@ -114,10 +115,34 @@ public class ArrOpenRedirectEndpointTests : IClassFixture<ArrCatalogWebApplicati
         (await client.GetAsync("/web/arr/radarr/open/movie/1")).StatusCode.Should().Be(expected);
     }
 
-    private HttpClient CreateArrClient(string expectedUrl, string json)
+    [Fact]
+    public async Task SonarrV5_RedirectAndPosterUseDiscoveredApi()
     {
-        var factory = _factory.WithWebHostBuilder(builder => builder.ConfigureServices(services =>
-            services.AddHttpClient("ArrOpen").ConfigurePrimaryHttpMessageHandler(() => new ArrHandler(expectedUrl, json))));
+        using var v5 = new SonarrV5Factory();
+        v5.SetConfigEnv();
+        using var scope = v5.Services.CreateScope();
+        await CatalogTestDataSeeder.SeedSonarrEpisodesAsync(scope.ServiceProvider.GetRequiredService<TorrentarrDbContext>());
+        using var client = CreateArrClient("http://sonarr-v5:8989/api/v5/series/201", "{\"titleSlug\":\"v5-series\"}", v5);
+        var response = await client.GetAsync("/web/arr/sonarr/open/series/1");
+        response.StatusCode.Should().Be(HttpStatusCode.Redirect);
+        response.Headers.Location!.ToString().Should().Be("http://sonarr-v5:8989/series/v5-series");
+        var poster = await client.GetAsync("/web/sonarr/sonarr/series/1/thumbnail");
+        poster.StatusCode.Should().Be(HttpStatusCode.OK);
+        (await poster.Content.ReadAsByteArrayAsync()).Should().Equal(new byte[] { 0xff, 0xd8, 0xff, 0xd9 });
+    }
+
+    private sealed class SonarrV5Factory : ArrCatalogWebApplicationFactory
+    {
+        protected override string GetTestConfigToml() => base.GetTestConfigToml().Replace("sonarr:8989", "sonarr-v5:8989");
+    }
+
+    private HttpClient CreateArrClient(string expectedUrl, string json, ArrCatalogWebApplicationFactory? testFactory = null)
+    {
+        var factory = (testFactory ?? _factory).WithWebHostBuilder(builder => builder.ConfigureServices(services =>
+        {
+            services.AddHttpClient("ArrOpen").ConfigurePrimaryHttpMessageHandler(() => new ArrHandler(expectedUrl, json));
+            services.AddHttpClient(nameof(ArrThumbnailService)).ConfigurePrimaryHttpMessageHandler(() => new ArrHandler(expectedUrl, json));
+        }));
         var client = factory.CreateClient(new Microsoft.AspNetCore.Mvc.Testing.WebApplicationFactoryClientOptions { AllowAutoRedirect = false });
         client.DefaultRequestHeaders.Authorization = new System.Net.Http.Headers.AuthenticationHeaderValue("Bearer", "test-api-token");
         return client;
@@ -127,7 +152,16 @@ public class ArrOpenRedirectEndpointTests : IClassFixture<ArrCatalogWebApplicati
     {
         protected override Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken cancellationToken)
         {
-            request.RequestUri!.ToString().Should().Be(expectedUrl);
+            var version = expectedUrl.Contains("/api/v5/") ? "v5" : "v3";
+            if (request.RequestUri!.AbsolutePath == "/MediaCover/201/poster.jpg")
+                return Task.FromResult(new HttpResponseMessage(HttpStatusCode.NotFound));
+            if (request.RequestUri.AbsolutePath == $"/api/{version}/MediaCover/201/poster.jpg")
+                return Task.FromResult(new HttpResponseMessage(HttpStatusCode.OK) { Content = new ByteArrayContent(new byte[] { 0xff, 0xd8, 0xff, 0xd9 }) });
+            if (request.RequestUri.AbsolutePath == "/api")
+                return Task.FromResult(new HttpResponseMessage(HttpStatusCode.OK) { Content = new StringContent($"{{\"current\":\"{version}\"}}") });
+            if (request.RequestUri.AbsolutePath == $"/api/{version}/system/status")
+                return Task.FromResult(new HttpResponseMessage(HttpStatusCode.OK) { Content = new StringContent($"{{\"version\":\"{(version == "v5" ? 5 : 4)}.0.0\"}}") });
+            request.RequestUri.ToString().Should().Be(expectedUrl);
             request.Headers.GetValues("X-Api-Key").Single().Should().EndWith("-key");
             return Task.FromResult(new HttpResponseMessage(HttpStatusCode.OK) { Content = new StringContent(json) });
         }

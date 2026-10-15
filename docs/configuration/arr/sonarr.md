@@ -2,6 +2,12 @@
 
 This guide covers how to configure Sonarr instances in Torrentarr for TV show management, automated searching, episode tracking, and quality upgrades.
 
+## API compatibility
+
+Torrentarr discovers each Sonarr instance's API automatically: Sonarr 3 and 4 use API v3; Sonarr 5 uses API v5. No extra configuration is required. Successful discovery is cached for five minutes in each process and refreshed on the next request after expiry, so upgrades are detected without restarting Torrentarr.
+
+The v5 integration handles multi-episode queue entries, updated queue-removal parameters, and episode-file inclusion. Existing configuration and database formats remain unchanged. Discovery failures stop the operation rather than guessing an API version.
+
 ---
 
 ## Quick Start
