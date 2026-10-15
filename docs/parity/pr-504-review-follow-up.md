@@ -124,3 +124,15 @@ Local verification for review 5529269550: Release build passed with zero warning
 1,360 non-live .NET tests passed (263 Core, 312 Host, 785 Infrastructure).
 Changed C# formatting/analyzers and `git diff --check` passed. Live services and
 Windows/macOS runtime checks were not run locally.
+
+## Review 5529671719 follow-up
+
+Both findings in the [Codex review](https://github.com/Feramance/Torrentarr/pull/504#pullrequestreview-5529671719) were verified as valid.
+
+- Disabled clients no longer make the free-space inventory incomplete. Enabled clients that are missing or fail enumeration still withhold resumes. Bulk/category regressions and Host tag/database coverage verify disabled configuration entries do not prevent healthy clients from resuming.
+- Reload acquires a mutation lease for the migration-capable load, allowing its nested migration write to persist the migrated TOML and original backup. The writer is released before reload subscribers run. Regressions verify persistence, backup contents, lease release, and rejection without file changes while processing is active.
+
+Local verification for review 5529671719: Release build passed with zero warnings/errors;
+1,363 non-live .NET tests passed (263 Core, 312 Host, 788 Infrastructure).
+Changed C# formatting/analyzers and `git diff --check` passed. Live services and
+Windows/macOS runtime checks were not run locally.

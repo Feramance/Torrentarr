@@ -39,7 +39,7 @@ public sealed class FreeSpaceInventory
         var result = new FreeSpaceInventory();
         var clients = registry.GetAllClients();
         foreach (var (id, cfg) in config.GetAllTorrentClients())
-            if (!string.IsNullOrWhiteSpace(cfg.Host) && cfg.Host != "CHANGE_ME" && (cfg.Disabled || !clients.ContainsKey(id)))
+            if (!string.IsNullOrWhiteSpace(cfg.Host) && cfg.Host != "CHANGE_ME" && !cfg.Disabled && !clients.ContainsKey(id))
                 result.Complete = false;
         foreach (var (id, client) in clients)
         {

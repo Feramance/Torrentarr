@@ -67,10 +67,11 @@ public class ConfigReloader : IConfigReloader, IDisposable
         {
             try
             {
-                using var processing = ConfigMutationGuard.EnterProcessing(ConfigPath);
                 _logger.LogInformation("ConfigReloader: reloading configuration from {Path}", ConfigPath);
 
-                var newConfig = _loader.Load();
+                // Loading may persist migrations; release the writer before notifying subscribers.
+                using (ConfigMutationGuard.EnterMutation(ConfigPath))
+                    _loader.Load();
 
                 var args = new ConfigReloadedEventArgs
                 {

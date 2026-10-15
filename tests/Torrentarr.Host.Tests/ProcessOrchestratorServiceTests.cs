@@ -70,6 +70,7 @@ public class ProcessOrchestratorServiceTests
         var registry = new Mock<ITorrentClientRegistry>();
         registry.Setup(r => r.GetAllClients()).Returns(new Dictionary<string, ITorrentClient> { ["named"] = client.Object });
         var config = new TorrentarrConfig(); config.Settings.Tagless = globalTagless;
+        config.TorrentClients["disabled"] = new() { Host = "fixture", Disabled = true };
         using var service = new ProcessOrchestratorService(NullLogger<ProcessOrchestratorService>.Instance,
             config, registry.Object, provider.GetRequiredService<IServiceScopeFactory>(), new ProcessStateManager(), Mock.Of<ISafeDeletionService>());
         const BindingFlags flags = BindingFlags.Instance | BindingFlags.NonPublic;

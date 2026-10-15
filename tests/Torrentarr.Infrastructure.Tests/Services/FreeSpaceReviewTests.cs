@@ -67,7 +67,6 @@ public sealed class FreeSpaceReviewTests : IDisposable
 
     [Theory]
     [InlineData("missing")]
-    [InlineData("disabled")]
     [InlineData("failed")]
     public async Task IncompleteInventory_DoesNotResume_ThenCompletePassRecovers(string failure)
     {
@@ -83,6 +82,21 @@ public sealed class FreeSpaceReviewTests : IDisposable
         healthy.Verify(c => c.ResumeTorrentAsync(It.IsAny<string>(), It.IsAny<CancellationToken>()), Times.Never);
         _config.TorrentClients.Remove("unknown"); _clients.Remove("unknown");
         (await Service().ResumeDownloadsIfSpaceAvailableAsync()).Should().BeTrue();
+    }
+
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task DisabledClient_DoesNotBlockActiveClientResume(bool categoryPass)
+    {
+        var paused = new TorrentInfo { Hash = "abc", State = "pausedDL", Category = "movies", Tags = "qBitrr-free_space_paused", AmountLeft = 1 };
+        var healthy = Client("healthy", true, paused);
+        _config.TorrentClients["disabled"] = new() { Host = "fixture", Disabled = true };
+
+        if (categoryPass) await Service().ProcessTorrentsForSpaceAsync("movies");
+        else (await Service().ResumeDownloadsIfSpaceAvailableAsync()).Should().BeTrue();
+
+        healthy.Verify(c => c.ResumeTorrentAsync("abc", It.IsAny<CancellationToken>()), Times.Once);
     }
 
     [Fact]
