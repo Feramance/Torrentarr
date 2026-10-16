@@ -166,12 +166,28 @@ public sealed class SonarrApiDiscoveryTests : IDisposable
     [Theory]
     [InlineData("v3")]
     [InlineData("v5")]
-    public async Task Discovery_FallsBackOnlyFor404(string version)
+    public async Task Discovery_FallsBackFor404(string version)
     {
         _version = version;
         _discoveryStatus = 404;
         (await SonarrApiDiscovery.ResolveAsync(_url, _key, false)).ApiVersion.Should().Be(version);
         _requests.Should().Contain(r => r.Path.EndsWith("/v3/system/status"));
+    }
+
+    [Theory]
+    [InlineData("v3", "")]
+    [InlineData("v3", " \t\r\n")]
+    [InlineData("v5", "")]
+    [InlineData("v5", " \t\r\n")]
+    public async Task Discovery_EmptySuccessUsesValidatedLegacyFallback(string version, string body)
+    {
+        _version = version;
+        _discoveryJson = body;
+        await new SonarrClient(_url, _key).GetSeriesAsync();
+        (await SonarrApiDiscovery.ResolveAsync(_url, _key, false)).ApiVersion.Should().Be(version);
+        _requests.Should().Contain(r => r.Path == "/sonarr/api/v3/system/status");
+        _requests.Should().Contain(r => r.Path == $"/sonarr/api/{version}/series");
+        _requests.Count(r => r.Path == "/sonarr/api").Should().Be(1);
     }
 
     [Theory]

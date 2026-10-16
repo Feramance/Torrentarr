@@ -65,7 +65,7 @@ public static class SonarrApiDiscovery
             var discovery = await ReadAsync("api", allowNotFound: true);
             string apiVersion;
             SystemInfo status;
-            if (discovery != null)
+            if (!string.IsNullOrWhiteSpace(discovery))
             {
                 var current = JObject.Parse(discovery)["current"];
                 apiVersion = current?.Type == JTokenType.String ? current.Value<string>()! : "";
