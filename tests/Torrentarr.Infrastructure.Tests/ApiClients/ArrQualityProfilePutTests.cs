@@ -105,7 +105,8 @@ public sealed class ArrQualityProfilePutTests : IDisposable
             using (var reader = new StreamReader(ctx.Request.InputStream, ctx.Request.ContentEncoding))
                 _lastBody = await reader.ReadToEndAsync();
 
-            var json = "{}";
+            var json = _lastPath == "/api" ? "{\"current\":\"v3\"}" :
+                _lastPath == "/api/v3/system/status" ? "{\"version\":\"4.0.0\"}" : "{}";
             if (_lastPath.StartsWith("/api/v3/movie/", StringComparison.Ordinal))
             {
                 json = PutOrGet("""{"id":1,"title":"Dune","qualityProfileId":1,"tags":[3,8],"minimumAvailability":"released"}""");

@@ -60,12 +60,31 @@ public class ArrThumbnailService
         if (arrId is null)
             return null;
 
-        var candidates = BuildCandidateUrls(instance.Value.URI.TrimEnd('/'), arrType, arrId.Value);
-        foreach (var url in candidates)
+        var baseUri = instance.Value.URI.TrimEnd('/');
+        var isSonarr = arrType.Equals("sonarr", StringComparison.OrdinalIgnoreCase);
+        var candidates = BuildCandidateUrls(baseUri, arrType, arrId.Value).ToList();
+        for (var i = 0; i < candidates.Count; i++)
         {
-            var fetched = await TryFetchSameHostAsync(url, instance.Value.URI, instance.Value.APIKey, ct);
+            var fetched = await TryFetchSameHostAsync(candidates[i], instance.Value.URI, instance.Value.APIKey, ct);
             if (fetched is null)
+            {
+                if (isSonarr && i == 0)
+                {
+                    try
+                    {
+                        using var discoveryClient = _httpClientFactory.CreateClient(instance.Value.SkipTLSVerify ? "ArrOpenSkipTls" : "ArrOpen");
+                        var info = await SonarrApiDiscovery.ResolveAsync(instance.Value.URI, instance.Value.APIKey,
+                            instance.Value.SkipTLSVerify, ct, discoveryClient);
+                        candidates.Add($"{baseUri}/api/{info.ApiVersion}/MediaCover/{arrId.Value}/poster.jpg");
+                    }
+                    catch (Exception ex) when (!ct.IsCancellationRequested &&
+                        ex is HttpRequestException or ArrApiException or Newtonsoft.Json.JsonException or OperationCanceledException or TimeoutException)
+                    {
+                        return null;
+                    }
+                }
                 continue;
+            }
 
             await File.WriteAllBytesAsync(cachePath, fetched.Value.Bytes, ct);
             var etag = Convert.ToHexString(SHA256.HashData(fetched.Value.Bytes)).ToLowerInvariant();
@@ -128,8 +147,7 @@ public class ArrThumbnailService
             },
             "sonarr" => new[]
             {
-                $"{baseUri}/MediaCover/{arrId}/poster.jpg",
-                $"{baseUri}/api/v3/MediaCover/{arrId}/poster.jpg"
+                $"{baseUri}/MediaCover/{arrId}/poster.jpg"
             },
             "lidarr_artist" or "lidarr" => new[]
             {

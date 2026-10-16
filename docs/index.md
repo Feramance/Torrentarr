@@ -216,7 +216,7 @@ Total time to library: 20.5 minutes (26% faster)
 - **qBittorrent**: Version 4.1.0+ or 5.x (including 5.2) with WebUI enabled
 - **Arr Instance**: At least one of:
     - Radarr: v3.x, v4.x, v5.x, v6.x
-    - Sonarr: v3.x, v4.x
+    - Sonarr: v3.x, v4.x, v5.x
     - Lidarr: v1.x, v2.x
     - Readarr: v0.4+
 

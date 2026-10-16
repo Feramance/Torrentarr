@@ -132,7 +132,7 @@ Regardless of installation method, you'll need:
 
 2. **Arr Instance** - At least one of:
    - Radarr (v3.x, v4.x, v5.x, v6.x)
-   - Sonarr (v3.x, v4.x)
+   - Sonarr (v3.x, v4.x, v5.x)
    - Lidarr (v1.x, v2.x)
 
 3. **Network Access** - Torrentarr needs to reach:

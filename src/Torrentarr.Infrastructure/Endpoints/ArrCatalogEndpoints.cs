@@ -1,3 +1,4 @@
+using Torrentarr.Infrastructure.ApiClients.Arr;
 using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Http;
 using Microsoft.EntityFrameworkCore;
@@ -636,7 +637,10 @@ public static class ArrCatalogEndpoints
             {
                 using var client = httpClientFactory.CreateClient(instance.Value.SkipTLSVerify ? "ArrOpenSkipTls" : "ArrOpen");
                 client.Timeout = TimeSpan.FromSeconds(20);
-                var apiVersion = kind is "movie" or "series" ? "v3" : "v1";
+                var apiVersion = kind == "series"
+                    ? (await SonarrApiDiscovery.ResolveAsync(baseUri, instance.Value.APIKey, instance.Value.SkipTLSVerify,
+                        httpContext.RequestAborted, client)).ApiVersion
+                    : kind == "movie" ? "v3" : "v1";
                 using var request = new HttpRequestMessage(HttpMethod.Get, $"{baseUri}/api/{apiVersion}/{kind}/{arrId}");
                 request.Headers.Add("X-Api-Key", instance.Value.APIKey);
                 using var response = await client.SendAsync(request, httpContext.RequestAborted);
@@ -646,7 +650,7 @@ public static class ArrCatalogEndpoints
                 var field = kind switch { "artist" => "foreignArtistId", "author" => "foreignAuthorId", _ => "titleSlug" };
                 slug = json.RootElement.ValueKind == System.Text.Json.JsonValueKind.Object && json.RootElement.TryGetProperty(field, out var value) && value.ValueKind == System.Text.Json.JsonValueKind.String ? value.GetString() : null;
             }
-            catch (Exception ex) when (ex is HttpRequestException or System.Text.Json.JsonException || ex is OperationCanceledException && !httpContext.RequestAborted.IsCancellationRequested)
+            catch (Exception ex) when (ex is HttpRequestException or System.Text.Json.JsonException or Newtonsoft.Json.JsonException or ArrApiException || ex is OperationCanceledException && !httpContext.RequestAborted.IsCancellationRequested)
             {
                 return Results.Problem("Unable to resolve Arr item", statusCode: StatusCodes.Status502BadGateway);
             }

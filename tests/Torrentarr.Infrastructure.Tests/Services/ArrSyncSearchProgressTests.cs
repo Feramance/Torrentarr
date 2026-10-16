@@ -74,6 +74,8 @@ internal sealed class ArrSyncStub : IDisposable
             var resource = request.Request.Url!.AbsolutePath.Split('/').Last();
             object data = resource switch
             {
+                "api" => new { current = "v3" },
+                "status" => new { version = "4.0.0" },
                 "movie" => new[] { new { id = 1, tmdbId = 1, title = "Movie", monitored = Monitored, year = 2000, qualityProfileId = 1, hasFile = false } },
                 "series" => new[] { new { id = 1, tvdbId = 1, title = "Series", monitored = Monitored, qualityProfileId = 1 } },
                 "episode" => new[] { new { id = 1, seriesId = 1, title = "Episode", monitored = Monitored, seasonNumber = 1, episodeNumber = 1, airDateUtc = "2000-01-01T00:00:00Z", hasFile = false } },

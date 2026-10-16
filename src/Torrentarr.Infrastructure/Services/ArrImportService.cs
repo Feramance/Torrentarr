@@ -422,22 +422,11 @@ public class ArrImportService : IArrImportService
         }
         else
         {
-            if (record.EpisodeId == null) return false;
-
-            var episodeEntry = await _dbContext.Episodes.AsNoTracking()
-                .FirstOrDefaultAsync(e => e.ArrId == record.EpisodeId && e.ArrInstance == arrName, ct);
-
-            if (episodeEntry == null) return false;
-
-            if (episodeEntry.EpisodeFileId is > 0)
-            {
-                var cfUnmet = record.CustomFormatScore < (episodeEntry.CustomFormatScore ?? 0);
-                if (config.Search.ForceMinimumCustomFormat)
-                    cfUnmet = cfUnmet && record.CustomFormatScore < (episodeEntry.MinCustomFormatScore ?? 0);
-                return cfUnmet;
-            }
-
-            return false;
+            var episodes = await _dbContext.Episodes.AsNoTracking()
+                .Where(e => record.EpisodeIds.Contains(e.ArrId) && e.ArrInstance == arrName && e.EpisodeFileId > 0)
+                .ToListAsync(ct);
+            return episodes.Any(e => record.CustomFormatScore < (e.CustomFormatScore ?? 0)
+                && (!config.Search.ForceMinimumCustomFormat || record.CustomFormatScore < (e.MinCustomFormatScore ?? 0)));
         }
     }
 
@@ -530,18 +519,19 @@ public class ArrImportService : IArrImportService
         if (record == null) return false;
 
         _logger.LogInformation("Blocklisting Sonarr queue item {Id} (hash: {Hash})", record.Id, downloadId);
-        var deleted = await client.DeleteFromQueueAsync(record.Id, removeFromClient: false, blocklist: true, ct);
+        var deleted = await client.DeleteFromQueueAsync(record.Id, removeFromClient: false, blocklist: true, ct, skipRedownload: true);
         if (deleted && config.ReSearch)
         {
-            if (record.SeriesId is int seriesId)
+            var searchBySeries = (config.Search.SearchBySeries ?? "smart").Trim('"').ToLowerInvariant();
+            var useSeriesSearch = searchBySeries == "true" || (searchBySeries == "smart" && record.EpisodeIds.Count > 1);
+            if (useSeriesSearch && record.SeriesId is int seriesId)
             {
                 _logger.LogInformation("Re-Searching Sonarr series {SeriesId} after blocklist", seriesId);
                 await client.SearchSeriesAsync(seriesId, ct);
             }
-            else if (record.EpisodeId is int episodeId)
+            else if (record.EpisodeIds.Count > 0)
             {
-                _logger.LogInformation("Re-Searching Sonarr episode {EpisodeId} after blocklist", episodeId);
-                await client.SearchEpisodeAsync(new List<int> { episodeId }, ct);
+                await client.SearchEpisodeAsync(record.EpisodeIds, ct);
             }
         }
         return deleted;
