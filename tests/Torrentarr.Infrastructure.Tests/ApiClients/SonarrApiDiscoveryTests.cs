@@ -10,6 +10,7 @@ using Torrentarr.Infrastructure.Database;
 using Torrentarr.Infrastructure.Database.Models;
 using Torrentarr.Infrastructure.Services;
 using Newtonsoft.Json;
+using Newtonsoft.Json.Linq;
 using Torrentarr.Infrastructure.ApiClients.Arr;
 using Xunit;
 
@@ -77,7 +78,7 @@ public sealed class SonarrApiDiscoveryTests : IDisposable
         requests.Where(r => r.Path != "/sonarr/api").Should().OnlyContain(r => r.Path.StartsWith($"/sonarr/api/{version}/"));
         requests.Single(r => r.Path.Contains("/episode?")).Path.Should().Contain(version == "v5"
             ? "includeSubresources=episodeFile" : "includeEpisodeFile=true");
-        requests.Single(r => r.Path.Contains("/queue?")).Path.Should().Contain("includeUnknownSeriesItems=false");
+        requests.Single(r => r.Path.Contains("/queue?")).Path.Should().Contain("includeUnknownSeriesItems=true");
         var put = requests.Single(r => r.Method == "PUT" && r.Body.Contains("\"qualityProfileId\":9"));
         put.Body.Should().Contain("\"tags\":[7]").And.Contain("\"qualityProfileId\":9");
     }
@@ -232,7 +233,7 @@ public sealed class SonarrApiDiscoveryTests : IDisposable
     [InlineData(true, false)]
     public async Task QueueServices_HandleEveryEpisodeWithoutDuplicatingQueueRows(bool forceMinimum, bool expected)
     {
-        _queueJson = "{\"records\":[{\"id\":1,\"downloadId\":\"ABC\",\"episodeIds\":[1,2],\"customFormatScore\":10}]}";
+        _queueJson = "{\"records\":[{\"id\":1,\"seriesId\":7,\"downloadId\":\"ABC\",\"episodeIds\":[1,2],\"customFormatScore\":10}]}";
         var cfg = new TorrentarrConfig();
         var arr = new ArrInstanceConfig { Type = "sonarr", URI = _url, APIKey = _key, Category = "tv" };
         arr.ReSearch = true;
@@ -259,6 +260,67 @@ public sealed class SonarrApiDiscoveryTests : IDisposable
         stored.EpisodeId.Should().BeNull();
     }
 
+    [Theory]
+    [InlineData("v3")]
+    [InlineData("v5")]
+    public async Task UnknownQueueItems_RemainAvailableForHashLookupAndErrorCleanup(string version)
+    {
+        _version = version;
+        _queueJson = """{"records":[{"id":1,"downloadId":"ABC","status":"completed","trackedDownloadStatus":"warning","trackedDownloadState":"importPending","statusMessages":[{"title":"Import","messages":["unmatched download"]}]}]}""";
+        var cfg = new TorrentarrConfig();
+        var arr = new ArrInstanceConfig { Type = "sonarr", URI = _url, APIKey = _key, Category = "tv" };
+        arr.ArrErrorCodesToBlocklist.Add("unmatched download");
+        cfg.ArrInstances["Sonarr-test"] = arr;
+        await using var db = new TorrentarrDbContext(new DbContextOptionsBuilder<TorrentarrDbContext>()
+            .UseInMemoryDatabase(Guid.NewGuid().ToString()).Options);
+        var service = new ArrImportService(NullLogger<ArrImportService>.Instance, cfg,
+            new QBittorrentConnectionManager(NullLogger<QBittorrentConnectionManager>.Instance), db);
+        (await service.BlocklistAndReSearchAsync("abc", "tv")).Should().BeTrue();
+        var sync = new ArrSyncService(NullLogger<ArrSyncService>.Instance, cfg, db, new DatabaseRestartCoordinator());
+        await sync.SyncQueueAsync("Sonarr-test");
+        var stored = await db.EpisodeQueue.SingleAsync();
+        stored.DownloadId.Should().Be("ABC");
+        stored.SeriesId.Should().BeNull();
+        _requests.Count(r => r.Method == "DELETE").Should().Be(2);
+        _deletion.Should().Be((true, true));
+    }
+
+    [Theory]
+    [InlineData("false", 2, 7, "EpisodeSearch")]
+    [InlineData("true", 2, 7, "SeriesSearch")]
+    [InlineData("smart", 2, 7, "SeriesSearch")]
+    [InlineData("smart", 1, 7, "EpisodeSearch")]
+    [InlineData("false", 0, 7, null)]
+    [InlineData("true", 0, 7, "SeriesSearch")]
+    [InlineData("true", 2, null, "EpisodeSearch")]
+    [InlineData("smart", 2, null, "EpisodeSearch")]
+    [InlineData("smart", 0, null, null)]
+    [InlineData("TRUE", 2, 7, "SeriesSearch")]
+    public async Task BlocklistReSearch_RespectsSearchMode(string mode, int episodeCount, int? seriesId, string? command)
+    {
+        var episodeIds = Enumerable.Range(1, episodeCount).ToList();
+        _queueJson = JsonConvert.SerializeObject(new { records = new[] { new { id = 1, downloadId = "ABC", seriesId, episodeIds } } });
+        var cfg = new TorrentarrConfig();
+        var arr = new ArrInstanceConfig { Type = "sonarr", URI = _url, APIKey = _key, Category = "tv", ReSearch = true };
+        arr.Search.SearchBySeries = mode;
+        cfg.ArrInstances["Sonarr-test"] = arr;
+        await using var db = new TorrentarrDbContext(new DbContextOptionsBuilder<TorrentarrDbContext>()
+            .UseInMemoryDatabase(Guid.NewGuid().ToString()).Options);
+        var service = new ArrImportService(NullLogger<ArrImportService>.Instance, cfg,
+            new QBittorrentConnectionManager(NullLogger<QBittorrentConnectionManager>.Instance), db);
+        (await service.BlocklistAndReSearchAsync("abc", "tv")).Should().BeTrue();
+        var searches = _requests.Where(r => r.Method == "POST").ToList();
+        if (command == null)
+        {
+            searches.Should().BeEmpty();
+            return;
+        }
+        var body = JObject.Parse(searches.Single().Body);
+        body.Value<string>("name").Should().Be(command);
+        if (command == "EpisodeSearch") body["episodeIds"]!.ToObject<List<int>>()!.Should().Equal(episodeIds);
+        else body.Value<int?>("seriesId").Should().Be(seriesId);
+    }
+
     private async Task ListenAsync()
     {
         while (_listener.IsListening)
@@ -278,6 +340,12 @@ public sealed class SonarrApiDiscoveryTests : IDisposable
                 : relative.Contains("/episode?") ? "[{\"id\":1,\"episodeFile\":{\"id\":8}}]"
                 : relative.EndsWith("/series/1") ? "{\"id\":1,\"qualityProfileId\":1,\"tags\":[7]}"
                 : relative.EndsWith("/series") || relative.Contains("/episodefile?") || relative.EndsWith("/qualityprofile") || relative.EndsWith("/command") && ctx.Request.HttpMethod == "GET" ? "[]" : "{}";
+            if (relative.Contains("/queue?") && ctx.Request.QueryString["includeUnknownSeriesItems"] == "false")
+            {
+                var queue = JObject.Parse(json);
+                queue["records"] = new JArray(((JArray)queue["records"]!).Where(r => r["seriesId"]?.Type == JTokenType.Integer));
+                json = queue.ToString(Formatting.None);
+            }
             ctx.Response.StatusCode = relative == "" ? _discoveryStatus : relative.EndsWith("/system/status") ? _statusCode : _failWrites && ctx.Request.HttpMethod == "DELETE" ? 400 : 200;
             if (ctx.Request.HttpMethod == "DELETE" && !_failWrites)
             {

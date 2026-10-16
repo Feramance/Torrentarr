@@ -181,7 +181,7 @@ public class SonarrClient
 
         request.AddQueryParameter("page", page.ToString());
         request.AddQueryParameter("pageSize", pageSize.ToString());
-        request.AddQueryParameter("includeUnknownSeriesItems", "false");
+        request.AddQueryParameter("includeUnknownSeriesItems", "true");
 
         var response = await ArrClientResponse.ExecuteAsync(_client, request, ct);
         ArrClientResponse.EnsureSuccess(response, $"GET /{request.Resource}");

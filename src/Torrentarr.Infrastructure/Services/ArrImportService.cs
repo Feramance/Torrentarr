@@ -522,7 +522,9 @@ public class ArrImportService : IArrImportService
         var deleted = await client.DeleteFromQueueAsync(record.Id, removeFromClient: false, blocklist: true, ct);
         if (deleted && config.ReSearch)
         {
-            if (record.SeriesId is int seriesId)
+            var searchBySeries = (config.Search.SearchBySeries ?? "smart").Trim('"').ToLowerInvariant();
+            var useSeriesSearch = searchBySeries == "true" || (searchBySeries == "smart" && record.EpisodeIds.Count > 1);
+            if (useSeriesSearch && record.SeriesId is int seriesId)
             {
                 _logger.LogInformation("Re-Searching Sonarr series {SeriesId} after blocklist", seriesId);
                 await client.SearchSeriesAsync(seriesId, ct);
