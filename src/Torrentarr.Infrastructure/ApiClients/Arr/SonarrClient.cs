@@ -265,18 +265,21 @@ public class SonarrClient
     /// <summary>
     /// Delete item from queue
     /// </summary>
-    public async Task<bool> DeleteFromQueueAsync(int id, bool removeFromClient = true, bool blocklist = false, CancellationToken ct = default)
+    public async Task<bool> DeleteFromQueueAsync(int id, bool removeFromClient = true, bool blocklist = false,
+        CancellationToken ct = default, bool skipRedownload = false)
     {
         var request = await CreateRequestAsync($"queue/{id}", Method.Delete, ct);
         AddApiKeyHeader(request);
 
         request.AddQueryParameter("removeFromClient", removeFromClient.ToString().ToLowerInvariant());
         request.AddQueryParameter("blocklist", blocklist.ToString().ToLowerInvariant());
+        request.AddQueryParameter("skipRedownload", skipRedownload.ToString().ToLowerInvariant());
         // Sonarr 5.0.0.2569 binds booleans; 5.0.0.2608 binds enums and ignores the booleans.
         if (request.Resource.Contains("/v5/"))
         {
             request.AddQueryParameter("removalMethod", removeFromClient ? "removeFromClient" : "ignore");
-            request.AddQueryParameter("blocklistMethod", blocklist ? "blocklistAndSearch" : "doNotBlocklist");
+            var blocklistMethod = skipRedownload ? "blocklistOnly" : "blocklistAndSearch";
+            request.AddQueryParameter("blocklistMethod", blocklist ? blocklistMethod : "doNotBlocklist");
         }
 
         var response = await ArrClientResponse.ExecuteAsync(_client, request, ct);

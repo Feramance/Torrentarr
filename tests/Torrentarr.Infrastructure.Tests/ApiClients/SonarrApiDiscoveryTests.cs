@@ -29,6 +29,7 @@ public sealed class SonarrApiDiscoveryTests : IDisposable
     private string? _statusJson;
     private bool _failWrites;
     private bool _enumDeleteContract;
+    private int _automaticSearches;
     private (bool Remove, bool Blocklist)? _deletion;
     private string? _queueJson;
     private readonly string _key = Guid.NewGuid().ToString();
@@ -118,6 +119,7 @@ public sealed class SonarrApiDiscoveryTests : IDisposable
         _statusJson = enums ? "{\"version\":\"5.0.0.2608\"}" : "{\"version\":\"5.0.0.2569\"}";
         (await new SonarrClient(_url, _key).DeleteFromQueueAsync(1, remove, blocklist)).Should().BeTrue();
         _deletion.Should().Be((remove, blocklist));
+        _automaticSearches.Should().Be(blocklist ? 1 : 0);
         _requests.Count(r => r.Method == "DELETE").Should().Be(1);
     }
 
@@ -309,6 +311,7 @@ public sealed class SonarrApiDiscoveryTests : IDisposable
         var service = new ArrImportService(NullLogger<ArrImportService>.Instance, cfg,
             new QBittorrentConnectionManager(NullLogger<QBittorrentConnectionManager>.Instance), db);
         (await service.BlocklistAndReSearchAsync("abc", "tv")).Should().BeTrue();
+        _automaticSearches.Should().Be(0);
         var searches = _requests.Where(r => r.Method == "POST").ToList();
         if (command == null)
         {
@@ -319,6 +322,39 @@ public sealed class SonarrApiDiscoveryTests : IDisposable
         body.Value<string>("name").Should().Be(command);
         if (command == "EpisodeSearch") body["episodeIds"]!.ToObject<List<int>>()!.Should().Equal(episodeIds);
         else body.Value<int?>("seriesId").Should().Be(seriesId);
+    }
+
+    [Theory]
+    [InlineData("v3", false, false)]
+    [InlineData("v3", false, true)]
+    [InlineData("v5", false, false)]
+    [InlineData("v5", false, true)]
+    [InlineData("v5", true, false)]
+    [InlineData("v5", true, true)]
+    public async Task Blocklist_ReSearchIsTheOnlyTriggerForReplacementSearch(string version, bool enums, bool reSearch)
+    {
+        _version = version;
+        _enumDeleteContract = enums;
+        _queueJson = """{"records":[{"id":1,"downloadId":"ABC","seriesId":7,"episodeIds":[1,2]}]}""";
+        var cfg = new TorrentarrConfig();
+        var arr = new ArrInstanceConfig { Type = "sonarr", URI = _url, APIKey = _key, Category = "tv", ReSearch = reSearch };
+        arr.Search.SearchBySeries = "false";
+        cfg.ArrInstances["Sonarr-test"] = arr;
+        await using var db = new TorrentarrDbContext(new DbContextOptionsBuilder<TorrentarrDbContext>()
+            .UseInMemoryDatabase(Guid.NewGuid().ToString()).Options);
+        var service = new ArrImportService(NullLogger<ArrImportService>.Instance, cfg,
+            new QBittorrentConnectionManager(NullLogger<QBittorrentConnectionManager>.Instance), db);
+        (await service.BlocklistAndReSearchAsync("abc", "tv")).Should().BeTrue();
+        _deletion.Should().Be((false, true));
+        _automaticSearches.Should().Be(0);
+        var commands = _requests.Where(r => r.Method == "POST").ToList();
+        commands.Count.Should().Be(reSearch ? 1 : 0);
+        if (reSearch)
+        {
+            var body = JObject.Parse(commands.Single().Body);
+            body.Value<string>("name").Should().Be("EpisodeSearch");
+            body["episodeIds"]!.ToObject<List<int>>()!.Should().Equal(1, 2);
+        }
     }
 
     private async Task ListenAsync()
@@ -355,11 +391,15 @@ public sealed class SonarrApiDiscoveryTests : IDisposable
                     if (query["removalMethod"] == null || query["blocklistMethod"] == null)
                         ctx.Response.StatusCode = 400;
                     else
+                    {
                         _deletion = (query["removalMethod"] == "removeFromClient", query["blocklistMethod"] != "doNotBlocklist");
+                        if (query["blocklistMethod"] == "blocklistAndSearch") _automaticSearches++;
+                    }
                 }
                 else
                 {
                     _deletion = (query["removeFromClient"] != "false", query["blocklist"] == "true");
+                    if (query["blocklist"] == "true" && query["skipRedownload"] != "true") _automaticSearches++;
                 }
             }
             var bytes = Encoding.UTF8.GetBytes(json);

@@ -519,7 +519,7 @@ public class ArrImportService : IArrImportService
         if (record == null) return false;
 
         _logger.LogInformation("Blocklisting Sonarr queue item {Id} (hash: {Hash})", record.Id, downloadId);
-        var deleted = await client.DeleteFromQueueAsync(record.Id, removeFromClient: false, blocklist: true, ct);
+        var deleted = await client.DeleteFromQueueAsync(record.Id, removeFromClient: false, blocklist: true, ct, skipRedownload: true);
         if (deleted && config.ReSearch)
         {
             var searchBySeries = (config.Search.SearchBySeries ?? "smart").Trim('"').ToLowerInvariant();
