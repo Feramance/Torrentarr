@@ -70,10 +70,18 @@ public class ArrThumbnailService
             {
                 if (isSonarr && i == 0)
                 {
-                    using var discoveryClient = _httpClientFactory.CreateClient(instance.Value.SkipTLSVerify ? "ArrOpenSkipTls" : "ArrOpen");
-                    var info = await SonarrApiDiscovery.ResolveAsync(instance.Value.URI, instance.Value.APIKey,
-                        instance.Value.SkipTLSVerify, ct, discoveryClient);
-                    candidates.Add($"{baseUri}/api/{info.ApiVersion}/MediaCover/{arrId.Value}/poster.jpg");
+                    try
+                    {
+                        using var discoveryClient = _httpClientFactory.CreateClient(instance.Value.SkipTLSVerify ? "ArrOpenSkipTls" : "ArrOpen");
+                        var info = await SonarrApiDiscovery.ResolveAsync(instance.Value.URI, instance.Value.APIKey,
+                            instance.Value.SkipTLSVerify, ct, discoveryClient);
+                        candidates.Add($"{baseUri}/api/{info.ApiVersion}/MediaCover/{arrId.Value}/poster.jpg");
+                    }
+                    catch (Exception ex) when (!ct.IsCancellationRequested &&
+                        ex is HttpRequestException or ArrApiException or Newtonsoft.Json.JsonException or OperationCanceledException or TimeoutException)
+                    {
+                        return null;
+                    }
                 }
                 continue;
             }

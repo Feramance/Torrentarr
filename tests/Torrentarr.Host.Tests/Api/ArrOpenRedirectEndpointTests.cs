@@ -152,6 +152,61 @@ public class ArrOpenRedirectEndpointTests : IClassFixture<ArrCatalogWebApplicati
         requests.Should().Equal("/MediaCover/201/poster.jpg");
     }
 
+    [Theory]
+    [InlineData("credentials")]
+    [InlineData("malformed")]
+    [InlineData("network")]
+    [InlineData("timeout")]
+    public async Task SonarrPoster_DiscoveryFailureReturns404WithoutGuessingVersion(string failure)
+    {
+        using var factory = new SonarrPosterFactory();
+        factory.SetConfigEnv();
+        using var scope = factory.Services.CreateScope();
+        await CatalogTestDataSeeder.SeedSonarrEpisodesAsync(scope.ServiceProvider.GetRequiredService<TorrentarrDbContext>());
+        ClearSonarrPosterCache();
+        var requests = new List<string>();
+        Func<HttpResponseMessage> discoveryResponse = failure switch
+        {
+            "credentials" => () => new HttpResponseMessage(HttpStatusCode.Unauthorized),
+            "malformed" => () => new HttpResponseMessage(HttpStatusCode.OK) { Content = new StringContent("{") },
+            "network" => () => throw new HttpRequestException("Sonarr unavailable"),
+            _ => () => throw new TaskCanceledException("Discovery timed out")
+        };
+        using var client = CreateArrClient("http://sonarr-poster:8989/api/v5/series/201", "{}", factory,
+            requests: requests, discoveryResponse: discoveryResponse);
+        var response = await client.GetAsync("/web/sonarr/sonarr/series/1/thumbnail");
+        response.StatusCode.Should().Be(HttpStatusCode.NotFound);
+        requests.Should().Equal("/MediaCover/201/poster.jpg", "/api");
+    }
+
+    [Fact]
+    public async Task SonarrPoster_PropagatesRequestCancellationDuringDiscovery()
+    {
+        using var factory = new SonarrPosterFactory();
+        factory.SetConfigEnv();
+        using var cancellation = new CancellationTokenSource();
+        var requests = new List<string>();
+        Func<HttpResponseMessage> discoveryResponse = () =>
+        {
+            cancellation.Cancel();
+            throw new OperationCanceledException(cancellation.Token);
+        };
+        using var configured = factory.WithWebHostBuilder(builder => builder.ConfigureServices(services =>
+        {
+            services.AddHttpClient("ArrOpen").ConfigurePrimaryHttpMessageHandler(() =>
+                new ArrHandler("http://sonarr-poster:8989/api/v5/series/201", "{}", false, requests, discoveryResponse));
+            services.AddHttpClient(nameof(ArrThumbnailService)).ConfigurePrimaryHttpMessageHandler(() =>
+                new ArrHandler("http://sonarr-poster:8989/api/v5/series/201", "{}", false, requests, discoveryResponse));
+        }));
+        using var scope = configured.Services.CreateScope();
+        await CatalogTestDataSeeder.SeedSonarrEpisodesAsync(scope.ServiceProvider.GetRequiredService<TorrentarrDbContext>());
+        ClearSonarrPosterCache();
+        var thumbnails = scope.ServiceProvider.GetRequiredService<ArrThumbnailService>();
+        var act = () => thumbnails.GetThumbnailAsync("sonarr", "sonarr", 1, cancellation.Token);
+        await act.Should().ThrowAsync<OperationCanceledException>();
+        requests.Should().Equal("/MediaCover/201/poster.jpg", "/api");
+    }
+
     private static void ClearSonarrPosterCache()
     {
         var key = Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes("sonarr:sonarr:1"))).ToLowerInvariant();
@@ -171,24 +226,26 @@ public class ArrOpenRedirectEndpointTests : IClassFixture<ArrCatalogWebApplicati
     }
 
     private HttpClient CreateArrClient(string expectedUrl, string json, ArrCatalogWebApplicationFactory? testFactory = null,
-        bool unversionedPosterAvailable = false, List<string>? requests = null)
+        bool unversionedPosterAvailable = false, List<string>? requests = null, Func<HttpResponseMessage>? discoveryResponse = null)
     {
         var factory = (testFactory ?? _factory).WithWebHostBuilder(builder => builder.ConfigureServices(services =>
         {
-            services.AddHttpClient("ArrOpen").ConfigurePrimaryHttpMessageHandler(() => new ArrHandler(expectedUrl, json, unversionedPosterAvailable, requests));
-            services.AddHttpClient(nameof(ArrThumbnailService)).ConfigurePrimaryHttpMessageHandler(() => new ArrHandler(expectedUrl, json, unversionedPosterAvailable, requests));
+            services.AddHttpClient("ArrOpen").ConfigurePrimaryHttpMessageHandler(() => new ArrHandler(expectedUrl, json, unversionedPosterAvailable, requests, discoveryResponse));
+            services.AddHttpClient(nameof(ArrThumbnailService)).ConfigurePrimaryHttpMessageHandler(() => new ArrHandler(expectedUrl, json, unversionedPosterAvailable, requests, discoveryResponse));
         }));
         var client = factory.CreateClient(new Microsoft.AspNetCore.Mvc.Testing.WebApplicationFactoryClientOptions { AllowAutoRedirect = false });
         client.DefaultRequestHeaders.Authorization = new System.Net.Http.Headers.AuthenticationHeaderValue("Bearer", "test-api-token");
         return client;
     }
 
-    private sealed class ArrHandler(string expectedUrl, string json, bool unversionedPosterAvailable, List<string>? requests) : HttpMessageHandler
+    private sealed class ArrHandler(string expectedUrl, string json, bool unversionedPosterAvailable, List<string>? requests, Func<HttpResponseMessage>? discoveryResponse) : HttpMessageHandler
     {
         protected override Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken cancellationToken)
         {
             var version = expectedUrl.Contains("/api/v5/") ? "v5" : "v3";
             requests?.Add(request.RequestUri!.AbsolutePath);
+            if (request.RequestUri!.AbsolutePath == "/api" && discoveryResponse != null)
+                return Task.FromResult(discoveryResponse());
             if (request.RequestUri!.AbsolutePath == "/MediaCover/201/poster.jpg")
                 return Task.FromResult(unversionedPosterAvailable
                     ? new HttpResponseMessage(HttpStatusCode.OK) { Content = new ByteArrayContent(new byte[] { 0xff, 0xd8, 0xff, 0xd9 }) }
