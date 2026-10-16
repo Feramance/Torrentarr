@@ -1,5 +1,22 @@
 # Changelog
 
+## v6.18.0-1 (2026-10-16)
+
+### Features
+- feat: discover Sonarr API versions and support v5 ([d41e8f3](https://github.com/Feramance/Torrentarr/commit/d41e8f3f25552fa1ba2d2c2a8b7cd3d7a24f1137))
+
+### Bug Fixes
+- fix: treat Sonarr poster discovery failures as cache misses ([a4f26fb](https://github.com/Feramance/Torrentarr/commit/a4f26fb5eb0079c87d6f745d4d89860b09b59d8a))
+- fix: handle empty legacy Sonarr API discovery responses ([6dbfe78](https://github.com/Feramance/Torrentarr/commit/6dbfe7808b287185d7c52be3a18ef6657e0fd54c))
+- fix: let Sonarr import service control replacement searches ([620525e](https://github.com/Feramance/Torrentarr/commit/620525e941032e82217b2e35c5e234171891cb0b))
+- fix: retain unmatched Sonarr queues and honor re-search mode ([b561fd3](https://github.com/Feramance/Torrentarr/commit/b561fd3cb1c4942e7e4929f9ad134aeb6b1487da))
+- fix: support early Sonarr v5 removal flags and preserve poster fallback ([1bfada1](https://github.com/Feramance/Torrentarr/commit/1bfada149b2327bcd1a444200db01041a344550f))
+
+### Documentation
+- docs: list Sonarr v5 support in README and guides ([60c1804](https://github.com/Feramance/Torrentarr/commit/60c18040e6311d1ee1e9c7278752e63e93cbb439))
+
+---
+
 ## v6.17.0-1 (2026-10-15)
 
 ### Bug Fixes
