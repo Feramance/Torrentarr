@@ -544,6 +544,9 @@ curl -H "X-Api-Key: your-api-key" http://radarr:7878/api/v3/system/status
 ```
 
 ### Test Sonarr Connection
+
+Sonarr v3 and v4 use API v3; for Sonarr v5, use `/api/v5/system/status` instead. Torrentarr detects the API version automatically.
+
 ```bash
 curl -H "X-Api-Key: your-api-key" http://sonarr:8989/api/v3/system/status
 

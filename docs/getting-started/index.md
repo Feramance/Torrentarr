@@ -44,7 +44,7 @@ curl http://localhost:8080
 Install and configure at least one of:
 
 - **Radarr** (v3.0+) - Movie management
-- **Sonarr** (v3.0+) - TV show management
+- **Sonarr** (v3.x, v4.x, v5.x) - TV show management
 - **Lidarr** (v1.0+) - Music management
 
 **Requirements for each Arr instance:**
