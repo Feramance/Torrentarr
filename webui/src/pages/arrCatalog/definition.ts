@@ -17,6 +17,7 @@ export interface ArrCatalogSummary {
   readonly total: number;
   /** Lidarr-only album-row catalog hint surfaced under the artist summary. */
   readonly rollupTotalAlbumsHint?: number;
+  readonly rollupTotalBooksHint?: number;
 }
 
 /**

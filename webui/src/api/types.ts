@@ -96,23 +96,54 @@ export interface LogSearchResponse {
   files_searched: string[];
 }
 
-export interface QbitOverviewTorrent {
+export interface QbitTorrentOverview {
   hash: string;
   name: string;
-  size: number;
-  progress: number;
-  state: string;
   category: string;
+  tags: string[];
+  state: string;
+  progress: number;
+  priority: number;
+  eta: number;
+  availability: number;
+  size: number;
+  totalSize: number;
+  downloaded: number;
+  uploaded: number;
+  amountLeft: number;
+  ratio: number;
+  dlspeed: number;
+  upspeed: number;
+  numSeeds: number;
+  numLeechs: number;
+  numComplete: number;
+  numIncomplete: number;
+  addedOn: number;
+  completionOn: number;
+  seedingTime: number;
+  timeActive: number;
+  lastActivity: number;
+  ratioLimit: number;
+  seedingTimeLimit: number;
+  dlLimit: number;
+  upLimit: number;
 }
 
 export interface QbitOverviewCategory {
   category: string;
-  instance: string;
-  managedBy: string;
+  qbitInstance: string;
+  instance?: string;
+  managedBy: "qbit" | "arr";
+  arrName: string | null;
   torrentCount: number;
   seedingCount: number;
-  truncated: boolean;
-  torrents: QbitOverviewTorrent[];
+  totalSize: number;
+  avgRatio: number;
+  avgSeedingTime: number;
+  seedingConfig: QbitCategorySeedingConfig | null;
+  torrents: QbitTorrentOverview[];
+  /** True when the server capped the torrent list for this category. */
+  torrentsTruncated?: boolean;
 }
 
 export interface QbitOverviewResponse {
@@ -120,6 +151,8 @@ export interface QbitOverviewResponse {
   categories: QbitOverviewCategory[];
   ready: boolean;
 }
+
+export type QbitOverviewTorrent = QbitTorrentOverview;
 
 export interface ConfigSchemaField {
   section: string;
@@ -249,7 +282,7 @@ export interface LidarrCounts {
 
 export interface LidarrTrack {
   id?: number;
-  trackNumber?: number;
+  trackNumber?: number | string;
   title?: string;
   duration?: number;
   hasFile?: boolean;
@@ -443,7 +476,13 @@ export interface MetaResponse {
   last_checked: string | null;
   error?: string | null;
   update_state: UpdateState;
-  installation_type: "docker" | "dotnet" | "binary" | "git" | "unknown";
+  installation_type:
+    | "docker"
+    | "dotnet"
+    | "binary"
+    | "git"
+    | "source"
+    | "unknown";
   binary_download_url: string | null;
   binary_download_name: string | null;
   binary_download_size: number | null;
@@ -546,3 +585,17 @@ export interface MaintenanceStatus {
   armed: Record<string, boolean>;
   nextScheduledRun: Record<string, string | null>;
 }
+
+export interface LogTailPayload {
+  content: string;
+  next_bytes: number;
+  size: number;
+  inode: number;
+  rotated: boolean;
+  truncated: boolean;
+}
+
+export type ReadarrBookEntry = {
+  book: ReadarrBook;
+  totals?: { available: number; monitored: number; missing?: number };
+};

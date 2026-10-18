@@ -22,6 +22,7 @@ import type {
   StatusResponse,
   TorrentDistribution,
   LogSearchResponse,
+  LogTailPayload,
   QbitOverviewResponse,
   ConfigSchemaResponse,
   TorrentClientInfo,
@@ -229,9 +230,25 @@ export async function getQbitOverview(
   const params = new URLSearchParams();
   if (instance) params.set("instance", instance);
   const query = params.toString();
-  return fetchJson<QbitOverviewResponse>(
+  const data = await fetchJson<QbitOverviewResponse>(
     `/web/qbit/overview${query ? `?${query}` : ""}`,
   );
+  return {
+    ...data,
+    categories: data.categories.map((cat) => ({
+      ...cat,
+      qbitInstance: cat.qbitInstance ?? cat.instance ?? "",
+      torrents: cat.torrents.map((t) => ({
+        ...t,
+        tags: Array.isArray(t.tags)
+          ? t.tags
+          : String(t.tags ?? "")
+              .split(",")
+              .map((tag) => tag.trim())
+              .filter(Boolean),
+      })),
+    })),
+  };
 }
 
 export async function getConfigSchema(): Promise<ConfigSchemaResponse> {
@@ -281,8 +298,27 @@ export function getLogDownloadUrl(name: string): string {
   return webPath(`/web/logs/${encodeURIComponent(name)}/download`);
 }
 
-export function getLogStreamUrl(name: string): string {
-  return webPath(`/web/logs/${encodeURIComponent(name)}/stream`);
+export function getLogStreamUrl(
+  name: string,
+  sinceBytes?: number,
+  inode?: number,
+  lines?: number,
+): string {
+  if (sinceBytes == null)
+    return webPath(`/web/logs/${encodeURIComponent(name)}/stream`);
+  const params = new URLSearchParams({
+    since_bytes: String(sinceBytes),
+    format: "json",
+  });
+  if (inode != null && inode > 0) {
+    params.set("inode", String(inode));
+  }
+  if (lines != null && lines > 0) {
+    params.set("lines", String(lines));
+  }
+  return webPath(
+    `/web/logs/${encodeURIComponent(name)}/stream?${params.toString()}`,
+  );
 }
 
 export async function searchLogs(
@@ -406,6 +442,7 @@ export async function getReadarrAuthors(
   page: number,
   pageSize: number,
   query?: string,
+  filters?: { missing?: boolean; reason?: string; monitored?: boolean },
 ): Promise<ReadarrAuthorsResponse> {
   const params = new URLSearchParams();
   params.set("page", page.toString());
@@ -413,6 +450,10 @@ export async function getReadarrAuthors(
   if (query) {
     params.set("q", query);
   }
+  if (filters?.missing) params.set("missing", "1");
+  if (filters?.reason) params.set("reason", filters.reason);
+  if (filters?.monitored != null)
+    params.set("monitored", String(filters.monitored));
   return fetchJson<ReadarrAuthorsResponse>(
     `/web/readarr/${encodeURIComponent(category)}/authors?${params}`,
   );
@@ -488,7 +529,7 @@ export async function updateConfig(
 ): Promise<ConfigUpdateResponse> {
   const token = resolveToken();
   const response = await fetch(
-    "/web/config",
+    webPath("/web/config"),
     buildInit(
       {
         method: "POST",
@@ -572,7 +613,7 @@ export async function setPassword(
 ): Promise<{ success: boolean }> {
   const token = resolveToken();
   const response = await fetch(
-    "/web/auth/set-password",
+    webPath("/web/auth/set-password"),
     buildInit(
       {
         method: "POST",
@@ -606,7 +647,7 @@ export class AuthError extends Error {
 export async function login(
   request: LoginRequest,
 ): Promise<{ success: boolean }> {
-  const response = await fetch("/web/login", {
+  const response = await fetch(webPath("/web/login"), {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     credentials: "include",
@@ -622,7 +663,7 @@ export async function login(
 /** Navigate to /web/logout to sign out the session cookie; server redirects to /login. Clears stored API token. */
 export function logout(): void {
   clearStoredToken();
-  window.location.href = "/web/logout";
+  window.location.href = webPath("/web/logout");
 }
 
 export async function getTorrentsDistribution(): Promise<TorrentDistribution> {
@@ -689,3 +730,55 @@ export const maintenanceCommand = (
     headers: JSON_HEADERS,
     body: JSON.stringify({ clientInstanceIds }),
   });
+
+export function getReadarrOpenAuthorUrl(
+  category: string,
+  authorId: number,
+): string {
+  return webPath(
+    `/web/arr/${encodeURIComponent(category)}/open/author/${authorId}`,
+  );
+}
+
+export interface GetLogTailJsonOptions {
+  lines?: number;
+  offset?: number;
+  sinceBytes?: number;
+  inode?: number;
+  aroundLine?: number;
+}
+
+/** Fetch log content as JSON (initial tail, older window, or byte-offset delta). */
+export async function getLogTailJson(
+  name: string,
+  options: GetLogTailJsonOptions = {},
+): Promise<LogTailPayload> {
+  const base = `/web/logs/${encodeURIComponent(name)}`;
+  const params = new URLSearchParams({ format: "json" });
+  if (options.lines != null && options.lines > 0) {
+    params.set("lines", String(options.lines));
+  }
+  if (options.offset != null && options.offset > 0) {
+    params.set("offset", String(options.offset));
+  }
+  if (options.sinceBytes != null) {
+    params.set("since_bytes", String(options.sinceBytes));
+  }
+  if (options.inode != null && options.inode > 0) {
+    params.set("inode", String(options.inode));
+  }
+  if (options.aroundLine != null && options.aroundLine > 0) {
+    params.set("around_line", String(options.aroundLine));
+  }
+  return fetchJson<LogTailPayload>(`${base}?${params.toString()}`);
+}
+
+/** Alias for delta polling. */
+export async function getLogDelta(
+  name: string,
+  sinceBytes: number,
+  inode?: number,
+  lines?: number,
+): Promise<LogTailPayload> {
+  return getLogTailJson(name, { sinceBytes, inode, lines });
+}

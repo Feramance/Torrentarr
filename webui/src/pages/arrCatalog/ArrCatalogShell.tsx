@@ -402,7 +402,7 @@ export function ArrCatalogShell<
                 );
               })}
               <div className="field" style={{ flex: "0 0 auto" }}>
-                <span>View</span>
+                <span className="hint">View</span>
                 <ArrBrowseModeToggle
                   mode={browseMode}
                   onChange={setBrowseMode}

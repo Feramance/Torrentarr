@@ -125,77 +125,46 @@ describe("ConfigView – delete button rendering", () => {
 
 // ── deleteQbitInstance logic ──────────────────────────────────────────────────
 
-describe("ConfigView – deleteQbitInstance behaviour", () => {
-  it("confirms and removes qBit just like any other instance", async () => {
+describe("ConfigView – section deletion", () => {
+  it("persists only the confirmed section deletion", async () => {
+    let changes: Record<string, unknown> = {};
     server.use(
       http.get("/web/config", () => HttpResponse.json(configWithInstances)),
-      http.post("/web/config", () => HttpResponse.json(okUpdateResponse)),
+      http.post("/web/config", async ({ request }) => {
+        changes = (
+          (await request.json()) as { changes: Record<string, unknown> }
+        ).changes;
+        return HttpResponse.json(okUpdateResponse);
+      }),
     );
-
-    const confirmSpy = vi.spyOn(window, "confirm").mockReturnValue(true);
     const user = userEvent.setup();
-
     renderConfig();
-
-    await screen.findByText("qBit");
-    const qbitHeader = screen.getByText("qBit");
-    const card = qbitHeader.closest(".card")!;
-    const deleteBtn = within(card).getByRole("button", { name: /delete/i });
-
-    await user.click(deleteBtn);
-
-    expect(confirmSpy).toHaveBeenCalledWith(
-      "Delete qBit? This action cannot be undone.",
+    const card = (await screen.findByText("qBit")).closest(".card")!;
+    await user.click(within(card).getByRole("button", { name: /delete/i }));
+    await user.click(
+      within(screen.getByRole("dialog")).getByRole("button", {
+        name: "Remove",
+      }),
     );
-    expect(screen.queryByText("qBit")).not.toBeInTheDocument();
+    await screen.findByText("qBit removed");
+    expect(changes).toEqual({ qBit: null });
     expect(screen.getByText("qBit-1")).toBeInTheDocument();
+    expect(screen.queryByText("qBit")).not.toBeInTheDocument();
   });
-
-  it("clicking Delete on qBit-1 calls window.confirm", async () => {
+  it("keeps the section when its confirmation is cancelled", async () => {
     server.use(
       http.get("/web/config", () => HttpResponse.json(configWithInstances)),
-      http.post("/web/config", () => HttpResponse.json(okUpdateResponse)),
     );
-
-    const confirmSpy = vi.spyOn(window, "confirm").mockReturnValue(false);
     const user = userEvent.setup();
-
     renderConfig();
-
-    await screen.findByText("qBit-1");
-    const qbit1Header = screen.getByText("qBit-1");
-    const card = qbit1Header.closest(".card")!;
-    const deleteBtn = within(card).getByRole("button", { name: /delete/i });
-
-    await user.click(deleteBtn);
-
-    expect(confirmSpy).toHaveBeenCalledWith(
-      "Delete qBit-1? This action cannot be undone.",
+    const card = (await screen.findByText("qBit-1")).closest(".card")!;
+    await user.click(within(card).getByRole("button", { name: /delete/i }));
+    await user.click(
+      within(screen.getByRole("dialog")).getByRole("button", {
+        name: "Cancel",
+      }),
     );
-  });
-
-  it("confirms and removes qBit-1 from the UI when window.confirm returns true", async () => {
-    server.use(
-      http.get("/web/config", () => HttpResponse.json(configWithInstances)),
-      http.post("/web/config", () => HttpResponse.json(okUpdateResponse)),
-    );
-
-    vi.spyOn(window, "confirm").mockReturnValue(true);
-    const user = userEvent.setup();
-
-    renderConfig();
-
-    await screen.findByText("qBit-1");
-    const qbit1Header = screen.getByText("qBit-1");
-    const card = qbit1Header.closest(".card")!;
-    const deleteBtn = within(card).getByRole("button", { name: /delete/i });
-
-    await user.click(deleteBtn);
-
-    // Card for qBit-1 should be gone
-    expect(screen.queryByText("qBit-1")).not.toBeInTheDocument();
-    // Other qBit card should still be present
-    expect(screen.getByText("qBit")).toBeInTheDocument();
+    expect(screen.getByText("qBit-1")).toBeInTheDocument();
   });
 });
 
@@ -285,16 +254,15 @@ describe("ConfigView – equal client names", () => {
       }
       await user.click(
         within(screen.getByRole("dialog")).getByRole("button", {
-          name: /done/i,
+          name: /^save$/i,
         }),
-      );
-      await user.click(
-        screen.getByRole("button", { name: /save \+ live reload/i }),
       );
       if (outcome === "retry") {
         await screen.findByText(/configuration is busy/i);
         await user.click(
-          screen.getByRole("button", { name: /save \+ live reload/i }),
+          within(screen.getByRole("dialog")).getByRole("button", {
+            name: /^save$/i,
+          }),
         );
       }
       await screen.findByText(
@@ -491,8 +459,8 @@ describe("ConfigView – UrlBase field", () => {
     );
 
     expect(
-      await screen.findByText(/UrlBase must start with \//i),
-    ).toBeInTheDocument();
+      (await screen.findAllByText(/UrlBase must start with \//i)).length,
+    ).toBeGreaterThan(0);
   });
 
   it("stores valid UrlBase in form state for save", async () => {
@@ -597,5 +565,111 @@ describe("ConfigView – Arr Entry Search and Import Mode", () => {
 
     const upgradeSearch = screen.getByLabelText(/do upgrade search/i);
     expect(upgradeSearch).toBeChecked();
+  });
+});
+
+describe("ConfigView – section persistence", () => {
+  it("saves only the selected section and retains unrelated drafts", async () => {
+    const seeding = {
+      MaxUploadRatio: 0,
+      DownloadRateLimitPerTorrent: -1,
+      UploadRateLimitPerTorrent: -1,
+      HitAndRunMode: "disabled",
+    };
+    let stored = {
+      ...structuredClone(configWithInstances),
+      qBit: {
+        ...configWithInstances.qBit,
+        Password: "[redacted]",
+        CategorySeeding: seeding,
+      },
+    };
+    let saved: { changes: Record<string, unknown> } | null = null;
+    server.use(
+      http.get("/web/config", () => HttpResponse.json(stored)),
+      http.post("/web/config", async ({ request }) => {
+        saved = (await request.json()) as { changes: Record<string, unknown> };
+        stored = {
+          ...stored,
+          qBit: { ...stored.qBit, Host: String(saved.changes["qBit.Host"]) },
+        };
+        return HttpResponse.json(okUpdateResponse);
+      }),
+    );
+    const user = userEvent.setup();
+    renderConfig();
+    const web = (await screen.findByText("Web Settings")).closest(".card")!;
+    await user.click(within(web).getByRole("button", { name: /configure/i }));
+    await user.type(
+      within(screen.getByRole("dialog")).getByRole("textbox", {
+        name: "Url Base",
+      }),
+      "/draft",
+    );
+    await user.click(
+      within(screen.getByRole("dialog")).getByRole("button", { name: "Close" }),
+    );
+    const qbit = screen.getByText("qBit").closest(".card")!;
+    await user.click(within(qbit).getByRole("button", { name: /configure/i }));
+    const host = within(screen.getByRole("dialog")).getByRole("textbox", {
+      name: "Host",
+    });
+    await user.clear(host);
+    await user.type(host, "seedbox.local");
+    await user.click(
+      within(screen.getByRole("dialog")).getByRole("button", {
+        name: /^Save$/,
+      }),
+    );
+    await screen.findByText("Configuration saved");
+    expect(saved!.changes).toEqual({ "qBit.Host": "seedbox.local" });
+    await user.click(within(web).getByRole("button", { name: /configure/i }));
+    expect(
+      within(screen.getByRole("dialog")).getByRole("textbox", {
+        name: "Url Base",
+      }),
+    ).toHaveValue("/draft");
+  });
+
+  it("retains edited values and the dialog when persistence fails", async () => {
+    server.use(
+      http.get("/web/config", () =>
+        HttpResponse.json({
+          ...configQbitOnly,
+          qBit: {
+            ...configQbitOnly.qBit,
+            CategorySeeding: {
+              MaxUploadRatio: 0,
+              DownloadRateLimitPerTorrent: -1,
+              UploadRateLimitPerTorrent: -1,
+              HitAndRunMode: "disabled",
+            },
+          },
+        }),
+      ),
+      http.post("/web/config", () =>
+        HttpResponse.json({ error: "disk unavailable" }, { status: 500 }),
+      ),
+    );
+    const user = userEvent.setup();
+    renderConfig();
+    const card = (await screen.findByText("qBit")).closest(".card")!;
+    await user.click(within(card).getByRole("button", { name: /configure/i }));
+    const host = within(screen.getByRole("dialog")).getByRole("textbox", {
+      name: "Host",
+    });
+    await user.clear(host);
+    await user.type(host, "keep-this.local");
+    await user.click(
+      within(screen.getByRole("dialog")).getByRole("button", {
+        name: /^Save$/,
+      }),
+    );
+    await screen.findByText("disk unavailable");
+    expect(host).toHaveValue("keep-this.local");
+    expect(screen.getByRole("dialog")).toBeInTheDocument();
+    expect(
+      screen.queryByText(/Configuration saved successfully/),
+    ).not.toBeInTheDocument();
   });
 });

@@ -34,7 +34,7 @@ public static class QbitOverviewBuilder
             var qbit = cfg.GetTorrentClient(instanceName);
             if (qbit == null)
                 continue;
-            if (qbit.Host == "CHANGE_ME" || string.IsNullOrEmpty(qbit.Host))
+            if (qbit.Disabled || qbit.Host == "CHANGE_ME" || string.IsNullOrEmpty(qbit.Host))
                 continue;
 
             var client = qbitManager.GetClient(instanceName);
@@ -56,25 +56,27 @@ public static class QbitOverviewBuilder
             foreach (var catName in monitored.OrderBy(c => c, StringComparer.OrdinalIgnoreCase))
             {
                 var inCat = torrents.Where(t =>
-                    CategoryPathHelper.MatchesConfigured(t.Category, new[] { catName }, prefix: true)
+                    CategoryPathHelper.MatchesConfigured(t.Category, new[] { catName }, prefix: qbit.MatchSubcategories)
                         == CategoryPathHelper.NormalizeCategory(catName)).ToList();
                 var truncated = inCat.Count > MaxTorrentsPerCategory;
                 var slice = inCat.Take(MaxTorrentsPerCategory).Select(SerializeTorrent).ToList();
-                var seeding = inCat.Count(t =>
-                    t.State.Contains("seeding", StringComparison.OrdinalIgnoreCase) ||
-                    t.State.Equals("uploading", StringComparison.OrdinalIgnoreCase) ||
-                    t.State.Equals("stalledUP", StringComparison.OrdinalIgnoreCase) ||
-                    t.State.Equals("forcedUP", StringComparison.OrdinalIgnoreCase) ||
-                    t.State.Equals("queuedUP", StringComparison.OrdinalIgnoreCase));
+                var seeding = inCat.Count(t => t.IsSeeding);
 
                 categories.Add(new
                 {
                     category = catName,
                     instance = instanceName,
+                    qbitInstance = instanceName,
+                    arrName = cfg.ArrInstances.FirstOrDefault(a => CategoryPathHelper.CategoryEquals(a.Value.Category, catName)).Key,
+                    totalSize = inCat.Sum(t => t.Size),
+                    avgRatio = inCat.Count > 0 ? inCat.Average(t => t.Ratio) : 0.0,
+                    avgSeedingTime = inCat.Count > 0 ? inCat.Average(t => (double)t.SeedingTime) : 0.0,
+                    seedingConfig = CategorySeedingApiResolver.ResolveAggregate(cfg, instanceName, qbit, catName, inCat),
                     managedBy = arrCategories.Contains(catName) ? "arr" : "qbit",
                     torrentCount = inCat.Count,
                     seedingCount = seeding,
                     truncated,
+                    torrentsTruncated = truncated,
                     torrents = slice
                 });
             }
@@ -102,6 +104,23 @@ public static class QbitOverviewBuilder
         completionOn = t.CompletionOn,
         tags = t.Tags,
         eta = t.Eta,
-        amountLeft = t.AmountLeft
+        amountLeft = t.AmountLeft,
+        priority = t.Priority,
+        totalSize = t.TotalSize > 0 ? t.TotalSize : t.Size,
+        downloaded = t.Downloaded,
+        uploaded = t.Uploaded,
+        dlspeed = t.DownloadSpeed,
+        upspeed = t.UploadSpeed,
+        numSeeds = t.NumSeeds,
+        numLeechs = t.NumLeechs,
+        numComplete = t.CompletePeers,
+        numIncomplete = t.IncompletePeers,
+        availability = t.Availability,
+        timeActive = t.TimeActive,
+        lastActivity = t.LastActivity,
+        ratioLimit = t.RatioLimit,
+        seedingTimeLimit = t.SeedingTimeLimit,
+        dlLimit = t.DownloadLimit,
+        upLimit = t.UploadLimit
     };
 }

@@ -323,3 +323,39 @@ describe("ProcessesView – Other section", () => {
     expect(screen.getByText("Paused: 0")).toBeInTheDocument();
   });
 });
+
+it("refreshes worker status when its other metrics are unchanged", async () => {
+  let status = "Sleeping";
+  server.use(
+    http.get("/web/processes", () =>
+      HttpResponse.json({
+        processes: [
+          {
+            category: "radarr",
+            name: "Radarr",
+            kind: "worker",
+            pid: 1,
+            alive: true,
+            status,
+            queueCount: 1,
+            categoryCount: 12,
+          },
+        ],
+      }),
+    ),
+    http.get("/web/status", () =>
+      HttpResponse.json({
+        ...emptyStatus,
+        arrs: [{ category: "radarr", name: "Radarr", type: "radarr" }],
+      }),
+    ),
+    http.get("/web/qbit/categories", () => HttpResponse.json(emptyCategories)),
+  );
+  renderView();
+  await screen.findByText("Sleeping");
+  status = "Running";
+  expect(
+    await screen.findByText("Running", {}, { timeout: 3000 }),
+  ).toBeInTheDocument();
+  expect(screen.getByText(/1 in progress/)).toBeInTheDocument();
+});

@@ -73,8 +73,11 @@ export function MaintenanceView(): JSX.Element {
     plan?.actions.filter((a) => a.destructive && !a.blockedReason) ?? [];
 
   return (
-    <section aria-labelledby="maintenance-title">
-      <div className="page-header">
+    <section
+      className="card maintenance-view"
+      aria-labelledby="maintenance-title"
+    >
+      <div className="card-header">
         <div>
           <h2 id="maintenance-title">Maintenance</h2>
           <p className="muted">
@@ -130,7 +133,7 @@ export function MaintenanceView(): JSX.Element {
                   )
                 }
               />{" "}
-              {operation}
+              {operation.replace(/([a-z])([A-Z])/g, "$1 $2")}
             </label>
           ))}
         </div>

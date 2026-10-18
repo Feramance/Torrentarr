@@ -9,6 +9,21 @@ namespace Torrentarr.Host.Tests;
 public class UpdateServiceTests
 {
     [Fact]
+    public void DockerMetadata_DisablesBinaryReplacement()
+    {
+        var previous = Environment.GetEnvironmentVariable("DOTNET_RUNNING_IN_CONTAINER");
+        try
+        {
+            Environment.SetEnvironmentVariable("DOTNET_RUNNING_IN_CONTAINER", "true");
+            var service = new UpdateService(NullLogger<UpdateService>.Instance, new TorrentarrConfig());
+            var meta = System.Text.Json.JsonSerializer.SerializeToElement(service.BuildMetaResponse());
+            meta.GetProperty("installation_type").GetString().Should().Be("docker");
+            service.CanApplyBinaries.Should().BeFalse();
+        }
+        finally { Environment.SetEnvironmentVariable("DOTNET_RUNNING_IN_CONTAINER", previous); }
+    }
+
+    [Fact]
     public void AssetPatterns_MatchPublishedNames()
     {
         UpdateService.GetAssetPattern(System.Runtime.InteropServices.OSPlatform.Windows, System.Runtime.InteropServices.Architecture.X64).Should().Be("windows-x64");

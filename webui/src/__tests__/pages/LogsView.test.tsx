@@ -1,189 +1,159 @@
-import React from "react";
 import {
-  describe,
-  it,
-  expect,
-  vi,
-  beforeAll,
-  afterAll,
-  afterEach,
-} from "vitest";
-import { render, screen, waitFor } from "@testing-library/react";
-import { http, HttpResponse } from "msw";
-import { setupServer } from "msw/node";
-import type { ReactNode } from "react";
+  act,
+  fireEvent,
+  render,
+  screen,
+  waitFor,
+} from "@testing-library/react";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { LogsView } from "../../pages/LogsView";
 import { ToastProvider } from "../../context/ToastContext";
+import { WebUIProvider } from "../../context/WebUIContext";
+import * as api from "../../api/client";
 
-// LazyLog uses ResizeObserver which isn't available in JSDOM
 vi.mock("@melloware/react-logviewer", () => ({
   LazyLog: ({ text }: { text: string }) => (
     <div data-testid="lazy-log">{text}</div>
   ),
 }));
-
-const server = setupServer();
-
-beforeAll(() => server.listen({ onUnhandledRequest: "bypass" }));
-afterEach(() => server.resetHandlers());
-afterAll(() => server.close());
-
-function Wrapper({ children }: { children: ReactNode }) {
-  return <ToastProvider>{children}</ToastProvider>;
-}
-
-function renderView(active = true) {
-  return render(<LogsView active={active} />, { wrapper: Wrapper });
-}
-
-// ── Structural rendering ──────────────────────────────────────────────────────
-
-describe("LogsView – card header", () => {
-  it("renders the Logs card header", async () => {
-    server.use(http.get("/web/logs", () => HttpResponse.json({ files: [] })));
-
-    renderView();
-
-    await screen.findByText("Logs");
-  });
-
-  it("renders the Log File label", async () => {
-    server.use(http.get("/web/logs", () => HttpResponse.json({ files: [] })));
-
-    renderView();
-
-    await screen.findByText("Log File");
-  });
-});
-
-// ── Empty state ───────────────────────────────────────────────────────────────
-
-describe("LogsView – empty state", () => {
-  it("shows the select-prompt when no files are returned", async () => {
-    server.use(http.get("/web/logs", () => HttpResponse.json({ files: [] })));
-
-    renderView();
-
-    await screen.findByText("Select a log file to view...");
-  });
-
-  it("shows select-prompt when list request fails", async () => {
-    server.use(http.get("/web/logs", () => HttpResponse.error()));
-
-    renderView();
-
-    // Error is swallowed (toast shown instead); component stays in empty state
-    await screen.findByText("Select a log file to view...");
-  });
-});
-
-// ── Control buttons ───────────────────────────────────────────────────────────
-
-describe("LogsView – control buttons", () => {
-  it("renders the Reload List button", async () => {
-    server.use(http.get("/web/logs", () => HttpResponse.json({ files: [] })));
-
-    renderView();
-
-    await screen.findByRole("button", { name: /reload list/i });
-  });
-
-  it("renders the Reload button", async () => {
-    server.use(http.get("/web/logs", () => HttpResponse.json({ files: [] })));
-
-    renderView();
-
-    await screen.findByRole("button", { name: /^reload$/i });
-  });
-
-  it("renders the Download button", async () => {
-    server.use(http.get("/web/logs", () => HttpResponse.json({ files: [] })));
-
-    renderView();
-
-    await screen.findByRole("button", { name: /download/i });
-  });
-
-  it("renders the Auto-scroll checkbox", async () => {
-    server.use(http.get("/web/logs", () => HttpResponse.json({ files: [] })));
-
-    renderView();
-
-    await screen.findByText("Auto-scroll");
-    expect(screen.getByRole("checkbox")).toBeInTheDocument();
-  });
-
-  it("renders the Search logs control", async () => {
-    server.use(http.get("/web/logs", () => HttpResponse.json({ files: [] })));
-
-    renderView();
-
-    await screen.findByRole("button", { name: /search logs/i });
-  });
-});
-
-// ── File list loaded ──────────────────────────────────────────────────────────
-
-describe("LogsView – with files", () => {
-  it("refreshes the file list when the retained view becomes active again", async () => {
-    let requests = 0;
-    server.use(
-      http.get("/web/logs", () => {
-        requests += 1;
-        return HttpResponse.json({ files: [] });
+vi.mock("../../api/client", () => ({
+  getConfig: vi.fn(),
+  updateConfig: vi.fn(),
+  getLogs: vi.fn(),
+  getLogTailJson: vi.fn(),
+  getLogDelta: vi.fn(),
+  searchLogs: vi.fn(),
+  getLogDownloadUrl: () => "/download",
+  getLogStreamUrl: () => "/stream",
+}));
+class Stream {
+  static instances: Stream[] = [];
+  listeners = new Map<string, (event: MessageEvent) => void>();
+  close = vi.fn();
+  onerror: (() => void) | null = null;
+  constructor() {
+    Stream.instances.push(this);
+  }
+  addEventListener(type: string, listener: (event: MessageEvent) => void) {
+    this.listeners.set(type, listener);
+  }
+  send(type: string, content: string) {
+    this.listeners.get(type)?.({
+      data: JSON.stringify({
+        ...payload,
+        content,
+        rotated: type === "rotated",
       }),
-    );
-
-    const view = renderView();
-    await waitFor(() => expect(requests).toBe(1));
-
-    view.rerender(<LogsView active={false} />);
-    view.rerender(<LogsView active />);
-
-    await waitFor(() => expect(requests).toBe(2));
+    } as MessageEvent);
+  }
+}
+const payload = {
+  content: "[now] INFO : ready\n[now] ERROR : failed\n",
+  next_bytes: 100,
+  size: 100,
+  inode: 1,
+  rotated: false,
+  truncated: false,
+};
+function view(active = true) {
+  return render(
+    <ToastProvider>
+      <WebUIProvider>
+        <LogsView active={active} />
+      </WebUIProvider>
+    </ToastProvider>,
+  );
+}
+beforeEach(() => {
+  vi.resetAllMocks();
+  Stream.instances = [];
+  vi.stubGlobal("EventSource", Stream);
+  vi.mocked(api.getConfig).mockResolvedValue({
+    WebUI: { Theme: "Dark", LiveArr: false },
   });
-
-  it("renders LazyLog when log content is available", async () => {
-    server.use(
-      http.get("/web/logs", () =>
-        HttpResponse.json({
-          files: [
-            { name: "All.log", size: 1024, modified: new Date().toISOString() },
-          ],
-        }),
-      ),
-      http.get("/web/logs/All.log", () =>
-        HttpResponse.text("2025-01-01 INFO Starting"),
-      ),
-    );
-
-    renderView();
-
-    // Wait for log content to be loaded and passed to the mocked LazyLog
-    const logEl = await screen.findByTestId("lazy-log");
-    expect(logEl).toBeInTheDocument();
-    expect(logEl.textContent).toContain("INFO");
+  vi.mocked(api.getLogs).mockResolvedValue({
+    files: [{ name: "All.log", size: 100, modified: "2026-10-18" }],
   });
-
-  it("does not show the select-prompt when log content is available", async () => {
-    server.use(
-      http.get("/web/logs", () =>
-        HttpResponse.json({
-          files: [
-            { name: "All.log", size: 1024, modified: new Date().toISOString() },
-          ],
-        }),
-      ),
-      http.get("/web/logs/All.log", () =>
-        HttpResponse.text("2025-01-01 INFO Starting"),
-      ),
-    );
-
-    renderView();
-
+  vi.mocked(api.getLogTailJson).mockResolvedValue(payload);
+  vi.mocked(api.getLogDelta).mockResolvedValue({ ...payload, content: "" });
+});
+afterEach(() => vi.unstubAllGlobals());
+describe("log viewer parity", () => {
+  it("falls back to delta polling after repeated stream failures", async () => {
+    view();
+    await waitFor(() => expect(Stream.instances.length).toBeGreaterThan(0));
+    act(() => Stream.instances.at(-1)!.onerror?.());
+    await waitFor(() => expect(Stream.instances.length).toBe(2), {
+      timeout: 2000,
+    });
+    act(() => Stream.instances.at(-1)!.onerror?.());
+    await waitFor(() => expect(api.getLogDelta).toHaveBeenCalled(), {
+      timeout: 3000,
+    });
+  });
+  it("filters loaded lines by level", async () => {
+    view();
     await screen.findByTestId("lazy-log");
-    expect(
-      screen.queryByText("Select a log file to view..."),
-    ).not.toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "ERROR" }));
+    expect(screen.getByTestId("lazy-log")).toHaveTextContent("failed");
+    expect(screen.getByTestId("lazy-log")).not.toHaveTextContent("ready");
+  });
+  it("keeps Follow independent from Live and closes streams when inactive", async () => {
+    const { rerender } = view();
+    await waitFor(() => expect(Stream.instances.length).toBeGreaterThan(0));
+    const stream = Stream.instances.at(-1)!;
+    fireEvent.click(screen.getByLabelText("Follow"));
+    expect(stream.close).not.toHaveBeenCalled();
+    rerender(
+      <ToastProvider>
+        <WebUIProvider>
+          <LogsView active={false} />
+        </WebUIProvider>
+      </ToastProvider>,
+    );
+    await waitFor(() => expect(stream.close).toHaveBeenCalled());
+  });
+  it("appends SSE events and replaces the window on rotation", async () => {
+    view();
+    await waitFor(() => expect(Stream.instances.length).toBeGreaterThan(0));
+    act(() =>
+      Stream.instances.at(-1)!.send("append", "[now] INFO : appended\n"),
+    );
+    expect(screen.getByTestId("lazy-log")).toHaveTextContent("appended");
+    act(() =>
+      Stream.instances.at(-1)!.send("rotated", "[now] INFO : replacement\n"),
+    );
+    expect(screen.getByTestId("lazy-log")).toHaveTextContent("replacement");
+    expect(screen.getByTestId("lazy-log")).not.toHaveTextContent("appended");
+  });
+  it("loads older windows and searches rotated files", async () => {
+    view();
+    await screen.findByTestId("lazy-log");
+    fireEvent.click(screen.getByRole("button", { name: /Load older logs/ }));
+    await waitFor(() =>
+      expect(api.getLogTailJson).toHaveBeenCalledWith(
+        "All.log",
+        expect.objectContaining({ offset: 2000 }),
+      ),
+    );
+    vi.mocked(api.searchLogs).mockResolvedValue({
+      query: "failure",
+      truncated: true,
+      files_searched: ["All.log"],
+      matches: [{ file: "All.log", line: 50, text: "failure" }],
+    });
+    fireEvent.change(
+      screen.getByPlaceholderText("Search log file on server…"),
+      { target: { value: "failure" } },
+    );
+    fireEvent.click(screen.getByRole("button", { name: "Search file" }));
+    await waitFor(() =>
+      expect(api.searchLogs).toHaveBeenCalledWith(
+        "All.log",
+        "failure",
+        expect.objectContaining({ includeRotated: true }),
+      ),
+    );
+    expect(await screen.findByText("failure")).toBeInTheDocument();
   });
 });

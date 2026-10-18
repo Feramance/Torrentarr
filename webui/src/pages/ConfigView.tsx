@@ -1,5 +1,8 @@
 import {
   useCallback,
+  createContext,
+  useContext,
+  Fragment,
   useEffect,
   useMemo,
   useRef,
@@ -22,6 +25,7 @@ import type {
   ConfigSchemaField,
   ConfigSchemaResponse,
 } from "../api/types";
+import { ConfirmDialog } from "../components/ConfirmDialog";
 import { CONFIG_SCHEMA } from "../config/configFields.generated";
 import { useToast } from "../context/ToastContext";
 import { useWebUI } from "../context/WebUIContext";
@@ -111,6 +115,8 @@ interface FieldDefinition {
   nativeUnit?: "seconds" | "minutes";
   /** Allow -1 (e.g. disabled) */
   allowNegative?: boolean;
+  applyLive?: boolean | null;
+  requiresRestart?: boolean | null;
 }
 
 const FALLBACK_CONFIG_SCHEMA = CONFIG_SCHEMA as unknown as ConfigSchemaResponse;
@@ -171,6 +177,8 @@ function schemaFieldToDefinition(
     required: field.required,
     nativeUnit: field.nativeUnit,
     allowNegative: field.allowNegative,
+    applyLive: field.applyLive,
+    requiresRestart: field.requiresRestart,
     validate,
   };
 }
@@ -190,7 +198,18 @@ function mergeSchemaFields(
     const field = schemaFieldToDefinition(schemaField, pathPrefix);
     if (!field?.path) continue;
     const path = field.path.join(".").toLowerCase();
-    if (paths.has(path)) continue;
+    if (paths.has(path)) {
+      const index = merged.findIndex(
+        (item) => item.path?.join(".").toLowerCase() === path,
+      );
+      if (index >= 0)
+        merged[index] = {
+          ...merged[index],
+          applyLive: schemaField.applyLive,
+          requiresRestart: schemaField.requiresRestart,
+        };
+      continue;
+    }
     paths.add(path);
     merged.push(field);
   }
@@ -201,6 +220,8 @@ interface ValidationError {
   path: string[];
   message: string;
 }
+
+const ValidationErrorsContext = createContext<ValidationError[]>([]);
 
 const SERVARR_SECTION_REGEX = /(rad|son|lid|read)arr/i;
 const QBIT_SECTION_REGEX = /^qBit(-.*)?$/i;
@@ -431,7 +452,7 @@ const SETTINGS_FIELDS: FieldDefinition[] = [
   {
     label: "Ping URLs",
     path: ["Settings", "PingURLS"],
-    type: "text",
+    type: "tags",
     parse: parseList,
     format: formatList,
     placeholder: "one.one.one.one, dns.google.com",
@@ -736,7 +757,7 @@ const QBIT_FIELDS: FieldDefinition[] = [
       if (value === null || value === undefined || value === "")
         return undefined;
       const num = typeof value === "number" ? value : Number(value);
-      if (!Number.isFinite(num) || num < 0 || num > 100) {
+      if (!Number.isFinite(num) || num < 0 || num > 1) {
         return "Min Download % must be between 0 and 100.";
       }
       return undefined;
@@ -907,7 +928,7 @@ const ARR_GENERAL_FIELDS: FieldDefinition[] = [
   {
     label: "Arr Error Codes To Blocklist",
     path: ["ArrErrorCodesToBlocklist"],
-    type: "text",
+    type: "tags",
     parse: parseList,
     format: formatList,
   },
@@ -1172,13 +1193,13 @@ const ARR_TORRENT_FIELDS: FieldDefinition[] = [
     },
   },
   {
-    label: "Maximum Deletable Percentage",
+    label: "Maximum Deletable Completion (0–1)",
     path: ["Torrent", "MaximumDeletablePercentage"],
     type: "number",
     validate: (value) => {
       const num = typeof value === "number" ? value : Number(value);
-      if (!Number.isFinite(num) || num < 0 || num > 100) {
-        return "Maximum Deletable Percentage must be between 0 and 100.";
+      if (!Number.isFinite(num) || num < 0 || num > 1) {
+        return "Maximum Deletable Completion must be between 0 and 1 (0.99 = 99%).";
       }
       return undefined;
     },
@@ -1430,7 +1451,7 @@ const ARR_TRACKER_FIELDS: FieldDefinition[] = [
       if (value === null || value === undefined || value === "")
         return undefined;
       const num = typeof value === "number" ? value : Number(value);
-      if (!Number.isFinite(num) || num < 0 || num > 100) {
+      if (!Number.isFinite(num) || num < 0 || num > 1) {
         return "Min Download % must be between 0 and 100.";
       }
       return undefined;
@@ -2071,6 +2092,8 @@ export function ConfigView(props?: ConfigViewProps): JSX.Element {
   const [isWebSettingsOpen, setWebSettingsOpen] = useState(false);
   const [isAuthOpen, setAuthOpen] = useState(false);
   const [isDirty, setDirty] = useState(false);
+  const [fieldErrors, setFieldErrors] = useState<ValidationError[]>([]);
+  const [pendingDelete, setPendingDelete] = useState<string | null>(null);
 
   useEffect(() => {
     if (!formState || !originalConfig) {
@@ -2202,33 +2225,9 @@ export function ConfigView(props?: ConfigViewProps): JSX.Element {
     },
     [formState],
   );
-  const deleteArrInstance = useCallback(
-    (key: string) => {
-      if (!formState) return;
-      if (!isArrSection(key)) {
-        return;
-      }
-      const confirmed = window.confirm(
-        `Delete ${key}? This action cannot be undone.`,
-      );
-      if (!confirmed) {
-        return;
-      }
-      if (!(key in formState)) {
-        return;
-      }
-      setFormState(
-        produce(formState, (draft) => {
-          delete draft[key];
-        }),
-      );
-      if (activeArrKey === key) {
-        setActiveArrKey(null);
-      }
-      push(`${key} removed`, "success");
-    },
-    [formState, activeArrKey, push],
-  );
+  const deleteArrInstance = (key: string) => {
+    if (isArrSection(key)) setPendingDelete(key);
+  };
 
   const addQbitInstance = useCallback(() => {
     if (!formState) return;
@@ -2255,30 +2254,49 @@ export function ConfigView(props?: ConfigViewProps): JSX.Element {
     setActiveQbitKey(key);
   }, [formState]);
 
-  const deleteQbitInstance = useCallback(
-    (key: string) => {
-      if (!formState) return;
-      const confirmed = window.confirm(
-        `Delete ${key}? This action cannot be undone.`,
+  const deleteQbitInstance = (key: string) => setPendingDelete(key);
+  const confirmDelete = async () => {
+    if (!pendingDelete || saving) return;
+    const key = pendingDelete;
+    const diskKey =
+      [...pendingRenames].find(([, next]) => next === key)?.[0] ?? key;
+    setSaving(true);
+    try {
+      if (originalConfig && diskKey in originalConfig) {
+        const response = await updateConfig({ changes: { [diskKey]: null } });
+        if (response.warning) push(response.warning, "error");
+      }
+      const remove = (previous: ConfigDocument | null) => {
+        const next = { ...previous };
+        delete next[key];
+        delete next[diskKey];
+        return next;
+      };
+      setFormState(remove);
+      setOriginalConfig(remove);
+      setPendingRenames(
+        (previous) =>
+          new Map(
+            [...previous].filter(
+              ([old, next]) => old !== diskKey && next !== key,
+            ),
+          ),
       );
-      if (!confirmed) {
-        return;
-      }
-      if (!(key in formState)) {
-        return;
-      }
-      setFormState(
-        produce(formState, (draft) => {
-          delete draft[key];
-        }),
-      );
-      if (activeQbitKey === key) {
-        setActiveQbitKey(null);
-      }
+      if (activeArrKey === key) setActiveArrKey(null);
+      if (activeQbitKey === key) setActiveQbitKey(null);
+      setPendingDelete(null);
       push(`${key} removed`, "success");
-    },
-    [formState, activeQbitKey, push],
-  );
+    } catch (error) {
+      push(
+        error instanceof Error
+          ? error.message
+          : "Failed to remove configuration section",
+        "error",
+      );
+    } finally {
+      setSaving(false);
+    }
+  };
 
   const handleRenameSection = useCallback(
     (oldName: string, rawNewName: string) => {
@@ -2351,123 +2369,160 @@ export function ConfigView(props?: ConfigViewProps): JSX.Element {
     [formState, push, activeQbitKey],
   );
 
-  const handleSubmit = useCallback(async () => {
-    if (!formState) return;
-    setSaving(true);
-    try {
-      const validationErrors = validateFormState(formState, {
-        settings: settingsFields,
-        webUI: webUIFields,
-        qBit: qbitFields,
-        arrSchema: arrSchemaFields,
-      });
-      if (validationErrors.length) {
-        const formatted = validationErrors
-          .map((error) => `${error.path.join(".")}: ${error.message}`)
-          .join("\n");
-        const message =
-          validationErrors.length === 1
-            ? formatted
-            : `Please resolve the following issues:\n${formatted}`;
-        push(message, "error");
-        setSaving(false);
-        return;
-      }
-      const flattenedOriginal = flatten(originalConfig ?? {});
-      const flattenedCurrent = flatten(formState);
-      const changes: Record<string, unknown> = {};
-      for (const [key, value] of Object.entries(flattenedCurrent)) {
-        const originalValue = flattenedOriginal[key];
-        // Use fast-deep-equal for accurate comparison
-        if (!equal(value, originalValue)) {
-          changes[key] = value;
+  const handleSubmit = useCallback(
+    async (sectionKey?: string): Promise<boolean> => {
+      if (!formState) return false;
+      setSaving(true);
+      try {
+        const validationErrors = validateFormState(formState, {
+          settings: settingsFields,
+          webUI: webUIFields,
+          qBit: qbitFields,
+          arrSchema: arrSchemaFields,
+        }).filter((error) => !sectionKey || error.path[0] === sectionKey);
+        setFieldErrors(validationErrors);
+        if (validationErrors.length) {
+          const formatted = validationErrors
+            .map((error) => `${error.path.join(".")}: ${error.message}`)
+            .join("\n");
+          const message =
+            validationErrors.length === 1
+              ? formatted
+              : `Please resolve the following issues:\n${formatted}`;
+          push(message, "error");
+          setSaving(false);
+          return false;
         }
-      }
-      for (const key of Object.keys(flattenedOriginal)) {
-        if (!(key in flattenedCurrent)) {
-          changes[key] = null;
+        const flattenedOriginal = flatten(originalConfig ?? {});
+        const flattenedCurrent = flatten(formState);
+        const changes: Record<string, unknown> = {};
+        for (const [key, value] of Object.entries(flattenedCurrent)) {
+          const originalValue = flattenedOriginal[key];
+          // Use fast-deep-equal for accurate comparison
+          if (!equal(value, originalValue)) {
+            changes[key] = value;
+          }
         }
-      }
-      // Explicitly mark all keys under renamed sections for deletion
-      for (const [oldName] of pendingRenames) {
         for (const key of Object.keys(flattenedOriginal)) {
-          if (key === oldName || key.startsWith(`${oldName}.`)) {
-            // Mark for deletion if not already tracked
-            if (!(key in changes)) {
-              changes[key] = null;
+          if (!(key in flattenedCurrent)) {
+            changes[key] = null;
+          }
+        }
+        // Explicitly mark all keys under renamed sections for deletion
+        for (const [oldName] of pendingRenames) {
+          for (const key of Object.keys(flattenedOriginal)) {
+            if (key === oldName || key.startsWith(`${oldName}.`)) {
+              // Mark for deletion if not already tracked
+              if (!(key in changes)) {
+                changes[key] = null;
+              }
             }
           }
         }
-      }
-      if (Object.keys(changes).length === 0) {
-        push("No changes detected", "info");
-        setSaving(false);
-        return;
-      }
-      const { configReloaded, reloadType, affectedInstances, warning } =
-        await updateConfig({
-          changes,
-          renames: Object.fromEntries(
-            [...pendingRenames].filter(
-              ([oldName, newName]) =>
-                originalConfig?.[oldName] && formState[newName],
-            ),
-          ),
-        });
-
-      // Build appropriate success message
-      let message = "Configuration saved";
-      if (warning) {
-        message = warning;
-      } else if (reloadType === "full") {
-        message += " • All instances reloaded";
-      } else if (reloadType === "multi_arr" && affectedInstances?.length) {
-        message += ` • Reloaded ${affectedInstances.length} instances: ${affectedInstances.join(", ")}`;
-      } else if (reloadType === "single_arr" && affectedInstances?.length) {
-        message += ` • Reloaded: ${affectedInstances.join(", ")}`;
-      } else if (reloadType === "webui") {
-        message += " • WebUI restarting...";
-      } else if (reloadType === "frontend") {
-        message += " • Theme/display settings updated";
-      }
-      push(message, warning ? "error" : "success");
-
-      // Only clear browser cache if backend reloaded (non-frontend-only changes)
-      if (configReloaded && "caches" in window) {
-        try {
-          const cacheNames = await caches.keys();
-          await Promise.all(
-            cacheNames.map((cacheName) => caches.delete(cacheName)),
-          );
-        } catch {
-          // cache clear failed, non-critical
+        const sectionRenames = [...pendingRenames].filter(
+          ([, next]) => !sectionKey || next === sectionKey,
+        );
+        if (sectionKey) {
+          const keys = new Set([
+            sectionKey,
+            ...sectionRenames.map(([old]) => old),
+          ]);
+          for (const key of Object.keys(changes))
+            if (
+              ![...keys].some(
+                (section) => key === section || key.startsWith(`${section}.`),
+              )
+            )
+              delete changes[key];
         }
-      }
+        if (Object.keys(changes).length === 0) {
+          push("No changes detected", "info");
+          setSaving(false);
+          return true;
+        }
+        const { configReloaded, reloadType, affectedInstances, warning } =
+          await updateConfig({
+            changes,
+            renames: Object.fromEntries(
+              sectionRenames.filter(
+                ([oldName, newName]) =>
+                  originalConfig?.[oldName] && formState[newName],
+              ),
+            ),
+          });
 
-      await loadConfig();
-      // Clear pending renames after successful save and reload
-      setPendingRenames(new Map());
-    } catch (error) {
-      push(
-        error instanceof Error
-          ? error.message
-          : "Failed to update configuration",
-        "error",
-      );
-    } finally {
-      setSaving(false);
-    }
-  }, [
-    formState,
-    originalConfig,
-    loadConfig,
-    push,
-    pendingRenames,
-    settingsFields,
-    webUIFields,
-    qbitFields,
-    arrSchemaFields,
-  ]);
+        // Build appropriate success message
+        let message = "Configuration saved";
+        if (warning) {
+          message = warning;
+        } else if (reloadType === "full") {
+          message += " • All instances reloaded";
+        } else if (reloadType === "multi_arr" && affectedInstances?.length) {
+          message += ` • Reloaded ${affectedInstances.length} instances: ${affectedInstances.join(", ")}`;
+        } else if (reloadType === "single_arr" && affectedInstances?.length) {
+          message += ` • Reloaded: ${affectedInstances.join(", ")}`;
+        } else if (reloadType === "webui") {
+          message += " • WebUI restarting...";
+        } else if (reloadType === "frontend") {
+          message += " • Theme/display settings updated";
+        }
+        push(message, warning ? "error" : "success");
+
+        // Only clear browser cache if backend reloaded (non-frontend-only changes)
+        if (configReloaded && "caches" in window) {
+          try {
+            const cacheNames = await caches.keys();
+            await Promise.all(
+              cacheNames.map((cacheName) => caches.delete(cacheName)),
+            );
+          } catch {
+            // cache clear failed, non-critical
+          }
+        }
+
+        if (sectionKey) {
+          const saved = await getConfig();
+          const savedKeys = [sectionKey, ...sectionRenames.map(([old]) => old)];
+          const mergeSaved = (previous: ConfigDocument | null) => {
+            const next = { ...previous };
+            for (const key of savedKeys) {
+              delete next[key];
+              if (key in saved) next[key] = saved[key];
+            }
+            return next;
+          };
+          setOriginalConfig(mergeSaved);
+          setFormState(mergeSaved);
+          setPendingRenames(
+            (previous) =>
+              new Map([...previous].filter(([, next]) => next !== sectionKey)),
+          );
+        } else await loadConfig();
+        return true;
+      } catch (error) {
+        push(
+          error instanceof Error
+            ? error.message
+            : "Failed to update configuration",
+          "error",
+        );
+        return false;
+      } finally {
+        setSaving(false);
+      }
+    },
+    [
+      formState,
+      originalConfig,
+      loadConfig,
+      push,
+      pendingRenames,
+      settingsFields,
+      webUIFields,
+      qbitFields,
+      arrSchemaFields,
+    ],
+  );
 
   if (loading || !formState) {
     return (
@@ -2483,7 +2538,16 @@ export function ConfigView(props?: ConfigViewProps): JSX.Element {
   }
 
   return (
-    <>
+    <ValidationErrorsContext.Provider value={fieldErrors}>
+      {fieldErrors.length > 0 && (
+        <div className="alert error" role="alert">
+          {fieldErrors.map((error) => (
+            <p key={error.path.join(".")}>
+              {error.path.join(".")}: {error.message}
+            </p>
+          ))}
+        </div>
+      )}
       <section className="card">
         <div className="card-header">Config</div>
         <div className="card-body config-layout">
@@ -2690,6 +2754,8 @@ export function ConfigView(props?: ConfigViewProps): JSX.Element {
           state={(formState[activeArrKey] as ConfigDocument) ?? null}
           onChange={handleFieldChange}
           onRename={handleRenameSection}
+          onSave={() => handleSubmit(activeArrKey)}
+          saving={saving}
           onClose={() => setActiveArrKey(null)}
         />
       ) : null}
@@ -2700,6 +2766,8 @@ export function ConfigView(props?: ConfigViewProps): JSX.Element {
           state={formState}
           basePath={[]}
           onChange={handleFieldChange}
+          onSave={() => handleSubmit("Settings")}
+          saving={saving}
           onClose={() => setSettingsOpen(false)}
         />
       ) : null}
@@ -2710,6 +2778,8 @@ export function ConfigView(props?: ConfigViewProps): JSX.Element {
           state={formState}
           basePath={[]}
           onChange={handleFieldChange}
+          onSave={() => handleSubmit("WebUI")}
+          saving={saving}
           onClose={() => setWebSettingsOpen(false)}
           showLiveSettings={true}
         />
@@ -2719,8 +2789,9 @@ export function ConfigView(props?: ConfigViewProps): JSX.Element {
           state={formState}
           onChange={handleFieldChange}
           onClose={() => setAuthOpen(false)}
-          onSave={async (changes) => {
-            await updateConfig({ changes });
+          onSave={async () => {
+            if (!(await handleSubmit("WebUI")))
+              throw new Error("Authentication settings were not saved.");
           }}
           setPasswordApi={setPassword}
           pushToast={push}
@@ -2733,10 +2804,26 @@ export function ConfigView(props?: ConfigViewProps): JSX.Element {
           state={(formState[activeQbitKey] as ConfigDocument) ?? null}
           onChange={handleFieldChange}
           onRename={handleRenameQbitSection}
+          onSave={() => handleSubmit(activeQbitKey)}
+          saving={saving}
           onClose={() => setActiveQbitKey(null)}
         />
       ) : null}
-    </>
+      {pendingDelete && (
+        <ConfirmDialog
+          title={`Remove ${pendingDelete}?`}
+          message={`This removes ${pendingDelete} from the config file. This action cannot be undone.`}
+          confirmLabel={saving ? "Removing…" : "Remove"}
+          danger
+          onConfirm={() => {
+            void confirmDelete();
+          }}
+          onCancel={() => {
+            if (!saving) setPendingDelete(null);
+          }}
+        />
+      )}
+    </ValidationErrorsContext.Provider>
   );
 }
 
@@ -3279,6 +3366,7 @@ function FieldGroup({
   sectionKey,
   qbitTrackers = false,
 }: FieldGroupProps): JSX.Element {
+  const errors = useContext(ValidationErrorsContext);
   const sectionName = sectionKey ?? basePath[0] ?? "";
 
   if (title === "Quality Profile Mappings") {
@@ -3506,7 +3594,7 @@ function FieldGroup({
     );
   }
 
-  const renderedFields = fields.map((field) => {
+  const renderField = (field: FieldDefinition) => {
     if (field.sectionName) {
       if (!sectionName) {
         return null;
@@ -3533,6 +3621,15 @@ function FieldGroup({
     const pathSegments = field.path ?? [];
     const path = [...basePath, ...pathSegments];
     const key = path.join(".");
+    const fieldLabel =
+      field.type === "duration"
+        ? field.label.replace(/ \((?:s|seconds|min|Minutes)\)$/, "")
+        : field.label;
+    const errorPath =
+      sectionKey && !basePath.length ? [sectionKey, ...path] : path;
+    const invalid = errors.some(
+      (error) => error.path.join(".") === errorPath.join("."),
+    );
     const rawValue =
       path.length > 0 ? getValue(state as ConfigDocument, path) : undefined;
     const formatted =
@@ -3545,6 +3642,13 @@ function FieldGroup({
       (field.type === "checkbox"
         ? `Enable or disable ${field.label}.`
         : `Set the ${field.label} value.`);
+
+    const applyHint = field.requiresRestart
+      ? " Requires restart to take effect."
+      : field.applyLive
+        ? " Applies live without restart."
+        : "";
+    const fieldDescription = description + applyHint;
 
     const isArrInstance =
       (basePath.length > 0 && SERVARR_SECTION_REGEX.test(basePath[0] ?? "")) ||
@@ -3561,7 +3665,7 @@ function FieldGroup({
           key={key}
           label={field.label}
           tooltip={tooltip}
-          description={description}
+          description={fieldDescription}
           value={String(rawValue ?? "")}
           placeholder={field.placeholder}
           canView={!isArrApiKey}
@@ -3576,6 +3680,8 @@ function FieldGroup({
         <div key={key} className="checkbox-field">
           <label title={tooltip}>
             <input
+              aria-label={fieldLabel}
+              aria-invalid={invalid || undefined}
               type="checkbox"
               checked={Boolean(formatted)}
               onChange={(event) => onChange(path, field, event.target.checked)}
@@ -3583,7 +3689,7 @@ function FieldGroup({
             {field.label}
           </label>
           {description && (
-            <div className="field-description">{description}</div>
+            <div className="field-description">{fieldDescription}</div>
           )}
         </div>
       );
@@ -3609,7 +3715,7 @@ function FieldGroup({
 
       return (
         <div key={key} className={fieldClassName}>
-          <label title={tooltip}>{field.label}</label>
+          <label title={tooltip}>{fieldLabel}</label>
           <Select
             options={(field.options ?? []).map((o) => ({ value: o, label: o }))}
             value={
@@ -3629,7 +3735,7 @@ function FieldGroup({
             styles={getSelectStyles()}
           />
           {description && (
-            <div className="field-description">{description}</div>
+            <div className="field-description">{fieldDescription}</div>
           )}
           {isThemeField && (
             <div className="field-hint">Theme changes apply immediately</div>
@@ -3642,7 +3748,7 @@ function FieldGroup({
       const allowNeg = field.allowNegative ?? false;
       return (
         <div key={key} className={fieldClassName}>
-          <label title={tooltip}>{field.label}</label>
+          <label title={tooltip}>{fieldLabel}</label>
           <DurationInput
             value={rawValue}
             baseUnit={baseUnit}
@@ -3651,7 +3757,7 @@ function FieldGroup({
             onChange={(v) => onChange(path, field, v)}
           />
           {description && (
-            <div className="field-description">{description}</div>
+            <div className="field-description">{fieldDescription}</div>
           )}
         </div>
       );
@@ -3659,8 +3765,10 @@ function FieldGroup({
     if (field.type === "number") {
       return (
         <div key={key} className={fieldClassName}>
-          <label title={tooltip}>{field.label}</label>
+          <label title={tooltip}>{fieldLabel}</label>
           <input
+            aria-label={fieldLabel}
+            aria-invalid={invalid || undefined}
             type="number"
             value={Number(formatted) || 0}
             onChange={(event) =>
@@ -3669,7 +3777,7 @@ function FieldGroup({
             placeholder={field.placeholder}
           />
           {description && (
-            <div className="field-description">{description}</div>
+            <div className="field-description">{fieldDescription}</div>
           )}
         </div>
       );
@@ -3677,15 +3785,17 @@ function FieldGroup({
     if (field.type === "password") {
       return (
         <div key={key} className={fieldClassName}>
-          <label title={tooltip}>{field.label}</label>
+          <label title={tooltip}>{fieldLabel}</label>
           <input
+            aria-label={fieldLabel}
+            aria-invalid={invalid || undefined}
             type="password"
             value={String(formatted)}
             onChange={(event) => onChange(path, field, event.target.value)}
             placeholder={field.placeholder}
           />
           {description && (
-            <div className="field-description">{description}</div>
+            <div className="field-description">{fieldDescription}</div>
           )}
         </div>
       );
@@ -3712,7 +3822,7 @@ function FieldGroup({
 
       return (
         <div key={key} className={fieldClassName}>
-          <label title={tooltip}>{field.label}</label>
+          <label title={tooltip}>{fieldLabel}</label>
           <TagInput
             value={tags}
             onChange={(newTags) => {
@@ -3721,22 +3831,43 @@ function FieldGroup({
             placeholder={field.placeholder}
           />
           {description && (
-            <div className="field-description">{description}</div>
+            <div className="field-description">{fieldDescription}</div>
           )}
         </div>
       );
     }
     return (
       <div key={key} className={fieldClassName}>
-        <label title={tooltip}>{field.label}</label>
+        <label title={tooltip}>{fieldLabel}</label>
         <input
+          aria-label={fieldLabel}
+          aria-invalid={invalid || undefined}
           type="text"
           value={String(formatted)}
           onChange={(event) => onChange(path, field, event.target.value)}
           placeholder={field.placeholder}
         />
-        {description && <div className="field-description">{description}</div>}
+        {description && (
+          <div className="field-description">{fieldDescription}</div>
+        )}
       </div>
+    );
+  };
+  const renderedFields = fields.map((field) => {
+    const path = [...basePath, ...(field.path ?? [])];
+    if (sectionKey && !basePath.length) path.unshift(sectionKey);
+    const message = errors.find(
+      (error) => error.path.join(".") === path.join("."),
+    )?.message;
+    return (
+      <Fragment key={path.join(".") || field.label}>
+        {renderField(field)}
+        {message && (
+          <p className="field-error" role="alert">
+            {message}
+          </p>
+        )}
+      </Fragment>
     );
   });
 
@@ -3995,6 +4126,18 @@ function DurationInput({
           </option>
         ))}
       </select>
+      {allowNegative && (
+        <button
+          type="button"
+          className="btn small ghost duration-input__disabled"
+          onClick={() => {
+            setRawInput("-1");
+            handleChange(-1, unit);
+          }}
+        >
+          Use disabled
+        </button>
+      )}
     </div>
   );
 }
@@ -4046,13 +4189,19 @@ function SecureField({
           <button
             type="button"
             className="btn ghost"
+            aria-label={`${showValue ? "Hide" : "Show"} ${label}`}
             onClick={() => setShowValue(!showValue)}
           >
             <IconImage src={VisibilityIcon} />
           </button>
         )}
         {canRefresh && (
-          <button type="button" className="btn ghost" onClick={handleRefresh}>
+          <button
+            type="button"
+            className="btn ghost"
+            aria-label={`Generate ${label}`}
+            onClick={handleRefresh}
+          >
             <IconImage src={RefreshIcon} />
           </button>
         )}
@@ -4069,6 +4218,8 @@ interface ArrInstanceModalProps {
   onChange: (path: string[], def: FieldDefinition, value: unknown) => void;
   onRename: (oldName: string, newName: string) => void;
   onClose: () => void;
+  onSave: () => Promise<boolean>;
+  saving: boolean;
 }
 
 function ArrInstanceModal({
@@ -4078,6 +4229,8 @@ function ArrInstanceModal({
   onChange,
   onRename,
   onClose,
+  onSave,
+  saving,
 }: ArrInstanceModalProps): JSX.Element {
   const {
     generalFields,
@@ -4186,23 +4339,8 @@ function ArrInstanceModal({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []); // Only run on mount
 
-  // Handle save with connection test
   const handleSave = async () => {
-    const uri = getValue(["URI"]) as string;
-    const apiKey = getValue(["APIKey"]) as string;
-
-    // If credentials exist, test connection before saving
-    if (uri && apiKey) {
-      const success = await handleTestConnection(false);
-      if (success) {
-        push("Configuration saved successfully", "success");
-        onClose();
-      }
-      // If unsuccessful, stay open so user can fix config
-    } else {
-      // No credentials to test, just close
-      onClose();
-    }
+    if (await onSave()) onClose();
   };
 
   return (
@@ -4385,7 +4523,12 @@ function ArrInstanceModal({
               "Test"
             )}
           </button>
-          <button className="btn primary" type="button" onClick={handleSave}>
+          <button
+            className="btn primary"
+            type="button"
+            onClick={handleSave}
+            disabled={saving}
+          >
             <IconImage src={SaveIcon} />
             Save
           </button>
@@ -4402,6 +4545,8 @@ interface QbitInstanceModalProps {
   onChange: (path: string[], def: FieldDefinition, value: unknown) => void;
   onRename: (oldName: string, newName: string) => void;
   onClose: () => void;
+  onSave: () => Promise<boolean>;
+  saving: boolean;
 }
 
 function QbitInstanceModal({
@@ -4411,6 +4556,8 @@ function QbitInstanceModal({
   onChange,
   onRename,
   onClose,
+  onSave,
+  saving,
 }: QbitInstanceModalProps): JSX.Element {
   return (
     <div className="modal-backdrop" role="presentation">
@@ -4480,9 +4627,16 @@ function QbitInstanceModal({
           />
         </div>
         <div className="modal-footer">
-          <button className="btn primary" type="button" onClick={onClose}>
+          <button
+            className="btn primary"
+            type="button"
+            disabled={saving}
+            onClick={async () => {
+              if (await onSave()) onClose();
+            }}
+          >
             <IconImage src={SaveIcon} />
-            Done
+            {saving ? "Saving…" : "Save"}
           </button>
         </div>
       </div>
@@ -4497,6 +4651,8 @@ interface SimpleConfigModalProps {
   basePath: string[];
   onChange: (path: string[], def: FieldDefinition, value: unknown) => void;
   onClose: () => void;
+  onSave: () => Promise<boolean>;
+  saving: boolean;
   showLiveSettings?: boolean;
 }
 
@@ -4507,6 +4663,8 @@ function SimpleConfigModal({
   basePath,
   onChange,
   onClose,
+  onSave,
+  saving,
   showLiveSettings = false,
 }: SimpleConfigModalProps): JSX.Element | null {
   const webUI = useWebUI();
@@ -4591,9 +4749,16 @@ function SimpleConfigModal({
           )}
         </div>
         <div className="modal-footer">
-          <button className="btn primary" type="button" onClick={onClose}>
+          <button
+            className="btn primary"
+            type="button"
+            disabled={saving}
+            onClick={async () => {
+              if (await onSave()) onClose();
+            }}
+          >
             <IconImage src={SaveIcon} />
-            Done
+            {saving ? "Saving…" : "Save"}
           </button>
         </div>
       </div>

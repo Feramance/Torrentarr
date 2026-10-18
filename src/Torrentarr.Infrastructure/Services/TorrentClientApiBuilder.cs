@@ -40,8 +40,7 @@ public static class TorrentClientApiBuilder
             foreach (var category in cfg.ManagedCategories.Union(arrCategories, StringComparer.OrdinalIgnoreCase))
             {
                 var inCategory = CategorySeedingApiResolver.SelectAggregateTorrents(torrents, category, cfg.MatchSubcategories);
-                var seeding = inCategory.Where(t => t.State.Contains("seeding", StringComparison.OrdinalIgnoreCase)
-                    || t.State.Contains("upload", StringComparison.OrdinalIgnoreCase)).ToList();
+                var seeding = inCategory.Where(t => t.IsSeeding).ToList();
                 var row = new Dictionary<string, object?>
                 {
                     ["category"] = category,

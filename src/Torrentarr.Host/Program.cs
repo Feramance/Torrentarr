@@ -799,7 +799,7 @@ try
                         if (torrents != null)
                         {
                             totalCount = torrents.Count;
-                            seedingCount = torrents.Count(t => t.State == "uploading" || t.State == "forcedUploading");
+                            seedingCount = torrents.Count(t => t.IsSeeding);
                         }
                     }
                 }
@@ -893,8 +893,11 @@ try
     });
 
     // Web Log Tail — last 1000 lines, plain text so frontend res.text() gets unquoted content
-    app.MapGet("/web/logs/{name}", async (string name) =>
+    app.MapGet("/web/logs/{name}", async (string name, HttpRequest request) =>
     {
+        if (request.Query["format"] == "json")
+            return await LogFileApi.TailFromRequestAsync(logsPath, name, request, request.HttpContext.RequestAborted);
+
         if (!IsValidLogFileName(name))
             return Results.BadRequest(new { error = "Invalid log file name" });
         var logFile = Path.Combine(logsPath, name);
@@ -1652,8 +1655,11 @@ try
         return Results.Ok(new { files });
     });
 
-    app.MapGet("/api/logs/{name}", async (string name) =>
+    app.MapGet("/api/logs/{name}", async (string name, HttpRequest request) =>
     {
+        if (request.Query["format"] == "json")
+            return await LogFileApi.TailFromRequestAsync(logsPath, name, request, request.HttpContext.RequestAborted);
+
         if (!IsValidLogFileName(name))
             return Results.BadRequest(new { error = "Invalid log file name" });
         var logFile = Path.Combine(logsPath, name);

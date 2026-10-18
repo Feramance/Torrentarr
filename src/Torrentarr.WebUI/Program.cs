@@ -1093,8 +1093,11 @@ app.MapGet("/web/logs", () =>
 });
 
 // Log file contents
-app.MapGet("/web/logs/{name}", async (string name, int? lines) =>
+app.MapGet("/web/logs/{name}", async (string name, HttpRequest request, int? lines) =>
 {
+    if (request.Query["format"] == "json")
+        return await LogFileApi.TailFromRequestAsync(logsPath, name, request, request.HttpContext.RequestAborted);
+
     var safeName = Path.GetFileName(name);
     if (!IsValidLogFileName(safeName))
         return Results.BadRequest(new { error = "Invalid log file name" });
@@ -1710,7 +1713,7 @@ app.MapGet("/web/meta", (TorrentarrConfig cfg) =>
             last_error = (string?)null,
             completed_at = (string?)null
         },
-        installation_type = "binary",
+        installation_type = Environment.GetEnvironmentVariable("DOTNET_RUNNING_IN_CONTAINER") == "true" || File.Exists("/.dockerenv") ? "docker" : "dotnet",
         binary_download_url = (string?)null,
         binary_download_name = (string?)null,
         binary_download_size = (long?)null,

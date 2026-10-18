@@ -94,6 +94,33 @@ public class TorrentInfo
     [JsonProperty("num_complete")]
     public int CompletePeers { get; set; }
 
+    [JsonProperty("dlspeed")]
+    public long DownloadSpeed { get; set; }
+    [JsonProperty("upspeed")]
+    public long UploadSpeed { get; set; }
+    [JsonProperty("num_seeds")]
+    public int NumSeeds { get; set; }
+    [JsonProperty("num_leechs")]
+    public int NumLeechs { get; set; }
+    [JsonProperty("num_incomplete")]
+    public int IncompletePeers { get; set; }
+    [JsonProperty("total_size")]
+    public long TotalSize { get; set; }
+    [JsonProperty("time_active")]
+    public long TimeActive { get; set; }
+    [JsonProperty("ratio_limit")]
+    public double RatioLimit { get; set; }
+    [JsonProperty("seeding_time_limit")]
+    public long SeedingTimeLimit { get; set; }
+    [JsonProperty("dl_limit")]
+    public long DownloadLimit { get; set; }
+    [JsonProperty("up_limit")]
+    public long UploadLimit { get; set; }
+
+    // Display counts include idle and queued seeds, without changing lifecycle policy.
+    [JsonIgnore]
+    public bool IsSeeding => State.ToLowerInvariant() is "uploading" or "stalledup" or "forcedup" or "queuedup" or "seeding";
+
     /// <summary>
     /// Check if torrent state indicates uploading/seeding.
     /// Matches qBitrr's is_uploading check.

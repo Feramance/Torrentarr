@@ -8,6 +8,10 @@ export type { ArrCatalogKind } from "./arrCatalog/registry";
 async function loadArrCatalogDefinition(
   kind: ArrCatalogKind,
 ): Promise<AnyArrCatalogDefinition> {
+  if (kind === "readarr") {
+    const mod = await import("./arrCatalog/readarrDefinition");
+    return mod.getReadarrCatalogDefinition();
+  }
   if (kind === "sonarr") {
     const mod = await import("./arrCatalog/sonarrDefinition");
     return mod.getSonarrCatalogDefinition();

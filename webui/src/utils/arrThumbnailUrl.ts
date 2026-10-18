@@ -29,3 +29,12 @@ export function lidarrArtistThumbnailUrl(
   const c = encodeURIComponent(category);
   return webPath(`/web/lidarr/${c}/artist/${artistId}/thumbnail`);
 }
+
+export function readarrAuthorThumbnailUrl(
+  category: string,
+  authorId: number,
+): string {
+  return webPath(
+    `/web/readarr/${encodeURIComponent(category)}/author/${authorId}/thumbnail`,
+  );
+}

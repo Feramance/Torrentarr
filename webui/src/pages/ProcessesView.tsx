@@ -74,6 +74,7 @@ function isProcessEqual(a: ProcessInfo, b: ProcessInfo): boolean {
     (a.restartKey ?? "") === (b.restartKey ?? "") &&
     a.pid === b.pid &&
     a.alive === b.alive &&
+    a.status === b.status &&
     (a.rebuilding ?? false) === (b.rebuilding ?? false) &&
     (a.searchSummary ?? "") === (b.searchSummary ?? "") &&
     (a.searchTimestamp ?? "") === (b.searchTimestamp ?? "") &&
@@ -375,16 +376,6 @@ export function ProcessesView({ active }: ProcessesViewProps): JSX.Element {
       const name = instanceName;
       const runningCount = items.filter((item) => item.alive).length;
       const totalCount = items.length;
-      const tone =
-        totalCount === 0
-          ? ""
-          : runningCount === totalCount
-            ? "status-indicator--ok"
-            : runningCount === 0
-              ? "status-indicator--bad"
-              : "status-indicator--partial";
-      const statusClass = ["status-indicator"];
-      if (tone) statusClass.push(tone);
       const statusLabel =
         totalCount === 0
           ? "No processes"
@@ -393,41 +384,39 @@ export function ProcessesView({ active }: ProcessesViewProps): JSX.Element {
             : runningCount === 0
               ? "Stopped"
               : `${runningCount}/${totalCount} running`;
-      const summaryLabel =
-        totalCount === 1 ? "1 process" : `${totalCount} processes`;
       const displayName =
         name === "FreeSpaceManager" ? "Free Space Manager" : name;
       const isOtherDisplayOnly = items.every((item) =>
         OTHER_DISPLAY_ONLY_NAMES.includes(item.name),
       );
-      const uniqueKinds = Array.from(new Set(items.map((item) => item.kind)));
-      const filteredKinds = uniqueKinds.filter((kind) => {
-        const lower = kind.toLowerCase();
-        return lower !== "search" && lower !== "torrent";
-      });
       const formatKind = (kind: string) =>
         kind ? kind.charAt(0).toUpperCase() + kind.slice(1) : kind;
 
       return (
         <div className="process-card" key={name}>
           <div className="process-card__header">
-            <div className="process-card__title">
-              <div className="process-card__name">{displayName}</div>
-              <div className="process-card__summary">{summaryLabel}</div>
-              {filteredKinds.length ? (
-                <div className="process-card__badges">
-                  {filteredKinds.map((kind) => (
-                    <span
-                      key={`${name}:${kind}:badge`}
-                      className="process-card__badge"
-                    >
-                      {formatKind(kind)}
-                    </span>
-                  ))}
-                </div>
-              ) : null}
+            <div className="process-card__name">{displayName}</div>
+            <div className="process-card__header-actions">
+              <span
+                className={`process-status process-status--${runningCount === totalCount ? "ok" : runningCount === 0 ? "bad" : "partial"}`}
+                title={statusLabel}
+              >
+                <span
+                  className={`process-status__dot process-status__dot--${runningCount ? "ok" : "bad"}`}
+                />
+                <span className="process-status__count">
+                  {runningCount}/{totalCount}
+                </span>
+              </span>
+              {!isOtherDisplayOnly && totalCount > 1 && (
+                <button
+                  className="btn small ghost process-action-btn"
+                  onClick={() => void handleRestartGroup(items)}
+                >
+                  Restart All
+                </button>
+              )}
             </div>
-            <div className={statusClass.join(" ")} title={statusLabel} />
           </div>
           <div className="process-card__list">
             {items.map((item) => (
@@ -452,6 +441,35 @@ export function ProcessesView({ active }: ProcessesViewProps): JSX.Element {
                     const status = item.status;
                     const summary = item.searchSummary ?? "";
 
+                    if (kindLower === "worker") {
+                      const age = item.searchTimestamp
+                        ? Math.max(
+                            0,
+                            Math.floor(
+                              (Date.now() -
+                                new Date(item.searchTimestamp).getTime()) /
+                                60000,
+                            ),
+                          )
+                        : null;
+                      return (
+                        <>
+                          <div>{status}</div>
+                          <div>
+                            Search:{" "}
+                            {summary.replace(/^Searching:\s*/i, "") ||
+                              "No pending searches"}
+                            {age !== null
+                              ? ` · ${age < 1 ? "just now" : `${age}m ago`}`
+                              : ""}
+                          </div>
+                          <div>
+                            {item.queueCount ?? "—"} in progress ·{" "}
+                            {item.categoryCount ?? "—"} tracked
+                          </div>
+                        </>
+                      );
+                    }
                     if (kindLower === "search") {
                       if (status) return status;
                       if (summary) return summary;
@@ -551,16 +569,6 @@ export function ProcessesView({ active }: ProcessesViewProps): JSX.Element {
               );
             })}
           </div>
-          {!isOtherDisplayOnly && (
-            <div className="process-card__footer">
-              <button
-                className="btn small"
-                onClick={() => void handleRestartGroup(items)}
-              >
-                Restart All
-              </button>
-            </div>
-          )}
         </div>
       );
     });

@@ -315,6 +315,11 @@ function ChangelogModal({
     ? new Date(updateState.completed_at).toLocaleString()
     : null;
   const isBinaryInstall = installationType === "binary";
+  const isDockerInstall = installationType === "docker";
+  const isSourceInstall =
+    installationType === "source" ||
+    installationType === "git" ||
+    installationType === "dotnet";
 
   // Start countdown when update completes successfully
   useEffect(() => {
@@ -445,7 +450,17 @@ function ChangelogModal({
             )}
           </div>
           <div className="changelog-buttons">
-            {isBinaryInstall ? (
+            {isDockerInstall ? (
+              <p className="hint">
+                Update your Torrentarr Docker image and recreate the container
+                to install this release.
+              </p>
+            ) : isSourceInstall ? (
+              <p className="hint">
+                Update your source checkout and rebuild Torrentarr to install
+                this release.
+              </p>
+            ) : isBinaryInstall ? (
               binaryDownloadError ? (
                 <div
                   className="update-status text-danger"
@@ -457,7 +472,7 @@ function ChangelogModal({
                 <>
                   <a
                     className="btn primary"
-                    href={`/web/download-update`}
+                    href={webPath("/web/download-update")}
                     download={binaryDownloadName ?? undefined}
                     target="_blank"
                     rel="noreferrer"
@@ -826,7 +841,7 @@ function LoginPage({
         {localAuthEnabled && oidcEnabled && <p className="login-divider">or</p>}
         {oidcEnabled && (
           <p className="login-oidc">
-            <a href="/web/auth/oidc/challenge">Sign in with OIDC</a>
+            <a href={webPath("/web/auth/oidc/challenge")}>Sign in with OIDC</a>
           </p>
         )}
         {!localAuthEnabled && !oidcEnabled && (
@@ -848,7 +863,9 @@ function AppShell(): JSX.Element {
   const [configViewKey, setConfigViewKey] = useState(0);
   const { push } = useToast();
   const { setValue: setSearchValue } = useSearch();
-  const { viewDensity, setViewDensity } = useWebUI();
+  const { viewDensity, setViewDensity, theme, setTheme, liveArr, setLiveArr } =
+    useWebUI();
+  const [showHelpMenu, setShowHelpMenu] = useState(false);
   const isOnline = useNetworkStatus();
   const [meta, setMeta] = useState<MetaResponse | null>(null);
   const [metaLoading, setMetaLoading] = useState(false);
@@ -976,6 +993,7 @@ function AppShell(): JSX.Element {
 
       // ESC - Clear search
       if (event.key === "Escape") {
+        setShowHelpMenu(false);
         setSearchValue("");
         return;
       }
@@ -1347,33 +1365,99 @@ function AppShell(): JSX.Element {
                 Compact
               </button>
             </div>
+            <div className="view-density-toggle" title="Theme">
+              <button
+                type="button"
+                className={theme === "dark" ? "active" : ""}
+                onClick={() => setTheme("dark")}
+              >
+                Dark
+              </button>
+              <button
+                type="button"
+                className={theme === "light" ? "active" : ""}
+                onClick={() => setTheme("light")}
+              >
+                Light
+              </button>
+            </div>
+            <div className="live-switch">
+              <span className="live-switch__label" id="live-switch-label">
+                Live
+              </span>
+              <button
+                type="button"
+                className={`live-switch__control${liveArr ? " live-switch__control--on" : ""}`}
+                role="switch"
+                aria-checked={liveArr}
+                aria-labelledby="live-switch-label"
+                title="Live updates for Arr and qBittorrent views"
+                aria-label="Live updates for Arr and qBittorrent views"
+                onClick={() => setLiveArr(!liveArr)}
+              >
+                <span className="live-switch__track" aria-hidden="true">
+                  <span className="live-switch__thumb" />
+                </span>
+              </button>
+            </div>
             <button
               type="button"
               className="btn small ghost"
-              onClick={handleCheckUpdates}
+              onClick={() => void handleCheckUpdates()}
               disabled={metaLoading}
             >
               <IconImage src={RefreshIcon} />
               {metaLoading ? "Checking..." : "Check Updates"}
             </button>
-            <a
-              href={repositoryUrl}
-              target="_blank"
-              rel="noreferrer"
-              className="btn small ghost"
-            >
-              <IconImage src={ExternalIcon} />
-              GitHub
-            </a>
-            <a
-              href="https://feramance.github.io/Torrentarr/"
-              target="_blank"
-              rel="noreferrer"
-              className="btn small ghost"
-            >
-              <IconImage src={ExternalIcon} />
-              Docs
-            </a>
+            <div className="appbar__help">
+              <button
+                type="button"
+                className="btn small ghost"
+                aria-expanded={showHelpMenu}
+                aria-haspopup="menu"
+                onClick={() => setShowHelpMenu((v) => !v)}
+              >
+                Help
+              </button>
+              {showHelpMenu ? (
+                <div className="appbar__help-menu" role="menu">
+                  <a
+                    href={repositoryUrl}
+                    target="_blank"
+                    rel="noreferrer"
+                    className="btn small ghost"
+                    role="menuitem"
+                    onClick={() => setShowHelpMenu(false)}
+                  >
+                    <IconImage src={ExternalIcon} />
+                    GitHub
+                  </a>
+                  <a
+                    href={webPath("/web/docs")}
+                    target="_blank"
+                    rel="noreferrer"
+                    className="btn small ghost"
+                    role="menuitem"
+                    title="Interactive API docs (Swagger UI)"
+                    onClick={() => setShowHelpMenu(false)}
+                  >
+                    <IconImage src={ExternalIcon} />
+                    OpenAPI
+                  </a>
+                  <a
+                    href="https://feramance.github.io/Torrentarr/"
+                    target="_blank"
+                    rel="noreferrer"
+                    className="btn small ghost"
+                    role="menuitem"
+                    onClick={() => setShowHelpMenu(false)}
+                  >
+                    <IconImage src={ExternalIcon} />
+                    Docs
+                  </a>
+                </div>
+              ) : null}
+            </div>
           </div>
         </div>
       </header>

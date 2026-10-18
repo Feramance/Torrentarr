@@ -349,6 +349,8 @@ public static class ArrCatalogEndpoints
                 artist = new
                 {
                     id = artist.ArrId,
+                    albumCount = albums.Count,
+                    trackTotalCount = tracks.Count,
                     name = artist.Title,
                     monitored = artist.Monitored,
                     qualityProfileName = artist.QualityProfileName,

@@ -16,8 +16,9 @@ public class TrackFilesModel
     [Column("albumid")]
     public int AlbumId { get; set; }
 
-    [Column("tracknumber")]
-    public int? TrackNumber { get; set; }
+    // SQLite INTEGER affinity also retains vinyl labels, as in the compatible qBitrr schema.
+    [Column("tracknumber", TypeName = "INTEGER")]
+    public string? TrackNumber { get; set; }
 
     [Column("title")]
     public string? Title { get; set; }

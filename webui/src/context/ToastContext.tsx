@@ -5,6 +5,7 @@ import {
   useContext,
   useMemo,
   useState,
+  useRef,
   type PropsWithChildren,
   type JSX,
 } from "react";
@@ -30,12 +31,20 @@ let toastCounter = 0;
 export function ToastProvider({ children }: PropsWithChildren): JSX.Element {
   const [toasts, setToasts] = useState<Toast[]>([]);
 
+  const recentToast = useRef<{ key: string; at: number } | null>(null);
+
   const dismiss = useCallback((id: number) => {
     setToasts((prev) => prev.filter((t) => t.id !== id));
   }, []);
 
   const push = useCallback(
     (message: string, kind: ToastKind = "info") => {
+      if (
+        recentToast.current?.key === `${kind}:${message}` &&
+        Date.now() - recentToast.current.at < 4000
+      )
+        return;
+      recentToast.current = { key: `${kind}:${message}`, at: Date.now() };
       const id = ++toastCounter;
       setToasts((prev) => [...prev, { id, message, kind }]);
       // Auto dismiss - longer duration for errors

@@ -42,7 +42,7 @@ export function WebUIProvider({
     theme: "dark",
   });
   const [loading, setLoading] = useState(true);
-  const toast = useToast();
+  const { push } = useToast();
 
   // Load initial settings
   useEffect(() => {
@@ -55,7 +55,7 @@ export function WebUIProvider({
         const warningMessage = sessionStorage.getItem("config_version_warning");
         if (warningMessage) {
           // Show error toast with longer duration for config version mismatch
-          toast.push(warningMessage, "error");
+          push(warningMessage, "error");
           // Clear the warning after showing it
           sessionStorage.removeItem("config_version_warning");
         }
@@ -93,7 +93,7 @@ export function WebUIProvider({
     };
 
     void loadSettings();
-  }, [toast]);
+  }, [push]);
 
   // Auto-save settings to backend
   const saveSettings = useCallback(
