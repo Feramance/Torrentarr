@@ -178,9 +178,9 @@ describe("ProcessesView – qBit category chips", () => {
       alive: true,
     };
     const qbitCategory = {
-      category: "radarr",
+      category: "autobrr",
       instance: "qBit",
-      managedBy: "arr",
+      managedBy: "qbit",
       torrentCount: 5,
       seedingCount: 2,
       totalSize: 0,
@@ -220,11 +220,10 @@ describe("ProcessesView – qBit category chips", () => {
     renderView();
 
     await screen.findByText("Torrent Clients");
-    // The "radarr" chip should appear under the qBit card
-    await screen.findByText("radarr");
+    await screen.findByText("autobrr");
   });
 
-  it("shows 'Arr' badge on Arr-managed category chip", async () => {
+  it("omits Arr-managed categories without hiding client-owned names on another instance", async () => {
     const qbitProcess = {
       category: "qBit",
       name: "qBit",
@@ -257,19 +256,26 @@ describe("ProcessesView – qBit category chips", () => {
       http.get("/web/status", () =>
         HttpResponse.json({
           ...emptyStatus,
-          qbitInstances: { qBit: { alive: true } },
+          qbitInstances: { qBit: { alive: true }, seedbox: { alive: true } },
         }),
       ),
       http.get("/web/qbit/categories", () =>
-        HttpResponse.json({ categories: [arrCategory], ready: true }),
+        HttpResponse.json({
+          categories: [
+            arrCategory,
+            { ...arrCategory, instance: "seedbox", managedBy: "qbit" },
+            { ...arrCategory, category: "autobrr", managedBy: "qbit" },
+          ],
+          ready: true,
+        }),
       ),
     );
 
     renderView();
 
-    await screen.findByText("sonarr");
-    // The managed-badge should say "Arr" for arr-managed categories
-    expect(screen.getByText("Arr")).toBeInTheDocument();
+    await screen.findByText("autobrr");
+    expect(screen.getAllByText("sonarr")).toHaveLength(1);
+    expect(screen.queryByText("Arr")).not.toBeInTheDocument();
   });
 });
 

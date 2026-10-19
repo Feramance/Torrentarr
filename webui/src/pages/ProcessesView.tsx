@@ -610,7 +610,10 @@ export function ProcessesView({ active }: ProcessesViewProps): JSX.Element {
     const cards = instances.map(({ name: instanceName, items }) => {
       const instanceCategories =
         app === "Torrent Clients"
-          ? qbitCategories.filter((cat) => cat.instance === instanceName)
+          ? qbitCategories.filter(
+              (cat) =>
+                cat.instance === instanceName && cat.managedBy === "qbit",
+            )
           : [];
       const name = instanceName;
       const runningCount = items.filter((item) => item.alive).length;
