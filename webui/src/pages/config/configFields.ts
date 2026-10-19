@@ -1,7 +1,7 @@
 import { WEBUI_FIELD_OVERLAYS } from "./configFieldOverlays";
 import { parseDurationToSeconds } from "../../config/durationUtils";
 import { CONFIG_SCHEMA } from "../../config/configFields.generated";
-import type { ConfigSchemaResponse } from "../../api/types";
+import type { ConfigSchemaResponse, ConfigSchemaField } from "../../api/types";
 import type { FieldDefinition } from "./configTypes";
 import { arrTypeFromSectionName } from "../../config/arrSections";
 let schema = CONFIG_SCHEMA as unknown as ConfigSchemaResponse;
@@ -13,20 +13,16 @@ const fieldTypes = new Set([
   "select",
   "tags",
   "duration",
+  "collection",
 ]);
-function isStructuredArray(path: string[]): boolean {
-  return (
-    path[0] === "Maintenance" &&
-    ["PathMappings", "SharePolicies", "Notifications"].includes(path[1] ?? "")
-  );
-}
 
 function fields(
   section: string,
   prefix: string[] = [],
   arrType?: string | null,
+  definitions?: ConfigSchemaField[],
 ): FieldDefinition[] {
-  return (schema.sections[section] ?? [])
+  return (definitions ?? schema.sections[section] ?? [])
     .filter(
       (f) =>
         f.uiExpose &&
@@ -36,26 +32,17 @@ function fields(
     .map((f) => ({
       label: f.label,
       path: [...prefix, ...f.path],
-      type: (isStructuredArray(f.path)
-        ? "json"
-        : f.kind) as FieldDefinition["type"],
-      format: isStructuredArray(f.path)
-        ? (value) =>
-            typeof value === "string"
-              ? value
-              : JSON.stringify(value ?? [], null, 2)
-        : f.kind === "select"
+      type: f.kind as FieldDefinition["type"],
+      default: f.default,
+      itemFields: f.itemFields
+        ? fields(section, [], arrType, f.itemFields)
+        : undefined,
+      format:
+        f.kind === "select"
           ? (value) => (value == null ? "" : String(value))
           : undefined,
-      parse: isStructuredArray(f.path)
-        ? (value) => {
-            try {
-              return JSON.parse(String(value));
-            } catch {
-              return value;
-            }
-          }
-        : f.kind === "select" && typeof f.default === "number"
+      parse:
+        f.kind === "select" && typeof f.default === "number"
           ? (value) => Number(value)
           : undefined,
       options: f.options,
@@ -72,8 +59,6 @@ function fields(
       minimum: f.minimum,
       maximum: f.maximum,
       validate: (value: unknown, context) => {
-        if (isStructuredArray(f.path) && !Array.isArray(value ?? []))
-          return `${f.label} must be a JSON array.`;
         const webError =
           section === "WebUI"
             ? WEBUI_FIELD_OVERLAYS[
@@ -81,7 +66,10 @@ function fields(
               ]?.validate?.(value, context)
             : undefined;
         if (webError) return webError;
-        if (value == null || value === "") return undefined;
+        if (value == null || value === "")
+          return definitions && f.required
+            ? `${f.label} is required.`
+            : undefined;
         const number = Number(value);
         if (f.minimum != null && number < f.minimum)
           return `${f.label} must be at least ${f.minimum}.`;

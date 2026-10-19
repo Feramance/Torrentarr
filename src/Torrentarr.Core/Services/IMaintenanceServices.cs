@@ -5,6 +5,8 @@ namespace Torrentarr.Core.Services;
 
 public interface IPathMappingService
 {
+    PathMappingResult Resolve(string clientPath, IReadOnlyList<PathMappingConfig> mappings);
+    string? ValidateLocalPath(string path, string root, bool requireFile = false);
     string? MapToLocal(string clientPath, IReadOnlyList<PathMappingConfig> mappings);
     IReadOnlyList<string> Validate(IReadOnlyList<PathMappingConfig> mappings);
     bool IsSafeDescendant(string candidate, string root);
@@ -12,6 +14,7 @@ public interface IPathMappingService
 
 public interface ITorrentInventoryService
 {
+    Task<TorrentInventory> CollectAsync(IReadOnlyDictionary<string, InventoryRequirements> requirements, CancellationToken ct = default, string? candidateHash = null);
     Task<TorrentInventory> BuildAsync(IEnumerable<string>? instanceIds = null, CancellationToken ct = default);
     /// <summary>Refreshes one torrent for eligibility checks; does not establish global file ownership.</summary>
     Task<TorrentInventory> RefreshCandidateAsync(string instanceId, string hash, CancellationToken ct = default);
@@ -25,8 +28,8 @@ public interface IHardlinkInspector
 
 public interface ISafeDeletionService
 {
-    Task<SafeDeletionResult> RemoveTorrentAsync(string clientInstanceId, string hash, bool removeContent, bool permanent = false, CancellationToken ct = default);
-    Task<SafeDeletionResult> RemoveMaintenanceTorrentAsync(string clientInstanceId, string hash, bool removeContent, TorrentInventory inventory, bool permanent = false, CancellationToken ct = default);
+    Task<SafeDeletionResult> RemoveTorrentAsync(string clientInstanceId, string hash, bool removeContent, CancellationToken ct = default);
+    Task<SafeDeletionResult> RemoveMaintenanceTorrentAsync(string clientInstanceId, string hash, bool removeContent, TorrentInventory inventory, CancellationToken ct = default);
     Task<SafeDeletionResult> QuarantineFileAsync(string clientInstanceId, string localPath, CancellationToken ct = default);
     Task<int> CleanupExpiredAsync(string clientInstanceId, CancellationToken ct = default);
 }
@@ -40,12 +43,9 @@ public interface IMaintenanceCoordinator
     Task<MaintenanceRunSummary> ApplyAsync(string planId, CancellationToken ct = default);
     Task ArmAsync(MaintenanceArmRequest request, CancellationToken ct = default);
     void Disarm(IEnumerable<string> instanceIds);
-    Task<MaintenanceRunSummary> RunAsync(IEnumerable<string>? instanceIds = null, string trigger = "manual", CancellationToken ct = default);
+    Task<MaintenanceRunSummary> RunAsync(IEnumerable<string>? instanceIds = null, string trigger = "manual", CancellationToken ct = default, IEnumerable<MaintenanceOperation>? operations = null);
     void Cancel();
     IReadOnlyList<MaintenanceRunSummary> GetHistory(int limit = 50);
 }
 
-public interface IMaintenanceNotificationService
-{
-    void Publish(MaintenanceEvent maintenanceEvent);
-}
+public sealed record PathMappingResult(string? LocalPath, string? Code = null, string? Error = null, string? LocalRoot = null);

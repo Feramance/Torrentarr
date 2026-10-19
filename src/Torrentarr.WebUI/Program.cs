@@ -157,7 +157,10 @@ if (configForDI.WebUI.AuthDisabled && WebUIAuthHelpers.IsPublicBindHost(configFo
 
 builder.Services.AddSingleton(configForDI);
 
-builder.Services.AddSingleton<IConfigReloader, ConfigReloader>();
+builder.Services.AddSingleton<ConfigReloader>();
+builder.Services.AddSingleton<IConfigReloader>(sp => sp.GetRequiredService<ConfigReloader>());
+builder.Services.AddHostedService(sp => sp.GetRequiredService<ConfigReloader>());
+builder.Services.AddHostedService<LiveConfigurationRuntime>();
 builder.Services.AddSingleton(configLoader);
 
 builder.Services.AddSingleton<IPasswordHasher, BCryptPasswordHasher>();
@@ -168,7 +171,6 @@ builder.Services.AddSingleton<IPathMappingService, PathMappingService>();
 builder.Services.AddSingleton<ITorrentInventoryService, TorrentInventoryService>();
 builder.Services.AddSingleton<IHardlinkInspector, HardlinkInspector>();
 builder.Services.AddSingleton<ISafeDeletionService, SafeDeletionService>();
-builder.Services.AddSingleton<IMaintenanceNotificationService, MaintenanceNotificationService>();
 builder.Services.AddSingleton<IMaintenanceCoordinator, MaintenanceCoordinator>();
 builder.Services.AddScoped<ISeedingService, SeedingService>();
 builder.Services.AddHttpClient();
@@ -194,22 +196,40 @@ var authBuilder = builder.Services.AddAuthentication(CookieAuthenticationDefault
     .AddCookie(options =>
     {
         options.Cookie.Name = "torrentarr_session";
+        string AuthenticationStamp() => Convert.ToHexString(SHA256.HashData(System.Text.Encoding.UTF8.GetBytes(
+            Newtonsoft.Json.JsonConvert.SerializeObject(new
+            {
+                configForDI.WebUI.Username,
+                configForDI.WebUI.PasswordHash,
+                configForDI.WebUI.LocalAuthEnabled,
+                configForDI.WebUI.OIDCEnabled,
+                configForDI.WebUI.OIDC
+            }))));
+        options.Events.OnSigningIn = context =>
+        {
+            if (context.Principal?.Identity is ClaimsIdentity identity)
+                identity.AddClaim(new Claim("torrentarr:auth", AuthenticationStamp()));
+            return Task.CompletedTask;
+        };
+        options.Events.OnValidatePrincipal = context =>
+        {
+            if (context.Principal?.FindFirst("torrentarr:auth")?.Value != AuthenticationStamp()) context.RejectPrincipal();
+            return Task.CompletedTask;
+        };
         options.Cookie.HttpOnly = true;
         options.Cookie.SameSite = SameSiteMode.Lax;
         options.Cookie.SecurePolicy = Microsoft.AspNetCore.Http.CookieSecurePolicy.SameAsRequest;
-        if (!string.IsNullOrEmpty(urlBase))
-            options.Cookie.Path = urlBase + "/";
-        options.LoginPath = UrlBaseHelper.WithUrlBase(urlBase, "/login");
-        options.AccessDeniedPath = UrlBaseHelper.WithUrlBase(urlBase, "/login");
+        var currentBase = UrlBaseHelper.NormalizeUrlBase(configForDI.WebUI.UrlBase);
+        if (!string.IsNullOrEmpty(currentBase))
+            options.Cookie.Path = currentBase + "/";
+        options.LoginPath = UrlBaseHelper.WithUrlBase(currentBase, "/login");
+        options.AccessDeniedPath = UrlBaseHelper.WithUrlBase(currentBase, "/login");
     });
-if (configForDI.WebUI.OIDCEnabled && configForDI.WebUI.OIDC is { } oidc
-    && !string.IsNullOrWhiteSpace(oidc.Authority)
-    && !string.IsNullOrWhiteSpace(oidc.ClientId))
-{
-    authBuilder.AddOpenIdConnect(OpenIdConnectDefaults.AuthenticationScheme, options =>
+authBuilder.AddOpenIdConnect(OpenIdConnectDefaults.AuthenticationScheme, options =>
     {
-        options.Authority = oidc.Authority.TrimEnd('/');
-        options.ClientId = oidc.ClientId;
+        var oidc = configForDI.WebUI.OIDC ?? new OIDCConfig();
+        options.Authority = string.IsNullOrWhiteSpace(oidc.Authority) ? "https://localhost" : oidc.Authority.TrimEnd('/');
+        options.ClientId = string.IsNullOrWhiteSpace(oidc.ClientId) ? "disabled" : oidc.ClientId;
         options.ClientSecret = oidc.ClientSecret;
         options.CallbackPath = oidc.CallbackPath;
         options.RequireHttpsMetadata = oidc.RequireHttpsMetadata;
@@ -218,21 +238,18 @@ if (configForDI.WebUI.OIDCEnabled && configForDI.WebUI.OIDC is { } oidc
         foreach (var s in (oidc.Scopes ?? "openid profile").Split(' ', StringSplitOptions.RemoveEmptyEntries))
             options.Scope.Add(s);
     });
-}
 
+
+var liveWeb = new LiveWebConfiguration(builder.WebHost, configForDI.WebUI);
 var app = builder.Build();
+app.MapGet("/web/config/status", (IConfigReloader reloader) => Results.Ok(reloader.GetStatus()));
+app.MapGet("/api/config/status", (IConfigReloader reloader) => Results.Ok(reloader.GetStatus()));
 
-if (configForDI.WebUI.BehindHttpsProxy)
+liveWeb.Attach(app, configForDI);
+app.Services.GetRequiredService<IConfigReloader>().ConfigReloaded += (_, args) =>
 {
-    app.UseForwardedHeaders(new ForwardedHeadersOptions
-    {
-        ForwardedHeaders = Microsoft.AspNetCore.HttpOverrides.ForwardedHeaders.XForwardedFor
-            | Microsoft.AspNetCore.HttpOverrides.ForwardedHeaders.XForwardedProto
-    });
-}
-
-if (!string.IsNullOrEmpty(urlBase))
-    app.UsePathBase(urlBase);
+    if (args.Success) app.Services.GetRequiredService<Microsoft.Extensions.Options.IOptionsMonitorCache<OpenIdConnectOptions>>().Clear();
+};
 app.UseConfigMutationGuard(ConfigurationLoader.GetDefaultConfigPath());
 
 // Ensure database is created and configure WAL mode
@@ -805,9 +822,13 @@ app.MapPost("/web/config", async (HttpContext ctx, TorrentarrConfig config, Conf
         if (savePasswordHashError != null)
             return Results.Json(new { error = savePasswordHashError }, statusCode: 403);
 
+        var liveValidation = reloader.Validate(updatedConfig);
+        if (!liveValidation.Ok) return Results.BadRequest(new { error = liveValidation.Error });
         await InstanceRenamePersistence.SaveAsync(config, updatedConfig, body?["renames"] as Newtonsoft.Json.Linq.JObject,
             loader, db, reloader.ConfigPath);
-        ApplyConfigInPlace(config, updatedConfig);
+        if (!reloader.Apply(updatedConfig, (body?["renames"] as Newtonsoft.Json.Linq.JObject)?.Properties()
+            .ToDictionary(p => p.Name, p => p.Value.ToString())))
+            return Results.BadRequest(new { error = reloader.GetStatus().Error });
         await registry.ReconcileAsync(config.GetAllTorrentClients(), connect: false);
     }
     catch (Exception ex)
@@ -816,26 +837,18 @@ app.MapPost("/web/config", async (HttpContext ctx, TorrentarrConfig config, Conf
         return Results.Json(new { error = "Failed to save configuration", details = ex.Message }, statusCode: 500);
     }
 
-    var reloaded = reloader.ReloadConfig();
+    var reloaded = reloader.GetStatus().State == "applied";
+    reloadType = "live";
 
     return Results.Ok(new
     {
         status = "ok",
         configReloaded = reloaded,
+        application = reloader.GetStatus(),
         reloadType,
         affectedInstances
     });
 });
-
-static void ApplyConfigInPlace(TorrentarrConfig target, TorrentarrConfig source)
-{
-    target.Settings = source.Settings;
-    target.WebUI = source.WebUI;
-    target.ArrInstances = source.ArrInstances;
-    target.QBitInstances = source.QBitInstances;
-    target.TorrentClients = source.TorrentClients;
-    TorrentPolicyHelper.InvalidateMonitoredPolicyCategoriesCache(target);
-}
 
 // Helper: apply a dot-path change to a JObject (e.g. "Settings.LoopSleepTimer" = 30)
 static void ApplyDotPathChange(Newtonsoft.Json.Linq.JObject root, string dotPath, Newtonsoft.Json.Linq.JToken value)
@@ -996,7 +1009,6 @@ static TorrentarrConfig FlatToConfig(Newtonsoft.Json.Linq.JObject flat, Torrenta
                 if (current.TorrentClients.TryGetValue(clientProp.Name, out var existing))
                 {
                     if (client.Password == "[redacted]") client.Password = existing.Password;
-                    RestoreNotificationTokens(client, existing);
                 }
                 result.TorrentClients[clientProp.Name] = client;
             }
@@ -1013,7 +1025,6 @@ static TorrentarrConfig FlatToConfig(Newtonsoft.Json.Linq.JObject flat, Torrenta
             if (current.QBitInstances.TryGetValue(prop.Name, out var existingQBit))
             {
                 if (qbit.Password == "[redacted]") qbit.Password = existingQBit.Password;
-                RestoreNotificationTokens(qbit, existingQBit);
             }
             result.QBitInstances[prop.Name] = qbit;
         }
@@ -1031,16 +1042,6 @@ static TorrentarrConfig FlatToConfig(Newtonsoft.Json.Linq.JObject flat, Torrenta
     }
 
     return result;
-}
-
-static void RestoreNotificationTokens(TorrentClientInstanceConfig target, TorrentClientInstanceConfig source)
-{
-    var sourceByUrl = source.Maintenance.Notifications
-        .Where(n => !string.IsNullOrWhiteSpace(n.Url))
-        .ToDictionary(n => n.Url, StringComparer.OrdinalIgnoreCase);
-    foreach (var notification in target.Maintenance.Notifications)
-        if (notification.Token == "[redacted]" && sourceByUrl.TryGetValue(notification.Url, out var existing))
-            notification.Token = existing.Token;
 }
 
 // Processes endpoint - list all processes with status
@@ -1220,7 +1221,11 @@ app.MapGet("/web/torrent-clients", async (ITorrentClientRegistry registry, Torre
 });
 app.MapGet("/web/maintenance/status", (IMaintenanceCoordinator maintenance) => Results.Ok(maintenance.GetStatus()));
 app.MapGet("/web/maintenance/history", (IMaintenanceCoordinator maintenance, int? limit) => Results.Ok(maintenance.GetHistory(limit ?? 50)));
-app.MapPost("/web/maintenance/preview", async (MaintenancePreviewRequest request, IMaintenanceCoordinator maintenance, CancellationToken ct) => Results.Ok(await maintenance.PreviewAsync(request, ct)));
+app.MapPost("/web/maintenance/preview", async (MaintenancePreviewRequest request, IMaintenanceCoordinator maintenance, CancellationToken ct) =>
+{
+    if (request.Operations.Any(op => !Enum.IsDefined(op))) return Results.BadRequest(new { error = "Unknown maintenance operation." });
+    return Results.Ok(await maintenance.PreviewAsync(request, ct));
+});
 app.MapPost("/web/maintenance/apply", async (MaintenanceApplyRequest request, IMaintenanceCoordinator maintenance, CancellationToken ct) =>
 {
     try { return Results.Ok(await maintenance.ApplyAsync(request.PlanId, ct)); }
@@ -1237,7 +1242,8 @@ app.MapPost("/web/maintenance/disarm", (MaintenanceClientsRequest request, IMain
 { maintenance.Disarm(request.ClientInstanceIds); return Results.Ok(maintenance.GetStatus()); });
 app.MapPost("/web/maintenance/run", async (MaintenanceClientsRequest request, IMaintenanceCoordinator maintenance, CancellationToken ct) =>
 {
-    try { return Results.Ok(await maintenance.RunAsync(request.ClientInstanceIds.Count == 0 ? null : request.ClientInstanceIds, "manual", ct)); }
+    if (request.Operations.Any(op => !Enum.IsDefined(op))) return Results.BadRequest(new { error = "Unknown maintenance operation." });
+    try { return Results.Ok(await maintenance.RunAsync(request.ClientInstanceIds.Count == 0 ? null : request.ClientInstanceIds, "manual", ct, request.Operations)); }
     catch (InvalidOperationException ex) { return Results.Conflict(new { error = ex.Message }); }
 });
 app.MapPost("/web/maintenance/cancel", (IMaintenanceCoordinator maintenance) =>
@@ -1691,10 +1697,12 @@ app.MapPost("/web/config/save", async (TorrentarrConfig updatedConfig, Torrentar
         if (passwordHashError != null)
             return Results.Json(new { error = passwordHashError }, statusCode: 403);
 
+        var liveValidation = reloader.Validate(updatedConfig);
+        if (!liveValidation.Ok) return Results.BadRequest(new { error = liveValidation.Error });
         await InstanceRenamePersistence.SaveAsync(config, updatedConfig, null, loader, db, reloader.ConfigPath);
-        ApplyConfigInPlace(config, updatedConfig);
+        if (!reloader.Apply(updatedConfig)) return Results.BadRequest(new { error = reloader.GetStatus().Error });
         await registry.ReconcileAsync(config.GetAllTorrentClients(), connect: false);
-        var reloadSuccess = reloader.ReloadConfig();
+        var reloadSuccess = reloader.GetStatus().State == "applied";
 
         return reloadSuccess
             ? Results.Ok(new { success = true, message = "Configuration saved and reloaded" })

@@ -18,13 +18,15 @@ by the adapter's capabilities.
 
 ## Configuration changes
 
-Saving connection changes removes the old connection before responding. Disabled,
-deleted, and placeholder clients are removed from active snapshots. The existing
-connection loop retries enabled clients; Arr workers restart with the saved
-configuration. A failed replacement stays unavailable instead of using the old
+Ordinary saves persist configuration while worker cycles continue using their
+current revision. Subsequent cycles adopt the saved revision at a safe boundary;
+path-mapping edits need no restart. Connection changes are reconciled in the
+background, removing disabled, deleted, and placeholder clients. The connection
+loop retries enabled clients. The configuration status reports when each component
+has applied the saved revision. A failed replacement stays unavailable instead of using the old
 endpoint. A remote request already dispatched before the save may still finish. Old client
 references reject subsequent requests; disposal waits for active requests to finish.
-Client renames preserve stored passwords, notification tokens, and persisted torrent
+Client renames preserve stored passwords and persisted torrent
 state, including import, seeding, and free-space pause markers. Arr renames retain
 media and queue associations. Existing recycle directories split by client are
 renamed within the same root; change the recycle root in a separate save. Exported
@@ -35,7 +37,7 @@ through its WebUI; a separately launched standalone WebUI rejects config/passwor
 writes for that config. Worker cycles also participate in config coordination.
 
 Renames briefly stop workers. Conflicting names or stored destination state are
-rejected rather than merged. Active processing can return HTTP 409; retry after
+rejected rather than merged. Renames during active processing can return HTTP 409; retry after
 it finishes. Configuration and SQLite changes use a recovery record beside config
 (`config.toml.rename.json`). Startup recovers it before normal configuration loading
 or worker startup. Do not delete this record after an interrupted save. If config
@@ -79,11 +81,12 @@ cleanup. Existing failed-category lifecycle cleanup remains compatible when
 maintenance mappings and recycling are absent.
 
 Before each file-moving or content-deleting action, apply re-enumerates every required client's torrent
-files and trackers, including owners whose top-level torrent metadata is unchanged.
+files, including owners whose top-level torrent metadata is unchanged. Tracker data
+is refreshed for the candidate only when its operation requires it.
 A failed refresh cannot authorize a move using an older inventory. Non-destructive
-operations refresh only the current torrent on its owning client, including its
-files and trackers, before checking eligibility. Retention cleanup rechecks the
-recycled files directly. Initial inventory collection still covers all required clients; candidate
+operations refresh only the current torrent on its owning client, requesting the
+data required by that operation before checking eligibility. Retention cleanup rechecks the
+recycled files directly. Ownership inventory collection covers all required clients; candidate
 snapshots never authorize content movement or deletion.
 
 Polling cannot make client updates and filesystem moves atomic. Avoid concurrent
@@ -129,3 +132,51 @@ download resumes. Active downloads outside the managed category also reserve
 space. Planned resumes wait until all protective pauses succeed. A failed or
 rejected pause withholds resumes until a later successful pass. Clients without
 tag support use instance-scoped SQLite pause markers.
+
+## Inspection readiness and diagnostics
+
+Preview reports readiness separately for each client and operation: `ready`,
+`partial`, `blocked`, or `disabled`. Examined, excluded, and uninspectable counts
+show inspection coverage; actionable and blocked-action counts describe proposed
+mutations. A ready inspection with no actions means nothing needs changing. A
+blocked inspection does not establish that the torrents or filesystem are clean.
+Orphan scanning never enumerates candidates without complete global ownership.
+
+Operations collect only the data they require. Client-only category changes,
+and tagging do not require local path mappings or
+file enumeration. Tracker and file request failures are isolated by torrent;
+tracker failure does not erase known file ownership, but still blocks decisions
+that require tracker data. Unregistered cleanup with matching candidates requires
+global file ownership, including clients outside the selected management scope.
+
+Filesystem work requires explicit absolute `ClientPath` → `LocalPath` mappings,
+even when both roots are identical. Local roots must be accessible from the
+Torrentarr process/container. Matching path names do not establish shared storage.
+Inspect the diagnostic's observed client paths and local paths, then use **Open
+Config** to correct mappings or fix the deployment's mount. Torrentarr never
+creates mappings or substitutes a guessed file location. Traversal paths and
+symlink/reparse-point ancestors are rejected.
+
+The API adds `diagnostics` and `operationResults` to plans and run summaries,
+`operation` to each action, and `armedOperations` to status. Diagnostics have stable
+codes, affected operations, file/torrent counts, remediation, and at most five
+examples per client/code group. Legacy warning strings remain available and are
+derived from those groups. Operation failures do not become plan-wide critical
+errors; invalid requests and invalid plan state still prevent execution.
+
+Arming authorizes only runnable operations in that client's reviewed preview.
+Scheduled runs re-evaluate those operations; manual runs may narrow them through
+an optional `operations` array on the existing run request. Requested unarmed
+operations are reported as blocked (or disabled) and never run. Restart,
+disarming, and configuration changes clear authorization. Changing UI selections
+invalidates the displayed preview and requires a new preview before arming.
+
+Run `planned` counts actionable work, while `blocked` counts blocked actions.
+`applied + skipped + failed + pending` equals `planned`; blocked inspections remain
+visible in operation results even when they produced no candidate actions. Such
+runs report `partial` rather than claiming every operation succeeded. The UI
+refreshes execution status and history while running and keeps cancellation
+available during a pending apply request.
+
+For structured field descriptions, path requirements and
+legacy/canonical TOML examples, see [Maintenance configuration](../configuration/maintenance.md).

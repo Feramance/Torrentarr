@@ -66,7 +66,6 @@ import {
 import {
   formatConfigSaveMessage,
   shouldRefreshMetaAfterSave,
-  shouldReloadPageAfterSave,
 } from "./config/configSaveResult";
 
 interface ConfigViewProps {
@@ -82,6 +81,26 @@ type PendingSectionDelete = {
 export function ConfigView(props?: ConfigViewProps): JSX.Element {
   const { active = true, onDirtyChange } = props ?? {};
   const { push } = useToast();
+  const [application, setApplication] = useState<
+    import("../api/types").ConfigurationApplicationStatus | null
+  >(null);
+  useEffect(() => {
+    const receive = (event: Event) => {
+      const next = (
+        event as CustomEvent<
+          import("../api/types").ConfigurationApplicationStatus
+        >
+      ).detail;
+      setApplication((current) =>
+        !current || next.acceptedRevision >= current.acceptedRevision
+          ? next
+          : current,
+      );
+    };
+    window.addEventListener("torrentarr:configuration", receive);
+    return () =>
+      window.removeEventListener("torrentarr:configuration", receive);
+  }, []);
   const [originalConfig, setOriginalConfig] = useState<ConfigDocument | null>(
     null,
   );
@@ -238,6 +257,24 @@ export function ConfigView(props?: ConfigViewProps): JSX.Element {
     return groups;
   }, [arrSections]);
   const [activeClient, setActiveClient] = useState<string | null>(null);
+  const clientValidationErrors = useMemo(() => {
+    const errors: ValidationError[] = [];
+    if (activeClient && formState) {
+      const section = get(formState, [
+        "TorrentClients",
+        activeClient,
+      ]) as ConfigDocument;
+      validateFieldGroup(
+        errors,
+        getClientFields(),
+        section,
+        ["TorrentClients", activeClient],
+        { root: formState, section },
+      );
+    }
+    return errors;
+  }, [activeClient, formState]);
+
   const [deleteClient, setDeleteClient] = useState<string | null>(null);
   const [clientSaving, setClientSaving] = useState(false);
   const [activeArrKey, setActiveArrKey] = useState<string | null>(null);
@@ -601,12 +638,14 @@ export function ConfigView(props?: ConfigViewProps): JSX.Element {
       affectedInstances: string[] | undefined,
       savedSectionKeys: Iterable<string> | "all",
       changedKeys: readonly string[] = [],
+      applicationStatus?: import("../api/types").ConfigurationApplicationStatus,
     ) => {
       const message = formatConfigSaveMessage(
         reloadType,
         configReloaded,
         affectedInstances,
         changedKeys,
+        applicationStatus,
       );
       push(message, "success");
 
@@ -616,10 +655,6 @@ export function ConfigView(props?: ConfigViewProps): JSX.Element {
         } catch {
           // meta refresh failed; config was saved — user can reload manually if needed
         }
-      }
-
-      if (shouldReloadPageAfterSave(reloadType, changedKeys)) {
-        window.setTimeout(() => window.location.reload(), 500);
       }
 
       if (configReloaded && "caches" in window) {
@@ -688,10 +723,14 @@ export function ConfigView(props?: ConfigViewProps): JSX.Element {
         return;
       }
 
-      const { configReloaded, reloadType, affectedInstances } =
-        await updateConfig({
-          changes,
-        });
+      const {
+        configReloaded,
+        reloadType,
+        affectedInstances,
+        application: applicationStatus,
+      } = await updateConfig({
+        changes,
+      });
       setServerValidationErrors([]);
       if (kind === "qbit") {
         setActiveQbitKey(null);
@@ -707,6 +746,7 @@ export function ConfigView(props?: ConfigViewProps): JSX.Element {
         affectedInstances,
         savedKeys,
         Object.keys(changes),
+        applicationStatus,
       );
     } catch (error) {
       setPendingDelete(null);
@@ -770,11 +810,16 @@ export function ConfigView(props?: ConfigViewProps): JSX.Element {
               oldName !== newName,
           ),
         );
-        const { configReloaded, reloadType, affectedInstances, warning } =
-          await updateConfig({
-            changes,
-            ...(Object.keys(renames).length ? { renames } : {}),
-          });
+        const {
+          configReloaded,
+          reloadType,
+          affectedInstances,
+          warning,
+          application: applicationStatus,
+        } = await updateConfig({
+          changes,
+          ...(Object.keys(renames).length ? { renames } : {}),
+        });
         if (warning) push(warning, "warning");
         setServerValidationErrors([]);
         const savedKeys = sectionKeysFromChanges(changes);
@@ -789,6 +834,7 @@ export function ConfigView(props?: ConfigViewProps): JSX.Element {
           affectedInstances,
           savedKeys,
           Object.keys(changes),
+          applicationStatus,
         );
         return true;
       } catch (error) {
@@ -841,13 +887,19 @@ export function ConfigView(props?: ConfigViewProps): JSX.Element {
         ) {
           errors.push(...getCategoryCrossSectionIssues(formState));
         }
-        if (errors.length) throw new Error(formatValidationErrors(errors));
+        if (errors.length) {
+          push(formatValidationErrors(errors), "error");
+          focusFirstValidationError(errors);
+          return false;
+        }
         const host = String(value?.Host ?? "").trim();
         const port = Number(value?.Port);
         if (!host || !Number.isInteger(port) || port < 1 || port > 65535)
           throw new Error("Enter a host and a port between 1 and 65535.");
       }
-      if (Object.keys(changes).length) await updateConfig({ changes });
+      const result = Object.keys(changes).length
+        ? await updateConfig({ changes })
+        : null;
       const saved = await getConfig();
       const merge = (previous: ConfigDocument | null) =>
         produce(previous ?? {}, (draft) => {
@@ -859,8 +911,19 @@ export function ConfigView(props?: ConfigViewProps): JSX.Element {
       setFormState(merge);
       setActiveClient(null);
       setDeleteClient(null);
+      if (result?.warning) push(result.warning, "warning");
       push(
-        remove ? "Torrent client removed" : "Torrent client saved",
+        remove
+          ? "Torrent client removed"
+          : result
+            ? formatConfigSaveMessage(
+                result.reloadType,
+                result.configReloaded,
+                result.affectedInstances,
+                Object.keys(changes),
+                result.application,
+              )
+            : "Torrent client saved",
         "success",
       );
       return true;
@@ -894,10 +957,30 @@ export function ConfigView(props?: ConfigViewProps): JSX.Element {
     setActiveClient(name);
   };
 
+  const applicationNotice = application && (
+    <p role="status" className="card-body">
+      {application.error ??
+        (application.state === "applied"
+          ? "Configuration applied live"
+          : application.state === "pending"
+            ? "Configuration saved; waiting for active operations to finish"
+            : "Some configuration changes could not be applied")}
+      {Object.entries(application.components)
+        .filter(([, value]) => value.error)
+        .map(([name, value]) => (
+          <span key={name}>
+            {" "}
+            {name}: {value.error}
+          </span>
+        ))}
+    </p>
+  );
+
   if (loading || !formState) {
     return (
       <section className="card">
         <div className="card-header">Config</div>
+        {applicationNotice}
         <div className="card-body">
           <div className="loading">
             <span className="spinner" /> Loading configuration…
@@ -911,6 +994,7 @@ export function ConfigView(props?: ConfigViewProps): JSX.Element {
     <>
       <section className="card">
         <div className="card-header">Config</div>
+        {applicationNotice}
         <div className="card-body config-layout">
           <section className="config-arr-group">
             <details className="config-arr-group__details" open>
@@ -1179,6 +1263,8 @@ export function ConfigView(props?: ConfigViewProps): JSX.Element {
         <QbitInstanceModal
           keyName={activeClient}
           fields={getClientFields()}
+          fieldPathPrefix={`TorrentClients.${activeClient}`}
+          validationErrors={clientValidationErrors}
           state={
             (formState.TorrentClients as ConfigDocument)?.[
               activeClient

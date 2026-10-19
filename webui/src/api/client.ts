@@ -695,6 +695,12 @@ export async function updateConfig(
     method: "POST",
     body: JSON.stringify(payload),
   });
+  if (result.application)
+    window.dispatchEvent(
+      new CustomEvent("torrentarr:configuration", {
+        detail: result.application,
+      }),
+    );
   invalidateGetCache(["/web/config", "/web/meta", "/web/status"]);
   window.dispatchEvent(new Event("torrentarr:config-saved"));
   return result;
@@ -849,11 +855,12 @@ export const armMaintenance = (
 export const maintenanceCommand = (
   command: "disarm" | "run" | "cancel",
   clientInstanceIds: string[] = [],
+  operations: MaintenanceOperation[] = [],
 ): Promise<MaintenanceStatus | MaintenanceRunSummary> =>
   fetchJson(`/web/maintenance/${command}`, {
     method: "POST",
     headers: JSON_HEADERS,
-    body: JSON.stringify({ clientInstanceIds }),
+    body: JSON.stringify({ clientInstanceIds, operations }),
   });
 
 export function getReadarrOpenAuthorUrl(
@@ -922,4 +929,38 @@ export async function refreshUrlBaseFromMeta(): Promise<MetaResponse> {
 }
 export function getQbitOverviewPath(instance?: string): string {
   return `/web/qbit/overview${instance ? `?instance=${encodeURIComponent(instance)}` : ""}`;
+}
+
+/** Uses the normal authentication path, including API tokens, for the live stream. */
+export async function watchConfiguration(
+  receive: (event: import("./types").LiveConfigurationEvent) => void,
+  signal: AbortSignal,
+): Promise<void> {
+  await fetchWithAuthRetry<void>(
+    "/web/config/events",
+    { signal },
+    async (response) => {
+      if (!response.ok || !response.body)
+        throw new Error("Configuration stream unavailable");
+      const reader = response.body
+        .pipeThrough(new TextDecoderStream())
+        .getReader();
+      let pending = "";
+      try {
+        while (!signal.aborted) {
+          const { value, done } = await reader.read();
+          if (done) break;
+          pending += value;
+          let end: number;
+          while ((end = pending.indexOf("\n\n")) >= 0) {
+            const event = pending.slice(0, end);
+            pending = pending.slice(end + 2);
+            if (event.startsWith("data: ")) receive(JSON.parse(event.slice(6)));
+          }
+        }
+      } finally {
+        reader.releaseLock();
+      }
+    },
+  );
 }

@@ -59,9 +59,11 @@ public static class InstanceRenamePersistence
         Func<Task>? suspend = null, CancellationToken ct = default)
     {
         var path = Path.GetFullPath(configPath ?? loader.ConfigPath);
-        using var ownership = suspend == null && !ConfigMutationGuard.OwnsMutation(path)
+        using var ownership = suspend == null && !ConfigMutationGuard.OwnsPublication(path)
             ? HostConfigOwnership.Acquire(path) : null;
-        using var mutation = ConfigMutationGuard.EnterMutation(path);
+        ct.ThrowIfCancellationRequested();
+        using var mutation = renames?.HasValues == true
+            ? ConfigMutationGuard.EnterMutation(path) : ConfigMutationGuard.EnterPublication(path);
         Validate(current, updated, renames);
         if (Newtonsoft.Json.JsonConvert.SerializeObject(current.GetAllTorrentClients())
             != Newtonsoft.Json.JsonConvert.SerializeObject(updated.GetAllTorrentClients()))

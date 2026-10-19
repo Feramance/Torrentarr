@@ -1710,49 +1710,54 @@ export const CONFIG_SCHEMA = {
           "PathMappings"
         ],
         "key": "Maintenance.PathMappings",
-        "label": "Path Mappings",
-        "kind": "tags",
+        "label": "Path mappings",
+        "kind": "collection",
         "default": [],
         "comments": "Torrentarr client-neutral torrent maintenance setting.",
         "required": false,
         "secure": false,
         "uiExpose": true,
-        "applyLive": false,
-        "requiresRestart": true
-      },
-      {
-        "section": "TorrentClient",
-        "path": [
-          "Maintenance",
-          "SharePolicies"
-        ],
-        "key": "Maintenance.SharePolicies",
-        "label": "Share Policies",
-        "kind": "tags",
-        "default": [],
-        "comments": "Torrentarr client-neutral torrent maintenance setting.",
-        "required": false,
-        "secure": false,
-        "uiExpose": true,
-        "applyLive": false,
-        "requiresRestart": true
-      },
-      {
-        "section": "TorrentClient",
-        "path": [
-          "Maintenance",
-          "Notifications"
-        ],
-        "key": "Maintenance.Notifications",
-        "label": "Notifications",
-        "kind": "tags",
-        "default": [],
-        "comments": "Torrentarr client-neutral torrent maintenance setting.",
-        "required": false,
-        "secure": false,
-        "uiExpose": true,
-        "applyLive": false,
-        "requiresRestart": true
+        "applyLive": true,
+        "requiresRestart": false,
+        "description": "Translate torrent client paths into paths visible to Torrentarr. This does not mount folders or move files. The longest matching client prefix wins. Saved mappings apply at the next worker processing cycle.",
+        "itemFields": [
+          {
+            "section": "TorrentClient",
+            "path": [
+              "ClientPath"
+            ],
+            "key": "ClientPath",
+            "label": "Torrent client path",
+            "kind": "text",
+            "default": "",
+            "comments": "Torrentarr client-neutral torrent maintenance setting.",
+            "required": true,
+            "secure": false,
+            "uiExpose": true,
+            "applyLive": null,
+            "requiresRestart": null,
+            "description": "Folder as seen by the torrent client.",
+            "placeholder": "/downloads"
+          },
+          {
+            "section": "TorrentClient",
+            "path": [
+              "LocalPath"
+            ],
+            "key": "LocalPath",
+            "label": "Torrentarr path",
+            "kind": "text",
+            "default": "",
+            "comments": "Torrentarr client-neutral torrent maintenance setting.",
+            "required": true,
+            "secure": false,
+            "uiExpose": true,
+            "applyLive": null,
+            "requiresRestart": null,
+            "description": "The same folder as seen by Torrentarr, including inside its Docker container.",
+            "placeholder": "/data/downloads"
+          }
+        ]
       }
     ],
     "Arr": [

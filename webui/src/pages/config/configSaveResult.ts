@@ -1,3 +1,5 @@
+import type { ConfigurationApplicationStatus } from "../../api/types";
+
 /** WebUI keys that bind a new host/port and require a full page reload after save. */
 export const WEBUI_PAGE_RELOAD_KEYS = new Set(["WebUI.Host", "WebUI.Port"]);
 
@@ -12,6 +14,7 @@ export function formatConfigSaveMessage(
   configReloaded: boolean,
   affectedInstances: string[] | undefined,
   changedKeys: readonly string[],
+  application?: ConfigurationApplicationStatus,
 ): string {
   let message = "Configuration saved";
   switch (reloadType) {
@@ -29,9 +32,12 @@ export function formatConfigSaveMessage(
       }
       break;
     case "live":
-      message += configReloaded
-        ? " • Applied live"
-        : " • Applied without restart";
+      message +=
+        application?.state === "error"
+          ? " • Some changes could not be applied"
+          : configReloaded
+            ? " • Applied live"
+            : " • Waiting for active operations to finish";
       break;
     case "qbit_hot":
       message += configReloaded

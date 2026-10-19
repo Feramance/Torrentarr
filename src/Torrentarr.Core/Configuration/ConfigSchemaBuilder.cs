@@ -40,10 +40,19 @@ public static class ConfigSchemaBuilder
             options: ["managed", "all", "explicit"]),
         Field("Maintenance.Schedule", "text", "Maintenance Schedule", "*/15 * * * *"),
         Field("Maintenance.PlanTtlMinutes", "number", "Preview TTL (minutes)", 30, minimum: 1),
-        Field("Maintenance.PathMappings", "tags", "Path Mappings", Array.Empty<string>()),
-        Field("Maintenance.SharePolicies", "tags", "Share Policies", Array.Empty<string>()),
-        Field("Maintenance.Notifications", "tags", "Notifications", Array.Empty<string>()),
+        Collection("PathMappings", "Path mappings", "Translate torrent client paths into paths visible to Torrentarr. This does not mount folders or move files. The longest matching client prefix wins. Saved mappings apply at the next worker processing cycle.", [
+            Item("ClientPath", "Torrent client path", "Folder as seen by the torrent client.", "/downloads"),
+            Item("LocalPath", "Torrentarr path", "The same folder as seen by Torrentarr, including inside its Docker container.", "/data/downloads")
+        ]),
     ];
+
+    private static ConfigSchemaField Collection(string name, string label, string description, IReadOnlyList<ConfigSchemaField> items)
+        => Field("Maintenance." + name, "collection", label, Array.Empty<object>()) with
+        { description = description, itemFields = items, applyLive = true, requiresRestart = false };
+
+    private static ConfigSchemaField Item(string key, string label, string description, string example)
+        => Field(key, "text", label, "") with
+        { description = description, required = true, placeholder = example, applyLive = null, requiresRestart = null };
 
     private static ConfigSchemaField Field(
         string key,
@@ -91,4 +100,5 @@ public sealed record ConfigSchemaField(
     [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingDefault)] bool allowNegative = false,
     [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] double? minimum = null,
     [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] double? maximum = null,
-    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] IReadOnlyList<string>? arrKinds = null);
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] IReadOnlyList<string>? arrKinds = null,
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] IReadOnlyList<ConfigSchemaField>? itemFields = null);

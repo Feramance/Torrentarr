@@ -186,6 +186,7 @@ export interface ConfigSchemaField {
   minimum?: number;
   maximum?: number;
   arrKinds?: string[];
+  itemFields?: ConfigSchemaField[];
 }
 
 export interface ConfigSchemaResponse {
@@ -514,10 +515,12 @@ export interface MetaResponse {
 }
 
 export interface ConfigUpdateResponse {
+  application?: ConfigurationApplicationStatus;
   warning?: string | null;
   status: string;
   configReloaded: boolean;
   reloadType:
+    | "live"
     | "none"
     | "frontend"
     | "webui"
@@ -546,10 +549,10 @@ export type MaintenanceOperation =
   | "PrivateTagging"
   | "TrackerErrorTagging"
   | "RepairPaused"
-  | "SharePolicy"
   | "RecycleRetention";
 
 export interface MaintenanceAction {
+  operation: MaintenanceOperation;
   id: string;
   kind: string;
   clientInstanceId: string;
@@ -563,6 +566,35 @@ export interface MaintenanceAction {
   requiredCapabilities: string[];
 }
 
+export interface MaintenanceDiagnostic {
+  code: string;
+  severity: "warning" | "error";
+  clientInstanceId: string;
+  operations: (MaintenanceOperation | number)[];
+  message: string;
+  remediation: string;
+  affectedFiles: number;
+  affectedTorrents: number;
+  examples: {
+    torrentHash?: string;
+    torrentName?: string;
+    clientPath?: string;
+    localPath?: string;
+  }[];
+}
+
+export interface MaintenanceOperationResult {
+  clientInstanceId: string;
+  operation: MaintenanceOperation | number;
+  state: "ready" | "partial" | "blocked" | "disabled";
+  examined: number;
+  excluded: number;
+  uninspectable: number;
+  actionable: number;
+  blockedActions: number;
+  reason?: string;
+}
+
 export interface MaintenancePlan {
   planId: string;
   expiresAt: string;
@@ -572,12 +604,18 @@ export interface MaintenancePlan {
   actions: MaintenanceAction[];
   warnings: string[];
   criticalErrors: string[];
+  diagnostics: MaintenanceDiagnostic[];
+  operationResults: MaintenanceOperationResult[];
   candidateCount: number;
   blockedCount: number;
   candidateBytes: number;
 }
 
 export interface MaintenanceRunSummary {
+  blocked: number;
+  pending: number;
+  operationResults: MaintenanceOperationResult[];
+  diagnostics: MaintenanceDiagnostic[];
   runId: string;
   startedAt: string;
   completedAt?: string;
@@ -597,6 +635,7 @@ export interface MaintenanceStatus {
   currentRun?: MaintenanceRunSummary;
   lastRun?: MaintenanceRunSummary;
   armed: Record<string, boolean>;
+  armedOperations: Record<string, MaintenanceOperation[]>;
   nextScheduledRun: Record<string, string | null>;
 }
 
@@ -613,3 +652,26 @@ export type ReadarrBookEntry = {
   book: ReadarrBook;
   totals?: { available: number; monitored: number; missing?: number };
 };
+
+export interface ConfigurationApplicationStatus {
+  acceptedRevision: number;
+  state: "applied" | "pending" | "error";
+  components: Record<
+    string,
+    { appliedRevision: number; error?: string | null }
+  >;
+  error?: string | null;
+}
+
+export interface LiveConfigurationEvent {
+  application: ConfigurationApplicationStatus;
+  webui: {
+    host: string;
+    port: number;
+    urlBase: string;
+    behindHttpsProxy: boolean;
+    theme: string;
+    viewDensity: string;
+    liveArr: boolean;
+  };
+}

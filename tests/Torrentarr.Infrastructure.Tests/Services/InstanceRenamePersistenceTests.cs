@@ -48,6 +48,19 @@ public sealed class InstanceRenamePersistenceTests : IDisposable
     }
 
     [Fact]
+    public async Task CancelledPublication_DoesNotAcquireOrWrite()
+    {
+        var before = File.ReadAllText(ConfigPath);
+        using var publisher = new FileStream(ConfigPath + ".publish-lock", FileMode.OpenOrCreate, FileAccess.ReadWrite, FileShare.None);
+        using var cancellation = new CancellationTokenSource();
+        cancellation.Cancel();
+        Func<Task> save = () => InstanceRenamePersistence.SaveAsync(_before, _after, null, _loader, _db, ct: cancellation.Token);
+        await save.Should().ThrowAsync<OperationCanceledException>();
+        File.ReadAllText(ConfigPath).Should().Be(before);
+        ConfigMutationGuard.OwnsPublication(ConfigPath).Should().BeFalse();
+    }
+
+    [Fact]
     public async Task Rename_PreservesEveryFieldAndOtherClients()
     {
         await InstanceRenamePersistence.SaveAsync(_before, _after, _renames, _loader, _db);
@@ -306,10 +319,11 @@ public sealed class InstanceRenamePersistenceTests : IDisposable
     }
 
     [Fact]
-    public void ExternalProcessingLease_PreventsConfigurationWrite()
+    public void ExternalProcessingLease_AllowsPublicationButPreventsRename()
     {
         using var external = new FileStream(ConfigPath + ".write-lock", FileMode.OpenOrCreate, FileAccess.ReadWrite, FileShare.ReadWrite);
-        FluentActions.Invoking(() => _loader.SaveConfig(_after)).Should().Throw<ConfigurationBusyException>();
+        _loader.SaveConfig(_after);
+        FluentActions.Invoking(() => ConfigMutationGuard.EnterMutation(ConfigPath)).Should().Throw<ConfigurationBusyException>();
     }
 
     [Fact]

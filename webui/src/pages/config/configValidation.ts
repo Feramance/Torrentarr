@@ -1,3 +1,4 @@
+import { pathMappingErrors } from "./pathMappingConfig";
 import type { ConfigDocument } from "../../api/types";
 import { getCategoryCrossSectionIssues } from "../../config/categoryConfigValidation";
 import equal from "fast-deep-equal";
@@ -99,6 +100,40 @@ export function validateFieldGroup(
             ? field.format(rawValue)
             : rawValue;
     const fullPath = [...basePath, ...pathSegments];
+    if (field.type === "collection") {
+      if (rawValue != null && !Array.isArray(rawValue)) {
+        errors.push({
+          path: fullPath,
+          message: `${field.label} must be a list.`,
+        });
+        continue;
+      }
+      const rows = (rawValue ?? []) as ConfigDocument[];
+      rows.forEach((row, index) => {
+        const itemPath = [...fullPath, String(index)];
+        if (!row || typeof row !== "object" || Array.isArray(row)) {
+          errors.push({
+            path: itemPath,
+            message: "Each entry must be an object.",
+          });
+          return;
+        }
+        const defaults = Object.fromEntries(
+          (field.itemFields ?? []).map((f) => [f.path![0], f.default]),
+        );
+        const entry = { ...defaults, ...row };
+        validateFieldGroup(
+          errors,
+          field.itemFields ?? [],
+          entry,
+          itemPath,
+          context,
+        );
+        for (const error of pathMappingErrors(entry, rows, index))
+          errors.push({ ...error, path: [...itemPath, ...error.path] });
+      });
+      continue;
+    }
     const baseError = basicValidation(field, value);
     if (baseError) {
       errors.push({ path: fullPath, message: baseError });

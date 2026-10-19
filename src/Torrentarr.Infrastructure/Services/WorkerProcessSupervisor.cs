@@ -181,6 +181,39 @@ public sealed class WorkerProcessSupervisor : BackgroundService, IProcessOrchest
                 await RestartProcessAsync(name);
     }
 
+    private readonly Dictionary<string, string> _statusFiles = new(StringComparer.OrdinalIgnoreCase);
+    public async Task ReconcileConfigurationAsync(CancellationToken ct = default)
+    {
+        await _lifecycle.WaitAsync(ct);
+        try
+        {
+            var snapshotPath = Path.Combine(ConfigurationLoader.GetDataDirectoryPath(), "active-config.json");
+            var snapshot = File.Exists(snapshotPath)
+                ? Newtonsoft.Json.JsonConvert.DeserializeObject<ConfigurationSnapshot>(File.ReadAllText(snapshotPath)) : null;
+            lock (_gate)
+            {
+                foreach (var rename in snapshot?.Renames ?? new Dictionary<string, string>())
+                    if (_processes.Remove(rename.Key, out var process))
+                    {
+                        _processes[rename.Value] = process;
+                        _statusFiles[rename.Value] = _statusFiles.GetValueOrDefault(rename.Key, StatusPath(rename.Key));
+                        _reportedWorkers.Remove(rename.Key);
+                    }
+            }
+            string[] removed;
+            lock (_gate) removed = _processes.Keys.Where(n => !_config.ArrInstances.ContainsKey(n)).ToArray();
+            foreach (var name in removed)
+            {
+                Process? process;
+                lock (_gate) _processes.TryGetValue(name, out process);
+                if (process != null && ReadProcessStatus(name, process).ConfigRevision >= _config.Revision)
+                    await StopWorkerAsync(name, ct);
+            }
+            StartWorkers();
+        }
+        finally { _lifecycle.Release(); }
+    }
+
     public Task<Dictionary<string, ProcessStatus>> GetProcessStatusAsync()
     {
         var result = new Dictionary<string, ProcessStatus>(StringComparer.OrdinalIgnoreCase);
@@ -211,7 +244,8 @@ public sealed class WorkerProcessSupervisor : BackgroundService, IProcessOrchest
             WorkerHeartbeat? heartbeat = null;
             try
             {
-                heartbeat = JsonSerializer.Deserialize<WorkerHeartbeat>(File.ReadAllText(StatusPath(name)), WorkerHeartbeat.JsonOptions);
+                heartbeat = JsonSerializer.Deserialize<WorkerHeartbeat>(File.ReadAllText(_statusFiles.GetValueOrDefault(name, StatusPath(name))), WorkerHeartbeat.JsonOptions);
+                if (heartbeat != null && _statusFiles.ContainsKey(name)) heartbeat = heartbeat with { Instance = name };
                 if (heartbeat == null || !heartbeat.Matches(name, process.Id, started)) heartbeat = null;
             }
             catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or JsonException) { }
@@ -227,6 +261,7 @@ public sealed class WorkerProcessSupervisor : BackgroundService, IProcessOrchest
                 IsAlive = alive,
                 LastHeartbeat = heartbeat?.Heartbeat.UtcDateTime,
                 RestartRequested = heartbeat?.RestartRequested ?? false,
+                ConfigRevision = heartbeat?.ConfigRevision ?? 0,
                 SearchSummary = heartbeat?.SearchSummary,
                 SearchTimestamp = heartbeat?.SearchTimestamp,
                 QueueCount = heartbeat?.QueueCount,
@@ -258,6 +293,7 @@ public sealed class WorkerProcessSupervisor : BackgroundService, IProcessOrchest
             Process? process = null;
             try
             {
+                _statusFiles.Remove(instanceName);
                 process = Process.Start(_startInfo(instanceName)) ?? throw new InvalidOperationException("Process.Start returned no process");
                 var child = process;
                 process.Exited += (sender, args) => { _ = Task.Run(() => WorkerExited(instanceName, child)); };
@@ -288,6 +324,7 @@ public sealed class WorkerProcessSupervisor : BackgroundService, IProcessOrchest
     {
         lock (_gate)
         {
+            name = _processes.FirstOrDefault(p => ReferenceEquals(p.Value, process)).Key ?? name;
             if (!_processes.TryGetValue(name, out var current) || !ReferenceEquals(current, process)) return;
             _processes.Remove(name);
             _reportedWorkers.Remove(name);

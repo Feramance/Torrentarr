@@ -65,9 +65,7 @@ export function TagInput({
           className="tag-input"
         />
       </div>
-      <div className="tag-input-hint">
-        Press Enter or comma to add a category
-      </div>
+      <div className="tag-input-hint">Press Enter or comma to add a value</div>
     </div>
   );
 }

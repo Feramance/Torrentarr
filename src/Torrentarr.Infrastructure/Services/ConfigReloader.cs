@@ -1,135 +1,214 @@
+using System.Collections.Concurrent;
+using System.Security.Cryptography;
+using Microsoft.Extensions.Hosting;
+using Microsoft.Extensions.Logging;
+using Newtonsoft.Json;
 using Torrentarr.Core.Configuration;
 using Torrentarr.Core.Services;
-using Microsoft.Extensions.Logging;
 
 namespace Torrentarr.Infrastructure.Services;
 
-public class ConfigReloader : IConfigReloader, IDisposable
+public sealed class ConfigReloader : BackgroundService, IConfigReloader
 {
     private readonly ILogger<ConfigReloader> _logger;
     private readonly ConfigurationLoader _loader;
+    private readonly TorrentarrConfig _config;
+    private readonly bool _worker;
+    private readonly object _gate = new();
+    private readonly ConcurrentDictionary<string, ConfigurationComponentStatus> _components = new();
     private readonly FileSystemWatcher? _watcher;
-    private readonly object _lock = new();
-    private DateTime _lastReloadTime = DateTime.MinValue;
-    private readonly TimeSpan _debounceTime = TimeSpan.FromSeconds(1);
-
+    private TaskCompletionSource _changed = NewSignal();
+    private Dictionary<string, string> _renames = new(StringComparer.OrdinalIgnoreCase);
+    public string ResolveInstanceName(string name)
+    {
+        var names = Volatile.Read(ref _renames);
+        while (names.TryGetValue(name, out var next)) name = next;
+        return name;
+    }
+    private string? _digest;
+    private string? _effectiveDigest;
+    private string? _error;
+    private DateTime _lastChange;
+    private bool _watching;
+    private long _revision;
     public event EventHandler<ConfigReloadedEventArgs>? ConfigReloaded;
+    public event Func<TorrentarrConfig, string?>? ValidateCandidate;
+    public string ConfigPath => _loader.ConfigPath;
+    public string SnapshotPath => Path.Combine(ConfigurationLoader.GetDataDirectoryPath(ConfigPath), "active-config.json");
+    public long Revision => Interlocked.Read(ref _revision);
 
-    public string ConfigPath { get; }
-
-    public ConfigReloader(ILogger<ConfigReloader> logger)
+    public ConfigReloader(ILogger<ConfigReloader> logger) : this(logger, new TorrentarrConfig(), new ConfigurationLoader()) { }
+    public ConfigReloader(ILogger<ConfigReloader> logger, TorrentarrConfig config, ConfigurationLoader loader, bool worker = false)
     {
         _logger = logger;
-        _loader = new ConfigurationLoader();
-
-        // Same resolution as ConfigurationLoader / GetDataDirectoryPath (watch the file we load)
-        ConfigPath = ConfigurationLoader.GetDefaultConfigPath();
-
-        var directory = Path.GetDirectoryName(ConfigPath);
-        var fileName = Path.GetFileName(ConfigPath);
-
-        if (!string.IsNullOrEmpty(directory) && Directory.Exists(directory))
+        _config = config;
+        _loader = loader;
+        _worker = worker;
+        var directory = Path.GetDirectoryName(Path.GetFullPath(worker ? SnapshotPath : ConfigPath))!;
+        if (Directory.Exists(directory))
         {
-            _watcher = new FileSystemWatcher(directory)
+            _watcher = new(directory, Path.GetFileName(worker ? SnapshotPath : ConfigPath))
+            { NotifyFilter = NotifyFilters.LastWrite | NotifyFilters.Size | NotifyFilters.FileName };
+            _watcher.Changed += OnChanged;
+            _watcher.Created += OnChanged;
+            _watcher.Renamed += OnChanged;
+        }
+    }
+    private static TaskCompletionSource NewSignal() => new(TaskCreationOptions.RunContinuationsAsynchronously);
+    private void OnChanged(object sender, FileSystemEventArgs args) => _lastChange = DateTime.UtcNow;
+    public void StartWatching() { _watching = true; if (_watcher != null) _watcher.EnableRaisingEvents = true; }
+    public void StopWatching() { _watching = false; if (_watcher != null) _watcher.EnableRaisingEvents = false; }
+
+    public ConfigurationApplicationStatus GetStatus()
+    {
+        var components = _components.ToDictionary(p => p.Key, p => p.Value);
+        var state = _error != null || components.Values.Any(c => c.Error != null) ? "error"
+            : components.Values.Any(c => c.AppliedRevision < Revision) ? "pending" : "applied";
+        return new(Revision, state, components, _error);
+    }
+    public void Acknowledge(string component, long revision, string? error = null) =>
+        _components.AddOrUpdate(component, new ConfigurationComponentStatus(revision, error), (_, previous) =>
+            revision >= previous.AppliedRevision ? new(revision, error) : previous);
+
+    public async Task WaitForChangeAsync(long revision, TimeSpan delay, CancellationToken ct)
+    {
+        Task signal;
+        lock (_gate) { if (Revision != revision) return; signal = _changed.Task; }
+        try { await signal.WaitAsync(delay > TimeSpan.Zero ? delay : TimeSpan.Zero, ct).ConfigureAwait(false); }
+        catch (TimeoutException) { }
+    }
+
+    public (bool Ok, string? Error) Validate(TorrentarrConfig candidate)
+    {
+        var result = ConfigValidationHelper.ValidateAll(candidate);
+        if (!result.Ok) return result;
+        foreach (var validate in ValidateCandidate?.GetInvocationList().Cast<Func<TorrentarrConfig, string?>>() ?? [])
+            if (validate(candidate) is { } error) return (false, error);
+        return (true, null);
+    }
+
+    public bool Apply(TorrentarrConfig candidate, Dictionary<string, string>? renames = null)
+    {
+        try
+        {
+            using var publication = _worker ? null : ConfigMutationGuard.EnterPublication(ConfigPath);
+            lock (_gate)
             {
-                Filter = fileName,
-                NotifyFilter = NotifyFilters.LastWrite | NotifyFilters.Size | NotifyFilters.FileName,
-                EnableRaisingEvents = false
-            };
-
-            _watcher.Changed += OnConfigFileChanged;
-            _watcher.Created += OnConfigFileChanged;
-            _watcher.Renamed += OnConfigFileChanged;
+                var validation = Validate(candidate);
+                if (!validation.Ok) { _error = validation.Error; return false; }
+                foreach (var (name, client) in candidate.GetAllTorrentClients())
+                    if (_config.GetTorrentClient(name) is { } previous && JsonConvert.SerializeObject(client) == JsonConvert.SerializeObject(previous))
+                        client.Maintenance.Armed = previous.Maintenance.Armed;
+                var json = JsonConvert.SerializeObject(candidate);
+                if (_effectiveDigest == json) { _error = null; return true; }
+                try
+                {
+                    var revision = Math.Max(DateTimeOffset.UtcNow.ToUnixTimeMilliseconds(), Revision + 1);
+                    var names = new Dictionary<string, string>(_renames, StringComparer.OrdinalIgnoreCase);
+                    if (renames != null) foreach (var rename in renames)
+                        {
+                            foreach (var key in names.Where(p => p.Value == rename.Key).Select(p => p.Key).ToArray()) names[key] = rename.Value;
+                            names[rename.Key] = rename.Value;
+                            foreach (var key in names.Where(p => p.Key == p.Value).Select(p => p.Key).ToArray()) names.Remove(key);
+                        }
+                    var snapshot = new ConfigurationSnapshot(revision, candidate, names);
+                    if (!_worker)
+                    {
+                        // This transport contains credentials, just like config.toml.
+                        if (File.Exists(SnapshotPath) && !OperatingSystem.IsWindows()) File.SetUnixFileMode(SnapshotPath, UnixFileMode.UserRead | UnixFileMode.UserWrite);
+                        ConfigMutationGuard.WriteAtomic(SnapshotPath, JsonConvert.SerializeObject(snapshot));
+                        if (!OperatingSystem.IsWindows()) File.SetUnixFileMode(SnapshotPath, UnixFileMode.UserRead | UnixFileMode.UserWrite);
+                    }
+                    Publish(snapshot, json);
+                    return true;
+                }
+                catch (Exception ex) { Fail(ex); return false; }
+            }
         }
+        catch (ConfigurationBusyException) { return false; }
+        catch (Exception ex) { lock (_gate) Fail(ex); return false; }
     }
-
-    public void StartWatching()
+    private void Publish(ConfigurationSnapshot snapshot, string json)
     {
-        if (_watcher != null)
+        Volatile.Write(ref _renames, snapshot.Renames ?? new(StringComparer.OrdinalIgnoreCase));
+        _config.Apply(snapshot.Config, snapshot.Revision);
+        Interlocked.Exchange(ref _revision, snapshot.Revision);
+        _effectiveDigest = json;
+        if (!_worker)
         {
-            _watcher.EnableRaisingEvents = true;
-            _logger.LogInformation("ConfigReloader: watching for changes to {Path}", ConfigPath);
+            foreach (var key in _components.Keys.Where(k => k.StartsWith("worker:") && !snapshot.Config.ArrInstances.ContainsKey(k[7..])))
+                _components.TryRemove(key, out _);
+            foreach (var (name, instance) in snapshot.Config.ArrInstances)
+                if (instance.Managed && !string.IsNullOrWhiteSpace(instance.URI) && instance.URI != "CHANGE_ME")
+                    _components.TryAdd("worker:" + name, new(0));
         }
+        _error = null;
+        var signal = _changed;
+        _changed = NewSignal();
+        signal.TrySetResult();
+        ConfigReloaded?.Invoke(this, new() { Success = true, Revision = Revision });
+        Acknowledge("configuration", Revision);
     }
-
-    public void StopWatching()
-    {
-        if (_watcher != null)
-        {
-            _watcher.EnableRaisingEvents = false;
-            _logger.LogTrace("ConfigReloader: stopped watching for changes");
-        }
-    }
-
     public bool ReloadConfig()
     {
-        lock (_lock)
+        try
         {
-            try
+            using var publication = _worker ? null : ConfigMutationGuard.EnterPublication(ConfigPath);
+            lock (_gate)
             {
-                _logger.LogInformation("ConfigReloader: reloading configuration from {Path}", ConfigPath);
-
-                // Loading may persist migrations; release the writer before notifying subscribers.
-                using (ConfigMutationGuard.EnterMutation(ConfigPath))
-                    _loader.Load();
-
-                var args = new ConfigReloadedEventArgs
+                try
                 {
-                    Success = true,
-                    ReloadedAt = DateTime.UtcNow
-                };
-
-                ConfigReloaded?.Invoke(this, args);
-
-                _logger.LogInformation("ConfigReloader: configuration reloaded successfully");
-                return true;
-            }
-            catch (Exception ex)
-            {
-                _logger.LogError(ex, "ConfigReloader: failed to reload configuration");
-
-                var args = new ConfigReloadedEventArgs
-                {
-                    Success = false,
-                    ErrorMessage = ex.Message,
-                    ReloadedAt = DateTime.UtcNow
-                };
-
-                ConfigReloaded?.Invoke(this, args);
-
-                return false;
+                    if (_worker)
+                    {
+                        var snapshot = JsonConvert.DeserializeObject<ConfigurationSnapshot>(File.ReadAllText(SnapshotPath))
+                            ?? throw new InvalidDataException();
+                        if (snapshot.Revision > Revision)
+                            Publish(snapshot, JsonConvert.SerializeObject(snapshot.Config));
+                        return true;
+                    }
+                    // Do not rewrite a user's partially saved file with migration defaults.
+                    TorrentarrConfig candidate;
+                    candidate = _loader.Load(persistMigrations: Revision == 0);
+                    return Apply(candidate);
+                }
+                catch (ConfigurationBusyException) { return false; }
+                catch (Exception ex) { Fail(ex); return false; }
             }
         }
+        catch (ConfigurationBusyException) { return false; }
+        catch (Exception ex) { lock (_gate) Fail(ex); return false; }
     }
-
-    private void OnConfigFileChanged(object sender, FileSystemEventArgs e)
+    private void Fail(Exception ex)
     {
-        var now = DateTime.UtcNow;
-        if (now - _lastReloadTime < _debounceTime)
+        // TOML parser diagnostics can contain credentials from the source line.
+        _error = $"Configuration was not applied ({ex.GetType().Name}). Check the configuration file.";
+        _logger.LogWarning("{Error}", _error);
+        ConfigReloaded?.Invoke(this, new() { Success = false, Revision = Revision, ErrorMessage = _error });
+    }
+    protected override async Task ExecuteAsync(CancellationToken stoppingToken)
+    {
+        if (!_worker) Apply(_config);
+        StartWatching();
+        try
         {
-            _logger.LogTrace("ConfigReloader: debouncing config change event");
-            return;
+            while (!stoppingToken.IsCancellationRequested)
+            {
+                var path = _worker ? SnapshotPath : ConfigPath;
+                if (DateTime.UtcNow - _lastChange >= TimeSpan.FromSeconds(1))
+                {
+                    try
+                    {
+                        var digest = Convert.ToHexString(SHA256.HashData(await File.ReadAllBytesAsync(path, stoppingToken)));
+                        if (_watching && digest != _digest && ReloadConfig()) _digest = digest;
+                    }
+                    catch (Exception ex) when (ex is IOException or UnauthorizedAccessException) { Fail(ex); }
+                }
+                await Task.Delay(TimeSpan.FromSeconds(1), stoppingToken);
+            }
         }
-
-        _lastReloadTime = now;
-        _logger.LogInformation("ConfigReloader: detected change in {Path}", e.FullPath);
-
-        Task.Run(() =>
-        {
-            try
-            {
-                Thread.Sleep(100);
-                ReloadConfig();
-            }
-            catch (Exception ex)
-            {
-                _logger.LogError(ex, "ConfigReloader: error processing config change");
-            }
-        });
+        catch (OperationCanceledException) when (stoppingToken.IsCancellationRequested) { }
+        finally { StopWatching(); }
     }
-
-    public void Dispose()
-    {
-        _watcher?.Dispose();
-    }
+    private bool _disposed;
+    public override void Dispose() { if (_disposed) return; _disposed = true; StopWatching(); _watcher?.Dispose(); base.Dispose(); }
 }

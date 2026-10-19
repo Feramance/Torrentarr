@@ -11,7 +11,7 @@ describe("generated config schema", () => {
       .reduce((total, [, fields]) => total + fields.length, 0);
 
     expect(qbitrrFieldCount).toBe(124);
-    expect(CONFIG_SCHEMA_FIELD_COUNT).toBe(153);
+    expect(CONFIG_SCHEMA_FIELD_COUNT).toBe(151);
     expect(
       CONFIG_SCHEMA.sections.Arr.some(
         (field) => field.key === "Torrent.FileExtensionAllowlist",

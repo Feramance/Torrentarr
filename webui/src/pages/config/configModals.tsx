@@ -476,6 +476,7 @@ export function QbitTorrentSummary({
 }
 
 export interface QbitInstanceModalProps {
+  fieldPathPrefix?: string;
   keyName: string;
   fields?: FieldDefinition[];
   state: ConfigDocument | ConfigDocument[keyof ConfigDocument] | null;
@@ -491,6 +492,7 @@ export interface QbitInstanceModalProps {
 }
 
 export function QbitInstanceModal({
+  fieldPathPrefix,
   keyName,
   fields = QBIT_FIELDS,
   state,
@@ -564,7 +566,7 @@ export function QbitInstanceModal({
                 onChange([keyName, ...path], def, value)
               }
               onRenameSection={onRename}
-              sectionKey={keyName}
+              sectionKey={fieldPathPrefix ?? keyName}
               defaultOpen
               validationErrors={validationErrors}
             />
@@ -578,7 +580,7 @@ export function QbitInstanceModal({
               }
               defaultOpen={false}
               qbitTrackers
-              sectionKey={keyName}
+              sectionKey={fieldPathPrefix ?? keyName}
               validationErrors={validationErrors}
             />
           </div>

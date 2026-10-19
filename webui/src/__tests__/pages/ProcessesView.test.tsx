@@ -221,6 +221,9 @@ describe("ProcessesView – qBit category chips", () => {
 
     await screen.findByText("Torrent Clients");
     await screen.findByText("autobrr");
+    expect(
+      screen.getByRole("button", { name: /autobrr/ }).querySelector(".badge"),
+    ).toBeNull();
   });
 
   it("omits Arr-managed categories without hiding client-owned names on another instance", async () => {
@@ -337,7 +340,7 @@ describe("ProcessesView – Other section", () => {
   });
 });
 
-it("refreshes worker status when its other metrics are unchanged", async () => {
+it("refreshes loop status without showing a worker badge", async () => {
   let status = "Sleeping";
   server.use(
     http.get("/web/processes", () =>
@@ -350,6 +353,7 @@ it("refreshes worker status when its other metrics are unchanged", async () => {
             pid: 1,
             alive: true,
             status,
+            torrent: { phase: status, startedAt: "2026-10-18T12:00:00Z" },
             queueCount: 1,
             categoryCount: 12,
           },
@@ -368,8 +372,9 @@ it("refreshes worker status when its other metrics are unchanged", async () => {
   await screen.findByText(/Sleeping/);
   status = "Running";
   expect(
-    await screen.findByText(/Worker · Running/, {}, { timeout: 3000 }),
+    await screen.findByText("Running", {}, { timeout: 3000 }),
   ).toBeInTheDocument();
+  expect(screen.queryByText(/^Worker(?: ·|$)/)).not.toBeInTheDocument();
   expect(screen.getByText(/1 in progress/)).toBeInTheDocument();
 });
 

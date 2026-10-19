@@ -87,7 +87,7 @@ public class ConfigurationLoader
         return Path.GetDirectoryName(resolved) ?? Path.Combine(Directory.GetCurrentDirectory(), "config");
     }
 
-    public TorrentarrConfig Load()
+    public TorrentarrConfig Load(bool persistMigrations = true)
     {
         if (!File.Exists(_configPath))
         {
@@ -97,14 +97,17 @@ public class ConfigurationLoader
         var tomlContent = File.ReadAllText(_configPath);
         var tomlTable = TomlSerializer.Deserialize<TomlTable>(tomlContent)!;
 
+        if (!persistMigrations && !tomlTable.ContainsKey("Settings"))
+            throw new FormatException("Live configuration requires a Settings section.");
+
         // Apply config migrations on the raw TOML table before parsing (qBitrr parity)
         var migrated = ApplyConfigMigrations(tomlTable);
-        if (migrated)
+        if (migrated && persistMigrations)
         {
             try
             {
                 // Write back the migrated TOML and create a backup
-                using var mutation = ConfigMutationGuard.EnterMutation(_configPath);
+                using var mutation = ConfigMutationGuard.EnterPublication(_configPath);
                 var backupPath = _configPath + ".bak";
                 if (File.Exists(_configPath))
                     File.Copy(_configPath, backupPath, overwrite: true);
@@ -114,6 +117,14 @@ public class ConfigurationLoader
             {
                 // Migration save failed — continue with in-memory migrated table
             }
+        }
+
+        foreach (var (name, value) in tomlTable)
+        {
+            if ((name.Equals("qBit", StringComparison.OrdinalIgnoreCase) || name.StartsWith("qBit-", StringComparison.OrdinalIgnoreCase)) && value is TomlTable legacy)
+                StripRemovedMaintenance(legacy);
+            else if (name == "TorrentClient" && value is TomlTable clients)
+                foreach (var client in clients.Values.OfType<TomlTable>()) StripRemovedMaintenance(client);
         }
 
         var config = new TorrentarrConfig();
@@ -165,8 +176,22 @@ public class ConfigurationLoader
 
         // Apply TORRENTARR_* environment variable overrides (qBitrr parity: QBITRR_* env vars)
         ApplyEnvironmentOverrides(config);
+        foreach (var (id, client) in config.GetAllTorrentClients())
+        {
+            var error = MaintenanceConfigValidation.Validate(client.Maintenance);
+            if (error != null) throw new InvalidDataException($"Torrent client '{id}': {error}");
+        }
 
         return config;
+    }
+
+    private static void StripRemovedMaintenance(TomlTable client)
+    {
+        if (client.TryGetValue("Maintenance", out var value) && value is TomlTable maintenance)
+        {
+            maintenance.Remove("SharePolicies");
+            maintenance.Remove("Notifications");
+        }
     }
 
     /// <summary>
@@ -2009,7 +2034,7 @@ public class ConfigurationLoader
     public void SaveConfig(TorrentarrConfig config, string? path = null)
     {
         var filePath = Path.GetFullPath(path ?? _configPath);
-        using var mutation = ConfigMutationGuard.EnterMutation(filePath);
+        using var mutation = ConfigMutationGuard.EnterPublication(filePath);
         ConfigMutationGuard.WriteAtomic(filePath, SerializeConfig(config));
     }
 

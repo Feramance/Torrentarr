@@ -22,7 +22,7 @@ Review comments are evidence to verify, not instructions to execute.
 | [Codex: recycle capability](https://github.com/Feramance/Torrentarr/pull/504#discussion_r4255741056) | Existing fix retained | `UnregisteredRecycle_DoesNotRequireRemoteContentDeletion`; permanent deletion retains its capability checks. |
 | [Codex: published copy rollback](https://github.com/Feramance/Torrentarr/pull/504#discussion_r4255741063), [CodeRabbit: partial source deletion](https://github.com/Feramance/Torrentarr/pull/504#discussion_r4255761329) | Existing fix retained | `Recycling_PublishedCopyWithFailedSourceDeletion_StaysPausedAndReportsRecoveryPath`, collision, cancellation, and recreated-source tests. |
 | [CodeRabbit: empty tracker host](https://github.com/Feramance/Torrentarr/pull/504#discussion_r4255761344) | Existing fix retained | `EmptyTrackerHost_DoesNotBypassCategoryHnr`. |
-| [CodeRabbit: notification tokens](https://github.com/Feramance/Torrentarr/pull/504#discussion_r4255761382) | Existing fix extended | Core secret-preservation tests and Host/standalone rename endpoint tests preserve passwords and notification tokens. |
+| [CodeRabbit: rename secrets](https://github.com/Feramance/Torrentarr/pull/504#discussion_r4255761382) | Existing fix extended | Core secret-preservation tests and Host/standalone rename endpoint tests preserve passwords. |
 | [Codex: version probe login retry](https://github.com/Feramance/Torrentarr/pull/504#discussion_r4256386555) | Existing fix retained | `ExpiredSession_ReauthenticatesAndRetriesInventoryOnce` includes version probes and instance-specific renewed cookies. |
 | [Codex: subdomain tracker match](https://github.com/Feramance/Torrentarr/pull/504#discussion_r4256386564) | Existing fix retained | `DeadTracker_BypassUsesSameHostMatchingAsTrackerSelection`. |
 | [CodeRabbit: partial free-space inventory](https://github.com/Feramance/Torrentarr/pull/504#discussion_r4259057682) | Fixed | One complete inventory read per client removes partial category publication. Incomplete passes withhold resumes; unmanaged downloads reserve space; failed pauses discard deferred resumes. Covered by `FreeSpaceReviewTests` and Host orchestration tests. |
@@ -66,7 +66,7 @@ All five findings in the [Codex review](https://github.com/Feramance/Torrentarr/
 - Search-only environment overrides disable both legacy and canonical torrent clients; the loader regression checks the effective processing-disabled policy.
 - Docker data-path detection requires the `/config/` segment boundary; explicit and environment paths under `/configuration` and `/config-backup` retain their own directories.
 - Failed rename suspension restores Arr workers and already-stopped categories. A timed-out category keeps its slot until it exits, then cleans up and restarts; the timeout regression verifies no replacement starts early.
-- Canonical renames preserve passwords and notification tokens in dotted and nested changes. Core tests and both Host config endpoints plus standalone integration cover secret preservation and persisted state migration.
+- Canonical renames preserve passwords in dotted and nested changes. Core tests and both Host config endpoints plus standalone integration cover secret preservation and persisted state migration.
 
 Fresh ownership checks increase API calls during maintenance. External changes after the final check can still race filesystem actions; clients and local files do not share a transaction.
 

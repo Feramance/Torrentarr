@@ -796,7 +796,11 @@ it("uses the shared client dialog and saves only the selected torrent client", a
             Host: "old-host",
             Port: 9091,
             Password: "[redacted]",
-            Maintenance: { PathMappings: [{ From: "/old", To: "/new" }] },
+            Maintenance: {
+              PathMappings: [
+                { ClientPath: "/old", LocalPath: "/new", FutureProperty: true },
+              ],
+            },
           },
         },
       }),
@@ -814,21 +818,21 @@ it("uses the shared client dialog and saves only the selected torrent client", a
   expect(
     screen.getByRole("textbox", { name: "Client Type", exact: true }),
   ).toHaveValue("transmission");
-  expect(
-    screen.getByRole("textbox", { name: "Path Mappings", exact: true }),
-  ).toHaveValue(JSON.stringify([{ From: "/old", To: "/new" }], null, 2));
   const mappings = screen.getByRole("textbox", {
-    name: "Path Mappings",
+    name: "Torrent client path",
     exact: true,
   });
+  expect(mappings).toHaveValue("/old");
   await user.clear(mappings);
-  await user.type(mappings, "invalid JSON");
+  await user.type(mappings, "relative/path");
   await user.click(screen.getByRole("button", { name: "Save", exact: true }));
   expect(changes).toEqual({});
   expect(screen.getByRole("dialog")).toBeInTheDocument();
-  fireEvent.change(mappings, {
-    target: { value: JSON.stringify([{ From: "/old", To: "/new" }]) },
-  });
+  expect(
+    screen.getByText("Use an absolute path without traversal segments."),
+  ).toBeInTheDocument();
+  expect(mappings).toHaveFocus();
+  fireEvent.change(mappings, { target: { value: "/old" } });
   const host = screen.getByRole("textbox", { name: "Host", exact: true });
   await user.clear(host);
   await user.type(host, "new-host");
@@ -837,3 +841,169 @@ it("uses the shared client dialog and saves only the selected torrent client", a
     expect(changes).toEqual({ "TorrentClients.seedbox.Host": "new-host" }),
   );
 });
+
+it.each([false, true])(
+  "saves mapping add/edit/remove/clear and retains a failed draft (canonical=%s)",
+  async (canonical) => {
+    const initial = [
+      { ClientPath: "/downloads", LocalPath: "/data", FutureProperty: true },
+    ];
+    let mappings = initial;
+    let fail = false;
+    let lastChanges: Record<string, unknown> = {};
+    const prefix = canonical ? "TorrentClients.seedbox" : "qBit";
+    const application = {
+      acceptedRevision: 20,
+      state: "pending",
+      components: { processing: { appliedRevision: 19 } },
+    };
+    const fixture = () => ({
+      ...configQbitOnly,
+      [canonical ? "TorrentClients" : "qBit"]: canonical
+        ? {
+            seedbox: {
+              Type: "transmission",
+              Host: "seedbox",
+              Port: 9091,
+              Disabled: true,
+              Maintenance: { PathMappings: mappings },
+            },
+          }
+        : {
+            ...configQbitOnly.qBit,
+            CategorySeeding: {
+              MaxUploadRatio: 0,
+              DownloadRateLimitPerTorrent: -1,
+              UploadRateLimitPerTorrent: -1,
+              HitAndRunMode: "disabled",
+            },
+            Maintenance: { PathMappings: mappings },
+          },
+    });
+    server.use(
+      http.get("/web/config", () => HttpResponse.json(fixture())),
+      http.post("/web/config", async ({ request }) => {
+        lastChanges = (
+          (await request.json()) as { changes: Record<string, unknown> }
+        ).changes;
+        if (fail)
+          return HttpResponse.json(
+            { error: "Configuration busy; retry" },
+            { status: 409 },
+          );
+        mappings = lastChanges[
+          `${prefix}.Maintenance.PathMappings`
+        ] as typeof initial;
+        return HttpResponse.json({
+          ...okUpdateResponse,
+          reloadType: "live",
+          application,
+        });
+      }),
+    );
+    const user = userEvent.setup();
+    renderConfig();
+    const open = async () => {
+      const card = (
+        await screen.findByText(canonical ? "seedbox" : "qBit", { exact: true })
+      ).closest(".card")!;
+      await user.click(within(card).getByRole("button", { name: "Configure" }));
+    };
+    const save = async () => {
+      await user.click(
+        screen.getByRole("button", { name: "Save", exact: true }),
+      );
+      await waitFor(() =>
+        expect(screen.queryByRole("dialog")).not.toBeInTheDocument(),
+      );
+    };
+    await open();
+    fireEvent.change(
+      screen.getByRole("textbox", { name: "Torrentarr path", exact: true }),
+      { target: { value: "/edited" } },
+    );
+    fail = true;
+    await user.click(screen.getByRole("button", { name: "Save", exact: true }));
+    await screen.findByText("Configuration busy; retry");
+    expect(
+      screen.getByRole("textbox", { name: "Torrentarr path", exact: true }),
+    ).toHaveValue("/edited");
+    expect(mappings).toEqual(initial);
+    fail = false;
+    await user.click(screen.getByRole("button", { name: "Add path mapping" }));
+    fireEvent.change(
+      screen.getAllByRole("textbox", {
+        name: "Torrent client path",
+        exact: true,
+      })[1],
+      { target: { value: "D:\\Downloads\\TV" } },
+    );
+    fireEvent.change(
+      screen.getAllByRole("textbox", {
+        name: "Torrentarr path",
+        exact: true,
+      })[1],
+      { target: { value: "/tv files" } },
+    );
+    await save();
+    expect(lastChanges).toEqual({
+      [`${prefix}.Maintenance.PathMappings`]: [
+        {
+          ClientPath: "/downloads",
+          LocalPath: "/edited",
+          FutureProperty: true,
+        },
+        { ClientPath: "D:\\Downloads\\TV", LocalPath: "/tv files" },
+      ],
+    });
+    expect(
+      screen.getByText(
+        "Configuration saved; waiting for active operations to finish",
+      ),
+    ).toBeInTheDocument();
+    await open();
+    expect(
+      screen.getAllByRole("textbox", {
+        name: "Torrentarr path",
+        exact: true,
+      })[0],
+    ).toHaveValue("/edited");
+    await user.click(
+      screen.getAllByRole("button", { name: "Remove path mapping" })[1],
+    );
+    await save();
+    expect(mappings).toHaveLength(1);
+    await open();
+    await user.click(
+      screen.getByRole("button", { name: "Remove path mapping" }),
+    );
+    await save();
+    expect(mappings).toEqual([]);
+    await open();
+    expect(
+      screen.queryByRole("textbox", {
+        name: "Torrent client path",
+        exact: true,
+      }),
+    ).not.toBeInTheDocument();
+    await user.click(
+      screen.getByRole("button", { name: "Close", exact: true }),
+    );
+    window.dispatchEvent(
+      new CustomEvent("torrentarr:configuration", {
+        detail: { ...application, state: "applied" },
+      }),
+    );
+    await screen.findByText("Configuration applied live");
+    window.dispatchEvent(
+      new CustomEvent("torrentarr:configuration", {
+        detail: { ...application, acceptedRevision: 19 },
+      }),
+    );
+    expect(
+      screen.queryByText(
+        "Configuration saved; waiting for active operations to finish",
+      ),
+    ).not.toBeInTheDocument();
+  },
+);

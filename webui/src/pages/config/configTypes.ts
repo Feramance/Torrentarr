@@ -7,7 +7,7 @@ type FieldType =
   | "password"
   | "select"
   | "tags"
-  | "json"
+  | "collection"
   | "duration";
 
 export interface ValidationContext {
@@ -26,6 +26,8 @@ export interface FieldDefinition {
   path?: string[];
   type: FieldType;
   options?: string[];
+  itemFields?: FieldDefinition[];
+  default?: unknown;
   placeholder?: string;
   description?: string;
   parse?: (value: string | boolean) => unknown;

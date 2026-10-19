@@ -57,6 +57,79 @@ public sealed class ConfigReloaderTests : IDisposable
     // Minimal TOML that ConfigurationLoader.Load() accepts without error.
     private const string MinimalToml = "[Settings]\n";
 
+    [Fact]
+    public void ReloadConfig_SnapshotCanBeAppliedByWorker()
+    {
+        File.WriteAllText(_configPath, MinimalToml);
+        using var reloader = CreateReloader(_configPath);
+        reloader.ReloadConfig().Should().BeTrue();
+        var workerConfig = new TorrentarrConfig();
+        using var worker = new ConfigReloader(NullLogger<ConfigReloader>.Instance,
+            workerConfig, new ConfigurationLoader(_configPath), worker: true);
+
+        worker.ReloadConfig().Should().BeTrue();
+
+        workerConfig.Revision.Should().Be(reloader.Revision);
+        workerConfig.Settings.ConfigVersion.Should().Be(ConfigurationLoader.ExpectedConfigVersion);
+        var status = worker.GetStatus();
+        status.AcceptedRevision.Should().Be(reloader.Revision);
+        status.State.Should().Be("applied");
+        status.Components["configuration"].AppliedRevision.Should().Be(reloader.Revision);
+    }
+
+    [Fact]
+    public async Task WorkerSnapshot_ChangesAtTheNextOperationBoundary()
+    {
+        Environment.SetEnvironmentVariable("TORRENTARR_CONFIG", _configPath);
+        var loader = new ConfigurationLoader(_configPath);
+        var hostConfig = ConfigurationLoader.GenerateDefaultConfig();
+        hostConfig.TorrentClients["one"] = new() { Maintenance = new() { PathMappings = [new() { ClientPath = "/old", LocalPath = _tempDir }] } };
+        loader.SaveConfig(hostConfig);
+        using var host = new ConfigReloader(NullLogger<ConfigReloader>.Instance, hostConfig, loader);
+        host.ReloadConfig().Should().BeTrue();
+        var workerConfig = new TorrentarrConfig();
+        using var worker = new ConfigReloader(NullLogger<ConfigReloader>.Instance, workerConfig, loader, worker: true);
+        worker.ReloadConfig().Should().BeTrue();
+        var revision = workerConfig.Revision;
+        using (workerConfig.BeginOperation())
+        using (ConfigMutationGuard.EnterProcessing(_configPath))
+        {
+            var updated = loader.Load();
+            updated.TorrentClients["one"].Maintenance.PathMappings[0].ClientPath = "/new";
+            loader.SaveConfig(updated);
+            host.Apply(updated).Should().BeTrue();
+            Task reload;
+            using (ExecutionContext.SuppressFlow()) reload = Task.Run(() => worker.ReloadConfig().Should().BeTrue());
+            await reload;
+            workerConfig.TorrentClients["one"].Maintenance.PathMappings[0].ClientPath.Should().Be("/old");
+            workerConfig.Revision.Should().Be(revision);
+        }
+        workerConfig.TorrentClients["one"].Maintenance.PathMappings[0].ClientPath.Should().Be("/new");
+        workerConfig.Revision.Should().BeGreaterThan(revision);
+    }
+
+    [Fact]
+    public void SnapshotPublicationFailure_PreservesActiveRevisionAndReportsTheSavedFileSeparately()
+    {
+        Environment.SetEnvironmentVariable("TORRENTARR_CONFIG", _configPath);
+        var loader = new ConfigurationLoader(_configPath);
+        var current = ConfigurationLoader.GenerateDefaultConfig();
+        loader.SaveConfig(current);
+        using var host = new ConfigReloader(NullLogger<ConfigReloader>.Instance, current, loader);
+        host.ReloadConfig().Should().BeTrue();
+        var previousRevision = host.Revision;
+        var updated = loader.Load();
+        updated.TorrentClients["one"] = new() { Maintenance = new() { PathMappings = [new() { ClientPath = "/downloads", LocalPath = _tempDir }] } };
+        File.Delete(host.SnapshotPath);
+        Directory.CreateDirectory(host.SnapshotPath);
+        loader.SaveConfig(updated);
+        host.Apply(updated).Should().BeFalse();
+        host.Revision.Should().Be(previousRevision);
+        current.TorrentClients.Should().NotContainKey("one");
+        loader.Load().TorrentClients["one"].Maintenance.PathMappings.Should().ContainSingle();
+        host.GetStatus().State.Should().Be("error");
+    }
+
     // ── ConfigPath resolution ─────────────────────────────────────────────────
 
     [Fact]
@@ -152,16 +225,16 @@ public sealed class ConfigReloaderTests : IDisposable
     }
 
     [Fact]
-    public void ReloadConfig_WhileProcessing_ReturnsFalseWithoutChangingFile()
+    public void ReloadConfig_WhileProcessing_PublishesAndPersistsMigrations()
     {
         File.WriteAllText(_configPath, MinimalToml);
         using var reloader = CreateReloader(_configPath);
         using var processing = ConfigMutationGuard.EnterProcessing(_configPath);
 
-        reloader.ReloadConfig().Should().BeFalse();
+        reloader.ReloadConfig().Should().BeTrue();
 
-        File.ReadAllText(_configPath).Should().Be(MinimalToml);
-        File.Exists(_configPath + ".bak").Should().BeFalse();
+        File.ReadAllText(_configPath).Should().Contain(ConfigurationLoader.ExpectedConfigVersion);
+        File.ReadAllText(_configPath + ".bak").Should().Be(MinimalToml);
     }
 
     [Fact]

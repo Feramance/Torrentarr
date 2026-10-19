@@ -927,7 +927,7 @@ function AppShell({
             ) : null}
             {visitedTabs.has("maintenance") ? (
               <div hidden={activeTab !== "maintenance"}>
-                <MaintenanceView />
+                <MaintenanceView onOpenConfig={() => switchTab("config")} />
               </div>
             ) : null}
             {visitedTabs.has("config") ? (

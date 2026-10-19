@@ -225,6 +225,7 @@ nav:
     - configuration/arr/lidarr.md
     - configuration/arr/readarr.md
   - Torrent Settings: configuration/torrents.md
+  - Maintenance Configuration: configuration/maintenance.md
   - Search & Requests:
     - configuration/search/index.md
     - configuration/search/overseerr.md

@@ -1,3 +1,4 @@
+import { PathMappingsEditor } from "./PathMappingsEditor";
 import React, {
   useCallback,
   useEffect,
@@ -90,7 +91,8 @@ export function NumberInput({
   placeholder?: string;
 }): JSX.Element {
   const n = Number(value);
-  const externalStr = Number.isFinite(n) ? String(n) : "0";
+  const externalStr =
+    value == null || value === "" ? "" : Number.isFinite(n) ? String(n) : "0";
   const [localValue, setLocalValue] = useState(externalStr);
   const isEditing = useRef(false);
 
@@ -132,18 +134,23 @@ export function DurationInput({
   placeholder,
   nativeUnit = "seconds",
   allowNegative = false,
+  nullable = false,
 }: {
   label?: string;
   value: unknown;
-  onChange: (v: string | number) => void;
+  onChange: (v: string | number | null) => void;
   placeholder?: string;
   nativeUnit?: "seconds" | "minutes";
   allowNegative?: boolean;
+  nullable?: boolean;
 }): JSX.Element {
   const fallback = allowNegative ? -1 : 0;
   const display = parseDurationDisplay(value, nativeUnit, fallback);
   const [num, setNum] = useState(display.number);
-  const [unit, setUnit] = useState<DurationUnit>(display.unit);
+  const emptyUnit = nativeUnit === "minutes" ? "m" : "s";
+  const [unit, setUnit] = useState<DurationUnit>(
+    nullable && value == null ? emptyUnit : display.unit,
+  );
   const [rawInput, setRawInput] = useState<string | null>(null);
   const isEditing = useRef(false);
   const unitDirty = useRef(false);
@@ -154,15 +161,19 @@ export function DurationInput({
       queueMicrotask(() => {
         setNum(d.number);
         if (!unitDirty.current) {
-          setUnit(d.unit);
+          setUnit(nullable && value == null ? emptyUnit : d.unit);
         }
       });
     }
-  }, [value, nativeUnit, fallback]);
+  }, [value, nativeUnit, fallback, nullable, emptyUnit]);
 
   const handleNumChange = (raw: string) => {
     if (raw !== "" && !NUMERIC_INPUT_RE.test(raw)) return;
     setRawInput(raw);
+    if (raw === "" && nullable) {
+      onChange(null);
+      return;
+    }
     if (raw === "" || raw === "-") return;
     const n = Number(raw);
     if (!Number.isFinite(n)) return;
@@ -175,7 +186,11 @@ export function DurationInput({
   const handleUnitChange = (newUnit: DurationUnit) => {
     setUnit(newUnit);
     unitDirty.current = true;
-    if (rawInput === "" || rawInput === "-") {
+    if (
+      rawInput === "" ||
+      rawInput === "-" ||
+      (nullable && value == null && rawInput == null)
+    ) {
       return;
     }
     const effectiveNum = rawInput !== null ? Number(rawInput) : num;
@@ -196,13 +211,22 @@ export function DurationInput({
   const handleFocus = () => {
     isEditing.current = true;
     unitDirty.current = false;
-    setRawInput(num === -1 && allowNegative ? "" : String(num));
+    setRawInput(
+      (nullable && value == null) || (num === -1 && allowNegative)
+        ? ""
+        : String(num),
+    );
   };
 
   const handleBlur = () => {
     isEditing.current = false;
     const pendingRaw = rawInput;
     setRawInput(null);
+
+    if (pendingRaw === "" && nullable) {
+      onChange(null);
+      return;
+    }
 
     if (pendingRaw === "" && allowNegative) {
       unitDirty.current = false;
@@ -239,7 +263,11 @@ export function DurationInput({
 
   const isDisabledValue = num === -1 && allowNegative && rawInput === null;
   const displayVal =
-    rawInput !== null ? rawInput : isDisabledValue ? "" : String(num);
+    rawInput !== null
+      ? rawInput
+      : isDisabledValue || (nullable && value == null)
+        ? ""
+        : String(num);
   const inputPlaceholder =
     allowNegative && (isDisabledValue || rawInput === "")
       ? "Disabled"
@@ -665,9 +693,17 @@ export function FieldGroup({
           <Select
             inputId={dataPath}
             aria-label={field.label}
-            options={(field.options ?? []).map((o) => ({ value: o, label: o }))}
+            options={(field.options ?? []).map((o) => ({
+              value: o,
+              label: o,
+            }))}
             value={
-              displayValue ? { value: displayValue, label: displayValue } : null
+              displayValue
+                ? {
+                    value: displayValue,
+                    label: displayValue,
+                  }
+                : null
             }
             onChange={(option) => {
               const newValue = option?.value || "";
@@ -728,6 +764,7 @@ export function FieldGroup({
             placeholder={field.placeholder}
             nativeUnit={field.nativeUnit ?? "seconds"}
             allowNegative={field.allowNegative ?? false}
+            nullable={field.required === false}
           />
           {description && (
             <div className="field-description">{description}</div>
@@ -759,30 +796,16 @@ export function FieldGroup({
         </div>
       );
     }
-    if (field.type === "json") {
+    if (field.type === "collection") {
       return (
-        <div
+        <PathMappingsEditor
           key={key}
-          className="field field--full-width"
-          data-field-path={dataPath}
-        >
-          <label htmlFor={dataPath} title={tooltip}>
-            {field.label}
-          </label>
-          <textarea
-            id={dataPath}
-            aria-label={field.label}
-            rows={6}
-            value={String(formatted)}
-            onChange={(event) => onChange(path, field, event.target.value)}
-            aria-invalid={errorMessage ? true : undefined}
-          />
-          {description ? (
-            <div className="field-description">{description}</div>
-          ) : null}
-          {renderReloadHint(field)}
-          <FieldErrorText message={errorMessage} />
-        </div>
+          field={field}
+          value={rawValue}
+          dataPath={dataPath}
+          validationErrors={validationErrors}
+          onChange={(value) => onChange(path, field, value)}
+        />
       );
     }
     if (field.type === "tags") {

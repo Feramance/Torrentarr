@@ -24,6 +24,43 @@ namespace Torrentarr.Host.Tests.Api;
 [Collection("HostWebCatalog")]
 public class StandaloneRadarrEndpointTests
 {
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task StandaloneMappingSave_PersistsWhileProcessing(bool canonical)
+    {
+        await using var factory = new StandaloneFactory();
+        using var client = factory.CreateClient();
+        client.Timeout = TimeSpan.FromSeconds(10);
+        var config = factory.Services.GetRequiredService<TorrentarrConfig>();
+        var reloader = factory.Services.GetRequiredService<IConfigReloader>();
+        var name = canonical ? "mapping" : "qBit-mapping";
+        var initial = new QBitConfig { Host = "fixture", Disabled = true };
+        if (canonical) config.TorrentClients[name] = initial; else config.QBitInstances[name] = initial;
+        using var processing = ConfigMutationGuard.EnterProcessing(reloader.ConfigPath);
+        var expected = new[] { new PathMappingConfig { ClientPath = "/downloads", LocalPath = Path.GetTempPath() } };
+        var response = await client.PostAsJsonAsync("/web/config", new
+        {
+            changes = new Dictionary<string, object> { [(canonical ? "TorrentClient." : "") + name + ".Maintenance.PathMappings"] = expected }
+        });
+        response.StatusCode.Should().Be(System.Net.HttpStatusCode.OK, await response.Content.ReadAsStringAsync());
+        new ConfigurationLoader(reloader.ConfigPath).Load().GetTorrentClient(name)!.Maintenance.PathMappings
+            .Should().BeEquivalentTo(expected);
+    }
+
+    [Theory]
+    [InlineData("/web/maintenance/preview", "SharePolicy")]
+    [InlineData("/web/maintenance/preview", 8)]
+    [InlineData("/web/maintenance/run", "SharePolicy")]
+    [InlineData("/web/maintenance/run", 8)]
+    public async Task StandaloneMaintenance_RejectsRemovedOperation(string endpoint, object operation)
+    {
+        await using var factory = new StandaloneFactory();
+        using var client = factory.CreateClient();
+        var response = await client.PostAsJsonAsync(endpoint, new { operations = new[] { operation } });
+        response.StatusCode.Should().Be(System.Net.HttpStatusCode.BadRequest);
+    }
+
     [Fact]
     public async Task StandaloneRadarr_FiltersBeforePaging_AndKeepsItsContract()
     {
@@ -139,7 +176,6 @@ public class StandaloneRadarrEndpointTests
             Host = "old",
             Disabled = true,
             Password = "secret",
-            Maintenance = new() { Notifications = [new() { Url = "https://notify.example", Token = "notify-secret" }] }
         };
         config.QBitInstances["qBit-other"] = new() { Host = "other", Password = "other-secret" };
         config.TorrentClients["canonical"] = new() { Host = "canonical" };
@@ -171,7 +207,6 @@ public class StandaloneRadarrEndpointTests
         saved.QBitInstances["qBit-renamed"].Host.Should().Be("old");
         saved.QBitInstances["qBit-renamed"].Disabled.Should().BeTrue();
         saved.QBitInstances["qBit-renamed"].Password.Should().Be("secret");
-        saved.QBitInstances["qBit-renamed"].Maintenance.Notifications.Single().Token.Should().Be("notify-secret");
         saved.QBitInstances["qBit-other"].Password.Should().Be("other-secret");
         saved.TorrentClients.Should().ContainKey("canonical");
         saved.ArrInstances.Should().ContainKey("Radarr");
@@ -197,7 +232,6 @@ public class StandaloneRadarrEndpointTests
             Host = "fixture",
             Disabled = true,
             Password = "secret",
-            Maintenance = new() { Notifications = [new() { Url = "https://notify.example", Token = "notify-secret" }] }
         };
         using var scope = factory.Services.CreateScope();
         var db = scope.ServiceProvider.GetRequiredService<TorrentarrDbContext>();
@@ -214,7 +248,6 @@ public class StandaloneRadarrEndpointTests
                     Host = "fixture",
                     Disabled = true,
                     Password = "[redacted]",
-                    Maintenance = new { Notifications = new[] { new { Url = "https://notify.example", Token = "[redacted]" } } }
                 }
             }
         });
@@ -222,7 +255,6 @@ public class StandaloneRadarrEndpointTests
         var saved = new ConfigurationLoader(factory.Services.GetRequiredService<IConfigReloader>().ConfigPath).Load();
         saved.TorrentClients.Should().NotContainKey("old");
         saved.TorrentClients["renamed"].Password.Should().Be("secret");
-        saved.TorrentClients["renamed"].Maintenance.Notifications.Single().Token.Should().Be("notify-secret");
         var state = await db.TorrentLibrary.AsNoTracking().SingleAsync(t => t.Hash == "canonical-rename");
         state.QbitInstance.Should().Be("renamed");
         state.FreeSpacePaused.Should().BeTrue();

@@ -85,6 +85,9 @@ public class TorrentInfo
     [JsonProperty("last_activity")]
     public long LastActivity { get; set; }
 
+    [JsonProperty("auto_tmm")]
+    public bool? AutoManaged { get; set; }
+
     [JsonProperty("super_seeding")]
     public bool SuperSeeding { get; set; }
 

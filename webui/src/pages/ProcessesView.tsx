@@ -338,11 +338,6 @@ function QbitCategoryChip({
           aria-label={aliveLabel}
         />
         <span className="process-chip__name">{cat.category}</span>
-        <span
-          className={`badge badge-${cat.managedBy === "arr" ? "arr" : "qbit"}`}
-        >
-          {cat.managedBy === "arr" ? "Arr" : "qBit"}
-        </span>
       </div>
       <div className="process-chip__summary" title={summary}>
         {summary}
@@ -666,7 +661,7 @@ export function ProcessesView({ active }: ProcessesViewProps): JSX.Element {
       const uniqueKinds = Array.from(new Set(items.map((item) => item.kind)));
       const filteredKinds = uniqueKinds.filter((kind) => {
         const lower = kind.toLowerCase();
-        return lower !== "search" && lower !== "torrent";
+        return !["search", "torrent", "worker", "category"].includes(lower);
       });
 
       const listClass =
@@ -687,12 +682,6 @@ export function ProcessesView({ active }: ProcessesViewProps): JSX.Element {
                       className="process-card__badge"
                     >
                       {formatKind(kind)}
-                      {kind === "worker" &&
-                      items[0]?.status &&
-                      !items[0]?.search &&
-                      !items[0]?.torrent
-                        ? ` · ${items[0].status}`
-                        : ""}
                     </span>
                   ))}
                 </div>

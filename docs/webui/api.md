@@ -1052,14 +1052,16 @@ Apply changes to configuration and trigger reload.
 
 **Renaming sections**: Send an optional `renames` map alongside `changes`
 (e.g., `"renames": { "qBit": "qBit-seedbox" }`). Include the old section
-deletions and new section values in `changes`. This preserves stored passwords
-and notification tokens when the new values contain `[redacted]` placeholders,
+deletions and new section values in `changes`. This preserves stored passwords and API keys when the new values contain `[redacted]` placeholders,
 and migrates persisted instance state. Destinations must be unused in both config
 and stored state; rename chains, cycles, and case-only renames are rejected. HTTP
-`409` means processing or another config save is active, or rename recovery is
-pending. Retry after processing finishes; pending recovery runs at startup.
+`409` means another configuration writer or an exclusive operation is active,
+or rename recovery is pending. Renames also return `409` during active processing.
+Ordinary saves, including path mappings, publish while workers run: the response
+`application.state` is `pending` until components adopt the saved revision at their
+next safe boundary, then `applied`. Pending recovery runs at startup.
 A successful response may include an optional `warning` string if config was saved
-but worker restart or client reconciliation failed. The saved rename should not
+but revision publication or runtime reconciliation failed. The saved rename should not
 be submitted again.
 
 **Deletion**: Set value to `null` to delete key:
