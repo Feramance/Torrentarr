@@ -497,6 +497,27 @@ try
     });
 
     // Static files — add cache-busting headers for the service worker
+    // Relative build assets resolve identically for every SPA alias and URL base.
+    app.Use(async (context, next) =>
+    {
+        var path = context.Request.Path.Value;
+        if (HttpMethods.IsGet(context.Request.Method) && path is "/" or "/ui" or "/ui/" or "/index.html" or "/static/index.html")
+        {
+            var index = app.Environment.WebRootFileProvider.GetFileInfo("index.html");
+            if (index.Exists)
+            {
+                using var reader = new StreamReader(index.CreateReadStream());
+                var html = await reader.ReadToEndAsync(context.RequestAborted);
+                var prefix = System.Net.WebUtility.HtmlEncode(string.IsNullOrEmpty(context.Request.PathBase.Value) ? urlBase : context.Request.PathBase.Value);
+                context.Response.ContentType = "text/html";
+                context.Response.Headers.CacheControl = "no-store";
+                await context.Response.WriteAsync(html.Replace("<head>", $"<head><base href=\"{prefix}/\">"), context.RequestAborted);
+                return;
+            }
+        }
+        await next(context);
+    });
+
     app.UseDefaultFiles();
     app.Use(async (context, next) =>
     {
@@ -509,25 +530,6 @@ try
         await next(context);
     });
     app.UseStaticFiles();
-
-    // Serve the SPA entry point from either the physical or embedded provider.
-    // Middleware avoids exposing /ui and /ui/ as conflicting Swagger actions.
-    app.Use(async (context, next) =>
-    {
-        if (context.Request.Path.Equals("/ui/", StringComparison.OrdinalIgnoreCase))
-        {
-            var index = app.Environment.WebRootFileProvider.GetFileInfo("index.html");
-            if (index.Exists)
-            {
-                context.Response.ContentType = "text/html";
-                await using var stream = index.CreateReadStream();
-                await stream.CopyToAsync(context.Response.Body);
-                return;
-            }
-        }
-
-        await next(context);
-    });
 
     app.UseAuthentication();
     app.UseArrCatalogDbSafe();
@@ -760,8 +762,8 @@ try
         return Results.Ok(new { categories, ready = true });
     });
 
-    // Web Processes — reads live state from ProcessStateManager + qBit connection status
-    app.MapGet("/web/processes", async (ProcessStateManager stateMgr, TorrentarrConfig cfg, ITorrentClientRegistry qbitMgr, WorkerProcessSupervisor workers) =>
+    // Web Processes — host tasks and real worker heartbeats; clients use /web/status.
+    app.MapGet("/web/processes", async (ProcessStateManager stateMgr, TorrentarrConfig cfg, WorkerProcessSupervisor workers) =>
     {
         var processes = stateMgr.GetAll().Select(s => new
         {
@@ -776,59 +778,13 @@ try
             queueCount = s.QueueCount,
             categoryCount = s.CategoryCount,
             metricType = s.MetricType,
+            freeSpacePaused = s.MetricType == "free-space" ? s.CategoryCount : null,
+            restartable = false,
             status = s.Status
         }).ToList<object>();
 
-        // Add a process card for each configured qBit instance
-        foreach (var (instanceName, qbit) in cfg.GetAllTorrentClients().Where(q => q.Value.Host != "CHANGE_ME"))
-        {
-            var isConnected = !qbit.Disabled && qbitMgr.IsConnected(instanceName);
-
-            int? totalCount = null;
-            int? seedingCount = null;
-
-            if (isConnected)
-            {
-                try
-                {
-                    var client = qbitMgr.GetClient(instanceName);
-
-                    if (client != null)
-                    {
-                        var torrents = await client.GetTorrentsAsync(cancellationToken: CancellationToken.None);
-                        if (torrents != null)
-                        {
-                            totalCount = torrents.Count;
-                            seedingCount = torrents.Count(t => t.IsSeeding);
-                        }
-                    }
-                }
-                catch { /* best-effort */ }
-            }
-
-            var statusText = isConnected
-                ? (totalCount.HasValue ? $"{totalCount} torrents ({seedingCount} seeding)" : "Connected")
-                : "Disconnected";
-
-            processes.Add(new
-            {
-                category = instanceName,
-                name = instanceName,
-                kind = "torrent",
-                pid = (int?)null,
-                alive = isConnected,
-                rebuilding = false,
-                searchSummary = (string?)null,
-                searchTimestamp = (string?)null,
-                queueCount = (int?)null,
-                categoryCount = (int?)null,
-                metricType = (string?)null,
-                status = statusText
-            });
-        }
-
         foreach (var status in (await workers.GetProcessStatusAsync()).Values)
-            processes.Add(new { category = cfg.ArrInstances.GetValueOrDefault(status.Name)?.Category ?? status.Name, name = status.Name, kind = status.Kind, pid = status.ProcessId, alive = status.IsAlive, rebuilding = false, searchSummary = status.SearchSummary, searchTimestamp = status.SearchTimestamp, queueCount = status.QueueCount, categoryCount = status.CategoryCount, metricType = status.MetricType, status = status.Status ?? (status.IsAlive ? "Running" : "Stopped"), restartKey = status.Name });
+            processes.Add(new { category = cfg.ArrInstances.GetValueOrDefault(status.Name)?.Category ?? status.Name, name = status.Name, kind = status.Kind, pid = status.ProcessId, alive = status.IsAlive, rebuilding = false, searchSummary = status.SearchSummary, searchTimestamp = status.SearchTimestamp, queueCount = status.QueueCount, categoryCount = status.CategoryCount, metricType = status.MetricType, status = status.Status ?? (status.IsAlive ? "Running" : "Stopped"), restartKey = status.Name, restartable = true, torrent = status.Torrent, search = status.Search });
 
         return Results.Ok(new { processes });
     });
@@ -1597,10 +1553,13 @@ try
             searchTimestamp = s.SearchTimestamp,
             queueCount = s.QueueCount,
             categoryCount = s.CategoryCount,
-            metricType = s.MetricType
+            metricType = s.MetricType,
+            freeSpacePaused = s.MetricType == "free-space" ? s.CategoryCount : null,
+            restartable = false,
+            status = s.Status
         }).ToList<object>();
         foreach (var status in (await workers.GetProcessStatusAsync()).Values)
-            processes.Add(new { category = cfg.ArrInstances.GetValueOrDefault(status.Name)?.Category ?? status.Name, name = status.Name, kind = status.Kind, pid = status.ProcessId, alive = status.IsAlive, rebuilding = false, searchSummary = status.SearchSummary, searchTimestamp = status.SearchTimestamp, queueCount = status.QueueCount, categoryCount = status.CategoryCount, metricType = status.MetricType, status = status.Status ?? (status.IsAlive ? "Running" : "Stopped"), restartKey = status.Name });
+            processes.Add(new { category = cfg.ArrInstances.GetValueOrDefault(status.Name)?.Category ?? status.Name, name = status.Name, kind = status.Kind, pid = status.ProcessId, alive = status.IsAlive, rebuilding = false, searchSummary = status.SearchSummary, searchTimestamp = status.SearchTimestamp, queueCount = status.QueueCount, categoryCount = status.CategoryCount, metricType = status.MetricType, status = status.Status ?? (status.IsAlive ? "Running" : "Stopped"), restartKey = status.Name, restartable = true, torrent = status.Torrent, search = status.Search });
         return Results.Ok(new { processes });
     });
 

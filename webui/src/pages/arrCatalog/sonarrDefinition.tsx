@@ -1,4 +1,4 @@
-import type { LegacyColumnDef } from "@tanstack/react-table/legacy";
+import type { AppColumnDef as LegacyColumnDef } from "../../tableCore";
 import {
   useCallback,
   useEffect,

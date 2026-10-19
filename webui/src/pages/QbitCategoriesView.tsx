@@ -165,22 +165,12 @@ export function QbitCategoriesView({
   const { push } = useToast();
   const { liveArr } = useWebUI();
   const isFetching = useRef(false);
-  const mounted = useRef(false);
-  const requestId = useRef(0);
-  useEffect(() => {
-    mounted.current = true;
-    requestId.current++;
-    return () => {
-      mounted.current = false;
-    };
-  }, []);
 
   const isAggregate = selection === "aggregate";
 
   const loadInstances = useCallback(async () => {
     try {
       const status = await getStatus();
-      if (!mounted.current) return;
       const names = Object.keys(status.qbitInstances ?? {}).sort((a, b) =>
         a.localeCompare(b),
       );
@@ -194,7 +184,7 @@ export function QbitCategoriesView({
         "error",
       );
     } finally {
-      if (mounted.current) setInstancesLoaded(true);
+      setInstancesLoaded(true);
     }
   }, [push]);
 
@@ -204,14 +194,12 @@ export function QbitCategoriesView({
         return;
       }
       isFetching.current = true;
-      const generation = ++requestId.current;
       if (showLoading) {
         setLoading(true);
       }
       try {
         const instanceArg = selection === "aggregate" ? undefined : selection;
         const data = await getQbitOverview(instanceArg);
-        if (!mounted.current || generation !== requestId.current) return;
         setCategories(data.categories);
         if (data.instances.length) {
           setInstances((prev) => {
@@ -226,11 +214,7 @@ export function QbitCategoriesView({
         }
       } catch (error) {
         // Background Live polls must stay silent — avoid network-error toast spam.
-        if (
-          showLoading &&
-          mounted.current &&
-          generation === requestId.current
-        ) {
+        if (showLoading) {
           push(
             error instanceof Error
               ? error.message
@@ -239,10 +223,10 @@ export function QbitCategoriesView({
           );
         }
       } finally {
-        if (mounted.current && generation === requestId.current) {
-          isFetching.current = false;
-          setOverviewLoaded(true);
-          if (showLoading) setLoading(false);
+        isFetching.current = false;
+        setOverviewLoaded(true);
+        if (showLoading) {
+          setLoading(false);
         }
       }
     },
@@ -250,8 +234,6 @@ export function QbitCategoriesView({
   );
 
   useEffect(() => {
-    requestId.current++;
-    isFetching.current = false;
     const id = window.setTimeout(() => {
       setOverviewLoaded(false);
     }, 0);
@@ -320,14 +302,26 @@ export function QbitCategoriesView({
     if (!focusCategory) {
       return;
     }
+    const focusInstance = sessionStorage.getItem(
+      "torrentarr:focusQbitInstance",
+    );
+    if (focusInstance && selection !== focusInstance) {
+      setSelection(focusInstance);
+      return;
+    }
     sessionStorage.removeItem("qbitrr:focusQbitCategory");
+    sessionStorage.removeItem("torrentarr:focusQbitInstance");
     const id = window.setTimeout(() => {
       setExpanded((prev) => {
         let changed = false;
         const next = { ...prev };
         for (const cat of filteredCategories) {
           const key = categorySectionKey(cat);
-          if (cat.category === focusCategory && next[key] !== true) {
+          if (
+            cat.category === focusCategory &&
+            (!focusInstance || cat.qbitInstance === focusInstance) &&
+            next[key] !== true
+          ) {
             next[key] = true;
             changed = true;
           }
@@ -336,7 +330,7 @@ export function QbitCategoriesView({
       });
     }, 0);
     return () => window.clearTimeout(id);
-  }, [active, filteredCategories]);
+  }, [active, filteredCategories, selection]);
 
   const summary = useMemo(() => {
     const totalTorrents = filteredCategories.reduce(
@@ -487,15 +481,11 @@ export function QbitCategoriesView({
                 </span>
               </button>
               {isOpen && (
-                <p className="hint">
-                  Average ratio {cat.avgRatio.toFixed(2)} · Average seed time{" "}
-                  {formatTime(cat.avgSeedingTime)} · Download limit{" "}
-                  {cat.seedingConfig?.downloadLimit ?? "mixed"} KB/s · Upload
-                  limit {cat.seedingConfig?.uploadLimit ?? "mixed"} KB/s
-                </p>
-              )}
-              {isOpen && (
                 <div className="qbit-category-section__body">
+                  <div className="hint">
+                    Average ratio {cat.avgRatio.toFixed(2)} · Average seed time{" "}
+                    {formatTime(cat.avgSeedingTime)}
+                  </div>
                   {cat.visibleTorrents.length === 0 ? (
                     <div className="hint">
                       No torrents in this category on {cat.qbitInstance}.

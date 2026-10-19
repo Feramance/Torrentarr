@@ -232,6 +232,8 @@ public sealed class WorkerProcessSupervisor : BackgroundService, IProcessOrchest
                 QueueCount = heartbeat?.QueueCount,
                 CategoryCount = heartbeat?.CategoryCount,
                 MetricType = heartbeat?.MetricType,
+                Torrent = heartbeat?.Torrent,
+                Search = heartbeat?.Search,
                 Status = !alive ? "Timed out" : heartbeat?.DescribeProgress() ?? "Initializing"
             };
         }

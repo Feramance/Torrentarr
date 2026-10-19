@@ -1,6 +1,7 @@
+import userEvent from "@testing-library/user-event";
 import React from "react";
 import { describe, it, expect, beforeAll, afterAll, afterEach } from "vitest";
-import { render, screen } from "@testing-library/react";
+import { render, screen, waitFor } from "@testing-library/react";
 import { http, HttpResponse } from "msw";
 import { setupServer } from "msw/node";
 import type { ReactNode } from "react";
@@ -218,7 +219,7 @@ describe("ProcessesView – qBit category chips", () => {
 
     renderView();
 
-    await screen.findByText("qBittorrent");
+    await screen.findByText("Torrent Clients");
     // The "radarr" chip should appear under the qBit card
     await screen.findByText("radarr");
   });
@@ -253,7 +254,12 @@ describe("ProcessesView – qBit category chips", () => {
       http.get("/web/processes", () =>
         HttpResponse.json({ processes: [qbitProcess] }),
       ),
-      http.get("/web/status", () => HttpResponse.json(emptyStatus)),
+      http.get("/web/status", () =>
+        HttpResponse.json({
+          ...emptyStatus,
+          qbitInstances: { qBit: { alive: true } },
+        }),
+      ),
       http.get("/web/qbit/categories", () =>
         HttpResponse.json({ categories: [arrCategory], ready: true }),
       ),
@@ -299,6 +305,7 @@ describe("ProcessesView – Other section", () => {
               pid: null,
               alive: true,
               categoryCount: 0,
+              freeSpacePaused: 0,
             },
           ],
         }),
@@ -318,9 +325,9 @@ describe("ProcessesView – Other section", () => {
       screen.getAllByText("Free Space Manager").length,
     ).toBeGreaterThanOrEqual(1);
     expect(
-      screen.getAllByText("Torrent count 0").length,
+      screen.getAllByText("Managing 0 categories").length,
     ).toBeGreaterThanOrEqual(2);
-    expect(screen.getByText("Paused: 0")).toBeInTheDocument();
+    expect(screen.getByText("0 paused for free space")).toBeInTheDocument();
   });
 });
 
@@ -352,10 +359,96 @@ it("refreshes worker status when its other metrics are unchanged", async () => {
     http.get("/web/qbit/categories", () => HttpResponse.json(emptyCategories)),
   );
   renderView();
-  await screen.findByText("Sleeping");
+  await screen.findByText(/Sleeping/);
   status = "Running";
   expect(
-    await screen.findByText("Running", {}, { timeout: 3000 }),
+    await screen.findByText(/Worker · Running/, {}, { timeout: 3000 }),
   ).toBeInTheDocument();
   expect(screen.getByText(/1 in progress/)).toBeInTheDocument();
+});
+
+it("shows two loop activities with one physical worker count and restart", async () => {
+  let restarts = 0;
+  server.use(
+    http.get("/web/status", () =>
+      HttpResponse.json({
+        ...emptyStatus,
+        arrs: [{ name: "Radarr-A", category: "shared", type: "radarr" }],
+      }),
+    ),
+    http.get("/web/processes", () =>
+      HttpResponse.json({
+        processes: [
+          {
+            name: "Radarr-A",
+            category: "shared",
+            kind: "worker",
+            restartKey: "Radarr-A",
+            restartable: true,
+            alive: true,
+            pid: 42,
+            search: { phase: "Sleeping", startedAt: "2026-10-18T12:00:00Z" },
+            torrent: { phase: "Running", startedAt: "2026-10-18T12:00:00Z" },
+            searchSummary: "0 searches triggered (2 items)",
+            queueCount: 2,
+            categoryCount: 3,
+          },
+        ],
+      }),
+    ),
+    http.get("/web/qbit/categories", () => HttpResponse.json(emptyCategories)),
+    http.post("/web/processes/Radarr-A/worker/restart", () => {
+      restarts++;
+      return HttpResponse.json({
+        status: "restarted",
+        restarted: ["Radarr-A"],
+      });
+    }),
+  );
+  renderView();
+  expect(await screen.findByText("1/1")).toBeInTheDocument();
+  expect(screen.getByText(/No active search/)).toBeInTheDocument();
+  expect(screen.getByText(/2 in progress/)).toBeInTheDocument();
+  expect(
+    screen.getAllByRole("button", { name: "Restart worker", exact: true }),
+  ).toHaveLength(1);
+  await userEvent.click(
+    screen.getByRole("button", { name: "Restart worker", exact: true }),
+  );
+  await waitFor(() => expect(restarts).toBe(1));
+});
+
+it("marks stopped worker activities as stopped despite a stale heartbeat", async () => {
+  server.use(
+    http.get("/web/status", () =>
+      HttpResponse.json({
+        ...emptyStatus,
+        arrs: [{ name: "Radarr-A", category: "movies", type: "radarr" }],
+      }),
+    ),
+    http.get("/web/qbit/categories", () => HttpResponse.json(emptyCategories)),
+    http.get("/web/processes", () =>
+      HttpResponse.json({
+        processes: [
+          {
+            name: "Radarr-A",
+            category: "movies",
+            kind: "worker",
+            alive: false,
+            pid: 42,
+            search: { phase: "Sleeping", wakeAt: "2026-10-18T12:01:00Z" },
+            torrent: { phase: "Running" },
+          },
+        ],
+      }),
+    ),
+  );
+  renderView();
+  expect(await screen.findByText("0/1")).toBeInTheDocument();
+  expect(
+    screen
+      .getAllByLabelText("Stopped")
+      .filter((el) => el.classList.contains("process-status__dot")),
+  ).toHaveLength(2);
+  expect(screen.queryByText(/resumes/)).not.toBeInTheDocument();
 });

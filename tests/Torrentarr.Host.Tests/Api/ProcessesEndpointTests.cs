@@ -17,8 +17,10 @@ public class ProcessesEndpointTests : IClassFixture<TorrentarrWebApplicationFact
         _factory = factory;
     }
 
-    [Fact]
-    public async Task GetProcesses_ReturnsOtherSectionEntries_WhenStatePrePopulated()
+    [Theory]
+    [InlineData("/web/processes")]
+    [InlineData("/api/processes")]
+    public async Task GetProcesses_ReturnsOtherSectionEntries_WhenStatePrePopulated(string endpoint)
     {
         using var scope = _factory.Services.CreateScope();
         var stateMgr = scope.ServiceProvider.GetRequiredService<ProcessStateManager>();
@@ -45,11 +47,11 @@ public class ProcessesEndpointTests : IClassFixture<TorrentarrWebApplicationFact
             Kind = "torrent",
             MetricType = "free-space",
             Alive = true,
-            CategoryCount = 0
+            CategoryCount = 7
         });
 
         var client = _factory.CreateClientWithApiToken();
-        var response = await client.GetAsync("/web/processes");
+        var response = await client.GetAsync(endpoint);
         response.StatusCode.Should().Be(HttpStatusCode.OK);
 
         var body = await response.Content.ReadAsStringAsync();
@@ -63,6 +65,9 @@ public class ProcessesEndpointTests : IClassFixture<TorrentarrWebApplicationFact
         names.Should().Contain("Recheck");
         names.Should().Contain("Failed");
         names.Should().Contain("FreeSpaceManager");
+        var freeSpace = processes.EnumerateArray().Single(p => p.GetProperty("name").GetString() == "FreeSpaceManager");
+        freeSpace.GetProperty("freeSpacePaused").GetInt32().Should().Be(7);
+        freeSpace.GetProperty("restartable").GetBoolean().Should().BeFalse();
     }
 
     [Fact]

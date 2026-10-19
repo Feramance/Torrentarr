@@ -3,9 +3,10 @@ import {
   createContext,
   useCallback,
   useContext,
+  useEffect,
   useMemo,
-  useState,
   useRef,
+  useState,
   type PropsWithChildren,
   type JSX,
 } from "react";
@@ -26,12 +27,31 @@ interface ToastContextValue {
 
 const ToastContext = createContext<ToastContextValue | undefined>(undefined);
 
+/** Skip identical message+kind pushes within this window (and while still visible). */
+export const TOAST_DEDUPE_MS = 4000;
+
 let toastCounter = 0;
+let lastPushKey: string | null = null;
+let lastPushAt = 0;
+
+function toastDedupeKey(message: string, kind: ToastKind): string {
+  return `${kind}\0${message}`;
+}
+
+/** Reset module-level dedupe state (tests only). */
+export function resetToastDedupeForTests(): void {
+  lastPushKey = null;
+  lastPushAt = 0;
+  toastCounter = 0;
+}
 
 export function ToastProvider({ children }: PropsWithChildren): JSX.Element {
   const [toasts, setToasts] = useState<Toast[]>([]);
+  const toastsRef = useRef(toasts);
 
-  const recentToast = useRef<{ key: string; at: number } | null>(null);
+  useEffect(() => {
+    toastsRef.current = toasts;
+  }, [toasts]);
 
   const dismiss = useCallback((id: number) => {
     setToasts((prev) => prev.filter((t) => t.id !== id));
@@ -39,15 +59,20 @@ export function ToastProvider({ children }: PropsWithChildren): JSX.Element {
 
   const push = useCallback(
     (message: string, kind: ToastKind = "info") => {
-      if (
-        recentToast.current?.key === `${kind}:${message}` &&
-        Date.now() - recentToast.current.at < 4000
-      )
+      const key = toastDedupeKey(message, kind);
+      const now = Date.now();
+      if (lastPushKey === key && now - lastPushAt < TOAST_DEDUPE_MS) {
         return;
-      recentToast.current = { key: `${kind}:${message}`, at: Date.now() };
+      }
+      if (
+        toastsRef.current.some((t) => t.message === message && t.kind === kind)
+      ) {
+        return;
+      }
       const id = ++toastCounter;
+      lastPushKey = key;
+      lastPushAt = now;
       setToasts((prev) => [...prev, { id, message, kind }]);
-      // Auto dismiss - longer duration for errors
       const duration = kind === "error" ? 8000 : 3500;
       window.setTimeout(() => dismiss(id), duration);
     },
@@ -87,13 +112,10 @@ export function ToastViewport(): JSX.Element | null {
           className={`toast ${toast.kind !== "info" ? toast.kind : ""}`}
           role="alert"
           tabIndex={0}
-          onClick={() => dismiss(toast.id)}
           onKeyDown={(e) => {
-            if (e.key === "Enter" || e.key === "Escape") {
-              e.preventDefault();
-              dismiss(toast.id);
-            }
+            if (e.key === "Enter" || e.key === "Escape") dismiss(toast.id);
           }}
+          onClick={() => dismiss(toast.id)}
         >
           {toast.message}
         </div>

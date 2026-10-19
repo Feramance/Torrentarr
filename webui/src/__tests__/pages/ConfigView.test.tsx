@@ -8,7 +8,13 @@ import {
   afterAll,
   afterEach,
 } from "vitest";
-import { render, screen, within } from "@testing-library/react";
+import {
+  fireEvent,
+  render,
+  screen,
+  within,
+  waitFor,
+} from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { http, HttpResponse } from "msw";
 import { setupServer } from "msw/node";
@@ -85,8 +91,13 @@ describe("ConfigView – delete button rendering", () => {
     // Find the card that contains "qBit" and confirm its delete button
     const qbitHeader = screen.getByText("qBit");
     const card = qbitHeader.closest(".card")!;
+    await userEvent.click(
+      within(card).getByRole("button", { name: /configure/i }),
+    );
     expect(
-      within(card).getByRole("button", { name: /delete/i }),
+      within(screen.getByRole("dialog")).getByRole("button", {
+        name: /delete/i,
+      }),
     ).toBeInTheDocument();
   });
 
@@ -101,8 +112,13 @@ describe("ConfigView – delete button rendering", () => {
     await screen.findByText("qBit-1");
     const qbit1Header = screen.getByText("qBit-1");
     const card = qbit1Header.closest(".card")!;
+    await userEvent.click(
+      within(card).getByRole("button", { name: /configure/i }),
+    );
     expect(
-      within(card).getByRole("button", { name: /delete/i }),
+      within(screen.getByRole("dialog")).getByRole("button", {
+        name: /delete/i,
+      }),
     ).toBeInTheDocument();
   });
 
@@ -117,8 +133,13 @@ describe("ConfigView – delete button rendering", () => {
     await screen.findByText("Radarr-1080");
     const arrHeader = screen.getByText("Radarr-1080");
     const card = arrHeader.closest(".card")!;
+    await userEvent.click(
+      within(card).getByRole("button", { name: /configure/i }),
+    );
     expect(
-      within(card).getByRole("button", { name: /delete/i }),
+      within(screen.getByRole("dialog")).getByRole("button", {
+        name: /delete/i,
+      }),
     ).toBeInTheDocument();
   });
 });
@@ -127,26 +148,37 @@ describe("ConfigView – delete button rendering", () => {
 
 describe("ConfigView – section deletion", () => {
   it("persists only the confirmed section deletion", async () => {
+    let current = structuredClone(configWithInstances);
     let changes: Record<string, unknown> = {};
     server.use(
-      http.get("/web/config", () => HttpResponse.json(configWithInstances)),
+      http.get("/web/config", () => HttpResponse.json(current)),
       http.post("/web/config", async ({ request }) => {
         changes = (
           (await request.json()) as { changes: Record<string, unknown> }
         ).changes;
+        current = Object.fromEntries(
+          Object.entries(current).filter(([key]) => changes[key] !== null),
+        ) as typeof current;
         return HttpResponse.json(okUpdateResponse);
       }),
     );
     const user = userEvent.setup();
     renderConfig();
     const card = (await screen.findByText("qBit")).closest(".card")!;
-    await user.click(within(card).getByRole("button", { name: /delete/i }));
+    await user.click(within(card).getByRole("button", { name: /configure/i }));
+    await user.click(
+      within(screen.getByRole("dialog")).getByRole("button", {
+        name: /delete/i,
+      }),
+    );
     await user.click(
       within(screen.getByRole("dialog")).getByRole("button", {
         name: "Remove",
       }),
     );
-    await screen.findByText("qBit removed");
+    await waitFor(() =>
+      expect(screen.queryByText("qBit")).not.toBeInTheDocument(),
+    );
     expect(changes).toEqual({ qBit: null });
     expect(screen.getByText("qBit-1")).toBeInTheDocument();
     expect(screen.queryByText("qBit")).not.toBeInTheDocument();
@@ -158,13 +190,18 @@ describe("ConfigView – section deletion", () => {
     const user = userEvent.setup();
     renderConfig();
     const card = (await screen.findByText("qBit-1")).closest(".card")!;
-    await user.click(within(card).getByRole("button", { name: /delete/i }));
+    await user.click(within(card).getByRole("button", { name: /configure/i }));
+    await user.click(
+      within(screen.getByRole("dialog")).getByRole("button", {
+        name: /delete/i,
+      }),
+    );
     await user.click(
       within(screen.getByRole("dialog")).getByRole("button", {
         name: "Cancel",
       }),
     );
-    expect(screen.getByText("qBit-1")).toBeInTheDocument();
+    expect(screen.getAllByText("qBit-1").length).toBeGreaterThan(0);
   });
 });
 
@@ -265,11 +302,9 @@ describe("ConfigView – equal client names", () => {
           }),
         );
       }
-      await screen.findByText(
-        outcome === "back"
-          ? /no changes detected|configuration saved/i
-          : /configuration saved/i,
-      );
+      if (outcome === "back")
+        await screen.findByText(/no changes detected|configuration saved/i);
+      else await waitFor(() => expect(saves).toBeGreaterThan(0));
       if (outcome === "back") {
         expect(renames).toEqual({});
         expect(changes["qBit.Host"]).not.toBeNull();
@@ -453,10 +488,9 @@ describe("ConfigView – UrlBase field", () => {
     const user = userEvent.setup();
     renderConfig();
 
-    await screen.findByText("Save + Live Reload");
-    await user.click(
-      screen.getByRole("button", { name: /save \+ live reload/i }),
-    );
+    const card = (await screen.findByText("Web Settings")).closest(".card")!;
+    await user.click(within(card).getByRole("button", { name: /configure/i }));
+    await user.click(screen.getByRole("button", { name: "Save", exact: true }));
 
     expect(
       (await screen.findAllByText(/UrlBase must start with \//i)).length,
@@ -672,4 +706,71 @@ describe("ConfigView – section persistence", () => {
       screen.queryByText(/Configuration saved successfully/),
     ).not.toBeInTheDocument();
   });
+});
+
+it("releases its modal and scroll lock while an inactive config panel is retained", async () => {
+  server.use(http.get("/web/config", () => HttpResponse.json(configQbitOnly)));
+  const user = userEvent.setup();
+  const { rerender } = renderConfig();
+  const card = (await screen.findByText("Web Settings")).closest(".card")!;
+  await user.click(within(card).getByRole("button", { name: /configure/i }));
+  expect(screen.getByRole("dialog")).toBeInTheDocument();
+  expect(document.body.style.overflow).toBe("hidden");
+  rerender(<ConfigView active={false} />);
+  expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
+  expect(document.body.style.overflow).toBe("");
+});
+
+it("uses the shared client dialog and saves only the selected additional client", async () => {
+  let changes: Record<string, unknown> = {};
+  server.use(
+    http.get("/web/config", () =>
+      HttpResponse.json({
+        ...configQbitOnly,
+        TorrentClients: {
+          seedbox: {
+            Type: "transmission",
+            Host: "old-host",
+            Port: 9091,
+            Password: "[redacted]",
+            Maintenance: { PathMappings: [{ From: "/old", To: "/new" }] },
+          },
+        },
+      }),
+    ),
+    http.post("/web/config", async ({ request }) => {
+      changes = ((await request.json()) as { changes: Record<string, unknown> })
+        .changes;
+      return HttpResponse.json(okUpdateResponse);
+    }),
+  );
+  const user = userEvent.setup();
+  renderConfig();
+  const card = (await screen.findByText("seedbox")).closest(".card")!;
+  await user.click(within(card).getByRole("button", { name: "Configure" }));
+  expect(
+    screen.getByRole("textbox", { name: "Client Type", exact: true }),
+  ).toHaveValue("transmission");
+  expect(
+    screen.getByRole("textbox", { name: "Path Mappings", exact: true }),
+  ).toHaveValue(JSON.stringify([{ From: "/old", To: "/new" }], null, 2));
+  const mappings = screen.getByRole("textbox", {
+    name: "Path Mappings",
+    exact: true,
+  });
+  await user.clear(mappings);
+  await user.type(mappings, "invalid JSON");
+  await user.click(screen.getByRole("button", { name: "Save", exact: true }));
+  expect(changes).toEqual({});
+  expect(screen.getByRole("dialog")).toBeInTheDocument();
+  fireEvent.change(mappings, {
+    target: { value: JSON.stringify([{ From: "/old", To: "/new" }]) },
+  });
+  const host = screen.getByRole("textbox", { name: "Host", exact: true });
+  await user.clear(host);
+  await user.type(host, "new-host");
+  await user.click(screen.getByRole("button", { name: "Save", exact: true }));
+  await waitFor(() =>
+    expect(changes).toEqual({ "TorrentClients.seedbox.Host": "new-host" }),
+  );
 });

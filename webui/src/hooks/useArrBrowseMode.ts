@@ -23,7 +23,7 @@ export function useArrBrowseMode(
   mode: ArrBrowseMode;
   setMode: (m: ArrBrowseMode) => void;
 } {
-  const storageKey = `torrentarr.arrBrowseMode.${appKey}`;
+  const storageKey = `qbitrr.arrBrowseMode.${appKey}`;
   const [mode, setModeState] = useState<ArrBrowseMode>(() =>
     readStored(storageKey),
   );

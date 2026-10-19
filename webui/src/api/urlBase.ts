@@ -1,19 +1,28 @@
 /** Public URL path prefix when the WebUI is served under a subpath (e.g. /qbitrr). */
 let cachedUrlBaseFromMeta: string | null = null;
 
-/** Derive UrlBase from the current page pathname before /web/meta is loaded. */
+/** App paths that appear after an optional UrlBase prefix in the browser URL. */
+const PUBLIC_APP_PATH =
+  /^(.*?)\/(?:ui|login|health|sw\.js|static|web|api)(?:\/|$)/;
+
+/**
+ * Derive UrlBase from the current page URL.
+ * Works for /qbitrr/static/index.html, /qbitrr/ui, /qbitrr/web/docs, etc.
+ */
 export function pathnameUrlBase(): string {
-  const path = window.location.pathname.replace(/\/$/, "") || "/";
-
-  const staticMatch = path.match(/^(.*)\/static\/index\.html$/);
-  if (staticMatch) return staticMatch[1];
-
-  const uiOrLoginMatch = path.match(/^(.*)\/(?:ui|login)$/);
-  if (uiOrLoginMatch) return uiOrLoginMatch[1];
-
-  const webMatch = path.match(/^(.*)\/web(?:\/|$)/);
-  if (webMatch) return webMatch[1];
-
+  const { pathname } = window.location;
+  const staticMatch = pathname.match(/^(.*)\/static\/index\.html$/);
+  if (staticMatch) {
+    return staticMatch[1];
+  }
+  const appMatch = pathname.match(PUBLIC_APP_PATH);
+  if (appMatch) {
+    return appMatch[1];
+  }
+  // Bare subpath entry (e.g. /qbitrr) before redirect to /qbitrr/ui
+  if (/^\/[^/]+$/.test(pathname)) {
+    return pathname;
+  }
   return "";
 }
 
@@ -32,17 +41,9 @@ export function setUrlBaseFromMeta(base: string | undefined): void {
   }
 }
 
-/** Clear cached UrlBase (for Vitest isolation). */
-export function resetUrlBaseCacheForTests(): void {
+/** Drop cached UrlBase so the next meta fetch or pathname derivation picks up changes. */
+export function clearUrlBaseCache(): void {
   cachedUrlBaseFromMeta = null;
-}
-
-/** True when the current pathname is the login route (with or without UrlBase). */
-export function isLoginPathname(pathname: string): boolean {
-  const normalized = pathname.replace(/\/$/, "") || "/";
-  if (normalized === "/login") return true;
-  const base = getUrlBase();
-  return base !== "" && normalized === `${base}/login`;
 }
 
 /** Prefix an app-relative path (must start with /) with the active UrlBase. */
@@ -52,4 +53,10 @@ export function webPath(path: string): string {
   }
   const base = getUrlBase();
   return base ? `${base}${path}` : path;
+}
+
+export const resetUrlBaseCacheForTests = clearUrlBaseCache;
+
+export function isLoginPathname(pathname: string): boolean {
+  return /(?:^|\/)login\/?$/.test(pathname);
 }

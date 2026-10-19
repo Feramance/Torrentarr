@@ -15,6 +15,9 @@ import { setupServer } from "msw/node";
 import App from "../../App";
 import { resetUrlBaseCacheForTests } from "../../api/urlBase";
 
+// Isolate lazy page imports from the shell tests that preload the real routes.
+vi.hoisted(() => vi.resetModules());
+
 const metaWithSetup = {
   current_version: "6.12.3",
   auth_required: true,
@@ -118,7 +121,7 @@ describe("App tab lifecycle", () => {
     expect(document.body.style.overflow).toBe("");
   });
 
-  it("reloads clean config state when reactivating the tab", async () => {
+  it("retains clean page state when reactivating the tab", async () => {
     vi.stubGlobal("location", {
       pathname: "/ui/",
       replace: vi.fn(),
@@ -140,7 +143,9 @@ describe("App tab lifecycle", () => {
     await user.click(screen.getByRole("button", { name: /processes/i }));
     await user.click(screen.getByRole("button", { name: /config/i }));
 
-    expect(screen.getByLabelText("mock config value")).toHaveValue("");
+    expect(screen.getByLabelText("mock config value")).toHaveValue(
+      "unsaved value",
+    );
   });
 
   it("discards retained config edits after confirmed navigation", async () => {
@@ -194,7 +199,9 @@ describe("App login setup flow", () => {
     render(<App />);
 
     expect(await screen.findByLabelText(/setup token/i)).toBeInTheDocument();
-    expect(screen.getByText(/welcome to torrentarr/i)).toBeInTheDocument();
+    expect(
+      screen.getByText(/create your username and password/i),
+    ).toBeInTheDocument();
   });
 
   it("blocks submit when setup token is empty", async () => {

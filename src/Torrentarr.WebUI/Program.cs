@@ -262,6 +262,24 @@ app.Use(async (context, next) =>
 
 // Serve static files from ClientApp/build
 var clientAppPath = Path.Combine(Directory.GetCurrentDirectory(), "ClientApp", "build");
+app.Use(async (context, next) =>
+{
+    var path = context.Request.Path.Value;
+    if (HttpMethods.IsGet(context.Request.Method) && path is "/" or "/ui" or "/ui/" or "/index.html" or "/static/index.html")
+    {
+        var file = Directory.Exists(clientAppPath) ? Path.Combine(clientAppPath, "index.html") : Path.Combine(app.Environment.WebRootPath ?? "wwwroot", "index.html");
+        if (File.Exists(file))
+        {
+            var html = await File.ReadAllTextAsync(file, context.RequestAborted);
+            var prefix = System.Net.WebUtility.HtmlEncode(string.IsNullOrEmpty(context.Request.PathBase.Value) ? urlBase : context.Request.PathBase.Value);
+            context.Response.ContentType = "text/html";
+            context.Response.Headers.CacheControl = "no-store";
+            await context.Response.WriteAsync(html.Replace("<head>", $"<head><base href=\"{prefix}/\">"), context.RequestAborted);
+            return;
+        }
+    }
+    await next(context);
+});
 if (Directory.Exists(clientAppPath))
 {
     app.UseDefaultFiles(new DefaultFilesOptions
@@ -1037,7 +1055,12 @@ app.MapGet("/web/processes", (TorrentarrConfig config) =>
             category = arr.Value.Category,
             name = arr.Key,
             type = arr.Value.Type,
-            alive = true,
+            kind = "worker",
+            restartable = false,
+            status = "Supervisor unavailable",
+            torrent = (WorkerLoopProgress?)null,
+            search = (WorkerLoopProgress?)null,
+            alive = false,
             pid = (int?)null,
             uptime = (long?)null
         });
@@ -1714,6 +1737,8 @@ app.MapGet("/web/meta", (TorrentarrConfig cfg) =>
             completed_at = (string?)null
         },
         installation_type = Environment.GetEnvironmentVariable("DOTNET_RUNNING_IN_CONTAINER") == "true" || File.Exists("/.dockerenv") ? "docker" : "dotnet",
+        auto_update_supported = false,
+        update_channel = cfg.Settings.AutoUpdateChannel,
         binary_download_url = (string?)null,
         binary_download_name = (string?)null,
         binary_download_size = (long?)null,

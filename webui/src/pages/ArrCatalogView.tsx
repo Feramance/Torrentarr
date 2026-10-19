@@ -8,10 +8,6 @@ export type { ArrCatalogKind } from "./arrCatalog/registry";
 async function loadArrCatalogDefinition(
   kind: ArrCatalogKind,
 ): Promise<AnyArrCatalogDefinition> {
-  if (kind === "readarr") {
-    const mod = await import("./arrCatalog/readarrDefinition");
-    return mod.getReadarrCatalogDefinition();
-  }
   if (kind === "sonarr") {
     const mod = await import("./arrCatalog/sonarrDefinition");
     return mod.getSonarrCatalogDefinition();
@@ -19,6 +15,10 @@ async function loadArrCatalogDefinition(
   if (kind === "lidarr") {
     const mod = await import("./arrCatalog/lidarrDefinition");
     return mod.getLidarrCatalogDefinition();
+  }
+  if (kind === "readarr") {
+    const mod = await import("./arrCatalog/readarrDefinition");
+    return mod.getReadarrCatalogDefinition();
   }
   const mod = await import("./arrCatalog/radarrDefinition");
   return mod.getRadarrCatalogDefinition();
@@ -31,10 +31,10 @@ async function loadArrCatalogDefinition(
  * Arr.
  *
  * Only the definition module for `kind` is loaded (dynamic import) so visiting one
- * Arr tab does not pull the other two Arr definition chunks.
+ * Arr tab does not pull the other Arr definition chunks.
  *
- * Sonarr/Lidarr browse always uses series/artist rows with seasons/episodes or
- * albums/tracks in the detail modal.
+ * Sonarr/Lidarr/Readarr browse always uses series/artist/author rows with
+ * seasons/episodes, albums/tracks, or books in the detail modal.
  */
 export function ArrCatalogView({
   kind,
@@ -47,32 +47,20 @@ export function ArrCatalogView({
     kind: ArrCatalogKind;
     definition: AnyArrCatalogDefinition;
   } | null>(null);
-  const [loadError, setLoadError] = useState<string | null>(null);
 
   useEffect(() => {
     let cancelled = false;
-    setLoadError(null);
-    void loadArrCatalogDefinition(kind).then(
-      (def) => {
-        if (!cancelled) setLoaded({ kind, definition: def });
-      },
-      (error: unknown) => {
-        if (!cancelled)
-          setLoadError(
-            error instanceof Error ? error.message : "Failed to load catalog",
-          );
-      },
-    );
+    void loadArrCatalogDefinition(kind).then((def) => {
+      if (!cancelled) {
+        setLoaded({ kind, definition: def });
+      }
+    });
     return () => {
       cancelled = true;
     };
   }, [kind]);
 
   if (!loaded || loaded.kind !== kind) {
-    if (loadError)
-      return (
-        <div className="hint">{loadError} — reload the page to retry.</div>
-      );
     return <div className="hint">Loading catalog…</div>;
   }
 

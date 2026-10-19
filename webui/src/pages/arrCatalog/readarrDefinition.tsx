@@ -1,4 +1,4 @@
-import type { LegacyColumnDef as AppColumnDef } from "@tanstack/react-table/legacy";
+import type { AppColumnDef } from "../../tableCore";
 import { useCallback, useMemo, type JSX, type RefCallback } from "react";
 import { getReadarrAuthors } from "../../api/client";
 import type {

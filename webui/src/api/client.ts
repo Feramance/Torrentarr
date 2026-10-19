@@ -1,4 +1,4 @@
-import { setUrlBaseFromMeta, webPath } from "./urlBase";
+import { clearUrlBaseCache, setUrlBaseFromMeta, webPath } from "./urlBase";
 import type {
   ArrListResponse,
   ConfigDocument,
@@ -33,6 +33,74 @@ import type {
 } from "./types";
 
 export type { LogFileInfo };
+export class AuthError extends Error {
+  code?: string;
+  constructor(message: string, code?: string) {
+    super(message);
+    this.name = "AuthError";
+    this.code = code;
+  }
+}
+
+/** API field validation error from config save (path is dotted, e.g. Lidarr.URI). */
+export interface ConfigApiValidationError {
+  path: string;
+  message: string;
+}
+
+/** Thrown when config update fails validation; preserves per-field errors for UI. */
+export class ConfigApiError extends Error {
+  validationErrors: ConfigApiValidationError[];
+
+  constructor(
+    message: string,
+    validationErrors: ConfigApiValidationError[] = [],
+  ) {
+    super(message);
+    this.name = "ConfigApiError";
+    this.validationErrors = validationErrors;
+  }
+}
+
+function parseConfigApiValidationErrors(
+  detail: unknown,
+): ConfigApiValidationError[] {
+  if (!detail || typeof detail !== "object") {
+    return [];
+  }
+  const raw = (detail as Record<string, unknown>).validationErrors;
+  if (!Array.isArray(raw)) {
+    return [];
+  }
+  const errors: ConfigApiValidationError[] = [];
+  for (const item of raw) {
+    if (!item || typeof item !== "object") {
+      continue;
+    }
+    const path = (item as Record<string, unknown>).path;
+    const message = (item as Record<string, unknown>).message;
+    if (
+      typeof path === "string" &&
+      path.trim() &&
+      typeof message === "string" &&
+      message.trim()
+    ) {
+      errors.push({ path: path.trim(), message: message.trim() });
+    }
+  }
+  return errors;
+}
+
+function formatConfigApiValidationErrors(
+  errors: ConfigApiValidationError[],
+): string {
+  const formatted = errors
+    .map((error) => `${error.path}: ${error.message}`)
+    .join("\n");
+  return errors.length === 1
+    ? formatted
+    : `Please resolve the following issues:\n${formatted}`;
+}
 
 const JSON_HEADERS = { "Content-Type": "application/json" } as const;
 const TOKEN_STORAGE_KEYS = ["token", "webui-token", "webui_token"] as const;
@@ -40,6 +108,85 @@ const MAX_AUTH_RETRIES = 1;
 
 // Request deduplication cache
 const inflightRequests = new Map<string, Promise<unknown>>();
+
+/** Short-lived GET response cache (status/config/meta/processes). Arr catalogs use TTL 0. */
+interface TtlCacheEntry {
+  expiresAt: number;
+  value: unknown;
+}
+
+const ttlResponseCache = new Map<string, TtlCacheEntry>();
+
+const GET_TTL_MS: ReadonlyArray<{
+  match: (path: string) => boolean;
+  ttlMs: number;
+}> = [
+  { match: (path) => path.includes("/web/status"), ttlMs: 2_000 },
+  { match: (path) => path.includes("/web/config"), ttlMs: 30_000 },
+  {
+    match: (path) =>
+      path.includes("/web/meta") && !/[?&]force=1(?:&|$)/.test(path),
+    ttlMs: 60_000,
+  },
+  { match: (path) => path.includes("/web/processes"), ttlMs: 800 },
+];
+
+function extractRequestPath(input: RequestInfo | URL): string {
+  const raw = input instanceof Request ? input.url : String(input);
+  try {
+    if (raw.startsWith("http://") || raw.startsWith("https://")) {
+      const url = new URL(raw);
+      return `${url.pathname}${url.search}`;
+    }
+  } catch {
+    // fall through
+  }
+  return raw;
+}
+
+function resolveGetTtlMs(path: string): number {
+  // Arr catalog paged URLs keep their own caches — never TTL here.
+  if (
+    /\/web\/(?:radarr|sonarr|lidarr|readarr)\//.test(path) ||
+    /\/web\/arr\//.test(path)
+  ) {
+    return 0;
+  }
+  for (const rule of GET_TTL_MS) {
+    if (rule.match(path)) {
+      return rule.ttlMs;
+    }
+  }
+  return 0;
+}
+
+function readTtlCache<T>(key: string): T | undefined {
+  const entry = ttlResponseCache.get(key);
+  if (!entry) {
+    return undefined;
+  }
+  if (Date.now() > entry.expiresAt) {
+    ttlResponseCache.delete(key);
+    return undefined;
+  }
+  return entry.value as T;
+}
+
+function writeTtlCache(key: string, value: unknown, ttlMs: number): void {
+  if (ttlMs <= 0) {
+    return;
+  }
+  ttlResponseCache.set(key, { value, expiresAt: Date.now() + ttlMs });
+}
+
+/** Invalidate TTL entries whose request path matches any of the substrings. */
+export function invalidateGetCache(pathSubstrings: readonly string[]): void {
+  for (const key of [...ttlResponseCache.keys()]) {
+    if (pathSubstrings.some((part) => key.includes(part))) {
+      ttlResponseCache.delete(key);
+    }
+  }
+}
 
 function createRequestKey(
   input: RequestInfo | URL,
@@ -66,12 +213,9 @@ function resolveToken(): string | null {
     const fromQuery = params.get("token");
     if (fromQuery) {
       localStorage.setItem("token", fromQuery);
-      // Remove the token from the URL so it doesn't persist in browser history or logs
-      params.delete("token");
-      const newSearch = params.toString();
-      const newUrl =
-        window.location.pathname + (newSearch ? `?${newSearch}` : "");
-      history.replaceState(null, "", newUrl);
+      const cleanUrl = new URL(window.location.href);
+      cleanUrl.searchParams.delete("token");
+      window.history.replaceState({}, "", cleanUrl.toString());
       return fromQuery;
     }
   } catch {
@@ -93,6 +237,13 @@ function clearStoredToken(): void {
   }
 }
 
+function resolveRequestInput(input: RequestInfo | URL): RequestInfo | URL {
+  if (typeof input === "string" && input.startsWith("/")) {
+    return webPath(input);
+  }
+  return input;
+}
+
 function buildInit(
   init: RequestInit | undefined,
   token: string | null,
@@ -106,16 +257,9 @@ function buildInit(
   }
   return {
     ...init,
-    credentials: "include",
     headers,
+    credentials: "include",
   };
-}
-
-function resolveRequestInput(input: RequestInfo | URL): RequestInfo | URL {
-  if (typeof input === "string" && input.startsWith("/")) {
-    return webPath(input);
-  }
-  return input;
 }
 
 async function fetchWithAuthRetry<T>(
@@ -140,22 +284,35 @@ async function fetchJson<T>(
   input: RequestInfo | URL,
   init?: RequestInit,
 ): Promise<T> {
-  // Only deduplicate GET requests (safe to share). Skip when a caller-provided
-  // AbortSignal is present so the request is not shared with a later abort.
+  // Only deduplicate GET requests (safe to share)
   const method = init?.method || "GET";
-  if (method === "GET" && !init?.signal) {
+  if (method === "GET") {
     const key = createRequestKey(input, init);
-    const existingRequest = inflightRequests.get(key) as Promise<T> | undefined;
+    const path = extractRequestPath(input);
+    const ttlMs = resolveGetTtlMs(path);
 
+    if (ttlMs > 0) {
+      const cached = readTtlCache<T>(key);
+      if (cached !== undefined) {
+        return cached;
+      }
+    }
+
+    const existingRequest = inflightRequests.get(key) as Promise<T> | undefined;
     if (existingRequest) {
       return existingRequest;
     }
 
     const promise = fetchWithAuthRetry<T>(input, init, (response) =>
       handleJson<T>(response),
-    ).finally(() => {
-      inflightRequests.delete(key);
-    });
+    )
+      .then((value) => {
+        writeTtlCache(key, value, ttlMs);
+        return value;
+      })
+      .finally(() => {
+        inflightRequests.delete(key);
+      });
 
     inflightRequests.set(key, promise);
     return promise;
@@ -194,6 +351,13 @@ async function handleJson<T>(res: Response): Promise<T> {
       if (errorText.trim()) {
         message = errorText;
       }
+    }
+    const validationErrors = parseConfigApiValidationErrors(detail);
+    if (validationErrors.length) {
+      throw new ConfigApiError(
+        formatConfigApiValidationErrors(validationErrors),
+        validationErrors,
+      );
     }
     throw new Error(message);
   }
@@ -527,43 +691,13 @@ export async function getConfig(): Promise<ConfigDocument> {
 export async function updateConfig(
   payload: ConfigUpdatePayload,
 ): Promise<ConfigUpdateResponse> {
-  const token = resolveToken();
-  const response = await fetch(
-    webPath("/web/config"),
-    buildInit(
-      {
-        method: "POST",
-        body: JSON.stringify(payload),
-      },
-      token,
-    ),
-  );
-
-  if (!response.ok) {
-    let detail: unknown = null;
-    try {
-      detail = await response.json();
-    } catch {
-      // ignore
-    }
-    let message = `${response.status} ${response.statusText}`;
-    if (
-      detail &&
-      typeof detail === "object" &&
-      "error" in detail &&
-      typeof (detail as Record<string, unknown>).error === "string"
-    ) {
-      const errorText = (detail as Record<string, unknown>).error as string;
-      if (errorText.trim()) {
-        message = errorText;
-      }
-    }
-    throw new Error(message);
-  }
-
-  // Parse response body with full type information
-  const data = (await response.json()) as ConfigUpdateResponse;
-  return data;
+  const result = await fetchJson<ConfigUpdateResponse>("/web/config", {
+    method: "POST",
+    body: JSON.stringify(payload),
+  });
+  invalidateGetCache(["/web/config", "/web/meta", "/web/status"]);
+  window.dispatchEvent(new Event("torrentarr:config-saved"));
+  return result;
 }
 
 export async function triggerUpdate(): Promise<void> {
@@ -635,15 +769,6 @@ export interface LoginRequest {
 }
 
 /** Error thrown by `login()`. Preserves the `code` field from the server response (e.g. "SETUP_REQUIRED"). */
-export class AuthError extends Error {
-  readonly code?: string;
-  constructor(message: string, code?: string) {
-    super(message);
-    this.name = "AuthError";
-    this.code = code;
-  }
-}
-
 export async function login(
   request: LoginRequest,
 ): Promise<{ success: boolean }> {
@@ -781,4 +906,20 @@ export async function getLogDelta(
   lines?: number,
 ): Promise<LogTailPayload> {
   return getLogTailJson(name, { sinceBytes, inode, lines });
+}
+
+export async function fetchWebToken(): Promise<string | null> {
+  try {
+    return (await getToken()).token || null;
+  } catch {
+    return null;
+  }
+}
+export async function refreshUrlBaseFromMeta(): Promise<MetaResponse> {
+  clearUrlBaseCache();
+  invalidateGetCache(["/web/meta"]);
+  return getMeta({ force: true });
+}
+export function getQbitOverviewPath(instance?: string): string {
+  return `/web/qbit/overview${instance ? `?instance=${encodeURIComponent(instance)}` : ""}`;
 }

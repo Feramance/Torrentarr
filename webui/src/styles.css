@@ -1798,6 +1798,17 @@ svg[height] {
     font-size: 14px;
     line-height: 1.4;
   }
+  .tracks-table td:nth-child(n) {
+    width: 100%;
+    white-space: normal;
+    overflow: visible;
+  }
+  .tracks-table td > * {
+    min-width: 0;
+    max-width: 100%;
+    white-space: normal;
+    overflow-wrap: anywhere;
+  }
   .tracks-table td::before {
     content: attr(data-label);
     font-weight: 600;
@@ -2352,6 +2363,7 @@ svg[height] {
 
 .config-layout {
   display: grid;
+  grid-template-columns: minmax(0, 1fr);
   gap: 16px;
 }
 .config-actions {
@@ -2362,7 +2374,7 @@ svg[height] {
 .config-grid {
   display: grid;
   gap: 20px;
-  grid-template-columns: repeat(auto-fit, minmax(320px, 1fr));
+  grid-template-columns: repeat(auto-fit, minmax(min(320px, 100%), 1fr));
 }
 .config-arr-groups {
   display: flex;
@@ -2370,6 +2382,7 @@ svg[height] {
   gap: 24px;
 }
 .config-arr-group {
+  min-width: 0;
   display: flex;
   flex-direction: column;
   gap: 12px;
@@ -2383,6 +2396,7 @@ svg[height] {
 }
 .config-arr-group__details summary {
   display: flex;
+  flex-wrap: wrap;
   justify-content: space-between;
   align-items: center;
   gap: 12px;
@@ -2427,7 +2441,7 @@ svg[height] {
 .config-arr-grid {
   display: grid;
   gap: 18px;
-  grid-template-columns: repeat(auto-fit, minmax(360px, 1fr));
+  grid-template-columns: repeat(auto-fit, minmax(min(360px, 100%), 1fr));
   margin-top: 4px;
 }
 .config-arr-grid .card-body {
@@ -2700,6 +2714,8 @@ svg[height] {
   letter-spacing: -0.01em;
 }
 .modal-body {
+  min-width: 0;
+  grid-template-columns: minmax(0, 1fr);
   padding: 24px;
   overflow-y: auto;
   overflow-x: hidden;
@@ -2969,7 +2985,7 @@ svg[height] {
 .tracker-grid {
   display: grid;
   gap: 16px;
-  grid-template-columns: repeat(auto-fit, minmax(320px, 1fr));
+  grid-template-columns: repeat(auto-fit, minmax(min(320px, 100%), 1fr));
 }
 .tracker-card.card {
   background: rgba(255, 255, 255, 0.03);
@@ -4864,6 +4880,7 @@ svg[height] {
 }
 
 .arr-detail-radarr__poster {
+  width: min(200px, 100%);
   max-width: 200px;
   margin: 0 auto;
 }
@@ -4889,6 +4906,8 @@ svg[height] {
 }
 
 .arr-detail-dl dd {
+  min-width: 0;
+  overflow-wrap: anywhere;
   margin: 0;
 }
 
@@ -5466,194 +5485,6 @@ svg[height] {
   }
 }
 
-/* Torrentarr-specific components and accessibility states. */
-@media (max-width: 720px) {
-  [data-theme="light"] .responsive-table tbody tr,
-  [data-theme="light"] .episodes-table tbody tr,
-  [data-theme="light"] .tracks-table tbody tr {
-    background: var(--surface);
-    border-color: var(--border);
-  }
-}
-.status-indicator--partial {
-  background: #f59e0b;
-  box-shadow: 0 0 12px rgba(245, 158, 11, 0.5);
-  animation: pulse 1.2s ease-in-out infinite;
-}
-
-.qbit-category-group {
-  border: 1px solid var(--border, rgba(122, 162, 247, 0.2));
-  border-radius: 12px;
-  padding: 8px 12px;
-}
-
-.qbit-category-group summary {
-  cursor: pointer;
-  font-weight: 600;
-  padding: 8px 4px;
-}
-
-.empty-state__icon {
-  font-size: 48px;
-  margin-bottom: 16px;
-  opacity: 0.5;
-}
-
-.empty-state__icon svg {
-  width: 48px;
-  height: 48px;
-}
-
-.empty-state__content {
-  position: relative;
-  z-index: 1;
-}
-
-.empty-state__title {
-  font-size: 18px;
-  font-weight: 600;
-  color: var(--on-surface);
-  margin: 0 0 8px 0;
-}
-
-.empty-state__message {
-  font-size: 14px;
-  color: var(--text-secondary);
-  margin: 0 0 16px 0;
-  line-height: 1.5;
-}
-
-.empty-state__action {
-  margin-top: 16px;
-}
-.login-card h1 {
-  margin: 0 0 8px;
-  font-size: 24px;
-  font-weight: 600;
-  color: var(--on-surface);
-}
-.login-card .form-group {
-  margin-bottom: 16px;
-}
-.login-card .form-group label {
-  display: block;
-  margin-bottom: 6px;
-  font-size: 14px;
-  font-weight: 500;
-  color: var(--on-surface);
-}
-.login-card .form-group input {
-  width: 100%;
-  padding: 10px 12px;
-  font-size: 16px;
-  border: 1px solid var(--border);
-  border-radius: 8px;
-  background: var(--bg);
-  color: var(--on-surface);
-}
-.login-card .form-group input:focus {
-  outline: none;
-  border-color: var(--primary);
-  box-shadow: 0 0 0 2px rgba(122, 162, 247, 0.25);
-}
-.login-card .btn.primary {
-  width: 100%;
-  margin-top: 8px;
-  padding: 10px 16px;
-}
-.login-oidc {
-  margin: 16px 0 0;
-  text-align: center;
-  font-size: 14px;
-}
-.login-oidc a {
-  color: var(--primary);
-  text-decoration: none;
-}
-.login-oidc a:hover {
-  text-decoration: underline;
-}
-.skeleton {
-  background: linear-gradient(
-    90deg,
-    var(--surface) 0%,
-    rgba(122, 162, 247, 0.1) 50%,
-    var(--surface) 100%
-  );
-  background-size: 200% 100%;
-  animation: skeleton-loading 1.5s ease-in-out infinite;
-  border-radius: 6px;
-}
-
-.skeleton-table {
-  display: flex;
-  flex-direction: column;
-  gap: 8px;
-  padding: 16px;
-}
-
-.skeleton-table-header {
-  display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(100px, 1fr));
-  gap: 12px;
-  margin-bottom: 8px;
-}
-
-.skeleton-header {
-  height: 24px;
-}
-
-.skeleton-table-row {
-  display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(100px, 1fr));
-  gap: 12px;
-  padding: 12px 0;
-  border-bottom: 1px solid var(--border);
-}
-
-.skeleton-cell {
-  height: 20px;
-}
-
-.skeleton-card {
-  padding: 20px;
-  background: var(--surface);
-  border-radius: 12px;
-  border: 1px solid var(--border);
-}
-
-.skeleton-title {
-  height: 28px;
-  width: 60%;
-  margin-bottom: 16px;
-}
-
-.skeleton-text {
-  height: 16px;
-  margin-bottom: 12px;
-}
-
-.skeleton-text:last-of-type {
-  width: 80%;
-}
-
-.skeleton-button {
-  height: 40px;
-  width: 120px;
-  margin-top: 16px;
-  border-radius: 8px;
-}
-
-.skeleton-text-group {
-  display: flex;
-  flex-direction: column;
-  gap: 12px;
-}
-
-[data-density="compact"] .process-chip__top {
-  gap: 6px;
-}
-
 /* Additional torrent clients share qBitrr's dashboard chrome. */
 .maintenance-view > .card {
   margin: 16px;
@@ -5672,41 +5503,22 @@ svg[height] {
   flex-wrap: wrap;
   gap: 8px;
 }
-.field-error {
-  grid-column: 1 / -1;
-  margin-top: -8px;
-}
-.pane {
-  min-width: 0;
-}
-.arr-movie-tile__poster img {
-  max-width: 100%;
-}
-.process-chip {
-  position: relative;
-}
-.process-chip__top {
-  justify-content: flex-end;
-  flex-direction: row-reverse;
-  gap: 6px;
-  padding-right: 60px;
-}
-.process-chip__actions {
-  position: absolute;
-  top: 8px;
-  right: 8px;
-  margin: 0;
-}
-.process-chip__actions .btn {
-  padding: 2px 6px;
-  border-color: transparent;
-  background: transparent;
-}
-.arr-detail-radarr__poster {
-  width: min(200px, 100%);
-}
-.arr-detail-dl {
-  min-width: 0;
-  overflow-wrap: anywhere;
-  align-content: start;
+
+@media (max-width: 720px) {
+  .modal-backdrop {
+    padding: max(12px, env(safe-area-inset-top))
+      max(12px, env(safe-area-inset-right))
+      max(12px, env(safe-area-inset-bottom))
+      max(12px, env(safe-area-inset-left));
+  }
+  .modal {
+    width: 100%;
+    max-height: calc(100dvh - 24px);
+  }
+  .modal-body {
+    padding: 16px;
+  }
+  .arr-detail-dl {
+    grid-template-columns: minmax(80px, 34%) minmax(0, 1fr);
+  }
 }

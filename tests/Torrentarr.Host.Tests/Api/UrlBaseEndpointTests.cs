@@ -58,6 +58,22 @@ public class UrlBaseEndpointTests : IClassFixture<UrlBaseWebApplicationFactory>
         response.StatusCode.Should().Be(HttpStatusCode.OK);
     }
 
+    [Theory]
+    [InlineData("/ui")]
+    [InlineData("/ui/")]
+    [InlineData("/static/index.html")]
+    public async Task SpaAliases_UseConfiguredAssetBase(string alias)
+    {
+        _factory.SetConfigEnv();
+        var client = _factory.CreateClientWithPathBase("/torrentarr");
+        var response = await client.GetAsync("/torrentarr" + alias);
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+        var html = await response.Content.ReadAsStringAsync();
+        html.Should().Contain("<base href=\"/torrentarr/\">");
+        html.Should().Contain("./assets/");
+        response.Headers.CacheControl!.NoStore.Should().BeTrue();
+    }
+
     [Fact]
     public async Task GetMeta_WithoutPathBaseClient_ReportsConfiguredUrlBase()
     {

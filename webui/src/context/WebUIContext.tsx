@@ -1,13 +1,16 @@
 import {
   createContext,
   useCallback,
+  useContext,
   useEffect,
+  useMemo,
   useState,
   type JSX,
   type ReactNode,
 } from "react";
 import { getConfig, updateConfig } from "../api/client";
 import { useToast } from "./ToastContext";
+import { createPersistedBooleanSetter } from "./webUISettingSetters";
 
 type ViewDensity = "comfortable" | "compact";
 type Theme = "light" | "dark";
@@ -18,33 +21,50 @@ interface WebUISettings {
   theme: Theme;
 }
 
-export interface WebUIContextValue {
+interface WebUIContextValue {
   liveArr: boolean;
   viewDensity: ViewDensity;
   theme: Theme;
   setLiveArr: (value: boolean) => void;
   setViewDensity: (value: ViewDensity) => void;
   setTheme: (value: Theme) => void;
-  loading: boolean;
 }
 
 const WebUIContext = createContext<WebUIContextValue | null>(null);
-export { WebUIContext };
+
+function applyThemeEarly(): void {
+  try {
+    const storedTheme = localStorage.getItem("theme");
+    const theme =
+      storedTheme === "light" || storedTheme === "dark" ? storedTheme : "dark";
+    document.documentElement.setAttribute("data-theme", theme);
+  } catch {
+    document.documentElement.setAttribute("data-theme", "dark");
+  }
+}
+
+applyThemeEarly();
 
 export function WebUIProvider({
   children,
 }: {
   children: ReactNode;
 }): JSX.Element {
-  const [settings, setSettings] = useState<WebUISettings>({
-    liveArr: true,
-    viewDensity: "comfortable",
-    theme: "dark",
+  const [settings, setSettings] = useState<WebUISettings>(() => {
+    const storedDensity = localStorage.getItem(
+      "viewDensity",
+    ) as ViewDensity | null;
+    const storedTheme = localStorage.getItem("theme") as Theme | null;
+    return {
+      liveArr: true,
+      viewDensity: storedDensity === "compact" ? "compact" : "comfortable",
+      theme: storedTheme === "light" ? "light" : "dark",
+    };
   });
-  const [loading, setLoading] = useState(true);
   const { push } = useToast();
 
-  // Load initial settings
+  // Load settings from backend only after AuthGate has authenticated (this provider
+  // mounts inside the authenticated tree — see App.tsx).
   useEffect(() => {
     const loadSettings = async () => {
       try {
@@ -87,8 +107,6 @@ export function WebUIProvider({
         document.documentElement.setAttribute("data-theme", theme);
       } catch {
         // settings load failed, defaults will be used
-      } finally {
-        setLoading(false);
       }
     };
 
@@ -107,11 +125,14 @@ export function WebUIProvider({
     [],
   );
 
-  const setLiveArr = useCallback(
-    (value: boolean) => {
-      setSettings((prev) => ({ ...prev, liveArr: value }));
-      void saveSettings("LiveArr", value);
-    },
+  const setLiveArr = useMemo(
+    () =>
+      createPersistedBooleanSetter<WebUISettings, "liveArr">(
+        setSettings,
+        saveSettings,
+        "liveArr",
+        "LiveArr",
+      ),
     [saveSettings],
   );
 
@@ -119,11 +140,7 @@ export function WebUIProvider({
     (value: ViewDensity) => {
       setSettings((prev) => ({ ...prev, viewDensity: value }));
       // Store in localStorage for instant application
-      try {
-        localStorage.setItem("viewDensity", value);
-      } catch {
-        /* quota exceeded or private mode */
-      }
+      localStorage.setItem("viewDensity", value);
       // Save to backend with proper capitalization (Comfortable or Compact)
       const capitalizedDensity =
         value === "comfortable" ? "Comfortable" : "Compact";
@@ -136,11 +153,7 @@ export function WebUIProvider({
     (value: Theme) => {
       setSettings((prev) => ({ ...prev, theme: value }));
       // Store in localStorage for instant application
-      try {
-        localStorage.setItem("theme", value);
-      } catch {
-        /* quota exceeded or private mode */
-      }
+      localStorage.setItem("theme", value);
       // Apply theme immediately to DOM
       document.documentElement.setAttribute("data-theme", value);
       // Save to backend with proper capitalization (Light or Dark)
@@ -150,21 +163,28 @@ export function WebUIProvider({
     [saveSettings],
   );
 
-  const value: WebUIContextValue = {
-    liveArr: settings.liveArr,
-    viewDensity: settings.viewDensity,
-    theme: settings.theme,
-    setLiveArr,
-    setViewDensity,
-    setTheme,
-    loading,
-  };
+  const value = useMemo<WebUIContextValue>(
+    () => ({
+      liveArr: settings.liveArr,
+      viewDensity: settings.viewDensity,
+      theme: settings.theme,
+      setLiveArr,
+      setViewDensity,
+      setTheme,
+    }),
+    [settings, setLiveArr, setViewDensity, setTheme],
+  );
 
   return (
     <WebUIContext.Provider value={value}>{children}</WebUIContext.Provider>
   );
 }
 
-// Re-export hook so consumers can import from one place; implementation lives in useWebUI.ts for Fast Refresh
-/* eslint-disable-next-line react-refresh/only-export-components */
-export { useWebUI } from "./useWebUI";
+// eslint-disable-next-line react-refresh/only-export-components
+export function useWebUI(): WebUIContextValue {
+  const context = useContext(WebUIContext);
+  if (!context) {
+    throw new Error("useWebUI must be used within WebUIProvider");
+  }
+  return context;
+}

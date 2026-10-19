@@ -1,6 +1,17 @@
 export type ArrType = "radarr" | "sonarr" | "lidarr" | string;
 
+export interface WorkerLoopProgress {
+  phase: string;
+  startedAt: string;
+  wakeAt?: string | null;
+  lastSuccess?: string | null;
+}
+
 export interface ProcessInfo {
+  torrent?: WorkerLoopProgress | null;
+  search?: WorkerLoopProgress | null;
+  freeSpacePaused?: number;
+  restartable?: boolean;
   category: string;
   name: string;
   kind: string;
@@ -281,6 +292,7 @@ export interface LidarrCounts {
 }
 
 export interface LidarrTrack {
+  reason?: string | null;
   id?: number;
   trackNumber?: number | string;
   title?: string;
@@ -465,6 +477,8 @@ export interface UpdateState {
 }
 
 export interface MetaResponse {
+  update_channel?: "latest" | "stable" | "nightly";
+  auto_update_supported?: boolean;
   current_version: string;
   latest_version: string | null;
   update_available: boolean;

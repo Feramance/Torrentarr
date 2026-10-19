@@ -2,6 +2,7 @@ import { useState, type KeyboardEvent } from "react";
 import CloseIcon from "../icons/close.svg";
 
 interface TagInputProps {
+  ariaLabel?: string;
   value: string[];
   onChange: (value: string[]) => void;
   placeholder?: string;
@@ -13,6 +14,7 @@ export function TagInput({
   onChange,
   placeholder,
   disabled,
+  ariaLabel,
 }: TagInputProps) {
   const [inputValue, setInputValue] = useState("");
 
@@ -37,14 +39,14 @@ export function TagInput({
   return (
     <div className="tag-input-container">
       <div className="tag-input-wrapper">
-        {value.map((tag) => (
+        {value.map((tag, index) => (
           <span key={tag} className="tag">
             {tag}
             {!disabled && (
               <button
                 type="button"
                 className="tag-remove"
-                onClick={() => handleRemove(value.indexOf(tag))}
+                onClick={() => handleRemove(index)}
                 aria-label={`Remove ${tag}`}
               >
                 <img src={CloseIcon} alt="Remove" />
@@ -53,6 +55,7 @@ export function TagInput({
           </span>
         ))}
         <input
+          aria-label={ariaLabel}
           type="text"
           value={inputValue}
           onChange={(e) => setInputValue(e.target.value)}

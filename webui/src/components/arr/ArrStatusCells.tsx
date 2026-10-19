@@ -34,7 +34,7 @@ export function ArrReasonBadge({
   readonly reason: string | null | undefined;
 }): JSX.Element {
   const trimmed = typeof reason === "string" ? reason.trim() : "";
-  if (!trimmed || trimmed.toLowerCase() === "none") {
+  if (!trimmed) {
     return (
       <span className="table-badge table-badge-reason table-badge-reason--idle">
         {ARR_IDLE_REASON_LABEL}
