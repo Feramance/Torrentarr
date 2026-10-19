@@ -75,6 +75,70 @@ function renderConfig() {
   return render(<ConfigView />, { wrapper: Wrapper });
 }
 
+it("lists every client together by name with the same controls and shared settings", async () => {
+  server.use(
+    http.get("/web/config", () =>
+      HttpResponse.json({
+        ...configQbitOnly,
+        TorrentClients: {
+          "a-transmission": {
+            Type: "transmission",
+            Host: "transmission",
+            Port: 9091,
+            Disabled: true,
+          },
+          "z-qbit": { Type: "qbittorrent", Host: "seedbox", Port: 8080 },
+        },
+      }),
+    ),
+  );
+  const user = userEvent.setup();
+  renderConfig();
+  const section = (await screen.findByText("Torrent Clients")).closest(
+    "section",
+  )!;
+  expect(screen.queryByText("qBittorrent Instances")).not.toBeInTheDocument();
+  expect(
+    screen.queryByText("Additional Torrent Clients"),
+  ).not.toBeInTheDocument();
+  expect(section.querySelector(".config-arr-group__count")).toHaveTextContent(
+    "3",
+  );
+  expect(
+    Array.from(
+      section.querySelectorAll(".card-header"),
+      (header) => header.textContent,
+    ),
+  ).toEqual(["a-transmission", "qBit", "z-qbit"]);
+  expect(
+    within(section).getAllByRole("button", { name: "Add Instance" }),
+  ).toHaveLength(1);
+  for (const card of section.querySelectorAll<HTMLElement>(
+    ".config-arr-card",
+  )) {
+    expect(within(card).getAllByRole("button")).toHaveLength(1);
+    expect(within(card).getByText("Host")).toBeInTheDocument();
+    expect(within(card).getByText("Status")).toBeInTheDocument();
+    await user.click(within(card).getByRole("button", { name: "Configure" }));
+    const dialog = screen.getByRole("dialog");
+    expect(
+      within(dialog).getByText("Managed Categories", { exact: true }),
+    ).toBeInTheDocument();
+    expect(
+      within(dialog).getByText("Hit and Run Mode", { exact: true }),
+    ).toBeInTheDocument();
+    expect(
+      within(dialog).getByText("Maintenance Enabled", { exact: true }),
+    ).toBeInTheDocument();
+    expect(
+      within(dialog).getByRole("button", { name: "Delete", exact: true }),
+    ).toBeInTheDocument();
+    await user.click(
+      within(dialog).getByRole("button", { name: "Close", exact: true }),
+    );
+  }
+});
+
 // ── delete button rendering ───────────────────────────────────────────────────
 
 describe("ConfigView – delete button rendering", () => {
@@ -331,7 +395,7 @@ describe("ConfigView – equal client names", () => {
 // ── addQbitInstance logic ──────────────────────────────────────────────────────
 
 describe("ConfigView – addQbitInstance behaviour", () => {
-  it("clicking 'Add Instance' creates a qBit-1 card when qBit is the only instance", async () => {
+  it("clicking 'Add Instance' creates a client-1 card when qBit is the only instance", async () => {
     server.use(
       http.get("/web/config", () => HttpResponse.json(configQbitOnly)),
       http.post("/web/config", () => HttpResponse.json(okUpdateResponse)),
@@ -342,24 +406,22 @@ describe("ConfigView – addQbitInstance behaviour", () => {
     renderConfig();
 
     await screen.findByText("qBit");
-    expect(screen.queryByText("qBit-1")).not.toBeInTheDocument();
+    expect(screen.queryByText("client-1")).not.toBeInTheDocument();
 
-    // The qBit "Add Instance" button is inside the "qBittorrent Instances" section.
+    // Scope the shared add button to the torrent client section.
     // Arr groups (Radarr/Sonarr/Lidarr) each have their own "Add Instance" button,
     // so we must scope the query to avoid ambiguity.
-    const qbitSection = screen
-      .getByText("qBittorrent Instances")
-      .closest("section")!;
+    const qbitSection = screen.getByText("Torrent Clients").closest("section")!;
     const addBtn = within(qbitSection).getByRole("button", {
       name: /add instance/i,
     });
     await user.click(addBtn);
 
-    // findAllByText: the card header AND the modal title both contain "qBit-1"
-    await screen.findAllByText("qBit-1");
+    // findAllByText: the card header AND the modal title both contain "client-1"
+    await screen.findAllByText("client-1");
   });
 
-  it("clicking 'Add Instance' twice creates qBit-1 and then qBit-2", async () => {
+  it("clicking 'Add Instance' twice creates client-1 and then client-2", async () => {
     server.use(
       http.get("/web/config", () => HttpResponse.json(configQbitOnly)),
       http.post("/web/config", () => HttpResponse.json(okUpdateResponse)),
@@ -371,19 +433,20 @@ describe("ConfigView – addQbitInstance behaviour", () => {
 
     await screen.findByText("qBit");
 
-    // Click once → creates qBit-1 and opens its configure modal
+    // Click once → creates client-1 and opens its configure modal
     const getAddBtn = () =>
-      within(
-        screen.getByText("qBittorrent Instances").closest("section")!,
-      ).getByRole("button", { name: /add instance/i });
+      within(screen.getByText("Torrent Clients").closest("section")!).getByRole(
+        "button",
+        { name: /add instance/i },
+      );
 
     await user.click(getAddBtn());
-    // Card header + modal title both show "qBit-1"
-    await screen.findAllByText("qBit-1");
+    // Card header + modal title both show "client-1"
+    await screen.findAllByText("client-1");
 
-    // Click again → creates qBit-2 (re-query button since DOM updated)
+    // Click again → creates client-2 (re-query button since DOM updated)
     await user.click(getAddBtn());
-    await screen.findAllByText("qBit-2");
+    await screen.findAllByText("client-2");
   });
 });
 
@@ -721,7 +784,7 @@ it("releases its modal and scroll lock while an inactive config panel is retaine
   expect(document.body.style.overflow).toBe("");
 });
 
-it("uses the shared client dialog and saves only the selected additional client", async () => {
+it("uses the shared client dialog and saves only the selected torrent client", async () => {
   let changes: Record<string, unknown> = {};
   server.use(
     http.get("/web/config", () =>

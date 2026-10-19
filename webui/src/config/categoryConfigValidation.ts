@@ -17,6 +17,15 @@ export interface CategoryCrossSectionIssue {
   message: string;
 }
 
+function sectionsWithClients(formState: ConfigDocument) {
+  return [
+    ...Object.entries(formState),
+    ...Object.entries((formState.TorrentClients ?? {}) as ConfigDocument).map(
+      ([name, value]) => [`TorrentClients.${name}`, value] as const,
+    ),
+  ];
+}
+
 function appendUnique(
   bucket: Map<string, string[]>,
   normalized: string,
@@ -62,10 +71,13 @@ export function getCategoryCrossSectionIssues(
   const arrByNormalized = new Map<string, string[]>();
   const qbitByNormalized = new Map<string, string[]>();
 
-  for (const [sectionKey, rawSection] of Object.entries(formState)) {
+  for (const [sectionKey, rawSection] of sectionsWithClients(formState)) {
     if (!rawSection || typeof rawSection !== "object") continue;
 
-    if (SERVARR_SECTION_REGEX.test(sectionKey)) {
+    if (
+      !sectionKey.startsWith("TorrentClients.") &&
+      SERVARR_SECTION_REGEX.test(sectionKey)
+    ) {
       const sec = rawSection as Record<string, unknown>;
       if (categoryHasBackslash(sec.Category)) {
         issues.push({
@@ -80,14 +92,17 @@ export function getCategoryCrossSectionIssues(
       }
     }
 
-    if (QBIT_SECTION_REGEX.test(sectionKey)) {
+    if (
+      QBIT_SECTION_REGEX.test(sectionKey) ||
+      sectionKey.startsWith("TorrentClients.")
+    ) {
       const sec = rawSection as Record<string, unknown>;
       const mc = sec.ManagedCategories;
       if (Array.isArray(mc)) {
         const badTags = mc.filter((t) => categoryHasBackslash(t));
         if (badTags.length > 0) {
           issues.push({
-            path: [sectionKey, "ManagedCategories"],
+            path: [...sectionKey.split("."), "ManagedCategories"],
             message: `${BACKSLASH_MSG} Problem entries: ${badTags.map(String).join(", ")}.`,
           });
         }
@@ -102,12 +117,15 @@ export function getCategoryCrossSectionIssues(
   for (const [normalized, arrKeys] of arrByNormalized) {
     const qKeys = qbitByNormalized.get(normalized);
     if (!normalized || !qKeys?.length) continue;
-    const msg = `Category "${normalized}" cannot be managed by both an Arr instance and a qBit managed category. Assign it to one owner only.`;
+    const msg = `Category "${normalized}" cannot be managed by both an Arr instance and a torrent client managed category. Assign it to one owner only.`;
     for (const arrKey of arrKeys) {
       issues.push({ path: [arrKey, "Category"], message: msg });
     }
     for (const qKey of qKeys) {
-      issues.push({ path: [qKey, "ManagedCategories"], message: msg });
+      issues.push({
+        path: [...qKey.split("."), "ManagedCategories"],
+        message: msg,
+      });
     }
   }
 
@@ -122,17 +140,23 @@ export function getCategoryOverlapWarnings(
 
   const union: string[] = [];
 
-  for (const [sectionKey, rawSection] of Object.entries(formState)) {
+  for (const [sectionKey, rawSection] of sectionsWithClients(formState)) {
     if (!rawSection || typeof rawSection !== "object") continue;
 
-    if (SERVARR_SECTION_REGEX.test(sectionKey)) {
+    if (
+      !sectionKey.startsWith("TorrentClients.") &&
+      SERVARR_SECTION_REGEX.test(sectionKey)
+    ) {
       const sec = rawSection as Record<string, unknown>;
       if (!sec.Managed) continue;
       const n = normalizeCategory(sec.Category);
       if (n) union.push(n);
     }
 
-    if (QBIT_SECTION_REGEX.test(sectionKey)) {
+    if (
+      QBIT_SECTION_REGEX.test(sectionKey) ||
+      sectionKey.startsWith("TorrentClients.")
+    ) {
       const sec = rawSection as Record<string, unknown>;
       const mc = sec.ManagedCategories;
       if (!Array.isArray(mc)) continue;
@@ -146,7 +170,7 @@ export function getCategoryOverlapWarnings(
   const pairs = findOverlapPairs(union);
   const lines = pairs.map(
     ([parent, child]) =>
-      `'${child}' is nested under '${parent}'. With MatchSubcategories off, qBittorrent category filters are exact-match only — use full paths or enable prefix matching where appropriate.`,
+      `'${child}' is nested under '${parent}'. With MatchSubcategories off, torrent client category filters are exact-match only — use full paths or enable prefix matching where appropriate.`,
   );
   return [...new Set(lines)];
 }

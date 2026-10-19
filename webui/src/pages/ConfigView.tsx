@@ -17,7 +17,10 @@ import {
 } from "../api/client";
 import type { ConfigDocument } from "../api/types";
 import { useToast } from "../context/ToastContext";
-import { getCategoryOverlapWarnings } from "../config/categoryConfigValidation";
+import {
+  getCategoryCrossSectionIssues,
+  getCategoryOverlapWarnings,
+} from "../config/categoryConfigValidation";
 import { ConfirmDialog } from "../components/ConfirmDialog";
 import { IconImage } from "../components/IconImage";
 import ConfigureIcon from "../icons/gear.svg";
@@ -156,12 +159,32 @@ export function ConfigView(props?: ConfigViewProps): JSX.Element {
     ) as Array<[string, ConfigDocument]>;
   }, [formState]);
 
-  const qbitSections = useMemo(() => {
-    if (!formState) return [] as Array<[string, ConfigDocument]>;
-    return Object.entries(formState).filter(
-      ([key, value]) =>
-        QBIT_SECTION_REGEX.test(key) && value && typeof value === "object",
-    ) as Array<[string, ConfigDocument]>;
+  const torrentClients = useMemo(() => {
+    if (!formState) return [];
+    return [
+      ...Object.entries(formState)
+        .filter(
+          ([key, value]) =>
+            QBIT_SECTION_REGEX.test(key) && value && typeof value === "object",
+        )
+        .map(([name, value]) => ({
+          name,
+          value: value as ConfigDocument,
+          legacy: true,
+        })),
+      ...Object.entries((formState.TorrentClients ?? {}) as ConfigDocument).map(
+        ([name, value]) => ({
+          name,
+          value: value as ConfigDocument,
+          legacy: false,
+        }),
+      ),
+    ].sort((a, b) =>
+      a.name.localeCompare(b.name, undefined, {
+        numeric: true,
+        sensitivity: "base",
+      }),
+    );
   }, [formState]);
   const categoryOverlapWarnings = useMemo(
     () => getCategoryOverlapWarnings(formState),
@@ -396,6 +419,7 @@ export function ConfigView(props?: ConfigViewProps): JSX.Element {
     const anyModalOpen = Boolean(
       activeArrKey ||
         activeQbitKey ||
+        activeClient ||
         isSettingsOpen ||
         isWebSettingsOpen ||
         isAuthSettingsOpen ||
@@ -414,6 +438,7 @@ export function ConfigView(props?: ConfigViewProps): JSX.Element {
         }
         setActiveArrKey(null);
         setActiveQbitKey(null);
+        setActiveClient(null);
         setSettingsOpen(false);
         setWebSettingsOpen(false);
         setAuthSettingsOpen(false);
@@ -428,6 +453,7 @@ export function ConfigView(props?: ConfigViewProps): JSX.Element {
     active,
     activeArrKey,
     activeQbitKey,
+    activeClient,
     isSettingsOpen,
     isWebSettingsOpen,
     isAuthSettingsOpen,
@@ -485,47 +511,6 @@ export function ConfigView(props?: ConfigViewProps): JSX.Element {
     },
     [formState],
   );
-
-  const addQbitInstance = useCallback(() => {
-    if (!formState) return;
-    let index = 1;
-    let key = `qBit-${index}`;
-    while (formState[key]) {
-      index += 1;
-      key = `qBit-${index}`;
-    }
-    const defaults: ConfigDocument = {
-      Disabled: false,
-      Host: "localhost",
-      Port: 8080,
-      UserName: "",
-      Password: "",
-      ManagedCategories: [],
-      MatchSubcategories: false,
-      Trackers: [],
-      CategorySeeding: {
-        DownloadRateLimitPerTorrent: -1,
-        UploadRateLimitPerTorrent: -1,
-        MaxUploadRatio: -1,
-        MaxSeedingTime: -1,
-        RemoveTorrent: -1,
-        HitAndRunMode: "disabled",
-        MinSeedRatio: 1.0,
-        MinSeedingTimeDays: 0,
-        HitAndRunMinimumDownloadPercent: 10,
-        HitAndRunPartialSeedRatio: 1.0,
-        TrackerUpdateBuffer: 0,
-        StalledDelay: -1,
-        IgnoreTorrentsYoungerThan: 180,
-      },
-    };
-    setFormState(
-      produce(formState, (draft) => {
-        draft[key] = defaults;
-      }),
-    );
-    setActiveQbitKey(key);
-  }, [formState]);
 
   const requestDeleteQbitInstance = useCallback(
     (key: string) => {
@@ -848,6 +833,14 @@ export function ConfigView(props?: ConfigViewProps): JSX.Element {
           root: formState,
           section: value,
         });
+        if (
+          !equal(
+            value?.ManagedCategories,
+            get(originalConfig, [...path, "ManagedCategories"]),
+          )
+        ) {
+          errors.push(...getCategoryCrossSectionIssues(formState));
+        }
         if (errors.length) throw new Error(formatValidationErrors(errors));
         const host = String(value?.Host ?? "").trim();
         const port = Number(value?.Port);
@@ -886,7 +879,8 @@ export function ConfigView(props?: ConfigViewProps): JSX.Element {
   const addClient = () => {
     let index = 1;
     const clients = (formState?.TorrentClients ?? {}) as ConfigDocument;
-    while (clients[`client-${index}`]) index++;
+    while (clients[`client-${index}`] || formState?.[`client-${index}`])
+      index++;
     const name = `client-${index}`;
     setFormState((previous) =>
       produce(previous ?? {}, (draft) => {
@@ -945,31 +939,34 @@ export function ConfigView(props?: ConfigViewProps): JSX.Element {
           <section className="config-arr-group">
             <details className="config-arr-group__details" open>
               <summary>
-                <span>qBittorrent Instances</span>
+                <span>Torrent Clients</span>
                 <span className="config-arr-group__count">
-                  {qbitSections.length}
+                  {torrentClients.length}
                 </span>
-                <button
-                  className="btn small"
-                  type="button"
-                  onClick={addQbitInstance}
-                >
+                <button className="btn small" type="button" onClick={addClient}>
                   <IconImage src={AddIcon} />
                   Add Instance
                 </button>
               </summary>
               <div className="config-arr-grid">
-                {qbitSections.map(([key, value]) => {
+                {torrentClients.map(({ name: key, value, legacy }) => {
                   const host = getValue(value as ConfigDocument, ["Host"]);
                   const port = getValue(value as ConfigDocument, ["Port"]);
                   const disabled = getValue(value as ConfigDocument, [
                     "Disabled",
                   ]);
                   return (
-                    <div className="card config-card config-arr-card" key={key}>
+                    <div
+                      className="card config-card config-arr-card"
+                      key={`${legacy ? "legacy" : "client"}:${key}`}
+                    >
                       <div className="card-header">{key}</div>
                       <div className="card-body">
                         <dl className="config-arr-summary">
+                          <div className="config-arr-summary__item">
+                            <dt>Client Type</dt>
+                            <dd>{String(value.Type ?? "qbittorrent")}</dd>
+                          </div>
                           <div className="config-arr-summary__item">
                             <dt>Status</dt>
                             <dd>{disabled ? "Disabled" : "Enabled"}</dd>
@@ -985,7 +982,11 @@ export function ConfigView(props?: ConfigViewProps): JSX.Element {
                           <button
                             className="btn primary"
                             type="button"
-                            onClick={() => setActiveQbitKey(key)}
+                            onClick={() =>
+                              legacy
+                                ? setActiveQbitKey(key)
+                                : setActiveClient(key)
+                            }
                           >
                             <IconImage src={ConfigureIcon} />
                             Configure
@@ -1000,62 +1001,6 @@ export function ConfigView(props?: ConfigViewProps): JSX.Element {
           </section>
           {groupedArrSections.length ? (
             <div className="config-arr-groups">
-              <section className="config-arr-group">
-                <details className="config-arr-group__details" open>
-                  <summary>
-                    <span>Additional Torrent Clients</span>
-                    <span className="config-arr-group__count">
-                      {
-                        Object.keys((formState.TorrentClients ?? {}) as object)
-                          .length
-                      }
-                    </span>
-                    <button
-                      className="btn small"
-                      type="button"
-                      onClick={addClient}
-                    >
-                      <IconImage src={AddIcon} />
-                      Add Instance
-                    </button>
-                  </summary>
-                  <div className="config-arr-grid">
-                    {Object.entries(
-                      (formState.TorrentClients ?? {}) as ConfigDocument,
-                    ).map(([name, client]) => (
-                      <div
-                        className="card config-card config-arr-card"
-                        key={name}
-                      >
-                        <div className="card-header">{name}</div>
-                        <div className="card-body">
-                          <p>
-                            {String((client as ConfigDocument).Type)} ·{" "}
-                            {String((client as ConfigDocument).Host)}:
-                            {String((client as ConfigDocument).Port)}
-                          </p>
-                          <div className="config-arr-actions">
-                            <button
-                              className="btn primary"
-                              type="button"
-                              onClick={() => setActiveClient(name)}
-                            >
-                              Configure
-                            </button>
-                            <button
-                              className="btn danger"
-                              type="button"
-                              onClick={() => setDeleteClient(name)}
-                            >
-                              Remove
-                            </button>
-                          </div>
-                        </div>
-                      </div>
-                    ))}
-                  </div>
-                </details>
-              </section>
               {groupedArrSections.map((group) => (
                 <section className="config-arr-group" key={group.type}>
                   <details className="config-arr-group__details" open>
@@ -1215,7 +1160,7 @@ export function ConfigView(props?: ConfigViewProps): JSX.Element {
       {active && isSetPasswordOpen ? (
         <SetPasswordModal onClose={() => setSetPasswordOpen(false)} />
       ) : null}
-      {activeQbitKey && formState ? (
+      {active && activeQbitKey && formState ? (
         <QbitInstanceModal
           keyName={activeQbitKey}
           state={(formState[activeQbitKey] as ConfigDocument) ?? null}
@@ -1243,7 +1188,7 @@ export function ConfigView(props?: ConfigViewProps): JSX.Element {
             handleFieldChange(["TorrentClients", ...path], def, value)
           }
           onRename={() => {}}
-          overlapWarnings={[]}
+          overlapWarnings={categoryOverlapWarnings}
           onClose={() => setActiveClient(null)}
           onSave={() => saveClient(activeClient)}
           onDelete={() => {

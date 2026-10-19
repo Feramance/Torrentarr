@@ -26,6 +26,9 @@ public static class ConfigSchemaBuilder
 
     private static IReadOnlyList<ConfigSchemaField> TorrentClientFields() =>
     [
+        .. Qbitrr5146ConfigSchema.qBit
+            .Where(field => field.key is not ("Disabled" or "Host" or "Port" or "UserName" or "Password"))
+            .Select(field => field with { section = "TorrentClient" }),
         Field("Type", "text", "Client Type", "qbittorrent"),
         Field("Disabled", "checkbox", "Disabled", false),
         Field("Host", "text", "Host", "CHANGE_ME"),

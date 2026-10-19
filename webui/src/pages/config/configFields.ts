@@ -118,7 +118,7 @@ export function configureConfigFields(
   AUTH_SETTINGS_FIELDS = web.filter((f) => !core.has(f.path![1]!));
   QBIT_FIELDS = [
     { ...displayName, placeholder: "qBit-seedbox" },
-    ...fields("qBit"),
+    ...getClientFields().filter((field) => field.path?.[0] !== "Type"),
   ];
 }
 configureConfigFields(schema);
