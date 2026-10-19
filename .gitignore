@@ -95,3 +95,6 @@ site/
 # Python tooling caches
 __pycache__/
 *.py[cod]
+
+# Private runtime configuration transport
+active-config.json

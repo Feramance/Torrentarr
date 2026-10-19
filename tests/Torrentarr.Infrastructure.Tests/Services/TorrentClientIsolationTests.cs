@@ -82,12 +82,22 @@ public sealed class TorrentClientIsolationTests
         var manager = new QBittorrentConnectionManager(NullLogger<QBittorrentConnectionManager>.Instance, [factory.Object]);
         var cfg = new TorrentClientInstanceConfig { Type = "fake", Host = "fixture" };
         await manager.InitializeAsync("one", cfg);
+        var original = manager.GetClient("one")!;
         if (changed == "disabled") cfg.Disabled = true;
         if (changed == "placeholder") cfg.Host = "CHANGE_ME";
         if (changed == "failed") cfg.Host = "new";
         await manager.ReconcileAsync(changed == "removed" ? [] : new Dictionary<string, TorrentClientInstanceConfig> { ["one"] = cfg });
-        manager.IsConnected("one").Should().BeFalse();
-        manager.GetConnectionInfo().Should().BeEmpty();
+        if (changed == "failed")
+        {
+            manager.IsConnected("one").Should().BeFalse("new-policy actions must not use the previous endpoint");
+            manager.GetClient("one").Should().BeNull();
+            (await original.GetVersionAsync()).Should().Be("fake-1", "already dispatched work retains its original client");
+        }
+        else
+        {
+            manager.IsConnected("one").Should().BeFalse();
+            manager.GetConnectionInfo().Should().BeEmpty();
+        }
     }
 
     [Fact]

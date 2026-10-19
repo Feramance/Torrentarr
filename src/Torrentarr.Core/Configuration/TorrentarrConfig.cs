@@ -10,14 +10,39 @@ namespace Torrentarr.Core.Configuration;
 /// </summary>
 public class TorrentarrConfig
 {
-    internal HashSet<string>? MonitoredPolicyCategoriesCache { get; set; }
-    internal object MonitoredPolicyCategoriesCacheLock { get; } = new();
-    public SettingsConfig Settings { get; set; } = new();
-    public Dictionary<string, QBitConfig> QBitInstances { get; set; } = new();
-    public Dictionary<string, TorrentClientInstanceConfig> TorrentClients { get; set; } = new();
-    public WebUIConfig WebUI { get; set; } = new();
-    public Dictionary<string, ArrInstanceConfig> ArrInstances { get; set; } = new();
+    private sealed record State(SettingsConfig Settings, Dictionary<string, QBitConfig> QBitInstances,
+        Dictionary<string, TorrentClientInstanceConfig> TorrentClients, WebUIConfig WebUI,
+        Dictionary<string, ArrInstanceConfig> ArrInstances, long Revision)
+    {
+        public HashSet<string>? Categories;
+        public object CacheLock { get; } = new();
+    }
+    private State _state = new(new(), new(), new(), new(), new(), 0);
+    private readonly AsyncLocal<State?> _operation = new();
+    private State Current => _operation.Value ?? Volatile.Read(ref _state);
+    internal HashSet<string>? MonitoredPolicyCategoriesCache { get => Current.Categories; set => Current.Categories = value; }
+    internal object MonitoredPolicyCategoriesCacheLock => Current.CacheLock;
+    public SettingsConfig Settings { get => Current.Settings; set => _state = _state with { Settings = value }; }
+    public Dictionary<string, QBitConfig> QBitInstances { get => Current.QBitInstances; set => _state = _state with { QBitInstances = value }; }
+    public Dictionary<string, TorrentClientInstanceConfig> TorrentClients { get => Current.TorrentClients; set => _state = _state with { TorrentClients = value }; }
+    public WebUIConfig WebUI { get => Current.WebUI; set => _state = _state with { WebUI = value }; }
+    public Dictionary<string, ArrInstanceConfig> ArrInstances { get => Current.ArrInstances; set => _state = _state with { ArrInstances = value }; }
     public List<ArrInstanceConfig> Arrs => ArrInstances.Values.ToList();
+    [Newtonsoft.Json.JsonIgnore, System.Text.Json.Serialization.JsonIgnore, TomlIgnore]
+    public long Revision => Current.Revision;
+    [Newtonsoft.Json.JsonIgnore, System.Text.Json.Serialization.JsonIgnore, TomlIgnore]
+    public bool HasPendingChanges => Volatile.Read(ref _state).Revision != Current.Revision;
+    public void Apply(TorrentarrConfig source, long revision) =>
+        Interlocked.Exchange(ref _state, new(source.Settings, source.QBitInstances, source.TorrentClients,
+            source.WebUI, source.ArrInstances, revision));
+    public IDisposable BeginOperation()
+    {
+        var previous = _operation.Value;
+        _operation.Value = Current;
+        return new Operation(() => _operation.Value = previous);
+    }
+    private sealed class Operation(Action release) : IDisposable { public void Dispose() => release(); }
+
 }
 
 public class SettingsConfig

@@ -15,6 +15,7 @@ public class SearchExecutor : ISearchExecutor
     private readonly TorrentarrDbContext _db;
     private readonly QualityProfileSwitcherService _profileSwitcher;
     private readonly DatabaseRestartCoordinator _restartCoordinator;
+    private readonly IConfigReloader? _reloader;
 
     // Cached per-instance Arr clients — created once, reused across calls
     private readonly Dictionary<string, object> _clientCache = new(StringComparer.OrdinalIgnoreCase);
@@ -36,13 +37,14 @@ public class SearchExecutor : ISearchExecutor
         TorrentarrConfig config,
         TorrentarrDbContext db,
         QualityProfileSwitcherService profileSwitcher,
-        DatabaseRestartCoordinator restartCoordinator)
+        DatabaseRestartCoordinator restartCoordinator, IConfigReloader? reloader = null)
     {
         _logger = logger;
         _config = config;
         _db = db;
         _profileSwitcher = profileSwitcher;
         _restartCoordinator = restartCoordinator;
+        _reloader = reloader;
     }
 
     public async Task<SearchResult> ExecuteSearchesAsync(
@@ -114,7 +116,7 @@ public class SearchExecutor : ISearchExecutor
 
         foreach (var candidate in candidatesList)
         {
-            if (cancellationToken.IsCancellationRequested)
+            if (cancellationToken.IsCancellationRequested || _config.HasPendingChanges)
             {
                 drained = false;
                 break;
@@ -140,7 +142,9 @@ public class SearchExecutor : ISearchExecutor
 
             if (!firstSearch)
             {
-                await Task.Delay(TimeSpan.FromSeconds(searchLoopDelay), cancellationToken);
+                if (_reloader != null) await _reloader.WaitForChangeAsync(_config.Revision, TimeSpan.FromSeconds(searchLoopDelay), cancellationToken);
+                else await Task.Delay(TimeSpan.FromSeconds(searchLoopDelay), cancellationToken);
+                if (_config.HasPendingChanges) { drained = false; break; }
             }
             firstSearch = false;
 

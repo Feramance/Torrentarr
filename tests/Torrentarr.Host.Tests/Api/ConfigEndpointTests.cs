@@ -20,6 +20,33 @@ public class ConfigEndpointTests : IClassFixture<TorrentarrWebApplicationFactory
         _factory = factory;
     }
 
+    [Fact]
+    public async Task ConfigSave_ReconfiguresInitiallyDisabledOidcAndCookiePathLive()
+    {
+        using var factory = new TorrentarrWebApplicationFactory();
+        using var client = factory.CreateClientWithApiToken();
+        var options = factory.Services.GetRequiredService<Microsoft.Extensions.Options.IOptionsMonitor<Microsoft.AspNetCore.Authentication.OpenIdConnect.OpenIdConnectOptions>>();
+        options.Get("OpenIdConnect").ClientId.Should().Be("disabled");
+        var response = await client.PostAsJsonAsync("/web/config", new
+        {
+            changes = new Dictionary<string, object>
+            {
+                ["WebUI.OIDCEnabled"] = true,
+                ["WebUI.OIDC.Authority"] = "https://id.example.test",
+                ["WebUI.OIDC.ClientId"] = "live-client",
+                ["WebUI.OIDC.ClientSecret"] = "private-live-secret",
+                ["WebUI.UrlBase"] = "/live"
+            }
+        });
+        response.EnsureSuccessStatusCode();
+        options.Get("OpenIdConnect").ClientId.Should().Be("live-client");
+        options.Get("OpenIdConnect").Authority.Should().Be("https://id.example.test");
+        var cookies = factory.Services.GetRequiredService<Microsoft.Extensions.Options.IOptionsMonitor<Microsoft.AspNetCore.Authentication.Cookies.CookieAuthenticationOptions>>();
+        cookies.Get("Cookies").Cookie.Path.Should().Be("/live/");
+        var status = await client.GetStringAsync("/live/web/config/status");
+        status.Should().NotContain("private-live-secret");
+    }
+
     [Theory]
     [InlineData("/web/config", false)]
     [InlineData("/web/config", true)]
@@ -90,13 +117,17 @@ public class ConfigEndpointTests : IClassFixture<TorrentarrWebApplicationFactory
     [InlineData("/api/config")]
     [InlineData("/WEB/CONFIG/")]
     [InlineData("/web/auth/set-password")]
-    public async Task ConfigurationWrites_Return409DuringProcessing(string endpoint)
+    public async Task ConfigurationWrites_WaitForProcessingWithoutRestart(string endpoint)
     {
         var client = _factory.CreateClientWithApiToken();
         var loader = _factory.Services.GetRequiredService<Torrentarr.Core.Configuration.ConfigurationLoader>();
         using var processing = Torrentarr.Core.Configuration.ConfigMutationGuard.EnterProcessing(loader.ConfigPath);
-        var response = await client.PostAsJsonAsync(endpoint, new { changes = new { }, username = "user", password = "password" });
-        response.StatusCode.Should().Be(HttpStatusCode.Conflict);
+        var pending = client.PostAsJsonAsync(endpoint, new { changes = new { }, username = "user", password = endpoint == "/web/auth/set-password" ? "" : "password" });
+        await Task.Delay(50);
+        pending.IsCompleted.Should().BeFalse();
+        processing.Dispose();
+        (await pending.WaitAsync(TimeSpan.FromSeconds(5))).StatusCode.Should().Be(
+            endpoint == "/web/auth/set-password" ? HttpStatusCode.BadRequest : HttpStatusCode.OK);
     }
 
     [Fact]
@@ -184,7 +215,7 @@ public class ConfigEndpointTests : IClassFixture<TorrentarrWebApplicationFactory
 
         response.StatusCode.Should().Be(HttpStatusCode.OK);
         var json = JsonDocument.Parse(await response.Content.ReadAsStringAsync()).RootElement;
-        json.GetProperty("reloadType").GetString().Should().Be("frontend");
+        json.GetProperty("reloadType").GetString().Should().Be("live");
     }
 
     [Fact]
@@ -204,7 +235,7 @@ public class ConfigEndpointTests : IClassFixture<TorrentarrWebApplicationFactory
 
         response.StatusCode.Should().Be(HttpStatusCode.OK);
         var json = JsonDocument.Parse(await response.Content.ReadAsStringAsync()).RootElement;
-        json.GetProperty("reloadType").GetString().Should().Be("webui");
+        json.GetProperty("reloadType").GetString().Should().Be("live");
     }
 
     [Fact]
@@ -224,7 +255,7 @@ public class ConfigEndpointTests : IClassFixture<TorrentarrWebApplicationFactory
 
         response.StatusCode.Should().Be(HttpStatusCode.OK);
         var json = JsonDocument.Parse(await response.Content.ReadAsStringAsync()).RootElement;
-        json.GetProperty("reloadType").GetString().Should().Be("full");
+        json.GetProperty("reloadType").GetString().Should().Be("live");
     }
 
     [Fact]

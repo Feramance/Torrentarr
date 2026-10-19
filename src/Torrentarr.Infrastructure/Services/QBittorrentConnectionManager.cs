@@ -17,6 +17,7 @@ public class QBittorrentConnectionManager : ITorrentClientRegistry
     // integrations remain compatible while snapshots stay race-free.
     private readonly Dictionary<string, ITorrentClient> _clients = new(StringComparer.OrdinalIgnoreCase);
     private readonly object _clientsLock = new();
+    private readonly HashSet<string> _pendingConnections = new(StringComparer.OrdinalIgnoreCase);
     private readonly SemaphoreSlim _reconcile = new(1, 1);
     private readonly Dictionary<string, ConnectionSettings> _settings = new(StringComparer.OrdinalIgnoreCase);
     private sealed record ConnectionSettings(string Type, string Host, int Port, string UserName, string Password, bool SkipTLSVerify);
@@ -47,8 +48,14 @@ public class QBittorrentConnectionManager : ITorrentClientRegistry
         var settings = new ConnectionSettings(config.Type, config.Host, config.Port, config.UserName, config.Password, config.SkipTLSVerify);
         lock (_clientsLock)
         {
-            if (!config.Disabled && config.Host != "CHANGE_ME" && _settings.GetValueOrDefault(name) == settings && _clients.ContainsKey(name)) return true;
-            RemoveClient(name);
+            if (!config.Disabled && config.Host != "CHANGE_ME" && _settings.GetValueOrDefault(name) == settings && _clients.ContainsKey(name))
+            {
+                _pendingConnections.Remove(name);
+                return true;
+            }
+            // Old operations may finish, but new-policy work must not use the previous endpoint.
+            _pendingConnections.Add(name);
+            if (config.Disabled || config.Host == "CHANGE_ME") RemoveClient(name);
         }
         if (config.Disabled || config.Host == "CHANGE_ME") return false;
         if (!_factories.TryGetValue(config.Type, out var factory))
@@ -68,6 +75,7 @@ public class QBittorrentConnectionManager : ITorrentClientRegistry
             var version = await client.GetVersionAsync(ct);
             lock (_clientsLock)
             {
+                RemoveClient(name);
                 _clients[name] = new RegisteredTorrentClient(client);
                 _settings[name] = settings;
                 _lastConnected[name] = DateTime.UtcNow;
@@ -87,6 +95,7 @@ public class QBittorrentConnectionManager : ITorrentClientRegistry
     private void RemoveClient(string name)
     {
         if (_clients.Remove(name, out var client)) (client as IDisposable)?.Dispose();
+        _pendingConnections.Remove(name);
         _settings.Remove(name);
         _lastConnected.TryRemove(name, out _);
     }
@@ -129,7 +138,7 @@ public class QBittorrentConnectionManager : ITorrentClientRegistry
     /// </summary>
     public ITorrentClient? GetClient(string instanceName)
     {
-        lock (_clientsLock) return _clients.TryGetValue(instanceName, out var client) ? client : null;
+        lock (_clientsLock) return !_pendingConnections.Contains(instanceName) && _clients.TryGetValue(instanceName, out var client) ? client : null;
     }
 
     /// <summary>
@@ -137,7 +146,7 @@ public class QBittorrentConnectionManager : ITorrentClientRegistry
     /// </summary>
     public IReadOnlyDictionary<string, ITorrentClient> GetAllClients()
     {
-        lock (_clientsLock) return new Dictionary<string, ITorrentClient>(_clients, StringComparer.OrdinalIgnoreCase);
+        lock (_clientsLock) return _clients.Where(p => !_pendingConnections.Contains(p.Key)).ToDictionary(p => p.Key, p => p.Value, StringComparer.OrdinalIgnoreCase);
     }
 
     /// <summary>
@@ -145,7 +154,7 @@ public class QBittorrentConnectionManager : ITorrentClientRegistry
     /// </summary>
     public bool IsConnected()
     {
-        lock (_clientsLock) return _clients.Count > 0;
+        lock (_clientsLock) return _clients.Keys.Any(name => !_pendingConnections.Contains(name));
     }
 
     /// <summary>
@@ -153,7 +162,7 @@ public class QBittorrentConnectionManager : ITorrentClientRegistry
     /// </summary>
     public bool IsConnected(string instanceName)
     {
-        lock (_clientsLock) return _clients.ContainsKey(instanceName);
+        lock (_clientsLock) return _clients.ContainsKey(instanceName) && !_pendingConnections.Contains(instanceName);
     }
 
     /// <summary>

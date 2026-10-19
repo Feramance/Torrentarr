@@ -188,6 +188,15 @@ function AuthGate({
     setAuthState("authenticated");
   }, []);
 
+  useEffect(() => {
+    const changed = () => {
+      void checkAuth();
+    };
+    window.addEventListener("torrentarr:authentication", changed);
+    return () =>
+      window.removeEventListener("torrentarr:authentication", changed);
+  }, [checkAuth]);
+
   if (authState === "loading") {
     return (
       <div

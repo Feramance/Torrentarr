@@ -9,6 +9,23 @@ namespace Torrentarr.Host.Tests;
 public class UpdateServiceTests
 {
     [Fact]
+    public async Task ChangingUpdateChannelInvalidatesThePreviousChannelsCache()
+    {
+        var config = new TorrentarrConfig();
+        config.Settings.AutoUpdateChannel = "stable";
+        var service = new UpdateService(NullLogger<UpdateService>.Instance, config);
+        const System.Reflection.BindingFlags flags = System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.NonPublic;
+        typeof(UpdateService).GetField("_lastChecked", flags)!.SetValue(service, DateTime.UtcNow);
+        typeof(UpdateService).GetField("_checkedChannel", flags)!.SetValue(service, "stable");
+        using var cancellation = new CancellationTokenSource();
+        cancellation.Cancel();
+        await service.CheckForUpdateAsync(ct: cancellation.Token);
+        config.Settings.AutoUpdateChannel = "latest";
+        var check = () => service.CheckForUpdateAsync(ct: cancellation.Token);
+        await check.Should().ThrowAsync<OperationCanceledException>();
+    }
+
+    [Fact]
     public void DockerMetadata_DisablesBinaryReplacement()
     {
         var previous = Environment.GetEnvironmentVariable("DOTNET_RUNNING_IN_CONTAINER");

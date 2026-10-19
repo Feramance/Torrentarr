@@ -923,3 +923,37 @@ export async function refreshUrlBaseFromMeta(): Promise<MetaResponse> {
 export function getQbitOverviewPath(instance?: string): string {
   return `/web/qbit/overview${instance ? `?instance=${encodeURIComponent(instance)}` : ""}`;
 }
+
+/** Uses normal authentication, including API tokens, for the live stream. */
+export async function watchConfiguration(
+  receive: (event: import("./types").LiveConfigurationEvent) => void,
+  signal: AbortSignal,
+): Promise<void> {
+  await fetchWithAuthRetry<void>(
+    "/web/config/events",
+    { signal },
+    async (response) => {
+      if (!response.ok || !response.body)
+        throw new Error("Configuration stream unavailable");
+      const reader = response.body
+        .pipeThrough(new TextDecoderStream())
+        .getReader();
+      let pending = "";
+      try {
+        while (!signal.aborted) {
+          const { value, done } = await reader.read();
+          if (done) break;
+          pending += value;
+          let end: number;
+          while ((end = pending.indexOf("\n\n")) >= 0) {
+            const event = pending.slice(0, end);
+            pending = pending.slice(end + 2);
+            if (event.startsWith("data: ")) receive(JSON.parse(event.slice(6)));
+          }
+        }
+      } finally {
+        reader.releaseLock();
+      }
+    },
+  );
+}

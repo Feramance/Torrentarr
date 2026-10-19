@@ -514,10 +514,12 @@ export interface MetaResponse {
 }
 
 export interface ConfigUpdateResponse {
+  application?: ConfigurationApplicationStatus;
   warning?: string | null;
   status: string;
   configReloaded: boolean;
   reloadType:
+    | "live"
     | "none"
     | "frontend"
     | "webui"
@@ -613,3 +615,26 @@ export type ReadarrBookEntry = {
   book: ReadarrBook;
   totals?: { available: number; monitored: number; missing?: number };
 };
+
+export interface ConfigurationApplicationStatus {
+  acceptedRevision: number;
+  state: "applied" | "pending" | "error";
+  components: Record<
+    string,
+    { appliedRevision: number; error?: string | null }
+  >;
+  error?: string | null;
+}
+export interface LiveConfigurationEvent {
+  application: ConfigurationApplicationStatus;
+  webui: {
+    authRevision?: number;
+    host: string;
+    port: number;
+    urlBase: string;
+    behindHttpsProxy: boolean;
+    theme: string;
+    viewDensity: string;
+    liveArr: boolean;
+  };
+}

@@ -33,17 +33,18 @@ var levelSwitch = new LoggingLevelSwitch(LogEventLevel.Information);
 var builder = WebApplication.CreateBuilder(args);
 
 // Configure Serilog - write to .config/logs/ with process metadata enrichment
+Func<bool> fileLoggingEnabled = () => true;
 Log.Logger = new LoggerConfiguration()
     .MinimumLevel.ControlledBy(levelSwitch)
     .Enrich.WithProperty("ProcessType", "WebUI")
     .Enrich.WithProperty("ProcessId", Environment.ProcessId)
     .Enrich.WithProperty("MachineName", Environment.MachineName)
     .WriteTo.Console()
-    .WriteTo.File(
+    .WriteTo.Logger(log => log.Filter.ByIncludingOnly(_ => fileLoggingEnabled()).WriteTo.File(
         Path.Combine(logsPath, "webui.log"),
         rollingInterval: RollingInterval.Day,
         shared: true,
-        retainedFileCountLimit: 7)
+        retainedFileCountLimit: 7))
     .CreateLogger();
 
 builder.Host.UseSerilog(dispose: true);
@@ -155,9 +156,13 @@ if (configForDI.WebUI.AuthDisabled && WebUIAuthHelpers.IsPublicBindHost(configFo
         configForDI.WebUI.Host);
 }
 
+fileLoggingEnabled = () => configForDI.Settings.Logging;
 builder.Services.AddSingleton(configForDI);
 
-builder.Services.AddSingleton<IConfigReloader, ConfigReloader>();
+builder.Services.AddSingleton<ConfigReloader>();
+builder.Services.AddSingleton<IConfigReloader>(sp => sp.GetRequiredService<ConfigReloader>());
+builder.Services.AddHostedService(sp => sp.GetRequiredService<ConfigReloader>());
+builder.Services.AddHostedService<LiveConfigurationRuntime>();
 builder.Services.AddSingleton(configLoader);
 
 builder.Services.AddSingleton<IPasswordHasher, BCryptPasswordHasher>();
@@ -194,22 +199,44 @@ var authBuilder = builder.Services.AddAuthentication(CookieAuthenticationDefault
     .AddCookie(options =>
     {
         options.Cookie.Name = "torrentarr_session";
+        string AuthenticationStamp() => Convert.ToHexString(SHA256.HashData(System.Text.Encoding.UTF8.GetBytes(
+                Newtonsoft.Json.JsonConvert.SerializeObject(new
+                {
+                    configForDI.WebUI.Username,
+                    configForDI.WebUI.PasswordHash,
+                    configForDI.WebUI.LocalAuthEnabled,
+                    configForDI.WebUI.OIDCEnabled,
+                    configForDI.WebUI.OIDC
+                }))));
+        options.Events.OnSigningIn = context =>
+        {
+            if (context.Principal?.Identity is ClaimsIdentity identity) identity.AddClaim(new Claim("torrentarr:auth", AuthenticationStamp()));
+            return Task.CompletedTask;
+        };
+        options.Events.OnValidatePrincipal = context =>
+        {
+            if (context.Principal?.FindFirst("torrentarr:auth")?.Value != AuthenticationStamp()) context.RejectPrincipal();
+            return Task.CompletedTask;
+        };
         options.Cookie.HttpOnly = true;
         options.Cookie.SameSite = SameSiteMode.Lax;
         options.Cookie.SecurePolicy = Microsoft.AspNetCore.Http.CookieSecurePolicy.SameAsRequest;
-        if (!string.IsNullOrEmpty(urlBase))
-            options.Cookie.Path = urlBase + "/";
-        options.LoginPath = UrlBaseHelper.WithUrlBase(urlBase, "/login");
-        options.AccessDeniedPath = UrlBaseHelper.WithUrlBase(urlBase, "/login");
+        var currentBase = UrlBaseHelper.NormalizeUrlBase(configForDI.WebUI.UrlBase);
+        if (!string.IsNullOrEmpty(currentBase))
+            options.Cookie.Path = currentBase + "/";
+        options.LoginPath = UrlBaseHelper.WithUrlBase(currentBase, "/login");
+        options.AccessDeniedPath = UrlBaseHelper.WithUrlBase(currentBase, "/login");
     });
-if (configForDI.WebUI.OIDCEnabled && configForDI.WebUI.OIDC is { } oidc
-    && !string.IsNullOrWhiteSpace(oidc.Authority)
-    && !string.IsNullOrWhiteSpace(oidc.ClientId))
-{
-    authBuilder.AddOpenIdConnect(OpenIdConnectDefaults.AuthenticationScheme, options =>
+authBuilder.AddOpenIdConnect(OpenIdConnectDefaults.AuthenticationScheme, options =>
     {
-        options.Authority = oidc.Authority.TrimEnd('/');
-        options.ClientId = oidc.ClientId;
+        var oidc = configForDI.WebUI.OIDC ?? new OIDCConfig();
+        options.Events.OnMessageReceived = context =>
+        {
+            if (!configForDI.WebUI.OIDCEnabled) context.SkipHandler();
+            return Task.CompletedTask;
+        };
+        options.Authority = string.IsNullOrWhiteSpace(oidc.Authority) ? "https://localhost" : oidc.Authority.TrimEnd('/');
+        options.ClientId = string.IsNullOrWhiteSpace(oidc.ClientId) ? "disabled" : oidc.ClientId;
         options.ClientSecret = oidc.ClientSecret;
         options.CallbackPath = oidc.CallbackPath;
         options.RequireHttpsMetadata = oidc.RequireHttpsMetadata;
@@ -218,21 +245,18 @@ if (configForDI.WebUI.OIDCEnabled && configForDI.WebUI.OIDC is { } oidc
         foreach (var s in (oidc.Scopes ?? "openid profile").Split(' ', StringSplitOptions.RemoveEmptyEntries))
             options.Scope.Add(s);
     });
-}
 
+
+var liveWeb = new LiveWebConfiguration(builder.WebHost, configForDI.WebUI);
 var app = builder.Build();
+app.MapGet("/web/config/status", (IConfigReloader reloader) => Results.Ok(reloader.GetStatus()));
+app.MapGet("/api/config/status", (IConfigReloader reloader) => Results.Ok(reloader.GetStatus()));
 
-if (configForDI.WebUI.BehindHttpsProxy)
+liveWeb.Attach(app, configForDI);
+app.Services.GetRequiredService<IConfigReloader>().ConfigReloaded += (_, args) =>
 {
-    app.UseForwardedHeaders(new ForwardedHeadersOptions
-    {
-        ForwardedHeaders = Microsoft.AspNetCore.HttpOverrides.ForwardedHeaders.XForwardedFor
-            | Microsoft.AspNetCore.HttpOverrides.ForwardedHeaders.XForwardedProto
-    });
-}
-
-if (!string.IsNullOrEmpty(urlBase))
-    app.UsePathBase(urlBase);
+    if (args.Success) app.Services.GetRequiredService<Microsoft.Extensions.Options.IOptionsMonitorCache<OpenIdConnectOptions>>().Clear();
+};
 app.UseConfigMutationGuard(ConfigurationLoader.GetDefaultConfigPath());
 
 // Ensure database is created and configure WAL mode
@@ -446,7 +470,7 @@ app.MapPost("/web/logout", async (HttpContext ctx, TorrentarrConfig cfg) =>
         UrlBaseHelper.NormalizeUrlBase(cfg.WebUI.UrlBase), "/login"), false);
 });
 
-app.MapPost("/web/auth/set-password", async (HttpContext ctx, TorrentarrConfig cfg, ConfigurationLoader loader, IPasswordHasher hasher) =>
+app.MapPost("/web/auth/set-password", async (HttpContext ctx, TorrentarrConfig cfg, ConfigurationLoader loader, IPasswordHasher hasher, IConfigReloader reloader) =>
 {
     var ip = ctx.Connection.RemoteIpAddress?.ToString();
     if (ip != null && !SetPasswordRateLimiter.TryAcquire(ip))
@@ -472,29 +496,18 @@ app.MapPost("/web/auth/set-password", async (HttpContext ctx, TorrentarrConfig c
         }, statusCode: 403);
     }
 
-    // Capture current values so we can revert if SaveConfig fails
-    var prevUsername = cfg.WebUI.Username;
-    var prevPasswordHash = cfg.WebUI.PasswordHash;
-    var prevAuthDisabled = cfg.WebUI.AuthDisabled;
-    var prevLocalAuthEnabled = cfg.WebUI.LocalAuthEnabled;
-
-    cfg.WebUI.Username = body.Username.Trim();
-    cfg.WebUI.PasswordHash = hasher.HashPassword(body.Password);
-    // Always enable local auth after setting a password, regardless of previous mode
-    if (cfg.WebUI.AuthDisabled)
-        cfg.WebUI.AuthDisabled = false;
-    cfg.WebUI.LocalAuthEnabled = true;
+    var candidate = Newtonsoft.Json.JsonConvert.DeserializeObject<TorrentarrConfig>(Newtonsoft.Json.JsonConvert.SerializeObject(cfg))!;
+    candidate.WebUI.Username = body.Username.Trim();
+    candidate.WebUI.PasswordHash = hasher.HashPassword(body.Password);
+    candidate.WebUI.AuthDisabled = false;
+    candidate.WebUI.LocalAuthEnabled = true;
     try
     {
-        loader.SaveConfig(cfg);
+        loader.SaveConfig(candidate);
+        if (!reloader.Apply(candidate)) return Results.Json(new { error = "Configuration could not be applied" }, statusCode: 500);
     }
     catch
     {
-        // Revert in-memory config so it stays in sync with persisted file
-        cfg.WebUI.Username = prevUsername;
-        cfg.WebUI.PasswordHash = prevPasswordHash;
-        cfg.WebUI.AuthDisabled = prevAuthDisabled;
-        cfg.WebUI.LocalAuthEnabled = prevLocalAuthEnabled;
         return Results.Json(new { error = "Failed to save configuration" }, statusCode: 500);
     }
     return Results.Ok(new { success = true });
@@ -805,10 +818,12 @@ app.MapPost("/web/config", async (HttpContext ctx, TorrentarrConfig config, Conf
         if (savePasswordHashError != null)
             return Results.Json(new { error = savePasswordHashError }, statusCode: 403);
 
+        var liveValidation = reloader.Validate(updatedConfig);
+        if (!liveValidation.Ok) return Results.BadRequest(new { error = liveValidation.Error });
         await InstanceRenamePersistence.SaveAsync(config, updatedConfig, body?["renames"] as Newtonsoft.Json.Linq.JObject,
             loader, db, reloader.ConfigPath);
-        ApplyConfigInPlace(config, updatedConfig);
-        await registry.ReconcileAsync(config.GetAllTorrentClients(), connect: false);
+        if (!reloader.Apply(updatedConfig, (body?["renames"] as Newtonsoft.Json.Linq.JObject)?.Properties().ToDictionary(p => p.Name, p => p.Value.ToString())))
+            return Results.BadRequest(new { error = reloader.GetStatus().Error });
     }
     catch (Exception ex)
     {
@@ -816,26 +831,18 @@ app.MapPost("/web/config", async (HttpContext ctx, TorrentarrConfig config, Conf
         return Results.Json(new { error = "Failed to save configuration", details = ex.Message }, statusCode: 500);
     }
 
-    var reloaded = reloader.ReloadConfig();
+    var reloaded = reloader.GetStatus().State == "applied";
+    reloadType = "live";
 
     return Results.Ok(new
     {
         status = "ok",
         configReloaded = reloaded,
+        application = reloader.GetStatus(),
         reloadType,
         affectedInstances
     });
 });
-
-static void ApplyConfigInPlace(TorrentarrConfig target, TorrentarrConfig source)
-{
-    target.Settings = source.Settings;
-    target.WebUI = source.WebUI;
-    target.ArrInstances = source.ArrInstances;
-    target.QBitInstances = source.QBitInstances;
-    target.TorrentClients = source.TorrentClients;
-    TorrentPolicyHelper.InvalidateMonitoredPolicyCategoriesCache(target);
-}
 
 // Helper: apply a dot-path change to a JObject (e.g. "Settings.LoopSleepTimer" = 30)
 static void ApplyDotPathChange(Newtonsoft.Json.Linq.JObject root, string dotPath, Newtonsoft.Json.Linq.JToken value)
@@ -1691,14 +1698,15 @@ app.MapPost("/web/config/save", async (TorrentarrConfig updatedConfig, Torrentar
         if (passwordHashError != null)
             return Results.Json(new { error = passwordHashError }, statusCode: 403);
 
+        var liveValidation = reloader.Validate(updatedConfig);
+        if (!liveValidation.Ok) return Results.BadRequest(new { error = liveValidation.Error });
         await InstanceRenamePersistence.SaveAsync(config, updatedConfig, null, loader, db, reloader.ConfigPath);
-        ApplyConfigInPlace(config, updatedConfig);
-        await registry.ReconcileAsync(config.GetAllTorrentClients(), connect: false);
-        var reloadSuccess = reloader.ReloadConfig();
+        if (!reloader.Apply(updatedConfig)) return Results.BadRequest(new { error = reloader.GetStatus().Error });
+        var reloadSuccess = reloader.GetStatus().State == "applied";
 
         return reloadSuccess
-            ? Results.Ok(new { success = true, message = "Configuration saved and reloaded" })
-            : Results.Ok(new { success = true, message = "Configuration saved but reload failed" });
+            ? Results.Ok(new { success = true, message = "Configuration saved and applied live", application = reloader.GetStatus() })
+            : Results.Ok(new { success = true, message = "Configuration saved; live application is pending", application = reloader.GetStatus() });
     }
     catch (Exception ex)
     {

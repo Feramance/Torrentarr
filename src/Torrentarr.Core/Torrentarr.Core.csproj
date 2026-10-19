@@ -11,4 +11,5 @@
     <PackageReference Include="Tomlyn" Version="2.10.1" />
   </ItemGroup>
 
+  <ItemGroup><EmbeddedResource Include="Configuration/LiveConfigurationCoverage.json" /></ItemGroup>
 </Project>

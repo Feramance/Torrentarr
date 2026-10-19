@@ -22,6 +22,7 @@ public class UpdateService
 
     // Cached check result — refreshed at most once per hour
     private DateTime _lastChecked = DateTime.MinValue;
+    private string? _checkedChannel;
     private string? _latestVersion;
     private bool _updateAvailable;
     private string? _changelog;
@@ -97,7 +98,7 @@ public class UpdateService
     /// </summary>
     public async Task CheckForUpdateAsync(bool forceRefresh = false, CancellationToken ct = default)
     {
-        if (!forceRefresh && _lastChecked != DateTime.MinValue &&
+        if (!forceRefresh && _checkedChannel == AutoUpdateChannel && _lastChecked != DateTime.MinValue &&
             (DateTime.UtcNow - _lastChecked).TotalHours < 1)
             return;
 
@@ -105,10 +106,19 @@ public class UpdateService
         try
         {
             // Double-check inside lock
-            if (!forceRefresh && _lastChecked != DateTime.MinValue &&
+            if (!forceRefresh && _checkedChannel == AutoUpdateChannel && _lastChecked != DateTime.MinValue &&
                 (DateTime.UtcNow - _lastChecked).TotalHours < 1)
                 return;
 
+            var channel = AutoUpdateChannel;
+            if (_checkedChannel != channel)
+            {
+                _latestVersion = null;
+                _updateAvailable = false;
+                _binaryDownloadUrl = null;
+                _workerDownloadUrl = null;
+            }
+            _checkedChannel = channel;
             var currentVersion = GetCurrentVersion();
             var assetPattern = GetAssetPattern();
 
@@ -118,7 +128,6 @@ public class UpdateService
                 http.DefaultRequestHeaders.Add("User-Agent", $"{RepoName}/{currentVersion}");
                 http.Timeout = TimeSpan.FromSeconds(10);
 
-                var channel = AutoUpdateChannel;
                 var release = await FetchReleaseForChannelAsync(http, channel, ct);
                 if (release == null)
                 {
@@ -250,7 +259,7 @@ public class UpdateService
             return Task.CompletedTask;
         }
 
-        if (string.IsNullOrEmpty(_binaryDownloadUrl) || string.IsNullOrEmpty(_workerDownloadUrl))
+        if (_checkedChannel != AutoUpdateChannel || string.IsNullOrEmpty(_binaryDownloadUrl) || string.IsNullOrEmpty(_workerDownloadUrl))
         {
             ApplyState.LastResult = "error";
             ApplyState.LastError = "No binary download URL available — run update check first.";

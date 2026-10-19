@@ -130,6 +130,7 @@ public class TorrentProcessor : ITorrentProcessor
 
             foreach (var torrent in torrents)
             {
+                if (_config.HasPendingChanges) break;
                 try
                 {
                     await ProcessSingleTorrentAsync(torrent, category, stats, cancellationToken);

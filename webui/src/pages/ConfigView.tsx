@@ -63,7 +63,6 @@ import {
 import {
   formatConfigSaveMessage,
   shouldRefreshMetaAfterSave,
-  shouldReloadPageAfterSave,
 } from "./config/configSaveResult";
 
 interface ConfigViewProps {
@@ -79,6 +78,22 @@ type PendingSectionDelete = {
 export function ConfigView(props?: ConfigViewProps): JSX.Element {
   const { active = true, onDirtyChange } = props ?? {};
   const { push } = useToast();
+  const [application, setApplication] = useState<
+    import("../api/types").ConfigurationApplicationStatus | null
+  >(null);
+  useEffect(() => {
+    const receive = (event: Event) =>
+      setApplication(
+        (
+          event as CustomEvent<
+            import("../api/types").ConfigurationApplicationStatus
+          >
+        ).detail,
+      );
+    window.addEventListener("torrentarr:configuration", receive);
+    return () =>
+      window.removeEventListener("torrentarr:configuration", receive);
+  }, []);
   const [originalConfig, setOriginalConfig] = useState<ConfigDocument | null>(
     null,
   );
@@ -633,10 +648,6 @@ export function ConfigView(props?: ConfigViewProps): JSX.Element {
         }
       }
 
-      if (shouldReloadPageAfterSave(reloadType, changedKeys)) {
-        window.setTimeout(() => window.location.reload(), 500);
-      }
-
       if (configReloaded && "caches" in window) {
         try {
           const cacheNames = await caches.keys();
@@ -904,6 +915,24 @@ export function ConfigView(props?: ConfigViewProps): JSX.Element {
     return (
       <section className="card">
         <div className="card-header">Config</div>
+        {application && (
+          <p role="status" className="card-body">
+            {application.error ??
+              (application.state === "applied"
+                ? "Configuration applied live"
+                : application.state === "pending"
+                  ? "Configuration saved; waiting for active operations to finish"
+                  : "Some configuration changes could not be applied")}
+            {Object.entries(application.components)
+              .filter(([, value]) => value.error)
+              .map(([name, value]) => (
+                <span key={name}>
+                  {" "}
+                  {name}: {value.error}
+                </span>
+              ))}
+          </p>
+        )}
         <div className="card-body">
           <div className="loading">
             <span className="spinner" /> Loading configuration…

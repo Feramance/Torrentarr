@@ -8,7 +8,13 @@ import {
   type JSX,
   type ReactNode,
 } from "react";
-import { getConfig, updateConfig } from "../api/client";
+import {
+  getConfig,
+  updateConfig,
+  watchConfiguration,
+  invalidateGetCache,
+} from "../api/client";
+import { setUrlBaseFromMeta } from "../api/urlBase";
 import { useToast } from "./ToastContext";
 import { createPersistedBooleanSetter } from "./webUISettingSetters";
 
@@ -112,6 +118,84 @@ export function WebUIProvider({
 
     void loadSettings();
   }, [push]);
+
+  useEffect(() => {
+    const controller = new AbortController();
+    let retry: ReturnType<typeof setTimeout> | undefined;
+    let previous: import("../api/types").LiveConfigurationEvent | undefined;
+    const connect = async () => {
+      try {
+        await watchConfiguration((event) => {
+          const next = event.webui;
+          if (
+            previous?.application.acceptedRevision !==
+            event.application.acceptedRevision
+          )
+            invalidateGetCache(["/web/"]);
+          setUrlBaseFromMeta(next.urlBase);
+          const theme = next.theme.toLowerCase() === "light" ? "light" : "dark";
+          const viewDensity =
+            next.viewDensity.toLowerCase() === "compact"
+              ? "compact"
+              : "comfortable";
+          setSettings((previous) =>
+            previous.theme === theme &&
+            previous.viewDensity === viewDensity &&
+            previous.liveArr === next.liveArr
+              ? previous
+              : { theme, viewDensity, liveArr: next.liveArr },
+          );
+          localStorage.setItem("theme", theme);
+          localStorage.setItem("viewDensity", viewDensity);
+          document.documentElement.setAttribute("data-theme", theme);
+          window.dispatchEvent(
+            new CustomEvent("torrentarr:configuration", {
+              detail: event.application,
+            }),
+          );
+          if (previous && previous.webui.urlBase !== next.urlBase) {
+            const oldBase = previous.webui.urlBase;
+            const suffix = window.location.pathname.startsWith(oldBase)
+              ? window.location.pathname.slice(oldBase.length)
+              : "/ui";
+            window.history.replaceState(
+              null,
+              "",
+              next.urlBase +
+                suffix +
+                window.location.search +
+                window.location.hash,
+            );
+          }
+          if (
+            previous &&
+            !next.behindHttpsProxy &&
+            (previous.webui.port !== next.port ||
+              previous.webui.host !== next.host)
+          ) {
+            const target = new URL(window.location.href);
+            if (next.host !== "0.0.0.0" && next.host !== "::")
+              target.hostname = next.host;
+            target.port = String(next.port);
+            target.pathname = next.urlBase + "/ui";
+            window.location.assign(target.href);
+          }
+          if (previous && previous.webui.authRevision !== next.authRevision)
+            window.dispatchEvent(new Event("torrentarr:authentication"));
+          previous = event;
+        }, controller.signal);
+      } catch {
+        /* Reconnect after listener changes or transient failures. */
+      }
+      if (!controller.signal.aborted)
+        retry = setTimeout(() => void connect(), 2000);
+    };
+    void connect();
+    return () => {
+      controller.abort();
+      if (retry) clearTimeout(retry);
+    };
+  }, []);
 
   // Auto-save settings to backend
   const saveSettings = useCallback(

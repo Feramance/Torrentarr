@@ -684,3 +684,22 @@ Logging = false  # Not recommended - no persistent logs
 - [Troubleshooting Overview](index.md)
 - [Configuration Reference](../configuration/config-file.md)
 - [GitHub Issues](https://github.com/Feramance/Torrentarr/issues)
+
+## Live configuration
+
+UI/API saves and changes to the resolved `config.toml` apply to the running processes.
+File changes are debounced for one second and also checked by polling for mounted
+storage. An active action finishes using its original configuration; subsequent
+work uses the new revision. Invalid files retain the last accepted configuration.
+
+`/web/config/status` and `/api/config/status` report the accepted revision,
+component acknowledgements, pending work, and application errors without returning
+configuration secrets. The Config page displays this status. Connection changes
+can reconnect clients; listener changes can disconnect browsers; authentication
+changes can require signing in again.
+
+`active-config.json` in the data directory transports the accepted configuration
+to workers. It contains credentials and is created with owner-only permissions on
+Unix. Do not publish it. It is runtime state, not an alternative user configuration.
+Environment changes, filesystem mounts, and installation of new binaries still
+require their normal deployment procedures.

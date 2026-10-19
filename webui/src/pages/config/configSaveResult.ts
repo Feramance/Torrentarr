@@ -31,7 +31,7 @@ export function formatConfigSaveMessage(
     case "live":
       message += configReloaded
         ? " • Applied live"
-        : " • Applied without restart";
+        : " • Waiting for live application";
       break;
     case "qbit_hot":
       message += configReloaded

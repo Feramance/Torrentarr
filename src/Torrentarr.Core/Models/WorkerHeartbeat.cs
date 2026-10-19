@@ -16,6 +16,7 @@ public sealed record WorkerHeartbeat
     public string Instance { get; init; } = "";
     public int Pid { get; init; }
     public DateTimeOffset Heartbeat { get; init; }
+    public long ConfigRevision { get; init; }
     public bool RestartRequested { get; init; }
     public string? SearchSummary { get; init; }
     public string? SearchTimestamp { get; init; }

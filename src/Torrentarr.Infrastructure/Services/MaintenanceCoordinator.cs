@@ -24,6 +24,7 @@ public sealed class MaintenanceCoordinator : BackgroundService, IMaintenanceCoor
     private readonly IMaintenanceNotificationService _notifications;
     private readonly ILogger<MaintenanceCoordinator> _logger;
     private readonly IServiceScopeFactory _scopes;
+    private readonly IConfigReloader? _reloader;
     private readonly ConcurrentDictionary<string, MaintenancePlan> _plans = new();
     private readonly ConcurrentDictionary<string, SemaphoreSlim> _instanceLocks = new(StringComparer.OrdinalIgnoreCase);
     private readonly List<MaintenanceRunSummary> _history = new();
@@ -40,7 +41,7 @@ public sealed class MaintenanceCoordinator : BackgroundService, IMaintenanceCoor
         IHardlinkInspector hardlinks,
         ISafeDeletionService deletion,
         IMaintenanceNotificationService notifications,
-        ILogger<MaintenanceCoordinator> logger, IServiceScopeFactory scopes)
+        ILogger<MaintenanceCoordinator> logger, IServiceScopeFactory scopes, IConfigReloader? reloader = null)
     {
         _config = config;
         _registry = registry;
@@ -51,6 +52,7 @@ public sealed class MaintenanceCoordinator : BackgroundService, IMaintenanceCoor
         _notifications = notifications;
         _logger = logger;
         _scopes = scopes;
+        _reloader = reloader;
         LoadHistory();
     }
 
@@ -77,6 +79,7 @@ public sealed class MaintenanceCoordinator : BackgroundService, IMaintenanceCoor
 
     public async Task<MaintenancePlan> PreviewAsync(MaintenancePreviewRequest request, CancellationToken ct = default)
     {
+        using var configuration = _config.BeginOperation();
         using var processing = ConfigMutationGuard.EnterProcessing();
         PrunePlans();
         using var scope = _scopes.CreateScope();
@@ -264,22 +267,26 @@ public sealed class MaintenanceCoordinator : BackgroundService, IMaintenanceCoor
     protected override async Task ExecuteAsync(CancellationToken stoppingToken)
     {
         DateTime? lastMinute = null;
+        long lastRevision = -1;
         while (!stoppingToken.IsCancellationRequested)
         {
             try
             {
                 var now = DateTime.UtcNow;
                 var minute = new DateTime(now.Year, now.Month, now.Day, now.Hour, now.Minute, 0, DateTimeKind.Utc);
-                if (lastMinute != minute)
+                if (lastMinute != minute || lastRevision != _config.Revision)
                 {
                     lastMinute = minute;
+                    lastRevision = _config.Revision;
                     var due = _config.GetAllTorrentClients()
                         .Where(pair => pair.Value.Maintenance.Enabled && pair.Value.Maintenance.Armed
                             && CronSchedule.Matches(pair.Value.Maintenance.Schedule, minute))
                         .Select(pair => pair.Key).ToList();
                     if (due.Count > 0) await RunAsync(due, "scheduled", stoppingToken);
                 }
-                await Task.Delay(TimeSpan.FromSeconds(15), stoppingToken);
+                _reloader?.Acknowledge("maintenance", lastRevision);
+                if (_reloader != null) await _reloader.WaitForChangeAsync(lastRevision, TimeSpan.FromSeconds(15), stoppingToken);
+                else await Task.Delay(TimeSpan.FromSeconds(15), stoppingToken);
             }
             catch (OperationCanceledException) when (stoppingToken.IsCancellationRequested)
             {
@@ -294,6 +301,7 @@ public sealed class MaintenanceCoordinator : BackgroundService, IMaintenanceCoor
 
     private async Task<MaintenanceRunSummary> ApplyPlanAsync(MaintenancePlan plan, string trigger, CancellationToken outerCt)
     {
+        using var configuration = _config.BeginOperation();
         using var processing = ConfigMutationGuard.EnterProcessing();
         var locks = plan.ClientInstanceIds.OrderBy(x => x, StringComparer.OrdinalIgnoreCase)
             .Select(id => _instanceLocks.GetOrAdd(id, _ => new SemaphoreSlim(1, 1))).ToList();

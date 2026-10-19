@@ -113,23 +113,7 @@ public class FreeSpaceServiceTests
         HasTag(torrent, "qBitrr-allowed_seeding").Should().BeTrue();
     }
 
-    // ── ParseFreeSpaceString (replicated logic) ───────────────────────────────
-    // FreeSpaceService uses this to convert the Settings.FreeSpace config string
-    // (e.g. "10G", "500M", "-1") into a byte count.
-
-    private static long ParseFreeSpaceString(string? value)
-    {
-        if (string.IsNullOrWhiteSpace(value) || value.Trim() == "-1") return -1;
-        var v = value.Trim().ToUpperInvariant();
-        try
-        {
-            if (v.EndsWith("G")) return long.Parse(v[..^1]) * 1024L * 1024L * 1024L;
-            if (v.EndsWith("M")) return long.Parse(v[..^1]) * 1024L * 1024L;
-            if (v.EndsWith("K")) return long.Parse(v[..^1]) * 1024L;
-            return long.Parse(v);
-        }
-        catch { return -1; }
-    }
+    private static long ParseFreeSpaceString(string? value) => FreeSpaceThreshold.Parse(value);
 
     [Fact]
     public void ParseFreeSpaceString_DisabledSentinel_ReturnsNegativeOne()
@@ -194,16 +178,14 @@ public class FreeSpaceServiceTests
     }
 
     [Fact]
-    public void ParseFreeSpaceString_InvalidString_ReturnsNegativeOne()
+    public void ParseFreeSpaceString_InvalidString_IsRejected()
     {
-        ParseFreeSpaceString("notanumber").Should().Be(-1);
+        var parse = () => ParseFreeSpaceString("notanumber");
+        parse.Should().Throw<FormatException>();
     }
 
-    [Fact]
-    public void ParseFreeSpaceString_InvalidSuffix_ReturnsNegativeOne()
-    {
-        // "10T" — terabyte suffix is not supported (only G, M, K)
-        // Parser attempts long.Parse("10T") which fails → returns -1
-        ParseFreeSpaceString("10T").Should().Be(-1);
-    }
+    [Theory]
+    [InlineData("1T", 1099511627776L)]
+    [InlineData("10t", 10995116277760L)]
+    public void ParseFreeSpaceString_Terabytes_AreSupported(string input, long expected) => ParseFreeSpaceString(input).Should().Be(expected);
 }

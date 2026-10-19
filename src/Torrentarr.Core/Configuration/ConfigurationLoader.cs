@@ -87,7 +87,7 @@ public class ConfigurationLoader
         return Path.GetDirectoryName(resolved) ?? Path.Combine(Directory.GetCurrentDirectory(), "config");
     }
 
-    public TorrentarrConfig Load()
+    public TorrentarrConfig Load(bool persistMigrations = true)
     {
         if (!File.Exists(_configPath))
         {
@@ -97,9 +97,11 @@ public class ConfigurationLoader
         var tomlContent = File.ReadAllText(_configPath);
         var tomlTable = TomlSerializer.Deserialize<TomlTable>(tomlContent)!;
 
+        if (!persistMigrations && !tomlTable.ContainsKey("Settings")) throw new FormatException("Live configuration requires a Settings section.");
+
         // Apply config migrations on the raw TOML table before parsing (qBitrr parity)
         var migrated = ApplyConfigMigrations(tomlTable);
-        if (migrated)
+        if (migrated && persistMigrations)
         {
             try
             {

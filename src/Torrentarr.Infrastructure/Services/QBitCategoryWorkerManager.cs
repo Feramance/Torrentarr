@@ -18,6 +18,7 @@ public class QBitCategoryWorkerManager : BackgroundService
     private readonly IServiceScopeFactory _scopeFactory;
     private readonly ProcessStateManager _stateManager;
     private readonly IConnectivityService _connectivityService;
+    private readonly IConfigReloader? _reloader;
 
     private readonly ConcurrentDictionary<string, (Task Task, CancellationTokenSource Cts)> _workers =
         new(StringComparer.OrdinalIgnoreCase);
@@ -29,10 +30,11 @@ public class QBitCategoryWorkerManager : BackgroundService
         TorrentarrConfig config,
         IServiceScopeFactory scopeFactory,
         ProcessStateManager stateManager,
-        IConnectivityService connectivityService)
+        IConnectivityService connectivityService, IConfigReloader? reloader = null)
     {
         _logger = logger;
         _config = config;
+        _reloader = reloader;
         _scopeFactory = scopeFactory;
         _stateManager = stateManager;
         _connectivityService = connectivityService;
@@ -208,33 +210,36 @@ public class QBitCategoryWorkerManager : BackgroundService
             await StopCategoryAsync(category);
     }
 
+    private Task WaitAsync(TimeSpan delay, CancellationToken ct) => _reloader?.WaitForChangeAsync(_config.Revision, delay, ct) ?? Task.Delay(delay, ct);
+
     private async Task RunCategoryLoopAsync(string category, string stateName, CancellationToken ct)
     {
         _stateManager.Update(stateName, s => { s.Alive = true; s.Rebuilding = false; });
 
         try
         {
-            var initialized = false;
+            long initializedRevision = -1;
             while (!ct.IsCancellationRequested)
             {
+                using var configuration = _config.BeginOperation();
                 var loopStart = DateTime.UtcNow;
                 try
                 {
                     if (!await _connectivityService.IsConnectedAsync(ct))
                     {
                         _stateManager.Update(stateName, s => s.Status = "Waiting for connectivity...");
-                        await Task.Delay(TimeSpan.FromSeconds(_config.Settings.NoInternetSleepTimer), ct);
+                        await WaitAsync(TimeSpan.FromSeconds(_config.Settings.NoInternetSleepTimer), ct);
                         continue;
                     }
 
                     using var processing = ConfigMutationGuard.EnterProcessing();
-                    if (!initialized)
+                    if (initializedRevision != _config.Revision)
                     {
                         using var initScope = _scopeFactory.CreateScope();
                         var ensure = initScope.ServiceProvider.GetRequiredService<QBitCategoryEnsureService>();
                         await ensure.EnsureCategoryOnAllInstancesAsync(category, ct);
                         await EnsureTrackerTagsAsync(initScope, ct);
-                        initialized = true;
+                        initializedRevision = _config.Revision;
                     }
                     _stateManager.Update(stateName, s => s.Status = "Processing torrents...");
                     using var scope = _scopeFactory.CreateScope();
@@ -243,6 +248,7 @@ public class QBitCategoryWorkerManager : BackgroundService
                     var pathTracker = scope.ServiceProvider.GetRequiredService<IImportPathTracker>();
 
                     await processor.ProcessTorrentsAsync(category, ct);
+                    if (_config.HasPendingChanges) continue;
                     await seeding.RemoveCompletedTorrentsAsync(category, ct);
 
                     var completedRoot = _config.Settings.CompletedDownloadFolder;
@@ -265,7 +271,7 @@ public class QBitCategoryWorkerManager : BackgroundService
                 var elapsed = DateTime.UtcNow - loopStart;
                 var sleep = TimeSpan.FromSeconds(_config.Settings.LoopSleepTimer) - elapsed;
                 if (sleep > TimeSpan.Zero)
-                    await Task.Delay(sleep, ct);
+                    await WaitAsync(sleep, ct);
             }
         }
         finally

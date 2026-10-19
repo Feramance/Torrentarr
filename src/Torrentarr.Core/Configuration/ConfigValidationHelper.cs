@@ -112,6 +112,10 @@ public static class ConfigValidationHelper
 
     public static (bool Ok, string? Error) ValidateAll(TorrentarrConfig config)
     {
+        if (!FreeSpaceThreshold.TryParse(config.Settings.FreeSpace, out _))
+            return (false, "FreeSpace must be -1 or a nonnegative integer with an optional K, M, G, or T suffix.");
+        if (config.WebUI.Port is < 1 or > 65535 || !System.Net.IPAddress.TryParse(config.WebUI.Host, out _))
+            return (false, "WebUI requires an IP bind address and port between 1 and 65535.");
         foreach (var check in new Func<TorrentarrConfig, (bool, string?)>[]
         {
             ValidateArrCategoryPaths,
