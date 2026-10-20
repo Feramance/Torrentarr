@@ -1,5 +1,11 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import { fireEvent, render, screen, waitFor } from "@testing-library/react";
+import {
+  act,
+  fireEvent,
+  render,
+  screen,
+  waitFor,
+} from "@testing-library/react";
 import { QbitCategoriesView } from "../../pages/QbitCategoriesView";
 import { ToastProvider } from "../../context/ToastContext";
 import { WebUIProvider } from "../../context/WebUIContext";
@@ -145,4 +151,57 @@ describe("torrent overview parity", () => {
     expect(api.getStatus).not.toHaveBeenCalled();
     expect(api.getQbitOverview).not.toHaveBeenCalled();
   });
+});
+
+it("keeps server totals when a category search matches a truncated list", async () => {
+  vi.mocked(api.getQbitOverview).mockResolvedValue({
+    ready: true,
+    instances: ["qBit-home"],
+    categories: [{ ...category(), torrentCount: 900, seedingCount: 800 }],
+  });
+  view();
+  await screen.findByRole("button", { name: /movies.*Arr/ });
+  fireEvent.change(screen.getByLabelText("Search"), {
+    target: { value: "movies" },
+  });
+  expect(screen.getAllByText(/900/).length).toBeGreaterThan(0);
+});
+it("fetches the newly selected instance while an old overview is pending", async () => {
+  vi.mocked(api.getStatus).mockResolvedValue({
+    arrs: [],
+    qbitInstances: {
+      "qBit-home": { alive: true, host: "home", port: 1, version: "5" },
+      "qBit-remote": { alive: true, host: "remote", port: 2, version: "5" },
+    },
+  });
+  let old!: (value: Awaited<ReturnType<typeof api.getQbitOverview>>) => void;
+  vi.mocked(api.getQbitOverview).mockImplementation((instance) =>
+    instance === "qBit-remote"
+      ? Promise.resolve({
+          ready: true,
+          instances: [],
+          categories: [
+            {
+              ...category(),
+              category: "remote-only",
+              qbitInstance: "qBit-remote",
+            },
+          ],
+        })
+      : new Promise((resolve) => {
+          old = resolve;
+        }),
+  );
+  view();
+  await waitFor(() => expect(api.getQbitOverview).toHaveBeenCalled());
+  fireEvent.change(screen.getByLabelText("Instance"), {
+    target: { value: "qBit-remote" },
+  });
+  await screen.findByRole("button", { name: /remote-only/ });
+  await act(async () =>
+    old({ ready: true, instances: [], categories: [category()] }),
+  );
+  expect(
+    screen.queryByRole("button", { name: /movies.*Arr/ }),
+  ).not.toBeInTheDocument();
 });

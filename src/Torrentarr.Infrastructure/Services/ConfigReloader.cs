@@ -105,12 +105,15 @@ public sealed class ConfigReloader : BackgroundService, IConfigReloader
                 {
                     var revision = Math.Max(DateTimeOffset.UtcNow.ToUnixTimeMilliseconds(), Revision + 1);
                     var names = new Dictionary<string, string>(_renames, StringComparer.OrdinalIgnoreCase);
-                    if (renames != null) foreach (var rename in renames)
+                    if (renames != null)
+                    {
+                        foreach (var rename in renames)
                         {
                             foreach (var key in names.Where(p => p.Value == rename.Key).Select(p => p.Key).ToArray()) names[key] = rename.Value;
                             names[rename.Key] = rename.Value;
                             foreach (var key in names.Where(p => p.Key == p.Value).Select(p => p.Key).ToArray()) names.Remove(key);
                         }
+                    }
                     var snapshot = new ConfigurationSnapshot(revision, candidate, names);
                     if (!_worker)
                     {

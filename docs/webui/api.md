@@ -605,6 +605,12 @@ curl http://localhost:6969/web/logs/Main.log
 
 ---
 
+### Structured Log Windows
+
+Add `format=json` to `GET /web/logs/<name>` (or its `/api` alias) for bounded log windows. `lines` selects the page size, `since_bytes` and `inode` request live deltas, and `around_line` opens a search window. The response includes `content`, `next_bytes`, `inode`, `size`, `rotated`, and `truncated`.
+
+For stable backward paging, pass `before_bytes` from the previous page's `start_bytes`, with `inode` from its `start_inode`. Alternatively, pass the live anchor pair (`since_bytes`, `inode`) alongside `before_bytes`. History pages read backward from that fixed boundary even when the file grows. Each page is capped at 8 MiB; the cap does not limit how far back the client can page. Search windows also return `start_line` for positioning the selected match. Rotation invalidates the cursor and returns a replacement tail with `rotated=true`.
+
 ### Download Log File
 
 Download log file as attachment.
@@ -1028,6 +1034,10 @@ Fetch current configuration from disk.
 ```
 
 ---
+
+### Live Configuration Events
+
+`GET /web/config/events` is authenticated with the same bearer token or login session as other protected WebUI endpoints. Both Host and standalone WebUI return `text/event-stream` with an initial `data:` JSON event and subsequent changes. Each event contains `application` (the accepted revision, component acknowledgments, and application state) and `webui` (host, port, URL base, proxy setting, theme, density, and live-update preference). Secrets are omitted. Browser disconnects cancel the stream; listener changes are flushed before rebinding.
 
 ### Update Configuration
 

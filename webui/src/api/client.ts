@@ -105,6 +105,7 @@ function formatConfigApiValidationErrors(
 const JSON_HEADERS = { "Content-Type": "application/json" } as const;
 const TOKEN_STORAGE_KEYS = ["token", "webui-token", "webui_token"] as const;
 const MAX_AUTH_RETRIES = 1;
+let transientToken: string | null = null;
 
 // Request deduplication cache
 const inflightRequests = new Map<string, Promise<unknown>>();
@@ -181,6 +182,10 @@ function writeTtlCache(key: string, value: unknown, ttlMs: number): void {
 
 /** Invalidate TTL entries whose request path matches any of the substrings. */
 export function invalidateGetCache(pathSubstrings: readonly string[]): void {
+  for (const key of inflightRequests.keys()) {
+    if (pathSubstrings.some((part) => key.includes(part)))
+      inflightRequests.delete(key);
+  }
   for (const key of [...ttlResponseCache.keys()]) {
     if (pathSubstrings.some((part) => key.includes(part))) {
       ttlResponseCache.delete(key);
@@ -200,40 +205,43 @@ function createRequestKey(
 
 function resolveToken(): string | null {
   for (const key of TOKEN_STORAGE_KEYS) {
-    const value = localStorage.getItem(key) || sessionStorage.getItem(key);
-    if (value) {
-      if (key !== "token") {
-        localStorage.setItem("token", value);
+    for (const name of ["localStorage", "sessionStorage"] as const) {
+      try {
+        const value = window[name].getItem(key);
+        if (value) return value;
+      } catch {
+        /* Storage may be unavailable; cookie authentication still works. */
       }
-      return value;
     }
   }
   try {
-    const params = new URLSearchParams(window.location.search);
-    const fromQuery = params.get("token");
-    if (fromQuery) {
-      localStorage.setItem("token", fromQuery);
-      const cleanUrl = new URL(window.location.href);
-      cleanUrl.searchParams.delete("token");
-      window.history.replaceState({}, "", cleanUrl.toString());
-      return fromQuery;
+    const url = new URL(window.location.href);
+    const token = url.searchParams.get("token");
+    if (token) {
+      transientToken = token;
+      try {
+        localStorage.setItem("token", token);
+      } catch {
+        /* Keep the token in memory for this session. */
+      }
+      url.searchParams.delete("token");
+      window.history.replaceState({}, "", url.toString());
+      return token;
     }
   } catch {
-    // ignore
+    /* Incomplete locations are also used by tests. */
   }
-  return null;
+  return transientToken;
 }
 
 function clearStoredToken(): void {
-  for (const key of TOKEN_STORAGE_KEYS) {
-    localStorage.removeItem(key);
-  }
-  try {
-    for (const key of TOKEN_STORAGE_KEYS) {
-      sessionStorage.removeItem(key);
+  transientToken = null;
+  for (const name of ["localStorage", "sessionStorage"] as const) {
+    try {
+      for (const key of TOKEN_STORAGE_KEYS) window[name].removeItem(key);
+    } catch {
+      /* Storage unavailable. */
     }
-  } catch {
-    // ignore session storage errors
   }
 }
 
@@ -307,11 +315,12 @@ async function fetchJson<T>(
       handleJson<T>(response),
     )
       .then((value) => {
-        writeTtlCache(key, value, ttlMs);
+        if (inflightRequests.get(key) === promise)
+          writeTtlCache(key, value, ttlMs);
         return value;
       })
       .finally(() => {
-        inflightRequests.delete(key);
+        if (inflightRequests.get(key) === promise) inflightRequests.delete(key);
       });
 
     inflightRequests.set(key, promise);
@@ -543,7 +552,7 @@ export async function getSonarrSeries(
   params.set("page_size", String(pageSize));
   if (q) params.set("q", q);
   if (options?.missingOnly) {
-    params.set("missing", "1");
+    params.set("missing", "true");
   }
   if (options?.reasonFilter) params.set("reason", options.reasonFilter);
   return fetchJson<SonarrSeriesResponse>(
@@ -614,7 +623,7 @@ export async function getReadarrAuthors(
   if (query) {
     params.set("q", query);
   }
-  if (filters?.missing) params.set("missing", "1");
+  if (filters?.missing) params.set("missing", "true");
   if (filters?.reason) params.set("reason", filters.reason);
   if (filters?.monitored != null)
     params.set("monitored", String(filters.monitored));
@@ -675,10 +684,14 @@ export async function getConfig(): Promise<ConfigDocument> {
     // Response has warning structure - store warning for display
     const warningResponse = response as ConfigResponseWithWarning;
     if (warningResponse.warning?.message) {
-      sessionStorage.setItem(
-        "config_version_warning",
-        warningResponse.warning.message,
-      );
+      try {
+        sessionStorage.setItem(
+          "config_version_warning",
+          warningResponse.warning.message,
+        );
+      } catch {
+        /* The configuration is still usable without a persisted warning. */
+      }
     }
     // Return the actual config (always present in warning structure)
     return warningResponse.config;
@@ -707,12 +720,16 @@ export async function updateConfig(
 }
 
 export async function triggerUpdate(): Promise<void> {
-  await fetchJson<void>("/web/update", { method: "POST" });
+  const result = await fetchJson<{ success: boolean; message: string }>(
+    "/web/update",
+    { method: "POST" },
+  );
+  if (!result.success) throw new Error(result.message);
 }
 
 export interface TestConnectionRequest {
   arrType: "radarr" | "sonarr" | "lidarr" | "readarr";
-  /** When present, backend uses stored config for this instance (e.g. when API key is redacted). */
+  /** Resolve the stored secret; explicit URI and TLS settings still take precedence. */
   instanceKey?: string;
   uri?: string;
   apiKey?: string;
@@ -873,6 +890,7 @@ export function getReadarrOpenAuthorUrl(
 }
 
 export interface GetLogTailJsonOptions {
+  beforeBytes?: number;
   lines?: number;
   offset?: number;
   sinceBytes?: number;
@@ -893,6 +911,8 @@ export async function getLogTailJson(
   if (options.offset != null && options.offset > 0) {
     params.set("offset", String(options.offset));
   }
+  if (options.beforeBytes != null)
+    params.set("before_bytes", String(options.beforeBytes));
   if (options.sinceBytes != null) {
     params.set("since_bytes", String(options.sinceBytes));
   }
@@ -940,7 +960,11 @@ export async function watchConfiguration(
     "/web/config/events",
     { signal },
     async (response) => {
-      if (!response.ok || !response.body)
+      if (
+        !response.ok ||
+        !response.body ||
+        !response.headers.get("content-type")?.includes("text/event-stream")
+      )
         throw new Error("Configuration stream unavailable");
       const reader = response.body
         .pipeThrough(new TextDecoderStream())

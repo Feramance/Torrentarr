@@ -115,7 +115,8 @@ export function getArrTorrentHandlingSummary(
     -1,
   );
   const maxEta = parseDurationToSeconds(torrent.MaximumETA, -1);
-  const maxDeletable = Number(torrent.MaximumDeletablePercentage) * 100;
+  const maxDeletable =
+    Math.round(Number(torrent.MaximumDeletablePercentage) * 10000) / 100;
   const doNotRemoveSlow = Boolean(torrent.DoNotRemoveSlow);
   const stalledDelayMin = parseDurationToMinutes(torrent.StalledDelay, -1);
   const reSearchStalled = Boolean(torrent.ReSearchStalled);

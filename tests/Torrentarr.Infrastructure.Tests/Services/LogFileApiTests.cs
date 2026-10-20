@@ -102,4 +102,50 @@ public class LogFileApiTests
         }
         finally { Directory.Delete(dir, true); }
     }
+    [Fact]
+    public async Task HistoryCursor_IsStableAcrossAppends_AndReadsBeyondEightMiB()
+    {
+        var path = Path.GetTempFileName();
+        try
+        {
+            await File.WriteAllLinesAsync(path, Enumerable.Range(1, 10000).Select(i => $"{i:D5} " + new string('x', 1018)), new System.Text.UTF8Encoding(false));
+            var context = new DefaultHttpContext();
+            context.Request.QueryString = new("?lines=2000");
+            var page = await LogFileApi.ReadWindowAsync(path, context.Request, default);
+            page.content.Should().StartWith("08001 ");
+            await File.AppendAllTextAsync(path, "new line\n");
+            for (var expected = 6001; expected >= 1; expected -= 2000)
+            {
+                context.Request.QueryString = new($"?lines=2000&before_bytes={page.start_bytes}&inode={page.start_inode}");
+                page = await LogFileApi.ReadWindowAsync(path, context.Request, default);
+                page.rotated.Should().BeFalse();
+                page.content.Should().StartWith($"{expected:D5} ");
+                page.content.Split('\n').Should().HaveCount(2000);
+            }
+            page.start_bytes.Should().Be(0);
+        }
+        finally { File.Delete(path); }
+    }
+
+    [Fact]
+    public async Task SearchWindow_HasAccurateUtf8HistoryBoundary_AndRejectsRotatedHistory()
+    {
+        var path = Path.GetTempFileName();
+        try
+        {
+            await File.WriteAllTextAsync(path, "café\r\nbeta\r\nmatch\r\nlast\r\n", new System.Text.UTF8Encoding(false));
+            var context = new DefaultHttpContext();
+            context.Request.QueryString = new("?lines=2&around_line=3");
+            var search = await LogFileApi.ReadWindowAsync(path, context.Request, default);
+            search.start_line.Should().Be(2);
+            search.start_bytes.Should().Be(7);
+            context.Request.QueryString = new($"?lines=2&before_bytes={search.start_bytes}&inode={search.start_inode}");
+            var older = await LogFileApi.ReadWindowAsync(path, context.Request, default);
+            older.content.Should().Be("café\r");
+            await File.WriteAllTextAsync(path, "replacement\n");
+            (await LogFileApi.ReadWindowAsync(path, context.Request, default)).rotated.Should().BeTrue();
+        }
+        finally { File.Delete(path); }
+    }
+
 }

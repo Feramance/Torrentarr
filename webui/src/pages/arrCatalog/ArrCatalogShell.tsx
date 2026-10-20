@@ -105,6 +105,10 @@ export function ArrCatalogShell<
     TInstSeed | TAggSeed
   > | null>(null);
 
+  useEffect(() => {
+    if (!active) setModalSelection(null);
+  }, [active]);
+
   const selectionRef = useRef<string | "aggregate" | "">(selection);
   selectionRef.current = selection;
   const globalSearchRef = useRef(globalSearch);
@@ -319,8 +323,9 @@ export function ArrCatalogShell<
           </aside>
           <div className="pane">
             <div className="field mobile-instance-select">
-              <label>Instance</label>
+              <label htmlFor={`${definition.kind}-instance`}>Instance</label>
               <select
+                id={`${definition.kind}-instance`}
                 value={selection || "aggregate"}
                 onChange={handleInstanceSelection}
                 disabled={!instances.length}

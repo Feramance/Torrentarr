@@ -80,7 +80,7 @@ it("lists every client together by name with the same controls and shared settin
     http.get("/web/config", () =>
       HttpResponse.json({
         ...configQbitOnly,
-        TorrentClients: {
+        TorrentClient: {
           "a-transmission": {
             Type: "transmission",
             Host: "transmission",
@@ -765,9 +765,7 @@ describe("ConfigView – section persistence", () => {
     await screen.findByText("disk unavailable");
     expect(host).toHaveValue("keep-this.local");
     expect(screen.getByRole("dialog")).toBeInTheDocument();
-    expect(
-      screen.queryByText(/Configuration saved successfully/),
-    ).not.toBeInTheDocument();
+    expect(screen.queryByText(/Configuration saved/)).not.toBeInTheDocument();
   });
 });
 
@@ -790,7 +788,7 @@ it("uses the shared client dialog and saves only the selected torrent client", a
     http.get("/web/config", () =>
       HttpResponse.json({
         ...configQbitOnly,
-        TorrentClients: {
+        TorrentClient: {
           seedbox: {
             Type: "transmission",
             Host: "old-host",
@@ -826,11 +824,9 @@ it("uses the shared client dialog and saves only the selected torrent client", a
   await user.clear(mappings);
   await user.type(mappings, "relative/path");
   await user.click(screen.getByRole("button", { name: "Save", exact: true }));
+  await screen.findByText("Use an absolute path without traversal segments.");
   expect(changes).toEqual({});
   expect(screen.getByRole("dialog")).toBeInTheDocument();
-  expect(
-    screen.getByText("Use an absolute path without traversal segments."),
-  ).toBeInTheDocument();
   expect(mappings).toHaveFocus();
   fireEvent.change(mappings, { target: { value: "/old" } });
   const host = screen.getByRole("textbox", { name: "Host", exact: true });
@@ -838,7 +834,7 @@ it("uses the shared client dialog and saves only the selected torrent client", a
   await user.type(host, "new-host");
   await user.click(screen.getByRole("button", { name: "Save", exact: true }));
   await waitFor(() =>
-    expect(changes).toEqual({ "TorrentClients.seedbox.Host": "new-host" }),
+    expect(changes).toEqual({ "TorrentClient.seedbox.Host": "new-host" }),
   );
 });
 
@@ -851,7 +847,7 @@ it.each([false, true])(
     let mappings = initial;
     let fail = false;
     let lastChanges: Record<string, unknown> = {};
-    const prefix = canonical ? "TorrentClients.seedbox" : "qBit";
+    const prefix = canonical ? "TorrentClient.seedbox" : "qBit";
     const application = {
       acceptedRevision: 20,
       state: "pending",
@@ -859,7 +855,7 @@ it.each([false, true])(
     };
     const fixture = () => ({
       ...configQbitOnly,
-      [canonical ? "TorrentClients" : "qBit"]: canonical
+      [canonical ? "TorrentClient" : "qBit"]: canonical
         ? {
             seedbox: {
               Type: "transmission",

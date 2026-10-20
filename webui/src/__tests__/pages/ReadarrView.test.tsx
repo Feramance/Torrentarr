@@ -1,4 +1,12 @@
-import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import {
+  afterEach,
+  beforeAll,
+  beforeEach,
+  describe,
+  expect,
+  it,
+  vi,
+} from "vitest";
 import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { ReadarrView } from "../../pages/ReadarrView";
 import { ToastProvider } from "../../context/ToastContext";
@@ -17,6 +25,10 @@ vi.mock("../../api/client", () => ({
   getReadarrAuthorDetail: vi.fn(),
   getReadarrOpenAuthorUrl: () => "/open",
 }));
+// These tests cover catalog behavior; chunk loading has its own error regression.
+beforeAll(async () => {
+  await import("../../pages/arrCatalog/readarrDefinition");
+});
 function view() {
   return render(
     <ToastProvider>

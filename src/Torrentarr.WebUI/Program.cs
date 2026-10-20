@@ -1522,13 +1522,17 @@ app.MapPost("/web/arr/test-connection", async (HttpContext ctx, TorrentarrConfig
             if (!config.ArrInstances.TryGetValue(body.InstanceKey, out var arrCfg))
                 return Results.Ok(new { success = false, message = "Instance not found or missing URI/APIKey in config" });
 
-            uri = arrCfg.URI;
+            uri = body.Uri ?? arrCfg.URI;
             apiKey = arrCfg.APIKey;
             skipTls = body.SkipTlsVerify ?? arrCfg.SkipTLSVerify;
         }
 
         if (string.IsNullOrEmpty(body.ArrType) || string.IsNullOrEmpty(uri) || string.IsNullOrEmpty(apiKey))
             return Results.Ok(new { success = false, message = "Missing required fields: arrType, uri, or apiKey" });
+
+        if (!Uri.TryCreate(uri, UriKind.Absolute, out var parsedUri) ||
+            (parsedUri.Scheme != "http" && parsedUri.Scheme != "https"))
+            return Results.Ok(new { success = false, message = "URI must use http or https scheme" });
 
         SystemInfo? systemInfo;
         var profiles = new List<QualityProfile>();
@@ -1746,7 +1750,7 @@ app.MapGet("/web/meta", (TorrentarrConfig cfg) =>
         },
         installation_type = Environment.GetEnvironmentVariable("DOTNET_RUNNING_IN_CONTAINER") == "true" || File.Exists("/.dockerenv") ? "docker" : "dotnet",
         auto_update_supported = false,
-        update_channel = cfg.Settings.AutoUpdateChannel,
+        update_channel = ConfigurationLoader.NormalizeAutoUpdateChannel(cfg.Settings.AutoUpdateChannel),
         binary_download_url = (string?)null,
         binary_download_name = (string?)null,
         binary_download_size = (long?)null,

@@ -24,6 +24,31 @@ namespace Torrentarr.Host.Tests.Api;
 [Collection("HostWebCatalog")]
 public class StandaloneRadarrEndpointTests
 {
+
+    [Fact]
+    public async Task StandaloneEvents_SendInitialConfigurationSnapshot()
+    {
+        await using var factory = new StandaloneFactory();
+        using var client = factory.CreateClient();
+        using var timeout = new CancellationTokenSource(TimeSpan.FromSeconds(5));
+        using var response = await client.GetAsync("/web/config/events", HttpCompletionOption.ResponseHeadersRead, timeout.Token);
+        response.Content.Headers.ContentType!.MediaType.Should().Be("text/event-stream");
+        using var reader = new StreamReader(await response.Content.ReadAsStreamAsync(timeout.Token));
+        (await reader.ReadLineAsync(timeout.Token)).Should().StartWith("data: ");
+    }
+
+    [Fact]
+    public async Task StandaloneStoredCredentials_KeepEditedUri()
+    {
+        await using var factory = new StandaloneFactory();
+        using var client = factory.CreateClient();
+        var config = factory.Services.GetRequiredService<TorrentarrConfig>();
+        config.ArrInstances["Radarr-original"] = new() { URI = "http://127.0.0.1:1", APIKey = "stored-secret" };
+        var response = await client.PostAsJsonAsync("/web/arr/test-connection", new { arrType = "radarr", instanceKey = "Radarr-original", uri = "ftp://edited" });
+        var result = await response.Content.ReadFromJsonAsync<JsonElement>();
+        result.GetProperty("message").GetString().Should().Be("URI must use http or https scheme");
+    }
+
     [Theory]
     [InlineData(false)]
     [InlineData(true)]

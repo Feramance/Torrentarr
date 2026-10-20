@@ -30,6 +30,12 @@ vi.mock("../../api/client", async (importOriginal) => {
   const actual = await importOriginal<typeof import("../../api/client")>();
   return {
     ...actual,
+    watchConfiguration: vi.fn(
+      (_receive, signal: AbortSignal) =>
+        new Promise<void>((resolve) =>
+          signal.addEventListener("abort", () => resolve(), { once: true }),
+        ),
+    ),
     getMeta: vi.fn(async () => metaWithSetup),
     getToken: vi.fn(async () => "test-token"),
     login: vi.fn(),

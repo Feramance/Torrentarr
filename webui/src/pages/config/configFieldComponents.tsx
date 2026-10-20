@@ -1071,12 +1071,10 @@ export function SecureField({
   const [showValue, setShowValue] = useState(false);
 
   const handleRefresh = () => {
-    const newKey =
-      typeof crypto !== "undefined" && typeof crypto.randomUUID === "function"
-        ? crypto.randomUUID().replace(/-/g, "")
-        : Array.from({ length: 32 }, () =>
-            Math.floor(Math.random() * 16).toString(16),
-          ).join("");
+    const bytes = crypto.getRandomValues(new Uint8Array(16));
+    const newKey = Array.from(bytes, (byte) =>
+      byte.toString(16).padStart(2, "0"),
+    ).join("");
     onChange(newKey);
   };
 
@@ -1101,12 +1099,18 @@ export function SecureField({
         <button
           type="button"
           className="btn ghost"
+          aria-label={`${showValue ? "Hide" : "Show"} ${label}`}
           onClick={() => setShowValue(!showValue)}
         >
           <IconImage src={VisibilityIcon} />
         </button>
         {canRefresh && (
-          <button type="button" className="btn ghost" onClick={handleRefresh}>
+          <button
+            type="button"
+            className="btn ghost"
+            aria-label={`Generate ${label}`}
+            onClick={handleRefresh}
+          >
             <IconImage src={RefreshIcon} />
           </button>
         )}

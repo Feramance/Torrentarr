@@ -640,6 +640,9 @@ export interface MaintenanceStatus {
 }
 
 export interface LogTailPayload {
+  start_bytes?: number;
+  start_inode?: number;
+  start_line?: number;
   content: string;
   next_bytes: number;
   size: number;

@@ -138,9 +138,9 @@ function filterCategories(
     const totalSize = visibleTorrents.reduce((sum, t) => sum + t.size, 0);
     filtered.push({
       ...cat,
-      torrentCount: visibleTorrents.length,
-      seedingCount,
-      totalSize,
+      torrentCount: categoryHit ? cat.torrentCount : visibleTorrents.length,
+      seedingCount: categoryHit ? cat.seedingCount : seedingCount,
+      totalSize: categoryHit ? cat.totalSize : totalSize,
       visibleTorrents,
     });
   }
@@ -164,7 +164,11 @@ export function QbitCategoriesView({
   const [overviewLoaded, setOverviewLoaded] = useState(false);
   const { push } = useToast();
   const { liveArr } = useWebUI();
-  const isFetching = useRef(false);
+  const isFetching = useRef<string | null>(null);
+  const requestId = useRef(0);
+  const selectionRef = useRef(selection);
+  selectionRef.current = selection;
+  const [loadedSelection, setLoadedSelection] = useState("");
 
   const isAggregate = selection === "aggregate";
 
@@ -190,16 +194,20 @@ export function QbitCategoriesView({
 
   const loadOverview = useCallback(
     async (showLoading = true) => {
-      if (isFetching.current || !selection) {
+      if (isFetching.current === selection || !selection) {
         return;
       }
-      isFetching.current = true;
+      isFetching.current = selection;
+      const id = ++requestId.current;
       if (showLoading) {
         setLoading(true);
       }
       try {
         const instanceArg = selection === "aggregate" ? undefined : selection;
         const data = await getQbitOverview(instanceArg);
+        if (selectionRef.current !== selection || requestId.current !== id)
+          return;
+        setLoadedSelection(selection);
         setCategories(data.categories);
         if (data.instances.length) {
           setInstances((prev) => {
@@ -214,7 +222,11 @@ export function QbitCategoriesView({
         }
       } catch (error) {
         // Background Live polls must stay silent — avoid network-error toast spam.
-        if (showLoading) {
+        if (
+          showLoading &&
+          selectionRef.current === selection &&
+          requestId.current === id
+        ) {
           push(
             error instanceof Error
               ? error.message
@@ -223,10 +235,12 @@ export function QbitCategoriesView({
           );
         }
       } finally {
-        isFetching.current = false;
-        setOverviewLoaded(true);
-        if (showLoading) {
-          setLoading(false);
+        if (requestId.current === id) {
+          isFetching.current = null;
+          if (selectionRef.current === selection) {
+            setOverviewLoaded(true);
+            setLoading(false);
+          }
         }
       }
     },
@@ -295,23 +309,38 @@ export function QbitCategoriesView({
 
   // Honor Processes deep-link focus (expand that category only).
   useEffect(() => {
-    if (!active || !filteredCategories.length) {
+    if (!active) {
       return;
     }
-    const focusCategory = sessionStorage.getItem("qbitrr:focusQbitCategory");
-    if (!focusCategory) {
+    let focusCategory: string | null;
+    let focusInstance: string | null;
+    try {
+      focusCategory = sessionStorage.getItem("qbitrr:focusQbitCategory");
+      focusInstance = sessionStorage.getItem("torrentarr:focusQbitInstance");
+    } catch {
       return;
     }
-    const focusInstance = sessionStorage.getItem(
-      "torrentarr:focusQbitInstance",
-    );
+    if (!focusCategory) return;
     if (focusInstance && selection !== focusInstance) {
       setSelection(focusInstance);
       return;
     }
-    sessionStorage.removeItem("qbitrr:focusQbitCategory");
-    sessionStorage.removeItem("torrentarr:focusQbitInstance");
+    if (
+      loadedSelection !== selection ||
+      !filteredCategories.some(
+        (cat) =>
+          cat.category === focusCategory &&
+          (!focusInstance || cat.qbitInstance === focusInstance),
+      )
+    )
+      return;
     const id = window.setTimeout(() => {
+      try {
+        sessionStorage.removeItem("qbitrr:focusQbitCategory");
+        sessionStorage.removeItem("torrentarr:focusQbitInstance");
+      } catch {
+        /* Still expand the requested category. */
+      }
       setExpanded((prev) => {
         let changed = false;
         const next = { ...prev };
@@ -330,7 +359,7 @@ export function QbitCategoriesView({
       });
     }, 0);
     return () => window.clearTimeout(id);
-  }, [active, filteredCategories, selection]);
+  }, [active, filteredCategories, selection, loadedSelection]);
 
   const summary = useMemo(() => {
     const totalTorrents = filteredCategories.reduce(

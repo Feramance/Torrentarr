@@ -33,9 +33,17 @@ interface WebUIContextValue {
 
 const WebUIContext = createContext<WebUIContextValue | null>(null);
 
+function readPreference(key: string): string | null {
+  try {
+    return localStorage.getItem(key);
+  } catch {
+    return null;
+  }
+}
+
 function applyThemeEarly(): void {
   try {
-    const storedTheme = localStorage.getItem("theme");
+    const storedTheme = readPreference("theme");
     const theme =
       storedTheme === "light" || storedTheme === "dark" ? storedTheme : "dark";
     document.documentElement.setAttribute("data-theme", theme);
@@ -52,10 +60,8 @@ export function WebUIProvider({
   children: ReactNode;
 }): JSX.Element {
   const [settings, setSettings] = useState<WebUISettings>(() => {
-    const storedDensity = localStorage.getItem(
-      "viewDensity",
-    ) as ViewDensity | null;
-    const storedTheme = localStorage.getItem("theme") as Theme | null;
+    const storedDensity = readPreference("viewDensity") as ViewDensity | null;
+    const storedTheme = readPreference("theme") as Theme | null;
     return {
       liveArr: true,
       viewDensity: storedDensity === "compact" ? "compact" : "comfortable",
@@ -72,20 +78,21 @@ export function WebUIProvider({
         const config = await getConfig();
         const webui = config?.WebUI as Record<string, unknown> | undefined;
 
-        // Check for config version warning in sessionStorage
-        const warningMessage = sessionStorage.getItem("config_version_warning");
-        if (warningMessage) {
-          // Show error toast with longer duration for config version mismatch
-          push(warningMessage, "error");
-          // Clear the warning after showing it
-          sessionStorage.removeItem("config_version_warning");
+        try {
+          const warningMessage = sessionStorage.getItem(
+            "config_version_warning",
+          );
+          if (warningMessage) {
+            push(warningMessage, "error");
+            sessionStorage.removeItem("config_version_warning");
+          }
+        } catch {
+          /* Storage is optional; still apply the backend settings. */
         }
-
-        // Load from localStorage as fallback
-        const storedDensity = localStorage.getItem(
+        const storedDensity = readPreference(
           "viewDensity",
         ) as ViewDensity | null;
-        const storedTheme = localStorage.getItem("theme") as Theme | null;
+        const storedTheme = readPreference("theme") as Theme | null;
 
         // Get theme and view density from backend or localStorage
         const backendTheme = webui?.Theme as string | undefined;
@@ -129,8 +136,16 @@ export function WebUIProvider({
               ? "compact"
               : "comfortable";
           setSettings({ theme, viewDensity, liveArr: next.liveArr });
-          localStorage.setItem("theme", theme);
-          localStorage.setItem("viewDensity", viewDensity);
+          try {
+            localStorage.setItem("theme", theme);
+          } catch {
+            /* Backend settings remain authoritative. */
+          }
+          try {
+            localStorage.setItem("viewDensity", viewDensity);
+          } catch {
+            /* Backend settings remain authoritative. */
+          }
           document.documentElement.setAttribute("data-theme", theme);
           window.dispatchEvent(
             new CustomEvent("torrentarr:configuration", {
@@ -206,7 +221,11 @@ export function WebUIProvider({
     (value: ViewDensity) => {
       setSettings((prev) => ({ ...prev, viewDensity: value }));
       // Store in localStorage for instant application
-      localStorage.setItem("viewDensity", value);
+      try {
+        localStorage.setItem("viewDensity", value);
+      } catch {
+        /* Backend settings remain authoritative. */
+      }
       // Save to backend with proper capitalization (Comfortable or Compact)
       const capitalizedDensity =
         value === "comfortable" ? "Comfortable" : "Compact";
@@ -219,7 +238,11 @@ export function WebUIProvider({
     (value: Theme) => {
       setSettings((prev) => ({ ...prev, theme: value }));
       // Store in localStorage for instant application
-      localStorage.setItem("theme", value);
+      try {
+        localStorage.setItem("theme", value);
+      } catch {
+        /* Backend settings remain authoritative. */
+      }
       // Apply theme immediately to DOM
       document.documentElement.setAttribute("data-theme", value);
       // Save to backend with proper capitalization (Light or Dark)

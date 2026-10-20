@@ -8,8 +8,22 @@ namespace Torrentarr.Host.Tests;
 
 public class UpdateServiceTests
 {
+
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public void Metadata_UsesNormalizedChannelAndActualBinaryEligibility(bool withWebUi)
+    {
+        var config = new TorrentarrConfig();
+        config.Settings.AutoUpdateChannel = " NIGHTLY ";
+        var service = new UpdateService(NullLogger<UpdateService>.Instance, config);
+        var meta = System.Text.Json.JsonSerializer.SerializeToElement(service.BuildMetaResponse(withWebUi ? config.WebUI : null));
+        meta.GetProperty("update_channel").GetString().Should().Be("nightly");
+        meta.GetProperty("auto_update_supported").GetBoolean().Should().BeFalse();
+    }
+
     [Fact]
-    public void DockerMetadata_DisablesBinaryReplacement()
+    public async Task DockerMetadata_DisablesBinaryReplacement()
     {
         var previous = Environment.GetEnvironmentVariable("DOTNET_RUNNING_IN_CONTAINER");
         try
@@ -19,6 +33,9 @@ public class UpdateServiceTests
             var meta = System.Text.Json.JsonSerializer.SerializeToElement(service.BuildMetaResponse());
             meta.GetProperty("installation_type").GetString().Should().Be("docker");
             service.CanApplyBinaries.Should().BeFalse();
+            meta.GetProperty("auto_update_supported").GetBoolean().Should().BeFalse();
+            await service.ApplyUpdateAsync(Moq.Mock.Of<Microsoft.Extensions.Hosting.IHostApplicationLifetime>());
+            service.ApplyState.LastError.Should().Contain("Docker");
         }
         finally { Environment.SetEnvironmentVariable("DOTNET_RUNNING_IN_CONTAINER", previous); }
     }

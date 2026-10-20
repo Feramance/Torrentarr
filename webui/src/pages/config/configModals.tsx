@@ -80,6 +80,7 @@ export function ConfigModalPortal({
 
 export interface ArrInstanceModalProps {
   keyName: string;
+  diskKey?: string;
   state: ConfigDocument | ConfigDocument[keyof ConfigDocument] | null;
   onChange: (path: string[], def: FieldDefinition, value: unknown) => void;
   onRename: (oldName: string, newName: string) => void;
@@ -94,6 +95,7 @@ export interface ArrInstanceModalProps {
 
 export function ArrInstanceModal({
   keyName,
+  diskKey = keyName,
   state,
   onChange,
   onRename,
@@ -185,8 +187,18 @@ export function ArrInstanceModal({
     try {
       const result = await testArrConnection(
         isApiKeyRedacted
-          ? { arrType, instanceKey: keyName }
-          : { arrType, uri: uri ?? "", apiKey: apiKey ?? "" },
+          ? {
+              arrType,
+              instanceKey: diskKey,
+              uri: uri ?? "",
+              skipTlsVerify: Boolean(getValue(["SkipTLSVerify"])),
+            }
+          : {
+              arrType,
+              uri: uri ?? "",
+              apiKey: apiKey ?? "",
+              skipTlsVerify: Boolean(getValue(["SkipTLSVerify"])),
+            },
       );
       setTestState({ testing: false, result });
 

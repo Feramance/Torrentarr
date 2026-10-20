@@ -6,7 +6,7 @@ namespace Torrentarr.Infrastructure.Endpoints;
 /// <summary>qBitrr log search / SSE helpers shared by Host and WebUI.</summary>
 public static class LogFileApi
 {
-    public sealed record TailPayload(string content, long next_bytes, long size, long inode, bool rotated, bool truncated);
+    public sealed record TailPayload(string content, long next_bytes, long size, long inode, bool rotated, bool truncated, long start_bytes = 0, long start_inode = 0, long start_line = 1);
     private const int MaxWindowBytes = 8 * 1024 * 1024;
 
     public static async Task<IResult> TailFromRequestAsync(string logsRoot, string name, HttpRequest request, CancellationToken ct)
@@ -34,27 +34,48 @@ public static class LogFileApi
         var identity = await CursorFingerprintAsync(stream, size, ct);
         var since = Number(request, "since_bytes");
         var generation = Number(request, "inode");
-        var delta = request.Query.ContainsKey("since_bytes");
+        var delta = request.Query.ContainsKey("since_bytes") && !request.Query.ContainsKey("before_bytes");
         var rotated = delta && (since > size || (generation != 0 && generation != await CursorFingerprintAsync(stream, since, ct)));
 
+        var history = request.Query.ContainsKey("before_bytes");
+        var before = Number(request, "before_bytes", size);
+        var historyAnchor = request.Query.ContainsKey("since_bytes") ? since : before;
+        if (history && (before > size || historyAnchor > size || (generation != 0 && generation != await CursorFingerprintAsync(stream, historyAnchor, ct))))
+        {
+            rotated = true;
+            before = size;
+        }
+        long windowStart = 0;
+        long windowEnd = history ? before : size;
+        var startLine = Math.Max(1, around - lines / 2);
         if (around > 0)
         {
+            // Locate actual byte boundaries; StreamReader.Position includes read-ahead bytes.
+            var buffer = new byte[65536];
+            long position = 0, line = 1;
+            windowEnd = 0;
             stream.Position = 0;
-            using var reader = new StreamReader(stream);
-            var startLine = Math.Max(1, around - lines / 2);
-            var window = new List<string>();
-            long current = 0;
-            while (await reader.ReadLineAsync(ct) is { } line)
+            while (position < Math.Min(size, SearchMaxBytes))
             {
-                current++;
-                if (current >= startLine) window.Add(line);
-                if (window.Count >= lines || stream.Position > SearchMaxBytes) break;
+                var count = await stream.ReadAsync(buffer.AsMemory(0, (int)Math.Min(buffer.Length, Math.Min(size, SearchMaxBytes) - position)), ct);
+                if (count == 0) break;
+                var done = false;
+                for (var i = 0; i < count; i++)
+                {
+                    if (buffer[i] != (byte)'\n') continue;
+                    var boundary = position + i + 1;
+                    if (line < startLine) windowStart = boundary;
+                    else windowEnd = boundary;
+                    if (++line >= startLine + lines) { done = true; break; }
+                }
+                position += count;
+                if (done) break;
             }
-            return new(string.Join('\n', window), size, size, identity, false, current < startLine || window.Count == lines);
+            if (windowEnd < windowStart) windowEnd = windowStart;
         }
-
-        var start = delta && !rotated ? since : Math.Max(0, size - MaxWindowBytes);
-        var length = (int)Math.Min(size - start, MaxWindowBytes);
+        var start = around > 0 ? windowStart
+            : delta && !rotated ? since : Math.Max(0, windowEnd - MaxWindowBytes);
+        var length = (int)Math.Min(windowEnd - start, MaxWindowBytes);
         stream.Seek(start, SeekOrigin.Begin);
         var bytes = new byte[length];
         var read = 0;
@@ -71,17 +92,22 @@ public static class LogFileApi
             var consumed = complete + 1;
             return new(System.Text.Encoding.UTF8.GetString(bytes, 0, consumed), start + consumed, size, await CursorFingerprintAsync(stream, start + consumed, ct), false, start + consumed < size);
         }
-        var cursor = start + complete + 1;
-        var text = System.Text.Encoding.UTF8.GetString(bytes, 0, complete + 1);
+        var boundaries = new List<int> { 0 };
+        for (var i = 0; i <= complete; i++)
+            if (bytes[i] == (byte)'\n') boundaries.Add(i + 1);
+        var first = 0;
         if (start > 0)
         {
-            var firstLine = text.IndexOf('\n');
-            text = firstLine < 0 ? "" : text[(firstLine + 1)..];
+            stream.Position = start - 1;
+            if (stream.ReadByte() != (byte)'\n') first = Math.Min(1, boundaries.Count - 1);
         }
-        var all = text.TrimEnd('\n').Split('\n');
-        var end = Math.Max(0, all.Length - offset);
-        var selected = all.Take(end).TakeLast(lines);
-        return new(string.Join('\n', selected), cursor, size, await CursorFingerprintAsync(stream, cursor, ct), rotated, start > 0 || end > lines || cursor < size);
+        var end = Math.Max(first, boundaries.Count - 1 - (around > 0 || history ? 0 : offset));
+        first = Math.Max(first, end - lines);
+        var startBytes = start + boundaries[first];
+        var cursor = start + complete + 1;
+        var text = System.Text.Encoding.UTF8.GetString(bytes, boundaries[first], boundaries[end] - boundaries[first]).TrimEnd('\n');
+        return new(text, cursor, size, await CursorFingerprintAsync(stream, cursor, ct), rotated,
+            startBytes > 0 || cursor < size, startBytes, await CursorFingerprintAsync(stream, startBytes, ct), around > 0 ? startLine : 1);
     }
 
     // Fingerprint both ends of the consumed window: stable on append, detects replacement and copy-truncate.

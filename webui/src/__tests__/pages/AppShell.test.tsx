@@ -121,3 +121,15 @@ describe("configured navigation", () => {
     expect(screen.queryByLabelText("catalog filter")).not.toBeInTheDocument();
   });
 });
+
+it("renders the authenticated shell when browser storage is blocked", async () => {
+  vi.spyOn(window, "localStorage", "get").mockImplementation(() => {
+    throw new Error("blocked");
+  });
+  try {
+    view();
+    expect(await screen.findByText("Worker dashboard")).toBeInTheDocument();
+  } finally {
+    vi.restoreAllMocks();
+  }
+});

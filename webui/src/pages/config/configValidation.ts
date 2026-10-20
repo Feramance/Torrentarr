@@ -262,12 +262,16 @@ export function sectionHasCategoryChanges(
   formState: ConfigDocument,
   originalConfig: ConfigDocument | null,
 ): boolean {
-  const categoryPath = `${sectionKey}.Category`;
+  const paths =
+    sectionKey === "Settings"
+      ? ["Settings.FailedCategory", "Settings.RecheckCategory"]
+      : ["Category", "ManagedCategories", "Managed"].map(
+          (key) => `${sectionKey}.${key}`,
+        );
   const flattenedOriginal = flatten(originalConfig ?? {});
   const flattenedCurrent = flatten(formState);
-  return !equal(
-    flattenedCurrent[categoryPath],
-    flattenedOriginal[categoryPath],
+  return paths.some(
+    (path) => !equal(flattenedCurrent[path], flattenedOriginal[path]),
   );
 }
 

@@ -50,6 +50,7 @@ import {
 import {
   validateSectionsForSave,
   validateFieldGroup,
+  sectionHasCategoryChanges,
 } from "./config/configValidation";
 import {
   QBIT_SECTION_REGEX,
@@ -191,7 +192,7 @@ export function ConfigView(props?: ConfigViewProps): JSX.Element {
           value: value as ConfigDocument,
           legacy: true,
         })),
-      ...Object.entries((formState.TorrentClients ?? {}) as ConfigDocument).map(
+      ...Object.entries((formState.TorrentClient ?? {}) as ConfigDocument).map(
         ([name, value]) => ({
           name,
           value: value as ConfigDocument,
@@ -261,14 +262,14 @@ export function ConfigView(props?: ConfigViewProps): JSX.Element {
     const errors: ValidationError[] = [];
     if (activeClient && formState) {
       const section = get(formState, [
-        "TorrentClients",
+        "TorrentClient",
         activeClient,
       ]) as ConfigDocument;
       validateFieldGroup(
         errors,
         getClientFields(),
         section,
-        ["TorrentClients", activeClient],
+        ["TorrentClient", activeClient],
         { root: formState, section },
       );
     }
@@ -862,15 +863,15 @@ export function ConfigView(props?: ConfigViewProps): JSX.Element {
   const saveClient = async (name: string, remove = false): Promise<boolean> => {
     if (!formState || clientSaving) return false;
     setClientSaving(true);
-    const path = ["TorrentClients", name];
+    const path = ["TorrentClient", name];
     try {
       const value = get(formState, path) as ConfigDocument;
       const changes = remove
-        ? { [`TorrentClients.${name}`]: null }
+        ? { [`TorrentClient.${name}`]: null }
         : buildSectionChanges(
             formState,
             originalConfig,
-            `TorrentClients.${name}`,
+            `TorrentClient.${name}`,
             new Map(),
           );
       if (!remove) {
@@ -880,9 +881,10 @@ export function ConfigView(props?: ConfigViewProps): JSX.Element {
           section: value,
         });
         if (
-          !equal(
-            value?.ManagedCategories,
-            get(originalConfig, [...path, "ManagedCategories"]),
+          sectionHasCategoryChanges(
+            `TorrentClient.${name}`,
+            formState,
+            originalConfig,
           )
         ) {
           errors.push(...getCategoryCrossSectionIssues(formState));
@@ -941,17 +943,13 @@ export function ConfigView(props?: ConfigViewProps): JSX.Element {
   };
   const addClient = () => {
     let index = 1;
-    const clients = (formState?.TorrentClients ?? {}) as ConfigDocument;
+    const clients = (formState?.TorrentClient ?? {}) as ConfigDocument;
     while (clients[`client-${index}`] || formState?.[`client-${index}`])
       index++;
     const name = `client-${index}`;
     setFormState((previous) =>
       produce(previous ?? {}, (draft) => {
-        set(
-          draft,
-          ["TorrentClients", name],
-          getSchemaDefaults("TorrentClient"),
-        );
+        set(draft, ["TorrentClient", name], getSchemaDefaults("TorrentClient"));
       }),
     );
     setActiveClient(name);
@@ -1181,6 +1179,7 @@ export function ConfigView(props?: ConfigViewProps): JSX.Element {
       {activeArrKey && formState ? (
         <ArrInstanceModal
           keyName={activeArrKey}
+          diskKey={resolveSectionDiskKey(activeArrKey, pendingRenames)}
           state={(formState[activeArrKey] as ConfigDocument) ?? null}
           onChange={handleFieldChange}
           onRename={handleRenameSection}
@@ -1263,15 +1262,15 @@ export function ConfigView(props?: ConfigViewProps): JSX.Element {
         <QbitInstanceModal
           keyName={activeClient}
           fields={getClientFields()}
-          fieldPathPrefix={`TorrentClients.${activeClient}`}
+          fieldPathPrefix={`TorrentClient.${activeClient}`}
           validationErrors={clientValidationErrors}
           state={
-            (formState.TorrentClients as ConfigDocument)?.[
+            (formState.TorrentClient as ConfigDocument)?.[
               activeClient
             ] as ConfigDocument
           }
           onChange={(path, def, value) =>
-            handleFieldChange(["TorrentClients", ...path], def, value)
+            handleFieldChange(["TorrentClient", ...path], def, value)
           }
           onRename={() => {}}
           overlapWarnings={categoryOverlapWarnings}

@@ -41,6 +41,7 @@ interface ReadarrAggRow extends ReadarrAuthorEntry {
 }
 
 interface ReadarrRollup {
+  authors: number;
   available: number;
   monitored: number;
   missing: number;
@@ -214,6 +215,7 @@ function getReadarrAggColumns(
 }
 
 const READARR_INITIAL_ROLLUP: ReadarrRollup = {
+  authors: 0,
   available: 0,
   monitored: 0,
   missing: 0,
@@ -280,6 +282,7 @@ export const READARR_DEFINITION: ArrCatalogDefinition<
       const seen = new Set(prev.seenInstances);
       seen.add(instKey);
       return {
+        authors: prev.authors + (response.total ?? 0),
         available: prev.available + (counts.available ?? 0),
         monitored: prev.monitored + (counts.monitored ?? 0),
         missing: prev.missing + (counts.missing ?? 0),
@@ -289,7 +292,7 @@ export const READARR_DEFINITION: ArrCatalogDefinition<
       };
     },
     summarize: (rows, rollup) => {
-      const total = rows.length > 0 ? rows.length : rollup.monitored;
+      const total = rollup.authors;
       return {
         available: rollup.available,
         monitored: rollup.monitored,

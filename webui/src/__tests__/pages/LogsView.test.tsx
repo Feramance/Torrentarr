@@ -48,6 +48,8 @@ class Stream {
   }
 }
 const payload = {
+  start_bytes: 50,
+  start_inode: 2,
   content: "[now] INFO : ready\n[now] ERROR : failed\n",
   next_bytes: 100,
   size: 100,
@@ -133,7 +135,7 @@ describe("log viewer parity", () => {
     await waitFor(() =>
       expect(api.getLogTailJson).toHaveBeenCalledWith(
         "All.log",
-        expect.objectContaining({ offset: 2000 }),
+        expect.objectContaining({ beforeBytes: 50, sinceBytes: 100, inode: 1 }),
       ),
     );
     vi.mocked(api.searchLogs).mockResolvedValue({
@@ -156,4 +158,63 @@ describe("log viewer parity", () => {
     );
     expect(await screen.findByText("failure")).toBeInTheDocument();
   });
+});
+
+it("filters native Host and Serilog worker levels", async () => {
+  vi.mocked(api.getLogTailJson).mockResolvedValue({
+    ...payload,
+    content:
+      "[2026-10-20][ERROR   ][Torrentarr]host failed\n2026-10-20 12:00:00 +00:00 [ERR] worker failed\n[now] INFO : fine\n",
+  });
+  view();
+  await screen.findByTestId("lazy-log");
+  fireEvent.click(screen.getByRole("button", { name: "ERROR" }));
+  expect(screen.getByTestId("lazy-log")).toHaveTextContent("host failed");
+  expect(screen.getByTestId("lazy-log")).toHaveTextContent("worker failed");
+  expect(screen.getByTestId("lazy-log")).not.toHaveTextContent("fine");
+});
+
+it("serializes slow polls and discards their results after switching files", async () => {
+  vi.mocked(api.getLogs).mockResolvedValue({ files: ["All.log", "Other.log"] });
+  vi.mocked(api.getLogTailJson).mockImplementation(async (name) => ({
+    ...payload,
+    content: name,
+  }));
+  let complete!: (value: typeof payload) => void;
+  vi.mocked(api.getLogDelta).mockImplementation(
+    () =>
+      new Promise((resolve) => {
+        complete = resolve;
+      }),
+  );
+  view();
+  await waitFor(() => expect(Stream.instances.length).toBeGreaterThan(0));
+  vi.useFakeTimers();
+  try {
+    act(() => Stream.instances.at(-1)!.onerror?.());
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(1000);
+    });
+    act(() => Stream.instances.at(-1)!.onerror?.());
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(1800);
+    });
+    expect(api.getLogDelta).toHaveBeenCalledTimes(1);
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(3600);
+    });
+    expect(api.getLogDelta).toHaveBeenCalledTimes(1);
+    fireEvent.keyDown(screen.getByLabelText("Log File"), { key: "ArrowDown" });
+    fireEvent.click(screen.getByText("Other.log"));
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(0);
+    });
+    await act(async () => complete({ ...payload, content: "obsolete lines" }));
+    expect(screen.getByTestId("lazy-log")).toHaveTextContent("Other.log");
+    expect(screen.getByTestId("lazy-log")).not.toHaveTextContent(
+      "obsolete lines",
+    );
+  } finally {
+    vi.useRealTimers();
+  }
 });

@@ -29,7 +29,7 @@ export const WEBUI_FIELD_OVERLAYS: Record<string, FieldOverlay> = {
         return undefined;
       }
       if (!raw.startsWith("/")) {
-        return "UrlBase must start with / (e.g. /qbitrr).";
+        return "UrlBase must start with / (e.g. /torrentarr).";
       }
       if (raw.endsWith("/")) {
         return "UrlBase must not end with a trailing slash.";

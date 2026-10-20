@@ -58,6 +58,9 @@ function fields(
       requiresRestart: f.requiresRestart ?? undefined,
       minimum: f.minimum,
       maximum: f.maximum,
+      ...(section === "WebUI"
+        ? WEBUI_FIELD_OVERLAYS[[...prefix, ...f.path].join(".")]
+        : undefined),
       validate: (value: unknown, context) => {
         const webError =
           section === "WebUI"

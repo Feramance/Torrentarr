@@ -71,6 +71,8 @@ saves/renames/secrets/drafts, completion fractions, extra clients, stale worker 
 status-only updates, category targets, row-store updates, catalog totals, authenticated
 media, log reconnect/rotation, URL-base aliases and service-worker caching.
 
+The table below records the original parity verification run. Later branch-review fixes and their current validation results are recorded in [PR #520 review follow-up](pr-520-review-follow-up.md); those results supersede these historical test counts.
+
 | Check | Result |
 | --- | --- |
 | Frontend | 287 passed across 42 files |

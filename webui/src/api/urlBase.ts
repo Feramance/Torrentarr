@@ -10,7 +10,14 @@ const PUBLIC_APP_PATH =
  * Works for /qbitrr/static/index.html, /qbitrr/ui, /qbitrr/web/docs, etc.
  */
 export function pathnameUrlBase(): string {
+  const base = document.querySelector("base[href]")?.getAttribute("href");
+  if (base) {
+    const url = new URL(base, window.location.href);
+    if (url.origin === window.location.origin)
+      return url.pathname.replace(/\/$/, "");
+  }
   const { pathname } = window.location;
+  if (pathname === "/index.html") return "";
   const staticMatch = pathname.match(/^(.*)\/static\/index\.html$/);
   if (staticMatch) {
     return staticMatch[1];
@@ -20,8 +27,8 @@ export function pathnameUrlBase(): string {
     return appMatch[1];
   }
   // Bare subpath entry (e.g. /qbitrr) before redirect to /qbitrr/ui
-  if (/^\/[^/]+$/.test(pathname)) {
-    return pathname;
+  if (/^\/[^/]+\/?$/.test(pathname)) {
+    return pathname.replace(/\/$/, "");
   }
   return "";
 }

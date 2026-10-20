@@ -521,9 +521,11 @@ export function ProcessesView({ active }: ProcessesViewProps): JSX.Element {
           setConfirmAction(null);
           try {
             await Promise.all(
-              items.map((item) =>
-                restartProcess(item.restartKey ?? item.category, item.kind),
-              ),
+              items
+                .filter((item) => item.restartable ?? item.kind === "worker")
+                .map((item) =>
+                  restartProcess(item.restartKey ?? item.category, item.kind),
+                ),
             );
             push(`Restarted ${label}`, "success");
             void load();
@@ -553,8 +555,14 @@ export function ProcessesView({ active }: ProcessesViewProps): JSX.Element {
     const appBuckets = new Map<string, Map<string, ProcessInfo[]>>();
     const arrs = statusData?.arrs ?? [];
     const clients = Object.keys(statusData?.qbitInstances ?? {});
+    const clientBucket = new Map<string, ProcessInfo[]>(
+      clients.map((name) => [name, []]),
+    );
     for (const proc of processes) {
-      if (clients.includes(proc.name) && proc.pid == null) continue;
+      if (clientBucket.has(proc.name)) {
+        if (proc.pid != null) clientBucket.get(proc.name)!.push(proc);
+        continue;
+      }
       const arr = arrs.find((arr) => arr.name === proc.name);
       if (!arr && /^(radarr|sonarr|lidarr|readarr)/i.test(proc.name)) continue;
       const app = arr ? formatKind(arr.type) : "Other";
@@ -564,11 +572,7 @@ export function ProcessesView({ active }: ProcessesViewProps): JSX.Element {
       if (!instances.has(name)) instances.set(name, []);
       instances.get(name)!.push(proc);
     }
-    if (clients.length)
-      appBuckets.set(
-        "Torrent Clients",
-        new Map(clients.map((name) => [name, []])),
-      );
+    if (clients.length) appBuckets.set("Torrent Clients", clientBucket);
     const appOrder = [
       "Radarr",
       "Sonarr",

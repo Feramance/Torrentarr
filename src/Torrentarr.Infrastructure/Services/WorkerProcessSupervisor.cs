@@ -49,6 +49,7 @@ public sealed class WorkerProcessSupervisor : BackgroundService, IProcessOrchest
             while (!stoppingToken.IsCancellationRequested)
             {
                 MonitorWorkers();
+                await StopRemovedWorkersAsync(stoppingToken);
                 await Task.Delay(TimeSpan.FromSeconds(5), stoppingToken);
             }
         }
@@ -200,6 +201,17 @@ public sealed class WorkerProcessSupervisor : BackgroundService, IProcessOrchest
                         _reportedWorkers.Remove(rename.Key);
                     }
             }
+            await StopRemovedWorkersAsync(ct, ownsLifecycle: true);
+            StartWorkers();
+        }
+        finally { _lifecycle.Release(); }
+    }
+
+    internal async Task StopRemovedWorkersAsync(CancellationToken ct, bool ownsLifecycle = false)
+    {
+        if (!ownsLifecycle) await _lifecycle.WaitAsync(ct);
+        try
+        {
             string[] removed;
             lock (_gate) removed = _processes.Keys.Where(n => !_config.ArrInstances.ContainsKey(n)).ToArray();
             foreach (var name in removed)
@@ -209,9 +221,8 @@ public sealed class WorkerProcessSupervisor : BackgroundService, IProcessOrchest
                 if (process != null && ReadProcessStatus(name, process).ConfigRevision >= _config.Revision)
                     await StopWorkerAsync(name, ct);
             }
-            StartWorkers();
         }
-        finally { _lifecycle.Release(); }
+        finally { if (!ownsLifecycle) _lifecycle.Release(); }
     }
 
     public Task<Dictionary<string, ProcessStatus>> GetProcessStatusAsync()

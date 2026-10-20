@@ -83,14 +83,14 @@ describe("path mapping forms", () => {
           ],
         },
       },
-      ["TorrentClients", "one"],
+      ["TorrentClient", "one"],
       { root: {} },
     );
     expect(errors).toEqual(
       expect.arrayContaining([
         expect.objectContaining({
           path: [
-            "TorrentClients",
+            "TorrentClient",
             "one",
             "Maintenance",
             "PathMappings",

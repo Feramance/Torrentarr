@@ -1340,6 +1340,8 @@ try
         // Ensure we have a fresh check before applying
         await updater.CheckForUpdateAsync();
         await updater.ApplyUpdateAsync(lifetime);
+        if (!updater.ApplyState.InProgress && updater.ApplyState.LastResult == "error")
+            return Results.Ok(new { success = false, message = updater.ApplyState.LastError });
         return Results.Ok(new { success = true, message = "Update started — application will restart when complete" });
     });
 
@@ -2064,6 +2066,8 @@ try
             return Results.Ok(new { success = false, message = "Update already in progress" });
         await updater.CheckForUpdateAsync();
         await updater.ApplyUpdateAsync(lifetime);
+        if (!updater.ApplyState.InProgress && updater.ApplyState.LastResult == "error")
+            return Results.Ok(new { success = false, message = updater.ApplyState.LastError });
         return Results.Ok(new { success = true, message = "Update started — application will restart when complete" });
     });
 
@@ -2205,7 +2209,7 @@ static async Task<IResult> HandleTestConnection(TestConnectionRequest req, Torre
             if (!cfg.ArrInstances.TryGetValue(req.InstanceKey, out var arrCfg))
                 return Results.Ok(new { success = false, message = "Instance not found or missing URI/APIKey in config" });
 
-            uri = arrCfg.URI;
+            uri = req.Uri ?? arrCfg.URI;
             apiKey = arrCfg.APIKey;
             skipTls = req.SkipTlsVerify ?? arrCfg.SkipTLSVerify;
         }

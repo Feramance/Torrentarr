@@ -85,13 +85,24 @@ function lineMatchesLevel(line: string, levels: Set<string>): boolean {
   if (levels.size === 0) {
     return true;
   }
-  // Format: "[asctime] LEVEL   : logger: message"
   const plain = stripAnsi(line);
-  for (const level of levels) {
-    const re = new RegExp(`\\b${level}\\s*:`);
-    if (re.test(plain)) {
-      return true;
-    }
+  const names: Record<string, string> = {
+    INF: "INFO",
+    WRN: "WARNING",
+    WARN: "WARNING",
+    ERR: "ERROR",
+    DBG: "DEBUG",
+    VRB: "TRACE",
+    FTL: "CRITICAL",
+    FATAL: "CRITICAL",
+    VERBOSE: "TRACE",
+  };
+  const match = plain.match(
+    /\[(?:[^\]]*?\s)?(TRACE|DEBUG|INFO|NOTICE|WARNING|WARN|ERROR|CRITICAL|FATAL|SUCCESS|INF|WRN|ERR|DBG|VRB|FTL)\s*\]|\b(TRACE|DEBUG|INFO|NOTICE|WARNING|ERROR|CRITICAL|SUCCESS)\s*:/i,
+  );
+  if (match) {
+    const level = (match[1] ?? match[2]).toUpperCase();
+    return levels.has(names[level] ?? level);
   }
   return false;
 }
@@ -130,6 +141,10 @@ export function LogsView({ active }: LogsViewProps): JSX.Element {
   /** True after the initial JSON tail for the current file has loaded. */
   const [tailReady, setTailReady] = useState(false);
 
+  const linesRef = useRef<string[]>([]);
+  const headBytesRef = useRef(0);
+  const windowEpoch = useRef(0);
+  const polling = useRef(false);
   const nextBytesRef = useRef(0);
   const inodeRef = useRef(0);
   const eventSourceRef = useRef<EventSource | null>(null);
@@ -149,9 +164,10 @@ export function LogsView({ active }: LogsViewProps): JSX.Element {
   const [lazyLogEpoch, setLazyLogEpoch] = useState(0);
   const prevActiveRef = useRef(active);
 
-  useEffect(() => {
+  if (selectedRef.current !== selected) {
     selectedRef.current = selected;
-  }, [selected]);
+    windowEpoch.current++;
+  }
 
   useEffect(() => {
     liveUpdatesRef.current = liveUpdates;
@@ -198,19 +214,26 @@ export function LogsView({ active }: LogsViewProps): JSX.Element {
       inodeRef.current = payload.inode;
       const incoming = splitLogLines(payload.content);
       if (mode === "replace" || payload.rotated) {
-        setLines(trimRingBuffer(incoming));
+        headBytesRef.current = payload.start_bytes ?? 0;
+        linesRef.current = trimRingBuffer(incoming);
+        setLines(linesRef.current);
         setOffsetFromEnd(0);
-        setHasMoreAbove(true);
+        setHasMoreAbove((payload.start_bytes ?? 0) > 0);
         return;
       }
       if (incoming.length === 0) {
         return;
       }
-      setLines((prev) => {
-        // Handle partial first line continuation: if prev last line incomplete
-        // and delta doesn't start with newline semantics — append as new lines.
-        return trimRingBuffer([...prev, ...incoming]);
-      });
+      const combined = [...linesRef.current, ...incoming];
+      const dropped = combined.slice(
+        0,
+        Math.max(0, combined.length - RING_BUFFER_MAX_LINES),
+      );
+      headBytesRef.current += new TextEncoder().encode(
+        dropped.map((line) => line + "\n").join(""),
+      ).length;
+      linesRef.current = trimRingBuffer(combined);
+      setLines(linesRef.current);
     },
     [],
   );
@@ -251,6 +274,7 @@ export function LogsView({ active }: LogsViewProps): JSX.Element {
   const fetchTail = useCallback(
     async (showLoading: boolean = false) => {
       if (!selected) return;
+      const epoch = ++windowEpoch.current;
       if (showLoading) setLoadingContent(true);
       try {
         const pending = pendingMatchRef.current;
@@ -260,12 +284,17 @@ export function LogsView({ active }: LogsViewProps): JSX.Element {
             lines: 200,
             aroundLine: pending.line,
           });
-          if (selectedRef.current !== selected) return;
+          if (selectedRef.current !== selected || windowEpoch.current !== epoch)
+            return;
           applyPayload(around, "replace");
           setOffsetFromEnd(1);
           setFollow(false);
-          setHasMoreAbove(true);
-          setPendingScrollLine(100);
+          setHasMoreAbove((around.start_bytes ?? 0) > 0);
+          setPendingScrollLine(
+            pending.line -
+              (around.start_line ?? Math.max(1, pending.line - 100)) +
+              1,
+          );
           setTailReady(true);
           closeStream();
         } else {
@@ -273,18 +302,26 @@ export function LogsView({ active }: LogsViewProps): JSX.Element {
             lines: DEFAULT_LOG_TAIL_LINES,
             offset: 0,
           });
-          if (selectedRef.current !== selected) return;
+          if (selectedRef.current !== selected || windowEpoch.current !== epoch)
+            return;
           applyPayload(payload, "replace");
           setOffsetFromEnd(0);
-          setHasMoreAbove(true);
+          setHasMoreAbove((payload.start_bytes ?? 0) > 0);
           setPendingScrollLine(null);
           setTailReady(true);
         }
       } catch (error) {
+        if (selectedRef.current !== selected || windowEpoch.current !== epoch)
+          return;
         setTailReady(false);
         push(describeError(error, `Failed to read ${selected}`), "error");
       } finally {
-        if (showLoading) setLoadingContent(false);
+        if (
+          showLoading &&
+          selectedRef.current === selected &&
+          windowEpoch.current === epoch
+        )
+          setLoadingContent(false);
       }
     },
     [selected, applyPayload, push, closeStream],
@@ -292,19 +329,35 @@ export function LogsView({ active }: LogsViewProps): JSX.Element {
 
   const loadMoreAbove = useCallback(async () => {
     if (!selected || loadingMore || !hasMoreAbove) return;
+    const epoch = ++windowEpoch.current;
     const nextOffset = offsetFromEnd + DEFAULT_LOG_TAIL_LINES;
+    closeStream();
+    setOffsetFromEnd(nextOffset);
     setLoadingMore(true);
     try {
       const payload = await getLogTailJson(selected, {
         lines: DEFAULT_LOG_TAIL_LINES,
-        offset: nextOffset,
+        beforeBytes: headBytesRef.current,
+        sinceBytes: nextBytesRef.current,
+        inode: inodeRef.current,
       });
-      if (selectedRef.current !== selected) return;
+      if (selectedRef.current !== selected || windowEpoch.current !== epoch)
+        return;
+      if (payload.rotated) {
+        applyPayload(payload, "replace");
+        return;
+      }
+      headBytesRef.current = payload.start_bytes ?? 0;
       const older = splitLogLines(payload.content);
+      setHasMoreAbove(headBytesRef.current > 0);
       if (older.length === 0) {
         setHasMoreAbove(false);
       } else {
-        setLines((prev) => [...older, ...prev].slice(0, RING_BUFFER_MAX_LINES));
+        linesRef.current = [...older, ...linesRef.current].slice(
+          0,
+          RING_BUFFER_MAX_LINES,
+        );
+        setLines(linesRef.current);
         setOffsetFromEnd(nextOffset);
         // Pause live while browsing history
         closeStream();
@@ -317,10 +370,20 @@ export function LogsView({ active }: LogsViewProps): JSX.Element {
     } finally {
       setLoadingMore(false);
     }
-  }, [selected, offsetFromEnd, loadingMore, hasMoreAbove, push, closeStream]);
+  }, [
+    selected,
+    offsetFromEnd,
+    loadingMore,
+    hasMoreAbove,
+    push,
+    closeStream,
+    applyPayload,
+  ]);
 
   const pollDelta = useCallback(async () => {
-    if (!selected || !atTailWindow) return;
+    if (!selected || !atTailWindow || polling.current) return;
+    polling.current = true;
+    const epoch = windowEpoch.current;
     try {
       const payload = await getLogDelta(
         selected,
@@ -328,10 +391,14 @@ export function LogsView({ active }: LogsViewProps): JSX.Element {
         inodeRef.current,
         DEFAULT_LOG_TAIL_LINES,
       );
+      if (selectedRef.current !== selected || windowEpoch.current !== epoch)
+        return;
       applyPayload(payload, payload.rotated ? "replace" : "append");
       setTransport("poll");
     } catch {
       // Background delta polls must stay silent — transient failures spam toasts.
+    } finally {
+      polling.current = false;
     }
   }, [selected, atTailWindow, applyPayload]);
 
@@ -343,6 +410,7 @@ export function LogsView({ active }: LogsViewProps): JSX.Element {
       return;
     }
     const fileName = selected;
+    const epoch = windowEpoch.current;
     const url = getLogStreamUrl(
       fileName,
       nextBytesRef.current,
@@ -356,7 +424,8 @@ export function LogsView({ active }: LogsViewProps): JSX.Element {
     const onPayload = (event: MessageEvent, mode: "append" | "replace") => {
       try {
         const payload = JSON.parse(String(event.data)) as LogTailPayload;
-        if (selectedRef.current !== fileName) return;
+        if (selectedRef.current !== fileName || windowEpoch.current !== epoch)
+          return;
         applyPayload(payload, mode);
         sseFailCountRef.current = 0;
         setTransport("sse");
@@ -372,6 +441,8 @@ export function LogsView({ active }: LogsViewProps): JSX.Element {
       onPayload(event as MessageEvent, "replace");
     });
     es.addEventListener("reconnect", (event) => {
+      if (selectedRef.current !== fileName || windowEpoch.current !== epoch)
+        return;
       try {
         const data = JSON.parse(String((event as MessageEvent).data)) as {
           next_bytes?: number;
@@ -400,6 +471,7 @@ export function LogsView({ active }: LogsViewProps): JSX.Element {
       }, 250);
     });
     es.onerror = () => {
+      if (eventSourceRef.current !== es) return;
       sseFailCountRef.current += 1;
       closeStream();
       if (sseFailCountRef.current >= 2) {
@@ -434,6 +506,7 @@ export function LogsView({ active }: LogsViewProps): JSX.Element {
     const id = window.setTimeout(() => {
       setForcePoll(false);
       setTailReady(false);
+      linesRef.current = [];
       setLines([]);
       setSearchMatches([]);
       setPendingScrollLine(null);
@@ -523,6 +596,7 @@ export function LogsView({ active }: LogsViewProps): JSX.Element {
 
   const runServerSearch = useCallback(async () => {
     if (!selected || !searchQuery.trim()) return;
+    const epoch = windowEpoch.current;
     setSearching(true);
     setShowSearchPanel(true);
     try {
@@ -531,6 +605,8 @@ export function LogsView({ active }: LogsViewProps): JSX.Element {
         context: 2,
         maxMatches: 200,
       });
+      if (selectedRef.current !== selected || windowEpoch.current !== epoch)
+        return;
       setSearchMatches(result.matches);
       setSearchTruncated(result.truncated);
       if (result.matches.length === 0) {
@@ -545,6 +621,9 @@ export function LogsView({ active }: LogsViewProps): JSX.Element {
 
   const openSearchMatch = useCallback(
     async (match: LogSearchMatch) => {
+      const epoch = ++windowEpoch.current;
+      closeStream();
+      setOffsetFromEnd(1);
       try {
         if (match.file !== selected) {
           pendingMatchRef.current = match;
@@ -555,11 +634,17 @@ export function LogsView({ active }: LogsViewProps): JSX.Element {
           lines: 200,
           aroundLine: match.line,
         });
+        if (selectedRef.current !== selected || windowEpoch.current !== epoch)
+          return;
         applyPayload(payload, "replace");
         setOffsetFromEnd(1);
         setFollow(false);
-        setHasMoreAbove(true);
-        setPendingScrollLine(100);
+        setHasMoreAbove((payload.start_bytes ?? 0) > 0);
+        setPendingScrollLine(
+          match.line -
+            (payload.start_line ?? Math.max(1, match.line - 100)) +
+            1,
+        );
         closeStream();
       } catch (error) {
         push(describeError(error, "Failed to open match"), "error");

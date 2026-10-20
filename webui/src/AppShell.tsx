@@ -97,7 +97,9 @@ const TAB_PREFETCHERS: Record<Tab, () => Promise<unknown>> = {
 };
 
 function prefetchTab(tabId: Tab): void {
-  void TAB_PREFETCHERS[tabId]();
+  void TAB_PREFETCHERS[tabId]().catch(() => {
+    /* The route displays load failures when opened. */
+  });
 }
 
 interface NavTab {
@@ -259,7 +261,12 @@ function AppShell({
       return;
     }
 
-    const lastSeenVersion = localStorage.getItem("lastSeenVersion");
+    let lastSeenVersion: string | null = null;
+    try {
+      lastSeenVersion = localStorage.getItem("lastSeenVersion");
+    } catch {
+      /* Version history is optional. */
+    }
     const currentVersion = meta.current_version;
 
     // Show welcome popup if this is a new version (but not on very first install)
@@ -277,7 +284,11 @@ function AppShell({
 
     // Store current version as last seen when user opens the app (first install)
     if (!lastSeenVersion) {
-      localStorage.setItem("lastSeenVersion", currentVersion);
+      try {
+        localStorage.setItem("lastSeenVersion", currentVersion);
+      } catch {
+        /* Version history is optional. */
+      }
     }
   }, [
     meta?.current_version,
@@ -366,12 +377,19 @@ function AppShell({
       }
       switchTab(tab as Tab);
       if (detail.qbitCategory) {
-        sessionStorage.setItem("qbitrr:focusQbitCategory", detail.qbitCategory);
-        if (detail.qbitInstance)
+        try {
           sessionStorage.setItem(
-            "torrentarr:focusQbitInstance",
-            detail.qbitInstance,
+            "qbitrr:focusQbitCategory",
+            detail.qbitCategory,
           );
+          if (detail.qbitInstance)
+            sessionStorage.setItem(
+              "torrentarr:focusQbitInstance",
+              detail.qbitInstance,
+            );
+        } catch {
+          /* Navigation still works without a persisted focus hint. */
+        }
       }
     };
     window.addEventListener(NAVIGATE_TAB_EVENT, onNavigate);
@@ -678,7 +696,11 @@ function AppShell({
     setShowWelcomeChangelog(false);
     // Mark this version as seen
     if (meta?.current_version) {
-      localStorage.setItem("lastSeenVersion", meta.current_version);
+      try {
+        localStorage.setItem("lastSeenVersion", meta.current_version);
+      } catch {
+        /* Version history is optional. */
+      }
     }
   };
 

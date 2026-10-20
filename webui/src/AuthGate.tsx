@@ -49,12 +49,16 @@ interface AuthInfo {
 }
 
 function readStoredToken(): string | null {
-  return (
-    localStorage.getItem("token") ||
-    localStorage.getItem("webui-token") ||
-    localStorage.getItem("webui_token") ||
-    null
-  );
+  try {
+    return (
+      localStorage.getItem("token") ||
+      localStorage.getItem("webui-token") ||
+      localStorage.getItem("webui_token") ||
+      null
+    );
+  } catch {
+    return null;
+  }
 }
 
 function authInfoFromMeta(meta: MetaResponse): AuthInfo {
@@ -126,7 +130,11 @@ function AuthGate({
         const token =
           tokenResult.status === "fulfilled" ? tokenResult.value : null;
         if (token) {
-          localStorage.setItem("token", token);
+          try {
+            localStorage.setItem("token", token);
+          } catch {
+            /* Cookie authentication remains available. */
+          }
           setAuthState("authenticated");
         } else {
           setAuthState("unauthenticated");
@@ -148,7 +156,11 @@ function AuthGate({
       try {
         const token = await fetchWebToken();
         if (token) {
-          localStorage.setItem("token", token);
+          try {
+            localStorage.setItem("token", token);
+          } catch {
+            /* Cookie authentication remains available. */
+          }
           setAuthState("authenticated");
         } else {
           setAuthState("unauthenticated");
@@ -183,7 +195,11 @@ function AuthGate({
   const handleLoginSuccess = useCallback(async () => {
     const token = await fetchWebToken().catch(() => null);
     if (token) {
-      localStorage.setItem("token", token);
+      try {
+        localStorage.setItem("token", token);
+      } catch {
+        /* Cookie authentication remains available. */
+      }
     }
     setAuthState("authenticated");
   }, []);

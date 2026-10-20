@@ -93,4 +93,82 @@ describe("api client GET TTL cache", () => {
     // POST + second GET (cache invalidated)
     expect(fetchMock).toHaveBeenCalledTimes(3);
   });
+  it("detaches invalidated requests and never caches their late responses", async () => {
+    const { getConfig, invalidateGetCache } = await loadClient();
+    let old!: (response: Response) => void;
+    let fresh!: (response: Response) => void;
+    const fetchMock = vi
+      .fn()
+      .mockImplementationOnce(
+        () =>
+          new Promise<Response>((resolve) => {
+            old = resolve;
+          }),
+      )
+      .mockImplementationOnce(
+        () =>
+          new Promise<Response>((resolve) => {
+            fresh = resolve;
+          }),
+      );
+    vi.stubGlobal("fetch", fetchMock);
+    const first = getConfig();
+    invalidateGetCache(["/web/config"]);
+    const second = getConfig();
+    old(Response.json({ Settings: { value: "old" } }));
+    await first;
+    const third = getConfig();
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+    fresh(Response.json({ Settings: { value: "new" } }));
+    expect(await second).toEqual({ Settings: { value: "new" } });
+    expect(await third).toEqual(await getConfig());
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+  });
+  it("uses a session token when local storage is blocked", async () => {
+    const { getStatus } = await loadClient();
+    sessionStorage.setItem("token", "session-token");
+    vi.spyOn(window, "localStorage", "get").mockImplementation(() => {
+      throw new Error("denied");
+    });
+    const fetchMock = mockFetch([{ ready: true }]);
+    await getStatus();
+    expect(fetchMock.mock.calls[0][1].headers.get("Authorization")).toBe(
+      "Bearer session-token",
+    );
+    sessionStorage.clear();
+  });
+  it("serializes Readarr's missing filter as a boolean", async () => {
+    const fetchMock = mockFetch([{ authors: [] }]);
+    const { getReadarrAuthors } = await loadClient();
+    await getReadarrAuthors("Readarr", 1, 20, "", { missing: true });
+    expect(fetchMock.mock.calls[0][0]).toContain("missing=true");
+  });
+  it("surfaces a rejected update instead of reporting that it started", async () => {
+    mockFetch([
+      {
+        success: false,
+        message: "Docker installations update by recreating the container.",
+      },
+    ]);
+    const { triggerUpdate } = await loadClient();
+    await expect(triggerUpdate()).rejects.toThrow("Docker installations");
+  });
+  it("retains a query token in memory when neither browser store is usable", async () => {
+    vi.unstubAllGlobals();
+    window.history.replaceState({}, "", "/ui?token=query-secret");
+    for (const store of ["localStorage", "sessionStorage"] as const)
+      vi.spyOn(window, store, "get").mockImplementation(() => {
+        throw new Error("blocked");
+      });
+    const fetchMock = mockFetch([{ ready: true }, { ready: true }]);
+    const { getStatus, invalidateGetCache } = await loadClient();
+    await getStatus();
+    expect(window.location.search).not.toContain("token");
+    invalidateGetCache(["/web/status"]);
+    await getStatus();
+    expect(fetchMock.mock.calls[1][1].headers.get("Authorization")).toBe(
+      "Bearer query-secret",
+    );
+    window.history.replaceState({}, "", "/");
+  });
 });

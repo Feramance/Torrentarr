@@ -54,6 +54,10 @@ export function ToastProvider({ children }: PropsWithChildren): JSX.Element {
   }, [toasts]);
 
   const dismiss = useCallback((id: number) => {
+    const toast = toastsRef.current.find((t) => t.id === id);
+    if (toast && lastPushKey === toastDedupeKey(toast.message, toast.kind))
+      lastPushKey = null;
+    toastsRef.current = toastsRef.current.filter((t) => t.id !== id);
     setToasts((prev) => prev.filter((t) => t.id !== id));
   }, []);
 

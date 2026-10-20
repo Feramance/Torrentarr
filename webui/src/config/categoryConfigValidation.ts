@@ -20,8 +20,8 @@ export interface CategoryCrossSectionIssue {
 function sectionsWithClients(formState: ConfigDocument) {
   return [
     ...Object.entries(formState),
-    ...Object.entries((formState.TorrentClients ?? {}) as ConfigDocument).map(
-      ([name, value]) => [`TorrentClients.${name}`, value] as const,
+    ...Object.entries((formState.TorrentClient ?? {}) as ConfigDocument).map(
+      ([name, value]) => [`TorrentClient.${name}`, value] as const,
     ),
   ];
 }
@@ -75,7 +75,7 @@ export function getCategoryCrossSectionIssues(
     if (!rawSection || typeof rawSection !== "object") continue;
 
     if (
-      !sectionKey.startsWith("TorrentClients.") &&
+      !sectionKey.startsWith("TorrentClient.") &&
       SERVARR_SECTION_REGEX.test(sectionKey)
     ) {
       const sec = rawSection as Record<string, unknown>;
@@ -94,7 +94,7 @@ export function getCategoryCrossSectionIssues(
 
     if (
       QBIT_SECTION_REGEX.test(sectionKey) ||
-      sectionKey.startsWith("TorrentClients.")
+      sectionKey.startsWith("TorrentClient.")
     ) {
       const sec = rawSection as Record<string, unknown>;
       const mc = sec.ManagedCategories;
@@ -144,7 +144,7 @@ export function getCategoryOverlapWarnings(
     if (!rawSection || typeof rawSection !== "object") continue;
 
     if (
-      !sectionKey.startsWith("TorrentClients.") &&
+      !sectionKey.startsWith("TorrentClient.") &&
       SERVARR_SECTION_REGEX.test(sectionKey)
     ) {
       const sec = rawSection as Record<string, unknown>;
@@ -155,7 +155,7 @@ export function getCategoryOverlapWarnings(
 
     if (
       QBIT_SECTION_REGEX.test(sectionKey) ||
-      sectionKey.startsWith("TorrentClients.")
+      sectionKey.startsWith("TorrentClient.")
     ) {
       const sec = rawSection as Record<string, unknown>;
       const mc = sec.ManagedCategories;
