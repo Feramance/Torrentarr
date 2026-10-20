@@ -56,7 +56,7 @@ public static class QbitOverviewBuilder
             foreach (var catName in monitored.OrderBy(c => c, StringComparer.OrdinalIgnoreCase))
             {
                 var inCat = torrents.Where(t =>
-                    CategoryPathHelper.MatchesConfigured(t.Category, new[] { catName }, prefix: qbit.MatchSubcategories)
+                    CategoryPathHelper.MatchesConfigured(t.Category, new[] { catName }, prefix: CategoryOwnershipHelper.PrefixMatchAllowedForOwner(cfg, catName, instanceName))
                         == CategoryPathHelper.NormalizeCategory(catName)).ToList();
                 var truncated = inCat.Count > MaxTorrentsPerCategory;
                 var slice = inCat.Take(MaxTorrentsPerCategory).Select(SerializeTorrent).ToList();

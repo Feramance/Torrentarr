@@ -93,6 +93,21 @@ describe("log viewer parity", () => {
       timeout: 3000,
     });
   });
+  it("reopens the live stream after refreshing the tail and ignores the old stream", async () => {
+    view();
+    await waitFor(() => expect(Stream.instances.length).toBe(1));
+    const old = Stream.instances[0];
+    fireEvent.click(screen.getByRole("button", { name: "More" }));
+    fireEvent.click(screen.getByRole("menuitem", { name: "Refresh" }));
+    await waitFor(() => expect(Stream.instances.length).toBeGreaterThan(1));
+    expect(old.close).toHaveBeenCalled();
+    act(() => old.send("append", "obsolete append\n"));
+    act(() => Stream.instances.at(-1)!.send("append", "fresh append\n"));
+    expect(screen.getByTestId("lazy-log")).toHaveTextContent("fresh append");
+    expect(screen.getByTestId("lazy-log")).not.toHaveTextContent(
+      "obsolete append",
+    );
+  });
   it("filters loaded lines by level", async () => {
     view();
     await screen.findByTestId("lazy-log");

@@ -282,7 +282,6 @@ try
         .PersistKeysToFileSystem(new DirectoryInfo(dataProtectionKeyPath))
         .SetApplicationName("Torrentarr");
 
-    var urlBase = UrlBaseHelper.NormalizeUrlBase(config.WebUI.UrlBase);
     var authBuilder = builder.Services.AddAuthentication(CookieAuthenticationDefaults.AuthenticationScheme)
         .AddCookie(options =>
         {
@@ -393,9 +392,14 @@ try
         typeof(Program).Assembly);
 
     liveWeb.Attach(app, config);
+    app.UseRouting();
     app.Services.GetRequiredService<IConfigReloader>().ConfigReloaded += (_, args) =>
     {
-        if (args.Success) app.Services.GetRequiredService<Microsoft.Extensions.Options.IOptionsMonitorCache<OpenIdConnectOptions>>().Clear();
+        if (args.Success)
+        {
+            app.Services.GetRequiredService<Microsoft.Extensions.Options.IOptionsMonitorCache<OpenIdConnectOptions>>().Clear();
+            app.Services.GetRequiredService<Microsoft.Extensions.Options.IOptionsMonitorCache<CookieAuthenticationOptions>>().Clear();
+        }
     };
     app.UseConfigMutationGuard(ConfigurationLoader.GetDefaultConfigPath(), host: true);
 
@@ -514,7 +518,7 @@ try
             {
                 using var reader = new StreamReader(index.CreateReadStream());
                 var html = await reader.ReadToEndAsync(context.RequestAborted);
-                var prefix = System.Net.WebUtility.HtmlEncode(string.IsNullOrEmpty(context.Request.PathBase.Value) ? urlBase : context.Request.PathBase.Value);
+                var prefix = System.Net.WebUtility.HtmlEncode(string.IsNullOrEmpty(context.Request.PathBase.Value) ? UrlBaseHelper.NormalizeUrlBase(config.WebUI.UrlBase) : context.Request.PathBase.Value);
                 context.Response.ContentType = "text/html";
                 context.Response.Headers.CacheControl = "no-store";
                 await context.Response.WriteAsync(html.Replace("<head>", $"<head><base href=\"{prefix}/\">"), context.RequestAborted);
@@ -649,7 +653,7 @@ try
     app.MapRadarrMoviesEndpoints();
 
     // Home redirect: / → /ui
-    app.MapGet("/", () => Results.Redirect(string.IsNullOrEmpty(urlBase) ? "/ui" : $"{urlBase}/ui"));
+    app.MapGet("/", () => Results.Redirect(UrlBaseHelper.WithUrlBase(UrlBaseHelper.NormalizeUrlBase(config.WebUI.UrlBase), "/ui")));
 
     // Health check
     app.MapGet("/health", () => Results.Ok(new

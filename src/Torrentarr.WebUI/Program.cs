@@ -190,8 +190,6 @@ builder.Services.AddDataProtection()
     .PersistKeysToFileSystem(new DirectoryInfo(dataProtectionKeyPath))
     .SetApplicationName("Torrentarr");
 
-var urlBase = UrlBaseHelper.NormalizeUrlBase(configForDI.WebUI.UrlBase);
-
 var authBuilder = builder.Services.AddAuthentication(CookieAuthenticationDefaults.AuthenticationScheme)
     .AddCookie(options =>
     {
@@ -246,9 +244,14 @@ app.MapGet("/web/config/status", (IConfigReloader reloader) => Results.Ok(reload
 app.MapGet("/api/config/status", (IConfigReloader reloader) => Results.Ok(reloader.GetStatus()));
 
 liveWeb.Attach(app, configForDI);
+app.UseRouting();
 app.Services.GetRequiredService<IConfigReloader>().ConfigReloaded += (_, args) =>
 {
-    if (args.Success) app.Services.GetRequiredService<Microsoft.Extensions.Options.IOptionsMonitorCache<OpenIdConnectOptions>>().Clear();
+    if (args.Success)
+    {
+        app.Services.GetRequiredService<Microsoft.Extensions.Options.IOptionsMonitorCache<OpenIdConnectOptions>>().Clear();
+        app.Services.GetRequiredService<Microsoft.Extensions.Options.IOptionsMonitorCache<CookieAuthenticationOptions>>().Clear();
+    }
 };
 app.UseConfigMutationGuard(ConfigurationLoader.GetDefaultConfigPath());
 
@@ -288,7 +291,7 @@ app.Use(async (context, next) =>
         if (File.Exists(file))
         {
             var html = await File.ReadAllTextAsync(file, context.RequestAborted);
-            var prefix = System.Net.WebUtility.HtmlEncode(string.IsNullOrEmpty(context.Request.PathBase.Value) ? urlBase : context.Request.PathBase.Value);
+            var prefix = System.Net.WebUtility.HtmlEncode(string.IsNullOrEmpty(context.Request.PathBase.Value) ? UrlBaseHelper.NormalizeUrlBase(configForDI.WebUI.UrlBase) : context.Request.PathBase.Value);
             context.Response.ContentType = "text/html";
             context.Response.Headers.CacheControl = "no-store";
             await context.Response.WriteAsync(html.Replace("<head>", $"<head><base href=\"{prefix}/\">"), context.RequestAborted);

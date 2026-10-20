@@ -92,7 +92,7 @@ public class LogFileApiTests
         var path = Path.Combine(dir, "All.log");
         try
         {
-            await File.WriteAllLinesAsync(path, Enumerable.Range(1, 100).Select(i => $"line {i}"));
+            await File.WriteAllTextAsync(path, string.Join("\n", Enumerable.Range(1, 100).Select(i => $"line {i}")) + "\n");
             var ctx = new DefaultHttpContext();
             ctx.Request.QueryString = new QueryString("?around_line=50&lines=4");
             (await LogFileApi.ReadWindowAsync(path, ctx.Request, default)).content.Should().Be("line 48\nline 49\nline 50\nline 51");

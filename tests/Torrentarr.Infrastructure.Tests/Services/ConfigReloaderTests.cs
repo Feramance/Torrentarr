@@ -1,3 +1,6 @@
+using System.Diagnostics;
+using Moq;
+using Torrentarr.Core.Interfaces;
 using FluentAssertions;
 using Microsoft.Extensions.Logging.Abstractions;
 using Torrentarr.Core.Services;
@@ -56,6 +59,93 @@ public sealed class ConfigReloaderTests : IDisposable
 
     // Minimal TOML that ConfigurationLoader.Load() accepts without error.
     private const string MinimalToml = "[Settings]\n";
+
+    [Fact]
+    public async Task Supervisor_DoesNotReapplyHistoricalRenamesToReusedNames()
+    {
+        if (OperatingSystem.IsWindows()) return;
+        Environment.SetEnvironmentVariable("TORRENTARR_CONFIG", _configPath);
+        var loader = new ConfigurationLoader(_configPath);
+        var config = new TorrentarrConfig();
+        config.ArrInstances["Radarr-A"] = new() { URI = "http://fixture", Category = "a", Managed = true };
+        using var host = new ConfigReloader(NullLogger<ConfigReloader>.Instance, config, loader);
+        host.Apply(config).Should().BeTrue();
+        var launches = new List<ProcessStartInfo>();
+        using var supervisor = new WorkerProcessSupervisor(config, NullLogger<WorkerProcessSupervisor>.Instance,
+            Mock.Of<IMediaValidationService>(), name =>
+            {
+                var info = new ProcessStartInfo("/bin/sh")
+                { ArgumentList = { "-c", "read command", "--status-path", Path.Combine(_tempDir, name + ".json") }, UseShellExecute = false, RedirectStandardInput = true };
+                launches.Add(info);
+                return info;
+            });
+        var orchestrator = (IProcessOrchestrator)supervisor;
+        await orchestrator.StartAsync();
+        TorrentarrConfig Copy() => Newtonsoft.Json.JsonConvert.DeserializeObject<TorrentarrConfig>(Newtonsoft.Json.JsonConvert.SerializeObject(config))!;
+        try
+        {
+            var originalPid = (await supervisor.GetProcessStatusAsync())["Radarr-A"].ProcessId;
+            var candidate = Copy();
+            candidate.ArrInstances["Radarr-B"] = candidate.ArrInstances["Radarr-A"];
+            candidate.ArrInstances.Remove("Radarr-A");
+            host.Apply(candidate, new() { ["Radarr-A"] = "Radarr-B" }).Should().BeTrue();
+            await supervisor.ReconcileConfigurationAsync();
+            (await supervisor.GetProcessStatusAsync())["Radarr-B"].ProcessId.Should().Be(originalPid);
+            candidate = Copy();
+            candidate.ArrInstances["Radarr-A"] = new() { URI = "http://fixture", Category = "new-a", Managed = true };
+            host.Apply(candidate).Should().BeTrue();
+            await supervisor.ReconcileConfigurationAsync();
+            var newPid = (await supervisor.GetProcessStatusAsync())["Radarr-A"].ProcessId;
+            newPid.Should().NotBe(originalPid);
+            launches.Should().HaveCount(2);
+            launches[0].ArgumentList.Last().Should().NotBe(launches[1].ArgumentList.Last(), "the renamed worker still owns its original heartbeat path");
+            await supervisor.ReconcileConfigurationAsync();
+            var status = await supervisor.GetProcessStatusAsync();
+            status["Radarr-A"].ProcessId.Should().Be(newPid);
+            status["Radarr-B"].ProcessId.Should().Be(originalPid);
+            candidate = Copy();
+            candidate.ArrInstances["Radarr-C"] = candidate.ArrInstances["Radarr-B"];
+            candidate.ArrInstances.Remove("Radarr-B");
+            host.Apply(candidate, new() { ["Radarr-B"] = "Radarr-C" }).Should().BeTrue();
+            await supervisor.ReconcileConfigurationAsync();
+            status = await supervisor.GetProcessStatusAsync();
+            status["Radarr-A"].ProcessId.Should().Be(newPid);
+            status["Radarr-C"].ProcessId.Should().Be(originalPid);
+        }
+        finally { await orchestrator.StopAsync(); }
+    }
+
+    [Fact]
+    public void RenameHistory_IsScopedToWorkerStartingRevisionWhenNamesAreReused()
+    {
+        Environment.SetEnvironmentVariable("TORRENTARR_CONFIG", _configPath);
+        var loader = new ConfigurationLoader(_configPath);
+        var config = new TorrentarrConfig();
+        config.ArrInstances["Radarr-A"] = new() { Category = "a" };
+        using var host = new ConfigReloader(NullLogger<ConfigReloader>.Instance, config, loader);
+        host.Apply(config).Should().BeTrue();
+        var originalRevision = host.Revision;
+        var candidate = Newtonsoft.Json.JsonConvert.DeserializeObject<TorrentarrConfig>(Newtonsoft.Json.JsonConvert.SerializeObject(config))!;
+        candidate.ArrInstances["Radarr-B"] = candidate.ArrInstances["Radarr-A"];
+        candidate.ArrInstances.Remove("Radarr-A");
+        host.Apply(candidate, new() { ["Radarr-A"] = "Radarr-B" }).Should().BeTrue();
+        candidate = Newtonsoft.Json.JsonConvert.DeserializeObject<TorrentarrConfig>(Newtonsoft.Json.JsonConvert.SerializeObject(config))!;
+        candidate.ArrInstances["Radarr-A"] = new() { Category = "new-a" };
+        host.Apply(candidate).Should().BeTrue();
+        var newWorkerRevision = host.Revision;
+        var workerConfig = new TorrentarrConfig();
+        using var worker = new ConfigReloader(NullLogger<ConfigReloader>.Instance, workerConfig, loader, worker: true);
+        worker.ReloadConfig().Should().BeTrue();
+        worker.ResolveInstanceName("Radarr-A", originalRevision).Should().Be("Radarr-B");
+        worker.ResolveInstanceName("Radarr-A", newWorkerRevision).Should().Be("Radarr-A");
+        candidate = Newtonsoft.Json.JsonConvert.DeserializeObject<TorrentarrConfig>(Newtonsoft.Json.JsonConvert.SerializeObject(config))!;
+        candidate.ArrInstances["Radarr-C"] = candidate.ArrInstances["Radarr-B"];
+        candidate.ArrInstances.Remove("Radarr-B");
+        host.Apply(candidate, new() { ["Radarr-B"] = "Radarr-C" }).Should().BeTrue();
+        worker.ReloadConfig().Should().BeTrue();
+        worker.ResolveInstanceName("Radarr-A", originalRevision).Should().Be("Radarr-C");
+        worker.ResolveInstanceName("Radarr-A", newWorkerRevision).Should().Be("Radarr-A");
+    }
 
     [Fact]
     public void ReloadConfig_SnapshotCanBeAppliedByWorker()

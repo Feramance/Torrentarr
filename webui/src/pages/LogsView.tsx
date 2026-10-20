@@ -138,8 +138,8 @@ export function LogsView({ active }: LogsViewProps): JSX.Element {
   const [pendingScrollLine, setPendingScrollLine] = useState<number | null>(
     null,
   );
-  /** True after the initial JSON tail for the current file has loaded. */
-  const [tailReady, setTailReady] = useState(false);
+  /** Generation of the loaded JSON tail; zero while replacing the window. */
+  const [tailReady, setTailReady] = useState(0);
 
   const linesRef = useRef<string[]>([]);
   const headBytesRef = useRef(0);
@@ -199,7 +199,7 @@ export function LogsView({ active }: LogsViewProps): JSX.Element {
     liveUpdates &&
     atTailWindow &&
     !!selected &&
-    tailReady;
+    tailReady > 0;
 
   const closeStream = useCallback(() => {
     if (eventSourceRef.current) {
@@ -275,6 +275,8 @@ export function LogsView({ active }: LogsViewProps): JSX.Element {
     async (showLoading: boolean = false) => {
       if (!selected) return;
       const epoch = ++windowEpoch.current;
+      closeStream();
+      setTailReady(0);
       if (showLoading) setLoadingContent(true);
       try {
         const pending = pendingMatchRef.current;
@@ -295,7 +297,7 @@ export function LogsView({ active }: LogsViewProps): JSX.Element {
               (around.start_line ?? Math.max(1, pending.line - 100)) +
               1,
           );
-          setTailReady(true);
+          setTailReady(epoch);
           closeStream();
         } else {
           const payload = await getLogTailJson(selected, {
@@ -308,12 +310,12 @@ export function LogsView({ active }: LogsViewProps): JSX.Element {
           setOffsetFromEnd(0);
           setHasMoreAbove((payload.start_bytes ?? 0) > 0);
           setPendingScrollLine(null);
-          setTailReady(true);
+          setTailReady(epoch);
         }
       } catch (error) {
         if (selectedRef.current !== selected || windowEpoch.current !== epoch)
           return;
-        setTailReady(false);
+        setTailReady(0);
         push(describeError(error, `Failed to read ${selected}`), "error");
       } finally {
         if (
@@ -505,7 +507,7 @@ export function LogsView({ active }: LogsViewProps): JSX.Element {
     sseFailCountRef.current = 0;
     const id = window.setTimeout(() => {
       setForcePoll(false);
-      setTailReady(false);
+      setTailReady(0);
       linesRef.current = [];
       setLines([]);
       setSearchMatches([]);
@@ -533,7 +535,7 @@ export function LogsView({ active }: LogsViewProps): JSX.Element {
     return () => {
       closeStream();
     };
-  }, [liveActive, forcePoll, openStream, closeStream]);
+  }, [liveActive, tailReady, forcePoll, openStream, closeStream]);
 
   useInterval(
     () => {

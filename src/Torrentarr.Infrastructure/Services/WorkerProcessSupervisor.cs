@@ -17,6 +17,7 @@ public sealed class WorkerProcessSupervisor : BackgroundService, IProcessOrchest
     private readonly TorrentarrConfig _config;
     private readonly ILogger<WorkerProcessSupervisor> _logger;
     private readonly IMediaValidationService _mediaValidation;
+    private readonly Dictionary<Process, long> _processRevisions = new();
     private readonly Dictionary<string, Process> _processes = new(StringComparer.OrdinalIgnoreCase);
     private readonly Dictionary<string, List<DateTime>> _restartTimes = new(StringComparer.OrdinalIgnoreCase);
     private readonly Dictionary<string, CancellationTokenSource> _pendingRetries = new(StringComparer.OrdinalIgnoreCase);
@@ -108,6 +109,8 @@ public sealed class WorkerProcessSupervisor : BackgroundService, IProcessOrchest
         {
             CancelRetry(instanceName);
             _processes.Remove(instanceName, out process);
+            if (process != null) _processRevisions.Remove(process);
+            _statusFiles.Remove(instanceName);
             _reportedWorkers.Remove(instanceName);
         }
         if (process == null) return;
@@ -193,13 +196,19 @@ public sealed class WorkerProcessSupervisor : BackgroundService, IProcessOrchest
                 ? Newtonsoft.Json.JsonConvert.DeserializeObject<ConfigurationSnapshot>(File.ReadAllText(snapshotPath)) : null;
             lock (_gate)
             {
-                foreach (var rename in snapshot?.Renames ?? new Dictionary<string, string>())
-                    if (_processes.Remove(rename.Key, out var process))
+                foreach (var rename in snapshot?.RenameHistory ?? [])
+                    if (_processes.TryGetValue(rename.From, out var process)
+                        && rename.Revision > _processRevisions.GetValueOrDefault(process) && rename.Revision <= _config.Revision)
                     {
-                        _processes[rename.Value] = process;
-                        _statusFiles[rename.Value] = _statusFiles.GetValueOrDefault(rename.Key, StatusPath(rename.Key));
-                        _reportedWorkers.Remove(rename.Key);
+                        _processes.Remove(rename.From);
+                        _processes[rename.To] = process;
+                        var statusPath = _statusFiles.GetValueOrDefault(rename.From, StatusPath(rename.From));
+                        _statusFiles.Remove(rename.From);
+                        _statusFiles[rename.To] = statusPath;
+                        _reportedWorkers.Remove(rename.From);
                     }
+                if (snapshot != null)
+                    foreach (var process in _processes.Values) _processRevisions[process] = _config.Revision;
             }
             await StopRemovedWorkersAsync(ct, ownsLifecycle: true);
             StartWorkers();
@@ -299,17 +308,29 @@ public sealed class WorkerProcessSupervisor : BackgroundService, IProcessOrchest
             {
                 if (!existing.HasExited) return;
                 _processes.Remove(instanceName);
+                _processRevisions.Remove(existing);
                 existing.Dispose();
             }
             Process? process = null;
             try
             {
                 _statusFiles.Remove(instanceName);
-                process = Process.Start(_startInfo(instanceName)) ?? throw new InvalidOperationException("Process.Start returned no process");
+                var startInfo = _startInfo(instanceName);
+                var statusArgument = startInfo.ArgumentList.IndexOf("--status-path") + 1;
+                if (statusArgument > 0)
+                {
+                    var path = startInfo.ArgumentList[statusArgument];
+                    if (_statusFiles.Values.Contains(path, StringComparer.OrdinalIgnoreCase))
+                        path = Path.Combine(Path.GetDirectoryName(path)!, $"{instanceName}-{Guid.NewGuid():N}.json");
+                    startInfo.ArgumentList[statusArgument] = path;
+                    _statusFiles[instanceName] = path;
+                }
+                process = Process.Start(startInfo) ?? throw new InvalidOperationException("Process.Start returned no process");
                 var child = process;
                 process.Exited += (sender, args) => { _ = Task.Run(() => WorkerExited(instanceName, child)); };
                 _reportedWorkers.Remove(instanceName);
                 _processes[instanceName] = process;
+                _processRevisions[process] = _config.Revision;
                 process.EnableRaisingEvents = true;
             }
             catch (Exception ex)
@@ -317,6 +338,8 @@ public sealed class WorkerProcessSupervisor : BackgroundService, IProcessOrchest
                 if (process != null)
                 {
                     _processes.Remove(instanceName);
+                    _processRevisions.Remove(process);
+                    _statusFiles.Remove(instanceName);
                     try
                     {
                         if (!process.HasExited) process.Kill(true);
@@ -338,6 +361,8 @@ public sealed class WorkerProcessSupervisor : BackgroundService, IProcessOrchest
             name = _processes.FirstOrDefault(p => ReferenceEquals(p.Value, process)).Key ?? name;
             if (!_processes.TryGetValue(name, out var current) || !ReferenceEquals(current, process)) return;
             _processes.Remove(name);
+            _processRevisions.Remove(process);
+            _statusFiles.Remove(name);
             _reportedWorkers.Remove(name);
             try { _logger.LogWarning("Worker {Instance} exited with code {Code}", name, process.ExitCode); }
             finally { process.Dispose(); }

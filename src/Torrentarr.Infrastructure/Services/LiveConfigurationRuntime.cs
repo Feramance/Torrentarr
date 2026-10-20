@@ -40,6 +40,8 @@ public sealed class LiveConfigurationRuntime(TorrentarrConfig config, IConfigRel
                         await clients.ReconcileAsync(config.GetAllTorrentClients(), ct: stoppingToken);
                         if (services.GetService<WorkerProcessSupervisor>() is { } workers)
                             await workers.ReconcileConfigurationAsync(stoppingToken);
+                        if (services.GetService<QBitCategoryWorkerManager>() is { } categories)
+                            await categories.SyncWorkersWithConfigAsync();
                         reloader.Acknowledge("runtime", revision);
                         applied = revision;
                     }

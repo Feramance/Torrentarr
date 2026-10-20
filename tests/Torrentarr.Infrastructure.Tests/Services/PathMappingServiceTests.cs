@@ -10,7 +10,7 @@ public sealed class PathMappingServiceTests
     [Fact]
     public void MapToLocal_UsesLongestMatchingClientPrefix()
     {
-        var root = Path.GetTempPath();
+        var root = TestPaths.TempPath;
         var nested = Path.Combine(root, "specific");
         var mappings = new List<PathMappingConfig>
         {
@@ -24,7 +24,7 @@ public sealed class PathMappingServiceTests
     [Fact]
     public void MapToLocal_RejectsTraversalOutsideRoot()
     {
-        var mappings = new List<PathMappingConfig> { new() { ClientPath = "/downloads", LocalPath = Path.GetTempPath() } };
+        var mappings = new List<PathMappingConfig> { new() { ClientPath = "/downloads", LocalPath = TestPaths.TempPath } };
         new PathMappingService().MapToLocal("/downloads/../../escape", mappings).Should().BeNull();
     }
 
@@ -36,7 +36,7 @@ public sealed class PathMappingServiceTests
     [InlineData(@"/downloads\Movie/file.mkv", "/downloads", "Movie/file.mkv")]
     public void Mapping_NormalizesSeparatorsAndPreservesRoots(string client, string prefix, string relative)
     {
-        var root = Path.GetTempPath();
+        var root = TestPaths.TempPath;
         var mapped = new PathMappingService().Resolve(client, [new() { ClientPath = prefix, LocalPath = root }]);
         mapped.Code.Should().BeNull();
         mapped.LocalPath.Should().Be(Path.Combine(root, relative.Replace('/', Path.DirectorySeparatorChar)));
@@ -48,7 +48,7 @@ public sealed class PathMappingServiceTests
     [InlineData("relative/file.mkv", "unsafe-path")]
     public void Mapping_ExplainsRejectedPaths(string client, string code)
     {
-        var result = new PathMappingService().Resolve(client, [new() { ClientPath = "/downloads", LocalPath = Path.GetTempPath() }]);
+        var result = new PathMappingService().Resolve(client, [new() { ClientPath = "/downloads", LocalPath = TestPaths.TempPath }]);
         result.LocalPath.Should().BeNull();
         result.Code.Should().Be(code);
     }
@@ -57,7 +57,7 @@ public sealed class PathMappingServiceTests
     public void Mapping_RequiresExplicitMappingsEvenForExistingSamePath()
     {
         var paths = new PathMappingService();
-        var root = Path.GetTempPath();
+        var root = TestPaths.TempPath;
         paths.Resolve(root, []).Code.Should().Be("missing-mapping");
         paths.Resolve(root, [new() { ClientPath = root, LocalPath = root }]).LocalPath.Should().Be(Path.GetFullPath(root.TrimEnd(Path.DirectorySeparatorChar)));
         paths.Resolve("/downloads/file", [new() { ClientPath = "/downloads", LocalPath = "relative" }]).Code.Should().Be("invalid-mapping");
@@ -67,8 +67,8 @@ public sealed class PathMappingServiceTests
     public void Mapping_RejectsAmbiguousPrefixes()
     {
         new PathMappingService().Resolve("/downloads/file", [
-            new() { ClientPath = "/downloads", LocalPath = Path.GetTempPath() },
-            new() { ClientPath = "/downloads/", LocalPath = Path.GetTempPath() }
+            new() { ClientPath = "/downloads", LocalPath = TestPaths.TempPath },
+            new() { ClientPath = "/downloads/", LocalPath = TestPaths.TempPath }
         ]).Code.Should().Be("invalid-mapping");
     }
 
@@ -76,9 +76,9 @@ public sealed class PathMappingServiceTests
     public void LocalValidation_SeparatesMissingMountFromMissingFile()
     {
         var paths = new PathMappingService();
-        var root = Path.Combine(Path.GetTempPath(), Guid.NewGuid().ToString("N"));
+        var root = Path.Combine(TestPaths.TempPath, Guid.NewGuid().ToString("N"));
         paths.ValidateLocalPath(root, root).Should().Be("inaccessible-local-root");
-        paths.ValidateLocalPath(Path.Combine(Path.GetTempPath(), Guid.NewGuid().ToString("N")), Path.GetTempPath(), true).Should().Be("missing-file");
+        paths.ValidateLocalPath(Path.Combine(TestPaths.TempPath, Guid.NewGuid().ToString("N")), TestPaths.TempPath, true).Should().Be("missing-file");
         paths.IsSafeDescendant(Path.Combine(Path.GetPathRoot(root)!, "child"), Path.GetPathRoot(root)!).Should().BeTrue();
     }
 
@@ -86,7 +86,7 @@ public sealed class PathMappingServiceTests
     public void LocalValidation_RejectsSymlinkAncestors()
     {
         if (OperatingSystem.IsWindows()) return;
-        var root = Path.Combine(Path.GetTempPath(), Guid.NewGuid().ToString("N"));
+        var root = Path.Combine(TestPaths.TempPath, Guid.NewGuid().ToString("N"));
         Directory.CreateDirectory(Path.Combine(root, "target"));
         try
         {

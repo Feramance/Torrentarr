@@ -17,7 +17,7 @@ namespace Torrentarr.Infrastructure.Tests.Services;
 [Collection(nameof(ConfigReloaderTests))]
 public sealed class MaintenanceSafetyTests : IDisposable
 {
-    private readonly string _root = Path.Combine(Path.GetTempPath(), "maintenance-test-" + Guid.NewGuid().ToString("N"));
+    private readonly string _root = Path.Combine(TestPaths.TempPath, "maintenance-test-" + Guid.NewGuid().ToString("N"));
     private readonly TorrentarrConfig _config = new();
     private readonly string? _previousDataDirectory;
     private readonly Mock<ITorrentClientRegistry> _registry = new();
@@ -901,7 +901,7 @@ public sealed class MaintenanceSafetyTests : IDisposable
     public async Task OrphanScan_DoesNotFollowSymlinkDirectories()
     {
         if (OperatingSystem.IsWindows()) return;
-        var outside = Path.Combine(Path.GetTempPath(), Guid.NewGuid().ToString("N"));
+        var outside = Path.Combine(TestPaths.TempPath, Guid.NewGuid().ToString("N"));
         Directory.CreateDirectory(outside);
         try
         {

@@ -147,6 +147,7 @@ try
     // Load configuration
     var configLoader = new ConfigurationLoader();
     TorrentarrConfig? config = null;
+    long startingRevision = 0;
 
     try
     {
@@ -156,9 +157,10 @@ try
             {
                 using var startupRead = ConfigMutationGuard.EnterProcessing(configLoader.ConfigPath);
                 var activePath = Path.Combine(basePath, "active-config.json");
-                config = statusPath != null && File.Exists(activePath)
-                    ? Newtonsoft.Json.JsonConvert.DeserializeObject<ConfigurationSnapshot>(File.ReadAllText(activePath))!.Config
-                    : configLoader.Load();
+                var snapshot = File.Exists(activePath)
+                    ? Newtonsoft.Json.JsonConvert.DeserializeObject<ConfigurationSnapshot>(File.ReadAllText(activePath)) : null;
+                startingRevision = snapshot?.Revision ?? DateTimeOffset.UtcNow.ToUnixTimeMilliseconds();
+                config = statusPath != null && snapshot != null ? snapshot.Config : configLoader.Load();
                 break;
             }
             catch (ConfigurationBusyException) when (attempt < 39)
@@ -205,7 +207,7 @@ try
     builder.Services.AddSingleton<IConfigReloader>(sp => sp.GetRequiredService<ConfigReloader>());
     builder.Services.AddHostedService(sp => sp.GetRequiredService<ConfigReloader>());
     builder.Services.AddSingleton(runtimeMetrics);
-    builder.Services.AddSingleton(new WorkerContext { InstanceName = instanceName });
+    builder.Services.AddSingleton(new WorkerContext { InstanceName = instanceName, StartingRevision = startingRevision });
 
     // Add database context - use same dbPath as defined at startup
     builder.Services.AddDbContext<TorrentarrDbContext>(options =>
@@ -300,7 +302,8 @@ class WorkerContext
     private string _name = "";
     private readonly AsyncLocal<string?> _operationName = new();
     public IConfigReloader? Reloader { get; set; }
-    public string InstanceName { get => _operationName.Value ?? Reloader?.ResolveInstanceName(_name) ?? _name; set => _name = value; }
+    public long StartingRevision { get; init; }
+    public string InstanceName { get => _operationName.Value ?? Reloader?.ResolveInstanceName(_name, StartingRevision) ?? _name; set => _name = value; }
     public IDisposable BeginOperation()
     {
         var previous = _operationName.Value;

@@ -79,6 +79,42 @@ Final local validation on 2026-10-20:
 
 The full frontend run was isolated from builds after concurrent build/test runs hit existing five-second test deadlines. No test deadlines were increased. The modal orchestration regression stubs generated field controls; catalog behavior tests preload their definition separately from the explicit rejected-import test. Endpoint tests cover authenticated stream access restrictions, initial snapshots in both server modes, component acknowledgments without a held configuration lease, and a real listener rebind. Log regressions include a 10 MiB file, appends between pages, UTF-8/CRLF boundaries, rotation, overlapping polls, and late responses from an obsolete selection.
 
+## Follow-up to review of `a028afa`
+
+The 2026-10-20 CI run passed Linux, frontend tests, lint, CodeQL, documentation, pre-commit, and standalone smoke tests on all three platforms. The .NET stage failed on macOS and Windows:
+
+- macOS: temporary directories use a `/var` symlink. Path safety correctly rejects symlink ancestors, so maintenance fixtures now resolve their temporary root to its physical path. Production path validation is unchanged.
+- Windows: a search-window fixture wrote platform CRLF while asserting LF. It now writes explicit LF; the existing UTF-8/CRLF boundary regression remains intact.
+
+Six additional Codex threads were verified and addressed:
+
+| # | Finding | Disposition and evidence |
+| --- | --- | --- |
+| 50 | [Live qBit category worker reconciliation](https://github.com/Feramance/Torrentarr/pull/520#discussion_r4325380186) | Runtime reconciles category workers before acknowledging each revision; regression covers category addition and removal. |
+| 51 | [Refresh drops live log events](https://github.com/Feramance/Torrentarr/pull/520#discussion_r4325380198) | Tail generation controls stream replacement; regression rejects old-stream events and accepts the new append after Refresh. |
+| 52 | [Reused instance names inherit historical renames](https://github.com/Feramance/Torrentarr/pull/520#discussion_r4325380207) | Snapshot rename history is revision-scoped for workers and processes. Tests cover A → B, new A, repeated reconciliation and B → C; reused names get distinct heartbeat paths while the renamed worker remains alive. |
+| 53 | [Stale cookie paths after a URL-base change](https://github.com/Feramance/Torrentarr/pull/520#discussion_r4325380216) | Host and standalone invalidate cached cookie options and route after live prefix stripping; regressions check paths and cookie-only login/token access after rebasing. |
+| 54 | [Cleared URL base retains startup HTML prefix](https://github.com/Feramance/Torrentarr/pull/520#discussion_r4325380229) | Both entry points read current configuration; regressions clear a nonempty prefix and verify the root document base. |
+| 55 | [Overview ignores Arr subcategory overrides](https://github.com/Feramance/Torrentarr/pull/520#discussion_r4325380241) | Overview uses the existing owner-specific helper; regressions cover true/false overrides and inherited defaults with aggregate counts. |
+
+CodeRabbit again skipped its incremental review; no new CodeRabbit findings were posted. No bot review requests or replies were sent.
+
+Follow-up local validation:
+
+| Check | Result |
+| --- | --- |
+| Frontend | 330 passed across 48 files |
+| Core, Release, non-live | 287 passed |
+| Infrastructure, Release, non-live | 916 passed |
+| Host, Release, non-live | 367 passed |
+| Non-live .NET total | 1,570 passed |
+| Workflow/parity script tests | 37 passed |
+| Production TypeScript/Vite build | Passed |
+| Frontend lint | 0 errors, 13 existing warnings |
+| Generated configuration schema | Current (`--check`) |
+
+Remote Windows/macOS validation and review-thread resolution follow publication. No test deadlines were increased and no safety guards were relaxed.
+
 ## Deferred existing concerns
 
 Thumbnail redirect-origin hardening and atomic cache publication predate this branch and remain separate follow-ups. Live provider OIDC, real destructive maintenance/update operations, and Windows/macOS standalone execution require their appropriate environments. Existing Docker Compose bytes and staging are preserved.

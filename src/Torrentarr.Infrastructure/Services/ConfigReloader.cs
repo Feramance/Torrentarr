@@ -19,10 +19,12 @@ public sealed class ConfigReloader : BackgroundService, IConfigReloader
     private readonly FileSystemWatcher? _watcher;
     private TaskCompletionSource _changed = NewSignal();
     private Dictionary<string, string> _renames = new(StringComparer.OrdinalIgnoreCase);
-    public string ResolveInstanceName(string name)
+    private List<ConfigurationRename> _renameHistory = [];
+    public string ResolveInstanceName(string name, long startingRevision = 0)
     {
-        var names = Volatile.Read(ref _renames);
-        while (names.TryGetValue(name, out var next)) name = next;
+        foreach (var rename in Volatile.Read(ref _renameHistory))
+            if (rename.Revision > startingRevision && string.Equals(name, rename.From, StringComparison.OrdinalIgnoreCase))
+                name = rename.To;
         return name;
     }
     private string? _digest;
@@ -114,7 +116,10 @@ public sealed class ConfigReloader : BackgroundService, IConfigReloader
                             foreach (var key in names.Where(p => p.Key == p.Value).Select(p => p.Key).ToArray()) names.Remove(key);
                         }
                     }
-                    var snapshot = new ConfigurationSnapshot(revision, candidate, names);
+                    var history = new List<ConfigurationRename>(_renameHistory);
+                    if (renames != null)
+                        history.AddRange(renames.Select(r => new ConfigurationRename(revision, r.Key, r.Value)));
+                    var snapshot = new ConfigurationSnapshot(revision, candidate, names, history);
                     if (!_worker)
                     {
                         // This transport contains credentials, just like config.toml.
@@ -133,6 +138,7 @@ public sealed class ConfigReloader : BackgroundService, IConfigReloader
     }
     private void Publish(ConfigurationSnapshot snapshot, string json)
     {
+        Volatile.Write(ref _renameHistory, snapshot.RenameHistory ?? []);
         Volatile.Write(ref _renames, snapshot.Renames ?? new(StringComparer.OrdinalIgnoreCase));
         _config.Apply(snapshot.Config, snapshot.Revision);
         Interlocked.Exchange(ref _revision, snapshot.Revision);

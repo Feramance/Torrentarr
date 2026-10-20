@@ -1,6 +1,8 @@
 extern alias Standalone;
 
 using System.Text.Json;
+using Microsoft.AspNetCore.Authentication.Cookies;
+using Microsoft.Extensions.Options;
 using FluentAssertions;
 using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.Mvc.Testing;
@@ -24,6 +26,36 @@ namespace Torrentarr.Host.Tests.Api;
 [Collection("HostWebCatalog")]
 public class StandaloneRadarrEndpointTests
 {
+
+    [Fact]
+    public async Task StandaloneLiveUrlBaseChange_RefreshesCookiePathsAndClearedHtmlBase()
+    {
+        await using var factory = new StandaloneFactory("/old");
+        using var client = factory.CreateClient();
+        var reloader = factory.Services.GetRequiredService<IConfigReloader>();
+        var options = factory.Services.GetRequiredService<IOptionsMonitor<CookieAuthenticationOptions>>();
+        options.Get(CookieAuthenticationDefaults.AuthenticationScheme).Cookie.Path.Should().Be("/old/");
+        var candidate = new ConfigurationLoader(reloader.ConfigPath).Load();
+        candidate.WebUI.UrlBase = "/new";
+        candidate.WebUI.AuthDisabled = false;
+        candidate.WebUI.LocalAuthEnabled = true;
+        candidate.WebUI.Username = "fixture";
+        candidate.WebUI.PasswordHash = BCrypt.Net.BCrypt.HashPassword("fixture-password", 10);
+        reloader.Apply(candidate).Should().BeTrue();
+        var cookie = options.Get(CookieAuthenticationDefaults.AuthenticationScheme);
+        cookie.Cookie.Path.Should().Be("/new/");
+        cookie.LoginPath.Value.Should().Be("/new/login");
+        cookie.AccessDeniedPath.Value.Should().Be("/new/login");
+        using var browser = factory.CreateClient(new WebApplicationFactoryClientOptions { AllowAutoRedirect = false });
+        var login = await browser.PostAsJsonAsync("/new/web/login", new { username = "fixture", password = "fixture-password" });
+        login.EnsureSuccessStatusCode();
+        login.Headers.GetValues("Set-Cookie").Should().Contain(value => value.Contains("path=/new/", StringComparison.OrdinalIgnoreCase));
+        (await browser.GetAsync("/new/web/token")).StatusCode.Should().Be(System.Net.HttpStatusCode.OK);
+        candidate = new ConfigurationLoader(reloader.ConfigPath).Load();
+        candidate.WebUI.UrlBase = "";
+        reloader.Apply(candidate).Should().BeTrue();
+        (await client.GetStringAsync("/ui")).Should().Contain("<base href=\"/\">");
+    }
 
     [Fact]
     public async Task StandaloneEvents_SendInitialConfigurationSnapshot()
@@ -291,21 +323,24 @@ public class StandaloneRadarrEndpointTests
         private readonly SqliteConnection _connection = new("Data Source=:memory:");
         private readonly string? _previousConfig = Environment.GetEnvironmentVariable("TORRENTARR_CONFIG");
         private readonly string? _previousOverride = ConfigurationLoader.TestConfigPathOverride;
-        public StandaloneFactory()
+        public StandaloneFactory(string urlBase = "")
         {
             Directory.CreateDirectory(_directory);
-            File.WriteAllText(Path.Combine(_directory, "config.toml"), """
+            File.WriteAllText(Path.Combine(_directory, "config.toml"), $$"""
                 [Settings]
                 ConfigVersion = '6.14.6'
                 [WebUI]
                 AuthDisabled = true
                 AllowInsecureExposure = true
                 Token = 'standalone-test'
+                UrlBase = '{{urlBase}}'
                 [Radarr]
                 URI = 'http://127.0.0.1:1'
                 Category = 'movies'
                 Managed = false
                 """);
+            Directory.CreateDirectory(Path.Combine(_directory, "wwwroot"));
+            File.WriteAllText(Path.Combine(_directory, "wwwroot", "index.html"), "<html><head></head><body></body></html>");
             _connection.Open();
         }
         protected override void ConfigureWebHost(IWebHostBuilder builder)
@@ -314,6 +349,7 @@ public class StandaloneRadarrEndpointTests
             Environment.SetEnvironmentVariable("TORRENTARR_CONFIG", path);
             ConfigurationLoader.TestConfigPathOverride = path;
             builder.UseEnvironment("Testing");
+            builder.UseWebRoot(Path.Combine(_directory, "wwwroot"));
             builder.ConfigureServices(services =>
             {
                 services.RemoveAll<IHostedService>();

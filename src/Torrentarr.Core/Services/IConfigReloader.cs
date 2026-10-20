@@ -17,7 +17,7 @@ public interface IConfigReloader
 
     string ConfigPath { get; }
     long Revision => 0;
-    string ResolveInstanceName(string name) => name;
+    string ResolveInstanceName(string name, long startingRevision = 0) => name;
     ConfigurationApplicationStatus GetStatus() => new(0, "applied", new Dictionary<string, ConfigurationComponentStatus>(), null);
     (bool Ok, string? Error) Validate(Torrentarr.Core.Configuration.TorrentarrConfig candidate) => Torrentarr.Core.Configuration.ConfigValidationHelper.ValidateAll(candidate);
     bool Apply(Torrentarr.Core.Configuration.TorrentarrConfig candidate, Dictionary<string, string>? renames = null) => ReloadConfig();
