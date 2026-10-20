@@ -61,6 +61,43 @@ public sealed class ConfigReloaderTests : IDisposable
     private const string MinimalToml = "[Settings]\n";
 
     [Fact]
+    public async Task ValidatedHeartbeats_AcknowledgeWorkerRevisionsWithoutResurrectingRemovedComponents()
+    {
+        Environment.SetEnvironmentVariable("TORRENTARR_CONFIG", _configPath);
+        var config = new TorrentarrConfig();
+        config.ArrInstances["Radarr"] = new() { URI = "http://fixture", Category = "movies", Managed = true };
+        using var reloader = new ConfigReloader(NullLogger<ConfigReloader>.Instance, config, new ConfigurationLoader(_configPath));
+        reloader.Apply(config).Should().BeTrue();
+        var revision = reloader.Revision;
+        using var process = Process.GetCurrentProcess();
+        using var supervisor = new WorkerProcessSupervisor(config, NullLogger<WorkerProcessSupervisor>.Instance,
+            Moq.Mock.Of<IMediaValidationService>(), _ => throw new InvalidOperationException(), reloader);
+        var processes = (Dictionary<string, Process>)typeof(WorkerProcessSupervisor)
+            .GetField("_processes", System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.NonPublic)!.GetValue(supervisor)!;
+        processes["Radarr"] = process;
+        var paths = (Dictionary<string, string>)typeof(WorkerProcessSupervisor)
+            .GetField("_statusFiles", System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.NonPublic)!.GetValue(supervisor)!;
+        var path = paths["Radarr"] = Path.Combine(_tempDir, "heartbeat.json");
+        async Task Heartbeat(int pid, long applied)
+        {
+            File.WriteAllText(path, System.Text.Json.JsonSerializer.Serialize(new Torrentarr.Core.Models.WorkerHeartbeat
+            { Instance = "Radarr", Pid = pid, Heartbeat = DateTimeOffset.UtcNow, ConfigRevision = applied }, Torrentarr.Core.Models.WorkerHeartbeat.JsonOptions));
+            await supervisor.GetProcessStatusAsync();
+        }
+        await Heartbeat(process.Id + 1, revision);
+        reloader.GetStatus().Components["worker:Radarr"].AppliedRevision.Should().Be(0);
+        await Heartbeat(process.Id, 0);
+        reloader.GetStatus().State.Should().Be("pending");
+        await Heartbeat(process.Id, revision);
+        reloader.GetStatus().State.Should().Be("applied");
+        var removed = new TorrentarrConfig();
+        using var operation = config.BeginOperation();
+        reloader.Apply(removed).Should().BeTrue();
+        await Heartbeat(process.Id, reloader.Revision);
+        reloader.GetStatus().Components.Should().NotContainKey("worker:Radarr");
+    }
+
+    [Fact]
     public async Task Supervisor_DoesNotReapplyHistoricalRenamesToReusedNames()
     {
         if (OperatingSystem.IsWindows()) return;

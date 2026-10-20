@@ -157,7 +157,8 @@ if (configForDI.WebUI.AuthDisabled && WebUIAuthHelpers.IsPublicBindHost(configFo
 
 builder.Services.AddSingleton(configForDI);
 
-builder.Services.AddSingleton<ConfigReloader>();
+builder.Services.AddSingleton<ConfigReloader>(sp => new ConfigReloader(
+    sp.GetRequiredService<ILogger<ConfigReloader>>(), configForDI, sp.GetRequiredService<ConfigurationLoader>(), trackWorkers: false));
 builder.Services.AddSingleton<IConfigReloader>(sp => sp.GetRequiredService<ConfigReloader>());
 builder.Services.AddHostedService(sp => sp.GetRequiredService<ConfigReloader>());
 builder.Services.AddHostedService<LiveConfigurationRuntime>();

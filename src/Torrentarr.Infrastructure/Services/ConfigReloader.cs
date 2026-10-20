@@ -14,6 +14,7 @@ public sealed class ConfigReloader : BackgroundService, IConfigReloader
     private readonly ConfigurationLoader _loader;
     private readonly TorrentarrConfig _config;
     private readonly bool _worker;
+    private readonly bool _trackWorkers;
     private readonly object _gate = new();
     private readonly ConcurrentDictionary<string, ConfigurationComponentStatus> _components = new();
     private readonly FileSystemWatcher? _watcher;
@@ -40,12 +41,13 @@ public sealed class ConfigReloader : BackgroundService, IConfigReloader
     public long Revision => Interlocked.Read(ref _revision);
 
     public ConfigReloader(ILogger<ConfigReloader> logger) : this(logger, new TorrentarrConfig(), new ConfigurationLoader()) { }
-    public ConfigReloader(ILogger<ConfigReloader> logger, TorrentarrConfig config, ConfigurationLoader loader, bool worker = false)
+    public ConfigReloader(ILogger<ConfigReloader> logger, TorrentarrConfig config, ConfigurationLoader loader, bool worker = false, bool trackWorkers = true)
     {
         _logger = logger;
         _config = config;
         _loader = loader;
         _worker = worker;
+        _trackWorkers = trackWorkers;
         var directory = Path.GetDirectoryName(Path.GetFullPath(worker ? SnapshotPath : ConfigPath))!;
         if (Directory.Exists(directory))
         {
@@ -68,9 +70,15 @@ public sealed class ConfigReloader : BackgroundService, IConfigReloader
             : components.Values.Any(c => c.AppliedRevision < Revision) ? "pending" : "applied";
         return new(Revision, state, components, _error);
     }
-    public void Acknowledge(string component, long revision, string? error = null) =>
-        _components.AddOrUpdate(component, new ConfigurationComponentStatus(revision, error), (_, previous) =>
-            revision >= previous.AppliedRevision ? new(revision, error) : previous);
+    public void Acknowledge(string component, long revision, string? error = null)
+    {
+        lock (_gate)
+        {
+            if (component.StartsWith("worker:", StringComparison.Ordinal) && !_components.ContainsKey(component)) return;
+            _components.AddOrUpdate(component, new ConfigurationComponentStatus(revision, error), (_, previous) =>
+                revision >= previous.AppliedRevision ? new(revision, error) : previous);
+        }
+    }
 
     public async Task WaitForChangeAsync(long revision, TimeSpan delay, CancellationToken ct)
     {
@@ -148,7 +156,7 @@ public sealed class ConfigReloader : BackgroundService, IConfigReloader
             foreach (var key in _components.Keys.Where(k => k.StartsWith("worker:") && !snapshot.Config.ArrInstances.ContainsKey(k[7..])))
                 _components.TryRemove(key, out _);
             foreach (var (name, instance) in snapshot.Config.ArrInstances)
-                if (instance.Managed && !string.IsNullOrWhiteSpace(instance.URI) && instance.URI != "CHANGE_ME")
+                if (_trackWorkers && instance.Managed && !string.IsNullOrWhiteSpace(instance.URI) && instance.URI != "CHANGE_ME")
                     _components.TryAdd("worker:" + name, new(0));
         }
         _error = null;

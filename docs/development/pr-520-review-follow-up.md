@@ -115,6 +115,17 @@ Follow-up local validation:
 
 Remote Windows/macOS validation and review-thread resolution follow publication. No test deadlines were increased and no safety guards were relaxed.
 
+## Follow-up to review of `10a7a82`
+
+Linux and Windows completed the complete build/test and standalone-smoke matrix successfully. macOS failed three App lifecycle assertions because a real lazy Config route escaped the mock boundary. The harness now preloads lazy routes while its mocks are in scope, stubs unrelated route/background work, and retains all lifecycle assertions and the existing deadlines. The failure was reproduced locally before the corrected focused run passed.
+
+| # | Finding | Disposition and evidence |
+| --- | --- | --- |
+| 56 | [Worker application acknowledgments](https://github.com/Feramance/Torrentarr/pull/520#discussion_r4327076629) | Supervisor forwards validated heartbeat revisions to the reloader. Regression rejects mismatched process identities, keeps older revisions pending, reaches applied on acknowledgment, and prevents removed components from returning during a pinned operation. Standalone WebUI does not wait for workers it does not launch. |
+| 57 | [Reload after live URL-base changes](https://github.com/Feramance/Torrentarr/pull/520#discussion_r4327076636) | Base/listener changes use one document navigation so relative lazy chunks load from the new prefix. Regressions preserve query/hash, clear prefixes, respect proxies, combine listener/base changes, and leave theme-only changes in place. |
+
+Latest local validation: 335 frontend tests across 49 files; the full non-live .NET run passed 287 Core, 917 Infrastructure and 367 Host tests (1,571 total). The final standalone-only worker-tracking guard adds one Host regression and passed all 18 selected standalone/event endpoint tests. The production frontend build passed, and lint reported 0 errors with the same 13 existing warnings. The full frontend pass ran alone after a concurrent .NET/frontend attempt exceeded an existing Config test deadline; no deadlines changed. Remote validation and thread resolution follow publication.
+
 ## Deferred existing concerns
 
 Thumbnail redirect-origin hardening and atomic cache publication predate this branch and remain separate follow-ups. Live provider OIDC, real destructive maintenance/update operations, and Windows/macOS standalone execution require their appropriate environments. Existing Docker Compose bytes and staging are preserved.

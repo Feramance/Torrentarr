@@ -4,18 +4,15 @@ import {
   it,
   expect,
   beforeAll,
-  afterAll,
   afterEach,
   beforeEach,
   vi,
 } from "vitest";
 import { render, screen, waitFor, fireEvent } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
-import { setupServer } from "msw/node";
-import App from "../../App";
 import { resetUrlBaseCacheForTests } from "../../api/urlBase";
 
-// Isolate lazy page imports from the shell tests that preload the real routes.
+// Initialize lazy routes only after this suite has registered its mocks.
 vi.hoisted(() => vi.resetModules());
 
 const metaWithSetup = {
@@ -25,6 +22,16 @@ const metaWithSetup = {
   oidc_enabled: false,
   setup_required: true,
 };
+
+vi.mock("react", async (original) => {
+  const actual = await original<typeof import("react")>();
+  // Preload lazy routes while this suite's module mocks are in scope.
+  const lazy: typeof actual.lazy = (load) => {
+    const pending = load();
+    return actual.lazy(() => pending);
+  };
+  return { ...actual, lazy };
+});
 
 vi.mock("../../api/client", async (importOriginal) => {
   const actual = await importOriginal<typeof import("../../api/client")>();
@@ -36,12 +43,31 @@ vi.mock("../../api/client", async (importOriginal) => {
           signal.addEventListener("abort", () => resolve(), { once: true }),
         ),
     ),
+    getConfig: vi.fn(async () => ({ WebUI: { LiveArr: false } })),
+    getStatus: vi.fn(async () => ({
+      ready: true,
+      arrs: [],
+      qbitInstances: {},
+    })),
     getMeta: vi.fn(async () => metaWithSetup),
     getToken: vi.fn(async () => "test-token"),
     login: vi.fn(),
     setPassword: vi.fn(async () => ({ success: true })),
   };
 });
+
+vi.mock("../../pages/ProcessesView", () => ({
+  ProcessesView: () => <p>Worker dashboard</p>,
+}));
+vi.mock("../../pages/LogsView", () => ({ LogsView: () => null }));
+vi.mock("../../pages/ArrCatalogView", () => ({ ArrCatalogView: () => null }));
+vi.mock("../../pages/QbitCategoriesView", () => ({
+  QbitCategoriesView: () => null,
+}));
+vi.mock("../../pages/MaintenanceView", () => ({ MaintenanceView: () => null }));
+vi.mock("../../components/ChangelogModal", () => ({
+  ChangelogModal: () => null,
+}));
 
 vi.mock("../../pages/ConfigView", () => ({
   ConfigView: ({
@@ -87,11 +113,13 @@ import {
   setPassword,
 } from "../../api/client";
 
-const server = setupServer();
-
-beforeAll(() => server.listen({ onUnhandledRequest: "bypass" }));
+let App: typeof import("../../App").default;
+beforeAll(async () => {
+  await vi.dynamicImportSettled();
+  vi.resetModules();
+  App = (await import("../../App")).default;
+});
 afterEach(() => {
-  server.resetHandlers();
   resetUrlBaseCacheForTests();
   vi.mocked(getMeta).mockResolvedValue(metaWithSetup);
   vi.mocked(getToken).mockResolvedValue("test-token");
@@ -189,9 +217,10 @@ describe("App tab lifecycle", () => {
     confirm.mockRestore();
   });
 });
-afterAll(() => server.close());
 
 beforeEach(() => {
+  localStorage.clear();
+  sessionStorage.clear();
   resetUrlBaseCacheForTests();
   vi.stubGlobal("location", {
     pathname: "/login",

@@ -152,32 +152,28 @@ export function WebUIProvider({
               detail: event.application,
             }),
           );
-          if (previous && previous.webui.urlBase !== next.urlBase) {
-            const oldBase = previous.webui.urlBase;
-            const suffix = window.location.pathname.startsWith(oldBase)
-              ? window.location.pathname.slice(oldBase.length)
-              : "/ui";
-            window.history.replaceState(
-              null,
-              "",
-              next.urlBase +
-                suffix +
-                window.location.search +
-                window.location.hash,
-            );
-          }
-          if (
-            previous &&
-            !next.behindHttpsProxy &&
-            (previous.webui.port !== next.port ||
-              previous.webui.host !== next.host)
-          ) {
-            const target = new URL(window.location.href);
-            if (next.host !== "0.0.0.0" && next.host !== "::")
-              target.hostname = next.host;
-            target.port = String(next.port);
-            target.pathname = next.urlBase + "/ui";
-            window.location.assign(target.href);
+          if (previous) {
+            const baseChanged = previous.webui.urlBase !== next.urlBase;
+            const listenerChanged =
+              !next.behindHttpsProxy &&
+              (previous.webui.port !== next.port ||
+                previous.webui.host !== next.host);
+            if (baseChanged || listenerChanged) {
+              const target = new URL(window.location.href);
+              if (listenerChanged) {
+                if (next.host !== "0.0.0.0" && next.host !== "::")
+                  target.hostname = next.host;
+                target.port = String(next.port);
+                target.pathname = next.urlBase + "/ui";
+              } else {
+                const oldBase = previous.webui.urlBase;
+                const suffix = target.pathname.startsWith(oldBase)
+                  ? target.pathname.slice(oldBase.length)
+                  : "/ui";
+                target.pathname = next.urlBase + suffix;
+              }
+              window.location.replace(target.href);
+            }
           }
           previous = event;
         }, controller.signal);

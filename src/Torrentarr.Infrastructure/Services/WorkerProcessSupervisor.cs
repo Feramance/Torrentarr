@@ -17,6 +17,7 @@ public sealed class WorkerProcessSupervisor : BackgroundService, IProcessOrchest
     private readonly TorrentarrConfig _config;
     private readonly ILogger<WorkerProcessSupervisor> _logger;
     private readonly IMediaValidationService _mediaValidation;
+    private readonly IConfigReloader? _reloader;
     private readonly Dictionary<Process, long> _processRevisions = new();
     private readonly Dictionary<string, Process> _processes = new(StringComparer.OrdinalIgnoreCase);
     private readonly Dictionary<string, List<DateTime>> _restartTimes = new(StringComparer.OrdinalIgnoreCase);
@@ -28,15 +29,16 @@ public sealed class WorkerProcessSupervisor : BackgroundService, IProcessOrchest
     private readonly SemaphoreSlim _lifecycle = new(1, 1);
     private readonly HashSet<string> _reportedWorkers = new(StringComparer.OrdinalIgnoreCase);
 
-    public WorkerProcessSupervisor(TorrentarrConfig config, ILogger<WorkerProcessSupervisor> logger, IMediaValidationService mediaValidation)
-        : this(config, logger, mediaValidation, name => ResolveWorkerStartInfo(name)) { }
+    public WorkerProcessSupervisor(TorrentarrConfig config, ILogger<WorkerProcessSupervisor> logger, IMediaValidationService mediaValidation, IConfigReloader? reloader = null)
+        : this(config, logger, mediaValidation, name => ResolveWorkerStartInfo(name), reloader) { }
 
     internal WorkerProcessSupervisor(TorrentarrConfig config, ILogger<WorkerProcessSupervisor> logger,
-        IMediaValidationService mediaValidation, Func<string, ProcessStartInfo> startInfo)
+        IMediaValidationService mediaValidation, Func<string, ProcessStartInfo> startInfo, IConfigReloader? reloader = null)
     {
         _config = config;
         _logger = logger;
         _mediaValidation = mediaValidation;
+        _reloader = reloader;
         _startInfo = startInfo;
     }
 
@@ -269,7 +271,11 @@ public sealed class WorkerProcessSupervisor : BackgroundService, IProcessOrchest
                 if (heartbeat == null || !heartbeat.Matches(name, process.Id, started)) heartbeat = null;
             }
             catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or JsonException) { }
-            if (heartbeat != null) _reportedWorkers.Add(name);
+            if (heartbeat != null)
+            {
+                _reportedWorkers.Add(name);
+                _reloader?.Acknowledge("worker:" + name, heartbeat.ConfigRevision);
+            }
             var alive = !process.HasExited && (heartbeat != null
                 ? now - heartbeat.Heartbeat < TimeSpan.FromSeconds(15) && !heartbeat.IsStalled(now)
                 : !_reportedWorkers.Contains(name) && now - started < WorkerLoopProgress.CycleTimeout);

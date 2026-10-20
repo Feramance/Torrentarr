@@ -28,6 +28,20 @@ public class StandaloneRadarrEndpointTests
 {
 
     [Fact]
+    public async Task StandaloneApplicationStatus_DoesNotWaitForWorkersItDoesNotLaunch()
+    {
+        await using var factory = new StandaloneFactory();
+        using var client = factory.CreateClient();
+        var reloader = factory.Services.GetRequiredService<IConfigReloader>();
+        var candidate = new ConfigurationLoader(reloader.ConfigPath).Load();
+        candidate.ArrInstances["Radarr"].Managed = true;
+        reloader.Apply(candidate).Should().BeTrue();
+        var status = await client.GetFromJsonAsync<JsonElement>("/web/config/status");
+        status.GetProperty("state").GetString().Should().Be("applied");
+        status.GetProperty("components").TryGetProperty("worker:Radarr", out _).Should().BeFalse();
+    }
+
+    [Fact]
     public async Task StandaloneLiveUrlBaseChange_RefreshesCookiePathsAndClearedHtmlBase()
     {
         await using var factory = new StandaloneFactory("/old");
