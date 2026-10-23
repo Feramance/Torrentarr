@@ -126,6 +126,14 @@ Linux and Windows completed the complete build/test and standalone-smoke matrix 
 
 Latest local validation: 335 frontend tests across 49 files; the full non-live .NET run passed 287 Core, 917 Infrastructure and 367 Host tests (1,571 total). The final standalone-only worker-tracking guard adds one Host regression and passed all 18 selected standalone/event endpoint tests. The production frontend build passed, and lint reported 0 errors with the same 13 existing warnings. The full frontend pass ran alone after a concurrent .NET/frontend attempt exceeded an existing Config test deadline; no deadlines changed. Remote validation and thread resolution follow publication.
 
+## Follow-up to review of `115ce4a`
+
+All checks on the merged-master baseline passed. The remaining Codex finding was verified:
+
+| # | Finding | Disposition and evidence |
+| --- | --- | --- |
+| 58 | [Busy worker revision acknowledgments](https://github.com/Feramance/Torrentarr/pull/520#discussion_r4359846544) | Both loops acknowledge their pinned configuration revision at the completed-cycle boundary, even when work leaves no sleep time. The regression runs both loops without sleep and publishes a newer revision during each cycle, verifying that the heartbeat acknowledges only the completed revision. It fails against the original loops and passes with the fix. |
+
 ## Deferred existing concerns
 
 Thumbnail redirect-origin hardening and atomic cache publication predate this branch and remain separate follow-ups. Live provider OIDC, real destructive maintenance/update operations, and Windows/macOS standalone execution require their appropriate environments. Existing Docker Compose bytes and staging are preserved.

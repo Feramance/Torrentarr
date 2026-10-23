@@ -454,6 +454,7 @@ class ArrWorkerService : BackgroundService
                 _logger.LogError(ex, "Error processing torrents for {Instance}", _context.InstanceName);
                 HandleProcessingError();
             }
+            Interlocked.Exchange(ref _runtimeMetrics.TorrentRevision, _config.Revision);
             var remaining = GetLoopDelay(_config.Settings.LoopSleepTimer, System.Diagnostics.Stopwatch.GetElapsedTime(cycleStart));
             if (remaining > TimeSpan.Zero)
                 await SleepLoopAsync("Torrent", "Sleeping", remaining, cancellationToken);
@@ -507,6 +508,7 @@ class ArrWorkerService : BackgroundService
                 _logger.LogError(ex, "Error searching for {Instance}", _context.InstanceName);
                 HandleSearchError();
             }
+            Interlocked.Exchange(ref _runtimeMetrics.SearchRevision, _config.Revision);
             var remaining = GetLoopDelay(_config.Settings.LoopSleepTimer, System.Diagnostics.Stopwatch.GetElapsedTime(cycleStart));
             if (remaining > TimeSpan.Zero)
                 await SleepLoopAsync("Search", "Sleeping", remaining, cancellationToken);
