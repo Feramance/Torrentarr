@@ -124,6 +124,34 @@ export function WebUIProvider({
   useEffect(() => {
     const controller = new AbortController();
     let retry: ReturnType<typeof setTimeout> | undefined;
+    let navigation: AbortController | undefined;
+    let navigationRetry: ReturnType<typeof setTimeout> | undefined;
+    const navigateWhenReady = (target: URL, urlBase: string) => {
+      navigation?.abort();
+      if (navigationRetry) clearTimeout(navigationRetry);
+      const pending = new AbortController();
+      navigation = pending;
+      const health = new URL(urlBase + "/health", target);
+      const probe = async () => {
+        try {
+          // The destination may be on another origin and still rebinding.
+          await fetch(health, {
+            mode: "no-cors",
+            credentials: "omit",
+            cache: "no-store",
+            signal: AbortSignal.any([
+              pending.signal,
+              AbortSignal.timeout(3000),
+            ]),
+          });
+          if (!pending.signal.aborted) window.location.replace(target.href);
+        } catch {
+          if (!pending.signal.aborted)
+            navigationRetry = setTimeout(() => void probe(), 500);
+        }
+      };
+      void probe();
+    };
     let previous: import("../api/types").LiveConfigurationEvent | undefined;
     const connect = async () => {
       try {
@@ -160,7 +188,7 @@ export function WebUIProvider({
                 previous.webui.host !== next.host);
             if (baseChanged || listenerChanged) {
               const target = new URL(window.location.href);
-              if (listenerChanged) {
+              if (listenerChanged || navigation) {
                 if (next.host !== "0.0.0.0" && next.host !== "::")
                   target.hostname = next.host;
                 target.port = String(next.port);
@@ -172,7 +200,9 @@ export function WebUIProvider({
                   : "/ui";
                 target.pathname = next.urlBase + suffix;
               }
-              window.location.replace(target.href);
+              if (listenerChanged || navigation)
+                navigateWhenReady(target, next.urlBase);
+              else window.location.replace(target.href);
             }
           }
           previous = event;
@@ -187,6 +217,8 @@ export function WebUIProvider({
     return () => {
       controller.abort();
       if (retry) clearTimeout(retry);
+      navigation?.abort();
+      if (navigationRetry) clearTimeout(navigationRetry);
     };
   }, []);
 

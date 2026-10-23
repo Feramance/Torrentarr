@@ -134,6 +134,14 @@ All checks on the merged-master baseline passed. The remaining Codex finding was
 | --- | --- | --- |
 | 58 | [Busy worker revision acknowledgments](https://github.com/Feramance/Torrentarr/pull/520#discussion_r4359846544) | Both loops acknowledge their pinned configuration revision at the completed-cycle boundary, even when work leaves no sleep time. The regression runs both loops without sleep and publishes a newer revision during each cycle, verifying that the heartbeat acknowledges only the completed revision. It fails against the original loops and passes with the fix. |
 
+## Follow-up to review of `794505a`
+
+| # | Finding | Disposition and evidence |
+| --- | --- | --- |
+| 59 | [Listener readiness before browser navigation](https://github.com/Feramance/Torrentarr/pull/520#discussion_r4362628040) | Browsers probe the new listener without credentials before navigating, retrying refused or timed-out connections while retaining the running document. Superseded probes and unmounts abort navigation. Regressions cover delayed readiness, a second prefix change during rebinding, stale responses, and unmounting. Prefix-only changes remain immediate; proxy behavior is preserved. |
+
+Local validation: all 338 frontend tests across 49 files passed; lint has 0 errors and the same 13 existing warnings. The preceding worker fix passed all 1,573 non-live .NET tests (287 Core, 918 Infrastructure, 368 Host). Required hooks run at each commit.
+
 ## Deferred existing concerns
 
 Thumbnail redirect-origin hardening and atomic cache publication predate this branch and remain separate follow-ups. Live provider OIDC, real destructive maintenance/update operations, and Windows/macOS standalone execution require their appropriate environments. Existing Docker Compose bytes and staging are preserved.
