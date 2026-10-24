@@ -153,6 +153,12 @@ All CI checks passed on the preceding revision. Two further Codex findings were 
 
 Latest local validation: 1,577 non-live .NET tests passed (287 Core, 922 Infrastructure, 368 Host), plus the strengthened two-loop race assertion. All 339 frontend tests across 49 files passed; lint has 0 errors and the same 13 existing warnings. Release and production frontend builds passed.
 
+## Follow-up to review of `397030a`
+
+| # | Finding | Disposition and evidence |
+| --- | --- | --- |
+| 62 | [Inactive Arr configuration portal](https://github.com/Feramance/Torrentarr/pull/520#discussion_r4366985140) | The existing Arr dialog now uses the same active-panel guard as the other configuration dialogs. The lifecycle regression covers both Web Settings and Arr dialogs, including scroll-lock release while inactive, restoration on return, and Escape dismissal. |
+
 ## Deferred existing concerns
 
 Thumbnail redirect-origin hardening and atomic cache publication predate this branch and remain separate follow-ups. Live provider OIDC, real destructive maintenance/update operations, and Windows/macOS standalone execution require their appropriate environments. Existing Docker Compose bytes and staging are preserved.

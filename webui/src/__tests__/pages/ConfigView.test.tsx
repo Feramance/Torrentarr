@@ -769,18 +769,29 @@ describe("ConfigView – section persistence", () => {
   });
 });
 
-it("releases its modal and scroll lock while an inactive config panel is retained", async () => {
-  server.use(http.get("/web/config", () => HttpResponse.json(configQbitOnly)));
-  const user = userEvent.setup();
-  const { rerender } = renderConfig();
-  const card = (await screen.findByText("Web Settings")).closest(".card")!;
-  await user.click(within(card).getByRole("button", { name: /configure/i }));
-  expect(screen.getByRole("dialog")).toBeInTheDocument();
-  expect(document.body.style.overflow).toBe("hidden");
-  rerender(<ConfigView active={false} />);
-  expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
-  expect(document.body.style.overflow).toBe("");
-});
+it.each(["Web Settings", "Radarr-1080"])(
+  "releases the %s modal and scroll lock while Config is inactive",
+  async (section) => {
+    server.use(
+      http.get("/web/config", () => HttpResponse.json(configWithInstances)),
+    );
+    const user = userEvent.setup();
+    const { rerender } = renderConfig();
+    const card = (await screen.findByText(section)).closest(".card")!;
+    await user.click(within(card).getByRole("button", { name: /configure/i }));
+    expect(screen.getByRole("dialog")).toBeInTheDocument();
+    expect(document.body.style.overflow).toBe("hidden");
+    rerender(<ConfigView active={false} />);
+    expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
+    expect(document.body.style.overflow).toBe("");
+    rerender(<ConfigView active />);
+    expect(screen.getByRole("dialog")).toBeInTheDocument();
+    expect(document.body.style.overflow).toBe("hidden");
+    fireEvent.keyDown(window, { key: "Escape" });
+    expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
+    expect(document.body.style.overflow).toBe("");
+  },
+);
 
 it("uses the shared client dialog and saves only the selected torrent client", async () => {
   let changes: Record<string, unknown> = {};
