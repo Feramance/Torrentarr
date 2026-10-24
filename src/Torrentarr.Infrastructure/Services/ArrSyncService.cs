@@ -182,6 +182,7 @@ public class ArrSyncService
                 existing.Year = movie.Year;
                 existing.MovieFileId = movie.MovieFile?.Id ?? 0;
                 existing.QualityProfileId = movie.QualityProfileId;
+                existing.QualityProfileName = profile?.Name;
                 existing.ArrId = movie.Id;
                 existing.HasFile = movie.HasFile;
                 existing.InCinemas = movie.InCinemas;
@@ -209,6 +210,7 @@ public class ArrSyncService
                     Year = movie.Year,
                     MovieFileId = movie.MovieFile?.Id ?? 0,
                     QualityProfileId = movie.QualityProfileId,
+                    QualityProfileName = profile?.Name,
                     ArrId = movie.Id,
                     HasFile = movie.HasFile,
                     InCinemas = movie.InCinemas,
@@ -327,6 +329,7 @@ public class ArrSyncService
                 existing.Monitored = series.Monitored;
                 existing.TvdbId = series.TvdbId;
                 existing.QualityProfileId = series.QualityProfileId;
+                existing.QualityProfileName = seriesProfile?.Name;
                 existing.ArrId = series.Id;
                 existing.MinCustomFormatScore = seriesMinCfScore;
                 _db.Series.Update(existing);
@@ -343,6 +346,7 @@ public class ArrSyncService
                     TvdbId = series.TvdbId,
                     Monitored = series.Monitored,
                     QualityProfileId = series.QualityProfileId,
+                    QualityProfileName = seriesProfile?.Name,
                     ArrId = series.Id,
                     MinCustomFormatScore = seriesMinCfScore
                 };
@@ -450,6 +454,7 @@ public class ArrSyncService
                     CustomFormatMet = customFormatMet,
                     Reason = reason,
                     QualityProfileId = seriesProfileId,
+                    QualityProfileName = seriesProfile?.Name,
                     Searched = flags.Searched,
                     Upgrade = flags.Upgrade
                 });
@@ -695,6 +700,7 @@ public class ArrSyncService
                 existing.Title = artist.ArtistName;
                 existing.Monitored = artist.Monitored;
                 existing.QualityProfileId = artist.QualityProfileId;
+                existing.QualityProfileName = profileDict.GetValueOrDefault(artist.QualityProfileId)?.Name;
                 existing.ArrId = artist.Id;
                 _db.Artists.Update(existing);
                 artistsUpdated++;
@@ -709,6 +715,7 @@ public class ArrSyncService
                     Title = artist.ArtistName,
                     Monitored = artist.Monitored,
                     QualityProfileId = artist.QualityProfileId,
+                    QualityProfileName = profileDict.GetValueOrDefault(artist.QualityProfileId)?.Name,
                     ArrId = artist.Id
                 });
                 artistsAdded++;
@@ -764,6 +771,7 @@ public class ArrSyncService
                 existing.ArtistId = album.ArtistId;
                 existing.ArtistTitle = artistName;
                 existing.QualityProfileId = albumProfileId;
+                existing.QualityProfileName = profileDict.GetValueOrDefault(albumProfileId)?.Name;
                 existing.ArrId = album.Id;
                 existing.HasFile = album.Statistics?.TrackFileCount > 0;
                 _db.Albums.Update(existing);
@@ -783,6 +791,7 @@ public class ArrSyncService
                     ArtistId = album.ArtistId,
                     ArtistTitle = artistName,
                     QualityProfileId = albumProfileId,
+                    QualityProfileName = profileDict.GetValueOrDefault(albumProfileId)?.Name,
                     ArrId = album.Id,
                     HasFile = album.Statistics?.TrackFileCount > 0
                 };
@@ -874,8 +883,10 @@ public class ArrSyncService
                 albumEntityByLidarrId.TryAdd(album.ArrId, album);
         }
 
-        // Fetch all tracks at once and group by Lidarr album ID
-        var allTracks = await client.GetTracksAsync(ct: ct);
+        // Lidarr requires an album or artist filter; finish all reads before replacing stored tracks.
+        var allTracks = new List<Track>();
+        foreach (var artist in artists)
+            allTracks.AddRange(await client.GetTracksAsync(ct: ct, artistId: artist.Id));
 
         // Clear all existing tracks for this instance then re-insert
         var existingTracks = await _db.Tracks
@@ -904,10 +915,10 @@ public class ArrSyncService
                 AlbumId = albumEntity.EntryId,
                 TrackNumber = track.TrackNumber,
                 Title = track.Title,
-                Duration = track.Duration,
+                Duration = track.Duration / 1000,
                 HasFile = track.HasFile,
                 TrackFileId = track.TrackFileId,
-                Monitored = track.Monitored
+                Monitored = albumEntity.Monitored
             });
             tracksAdded++;
             _logger.LogTrace("DB Insert: Track {Title} added to database (new)", track.Title);
@@ -1010,6 +1021,7 @@ public class ArrSyncService
                 existing.Title = author.AuthorName;
                 existing.Monitored = author.Monitored;
                 existing.QualityProfileId = author.QualityProfileId;
+                existing.QualityProfileName = profileDict.GetValueOrDefault(author.QualityProfileId)?.Name;
                 existing.ArrId = author.Id;
                 existing.BookCount = author.Statistics?.BookCount ?? existing.BookCount;
                 _db.Authors.Update(existing);
@@ -1024,6 +1036,7 @@ public class ArrSyncService
                     Title = author.AuthorName,
                     Monitored = author.Monitored,
                     QualityProfileId = author.QualityProfileId,
+                    QualityProfileName = profileDict.GetValueOrDefault(author.QualityProfileId)?.Name,
                     ArrId = author.Id,
                     BookCount = author.Statistics?.BookCount ?? 0
                 });
@@ -1071,6 +1084,7 @@ public class ArrSyncService
                 existing.ArrAuthorId = book.AuthorId;
                 existing.AuthorTitle = authorName;
                 existing.QualityProfileId = bookProfileId;
+                existing.QualityProfileName = profileDict.GetValueOrDefault(bookProfileId)?.Name;
                 existing.ArrId = book.Id;
                 existing.HasFile = hasFile;
                 existing.BookFileId = hasFile ? Math.Max(existing.BookFileId, 1) : 0;
@@ -1090,6 +1104,7 @@ public class ArrSyncService
                     ArrAuthorId = book.AuthorId,
                     AuthorTitle = authorName,
                     QualityProfileId = bookProfileId,
+                    QualityProfileName = profileDict.GetValueOrDefault(bookProfileId)?.Name,
                     ArrId = book.Id,
                     HasFile = hasFile,
                     BookFileId = hasFile ? 1 : 0

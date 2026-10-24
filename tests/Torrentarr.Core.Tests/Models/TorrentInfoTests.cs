@@ -68,4 +68,16 @@ public class TorrentInfoTests
 
         torrent.QBitInstanceName.Should().Be("qBit");
     }
+    [Theory]
+    [InlineData("uploading", true)]
+    [InlineData("stalledUP", true)]
+    [InlineData("forcedUP", true)]
+    [InlineData("queuedUP", true)]
+    [InlineData("seeding", true)]
+    [InlineData("pausedUP", false)]
+    [InlineData("stoppedUP", false)]
+    [InlineData("downloading", false)]
+    public void IsSeeding_UsesOverviewDisplayStates(string state, bool expected)
+        => new TorrentInfo { State = state }.IsSeeding.Should().Be(expected);
+
 }

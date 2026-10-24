@@ -52,8 +52,12 @@ public class ArrThumbnailService
         {
             var bytes = await File.ReadAllBytesAsync(cachePath, ct);
             var mime = GuessMime(bytes);
-            var etag = await ReadOrCreateETagAsync(etagPath, bytes, ct);
-            return (bytes, mime, etag);
+            if (bytes.Length <= MaxBytes && mime != "application/octet-stream")
+            {
+                var etag = await ReadOrCreateETagAsync(etagPath, bytes, ct);
+                return (bytes, mime, etag);
+            }
+            // Older versions could cache a successful HTML login page as a poster.
         }
 
         var arrId = await ResolveArrIdAsync(arrType, keys, entryId, ct);
@@ -188,8 +192,8 @@ public class ArrThumbnailService
         if (bytes.Length == 0 || bytes.Length > MaxBytes)
             return null;
 
-        var contentType = response.Content.Headers.ContentType?.MediaType ?? GuessMime(bytes);
-        return (bytes, contentType);
+        var contentType = GuessMime(bytes);
+        return contentType == "application/octet-stream" ? null : (bytes, contentType);
     }
 
     private static bool IsSameHost(string url, string arrBaseUri)
@@ -208,6 +212,9 @@ public class ArrThumbnailService
             return "image/png";
         if (bytes.Length >= 6 && bytes[0] == 'G' && bytes[1] == 'I')
             return "image/gif";
+        if (bytes.Length >= 12 && Encoding.ASCII.GetString(bytes, 0, 4) == "RIFF"
+            && Encoding.ASCII.GetString(bytes, 8, 4) == "WEBP")
+            return "image/webp";
         return "application/octet-stream";
     }
 

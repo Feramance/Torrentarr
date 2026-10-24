@@ -4,16 +4,16 @@ import {
   it,
   expect,
   beforeAll,
-  afterAll,
   afterEach,
   beforeEach,
   vi,
 } from "vitest";
 import { render, screen, waitFor, fireEvent } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
-import { setupServer } from "msw/node";
-import App from "../../App";
 import { resetUrlBaseCacheForTests } from "../../api/urlBase";
+
+// Initialize lazy routes only after this suite has registered its mocks.
+vi.hoisted(() => vi.resetModules());
 
 const metaWithSetup = {
   current_version: "6.12.3",
@@ -23,16 +23,51 @@ const metaWithSetup = {
   setup_required: true,
 };
 
+vi.mock("react", async (original) => {
+  const actual = await original<typeof import("react")>();
+  // Preload lazy routes while this suite's module mocks are in scope.
+  const lazy: typeof actual.lazy = (load) => {
+    const pending = load();
+    return actual.lazy(() => pending);
+  };
+  return { ...actual, lazy };
+});
+
 vi.mock("../../api/client", async (importOriginal) => {
   const actual = await importOriginal<typeof import("../../api/client")>();
   return {
     ...actual,
+    watchConfiguration: vi.fn(
+      (_receive, signal: AbortSignal) =>
+        new Promise<void>((resolve) =>
+          signal.addEventListener("abort", () => resolve(), { once: true }),
+        ),
+    ),
+    getConfig: vi.fn(async () => ({ WebUI: { LiveArr: false } })),
+    getStatus: vi.fn(async () => ({
+      ready: true,
+      arrs: [],
+      qbitInstances: {},
+    })),
     getMeta: vi.fn(async () => metaWithSetup),
     getToken: vi.fn(async () => "test-token"),
     login: vi.fn(),
     setPassword: vi.fn(async () => ({ success: true })),
   };
 });
+
+vi.mock("../../pages/ProcessesView", () => ({
+  ProcessesView: () => <p>Worker dashboard</p>,
+}));
+vi.mock("../../pages/LogsView", () => ({ LogsView: () => null }));
+vi.mock("../../pages/ArrCatalogView", () => ({ ArrCatalogView: () => null }));
+vi.mock("../../pages/QbitCategoriesView", () => ({
+  QbitCategoriesView: () => null,
+}));
+vi.mock("../../pages/MaintenanceView", () => ({ MaintenanceView: () => null }));
+vi.mock("../../components/ChangelogModal", () => ({
+  ChangelogModal: () => null,
+}));
 
 vi.mock("../../pages/ConfigView", () => ({
   ConfigView: ({
@@ -78,11 +113,13 @@ import {
   setPassword,
 } from "../../api/client";
 
-const server = setupServer();
-
-beforeAll(() => server.listen({ onUnhandledRequest: "bypass" }));
+let App: typeof import("../../App").default;
+beforeAll(async () => {
+  await vi.dynamicImportSettled();
+  vi.resetModules();
+  App = (await import("../../App")).default;
+});
 afterEach(() => {
-  server.resetHandlers();
   resetUrlBaseCacheForTests();
   vi.mocked(getMeta).mockResolvedValue(metaWithSetup);
   vi.mocked(getToken).mockResolvedValue("test-token");
@@ -118,7 +155,7 @@ describe("App tab lifecycle", () => {
     expect(document.body.style.overflow).toBe("");
   });
 
-  it("reloads clean config state when reactivating the tab", async () => {
+  it("retains clean page state when reactivating the tab", async () => {
     vi.stubGlobal("location", {
       pathname: "/ui/",
       replace: vi.fn(),
@@ -140,7 +177,9 @@ describe("App tab lifecycle", () => {
     await user.click(screen.getByRole("button", { name: /processes/i }));
     await user.click(screen.getByRole("button", { name: /config/i }));
 
-    expect(screen.getByLabelText("mock config value")).toHaveValue("");
+    expect(screen.getByLabelText("mock config value")).toHaveValue(
+      "unsaved value",
+    );
   });
 
   it("discards retained config edits after confirmed navigation", async () => {
@@ -178,9 +217,10 @@ describe("App tab lifecycle", () => {
     confirm.mockRestore();
   });
 });
-afterAll(() => server.close());
 
 beforeEach(() => {
+  localStorage.clear();
+  sessionStorage.clear();
   resetUrlBaseCacheForTests();
   vi.stubGlobal("location", {
     pathname: "/login",
@@ -194,7 +234,9 @@ describe("App login setup flow", () => {
     render(<App />);
 
     expect(await screen.findByLabelText(/setup token/i)).toBeInTheDocument();
-    expect(screen.getByText(/welcome to torrentarr/i)).toBeInTheDocument();
+    expect(
+      screen.getByText(/create your username and password/i),
+    ).toBeInTheDocument();
   });
 
   it("blocks submit when setup token is empty", async () => {

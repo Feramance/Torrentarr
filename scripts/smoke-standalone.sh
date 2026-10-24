@@ -89,9 +89,15 @@ done
 curl --fail --silent "$base_url/health" | grep -q '"healthy"'
 index=$(curl --fail --silent --location "$base_url/ui/")
 printf '%s\n' "$index" | grep -q '<html'
-asset=$(printf '%s\n' "$index" | sed -n 's/.*src="\(\/assets\/[^" ]*\.js\)".*/\1/p' | head -n 1)
+asset=$(printf '%s\n' "$index" | node -e '
+  const html = require("fs").readFileSync(0, "utf8");
+  const src = html.match(/<script[^>]*src="((?:\.\/|\/)assets\/[^" ]+\.js)"/);
+  if (!src) process.exit(1);
+  const base = html.match(/<base[^>]*href="([^"]+)"/);
+  console.log(new URL(src[1], new URL(base ? base[1] : "ui/", process.argv[1] + "/")).href);
+' "$base_url")
 test -n "$asset"
-curl --fail --silent --location "$base_url$asset" >/dev/null
+curl --fail --silent --location "$asset" >/dev/null
 
 validate_json() {
   if command -v node >/dev/null 2>&1; then

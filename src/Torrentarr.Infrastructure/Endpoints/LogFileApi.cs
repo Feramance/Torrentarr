@@ -6,6 +6,124 @@ namespace Torrentarr.Infrastructure.Endpoints;
 /// <summary>qBitrr log search / SSE helpers shared by Host and WebUI.</summary>
 public static class LogFileApi
 {
+    public sealed record TailPayload(string content, long next_bytes, long size, long inode, bool rotated, bool truncated, long start_bytes = 0, long start_inode = 0, long start_line = 1);
+    private const int MaxWindowBytes = 8 * 1024 * 1024;
+
+    public static async Task<IResult> TailFromRequestAsync(string logsRoot, string name, HttpRequest request, CancellationToken ct)
+    {
+        var path = ResolveLogFile(logsRoot, name);
+        if (path is null) return Results.BadRequest(new { error = "Invalid log file name" });
+        try
+        {
+            var payload = await ReadWindowAsync(path, request, ct);
+            return Results.Ok(payload);
+        }
+        catch (FileNotFoundException) { return Results.NotFound(new { error = "Log file not found" }); }
+        catch (DirectoryNotFoundException) { return Results.NotFound(new { error = "Log file not found" }); }
+    }
+
+    public static async Task<TailPayload> ReadWindowAsync(string path, HttpRequest request, CancellationToken ct)
+    {
+        static long Number(HttpRequest req, string key, long fallback = 0) =>
+            long.TryParse(req.Query[key], out var value) ? Math.Max(0, value) : fallback;
+        var lines = (int)Math.Clamp(Number(request, "lines", 2000), 1, 20000);
+        var offset = (int)Math.Min(Number(request, "offset"), 100000);
+        var around = Number(request, "around_line");
+        await using var stream = new FileStream(path, FileMode.Open, FileAccess.Read, FileShare.ReadWrite | FileShare.Delete);
+        var size = stream.Length;
+        var identity = await CursorFingerprintAsync(stream, size, ct);
+        var since = Number(request, "since_bytes");
+        var generation = Number(request, "inode");
+        var delta = request.Query.ContainsKey("since_bytes") && !request.Query.ContainsKey("before_bytes");
+        var rotated = delta && (since > size || (generation != 0 && generation != await CursorFingerprintAsync(stream, since, ct)));
+
+        var history = request.Query.ContainsKey("before_bytes");
+        var before = Number(request, "before_bytes", size);
+        var historyAnchor = request.Query.ContainsKey("since_bytes") ? since : before;
+        if (history && (before > size || historyAnchor > size || (generation != 0 && generation != await CursorFingerprintAsync(stream, historyAnchor, ct))))
+        {
+            rotated = true;
+            before = size;
+        }
+        long windowStart = 0;
+        long windowEnd = history ? before : size;
+        var startLine = Math.Max(1, around - lines / 2);
+        if (around > 0)
+        {
+            // Locate actual byte boundaries; StreamReader.Position includes read-ahead bytes.
+            var buffer = new byte[65536];
+            long position = 0, line = 1;
+            windowEnd = 0;
+            stream.Position = 0;
+            while (position < Math.Min(size, SearchMaxBytes))
+            {
+                var count = await stream.ReadAsync(buffer.AsMemory(0, (int)Math.Min(buffer.Length, Math.Min(size, SearchMaxBytes) - position)), ct);
+                if (count == 0) break;
+                var done = false;
+                for (var i = 0; i < count; i++)
+                {
+                    if (buffer[i] != (byte)'\n') continue;
+                    var boundary = position + i + 1;
+                    if (line < startLine) windowStart = boundary;
+                    else windowEnd = boundary;
+                    if (++line >= startLine + lines) { done = true; break; }
+                }
+                position += count;
+                if (done) break;
+            }
+            if (windowEnd < windowStart) windowEnd = windowStart;
+        }
+        var start = around > 0 ? windowStart
+            : delta && !rotated ? since : Math.Max(0, windowEnd - MaxWindowBytes);
+        var length = (int)Math.Min(windowEnd - start, MaxWindowBytes);
+        stream.Seek(start, SeekOrigin.Begin);
+        var bytes = new byte[length];
+        var read = 0;
+        while (read < length)
+        {
+            var count = await stream.ReadAsync(bytes.AsMemory(read, length - read), ct);
+            if (count == 0) break;
+            read += count;
+        }
+        // Delta cursors stop at a complete line, so partial writes and UTF-8 characters are retried.
+        var complete = read == 0 ? -1 : Array.LastIndexOf(bytes, (byte)'\n', read - 1, read);
+        if (delta && !rotated)
+        {
+            var consumed = complete + 1;
+            return new(System.Text.Encoding.UTF8.GetString(bytes, 0, consumed), start + consumed, size, await CursorFingerprintAsync(stream, start + consumed, ct), false, start + consumed < size);
+        }
+        var boundaries = new List<int> { 0 };
+        for (var i = 0; i <= complete; i++)
+            if (bytes[i] == (byte)'\n') boundaries.Add(i + 1);
+        var first = 0;
+        if (start > 0)
+        {
+            stream.Position = start - 1;
+            if (stream.ReadByte() != (byte)'\n') first = Math.Min(1, boundaries.Count - 1);
+        }
+        var end = Math.Max(first, boundaries.Count - 1 - (around > 0 || history ? 0 : offset));
+        first = Math.Max(first, end - lines);
+        var startBytes = start + boundaries[first];
+        var cursor = start + complete + 1;
+        var text = System.Text.Encoding.UTF8.GetString(bytes, boundaries[first], boundaries[end] - boundaries[first]).TrimEnd('\n');
+        return new(text, cursor, size, await CursorFingerprintAsync(stream, cursor, ct), rotated,
+            startBytes > 0 || cursor < size, startBytes, await CursorFingerprintAsync(stream, startBytes, ct), around > 0 ? startLine : 1);
+    }
+
+    // Fingerprint both ends of the consumed window: stable on append, detects replacement and copy-truncate.
+    private static async Task<long> CursorFingerprintAsync(FileStream stream, long boundary, CancellationToken ct)
+    {
+        var first = (int)Math.Min(512, boundary);
+        var last = (int)Math.Min(512, boundary - first);
+        var bytes = new byte[first + last];
+        stream.Position = 0;
+        await stream.ReadExactlyAsync(bytes.AsMemory(0, first), ct);
+        stream.Position = boundary - last;
+        await stream.ReadExactlyAsync(bytes.AsMemory(first, last), ct);
+        var hash = System.Security.Cryptography.SHA256.HashData(bytes);
+        return (long)(System.Buffers.Binary.BinaryPrimitives.ReadUInt64LittleEndian(hash) & ((1UL << 53) - 1));
+    }
+
     public const int SearchMaxMatchesDefault = 200;
     public const int SearchMaxMatchesHard = 1000;
     public const int SearchContextHard = 10;
@@ -108,6 +226,35 @@ public static class LogFileApi
         ctx.Response.Headers.CacheControl = "no-cache";
         ctx.Response.Headers["X-Accel-Buffering"] = "no";
         ctx.Response.Headers.Connection = "keep-alive";
+
+        if (ctx.Request.Query["format"] == "json")
+        {
+            var startedAt = DateTime.UtcNow;
+            TailPayload? latest = null;
+            while (!ct.IsCancellationRequested && (DateTime.UtcNow - startedAt).TotalSeconds < SseMaxSeconds)
+            {
+                try
+                {
+                    var payload = await ReadWindowAsync(path, ctx.Request, ct);
+                    latest = payload;
+                    await ctx.Response.WriteAsync($"event: {(payload.rotated ? "rotated" : "append")}\ndata: {System.Text.Json.JsonSerializer.Serialize(payload)}\n\n", ct);
+                    await ctx.Response.Body.FlushAsync(ct);
+                    var query = Microsoft.AspNetCore.WebUtilities.QueryHelpers.ParseQuery(ctx.Request.QueryString.Value ?? "");
+                    query["since_bytes"] = payload.next_bytes.ToString(System.Globalization.CultureInfo.InvariantCulture);
+                    query["inode"] = payload.inode.ToString(System.Globalization.CultureInfo.InvariantCulture);
+                    ctx.Request.Query = new QueryCollection(query);
+                    await Task.Delay(TimeSpan.FromSeconds(SsePollSeconds), ct);
+                }
+                catch (FileNotFoundException) { await Task.Delay(TimeSpan.FromSeconds(SsePollSeconds), ct); }
+                catch (OperationCanceledException) when (ct.IsCancellationRequested) { break; }
+            }
+            if (!ct.IsCancellationRequested && latest is not null)
+            {
+                await ctx.Response.WriteAsync($"event: reconnect\ndata: {System.Text.Json.JsonSerializer.Serialize(latest)}\n\n", ct);
+                await ctx.Response.Body.FlushAsync(ct);
+            }
+            return;
+        }
 
         var started = DateTime.UtcNow;
         var lastPing = DateTime.UtcNow;

@@ -24,7 +24,8 @@ public class FreeSpaceService : IFreeSpaceService
     private readonly ITorrentClientRegistry _qbitManager;
     private readonly TorrentarrDbContext _dbContext;
     private long _currentFreeSpace;
-    private long _minFreeSpaceBytes;
+    private long _minFreeSpaceBytes => FreeSpaceThreshold.Parse(_config.Settings.FreeSpace) is var bytes && bytes > 0
+        ? bytes : (long)(_config.Settings.FreeSpaceThresholdGB ?? 10) * 1024L * 1024L * 1024L;
 
     public FreeSpaceService(
         ILogger<FreeSpaceService> logger,
@@ -36,29 +37,13 @@ public class FreeSpaceService : IFreeSpaceService
         _config = config;
         _qbitManager = qbitManager;
         _dbContext = dbContext;
-        // §FreeSpace parity: prefer Settings.FreeSpace (qBitrr string format) over FreeSpaceThresholdGB
-        var freeSpaceBytes = ParseFreeSpaceString(config.Settings.FreeSpace);
-        _minFreeSpaceBytes = freeSpaceBytes > 0
-            ? freeSpaceBytes
-            : (long)(_config.Settings.FreeSpaceThresholdGB ?? 10) * 1024L * 1024L * 1024L;
+
     }
 
     /// <summary>
     /// Parse qBitrr FreeSpace config string: "-1" → disabled (-1), "10G" → 10 GiB, "500M" → 500 MiB, "1024K" → 1 KiB, raw number → bytes.
     /// </summary>
-    private static long ParseFreeSpaceString(string? value)
-    {
-        if (string.IsNullOrWhiteSpace(value) || value.Trim() == "-1") return -1;
-        var v = value.Trim().ToUpperInvariant();
-        try
-        {
-            if (v.EndsWith("G")) return long.Parse(v[..^1]) * 1024L * 1024L * 1024L;
-            if (v.EndsWith("M")) return long.Parse(v[..^1]) * 1024L * 1024L;
-            if (v.EndsWith("K")) return long.Parse(v[..^1]) * 1024L;
-            return long.Parse(v);
-        }
-        catch { return -1; }
-    }
+    private static long ParseFreeSpaceString(string? value) => FreeSpaceThreshold.Parse(value);
 
     public async Task<bool> HasEnoughFreeSpaceAsync(long requiredBytes, CancellationToken cancellationToken = default)
     {

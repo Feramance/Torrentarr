@@ -74,7 +74,7 @@ Access the WebUI at `http://<host>:6969/ui` after startup.
 
 ## Key Features
 
-- **Optional torrent maintenance** – Preview and arm category, repair, share-policy, and file cleanup actions with ownership and H&R safeguards. [Maintenance guide](docs/features/torrent-maintenance.md).
+- **Optional torrent maintenance** – Preview and arm category, repair, and file cleanup actions with ownership and H&R safeguards. [Maintenance guide](docs/features/torrent-maintenance.md).
 - **Sonarr v3, v4, and v5 support** – Automatic API version detection with the same configuration format. [Sonarr configuration](docs/configuration/arr/sonarr.md).
 - **Multi-qBittorrent Support** – Manage torrents across multiple qBittorrent instances for load balancing, redundancy, and VPN isolation
 - **Torrent Health Monitoring** – Detect stalled/failed downloads, auto-blacklist, trigger re-searches

@@ -48,6 +48,47 @@ public sealed class InstanceRenamePersistenceTests : IDisposable
     }
 
     [Fact]
+    public async Task CancelledPublication_DoesNotAcquireOrWrite()
+    {
+        var before = File.ReadAllText(ConfigPath);
+        using var publisher = new FileStream(ConfigPath + ".publish-lock", FileMode.OpenOrCreate, FileAccess.ReadWrite, FileShare.None);
+        using var cancellation = new CancellationTokenSource();
+        cancellation.Cancel();
+        Func<Task> save = () => InstanceRenamePersistence.SaveAsync(_before, _after, null, _loader, _db, ct: cancellation.Token);
+        await save.Should().ThrowAsync<OperationCanceledException>();
+        File.ReadAllText(ConfigPath).Should().Be(before);
+        ConfigMutationGuard.OwnsPublication(ConfigPath).Should().BeFalse();
+    }
+
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task Rename_KeepsProcessingExcludedUntilSnapshotPublication(bool failPublication)
+    {
+        var publishing = false;
+        Func<Task> save = () => InstanceRenamePersistence.SaveAsync(_before, _after, _renames, _loader, _db,
+            publish: () =>
+            {
+                publishing = true;
+                File.Exists(ConfigPath + ".rename.json").Should().BeTrue();
+                ConfigMutationGuard.OwnsMutation(ConfigPath).Should().BeTrue();
+                FluentActions.Invoking(() => new FileStream(ConfigPath + ".write-lock", FileMode.Open, FileAccess.ReadWrite, FileShare.None))
+                    .Should().Throw<IOException>();
+                if (failPublication) throw new IOException("snapshot unavailable");
+            });
+        if (failPublication)
+        {
+            await save.Should().ThrowAsync<IOException>();
+            FluentActions.Invoking(() => ConfigMutationGuard.EnterProcessing(ConfigPath)).Should().Throw<ConfigurationBusyException>();
+            await InstanceRenamePersistence.RecoverAsync(ConfigPath, DbPath);
+        }
+        else await save();
+        publishing.Should().BeTrue();
+        File.Exists(ConfigPath + ".rename.json").Should().BeFalse();
+        (await _db.TorrentLibrary.AsNoTracking().SingleAsync(t => t.Id == 1)).QbitInstance.Should().Be("qBit-after");
+    }
+
+    [Fact]
     public async Task Rename_PreservesEveryFieldAndOtherClients()
     {
         await InstanceRenamePersistence.SaveAsync(_before, _after, _renames, _loader, _db);
@@ -306,10 +347,11 @@ public sealed class InstanceRenamePersistenceTests : IDisposable
     }
 
     [Fact]
-    public void ExternalProcessingLease_PreventsConfigurationWrite()
+    public void ExternalProcessingLease_AllowsPublicationButPreventsRename()
     {
         using var external = new FileStream(ConfigPath + ".write-lock", FileMode.OpenOrCreate, FileAccess.ReadWrite, FileShare.ReadWrite);
-        FluentActions.Invoking(() => _loader.SaveConfig(_after)).Should().Throw<ConfigurationBusyException>();
+        _loader.SaveConfig(_after);
+        FluentActions.Invoking(() => ConfigMutationGuard.EnterMutation(ConfigPath)).Should().Throw<ConfigurationBusyException>();
     }
 
     [Fact]

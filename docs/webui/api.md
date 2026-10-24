@@ -605,6 +605,12 @@ curl http://localhost:6969/web/logs/Main.log
 
 ---
 
+### Structured Log Windows
+
+Add `format=json` to `GET /web/logs/<name>` (or its `/api` alias) for bounded log windows. `lines` selects the page size, `since_bytes` and `inode` request live deltas, and `around_line` opens a search window. The response includes `content`, `next_bytes`, `inode`, `size`, `rotated`, and `truncated`.
+
+For stable backward paging, pass `before_bytes` from the previous page's `start_bytes`, with `inode` from its `start_inode`. Alternatively, pass the live anchor pair (`since_bytes`, `inode`) alongside `before_bytes`. History pages read backward from that fixed boundary even when the file grows. Each page is capped at 8 MiB; the cap does not limit how far back the client can page. Search windows also return `start_line` for positioning the selected match. Rotation invalidates the cursor and returns a replacement tail with `rotated=true`.
+
 ### Download Log File
 
 Download log file as attachment.
@@ -1029,6 +1035,10 @@ Fetch current configuration from disk.
 
 ---
 
+### Live Configuration Events
+
+`GET /web/config/events` is authenticated with the same bearer token or login session as other protected WebUI endpoints. Both Host and standalone WebUI return `text/event-stream` with an initial `data:` JSON event and subsequent changes. Each event contains `application` (the accepted revision, component acknowledgments, and application state) and `webui` (host, port, URL base, proxy setting, theme, density, and live-update preference). Secrets are omitted. Browser disconnects cancel the stream; listener changes are flushed before rebinding.
+
 ### Update Configuration
 
 Apply changes to configuration and trigger reload.
@@ -1052,14 +1062,16 @@ Apply changes to configuration and trigger reload.
 
 **Renaming sections**: Send an optional `renames` map alongside `changes`
 (e.g., `"renames": { "qBit": "qBit-seedbox" }`). Include the old section
-deletions and new section values in `changes`. This preserves stored passwords
-and notification tokens when the new values contain `[redacted]` placeholders,
+deletions and new section values in `changes`. This preserves stored passwords and API keys when the new values contain `[redacted]` placeholders,
 and migrates persisted instance state. Destinations must be unused in both config
 and stored state; rename chains, cycles, and case-only renames are rejected. HTTP
-`409` means processing or another config save is active, or rename recovery is
-pending. Retry after processing finishes; pending recovery runs at startup.
+`409` means another configuration writer or an exclusive operation is active,
+or rename recovery is pending. Renames also return `409` during active processing.
+Ordinary saves, including path mappings, publish while workers run: the response
+`application.state` is `pending` until components adopt the saved revision at their
+next safe boundary, then `applied`. Pending recovery runs at startup.
 A successful response may include an optional `warning` string if config was saved
-but worker restart or client reconciliation failed. The saved rename should not
+but revision publication or runtime reconciliation failed. The saved rename should not
 be submitted again.
 
 **Deletion**: Set value to `null` to delete key:

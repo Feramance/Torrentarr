@@ -1,5 +1,8 @@
 import { describe, it, expect, beforeAll, afterAll, afterEach } from "vitest";
-import { resetUrlBaseCacheForTests } from "../../api/urlBase";
+import {
+  resetUrlBaseCacheForTests,
+  setUrlBaseFromMeta,
+} from "../../api/urlBase";
 import { http, HttpResponse } from "msw";
 import { setupServer } from "msw/node";
 import {
@@ -20,6 +23,8 @@ import {
   searchLogs,
   getQbitOverview,
   getConfigSchema,
+  getLogStreamUrl,
+  getReadarrOpenAuthorUrl,
 } from "../../api/client";
 
 const server = setupServer();
@@ -30,6 +35,24 @@ afterEach(() => {
   resetUrlBaseCacheForTests();
 });
 afterAll(() => server.close());
+
+it("prefixes config, authentication and asset links with the configured URL base", async () => {
+  setUrlBaseFromMeta("/torrentarr");
+  const requests: string[] = [];
+  server.use(
+    http.post("/torrentarr/web/:action", ({ request }) => {
+      requests.push(new URL(request.url).pathname);
+      return HttpResponse.json({ success: true, status: "ok" });
+    }),
+  );
+  await updateConfig({ changes: { "Settings.LoopSleepTimer": 5 } });
+  await login({ username: "fixture", password: "fixture" });
+  expect(requests).toEqual(["/torrentarr/web/config", "/torrentarr/web/login"]);
+  expect(getLogStreamUrl("All.log", 10, 1)).toContain("/torrentarr/web/logs/");
+  expect(getReadarrOpenAuthorUrl("Readarr-Test", 1)).toContain(
+    "/torrentarr/web/arr/",
+  );
+});
 
 // ── getQbitCategories ────────────────────────────────────────────────────────
 

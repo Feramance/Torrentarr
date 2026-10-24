@@ -17,6 +17,8 @@ public sealed class WorkerProcessSupervisor : BackgroundService, IProcessOrchest
     private readonly TorrentarrConfig _config;
     private readonly ILogger<WorkerProcessSupervisor> _logger;
     private readonly IMediaValidationService _mediaValidation;
+    private readonly IConfigReloader? _reloader;
+    private readonly Dictionary<Process, long> _processRevisions = new();
     private readonly Dictionary<string, Process> _processes = new(StringComparer.OrdinalIgnoreCase);
     private readonly Dictionary<string, List<DateTime>> _restartTimes = new(StringComparer.OrdinalIgnoreCase);
     private readonly Dictionary<string, CancellationTokenSource> _pendingRetries = new(StringComparer.OrdinalIgnoreCase);
@@ -27,15 +29,16 @@ public sealed class WorkerProcessSupervisor : BackgroundService, IProcessOrchest
     private readonly SemaphoreSlim _lifecycle = new(1, 1);
     private readonly HashSet<string> _reportedWorkers = new(StringComparer.OrdinalIgnoreCase);
 
-    public WorkerProcessSupervisor(TorrentarrConfig config, ILogger<WorkerProcessSupervisor> logger, IMediaValidationService mediaValidation)
-        : this(config, logger, mediaValidation, name => ResolveWorkerStartInfo(name)) { }
+    public WorkerProcessSupervisor(TorrentarrConfig config, ILogger<WorkerProcessSupervisor> logger, IMediaValidationService mediaValidation, IConfigReloader? reloader = null)
+        : this(config, logger, mediaValidation, name => ResolveWorkerStartInfo(name), reloader) { }
 
     internal WorkerProcessSupervisor(TorrentarrConfig config, ILogger<WorkerProcessSupervisor> logger,
-        IMediaValidationService mediaValidation, Func<string, ProcessStartInfo> startInfo)
+        IMediaValidationService mediaValidation, Func<string, ProcessStartInfo> startInfo, IConfigReloader? reloader = null)
     {
         _config = config;
         _logger = logger;
         _mediaValidation = mediaValidation;
+        _reloader = reloader;
         _startInfo = startInfo;
     }
 
@@ -49,6 +52,7 @@ public sealed class WorkerProcessSupervisor : BackgroundService, IProcessOrchest
             while (!stoppingToken.IsCancellationRequested)
             {
                 MonitorWorkers();
+                await StopRemovedWorkersAsync(stoppingToken);
                 await Task.Delay(TimeSpan.FromSeconds(5), stoppingToken);
             }
         }
@@ -107,6 +111,8 @@ public sealed class WorkerProcessSupervisor : BackgroundService, IProcessOrchest
         {
             CancelRetry(instanceName);
             _processes.Remove(instanceName, out process);
+            if (process != null) _processRevisions.Remove(process);
+            _statusFiles.Remove(instanceName);
             _reportedWorkers.Remove(instanceName);
         }
         if (process == null) return;
@@ -181,6 +187,55 @@ public sealed class WorkerProcessSupervisor : BackgroundService, IProcessOrchest
                 await RestartProcessAsync(name);
     }
 
+    private readonly Dictionary<string, string> _statusFiles = new(StringComparer.OrdinalIgnoreCase);
+    public async Task ReconcileConfigurationAsync(CancellationToken ct = default)
+    {
+        await _lifecycle.WaitAsync(ct);
+        try
+        {
+            var snapshotPath = Path.Combine(ConfigurationLoader.GetDataDirectoryPath(), "active-config.json");
+            var snapshot = File.Exists(snapshotPath)
+                ? Newtonsoft.Json.JsonConvert.DeserializeObject<ConfigurationSnapshot>(File.ReadAllText(snapshotPath)) : null;
+            lock (_gate)
+            {
+                foreach (var rename in snapshot?.RenameHistory ?? [])
+                    if (_processes.TryGetValue(rename.From, out var process)
+                        && rename.Revision > _processRevisions.GetValueOrDefault(process) && rename.Revision <= _config.Revision)
+                    {
+                        _processes.Remove(rename.From);
+                        _processes[rename.To] = process;
+                        var statusPath = _statusFiles.GetValueOrDefault(rename.From, StatusPath(rename.From));
+                        _statusFiles.Remove(rename.From);
+                        _statusFiles[rename.To] = statusPath;
+                        _reportedWorkers.Remove(rename.From);
+                    }
+                if (snapshot != null)
+                    foreach (var process in _processes.Values) _processRevisions[process] = _config.Revision;
+            }
+            await StopRemovedWorkersAsync(ct, ownsLifecycle: true);
+            StartWorkers();
+        }
+        finally { _lifecycle.Release(); }
+    }
+
+    internal async Task StopRemovedWorkersAsync(CancellationToken ct, bool ownsLifecycle = false)
+    {
+        if (!ownsLifecycle) await _lifecycle.WaitAsync(ct);
+        try
+        {
+            string[] removed;
+            lock (_gate) removed = _processes.Keys.Where(n => !_config.ArrInstances.ContainsKey(n)).ToArray();
+            foreach (var name in removed)
+            {
+                Process? process;
+                lock (_gate) _processes.TryGetValue(name, out process);
+                if (process != null && ReadProcessStatus(name, process).ConfigRevision >= _config.Revision)
+                    await StopWorkerAsync(name, ct);
+            }
+        }
+        finally { if (!ownsLifecycle) _lifecycle.Release(); }
+    }
+
     public Task<Dictionary<string, ProcessStatus>> GetProcessStatusAsync()
     {
         var result = new Dictionary<string, ProcessStatus>(StringComparer.OrdinalIgnoreCase);
@@ -211,11 +266,16 @@ public sealed class WorkerProcessSupervisor : BackgroundService, IProcessOrchest
             WorkerHeartbeat? heartbeat = null;
             try
             {
-                heartbeat = JsonSerializer.Deserialize<WorkerHeartbeat>(File.ReadAllText(StatusPath(name)), WorkerHeartbeat.JsonOptions);
+                heartbeat = JsonSerializer.Deserialize<WorkerHeartbeat>(File.ReadAllText(_statusFiles.GetValueOrDefault(name, StatusPath(name))), WorkerHeartbeat.JsonOptions);
+                if (heartbeat != null && _statusFiles.ContainsKey(name)) heartbeat = heartbeat with { Instance = name };
                 if (heartbeat == null || !heartbeat.Matches(name, process.Id, started)) heartbeat = null;
             }
             catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or JsonException) { }
-            if (heartbeat != null) _reportedWorkers.Add(name);
+            if (heartbeat != null)
+            {
+                _reportedWorkers.Add(name);
+                _reloader?.Acknowledge("worker:" + name, heartbeat.ConfigRevision);
+            }
             var alive = !process.HasExited && (heartbeat != null
                 ? now - heartbeat.Heartbeat < TimeSpan.FromSeconds(15) && !heartbeat.IsStalled(now)
                 : !_reportedWorkers.Contains(name) && now - started < WorkerLoopProgress.CycleTimeout);
@@ -227,11 +287,14 @@ public sealed class WorkerProcessSupervisor : BackgroundService, IProcessOrchest
                 IsAlive = alive,
                 LastHeartbeat = heartbeat?.Heartbeat.UtcDateTime,
                 RestartRequested = heartbeat?.RestartRequested ?? false,
+                ConfigRevision = heartbeat?.ConfigRevision ?? 0,
                 SearchSummary = heartbeat?.SearchSummary,
                 SearchTimestamp = heartbeat?.SearchTimestamp,
                 QueueCount = heartbeat?.QueueCount,
                 CategoryCount = heartbeat?.CategoryCount,
                 MetricType = heartbeat?.MetricType,
+                Torrent = heartbeat?.Torrent,
+                Search = heartbeat?.Search,
                 Status = !alive ? "Timed out" : heartbeat?.DescribeProgress() ?? "Initializing"
             };
         }
@@ -251,16 +314,29 @@ public sealed class WorkerProcessSupervisor : BackgroundService, IProcessOrchest
             {
                 if (!existing.HasExited) return;
                 _processes.Remove(instanceName);
+                _processRevisions.Remove(existing);
                 existing.Dispose();
             }
             Process? process = null;
             try
             {
-                process = Process.Start(_startInfo(instanceName)) ?? throw new InvalidOperationException("Process.Start returned no process");
+                _statusFiles.Remove(instanceName);
+                var startInfo = _startInfo(instanceName);
+                var statusArgument = startInfo.ArgumentList.IndexOf("--status-path") + 1;
+                if (statusArgument > 0)
+                {
+                    var path = startInfo.ArgumentList[statusArgument];
+                    if (_statusFiles.Values.Contains(path, StringComparer.OrdinalIgnoreCase))
+                        path = Path.Combine(Path.GetDirectoryName(path)!, $"{instanceName}-{Guid.NewGuid():N}.json");
+                    startInfo.ArgumentList[statusArgument] = path;
+                    _statusFiles[instanceName] = path;
+                }
+                process = Process.Start(startInfo) ?? throw new InvalidOperationException("Process.Start returned no process");
                 var child = process;
                 process.Exited += (sender, args) => { _ = Task.Run(() => WorkerExited(instanceName, child)); };
                 _reportedWorkers.Remove(instanceName);
                 _processes[instanceName] = process;
+                _processRevisions[process] = _config.Revision;
                 process.EnableRaisingEvents = true;
             }
             catch (Exception ex)
@@ -268,6 +344,8 @@ public sealed class WorkerProcessSupervisor : BackgroundService, IProcessOrchest
                 if (process != null)
                 {
                     _processes.Remove(instanceName);
+                    _processRevisions.Remove(process);
+                    _statusFiles.Remove(instanceName);
                     try
                     {
                         if (!process.HasExited) process.Kill(true);
@@ -286,8 +364,11 @@ public sealed class WorkerProcessSupervisor : BackgroundService, IProcessOrchest
     {
         lock (_gate)
         {
+            name = _processes.FirstOrDefault(p => ReferenceEquals(p.Value, process)).Key ?? name;
             if (!_processes.TryGetValue(name, out var current) || !ReferenceEquals(current, process)) return;
             _processes.Remove(name);
+            _processRevisions.Remove(process);
+            _statusFiles.Remove(name);
             _reportedWorkers.Remove(name);
             try { _logger.LogWarning("Worker {Instance} exited with code {Code}", name, process.ExitCode); }
             finally { process.Dispose(); }

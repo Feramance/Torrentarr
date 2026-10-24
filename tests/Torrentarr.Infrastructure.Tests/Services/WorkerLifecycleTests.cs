@@ -174,6 +174,40 @@ public class WorkerLifecycleTests
         attempts.Should().Be(3);
     }
 
+
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task RemovedWorker_IsRetriedAfterAcknowledgment_UnlessRestored(bool restored)
+    {
+        if (OperatingSystem.IsWindows()) return;
+        var config = Config();
+        config.Apply(config, 2);
+        using var supervisor = new WorkerProcessSupervisor(config, NullLogger<WorkerProcessSupervisor>.Instance,
+            Mock.Of<IMediaValidationService>(), _ => new ProcessStartInfo("/bin/sh")
+            { ArgumentList = { "-c", "read command" }, UseShellExecute = false, RedirectStandardInput = true });
+        var orchestrator = (IProcessOrchestrator)supervisor;
+        var status = Path.GetTempFileName();
+        await orchestrator.StartAsync();
+        try
+        {
+            var pid = (await supervisor.GetProcessStatusAsync())["Radarr"].ProcessId!.Value;
+            var files = (Dictionary<string, string>)typeof(WorkerProcessSupervisor)
+                .GetField("_statusFiles", System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.NonPublic)!.GetValue(supervisor)!;
+            files["Radarr"] = status;
+            var instance = config.ArrInstances["Radarr"];
+            config.ArrInstances.Clear();
+            await supervisor.StopRemovedWorkersAsync(default);
+            (await supervisor.GetProcessStatusAsync()).Should().ContainKey("Radarr");
+            if (restored) config.ArrInstances["Radarr"] = instance;
+            await File.WriteAllTextAsync(status, System.Text.Json.JsonSerializer.Serialize(new WorkerHeartbeat
+            { Instance = "Radarr", Pid = pid, Heartbeat = DateTimeOffset.UtcNow, ConfigRevision = 2 }, WorkerHeartbeat.JsonOptions));
+            await supervisor.StopRemovedWorkersAsync(default);
+            (await supervisor.GetProcessStatusAsync()).ContainsKey("Radarr").Should().Be(restored);
+        }
+        finally { await orchestrator.StopAsync(); File.Delete(status); }
+    }
+
     private static TorrentarrConfig Config()
     {
         var config = new TorrentarrConfig();

@@ -24,15 +24,15 @@ export const FIELD_TOOLTIPS: Record<string, string> = {
   "Settings.IgnoreTorrentsYoungerThan":
     "Ignore torrents younger than this many seconds when evaluating failures.",
   "Settings.PingURLS":
-    "Hostnames or URLs used to test for internet connectivity via HTTP/TCP (ICMP is not used, so Docker/Unraid hosts that block ping still work).",
+    "Hostnames used to test for internet connectivity. They are pinged frequently.",
   "Settings.FFprobeAutoUpdate":
     "Download and update the bundled ffprobe binary automatically.",
   "Settings.AutoUpdateEnabled":
-    "Enable the background worker that periodically checks for Torrentarr updates.",
+    "Enable the background worker that periodically checks for Torrentarr updates. Ignored for source builds (.git checkout or TORRENTARR_SOURCE_BUILD).",
   "Settings.AutoUpdateCron":
     "Cron expression describing when to check for updates (default weekly Sunday at 03:00).",
   "Settings.AutoUpdateChannel":
-    "Release channel for update checks: latest (newest GitHub release), stable (newest non-prerelease), or nightly (check only; binary apply is disabled).",
+    "Release channel for updates: latest (newest release including builds), stable (newest non-build release), or nightly (tip of master; not supported for binary installs). Source builds never auto-update.",
   "Settings.AutoRestartProcesses":
     "Automatically restart worker processes that crash unexpectedly. Recommended to keep enabled for reliability.",
   "Settings.MaxProcessRestarts":
@@ -45,8 +45,23 @@ export const FIELD_TOOLTIPS: Record<string, string> = {
     "Interface address for the built-in WebUI. 0.0.0.0 binds on all interfaces.",
   "WebUI.Port": "Port number for the built-in WebUI.",
   "WebUI.Token":
-    "Optional bearer token required by the WebUI/API. Leave empty to disable authentication.",
-  "WebUI.LiveArr": "Enable live updates for Arr views.",
+    "Bearer token used when authentication is enabled. Does not enable auth by itself. Available via /api/token and /web/token when authorized.",
+  "WebUI.AuthDisabled":
+    "When true, no login is required and the full admin API is open (including token retrieval, config, and self-update). Set false to require login.",
+  "WebUI.AllowInsecureExposure":
+    "Required when AuthDisabled is true and Host is 0.0.0.0 or ::. Acknowledge intentional unauthenticated exposure (e.g. behind a reverse proxy).",
+  "WebUI.AllowInsecureTokenQuery":
+    "Allow ?token= query auth (insecure; leaks in logs/history). Prefer Authorization: Bearer.",
+  "WebUI.BehindHttpsProxy":
+    "Set to true when the WebUI is reached over HTTPS behind a trusted reverse proxy that overwrites X-Forwarded-* headers. Enables Secure session cookies.",
+  "WebUI.LocalAuthEnabled":
+    "Enable username/password login (requires Username and Set Password).",
+  "WebUI.OIDCEnabled":
+    "Enable OpenID Connect login. Configure OIDC Authority and Client ID/Secret.",
+  "WebUI.Username":
+    "Username for local auth login. Used together with the password set via Set Password.",
+  "WebUI.LiveArr":
+    "Enable live updates for Arr catalogs and the qBittorrent overview.",
   "WebUI.Theme": "Choose the visual theme for the WebUI (light or dark).",
   "WebUI.ViewDensity":
     "View density for lists in the WebUI: Comfortable (more spacing) or Compact (more rows on screen).",
@@ -54,42 +69,30 @@ export const FIELD_TOOLTIPS: Record<string, string> = {
   "qBit.Trackers":
     "Tracker configs shared by all Arr instances on this qBit instance. Define tracker-specific rate limits, HnR protection, and management rules here. Arr instances inherit these and can optionally override per-tracker settings.",
   "qBit.Disabled":
-    "Disable Torrentarr's direct qBittorrent integration (headless mode for search-only setups).",
+    "Skip connecting this qBit instance while keeping its config. Not global headless — omit all [qBit] sections (or use QBITRR_QBIT_DISABLED / QBITRR_OVERRIDES_SEARCH_ONLY) for search-only without torrent management.",
   "qBit.Host": "qBittorrent WebUI host or IP address.",
   "qBit.Port": "qBittorrent WebUI port.",
   "qBit.UserName": "qBittorrent WebUI username.",
   "qBit.Password":
     "qBittorrent WebUI password. Remove this if authentication is bypassed for the host.",
-  "qBit.SkipTLSVerify":
-    "When true, do not verify the TLS certificate for this qBittorrent WebUI (self-signed certs). Disables MITM protection for that connection.",
 
   Disabled:
-    "Disable this qBittorrent instance (headless mode for search-only setups).",
+    "Skip connecting this qBit instance while keeping its config. Not global headless — omit all [qBit] sections (or use QBITRR_QBIT_DISABLED / QBITRR_OVERRIDES_SEARCH_ONLY) for search-only without torrent management.",
   Host: "qBittorrent WebUI host or IP address.",
   Port: "qBittorrent WebUI port.",
   UserName: "qBittorrent WebUI username.",
   Password:
     "qBittorrent WebUI password. Remove this if authentication is bypassed for the host.",
-  DownloadPath:
-    "Override the download folder path used for free space monitoring. Leave blank to use qBittorrent's configured default.",
 
   "ARR.Managed":
     "Toggle whether this Servarr instance is actively managed by Torrentarr.",
-  "ARR.SearchOnly":
-    "Only perform searches; do not process imports. Mutually exclusive with Processing Only.",
-  "ARR.ProcessingOnly":
-    "Only process imports; do not perform searches. Mutually exclusive with Search Only.",
   "ARR.URI":
     "Servarr URL, including protocol and port if needed (for example http://localhost:8989).",
   "ARR.APIKey": "Servarr API key from Settings > General > Security.",
-  "ARR.SkipTLSVerify":
-    "When true, do not verify TLS for this Servarr API (HTTPS). Does not affect Overseerr/Ombi. Disables MITM protection for that connection.",
   "ARR.Category":
     "qBittorrent category applied by the Servarr instance to its downloads.",
   "ARR.ReSearch":
     "Re-run searches for failed torrents that Torrentarr removes.",
-  "ARR.ImportMode":
-    "Preferred import mode (Move, Copy, or Auto) when Servarr grabs completed files.",
   "ARR.importMode":
     "Preferred import mode (Move, Copy, or Auto) when Servarr grabs completed files.",
   "ARR.RssSyncTimer":
@@ -164,12 +167,12 @@ export const FIELD_TOOLTIPS: Record<string, string> = {
   "Torrent.IgnoreTorrentsYoungerThan":
     "Ignore torrents younger than this many seconds for failure handling.",
   "Torrent.MaximumETA":
-    "Maximum allowed remaining ETA in seconds; values above this are considered stalled.",
+    "Maximum allowed remaining ETA (-1 = no limit from this source). A positive tracker value overrides; tracker -1 does not clear this limit.",
   "Torrent.MaximumDeletablePercentage":
     "Upper bound for completion percentage when deciding to delete a torrent.",
   "Torrent.DoNotRemoveSlow": "Ignore slow torrents when pruning.",
   "Torrent.StalledDelay":
-    "Minutes to allow stalled torrents before taking action (-1 is infinite grace, 0 is immediate cleanup).",
+    "Minutes to allow stalled torrents before taking action (-1 disables, 0 is infinite).",
   "Torrent.ReSearchStalled":
     "Re-run searches for stalled torrents before or after removal depending on configuration.",
   "Torrent.RemoveDeadTrackers": "Remove trackers flagged as dead.",
@@ -181,13 +184,13 @@ export const FIELD_TOOLTIPS: Record<string, string> = {
   "Torrent.SeedingMode.UploadRateLimitPerTorrent":
     "Per-torrent upload rate limit in bytes per second (-1 disables the limit).",
   "Torrent.SeedingMode.MaxUploadRatio":
-    "Maximum allowed upload ratio (-1 disables the limit).",
+    "Maximum allowed upload ratio (-1 = no limit from this source). A positive tracker value overrides; tracker -1 does not clear this limit.",
   "Torrent.SeedingMode.MaxSeedingTime":
-    "Maximum seeding duration in seconds (-1 disables the limit).",
+    'Maximum seeding duration (-1 = no limit from this source; accepts values like "2w"). A positive tracker value overrides; tracker -1 does not clear this limit.',
   "Torrent.SeedingMode.RemoveTorrent":
     "Removal policy: -1 do not remove, 1 remove on ratio, 2 remove on time, 3 remove on ratio or time, 4 remove on ratio and time.",
   "CategorySeeding.HitAndRunMode":
-    "Hit and Run protection mode: 'and' requires both ratio and time, 'or' clears on either, 'disabled' turns off HnR.",
+    "Hit and Run mode: and = require both ratio and time to clear; or = either clears; disabled = no HnR.",
   "CategorySeeding.MinSeedRatio":
     "Minimum seed ratio before removal allowed for managed categories (HnR protection).",
   "CategorySeeding.MinSeedingTimeDays":
@@ -199,11 +202,11 @@ export const FIELD_TOOLTIPS: Record<string, string> = {
   "CategorySeeding.TrackerUpdateBuffer":
     "Extra seconds buffer for tracker stats lag in managed categories.",
   "CategorySeeding.StalledDelay":
-    "Minutes to allow stalled torrents in managed categories before taking action (-1 is infinite grace, 0 is immediate cleanup).",
+    "Minutes to allow stalled downloads before removal for qBit-managed categories (-1 = disabled, 0 = infinite).",
   "CategorySeeding.IgnoreTorrentsYoungerThan":
-    "Ignore torrents younger than this many seconds in managed categories when evaluating failures.",
+    "Ignore torrents younger than this many seconds for stalled removal; last_activity must also be older than this.",
   HitAndRunMode:
-    "Hit and Run protection mode for this tracker: 'and' requires both ratio and time, 'or' clears on either, 'disabled' turns off HnR.",
+    "Hit and Run mode: and = require both ratio and time; or = either clears; disabled = no HnR.",
   MinSeedRatio:
     "Minimum seed ratio before HnR obligation is cleared (e.g. 1.0 for 1:1 ratio).",
   MinSeedingTimeDays:
@@ -215,7 +218,7 @@ export const FIELD_TOOLTIPS: Record<string, string> = {
   TrackerUpdateBuffer:
     "Extra seconds to wait after meeting HnR criteria. Accounts for tracker stats lag (~30 min behind client).",
   SortTorrents:
-    "When enabled, torrents for this tracker are included in qBittorrent's download queue ordering by tracker priority and announce order (where global policy allows). Requires qBittorrent's torrent queue to be in use for ordering to take effect.",
+    "When enabled (on any tracker), Torrentarr reorders torrents in the qBittorrent queue by tracker priority (highest first). Requires qBittorrent Torrent Queuing to be enabled.",
 };
 
 export function getTooltip(path: string[]): string | undefined {

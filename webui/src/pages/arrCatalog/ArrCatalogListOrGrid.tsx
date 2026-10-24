@@ -1,6 +1,6 @@
 import type { JSX, ReactNode, RefCallback } from "react";
 import React from "react";
-import type { LegacyColumnDef } from "@tanstack/react-table/legacy";
+import type { AppColumnDef } from "../../tableCore";
 import { StableTable } from "../../components/StableTable";
 import type { Hashable } from "../../utils/dataSync";
 import type { RowsStore } from "../../utils/rowsStore";
@@ -75,7 +75,7 @@ interface ArrCatalogListOrGridProps<TRow extends Hashable> {
   readonly rows: ReadonlyArray<TRow>;
   readonly rowOrder: ReadonlyArray<string>;
   readonly rowsStore: RowsStore<TRow>;
-  readonly columns: LegacyColumnDef<TRow, unknown>[];
+  readonly columns: AppColumnDef<TRow, unknown>[];
   readonly getRowKey: (row: TRow) => string;
   readonly onRowSelect: (row: TRow) => void;
   readonly iconGridRef: RefCallback<HTMLElement | null>;
@@ -94,21 +94,21 @@ export function ArrCatalogListOrGrid<TRow extends Hashable>({
   iconGridRef,
   renderIconTile,
 }: ArrCatalogListOrGridProps<TRow>): JSX.Element | null {
-  void rowOrder;
-  void rowsStore;
   if (!rows.length) {
     return null;
   }
   if (browseMode === "list") {
     const StoreTable = StableTable as React.ComponentType<{
-      data: TRow[];
-      columns: LegacyColumnDef<TRow, unknown>[];
+      rowsStore: RowsStore<TRow>;
+      rowOrder: readonly string[];
+      columns: AppColumnDef<TRow, unknown>[];
       getRowKey: (row: TRow) => string;
       onRowClick: (row: TRow) => void;
     }>;
     return (
       <StoreTable
-        data={[...rows]}
+        rowsStore={rowsStore}
+        rowOrder={rowOrder}
         columns={columns}
         getRowKey={getRowKey}
         onRowClick={onRowSelect}
@@ -117,11 +117,7 @@ export function ArrCatalogListOrGrid<TRow extends Hashable>({
   }
   return (
     <div className="arr-icon-grid" ref={iconGridRef}>
-      {rows.map((row) => (
-        <React.Fragment key={getRowKey(row)}>
-          {renderIconTile(row)}
-        </React.Fragment>
-      ))}
+      {rows.map((row) => renderIconTile(row))}
     </div>
   );
 }

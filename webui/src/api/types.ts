@@ -1,6 +1,17 @@
 export type ArrType = "radarr" | "sonarr" | "lidarr" | string;
 
+export interface WorkerLoopProgress {
+  phase: string;
+  startedAt: string;
+  wakeAt?: string | null;
+  lastSuccess?: string | null;
+}
+
 export interface ProcessInfo {
+  torrent?: WorkerLoopProgress | null;
+  search?: WorkerLoopProgress | null;
+  freeSpacePaused?: number;
+  restartable?: boolean;
   category: string;
   name: string;
   kind: string;
@@ -96,23 +107,54 @@ export interface LogSearchResponse {
   files_searched: string[];
 }
 
-export interface QbitOverviewTorrent {
+export interface QbitTorrentOverview {
   hash: string;
   name: string;
-  size: number;
-  progress: number;
-  state: string;
   category: string;
+  tags: string[];
+  state: string;
+  progress: number;
+  priority: number;
+  eta: number;
+  availability: number;
+  size: number;
+  totalSize: number;
+  downloaded: number;
+  uploaded: number;
+  amountLeft: number;
+  ratio: number;
+  dlspeed: number;
+  upspeed: number;
+  numSeeds: number;
+  numLeechs: number;
+  numComplete: number;
+  numIncomplete: number;
+  addedOn: number;
+  completionOn: number;
+  seedingTime: number;
+  timeActive: number;
+  lastActivity: number;
+  ratioLimit: number;
+  seedingTimeLimit: number;
+  dlLimit: number;
+  upLimit: number;
 }
 
 export interface QbitOverviewCategory {
   category: string;
-  instance: string;
-  managedBy: string;
+  qbitInstance: string;
+  instance?: string;
+  managedBy: "qbit" | "arr";
+  arrName: string | null;
   torrentCount: number;
   seedingCount: number;
-  truncated: boolean;
-  torrents: QbitOverviewTorrent[];
+  totalSize: number;
+  avgRatio: number;
+  avgSeedingTime: number;
+  seedingConfig: QbitCategorySeedingConfig | null;
+  torrents: QbitTorrentOverview[];
+  /** True when the server capped the torrent list for this category. */
+  torrentsTruncated?: boolean;
 }
 
 export interface QbitOverviewResponse {
@@ -120,6 +162,8 @@ export interface QbitOverviewResponse {
   categories: QbitOverviewCategory[];
   ready: boolean;
 }
+
+export type QbitOverviewTorrent = QbitTorrentOverview;
 
 export interface ConfigSchemaField {
   section: string;
@@ -142,6 +186,7 @@ export interface ConfigSchemaField {
   minimum?: number;
   maximum?: number;
   arrKinds?: string[];
+  itemFields?: ConfigSchemaField[];
 }
 
 export interface ConfigSchemaResponse {
@@ -248,8 +293,9 @@ export interface LidarrCounts {
 }
 
 export interface LidarrTrack {
+  reason?: string | null;
   id?: number;
-  trackNumber?: number;
+  trackNumber?: number | string;
   title?: string;
   duration?: number;
   hasFile?: boolean;
@@ -432,6 +478,8 @@ export interface UpdateState {
 }
 
 export interface MetaResponse {
+  update_channel?: "latest" | "stable" | "nightly";
+  auto_update_supported?: boolean;
   current_version: string;
   latest_version: string | null;
   update_available: boolean;
@@ -443,7 +491,13 @@ export interface MetaResponse {
   last_checked: string | null;
   error?: string | null;
   update_state: UpdateState;
-  installation_type: "docker" | "dotnet" | "binary" | "git" | "unknown";
+  installation_type:
+    | "docker"
+    | "dotnet"
+    | "binary"
+    | "git"
+    | "source"
+    | "unknown";
   binary_download_url: string | null;
   binary_download_name: string | null;
   binary_download_size: number | null;
@@ -461,10 +515,12 @@ export interface MetaResponse {
 }
 
 export interface ConfigUpdateResponse {
+  application?: ConfigurationApplicationStatus;
   warning?: string | null;
   status: string;
   configReloaded: boolean;
   reloadType:
+    | "live"
     | "none"
     | "frontend"
     | "webui"
@@ -493,10 +549,10 @@ export type MaintenanceOperation =
   | "PrivateTagging"
   | "TrackerErrorTagging"
   | "RepairPaused"
-  | "SharePolicy"
   | "RecycleRetention";
 
 export interface MaintenanceAction {
+  operation: MaintenanceOperation;
   id: string;
   kind: string;
   clientInstanceId: string;
@@ -510,6 +566,35 @@ export interface MaintenanceAction {
   requiredCapabilities: string[];
 }
 
+export interface MaintenanceDiagnostic {
+  code: string;
+  severity: "warning" | "error";
+  clientInstanceId: string;
+  operations: (MaintenanceOperation | number)[];
+  message: string;
+  remediation: string;
+  affectedFiles: number;
+  affectedTorrents: number;
+  examples: {
+    torrentHash?: string;
+    torrentName?: string;
+    clientPath?: string;
+    localPath?: string;
+  }[];
+}
+
+export interface MaintenanceOperationResult {
+  clientInstanceId: string;
+  operation: MaintenanceOperation | number;
+  state: "ready" | "partial" | "blocked" | "disabled";
+  examined: number;
+  excluded: number;
+  uninspectable: number;
+  actionable: number;
+  blockedActions: number;
+  reason?: string;
+}
+
 export interface MaintenancePlan {
   planId: string;
   expiresAt: string;
@@ -519,12 +604,18 @@ export interface MaintenancePlan {
   actions: MaintenanceAction[];
   warnings: string[];
   criticalErrors: string[];
+  diagnostics: MaintenanceDiagnostic[];
+  operationResults: MaintenanceOperationResult[];
   candidateCount: number;
   blockedCount: number;
   candidateBytes: number;
 }
 
 export interface MaintenanceRunSummary {
+  blocked: number;
+  pending: number;
+  operationResults: MaintenanceOperationResult[];
+  diagnostics: MaintenanceDiagnostic[];
   runId: string;
   startedAt: string;
   completedAt?: string;
@@ -544,5 +635,46 @@ export interface MaintenanceStatus {
   currentRun?: MaintenanceRunSummary;
   lastRun?: MaintenanceRunSummary;
   armed: Record<string, boolean>;
+  armedOperations: Record<string, MaintenanceOperation[]>;
   nextScheduledRun: Record<string, string | null>;
+}
+
+export interface LogTailPayload {
+  start_bytes?: number;
+  start_inode?: number;
+  start_line?: number;
+  content: string;
+  next_bytes: number;
+  size: number;
+  inode: number;
+  rotated: boolean;
+  truncated: boolean;
+}
+
+export type ReadarrBookEntry = {
+  book: ReadarrBook;
+  totals?: { available: number; monitored: number; missing?: number };
+};
+
+export interface ConfigurationApplicationStatus {
+  acceptedRevision: number;
+  state: "applied" | "pending" | "error";
+  components: Record<
+    string,
+    { appliedRevision: number; error?: string | null }
+  >;
+  error?: string | null;
+}
+
+export interface LiveConfigurationEvent {
+  application: ConfigurationApplicationStatus;
+  webui: {
+    host: string;
+    port: number;
+    urlBase: string;
+    behindHttpsProxy: boolean;
+    theme: string;
+    viewDensity: string;
+    liveArr: boolean;
+  };
 }

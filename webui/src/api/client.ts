@@ -1,4 +1,4 @@
-import { setUrlBaseFromMeta, webPath } from "./urlBase";
+import { clearUrlBaseCache, setUrlBaseFromMeta, webPath } from "./urlBase";
 import type {
   ArrListResponse,
   ConfigDocument,
@@ -22,6 +22,7 @@ import type {
   StatusResponse,
   TorrentDistribution,
   LogSearchResponse,
+  LogTailPayload,
   QbitOverviewResponse,
   ConfigSchemaResponse,
   TorrentClientInfo,
@@ -32,13 +33,165 @@ import type {
 } from "./types";
 
 export type { LogFileInfo };
+export class AuthError extends Error {
+  code?: string;
+  constructor(message: string, code?: string) {
+    super(message);
+    this.name = "AuthError";
+    this.code = code;
+  }
+}
+
+/** API field validation error from config save (path is dotted, e.g. Lidarr.URI). */
+export interface ConfigApiValidationError {
+  path: string;
+  message: string;
+}
+
+/** Thrown when config update fails validation; preserves per-field errors for UI. */
+export class ConfigApiError extends Error {
+  validationErrors: ConfigApiValidationError[];
+
+  constructor(
+    message: string,
+    validationErrors: ConfigApiValidationError[] = [],
+  ) {
+    super(message);
+    this.name = "ConfigApiError";
+    this.validationErrors = validationErrors;
+  }
+}
+
+function parseConfigApiValidationErrors(
+  detail: unknown,
+): ConfigApiValidationError[] {
+  if (!detail || typeof detail !== "object") {
+    return [];
+  }
+  const raw = (detail as Record<string, unknown>).validationErrors;
+  if (!Array.isArray(raw)) {
+    return [];
+  }
+  const errors: ConfigApiValidationError[] = [];
+  for (const item of raw) {
+    if (!item || typeof item !== "object") {
+      continue;
+    }
+    const path = (item as Record<string, unknown>).path;
+    const message = (item as Record<string, unknown>).message;
+    if (
+      typeof path === "string" &&
+      path.trim() &&
+      typeof message === "string" &&
+      message.trim()
+    ) {
+      errors.push({ path: path.trim(), message: message.trim() });
+    }
+  }
+  return errors;
+}
+
+function formatConfigApiValidationErrors(
+  errors: ConfigApiValidationError[],
+): string {
+  const formatted = errors
+    .map((error) => `${error.path}: ${error.message}`)
+    .join("\n");
+  return errors.length === 1
+    ? formatted
+    : `Please resolve the following issues:\n${formatted}`;
+}
 
 const JSON_HEADERS = { "Content-Type": "application/json" } as const;
 const TOKEN_STORAGE_KEYS = ["token", "webui-token", "webui_token"] as const;
 const MAX_AUTH_RETRIES = 1;
+let transientToken: string | null = null;
 
 // Request deduplication cache
 const inflightRequests = new Map<string, Promise<unknown>>();
+
+/** Short-lived GET response cache (status/config/meta/processes). Arr catalogs use TTL 0. */
+interface TtlCacheEntry {
+  expiresAt: number;
+  value: unknown;
+}
+
+const ttlResponseCache = new Map<string, TtlCacheEntry>();
+
+const GET_TTL_MS: ReadonlyArray<{
+  match: (path: string) => boolean;
+  ttlMs: number;
+}> = [
+  { match: (path) => path.includes("/web/status"), ttlMs: 2_000 },
+  { match: (path) => path.includes("/web/config"), ttlMs: 30_000 },
+  {
+    match: (path) =>
+      path.includes("/web/meta") && !/[?&]force=1(?:&|$)/.test(path),
+    ttlMs: 60_000,
+  },
+  { match: (path) => path.includes("/web/processes"), ttlMs: 800 },
+];
+
+function extractRequestPath(input: RequestInfo | URL): string {
+  const raw = input instanceof Request ? input.url : String(input);
+  try {
+    if (raw.startsWith("http://") || raw.startsWith("https://")) {
+      const url = new URL(raw);
+      return `${url.pathname}${url.search}`;
+    }
+  } catch {
+    // fall through
+  }
+  return raw;
+}
+
+function resolveGetTtlMs(path: string): number {
+  // Arr catalog paged URLs keep their own caches — never TTL here.
+  if (
+    /\/web\/(?:radarr|sonarr|lidarr|readarr)\//.test(path) ||
+    /\/web\/arr\//.test(path)
+  ) {
+    return 0;
+  }
+  for (const rule of GET_TTL_MS) {
+    if (rule.match(path)) {
+      return rule.ttlMs;
+    }
+  }
+  return 0;
+}
+
+function readTtlCache<T>(key: string): T | undefined {
+  const entry = ttlResponseCache.get(key);
+  if (!entry) {
+    return undefined;
+  }
+  if (Date.now() > entry.expiresAt) {
+    ttlResponseCache.delete(key);
+    return undefined;
+  }
+  return entry.value as T;
+}
+
+function writeTtlCache(key: string, value: unknown, ttlMs: number): void {
+  if (ttlMs <= 0) {
+    return;
+  }
+  ttlResponseCache.set(key, { value, expiresAt: Date.now() + ttlMs });
+}
+
+/** Invalidate TTL entries whose request path matches any of the substrings. */
+export function invalidateGetCache(pathSubstrings: readonly string[]): void {
+  for (const key of inflightRequests.keys()) {
+    if (pathSubstrings.some((part) => key.includes(part)))
+      inflightRequests.delete(key);
+  }
+  for (const key of [...ttlResponseCache.keys()]) {
+    if (pathSubstrings.some((part) => key.includes(part))) {
+      ttlResponseCache.delete(key);
+    }
+  }
+}
 
 function createRequestKey(
   input: RequestInfo | URL,
@@ -52,44 +205,51 @@ function createRequestKey(
 
 function resolveToken(): string | null {
   for (const key of TOKEN_STORAGE_KEYS) {
-    const value = localStorage.getItem(key) || sessionStorage.getItem(key);
-    if (value) {
-      if (key !== "token") {
-        localStorage.setItem("token", value);
+    for (const name of ["localStorage", "sessionStorage"] as const) {
+      try {
+        const value = window[name].getItem(key);
+        if (value) return value;
+      } catch {
+        /* Storage may be unavailable; cookie authentication still works. */
       }
-      return value;
     }
   }
   try {
-    const params = new URLSearchParams(window.location.search);
-    const fromQuery = params.get("token");
-    if (fromQuery) {
-      localStorage.setItem("token", fromQuery);
-      // Remove the token from the URL so it doesn't persist in browser history or logs
-      params.delete("token");
-      const newSearch = params.toString();
-      const newUrl =
-        window.location.pathname + (newSearch ? `?${newSearch}` : "");
-      history.replaceState(null, "", newUrl);
-      return fromQuery;
+    const url = new URL(window.location.href);
+    const token = url.searchParams.get("token");
+    if (token) {
+      transientToken = token;
+      try {
+        localStorage.setItem("token", token);
+      } catch {
+        /* Keep the token in memory for this session. */
+      }
+      url.searchParams.delete("token");
+      window.history.replaceState({}, "", url.toString());
+      return token;
     }
   } catch {
-    // ignore
+    /* Incomplete locations are also used by tests. */
   }
-  return null;
+  return transientToken;
 }
 
 function clearStoredToken(): void {
-  for (const key of TOKEN_STORAGE_KEYS) {
-    localStorage.removeItem(key);
-  }
-  try {
-    for (const key of TOKEN_STORAGE_KEYS) {
-      sessionStorage.removeItem(key);
+  transientToken = null;
+  for (const name of ["localStorage", "sessionStorage"] as const) {
+    try {
+      for (const key of TOKEN_STORAGE_KEYS) window[name].removeItem(key);
+    } catch {
+      /* Storage unavailable. */
     }
-  } catch {
-    // ignore session storage errors
   }
+}
+
+function resolveRequestInput(input: RequestInfo | URL): RequestInfo | URL {
+  if (typeof input === "string" && input.startsWith("/")) {
+    return webPath(input);
+  }
+  return input;
 }
 
 function buildInit(
@@ -105,16 +265,9 @@ function buildInit(
   }
   return {
     ...init,
-    credentials: "include",
     headers,
+    credentials: "include",
   };
-}
-
-function resolveRequestInput(input: RequestInfo | URL): RequestInfo | URL {
-  if (typeof input === "string" && input.startsWith("/")) {
-    return webPath(input);
-  }
-  return input;
 }
 
 async function fetchWithAuthRetry<T>(
@@ -139,22 +292,36 @@ async function fetchJson<T>(
   input: RequestInfo | URL,
   init?: RequestInit,
 ): Promise<T> {
-  // Only deduplicate GET requests (safe to share). Skip when a caller-provided
-  // AbortSignal is present so the request is not shared with a later abort.
+  // Only deduplicate GET requests (safe to share)
   const method = init?.method || "GET";
-  if (method === "GET" && !init?.signal) {
+  if (method === "GET") {
     const key = createRequestKey(input, init);
-    const existingRequest = inflightRequests.get(key) as Promise<T> | undefined;
+    const path = extractRequestPath(input);
+    const ttlMs = resolveGetTtlMs(path);
 
+    if (ttlMs > 0) {
+      const cached = readTtlCache<T>(key);
+      if (cached !== undefined) {
+        return cached;
+      }
+    }
+
+    const existingRequest = inflightRequests.get(key) as Promise<T> | undefined;
     if (existingRequest) {
       return existingRequest;
     }
 
     const promise = fetchWithAuthRetry<T>(input, init, (response) =>
       handleJson<T>(response),
-    ).finally(() => {
-      inflightRequests.delete(key);
-    });
+    )
+      .then((value) => {
+        if (inflightRequests.get(key) === promise)
+          writeTtlCache(key, value, ttlMs);
+        return value;
+      })
+      .finally(() => {
+        if (inflightRequests.get(key) === promise) inflightRequests.delete(key);
+      });
 
     inflightRequests.set(key, promise);
     return promise;
@@ -194,6 +361,13 @@ async function handleJson<T>(res: Response): Promise<T> {
         message = errorText;
       }
     }
+    const validationErrors = parseConfigApiValidationErrors(detail);
+    if (validationErrors.length) {
+      throw new ConfigApiError(
+        formatConfigApiValidationErrors(validationErrors),
+        validationErrors,
+      );
+    }
     throw new Error(message);
   }
   return (await res.json()) as T;
@@ -229,9 +403,25 @@ export async function getQbitOverview(
   const params = new URLSearchParams();
   if (instance) params.set("instance", instance);
   const query = params.toString();
-  return fetchJson<QbitOverviewResponse>(
+  const data = await fetchJson<QbitOverviewResponse>(
     `/web/qbit/overview${query ? `?${query}` : ""}`,
   );
+  return {
+    ...data,
+    categories: data.categories.map((cat) => ({
+      ...cat,
+      qbitInstance: cat.qbitInstance ?? cat.instance ?? "",
+      torrents: cat.torrents.map((t) => ({
+        ...t,
+        tags: Array.isArray(t.tags)
+          ? t.tags
+          : String(t.tags ?? "")
+              .split(",")
+              .map((tag) => tag.trim())
+              .filter(Boolean),
+      })),
+    })),
+  };
 }
 
 export async function getConfigSchema(): Promise<ConfigSchemaResponse> {
@@ -281,8 +471,27 @@ export function getLogDownloadUrl(name: string): string {
   return webPath(`/web/logs/${encodeURIComponent(name)}/download`);
 }
 
-export function getLogStreamUrl(name: string): string {
-  return webPath(`/web/logs/${encodeURIComponent(name)}/stream`);
+export function getLogStreamUrl(
+  name: string,
+  sinceBytes?: number,
+  inode?: number,
+  lines?: number,
+): string {
+  if (sinceBytes == null)
+    return webPath(`/web/logs/${encodeURIComponent(name)}/stream`);
+  const params = new URLSearchParams({
+    since_bytes: String(sinceBytes),
+    format: "json",
+  });
+  if (inode != null && inode > 0) {
+    params.set("inode", String(inode));
+  }
+  if (lines != null && lines > 0) {
+    params.set("lines", String(lines));
+  }
+  return webPath(
+    `/web/logs/${encodeURIComponent(name)}/stream?${params.toString()}`,
+  );
 }
 
 export async function searchLogs(
@@ -343,7 +552,7 @@ export async function getSonarrSeries(
   params.set("page_size", String(pageSize));
   if (q) params.set("q", q);
   if (options?.missingOnly) {
-    params.set("missing", "1");
+    params.set("missing", "true");
   }
   if (options?.reasonFilter) params.set("reason", options.reasonFilter);
   return fetchJson<SonarrSeriesResponse>(
@@ -406,6 +615,7 @@ export async function getReadarrAuthors(
   page: number,
   pageSize: number,
   query?: string,
+  filters?: { missing?: boolean; reason?: string; monitored?: boolean },
 ): Promise<ReadarrAuthorsResponse> {
   const params = new URLSearchParams();
   params.set("page", page.toString());
@@ -413,6 +623,10 @@ export async function getReadarrAuthors(
   if (query) {
     params.set("q", query);
   }
+  if (filters?.missing) params.set("missing", "true");
+  if (filters?.reason) params.set("reason", filters.reason);
+  if (filters?.monitored != null)
+    params.set("monitored", String(filters.monitored));
   return fetchJson<ReadarrAuthorsResponse>(
     `/web/readarr/${encodeURIComponent(category)}/authors?${params}`,
   );
@@ -470,10 +684,14 @@ export async function getConfig(): Promise<ConfigDocument> {
     // Response has warning structure - store warning for display
     const warningResponse = response as ConfigResponseWithWarning;
     if (warningResponse.warning?.message) {
-      sessionStorage.setItem(
-        "config_version_warning",
-        warningResponse.warning.message,
-      );
+      try {
+        sessionStorage.setItem(
+          "config_version_warning",
+          warningResponse.warning.message,
+        );
+      } catch {
+        /* The configuration is still usable without a persisted warning. */
+      }
     }
     // Return the actual config (always present in warning structure)
     return warningResponse.config;
@@ -486,52 +704,32 @@ export async function getConfig(): Promise<ConfigDocument> {
 export async function updateConfig(
   payload: ConfigUpdatePayload,
 ): Promise<ConfigUpdateResponse> {
-  const token = resolveToken();
-  const response = await fetch(
-    "/web/config",
-    buildInit(
-      {
-        method: "POST",
-        body: JSON.stringify(payload),
-      },
-      token,
-    ),
-  );
-
-  if (!response.ok) {
-    let detail: unknown = null;
-    try {
-      detail = await response.json();
-    } catch {
-      // ignore
-    }
-    let message = `${response.status} ${response.statusText}`;
-    if (
-      detail &&
-      typeof detail === "object" &&
-      "error" in detail &&
-      typeof (detail as Record<string, unknown>).error === "string"
-    ) {
-      const errorText = (detail as Record<string, unknown>).error as string;
-      if (errorText.trim()) {
-        message = errorText;
-      }
-    }
-    throw new Error(message);
-  }
-
-  // Parse response body with full type information
-  const data = (await response.json()) as ConfigUpdateResponse;
-  return data;
+  const result = await fetchJson<ConfigUpdateResponse>("/web/config", {
+    method: "POST",
+    body: JSON.stringify(payload),
+  });
+  if (result.application)
+    window.dispatchEvent(
+      new CustomEvent("torrentarr:configuration", {
+        detail: result.application,
+      }),
+    );
+  invalidateGetCache(["/web/config", "/web/meta", "/web/status"]);
+  window.dispatchEvent(new Event("torrentarr:config-saved"));
+  return result;
 }
 
 export async function triggerUpdate(): Promise<void> {
-  await fetchJson<void>("/web/update", { method: "POST" });
+  const result = await fetchJson<{ success: boolean; message: string }>(
+    "/web/update",
+    { method: "POST" },
+  );
+  if (!result.success) throw new Error(result.message);
 }
 
 export interface TestConnectionRequest {
   arrType: "radarr" | "sonarr" | "lidarr" | "readarr";
-  /** When present, backend uses stored config for this instance (e.g. when API key is redacted). */
+  /** Resolve the stored secret; explicit URI and TLS settings still take precedence. */
   instanceKey?: string;
   uri?: string;
   apiKey?: string;
@@ -572,7 +770,7 @@ export async function setPassword(
 ): Promise<{ success: boolean }> {
   const token = resolveToken();
   const response = await fetch(
-    "/web/auth/set-password",
+    webPath("/web/auth/set-password"),
     buildInit(
       {
         method: "POST",
@@ -594,19 +792,10 @@ export interface LoginRequest {
 }
 
 /** Error thrown by `login()`. Preserves the `code` field from the server response (e.g. "SETUP_REQUIRED"). */
-export class AuthError extends Error {
-  readonly code?: string;
-  constructor(message: string, code?: string) {
-    super(message);
-    this.name = "AuthError";
-    this.code = code;
-  }
-}
-
 export async function login(
   request: LoginRequest,
 ): Promise<{ success: boolean }> {
-  const response = await fetch("/web/login", {
+  const response = await fetch(webPath("/web/login"), {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     credentials: "include",
@@ -622,7 +811,7 @@ export async function login(
 /** Navigate to /web/logout to sign out the session cookie; server redirects to /login. Clears stored API token. */
 export function logout(): void {
   clearStoredToken();
-  window.location.href = "/web/logout";
+  window.location.href = webPath("/web/logout");
 }
 
 export async function getTorrentsDistribution(): Promise<TorrentDistribution> {
@@ -683,9 +872,119 @@ export const armMaintenance = (
 export const maintenanceCommand = (
   command: "disarm" | "run" | "cancel",
   clientInstanceIds: string[] = [],
+  operations: MaintenanceOperation[] = [],
 ): Promise<MaintenanceStatus | MaintenanceRunSummary> =>
   fetchJson(`/web/maintenance/${command}`, {
     method: "POST",
     headers: JSON_HEADERS,
-    body: JSON.stringify({ clientInstanceIds }),
+    body: JSON.stringify({ clientInstanceIds, operations }),
   });
+
+export function getReadarrOpenAuthorUrl(
+  category: string,
+  authorId: number,
+): string {
+  return webPath(
+    `/web/arr/${encodeURIComponent(category)}/open/author/${authorId}`,
+  );
+}
+
+export interface GetLogTailJsonOptions {
+  beforeBytes?: number;
+  lines?: number;
+  offset?: number;
+  sinceBytes?: number;
+  inode?: number;
+  aroundLine?: number;
+}
+
+/** Fetch log content as JSON (initial tail, older window, or byte-offset delta). */
+export async function getLogTailJson(
+  name: string,
+  options: GetLogTailJsonOptions = {},
+): Promise<LogTailPayload> {
+  const base = `/web/logs/${encodeURIComponent(name)}`;
+  const params = new URLSearchParams({ format: "json" });
+  if (options.lines != null && options.lines > 0) {
+    params.set("lines", String(options.lines));
+  }
+  if (options.offset != null && options.offset > 0) {
+    params.set("offset", String(options.offset));
+  }
+  if (options.beforeBytes != null)
+    params.set("before_bytes", String(options.beforeBytes));
+  if (options.sinceBytes != null) {
+    params.set("since_bytes", String(options.sinceBytes));
+  }
+  if (options.inode != null && options.inode > 0) {
+    params.set("inode", String(options.inode));
+  }
+  if (options.aroundLine != null && options.aroundLine > 0) {
+    params.set("around_line", String(options.aroundLine));
+  }
+  return fetchJson<LogTailPayload>(`${base}?${params.toString()}`);
+}
+
+/** Alias for delta polling. */
+export async function getLogDelta(
+  name: string,
+  sinceBytes: number,
+  inode?: number,
+  lines?: number,
+): Promise<LogTailPayload> {
+  return getLogTailJson(name, { sinceBytes, inode, lines });
+}
+
+export async function fetchWebToken(): Promise<string | null> {
+  try {
+    return (await getToken()).token || null;
+  } catch {
+    return null;
+  }
+}
+export async function refreshUrlBaseFromMeta(): Promise<MetaResponse> {
+  clearUrlBaseCache();
+  invalidateGetCache(["/web/meta"]);
+  return getMeta({ force: true });
+}
+export function getQbitOverviewPath(instance?: string): string {
+  return `/web/qbit/overview${instance ? `?instance=${encodeURIComponent(instance)}` : ""}`;
+}
+
+/** Uses the normal authentication path, including API tokens, for the live stream. */
+export async function watchConfiguration(
+  receive: (event: import("./types").LiveConfigurationEvent) => void,
+  signal: AbortSignal,
+): Promise<void> {
+  await fetchWithAuthRetry<void>(
+    "/web/config/events",
+    { signal },
+    async (response) => {
+      if (
+        !response.ok ||
+        !response.body ||
+        !response.headers.get("content-type")?.includes("text/event-stream")
+      )
+        throw new Error("Configuration stream unavailable");
+      const reader = response.body
+        .pipeThrough(new TextDecoderStream())
+        .getReader();
+      let pending = "";
+      try {
+        while (!signal.aborted) {
+          const { value, done } = await reader.read();
+          if (done) break;
+          pending += value;
+          let end: number;
+          while ((end = pending.indexOf("\n\n")) >= 0) {
+            const event = pending.slice(0, end);
+            pending = pending.slice(end + 2);
+            if (event.startsWith("data: ")) receive(JSON.parse(event.slice(6)));
+          }
+        }
+      } finally {
+        reader.releaseLock();
+      }
+    },
+  );
+}

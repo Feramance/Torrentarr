@@ -130,7 +130,7 @@ try
                         var directory = Path.GetDirectoryName(statusPath);
                         if (!string.IsNullOrEmpty(directory)) Directory.CreateDirectory(directory);
                         await File.WriteAllTextAsync(statusPath + ".tmp", System.Text.Json.JsonSerializer.Serialize(
-                            runtimeMetrics.Snapshot(instanceName, restartCoordinator.RestartRequested), WorkerHeartbeat.JsonOptions), monitorCts.Token);
+                            runtimeMetrics.Snapshot(runtimeMetrics.InstanceName ?? instanceName, restartCoordinator.RestartRequested), WorkerHeartbeat.JsonOptions), monitorCts.Token);
                         File.Move(statusPath + ".tmp", statusPath, true);
                     }
                     catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
@@ -147,6 +147,7 @@ try
     // Load configuration
     var configLoader = new ConfigurationLoader();
     TorrentarrConfig? config = null;
+    long startingRevision = 0;
 
     try
     {
@@ -155,7 +156,11 @@ try
             try
             {
                 using var startupRead = ConfigMutationGuard.EnterProcessing(configLoader.ConfigPath);
-                config = configLoader.Load();
+                var activePath = Path.Combine(basePath, "active-config.json");
+                var snapshot = File.Exists(activePath)
+                    ? Newtonsoft.Json.JsonConvert.DeserializeObject<ConfigurationSnapshot>(File.ReadAllText(activePath)) : null;
+                startingRevision = snapshot?.Revision ?? DateTimeOffset.UtcNow.ToUnixTimeMilliseconds();
+                config = statusPath != null && snapshot != null ? snapshot.Config : configLoader.Load();
                 break;
             }
             catch (ConfigurationBusyException) when (attempt < 39)
@@ -196,8 +201,13 @@ try
     builder.Services.AddSerilog();
     builder.Services.AddSingleton(config);
     builder.Services.AddSingleton(instanceConfig);
+    builder.Services.AddSingleton(levelSwitch);
+    builder.Services.AddSingleton<ConfigReloader>(sp => new ConfigReloader(
+        sp.GetRequiredService<ILogger<ConfigReloader>>(), config, new ConfigurationLoader(), worker: true));
+    builder.Services.AddSingleton<IConfigReloader>(sp => sp.GetRequiredService<ConfigReloader>());
+    builder.Services.AddHostedService(sp => sp.GetRequiredService<ConfigReloader>());
     builder.Services.AddSingleton(runtimeMetrics);
-    builder.Services.AddSingleton(new WorkerContext { InstanceName = instanceName });
+    builder.Services.AddSingleton(new WorkerContext { InstanceName = instanceName, StartingRevision = startingRevision });
 
     // Add database context - use same dbPath as defined at startup
     builder.Services.AddDbContext<TorrentarrDbContext>(options =>
@@ -233,6 +243,11 @@ try
     using var host = builder.Build();
 
     await ArrWorkerService.LoadSearchActivityAsync(host.Services, instanceName, runtimeMetrics, Log.Logger, monitorCts.Token);
+    var liveConfig = host.Services.GetRequiredService<IConfigReloader>();
+    liveConfig.ConfigReloaded += (_, args) =>
+    {
+        if (args.Success) levelSwitch.MinimumLevel = LiveConfigurationRuntime.ParseLevel(config.Settings.ConsoleLevel);
+    };
     var lifetime = host.Services.GetRequiredService<IHostApplicationLifetime>();
     using var stoppingRegistration = lifetime.ApplicationStopping.Register(monitorCts.Cancel);
     using var input = new StreamReader(Console.OpenStandardInput());
@@ -284,7 +299,18 @@ finally
 
 class WorkerContext
 {
-    public string InstanceName { get; set; } = "";
+    private string _name = "";
+    private readonly AsyncLocal<string?> _operationName = new();
+    public IConfigReloader? Reloader { get; set; }
+    public long StartingRevision { get; init; }
+    public string InstanceName { get => _operationName.Value ?? Reloader?.ResolveInstanceName(_name, StartingRevision) ?? _name; set => _name = value; }
+    public IDisposable BeginOperation()
+    {
+        var previous = _operationName.Value;
+        _operationName.Value = InstanceName;
+        return new NameScope(() => _operationName.Value = previous);
+    }
+    private sealed class NameScope(Action release) : IDisposable { public void Dispose() => release(); }
 }
 
 /// <summary>
@@ -294,7 +320,9 @@ class ArrWorkerService : BackgroundService
 {
     private readonly ILogger<ArrWorkerService> _logger;
     private readonly TorrentarrConfig _config;
-    private readonly ArrInstanceConfig _instanceConfig;
+    private ArrInstanceConfig _instanceConfig => _config.ArrInstances.GetValueOrDefault(_context.InstanceName) ?? new() { Managed = false };
+    private readonly IConfigReloader? _reloader;
+    private long _initializedRevision;
     private readonly WorkerContext _context;
     private readonly IServiceProvider _serviceProvider;
     private readonly QBittorrentConnectionManager _qbitManager;
@@ -333,8 +361,9 @@ class ArrWorkerService : BackgroundService
     {
         _logger = logger;
         _config = config;
-        _instanceConfig = instanceConfig;
+        _reloader = serviceProvider.GetService<IConfigReloader>();
         _context = context;
+        _context.Reloader = _reloader;
         _serviceProvider = serviceProvider;
         _qbitManager = qbitManager;
         _connectivityService = connectivityService;
@@ -370,6 +399,14 @@ class ArrWorkerService : BackgroundService
     {
         while (!cancellationToken.IsCancellationRequested)
         {
+            using var configuration = _config.BeginOperation();
+            using var identity = _context.BeginOperation();
+            _runtimeMetrics.InstanceName = _context.InstanceName;
+            if (!_instanceConfig.Managed || string.IsNullOrWhiteSpace(_instanceConfig.URI) || _instanceConfig.URI == "CHANGE_ME")
+            {
+                await SleepLoopAsync("Torrent", "Disabled", TimeSpan.FromSeconds(2), cancellationToken);
+                continue;
+            }
             var cycleStart = System.Diagnostics.Stopwatch.GetTimestamp();
             using var cycle = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
             cycle.CancelAfter(WorkerLoopProgress.CycleTimeout);
@@ -382,11 +419,18 @@ class ArrWorkerService : BackgroundService
                     continue;
                 }
                 using var processing = ConfigMutationGuard.EnterProcessing();
+                RequireCurrentConfiguration();
                 await _qbitManager.EnsureAllConnectedAsync(_config.GetAllTorrentClients(), cycle.Token);
-                if (!_initialized)
+                if (!_initialized || _initializedRevision != _config.Revision)
                 {
-                    await InitializeAsync(cycle.Token);
+                    _qbitSetupComplete = false;
+                    _serviceProvider.GetRequiredService<ITorrentCacheService>().Clear();
+                    _serviceProvider.GetRequiredService<IImportPathTracker>().Clear();
+                    _serviceProvider.GetRequiredService<StalledUploadTracker>().Clear();
+                    if (!_initialized) await InitializeAsync(cycle.Token);
+                    else _qbitSetupComplete = await EnsureQBitSetupAsync(cycle.Token);
                     _initialized = true;
+                    _initializedRevision = _config.Revision;
                 }
                 else if (!_qbitSetupComplete)
                 {
@@ -411,6 +455,7 @@ class ArrWorkerService : BackgroundService
                 _logger.LogError(ex, "Error processing torrents for {Instance}", _context.InstanceName);
                 HandleProcessingError();
             }
+            Interlocked.Exchange(ref _runtimeMetrics.TorrentRevision, _config.Revision);
             var remaining = GetLoopDelay(_config.Settings.LoopSleepTimer, System.Diagnostics.Stopwatch.GetElapsedTime(cycleStart));
             if (remaining > TimeSpan.Zero)
                 await SleepLoopAsync("Torrent", "Sleeping", remaining, cancellationToken);
@@ -421,6 +466,14 @@ class ArrWorkerService : BackgroundService
     {
         while (!cancellationToken.IsCancellationRequested)
         {
+            using var configuration = _config.BeginOperation();
+            using var identity = _context.BeginOperation();
+            _runtimeMetrics.InstanceName = _context.InstanceName;
+            if (!_instanceConfig.Managed || string.IsNullOrWhiteSpace(_instanceConfig.URI) || _instanceConfig.URI == "CHANGE_ME")
+            {
+                await SleepLoopAsync("Search", "Disabled", TimeSpan.FromSeconds(2), cancellationToken);
+                continue;
+            }
             var cycleStart = System.Diagnostics.Stopwatch.GetTimestamp();
             using var cycle = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
             cycle.CancelAfter(WorkerLoopProgress.CycleTimeout);
@@ -444,6 +497,7 @@ class ArrWorkerService : BackgroundService
                     continue;
                 }
                 using var processing = ConfigMutationGuard.EnterProcessing();
+                RequireCurrentConfiguration();
                 await ProcessSearchAsync(cycle.Token);
                 _consecutiveSearchErrors = 0;
                 _runtimeMetrics.Search = _runtimeMetrics.Search with { LastSuccess = DateTimeOffset.UtcNow };
@@ -456,10 +510,18 @@ class ArrWorkerService : BackgroundService
                 _logger.LogError(ex, "Error searching for {Instance}", _context.InstanceName);
                 HandleSearchError();
             }
+            Interlocked.Exchange(ref _runtimeMetrics.SearchRevision, _config.Revision);
             var remaining = GetLoopDelay(_config.Settings.LoopSleepTimer, System.Diagnostics.Stopwatch.GetElapsedTime(cycleStart));
             if (remaining > TimeSpan.Zero)
                 await SleepLoopAsync("Search", "Sleeping", remaining, cancellationToken);
         }
+    }
+
+    private void RequireCurrentConfiguration()
+    {
+        // A rename may have completed while this cycle was awaiting connectivity.
+        if (_reloader != null && (!_reloader.ReloadConfig() || _config.Revision != _config.LatestRevision))
+            throw new ConfigurationBusyException("Configuration changed before processing started.");
     }
 
     private async Task SleepLoopAsync(string loop, string phase, TimeSpan delay, CancellationToken ct)
@@ -467,7 +529,10 @@ class ArrWorkerService : BackgroundService
         var now = DateTimeOffset.UtcNow;
         if (loop == "Torrent") _runtimeMetrics.Torrent = new(phase, now, now + delay, _runtimeMetrics.Torrent.LastSuccess);
         else _runtimeMetrics.Search = new(phase, now, now + delay, _runtimeMetrics.Search.LastSuccess);
-        await Task.Delay(delay, ct);
+        if (loop == "Torrent") Interlocked.Exchange(ref _runtimeMetrics.TorrentRevision, _config.Revision);
+        else Interlocked.Exchange(ref _runtimeMetrics.SearchRevision, _config.Revision);
+        if (_reloader != null) await _reloader.WaitForChangeAsync(_config.Revision, delay, ct);
+        else await Task.Delay(delay, ct);
     }
 
     internal static TimeSpan GetLoopDelay(int seconds, TimeSpan elapsed) =>
@@ -832,6 +897,9 @@ class ArrWorkerService : BackgroundService
 
 sealed class WorkerRuntimeMetrics
 {
+    public string? InstanceName { get; set; }
+    public long TorrentRevision;
+    public long SearchRevision;
     private WorkerLoopProgress _torrent = new("Initializing", DateTimeOffset.UtcNow);
     private WorkerLoopProgress _search = new("Initializing", DateTimeOffset.UtcNow);
     public WorkerLoopProgress Torrent { get => Volatile.Read(ref _torrent); set => Volatile.Write(ref _torrent, value); }
@@ -842,6 +910,7 @@ sealed class WorkerRuntimeMetrics
         Pid = Environment.ProcessId,
         Heartbeat = DateTimeOffset.UtcNow,
         RestartRequested = restartRequested,
+        ConfigRevision = Math.Min(Interlocked.Read(ref TorrentRevision), Interlocked.Read(ref SearchRevision)),
         SearchSummary = SearchSummary,
         SearchTimestamp = SearchTimestamp,
         QueueCount = QueueCount,
