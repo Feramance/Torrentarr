@@ -828,11 +828,16 @@ app.MapPost("/web/config", async (HttpContext ctx, TorrentarrConfig config, Conf
 
         var liveValidation = reloader.Validate(updatedConfig);
         if (!liveValidation.Ok) return Results.BadRequest(new { error = liveValidation.Error });
-        await InstanceRenamePersistence.SaveAsync(config, updatedConfig, body?["renames"] as Newtonsoft.Json.Linq.JObject,
-            loader, db, reloader.ConfigPath);
-        if (!reloader.Apply(updatedConfig, (body?["renames"] as Newtonsoft.Json.Linq.JObject)?.Properties()
-            .ToDictionary(p => p.Name, p => p.Value.ToString())))
-            return Results.BadRequest(new { error = reloader.GetStatus().Error });
+        var renames = body?["renames"] as Newtonsoft.Json.Linq.JObject;
+        var applied = false;
+        await InstanceRenamePersistence.SaveAsync(config, updatedConfig, renames,
+            loader, db, reloader.ConfigPath, publish: () =>
+            {
+                applied = reloader.Apply(updatedConfig, renames?.Properties().ToDictionary(p => p.Name, p => p.Value.ToString()));
+                if (!applied && renames?.HasValues == true)
+                    throw new InvalidOperationException("Renamed configuration could not be published; recovery is required.");
+            });
+        if (!applied) return Results.BadRequest(new { error = reloader.GetStatus().Error });
         await registry.ReconcileAsync(config.GetAllTorrentClients(), connect: false);
     }
     catch (Exception ex)

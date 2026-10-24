@@ -419,6 +419,7 @@ class ArrWorkerService : BackgroundService
                     continue;
                 }
                 using var processing = ConfigMutationGuard.EnterProcessing();
+                RequireCurrentConfiguration();
                 await _qbitManager.EnsureAllConnectedAsync(_config.GetAllTorrentClients(), cycle.Token);
                 if (!_initialized || _initializedRevision != _config.Revision)
                 {
@@ -496,6 +497,7 @@ class ArrWorkerService : BackgroundService
                     continue;
                 }
                 using var processing = ConfigMutationGuard.EnterProcessing();
+                RequireCurrentConfiguration();
                 await ProcessSearchAsync(cycle.Token);
                 _consecutiveSearchErrors = 0;
                 _runtimeMetrics.Search = _runtimeMetrics.Search with { LastSuccess = DateTimeOffset.UtcNow };
@@ -513,6 +515,13 @@ class ArrWorkerService : BackgroundService
             if (remaining > TimeSpan.Zero)
                 await SleepLoopAsync("Search", "Sleeping", remaining, cancellationToken);
         }
+    }
+
+    private void RequireCurrentConfiguration()
+    {
+        // A rename may have completed while this cycle was awaiting connectivity.
+        if (_reloader != null && (!_reloader.ReloadConfig() || _config.Revision != _config.LatestRevision))
+            throw new ConfigurationBusyException("Configuration changed before processing started.");
     }
 
     private async Task SleepLoopAsync(string loop, string phase, TimeSpan delay, CancellationToken ct)

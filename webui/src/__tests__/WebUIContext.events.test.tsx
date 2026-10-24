@@ -176,3 +176,22 @@ it("cancels navigation when the provider unmounts", async () => {
   await act(async () => ready(new Response()));
   expect(replace).not.toHaveBeenCalled();
 });
+
+it("probes and navigates to an IPv6 listener", async () => {
+  await mount();
+  act(() =>
+    receive({
+      ...initial,
+      webui: { ...initial.webui, host: "::1", port: 6970 },
+    }),
+  );
+  await waitFor(() =>
+    expect(replace).toHaveBeenCalledExactlyOnceWith(
+      "http://[::1]:6970/old/ui?filter=active#logs",
+    ),
+  );
+  expect(fetch).toHaveBeenCalledWith(
+    new URL("http://[::1]:6970/old/health"),
+    expect.anything(),
+  );
+});

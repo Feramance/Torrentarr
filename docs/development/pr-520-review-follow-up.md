@@ -142,6 +142,17 @@ All checks on the merged-master baseline passed. The remaining Codex finding was
 
 Local validation: all 338 frontend tests across 49 files passed; lint has 0 errors and the same 13 existing warnings. The preceding worker fix passed all 1,573 non-live .NET tests (287 Core, 918 Infrastructure, 368 Host). Required hooks run at each commit.
 
+## Follow-up to review of `c8c9e6b`
+
+All CI checks passed on the preceding revision. Two further Codex findings were verified:
+
+| # | Finding | Disposition and evidence |
+| --- | --- | --- |
+| 60 | [Worker snapshots across Arr renames](https://github.com/Feramance/Torrentarr/pull/520#discussion_r4362852506) | Host and standalone publish the replacement snapshot while the rename barrier remains exclusive. Workers refresh their snapshot after acquiring a processing lease and discard a cycle pinned to an older revision. Tests suspend connectivity in both loops, publish a rename, and verify old-identity work is skipped. Publication-barrier tests cover success and failure; failed publication retains the recovery journal and blocks processing. |
+| 61 | [IPv6 navigation hostnames](https://github.com/Feramance/Torrentarr/pull/520#discussion_r4362852518) | Explicit IPv6 bind addresses are bracketed before assigning URL.hostname. Regression verifies both the readiness probe and document navigation use `[::1]`. Wildcard bind handling is unchanged. |
+
+Latest local validation: 1,577 non-live .NET tests passed (287 Core, 922 Infrastructure, 368 Host), plus the strengthened two-loop race assertion. All 339 frontend tests across 49 files passed; lint has 0 errors and the same 13 existing warnings. Release and production frontend builds passed.
+
 ## Deferred existing concerns
 
 Thumbnail redirect-origin hardening and atomic cache publication predate this branch and remain separate follow-ups. Live provider OIDC, real destructive maintenance/update operations, and Windows/macOS standalone execution require their appropriate environments. Existing Docker Compose bytes and staging are preserved.

@@ -195,6 +195,65 @@ public class ActiveWorkerSearchTests
         harness.Metrics.Snapshot("Radarr", false).ConfigRevision.Should().Be(42);
     }
 
+    [Theory]
+    [InlineData("Torrent")]
+    [InlineData("Search")]
+    public async Task RenameDuringConnectivity_DiscardsThePinnedCycle(string loop)
+    {
+        var reloader = new Mock<IConfigReloader>();
+        var instance = new ArrInstanceConfig { Managed = true, URI = "http://localhost", Category = "movies" };
+        using var harness = new Harness(instance, reloader: reloader.Object);
+        instance.URI = "http://localhost";
+        var config = harness.Provider.GetRequiredService<TorrentarrConfig>();
+        config.Settings.LoopSleepTimer = 0;
+        config.Apply(config, 42);
+        var renamed = new TorrentarrConfig { Settings = config.Settings };
+        renamed.ArrInstances["Radarr-renamed"] = instance;
+        var renamedSnapshotPublished = false;
+        reloader.Setup(r => r.ReloadConfig()).Returns(() =>
+        {
+            renamedSnapshotPublished.Should().BeTrue();
+            config.Apply(renamed, 43);
+            return true;
+        });
+        reloader.Setup(r => r.ResolveInstanceName("Radarr", 0))
+            .Returns(() => config.LatestRevision == 43 ? "Radarr-renamed" : "Radarr");
+        var connected = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var release = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        using var stop = new CancellationTokenSource(TimeSpan.FromSeconds(10));
+        var calls = 0;
+        var connectivity = new Mock<IConnectivityService>();
+        connectivity.Setup(c => c.IsConnectedAsync(It.IsAny<CancellationToken>())).Returns(async () =>
+        {
+            if (++calls == 2)
+            {
+                stop.Cancel();
+                throw new OperationCanceledException(stop.Token);
+            }
+            connected.SetResult();
+            await release.Task.WaitAsync(stop.Token);
+            return true;
+        });
+        using var worker = new ArrWorkerService(NullLogger<ArrWorkerService>.Instance, config, instance,
+            new WorkerContext { InstanceName = "Radarr" }, harness.Provider,
+            new QBittorrentConnectionManager(NullLogger<QBittorrentConnectionManager>.Instance),
+            connectivity.Object, new SearchYearCursor(), harness.Metrics);
+        const System.Reflection.BindingFlags flags = System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.NonPublic;
+        typeof(ArrWorkerService).GetField("_initialized", flags)!.SetValue(worker, true);
+        var running = (Task)typeof(ArrWorkerService).GetMethod($"Run{loop}LoopAsync", flags)!.Invoke(worker, [stop.Token])!;
+        await connected.Task.WaitAsync(stop.Token);
+        renamedSnapshotPublished = true;
+        release.SetResult();
+        await running;
+        reloader.Verify(r => r.ReloadConfig(), Times.Once);
+        harness.Metrics.InstanceName.Should().Be("Radarr-renamed");
+        typeof(ArrWorkerService).GetField(loop == "Torrent" ? "_consecutiveErrors" : "_consecutiveSearchErrors", flags)!
+            .GetValue(worker).Should().Be(0);
+        harness.Metrics.Torrent.LastSuccess.Should().BeNull();
+        harness.Metrics.Search.LastSuccess.Should().BeNull();
+        harness.Db.Movies.Should().BeEmpty();
+    }
+
     private sealed class Harness : IDisposable
     {
         public Mock<IArrMediaService> Media { get; } = new(MockBehavior.Strict);
@@ -202,7 +261,7 @@ public class ActiveWorkerSearchTests
         public ServiceProvider Provider { get; }
         public TorrentarrDbContext Db { get; }
         public ArrWorkerService Worker { get; }
-        public Harness(ArrInstanceConfig instance, bool sqlite = false, bool skipSync = true)
+        public Harness(ArrInstanceConfig instance, bool sqlite = false, bool skipSync = true, IConfigReloader? reloader = null)
         {
             var config = new TorrentarrConfig();
             config.ArrInstances["Radarr"] = instance;
@@ -215,6 +274,7 @@ public class ActiveWorkerSearchTests
             Db.Database.EnsureCreated();
             var services = new ServiceCollection();
             services.AddSingleton(config).AddSingleton(Db).AddSingleton(Media.Object);
+            if (reloader != null) services.AddSingleton(reloader);
             services.AddSingleton(Mock.Of<ITorrentProcessor>()).AddSingleton(Mock.Of<ITorrentCacheService>());
             services.AddSingleton(new DatabaseRestartCoordinator());
             services.AddSingleton(Microsoft.Extensions.Logging.Abstractions.NullLogger<ArrSyncService>.Instance as Microsoft.Extensions.Logging.ILogger<ArrSyncService>);

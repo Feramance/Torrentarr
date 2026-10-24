@@ -190,7 +190,9 @@ export function WebUIProvider({
               const target = new URL(window.location.href);
               if (listenerChanged || navigation) {
                 if (next.host !== "0.0.0.0" && next.host !== "::")
-                  target.hostname = next.host;
+                  target.hostname = next.host.includes(":")
+                    ? `[${next.host}]`
+                    : next.host;
                 target.port = String(next.port);
                 target.pathname = next.urlBase + "/ui";
               } else {
