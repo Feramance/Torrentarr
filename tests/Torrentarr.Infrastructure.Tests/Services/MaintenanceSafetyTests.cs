@@ -961,19 +961,114 @@ public sealed class MaintenanceSafetyTests : IDisposable
         using var automation = new TorrentAutomationService(_config, _registry.Object, _services.GetRequiredService<IServiceScopeFactory>(), NullLogger<TorrentAutomationService>.Instance);
         using var cancellation = new CancellationTokenSource(TimeSpan.FromSeconds(10));
         var inspection = Inspect(automation, cancellation.Token);
-        var decisions = (System.Collections.Concurrent.ConcurrentDictionary<string, ProtectionDecision>)typeof(TorrentAutomationService)
+        var decisions = (System.Collections.Concurrent.ConcurrentDictionary<string, List<ProtectionDecision>>)typeof(TorrentAutomationService)
             .GetField("_protection", System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance)!.GetValue(automation)!;
         try
         {
-            while (!decisions.Values.Any(d => d.TorrentHash == fast.Hash)) await Task.Delay(10, cancellation.Token);
+            while (!decisions.Values.SelectMany(d => d).Any(d => d.TorrentHash == fast.Hash)) await Task.Delay(10, cancellation.Token);
             inspection.IsCompleted.Should().BeFalse();
-            decisions.Values.Should().Contain(d => d.TorrentHash == fast.Hash && d.State == "protected");
+            decisions.Values.SelectMany(d => d).Should().Contain(d => d.TorrentHash == fast.Hash && d.State == "protected");
         }
         finally
         {
             await cancellation.CancelAsync();
             await FluentActions.Awaiting(() => inspection).Should().ThrowAsync<OperationCanceledException>();
         }
+    }
+
+    [Fact]
+    public async Task PausedRepair_CompletionReleasesClaimAndHealthyResetAllowsLaterRepair()
+    {
+        var torrent = AddTorrent(); torrent.State = "pausedDL"; torrent.Progress = 0.5;
+        ClientConfig.Maintenance.Repair.Enabled = true;
+        _client.Setup(c => c.RecheckTorrentsAsync(It.IsAny<List<string>>(), It.IsAny<CancellationToken>())).ReturnsAsync(true);
+        (await Apply(await Preview(MaintenanceOperation.RepairPaused))).Applied.Should().Be(1);
+        async Task ObserveAfterRestart()
+        {
+            using var automation = new TorrentAutomationService(_config, _registry.Object, _services.GetRequiredService<IServiceScopeFactory>(), NullLogger<TorrentAutomationService>.Instance);
+            await Inspect(automation, default);
+        }
+        torrent.State = "checkingDL";
+        await ObserveAfterRestart();
+        MaintenanceRecovery.Read(_db, torrent, "RepairPaused").Stage.Should().Be("checking");
+        torrent.State = "pausedDL";
+        await ObserveAfterRestart();
+        var state = MaintenanceRecovery.Read(_db, torrent, "RepairPaused");
+        state.Stage.Should().Be("checked"); state.CompletedAt.Should().NotBeNull();
+        var other = AddTorrent("other", "other.mkv"); other.State = "error";
+        (await MaintenanceRecovery.RequestAsync(_db, _client.Object, other, "ErrorRecovery", new(), default)).Should().BeTrue();
+        state.HealthySince = DateTimeOffset.UtcNow.AddMinutes(-ClientConfig.Maintenance.ErrorRecovery.HealthyResetMinutes - 1);
+        MaintenancePersistence.Write(_db, MaintenancePersistence.Key("one", torrent.Hash, "recovery:RepairPaused"), state);
+        await ObserveAfterRestart();
+        MaintenanceRecovery.Read(_db, torrent, "RepairPaused").Stage.Should().Be("new");
+    }
+
+    [Fact]
+    public async Task ProtectionInspection_RetainsAllPoliciesForTheSameTracker()
+    {
+        var torrent = AddTorrent(); torrent.IsPrivate = true; torrent.State = "uploading";
+        ClientConfig.Trackers = [new() { Uri = "https://tracker.example", Protection = new() { Policy = "onlyencodes" } }];
+        _config.ArrInstances["Radarr-Movies"] = new()
+        {
+            Category = "movies",
+            Torrent = new()
+            {
+                Trackers = [new()
+        {
+            Uri = "https://tracker.example", Protection = new() { Policy = "custom", MinimumSeedHours = 0, AdditionalSeedHours = 0, AccountingGraceMinutes = 0, AllowClientRatioClearance = true }
+        }]
+            }
+        };
+        _client.Setup(c => c.GetTorrentTrackersAsync(torrent.Hash, It.IsAny<CancellationToken>()))
+            .ReturnsAsync([new() { Url = "https://tracker.example/announce", Status = 2 }]);
+        using var automation = new TorrentAutomationService(_config, _registry.Object, _services.GetRequiredService<IServiceScopeFactory>(), NullLogger<TorrentAutomationService>.Instance);
+        await Inspect(automation, default);
+        var status = automation.GetStatus();
+        status.Protection.Should().HaveCount(2).And.Contain(d => d.State == "eligible").And.Contain(d => d.State == "protected" && d.DeadlineRisk != "none");
+        status.Inspections.Single().NextAttempt.Should().BeBefore(DateTimeOffset.UtcNow.AddMinutes(2));
+        var next = (System.Collections.Concurrent.ConcurrentDictionary<string, DateTimeOffset>)typeof(TorrentAutomationService)
+            .GetField("_nextInspection", System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance)!.GetValue(automation)!;
+        next.Clear();
+        await Inspect(automation, default);
+        automation.GetStatus().Protection.Should().HaveCount(2);
+        _client.Verify(c => c.GetTorrentTrackersAsync(torrent.Hash, It.IsAny<CancellationToken>()), Times.AtLeast(2));
+    }
+
+    private sealed class AdjustableTimeProvider : TimeProvider
+    {
+        public DateTimeOffset Now { get; set; } = DateTimeOffset.UtcNow;
+        public override DateTimeOffset GetUtcNow() => Now;
+    }
+
+    [Theory]
+    [InlineData("none")]
+    [InlineData("category")]
+    [InlineData("hnr")]
+    [InlineData("ignored")]
+    public async Task Recycling_OwnedPausePreservesIdleLimitButRevalidatesOtherChanges(string change)
+    {
+        var torrent = AddTorrent(); torrent.State = "stalledUP"; torrent.SeedingTime = 0;
+        ClientConfig.CategorySeeding = new() { RemoveTorrent = 2, MaxSeedingTime = 60, StalledDelay = 0 };
+        var time = new AdjustableTimeProvider();
+        var idle = new StalledUploadTracker(time);
+        var seeding = new SeedingService(NullLogger<SeedingService>.Instance, _db, _config, _registry.Object, idle);
+        using var services = new ServiceCollection().AddSingleton(_db).AddScoped<ISeedingService>(_ => seeding).BuildServiceProvider();
+        var deletion = new SafeDeletionService(_registry.Object, _inventory, new PathMappingService(), _config, NullLogger<SafeDeletionService>.Instance, services.GetRequiredService<IServiceScopeFactory>());
+        (await seeding.ShouldRemoveTorrentAsync(torrent)).Should().BeFalse();
+        time.Now = time.Now.AddMinutes(1);
+        (await seeding.ShouldRemoveTorrentAsync(torrent)).Should().BeTrue();
+        _client.Setup(c => c.PauseTorrentsAsync(It.IsAny<List<string>>(), It.IsAny<CancellationToken>())).ReturnsAsync(() =>
+        {
+            torrent.State = "pausedUP";
+            if (change == "category") torrent.Category = "changed";
+            if (change == "hnr") torrent.IsPrivate = true;
+            if (change == "ignored") torrent.Tags = "qBitrr-ignored";
+            return true;
+        });
+        var result = await deletion.RemoveMaintenanceTorrentAsync("one", torrent.Hash, true, await _inventory.BuildAsync());
+        result.Success.Should().Be(change == "none", result.Error);
+        File.Exists(Path.Combine(_root, "movie.mkv")).Should().Be(change != "none");
+        _client.Verify(c => c.DeleteTorrentsAsync(It.IsAny<List<string>>(), false, It.IsAny<CancellationToken>()), change == "none" ? Times.Once() : Times.Never());
     }
 
     [Fact]
