@@ -2403,12 +2403,18 @@ static async Task<IResult> SaveAndRespondConfigUpdate(
     if (!validation.Ok) return Results.BadRequest(new { error = validation.Error });
 
 
-    if (db != null)
-        await InstanceRenamePersistence.SaveAsync(cfg, updatedConfig, renames, loader, db, suspend: () => Task.CompletedTask);
-    else loader.SaveConfig(updatedConfig);
     var renameMap = renames?.Properties().ToDictionary(p => p.Name, p => p.Value.ToString());
-    var applied = reloader?.Apply(updatedConfig, renameMap) ?? false;
-    if (reloader == null) cfg.Apply(updatedConfig, cfg.Revision + 1);
+    var applied = false;
+    void Publish()
+    {
+        applied = reloader?.Apply(updatedConfig, renameMap) ?? false;
+        if (reloader == null) cfg.Apply(updatedConfig, cfg.Revision + 1);
+        else if (!applied && renames?.HasValues == true)
+            throw new InvalidOperationException("Renamed configuration could not be published; recovery is required.");
+    }
+    if (db != null)
+        await InstanceRenamePersistence.SaveAsync(cfg, updatedConfig, renames, loader, db, suspend: () => Task.CompletedTask, publish: Publish);
+    else { loader.SaveConfig(updatedConfig); Publish(); }
     services?.GetServices<IHostedService>().OfType<ProcessOrchestratorService>().FirstOrDefault()?.NotifyConfigurationChanged();
     var application = reloader?.GetStatus();
     var warning = applied ? null : application?.Error;

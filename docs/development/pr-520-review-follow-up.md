@@ -126,6 +126,39 @@ Linux and Windows completed the complete build/test and standalone-smoke matrix 
 
 Latest local validation: 335 frontend tests across 49 files; the full non-live .NET run passed 287 Core, 917 Infrastructure and 367 Host tests (1,571 total). The final standalone-only worker-tracking guard adds one Host regression and passed all 18 selected standalone/event endpoint tests. The production frontend build passed, and lint reported 0 errors with the same 13 existing warnings. The full frontend pass ran alone after a concurrent .NET/frontend attempt exceeded an existing Config test deadline; no deadlines changed. Remote validation and thread resolution follow publication.
 
+## Follow-up to review of `115ce4a`
+
+All checks on the merged-master baseline passed. The remaining Codex finding was verified:
+
+| # | Finding | Disposition and evidence |
+| --- | --- | --- |
+| 58 | [Busy worker revision acknowledgments](https://github.com/Feramance/Torrentarr/pull/520#discussion_r4359846544) | Both loops acknowledge their pinned configuration revision at the completed-cycle boundary, even when work leaves no sleep time. The regression runs both loops without sleep and publishes a newer revision during each cycle, verifying that the heartbeat acknowledges only the completed revision. It fails against the original loops and passes with the fix. |
+
+## Follow-up to review of `794505a`
+
+| # | Finding | Disposition and evidence |
+| --- | --- | --- |
+| 59 | [Listener readiness before browser navigation](https://github.com/Feramance/Torrentarr/pull/520#discussion_r4362628040) | Browsers probe the new listener without credentials before navigating, retrying refused or timed-out connections while retaining the running document. Superseded probes and unmounts abort navigation. Regressions cover delayed readiness, a second prefix change during rebinding, stale responses, and unmounting. Prefix-only changes remain immediate; proxy behavior is preserved. |
+
+Local validation: all 338 frontend tests across 49 files passed; lint has 0 errors and the same 13 existing warnings. The preceding worker fix passed all 1,573 non-live .NET tests (287 Core, 918 Infrastructure, 368 Host). Required hooks run at each commit.
+
+## Follow-up to review of `c8c9e6b`
+
+All CI checks passed on the preceding revision. Two further Codex findings were verified:
+
+| # | Finding | Disposition and evidence |
+| --- | --- | --- |
+| 60 | [Worker snapshots across Arr renames](https://github.com/Feramance/Torrentarr/pull/520#discussion_r4362852506) | Host and standalone publish the replacement snapshot while the rename barrier remains exclusive. Workers refresh their snapshot after acquiring a processing lease and discard a cycle pinned to an older revision. Tests suspend connectivity in both loops, publish a rename, and verify old-identity work is skipped. Publication-barrier tests cover success and failure; failed publication retains the recovery journal and blocks processing. |
+| 61 | [IPv6 navigation hostnames](https://github.com/Feramance/Torrentarr/pull/520#discussion_r4362852518) | Explicit IPv6 bind addresses are bracketed before assigning URL.hostname. Regression verifies both the readiness probe and document navigation use `[::1]`. Wildcard bind handling is unchanged. |
+
+Latest local validation: 1,577 non-live .NET tests passed (287 Core, 922 Infrastructure, 368 Host), plus the strengthened two-loop race assertion. All 339 frontend tests across 49 files passed; lint has 0 errors and the same 13 existing warnings. Release and production frontend builds passed.
+
+## Follow-up to review of `397030a`
+
+| # | Finding | Disposition and evidence |
+| --- | --- | --- |
+| 62 | [Inactive Arr configuration portal](https://github.com/Feramance/Torrentarr/pull/520#discussion_r4366985140) | The existing Arr dialog now uses the same active-panel guard as the other configuration dialogs. The lifecycle regression covers both Web Settings and Arr dialogs, including scroll-lock release while inactive, restoration on return, and Escape dismissal. |
+
 ## Deferred existing concerns
 
 Thumbnail redirect-origin hardening and atomic cache publication predate this branch and remain separate follow-ups. Live provider OIDC, real destructive maintenance/update operations, and Windows/macOS standalone execution require their appropriate environments. Existing Docker Compose bytes and staging are preserved.

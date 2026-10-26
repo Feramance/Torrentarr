@@ -419,6 +419,7 @@ class ArrWorkerService : BackgroundService
                     continue;
                 }
                 using var processing = ConfigMutationGuard.EnterProcessing();
+                RequireCurrentConfiguration();
                 await _qbitManager.EnsureAllConnectedAsync(_config.GetAllTorrentClients(), cycle.Token);
                 if (!_initialized || _initializedRevision != _config.Revision)
                 {
@@ -454,6 +455,7 @@ class ArrWorkerService : BackgroundService
                 _logger.LogError(ex, "Error processing torrents for {Instance}", _context.InstanceName);
                 HandleProcessingError();
             }
+            Interlocked.Exchange(ref _runtimeMetrics.TorrentRevision, _config.Revision);
             var remaining = GetLoopDelay(_config.Settings.LoopSleepTimer, System.Diagnostics.Stopwatch.GetElapsedTime(cycleStart));
             if (remaining > TimeSpan.Zero)
                 await SleepLoopAsync("Torrent", "Sleeping", remaining, cancellationToken);
@@ -495,6 +497,7 @@ class ArrWorkerService : BackgroundService
                     continue;
                 }
                 using var processing = ConfigMutationGuard.EnterProcessing();
+                RequireCurrentConfiguration();
                 await ProcessSearchAsync(cycle.Token);
                 _consecutiveSearchErrors = 0;
                 _runtimeMetrics.Search = _runtimeMetrics.Search with { LastSuccess = DateTimeOffset.UtcNow };
@@ -507,10 +510,18 @@ class ArrWorkerService : BackgroundService
                 _logger.LogError(ex, "Error searching for {Instance}", _context.InstanceName);
                 HandleSearchError();
             }
+            Interlocked.Exchange(ref _runtimeMetrics.SearchRevision, _config.Revision);
             var remaining = GetLoopDelay(_config.Settings.LoopSleepTimer, System.Diagnostics.Stopwatch.GetElapsedTime(cycleStart));
             if (remaining > TimeSpan.Zero)
                 await SleepLoopAsync("Search", "Sleeping", remaining, cancellationToken);
         }
+    }
+
+    private void RequireCurrentConfiguration()
+    {
+        // A rename may have completed while this cycle was awaiting connectivity.
+        if (_reloader != null && (!_reloader.ReloadConfig() || _config.Revision != _config.LatestRevision))
+            throw new ConfigurationBusyException("Configuration changed before processing started.");
     }
 
     private async Task SleepLoopAsync(string loop, string phase, TimeSpan delay, CancellationToken ct)

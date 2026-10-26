@@ -1182,7 +1182,7 @@ export function ConfigView(props?: ConfigViewProps): JSX.Element {
           ) : null}
         </div>
       </section>
-      {activeArrKey && formState ? (
+      {active && activeArrKey && formState ? (
         <ArrInstanceModal
           keyName={activeArrKey}
           diskKey={resolveSectionDiskKey(activeArrKey, pendingRenames)}

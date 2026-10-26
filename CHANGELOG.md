@@ -6,6 +6,56 @@
 - Gate every removal on effective age, incomplete-torrent stalled grace, enabled removal policy, ordinary seeding limits, and HnR. Revalidate candidates before deletion; block protected removals in Manage previews.
 - Require HnR clearance for Arr error cleanup, post-import invalid-media cleanup, and excluded-file deletion. Recheck clearance before recycling and client removal, with rollback on changed clearance. Missing protection services preserve torrents and files.
 
+## v6.19.0-1 (2026-10-26)
+
+### Features
+- feat: adopt canonical qBitrr WebUI with Torrentarr contract adapters ([8034a72](https://github.com/Feramance/Torrentarr/commit/8034a72dc3ee5693cf38bcc64b25f52e4cf89858))
+- feat: overhaul WebUI for qBitrr parity ([9b2b7f3](https://github.com/Feramance/Torrentarr/commit/9b2b7f3f5d06746d907699d96c3d2b8bbd4cb9f6))
+
+### Bug Fixes
+- fix: hide Arr configuration dialog when tab is inactive ([1274576](https://github.com/Feramance/Torrentarr/commit/1274576030d1f4f30be28e7cecd341cbb89cc7a0))
+- fix: coordinate renamed worker snapshots and IPv6 navigation ([397030a](https://github.com/Feramance/Torrentarr/commit/397030a3b34b7cf89ffd5ef293548f05c7dab251))
+- fix: wait for live WebUI listener before navigation ([c8c9e6b](https://github.com/Feramance/Torrentarr/commit/c8c9e6b624e8bd7ed3b250fbb20ddfe56d013a35))
+- fix: acknowledge configuration after busy worker cycles ([794505a](https://github.com/Feramance/Torrentarr/commit/794505a590503a389944fcc1f8da120d399253f2))
+- fix: complete config acknowledgments and stabilize lifecycle tests ([504420e](https://github.com/Feramance/Torrentarr/commit/504420e43b82d6977e3e9f6c15f0192d3262ca8a))
+- fix: resolve live configuration reviews and cross-platform tests ([10a7a82](https://github.com/Feramance/Torrentarr/commit/10a7a820688552901770d01baaa6870ea7515e68))
+- fix: address WebUI PR review findings ([a028afa](https://github.com/Feramance/Torrentarr/commit/a028afa2afca9f0bae48bb028e508905a62fff65))
+- fix: publish maintenance configuration without waiting for worker cycles ([b29f764](https://github.com/Feramance/Torrentarr/commit/b29f7644a1b141a573a55de12db84b8cff802c63))
+- fix: treat torrent clients equally in configuration ([d016ce2](https://github.com/Feramance/Torrentarr/commit/d016ce2807017317afef9ff021f6f4cfb2c03972))
+- fix: reject HTML posters and recover invalid thumbnail caches ([c234b28](https://github.com/Feramance/Torrentarr/commit/c234b285ca469b9d20d75b659469908a46e70f29))
+- fix: omit Arr-managed categories from process client cards ([7516154](https://github.com/Feramance/Torrentarr/commit/7516154696f1ab88c959a78c3a8b4eff9f336cc8))
+
+### Maintenance
+- fix(deps): align Vitest coverage provider with runner ([20e0265](https://github.com/Feramance/Torrentarr/commit/20e0265d19e787b9b64e22c309602720c1bd8ae4))
+- Bump RestSharp from 114.0.0 to 114.1.0 ([700f46d](https://github.com/Feramance/Torrentarr/commit/700f46da466c985d2cd920fe9d462d0bdc971b41))
+- Bump Microsoft.NET.Test.Sdk from 18.10.1 to 18.11.0 ([1a47cf2](https://github.com/Feramance/Torrentarr/commit/1a47cf2846d3d86c9eeaf723b9ebb39fb3eb5318))
+- Bump Microsoft.Extensions.Hosting from 10.0.12 to 10.0.13 ([6f6c9b5](https://github.com/Feramance/Torrentarr/commit/6f6c9b591b870d2e57d08677fc58ceba953d9648))
+- Bump Microsoft.Extensions.FileProviders.Embedded from 10.0.12 to 10.0.13 ([0fa2e70](https://github.com/Feramance/Torrentarr/commit/0fa2e707e2737730b241489db00febf928c0a906))
+- Bump Microsoft.EntityFrameworkCore.Sqlite from 10.0.12 to 10.0.13 ([627837a](https://github.com/Feramance/Torrentarr/commit/627837a87d3ca6376e633ab9e3d7598b3b13260f))
+- build(deps-dev): bump vite from 8.3.4 to 8.3.5 in /webui ([aa7990f](https://github.com/Feramance/Torrentarr/commit/aa7990f48294299ad13989914e2fd8cd2d6a93eb))
+- build(deps-dev): bump vitest from 5.0.3 to 5.0.5 in /webui ([3db9155](https://github.com/Feramance/Torrentarr/commit/3db915586767294f347f845df6e346fca8ea196a))
+- build(deps-dev): bump postcss from 8.5.29 to 8.5.31 in /webui ([c4763d0](https://github.com/Feramance/Torrentarr/commit/c4763d071d4ccf89835d9d4dce0cd6fb581da817))
+- build(deps-dev): bump @testing-library/user-event in /webui ([01cbe3e](https://github.com/Feramance/Torrentarr/commit/01cbe3e859c958e4adc9991541aa32b7949bd47a))
+- build(deps): bump actions/setup-python from 7.0.0 to 7.1.0 ([c29143d](https://github.com/Feramance/Torrentarr/commit/c29143df4d394a8f7113de631513a18225ac0b53))
+- build(deps): bump @tanstack/react-table from 9.2.8 to 9.3.1 in /webui ([2fa0e21](https://github.com/Feramance/Torrentarr/commit/2fa0e21d255b42e5ce28b639235bb0fad58cdf00))
+- build(deps-dev): bump vite ([0980d23](https://github.com/Feramance/Torrentarr/commit/0980d23cdf5d07098eec372abe0948bdc5ad43d1))
+- test: align config endpoint checks with the maintenance schema ([0f5c809](https://github.com/Feramance/Torrentarr/commit/0f5c809212026ab2df7e0ed02d67fb3037f9e101))
+- fix(deps): provide the TypeScript 6 API alongside the native compiler ([1d29d75](https://github.com/Feramance/Torrentarr/commit/1d29d75b2f6079f2686ac6a505e4e24b54c53bc6))
+- fix(deps): keep React DOM aligned with React ([f0ab2e1](https://github.com/Feramance/Torrentarr/commit/f0ab2e1abcdf36ed28de7093752cf10aedef5bee))
+- build(deps-dev): bump typescript from 6.0.3 to 7.0.2 in /webui ([ab3961c](https://github.com/Feramance/Torrentarr/commit/ab3961ce5fa19289e4d8b00088eb07a70ec7f20e))
+- build(deps-dev): bump @types/node from 26.6.3 to 26.6.5 in /webui ([3e629f5](https://github.com/Feramance/Torrentarr/commit/3e629f579bec73bf794b4d33d839a7d292eb4070))
+- build(deps): bump react and @types/react in /webui ([4d17b42](https://github.com/Feramance/Torrentarr/commit/4d17b42212ff374ecc9cb111ccd2d3c4dc3d311b))
+- fix(deps): align worker logging abstractions with EF Core ([4a8672b](https://github.com/Feramance/Torrentarr/commit/4a8672b5998a54cdf4f338966789bcd538898073))
+- Bump Microsoft.EntityFrameworkCore.InMemory from 10.0.12 to 10.0.13 ([94018c1](https://github.com/Feramance/Torrentarr/commit/94018c1b10e50188e5c4c39ebe6369b1b86d0d53))
+- Bump Microsoft.EntityFrameworkCore from 10.0.12 to 10.0.13 ([db5a4c7](https://github.com/Feramance/Torrentarr/commit/db5a4c77ccc541ce76e6c536e130429627bb288c))
+- Bump Microsoft.AspNetCore.Mvc.Testing from 10.0.12 to 10.0.13 ([18772ea](https://github.com/Feramance/Torrentarr/commit/18772ea395a686421ca35e252adede53e23ae1eb))
+- Bump Microsoft.AspNetCore.Mvc.NewtonsoftJson from 10.0.12 to 10.0.13 ([133abf2](https://github.com/Feramance/Torrentarr/commit/133abf2886912ccd4bb62ba8ea39fb66b3c9d749))
+- Bump Microsoft.AspNetCore.Authentication.OpenIdConnect from 10.0.12 to 10.0.13 ([2a90777](https://github.com/Feramance/Torrentarr/commit/2a90777c1821414efd5452fd67debbce908e0b20))
+- build(deps): bump immer from 11.1.18 to 11.1.21 in /webui ([3cd1cd7](https://github.com/Feramance/Torrentarr/commit/3cd1cd74a086c06f2b7f433a92085cc733435b06))
+- build(deps-dev): bump eslint-plugin-react-refresh in /webui ([7958404](https://github.com/Feramance/Torrentarr/commit/795840439dfa62c093718c06fb0df7d7510c4626))
+
+---
+
 ## v6.18.0-1 (2026-10-16)
 
 ### Features
