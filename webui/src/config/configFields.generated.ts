@@ -1221,6 +1221,319 @@ export const CONFIG_SCHEMA = {
       {
         "section": "TorrentClient",
         "path": [
+          "SkipTLSVerify"
+        ],
+        "key": "SkipTLSVerify",
+        "label": "Skip TLS Verify",
+        "kind": "checkbox",
+        "default": false,
+        "comments": [
+          "If true, do not verify TLS certificates for HTTPS WebUI (self-signed certs). Disables MITM protection for that connection."
+        ],
+        "required": false,
+        "secure": false,
+        "uiExpose": true,
+        "applyLive": false,
+        "requiresRestart": false
+      },
+      {
+        "section": "TorrentClient",
+        "path": [
+          "ManagedCategories"
+        ],
+        "key": "ManagedCategories",
+        "label": "Managed Categories",
+        "kind": "tags",
+        "default": [],
+        "comments": [
+          "Categories managed directly by this qBit instance (not managed by Arr instances).",
+          "These categories will have seeding settings applied according to CategorySeeding configuration.",
+          "Subcategory paths use \u0027/\u0027 to match qBittorrent (for example \u0027seed/tleech\u0027).",
+          "Example: [\u0027downloads\u0027, \u0027private-tracker\u0027, \u0027long-term-seed\u0027]"
+        ],
+        "required": false,
+        "secure": false,
+        "uiExpose": true,
+        "applyLive": false,
+        "requiresRestart": false
+      },
+      {
+        "section": "TorrentClient",
+        "path": [
+          "MatchSubcategories"
+        ],
+        "key": "MatchSubcategories",
+        "label": "Match Subcategories",
+        "kind": "checkbox",
+        "default": false,
+        "comments": [
+          "When true, configured categories ALSO match torrents in any subcategory beneath them.",
+          "Example: setting MatchSubcategories=true with ManagedCategories=[\u0027seed\u0027] manages",
+          "torrents whose qBit category is \u0027seed\u0027, \u0027seed/tleech\u0027, \u0027seed/longterm\u0027, etc.",
+          "When false (default) the qBit category string must match exactly."
+        ],
+        "required": false,
+        "secure": false,
+        "uiExpose": true,
+        "applyLive": false,
+        "requiresRestart": false
+      },
+      {
+        "section": "TorrentClient",
+        "path": [
+          "CategorySeeding",
+          "DownloadRateLimitPerTorrent"
+        ],
+        "key": "CategorySeeding.DownloadRateLimitPerTorrent",
+        "label": "Download Rate Limit Per Torrent",
+        "kind": "number",
+        "default": -1,
+        "comments": "Download rate limit per torrent in KB/s (-1 = disabled)",
+        "required": false,
+        "secure": false,
+        "uiExpose": true,
+        "applyLive": false,
+        "requiresRestart": false,
+        "allowNegative": true
+      },
+      {
+        "section": "TorrentClient",
+        "path": [
+          "CategorySeeding",
+          "UploadRateLimitPerTorrent"
+        ],
+        "key": "CategorySeeding.UploadRateLimitPerTorrent",
+        "label": "Upload Rate Limit Per Torrent",
+        "kind": "number",
+        "default": -1,
+        "comments": "Upload rate limit per torrent in KB/s (-1 = disabled)",
+        "required": false,
+        "secure": false,
+        "uiExpose": true,
+        "applyLive": false,
+        "requiresRestart": false,
+        "allowNegative": true
+      },
+      {
+        "section": "TorrentClient",
+        "path": [
+          "CategorySeeding",
+          "MaxUploadRatio"
+        ],
+        "key": "CategorySeeding.MaxUploadRatio",
+        "label": "Max Upload Ratio",
+        "kind": "number",
+        "default": -1,
+        "comments": "Maximum upload ratio (-1 = disabled, e.g. 2.0 for 200%)",
+        "required": false,
+        "secure": false,
+        "uiExpose": true,
+        "applyLive": false,
+        "requiresRestart": false,
+        "allowNegative": true
+      },
+      {
+        "section": "TorrentClient",
+        "path": [
+          "CategorySeeding",
+          "MaxSeedingTime"
+        ],
+        "key": "CategorySeeding.MaxSeedingTime",
+        "label": "Max Seeding Time",
+        "kind": "duration",
+        "default": -1,
+        "comments": "Maximum seeding time in seconds (-1 = disabled, e.g. 604800 for 7 days)",
+        "required": false,
+        "secure": false,
+        "uiExpose": true,
+        "applyLive": false,
+        "requiresRestart": false,
+        "nativeUnit": "seconds",
+        "allowNegative": true
+      },
+      {
+        "section": "TorrentClient",
+        "path": [
+          "CategorySeeding",
+          "RemoveTorrent"
+        ],
+        "key": "CategorySeeding.RemoveTorrent",
+        "label": "Remove Torrent",
+        "kind": "select",
+        "default": -1,
+        "comments": [
+          "When to remove torrents from qBittorrent:",
+          "  -1 = Never remove",
+          "   1 = Remove when MaxUploadRatio is reached",
+          "   2 = Remove when MaxSeedingTime is reached",
+          "   3 = Remove when either condition is met (OR)",
+          "   4 = Remove when both conditions are met (AND)"
+        ],
+        "required": false,
+        "secure": false,
+        "uiExpose": true,
+        "applyLive": false,
+        "requiresRestart": false,
+        "options": [
+          "-1",
+          "1",
+          "2",
+          "3",
+          "4"
+        ]
+      },
+      {
+        "section": "TorrentClient",
+        "path": [
+          "CategorySeeding",
+          "HitAndRunMode"
+        ],
+        "key": "CategorySeeding.HitAndRunMode",
+        "label": "Hit and Run Mode",
+        "kind": "select",
+        "default": "disabled",
+        "comments": [
+          "Hit and Run mode: and = require both ratio and time; or = either clears; disabled = no HnR."
+        ],
+        "required": false,
+        "secure": false,
+        "uiExpose": true,
+        "applyLive": false,
+        "requiresRestart": false,
+        "options": [
+          "disabled",
+          "and",
+          "or"
+        ]
+      },
+      {
+        "section": "TorrentClient",
+        "path": [
+          "CategorySeeding",
+          "MinSeedRatio"
+        ],
+        "key": "CategorySeeding.MinSeedRatio",
+        "label": "Min Seed Ratio",
+        "kind": "number",
+        "default": 1,
+        "comments": "Minimum seed ratio before removal allowed (HnR protection)",
+        "required": false,
+        "secure": false,
+        "uiExpose": true,
+        "applyLive": false,
+        "requiresRestart": false
+      },
+      {
+        "section": "TorrentClient",
+        "path": [
+          "CategorySeeding",
+          "MinSeedingTimeDays"
+        ],
+        "key": "CategorySeeding.MinSeedingTimeDays",
+        "label": "Min Seeding Time Days",
+        "kind": "number",
+        "default": 0,
+        "comments": "Minimum seeding time in days before removal allowed (HnR protection, 0 = ratio only)",
+        "required": false,
+        "secure": false,
+        "uiExpose": true,
+        "applyLive": false,
+        "requiresRestart": false
+      },
+      {
+        "section": "TorrentClient",
+        "path": [
+          "CategorySeeding",
+          "HitAndRunMinimumDownloadPercent"
+        ],
+        "key": "CategorySeeding.HitAndRunMinimumDownloadPercent",
+        "label": "Hit and Run Minimum Download Percent",
+        "kind": "number",
+        "default": 10,
+        "comments": "Minimum download percentage before a torrent is considered for HnR (0-100, default 10)",
+        "required": false,
+        "secure": false,
+        "uiExpose": true,
+        "applyLive": false,
+        "requiresRestart": false,
+        "minimum": 0,
+        "maximum": 100
+      },
+      {
+        "section": "TorrentClient",
+        "path": [
+          "CategorySeeding",
+          "HitAndRunPartialSeedRatio"
+        ],
+        "key": "CategorySeeding.HitAndRunPartialSeedRatio",
+        "label": "Hit and Run Partial Seed Ratio",
+        "kind": "number",
+        "default": 1,
+        "comments": "Minimum ratio for partial downloads (\u003E=HitAndRunMinimumDownloadPercent% but \u003C100% complete)",
+        "required": false,
+        "secure": false,
+        "uiExpose": true,
+        "applyLive": false,
+        "requiresRestart": false
+      },
+      {
+        "section": "TorrentClient",
+        "path": [
+          "CategorySeeding",
+          "TrackerUpdateBuffer"
+        ],
+        "key": "CategorySeeding.TrackerUpdateBuffer",
+        "label": "Tracker Update Buffer",
+        "kind": "duration",
+        "default": 0,
+        "comments": "Extra seconds buffer for tracker stats lag (0 = disabled)",
+        "required": false,
+        "secure": false,
+        "uiExpose": true,
+        "applyLive": false,
+        "requiresRestart": false,
+        "nativeUnit": "seconds"
+      },
+      {
+        "section": "TorrentClient",
+        "path": [
+          "CategorySeeding",
+          "StalledDelay"
+        ],
+        "key": "CategorySeeding.StalledDelay",
+        "label": "Stalled Delay",
+        "kind": "duration",
+        "default": -1,
+        "comments": "Stalled cleanup grace period in minutes (-1 = infinite, 0 = immediate cleanup).",
+        "required": false,
+        "secure": false,
+        "uiExpose": true,
+        "applyLive": false,
+        "requiresRestart": false,
+        "nativeUnit": "minutes",
+        "allowNegative": true
+      },
+      {
+        "section": "TorrentClient",
+        "path": [
+          "CategorySeeding",
+          "IgnoreTorrentsYoungerThan"
+        ],
+        "key": "CategorySeeding.IgnoreTorrentsYoungerThan",
+        "label": "Ignore Torrents Younger Than",
+        "kind": "duration",
+        "default": 180,
+        "comments": "Ignore torrents younger than this (seconds). Stalled removal also requires last_activity older than this.",
+        "required": false,
+        "secure": false,
+        "uiExpose": true,
+        "applyLive": false,
+        "requiresRestart": false,
+        "nativeUnit": "seconds"
+      },
+      {
+        "section": "TorrentClient",
+        "path": [
           "Type"
         ],
         "key": "Type",
@@ -1397,49 +1710,54 @@ export const CONFIG_SCHEMA = {
           "PathMappings"
         ],
         "key": "Maintenance.PathMappings",
-        "label": "Path Mappings",
-        "kind": "tags",
+        "label": "Path mappings",
+        "kind": "collection",
         "default": [],
         "comments": "Torrentarr client-neutral torrent maintenance setting.",
         "required": false,
         "secure": false,
         "uiExpose": true,
-        "applyLive": false,
-        "requiresRestart": true
-      },
-      {
-        "section": "TorrentClient",
-        "path": [
-          "Maintenance",
-          "SharePolicies"
-        ],
-        "key": "Maintenance.SharePolicies",
-        "label": "Share Policies",
-        "kind": "tags",
-        "default": [],
-        "comments": "Torrentarr client-neutral torrent maintenance setting.",
-        "required": false,
-        "secure": false,
-        "uiExpose": true,
-        "applyLive": false,
-        "requiresRestart": true
-      },
-      {
-        "section": "TorrentClient",
-        "path": [
-          "Maintenance",
-          "Notifications"
-        ],
-        "key": "Maintenance.Notifications",
-        "label": "Notifications",
-        "kind": "tags",
-        "default": [],
-        "comments": "Torrentarr client-neutral torrent maintenance setting.",
-        "required": false,
-        "secure": false,
-        "uiExpose": true,
-        "applyLive": false,
-        "requiresRestart": true
+        "applyLive": true,
+        "requiresRestart": false,
+        "description": "Translate torrent client paths into paths visible to Torrentarr. This does not mount folders or move files. The longest matching client prefix wins. Saved mappings apply at the next worker processing cycle.",
+        "itemFields": [
+          {
+            "section": "TorrentClient",
+            "path": [
+              "ClientPath"
+            ],
+            "key": "ClientPath",
+            "label": "Torrent client path",
+            "kind": "text",
+            "default": "",
+            "comments": "Torrentarr client-neutral torrent maintenance setting.",
+            "required": true,
+            "secure": false,
+            "uiExpose": true,
+            "applyLive": null,
+            "requiresRestart": null,
+            "description": "Folder as seen by the torrent client.",
+            "placeholder": "/downloads"
+          },
+          {
+            "section": "TorrentClient",
+            "path": [
+              "LocalPath"
+            ],
+            "key": "LocalPath",
+            "label": "Torrentarr path",
+            "kind": "text",
+            "default": "",
+            "comments": "Torrentarr client-neutral torrent maintenance setting.",
+            "required": true,
+            "secure": false,
+            "uiExpose": true,
+            "applyLive": null,
+            "requiresRestart": null,
+            "description": "The same folder as seen by Torrentarr, including inside its Docker container.",
+            "placeholder": "/data/downloads"
+          }
+        ]
       }
     ],
     "Arr": [

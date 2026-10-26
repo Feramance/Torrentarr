@@ -1,6 +1,8 @@
 extern alias Standalone;
 
 using System.Text.Json;
+using Microsoft.AspNetCore.Authentication.Cookies;
+using Microsoft.Extensions.Options;
 using FluentAssertions;
 using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.Mvc.Testing;
@@ -24,6 +26,112 @@ namespace Torrentarr.Host.Tests.Api;
 [Collection("HostWebCatalog")]
 public class StandaloneRadarrEndpointTests
 {
+
+    [Fact]
+    public async Task StandaloneApplicationStatus_DoesNotWaitForWorkersItDoesNotLaunch()
+    {
+        await using var factory = new StandaloneFactory();
+        using var client = factory.CreateClient();
+        var reloader = factory.Services.GetRequiredService<IConfigReloader>();
+        var candidate = new ConfigurationLoader(reloader.ConfigPath).Load();
+        candidate.ArrInstances["Radarr"].Managed = true;
+        reloader.Apply(candidate).Should().BeTrue();
+        var status = await client.GetFromJsonAsync<JsonElement>("/web/config/status");
+        status.GetProperty("state").GetString().Should().Be("applied");
+        status.GetProperty("components").TryGetProperty("worker:Radarr", out _).Should().BeFalse();
+    }
+
+    [Fact]
+    public async Task StandaloneLiveUrlBaseChange_RefreshesCookiePathsAndClearedHtmlBase()
+    {
+        await using var factory = new StandaloneFactory("/old");
+        using var client = factory.CreateClient();
+        var reloader = factory.Services.GetRequiredService<IConfigReloader>();
+        var options = factory.Services.GetRequiredService<IOptionsMonitor<CookieAuthenticationOptions>>();
+        options.Get(CookieAuthenticationDefaults.AuthenticationScheme).Cookie.Path.Should().Be("/old/");
+        var candidate = new ConfigurationLoader(reloader.ConfigPath).Load();
+        candidate.WebUI.UrlBase = "/new";
+        candidate.WebUI.AuthDisabled = false;
+        candidate.WebUI.LocalAuthEnabled = true;
+        candidate.WebUI.Username = "fixture";
+        candidate.WebUI.PasswordHash = BCrypt.Net.BCrypt.HashPassword("fixture-password", 10);
+        reloader.Apply(candidate).Should().BeTrue();
+        var cookie = options.Get(CookieAuthenticationDefaults.AuthenticationScheme);
+        cookie.Cookie.Path.Should().Be("/new/");
+        cookie.LoginPath.Value.Should().Be("/new/login");
+        cookie.AccessDeniedPath.Value.Should().Be("/new/login");
+        using var browser = factory.CreateClient(new WebApplicationFactoryClientOptions { AllowAutoRedirect = false });
+        var login = await browser.PostAsJsonAsync("/new/web/login", new { username = "fixture", password = "fixture-password" });
+        login.EnsureSuccessStatusCode();
+        login.Headers.GetValues("Set-Cookie").Should().Contain(value => value.Contains("path=/new/", StringComparison.OrdinalIgnoreCase));
+        (await browser.GetAsync("/new/web/token")).StatusCode.Should().Be(System.Net.HttpStatusCode.OK);
+        candidate = new ConfigurationLoader(reloader.ConfigPath).Load();
+        candidate.WebUI.UrlBase = "";
+        reloader.Apply(candidate).Should().BeTrue();
+        (await client.GetStringAsync("/ui")).Should().Contain("<base href=\"/\">");
+    }
+
+    [Fact]
+    public async Task StandaloneEvents_SendInitialConfigurationSnapshot()
+    {
+        await using var factory = new StandaloneFactory();
+        using var client = factory.CreateClient();
+        using var timeout = new CancellationTokenSource(TimeSpan.FromSeconds(5));
+        using var response = await client.GetAsync("/web/config/events", HttpCompletionOption.ResponseHeadersRead, timeout.Token);
+        response.Content.Headers.ContentType!.MediaType.Should().Be("text/event-stream");
+        using var reader = new StreamReader(await response.Content.ReadAsStreamAsync(timeout.Token));
+        (await reader.ReadLineAsync(timeout.Token)).Should().StartWith("data: ");
+    }
+
+    [Fact]
+    public async Task StandaloneStoredCredentials_KeepEditedUri()
+    {
+        await using var factory = new StandaloneFactory();
+        using var client = factory.CreateClient();
+        var config = factory.Services.GetRequiredService<TorrentarrConfig>();
+        config.ArrInstances["Radarr-original"] = new() { URI = "http://127.0.0.1:1", APIKey = "stored-secret" };
+        var response = await client.PostAsJsonAsync("/web/arr/test-connection", new { arrType = "radarr", instanceKey = "Radarr-original", uri = "ftp://edited" });
+        var result = await response.Content.ReadFromJsonAsync<JsonElement>();
+        result.GetProperty("message").GetString().Should().Be("URI must use http or https scheme");
+    }
+
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task StandaloneMappingSave_PersistsWhileProcessing(bool canonical)
+    {
+        await using var factory = new StandaloneFactory();
+        using var client = factory.CreateClient();
+        client.Timeout = TimeSpan.FromSeconds(10);
+        var config = factory.Services.GetRequiredService<TorrentarrConfig>();
+        var reloader = factory.Services.GetRequiredService<IConfigReloader>();
+        var name = canonical ? "mapping" : "qBit-mapping";
+        var initial = new QBitConfig { Host = "fixture", Disabled = true };
+        if (canonical) config.TorrentClients[name] = initial; else config.QBitInstances[name] = initial;
+        using var processing = ConfigMutationGuard.EnterProcessing(reloader.ConfigPath);
+        var expected = new[] { new PathMappingConfig { ClientPath = "/downloads", LocalPath = Path.GetTempPath() } };
+        var response = await client.PostAsJsonAsync("/web/config", new
+        {
+            changes = new Dictionary<string, object> { [(canonical ? "TorrentClient." : "") + name + ".Maintenance.PathMappings"] = expected }
+        });
+        response.StatusCode.Should().Be(System.Net.HttpStatusCode.OK, await response.Content.ReadAsStringAsync());
+        new ConfigurationLoader(reloader.ConfigPath).Load().GetTorrentClient(name)!.Maintenance.PathMappings
+            .Should().BeEquivalentTo(expected);
+    }
+
+    [Theory]
+    [InlineData("/web/maintenance/preview", "SharePolicy")]
+    [InlineData("/web/maintenance/preview", 8)]
+    [InlineData("/web/maintenance/run", "SharePolicy")]
+    [InlineData("/web/maintenance/run", 8)]
+    public async Task StandaloneMaintenance_RejectsRemovedOperation(string endpoint, object operation)
+    {
+        await using var factory = new StandaloneFactory();
+        using var client = factory.CreateClient();
+        var response = await client.PostAsJsonAsync(endpoint, new { operations = new[] { operation } });
+        response.StatusCode.Should().Be(System.Net.HttpStatusCode.BadRequest);
+    }
+
     [Fact]
     public async Task StandaloneRadarr_FiltersBeforePaging_AndKeepsItsContract()
     {
@@ -139,7 +247,6 @@ public class StandaloneRadarrEndpointTests
             Host = "old",
             Disabled = true,
             Password = "secret",
-            Maintenance = new() { Notifications = [new() { Url = "https://notify.example", Token = "notify-secret" }] }
         };
         config.QBitInstances["qBit-other"] = new() { Host = "other", Password = "other-secret" };
         config.TorrentClients["canonical"] = new() { Host = "canonical" };
@@ -171,7 +278,6 @@ public class StandaloneRadarrEndpointTests
         saved.QBitInstances["qBit-renamed"].Host.Should().Be("old");
         saved.QBitInstances["qBit-renamed"].Disabled.Should().BeTrue();
         saved.QBitInstances["qBit-renamed"].Password.Should().Be("secret");
-        saved.QBitInstances["qBit-renamed"].Maintenance.Notifications.Single().Token.Should().Be("notify-secret");
         saved.QBitInstances["qBit-other"].Password.Should().Be("other-secret");
         saved.TorrentClients.Should().ContainKey("canonical");
         saved.ArrInstances.Should().ContainKey("Radarr");
@@ -197,7 +303,6 @@ public class StandaloneRadarrEndpointTests
             Host = "fixture",
             Disabled = true,
             Password = "secret",
-            Maintenance = new() { Notifications = [new() { Url = "https://notify.example", Token = "notify-secret" }] }
         };
         using var scope = factory.Services.CreateScope();
         var db = scope.ServiceProvider.GetRequiredService<TorrentarrDbContext>();
@@ -214,7 +319,6 @@ public class StandaloneRadarrEndpointTests
                     Host = "fixture",
                     Disabled = true,
                     Password = "[redacted]",
-                    Maintenance = new { Notifications = new[] { new { Url = "https://notify.example", Token = "[redacted]" } } }
                 }
             }
         });
@@ -222,7 +326,6 @@ public class StandaloneRadarrEndpointTests
         var saved = new ConfigurationLoader(factory.Services.GetRequiredService<IConfigReloader>().ConfigPath).Load();
         saved.TorrentClients.Should().NotContainKey("old");
         saved.TorrentClients["renamed"].Password.Should().Be("secret");
-        saved.TorrentClients["renamed"].Maintenance.Notifications.Single().Token.Should().Be("notify-secret");
         var state = await db.TorrentLibrary.AsNoTracking().SingleAsync(t => t.Hash == "canonical-rename");
         state.QbitInstance.Should().Be("renamed");
         state.FreeSpacePaused.Should().BeTrue();
@@ -234,21 +337,24 @@ public class StandaloneRadarrEndpointTests
         private readonly SqliteConnection _connection = new("Data Source=:memory:");
         private readonly string? _previousConfig = Environment.GetEnvironmentVariable("TORRENTARR_CONFIG");
         private readonly string? _previousOverride = ConfigurationLoader.TestConfigPathOverride;
-        public StandaloneFactory()
+        public StandaloneFactory(string urlBase = "")
         {
             Directory.CreateDirectory(_directory);
-            File.WriteAllText(Path.Combine(_directory, "config.toml"), """
+            File.WriteAllText(Path.Combine(_directory, "config.toml"), $$"""
                 [Settings]
                 ConfigVersion = '6.14.6'
                 [WebUI]
                 AuthDisabled = true
                 AllowInsecureExposure = true
                 Token = 'standalone-test'
+                UrlBase = '{{urlBase}}'
                 [Radarr]
                 URI = 'http://127.0.0.1:1'
                 Category = 'movies'
                 Managed = false
                 """);
+            Directory.CreateDirectory(Path.Combine(_directory, "wwwroot"));
+            File.WriteAllText(Path.Combine(_directory, "wwwroot", "index.html"), "<html><head></head><body></body></html>");
             _connection.Open();
         }
         protected override void ConfigureWebHost(IWebHostBuilder builder)
@@ -257,6 +363,7 @@ public class StandaloneRadarrEndpointTests
             Environment.SetEnvironmentVariable("TORRENTARR_CONFIG", path);
             ConfigurationLoader.TestConfigPathOverride = path;
             builder.UseEnvironment("Testing");
+            builder.UseWebRoot(Path.Combine(_directory, "wwwroot"));
             builder.ConfigureServices(services =>
             {
                 services.RemoveAll<IHostedService>();

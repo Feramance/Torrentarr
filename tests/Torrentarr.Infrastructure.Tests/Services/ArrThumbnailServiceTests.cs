@@ -166,6 +166,116 @@ public class ArrThumbnailServiceTests : IDisposable
         result!.Value.Bytes.Should().Equal(bytes);
     }
 
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task GetThumbnailAsync_SkipsHtmlAndRepairsInvalidCache(bool poisonedCache)
+    {
+        const int id = 8131;
+        ClearThumbnailCache("radarr", "radarr", id);
+        await using var db = CreateDb();
+        db.Movies.Add(new MoviesFilesModel { EntryId = id, ArrId = 42, ArrInstance = "radarr" });
+        await db.SaveChangesAsync();
+        var cachePath = Path.Combine(ConfigurationLoader.GetDataDirectoryPath(), "cache", "thumbnails",
+            Sha256Hex($"radarr:radarr:{id}")[..40] + ".bin");
+        if (poisonedCache)
+        {
+            Directory.CreateDirectory(Path.GetDirectoryName(cachePath)!);
+            await File.WriteAllTextAsync(cachePath, "<!DOCTYPE html><html>Login</html>");
+            await File.WriteAllTextAsync(cachePath + ".etag", "invalid-poster");
+        }
+        var requests = new List<string>();
+        var svc = new ArrThumbnailService(db, LoadConfig(), CreateFactory(request =>
+        {
+            requests.Add(request.RequestUri!.AbsolutePath);
+            // Even a misleading image MIME type must not admit HTML into the cache.
+            var bytes = request.RequestUri.AbsolutePath.StartsWith("/api/")
+                ? FakeJpegBytes() : Encoding.UTF8.GetBytes("<!DOCTYPE html><html>Login</html>");
+            return new HttpResponseMessage(HttpStatusCode.OK)
+            {
+                Content = new ByteArrayContent(bytes)
+                {
+                    Headers = { ContentType = new System.Net.Http.Headers.MediaTypeHeaderValue("image/jpeg") }
+                }
+            };
+        }));
+        var poster = await svc.GetThumbnailAsync("radarr", "radarr", id);
+        poster.Should().NotBeNull();
+        poster!.Value.Bytes.Should().Equal(FakeJpegBytes());
+        poster.Value.ETag.Should().NotBe("invalid-poster");
+        (await File.ReadAllBytesAsync(cachePath)).Should().Equal(FakeJpegBytes());
+        (await svc.GetThumbnailAsync("radarr", "radarr", id))!.Value.Bytes.Should().Equal(FakeJpegBytes());
+        requests.Should().Equal("/MediaCover/42/poster.jpg", "/api/v3/MediaCover/42/poster.jpg");
+    }
+
+    [Fact]
+    public async Task GetThumbnailAsync_DoesNotCacheHtmlWhenNoImageRouteSucceeds()
+    {
+        const int id = 8132;
+        ClearThumbnailCache("radarr", "radarr", id);
+        await using var db = CreateDb();
+        db.Movies.Add(new MoviesFilesModel { EntryId = id, ArrId = 42, ArrInstance = "radarr" });
+        await db.SaveChangesAsync();
+        var svc = new ArrThumbnailService(db, LoadConfig(), CreateFactory(_ =>
+            new HttpResponseMessage(HttpStatusCode.OK) { Content = new StringContent("<html>Login</html>") }));
+        (await svc.GetThumbnailAsync("radarr", "radarr", id)).Should().BeNull();
+        var cachePath = Path.Combine(ConfigurationLoader.GetDataDirectoryPath(), "cache", "thumbnails",
+            Sha256Hex($"radarr:radarr:{id}")[..40] + ".bin");
+        File.Exists(cachePath).Should().BeFalse();
+    }
+
+    [Theory]
+    [InlineData("FFD8FFD9", "image/jpeg")]
+    [InlineData("89504E470D0A1A0A", "image/png")]
+    [InlineData("474946383961", "image/gif")]
+    [InlineData("524946460000000057454250", "image/webp")]
+    public async Task GetThumbnailAsync_UsesImageSignatureForContentType(string hex, string mime)
+    {
+        const int id = 8133;
+        ClearThumbnailCache("radarr", "radarr", id);
+        await using var db = CreateDb();
+        db.Movies.Add(new MoviesFilesModel { EntryId = id, ArrId = 42, ArrInstance = "radarr" });
+        await db.SaveChangesAsync();
+        var svc = new ArrThumbnailService(db, LoadConfig(), CreateFactory(_ =>
+            new HttpResponseMessage(HttpStatusCode.OK) { Content = new ByteArrayContent(Convert.FromHexString(hex)) }));
+        (await svc.GetThumbnailAsync("radarr", "radarr", id))!.Value.ContentType.Should().Be(mime);
+        (await svc.GetThumbnailAsync("radarr", "radarr", id))!.Value.ContentType.Should().Be(mime);
+    }
+
+    [Theory]
+    [InlineData("v3", "4.0.0")]
+    [InlineData("v5", "5.0.0")]
+    public async Task GetThumbnailAsync_SonarrHtmlFallsBackToDiscoveredVersion(string apiVersion, string version)
+    {
+        const int id = 8134;
+        ClearThumbnailCache("sonarr", "radarr", id);
+        await using var db = CreateDb();
+        db.Series.Add(new SeriesFilesModel { EntryId = id, ArrId = 42, ArrInstance = "radarr" });
+        await db.SaveChangesAsync();
+        var config = LoadConfig();
+        config.ArrInstances.Values.Single().URI = $"http://sonarr-thumbnail-{apiVersion}.local";
+        var requests = new List<string>();
+        var svc = new ArrThumbnailService(db, config, CreateFactory(request =>
+        {
+            var path = request.RequestUri!.AbsolutePath;
+            requests.Add(path);
+            var content = path switch
+            {
+                "/MediaCover/42/poster.jpg" => (HttpContent)new StringContent("<!DOCTYPE html><html>Login</html>"),
+                "/api" => new StringContent($"{{\"current\":\"{apiVersion}\"}}"),
+                var p when p == $"/api/{apiVersion}/system/status" => new StringContent($"{{\"version\":\"{version}\"}}"),
+                var p when p == $"/api/{apiVersion}/MediaCover/42/poster.jpg" => new ByteArrayContent(FakeJpegBytes()),
+                _ => throw new InvalidOperationException($"Unexpected route: {path}")
+            };
+            return new HttpResponseMessage(HttpStatusCode.OK) { Content = content };
+        }));
+        var poster = await svc.GetThumbnailAsync("sonarr", "radarr", id);
+        poster.Should().NotBeNull();
+        poster!.Value.Bytes.Should().Equal(FakeJpegBytes());
+        requests.Should().Equal("/MediaCover/42/poster.jpg", "/api",
+            $"/api/{apiVersion}/system/status", $"/api/{apiVersion}/MediaCover/42/poster.jpg");
+    }
+
     private static string Sha256Hex(string input)
         => Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(input))).ToLowerInvariant();
 

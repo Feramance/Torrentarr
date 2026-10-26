@@ -1,0 +1,210 @@
+{
+  "arrs": [
+    {
+      "name": "Radarr-demo",
+      "category": "Radarr-demo",
+      "type": "radarr",
+      "alive": true
+    },
+    {
+      "name": "Sonarr-demo",
+      "category": "Sonarr-demo",
+      "type": "sonarr",
+      "alive": true
+    },
+    {
+      "name": "Lidarr-demo",
+      "category": "Lidarr-demo",
+      "type": "lidarr",
+      "alive": true
+    },
+    {
+      "name": "Readarr-demo",
+      "category": "Readarr-demo",
+      "type": "readarr",
+      "alive": true
+    }
+  ],
+  "counts": {
+    "available": 1,
+    "monitored": 2,
+    "missing": 1
+  },
+  "artist": {
+    "id": 1,
+    "name": "Radiohead",
+    "monitored": true,
+    "qualityProfileName": "Lossless",
+    "albumsMonitored": 2,
+    "albumsAvailable": 1,
+    "albumsMissing": 1,
+    "albumCount": 2,
+    "trackTotalCount": 2
+  },
+  "album": {
+    "album": {
+      "id": 2,
+      "title": "In Rainbows",
+      "monitored": true,
+      "qualityProfileName": "Lossless"
+    },
+    "totals": {
+      "available": 1,
+      "monitored": 2,
+      "missing": 1
+    },
+    "tracks": [
+      {
+        "id": 3,
+        "trackNumber": "A1",
+        "title": "15 Step",
+        "duration": 237,
+        "monitored": true,
+        "hasFile": true
+      }
+    ]
+  },
+  "author": {
+    "id": 1,
+    "name": "Frank Herbert",
+    "monitored": true,
+    "qualityProfileName": "EPUB",
+    "booksAvailable": 1,
+    "booksMonitored": 2,
+    "booksMissing": 1,
+    "bookCount": 2
+  },
+  "book": {
+    "book": {
+      "id": 2,
+      "title": "Dune",
+      "monitored": true,
+      "hasFile": true,
+      "qualityProfileName": "EPUB",
+      "authorId": 1
+    }
+  },
+  "movie": {
+    "id": 1,
+    "title": "The Matrix",
+    "year": 1999,
+    "monitored": true,
+    "hasFile": true,
+    "qualityProfileName": "HD-1080p"
+  },
+  "series": {
+    "series": {
+      "id": 1,
+      "title": "Severance",
+      "monitored": true,
+      "qualityProfileName": "HD-1080p"
+    },
+    "totals": {
+      "available": 1,
+      "monitored": 2,
+      "missing": 1
+    },
+    "seasons": {
+      "1": {
+        "available": 1,
+        "monitored": 2,
+        "missing": 1,
+        "episodes": [
+          {
+            "id": 2,
+            "title": "Good News About Hell",
+            "episodeNumber": 1,
+            "seasonNumber": 1,
+            "monitored": true,
+            "hasFile": true
+          }
+        ]
+      }
+    }
+  },
+  "torrent": {
+    "hash": "abc123",
+    "name": "The Matrix (1999)",
+    "category": "movies",
+    "tags": ["HD"],
+    "state": "stalledUP",
+    "progress": 1,
+    "priority": 1,
+    "eta": 0,
+    "availability": 1,
+    "size": 1073741824,
+    "totalSize": 1073741824,
+    "downloaded": 1073741824,
+    "uploaded": 2147483648,
+    "amountLeft": 0,
+    "ratio": 2,
+    "dlspeed": 0,
+    "upspeed": 1024,
+    "numSeeds": 3,
+    "numLeechs": 1,
+    "numComplete": 3,
+    "numIncomplete": 1,
+    "addedOn": 1760000000,
+    "completionOn": 1760003600,
+    "seedingTime": 86400,
+    "timeActive": 90000,
+    "lastActivity": 1760007200,
+    "ratioLimit": -1,
+    "seedingTimeLimit": -1,
+    "dlLimit": -1,
+    "upLimit": -1
+  },
+  "category": {
+    "category": "movies",
+    "instance": "qBit-main",
+    "qbitInstance": "qBit-main",
+    "managedBy": "arr",
+    "arrName": "Radarr-demo",
+    "torrentCount": 1,
+    "seedingCount": 1,
+    "totalSize": 1073741824,
+    "avgRatio": 2,
+    "avgSeedingTime": 86400,
+    "seedingConfig": {
+      "maxRatio": -1,
+      "maxTime": -1,
+      "removeMode": -1,
+      "downloadLimit": -1,
+      "uploadLimit": -1
+    },
+    "torrents": [
+      {
+        "hash": "abc123",
+        "name": "The Matrix (1999)",
+        "category": "movies",
+        "tags": ["HD"],
+        "state": "stalledUP",
+        "progress": 1,
+        "priority": 1,
+        "eta": 0,
+        "availability": 1,
+        "size": 1073741824,
+        "totalSize": 1073741824,
+        "downloaded": 1073741824,
+        "uploaded": 2147483648,
+        "amountLeft": 0,
+        "ratio": 2,
+        "dlspeed": 0,
+        "upspeed": 1024,
+        "numSeeds": 3,
+        "numLeechs": 1,
+        "numComplete": 3,
+        "numIncomplete": 1,
+        "addedOn": 1760000000,
+        "completionOn": 1760003600,
+        "seedingTime": 86400,
+        "timeActive": 90000,
+        "lastActivity": 1760007200,
+        "ratioLimit": -1,
+        "seedingTimeLimit": -1,
+        "dlLimit": -1,
+        "upLimit": -1
+      }
+    ]
+  }
+}

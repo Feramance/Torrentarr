@@ -44,6 +44,10 @@ public class UpdateService
     /// <summary>State of any in-progress or last completed apply operation.</summary>
     public UpdateApplyState ApplyState { get; } = new();
 
+    private static bool IsContainer() =>
+        string.Equals(Environment.GetEnvironmentVariable("DOTNET_RUNNING_IN_CONTAINER"), "true", StringComparison.OrdinalIgnoreCase)
+        || File.Exists("/.dockerenv");
+
     public UpdateService(ILogger<UpdateService> logger, TorrentarrConfig config, WorkerProcessSupervisor? workers = null)
     {
         _logger = logger;
@@ -70,7 +74,7 @@ public class UpdateService
     public string AutoUpdateChannel =>
         ConfigurationLoader.NormalizeAutoUpdateChannel(_config.Settings.AutoUpdateChannel);
 
-    public bool CanApplyBinaries => !IsSourceBuild() && AutoUpdateChannel != "nightly";
+    public bool CanApplyBinaries => !IsContainer() && !IsSourceBuild() && AutoUpdateChannel != "nightly";
 
     public static string GetCurrentVersion()
     {
@@ -123,7 +127,7 @@ public class UpdateService
                     return;
                 }
 
-                ApplyReleaseMetadata(release, currentVersion, assetPattern, allowBinary: channel != "nightly" && !IsSourceBuild());
+                ApplyReleaseMetadata(release, currentVersion, assetPattern, allowBinary: CanApplyBinaries);
             }
             catch (Exception ex)
             {
@@ -167,7 +171,9 @@ public class UpdateService
                 last_checked = _lastChecked == DateTime.MinValue ? (string?)null : _lastChecked.ToString("o"),
                 error = _checkError,
                 update_state = updateState,
-                installation_type = IsSourceBuild() ? "source" : "binary",
+                installation_type = IsContainer() ? "docker" : IsSourceBuild() ? "source" : "binary",
+                auto_update_supported = CanApplyBinaries,
+                update_channel = AutoUpdateChannel,
                 binary_download_url = _binaryDownloadUrl,
                 binary_download_name = _binaryDownloadName,
                 binary_download_size = _binaryDownloadSize,
@@ -191,7 +197,9 @@ public class UpdateService
             last_checked = _lastChecked == DateTime.MinValue ? (string?)null : _lastChecked.ToString("o"),
             error = _checkError,
             update_state = updateState,
-            installation_type = IsSourceBuild() ? "source" : "binary",
+            installation_type = IsContainer() ? "docker" : IsSourceBuild() ? "source" : "binary",
+            auto_update_supported = CanApplyBinaries,
+            update_channel = AutoUpdateChannel,
             binary_download_url = _binaryDownloadUrl,
             binary_download_name = _binaryDownloadName,
             binary_download_size = _binaryDownloadSize,
@@ -217,6 +225,14 @@ public class UpdateService
     {
         if (ApplyState.InProgress)
             return Task.CompletedTask;
+
+        if (IsContainer())
+        {
+            ApplyState.LastResult = "error";
+            ApplyState.LastError = "Docker installations update by pulling and recreating the container.";
+            ApplyState.CompletedAt = DateTime.UtcNow;
+            return Task.CompletedTask;
+        }
 
         if (IsSourceBuild())
         {
@@ -597,7 +613,8 @@ public class UpdateService
             _binaryDownloadSize = null;
             _workerDownloadUrl = null;
             _workerDownloadName = null;
-            _binaryDownloadError = AutoUpdateChannel == "nightly"
+            _binaryDownloadError = IsContainer() ? "Docker installations update by pulling and recreating the container."
+                : AutoUpdateChannel == "nightly"
                 ? "Nightly channel does not download or apply binaries"
                 : "Source builds cannot apply binary updates";
             return;

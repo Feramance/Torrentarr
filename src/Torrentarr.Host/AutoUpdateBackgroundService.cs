@@ -16,51 +16,33 @@ public class AutoUpdateBackgroundService : BackgroundService
     private readonly TorrentarrConfig _config;
     private readonly UpdateService _updateService;
     private readonly IHostApplicationLifetime _lifetime;
+    private readonly IConfigReloader? _reloader;
 
     public AutoUpdateBackgroundService(
         ILogger<AutoUpdateBackgroundService> logger,
         TorrentarrConfig config,
         UpdateService updateService,
-        IHostApplicationLifetime lifetime)
+        IHostApplicationLifetime lifetime, IConfigReloader? reloader = null)
     {
         _logger = logger;
         _config = config;
         _updateService = updateService;
         _lifetime = lifetime;
+        _reloader = reloader;
     }
 
     protected override async Task ExecuteAsync(CancellationToken stoppingToken)
     {
-        if (!_config.Settings.AutoUpdateEnabled)
-        {
-            _logger.LogDebug("AutoUpdateBackgroundService: AutoUpdateEnabled=false, exiting");
-            return;
-        }
-
-        if (UpdateService.IsSourceBuild())
-        {
-            _logger.LogInformation("AutoUpdateBackgroundService: source/dotnet run build — auto-update disabled");
-            return;
-        }
-
-        var channel = ConfigurationLoader.NormalizeAutoUpdateChannel(_config.Settings.AutoUpdateChannel);
-        if (channel == "nightly")
-        {
-            _logger.LogInformation("AutoUpdateBackgroundService: nightly channel checks only — binaries will not be applied");
-        }
-
-        var cron = _config.Settings.AutoUpdateCron ?? "0 3 * * 0";
-        _logger.LogInformation("AutoUpdateBackgroundService: Starting with schedule '{Cron}'", cron);
-
-        // Align to the next minute boundary so the cron check fires once per minute
-        var delayToNextMinute = TimeSpan.FromSeconds(60 - DateTime.UtcNow.Second);
-        await Task.Delay(delayToNextMinute, stoppingToken);
-
+        DateTime? lastCheckMinute = null;
         while (!stoppingToken.IsCancellationRequested)
         {
+            using var configuration = _config.BeginOperation();
             var now = DateTime.UtcNow;
-            if (CronSchedule.Matches(cron, now))
+            var minute = new DateTime(now.Year, now.Month, now.Day, now.Hour, now.Minute, 0, DateTimeKind.Utc);
+            var cron = _config.Settings.AutoUpdateCron ?? "0 3 * * 0";
+            if (_config.Settings.AutoUpdateEnabled && !UpdateService.IsSourceBuild() && lastCheckMinute != minute && CronSchedule.Matches(cron, now))
             {
+                lastCheckMinute = minute;
                 _logger.LogInformation("AutoUpdateBackgroundService: Cron matched at {Time}, checking for update", now);
                 try
                 {
@@ -82,7 +64,9 @@ public class AutoUpdateBackgroundService : BackgroundService
                 }
             }
 
-            await Task.Delay(TimeSpan.FromMinutes(1), stoppingToken);
+            _reloader?.Acknowledge("auto-update", _config.Revision);
+            if (_reloader != null) await _reloader.WaitForChangeAsync(_config.Revision, TimeSpan.FromSeconds(60 - DateTime.UtcNow.Second), stoppingToken);
+            else await Task.Delay(TimeSpan.FromMinutes(1), stoppingToken);
         }
     }
 

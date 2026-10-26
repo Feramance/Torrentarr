@@ -1,6 +1,6 @@
 /**
  * Live summary text for how torrents are handled based on config state.
- * Used by ConfigView Arr and qBit instance modals; updates as the user edits (no save required).
+ * Used by ConfigView Arr and torrent client modals; updates as the user edits (no save required).
  */
 
 import { get } from "lodash-es";
@@ -115,7 +115,8 @@ export function getArrTorrentHandlingSummary(
     -1,
   );
   const maxEta = parseDurationToSeconds(torrent.MaximumETA, -1);
-  const maxDeletable = Number(torrent.MaximumDeletablePercentage);
+  const maxDeletable =
+    Math.round(Number(torrent.MaximumDeletablePercentage) * 10000) / 100;
   const doNotRemoveSlow = Boolean(torrent.DoNotRemoveSlow);
   const stalledDelayMin = parseDurationToMinutes(torrent.StalledDelay, -1);
   const reSearchStalled = Boolean(torrent.ReSearchStalled);
@@ -241,7 +242,7 @@ export function getArrTorrentHandlingSummary(
     | undefined;
   if (!Array.isArray(trackers) || trackers.length === 0) {
     blocks.push(
-      "No per-tracker overrides; behaviour above applies to all trackers (using qBit instance defaults).",
+      "No per-tracker overrides; behaviour above applies to all trackers (using torrent client defaults).",
     );
   } else {
     blocks.push("**Per-tracker behaviour**");
@@ -259,7 +260,7 @@ export function getArrTorrentHandlingSummary(
         "days",
       );
       const sortNote = t.SortTorrents
-        ? " **Queue sort** uses this tracker's priority in qBittorrent's download queue when queuing is enabled."
+        ? " **Queue sort** uses this tracker's priority in the torrent client's download queue when queuing is enabled."
         : "";
       if (mode === "disabled") {
         blocks.push(
@@ -273,14 +274,14 @@ export function getArrTorrentHandlingSummary(
       }
     });
     blocks.push(
-      "Other trackers use qBit instance defaults and the seeding/stalled rules above.",
+      "Other trackers use torrent client defaults and the seeding/stalled rules above.",
     );
   }
 
   return blocks.join("\n\n");
 }
 
-/** Build human-readable summary for a qBit instance: lifetime narrative and per-tracker behaviour. */
+/** Build human-readable summary for a torrent client: lifetime narrative and per-tracker behaviour. */
 export function getQbitTorrentHandlingSummary(
   state: ConfigDocument | null,
 ): string {
@@ -429,7 +430,7 @@ export function getQbitTorrentHandlingSummary(
         "days",
       );
       const sortNote = t.SortTorrents
-        ? " **Queue sort** uses this tracker's priority in qBittorrent's download queue when queuing is enabled."
+        ? " **Queue sort** uses this tracker's priority in the torrent client's download queue when queuing is enabled."
         : "";
       if (mode === "disabled") {
         blocks.push(

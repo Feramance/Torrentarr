@@ -222,8 +222,7 @@ export function ArrCatalogShell<
   const instanceLabel = useMemo(() => {
     if (!selection || selection === "aggregate") return "";
     return (
-      instances.find((i) => (i.name || i.category) === selection)?.name ||
-      String(selection)
+      instances.find((i) => i.name === selection)?.name || String(selection)
     );
   }, [instances, selection]);
 
@@ -309,12 +308,12 @@ export function ArrCatalogShell<
             {instances.map((inst) => (
               <button
                 type="button"
-                key={inst.name || inst.category}
+                key={inst.name}
                 className={`btn ghost ${
-                  selection === (inst.name || inst.category) ? "active" : ""
+                  selection === inst.name ? "active" : ""
                 }`}
                 onClick={() => {
-                  setSelection(inst.name || inst.category);
+                  setSelection(inst.name);
                   setGlobalSearch("");
                 }}
               >
@@ -324,11 +323,9 @@ export function ArrCatalogShell<
           </aside>
           <div className="pane">
             <div className="field mobile-instance-select">
-              <label htmlFor={`${definition.kind}-catalog-instance`}>
-                Instance
-              </label>
+              <label htmlFor={`${definition.kind}-instance`}>Instance</label>
               <select
-                id={`${definition.kind}-catalog-instance`}
+                id={`${definition.kind}-instance`}
                 value={selection || "aggregate"}
                 onChange={handleInstanceSelection}
                 disabled={!instances.length}
@@ -339,10 +336,7 @@ export function ArrCatalogShell<
                   </option>
                 )}
                 {instances.map((inst) => (
-                  <option
-                    key={inst.name || inst.category}
-                    value={inst.name || inst.category}
-                  >
+                  <option key={inst.name} value={inst.name}>
                     {inst.name || inst.category}
                   </option>
                 ))}
@@ -357,11 +351,9 @@ export function ArrCatalogShell<
               }}
             >
               <div className="col field" style={{ flex: "1 1 200px" }}>
-                <label htmlFor={`${definition.kind}-catalog-search`}>
-                  Search
-                </label>
+                <label htmlFor={`${definition.kind}-search`}>Search</label>
                 <input
-                  id={`${definition.kind}-catalog-search`}
+                  id={`${definition.kind}-search`}
                   placeholder={definition.searchPlaceholder}
                   value={globalSearch}
                   onChange={(event) => setGlobalSearch(event.target.value)}
@@ -380,11 +372,11 @@ export function ArrCatalogShell<
                       minWidth: `${control.minWidth ?? 140}px`,
                     }}
                   >
-                    <label htmlFor={`${definition.kind}-catalog-${control.id}`}>
+                    <label htmlFor={`${definition.kind}-${control.id}`}>
                       {control.label}
                     </label>
                     <select
-                      id={`${definition.kind}-catalog-${control.id}`}
+                      id={`${definition.kind}-${control.id}`}
                       value={control.getValue(filters)}
                       onChange={(event) =>
                         setFilters((prev) =>
@@ -402,7 +394,7 @@ export function ArrCatalogShell<
                 );
               })}
               <div className="field" style={{ flex: "0 0 auto" }}>
-                <span>View</span>
+                <label>View</label>
                 <ArrBrowseModeToggle
                   mode={browseMode}
                   onChange={setBrowseMode}

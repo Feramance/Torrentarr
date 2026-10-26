@@ -11,9 +11,23 @@ import {
 } from "./ArrCatalogListOrGrid";
 
 vi.mock("../../components/StableTable", () => ({
-  StableTable: ({ data }: { data: Array<{ id: string; title: string }> }) => (
+  StableTable: ({
+    data,
+    rowOrder,
+    rowsStore,
+  }: {
+    data?: Array<{ id: string; title: string }>;
+    rowOrder: string[];
+    rowsStore: {
+      getSnapshot: () => {
+        rowsById: Map<string, { id: string; title: string }>;
+      };
+    };
+  }) => (
     <div data-testid="stable-table">
-      {data.map((row) => (
+      {(
+        data ?? rowOrder.map((id) => rowsStore.getSnapshot().rowsById.get(id)!)
+      ).map((row) => (
         <button key={row.id} type="button">
           {row.id}
         </button>

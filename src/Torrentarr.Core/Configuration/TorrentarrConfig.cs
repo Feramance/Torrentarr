@@ -10,14 +10,47 @@ namespace Torrentarr.Core.Configuration;
 /// </summary>
 public class TorrentarrConfig
 {
-    internal HashSet<string>? MonitoredPolicyCategoriesCache { get; set; }
-    internal object MonitoredPolicyCategoriesCacheLock { get; } = new();
-    public SettingsConfig Settings { get; set; } = new();
-    public Dictionary<string, QBitConfig> QBitInstances { get; set; } = new();
-    public Dictionary<string, TorrentClientInstanceConfig> TorrentClients { get; set; } = new();
-    public WebUIConfig WebUI { get; set; } = new();
-    public Dictionary<string, ArrInstanceConfig> ArrInstances { get; set; } = new();
+    internal HashSet<string>? MonitoredPolicyCategoriesCache { get => Current.Categories; set => Current.Categories = value; }
+    internal object MonitoredPolicyCategoriesCacheLock => Current.CacheLock;
+    private sealed record State(SettingsConfig Settings, Dictionary<string, QBitConfig> QBitInstances,
+        Dictionary<string, TorrentClientInstanceConfig> TorrentClients, WebUIConfig WebUI,
+        Dictionary<string, ArrInstanceConfig> ArrInstances, long Revision)
+    {
+        public HashSet<string>? Categories;
+        public object CacheLock { get; } = new();
+    }
+    private State _state = new(new(), new(), new(), new(), new(), 0);
+    private readonly AsyncLocal<State?> _operation = new();
+    private State Current => _operation.Value ?? Volatile.Read(ref _state);
+    public SettingsConfig Settings { get => Current.Settings; set => _state = _state with { Settings = value }; }
+    public Dictionary<string, QBitConfig> QBitInstances { get => Current.QBitInstances; set => _state = _state with { QBitInstances = value }; }
+    public Dictionary<string, TorrentClientInstanceConfig> TorrentClients { get => Current.TorrentClients; set => _state = _state with { TorrentClients = value }; }
+    public WebUIConfig WebUI { get => Current.WebUI; set => _state = _state with { WebUI = value }; }
+    public Dictionary<string, ArrInstanceConfig> ArrInstances { get => Current.ArrInstances; set => _state = _state with { ArrInstances = value }; }
     public List<ArrInstanceConfig> Arrs => ArrInstances.Values.ToList();
+    [Newtonsoft.Json.JsonIgnore, System.Text.Json.Serialization.JsonIgnore, TomlIgnore]
+    public long Revision => Current.Revision;
+    [Newtonsoft.Json.JsonIgnore, System.Text.Json.Serialization.JsonIgnore, TomlIgnore]
+    public long LatestRevision => Volatile.Read(ref _state).Revision;
+
+    public void Apply(TorrentarrConfig source, long revision)
+    {
+        Interlocked.Exchange(ref _state, new(source.Settings, source.QBitInstances, source.TorrentClients,
+            source.WebUI, source.ArrInstances, revision));
+        TorrentPolicyHelper.InvalidateMonitoredPolicyCategoriesCache(this);
+    }
+
+    public IDisposable BeginOperation()
+    {
+        var previous = _operation.Value;
+        _operation.Value = Current;
+        return new Operation(() => _operation.Value = previous);
+    }
+    private sealed class Operation(Action release) : IDisposable
+    {
+        public void Dispose() => release();
+    }
+
 }
 
 public class SettingsConfig
@@ -115,17 +148,6 @@ public class MaintenanceConfig
     public List<CategoryMappingConfig> CategoryMappings { get; set; } = new();
     public List<CategoryTransitionConfig> CategoryTransitions { get; set; } = new();
     public List<TrackerAssignmentConfig> TrackerAssignments { get; set; } = new();
-    public List<SharePolicyConfig> SharePolicies { get; set; } = new();
-    public List<MaintenanceNotificationConfig> Notifications { get; set; } = new();
-}
-
-public class MaintenanceNotificationConfig
-{
-    public bool Enabled { get; set; }
-    public string Type { get; set; } = "webhook";
-    public string Url { get; set; } = "";
-    public string Token { get; set; } = "";
-    public int MaxAttempts { get; set; } = 3;
 }
 
 public class PathMappingConfig
@@ -206,25 +228,6 @@ public class TrackerAssignmentConfig
     public string TrackerContains { get; set; } = "";
     public string Category { get; set; } = "";
     public List<string> Tags { get; set; } = new();
-}
-
-public class SharePolicyConfig
-{
-    public string Name { get; set; } = "";
-    public int Priority { get; set; }
-    public List<string> Categories { get; set; } = new();
-    public List<string> Tags { get; set; } = new();
-    public List<string> Trackers { get; set; } = new();
-    public string CompletionState { get; set; } = "completed";
-    public string Privacy { get; set; } = "any";
-    public double? MaximumRatio { get; set; }
-    public int? MaximumSeedingMinutes { get; set; }
-    public int? MaximumInactiveMinutes { get; set; }
-    public int MinimumSeedCount { get; set; }
-    public int MinimumSeedingMinutes { get; set; }
-    public int? UploadLimitKiB { get; set; }
-    public string Action { get; set; } = "stop";
-    public string WaitingTag { get; set; } = "maintenance-waiting";
 }
 
 public class CategorySeedingConfig

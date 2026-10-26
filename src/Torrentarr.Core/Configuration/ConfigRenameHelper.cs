@@ -51,15 +51,6 @@ public static class ConfigRenameHelper
                         changes[path] = property.Value.DeepClone();
                 }
                 else if (property.Value is JObject nested) Preserve(nested, path);
-                else if (property.Name == "Notifications" && property.Value is JArray original && supplied is JArray notifications)
-                    foreach (var notification in notifications.OfType<JObject>())
-                        if (notification.GetValue("Token", StringComparison.OrdinalIgnoreCase)?.Value<string>() == "[redacted]")
-                        {
-                            var existing = original.OfType<JObject>().FirstOrDefault(n =>
-                                string.Equals(n["Url"]?.Value<string>(), notification.GetValue("Url", StringComparison.OrdinalIgnoreCase)?.Value<string>(), StringComparison.OrdinalIgnoreCase));
-                            if (existing == null) throw new ArgumentException("Cannot restore a notification token for the renamed client.");
-                            notification.Properties().First(p => p.Name.Equals("Token", StringComparison.OrdinalIgnoreCase)).Value = existing["Token"]?.DeepClone() ?? JValue.CreateNull();
-                        }
             }
         }
     }

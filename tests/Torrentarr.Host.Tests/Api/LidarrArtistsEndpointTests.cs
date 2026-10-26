@@ -56,6 +56,8 @@ public class LidarrArtistsEndpointTests : IClassFixture<ArrCatalogWebApplication
         var json = JsonDocument.Parse(await response.Content.ReadAsStringAsync()).RootElement;
         json.GetProperty("artist").GetProperty("name").GetString().Should().Be("Artist One");
         json.GetProperty("albums").GetArrayLength().Should().Be(2);
+        json.GetProperty("artist").GetProperty("albumCount").GetInt32().Should().Be(2);
+        json.GetProperty("artist").GetProperty("trackTotalCount").GetInt32().Should().Be(json.GetProperty("albums").EnumerateArray().Sum(a => a.GetProperty("tracks").GetArrayLength()));
         json.GetProperty("albums")[0].GetProperty("tracks").ValueKind.Should().Be(JsonValueKind.Array);
     }
 

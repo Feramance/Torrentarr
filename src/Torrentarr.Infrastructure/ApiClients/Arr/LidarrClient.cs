@@ -262,15 +262,17 @@ public class LidarrClient
     }
 
     /// <summary>
-    /// Get tracks for an album
+    /// Get tracks for an album or artist.
     /// </summary>
-    public async Task<List<Track>> GetTracksAsync(int? albumId = null, CancellationToken ct = default)
+    public async Task<List<Track>> GetTracksAsync(int? albumId = null, CancellationToken ct = default, int? artistId = null)
     {
         var request = new RestRequest("/api/v1/track", Method.Get);
         AddApiKeyHeader(request);
 
         if (albumId.HasValue)
             request.AddQueryParameter("albumId", albumId.Value.ToString());
+        if (artistId.HasValue)
+            request.AddQueryParameter("artistId", artistId.Value.ToString());
 
         var response = await ArrClientResponse.ExecuteAsync(_client, request, ct);
         ArrClientResponse.EnsureSuccess(response, "GET /api/v1/track");
@@ -595,7 +597,7 @@ public class Track
     public int ArtistId { get; set; }
 
     [JsonProperty("trackNumber")]
-    public int TrackNumber { get; set; }
+    public string? TrackNumber { get; set; }
 
     [JsonProperty("title")]
     public string Title { get; set; } = "";

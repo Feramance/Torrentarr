@@ -25,6 +25,7 @@ import { SearchProvider } from "../../context/SearchContext";
 
 vi.mock("../../utils/sharedIntersectionObserver", () => ({
   observePosterVisibility: () => () => {},
+  refreshPendingPosterObservers: () => {},
 }));
 
 // Permanent catch-all: settles any stale inflightRequests promises instantly after
@@ -98,6 +99,7 @@ function Wrapper({ children }: { children: ReactNode }) {
 }
 
 function renderView(active = true) {
+  localStorage.setItem("qbitrr.arrBrowseMode.radarr", "list");
   localStorage.setItem("torrentarr.arrBrowseMode.radarr", "list");
   return render(<ArrCatalogView kind="radarr" active={active} />, {
     wrapper: Wrapper,

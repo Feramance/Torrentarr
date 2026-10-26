@@ -84,8 +84,12 @@ SearchMissing = false
         if ($health.Content -notmatch '"healthy"') { throw 'Health endpoint did not report healthy.' }
         $index = (Invoke-WebRequest -Uri "$baseUrl/ui/" -UseBasicParsing).Content
         if ($index -notmatch '<html') { throw 'Embedded UI did not return HTML.' }
-        if ($index -notmatch 'src="(\/assets\/[^" ]+\.js)"') { throw 'No hashed WebUI asset found.' }
-        Invoke-WebRequest -Uri "$baseUrl$($matches[1])" -UseBasicParsing | Out-Null
+        if ($index -notmatch '<script[^>]*src="((?:\.\/|\/)assets\/[^" ]+\.js)"') { throw 'No hashed WebUI asset found.' }
+        $assetPath = $matches[1]
+        $documentBase = [Uri]::new([Uri]"$baseUrl/", 'ui/')
+        if ($index -match '<base[^>]*href="([^"]+)"') { $documentBase = [Uri]::new([Uri]"$baseUrl/", $matches[1]) }
+        $assetUrl = [Uri]::new($documentBase, $assetPath)
+        Invoke-WebRequest -Uri $assetUrl.AbsoluteUri -UseBasicParsing | Out-Null
         $openApi = Invoke-WebRequest -Uri "$baseUrl/api/openapi.json" -Headers @{ Authorization = 'Bearer standalone-smoke-token' } -UseBasicParsing
         $null = $openApi.Content | ConvertFrom-Json
         $statusPath = Join-Path $workDir 'workers/Radarr-Smoke.json'

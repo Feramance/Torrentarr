@@ -1,308 +1,144 @@
-import React from "react";
-import { describe, it, expect, beforeAll, afterAll, afterEach } from "vitest";
-import { fireEvent, render, screen } from "@testing-library/react";
-import { http, HttpResponse } from "msw";
-import { setupServer } from "msw/node";
-import type { ReactNode } from "react";
+import {
+  afterEach,
+  beforeAll,
+  beforeEach,
+  describe,
+  expect,
+  it,
+  vi,
+} from "vitest";
+import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { ReadarrView } from "../../pages/ReadarrView";
 import { ToastProvider } from "../../context/ToastContext";
 import { WebUIProvider } from "../../context/WebUIContext";
 import { SearchProvider } from "../../context/SearchContext";
+import * as api from "../../api/client";
 
-const server = setupServer();
-
-beforeAll(() => server.listen({ onUnhandledRequest: "bypass" }));
-afterEach(async () => {
-  server.resetHandlers();
-  server.use(http.all("*", () => new HttpResponse(null, { status: 500 })));
-  await new Promise<void>((r) => setTimeout(r, 50));
-  server.resetHandlers();
+vi.mock("../../components/arr/ArrPosterImage", () => ({
+  ArrPosterImage: () => <img alt="" />,
+}));
+vi.mock("../../api/client", () => ({
+  getConfig: vi.fn(),
+  updateConfig: vi.fn(),
+  getArrList: vi.fn(),
+  getReadarrAuthors: vi.fn(),
+  getReadarrAuthorDetail: vi.fn(),
+  getReadarrOpenAuthorUrl: () => "/open",
+}));
+// These tests cover catalog behavior; chunk loading has its own error regression.
+beforeAll(async () => {
+  await import("../../pages/arrCatalog/readarrDefinition");
 });
-afterAll(() => server.close());
-
-const minimalConfig = {
-  Settings: {},
-  WebUI: { LiveArr: false },
-};
-
-const emptyArrList = { arr: [], ready: true };
-
-const readarrArrList = {
-  arr: [{ category: "readarr-books", name: "Readarr Books", type: "readarr" }],
-  ready: true,
-};
-
-const emptyAuthorsResponse = {
-  category: "readarr-books",
-  authors: [],
-  total: 0,
-  page: 0,
-  page_size: 50,
-  counts: { available: 0, monitored: 0, missing: 0 },
-};
-
-function Wrapper({ children }: { children: ReactNode }) {
-  return (
+function view() {
+  return render(
     <ToastProvider>
       <WebUIProvider>
-        <SearchProvider>{children}</SearchProvider>
+        <SearchProvider>
+          <ReadarrView active />
+        </SearchProvider>
       </WebUIProvider>
-    </ToastProvider>
+    </ToastProvider>,
   );
 }
-
-function renderView(active = true) {
-  return render(<ReadarrView active={active} />, { wrapper: Wrapper });
-}
-
-describe("ReadarrView – card header", () => {
-  it("renders the Readarr card header", async () => {
-    server.use(
-      http.get("/web/config", () => HttpResponse.json(minimalConfig)),
-      http.post("/web/config", () => HttpResponse.json({})),
-      http.get("/web/arr", () => HttpResponse.json(emptyArrList)),
-    );
-
-    renderView();
-
-    await screen.findByText("Readarr");
+beforeEach(() => {
+  vi.resetAllMocks();
+  vi.stubGlobal(
+    "ResizeObserver",
+    class {
+      observe() {}
+      unobserve() {}
+      disconnect() {}
+    },
+  );
+  vi.mocked(api.getConfig).mockResolvedValue({ WebUI: { LiveArr: false } });
+  vi.mocked(api.getArrList).mockResolvedValue({
+    arr: [{ name: "Readarr-Books", category: "books", type: "readarr" }],
+    ready: true,
+  });
+  vi.mocked(api.getReadarrAuthors).mockResolvedValue({
+    category: "books",
+    counts: { available: 1, monitored: 2, missing: 1 },
+    book_total: 2,
+    total: 1,
+    page: 0,
+    page_size: 50,
+    authors: [
+      {
+        author: {
+          id: 10,
+          name: "Frank Herbert",
+          monitored: true,
+          booksAvailable: 1,
+          booksMissing: 1,
+        },
+      },
+    ],
+  });
+  vi.mocked(api.getReadarrAuthorDetail).mockResolvedValue({
+    category: "books",
+    counts: { available: 1, monitored: 2 },
+    author: { id: 10, name: "Frank Herbert", bookCount: 2 },
+    books: [
+      { book: { id: 20, title: "Dune", hasFile: true, monitored: true } },
+    ],
   });
 });
-
-describe("ReadarrView – empty state", () => {
-  it("shows 'No authors found.' when no instances are configured", async () => {
-    server.use(
-      http.get("/web/config", () => HttpResponse.json(minimalConfig)),
-      http.post("/web/config", () => HttpResponse.json({})),
-      http.get("/web/arr", () => HttpResponse.json(emptyArrList)),
-    );
-
-    renderView();
-
-    await screen.findByText("No authors found.");
-  });
-
-  it("shows 'No books found.' when instance returns empty author list", async () => {
-    server.use(
-      http.get("/web/config", () => HttpResponse.json(minimalConfig)),
-      http.post("/web/config", () => HttpResponse.json({})),
-      http.get("/web/arr", () => HttpResponse.json(readarrArrList)),
-      http.get("/web/readarr/readarr-books/authors", () =>
-        HttpResponse.json(emptyAuthorsResponse),
-      ),
-    );
-
-    renderView();
-
-    await screen.findByText("No books found.", {}, { timeout: 10000 });
-  }, 12000);
-});
-
-describe("ReadarrView – instance sidebar", () => {
-  it("shows refresh and restart actions when one readarr instance is configured", async () => {
-    server.use(
-      http.get("/web/config", () => HttpResponse.json(minimalConfig)),
-      http.post("/web/config", () => HttpResponse.json({})),
-      http.get("/web/arr", () => HttpResponse.json(readarrArrList)),
-      http.get("/web/readarr/readarr-books/authors", () =>
-        HttpResponse.json(emptyAuthorsResponse),
-      ),
-    );
-
-    renderView();
-
-    await screen.findByText("No books found.", {}, { timeout: 10000 });
-    expect(screen.getByTitle("Restart worker")).toBeInTheDocument();
-  }, 12000);
-
-  it("renders author rows without a tracks table", async () => {
-    server.use(
-      http.get("/web/config", () => HttpResponse.json(minimalConfig)),
-      http.post("/web/config", () => HttpResponse.json({})),
-      http.get("/web/arr", () => HttpResponse.json(readarrArrList)),
-      http.get("/web/readarr/readarr-books/authors", () =>
-        HttpResponse.json({
-          category: "readarr-books",
-          authors: [
-            {
-              author: {
-                id: 1,
-                name: "Frank Herbert",
-                monitored: true,
-                bookCount: 2,
-                booksAvailable: 1,
-                booksMonitored: 2,
-              },
-            },
-          ],
-          total: 1,
-          page: 0,
-          page_size: 50,
-          counts: { available: 1, monitored: 2, missing: 1 },
-        }),
-      ),
-    );
-
-    renderView();
-
-    expect(await screen.findByText("Frank Herbert")).toBeInTheDocument();
+afterEach(() => vi.unstubAllGlobals());
+describe("Readarr shared catalog", () => {
+  it("offers the same filters and browse layouts as the other Arrs", async () => {
+    view();
     expect(
-      screen.getByRole("button", { name: /open in readarr/i }),
+      await screen.findByRole(
+        "button",
+        { name: /Frank Herbert/ },
+        { timeout: 5000 },
+      ),
     ).toBeInTheDocument();
-    expect(screen.queryByText(/tracks/i)).not.toBeInTheDocument();
+    expect(screen.getByLabelText("Status")).toBeInTheDocument();
+    expect(screen.getByLabelText("Search Reason")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "List" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Icon" })).toBeInTheDocument();
   });
-
-  it("ignores stale author-detail responses", async () => {
-    let resolveFirst: ((value: unknown) => void) | undefined;
-    const firstGate = new Promise((resolve) => {
-      resolveFirst = resolve;
+  it("opens author and book metadata in a detail dialog", async () => {
+    view();
+    fireEvent.click(
+      await screen.findByRole(
+        "button",
+        { name: /Frank Herbert/ },
+        { timeout: 5000 },
+      ),
+    );
+    expect((await screen.findAllByText("Dune")).length).toBeGreaterThan(0);
+    expect(screen.getByRole("dialog")).toBeInTheDocument();
+    expect(screen.queryByText("Tracks")).not.toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "Close" }));
+    expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
+  });
+  it("sends missing-only filters through the author API", async () => {
+    view();
+    await screen.findByRole(
+      "button",
+      { name: /Frank Herbert/ },
+      { timeout: 5000 },
+    );
+    fireEvent.change(screen.getByLabelText("Status"), {
+      target: { value: "missing" },
     });
-
-    server.use(
-      http.get("/web/config", () => HttpResponse.json(minimalConfig)),
-      http.post("/web/config", () => HttpResponse.json({})),
-      http.get("/web/arr", () => HttpResponse.json(readarrArrList)),
-      http.get("/web/readarr/readarr-books/authors", () =>
-        HttpResponse.json({
-          category: "readarr-books",
-          authors: [
-            {
-              author: {
-                id: 1,
-                name: "Frank Herbert",
-                monitored: true,
-                bookCount: 1,
-                booksAvailable: 1,
-                booksMonitored: 1,
-              },
-            },
-            {
-              author: {
-                id: 2,
-                name: "Ursula K. Le Guin",
-                monitored: true,
-                bookCount: 1,
-                booksAvailable: 1,
-                booksMonitored: 1,
-              },
-            },
-          ],
-          total: 2,
-          page: 0,
-          page_size: 50,
-          counts: { available: 2, monitored: 2, missing: 0 },
-        }),
+    await waitFor(() =>
+      expect(api.getReadarrAuthors).toHaveBeenCalledWith(
+        expect.any(String),
+        expect.any(Number),
+        expect.any(Number),
+        expect.any(String),
+        expect.objectContaining({ missing: true }),
       ),
-      http.get("/web/readarr/readarr-books/author/:id", async ({ params }) => {
-        const id = String(params.id);
-        if (id === "1") {
-          await firstGate;
-          return HttpResponse.json({
-            category: "readarr-books",
-            author: { id: 1, name: "Frank Herbert" },
-            books: [{ book: { id: 10, title: "Dune", hasFile: true } }],
-          });
-        }
-        return HttpResponse.json({
-          category: "readarr-books",
-          author: { id: 2, name: "Ursula K. Le Guin" },
-          books: [
-            { book: { id: 20, title: "A Wizard of Earthsea", hasFile: true } },
-          ],
-        });
-      }),
     );
-
-    renderView();
-    expect(await screen.findByText("Frank Herbert")).toBeInTheDocument();
-
-    // Same-tick clicks: B can resolve before React re-renders from A.
-    fireEvent.click(screen.getByRole("button", { name: "Frank Herbert" }));
-    fireEvent.click(screen.getByRole("button", { name: "Ursula K. Le Guin" }));
-
-    expect(await screen.findByText("A Wizard of Earthsea")).toBeInTheDocument();
-    resolveFirst?.(undefined);
-    await new Promise((r) => setTimeout(r, 50));
-    expect(screen.queryByText("Dune")).not.toBeInTheDocument();
   });
-
-  it("ignores a stale first expand of the same author after A then B then A", async () => {
-    let author1Hits = 0;
-
-    server.use(
-      http.get("/web/config", () => HttpResponse.json(minimalConfig)),
-      http.post("/web/config", () => HttpResponse.json({})),
-      http.get("/web/arr", () => HttpResponse.json(readarrArrList)),
-      http.get("/web/readarr/readarr-books/authors", () =>
-        HttpResponse.json({
-          category: "readarr-books",
-          authors: [
-            {
-              author: {
-                id: 1,
-                name: "Frank Herbert",
-                monitored: true,
-                bookCount: 1,
-                booksAvailable: 1,
-                booksMonitored: 1,
-              },
-            },
-            {
-              author: {
-                id: 2,
-                name: "Ursula K. Le Guin",
-                monitored: true,
-                bookCount: 1,
-                booksAvailable: 1,
-                booksMonitored: 1,
-              },
-            },
-          ],
-          total: 2,
-          page: 0,
-          page_size: 50,
-          counts: { available: 2, monitored: 2, missing: 0 },
-        }),
-      ),
-      http.get("/web/readarr/readarr-books/author/:id", async ({ params }) => {
-        const id = String(params.id);
-        if (id === "1") {
-          author1Hits += 1;
-          if (author1Hits === 1) {
-            await new Promise((r) => setTimeout(r, 150));
-            return HttpResponse.json({
-              category: "readarr-books",
-              author: { id: 1, name: "Frank Herbert" },
-              books: [{ book: { id: 10, title: "Dune", hasFile: true } }],
-            });
-          }
-          return HttpResponse.json({
-            category: "readarr-books",
-            author: { id: 1, name: "Frank Herbert" },
-            books: [{ book: { id: 11, title: "Dune Messiah", hasFile: true } }],
-          });
-        }
-        return HttpResponse.json({
-          category: "readarr-books",
-          author: { id: 2, name: "Ursula K. Le Guin" },
-          books: [
-            { book: { id: 20, title: "A Wizard of Earthsea", hasFile: true } },
-          ],
-        });
-      }),
-    );
-
-    renderView();
-    expect(await screen.findByText("Frank Herbert")).toBeInTheDocument();
-
-    fireEvent.click(screen.getByRole("button", { name: "Frank Herbert" }));
-    fireEvent.click(screen.getByRole("button", { name: "Ursula K. Le Guin" }));
-    expect(await screen.findByText("A Wizard of Earthsea")).toBeInTheDocument();
-
-    fireEvent.click(screen.getByRole("button", { name: "Frank Herbert" }));
-    expect(await screen.findByText("Dune Messiah")).toBeInTheDocument();
-    await new Promise((r) => setTimeout(r, 200));
-    expect(screen.queryByText("Dune")).not.toBeInTheDocument();
-    expect(screen.getByText("Dune Messiah")).toBeInTheDocument();
+  it("explains an empty catalog when no instances are configured", async () => {
+    vi.mocked(api.getArrList).mockResolvedValue({ arr: [], ready: true });
+    view();
+    expect(
+      await screen.findByText(/No Readarr instances configured/),
+    ).toBeInTheDocument();
   });
 });

@@ -40,10 +40,13 @@ public class ProcessStatus
     public DateTime? LastHeartbeat { get; set; }
     public int RestartCount { get; set; }
     public bool RestartRequested { get; set; }
+    public long ConfigRevision { get; set; }
     public string? SearchSummary { get; set; }
     public string? SearchTimestamp { get; set; }
     public int? QueueCount { get; set; }
     public int? CategoryCount { get; set; }
     public string? MetricType { get; set; }
     public string? Status { get; set; }
+    public Torrentarr.Core.Models.WorkerLoopProgress? Torrent { get; set; }
+    public Torrentarr.Core.Models.WorkerLoopProgress? Search { get; set; }
 }

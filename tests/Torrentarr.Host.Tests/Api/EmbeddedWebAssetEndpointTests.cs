@@ -32,10 +32,11 @@ public class EmbeddedWebAssetEndpointTests : IClassFixture<TorrentarrWebApplicat
         var index = await indexResponse.Content.ReadAsStringAsync();
         index.Should().Contain("<html");
 
-        var assetPath = Regex.Match(index, "src=\"(?<path>/assets/[^\"]+\\.js)\"").Groups["path"].Value;
+        var assetPath = Regex.Match(index, "src=\"(?<path>(?:[.]/|/)assets/[^\"]+[.]js)\"").Groups["path"].Value;
         assetPath.Should().NotBeNullOrWhiteSpace();
 
-        var assetResponse = await client.GetAsync(assetPath);
+        index.Should().Contain("<base href=\"/\">");
+        var assetResponse = await client.GetAsync(new Uri(new Uri("http://localhost/"), assetPath).PathAndQuery);
         assetResponse.StatusCode.Should().Be(HttpStatusCode.OK);
         (await assetResponse.Content.ReadAsByteArrayAsync()).Should().NotBeEmpty();
     }

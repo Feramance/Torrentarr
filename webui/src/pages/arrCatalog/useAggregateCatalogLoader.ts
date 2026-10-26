@@ -220,7 +220,7 @@ export function useAggregateCatalogLoader<
       aggActiveLoadGenRef.current = gen;
       const requestKey = JSON.stringify({
         instances: [...instances]
-          .map((instance) => instance.category)
+          .map((instance) => instance.name)
           .sort((a, b) => a.localeCompare(b)),
         search: globalSearchRef.current,
         filters: filtersRef.current,

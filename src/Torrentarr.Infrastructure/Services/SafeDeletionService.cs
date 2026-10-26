@@ -28,13 +28,13 @@ public sealed class SafeDeletionService : ISafeDeletionService
         _logger = logger;
     }
 
-    public Task<SafeDeletionResult> RemoveTorrentAsync(string clientInstanceId, string hash, bool removeContent, bool permanent = false, CancellationToken ct = default)
-        => RemoveAsync(clientInstanceId, hash, removeContent, null, permanent, ct);
+    public Task<SafeDeletionResult> RemoveTorrentAsync(string clientInstanceId, string hash, bool removeContent, CancellationToken ct = default)
+        => RemoveAsync(clientInstanceId, hash, removeContent, null, ct);
 
-    public Task<SafeDeletionResult> RemoveMaintenanceTorrentAsync(string clientInstanceId, string hash, bool removeContent, TorrentInventory inventory, bool permanent = false, CancellationToken ct = default)
-        => RemoveAsync(clientInstanceId, hash, removeContent, inventory, permanent, ct);
+    public Task<SafeDeletionResult> RemoveMaintenanceTorrentAsync(string clientInstanceId, string hash, bool removeContent, TorrentInventory inventory, CancellationToken ct = default)
+        => RemoveAsync(clientInstanceId, hash, removeContent, inventory, ct);
 
-    private async Task<SafeDeletionResult> RemoveAsync(string clientInstanceId, string hash, bool removeContent, TorrentInventory? validatedInventory, bool permanent, CancellationToken ct)
+    private async Task<SafeDeletionResult> RemoveAsync(string clientInstanceId, string hash, bool removeContent, TorrentInventory? validatedInventory, CancellationToken ct)
     {
         var client = _registry.GetClient(clientInstanceId);
         var cfg = _config.GetTorrentClient(clientInstanceId);
@@ -90,19 +90,7 @@ public sealed class SafeDeletionService : ISafeDeletionService
         if (!cfg.Maintenance.RecycleBin.Enabled)
             return new(false, true, 0, "Recycle-bin content removal is disabled; refusing destructive deletion.");
 
-        if (permanent)
-        {
-            if (!client.Capabilities.ContentDeletion)
-                return new(false, true, 0, "Torrent client does not support content deletion.");
-            var removed = await client.DeleteTorrentsAsync([hash], true, ct);
-            return removed
-                ? new(true, false, 0)
-                : new(false, true, 0, "Torrent client rejected content deletion.");
-        }
-
-        await BackupResumeDataAsync(client, hash, clientInstanceId, cfg, ct);
-
-        var moved = 0L;
+        long moved = 0;
         var movedPaths = new List<(string Source, string Destination)>();
         var removalAttempted = false;
         var removalRejected = false;
@@ -201,7 +189,7 @@ public sealed class SafeDeletionService : ISafeDeletionService
         if (cfg.Maintenance.RecycleBin.SplitByClient)
             root = Path.Combine(root, Sanitize(clientInstanceId));
         if (!Directory.Exists(root)) return Task.FromResult(0);
-        if ((File.GetAttributes(root) & FileAttributes.ReparsePoint) != 0) return Task.FromResult(0);
+        if (_paths.ValidateLocalPath(root, root) != null) throw new IOException("Recycle root is inaccessible or unsafe.");
 
         var cutoff = DateTime.UtcNow.AddDays(-cfg.Maintenance.RecycleBin.RetentionDays);
         var deleted = 0;
@@ -209,7 +197,7 @@ public sealed class SafeDeletionService : ISafeDeletionService
         {
             RecurseSubdirectories = true,
             AttributesToSkip = FileAttributes.ReparsePoint,
-            IgnoreInaccessible = true
+            IgnoreInaccessible = false
         };
         foreach (var path in Directory.EnumerateFileSystemEntries(root, "*", options))
         {
@@ -218,6 +206,7 @@ public sealed class SafeDeletionService : ISafeDeletionService
             var modified = File.GetLastWriteTimeUtc(path);
             if (modified > cutoff) continue;
             if ((File.GetAttributes(path) & FileAttributes.ReparsePoint) != 0) continue;
+            if (_paths.ValidateLocalPath(path, root, requireFile: true) != null) throw new IOException("Recycle item is inaccessible or unsafe.");
             File.Delete(path);
             deleted++;
         }
@@ -233,7 +222,7 @@ public sealed class SafeDeletionService : ISafeDeletionService
             return $"Refusing symlink or reparse point: {full}";
         var root = cfg.Maintenance.PathMappings.Select(m => m.LocalPath)
             .FirstOrDefault(candidate => !string.IsNullOrWhiteSpace(candidate) && _paths.IsSafeDescendant(full, candidate));
-        if (root == null || HasReparsePointInPath(full, Path.GetFullPath(root)))
+        if (root == null || _paths.ValidateLocalPath(full, root) != null || HasReparsePointInPath(full, Path.GetFullPath(root)))
             return $"Refusing path with a symlink or reparse-point ancestor: {full}";
         return null;
     }

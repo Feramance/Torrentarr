@@ -17,6 +17,77 @@ namespace Torrentarr.Host.Tests;
 public class ProcessOrchestratorServiceTests
 {
     [Theory]
+    [InlineData("-1")]
+    [InlineData("0")]
+    public async Task FreeSpace_ConfigSaveWakesLoopAndRefreshesSettings(string initialThreshold)
+    {
+        var config = new TorrentarrConfig();
+        config.Settings.FreeSpace = initialThreshold;
+        config.Settings.LoopSleepTimer = 3600;
+        config.QBitInstances["qBit-test"] = new QBitConfig
+        {
+            Host = "localhost",
+            UserName = "test",
+            Password = "test",
+            ManagedCategories = ["movies"]
+        };
+        var client = new Mock<ITorrentClient>();
+        client.SetupGet(c => c.Capabilities).Returns(TorrentClientCapabilities.QBittorrent);
+        client.Setup(c => c.GetTorrentsAsync(It.IsAny<string?>(), It.IsAny<string?>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync([]);
+        var registry = new Mock<ITorrentClientRegistry>();
+        registry.Setup(r => r.GetAllClients()).Returns(new Dictionary<string, ITorrentClient> { ["qBit-test"] = client.Object });
+        registry.Setup(r => r.IsConnected()).Returns(true);
+        var states = new ProcessStateManager();
+        using var service = new ProcessOrchestratorService(NullLogger<ProcessOrchestratorService>.Instance,
+            config, registry.Object, Mock.Of<IServiceScopeFactory>(), states, Mock.Of<ISafeDeletionService>());
+        await service.StartAsync(CancellationToken.None);
+        try
+        {
+            await WaitUntilAsync(() => states.GetState("Failed")?.Alive == true);
+            states.GetState("FreeSpaceManager")!.Alive.Should().BeFalse();
+
+            config.Settings = new SettingsConfig
+            {
+                FreeSpace = "1024G",
+                FreeSpaceFolder = Path.GetTempPath(),
+                LoopSleepTimer = 3600
+            };
+            service.NotifyConfigurationChanged();
+            await WaitUntilAsync(() => states.GetState("FreeSpaceManager")!.Alive);
+            const BindingFlags flags = BindingFlags.Instance | BindingFlags.NonPublic;
+            typeof(ProcessOrchestratorService).GetField("_minFreeSpaceBytes", flags)!.GetValue(service)
+                .Should().Be(1099511627776L);
+            typeof(ProcessOrchestratorService).GetField("_freeSpaceFolder", flags)!.GetValue(service)
+                .Should().Be(Path.GetTempPath());
+
+            config.Settings.FreeSpace = "2G";
+            service.NotifyConfigurationChanged();
+            await WaitUntilAsync(() => (long)typeof(ProcessOrchestratorService)
+                .GetField("_minFreeSpaceBytes", flags)!.GetValue(service)! == 2147483648L);
+
+            config.Settings.AutoPauseResume = false;
+            service.NotifyConfigurationChanged();
+            await WaitUntilAsync(() => !states.GetState("FreeSpaceManager")!.Alive);
+
+            config.Settings.AutoPauseResume = true;
+            service.NotifyConfigurationChanged();
+            await WaitUntilAsync(() => states.GetState("FreeSpaceManager")!.Alive);
+
+            config.Settings.FreeSpace = "-1";
+            service.NotifyConfigurationChanged();
+            await WaitUntilAsync(() => !states.GetState("FreeSpaceManager")!.Alive);
+        }
+        finally { await service.StopAsync(CancellationToken.None); }
+    }
+
+    private static async Task WaitUntilAsync(Func<bool> condition)
+    {
+        using var timeout = new CancellationTokenSource(TimeSpan.FromSeconds(5));
+        while (!condition()) await Task.Delay(10, timeout.Token);
+    }
+
+    [Theory]
     [InlineData(true)]
     [InlineData(false)]
     public async Task FreeSpace_FailedClientDoesNotPreventPausingHealthyDownloads(bool failedFirst)

@@ -23,6 +23,14 @@ public class ConfigSchemaBuilderTests
     }
 
     [Fact]
+    public void TorrentClients_ExposeEverySharedTorrentSetting()
+    {
+        var sharedKeys = ConfigSchemaBuilder.Sections["qBit"].Select(field => field.key);
+        ConfigSchemaBuilder.Sections["TorrentClient"].Select(field => field.key)
+            .Should().Contain(sharedKeys);
+    }
+
+    [Fact]
     public void Registry_UsesTorrentarrSchemaVersionAndQbitrrWireNames()
     {
         var json = JsonSerializer.SerializeToElement(ConfigSchemaBuilder.Build());

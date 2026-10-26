@@ -1,3 +1,4 @@
+using Microsoft.Extensions.DependencyInjection;
 using FluentAssertions;
 using System.Net;
 using System.Net.Http.Json;
@@ -19,6 +20,25 @@ public class ArrTestConnectionEndpointTests : IClassFixture<TorrentarrWebApplica
     public ArrTestConnectionEndpointTests(TorrentarrWebApplicationFactory factory)
     {
         _factory = factory;
+    }
+
+
+    [Theory]
+    [InlineData("/web/arr/test-connection")]
+    [InlineData("/api/arr/test-connection")]
+    public async Task StoredCredentialTest_ValidatesEditedUriRatherThanPersistedUri(string endpoint)
+    {
+        using var client = _factory.CreateClientWithApiToken();
+        var config = _factory.Services.GetRequiredService<Torrentarr.Core.Configuration.TorrentarrConfig>();
+        config.ArrInstances["Radarr-original"] = new() { URI = "http://127.0.0.1:1", APIKey = "stored-secret" };
+        try
+        {
+            var response = await client.PostAsJsonAsync(endpoint, new { arrType = "radarr", instanceKey = "Radarr-original", uri = "ftp://edited", skipTlsVerify = true });
+            var result = await response.Content.ReadFromJsonAsync<JsonElement>();
+            result.GetProperty("message").GetString().Should().Be("URI must use http or https scheme");
+            (await response.Content.ReadAsStringAsync()).Should().NotContain("stored-secret");
+        }
+        finally { config.ArrInstances.Remove("Radarr-original"); }
     }
 
     // ── POST /web/arr/test-connection ─────────────────────────────────────────

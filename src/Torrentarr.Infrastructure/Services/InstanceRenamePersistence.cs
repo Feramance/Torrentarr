@@ -56,17 +56,19 @@ public static class InstanceRenamePersistence
 
     public static async Task SaveAsync(TorrentarrConfig current, TorrentarrConfig updated, JObject? renames,
         ConfigurationLoader loader, TorrentarrDbContext db, string? configPath = null,
-        Func<Task>? suspend = null, CancellationToken ct = default)
+        Func<Task>? suspend = null, CancellationToken ct = default, Action? publish = null)
     {
         var path = Path.GetFullPath(configPath ?? loader.ConfigPath);
-        using var ownership = suspend == null && !ConfigMutationGuard.OwnsMutation(path)
+        using var ownership = suspend == null && !ConfigMutationGuard.OwnsPublication(path)
             ? HostConfigOwnership.Acquire(path) : null;
-        using var mutation = ConfigMutationGuard.EnterMutation(path);
+        ct.ThrowIfCancellationRequested();
+        using var mutation = renames?.HasValues == true
+            ? ConfigMutationGuard.EnterMutation(path) : ConfigMutationGuard.EnterPublication(path);
         Validate(current, updated, renames);
         if (Newtonsoft.Json.JsonConvert.SerializeObject(current.GetAllTorrentClients())
             != Newtonsoft.Json.JsonConvert.SerializeObject(updated.GetAllTorrentClients()))
             foreach (var cfg in updated.GetAllTorrentClients().Values) cfg.Maintenance.Armed = false;
-        if (renames == null || !renames.HasValues) { loader.SaveConfig(updated, path); return; }
+        if (renames == null || !renames.HasValues) { loader.SaveConfig(updated, path); publish?.Invoke(); return; }
         var connection = db.Database.GetDbConnection();
         var close = connection.State != ConnectionState.Open;
         if (close) await connection.OpenAsync(ct);
@@ -118,6 +120,7 @@ public static class InstanceRenamePersistence
             // Once config is published, cancellation must not interrupt the matching DB commit.
             await transaction.CommitAsync(CancellationToken.None);
             db.ChangeTracker.Clear();
+            publish?.Invoke();
             File.Delete(journalPath);
         }
         catch

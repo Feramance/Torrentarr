@@ -8,7 +8,13 @@ import {
   afterAll,
   afterEach,
 } from "vitest";
-import { render, screen, within } from "@testing-library/react";
+import {
+  fireEvent,
+  render,
+  screen,
+  within,
+  waitFor,
+} from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { http, HttpResponse } from "msw";
 import { setupServer } from "msw/node";
@@ -69,6 +75,70 @@ function renderConfig() {
   return render(<ConfigView />, { wrapper: Wrapper });
 }
 
+it("lists every client together by name with the same controls and shared settings", async () => {
+  server.use(
+    http.get("/web/config", () =>
+      HttpResponse.json({
+        ...configQbitOnly,
+        TorrentClient: {
+          "a-transmission": {
+            Type: "transmission",
+            Host: "transmission",
+            Port: 9091,
+            Disabled: true,
+          },
+          "z-qbit": { Type: "qbittorrent", Host: "seedbox", Port: 8080 },
+        },
+      }),
+    ),
+  );
+  const user = userEvent.setup();
+  renderConfig();
+  const section = (await screen.findByText("Torrent Clients")).closest(
+    "section",
+  )!;
+  expect(screen.queryByText("qBittorrent Instances")).not.toBeInTheDocument();
+  expect(
+    screen.queryByText("Additional Torrent Clients"),
+  ).not.toBeInTheDocument();
+  expect(section.querySelector(".config-arr-group__count")).toHaveTextContent(
+    "3",
+  );
+  expect(
+    Array.from(
+      section.querySelectorAll(".card-header"),
+      (header) => header.textContent,
+    ),
+  ).toEqual(["a-transmission", "qBit", "z-qbit"]);
+  expect(
+    within(section).getAllByRole("button", { name: "Add Instance" }),
+  ).toHaveLength(1);
+  for (const card of section.querySelectorAll<HTMLElement>(
+    ".config-arr-card",
+  )) {
+    expect(within(card).getAllByRole("button")).toHaveLength(1);
+    expect(within(card).getByText("Host")).toBeInTheDocument();
+    expect(within(card).getByText("Status")).toBeInTheDocument();
+    await user.click(within(card).getByRole("button", { name: "Configure" }));
+    const dialog = screen.getByRole("dialog");
+    expect(
+      within(dialog).getByText("Managed Categories", { exact: true }),
+    ).toBeInTheDocument();
+    expect(
+      within(dialog).getByText("Hit and Run Mode", { exact: true }),
+    ).toBeInTheDocument();
+    expect(
+      within(dialog).getByText("Maintenance Enabled", { exact: true }),
+    ).toBeInTheDocument();
+    expect(
+      within(dialog).getByRole("button", { name: "Delete", exact: true }),
+    ).toBeInTheDocument();
+    await user.click(
+      within(dialog).getByRole("button", { name: "Close", exact: true }),
+    );
+  }
+});
+
 // ── delete button rendering ───────────────────────────────────────────────────
 
 describe("ConfigView – delete button rendering", () => {
@@ -85,8 +155,13 @@ describe("ConfigView – delete button rendering", () => {
     // Find the card that contains "qBit" and confirm its delete button
     const qbitHeader = screen.getByText("qBit");
     const card = qbitHeader.closest(".card")!;
+    await userEvent.click(
+      within(card).getByRole("button", { name: /configure/i }),
+    );
     expect(
-      within(card).getByRole("button", { name: /delete/i }),
+      within(screen.getByRole("dialog")).getByRole("button", {
+        name: /delete/i,
+      }),
     ).toBeInTheDocument();
   });
 
@@ -101,8 +176,13 @@ describe("ConfigView – delete button rendering", () => {
     await screen.findByText("qBit-1");
     const qbit1Header = screen.getByText("qBit-1");
     const card = qbit1Header.closest(".card")!;
+    await userEvent.click(
+      within(card).getByRole("button", { name: /configure/i }),
+    );
     expect(
-      within(card).getByRole("button", { name: /delete/i }),
+      within(screen.getByRole("dialog")).getByRole("button", {
+        name: /delete/i,
+      }),
     ).toBeInTheDocument();
   });
 
@@ -117,85 +197,75 @@ describe("ConfigView – delete button rendering", () => {
     await screen.findByText("Radarr-1080");
     const arrHeader = screen.getByText("Radarr-1080");
     const card = arrHeader.closest(".card")!;
+    await userEvent.click(
+      within(card).getByRole("button", { name: /configure/i }),
+    );
     expect(
-      within(card).getByRole("button", { name: /delete/i }),
+      within(screen.getByRole("dialog")).getByRole("button", {
+        name: /delete/i,
+      }),
     ).toBeInTheDocument();
   });
 });
 
 // ── deleteQbitInstance logic ──────────────────────────────────────────────────
 
-describe("ConfigView – deleteQbitInstance behaviour", () => {
-  it("confirms and removes qBit just like any other instance", async () => {
+describe("ConfigView – section deletion", () => {
+  it("persists only the confirmed section deletion", async () => {
+    let current = structuredClone(configWithInstances);
+    let changes: Record<string, unknown> = {};
     server.use(
-      http.get("/web/config", () => HttpResponse.json(configWithInstances)),
-      http.post("/web/config", () => HttpResponse.json(okUpdateResponse)),
+      http.get("/web/config", () => HttpResponse.json(current)),
+      http.post("/web/config", async ({ request }) => {
+        changes = (
+          (await request.json()) as { changes: Record<string, unknown> }
+        ).changes;
+        current = Object.fromEntries(
+          Object.entries(current).filter(([key]) => changes[key] !== null),
+        ) as typeof current;
+        return HttpResponse.json(okUpdateResponse);
+      }),
     );
-
-    const confirmSpy = vi.spyOn(window, "confirm").mockReturnValue(true);
     const user = userEvent.setup();
-
     renderConfig();
-
-    await screen.findByText("qBit");
-    const qbitHeader = screen.getByText("qBit");
-    const card = qbitHeader.closest(".card")!;
-    const deleteBtn = within(card).getByRole("button", { name: /delete/i });
-
-    await user.click(deleteBtn);
-
-    expect(confirmSpy).toHaveBeenCalledWith(
-      "Delete qBit? This action cannot be undone.",
+    const card = (await screen.findByText("qBit")).closest(".card")!;
+    await user.click(within(card).getByRole("button", { name: /configure/i }));
+    await user.click(
+      within(screen.getByRole("dialog")).getByRole("button", {
+        name: /delete/i,
+      }),
     );
-    expect(screen.queryByText("qBit")).not.toBeInTheDocument();
+    await user.click(
+      within(screen.getByRole("dialog")).getByRole("button", {
+        name: "Remove",
+      }),
+    );
+    await waitFor(() =>
+      expect(screen.queryByText("qBit")).not.toBeInTheDocument(),
+    );
+    expect(changes).toEqual({ qBit: null });
     expect(screen.getByText("qBit-1")).toBeInTheDocument();
+    expect(screen.queryByText("qBit")).not.toBeInTheDocument();
   });
-
-  it("clicking Delete on qBit-1 calls window.confirm", async () => {
+  it("keeps the section when its confirmation is cancelled", async () => {
     server.use(
       http.get("/web/config", () => HttpResponse.json(configWithInstances)),
-      http.post("/web/config", () => HttpResponse.json(okUpdateResponse)),
     );
-
-    const confirmSpy = vi.spyOn(window, "confirm").mockReturnValue(false);
     const user = userEvent.setup();
-
     renderConfig();
-
-    await screen.findByText("qBit-1");
-    const qbit1Header = screen.getByText("qBit-1");
-    const card = qbit1Header.closest(".card")!;
-    const deleteBtn = within(card).getByRole("button", { name: /delete/i });
-
-    await user.click(deleteBtn);
-
-    expect(confirmSpy).toHaveBeenCalledWith(
-      "Delete qBit-1? This action cannot be undone.",
+    const card = (await screen.findByText("qBit-1")).closest(".card")!;
+    await user.click(within(card).getByRole("button", { name: /configure/i }));
+    await user.click(
+      within(screen.getByRole("dialog")).getByRole("button", {
+        name: /delete/i,
+      }),
     );
-  });
-
-  it("confirms and removes qBit-1 from the UI when window.confirm returns true", async () => {
-    server.use(
-      http.get("/web/config", () => HttpResponse.json(configWithInstances)),
-      http.post("/web/config", () => HttpResponse.json(okUpdateResponse)),
+    await user.click(
+      within(screen.getByRole("dialog")).getByRole("button", {
+        name: "Cancel",
+      }),
     );
-
-    vi.spyOn(window, "confirm").mockReturnValue(true);
-    const user = userEvent.setup();
-
-    renderConfig();
-
-    await screen.findByText("qBit-1");
-    const qbit1Header = screen.getByText("qBit-1");
-    const card = qbit1Header.closest(".card")!;
-    const deleteBtn = within(card).getByRole("button", { name: /delete/i });
-
-    await user.click(deleteBtn);
-
-    // Card for qBit-1 should be gone
-    expect(screen.queryByText("qBit-1")).not.toBeInTheDocument();
-    // Other qBit card should still be present
-    expect(screen.getByText("qBit")).toBeInTheDocument();
+    expect(screen.getAllByText("qBit-1").length).toBeGreaterThan(0);
   });
 });
 
@@ -285,23 +355,20 @@ describe("ConfigView – equal client names", () => {
       }
       await user.click(
         within(screen.getByRole("dialog")).getByRole("button", {
-          name: /done/i,
+          name: /^save$/i,
         }),
-      );
-      await user.click(
-        screen.getByRole("button", { name: /save \+ live reload/i }),
       );
       if (outcome === "retry") {
         await screen.findByText(/configuration is busy/i);
         await user.click(
-          screen.getByRole("button", { name: /save \+ live reload/i }),
+          within(screen.getByRole("dialog")).getByRole("button", {
+            name: /^save$/i,
+          }),
         );
       }
-      await screen.findByText(
-        outcome === "back"
-          ? /no changes detected|configuration saved/i
-          : /configuration saved/i,
-      );
+      if (outcome === "back")
+        await screen.findByText(/no changes detected|configuration saved/i);
+      else await waitFor(() => expect(saves).toBeGreaterThan(0));
       if (outcome === "back") {
         expect(renames).toEqual({});
         expect(changes["qBit.Host"]).not.toBeNull();
@@ -328,7 +395,7 @@ describe("ConfigView – equal client names", () => {
 // ── addQbitInstance logic ──────────────────────────────────────────────────────
 
 describe("ConfigView – addQbitInstance behaviour", () => {
-  it("clicking 'Add Instance' creates a qBit-1 card when qBit is the only instance", async () => {
+  it("clicking 'Add Instance' creates a client-1 card when qBit is the only instance", async () => {
     server.use(
       http.get("/web/config", () => HttpResponse.json(configQbitOnly)),
       http.post("/web/config", () => HttpResponse.json(okUpdateResponse)),
@@ -339,24 +406,22 @@ describe("ConfigView – addQbitInstance behaviour", () => {
     renderConfig();
 
     await screen.findByText("qBit");
-    expect(screen.queryByText("qBit-1")).not.toBeInTheDocument();
+    expect(screen.queryByText("client-1")).not.toBeInTheDocument();
 
-    // The qBit "Add Instance" button is inside the "qBittorrent Instances" section.
+    // Scope the shared add button to the torrent client section.
     // Arr groups (Radarr/Sonarr/Lidarr) each have their own "Add Instance" button,
     // so we must scope the query to avoid ambiguity.
-    const qbitSection = screen
-      .getByText("qBittorrent Instances")
-      .closest("section")!;
+    const qbitSection = screen.getByText("Torrent Clients").closest("section")!;
     const addBtn = within(qbitSection).getByRole("button", {
       name: /add instance/i,
     });
     await user.click(addBtn);
 
-    // findAllByText: the card header AND the modal title both contain "qBit-1"
-    await screen.findAllByText("qBit-1");
+    // findAllByText: the card header AND the modal title both contain "client-1"
+    await screen.findAllByText("client-1");
   });
 
-  it("clicking 'Add Instance' twice creates qBit-1 and then qBit-2", async () => {
+  it("clicking 'Add Instance' twice creates client-1 and then client-2", async () => {
     server.use(
       http.get("/web/config", () => HttpResponse.json(configQbitOnly)),
       http.post("/web/config", () => HttpResponse.json(okUpdateResponse)),
@@ -368,19 +433,20 @@ describe("ConfigView – addQbitInstance behaviour", () => {
 
     await screen.findByText("qBit");
 
-    // Click once → creates qBit-1 and opens its configure modal
+    // Click once → creates client-1 and opens its configure modal
     const getAddBtn = () =>
-      within(
-        screen.getByText("qBittorrent Instances").closest("section")!,
-      ).getByRole("button", { name: /add instance/i });
+      within(screen.getByText("Torrent Clients").closest("section")!).getByRole(
+        "button",
+        { name: /add instance/i },
+      );
 
     await user.click(getAddBtn());
-    // Card header + modal title both show "qBit-1"
-    await screen.findAllByText("qBit-1");
+    // Card header + modal title both show "client-1"
+    await screen.findAllByText("client-1");
 
-    // Click again → creates qBit-2 (re-query button since DOM updated)
+    // Click again → creates client-2 (re-query button since DOM updated)
     await user.click(getAddBtn());
-    await screen.findAllByText("qBit-2");
+    await screen.findAllByText("client-2");
   });
 });
 
@@ -485,14 +551,13 @@ describe("ConfigView – UrlBase field", () => {
     const user = userEvent.setup();
     renderConfig();
 
-    await screen.findByText("Save + Live Reload");
-    await user.click(
-      screen.getByRole("button", { name: /save \+ live reload/i }),
-    );
+    const card = (await screen.findByText("Web Settings")).closest(".card")!;
+    await user.click(within(card).getByRole("button", { name: /configure/i }));
+    await user.click(screen.getByRole("button", { name: "Save", exact: true }));
 
     expect(
-      await screen.findByText(/UrlBase must start with \//i),
-    ).toBeInTheDocument();
+      (await screen.findAllByText(/UrlBase must start with \//i)).length,
+    ).toBeGreaterThan(0);
   });
 
   it("stores valid UrlBase in form state for save", async () => {
@@ -599,3 +664,353 @@ describe("ConfigView – Arr Entry Search and Import Mode", () => {
     expect(upgradeSearch).toBeChecked();
   });
 });
+
+describe("ConfigView – section persistence", () => {
+  it("saves only the selected section and retains unrelated drafts", async () => {
+    const seeding = {
+      MaxUploadRatio: 0,
+      DownloadRateLimitPerTorrent: -1,
+      UploadRateLimitPerTorrent: -1,
+      HitAndRunMode: "disabled",
+    };
+    let stored = {
+      ...structuredClone(configWithInstances),
+      qBit: {
+        ...configWithInstances.qBit,
+        Password: "[redacted]",
+        CategorySeeding: seeding,
+      },
+    };
+    let saved: { changes: Record<string, unknown> } | null = null;
+    server.use(
+      http.get("/web/config", () => HttpResponse.json(stored)),
+      http.post("/web/config", async ({ request }) => {
+        saved = (await request.json()) as { changes: Record<string, unknown> };
+        stored = {
+          ...stored,
+          qBit: { ...stored.qBit, Host: String(saved.changes["qBit.Host"]) },
+        };
+        return HttpResponse.json(okUpdateResponse);
+      }),
+    );
+    const user = userEvent.setup();
+    renderConfig();
+    const web = (await screen.findByText("Web Settings")).closest(".card")!;
+    await user.click(within(web).getByRole("button", { name: /configure/i }));
+    await user.type(
+      within(screen.getByRole("dialog")).getByRole("textbox", {
+        name: "Url Base",
+      }),
+      "/draft",
+    );
+    await user.click(
+      within(screen.getByRole("dialog")).getByRole("button", { name: "Close" }),
+    );
+    const qbit = screen.getByText("qBit").closest(".card")!;
+    await user.click(within(qbit).getByRole("button", { name: /configure/i }));
+    const host = within(screen.getByRole("dialog")).getByRole("textbox", {
+      name: "Host",
+    });
+    await user.clear(host);
+    await user.type(host, "seedbox.local");
+    await user.click(
+      within(screen.getByRole("dialog")).getByRole("button", {
+        name: /^Save$/,
+      }),
+    );
+    await screen.findByText("Configuration saved");
+    expect(saved!.changes).toEqual({ "qBit.Host": "seedbox.local" });
+    await user.click(within(web).getByRole("button", { name: /configure/i }));
+    expect(
+      within(screen.getByRole("dialog")).getByRole("textbox", {
+        name: "Url Base",
+      }),
+    ).toHaveValue("/draft");
+  });
+
+  it("retains edited values and the dialog when persistence fails", async () => {
+    server.use(
+      http.get("/web/config", () =>
+        HttpResponse.json({
+          ...configQbitOnly,
+          qBit: {
+            ...configQbitOnly.qBit,
+            CategorySeeding: {
+              MaxUploadRatio: 0,
+              DownloadRateLimitPerTorrent: -1,
+              UploadRateLimitPerTorrent: -1,
+              HitAndRunMode: "disabled",
+            },
+          },
+        }),
+      ),
+      http.post("/web/config", () =>
+        HttpResponse.json({ error: "disk unavailable" }, { status: 500 }),
+      ),
+    );
+    const user = userEvent.setup();
+    renderConfig();
+    const card = (await screen.findByText("qBit")).closest(".card")!;
+    await user.click(within(card).getByRole("button", { name: /configure/i }));
+    const host = within(screen.getByRole("dialog")).getByRole("textbox", {
+      name: "Host",
+    });
+    await user.clear(host);
+    await user.type(host, "keep-this.local");
+    await user.click(
+      within(screen.getByRole("dialog")).getByRole("button", {
+        name: /^Save$/,
+      }),
+    );
+    await screen.findByText("disk unavailable");
+    expect(host).toHaveValue("keep-this.local");
+    expect(screen.getByRole("dialog")).toBeInTheDocument();
+    expect(screen.queryByText(/Configuration saved/)).not.toBeInTheDocument();
+  });
+});
+
+it.each(["Web Settings", "Radarr-1080"])(
+  "releases the %s modal and scroll lock while Config is inactive",
+  async (section) => {
+    server.use(
+      http.get("/web/config", () => HttpResponse.json(configWithInstances)),
+    );
+    const user = userEvent.setup();
+    const { rerender } = renderConfig();
+    const card = (await screen.findByText(section)).closest(".card")!;
+    await user.click(within(card).getByRole("button", { name: /configure/i }));
+    expect(screen.getByRole("dialog")).toBeInTheDocument();
+    expect(document.body.style.overflow).toBe("hidden");
+    rerender(<ConfigView active={false} />);
+    expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
+    expect(document.body.style.overflow).toBe("");
+    rerender(<ConfigView active />);
+    expect(screen.getByRole("dialog")).toBeInTheDocument();
+    expect(document.body.style.overflow).toBe("hidden");
+    fireEvent.keyDown(window, { key: "Escape" });
+    expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
+    expect(document.body.style.overflow).toBe("");
+  },
+);
+
+it("uses the shared client dialog and saves only the selected torrent client", async () => {
+  let changes: Record<string, unknown> = {};
+  server.use(
+    http.get("/web/config", () =>
+      HttpResponse.json({
+        ...configQbitOnly,
+        TorrentClient: {
+          seedbox: {
+            Type: "transmission",
+            Host: "old-host",
+            Port: 9091,
+            Password: "[redacted]",
+            Maintenance: {
+              PathMappings: [
+                { ClientPath: "/old", LocalPath: "/new", FutureProperty: true },
+              ],
+            },
+          },
+        },
+      }),
+    ),
+    http.post("/web/config", async ({ request }) => {
+      changes = ((await request.json()) as { changes: Record<string, unknown> })
+        .changes;
+      return HttpResponse.json(okUpdateResponse);
+    }),
+  );
+  const user = userEvent.setup();
+  renderConfig();
+  const card = (await screen.findByText("seedbox")).closest(".card")!;
+  await user.click(within(card).getByRole("button", { name: "Configure" }));
+  expect(
+    screen.getByRole("textbox", { name: "Client Type", exact: true }),
+  ).toHaveValue("transmission");
+  const mappings = screen.getByRole("textbox", {
+    name: "Torrent client path",
+    exact: true,
+  });
+  expect(mappings).toHaveValue("/old");
+  await user.clear(mappings);
+  await user.type(mappings, "relative/path");
+  await user.click(screen.getByRole("button", { name: "Save", exact: true }));
+  await screen.findByText("Use an absolute path without traversal segments.");
+  expect(changes).toEqual({});
+  expect(screen.getByRole("dialog")).toBeInTheDocument();
+  expect(mappings).toHaveFocus();
+  fireEvent.change(mappings, { target: { value: "/old" } });
+  const host = screen.getByRole("textbox", { name: "Host", exact: true });
+  await user.clear(host);
+  await user.type(host, "new-host");
+  await user.click(screen.getByRole("button", { name: "Save", exact: true }));
+  await waitFor(() =>
+    expect(changes).toEqual({ "TorrentClient.seedbox.Host": "new-host" }),
+  );
+});
+
+it.each([false, true])(
+  "saves mapping add/edit/remove/clear and retains a failed draft (canonical=%s)",
+  async (canonical) => {
+    const initial = [
+      { ClientPath: "/downloads", LocalPath: "/data", FutureProperty: true },
+    ];
+    let mappings = initial;
+    let fail = false;
+    let lastChanges: Record<string, unknown> = {};
+    const prefix = canonical ? "TorrentClient.seedbox" : "qBit";
+    const application = {
+      acceptedRevision: 20,
+      state: "pending",
+      components: { processing: { appliedRevision: 19 } },
+    };
+    const fixture = () => ({
+      ...configQbitOnly,
+      [canonical ? "TorrentClient" : "qBit"]: canonical
+        ? {
+            seedbox: {
+              Type: "transmission",
+              Host: "seedbox",
+              Port: 9091,
+              Disabled: true,
+              Maintenance: { PathMappings: mappings },
+            },
+          }
+        : {
+            ...configQbitOnly.qBit,
+            CategorySeeding: {
+              MaxUploadRatio: 0,
+              DownloadRateLimitPerTorrent: -1,
+              UploadRateLimitPerTorrent: -1,
+              HitAndRunMode: "disabled",
+            },
+            Maintenance: { PathMappings: mappings },
+          },
+    });
+    server.use(
+      http.get("/web/config", () => HttpResponse.json(fixture())),
+      http.post("/web/config", async ({ request }) => {
+        lastChanges = (
+          (await request.json()) as { changes: Record<string, unknown> }
+        ).changes;
+        if (fail)
+          return HttpResponse.json(
+            { error: "Configuration busy; retry" },
+            { status: 409 },
+          );
+        mappings = lastChanges[
+          `${prefix}.Maintenance.PathMappings`
+        ] as typeof initial;
+        return HttpResponse.json({
+          ...okUpdateResponse,
+          reloadType: "live",
+          application,
+        });
+      }),
+    );
+    const user = userEvent.setup();
+    renderConfig();
+    const open = async () => {
+      const card = (
+        await screen.findByText(canonical ? "seedbox" : "qBit", { exact: true })
+      ).closest(".card")!;
+      await user.click(within(card).getByRole("button", { name: "Configure" }));
+    };
+    const save = async () => {
+      await user.click(
+        screen.getByRole("button", { name: "Save", exact: true }),
+      );
+      await waitFor(() =>
+        expect(screen.queryByRole("dialog")).not.toBeInTheDocument(),
+      );
+    };
+    await open();
+    fireEvent.change(
+      screen.getByRole("textbox", { name: "Torrentarr path", exact: true }),
+      { target: { value: "/edited" } },
+    );
+    fail = true;
+    await user.click(screen.getByRole("button", { name: "Save", exact: true }));
+    await screen.findByText("Configuration busy; retry");
+    expect(
+      screen.getByRole("textbox", { name: "Torrentarr path", exact: true }),
+    ).toHaveValue("/edited");
+    expect(mappings).toEqual(initial);
+    fail = false;
+    await user.click(screen.getByRole("button", { name: "Add path mapping" }));
+    fireEvent.change(
+      screen.getAllByRole("textbox", {
+        name: "Torrent client path",
+        exact: true,
+      })[1],
+      { target: { value: "D:\\Downloads\\TV" } },
+    );
+    fireEvent.change(
+      screen.getAllByRole("textbox", {
+        name: "Torrentarr path",
+        exact: true,
+      })[1],
+      { target: { value: "/tv files" } },
+    );
+    await save();
+    expect(lastChanges).toEqual({
+      [`${prefix}.Maintenance.PathMappings`]: [
+        {
+          ClientPath: "/downloads",
+          LocalPath: "/edited",
+          FutureProperty: true,
+        },
+        { ClientPath: "D:\\Downloads\\TV", LocalPath: "/tv files" },
+      ],
+    });
+    expect(
+      screen.getByText(
+        "Configuration saved; waiting for active operations to finish",
+      ),
+    ).toBeInTheDocument();
+    await open();
+    expect(
+      screen.getAllByRole("textbox", {
+        name: "Torrentarr path",
+        exact: true,
+      })[0],
+    ).toHaveValue("/edited");
+    await user.click(
+      screen.getAllByRole("button", { name: "Remove path mapping" })[1],
+    );
+    await save();
+    expect(mappings).toHaveLength(1);
+    await open();
+    await user.click(
+      screen.getByRole("button", { name: "Remove path mapping" }),
+    );
+    await save();
+    expect(mappings).toEqual([]);
+    await open();
+    expect(
+      screen.queryByRole("textbox", {
+        name: "Torrent client path",
+        exact: true,
+      }),
+    ).not.toBeInTheDocument();
+    await user.click(
+      screen.getByRole("button", { name: "Close", exact: true }),
+    );
+    window.dispatchEvent(
+      new CustomEvent("torrentarr:configuration", {
+        detail: { ...application, state: "applied" },
+      }),
+    );
+    await screen.findByText("Configuration applied live");
+    window.dispatchEvent(
+      new CustomEvent("torrentarr:configuration", {
+        detail: { ...application, acceptedRevision: 19 },
+      }),
+    );
+    expect(
+      screen.queryByText(
+        "Configuration saved; waiting for active operations to finish",
+      ),
+    ).not.toBeInTheDocument();
+  },
+);

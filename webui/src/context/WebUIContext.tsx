@@ -1,13 +1,17 @@
 import {
   createContext,
   useCallback,
+  useContext,
   useEffect,
+  useMemo,
   useState,
   type JSX,
   type ReactNode,
 } from "react";
-import { getConfig, updateConfig } from "../api/client";
+import { getConfig, updateConfig, watchConfiguration } from "../api/client";
+import { setUrlBaseFromMeta } from "../api/urlBase";
 import { useToast } from "./ToastContext";
+import { createPersistedBooleanSetter } from "./webUISettingSetters";
 
 type ViewDensity = "comfortable" | "compact";
 type Theme = "light" | "dark";
@@ -18,53 +22,77 @@ interface WebUISettings {
   theme: Theme;
 }
 
-export interface WebUIContextValue {
+interface WebUIContextValue {
   liveArr: boolean;
   viewDensity: ViewDensity;
   theme: Theme;
   setLiveArr: (value: boolean) => void;
   setViewDensity: (value: ViewDensity) => void;
   setTheme: (value: Theme) => void;
-  loading: boolean;
 }
 
 const WebUIContext = createContext<WebUIContextValue | null>(null);
-export { WebUIContext };
+
+function readPreference(key: string): string | null {
+  try {
+    return localStorage.getItem(key);
+  } catch {
+    return null;
+  }
+}
+
+function applyThemeEarly(): void {
+  try {
+    const storedTheme = readPreference("theme");
+    const theme =
+      storedTheme === "light" || storedTheme === "dark" ? storedTheme : "dark";
+    document.documentElement.setAttribute("data-theme", theme);
+  } catch {
+    document.documentElement.setAttribute("data-theme", "dark");
+  }
+}
+
+applyThemeEarly();
 
 export function WebUIProvider({
   children,
 }: {
   children: ReactNode;
 }): JSX.Element {
-  const [settings, setSettings] = useState<WebUISettings>({
-    liveArr: true,
-    viewDensity: "comfortable",
-    theme: "dark",
+  const [settings, setSettings] = useState<WebUISettings>(() => {
+    const storedDensity = readPreference("viewDensity") as ViewDensity | null;
+    const storedTheme = readPreference("theme") as Theme | null;
+    return {
+      liveArr: true,
+      viewDensity: storedDensity === "compact" ? "compact" : "comfortable",
+      theme: storedTheme === "light" ? "light" : "dark",
+    };
   });
-  const [loading, setLoading] = useState(true);
-  const toast = useToast();
+  const { push } = useToast();
 
-  // Load initial settings
+  // Load settings from backend only after AuthGate has authenticated (this provider
+  // mounts inside the authenticated tree — see App.tsx).
   useEffect(() => {
     const loadSettings = async () => {
       try {
         const config = await getConfig();
         const webui = config?.WebUI as Record<string, unknown> | undefined;
 
-        // Check for config version warning in sessionStorage
-        const warningMessage = sessionStorage.getItem("config_version_warning");
-        if (warningMessage) {
-          // Show error toast with longer duration for config version mismatch
-          toast.push(warningMessage, "error");
-          // Clear the warning after showing it
-          sessionStorage.removeItem("config_version_warning");
+        try {
+          const warningMessage = sessionStorage.getItem(
+            "config_version_warning",
+          );
+          if (warningMessage) {
+            push(warningMessage, "error");
+            sessionStorage.removeItem("config_version_warning");
+          }
+        } catch {
+          /* Storage is optional; still apply the backend settings. */
         }
-
-        // Load from localStorage as fallback
-        const storedDensity = localStorage.getItem(
+        const storedDensity = readPreference(
           "viewDensity",
         ) as ViewDensity | null;
-        const storedTheme = localStorage.getItem("theme") as Theme | null;
+        const storedTheme = readPreference("theme") as Theme | null;
 
         // Get theme and view density from backend or localStorage
         const backendTheme = webui?.Theme as string | undefined;
@@ -87,13 +115,114 @@ export function WebUIProvider({
         document.documentElement.setAttribute("data-theme", theme);
       } catch {
         // settings load failed, defaults will be used
-      } finally {
-        setLoading(false);
       }
     };
 
     void loadSettings();
-  }, [toast]);
+  }, [push]);
+
+  useEffect(() => {
+    const controller = new AbortController();
+    let retry: ReturnType<typeof setTimeout> | undefined;
+    let navigation: AbortController | undefined;
+    let navigationRetry: ReturnType<typeof setTimeout> | undefined;
+    const navigateWhenReady = (target: URL, urlBase: string) => {
+      navigation?.abort();
+      if (navigationRetry) clearTimeout(navigationRetry);
+      const pending = new AbortController();
+      navigation = pending;
+      const health = new URL(urlBase + "/health", target);
+      const probe = async () => {
+        try {
+          // The destination may be on another origin and still rebinding.
+          await fetch(health, {
+            mode: "no-cors",
+            credentials: "omit",
+            cache: "no-store",
+            signal: AbortSignal.any([
+              pending.signal,
+              AbortSignal.timeout(3000),
+            ]),
+          });
+          if (!pending.signal.aborted) window.location.replace(target.href);
+        } catch {
+          if (!pending.signal.aborted)
+            navigationRetry = setTimeout(() => void probe(), 500);
+        }
+      };
+      void probe();
+    };
+    let previous: import("../api/types").LiveConfigurationEvent | undefined;
+    const connect = async () => {
+      try {
+        await watchConfiguration((event) => {
+          const next = event.webui;
+          setUrlBaseFromMeta(next.urlBase);
+          const theme = next.theme.toLowerCase() === "light" ? "light" : "dark";
+          const viewDensity =
+            next.viewDensity.toLowerCase() === "compact"
+              ? "compact"
+              : "comfortable";
+          setSettings({ theme, viewDensity, liveArr: next.liveArr });
+          try {
+            localStorage.setItem("theme", theme);
+          } catch {
+            /* Backend settings remain authoritative. */
+          }
+          try {
+            localStorage.setItem("viewDensity", viewDensity);
+          } catch {
+            /* Backend settings remain authoritative. */
+          }
+          document.documentElement.setAttribute("data-theme", theme);
+          window.dispatchEvent(
+            new CustomEvent("torrentarr:configuration", {
+              detail: event.application,
+            }),
+          );
+          if (previous) {
+            const baseChanged = previous.webui.urlBase !== next.urlBase;
+            const listenerChanged =
+              !next.behindHttpsProxy &&
+              (previous.webui.port !== next.port ||
+                previous.webui.host !== next.host);
+            if (baseChanged || listenerChanged) {
+              const target = new URL(window.location.href);
+              if (listenerChanged || navigation) {
+                if (next.host !== "0.0.0.0" && next.host !== "::")
+                  target.hostname = next.host.includes(":")
+                    ? `[${next.host}]`
+                    : next.host;
+                target.port = String(next.port);
+                target.pathname = next.urlBase + "/ui";
+              } else {
+                const oldBase = previous.webui.urlBase;
+                const suffix = target.pathname.startsWith(oldBase)
+                  ? target.pathname.slice(oldBase.length)
+                  : "/ui";
+                target.pathname = next.urlBase + suffix;
+              }
+              if (listenerChanged || navigation)
+                navigateWhenReady(target, next.urlBase);
+              else window.location.replace(target.href);
+            }
+          }
+          previous = event;
+        }, controller.signal);
+      } catch {
+        /* Reconnect after listener changes or transient network failures. */
+      }
+      if (!controller.signal.aborted)
+        retry = setTimeout(() => void connect(), 2000);
+    };
+    void connect();
+    return () => {
+      controller.abort();
+      if (retry) clearTimeout(retry);
+      navigation?.abort();
+      if (navigationRetry) clearTimeout(navigationRetry);
+    };
+  }, []);
 
   // Auto-save settings to backend
   const saveSettings = useCallback(
@@ -107,11 +236,14 @@ export function WebUIProvider({
     [],
   );
 
-  const setLiveArr = useCallback(
-    (value: boolean) => {
-      setSettings((prev) => ({ ...prev, liveArr: value }));
-      void saveSettings("LiveArr", value);
-    },
+  const setLiveArr = useMemo(
+    () =>
+      createPersistedBooleanSetter<WebUISettings, "liveArr">(
+        setSettings,
+        saveSettings,
+        "liveArr",
+        "LiveArr",
+      ),
     [saveSettings],
   );
 
@@ -122,7 +254,7 @@ export function WebUIProvider({
       try {
         localStorage.setItem("viewDensity", value);
       } catch {
-        /* quota exceeded or private mode */
+        /* Backend settings remain authoritative. */
       }
       // Save to backend with proper capitalization (Comfortable or Compact)
       const capitalizedDensity =
@@ -139,7 +271,7 @@ export function WebUIProvider({
       try {
         localStorage.setItem("theme", value);
       } catch {
-        /* quota exceeded or private mode */
+        /* Backend settings remain authoritative. */
       }
       // Apply theme immediately to DOM
       document.documentElement.setAttribute("data-theme", value);
@@ -150,21 +282,28 @@ export function WebUIProvider({
     [saveSettings],
   );
 
-  const value: WebUIContextValue = {
-    liveArr: settings.liveArr,
-    viewDensity: settings.viewDensity,
-    theme: settings.theme,
-    setLiveArr,
-    setViewDensity,
-    setTheme,
-    loading,
-  };
+  const value = useMemo<WebUIContextValue>(
+    () => ({
+      liveArr: settings.liveArr,
+      viewDensity: settings.viewDensity,
+      theme: settings.theme,
+      setLiveArr,
+      setViewDensity,
+      setTheme,
+    }),
+    [settings, setLiveArr, setViewDensity, setTheme],
+  );
 
   return (
     <WebUIContext.Provider value={value}>{children}</WebUIContext.Provider>
   );
 }
 
-// Re-export hook so consumers can import from one place; implementation lives in useWebUI.ts for Fast Refresh
-/* eslint-disable-next-line react-refresh/only-export-components */
-export { useWebUI } from "./useWebUI";
+// eslint-disable-next-line react-refresh/only-export-components
+export function useWebUI(): WebUIContextValue {
+  const context = useContext(WebUIContext);
+  if (!context) {
+    throw new Error("useWebUI must be used within WebUIProvider");
+  }
+  return context;
+}

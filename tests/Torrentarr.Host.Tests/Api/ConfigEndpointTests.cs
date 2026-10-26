@@ -20,12 +20,41 @@ public class ConfigEndpointTests : IClassFixture<TorrentarrWebApplicationFactory
         _factory = factory;
     }
 
+
+
+    [Theory]
+    [InlineData("/web/config")]
+    [InlineData("/api/config")]
+    public async Task ConfigSave_WakesHostOrchestrator(string endpoint)
+    {
+        using var factory = _factory.WithWebHostBuilder(builder => builder.ConfigureServices(services =>
+            services.AddHostedService<ProcessOrchestratorService>()));
+        using var client = factory.CreateClient();
+        client.DefaultRequestHeaders.Authorization = new System.Net.Http.Headers.AuthenticationHeaderValue("Bearer", "test-api-token");
+        var service = factory.Services.GetServices<Microsoft.Extensions.Hosting.IHostedService>()
+            .OfType<ProcessOrchestratorService>().Single();
+        var threshold = typeof(ProcessOrchestratorService).GetField("_minFreeSpaceBytes",
+            System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.NonPublic)!;
+        var response = await client.PostAsJsonAsync(endpoint, new
+        {
+            changes = new Dictionary<string, object>
+            {
+                ["Settings.FreeSpace"] = "1024G",
+                ["Settings.LoopSleepTimer"] = 3600
+            }
+        });
+        response.EnsureSuccessStatusCode();
+        using var timeout = new CancellationTokenSource(TimeSpan.FromSeconds(5));
+        while ((long)threshold.GetValue(service)! != 1099511627776L)
+            await Task.Delay(10, timeout.Token);
+    }
+
     [Theory]
     [InlineData("/web/config", false)]
     [InlineData("/web/config", true)]
     [InlineData("/api/config", false)]
     [InlineData("/api/config", true)]
-    public async Task RenameClient_PreservesPasswordAndNotificationToken(string endpoint, bool canonical)
+    public async Task RenameClient_PreservesPasswordAndStoredState(string endpoint, bool canonical)
     {
         var client = _factory.CreateClientWithApiToken();
         using var scope = _factory.Services.CreateScope();
@@ -36,7 +65,6 @@ public class ConfigEndpointTests : IClassFixture<TorrentarrWebApplicationFactory
             Host = "fixture",
             Disabled = true,
             Password = "secret",
-            Maintenance = new() { Notifications = [new() { Url = "https://notify.example", Token = "notify-secret" }] }
         };
         if (canonical) config.TorrentClients["qBit-before"] = source;
         else config.QBitInstances["qBit-before"] = source;
@@ -62,7 +90,6 @@ public class ConfigEndpointTests : IClassFixture<TorrentarrWebApplicationFactory
                     [prefix + "qBit-after.Host"] = "fixture",
                     [prefix + "qBit-after.Disabled"] = true,
                     [prefix + "qBit-after.Password"] = "[redacted]",
-                    [prefix + "qBit-after.Maintenance.Notifications"] = new[] { new { Url = "https://notify.example", Token = "[redacted]" } }
                 }
             });
             response.EnsureSuccessStatusCode();
@@ -73,7 +100,6 @@ public class ConfigEndpointTests : IClassFixture<TorrentarrWebApplicationFactory
             var clients = Torrentarr.Core.Configuration.TorrentClientConfigExtensions.GetAllTorrentClients(config);
             clients.Should().NotContainKey("qBit-before");
             clients["qBit-after"].Password.Should().Be("secret");
-            clients["qBit-after"].Maintenance.Notifications.Single().Token.Should().Be("notify-secret");
         }
         finally
         {
@@ -90,11 +116,11 @@ public class ConfigEndpointTests : IClassFixture<TorrentarrWebApplicationFactory
     [InlineData("/api/config")]
     [InlineData("/WEB/CONFIG/")]
     [InlineData("/web/auth/set-password")]
-    public async Task ConfigurationWrites_Return409DuringProcessing(string endpoint)
+    public async Task ConfigurationWrites_Return409DuringExclusiveChanges(string endpoint)
     {
         var client = _factory.CreateClientWithApiToken();
         var loader = _factory.Services.GetRequiredService<Torrentarr.Core.Configuration.ConfigurationLoader>();
-        using var processing = Torrentarr.Core.Configuration.ConfigMutationGuard.EnterProcessing(loader.ConfigPath);
+        using var external = new FileStream(loader.ConfigPath + ".write-lock", FileMode.OpenOrCreate, FileAccess.ReadWrite, FileShare.None);
         var response = await client.PostAsJsonAsync(endpoint, new { changes = new { }, username = "user", password = "password" });
         response.StatusCode.Should().Be(HttpStatusCode.Conflict);
     }
@@ -184,7 +210,7 @@ public class ConfigEndpointTests : IClassFixture<TorrentarrWebApplicationFactory
 
         response.StatusCode.Should().Be(HttpStatusCode.OK);
         var json = JsonDocument.Parse(await response.Content.ReadAsStringAsync()).RootElement;
-        json.GetProperty("reloadType").GetString().Should().Be("frontend");
+        json.GetProperty("reloadType").GetString().Should().Be("live");
     }
 
     [Fact]
@@ -204,7 +230,7 @@ public class ConfigEndpointTests : IClassFixture<TorrentarrWebApplicationFactory
 
         response.StatusCode.Should().Be(HttpStatusCode.OK);
         var json = JsonDocument.Parse(await response.Content.ReadAsStringAsync()).RootElement;
-        json.GetProperty("reloadType").GetString().Should().Be("webui");
+        json.GetProperty("reloadType").GetString().Should().Be("live");
     }
 
     [Fact]
@@ -224,7 +250,7 @@ public class ConfigEndpointTests : IClassFixture<TorrentarrWebApplicationFactory
 
         response.StatusCode.Should().Be(HttpStatusCode.OK);
         var json = JsonDocument.Parse(await response.Content.ReadAsStringAsync()).RootElement;
-        json.GetProperty("reloadType").GetString().Should().Be("full");
+        json.GetProperty("reloadType").GetString().Should().Be("live");
     }
 
     [Fact]

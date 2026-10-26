@@ -95,23 +95,25 @@ public static class ConfigValidationHelper
         foreach (var (id, client) in config.GetAllTorrentClients())
         {
             if (string.IsNullOrWhiteSpace(client.Type)) return (false, $"Torrent client '{id}' requires a Type.");
+            var maintenanceError = MaintenanceConfigValidation.Validate(client.Maintenance);
+            if (maintenanceError != null) return (false, $"Torrent client '{id}': {maintenanceError}");
             if (client.Maintenance.Scope is not ("managed" or "all" or "explicit"))
                 return (false, $"Torrent client '{id}' has invalid maintenance scope '{client.Maintenance.Scope}'.");
             if (client.Maintenance.PlanTtlMinutes <= 0)
                 return (false, $"Torrent client '{id}' maintenance PlanTtlMinutes must be positive.");
             if (CronSchedule.Next(client.Maintenance.Schedule, DateTimeOffset.UtcNow) == null)
                 return (false, $"Torrent client '{id}' has an invalid maintenance schedule.");
-            var duplicateMapping = client.Maintenance.PathMappings
-                .GroupBy(m => m.ClientPath.TrimEnd('/', '\\'), StringComparer.OrdinalIgnoreCase)
-                .FirstOrDefault(group => group.Count() > 1)?.Key;
-            if (duplicateMapping != null)
-                return (false, $"Torrent client '{id}' has duplicate path mapping '{duplicateMapping}'.");
         }
         return (true, null);
     }
 
     public static (bool Ok, string? Error) ValidateAll(TorrentarrConfig config)
     {
+        if (!FreeSpaceThreshold.TryParse(config.Settings.FreeSpace, out _))
+            return (false, "FreeSpace must be -1 or a nonnegative integer with an optional K, M, G, or T suffix.");
+        if (config.WebUI.Port is < 1 or > 65535 || !System.Net.IPAddress.TryParse(config.WebUI.Host, out _))
+            return (false, "WebUI requires an IP bind address and port between 1 and 65535.");
+
         foreach (var check in new Func<TorrentarrConfig, (bool, string?)>[]
         {
             ValidateArrCategoryPaths,

@@ -11,7 +11,7 @@ describe("generated config schema", () => {
       .reduce((total, [, fields]) => total + fields.length, 0);
 
     expect(qbitrrFieldCount).toBe(124);
-    expect(CONFIG_SCHEMA_FIELD_COUNT).toBe(137);
+    expect(CONFIG_SCHEMA_FIELD_COUNT).toBe(151);
     expect(
       CONFIG_SCHEMA.sections.Arr.some(
         (field) => field.key === "Torrent.FileExtensionAllowlist",
@@ -27,6 +27,14 @@ describe("generated config schema", () => {
         (field) => field.key === "Maintenance.Enabled",
       ),
     ).toBe(true);
+  });
+
+  it("exposes every shared torrent setting for every client type", () => {
+    const keys = CONFIG_SCHEMA.sections.TorrentClient.map((field) => field.key);
+    for (const field of CONFIG_SCHEMA.sections.qBit) {
+      expect(keys).toContain(field.key);
+    }
+    expect(new Set(keys).size).toBe(keys.length);
   });
 
   it("uses Torrentarr's +1 major config version", () => {

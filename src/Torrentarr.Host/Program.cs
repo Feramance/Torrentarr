@@ -229,9 +229,6 @@ try
     builder.Services.AddSingleton<IHardlinkInspector, HardlinkInspector>();
     builder.Services.AddSingleton<ITorrentInventoryService, TorrentInventoryService>();
     builder.Services.AddSingleton<ISafeDeletionService, SafeDeletionService>();
-    builder.Services.AddSingleton<MaintenanceNotificationService>();
-    builder.Services.AddSingleton<IMaintenanceNotificationService>(sp => sp.GetRequiredService<MaintenanceNotificationService>());
-    builder.Services.AddHostedService(sp => sp.GetRequiredService<MaintenanceNotificationService>());
     builder.Services.AddSingleton<MaintenanceCoordinator>();
     builder.Services.AddSingleton<IMaintenanceCoordinator>(sp => sp.GetRequiredService<MaintenanceCoordinator>());
     builder.Services.AddHostedService(sp => sp.GetRequiredService<MaintenanceCoordinator>());
@@ -260,7 +257,10 @@ try
     builder.Services.AddSingleton<QBitCategoryWorkerManager>();
     builder.Services.AddHostedService(sp => sp.GetRequiredService<QBitCategoryWorkerManager>());
     builder.Services.AddHostedService<PeriodicWalCheckpointService>();
-    builder.Services.AddSingleton<IConfigReloader, ConfigReloader>();
+    builder.Services.AddSingleton<ConfigReloader>();
+    builder.Services.AddSingleton<IConfigReloader>(sp => sp.GetRequiredService<ConfigReloader>());
+    builder.Services.AddHostedService(sp => sp.GetRequiredService<ConfigReloader>());
+    builder.Services.AddHostedService<LiveConfigurationRuntime>();
     // §6.10 / §1.8: update check + auto-update
     builder.Services.AddSingleton<UpdateService>();
     builder.Services.AddHostedService<AutoUpdateBackgroundService>();
@@ -282,27 +282,44 @@ try
         .PersistKeysToFileSystem(new DirectoryInfo(dataProtectionKeyPath))
         .SetApplicationName("Torrentarr");
 
-    var urlBase = UrlBaseHelper.NormalizeUrlBase(config.WebUI.UrlBase);
     var authBuilder = builder.Services.AddAuthentication(CookieAuthenticationDefaults.AuthenticationScheme)
         .AddCookie(options =>
         {
             options.Cookie.Name = "torrentarr_session";
+            string AuthenticationStamp() => Convert.ToHexString(SHA256.HashData(System.Text.Encoding.UTF8.GetBytes(
+                Newtonsoft.Json.JsonConvert.SerializeObject(new
+                {
+                    config.WebUI.Username,
+                    config.WebUI.PasswordHash,
+                    config.WebUI.LocalAuthEnabled,
+                    config.WebUI.OIDCEnabled,
+                    config.WebUI.OIDC
+                }))));
+            options.Events.OnSigningIn = context =>
+            {
+                if (context.Principal?.Identity is ClaimsIdentity identity)
+                    identity.AddClaim(new Claim("torrentarr:auth", AuthenticationStamp()));
+                return Task.CompletedTask;
+            };
+            options.Events.OnValidatePrincipal = context =>
+            {
+                if (context.Principal?.FindFirst("torrentarr:auth")?.Value != AuthenticationStamp()) context.RejectPrincipal();
+                return Task.CompletedTask;
+            };
             options.Cookie.HttpOnly = true;
             options.Cookie.SameSite = SameSiteMode.Lax;
             options.Cookie.SecurePolicy = Microsoft.AspNetCore.Http.CookieSecurePolicy.SameAsRequest;
-            if (!string.IsNullOrEmpty(urlBase))
-                options.Cookie.Path = urlBase + "/";
-            options.LoginPath = UrlBaseHelper.WithUrlBase(urlBase, "/login");
-            options.AccessDeniedPath = UrlBaseHelper.WithUrlBase(urlBase, "/login");
+            var currentBase = UrlBaseHelper.NormalizeUrlBase(config.WebUI.UrlBase);
+            if (!string.IsNullOrEmpty(currentBase))
+                options.Cookie.Path = currentBase + "/";
+            options.LoginPath = UrlBaseHelper.WithUrlBase(currentBase, "/login");
+            options.AccessDeniedPath = UrlBaseHelper.WithUrlBase(currentBase, "/login");
         });
-    if (config.WebUI.OIDCEnabled && config.WebUI.OIDC is { } oidc
-        && !string.IsNullOrWhiteSpace(oidc.Authority)
-        && !string.IsNullOrWhiteSpace(oidc.ClientId))
-    {
-        authBuilder.AddOpenIdConnect(OpenIdConnectDefaults.AuthenticationScheme, options =>
+    authBuilder.AddOpenIdConnect(OpenIdConnectDefaults.AuthenticationScheme, options =>
         {
-            options.Authority = oidc.Authority.TrimEnd('/');
-            options.ClientId = oidc.ClientId;
+            var oidc = config.WebUI.OIDC ?? new OIDCConfig();
+            options.Authority = string.IsNullOrWhiteSpace(oidc.Authority) ? "https://localhost" : oidc.Authority.TrimEnd('/');
+            options.ClientId = string.IsNullOrWhiteSpace(oidc.ClientId) ? "disabled" : oidc.ClientId;
             options.ClientSecret = oidc.ClientSecret;
             options.CallbackPath = oidc.CallbackPath;
             options.RequireHttpsMetadata = oidc.RequireHttpsMetadata;
@@ -311,7 +328,7 @@ try
             foreach (var s in (oidc.Scopes ?? "openid profile").Split(' ', StringSplitOptions.RemoveEmptyEntries))
                 options.Scope.Add(s);
         });
-    }
+
 
     builder.Services.AddControllers()
         .AddNewtonsoftJson(options =>
@@ -362,17 +379,11 @@ try
             options.EnableSensitiveDataLogging();
     });
 
-    builder.WebHost.ConfigureKestrel(options =>
-    {
-        var host = config.WebUI.Host;
-        var port = config.WebUI.Port;
-        if (host == "0.0.0.0")
-            options.ListenAnyIP(port);
-        else
-            options.Listen(System.Net.IPAddress.Parse(host), port);
-    });
+    var liveWeb = new LiveWebConfiguration(builder.WebHost, config.WebUI);
 
     var app = builder.Build();
+    app.MapGet("/web/config/status", (IConfigReloader reloader) => Results.Ok(reloader.GetStatus()));
+    app.MapGet("/api/config/status", (IConfigReloader reloader) => Results.Ok(reloader.GetStatus()));
     if (ownership != null) app.Lifetime.ApplicationStopped.Register(ownership.Dispose);
 
     // Prefer physical files for development, with the embedded SPA as the standalone fallback.
@@ -380,17 +391,16 @@ try
         app.Environment,
         typeof(Program).Assembly);
 
-    if (config.WebUI.BehindHttpsProxy)
+    liveWeb.Attach(app, config);
+    app.UseRouting();
+    app.Services.GetRequiredService<IConfigReloader>().ConfigReloaded += (_, args) =>
     {
-        app.UseForwardedHeaders(new ForwardedHeadersOptions
+        if (args.Success)
         {
-            ForwardedHeaders = Microsoft.AspNetCore.HttpOverrides.ForwardedHeaders.XForwardedFor
-                | Microsoft.AspNetCore.HttpOverrides.ForwardedHeaders.XForwardedProto
-        });
-    }
-
-    if (!string.IsNullOrEmpty(urlBase))
-        app.UsePathBase(urlBase);
+            app.Services.GetRequiredService<Microsoft.Extensions.Options.IOptionsMonitorCache<OpenIdConnectOptions>>().Clear();
+            app.Services.GetRequiredService<Microsoft.Extensions.Options.IOptionsMonitorCache<CookieAuthenticationOptions>>().Clear();
+        }
+    };
     app.UseConfigMutationGuard(ConfigurationLoader.GetDefaultConfigPath(), host: true);
 
     // First-run hint: Host wwwroot is build output; API still works without the SPA bundle.
@@ -497,6 +507,27 @@ try
     });
 
     // Static files — add cache-busting headers for the service worker
+    // Relative build assets resolve identically for every SPA alias and URL base.
+    app.Use(async (context, next) =>
+    {
+        var path = context.Request.Path.Value;
+        if (HttpMethods.IsGet(context.Request.Method) && path is "/" or "/ui" or "/ui/" or "/index.html" or "/static/index.html")
+        {
+            var index = app.Environment.WebRootFileProvider.GetFileInfo("index.html");
+            if (index.Exists)
+            {
+                using var reader = new StreamReader(index.CreateReadStream());
+                var html = await reader.ReadToEndAsync(context.RequestAborted);
+                var prefix = System.Net.WebUtility.HtmlEncode(string.IsNullOrEmpty(context.Request.PathBase.Value) ? UrlBaseHelper.NormalizeUrlBase(config.WebUI.UrlBase) : context.Request.PathBase.Value);
+                context.Response.ContentType = "text/html";
+                context.Response.Headers.CacheControl = "no-store";
+                await context.Response.WriteAsync(html.Replace("<head>", $"<head><base href=\"{prefix}/\">"), context.RequestAborted);
+                return;
+            }
+        }
+        await next(context);
+    });
+
     app.UseDefaultFiles();
     app.Use(async (context, next) =>
     {
@@ -509,25 +540,6 @@ try
         await next(context);
     });
     app.UseStaticFiles();
-
-    // Serve the SPA entry point from either the physical or embedded provider.
-    // Middleware avoids exposing /ui and /ui/ as conflicting Swagger actions.
-    app.Use(async (context, next) =>
-    {
-        if (context.Request.Path.Equals("/ui/", StringComparison.OrdinalIgnoreCase))
-        {
-            var index = app.Environment.WebRootFileProvider.GetFileInfo("index.html");
-            if (index.Exists)
-            {
-                context.Response.ContentType = "text/html";
-                await using var stream = index.CreateReadStream();
-                await stream.CopyToAsync(context.Response.Body);
-                return;
-            }
-        }
-
-        await next(context);
-    });
 
     app.UseAuthentication();
     app.UseArrCatalogDbSafe();
@@ -641,7 +653,7 @@ try
     app.MapRadarrMoviesEndpoints();
 
     // Home redirect: / → /ui
-    app.MapGet("/", () => Results.Redirect(string.IsNullOrEmpty(urlBase) ? "/ui" : $"{urlBase}/ui"));
+    app.MapGet("/", () => Results.Redirect(UrlBaseHelper.WithUrlBase(UrlBaseHelper.NormalizeUrlBase(config.WebUI.UrlBase), "/ui")));
 
     // Health check
     app.MapGet("/health", () => Results.Ok(new
@@ -687,7 +699,10 @@ try
         app.MapGet(prefix + "/maintenance/history", (IMaintenanceCoordinator maintenance, int? limit) =>
             Results.Ok(maintenance.GetHistory(limit ?? 50)));
         app.MapPost(prefix + "/maintenance/preview", async (MaintenancePreviewRequest request, IMaintenanceCoordinator maintenance, CancellationToken ct) =>
-            Results.Ok(await maintenance.PreviewAsync(request, ct)));
+        {
+            if (request.Operations.Any(op => !Enum.IsDefined(op))) return Results.BadRequest(new { error = "Unknown maintenance operation." });
+            return Results.Ok(await maintenance.PreviewAsync(request, ct));
+        });
         app.MapPost(prefix + "/maintenance/apply", async (MaintenanceApplyRequest request, IMaintenanceCoordinator maintenance, CancellationToken ct) =>
         {
             try { return Results.Ok(await maintenance.ApplyAsync(request.PlanId, ct)); }
@@ -707,7 +722,8 @@ try
         });
         app.MapPost(prefix + "/maintenance/run", async (MaintenanceClientsRequest request, IMaintenanceCoordinator maintenance, CancellationToken ct) =>
         {
-            try { return Results.Ok(await maintenance.RunAsync(request.ClientInstanceIds.Count == 0 ? null : request.ClientInstanceIds, ct: ct)); }
+            if (request.Operations.Any(op => !Enum.IsDefined(op))) return Results.BadRequest(new { error = "Unknown maintenance operation." });
+            try { return Results.Ok(await maintenance.RunAsync(request.ClientInstanceIds.Count == 0 ? null : request.ClientInstanceIds, ct: ct, operations: request.Operations)); }
             catch (InvalidOperationException ex) { return Results.Conflict(new { error = ex.Message }); }
         });
         app.MapPost(prefix + "/maintenance/cancel", (IMaintenanceCoordinator maintenance) =>
@@ -760,8 +776,8 @@ try
         return Results.Ok(new { categories, ready = true });
     });
 
-    // Web Processes — reads live state from ProcessStateManager + qBit connection status
-    app.MapGet("/web/processes", async (ProcessStateManager stateMgr, TorrentarrConfig cfg, ITorrentClientRegistry qbitMgr, WorkerProcessSupervisor workers) =>
+    // Web Processes — host tasks and real worker heartbeats; clients use /web/status.
+    app.MapGet("/web/processes", async (ProcessStateManager stateMgr, TorrentarrConfig cfg, WorkerProcessSupervisor workers) =>
     {
         var processes = stateMgr.GetAll().Select(s => new
         {
@@ -776,59 +792,13 @@ try
             queueCount = s.QueueCount,
             categoryCount = s.CategoryCount,
             metricType = s.MetricType,
+            freeSpacePaused = s.MetricType == "free-space" ? s.CategoryCount : null,
+            restartable = false,
             status = s.Status
         }).ToList<object>();
 
-        // Add a process card for each configured qBit instance
-        foreach (var (instanceName, qbit) in cfg.GetAllTorrentClients().Where(q => q.Value.Host != "CHANGE_ME"))
-        {
-            var isConnected = !qbit.Disabled && qbitMgr.IsConnected(instanceName);
-
-            int? totalCount = null;
-            int? seedingCount = null;
-
-            if (isConnected)
-            {
-                try
-                {
-                    var client = qbitMgr.GetClient(instanceName);
-
-                    if (client != null)
-                    {
-                        var torrents = await client.GetTorrentsAsync(cancellationToken: CancellationToken.None);
-                        if (torrents != null)
-                        {
-                            totalCount = torrents.Count;
-                            seedingCount = torrents.Count(t => t.State == "uploading" || t.State == "forcedUploading");
-                        }
-                    }
-                }
-                catch { /* best-effort */ }
-            }
-
-            var statusText = isConnected
-                ? (totalCount.HasValue ? $"{totalCount} torrents ({seedingCount} seeding)" : "Connected")
-                : "Disconnected";
-
-            processes.Add(new
-            {
-                category = instanceName,
-                name = instanceName,
-                kind = "torrent",
-                pid = (int?)null,
-                alive = isConnected,
-                rebuilding = false,
-                searchSummary = (string?)null,
-                searchTimestamp = (string?)null,
-                queueCount = (int?)null,
-                categoryCount = (int?)null,
-                metricType = (string?)null,
-                status = statusText
-            });
-        }
-
         foreach (var status in (await workers.GetProcessStatusAsync()).Values)
-            processes.Add(new { category = cfg.ArrInstances.GetValueOrDefault(status.Name)?.Category ?? status.Name, name = status.Name, kind = status.Kind, pid = status.ProcessId, alive = status.IsAlive, rebuilding = false, searchSummary = status.SearchSummary, searchTimestamp = status.SearchTimestamp, queueCount = status.QueueCount, categoryCount = status.CategoryCount, metricType = status.MetricType, status = status.Status ?? (status.IsAlive ? "Running" : "Stopped"), restartKey = status.Name });
+            processes.Add(new { category = cfg.ArrInstances.GetValueOrDefault(status.Name)?.Category ?? status.Name, name = status.Name, kind = status.Kind, pid = status.ProcessId, alive = status.IsAlive, rebuilding = false, searchSummary = status.SearchSummary, searchTimestamp = status.SearchTimestamp, queueCount = status.QueueCount, categoryCount = status.CategoryCount, metricType = status.MetricType, status = status.Status ?? (status.IsAlive ? "Running" : "Stopped"), restartKey = status.Name, restartable = true, torrent = status.Torrent, search = status.Search });
 
         return Results.Ok(new { processes });
     });
@@ -893,8 +863,11 @@ try
     });
 
     // Web Log Tail — last 1000 lines, plain text so frontend res.text() gets unquoted content
-    app.MapGet("/web/logs/{name}", async (string name) =>
+    app.MapGet("/web/logs/{name}", async (string name, HttpRequest request) =>
     {
+        if (request.Query["format"] == "json")
+            return await LogFileApi.TailFromRequestAsync(logsPath, name, request, request.HttpContext.RequestAborted);
+
         if (!IsValidLogFileName(name))
             return Results.BadRequest(new { error = "Invalid log file name" });
         var logFile = Path.Combine(logsPath, name);
@@ -1371,6 +1344,8 @@ try
         // Ensure we have a fresh check before applying
         await updater.CheckForUpdateAsync();
         await updater.ApplyUpdateAsync(lifetime);
+        if (!updater.ApplyState.InProgress && updater.ApplyState.LastResult == "error")
+            return Results.Ok(new { success = false, message = updater.ApplyState.LastError });
         return Results.Ok(new { success = true, message = "Update started — application will restart when complete" });
     });
 
@@ -1594,10 +1569,13 @@ try
             searchTimestamp = s.SearchTimestamp,
             queueCount = s.QueueCount,
             categoryCount = s.CategoryCount,
-            metricType = s.MetricType
+            metricType = s.MetricType,
+            freeSpacePaused = s.MetricType == "free-space" ? s.CategoryCount : null,
+            restartable = false,
+            status = s.Status
         }).ToList<object>();
         foreach (var status in (await workers.GetProcessStatusAsync()).Values)
-            processes.Add(new { category = cfg.ArrInstances.GetValueOrDefault(status.Name)?.Category ?? status.Name, name = status.Name, kind = status.Kind, pid = status.ProcessId, alive = status.IsAlive, rebuilding = false, searchSummary = status.SearchSummary, searchTimestamp = status.SearchTimestamp, queueCount = status.QueueCount, categoryCount = status.CategoryCount, metricType = status.MetricType, status = status.Status ?? (status.IsAlive ? "Running" : "Stopped"), restartKey = status.Name });
+            processes.Add(new { category = cfg.ArrInstances.GetValueOrDefault(status.Name)?.Category ?? status.Name, name = status.Name, kind = status.Kind, pid = status.ProcessId, alive = status.IsAlive, rebuilding = false, searchSummary = status.SearchSummary, searchTimestamp = status.SearchTimestamp, queueCount = status.QueueCount, categoryCount = status.CategoryCount, metricType = status.MetricType, status = status.Status ?? (status.IsAlive ? "Running" : "Stopped"), restartKey = status.Name, restartable = true, torrent = status.Torrent, search = status.Search });
         return Results.Ok(new { processes });
     });
 
@@ -1652,8 +1630,11 @@ try
         return Results.Ok(new { files });
     });
 
-    app.MapGet("/api/logs/{name}", async (string name) =>
+    app.MapGet("/api/logs/{name}", async (string name, HttpRequest request) =>
     {
+        if (request.Query["format"] == "json")
+            return await LogFileApi.TailFromRequestAsync(logsPath, name, request, request.HttpContext.RequestAborted);
+
         if (!IsValidLogFileName(name))
             return Results.BadRequest(new { error = "Invalid log file name" });
         var logFile = Path.Combine(logsPath, name);
@@ -2089,6 +2070,8 @@ try
             return Results.Ok(new { success = false, message = "Update already in progress" });
         await updater.CheckForUpdateAsync();
         await updater.ApplyUpdateAsync(lifetime);
+        if (!updater.ApplyState.InProgress && updater.ApplyState.LastResult == "error")
+            return Results.Ok(new { success = false, message = updater.ApplyState.LastError });
         return Results.Ok(new { success = true, message = "Update started — application will restart when complete" });
     });
 
@@ -2230,7 +2213,7 @@ static async Task<IResult> HandleTestConnection(TestConnectionRequest req, Torre
             if (!cfg.ArrInstances.TryGetValue(req.InstanceKey, out var arrCfg))
                 return Results.Ok(new { success = false, message = "Instance not found or missing URI/APIKey in config" });
 
-            uri = arrCfg.URI;
+            uri = req.Uri ?? arrCfg.URI;
             apiKey = arrCfg.APIKey;
             skipTls = req.SkipTlsVerify ?? arrCfg.SkipTLSVerify;
         }
@@ -2445,9 +2428,11 @@ static async Task<IResult> SaveAndRespondConfigUpdate(
     if (passwordHashError != null)
         return Results.Json(new { error = passwordHashError }, statusCode: 403);
 
+
     var (reloadType, affectedInstancesList) = DetermineReloadType(cfg, updatedConfig);
-    var settingsChanged = Newtonsoft.Json.JsonConvert.SerializeObject(cfg.Settings)
-        != Newtonsoft.Json.JsonConvert.SerializeObject(updatedConfig.Settings);
+    var reloader = services?.GetService<IConfigReloader>();
+    var validation = reloader?.Validate(updatedConfig) ?? ConfigValidationHelper.ValidateAll(updatedConfig);
+    if (!validation.Ok) return Results.BadRequest(new { error = validation.Error });
 
     if (Newtonsoft.Json.JsonConvert.SerializeObject(cfg.GetAllTorrentClients())
         != Newtonsoft.Json.JsonConvert.SerializeObject(updatedConfig.GetAllTorrentClients()))
@@ -2456,96 +2441,28 @@ static async Task<IResult> SaveAndRespondConfigUpdate(
             client.Maintenance.Armed = false;
     }
 
-    var suspended = false;
-    var suspensionStarted = false;
-    try
+    var renameMap = renames?.Properties().ToDictionary(p => p.Name, p => p.Value.ToString());
+    var applied = false;
+    void Publish()
     {
-        if (db != null)
-            await InstanceRenamePersistence.SaveAsync(cfg, updatedConfig, renames, loader, db, suspend: async () =>
-            {
-                suspensionStarted = true;
-                if (workerMgr != null) await ((IProcessOrchestrator)workerMgr).StopAsync(CancellationToken.None);
-                if (qbitCategoryMgr != null) await qbitCategoryMgr.SuspendAsync();
-                suspended = true;
-            });
-        else loader.SaveConfig(updatedConfig);
+        applied = reloader?.Apply(updatedConfig, renameMap) ?? false;
+        if (reloader == null) cfg.Apply(updatedConfig, cfg.Revision + 1);
+        else if (!applied && renames?.HasValues == true)
+            throw new InvalidOperationException("Renamed configuration could not be published; recovery is required.");
     }
-    catch
-    {
-        if (suspensionStarted && !File.Exists(loader.ConfigPath + ".rename.json"))
-        {
-            if (workerMgr != null) await ((IProcessOrchestrator)workerMgr).StartAsync(CancellationToken.None);
-            if (qbitCategoryMgr != null) await qbitCategoryMgr.SyncWorkersWithConfigAsync();
-        }
-        throw;
-    }
-    cfg.Settings = updatedConfig.Settings;
-    cfg.WebUI = updatedConfig.WebUI;
-    cfg.ArrInstances = updatedConfig.ArrInstances;
-    cfg.QBitInstances = updatedConfig.QBitInstances;
-    cfg.TorrentClients = updatedConfig.TorrentClients;
-    TorrentPolicyHelper.InvalidateMonitoredPolicyCategoriesCache(cfg);
-    string? warning = null;
-    try
-    {
-        if (suspended)
-        {
-            services?.GetService<ITorrentCacheService>()?.Clear();
-            services?.GetService<IImportPathTracker>()?.Clear();
-            services?.GetService<StalledUploadTracker>()?.Clear();
-        }
-        if (reloadType == "full" && registry != null) await registry.ReconcileAsync(cfg.GetAllTorrentClients(), connect: false);
-
-        if (workerMgr != null)
-        {
-            if (suspended)
-            {
-                await ((IProcessOrchestrator)workerMgr).StartAsync(CancellationToken.None);
-                if (qbitCategoryMgr != null) await qbitCategoryMgr.SyncWorkersWithConfigAsync();
-            }
-            else if (settingsChanged)
-            {
-                await workerMgr.RestartAllWorkersAsync();
-                if (reloadType == "full" && qbitCategoryMgr != null)
-                    await qbitCategoryMgr.SyncWorkersWithConfigAsync();
-            }
-            else
-            {
-                switch (reloadType)
-                {
-                    case "full":
-                        await workerMgr.RestartAllWorkersAsync();
-                        if (qbitCategoryMgr != null)
-                            await qbitCategoryMgr.SyncWorkersWithConfigAsync();
-                        break;
-                    case "multi_arr":
-                    case "single_arr":
-                        foreach (var inst in affectedInstancesList)
-                            await workerMgr.RestartWorkerAsync(inst);
-                        break;
-                }
-            }
-        }
-
-        if (workerMgr != null && (suspended || settingsChanged || reloadType is "full" or "single_arr" or "multi_arr"))
-        {
-            var statuses = await workerMgr.GetProcessStatusAsync();
-            var unavailable = statuses.Where(s => !s.Value.IsAlive).Select(s => s.Key).ToList();
-            if (unavailable.Count > 0)
-                warning = "Configuration saved, but these workers are not running: " + string.Join(", ", unavailable);
-        }
-
-    }
-    catch (Exception ex)
-    {
-        warning = "Configuration saved, but restarting workers or reconciling clients failed: " + ex.Message;
-        services?.GetService<ILogger<Program>>()?.LogError(ex, "Configuration saved but activation failed");
-    }
+    if (db != null)
+        await InstanceRenamePersistence.SaveAsync(cfg, updatedConfig, renames, loader, db, suspend: () => Task.CompletedTask, publish: Publish);
+    else { loader.SaveConfig(updatedConfig); Publish(); }
+    services?.GetServices<IHostedService>().OfType<ProcessOrchestratorService>().FirstOrDefault()?.NotifyConfigurationChanged();
+    var application = reloader?.GetStatus();
+    var warning = applied ? null : application?.Error;
+    reloadType = "live";
 
     return Results.Ok(new
     {
         status = "ok",
-        configReloaded = warning == null && reloadType != "none" && reloadType != "frontend",
+        configReloaded = application?.State == "applied",
+        application,
         reloadType,
         affectedInstances = affectedInstancesList,
         warning
@@ -2687,6 +2604,8 @@ class ProcessOrchestratorService : BackgroundService
     private string? _freeSpaceFolder;
     private bool _qbitConfigured;
     private bool _freeSpaceEnabled;
+    private readonly IConfigReloader? _reloader;
+    private readonly SemaphoreSlim _configurationChanged = new(0, 1);
 
     public ProcessOrchestratorService(
         ILogger<ProcessOrchestratorService> logger,
@@ -2694,14 +2613,30 @@ class ProcessOrchestratorService : BackgroundService
         ITorrentClientRegistry qbitManager,
         IServiceScopeFactory scopeFactory,
         ProcessStateManager stateManager,
-        ISafeDeletionService safeDeletion)
+        ISafeDeletionService safeDeletion, IConfigReloader? reloader = null)
     {
+        _reloader = reloader;
+        if (_reloader != null) _reloader.ConfigReloaded += OnConfigurationChanged;
         _logger = logger;
         _config = config;
         _qbitManager = qbitManager;
         _scopeFactory = scopeFactory;
         _stateManager = stateManager;
         _safeDeletion = safeDeletion;
+        RefreshConfiguration();
+    }
+
+    private void OnConfigurationChanged(object? sender, ConfigReloadedEventArgs args) { if (args.Success) NotifyConfigurationChanged(); }
+
+    public void NotifyConfigurationChanged()
+    {
+        // Coalesce saves while the current policy pass finishes.
+        try { _configurationChanged.Release(); }
+        catch (SemaphoreFullException) { }
+    }
+
+    private void RefreshConfiguration()
+    {
         // §8: Respect Settings.FreeSpace string ("-1" = disabled, "10G"/"500M" = threshold)
         var freeSpaceBytes = ParseFreeSpaceString(_config.Settings.FreeSpace);
         if (freeSpaceBytes < 0)
@@ -2714,24 +2649,13 @@ class ProcessOrchestratorService : BackgroundService
             _freeSpaceEnabled = true;
             _minFreeSpaceBytes = freeSpaceBytes;
         }
-        _qbitConfigured = config.GetAllTorrentClients().Values.Any(q =>
+        _qbitConfigured = _config.GetAllTorrentClients().Values.Any(q =>
             !q.Disabled && q.Host != "CHANGE_ME" && q.UserName != "CHANGE_ME" && q.Password != "CHANGE_ME");
+        _freeSpaceFolder = GetFreeSpaceFolder();
     }
 
     /// <summary>Parse qBitrr FreeSpace string: "-1" = disabled, "10G"/"500M"/"1024K" or raw number = threshold bytes.</summary>
-    private static long ParseFreeSpaceString(string? value)
-    {
-        if (string.IsNullOrWhiteSpace(value) || value.Trim() == "-1") return -1;
-        var v = value.Trim().ToUpperInvariant();
-        try
-        {
-            if (v.EndsWith("G")) return long.Parse(v[..^1]) * 1024L * 1024L * 1024L;
-            if (v.EndsWith("M")) return long.Parse(v[..^1]) * 1024L * 1024L;
-            if (v.EndsWith("K")) return long.Parse(v[..^1]) * 1024L;
-            return long.Parse(v);
-        }
-        catch { return -1; }
-    }
+    private static long ParseFreeSpaceString(string? value) => FreeSpaceThreshold.Parse(value);
 
     protected override async Task ExecuteAsync(CancellationToken stoppingToken)
     {
@@ -2753,8 +2677,6 @@ class ProcessOrchestratorService : BackgroundService
             var initialManaged = TorrentPolicyHelper.GetAllMonitoredPolicyCategories(_config);
             if (initialManaged.Count > 0)
                 _logger.LogInformation("FreeSpace categories: {Categories}", string.Join(", ", initialManaged));
-
-            _freeSpaceFolder = GetFreeSpaceFolder();
 
             // Other section (Recheck, Failed, Free Space Manager): only when qBit is configured
             if (_qbitConfigured)
@@ -2788,8 +2710,13 @@ class ProcessOrchestratorService : BackgroundService
 
             while (!stoppingToken.IsCancellationRequested)
             {
+                var passRevision = _config.Revision;
                 try
                 {
+                    using var configuration = _config.BeginOperation();
+                    RefreshConfiguration();
+                    if (!TorrentPolicyHelper.EnableFreeSpace(_config, _freeSpaceEnabled && _minFreeSpaceBytes > 0))
+                        _stateManager.Update("FreeSpaceManager", state => state.Alive = false);
                     if (_qbitConfigured)
                     {
                         await _qbitManager.EnsureAllConnectedAsync(_config.GetAllTorrentClients(), stoppingToken);
@@ -2811,7 +2738,8 @@ class ProcessOrchestratorService : BackgroundService
                     _logger.LogError(ex, "Error in orchestrator loop");
                 }
 
-                await Task.Delay(TimeSpan.FromSeconds(_config.Settings.LoopSleepTimer), stoppingToken);
+                _reloader?.Acknowledge("torrent-policy", passRevision);
+                await _configurationChanged.WaitAsync(TimeSpan.FromSeconds(_config.Settings.LoopSleepTimer), stoppingToken);
             }
         }
         catch (OperationCanceledException)

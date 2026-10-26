@@ -1,3 +1,8 @@
+using Microsoft.AspNetCore.Authentication.Cookies;
+using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Options;
+using Torrentarr.Core.Configuration;
+using Torrentarr.Core.Services;
 using FluentAssertions;
 using Microsoft.AspNetCore.Mvc.Testing;
 using System.Net;
@@ -15,6 +20,43 @@ public class UrlBaseEndpointTests : IClassFixture<UrlBaseWebApplicationFactory>
     public UrlBaseEndpointTests(UrlBaseWebApplicationFactory factory)
     {
         _factory = factory;
+    }
+
+    [Fact]
+    public async Task LiveUrlBaseChange_RefreshesCookiePathsAndClearedHtmlBase()
+    {
+        _factory.SetConfigEnv();
+        using var client = _factory.CreateClientWithPathBase("");
+        var reloader = _factory.Services.GetRequiredService<IConfigReloader>();
+        var options = _factory.Services.GetRequiredService<IOptionsMonitor<CookieAuthenticationOptions>>();
+        var original = new ConfigurationLoader(_factory.TempConfigPath).Load();
+        var candidate = new ConfigurationLoader(_factory.TempConfigPath).Load();
+        options.Get(CookieAuthenticationDefaults.AuthenticationScheme).Cookie.Path.Should().Be("/torrentarr/");
+        try
+        {
+            candidate.WebUI.UrlBase = "/new";
+            candidate.WebUI.AuthDisabled = false;
+            candidate.WebUI.LocalAuthEnabled = true;
+            candidate.WebUI.Username = "fixture";
+            candidate.WebUI.PasswordHash = BCrypt.Net.BCrypt.HashPassword("fixture-password", 10);
+            reloader.Apply(candidate).Should().BeTrue();
+            var cookie = options.Get(CookieAuthenticationDefaults.AuthenticationScheme);
+            cookie.Cookie.Path.Should().Be("/new/");
+            cookie.LoginPath.Value.Should().Be("/new/login");
+            cookie.AccessDeniedPath.Value.Should().Be("/new/login");
+            using var browser = _factory.CreateClient(new WebApplicationFactoryClientOptions { AllowAutoRedirect = false });
+            var login = await browser.PostAsJsonAsync("/new/web/login", new { username = "fixture", password = "fixture-password" });
+            login.EnsureSuccessStatusCode();
+            login.Headers.GetValues("Set-Cookie").Should().Contain(value => value.Contains("path=/new/", StringComparison.OrdinalIgnoreCase));
+            (await browser.GetAsync("/new/web/token")).StatusCode.Should().Be(System.Net.HttpStatusCode.OK);
+            candidate = new ConfigurationLoader(_factory.TempConfigPath).Load();
+            candidate.WebUI.UrlBase = "";
+            reloader.Apply(candidate).Should().BeTrue();
+            var html = await client.GetStringAsync("/ui");
+            html.Should().Contain("<base href=\"/\">");
+            html.Should().NotContain("<base href=\"/torrentarr/\">");
+        }
+        finally { reloader.Apply(original).Should().BeTrue(); }
     }
 
     [Fact]
@@ -56,6 +98,22 @@ public class UrlBaseEndpointTests : IClassFixture<UrlBaseWebApplicationFactory>
         var client = _factory.CreateClientWithPathBase("/torrentarr");
         var response = await client.GetAsync("/web/status");
         response.StatusCode.Should().Be(HttpStatusCode.OK);
+    }
+
+    [Theory]
+    [InlineData("/ui")]
+    [InlineData("/ui/")]
+    [InlineData("/static/index.html")]
+    public async Task SpaAliases_UseConfiguredAssetBase(string alias)
+    {
+        _factory.SetConfigEnv();
+        var client = _factory.CreateClientWithPathBase("/torrentarr");
+        var response = await client.GetAsync("/torrentarr" + alias);
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+        var html = await response.Content.ReadAsStringAsync();
+        html.Should().Contain("<base href=\"/torrentarr/\">");
+        html.Should().Contain("./assets/");
+        response.Headers.CacheControl!.NoStore.Should().BeTrue();
     }
 
     [Fact]

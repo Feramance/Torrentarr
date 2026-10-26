@@ -4,9 +4,9 @@ export type ArrBrowseMode = "list" | "icon";
 
 const defaultMode: ArrBrowseMode = "icon";
 
-function readStored(key: string): ArrBrowseMode {
+function readStored(key: string, legacyKey: string): ArrBrowseMode {
   try {
-    const v = localStorage.getItem(key);
+    const v = localStorage.getItem(key) ?? localStorage.getItem(legacyKey);
     if (v === "list" || v === "icon") return v;
   } catch {
     // ignore
@@ -17,13 +17,15 @@ function readStored(key: string): ArrBrowseMode {
 /**
  * List = tabular view without browse thumbnails. Icon = tile grid with posters (default).
  */
-export function useArrBrowseMode(appKey: "radarr" | "sonarr" | "lidarr"): {
+export function useArrBrowseMode(
+  appKey: "radarr" | "sonarr" | "lidarr" | "readarr",
+): {
   mode: ArrBrowseMode;
   setMode: (m: ArrBrowseMode) => void;
 } {
-  const storageKey = `torrentarr.arrBrowseMode.${appKey}`;
+  const storageKey = `qbitrr.arrBrowseMode.${appKey}`;
   const [mode, setModeState] = useState<ArrBrowseMode>(() =>
-    readStored(storageKey),
+    readStored(storageKey, `torrentarr.arrBrowseMode.${appKey}`),
   );
 
   const setMode = useCallback(
