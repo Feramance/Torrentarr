@@ -1,5 +1,23 @@
 # Changelog
 
+## v6.19.1-1 (2026-10-26)
+
+### Features
+- feat: simplify torrent maintenance with durable recovery and protection ([f41de5b](https://github.com/Feramance/Torrentarr/commit/f41de5b1da804c2d01f501df3c240ee2b03f3b7d))
+
+### Bug Fixes
+- fix: preserve shared-storage budgets and healthy recovery imports ([bcf625e](https://github.com/Feramance/Torrentarr/commit/bcf625e92f3e92d8003f2b495347bf388aa8e799))
+- fix: validate protection evidence and separate repair budgets ([7d10e62](https://github.com/Feramance/Torrentarr/commit/7d10e62e3e2cf5b0e0fa0fe5dbcfb281211081de))
+- fix: retain maintenance clearance and finish recovery claims ([73ce73e](https://github.com/Feramance/Torrentarr/commit/73ce73e9498df708a3f50ef26002cf105258b4ee))
+- fix: close shared-storage and recheck review gaps ([dca1588](https://github.com/Feramance/Torrentarr/commit/dca158816d7f21a410fd8a285afb3961373d6eea))
+- fix: address maintenance review findings and CI failures ([6c93e3f](https://github.com/Feramance/Torrentarr/commit/6c93e3f5be67c46ab24ec2450a21d682d4a93566))
+
+### Maintenance
+- fix(deps): resolve undici and zod security advisories ([195614a](https://github.com/Feramance/Torrentarr/commit/195614a3a47be60667a3c9b2e289ef70a180ecaa))
+- test: isolate configuration environment and complete worker fixture ([ab6c831](https://github.com/Feramance/Torrentarr/commit/ab6c831a2dcffcacea797bc8e0690c3839591b87))
+
+---
+
 ## Unreleased
 
 ### Safety
