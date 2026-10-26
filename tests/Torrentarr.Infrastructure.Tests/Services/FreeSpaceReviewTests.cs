@@ -20,8 +20,6 @@ public sealed class FreeSpaceReviewTests : IDisposable
 
     public FreeSpaceReviewTests()
     {
-        _config.Settings.FreeSpaceFolder = Path.GetTempPath();
-        _config.Settings.FreeSpace = "1";
         _registry.Setup(r => r.GetAllClients()).Returns(_clients);
         _registry.Setup(r => r.GetClient(It.IsAny<string>())).Returns((string id) => _clients.GetValueOrDefault(id));
         _db = new(new DbContextOptionsBuilder<TorrentarrDbContext>().UseSqlite("Data Source=:memory:").Options);
@@ -30,7 +28,8 @@ public sealed class FreeSpaceReviewTests : IDisposable
 
     private Mock<ITorrentClient> Client(string id, bool tags, params TorrentInfo[] torrents)
     {
-        _config.TorrentClients[id] = new() { Host = "fixture", DownloadPath = Path.GetTempPath() };
+        _config.TorrentClients[id] = new() { Host = "fixture", DownloadPath = Path.GetTempPath(), FreeSpace = [new() { Path = Path.GetTempPath(), Enabled = true, Limit = "1" }] };
+        foreach (var torrent in torrents) torrent.SavePath = Path.GetTempPath();
         var client = new Mock<ITorrentClient>();
         client.SetupGet(c => c.Capabilities).Returns(TorrentClientCapabilities.QBittorrent with { Tags = tags });
         client.Setup(c => c.GetTorrentsAsync(It.IsAny<string?>(), It.IsAny<string?>(), It.IsAny<CancellationToken>())).ReturnsAsync(torrents.ToList());
@@ -45,6 +44,14 @@ public sealed class FreeSpaceReviewTests : IDisposable
     }
     private FreeSpaceService Service() => new(NullLogger<FreeSpaceService>.Instance, _config, _registry.Object, _db);
 
+    private void SetLimit(string limit)
+    {
+        foreach (var client in _config.TorrentClients.Values)
+            foreach (var monitor in client.FreeSpace) monitor.Limit = limit;
+    }
+    private async Task<bool> Pause() => (await Service().ProcessAsync(new HashSet<string> { "movies", "" })).Paused > 0;
+    private async Task<bool> Resume() => (await Service().ProcessAsync(new HashSet<string> { "movies", "" })).Resumed > 0;
+
     [Theory]
     [InlineData(false)]
     [InlineData(true)]
@@ -53,13 +60,13 @@ public sealed class FreeSpaceReviewTests : IDisposable
         var torrent = new TorrentInfo { Hash = "abc", State = "downloading", Category = "movies", AmountLeft = 1 };
         var client = Client("named", false, torrent);
         _config.Settings.Tagless = globalTagless;
-        _config.Settings.FreeSpace = long.MaxValue.ToString();
-        (await Service().PauseDownloadsIfLowSpaceAsync()).Should().BeTrue();
+        SetLimit(long.MaxValue.ToString());
+        (await Pause()).Should().BeTrue();
         var paused = await _db.TorrentLibrary.AsNoTracking().SingleAsync();
         paused.QbitInstance.Should().Be("named"); paused.FreeSpacePaused.Should().BeTrue();
         torrent.State = "pausedDL";
-        _config.Settings.FreeSpace = "1";
-        (await Service().ResumeDownloadsIfSpaceAvailableAsync()).Should().BeTrue();
+        SetLimit("1");
+        (await Resume()).Should().BeTrue();
         (await _db.TorrentLibrary.AsNoTracking().SingleAsync()).FreeSpacePaused.Should().BeFalse();
         client.Verify(c => c.AddTagsAsync(It.IsAny<List<string>>(), It.IsAny<List<string>>(), It.IsAny<CancellationToken>()), Times.Never);
         client.Verify(c => c.RemoveTagsAsync(It.IsAny<List<string>>(), It.IsAny<List<string>>(), It.IsAny<CancellationToken>()), Times.Never);
@@ -78,10 +85,10 @@ public sealed class FreeSpaceReviewTests : IDisposable
             var failed = Client("unknown", true);
             failed.Setup(c => c.GetTorrentsAsync(It.IsAny<string?>(), It.IsAny<string?>(), It.IsAny<CancellationToken>())).ThrowsAsync(new HttpRequestException());
         }
-        (await Service().ResumeDownloadsIfSpaceAvailableAsync()).Should().BeFalse();
+        (await Resume()).Should().BeFalse();
         healthy.Verify(c => c.ResumeTorrentAsync(It.IsAny<string>(), It.IsAny<CancellationToken>()), Times.Never);
         _config.TorrentClients.Remove("unknown"); _clients.Remove("unknown");
-        (await Service().ResumeDownloadsIfSpaceAvailableAsync()).Should().BeTrue();
+        (await Resume()).Should().BeTrue();
     }
 
     [Theory]
@@ -93,8 +100,8 @@ public sealed class FreeSpaceReviewTests : IDisposable
         var healthy = Client("healthy", true, paused);
         _config.TorrentClients["disabled"] = new() { Host = "fixture", Disabled = true };
 
-        if (categoryPass) await Service().ProcessTorrentsForSpaceAsync("movies");
-        else (await Service().ResumeDownloadsIfSpaceAvailableAsync()).Should().BeTrue();
+        if (categoryPass) await Service().ProcessAsync(new HashSet<string> { "movies" });
+        else (await Resume()).Should().BeTrue();
 
         healthy.Verify(c => c.ResumeTorrentAsync("abc", It.IsAny<CancellationToken>()), Times.Once);
     }
@@ -105,7 +112,7 @@ public sealed class FreeSpaceReviewTests : IDisposable
         var paused = new TorrentInfo { Hash = "paused", State = "pausedDL", Category = "movies", Tags = "qBitrr-free_space_paused", AmountLeft = 1 };
         var active = new TorrentInfo { Hash = "active", State = "downloading", Category = "other", AmountLeft = long.MaxValue / 2 };
         var client = Client("one", true, paused, active);
-        await Service().ProcessTorrentsForSpaceAsync("movies");
+        await Service().ProcessAsync(new HashSet<string> { "movies" });
         client.Verify(c => c.ResumeTorrentAsync(It.IsAny<string>(), It.IsAny<CancellationToken>()), Times.Never);
         client.Verify(c => c.PauseTorrentAsync("active", It.IsAny<CancellationToken>()), Times.Never);
     }
@@ -117,7 +124,7 @@ public sealed class FreeSpaceReviewTests : IDisposable
         var active = new TorrentInfo { Hash = "active", State = "downloading", Category = "movies", AmountLeft = long.MaxValue / 2, AddedOn = 2 };
         var client = Client("one", true, paused, active);
         client.Setup(c => c.PauseTorrentAsync("active", It.IsAny<CancellationToken>())).ReturnsAsync(false);
-        await Service().ProcessTorrentsForSpaceAsync("movies");
+        await Service().ProcessAsync(new HashSet<string> { "movies" });
         client.Verify(c => c.PauseTorrentAsync("active", It.IsAny<CancellationToken>()), Times.Once);
         client.Verify(c => c.ResumeTorrentAsync(It.IsAny<string>(), It.IsAny<CancellationToken>()), Times.Never);
     }
@@ -138,7 +145,7 @@ public sealed class FreeSpaceReviewTests : IDisposable
         var second = Client("two", false, new TorrentInfo { Hash = "abc", State = "pausedDL", Category = "movies", AmountLeft = 1 });
         _db.TorrentLibrary.Add(new() { Hash = "abc", QbitInstance = "one", FreeSpacePaused = true });
         await _db.SaveChangesAsync();
-        (await Service().ResumeDownloadsIfSpaceAvailableAsync()).Should().BeTrue();
+        (await Resume()).Should().BeTrue();
         first.Verify(c => c.ResumeTorrentAsync("abc", It.IsAny<CancellationToken>()), Times.Once);
         second.Verify(c => c.ResumeTorrentAsync(It.IsAny<string>(), It.IsAny<CancellationToken>()), Times.Never);
     }
@@ -149,7 +156,7 @@ public sealed class FreeSpaceReviewTests : IDisposable
         _db.TorrentLibrary.Add(new() { Hash = "abc", QbitInstance = "named", FreeSpacePaused = true });
         await _db.SaveChangesAsync();
         client.Setup(c => c.ResumeTorrentAsync("abc", It.IsAny<CancellationToken>())).ReturnsAsync(false);
-        (await Service().ResumeDownloadsIfSpaceAvailableAsync()).Should().BeFalse();
+        (await Resume()).Should().BeFalse();
         (await _db.TorrentLibrary.AsNoTracking().SingleAsync()).FreeSpacePaused.Should().BeTrue();
     }
 
@@ -179,17 +186,17 @@ public sealed class FreeSpaceReviewTests : IDisposable
             .ReturnsAsync(() => { torrent.State = "downloading"; return true; });
         client.Setup(c => c.PauseTorrentAsync("abc", It.IsAny<CancellationToken>()))
             .ReturnsAsync(() => { if (restorePause) torrent.State = "pausedDL"; return restorePause; });
-        (await Service().ResumeDownloadsIfSpaceAvailableAsync()).Should().BeFalse();
+        (await Resume()).Should().BeFalse();
         torrent.State.Should().Be(restorePause ? "pausedDL" : "downloading");
         client.Verify(c => c.PauseTorrentAsync("abc", It.Is<CancellationToken>(ct => !ct.CanBeCanceled)), Times.Once);
         if (!tags) (await _db.TorrentLibrary.AsNoTracking().SingleAsync()).FreeSpacePaused.Should().BeTrue();
         rejectClear = false;
         if (!tags) await _db.Database.ExecuteSqlRawAsync("DROP TRIGGER reject_clear");
-        await Service().ResumeDownloadsIfSpaceAvailableAsync();
+        await Resume();
         if (!tags) (await _db.TorrentLibrary.AsNoTracking().SingleAsync()).FreeSpacePaused.Should().BeFalse();
         else torrent.Tags.Should().BeEmpty();
         torrent.State = "pausedDL";
-        (await Service().ResumeDownloadsIfSpaceAvailableAsync()).Should().BeFalse();
+        (await Resume()).Should().BeFalse();
         client.Verify(c => c.ResumeTorrentAsync("abc", It.IsAny<CancellationToken>()), Times.Exactly(restorePause ? 2 : 1));
     }
 
@@ -199,12 +206,12 @@ public sealed class FreeSpaceReviewTests : IDisposable
     public async Task ManualPauseDuringLowSpace_IsNeverMarkedOrAutomaticallyResumed(bool tags)
     {
         var client = Client("named", tags, new TorrentInfo { Hash = "abc", State = "pausedDL", Category = "movies", AmountLeft = 1 });
-        _config.Settings.FreeSpace = long.MaxValue.ToString();
-        await Service().ProcessTorrentsForSpaceAsync("movies");
+        SetLimit(long.MaxValue.ToString());
+        await Service().ProcessAsync(new HashSet<string> { "movies" });
         client.Verify(c => c.AddTagsAsync(It.IsAny<List<string>>(), It.IsAny<List<string>>(), It.IsAny<CancellationToken>()), Times.Never);
         (await _db.TorrentLibrary.CountAsync()).Should().Be(0);
-        _config.Settings.FreeSpace = "1";
-        (await Service().ResumeDownloadsIfSpaceAvailableAsync()).Should().BeFalse();
+        SetLimit("1");
+        (await Resume()).Should().BeFalse();
         client.Verify(c => c.ResumeTorrentAsync(It.IsAny<string>(), It.IsAny<CancellationToken>()), Times.Never);
     }
 
@@ -222,9 +229,9 @@ public sealed class FreeSpaceReviewTests : IDisposable
         client.Setup(c => c.RemoveTagsAsync(It.IsAny<List<string>>(), It.IsAny<List<string>>(), It.IsAny<CancellationToken>()))
             .ReturnsAsync((List<string> _, List<string> values, CancellationToken _) => { if (values.Contains("qBitrr-free_space_paused")) torrent.Tags = ""; return true; });
         client.Setup(c => c.PauseTorrentAsync("abc", It.IsAny<CancellationToken>())).ReturnsAsync(false);
-        _config.Settings.FreeSpace = long.MaxValue.ToString();
-        if (bulk) (await Service().PauseDownloadsIfLowSpaceAsync()).Should().BeFalse();
-        else await Service().ProcessTorrentsForSpaceAsync("movies");
+        SetLimit(long.MaxValue.ToString());
+        if (bulk) (await Pause()).Should().BeFalse();
+        else await Service().ProcessAsync(new HashSet<string> { "movies" });
         if (tags)
         {
             torrent.Tags.Should().BeEmpty();
@@ -233,8 +240,8 @@ public sealed class FreeSpaceReviewTests : IDisposable
         }
         else (await _db.TorrentLibrary.AsNoTracking().SingleAsync()).FreeSpacePaused.Should().BeFalse();
         torrent.State = "pausedDL";
-        _config.Settings.FreeSpace = "1";
-        (await Service().ResumeDownloadsIfSpaceAvailableAsync()).Should().BeFalse();
+        SetLimit("1");
+        (await Resume()).Should().BeFalse();
         client.Verify(c => c.ResumeTorrentAsync(It.IsAny<string>(), It.IsAny<CancellationToken>()), Times.Never);
     }
 
@@ -244,8 +251,8 @@ public sealed class FreeSpaceReviewTests : IDisposable
         var torrent = new TorrentInfo { Hash = "abc", Category = "movies", State = "downloading", AmountLeft = 1 };
         var client = Client("named", false, torrent);
         client.Setup(c => c.PauseTorrentAsync("abc", It.IsAny<CancellationToken>())).ThrowsAsync(new HttpRequestException("response lost"));
-        _config.Settings.FreeSpace = long.MaxValue.ToString();
-        (await Service().PauseDownloadsIfLowSpaceAsync()).Should().BeFalse();
+        SetLimit(long.MaxValue.ToString());
+        (await Pause()).Should().BeFalse();
         (await _db.TorrentLibrary.AsNoTracking().SingleAsync()).FreeSpacePaused.Should().BeTrue();
     }
 

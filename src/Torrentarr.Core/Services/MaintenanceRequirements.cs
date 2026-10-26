@@ -5,7 +5,7 @@ namespace Torrentarr.Core.Services;
 
 public static class MaintenanceRequirements
 {
-    public static bool Enabled(MaintenanceOperation operation, MaintenanceConfig config) => config.Enabled && (operation switch
+    public static bool Enabled(MaintenanceOperation operation, MaintenanceConfig config) => config.Enabled && (MaintenancePolicies.Get(config, operation)?.Enabled ?? (operation switch
     {
         MaintenanceOperation.OrphanScan => config.Orphans.Enabled,
         MaintenanceOperation.HardlinkAudit => config.Hardlinks.Enabled,
@@ -14,17 +14,19 @@ public static class MaintenanceRequirements
         MaintenanceOperation.PrivateTagging => !string.IsNullOrWhiteSpace(config.AutomaticManagement.PrivateTag),
         MaintenanceOperation.TrackerErrorTagging => !string.IsNullOrWhiteSpace(config.AutomaticManagement.TrackerErrorTag),
         MaintenanceOperation.RepairPaused => config.Repair.Enabled,
-        MaintenanceOperation.RecycleRetention => config.RecycleBin.Enabled,
+        MaintenanceOperation.RecycleRetention => config.RecycleBin.Enabled && config.RecycleBin.RetentionEnabled,
+        MaintenanceOperation.ErrorRecovery => config.ErrorRecovery.Enabled,
         _ => true
-    });
+    }));
 
     public static InventoryRequirements For(MaintenanceOperation operation, MaintenanceConfig config) => operation switch
     {
         MaintenanceOperation.OrphanScan => InventoryRequirements.Metadata | InventoryRequirements.Files | InventoryRequirements.LocalFiles | InventoryRequirements.GlobalOwnership,
         MaintenanceOperation.HardlinkAudit => InventoryRequirements.Metadata | InventoryRequirements.Files | InventoryRequirements.LocalFiles,
-        MaintenanceOperation.UnregisteredCleanup => InventoryRequirements.Metadata | InventoryRequirements.Trackers,
-        MaintenanceOperation.CategoryReconcile => InventoryRequirements.Metadata | (config.TrackerAssignments.Count > 0 ? InventoryRequirements.Trackers : InventoryRequirements.None),
+        MaintenanceOperation.UnregisteredCleanup or MaintenanceOperation.ErrorRecovery => InventoryRequirements.Metadata | InventoryRequirements.Trackers | InventoryRequirements.Properties,
+        MaintenanceOperation.CategoryReconcile or MaintenanceOperation.AutomaticManagement or MaintenanceOperation.RepairPaused => InventoryRequirements.Metadata | InventoryRequirements.Trackers | InventoryRequirements.Properties,
         MaintenanceOperation.TrackerErrorTagging => InventoryRequirements.Metadata | InventoryRequirements.Trackers,
+        MaintenanceOperation.PrivateTagging => InventoryRequirements.Metadata | InventoryRequirements.Properties,
         MaintenanceOperation.RecycleRetention => InventoryRequirements.None,
         _ => InventoryRequirements.Metadata
     };

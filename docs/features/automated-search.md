@@ -771,9 +771,7 @@ Map main quality profiles to temporary profiles.
 **Format:**
 
 ```toml
-QualityProfileMappings = {
-  "Main Profile Name" = "Temporary Profile Name"
-}
+QualityProfileMappings = { "Main Profile Name" = "Temporary Profile Name"}
 ```
 
 **Profile names must match exactly as they appear in your Arr instance.**
@@ -782,20 +780,19 @@ QualityProfileMappings = {
 
 ```toml
 # Lidarr - Music
-QualityProfileMappings = {
-  "Lossless (FLAC)" = "Lossy (MP3-320)"
-}
+QualityProfileMappings = { "Lossless (FLAC)" = "Lossy (MP3-320)"}
 
 # Radarr - Movies
-QualityProfileMappings = {
-  "Ultra HD" = "HD-1080p",
-  "HD-1080p" = "SD"
-}
+```
+
+```toml
+QualityProfileMappings = { "Ultra HD" = "HD-1080p", "HD-1080p" = "SD"}
 
 # Sonarr - TV
-QualityProfileMappings = {
-  "WEB-1080p" = "WEB-720p"
-}
+```
+
+```toml
+QualityProfileMappings = { "WEB-1080p" = "WEB-720p"}
 ```
 
 ---
@@ -1171,7 +1168,7 @@ SearchRequestsEvery = 600  # 10 minutes
 1. **Enable SearchMissing:**
    ```toml
    SearchMissing = true
-   ```
+```
 
 2. **Check Arr has missing items:**
    - Open Radarr/Sonarr/Lidarr
@@ -1198,7 +1195,7 @@ SearchRequestsEvery = 600  # 10 minutes
 1. **Increase delay:**
    ```toml
    SearchRequestsEvery = 600  # Up from 300
-   ```
+```
 
 2. **Check indexer limits:**
    - Review indexer documentation
@@ -1220,7 +1217,7 @@ SearchRequestsEvery = 600  # 10 minutes
    ```toml
    # Must match EXACTLY (case-sensitive)
    QualityProfileMappings = {"Lossless (FLAC)" = "Any (MP3)"}
-   ```
+```
 
 2. **Check Arr logs for errors:**
    - Profile not found
@@ -1230,12 +1227,12 @@ SearchRequestsEvery = 600  # 10 minutes
    ```toml
    [Settings]
    ConsoleLevel = "DEBUG"
-   ```
+```
 
 4. **Check retry attempts:**
    ```toml
    ProfileSwitchRetryAttempts = 5  # Up from 3
-   ```
+```
 
 ---
 
@@ -1248,12 +1245,12 @@ SearchRequestsEvery = 600  # 10 minutes
 1. **Decrease delay (carefully):**
    ```toml
    SearchRequestsEvery = 180  # Down from 300
-   ```
+```
 
 2. **Use one-time search:**
    ```toml
    SearchAgainOnSearchCompletion = false
-   ```
+```
 
 3. **Manual batch search in Arr:**
    - For initial library fill
@@ -1434,12 +1431,12 @@ Episodes:
 2. **Check UseTempForMissing enabled:**
    ```toml
    UseTempForMissing = true
-   ```
+```
 
 3. **Verify mappings configured:**
    ```toml
    QualityProfileMappings = {"Main Profile" = "Temp Profile"}
-   ```
+```
 
 4. **Review logs:**
    ```bash
@@ -1455,12 +1452,12 @@ Episodes:
 1. **Enable auto-reset timeout:**
    ```toml
    TempProfileResetTimeoutMinutes = 10080  # 7 days
-   ```
+```
 
 2. **Force reset on startup:**
    ```toml
    ForceResetTempProfiles = true
-   ```
+```
    Restart Torrentarr.
 
 3. **Manual reset in Arr:**
@@ -1576,11 +1573,7 @@ TempProfileResetTimeoutMinutes = 10080  # 7 days for music
 **A:** Yes! Example:
 
 ```toml
-QualityProfileMappings = {
-  "Ultra-HD (4K)" = "HD-1080p",
-  "HD-1080p" = "HD-720p",
-  "HD-720p" = "SD"
-}
+QualityProfileMappings = { "Ultra-HD (4K)" = "HD-1080p", "HD-1080p" = "HD-720p", "HD-720p" = "SD"}
 ```
 
 This creates a quality hierarchy:

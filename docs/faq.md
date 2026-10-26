@@ -410,6 +410,10 @@ Benefits:
 ```toml
 [Settings]
 FFprobeAutoUpdate = true
+```
+
+```toml
+[Settings]
 FFprobeAutoUpdate = true  # Auto-download FFprobe
 ```
 
@@ -418,15 +422,15 @@ FFprobeAutoUpdate = true  # Auto-download FFprobe
 With disk space management enabled:
 
 ```toml
-[Settings]
-FreeSpace = "50G"           # Threshold
-FreeSpaceFolder = "/downloads"
-AutoPauseResume = true
+[[qBit.FreeSpace]]
+Path = "/downloads"
+Enabled = true
+Limit = "50G"
 ```
 
 **Behavior:**
 1. Disk space drops below 50GB
-2. Torrentarr pauses all torrents
+2. Torrentarr pauses affected downloading work and preserves completed seeders
 3. Arr imports completed downloads (frees space)
 4. Space increases above threshold
 5. Torrentarr resumes torrents automatically
@@ -515,7 +519,7 @@ RemoveTorrent = 4         # Must meet BOTH requirements
 
 This ensures you maintain good standing on private trackers.
 
-[Private tracker setup →](advanced/index.md#custom-tracker-configuration)
+[Private tracker setup →](configuration/seeding.md#per-tracker-configuration)
 
 ### Can I schedule searches at specific times?
 

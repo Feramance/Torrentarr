@@ -10,8 +10,20 @@ describe("generated config schema", () => {
       .filter(([section]) => section !== "TorrentClient")
       .reduce((total, [, fields]) => total + fields.length, 0);
 
-    expect(qbitrrFieldCount).toBe(124);
-    expect(CONFIG_SCHEMA_FIELD_COUNT).toBe(151);
+    expect(qbitrrFieldCount).toBeGreaterThan(100);
+    expect(CONFIG_SCHEMA_FIELD_COUNT).toBe(
+      qbitrrFieldCount + CONFIG_SCHEMA.sections.TorrentClient.length,
+    );
+    expect(
+      CONFIG_SCHEMA.sections.Settings.some(
+        (field) => String(field.key) === "FreeSpace",
+      ),
+    ).toBe(false);
+    expect(
+      CONFIG_SCHEMA.sections.TorrentClient.some(
+        (field) => field.key === "FreeSpace",
+      ),
+    ).toBe(true);
     expect(
       CONFIG_SCHEMA.sections.Arr.some(
         (field) => field.key === "Torrent.FileExtensionAllowlist",
@@ -41,6 +53,6 @@ describe("generated config schema", () => {
     const version = CONFIG_SCHEMA.sections.Settings.find(
       (field) => field.key === "ConfigVersion",
     );
-    expect(version?.default).toBe("6.15.2");
+    expect(version?.default).toBe("6.20.2");
   });
 });

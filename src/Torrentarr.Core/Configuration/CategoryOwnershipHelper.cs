@@ -7,6 +7,10 @@ namespace Torrentarr.Core.Configuration;
 /// </summary>
 public static class CategoryOwnershipHelper
 {
+    public static bool ArrOwnsTorrent(TorrentarrConfig config, ArrInstanceConfig arr, TorrentInfo torrent)
+        => ResolveOwningCategory(config, torrent.Category, torrent.ClientInstanceId) is { Length: > 0 } owner
+            && CategoryPathHelper.CategoryEquals(arr.Category, owner);
+
     /// <summary>All category keys with active torrent processing (Arr categories + qBit-only managed).</summary>
     public static HashSet<string> BuildManagedObjectKeys(TorrentarrConfig config)
     {
@@ -132,6 +136,14 @@ public static class CategoryOwnershipHelper
             return null;
 
         var managed = BuildManagedObjectKeys(config);
+        if (qbitSection != null)
+        {
+            var local = config.GetTorrentClient(qbitSection);
+            managed.RemoveWhere(category => FindArrSectionForCategory(config, category) == null
+                && !CategoryPathHelper.CategoryEquals(category, config.Settings.FailedCategory)
+                && !CategoryPathHelper.CategoryEquals(category, config.Settings.RecheckCategory)
+                && !(local?.ManagedCategories.Any(c => CategoryPathHelper.CategoryEquals(c, category)) ?? false));
+        }
         if (managed.Contains(norm))
             return norm;
 
@@ -161,6 +173,7 @@ public static class CategoryOwnershipHelper
 
         foreach (var (instanceName, fetchAll) in fetchAllByInstance)
         {
+            if (config.GetTorrentClient(instanceName)?.Disabled == true || ResolveOwningCategory(config, target, instanceName) != target) continue;
             var usePrefix = PrefixMatchAllowedForOwner(config, target, instanceName);
             List<TorrentInfo> torrents;
             if (usePrefix)

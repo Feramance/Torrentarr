@@ -21,6 +21,8 @@ Consider this common misconfiguration:
 
 ```yaml
 # ❌ WRONG: Inconsistent paths across containers
+
+> Since 6.19.0, download paths and free-space monitors belong to each torrent client. Older global settings shown below are accepted as migration inputs. See [the current configuration reference](/configuration/config-file/#client-download-paths-and-free-space-monitors).
 services:
   qbittorrent:
     volumes:

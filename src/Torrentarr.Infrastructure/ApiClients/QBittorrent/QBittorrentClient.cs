@@ -411,6 +411,17 @@ public class QBittorrentClient : ITorrentClient, IDisposable
     /// <summary>
     /// Set share limits (ratio and seeding time) for a torrent
     /// </summary>
+    public async Task<bool> SetShareLimitsAsync(string hash, double ratioLimit, long seedingTimeLimit, long inactiveSeedingTimeLimit, CancellationToken ct = default)
+    {
+        var request = new RestRequest("api/v2/torrents/setShareLimits", Method.Post);
+        AddAuthCookie(request);
+        request.AddParameter("hashes", hash);
+        request.AddParameter("ratioLimit", ratioLimit);
+        request.AddParameter("seedingTimeLimit", seedingTimeLimit);
+        request.AddParameter("inactiveSeedingTimeLimit", inactiveSeedingTimeLimit);
+        return (await ExecuteAsync(request, ct)).IsSuccessful;
+    }
+
     public async Task<bool> SetShareLimitsAsync(string hash, double ratioLimit, long seedingTimeLimit, CancellationToken ct = default)
     {
         var request = new RestRequest("api/v2/torrents/setShareLimits", Method.Post);
@@ -656,6 +667,7 @@ public class QBittorrentClient : ITorrentClient, IDisposable
         if (value == null) return null;
         return new TorrentPropertiesRecord
         {
+            IsPrivate = value.IsPrivate,
             SavePath = value.SavePath,
             CreationDate = value.CreationDate,
             PieceSize = value.PieceSize,
@@ -746,6 +758,8 @@ public class CategoryInfo
 /// </summary>
 public class TorrentProperties
 {
+    [JsonProperty("is_private")]
+    public bool? IsPrivate { get; set; }
     [JsonProperty("save_path")]
     public string SavePath { get; set; } = "";
 

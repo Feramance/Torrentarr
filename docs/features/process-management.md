@@ -351,7 +351,7 @@ If a process doesn't terminate within 30 seconds, it's forcefully killed (SIGKIL
    ```toml
    [Settings]
    ConsoleLevel = "DEBUG"
-   ```
+```
 2. ✅ Check for database locks:
    ```bash
    tail -f ~/logs/Main.log | grep -i "lock"
@@ -495,6 +495,10 @@ Adjust `ProcessRestartDelay` based on failure type:
 ProcessRestartDelay = 3
 
 # Slower restart if Arr startup is slow
+```
+
+```toml
+[Settings]
 ProcessRestartDelay = 15
 ```
 

@@ -299,7 +299,7 @@ docker exec torrentarr ls -la /downloads
 Host = "qbittorrent"  # Use container name
 Port = 8080
 
-[[Radarr]]
+[Radarr-Movies]
 URI = "http://radarr:7878"  # Use container name
 ```
 

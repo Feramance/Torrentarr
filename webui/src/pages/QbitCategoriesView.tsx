@@ -14,6 +14,7 @@ import { useToast } from "../context/ToastContext";
 import { useWebUI } from "../context/WebUIContext";
 import { useInterval } from "../hooks/useInterval";
 import { isSeedingState } from "../utils/qbitTorrentDisplay";
+import { TorrentAutomationIssues } from "../components/TorrentAutomationIssues";
 import { ArrCatalogBodyChrome } from "./arrCatalog/ArrCatalogBodyChrome";
 
 function formatBytes(bytes: number): string {
@@ -612,6 +613,7 @@ export function QbitCategoriesView({
               </div>
             </div>
 
+            <TorrentAutomationIssues clientId={selection} />
             <ArrCatalogBodyChrome
               summaryLine={summaryLine}
               onRefresh={handleRefresh}

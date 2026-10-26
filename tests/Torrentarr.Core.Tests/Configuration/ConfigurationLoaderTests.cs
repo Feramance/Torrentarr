@@ -527,7 +527,7 @@ public class ConfigurationLoaderTests : IDisposable
         config.Settings.FailedCategory.Should().Be("failed");
         config.Settings.RecheckCategory.Should().Be("recheck");
         config.Settings.Tagless.Should().BeFalse();
-        config.Settings.AutoPauseResume.Should().BeTrue();
+        config.GetAllTorrentClients().Values.Should().OnlyContain(c => c.FreeSpace.Count == 0);
         config.Settings.FFprobeAutoUpdate.Should().BeTrue();
     }
 
@@ -1150,13 +1150,16 @@ public class ConfigurationLoaderTests : IDisposable
         {
             Environment.SetEnvironmentVariable("QBITRR_SETTINGS_FREE_SPACE", "42G");
 
-            WriteToml("""
+            WriteToml($"""
                 [Settings]
                 FreeSpace = "10G"
+                FreeSpaceFolder = '{Path.GetTempPath().Replace('\\', '/')}'
+                [qBit]
+                Host = "localhost"
                 """);
 
             var config = new ConfigurationLoader(_tempFilePath).Load();
-            config.Settings.FreeSpace.Should().Be("42G");
+            config.QBitInstances["qBit"].FreeSpace.Single().Limit.Should().Be("42G");
         }
         finally
         {
@@ -1174,13 +1177,16 @@ public class ConfigurationLoaderTests : IDisposable
             Environment.SetEnvironmentVariable("TORRENTARR_SETTINGS_FREE_SPACE", "");
             Environment.SetEnvironmentVariable("QBITRR_SETTINGS_FREE_SPACE", "42G");
 
-            WriteToml("""
+            WriteToml($"""
                 [Settings]
                 FreeSpace = "10G"
+                FreeSpaceFolder = '{Path.GetTempPath().Replace('\\', '/')}'
+                [qBit]
+                Host = "localhost"
                 """);
 
             var config = new ConfigurationLoader(_tempFilePath).Load();
-            config.Settings.FreeSpace.Should().Be("10G");
+            config.QBitInstances["qBit"].FreeSpace.Single().Limit.Should().Be("10G");
         }
         finally
         {
@@ -1579,4 +1585,38 @@ public class ConfigurationLoaderTests : IDisposable
         config.WebUI.AllowInsecureTokenQuery.Should().BeFalse();
         config.WebUI.AllowsInsecureTokenQuery.Should().BeFalse();
     }
+    [Fact]
+    public void Load_LegacyStorageEnvironmentRemainsRuntimeOnlyAfterMigration()
+    {
+        var previousLimit = Environment.GetEnvironmentVariable("TORRENTARR_SETTINGS_FREE_SPACE");
+        var previousRoot = Environment.GetEnvironmentVariable("TORRENTARR_SETTINGS_COMPLETED_DOWNLOAD_FOLDER");
+        var root = Path.GetTempPath().Replace('\\', '/').TrimEnd('/');
+        try
+        {
+            Environment.SetEnvironmentVariable("TORRENTARR_SETTINGS_FREE_SPACE", "42G");
+            Environment.SetEnvironmentVariable("TORRENTARR_SETTINGS_COMPLETED_DOWNLOAD_FOLDER", root + "/runtime");
+            WriteToml($"""
+                [Settings]
+                FreeSpace = "10G"
+                CompletedDownloadFolder = '{root}/file'
+                [qBit]
+                Host = "localhost"
+                """);
+            var loader = new ConfigurationLoader(_tempFilePath);
+            foreach (var pass in Enumerable.Range(0, 2))
+            {
+                var client = loader.Load().QBitInstances["qBit"];
+                client.DownloadPath.Should().Be(root + "/runtime");
+                client.FreeSpace.Single().Path.Should().Be(root + "/runtime");
+                client.FreeSpace.Single().Limit.Should().Be("42G");
+                File.ReadAllText(_tempFilePath).Should().NotContain("42G").And.NotContain(root + "/runtime");
+            }
+        }
+        finally
+        {
+            Environment.SetEnvironmentVariable("TORRENTARR_SETTINGS_FREE_SPACE", previousLimit);
+            Environment.SetEnvironmentVariable("TORRENTARR_SETTINGS_COMPLETED_DOWNLOAD_FOLDER", previousRoot);
+        }
+    }
+
 }

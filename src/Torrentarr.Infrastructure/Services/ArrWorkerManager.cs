@@ -653,12 +653,7 @@ public class ArrWorkerManager : BackgroundService
             await processor.ProcessTorrentsAsync(arrCfg.Category, ct);
 
             var pathTracker = scope.ServiceProvider.GetRequiredService<IImportPathTracker>();
-            var completedRoot = _config.Settings.CompletedDownloadFolder;
-            if (!string.IsNullOrWhiteSpace(completedRoot))
-            {
-                pathTracker.RemoveEmptyPathsUnder(completedRoot);
-                pathTracker.ClearIfFolderEmpty(completedRoot);
-            }
+            ClientDownloadPaths.Clean(_config, pathTracker);
         }
         catch (Exception ex)
         {

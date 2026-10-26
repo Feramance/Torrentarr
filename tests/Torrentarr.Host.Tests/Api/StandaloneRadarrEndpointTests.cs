@@ -191,7 +191,7 @@ public class StandaloneRadarrEndpointTests
         await using var factory = new StandaloneFactory();
         var client = factory.CreateClient();
         var config = factory.Services.GetRequiredService<TorrentarrConfig>();
-        config.TorrentClients["one"] = new() { Host = "fixture", Maintenance = new() { Enabled = true, Armed = true } };
+        config.TorrentClients["one"] = new() { Host = "fixture" };
         var response = await client.PostAsJsonAsync("/web/maintenance/preview", new MaintenancePreviewRequest());
         response.EnsureSuccessStatusCode();
         var plan = await response.Content.ReadFromJsonAsync<JsonElement>();
@@ -206,6 +206,22 @@ public class StandaloneRadarrEndpointTests
         plan.GetProperty("planId").GetString().Should().NotBeNullOrWhiteSpace();
         var status = await client.GetFromJsonAsync<JsonElement>("/web/status");
         status.TryGetProperty("qbit", out _).Should().BeFalse();
+    }
+
+    [Theory]
+    [InlineData("/web")]
+    [InlineData("/api")]
+    public async Task StandaloneMaintenance_SessionEndpointsAreGone(string prefix)
+    {
+        await using var factory = new StandaloneFactory();
+        var client = factory.CreateClient();
+        client.DefaultRequestHeaders.Authorization = new System.Net.Http.Headers.AuthenticationHeaderValue("Bearer", "standalone-test");
+        foreach (var command in new[] { "arm", "disarm" })
+        {
+            var response = await client.PostAsJsonAsync(prefix + "/maintenance/" + command, new { });
+            response.StatusCode.Should().Be(System.Net.HttpStatusCode.Gone);
+            (await response.Content.ReadAsStringAsync()).Should().Contain("Automatic").And.Contain("Manual");
+        }
     }
 
     [Fact]

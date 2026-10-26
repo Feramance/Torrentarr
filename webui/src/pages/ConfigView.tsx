@@ -41,6 +41,7 @@ import {
   focusFirstValidationError,
   formatValidationErrors,
   getValue,
+  parseFieldValue,
   prunePendingRenames,
   resolveSectionDiskKey,
   sectionKeysFromChanges,
@@ -106,6 +107,23 @@ export function ConfigView(props?: ConfigViewProps): JSX.Element {
     null,
   );
   const [formState, setFormState] = useState<ConfigDocument | null>(null);
+  useEffect(() => {
+    const receive = (event: Event) => {
+      const { path, maintenance } = (
+        event as CustomEvent<{ path: string[]; maintenance: unknown }>
+      ).detail;
+      const merge = (current: ConfigDocument | null) =>
+        current &&
+        produce(current, (draft) => {
+          set(draft, [...path, "Maintenance"], structuredClone(maintenance));
+        });
+      setOriginalConfig(merge);
+      setFormState(merge);
+    };
+    window.addEventListener("torrentarr:manage-saved", receive);
+    return () => window.removeEventListener("torrentarr:manage-saved", receive);
+  }, []);
+
   const [loading, setLoading] = useState(false);
   const [, setSavingSection] = useState<string | null>(null);
   const [pendingRenames, setPendingRenames] = useState<Map<string, string>>(
@@ -148,19 +166,7 @@ export function ConfigView(props?: ConfigViewProps): JSX.Element {
   const handleFieldChange = useCallback(
     (path: string[], def: FieldDefinition, raw: unknown) => {
       if (!formState) return;
-      // For tags type, handle arrays directly without parsing
-      const parsed =
-        def.type === "tags" && Array.isArray(raw)
-          ? raw
-          : def.parse?.(raw as string | boolean) ??
-            (def.type === "number"
-              ? (() => {
-                  const n = Number(raw);
-                  return Number.isFinite(n) ? n : 0;
-                })()
-              : def.type === "checkbox"
-                ? Boolean(raw)
-                : raw);
+      const parsed = parseFieldValue(def, raw);
 
       setFormState(
         produce(formState, (draft) => {
@@ -1245,6 +1251,13 @@ export function ConfigView(props?: ConfigViewProps): JSX.Element {
       ) : null}
       {active && activeQbitKey && formState ? (
         <QbitInstanceModal
+          manageClientId={
+            originalConfig?.[activeQbitKey] &&
+            !pendingRenames.has(activeQbitKey) &&
+            ![...pendingRenames.values()].includes(activeQbitKey)
+              ? activeQbitKey
+              : undefined
+          }
           keyName={activeQbitKey}
           state={(formState[activeQbitKey] as ConfigDocument) ?? null}
           onChange={handleFieldChange}
@@ -1260,6 +1273,11 @@ export function ConfigView(props?: ConfigViewProps): JSX.Element {
       ) : null}
       {active && activeClient ? (
         <QbitInstanceModal
+          manageClientId={
+            (originalConfig?.TorrentClient as ConfigDocument)?.[activeClient]
+              ? activeClient
+              : undefined
+          }
           keyName={activeClient}
           fields={getClientFields()}
           fieldPathPrefix={`TorrentClient.${activeClient}`}

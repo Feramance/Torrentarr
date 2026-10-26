@@ -138,6 +138,9 @@ function AppShell({
     readarr: false,
     qbittorrent: false,
   });
+  const [manageDirty, setManageDirty] = useState(false);
+  const [manageKey, setManageKey] = useState(0);
+  const [manageClientId, setManageClientId] = useState<string>();
   const [configDirty, setConfigDirty] = useState(false);
   const [configKey, setConfigKey] = useState(0);
   const { push } = useToast();
@@ -155,8 +158,27 @@ function AppShell({
   }, []);
 
   const switchTab = useCallback(
-    (tabId: Tab) => {
-      if (activeTab === "config" && tabId !== "config" && configDirty) {
+    (tabId: Tab, preserveConfigDraft = false) => {
+      if (
+        activeTab === "maintenance" &&
+        tabId !== "maintenance" &&
+        manageDirty
+      ) {
+        if (
+          !window.confirm(
+            "You have unsaved Manage settings. Discard them and leave?",
+          )
+        )
+          return;
+        setManageKey((key) => key + 1);
+        setManageDirty(false);
+      }
+      if (
+        activeTab === "config" &&
+        tabId !== "config" &&
+        configDirty &&
+        !preserveConfigDraft
+      ) {
         const shouldLeave = window.confirm(
           "You have unsaved configuration changes. Leave without saving?",
         );
@@ -174,7 +196,7 @@ function AppShell({
       });
       setSearchValue("");
     },
-    [activeTab, configDirty, markTabVisited, setSearchValue],
+    [activeTab, configDirty, manageDirty, markTabVisited, setSearchValue],
   );
   const { viewDensity, setViewDensity, theme, setTheme, liveArr, setLiveArr } =
     useWebUI();
@@ -375,7 +397,8 @@ function AppShell({
       ) {
         return;
       }
-      switchTab(tab as Tab);
+      if (detail.manageClientId) setManageClientId(detail.manageClientId);
+      switchTab(tab as Tab, detail.preserveConfigDraft);
       if (detail.qbitCategory) {
         try {
           sessionStorage.setItem(
@@ -618,7 +641,7 @@ function AppShell({
     }
     nextTabs.push({
       id: "maintenance",
-      label: "Maintenance",
+      label: "Manage",
       icon: ConfigIcon,
     });
     nextTabs.push({ id: "config", label: "Config", icon: ConfigIcon });
@@ -949,7 +972,12 @@ function AppShell({
             ) : null}
             {visitedTabs.has("maintenance") ? (
               <div hidden={activeTab !== "maintenance"}>
-                <MaintenanceView onOpenConfig={() => switchTab("config")} />
+                <MaintenanceView
+                  key={manageKey}
+                  active={activeTab === "maintenance"}
+                  requestedClientId={manageClientId}
+                  onDirtyChange={setManageDirty}
+                />
               </div>
             ) : null}
             {visitedTabs.has("config") ? (

@@ -1,4 +1,5 @@
 using Torrentarr.Core.Configuration;
+using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
 using Torrentarr.Core.Interfaces;
 using Torrentarr.Core.Models;
@@ -13,19 +14,22 @@ public sealed class SafeDeletionService : ISafeDeletionService
     private readonly IPathMappingService _paths;
     private readonly TorrentarrConfig _config;
     private readonly ILogger<SafeDeletionService> _logger;
+    private readonly IServiceScopeFactory? _scopes;
+    private RecycleLedger Ledger => new(_scopes);
 
     public SafeDeletionService(
         ITorrentClientRegistry registry,
         ITorrentInventoryService inventory,
         IPathMappingService paths,
         TorrentarrConfig config,
-        ILogger<SafeDeletionService> logger)
+        ILogger<SafeDeletionService> logger, IServiceScopeFactory? scopes = null)
     {
         _registry = registry;
         _inventory = inventory;
         _paths = paths;
         _config = config;
         _logger = logger;
+        _scopes = scopes;
     }
 
     public Task<SafeDeletionResult> RemoveTorrentAsync(string clientInstanceId, string hash, bool removeContent, CancellationToken ct = default)
@@ -36,10 +40,20 @@ public sealed class SafeDeletionService : ISafeDeletionService
 
     private async Task<SafeDeletionResult> RemoveAsync(string clientInstanceId, string hash, bool removeContent, TorrentInventory? validatedInventory, CancellationToken ct)
     {
+        using var configuration = _config.BeginOperation();
+        using var processing = ConfigMutationGuard.EnterProcessing();
         var client = _registry.GetClient(clientInstanceId);
         var cfg = _config.GetTorrentClient(clientInstanceId);
         if (client == null || cfg == null)
             return new(false, true, 0, "Torrent client is disconnected or unconfigured.");
+
+        var expected = validatedInventory?.Torrents.FirstOrDefault(t =>
+            t.Torrent.ClientInstanceId.Equals(clientInstanceId, StringComparison.OrdinalIgnoreCase)
+            && t.Torrent.Hash.Equals(hash, StringComparison.OrdinalIgnoreCase))?.Torrent
+            ?? (await client.GetTorrentsAsync(cancellationToken: ct))
+                .FirstOrDefault(t => t.Hash.Equals(hash, StringComparison.OrdinalIgnoreCase));
+        if (expected == null || !await ProtectionAllowsAsync(clientInstanceId, hash, ct, expected))
+            return new(false, true, 0, "Removal protections are unmet, unknown, or changed; torrent and content preserved.");
 
         if (!removeContent)
             return await client.DeleteTorrentsAsync([hash], false, ct)
@@ -49,7 +63,7 @@ public sealed class SafeDeletionService : ISafeDeletionService
         // Preserve legacy failed-torrent cleanup for installations that have no
         // optional maintenance mappings, but only through the client's explicit
         // content-deletion capability and with recycling disabled.
-        if (validatedInventory == null && cfg.Maintenance.PathMappings.Count == 0 && !cfg.Maintenance.RecycleBin.Enabled)
+        if (validatedInventory == null && _config.GetAllTorrentClients().Count == 1 && cfg.Maintenance.PathMappings.Count == 0 && !cfg.Maintenance.RecycleBin.Enabled)
         {
             if (!client.Capabilities.ContentDeletion)
                 return new(false, true, 0, "No path mapping is configured and the client cannot delete content safely.");
@@ -81,6 +95,7 @@ public sealed class SafeDeletionService : ISafeDeletionService
                 || !owner.Torrent.ClientInstanceId.Equals(clientInstanceId, StringComparison.OrdinalIgnoreCase)));
         if (shared)
         {
+            if (!await ProtectionAllowsAsync(clientInstanceId, hash, ct, expected)) return new(false, true, 0, "Removal clearance changed.");
             var removed = await client.DeleteTorrentsAsync([hash], false, ct);
             return removed
                 ? new(true, true, 0)
@@ -92,11 +107,14 @@ public sealed class SafeDeletionService : ISafeDeletionService
 
         long moved = 0;
         var movedPaths = new List<(string Source, string Destination)>();
+        var entries = new List<RecycleEntry>();
         var removalAttempted = false;
         var removalRejected = false;
         var pausedForRecycle = false;
         try
         {
+            if (!await ProtectionAllowsAsync(clientInstanceId, hash, ct, expected))
+                throw new IOException("Removal clearance changed before pause.");
             var current = (await client.GetTorrentsAsync(cancellationToken: ct))
                 .FirstOrDefault(t => t.Hash.Equals(hash, StringComparison.OrdinalIgnoreCase))
                 ?? throw new IOException("Torrent no longer exists.");
@@ -113,12 +131,16 @@ public sealed class SafeDeletionService : ISafeDeletionService
                     if (attempt >= 49) throw new IOException("Torrent did not stop; refusing to recycle active files.");
                     await Task.Delay(100, ct);
                 }
+                expected.State = current.State;
             }
+            if (!await ProtectionAllowsAsync(clientInstanceId, hash, ct, expected))
+                throw new IOException("Removal clearance changed before recycling.");
             foreach (var source in CollapseRoots(localFiles))
             {
                 var validation = ValidateSource(source, cfg);
                 if (validation != null) throw new IOException(validation);
                 var destination = BuildRecycleDestination(source, clientInstanceId, item.Torrent.Category, cfg);
+                entries.Add(Ledger.Prepare(clientInstanceId, source, destination, hash));
                 try { moved += await MoveToRecycleAsync(source, destination, ct); }
                 catch (RecyclePublishedException)
                 {
@@ -129,12 +151,15 @@ public sealed class SafeDeletionService : ISafeDeletionService
                 RemoveEmptyParents(Path.GetDirectoryName(source), cfg);
             }
             ct.ThrowIfCancellationRequested();
+            if (!await ProtectionAllowsAsync(clientInstanceId, hash, ct, expected))
+                throw new IOException("Removal clearance changed before client removal.");
             removalAttempted = true;
             if (!await client.DeleteTorrentsAsync([hash], false, ct))
             {
                 removalRejected = true;
                 throw new IOException("Torrent client rejected removal.");
             }
+            foreach (var entry in entries) Ledger.Write(entry with { State = "committed", RecycledAt = DateTimeOffset.UtcNow });
             return new(true, false, moved);
         }
         catch (Exception ex)
@@ -155,6 +180,8 @@ public sealed class SafeDeletionService : ISafeDeletionService
                 }
             }
             var restored = errors.Count == 0;
+            foreach (var entry in entries)
+                Ledger.Write(entry with { State = restored && (!removalAttempted || removalRejected) ? "restored" : "needs-recovery" });
             if (pausedForRecycle && restored && (!removalAttempted || removalRejected))
             {
                 try
@@ -170,6 +197,46 @@ public sealed class SafeDeletionService : ISafeDeletionService
         }
     }
 
+    private async Task<bool> ProtectionAllowsAsync(string instanceId, string hash, CancellationToken ct, TorrentInfo? expected = null)
+    {
+        if (_scopes == null || _config.Revision != _config.LatestRevision || _config.GetTorrentClient(instanceId)?.Disabled != false) return false;
+        try
+        {
+            var client = _registry.GetClient(instanceId);
+            if (client == null) return false;
+            using var scope = _scopes.CreateScope();
+            var seeding = scope.ServiceProvider.GetRequiredService<ISeedingService>();
+            var current = (await client.GetTorrentsAsync(cancellationToken: ct))
+                .FirstOrDefault(t => t.Hash.Equals(hash, StringComparison.OrdinalIgnoreCase));
+            if (current == null || (expected != null && !SeedingService.SameRemovalCandidate(expected, current))) return false;
+            current.ClientInstanceId = instanceId;
+            return await seeding.CanDeleteTorrentAsync(current, "final safe-removal boundary", ct);
+        }
+        catch (Exception ex) when (ex is not OperationCanceledException)
+        {
+            _logger.LogWarning(ex, "HnR clearance unavailable for {Hash} on {Client}; preserving torrent", hash, instanceId);
+            return false;
+        }
+    }
+
+    public async Task<bool> DeleteOwnedFileAsync(string instanceId, string hash, string path, CancellationToken ct = default)
+    {
+        using var configuration = _config.BeginOperation();
+        using var processing = ConfigMutationGuard.EnterProcessing();
+        var cfg = _config.GetTorrentClient(instanceId);
+        if (cfg == null || ValidateSource(path, cfg) != null) return false;
+        var inventory = await _inventory.BuildAsync(ct: ct);
+        if (!inventory.IsComplete || !inventory.LocalPathReferences.TryGetValue(Path.GetFullPath(path), out var owners)
+            || !owners.Any(o => o.Torrent.ClientInstanceId.Equals(instanceId, StringComparison.OrdinalIgnoreCase)
+                && o.Torrent.Hash.Equals(hash, StringComparison.OrdinalIgnoreCase))) return false;
+        foreach (var owner in owners)
+            if (!await ProtectionAllowsAsync(owner.Torrent.ClientInstanceId, owner.Torrent.Hash, ct, owner.Torrent)) return false;
+        if (ValidateSource(path, cfg) != null) return false;
+        ct.ThrowIfCancellationRequested();
+        File.Delete(path);
+        return true;
+    }
+
     public async Task<SafeDeletionResult> QuarantineFileAsync(string clientInstanceId, string localPath, CancellationToken ct = default)
     {
         var cfg = _config.GetTorrentClient(clientInstanceId);
@@ -177,40 +244,139 @@ public sealed class SafeDeletionService : ISafeDeletionService
         var validation = ValidateSource(localPath, cfg);
         if (validation != null) return new(false, true, 0, validation);
         var destination = BuildRecycleDestination(localPath, clientInstanceId, "orphans", cfg);
-        var bytes = await MoveToRecycleAsync(localPath, destination, ct);
-        return new(true, false, bytes);
+        var entry = Ledger.Prepare(clientInstanceId, localPath, destination);
+        try
+        {
+            var bytes = await MoveToRecycleAsync(localPath, destination, ct);
+            Ledger.Write(entry with { State = "committed", RecycledAt = DateTimeOffset.UtcNow });
+            return new(true, false, bytes);
+        }
+        catch { Ledger.Write(entry with { State = "needs-recovery" }); throw; }
     }
 
-    public Task<int> CleanupExpiredAsync(string clientInstanceId, CancellationToken ct = default)
-    {
-        var cfg = _config.GetTorrentClient(clientInstanceId);
-        if (cfg == null || !cfg.Maintenance.RecycleBin.Enabled) return Task.FromResult(0);
-        var root = ResolveRecycleRoot(cfg);
-        if (cfg.Maintenance.RecycleBin.SplitByClient)
-            root = Path.Combine(root, Sanitize(clientInstanceId));
-        if (!Directory.Exists(root)) return Task.FromResult(0);
-        if (_paths.ValidateLocalPath(root, root) != null) throw new IOException("Recycle root is inaccessible or unsafe.");
+    public IReadOnlyList<string> GetRecoveryPaths() => Ledger.Read().Where(e => e.State is "preparing" or "needs-recovery")
+        .SelectMany(e => new[] { e.Source, e.Destination }).Where(Path.IsPathFullyQualified).Distinct().ToList();
 
-        var cutoff = DateTime.UtcNow.AddDays(-cfg.Maintenance.RecycleBin.RetentionDays);
-        var deleted = 0;
-        var options = new EnumerationOptions
+    public IReadOnlyList<RecycleEntry> InspectRecycleEntries(string clientInstanceId)
+    {
+        var cfg = _config.GetTorrentClient(clientInstanceId) ?? throw new InvalidOperationException("Unknown client.");
+        var baseRoot = ResolveRecycleRoot(cfg);
+        var root = cfg.Maintenance.RecycleBin.SplitByClient ? Path.Combine(baseRoot, Sanitize(clientInstanceId)) : baseRoot;
+        var entries = Ledger.Read();
+        var owned = entries.Where(e => e.ClientInstanceId.Equals(clientInstanceId, StringComparison.OrdinalIgnoreCase)
+            && e.State is not ("restored" or "purged")).ToList();
+        if (!Directory.Exists(root))
         {
-            RecurseSubdirectories = true,
-            AttributesToSkip = FileAttributes.ReparsePoint,
-            IgnoreInaccessible = false
-        };
-        foreach (var path in Directory.EnumerateFileSystemEntries(root, "*", options))
+            if (owned.Count > 0) throw new IOException("Recorded recycle storage is missing; verify the mount before cleanup.");
+            var parent = Directory.Exists(baseRoot) ? baseRoot : Path.GetDirectoryName(baseRoot);
+            if (parent == null || _paths.ValidateLocalPath(parent, parent) != null) throw new IOException("Recycle root is inaccessible.");
+            return owned;
+        }
+        if (_paths.ValidateLocalPath(root, root) != null) throw new IOException("Recycle root is inaccessible or unsafe.");
+        var sharedLegacy = !cfg.Maintenance.RecycleBin.SplitByClient && _config.GetAllTorrentClients().Any(p =>
+        {
+            if (p.Key.Equals(clientInstanceId, StringComparison.OrdinalIgnoreCase)) return false;
+            try { var other = ResolveRecycleRoot(p.Value); return _paths.IsSafeDescendant(other, root) || _paths.IsSafeDescendant(root, other); }
+            catch (InvalidOperationException) { return false; }
+        });
+        var options = new EnumerationOptions { AttributesToSkip = FileAttributes.ReparsePoint, IgnoreInaccessible = false };
+        var folders = cfg.Maintenance.RecycleBin.SplitByCategory ? Directory.EnumerateDirectories(root, "*", options) : new[] { root };
+        foreach (var folder in folders)
+            foreach (var path in Directory.EnumerateFileSystemEntries(folder, "*", options))
+            {
+                if (entries.Any(e => string.Equals(e.Destination, path, OperatingSystem.IsWindows() ? StringComparison.OrdinalIgnoreCase : StringComparison.Ordinal))) continue;
+                owned.Add(new(RecycleLedger.Key(clientInstanceId, path), clientInstanceId, path, path,
+                    DateTimeOffset.UtcNow, path.EndsWith(".partial", StringComparison.OrdinalIgnoreCase) ? "needs-recovery" : sharedLegacy ? "ambiguous" : "legacy"));
+            }
+        return owned;
+    }
+
+    public IReadOnlyList<RecycleFileSnapshot> InspectRecycleFiles(RecycleEntry entry)
+    {
+        var cfg = _config.GetTorrentClient(entry.ClientInstanceId) ?? throw new InvalidOperationException("Unknown recycle owner.");
+        var root = ClientRecycleDirectory(cfg, entry.ClientInstanceId) ?? ResolveRecycleRoot(cfg);
+        if (!_paths.IsSafeDescendant(entry.Destination, root) || _paths.ValidateLocalPath(entry.Destination, root) != null)
+            throw new IOException("Recycle entry is inaccessible or outside its configured root.");
+        if (!File.Exists(entry.Destination) && !Directory.Exists(entry.Destination)) throw new IOException("Recorded recycled content is missing; verify storage.");
+        var files = new List<RecycleFileSnapshot>();
+        var pending = new Stack<string>(); pending.Push(entry.Destination);
+        while (pending.TryPop(out var path))
+        {
+            if (_paths.ValidateLocalPath(path, root) != null) throw new IOException("Unsafe recycle path.");
+            FileAttributes attributes;
+            try { attributes = File.GetAttributes(path); }
+            catch (FileNotFoundException) { continue; }
+            catch (DirectoryNotFoundException) { continue; }
+            if ((attributes & FileAttributes.ReparsePoint) != 0) throw new IOException("Recycle links require manual investigation.");
+            if ((attributes & FileAttributes.Directory) != 0)
+            {
+                foreach (var child in Directory.EnumerateFileSystemEntries(path)) pending.Push(child);
+            }
+            else
+            {
+                var info = new FileInfo(path); files.Add(new(path, info.Length, info.LastWriteTimeUtc.Ticks));
+            }
+        }
+        return files;
+    }
+
+    public void RegisterLegacyRecycleEntry(string clientInstanceId, string path)
+    {
+        var entry = InspectRecycleEntries(clientInstanceId).FirstOrDefault(e => e.Destination == path && e.State == "legacy")
+            ?? throw new InvalidOperationException("Legacy recycle entry changed or ownership is ambiguous.");
+        _ = InspectRecycleFiles(entry);
+        Ledger.Write(entry with { State = "committed", RecycledAt = DateTimeOffset.UtcNow });
+    }
+
+    public Task<long> PurgeRecycleEntryAsync(string clientInstanceId, string key, IReadOnlyList<RecycleFileSnapshot> files, CancellationToken ct = default)
+    {
+        var cfg = _config.GetTorrentClient(clientInstanceId) ?? throw new InvalidOperationException("Unknown client.");
+        var entry = Ledger.Read().SingleOrDefault(e => e.Key == key && e.ClientInstanceId.Equals(clientInstanceId, StringComparison.OrdinalIgnoreCase));
+        if (entry == null || entry.State != "committed" || !cfg.Maintenance.RecycleBin.Enabled || !cfg.Maintenance.RecycleBin.RetentionEnabled
+            || (DateTimeOffset.UtcNow - entry.RecycledAt).TotalDays < cfg.Maintenance.RecycleBin.RetentionDays)
+            throw new InvalidOperationException("Recycle entry is not eligible for retention.");
+        var current = InspectRecycleFiles(entry).ToDictionary(f => f.Path);
+        long bytes = 0;
+        foreach (var file in files.Take(cfg.Maintenance.RecycleBin.MaxFilesDeletedPerRun))
         {
             ct.ThrowIfCancellationRequested();
-            if (Directory.Exists(path)) continue;
-            var modified = File.GetLastWriteTimeUtc(path);
-            if (modified > cutoff) continue;
-            if ((File.GetAttributes(path) & FileAttributes.ReparsePoint) != 0) continue;
-            if (_paths.ValidateLocalPath(path, root, requireFile: true) != null) throw new IOException("Recycle item is inaccessible or unsafe.");
-            File.Delete(path);
-            deleted++;
+            if (!current.TryGetValue(file.Path, out var fresh) || fresh != file) throw new IOException("Recycle file changed after preview; check again.");
+            if (_paths.ValidateLocalPath(file.Path, ClientRecycleDirectory(cfg, clientInstanceId) ?? ResolveRecycleRoot(cfg), true) != null) throw new IOException("Recycle path changed before deletion.");
+            var info = new FileInfo(file.Path);
+            if (info.Length != file.Bytes || info.LastWriteTimeUtc.Ticks != file.LastWriteTicks) throw new IOException("Recycle file changed before deletion.");
+            File.Delete(file.Path); bytes += file.Bytes;
         }
-        return Task.FromResult(deleted);
+        if ((!File.Exists(entry.Destination) && !Directory.Exists(entry.Destination)) || InspectRecycleFiles(entry).Count == 0)
+        {
+            if (Directory.Exists(entry.Destination))
+            {
+                // Never recursively remove an uninspected file or link added during purge.
+                var options = new EnumerationOptions { RecurseSubdirectories = true, AttributesToSkip = FileAttributes.ReparsePoint, IgnoreInaccessible = false };
+                foreach (var directory in Directory.EnumerateDirectories(entry.Destination, "*", options).OrderByDescending(p => p.Length))
+                    if (_paths.ValidateLocalPath(directory, root: ClientRecycleDirectory(cfg, clientInstanceId) ?? ResolveRecycleRoot(cfg)) == null && !Directory.EnumerateFileSystemEntries(directory).Any()) Directory.Delete(directory);
+                if (!Directory.EnumerateFileSystemEntries(entry.Destination).Any()) Directory.Delete(entry.Destination);
+            }
+            Ledger.Write(entry with { State = "purged" });
+        }
+        return Task.FromResult(bytes);
+    }
+
+    public async Task<int> CleanupExpiredAsync(string clientInstanceId, CancellationToken ct = default)
+    {
+        var cfg = _config.GetTorrentClient(clientInstanceId);
+        if (cfg == null || !cfg.Maintenance.RecycleBin.Enabled || !cfg.Maintenance.RecycleBin.RetentionEnabled) return 0;
+        var remaining = cfg.Maintenance.RecycleBin.MaxFilesDeletedPerRun;
+        var deleted = 0;
+        foreach (var entry in InspectRecycleEntries(clientInstanceId))
+        {
+            if (entry.State == "legacy") { RegisterLegacyRecycleEntry(clientInstanceId, entry.Destination); continue; }
+            if (entry.State != "committed" || (DateTimeOffset.UtcNow - entry.RecycledAt).TotalDays < cfg.Maintenance.RecycleBin.RetentionDays) continue;
+            var files = InspectRecycleFiles(entry).Take(remaining).ToList();
+            await PurgeRecycleEntryAsync(clientInstanceId, entry.Key, files, ct);
+            remaining -= files.Count; deleted += files.Count;
+            if (remaining == 0) break;
+        }
+        return deleted;
     }
 
     private string? ValidateSource(string source, TorrentClientInstanceConfig cfg)
@@ -319,13 +485,6 @@ public sealed class SafeDeletionService : ISafeDeletionService
         var bytes = Directory.Exists(destination)
             ? Directory.EnumerateFiles(destination, "*", SearchOption.AllDirectories).Sum(f => new FileInfo(f).Length)
             : new FileInfo(destination).Length;
-        try
-        {
-            var stamp = DateTime.UtcNow;
-            if (Directory.Exists(destination)) Directory.SetLastWriteTimeUtc(destination, stamp);
-            else File.SetLastWriteTimeUtc(destination, stamp);
-        }
-        catch (IOException) { }
         _logger.LogInformation("Moved {Source} to recycle bin {Destination}", source, destination);
         return bytes;
     }

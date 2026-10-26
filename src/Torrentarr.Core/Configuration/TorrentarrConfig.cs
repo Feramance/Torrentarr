@@ -55,13 +55,9 @@ public class TorrentarrConfig
 
 public class SettingsConfig
 {
-    public string ConfigVersion { get; set; } = "6.18.0";
+    public string ConfigVersion { get; set; } = "6.20.2";
     public string ConsoleLevel { get; set; } = "INFO";
     public bool Logging { get; set; } = true;
-    public string CompletedDownloadFolder { get; set; } = "";
-    public string FreeSpace { get; set; } = "-1";
-    public string FreeSpaceFolder { get; set; } = "";
-    public bool AutoPauseResume { get; set; } = true;
     public int NoInternetSleepTimer { get; set; } = 15;
     public int LoopSleepTimer { get; set; } = 5;
     public int SearchLoopDelay { get; set; } = -1;
@@ -81,7 +77,6 @@ public class SettingsConfig
     public int ProcessRestartDelay { get; set; } = 5;
     public List<CategorySeedingRule>? CategorySeedingRules { get; set; }
     public List<TrackerRule>? TrackerRules { get; set; }
-    public double? FreeSpaceThresholdGB { get; set; } = 10;
     public string ImportMode { get; set; } = "Auto";
 }
 
@@ -111,12 +106,21 @@ public class TorrentClientInstanceConfig
     public string Password { get; set; } = "CHANGE_ME";
     /// <summary>When true, do not verify TLS certificates for this qBittorrent WebUI (self-signed certs).</summary>
     public bool SkipTLSVerify { get; set; }
+    public List<FreeSpaceMonitorConfig> FreeSpace { get; set; } = new();
     public string? DownloadPath { get; set; }
     public List<string> ManagedCategories { get; set; } = new();
     public bool MatchSubcategories { get; set; }
     public List<TrackerConfig> Trackers { get; set; } = new();
     public CategorySeedingConfig CategorySeeding { get; set; } = new();
+    public MigrationNoticeDocument Migration { get; set; } = new();
     public MaintenanceConfig Maintenance { get; set; } = new();
+}
+
+public class FreeSpaceMonitorConfig
+{
+    public string Path { get; set; } = "";
+    public bool Enabled { get; set; }
+    public string Limit { get; set; } = "10G";
 }
 
 public class QBitConfig : TorrentClientInstanceConfig
@@ -124,8 +128,32 @@ public class QBitConfig : TorrentClientInstanceConfig
     public QBitConfig() => LegacySection = true;
 }
 
+public class MigrationNoticeDocument
+{
+    public List<string> Notices { get; set; } = [];
+}
+
+public class StorageConfig
+{
+    public bool AutomaticCleanup { get; set; }
+    public List<PathMappingConfig> PathMappings { get; set; } = [];
+    public OrphanMaintenanceConfig Orphans { get; set; } = new();
+    public RecycleBinConfig RecycleBin { get; set; } = new();
+}
+
+public class RecoveryConfig : ErrorRecoveryConfig
+{
+    public RecoveryConfig() => Enabled = true;
+    public int MinimumTorrentAgeMinutes { get; set; } = 10;
+    public List<string> IncludedCategories { get; set; } = [];
+    public List<string> ExcludedCategories { get; set; } = [];
+    public List<string> ExcludedTags { get; set; } = [];
+}
+
 public class MaintenanceConfig
 {
+    public Dictionary<string, MaintenanceOperationPolicy> Operations { get; set; } = new(StringComparer.OrdinalIgnoreCase);
+    public ErrorRecoveryConfig ErrorRecovery { get; set; } = new();
     public bool Enabled { get; set; }
     [TomlIgnore]
     [Newtonsoft.Json.JsonIgnore]
@@ -158,6 +186,8 @@ public class PathMappingConfig
 
 public class RecycleBinConfig
 {
+    public bool RetentionEnabled { get; set; } = true;
+    public int MaxFilesDeletedPerRun { get; set; } = 100;
     public bool Enabled { get; set; } = true;
     public string Path { get; set; } = "";
     public int RetentionDays { get; set; } = 30;
@@ -169,14 +199,18 @@ public class RecycleBinConfig
 
 public class OrphanMaintenanceConfig
 {
+    public List<string> ScanRoots { get; set; } = new();
+    public int MaxInspectedFilesPerRun { get; set; } = 10000;
     public bool Enabled { get; set; }
-    public int MinimumAgeMinutes { get; set; } = 60;
-    public int MaxFilesPerRun { get; set; } = 50;
+    public int MinimumAgeMinutes { get; set; } = 1440;
+    public int MaxFilesPerRun { get; set; } = 10;
     public List<string> ExcludePatterns { get; set; } = new();
 }
 
 public class HardlinkMaintenanceConfig
 {
+    public bool RemoveClearedTag { get; set; }
+    public int MaxInspectedTorrentsPerRun { get; set; } = 1000;
     public bool Enabled { get; set; }
     public string Tag { get; set; } = "noHL";
     public bool CountLinksInsideRoot { get; set; }
@@ -198,12 +232,15 @@ public class UnregisteredMaintenanceConfig
 
 public class RepairMaintenanceConfig
 {
+    public bool ResumeCompleted { get; set; } = true;
+    public bool RecheckIncomplete { get; set; } = true;
     public bool Enabled { get; set; }
     public int MaxPerRun { get; set; } = 10;
 }
 
 public class AutomaticManagementConfig
 {
+    public bool RemoveClearedTrackerErrorTag { get; set; }
     public bool Enabled { get; set; }
     public List<string> IgnoredTags { get; set; } = new();
     public string PrivateTag { get; set; } = "";
@@ -268,6 +305,7 @@ public class CategorySeedingCategoryOverride
 
 public class TrackerConfig
 {
+    public TrackerProtectionConfig? Protection { get; set; }
     public string? Name { get; set; }
     public string Uri { get; set; } = "";
     public int Priority { get; set; }

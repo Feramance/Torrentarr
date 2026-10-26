@@ -76,7 +76,7 @@ This page covers the most frequently encountered issues with Torrentarr and thei
      [qBit]
      UserName = ""
      Password = ""
-     ```
+```
 
 3. **Test login manually:**
    ```bash
@@ -110,7 +110,7 @@ This page covers the most frequently encountered issues with Torrentarr and thei
    Port = 8080
    UserName = "admin"
    Password = "password"
-   ```
+```
 
 3. **Test connectivity manually:**
    ```bash
@@ -145,11 +145,17 @@ This page covers the most frequently encountered issues with Torrentarr and thei
    URI = "http://localhost:7878"
 
    # ❌ Incorrect (missing http://)
+```
+
+```toml
    URI = "localhost:7878"
 
    # ❌ Incorrect (trailing slash)
+```
+
+```toml
    URI = "http://localhost:7878/"
-   ```
+```
 
 3. **Check API key:**
    - Copy API key from Arr instance: **Settings** → **General** → **Security**
@@ -160,7 +166,7 @@ This page covers the most frequently encountered issues with Torrentarr and thei
    - If Arr and Torrentarr are in the same Docker network, use service name:
      ```toml
      URI = "http://radarr:7878"  # Not "localhost"
-     ```
+```
 
 ---
 
@@ -185,7 +191,7 @@ The #1 reason Torrentarr doesn't process torrents is **mismatched categories**.
    ```toml
    [Radarr-Movies]
    Category = "radarr-movies"  # Must EXACTLY match!
-   ```
+```
 
 3. **Check existing torrents in qBittorrent:**
    - Open qBittorrent
@@ -196,7 +202,7 @@ The #1 reason Torrentarr doesn't process torrents is **mismatched categories**.
    ```toml
    [Settings]
    ConsoleLevel = "DEBUG"
-   ```
+```
    Look for: `Processing category: radarr-movies` in logs
 
 **Other Causes:**
@@ -219,7 +225,7 @@ The #1 reason Torrentarr doesn't process torrents is **mismatched categories**.
    ```toml
    [Settings]
    IgnoreTorrentsYoungerThan = 60  # 1 minute
-   ```
+```
 
 2. **File extension not allowed:**
 
@@ -227,7 +233,7 @@ The #1 reason Torrentarr doesn't process torrents is **mismatched categories**.
    ```toml
    [Radarr-Movies.Torrent]
    FileExtensionAllowlist = [".mp4", ".mkv", ".avi", ".!qB", ".parts"]
-   ```
+```
 
 3. **FFprobe validation failure:**
 
@@ -240,7 +246,7 @@ The #1 reason Torrentarr doesn't process torrents is **mismatched categories**.
    [Radarr-Movies.Torrent]
    MaximumETA = -1  # Disable
    # Or increase: MaximumETA = 86400  # 24 hours
-   ```
+```
 
 ---
 
@@ -254,7 +260,7 @@ The #1 reason Torrentarr doesn't process torrents is **mismatched categories**.
    ```toml
    [Radarr-Movies.Torrent]
    StalledDelay = 15  # Wait 15 minutes before removal
-   ```
+```
    - `-1` = Disabled (never remove stalled)
    - `0` = Immediate removal
    - `>0` = Wait N minutes before removal
@@ -267,7 +273,7 @@ The #1 reason Torrentarr doesn't process torrents is **mismatched categories**.
    ```toml
    [Radarr-Movies.Torrent]
    ReSearchStalled = true  # Search before removing
-   ```
+```
 
 4. **Check logs for stall detection:**
    ```bash
@@ -290,7 +296,7 @@ The #1 reason Torrentarr doesn't process torrents is **mismatched categories**.
    ```toml
    [Radarr-Movies.Search]
    SearchMissing = true  # REQUIRED - master switch for all search features
-   ```
+```
 
    **Important:** DoUpgradeSearch, QualityUnmetSearch, CustomFormatUnmetSearch, and request processing (Overseerr/Ombi) will ONLY work if SearchMissing is enabled.
 
@@ -324,7 +330,7 @@ The #1 reason Torrentarr doesn't process torrents is **mismatched categories**.
    ```toml
    [Settings]
    SearchLoopDelay = -1  # -1 = uses default 30s between each search
-   ```
+```
 
 6. **Verify Arr has missing media:**
    - Open Radarr/Sonarr → **Wanted** → **Missing**
@@ -346,13 +352,13 @@ The #1 reason Torrentarr doesn't process torrents is **mismatched categories**.
    ```toml
    [Radarr-Movies.Search.Overseerr]
    SearchOverseerrRequests = true
-   ```
+```
 
 2. **Verify connection details:**
    ```toml
    OverseerrURI = "http://localhost:5055"  # Correct URI?
    OverseerrAPIKey = "your-api-key"         # Valid API key?
-   ```
+```
 
 3. **Test API manually:**
    ```bash
@@ -363,14 +369,14 @@ The #1 reason Torrentarr doesn't process torrents is **mismatched categories**.
 4. **Check approval status:**
    ```toml
    ApprovedOnly = true  # Only processes approved requests
-   ```
+```
    - If `true`, make sure requests are approved in Overseerr
    - Set to `false` to process all requests
 
 5. **Verify 4K instance flag:**
    ```toml
    Is4K = true  # For 4K Radarr instances
-   ```
+```
    Must match your Overseerr configuration
 
 ---
@@ -431,11 +437,11 @@ The #1 reason Torrentarr doesn't process torrents is **mismatched categories**.
        - /mnt/data/torrents:/downloads  # Must match!
    ```
 
-2. **Verify CompletedDownloadFolder:**
+2. **Verify the client DownloadPath and local path mappings:**
    ```toml
-   [Settings]
-   CompletedDownloadFolder = "/downloads"  # Must be accessible to Torrentarr
-   ```
+[qBit]
+DownloadPath = "/downloads"
+```
 
 3. **Check file permissions:**
    ```bash
@@ -480,13 +486,13 @@ The #1 reason Torrentarr doesn't process torrents is **mismatched categories**.
    [Radarr-Movies.Search]
    DoUpgradeSearch = true
    QualityUnmetSearch = true
-   ```
+```
 
 4. **Enable temp profile switching:**
    ```toml
    UseTempForMissing = true
-   QualityProfileMappings = { "Ultra-HD" = "HD-1080p" }
-   ```
+   QualityProfileMappings = {"Ultra-HD" = "HD-1080p"}
+```
    This grabs *something* initially, then upgrades later
 
 ---
@@ -501,21 +507,21 @@ The #1 reason Torrentarr doesn't process torrents is **mismatched categories**.
    ```toml
    [Settings]
    LoopSleepTimer = 1  # Very aggressive
-   ```
+```
    **Solution:** Increase to 5-10 seconds:
    ```toml
    LoopSleepTimer = 5
-   ```
+```
 
 2. **Too many concurrent searches:**
    ```toml
    [Radarr-Movies.Search]
    SearchLimit = 10  # Too high
-   ```
+```
    **Solution:** Lower to 3-5:
    ```toml
    SearchLimit = 3
-   ```
+```
 
 3. **Database locked:**
    - Multiple Torrentarr instances accessing same database
@@ -535,21 +541,21 @@ The #1 reason Torrentarr doesn't process torrents is **mismatched categories**.
    ```toml
    [Settings]
    ConsoleLevel = "TRACE"  # Very verbose
-   ```
+```
    **Solution:** Use INFO or WARNING:
    ```toml
    ConsoleLevel = "INFO"
-   ```
+```
 
 3. **WebUI live updates:**
    ```toml
    [WebUI]
    LiveArr = true  # Increases memory usage
-   ```
+```
    **Solution:** Disable if not needed:
    ```toml
    LiveArr = false
-   ```
+```
 
 ---
 
@@ -559,22 +565,30 @@ The #1 reason Torrentarr doesn't process torrents is **mismatched categories**.
 
 **Solutions:**
 
-1. **Enable AutoPauseResume:**
+1. **Enable the appropriate client free-space monitor:**
    ```toml
-   [Settings]
-   AutoPauseResume = true
-   ```
+[[qBit.FreeSpace]]
+Path = '/downloads'
+Enabled = true
+Limit = '10G'
+```
 
 2. **Set FreeSpace threshold:**
    ```toml
-   FreeSpace = "50G"  # Pause when <50GB free
-   ```
+[[qBit.FreeSpace]]
+Path = '/downloads'
+Enabled = false
+Limit = "50G"
+```
    Supported units: K (KB), M (MB), G (GB), T (TB)
 
-3. **Set FreeSpaceFolder:**
+3. **Set the local monitor Path:**
    ```toml
-   FreeSpaceFolder = "/downloads"  # Path to check
-   ```
+[[qBit.FreeSpace]]
+Path = "/downloads"
+Enabled = false
+Limit = '10G'
+```
    Must be the mount point or directory to monitor
 
 4. **Verify path is correct:**
@@ -592,11 +606,11 @@ The #1 reason Torrentarr doesn't process torrents is **mismatched categories**.
    ```toml
    [Radarr-Movies]
    ImportMode = "Copy"  # Leaves files in download folder
-   ```
+```
    **Solution:** Use Move to free space:
    ```toml
    ImportMode = "Move"
-   ```
+```
 
 2. **Seeding torrents:**
    - Files remain until seeding goals met
@@ -606,13 +620,13 @@ The #1 reason Torrentarr doesn't process torrents is **mismatched categories**.
      MaxUploadRatio = 1.0  # Lower ratio
      MaxSeedingTime = 86400  # 1 day
      RemoveTorrent = 1  # Remove when ratio met
-     ```
+```
 
 3. **MaximumDeletablePercentage protection:**
    ```toml
    [Radarr-Movies.Torrent]
    MaximumDeletablePercentage = 0.99  # Won't delete nearly-complete
-   ```
+```
 
 ---
 
@@ -639,7 +653,7 @@ The #1 reason Torrentarr doesn't process torrents is **mismatched categories**.
    ```toml
    [Settings]
    ConsoleLevel = "DEBUG"
-   ```
+```
    Look for config loading messages
 
 ---
@@ -678,7 +692,7 @@ The #1 reason Torrentarr doesn't process torrents is **mismatched categories**.
    [WebUI]
    Host = "0.0.0.0"  # Listen on all interfaces
    Port = 6969        # Default port
-   ```
+```
 
 2. **Test connection:**
    ```bash
@@ -709,7 +723,7 @@ The #1 reason Torrentarr doesn't process torrents is **mismatched categories**.
    ```toml
    [WebUI]
    Token = ""  # Empty = no authentication required
-   ```
+```
 
 2. **If Token is set but lost:**
    - Edit `/config/config.toml`
@@ -737,7 +751,7 @@ The #1 reason Torrentarr doesn't process torrents is **mismatched categories**.
    ```toml
    [Settings]
    Logging = true
-   ```
+```
 
 2. **Check log directory:**
    - **Docker:** `/config/logs/`
@@ -777,7 +791,7 @@ If your issue isn't covered here:
    ```toml
    [Settings]
    ConsoleLevel = "DEBUG"
-   ```
+```
 
 2. **Collect relevant logs:**
    - `Main.log` – Core Torrentarr operations

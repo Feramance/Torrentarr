@@ -124,7 +124,9 @@ plugins:
     separator: '[\s\-,:!=\[\]()"`/]+|\.(?!\d)|&[lg]t;|(?!\b)(?=[A-Z][a-z])'
 - swagger-ui-tag:
 - git-revision-date-localized:
+    enabled: !ENV [TORRENTARR_DOCS_GIT_DATES, true]
     enable_creation_date: true
+    fallback_to_build_date: true
     type: timeago
     enable_parallel_processing: false
     enable_git_follow: false
@@ -225,7 +227,7 @@ nav:
     - configuration/arr/lidarr.md
     - configuration/arr/readarr.md
   - Torrent Settings: configuration/torrents.md
-  - Maintenance Configuration: configuration/maintenance.md
+  - Manage Configuration: configuration/maintenance.md
   - Search & Requests:
     - configuration/search/index.md
     - configuration/search/overseerr.md
@@ -249,7 +251,9 @@ nav:
   - Disk Space Management: features/disk-space.md
   - Auto Updates: features/auto-updates.md
   - Process Management: features/process-management.md
-  - Torrent Maintenance: features/torrent-maintenance.md
+  - Manage: features/torrent-maintenance.md
+  - Manage Examples: features/maintenance-examples.md
+  - Manage Controls: configuration/maintenance-controls.md
 
 - Web UI:
   - webui/index.md
@@ -281,6 +285,8 @@ nav:
   - Testing: development/testing.md
   - Release Process: development/release-process.md
   - WebUI Development: development/webui.md
+  - Branch Change Inventory: development/branch-change-inventory.md
+  - Maintenance Verification: development/maintenance-verification.md
   - qBitrr parity:
     - parity/overview.md
     - parity/full-parity-path-report.md

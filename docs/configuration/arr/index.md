@@ -59,7 +59,7 @@ All Arr instances share common configuration options:
 ### Required Settings
 
 ```toml
-[[Radarr]]  # or [[Sonarr]] or [[Lidarr]]
+[Radarr-Movies]  # or [Sonarr-TV] or [Lidarr-Music]
 Name = "Radarr-Main"
 URI = "http://localhost:7878"
 APIKey = "your-api-key-here"
@@ -72,7 +72,7 @@ APIKey = "your-api-key-here"
 ### Optional Settings
 
 ```toml
-[[Radarr]]
+[Radarr-Movies]
 Name = "Radarr-Main"
 URI = "http://localhost:7878"
 APIKey = "your-api-key-here"
@@ -91,25 +91,29 @@ SearchPeriodDays = 7                   # Days to search for missing
 You can configure multiple instances of the same Arr type:
 
 ```toml
-[[Radarr]]
+[Radarr-Movies]
 Name = "Radarr-Movies-4K"
 URI = "http://localhost:7878"
 APIKey = "radarr-api-key"
 Category = "radarr-4k"
+```
 
-[[Radarr]]
+```toml
+[Radarr-Movies]
 Name = "Radarr-Movies-1080p"
 URI = "http://localhost:7879"
 APIKey = "radarr2-api-key"
 Category = "radarr-1080p"
 
-[[Sonarr]]
+[Sonarr-TV]
 Name = "Sonarr-TV"
 URI = "http://localhost:8989"
 APIKey = "sonarr-api-key"
 Category = "sonarr"
+```
 
-[[Sonarr]]
+```toml
+[Sonarr-TV]
 Name = "Sonarr-Anime"
 URI = "http://localhost:8990"
 APIKey = "sonarr-anime-api-key"
@@ -145,7 +149,7 @@ After configuring an Arr instance:
 When running in Docker with a custom network:
 
 ```toml
-[[Radarr]]
+[Radarr-Movies]
 Name = "Radarr"
 URI = "http://radarr:7878"  # Use container name
 APIKey = "your-api-key"
@@ -156,7 +160,7 @@ APIKey = "your-api-key"
 For Arr instances on different machines:
 
 ```toml
-[[Radarr]]
+[Radarr-Movies]
 Name = "Radarr-Remote"
 URI = "http://192.168.1.100:7878"
 APIKey = "your-api-key"
@@ -167,7 +171,7 @@ APIKey = "your-api-key"
 For secure connections:
 
 ```toml
-[[Radarr]]
+[Radarr-Movies]
 Name = "Radarr-Secure"
 URI = "https://radarr.yourdomain.com"
 APIKey = "your-api-key"
@@ -184,10 +188,10 @@ Torrentarr uses qBittorrent categories to track which Arr instance owns each tor
 
 - **Custom Categories:**
   ```toml
-  [[Radarr]]
+  [Radarr-Movies]
   Name = "Radarr-4K"
   Category = "movies-4k"  # Custom category
-  ```
+```
 
 **Important:** Make sure your Arr instances are configured to use these categories in their download client settings.
 
@@ -198,7 +202,7 @@ Torrentarr uses qBittorrent categories to track which Arr instance owns each tor
 Torrentarr can trigger imports immediately when downloads complete:
 
 ```toml
-[[Radarr]]
+[Radarr-Movies]
 InstantImport = true
 ```
 
@@ -212,7 +216,7 @@ Benefits:
 Monitor and fix stalled or failed downloads:
 
 ```toml
-[[Radarr]]
+[Radarr-Movies]
 HealthCheck = true
 ```
 
@@ -227,7 +231,7 @@ Features:
 Automatically search for missing or wanted media:
 
 ```toml
-[[Radarr]]
+[Radarr-Movies]
 SearchMissing = true
 SearchPeriodDays = 7  # Search every 7 days
 ```
@@ -274,7 +278,7 @@ See: [Troubleshooting Guide](../../troubleshooting/common-issues.md#import-issue
 Control how files are handled when imported to your Arr instance:
 
 ```toml
-[[Radarr]]
+[Radarr-Movies]
 ImportMode = "Move"  # or "Copy" or "Hardlink"
 ```
 
@@ -296,12 +300,9 @@ ImportMode = "Move"  # or "Copy" or "Hardlink"
 Map quality profiles for temporary searches:
 
 ```toml
-[[Lidarr]]
+[Lidarr-Music]
 # Accept lower quality temporarily, upgrade later
-QualityProfileMappings = {
-    "Lossless (FLAC)" = "Any (MP3-320)",
-    "High Quality (1080p)" = "Standard (720p)"
-}
+QualityProfileMappings = { "Lossless (FLAC)" = "Any (MP3-320)", "High Quality (1080p)" = "Standard (720p)"}
 ```
 
 This allows Torrentarr to temporarily lower quality requirements to get *something* now, then upgrade when better releases appear.
@@ -311,7 +312,7 @@ This allows Torrentarr to temporarily lower quality requirements to get *somethi
 Enforce minimum custom format scores:
 
 ```toml
-[[Radarr]]
+[Radarr-Movies]
 # Require custom format score of at least 1000
 ForceMinimumCustomFormat = true
 MinimumCustomFormatScore = 1000
@@ -327,7 +328,7 @@ MinimumCustomFormatScore = 1000
 Configure when and how often Torrentarr searches for missing content:
 
 ```toml
-[[Radarr]]
+[Radarr-Movies]
 SearchMissing = true
 SearchRequestsEvery = 300  # Search every 5 minutes
 SearchAgainOnSearchCompletion = true  # Restart after each cycle
@@ -345,7 +346,7 @@ SearchInReverse = false  # Start from newest to oldest
 Integrate with request management systems:
 
 ```toml
-[[Radarr]]
+[Radarr-Movies]
 [Radarr.Overseerr]
 OverseerrURL = "http://localhost:5055"
 OverseerrAPIKey = "overseerr-api-key"
@@ -391,7 +392,7 @@ RemoveTorrent = 3  # Remove when ratio OR time met
 Filter what content Torrentarr searches for:
 
 ```toml
-[[Sonarr]]
+[Sonarr-TV]
 [Sonarr.Search]
 # Only search for monitored content
 Monitored = true
@@ -414,7 +415,7 @@ SearchLimit = 50  # Search max 50 episodes per cycle
 Control logging per Arr instance:
 
 ```toml
-[[Radarr]]
+[Radarr-Movies]
 LogLevel = "DEBUG"  # Override global log level
 ```
 
@@ -427,7 +428,7 @@ Useful for debugging specific instance issues without flooding logs from other i
 Simple single-instance configuration:
 
 ```toml
-[[Radarr]]
+[Radarr-Movies]
 Name = "Radarr-Movies"
 URI = "http://localhost:7878"
 APIKey = "your-radarr-api-key"
@@ -441,7 +442,7 @@ HealthCheck = true
 Separate instances for different qualities:
 
 ```toml
-[[Radarr]]
+[Radarr-Movies]
 Name = "Radarr-1080p"
 URI = "http://localhost:7878"
 APIKey = "radarr-1080p-api-key"
@@ -451,8 +452,10 @@ ImportMode = "Move"
 [Radarr-1080p.Search]
 SearchMissing = true
 DoUpgradeSearch = true
+```
 
-[[Radarr]]
+```toml
+[Radarr-Movies]
 Name = "Radarr-4K"
 URI = "http://localhost:7879"
 APIKey = "radarr-4k-api-key"
@@ -471,7 +474,7 @@ ForceMinimumCustomFormat = true
 Separate Sonarr instances for different content types:
 
 ```toml
-[[Sonarr]]
+[Sonarr-TV]
 Name = "Sonarr-TV"
 URI = "http://localhost:8989"
 APIKey = "sonarr-tv-api-key"
@@ -482,8 +485,10 @@ SearchMissing = true
 SearchLimit = 100  # Search up to 100 episodes
 AlsoSearchSpecials = false
 PrioritizeTodaysReleases = true
+```
 
-[[Sonarr]]
+```toml
+[Sonarr-TV]
 Name = "Sonarr-Anime"
 URI = "http://localhost:8990"
 APIKey = "sonarr-anime-api-key"
@@ -499,7 +504,7 @@ AlsoSearchSpecials = true  # Search for OVAs, specials
 Lidarr with temporary quality profiles:
 
 ```toml
-[[Lidarr]]
+[Lidarr-Music]
 Name = "Lidarr-Music"
 URI = "http://localhost:8686"
 APIKey = "lidarr-api-key"
@@ -510,10 +515,7 @@ SearchMissing = true
 UseTempForMissing = true  # Accept lower quality temporarily
 
 # Profile mappings: preferred → temporary
-QualityProfileMappings = {
-    "Lossless (FLAC)" = "Any (MP3-320)",
-    "High Quality (320)" = "Standard (192)"
-}
+QualityProfileMappings = { "Lossless (FLAC)" = "Any (MP3-320)", "High Quality (320)" = "Standard (192)"}
 
 # Reset profiles after 7 days
 TempProfileResetTimeoutMinutes = 10080
@@ -525,7 +527,7 @@ ForceResetTempProfiles = true
 Configuration optimized for private trackers:
 
 ```toml
-[[Radarr]]
+[Radarr-Movies]
 Name = "Radarr-Private"
 URI = "http://localhost:7878"
 APIKey = "radarr-api-key"
@@ -548,7 +550,7 @@ RemoveTorrent = 2  # Only remove based on time, not ratio
 Complete Overseerr setup with 4K routing:
 
 ```toml
-[[Radarr]]
+[Radarr-Movies]
 Name = "Radarr-1080p"
 URI = "http://localhost:7878"
 APIKey = "radarr-1080p-api-key"
@@ -559,8 +561,10 @@ OverseerrURL = "http://localhost:5055"
 OverseerrAPIKey = "overseerr-api-key"
 ApprovedOnly = true
 Is4K = false
+```
 
-[[Radarr]]
+```toml
+[Radarr-Movies]
 Name = "Radarr-4K"
 URI = "http://localhost:7879"
 APIKey = "radarr-4k-api-key"
@@ -572,7 +576,7 @@ OverseerrAPIKey = "overseerr-api-key"
 ApprovedOnly = true
 Is4K = true
 
-[[Sonarr]]
+[Sonarr-TV]
 Name = "Sonarr-TV"
 URI = "http://localhost:8989"
 APIKey = "sonarr-api-key"
@@ -588,7 +592,7 @@ ApprovedOnly = true
 
 ### 1. Use Descriptive Names
 
-```toml
+```text
 # Good
 [[Radarr]]
 Name = "Radarr-Movies-4K-Private"
@@ -605,17 +609,24 @@ Descriptive names help you identify instances in logs and the WebUI.
 Always use unique categories for each instance:
 
 ```toml
-[[Radarr]]
+[Radarr-Movies]
 Category = "radarr-4k"  # Unique
+```
 
-[[Radarr]]
+```toml
+[Radarr-Movies]
 Category = "radarr-1080p"  # Different
 
 # Don't do this:
-[[Radarr]]
-Category = "radarr"  # Same!
+```
 
-[[Radarr]]
+```toml
+[Radarr-Movies]
+Category = "radarr"  # Same!
+```
+
+```toml
+[Radarr-Movies]
 Category = "radarr"  # Same! Will cause conflicts!
 ```
 
@@ -635,12 +646,12 @@ If using Overseerr, configure it on every relevant Arr instance:
 
 ```toml
 # Configure on Radarr
-[[Radarr]]
+[Radarr-Movies]
 [Radarr.Overseerr]
 # ... config
 
 # Configure on Sonarr
-[[Sonarr]]
+[Sonarr-TV]
 [Sonarr.Overseerr]
 # ... config
 
@@ -659,7 +670,7 @@ If using Overseerr, configure it on every relevant Arr instance:
 Instead of hardcoding API keys:
 
 ```toml
-[[Radarr]]
+[Radarr-Movies]
 APIKey = "${RADARR_API_KEY}"  # Reference environment variable
 ```
 
@@ -744,7 +755,7 @@ See: [Troubleshooting Guide](../../troubleshooting/common-issues.md#import-issue
    ```toml
    [Radarr.Search]
    SearchMissing = true
-   ```
+```
 
 2. **Verify indexers configured in Arr:**
    - Open Arr → Settings → Indexers
@@ -759,7 +770,7 @@ See: [Troubleshooting Guide](../../troubleshooting/common-issues.md#import-issue
 4. **Adjust search frequency:**
    ```toml
    SearchRequestsEvery = 300  # Increase if too fast
-   ```
+```
 
 ## Next Steps
 

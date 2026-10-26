@@ -517,6 +517,8 @@ SearchRequestsEvery = 1800
 
 ```bash
 # Check Radarr quality profile settings
+
+> Since 6.19.0, download paths and free-space monitors belong to each torrent client. Older global settings shown below are accepted as migration inputs. See [the current configuration reference](/configuration/config-file/#client-download-paths-and-free-space-monitors).
 curl http://localhost:7878/api/v3/qualityprofile \
   -H "X-Api-Key: YOUR_API_KEY"
 
@@ -589,7 +591,7 @@ AutoPauseResume = true
 2. **In Torrentarr:**
    ```toml
    CustomFormatUnmetSearch = true
-   ```
+```
 
 **Debug:**
 

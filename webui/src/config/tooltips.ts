@@ -4,14 +4,10 @@ export const FIELD_TOOLTIPS: Record<string, string> = {
   "Settings.ConsoleLevel":
     "Level of logging; choose between CRITICAL, ERROR, WARNING, NOTICE, INFO, DEBUG, TRACE.",
   "Settings.Logging": "Enable writing log output to files.",
-  "Settings.CompletedDownloadFolder":
-    "Folder where completed downloads are stored. Replace backslashes with forward slashes.",
-  "Settings.FreeSpace":
-    "Desired free space threshold (use K, M, G, T suffix). Set to -1 to disable the free space guard.",
-  "Settings.FreeSpaceFolder":
-    "Path used when checking free space. Replace backslashes with forward slashes.",
-  "Settings.AutoPauseResume":
-    "Automatically pause and resume torrents in response to the free space guard.",
+  "TorrentClient.DownloadPath":
+    "Default download root as seen by this torrent client.",
+  "TorrentClient.FreeSpace":
+    "Monitor local paths with one shared space budget per filesystem across all clients.",
   "Settings.NoInternetSleepTimer":
     "Delay, in seconds, before retrying when no internet connectivity is detected.",
   "Settings.LoopSleepTimer":

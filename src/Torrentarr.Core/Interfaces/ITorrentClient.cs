@@ -30,6 +30,7 @@ public interface ITorrentClient
     Task<List<TorrentFileRecord>> GetTorrentFilesAsync(string hash, CancellationToken ct = default);
     Task<bool> RecheckTorrentsAsync(List<string> hashes, CancellationToken ct = default);
     Task<bool> SetShareLimitsAsync(string hash, double ratioLimit, long seedingTimeLimit, CancellationToken ct = default);
+    Task<bool> SetShareLimitsAsync(string hash, double ratioLimit, long seedingTimeLimit, long inactiveSeedingTimeLimit, CancellationToken ct = default) => Task.FromResult(false);
     Task<bool> SetDownloadLimitAsync(string hash, long limit, CancellationToken ct = default);
     Task<bool> SetUploadLimitAsync(string hash, long limit, CancellationToken ct = default);
     Task<bool> SetSuperSeedingAsync(string hash, bool enabled, CancellationToken ct = default);

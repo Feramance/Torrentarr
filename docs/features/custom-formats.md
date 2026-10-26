@@ -491,7 +491,7 @@ tail -f ~/logs/Radarr-4K.log | grep -i "custom format"
 1. **Enable custom format search:**
    ```toml
    CustomFormatUnmetSearch = true
-   ```
+```
 
 2. **Check quality profile minimum:**
    - Ensure quality profile has minimum custom format score > 0
@@ -519,7 +519,7 @@ tail -f ~/logs/Radarr-4K.log | grep -i "custom format"
 1. **Disable forced enforcement:**
    ```toml
    ForceMinimumCustomFormat = false
-   ```
+```
 
 2. **Lower minimum score:**
    - Radarr/Sonarr → Quality Profile
@@ -564,7 +564,7 @@ tail -f ~/logs/Radarr-4K.log | grep -i "custom format"
 1. **Enable upgrade search:**
    ```toml
    DoUpgradeSearch = true
-   ```
+```
 
 2. **Check "Upgrade Until" score:**
    - Quality Profile → Upgrade Until Custom Format Score
@@ -611,6 +611,9 @@ CustomFormatUnmetSearch = true
 ForceMinimumCustomFormat = false
 
 # Phase 2: After validating (enforce)
+```
+
+```toml
 ForceMinimumCustomFormat = true
 ```
 

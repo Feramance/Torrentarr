@@ -10,6 +10,7 @@ public enum MaintenanceOperation
     PrivateTagging,
     TrackerErrorTagging,
     RepairPaused,
+    ErrorRecovery = 10,
     RecycleRetention = 9 // 8 is retired; persisted history must keep its original meaning.
 }
 
@@ -24,6 +25,7 @@ public enum MaintenanceActionKind
     Resume,
     // Retired action IDs stay unused for persisted-history compatibility.
     RecycleContent = 9,
+    RegisterRecycleEntry = 14,
     DeleteExpiredRecycleItem = 13
 }
 
@@ -46,6 +48,9 @@ public sealed class MaintenanceAction
 
 public sealed class MaintenancePlan
 {
+    [Newtonsoft.Json.JsonIgnore, System.Text.Json.Serialization.JsonIgnore]
+    public Dictionary<string, string> InspectionCursors { get; init; } = new();
+    public bool IsDraft { get; init; }
     public string PlanId { get; init; } = Guid.NewGuid().ToString("N");
     public DateTimeOffset CreatedAt { get; init; } = DateTimeOffset.UtcNow;
     public DateTimeOffset ExpiresAt { get; init; }
@@ -65,12 +70,14 @@ public sealed class MaintenancePlan
 
 public sealed class MaintenancePreviewRequest
 {
+    public Dictionary<string, Torrentarr.Core.Configuration.MaintenanceConfig> MaintenanceOverrides { get; init; } = new();
     public List<string> ClientInstanceIds { get; init; } = new();
     public List<MaintenanceOperation> Operations { get; init; } = new();
 }
 
 public sealed class MaintenanceApplyRequest
 {
+    public bool AuthorizeOnce { get; init; }
     public string PlanId { get; init; } = "";
 }
 
@@ -88,6 +95,7 @@ public sealed class MaintenanceClientsRequest
 
 public sealed class MaintenanceRunSummary
 {
+    public List<string> SkippedReasons { get; init; } = new();
     public string RunId { get; init; } = Guid.NewGuid().ToString("N");
     public DateTimeOffset StartedAt { get; init; } = DateTimeOffset.UtcNow;
     public DateTimeOffset? CompletedAt { get; set; }
@@ -102,12 +110,19 @@ public sealed class MaintenanceRunSummary
     public int Skipped { get; set; }
     public int Failed { get; set; }
     public long BytesMoved { get; set; }
+    public long BytesReclaimed { get; set; }
     public string Result { get; set; } = "running";
     public List<string> Errors { get; init; } = new();
 }
 
 public sealed class MaintenanceStatus
 {
+    public string ConfigurationFingerprint { get; init; } = "";
+    public List<CleanupClientStatus> Cleanup { get; init; } = [];
+    public List<MaintenanceOperationStatus> Operations { get; init; } = new();
+    public List<ProtectionDecision> Protection { get; init; } = new();
+    public List<MaintenanceRecoveryStatus> Recovery { get; init; } = new();
+    public List<MaintenanceInspectionStatus> Inspections { get; init; } = new();
     public bool Running { get; init; }
     public MaintenanceRunSummary? CurrentRun { get; init; }
     public MaintenanceRunSummary? LastRun { get; init; }
@@ -159,7 +174,8 @@ public enum InventoryRequirements
     Files = 4,
     LocalFiles = 8,
     GlobalOwnership = 16,
-    All = Metadata | Trackers | Files | LocalFiles | GlobalOwnership
+    Properties = 32,
+    All = Metadata | Trackers | Files | LocalFiles | GlobalOwnership | Properties
 }
 
 public sealed class MaintenanceOperationResult
@@ -208,3 +224,57 @@ public sealed class MaintenanceDiagnostic
         if (operations != null) diagnostic.Operations = diagnostic.Operations.Concat(operations).Distinct().ToList();
     }
 }
+
+public sealed class MaintenanceOperationStatus
+{
+    public string ClientInstanceId { get; init; } = "";
+    public MaintenanceOperation Operation { get; init; }
+    public bool Enabled { get; init; }
+    public string ExecutionMode { get; init; } = "manual";
+    public string Schedule { get; init; } = "";
+    public string? NextRun { get; init; }
+    public bool Authorized { get; init; }
+}
+
+public sealed class MaintenanceRecoveryStatus
+{
+    public string ClientInstanceId { get; init; } = "";
+    public string TorrentHash { get; init; } = "";
+    public string TorrentName { get; init; } = "";
+    public MaintenanceOperation Operation { get; init; }
+    public string Stage { get; init; } = "";
+    public string Reason { get; init; } = "";
+    public int Attempts { get; init; }
+    public DateTimeOffset? FailureSince { get; init; }
+}
+
+public sealed class MaintenanceInspectionStatus
+{
+    public string ClientInstanceId { get; init; } = "";
+    public DateTimeOffset? LastSucceededAt { get; init; }
+    public DateTimeOffset? NextAttempt { get; init; }
+    public int ConsecutiveFailures { get; init; }
+}
+
+public sealed class TorrentAutomationStatus
+{
+    public List<TorrentAutomationIssue> TrackerIssues { get; init; } = [];
+    public List<ProtectionDecision> Protection { get; init; } = [];
+    public List<MaintenanceRecoveryStatus> Recovery { get; init; } = [];
+    public List<MaintenanceInspectionStatus> Inspections { get; init; } = [];
+}
+
+public sealed record RecycleEntry(string Key, string ClientInstanceId, string Source, string Destination,
+    DateTimeOffset RecycledAt, string State, string? TorrentHash = null);
+
+public sealed class CleanupClientStatus
+{
+    public string ClientInstanceId { get; init; } = "";
+    public bool Automatic { get; init; }
+    public DateTimeOffset? NextRun { get; init; }
+    public List<string> Notices { get; init; } = [];
+}
+
+public sealed record RecycleFileSnapshot(string Path, long Bytes, long LastWriteTicks);
+
+public sealed record TorrentAutomationIssue(string ClientInstanceId, string TorrentHash, string TorrentName, string Reason, long AddedOn);

@@ -1,4 +1,4 @@
-﻿# qBittorrent Configuration
+# qBittorrent Configuration
 
 Torrentarr connects to qBittorrent's Web UI to monitor and manage torrents. This page covers all qBittorrent-related settings and how to configure the connection.
 
@@ -284,7 +284,7 @@ With multi-instance support, you can configure multiple qBittorrent instances an
 - ✅ Monitor torrents across **all instances** for each Arr category
 - ✅ Track instance health and automatically skip offline instances
 - ✅ Allow torrents to be managed regardless of which instance they're on
-- ✅ Maintain 100% backward compatibility with single-instance setups
+- ✅ Retain legacy single-instance section names while validating current client settings
 
 ### How It Works
 

@@ -241,8 +241,8 @@ services:
 **config.toml:**
 
 ```toml
-[Settings]
-CompletedDownloadFolder = "/data/torrents"
+[qBit]
+DownloadPath = "/data/torrents"
 ```
 
 ---
@@ -365,13 +365,13 @@ docker stats torrentarr
    ```toml
    [Settings]
    ConsoleLevel = "WARNING"
-   ```
+```
 
 3. **Disable WebUI live updates:**
    ```toml
    [WebUI]
    LiveArr = false
-   ```
+```
 
 ---
 
@@ -463,6 +463,7 @@ networks:
 
 ```toml
 [qBit]
+DownloadPath = "/data/torrents"
 Host = "qbittorrent"  # Docker service name
 Port = 8080
 UserName = "admin"
@@ -479,11 +480,12 @@ APIKey = "your-api-key"
 Category = "sonarr-tv"
 
 [Settings]
-CompletedDownloadFolder = "/data/torrents"
 
 [WebUI]
 Host = "0.0.0.0"
 Port = 6969
+
+
 ```
 
 ---

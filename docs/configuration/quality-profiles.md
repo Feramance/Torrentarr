@@ -226,10 +226,7 @@ UseTempForMissing = true
 KeepTempProfile = false
 
 # Map main profiles to temporary profiles
-QualityProfileMappings = {
-  "Lossless (FLAC)" = "Any (MP3)",
-  "Ultra-HD" = "HD-1080p"
-}
+QualityProfileMappings = { "Lossless (FLAC)" = "Any (MP3)", "Ultra-HD" = "HD-1080p"}
 
 # Reset all temp profiles on startup
 ForceResetTempProfiles = false
@@ -294,9 +291,7 @@ Enable temporary quality profile switching for missing media.
 ### QualityProfileMappings
 
 ```toml
-QualityProfileMappings = {
-  "Main Profile Name" = "Temporary Profile Name"
-}
+QualityProfileMappings = { "Main Profile Name" = "Temporary Profile Name"}
 ```
 
 **Type:** Dictionary (main → temp profile names)
@@ -316,21 +311,19 @@ QualityProfileMappings = {"MainProfile" = "TempProfile", "Another" = "Fallback"}
 
 ```toml
 # Lidarr - Music
-QualityProfileMappings = {
-  "Lossless (FLAC)" = "Any (MP3-320)",
-  "FLAC Only" = "Lossy"
-}
+QualityProfileMappings = { "Lossless (FLAC)" = "Any (MP3-320)", "FLAC Only" = "Lossy"}
 
 # Radarr - Movies
-QualityProfileMappings = {
-  "Ultra-HD (4K)" = "HD-1080p",
-  "Bluray-1080p" = "Any"
-}
+```
+
+```toml
+QualityProfileMappings = { "Ultra-HD (4K)" = "HD-1080p", "Bluray-1080p" = "Any"}
 
 # Sonarr - TV
-QualityProfileMappings = {
-  "WEB-DL 1080p" = "HDTV-720p"
-}
+```
+
+```toml
+QualityProfileMappings = { "WEB-DL 1080p" = "HDTV-720p"}
 ```
 
 !!! warning "Exact Profile Names Required"
@@ -682,7 +675,7 @@ Profiles in Lidarr:
 
 ### 2. Use Descriptive Profile Names
 
-```toml
+```text
 # Good - Clear purpose
 QualityProfileMappings = {
   "Lossless (FLAC)" = "Lossy (MP3-320)"
@@ -703,6 +696,9 @@ QualityProfileMappings = {
 UseTempForMissing = false
 
 # Phase 2: After validating need
+```
+
+```toml
 UseTempForMissing = true
 ```
 
@@ -717,9 +713,15 @@ Only enable if you frequently encounter missing content due to quality requireme
 TempProfileResetTimeoutMinutes = 60  # 1 hour
 
 # Good - Reasonable retry interval
+```
+
+```toml
 TempProfileResetTimeoutMinutes = 10080  # 7 days
 
 # Too long - Delays upgrades unnecessarily
+```
+
+```toml
 TempProfileResetTimeoutMinutes = 525600  # 1 year
 ```
 
@@ -775,7 +777,7 @@ curl -H "X-Api-Key: your-key" http://localhost:8686/api/v1/qualityprofile
    ```
 
 2. **Check mapping syntax:**
-   ```toml
+   ```text
    # Correct
    QualityProfileMappings = {"Main" = "Temp"}
 
@@ -787,7 +789,7 @@ curl -H "X-Api-Key: your-key" http://localhost:8686/api/v1/qualityprofile
    ```toml
    [Settings]
    ConsoleLevel = "DEBUG"
-   ```
+```
 
 4. **Review logs:**
    ```bash
@@ -805,17 +807,17 @@ curl -H "X-Api-Key: your-key" http://localhost:8686/api/v1/qualityprofile
 1. **Check KeepTempProfile:**
    ```toml
    KeepTempProfile = false  # Must be false
-   ```
+```
 
 2. **Verify timeout set:**
    ```toml
    TempProfileResetTimeoutMinutes = 10080  # Not 0
-   ```
+```
 
 3. **Force reset:**
    ```toml
    ForceResetTempProfiles = true
-   ```
+```
    Restart Torrentarr
 
 ---
@@ -829,7 +831,7 @@ curl -H "X-Api-Key: your-key" http://localhost:8686/api/v1/qualityprofile
 1. **Increase retries:**
    ```toml
    ProfileSwitchRetryAttempts = 5  # Up from 3
-   ```
+```
 
 2. **Check Arr API connectivity:**
    ```bash
@@ -855,7 +857,7 @@ curl -H "X-Api-Key: your-key" http://localhost:8686/api/v1/qualityprofile
 2. **Enable upgrade search:**
    ```toml
    DoUpgradeSearch = true
-   ```
+```
 
 3. **Check quality cutoff:**
    - In Arr quality profile
@@ -874,10 +876,7 @@ curl -H "X-Api-Key: your-key" http://localhost:8686/api/v1/qualityprofile
 **Strategy:** Prefer 4K/1080p but accept SD temporarily
 
 ```toml
-QualityProfileMappings = {
-  "Ultra-HD" = "HD-1080p",
-  "HD-1080p" = "SD"
-}
+QualityProfileMappings = { "Ultra-HD" = "HD-1080p", "HD-1080p" = "SD"}
 TempProfileResetTimeoutMinutes = 43200  # 30 days
 ```
 
@@ -888,9 +887,7 @@ TempProfileResetTimeoutMinutes = 43200  # 30 days
 **Strategy:** Get episodes fast, upgrade to WEB-DL later
 
 ```toml
-QualityProfileMappings = {
-  "WEB-DL 1080p" = "HDTV-1080p"
-}
+QualityProfileMappings = { "WEB-DL 1080p" = "HDTV-1080p"}
 TempProfileResetTimeoutMinutes = 1440  # 1 day (for new episodes)
 ```
 
@@ -901,10 +898,7 @@ TempProfileResetTimeoutMinutes = 1440  # 1 day (for new episodes)
 **Strategy:** Essential - Many albums lack lossless
 
 ```toml
-QualityProfileMappings = {
-  "Lossless (FLAC)" = "Any (MP3-320)",
-  "FLAC 24bit" = "Lossless (FLAC)"
-}
+QualityProfileMappings = { "Lossless (FLAC)" = "Any (MP3-320)", "FLAC 24bit" = "Lossless (FLAC)"}
 TempProfileResetTimeoutMinutes = 10080  # 7 days
 ```
 

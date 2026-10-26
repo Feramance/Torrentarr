@@ -386,7 +386,7 @@ ApprovedOnly = true
 
 **Time to setup:** 15 minutes
 
-[**Example Configuration →**](quickstart.md#scenario-1-simple-home-server)
+[**Example Configuration →**](quickstart.md#minimal-setup)
 
 ---
 
@@ -402,7 +402,7 @@ ApprovedOnly = true
 
 **Time to setup:** 45 minutes
 
-[**Example Configuration →**](quickstart.md#scenario-2-multi-arr-setup)
+[**Example Configuration →**](quickstart.md#minimal-setup)
 
 ---
 
@@ -418,7 +418,7 @@ ApprovedOnly = true
 
 **Time to setup:** 30 minutes
 
-[**Example Configuration →**](quickstart.md#scenario-4-docker-compose-full-stack)
+[**Example Configuration →**](quickstart.md#build-and-start)
 
 ---
 

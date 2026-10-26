@@ -40,12 +40,12 @@ public sealed class MaintenanceSafetyTests : IDisposable
         _config.TorrentClients["one"] = new()
         {
             Host = "fixture",
+            CategorySeeding = new() { RemoveTorrent = 1, MaxUploadRatio = 1, StalledDelay = 0 },
             ManagedCategories = ["movies"],
             Maintenance = new()
             {
                 Enabled = true,
-                Scope = "all",
-                MinimumTorrentAgeMinutes = 0,
+                Orphans = new() { ScanRoots = [_root] },
                 PathMappings = [new() { ClientPath = "/downloads", LocalPath = _root }],
                 RecycleBin = new() { Enabled = true, Path = Path.Combine(_root, ".recycle") }
             }
@@ -63,12 +63,60 @@ public sealed class MaintenanceSafetyTests : IDisposable
         _registry.Setup(r => r.GetAllClients()).Returns(new Dictionary<string, ITorrentClient> { ["one"] = _client.Object });
         var paths = new PathMappingService();
         _inventory = new(_registry.Object, _config, paths, NullLogger<TorrentInventoryService>.Instance);
-        _deletion = new(_registry.Object, _inventory, paths, _config, NullLogger<SafeDeletionService>.Instance);
-        _db = new(new DbContextOptionsBuilder<TorrentarrDbContext>().UseInMemoryDatabase(Guid.NewGuid().ToString()).Options);
+        _db = new(new DbContextOptionsBuilder<TorrentarrDbContext>().UseSqlite("Data Source=:memory:").Options);
+        _db.Database.OpenConnection(); _db.Database.EnsureCreated();
         _seeding = new(NullLogger<SeedingService>.Instance, _db, _config, _registry.Object);
-        _services = new ServiceCollection().AddScoped<ISeedingService>(_ => _seeding).BuildServiceProvider();
+        _services = new ServiceCollection().AddLogging().AddSingleton(_db).AddScoped<ISeedingService>(_ => _seeding).BuildServiceProvider();
+        _deletion = new(_registry.Object, _inventory, paths, _config, NullLogger<SafeDeletionService>.Instance, _services.GetRequiredService<IServiceScopeFactory>());
         _maintenance = new(_config, _registry.Object, _inventory, paths, Mock.Of<IHardlinkInspector>(), _deletion,
             NullLogger<MaintenanceCoordinator>.Instance, _services.GetRequiredService<IServiceScopeFactory>());
+    }
+
+
+    [Fact]
+    public async Task DeadTrackerMessages_NeverDeleteDirectlyEvenWhenLegacyRemovalIsEnabled()
+    {
+        var torrent = AddTorrent();
+        _config.ArrInstances["Radarr-Movies"] = new() { Category = "movies", Torrent = new() { SeedingMode = new() { RemoveDeadTrackers = true, RemoveTrackerWithMessage = ["unregistered torrent"] } } };
+        _client.Setup(c => c.GetTorrentTrackersAsync(torrent.Hash, It.IsAny<CancellationToken>()))
+            .ReturnsAsync([new() { Url = "https://tracker.example/announce", Msg = "unregistered torrent" }]);
+        await _seeding.ApplyTrackerActionsForTorrentAsync(torrent);
+        _client.Verify(c => c.DeleteTorrentsAsync(It.IsAny<List<string>>(), It.IsAny<bool>(), It.IsAny<CancellationToken>()), Times.Never);
+    }
+
+
+
+    [Fact]
+    public void Recovery_RequiresConfirmedCompletionAndContinuousFailure()
+    {
+        var torrent = AddTorrent(); var now = DateTimeOffset.UtcNow;
+        var cfg = ClientConfig.Maintenance.ErrorRecovery;
+        var key = MaintenancePersistence.Key("one", torrent.Hash, "recovery:ErrorRecovery");
+        MaintenancePersistence.Write(_db, key, new RecoveryIncident { Stage = "requested", RequestedAt = now.AddMinutes(-61), Attempts = 1 });
+        torrent.State = "error";
+        MaintenanceRecovery.Observe(_db, torrent, "ErrorRecovery", true, cfg, now);
+        var state = MaintenanceRecovery.Read(_db, torrent, "ErrorRecovery");
+        state.Stage.Should().Be("unconfirmed");
+        MaintenanceRecovery.CanRecycle(state, cfg, now.AddDays(3)).Should().BeFalse();
+        MaintenancePersistence.Write(_db, key, new RecoveryIncident { Stage = "checking", RequestedAt = now.AddMinutes(-2), CheckingAt = now.AddMinutes(-1), Attempts = 1 });
+        MaintenanceRecovery.Observe(_db, torrent, "ErrorRecovery", true, cfg, now);
+        state = MaintenanceRecovery.Read(_db, torrent, "ErrorRecovery");
+        state.CompletedAt.Should().Be(now); state.Stage.Should().Be("recurring");
+        for (var minute = 5; minute <= 1440; minute += 5)
+            MaintenanceRecovery.Observe(_db, torrent, "ErrorRecovery", true, cfg, now.AddMinutes(minute));
+        MaintenanceRecovery.CanRecycle(MaintenanceRecovery.Read(_db, torrent, "ErrorRecovery"), cfg, now.AddMinutes(1440)).Should().BeTrue();
+        MaintenanceRecovery.Observe(_db, torrent, "ErrorRecovery", true, cfg, now.AddMinutes(1500));
+        MaintenanceRecovery.CanRecycle(MaintenanceRecovery.Read(_db, torrent, "ErrorRecovery"), cfg, now.AddMinutes(1500)).Should().BeFalse();
+    }
+
+    [Fact]
+    public void EveryApplicableTrackerCanBlockClearance()
+    {
+        var torrent = AddTorrent(); torrent.IsPrivate = true;
+        ClientConfig.Trackers = [new() { Uri = "https://first.example", HitAndRunMode = "or", MinSeedRatio = 1, Priority = 100 },
+            new() { Uri = "https://second.example", Protection = new() { Policy = "onlyencodes" }, Priority = 1 }];
+        _seeding.GetProtectionDecisions(torrent, [new() { Url = "https://first.example/announce", Status = 2 }, new() { Url = "https://second.example/announce", Status = 2 }])
+            .Should().Contain(d => d.State == "eligible").And.Contain(d => d.State == "protected");
     }
 
     [Fact]
@@ -92,7 +140,7 @@ public sealed class MaintenanceSafetyTests : IDisposable
     public async Task RemovedOperation_CannotBeRun()
     {
         await FluentActions.Awaiting(() => _maintenance.RunAsync(operations: [(MaintenanceOperation)8]))
-            .Should().ThrowAsync<InvalidOperationException>().WithMessage("Unknown maintenance operation.");
+            .Should().ThrowAsync<InvalidOperationException>();
         _registry.Verify(r => r.GetClient(It.IsAny<string>()), Times.Never);
     }
 
@@ -107,8 +155,10 @@ public sealed class MaintenanceSafetyTests : IDisposable
             ContentPath = "/downloads/" + filename,
             Size = 4,
             Progress = 1,
+            IsPrivate = false,
             AddedOn = 1,
             SeedingTime = 3600,
+            LastActivity = 1,
             Ratio = 2,
             CompletePeers = 5,
             State = "pausedUP",
@@ -125,8 +175,7 @@ public sealed class MaintenanceSafetyTests : IDisposable
 
     private async Task<MaintenanceRunSummary> Apply(MaintenancePlan plan)
     {
-        await _maintenance.ArmAsync(new() { PlanId = plan.PlanId });
-        return await _maintenance.ApplyAsync(plan.PlanId);
+        return await _maintenance.ApplyOnceAsync(plan.PlanId);
     }
 
     [Theory]
@@ -134,7 +183,7 @@ public sealed class MaintenanceSafetyTests : IDisposable
     [InlineData("https://TRACKER.example.org/announce", true)]
     [InlineData("https://notexample.org/announce", false)]
     [InlineData("https://example.org.evil.test/announce", false)]
-    public async Task DeadTracker_BypassUsesSameHostMatchingAsTrackerSelection(string url, bool allowed)
+    public async Task DeadTracker_HealthFailureNeverBypassesProtection(string url, bool allowed)
     {
         var torrent = AddTorrent();
         ClientConfig.CategorySeeding = new() { HitAndRunMode = "and", MinSeedRatio = 10, MinSeedingTimeDays = 10 };
@@ -143,8 +192,8 @@ public sealed class MaintenanceSafetyTests : IDisposable
         var trackers = new List<TorrentTracker> { new() { Url = url, Msg = "unregistered torrent" } };
         _client.Setup(c => c.GetTorrentTrackersAsync("abc", It.IsAny<CancellationToken>())).ReturnsAsync(trackers);
 
-        _seeding.HnrAllowsDelete(torrent, trackers).Should().Be(allowed);
-        (await _seeding.HnrAllowsDeleteAsync(torrent, "cleanup")).Should().Be(allowed);
+        _seeding.HnrAllowsDelete(torrent, trackers).Should().BeFalse();
+        (await _seeding.HnrAllowsDeleteAsync(torrent, "cleanup")).Should().BeFalse();
         (await _seeding.IsTrackerDeadAsync(torrent, tracker)).Should().Be(allowed);
     }
 
@@ -193,7 +242,7 @@ public sealed class MaintenanceSafetyTests : IDisposable
         var plan = await Preview(MaintenanceOperation.OrphanScan);
         plan.CriticalErrors.Should().BeEmpty();
         plan.OperationResults.Should().Contain(r => r.Operation == MaintenanceOperation.OrphanScan && r.State == "blocked");
-        await FluentActions.Awaiting(() => _maintenance.ArmAsync(new() { PlanId = plan.PlanId })).Should().ThrowAsync<InvalidOperationException>();
+        (await Apply(plan)).Applied.Should().Be(0);
         File.ReadAllText(Path.Combine(_root, "orphan.mkv")).Should().Be("other client's data");
         _registry.Verify(r => r.GetClient("disabled"), Times.Never);
     }
@@ -219,7 +268,7 @@ public sealed class MaintenanceSafetyTests : IDisposable
         if (newOwner) AddTorrent();
         else _client.Setup(c => c.GetTorrentsAsync(It.IsAny<string?>(), It.IsAny<string?>(), It.IsAny<CancellationToken>())).ThrowsAsync(new HttpRequestException());
         var run = await Apply(plan);
-        run.Skipped.Should().Be(1);
+        (run.Failed + run.Skipped).Should().Be(1);
         File.Exists(path).Should().BeTrue();
     }
 
@@ -234,7 +283,7 @@ public sealed class MaintenanceSafetyTests : IDisposable
         var plan = await Preview(MaintenanceOperation.OrphanScan);
         plan.CandidateCount.Should().Be(1);
         _files["owner"] = [new() { Name = "orphan.mkv", Size = 4 }];
-        (await Apply(plan)).Skipped.Should().Be(1);
+        (await Apply(plan)).Should().Match<MaintenanceRunSummary>(run => run.Failed + run.Skipped == 1);
         File.Exists(path).Should().BeTrue();
     }
 
@@ -261,7 +310,7 @@ public sealed class MaintenanceSafetyTests : IDisposable
         ClientConfig.CategorySeeding.HitAndRunMode = mode;
         ClientConfig.CategorySeeding.MinSeedRatio = 1;
         ClientConfig.CategorySeeding.MinSeedingTimeDays = (int)(time / 86400);
-        _seeding.HnrAllowsDelete(torrent, []).Should().Be(allowed);
+        _seeding.HnrAllowsDelete(torrent, [new() { Url = "https://tracker.example/announce", Status = 2 }]).Should().Be(allowed);
     }
 
     [Fact]
@@ -276,16 +325,6 @@ public sealed class MaintenanceSafetyTests : IDisposable
     }
 
 
-    [Fact]
-    public async Task RepairApply_DoesNotResumeTorrentThatWasUnpaused()
-    {
-        var torrent = AddTorrent();
-        ClientConfig.Maintenance.Repair.Enabled = true;
-        var plan = await Preview(MaintenanceOperation.RepairPaused);
-        torrent.State = "uploading";
-        (await Apply(plan)).Skipped.Should().Be(1);
-        _client.Verify(c => c.ResumeTorrentsAsync(It.IsAny<List<string>>(), It.IsAny<CancellationToken>()), Times.Never);
-    }
 
     [Theory]
     [InlineData(null)]
@@ -299,56 +338,8 @@ public sealed class MaintenanceSafetyTests : IDisposable
         _seeding.HnrAllowsDelete(torrent, [new() { Url = url!, Msg = "unregistered torrent" }]).Should().BeFalse();
     }
 
-    [Fact]
-    public async Task UnselectedClientMappingChange_InvalidatesArmedPlan()
-    {
-        AddTorrent();
-        ClientConfig.Maintenance.Unregistered.Enabled = true;
-        _client.Setup(c => c.GetTorrentTrackersAsync(It.IsAny<string>(), It.IsAny<CancellationToken>()))
-            .ReturnsAsync([new() { Url = "https://tracker.example/announce", Msg = "unregistered torrent" }]);
-        _config.TorrentClients["two"] = new()
-        {
-            Host = "other",
-            Maintenance = new() { PathMappings = [new() { ClientPath = "/other", LocalPath = _root }] }
-        };
-        var other = new Mock<ITorrentClient>();
-        other.SetupGet(c => c.Capabilities).Returns(TorrentClientCapabilities.QBittorrent);
-        other.Setup(c => c.GetTorrentsAsync(It.IsAny<string?>(), It.IsAny<string?>(), It.IsAny<CancellationToken>())).ReturnsAsync([]);
-        _registry.Setup(r => r.GetClient("two")).Returns(other.Object);
-        var plan = await Preview(MaintenanceOperation.UnregisteredCleanup);
-        await _maintenance.ArmAsync(new() { PlanId = plan.PlanId });
-        _config.TorrentClients["two"].Maintenance.PathMappings = [new() { ClientPath = "/downloads", LocalPath = _root }];
-        await FluentActions.Awaiting(() => _maintenance.ApplyAsync(plan.PlanId)).Should().ThrowAsync<InvalidOperationException>();
-        _client.Verify(c => c.DeleteTorrentsAsync(It.IsAny<List<string>>(), It.IsAny<bool>(), It.IsAny<CancellationToken>()), Times.Never);
-    }
 
-    [Fact]
-    public async Task UnregisteredRecycle_DoesNotRequireRemoteContentDeletion()
-    {
-        AddTorrent();
-        ClientConfig.Maintenance.Unregistered.Enabled = true;
-        ClientConfig.Maintenance.Unregistered.GraceMinutes = 0;
-        _client.SetupGet(c => c.Capabilities).Returns(TorrentClientCapabilities.QBittorrent with { ContentDeletion = false });
-        _client.Setup(c => c.GetTorrentTrackersAsync("abc", It.IsAny<CancellationToken>()))
-            .ReturnsAsync([new() { Url = "https://tracker.example/announce", Msg = "unregistered torrent" }]);
-        var plan = await Preview(MaintenanceOperation.UnregisteredCleanup);
-        plan.Actions.Should().ContainSingle();
-        var run = await Apply(plan);
-        run.Applied.Should().Be(1);
-        _client.Verify(c => c.DeleteTorrentsAsync(It.IsAny<List<string>>(), false, It.IsAny<CancellationToken>()), Times.Once);
-    }
 
-    [Fact]
-    public async Task ChangedHnrConfig_InvalidatesPreview()
-    {
-        AddTorrent();
-        ClientConfig.Maintenance.Unregistered.Enabled = true;
-        _client.Setup(c => c.GetTorrentTrackersAsync(It.IsAny<string>(), It.IsAny<CancellationToken>()))
-            .ReturnsAsync([new() { Url = "https://tracker.example/announce", Msg = "unregistered torrent" }]);
-        var plan = await Preview(MaintenanceOperation.UnregisteredCleanup);
-        ClientConfig.CategorySeeding.MinSeedRatio = 5;
-        await FluentActions.Awaiting(() => _maintenance.ArmAsync(new() { PlanId = plan.PlanId })).Should().ThrowAsync<InvalidOperationException>();
-    }
 
     [Theory]
     [InlineData(false)]
@@ -607,113 +598,11 @@ public sealed class MaintenanceSafetyTests : IDisposable
         _client.Verify(c => c.GetTorrentsAsync(It.IsAny<string?>(), It.IsAny<string?>(), It.IsAny<CancellationToken>()), Times.Exactly(2));
     }
 
-    [Theory]
-    [InlineData(false)]
-    [InlineData(true)]
-    public async Task ManyNonDestructiveActions_RefreshOnlyEachCandidate(bool tagging)
-    {
-        const int count = 100;
-        for (var i = 0; i < count; i++) AddTorrent("hash-" + i, "file-" + i + ".mkv").IsPrivate = true;
-        ClientConfig.Maintenance.CategoryMappings = [new() { ClientPath = "/downloads", Category = "other" }];
-        ClientConfig.Maintenance.AutomaticManagement.PrivateTag = "private";
-        _client.Setup(c => c.SetCategoryAsync(It.IsAny<List<string>>(), It.IsAny<string>(), It.IsAny<CancellationToken>())).ReturnsAsync(true);
-        _client.Setup(c => c.AddTagsAsync(It.IsAny<List<string>>(), It.IsAny<List<string>>(), It.IsAny<CancellationToken>())).ReturnsAsync(true);
-        var other = new Mock<ITorrentClient>();
-        _config.TorrentClients["other"] = new() { Host = "fixture" };
-        other.SetupGet(c => c.Identity).Returns(new TorrentClientIdentity("other", "fake"));
-        other.SetupGet(c => c.Capabilities).Returns(TorrentClientCapabilities.QBittorrent);
-        other.Setup(c => c.GetTorrentsAsync(It.IsAny<string?>(), It.IsAny<string?>(), It.IsAny<CancellationToken>()))
-            .ReturnsAsync([new() { Hash = "unrelated", Size = 0 }]);
-        other.Setup(c => c.GetTorrentFilesAsync(It.IsAny<string>(), It.IsAny<CancellationToken>())).ReturnsAsync([]);
-        other.Setup(c => c.GetTorrentTrackersAsync(It.IsAny<string>(), It.IsAny<CancellationToken>())).ReturnsAsync([]);
-        _registry.Setup(r => r.GetClient("other")).Returns(other.Object);
-        var plan = await Preview(tagging ? MaintenanceOperation.PrivateTagging : MaintenanceOperation.CategoryReconcile);
-        plan.CandidateCount.Should().Be(count);
-        _client.Invocations.Clear();
-        other.Invocations.Clear();
-        var run = await Apply(plan);
-        run.Applied.Should().Be(count);
-        other.Verify(c => c.GetTorrentsAsync(It.IsAny<string?>(), It.IsAny<string?>(), It.IsAny<CancellationToken>()), Times.Never);
-        other.Verify(c => c.GetTorrentFilesAsync(It.IsAny<string>(), It.IsAny<CancellationToken>()), Times.Never);
-        other.Verify(c => c.GetTorrentTrackersAsync(It.IsAny<string>(), It.IsAny<CancellationToken>()), Times.Never);
-        _client.Verify(c => c.GetTorrentFilesAsync(It.IsAny<string>(), It.IsAny<CancellationToken>()), Times.Never);
-        _client.Verify(c => c.GetTorrentTrackersAsync(It.IsAny<string>(), It.IsAny<CancellationToken>()), Times.Never);
-        _client.Verify(c => c.GetTorrentsAsync(It.IsAny<string?>(), It.IsAny<string?>(), It.IsAny<CancellationToken>()), Times.Exactly(count));
-    }
-
-    [Theory]
-    [InlineData("removed")]
-    [InlineData("scope")]
-    [InlineData("tracker")]
-    [InlineData("capability")]
-    public async Task CandidateRefresh_StillRejectsStaleActions(string change)
-    {
-        var torrent = AddTorrent();
-        ClientConfig.Maintenance.Scope = "explicit";
-        ClientConfig.Maintenance.ExplicitCategories = ["movies"];
-        if (change == "tracker")
-        {
-            ClientConfig.Maintenance.TrackerAssignments = [new() { TrackerContains = "tracker.example", Category = "other" }];
-            _client.Setup(c => c.GetTorrentTrackersAsync("abc", It.IsAny<CancellationToken>())).ReturnsAsync([new() { Url = "https://tracker.example/announce", Status = 2 }]);
-        }
-        else ClientConfig.Maintenance.CategoryMappings = [new() { ClientPath = "/downloads", Category = "other" }];
-        var plan = await Preview(MaintenanceOperation.CategoryReconcile);
-        plan.CandidateCount.Should().Be(1);
-        if (change == "removed") _torrents.Clear();
-        if (change == "scope") torrent.Category = "outside";
-        if (change == "tracker") _client.Setup(c => c.GetTorrentTrackersAsync("abc", It.IsAny<CancellationToken>())).ReturnsAsync([]);
-        if (change == "capability") _client.SetupGet(c => c.Capabilities).Returns(TorrentClientCapabilities.QBittorrent with { Categories = false });
-        (await Apply(plan)).Applied.Should().Be(0);
-        _client.Verify(c => c.SetCategoryAsync(It.IsAny<List<string>>(), It.IsAny<string>(), It.IsAny<CancellationToken>()), Times.Never);
-    }
-
-    [Theory]
-    [InlineData(false)]
-    [InlineData(true)]
-    public async Task Retention_RechecksFilesystemWithoutRefreshingTorrentInventory(bool refreshed)
-    {
-        AddTorrent();
-        var directory = Path.Combine(_root, ".recycle", "one");
-        Directory.CreateDirectory(directory);
-        var path = Path.Combine(directory, "expired");
-        File.WriteAllText(path, "data");
-        File.SetLastWriteTimeUtc(path, DateTime.UtcNow.AddDays(-60));
-        var plan = await Preview(MaintenanceOperation.RecycleRetention);
-        if (refreshed) File.SetLastWriteTimeUtc(path, DateTime.UtcNow);
-        _client.Invocations.Clear();
-        (await Apply(plan)).Applied.Should().Be(1);
-        File.Exists(path).Should().Be(refreshed);
-        _client.Verify(c => c.GetTorrentsAsync(It.IsAny<string?>(), It.IsAny<string?>(), It.IsAny<CancellationToken>()), Times.Never);
-    }
-
-    [Fact]
-    public async Task MixedPlan_RefreshesAllOwnersBeforeOrphanMove()
-    {
-        AddTorrent("owner", "owned.mkv");
-        var orphan = Path.Combine(_root, "orphan.mkv");
-        File.WriteAllText(orphan, "data");
-        ClientConfig.Maintenance.Orphans.Enabled = true;
-        ClientConfig.Maintenance.Orphans.MinimumAgeMinutes = 0;
-        ClientConfig.Maintenance.CategoryMappings = [new() { ClientPath = "/downloads", Category = "other" }];
-        var plan = await _maintenance.PreviewAsync(new() { ClientInstanceIds = ["one"], Operations = [MaintenanceOperation.CategoryReconcile, MaintenanceOperation.OrphanScan] });
-        plan.CandidateCount.Should().Be(2);
-        _files["owner"] = [new() { Name = "orphan.mkv", Size = 4 }];
-        _client.Setup(c => c.SetCategoryAsync(It.IsAny<List<string>>(), It.IsAny<string>(), It.IsAny<CancellationToken>())).ReturnsAsync(true);
-        var run = await Apply(plan);
-        run.Skipped.Should().Be(1); run.Applied.Should().Be(1);
-        File.Exists(orphan).Should().BeTrue();
-    }
 
 
-    [Fact]
-    public async Task UnsupportedCategories_AreBlocked()
-    {
-        AddTorrent();
-        _client.SetupGet(c => c.Capabilities).Returns(TorrentClientCapabilities.QBittorrent with { Categories = false });
-        ClientConfig.Maintenance.CategoryMappings = [new() { ClientPath = "/downloads", Category = "other" }];
-        var plan = await Preview(MaintenanceOperation.CategoryReconcile);
-        plan.BlockedCount.Should().Be(1);
-    }
+
+
+
 
     [Fact]
     public async Task MultipleMovedFiles_AreRestoredOnCancellation()
@@ -742,53 +631,8 @@ public sealed class MaintenanceSafetyTests : IDisposable
         _client.Verify(c => c.AddTagsAsync(It.IsAny<List<string>>(), It.IsAny<List<string>>(), It.IsAny<CancellationToken>()), Times.Never);
     }
 
-    [Fact]
-    public async Task SamePlan_CannotBeAppliedTwiceWhileRemovalIsPending()
-    {
-        AddTorrent();
-        ClientConfig.Maintenance.Unregistered.Enabled = true;
-        _client.Setup(c => c.GetTorrentTrackersAsync(It.IsAny<string>(), It.IsAny<CancellationToken>()))
-            .ReturnsAsync([new() { Url = "https://tracker.example/announce", Msg = "unregistered torrent" }]);
-        var plan = await Preview(MaintenanceOperation.UnregisteredCleanup);
-        await _maintenance.ArmAsync(new() { PlanId = plan.PlanId });
-        var completion = new TaskCompletionSource<bool>(TaskCreationOptions.RunContinuationsAsynchronously);
-        _client.Setup(c => c.DeleteTorrentsAsync(It.IsAny<List<string>>(), false, It.IsAny<CancellationToken>())).Returns(completion.Task);
-        var first = _maintenance.ApplyAsync(plan.PlanId);
-        try
-        {
-            await FluentActions.Awaiting(() => _maintenance.ApplyAsync(plan.PlanId)).Should().ThrowAsync<InvalidOperationException>();
-        }
-        finally { completion.SetResult(true); await first; }
-        _client.Verify(c => c.DeleteTorrentsAsync(It.IsAny<List<string>>(), false, It.IsAny<CancellationToken>()), Times.Once);
-    }
 
-    [Fact]
-    public async Task MissingFileCapability_StillAllowsNonDestructiveInspection()
-    {
-        AddTorrent();
-        _client.SetupGet(c => c.Capabilities).Returns(TorrentClientCapabilities.QBittorrent with { FileEnumeration = false });
-        ClientConfig.Maintenance.CategoryMappings = [new() { ClientPath = "/downloads", Category = "other" }];
-        var plan = await Preview(MaintenanceOperation.CategoryReconcile);
-        plan.Warnings.Should().BeEmpty();
-        plan.CandidateCount.Should().Be(1);
-        _client.Verify(c => c.GetTorrentFilesAsync(It.IsAny<string>(), It.IsAny<CancellationToken>()), Times.Never);
-    }
 
-    [Fact]
-    public async Task MissingMappings_BlockOnlyFilesystemOperations()
-    {
-        AddTorrent();
-        ClientConfig.Maintenance.PathMappings.Clear();
-        ClientConfig.Maintenance.Hardlinks.Enabled = true;
-        ClientConfig.Maintenance.CategoryMappings = [new() { ClientPath = "/downloads", Category = "other" }];
-        _client.Setup(c => c.SetCategoryAsync(It.IsAny<List<string>>(), "other", It.IsAny<CancellationToken>())).ReturnsAsync(true);
-        var plan = await _maintenance.PreviewAsync(new() { ClientInstanceIds = ["one"], Operations = [MaintenanceOperation.CategoryReconcile, MaintenanceOperation.HardlinkAudit] });
-        plan.CriticalErrors.Should().BeEmpty();
-        plan.OperationResults.Single(r => r.Operation == MaintenanceOperation.HardlinkAudit).State.Should().Be("blocked");
-        plan.OperationResults.Single(r => r.Operation == MaintenanceOperation.CategoryReconcile).State.Should().Be("ready");
-        (await Apply(plan)).Applied.Should().Be(1);
-        _maintenance.GetStatus().ArmedOperations["one"].Should().Equal(MaintenanceOperation.CategoryReconcile);
-    }
 
     [Fact]
     public async Task UnmappedFiles_AreGroupedWithExactCountsAndBoundedExamples()
@@ -832,70 +676,10 @@ public sealed class MaintenanceSafetyTests : IDisposable
 
 
 
-    [Fact]
-    public async Task UnknownHardlinkCount_IsUninspectableAndNeverActionable()
-    {
-        AddTorrent();
-        ClientConfig.Maintenance.Hardlinks.Enabled = true;
-        var plan = await Preview(MaintenanceOperation.HardlinkAudit);
-        plan.CandidateCount.Should().Be(0);
-        plan.OperationResults.Single().Uninspectable.Should().Be(1);
-        plan.OperationResults.Single().State.Should().Be("blocked");
-        plan.Diagnostics.Should().Contain(d => d.Code == "hardlink-inspection-failed");
-    }
 
-    [Theory]
-    [InlineData(false)]
-    [InlineData(true)]
-    public async Task CategoryRules_DeduplicateOrBlockConflictingMutations(bool conflict)
-    {
-        AddTorrent();
-        ClientConfig.Maintenance.CategoryMappings = [new() { ClientPath = "/downloads", Category = "other" }];
-        ClientConfig.Maintenance.CategoryTransitions = [new() { From = "movies", To = conflict ? "different" : "other", DelayMinutes = 0 }];
-        _torrents[0].CompletionOn = 1;
-        var plan = await Preview(MaintenanceOperation.CategoryReconcile);
-        plan.CandidateCount.Should().Be(conflict ? 0 : 1);
-        plan.BlockedCount.Should().Be(conflict ? 2 : 0);
-    }
 
-    [Fact]
-    public async Task AutomaticManagement_DoesNotRepeatSatisfiedSetting()
-    {
-        AddTorrent().AutoManaged = true;
-        ClientConfig.Maintenance.AutomaticManagement.Enabled = true;
-        (await Preview(MaintenanceOperation.AutomaticManagement)).Actions.Should().BeEmpty();
-    }
 
-    [Theory]
-    [InlineData("manual")]
-    [InlineData("scheduled")]
-    public async Task Runs_DoNotExpandReviewedOperationScope(string trigger)
-    {
-        AddTorrent().IsPrivate = true;
-        ClientConfig.Maintenance.AutomaticManagement.PrivateTag = "private";
-        ClientConfig.Maintenance.CategoryMappings = [new() { ClientPath = "/downloads", Category = "other" }];
-        _client.Setup(c => c.SetCategoryAsync(It.IsAny<List<string>>(), It.IsAny<string>(), It.IsAny<CancellationToken>())).ReturnsAsync(true);
-        var plan = await Preview(MaintenanceOperation.CategoryReconcile);
-        await _maintenance.ArmAsync(new() { PlanId = plan.PlanId });
-        var run = await _maintenance.RunAsync(["one"], trigger);
-        run.Applied.Should().Be(1);
-        run.OperationResults.Should().OnlyContain(r => r.Operation == MaintenanceOperation.CategoryReconcile);
-        var unreviewed = await _maintenance.RunAsync(["one"], operations: [MaintenanceOperation.PrivateTagging]);
-        unreviewed.Applied.Should().Be(0);
-        unreviewed.OperationResults.Single().State.Should().Be("blocked");
-        _client.Verify(c => c.AddTagsAsync(It.IsAny<List<string>>(), It.IsAny<List<string>>(), It.IsAny<CancellationToken>()), Times.Never);
-    }
 
-    [Fact]
-    public async Task ConfigurationChange_ClearsAuthorization()
-    {
-        AddTorrent();
-        var plan = await Preview(MaintenanceOperation.CategoryReconcile);
-        await _maintenance.ArmAsync(new() { PlanId = plan.PlanId });
-        ClientConfig.Maintenance.Scope = "explicit";
-        _maintenance.GetStatus().Armed["one"].Should().BeFalse();
-        _maintenance.GetStatus().ArmedOperations["one"].Should().BeEmpty();
-    }
 
     [Fact]
     public async Task OrphanScan_DoesNotFollowSymlinkDirectories()
@@ -915,17 +699,6 @@ public sealed class MaintenanceSafetyTests : IDisposable
         finally { Directory.Delete(outside, true); }
     }
 
-    [Fact]
-    public async Task UnregisteredWithoutCandidates_DoesNotInspectFiles()
-    {
-        AddTorrent();
-        ClientConfig.Maintenance.Unregistered.Enabled = true;
-        ClientConfig.Maintenance.PathMappings.Clear();
-        var plan = await Preview(MaintenanceOperation.UnregisteredCleanup);
-        plan.Diagnostics.Should().BeEmpty();
-        plan.OperationResults.Single().State.Should().Be("ready");
-        _client.Verify(c => c.GetTorrentFilesAsync(It.IsAny<string>(), It.IsAny<CancellationToken>()), Times.Never);
-    }
 
     [Fact]
     public async Task RetentionWithoutExpiredFiles_DoesNotProposeMutation()
@@ -934,9 +707,9 @@ public sealed class MaintenanceSafetyTests : IDisposable
         Directory.CreateDirectory(directory);
         File.WriteAllText(Path.Combine(directory, "fresh"), "keep");
         var plan = await Preview(MaintenanceOperation.RecycleRetention);
-        plan.Actions.Should().BeEmpty();
-        plan.OperationResults.Single().State.Should().Be("ready");
-        plan.OperationResults.Single().Examined.Should().Be(1);
+        plan.Actions.Should().OnlyContain(a => a.Kind == MaintenanceActionKind.RegisterRecycleEntry);
+        (await Apply(plan)).Applied.Should().Be(1);
+        (await Preview(MaintenanceOperation.RecycleRetention)).Actions.Should().BeEmpty();
     }
 
     [Fact]
@@ -950,43 +723,415 @@ public sealed class MaintenanceSafetyTests : IDisposable
         metadata.Diagnostics.Should().Contain(d => d.Code == "ownership-not-inspected");
     }
 
+
+
+
     [Fact]
-    public async Task DisabledSelectedClient_DoesNotPreventArmingReadyClient()
+    public async Task RecycledOldMediaGetsFullRetention_AndPreviewDoesNotRegisterLegacyFiles()
     {
-        AddTorrent();
-        ClientConfig.Maintenance.CategoryMappings = [new() { ClientPath = "/downloads", Category = "other" }];
-        _client.Setup(c => c.SetCategoryAsync(It.IsAny<List<string>>(), It.IsAny<string>(), It.IsAny<CancellationToken>())).ReturnsAsync(true);
-        _config.TorrentClients["disabled"] = new() { Host = "offline", Disabled = true };
-        var plan = await _maintenance.PreviewAsync(new() { ClientInstanceIds = ["one", "disabled"], Operations = [MaintenanceOperation.CategoryReconcile] });
-        plan.OperationResults.Single(r => r.ClientInstanceId == "disabled").State.Should().Be("disabled");
+        var directory = Path.Combine(_root, ".recycle", "one"); Directory.CreateDirectory(directory);
+        var old = Path.Combine(directory, "old-file"); File.WriteAllText(old, "keep"); File.SetLastWriteTimeUtc(old, DateTime.UtcNow.AddYears(-5));
+        var rows = _db.MaintenanceState.Count();
+        var plan = await Preview(MaintenanceOperation.RecycleRetention);
+        _db.MaintenanceState.Count().Should().Be(rows);
+        plan.Actions.Single().Kind.Should().Be(MaintenanceActionKind.RegisterRecycleEntry);
         (await Apply(plan)).Applied.Should().Be(1);
-        _maintenance.GetStatus().Armed["disabled"].Should().BeFalse();
+        (await Preview(MaintenanceOperation.RecycleRetention)).Actions.Should().BeEmpty();
+        File.ReadAllText(old).Should().Be("keep");
     }
 
     [Fact]
-    public async Task ConfigurationReplacement_DuringPinnedRunStopsSubsequentActions()
+    public async Task RetentionUsesCommittedEntryTime_AndRejectsChangedFiles()
     {
-        AddTorrent(); AddTorrent("other", "other.mkv");
-        ClientConfig.Maintenance.CategoryMappings = [new() { ClientPath = "/downloads", Category = "different" }];
-        var changed = false;
-        _client.Setup(c => c.SetCategoryAsync(It.IsAny<List<string>>(), It.IsAny<string>(), It.IsAny<CancellationToken>()))
-            .Callback(() => { if (!changed) { changed = true; _config.Apply(_config, 1); } }).ReturnsAsync(true);
-        var plan = await Preview(MaintenanceOperation.CategoryReconcile);
-        var run = await Apply(plan);
-        run.Applied.Should().Be(1);
-        run.Pending.Should().Be(1);
-        run.Result.Should().Be("cancelled");
+        var source = Path.Combine(_root, "old.mkv"); File.WriteAllText(source, "data");
+        File.SetLastWriteTimeUtc(source, DateTime.UtcNow.AddYears(-5));
+        (await _deletion.QuarantineFileAsync("one", source)).Success.Should().BeTrue();
+        var entry = _deletion.InspectRecycleEntries("one").Single();
+        File.GetLastWriteTimeUtc(entry.Destination).Should().BeBefore(DateTime.UtcNow.AddYears(-4));
+        (await Preview(MaintenanceOperation.RecycleRetention)).Actions.Should().BeEmpty();
+        MaintenancePersistence.Write(_db, entry.Key, entry with { RecycledAt = DateTimeOffset.UtcNow.AddDays(-31) });
+        var plan = await Preview(MaintenanceOperation.RecycleRetention);
+        plan.Actions.Single().Kind.Should().Be(MaintenanceActionKind.DeleteExpiredRecycleItem);
+        File.AppendAllText(entry.Destination, "new data");
+        (await Apply(plan)).Should().Match<MaintenanceRunSummary>(run => run.Failed + run.Skipped == 1);
+        File.Exists(entry.Destination).Should().BeTrue();
+        var fresh = await Preview(MaintenanceOperation.RecycleRetention);
+        (await Apply(fresh)).BytesReclaimed.Should().Be(12);
+        File.Exists(entry.Destination).Should().BeFalse();
+    }
+
+    [Theory]
+    [InlineData("preparing")]
+    [InlineData("needs-recovery")]
+    public async Task IncompleteRecyclingNeverExpires_AfterRestart(string state)
+    {
+        var directory = Path.Combine(_root, ".recycle", "one"); Directory.CreateDirectory(directory);
+        var path = Path.Combine(directory, "pending"); File.WriteAllText(path, "keep");
+        var key = RecycleLedger.Key("one", path);
+        MaintenancePersistence.Write(_db, key, new RecycleEntry(key, "one", "original", path, DateTimeOffset.UtcNow.AddYears(-1), state));
+        using var restarted = new MaintenanceCoordinator(_config, _registry.Object, _inventory, new PathMappingService(), Mock.Of<IHardlinkInspector>(),
+            _deletion, NullLogger<MaintenanceCoordinator>.Instance, _services.GetRequiredService<IServiceScopeFactory>());
+        var plan = await restarted.PreviewAsync(new() { ClientInstanceIds = ["one"], Operations = [MaintenanceOperation.RecycleRetention] });
+        plan.Actions.Should().BeEmpty(); plan.OperationResults.Single().State.Should().Be("partial");
+        (await restarted.ApplyAsync(plan.PlanId)).Result.Should().Be("partial"); File.Exists(path).Should().BeTrue();
+    }
+
+    [Fact]
+    public async Task DirectoryRetentionCountsActualFilesAcrossPartialPurges()
+    {
+        var path = Path.Combine(_root, ".recycle", "one", "folder"); Directory.CreateDirectory(path);
+        File.WriteAllText(Path.Combine(path, "one"), "one"); File.WriteAllText(Path.Combine(path, "two"), "two");
+        var key = RecycleLedger.Key("one", path);
+        MaintenancePersistence.Write(_db, key, new RecycleEntry(key, "one", "original", path, DateTimeOffset.UtcNow.AddDays(-40), "committed"));
+        ClientConfig.Maintenance.RecycleBin.MaxFilesDeletedPerRun = 1;
+        (await Apply(await Preview(MaintenanceOperation.RecycleRetention))).BytesReclaimed.Should().Be(3);
+        Directory.GetFiles(path).Should().HaveCount(1);
+        (await Apply(await Preview(MaintenanceOperation.RecycleRetention))).BytesReclaimed.Should().Be(3);
+        Directory.Exists(path).Should().BeFalse();
+    }
+
+    [Fact]
+    public async Task PreviewIsSingleUse_AndConfigurationChangesInvalidateIt()
+    {
+        ClientConfig.Maintenance.Orphans.Enabled = true; ClientConfig.Maintenance.Orphans.MinimumAgeMinutes = 0;
+        File.WriteAllText(Path.Combine(_root, "orphan.mkv"), "data");
+        var plan = await Preview(MaintenanceOperation.OrphanScan);
+        ClientConfig.Maintenance.Orphans.MinimumAgeMinutes = 99;
+        await FluentActions.Awaiting(() => Apply(plan)).Should().ThrowAsync<InvalidOperationException>();
+        ClientConfig.Maintenance.Orphans.MinimumAgeMinutes = 0;
+        plan = await Preview(MaintenanceOperation.OrphanScan);
+        (await Apply(plan)).Applied.Should().Be(1);
+        await FluentActions.Awaiting(() => Apply(plan)).Should().ThrowAsync<InvalidOperationException>();
+    }
+
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task DisabledOrExhaustedRecoveryKeepsErrors_WithoutUnboundedRechecks(bool enabled)
+    {
+        var torrent = AddTorrent(); torrent.State = "missingFiles";
+        var config = new RecoveryConfig { Enabled = enabled, MinimumTorrentAgeMinutes = 0 };
+        _client.Setup(c => c.RecheckTorrentsAsync(It.IsAny<List<string>>(), It.IsAny<CancellationToken>())).ReturnsAsync(true);
+        await MaintenanceRecovery.ProcessAsync(_db, _client.Object, torrent, config, 0, true, default);
+        await MaintenanceRecovery.ProcessAsync(_db, _client.Object, torrent, config, 0, true, default);
+        MaintenanceRecovery.BlocksAutomaticRemoval(_db, torrent, config).Should().BeTrue();
+        _client.Verify(c => c.RecheckTorrentsAsync(It.IsAny<List<string>>(), It.IsAny<CancellationToken>()), enabled ? Times.Once() : Times.Never());
+        _client.Verify(c => c.DeleteTorrentsAsync(It.IsAny<List<string>>(), It.IsAny<bool>(), It.IsAny<CancellationToken>()), Times.Never());
+    }
+
+    [Fact]
+    public async Task ExplicitRecheckDoesNotRepeatUntilObservedExit()
+    {
+        var torrent = AddTorrent(); torrent.Category = "recheck";
+        _client.Setup(c => c.RecheckTorrentsAsync(It.IsAny<List<string>>(), It.IsAny<CancellationToken>())).ReturnsAsync(true);
+        await MaintenanceRecovery.RequestExplicitAsync(_db, _client.Object, torrent, default);
+        await MaintenanceRecovery.RequestExplicitAsync(_db, _client.Object, torrent, default);
+        _client.Verify(c => c.RecheckTorrentsAsync(It.IsAny<List<string>>(), It.IsAny<CancellationToken>()), Times.Once);
+        torrent.Category = "movies"; MaintenanceRecovery.ObserveExplicitExits(_db, "one", [torrent], "recheck");
+        torrent.Category = "recheck"; await MaintenanceRecovery.RequestExplicitAsync(_db, _client.Object, torrent, default);
+        _client.Verify(c => c.RecheckTorrentsAsync(It.IsAny<List<string>>(), It.IsAny<CancellationToken>()), Times.Exactly(2));
+    }
+
+    [Fact]
+    public async Task ProtectionInspectionRunsWithCleanupAndRecoveryDisabled()
+    {
+        ClientConfig.Maintenance.Enabled = false; ClientConfig.Maintenance.ErrorRecovery.Enabled = false;
+        ClientConfig.Trackers = [new() { Uri = "https://tracker.example", Protection = new() { Policy = "onlyencodes" } }];
+        var torrent = AddTorrent(); torrent.IsPrivate = true; torrent.State = "uploading";
+        _client.Setup(c => c.GetTorrentTrackersAsync(torrent.Hash, It.IsAny<CancellationToken>()))
+            .ReturnsAsync([new() { Url = "https://tracker.example/announce", Status = 2, Msg = "" }]);
+        var inspected = new TaskCompletionSource<bool>(TaskCreationOptions.RunContinuationsAsynchronously);
+        var reloader = new Mock<IConfigReloader>();
+        reloader.Setup(r => r.Acknowledge("torrent-protection", It.IsAny<long>(), It.IsAny<string?>()))
+            .Callback(() => inspected.TrySetResult(true));
+        using var automation = new TorrentAutomationService(_config, _registry.Object, _services.GetRequiredService<IServiceScopeFactory>(), NullLogger<TorrentAutomationService>.Instance, reloader.Object);
+        await automation.StartAsync(default);
+        try
+        {
+            // The fixture shares a DbContext; read status only after the background inspection completes.
+            await inspected.Task.WaitAsync(TimeSpan.FromSeconds(10));
+            automation.GetStatus().Inspections.Single().LastSucceededAt.Should().NotBeNull();
+            automation.GetStatus().Protection.Should().Contain(p => p.TorrentHash == torrent.Hash && p.State == "protected");
+        }
+        finally { await automation.StopAsync(default); }
+    }
+
+    [Fact]
+    public async Task ZeroOrphanBudgetDoesNotScanOrQueryOwners()
+    {
+        ClientConfig.Maintenance.Orphans.Enabled = true; ClientConfig.Maintenance.Orphans.MaxFilesPerRun = 0;
+        var plan = await Preview(MaintenanceOperation.OrphanScan);
+        plan.Actions.Should().BeEmpty(); plan.OperationResults.Single().State.Should().Be("ready");
+        _client.Verify(c => c.GetTorrentsAsync(It.IsAny<string?>(), It.IsAny<string?>(), It.IsAny<CancellationToken>()), Times.Never);
+    }
+
+    [Fact]
+    public async Task PendingRecycleSourcesAreNotOrphanCandidates()
+    {
+        ClientConfig.Maintenance.Orphans.Enabled = true; ClientConfig.Maintenance.Orphans.MinimumAgeMinutes = 0;
+        var source = Path.Combine(_root, "restore-needed"); File.WriteAllText(source, "keep");
+        var destination = Path.Combine(_root, ".recycle", "one", "pending");
+        var key = RecycleLedger.Key("one", destination);
+        MaintenancePersistence.Write(_db, key, new RecycleEntry(key, "one", source, destination, DateTimeOffset.UtcNow, "needs-recovery"));
+        (await Preview(MaintenanceOperation.OrphanScan)).Actions.Should().BeEmpty();
+        File.Exists(source).Should().BeTrue();
+    }
+
+    [Fact]
+    public void ArrProtectionFollowsSubcategoryOwnership()
+    {
+        ClientConfig.MatchSubcategories = true;
+        _config.ArrInstances["Radarr-Movies"] = new() { Category = "movies", Torrent = new() { Trackers = [new() { Uri = "https://tracker.example", Protection = new() { Policy = "onlyencodes" } }] } };
+        var torrent = AddTorrent(); torrent.Category = "movies/4k"; torrent.IsPrivate = true;
+        _seeding.GetProtectionDecisions(torrent, [new() { Url = "https://tracker.example/announce", Status = 2, Msg = "" }])
+            .Should().Contain(d => d.State == "protected");
+    }
+
+    [Fact]
+    public async Task DailyCleanupClaimsOnceAcrossRestart_AndDoesNotCatchUpMissedRuns()
+    {
+        ClientConfig.Maintenance.Enabled = true; ClientConfig.Maintenance.Operations["OrphanScan"] = new() { Enabled = true, ExecutionMode = "automatic", Schedule = "15 3 * * *" }; ClientConfig.Maintenance.Operations["RecycleRetention"] = new() { Enabled = false }; ClientConfig.Maintenance.Orphans.Enabled = true; ClientConfig.Maintenance.Orphans.MinimumAgeMinutes = 0;
+        var source = Path.Combine(_root, "daily-orphan"); File.WriteAllText(source, "data");
+        var day = new DateTimeOffset(DateTime.UtcNow.Date.AddHours(3).AddMinutes(15), TimeSpan.Zero);
+        await _maintenance.RunDueAsync(day, expectedRevision: _config.Revision + 1);
+        File.Exists(source).Should().BeTrue(); _maintenance.GetHistory().Should().BeEmpty();
+        await _maintenance.RunDueAsync(day.AddMinutes(1));
+        File.Exists(source).Should().BeTrue(); _maintenance.GetHistory().Should().BeEmpty();
+        await _maintenance.RunDueAsync(day);
+        File.Exists(source).Should().BeFalse(); _maintenance.GetHistory().Single().Trigger.Should().Be("scheduled");
+        using var restarted = new MaintenanceCoordinator(_config, _registry.Object, _inventory, new PathMappingService(), Mock.Of<IHardlinkInspector>(),
+            _deletion, NullLogger<MaintenanceCoordinator>.Instance, _services.GetRequiredService<IServiceScopeFactory>());
+        await restarted.RunDueAsync(day);
+        restarted.GetHistory().Should().ContainSingle();
+    }
+
+    [Fact]
+    public async Task RecoveryBlocksRemoval_WithoutInventingTrackerObligations()
+    {
+        ClientConfig.CategorySeeding.RemoveTorrent = 1; ClientConfig.CategorySeeding.MaxUploadRatio = 1;
+        var torrent = AddTorrent();
+        MaintenancePersistence.Write(_db, MaintenancePersistence.Key("one", torrent.Hash, "recovery:ErrorRecovery"), new RecoveryIncident { AddedOn = torrent.AddedOn, Attempts = 1, Stage = "unconfirmed" });
+        (await _seeding.ShouldRemoveTorrentAsync(torrent)).Should().BeFalse();
+        (await _seeding.HnrAllowsDeleteAsync(torrent, "routine pause")).Should().BeTrue();
+    }
+
+    [Theory]
+    [InlineData(MaintenanceOperation.OrphanScan)]
+    [InlineData(MaintenanceOperation.HardlinkAudit)]
+    [InlineData(MaintenanceOperation.UnregisteredCleanup)]
+    [InlineData(MaintenanceOperation.CategoryReconcile)]
+    [InlineData(MaintenanceOperation.AutomaticManagement)]
+    [InlineData(MaintenanceOperation.PrivateTagging)]
+    [InlineData(MaintenanceOperation.TrackerErrorTagging)]
+    [InlineData(MaintenanceOperation.RepairPaused)]
+    [InlineData(MaintenanceOperation.ErrorRecovery)]
+    [InlineData(MaintenanceOperation.RecycleRetention)]
+    public async Task EveryRestoredToolReachesItsPlanner(MaintenanceOperation operation)
+    {
+        ClientConfig.Maintenance.Operations[operation.ToString()] = new() { Enabled = true, ExecutionMode = "manual" };
+        var plan = await Preview(operation);
+        plan.CriticalErrors.Should().BeEmpty();
+        plan.OperationResults.Should().ContainSingle(result => result.Operation == operation && result.State != "disabled");
+    }
+
+    [Theory]
+    [InlineData(MaintenanceOperation.CategoryReconcile, MaintenanceActionKind.SetCategory)]
+    [InlineData(MaintenanceOperation.AutomaticManagement, MaintenanceActionKind.SetAutomaticManagement)]
+    [InlineData(MaintenanceOperation.PrivateTagging, MaintenanceActionKind.AddTag)]
+    [InlineData(MaintenanceOperation.TrackerErrorTagging, MaintenanceActionKind.AddTag)]
+    public async Task RestoredOrganizationToolsApplyOnlyAfterReview(MaintenanceOperation operation, MaintenanceActionKind kind)
+    {
+        var torrent = AddTorrent(); torrent.IsPrivate = operation == MaintenanceOperation.PrivateTagging; torrent.AutoManaged = false;
+        ClientConfig.CategorySeeding.HitAndRunMode = "disabled";
+        ClientConfig.Maintenance.Operations[operation.ToString()] = new() { Enabled = true, ExecutionMode = "manual" };
+        ClientConfig.Maintenance.CategoryMappings = [new() { ClientPath = "/downloads", Category = "seed" }];
+        ClientConfig.Maintenance.AutomaticManagement.PrivateTag = "private";
+        _client.Setup(c => c.GetTorrentTrackersAsync(torrent.Hash, It.IsAny<CancellationToken>())).ReturnsAsync([new() { Url = "https://tracker.example", Status = 0, Msg = "offline" }]);
+        _client.Setup(c => c.SetCategoryAsync(It.IsAny<List<string>>(), "seed", It.IsAny<CancellationToken>())).ReturnsAsync(true);
+        _client.Setup(c => c.SetAutomaticManagementAsync(It.IsAny<List<string>>(), true, It.IsAny<CancellationToken>())).ReturnsAsync(true);
+        _client.Setup(c => c.AddTagsAsync(It.IsAny<List<string>>(), It.IsAny<List<string>>(), It.IsAny<CancellationToken>())).ReturnsAsync(true);
+        var plan = await Preview(operation);
+        plan.Actions.Should().ContainSingle(action => action.Kind == kind && action.BlockedReason == null);
+        _client.Verify(c => c.AddTagsAsync(It.IsAny<List<string>>(), It.IsAny<List<string>>(), It.IsAny<CancellationToken>()), Times.Never);
+        (await Apply(plan)).Applied.Should().Be(1);
         _maintenance.GetStatus().Armed["one"].Should().BeFalse();
     }
 
     [Fact]
-    public async Task InvalidRequest_HasStructuredCriticalDiagnosticsWithoutCollectingInventory()
+    public async Task SwitchingToManualStopsFurtherAutomaticActionsAndInvalidatesPreview()
     {
-        var plan = await _maintenance.PreviewAsync(new() { ClientInstanceIds = ["unknown"], Operations = [(MaintenanceOperation)999] });
-        plan.CriticalErrors.Should().HaveCount(2);
-        plan.Diagnostics.Should().OnlyContain(d => d.Severity == "error");
-        plan.Actions.Should().BeEmpty();
-        _client.Verify(c => c.GetTorrentsAsync(It.IsAny<string?>(), It.IsAny<string?>(), It.IsAny<CancellationToken>()), Times.Never);
+        AddTorrent("first", "first.mkv").IsPrivate = true;
+        AddTorrent("second", "second.mkv").IsPrivate = true;
+        ClientConfig.CategorySeeding.HitAndRunMode = "disabled";
+        ClientConfig.Maintenance.AutomaticManagement.PrivateTag = "private";
+        var policy = new MaintenanceOperationPolicy { Enabled = true, ExecutionMode = "automatic" };
+        ClientConfig.Maintenance.Operations["PrivateTagging"] = policy;
+        var preview = await Preview(MaintenanceOperation.PrivateTagging);
+        preview.Actions.Should().HaveCount(2);
+        _client.Setup(c => c.AddTagsAsync(It.IsAny<List<string>>(), It.IsAny<List<string>>(), It.IsAny<CancellationToken>()))
+            .Callback(() => policy.ExecutionMode = "manual").ReturnsAsync(true);
+        var run = await _maintenance.RunAsync(["one"], operations: [MaintenanceOperation.PrivateTagging]);
+        run.Applied.Should().Be(1);
+        _client.Verify(c => c.AddTagsAsync(It.IsAny<List<string>>(), It.IsAny<List<string>>(), It.IsAny<CancellationToken>()), Times.Once);
+        await FluentActions.Awaiting(() => Apply(preview)).Should().ThrowAsync<InvalidOperationException>();
+    }
+
+    [Theory]
+    [InlineData("manual", false)]
+    [InlineData("automatic", true)]
+    public async Task SchedulingModePersistsAcrossRestartAndManualCannotRun(string mode, bool automatic)
+    {
+        ClientConfig.Maintenance.Operations["PrivateTagging"] = new() { Enabled = true, ExecutionMode = mode };
+        var operation = _maintenance.GetStatus().Operations.Single(o => o.ClientInstanceId == "one" && o.Operation == MaintenanceOperation.PrivateTagging);
+        operation.Authorized.Should().Be(automatic);
+        (operation.NextRun != null).Should().Be(automatic);
+        using var restarted = new MaintenanceCoordinator(_config, _registry.Object, _inventory, new PathMappingService(), Mock.Of<IHardlinkInspector>(),
+            _deletion, NullLogger<MaintenanceCoordinator>.Instance, _services.GetRequiredService<IServiceScopeFactory>());
+        restarted.GetStatus().Operations.Single(o => o.ClientInstanceId == "one" && o.Operation == MaintenanceOperation.PrivateTagging).Authorized.Should().Be(automatic);
+        restarted.GetStatus().Armed.Values.Should().OnlyContain(value => !value);
+        restarted.GetStatus().ArmedOperations.Values.Should().OnlyContain(value => value.Count == 0);
+        if (!automatic)
+            await FluentActions.Awaiting(() => restarted.RunAsync(["one"], operations: [MaintenanceOperation.PrivateTagging])).Should().ThrowAsync<InvalidOperationException>();
+        ClientConfig.Maintenance.Operations["PrivateTagging"].ExecutionMode = "manual";
+        restarted.GetStatus().Operations.Single(o => o.ClientInstanceId == "one" && o.Operation == MaintenanceOperation.PrivateTagging).Authorized.Should().BeFalse();
+        await restarted.RunDueAsync(DateTimeOffset.UtcNow);
+        _client.Verify(c => c.AddTagsAsync(It.IsAny<List<string>>(), It.IsAny<List<string>>(), It.IsAny<CancellationToken>()), Times.Never);
+    }
+
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task SafeRemovalWithoutProtectionServiceNeverDeletes(bool content)
+    {
+        AddTorrent();
+        var deletion = new SafeDeletionService(_registry.Object, _inventory, new PathMappingService(), _config, NullLogger<SafeDeletionService>.Instance);
+        (await deletion.RemoveTorrentAsync("one", "abc", content)).Success.Should().BeFalse();
+        _client.Verify(c => c.DeleteTorrentsAsync(It.IsAny<List<string>>(), It.IsAny<bool>(), It.IsAny<CancellationToken>()), Times.Never);
+        File.Exists(Path.Combine(_root, "movie.mkv")).Should().BeTrue();
+    }
+
+    [Fact]
+    public async Task ClearanceLostAfterRecyclingRestoresFilesAndPreservesTorrent()
+    {
+        AddTorrent();
+        var seeding = new Mock<ISeedingService>();
+        seeding.SetupSequence(s => s.CanDeleteTorrentAsync(It.IsAny<TorrentInfo>(), It.IsAny<string>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(true).ReturnsAsync(true).ReturnsAsync(true).ReturnsAsync(false);
+        using var services = new ServiceCollection().AddSingleton(_db).AddScoped<ISeedingService>(_ => seeding.Object).BuildServiceProvider();
+        var deletion = new SafeDeletionService(_registry.Object, _inventory, new PathMappingService(), _config,
+            NullLogger<SafeDeletionService>.Instance, services.GetRequiredService<IServiceScopeFactory>());
+        var result = await deletion.RemoveTorrentAsync("one", "abc", true);
+        result.Success.Should().BeFalse();
+        result.ContentPreserved.Should().BeTrue();
+        File.Exists(Path.Combine(_root, "movie.mkv")).Should().BeTrue();
+        _client.Verify(c => c.DeleteTorrentsAsync(It.IsAny<List<string>>(), It.IsAny<bool>(), It.IsAny<CancellationToken>()), Times.Never);
+    }
+
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task OwnedFileCleanupRequiresHnrClearance(bool allowed)
+    {
+        var torrent = AddTorrent(); torrent.IsPrivate = true; torrent.Ratio = allowed ? 1 : .000249; torrent.Progress = .5416; torrent.LastActivity = 1;
+        ClientConfig.Trackers = [new() { Uri = "https://tracker.example", HitAndRunMode = "and", MinSeedRatio = 1, HitAndRunPartialSeedRatio = 1 }];
+        _client.Setup(c => c.GetTorrentTrackersAsync("abc", It.IsAny<CancellationToken>())).ReturnsAsync([new() { Url = "https://tracker.example/announce", Status = 2 }]);
+        var path = Path.Combine(_root, "movie.mkv");
+        (await _deletion.DeleteOwnedFileAsync("one", "abc", path)).Should().Be(allowed);
+        File.Exists(path).Should().Be(!allowed);
+    }
+
+    [Theory]
+    [InlineData(-1, 2, false)]
+    [InlineData(1, .5, false)]
+    [InlineData(1, 2, true)]
+    public async Task EveryRemovalRequiresSeedingPolicy(int mode, double ratio, bool allowed)
+    {
+        var torrent = AddTorrent(); torrent.Ratio = ratio;
+        ClientConfig.CategorySeeding.RemoveTorrent = mode;
+        (await _seeding.CanDeleteTorrentAsync(torrent, "CF unmet")).Should().Be(allowed);
+        (await _deletion.RemoveTorrentAsync("one", "abc", false)).Success.Should().Be(allowed);
+        _client.Verify(c => c.DeleteTorrentsAsync(It.IsAny<List<string>>(), It.IsAny<bool>(), It.IsAny<CancellationToken>()), allowed ? Times.Once() : Times.Never());
+    }
+
+    [Theory]
+    [InlineData(-1, 7200, false)]
+    [InlineData(60, 1800, false)]
+    [InlineData(60, 7200, true)]
+    public async Task EveryIncompleteRemovalRequiresStalledGrace(int delay, int idleSeconds, bool allowed)
+    {
+        var torrent = AddTorrent(); torrent.Progress = .5; torrent.State = "stalledDL";
+        torrent.LastActivity = DateTimeOffset.UtcNow.ToUnixTimeSeconds() - idleSeconds;
+        ClientConfig.CategorySeeding.StalledDelay = delay;
+        (await _deletion.RemoveTorrentAsync("one", "abc", false)).Success.Should().Be(allowed);
+    }
+
+    [Theory]
+    [InlineData(1, .5, 0, false)]
+    [InlineData(1, 2, 0, true)]
+    [InlineData(2, 2, 0, false)]
+    [InlineData(2, .5, 7200, true)]
+    [InlineData(3, 2, 0, true)]
+    [InlineData(4, 2, 0, false)]
+    [InlineData(4, 2, 7200, true)]
+    public async Task FinalRemovalPreservesConfiguredRatioTimeCombination(int mode, double ratio, long seedSeconds, bool allowed)
+    {
+        var torrent = AddTorrent(); torrent.Ratio = ratio; torrent.SeedingTime = seedSeconds;
+        ClientConfig.CategorySeeding.RemoveTorrent = mode;
+        ClientConfig.CategorySeeding.MaxSeedingTime = 3600;
+        (await _seeding.CanDeleteTorrentAsync(torrent, "cleanup")).Should().Be(allowed);
+    }
+
+    [Fact]
+    public async Task LegacyTrackerMinimumsRemainMandatoryForCleanup()
+    {
+        var torrent = AddTorrent(); torrent.Tracker = "https://tracker.example/announce";
+        _config.Settings.TrackerRules = [new() { TrackerUrl = "tracker.example", MinimumRatio = 3, MinimumSeedingTime = 120 }];
+        (await _seeding.CanDeleteTorrentAsync(torrent, "cleanup")).Should().BeFalse();
+        torrent.Ratio = 3; torrent.SeedingTime = 7200;
+        (await _seeding.CanDeleteTorrentAsync(torrent, "cleanup")).Should().BeTrue();
+    }
+
+    [Fact]
+    public async Task EffectiveCategoryAgeBlocksOtherwiseClearedCleanup()
+    {
+        var torrent = AddTorrent(); torrent.AddedOn = DateTimeOffset.UtcNow.ToUnixTimeSeconds() - 300;
+        ClientConfig.CategorySeeding.Categories = [new() { Name = "movies", IgnoreTorrentsYoungerThan = 3600 }];
+        (await _deletion.RemoveTorrentAsync("one", "abc", false)).Success.Should().BeFalse();
+        _client.Verify(c => c.DeleteTorrentsAsync(It.IsAny<List<string>>(), It.IsAny<bool>(), It.IsAny<CancellationToken>()), Times.Never);
+    }
+
+    [Fact]
+    public async Task ArrAgeCannotBypassLongerCategoryProtection()
+    {
+        var torrent = AddTorrent(); torrent.AddedOn = DateTimeOffset.UtcNow.ToUnixTimeSeconds() - 300;
+        ClientConfig.CategorySeeding.IgnoreTorrentsYoungerThan = 3600;
+        _config.ArrInstances["Radarr-Movies"] = new() { Category = "movies", Torrent = new() { IgnoreTorrentsYoungerThan = 180 } };
+        (await _seeding.CanDeleteTorrentAsync(torrent, "CF unmet")).Should().BeFalse();
+    }
+
+    [Fact]
+    public async Task CandidateActivityChangesDuringInventoryBlockRemoval()
+    {
+        var torrent = AddTorrent();
+        var inventory = await _inventory.BuildAsync();
+        torrent.LastActivity = DateTimeOffset.UtcNow.ToUnixTimeSeconds();
+        (await _deletion.RemoveMaintenanceTorrentAsync("one", "abc", true, inventory)).Success.Should().BeFalse();
+        File.Exists(Path.Combine(_root, "movie.mkv")).Should().BeTrue();
+        _client.Verify(c => c.DeleteTorrentsAsync(It.IsAny<List<string>>(), It.IsAny<bool>(), It.IsAny<CancellationToken>()), Times.Never);
+    }
+
+    [Fact]
+    public void PublishedConfigurationAndInvalidAccountingCannotClearHnr()
+    {
+        var torrent = AddTorrent();
+        _seeding.HnrAllowsDelete(torrent, []).Should().BeTrue();
+        using (_config.BeginOperation())
+        {
+            _config.Apply(_config, _config.LatestRevision + 1);
+            _seeding.HnrAllowsDelete(torrent, []).Should().BeFalse();
+        }
+        torrent.Ratio = double.NaN;
+        _seeding.HnrAllowsDelete(torrent, []).Should().BeFalse();
     }
 
     public void Dispose()

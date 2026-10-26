@@ -1,3 +1,4 @@
+import { PersistentDetails } from "../PersistentDetails";
 import { useMemo, type JSX } from "react";
 import { getSonarrOpenSeriesUrl } from "../../api/client";
 import { ArrExternalLink, ArrInstanceHint } from "./ArrExternalLink";
@@ -74,10 +75,10 @@ export function SonarrSeriesGroupDetailBody({
         qualityProfileName={group.qualityProfileName}
       />
       {bySeason.map(([season, eps]) => (
-        <details
+        <PersistentDetails
           key={season}
           className="arr-series-season"
-          open={bySeason.length <= 3}
+          defaultOpen={bySeason.length <= 3}
         >
           <summary style={{ fontWeight: 600, cursor: "pointer" }}>
             Season {season} ({eps.length} episodes)
@@ -114,7 +115,7 @@ export function SonarrSeriesGroupDetailBody({
               </tbody>
             </table>
           </div>
-        </details>
+        </PersistentDetails>
       ))}
     </div>
   );

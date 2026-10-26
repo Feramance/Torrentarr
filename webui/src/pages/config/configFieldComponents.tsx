@@ -62,6 +62,8 @@ function renderReloadHint(field: FieldDefinition): JSX.Element | null {
 }
 
 export interface FieldGroupProps {
+  children?: React.ReactNode;
+  description?: string;
   title: string | null;
   fields: FieldDefinition[];
   state: ConfigDocument | ConfigDocument[keyof ConfigDocument] | null;
@@ -81,11 +83,15 @@ const NUMERIC_INPUT_RE = /^-?\d*\.?\d*$/;
 
 export function NumberInput({
   label,
+  id,
+  invalid,
   value,
   onChange,
   placeholder,
 }: {
   label?: string;
+  id?: string;
+  invalid?: boolean;
   value: unknown;
   onChange: (v: string) => void;
   placeholder?: string;
@@ -105,6 +111,8 @@ export function NumberInput({
   return (
     <input
       aria-label={label}
+      id={id}
+      aria-invalid={invalid || undefined}
       type="text"
       inputMode="decimal"
       value={localValue}
@@ -309,6 +317,8 @@ export function DurationInput({
 }
 
 export function FieldGroup({
+  children,
+  description,
   title,
   fields,
   state,
@@ -333,10 +343,19 @@ export function FieldGroup({
     if (!pathSegments.length) {
       return false;
     }
-    return Boolean(
-      findFieldErrorMessage(validationErrors, pathSegments, errorOpts),
-    );
+    const dataPath = fieldErrorDataPath(pathSegments, errorOpts);
+    return validationErrors.some(({ path }) => {
+      const errorPath = path.join(".");
+      return errorPath === dataPath || errorPath.startsWith(`${dataPath}.`);
+    });
   });
+
+  const details = useRef<HTMLDetailsElement>(null);
+  useEffect(() => {
+    if ((defaultOpen || groupHasErrors) && details.current) {
+      details.current.open = true;
+    }
+  }, [defaultOpen, groupHasErrors]);
 
   if (title === "Quality Profile Mappings") {
     const mappings = (getValue(state as ConfigDocument, [
@@ -391,10 +410,7 @@ export function FieldGroup({
     };
 
     return (
-      <details
-        className="config-section"
-        open={defaultOpen || groupHasErrors || undefined}
-      >
+      <details className="config-section" ref={details}>
         <summary>{title}</summary>
         <div className="config-section__body">
           <div className="field-description" style={{ marginBottom: "1rem" }}>
@@ -518,10 +534,7 @@ export function FieldGroup({
       );
     };
     return (
-      <details
-        className="config-section"
-        open={defaultOpen || groupHasErrors || undefined}
-      >
+      <details className="config-section" ref={details}>
         <summary>{title}</summary>
         <div className="config-section__body">
           {qbitTrackers && (
@@ -642,6 +655,39 @@ export function FieldGroup({
       );
     }
 
+    if (
+      field.type === "checkbox" &&
+      pathSegments.includes("Operations") &&
+      pathSegments.at(-1) === "Enabled"
+    ) {
+      return (
+        <label key={key} className={fieldClassName} data-field-path={dataPath}>
+          {field.label}
+          <select
+            aria-label={field.label}
+            aria-invalid={errorMessage ? true : undefined}
+            value={
+              rawValue == null ? "inherit" : rawValue ? "enabled" : "disabled"
+            }
+            onChange={(event) =>
+              onChange(
+                path,
+                field,
+                event.target.value === "inherit"
+                  ? null
+                  : event.target.value === "enabled",
+              )
+            }
+          >
+            <option value="inherit">Use existing operation settings</option>
+            <option value="enabled">Enabled</option>
+            <option value="disabled">Disabled</option>
+          </select>
+          <span className="field-description">{description}</span>
+          <FieldErrorText message={errorMessage} />
+        </label>
+      );
+    }
     if (field.type === "checkbox") {
       return (
         <div
@@ -652,6 +698,10 @@ export function FieldGroup({
           <label title={tooltip}>
             <input
               type="checkbox"
+              disabled={
+                pathSegments.join(".") ===
+                  "Maintenance.Hardlinks.CountLinksInsideRoot" && !rawValue
+              }
               checked={Boolean(formatted)}
               onChange={(event) => onChange(path, field, event.target.checked)}
               aria-invalid={errorMessage ? true : undefined}
@@ -685,6 +735,13 @@ export function FieldGroup({
         }
       }
 
+      const optionLabel = (value: string) =>
+        field.path?.at(-1) === "ExecutionMode"
+          ? {
+              manual: "Manual",
+              automatic: "Automatic",
+            }[value] ?? value
+          : value;
       return (
         <div key={key} className={fieldClassName} data-field-path={dataPath}>
           <label htmlFor={dataPath} title={tooltip}>
@@ -695,13 +752,13 @@ export function FieldGroup({
             aria-label={field.label}
             options={(field.options ?? []).map((o) => ({
               value: o,
-              label: o,
+              label: optionLabel(o),
             }))}
             value={
               displayValue
                 ? {
                     value: displayValue,
-                    label: displayValue,
+                    label: optionLabel(String(displayValue)),
                   }
                 : null
             }
@@ -738,6 +795,8 @@ export function FieldGroup({
             {field.label}
           </label>
           <NumberInput
+            id={dataPath}
+            invalid={Boolean(errorMessage)}
             label={field.label}
             value={formatted}
             onChange={(v) => onChange(path, field, v)}
@@ -872,12 +931,15 @@ export function FieldGroup({
 
   if (title) {
     return (
-      <details
-        className="config-section"
-        open={defaultOpen || groupHasErrors || undefined}
-      >
+      <details className="config-section" ref={details}>
         <summary>{title}</summary>
-        <div className="config-section__body field-grid">{renderedFields}</div>
+        <div className="config-section__body field-grid">
+          {description && (
+            <p className="field-description field--full-width">{description}</p>
+          )}
+          {renderedFields}
+          {children}
+        </div>
       </details>
     );
   }

@@ -3,7 +3,21 @@ import { set } from "lodash-es";
 import equal from "fast-deep-equal";
 import type { ConfigDocument } from "../../api/types";
 import { SERVARR_SECTION_REGEX } from "./configTypes";
-import type { ValidationError } from "./configTypes";
+import type { FieldDefinition, ValidationError } from "./configTypes";
+
+export function parseFieldValue(field: FieldDefinition, raw: unknown): unknown {
+  if (
+    raw === null ||
+    (field.type === "number" && field.default === null && raw === "")
+  )
+    return null;
+  if (field.type === "tags" && Array.isArray(raw)) return raw;
+  const parsed = field.parse?.(raw as string | boolean);
+  if (parsed != null) return parsed;
+  if (field.type === "number")
+    return Number.isFinite(Number(raw)) ? Number(raw) : raw;
+  return field.type === "checkbox" ? Boolean(raw) : raw;
+}
 
 export function isEmptyValue(value: unknown): boolean {
   return (
@@ -241,6 +255,13 @@ export function focusFirstValidationError(errors: ValidationError[]): void {
   const el = document.querySelector<HTMLElement>(
     `[data-field-path="${CSS.escape(path)}"]`,
   );
+  for (
+    let group = el?.closest("details");
+    group;
+    group = group.parentElement?.closest("details")
+  ) {
+    group.open = true;
+  }
   el?.scrollIntoView?.({ behavior: "smooth", block: "center" });
   const focusable = el?.querySelector<HTMLElement>(
     "input, select, textarea, button",

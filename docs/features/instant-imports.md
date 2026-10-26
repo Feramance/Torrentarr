@@ -179,9 +179,17 @@ Adjust `LoopSleepTimer` for faster detection:
 LoopSleepTimer = 3
 
 # Check every 10 seconds (lower resource usage)
+```
+
+```toml
+[Settings]
 LoopSleepTimer = 10
 
 # Check every 1 second (very responsive, higher CPU)
+```
+
+```toml
+[Settings]
 LoopSleepTimer = 1
 ```
 
@@ -199,9 +207,17 @@ Control how Arr imports files:
 ImportMode = "Auto"
 
 # Move files (faster, frees disk space)
+```
+
+```toml
+[Radarr-Movies]
 ImportMode = "Move"
 
 # Copy files (preserves torrents for seeding)
+```
+
+```toml
+[Radarr-Movies]
 ImportMode = "Copy"
 ```
 
@@ -608,7 +624,7 @@ grep -i "import" ~/logs/Radarr-Movies.log
    ```toml
    [Radarr-Movies]
    Managed = true  # Must be true
-   ```
+```
 
 2. **Check category match:**
    ```toml
@@ -617,13 +633,13 @@ grep -i "import" ~/logs/Radarr-Movies.log
    Category = "radarr-movies"
 
    # Must match Radarr's qBittorrent download client category
-   ```
+```
 
 3. **Check LoopSleepTimer:**
    ```toml
    [Settings]
    LoopSleepTimer = 5  # Lower for faster detection
-   ```
+```
 
 4. **Review logs:**
    ```bash
@@ -696,7 +712,7 @@ grep -i "import" ~/logs/Radarr-Movies.log
 
    [Radarr-4K]
    Category = "radarr-4k"  # Different category
-   ```
+```
 
 3. **Check Arr's import mode:**
    - Use "Move" instead of "Copy" if duplicates persist
@@ -873,9 +889,15 @@ sequenceDiagram
 LoopSleepTimer = 3
 
 # Personal setup (few downloads)
+```
+
+```toml
 LoopSleepTimer = 5
 
 # Low-power device (Raspberry Pi)
+```
+
+```toml
 LoopSleepTimer = 10
 ```
 
@@ -899,9 +921,15 @@ Prevents importing fake/corrupt files.
 ImportMode = "Copy"
 
 # Public trackers (save space)
+```
+
+```toml
 ImportMode = "Move"
 
 # Mixed trackers
+```
+
+```toml
 ImportMode = "Auto"
 ```
 

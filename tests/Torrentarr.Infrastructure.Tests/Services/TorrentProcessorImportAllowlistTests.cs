@@ -76,7 +76,12 @@ public sealed class TorrentProcessorImportAllowlistTests : IDisposable
             await File.WriteAllTextAsync(sibling, "keep");
             var client = new FileClient([TorrentFile(0, "Movie/movie.mkv"), TorrentFile(1, "Movie/sample.txt")]);
 
-            var result = await ApplyAsync(CreateProcessor(), Torrent(content.FullName), Config(autoDelete: true), client, completed: true);
+            var seeding = new Mock<ISeedingService>();
+            seeding.Setup(s => s.HnrAllowsDeleteAsync(It.IsAny<TorrentInfo>(), It.IsAny<string>(), It.IsAny<CancellationToken>())).ReturnsAsync(true);
+            var deletion = new Mock<ISafeDeletionService>();
+            deletion.Setup(d => d.DeleteOwnedFileAsync(It.IsAny<string>(), It.IsAny<string>(), disallowed, It.IsAny<CancellationToken>()))
+                .ReturnsAsync(() => { File.Delete(disallowed); return true; });
+            var result = await ApplyAsync(CreateProcessor(seeding.Object, deletion: deletion.Object), Torrent(content.FullName), Config(autoDelete: true), client, completed: true);
 
             Ready(result).Should().BeTrue();
             File.Exists(allowed).Should().BeTrue();
@@ -424,14 +429,14 @@ public sealed class TorrentProcessorImportAllowlistTests : IDisposable
 
     private TorrentProcessor CreateProcessor(
         ISeedingService? seeding = null,
-        ITorrentCacheService? cache = null) => new(
+        ITorrentCacheService? cache = null, ISafeDeletionService? deletion = null) => new(
         NullLogger<TorrentProcessor>.Instance,
         new QBittorrentConnectionManager(NullLogger<QBittorrentConnectionManager>.Instance),
         _db,
         new TorrentarrConfig(),
         cache ?? new TorrentCacheService(NullLogger<TorrentCacheService>.Instance),
         new DatabaseRestartCoordinator(),
-        seedingService: seeding);
+        seedingService: seeding, safeDeletion: deletion);
 
     private static ArrInstanceConfig Config(bool autoDelete) => new()
     {

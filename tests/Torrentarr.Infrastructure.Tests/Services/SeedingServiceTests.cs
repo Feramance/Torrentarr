@@ -1,5 +1,7 @@
 using System.Collections.Generic;
 using FluentAssertions;
+using Moq;
+using Torrentarr.Core.Interfaces;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging.Abstractions;
 using Torrentarr.Core.Configuration;
@@ -22,13 +24,14 @@ public class SeedingServiceTests
             .UseInMemoryDatabase(Guid.NewGuid().ToString())
             .Options;
         var dbContext = new TorrentarrDbContext(options);
-        var mgr = new QBittorrentConnectionManager(NullLogger<QBittorrentConnectionManager>.Instance);
-        return new SeedingService(
-            NullLogger<SeedingService>.Instance,
-            dbContext,
-            config ?? new TorrentarrConfig(),
-            mgr,
-            stalled);
+        var client = new Mock<ITorrentClient>();
+        client.SetupGet(c => c.Capabilities).Returns(TorrentClientCapabilities.QBittorrent);
+        client.Setup(c => c.GetTorrentTrackersAsync(It.IsAny<string>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync([new() { Url = "https://tracker.example/announce", Status = 2 }]);
+        var registry = new Mock<ITorrentClientRegistry>();
+        registry.Setup(r => r.GetClient(It.IsAny<string>())).Returns(client.Object);
+        return new SeedingService(NullLogger<SeedingService>.Instance, dbContext, config ?? new TorrentarrConfig(), registry.Object, stalled);
+
     }
 
     [Fact]
@@ -167,6 +170,8 @@ public class SeedingServiceTests
         => new TorrentInfo
         {
             Hash = "aabbcc",
+            AddedOn = 1,
+            IsPrivate = false,
             Name = "Test Torrent",
             Progress = progress,
             Ratio = ratio,
@@ -306,6 +311,10 @@ public class SeedingServiceTests
     [InlineData("stalleddownload", false)]
     [InlineData("paused", false)]
     [InlineData("", false)]
+    [InlineData("pausedUP", true)]
+    [InlineData("stoppedUP", true)]
+    [InlineData("queuedUP", true)]
+    [InlineData("forcedUP", true)]
     public void IsUploadingState_DetectsUploadingStates(string state, bool expected)
     {
         SeedingService.IsUploadingState(state).Should().Be(expected);

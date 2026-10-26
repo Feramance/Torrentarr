@@ -541,6 +541,7 @@ export interface TorrentClientInfo {
 }
 
 export type MaintenanceOperation =
+  | "ErrorRecovery"
   | "OrphanScan"
   | "HardlinkAudit"
   | "UnregisteredCleanup"
@@ -561,6 +562,7 @@ export interface MaintenanceAction {
   path?: string;
   bytes: number;
   reason: string;
+  arguments?: Record<string, string>;
   destructive: boolean;
   blockedReason?: string;
   requiredCapabilities: string[];
@@ -596,6 +598,7 @@ export interface MaintenanceOperationResult {
 }
 
 export interface MaintenancePlan {
+  isDraft?: boolean;
   planId: string;
   expiresAt: string;
   configurationFingerprint: string;
@@ -612,6 +615,7 @@ export interface MaintenancePlan {
 }
 
 export interface MaintenanceRunSummary {
+  skippedReasons?: string[];
   blocked: number;
   pending: number;
   operationResults: MaintenanceOperationResult[];
@@ -626,11 +630,62 @@ export interface MaintenanceRunSummary {
   skipped: number;
   failed: number;
   bytesMoved: number;
+  bytesReclaimed?: number;
   result: string;
   errors: string[];
 }
 
 export interface MaintenanceStatus {
+  configurationFingerprint?: string;
+  cleanup?: {
+    clientInstanceId: string;
+    automatic: boolean;
+    nextRun?: string;
+    notices: string[];
+  }[];
+  inspections?: {
+    clientInstanceId: string;
+    lastSucceededAt?: string;
+    nextAttempt?: string;
+    consecutiveFailures: number;
+  }[];
+  recovery?: {
+    clientInstanceId: string;
+    torrentHash: string;
+    torrentName: string;
+    operation: MaintenanceOperation;
+    stage: string;
+    reason: string;
+    attempts: number;
+    failureSince?: string;
+  }[];
+  operations?: {
+    clientInstanceId: string;
+    operation: MaintenanceOperation;
+    enabled: boolean;
+    executionMode: string;
+    schedule: string;
+    nextRun?: string;
+    authorized: boolean;
+  }[];
+  protection?: {
+    clientInstanceId: string;
+    torrentHash: string;
+    torrentName: string;
+    tracker: string;
+    state: string;
+    reason: string;
+    observedSeedSeconds: number;
+    remainingSeedSeconds: number;
+    deadline?: string;
+    latestRecoveryStart?: string;
+    latestCompletion?: string;
+    estimatedCompletion?: string;
+    completionRisk?: string;
+    deadlineRisk: string;
+    nativeStopLimitRisk?: boolean;
+    localEstimate: boolean;
+  }[];
   running: boolean;
   currentRun?: MaintenanceRunSummary;
   lastRun?: MaintenanceRunSummary;
@@ -677,4 +732,16 @@ export interface LiveConfigurationEvent {
     viewDensity: string;
     liveArr: boolean;
   };
+}
+
+export interface TorrentAutomationStatus {
+  trackerIssues?: {
+    clientInstanceId: string;
+    torrentHash: string;
+    torrentName: string;
+    reason: string;
+  }[];
+  protection: NonNullable<MaintenanceStatus["protection"]>;
+  recovery: NonNullable<MaintenanceStatus["recovery"]>;
+  inspections: NonNullable<MaintenanceStatus["inspections"]>;
 }

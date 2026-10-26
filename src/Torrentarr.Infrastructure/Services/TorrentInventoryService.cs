@@ -62,6 +62,12 @@ public sealed class TorrentInventoryService(ITorrentClientRegistry registry, Tor
                 torrent.ClientInstanceId = id;
                 var item = new TorrentInventoryItem { Torrent = torrent, Client = new(client.Identity, client.Capabilities) };
                 result.Torrents.Add(item);
+                if (required.HasFlag(InventoryRequirements.Properties) && !torrent.IsPrivate.HasValue)
+                {
+                    try { torrent.IsPrivate = (await client.GetTorrentPropertiesAsync(torrent.Hash, ct))?.IsPrivate; }
+                    catch (Exception ex) when (ex is not OperationCanceledException)
+                    { Issue("properties-failed", "Torrent privacy inspection failed.", torrent, blocksOwnership: false); }
+                }
                 if (required.HasFlag(InventoryRequirements.Files))
                 {
                     if (!client.Capabilities.FileEnumeration) Issue("file-enumeration-unsupported", "Client cannot enumerate file ownership.", torrent);

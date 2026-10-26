@@ -1,5 +1,11 @@
 # Changelog
 
+## Unreleased
+
+### Safety
+- Gate every removal on effective age, incomplete-torrent stalled grace, enabled removal policy, ordinary seeding limits, and HnR. Revalidate candidates before deletion; block protected removals in Manage previews.
+- Require HnR clearance for Arr error cleanup, post-import invalid-media cleanup, and excluded-file deletion. Recheck clearance before recycling and client removal, with rollback on changed clearance. Missing protection services preserve torrents and files.
+
 ## v6.18.0-1 (2026-10-16)
 
 ### Features

@@ -115,6 +115,8 @@ public class TorrentInfo
     public double RatioLimit { get; set; }
     [JsonProperty("seeding_time_limit")]
     public long SeedingTimeLimit { get; set; }
+    [JsonProperty("inactive_seeding_time_limit")]
+    public long? InactiveSeedingTimeLimit { get; set; }
     [JsonProperty("dl_limit")]
     public long DownloadLimit { get; set; }
     [JsonProperty("up_limit")]

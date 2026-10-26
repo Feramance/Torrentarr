@@ -71,9 +71,9 @@
 ### 🛡️ Hit and Run Protection
 - **Automatic HnR tracking** – prevent torrent removal until seeding obligations are met
 - **Configurable thresholds** – per-tracker minimum ratio, seeding time, and download percentage
-- **Partial download handling** – ratio-only clearing for incomplete downloads
-- **Dead tracker bypass** – auto-exempt torrents from unregistered/unauthorized trackers
-- **Tracker inheritance** – define HnR rules once at qBit level, inherited by all Arr instances
+- **Partial download handling** – preserve incomplete obligations unless configured tracker rules permit provable clearance
+- **Conservative tracker evidence** – dead/unregistered messages never bypass protection
+- **Every tracker obligation** – evaluate all applicable configured requirements; unknown private trackers remain protected
 
 ### 💾 Disk Space & Resource Management
 - **Free space monitoring** – pause torrents when space is low
@@ -306,7 +306,7 @@ Perfect for personal Plex/Jellyfin/Emby servers:
 - Basic quality management
 - Request integration for family/friends
 
-[**Example Setup →**](getting-started/quickstart.md#scenario-1-simple-home-server)
+[**Example Setup →**](getting-started/quickstart.md#minimal-setup)
 
 ---
 
@@ -320,7 +320,7 @@ For users with extensive libraries and quality requirements:
 - Per-tracker seeding rules
 - Overseerr integration for public access
 
-[**Example Setup →**](getting-started/quickstart.md#scenario-3-power-user-with-quality-control)
+[**Example Setup →**](getting-started/quickstart.md#optional-automation)
 
 ---
 
@@ -334,7 +334,7 @@ Manage shared seedboxes with multiple users:
 - Per-user quality profiles
 - Centralized monitoring via WebUI
 
-[**Example Setup →**](getting-started/quickstart.md#scenario-4-docker-compose-full-stack)
+[**Example Setup →**](getting-started/quickstart.md#build-and-start)
 
 ---
 

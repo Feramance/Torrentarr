@@ -10,10 +10,13 @@ export type NavigableTab =
   | "lidarr"
   | "readarr"
   | "qbittorrent"
-  | "config";
+  | "config"
+  | "maintenance";
 
 export interface NavigateTabDetail {
   tab: NavigableTab;
+  manageClientId?: string;
+  preserveConfigDraft?: boolean;
   /** When set with tab=qbittorrent, expand/focus this category after navigation. */
   qbitCategory?: string;
   qbitInstance?: string;

@@ -250,12 +250,7 @@ public class QBitCategoryWorkerManager : BackgroundService
                     await processor.ProcessTorrentsAsync(category, ct);
                     await seeding.RemoveCompletedTorrentsAsync(category, ct);
 
-                    var completedRoot = _config.Settings.CompletedDownloadFolder;
-                    if (!string.IsNullOrWhiteSpace(completedRoot))
-                    {
-                        pathTracker.RemoveEmptyPathsUnder(completedRoot);
-                        pathTracker.ClearIfFolderEmpty(completedRoot);
-                    }
+                    ClientDownloadPaths.Clean(_config, pathTracker);
                 }
                 catch (OperationCanceledException) when (ct.IsCancellationRequested)
                 {

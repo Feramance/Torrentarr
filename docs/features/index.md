@@ -281,24 +281,27 @@ Automatically pause/resume torrents based on available disk space.
 ```toml
 [Settings]
 # Free space threshold
-FreeSpace = "50G"  # Pause downloads below 50 GB free
 
 # Directory to monitor
-FreeSpaceFolder = "/path/to/downloads"
 
 # Enable auto pause/resume
-AutoPauseResume = true
+
+
+[[qBit.FreeSpace]]
+Path = "/path/to/downloads"
+Enabled = true
+Limit = "50G"
 ```
 
 **How it works:**
 
-1. Torrentarr monitors `FreeSpaceFolder` disk usage
-2. When free space drops below `FreeSpace` threshold:
-   - Pauses all downloads
+1. Torrentarr monitors each enabled local monitor Path
+2. When free space drops below the shared filesystem reserve:
+   - Pauses managed downloading work that cannot fit
    - Keeps seeding active
    - Logs warning message
 3. When space frees up (files imported/deleted):
-   - Resumes paused downloads
+   - Resumes only Torrentarr-marked downloads that fit
    - Continues normal operation
 
 **Benefits:**
@@ -411,7 +414,6 @@ Token = "your-secret-token"
 
 # Theme
 Theme = "Dark"  # Dark or Light
-
 ```
 
 **Security:**

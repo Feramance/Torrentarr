@@ -637,13 +637,10 @@ class ArrWorkerService : BackgroundService
             _logger.LogDebug(ex, "Unable to update process metrics for {Instance}", _context.InstanceName);
         }
 
-        if (!_instanceConfig.SearchOnly
-            && !string.IsNullOrWhiteSpace(_config.Settings.CompletedDownloadFolder)
-            && _config.Settings.CompletedDownloadFolder != "CHANGE_ME")
+        if (!_instanceConfig.SearchOnly)
         {
             var pathTracker = scope.ServiceProvider.GetRequiredService<IImportPathTracker>();
-            pathTracker.RemoveEmptyPathsUnder(_config.Settings.CompletedDownloadFolder);
-            pathTracker.ClearIfFolderEmpty(_config.Settings.CompletedDownloadFolder);
+            ClientDownloadPaths.Clean(_config, pathTracker);
         }
 
     }

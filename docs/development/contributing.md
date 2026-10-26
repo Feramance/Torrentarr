@@ -12,8 +12,10 @@ Thank you for contributing to Torrentarr! This guide covers how to contribute ef
    ```
 3. **Set up development environment:**
    ```bash
-   make newenv    # Create virtual environment
-   make syncenv   # Install dependencies
+   dotnet restore
+   cd webui
+   npm ci
+   cd ..
    ```
    For pre-commit (including compile checks) you also need:
    ```bash
@@ -257,3 +259,8 @@ Thank you for making Torrentarr better!
 - [Testing](testing.md) - How to test your changes
 - [Development Guide](index.md) - Complete development documentation
 - [Release Process](release-process.md) - How releases work
+
+
+## Maintenance and documentation changes
+
+Use [maintenance verification](maintenance-verification.md) for model/schema/UI/docs coverage, isolated tests, frontend-before-Host builds and API drift checks. Update current guidance and the [branch inventory](branch-change-inventory.md); leave dated audit reports historical. Never bypass commit hooks.

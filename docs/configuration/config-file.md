@@ -70,19 +70,11 @@ The `[Settings]` section contains global configuration that applies to all Torre
 ```toml
 [Settings]
 # Internal config schema version - DO NOT MODIFY
-ConfigVersion = "6.14.6"
+ConfigVersion = "6.20.2"
 
 # Logging
 ConsoleLevel = "INFO"
 Logging = true
-
-# Paths
-CompletedDownloadFolder = "/data/downloads"
-FreeSpaceFolder = "/data/downloads"
-
-# Disk space management
-FreeSpace = "50G"
-AutoPauseResume = true
 
 # Timers
 NoInternetSleepTimer = 15
@@ -120,11 +112,11 @@ ProcessRestartDelay = 5
 ### ConfigVersion
 
 ```toml
-ConfigVersion = "6.14.6"
+ConfigVersion = "6.20.2"
 ```
 
 **Type:** String
-**Default:** `"6.14.6"`
+**Default:** `"6.20.2"`
 **Required:** Yes (managed automatically)
 
 Internal configuration schema version. **DO NOT MODIFY** this value manually. Torrentarr uses it to detect when config migrations are needed. Updated automatically when Torrentarr migrates an older config to the current format.
@@ -185,124 +177,45 @@ Enable or disable logging to files. When enabled, logs are written to:
 
 ---
 
-### CompletedDownloadFolder
+### Client download paths and free-space monitors
+
+Download roots and space protection are configured per torrent client, outside `[Settings]`:
 
 ```toml
-CompletedDownloadFolder = "/data/downloads"
+[TorrentClient.local]
+Type = "qbittorrent"
+Host = "localhost"
+Port = 8080
+DownloadPath = "/downloads"
+FreeSpace = [
+  { Path = "/data/downloads", Enabled = true, Limit = "50G" },
+  { Path = "/data/archive", Enabled = false, Limit = "100G" }
+]
+
+[[TorrentClient.local.Maintenance.PathMappings]]
+ClientPath = "/downloads"
+LocalPath = "/data/downloads"
 ```
 
-**Type:** String (path)
-**Required:** Yes
+The same fields work in legacy `[qBit]` and `[qBit-name]` sections. `DownloadPath` is the default root **as seen by the client**, used when creating missing categories. Existing category paths are preserved. Monitor `Path` values are absolute paths **as seen by Torrentarr**; mounts must already exist. Path mappings translate between these views without moving files.
 
-Path where qBittorrent saves completed downloads. This **must match** qBittorrent's "Default Save Path" setting.
+New clients have no monitors. New monitor rows start disabled with a `10G` limit. Limits accept nonnegative bytes or K/M/G/T suffixes (powers of 1024); use `Enabled = false` to disable a row. Duplicate paths are rejected, while temporarily unavailable paths may still be saved.
 
-**Finding this path:**
+Exactly one host-owned `FreeSpaceManager` reads the client inventories and allocates space per shared filesystem. Clients and paths on the same storage share one budget and the largest enabled reserve. Remaining active unmanaged downloads consume that budget too. Managed downloads are evaluated in queue order, reserving each torrent's remaining bytes once, and only downloads that do not fit are paused. User-paused torrents remain paused.
 
-1. Open qBittorrent
-2. Go to **Tools** → **Options** → **Downloads**
-3. Note the **Default Save Path**
+Unavailable enabled paths pause affected managed downloads and withhold resumes; healthy independent storage continues. Unmatched paths are logged and left alone. Disabling/removing a monitor does not automatically resume torrents paused by it. Changes apply on the next processing cycle.
 
-**Important:**
+#### Migration to 6.20.2
 
-- Use forward slashes `/` (even on Windows)
-- Don't include trailing slash
-- Path must be accessible to Torrentarr
-- Docker: Must be the path as Torrentarr sees it (inside container)
+Maintenance remains the canonical per-client configuration and all ten tools remain supported. Configure them in **Manage**. Existing maintenance values, scopes, limits, outcomes, and schedules are preserved. Interim Storage and Recovery values fill only missing maintenance settings. Explicit daily cleanup becomes equivalent per-operation scheduling, without enabling unrelated tools. Schema 6.20.2 changes session execution modes to Manual while preserving their schedules. See [Manage configuration](maintenance.md).
 
-**Examples:**
+#### Migration to 6.19.0
 
-```toml
-# Linux/Docker
-CompletedDownloadFolder = "/data/downloads"
+The old global `CompletedDownloadFolder`, `FreeSpace`, `FreeSpaceFolder`, `AutoPauseResume`, and `FreeSpaceThresholdGB` fields are migrated automatically, backed up to `config.toml.bak`, and removed from the saved file. Existing per-client values take precedence, including an explicitly empty monitor list.
 
-# Windows (use forward slashes!)
-CompletedDownloadFolder = "D:/Downloads/Complete"
+For one client, a missing download root inherits the old completed folder (reverse-mapped only when unambiguous). The monitor uses the old free-space folder, completed folder, then mapped client download path. The old limit and disabled state are preserved. With multiple clients, explicit client paths are used; ambiguous paths remain disabled and produce warnings for review. Migration does not create path mappings.
 
-# Network share (Docker)
-CompletedDownloadFolder = "/mnt/nas/downloads"
-```
-
----
-
-### FreeSpace
-
-```toml
-FreeSpace = "50G"
-```
-
-**Type:** String
-**Default:** `"-1"` (disabled)
-**Format:** Number + Unit (`K`, `M`, `G`, `T`)
-
-Minimum free space to maintain in download directory. When free space drops below this threshold, Torrentarr pauses downloads.
-
-**Units:**
-
-- `K` - Kilobytes
-- `M` - Megabytes
-- `G` - Gigabytes (recommended)
-- `T` - Terabytes
-
-**Examples:**
-
-```toml
-FreeSpace = "50G"    # 50 gigabytes
-FreeSpace = "100M"   # 100 megabytes
-FreeSpace = "1T"     # 1 terabyte
-FreeSpace = "-1"     # Disabled
-```
-
-**How it works:**
-
-1. Torrentarr monitors `FreeSpaceFolder` every loop
-2. If free space < `FreeSpace` threshold:
-   - Pauses all downloads
-   - Keeps seeding active
-   - Logs warning
-3. When space frees up:
-   - Resumes downloads automatically
-
-**Recommendation:** Set to 10-20% of your disk capacity.
-
----
-
-### FreeSpaceFolder
-
-```toml
-FreeSpaceFolder = "/data/downloads"
-```
-
-**Type:** String (path)
-**Default:** Same as `CompletedDownloadFolder`
-
-Folder to monitor for free space checks. Usually the same as `CompletedDownloadFolder`.
-
-**Use cases for different path:**
-
-- Download folder on SSD, monitoring HDD
-- Monitoring parent filesystem
-- Shared storage with multiple mount points
-
----
-
-### AutoPauseResume
-
-```toml
-AutoPauseResume = true
-```
-
-**Type:** Boolean
-**Default:** `true`
-
-Enable automatic pausing and resuming of torrents. **Required** for `FreeSpace` feature to work.
-
-When `true`:
-
-- Torrentarr can pause torrents when disk is full
-- Torrentarr can resume torrents when space frees up
-- Health checks can pause/resume stalled torrents
-
-**Recommendation:** Keep enabled.
+Legacy `TORRENTARR_SETTINGS_*` environment overrides and their `QBITRR_SETTINGS_*` aliases still apply at runtime through equivalent conversion, without being written to disk. Explicitly empty primary variables suppress their aliases.
 
 ---
 
@@ -525,9 +438,15 @@ Hostnames to ping for internet connectivity checks.
 PingURLS = ["one.one.one.one", "dns.google.com"]
 
 # Alternative DNS providers
+```
+
+```toml
 PingURLS = ["1.1.1.1", "8.8.8.8", "9.9.9.9"]
 
 # Mix of services
+```
+
+```toml
 PingURLS = ["cloudflare.com", "google.com", "github.com"]
 ```
 
@@ -641,12 +560,21 @@ Cron schedule for automatic updates (when `AutoUpdateEnabled = true`).
 AutoUpdateCron = "0 3 * * 0"
 
 # Every day at 2:00 AM
+```
+
+```toml
 AutoUpdateCron = "0 2 * * *"
 
 # Every Monday at 4:30 AM
+```
+
+```toml
 AutoUpdateCron = "30 4 * * 1"
 
 # First day of month at midnight
+```
+
+```toml
 AutoUpdateCron = "0 0 1 * *"
 ```
 
@@ -817,7 +745,13 @@ TCP port for the WebUI.
 
 ```toml
 Port = 6969   # http://localhost:6969/ui
+```
+
+```toml
 Port = 8080   # http://localhost:8080/ui
+```
+
+```toml
 Port = 443    # https://localhost:443/ui (with reverse proxy)
 ```
 
@@ -947,6 +881,8 @@ The `[qBit]` section configures the connection to qBittorrent.
 ```toml
 [qBit]
 Disabled = false
+DownloadPath = "/data/downloads"
+FreeSpace = [{ Path = "/data/downloads", Enabled = true, Limit = "10G" }]
 Host = "localhost"
 Port = 8080
 UserName = "admin"
@@ -1108,7 +1044,7 @@ MaximumETA = 172800  # 48 hours for large 4K files
 **Solutions:**
 
 1. **Check data types:**
-   ```toml
+   ```text
    # Wrong
    Port = "6969"  # String
 
@@ -1117,7 +1053,7 @@ MaximumETA = 172800  # 48 hours for large 4K files
    ```
 
 2. **Check enums:**
-   ```toml
+   ```text
    # Wrong
    ConsoleLevel = "info"
 
@@ -1153,11 +1089,9 @@ sudo systemctl restart torrentarr
 **Solution:** Check these are set:
 
 ```toml
-[Settings]
-CompletedDownloadFolder = "/path/to/downloads"  # Required
-
 [qBit]
 Host = "localhost"  # Required
+DownloadPath = "/path/to/downloads"  # Client-side root for category creation
 ```
 
 ---
@@ -1168,8 +1102,7 @@ Absolute minimum configuration to get started:
 
 ```toml
 [Settings]
-ConfigVersion = "6.14.6"
-CompletedDownloadFolder = "/data/downloads"
+ConfigVersion = "6.20.2"
 
 [WebUI]
 Host = "0.0.0.0"
@@ -1177,6 +1110,8 @@ Port = 6969
 
 [qBit]
 Disabled = false
+DownloadPath = "/data/downloads"
+FreeSpace = [{ Path = "/data/downloads", Enabled = true, Limit = "10G" }]
 Host = "localhost"
 Port = 8080
 UserName = "admin"

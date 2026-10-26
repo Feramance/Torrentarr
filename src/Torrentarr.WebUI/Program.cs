@@ -173,6 +173,7 @@ builder.Services.AddSingleton<ITorrentInventoryService, TorrentInventoryService>
 builder.Services.AddSingleton<IHardlinkInspector, HardlinkInspector>();
 builder.Services.AddSingleton<ISafeDeletionService, SafeDeletionService>();
 builder.Services.AddSingleton<IMaintenanceCoordinator, MaintenanceCoordinator>();
+builder.Services.AddSingleton<TorrentAutomationService>();
 builder.Services.AddScoped<ISeedingService, SeedingService>();
 builder.Services.AddHttpClient();
 builder.Services.AddHttpClient("ArrOpen").ConfigurePrimaryHttpMessageHandler(() => new HttpClientHandler { AllowAutoRedirect = false });
@@ -1223,35 +1224,8 @@ app.MapGet("/web/torrent-clients", async (ITorrentClientRegistry registry, Torre
     }
     return Results.Ok(clients);
 });
-app.MapGet("/web/maintenance/status", (IMaintenanceCoordinator maintenance) => Results.Ok(maintenance.GetStatus()));
-app.MapGet("/web/maintenance/history", (IMaintenanceCoordinator maintenance, int? limit) => Results.Ok(maintenance.GetHistory(limit ?? 50)));
-app.MapPost("/web/maintenance/preview", async (MaintenancePreviewRequest request, IMaintenanceCoordinator maintenance, CancellationToken ct) =>
-{
-    if (request.Operations.Any(op => !Enum.IsDefined(op))) return Results.BadRequest(new { error = "Unknown maintenance operation." });
-    return Results.Ok(await maintenance.PreviewAsync(request, ct));
-});
-app.MapPost("/web/maintenance/apply", async (MaintenanceApplyRequest request, IMaintenanceCoordinator maintenance, CancellationToken ct) =>
-{
-    try { return Results.Ok(await maintenance.ApplyAsync(request.PlanId, ct)); }
-    catch (KeyNotFoundException ex) { return Results.NotFound(new { error = ex.Message }); }
-    catch (InvalidOperationException ex) { return Results.Conflict(new { error = ex.Message }); }
-});
-app.MapPost("/web/maintenance/arm", async (MaintenanceArmRequest request, IMaintenanceCoordinator maintenance, CancellationToken ct) =>
-{
-    try { await maintenance.ArmAsync(request, ct); return Results.Ok(maintenance.GetStatus()); }
-    catch (KeyNotFoundException ex) { return Results.NotFound(new { error = ex.Message }); }
-    catch (InvalidOperationException ex) { return Results.Conflict(new { error = ex.Message }); }
-});
-app.MapPost("/web/maintenance/disarm", (MaintenanceClientsRequest request, IMaintenanceCoordinator maintenance) =>
-{ maintenance.Disarm(request.ClientInstanceIds); return Results.Ok(maintenance.GetStatus()); });
-app.MapPost("/web/maintenance/run", async (MaintenanceClientsRequest request, IMaintenanceCoordinator maintenance, CancellationToken ct) =>
-{
-    if (request.Operations.Any(op => !Enum.IsDefined(op))) return Results.BadRequest(new { error = "Unknown maintenance operation." });
-    try { return Results.Ok(await maintenance.RunAsync(request.ClientInstanceIds.Count == 0 ? null : request.ClientInstanceIds, "manual", ct, request.Operations)); }
-    catch (InvalidOperationException ex) { return Results.Conflict(new { error = ex.Message }); }
-});
-app.MapPost("/web/maintenance/cancel", (IMaintenanceCoordinator maintenance) =>
-{ maintenance.Cancel(); return Results.Ok(maintenance.GetStatus()); });
+app.MapTorrentMaintenanceEndpoints("/web", standalone: true);
+app.MapTorrentMaintenanceEndpoints("/api", standalone: true);
 
 app.MapGet("/web/qbit/overview", async (HttpRequest request, TorrentarrConfig cfg, ITorrentClientRegistry clientRegistry, CancellationToken ct) =>
 {

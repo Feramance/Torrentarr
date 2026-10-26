@@ -69,10 +69,28 @@ function fields(
               ]?.validate?.(value, context)
             : undefined;
         if (webError) return webError;
+        if (
+          (f.key === "Maintenance.Schedule" ||
+            (f.key.startsWith("Maintenance.Operations.") &&
+              f.key.endsWith(".Schedule") &&
+              value !== "")) &&
+          value != null &&
+          !validMaintenanceCron(String(value))
+        )
+          return "Maintenance schedule must be a valid five-field cron expression (UTC).";
         if (value == null || value === "")
           return definitions && f.required
             ? `${f.label} is required.`
             : undefined;
+        if (
+          (f.key.startsWith("Maintenance.") ||
+            f.key.startsWith("Storage.") ||
+            f.key.startsWith("Recovery.") ||
+            (definitions && section !== "TrackerProtection")) &&
+          f.kind === "number" &&
+          !Number.isInteger(Number(value))
+        )
+          return `${f.label} must be a whole number.`;
         const number = Number(value);
         if (f.minimum != null && number < f.minimum)
           return `${f.label} must be at least ${f.minimum}.`;
@@ -103,6 +121,10 @@ export function configureConfigFields(
     "BehindHttpsProxy",
     "UrlBase",
     "AllowInsecureExposure",
+    "AllowInsecureTokenQuery",
+    "Theme",
+    "ViewDensity",
+    "LiveArr",
   ]);
   const web = fields("WebUI", ["WebUI"]);
   WEB_SETTINGS_FIELDS = web.filter((f) => core.has(f.path![1]!));
@@ -320,6 +342,15 @@ export const ARR_TRACKER_FIELDS: FieldDefinition[] = [
   },
 ];
 
+const qualityKeys = new Set([
+  "UseTempForMissing",
+  "KeepTempProfile",
+  "QualityProfileMappings",
+  "ForceResetTempProfiles",
+  "TempProfileResetTimeoutMinutes",
+  "ProfileSwitchRetryAttempts",
+]);
+
 export function getArrFieldSets(arrKey: string) {
   const type = arrTypeFromSectionName(arrKey);
   const arr = fields("Arr", [], type);
@@ -328,16 +359,63 @@ export function getArrFieldSets(arrKey: string) {
     entryFields: arr.filter(
       (f) =>
         f.path?.[0] === "EntrySearch" &&
-        !["Ombi", "Overseerr"].includes(f.path[1]!),
+        !["Ombi", "Overseerr"].includes(f.path[1]!) &&
+        !qualityKeys.has(f.path[1]!),
     ),
-    entryOmbiFields: arr.filter((f) => f.path?.[1] === "Ombi"),
-    entryOverseerrFields: arr.filter((f) => f.path?.[1] === "Overseerr"),
+    qualityFields: arr.filter(
+      (f) =>
+        f.path?.[0] === "EntrySearch" &&
+        qualityKeys.has(f.path[1]!) &&
+        f.path[1] !== "QualityProfileMappings",
+    ),
+    entryOmbiFields: integrationFields(arr, "Ombi"),
+    entryOverseerrFields: integrationFields(arr, "Overseerr"),
     torrentFields: arr.filter(
       (f) => f.path?.[0] === "Torrent" && f.path[1] !== "SeedingMode",
     ),
     seedingFields: arr.filter(
       (f) => f.path?.[0] === "Torrent" && f.path[1] === "SeedingMode",
     ),
-    trackerFields: ARR_TRACKER_FIELDS,
+    trackerFields: [...ARR_TRACKER_FIELDS, ...getTrackerProtectionFields()],
   };
+}
+
+function integrationFields(
+  arr: FieldDefinition[],
+  name: string,
+): FieldDefinition[] {
+  const order = [`${name}URI`, `${name}APIKey`, "SkipTLSVerify"];
+  const selected = arr.filter((field) => field.path?.[1] === name);
+  return [
+    ...order.flatMap((key) => selected.filter((f) => f.path?.[2] === key)),
+    ...selected.filter((f) => !order.includes(f.path?.[2] ?? "")),
+  ];
+}
+
+export function validMaintenanceCron(expression: string): boolean {
+  const fields = expression.trim().split(/ +/);
+  const bounds = [
+    [0, 59],
+    [0, 23],
+    [1, 31],
+    [1, 12],
+    [0, 7],
+  ];
+  return (
+    fields.length === 5 &&
+    fields.every((field, index) => {
+      const [min, max] = bounds[index]!;
+      return field.split(",").every((part) => {
+        const match = /^(\*|\d+(?:-\d+)?)(?:\/(\d+))?$/.exec(part);
+        if (!match || (match[2] != null && Number(match[2]) <= 0)) return false;
+        if (match[1] === "*") return true;
+        const [start, end = start] = match[1]!.split("-").map(Number);
+        return start! >= min! && end! <= max! && start! <= end!;
+      });
+    })
+  );
+}
+
+export function getTrackerProtectionFields(): FieldDefinition[] {
+  return fields("TrackerProtection", ["Protection"]);
 }

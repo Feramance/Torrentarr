@@ -28,9 +28,15 @@ public interface IHardlinkInspector
 
 public interface ISafeDeletionService
 {
+    Task<bool> DeleteOwnedFileAsync(string clientInstanceId, string hash, string path, CancellationToken ct = default) => Task.FromResult(false);
     Task<SafeDeletionResult> RemoveTorrentAsync(string clientInstanceId, string hash, bool removeContent, CancellationToken ct = default);
     Task<SafeDeletionResult> RemoveMaintenanceTorrentAsync(string clientInstanceId, string hash, bool removeContent, TorrentInventory inventory, CancellationToken ct = default);
     Task<SafeDeletionResult> QuarantineFileAsync(string clientInstanceId, string localPath, CancellationToken ct = default);
+    IReadOnlyList<string> GetRecoveryPaths() => [];
+    IReadOnlyList<RecycleEntry> InspectRecycleEntries(string clientInstanceId) => [];
+    IReadOnlyList<RecycleFileSnapshot> InspectRecycleFiles(RecycleEntry entry) => [];
+    Task<long> PurgeRecycleEntryAsync(string clientInstanceId, string key, IReadOnlyList<RecycleFileSnapshot> files, CancellationToken ct = default) => throw new NotSupportedException();
+    void RegisterLegacyRecycleEntry(string clientInstanceId, string path) => throw new NotSupportedException();
     Task<int> CleanupExpiredAsync(string clientInstanceId, CancellationToken ct = default);
 }
 
@@ -41,8 +47,7 @@ public interface IMaintenanceCoordinator
     MaintenanceStatus GetStatus();
     Task<MaintenancePlan> PreviewAsync(MaintenancePreviewRequest request, CancellationToken ct = default);
     Task<MaintenanceRunSummary> ApplyAsync(string planId, CancellationToken ct = default);
-    Task ArmAsync(MaintenanceArmRequest request, CancellationToken ct = default);
-    void Disarm(IEnumerable<string> instanceIds);
+    Task<MaintenanceRunSummary> ApplyOnceAsync(string planId, CancellationToken ct = default);
     Task<MaintenanceRunSummary> RunAsync(IEnumerable<string>? instanceIds = null, string trigger = "manual", CancellationToken ct = default, IEnumerable<MaintenanceOperation>? operations = null);
     void Cancel();
     IReadOnlyList<MaintenanceRunSummary> GetHistory(int limit = 50);

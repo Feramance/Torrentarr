@@ -1,5 +1,5 @@
 # Torrentarr Configuration Example
-# This file is 100% compatible with qBitrr config.toml
+# Legacy qBitrr settings are migrated automatically on load.
 # Copy this file to one of the following locations:
 #   - ~/config/config.toml
 #   - ~/.config/qbitrr/config.toml
@@ -8,25 +8,13 @@
 
 [Settings]
 # Internal config schema version - managed automatically
-ConfigVersion = "6.18.0"
+ConfigVersion = "6.20.2"
 
 # Logging level: CRITICAL, ERROR, WARNING, NOTICE, INFO, DEBUG, TRACE
 ConsoleLevel = "INFO"
 
 # Enable logging to files (logs/ directory)
 Logging = true
-
-# Path to completed downloads folder
-CompletedDownloadFolder = "/downloads/completed"
-
-# Desired free space (-1 to disable): K=kilobytes, M=megabytes, G=gigabytes, T=terabytes
-FreeSpace = "10G"
-
-# Folder to check for free space
-FreeSpaceFolder = "/downloads"
-
-# Enable automatic pause/resume of torrents based on free space
-AutoPauseResume = true
 
 # Sleep time when no internet connection (seconds)
 NoInternetSleepTimer = 15
@@ -101,6 +89,10 @@ Theme = "Dark"
 ViewDensity = "Comfortable"
 
 [qBit]
+# Default path as seen by this torrent client (category creation uses this root).
+DownloadPath = "/downloads/completed"
+# Paths as seen by Torrentarr. One manager shares budgets across clients on the same filesystem.
+FreeSpace = [{ Path = "/downloads", Enabled = false, Limit = "10G" }]
 # Disable qBittorrent integration (headless search-only mode)
 Disabled = false
 
@@ -216,3 +208,55 @@ SearchByYear = true
 # APIKey = "your-4k-radarr-api-key"
 # Managed = true
 # Category = "radarr-4k"
+
+# Configure these tools in Manage. Optional maintenance is disabled by default.
+[qBit.Maintenance]
+Enabled = false
+Scope = 'managed'
+Schedule = '*/15 * * * *'
+PlanTtlMinutes = 30
+MinimumTorrentAgeMinutes = 10
+ExplicitCategories = []
+ExcludedCategories = []
+ExcludedTags = []
+
+# Explicit mappings describe the same folder in the client and Torrentarr.
+# [[qBit.Maintenance.PathMappings]]
+# ClientPath = '/downloads'
+# LocalPath = '/data/downloads'
+
+[qBit.Maintenance.Orphans]
+Enabled = false
+ScanRoots = []
+MinimumAgeMinutes = 1440
+MaxFilesPerRun = 10
+MaxInspectedFilesPerRun = 10000
+ExcludePatterns = []
+
+[qBit.Maintenance.RecycleBin]
+Enabled = true
+Path = ''
+RetentionEnabled = true
+RetentionDays = 30
+MaxTorrentMovesPerRun = 10
+MaxFilesDeletedPerRun = 100
+SplitByClient = true
+SplitByCategory = false
+ResumeDataPath = ''
+
+[qBit.Maintenance.ErrorRecovery]
+Enabled = false
+Outcome = 'keep'
+States = ['error', 'missingFiles']
+MaxRepairAttempts = 1
+MaxPerRun = 2
+RetryMinutes = 10
+RecheckTimeoutMinutes = 60
+SustainedFailureMinutes = 1440
+HealthyResetMinutes = 60
+
+# Example persistent daily orphan scan; keep disabled until roots are configured.
+[qBit.Maintenance.Operations.OrphanScan]
+Enabled = false
+ExecutionMode = 'manual'
+Schedule = '15 3 * * *'
