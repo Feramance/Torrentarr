@@ -201,9 +201,9 @@ The same fields work in legacy `[qBit]` and `[qBit-name]` sections. `DownloadPat
 
 New clients have no monitors. New monitor rows start disabled with a `10G` limit. Limits accept nonnegative bytes or K/M/G/T suffixes (powers of 1024); use `Enabled = false` to disable a row. Duplicate paths are rejected, while temporarily unavailable paths may still be saved.
 
-Exactly one host-owned `FreeSpaceManager` reads the client inventories and allocates space per shared filesystem. Clients and paths on the same storage share one budget and the largest enabled reserve. Remaining active unmanaged downloads consume that budget too. Managed downloads are evaluated in queue order, reserving each torrent's remaining bytes once, and only downloads that do not fit are paused. User-paused torrents remain paused.
+Exactly one host-owned `FreeSpaceManager` reads the client inventories and allocates space per shared filesystem. Clients and paths on the same storage share one budget and the largest enabled reserve. Remaining active unmanaged downloads consume that budget too. Managed downloads are evaluated globally oldest first by added date, reserving each torrent's remaining bytes once, and only downloads that do not fit are paused. User-paused torrents remain paused.
 
-Unavailable enabled paths pause affected managed downloads and withhold resumes; healthy independent storage continues. If an enabled client’s torrent inventory is unavailable, all resumes are withheld because its download locations are unknown. Unmatched paths are logged and left alone. Disabling/removing a monitor does not automatically resume torrents paused by it. Changes apply on the next processing cycle.
+Unavailable enabled paths pause affected managed downloads and withhold resumes; healthy independent storage continues. If an enabled client’s torrent inventory is unavailable, all resumes are withheld because its download locations are unknown. Unresolved active download paths also withhold resumes across monitored storage. Unmatched paths are logged and left alone. Disabling/removing a monitor does not automatically resume torrents paused by it. Changes apply on the next processing cycle.
 
 #### Migration to 6.20.2
 

@@ -312,5 +312,41 @@ public sealed class FreeSpaceReviewTests : IDisposable
         (await service.ProcessAsync(new HashSet<string> { "movies" })).Resumed.Should().Be(1);
     }
 
+    [Theory]
+    [InlineData("downloading", false)]
+    [InlineData("queuedDL", false)]
+    [InlineData("pausedDL", true)]
+    [InlineData("uploading", true)]
+    public async Task UnmappedActiveDownloads_WithholdResumesWithoutPausingUnknownPaths(string state, bool resumes)
+    {
+        var unknown = new TorrentInfo { Hash = "unknown", State = state, Category = "movies", AmountLeft = 80 };
+        var paused = new TorrentInfo { Hash = "paused", State = "pausedDL", Category = "movies", Tags = "qBitrr-free_space_paused", AmountLeft = 1 };
+        var first = Client("one", true, unknown);
+        var second = Client("two", true, paused);
+        unknown.SavePath = "/remote/unmapped";
+        _config.TorrentClients["one"].Maintenance.PathMappings = [new() { ClientPath = "/known", LocalPath = Path.GetTempPath() }];
+        (await Service().ProcessAsync(new HashSet<string> { "movies" })).Resumed.Should().Be(resumes ? 1 : 0);
+        first.Verify(c => c.PauseTorrentAsync(It.IsAny<string>(), It.IsAny<CancellationToken>()), Times.Never);
+        second.Verify(c => c.ResumeTorrentAsync("paused", It.IsAny<CancellationToken>()), resumes ? Times.Once() : Times.Never());
+    }
+
+    [Theory]
+    [InlineData("downloading")]
+    [InlineData("pausedDL")]
+    public async Task SharedDisk_AllocatesOldestFirstAcrossClientLocalQueuePositions(string state)
+    {
+        var newer = new TorrentInfo { Hash = "new", State = state, Category = "movies", AmountLeft = 60, AddedOn = 2, Priority = 1, Tags = "qBitrr-free_space_paused" };
+        var older = new TorrentInfo { Hash = "old", State = state, Category = "movies", AmountLeft = 60, AddedOn = 1, Priority = 2, Tags = "qBitrr-free_space_paused" };
+        var first = Client("new", true, newer);
+        var second = Client("old", true, older);
+        SetLimit("10");
+        var service = new SharedDiskService(_config, _registry.Object, _db, "other-disk");
+        await service.ProcessAsync(new HashSet<string> { "movies" });
+        first.Verify(c => c.PauseTorrentAsync("new", It.IsAny<CancellationToken>()), state == "downloading" ? Times.Once() : Times.Never());
+        first.Verify(c => c.ResumeTorrentAsync("new", It.IsAny<CancellationToken>()), Times.Never);
+        second.Verify(c => c.PauseTorrentAsync("old", It.IsAny<CancellationToken>()), Times.Never);
+        second.Verify(c => c.ResumeTorrentAsync("old", It.IsAny<CancellationToken>()), state == "pausedDL" ? Times.Once() : Times.Never());
+    }
+
     public void Dispose() => _db.Dispose();
 }

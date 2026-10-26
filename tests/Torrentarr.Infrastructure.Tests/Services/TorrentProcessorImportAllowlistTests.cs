@@ -61,8 +61,10 @@ public sealed class TorrentProcessorImportAllowlistTests : IDisposable
         Ready(result).Should().BeFalse();
     }
 
-    [Fact]
-    public async Task CompletedTorrent_AutoDelete_RemovesOnlyOwnedDisallowedFiles()
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task CompletedTorrent_AutoDelete_RemovesOnlyOwnedDisallowedFiles(bool repaired)
     {
         var root = Directory.CreateTempSubdirectory("torrentarr-allowlist-");
         try
@@ -81,12 +83,16 @@ public sealed class TorrentProcessorImportAllowlistTests : IDisposable
             var deletion = new Mock<ISafeDeletionService>();
             deletion.Setup(d => d.DeleteOwnedFileAsync(It.IsAny<string>(), It.IsAny<string>(), disallowed, It.IsAny<CancellationToken>()))
                 .ReturnsAsync(() => { File.Delete(disallowed); return true; });
-            var result = await ApplyAsync(CreateProcessor(seeding.Object, deletion: deletion.Object), Torrent(content.FullName), Config(autoDelete: true), client, completed: true);
+            var torrent = Torrent(content.FullName);
+            if (repaired) MaintenancePersistence.Write(_db, MaintenancePersistence.Key(torrent.ClientInstanceId, torrent.Hash, "recovery:ErrorRecovery"),
+                new RecoveryIncident { AddedOn = torrent.AddedOn, Stage = "checked", Attempts = 1 });
+            var result = await ApplyAsync(CreateProcessor(seeding.Object, deletion: deletion.Object), torrent, Config(autoDelete: true), client, completed: true);
 
-            Ready(result).Should().BeTrue();
+            Ready(result).Should().Be(!repaired);
             File.Exists(allowed).Should().BeTrue();
-            File.Exists(disallowed).Should().BeFalse();
+            File.Exists(disallowed).Should().Be(repaired);
             File.Exists(sibling).Should().BeTrue();
+            deletion.Verify(d => d.DeleteOwnedFileAsync(It.IsAny<string>(), It.IsAny<string>(), disallowed, It.IsAny<CancellationToken>()), repaired ? Times.Never() : Times.Once());
         }
         finally
         {

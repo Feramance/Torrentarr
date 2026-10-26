@@ -27,7 +27,7 @@ Every torrent removal and deletion of referenced torrent content requires curren
 
 Manual mode applies a reviewed preview once. Automatic mode runs on the saved schedule without requiring a restart and retains scheduling across restarts. Existing session settings migrate to Manual with their schedules preserved. Cron expressions use UTC. Missed runs are not replayed; persisted claims prevent the same scheduled minute from running twice after restart.
 
-The maintenance coordinator owns repair execution. Normal torrent processing and protection inspection observe repair incidents and preserve unresolved torrents. Durable request claims prevent duplicate checks across processes. Failed or unconfirmed checks do not authorize deletion. Recovery recycling requires an explicit outcome, confirmed completion, a continuously observed failure window, and all ownership and seeding safeguards.
+The maintenance coordinator owns repair execution. Normal torrent processing and protection inspection observe repair incidents and preserve unresolved torrents. Durable request claims prevent duplicate checks across processes. Failed or unconfirmed checks do not authorize deletion. Once healthy, repaired torrents can continue file filtering and Arr imports while removal remains protected until the healthy reset. Recovery recycling requires an explicit outcome, confirmed completion, a continuously observed failure window, and all ownership and seeding safeguards.
 
 ## Recycling and retention
 

@@ -309,7 +309,9 @@ public class TorrentProcessor : ITorrentProcessor
         string contentPath,
         CancellationToken ct)
     {
-        if (!arrCfg.Torrent.AutoDelete || _mediaValidation == null)
+        if (!arrCfg.Torrent.AutoDelete || _mediaValidation == null
+            || MaintenanceRecovery.BlocksAutomaticRemoval(_dbContext, torrent,
+                _config.GetTorrentClient(torrent.ClientInstanceId)?.Maintenance.ErrorRecovery ?? new ErrorRecoveryConfig()))
             return;
 
         var allowlist = arrCfg.Torrent.FileExtensionAllowlist.Count > 0
@@ -436,7 +438,8 @@ public class TorrentProcessor : ITorrentProcessor
         if (MaintenanceRecovery.IsErrorState(torrent, recovery) || MaintenanceRecovery.Read(_dbContext, torrent, "ErrorRecovery").Stage != "new")
             MaintenanceRecovery.Observe(_dbContext, torrent, MaintenanceOperation.ErrorRecovery.ToString(),
             MaintenanceRecovery.IsErrorState(torrent, recovery), recovery, DateTimeOffset.UtcNow);
-        if (MaintenanceRecovery.BlocksAutomaticRemoval(_dbContext, torrent, recovery))
+        var recoveryBlocksRemoval = MaintenanceRecovery.BlocksAutomaticRemoval(_dbContext, torrent, recovery);
+        if (MaintenanceRecovery.IsErrorState(torrent, recovery))
         {
             _logger.LogDebug("Keeping {Hash}: recovery is pending, disabled, or unsuccessful", torrent.Hash);
             return;
@@ -447,7 +450,7 @@ public class TorrentProcessor : ITorrentProcessor
         // ================================================================================
 
         // Branch 1: Custom format unmet → delete (qBitrr _process_single_torrent_delete_cfunmet)
-        if (_importService != null
+        if (!recoveryBlocksRemoval && _importService != null
             && arrCfg?.Search.CustomFormatUnmetSearch == true
             && !HasTag(torrent, IgnoredTag)
             && !HasTag(torrent, FreeSpacePausedTag)
@@ -465,7 +468,7 @@ public class TorrentProcessor : ITorrentProcessor
         }
         // Branch 2: Ratio/seed limit met AND not leave_alone AND fully downloaded → delete
         // (qBitrr line 6106-6109: remove_torrent and not leave_alone and amount_left==0)
-        else if (removeTorrent && !leaveAlone && torrent.AmountLeft == 0)
+        else if (!recoveryBlocksRemoval && removeTorrent && !leaveAlone && torrent.AmountLeft == 0)
         {
             _logger.LogWarning("Removal requested (ratio/seed limit reached): [{Name}] | Ratio[{Ratio:F2}] | SeedingTime[{SeedTime}s] | Hash[{Hash}]",
                 torrent.Name, torrent.Ratio, torrent.SeedingTime, torrent.Hash);
@@ -641,7 +644,7 @@ public class TorrentProcessor : ITorrentProcessor
 
                 _cache.MarkFileFiltered(torrent.QBitInstanceName, torrent.Hash);
             }
-            if (leaveAlone || state == TorrentState.ForcedUploading)
+            if (leaveAlone && !recoveryBlocksRemoval || state == TorrentState.ForcedUploading)
             {
                 _logger.LogTrace("Completed torrent — allowing seeding: [{Name}]", torrent.Name);
             }
@@ -810,8 +813,7 @@ public class TorrentProcessor : ITorrentProcessor
         ITorrentClient client, TorrentInfo torrent, bool deleteFiles, CancellationToken ct,
         Func<TorrentInfo, Task<bool>>? stillApplies = null)
     {
-        if (!torrent.Category.Equals(_config.Settings.FailedCategory, StringComparison.OrdinalIgnoreCase)
-            && MaintenanceRecovery.BlocksAutomaticRemoval(_dbContext, torrent,
+        if (MaintenanceRecovery.BlocksAutomaticRemoval(_dbContext, torrent,
                 _config.GetTorrentClient(torrent.ClientInstanceId)?.Maintenance.ErrorRecovery ?? new ErrorRecoveryConfig())) return false;
         var current = (await client.GetTorrentsAsync(cancellationToken: ct)).FirstOrDefault(t => t.Hash.Equals(torrent.Hash, StringComparison.OrdinalIgnoreCase));
         if (current == null || !SeedingService.SameRemovalCandidate(torrent, current)) return false;
@@ -1530,6 +1532,8 @@ public class TorrentProcessor : ITorrentProcessor
 
     private async Task TryDeleteTorrentOwnedFileAsync(TorrentInfo torrent, string relativePath, CancellationToken ct)
     {
+        if (MaintenanceRecovery.BlocksAutomaticRemoval(_dbContext, torrent,
+            _config.GetTorrentClient(torrent.ClientInstanceId)?.Maintenance.ErrorRecovery ?? new ErrorRecoveryConfig())) return;
         try
         {
             var path = ResolveTorrentOwnedPath(torrent, relativePath);

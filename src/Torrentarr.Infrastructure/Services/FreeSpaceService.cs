@@ -165,13 +165,17 @@ public class FreeSpaceService(
         var monitors = ReadMonitors();
         if (monitors.Count == 0) return new(0, 0, 0, false);
         var inventory = await FreeSpaceInventory.ReadAsync(config, registry, logger, cancellationToken);
-        var assignments = inventory.Torrents.Select(item => (Item: item, Monitor: Match(item, monitors))).Where(a => a.Monitor != null).ToList();
+        var assignments = inventory.Torrents.Select(item => (Item: item, Monitor: Match(item, monitors))).ToList();
+        var allocationComplete = inventory.Complete && assignments.All(a => a.Monitor != null
+            || !TorrentPolicyHelper.IsFreeSpaceDownloadState(a.Item.Torrent.State)
+            || TorrentPolicyHelper.IsPausedDownloadStateForFreeSpace(a.Item.Torrent.State));
+        if (!allocationComplete) logger.LogWarning("FreeSpace: unresolved download locations; automatic resumes withheld");
         static string Key(Monitor m) => m.Space?.Identity ?? $"unavailable:{m.Client}:{m.Config.Path}";
         int paused = 0, resumed = 0;
         foreach (var group in monitors.GroupBy(Key))
         {
             var rows = group.ToList();
-            var items = assignments.Where(a => Key(a.Monitor!) == group.Key).Select(a => a.Item).ToList();
+            var items = assignments.Where(a => a.Monitor != null && Key(a.Monitor) == group.Key).Select(a => a.Item).ToList();
             var available = rows[0].Space?.FreeBytes ?? 0;
             var reserve = rows.Max(m => FreeSpaceThreshold.Parse(m.Config.Limit));
             // Saturate subtraction so very large torrent inventories cannot overflow into free space.
@@ -182,11 +186,10 @@ public class FreeSpaceService(
             foreach (var item in items.Where(i => !Managed(i) && TorrentPolicyHelper.IsFreeSpaceDownloadState(i.Torrent.State)
                 && !TorrentPolicyHelper.IsPausedDownloadStateForFreeSpace(i.Torrent.State))) Reserve(Math.Max(0, item.Torrent.AmountLeft));
 
-            var safe = rows.All(m => m.Space != null) && inventory.Complete;
+            var safe = rows.All(m => m.Space != null) && allocationComplete;
             var resumes = new List<Func<Task>>();
             var ordered = items.Where(Managed)
-                .OrderBy(i => TorrentPolicyHelper.TorrentQueuePositionSortKey(i.Torrent).InactiveQueueGroup)
-                .ThenBy(i => TorrentPolicyHelper.TorrentQueuePositionSortKey(i.Torrent).Nq).ThenBy(i => i.Torrent.AddedOn);
+                .OrderBy(i => i.Torrent.AddedOn);
             foreach (var item in ordered)
             {
                 cancellationToken.ThrowIfCancellationRequested();
