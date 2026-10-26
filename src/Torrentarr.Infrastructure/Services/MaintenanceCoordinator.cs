@@ -887,48 +887,49 @@ public sealed class MaintenanceCoordinator : BackgroundService, IMaintenanceCoor
         var cursorKey = MaintenancePersistence.Key(id, "", "cursor:OrphanScan");
         var previous = MaintenancePersistence.Read<ScanCursor>(cursorDb, cursorKey).Position;
         if (cursors != null) cursors[cursorKey] = "";
-        foreach (var mapping in cfg.Maintenance.PathMappings.Where(m => cfg.Maintenance.Orphans.ScanRoots.Contains(m.LocalPath)))
+        var options = new EnumerationOptions
+        {
+            RecurseSubdirectories = true,
+            AttributesToSkip = FileAttributes.ReparsePoint,
+            IgnoreInaccessible = false,
+            ReturnSpecialDirectories = false
+        };
+        var files = cfg.Maintenance.PathMappings.Where(m => cfg.Maintenance.Orphans.ScanRoots.Contains(m.LocalPath)).SelectMany(mapping =>
         {
             if (!Directory.Exists(mapping.LocalPath)) throw new IOException("Orphan root is missing or inaccessible.");
             if (_paths.ValidateLocalPath(mapping.LocalPath, mapping.LocalPath) != null) throw new IOException("Orphan root is inaccessible or unsafe.");
-            var options = new EnumerationOptions
+            return Directory.EnumerateFiles(mapping.LocalPath, "*", options).Select(file => { ct.ThrowIfCancellationRequested(); return (File: file, Mapping: mapping); });
+        });
+        // shortcut: ordering enumerates names across all roots; use a filesystem index for very large roots.
+        foreach (var (file, mapping) in files.OrderBy(entry => entry.File, StringComparer.Ordinal))
+        {
+            ct.ThrowIfCancellationRequested();
+            if (string.CompareOrdinal(file, previous) <= 0) continue;
+            if (yielded >= cfg.Maintenance.Orphans.MaxFilesPerRun || inspected++ >= cfg.Maintenance.Orphans.MaxInspectedFilesPerRun) yield break;
+            if (cursors != null) cursors[cursorKey] = file;
+            if (!inspectedPaths.Add(Path.GetFullPath(file))) continue;
+            if (result != null) result.Examined++;
+            if (_paths.ValidateLocalPath(file, mapping.LocalPath, requireFile: true) != null) throw new IOException("Orphan file is inaccessible or unsafe.");
+            if (IsAutomationStorage(file) || recoveryPaths.Any(p => _paths.IsSafeDescendant(file, p))) continue;
+            var recycleRoot = cfg.Maintenance.RecycleBin.Path;
+            if (string.IsNullOrWhiteSpace(recycleRoot) && cfg.Maintenance.PathMappings.Count > 0)
+                recycleRoot = Path.Combine(cfg.Maintenance.PathMappings[0].LocalPath, ".torrentarr-recycle");
+            if (!string.IsNullOrWhiteSpace(recycleRoot) && _paths.IsSafeDescendant(file, recycleRoot)) continue;
+            if (referenced.Contains(Path.GetFullPath(file))) continue;
+            var relative = Path.GetRelativePath(mapping.LocalPath, file);
+            if (cfg.Maintenance.Orphans.ExcludePatterns.Any(pattern => FileSystemName.MatchesSimpleExpression(pattern, relative, OperatingSystem.IsWindows()))) continue;
+            if ((DateTime.UtcNow - File.GetLastWriteTimeUtc(file)).TotalMinutes < cfg.Maintenance.Orphans.MinimumAgeMinutes) continue;
+            if ((File.GetAttributes(file) & FileAttributes.ReparsePoint) != 0) continue;
+            yielded++;
+            yield return new MaintenanceAction
             {
-                RecurseSubdirectories = true,
-                AttributesToSkip = FileAttributes.ReparsePoint,
-                IgnoreInaccessible = false,
-                ReturnSpecialDirectories = false
+                Kind = MaintenanceActionKind.QuarantineFile,
+                ClientInstanceId = id,
+                Path = file,
+                Bytes = new FileInfo(file).Length,
+                Reason = "File is not referenced by any connected torrent.",
+                Destructive = true
             };
-            // shortcut: ordering enumerates names across the root; use a filesystem index for very large roots.
-            foreach (var file in Directory.EnumerateFiles(mapping.LocalPath, "*", options).Select(file => { ct.ThrowIfCancellationRequested(); return file; }).Distinct().Order(StringComparer.Ordinal))
-            {
-                ct.ThrowIfCancellationRequested();
-                if (string.CompareOrdinal(file, previous) <= 0) continue;
-                if (yielded >= cfg.Maintenance.Orphans.MaxFilesPerRun || inspected++ >= cfg.Maintenance.Orphans.MaxInspectedFilesPerRun) yield break;
-                if (cursors != null) cursors[cursorKey] = file;
-                if (!inspectedPaths.Add(Path.GetFullPath(file))) continue;
-                if (result != null) result.Examined++;
-                if (_paths.ValidateLocalPath(file, mapping.LocalPath, requireFile: true) != null) throw new IOException("Orphan file is inaccessible or unsafe.");
-                if (IsAutomationStorage(file) || recoveryPaths.Any(p => _paths.IsSafeDescendant(file, p))) continue;
-                var recycleRoot = cfg.Maintenance.RecycleBin.Path;
-                if (string.IsNullOrWhiteSpace(recycleRoot) && cfg.Maintenance.PathMappings.Count > 0)
-                    recycleRoot = Path.Combine(cfg.Maintenance.PathMappings[0].LocalPath, ".torrentarr-recycle");
-                if (!string.IsNullOrWhiteSpace(recycleRoot) && _paths.IsSafeDescendant(file, recycleRoot)) continue;
-                if (referenced.Contains(Path.GetFullPath(file))) continue;
-                var relative = Path.GetRelativePath(mapping.LocalPath, file);
-                if (cfg.Maintenance.Orphans.ExcludePatterns.Any(pattern => FileSystemName.MatchesSimpleExpression(pattern, relative, OperatingSystem.IsWindows()))) continue;
-                if ((DateTime.UtcNow - File.GetLastWriteTimeUtc(file)).TotalMinutes < cfg.Maintenance.Orphans.MinimumAgeMinutes) continue;
-                if ((File.GetAttributes(file) & FileAttributes.ReparsePoint) != 0) continue;
-                yielded++;
-                yield return new MaintenanceAction
-                {
-                    Kind = MaintenanceActionKind.QuarantineFile,
-                    ClientInstanceId = id,
-                    Path = file,
-                    Bytes = new FileInfo(file).Length,
-                    Reason = "File is not referenced by any connected torrent.",
-                    Destructive = true
-                };
-            }
         }
         if (cursors != null) cursors[cursorKey] = "";
     }
@@ -1030,7 +1031,7 @@ public sealed class MaintenanceCoordinator : BackgroundService, IMaintenanceCoor
             if (healthy && unregistered && !MaintenanceRecovery.IsError(item.Torrent, cfg.Maintenance)) continue;
             var state = MaintenanceRecovery.Read(db, item.Torrent, operation.ToString());
             var recycle = !healthy && MaintenanceRecovery.CanRecycle(state, config, DateTimeOffset.UtcNow) && (unregistered || config.Outcome == "recycle");
-            var retry = state.Attempts < config.MaxRepairAttempts && state.Stage is "new" or "rejected"
+            var retry = state.Attempts < config.MaxRepairAttempts && state.Stage is "new" or "rejected" or "checked" or "recurring"
                 && (state.RequestedAt == null || DateTimeOffset.UtcNow - state.RequestedAt >= TimeSpan.FromMinutes(config.RetryMinutes));
             if (!retry && !recycle) continue;
             if (!recycle && rechecks >= config.MaxPerRun) continue;

@@ -169,7 +169,10 @@ public sealed class MaintenanceCompatibilityTests : IDisposable
                 var act = () => new ConfigurationLoader(ConfigPath).Load();
                 act.Should().NotThrow("documented TOML must load: {0}", file);
             }
-        File.Copy(Path.Combine(root, "config.example.toml"), ConfigPath, true);
+        // The shipped example uses Linux local paths; adapt its monitor to the test platform.
+        var example = File.ReadAllText(Path.Combine(root, "config.example.toml"));
+        example = example.Replace("Path = \"/downloads\"", "Path = '" + _folder.Replace('\\', '/') + "'");
+        File.WriteAllText(ConfigPath, example);
         new ConfigurationLoader(ConfigPath).Load().GetTorrentClient("qBit")!.Maintenance.Enabled.Should().BeFalse();
     }
 }

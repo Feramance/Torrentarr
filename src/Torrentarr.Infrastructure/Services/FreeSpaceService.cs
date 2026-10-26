@@ -147,8 +147,8 @@ public class FreeSpaceService(
                 if (prefix?.Space?.Identity == identity) return prefix;
                 var sameDisk = own.FirstOrDefault(m => m.Space?.Identity == identity);
                 if (sameDisk != null) return sameDisk;
-                // Clients without enabled monitors can still consume storage protected by another client.
-                if (own.Count == 0) return monitors.FirstOrDefault(m => m.Space?.Identity == identity);
+                // Downloads consume shared storage even when their client monitors a different disk.
+                return monitors.FirstOrDefault(m => m.Space?.Identity == identity);
             }
             catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or ArgumentException)
             {
@@ -178,7 +178,7 @@ public class FreeSpaceService(
             long remaining = available >= reserve ? available - reserve : -1;
             void Reserve(long bytes) => remaining = bytes > remaining ? -1 : remaining - Math.Max(0, bytes);
             bool Managed(FreeSpaceTorrent item) => managedCategories.Contains(item.Torrent.Category)
-                && monitors.Any(m => m.Client.Equals(item.InstanceName, StringComparison.OrdinalIgnoreCase));
+                && rows.Any(m => m.Client.Equals(item.InstanceName, StringComparison.OrdinalIgnoreCase));
             foreach (var item in items.Where(i => !Managed(i) && TorrentPolicyHelper.IsFreeSpaceDownloadState(i.Torrent.State)
                 && !TorrentPolicyHelper.IsPausedDownloadStateForFreeSpace(i.Torrent.State))) Reserve(Math.Max(0, item.Torrent.AmountLeft));
 

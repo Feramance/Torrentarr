@@ -832,6 +832,107 @@ public sealed class MaintenanceSafetyTests : IDisposable
         _client.Verify(c => c.RecheckTorrentsAsync(It.IsAny<List<string>>(), It.IsAny<CancellationToken>()), Times.Exactly(2));
     }
 
+    [Theory]
+    [InlineData("checked")]
+    [InlineData("recurring")]
+    public async Task RecoveryRetry_ClearsPreviousCompletionAndRequiresANewCheck(string stage)
+    {
+        var torrent = AddTorrent(); torrent.State = "error";
+        var cfg = ClientConfig.Maintenance.ErrorRecovery;
+        cfg.Enabled = true; cfg.MaxRepairAttempts = 2;
+        var now = DateTimeOffset.UtcNow;
+        var key = MaintenancePersistence.Key("one", torrent.Hash, "recovery:ErrorRecovery");
+        MaintenancePersistence.Write(_db, key, new RecoveryIncident
+        {
+            AddedOn = torrent.AddedOn,
+            Stage = stage,
+            Attempts = 1,
+            RequestedAt = now.AddMinutes(-cfg.RetryMinutes - 5),
+            CheckingAt = now.AddMinutes(-4),
+            CompletedAt = now.AddMinutes(-3),
+            FailureSince = now.AddMinutes(-2)
+        });
+        _client.Setup(c => c.RecheckTorrentsAsync(It.IsAny<List<string>>(), It.IsAny<CancellationToken>())).ReturnsAsync(true);
+        (await Preview(MaintenanceOperation.ErrorRecovery)).Actions.Should().ContainSingle(a => a.Kind == MaintenanceActionKind.Recheck);
+        (await MaintenanceRecovery.RequestAsync(_db, _client.Object, torrent, "ErrorRecovery", cfg, default)).Should().BeTrue();
+        var state = MaintenanceRecovery.Read(_db, torrent, "ErrorRecovery");
+        state.Attempts.Should().Be(2); state.Stage.Should().Be("requested");
+        state.CheckingAt.Should().BeNull(); state.CompletedAt.Should().BeNull(); state.FailureSince.Should().BeNull();
+        MaintenanceRecovery.Observe(_db, torrent, "ErrorRecovery", true, cfg, now.AddSeconds(1));
+        MaintenanceRecovery.Read(_db, torrent, "ErrorRecovery").Stage.Should().Be("requested");
+        (await Preview(MaintenanceOperation.ErrorRecovery)).Actions.Should().BeEmpty();
+    }
+
+    [Fact]
+    public async Task OrphanScan_SharedCursorVisitsAllRootsInGlobalPathOrder()
+    {
+        var first = Path.Combine(_root, "a");
+        var second = Path.Combine(_root, "a-before");
+        var third = Path.Combine(_root, "z");
+        foreach (var root in new[] { first, second, third }) Directory.CreateDirectory(root);
+        ClientConfig.Maintenance.PathMappings = [new() { ClientPath = "/z", LocalPath = third },
+            new() { ClientPath = "/a", LocalPath = first }, new() { ClientPath = "/b", LocalPath = second }];
+        var cfg = ClientConfig.Maintenance.Orphans;
+        cfg.Enabled = true; cfg.ScanRoots = [third, first, second]; cfg.MinimumAgeMinutes = 0; cfg.MaxInspectedFilesPerRun = 1;
+        var expected = new[] { Path.Combine(first, "orphan"), Path.Combine(second, "orphan"), Path.Combine(third, "orphan") }.Order(StringComparer.Ordinal).ToList();
+        foreach (var path in expected) File.WriteAllText(path, "data");
+        var visited = new List<string>();
+        for (var pass = 0; pass < 3; pass++)
+        {
+            var plan = await Preview(MaintenanceOperation.OrphanScan);
+            visited.Add(plan.Actions.Single().Path!);
+            foreach (var cursor in plan.InspectionCursors)
+                MaintenancePersistence.Write(_db, cursor.Key, new ScanCursor { Position = cursor.Value });
+        }
+        visited.Should().Equal(expected);
+    }
+
+    [Fact]
+    public async Task RecoveryInspection_ObservesUnregisteredCompletionWithoutProtectionPolicies()
+    {
+        var torrent = AddTorrent(); torrent.State = "error";
+        var now = DateTimeOffset.UtcNow;
+        MaintenancePersistence.Write(_db, MaintenancePersistence.Key("one", torrent.Hash, "recovery:UnregisteredCleanup"),
+            new RecoveryIncident { AddedOn = torrent.AddedOn, Stage = "checking", Attempts = 1, RequestedAt = now.AddMinutes(-2), CheckingAt = now.AddMinutes(-1) });
+        _client.Setup(c => c.GetTorrentTrackersAsync(torrent.Hash, It.IsAny<CancellationToken>()))
+            .ReturnsAsync([new() { Url = "https://tracker.example/announce", Msg = "unregistered torrent" }]);
+        using var automation = new TorrentAutomationService(_config, _registry.Object, _services.GetRequiredService<IServiceScopeFactory>(), NullLogger<TorrentAutomationService>.Instance);
+        await Inspect(automation, default);
+        var state = MaintenanceRecovery.Read(_db, torrent, "UnregisteredCleanup");
+        state.Stage.Should().Be("recurring"); state.CompletedAt.Should().NotBeNull();
+    }
+
+    private static Task Inspect(TorrentAutomationService automation, CancellationToken ct)
+        => (Task)typeof(TorrentAutomationService).GetMethod("InspectProtectionAsync", System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance)!.Invoke(automation, [ct])!;
+
+    [Fact]
+    public async Task ProtectionInspection_PersistsCompletedSnapshotsBeforeSlowFetchEnds()
+    {
+        ClientConfig.Trackers = [new() { Uri = "https://tracker.example", Protection = new() { Policy = "onlyencodes" } }];
+        var fast = AddTorrent("fast"); fast.IsPrivate = true; fast.State = "uploading";
+        var slow = AddTorrent("slow", "other.mkv"); slow.IsPrivate = true; slow.State = "uploading";
+        _client.Setup(c => c.GetTorrentTrackersAsync(fast.Hash, It.IsAny<CancellationToken>()))
+            .ReturnsAsync([new() { Url = "https://tracker.example/announce", Status = 2 }]);
+        _client.Setup(c => c.GetTorrentTrackersAsync(slow.Hash, It.IsAny<CancellationToken>()))
+            .Returns(async (string _, CancellationToken ct) => { await Task.Delay(Timeout.Infinite, ct); return new List<TorrentTracker>(); });
+        using var automation = new TorrentAutomationService(_config, _registry.Object, _services.GetRequiredService<IServiceScopeFactory>(), NullLogger<TorrentAutomationService>.Instance);
+        using var cancellation = new CancellationTokenSource(TimeSpan.FromSeconds(10));
+        var inspection = Inspect(automation, cancellation.Token);
+        var decisions = (System.Collections.Concurrent.ConcurrentDictionary<string, ProtectionDecision>)typeof(TorrentAutomationService)
+            .GetField("_protection", System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance)!.GetValue(automation)!;
+        try
+        {
+            while (!decisions.Values.Any(d => d.TorrentHash == fast.Hash)) await Task.Delay(10, cancellation.Token);
+            inspection.IsCompleted.Should().BeFalse();
+            decisions.Values.Should().Contain(d => d.TorrentHash == fast.Hash && d.State == "protected");
+        }
+        finally
+        {
+            await cancellation.CancelAsync();
+            await FluentActions.Awaiting(() => inspection).Should().ThrowAsync<OperationCanceledException>();
+        }
+    }
+
     [Fact]
     public async Task ProtectionInspectionRunsWithCleanupAndRecoveryDisabled()
     {

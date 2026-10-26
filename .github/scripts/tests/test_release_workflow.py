@@ -120,12 +120,16 @@ esac
             "major": f"{major + 1}.0.0-1",
             "build": f"{major}.{minor}.{patch}-{build + 1}",
         }
+        schema_files = ["src/Torrentarr.Core/Configuration/TorrentarrConfig.cs",
+                        "src/Torrentarr.Core/Configuration/ConfigurationLoader.cs", "config.example.toml"]
+        schema = re.search(r'ExpectedConfigVersion = "([^"]+)"',
+                           (ROOT / schema_files[1]).read_text()).group(1)
         files = [section.split(":", 2)[2] for section in config.sections()
                  if section.startswith("bumpversion:file:")]
         for release_type, version in expected.items():
             with self.subTest(release_type=release_type), tempfile.TemporaryDirectory() as directory:
                 destination = Path(directory)
-                for filename in [".bumpversion.cfg", *files]:
+                for filename in [".bumpversion.cfg", *files, *schema_files]:
                     target = destination / filename
                     target.parent.mkdir(parents=True, exist_ok=True)
                     shutil.copyfile(ROOT / filename, target)
@@ -145,10 +149,11 @@ esac
                     self.assertIn(f"<{field}>{numeric}</{field}>", props)
                 for filename in files:
                     text = (destination / filename).read_text()
-                    if filename.endswith((".cs", ".toml")):
-                        self.assertIn(f'"{version.split("-")[0]}"', text)
-                    else:
-                        self.assertIn(version, text)
+                    self.assertIn(version, text)
+                # Config schema versions advance with migrations, independently of package releases.
+                for filename in schema_files:
+                    self.assertEqual((destination / filename).read_text(), (ROOT / filename).read_text())
+                    self.assertIn(f'"{schema}"', (destination / filename).read_text())
 
     def test_changelog_works_before_draft_tag_exists(self):
         with tempfile.TemporaryDirectory() as directory:

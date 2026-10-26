@@ -86,6 +86,7 @@ public static class MaintenanceRecovery
                 || state.RequestedAt is { } previous && DateTimeOffset.UtcNow - previous < TimeSpan.FromMinutes(cfg.RetryMinutes)) return false;
             // A durable claim prevents workers and maintenance from submitting the same check.
             state.AddedOn = torrent.AddedOn;
+            state.CheckingAt = null; state.CompletedAt = null; state.FailureSince = null; state.HealthySince = null;
             state.Attempts++; state.RequestedAt = DateTimeOffset.UtcNow; state.RequestExpiresAt = DateTimeOffset.UtcNow.AddMinutes(cfg.RecheckTimeoutMinutes); state.TorrentName = torrent.Name; state.Stage = "requested";
             MaintenancePersistence.Write(db, key, state); transaction.Commit();
         }

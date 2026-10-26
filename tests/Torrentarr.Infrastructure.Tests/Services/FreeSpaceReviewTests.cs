@@ -268,5 +268,31 @@ public sealed class FreeSpaceReviewTests : IDisposable
         client.Verify(c => c.ResumeTorrentAsync(It.IsAny<string>(), It.IsAny<CancellationToken>()), Times.Never);
     }
 
+    private sealed class SharedDiskService(TorrentarrConfig config, ITorrentClientRegistry registry, TorrentarrDbContext db, string otherDisk)
+        : FreeSpaceService(NullLogger<FreeSpaceService>.Instance, config, registry, db)
+    {
+        protected override string IdentifyStorage(string path) => path == otherDisk ? "other" : "shared";
+        protected override StorageSpace ReadSpace(string path) => new(IdentifyStorage(path), 1000, 100);
+    }
+
+    [Theory]
+    [InlineData("movies")]
+    [InlineData("other")]
+    public async Task ClientMonitoringAnotherDisk_StillReservesSharedDiskDownloads(string category)
+    {
+        var active = new TorrentInfo { Hash = "active", State = "downloading", Category = category, AmountLeft = 80 };
+        var paused = new TorrentInfo { Hash = "paused", State = "pausedDL", Category = "movies", Tags = "qBitrr-free_space_paused", AmountLeft = 50 };
+        var first = Client("one", true, active);
+        var second = Client("two", true, paused);
+        var other = Path.Combine(Path.GetTempPath(), "other-disk");
+        _config.TorrentClients["one"].FreeSpace[0].Path = other;
+        SetLimit("10");
+        var service = new SharedDiskService(_config, _registry.Object, _db, other);
+        var result = await service.ProcessAsync(new HashSet<string> { "movies" });
+        result.Resumed.Should().Be(0);
+        second.Verify(c => c.ResumeTorrentAsync(It.IsAny<string>(), It.IsAny<CancellationToken>()), Times.Never);
+        first.Verify(c => c.PauseTorrentAsync(It.IsAny<string>(), It.IsAny<CancellationToken>()), Times.Never);
+    }
+
     public void Dispose() => _db.Dispose();
 }
