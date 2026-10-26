@@ -1071,6 +1071,80 @@ public sealed class MaintenanceSafetyTests : IDisposable
         _client.Verify(c => c.DeleteTorrentsAsync(It.IsAny<List<string>>(), false, It.IsAny<CancellationToken>()), change == "none" ? Times.Once() : Times.Never());
     }
 
+    [Theory]
+    [InlineData("added")]
+    [InlineData("completion")]
+    [InlineData("counter")]
+    public async Task FinalRemovalBoundary_RejectsPersistedClearanceFromBeforeAReset(string change)
+    {
+        var torrent = AddTorrent(); torrent.IsPrivate = true; torrent.SeedingTime = 200000; torrent.CompletionOn = 1;
+        var policy = new TrackerProtectionConfig { Policy = "onlyencodes" };
+        ClientConfig.Trackers = [new() { Uri = "https://tracker.example", Protection = policy }];
+        _client.Setup(c => c.GetTorrentTrackersAsync(torrent.Hash, It.IsAny<CancellationToken>()))
+            .ReturnsAsync([new() { Url = "https://tracker.example/announce", Status = 2 }]);
+        var fingerprint = JsonConvert.SerializeObject(policy);
+        var policyId = Convert.ToHexString(System.Security.Cryptography.SHA256.HashData(System.Text.Encoding.UTF8.GetBytes(fingerprint)));
+        MaintenancePersistence.Write(_db, MaintenancePersistence.Key("one", torrent.Hash, "protection:tracker.example:" + policyId), new ProtectionObservation
+        {
+            AddedOn = torrent.AddedOn,
+            CompletionOn = torrent.CompletionOn,
+            ClientSeedSeconds = torrent.SeedingTime,
+            SeedSeconds = torrent.SeedingTime,
+            EligibleSince = DateTimeOffset.UtcNow.AddHours(-2),
+            PolicyFingerprint = fingerprint
+        });
+        (await _seeding.CanDeleteTorrentAsync(torrent, "test")).Should().BeTrue();
+        if (change == "added") torrent.AddedOn++;
+        if (change == "completion") torrent.CompletionOn++;
+        if (change == "counter") torrent.SeedingTime--;
+        var result = await _deletion.RemoveMaintenanceTorrentAsync("one", torrent.Hash, true, await _inventory.BuildAsync());
+        result.Success.Should().BeFalse(); File.Exists(Path.Combine(_root, "movie.mkv")).Should().BeTrue();
+        _client.Verify(c => c.DeleteTorrentsAsync(It.IsAny<List<string>>(), It.IsAny<bool>(), It.IsAny<CancellationToken>()), Times.Never);
+    }
+
+    [Theory]
+    [InlineData(MaintenanceOperation.ErrorRecovery, 1)]
+    [InlineData(MaintenanceOperation.UnregisteredCleanup, 0)]
+    public async Task UnregisteredGraceDoesNotDelayOrdinaryErrorRecovery(MaintenanceOperation operation, int expected)
+    {
+        var torrent = AddTorrent(); torrent.State = "error"; torrent.AddedOn = DateTimeOffset.UtcNow.AddMinutes(-20).ToUnixTimeSeconds();
+        ClientConfig.Maintenance.ErrorRecovery.Enabled = true;
+        ClientConfig.Maintenance.Unregistered.Enabled = operation == MaintenanceOperation.UnregisteredCleanup;
+        ClientConfig.Maintenance.Unregistered.GraceMinutes = 1440;
+        _client.Setup(c => c.GetTorrentTrackersAsync(torrent.Hash, It.IsAny<CancellationToken>()))
+            .ReturnsAsync([new() { Url = "https://tracker.example/announce", Msg = "unregistered torrent" }]);
+        (await Preview(operation)).Actions.Should().HaveCount(expected);
+    }
+
+    [Theory]
+    [InlineData(0)]
+    [InlineData(1)]
+    public async Task UnregisteredCleanup_RepairAndContentMoveBudgetsAreIndependent(int moves)
+    {
+        ClientConfig.Maintenance.Unregistered.Enabled = true;
+        ClientConfig.Maintenance.ErrorRecovery.MaxPerRun = 2;
+        ClientConfig.Maintenance.RecycleBin.MaxTorrentMovesPerRun = moves;
+        foreach (var hash in new[] { "recycle-one", "recycle-two", "repair-one", "repair-two" })
+        {
+            var torrent = AddTorrent(hash, hash + ".mkv");
+            if (!hash.StartsWith("recycle")) continue;
+            MaintenancePersistence.Write(_db, MaintenancePersistence.Key("one", hash, "recovery:UnregisteredCleanup"), new RecoveryIncident
+            {
+                AddedOn = torrent.AddedOn,
+                Stage = "recurring",
+                Attempts = 1,
+                CompletedAt = DateTimeOffset.UtcNow.AddDays(-2),
+                FailureSince = DateTimeOffset.UtcNow.AddDays(-2),
+                LastObserved = DateTimeOffset.UtcNow
+            });
+        }
+        _client.Setup(c => c.GetTorrentTrackersAsync(It.IsAny<string>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync([new() { Url = "https://tracker.example/announce", Msg = "unregistered torrent" }]);
+        var plan = await Preview(MaintenanceOperation.UnregisteredCleanup);
+        plan.Actions.Count(a => a.Kind == MaintenanceActionKind.Recheck).Should().Be(2);
+        plan.Actions.Count(a => a.Kind == MaintenanceActionKind.RecycleContent).Should().Be(moves);
+    }
+
     [Fact]
     public async Task ProtectionInspectionRunsWithCleanupAndRecoveryDisabled()
     {

@@ -43,6 +43,8 @@ public static class TrackerProtectionEvaluator
     public static ProtectionDecision Evaluate(TorrentInfo torrent, TrackerProtectionConfig policy,
         ProtectionObservation observation, DateTimeOffset now, bool healthy)
     {
+        if (!EvidenceMatches(observation, torrent))
+            observation = new() { MaximumDownloadPercent = observation.MaximumDownloadPercent };
         var threshold = policy.Policy is "onlyencodes" or "torrentleech-power" ? 10 : policy.DownloadThresholdPercent;
         var inclusive = policy.Policy != "onlyencodes" && policy.ThresholdInclusive;
         var partialPolicy = policy.Policy == "onlyencodes" ? "preserve" : policy.Policy == "torrentleech-power" ? "ratio" : policy.PartialPolicy;
@@ -104,11 +106,9 @@ public static class TrackerProtectionEvaluator
 
     public static void Observe(ProtectionObservation observation, TorrentInfo torrent, bool healthy, DateTimeOffset now)
     {
-        if (observation.AddedOn != 0 && observation.AddedOn != torrent.AddedOn)
+        if (!EvidenceMatches(observation, torrent))
         { observation.SeedSeconds = 0; observation.EligibleSince = null; observation.HealthySeeding = false; observation.LastObserved = null; }
         observation.AddedOn = torrent.AddedOn;
-        if (observation.CompletionOn != torrent.CompletionOn || torrent.SeedingTime < observation.ClientSeedSeconds)
-        { observation.SeedSeconds = 0; observation.EligibleSince = null; }
         var seeding = healthy && torrent.Progress >= 1 && torrent.CompletionOn > 0 && torrent.CompletionOn <= now.ToUnixTimeSeconds()
             && torrent.State.ToLowerInvariant() is "uploading" or "stalledup" or "forcedup" or "seeding";
         if (seeding && observation.HealthySeeding && observation.LastObserved is { } last)
@@ -124,4 +124,8 @@ public static class TrackerProtectionEvaluator
         observation.HealthySeeding = seeding;
         observation.LastObserved = now;
     }
+    private static bool EvidenceMatches(ProtectionObservation observation, TorrentInfo torrent)
+        => observation.AddedOn == torrent.AddedOn && observation.CompletionOn == torrent.CompletionOn
+            && torrent.SeedingTime >= observation.ClientSeedSeconds;
+
 }

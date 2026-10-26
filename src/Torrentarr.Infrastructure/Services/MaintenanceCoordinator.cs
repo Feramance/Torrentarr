@@ -1019,13 +1019,14 @@ public sealed class MaintenanceCoordinator : BackgroundService, IMaintenanceCoor
         var trackerCounts = new Dictionary<string, int>();
         var count = 0;
         var rechecks = 0;
+        var recycles = 0;
         foreach (var item in items)
         {
-            if (count >= (unregistered ? cfg.Maintenance.RecycleBin.MaxTorrentMovesPerRun : config.MaxPerRun)) yield break;
+            if (!unregistered && count >= config.MaxPerRun) yield break;
             var tracker = item.Trackers.FirstOrDefault(t => cfg.Maintenance.Unregistered.Messages.Any(m => t.Msg.Contains(m, StringComparison.OrdinalIgnoreCase)));
             if (unregistered ? tracker == null : !MaintenanceRecovery.IsError(item.Torrent, cfg.Maintenance)) continue;
             if (item.Torrent.AddedOn <= 0 || DateTimeOffset.UtcNow - DateTimeOffset.FromUnixTimeSeconds(item.Torrent.AddedOn)
-                < TimeSpan.FromMinutes(Math.Max(cfg.Maintenance.MinimumTorrentAgeMinutes, cfg.Maintenance.Unregistered.GraceMinutes))) continue;
+                < TimeSpan.FromMinutes(Math.Max(cfg.Maintenance.MinimumTorrentAgeMinutes, unregistered ? cfg.Maintenance.Unregistered.GraceMinutes : 0))) continue;
             if (unregistered && cfg.Maintenance.Unregistered.CompletedOnly && item.Torrent.Progress < 1) continue;
             var healthy = MaintenanceRecovery.HealthyTracker(item.Trackers);
             if (healthy && unregistered && !MaintenanceRecovery.IsError(item.Torrent, cfg.Maintenance)) continue;
@@ -1034,11 +1035,12 @@ public sealed class MaintenanceCoordinator : BackgroundService, IMaintenanceCoor
             var retry = state.Attempts < config.MaxRepairAttempts && state.Stage is "new" or "rejected" or "checked" or "recurring"
                 && (state.RequestedAt == null || DateTimeOffset.UtcNow - state.RequestedAt >= TimeSpan.FromMinutes(config.RetryMinutes));
             if (!retry && !recycle) continue;
-            if (!recycle && rechecks >= config.MaxPerRun) continue;
-            if (!recycle) rechecks++;
+            if (recycle && unregistered && recycles >= cfg.Maintenance.RecycleBin.MaxTorrentMovesPerRun
+                || !recycle && rechecks >= config.MaxPerRun) continue;
             var trackerKey = tracker == null ? "" : Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(tracker.Url)));
             if (unregistered && trackerCounts.GetValueOrDefault(trackerKey) >= cfg.Maintenance.Unregistered.MaxPerTrackerPerRun) continue;
 
+            if (recycle) recycles++; else rechecks++;
             count++; trackerCounts[trackerKey] = trackerCounts.GetValueOrDefault(trackerKey) + 1;
             yield return new MaintenanceAction
             {

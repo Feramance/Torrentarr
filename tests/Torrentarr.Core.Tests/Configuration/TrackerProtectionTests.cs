@@ -19,7 +19,14 @@ public class TrackerProtectionTests
         SeedingTime = 200000,
         Ratio = 10
     };
-    private static ProtectionObservation Observation(double hours) => new() { SeedSeconds = hours * 3600, EligibleSince = Now.AddHours(-2) };
+    private static ProtectionObservation Observation(double hours, TorrentInfo? torrent = null) => new()
+    {
+        AddedOn = (torrent ?? Torrent()).AddedOn,
+        CompletionOn = (torrent ?? Torrent()).CompletionOn,
+        ClientSeedSeconds = (torrent ?? Torrent()).SeedingTime,
+        SeedSeconds = hours * 3600,
+        EligibleSince = Now.AddHours(-2)
+    };
 
     [Theory]
     [InlineData(47, "protected")]
@@ -73,10 +80,10 @@ public class TrackerProtectionTests
     public void RecoveryBoundarySubtractsOutstandingSeedTimeAccountingAndReserve()
     {
         var torrent = Torrent(); torrent.AddedOn = Now.AddHours(-100).ToUnixTimeSeconds();
-        var decision = TrackerProtectionEvaluator.Evaluate(torrent, new() { Policy = "onlyencodes" }, Observation(12), Now, true);
+        var decision = TrackerProtectionEvaluator.Evaluate(torrent, new() { Policy = "onlyencodes" }, Observation(12, torrent), Now, true);
         decision.LatestRecoveryStart.Should().Be(Now.AddHours(25));
-        TrackerProtectionEvaluator.Evaluate(torrent, new() { Policy = "onlyencodes" }, Observation(12), Now.AddHours(1), true).DeadlineRisk.Should().Be("warning");
-        TrackerProtectionEvaluator.Evaluate(torrent, new() { Policy = "onlyencodes" }, Observation(12), Now.AddHours(25), true).DeadlineRisk.Should().Be("critical");
+        TrackerProtectionEvaluator.Evaluate(torrent, new() { Policy = "onlyencodes" }, Observation(12, torrent), Now.AddHours(1), true).DeadlineRisk.Should().Be("warning");
+        TrackerProtectionEvaluator.Evaluate(torrent, new() { Policy = "onlyencodes" }, Observation(12, torrent), Now.AddHours(25), true).DeadlineRisk.Should().Be("critical");
     }
 
     [Fact]
@@ -146,4 +153,22 @@ public class TrackerProtectionTests
         state.SeedSeconds.Should().Be(0);
         state.AddedOn.Should().Be(torrent.AddedOn);
     }
+    [Theory]
+    [InlineData("added")]
+    [InlineData("completion")]
+    [InlineData("counter")]
+    public void EvaluationCannotClearUsingEvidenceFromBeforeAReset(string change)
+    {
+        var torrent = Torrent();
+        var state = Observation(60, torrent);
+        var policy = new TrackerProtectionConfig { Policy = "onlyencodes" };
+        TrackerProtectionEvaluator.Evaluate(torrent, policy, state, Now, true).State.Should().Be("eligible");
+        if (change == "added") torrent.AddedOn++;
+        if (change == "completion") torrent.CompletionOn++;
+        if (change == "counter") torrent.SeedingTime--;
+        var decision = TrackerProtectionEvaluator.Evaluate(torrent, policy, state, Now, true);
+        decision.State.Should().Be("protected"); decision.ObservedSeedSeconds.Should().Be(0);
+        state.SeedSeconds.Should().Be(60 * 3600, "evaluation must not record observations");
+    }
+
 }
