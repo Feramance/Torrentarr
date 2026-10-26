@@ -182,11 +182,7 @@ public class FreeSpaceService(
             foreach (var item in items.Where(i => !Managed(i) && TorrentPolicyHelper.IsFreeSpaceDownloadState(i.Torrent.State)
                 && !TorrentPolicyHelper.IsPausedDownloadStateForFreeSpace(i.Torrent.State))) Reserve(Math.Max(0, item.Torrent.AmountLeft));
 
-            var safe = rows.All(m => m.Space != null) && !inventory.FailedClients.Any(id =>
-            {
-                var failedRows = monitors.Where(m => m.Client.Equals(id, StringComparison.OrdinalIgnoreCase)).ToList();
-                return failedRows.Count == 0 || failedRows.Any(m => Key(m) == group.Key);
-            });
+            var safe = rows.All(m => m.Space != null) && inventory.Complete;
             var resumes = new List<Func<Task>>();
             var ordered = items.Where(Managed)
                 .OrderBy(i => TorrentPolicyHelper.TorrentQueuePositionSortKey(i.Torrent).InactiveQueueGroup)

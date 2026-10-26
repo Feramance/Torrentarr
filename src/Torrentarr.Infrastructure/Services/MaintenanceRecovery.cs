@@ -135,6 +135,7 @@ public static class MaintenanceRecovery
 
     public static async Task<bool> RequestExplicitAsync(TorrentarrDbContext db, ITorrentClient client, TorrentInfo torrent, CancellationToken ct)
     {
+        if (Read(db, torrent, "ExplicitRecheck").Stage is not ("new" or "rejected")) return false;
         var config = new ErrorRecoveryConfig();
         return await RequestAsync(db, client, torrent, "ExplicitRecheck", config, ct);
     }
@@ -144,7 +145,16 @@ public static class MaintenanceRecovery
         var prefix = client.ToUpperInvariant() + "|";
         var active = torrents.Where(t => t.Category.Equals(recheckCategory, StringComparison.OrdinalIgnoreCase)).Select(t => t.Hash.ToUpperInvariant()).ToHashSet();
         var records = db.MaintenanceState.Where(s => s.Key.StartsWith(prefix) && s.Key.EndsWith("|recovery:ExplicitRecheck")).ToList();
-        foreach (var record in records.Where(r => !active.Contains(r.Key.Split('|')[1]))) db.MaintenanceState.Remove(record);
+        foreach (var record in records)
+        {
+            var hash = record.Key.Split('|')[1];
+            if (!active.Contains(hash)) { db.MaintenanceState.Remove(record); continue; }
+            var torrent = torrents.First(t => t.Hash.Equals(hash, StringComparison.OrdinalIgnoreCase));
+            torrent.ClientInstanceId = client;
+            // Keep completed evidence until category exit, without holding an active recheck claim.
+            if (Read(db, torrent, "ExplicitRecheck").Stage is "requested" or "checking")
+                Observe(db, torrent, "ExplicitRecheck", false, new ErrorRecoveryConfig(), DateTimeOffset.UtcNow);
+        }
         db.SaveChanges();
     }
 }

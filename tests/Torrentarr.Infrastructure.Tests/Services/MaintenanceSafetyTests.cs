@@ -832,6 +832,49 @@ public sealed class MaintenanceSafetyTests : IDisposable
         _client.Verify(c => c.RecheckTorrentsAsync(It.IsAny<List<string>>(), It.IsAny<CancellationToken>()), Times.Exactly(2));
     }
 
+    [Fact]
+    public async Task CompletedExplicitRecheck_ReleasesOtherRepairsButCannotRepeatUntilCategoryExit()
+    {
+        var explicitTorrent = AddTorrent("explicit"); explicitTorrent.Category = "recheck";
+        var repair = AddTorrent("repair", "repair.mkv"); repair.State = "error";
+        _client.Setup(c => c.RecheckTorrentsAsync(It.IsAny<List<string>>(), It.IsAny<CancellationToken>())).ReturnsAsync(true);
+        (await MaintenanceRecovery.RequestExplicitAsync(_db, _client.Object, explicitTorrent, default)).Should().BeTrue();
+        (await MaintenanceRecovery.RequestAsync(_db, _client.Object, repair, "ErrorRecovery", new(), default)).Should().BeFalse();
+        explicitTorrent.State = "checkingUP";
+        MaintenanceRecovery.ObserveExplicitExits(_db, "one", _torrents, "recheck");
+        MaintenanceRecovery.Read(_db, explicitTorrent, "ExplicitRecheck").Stage.Should().Be("checking");
+        explicitTorrent.State = "pausedUP";
+        MaintenanceRecovery.ObserveExplicitExits(_db, "one", _torrents, "recheck");
+        var state = MaintenanceRecovery.Read(_db, explicitTorrent, "ExplicitRecheck");
+        state.Stage.Should().Be("checked"); state.CompletedAt.Should().NotBeNull();
+        (await MaintenanceRecovery.RequestAsync(_db, _client.Object, repair, "ErrorRecovery", new(), default)).Should().BeTrue();
+        state.HealthySince = DateTimeOffset.UtcNow.AddDays(-10);
+        MaintenancePersistence.Write(_db, MaintenancePersistence.Key("one", explicitTorrent.Hash, "recovery:ExplicitRecheck"), state);
+        MaintenanceRecovery.ObserveExplicitExits(_db, "one", _torrents, "recheck");
+        MaintenanceRecovery.Read(_db, explicitTorrent, "ExplicitRecheck").Stage.Should().Be("checked");
+        (await MaintenanceRecovery.RequestExplicitAsync(_db, _client.Object, explicitTorrent, default)).Should().BeFalse();
+    }
+
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public void SyntheticPeerDiscoveryEntries_DoNotBlockTrackerClearanceOrSupplyTrackerHealth(bool realTrackerHealthy)
+    {
+        var torrent = AddTorrent(); torrent.IsPrivate = true;
+        ClientConfig.Trackers = [new() { Uri = "https://tracker.example", HitAndRunMode = "or", MinSeedRatio = 1, TrackerUpdateBuffer = 0 }];
+        var trackers = new List<TorrentTracker>
+        {
+            new() { Url = "https://tracker.example/announce", Tier = 0, Status = realTrackerHealthy ? 2 : 0 },
+            new() { Url = "** [DHT] **", Tier = -1, Status = 2 },
+            new() { Url = "** [PeX] **", Tier = -1, Status = 2 },
+            new() { Url = "** [LSD] **", Tier = -1, Status = 2 }
+        };
+        _seeding.GetProtectionDecisions(torrent, trackers).Should().ContainSingle();
+        _seeding.HnrAllowsDelete(torrent, trackers).Should().Be(realTrackerHealthy);
+        trackers.Add(new() { Url = "https://unmatched.example/announce", Tier = 1, Status = 2 });
+        _seeding.HnrAllowsDelete(torrent, trackers).Should().BeFalse();
+    }
+
     [Theory]
     [InlineData("checked")]
     [InlineData("recurring")]

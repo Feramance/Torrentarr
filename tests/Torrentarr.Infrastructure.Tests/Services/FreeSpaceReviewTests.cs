@@ -294,5 +294,23 @@ public sealed class FreeSpaceReviewTests : IDisposable
         first.Verify(c => c.PauseTorrentAsync(It.IsAny<string>(), It.IsAny<CancellationToken>()), Times.Never);
     }
 
+    [Fact]
+    public async Task FailedClientMonitoringAnotherDisk_WithholdsAllResumesUntilInventoryRecovers()
+    {
+        var active = new TorrentInfo { Hash = "active", State = "downloading", Category = "movies", AmountLeft = 80 };
+        var paused = new TorrentInfo { Hash = "paused", State = "pausedDL", Category = "movies", Tags = "qBitrr-free_space_paused", AmountLeft = 50 };
+        var failed = Client("one", true, active);
+        var healthy = Client("two", true, paused);
+        var other = Path.Combine(Path.GetTempPath(), "other-disk");
+        _config.TorrentClients["one"].FreeSpace[0].Path = other;
+        SetLimit("10");
+        failed.Setup(c => c.GetTorrentsAsync(It.IsAny<string?>(), It.IsAny<string?>(), It.IsAny<CancellationToken>())).ThrowsAsync(new HttpRequestException());
+        var service = new SharedDiskService(_config, _registry.Object, _db, other);
+        (await service.ProcessAsync(new HashSet<string> { "movies" })).Resumed.Should().Be(0);
+        healthy.Verify(c => c.ResumeTorrentAsync(It.IsAny<string>(), It.IsAny<CancellationToken>()), Times.Never);
+        failed.Setup(c => c.GetTorrentsAsync(It.IsAny<string?>(), It.IsAny<string?>(), It.IsAny<CancellationToken>())).ReturnsAsync([]);
+        (await service.ProcessAsync(new HashSet<string> { "movies" })).Resumed.Should().Be(1);
+    }
+
     public void Dispose() => _db.Dispose();
 }

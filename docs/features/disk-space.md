@@ -31,6 +31,8 @@ Limit = '10G'
 Set Enabled deliberately after verifying paths. Limit accepts non-negative bytes or
 K/M/G/T suffixes; invalid values and traversal paths are rejected. Zero reserves no
 extra bytes. An unavailable monitor fails conservatively for affected downloads.
+If any enabled client’s torrent inventory is unavailable, resumes are withheld on
+all storage until a complete inventory establishes its download locations.
 Mapped paths use the longest matching prefix. Unmapped/ambiguous ownership cannot
 justify optimistic free-space decisions.
 

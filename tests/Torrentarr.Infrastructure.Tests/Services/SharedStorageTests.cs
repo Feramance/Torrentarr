@@ -103,15 +103,15 @@ public sealed class SharedStorageTests : IDisposable
     }
 
     [Fact]
-    public async Task FailedInventoryOnlyWithholdsResumesOnAffectedStorage()
+    public async Task FailedInventoryWithUnknownDownloadLocationsWithholdsAllResumes()
     {
         var failed = Client("one", "disk-a", 1);
         failed.Setup(c => c.GetTorrentsAsync(It.IsAny<string?>(), It.IsAny<string?>(), It.IsAny<CancellationToken>())).ThrowsAsync(new IOException());
         var same = Client("two", "disk-a", 1, state: "pausedDL");
         var independent = Client("three", "disk-b", 1, state: "pausedDL");
-        (await Process()).Resumed.Should().Be(1);
+        (await Process()).Resumed.Should().Be(0);
         same.Verify(c => c.ResumeTorrentAsync(It.IsAny<string>(), It.IsAny<CancellationToken>()), Times.Never);
-        independent.Verify(c => c.ResumeTorrentAsync("three", It.IsAny<CancellationToken>()), Times.Once);
+        independent.Verify(c => c.ResumeTorrentAsync("three", It.IsAny<CancellationToken>()), Times.Never);
     }
 
     [Fact]

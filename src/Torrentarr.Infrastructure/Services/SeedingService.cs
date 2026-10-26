@@ -346,6 +346,8 @@ public class SeedingService : ISeedingService
 
     public List<ProtectionDecision> GetProtectionDecisions(TorrentInfo torrent, IReadOnlyList<TorrentTracker> torrentTrackers, bool observe = false)
     {
+        // Negative tiers are qBittorrent's synthetic DHT/PeX/LSD entries, not tracker obligations.
+        torrentTrackers = torrentTrackers.Where(t => t.Tier >= 0).ToList();
         // All configured obligations apply, including different policies for the same tracker.
         var obligations = (_config.GetTorrentClient(torrent.ClientInstanceId)?.Trackers ?? [])
             .Concat(_config.ArrInstances.Values.Where(a => CategoryOwnershipHelper.ArrOwnsTorrent(_config, a, torrent)).SelectMany(a => a.Torrent.Trackers));

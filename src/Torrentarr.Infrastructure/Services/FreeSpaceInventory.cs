@@ -58,7 +58,7 @@ public sealed class FreeSpaceInventory
                 logger.LogWarning(ex, "[{Instance}] FreeSpace: unable to enumerate torrents", id);
             }
         }
-        if (!result.Complete) logger.LogWarning("FreeSpace: incomplete download inventory; resumes withheld for affected storage");
+        if (!result.Complete) logger.LogWarning("FreeSpace: incomplete download inventory; resumes withheld for all storage");
         return result;
     }
 
