@@ -5,6 +5,10 @@ using Xunit;
 
 namespace Torrentarr.Core.Tests.Configuration;
 
+[CollectionDefinition("Configuration environment", DisableParallelization = true)]
+public sealed class ConfigurationEnvironmentCollection { }
+
+[Collection("Configuration environment")]
 public class ConfigurationLoaderTests : IDisposable
 {
     private readonly string _tempFilePath;
