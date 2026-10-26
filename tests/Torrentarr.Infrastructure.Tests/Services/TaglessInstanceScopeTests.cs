@@ -233,12 +233,15 @@ public sealed class TaglessInstanceScopeTests
             _ => throw new ArgumentOutOfRangeException(nameof(serviceType))
         };
 
+        if (serviceType == typeof(FreeSpaceService))
+        {
+            var client = Moq.Mock.Of<Torrentarr.Core.Interfaces.ITorrentClient>(c => c.Capabilities == TorrentClientCapabilities.QBittorrent);
+            return ((Task<bool>)serviceType.GetMethod("HasMarker", BindingFlags.NonPublic | BindingFlags.Instance)!
+                .Invoke(service, [new FreeSpaceTorrent(torrent.QBitInstanceName, client, torrent), CancellationToken.None])!).GetAwaiter().GetResult();
+        }
         var method = serviceType.GetMethod("HasTag", BindingFlags.NonPublic | BindingFlags.Instance);
         method.Should().NotBeNull();
-        var arguments = serviceType == typeof(FreeSpaceService)
-            ? new object[] { torrent, tag, Moq.Mock.Of<Torrentarr.Core.Interfaces.ITorrentClient>(
-                c => c.Capabilities == TorrentClientCapabilities.QBittorrent), torrent.QBitInstanceName }
-            : new object[] { torrent, tag };
+        var arguments = new object[] { torrent, tag };
         return (bool)method!.Invoke(service, arguments)!;
     }
 }

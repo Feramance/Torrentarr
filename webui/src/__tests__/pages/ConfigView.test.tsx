@@ -19,11 +19,25 @@ import userEvent from "@testing-library/user-event";
 import { http, HttpResponse } from "msw";
 import { setupServer } from "msw/node";
 import type { ReactNode } from "react";
+import { MaintenanceView } from "../../pages/MaintenanceView";
+import { CONFIG_SCHEMA } from "../../config/configFields.generated";
+import { NAVIGATE_TAB_EVENT } from "../../utils/navigateTab";
 import { ConfigView } from "../../pages/ConfigView";
 import { ToastProvider, ToastViewport } from "../../context/ToastContext";
 import { WebUIProvider } from "../../context/WebUIContext";
 
-const server = setupServer();
+const server = setupServer(
+  http.get("/web/config/schema", () => HttpResponse.json(CONFIG_SCHEMA)),
+  http.get("/web/torrent-clients", () =>
+    HttpResponse.json(
+      ["qBit", "seedbox"].map((id) => ({ id, connected: true })),
+    ),
+  ),
+  http.get("/web/maintenance/status", () =>
+    HttpResponse.json({ running: false, operations: [], armed: {} }),
+  ),
+  http.get("/web/maintenance/history", () => HttpResponse.json([])),
+);
 
 beforeAll(() => server.listen({ onUnhandledRequest: "bypass" }));
 afterEach(() => {
@@ -128,7 +142,7 @@ it("lists every client together by name with the same controls and shared settin
       within(dialog).getByText("Hit and Run Mode", { exact: true }),
     ).toBeInTheDocument();
     expect(
-      within(dialog).getByText("Maintenance Enabled", { exact: true }),
+      within(dialog).getByRole("button", { name: "Open Manage" }),
     ).toBeInTheDocument();
     expect(
       within(dialog).getByRole("button", { name: "Delete", exact: true }),
@@ -289,9 +303,6 @@ describe("ConfigView – equal client names", () => {
             Settings: {
               ...configQbitOnly.Settings,
               ConsoleLevel: "INFO",
-              CompletedDownloadFolder: "/downloads",
-              FreeSpace: "10G",
-              FreeSpaceFolder: "/downloads",
               NoInternetSleepTimer: 60,
               SearchLoopDelay: -1,
               IgnoreTorrentsYoungerThan: 0,
@@ -827,19 +838,8 @@ it("uses the shared client dialog and saves only the selected torrent client", a
   expect(
     screen.getByRole("textbox", { name: "Client Type", exact: true }),
   ).toHaveValue("transmission");
-  const mappings = screen.getByRole("textbox", {
-    name: "Torrent client path",
-    exact: true,
-  });
-  expect(mappings).toHaveValue("/old");
-  await user.clear(mappings);
-  await user.type(mappings, "relative/path");
-  await user.click(screen.getByRole("button", { name: "Save", exact: true }));
-  await screen.findByText("Use an absolute path without traversal segments.");
-  expect(changes).toEqual({});
-  expect(screen.getByRole("dialog")).toBeInTheDocument();
-  expect(mappings).toHaveFocus();
-  fireEvent.change(mappings, { target: { value: "/old" } });
+  expect(screen.queryByText("Path mappings")).not.toBeInTheDocument();
+  expect(screen.getByRole("button", { name: "Open Manage" })).toBeEnabled();
   const host = screen.getByRole("textbox", { name: "Host", exact: true });
   await user.clear(host);
   await user.type(host, "new-host");
@@ -909,19 +909,24 @@ it.each([false, true])(
       }),
     );
     const user = userEvent.setup();
-    renderConfig();
+    render(
+      <MaintenanceView requestedClientId={canonical ? "seedbox" : "qBit"} />,
+      { wrapper: Wrapper },
+    );
     const open = async () => {
-      const card = (
-        await screen.findByText(canonical ? "seedbox" : "qBit", { exact: true })
-      ).closest(".card")!;
-      await user.click(within(card).getByRole("button", { name: "Configure" }));
+      const shared = await screen.findByText(/Shared settings ·/);
+      if (!shared.closest("details")!.open) await user.click(shared);
+      const mappings = screen.getByText("Path mappings", {
+        selector: "summary",
+      });
+      if (!mappings.closest("details")!.open) await user.click(mappings);
     };
     const save = async () => {
-      await user.click(
-        screen.getByRole("button", { name: "Save", exact: true }),
-      );
+      await user.click(screen.getByRole("button", { name: "Save settings" }));
       await waitFor(() =>
-        expect(screen.queryByRole("dialog")).not.toBeInTheDocument(),
+        expect(
+          screen.getByRole("button", { name: "Save settings" }),
+        ).toBeDisabled(),
       );
     };
     await open();
@@ -930,7 +935,9 @@ it.each([false, true])(
       { target: { value: "/edited" } },
     );
     fail = true;
-    await user.click(screen.getByRole("button", { name: "Save", exact: true }));
+    await user.click(
+      screen.getByRole("button", { name: "Save settings", exact: true }),
+    );
     await screen.findByText("Configuration busy; retry");
     expect(
       screen.getByRole("textbox", { name: "Torrentarr path", exact: true }),
@@ -993,9 +1000,6 @@ it.each([false, true])(
         exact: true,
       }),
     ).not.toBeInTheDocument();
-    await user.click(
-      screen.getByRole("button", { name: "Close", exact: true }),
-    );
     window.dispatchEvent(
       new CustomEvent("torrentarr:configuration", {
         detail: { ...application, state: "applied" },
@@ -1014,3 +1018,93 @@ it.each([false, true])(
     ).not.toBeInTheDocument();
   },
 );
+
+it.each([false, true])(
+  "round-trips storage settings without editing credentials (canonical=%s)",
+  async (canonical) => {
+    const prefix = canonical ? "TorrentClient.seedbox" : "qBit";
+    let saved: Record<string, unknown> = {};
+    const storage = {
+      Enabled: false,
+      FutureSetting: 42,
+      Orphans: { Enabled: false, MinimumAgeMinutes: 60 },
+    };
+    const client = {
+      Type: "qbittorrent",
+      Disabled: true,
+      Host: "localhost",
+      Port: 8080,
+      Password: "[redacted]",
+      Maintenance: storage,
+    };
+    const fixture = {
+      ...configQbitOnly,
+      ...(canonical
+        ? { TorrentClient: { seedbox: client } }
+        : { qBit: client }),
+    };
+    server.use(
+      http.get("/web/config", () => HttpResponse.json(fixture)),
+      http.post("/web/config", async ({ request }) => {
+        saved = ((await request.json()) as { changes: Record<string, unknown> })
+          .changes;
+        return HttpResponse.json(okUpdateResponse);
+      }),
+    );
+    const user = userEvent.setup();
+    render(
+      <MaintenanceView requestedClientId={canonical ? "seedbox" : "qBit"} />,
+      { wrapper: Wrapper },
+    );
+    await screen.findByText(/Shared settings ·/);
+    await user.click(
+      screen.getByText("Orphan-file cleanup", { selector: "strong" }),
+    );
+    fireEvent.change(
+      screen.getByLabelText("Minimum orphan file age (minutes)"),
+      { target: { value: "120" } },
+    );
+    await user.click(
+      screen.getByRole("button", { name: "Save settings", exact: true }),
+    );
+    await waitFor(() =>
+      expect(
+        screen.getByRole("button", { name: "Save settings" }),
+      ).toBeDisabled(),
+    );
+    expect(saved).toMatchObject({
+      [`${prefix}.Maintenance.Orphans.MinimumAgeMinutes`]: 120,
+    });
+    expect(Object.keys(saved)).not.toContain(`${prefix}.Password`);
+    expect(storage.FutureSetting).toBe(42);
+  },
+);
+
+it("opens Manage for the saved client without losing its pending connection edits", async () => {
+  server.use(http.get("/web/config", () => HttpResponse.json(configQbitOnly)));
+  const navigate = vi.fn();
+  window.addEventListener(NAVIGATE_TAB_EVENT, navigate);
+  try {
+    const user = userEvent.setup();
+    renderConfig();
+    const card = (await screen.findByText("qBit", { exact: true })).closest(
+      ".card",
+    )!;
+    await user.click(within(card).getByRole("button", { name: "Configure" }));
+    fireEvent.change(
+      screen.getByRole("textbox", { name: "Host", exact: true }),
+      { target: { value: "pending.local" } },
+    );
+    await user.click(screen.getByRole("button", { name: "Open Manage" }));
+    expect(navigate.mock.calls[0][0].detail).toEqual({
+      tab: "maintenance",
+      manageClientId: "qBit",
+      preserveConfigDraft: true,
+    });
+    expect(
+      screen.getByRole("textbox", { name: "Host", exact: true }),
+    ).toHaveValue("pending.local");
+  } finally {
+    window.removeEventListener(NAVIGATE_TAB_EVENT, navigate);
+  }
+});

@@ -1,6 +1,6 @@
 # Full qBitrr → Torrentarr parity path report
 
-End-to-end review of **every user-facing feature and logical path**, compared to upstream [qBitrr](https://github.com/Feramance/qBitrr).
+Baseline review of **user-facing features and logical paths**, compared to upstream [qBitrr](https://github.com/Feramance/qBitrr).
 
 | Field | Value |
 | --- | --- |
@@ -10,6 +10,8 @@ End-to-end review of **every user-facing feature and logical path**, compared to
 | **Row-level file map** | [full-parity-matrix.md](full-parity-matrix.md) |
 | **Contributor pin / tests** | [contributor-reference.md](contributor-reference.md) |
 | **User overview** | [overview.md](overview.md) |
+
+Current branch behavior is reconciled in the [branch inventory](../development/branch-change-inventory.md). Baseline findings below remain historical; current [tracker protection](../configuration/seeding.md) intentionally removes dead-message bypass/deletion behavior.
 
 Legend:
 

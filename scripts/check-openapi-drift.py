@@ -7,11 +7,12 @@ import json
 import sys
 from copy import deepcopy
 from openapi_status import STATUS_SCHEMA
+from openapi_maintenance import EXTENSION_PATHS as MAINTENANCE_PATHS, apply as apply_maintenance
 from pathlib import Path
 from typing import Any
 
 HTTP_METHODS = {"get", "put", "post", "delete", "patch", "head", "options", "trace"}
-TORRENTARR_EXTENSIONS = {
+TORRENTARR_EXTENSIONS = MAINTENANCE_PATHS | {
     "/api/arr/{category}/open/{kind}/{entryId}",
     "/api/lidarr/{category}/tracks",
     "/api/qbit/categories",
@@ -351,13 +352,26 @@ def compare(torrentarr: dict, qbitrr: dict, allowed_extensions: set[str] | None 
     return errors
 
 
+def maintenance_drift(document: dict) -> list[str]:
+    expected = {"paths": {}}
+    apply_maintenance(expected)
+    errors = []
+    for name, schema in expected['components']['schemas'].items():
+        if document.get('components', {}).get('schemas', {}).get(name) != schema:
+            errors.append(f"generated maintenance schema differs: {name}")
+    for path, operations in expected['paths'].items():
+        if document.get('paths', {}).get(path) != operations:
+            errors.append(f"generated maintenance operation differs: {path}")
+    return errors
+
+
 def main(argv: list[str]) -> int:
     if len(argv) != 3:
         print(f"usage: {argv[0]} TORRENTARR_SPEC QBITRR_SPEC", file=sys.stderr)
         return 2
     torrentarr = load(argv[1])
     qbitrr = load(argv[2])
-    errors = compare(torrentarr, qbitrr)
+    errors = compare(torrentarr, qbitrr) + maintenance_drift(torrentarr)
     if errors:
         print(f"OpenAPI parity failed with {len(errors)} difference(s):")
         for error in errors:

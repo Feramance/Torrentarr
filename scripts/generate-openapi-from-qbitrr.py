@@ -8,6 +8,7 @@ import sys
 import urllib.request
 from copy import deepcopy
 from openapi_status import STATUS_SCHEMA
+from openapi_maintenance import apply as apply_maintenance
 
 QBITRR_REF = os.environ.get("QBITRR_OPENAPI_REF", "v5.14.6-1")
 OUT_PATH = "docs/assets/openapi.json"
@@ -166,6 +167,8 @@ def main() -> int:
         operation = spec["paths"][path]["get"]
         operation["description"] = "All clients are equal. Read qbitInstances by instance name; the legacy qbit field has been removed."
         operation["responses"]["200"]["content"]["application/json"]["schema"] = deepcopy(STATUS_SCHEMA)
+
+    apply_maintenance(spec)
 
     out = sys.argv[1] if len(sys.argv) > 1 else OUT_PATH
     with open(out, "w", encoding="utf-8") as f:

@@ -1,10 +1,10 @@
 # Full Parity Matrix (qBitrr -> Torrentarr)
 
-This matrix tracks the current parity audit against upstream qBitrr master commit **329e604e4e8512b1e32ba86e61920e1ae1e07a65** (schema **5.14.6**). `SettingsConfig.ConfigVersion` defaults to **6.15.2**; `ConfigurationLoader.ExpectedConfigVersion` is **6.15.2**, with **6.14.6** retained as the stalled-delay migration cutoff.
+This matrix preserves the baseline parity audit against upstream qBitrr master commit **329e604e4e8512b1e32ba86e61920e1ae1e07a65** (schema **5.14.6**). At that baseline, `SettingsConfig.ConfigVersion` defaulted to **6.15.2**; `ConfigurationLoader.ExpectedConfigVersion` was **6.15.2**, with **6.14.6** retained as the stalled-delay migration cutoff.
 
 ## Parity claim policy
 
-Use this file as the **source of truth** for how close implementation is to upstream. A strict latest-main parity claim is only defensible when **no** file row is `partial` and **no** support row is `missing`. Rows marked `intentional-divergence` document architectural differences with equivalent user-facing outcomes.
+Use this file for the pinned baseline findings. Current branch changes and intentional safety differences are reconciled in the [branch inventory](../development/branch-change-inventory.md); current [tracker protection](../configuration/seeding.md) removes the dead-message bypass and direct dead-tracker deletion path. A strict latest-main parity claim is only defensible when **no** file row is `partial` and **no** support row is `missing`. Rows marked `intentional-divergence` document architectural differences with equivalent user-facing outcomes.
 
 **Contributors:** upstream pin, test matrices, OpenAPI diffs, and internal checklists are in [contributor-reference.md](contributor-reference.md) (not needed for end users; see [overview.md](overview.md)). Path-level feature coverage and known drift vs this file’s `full` rows: [full-parity-path-report.md](full-parity-path-report.md).
 

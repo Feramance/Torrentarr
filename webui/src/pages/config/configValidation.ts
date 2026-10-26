@@ -1,4 +1,4 @@
-import { pathMappingErrors } from "./pathMappingConfig";
+import { pathMappingErrors, freeSpaceErrors } from "./pathMappingConfig";
 import type { ConfigDocument } from "../../api/types";
 import { getCategoryCrossSectionIssues } from "../../config/categoryConfigValidation";
 import equal from "fast-deep-equal";
@@ -68,6 +68,12 @@ export function basicValidation(
       }
       return undefined;
     }
+    case "tags":
+      return value != null &&
+        (!Array.isArray(value) ||
+          value.some((item) => typeof item !== "string"))
+        ? `${label} must be a list of strings.`
+        : undefined;
     default:
       return undefined;
   }
@@ -129,7 +135,13 @@ export function validateFieldGroup(
           itemPath,
           context,
         );
-        for (const error of pathMappingErrors(entry, rows, index))
+        const rowErrors =
+          pathSegments.at(-1) === "FreeSpace"
+            ? freeSpaceErrors(entry, rows, index)
+            : pathSegments.at(-1) === "PathMappings"
+              ? pathMappingErrors(entry, rows, index)
+              : [];
+        for (const error of rowErrors)
           errors.push({ ...error, path: [...itemPath, ...error.path] });
       });
       continue;

@@ -29,6 +29,7 @@ public class TorrentarrDbContext : DbContext
     public DbSet<BookQueueModel> BookQueue { get; set; }
     public DbSet<FilesQueued> FilesQueued { get; set; }
     public DbSet<SearchActivity> SearchActivity { get; set; }
+    public DbSet<MaintenanceState> MaintenanceState { get; set; }
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {

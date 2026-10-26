@@ -18,6 +18,28 @@
       }
     },
     "schemas": {
+      "CleanupClientStatus": {
+        "properties": {
+          "automatic": {
+            "type": "boolean"
+          },
+          "clientInstanceId": {
+            "type": "string"
+          },
+          "nextRun": {
+            "format": "date-time",
+            "nullable": true,
+            "type": "string"
+          },
+          "notices": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          }
+        },
+        "type": "object"
+      },
       "ConfigUpdateResponse": {
         "properties": {
           "affectedInstances": {
@@ -142,6 +164,1021 @@
           "truncated"
         ],
         "type": "object"
+      },
+      "MaintenanceAction": {
+        "properties": {
+          "arguments": {
+            "additionalProperties": {
+              "type": "string"
+            },
+            "type": "object"
+          },
+          "blockedReason": {
+            "nullable": true,
+            "type": "string"
+          },
+          "bytes": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "clientInstanceId": {
+            "type": "string"
+          },
+          "destructive": {
+            "type": "boolean"
+          },
+          "id": {
+            "type": "string"
+          },
+          "kind": {
+            "description": "Numeric retired IDs remain readable in history.",
+            "oneOf": [
+              {
+                "enum": [
+                  "QuarantineFile",
+                  "AddTag",
+                  "RemoveTag",
+                  "SetCategory",
+                  "SetAutomaticManagement",
+                  "Recheck",
+                  "Resume",
+                  "RecycleContent",
+                  "DeleteExpiredRecycleItem",
+                  "RegisterRecycleEntry"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "integer"
+              }
+            ]
+          },
+          "operation": {
+            "description": "Unknown numeric IDs are retained in historical results; preview accepts all ten defined maintenance operations.",
+            "oneOf": [
+              {
+                "enum": [
+                  "OrphanScan",
+                  "HardlinkAudit",
+                  "UnregisteredCleanup",
+                  "CategoryReconcile",
+                  "AutomaticManagement",
+                  "PrivateTagging",
+                  "TrackerErrorTagging",
+                  "RepairPaused",
+                  "RecycleRetention",
+                  "ErrorRecovery"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "integer"
+              }
+            ]
+          },
+          "path": {
+            "nullable": true,
+            "type": "string"
+          },
+          "reason": {
+            "type": "string"
+          },
+          "requiredCapabilities": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "torrentHash": {
+            "nullable": true,
+            "type": "string"
+          },
+          "torrentName": {
+            "nullable": true,
+            "type": "string"
+          }
+        },
+        "type": "object"
+      },
+      "MaintenanceApplyRequest": {
+        "properties": {
+          "authorizeOnce": {
+            "type": "boolean"
+          },
+          "planId": {
+            "type": "string"
+          }
+        },
+        "type": "object"
+      },
+      "MaintenanceArmRequest": {
+        "properties": {
+          "clientInstanceIds": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "planId": {
+            "type": "string"
+          }
+        },
+        "type": "object"
+      },
+      "MaintenanceClientsRequest": {
+        "properties": {
+          "clientInstanceIds": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "operations": {
+            "items": {
+              "description": "Unknown numeric IDs are retained in historical results; preview accepts all ten defined maintenance operations.",
+              "oneOf": [
+                {
+                  "enum": [
+                    "OrphanScan",
+                    "HardlinkAudit",
+                    "UnregisteredCleanup",
+                    "CategoryReconcile",
+                    "AutomaticManagement",
+                    "PrivateTagging",
+                    "TrackerErrorTagging",
+                    "RepairPaused",
+                    "RecycleRetention",
+                    "ErrorRecovery"
+                  ],
+                  "type": "string"
+                },
+                {
+                  "type": "integer"
+                }
+              ]
+            },
+            "type": "array"
+          }
+        },
+        "type": "object"
+      },
+      "MaintenanceDiagnostic": {
+        "properties": {
+          "affectedFiles": {
+            "format": "int32",
+            "type": "integer"
+          },
+          "affectedTorrents": {
+            "format": "int32",
+            "type": "integer"
+          },
+          "clientInstanceId": {
+            "type": "string"
+          },
+          "code": {
+            "type": "string"
+          },
+          "examples": {
+            "items": {
+              "$ref": "#/components/schemas/MaintenanceDiagnosticExample"
+            },
+            "type": "array"
+          },
+          "message": {
+            "type": "string"
+          },
+          "operations": {
+            "items": {
+              "description": "Unknown numeric IDs are retained in historical results; preview accepts all ten defined maintenance operations.",
+              "oneOf": [
+                {
+                  "enum": [
+                    "OrphanScan",
+                    "HardlinkAudit",
+                    "UnregisteredCleanup",
+                    "CategoryReconcile",
+                    "AutomaticManagement",
+                    "PrivateTagging",
+                    "TrackerErrorTagging",
+                    "RepairPaused",
+                    "RecycleRetention",
+                    "ErrorRecovery"
+                  ],
+                  "type": "string"
+                },
+                {
+                  "type": "integer"
+                }
+              ]
+            },
+            "type": "array"
+          },
+          "remediation": {
+            "type": "string"
+          },
+          "severity": {
+            "type": "string"
+          },
+          "torrentHashes": {
+            "additionalProperties": true,
+            "type": "object"
+          }
+        },
+        "type": "object"
+      },
+      "MaintenanceDiagnosticExample": {
+        "properties": {
+          "clientPath": {
+            "nullable": true,
+            "type": "string"
+          },
+          "localPath": {
+            "nullable": true,
+            "type": "string"
+          },
+          "torrentHash": {
+            "nullable": true,
+            "type": "string"
+          },
+          "torrentName": {
+            "nullable": true,
+            "type": "string"
+          }
+        },
+        "type": "object"
+      },
+      "MaintenanceInspectionStatus": {
+        "properties": {
+          "clientInstanceId": {
+            "type": "string"
+          },
+          "consecutiveFailures": {
+            "format": "int32",
+            "type": "integer"
+          },
+          "lastSucceededAt": {
+            "format": "date-time",
+            "nullable": true,
+            "type": "string"
+          },
+          "nextAttempt": {
+            "format": "date-time",
+            "nullable": true,
+            "type": "string"
+          }
+        },
+        "type": "object"
+      },
+      "MaintenanceOperationResult": {
+        "properties": {
+          "actionable": {
+            "format": "int32",
+            "type": "integer"
+          },
+          "blockedActions": {
+            "format": "int32",
+            "type": "integer"
+          },
+          "clientInstanceId": {
+            "type": "string"
+          },
+          "examined": {
+            "format": "int32",
+            "type": "integer"
+          },
+          "excluded": {
+            "format": "int32",
+            "type": "integer"
+          },
+          "operation": {
+            "description": "Unknown numeric IDs are retained in historical results; preview accepts all ten defined maintenance operations.",
+            "oneOf": [
+              {
+                "enum": [
+                  "OrphanScan",
+                  "HardlinkAudit",
+                  "UnregisteredCleanup",
+                  "CategoryReconcile",
+                  "AutomaticManagement",
+                  "PrivateTagging",
+                  "TrackerErrorTagging",
+                  "RepairPaused",
+                  "RecycleRetention",
+                  "ErrorRecovery"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "integer"
+              }
+            ]
+          },
+          "reason": {
+            "nullable": true,
+            "type": "string"
+          },
+          "state": {
+            "type": "string"
+          },
+          "uninspectable": {
+            "format": "int32",
+            "type": "integer"
+          }
+        },
+        "type": "object"
+      },
+      "MaintenanceOperationStatus": {
+        "properties": {
+          "authorized": {
+            "type": "boolean"
+          },
+          "clientInstanceId": {
+            "type": "string"
+          },
+          "enabled": {
+            "type": "boolean"
+          },
+          "executionMode": {
+            "enum": [
+              "manual",
+              "automatic"
+            ],
+            "type": "string"
+          },
+          "nextRun": {
+            "nullable": true,
+            "type": "string"
+          },
+          "operation": {
+            "description": "Unknown numeric IDs are retained in historical results; preview accepts all ten defined maintenance operations.",
+            "oneOf": [
+              {
+                "enum": [
+                  "OrphanScan",
+                  "HardlinkAudit",
+                  "UnregisteredCleanup",
+                  "CategoryReconcile",
+                  "AutomaticManagement",
+                  "PrivateTagging",
+                  "TrackerErrorTagging",
+                  "RepairPaused",
+                  "RecycleRetention",
+                  "ErrorRecovery"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "integer"
+              }
+            ]
+          },
+          "schedule": {
+            "type": "string"
+          }
+        },
+        "type": "object"
+      },
+      "MaintenancePlan": {
+        "properties": {
+          "actions": {
+            "items": {
+              "$ref": "#/components/schemas/MaintenanceAction"
+            },
+            "type": "array"
+          },
+          "blockedCount": {
+            "format": "int32",
+            "type": "integer"
+          },
+          "candidateBytes": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "candidateCount": {
+            "format": "int32",
+            "type": "integer"
+          },
+          "clientInstanceIds": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "configurationFingerprint": {
+            "type": "string"
+          },
+          "consumed": {
+            "type": "boolean"
+          },
+          "createdAt": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "criticalErrors": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "diagnostics": {
+            "items": {
+              "$ref": "#/components/schemas/MaintenanceDiagnostic"
+            },
+            "type": "array"
+          },
+          "expiresAt": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "isDraft": {
+            "type": "boolean"
+          },
+          "operationResults": {
+            "items": {
+              "$ref": "#/components/schemas/MaintenanceOperationResult"
+            },
+            "type": "array"
+          },
+          "operations": {
+            "items": {
+              "description": "Unknown numeric IDs are retained in historical results; preview accepts all ten defined maintenance operations.",
+              "oneOf": [
+                {
+                  "enum": [
+                    "OrphanScan",
+                    "HardlinkAudit",
+                    "UnregisteredCleanup",
+                    "CategoryReconcile",
+                    "AutomaticManagement",
+                    "PrivateTagging",
+                    "TrackerErrorTagging",
+                    "RepairPaused",
+                    "RecycleRetention",
+                    "ErrorRecovery"
+                  ],
+                  "type": "string"
+                },
+                {
+                  "type": "integer"
+                }
+              ]
+            },
+            "type": "array"
+          },
+          "planId": {
+            "type": "string"
+          },
+          "warnings": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          }
+        },
+        "type": "object"
+      },
+      "MaintenancePreviewRequest": {
+        "properties": {
+          "clientInstanceIds": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "maintenanceOverrides": {
+            "additionalProperties": {
+              "additionalProperties": true,
+              "type": "object"
+            },
+            "type": "object"
+          },
+          "operations": {
+            "items": {
+              "description": "Unknown numeric IDs are retained in historical results; preview accepts all ten defined maintenance operations.",
+              "oneOf": [
+                {
+                  "enum": [
+                    "OrphanScan",
+                    "HardlinkAudit",
+                    "UnregisteredCleanup",
+                    "CategoryReconcile",
+                    "AutomaticManagement",
+                    "PrivateTagging",
+                    "TrackerErrorTagging",
+                    "RepairPaused",
+                    "RecycleRetention",
+                    "ErrorRecovery"
+                  ],
+                  "type": "string"
+                },
+                {
+                  "type": "integer"
+                }
+              ]
+            },
+            "type": "array"
+          }
+        },
+        "type": "object"
+      },
+      "MaintenanceRecoveryStatus": {
+        "properties": {
+          "attempts": {
+            "format": "int32",
+            "type": "integer"
+          },
+          "clientInstanceId": {
+            "type": "string"
+          },
+          "failureSince": {
+            "format": "date-time",
+            "nullable": true,
+            "type": "string"
+          },
+          "operation": {
+            "description": "Unknown numeric IDs are retained in historical results; preview accepts all ten defined maintenance operations.",
+            "oneOf": [
+              {
+                "enum": [
+                  "OrphanScan",
+                  "HardlinkAudit",
+                  "UnregisteredCleanup",
+                  "CategoryReconcile",
+                  "AutomaticManagement",
+                  "PrivateTagging",
+                  "TrackerErrorTagging",
+                  "RepairPaused",
+                  "RecycleRetention",
+                  "ErrorRecovery"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "integer"
+              }
+            ]
+          },
+          "reason": {
+            "type": "string"
+          },
+          "stage": {
+            "type": "string"
+          },
+          "torrentHash": {
+            "type": "string"
+          },
+          "torrentName": {
+            "type": "string"
+          }
+        },
+        "type": "object"
+      },
+      "MaintenanceRunSummary": {
+        "properties": {
+          "applied": {
+            "format": "int32",
+            "type": "integer"
+          },
+          "blocked": {
+            "format": "int32",
+            "type": "integer"
+          },
+          "bytesMoved": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "bytesReclaimed": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "clientInstanceIds": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "completedAt": {
+            "format": "date-time",
+            "nullable": true,
+            "type": "string"
+          },
+          "diagnostics": {
+            "items": {
+              "$ref": "#/components/schemas/MaintenanceDiagnostic"
+            },
+            "type": "array"
+          },
+          "errors": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "failed": {
+            "format": "int32",
+            "type": "integer"
+          },
+          "operationResults": {
+            "items": {
+              "$ref": "#/components/schemas/MaintenanceOperationResult"
+            },
+            "type": "array"
+          },
+          "pending": {
+            "format": "int32",
+            "type": "integer"
+          },
+          "planned": {
+            "format": "int32",
+            "type": "integer"
+          },
+          "result": {
+            "type": "string"
+          },
+          "runId": {
+            "type": "string"
+          },
+          "skipped": {
+            "format": "int32",
+            "type": "integer"
+          },
+          "skippedReasons": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "startedAt": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "trigger": {
+            "type": "string"
+          }
+        },
+        "type": "object"
+      },
+      "MaintenanceStatus": {
+        "properties": {
+          "armed": {
+            "additionalProperties": {
+              "type": "boolean"
+            },
+            "deprecated": true,
+            "description": "Compatibility field; always false/empty. Use per-operation executionMode and authorized status.",
+            "type": "object"
+          },
+          "armedOperations": {
+            "additionalProperties": {
+              "items": {
+                "description": "Unknown numeric IDs are retained in historical results; preview accepts all ten defined maintenance operations.",
+                "oneOf": [
+                  {
+                    "enum": [
+                      "OrphanScan",
+                      "HardlinkAudit",
+                      "UnregisteredCleanup",
+                      "CategoryReconcile",
+                      "AutomaticManagement",
+                      "PrivateTagging",
+                      "TrackerErrorTagging",
+                      "RepairPaused",
+                      "RecycleRetention",
+                      "ErrorRecovery"
+                    ],
+                    "type": "string"
+                  },
+                  {
+                    "type": "integer"
+                  }
+                ]
+              },
+              "type": "array"
+            },
+            "deprecated": true,
+            "description": "Compatibility field; always false/empty. Use per-operation executionMode and authorized status.",
+            "type": "object"
+          },
+          "cleanup": {
+            "items": {
+              "$ref": "#/components/schemas/CleanupClientStatus"
+            },
+            "type": "array"
+          },
+          "configurationFingerprint": {
+            "type": "string"
+          },
+          "currentRun": {
+            "$ref": "#/components/schemas/MaintenanceRunSummary",
+            "nullable": true
+          },
+          "inspections": {
+            "items": {
+              "$ref": "#/components/schemas/MaintenanceInspectionStatus"
+            },
+            "type": "array"
+          },
+          "lastRun": {
+            "$ref": "#/components/schemas/MaintenanceRunSummary",
+            "nullable": true
+          },
+          "nextScheduledRun": {
+            "additionalProperties": {
+              "nullable": true,
+              "type": "string"
+            },
+            "type": "object"
+          },
+          "operations": {
+            "items": {
+              "$ref": "#/components/schemas/MaintenanceOperationStatus"
+            },
+            "type": "array"
+          },
+          "protection": {
+            "items": {
+              "$ref": "#/components/schemas/ProtectionDecision"
+            },
+            "type": "array"
+          },
+          "recovery": {
+            "items": {
+              "$ref": "#/components/schemas/MaintenanceRecoveryStatus"
+            },
+            "type": "array"
+          },
+          "running": {
+            "type": "boolean"
+          }
+        },
+        "type": "object"
+      },
+      "ProtectionDecision": {
+        "properties": {
+          "clientInstanceId": {
+            "type": "string"
+          },
+          "completionRisk": {
+            "type": "string"
+          },
+          "deadline": {
+            "format": "date-time",
+            "nullable": true,
+            "type": "string"
+          },
+          "deadlineRisk": {
+            "type": "string"
+          },
+          "estimatedCompletion": {
+            "format": "date-time",
+            "nullable": true,
+            "type": "string"
+          },
+          "latestCompletion": {
+            "format": "date-time",
+            "nullable": true,
+            "type": "string"
+          },
+          "latestRecoveryStart": {
+            "format": "date-time",
+            "nullable": true,
+            "type": "string"
+          },
+          "localEstimate": {
+            "type": "boolean"
+          },
+          "nativeStopLimitRisk": {
+            "type": "boolean"
+          },
+          "observedSeedSeconds": {
+            "format": "double",
+            "type": "number"
+          },
+          "reason": {
+            "type": "string"
+          },
+          "remainingSeedSeconds": {
+            "format": "double",
+            "type": "number"
+          },
+          "state": {
+            "type": "string"
+          },
+          "torrentHash": {
+            "type": "string"
+          },
+          "torrentName": {
+            "type": "string"
+          },
+          "tracker": {
+            "type": "string"
+          }
+        },
+        "type": "object"
+      },
+      "RecycleEntry": {
+        "properties": {
+          "clientInstanceId": {
+            "type": "string"
+          },
+          "destination": {
+            "type": "string"
+          },
+          "key": {
+            "type": "string"
+          },
+          "recycledAt": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "source": {
+            "type": "string"
+          },
+          "state": {
+            "type": "string"
+          },
+          "torrentHash": {
+            "nullable": true,
+            "type": "string"
+          }
+        },
+        "type": "object"
+      },
+      "RecycleFileSnapshot": {
+        "properties": {
+          "bytes": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "lastWriteTicks": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "path": {
+            "type": "string"
+          }
+        },
+        "type": "object"
+      },
+      "TorrentAutomationIssue": {
+        "properties": {
+          "addedOn": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "clientInstanceId": {
+            "type": "string"
+          },
+          "reason": {
+            "type": "string"
+          },
+          "torrentHash": {
+            "type": "string"
+          },
+          "torrentName": {
+            "type": "string"
+          }
+        },
+        "type": "object"
+      },
+      "TorrentAutomationStatus": {
+        "properties": {
+          "inspections": {
+            "items": {
+              "$ref": "#/components/schemas/MaintenanceInspectionStatus"
+            },
+            "type": "array"
+          },
+          "protection": {
+            "items": {
+              "$ref": "#/components/schemas/ProtectionDecision"
+            },
+            "type": "array"
+          },
+          "recovery": {
+            "items": {
+              "$ref": "#/components/schemas/MaintenanceRecoveryStatus"
+            },
+            "type": "array"
+          },
+          "trackerIssues": {
+            "items": {
+              "$ref": "#/components/schemas/TorrentAutomationIssue"
+            },
+            "type": "array"
+          }
+        },
+        "type": "object"
+      },
+      "TorrentClientView": {
+        "properties": {
+          "capabilities": {
+            "additionalProperties": true,
+            "type": "object"
+          },
+          "identity": {
+            "additionalProperties": true,
+            "type": "object"
+          }
+        },
+        "type": "object"
+      },
+      "TorrentFileInventoryItem": {
+        "properties": {
+          "clientPath": {
+            "additionalProperties": true,
+            "type": "object"
+          },
+          "file": {
+            "additionalProperties": true,
+            "type": "object"
+          },
+          "localPath": {
+            "nullable": true,
+            "type": "string"
+          }
+        },
+        "type": "object"
+      },
+      "TorrentInventory": {
+        "properties": {
+          "diagnostics": {
+            "items": {
+              "$ref": "#/components/schemas/MaintenanceDiagnostic"
+            },
+            "type": "array"
+          },
+          "inspectedClients": {
+            "additionalProperties": true,
+            "type": "object"
+          },
+          "isComplete": {
+            "type": "boolean"
+          },
+          "localPathReferences": {
+            "additionalProperties": {
+              "items": {
+                "$ref": "#/components/schemas/TorrentInventoryItem"
+              },
+              "type": "array"
+            },
+            "type": "object"
+          },
+          "ownershipComplete": {
+            "type": "boolean"
+          },
+          "ownershipRequested": {
+            "type": "boolean"
+          },
+          "torrents": {
+            "items": {
+              "$ref": "#/components/schemas/TorrentInventoryItem"
+            },
+            "type": "array"
+          },
+          "warnings": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          }
+        },
+        "type": "object"
+      },
+      "TorrentInventoryItem": {
+        "properties": {
+          "client": {
+            "additionalProperties": true,
+            "type": "object"
+          },
+          "files": {
+            "items": {
+              "$ref": "#/components/schemas/TorrentFileInventoryItem"
+            },
+            "type": "array"
+          },
+          "filesComplete": {
+            "type": "boolean"
+          },
+          "localFilesComplete": {
+            "type": "boolean"
+          },
+          "torrent": {
+            "additionalProperties": true,
+            "type": "object"
+          },
+          "trackers": {
+            "items": {
+              "additionalProperties": true,
+              "type": "object"
+            },
+            "type": "array"
+          },
+          "trackersComplete": {
+            "type": "boolean"
+          }
+        },
+        "type": "object"
       }
     },
     "securitySchemes": {
@@ -153,7 +1190,7 @@
     }
   },
   "info": {
-    "description": "API for qBittorrent + Arr automation (Torrentarr \u2014 C# port of qBitrr). Aligned with qBitrr v5.14.6-1, master commit 329e604e4e8512b1e32ba86e61920e1ae1e07a65. When WebUI.AuthDisabled is false, most routes require a Bearer token (WebUI.Token) or a valid browser session after login. Interactive docs: GET /web/docs or GET /api/docs.",
+    "description": "API for qBittorrent + Arr automation (Torrentarr \u2014 C# port of qBitrr). Aligned with qBitrr v5.14.6-1. When WebUI.AuthDisabled is false, most routes require a Bearer token (WebUI.Token) or a valid browser session after login. Interactive docs: GET /web/docs or GET /api/docs.",
     "title": "Torrentarr API",
     "version": "v1"
   },
@@ -1295,6 +2332,279 @@
         ]
       }
     },
+    "/api/maintenance/apply": {
+      "post": {
+        "description": "Manage supports all ten maintenance operations. Draft previews cannot execute. Saved plans expire at their configured TTL and execute once. Manual applies a reviewed preview once. Automatic runs on its saved schedule and persists across restarts; saving never runs a tool immediately. /api requires a Bearer token; /web follows configured login requirements.",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/MaintenanceApplyRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MaintenanceRunSummary"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "400": {
+            "description": "Invalid selection or configuration"
+          },
+          "401": {
+            "description": "Authentication required"
+          },
+          "404": {
+            "description": "No executable saved plan"
+          },
+          "409": {
+            "description": "Stale, expired, consumed, unauthorized, or concurrent plan"
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "summary": "Maintenance apply",
+        "tags": [
+          "Torrentarr Maintenance"
+        ]
+      }
+    },
+    "/api/maintenance/arm": {
+      "post": {
+        "deprecated": true,
+        "description": "Temporary session authorization has been removed. Save Automatic mode to enable scheduling, or Manual mode to stop scheduling.",
+        "responses": {
+          "401": {
+            "description": "Authentication required"
+          },
+          "410": {
+            "description": "Temporary session authorization has been removed. Save Automatic mode to enable scheduling, or Manual mode to stop scheduling."
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "summary": "Maintenance arm",
+        "tags": [
+          "Torrentarr Maintenance"
+        ]
+      }
+    },
+    "/api/maintenance/cancel": {
+      "post": {
+        "description": "Manage supports all ten maintenance operations. Draft previews cannot execute. Saved plans expire at their configured TTL and execute once. Manual applies a reviewed preview once. Automatic runs on its saved schedule and persists across restarts; saving never runs a tool immediately. /api requires a Bearer token; /web follows configured login requirements.",
+        "responses": {
+          "202": {
+            "description": "Accepted"
+          },
+          "401": {
+            "description": "Authentication required"
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "summary": "Maintenance cancel",
+        "tags": [
+          "Torrentarr Maintenance"
+        ]
+      }
+    },
+    "/api/maintenance/disarm": {
+      "post": {
+        "deprecated": true,
+        "description": "Temporary session authorization has been removed. Save Automatic mode to enable scheduling, or Manual mode to stop scheduling.",
+        "responses": {
+          "401": {
+            "description": "Authentication required"
+          },
+          "410": {
+            "description": "Temporary session authorization has been removed. Save Automatic mode to enable scheduling, or Manual mode to stop scheduling."
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "summary": "Maintenance disarm",
+        "tags": [
+          "Torrentarr Maintenance"
+        ]
+      }
+    },
+    "/api/maintenance/history": {
+      "get": {
+        "description": "Manage supports all ten maintenance operations. Draft previews cannot execute. Saved plans expire at their configured TTL and execute once. Manual applies a reviewed preview once. Automatic runs on its saved schedule and persists across restarts; saving never runs a tool immediately. /api requires a Bearer token; /web follows configured login requirements.",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "limit",
+            "schema": {
+              "default": 50,
+              "maximum": 500,
+              "minimum": 1,
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/MaintenanceRunSummary"
+                  },
+                  "type": "array"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "401": {
+            "description": "Authentication required"
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "summary": "Maintenance history",
+        "tags": [
+          "Torrentarr Maintenance"
+        ]
+      }
+    },
+    "/api/maintenance/preview": {
+      "post": {
+        "description": "Manage supports all ten maintenance operations. Draft previews cannot execute. Saved plans expire at their configured TTL and execute once. Manual applies a reviewed preview once. Automatic runs on its saved schedule and persists across restarts; saving never runs a tool immediately. /api requires a Bearer token; /web follows configured login requirements.",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/MaintenancePreviewRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MaintenancePlan"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "400": {
+            "description": "Invalid selection or configuration"
+          },
+          "401": {
+            "description": "Authentication required"
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "summary": "Maintenance preview",
+        "tags": [
+          "Torrentarr Maintenance"
+        ]
+      }
+    },
+    "/api/maintenance/run": {
+      "post": {
+        "description": "Manage supports all ten maintenance operations. Draft previews cannot execute. Saved plans expire at their configured TTL and execute once. Manual applies a reviewed preview once. Automatic runs on its saved schedule and persists across restarts; saving never runs a tool immediately. /api requires a Bearer token; /web follows configured login requirements.",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/MaintenanceClientsRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MaintenanceRunSummary"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "400": {
+            "description": "Invalid selection or configuration"
+          },
+          "401": {
+            "description": "Authentication required"
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "summary": "Maintenance run",
+        "tags": [
+          "Torrentarr Maintenance"
+        ]
+      }
+    },
+    "/api/maintenance/status": {
+      "get": {
+        "description": "Manage supports all ten maintenance operations. Draft previews cannot execute. Saved plans expire at their configured TTL and execute once. Manual applies a reviewed preview once. Automatic runs on its saved schedule and persists across restarts; saving never runs a tool immediately. /api requires a Bearer token; /web follows configured login requirements.",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MaintenanceStatus"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "401": {
+            "description": "Authentication required"
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "summary": "Maintenance status",
+        "tags": [
+          "Torrentarr Maintenance"
+        ]
+      }
+    },
     "/api/meta": {
       "get": {
         "operationId": "api_meta",
@@ -1566,7 +2876,6 @@
     },
     "/api/radarr/{category}/movies": {
       "get": {
-        "description": "Total reflects all active filters; counts remain full-library rollups.",
         "operationId": "api_radarr_movies",
         "parameters": [
           {
@@ -1638,15 +2947,6 @@
             "name": "is_request",
             "schema": {
               "type": "boolean"
-            }
-          },
-          {
-            "description": "Filter before pagination by search reason. Not being searched includes null and empty reasons; all or an empty value disables this filter.",
-            "in": "query",
-            "name": "reason",
-            "required": false,
-            "schema": {
-              "type": "string"
             }
           }
         ],
@@ -2098,6 +3398,34 @@
         "summary": "Current WebUI API token (requires auth)",
         "tags": [
           "Auth"
+        ]
+      }
+    },
+    "/api/torrent-automation/status": {
+      "get": {
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TorrentAutomationStatus"
+                }
+              }
+            },
+            "description": "Observed status; never authorizes mutation"
+          },
+          "401": {
+            "description": "Authentication required"
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "summary": "Protection and recovery status",
+        "tags": [
+          "Torrentarr Automation"
         ]
       }
     },
@@ -3520,6 +4848,239 @@
         ]
       }
     },
+    "/web/maintenance/apply": {
+      "post": {
+        "description": "Manage supports all ten maintenance operations. Draft previews cannot execute. Saved plans expire at their configured TTL and execute once. Manual applies a reviewed preview once. Automatic runs on its saved schedule and persists across restarts; saving never runs a tool immediately. /api requires a Bearer token; /web follows configured login requirements.",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/MaintenanceApplyRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MaintenanceRunSummary"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "400": {
+            "description": "Invalid selection or configuration"
+          },
+          "401": {
+            "description": "Authentication required"
+          },
+          "404": {
+            "description": "No executable saved plan"
+          },
+          "409": {
+            "description": "Stale, expired, consumed, unauthorized, or concurrent plan"
+          }
+        },
+        "summary": "Maintenance apply",
+        "tags": [
+          "Torrentarr Maintenance"
+        ]
+      }
+    },
+    "/web/maintenance/arm": {
+      "post": {
+        "deprecated": true,
+        "description": "Temporary session authorization has been removed. Save Automatic mode to enable scheduling, or Manual mode to stop scheduling.",
+        "responses": {
+          "401": {
+            "description": "Authentication required"
+          },
+          "410": {
+            "description": "Temporary session authorization has been removed. Save Automatic mode to enable scheduling, or Manual mode to stop scheduling."
+          }
+        },
+        "summary": "Maintenance arm",
+        "tags": [
+          "Torrentarr Maintenance"
+        ]
+      }
+    },
+    "/web/maintenance/cancel": {
+      "post": {
+        "description": "Manage supports all ten maintenance operations. Draft previews cannot execute. Saved plans expire at their configured TTL and execute once. Manual applies a reviewed preview once. Automatic runs on its saved schedule and persists across restarts; saving never runs a tool immediately. /api requires a Bearer token; /web follows configured login requirements.",
+        "responses": {
+          "202": {
+            "description": "Accepted"
+          },
+          "401": {
+            "description": "Authentication required"
+          }
+        },
+        "summary": "Maintenance cancel",
+        "tags": [
+          "Torrentarr Maintenance"
+        ]
+      }
+    },
+    "/web/maintenance/disarm": {
+      "post": {
+        "deprecated": true,
+        "description": "Temporary session authorization has been removed. Save Automatic mode to enable scheduling, or Manual mode to stop scheduling.",
+        "responses": {
+          "401": {
+            "description": "Authentication required"
+          },
+          "410": {
+            "description": "Temporary session authorization has been removed. Save Automatic mode to enable scheduling, or Manual mode to stop scheduling."
+          }
+        },
+        "summary": "Maintenance disarm",
+        "tags": [
+          "Torrentarr Maintenance"
+        ]
+      }
+    },
+    "/web/maintenance/history": {
+      "get": {
+        "description": "Manage supports all ten maintenance operations. Draft previews cannot execute. Saved plans expire at their configured TTL and execute once. Manual applies a reviewed preview once. Automatic runs on its saved schedule and persists across restarts; saving never runs a tool immediately. /api requires a Bearer token; /web follows configured login requirements.",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "limit",
+            "schema": {
+              "default": 50,
+              "maximum": 500,
+              "minimum": 1,
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/MaintenanceRunSummary"
+                  },
+                  "type": "array"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "401": {
+            "description": "Authentication required"
+          }
+        },
+        "summary": "Maintenance history",
+        "tags": [
+          "Torrentarr Maintenance"
+        ]
+      }
+    },
+    "/web/maintenance/preview": {
+      "post": {
+        "description": "Manage supports all ten maintenance operations. Draft previews cannot execute. Saved plans expire at their configured TTL and execute once. Manual applies a reviewed preview once. Automatic runs on its saved schedule and persists across restarts; saving never runs a tool immediately. /api requires a Bearer token; /web follows configured login requirements.",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/MaintenancePreviewRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MaintenancePlan"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "400": {
+            "description": "Invalid selection or configuration"
+          },
+          "401": {
+            "description": "Authentication required"
+          }
+        },
+        "summary": "Maintenance preview",
+        "tags": [
+          "Torrentarr Maintenance"
+        ]
+      }
+    },
+    "/web/maintenance/run": {
+      "post": {
+        "description": "Manage supports all ten maintenance operations. Draft previews cannot execute. Saved plans expire at their configured TTL and execute once. Manual applies a reviewed preview once. Automatic runs on its saved schedule and persists across restarts; saving never runs a tool immediately. /api requires a Bearer token; /web follows configured login requirements.",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/MaintenanceClientsRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MaintenanceRunSummary"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "400": {
+            "description": "Invalid selection or configuration"
+          },
+          "401": {
+            "description": "Authentication required"
+          }
+        },
+        "summary": "Maintenance run",
+        "tags": [
+          "Torrentarr Maintenance"
+        ]
+      }
+    },
+    "/web/maintenance/status": {
+      "get": {
+        "description": "Manage supports all ten maintenance operations. Draft previews cannot execute. Saved plans expire at their configured TTL and execute once. Manual applies a reviewed preview once. Automatic runs on its saved schedule and persists across restarts; saving never runs a tool immediately. /api requires a Bearer token; /web follows configured login requirements.",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MaintenanceStatus"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "401": {
+            "description": "Authentication required"
+          }
+        },
+        "summary": "Maintenance status",
+        "tags": [
+          "Torrentarr Maintenance"
+        ]
+      }
+    },
     "/web/meta": {
       "get": {
         "operationId": "web_meta_public",
@@ -3826,7 +5387,6 @@
     },
     "/web/radarr/{category}/movies": {
       "get": {
-        "description": "Total reflects all active filters; counts remain full-library rollups.",
         "operationId": "web_radarr_movies",
         "parameters": [
           {
@@ -3898,15 +5458,6 @@
             "name": "is_request",
             "schema": {
               "type": "boolean"
-            }
-          },
-          {
-            "description": "Filter before pagination by search reason. Not being searched includes null and empty reasons; all or an empty value disables this filter.",
-            "in": "query",
-            "name": "reason",
-            "required": false,
-            "schema": {
-              "type": "string"
             }
           }
         ],
@@ -4367,6 +5918,29 @@
         "summary": "API token when auth disabled or session valid; 401 with empty token if auth required and not signed in",
         "tags": [
           "Auth"
+        ]
+      }
+    },
+    "/web/torrent-automation/status": {
+      "get": {
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TorrentAutomationStatus"
+                }
+              }
+            },
+            "description": "Observed status; never authorizes mutation"
+          },
+          "401": {
+            "description": "Authentication required"
+          }
+        },
+        "summary": "Protection and recovery status",
+        "tags": [
+          "Torrentarr Automation"
         ]
       }
     },

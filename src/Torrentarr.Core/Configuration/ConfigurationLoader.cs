@@ -14,7 +14,7 @@ internal sealed class TorrentClientConfigDocument
 public class ConfigurationLoader
 {
     /// <summary>Expected config schema version (qBitrr parity). Used for validation and mismatch warning.</summary>
-    public const string ExpectedConfigVersion = "6.19.0";
+    public const string ExpectedConfigVersion = "6.20.2";
 
     /// <summary>
     /// TEST USE ONLY. When set by test fixtures, GetDefaultConfigPath() returns this instead of env/defaults.
@@ -100,6 +100,22 @@ public class ConfigurationLoader
         if (!persistMigrations && !tomlTable.ContainsKey("Settings"))
             throw new FormatException("Live configuration requires a Settings section.");
 
+        // Environment overrides are runtime-only; migration persists only file values.
+        var runtimeStorage = StorageConfigMigration.ReadLegacy(tomlTable);
+        var storageEnvironment = new TomlTable();
+        foreach (var (key, suffix) in new[] { ("CompletedDownloadFolder", "COMPLETED_DOWNLOAD_FOLDER"),
+            ("FreeSpace", "FREE_SPACE"), ("FreeSpaceFolder", "FREE_SPACE_FOLDER"), ("AutoPauseResume", "AUTO_PAUSE_RESUME") })
+        {
+            var value = ReadEnv("TORRENTARR_SETTINGS_" + suffix, "QBITRR_SETTINGS_" + suffix);
+            if (string.IsNullOrEmpty(value)) continue;
+            if (key == "AutoPauseResume")
+            {
+                ApplyEnvBool("TORRENTARR_SETTINGS_" + suffix, "QBITRR_SETTINGS_" + suffix, enabled => storageEnvironment[key] = enabled);
+            }
+            else storageEnvironment[key] = value;
+        }
+        foreach (var (key, value) in storageEnvironment) runtimeStorage[key] = value;
+
         // Apply config migrations on the raw TOML table before parsing (qBitrr parity)
         var migrated = ApplyConfigMigrations(tomlTable);
         if (migrated && persistMigrations)
@@ -118,6 +134,9 @@ public class ConfigurationLoader
                 // Migration save failed — continue with in-memory migrated table
             }
         }
+
+        if (storageEnvironment.Count > 0)
+            StorageConfigMigration.ApplyEnvironment(tomlTable, runtimeStorage, storageEnvironment.Keys);
 
         foreach (var (name, value) in tomlTable)
         {
@@ -178,7 +197,7 @@ public class ConfigurationLoader
         ApplyEnvironmentOverrides(config);
         foreach (var (id, client) in config.GetAllTorrentClients())
         {
-            var error = MaintenanceConfigValidation.Validate(client.Maintenance);
+            var error = StorageConfigMigration.Validate(client) ?? MaintenanceConfigValidation.Validate(client.Maintenance) ?? StorageConfigurationValidation.Validate(client);
             if (error != null) throw new InvalidDataException($"Torrent client '{id}': {error}");
         }
 
@@ -206,13 +225,9 @@ public class ConfigurationLoader
         var s = config.Settings;
         ApplyEnvString("TORRENTARR_SETTINGS_CONSOLE_LEVEL", "QBITRR_SETTINGS_CONSOLE_LEVEL", v => s.ConsoleLevel = v);
         ApplyEnvBool("TORRENTARR_SETTINGS_LOGGING", "QBITRR_SETTINGS_LOGGING", v => s.Logging = v);
-        ApplyEnvString("TORRENTARR_SETTINGS_COMPLETED_DOWNLOAD_FOLDER", "QBITRR_SETTINGS_COMPLETED_DOWNLOAD_FOLDER", v => s.CompletedDownloadFolder = v);
-        ApplyEnvString("TORRENTARR_SETTINGS_FREE_SPACE", "QBITRR_SETTINGS_FREE_SPACE", v => s.FreeSpace = v);
-        ApplyEnvString("TORRENTARR_SETTINGS_FREE_SPACE_FOLDER", "QBITRR_SETTINGS_FREE_SPACE_FOLDER", v => s.FreeSpaceFolder = v);
         ApplyEnvInt("TORRENTARR_SETTINGS_NO_INTERNET_SLEEP_TIMER", "QBITRR_SETTINGS_NO_INTERNET_SLEEP_TIMER", v => s.NoInternetSleepTimer = v);
         ApplyEnvInt("TORRENTARR_SETTINGS_LOOP_SLEEP_TIMER", "QBITRR_SETTINGS_LOOP_SLEEP_TIMER", v => s.LoopSleepTimer = v);
         ApplyEnvInt("TORRENTARR_SETTINGS_SEARCH_LOOP_DELAY", "QBITRR_SETTINGS_SEARCH_LOOP_DELAY", v => s.SearchLoopDelay = v);
-        ApplyEnvBool("TORRENTARR_SETTINGS_AUTO_PAUSE_RESUME", "QBITRR_SETTINGS_AUTO_PAUSE_RESUME", v => s.AutoPauseResume = v);
         ApplyEnvString("TORRENTARR_SETTINGS_FAILED_CATEGORY", "QBITRR_SETTINGS_FAILED_CATEGORY", v => s.FailedCategory = v);
         ApplyEnvString("TORRENTARR_SETTINGS_RECHECK_CATEGORY", "QBITRR_SETTINGS_RECHECK_CATEGORY", v => s.RecheckCategory = v);
         ApplyEnvBool("TORRENTARR_SETTINGS_TAGLESS", "QBITRR_SETTINGS_TAGLESS", v => s.Tagless = v);
@@ -387,6 +402,9 @@ public class ConfigurationLoader
         // Migration 7: Expand unmodified Readarr ebook-only allowlists to include audiobook extensions
         if (MigrateReadarrEbookAllowlist(root))
             changed = true;
+
+        if (MaintenanceSimplificationMigration.Migrate(root)) changed = true;
+        if (StorageConfigMigration.Migrate(root)) changed = true;
 
         // Validate and fill missing config values with defaults
         if (ValidateAndFillConfig(root))
@@ -911,10 +929,6 @@ public class ConfigurationLoader
             {
                 ("ConsoleLevel", "INFO"),
                 ("Logging", true),
-                ("CompletedDownloadFolder", ""),
-                ("FreeSpace", "-1"),
-                ("FreeSpaceFolder", ""),
-                ("AutoPauseResume", true),
                 ("NoInternetSleepTimer", (long)15),
                 ("LoopSleepTimer", (long)5),
                 ("SearchLoopDelay", (long)(-1)),
@@ -1174,18 +1188,6 @@ public class ConfigurationLoader
         if (table.TryGetValue("Logging", out var logging))
             settings.Logging = Convert.ToBoolean(logging);
 
-        if (table.TryGetValue("CompletedDownloadFolder", out var downloadFolder))
-            settings.CompletedDownloadFolder = downloadFolder?.ToString() ?? "";
-
-        if (table.TryGetValue("FreeSpace", out var freeSpace))
-            settings.FreeSpace = freeSpace?.ToString() ?? "-1";
-
-        if (table.TryGetValue("FreeSpaceFolder", out var freeSpaceFolder))
-            settings.FreeSpaceFolder = freeSpaceFolder?.ToString() ?? "";
-
-        if (table.TryGetValue("AutoPauseResume", out var autoPauseResume))
-            settings.AutoPauseResume = Convert.ToBoolean(autoPauseResume);
-
         if (table.TryGetValue("NoInternetSleepTimer", out var noInternetSleep))
             settings.NoInternetSleepTimer = DurationParser.ParseToSeconds(noInternetSleep, 15);
 
@@ -1267,6 +1269,10 @@ public class ConfigurationLoader
         if (table.TryGetValue("SkipTLSVerify", out var skipTls))
             qbit.SkipTLSVerify = Convert.ToBoolean(skipTls);
 
+        if (table.TryGetValue("FreeSpace", out var monitors))
+            qbit.FreeSpace = TomlSerializer.Deserialize<TorrentClientInstanceConfig>(
+                TomlSerializer.Serialize(new TomlTable { ["FreeSpace"] = monitors }))!.FreeSpace;
+
         if (table.TryGetValue("DownloadPath", out var downloadPath))
             qbit.DownloadPath = downloadPath?.ToString();
 
@@ -1283,8 +1289,9 @@ public class ConfigurationLoader
             qbit.Trackers = GetTrackerTables(trackersObj).Select(t => ParseTrackerConfig(t)).Where(t => t != null).ToList()!;
 
         if (table.TryGetValue("Maintenance", out var maintenanceObj) && maintenanceObj is TomlTable maintenanceTable)
-            qbit.Maintenance = TomlSerializer.Deserialize<MaintenanceConfig>(
-                TomlSerializer.Serialize(maintenanceTable)) ?? new MaintenanceConfig();
+            qbit.Maintenance = TomlSerializer.Deserialize<MaintenanceConfig>(TomlSerializer.Serialize(maintenanceTable)) ?? new();
+        if (table.TryGetValue("Migration", out var migrationObj) && migrationObj is TomlTable migrationTable)
+            qbit.Migration = TomlSerializer.Deserialize<MigrationNoticeDocument>(TomlSerializer.Serialize(migrationTable)) ?? new();
 
         return qbit;
     }
@@ -1326,6 +1333,8 @@ public class ConfigurationLoader
         if (table == null) return null;
 
         var tracker = new TrackerConfig();
+        if (table.TryGetValue("Protection", out var protection) && protection is TomlTable policy)
+            tracker.Protection = TomlSerializer.Deserialize<TrackerProtectionConfig>(TomlSerializer.Serialize(policy));
 
         if (table.TryGetValue("Name", out var name))
             tracker.Name = name?.ToString();
@@ -1391,6 +1400,8 @@ public class ConfigurationLoader
         if (table.TryGetValue("AddTags", out var addTagsVal) && addTagsVal is Tomlyn.Model.TomlArray addTagsArr)
             tracker.AddTags = addTagsArr.OfType<string>().ToList();
 
+        var protectionError = TrackerProtectionValidation.Validate(tracker.Protection);
+        if (protectionError != null) throw new InvalidOperationException(protectionError);
         return tracker;
     }
 
@@ -1976,10 +1987,6 @@ public class ConfigurationLoader
                 ConfigVersion = ExpectedConfigVersion,
                 ConsoleLevel = "INFO",
                 Logging = true,
-                CompletedDownloadFolder = "CHANGE_ME",
-                FreeSpace = "-1",
-                FreeSpaceFolder = "CHANGE_ME",
-                AutoPauseResume = true,
                 NoInternetSleepTimer = 15,
                 LoopSleepTimer = 5,
                 SearchLoopDelay = -1,
@@ -2058,10 +2065,6 @@ public class ConfigurationLoader
         sb.AppendLine($"ConfigVersion = \"{config.Settings.ConfigVersion}\"");
         sb.AppendLine($"ConsoleLevel = \"{config.Settings.ConsoleLevel}\"");
         sb.AppendLine($"Logging = {config.Settings.Logging.ToString().ToLower()}");
-        sb.AppendLine($"CompletedDownloadFolder = \"{config.Settings.CompletedDownloadFolder}\"");
-        sb.AppendLine($"FreeSpace = \"{config.Settings.FreeSpace}\"");
-        sb.AppendLine($"FreeSpaceFolder = \"{config.Settings.FreeSpaceFolder}\"");
-        sb.AppendLine($"AutoPauseResume = {config.Settings.AutoPauseResume.ToString().ToLower()}");
         sb.AppendLine($"NoInternetSleepTimer = {config.Settings.NoInternetSleepTimer}");
         sb.AppendLine($"LoopSleepTimer = {config.Settings.LoopSleepTimer}");
         sb.AppendLine($"SearchLoopDelay = {config.Settings.SearchLoopDelay}");
@@ -2129,7 +2132,9 @@ public class ConfigurationLoader
             sb.AppendLine($"Password = \"{qbit.Password}\"");
             sb.AppendLine($"SkipTLSVerify = {qbit.SkipTLSVerify.ToString().ToLower()}");
             if (!string.IsNullOrEmpty(qbit.DownloadPath))
-                sb.AppendLine($"DownloadPath = \"{qbit.DownloadPath}\"");
+                sb.AppendLine($"DownloadPath = \"{EscapeTomlString(qbit.DownloadPath)}\"");
+            sb.AppendLine("FreeSpace = [" + string.Join(", ", qbit.FreeSpace.Select(m =>
+                $"{{ Path = \"{EscapeTomlString(m.Path)}\", Enabled = {m.Enabled.ToString().ToLowerInvariant()}, Limit = \"{EscapeTomlString(m.Limit)}\" }}")) + "]");
             sb.AppendLine($"ManagedCategories = [{string.Join(", ", qbit.ManagedCategories.Select(c => $"\"{c}\""))}]");
             sb.AppendLine($"MatchSubcategories = {qbit.MatchSubcategories.ToString().ToLower()}");
             if (name == "qBit")
@@ -2177,7 +2182,8 @@ public class ConfigurationLoader
                 if (category.IgnoreTorrentsYoungerThan.HasValue) sb.AppendLine($"IgnoreTorrentsYoungerThan = {category.IgnoreTorrentsYoungerThan.Value}");
             }
             sb.AppendLine();
-            AppendMaintenanceSection(sb, name, qbit.Maintenance);
+            AppendClientSection(sb, name, "Maintenance", qbit.Maintenance);
+            AppendClientSection(sb, name, "Migration", qbit.Migration);
         }
 
         if (config.TorrentClients.Count > 0)
@@ -2329,6 +2335,11 @@ public class ConfigurationLoader
             sb.AppendLine($"MinSeedingTime = {tracker.MinSeedingTimeDays ?? 0}");
             sb.AppendLine($"HitAndRunPartialSeedRatio = {tracker.HitAndRunPartialSeedRatio ?? 1.0}");
             sb.AppendLine($"TrackerUpdateBuffer = {tracker.TrackerUpdateBuffer ?? 0}");
+            if (tracker.Protection != null)
+            {
+                var policy = TomlSerializer.Serialize(tracker.Protection);
+                sb.AppendLine("Protection = { " + string.Join(", ", policy.Split('\n', StringSplitOptions.RemoveEmptyEntries).Select(line => line.Trim())) + " }");
+            }
             sb.AppendLine($"HitAndRunMinimumDownloadPercent = {tracker.HitAndRunMinimumDownloadPercent ?? 10}");
             if (tracker.SuperSeedMode.HasValue)
                 sb.AppendLine($"SuperSeedMode = {tracker.SuperSeedMode.Value.ToString().ToLower()}");
@@ -2362,19 +2373,14 @@ public class ConfigurationLoader
     /// <summary>
     /// Escape special characters for TOML string values
     /// </summary>
-    private static void AppendMaintenanceSection(
-        System.Text.StringBuilder sb, string parent, MaintenanceConfig maintenance)
+    private static void AppendClientSection<T>(System.Text.StringBuilder sb, string parent, string section, T value)
     {
-        sb.AppendLine($"[{parent}.Maintenance]");
-        foreach (var rawLine in TomlSerializer.Serialize(maintenance).Split('\n'))
+        sb.AppendLine($"[{parent}.{section}]");
+        foreach (var line in TomlSerializer.Serialize(value).Trim().Split('\n'))
         {
-            var line = rawLine.TrimEnd('\r');
-            if (line.StartsWith("[[", StringComparison.Ordinal))
-                sb.AppendLine($"[[{parent}.Maintenance.{line[2..]}");
-            else if (line.StartsWith("[", StringComparison.Ordinal))
-                sb.AppendLine($"[{parent}.Maintenance.{line[1..]}");
-            else
-                sb.AppendLine(line);
+            if (line.StartsWith("[[")) sb.AppendLine($"[[{parent}.{section}.{line[2..]}");
+            else if (line.StartsWith("[")) sb.AppendLine($"[{parent}.{section}.{line[1..]}");
+            else sb.AppendLine(line);
         }
         sb.AppendLine();
     }

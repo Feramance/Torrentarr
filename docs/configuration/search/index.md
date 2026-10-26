@@ -18,7 +18,7 @@ Torrentarr can automatically trigger searches in your Arr instances for:
 Configure Torrentarr to periodically search for missing content:
 
 ```toml
-[[Radarr]]
+[Radarr-Movies]
 Name = "Radarr-Main"
 SearchMissing = true
 SearchPeriodDays = 7  # Search every 7 days
@@ -35,9 +35,17 @@ This will automatically search for:
 Control how often Torrentarr searches:
 
 ```toml
-[[Radarr]]
+[Radarr-Movies]
 SearchPeriodDays = 1   # Daily (aggressive)
+```
+
+```toml
+[Radarr-Movies]
 SearchPeriodDays = 7   # Weekly (recommended)
+```
+
+```toml
+[Radarr-Movies]
 SearchPeriodDays = 30  # Monthly (conservative)
 ```
 
@@ -65,7 +73,7 @@ SearchPeriodDays = 30  # Monthly (conservative)
 Prioritize searches for user requests:
 
 ```toml
-[[Radarr]]
+[Radarr-Movies]
 PrioritizeRequests = true  # Search requests first
 RequestSearchDelay = 60    # Wait 1 minute after request
 ```
@@ -77,7 +85,7 @@ RequestSearchDelay = 60    # Wait 1 minute after request
 Search for better quality releases:
 
 ```toml
-[[Radarr]]
+[Radarr-Movies]
 SearchUpgrades = true
 UpgradePeriodDays = 14  # Search for upgrades every 2 weeks
 ```
@@ -87,7 +95,7 @@ UpgradePeriodDays = 14  # Search for upgrades every 2 weeks
 Configure what qualifies as an upgrade:
 
 ```toml
-[[Radarr]]
+[Radarr-Movies]
 # Only upgrade if:
 MinimumQualityGain = "1080p"  # At least 1080p
 CustomFormatScore = 100        # CF score improvement
@@ -100,7 +108,7 @@ CustomFormatScore = 100        # CF score improvement
 When a download fails, automatically search again:
 
 ```toml
-[[Radarr]]
+[Radarr-Movies]
 AutoResearchFailed = true
 ResearchDelay = 300        # Wait 5 minutes before re-searching
 MaxResearchAttempts = 3    # Try up to 3 times
@@ -111,7 +119,7 @@ MaxResearchAttempts = 3    # Try up to 3 times
 Configure blacklisting of failed releases:
 
 ```toml
-[[Radarr]]
+[Radarr-Movies]
 BlacklistFailed = true      # Blacklist failed torrents
 BlacklistMinSize = 104857600  # Only blacklist if > 100MB
 ```
@@ -146,7 +154,7 @@ MaxConcurrentSearches = 5  # Max 5 simultaneous searches
 - **RSS** - Grab from RSS feeds
 
 ```toml
-[[Radarr]]
+[Radarr-Movies]
 SearchMode = "Standard"  # or "Interactive" or "RSS"
 ```
 
@@ -157,7 +165,7 @@ SearchMode = "Standard"  # or "Interactive" or "RSS"
 - **Episode** - Search individual episodes
 
 ```toml
-[[Sonarr]]
+[Sonarr-TV]
 DefaultSearchMode = "Episode"  # More targeted
 ```
 
@@ -168,7 +176,7 @@ DefaultSearchMode = "Episode"  # More targeted
 Only search if custom format requirements can be met:
 
 ```toml
-[[Radarr]]
+[Radarr-Movies]
 RequireCustomFormat = true
 MinimumCustomFormatScore = 100
 ```
@@ -178,7 +186,7 @@ MinimumCustomFormatScore = 100
 Filter searches by release properties:
 
 ```toml
-[[Radarr]]
+[Radarr-Movies]
 PreferredWords = ["PROPER", "REPACK"]
 ForbiddenWords = ["CAM", "TS"]
 MinSeeders = 5  # Require at least 5 seeders
@@ -278,7 +286,7 @@ SearchDelaySeconds = 30
 ### Aggressive Search (New Library)
 
 ```toml
-[[Radarr]]
+[Radarr-Movies]
 Name = "Radarr-New"
 SearchMissing = true
 SearchPeriodDays = 1        # Daily
@@ -290,7 +298,7 @@ PrioritizeRequests = true
 ### Conservative Search (Established Library)
 
 ```toml
-[[Radarr]]
+[Radarr-Movies]
 Name = "Radarr-Established"
 SearchMissing = true
 SearchPeriodDays = 30       # Monthly
@@ -307,7 +315,7 @@ URI = "http://overseerr:5055"
 APIKey = "overseerr-api-key"
 CheckInterval = 180  # Check every 3 minutes
 
-[[Radarr]]
+[Radarr-Movies]
 PrioritizeRequests = true
 RequestSearchDelay = 30     # Quick response
 SearchMissing = false       # Only search requests

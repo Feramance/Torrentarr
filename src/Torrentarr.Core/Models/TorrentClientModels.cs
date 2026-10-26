@@ -45,6 +45,8 @@ public class TorrentClientCategory
 
 public class TorrentPropertiesRecord
 {
+    [JsonProperty("is_private")]
+    public bool? IsPrivate { get; set; }
     [JsonProperty("save_path")]
     public string SavePath { get; set; } = "";
 

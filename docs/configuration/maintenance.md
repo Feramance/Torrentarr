@@ -1,54 +1,49 @@
-# Maintenance configuration
+# Manage configuration
 
-Open **Config → Configure** on a torrent client and use **Path mappings** to add,
-edit, or remove mappings. Save the client to persist changes to `config.toml`.
-Active worker cycles finish with their current mappings; subsequent cycles use
-the saved revision. The configuration status distinguishes saved changes waiting
-for active operations from changes applied by all components. No restart is needed. Closing without saving
-leaves changes unapplied; reload configuration to discard a retained draft.
-Maintenance remains opt-in: use the
-[maintenance preview](../features/torrent-maintenance.md) before arming or applying actions.
+Open **Manage** and select a torrent client. This is the single editor for maintenance tools. The client configuration dialog provides a summary and **Open Manage** shortcut; connection, free-space monitors, seeding, and tracker settings remain in Config.
 
-## Path mappings
+Tools are grouped under **Recovery**, **Organization**, and **Storage**. Expand a card to configure or check that tool. Only one tool card stays open. Advanced filters, limits, schedules, and tuning start collapsed. Shared scope, path mappings, recycling, and safeguards are configured once under **Shared settings**.
 
-**Torrent client path** is the root reported by the torrent client.
-**Torrentarr path** is the same directory as seen by Torrentarr's process. In Docker,
-use the container path, not the host path. For example, `/downloads/movie/file.mkv`
-becomes `/data/downloads/movie/file.mkv` with this mapping:
-
-```toml
-[[qBit.Maintenance.PathMappings]]
-ClientPath = '/downloads'
-LocalPath = '/data/downloads'
-```
-
-Mappings translate paths: they do not create mounts, copy, or move files. Both
-roots must be absolute without `.` or `..` segments. Duplicate client roots are
-rejected; overlapping roots use the longest matching prefix. Windows client paths
-are supported, such as `'D:\Downloads'`; the local root must be absolute for the
-operating system running Torrentarr. Preview checks filesystem accessibility.
-
-## Canonical torrent-client sections
-
-Path mappings work identically for legacy `[qBit]` / `[qBit-name]` and canonical
-`[TorrentClient.name]` instances:
+Save settings before checking a tool. Saving does not run it. **Manual** applies a reviewed preview once. **Automatic** runs on the saved schedule and stays enabled after restart; no restart is required. Saving Automatic enables future scheduled runs and never executes a tool immediately. The schedule is shown beside Automatic, in UTC; blank inherits the shared client schedule. Manual hides the schedule without discarding it. Schedules use UTC; displayed times use your browser timezone.
 
 ```toml
 [TorrentClient.seedbox]
 Type = 'qbittorrent'
 Host = 'localhost'
 Port = 8080
+ManagedCategories = ['movies']
+
+[TorrentClient.seedbox.Maintenance]
+Enabled = true
+Scope = 'managed'
+ExcludedTags = ['keep']
 
 [[TorrentClient.seedbox.Maintenance.PathMappings]]
 ClientPath = '/downloads'
 LocalPath = '/data/downloads'
+
+[TorrentClient.seedbox.Maintenance.Orphans]
+Enabled = true
+ScanRoots = ['/data/downloads']
+MinimumAgeMinutes = 1440
+MaxFilesPerRun = 10
+
+[TorrentClient.seedbox.Maintenance.RecycleBin]
+Enabled = true
+Path = '/data/recycle'
+RetentionEnabled = true
+RetentionDays = 30
+
+[TorrentClient.seedbox.Maintenance.Operations.OrphanScan]
+Enabled = true
+ExecutionMode = 'manual'
+Schedule = '15 3 * * *'
 ```
 
-Replace example paths with your own. Seeding ratio, time limits, category/tracker
-overrides, and Hit & Run protection remain configured through the existing
-[seeding settings](seeding.md).
+The same nested settings work under legacy `qBit` / `qBit-*` sections. Do not declare the same client ID in both section styles. The persisted name remains `Maintenance`; Manage is its interface label.
 
-Legacy share-policy and maintenance-notification tables are ignored when loading
-existing TOML and omitted on the next save. They no longer perform actions or send
-notifications, and are not converted into seeding rules. Loading alone does not
-rewrite a file solely to remove those tables.
+Path mappings describe the same storage in two namespaces; they do not mount or move folders. Filesystem cleanup needs explicit mappings and scan roots. Never select an Arr library or filesystem root as an orphan scan root.
+
+All original tools and their settings remain supported. Interim `Storage` and `Recovery` settings fill missing canonical maintenance values. Existing canonical values, disabled states, scopes, zero budgets, outcomes, and schedules take precedence. Schema 6.20.2 changes existing `session` execution modes to `manual`; schedules and all other settings remain saved. Tools without an operation policy also default to Manual. Select Automatic explicitly to resume scheduling. Migration never enables unrelated tools.
+
+See [workflow and safety](../features/torrent-maintenance.md), [all controls](maintenance-controls.md), and [examples](../features/maintenance-examples.md).

@@ -11,7 +11,7 @@ export const CONFIG_SCHEMA = {
         "key": "ConfigVersion",
         "label": "Config Version",
         "kind": "text",
-        "default": "6.15.2",
+        "default": "6.20.2",
         "comments": [
           "Internal config schema version - DO NOT MODIFY",
           "This is managed automatically by qBitrr for config migrations"
@@ -62,70 +62,6 @@ export const CONFIG_SCHEMA = {
         "uiExpose": true,
         "applyLive": false,
         "requiresRestart": true
-      },
-      {
-        "section": "Settings",
-        "path": [
-          "CompletedDownloadFolder"
-        ],
-        "key": "CompletedDownloadFolder",
-        "label": "Completed Download Folder",
-        "kind": "text",
-        "default": "CHANGE_ME",
-        "comments": "Folder where your completed downloads are put into. Can be found in qBitTorrent -\u003E Options -\u003E Downloads -\u003E Default Save Path (Please note, replace all \u0027\\\u0027 with \u0027/\u0027)",
-        "required": true,
-        "secure": false,
-        "uiExpose": true,
-        "applyLive": true,
-        "requiresRestart": false
-      },
-      {
-        "section": "Settings",
-        "path": [
-          "FreeSpace"
-        ],
-        "key": "FreeSpace",
-        "label": "Free Space",
-        "kind": "text",
-        "default": "-1",
-        "comments": "The desired amount of free space in the downloads directory [K=kilobytes, M=megabytes, G=gigabytes, T=terabytes] (set to -1 to disable, this bypasses AutoPauseResume)",
-        "required": true,
-        "secure": false,
-        "uiExpose": true,
-        "applyLive": true,
-        "requiresRestart": false
-      },
-      {
-        "section": "Settings",
-        "path": [
-          "FreeSpaceFolder"
-        ],
-        "key": "FreeSpaceFolder",
-        "label": "Free Space Folder",
-        "kind": "text",
-        "default": "CHANGE_ME",
-        "comments": "Folder where the free space handler will check for free space (Please note, replace all \u0027\u0027 with \u0027/\u0027)",
-        "required": false,
-        "secure": false,
-        "uiExpose": true,
-        "applyLive": true,
-        "requiresRestart": false
-      },
-      {
-        "section": "Settings",
-        "path": [
-          "AutoPauseResume"
-        ],
-        "key": "AutoPauseResume",
-        "label": "Auto Pause/Resume",
-        "kind": "checkbox",
-        "default": true,
-        "comments": "Enable automation of pausing and resuming torrents as needed (Required enabled for the FreeSpace logic to function)",
-        "required": false,
-        "secure": false,
-        "uiExpose": true,
-        "applyLive": true,
-        "requiresRestart": false
       },
       {
         "section": "Settings",
@@ -821,91 +757,6 @@ export const CONFIG_SCHEMA = {
       {
         "section": "qBit",
         "path": [
-          "Disabled"
-        ],
-        "key": "Disabled",
-        "label": "Disabled",
-        "kind": "checkbox",
-        "default": false,
-        "comments": [
-          "Skip connecting this qBit instance while keeping the section in config.",
-          "Does not enable global headless mode; omit all [qBit] / [qBit-*] sections (or use QBITRR_QBIT_DISABLED / SEARCH_ONLY) for search-only without torrent management."
-        ],
-        "required": false,
-        "secure": false,
-        "uiExpose": true,
-        "applyLive": false,
-        "requiresRestart": false
-      },
-      {
-        "section": "qBit",
-        "path": [
-          "Host"
-        ],
-        "key": "Host",
-        "label": "Host",
-        "kind": "text",
-        "default": "CHANGE_ME",
-        "comments": "qbittorrent WebUI URL/IP - Can be found in Options \u003E Web UI (called \u0022IP Address\u0022)",
-        "required": false,
-        "secure": false,
-        "uiExpose": true,
-        "applyLive": false,
-        "requiresRestart": false
-      },
-      {
-        "section": "qBit",
-        "path": [
-          "Port"
-        ],
-        "key": "Port",
-        "label": "Port",
-        "kind": "number",
-        "default": 8080,
-        "comments": "qbittorrent WebUI Port - Can be found in Options \u003E Web UI (called \u0022Port\u0022 on top right corner of the window)",
-        "required": false,
-        "secure": false,
-        "uiExpose": true,
-        "applyLive": false,
-        "requiresRestart": false,
-        "minimum": 1,
-        "maximum": 65535
-      },
-      {
-        "section": "qBit",
-        "path": [
-          "UserName"
-        ],
-        "key": "UserName",
-        "label": "UserName",
-        "kind": "text",
-        "default": "CHANGE_ME",
-        "comments": "qbittorrent WebUI Authentication - Can be found in Options \u003E Web UI \u003E Authentication",
-        "required": false,
-        "secure": false,
-        "uiExpose": true,
-        "applyLive": false,
-        "requiresRestart": false
-      },
-      {
-        "section": "qBit",
-        "path": [
-          "Password"
-        ],
-        "key": "Password",
-        "label": "Password",
-        "kind": "password",
-        "default": "CHANGE_ME",
-        "comments": "If you set \u0022Bypass authentication on localhost or whitelisted IPs\u0022 remove this field.",
-        "required": false,
-        "secure": true,
-        "uiExpose": true,
-        "applyLive": false,
-        "requiresRestart": false
-      },
-      {
-        "section": "qBit",
-        "path": [
           "SkipTLSVerify"
         ],
         "key": "SkipTLSVerify",
@@ -918,7 +769,7 @@ export const CONFIG_SCHEMA = {
         "required": false,
         "secure": false,
         "uiExpose": true,
-        "applyLive": false,
+        "applyLive": true,
         "requiresRestart": false
       },
       {
@@ -939,7 +790,7 @@ export const CONFIG_SCHEMA = {
         "required": false,
         "secure": false,
         "uiExpose": true,
-        "applyLive": false,
+        "applyLive": true,
         "requiresRestart": false
       },
       {
@@ -960,7 +811,7 @@ export const CONFIG_SCHEMA = {
         "required": false,
         "secure": false,
         "uiExpose": true,
-        "applyLive": false,
+        "applyLive": true,
         "requiresRestart": false
       },
       {
@@ -977,7 +828,7 @@ export const CONFIG_SCHEMA = {
         "required": false,
         "secure": false,
         "uiExpose": true,
-        "applyLive": false,
+        "applyLive": true,
         "requiresRestart": false,
         "allowNegative": true
       },
@@ -995,7 +846,7 @@ export const CONFIG_SCHEMA = {
         "required": false,
         "secure": false,
         "uiExpose": true,
-        "applyLive": false,
+        "applyLive": true,
         "requiresRestart": false,
         "allowNegative": true
       },
@@ -1013,7 +864,7 @@ export const CONFIG_SCHEMA = {
         "required": false,
         "secure": false,
         "uiExpose": true,
-        "applyLive": false,
+        "applyLive": true,
         "requiresRestart": false,
         "allowNegative": true
       },
@@ -1031,7 +882,7 @@ export const CONFIG_SCHEMA = {
         "required": false,
         "secure": false,
         "uiExpose": true,
-        "applyLive": false,
+        "applyLive": true,
         "requiresRestart": false,
         "nativeUnit": "seconds",
         "allowNegative": true
@@ -1057,7 +908,7 @@ export const CONFIG_SCHEMA = {
         "required": false,
         "secure": false,
         "uiExpose": true,
-        "applyLive": false,
+        "applyLive": true,
         "requiresRestart": false,
         "options": [
           "-1",
@@ -1083,7 +934,7 @@ export const CONFIG_SCHEMA = {
         "required": false,
         "secure": false,
         "uiExpose": true,
-        "applyLive": false,
+        "applyLive": true,
         "requiresRestart": false,
         "options": [
           "disabled",
@@ -1105,7 +956,7 @@ export const CONFIG_SCHEMA = {
         "required": false,
         "secure": false,
         "uiExpose": true,
-        "applyLive": false,
+        "applyLive": true,
         "requiresRestart": false
       },
       {
@@ -1122,7 +973,7 @@ export const CONFIG_SCHEMA = {
         "required": false,
         "secure": false,
         "uiExpose": true,
-        "applyLive": false,
+        "applyLive": true,
         "requiresRestart": false
       },
       {
@@ -1139,7 +990,7 @@ export const CONFIG_SCHEMA = {
         "required": false,
         "secure": false,
         "uiExpose": true,
-        "applyLive": false,
+        "applyLive": true,
         "requiresRestart": false,
         "minimum": 0,
         "maximum": 100
@@ -1158,7 +1009,7 @@ export const CONFIG_SCHEMA = {
         "required": false,
         "secure": false,
         "uiExpose": true,
-        "applyLive": false,
+        "applyLive": true,
         "requiresRestart": false
       },
       {
@@ -1175,7 +1026,7 @@ export const CONFIG_SCHEMA = {
         "required": false,
         "secure": false,
         "uiExpose": true,
-        "applyLive": false,
+        "applyLive": true,
         "requiresRestart": false,
         "nativeUnit": "seconds"
       },
@@ -1193,7 +1044,7 @@ export const CONFIG_SCHEMA = {
         "required": false,
         "secure": false,
         "uiExpose": true,
-        "applyLive": false,
+        "applyLive": true,
         "requiresRestart": false,
         "nativeUnit": "minutes",
         "allowNegative": true
@@ -1212,9 +1063,2858 @@ export const CONFIG_SCHEMA = {
         "required": false,
         "secure": false,
         "uiExpose": true,
-        "applyLive": false,
+        "applyLive": true,
         "requiresRestart": false,
         "nativeUnit": "seconds"
+      },
+      {
+        "section": "qBit",
+        "path": [
+          "Disabled"
+        ],
+        "key": "Disabled",
+        "label": "Disabled",
+        "kind": "checkbox",
+        "default": false,
+        "comments": "Disconnect and stop managing this client. Unknown remote file ownership still blocks destructive maintenance.",
+        "required": false,
+        "secure": false,
+        "uiExpose": true,
+        "applyLive": true,
+        "requiresRestart": false
+      },
+      {
+        "section": "qBit",
+        "path": [
+          "Host"
+        ],
+        "key": "Host",
+        "label": "Host",
+        "kind": "text",
+        "default": "CHANGE_ME",
+        "comments": "Torrent client\u0027s WebUI address, reachable from Torrentarr\u0027s process/container.",
+        "required": false,
+        "secure": false,
+        "uiExpose": true,
+        "applyLive": true,
+        "requiresRestart": false
+      },
+      {
+        "section": "qBit",
+        "path": [
+          "Port"
+        ],
+        "key": "Port",
+        "label": "Port",
+        "kind": "number",
+        "default": 8080,
+        "comments": "Torrent client\u0027s WebUI TCP port, from 1 to 65535.",
+        "required": false,
+        "secure": false,
+        "uiExpose": true,
+        "applyLive": true,
+        "requiresRestart": false,
+        "minimum": 1,
+        "maximum": 65535
+      },
+      {
+        "section": "qBit",
+        "path": [
+          "UserName"
+        ],
+        "key": "UserName",
+        "label": "Username",
+        "kind": "text",
+        "default": "CHANGE_ME",
+        "comments": "Login username for the torrent client.",
+        "required": false,
+        "secure": false,
+        "uiExpose": true,
+        "applyLive": true,
+        "requiresRestart": false
+      },
+      {
+        "section": "qBit",
+        "path": [
+          "Password"
+        ],
+        "key": "Password",
+        "label": "Password",
+        "kind": "password",
+        "default": "CHANGE_ME",
+        "comments": "Client login secret. Redacted values retain the stored credential until explicitly replaced.",
+        "required": false,
+        "secure": true,
+        "uiExpose": true,
+        "applyLive": true,
+        "requiresRestart": false
+      },
+      {
+        "section": "qBit",
+        "path": [
+          "DownloadPath"
+        ],
+        "key": "DownloadPath",
+        "label": "Download path",
+        "kind": "text",
+        "default": "",
+        "comments": "Download path. Uses the displayed units and default; operation prerequisites and protection checks still apply.",
+        "required": false,
+        "secure": false,
+        "uiExpose": true,
+        "applyLive": true,
+        "requiresRestart": false,
+        "description": "Default download root as seen by this torrent client. Existing category paths are preserved."
+      },
+      {
+        "section": "qBit",
+        "path": [
+          "FreeSpace"
+        ],
+        "key": "FreeSpace",
+        "label": "Free-space monitors",
+        "kind": "collection",
+        "default": [],
+        "comments": "Free-space monitors. Uses the displayed units and default; operation prerequisites and protection checks still apply.",
+        "required": false,
+        "secure": false,
+        "uiExpose": true,
+        "applyLive": true,
+        "requiresRestart": false,
+        "description": "Paths visible to Torrentarr. One manager shares a budget across all clients using the same filesystem, preserving the largest configured reserve.",
+        "itemFields": [
+          {
+            "section": "TorrentClient",
+            "path": [
+              "Path"
+            ],
+            "key": "Path",
+            "label": "Torrentarr path",
+            "kind": "text",
+            "default": "",
+            "comments": "Torrentarr path. Uses the displayed units and default; operation prerequisites and protection checks still apply.",
+            "required": true,
+            "secure": false,
+            "uiExpose": true,
+            "applyLive": null,
+            "requiresRestart": null,
+            "description": "Absolute local folder to monitor. Downloads are matched using this client\u0027s path mappings.",
+            "placeholder": "/data/downloads"
+          },
+          {
+            "section": "TorrentClient",
+            "path": [
+              "Enabled"
+            ],
+            "key": "Enabled",
+            "label": "Enabled",
+            "kind": "checkbox",
+            "default": false,
+            "comments": "Enabled. Off disables this behavior; operation enablement and authorization still apply.",
+            "required": false,
+            "secure": false,
+            "uiExpose": true,
+            "applyLive": true,
+            "requiresRestart": false
+          },
+          {
+            "section": "TorrentClient",
+            "path": [
+              "Limit"
+            ],
+            "key": "Limit",
+            "label": "Minimum free space",
+            "kind": "text",
+            "default": "10G",
+            "comments": "Minimum free space. Uses the displayed units and default; operation prerequisites and protection checks still apply.",
+            "required": true,
+            "secure": false,
+            "uiExpose": true,
+            "applyLive": null,
+            "requiresRestart": null,
+            "description": "Reserve in bytes or with K, M, G, T suffix. Disable using the checkbox.",
+            "placeholder": "10G"
+          }
+        ]
+      },
+      {
+        "section": "qBit",
+        "path": [
+          "Maintenance",
+          "Enabled"
+        ],
+        "key": "Maintenance.Enabled",
+        "label": "Maintenance Enabled",
+        "kind": "checkbox",
+        "default": false,
+        "comments": "Enable Manage tools. Select Automatic per tool to allow scheduled execution; saving never executes a tool immediately.",
+        "required": false,
+        "secure": false,
+        "uiExpose": true,
+        "applyLive": true,
+        "requiresRestart": false
+      },
+      {
+        "section": "qBit",
+        "path": [
+          "Maintenance",
+          "Scope"
+        ],
+        "key": "Maintenance.Scope",
+        "label": "Maintenance Scope",
+        "kind": "select",
+        "default": "managed",
+        "comments": "Managed categories, all torrents, or an explicit category list. Operation filters can only narrow this scope.",
+        "required": false,
+        "secure": false,
+        "uiExpose": true,
+        "applyLive": true,
+        "requiresRestart": false,
+        "options": [
+          "managed",
+          "all",
+          "explicit"
+        ]
+      },
+      {
+        "section": "qBit",
+        "path": [
+          "Maintenance",
+          "Schedule"
+        ],
+        "key": "Maintenance.Schedule",
+        "label": "Maintenance Schedule",
+        "kind": "text",
+        "default": "*/15 * * * *",
+        "comments": "Fallback five-field cron schedule in UTC, used only by enabled tools saved in Automatic mode.",
+        "required": false,
+        "secure": false,
+        "uiExpose": true,
+        "applyLive": true,
+        "requiresRestart": false
+      },
+      {
+        "section": "qBit",
+        "path": [
+          "Maintenance",
+          "PlanTtlMinutes"
+        ],
+        "key": "Maintenance.PlanTtlMinutes",
+        "label": "Preview TTL (minutes)",
+        "kind": "number",
+        "default": 30,
+        "comments": "Positive minutes a saved preview remains executable. Saving or relevant revision changes invalidate it earlier.",
+        "required": false,
+        "secure": false,
+        "uiExpose": true,
+        "applyLive": true,
+        "requiresRestart": false,
+        "minimum": 1
+      },
+      {
+        "section": "qBit",
+        "path": [
+          "Maintenance",
+          "MinimumTorrentAgeMinutes"
+        ],
+        "key": "Maintenance.MinimumTorrentAgeMinutes",
+        "label": "Minimum torrent age (minutes)",
+        "kind": "number",
+        "default": 10,
+        "comments": "Minutes after addition before eligibility. Zero removes this extra delay; ordinary torrent-age grace still applies.",
+        "required": false,
+        "secure": false,
+        "uiExpose": true,
+        "applyLive": true,
+        "requiresRestart": false,
+        "minimum": 0
+      },
+      {
+        "section": "qBit",
+        "path": [
+          "Maintenance",
+          "ExplicitCategories"
+        ],
+        "key": "Maintenance.ExplicitCategories",
+        "label": "Explicit categories",
+        "kind": "tags",
+        "default": [],
+        "comments": "Categories selected when scope is explicit. Empty selects none in explicit scope.",
+        "required": false,
+        "secure": false,
+        "uiExpose": true,
+        "applyLive": true,
+        "requiresRestart": false
+      },
+      {
+        "section": "qBit",
+        "path": [
+          "Maintenance",
+          "ExcludedCategories"
+        ],
+        "key": "Maintenance.ExcludedCategories",
+        "label": "Excluded categories",
+        "kind": "tags",
+        "default": [],
+        "comments": "Always preserve torrents in these categories; exclusions override inclusion.",
+        "required": false,
+        "secure": false,
+        "uiExpose": true,
+        "applyLive": true,
+        "requiresRestart": false
+      },
+      {
+        "section": "qBit",
+        "path": [
+          "Maintenance",
+          "ExcludedTags"
+        ],
+        "key": "Maintenance.ExcludedTags",
+        "label": "Excluded tags",
+        "kind": "tags",
+        "default": [],
+        "comments": "Always preserve torrents bearing any of these tags.",
+        "required": false,
+        "secure": false,
+        "uiExpose": true,
+        "applyLive": true,
+        "requiresRestart": false
+      },
+      {
+        "section": "qBit",
+        "path": [
+          "Maintenance",
+          "Orphans",
+          "Enabled"
+        ],
+        "key": "Maintenance.Orphans.Enabled",
+        "label": "Enable orphan scan",
+        "kind": "checkbox",
+        "default": false,
+        "comments": "Enable orphan scan. Off disables this behavior; operation enablement and authorization still apply.",
+        "required": false,
+        "secure": false,
+        "uiExpose": true,
+        "applyLive": true,
+        "requiresRestart": false,
+        "description": "Moves unreferenced files into the recycle bin; requires complete ownership inspection and local path mappings."
+      },
+      {
+        "section": "qBit",
+        "path": [
+          "Maintenance",
+          "Orphans",
+          "MinimumAgeMinutes"
+        ],
+        "key": "Maintenance.Orphans.MinimumAgeMinutes",
+        "label": "Minimum orphan file age (minutes)",
+        "kind": "number",
+        "default": 1440,
+        "comments": "Preserve files modified within this many minutes. Default 1440 (24 hours); zero removes only this file-age delay.",
+        "required": false,
+        "secure": false,
+        "uiExpose": true,
+        "applyLive": true,
+        "requiresRestart": false,
+        "minimum": 0
+      },
+      {
+        "section": "qBit",
+        "path": [
+          "Maintenance",
+          "Orphans",
+          "MaxFilesPerRun"
+        ],
+        "key": "Maintenance.Orphans.MaxFilesPerRun",
+        "label": "Maximum orphan files per run",
+        "kind": "number",
+        "default": 10,
+        "comments": "Maximum orphan files per run. Zero permits no mutations for action/deletion caps; inspection budgets must be positive.",
+        "required": false,
+        "secure": false,
+        "uiExpose": true,
+        "applyLive": true,
+        "requiresRestart": false,
+        "minimum": 0
+      },
+      {
+        "section": "qBit",
+        "path": [
+          "Maintenance",
+          "Orphans",
+          "ExcludePatterns"
+        ],
+        "key": "Maintenance.Orphans.ExcludePatterns",
+        "label": "Orphan exclusion patterns",
+        "kind": "tags",
+        "default": [],
+        "comments": "Wildcard patterns matched against relative paths, before any orphan move. Empty excludes no extra files.",
+        "required": false,
+        "secure": false,
+        "uiExpose": true,
+        "applyLive": true,
+        "requiresRestart": false
+      },
+      {
+        "section": "qBit",
+        "path": [
+          "Maintenance",
+          "Hardlinks",
+          "Enabled"
+        ],
+        "key": "Maintenance.Hardlinks.Enabled",
+        "label": "Enable hardlink audit",
+        "kind": "checkbox",
+        "default": false,
+        "comments": "Enable hardlink audit. Off disables this behavior; operation enablement and authorization still apply.",
+        "required": false,
+        "secure": false,
+        "uiExpose": true,
+        "applyLive": true,
+        "requiresRestart": false
+      },
+      {
+        "section": "qBit",
+        "path": [
+          "Maintenance",
+          "Hardlinks",
+          "Tag"
+        ],
+        "key": "Maintenance.Hardlinks.Tag",
+        "label": "Missing hardlink tag",
+        "kind": "text",
+        "default": "noHL",
+        "comments": "Tag applied when a file has no additional hardlink. Requires filesystem link-count support.",
+        "required": false,
+        "secure": false,
+        "uiExpose": true,
+        "applyLive": true,
+        "requiresRestart": false
+      },
+      {
+        "section": "qBit",
+        "path": [
+          "Maintenance",
+          "Hardlinks",
+          "CountLinksInsideRoot"
+        ],
+        "key": "Maintenance.Hardlinks.CountLinksInsideRoot",
+        "label": "Count links inside root (unsupported)",
+        "kind": "checkbox",
+        "default": false,
+        "comments": "Count links inside root (unsupported). Off disables this behavior; operation enablement and authorization still apply.",
+        "required": false,
+        "secure": false,
+        "uiExpose": true,
+        "applyLive": true,
+        "requiresRestart": false,
+        "description": "Unsupported: leave disabled. Root-scoped hardlink inspection cannot currently run."
+      },
+      {
+        "section": "qBit",
+        "path": [
+          "Maintenance",
+          "Hardlinks",
+          "Categories"
+        ],
+        "key": "Maintenance.Hardlinks.Categories",
+        "label": "Hardlink audit categories",
+        "kind": "tags",
+        "default": [],
+        "comments": "Hardlink audit categories. Empty applies no additional list entries; operation filters inherit client scope.",
+        "required": false,
+        "secure": false,
+        "uiExpose": true,
+        "applyLive": true,
+        "requiresRestart": false
+      },
+      {
+        "section": "qBit",
+        "path": [
+          "Maintenance",
+          "Hardlinks",
+          "ExcludedTags"
+        ],
+        "key": "Maintenance.Hardlinks.ExcludedTags",
+        "label": "Hardlink audit excluded tags",
+        "kind": "tags",
+        "default": [],
+        "comments": "Hardlink audit excluded tags. Empty applies no additional list entries; operation filters inherit client scope.",
+        "required": false,
+        "secure": false,
+        "uiExpose": true,
+        "applyLive": true,
+        "requiresRestart": false
+      },
+      {
+        "section": "qBit",
+        "path": [
+          "Maintenance",
+          "AutomaticManagement",
+          "Enabled"
+        ],
+        "key": "Maintenance.AutomaticManagement.Enabled",
+        "label": "Enable automatic management",
+        "kind": "checkbox",
+        "default": false,
+        "comments": "Enable automatic management. Off disables this behavior; operation enablement and authorization still apply.",
+        "required": false,
+        "secure": false,
+        "uiExpose": true,
+        "applyLive": true,
+        "requiresRestart": false,
+        "description": "Enables client automatic management, which may relocate content according to category paths."
+      },
+      {
+        "section": "qBit",
+        "path": [
+          "Maintenance",
+          "AutomaticManagement",
+          "IgnoredTags"
+        ],
+        "key": "Maintenance.AutomaticManagement.IgnoredTags",
+        "label": "Automatic management ignored tags",
+        "kind": "tags",
+        "default": [],
+        "comments": "Automatic management ignored tags. Empty applies no additional list entries; operation filters inherit client scope.",
+        "required": false,
+        "secure": false,
+        "uiExpose": true,
+        "applyLive": true,
+        "requiresRestart": false
+      },
+      {
+        "section": "qBit",
+        "path": [
+          "Maintenance",
+          "AutomaticManagement",
+          "PrivateTag"
+        ],
+        "key": "Maintenance.AutomaticManagement.PrivateTag",
+        "label": "Private torrent tag",
+        "kind": "text",
+        "default": "",
+        "comments": "Private torrent tag. Uses the displayed units and default; operation prerequisites and protection checks still apply.",
+        "required": false,
+        "secure": false,
+        "uiExpose": true,
+        "applyLive": true,
+        "requiresRestart": false,
+        "description": "Blank disables private tagging. Existing tags are not automatically removed."
+      },
+      {
+        "section": "qBit",
+        "path": [
+          "Maintenance",
+          "AutomaticManagement",
+          "TrackerErrorTag"
+        ],
+        "key": "Maintenance.AutomaticManagement.TrackerErrorTag",
+        "label": "Tracker error tag",
+        "kind": "text",
+        "default": "issue",
+        "comments": "Tracker error tag. Uses the displayed units and default; operation prerequisites and protection checks still apply.",
+        "required": false,
+        "secure": false,
+        "uiExpose": true,
+        "applyLive": true,
+        "requiresRestart": false,
+        "description": "Blank disables tracker-error tagging. Existing tags are not automatically removed."
+      },
+      {
+        "section": "qBit",
+        "path": [
+          "Maintenance",
+          "Repair",
+          "Enabled"
+        ],
+        "key": "Maintenance.Repair.Enabled",
+        "label": "Enable paused torrent repair",
+        "kind": "checkbox",
+        "default": false,
+        "comments": "Enable paused torrent repair. Off disables this behavior; operation enablement and authorization still apply.",
+        "required": false,
+        "secure": false,
+        "uiExpose": true,
+        "applyLive": true,
+        "requiresRestart": false,
+        "description": "Complete paused torrents are resumed, including intentionally paused torrents. Incomplete torrents are rechecked."
+      },
+      {
+        "section": "qBit",
+        "path": [
+          "Maintenance",
+          "Repair",
+          "MaxPerRun"
+        ],
+        "key": "Maintenance.Repair.MaxPerRun",
+        "label": "Maximum repairs per run",
+        "kind": "number",
+        "default": 10,
+        "comments": "Maximum repairs per run. Zero permits no mutations for action/deletion caps; inspection budgets must be positive.",
+        "required": false,
+        "secure": false,
+        "uiExpose": true,
+        "applyLive": true,
+        "requiresRestart": false,
+        "minimum": 0
+      },
+      {
+        "section": "qBit",
+        "path": [
+          "Maintenance",
+          "Unregistered",
+          "Enabled"
+        ],
+        "key": "Maintenance.Unregistered.Enabled",
+        "label": "Enable unregistered cleanup",
+        "kind": "checkbox",
+        "default": false,
+        "comments": "Enable unregistered cleanup. Off disables this behavior; operation enablement and authorization still apply.",
+        "required": false,
+        "secure": false,
+        "uiExpose": true,
+        "applyLive": true,
+        "requiresRestart": false
+      },
+      {
+        "section": "qBit",
+        "path": [
+          "Maintenance",
+          "Unregistered",
+          "GraceMinutes"
+        ],
+        "key": "Maintenance.Unregistered.GraceMinutes",
+        "label": "Unregistered grace period (minutes)",
+        "kind": "number",
+        "default": 10,
+        "comments": "Unregistered grace period (minutes). Uses the displayed units and default; operation prerequisites and protection checks still apply.",
+        "required": false,
+        "secure": false,
+        "uiExpose": true,
+        "applyLive": true,
+        "requiresRestart": false,
+        "minimum": 0
+      },
+      {
+        "section": "qBit",
+        "path": [
+          "Maintenance",
+          "Unregistered",
+          "MaxPerTrackerPerRun"
+        ],
+        "key": "Maintenance.Unregistered.MaxPerTrackerPerRun",
+        "label": "Maximum removals per tracker per run",
+        "kind": "number",
+        "default": 10,
+        "comments": "Maximum removals per tracker per run. Zero permits no mutations for action/deletion caps; inspection budgets must be positive.",
+        "required": false,
+        "secure": false,
+        "uiExpose": true,
+        "applyLive": true,
+        "requiresRestart": false,
+        "minimum": 0
+      },
+      {
+        "section": "qBit",
+        "path": [
+          "Maintenance",
+          "Unregistered",
+          "CompletedOnly"
+        ],
+        "key": "Maintenance.Unregistered.CompletedOnly",
+        "label": "Only clean up completed torrents",
+        "kind": "checkbox",
+        "default": false,
+        "comments": "Only clean up completed torrents. Off disables this behavior; operation enablement and authorization still apply.",
+        "required": false,
+        "secure": false,
+        "uiExpose": true,
+        "applyLive": true,
+        "requiresRestart": false
+      },
+      {
+        "section": "qBit",
+        "path": [
+          "Maintenance",
+          "Unregistered",
+          "Messages"
+        ],
+        "key": "Maintenance.Unregistered.Messages",
+        "label": "Unregistered tracker messages",
+        "kind": "tags",
+        "default": [
+          "unregistered torrent",
+          "torrent not registered",
+          "torrent not found",
+          "torrent not authorized"
+        ],
+        "comments": "Unregistered tracker messages. Empty applies no additional list entries; operation filters inherit client scope.",
+        "required": false,
+        "secure": false,
+        "uiExpose": true,
+        "applyLive": true,
+        "requiresRestart": false
+      },
+      {
+        "section": "qBit",
+        "path": [
+          "Maintenance",
+          "RecycleBin",
+          "Enabled"
+        ],
+        "key": "Maintenance.RecycleBin.Enabled",
+        "label": "Enable recycle bin and retention",
+        "kind": "checkbox",
+        "default": true,
+        "comments": "Allow local recycle storage for content moves. Retention deletion has a separate enablement and operation policy.",
+        "required": false,
+        "secure": false,
+        "uiExpose": true,
+        "applyLive": true,
+        "requiresRestart": false
+      },
+      {
+        "section": "qBit",
+        "path": [
+          "Maintenance",
+          "RecycleBin",
+          "Path"
+        ],
+        "key": "Maintenance.RecycleBin.Path",
+        "label": "Recycle bin path",
+        "kind": "text",
+        "default": "",
+        "comments": "Recycle bin path. Uses the displayed units and default; operation prerequisites and protection checks still apply.",
+        "required": false,
+        "secure": false,
+        "uiExpose": true,
+        "applyLive": true,
+        "requiresRestart": false,
+        "description": "Absolute path visible to Torrentarr. Blank uses .torrentarr-recycle inside the first mapped local root."
+      },
+      {
+        "section": "qBit",
+        "path": [
+          "Maintenance",
+          "RecycleBin",
+          "RetentionDays"
+        ],
+        "key": "Maintenance.RecycleBin.RetentionDays",
+        "label": "Recycle retention (days)",
+        "kind": "number",
+        "default": 30,
+        "comments": "Days before permanent recycle deletion. Zero makes files immediately age-eligible; disable retention to preserve indefinitely.",
+        "required": false,
+        "secure": false,
+        "uiExpose": true,
+        "applyLive": true,
+        "requiresRestart": false,
+        "description": "Expired recycle files are permanently deleted after this many days.",
+        "minimum": 0
+      },
+      {
+        "section": "qBit",
+        "path": [
+          "Maintenance",
+          "RecycleBin",
+          "MaxTorrentMovesPerRun"
+        ],
+        "key": "Maintenance.RecycleBin.MaxTorrentMovesPerRun",
+        "label": "Maximum torrent moves per run",
+        "kind": "number",
+        "default": 10,
+        "comments": "Maximum torrent moves per run. Zero permits no mutations for action/deletion caps; inspection budgets must be positive.",
+        "required": false,
+        "secure": false,
+        "uiExpose": true,
+        "applyLive": true,
+        "requiresRestart": false,
+        "minimum": 0
+      },
+      {
+        "section": "qBit",
+        "path": [
+          "Maintenance",
+          "RecycleBin",
+          "SplitByClient"
+        ],
+        "key": "Maintenance.RecycleBin.SplitByClient",
+        "label": "Separate recycle bin by client",
+        "kind": "checkbox",
+        "default": true,
+        "comments": "Separate recycle bin by client. Off disables this behavior; operation enablement and authorization still apply.",
+        "required": false,
+        "secure": false,
+        "uiExpose": true,
+        "applyLive": true,
+        "requiresRestart": false
+      },
+      {
+        "section": "qBit",
+        "path": [
+          "Maintenance",
+          "RecycleBin",
+          "SplitByCategory"
+        ],
+        "key": "Maintenance.RecycleBin.SplitByCategory",
+        "label": "Separate recycle bin by category",
+        "kind": "checkbox",
+        "default": false,
+        "comments": "Separate recycle bin by category. Off disables this behavior; operation enablement and authorization still apply.",
+        "required": false,
+        "secure": false,
+        "uiExpose": true,
+        "applyLive": true,
+        "requiresRestart": false
+      },
+      {
+        "section": "qBit",
+        "path": [
+          "Maintenance",
+          "RecycleBin",
+          "ResumeDataPath"
+        ],
+        "key": "Maintenance.RecycleBin.ResumeDataPath",
+        "label": "Resume data backup path",
+        "kind": "text",
+        "default": "",
+        "comments": "Resume data backup path. Uses the displayed units and default; operation prerequisites and protection checks still apply.",
+        "required": false,
+        "secure": false,
+        "uiExpose": true,
+        "applyLive": true,
+        "requiresRestart": false,
+        "description": "Optional resume-data backup directory, used when the client supports export."
+      },
+      {
+        "section": "qBit",
+        "path": [
+          "Maintenance",
+          "Operations",
+          "OrphanScan",
+          "Enabled"
+        ],
+        "key": "Maintenance.Operations.OrphanScan.Enabled",
+        "label": "Enable operation",
+        "kind": "checkbox",
+        "default": false,
+        "comments": "Enable operation. Off disables this behavior; operation enablement and authorization still apply.",
+        "required": false,
+        "secure": false,
+        "uiExpose": true,
+        "applyLive": true,
+        "requiresRestart": false,
+        "description": "Explicit operation override. Existing configs without an override retain their legacy enablement."
+      },
+      {
+        "section": "qBit",
+        "path": [
+          "Maintenance",
+          "Operations",
+          "OrphanScan",
+          "ExecutionMode"
+        ],
+        "key": "Maintenance.Operations.OrphanScan.ExecutionMode",
+        "label": "Execution mode",
+        "kind": "select",
+        "default": "manual",
+        "comments": "Execution mode. Uses the displayed units and default; operation prerequisites and protection checks still apply.",
+        "required": false,
+        "secure": false,
+        "uiExpose": true,
+        "applyLive": true,
+        "requiresRestart": false,
+        "options": [
+          "manual",
+          "automatic"
+        ],
+        "description": "Manual applies a reviewed preview once. Automatic runs on the saved schedule and remains enabled after restart; no restart is required."
+      },
+      {
+        "section": "qBit",
+        "path": [
+          "Maintenance",
+          "Operations",
+          "OrphanScan",
+          "Schedule"
+        ],
+        "key": "Maintenance.Operations.OrphanScan.Schedule",
+        "label": "Operation schedule (UTC)",
+        "kind": "text",
+        "default": "15 3 * * *",
+        "comments": "Operation schedule (UTC). Uses the displayed units and default; operation prerequisites and protection checks still apply.",
+        "required": false,
+        "secure": false,
+        "uiExpose": true,
+        "applyLive": true,
+        "requiresRestart": false,
+        "description": "Five-field cron expression in UTC. Blank inherits the client schedule."
+      },
+      {
+        "section": "qBit",
+        "path": [
+          "Maintenance",
+          "Operations",
+          "OrphanScan",
+          "IncludedCategories"
+        ],
+        "key": "Maintenance.Operations.OrphanScan.IncludedCategories",
+        "label": "Included categories",
+        "kind": "tags",
+        "default": [],
+        "comments": "Included categories. Empty applies no additional list entries; operation filters inherit client scope.",
+        "required": false,
+        "secure": false,
+        "uiExpose": true,
+        "applyLive": true,
+        "requiresRestart": false,
+        "description": "Blank inherits client-wide scope. Entries narrow that scope."
+      },
+      {
+        "section": "qBit",
+        "path": [
+          "Maintenance",
+          "Operations",
+          "OrphanScan",
+          "ExcludedCategories"
+        ],
+        "key": "Maintenance.Operations.OrphanScan.ExcludedCategories",
+        "label": "Excluded categories",
+        "kind": "tags",
+        "default": [],
+        "comments": "Excluded categories. Empty applies no additional list entries; operation filters inherit client scope.",
+        "required": false,
+        "secure": false,
+        "uiExpose": true,
+        "applyLive": true,
+        "requiresRestart": false
+      },
+      {
+        "section": "qBit",
+        "path": [
+          "Maintenance",
+          "Operations",
+          "OrphanScan",
+          "ExcludedTags"
+        ],
+        "key": "Maintenance.Operations.OrphanScan.ExcludedTags",
+        "label": "Excluded tags",
+        "kind": "tags",
+        "default": [],
+        "comments": "Excluded tags. Empty applies no additional list entries; operation filters inherit client scope.",
+        "required": false,
+        "secure": false,
+        "uiExpose": true,
+        "applyLive": true,
+        "requiresRestart": false
+      },
+      {
+        "section": "qBit",
+        "path": [
+          "Maintenance",
+          "Operations",
+          "OrphanScan",
+          "MaxActionsPerRun"
+        ],
+        "key": "Maintenance.Operations.OrphanScan.MaxActionsPerRun",
+        "label": "Maximum actions per run",
+        "kind": "number",
+        "default": null,
+        "comments": "Maximum actions per run. Zero permits no mutations for action/deletion caps; inspection budgets must be positive.",
+        "required": false,
+        "secure": false,
+        "uiExpose": true,
+        "applyLive": true,
+        "requiresRestart": false,
+        "description": "Blank preserves operation limits. Zero permits no mutations.",
+        "minimum": 0
+      },
+      {
+        "section": "qBit",
+        "path": [
+          "Maintenance",
+          "Operations",
+          "HardlinkAudit",
+          "Enabled"
+        ],
+        "key": "Maintenance.Operations.HardlinkAudit.Enabled",
+        "label": "Enable operation",
+        "kind": "checkbox",
+        "default": false,
+        "comments": "Enable operation. Off disables this behavior; operation enablement and authorization still apply.",
+        "required": false,
+        "secure": false,
+        "uiExpose": true,
+        "applyLive": true,
+        "requiresRestart": false,
+        "description": "Explicit operation override. Existing configs without an override retain their legacy enablement."
+      },
+      {
+        "section": "qBit",
+        "path": [
+          "Maintenance",
+          "Operations",
+          "HardlinkAudit",
+          "ExecutionMode"
+        ],
+        "key": "Maintenance.Operations.HardlinkAudit.ExecutionMode",
+        "label": "Execution mode",
+        "kind": "select",
+        "default": "manual",
+        "comments": "Execution mode. Uses the displayed units and default; operation prerequisites and protection checks still apply.",
+        "required": false,
+        "secure": false,
+        "uiExpose": true,
+        "applyLive": true,
+        "requiresRestart": false,
+        "options": [
+          "manual",
+          "automatic"
+        ],
+        "description": "Manual applies a reviewed preview once. Automatic runs on the saved schedule and remains enabled after restart; no restart is required."
+      },
+      {
+        "section": "qBit",
+        "path": [
+          "Maintenance",
+          "Operations",
+          "HardlinkAudit",
+          "Schedule"
+        ],
+        "key": "Maintenance.Operations.HardlinkAudit.Schedule",
+        "label": "Operation schedule (UTC)",
+        "kind": "text",
+        "default": "15 4 * * *",
+        "comments": "Operation schedule (UTC). Uses the displayed units and default; operation prerequisites and protection checks still apply.",
+        "required": false,
+        "secure": false,
+        "uiExpose": true,
+        "applyLive": true,
+        "requiresRestart": false,
+        "description": "Five-field cron expression in UTC. Blank inherits the client schedule."
+      },
+      {
+        "section": "qBit",
+        "path": [
+          "Maintenance",
+          "Operations",
+          "HardlinkAudit",
+          "IncludedCategories"
+        ],
+        "key": "Maintenance.Operations.HardlinkAudit.IncludedCategories",
+        "label": "Included categories",
+        "kind": "tags",
+        "default": [],
+        "comments": "Included categories. Empty applies no additional list entries; operation filters inherit client scope.",
+        "required": false,
+        "secure": false,
+        "uiExpose": true,
+        "applyLive": true,
+        "requiresRestart": false,
+        "description": "Blank inherits client-wide scope. Entries narrow that scope."
+      },
+      {
+        "section": "qBit",
+        "path": [
+          "Maintenance",
+          "Operations",
+          "HardlinkAudit",
+          "ExcludedCategories"
+        ],
+        "key": "Maintenance.Operations.HardlinkAudit.ExcludedCategories",
+        "label": "Excluded categories",
+        "kind": "tags",
+        "default": [],
+        "comments": "Excluded categories. Empty applies no additional list entries; operation filters inherit client scope.",
+        "required": false,
+        "secure": false,
+        "uiExpose": true,
+        "applyLive": true,
+        "requiresRestart": false
+      },
+      {
+        "section": "qBit",
+        "path": [
+          "Maintenance",
+          "Operations",
+          "HardlinkAudit",
+          "ExcludedTags"
+        ],
+        "key": "Maintenance.Operations.HardlinkAudit.ExcludedTags",
+        "label": "Excluded tags",
+        "kind": "tags",
+        "default": [],
+        "comments": "Excluded tags. Empty applies no additional list entries; operation filters inherit client scope.",
+        "required": false,
+        "secure": false,
+        "uiExpose": true,
+        "applyLive": true,
+        "requiresRestart": false
+      },
+      {
+        "section": "qBit",
+        "path": [
+          "Maintenance",
+          "Operations",
+          "HardlinkAudit",
+          "MaxActionsPerRun"
+        ],
+        "key": "Maintenance.Operations.HardlinkAudit.MaxActionsPerRun",
+        "label": "Maximum actions per run",
+        "kind": "number",
+        "default": null,
+        "comments": "Maximum actions per run. Zero permits no mutations for action/deletion caps; inspection budgets must be positive.",
+        "required": false,
+        "secure": false,
+        "uiExpose": true,
+        "applyLive": true,
+        "requiresRestart": false,
+        "description": "Blank preserves operation limits. Zero permits no mutations.",
+        "minimum": 0
+      },
+      {
+        "section": "qBit",
+        "path": [
+          "Maintenance",
+          "Operations",
+          "UnregisteredCleanup",
+          "Enabled"
+        ],
+        "key": "Maintenance.Operations.UnregisteredCleanup.Enabled",
+        "label": "Enable operation",
+        "kind": "checkbox",
+        "default": false,
+        "comments": "Enable operation. Off disables this behavior; operation enablement and authorization still apply.",
+        "required": false,
+        "secure": false,
+        "uiExpose": true,
+        "applyLive": true,
+        "requiresRestart": false,
+        "description": "Explicit operation override. Existing configs without an override retain their legacy enablement."
+      },
+      {
+        "section": "qBit",
+        "path": [
+          "Maintenance",
+          "Operations",
+          "UnregisteredCleanup",
+          "ExecutionMode"
+        ],
+        "key": "Maintenance.Operations.UnregisteredCleanup.ExecutionMode",
+        "label": "Execution mode",
+        "kind": "select",
+        "default": "manual",
+        "comments": "Execution mode. Uses the displayed units and default; operation prerequisites and protection checks still apply.",
+        "required": false,
+        "secure": false,
+        "uiExpose": true,
+        "applyLive": true,
+        "requiresRestart": false,
+        "options": [
+          "manual",
+          "automatic"
+        ],
+        "description": "Manual applies a reviewed preview once. Automatic runs on the saved schedule and remains enabled after restart; no restart is required."
+      },
+      {
+        "section": "qBit",
+        "path": [
+          "Maintenance",
+          "Operations",
+          "UnregisteredCleanup",
+          "Schedule"
+        ],
+        "key": "Maintenance.Operations.UnregisteredCleanup.Schedule",
+        "label": "Operation schedule (UTC)",
+        "kind": "text",
+        "default": "*/30 * * * *",
+        "comments": "Operation schedule (UTC). Uses the displayed units and default; operation prerequisites and protection checks still apply.",
+        "required": false,
+        "secure": false,
+        "uiExpose": true,
+        "applyLive": true,
+        "requiresRestart": false,
+        "description": "Five-field cron expression in UTC. Blank inherits the client schedule."
+      },
+      {
+        "section": "qBit",
+        "path": [
+          "Maintenance",
+          "Operations",
+          "UnregisteredCleanup",
+          "IncludedCategories"
+        ],
+        "key": "Maintenance.Operations.UnregisteredCleanup.IncludedCategories",
+        "label": "Included categories",
+        "kind": "tags",
+        "default": [],
+        "comments": "Included categories. Empty applies no additional list entries; operation filters inherit client scope.",
+        "required": false,
+        "secure": false,
+        "uiExpose": true,
+        "applyLive": true,
+        "requiresRestart": false,
+        "description": "Blank inherits client-wide scope. Entries narrow that scope."
+      },
+      {
+        "section": "qBit",
+        "path": [
+          "Maintenance",
+          "Operations",
+          "UnregisteredCleanup",
+          "ExcludedCategories"
+        ],
+        "key": "Maintenance.Operations.UnregisteredCleanup.ExcludedCategories",
+        "label": "Excluded categories",
+        "kind": "tags",
+        "default": [],
+        "comments": "Excluded categories. Empty applies no additional list entries; operation filters inherit client scope.",
+        "required": false,
+        "secure": false,
+        "uiExpose": true,
+        "applyLive": true,
+        "requiresRestart": false
+      },
+      {
+        "section": "qBit",
+        "path": [
+          "Maintenance",
+          "Operations",
+          "UnregisteredCleanup",
+          "ExcludedTags"
+        ],
+        "key": "Maintenance.Operations.UnregisteredCleanup.ExcludedTags",
+        "label": "Excluded tags",
+        "kind": "tags",
+        "default": [],
+        "comments": "Excluded tags. Empty applies no additional list entries; operation filters inherit client scope.",
+        "required": false,
+        "secure": false,
+        "uiExpose": true,
+        "applyLive": true,
+        "requiresRestart": false
+      },
+      {
+        "section": "qBit",
+        "path": [
+          "Maintenance",
+          "Operations",
+          "UnregisteredCleanup",
+          "MaxActionsPerRun"
+        ],
+        "key": "Maintenance.Operations.UnregisteredCleanup.MaxActionsPerRun",
+        "label": "Maximum actions per run",
+        "kind": "number",
+        "default": null,
+        "comments": "Maximum actions per run. Zero permits no mutations for action/deletion caps; inspection budgets must be positive.",
+        "required": false,
+        "secure": false,
+        "uiExpose": true,
+        "applyLive": true,
+        "requiresRestart": false,
+        "description": "Blank preserves operation limits. Zero permits no mutations.",
+        "minimum": 0
+      },
+      {
+        "section": "qBit",
+        "path": [
+          "Maintenance",
+          "Operations",
+          "CategoryReconcile",
+          "Enabled"
+        ],
+        "key": "Maintenance.Operations.CategoryReconcile.Enabled",
+        "label": "Enable operation",
+        "kind": "checkbox",
+        "default": false,
+        "comments": "Enable operation. Off disables this behavior; operation enablement and authorization still apply.",
+        "required": false,
+        "secure": false,
+        "uiExpose": true,
+        "applyLive": true,
+        "requiresRestart": false,
+        "description": "Explicit operation override. Existing configs without an override retain their legacy enablement."
+      },
+      {
+        "section": "qBit",
+        "path": [
+          "Maintenance",
+          "Operations",
+          "CategoryReconcile",
+          "ExecutionMode"
+        ],
+        "key": "Maintenance.Operations.CategoryReconcile.ExecutionMode",
+        "label": "Execution mode",
+        "kind": "select",
+        "default": "manual",
+        "comments": "Execution mode. Uses the displayed units and default; operation prerequisites and protection checks still apply.",
+        "required": false,
+        "secure": false,
+        "uiExpose": true,
+        "applyLive": true,
+        "requiresRestart": false,
+        "options": [
+          "manual",
+          "automatic"
+        ],
+        "description": "Manual applies a reviewed preview once. Automatic runs on the saved schedule and remains enabled after restart; no restart is required."
+      },
+      {
+        "section": "qBit",
+        "path": [
+          "Maintenance",
+          "Operations",
+          "CategoryReconcile",
+          "Schedule"
+        ],
+        "key": "Maintenance.Operations.CategoryReconcile.Schedule",
+        "label": "Operation schedule (UTC)",
+        "kind": "text",
+        "default": "*/15 * * * *",
+        "comments": "Operation schedule (UTC). Uses the displayed units and default; operation prerequisites and protection checks still apply.",
+        "required": false,
+        "secure": false,
+        "uiExpose": true,
+        "applyLive": true,
+        "requiresRestart": false,
+        "description": "Five-field cron expression in UTC. Blank inherits the client schedule."
+      },
+      {
+        "section": "qBit",
+        "path": [
+          "Maintenance",
+          "Operations",
+          "CategoryReconcile",
+          "IncludedCategories"
+        ],
+        "key": "Maintenance.Operations.CategoryReconcile.IncludedCategories",
+        "label": "Included categories",
+        "kind": "tags",
+        "default": [],
+        "comments": "Included categories. Empty applies no additional list entries; operation filters inherit client scope.",
+        "required": false,
+        "secure": false,
+        "uiExpose": true,
+        "applyLive": true,
+        "requiresRestart": false,
+        "description": "Blank inherits client-wide scope. Entries narrow that scope."
+      },
+      {
+        "section": "qBit",
+        "path": [
+          "Maintenance",
+          "Operations",
+          "CategoryReconcile",
+          "ExcludedCategories"
+        ],
+        "key": "Maintenance.Operations.CategoryReconcile.ExcludedCategories",
+        "label": "Excluded categories",
+        "kind": "tags",
+        "default": [],
+        "comments": "Excluded categories. Empty applies no additional list entries; operation filters inherit client scope.",
+        "required": false,
+        "secure": false,
+        "uiExpose": true,
+        "applyLive": true,
+        "requiresRestart": false
+      },
+      {
+        "section": "qBit",
+        "path": [
+          "Maintenance",
+          "Operations",
+          "CategoryReconcile",
+          "ExcludedTags"
+        ],
+        "key": "Maintenance.Operations.CategoryReconcile.ExcludedTags",
+        "label": "Excluded tags",
+        "kind": "tags",
+        "default": [],
+        "comments": "Excluded tags. Empty applies no additional list entries; operation filters inherit client scope.",
+        "required": false,
+        "secure": false,
+        "uiExpose": true,
+        "applyLive": true,
+        "requiresRestart": false
+      },
+      {
+        "section": "qBit",
+        "path": [
+          "Maintenance",
+          "Operations",
+          "CategoryReconcile",
+          "MaxActionsPerRun"
+        ],
+        "key": "Maintenance.Operations.CategoryReconcile.MaxActionsPerRun",
+        "label": "Maximum actions per run",
+        "kind": "number",
+        "default": null,
+        "comments": "Maximum actions per run. Zero permits no mutations for action/deletion caps; inspection budgets must be positive.",
+        "required": false,
+        "secure": false,
+        "uiExpose": true,
+        "applyLive": true,
+        "requiresRestart": false,
+        "description": "Blank preserves operation limits. Zero permits no mutations.",
+        "minimum": 0
+      },
+      {
+        "section": "qBit",
+        "path": [
+          "Maintenance",
+          "Operations",
+          "AutomaticManagement",
+          "Enabled"
+        ],
+        "key": "Maintenance.Operations.AutomaticManagement.Enabled",
+        "label": "Enable operation",
+        "kind": "checkbox",
+        "default": false,
+        "comments": "Enable operation. Off disables this behavior; operation enablement and authorization still apply.",
+        "required": false,
+        "secure": false,
+        "uiExpose": true,
+        "applyLive": true,
+        "requiresRestart": false,
+        "description": "Explicit operation override. Existing configs without an override retain their legacy enablement."
+      },
+      {
+        "section": "qBit",
+        "path": [
+          "Maintenance",
+          "Operations",
+          "AutomaticManagement",
+          "ExecutionMode"
+        ],
+        "key": "Maintenance.Operations.AutomaticManagement.ExecutionMode",
+        "label": "Execution mode",
+        "kind": "select",
+        "default": "manual",
+        "comments": "Execution mode. Uses the displayed units and default; operation prerequisites and protection checks still apply.",
+        "required": false,
+        "secure": false,
+        "uiExpose": true,
+        "applyLive": true,
+        "requiresRestart": false,
+        "options": [
+          "manual",
+          "automatic"
+        ],
+        "description": "Manual applies a reviewed preview once. Automatic runs on the saved schedule and remains enabled after restart; no restart is required."
+      },
+      {
+        "section": "qBit",
+        "path": [
+          "Maintenance",
+          "Operations",
+          "AutomaticManagement",
+          "Schedule"
+        ],
+        "key": "Maintenance.Operations.AutomaticManagement.Schedule",
+        "label": "Operation schedule (UTC)",
+        "kind": "text",
+        "default": "*/30 * * * *",
+        "comments": "Operation schedule (UTC). Uses the displayed units and default; operation prerequisites and protection checks still apply.",
+        "required": false,
+        "secure": false,
+        "uiExpose": true,
+        "applyLive": true,
+        "requiresRestart": false,
+        "description": "Five-field cron expression in UTC. Blank inherits the client schedule."
+      },
+      {
+        "section": "qBit",
+        "path": [
+          "Maintenance",
+          "Operations",
+          "AutomaticManagement",
+          "IncludedCategories"
+        ],
+        "key": "Maintenance.Operations.AutomaticManagement.IncludedCategories",
+        "label": "Included categories",
+        "kind": "tags",
+        "default": [],
+        "comments": "Included categories. Empty applies no additional list entries; operation filters inherit client scope.",
+        "required": false,
+        "secure": false,
+        "uiExpose": true,
+        "applyLive": true,
+        "requiresRestart": false,
+        "description": "Blank inherits client-wide scope. Entries narrow that scope."
+      },
+      {
+        "section": "qBit",
+        "path": [
+          "Maintenance",
+          "Operations",
+          "AutomaticManagement",
+          "ExcludedCategories"
+        ],
+        "key": "Maintenance.Operations.AutomaticManagement.ExcludedCategories",
+        "label": "Excluded categories",
+        "kind": "tags",
+        "default": [],
+        "comments": "Excluded categories. Empty applies no additional list entries; operation filters inherit client scope.",
+        "required": false,
+        "secure": false,
+        "uiExpose": true,
+        "applyLive": true,
+        "requiresRestart": false
+      },
+      {
+        "section": "qBit",
+        "path": [
+          "Maintenance",
+          "Operations",
+          "AutomaticManagement",
+          "ExcludedTags"
+        ],
+        "key": "Maintenance.Operations.AutomaticManagement.ExcludedTags",
+        "label": "Excluded tags",
+        "kind": "tags",
+        "default": [],
+        "comments": "Excluded tags. Empty applies no additional list entries; operation filters inherit client scope.",
+        "required": false,
+        "secure": false,
+        "uiExpose": true,
+        "applyLive": true,
+        "requiresRestart": false
+      },
+      {
+        "section": "qBit",
+        "path": [
+          "Maintenance",
+          "Operations",
+          "AutomaticManagement",
+          "MaxActionsPerRun"
+        ],
+        "key": "Maintenance.Operations.AutomaticManagement.MaxActionsPerRun",
+        "label": "Maximum actions per run",
+        "kind": "number",
+        "default": null,
+        "comments": "Maximum actions per run. Zero permits no mutations for action/deletion caps; inspection budgets must be positive.",
+        "required": false,
+        "secure": false,
+        "uiExpose": true,
+        "applyLive": true,
+        "requiresRestart": false,
+        "description": "Blank preserves operation limits. Zero permits no mutations.",
+        "minimum": 0
+      },
+      {
+        "section": "qBit",
+        "path": [
+          "Maintenance",
+          "Operations",
+          "PrivateTagging",
+          "Enabled"
+        ],
+        "key": "Maintenance.Operations.PrivateTagging.Enabled",
+        "label": "Enable operation",
+        "kind": "checkbox",
+        "default": false,
+        "comments": "Enable operation. Off disables this behavior; operation enablement and authorization still apply.",
+        "required": false,
+        "secure": false,
+        "uiExpose": true,
+        "applyLive": true,
+        "requiresRestart": false,
+        "description": "Explicit operation override. Existing configs without an override retain their legacy enablement."
+      },
+      {
+        "section": "qBit",
+        "path": [
+          "Maintenance",
+          "Operations",
+          "PrivateTagging",
+          "ExecutionMode"
+        ],
+        "key": "Maintenance.Operations.PrivateTagging.ExecutionMode",
+        "label": "Execution mode",
+        "kind": "select",
+        "default": "manual",
+        "comments": "Execution mode. Uses the displayed units and default; operation prerequisites and protection checks still apply.",
+        "required": false,
+        "secure": false,
+        "uiExpose": true,
+        "applyLive": true,
+        "requiresRestart": false,
+        "options": [
+          "manual",
+          "automatic"
+        ],
+        "description": "Manual applies a reviewed preview once. Automatic runs on the saved schedule and remains enabled after restart; no restart is required."
+      },
+      {
+        "section": "qBit",
+        "path": [
+          "Maintenance",
+          "Operations",
+          "PrivateTagging",
+          "Schedule"
+        ],
+        "key": "Maintenance.Operations.PrivateTagging.Schedule",
+        "label": "Operation schedule (UTC)",
+        "kind": "text",
+        "default": "*/30 * * * *",
+        "comments": "Operation schedule (UTC). Uses the displayed units and default; operation prerequisites and protection checks still apply.",
+        "required": false,
+        "secure": false,
+        "uiExpose": true,
+        "applyLive": true,
+        "requiresRestart": false,
+        "description": "Five-field cron expression in UTC. Blank inherits the client schedule."
+      },
+      {
+        "section": "qBit",
+        "path": [
+          "Maintenance",
+          "Operations",
+          "PrivateTagging",
+          "IncludedCategories"
+        ],
+        "key": "Maintenance.Operations.PrivateTagging.IncludedCategories",
+        "label": "Included categories",
+        "kind": "tags",
+        "default": [],
+        "comments": "Included categories. Empty applies no additional list entries; operation filters inherit client scope.",
+        "required": false,
+        "secure": false,
+        "uiExpose": true,
+        "applyLive": true,
+        "requiresRestart": false,
+        "description": "Blank inherits client-wide scope. Entries narrow that scope."
+      },
+      {
+        "section": "qBit",
+        "path": [
+          "Maintenance",
+          "Operations",
+          "PrivateTagging",
+          "ExcludedCategories"
+        ],
+        "key": "Maintenance.Operations.PrivateTagging.ExcludedCategories",
+        "label": "Excluded categories",
+        "kind": "tags",
+        "default": [],
+        "comments": "Excluded categories. Empty applies no additional list entries; operation filters inherit client scope.",
+        "required": false,
+        "secure": false,
+        "uiExpose": true,
+        "applyLive": true,
+        "requiresRestart": false
+      },
+      {
+        "section": "qBit",
+        "path": [
+          "Maintenance",
+          "Operations",
+          "PrivateTagging",
+          "ExcludedTags"
+        ],
+        "key": "Maintenance.Operations.PrivateTagging.ExcludedTags",
+        "label": "Excluded tags",
+        "kind": "tags",
+        "default": [],
+        "comments": "Excluded tags. Empty applies no additional list entries; operation filters inherit client scope.",
+        "required": false,
+        "secure": false,
+        "uiExpose": true,
+        "applyLive": true,
+        "requiresRestart": false
+      },
+      {
+        "section": "qBit",
+        "path": [
+          "Maintenance",
+          "Operations",
+          "PrivateTagging",
+          "MaxActionsPerRun"
+        ],
+        "key": "Maintenance.Operations.PrivateTagging.MaxActionsPerRun",
+        "label": "Maximum actions per run",
+        "kind": "number",
+        "default": null,
+        "comments": "Maximum actions per run. Zero permits no mutations for action/deletion caps; inspection budgets must be positive.",
+        "required": false,
+        "secure": false,
+        "uiExpose": true,
+        "applyLive": true,
+        "requiresRestart": false,
+        "description": "Blank preserves operation limits. Zero permits no mutations.",
+        "minimum": 0
+      },
+      {
+        "section": "qBit",
+        "path": [
+          "Maintenance",
+          "Operations",
+          "TrackerErrorTagging",
+          "Enabled"
+        ],
+        "key": "Maintenance.Operations.TrackerErrorTagging.Enabled",
+        "label": "Enable operation",
+        "kind": "checkbox",
+        "default": false,
+        "comments": "Enable operation. Off disables this behavior; operation enablement and authorization still apply.",
+        "required": false,
+        "secure": false,
+        "uiExpose": true,
+        "applyLive": true,
+        "requiresRestart": false,
+        "description": "Explicit operation override. Existing configs without an override retain their legacy enablement."
+      },
+      {
+        "section": "qBit",
+        "path": [
+          "Maintenance",
+          "Operations",
+          "TrackerErrorTagging",
+          "ExecutionMode"
+        ],
+        "key": "Maintenance.Operations.TrackerErrorTagging.ExecutionMode",
+        "label": "Execution mode",
+        "kind": "select",
+        "default": "manual",
+        "comments": "Execution mode. Uses the displayed units and default; operation prerequisites and protection checks still apply.",
+        "required": false,
+        "secure": false,
+        "uiExpose": true,
+        "applyLive": true,
+        "requiresRestart": false,
+        "options": [
+          "manual",
+          "automatic"
+        ],
+        "description": "Manual applies a reviewed preview once. Automatic runs on the saved schedule and remains enabled after restart; no restart is required."
+      },
+      {
+        "section": "qBit",
+        "path": [
+          "Maintenance",
+          "Operations",
+          "TrackerErrorTagging",
+          "Schedule"
+        ],
+        "key": "Maintenance.Operations.TrackerErrorTagging.Schedule",
+        "label": "Operation schedule (UTC)",
+        "kind": "text",
+        "default": "*/30 * * * *",
+        "comments": "Operation schedule (UTC). Uses the displayed units and default; operation prerequisites and protection checks still apply.",
+        "required": false,
+        "secure": false,
+        "uiExpose": true,
+        "applyLive": true,
+        "requiresRestart": false,
+        "description": "Five-field cron expression in UTC. Blank inherits the client schedule."
+      },
+      {
+        "section": "qBit",
+        "path": [
+          "Maintenance",
+          "Operations",
+          "TrackerErrorTagging",
+          "IncludedCategories"
+        ],
+        "key": "Maintenance.Operations.TrackerErrorTagging.IncludedCategories",
+        "label": "Included categories",
+        "kind": "tags",
+        "default": [],
+        "comments": "Included categories. Empty applies no additional list entries; operation filters inherit client scope.",
+        "required": false,
+        "secure": false,
+        "uiExpose": true,
+        "applyLive": true,
+        "requiresRestart": false,
+        "description": "Blank inherits client-wide scope. Entries narrow that scope."
+      },
+      {
+        "section": "qBit",
+        "path": [
+          "Maintenance",
+          "Operations",
+          "TrackerErrorTagging",
+          "ExcludedCategories"
+        ],
+        "key": "Maintenance.Operations.TrackerErrorTagging.ExcludedCategories",
+        "label": "Excluded categories",
+        "kind": "tags",
+        "default": [],
+        "comments": "Excluded categories. Empty applies no additional list entries; operation filters inherit client scope.",
+        "required": false,
+        "secure": false,
+        "uiExpose": true,
+        "applyLive": true,
+        "requiresRestart": false
+      },
+      {
+        "section": "qBit",
+        "path": [
+          "Maintenance",
+          "Operations",
+          "TrackerErrorTagging",
+          "ExcludedTags"
+        ],
+        "key": "Maintenance.Operations.TrackerErrorTagging.ExcludedTags",
+        "label": "Excluded tags",
+        "kind": "tags",
+        "default": [],
+        "comments": "Excluded tags. Empty applies no additional list entries; operation filters inherit client scope.",
+        "required": false,
+        "secure": false,
+        "uiExpose": true,
+        "applyLive": true,
+        "requiresRestart": false
+      },
+      {
+        "section": "qBit",
+        "path": [
+          "Maintenance",
+          "Operations",
+          "TrackerErrorTagging",
+          "MaxActionsPerRun"
+        ],
+        "key": "Maintenance.Operations.TrackerErrorTagging.MaxActionsPerRun",
+        "label": "Maximum actions per run",
+        "kind": "number",
+        "default": null,
+        "comments": "Maximum actions per run. Zero permits no mutations for action/deletion caps; inspection budgets must be positive.",
+        "required": false,
+        "secure": false,
+        "uiExpose": true,
+        "applyLive": true,
+        "requiresRestart": false,
+        "description": "Blank preserves operation limits. Zero permits no mutations.",
+        "minimum": 0
+      },
+      {
+        "section": "qBit",
+        "path": [
+          "Maintenance",
+          "Operations",
+          "RepairPaused",
+          "Enabled"
+        ],
+        "key": "Maintenance.Operations.RepairPaused.Enabled",
+        "label": "Enable operation",
+        "kind": "checkbox",
+        "default": false,
+        "comments": "Enable operation. Off disables this behavior; operation enablement and authorization still apply.",
+        "required": false,
+        "secure": false,
+        "uiExpose": true,
+        "applyLive": true,
+        "requiresRestart": false,
+        "description": "Explicit operation override. Existing configs without an override retain their legacy enablement."
+      },
+      {
+        "section": "qBit",
+        "path": [
+          "Maintenance",
+          "Operations",
+          "RepairPaused",
+          "ExecutionMode"
+        ],
+        "key": "Maintenance.Operations.RepairPaused.ExecutionMode",
+        "label": "Execution mode",
+        "kind": "select",
+        "default": "manual",
+        "comments": "Execution mode. Uses the displayed units and default; operation prerequisites and protection checks still apply.",
+        "required": false,
+        "secure": false,
+        "uiExpose": true,
+        "applyLive": true,
+        "requiresRestart": false,
+        "options": [
+          "manual",
+          "automatic"
+        ],
+        "description": "Manual applies a reviewed preview once. Automatic runs on the saved schedule and remains enabled after restart; no restart is required."
+      },
+      {
+        "section": "qBit",
+        "path": [
+          "Maintenance",
+          "Operations",
+          "RepairPaused",
+          "Schedule"
+        ],
+        "key": "Maintenance.Operations.RepairPaused.Schedule",
+        "label": "Operation schedule (UTC)",
+        "kind": "text",
+        "default": "*/30 * * * *",
+        "comments": "Operation schedule (UTC). Uses the displayed units and default; operation prerequisites and protection checks still apply.",
+        "required": false,
+        "secure": false,
+        "uiExpose": true,
+        "applyLive": true,
+        "requiresRestart": false,
+        "description": "Five-field cron expression in UTC. Blank inherits the client schedule."
+      },
+      {
+        "section": "qBit",
+        "path": [
+          "Maintenance",
+          "Operations",
+          "RepairPaused",
+          "IncludedCategories"
+        ],
+        "key": "Maintenance.Operations.RepairPaused.IncludedCategories",
+        "label": "Included categories",
+        "kind": "tags",
+        "default": [],
+        "comments": "Included categories. Empty applies no additional list entries; operation filters inherit client scope.",
+        "required": false,
+        "secure": false,
+        "uiExpose": true,
+        "applyLive": true,
+        "requiresRestart": false,
+        "description": "Blank inherits client-wide scope. Entries narrow that scope."
+      },
+      {
+        "section": "qBit",
+        "path": [
+          "Maintenance",
+          "Operations",
+          "RepairPaused",
+          "ExcludedCategories"
+        ],
+        "key": "Maintenance.Operations.RepairPaused.ExcludedCategories",
+        "label": "Excluded categories",
+        "kind": "tags",
+        "default": [],
+        "comments": "Excluded categories. Empty applies no additional list entries; operation filters inherit client scope.",
+        "required": false,
+        "secure": false,
+        "uiExpose": true,
+        "applyLive": true,
+        "requiresRestart": false
+      },
+      {
+        "section": "qBit",
+        "path": [
+          "Maintenance",
+          "Operations",
+          "RepairPaused",
+          "ExcludedTags"
+        ],
+        "key": "Maintenance.Operations.RepairPaused.ExcludedTags",
+        "label": "Excluded tags",
+        "kind": "tags",
+        "default": [],
+        "comments": "Excluded tags. Empty applies no additional list entries; operation filters inherit client scope.",
+        "required": false,
+        "secure": false,
+        "uiExpose": true,
+        "applyLive": true,
+        "requiresRestart": false
+      },
+      {
+        "section": "qBit",
+        "path": [
+          "Maintenance",
+          "Operations",
+          "RepairPaused",
+          "MaxActionsPerRun"
+        ],
+        "key": "Maintenance.Operations.RepairPaused.MaxActionsPerRun",
+        "label": "Maximum actions per run",
+        "kind": "number",
+        "default": null,
+        "comments": "Maximum actions per run. Zero permits no mutations for action/deletion caps; inspection budgets must be positive.",
+        "required": false,
+        "secure": false,
+        "uiExpose": true,
+        "applyLive": true,
+        "requiresRestart": false,
+        "description": "Blank preserves operation limits. Zero permits no mutations.",
+        "minimum": 0
+      },
+      {
+        "section": "qBit",
+        "path": [
+          "Maintenance",
+          "Operations",
+          "RecycleRetention",
+          "Enabled"
+        ],
+        "key": "Maintenance.Operations.RecycleRetention.Enabled",
+        "label": "Enable operation",
+        "kind": "checkbox",
+        "default": false,
+        "comments": "Enable operation. Off disables this behavior; operation enablement and authorization still apply.",
+        "required": false,
+        "secure": false,
+        "uiExpose": true,
+        "applyLive": true,
+        "requiresRestart": false,
+        "description": "Explicit operation override. Existing configs without an override retain their legacy enablement."
+      },
+      {
+        "section": "qBit",
+        "path": [
+          "Maintenance",
+          "Operations",
+          "RecycleRetention",
+          "ExecutionMode"
+        ],
+        "key": "Maintenance.Operations.RecycleRetention.ExecutionMode",
+        "label": "Execution mode",
+        "kind": "select",
+        "default": "manual",
+        "comments": "Execution mode. Uses the displayed units and default; operation prerequisites and protection checks still apply.",
+        "required": false,
+        "secure": false,
+        "uiExpose": true,
+        "applyLive": true,
+        "requiresRestart": false,
+        "options": [
+          "manual",
+          "automatic"
+        ],
+        "description": "Manual applies a reviewed preview once. Automatic runs on the saved schedule and remains enabled after restart; no restart is required."
+      },
+      {
+        "section": "qBit",
+        "path": [
+          "Maintenance",
+          "Operations",
+          "RecycleRetention",
+          "Schedule"
+        ],
+        "key": "Maintenance.Operations.RecycleRetention.Schedule",
+        "label": "Operation schedule (UTC)",
+        "kind": "text",
+        "default": "45 4 * * *",
+        "comments": "Operation schedule (UTC). Uses the displayed units and default; operation prerequisites and protection checks still apply.",
+        "required": false,
+        "secure": false,
+        "uiExpose": true,
+        "applyLive": true,
+        "requiresRestart": false,
+        "description": "Five-field cron expression in UTC. Blank inherits the client schedule."
+      },
+      {
+        "section": "qBit",
+        "path": [
+          "Maintenance",
+          "Operations",
+          "RecycleRetention",
+          "IncludedCategories"
+        ],
+        "key": "Maintenance.Operations.RecycleRetention.IncludedCategories",
+        "label": "Included categories",
+        "kind": "tags",
+        "default": [],
+        "comments": "Included categories. Empty applies no additional list entries; operation filters inherit client scope.",
+        "required": false,
+        "secure": false,
+        "uiExpose": true,
+        "applyLive": true,
+        "requiresRestart": false,
+        "description": "Blank inherits client-wide scope. Entries narrow that scope."
+      },
+      {
+        "section": "qBit",
+        "path": [
+          "Maintenance",
+          "Operations",
+          "RecycleRetention",
+          "ExcludedCategories"
+        ],
+        "key": "Maintenance.Operations.RecycleRetention.ExcludedCategories",
+        "label": "Excluded categories",
+        "kind": "tags",
+        "default": [],
+        "comments": "Excluded categories. Empty applies no additional list entries; operation filters inherit client scope.",
+        "required": false,
+        "secure": false,
+        "uiExpose": true,
+        "applyLive": true,
+        "requiresRestart": false
+      },
+      {
+        "section": "qBit",
+        "path": [
+          "Maintenance",
+          "Operations",
+          "RecycleRetention",
+          "ExcludedTags"
+        ],
+        "key": "Maintenance.Operations.RecycleRetention.ExcludedTags",
+        "label": "Excluded tags",
+        "kind": "tags",
+        "default": [],
+        "comments": "Excluded tags. Empty applies no additional list entries; operation filters inherit client scope.",
+        "required": false,
+        "secure": false,
+        "uiExpose": true,
+        "applyLive": true,
+        "requiresRestart": false
+      },
+      {
+        "section": "qBit",
+        "path": [
+          "Maintenance",
+          "Operations",
+          "RecycleRetention",
+          "MaxActionsPerRun"
+        ],
+        "key": "Maintenance.Operations.RecycleRetention.MaxActionsPerRun",
+        "label": "Maximum actions per run",
+        "kind": "number",
+        "default": null,
+        "comments": "Maximum actions per run. Zero permits no mutations for action/deletion caps; inspection budgets must be positive.",
+        "required": false,
+        "secure": false,
+        "uiExpose": true,
+        "applyLive": true,
+        "requiresRestart": false,
+        "description": "Blank preserves operation limits. Zero permits no mutations.",
+        "minimum": 0
+      },
+      {
+        "section": "qBit",
+        "path": [
+          "Maintenance",
+          "Operations",
+          "ErrorRecovery",
+          "Enabled"
+        ],
+        "key": "Maintenance.Operations.ErrorRecovery.Enabled",
+        "label": "Enable operation",
+        "kind": "checkbox",
+        "default": false,
+        "comments": "Enable operation. Off disables this behavior; operation enablement and authorization still apply.",
+        "required": false,
+        "secure": false,
+        "uiExpose": true,
+        "applyLive": true,
+        "requiresRestart": false,
+        "description": "Explicit operation override. Existing configs without an override retain their legacy enablement."
+      },
+      {
+        "section": "qBit",
+        "path": [
+          "Maintenance",
+          "Operations",
+          "ErrorRecovery",
+          "ExecutionMode"
+        ],
+        "key": "Maintenance.Operations.ErrorRecovery.ExecutionMode",
+        "label": "Execution mode",
+        "kind": "select",
+        "default": "manual",
+        "comments": "Execution mode. Uses the displayed units and default; operation prerequisites and protection checks still apply.",
+        "required": false,
+        "secure": false,
+        "uiExpose": true,
+        "applyLive": true,
+        "requiresRestart": false,
+        "options": [
+          "manual",
+          "automatic"
+        ],
+        "description": "Manual applies a reviewed preview once. Automatic runs on the saved schedule and remains enabled after restart; no restart is required."
+      },
+      {
+        "section": "qBit",
+        "path": [
+          "Maintenance",
+          "Operations",
+          "ErrorRecovery",
+          "Schedule"
+        ],
+        "key": "Maintenance.Operations.ErrorRecovery.Schedule",
+        "label": "Operation schedule (UTC)",
+        "kind": "text",
+        "default": "*/5 * * * *",
+        "comments": "Operation schedule (UTC). Uses the displayed units and default; operation prerequisites and protection checks still apply.",
+        "required": false,
+        "secure": false,
+        "uiExpose": true,
+        "applyLive": true,
+        "requiresRestart": false,
+        "description": "Five-field cron expression in UTC. Blank inherits the client schedule."
+      },
+      {
+        "section": "qBit",
+        "path": [
+          "Maintenance",
+          "Operations",
+          "ErrorRecovery",
+          "IncludedCategories"
+        ],
+        "key": "Maintenance.Operations.ErrorRecovery.IncludedCategories",
+        "label": "Included categories",
+        "kind": "tags",
+        "default": [],
+        "comments": "Included categories. Empty applies no additional list entries; operation filters inherit client scope.",
+        "required": false,
+        "secure": false,
+        "uiExpose": true,
+        "applyLive": true,
+        "requiresRestart": false,
+        "description": "Blank inherits client-wide scope. Entries narrow that scope."
+      },
+      {
+        "section": "qBit",
+        "path": [
+          "Maintenance",
+          "Operations",
+          "ErrorRecovery",
+          "ExcludedCategories"
+        ],
+        "key": "Maintenance.Operations.ErrorRecovery.ExcludedCategories",
+        "label": "Excluded categories",
+        "kind": "tags",
+        "default": [],
+        "comments": "Excluded categories. Empty applies no additional list entries; operation filters inherit client scope.",
+        "required": false,
+        "secure": false,
+        "uiExpose": true,
+        "applyLive": true,
+        "requiresRestart": false
+      },
+      {
+        "section": "qBit",
+        "path": [
+          "Maintenance",
+          "Operations",
+          "ErrorRecovery",
+          "ExcludedTags"
+        ],
+        "key": "Maintenance.Operations.ErrorRecovery.ExcludedTags",
+        "label": "Excluded tags",
+        "kind": "tags",
+        "default": [],
+        "comments": "Excluded tags. Empty applies no additional list entries; operation filters inherit client scope.",
+        "required": false,
+        "secure": false,
+        "uiExpose": true,
+        "applyLive": true,
+        "requiresRestart": false
+      },
+      {
+        "section": "qBit",
+        "path": [
+          "Maintenance",
+          "Operations",
+          "ErrorRecovery",
+          "MaxActionsPerRun"
+        ],
+        "key": "Maintenance.Operations.ErrorRecovery.MaxActionsPerRun",
+        "label": "Maximum actions per run",
+        "kind": "number",
+        "default": null,
+        "comments": "Maximum actions per run. Zero permits no mutations for action/deletion caps; inspection budgets must be positive.",
+        "required": false,
+        "secure": false,
+        "uiExpose": true,
+        "applyLive": true,
+        "requiresRestart": false,
+        "description": "Blank preserves operation limits. Zero permits no mutations.",
+        "minimum": 0
+      },
+      {
+        "section": "qBit",
+        "path": [
+          "Maintenance",
+          "ErrorRecovery",
+          "Enabled"
+        ],
+        "key": "Maintenance.ErrorRecovery.Enabled",
+        "label": "Enable error recovery (legacy fallback)",
+        "kind": "checkbox",
+        "default": false,
+        "comments": "Enable error recovery (legacy fallback). Off disables this behavior; operation enablement and authorization still apply.",
+        "required": false,
+        "secure": false,
+        "uiExpose": true,
+        "applyLive": true,
+        "requiresRestart": false
+      },
+      {
+        "section": "qBit",
+        "path": [
+          "Maintenance",
+          "ErrorRecovery",
+          "Outcome"
+        ],
+        "key": "Maintenance.ErrorRecovery.Outcome",
+        "label": "Outcome after failed repair",
+        "kind": "select",
+        "default": "keep",
+        "comments": "Keep reports recurring failures without deletion. Recycle permits removal only after confirmed repair, sustained failure, and all protection checks.",
+        "required": false,
+        "secure": false,
+        "uiExpose": true,
+        "applyLive": true,
+        "requiresRestart": false,
+        "options": [
+          "keep",
+          "recycle"
+        ]
+      },
+      {
+        "section": "qBit",
+        "path": [
+          "Maintenance",
+          "ErrorRecovery",
+          "States"
+        ],
+        "key": "Maintenance.ErrorRecovery.States",
+        "label": "Client error states",
+        "kind": "tags",
+        "default": [
+          "error",
+          "missingFiles"
+        ],
+        "comments": "Exact client error-state names eligible for repair. Tracker messages alone never interrupt healthy protected seeding.",
+        "required": false,
+        "secure": false,
+        "uiExpose": true,
+        "applyLive": true,
+        "requiresRestart": false
+      },
+      {
+        "section": "qBit",
+        "path": [
+          "Maintenance",
+          "ErrorRecovery",
+          "MaxRepairAttempts"
+        ],
+        "key": "Maintenance.ErrorRecovery.MaxRepairAttempts",
+        "label": "Repair attempts per incident",
+        "kind": "number",
+        "default": 1,
+        "comments": "Positive accepted recheck attempts per incident. Default one; rejected submissions do not consume an accepted attempt.",
+        "required": false,
+        "secure": false,
+        "uiExpose": true,
+        "applyLive": true,
+        "requiresRestart": false,
+        "minimum": 1
+      },
+      {
+        "section": "qBit",
+        "path": [
+          "Maintenance",
+          "ErrorRecovery",
+          "MaxPerRun"
+        ],
+        "key": "Maintenance.ErrorRecovery.MaxPerRun",
+        "label": "Maximum new rechecks per run",
+        "kind": "number",
+        "default": 2,
+        "comments": "Maximum new rechecks per run. Zero permits no mutations for action/deletion caps; inspection budgets must be positive.",
+        "required": false,
+        "secure": false,
+        "uiExpose": true,
+        "applyLive": true,
+        "requiresRestart": false,
+        "minimum": 0
+      },
+      {
+        "section": "qBit",
+        "path": [
+          "Maintenance",
+          "ErrorRecovery",
+          "RetryMinutes"
+        ],
+        "key": "Maintenance.ErrorRecovery.RetryMinutes",
+        "label": "Rejected recheck retry delay (minutes)",
+        "kind": "number",
+        "default": 10,
+        "comments": "Positive delay before retrying rejected rechecks. Default 10 minutes; failures never prove recovery.",
+        "required": false,
+        "secure": false,
+        "uiExpose": true,
+        "applyLive": true,
+        "requiresRestart": false,
+        "minimum": 1
+      },
+      {
+        "section": "qBit",
+        "path": [
+          "Maintenance",
+          "ErrorRecovery",
+          "RecheckTimeoutMinutes"
+        ],
+        "key": "Maintenance.ErrorRecovery.RecheckTimeoutMinutes",
+        "label": "Recheck confirmation timeout (minutes)",
+        "kind": "number",
+        "default": 60,
+        "comments": "Positive time allowed to observe checking and completion. Default 60 minutes; unconfirmed/timed-out checks never allow cleanup.",
+        "required": false,
+        "secure": false,
+        "uiExpose": true,
+        "applyLive": true,
+        "requiresRestart": false,
+        "minimum": 1
+      },
+      {
+        "section": "qBit",
+        "path": [
+          "Maintenance",
+          "ErrorRecovery",
+          "SustainedFailureMinutes"
+        ],
+        "key": "Maintenance.ErrorRecovery.SustainedFailureMinutes",
+        "label": "Confirmed recurring error delay (minutes)",
+        "kind": "number",
+        "default": 1440,
+        "comments": "Positive continuously observed failure window after confirmed repair. Default 1440 minutes; observation gaps restart it.",
+        "required": false,
+        "secure": false,
+        "uiExpose": true,
+        "applyLive": true,
+        "requiresRestart": false,
+        "minimum": 1
+      },
+      {
+        "section": "qBit",
+        "path": [
+          "Maintenance",
+          "ErrorRecovery",
+          "HealthyResetMinutes"
+        ],
+        "key": "Maintenance.ErrorRecovery.HealthyResetMinutes",
+        "label": "Observed healthy reset (minutes)",
+        "kind": "number",
+        "default": 60,
+        "comments": "Positive observed-health window before resetting an incident. Default 60 minutes; unobserved downtime is not evidence.",
+        "required": false,
+        "secure": false,
+        "uiExpose": true,
+        "applyLive": true,
+        "requiresRestart": false,
+        "minimum": 1
+      },
+      {
+        "section": "qBit",
+        "path": [
+          "Maintenance",
+          "RecycleBin",
+          "RetentionEnabled"
+        ],
+        "key": "Maintenance.RecycleBin.RetentionEnabled",
+        "label": "Enable expired-file deletion",
+        "kind": "checkbox",
+        "default": true,
+        "comments": "Enable expired-file deletion. Off disables this behavior; operation enablement and authorization still apply.",
+        "required": false,
+        "secure": false,
+        "uiExpose": true,
+        "applyLive": true,
+        "requiresRestart": false,
+        "description": "Independent of recycle storage. Off preserves recycled files indefinitely."
+      },
+      {
+        "section": "qBit",
+        "path": [
+          "Maintenance",
+          "RecycleBin",
+          "MaxFilesDeletedPerRun"
+        ],
+        "key": "Maintenance.RecycleBin.MaxFilesDeletedPerRun",
+        "label": "Maximum recycle files deleted per run",
+        "kind": "number",
+        "default": 100,
+        "comments": "Maximum recycle files deleted per run. Zero permits no mutations for action/deletion caps; inspection budgets must be positive.",
+        "required": false,
+        "secure": false,
+        "uiExpose": true,
+        "applyLive": true,
+        "requiresRestart": false,
+        "minimum": 0
+      },
+      {
+        "section": "qBit",
+        "path": [
+          "Maintenance",
+          "Orphans",
+          "ScanRoots"
+        ],
+        "key": "Maintenance.Orphans.ScanRoots",
+        "label": "Orphan scan roots",
+        "kind": "tags",
+        "default": [],
+        "comments": "Orphan scan roots. Empty applies no additional list entries; operation filters inherit client scope.",
+        "required": false,
+        "secure": false,
+        "uiExpose": true,
+        "applyLive": true,
+        "requiresRestart": false,
+        "description": "Explicit local roots to scan. Each must match a path mapping. Blank disables filesystem scanning."
+      },
+      {
+        "section": "qBit",
+        "path": [
+          "Maintenance",
+          "Orphans",
+          "MaxInspectedFilesPerRun"
+        ],
+        "key": "Maintenance.Orphans.MaxInspectedFilesPerRun",
+        "label": "Maximum files inspected per scan",
+        "kind": "number",
+        "default": 10000,
+        "comments": "Positive file eligibility-inspection budget, default 10000. Directory name ordering still enumerates the root.",
+        "required": false,
+        "secure": false,
+        "uiExpose": true,
+        "applyLive": true,
+        "requiresRestart": false,
+        "minimum": 1
+      },
+      {
+        "section": "qBit",
+        "path": [
+          "Maintenance",
+          "Hardlinks",
+          "MaxInspectedTorrentsPerRun"
+        ],
+        "key": "Maintenance.Hardlinks.MaxInspectedTorrentsPerRun",
+        "label": "Maximum torrents inspected per hardlink audit",
+        "kind": "number",
+        "default": 1000,
+        "comments": "Positive inspection budget, default 1000 torrents. Applied runs persist a cursor for eventual coverage.",
+        "required": false,
+        "secure": false,
+        "uiExpose": true,
+        "applyLive": true,
+        "requiresRestart": false,
+        "minimum": 1
+      },
+      {
+        "section": "qBit",
+        "path": [
+          "Maintenance",
+          "Hardlinks",
+          "RemoveClearedTag"
+        ],
+        "key": "Maintenance.Hardlinks.RemoveClearedTag",
+        "label": "Remove cleared hardlink tags",
+        "kind": "checkbox",
+        "default": false,
+        "comments": "Remove cleared hardlink tags. Off disables this behavior; operation enablement and authorization still apply.",
+        "required": false,
+        "secure": false,
+        "uiExpose": true,
+        "applyLive": true,
+        "requiresRestart": false,
+        "description": "Remove only tags recorded as applied by Torrentarr, when additional hardlinks are found."
+      },
+      {
+        "section": "qBit",
+        "path": [
+          "Maintenance",
+          "AutomaticManagement",
+          "RemoveClearedTrackerErrorTag"
+        ],
+        "key": "Maintenance.AutomaticManagement.RemoveClearedTrackerErrorTag",
+        "label": "Remove cleared tracker-error tags",
+        "kind": "checkbox",
+        "default": false,
+        "comments": "Remove cleared tracker-error tags. Off disables this behavior; operation enablement and authorization still apply.",
+        "required": false,
+        "secure": false,
+        "uiExpose": true,
+        "applyLive": true,
+        "requiresRestart": false,
+        "description": "Remove only Torrentarr-owned tags when a tracker is healthy again."
+      },
+      {
+        "section": "qBit",
+        "path": [
+          "Maintenance",
+          "Repair",
+          "ResumeCompleted"
+        ],
+        "key": "Maintenance.Repair.ResumeCompleted",
+        "label": "Resume complete paused torrents",
+        "kind": "checkbox",
+        "default": true,
+        "comments": "Explicitly authorizes resuming complete paused torrents, including deliberate user pauses. Review before enabling.",
+        "required": false,
+        "secure": false,
+        "uiExpose": true,
+        "applyLive": true,
+        "requiresRestart": false
+      },
+      {
+        "section": "qBit",
+        "path": [
+          "Maintenance",
+          "Repair",
+          "RecheckIncomplete"
+        ],
+        "key": "Maintenance.Repair.RecheckIncomplete",
+        "label": "Recheck incomplete paused torrents",
+        "kind": "checkbox",
+        "default": true,
+        "comments": "Request file rechecks for incomplete paused torrents. This can create disk IO; it does not prove successful recovery.",
+        "required": false,
+        "secure": false,
+        "uiExpose": true,
+        "applyLive": true,
+        "requiresRestart": false
+      },
+      {
+        "section": "qBit",
+        "path": [
+          "Maintenance",
+          "CategoryMappings"
+        ],
+        "key": "Maintenance.CategoryMappings",
+        "label": "Category mappings",
+        "kind": "collection",
+        "default": [],
+        "comments": "Category mappings. Uses the displayed units and default; operation prerequisites and protection checks still apply.",
+        "required": false,
+        "secure": false,
+        "uiExpose": true,
+        "applyLive": true,
+        "requiresRestart": false,
+        "description": "Assign categories by save path; the longest matching path wins.",
+        "itemFields": [
+          {
+            "section": "TorrentClient",
+            "path": [
+              "ClientPath"
+            ],
+            "key": "ClientPath",
+            "label": "Save path",
+            "kind": "text",
+            "default": "",
+            "comments": "Save path. Uses the displayed units and default; operation prerequisites and protection checks still apply.",
+            "required": true,
+            "secure": false,
+            "uiExpose": true,
+            "applyLive": null,
+            "requiresRestart": null,
+            "description": "Absolute path as seen by the torrent client.",
+            "placeholder": "/downloads/movies"
+          },
+          {
+            "section": "TorrentClient",
+            "path": [
+              "Category"
+            ],
+            "key": "Category",
+            "label": "Category",
+            "kind": "text",
+            "default": "",
+            "comments": "Category. Uses the displayed units and default; operation prerequisites and protection checks still apply.",
+            "required": true,
+            "secure": false,
+            "uiExpose": true,
+            "applyLive": null,
+            "requiresRestart": null,
+            "description": "Target category.",
+            "placeholder": "movies"
+          }
+        ]
+      },
+      {
+        "section": "qBit",
+        "path": [
+          "Maintenance",
+          "CategoryTransitions"
+        ],
+        "key": "Maintenance.CategoryTransitions",
+        "label": "Category transitions",
+        "kind": "collection",
+        "default": [],
+        "comments": "Category transitions. Uses the displayed units and default; operation prerequisites and protection checks still apply.",
+        "required": false,
+        "secure": false,
+        "uiExpose": true,
+        "applyLive": true,
+        "requiresRestart": false,
+        "description": "Change completed torrents\u0027 categories after a delay.",
+        "itemFields": [
+          {
+            "section": "TorrentClient",
+            "path": [
+              "From"
+            ],
+            "key": "From",
+            "label": "From category",
+            "kind": "text",
+            "default": "",
+            "comments": "From category. Uses the displayed units and default; operation prerequisites and protection checks still apply.",
+            "required": true,
+            "secure": false,
+            "uiExpose": true,
+            "applyLive": null,
+            "requiresRestart": null,
+            "description": "Current category.",
+            "placeholder": "movies"
+          },
+          {
+            "section": "TorrentClient",
+            "path": [
+              "To"
+            ],
+            "key": "To",
+            "label": "To category",
+            "kind": "text",
+            "default": "",
+            "comments": "To category. Uses the displayed units and default; operation prerequisites and protection checks still apply.",
+            "required": true,
+            "secure": false,
+            "uiExpose": true,
+            "applyLive": null,
+            "requiresRestart": null,
+            "description": "Target category.",
+            "placeholder": "seed"
+          },
+          {
+            "section": "TorrentClient",
+            "path": [
+              "DelayMinutes"
+            ],
+            "key": "DelayMinutes",
+            "label": "Delay after completion (minutes)",
+            "kind": "number",
+            "default": 0,
+            "comments": "Delay after completion (minutes). Uses the displayed units and default; operation prerequisites and protection checks still apply.",
+            "required": false,
+            "secure": false,
+            "uiExpose": true,
+            "applyLive": true,
+            "requiresRestart": false,
+            "minimum": 0
+          }
+        ]
+      },
+      {
+        "section": "qBit",
+        "path": [
+          "Maintenance",
+          "TrackerAssignments"
+        ],
+        "key": "Maintenance.TrackerAssignments",
+        "label": "Tracker assignments",
+        "kind": "collection",
+        "default": [],
+        "comments": "Tracker assignments. Uses the displayed units and default; operation prerequisites and protection checks still apply.",
+        "required": false,
+        "secure": false,
+        "uiExpose": true,
+        "applyLive": true,
+        "requiresRestart": false,
+        "description": "Assign categories and tags when a tracker URL contains the configured text.",
+        "itemFields": [
+          {
+            "section": "TorrentClient",
+            "path": [
+              "TrackerContains"
+            ],
+            "key": "TrackerContains",
+            "label": "Tracker URL contains",
+            "kind": "text",
+            "default": "",
+            "comments": "Tracker URL contains. Uses the displayed units and default; operation prerequisites and protection checks still apply.",
+            "required": true,
+            "secure": false,
+            "uiExpose": true,
+            "applyLive": null,
+            "requiresRestart": null,
+            "description": "Case-insensitive tracker URL match.",
+            "placeholder": "tracker.example.com"
+          },
+          {
+            "section": "TorrentClient",
+            "path": [
+              "Category"
+            ],
+            "key": "Category",
+            "label": "Assigned category",
+            "kind": "text",
+            "default": "",
+            "comments": "Assigned category. Uses the displayed units and default; operation prerequisites and protection checks still apply.",
+            "required": false,
+            "secure": false,
+            "uiExpose": true,
+            "applyLive": true,
+            "requiresRestart": false
+          },
+          {
+            "section": "TorrentClient",
+            "path": [
+              "Tags"
+            ],
+            "key": "Tags",
+            "label": "Assigned tags",
+            "kind": "tags",
+            "default": [],
+            "comments": "Assigned tags. Empty applies no additional list entries; operation filters inherit client scope.",
+            "required": false,
+            "secure": false,
+            "uiExpose": true,
+            "applyLive": true,
+            "requiresRestart": false
+          }
+        ]
+      },
+      {
+        "section": "qBit",
+        "path": [
+          "Maintenance",
+          "PathMappings"
+        ],
+        "key": "Maintenance.PathMappings",
+        "label": "Path mappings",
+        "kind": "collection",
+        "default": [],
+        "comments": "Path mappings. Uses the displayed units and default; operation prerequisites and protection checks still apply.",
+        "required": false,
+        "secure": false,
+        "uiExpose": true,
+        "applyLive": true,
+        "requiresRestart": false,
+        "description": "Translate torrent client paths into paths visible to Torrentarr. This does not mount folders or move files. The longest matching client prefix wins. Saved mappings apply at the next worker processing cycle.",
+        "itemFields": [
+          {
+            "section": "TorrentClient",
+            "path": [
+              "ClientPath"
+            ],
+            "key": "ClientPath",
+            "label": "Torrent client path",
+            "kind": "text",
+            "default": "",
+            "comments": "Torrent client path. Uses the displayed units and default; operation prerequisites and protection checks still apply.",
+            "required": true,
+            "secure": false,
+            "uiExpose": true,
+            "applyLive": null,
+            "requiresRestart": null,
+            "description": "Folder as seen by the torrent client.",
+            "placeholder": "/downloads"
+          },
+          {
+            "section": "TorrentClient",
+            "path": [
+              "LocalPath"
+            ],
+            "key": "LocalPath",
+            "label": "Torrentarr path",
+            "kind": "text",
+            "default": "",
+            "comments": "Torrentarr path. Uses the displayed units and default; operation prerequisites and protection checks still apply.",
+            "required": true,
+            "secure": false,
+            "uiExpose": true,
+            "applyLive": null,
+            "requiresRestart": null,
+            "description": "The same folder as seen by Torrentarr, including inside its Docker container.",
+            "placeholder": "/data/downloads"
+          }
+        ]
       }
     ],
     "TorrentClient": [
@@ -1233,7 +3933,7 @@ export const CONFIG_SCHEMA = {
         "required": false,
         "secure": false,
         "uiExpose": true,
-        "applyLive": false,
+        "applyLive": true,
         "requiresRestart": false
       },
       {
@@ -1254,7 +3954,7 @@ export const CONFIG_SCHEMA = {
         "required": false,
         "secure": false,
         "uiExpose": true,
-        "applyLive": false,
+        "applyLive": true,
         "requiresRestart": false
       },
       {
@@ -1275,7 +3975,7 @@ export const CONFIG_SCHEMA = {
         "required": false,
         "secure": false,
         "uiExpose": true,
-        "applyLive": false,
+        "applyLive": true,
         "requiresRestart": false
       },
       {
@@ -1292,7 +3992,7 @@ export const CONFIG_SCHEMA = {
         "required": false,
         "secure": false,
         "uiExpose": true,
-        "applyLive": false,
+        "applyLive": true,
         "requiresRestart": false,
         "allowNegative": true
       },
@@ -1310,7 +4010,7 @@ export const CONFIG_SCHEMA = {
         "required": false,
         "secure": false,
         "uiExpose": true,
-        "applyLive": false,
+        "applyLive": true,
         "requiresRestart": false,
         "allowNegative": true
       },
@@ -1328,7 +4028,7 @@ export const CONFIG_SCHEMA = {
         "required": false,
         "secure": false,
         "uiExpose": true,
-        "applyLive": false,
+        "applyLive": true,
         "requiresRestart": false,
         "allowNegative": true
       },
@@ -1346,7 +4046,7 @@ export const CONFIG_SCHEMA = {
         "required": false,
         "secure": false,
         "uiExpose": true,
-        "applyLive": false,
+        "applyLive": true,
         "requiresRestart": false,
         "nativeUnit": "seconds",
         "allowNegative": true
@@ -1372,7 +4072,7 @@ export const CONFIG_SCHEMA = {
         "required": false,
         "secure": false,
         "uiExpose": true,
-        "applyLive": false,
+        "applyLive": true,
         "requiresRestart": false,
         "options": [
           "-1",
@@ -1398,7 +4098,7 @@ export const CONFIG_SCHEMA = {
         "required": false,
         "secure": false,
         "uiExpose": true,
-        "applyLive": false,
+        "applyLive": true,
         "requiresRestart": false,
         "options": [
           "disabled",
@@ -1420,7 +4120,7 @@ export const CONFIG_SCHEMA = {
         "required": false,
         "secure": false,
         "uiExpose": true,
-        "applyLive": false,
+        "applyLive": true,
         "requiresRestart": false
       },
       {
@@ -1437,7 +4137,7 @@ export const CONFIG_SCHEMA = {
         "required": false,
         "secure": false,
         "uiExpose": true,
-        "applyLive": false,
+        "applyLive": true,
         "requiresRestart": false
       },
       {
@@ -1454,7 +4154,7 @@ export const CONFIG_SCHEMA = {
         "required": false,
         "secure": false,
         "uiExpose": true,
-        "applyLive": false,
+        "applyLive": true,
         "requiresRestart": false,
         "minimum": 0,
         "maximum": 100
@@ -1473,7 +4173,7 @@ export const CONFIG_SCHEMA = {
         "required": false,
         "secure": false,
         "uiExpose": true,
-        "applyLive": false,
+        "applyLive": true,
         "requiresRestart": false
       },
       {
@@ -1490,7 +4190,7 @@ export const CONFIG_SCHEMA = {
         "required": false,
         "secure": false,
         "uiExpose": true,
-        "applyLive": false,
+        "applyLive": true,
         "requiresRestart": false,
         "nativeUnit": "seconds"
       },
@@ -1508,7 +4208,7 @@ export const CONFIG_SCHEMA = {
         "required": false,
         "secure": false,
         "uiExpose": true,
-        "applyLive": false,
+        "applyLive": true,
         "requiresRestart": false,
         "nativeUnit": "minutes",
         "allowNegative": true
@@ -1527,7 +4227,7 @@ export const CONFIG_SCHEMA = {
         "required": false,
         "secure": false,
         "uiExpose": true,
-        "applyLive": false,
+        "applyLive": true,
         "requiresRestart": false,
         "nativeUnit": "seconds"
       },
@@ -1540,12 +4240,12 @@ export const CONFIG_SCHEMA = {
         "label": "Client Type",
         "kind": "text",
         "default": "qbittorrent",
-        "comments": "Torrentarr client-neutral torrent maintenance setting.",
+        "comments": "Client adapter identifier. qbittorrent is shipped; other products require a registered factory.",
         "required": false,
         "secure": false,
         "uiExpose": true,
-        "applyLive": false,
-        "requiresRestart": true
+        "applyLive": true,
+        "requiresRestart": false
       },
       {
         "section": "TorrentClient",
@@ -1556,12 +4256,12 @@ export const CONFIG_SCHEMA = {
         "label": "Disabled",
         "kind": "checkbox",
         "default": false,
-        "comments": "Torrentarr client-neutral torrent maintenance setting.",
+        "comments": "Disconnect and stop managing this client. Unknown remote file ownership still blocks destructive maintenance.",
         "required": false,
         "secure": false,
         "uiExpose": true,
-        "applyLive": false,
-        "requiresRestart": true
+        "applyLive": true,
+        "requiresRestart": false
       },
       {
         "section": "TorrentClient",
@@ -1572,12 +4272,12 @@ export const CONFIG_SCHEMA = {
         "label": "Host",
         "kind": "text",
         "default": "CHANGE_ME",
-        "comments": "Torrentarr client-neutral torrent maintenance setting.",
+        "comments": "Torrent client\u0027s WebUI address, reachable from Torrentarr\u0027s process/container.",
         "required": false,
         "secure": false,
         "uiExpose": true,
-        "applyLive": false,
-        "requiresRestart": true
+        "applyLive": true,
+        "requiresRestart": false
       },
       {
         "section": "TorrentClient",
@@ -1588,12 +4288,12 @@ export const CONFIG_SCHEMA = {
         "label": "Port",
         "kind": "number",
         "default": 8080,
-        "comments": "Torrentarr client-neutral torrent maintenance setting.",
+        "comments": "Torrent client\u0027s WebUI TCP port, from 1 to 65535.",
         "required": false,
         "secure": false,
         "uiExpose": true,
-        "applyLive": false,
-        "requiresRestart": true,
+        "applyLive": true,
+        "requiresRestart": false,
         "minimum": 1,
         "maximum": 65535
       },
@@ -1606,12 +4306,12 @@ export const CONFIG_SCHEMA = {
         "label": "Username",
         "kind": "text",
         "default": "CHANGE_ME",
-        "comments": "Torrentarr client-neutral torrent maintenance setting.",
+        "comments": "Login username for the torrent client.",
         "required": false,
         "secure": false,
         "uiExpose": true,
-        "applyLive": false,
-        "requiresRestart": true
+        "applyLive": true,
+        "requiresRestart": false
       },
       {
         "section": "TorrentClient",
@@ -1622,12 +4322,100 @@ export const CONFIG_SCHEMA = {
         "label": "Password",
         "kind": "password",
         "default": "CHANGE_ME",
-        "comments": "Torrentarr client-neutral torrent maintenance setting.",
+        "comments": "Client login secret. Redacted values retain the stored credential until explicitly replaced.",
         "required": false,
         "secure": true,
         "uiExpose": true,
-        "applyLive": false,
-        "requiresRestart": true
+        "applyLive": true,
+        "requiresRestart": false
+      },
+      {
+        "section": "TorrentClient",
+        "path": [
+          "DownloadPath"
+        ],
+        "key": "DownloadPath",
+        "label": "Download path",
+        "kind": "text",
+        "default": "",
+        "comments": "Download path. Uses the displayed units and default; operation prerequisites and protection checks still apply.",
+        "required": false,
+        "secure": false,
+        "uiExpose": true,
+        "applyLive": true,
+        "requiresRestart": false,
+        "description": "Default download root as seen by this torrent client. Existing category paths are preserved."
+      },
+      {
+        "section": "TorrentClient",
+        "path": [
+          "FreeSpace"
+        ],
+        "key": "FreeSpace",
+        "label": "Free-space monitors",
+        "kind": "collection",
+        "default": [],
+        "comments": "Free-space monitors. Uses the displayed units and default; operation prerequisites and protection checks still apply.",
+        "required": false,
+        "secure": false,
+        "uiExpose": true,
+        "applyLive": true,
+        "requiresRestart": false,
+        "description": "Paths visible to Torrentarr. One manager shares a budget across all clients using the same filesystem, preserving the largest configured reserve.",
+        "itemFields": [
+          {
+            "section": "TorrentClient",
+            "path": [
+              "Path"
+            ],
+            "key": "Path",
+            "label": "Torrentarr path",
+            "kind": "text",
+            "default": "",
+            "comments": "Torrentarr path. Uses the displayed units and default; operation prerequisites and protection checks still apply.",
+            "required": true,
+            "secure": false,
+            "uiExpose": true,
+            "applyLive": null,
+            "requiresRestart": null,
+            "description": "Absolute local folder to monitor. Downloads are matched using this client\u0027s path mappings.",
+            "placeholder": "/data/downloads"
+          },
+          {
+            "section": "TorrentClient",
+            "path": [
+              "Enabled"
+            ],
+            "key": "Enabled",
+            "label": "Enabled",
+            "kind": "checkbox",
+            "default": false,
+            "comments": "Enabled. Off disables this behavior; operation enablement and authorization still apply.",
+            "required": false,
+            "secure": false,
+            "uiExpose": true,
+            "applyLive": true,
+            "requiresRestart": false
+          },
+          {
+            "section": "TorrentClient",
+            "path": [
+              "Limit"
+            ],
+            "key": "Limit",
+            "label": "Minimum free space",
+            "kind": "text",
+            "default": "10G",
+            "comments": "Minimum free space. Uses the displayed units and default; operation prerequisites and protection checks still apply.",
+            "required": true,
+            "secure": false,
+            "uiExpose": true,
+            "applyLive": null,
+            "requiresRestart": null,
+            "description": "Reserve in bytes or with K, M, G, T suffix. Disable using the checkbox.",
+            "placeholder": "10G"
+          }
+        ]
       },
       {
         "section": "TorrentClient",
@@ -1639,12 +4427,12 @@ export const CONFIG_SCHEMA = {
         "label": "Maintenance Enabled",
         "kind": "checkbox",
         "default": false,
-        "comments": "Torrentarr client-neutral torrent maintenance setting.",
+        "comments": "Enable Manage tools. Select Automatic per tool to allow scheduled execution; saving never executes a tool immediately.",
         "required": false,
         "secure": false,
         "uiExpose": true,
-        "applyLive": false,
-        "requiresRestart": true
+        "applyLive": true,
+        "requiresRestart": false
       },
       {
         "section": "TorrentClient",
@@ -1656,12 +4444,12 @@ export const CONFIG_SCHEMA = {
         "label": "Maintenance Scope",
         "kind": "select",
         "default": "managed",
-        "comments": "Torrentarr client-neutral torrent maintenance setting.",
+        "comments": "Managed categories, all torrents, or an explicit category list. Operation filters can only narrow this scope.",
         "required": false,
         "secure": false,
         "uiExpose": true,
-        "applyLive": false,
-        "requiresRestart": true,
+        "applyLive": true,
+        "requiresRestart": false,
         "options": [
           "managed",
           "all",
@@ -1678,12 +4466,12 @@ export const CONFIG_SCHEMA = {
         "label": "Maintenance Schedule",
         "kind": "text",
         "default": "*/15 * * * *",
-        "comments": "Torrentarr client-neutral torrent maintenance setting.",
+        "comments": "Fallback five-field cron schedule in UTC, used only by enabled tools saved in Automatic mode.",
         "required": false,
         "secure": false,
         "uiExpose": true,
-        "applyLive": false,
-        "requiresRestart": true
+        "applyLive": true,
+        "requiresRestart": false
       },
       {
         "section": "TorrentClient",
@@ -1695,13 +4483,2562 @@ export const CONFIG_SCHEMA = {
         "label": "Preview TTL (minutes)",
         "kind": "number",
         "default": 30,
-        "comments": "Torrentarr client-neutral torrent maintenance setting.",
+        "comments": "Positive minutes a saved preview remains executable. Saving or relevant revision changes invalidate it earlier.",
         "required": false,
         "secure": false,
         "uiExpose": true,
-        "applyLive": false,
-        "requiresRestart": true,
+        "applyLive": true,
+        "requiresRestart": false,
         "minimum": 1
+      },
+      {
+        "section": "TorrentClient",
+        "path": [
+          "Maintenance",
+          "MinimumTorrentAgeMinutes"
+        ],
+        "key": "Maintenance.MinimumTorrentAgeMinutes",
+        "label": "Minimum torrent age (minutes)",
+        "kind": "number",
+        "default": 10,
+        "comments": "Minutes after addition before eligibility. Zero removes this extra delay; ordinary torrent-age grace still applies.",
+        "required": false,
+        "secure": false,
+        "uiExpose": true,
+        "applyLive": true,
+        "requiresRestart": false,
+        "minimum": 0
+      },
+      {
+        "section": "TorrentClient",
+        "path": [
+          "Maintenance",
+          "ExplicitCategories"
+        ],
+        "key": "Maintenance.ExplicitCategories",
+        "label": "Explicit categories",
+        "kind": "tags",
+        "default": [],
+        "comments": "Categories selected when scope is explicit. Empty selects none in explicit scope.",
+        "required": false,
+        "secure": false,
+        "uiExpose": true,
+        "applyLive": true,
+        "requiresRestart": false
+      },
+      {
+        "section": "TorrentClient",
+        "path": [
+          "Maintenance",
+          "ExcludedCategories"
+        ],
+        "key": "Maintenance.ExcludedCategories",
+        "label": "Excluded categories",
+        "kind": "tags",
+        "default": [],
+        "comments": "Always preserve torrents in these categories; exclusions override inclusion.",
+        "required": false,
+        "secure": false,
+        "uiExpose": true,
+        "applyLive": true,
+        "requiresRestart": false
+      },
+      {
+        "section": "TorrentClient",
+        "path": [
+          "Maintenance",
+          "ExcludedTags"
+        ],
+        "key": "Maintenance.ExcludedTags",
+        "label": "Excluded tags",
+        "kind": "tags",
+        "default": [],
+        "comments": "Always preserve torrents bearing any of these tags.",
+        "required": false,
+        "secure": false,
+        "uiExpose": true,
+        "applyLive": true,
+        "requiresRestart": false
+      },
+      {
+        "section": "TorrentClient",
+        "path": [
+          "Maintenance",
+          "Orphans",
+          "Enabled"
+        ],
+        "key": "Maintenance.Orphans.Enabled",
+        "label": "Enable orphan scan",
+        "kind": "checkbox",
+        "default": false,
+        "comments": "Enable orphan scan. Off disables this behavior; operation enablement and authorization still apply.",
+        "required": false,
+        "secure": false,
+        "uiExpose": true,
+        "applyLive": true,
+        "requiresRestart": false,
+        "description": "Moves unreferenced files into the recycle bin; requires complete ownership inspection and local path mappings."
+      },
+      {
+        "section": "TorrentClient",
+        "path": [
+          "Maintenance",
+          "Orphans",
+          "MinimumAgeMinutes"
+        ],
+        "key": "Maintenance.Orphans.MinimumAgeMinutes",
+        "label": "Minimum orphan file age (minutes)",
+        "kind": "number",
+        "default": 1440,
+        "comments": "Preserve files modified within this many minutes. Default 1440 (24 hours); zero removes only this file-age delay.",
+        "required": false,
+        "secure": false,
+        "uiExpose": true,
+        "applyLive": true,
+        "requiresRestart": false,
+        "minimum": 0
+      },
+      {
+        "section": "TorrentClient",
+        "path": [
+          "Maintenance",
+          "Orphans",
+          "MaxFilesPerRun"
+        ],
+        "key": "Maintenance.Orphans.MaxFilesPerRun",
+        "label": "Maximum orphan files per run",
+        "kind": "number",
+        "default": 10,
+        "comments": "Maximum orphan files per run. Zero permits no mutations for action/deletion caps; inspection budgets must be positive.",
+        "required": false,
+        "secure": false,
+        "uiExpose": true,
+        "applyLive": true,
+        "requiresRestart": false,
+        "minimum": 0
+      },
+      {
+        "section": "TorrentClient",
+        "path": [
+          "Maintenance",
+          "Orphans",
+          "ExcludePatterns"
+        ],
+        "key": "Maintenance.Orphans.ExcludePatterns",
+        "label": "Orphan exclusion patterns",
+        "kind": "tags",
+        "default": [],
+        "comments": "Wildcard patterns matched against relative paths, before any orphan move. Empty excludes no extra files.",
+        "required": false,
+        "secure": false,
+        "uiExpose": true,
+        "applyLive": true,
+        "requiresRestart": false
+      },
+      {
+        "section": "TorrentClient",
+        "path": [
+          "Maintenance",
+          "Hardlinks",
+          "Enabled"
+        ],
+        "key": "Maintenance.Hardlinks.Enabled",
+        "label": "Enable hardlink audit",
+        "kind": "checkbox",
+        "default": false,
+        "comments": "Enable hardlink audit. Off disables this behavior; operation enablement and authorization still apply.",
+        "required": false,
+        "secure": false,
+        "uiExpose": true,
+        "applyLive": true,
+        "requiresRestart": false
+      },
+      {
+        "section": "TorrentClient",
+        "path": [
+          "Maintenance",
+          "Hardlinks",
+          "Tag"
+        ],
+        "key": "Maintenance.Hardlinks.Tag",
+        "label": "Missing hardlink tag",
+        "kind": "text",
+        "default": "noHL",
+        "comments": "Tag applied when a file has no additional hardlink. Requires filesystem link-count support.",
+        "required": false,
+        "secure": false,
+        "uiExpose": true,
+        "applyLive": true,
+        "requiresRestart": false
+      },
+      {
+        "section": "TorrentClient",
+        "path": [
+          "Maintenance",
+          "Hardlinks",
+          "CountLinksInsideRoot"
+        ],
+        "key": "Maintenance.Hardlinks.CountLinksInsideRoot",
+        "label": "Count links inside root (unsupported)",
+        "kind": "checkbox",
+        "default": false,
+        "comments": "Count links inside root (unsupported). Off disables this behavior; operation enablement and authorization still apply.",
+        "required": false,
+        "secure": false,
+        "uiExpose": true,
+        "applyLive": true,
+        "requiresRestart": false,
+        "description": "Unsupported: leave disabled. Root-scoped hardlink inspection cannot currently run."
+      },
+      {
+        "section": "TorrentClient",
+        "path": [
+          "Maintenance",
+          "Hardlinks",
+          "Categories"
+        ],
+        "key": "Maintenance.Hardlinks.Categories",
+        "label": "Hardlink audit categories",
+        "kind": "tags",
+        "default": [],
+        "comments": "Hardlink audit categories. Empty applies no additional list entries; operation filters inherit client scope.",
+        "required": false,
+        "secure": false,
+        "uiExpose": true,
+        "applyLive": true,
+        "requiresRestart": false
+      },
+      {
+        "section": "TorrentClient",
+        "path": [
+          "Maintenance",
+          "Hardlinks",
+          "ExcludedTags"
+        ],
+        "key": "Maintenance.Hardlinks.ExcludedTags",
+        "label": "Hardlink audit excluded tags",
+        "kind": "tags",
+        "default": [],
+        "comments": "Hardlink audit excluded tags. Empty applies no additional list entries; operation filters inherit client scope.",
+        "required": false,
+        "secure": false,
+        "uiExpose": true,
+        "applyLive": true,
+        "requiresRestart": false
+      },
+      {
+        "section": "TorrentClient",
+        "path": [
+          "Maintenance",
+          "AutomaticManagement",
+          "Enabled"
+        ],
+        "key": "Maintenance.AutomaticManagement.Enabled",
+        "label": "Enable automatic management",
+        "kind": "checkbox",
+        "default": false,
+        "comments": "Enable automatic management. Off disables this behavior; operation enablement and authorization still apply.",
+        "required": false,
+        "secure": false,
+        "uiExpose": true,
+        "applyLive": true,
+        "requiresRestart": false,
+        "description": "Enables client automatic management, which may relocate content according to category paths."
+      },
+      {
+        "section": "TorrentClient",
+        "path": [
+          "Maintenance",
+          "AutomaticManagement",
+          "IgnoredTags"
+        ],
+        "key": "Maintenance.AutomaticManagement.IgnoredTags",
+        "label": "Automatic management ignored tags",
+        "kind": "tags",
+        "default": [],
+        "comments": "Automatic management ignored tags. Empty applies no additional list entries; operation filters inherit client scope.",
+        "required": false,
+        "secure": false,
+        "uiExpose": true,
+        "applyLive": true,
+        "requiresRestart": false
+      },
+      {
+        "section": "TorrentClient",
+        "path": [
+          "Maintenance",
+          "AutomaticManagement",
+          "PrivateTag"
+        ],
+        "key": "Maintenance.AutomaticManagement.PrivateTag",
+        "label": "Private torrent tag",
+        "kind": "text",
+        "default": "",
+        "comments": "Private torrent tag. Uses the displayed units and default; operation prerequisites and protection checks still apply.",
+        "required": false,
+        "secure": false,
+        "uiExpose": true,
+        "applyLive": true,
+        "requiresRestart": false,
+        "description": "Blank disables private tagging. Existing tags are not automatically removed."
+      },
+      {
+        "section": "TorrentClient",
+        "path": [
+          "Maintenance",
+          "AutomaticManagement",
+          "TrackerErrorTag"
+        ],
+        "key": "Maintenance.AutomaticManagement.TrackerErrorTag",
+        "label": "Tracker error tag",
+        "kind": "text",
+        "default": "issue",
+        "comments": "Tracker error tag. Uses the displayed units and default; operation prerequisites and protection checks still apply.",
+        "required": false,
+        "secure": false,
+        "uiExpose": true,
+        "applyLive": true,
+        "requiresRestart": false,
+        "description": "Blank disables tracker-error tagging. Existing tags are not automatically removed."
+      },
+      {
+        "section": "TorrentClient",
+        "path": [
+          "Maintenance",
+          "Repair",
+          "Enabled"
+        ],
+        "key": "Maintenance.Repair.Enabled",
+        "label": "Enable paused torrent repair",
+        "kind": "checkbox",
+        "default": false,
+        "comments": "Enable paused torrent repair. Off disables this behavior; operation enablement and authorization still apply.",
+        "required": false,
+        "secure": false,
+        "uiExpose": true,
+        "applyLive": true,
+        "requiresRestart": false,
+        "description": "Complete paused torrents are resumed, including intentionally paused torrents. Incomplete torrents are rechecked."
+      },
+      {
+        "section": "TorrentClient",
+        "path": [
+          "Maintenance",
+          "Repair",
+          "MaxPerRun"
+        ],
+        "key": "Maintenance.Repair.MaxPerRun",
+        "label": "Maximum repairs per run",
+        "kind": "number",
+        "default": 10,
+        "comments": "Maximum repairs per run. Zero permits no mutations for action/deletion caps; inspection budgets must be positive.",
+        "required": false,
+        "secure": false,
+        "uiExpose": true,
+        "applyLive": true,
+        "requiresRestart": false,
+        "minimum": 0
+      },
+      {
+        "section": "TorrentClient",
+        "path": [
+          "Maintenance",
+          "Unregistered",
+          "Enabled"
+        ],
+        "key": "Maintenance.Unregistered.Enabled",
+        "label": "Enable unregistered cleanup",
+        "kind": "checkbox",
+        "default": false,
+        "comments": "Enable unregistered cleanup. Off disables this behavior; operation enablement and authorization still apply.",
+        "required": false,
+        "secure": false,
+        "uiExpose": true,
+        "applyLive": true,
+        "requiresRestart": false
+      },
+      {
+        "section": "TorrentClient",
+        "path": [
+          "Maintenance",
+          "Unregistered",
+          "GraceMinutes"
+        ],
+        "key": "Maintenance.Unregistered.GraceMinutes",
+        "label": "Unregistered grace period (minutes)",
+        "kind": "number",
+        "default": 10,
+        "comments": "Unregistered grace period (minutes). Uses the displayed units and default; operation prerequisites and protection checks still apply.",
+        "required": false,
+        "secure": false,
+        "uiExpose": true,
+        "applyLive": true,
+        "requiresRestart": false,
+        "minimum": 0
+      },
+      {
+        "section": "TorrentClient",
+        "path": [
+          "Maintenance",
+          "Unregistered",
+          "MaxPerTrackerPerRun"
+        ],
+        "key": "Maintenance.Unregistered.MaxPerTrackerPerRun",
+        "label": "Maximum removals per tracker per run",
+        "kind": "number",
+        "default": 10,
+        "comments": "Maximum removals per tracker per run. Zero permits no mutations for action/deletion caps; inspection budgets must be positive.",
+        "required": false,
+        "secure": false,
+        "uiExpose": true,
+        "applyLive": true,
+        "requiresRestart": false,
+        "minimum": 0
+      },
+      {
+        "section": "TorrentClient",
+        "path": [
+          "Maintenance",
+          "Unregistered",
+          "CompletedOnly"
+        ],
+        "key": "Maintenance.Unregistered.CompletedOnly",
+        "label": "Only clean up completed torrents",
+        "kind": "checkbox",
+        "default": false,
+        "comments": "Only clean up completed torrents. Off disables this behavior; operation enablement and authorization still apply.",
+        "required": false,
+        "secure": false,
+        "uiExpose": true,
+        "applyLive": true,
+        "requiresRestart": false
+      },
+      {
+        "section": "TorrentClient",
+        "path": [
+          "Maintenance",
+          "Unregistered",
+          "Messages"
+        ],
+        "key": "Maintenance.Unregistered.Messages",
+        "label": "Unregistered tracker messages",
+        "kind": "tags",
+        "default": [
+          "unregistered torrent",
+          "torrent not registered",
+          "torrent not found",
+          "torrent not authorized"
+        ],
+        "comments": "Unregistered tracker messages. Empty applies no additional list entries; operation filters inherit client scope.",
+        "required": false,
+        "secure": false,
+        "uiExpose": true,
+        "applyLive": true,
+        "requiresRestart": false
+      },
+      {
+        "section": "TorrentClient",
+        "path": [
+          "Maintenance",
+          "RecycleBin",
+          "Enabled"
+        ],
+        "key": "Maintenance.RecycleBin.Enabled",
+        "label": "Enable recycle bin and retention",
+        "kind": "checkbox",
+        "default": true,
+        "comments": "Allow local recycle storage for content moves. Retention deletion has a separate enablement and operation policy.",
+        "required": false,
+        "secure": false,
+        "uiExpose": true,
+        "applyLive": true,
+        "requiresRestart": false
+      },
+      {
+        "section": "TorrentClient",
+        "path": [
+          "Maintenance",
+          "RecycleBin",
+          "Path"
+        ],
+        "key": "Maintenance.RecycleBin.Path",
+        "label": "Recycle bin path",
+        "kind": "text",
+        "default": "",
+        "comments": "Recycle bin path. Uses the displayed units and default; operation prerequisites and protection checks still apply.",
+        "required": false,
+        "secure": false,
+        "uiExpose": true,
+        "applyLive": true,
+        "requiresRestart": false,
+        "description": "Absolute path visible to Torrentarr. Blank uses .torrentarr-recycle inside the first mapped local root."
+      },
+      {
+        "section": "TorrentClient",
+        "path": [
+          "Maintenance",
+          "RecycleBin",
+          "RetentionDays"
+        ],
+        "key": "Maintenance.RecycleBin.RetentionDays",
+        "label": "Recycle retention (days)",
+        "kind": "number",
+        "default": 30,
+        "comments": "Days before permanent recycle deletion. Zero makes files immediately age-eligible; disable retention to preserve indefinitely.",
+        "required": false,
+        "secure": false,
+        "uiExpose": true,
+        "applyLive": true,
+        "requiresRestart": false,
+        "description": "Expired recycle files are permanently deleted after this many days.",
+        "minimum": 0
+      },
+      {
+        "section": "TorrentClient",
+        "path": [
+          "Maintenance",
+          "RecycleBin",
+          "MaxTorrentMovesPerRun"
+        ],
+        "key": "Maintenance.RecycleBin.MaxTorrentMovesPerRun",
+        "label": "Maximum torrent moves per run",
+        "kind": "number",
+        "default": 10,
+        "comments": "Maximum torrent moves per run. Zero permits no mutations for action/deletion caps; inspection budgets must be positive.",
+        "required": false,
+        "secure": false,
+        "uiExpose": true,
+        "applyLive": true,
+        "requiresRestart": false,
+        "minimum": 0
+      },
+      {
+        "section": "TorrentClient",
+        "path": [
+          "Maintenance",
+          "RecycleBin",
+          "SplitByClient"
+        ],
+        "key": "Maintenance.RecycleBin.SplitByClient",
+        "label": "Separate recycle bin by client",
+        "kind": "checkbox",
+        "default": true,
+        "comments": "Separate recycle bin by client. Off disables this behavior; operation enablement and authorization still apply.",
+        "required": false,
+        "secure": false,
+        "uiExpose": true,
+        "applyLive": true,
+        "requiresRestart": false
+      },
+      {
+        "section": "TorrentClient",
+        "path": [
+          "Maintenance",
+          "RecycleBin",
+          "SplitByCategory"
+        ],
+        "key": "Maintenance.RecycleBin.SplitByCategory",
+        "label": "Separate recycle bin by category",
+        "kind": "checkbox",
+        "default": false,
+        "comments": "Separate recycle bin by category. Off disables this behavior; operation enablement and authorization still apply.",
+        "required": false,
+        "secure": false,
+        "uiExpose": true,
+        "applyLive": true,
+        "requiresRestart": false
+      },
+      {
+        "section": "TorrentClient",
+        "path": [
+          "Maintenance",
+          "RecycleBin",
+          "ResumeDataPath"
+        ],
+        "key": "Maintenance.RecycleBin.ResumeDataPath",
+        "label": "Resume data backup path",
+        "kind": "text",
+        "default": "",
+        "comments": "Resume data backup path. Uses the displayed units and default; operation prerequisites and protection checks still apply.",
+        "required": false,
+        "secure": false,
+        "uiExpose": true,
+        "applyLive": true,
+        "requiresRestart": false,
+        "description": "Optional resume-data backup directory, used when the client supports export."
+      },
+      {
+        "section": "TorrentClient",
+        "path": [
+          "Maintenance",
+          "Operations",
+          "OrphanScan",
+          "Enabled"
+        ],
+        "key": "Maintenance.Operations.OrphanScan.Enabled",
+        "label": "Enable operation",
+        "kind": "checkbox",
+        "default": false,
+        "comments": "Enable operation. Off disables this behavior; operation enablement and authorization still apply.",
+        "required": false,
+        "secure": false,
+        "uiExpose": true,
+        "applyLive": true,
+        "requiresRestart": false,
+        "description": "Explicit operation override. Existing configs without an override retain their legacy enablement."
+      },
+      {
+        "section": "TorrentClient",
+        "path": [
+          "Maintenance",
+          "Operations",
+          "OrphanScan",
+          "ExecutionMode"
+        ],
+        "key": "Maintenance.Operations.OrphanScan.ExecutionMode",
+        "label": "Execution mode",
+        "kind": "select",
+        "default": "manual",
+        "comments": "Execution mode. Uses the displayed units and default; operation prerequisites and protection checks still apply.",
+        "required": false,
+        "secure": false,
+        "uiExpose": true,
+        "applyLive": true,
+        "requiresRestart": false,
+        "options": [
+          "manual",
+          "automatic"
+        ],
+        "description": "Manual applies a reviewed preview once. Automatic runs on the saved schedule and remains enabled after restart; no restart is required."
+      },
+      {
+        "section": "TorrentClient",
+        "path": [
+          "Maintenance",
+          "Operations",
+          "OrphanScan",
+          "Schedule"
+        ],
+        "key": "Maintenance.Operations.OrphanScan.Schedule",
+        "label": "Operation schedule (UTC)",
+        "kind": "text",
+        "default": "15 3 * * *",
+        "comments": "Operation schedule (UTC). Uses the displayed units and default; operation prerequisites and protection checks still apply.",
+        "required": false,
+        "secure": false,
+        "uiExpose": true,
+        "applyLive": true,
+        "requiresRestart": false,
+        "description": "Five-field cron expression in UTC. Blank inherits the client schedule."
+      },
+      {
+        "section": "TorrentClient",
+        "path": [
+          "Maintenance",
+          "Operations",
+          "OrphanScan",
+          "IncludedCategories"
+        ],
+        "key": "Maintenance.Operations.OrphanScan.IncludedCategories",
+        "label": "Included categories",
+        "kind": "tags",
+        "default": [],
+        "comments": "Included categories. Empty applies no additional list entries; operation filters inherit client scope.",
+        "required": false,
+        "secure": false,
+        "uiExpose": true,
+        "applyLive": true,
+        "requiresRestart": false,
+        "description": "Blank inherits client-wide scope. Entries narrow that scope."
+      },
+      {
+        "section": "TorrentClient",
+        "path": [
+          "Maintenance",
+          "Operations",
+          "OrphanScan",
+          "ExcludedCategories"
+        ],
+        "key": "Maintenance.Operations.OrphanScan.ExcludedCategories",
+        "label": "Excluded categories",
+        "kind": "tags",
+        "default": [],
+        "comments": "Excluded categories. Empty applies no additional list entries; operation filters inherit client scope.",
+        "required": false,
+        "secure": false,
+        "uiExpose": true,
+        "applyLive": true,
+        "requiresRestart": false
+      },
+      {
+        "section": "TorrentClient",
+        "path": [
+          "Maintenance",
+          "Operations",
+          "OrphanScan",
+          "ExcludedTags"
+        ],
+        "key": "Maintenance.Operations.OrphanScan.ExcludedTags",
+        "label": "Excluded tags",
+        "kind": "tags",
+        "default": [],
+        "comments": "Excluded tags. Empty applies no additional list entries; operation filters inherit client scope.",
+        "required": false,
+        "secure": false,
+        "uiExpose": true,
+        "applyLive": true,
+        "requiresRestart": false
+      },
+      {
+        "section": "TorrentClient",
+        "path": [
+          "Maintenance",
+          "Operations",
+          "OrphanScan",
+          "MaxActionsPerRun"
+        ],
+        "key": "Maintenance.Operations.OrphanScan.MaxActionsPerRun",
+        "label": "Maximum actions per run",
+        "kind": "number",
+        "default": null,
+        "comments": "Maximum actions per run. Zero permits no mutations for action/deletion caps; inspection budgets must be positive.",
+        "required": false,
+        "secure": false,
+        "uiExpose": true,
+        "applyLive": true,
+        "requiresRestart": false,
+        "description": "Blank preserves operation limits. Zero permits no mutations.",
+        "minimum": 0
+      },
+      {
+        "section": "TorrentClient",
+        "path": [
+          "Maintenance",
+          "Operations",
+          "HardlinkAudit",
+          "Enabled"
+        ],
+        "key": "Maintenance.Operations.HardlinkAudit.Enabled",
+        "label": "Enable operation",
+        "kind": "checkbox",
+        "default": false,
+        "comments": "Enable operation. Off disables this behavior; operation enablement and authorization still apply.",
+        "required": false,
+        "secure": false,
+        "uiExpose": true,
+        "applyLive": true,
+        "requiresRestart": false,
+        "description": "Explicit operation override. Existing configs without an override retain their legacy enablement."
+      },
+      {
+        "section": "TorrentClient",
+        "path": [
+          "Maintenance",
+          "Operations",
+          "HardlinkAudit",
+          "ExecutionMode"
+        ],
+        "key": "Maintenance.Operations.HardlinkAudit.ExecutionMode",
+        "label": "Execution mode",
+        "kind": "select",
+        "default": "manual",
+        "comments": "Execution mode. Uses the displayed units and default; operation prerequisites and protection checks still apply.",
+        "required": false,
+        "secure": false,
+        "uiExpose": true,
+        "applyLive": true,
+        "requiresRestart": false,
+        "options": [
+          "manual",
+          "automatic"
+        ],
+        "description": "Manual applies a reviewed preview once. Automatic runs on the saved schedule and remains enabled after restart; no restart is required."
+      },
+      {
+        "section": "TorrentClient",
+        "path": [
+          "Maintenance",
+          "Operations",
+          "HardlinkAudit",
+          "Schedule"
+        ],
+        "key": "Maintenance.Operations.HardlinkAudit.Schedule",
+        "label": "Operation schedule (UTC)",
+        "kind": "text",
+        "default": "15 4 * * *",
+        "comments": "Operation schedule (UTC). Uses the displayed units and default; operation prerequisites and protection checks still apply.",
+        "required": false,
+        "secure": false,
+        "uiExpose": true,
+        "applyLive": true,
+        "requiresRestart": false,
+        "description": "Five-field cron expression in UTC. Blank inherits the client schedule."
+      },
+      {
+        "section": "TorrentClient",
+        "path": [
+          "Maintenance",
+          "Operations",
+          "HardlinkAudit",
+          "IncludedCategories"
+        ],
+        "key": "Maintenance.Operations.HardlinkAudit.IncludedCategories",
+        "label": "Included categories",
+        "kind": "tags",
+        "default": [],
+        "comments": "Included categories. Empty applies no additional list entries; operation filters inherit client scope.",
+        "required": false,
+        "secure": false,
+        "uiExpose": true,
+        "applyLive": true,
+        "requiresRestart": false,
+        "description": "Blank inherits client-wide scope. Entries narrow that scope."
+      },
+      {
+        "section": "TorrentClient",
+        "path": [
+          "Maintenance",
+          "Operations",
+          "HardlinkAudit",
+          "ExcludedCategories"
+        ],
+        "key": "Maintenance.Operations.HardlinkAudit.ExcludedCategories",
+        "label": "Excluded categories",
+        "kind": "tags",
+        "default": [],
+        "comments": "Excluded categories. Empty applies no additional list entries; operation filters inherit client scope.",
+        "required": false,
+        "secure": false,
+        "uiExpose": true,
+        "applyLive": true,
+        "requiresRestart": false
+      },
+      {
+        "section": "TorrentClient",
+        "path": [
+          "Maintenance",
+          "Operations",
+          "HardlinkAudit",
+          "ExcludedTags"
+        ],
+        "key": "Maintenance.Operations.HardlinkAudit.ExcludedTags",
+        "label": "Excluded tags",
+        "kind": "tags",
+        "default": [],
+        "comments": "Excluded tags. Empty applies no additional list entries; operation filters inherit client scope.",
+        "required": false,
+        "secure": false,
+        "uiExpose": true,
+        "applyLive": true,
+        "requiresRestart": false
+      },
+      {
+        "section": "TorrentClient",
+        "path": [
+          "Maintenance",
+          "Operations",
+          "HardlinkAudit",
+          "MaxActionsPerRun"
+        ],
+        "key": "Maintenance.Operations.HardlinkAudit.MaxActionsPerRun",
+        "label": "Maximum actions per run",
+        "kind": "number",
+        "default": null,
+        "comments": "Maximum actions per run. Zero permits no mutations for action/deletion caps; inspection budgets must be positive.",
+        "required": false,
+        "secure": false,
+        "uiExpose": true,
+        "applyLive": true,
+        "requiresRestart": false,
+        "description": "Blank preserves operation limits. Zero permits no mutations.",
+        "minimum": 0
+      },
+      {
+        "section": "TorrentClient",
+        "path": [
+          "Maintenance",
+          "Operations",
+          "UnregisteredCleanup",
+          "Enabled"
+        ],
+        "key": "Maintenance.Operations.UnregisteredCleanup.Enabled",
+        "label": "Enable operation",
+        "kind": "checkbox",
+        "default": false,
+        "comments": "Enable operation. Off disables this behavior; operation enablement and authorization still apply.",
+        "required": false,
+        "secure": false,
+        "uiExpose": true,
+        "applyLive": true,
+        "requiresRestart": false,
+        "description": "Explicit operation override. Existing configs without an override retain their legacy enablement."
+      },
+      {
+        "section": "TorrentClient",
+        "path": [
+          "Maintenance",
+          "Operations",
+          "UnregisteredCleanup",
+          "ExecutionMode"
+        ],
+        "key": "Maintenance.Operations.UnregisteredCleanup.ExecutionMode",
+        "label": "Execution mode",
+        "kind": "select",
+        "default": "manual",
+        "comments": "Execution mode. Uses the displayed units and default; operation prerequisites and protection checks still apply.",
+        "required": false,
+        "secure": false,
+        "uiExpose": true,
+        "applyLive": true,
+        "requiresRestart": false,
+        "options": [
+          "manual",
+          "automatic"
+        ],
+        "description": "Manual applies a reviewed preview once. Automatic runs on the saved schedule and remains enabled after restart; no restart is required."
+      },
+      {
+        "section": "TorrentClient",
+        "path": [
+          "Maintenance",
+          "Operations",
+          "UnregisteredCleanup",
+          "Schedule"
+        ],
+        "key": "Maintenance.Operations.UnregisteredCleanup.Schedule",
+        "label": "Operation schedule (UTC)",
+        "kind": "text",
+        "default": "*/30 * * * *",
+        "comments": "Operation schedule (UTC). Uses the displayed units and default; operation prerequisites and protection checks still apply.",
+        "required": false,
+        "secure": false,
+        "uiExpose": true,
+        "applyLive": true,
+        "requiresRestart": false,
+        "description": "Five-field cron expression in UTC. Blank inherits the client schedule."
+      },
+      {
+        "section": "TorrentClient",
+        "path": [
+          "Maintenance",
+          "Operations",
+          "UnregisteredCleanup",
+          "IncludedCategories"
+        ],
+        "key": "Maintenance.Operations.UnregisteredCleanup.IncludedCategories",
+        "label": "Included categories",
+        "kind": "tags",
+        "default": [],
+        "comments": "Included categories. Empty applies no additional list entries; operation filters inherit client scope.",
+        "required": false,
+        "secure": false,
+        "uiExpose": true,
+        "applyLive": true,
+        "requiresRestart": false,
+        "description": "Blank inherits client-wide scope. Entries narrow that scope."
+      },
+      {
+        "section": "TorrentClient",
+        "path": [
+          "Maintenance",
+          "Operations",
+          "UnregisteredCleanup",
+          "ExcludedCategories"
+        ],
+        "key": "Maintenance.Operations.UnregisteredCleanup.ExcludedCategories",
+        "label": "Excluded categories",
+        "kind": "tags",
+        "default": [],
+        "comments": "Excluded categories. Empty applies no additional list entries; operation filters inherit client scope.",
+        "required": false,
+        "secure": false,
+        "uiExpose": true,
+        "applyLive": true,
+        "requiresRestart": false
+      },
+      {
+        "section": "TorrentClient",
+        "path": [
+          "Maintenance",
+          "Operations",
+          "UnregisteredCleanup",
+          "ExcludedTags"
+        ],
+        "key": "Maintenance.Operations.UnregisteredCleanup.ExcludedTags",
+        "label": "Excluded tags",
+        "kind": "tags",
+        "default": [],
+        "comments": "Excluded tags. Empty applies no additional list entries; operation filters inherit client scope.",
+        "required": false,
+        "secure": false,
+        "uiExpose": true,
+        "applyLive": true,
+        "requiresRestart": false
+      },
+      {
+        "section": "TorrentClient",
+        "path": [
+          "Maintenance",
+          "Operations",
+          "UnregisteredCleanup",
+          "MaxActionsPerRun"
+        ],
+        "key": "Maintenance.Operations.UnregisteredCleanup.MaxActionsPerRun",
+        "label": "Maximum actions per run",
+        "kind": "number",
+        "default": null,
+        "comments": "Maximum actions per run. Zero permits no mutations for action/deletion caps; inspection budgets must be positive.",
+        "required": false,
+        "secure": false,
+        "uiExpose": true,
+        "applyLive": true,
+        "requiresRestart": false,
+        "description": "Blank preserves operation limits. Zero permits no mutations.",
+        "minimum": 0
+      },
+      {
+        "section": "TorrentClient",
+        "path": [
+          "Maintenance",
+          "Operations",
+          "CategoryReconcile",
+          "Enabled"
+        ],
+        "key": "Maintenance.Operations.CategoryReconcile.Enabled",
+        "label": "Enable operation",
+        "kind": "checkbox",
+        "default": false,
+        "comments": "Enable operation. Off disables this behavior; operation enablement and authorization still apply.",
+        "required": false,
+        "secure": false,
+        "uiExpose": true,
+        "applyLive": true,
+        "requiresRestart": false,
+        "description": "Explicit operation override. Existing configs without an override retain their legacy enablement."
+      },
+      {
+        "section": "TorrentClient",
+        "path": [
+          "Maintenance",
+          "Operations",
+          "CategoryReconcile",
+          "ExecutionMode"
+        ],
+        "key": "Maintenance.Operations.CategoryReconcile.ExecutionMode",
+        "label": "Execution mode",
+        "kind": "select",
+        "default": "manual",
+        "comments": "Execution mode. Uses the displayed units and default; operation prerequisites and protection checks still apply.",
+        "required": false,
+        "secure": false,
+        "uiExpose": true,
+        "applyLive": true,
+        "requiresRestart": false,
+        "options": [
+          "manual",
+          "automatic"
+        ],
+        "description": "Manual applies a reviewed preview once. Automatic runs on the saved schedule and remains enabled after restart; no restart is required."
+      },
+      {
+        "section": "TorrentClient",
+        "path": [
+          "Maintenance",
+          "Operations",
+          "CategoryReconcile",
+          "Schedule"
+        ],
+        "key": "Maintenance.Operations.CategoryReconcile.Schedule",
+        "label": "Operation schedule (UTC)",
+        "kind": "text",
+        "default": "*/15 * * * *",
+        "comments": "Operation schedule (UTC). Uses the displayed units and default; operation prerequisites and protection checks still apply.",
+        "required": false,
+        "secure": false,
+        "uiExpose": true,
+        "applyLive": true,
+        "requiresRestart": false,
+        "description": "Five-field cron expression in UTC. Blank inherits the client schedule."
+      },
+      {
+        "section": "TorrentClient",
+        "path": [
+          "Maintenance",
+          "Operations",
+          "CategoryReconcile",
+          "IncludedCategories"
+        ],
+        "key": "Maintenance.Operations.CategoryReconcile.IncludedCategories",
+        "label": "Included categories",
+        "kind": "tags",
+        "default": [],
+        "comments": "Included categories. Empty applies no additional list entries; operation filters inherit client scope.",
+        "required": false,
+        "secure": false,
+        "uiExpose": true,
+        "applyLive": true,
+        "requiresRestart": false,
+        "description": "Blank inherits client-wide scope. Entries narrow that scope."
+      },
+      {
+        "section": "TorrentClient",
+        "path": [
+          "Maintenance",
+          "Operations",
+          "CategoryReconcile",
+          "ExcludedCategories"
+        ],
+        "key": "Maintenance.Operations.CategoryReconcile.ExcludedCategories",
+        "label": "Excluded categories",
+        "kind": "tags",
+        "default": [],
+        "comments": "Excluded categories. Empty applies no additional list entries; operation filters inherit client scope.",
+        "required": false,
+        "secure": false,
+        "uiExpose": true,
+        "applyLive": true,
+        "requiresRestart": false
+      },
+      {
+        "section": "TorrentClient",
+        "path": [
+          "Maintenance",
+          "Operations",
+          "CategoryReconcile",
+          "ExcludedTags"
+        ],
+        "key": "Maintenance.Operations.CategoryReconcile.ExcludedTags",
+        "label": "Excluded tags",
+        "kind": "tags",
+        "default": [],
+        "comments": "Excluded tags. Empty applies no additional list entries; operation filters inherit client scope.",
+        "required": false,
+        "secure": false,
+        "uiExpose": true,
+        "applyLive": true,
+        "requiresRestart": false
+      },
+      {
+        "section": "TorrentClient",
+        "path": [
+          "Maintenance",
+          "Operations",
+          "CategoryReconcile",
+          "MaxActionsPerRun"
+        ],
+        "key": "Maintenance.Operations.CategoryReconcile.MaxActionsPerRun",
+        "label": "Maximum actions per run",
+        "kind": "number",
+        "default": null,
+        "comments": "Maximum actions per run. Zero permits no mutations for action/deletion caps; inspection budgets must be positive.",
+        "required": false,
+        "secure": false,
+        "uiExpose": true,
+        "applyLive": true,
+        "requiresRestart": false,
+        "description": "Blank preserves operation limits. Zero permits no mutations.",
+        "minimum": 0
+      },
+      {
+        "section": "TorrentClient",
+        "path": [
+          "Maintenance",
+          "Operations",
+          "AutomaticManagement",
+          "Enabled"
+        ],
+        "key": "Maintenance.Operations.AutomaticManagement.Enabled",
+        "label": "Enable operation",
+        "kind": "checkbox",
+        "default": false,
+        "comments": "Enable operation. Off disables this behavior; operation enablement and authorization still apply.",
+        "required": false,
+        "secure": false,
+        "uiExpose": true,
+        "applyLive": true,
+        "requiresRestart": false,
+        "description": "Explicit operation override. Existing configs without an override retain their legacy enablement."
+      },
+      {
+        "section": "TorrentClient",
+        "path": [
+          "Maintenance",
+          "Operations",
+          "AutomaticManagement",
+          "ExecutionMode"
+        ],
+        "key": "Maintenance.Operations.AutomaticManagement.ExecutionMode",
+        "label": "Execution mode",
+        "kind": "select",
+        "default": "manual",
+        "comments": "Execution mode. Uses the displayed units and default; operation prerequisites and protection checks still apply.",
+        "required": false,
+        "secure": false,
+        "uiExpose": true,
+        "applyLive": true,
+        "requiresRestart": false,
+        "options": [
+          "manual",
+          "automatic"
+        ],
+        "description": "Manual applies a reviewed preview once. Automatic runs on the saved schedule and remains enabled after restart; no restart is required."
+      },
+      {
+        "section": "TorrentClient",
+        "path": [
+          "Maintenance",
+          "Operations",
+          "AutomaticManagement",
+          "Schedule"
+        ],
+        "key": "Maintenance.Operations.AutomaticManagement.Schedule",
+        "label": "Operation schedule (UTC)",
+        "kind": "text",
+        "default": "*/30 * * * *",
+        "comments": "Operation schedule (UTC). Uses the displayed units and default; operation prerequisites and protection checks still apply.",
+        "required": false,
+        "secure": false,
+        "uiExpose": true,
+        "applyLive": true,
+        "requiresRestart": false,
+        "description": "Five-field cron expression in UTC. Blank inherits the client schedule."
+      },
+      {
+        "section": "TorrentClient",
+        "path": [
+          "Maintenance",
+          "Operations",
+          "AutomaticManagement",
+          "IncludedCategories"
+        ],
+        "key": "Maintenance.Operations.AutomaticManagement.IncludedCategories",
+        "label": "Included categories",
+        "kind": "tags",
+        "default": [],
+        "comments": "Included categories. Empty applies no additional list entries; operation filters inherit client scope.",
+        "required": false,
+        "secure": false,
+        "uiExpose": true,
+        "applyLive": true,
+        "requiresRestart": false,
+        "description": "Blank inherits client-wide scope. Entries narrow that scope."
+      },
+      {
+        "section": "TorrentClient",
+        "path": [
+          "Maintenance",
+          "Operations",
+          "AutomaticManagement",
+          "ExcludedCategories"
+        ],
+        "key": "Maintenance.Operations.AutomaticManagement.ExcludedCategories",
+        "label": "Excluded categories",
+        "kind": "tags",
+        "default": [],
+        "comments": "Excluded categories. Empty applies no additional list entries; operation filters inherit client scope.",
+        "required": false,
+        "secure": false,
+        "uiExpose": true,
+        "applyLive": true,
+        "requiresRestart": false
+      },
+      {
+        "section": "TorrentClient",
+        "path": [
+          "Maintenance",
+          "Operations",
+          "AutomaticManagement",
+          "ExcludedTags"
+        ],
+        "key": "Maintenance.Operations.AutomaticManagement.ExcludedTags",
+        "label": "Excluded tags",
+        "kind": "tags",
+        "default": [],
+        "comments": "Excluded tags. Empty applies no additional list entries; operation filters inherit client scope.",
+        "required": false,
+        "secure": false,
+        "uiExpose": true,
+        "applyLive": true,
+        "requiresRestart": false
+      },
+      {
+        "section": "TorrentClient",
+        "path": [
+          "Maintenance",
+          "Operations",
+          "AutomaticManagement",
+          "MaxActionsPerRun"
+        ],
+        "key": "Maintenance.Operations.AutomaticManagement.MaxActionsPerRun",
+        "label": "Maximum actions per run",
+        "kind": "number",
+        "default": null,
+        "comments": "Maximum actions per run. Zero permits no mutations for action/deletion caps; inspection budgets must be positive.",
+        "required": false,
+        "secure": false,
+        "uiExpose": true,
+        "applyLive": true,
+        "requiresRestart": false,
+        "description": "Blank preserves operation limits. Zero permits no mutations.",
+        "minimum": 0
+      },
+      {
+        "section": "TorrentClient",
+        "path": [
+          "Maintenance",
+          "Operations",
+          "PrivateTagging",
+          "Enabled"
+        ],
+        "key": "Maintenance.Operations.PrivateTagging.Enabled",
+        "label": "Enable operation",
+        "kind": "checkbox",
+        "default": false,
+        "comments": "Enable operation. Off disables this behavior; operation enablement and authorization still apply.",
+        "required": false,
+        "secure": false,
+        "uiExpose": true,
+        "applyLive": true,
+        "requiresRestart": false,
+        "description": "Explicit operation override. Existing configs without an override retain their legacy enablement."
+      },
+      {
+        "section": "TorrentClient",
+        "path": [
+          "Maintenance",
+          "Operations",
+          "PrivateTagging",
+          "ExecutionMode"
+        ],
+        "key": "Maintenance.Operations.PrivateTagging.ExecutionMode",
+        "label": "Execution mode",
+        "kind": "select",
+        "default": "manual",
+        "comments": "Execution mode. Uses the displayed units and default; operation prerequisites and protection checks still apply.",
+        "required": false,
+        "secure": false,
+        "uiExpose": true,
+        "applyLive": true,
+        "requiresRestart": false,
+        "options": [
+          "manual",
+          "automatic"
+        ],
+        "description": "Manual applies a reviewed preview once. Automatic runs on the saved schedule and remains enabled after restart; no restart is required."
+      },
+      {
+        "section": "TorrentClient",
+        "path": [
+          "Maintenance",
+          "Operations",
+          "PrivateTagging",
+          "Schedule"
+        ],
+        "key": "Maintenance.Operations.PrivateTagging.Schedule",
+        "label": "Operation schedule (UTC)",
+        "kind": "text",
+        "default": "*/30 * * * *",
+        "comments": "Operation schedule (UTC). Uses the displayed units and default; operation prerequisites and protection checks still apply.",
+        "required": false,
+        "secure": false,
+        "uiExpose": true,
+        "applyLive": true,
+        "requiresRestart": false,
+        "description": "Five-field cron expression in UTC. Blank inherits the client schedule."
+      },
+      {
+        "section": "TorrentClient",
+        "path": [
+          "Maintenance",
+          "Operations",
+          "PrivateTagging",
+          "IncludedCategories"
+        ],
+        "key": "Maintenance.Operations.PrivateTagging.IncludedCategories",
+        "label": "Included categories",
+        "kind": "tags",
+        "default": [],
+        "comments": "Included categories. Empty applies no additional list entries; operation filters inherit client scope.",
+        "required": false,
+        "secure": false,
+        "uiExpose": true,
+        "applyLive": true,
+        "requiresRestart": false,
+        "description": "Blank inherits client-wide scope. Entries narrow that scope."
+      },
+      {
+        "section": "TorrentClient",
+        "path": [
+          "Maintenance",
+          "Operations",
+          "PrivateTagging",
+          "ExcludedCategories"
+        ],
+        "key": "Maintenance.Operations.PrivateTagging.ExcludedCategories",
+        "label": "Excluded categories",
+        "kind": "tags",
+        "default": [],
+        "comments": "Excluded categories. Empty applies no additional list entries; operation filters inherit client scope.",
+        "required": false,
+        "secure": false,
+        "uiExpose": true,
+        "applyLive": true,
+        "requiresRestart": false
+      },
+      {
+        "section": "TorrentClient",
+        "path": [
+          "Maintenance",
+          "Operations",
+          "PrivateTagging",
+          "ExcludedTags"
+        ],
+        "key": "Maintenance.Operations.PrivateTagging.ExcludedTags",
+        "label": "Excluded tags",
+        "kind": "tags",
+        "default": [],
+        "comments": "Excluded tags. Empty applies no additional list entries; operation filters inherit client scope.",
+        "required": false,
+        "secure": false,
+        "uiExpose": true,
+        "applyLive": true,
+        "requiresRestart": false
+      },
+      {
+        "section": "TorrentClient",
+        "path": [
+          "Maintenance",
+          "Operations",
+          "PrivateTagging",
+          "MaxActionsPerRun"
+        ],
+        "key": "Maintenance.Operations.PrivateTagging.MaxActionsPerRun",
+        "label": "Maximum actions per run",
+        "kind": "number",
+        "default": null,
+        "comments": "Maximum actions per run. Zero permits no mutations for action/deletion caps; inspection budgets must be positive.",
+        "required": false,
+        "secure": false,
+        "uiExpose": true,
+        "applyLive": true,
+        "requiresRestart": false,
+        "description": "Blank preserves operation limits. Zero permits no mutations.",
+        "minimum": 0
+      },
+      {
+        "section": "TorrentClient",
+        "path": [
+          "Maintenance",
+          "Operations",
+          "TrackerErrorTagging",
+          "Enabled"
+        ],
+        "key": "Maintenance.Operations.TrackerErrorTagging.Enabled",
+        "label": "Enable operation",
+        "kind": "checkbox",
+        "default": false,
+        "comments": "Enable operation. Off disables this behavior; operation enablement and authorization still apply.",
+        "required": false,
+        "secure": false,
+        "uiExpose": true,
+        "applyLive": true,
+        "requiresRestart": false,
+        "description": "Explicit operation override. Existing configs without an override retain their legacy enablement."
+      },
+      {
+        "section": "TorrentClient",
+        "path": [
+          "Maintenance",
+          "Operations",
+          "TrackerErrorTagging",
+          "ExecutionMode"
+        ],
+        "key": "Maintenance.Operations.TrackerErrorTagging.ExecutionMode",
+        "label": "Execution mode",
+        "kind": "select",
+        "default": "manual",
+        "comments": "Execution mode. Uses the displayed units and default; operation prerequisites and protection checks still apply.",
+        "required": false,
+        "secure": false,
+        "uiExpose": true,
+        "applyLive": true,
+        "requiresRestart": false,
+        "options": [
+          "manual",
+          "automatic"
+        ],
+        "description": "Manual applies a reviewed preview once. Automatic runs on the saved schedule and remains enabled after restart; no restart is required."
+      },
+      {
+        "section": "TorrentClient",
+        "path": [
+          "Maintenance",
+          "Operations",
+          "TrackerErrorTagging",
+          "Schedule"
+        ],
+        "key": "Maintenance.Operations.TrackerErrorTagging.Schedule",
+        "label": "Operation schedule (UTC)",
+        "kind": "text",
+        "default": "*/30 * * * *",
+        "comments": "Operation schedule (UTC). Uses the displayed units and default; operation prerequisites and protection checks still apply.",
+        "required": false,
+        "secure": false,
+        "uiExpose": true,
+        "applyLive": true,
+        "requiresRestart": false,
+        "description": "Five-field cron expression in UTC. Blank inherits the client schedule."
+      },
+      {
+        "section": "TorrentClient",
+        "path": [
+          "Maintenance",
+          "Operations",
+          "TrackerErrorTagging",
+          "IncludedCategories"
+        ],
+        "key": "Maintenance.Operations.TrackerErrorTagging.IncludedCategories",
+        "label": "Included categories",
+        "kind": "tags",
+        "default": [],
+        "comments": "Included categories. Empty applies no additional list entries; operation filters inherit client scope.",
+        "required": false,
+        "secure": false,
+        "uiExpose": true,
+        "applyLive": true,
+        "requiresRestart": false,
+        "description": "Blank inherits client-wide scope. Entries narrow that scope."
+      },
+      {
+        "section": "TorrentClient",
+        "path": [
+          "Maintenance",
+          "Operations",
+          "TrackerErrorTagging",
+          "ExcludedCategories"
+        ],
+        "key": "Maintenance.Operations.TrackerErrorTagging.ExcludedCategories",
+        "label": "Excluded categories",
+        "kind": "tags",
+        "default": [],
+        "comments": "Excluded categories. Empty applies no additional list entries; operation filters inherit client scope.",
+        "required": false,
+        "secure": false,
+        "uiExpose": true,
+        "applyLive": true,
+        "requiresRestart": false
+      },
+      {
+        "section": "TorrentClient",
+        "path": [
+          "Maintenance",
+          "Operations",
+          "TrackerErrorTagging",
+          "ExcludedTags"
+        ],
+        "key": "Maintenance.Operations.TrackerErrorTagging.ExcludedTags",
+        "label": "Excluded tags",
+        "kind": "tags",
+        "default": [],
+        "comments": "Excluded tags. Empty applies no additional list entries; operation filters inherit client scope.",
+        "required": false,
+        "secure": false,
+        "uiExpose": true,
+        "applyLive": true,
+        "requiresRestart": false
+      },
+      {
+        "section": "TorrentClient",
+        "path": [
+          "Maintenance",
+          "Operations",
+          "TrackerErrorTagging",
+          "MaxActionsPerRun"
+        ],
+        "key": "Maintenance.Operations.TrackerErrorTagging.MaxActionsPerRun",
+        "label": "Maximum actions per run",
+        "kind": "number",
+        "default": null,
+        "comments": "Maximum actions per run. Zero permits no mutations for action/deletion caps; inspection budgets must be positive.",
+        "required": false,
+        "secure": false,
+        "uiExpose": true,
+        "applyLive": true,
+        "requiresRestart": false,
+        "description": "Blank preserves operation limits. Zero permits no mutations.",
+        "minimum": 0
+      },
+      {
+        "section": "TorrentClient",
+        "path": [
+          "Maintenance",
+          "Operations",
+          "RepairPaused",
+          "Enabled"
+        ],
+        "key": "Maintenance.Operations.RepairPaused.Enabled",
+        "label": "Enable operation",
+        "kind": "checkbox",
+        "default": false,
+        "comments": "Enable operation. Off disables this behavior; operation enablement and authorization still apply.",
+        "required": false,
+        "secure": false,
+        "uiExpose": true,
+        "applyLive": true,
+        "requiresRestart": false,
+        "description": "Explicit operation override. Existing configs without an override retain their legacy enablement."
+      },
+      {
+        "section": "TorrentClient",
+        "path": [
+          "Maintenance",
+          "Operations",
+          "RepairPaused",
+          "ExecutionMode"
+        ],
+        "key": "Maintenance.Operations.RepairPaused.ExecutionMode",
+        "label": "Execution mode",
+        "kind": "select",
+        "default": "manual",
+        "comments": "Execution mode. Uses the displayed units and default; operation prerequisites and protection checks still apply.",
+        "required": false,
+        "secure": false,
+        "uiExpose": true,
+        "applyLive": true,
+        "requiresRestart": false,
+        "options": [
+          "manual",
+          "automatic"
+        ],
+        "description": "Manual applies a reviewed preview once. Automatic runs on the saved schedule and remains enabled after restart; no restart is required."
+      },
+      {
+        "section": "TorrentClient",
+        "path": [
+          "Maintenance",
+          "Operations",
+          "RepairPaused",
+          "Schedule"
+        ],
+        "key": "Maintenance.Operations.RepairPaused.Schedule",
+        "label": "Operation schedule (UTC)",
+        "kind": "text",
+        "default": "*/30 * * * *",
+        "comments": "Operation schedule (UTC). Uses the displayed units and default; operation prerequisites and protection checks still apply.",
+        "required": false,
+        "secure": false,
+        "uiExpose": true,
+        "applyLive": true,
+        "requiresRestart": false,
+        "description": "Five-field cron expression in UTC. Blank inherits the client schedule."
+      },
+      {
+        "section": "TorrentClient",
+        "path": [
+          "Maintenance",
+          "Operations",
+          "RepairPaused",
+          "IncludedCategories"
+        ],
+        "key": "Maintenance.Operations.RepairPaused.IncludedCategories",
+        "label": "Included categories",
+        "kind": "tags",
+        "default": [],
+        "comments": "Included categories. Empty applies no additional list entries; operation filters inherit client scope.",
+        "required": false,
+        "secure": false,
+        "uiExpose": true,
+        "applyLive": true,
+        "requiresRestart": false,
+        "description": "Blank inherits client-wide scope. Entries narrow that scope."
+      },
+      {
+        "section": "TorrentClient",
+        "path": [
+          "Maintenance",
+          "Operations",
+          "RepairPaused",
+          "ExcludedCategories"
+        ],
+        "key": "Maintenance.Operations.RepairPaused.ExcludedCategories",
+        "label": "Excluded categories",
+        "kind": "tags",
+        "default": [],
+        "comments": "Excluded categories. Empty applies no additional list entries; operation filters inherit client scope.",
+        "required": false,
+        "secure": false,
+        "uiExpose": true,
+        "applyLive": true,
+        "requiresRestart": false
+      },
+      {
+        "section": "TorrentClient",
+        "path": [
+          "Maintenance",
+          "Operations",
+          "RepairPaused",
+          "ExcludedTags"
+        ],
+        "key": "Maintenance.Operations.RepairPaused.ExcludedTags",
+        "label": "Excluded tags",
+        "kind": "tags",
+        "default": [],
+        "comments": "Excluded tags. Empty applies no additional list entries; operation filters inherit client scope.",
+        "required": false,
+        "secure": false,
+        "uiExpose": true,
+        "applyLive": true,
+        "requiresRestart": false
+      },
+      {
+        "section": "TorrentClient",
+        "path": [
+          "Maintenance",
+          "Operations",
+          "RepairPaused",
+          "MaxActionsPerRun"
+        ],
+        "key": "Maintenance.Operations.RepairPaused.MaxActionsPerRun",
+        "label": "Maximum actions per run",
+        "kind": "number",
+        "default": null,
+        "comments": "Maximum actions per run. Zero permits no mutations for action/deletion caps; inspection budgets must be positive.",
+        "required": false,
+        "secure": false,
+        "uiExpose": true,
+        "applyLive": true,
+        "requiresRestart": false,
+        "description": "Blank preserves operation limits. Zero permits no mutations.",
+        "minimum": 0
+      },
+      {
+        "section": "TorrentClient",
+        "path": [
+          "Maintenance",
+          "Operations",
+          "RecycleRetention",
+          "Enabled"
+        ],
+        "key": "Maintenance.Operations.RecycleRetention.Enabled",
+        "label": "Enable operation",
+        "kind": "checkbox",
+        "default": false,
+        "comments": "Enable operation. Off disables this behavior; operation enablement and authorization still apply.",
+        "required": false,
+        "secure": false,
+        "uiExpose": true,
+        "applyLive": true,
+        "requiresRestart": false,
+        "description": "Explicit operation override. Existing configs without an override retain their legacy enablement."
+      },
+      {
+        "section": "TorrentClient",
+        "path": [
+          "Maintenance",
+          "Operations",
+          "RecycleRetention",
+          "ExecutionMode"
+        ],
+        "key": "Maintenance.Operations.RecycleRetention.ExecutionMode",
+        "label": "Execution mode",
+        "kind": "select",
+        "default": "manual",
+        "comments": "Execution mode. Uses the displayed units and default; operation prerequisites and protection checks still apply.",
+        "required": false,
+        "secure": false,
+        "uiExpose": true,
+        "applyLive": true,
+        "requiresRestart": false,
+        "options": [
+          "manual",
+          "automatic"
+        ],
+        "description": "Manual applies a reviewed preview once. Automatic runs on the saved schedule and remains enabled after restart; no restart is required."
+      },
+      {
+        "section": "TorrentClient",
+        "path": [
+          "Maintenance",
+          "Operations",
+          "RecycleRetention",
+          "Schedule"
+        ],
+        "key": "Maintenance.Operations.RecycleRetention.Schedule",
+        "label": "Operation schedule (UTC)",
+        "kind": "text",
+        "default": "45 4 * * *",
+        "comments": "Operation schedule (UTC). Uses the displayed units and default; operation prerequisites and protection checks still apply.",
+        "required": false,
+        "secure": false,
+        "uiExpose": true,
+        "applyLive": true,
+        "requiresRestart": false,
+        "description": "Five-field cron expression in UTC. Blank inherits the client schedule."
+      },
+      {
+        "section": "TorrentClient",
+        "path": [
+          "Maintenance",
+          "Operations",
+          "RecycleRetention",
+          "IncludedCategories"
+        ],
+        "key": "Maintenance.Operations.RecycleRetention.IncludedCategories",
+        "label": "Included categories",
+        "kind": "tags",
+        "default": [],
+        "comments": "Included categories. Empty applies no additional list entries; operation filters inherit client scope.",
+        "required": false,
+        "secure": false,
+        "uiExpose": true,
+        "applyLive": true,
+        "requiresRestart": false,
+        "description": "Blank inherits client-wide scope. Entries narrow that scope."
+      },
+      {
+        "section": "TorrentClient",
+        "path": [
+          "Maintenance",
+          "Operations",
+          "RecycleRetention",
+          "ExcludedCategories"
+        ],
+        "key": "Maintenance.Operations.RecycleRetention.ExcludedCategories",
+        "label": "Excluded categories",
+        "kind": "tags",
+        "default": [],
+        "comments": "Excluded categories. Empty applies no additional list entries; operation filters inherit client scope.",
+        "required": false,
+        "secure": false,
+        "uiExpose": true,
+        "applyLive": true,
+        "requiresRestart": false
+      },
+      {
+        "section": "TorrentClient",
+        "path": [
+          "Maintenance",
+          "Operations",
+          "RecycleRetention",
+          "ExcludedTags"
+        ],
+        "key": "Maintenance.Operations.RecycleRetention.ExcludedTags",
+        "label": "Excluded tags",
+        "kind": "tags",
+        "default": [],
+        "comments": "Excluded tags. Empty applies no additional list entries; operation filters inherit client scope.",
+        "required": false,
+        "secure": false,
+        "uiExpose": true,
+        "applyLive": true,
+        "requiresRestart": false
+      },
+      {
+        "section": "TorrentClient",
+        "path": [
+          "Maintenance",
+          "Operations",
+          "RecycleRetention",
+          "MaxActionsPerRun"
+        ],
+        "key": "Maintenance.Operations.RecycleRetention.MaxActionsPerRun",
+        "label": "Maximum actions per run",
+        "kind": "number",
+        "default": null,
+        "comments": "Maximum actions per run. Zero permits no mutations for action/deletion caps; inspection budgets must be positive.",
+        "required": false,
+        "secure": false,
+        "uiExpose": true,
+        "applyLive": true,
+        "requiresRestart": false,
+        "description": "Blank preserves operation limits. Zero permits no mutations.",
+        "minimum": 0
+      },
+      {
+        "section": "TorrentClient",
+        "path": [
+          "Maintenance",
+          "Operations",
+          "ErrorRecovery",
+          "Enabled"
+        ],
+        "key": "Maintenance.Operations.ErrorRecovery.Enabled",
+        "label": "Enable operation",
+        "kind": "checkbox",
+        "default": false,
+        "comments": "Enable operation. Off disables this behavior; operation enablement and authorization still apply.",
+        "required": false,
+        "secure": false,
+        "uiExpose": true,
+        "applyLive": true,
+        "requiresRestart": false,
+        "description": "Explicit operation override. Existing configs without an override retain their legacy enablement."
+      },
+      {
+        "section": "TorrentClient",
+        "path": [
+          "Maintenance",
+          "Operations",
+          "ErrorRecovery",
+          "ExecutionMode"
+        ],
+        "key": "Maintenance.Operations.ErrorRecovery.ExecutionMode",
+        "label": "Execution mode",
+        "kind": "select",
+        "default": "manual",
+        "comments": "Execution mode. Uses the displayed units and default; operation prerequisites and protection checks still apply.",
+        "required": false,
+        "secure": false,
+        "uiExpose": true,
+        "applyLive": true,
+        "requiresRestart": false,
+        "options": [
+          "manual",
+          "automatic"
+        ],
+        "description": "Manual applies a reviewed preview once. Automatic runs on the saved schedule and remains enabled after restart; no restart is required."
+      },
+      {
+        "section": "TorrentClient",
+        "path": [
+          "Maintenance",
+          "Operations",
+          "ErrorRecovery",
+          "Schedule"
+        ],
+        "key": "Maintenance.Operations.ErrorRecovery.Schedule",
+        "label": "Operation schedule (UTC)",
+        "kind": "text",
+        "default": "*/5 * * * *",
+        "comments": "Operation schedule (UTC). Uses the displayed units and default; operation prerequisites and protection checks still apply.",
+        "required": false,
+        "secure": false,
+        "uiExpose": true,
+        "applyLive": true,
+        "requiresRestart": false,
+        "description": "Five-field cron expression in UTC. Blank inherits the client schedule."
+      },
+      {
+        "section": "TorrentClient",
+        "path": [
+          "Maintenance",
+          "Operations",
+          "ErrorRecovery",
+          "IncludedCategories"
+        ],
+        "key": "Maintenance.Operations.ErrorRecovery.IncludedCategories",
+        "label": "Included categories",
+        "kind": "tags",
+        "default": [],
+        "comments": "Included categories. Empty applies no additional list entries; operation filters inherit client scope.",
+        "required": false,
+        "secure": false,
+        "uiExpose": true,
+        "applyLive": true,
+        "requiresRestart": false,
+        "description": "Blank inherits client-wide scope. Entries narrow that scope."
+      },
+      {
+        "section": "TorrentClient",
+        "path": [
+          "Maintenance",
+          "Operations",
+          "ErrorRecovery",
+          "ExcludedCategories"
+        ],
+        "key": "Maintenance.Operations.ErrorRecovery.ExcludedCategories",
+        "label": "Excluded categories",
+        "kind": "tags",
+        "default": [],
+        "comments": "Excluded categories. Empty applies no additional list entries; operation filters inherit client scope.",
+        "required": false,
+        "secure": false,
+        "uiExpose": true,
+        "applyLive": true,
+        "requiresRestart": false
+      },
+      {
+        "section": "TorrentClient",
+        "path": [
+          "Maintenance",
+          "Operations",
+          "ErrorRecovery",
+          "ExcludedTags"
+        ],
+        "key": "Maintenance.Operations.ErrorRecovery.ExcludedTags",
+        "label": "Excluded tags",
+        "kind": "tags",
+        "default": [],
+        "comments": "Excluded tags. Empty applies no additional list entries; operation filters inherit client scope.",
+        "required": false,
+        "secure": false,
+        "uiExpose": true,
+        "applyLive": true,
+        "requiresRestart": false
+      },
+      {
+        "section": "TorrentClient",
+        "path": [
+          "Maintenance",
+          "Operations",
+          "ErrorRecovery",
+          "MaxActionsPerRun"
+        ],
+        "key": "Maintenance.Operations.ErrorRecovery.MaxActionsPerRun",
+        "label": "Maximum actions per run",
+        "kind": "number",
+        "default": null,
+        "comments": "Maximum actions per run. Zero permits no mutations for action/deletion caps; inspection budgets must be positive.",
+        "required": false,
+        "secure": false,
+        "uiExpose": true,
+        "applyLive": true,
+        "requiresRestart": false,
+        "description": "Blank preserves operation limits. Zero permits no mutations.",
+        "minimum": 0
+      },
+      {
+        "section": "TorrentClient",
+        "path": [
+          "Maintenance",
+          "ErrorRecovery",
+          "Enabled"
+        ],
+        "key": "Maintenance.ErrorRecovery.Enabled",
+        "label": "Enable error recovery (legacy fallback)",
+        "kind": "checkbox",
+        "default": false,
+        "comments": "Enable error recovery (legacy fallback). Off disables this behavior; operation enablement and authorization still apply.",
+        "required": false,
+        "secure": false,
+        "uiExpose": true,
+        "applyLive": true,
+        "requiresRestart": false
+      },
+      {
+        "section": "TorrentClient",
+        "path": [
+          "Maintenance",
+          "ErrorRecovery",
+          "Outcome"
+        ],
+        "key": "Maintenance.ErrorRecovery.Outcome",
+        "label": "Outcome after failed repair",
+        "kind": "select",
+        "default": "keep",
+        "comments": "Keep reports recurring failures without deletion. Recycle permits removal only after confirmed repair, sustained failure, and all protection checks.",
+        "required": false,
+        "secure": false,
+        "uiExpose": true,
+        "applyLive": true,
+        "requiresRestart": false,
+        "options": [
+          "keep",
+          "recycle"
+        ]
+      },
+      {
+        "section": "TorrentClient",
+        "path": [
+          "Maintenance",
+          "ErrorRecovery",
+          "States"
+        ],
+        "key": "Maintenance.ErrorRecovery.States",
+        "label": "Client error states",
+        "kind": "tags",
+        "default": [
+          "error",
+          "missingFiles"
+        ],
+        "comments": "Exact client error-state names eligible for repair. Tracker messages alone never interrupt healthy protected seeding.",
+        "required": false,
+        "secure": false,
+        "uiExpose": true,
+        "applyLive": true,
+        "requiresRestart": false
+      },
+      {
+        "section": "TorrentClient",
+        "path": [
+          "Maintenance",
+          "ErrorRecovery",
+          "MaxRepairAttempts"
+        ],
+        "key": "Maintenance.ErrorRecovery.MaxRepairAttempts",
+        "label": "Repair attempts per incident",
+        "kind": "number",
+        "default": 1,
+        "comments": "Positive accepted recheck attempts per incident. Default one; rejected submissions do not consume an accepted attempt.",
+        "required": false,
+        "secure": false,
+        "uiExpose": true,
+        "applyLive": true,
+        "requiresRestart": false,
+        "minimum": 1
+      },
+      {
+        "section": "TorrentClient",
+        "path": [
+          "Maintenance",
+          "ErrorRecovery",
+          "MaxPerRun"
+        ],
+        "key": "Maintenance.ErrorRecovery.MaxPerRun",
+        "label": "Maximum new rechecks per run",
+        "kind": "number",
+        "default": 2,
+        "comments": "Maximum new rechecks per run. Zero permits no mutations for action/deletion caps; inspection budgets must be positive.",
+        "required": false,
+        "secure": false,
+        "uiExpose": true,
+        "applyLive": true,
+        "requiresRestart": false,
+        "minimum": 0
+      },
+      {
+        "section": "TorrentClient",
+        "path": [
+          "Maintenance",
+          "ErrorRecovery",
+          "RetryMinutes"
+        ],
+        "key": "Maintenance.ErrorRecovery.RetryMinutes",
+        "label": "Rejected recheck retry delay (minutes)",
+        "kind": "number",
+        "default": 10,
+        "comments": "Positive delay before retrying rejected rechecks. Default 10 minutes; failures never prove recovery.",
+        "required": false,
+        "secure": false,
+        "uiExpose": true,
+        "applyLive": true,
+        "requiresRestart": false,
+        "minimum": 1
+      },
+      {
+        "section": "TorrentClient",
+        "path": [
+          "Maintenance",
+          "ErrorRecovery",
+          "RecheckTimeoutMinutes"
+        ],
+        "key": "Maintenance.ErrorRecovery.RecheckTimeoutMinutes",
+        "label": "Recheck confirmation timeout (minutes)",
+        "kind": "number",
+        "default": 60,
+        "comments": "Positive time allowed to observe checking and completion. Default 60 minutes; unconfirmed/timed-out checks never allow cleanup.",
+        "required": false,
+        "secure": false,
+        "uiExpose": true,
+        "applyLive": true,
+        "requiresRestart": false,
+        "minimum": 1
+      },
+      {
+        "section": "TorrentClient",
+        "path": [
+          "Maintenance",
+          "ErrorRecovery",
+          "SustainedFailureMinutes"
+        ],
+        "key": "Maintenance.ErrorRecovery.SustainedFailureMinutes",
+        "label": "Confirmed recurring error delay (minutes)",
+        "kind": "number",
+        "default": 1440,
+        "comments": "Positive continuously observed failure window after confirmed repair. Default 1440 minutes; observation gaps restart it.",
+        "required": false,
+        "secure": false,
+        "uiExpose": true,
+        "applyLive": true,
+        "requiresRestart": false,
+        "minimum": 1
+      },
+      {
+        "section": "TorrentClient",
+        "path": [
+          "Maintenance",
+          "ErrorRecovery",
+          "HealthyResetMinutes"
+        ],
+        "key": "Maintenance.ErrorRecovery.HealthyResetMinutes",
+        "label": "Observed healthy reset (minutes)",
+        "kind": "number",
+        "default": 60,
+        "comments": "Positive observed-health window before resetting an incident. Default 60 minutes; unobserved downtime is not evidence.",
+        "required": false,
+        "secure": false,
+        "uiExpose": true,
+        "applyLive": true,
+        "requiresRestart": false,
+        "minimum": 1
+      },
+      {
+        "section": "TorrentClient",
+        "path": [
+          "Maintenance",
+          "RecycleBin",
+          "RetentionEnabled"
+        ],
+        "key": "Maintenance.RecycleBin.RetentionEnabled",
+        "label": "Enable expired-file deletion",
+        "kind": "checkbox",
+        "default": true,
+        "comments": "Enable expired-file deletion. Off disables this behavior; operation enablement and authorization still apply.",
+        "required": false,
+        "secure": false,
+        "uiExpose": true,
+        "applyLive": true,
+        "requiresRestart": false,
+        "description": "Independent of recycle storage. Off preserves recycled files indefinitely."
+      },
+      {
+        "section": "TorrentClient",
+        "path": [
+          "Maintenance",
+          "RecycleBin",
+          "MaxFilesDeletedPerRun"
+        ],
+        "key": "Maintenance.RecycleBin.MaxFilesDeletedPerRun",
+        "label": "Maximum recycle files deleted per run",
+        "kind": "number",
+        "default": 100,
+        "comments": "Maximum recycle files deleted per run. Zero permits no mutations for action/deletion caps; inspection budgets must be positive.",
+        "required": false,
+        "secure": false,
+        "uiExpose": true,
+        "applyLive": true,
+        "requiresRestart": false,
+        "minimum": 0
+      },
+      {
+        "section": "TorrentClient",
+        "path": [
+          "Maintenance",
+          "Orphans",
+          "ScanRoots"
+        ],
+        "key": "Maintenance.Orphans.ScanRoots",
+        "label": "Orphan scan roots",
+        "kind": "tags",
+        "default": [],
+        "comments": "Orphan scan roots. Empty applies no additional list entries; operation filters inherit client scope.",
+        "required": false,
+        "secure": false,
+        "uiExpose": true,
+        "applyLive": true,
+        "requiresRestart": false,
+        "description": "Explicit local roots to scan. Each must match a path mapping. Blank disables filesystem scanning."
+      },
+      {
+        "section": "TorrentClient",
+        "path": [
+          "Maintenance",
+          "Orphans",
+          "MaxInspectedFilesPerRun"
+        ],
+        "key": "Maintenance.Orphans.MaxInspectedFilesPerRun",
+        "label": "Maximum files inspected per scan",
+        "kind": "number",
+        "default": 10000,
+        "comments": "Positive file eligibility-inspection budget, default 10000. Directory name ordering still enumerates the root.",
+        "required": false,
+        "secure": false,
+        "uiExpose": true,
+        "applyLive": true,
+        "requiresRestart": false,
+        "minimum": 1
+      },
+      {
+        "section": "TorrentClient",
+        "path": [
+          "Maintenance",
+          "Hardlinks",
+          "MaxInspectedTorrentsPerRun"
+        ],
+        "key": "Maintenance.Hardlinks.MaxInspectedTorrentsPerRun",
+        "label": "Maximum torrents inspected per hardlink audit",
+        "kind": "number",
+        "default": 1000,
+        "comments": "Positive inspection budget, default 1000 torrents. Applied runs persist a cursor for eventual coverage.",
+        "required": false,
+        "secure": false,
+        "uiExpose": true,
+        "applyLive": true,
+        "requiresRestart": false,
+        "minimum": 1
+      },
+      {
+        "section": "TorrentClient",
+        "path": [
+          "Maintenance",
+          "Hardlinks",
+          "RemoveClearedTag"
+        ],
+        "key": "Maintenance.Hardlinks.RemoveClearedTag",
+        "label": "Remove cleared hardlink tags",
+        "kind": "checkbox",
+        "default": false,
+        "comments": "Remove cleared hardlink tags. Off disables this behavior; operation enablement and authorization still apply.",
+        "required": false,
+        "secure": false,
+        "uiExpose": true,
+        "applyLive": true,
+        "requiresRestart": false,
+        "description": "Remove only tags recorded as applied by Torrentarr, when additional hardlinks are found."
+      },
+      {
+        "section": "TorrentClient",
+        "path": [
+          "Maintenance",
+          "AutomaticManagement",
+          "RemoveClearedTrackerErrorTag"
+        ],
+        "key": "Maintenance.AutomaticManagement.RemoveClearedTrackerErrorTag",
+        "label": "Remove cleared tracker-error tags",
+        "kind": "checkbox",
+        "default": false,
+        "comments": "Remove cleared tracker-error tags. Off disables this behavior; operation enablement and authorization still apply.",
+        "required": false,
+        "secure": false,
+        "uiExpose": true,
+        "applyLive": true,
+        "requiresRestart": false,
+        "description": "Remove only Torrentarr-owned tags when a tracker is healthy again."
+      },
+      {
+        "section": "TorrentClient",
+        "path": [
+          "Maintenance",
+          "Repair",
+          "ResumeCompleted"
+        ],
+        "key": "Maintenance.Repair.ResumeCompleted",
+        "label": "Resume complete paused torrents",
+        "kind": "checkbox",
+        "default": true,
+        "comments": "Explicitly authorizes resuming complete paused torrents, including deliberate user pauses. Review before enabling.",
+        "required": false,
+        "secure": false,
+        "uiExpose": true,
+        "applyLive": true,
+        "requiresRestart": false
+      },
+      {
+        "section": "TorrentClient",
+        "path": [
+          "Maintenance",
+          "Repair",
+          "RecheckIncomplete"
+        ],
+        "key": "Maintenance.Repair.RecheckIncomplete",
+        "label": "Recheck incomplete paused torrents",
+        "kind": "checkbox",
+        "default": true,
+        "comments": "Request file rechecks for incomplete paused torrents. This can create disk IO; it does not prove successful recovery.",
+        "required": false,
+        "secure": false,
+        "uiExpose": true,
+        "applyLive": true,
+        "requiresRestart": false
+      },
+      {
+        "section": "TorrentClient",
+        "path": [
+          "Maintenance",
+          "CategoryMappings"
+        ],
+        "key": "Maintenance.CategoryMappings",
+        "label": "Category mappings",
+        "kind": "collection",
+        "default": [],
+        "comments": "Category mappings. Uses the displayed units and default; operation prerequisites and protection checks still apply.",
+        "required": false,
+        "secure": false,
+        "uiExpose": true,
+        "applyLive": true,
+        "requiresRestart": false,
+        "description": "Assign categories by save path; the longest matching path wins.",
+        "itemFields": [
+          {
+            "section": "TorrentClient",
+            "path": [
+              "ClientPath"
+            ],
+            "key": "ClientPath",
+            "label": "Save path",
+            "kind": "text",
+            "default": "",
+            "comments": "Save path. Uses the displayed units and default; operation prerequisites and protection checks still apply.",
+            "required": true,
+            "secure": false,
+            "uiExpose": true,
+            "applyLive": null,
+            "requiresRestart": null,
+            "description": "Absolute path as seen by the torrent client.",
+            "placeholder": "/downloads/movies"
+          },
+          {
+            "section": "TorrentClient",
+            "path": [
+              "Category"
+            ],
+            "key": "Category",
+            "label": "Category",
+            "kind": "text",
+            "default": "",
+            "comments": "Category. Uses the displayed units and default; operation prerequisites and protection checks still apply.",
+            "required": true,
+            "secure": false,
+            "uiExpose": true,
+            "applyLive": null,
+            "requiresRestart": null,
+            "description": "Target category.",
+            "placeholder": "movies"
+          }
+        ]
+      },
+      {
+        "section": "TorrentClient",
+        "path": [
+          "Maintenance",
+          "CategoryTransitions"
+        ],
+        "key": "Maintenance.CategoryTransitions",
+        "label": "Category transitions",
+        "kind": "collection",
+        "default": [],
+        "comments": "Category transitions. Uses the displayed units and default; operation prerequisites and protection checks still apply.",
+        "required": false,
+        "secure": false,
+        "uiExpose": true,
+        "applyLive": true,
+        "requiresRestart": false,
+        "description": "Change completed torrents\u0027 categories after a delay.",
+        "itemFields": [
+          {
+            "section": "TorrentClient",
+            "path": [
+              "From"
+            ],
+            "key": "From",
+            "label": "From category",
+            "kind": "text",
+            "default": "",
+            "comments": "From category. Uses the displayed units and default; operation prerequisites and protection checks still apply.",
+            "required": true,
+            "secure": false,
+            "uiExpose": true,
+            "applyLive": null,
+            "requiresRestart": null,
+            "description": "Current category.",
+            "placeholder": "movies"
+          },
+          {
+            "section": "TorrentClient",
+            "path": [
+              "To"
+            ],
+            "key": "To",
+            "label": "To category",
+            "kind": "text",
+            "default": "",
+            "comments": "To category. Uses the displayed units and default; operation prerequisites and protection checks still apply.",
+            "required": true,
+            "secure": false,
+            "uiExpose": true,
+            "applyLive": null,
+            "requiresRestart": null,
+            "description": "Target category.",
+            "placeholder": "seed"
+          },
+          {
+            "section": "TorrentClient",
+            "path": [
+              "DelayMinutes"
+            ],
+            "key": "DelayMinutes",
+            "label": "Delay after completion (minutes)",
+            "kind": "number",
+            "default": 0,
+            "comments": "Delay after completion (minutes). Uses the displayed units and default; operation prerequisites and protection checks still apply.",
+            "required": false,
+            "secure": false,
+            "uiExpose": true,
+            "applyLive": true,
+            "requiresRestart": false,
+            "minimum": 0
+          }
+        ]
+      },
+      {
+        "section": "TorrentClient",
+        "path": [
+          "Maintenance",
+          "TrackerAssignments"
+        ],
+        "key": "Maintenance.TrackerAssignments",
+        "label": "Tracker assignments",
+        "kind": "collection",
+        "default": [],
+        "comments": "Tracker assignments. Uses the displayed units and default; operation prerequisites and protection checks still apply.",
+        "required": false,
+        "secure": false,
+        "uiExpose": true,
+        "applyLive": true,
+        "requiresRestart": false,
+        "description": "Assign categories and tags when a tracker URL contains the configured text.",
+        "itemFields": [
+          {
+            "section": "TorrentClient",
+            "path": [
+              "TrackerContains"
+            ],
+            "key": "TrackerContains",
+            "label": "Tracker URL contains",
+            "kind": "text",
+            "default": "",
+            "comments": "Tracker URL contains. Uses the displayed units and default; operation prerequisites and protection checks still apply.",
+            "required": true,
+            "secure": false,
+            "uiExpose": true,
+            "applyLive": null,
+            "requiresRestart": null,
+            "description": "Case-insensitive tracker URL match.",
+            "placeholder": "tracker.example.com"
+          },
+          {
+            "section": "TorrentClient",
+            "path": [
+              "Category"
+            ],
+            "key": "Category",
+            "label": "Assigned category",
+            "kind": "text",
+            "default": "",
+            "comments": "Assigned category. Uses the displayed units and default; operation prerequisites and protection checks still apply.",
+            "required": false,
+            "secure": false,
+            "uiExpose": true,
+            "applyLive": true,
+            "requiresRestart": false
+          },
+          {
+            "section": "TorrentClient",
+            "path": [
+              "Tags"
+            ],
+            "key": "Tags",
+            "label": "Assigned tags",
+            "kind": "tags",
+            "default": [],
+            "comments": "Assigned tags. Empty applies no additional list entries; operation filters inherit client scope.",
+            "required": false,
+            "secure": false,
+            "uiExpose": true,
+            "applyLive": true,
+            "requiresRestart": false
+          }
+        ]
       },
       {
         "section": "TorrentClient",
@@ -1713,7 +7050,7 @@ export const CONFIG_SCHEMA = {
         "label": "Path mappings",
         "kind": "collection",
         "default": [],
-        "comments": "Torrentarr client-neutral torrent maintenance setting.",
+        "comments": "Path mappings. Uses the displayed units and default; operation prerequisites and protection checks still apply.",
         "required": false,
         "secure": false,
         "uiExpose": true,
@@ -1730,7 +7067,7 @@ export const CONFIG_SCHEMA = {
             "label": "Torrent client path",
             "kind": "text",
             "default": "",
-            "comments": "Torrentarr client-neutral torrent maintenance setting.",
+            "comments": "Torrent client path. Uses the displayed units and default; operation prerequisites and protection checks still apply.",
             "required": true,
             "secure": false,
             "uiExpose": true,
@@ -1748,7 +7085,7 @@ export const CONFIG_SCHEMA = {
             "label": "Torrentarr path",
             "kind": "text",
             "default": "",
-            "comments": "Torrentarr client-neutral torrent maintenance setting.",
+            "comments": "Torrentarr path. Uses the displayed units and default; operation prerequisites and protection checks still apply.",
             "required": true,
             "secure": false,
             "uiExpose": true,
@@ -2901,12 +8238,15 @@ export const CONFIG_SCHEMA = {
         "label": "Remove Dead Trackers",
         "kind": "checkbox",
         "default": false,
-        "comments": "Enable if you want to remove dead trackers",
+        "comments": [
+          "Legacy compatibility setting: true preserves and reports matching tracker failures instead of directly deleting torrents. Tracker rejection never authorizes torrent removal."
+        ],
         "required": false,
         "secure": false,
         "uiExpose": true,
         "applyLive": null,
-        "requiresRestart": null
+        "requiresRestart": null,
+        "description": "Legacy compatibility setting: true preserves and reports matching tracker failures instead of directly deleting torrents. Tracker rejection never authorizes torrent removal."
       },
       {
         "section": "Arr",
@@ -2924,12 +8264,237 @@ export const CONFIG_SCHEMA = {
           "unsupported URL protocol",
           "info hash is not authorized with this tracker"
         ],
-        "comments": "If \u0022RemoveDeadTrackers\u0022 is set to true then remove trackers with the following messages",
+        "comments": [
+          "Tracker-message matches may remove the tracker URL only when RemoveDeadTrackers is false and fresh protection permits it. Messages never directly authorize torrent/content deletion."
+        ],
         "required": false,
         "secure": false,
         "uiExpose": true,
         "applyLive": null,
-        "requiresRestart": null
+        "requiresRestart": null,
+        "description": "Tracker-message matches may remove the tracker URL only when RemoveDeadTrackers is false and fresh protection permits it. Messages never directly authorize torrent/content deletion."
+      }
+    ],
+    "TrackerProtection": [
+      {
+        "section": "TrackerProtection",
+        "path": [
+          "Policy"
+        ],
+        "key": "Policy",
+        "label": "Tracker protection policy",
+        "kind": "select",
+        "default": "custom",
+        "comments": "Tracker protection policy. Uses the displayed units and default; operation prerequisites and protection checks still apply.",
+        "required": false,
+        "secure": false,
+        "uiExpose": true,
+        "applyLive": true,
+        "requiresRestart": false,
+        "options": [
+          "custom",
+          "torrentleech-power",
+          "onlyencodes"
+        ]
+      },
+      {
+        "section": "TrackerProtection",
+        "path": [
+          "MinimumSeedHours"
+        ],
+        "key": "MinimumSeedHours",
+        "label": "Minimum completed seed time (hours)",
+        "kind": "number",
+        "default": 48,
+        "comments": "Minimum completed seed time (hours). Uses the displayed units and default; operation prerequisites and protection checks still apply.",
+        "required": false,
+        "secure": false,
+        "uiExpose": true,
+        "applyLive": true,
+        "requiresRestart": false,
+        "minimum": 0,
+        "maximum": 876000
+      },
+      {
+        "section": "TrackerProtection",
+        "path": [
+          "MinimumRatio"
+        ],
+        "key": "MinimumRatio",
+        "label": "Minimum ratio",
+        "kind": "number",
+        "default": 1,
+        "comments": "Minimum ratio. Uses the displayed units and default; operation prerequisites and protection checks still apply.",
+        "required": false,
+        "secure": false,
+        "uiExpose": true,
+        "applyLive": true,
+        "requiresRestart": false,
+        "minimum": 0
+      },
+      {
+        "section": "TrackerProtection",
+        "path": [
+          "AllowClientRatioClearance"
+        ],
+        "key": "AllowClientRatioClearance",
+        "label": "Allow client-estimated ratio clearance",
+        "kind": "checkbox",
+        "default": false,
+        "comments": "Allow client-estimated ratio clearance. Off disables this behavior; operation enablement and authorization still apply.",
+        "required": false,
+        "secure": false,
+        "uiExpose": true,
+        "applyLive": true,
+        "requiresRestart": false,
+        "description": "Off by default: a client ratio does not prove tracker credit. OnlyEncodes never clears on ratio."
+      },
+      {
+        "section": "TrackerProtection",
+        "path": [
+          "PartialPolicy"
+        ],
+        "key": "PartialPolicy",
+        "label": "Partial download policy",
+        "kind": "select",
+        "default": "preserve",
+        "comments": "Partial download policy. Uses the displayed units and default; operation prerequisites and protection checks still apply.",
+        "required": false,
+        "secure": false,
+        "uiExpose": true,
+        "applyLive": true,
+        "requiresRestart": false,
+        "options": [
+          "preserve",
+          "ratio"
+        ]
+      },
+      {
+        "section": "TrackerProtection",
+        "path": [
+          "DownloadThresholdPercent"
+        ],
+        "key": "DownloadThresholdPercent",
+        "label": "Download obligation threshold (%)",
+        "kind": "number",
+        "default": 10,
+        "comments": "Download obligation threshold (%). Uses the displayed units and default; operation prerequisites and protection checks still apply.",
+        "required": false,
+        "secure": false,
+        "uiExpose": true,
+        "applyLive": true,
+        "requiresRestart": false,
+        "minimum": 0,
+        "maximum": 100
+      },
+      {
+        "section": "TrackerProtection",
+        "path": [
+          "ThresholdInclusive"
+        ],
+        "key": "ThresholdInclusive",
+        "label": "Include threshold boundary",
+        "kind": "checkbox",
+        "default": true,
+        "comments": "Include threshold boundary. Off disables this behavior; operation enablement and authorization still apply.",
+        "required": false,
+        "secure": false,
+        "uiExpose": true,
+        "applyLive": true,
+        "requiresRestart": false
+      },
+      {
+        "section": "TrackerProtection",
+        "path": [
+          "FulfillmentHours"
+        ],
+        "key": "FulfillmentHours",
+        "label": "Fulfillment window (hours)",
+        "kind": "number",
+        "default": null,
+        "comments": "Fulfillment window (hours). Uses the displayed units and default; operation prerequisites and protection checks still apply.",
+        "required": false,
+        "secure": false,
+        "uiExpose": true,
+        "applyLive": true,
+        "requiresRestart": false,
+        "description": "Blank means no deadline, except OnlyEncodes uses an explicitly unconfirmed 168-hour warning window. A missed deadline never clears protection.",
+        "minimum": 1,
+        "maximum": 876000
+      },
+      {
+        "section": "TrackerProtection",
+        "path": [
+          "DeadlineStart"
+        ],
+        "key": "DeadlineStart",
+        "label": "Deadline starts at",
+        "kind": "select",
+        "default": "added",
+        "comments": "Deadline starts at. Uses the displayed units and default; operation prerequisites and protection checks still apply.",
+        "required": false,
+        "secure": false,
+        "uiExpose": true,
+        "applyLive": true,
+        "requiresRestart": false,
+        "options": [
+          "added",
+          "completed"
+        ]
+      },
+      {
+        "section": "TrackerProtection",
+        "path": [
+          "AdditionalSeedHours"
+        ],
+        "key": "AdditionalSeedHours",
+        "label": "Extra seed-time margin (hours)",
+        "kind": "number",
+        "default": 6,
+        "comments": "Extra seed-time margin (hours). Uses the displayed units and default; operation prerequisites and protection checks still apply.",
+        "required": false,
+        "secure": false,
+        "uiExpose": true,
+        "applyLive": true,
+        "requiresRestart": false,
+        "minimum": 0,
+        "maximum": 876000
+      },
+      {
+        "section": "TrackerProtection",
+        "path": [
+          "AccountingGraceMinutes"
+        ],
+        "key": "AccountingGraceMinutes",
+        "label": "Accounting grace (minutes)",
+        "kind": "number",
+        "default": 60,
+        "comments": "Accounting grace (minutes). Uses the displayed units and default; operation prerequisites and protection checks still apply.",
+        "required": false,
+        "secure": false,
+        "uiExpose": true,
+        "applyLive": true,
+        "requiresRestart": false,
+        "minimum": 0,
+        "maximum": 52560000
+      },
+      {
+        "section": "TrackerProtection",
+        "path": [
+          "RecoveryReserveHours"
+        ],
+        "key": "RecoveryReserveHours",
+        "label": "Recovery reserve (hours)",
+        "kind": "number",
+        "default": 6,
+        "comments": "Recovery reserve (hours). Uses the displayed units and default; operation prerequisites and protection checks still apply.",
+        "required": false,
+        "secure": false,
+        "uiExpose": true,
+        "applyLive": true,
+        "requiresRestart": false,
+        "minimum": 0,
+        "maximum": 876000
       }
     ]
   }

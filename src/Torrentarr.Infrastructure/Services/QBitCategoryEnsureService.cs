@@ -87,17 +87,8 @@ public class QBitCategoryEnsureService
 
     private string ResolveCompletedRoot(string instanceName)
     {
-        var folder = _config.Settings.CompletedDownloadFolder;
-        if (!string.IsNullOrWhiteSpace(folder) && folder != "CHANGE_ME" && Directory.Exists(folder))
-            return folder;
-
-        foreach (var qbit in new[] { _config.GetTorrentClient(instanceName) }.OfType<TorrentClientInstanceConfig>())
-        {
-            if (!string.IsNullOrWhiteSpace(qbit.DownloadPath) && qbit.DownloadPath != "CHANGE_ME"
-                && Directory.Exists(qbit.DownloadPath))
-                return qbit.DownloadPath;
-        }
-
-        return folder is { Length: > 0 } ? folder : "/downloads";
+        var path = _config.GetTorrentClient(instanceName)?.DownloadPath;
+        if (!string.IsNullOrWhiteSpace(path) && path != "CHANGE_ME") return path;
+        throw new InvalidOperationException($"Client '{instanceName}' has no DownloadPath; cannot create category without a client download root.");
     }
 }

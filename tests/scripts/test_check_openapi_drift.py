@@ -16,6 +16,13 @@ def document(paths, components=None):
 
 
 class OpenApiDriftTests(unittest.TestCase):
+    def test_maintenance_generation_detects_missing_inspection_evidence(self):
+        generated = {"paths": {}}
+        module.apply_maintenance(generated)
+        self.assertEqual(module.maintenance_drift(generated), [])
+        del generated['components']['schemas']['MaintenanceStatus']['properties']['inspections']
+        self.assertIn('generated maintenance schema differs: MaintenanceStatus', module.maintenance_drift(generated))
+
     def test_config_warning_is_optional_and_cannot_hide_other_drift(self):
         for route in ("/web/config", "/api/config"):
             upstream = document({route: {"post": {"responses": {"200": {"content": {"application/json": {"schema": {

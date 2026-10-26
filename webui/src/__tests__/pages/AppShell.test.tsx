@@ -70,7 +70,7 @@ describe("configured navigation", () => {
       expect(
         screen.queryByRole("button", { name, exact: true }),
       ).not.toBeInTheDocument();
-    for (const name of ["Processes", "Logs", "Maintenance", "Config"])
+    for (const name of ["Processes", "Logs", "Manage", "Config"])
       expect(
         screen.getByRole("button", { name, exact: true }),
       ).toBeInTheDocument();

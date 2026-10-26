@@ -1,4 +1,4 @@
-﻿# Torrent Configuration
+# Torrent Configuration
 
 Torrentarr provides granular control over how torrents are processed, filtered, and managed for each Arr instance. This page covers all torrent-specific settings available in the `[<Arr>-<Name>.Torrent]` section.
 
@@ -124,6 +124,9 @@ FileNameExclusionRegex = [
     "\\b1337x\\b"
 ]
 
+```
+
+```toml
 # Block unwanted audio tracks
 FileNameExclusionRegex = [
     "\\.commentary\\.",
@@ -157,9 +160,15 @@ FileExtensionAllowlist = [
 FileExtensionAllowlist = [".mkv", ".mp4"]
 
 # Include audio for music
+```
+
+```toml
 FileExtensionAllowlist = [".flac", ".mp3", ".m4a", ".alac"]
 
 # Allow all files (empty list)
+```
+
+```toml
 FileExtensionAllowlist = []
 ```
 
@@ -215,9 +224,15 @@ IgnoreTorrentsYoungerThan = 300  # 5 minutes
 IgnoreTorrentsYoungerThan = 60  # 1 minute
 
 # Standard (recommended)
+```
+
+```toml
 IgnoreTorrentsYoungerThan = 180  # 3 minutes
 
 # Conservative (slow tracker/large torrents)
+```
+
+```toml
 IgnoreTorrentsYoungerThan = 600  # 10 minutes
 ```
 
@@ -270,9 +285,15 @@ MaximumETA = 3600  # 1 hour
 MaximumETA = 7200
 
 # Remove torrents taking over 30 minutes
+```
+
+```toml
 MaximumETA = 1800
 
 # Disabled (no ETA limit)
+```
+
+```toml
 MaximumETA = -1
 ```
 
@@ -303,9 +324,15 @@ Prevents accidentally deleting nearly-complete torrents due to temporary stalls 
 MaximumDeletablePercentage = 0.50
 
 # Aggressive (delete even at 99%)
+```
+
+```toml
 MaximumDeletablePercentage = 0.99
 
 # Never auto-delete based on completion
+```
+
+```toml
 MaximumDeletablePercentage = 0.01  # Only delete if < 1% complete
 ```
 
@@ -367,9 +394,15 @@ StalledDelay = 30  # 30 minutes
 StalledDelay = 5
 
 # Patient (1 hour)
+```
+
+```toml
 StalledDelay = 60
 
 # Never remove
+```
+
+```toml
 StalledDelay = -1
 ```
 
@@ -713,13 +746,13 @@ MaxSeedingTime = 172800  # 48 hours (more patient)
    ```toml
    # If too restrictive, no files match
    FileExtensionAllowlist = [".mkv"]  # Won't download .mp4 files
-   ```
+```
 
 2. **FolderExclusionRegex:**
    ```toml
    # Too broad, excludes everything
    FolderExclusionRegex = [".*"]  # BAD: Matches all folders
-   ```
+```
 
 **Solution:** Widen allowlist or reduce exclusions
 
@@ -734,12 +767,12 @@ MaxSeedingTime = 172800  # 48 hours (more patient)
 1. **MaximumETA:**
    ```toml
    MaximumETA = 600  # 10 minutes (too aggressive)
-   ```
+```
 
 2. **StalledDelay:**
    ```toml
    StalledDelay = 5  # 5 minutes (too quick)
-   ```
+```
 
 **Solution:** Increase timeouts or disable with `-1`
 
@@ -754,12 +787,12 @@ MaxSeedingTime = 172800  # 48 hours (more patient)
 1. **Stalled cleanup disabled (infinite grace):**
    ```toml
    StalledDelay = -1  # Infinite stalled grace; other cleanup rules may still remove torrents
-   ```
+```
 
 2. **DoNotRemoveSlow enabled:**
    ```toml
    DoNotRemoveSlow = true  # Keeps slow torrents
-   ```
+```
 
 **Solution:** Enable stalled detection:
 ```toml
@@ -780,6 +813,9 @@ StalledDelay = 30  # 30 minutes
 FolderExclusionRegex = ["\bsample\b"]  # Single backslash
 
 # Correct
+```
+
+```toml
 FolderExclusionRegex = ["\\bsample\\b"]  # Double backslash
 ```
 
@@ -826,9 +862,15 @@ Saves bandwidth by not downloading NFO, artwork, etc.
 IgnoreTorrentsYoungerThan = 120  # 2 minutes
 
 # Movies (larger files, more patient)
+```
+
+```toml
 IgnoreTorrentsYoungerThan = 300  # 5 minutes
 
 # Music/Anime (very patient)
+```
+
+```toml
 IgnoreTorrentsYoungerThan = 600  # 10 minutes
 ```
 

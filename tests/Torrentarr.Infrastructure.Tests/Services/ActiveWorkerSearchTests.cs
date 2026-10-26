@@ -276,6 +276,7 @@ public class ActiveWorkerSearchTests
             services.AddSingleton(config).AddSingleton(Db).AddSingleton(Media.Object);
             if (reloader != null) services.AddSingleton(reloader);
             services.AddSingleton(Mock.Of<ITorrentProcessor>()).AddSingleton(Mock.Of<ITorrentCacheService>());
+            services.AddSingleton<IImportPathTracker, ImportPathTracker>();
             services.AddSingleton(new DatabaseRestartCoordinator());
             services.AddSingleton(Microsoft.Extensions.Logging.Abstractions.NullLogger<ArrSyncService>.Instance as Microsoft.Extensions.Logging.ILogger<ArrSyncService>);
             services.AddScoped<ArrSyncService>();

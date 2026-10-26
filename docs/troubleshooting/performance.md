@@ -114,7 +114,7 @@ LoopSleepTimer = 5  # Seconds between checks
     ```toml
     [Settings]
     LoopSleepTimer = 5  # Check every 5 seconds
-    ```
+```
 
     **Use when:** Small library, few torrents, powerful hardware
 
@@ -122,7 +122,7 @@ LoopSleepTimer = 5  # Seconds between checks
     ```toml
     [Settings]
     LoopSleepTimer = 15  # Check every 15 seconds
-    ```
+```
 
     **Use when:** Medium library, moderate torrent count
 
@@ -130,7 +130,7 @@ LoopSleepTimer = 5  # Seconds between checks
     ```toml
     [Settings]
     LoopSleepTimer = 60  # Check every minute
-    ```
+```
 
     **Use when:** Large library, many torrents, limited CPU/memory
 
@@ -219,7 +219,7 @@ RssSyncTimer = 15  # Minutes between RSS syncs
     ```toml
     [Radarr-Movies]
     RssSyncTimer = 0
-    ```
+```
 
 ### Refresh Downloads Timer
 
@@ -300,6 +300,9 @@ FileNameExclusionRegEx = [
 ]
 
 # ✅ Fast: Simplified patterns
+```
+
+```toml
 [Settings.Files]
 FileNameExclusionRegEx = [
     '(?i)(sample|trailer|extra)',

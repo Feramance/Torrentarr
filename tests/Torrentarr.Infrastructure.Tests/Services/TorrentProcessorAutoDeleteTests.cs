@@ -37,7 +37,7 @@ public sealed class TorrentProcessorAutoDeleteTests : IDisposable
 
     private TorrentProcessor CreateProcessor(
         IArrImportService? import = null,
-        IMediaValidationService? media = null)
+        IMediaValidationService? media = null, ISafeDeletionService? deletion = null)
     {
         return new TorrentProcessor(
             NullLogger<TorrentProcessor>.Instance,
@@ -47,7 +47,7 @@ public sealed class TorrentProcessorAutoDeleteTests : IDisposable
             new TorrentCacheService(NullLogger<TorrentCacheService>.Instance),
             new DatabaseRestartCoordinator(),
             import,
-            mediaValidation: media);
+            mediaValidation: media, safeDeletion: deletion);
     }
 
     [Fact]
@@ -76,8 +76,10 @@ public sealed class TorrentProcessorAutoDeleteTests : IDisposable
         }
     }
 
-    [Fact]
-    public async Task AutoDeleteOn_ZeroValidMedia_BlocklistsAndDeletesFiles()
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task AutoDeleteOn_ZeroValidMedia_RequiresProtectedRemoval(bool allowed)
     {
         var dir = Path.Combine(Path.GetTempPath(), "torrentarr-ad-" + Guid.NewGuid().ToString("N"));
         Directory.CreateDirectory(dir);
@@ -94,7 +96,10 @@ public sealed class TorrentProcessorAutoDeleteTests : IDisposable
         import.Setup(i => i.BlocklistAndReSearchAsync("abc", "movies", It.IsAny<CancellationToken>()))
             .ReturnsAsync(true);
 
-        var processor = CreateProcessor(import.Object, media.Object);
+        var deletion = new Mock<ISafeDeletionService>();
+        deletion.Setup(d => d.RemoveTorrentAsync(It.IsAny<string>(), "abc", true, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new SafeDeletionResult(allowed, true, 0));
+        var processor = CreateProcessor(import.Object, media.Object, deletion.Object);
 
         await processor.RunPostImportAutoDeleteCleanupAsync(
             new TorrentInfo { Hash = "abc", Name = "movie", Category = "movies", ContentPath = dir },
@@ -102,8 +107,9 @@ public sealed class TorrentProcessorAutoDeleteTests : IDisposable
             dir,
             CancellationToken.None);
 
-        import.Verify(i => i.BlocklistAndReSearchAsync("abc", "movies", It.IsAny<CancellationToken>()), Times.Once);
-        Directory.Exists(dir).Should().BeFalse();
+        import.Verify(i => i.BlocklistAndReSearchAsync("abc", "movies", It.IsAny<CancellationToken>()), allowed ? Times.Once() : Times.Never());
+        Directory.Exists(dir).Should().BeTrue("the protected deletion service owns content removal");
+        Directory.Delete(dir, true);
     }
 
     [Fact]

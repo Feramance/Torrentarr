@@ -1,9 +1,11 @@
-using System.Net;
-using System.Net.Sockets;
 using System.Text;
 using System.Text.Json;
 using FluentAssertions;
+using Microsoft.AspNetCore.Builder;
+using Microsoft.AspNetCore.Hosting;
+using Microsoft.AspNetCore.Http;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Logging.Abstractions;
 using Torrentarr.Core.Configuration;
 using Torrentarr.Infrastructure.Database;
@@ -83,58 +85,53 @@ public class ArrSyncSearchProgressTests
 
 internal sealed class ArrSyncStub : IDisposable
 {
-    private readonly HttpListener _listener = new();
-    private readonly Task _serve;
+    private readonly WebApplication _app;
     public string Url { get; }
     public bool Monitored { get; set; } = true;
     public bool FailTracks { get; set; }
     public string TrackNumber { get; set; } = "1";
     public ArrSyncStub()
     {
-        using var port = new TcpListener(IPAddress.Loopback, 0);
-        port.Start();
-        Url = $"http://127.0.0.1:{((IPEndPoint)port.LocalEndpoint).Port}";
-        port.Stop();
-        _listener.Prefixes.Add(Url + "/");
-        _listener.Start();
-        _serve = ServeAsync();
+        var builder = WebApplication.CreateSlimBuilder();
+        builder.Logging.ClearProviders();
+        // Bind port zero directly so another fixture cannot claim a probed-and-released port.
+        builder.WebHost.UseUrls("http://127.0.0.1:0");
+        _app = builder.Build();
+        _app.Run(ServeAsync);
+        _app.StartAsync().GetAwaiter().GetResult();
+        Url = _app.Urls.Single();
     }
-    private async Task ServeAsync()
+    private async Task ServeAsync(HttpContext request)
     {
-        while (_listener.IsListening)
+        var resource = request.Request.Path.Value!.Split('/').Last();
+        if (resource == "track" && (FailTracks || request.Request.Query["artistId"] != "1"))
         {
-            HttpListenerContext request;
-            try { request = await _listener.GetContextAsync(); }
-            catch (HttpListenerException) { break; }
-            catch (ObjectDisposedException) { break; }
-            var resource = request.Request.Url!.AbsolutePath.Split('/').Last();
-            if (resource == "track" && (FailTracks || request.Request.QueryString["artistId"] != "1"))
-            {
-                request.Response.StatusCode = FailTracks ? 500 : 400;
-                request.Response.Close();
-                continue;
-            }
-            object data = resource switch
-            {
-                "api" => new { current = "v3" },
-                "status" => new { version = "4.0.0" },
-                "qualityprofile" => new[] { new { id = 1, name = "Default" } },
-                "movie" => new[] { new { id = 1, tmdbId = 1, title = "Movie", monitored = Monitored, year = 2000, qualityProfileId = 1, hasFile = false } },
-                "series" => new[] { new { id = 1, tvdbId = 1, title = "Series", monitored = Monitored, qualityProfileId = 1 } },
-                "episode" => new[] { new { id = 1, seriesId = 1, title = "Episode", monitored = Monitored, seasonNumber = 1, episodeNumber = 1, airDateUtc = "2000-01-01T00:00:00Z", hasFile = false } },
-                "artist" => new[] { new { id = 1, foreignArtistId = "artist", artistName = "Artist", monitored = Monitored, qualityProfileId = 1 } },
-                "album" => new[] { new { id = 1, foreignAlbumId = "album", title = "Album", artistId = 1, monitored = Monitored, qualityProfileId = 1, releaseDate = "2000-01-01T00:00:00Z" } },
-                "track" => new[] { new { id = 1, albumId = 1, title = "Track", trackNumber = TrackNumber, hasFile = true, duration = 180000 } },
-                "author" => new[] { new { id = 1, foreignAuthorId = "author", authorName = "Author", monitored = Monitored, qualityProfileId = 1 } },
-                "book" => new[] { new { id = 1, foreignBookId = "book", title = "Book", authorId = 1, monitored = Monitored, qualityProfileId = 1, releaseDate = "2000-01-01T00:00:00Z" } },
-                _ => Array.Empty<object>()
-            };
-            var bytes = Encoding.UTF8.GetBytes(JsonSerializer.Serialize(data));
-            request.Response.ContentType = "application/json";
-            request.Response.ContentLength64 = bytes.Length;
-            await request.Response.OutputStream.WriteAsync(bytes);
-            request.Response.Close();
+            request.Response.StatusCode = FailTracks ? 500 : 400;
+            return;
         }
+        object data = resource switch
+        {
+            "api" => new { current = "v3" },
+            "status" => new { version = "4.0.0" },
+            "qualityprofile" => new[] { new { id = 1, name = "Default" } },
+            "movie" => new[] { new { id = 1, tmdbId = 1, title = "Movie", monitored = Monitored, year = 2000, qualityProfileId = 1, hasFile = false } },
+            "series" => new[] { new { id = 1, tvdbId = 1, title = "Series", monitored = Monitored, qualityProfileId = 1 } },
+            "episode" => new[] { new { id = 1, seriesId = 1, title = "Episode", monitored = Monitored, seasonNumber = 1, episodeNumber = 1, airDateUtc = "2000-01-01T00:00:00Z", hasFile = false } },
+            "artist" => new[] { new { id = 1, foreignArtistId = "artist", artistName = "Artist", monitored = Monitored, qualityProfileId = 1 } },
+            "album" => new[] { new { id = 1, foreignAlbumId = "album", title = "Album", artistId = 1, monitored = Monitored, qualityProfileId = 1, releaseDate = "2000-01-01T00:00:00Z" } },
+            "track" => new[] { new { id = 1, albumId = 1, title = "Track", trackNumber = TrackNumber, hasFile = true, duration = 180000 } },
+            "author" => new[] { new { id = 1, foreignAuthorId = "author", authorName = "Author", monitored = Monitored, qualityProfileId = 1 } },
+            "book" => new[] { new { id = 1, foreignBookId = "book", title = "Book", authorId = 1, monitored = Monitored, qualityProfileId = 1, releaseDate = "2000-01-01T00:00:00Z" } },
+            _ => Array.Empty<object>()
+        };
+        var bytes = Encoding.UTF8.GetBytes(JsonSerializer.Serialize(data));
+        request.Response.ContentType = "application/json";
+        request.Response.ContentLength = bytes.Length;
+        await request.Response.Body.WriteAsync(bytes);
     }
-    public void Dispose() { _listener.Close(); _serve.GetAwaiter().GetResult(); }
+    public void Dispose()
+    {
+        _app.StopAsync().GetAwaiter().GetResult();
+        _app.DisposeAsync().AsTask().GetAwaiter().GetResult();
+    }
 }

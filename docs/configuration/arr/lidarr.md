@@ -281,7 +281,7 @@ UseTempForMissing = false
 KeepTempProfile = false
 
 # Map main profiles to temp profiles
-QualityProfileMappings = { "Lossless" = "MP3-320", "MP3-320" = "MP3-V0" }
+QualityProfileMappings = {"Lossless" = "MP3-320", "MP3-320" = "MP3-V0"}
 
 # Reset all temp profiles on Torrentarr startup
 ForceResetTempProfiles = false
@@ -305,7 +305,7 @@ ProfileSwitchRetryAttempts = 3
 
 ```toml
 # Grab MP3 now, upgrade to FLAC later
-QualityProfileMappings = { "Lossless (FLAC)" = "Lossy (MP3-320)" }
+QualityProfileMappings = {"Lossless (FLAC)" = "Lossy (MP3-320)"}
 ```
 
 ---
@@ -551,7 +551,7 @@ ForceMinimumCustomFormat = true  # Strictly enforce lossless
 
 # Grab MP3 now, upgrade to FLAC later
 UseTempForMissing = true
-QualityProfileMappings = { "Lossless (FLAC)" = "Lossy (MP3-320)" }
+QualityProfileMappings = {"Lossless (FLAC)" = "Lossy (MP3-320)"}
 TempProfileResetTimeoutMinutes = 10080  # 7 days
 
 [Lidarr-Lossless.Torrent]
@@ -659,22 +659,22 @@ AddTags = ["RED", "private", "lossless"]
 1. ✅ Increase `MaxUploadRatio`:
    ```toml
    MaxUploadRatio = 3.0  # Or higher for strict trackers
-   ```
+```
 
 2. ✅ Increase `MaxSeedingTime`:
    ```toml
    MaxSeedingTime = 259200  # 72 hours for RED/OPS
-   ```
+```
 
 3. ✅ Change removal condition:
    ```toml
    RemoveTorrent = 4  # Remove only when BOTH ratio AND time met
-   ```
+```
 
 4. ✅ Use `Copy` import mode:
    ```toml
    ImportMode = "Copy"  # Preserves files for seeding
-   ```
+```
 
 ---
 

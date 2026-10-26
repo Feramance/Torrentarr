@@ -33,19 +33,17 @@ public class ConfigEndpointTests : IClassFixture<TorrentarrWebApplicationFactory
         client.DefaultRequestHeaders.Authorization = new System.Net.Http.Headers.AuthenticationHeaderValue("Bearer", "test-api-token");
         var service = factory.Services.GetServices<Microsoft.Extensions.Hosting.IHostedService>()
             .OfType<ProcessOrchestratorService>().Single();
-        var threshold = typeof(ProcessOrchestratorService).GetField("_minFreeSpaceBytes",
-            System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.NonPublic)!;
+        var reloader = factory.Services.GetRequiredService<Torrentarr.Core.Services.IConfigReloader>();
         var response = await client.PostAsJsonAsync(endpoint, new
         {
             changes = new Dictionary<string, object>
             {
-                ["Settings.FreeSpace"] = "1024G",
                 ["Settings.LoopSleepTimer"] = 3600
             }
         });
         response.EnsureSuccessStatusCode();
         using var timeout = new CancellationTokenSource(TimeSpan.FromSeconds(5));
-        while ((long)threshold.GetValue(service)! != 1099511627776L)
+        while (reloader.GetStatus().Components.GetValueOrDefault("torrent-policy")?.AppliedRevision != reloader.Revision)
             await Task.Delay(10, timeout.Token);
     }
 

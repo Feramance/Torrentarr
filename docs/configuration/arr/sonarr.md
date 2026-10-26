@@ -341,7 +341,7 @@ UseTempForMissing = false
 KeepTempProfile = false
 
 # Map main profiles to temp profiles
-QualityProfileMappings = { "Ultra-HD" = "Web-DL 1080p", "HD-1080p" = "HDTV-720p" }
+QualityProfileMappings = {"Ultra-HD" = "Web-DL 1080p", "HD-1080p" = "HDTV-720p"}
 
 # Reset all temp profiles on Torrentarr startup
 ForceResetTempProfiles = false

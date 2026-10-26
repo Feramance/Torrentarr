@@ -179,3 +179,8 @@ See the repository `tests/` folder and `webui/src/__tests__/` for examples. Mock
 - [Development Guide](index.md) - Complete development setup
 - [Contributing](contributing.md) - Contribution guidelines
 - [Code Style](code-style.md) - Code formatting rules
+
+
+## Maintenance and branch contract checks
+
+See [maintenance verification](maintenance-verification.md) for schema/docs coverage, isolated draft and recovery tests, frontend-before-Host build order, API drift and visual checks. Test counts in older reports are historical; use current test output.

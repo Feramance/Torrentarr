@@ -725,7 +725,7 @@ All responses are JSON:
     [WebUI]
     Port = 6969  # Check your config.toml
     Host = "0.0.0.0"  # Or "127.0.0.1"
-    ```
+```
 
 3. **Check port mapping (Docker):**
 
@@ -779,7 +779,7 @@ All responses are JSON:
     ```toml
     [WebUI]
     Token = "your-token-here"  # If set, token is required
-    ```
+```
 
 2. **Verify token in requests:**
 
@@ -805,7 +805,7 @@ All responses are JSON:
     ```toml
     [WebUI]
     Token = ""  # Empty = no authentication
-    ```
+```
 
     Restart Torrentarr and test. Re-enable token afterward.
 
@@ -993,7 +993,7 @@ All responses are JSON:
     URI = "http://localhost:7878"  # Correct
     # NOT: "http://localhost:7878/" (trailing slash)
     # NOT: "localhost:7878" (missing protocol)
-    ```
+```
 
 4. **Check network connectivity:**
 
@@ -1127,6 +1127,10 @@ If accessing WebUI from a different domain:
 CORSOrigins = "https://myapp.com,https://admin.myapp.com"
 
 # Or allow all (not recommended for production)
+```
+
+```toml
+[WebUI]
 CORSOrigins = "*"
 ```
 

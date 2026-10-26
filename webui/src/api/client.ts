@@ -843,34 +843,30 @@ export const getMaintenanceHistory = (): Promise<MaintenanceRunSummary[]> =>
 export const previewMaintenance = (
   clientInstanceIds: string[],
   operations: MaintenanceOperation[],
+  maintenanceOverrides?: Record<string, unknown>,
 ): Promise<MaintenancePlan> =>
   fetchJson<MaintenancePlan>("/web/maintenance/preview", {
     method: "POST",
     headers: JSON_HEADERS,
-    body: JSON.stringify({ clientInstanceIds, operations }),
+    body: JSON.stringify({
+      clientInstanceIds,
+      operations,
+      maintenanceOverrides,
+    }),
   });
 
 export const applyMaintenance = (
   planId: string,
+  authorizeOnce = false,
 ): Promise<MaintenanceRunSummary> =>
   fetchJson<MaintenanceRunSummary>("/web/maintenance/apply", {
     method: "POST",
     headers: JSON_HEADERS,
-    body: JSON.stringify({ planId }),
-  });
-
-export const armMaintenance = (
-  planId: string,
-  clientInstanceIds: string[],
-): Promise<MaintenanceStatus> =>
-  fetchJson<MaintenanceStatus>("/web/maintenance/arm", {
-    method: "POST",
-    headers: JSON_HEADERS,
-    body: JSON.stringify({ planId, clientInstanceIds }),
+    body: JSON.stringify({ planId, authorizeOnce }),
   });
 
 export const maintenanceCommand = (
-  command: "disarm" | "run" | "cancel",
+  command: "run" | "cancel",
   clientInstanceIds: string[] = [],
   operations: MaintenanceOperation[] = [],
 ): Promise<MaintenanceStatus | MaintenanceRunSummary> =>
@@ -988,3 +984,7 @@ export async function watchConfiguration(
     },
   );
 }
+
+export const getTorrentAutomationStatus = (): Promise<
+  import("./types").TorrentAutomationStatus
+> => fetchJson("/web/torrent-automation/status");

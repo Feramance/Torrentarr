@@ -52,7 +52,13 @@ Examples:
 
 ```toml
 AutoUpdateCron = "0 3 * * *"    # daily 03:00 UTC
+```
+
+```toml
 AutoUpdateCron = "0 3 * * 0,3"  # Sun and Wed 03:00 UTC
+```
+
+```toml
 AutoUpdateCron = "0 2 1 * *"    # 1st of month 02:00 UTC
 ```
 

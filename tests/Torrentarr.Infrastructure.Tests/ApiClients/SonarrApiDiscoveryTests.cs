@@ -281,7 +281,7 @@ public sealed class SonarrApiDiscoveryTests : IDisposable
     [Theory]
     [InlineData("v3")]
     [InlineData("v5")]
-    public async Task UnknownQueueItems_RemainAvailableForHashLookupAndErrorCleanup(string version)
+    public async Task UnknownQueueItems_RemainAvailableAndCannotRemoveAnUnverifiedTorrent(string version)
     {
         _version = version;
         _queueJson = """{"records":[{"id":1,"downloadId":"ABC","status":"completed","trackedDownloadStatus":"warning","trackedDownloadState":"importPending","statusMessages":[{"title":"Import","messages":["unmatched download"]}]}]}""";
@@ -299,8 +299,8 @@ public sealed class SonarrApiDiscoveryTests : IDisposable
         var stored = await db.EpisodeQueue.SingleAsync();
         stored.DownloadId.Should().Be("ABC");
         stored.SeriesId.Should().BeNull();
-        _requests.Count(r => r.Method == "DELETE").Should().Be(2);
-        _deletion.Should().Be((true, true));
+        _requests.Count(r => r.Method == "DELETE").Should().Be(1);
+        _deletion.Should().Be((false, true));
     }
 
     [Theory]

@@ -608,7 +608,7 @@ Logging = false  # Not recommended - no persistent logs
    ```toml
    [Settings]
    Logging = true
-   ```
+```
 
 2. Log directory exists and is writable:
    ```bash
@@ -628,7 +628,7 @@ Logging = false  # Not recommended - no persistent logs
 1. Log level is not too restrictive:
    ```toml
    ConsoleLevel = "INFO"  # Not CRITICAL/ERROR
-   ```
+```
 
 2. Torrentarr is actually running:
    ```bash
@@ -649,7 +649,7 @@ Logging = false  # Not recommended - no persistent logs
 1. Reduce log level:
    ```toml
    ConsoleLevel = "WARNING"  # From DEBUG/TRACE
-   ```
+```
 
 2. Implement external log rotation:
    ```bash

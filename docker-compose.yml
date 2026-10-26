@@ -4,9 +4,9 @@ services:
     container_name: torrentarr
     restart: unless-stopped
     ports:
-    - 6969:6969
+    - 6970:6969
     volumes:
-    - ./.config:/config
+    - .config:/config
     - torrents:/torrents
     environment:
     - TZ=Europe/Malta

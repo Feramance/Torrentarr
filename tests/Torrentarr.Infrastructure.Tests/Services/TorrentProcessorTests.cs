@@ -492,8 +492,10 @@ public sealed class TorrentProcessorTests : IDisposable
     /// Regression: torrents first seen in a complete/seeding state never run file filtering (Branch 9),
     /// but must still finalize after Arr confirms import once the scan was triggered (f49384b).
     /// </summary>
-    [Fact]
-    public async Task ProcessSingleTorrentAsync_PendingImport_FinalizesWithoutFileFilterWhenArrConfirms()
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task ProcessSingleTorrentAsync_PendingImport_FinalizesWithoutFileFilterWhenArrConfirms(bool repaired)
     {
         const string hash = "complete-first-hash";
         const string category = "radarr-hd";
@@ -537,6 +539,8 @@ public sealed class TorrentProcessorTests : IDisposable
             ContentPath = "/downloads/completed/item",
             QBitInstanceName = instance
         };
+        if (repaired) MaintenancePersistence.Write(_db, MaintenancePersistence.Key(instance, hash, "recovery:ErrorRecovery"),
+            new RecoveryIncident { AddedOn = torrent.AddedOn, Attempts = 1, Stage = "checked", CompletedAt = DateTimeOffset.UtcNow, LastObserved = DateTimeOffset.UtcNow });
         RegisterTestClient(manager, instance, new StubQBittorrentClient(torrent));
 
         var cache = new TorrentCacheService(NullLogger<TorrentCacheService>.Instance);
@@ -611,6 +615,51 @@ public sealed class TorrentProcessorTests : IDisposable
         await (Task)method.Invoke(processor, [torrent, category, new TorrentProcessingStats(), CancellationToken.None])!;
 
         cache.IsFileFiltered(instance, hash).Should().BeTrue();
+    }
+
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task HealthyRepairedTorrent_ImportsWithoutWaitingForDestructiveClearance(bool removalLimitMet)
+    {
+        var path = Path.GetTempFileName();
+        try
+        {
+            var torrent = new TorrentInfo
+            {
+                Hash = "repaired",
+                Category = "movies",
+                State = "uploading",
+                Progress = 1,
+                AmountLeft = 0,
+                AddedOn = DateTimeOffset.UtcNow.AddHours(-2).ToUnixTimeSeconds(),
+                CompletionOn = DateTimeOffset.UtcNow.AddMinutes(-5).ToUnixTimeSeconds(),
+                ContentPath = path,
+                ClientInstanceId = "qBit"
+            };
+            var config = new TorrentarrConfig { Settings = { Tagless = true } };
+            config.ArrInstances["Radarr"] = new() { Category = "movies", Search = { CustomFormatUnmetSearch = true }, Torrent = { AutoDelete = true } };
+            var manager = new QBittorrentConnectionManager(NullLogger<QBittorrentConnectionManager>.Instance);
+            RegisterTestClient(manager, "qBit", new StubQBittorrentClient(torrent));
+            var imports = new Mock<IArrImportService>();
+            imports.Setup(i => i.IsCustomFormatUnmetAsync(torrent.Hash, torrent.Category, It.IsAny<CancellationToken>())).ReturnsAsync(true);
+            imports.Setup(i => i.TriggerImportAsync(torrent.Hash, path, torrent.Category, It.IsAny<CancellationToken>())).ReturnsAsync(new ImportResult { Success = true });
+            var seeding = new Mock<ISeedingService>();
+            seeding.Setup(s => s.ShouldRemoveTorrentAsync(torrent, It.IsAny<CancellationToken>())).ReturnsAsync(removalLimitMet);
+            var deletion = new Mock<ISafeDeletionService>(MockBehavior.Strict);
+            var cache = new TorrentCacheService(NullLogger<TorrentCacheService>.Instance);
+            cache.MarkFileFiltered("qBit", torrent.Hash);
+            MaintenancePersistence.Write(_db, MaintenancePersistence.Key("qBit", torrent.Hash, "recovery:ErrorRecovery"),
+                new RecoveryIncident { AddedOn = torrent.AddedOn, Attempts = 1, Stage = "checked", CompletedAt = DateTimeOffset.UtcNow, LastObserved = DateTimeOffset.UtcNow });
+            var processor = new TorrentProcessor(NullLogger<TorrentProcessor>.Instance, manager, _db, config, cache, new DatabaseRestartCoordinator(),
+                imports.Object, seeding.Object, mediaValidation: Mock.Of<IMediaValidationService>(), safeDeletion: deletion.Object);
+            await processor.ProcessTorrentAsync(torrent.Hash);
+            imports.Verify(i => i.TriggerImportAsync(torrent.Hash, path, torrent.Category, It.IsAny<CancellationToken>()), Times.Once);
+            imports.Verify(i => i.BlocklistAndReSearchAsync(It.IsAny<string>(), It.IsAny<string>(), It.IsAny<CancellationToken>()), Times.Never);
+            File.Exists(path).Should().BeTrue();
+            deletion.VerifyNoOtherCalls();
+        }
+        finally { File.Delete(path); }
     }
 
     [Fact]

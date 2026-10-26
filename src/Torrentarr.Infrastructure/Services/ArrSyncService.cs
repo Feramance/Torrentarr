@@ -1,3 +1,5 @@
+using Torrentarr.Core.Interfaces;
+using Torrentarr.Core.Services;
 using Torrentarr.Core.Configuration;
 using Torrentarr.Infrastructure.ApiClients.Arr;
 using Torrentarr.Infrastructure.Database;
@@ -27,17 +29,26 @@ public class ArrSyncService
     private readonly TorrentarrConfig _config;
     private readonly TorrentarrDbContext _db;
     private readonly DatabaseRestartCoordinator _restartCoordinator;
+    private readonly ITorrentClientRegistry? _torrents;
+    private readonly ISafeDeletionService? _deletion;
+
+    public ArrSyncService(ILogger<ArrSyncService> logger, TorrentarrConfig config,
+        TorrentarrDbContext db, DatabaseRestartCoordinator restartCoordinator)
+        : this(logger, config, db, restartCoordinator, null, null) { }
 
     public ArrSyncService(
         ILogger<ArrSyncService> logger,
         TorrentarrConfig config,
         TorrentarrDbContext db,
-        DatabaseRestartCoordinator restartCoordinator)
+        DatabaseRestartCoordinator restartCoordinator,
+        ITorrentClientRegistry? torrents, ISafeDeletionService? deletion)
     {
         _logger = logger;
         _config = config;
         _db = db;
         _restartCoordinator = restartCoordinator;
+        _torrents = torrents;
+        _deletion = deletion;
     }
 
     public async Task SyncAsync(string instanceName, CancellationToken ct = default)
@@ -288,7 +299,7 @@ public class ArrSyncService
         await ScanQueueForBlocklistAsync(
             queueItems.Select(i => (i.Id, i.DownloadId, i.Status, i.TrackedDownloadStatus, i.TrackedDownloadState, i.OutputPath, i.StatusMessages)),
             cfg,
-            (id, token) => client.DeleteFromQueueAsync(id, removeFromClient: true, blocklist: true, ct: token),
+            (id, token) => client.DeleteFromQueueAsync(id, removeFromClient: false, blocklist: true, ct: token),
             ct);
     }
 
@@ -519,7 +530,7 @@ public class ArrSyncService
         await ScanQueueForBlocklistAsync(
             queueItems.Select(i => (i.Id, i.DownloadId, i.Status, i.TrackedDownloadStatus, i.TrackedDownloadState, i.OutputPath, i.StatusMessages)),
             cfg,
-            (id, token) => client.DeleteFromQueueAsync(id, removeFromClient: true, blocklist: true, ct: token),
+            (id, token) => client.DeleteFromQueueAsync(id, removeFromClient: false, blocklist: true, ct: token),
             ct);
     }
 
@@ -976,7 +987,7 @@ public class ArrSyncService
         await ScanQueueForBlocklistAsync(
             queueItems.Select(i => (i.Id, i.DownloadId, i.Status, i.TrackedDownloadStatus, i.TrackedDownloadState, i.OutputPath, i.StatusMessages)),
             cfg,
-            (id, token) => client.DeleteFromQueueAsync(id, removeFromClient: true, blocklist: true, ct: token),
+            (id, token) => client.DeleteFromQueueAsync(id, removeFromClient: false, blocklist: true, ct: token),
             ct);
     }
 
@@ -1242,7 +1253,7 @@ public class ArrSyncService
         await ScanQueueForBlocklistAsync(
             queueItems.Select(i => (i.Id, i.DownloadId, i.Status, i.TrackedDownloadStatus, i.TrackedDownloadState, i.OutputPath, i.StatusMessages)),
             cfg,
-            (id, token) => client.DeleteFromQueueAsync(id, removeFromClient: true, blocklist: true, ct: token),
+            (id, token) => client.DeleteFromQueueAsync(id, removeFromClient: false, blocklist: true, ct: token),
             ct);
     }
 
@@ -1666,6 +1677,8 @@ public class ArrSyncService
         Func<int, CancellationToken, Task<bool>> deleteFromQueue,
         CancellationToken ct)
     {
+        using var configuration = _config.BeginOperation();
+        using var processing = ConfigMutationGuard.EnterProcessing();
         if (cfg.ArrErrorCodesToBlocklist.Count == 0) return;
 
         var codes = new HashSet<string>(cfg.ArrErrorCodesToBlocklist);
@@ -1686,37 +1699,48 @@ public class ArrSyncService
                         if (!codes.Contains(line))
                             continue;
                         matched = true;
-                        CleanupBlocklistedPath(outputPath, msg.Title);
                     }
                 }
             }
 
             if (!matched) continue;
 
+            if (_torrents == null || _deletion == null || string.IsNullOrWhiteSpace(downloadId)) continue;
+            var matches = new List<(string Instance, Torrentarr.Core.Models.TorrentInfo Torrent)>();
+            var complete = true;
+            foreach (var (instance, settings) in _config.GetAllTorrentClients())
+            {
+                if (settings.Disabled) { complete = false; break; }
+                var torrentClient = _torrents.GetClient(instance);
+                if (torrentClient == null) { complete = false; break; }
+                try
+                {
+                    foreach (var torrent in await torrentClient.GetTorrentsAsync(cancellationToken: ct))
+                    {
+                        torrent.ClientInstanceId = instance;
+                        if (torrent.Hash.Equals(downloadId, StringComparison.OrdinalIgnoreCase)
+                            && CategoryOwnershipHelper.ArrOwnsTorrent(_config, cfg, torrent)) matches.Add((instance, torrent));
+                    }
+                }
+                catch (Exception ex) when (ex is not OperationCanceledException)
+                { _logger.LogWarning(ex, "Cannot verify Arr cleanup ownership for {Hash}", downloadId); complete = false; break; }
+            }
+            if (!complete || matches.Count != 1)
+            {
+                _logger.LogInformation("Arr cleanup blocked for {Hash}: owning client is unknown or ambiguous", downloadId);
+                continue;
+            }
+            var removal = await _deletion.RemoveTorrentAsync(matches[0].Instance, downloadId, true, ct);
+            if (!removal.Success)
+            {
+                _logger.LogInformation("Arr cleanup blocked for {Hash}: {Reason}", downloadId, removal.Error);
+                continue;
+            }
             _logger.LogWarning(
                 "ArrErrorCodesToBlocklist: blocklisting queue item {Id} (hash: {DownloadId})",
                 id, downloadId);
 
             await deleteFromQueue(id, ct);
-        }
-    }
-
-    internal static void CleanupBlocklistedPath(string? outputPath, string? title)
-    {
-        var target = ResolveBlocklistedCleanupTarget(outputPath, title);
-        if (target == null)
-            return;
-
-        try
-        {
-            if (Directory.Exists(target))
-                Directory.Delete(target, recursive: true);
-            else if (File.Exists(target))
-                File.Delete(target);
-        }
-        catch (Exception)
-        {
-            // qBitrr swallows in-use / permission errors while logging debug.
         }
     }
 

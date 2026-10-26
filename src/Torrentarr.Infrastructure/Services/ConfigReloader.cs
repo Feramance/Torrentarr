@@ -106,9 +106,6 @@ public sealed class ConfigReloader : BackgroundService, IConfigReloader
             {
                 var validation = Validate(candidate);
                 if (!validation.Ok) { _error = validation.Error; return false; }
-                foreach (var (name, client) in candidate.GetAllTorrentClients())
-                    if (_config.GetTorrentClient(name) is { } previous && JsonConvert.SerializeObject(client) == JsonConvert.SerializeObject(previous))
-                        client.Maintenance.Armed = previous.Maintenance.Armed;
                 var json = JsonConvert.SerializeObject(candidate);
                 if (_effectiveDigest == json) { _error = null; return true; }
                 try

@@ -2,12 +2,8 @@ using System.Net;
 using System.Net.Http.Json;
 using System.Text.Json;
 using FluentAssertions;
-using Microsoft.AspNetCore.Hosting;
 using Microsoft.Extensions.DependencyInjection;
-using Microsoft.Extensions.DependencyInjection.Extensions;
-using Moq;
 using Torrentarr.Core.Configuration;
-using Torrentarr.Core.Interfaces;
 using Torrentarr.Core.Models;
 using Xunit;
 
@@ -17,90 +13,45 @@ namespace Torrentarr.Host.Tests.Api;
 public sealed class MaintenanceEndpointTests
 {
     [Theory]
-    [InlineData("/web/maintenance/preview", "SharePolicy")]
-    [InlineData("/api/maintenance/preview", "SharePolicy")]
-    [InlineData("/web/maintenance/run", "SharePolicy")]
-    [InlineData("/api/maintenance/run", "SharePolicy")]
-    [InlineData("/web/maintenance/preview", 8)]
-    [InlineData("/api/maintenance/preview", 8)]
-    [InlineData("/web/maintenance/run", 8)]
-    [InlineData("/api/maintenance/run", 8)]
-    public async Task RemovedOperations_AreRejected(string endpoint, object operation)
+    [InlineData("/web")]
+    [InlineData("/api")]
+    public async Task AllTenOperationsAndSchedulingEndpointsAreAvailable(string prefix)
     {
-        using var factory = new TorrentarrWebApplicationFactory();
-        using var client = factory.CreateClientWithApiToken();
-        var response = await client.PostAsJsonAsync(endpoint, new { operations = new[] { operation } });
-        response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
-    }
-
-    [Fact]
-    public async Task SchemaAndConfig_DoNotExposeRemovedFeatures()
-    {
-        using var factory = new TorrentarrWebApplicationFactory();
-        using var client = factory.CreateClientWithApiToken();
-        foreach (var endpoint in new[] { "/web/config/schema", "/api/config/schema", "/web/config", "/api/config" })
-        {
-            var response = await client.GetAsync(endpoint);
-            response.EnsureSuccessStatusCode();
-            (await response.Content.ReadAsStringAsync()).Should().NotContain("SharePolicies").And.NotContain("Notifications");
-        }
+        using var factory = new TorrentarrWebApplicationFactory(); using var client = factory.CreateClientWithApiToken();
+        foreach (var operation in Enum.GetNames<MaintenanceOperation>())
+            (await client.PostAsJsonAsync(prefix + "/maintenance/preview", new { clientInstanceIds = new[] { "qBit" }, operations = new[] { operation } })).EnsureSuccessStatusCode();
+        (await client.PostAsJsonAsync(prefix + "/maintenance/arm", new { planId = "missing" })).StatusCode.Should().Be(HttpStatusCode.Gone);
+        (await client.PostAsJsonAsync(prefix + "/maintenance/disarm", new { clientInstanceIds = new[] { "qBit" } })).StatusCode.Should().Be(HttpStatusCode.Gone);
+        var run = await client.PostAsJsonAsync(prefix + "/maintenance/run", new { clientInstanceIds = new[] { "qBit" } });
+        run.StatusCode.Should().NotBe(HttpStatusCode.Gone);
+        (await client.PostAsJsonAsync(prefix + "/maintenance/preview", new { operations = new[] { 999 } })).StatusCode.Should().Be(HttpStatusCode.BadRequest);
     }
 
     [Theory]
     [InlineData("/web")]
     [InlineData("/api")]
-    public async Task MixedPreview_ExposesReadinessAndAppliesOnlyReadyWork(string prefix)
+    public async Task ReviewedPreviewAppliesOnce_WithoutPersistentAuthorization(string prefix)
     {
-        using var factory = new TorrentarrWebApplicationFactory();
-        var torrentClient = new Mock<ITorrentClient>();
-        torrentClient.SetupGet(c => c.Identity).Returns(new TorrentClientIdentity("one", "fake"));
-        torrentClient.SetupGet(c => c.Capabilities).Returns(TorrentClientCapabilities.QBittorrent);
-        torrentClient.Setup(c => c.GetTorrentsAsync(It.IsAny<string?>(), It.IsAny<string?>(), It.IsAny<CancellationToken>()))
-            .ReturnsAsync([new() { Hash = "abc", Name = "movie", Category = "movies", SavePath = "/downloads", Size = 4, AddedOn = 1 }]);
-        torrentClient.Setup(c => c.GetTorrentFilesAsync(It.IsAny<string>(), It.IsAny<CancellationToken>()))
-            .ReturnsAsync([new() { Name = "movie.mkv", Size = 4 }]);
-        torrentClient.Setup(c => c.SetCategoryAsync(It.IsAny<List<string>>(), "other", It.IsAny<CancellationToken>())).ReturnsAsync(true);
-        var registry = new Mock<ITorrentClientRegistry>();
-        registry.Setup(r => r.GetClient("one")).Returns(torrentClient.Object);
-        registry.Setup(r => r.GetAllClients()).Returns(new Dictionary<string, ITorrentClient> { ["one"] = torrentClient.Object });
-        using var app = factory.WithWebHostBuilder(builder => builder.ConfigureServices(services =>
+        using var factory = new TorrentarrWebApplicationFactory(); using var client = factory.CreateClientWithApiToken();
+        factory.Services.GetRequiredService<TorrentarrConfig>().QBitInstances.Clear();
+        var preview = await client.PostAsJsonAsync(prefix + "/maintenance/preview", new { }); preview.EnsureSuccessStatusCode();
+        var plan = await preview.Content.ReadFromJsonAsync<JsonElement>();
+        plan.GetProperty("operations").GetArrayLength().Should().Be(10);
+        var id = plan.GetProperty("planId").GetString();
+        (await client.PostAsJsonAsync(prefix + "/maintenance/apply", new { planId = id, authorizeOnce = true })).EnsureSuccessStatusCode();
+        (await client.PostAsJsonAsync(prefix + "/maintenance/apply", new { planId = id, authorizeOnce = true })).StatusCode.Should().Be(HttpStatusCode.Conflict);
+        (await client.GetAsync(prefix + "/torrent-automation/status")).EnsureSuccessStatusCode();
+    }
+
+    [Fact]
+    public async Task SchemaRetainsEveryToolWithMaintenanceAsCanonicalContract()
+    {
+        using var factory = new TorrentarrWebApplicationFactory(); using var client = factory.CreateClientWithApiToken();
+        foreach (var prefix in new[] { "/web", "/api" })
         {
-            services.RemoveAll<ITorrentClientRegistry>();
-            services.AddSingleton(registry.Object);
-        }));
-        using var client = app.CreateClient();
-        client.DefaultRequestHeaders.Authorization = new System.Net.Http.Headers.AuthenticationHeaderValue("Bearer", "test-api-token");
-        var config = app.Services.GetRequiredService<TorrentarrConfig>();
-        config.TorrentClients["one"] = new()
-        {
-            Host = "fixture",
-            Maintenance = new()
-            {
-                Enabled = true,
-                Scope = "all",
-                MinimumTorrentAgeMinutes = 0,
-                Orphans = new() { Enabled = true },
-                CategoryMappings = [new() { ClientPath = "/downloads", Category = "other" }]
-            }
-        };
-        var response = await client.PostAsJsonAsync(prefix + "/maintenance/preview", new MaintenancePreviewRequest
-        { ClientInstanceIds = ["one"], Operations = [MaintenanceOperation.OrphanScan, MaintenanceOperation.CategoryReconcile] });
-        response.StatusCode.Should().Be(HttpStatusCode.OK);
-        var plan = await response.Content.ReadFromJsonAsync<JsonElement>();
-        plan.GetProperty("criticalErrors").GetArrayLength().Should().Be(0);
-        plan.GetProperty("candidateCount").GetInt32().Should().Be(1);
-        plan.GetProperty("diagnostics").EnumerateArray().Should().Contain(d => d.GetProperty("code").GetString() == "missing-mapping");
-        plan.GetProperty("operationResults").EnumerateArray().Should().Contain(r => r.GetProperty("operation").GetString() == "OrphanScan" && r.GetProperty("state").GetString() == "blocked");
-        plan.GetProperty("actions")[0].GetProperty("operation").GetString().Should().Be("CategoryReconcile");
-        var planId = plan.GetProperty("planId").GetString()!;
-        (await client.PostAsJsonAsync(prefix + "/maintenance/arm", new MaintenanceArmRequest { PlanId = planId })).EnsureSuccessStatusCode();
-        var applied = await client.PostAsJsonAsync(prefix + "/maintenance/apply", new MaintenanceApplyRequest { PlanId = planId });
-        applied.EnsureSuccessStatusCode();
-        var run = await applied.Content.ReadFromJsonAsync<JsonElement>();
-        run.GetProperty("applied").GetInt32().Should().Be(1);
-        run.GetProperty("result").GetString().Should().Be("partial");
-        run.GetProperty("pending").GetInt32().Should().Be(0);
-        run.GetProperty("operationResults").GetArrayLength().Should().Be(2);
-        torrentClient.Verify(c => c.DeleteTorrentsAsync(It.IsAny<List<string>>(), It.IsAny<bool>(), It.IsAny<CancellationToken>()), Times.Never);
+            var schema = await client.GetStringAsync(prefix + "/config/schema");
+            schema.Should().Contain("Maintenance.Enabled").And.Contain("Maintenance.Hardlinks.Tag").And.Contain("Maintenance.CategoryMappings")
+                .And.Contain("Maintenance.ErrorRecovery.Outcome").And.NotContain("Storage.AutomaticCleanup");
+        }
     }
 }

@@ -39,11 +39,8 @@ public static class TorrentPolicyHelper
     public static bool EnableTrackerSort(TorrentarrConfig config) =>
         GlobalSortTorrentsEnabled(config) && !IsEffectiveQBitDisabled(config);
 
-    /// <param name="freeSpaceGuardActive"><c>Settings.FreeSpace</c> resolved to a non-disabled threshold and <c>_minFreeSpaceBytes &gt; 0</c>.</param>
-    public static bool EnableFreeSpace(TorrentarrConfig config, bool freeSpaceGuardActive) =>
-        config.Settings.AutoPauseResume
-        && freeSpaceGuardActive
-        && !IsEffectiveQBitDisabled(config);
+    public static bool EnableFreeSpace(TorrentarrConfig config) =>
+        config.GetAllTorrentClients().Values.Any(client => !client.Disabled && client.FreeSpace.Any(m => m.Enabled));
 
     /// <summary>
     /// When true, Host runs pre-sort tracker sync; workers should skip duplicate <c>ApplyTrackerActionsForTorrentAsync</c>.

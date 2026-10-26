@@ -1,3 +1,4 @@
+import { PersistentDetails } from "../PersistentDetails";
 import { useEffect, useState } from "react";
 import type { JSX } from "react";
 import { getLidarrOpenArtistUrl } from "../../api/client";
@@ -114,10 +115,10 @@ export function LidarrArtistDetailBody({
               ? albumEntry.tracks.length
               : 0;
             return (
-              <details
+              <PersistentDetails
                 key={String(alb?.["id"] ?? idx)}
                 className="arr-series-season"
-                open={albums.length <= 3}
+                defaultOpen={albums.length <= 3}
               >
                 <summary style={{ fontWeight: 600, cursor: "pointer" }}>
                   {albTitle}
@@ -129,7 +130,7 @@ export function LidarrArtistDetailBody({
                     category={category}
                   />
                 </div>
-              </details>
+              </PersistentDetails>
             );
           })}
         </div>

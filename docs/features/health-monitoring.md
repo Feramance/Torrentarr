@@ -613,7 +613,7 @@ graph LR
     DoNotRemoveSlow = false
     MaximumDeletablePercentage = 0.95
     IgnoreTorrentsYoungerThan = 120
-    ```
+```
 
     **Best for:**
 
@@ -632,7 +632,7 @@ graph LR
     DoNotRemoveSlow = true
     MaximumDeletablePercentage = 0.99
     IgnoreTorrentsYoungerThan = 180
-    ```
+```
 
     **Best for:**
 
@@ -651,7 +651,7 @@ graph LR
     DoNotRemoveSlow = true
     MaximumDeletablePercentage = 0.99
     IgnoreTorrentsYoungerThan = 300
-    ```
+```
 
     **Best for:**
 
@@ -684,22 +684,22 @@ graph LR
 1. **Increase stalled delay:**
    ```toml
    StalledDelay = 30  # Up from 15
-   ```
+```
 
 2. **Increase ETA tolerance:**
    ```toml
    MaximumETA = 172800  # Up from 86400
-   ```
+```
 
 3. **Enable slow torrent protection:**
    ```toml
    DoNotRemoveSlow = true
-   ```
+```
 
 4. **Increase young torrent threshold:**
    ```toml
    IgnoreTorrentsYoungerThan = 300  # Up from 180
-   ```
+```
 
 ---
 
@@ -712,17 +712,17 @@ graph LR
 1. **Decrease stalled delay:**
    ```toml
    StalledDelay = 10  # Down from 15
-   ```
+```
 
 2. **Set maximum ETA:**
    ```toml
    MaximumETA = 86400  # 24 hours (was -1 disabled)
-   ```
+```
 
 3. **Disable slow torrent protection:**
    ```toml
    DoNotRemoveSlow = false
-   ```
+```
 
 4. **Check logs for detection:**
    ```bash
@@ -754,7 +754,7 @@ graph LR
 3. **Update FFprobe:**
    ```toml
    FFprobeAutoUpdate = true
-   ```
+```
    Restart Torrentarr to download latest version
 
 4. **Review validation logs:**
@@ -880,7 +880,7 @@ ValidateAllFiles = false  # Only validate largest (default)
 **Per-Arr instance validation** allows different rules for different libraries:
 
 ```toml
-[[Radarr]]
+[Radarr-Movies]
 Name = "Radarr-4K"
 
 [Radarr.FFprobe]

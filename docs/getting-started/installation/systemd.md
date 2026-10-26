@@ -369,8 +369,12 @@ sudo systemctl start torrentarr-movies torrentarr-tv
     ```toml
     [Settings]
     WebUIPort = 6969  # movies
+```
+
+```toml
+    [Settings]
     WebUIPort = 6970  # tv
-    ```
+```
 
 ## Troubleshooting
 

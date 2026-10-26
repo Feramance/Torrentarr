@@ -1,3 +1,5 @@
+import { requestNavigateTab } from "../../utils/navigateTab";
+import { clientGroups, arrGeneralGroups, simpleGroups } from "./configGroups";
 import React, { useEffect, useMemo, useRef, useState, type JSX } from "react";
 import { createPortal } from "react-dom";
 import ReactMarkdown from "react-markdown";
@@ -19,6 +21,7 @@ import RefreshIcon from "../../icons/refresh-arrow.svg";
 import { safeClick } from "../../utils/safeClick";
 import {
   ARR_TRACKER_FIELDS,
+  getTrackerProtectionFields,
   getArrFieldSets,
   QBIT_FIELDS,
 } from "./configFields";
@@ -110,6 +113,7 @@ export function ArrInstanceModal({
   const {
     generalFields,
     entryFields,
+    qualityFields,
     entryOmbiFields,
     entryOverseerrFields,
     torrentFields,
@@ -285,50 +289,73 @@ export function ArrInstanceModal({
           <div className="modal-body">
             <ArrTorrentSummary state={state} />
             <CategoryOverlapAlert messages={overlapWarnings} />
-            <FieldGroup
-              title={null}
-              fields={generalFields}
-              state={state}
-              basePath={[]}
-              onChange={(path, def, value) =>
-                onChange([keyName, ...path], def, value)
-              }
-              onRenameSection={onRename}
-              sectionKey={keyName}
-              defaultOpen
-              validationErrors={validationErrors}
-            />
-            {testState.result && (
-              <div
-                className={`alert ${testState.result.success ? "success" : "error"}`}
-                style={{ margin: "16px 0" }}
+            {arrGeneralGroups(generalFields).map((group) => (
+              <FieldGroup
+                key={group.title}
+                title={group.title}
+                fields={group.fields}
+                state={state}
+                basePath={[]}
+                onChange={(path, def, value) =>
+                  onChange([keyName, ...path], def, value)
+                }
+                onRenameSection={onRename}
+                sectionKey={keyName}
+                defaultOpen={group.defaultOpen}
+                validationErrors={validationErrors}
               >
-                {testState.result.success ? (
-                  <>
-                    <strong>✓ {testState.result.message}</strong>
-                    {testState.result.systemInfo && (
-                      <div className="alert-details">
-                        Version: {testState.result.systemInfo.version}
-                        {testState.result.systemInfo.branch &&
-                          ` (${testState.result.systemInfo.branch})`}
+                {group.title === "Connection" && (
+                  <div className="field--full-width">
+                    <button
+                      className="btn secondary"
+                      type="button"
+                      onClick={() => handleTestConnection(false)}
+                      disabled={testState.testing}
+                    >
+                      {testState.testing ? (
+                        <>
+                          <IconImage src={RefreshIcon} />
+                          Testing...
+                        </>
+                      ) : (
+                        "Test"
+                      )}
+                    </button>
+                    {testState.result && (
+                      <div
+                        className={`alert ${testState.result.success ? "success" : "error"}`}
+                        style={{ margin: "16px 0" }}
+                      >
+                        {testState.result.success ? (
+                          <>
+                            <strong>✓ {testState.result.message}</strong>
+                            {testState.result.systemInfo && (
+                              <div className="alert-details">
+                                Version: {testState.result.systemInfo.version}
+                                {testState.result.systemInfo.branch &&
+                                  ` (${testState.result.systemInfo.branch})`}
+                              </div>
+                            )}
+                            {testState.result.qualityProfiles && (
+                              <div className="alert-details">
+                                Found {testState.result.qualityProfiles.length}{" "}
+                                quality profile(s)
+                              </div>
+                            )}
+                          </>
+                        ) : (
+                          <>
+                            <strong>⚠️ Connection Failed</strong>
+                            <br />
+                            {testState.result.message}
+                          </>
+                        )}
                       </div>
                     )}
-                    {testState.result.qualityProfiles && (
-                      <div className="alert-details">
-                        Found {testState.result.qualityProfiles.length} quality
-                        profile(s)
-                      </div>
-                    )}
-                  </>
-                ) : (
-                  <>
-                    <strong>⚠️ Connection Failed</strong>
-                    <br />
-                    {testState.result.message}
-                  </>
+                  </div>
                 )}
-              </div>
-            )}
+              </FieldGroup>
+            ))}
             <FieldGroup
               title="Entry Search"
               fields={entryFields}
@@ -338,7 +365,17 @@ export function ArrInstanceModal({
                 onChange([keyName, ...path], def, value)
               }
               sectionKey={keyName}
-              defaultOpen
+              validationErrors={validationErrors}
+            />
+            <FieldGroup
+              title="Quality profiles"
+              fields={qualityFields}
+              state={state}
+              basePath={[]}
+              onChange={(path, def, value) =>
+                onChange([keyName, ...path], def, value)
+              }
+              sectionKey={keyName}
               validationErrors={validationErrors}
             />
             <FieldGroup
@@ -350,7 +387,6 @@ export function ArrInstanceModal({
                 onChange([keyName, ...path], def, value)
               }
               sectionKey={keyName}
-              defaultOpen
               qualityProfiles={qualityProfiles}
               validationErrors={validationErrors}
             />
@@ -433,21 +469,6 @@ export function ArrInstanceModal({
               </button>
             )}
             <button
-              className="btn secondary"
-              type="button"
-              onClick={() => handleTestConnection(false)}
-              disabled={testState.testing}
-            >
-              {testState.testing ? (
-                <>
-                  <IconImage src={RefreshIcon} />
-                  Testing...
-                </>
-              ) : (
-                "Test"
-              )}
-            </button>
-            <button
               className="btn primary"
               type="button"
               onClick={() => void handleSave()}
@@ -488,6 +509,7 @@ export function QbitTorrentSummary({
 }
 
 export interface QbitInstanceModalProps {
+  manageClientId?: string;
   fieldPathPrefix?: string;
   keyName: string;
   fields?: FieldDefinition[];
@@ -504,6 +526,7 @@ export interface QbitInstanceModalProps {
 }
 
 export function QbitInstanceModal({
+  manageClientId,
   fieldPathPrefix,
   keyName,
   fields = QBIT_FIELDS,
@@ -569,22 +592,37 @@ export function QbitInstanceModal({
           <div className="modal-body">
             <QbitTorrentSummary state={state} />
             <CategoryOverlapAlert messages={overlapWarnings} />
-            <FieldGroup
-              title={null}
-              fields={fields}
-              state={state}
-              basePath={[]}
-              onChange={(path, def, value) =>
-                onChange([keyName, ...path], def, value)
-              }
-              onRenameSection={onRename}
-              sectionKey={fieldPathPrefix ?? keyName}
-              defaultOpen
-              validationErrors={validationErrors}
-            />
+            {clientGroups(fields)
+              .filter(
+                (group) =>
+                  !["Manage", "Storage", "Torrent automation"].includes(
+                    group.title,
+                  ),
+              )
+              .map((group) => (
+                <FieldGroup
+                  key={group.title}
+                  title={
+                    group.fields.length === 1 &&
+                    group.fields[0]?.type === "collection"
+                      ? null
+                      : group.title
+                  }
+                  fields={group.fields}
+                  state={state}
+                  basePath={[]}
+                  onChange={(path, def, value) =>
+                    onChange([keyName, ...path], def, value)
+                  }
+                  onRenameSection={onRename}
+                  sectionKey={fieldPathPrefix ?? keyName}
+                  defaultOpen={group.defaultOpen}
+                  validationErrors={validationErrors}
+                />
+              ))}
             <FieldGroup
               title="Trackers"
-              fields={ARR_TRACKER_FIELDS}
+              fields={[...ARR_TRACKER_FIELDS, ...getTrackerProtectionFields()]}
               state={state}
               basePath={[]}
               onChange={(path, def, value) =>
@@ -595,6 +633,36 @@ export function QbitInstanceModal({
               sectionKey={fieldPathPrefix ?? keyName}
               validationErrors={validationErrors}
             />
+            <div className="config-section">
+              <h3>Manage</h3>
+              <p>
+                Configure recovery, organization, and storage tools in Manage.
+              </p>
+              <p>
+                {(state as ConfigDocument)?.Maintenance &&
+                ((state as ConfigDocument).Maintenance as ConfigDocument)
+                  .Enabled
+                  ? "Maintenance enabled"
+                  : "Maintenance disabled"}
+              </p>
+              <button
+                type="button"
+                className="btn"
+                disabled={!manageClientId}
+                onClick={() =>
+                  requestNavigateTab({
+                    tab: "maintenance",
+                    manageClientId,
+                    preserveConfigDraft: true,
+                  })
+                }
+              >
+                Open Manage
+              </button>
+              {!manageClientId && (
+                <p>Save this client and its name before opening Manage.</p>
+              )}
+            </div>
           </div>
           {(validationErrors.length || saveDisabled) && saveBlockedReason ? (
             <div className="modal-footer-note" role="status">
@@ -713,72 +781,99 @@ export function SimpleConfigModal({
             </button>
           </div>
           <div className="modal-body">
-            <FieldGroup
-              title={null}
-              fields={fields}
-              state={state}
-              basePath={basePath}
-              onChange={onChange}
-              defaultOpen
-              validationErrors={validationErrors}
-            />
-            {showLiveSettings && webUI && (
-              <div className="field-group">
-                <h3 className="field-group-title">Live Settings</h3>
-                <div className="field-group-content">
-                  <div className="field">
-                    <label>
-                      <input
-                        type="checkbox"
-                        checked={webUI.liveArr}
-                        onChange={(e) => webUI.setLiveArr(e.target.checked)}
-                      />{" "}
-                      Live updates
-                    </label>
-                    <p className="field-description">
-                      Enable live updates for Arr catalogs and the qBittorrent
-                      overview
-                    </p>
+            {simpleGroups(title, fields).map((group) => (
+              <FieldGroup
+                key={group.title}
+                title={group.title}
+                fields={
+                  showLiveSettings
+                    ? group.fields.filter(
+                        (field) =>
+                          !["WebUI.Theme", "WebUI.LiveArr"].includes(
+                            field.path?.join(".") ?? "",
+                          ),
+                      )
+                    : group.fields
+                }
+                state={state}
+                basePath={basePath}
+                onChange={onChange}
+                defaultOpen={group.defaultOpen}
+                validationErrors={validationErrors}
+              >
+                {group.title === "Appearance and live display" && (
+                  <div className="field--full-width">
+                    {showLiveSettings && webUI && (
+                      <div className="field-group">
+                        <h3 className="field-group-title">Live Settings</h3>
+                        <div className="field-group-content">
+                          <div className="field">
+                            <label>
+                              <input
+                                type="checkbox"
+                                checked={webUI.liveArr}
+                                onChange={(e) =>
+                                  webUI.setLiveArr(e.target.checked)
+                                }
+                              />{" "}
+                              Live updates
+                            </label>
+                            <p className="field-description">
+                              Enable live updates for Arr catalogs and the
+                              qBittorrent overview
+                            </p>
+                          </div>
+                          <div className="field">
+                            <label>Theme</label>
+                            <select
+                              value={webUI.theme}
+                              onChange={(e) =>
+                                webUI.setTheme(
+                                  e.target.value as "light" | "dark",
+                                )
+                              }
+                            >
+                              <option value="dark">Dark</option>
+                              <option value="light">Light</option>
+                            </select>
+                            <p className="field-description">
+                              WebUI theme (Light or Dark)
+                            </p>
+                          </div>
+                        </div>
+                      </div>
+                    )}
                   </div>
-                  <div className="field">
-                    <label>Theme</label>
-                    <select
-                      value={webUI.theme}
-                      onChange={(e) =>
-                        webUI.setTheme(e.target.value as "light" | "dark")
-                      }
-                    >
-                      <option value="dark">Dark</option>
-                      <option value="light">Light</option>
-                    </select>
-                    <p className="field-description">
-                      WebUI theme (Light or Dark)
-                    </p>
+                )}
+                {group.title === "Local login" && (
+                  <div className="field--full-width">
+                    {onSetPassword && (
+                      <div className="field-group">
+                        <h3 className="field-group-title">
+                          Password Management
+                        </h3>
+                        <div className="field-group-content">
+                          <div className="field">
+                            <p className="field-description">
+                              Set or change the login password for local auth.
+                              The password hash is stored securely in config and
+                              never exposed via the API.
+                            </p>
+                            <button
+                              className="btn primary"
+                              type="button"
+                              onClick={onSetPassword}
+                            >
+                              Set Password
+                            </button>
+                          </div>
+                        </div>
+                      </div>
+                    )}{" "}
                   </div>
-                </div>
-              </div>
-            )}
-            {onSetPassword && (
-              <div className="field-group">
-                <h3 className="field-group-title">Password Management</h3>
-                <div className="field-group-content">
-                  <div className="field">
-                    <p className="field-description">
-                      Set or change the login password for local auth. The
-                      password hash is stored securely in config and never
-                      exposed via the API.
-                    </p>
-                    <button
-                      className="btn primary"
-                      type="button"
-                      onClick={onSetPassword}
-                    >
-                      Set Password
-                    </button>
-                  </div>
-                </div>
-              </div>
-            )}
+                )}
+              </FieldGroup>
+            ))}
           </div>
           {(validationErrors.length || saveDisabled) && saveBlockedReason ? (
             <div className="modal-footer-note" role="status">

@@ -62,20 +62,20 @@ public class TorrentPolicyHelperTests
     public void EnableFreeSpace_FalseWhenAutoPauseResumeOff_EvenIfThresholdSet()
     {
         var cfg = new TorrentarrConfig();
-        cfg.Settings.AutoPauseResume = false;
         cfg.QBitInstances["qBit"] = new QBitConfig { Disabled = false };
 
-        TorrentPolicyHelper.EnableFreeSpace(cfg, freeSpaceGuardActive: true).Should().BeFalse();
+        TorrentPolicyHelper.EnableFreeSpace(cfg).Should().BeFalse();
     }
 
     [Fact]
     public void EnableFreeSpace_TrueWhenGuardActive_AndAutoPause_AndQBitEnabled()
     {
         var cfg = new TorrentarrConfig();
-        cfg.Settings.AutoPauseResume = true;
         cfg.QBitInstances["qBit"] = new QBitConfig { Disabled = false };
 
-        TorrentPolicyHelper.EnableFreeSpace(cfg, freeSpaceGuardActive: true).Should().BeTrue();
+        cfg.QBitInstances["qBit"].FreeSpace.Add(new() { Path = "/downloads", Enabled = true, Limit = "10G" });
+
+        TorrentPolicyHelper.EnableFreeSpace(cfg).Should().BeTrue();
     }
 
     [Fact]

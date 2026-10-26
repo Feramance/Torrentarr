@@ -68,6 +68,7 @@ internal sealed class RegisteredTorrentClient(ITorrentClient client) : ITorrentC
     public Task<List<TorrentFileRecord>> GetTorrentFilesAsync(string hash, CancellationToken ct = default) => UseAsync(() => client.GetTorrentFilesAsync(hash, ct));
     public Task<bool> RecheckTorrentsAsync(List<string> hashes, CancellationToken ct = default) => UseAsync(() => client.RecheckTorrentsAsync(hashes, ct));
     public Task<bool> SetShareLimitsAsync(string hash, double ratioLimit, long seedingTimeLimit, CancellationToken ct = default) => UseAsync(() => client.SetShareLimitsAsync(hash, ratioLimit, seedingTimeLimit, ct));
+    public Task<bool> SetShareLimitsAsync(string hash, double ratioLimit, long seedingTimeLimit, long inactiveSeedingTimeLimit, CancellationToken ct = default) => UseAsync(() => client.SetShareLimitsAsync(hash, ratioLimit, seedingTimeLimit, inactiveSeedingTimeLimit, ct));
     public Task<bool> SetDownloadLimitAsync(string hash, long limit, CancellationToken ct = default) => UseAsync(() => client.SetDownloadLimitAsync(hash, limit, ct));
     public Task<bool> SetUploadLimitAsync(string hash, long limit, CancellationToken ct = default) => UseAsync(() => client.SetUploadLimitAsync(hash, limit, ct));
     public Task<bool> SetSuperSeedingAsync(string hash, bool enabled, CancellationToken ct = default) => UseAsync(() => client.SetSuperSeedingAsync(hash, enabled, ct));

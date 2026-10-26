@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { describe, it, expect, vi } from "vitest";
-import { fireEvent, render, screen } from "@testing-library/react";
+import { fireEvent, render, screen, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import type { ConfigDocument } from "../../api/types";
 import { PathMappingsEditor } from "../../pages/config/PathMappingsEditor";
@@ -49,6 +49,10 @@ describe("path mapping forms", () => {
         initial={[{ ClientPath: "/downloads", LocalPath: "/data", Future: 42 }]}
       />,
     );
+    expect(
+      screen.getByText("Path mappings").closest("details"),
+    ).not.toHaveAttribute("open");
+    await user.click(screen.getByText("Path mappings"));
     fireEvent.change(screen.getByRole("textbox", { name: "Torrentarr path" }), {
       target: { value: "/data/downloads" },
     });
@@ -57,17 +61,36 @@ describe("path mapping forms", () => {
       LocalPath: "/data/downloads",
       Future: 42,
     });
+    expect(screen.queryByText(/movie\/file.mkv/)).not.toBeInTheDocument();
     expect(
-      screen.getByText(
-        /\/downloads\/movie\/file.mkv → \/data\/downloads\/movie\/file.mkv/,
-      ),
-    ).toBeInTheDocument();
+      screen.getByRole("group", { name: "Path mapping 1" }),
+    ).not.toHaveClass("config-section");
     await user.click(screen.getByRole("button", { name: "Add path mapping" }));
     expect(result()).toHaveLength(2);
     await user.click(
       screen.getAllByRole("button", { name: "Remove path mapping" })[1],
     );
     expect(result()).toHaveLength(1);
+  });
+
+  it("opens invalid mapping groups and keeps them open after fixing the row", () => {
+    render(
+      <Editor
+        initial={[{ ClientPath: "relative", LocalPath: "/data", Future: 42 }]}
+      />,
+    );
+    const details = screen.getByText("Path mappings").closest("details")!;
+    expect(details).toHaveAttribute("open");
+    const row = screen.getByRole("group", { name: "Path mapping 1" });
+    expect(
+      within(row).getByRole("textbox", { name: "Torrent client path" }),
+    ).toHaveAttribute("aria-invalid", "true");
+    fireEvent.change(
+      within(row).getByRole("textbox", { name: "Torrent client path" }),
+      { target: { value: "/downloads" } },
+    );
+    expect(details).toHaveAttribute("open");
+    expect(result()[0].Future).toBe(42);
   });
 
   it("reports indexed field paths for duplicate mappings", () => {
@@ -102,15 +125,20 @@ describe("path mapping forms", () => {
     );
   });
 
-  it("exposes only path mappings as a maintenance collection", () => {
+  it("retains all maintenance capabilities in the schema", () => {
+    const keys = getClientFields().map((field) => field.path?.join("."));
+    for (const key of [
+      "Maintenance.Enabled",
+      "Maintenance.ErrorRecovery.MaxRepairAttempts",
+      "Maintenance.Hardlinks.Tag",
+      "Maintenance.CategoryMappings",
+      "Maintenance.Operations.RepairPaused.ExecutionMode",
+    ])
+      expect(keys).toContain(key);
     expect(
-      getClientFields()
-        .filter((f) => f.type === "collection")
-        .map((f) => f.path?.join(".")),
-    ).toEqual(["Maintenance.PathMappings"]);
-    render(<Editor />);
-    expect(
-      screen.queryByText(/Share policies|Notifications/i),
-    ).not.toBeInTheDocument();
+      keys.some(
+        (key) => key?.startsWith("Storage.") || key?.startsWith("Recovery."),
+      ),
+    ).toBe(false);
   });
 });

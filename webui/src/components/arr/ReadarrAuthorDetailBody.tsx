@@ -1,3 +1,4 @@
+import { PersistentDetails } from "../PersistentDetails";
 import { useEffect, useState } from "react";
 import type { JSX } from "react";
 import { getReadarrOpenAuthorUrl } from "../../api/client";
@@ -109,10 +110,10 @@ export function ReadarrAuthorDetailBody({
             const bk = bookEntry.book as Record<string, unknown>;
             const bkTitle = String(bk?.["title"] ?? "Book");
             return (
-              <details
+              <PersistentDetails
                 key={String(bk?.["id"] ?? idx)}
                 className="arr-series-season"
-                open={books.length <= 3}
+                defaultOpen={books.length <= 3}
               >
                 <summary style={{ fontWeight: 600, cursor: "pointer" }}>
                   {bkTitle}
@@ -120,7 +121,7 @@ export function ReadarrAuthorDetailBody({
                 <div style={{ marginTop: 8 }}>
                   <ReadarrBookDetailBody entry={bookEntry} />
                 </div>
-              </details>
+              </PersistentDetails>
             );
           })}
         </div>

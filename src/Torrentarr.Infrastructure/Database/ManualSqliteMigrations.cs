@@ -28,6 +28,8 @@ public static class ManualSqliteMigrations
         AddColumnIfMissing(db, "albumfilesmodel", "PhysicalRelease", "TEXT");
         AddColumnIfMissing(db, "albumfilesmodel", "MinimumAvailability", "TEXT");
 
+        CreateTableIfMissing(db, "torrentarr_maintenance_state", "CREATE TABLE IF NOT EXISTS torrentarr_maintenance_state (Key TEXT NOT NULL PRIMARY KEY, Data TEXT NOT NULL DEFAULT '{}');");
+
         CreateTableIfMissing(db, "searchactivity", "CREATE TABLE IF NOT EXISTS searchactivity ( category TEXT NOT NULL PRIMARY KEY, summary TEXT, timestamp TEXT );");
 
         CreateTableIfMissing(db, "bookfilesmodel", """

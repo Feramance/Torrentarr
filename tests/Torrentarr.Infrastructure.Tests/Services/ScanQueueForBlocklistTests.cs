@@ -1,3 +1,7 @@
+using Moq;
+using Torrentarr.Core.Interfaces;
+using Torrentarr.Core.Models;
+using Torrentarr.Core.Services;
 using FluentAssertions;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging.Abstractions;
@@ -23,16 +27,25 @@ public class ScanQueueForBlocklistTests
             List<StatusMessage>? msgs, string? outputPath = null)
         => (id, downloadId, status, trackedStatus, state, outputPath, msgs);
 
-    private static ArrSyncService CreateService()
+    private static ArrSyncService CreateService(bool allowed = true, bool ambiguous = false)
     {
         var options = new DbContextOptionsBuilder<TorrentarrDbContext>()
             .UseInMemoryDatabase(Guid.NewGuid().ToString())
             .Options;
-        return new ArrSyncService(
-            NullLogger<ArrSyncService>.Instance,
-            new TorrentarrConfig(),
-            new TorrentarrDbContext(options),
-            new DatabaseRestartCoordinator());
+        var config = new TorrentarrConfig();
+        config.TorrentClients["one"] = new() { Host = "fixture", ManagedCategories = ["movies"] };
+        if (ambiguous) config.TorrentClients["two"] = new() { Host = "fixture", ManagedCategories = ["movies"] };
+        config.ArrInstances["Radarr"] = new() { Category = "movies" };
+        var registry = new Mock<ITorrentClientRegistry>();
+        var client = new Mock<ITorrentClient>();
+        client.Setup(c => c.GetTorrentsAsync(It.IsAny<string?>(), It.IsAny<string?>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(() => new[] { "hashX", "h8", "h10", "h20" }.Select(h => new TorrentInfo { Hash = h, Category = "movies" }).ToList());
+        registry.Setup(r => r.GetClient(It.IsAny<string>())).Returns(client.Object);
+        var deletion = new Mock<ISafeDeletionService>();
+        deletion.Setup(d => d.RemoveTorrentAsync(It.IsAny<string>(), It.IsAny<string>(), true, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new SafeDeletionResult(allowed, true, 0, allowed ? null : "HnR protected"));
+        return new ArrSyncService(NullLogger<ArrSyncService>.Instance, config,
+            new TorrentarrDbContext(options), new DatabaseRestartCoordinator(), registry.Object, deletion.Object);
     }
 
     private static async Task InvokeScanAsync(
@@ -42,6 +55,7 @@ public class ScanQueueForBlocklistTests
         ArrInstanceConfig cfg,
         Func<int, CancellationToken, Task<bool>> deleteFromQueue)
     {
+        cfg.Category = "movies";
         var method = typeof(ArrSyncService).GetMethod(
             "ScanQueueForBlocklistAsync",
             BindingFlags.NonPublic | BindingFlags.Instance);
@@ -240,23 +254,23 @@ public class ScanQueueForBlocklistTests
         deleted.Should().ContainSingle().Which.Should().Be(20);
     }
 
-    [Fact]
-    public void CleanupBlocklistedPath_DeletesListedFile()
+    [Theory]
+    [InlineData(false, false)]
+    [InlineData(true, true)]
+    public async Task ProtectedOrAmbiguousCleanupPreservesQueueAndFiles(bool allowed, bool ambiguous)
     {
-        var dir = Path.Combine(Path.GetTempPath(), $"torrentarr-bl-{Guid.NewGuid():N}");
-        Directory.CreateDirectory(dir);
-        var file = Path.Combine(dir, "bad.mkv");
-        File.WriteAllText(file, "x");
+        var service = CreateService(allowed, ambiguous);
+        var path = Path.GetTempFileName();
         try
         {
-            ArrSyncService.CleanupBlocklistedPath(dir, "bad.mkv");
-            File.Exists(file).Should().BeFalse();
+            var deleted = new List<int>();
+            await InvokeScanAsync(service, [Item(1, "hashX", "completed", "warning", "importPending",
+                [new StatusMessage { Title = Path.GetFileName(path), Messages = ["Corrupt"] }], Path.GetDirectoryName(path))],
+                new() { ArrErrorCodesToBlocklist = ["Corrupt"] }, (id, _) => { deleted.Add(id); return Task.FromResult(true); });
+            deleted.Should().BeEmpty();
+            File.Exists(path).Should().BeTrue();
         }
-        finally
-        {
-            if (Directory.Exists(dir))
-                Directory.Delete(dir, recursive: true);
-        }
+        finally { File.Delete(path); }
     }
 
     [Fact]
@@ -304,8 +318,6 @@ public class ScanQueueForBlocklistTests
     {
         var dir = Path.GetFullPath(Path.Combine(Path.GetTempPath(), $"torrentarr-bl-{Guid.NewGuid():N}"));
         ArrSyncService.ResolveBlocklistedCleanupTarget(dir, "bad\0name").Should().BeNull();
-        var cleanup = () => ArrSyncService.CleanupBlocklistedPath(dir, "bad\0name");
-        cleanup.Should().NotThrow();
 
         foreach (var ch in Path.GetInvalidFileNameChars())
         {
@@ -313,15 +325,11 @@ public class ScanQueueForBlocklistTests
                 continue;
 
             ArrSyncService.ResolveBlocklistedCleanupTarget(dir, "file" + ch + "name").Should().BeNull();
-            var del = () => ArrSyncService.CleanupBlocklistedPath(dir, "file" + ch + "name");
-            del.Should().NotThrow();
         }
 
         if (OperatingSystem.IsWindows())
         {
             ArrSyncService.ResolveBlocklistedCleanupTarget(dir, "Who?").Should().BeNull();
-            var who = () => ArrSyncService.CleanupBlocklistedPath(dir, "Who?");
-            who.Should().NotThrow();
         }
     }
 }

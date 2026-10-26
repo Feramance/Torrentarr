@@ -229,6 +229,8 @@ try
     builder.Services.AddSingleton<IHardlinkInspector, HardlinkInspector>();
     builder.Services.AddSingleton<ITorrentInventoryService, TorrentInventoryService>();
     builder.Services.AddSingleton<ISafeDeletionService, SafeDeletionService>();
+    builder.Services.AddSingleton<TorrentAutomationService>();
+    builder.Services.AddHostedService(sp => sp.GetRequiredService<TorrentAutomationService>());
     builder.Services.AddSingleton<MaintenanceCoordinator>();
     builder.Services.AddSingleton<IMaintenanceCoordinator>(sp => sp.GetRequiredService<MaintenanceCoordinator>());
     builder.Services.AddHostedService(sp => sp.GetRequiredService<MaintenanceCoordinator>());
@@ -245,6 +247,7 @@ try
     builder.Services.AddScoped<ArrSyncService>();
     builder.Services.AddScoped<IArrImportService, ArrImportService>();
     builder.Services.AddScoped<ISeedingService, SeedingService>();
+    builder.Services.AddScoped<IFreeSpaceService, FreeSpaceService>();
     builder.Services.AddSingleton<IMediaValidationService, MediaValidationService>();
     builder.Services.AddScoped<ITorrentProcessor, TorrentProcessor>();
     builder.Services.AddScoped<IArrMediaService, ArrMediaService>();
@@ -695,42 +698,7 @@ try
             }
             return Results.Ok(clients);
         });
-        app.MapGet(prefix + "/maintenance/status", (IMaintenanceCoordinator maintenance) => Results.Ok(maintenance.GetStatus()));
-        app.MapGet(prefix + "/maintenance/history", (IMaintenanceCoordinator maintenance, int? limit) =>
-            Results.Ok(maintenance.GetHistory(limit ?? 50)));
-        app.MapPost(prefix + "/maintenance/preview", async (MaintenancePreviewRequest request, IMaintenanceCoordinator maintenance, CancellationToken ct) =>
-        {
-            if (request.Operations.Any(op => !Enum.IsDefined(op))) return Results.BadRequest(new { error = "Unknown maintenance operation." });
-            return Results.Ok(await maintenance.PreviewAsync(request, ct));
-        });
-        app.MapPost(prefix + "/maintenance/apply", async (MaintenanceApplyRequest request, IMaintenanceCoordinator maintenance, CancellationToken ct) =>
-        {
-            try { return Results.Ok(await maintenance.ApplyAsync(request.PlanId, ct)); }
-            catch (KeyNotFoundException ex) { return Results.NotFound(new { error = ex.Message }); }
-            catch (InvalidOperationException ex) { return Results.Conflict(new { error = ex.Message }); }
-        });
-        app.MapPost(prefix + "/maintenance/arm", async (MaintenanceArmRequest request, IMaintenanceCoordinator maintenance, CancellationToken ct) =>
-        {
-            try { await maintenance.ArmAsync(request, ct); return Results.Ok(maintenance.GetStatus()); }
-            catch (KeyNotFoundException ex) { return Results.NotFound(new { error = ex.Message }); }
-            catch (InvalidOperationException ex) { return Results.Conflict(new { error = ex.Message }); }
-        });
-        app.MapPost(prefix + "/maintenance/disarm", (MaintenanceClientsRequest request, IMaintenanceCoordinator maintenance) =>
-        {
-            maintenance.Disarm(request.ClientInstanceIds);
-            return Results.Ok(maintenance.GetStatus());
-        });
-        app.MapPost(prefix + "/maintenance/run", async (MaintenanceClientsRequest request, IMaintenanceCoordinator maintenance, CancellationToken ct) =>
-        {
-            if (request.Operations.Any(op => !Enum.IsDefined(op))) return Results.BadRequest(new { error = "Unknown maintenance operation." });
-            try { return Results.Ok(await maintenance.RunAsync(request.ClientInstanceIds.Count == 0 ? null : request.ClientInstanceIds, ct: ct, operations: request.Operations)); }
-            catch (InvalidOperationException ex) { return Results.Conflict(new { error = ex.Message }); }
-        });
-        app.MapPost(prefix + "/maintenance/cancel", (IMaintenanceCoordinator maintenance) =>
-        {
-            maintenance.Cancel();
-            return Results.Accepted();
-        });
+        app.MapTorrentMaintenanceEndpoints(prefix);
     }
 
     // ==================== /web/* endpoints ====================
@@ -2434,12 +2402,6 @@ static async Task<IResult> SaveAndRespondConfigUpdate(
     var validation = reloader?.Validate(updatedConfig) ?? ConfigValidationHelper.ValidateAll(updatedConfig);
     if (!validation.Ok) return Results.BadRequest(new { error = validation.Error });
 
-    if (Newtonsoft.Json.JsonConvert.SerializeObject(cfg.GetAllTorrentClients())
-        != Newtonsoft.Json.JsonConvert.SerializeObject(updatedConfig.GetAllTorrentClients()))
-    {
-        foreach (var client in updatedConfig.GetAllTorrentClients().Values)
-            client.Maintenance.Armed = false;
-    }
 
     var renameMap = renames?.Properties().ToDictionary(p => p.Name, p => p.Value.ToString());
     var applied = false;
@@ -2599,11 +2561,7 @@ class ProcessOrchestratorService : BackgroundService
     private readonly IServiceScopeFactory _scopeFactory;
     private readonly ProcessStateManager _stateManager;
     private readonly ISafeDeletionService _safeDeletion;
-    private long _currentFreeSpace;
-    private long _minFreeSpaceBytes;
-    private string? _freeSpaceFolder;
     private bool _qbitConfigured;
-    private bool _freeSpaceEnabled;
     private readonly IConfigReloader? _reloader;
     private readonly SemaphoreSlim _configurationChanged = new(0, 1);
 
@@ -2637,25 +2595,9 @@ class ProcessOrchestratorService : BackgroundService
 
     private void RefreshConfiguration()
     {
-        // §8: Respect Settings.FreeSpace string ("-1" = disabled, "10G"/"500M" = threshold)
-        var freeSpaceBytes = ParseFreeSpaceString(_config.Settings.FreeSpace);
-        if (freeSpaceBytes < 0)
-        {
-            _freeSpaceEnabled = false;
-            _minFreeSpaceBytes = (long)(_config.Settings.FreeSpaceThresholdGB ?? 10) * 1024L * 1024L * 1024L;
-        }
-        else
-        {
-            _freeSpaceEnabled = true;
-            _minFreeSpaceBytes = freeSpaceBytes;
-        }
         _qbitConfigured = _config.GetAllTorrentClients().Values.Any(q =>
             !q.Disabled && q.Host != "CHANGE_ME" && q.UserName != "CHANGE_ME" && q.Password != "CHANGE_ME");
-        _freeSpaceFolder = GetFreeSpaceFolder();
     }
-
-    /// <summary>Parse qBitrr FreeSpace string: "-1" = disabled, "10G"/"500M"/"1024K" or raw number = threshold bytes.</summary>
-    private static long ParseFreeSpaceString(string? value) => FreeSpaceThreshold.Parse(value);
 
     protected override async Task ExecuteAsync(CancellationToken stoppingToken)
     {
@@ -2678,7 +2620,17 @@ class ProcessOrchestratorService : BackgroundService
             if (initialManaged.Count > 0)
                 _logger.LogInformation("FreeSpace categories: {Categories}", string.Join(", ", initialManaged));
 
-            // Other section (Recheck, Failed, Free Space Manager): only when qBit is configured
+            _stateManager.Initialize("FreeSpaceManager", new ArrProcessState
+            {
+                Name = "FreeSpaceManager",
+                Category = "FreeSpaceManager",
+                Kind = "torrent",
+                MetricType = "free-space",
+                Alive = false,
+                CategoryCount = null
+            });
+
+            // Special categories are initialized when torrent clients are configured.
             if (_qbitConfigured)
             {
                 _stateManager.Initialize("Recheck", new ArrProcessState
@@ -2697,15 +2649,6 @@ class ProcessOrchestratorService : BackgroundService
                     Alive = false,
                     CategoryCount = null
                 });
-                _stateManager.Initialize("FreeSpaceManager", new ArrProcessState
-                {
-                    Name = "FreeSpaceManager",
-                    Category = "FreeSpaceManager",
-                    Kind = "torrent",
-                    MetricType = "free-space",
-                    Alive = false,
-                    CategoryCount = null
-                });
             }
 
             while (!stoppingToken.IsCancellationRequested)
@@ -2715,7 +2658,7 @@ class ProcessOrchestratorService : BackgroundService
                 {
                     using var configuration = _config.BeginOperation();
                     RefreshConfiguration();
-                    if (!TorrentPolicyHelper.EnableFreeSpace(_config, _freeSpaceEnabled && _minFreeSpaceBytes > 0))
+                    if (!TorrentPolicyHelper.EnableFreeSpace(_config))
                         _stateManager.Update("FreeSpaceManager", state => state.Alive = false);
                     if (_qbitConfigured)
                     {
@@ -2724,9 +2667,8 @@ class ProcessOrchestratorService : BackgroundService
                         {
                             await ProcessSpecialCategoriesAsync(stoppingToken);
 
-                            var freeSpaceGuardActive = _freeSpaceEnabled && _minFreeSpaceBytes > 0;
                             var enableTrackerSort = TorrentPolicyHelper.EnableTrackerSort(_config);
-                            var enableFreeSpace = TorrentPolicyHelper.EnableFreeSpace(_config, freeSpaceGuardActive);
+                            var enableFreeSpace = TorrentPolicyHelper.EnableFreeSpace(_config);
                             var managedCategories = TorrentPolicyHelper.GetAllMonitoredPolicyCategories(_config);
                             if (managedCategories.Count > 0 && (enableTrackerSort || enableFreeSpace))
                                 await ProcessTorrentPolicyAsync(managedCategories, enableTrackerSort, enableFreeSpace, stoppingToken);
@@ -2752,38 +2694,6 @@ class ProcessOrchestratorService : BackgroundService
         }
     }
 
-    private string? GetFreeSpaceFolder()
-    {
-        // Try configured folder first
-        if (!string.IsNullOrEmpty(_config.Settings.FreeSpaceFolder) && _config.Settings.FreeSpaceFolder != "CHANGE_ME")
-        {
-            // Check if path exists, if not return null
-            if (Directory.Exists(_config.Settings.FreeSpaceFolder))
-                return _config.Settings.FreeSpaceFolder;
-        }
-
-        // Fallback to completed download folder
-        if (!string.IsNullOrEmpty(_config.Settings.CompletedDownloadFolder) && _config.Settings.CompletedDownloadFolder != "CHANGE_ME")
-        {
-            if (Directory.Exists(_config.Settings.CompletedDownloadFolder))
-                return _config.Settings.CompletedDownloadFolder;
-        }
-
-        // Fall back to qBit download paths (Docker mounts torrents separately from /config)
-        foreach (var (_, qbit) in _config.GetAllTorrentClients())
-        {
-            if (qbit.Disabled)
-                continue;
-            var path = qbit.DownloadPath;
-            if (string.IsNullOrWhiteSpace(path) || path == "CHANGE_ME")
-                continue;
-            if (Directory.Exists(path))
-                return path;
-        }
-
-        return null;
-    }
-
     private async Task ProcessSpecialCategoriesAsync(CancellationToken cancellationToken)
     {
         using var processing = ConfigMutationGuard.EnterProcessing();
@@ -2793,7 +2703,11 @@ class ProcessOrchestratorService : BackgroundService
         {
             try
             {
-                var failedTorrents = await client.GetTorrentsAsync(_config.Settings.FailedCategory, cancellationToken: cancellationToken);
+                using var recoveryScope = _scopeFactory.CreateScope();
+                var recoveryDb = recoveryScope.ServiceProvider.GetRequiredService<TorrentarrDbContext>();
+                var allTorrents = await client.GetTorrentsAsync(cancellationToken: cancellationToken);
+                MaintenanceRecovery.ObserveExplicitExits(recoveryDb, instanceName, allTorrents, _config.Settings.RecheckCategory);
+                var failedTorrents = allTorrents.Where(t => t.Category.Equals(_config.Settings.FailedCategory, StringComparison.OrdinalIgnoreCase)).ToList();
                 totalFailed += failedTorrents.Count;
                 foreach (var torrent in failedTorrents)
                 {
@@ -2816,7 +2730,7 @@ class ProcessOrchestratorService : BackgroundService
                         _logger.LogWarning("[{Instance}] Safe deletion skipped for {Name}: {Reason}", instanceName, torrent.Name, deletion.Error);
                 }
 
-                var recheckTorrents = await client.GetTorrentsAsync(_config.Settings.RecheckCategory, cancellationToken: cancellationToken);
+                var recheckTorrents = allTorrents.Where(t => t.Category.Equals(_config.Settings.RecheckCategory, StringComparison.OrdinalIgnoreCase)).ToList();
                 totalRecheck += recheckTorrents.Count;
                 foreach (var torrent in recheckTorrents)
                 {
@@ -2833,8 +2747,9 @@ class ProcessOrchestratorService : BackgroundService
                             continue;
                         }
                     }
-                    _logger.LogInformation("[{Instance}] Re-checking torrent: {Name}", instanceName, torrent.Name);
-                    if (client.Capabilities.Recheck) await client.RecheckTorrentsAsync(new List<string> { torrent.Hash }, cancellationToken);
+                    torrent.ClientInstanceId = instanceName;
+                    if (await MaintenanceRecovery.RequestExplicitAsync(recoveryDb, client, torrent, cancellationToken))
+                        _logger.LogInformation("[{Instance}] Requested recheck for torrent: {Name}", instanceName, torrent.Name);
                 }
             }
             catch (Exception ex)
@@ -2925,77 +2840,15 @@ class ProcessOrchestratorService : BackgroundService
 
     private async Task ProcessFreeSpaceManagerAsync(HashSet<string> managedCategories, CancellationToken cancellationToken)
     {
-        _logger.LogInformation("FreeSpace: Starting FreeSpace manager check");
-
-        if (string.IsNullOrEmpty(_freeSpaceFolder))
+        using var scope = _scopeFactory.CreateScope();
+        var manager = scope.ServiceProvider.GetRequiredService<IFreeSpaceService>();
+        var result = await manager.ProcessAsync(managedCategories, cancellationToken);
+        _stateManager.Update("FreeSpaceManager", state =>
         {
-            _logger.LogWarning("FreeSpace: No free space folder configured or folder doesn't exist");
-            _stateManager.Update("FreeSpaceManager", s => { s.Alive = false; s.CategoryCount = 0; });
-            return;
-        }
-
-        _logger.LogInformation("FreeSpace: Using folder {Folder} for space monitoring", _freeSpaceFolder);
-
-        // §1.6: tagless mode needs a DB scope to read/write FreeSpacePaused column
-        IServiceScope? scope = null;
-        TorrentarrDbContext? dbContext = null;
-        if (_config.Settings.Tagless || _qbitManager.GetAllClients().Values.Any(c => !c.Capabilities.Tags))
-        {
-            scope = _scopeFactory.CreateScope();
-            dbContext = scope.ServiceProvider.GetRequiredService<TorrentarrDbContext>();
-        }
-
-        const string freeSpacePausedTag = "qBitrr-free_space_paused";
-        int pausedCount = 0;
-
-        try
-        {
-            var driveInfo = new DriveInfo(_freeSpaceFolder);
-            _currentFreeSpace = driveInfo.AvailableFreeSpace - _minFreeSpaceBytes;
-
-            var inventory = await FreeSpaceInventory.ReadAsync(_config, _qbitManager, _logger, cancellationToken);
-            var allTorrents = inventory.Torrents;
-            _currentFreeSpace -= inventory.UnmanagedRemaining(t => managedCategories.Contains(t.Category));
-
-            int[]? pausedCountRef = null;
-            if (!_config.Settings.Tagless)
-            {
-                pausedCount = allTorrents.Count(t => t.Torrent.Tags?.Contains(freeSpacePausedTag) == true);
-                pausedCountRef = new int[] { pausedCount };
-            }
-
-            var ordered = allTorrents.Where(t => managedCategories.Contains(t.Torrent.Category))
-                .OrderBy(t => TorrentPolicyHelper.TorrentQueuePositionSortKey(t.Torrent).InactiveQueueGroup)
-                .ThenBy(t => TorrentPolicyHelper.TorrentQueuePositionSortKey(t.Torrent).Nq)
-                .ThenBy(t => t.Torrent.AddedOn);
-            await inventory.ApplyAsync(ordered, (item, resumes) => ProcessSingleTorrentSpaceAsync(
-                item.InstanceName, item.Client, item.Torrent, dbContext,
-                _config.Settings.Tagless || !item.Client.Capabilities.Tags ? null : pausedCountRef,
-                resumes, cancellationToken), _logger, cancellationToken);
-
-            pausedCount = pausedCountRef?[0] ?? 0;
-            if (dbContext != null)
-            {
-                var taglessIds = allTorrents.Where(t => _config.Settings.Tagless || !t.Client.Capabilities.Tags)
-                    .Select(t => t.InstanceName).Distinct().ToList();
-                pausedCount += await dbContext.TorrentLibrary.CountAsync(t => t.FreeSpacePaused && taglessIds.Contains(t.QbitInstance), cancellationToken);
-            }
-
-            _stateManager.Update("FreeSpaceManager", s =>
-            {
-                s.CategoryCount = pausedCount;
-                s.MetricType = "free-space";
-                s.Alive = _freeSpaceEnabled && _minFreeSpaceBytes > 0 && !string.IsNullOrEmpty(_freeSpaceFolder);
-            });
-        }
-        catch (Exception ex) when (ex is not OperationCanceledException)
-        {
-            _logger.LogError(ex, "Error in free space manager");
-        }
-        finally
-        {
-            scope?.Dispose();
-        }
+            state.CategoryCount = result.MarkedCount;
+            state.MetricType = "free-space";
+            state.Alive = result.Available;
+        });
     }
 
     /// <summary>
@@ -3092,134 +2945,7 @@ class ProcessOrchestratorService : BackgroundService
         }
     }
 
-    private async Task ProcessSingleTorrentSpaceAsync(
-        string instanceName, ITorrentClient client, TorrentInfo torrent, TorrentarrDbContext? dbContext, int[]? pausedCountRef, List<Func<Task>>? resumes, CancellationToken cancellationToken)
-    {
-        const string freeSpacePausedTag = "qBitrr-free_space_paused";
-        var tagless = _config.Settings.Tagless || !client.Capabilities.Tags;
 
-        var isFreeSpaceDownload = TorrentPolicyHelper.IsFreeSpaceDownloadState(torrent.State);
-        var isPausedDownload = TorrentPolicyHelper.IsPausedDownloadStateForFreeSpace(torrent.State);
-
-        // §1.6: tagless mode reads FreeSpacePaused from DB column; otherwise check qBit tag
-        bool hasFreeSpaceTag;
-        if (tagless && dbContext != null)
-        {
-            var dbEntry = await dbContext.TorrentLibrary.AsNoTracking()
-                .FirstOrDefaultAsync(t => t.Hash == torrent.Hash && t.QbitInstance == instanceName, cancellationToken);
-            hasFreeSpaceTag = dbEntry?.FreeSpacePaused == true;
-        }
-        else
-        {
-            hasFreeSpaceTag = torrent.Tags?.Contains(freeSpacePausedTag) == true;
-        }
-
-        if (isFreeSpaceDownload && !isPausedDownload && hasFreeSpaceTag)
-        {
-            if (tagless && dbContext != null)
-                await TaglessTorrentLibraryHelper.SetFreeSpacePausedAsync(
-                    dbContext, torrent.Hash, torrent.Category, instanceName, paused: false, cancellationToken);
-            else if (!await client.RemoveTagsAsync([torrent.Hash], [freeSpacePausedTag], cancellationToken))
-                throw new IOException("Torrent client rejected free-space marker cleanup.");
-            if (pausedCountRef != null) pausedCountRef[0]--;
-        }
-
-        if (isFreeSpaceDownload)
-        {
-            var freeSpaceTest = _currentFreeSpace - torrent.AmountLeft;
-
-            _logger.LogInformation(
-                "FreeSpace: Evaluating torrent: {Name} | Current space: {Available} | Space after: {SpaceAfter} | Remaining: {Needed}",
-                torrent.Name, FormatBytes(_currentFreeSpace), FormatBytes(freeSpaceTest), FormatBytes(torrent.AmountLeft));
-
-            if (!isPausedDownload && freeSpaceTest < 0)
-            {
-                _logger.LogInformation(
-                    "FreeSpace: Pausing download (insufficient space) | Torrent: {Name} | Available: {Available} | Needed: {Needed} | Deficit: {Deficit}",
-                    torrent.Name, FormatBytes(_currentFreeSpace), FormatBytes(torrent.AmountLeft), FormatBytes(-freeSpaceTest));
-                // §1.6: tagless — set DB column; else apply qBit tag
-                if (tagless && dbContext != null)
-                    await TaglessTorrentLibraryHelper.SetFreeSpacePausedAsync(
-                        dbContext, torrent.Hash, torrent.Category, instanceName, paused: true, cancellationToken);
-                else if (!await client.AddTagsAsync(new List<string> { torrent.Hash }, new List<string> { freeSpacePausedTag }, cancellationToken))
-                    throw new IOException("Torrent client rejected free-space marker update.");
-                await FreeSpaceInventory.PauseAndRollbackMarkerAsync(client, torrent.Hash, async () =>
-                {
-                    if (tagless && dbContext != null)
-                        await TaglessTorrentLibraryHelper.SetFreeSpacePausedAsync(
-                            dbContext, torrent.Hash, torrent.Category, instanceName, paused: false, CancellationToken.None);
-                    else if (!await client.RemoveTagsAsync([torrent.Hash], [freeSpacePausedTag], CancellationToken.None))
-                        throw new IOException("Torrent client rejected free-space marker rollback.");
-                }, cancellationToken);
-                if (pausedCountRef != null) pausedCountRef[0]++;
-            }
-            else if (isPausedDownload && freeSpaceTest < 0 && hasFreeSpaceTag)
-            {
-                _logger.LogInformation(
-                    "FreeSpace: Keeping paused (insufficient space) | Torrent: {Name} | Available: {Available} | Needed: {Needed} | Deficit: {Deficit}",
-                    torrent.Name, FormatBytes(_currentFreeSpace), FormatBytes(torrent.AmountLeft), FormatBytes(-freeSpaceTest));
-                if (tagless && dbContext != null)
-                    await TaglessTorrentLibraryHelper.SetFreeSpacePausedAsync(
-                        dbContext, torrent.Hash, torrent.Category, instanceName, paused: true, cancellationToken);
-                else if (!await client.AddTagsAsync(new List<string> { torrent.Hash }, new List<string> { freeSpacePausedTag }, cancellationToken))
-                    throw new IOException("Torrent client rejected free-space marker update.");
-            }
-            else if (isPausedDownload && freeSpaceTest >= 0 && hasFreeSpaceTag && resumes != null)
-            {
-                _logger.LogInformation(
-                    "FreeSpace: Resuming download (space available) | Torrent: {Name} | Available: {Available} | Space after: {SpaceAfter}",
-                    torrent.Name, FormatBytes(_currentFreeSpace), FormatBytes(freeSpaceTest));
-                _currentFreeSpace = freeSpaceTest;
-                resumes.Add(async () =>
-                {
-                    await FreeSpaceInventory.ResumeAndClearMarkerAsync(client, torrent.Hash, async () =>
-                    {
-                        // §1.6: tagless — clear DB column; else remove qBit tag
-                        if (tagless && dbContext != null)
-                            await TaglessTorrentLibraryHelper.SetFreeSpacePausedAsync(
-                                dbContext, torrent.Hash, torrent.Category, instanceName, paused: false, CancellationToken.None);
-                        else if (!await client.RemoveTagsAsync(new List<string> { torrent.Hash }, new List<string> { freeSpacePausedTag }, CancellationToken.None))
-                            throw new IOException("Torrent client rejected free-space marker update.");
-                    }, cancellationToken);
-                    if (pausedCountRef != null) pausedCountRef[0]--;
-                });
-            }
-            else if (!isPausedDownload && freeSpaceTest >= 0)
-            {
-                _logger.LogInformation(
-                    "FreeSpace: Continuing download (sufficient space) | Torrent: {Name} | Available: {Available} | Space after: {SpaceAfter}",
-                    torrent.Name, FormatBytes(_currentFreeSpace), FormatBytes(freeSpaceTest));
-                _currentFreeSpace = freeSpaceTest;
-            }
-        }
-        else if (!isFreeSpaceDownload && hasFreeSpaceTag)
-        {
-            // Torrent completed — clear the paused marker
-            _logger.LogInformation(
-                "FreeSpace: Torrent completed, removing free space tag | Torrent: {Name} | Available: {Available}",
-                torrent.Name, FormatBytes(_currentFreeSpace + _minFreeSpaceBytes));
-            // §1.6: tagless — clear DB column; else remove qBit tag
-            if (tagless && dbContext != null)
-                await TaglessTorrentLibraryHelper.SetFreeSpacePausedAsync(
-                    dbContext, torrent.Hash, torrent.Category, instanceName, paused: false, cancellationToken);
-            else if (!await client.RemoveTagsAsync(new List<string> { torrent.Hash }, new List<string> { freeSpacePausedTag }, cancellationToken))
-                throw new IOException("Torrent client rejected free-space marker update.");
-            if (pausedCountRef != null) pausedCountRef[0]--;
-        }
-    }
-
-    private static string FormatBytes(long bytes)
-    {
-        string[] sizes = { "B", "KB", "MB", "GB", "TB" };
-        double len = bytes;
-        int order = 0;
-        while (len >= 1024 && order < sizes.Length - 1)
-        {
-            order++;
-            len /= 1024;
-        }
-        return $"{len:0.##} {sizes[order]}";
-    }
 }
 
 // Request models for API endpoints

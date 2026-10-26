@@ -29,7 +29,7 @@ public class ConfigSchemaAndOverviewEndpointTests : IClassFixture<TorrentarrWebA
         json.RootElement.GetProperty("sections").TryGetProperty("TorrentClient", out _).Should().BeTrue();
         json.RootElement.GetProperty("sections").TryGetProperty("Arr", out _).Should().BeTrue();
         json.RootElement.GetProperty("sections").EnumerateObject()
-            .Sum(section => section.Value.GetArrayLength()).Should().Be(151);
+            .Sum(section => section.Value.GetArrayLength()).Should().Be(Torrentarr.Core.Configuration.ConfigSchemaBuilder.Sections.Sum(s => s.Value.Count));
         var mappings = json.RootElement.GetProperty("sections").GetProperty("TorrentClient").EnumerateArray()
             .Single(field => field.GetProperty("key").GetString() == "Maintenance.PathMappings");
         mappings.GetProperty("applyLive").GetBoolean().Should().BeTrue();

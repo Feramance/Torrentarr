@@ -10,6 +10,30 @@ import {
 } from "./durationUtils";
 import type { ConfigDocument } from "../api/types";
 
+function trackerProtectionSummary(
+  tracker: Record<string, unknown>,
+  name: string,
+): string | undefined {
+  const policy = tracker.Protection as Record<string, unknown> | undefined;
+  if (!policy || typeof policy !== "object") return undefined;
+  const preset = String(policy.Policy ?? "custom");
+  const hours =
+    preset === "onlyencodes"
+      ? 48
+      : preset === "torrentleech-power"
+        ? 192
+        : Number(policy.MinimumSeedHours ?? 48);
+  return (
+    `- **${name}** — ${preset} protection: ${hours} mandatory completed seed hours, ${Number(policy.AdditionalSeedHours ?? 6)} extra hours and ${Number(policy.AccountingGraceMinutes ?? 60)} minutes of accounting grace. ` +
+    (preset === "onlyencodes"
+      ? "Ratio never replaces mandatory time. The default 168-hour warning deadline awaits confirmation. "
+      : policy.AllowClientRatioClearance
+        ? "Client-estimated ratio clearance is explicitly enabled; it cannot guarantee tracker credit. "
+        : "Client-ratio-only clearance is disabled. ") +
+    "Partial and unknown obligations remain protected. Every applicable tracker must clear; a missed deadline never permits removal."
+  );
+}
+
 const REMOVE_TORRENT_LABELS: Record<number, string> = {
   [-1]: "Do not remove",
   1: "On max upload ratio",
@@ -205,11 +229,10 @@ export function getArrTorrentHandlingSummary(
   if (Number.isFinite(maxTimeSec) && maxTimeSec >= 0) {
     seedParts.push(`Maximum seeding time is ${formatSeconds(maxTimeSec)}.`);
   }
-  seedParts.push(
-    removeDead ? "Dead trackers are removed." : "Dead trackers are kept.",
-  );
-  if (removeMessages > 0) {
-    seedParts.push(`${removeMessages} tracker message(s) can trigger removal.`);
+  if (removeDead || removeMessages > 0) {
+    seedParts.push(
+      "Tracker messages cannot directly delete torrents. Recovery keeps and reports failed torrents; protection checks guard normal removal.",
+    );
   }
 
   const hnrMode = resolveHnrMode(seeding.HitAndRunMode);
@@ -217,7 +240,7 @@ export function getArrTorrentHandlingSummary(
   const minDays = Number(seeding.MinSeedingTimeDays ?? 0);
   if (hnrMode === "disabled") {
     seedParts.push(
-      "Hit and Run is off, so all torrents follow these seeding and stalled rules only.",
+      "Legacy Hit and Run is off here. Tracker protection still applies; unknown private obligations are preserved.",
     );
   } else {
     const daysVal = Number.isFinite(minDays) ? minDays : 0;
@@ -249,6 +272,11 @@ export function getArrTorrentHandlingSummary(
     trackers.forEach((raw) => {
       const t = raw as Record<string, unknown>;
       const name = String(t.Name ?? "Tracker").trim() || "Tracker";
+      const protection = trackerProtectionSummary(t, name);
+      if (protection) {
+        blocks.push(protection);
+        return;
+      }
       const mode = resolveHnrMode(t.HitAndRunMode);
       const tMinRatio = Number(t.MinSeedRatio ?? 1);
       const tMinDays = Number(t.MinSeedingTimeDays ?? 0);
@@ -264,7 +292,7 @@ export function getArrTorrentHandlingSummary(
         : "";
       if (mode === "disabled") {
         blocks.push(
-          `- **${name}** \u2014 HnR is off. The torrent may be removed as soon as the seeding rules above are met.${sortNote}`,
+          `- **${name}** \u2014 Legacy HnR is off for this row. Removal still requires every applicable obligation to clear.${sortNote}`,
         );
       } else {
         const both = mode === "and" ? "both required" : "either allows removal";
@@ -392,7 +420,7 @@ export function getQbitTorrentHandlingSummary(
   const minDays = Number(seeding.MinSeedingTimeDays ?? 0);
   if (hnrMode === "disabled") {
     blocks.push(
-      "Hit and Run is off at the category level, so all torrents follow these seeding and stalled rules only.",
+      "Legacy category Hit and Run is off. Tracker protection still applies; unknown private obligations are preserved.",
     );
   } else {
     const daysVal = Number.isFinite(minDays) ? minDays : 0;
@@ -419,6 +447,11 @@ export function getQbitTorrentHandlingSummary(
     trackers.forEach((raw) => {
       const t = raw as Record<string, unknown>;
       const name = String(t.Name ?? "Tracker").trim() || "Tracker";
+      const protection = trackerProtectionSummary(t, name);
+      if (protection) {
+        blocks.push(protection);
+        return;
+      }
       const mode = resolveHnrMode(t.HitAndRunMode);
       const tMinRatio = Number(t.MinSeedRatio ?? 1);
       const tMinDays = Number(t.MinSeedingTimeDays ?? 0);
@@ -434,7 +467,7 @@ export function getQbitTorrentHandlingSummary(
         : "";
       if (mode === "disabled") {
         blocks.push(
-          `- **${name}** \u2014 HnR is off. The torrent may be removed as soon as the seeding rules above are met (e.g. after max time or when max ratio is reached).${sortNote}`,
+          `- **${name}** \u2014 Legacy HnR is off for this row. Removal still requires every applicable obligation to clear (e.g. after max time or when max ratio is reached).${sortNote}`,
         );
       } else {
         const both = mode === "and" ? "both required" : "either allows removal";

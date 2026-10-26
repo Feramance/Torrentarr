@@ -82,9 +82,15 @@ IP address the WebUI server listens on.
 Host = "0.0.0.0"
 
 # Native (with reverse proxy)
+```
+
+```toml
 Host = "127.0.0.1"
 
 # Native (direct access)
+```
+
+```toml
 Host = "0.0.0.0"  # Use with Token for security
 ```
 
@@ -107,7 +113,13 @@ TCP port the WebUI listens on.
 
 ```toml
 Port = 6969   # Default
+```
+
+```toml
 Port = 8080   # Alternative
+```
+
+```toml
 Port = 443    # HTTPS (with reverse proxy)
 ```
 
@@ -226,6 +238,9 @@ Enable live updates for Arr instance views (Radarr/Sonarr/Lidarr tabs).
 LiveArr = true  # Enable real-time updates
 
 # Low-resource system (Raspberry Pi, etc.)
+```
+
+```toml
 LiveArr = false  # Reduce load
 ```
 
@@ -579,7 +594,7 @@ WebUI settings (Host, Port, Token) are read from `config.toml` only. Torrentarr 
    [WebUI]
    Host = "0.0.0.0"
    Port = 6969
-   ```
+```
 
 ---
 
@@ -616,7 +631,7 @@ For more authentication troubleshooting, see [WebUI Authentication](webui-authen
    ```toml
    # If accessing remotely, must not be 127.0.0.1
    Host = "0.0.0.0"
-   ```
+```
 
 2. **Check firewall:**
    ```bash
@@ -644,7 +659,7 @@ For more authentication troubleshooting, see [WebUI Authentication](webui-authen
 1. **Disable live updates:**
    ```toml
    LiveArr = false
-   ```
+```
 
 2. **Check resource usage:**
    ```bash

@@ -4,6 +4,7 @@ using FluentAssertions;
 using Microsoft.EntityFrameworkCore;
 using Newtonsoft.Json.Linq;
 using Torrentarr.Core.Configuration;
+using Torrentarr.Core.Models;
 using Torrentarr.Infrastructure.Database;
 using Torrentarr.Infrastructure.Database.Models;
 using Torrentarr.Infrastructure.Services;
@@ -100,6 +101,29 @@ public sealed class InstanceRenamePersistenceTests : IDisposable
         (await _db.TorrentLibrary.AsNoTracking().SingleAsync(t => t.Id == 2)).QbitInstance.Should().Be("other");
         _loader.Load().QBitInstances.Should().ContainKey("qBit-after").And.NotContainKey("qBit-before");
         File.Exists(ConfigPath + ".rename.json").Should().BeFalse();
+    }
+
+    [Fact]
+    public async Task RenamePreservesRecoveryProtectionAndRecycleEvidence()
+    {
+        var recycle = Path.Combine(_root, "recycle");
+        _before.QBitInstances["qBit-before"].Maintenance.RecycleBin.Path = recycle;
+        _after.QBitInstances["qBit-after"].Maintenance.RecycleBin.Path = recycle;
+        var oldPath = Path.Combine(recycle, "qBit-before", "media");
+        var newPath = Path.Combine(recycle, "qBit-after", "media");
+        Directory.CreateDirectory(Path.GetDirectoryName(oldPath)!); File.WriteAllText(oldPath, "keep");
+        var key = RecycleLedger.Key("qBit-before", oldPath);
+        MaintenancePersistence.Write(_db, key, new RecycleEntry(key, "qBit-before", "/downloads/media", oldPath, DateTimeOffset.UtcNow, "needs-recovery", "abc"));
+        MaintenancePersistence.Write(_db, MaintenancePersistence.Key("qBit-before", "abc", "recovery:ErrorRecovery"), new RecoveryIncident { AddedOn = 1, Attempts = 1, Stage = "unconfirmed" });
+        MaintenancePersistence.Write(_db, MaintenancePersistence.Key("qBit-before", "abc", "protection:tracker:policy"), new ProtectionObservation { AddedOn = 1, SeedSeconds = 123 });
+        await InstanceRenamePersistence.SaveAsync(_before, _after, _renames, _loader, _db);
+        var entry = Newtonsoft.Json.JsonConvert.DeserializeObject<RecycleEntry>(_db.MaintenanceState.AsNoTracking().Single(row => row.Key == RecycleLedger.Key("qBit-after", newPath)).Data)!;
+        entry.ClientInstanceId.Should().Be("qBit-after"); entry.Destination.Should().Be(newPath); entry.State.Should().Be("needs-recovery");
+        File.ReadAllText(newPath).Should().Be("keep"); File.Exists(oldPath).Should().BeFalse();
+        var recovery = MaintenancePersistence.Read<RecoveryIncident>(_db, MaintenancePersistence.Key("qBit-after", "abc", "recovery:ErrorRecovery"));
+        recovery.Attempts.Should().Be(1); recovery.Stage.Should().Be("unconfirmed");
+        MaintenancePersistence.Read<ProtectionObservation>(_db, MaintenancePersistence.Key("qBit-after", "abc", "protection:tracker:policy")).SeedSeconds.Should().Be(123);
+        _db.MaintenanceState.AsNoTracking().Should().NotContain(row => row.Key.StartsWith("QBIT-BEFORE|"));
     }
 
     [Fact]

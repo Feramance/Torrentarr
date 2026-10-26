@@ -1,3 +1,4 @@
+import { useEffect, useRef } from "react";
 import type { ConfigDocument } from "../../api/types";
 import type { FieldDefinition, ValidationError } from "./configTypes";
 import { FieldGroup } from "./configFieldComponents";
@@ -15,68 +16,120 @@ export function PathMappingsEditor({
   validationErrors: ValidationError[];
   onChange: (value: ConfigDocument[]) => void;
 }) {
+  const isMapping = field.path?.at(-1) === "PathMappings";
+  const kind = field.path?.at(-1) ?? "";
+  const isMonitor = kind === "FreeSpace";
+  const itemLabel =
+    (
+      {
+        PathMappings: "path mapping",
+        FreeSpace: "free-space monitor",
+        CategoryMappings: "category mapping",
+        CategoryTransitions: "category transition",
+        TrackerAssignments: "tracker assignment",
+      } as Record<string, string>
+    )[kind] ?? "entry";
   const rows = (Array.isArray(value) ? value : []) as ConfigDocument[];
+  const hasErrors = validationErrors.some(({ path }) => {
+    const key = path.join(".");
+    return key === dataPath || key.startsWith(`${dataPath}.`);
+  });
+  const details = useRef<HTMLDetailsElement>(null);
+  useEffect(() => {
+    if (hasErrors && details.current) details.current.open = true;
+  }, [hasErrors]);
   return (
-    <section
-      className="field field--full-width"
+    <details
+      className="config-section field--full-width collection-editor"
+      ref={details}
       aria-label={field.label}
       data-field-path={dataPath}
     >
-      <h3>{field.label}</h3>
-      <p className="field-description">{field.description}</p>
-      {!rows.length && (
-        <p>No path mappings. Example: /downloads → /data/downloads.</p>
-      )}
-      {rows.map((row, index) => {
-        const path = `${dataPath}.${index}`;
-        return (
-          <div key={index} className="config-section">
-            <h4>Path mapping {index + 1}</h4>
-            <FieldGroup
-              title={null}
-              fields={field.itemFields ?? []}
-              state={row}
-              sectionKey={path}
-              basePath={[]}
-              validationErrors={validationErrors}
-              onChange={(changed, _def, next) =>
-                onChange(
-                  rows.map((entry, i) =>
-                    i === index ? { ...entry, [changed.at(-1)!]: next } : entry,
-                  ),
-                )
-              }
-            />
-            <p style={{ overflowWrap: "anywhere" }}>
-              <code>{`${String(row.ClientPath || "/downloads").replace(/[\\/]+$/, "")}/movie/file.mkv → ${String(row.LocalPath || "/data/downloads").replace(/[\\/]+$/, "")}/movie/file.mkv`}</code>
-            </p>
-            <button
-              className="btn danger"
-              type="button"
-              onClick={() => onChange(rows.filter((_, i) => i !== index))}
+      <summary>{field.label}</summary>
+      <div className="config-section__body">
+        <p className="field-description">{field.description}</p>
+        {isMapping && (
+          <p className="field-description">
+            Example: /downloads → /data/downloads.
+          </p>
+        )}
+        {!rows.length && (
+          <p>
+            {isMapping
+              ? "No path mappings."
+              : isMonitor
+                ? "No free-space monitors. Add a local path to enable space protection."
+                : `No ${field.label.toLowerCase()}.`}
+          </p>
+        )}
+        {rows.map((row, index) => {
+          const path = `${dataPath}.${index}`;
+          return (
+            <div
+              key={index}
+              className={`collection-row ${isMapping || kind === "CategoryMappings" ? "collection-row--mapping" : isMonitor ? "collection-row--monitor" : "collection-row--rules"}`}
+              role="group"
+              aria-label={`${itemLabel[0]!.toUpperCase() + itemLabel.slice(1)} ${index + 1}`}
             >
-              Remove path mapping
-            </button>
-          </div>
-        );
-      })}
-      <button
-        className="btn"
-        type="button"
-        onClick={() =>
-          onChange([
-            ...rows,
-            Object.fromEntries(
-              (field.itemFields ?? []).map((f) => [
-                f.path![0],
-                structuredClone(f.default),
-              ]),
-            ),
-          ])
-        }
-      >
-        Add path mapping
-      </button>
-    </section>
+              <FieldGroup
+                title={null}
+                fields={(field.itemFields ?? []).map((item) => ({
+                  ...item,
+                  description: "",
+                  applyLive: false,
+                  requiresRestart: false,
+                }))}
+                state={row}
+                sectionKey={path}
+                basePath={[]}
+                validationErrors={validationErrors}
+                onChange={(changed, def, next) =>
+                  onChange(
+                    rows.map((entry, i) =>
+                      i === index
+                        ? {
+                            ...entry,
+                            [changed.at(-1)!]:
+                              def.type === "number" &&
+                              next !== "" &&
+                              Number.isFinite(Number(next))
+                                ? Number(next)
+                                : next,
+                          }
+                        : entry,
+                    ),
+                  )
+                }
+              />
+              <button
+                className="btn danger"
+                aria-label={`Remove ${itemLabel}`}
+                type="button"
+                onClick={() => onChange(rows.filter((_, i) => i !== index))}
+              >
+                Remove
+              </button>
+            </div>
+          );
+        })}
+        <button
+          className="btn"
+          type="button"
+          onClick={() =>
+            onChange([
+              ...rows,
+              Object.fromEntries(
+                (field.itemFields ?? []).map((f) => [
+                  f.path![0],
+                  structuredClone(f.default),
+                ]),
+              ),
+            ])
+          }
+        >
+          Add {itemLabel}
+        </button>
+      </div>
+    </details>
   );
 }

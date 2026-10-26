@@ -23,8 +23,6 @@ public sealed class TorrentClientMaintenanceTests
                 Password = "p",
                 Maintenance = new MaintenanceConfig
                 {
-                    Enabled = true,
-                    Scope = "all",
                     PathMappings = [new() { ClientPath = "/downloads", LocalPath = Path.GetTempPath() }],
                 }
             };
@@ -37,7 +35,6 @@ public sealed class TorrentClientMaintenanceTests
 
             var loaded = loader.Load();
             loaded.QBitInstances.Should().ContainKey("qBit");
-            loaded.TorrentClients["seedbox"].Maintenance.Scope.Should().Be("all");
             foreach (var maintenance in new[] { loaded.TorrentClients["seedbox"].Maintenance, loaded.QBitInstances["qBit"].Maintenance })
             {
                 maintenance.PathMappings.Single().ClientPath.Should().Be("/downloads");

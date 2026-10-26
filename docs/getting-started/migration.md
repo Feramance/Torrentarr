@@ -168,7 +168,7 @@ TempQualityProfile = ["HD-1080p", "HDTV-720p"]
 
 ```toml
 [Radarr-Movies.Search]
-QualityProfileMappings = { "Ultra-HD" = "HD-1080p", "HD-1080p" = "HDTV-720p" }
+QualityProfileMappings = {"Ultra-HD" = "HD-1080p", "HD-1080p" = "HDTV-720p"}
 ```
 
 **3. Add process restart settings (optional):**
@@ -329,7 +329,7 @@ Users running custom Arr scripts can consolidate functionality into Torrentarr.
    [Radarr-Movies.Torrent]
    StalledDelay = 15
    ReSearchStalled = true
-   ```
+```
 
    **Missing media script:**
    ```toml
@@ -337,7 +337,7 @@ Users running custom Arr scripts can consolidate functionality into Torrentarr.
    SearchMissing = true
    SearchByYear = true
    SearchAgainOnSearchCompletion = true
-   ```
+```
 
    **Upgrade script:**
    ```toml
@@ -345,7 +345,7 @@ Users running custom Arr scripts can consolidate functionality into Torrentarr.
    DoUpgradeSearch = true
    QualityUnmetSearch = true
    CustomFormatUnmetSearch = true
-   ```
+```
 
 3. **Test Torrentarr:**
    - Run in parallel with scripts initially

@@ -70,6 +70,10 @@ public interface ISeedingService
 
     Task<bool> HnrAllowsDeleteAsync(TorrentInfo torrent, string reason, CancellationToken cancellationToken = default);
 
+    /// <summary>Require HnR, effective age/stalled grace, and seeding policy clearance for any deletion.</summary>
+    Task<bool> CanDeleteTorrentAsync(TorrentInfo torrent, string reason, CancellationToken cancellationToken = default)
+        => Task.FromResult(false);
+
     /// <summary>
     /// Apply seeding limits (ratio, time, rate limits) to a torrent.
     /// Matches qBitrr's _apply_seeding_limits() exactly.

@@ -74,14 +74,14 @@ Access the WebUI at `http://<host>:6969/ui` after startup.
 
 ## Key Features
 
-- **Optional torrent maintenance** – Preview and arm category, repair, and file cleanup actions with ownership and H&R safeguards. [Maintenance guide](docs/features/torrent-maintenance.md).
+- **Manage** – Configure and run all ten recovery, organization, and storage tools in one workspace. Compact cards keep advanced settings out of the client configuration dialog. [Maintenance guide](docs/features/torrent-maintenance.md) and [worked examples](docs/features/maintenance-examples.md).
 - **Sonarr v3, v4, and v5 support** – Automatic API version detection with the same configuration format. [Sonarr configuration](docs/configuration/arr/sonarr.md).
 - **Multi-qBittorrent Support** – Manage torrents across multiple qBittorrent instances for load balancing, redundancy, and VPN isolation
 - **Torrent Health Monitoring** – Detect stalled/failed downloads, auto-blacklist, trigger re-searches
 - **Automated Search** – Missing media, quality upgrades, custom format scoring
 - **Quality Management** – RSS sync, queue refresh, profile switching, custom format enforcement
 - **Seeding Control** – Per-tracker settings, ratio/time limits, tracker injection
-- **Hit and Run Protection** – Automatic HnR obligation tracking with configurable thresholds, partial download handling, and dead tracker bypass
+- **Hit and Run Protection** – Automatic HnR obligation tracking with configurable thresholds, partial download handling, and mandatory clearance before removal
 - **Disk Space Management** – Auto-pause when low on space, configurable thresholds
 - **Modern WebUI** – Live process monitoring, log viewer, Arr insights
 - **WebUI authentication** – Optional login (local or OIDC), API token, and secure set-password
@@ -107,10 +107,11 @@ Access the WebUI at `http://<host>:6969/ui` after startup.
    Category = "radarr-movies"
    ```
 
-3. **Set completed folder**:
+3. **Set the client download path and optional space monitor**:
    ```toml
-   [Settings]
-   CompletedDownloadFolder = "/path/to/completed"
+   [qBit]
+   DownloadPath = "/path/to/completed"
+   FreeSpace = [{ Path = "/path/to/completed", Enabled = true, Limit = "10G" }]
    ```
 
 ### Multi-qBittorrent

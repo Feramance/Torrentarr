@@ -213,7 +213,7 @@ Include:
    Port = 8080
    UserName = "admin"
    Password = "REDACTED"
-   ```
+```
 
 ## Debug Mode
 
@@ -240,13 +240,13 @@ LogLevel = "DEBUG"
    ```toml
    [Settings]
    CheckInterval = 300  # Increase interval (default: 60)
-   ```
+```
 
 2. **Too many concurrent health checks:**
    ```toml
    [Settings]
    MaxConcurrentChecks = 5  # Reduce concurrent operations
-   ```
+```
 
 3. **Large torrent counts:**
    - Limit categories to only what Torrentarr needs to manage
@@ -256,7 +256,7 @@ LogLevel = "DEBUG"
    ```toml
    [Settings]
    FFprobeAutoUpdate = false  # Temporarily disable to test
-   ```
+```
 
 **Monitor Resource Usage:**
 
@@ -281,13 +281,13 @@ top -p $(pidof torrentarr)
    ```toml
    [Settings]
    LogRetentionDays = 7  # Reduce from default 30
-   ```
+```
 
 2. **Limit torrent history:**
    ```toml
    [Settings]
    TorrentHistoryDays = 30  # Clean old entries
-   ```
+```
 
 3. **Vacuum database regularly:**
    ```bash
@@ -339,15 +339,15 @@ top -p $(pidof torrentarr)
 
 1. **Enable instant imports:**
    ```toml
-   [[Radarr]]
+   [Radarr-Movies]
    InstantImport = true  # Trigger immediate imports
-   ```
+```
 
 2. **Optimize Arr refresh intervals:**
    ```toml
-   [[Radarr]]
+   [Radarr-Movies]
    RefreshDownloadsTimer = 1  # Check every 1 minute
-   ```
+```
 
 3. **Check Arr instance performance:**
    - Review Arr logs for slow operations
@@ -373,7 +373,7 @@ top -p $(pidof torrentarr)
    [Settings]
    ConnectionTimeout = 60  # Increase from default 30
    ReadTimeout = 120       # Increase from default 60
-   ```
+```
 
 2. **Check network connectivity:**
    ```bash
@@ -410,7 +410,7 @@ top -p $(pidof torrentarr)
    ```toml
    [qBit]
    Host = "http://192.168.1.100"  # Instead of hostname
-   ```
+```
 
 2. **Check DNS configuration (Docker):**
    ```yaml
@@ -477,7 +477,7 @@ top -p $(pidof torrentarr)
 **Common Mistakes:**
 
 1. **Missing quotes:**
-   ```toml
+   ```text
    # ❌ Wrong
    Host = http://localhost
 
@@ -486,7 +486,7 @@ top -p $(pidof torrentarr)
    ```
 
 2. **Wrong quotes:**
-   ```toml
+   ```text
    # ❌ Wrong (single quotes don't work for all values)
    APIKey = 'abc123'
 
@@ -495,7 +495,7 @@ top -p $(pidof torrentarr)
    ```
 
 3. **Unclosed brackets:**
-   ```toml
+   ```text
    # ❌ Wrong
    [[Radarr]
    Name = "Movies"
@@ -506,7 +506,7 @@ top -p $(pidof torrentarr)
    ```
 
 4. **Duplicate sections:**
-   ```toml
+   ```text
    # ❌ Wrong (duplicate [Settings])
    [Settings]
    LogLevel = "INFO"
@@ -546,7 +546,7 @@ Host = "localhost"  # REQUIRED
 Port = 8080
 # UserName and Password (if qBit has auth enabled)
 
-[[Radarr]]
+[Radarr-Movies]
 URI = "http://localhost:7878"   # REQUIRED
 APIKey = "your-api-key"         # REQUIRED
 Category = "radarr"             # REQUIRED (must match qBit download client)
@@ -588,15 +588,15 @@ Category = "radarr"             # REQUIRED (must match qBit download client)
 
 1. **Enable search functionality:**
    ```toml
-   [[Radarr]]
+   [Radarr-Movies]
    [Radarr.Search]
    SearchMissing = true
-   ```
+```
 
 2. **Check search intervals:**
    ```toml
    SearchRequestsEvery = 300  # Search every 5 minutes
-   ```
+```
 
 3. **Verify Arr has indexers:**
    - Radarr/Sonarr/Lidarr must have working indexers configured
@@ -622,18 +622,18 @@ Category = "radarr"             # REQUIRED (must match qBit download client)
 1. **Increase search interval:**
    ```toml
    SearchRequestsEvery = 600  # 10 minutes instead of 5
-   ```
+```
 
 2. **Reduce search limit:**
    ```toml
    SearchLimit = 3  # Fewer concurrent searches
-   ```
+```
 
 3. **Disable upgrade searches temporarily:**
    ```toml
    DoUpgradeSearch = false
    QualityUnmetSearch = false
-   ```
+```
 
 4. **Monitor indexer stats:**
    - Check Prowlarr for indexer statistics
@@ -651,12 +651,12 @@ Category = "radarr"             # REQUIRED (must match qBit download client)
 
 1. **Adjust seeding limits:**
    ```toml
-   [[Radarr]]
+   [Radarr-Movies]
    [Radarr.Torrent.SeedingMode]
    MaxUploadRatio = 2.0      # Increase ratio
    MaxSeedingTime = 1209600  # 14 days in seconds
    RemoveTorrent = 4         # Remove only when BOTH met
-   ```
+```
 
 2. **Check tracker-specific rules:**
    ```toml
@@ -664,12 +664,12 @@ Category = "radarr"             # REQUIRED (must match qBit download client)
    Name = "PrivateTracker"
    URI = "https://tracker.example.com"
    MaxUploadRatio = 3.0      # Higher for private trackers
-   ```
+```
 
 3. **Disable automatic removal:**
    ```toml
    RemoveTorrent = -1  # Never auto-remove
-   ```
+```
 
 ---
 
@@ -682,12 +682,12 @@ Category = "radarr"             # REQUIRED (must match qBit download client)
 1. **Increase stall delay:**
    ```toml
    StalledDelay = 30  # 30 minutes before considering stalled
-   ```
+```
 
 2. **Disable tracker error removal:**
    ```toml
    RemoveDeadTrackers = false
-   ```
+```
 
 3. **Customize tracker error messages:**
    ```toml
@@ -695,7 +695,7 @@ Category = "radarr"             # REQUIRED (must match qBit download client)
      # Only remove on these specific errors
      "info hash is not authorized with this tracker"
    ]
-   ```
+```
 
 ---
 
@@ -711,19 +711,19 @@ Category = "radarr"             # REQUIRED (must match qBit download client)
    ```toml
    [Settings]
    LogLevel = "INFO"  # Change from DEBUG
-   ```
+```
 
 2. **Enable log rotation:**
    ```toml
    LogRotation = true
    LogMaxSize = 10485760    # 10 MB
    LogBackupCount = 5
-   ```
+```
 
 3. **Reduce retention:**
    ```toml
    LogRetentionDays = 7  # Keep only 1 week
-   ```
+```
 
 ---
 

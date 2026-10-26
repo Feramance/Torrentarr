@@ -61,8 +61,10 @@ public sealed class TorrentProcessorImportAllowlistTests : IDisposable
         Ready(result).Should().BeFalse();
     }
 
-    [Fact]
-    public async Task CompletedTorrent_AutoDelete_RemovesOnlyOwnedDisallowedFiles()
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task CompletedTorrent_AutoDelete_RemovesOnlyOwnedDisallowedFiles(bool repaired)
     {
         var root = Directory.CreateTempSubdirectory("torrentarr-allowlist-");
         try
@@ -76,12 +78,21 @@ public sealed class TorrentProcessorImportAllowlistTests : IDisposable
             await File.WriteAllTextAsync(sibling, "keep");
             var client = new FileClient([TorrentFile(0, "Movie/movie.mkv"), TorrentFile(1, "Movie/sample.txt")]);
 
-            var result = await ApplyAsync(CreateProcessor(), Torrent(content.FullName), Config(autoDelete: true), client, completed: true);
+            var seeding = new Mock<ISeedingService>();
+            seeding.Setup(s => s.HnrAllowsDeleteAsync(It.IsAny<TorrentInfo>(), It.IsAny<string>(), It.IsAny<CancellationToken>())).ReturnsAsync(true);
+            var deletion = new Mock<ISafeDeletionService>();
+            deletion.Setup(d => d.DeleteOwnedFileAsync(It.IsAny<string>(), It.IsAny<string>(), disallowed, It.IsAny<CancellationToken>()))
+                .ReturnsAsync(() => { File.Delete(disallowed); return true; });
+            var torrent = Torrent(content.FullName);
+            if (repaired) MaintenancePersistence.Write(_db, MaintenancePersistence.Key(torrent.ClientInstanceId, torrent.Hash, "recovery:ErrorRecovery"),
+                new RecoveryIncident { AddedOn = torrent.AddedOn, Stage = "checked", Attempts = 1 });
+            var result = await ApplyAsync(CreateProcessor(seeding.Object, deletion: deletion.Object), torrent, Config(autoDelete: true), client, completed: true);
 
-            Ready(result).Should().BeTrue();
+            Ready(result).Should().Be(!repaired);
             File.Exists(allowed).Should().BeTrue();
-            File.Exists(disallowed).Should().BeFalse();
+            File.Exists(disallowed).Should().Be(repaired);
             File.Exists(sibling).Should().BeTrue();
+            deletion.Verify(d => d.DeleteOwnedFileAsync(It.IsAny<string>(), It.IsAny<string>(), disallowed, It.IsAny<CancellationToken>()), repaired ? Times.Never() : Times.Once());
         }
         finally
         {
@@ -424,14 +435,14 @@ public sealed class TorrentProcessorImportAllowlistTests : IDisposable
 
     private TorrentProcessor CreateProcessor(
         ISeedingService? seeding = null,
-        ITorrentCacheService? cache = null) => new(
+        ITorrentCacheService? cache = null, ISafeDeletionService? deletion = null) => new(
         NullLogger<TorrentProcessor>.Instance,
         new QBittorrentConnectionManager(NullLogger<QBittorrentConnectionManager>.Instance),
         _db,
         new TorrentarrConfig(),
         cache ?? new TorrentCacheService(NullLogger<TorrentCacheService>.Instance),
         new DatabaseRestartCoordinator(),
-        seedingService: seeding);
+        seedingService: seeding, safeDeletion: deletion);
 
     private static ArrInstanceConfig Config(bool autoDelete) => new()
     {

@@ -65,9 +65,6 @@ public static class InstanceRenamePersistence
         using var mutation = renames?.HasValues == true
             ? ConfigMutationGuard.EnterMutation(path) : ConfigMutationGuard.EnterPublication(path);
         Validate(current, updated, renames);
-        if (Newtonsoft.Json.JsonConvert.SerializeObject(current.GetAllTorrentClients())
-            != Newtonsoft.Json.JsonConvert.SerializeObject(updated.GetAllTorrentClients()))
-            foreach (var cfg in updated.GetAllTorrentClients().Values) cfg.Maintenance.Armed = false;
         if (renames == null || !renames.HasValues) { loader.SaveConfig(updated, path); publish?.Invoke(); return; }
         var connection = db.Database.GetDbConnection();
         var close = connection.State != ConnectionState.Open;
@@ -94,6 +91,13 @@ public static class InstanceRenamePersistence
                 }
                 if (client != null)
                 {
+                    if (await TableExistsAsync(connection, transaction, "torrentarr_maintenance_state", ct))
+                    {
+                        if ((await StateRowsAsync(connection, transaction, destination, ct)).Count > 0)
+                            throw new ArgumentException("Automation state already exists for the renamed client.");
+                        state.Add(new("torrentarr_maintenance_state", "Key", rename.Name, destination,
+                            await StateRowsAsync(connection, transaction, rename.Name, ct)));
+                    }
                     var sourceDirectory = SafeDeletionService.ClientRecycleDirectory(client, rename.Name);
                     var destinationDirectory = SafeDeletionService.ClientRecycleDirectory(client, destination);
                     if (sourceDirectory != null && destinationDirectory != null && Directory.Exists(sourceDirectory)
@@ -214,10 +218,59 @@ public static class InstanceRenamePersistence
         return rows;
     }
 
+    private static async Task<List<long>> StateRowsAsync(DbConnection connection, DbTransaction transaction, string client, CancellationToken ct)
+    {
+        await using var command = connection.CreateCommand(); command.Transaction = transaction;
+        command.CommandText = "SELECT rowid FROM torrentarr_maintenance_state WHERE substr(Key,1,length($prefix))=$prefix";
+        Add(command, "$prefix", client.ToUpperInvariant() + "|");
+        var rows = new List<long>();
+        await using var reader = await command.ExecuteReaderAsync(ct);
+        while (await reader.ReadAsync(ct)) rows.Add(reader.GetInt64(0));
+        return rows;
+    }
+
     private static async Task ApplyStateAsync(DbConnection connection, DbTransaction transaction, Journal journal, CancellationToken ct)
     {
         foreach (var move in journal.State)
         {
+            if (move.Table == "torrentarr_maintenance_state" && move.Column == "Key")
+            {
+                foreach (var row in move.Rows)
+                {
+                    await using var read = connection.CreateCommand(); read.Transaction = transaction;
+                    read.CommandText = "SELECT Key, Data FROM torrentarr_maintenance_state WHERE rowid=$row";
+                    Add(read, "$row", row);
+                    string key; JObject data;
+                    await using (var reader = await read.ExecuteReaderAsync(ct))
+                    {
+                        if (!await reader.ReadAsync(ct)) throw new InvalidOperationException("Automation state disappeared during rename.");
+                        key = reader.GetString(0); data = JObject.Parse(reader.GetString(1));
+                    }
+                    var oldPrefix = move.Source.ToUpperInvariant() + "|";
+                    var newPrefix = move.Destination.ToUpperInvariant() + "|";
+                    if (key.StartsWith(newPrefix, StringComparison.Ordinal)) continue;
+                    if (!key.StartsWith(oldPrefix, StringComparison.Ordinal)) throw new InvalidOperationException("Automation owner changed during rename.");
+                    var newKey = newPrefix + key[oldPrefix.Length..];
+                    if (data.ContainsKey("ClientInstanceId")) data["ClientInstanceId"] = move.Destination;
+                    foreach (var directory in journal.Directories)
+                        foreach (var field in new[] { "Source", "Destination" })
+                        {
+                            var path = data[field]?.Value<string>();
+                            if (path != null && StorageConfigMigration.Contains(directory.Source, path))
+                                data[field] = directory.Destination + path[directory.Source.Length..];
+                        }
+                    if (key.Contains("|recycle:", StringComparison.Ordinal))
+                    {
+                        newKey = RecycleLedger.Key(move.Destination, data["Destination"]!.Value<string>()!);
+                        data["Key"] = newKey;
+                    }
+                    await using var update = connection.CreateCommand(); update.Transaction = transaction;
+                    update.CommandText = "UPDATE torrentarr_maintenance_state SET Key=$key, Data=$data WHERE rowid=$row";
+                    Add(update, "$key", newKey); Add(update, "$data", data.ToString(Newtonsoft.Json.Formatting.None)); Add(update, "$row", row);
+                    await update.ExecuteNonQueryAsync(ct);
+                }
+                continue;
+            }
             if (!(ArrStateColumns.Contains((move.Table, move.Column))
                 || move.Column == "qbitinstance" && move.Table == "torrentlibrary"))
                 throw new InvalidOperationException("Invalid rename recovery table.");
