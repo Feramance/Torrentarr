@@ -7299,12 +7299,15 @@ export const CONFIG_SCHEMA = {
         "label": "Also Search Specials",
         "kind": "checkbox",
         "default": false,
-        "comments": "Should search for specials episodes? (Season 00)",
+        "comments": [
+          "Include season-zero episodes only when this series has at least one monitored special. Unmonitored also controls whether other specials may be searched."
+        ],
         "required": false,
         "secure": false,
         "uiExpose": true,
         "applyLive": null,
         "requiresRestart": null,
+        "description": "Include season-zero episodes only when this series has at least one monitored special. Unmonitored also controls whether other specials may be searched.",
         "arrKinds": [
           "sonarr"
         ]
@@ -7612,13 +7615,11 @@ export const CONFIG_SCHEMA = {
           "SearchBySeries"
         ],
         "key": "EntrySearch.SearchBySeries",
-        "label": "Search By Series",
+        "label": "Search Mode",
         "kind": "select",
         "default": "smart",
         "comments": [
-          "Search mode: true (always series search), false (always episode search), or \u0027smart\u0027 (automatic)",
-          "Smart mode: uses series search for entire seasons/series, episode search for single episodes",
-          "(Series search ignores QualityUnmetSearch and CustomFormatUnmetSearch settings)"
+          "Smart: search a series, then seasons, when more than half of in-scope aired episodes need searching (at least two); otherwise search episodes. Series/season/episode force that scope. Counts use enabled missing, quality and custom-format settings across all years. Series searches split into permitted seasons when needed to exclude specials. Legacy true/false mean series/episode. Broad searches may also upgrade other episodes under Sonarr\u0027s profiles."
         ],
         "required": false,
         "secure": false,
@@ -7627,9 +7628,11 @@ export const CONFIG_SCHEMA = {
         "requiresRestart": null,
         "options": [
           "smart",
-          "true",
-          "false"
+          "series",
+          "season",
+          "episode"
         ],
+        "description": "Smart: search a series, then seasons, when more than half of in-scope aired episodes need searching (at least two); otherwise search episodes. Series/season/episode force that scope. Counts use enabled missing, quality and custom-format settings across all years. Series searches split into permitted seasons when needed to exclude specials. Legacy true/false mean series/episode. Broad searches may also upgrade other episodes under Sonarr\u0027s profiles.",
         "arrKinds": [
           "sonarr"
         ]

@@ -8,6 +8,15 @@ namespace Torrentarr.Core.Tests.Configuration;
 public class ConfigSchemaBuilderTests
 {
     [Fact]
+    public void SonarrSearchMode_ExposesFourNamedOptions()
+    {
+        var mode = ConfigSchemaBuilder.Sections["Arr"].Single(f => f.key == "EntrySearch.SearchBySeries");
+        mode.label.Should().Be("Search Mode");
+        mode.options.Should().Equal("smart", "series", "season", "episode");
+        mode.@default.Should().Be("smart");
+    }
+
+    [Fact]
     public void MaintenanceRegistry_CoversEveryPersistentPropertyAndCollectionItem()
     {
         var fields = ConfigSchemaBuilder.Sections["TorrentClient"];

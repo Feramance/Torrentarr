@@ -393,7 +393,7 @@ Filter what content Torrentarr searches for:
 
 ```toml
 [Sonarr-TV]
-[Sonarr.Search]
+[Sonarr.EntrySearch]
 # Only search for monitored content
 Monitored = true
 
@@ -480,7 +480,7 @@ URI = "http://localhost:8989"
 APIKey = "sonarr-tv-api-key"
 Category = "sonarr-tv"
 
-[Sonarr-TV.Search]
+[Sonarr-TV.EntrySearch]
 SearchMissing = true
 SearchLimit = 100  # Search up to 100 episodes
 AlsoSearchSpecials = false
@@ -494,9 +494,9 @@ URI = "http://localhost:8990"
 APIKey = "sonarr-anime-api-key"
 Category = "sonarr-anime"
 
-[Sonarr-Anime.Search]
+[Sonarr-Anime.EntrySearch]
 SearchMissing = true
-AlsoSearchSpecials = true  # Search for OVAs, specials
+AlsoSearchSpecials = true  # Search OVAs/specials only where at least one special is monitored
 ```
 
 ### Example 4: Music Library

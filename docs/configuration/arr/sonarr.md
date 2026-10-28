@@ -216,12 +216,12 @@ ArrErrorCodesToBlocklist = []  # Empty list = disabled
 
 ## Automated Search Configuration
 
-Torrentarr can automatically search for missing episodes, quality upgrades, and user requests. Configure these settings in the `[Sonarr-TV.Search]` subsection.
+Torrentarr can automatically search for missing episodes, quality upgrades, and user requests. Configure these settings in the `[Sonarr-TV.EntrySearch]` subsection.
 
 ### Basic Search Settings
 
 ```toml
-[Sonarr-TV.Search]
+[Sonarr-TV.EntrySearch]
 # Enable automated search for missing episodes
 SearchMissing = true
 
@@ -252,29 +252,34 @@ SearchAgainOnSearchCompletion = true
 
 ---
 
-### Search Mode (Series vs. Episode)
+### Search Mode
 
 ```toml
-[Sonarr-TV.Search]
-# Search mode: true | false | "smart"
+[Sonarr-TV.EntrySearch]
+# Search mode: "smart" | "series" | "season" | "episode"
 SearchBySeries = "smart"
 ```
 
 | Mode | Behavior |
 |------|----------|
-| `true` | Always use series-level search (searches entire series at once) |
-| `false` | Always use episode-level search (searches individual episodes) |
-| `"smart"` | **(Recommended)** Automatically chooses:  <br>- Series search for entire seasons/series  <br>- Episode search for single episodes |
+| `"series"` | Search each affected series once; split into permitted seasons when necessary to exclude specials. |
+| `"season"` | Search each affected season once, without requiring a majority. |
+| `"episode"` | Search individual episodes. |
+| `"smart"` | **(Recommended)** Series search when more than half of in-scope aired episodes need searching; otherwise apply that rule per season, then search individual episodes. Promotion requires at least two eligible episodes. |
+
+The WebUI **Search Mode** dropdown offers **Smart**, **Series**, **Season**, and **Episode**. Existing `true` / `"true"` values are accepted as `"series"`, and `false` / `"false"` as `"episode"`; saving writes the named mode.
+
+Specials require `AlsoSearchSpecials = true` and at least one monitored season-zero episode **in that series**. Once this gate is satisfied, `Unmonitored = true` may include its other unmonitored specials. The gate applies to all four modes, upgrades, and blocklist retries. Series searches cannot bypass it: Torrentarr checks Sonarr's season metadata and uses permitted season searches instead when needed. Sonarr's monitoring settings are not changed.
 
 !!! tip "Smart Mode Benefits"
-    `"smart"` mode optimizes search efficiency by using series search for bulk operations and episode search for granular control. This reduces indexer API calls and improves search speed.
+    Smart mode combines outstanding missing, quality, custom-format, and upgrade needs under the enabled settings. Counts span all years even with `SearchByYear` enabled; a candidate in the current pass must trigger the search. The denominator includes satisfied aired episodes within the monitoring/specials scope. Exactly 50% stays at the narrower scope. Unmonitored episodes and episodes without enough inventory use episode searches. The same selection applies to blocklist retries and all supported Sonarr versions.
 
 ---
 
 ### Prioritize Today's Releases
 
 ```toml
-[Sonarr-TV.Search]
+[Sonarr-TV.EntrySearch]
 # Prioritize episodes that aired today
 PrioritizeTodaysReleases = true
 ```
@@ -295,7 +300,7 @@ When enabled, Torrentarr searches for episodes that aired **today** before proce
 ### Quality Upgrade Searches
 
 ```toml
-[Sonarr-TV.Search]
+[Sonarr-TV.EntrySearch]
 # Search for better quality versions of existing episodes
 DoUpgradeSearch = false
 
@@ -317,7 +322,7 @@ ForceMinimumCustomFormat = false
 - `ForceMinimumCustomFormat = true` – Strictly enforce CF scores (removes non-compliant torrents)
 
 !!! warning "Series Search Limitations"
-    When `SearchBySeries = true` or `"smart"` (for series-level searches), **QualityUnmetSearch** and **CustomFormatUnmetSearch** are **ignored**. Series searches don't support granular quality filtering.
+    Smart mode uses **QualityUnmetSearch** and **CustomFormatUnmetSearch** to select scope. Once a series or season search is submitted, Sonarr's profiles govern all its results, so other episodes may also be upgraded. Explicit `SearchBySeries = "series"` selects series scope, subject to the specials gate. Missing identity falls back to narrower searches; retries whose specials permission cannot be established remain unsubmitted.
 
 !!! tip "Bandwidth Considerations"
     Upgrade searches can generate significant indexer traffic, especially for large TV libraries. Enable these only if you have:
@@ -333,7 +338,7 @@ ForceMinimumCustomFormat = false
 Temporarily lower quality standards for missing episodes, then upgrade them later:
 
 ```toml
-[Sonarr-TV.Search]
+[Sonarr-TV.EntrySearch]
 # Use temp profile for missing episodes
 UseTempForMissing = false
 
@@ -376,7 +381,7 @@ ProfileSwitchRetryAttempts = 3
 ### Overseerr
 
 ```toml
-[Sonarr-TV.Search.Overseerr]
+[Sonarr-TV.EntrySearch.Overseerr]
 # Enable Overseerr request processing
 SearchOverseerrRequests = false
 
@@ -408,7 +413,7 @@ When enabled, Torrentarr:
 ### Ombi
 
 ```toml
-[Sonarr-TV.Search.Ombi]
+[Sonarr-TV.EntrySearch.Ombi]
 # Enable Ombi request processing
 SearchOmbiRequests = false
 
@@ -565,7 +570,7 @@ ArrErrorCodesToBlocklist = [
   "Unable to determine if file is a sample"
 ]
 
-[Sonarr-TV.Search]
+[Sonarr-TV.EntrySearch]
 SearchMissing = true
 AlsoSearchSpecials = false
 Unmonitored = false
@@ -587,7 +592,7 @@ ProfileSwitchRetryAttempts = 3
 SearchBySeries = "smart"
 PrioritizeTodaysReleases = true
 
-[Sonarr-TV.Search.Overseerr]
+[Sonarr-TV.EntrySearch.Overseerr]
 SearchOverseerrRequests = true
 OverseerrURI = "http://localhost:5055"
 OverseerrAPIKey = "your-overseerr-api-key"
@@ -632,9 +637,9 @@ RssSyncTimer = 1
 RefreshDownloadsTimer = 1
 ArrErrorCodesToBlocklist = ["Not an upgrade for existing episode file(s)"]
 
-[Sonarr-Anime.Search]
+[Sonarr-Anime.EntrySearch]
 SearchMissing = true
-AlsoSearchSpecials = true  # Often want anime specials
+AlsoSearchSpecials = true  # Requires at least one monitored special per series
 Unmonitored = false
 SearchLimit = 5
 SearchByYear = true
@@ -692,7 +697,7 @@ RemoveTorrent = 4  # Remove only when both ratio AND time met
 
 **Solutions:**
 
-1. ✅ Verify `SearchMissing = true` in `[Sonarr-TV.Search]`
+1. ✅ Verify `SearchMissing = true` in `[Sonarr-TV.EntrySearch]`
 2. ✅ Check `SearchLimit` isn't too low
 3. ✅ Ensure Sonarr has indexers configured and working
 4. ✅ Review `SearchRequestsEvery` delay setting

@@ -310,10 +310,6 @@ public class ArrMediaService : IArrMediaService
 
         try
         {
-            // qBitrr §2.12: "today's release" = aired between 25 hours ago and 1 hour ago
-            var todayLower = DateTime.UtcNow.AddHours(-25);
-            var todayUpper = DateTime.UtcNow.AddHours(-1);
-
             switch (arrConfig.Type.ToLowerInvariant())
             {
                 case "radarr":
@@ -344,44 +340,9 @@ public class ArrMediaService : IArrMediaService
                     break;
 
                 case "sonarr":
-                    // §2.10: When Unmonitored=true, include unmonitored items
-                    var episodes = searchConfig.Unmonitored
-                        ? await _dbContext.Episodes
-                            .Where(e => e.ArrInstance == instanceName && !e.Searched)
-                            .ToListAsync(cancellationToken)
-                        : await _dbContext.Episodes
-                            .Where(e => e.ArrInstance == instanceName && e.Monitored == true && !e.Searched)
-                            .ToListAsync(cancellationToken);
-
-                    foreach (var ep in episodes)
-                    {
-                        if (!searchConfig.AlsoSearchSpecials && ep.SeasonNumber == 0)
-                            continue;
-
-                        var priority = GetReasonPriority(ep.Reason, searchConfig);
-                        if (priority >= 99) continue;
-
-                        // §2.12: 25h/1h window instead of calendar-day comparison
-                        var isTodaysRelease = searchConfig.PrioritizeTodaysReleases &&
-                            ep.AirDateUtc.HasValue &&
-                            ep.AirDateUtc.Value >= todayLower &&
-                            ep.AirDateUtc.Value <= todayUpper;
-
-                        candidates.Add(new SearchCandidate
-                        {
-                            ArrId = ep.ArrId,
-                            Title = $"{ep.SeriesTitle} S{ep.SeasonNumber:00}E{ep.EpisodeNumber:00}",
-                            Type = "Episode",
-                            Reason = ep.Reason ?? "Missing",
-                            Priority = priority,
-                            SeriesId = ep.ArrSeriesId,
-                            SeasonNumber = ep.SeasonNumber,
-                            EpisodeNumber = ep.EpisodeNumber,
-                            AirDate = ep.AirDateUtc,
-                            Year = ep.AirDateUtc?.Year,
-                            IsTodaysRelease = isTodaysRelease
-                        });
-                    }
+                    var episodes = await _dbContext.Episodes.AsNoTracking()
+                        .Where(e => e.ArrInstance == instanceName).ToListAsync(cancellationToken);
+                    candidates.AddRange(SonarrSearchScope.Candidates(episodes, searchConfig, DateTime.UtcNow));
                     break;
 
                 case "lidarr":
@@ -489,33 +450,9 @@ public class ArrMediaService : IArrMediaService
                 break;
 
             case "sonarr":
-                var episodesQuery = _dbContext.Episodes
-                    .Where(e => e.ArrInstance == instanceName && e.Monitored == true && e.HasFile);
-                episodesQuery = searchConfig.DoUpgradeSearch
-                    ? episodesQuery.Where(e => !e.Upgrade)
-                    : episodesQuery.Where(e => !e.Searched);
-                var episodes = await episodesQuery.ToListAsync(cancellationToken);
-
-                foreach (var ep in episodes)
-                {
-                    var priority = GetUpgradePriority(ep.QualityMet, ep.CustomFormatMet, searchConfig);
-                    if (priority >= 99) continue;
-
-                    var reason = DetermineUpgradeReason(ep.QualityMet, ep.CustomFormatMet, searchConfig);
-
-                    candidates.Add(new SearchCandidate
-                    {
-                        ArrId = ep.ArrId,
-                        Title = $"{ep.SeriesTitle} S{ep.SeasonNumber:00}E{ep.EpisodeNumber:00}",
-                        Type = "Episode",
-                        Reason = reason,
-                        Priority = priority,
-                        SeriesId = ep.ArrSeriesId,
-                        SeasonNumber = ep.SeasonNumber,
-                        EpisodeNumber = ep.EpisodeNumber,
-                        Year = ep.AirDateUtc?.Year
-                    });
-                }
+                var episodes = await _dbContext.Episodes.AsNoTracking()
+                    .Where(e => e.ArrInstance == instanceName).ToListAsync(cancellationToken);
+                candidates.AddRange(SonarrSearchScope.Candidates(episodes, searchConfig, DateTime.UtcNow, upgradesOnly: true));
                 break;
 
             case "lidarr":

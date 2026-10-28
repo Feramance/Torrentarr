@@ -160,7 +160,7 @@ Implementation: [`ArrWorkerManager.RunSearchAsync`](https://github.com/Feramance
 
 - Types: Radarr movies, Sonarr episodes, Lidarr albums, Readarr books.
 - Filters: `ArrInstance` dictionary key, `Monitored` unless `Unmonitored`, `!HasFile`, `!Searched`.
-- Skip specials if `!AlsoSearchSpecials` (Sonarr season 0).
+- Skip specials unless `AlsoSearchSpecials` is enabled and at least one special in that series is monitored; enforce this for implicit series searches too.
 - `PrioritizeTodaysReleases`: air/release in −25h / −1h window.
 - Reason priority: Missing=1, CustomFormat=2, Quality=3, Upgrade=4, None/NotAvailable=99 (skipped).
 - Availability: Radarr `MinimumAvailabilityCheck`; episodes/albums/books date windows.
@@ -180,7 +180,7 @@ This matches qBitrr: `should_mark_searched` does **not** look at `do_upgrade_sea
 - Cap: `SearchLimit` vs active Arr commands (`queued` / `started` / `running` plus search command names).
 - Delay: `SearchLoopDelay` if >0, else **30s**. Settings default is **-1**, so 30s unless a positive value is set.
 - `UseTempForMissing` → switch to temp profile before search.
-- Sonarr `SearchBySeries`: `"true"` / `"smart"` (count > 1) / `"false"`.
+- Sonarr `SearchBySeries`: `"smart"` (strict majority, series then season then episode), `"series"`, `"season"`, `"episode"`; legacy true/false remain aliases.
 - Commands: MoviesSearch, EpisodeSearch, SeriesSearch, AlbumSearch, ArtistSearch, BookSearch, AuthorSearch.
 - After trigger: `Searched=true` and `Upgrade=true`, scoped to `ArrInstance`.
 

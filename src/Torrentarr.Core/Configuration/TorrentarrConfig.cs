@@ -448,7 +448,17 @@ public class SearchConfig
     public int ProfileSwitchRetryAttempts { get; set; } = 3;
     public List<string> MainQualityProfile { get; set; } = new();
     public List<string> TempQualityProfile { get; set; } = new();
-    public string SearchBySeries { get; set; } = "smart";
+    private string _searchBySeries = "smart";
+    public string SearchBySeries
+    {
+        get => _searchBySeries;
+        set => _searchBySeries = (value ?? "smart").Trim().Trim('"').ToLowerInvariant() switch
+        {
+            "true" => "series",
+            "false" => "episode",
+            var mode => mode
+        };
+    }
     public bool PrioritizeTodaysReleases { get; set; } = true;
     public OmbiConfig? Ombi { get; set; }
     public OverseerrConfig? Overseerr { get; set; }

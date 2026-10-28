@@ -39,7 +39,16 @@ function fields(
         : undefined,
       format:
         f.kind === "select"
-          ? (value) => (value == null ? "" : String(value))
+          ? (value) => {
+              const formatted = value == null ? "" : String(value);
+              if (f.key !== "EntrySearch.SearchBySeries") return formatted;
+              const mode = formatted.toLowerCase();
+              return mode === "true"
+                ? "series"
+                : mode === "false"
+                  ? "episode"
+                  : mode;
+            }
           : undefined,
       parse:
         f.kind === "select" && typeof f.default === "number"
