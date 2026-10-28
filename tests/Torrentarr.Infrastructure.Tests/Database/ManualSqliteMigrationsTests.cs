@@ -50,5 +50,10 @@ public class ManualSqliteMigrationsTests
         tables.Should().Contain("bookfilesmodel");
         tables.Should().Contain("authorfilesmodel");
         tables.Should().Contain("bookqueuemodel");
+        tables.Should().Contain("torrentarr_sonarr_search_retries");
+        ctx.SonarrSearchRetries.Add(new() { ArrInstance = "Sonarr-test", DownloadId = "ABC" });
+        ctx.SaveChanges();
+        ManualSqliteMigrations.Apply(ctx);
+        ctx.SonarrSearchRetries.Single().DownloadId.Should().Be("ABC");
     }
 }

@@ -1,6 +1,7 @@
 using FluentAssertions;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging.Abstractions;
+using Moq;
 using Torrentarr.Core.Configuration;
 using Torrentarr.Core.Services;
 using Torrentarr.Infrastructure.ApiClients.Arr;
@@ -140,6 +141,101 @@ public sealed class SonarrSearchExecutionTests : IDisposable
     }
 
     [Fact]
+    public async Task PendingRetries_PartialSubmissionKeepsOnlyUnsubmittedEpisodes()
+    {
+        _db.SonarrSearchRetries.Add(new()
+        {
+            ArrInstance = "Sonarr-test",
+            DownloadId = "ABC",
+            CandidatesJson = """[{"ArrId":1,"Reason":"Retry"},{"ArrId":2,"Reason":"Retry"}]"""
+        });
+        await _db.SaveChangesAsync();
+        var executor = new Mock<ISearchExecutor>();
+        executor.Setup(e => e.ExecuteSearchesAsync("Sonarr-test", It.IsAny<IEnumerable<SearchCandidate>>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new SearchResult { SearchesTriggered = 1, SearchedIds = [1], LoopCompleted = false });
+
+        await SonarrRetryQueue.ExecuteAsync(_db, executor.Object, "Sonarr-test", NullLogger.Instance, default);
+
+        var remaining = System.Text.Json.JsonSerializer.Deserialize<List<SearchCandidate>>((await _db.SonarrSearchRetries.SingleAsync()).CandidatesJson)!;
+        remaining.Should().ContainSingle(c => c.ArrId == 2);
+    }
+
+    [Fact]
+    public async Task PendingRetries_SurviveNewContext_AndSearchWithoutScheduledSearching()
+    {
+        var options = new DbContextOptionsBuilder<TorrentarrDbContext>()
+            .UseInMemoryDatabase(Guid.NewGuid().ToString()).Options;
+        var candidates = new List<SearchCandidate>
+        {
+            new() { ArrId = 1, SeriesId = 7, Reason = "Retry", Type = "Episode" },
+            new() { ArrId = 2, SeriesId = 7, Reason = "Retry", Type = "Episode" }
+        };
+        await using (var first = new TorrentarrDbContext(options))
+        {
+            var episodes = SonarrSearchScopeTests.Episodes(2, 2);
+            foreach (var episode in episodes) episode.Searched = true;
+            first.Episodes.AddRange(episodes);
+            first.SonarrSearchRetries.Add(new()
+            {
+                ArrInstance = "Sonarr-test",
+                DownloadId = "ABC",
+                CandidatesJson = System.Text.Json.JsonSerializer.Serialize(candidates)
+            });
+            first.SonarrSearchRetries.Add(new() { ArrInstance = "Sonarr-other", DownloadId = "ABC" });
+            await first.SaveChangesAsync();
+        }
+        _arr.Search.SearchMissing = false;
+        _arr.Search.SearchBySeries = "episode";
+        _arr.Search.SearchLimit = 1;
+        var coordinator = new DatabaseRestartCoordinator();
+        await using var restarted = new TorrentarrDbContext(options);
+        var executor = new RecordingExecutor(_config, restarted,
+            new QualityProfileSwitcherService(NullLogger<QualityProfileSwitcherService>.Instance, restarted, coordinator), coordinator);
+        executor.ActiveCommands = 1;
+        await SonarrRetryQueue.ExecuteAsync(restarted, executor, "Sonarr-test", NullLogger.Instance, default);
+        executor.Plans.Should().BeEmpty();
+        restarted.SonarrSearchRetries.Should().HaveCount(2);
+
+        executor.ActiveCommands = 0;
+        executor.Succeed = false;
+        await SonarrRetryQueue.ExecuteAsync(restarted, executor, "Sonarr-test", NullLogger.Instance, default);
+        restarted.SonarrSearchRetries.Should().HaveCount(2);
+        executor.Succeed = true;
+        await SonarrRetryQueue.ExecuteAsync(restarted, executor, "Sonarr-test", NullLogger.Instance, default);
+        restarted.SonarrSearchRetries.Should().ContainSingle(r => r.ArrInstance == "Sonarr-other");
+        executor.Plans.Last().Covered.Select(c => c.ArrId).Should().Equal(1, 2);
+    }
+
+    [Theory]
+    [InlineData("smart", false)]
+    [InlineData("series", false)]
+    [InlineData("season", false)]
+    [InlineData("smart", true)]
+    [InlineData("series", true)]
+    [InlineData("season", true)]
+    public async Task BroadSearches_KeepSpecialsExplicitUnlessUnmonitoredIsEnabled(string mode, bool unmonitored)
+    {
+        _arr.Search.SearchBySeries = mode;
+        _arr.Search.AlsoSearchSpecials = true;
+        _arr.Search.Unmonitored = unmonitored;
+        var episodes = SonarrSearchScopeTests.Episodes(3, 3)
+            .Concat(SonarrSearchScopeTests.Episodes(3, 3, season: 0, firstId: 10)).ToList();
+        episodes.Last().Monitored = false;
+        var needs = await SeedAsync(episodes);
+        _executor.SpecialsSeasonMonitored = true;
+        var result = await _executor.ExecuteSearchesAsync("Sonarr-test", needs);
+        if (unmonitored)
+            _executor.Plans.Should().Contain(p => p.Command == "SeriesSearch" || p.Command == "SeasonSearch" && p.Trigger.SeasonNumber == 0);
+        else
+        {
+            _executor.Plans.Should().NotContain(p => p.Command == "SeriesSearch" || p.Command == "SeasonSearch" && p.Trigger.SeasonNumber == 0);
+            _executor.Plans.Where(p => p.Trigger.SeasonNumber == 0).Should().HaveCount(2)
+                .And.OnlyContain(p => p.Command == "EpisodeSearch");
+            result.SearchedIds.Should().NotContain(12);
+        }
+    }
+
+    [Fact]
     public async Task Cancellation_DoesNotSubmitOrMarkSearches()
     {
         var episodes = SonarrSearchScopeTests.Episodes(3, 3);
@@ -161,8 +257,9 @@ public sealed class SonarrSearchExecutionTests : IDisposable
         internal List<SonarrSearchPlan> Plans { get; } = [];
         internal bool Succeed { get; set; } = true;
         internal bool BlockAfterFirst { get; set; }
+        internal int ActiveCommands { get; set; }
         public override Task<int> GetActiveCommandCountAsync(string instanceName, CancellationToken cancellationToken = default)
-            => Task.FromResult(BlockAfterFirst && Plans.Count > 0 ? 1 : 0);
+            => Task.FromResult(BlockAfterFirst && Plans.Count > 0 ? 1 : ActiveCommands);
         internal bool SpecialsSeasonMonitored { get; set; }
         internal override Task<List<SonarrSeries>> GetSonarrSeriesAsync(string instanceName, ArrInstanceConfig config, CancellationToken ct) =>
             Task.FromResult(new List<SonarrSeries> { new()

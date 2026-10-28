@@ -31,6 +31,7 @@ public static class ManualSqliteMigrations
         CreateTableIfMissing(db, "torrentarr_maintenance_state", "CREATE TABLE IF NOT EXISTS torrentarr_maintenance_state (Key TEXT NOT NULL PRIMARY KEY, Data TEXT NOT NULL DEFAULT '{}');");
 
         CreateTableIfMissing(db, "searchactivity", "CREATE TABLE IF NOT EXISTS searchactivity ( category TEXT NOT NULL PRIMARY KEY, summary TEXT, timestamp TEXT );");
+        CreateTableIfMissing(db, "torrentarr_sonarr_search_retries", "CREATE TABLE IF NOT EXISTS torrentarr_sonarr_search_retries ( ArrInstance TEXT NOT NULL, DownloadId TEXT NOT NULL, CandidatesJson TEXT NOT NULL DEFAULT '[]', PRIMARY KEY (ArrInstance, DownloadId) );");
 
         CreateTableIfMissing(db, "bookfilesmodel", """
             CREATE TABLE IF NOT EXISTS bookfilesmodel (

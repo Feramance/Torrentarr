@@ -269,7 +269,9 @@ SearchBySeries = "smart"
 
 The WebUI **Search Mode** dropdown offers **Smart**, **Series**, **Season**, and **Episode**. Existing `true` / `"true"` values are accepted as `"series"`, and `false` / `"false"` as `"episode"`; saving writes the named mode.
 
-Specials require `AlsoSearchSpecials = true` and at least one monitored season-zero episode **in that series**. Once this gate is satisfied, `Unmonitored = true` may include its other unmonitored specials. The gate applies to all four modes, upgrades, and blocklist retries. Series searches cannot bypass it: Torrentarr checks Sonarr's season metadata and uses permitted season searches instead when needed. Sonarr's monitoring settings are not changed.
+Specials require `AlsoSearchSpecials = true` and at least one monitored season-zero episode **in that series**. Once this gate is satisfied, `Unmonitored = true` may include its other unmonitored specials. The gate applies to all four modes, upgrades, and blocklist retries. Series searches cannot bypass it: Torrentarr checks Sonarr's season metadata and uses permitted season searches instead when needed. With `Unmonitored = false`, specials use explicit episode searches to avoid implicitly searching unmonitored specials. Sonarr's monitoring settings are not changed.
+
+Blocklist retries that reach `SearchLimit` or fail submission are saved in `torrentarr.db` and retried on later worker cycles, including when scheduled searching is disabled.
 
 !!! tip "Smart Mode Benefits"
     Smart mode combines outstanding missing, quality, custom-format, and upgrade needs under the enabled settings. Counts span all years even with `SearchByYear` enabled; a candidate in the current pass must trigger the search. The denominator includes satisfied aired episodes within the monitoring/specials scope. Exactly 50% stays at the narrower scope. Unmonitored episodes and episodes without enough inventory use episode searches. The same selection applies to blocklist retries and all supported Sonarr versions.

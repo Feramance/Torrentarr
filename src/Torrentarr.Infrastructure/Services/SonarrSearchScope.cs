@@ -103,7 +103,8 @@ internal static class SonarrSearchScope
                 eligible = covered.DistinctBy(c => c.ArrId).Count();
                 total = seriesPopulation.GetValueOrDefault(candidate.SeriesId.Value, []).Count;
             }
-            else if (mode == "season" && candidate.SeriesId is > 0 && candidate.SeasonNumber.HasValue && knownMonitored && populationIds.Contains(candidate.ArrId))
+            else if (mode == "season" && candidate.SeriesId is > 0 && candidate.SeasonNumber.HasValue &&
+                (config.Unmonitored || candidate.SeasonNumber != 0) && knownMonitored && populationIds.Contains(candidate.ArrId))
             {
                 command = "SeasonSearch";
                 var seasonKey = (candidate.SeriesId.Value, candidate.SeasonNumber.Value);
@@ -129,7 +130,7 @@ internal static class SonarrSearchScope
                     var allSeasonNeeds = seasonNeeds.GetValueOrDefault(seasonKey, []);
                     total = seasonPopulation.GetValueOrDefault(seasonKey, []).Count;
                     eligible = allSeasonNeeds.Count;
-                    if (eligible >= 2 && eligible * 2 > total)
+                    if (eligible >= 2 && eligible * 2 > total && (config.Unmonitored || candidate.SeasonNumber != 0))
                     {
                         command = "SeasonSearch";
                         covered = allSeasonNeeds;

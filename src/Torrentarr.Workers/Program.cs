@@ -661,6 +661,9 @@ class ArrWorkerService : BackgroundService
         using var scope = _serviceProvider.CreateScope();
         var syncService = scope.ServiceProvider.GetRequiredService<ArrSyncService>();
         var arrMediaService = scope.ServiceProvider.GetRequiredService<IArrMediaService>();
+        if (_instanceConfig.Type.Equals("sonarr", StringComparison.OrdinalIgnoreCase) && _instanceConfig.ReSearch)
+            await SonarrRetryQueue.ExecuteAsync(scope.ServiceProvider.GetRequiredService<TorrentarrDbContext>(),
+                scope.ServiceProvider.GetRequiredService<ISearchExecutor>(), _context.InstanceName, _logger, cancellationToken);
         await syncService.SyncAsync(_context.InstanceName, cancellationToken);
         if (_instanceConfig.Search.SearchMissing)
             await syncService.MarkRequestsAsync(_context.InstanceName, cancellationToken);

@@ -539,7 +539,15 @@ public class ArrImportService : IArrImportService
             if (retries.Count == 0 && record.SeriesId.HasValue &&
                 config.Search.SearchBySeries.Equals("series", StringComparison.OrdinalIgnoreCase))
                 retries.Add(new SearchCandidate { SeriesId = record.SeriesId, Type = "Episode", Reason = "Retry" });
-            await _searchExecutor.ExecuteSearchesAsync(instanceName, retries, ct);
+            var pending = await _dbContext.SonarrSearchRetries.FindAsync([instanceName, downloadId], ct);
+            if (pending == null)
+            {
+                pending = new Database.Models.SonarrSearchRetry { ArrInstance = instanceName, DownloadId = downloadId };
+                _dbContext.SonarrSearchRetries.Add(pending);
+            }
+            pending.CandidatesJson = System.Text.Json.JsonSerializer.Serialize(retries);
+            await _dbContext.SaveChangesAsync(ct);
+            await SonarrRetryQueue.ExecuteAsync(_dbContext, _searchExecutor, instanceName, _logger, ct);
         }
         return deleted;
     }

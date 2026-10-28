@@ -92,7 +92,7 @@ public class SearchExecutor : ISearchExecutor
         if (isSonarr)
         {
             var inventory = await _db.Episodes.AsNoTracking().Where(e => e.ArrInstance == instanceName).ToListAsync(cancellationToken);
-            candidatesList = await ResolveSonarrRetriesAsync(instanceName, arrConfig, candidatesList, inventory, cancellationToken);
+            candidatesList = await ResolveSonarrRetriesAsync(instanceName, arrConfig, candidatesList, inventory, result, cancellationToken);
             plans = SonarrSearchScope.Plan(candidatesList, inventory,
                 await _db.Series.AsNoTracking().Where(e => e.ArrInstance == instanceName).ToListAsync(cancellationToken),
                 arrConfig.Search, DateTime.UtcNow);
@@ -113,7 +113,7 @@ public class SearchExecutor : ISearchExecutor
         }
 
         var firstSearch = true;
-        var drained = true;
+        var drained = result.Errors.Count == 0;
 
         foreach (var plan in plans)
         {
@@ -212,7 +212,7 @@ public class SearchExecutor : ISearchExecutor
     }
 
     private async Task<List<SearchCandidate>> ResolveSonarrRetriesAsync(string instanceName, ArrInstanceConfig config,
-        List<SearchCandidate> requested, List<EpisodeFilesModel> inventory, CancellationToken ct)
+        List<SearchCandidate> requested, List<EpisodeFilesModel> inventory, SearchResult searchResult, CancellationToken ct)
     {
         var knownIds = inventory.Select(e => e.ArrId).ToHashSet();
         var result = requested.Where(c => c.Reason != "Retry" || knownIds.Contains(c.ArrId)).ToList();
@@ -254,11 +254,15 @@ public class SearchExecutor : ISearchExecutor
                         });
                 }
                 if (!retryIds.Contains(0) && retryIds.Any(id => !knownIds.Contains(id)))
+                {
+                    searchResult.Errors.Add($"Unresolved Sonarr retry IDs for series {group.Key}");
                     _logger.LogWarning("Skipping unresolved Sonarr retry IDs for series {SeriesId}", group.Key);
+                }
             }
             catch (OperationCanceledException) when (ct.IsCancellationRequested) { throw; }
             catch (Exception ex)
             {
+                searchResult.Errors.Add($"Cannot resolve Sonarr retry metadata for series {group.Key}: {ex.Message}");
                 _logger.LogWarning(ex, "Cannot resolve Sonarr retry metadata for series {SeriesId}; leaving retry unsubmitted", group.Key);
             }
         }
@@ -298,7 +302,7 @@ public class SearchExecutor : ISearchExecutor
                 result.AddRange(plan.Covered.Select(c => new SonarrSearchPlan(c, "EpisodeSearch", [c], 1, 1)));
                 continue;
             }
-            if ((specialsAllowed || !seasons.Any(s => s.SeasonNumber == 0 && s.Monitored)) &&
+            if (((specialsAllowed && config.Search.Unmonitored) || !seasons.Any(s => s.SeasonNumber == 0 && s.Monitored)) &&
                 plan.Covered.All(c => seasons.Any(s => s.Monitored && s.SeasonNumber == c.SeasonNumber)))
             {
                 result.Add(plan);
@@ -309,7 +313,7 @@ public class SearchExecutor : ISearchExecutor
             var seasonNumbers = plan.Covered.Where(c => c.SeasonNumber.HasValue).Select(c => c.SeasonNumber!.Value);
             if (config.Search.SearchBySeries == "series")
                 seasonNumbers = seasonNumbers.Concat(seasons.Where(s => s.Monitored).Select(s => s.SeasonNumber));
-            foreach (var season in seasonNumbers.Distinct().Where(n => n != 0 || specialsAllowed))
+            foreach (var season in seasonNumbers.Distinct().Where(n => n != 0 || (specialsAllowed && config.Search.Unmonitored)))
             {
                 var covered = plan.Covered.Where(c => c.SeasonNumber == season).ToList();
                 var trigger = new SearchCandidate
@@ -322,7 +326,8 @@ public class SearchExecutor : ISearchExecutor
                 result.Add(new SonarrSearchPlan(trigger, "SeasonSearch", covered, covered.Count,
                     inventory.Count(e => e.ArrSeriesId == trigger.SeriesId && e.SeasonNumber == season && e.Monitored == true && e.AirDateUtc <= DateTime.UtcNow)));
             }
-            result.AddRange(plan.Covered.Where(c => !c.SeasonNumber.HasValue)
+            result.AddRange(plan.Covered.Where(c => !c.SeasonNumber.HasValue ||
+                (c.SeasonNumber == 0 && specialsAllowed && !config.Search.Unmonitored))
                 .Select(c => new SonarrSearchPlan(c, "EpisodeSearch", [c], 1, 1)));
         }
         return result;

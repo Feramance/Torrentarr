@@ -35,17 +35,24 @@ public sealed class SonarrApiDiscoveryTests : IDisposable
     private int _automaticSearches;
     private (bool Remove, bool Blocklist)? _deletion;
     private string? _queueJson;
+    private string _commandsJson = "[]";
     private readonly string _key = Guid.NewGuid().ToString();
 
     public SonarrApiDiscoveryTests()
     {
-        var socket = new TcpListener(IPAddress.Loopback, 0);
-        socket.Start();
-        var port = ((IPEndPoint)socket.LocalEndpoint).Port;
-        socket.Stop();
-        _url = $"http://127.0.0.1:{port}/sonarr";
-        _listener.Prefixes.Add($"http://127.0.0.1:{port}/");
-        _listener.Start();
+        for (var attempt = 0; ; attempt++)
+        {
+            var socket = new TcpListener(IPAddress.Loopback, 0);
+            socket.Start();
+            var port = ((IPEndPoint)socket.LocalEndpoint).Port;
+            socket.Stop();
+            _url = $"http://127.0.0.1:{port}/sonarr";
+            _listener.Prefixes.Clear();
+            _listener.Prefixes.Add($"http://127.0.0.1:{port}/");
+            try { _listener.Start(); break; }
+            // Another test or process can claim the port after the reservation is released.
+            catch (HttpListenerException ex) when (attempt < 9 && ex.ErrorCode is 98 or 183 or 10048) { }
+        }
         _loop = Task.Run(ListenAsync);
     }
 
@@ -90,6 +97,46 @@ public sealed class SonarrApiDiscoveryTests : IDisposable
         requests.Single(r => r.Path.Contains("/queue?")).Path.Should().Contain("includeUnknownSeriesItems=true");
         var put = requests.Single(r => r.Method == "PUT" && r.Body.Contains("\"qualityProfileId\":9"));
         put.Body.Should().Contain("\"tags\":[7]").And.Contain("\"qualityProfileId\":9");
+    }
+
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task Blocklist_UnsubmittedRetriesAreSavedAndSubmittedOnNextCycle(bool failSubmission)
+    {
+        _queueJson = """{"records":[{"id":1,"downloadId":"ABC","seriesId":7,"episodeIds":[1,2]}]}""";
+        _commandsJson = failSubmission ? "[]" : """[{"name":"EpisodeSearch","status":"started"}]""";
+        _failSearchWrites = failSubmission;
+        var cfg = new TorrentarrConfig();
+        var arr = new ArrInstanceConfig { Type = "sonarr", URI = _url, APIKey = _key, Category = "tv", ReSearch = true };
+        arr.Search.SearchBySeries = "episode";
+        arr.Search.SearchMissing = false;
+        arr.Search.SearchLimit = 1;
+        cfg.ArrInstances["Sonarr-test"] = arr;
+        var options = new DbContextOptionsBuilder<TorrentarrDbContext>()
+            .UseInMemoryDatabase(Guid.NewGuid().ToString()).Options;
+        await using (var db = new TorrentarrDbContext(options))
+        {
+            var service = new ArrImportService(NullLogger<ArrImportService>.Instance, cfg,
+                new QBittorrentConnectionManager(NullLogger<QBittorrentConnectionManager>.Instance), db);
+            (await service.BlocklistAndReSearchAsync("abc", "tv")).Should().BeTrue();
+            (await db.SonarrSearchRetries.SingleAsync()).CandidatesJson.Should().Contain("\"ArrId\":1").And.Contain("\"ArrId\":2");
+            _automaticSearches.Should().Be(0);
+            if (!failSubmission) _requests.Should().NotContain(r => r.Method == "POST");
+        }
+
+        _commandsJson = "[]";
+        _failSearchWrites = false;
+        await using var restarted = new TorrentarrDbContext(options);
+        var coordinator = new DatabaseRestartCoordinator();
+        var executor = new SearchExecutor(NullLogger<SearchExecutor>.Instance, cfg, restarted,
+            new QualityProfileSwitcherService(NullLogger<QualityProfileSwitcherService>.Instance, restarted, coordinator), coordinator);
+        await SonarrRetryQueue.ExecuteAsync(restarted, executor, "Sonarr-test", NullLogger.Instance, default);
+        (await restarted.SonarrSearchRetries.ToListAsync()).Should().BeEmpty();
+        var body = JObject.Parse(_requests.Last(r => r.Method == "POST").Body);
+        body.Value<string>("name").Should().Be("EpisodeSearch");
+        body["episodeIds"]!.ToObject<List<int>>()!.Should().Equal(1, 2);
+        _requests.Count(r => r.Method == "DELETE").Should().Be(1);
     }
 
     [Theory]
@@ -552,7 +599,8 @@ public sealed class SonarrApiDiscoveryTests : IDisposable
                     qualityProfileId = 1,
                     seasons = new[] { new { seasonNumber = 0, monitored = _specialsSeasonMonitored }, new { seasonNumber = 1, monitored = true }, new { seasonNumber = 2, monitored = true } }
                 }))
-                : relative.Contains("/episodefile?") || relative.EndsWith("/qualityprofile") || relative.EndsWith("/command") && ctx.Request.HttpMethod == "GET" ? "[]" : "{}";
+                : relative.EndsWith("/command") && ctx.Request.HttpMethod == "GET" ? _commandsJson
+                : relative.Contains("/episodefile?") || relative.EndsWith("/qualityprofile") ? "[]" : "{}";
             if (relative.Contains("/queue?") && ctx.Request.QueryString["includeUnknownSeriesItems"] == "false")
             {
                 var queue = JObject.Parse(json);
