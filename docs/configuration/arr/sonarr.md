@@ -262,7 +262,7 @@ SearchBySeries = "smart"
 
 | Mode | Behavior |
 |------|----------|
-| `"series"` | Search each affected series once; split into permitted seasons when necessary to exclude specials. |
+| `"series"` | Search each affected series once; split into permitted seasons with outstanding needs when necessary to exclude specials. |
 | `"season"` | Search each affected season once, without requiring a majority. |
 | `"episode"` | Search individual episodes. |
 | `"smart"` | **(Recommended)** Series search when more than half of in-scope aired episodes need searching; otherwise apply that rule per season, then search individual episodes. Promotion requires at least two eligible episodes. |

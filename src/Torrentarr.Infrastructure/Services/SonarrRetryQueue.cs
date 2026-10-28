@@ -28,12 +28,13 @@ public static class SonarrRetryQueue
                     db.SonarrSearchRetries.Remove(retry);
                 else
                 {
-                    retry.CandidatesJson = JsonSerializer.Serialize(candidates.Where(c => !result.SearchedIds.Contains(c.ArrId)));
+                    retry.CandidatesJson = JsonSerializer.Serialize((result.RetryCandidates ?? candidates)
+                        .Where(c => !result.SearchedIds.Contains(c.ArrId)));
                     logger.LogWarning("Sonarr re-search after blocklist of {Hash} was not fully submitted ({Triggered} triggered); remaining retries are saved",
                         retry.DownloadId, result.SearchesTriggered);
                 }
                 await db.SaveChangesAsync(ct);
-                if (!result.LoopCompleted) break;
+                if (!result.LoopCompleted && !result.OnlyRetryResolutionFailed) break;
             }
         }
         finally { gate.Release(); }

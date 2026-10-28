@@ -114,12 +114,14 @@ public class SearchExecutor : ISearchExecutor
 
         var firstSearch = true;
         var drained = result.Errors.Count == 0;
+        var submissionStopped = false;
 
         foreach (var plan in plans)
         {
             var candidate = plan.Trigger;
             if (cancellationToken.IsCancellationRequested)
             {
+                submissionStopped = true;
                 drained = false;
                 break;
             }
@@ -127,6 +129,7 @@ public class SearchExecutor : ISearchExecutor
             var activeCommands = await GetActiveCommandCountAsync(instanceName, cancellationToken);
             if (!CanSearch(activeCommands, searchLimit))
             {
+                submissionStopped = true;
                 _logger.LogTrace("SearchExecutor: command limit reached ({Active}/{Limit}), pausing searches",
                     activeCommands, searchLimit);
                 drained = false;
@@ -193,6 +196,7 @@ public class SearchExecutor : ISearchExecutor
                 }
                 else
                 {
+                    submissionStopped = true;
                     drained = false;
                     _logger.LogTrace("SearchExecutor: search not triggered for {Title}", candidate.Title);
                 }
@@ -200,6 +204,7 @@ public class SearchExecutor : ISearchExecutor
             catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested) { throw; }
             catch (Exception ex)
             {
+                submissionStopped = true;
                 drained = false;
                 _logger.LogError(ex, "SearchExecutor: error searching {Title}", candidate.Title);
                 result.Errors.Add($"Failed to search {candidate.Title}: {ex.Message}");
@@ -208,6 +213,7 @@ public class SearchExecutor : ISearchExecutor
 
         result.ItemsSearched = result.SearchedIds.Count;
         result.LoopCompleted = drained;
+        result.OnlyRetryResolutionFailed = !drained && !submissionStopped;
         return result;
     }
 
@@ -266,7 +272,12 @@ public class SearchExecutor : ISearchExecutor
                 _logger.LogWarning(ex, "Cannot resolve Sonarr retry metadata for series {SeriesId}; leaving retry unsubmitted", group.Key);
             }
         }
-        return result.DistinctBy(c => c.ArrId).ToList();
+        var resolved = result.DistinctBy(c => c.ArrId).ToList();
+        searchResult.RetryCandidates = resolved.Where(c => c.Reason == "Retry")
+            .Concat(requested.Where(c => c.Reason == "Retry" &&
+                !resolved.Any(r => r.ArrId == c.ArrId || (c.ArrId == 0 && r.SeriesId == c.SeriesId))))
+            .DistinctBy(c => c.ArrId).ToList();
+        return resolved;
     }
 
     internal virtual Task<List<SonarrSeries>> GetSonarrSeriesAsync(string instanceName, ArrInstanceConfig config, CancellationToken ct) =>
@@ -310,9 +321,8 @@ public class SearchExecutor : ISearchExecutor
             }
 
             // SeriesSearch has no exclude-specials parameter, so restrict its scope with season commands.
+            // Keep only seasons with covered episodes so partial retries can advance past completed seasons.
             var seasonNumbers = plan.Covered.Where(c => c.SeasonNumber.HasValue).Select(c => c.SeasonNumber!.Value);
-            if (config.Search.SearchBySeries == "series")
-                seasonNumbers = seasonNumbers.Concat(seasons.Where(s => s.Monitored).Select(s => s.SeasonNumber));
             foreach (var season in seasonNumbers.Distinct().Where(n => n != 0 || (specialsAllowed && config.Search.Unmonitored)))
             {
                 var covered = plan.Covered.Where(c => c.SeasonNumber == season).ToList();

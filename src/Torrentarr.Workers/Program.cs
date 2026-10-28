@@ -661,6 +661,23 @@ class ArrWorkerService : BackgroundService
         using var scope = _serviceProvider.CreateScope();
         var syncService = scope.ServiceProvider.GetRequiredService<ArrSyncService>();
         var arrMediaService = scope.ServiceProvider.GetRequiredService<IArrMediaService>();
+        if (_instanceConfig.Search.UseTempForMissing && _instanceConfig.Search.TempProfileResetTimeoutMinutes > 0)
+        {
+            try
+            {
+                await scope.ServiceProvider.GetRequiredService<QualityProfileSwitcherService>()
+                    .RestoreTimedOutProfilesAsync(_context.InstanceName, _instanceConfig, cancellationToken);
+            }
+            catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+            {
+                throw;
+            }
+            catch (Exception ex)
+            {
+                _logger.LogWarning(ex, "Failed to restore timed-out temporary profiles for {Instance}; continuing search", _context.InstanceName);
+            }
+        }
+
         if (_instanceConfig.Type.Equals("sonarr", StringComparison.OrdinalIgnoreCase) && _instanceConfig.ReSearch)
             await SonarrRetryQueue.ExecuteAsync(scope.ServiceProvider.GetRequiredService<TorrentarrDbContext>(),
                 scope.ServiceProvider.GetRequiredService<ISearchExecutor>(), _context.InstanceName, _logger, cancellationToken);
@@ -671,23 +688,6 @@ class ArrWorkerService : BackgroundService
         SearchResult? searchResult = null;
         if (!_instanceConfig.ProcessingOnly && ShouldRunSearch())
         {
-            if (_instanceConfig.Search.UseTempForMissing && _instanceConfig.Search.TempProfileResetTimeoutMinutes > 0)
-            {
-                try
-                {
-                    await scope.ServiceProvider.GetRequiredService<QualityProfileSwitcherService>()
-                        .RestoreTimedOutProfilesAsync(_context.InstanceName, _instanceConfig, cancellationToken);
-                }
-                catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
-                {
-                    throw;
-                }
-                catch (Exception ex)
-                {
-                    _logger.LogWarning(ex, "Failed to restore timed-out temporary profiles for {Instance}; continuing search", _context.InstanceName);
-                }
-            }
-
             if (_searchLoopCompleted && _instanceConfig.Search.SearchAgainOnSearchCompletion)
             {
                 await ResetSearchedFlagsAsync(scope.ServiceProvider.GetRequiredService<TorrentarrDbContext>(), cancellationToken);
