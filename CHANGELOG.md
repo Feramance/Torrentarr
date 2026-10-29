@@ -1,5 +1,15 @@
 # Changelog
 
+## v6.19.3-1 (2026-10-29)
+
+### Bug Fixes
+- fix: preserve qBitrr durations during storage migration ([f756d86](https://github.com/Feramance/Torrentarr/commit/f756d86b8021889e3eefb13a04069442c36a7cec))
+
+### Maintenance
+- test: isolate qBitrr storage environment aliases ([370ad7e](https://github.com/Feramance/Torrentarr/commit/370ad7ea75b465a350a9ee5ea0c92f890ff5b6c9))
+
+---
+
 ## v6.19.2-1 (2026-10-29)
 
 ### Features
