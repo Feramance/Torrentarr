@@ -1,5 +1,16 @@
 # Changelog
 
+## v6.19.2-1 (2026-10-29)
+
+### Features
+- feat: add configuration-aware Sonarr search modes ([67f6e8a](https://github.com/Feramance/Torrentarr/commit/67f6e8adf3249eca1831e4b114e517c8c38f5e44))
+
+### Bug Fixes
+- fix: continue deferred Sonarr searches and restore temporary profiles ([fb69ffd](https://github.com/Feramance/Torrentarr/commit/fb69ffd76d60b76e4bd76fe6c16e3ef0922ce757))
+- fix: retain Sonarr retries and restrict special search scopes ([da08730](https://github.com/Feramance/Torrentarr/commit/da08730a7df36259670f82b74eccc950e7dd1101))
+
+---
+
 ## v6.19.1-1 (2026-10-26)
 
 ### Features
