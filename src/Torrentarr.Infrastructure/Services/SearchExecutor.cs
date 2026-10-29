@@ -16,6 +16,7 @@ public class SearchExecutor : ISearchExecutor
     private readonly QualityProfileSwitcherService _profileSwitcher;
     private readonly DatabaseRestartCoordinator _restartCoordinator;
     private readonly IOperationalIssueReporter? _issues;
+    private readonly SearchSubmissionTiming _timing;
 
     internal TimeProvider Clock { get; set; } = TimeProvider.System;
 
@@ -40,7 +41,13 @@ public class SearchExecutor : ISearchExecutor
         TorrentarrDbContext db,
         QualityProfileSwitcherService profileSwitcher,
         DatabaseRestartCoordinator restartCoordinator, IOperationalIssueReporter? issues = null)
+        : this(logger, config, db, profileSwitcher, restartCoordinator, issues, new SearchSubmissionTiming()) { }
+
+    public SearchExecutor(ILogger<SearchExecutor> logger, TorrentarrConfig config, TorrentarrDbContext db,
+        QualityProfileSwitcherService profileSwitcher, DatabaseRestartCoordinator restartCoordinator,
+        IOperationalIssueReporter? issues, SearchSubmissionTiming timing)
     {
+        _timing = timing;
         _logger = logger;
         _config = config;
         _db = db;
@@ -114,119 +121,128 @@ public class SearchExecutor : ISearchExecutor
             plans = await RestrictSonarrSeriesSearchesAsync(instanceName, arrConfig, plans, inventory, cancellationToken);
         }
 
-        var firstSearch = true;
         var drained = result.Errors.Count == 0;
         var submissionStopped = false;
 
         foreach (var plan in plans)
         {
-            var candidate = plan.Trigger;
-            cancellationToken.ThrowIfCancellationRequested();
-            var delay = firstSearch ? TimeSpan.Zero : TimeSpan.FromSeconds(searchLoopDelay);
-            if (OutOfBudget(delay))
-            {
-                Yield(); drained = false; submissionStopped = true; break;
-            }
-
-            var activeCommands = await GetActiveCommandCountAsync(instanceName, cancellationToken);
-            if (!CanSearch(activeCommands, searchLimit))
-            {
-                submissionStopped = true;
-                _logger.LogTrace("SearchExecutor: command limit reached ({Active}/{Limit}), pausing searches",
-                    activeCommands, searchLimit);
-                drained = false;
-                break;
-            }
-
-            if (!firstSearch)
-            {
-                await Task.Delay(delay, Clock, cancellationToken);
-            }
-            firstSearch = false;
-
+            var gate = _timing.Gate(instanceName);
+            await gate.WaitAsync(cancellationToken);
             try
             {
-                // Recheck capacity after sleeping, before changing any external profile.
-                if (!CanSearch(await GetActiveCommandCountAsync(instanceName, cancellationToken), searchLimit))
-                { drained = false; submissionStopped = true; break; }
-                if (OutOfBudget(TimeSpan.Zero))
-                { Yield(); drained = false; submissionStopped = true; break; }
-                if (!await _profileSwitcher.SwitchToTempProfilesAsync(instanceName, arrConfig, plan.Covered, cancellationToken))
+                var candidate = plan.Trigger;
+                cancellationToken.ThrowIfCancellationRequested();
+                var delay = _timing.RemainingDelay(instanceName, Clock.GetUtcNow(), TimeSpan.FromSeconds(searchLoopDelay));
+                if (OutOfBudget(delay))
                 {
-                    drained = false; submissionStopped = true;
-                    result.Errors.Add($"Search skipped for {candidate.Title}: temporary profile preparation failed.");
-                    continue;
-                }
-                if (OutOfBudget(TimeSpan.Zero))
-                { Yield(); drained = false; submissionStopped = true; break; }
-                var useSeriesSearch = plan.Command == "SeriesSearch";
-                if (isSonarr)
-                    _logger.LogInformation("Sonarr {Command}: series={SeriesId}, season={Season}, eligible={Eligible}/{Total}",
-                        plan.Command, candidate.SeriesId, candidate.SeasonNumber, plan.EligibleCount, plan.TotalCount);
-
-                // Log candidate being searched (qBitrr format) - BEFORE attempting trigger
-                var reasonText = string.IsNullOrEmpty(candidate.Reason) ? "" : $"[{candidate.Reason?.Trim('"').Trim()}]";
-                var typeText = (candidate.Type ?? "").Trim('"').Trim();
-
-                switch (typeText.ToLowerInvariant())
-                {
-                    case "movie":
-                        _logger.LogInformation(
-                            "Searching for: {Title:l} ({Year}) [id={ArrId}|movie]{Reason:l}",
-                            candidate.Title, candidate.Year ?? 0, candidate.ArrId, reasonText);
-                        break;
-                    case "episode":
-                        if (useSeriesSearch)
-                            _logger.LogInformation(
-                                "Searching for: {Title:l} [id={SeriesId}|series]{Reason:l}",
-                                candidate.Title, candidate.SeriesId, reasonText);
-                        else
-                            _logger.LogInformation(
-                                "Searching for: {Title:l} | S{SeasonNumber:D2}E{EpisodeNumber:D3} | [id={ArrId}|episode]{Reason:l}",
-                                candidate.Title, candidate.SeasonNumber ?? 0, candidate.EpisodeNumber ?? 0, candidate.ArrId, reasonText);
-                        break;
-                    case "album":
-                        _logger.LogInformation(
-                            "Searching for: {ArtistName:l} [id={AlbumId}|album]{Reason:l}",
-                            candidate.Title, candidate.AlbumId ?? 0, reasonText);
-                        break;
-                    default:
-                        _logger.LogInformation("Searching for: {Title:l} [id={ArrId}|{Type:l}]{Reason:l}",
-                            candidate.Title, candidate.ArrId, typeText, reasonText);
-                        break;
+                    Yield(); drained = false; submissionStopped = true; break;
                 }
 
-                var triggered = isSonarr
-                    ? await TriggerSonarrSearchAsync(instanceName, arrConfig, plan, cancellationToken)
-                    : await TriggerSearchForCandidateAsync(instanceName, arrConfig, candidate, false, cancellationToken);
-                if (triggered)
+                var activeCommands = await GetActiveCommandCountAsync(instanceName, cancellationToken);
+                if (!CanSearch(activeCommands, searchLimit))
                 {
-                    if (_issues != null) await _issues.ResolveAsync(SearchIssue(instanceName, "submission", candidate.ArrId.ToString()), cancellationToken);
-                    result.SearchesTriggered++;
-                    foreach (var covered in plan.Covered)
+                    submissionStopped = true;
+                    _logger.LogTrace("SearchExecutor: command limit reached ({Active}/{Limit}), pausing searches",
+                        activeCommands, searchLimit);
+                    drained = false;
+                    break;
+                }
+
+                delay = _timing.RemainingDelay(instanceName, Clock.GetUtcNow(), TimeSpan.FromSeconds(searchLoopDelay));
+                if (OutOfBudget(delay))
+                { Yield(); drained = false; submissionStopped = true; break; }
+                if (delay > TimeSpan.Zero) await Task.Delay(delay, Clock, cancellationToken);
+
+                try
+                {
+                    // Recheck capacity after sleeping, before changing any external profile.
+                    if (!CanSearch(await GetActiveCommandCountAsync(instanceName, cancellationToken), searchLimit))
+                    { drained = false; submissionStopped = true; break; }
+                    if (OutOfBudget(TimeSpan.Zero))
+                    { Yield(); drained = false; submissionStopped = true; break; }
+                    if (!await _profileSwitcher.SwitchToTempProfilesAsync(instanceName, arrConfig, plan.Covered, cancellationToken))
                     {
-                        if (covered.ArrId <= 0) continue;
-                        await MarkAsSearchedAsync(instanceName, arrConfig, covered, cancellationToken);
-                        result.SearchedIds.Add(covered.ArrId);
+                        drained = false; submissionStopped = true;
+                        result.Errors.Add($"Search skipped for {candidate.Title}: temporary profile preparation failed.");
+                        continue;
+                    }
+                    if (OutOfBudget(TimeSpan.Zero))
+                    { Yield(); drained = false; submissionStopped = true; break; }
+                    var useSeriesSearch = plan.Command == "SeriesSearch";
+                    if (isSonarr)
+                        _logger.LogInformation("Sonarr {Command}: series={SeriesId}, season={Season}, eligible={Eligible}/{Total}",
+                            plan.Command, candidate.SeriesId, candidate.SeasonNumber, plan.EligibleCount, plan.TotalCount);
+
+                    // Log candidate being searched (qBitrr format) - BEFORE attempting trigger
+                    var reasonText = string.IsNullOrEmpty(candidate.Reason) ? "" : $"[{candidate.Reason?.Trim('"').Trim()}]";
+                    var typeText = (candidate.Type ?? "").Trim('"').Trim();
+
+                    switch (typeText.ToLowerInvariant())
+                    {
+                        case "movie":
+                            _logger.LogInformation(
+                                "Searching for: {Title:l} ({Year}) [id={ArrId}|movie]{Reason:l}",
+                                candidate.Title, candidate.Year ?? 0, candidate.ArrId, reasonText);
+                            break;
+                        case "episode":
+                            if (useSeriesSearch)
+                                _logger.LogInformation(
+                                    "Searching for: {Title:l} [id={SeriesId}|series]{Reason:l}",
+                                    candidate.Title, candidate.SeriesId, reasonText);
+                            else
+                                _logger.LogInformation(
+                                    "Searching for: {Title:l} | S{SeasonNumber:D2}E{EpisodeNumber:D3} | [id={ArrId}|episode]{Reason:l}",
+                                    candidate.Title, candidate.SeasonNumber ?? 0, candidate.EpisodeNumber ?? 0, candidate.ArrId, reasonText);
+                            break;
+                        case "album":
+                            _logger.LogInformation(
+                                "Searching for: {ArtistName:l} [id={AlbumId}|album]{Reason:l}",
+                                candidate.Title, candidate.AlbumId ?? 0, reasonText);
+                            break;
+                        default:
+                            _logger.LogInformation("Searching for: {Title:l} [id={ArrId}|{Type:l}]{Reason:l}",
+                                candidate.Title, candidate.ArrId, typeText, reasonText);
+                            break;
+                    }
+
+                    bool triggered;
+                    try
+                    {
+                        triggered = isSonarr
+                            ? await TriggerSonarrSearchAsync(instanceName, arrConfig, plan, cancellationToken)
+                            : await TriggerSearchForCandidateAsync(instanceName, arrConfig, candidate, false, cancellationToken);
+                    }
+                    finally { _timing.Record(instanceName, Clock.GetUtcNow()); }
+                    if (triggered)
+                    {
+                        if (_issues != null) await _issues.ResolveAsync(SearchIssue(instanceName, "submission", candidate.ArrId.ToString()), cancellationToken);
+                        result.SearchesTriggered++;
+                        foreach (var covered in plan.Covered)
+                        {
+                            if (covered.ArrId <= 0) continue;
+                            await MarkAsSearchedAsync(instanceName, arrConfig, covered, cancellationToken);
+                            result.SearchedIds.Add(covered.ArrId);
+                        }
+                    }
+                    else
+                    {
+                        submissionStopped = true;
+                        drained = false;
+                        result.Errors.Add("Arr rejected a search submission.");
+                        if (_issues != null) await _issues.ReportAsync(SearchIssue(instanceName, "submission", candidate.ArrId.ToString()), cancellationToken);
+                        _logger.LogTrace("SearchExecutor: search not triggered for {Title}", candidate.Title);
                     }
                 }
-                else
+                catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested) { throw; }
+                catch (Exception ex)
                 {
                     submissionStopped = true;
                     drained = false;
-                    result.Errors.Add("Arr rejected a search submission.");
-                    if (_issues != null) await _issues.ReportAsync(SearchIssue(instanceName, "submission", candidate.ArrId.ToString()), cancellationToken);
-                    _logger.LogTrace("SearchExecutor: search not triggered for {Title}", candidate.Title);
+                    _logger.LogError(ex, "SearchExecutor: error searching {Title}", candidate.Title);
+                    result.Errors.Add($"Failed to search {candidate.Title}: {ex.Message}");
                 }
             }
-            catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested) { throw; }
-            catch (Exception ex)
-            {
-                submissionStopped = true;
-                drained = false;
-                _logger.LogError(ex, "SearchExecutor: error searching {Title}", candidate.Title);
-                result.Errors.Add($"Failed to search {candidate.Title}: {ex.Message}");
-            }
+            finally { gate.Release(); }
         }
 
         result.ItemsSearched = result.SearchedIds.Count;

@@ -37,7 +37,7 @@ public class SearchExecutorTests
 
     private static TestSearchExecutor CreateTestService(
         TorrentarrConfig? config = null,
-        TorrentarrDbContext? dbContext = null)
+        TorrentarrDbContext? dbContext = null, SearchSubmissionTiming? timing = null)
     {
         var options = new DbContextOptionsBuilder<TorrentarrDbContext>()
             .UseInMemoryDatabase(Guid.NewGuid().ToString())
@@ -55,7 +55,7 @@ public class SearchExecutorTests
             cfg,
             db,
             switcher,
-            new DatabaseRestartCoordinator());
+            new DatabaseRestartCoordinator(), timing);
     }
 
     private static TorrentarrConfig CreateConfigWithRadarr(int searchLoopDelay = 30, int searchLimit = 5)
@@ -95,6 +95,49 @@ public class SearchExecutorTests
             clock.GetUtcNow().AddMinutes(10), default);
         next.LoopCompleted.Should().BeTrue();
         service.TriggeredCandidates.Select(c => c.ArrId).Should().Equal(1, 2);
+    }
+
+    [Fact]
+    public async Task BudgetYield_PreservesRemainingDelayAcrossExecutorScopesAndInstances()
+    {
+        var config = CreateConfigWithRadarr(searchLoopDelay: 300);
+        config.ArrInstances["Other"] = config.ArrInstances["Radarr-test"];
+        var timing = new SearchSubmissionTiming();
+        var clock = new ManualClock();
+        var first = CreateTestService(config, timing: timing); first.Clock = clock;
+        SearchCandidate[] candidates = [new() { ArrId = 1 }, new() { ArrId = 2 }];
+        var yielded = await first.ExecuteSearchesAsync("Radarr-test", candidates, clock.Now.AddMinutes(2), default);
+        yielded.SearchedIds.Should().Equal(1);
+        var next = CreateTestService(config, timing: timing); next.Clock = clock;
+        var stillPending = await next.ExecuteSearchesAsync("Radarr-test", candidates.Skip(1), clock.Now.AddMinutes(2), default);
+        stillPending.BudgetExhausted.Should().BeTrue();
+        next.TriggeredCandidates.Should().BeEmpty();
+        // A different instance is not held back by this instance's outstanding delay.
+        (await next.ExecuteSearchesAsync("Other", candidates.Take(1), clock.Now.AddMinutes(2), default)).SearchesTriggered.Should().Be(1);
+        clock.Now += TimeSpan.FromMinutes(1);
+        var resumed = await next.ExecuteSearchesAsync("Radarr-test", candidates.Skip(1), clock.Now.AddMinutes(10), default);
+        resumed.SearchedIds.Should().Equal(2);
+        resumed.LoopCompleted.Should().BeTrue();
+        clock.Delays.Should().Equal(TimeSpan.FromMinutes(4));
+    }
+
+    [Fact]
+    public async Task SharedSubmissionGate_CancellationDoesNotLeakTheInstanceLock()
+    {
+        var timing = new SearchSubmissionTiming();
+        var service = CreateTestService(CreateConfigWithRadarr(), timing: timing);
+        var gate = timing.Gate("Radarr-test");
+        await gate.WaitAsync();
+        using var stop = new CancellationTokenSource();
+        try
+        {
+            var waiting = service.ExecuteSearchesAsync("Radarr-test", [new() { ArrId = 1 }], stop.Token);
+            waiting.IsCompleted.Should().BeFalse();
+            stop.Cancel();
+            await FluentActions.Awaiting(() => waiting).Should().ThrowAsync<OperationCanceledException>();
+        }
+        finally { gate.Release(); }
+        (await service.ExecuteSearchesAsync("Radarr-test", [new() { ArrId = 1 }])).SearchesTriggered.Should().Be(1);
     }
 
     [Fact]
@@ -147,7 +190,14 @@ public class SearchExecutorTests
     private sealed class ManualClock : TimeProvider
     {
         public DateTimeOffset Now { get; set; } = DateTimeOffset.UnixEpoch;
+        public List<TimeSpan> Delays { get; } = [];
         public override DateTimeOffset GetUtcNow() => Now;
+        public override ITimer CreateTimer(TimerCallback callback, object? state, TimeSpan dueTime, TimeSpan period)
+        {
+            Delays.Add(dueTime);
+            Now += dueTime;
+            return new Timer(callback, state, TimeSpan.Zero, Timeout.InfiniteTimeSpan);
+        }
     }
 
     [Fact]
@@ -381,8 +431,8 @@ internal sealed class TestSearchExecutor : SearchExecutor
         TorrentarrConfig config,
         TorrentarrDbContext db,
         QualityProfileSwitcherService profileSwitcher,
-        DatabaseRestartCoordinator restartCoordinator)
-        : base(logger, config, db, profileSwitcher, restartCoordinator)
+        DatabaseRestartCoordinator restartCoordinator, SearchSubmissionTiming? timing = null)
+        : base(logger, config, db, profileSwitcher, restartCoordinator, null, timing ?? new SearchSubmissionTiming())
     {
     }
 

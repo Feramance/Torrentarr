@@ -227,6 +227,7 @@ try
     builder.Services.AddSingleton<IMediaValidationService, MediaValidationService>();
     builder.Services.AddScoped<ITorrentProcessor, TorrentProcessor>();
     builder.Services.AddScoped<ArrSyncService>();
+    builder.Services.AddSingleton<SearchSubmissionTiming>();
     builder.Services.AddScoped<ISearchExecutor, SearchExecutor>();
     builder.Services.AddScoped<QualityProfileSwitcherService>();
     builder.Services.AddScoped<IArrMediaService, ArrMediaService>();
