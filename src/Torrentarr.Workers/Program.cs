@@ -504,7 +504,7 @@ class ArrWorkerService : BackgroundService
                 }
                 using var processing = ConfigMutationGuard.EnterProcessing();
                 RequireCurrentConfiguration();
-                await ProcessSearchAsync(cycle.Token);
+                await ProcessSearchAsync(cycle.Token, DateTimeOffset.UtcNow + WorkerLoopProgress.CycleTimeout - System.Diagnostics.Stopwatch.GetElapsedTime(cycleStart));
                 _consecutiveSearchErrors = 0;
                 _runtimeMetrics.Search = _runtimeMetrics.Search with { LastSuccess = DateTimeOffset.UtcNow };
                 await ObserveLoopAsync("search", true, cycle.Token);
@@ -673,7 +673,10 @@ class ArrWorkerService : BackgroundService
 
     }
 
-    internal async Task ProcessSearchAsync(CancellationToken cancellationToken)
+    internal Task ProcessSearchAsync(CancellationToken cancellationToken)
+        => ProcessSearchAsync(cancellationToken, null);
+
+    internal async Task ProcessSearchAsync(CancellationToken cancellationToken, DateTimeOffset? deadline)
     {
         using var scope = _serviceProvider.CreateScope();
         var syncService = scope.ServiceProvider.GetRequiredService<ArrSyncService>();
@@ -698,7 +701,7 @@ class ArrWorkerService : BackgroundService
         if (_instanceConfig.ReSearch)
             await SonarrRetryQueue.ExecuteAsync(scope.ServiceProvider.GetRequiredService<TorrentarrDbContext>(),
                 scope.ServiceProvider.GetRequiredService<ISearchExecutor>(), _context.InstanceName, _logger, cancellationToken,
-                _instanceConfig, scope.ServiceProvider.GetService<IOperationalIssueReporter>());
+                _instanceConfig, scope.ServiceProvider.GetService<IOperationalIssueReporter>(), deadline);
         await syncService.SyncAsync(_context.InstanceName, cancellationToken);
         if (_instanceConfig.Search.SearchMissing)
             await syncService.MarkRequestsAsync(_context.InstanceName, cancellationToken);
@@ -716,22 +719,28 @@ class ArrWorkerService : BackgroundService
             if (_instanceConfig.Search.DoUpgradeSearch)
             {
                 _logger.LogInformation("Searching for quality upgrades (exclusive) in {Instance}", _context.InstanceName);
-                searchResult = await arrMediaService.SearchQualityUpgradesAsync(_instanceConfig.Category, cancellationToken);
+                searchResult = await (deadline.HasValue
+                        ? arrMediaService.SearchQualityUpgradesAsync(_instanceConfig.Category, deadline, cancellationToken)
+                        : arrMediaService.SearchQualityUpgradesAsync(_instanceConfig.Category, cancellationToken));
             }
             else
             {
                 if (_instanceConfig.Search.SearchMissing)
                 {
                     _logger.LogInformation("Searching for missing media in {Instance}", _context.InstanceName);
-                    searchResult = await arrMediaService.SearchMissingMediaAsync(_instanceConfig.Category, cancellationToken);
+                    searchResult = await (deadline.HasValue
+                        ? arrMediaService.SearchMissingMediaAsync(_instanceConfig.Category, deadline, cancellationToken)
+                        : arrMediaService.SearchMissingMediaAsync(_instanceConfig.Category, cancellationToken));
                     if (searchResult.SearchesTriggered > 0)
                         _logger.LogInformation("Triggered {Count} searches for missing media", searchResult.SearchesTriggered);
                 }
 
                 // QualityUnmetSearch / CustomFormatUnmetSearch are always additive
-                if (_instanceConfig.Search.QualityUnmetSearch || _instanceConfig.Search.CustomFormatUnmetSearch)
+                if (searchResult?.BudgetExhausted != true && (_instanceConfig.Search.QualityUnmetSearch || _instanceConfig.Search.CustomFormatUnmetSearch))
                 {
-                    var upgradeResult = await arrMediaService.SearchQualityUpgradesAsync(_instanceConfig.Category, cancellationToken);
+                    var upgradeResult = await (deadline.HasValue
+                        ? arrMediaService.SearchQualityUpgradesAsync(_instanceConfig.Category, deadline, cancellationToken)
+                        : arrMediaService.SearchQualityUpgradesAsync(_instanceConfig.Category, cancellationToken));
                     if (searchResult == null)
                         searchResult = upgradeResult;
                     else

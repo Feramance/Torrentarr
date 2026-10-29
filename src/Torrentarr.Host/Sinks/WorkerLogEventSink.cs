@@ -134,6 +134,7 @@ public class WorkerLogEventSink : ILogEventSink
         lock (_lock)
         {
             writer.WriteLine(formattedMessage);
+            if (logEvent.Exception != null) writer.WriteLine(logEvent.Exception);
         }
     }
 

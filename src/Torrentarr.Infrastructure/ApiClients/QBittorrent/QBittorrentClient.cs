@@ -18,6 +18,8 @@ public class QBittorrentClient : ITorrentClient, IDisposable
     private readonly string _username;
     private readonly string _password;
     private string? _cookie;
+    private Version? _version;
+    private readonly SemaphoreSlim _versionGate = new(1, 1);
 
     public TorrentClientIdentity Identity { get; }
     public TorrentClientCapabilities Capabilities => TorrentClientCapabilities.QBittorrent;
@@ -51,7 +53,7 @@ public class QBittorrentClient : ITorrentClient, IDisposable
     private Task<RestResponse> ExecuteAsync(RestRequest request, CancellationToken ct) =>
         HttpRetryHelper.ExecuteQBitAsync(_client, request, ct);
 
-    private async Task<RestResponse> ExecuteInventoryAsync(RestRequest request, CancellationToken ct)
+    private async Task<RestResponse> ExecuteAuthenticatedAsync(RestRequest request, CancellationToken ct)
     {
         var response = await ExecuteAsync(request, ct);
         if (response.StatusCode == System.Net.HttpStatusCode.Forbidden && await LoginAsync(ct))
@@ -60,6 +62,42 @@ public class QBittorrentClient : ITorrentClient, IDisposable
             response = await ExecuteAsync(request, ct);
         }
         return response;
+    }
+
+    private async Task<Version?> DetectVersionAsync(CancellationToken ct)
+    {
+        await _versionGate.WaitAsync(ct);
+        try
+        {
+            if (_version != null) return _version;
+            try
+            {
+                var text = (await GetVersionAsync(ct)).Trim();
+                var match = System.Text.RegularExpressions.Regex.Match(text,
+                    @"^[vV]?(\d+\.\d+(?:\.\d+)?)(?:[-+].*|(?:alpha|beta|rc)\d*)?$",
+                    System.Text.RegularExpressions.RegexOptions.IgnoreCase);
+                if (!match.Success || !Version.TryParse(match.Groups[1].Value, out _version))
+                    throw new HttpRequestException("Unrecognized qBittorrent version.");
+            }
+            catch (Exception ex) when (ex is not OperationCanceledException)
+            {
+                Serilog.Log.Warning("qBittorrent [{Instance}] version detection failed ({ErrorType}); using legacy requests",
+                    Identity.InstanceId, ex.GetType().Name);
+            }
+            ct.ThrowIfCancellationRequested();
+            return _version;
+        }
+        finally { _versionGate.Release(); }
+    }
+
+    private async Task<bool> ExecuteMutationAsync(RestRequest request, string? hash, CancellationToken ct)
+    {
+        var response = await ExecuteAuthenticatedAsync(request, ct);
+        ct.ThrowIfCancellationRequested();
+        if (!response.IsSuccessful)
+            Serilog.Log.Warning("qBittorrent [{Instance}] {Operation} rejected for {Hash}: HTTP {Status}, {ResponseStatus}",
+                Identity.InstanceId, request.Resource, hash, (int)response.StatusCode, response.ResponseStatus);
+        return response.IsSuccessful;
     }
 
     private static List<T> ReadInventoryList<T>(RestResponse response)
@@ -155,7 +193,7 @@ public class QBittorrentClient : ITorrentClient, IDisposable
         var request = new RestRequest("/api/v2/app/version", Method.Get);
         AddAuthCookie(request);
 
-        var response = await ExecuteInventoryAsync(request, ct);
+        var response = await ExecuteAuthenticatedAsync(request, ct);
         if (!response.IsSuccessful)
             throw new HttpRequestException($"Torrent version request failed (HTTP {(int)response.StatusCode}).", null, response.StatusCode);
         return response.Content ?? "";
@@ -174,7 +212,7 @@ public class QBittorrentClient : ITorrentClient, IDisposable
         if (!string.IsNullOrEmpty(sort))
             request.AddQueryParameter("sort", sort);
 
-        var response = await ExecuteInventoryAsync(request, cancellationToken);
+        var response = await ExecuteAuthenticatedAsync(request, cancellationToken);
         cancellationToken.ThrowIfCancellationRequested();
 
         return ReadInventoryList<TorrentInfo>(response);
@@ -225,13 +263,13 @@ public class QBittorrentClient : ITorrentClient, IDisposable
     /// </summary>
     public async Task<bool> PauseTorrentsAsync(List<string> hashes, CancellationToken ct = default)
     {
-        var request = new RestRequest("/api/v2/torrents/pause", Method.Post);
+        var version = await DetectVersionAsync(ct);
+        var request = new RestRequest(version?.Major >= 5 ? "/api/v2/torrents/stop" : "/api/v2/torrents/pause", Method.Post);
         AddAuthCookie(request);
 
         request.AddParameter("hashes", string.Join("|", hashes));
 
-        var response = await ExecuteAsync(request, ct);
-        return response.IsSuccessful;
+        return await ExecuteMutationAsync(request, string.Join("|", hashes), ct);
     }
 
     /// <summary>
@@ -239,13 +277,13 @@ public class QBittorrentClient : ITorrentClient, IDisposable
     /// </summary>
     public async Task<bool> ResumeTorrentsAsync(List<string> hashes, CancellationToken ct = default)
     {
-        var request = new RestRequest("/api/v2/torrents/resume", Method.Post);
+        var version = await DetectVersionAsync(ct);
+        var request = new RestRequest(version?.Major >= 5 ? "/api/v2/torrents/start" : "/api/v2/torrents/resume", Method.Post);
         AddAuthCookie(request);
 
         request.AddParameter("hashes", string.Join("|", hashes));
 
-        var response = await ExecuteAsync(request, ct);
-        return response.IsSuccessful;
+        return await ExecuteMutationAsync(request, string.Join("|", hashes), ct);
     }
 
     /// <summary>
@@ -369,7 +407,7 @@ public class QBittorrentClient : ITorrentClient, IDisposable
         AddAuthCookie(request);
         request.AddQueryParameter("hash", hash);
 
-        var response = await ExecuteInventoryAsync(request, ct);
+        var response = await ExecuteAuthenticatedAsync(request, ct);
         ct.ThrowIfCancellationRequested();
 
         return ReadInventoryList<TorrentTracker>(response);
@@ -411,28 +449,56 @@ public class QBittorrentClient : ITorrentClient, IDisposable
     /// <summary>
     /// Set share limits (ratio and seeding time) for a torrent
     /// </summary>
-    public async Task<bool> SetShareLimitsAsync(string hash, double ratioLimit, long seedingTimeLimit, long inactiveSeedingTimeLimit, CancellationToken ct = default)
+    public Task<bool> SetShareLimitsAsync(string hash, double ratioLimit, long seedingTimeLimit, long inactiveSeedingTimeLimit, CancellationToken ct = default)
+        => SetShareLimitsCoreAsync(hash, ratioLimit, seedingTimeLimit, inactiveSeedingTimeLimit, ct);
+
+    public Task<bool> SetShareLimitsAsync(string hash, double ratioLimit, long seedingTimeLimit, CancellationToken ct = default)
+        => SetShareLimitsCoreAsync(hash, ratioLimit, seedingTimeLimit, null, ct);
+
+    private async Task<bool> SetShareLimitsCoreAsync(string hash, double ratio, long time, long? inactive, CancellationToken ct)
     {
+        var version = await DetectVersionAsync(ct);
+        var modern = version >= new Version(5, 3);
+        TorrentInfo? current = null;
+        if (modern || (version >= new Version(4, 6) && !inactive.HasValue))
+        {
+            var inventory = new RestRequest("/api/v2/torrents/info", Method.Get);
+            AddAuthCookie(inventory);
+            inventory.AddQueryParameter("hashes", hash);
+            try
+            {
+                var response = await ExecuteAuthenticatedAsync(inventory, ct);
+                ct.ThrowIfCancellationRequested();
+                current = ReadInventoryList<TorrentInfo>(response)
+                    .SingleOrDefault(t => t.Hash.Equals(hash, StringComparison.OrdinalIgnoreCase));
+            }
+            catch (HttpRequestException ex)
+            {
+                Serilog.Log.Warning("qBittorrent [{Instance}] setShareLimits skipped for {Hash}: current settings read failed (HTTP {Status})",
+                    Identity.InstanceId, hash, (int?)ex.StatusCode);
+                return false;
+            }
+            if (current == null || (!inactive.HasValue && !current.InactiveSeedingTimeLimit.HasValue)
+                || (modern && (string.IsNullOrEmpty(current.ShareLimitAction) || string.IsNullOrEmpty(current.ShareLimitsMode))))
+            {
+                Serilog.Log.Warning("qBittorrent [{Instance}] setShareLimits skipped for {Hash}: required current settings are unavailable",
+                    Identity.InstanceId, hash);
+                return false;
+            }
+        }
         var request = new RestRequest("api/v2/torrents/setShareLimits", Method.Post);
         AddAuthCookie(request);
         request.AddParameter("hashes", hash);
-        request.AddParameter("ratioLimit", ratioLimit);
-        request.AddParameter("seedingTimeLimit", seedingTimeLimit);
-        request.AddParameter("inactiveSeedingTimeLimit", inactiveSeedingTimeLimit);
-        return (await ExecuteAsync(request, ct)).IsSuccessful;
-    }
-
-    public async Task<bool> SetShareLimitsAsync(string hash, double ratioLimit, long seedingTimeLimit, CancellationToken ct = default)
-    {
-        var request = new RestRequest("api/v2/torrents/setShareLimits", Method.Post);
-        AddAuthCookie(request);
-
-        request.AddParameter("hashes", hash);
-        request.AddParameter("ratioLimit", ratioLimit);
-        request.AddParameter("seedingTimeLimit", seedingTimeLimit);
-
-        var response = await ExecuteAsync(request, ct);
-        return response.IsSuccessful;
+        request.AddParameter("ratioLimit", ratio);
+        request.AddParameter("seedingTimeLimit", time);
+        if (version >= new Version(4, 6) || (version == null && inactive.HasValue))
+            request.AddParameter("inactiveSeedingTimeLimit", inactive ?? current!.InactiveSeedingTimeLimit!.Value);
+        if (modern)
+        {
+            request.AddParameter("shareLimitAction", current!.ShareLimitAction);
+            request.AddParameter("shareLimitsMode", current.ShareLimitsMode);
+        }
+        return await ExecuteMutationAsync(request, hash, ct);
     }
 
     /// <summary>
@@ -541,7 +607,7 @@ public class QBittorrentClient : ITorrentClient, IDisposable
         AddAuthCookie(request);
         request.AddQueryParameter("hash", hash);
 
-        var response = await ExecuteInventoryAsync(request, ct);
+        var response = await ExecuteAuthenticatedAsync(request, ct);
         ct.ThrowIfCancellationRequested();
 
         return ReadInventoryList<TorrentFile>(response);

@@ -228,7 +228,7 @@ public class FreeSpaceService(
                     if (TorrentPolicyHelper.IsFreeSpaceDownloadState(item.Torrent.State)
                         && !TorrentPolicyHelper.IsPausedDownloadStateForFreeSpace(item.Torrent.State))
                         Reserve(Math.Max(0, item.Torrent.AmountLeft));
-                    logger.LogWarning(ex, "FreeSpace: [{Client}] Operation failed; shared-storage resumes withheld", item.InstanceName);
+                    logger.LogWarning(ex, "FreeSpace: [{Client}] Operation failed for torrent {Hash}; shared-storage resumes withheld", item.InstanceName, item.Torrent.Hash);
                 }
             }
             if (safe)

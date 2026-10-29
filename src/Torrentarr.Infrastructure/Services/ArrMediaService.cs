@@ -41,8 +41,14 @@ public class ArrMediaService : IArrMediaService
         _yearCursor = yearCursor ?? new SearchYearCursor();
     }
 
-    public async Task<SearchResult> SearchMissingMediaAsync(string category, CancellationToken cancellationToken = default)
+    public Task<SearchResult> SearchMissingMediaAsync(string category, CancellationToken cancellationToken = default)
+        => SearchMissingMediaAsync(category, null, cancellationToken);
+
+    public async Task<SearchResult> SearchMissingMediaAsync(string category, DateTimeOffset? deadline, CancellationToken cancellationToken)
     {
+        cancellationToken.ThrowIfCancellationRequested();
+        if (deadline is { } end && end - DateTimeOffset.UtcNow <= TimeSpan.FromMinutes(1))
+            return new SearchResult { BudgetExhausted = true };
         _logger.LogTrace("Starting missing media search for category {Category}", category);
 
         var arrInstance = _config.ArrInstances.Values.FirstOrDefault(i =>
@@ -73,14 +79,22 @@ public class ArrMediaService : IArrMediaService
         _logger.LogTrace("Found {Count} search candidates", candidates.Count);
 
         _logger.LogTrace("Executing searches for {Count} candidates", candidates.Count);
-        var result = await _searchExecutor.ExecuteSearchesAsync(instanceName, candidates, cancellationToken);
+        var result = await (deadline.HasValue
+            ? _searchExecutor.ExecuteSearchesAsync(instanceName, candidates, deadline, cancellationToken)
+            : _searchExecutor.ExecuteSearchesAsync(instanceName, candidates, cancellationToken));
         _logger.LogTrace("Search complete - triggered {Count} searches", result.SearchesTriggered);
 
         return result;
     }
 
-    public async Task<SearchResult> SearchQualityUpgradesAsync(string category, CancellationToken cancellationToken = default)
+    public Task<SearchResult> SearchQualityUpgradesAsync(string category, CancellationToken cancellationToken = default)
+        => SearchQualityUpgradesAsync(category, null, cancellationToken);
+
+    public async Task<SearchResult> SearchQualityUpgradesAsync(string category, DateTimeOffset? deadline, CancellationToken cancellationToken)
     {
+        cancellationToken.ThrowIfCancellationRequested();
+        if (deadline is { } end && end - DateTimeOffset.UtcNow <= TimeSpan.FromMinutes(1))
+            return new SearchResult { BudgetExhausted = true };
         _logger.LogTrace("Starting quality upgrade search for category {Category}", category);
 
         var arrInstance = _config.ArrInstances.Values.FirstOrDefault(i =>
@@ -108,7 +122,9 @@ public class ArrMediaService : IArrMediaService
         var candidates = await GetUpgradeCandidatesAsync(instanceName, arrInstance, cancellationToken);
         candidates = await ApplySearchByYearAsync(instanceName, arrInstance, candidates, cancellationToken);
 
-        return await _searchExecutor.ExecuteSearchesAsync(instanceName, candidates, cancellationToken);
+        return await (deadline.HasValue
+            ? _searchExecutor.ExecuteSearchesAsync(instanceName, candidates, deadline, cancellationToken)
+            : _searchExecutor.ExecuteSearchesAsync(instanceName, candidates, cancellationToken));
     }
 
     public async Task<List<WantedMedia>> GetWantedMediaAsync(string category, CancellationToken cancellationToken = default)

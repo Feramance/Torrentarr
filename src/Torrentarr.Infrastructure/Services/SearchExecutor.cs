@@ -17,6 +17,8 @@ public class SearchExecutor : ISearchExecutor
     private readonly DatabaseRestartCoordinator _restartCoordinator;
     private readonly IOperationalIssueReporter? _issues;
 
+    internal TimeProvider Clock { get; set; } = TimeProvider.System;
+
     // Cached per-instance Arr clients — created once, reused across calls
     private readonly Dictionary<string, object> _clientCache = new(StringComparer.OrdinalIgnoreCase);
 
@@ -47,12 +49,23 @@ public class SearchExecutor : ISearchExecutor
         _issues = issues;
     }
 
-    public async Task<SearchResult> ExecuteSearchesAsync(
-        string instanceName,
-        IEnumerable<SearchCandidate> candidates,
+    public Task<SearchResult> ExecuteSearchesAsync(string instanceName, IEnumerable<SearchCandidate> candidates,
         CancellationToken cancellationToken = default)
+        => ExecuteSearchesAsync(instanceName, candidates, null, cancellationToken);
+
+    public async Task<SearchResult> ExecuteSearchesAsync(string instanceName, IEnumerable<SearchCandidate> candidates,
+        DateTimeOffset? deadline, CancellationToken cancellationToken)
     {
+        cancellationToken.ThrowIfCancellationRequested();
         var result = new SearchResult();
+
+        bool OutOfBudget(TimeSpan delay) => deadline is { } end && end - Clock.GetUtcNow() <= delay + TimeSpan.FromMinutes(1);
+        void Yield()
+        {
+            result.BudgetExhausted = true;
+            _logger.LogInformation("SearchExecutor: cycle budget reached for {Instance}; remaining searches deferred", instanceName);
+        }
+        if (OutOfBudget(TimeSpan.Zero)) { Yield(); return result; }
 
         if (!_config.ArrInstances.TryGetValue(instanceName, out var arrConfig))
         {
@@ -108,11 +121,11 @@ public class SearchExecutor : ISearchExecutor
         foreach (var plan in plans)
         {
             var candidate = plan.Trigger;
-            if (cancellationToken.IsCancellationRequested)
+            cancellationToken.ThrowIfCancellationRequested();
+            var delay = firstSearch ? TimeSpan.Zero : TimeSpan.FromSeconds(searchLoopDelay);
+            if (OutOfBudget(delay))
             {
-                submissionStopped = true;
-                drained = false;
-                break;
+                Yield(); drained = false; submissionStopped = true; break;
             }
 
             var activeCommands = await GetActiveCommandCountAsync(instanceName, cancellationToken);
@@ -127,7 +140,7 @@ public class SearchExecutor : ISearchExecutor
 
             if (!firstSearch)
             {
-                await Task.Delay(TimeSpan.FromSeconds(searchLoopDelay), cancellationToken);
+                await Task.Delay(delay, Clock, cancellationToken);
             }
             firstSearch = false;
 
@@ -136,12 +149,16 @@ public class SearchExecutor : ISearchExecutor
                 // Recheck capacity after sleeping, before changing any external profile.
                 if (!CanSearch(await GetActiveCommandCountAsync(instanceName, cancellationToken), searchLimit))
                 { drained = false; submissionStopped = true; break; }
+                if (OutOfBudget(TimeSpan.Zero))
+                { Yield(); drained = false; submissionStopped = true; break; }
                 if (!await _profileSwitcher.SwitchToTempProfilesAsync(instanceName, arrConfig, plan.Covered, cancellationToken))
                 {
                     drained = false; submissionStopped = true;
                     result.Errors.Add($"Search skipped for {candidate.Title}: temporary profile preparation failed.");
                     continue;
                 }
+                if (OutOfBudget(TimeSpan.Zero))
+                { Yield(); drained = false; submissionStopped = true; break; }
                 var useSeriesSearch = plan.Command == "SeriesSearch";
                 if (isSonarr)
                     _logger.LogInformation("Sonarr {Command}: series={SeriesId}, season={Season}, eligible={Eligible}/{Total}",

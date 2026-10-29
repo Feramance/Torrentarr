@@ -79,6 +79,78 @@ public class SearchExecutorTests
     }
 
     [Fact]
+    public async Task Deadline_YieldsBeforeDelayAndPreservesPartialProgress()
+    {
+        var service = CreateTestService(CreateConfigWithRadarr(searchLoopDelay: 300));
+        var clock = new ManualClock(); service.Clock = clock;
+        SearchCandidate[] candidates = [new() { ArrId = 1, Type = "Movie" }, new() { ArrId = 2, Type = "Movie" }];
+        var result = await service.ExecuteSearchesAsync("Radarr-test", candidates, clock.GetUtcNow().AddMinutes(2), default);
+        result.BudgetExhausted.Should().BeTrue();
+        result.LoopCompleted.Should().BeFalse();
+        result.Errors.Should().BeEmpty();
+        result.SearchedIds.Should().Equal(1);
+        result.ItemsSearched.Should().Be(1);
+        result.SearchesTriggered.Should().Be(1);
+        var next = await service.ExecuteSearchesAsync("Radarr-test", candidates.Where(c => !result.SearchedIds.Contains(c.ArrId)),
+            clock.GetUtcNow().AddMinutes(10), default);
+        next.LoopCompleted.Should().BeTrue();
+        service.TriggeredCandidates.Select(c => c.ArrId).Should().Equal(1, 2);
+    }
+
+    [Fact]
+    public async Task Deadline_RecheckedAfterCapacityReadBeforeProfileChanges()
+    {
+        var service = CreateTestService(CreateConfigWithRadarr());
+        var clock = new ManualClock(); service.Clock = clock;
+        var deadline = clock.GetUtcNow().AddMinutes(2);
+        service.OnCapacityRead = () => clock.Now = deadline;
+        var result = await service.ExecuteSearchesAsync("Radarr-test", [new() { ArrId = 1 }], deadline, default);
+        result.BudgetExhausted.Should().BeTrue();
+        service.TriggeredCandidates.Should().BeEmpty();
+    }
+
+    [Fact]
+    public async Task Deadline_DoesNotShortenConfiguredDelay()
+    {
+        var service = CreateTestService(CreateConfigWithRadarr(searchLoopDelay: 1));
+        var elapsed = System.Diagnostics.Stopwatch.StartNew();
+        var result = await service.ExecuteSearchesAsync("Radarr-test", [new() { ArrId = 1 }, new() { ArrId = 2 }],
+            DateTimeOffset.UtcNow.AddMinutes(2), default);
+        result.LoopCompleted.Should().BeTrue();
+        elapsed.Elapsed.Should().BeGreaterThanOrEqualTo(TimeSpan.FromSeconds(1));
+    }
+
+    [Fact]
+    public async Task Deadline_RecheckedAfterWaitingBeforeAnotherSubmission()
+    {
+        var service = CreateTestService(CreateConfigWithRadarr(searchLoopDelay: 1));
+        var clock = new ManualClock(); service.Clock = clock;
+        var deadline = clock.GetUtcNow().AddMinutes(2);
+        var reads = 0;
+        service.OnCapacityRead = () => { if (++reads == 4) clock.Now = deadline; };
+        var result = await service.ExecuteSearchesAsync("Radarr-test", [new() { ArrId = 1 }, new() { ArrId = 2 }], deadline, default);
+        result.BudgetExhausted.Should().BeTrue();
+        result.SearchedIds.Should().Equal(1);
+        result.Errors.Should().BeEmpty();
+        service.TriggeredCandidates.Should().ContainSingle();
+    }
+
+    [Fact]
+    public async Task Deadline_DoesNotSwallowCancellation()
+    {
+        var service = CreateTestService(CreateConfigWithRadarr());
+        using var stop = new CancellationTokenSource(); stop.Cancel();
+        await FluentActions.Awaiting(() => service.ExecuteSearchesAsync("Radarr-test", [new() { ArrId = 1 }],
+            DateTimeOffset.UtcNow.AddMinutes(2), stop.Token)).Should().ThrowAsync<OperationCanceledException>();
+    }
+
+    private sealed class ManualClock : TimeProvider
+    {
+        public DateTimeOffset Now { get; set; } = DateTimeOffset.UnixEpoch;
+        public override DateTimeOffset GetUtcNow() => Now;
+    }
+
+    [Fact]
     public void Constructor_CreatesInstance()
     {
         var service = CreateService();
@@ -301,6 +373,7 @@ public class SearchExecutorTests
 internal sealed class TestSearchExecutor : SearchExecutor
 {
     public int ActiveCommandCount { get; set; }
+    public Action? OnCapacityRead { get; set; }
     public List<SearchCandidate> TriggeredCandidates { get; } = new();
 
     public TestSearchExecutor(
@@ -314,7 +387,10 @@ internal sealed class TestSearchExecutor : SearchExecutor
     }
 
     public override Task<int> GetActiveCommandCountAsync(string instanceName, CancellationToken cancellationToken = default)
-        => Task.FromResult(ActiveCommandCount);
+    {
+        OnCapacityRead?.Invoke();
+        return Task.FromResult(ActiveCommandCount);
+    }
 
     protected override Task<bool> TriggerSearchForCandidateAsync(
         string instanceName,

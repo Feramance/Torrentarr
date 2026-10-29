@@ -293,7 +293,7 @@ public class SeedingService : ISeedingService
             var torrentTrackers = await client.GetTorrentTrackersAsync(torrent.Hash, cancellationToken);
             return SelectTrackerConfig(trackers, torrentTrackers);
         }
-        catch (Exception ex) when (ex is not OperationCanceledException)
+        catch (Exception ex) when (ex is not OperationCanceledException && ex is not HttpRequestException { StatusCode: System.Net.HttpStatusCode.NotFound })
         {
             _logger.LogWarning(ex, "Error getting tracker config for torrent {Hash}", torrent.Hash);
             return null;

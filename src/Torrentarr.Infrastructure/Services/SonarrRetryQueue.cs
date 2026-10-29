@@ -50,6 +50,11 @@ public static class SonarrRetryQueue
     public static async Task ExecuteAsync(TorrentarrDbContext db, ISearchExecutor executor,
         string instanceName, ILogger logger, CancellationToken ct, ArrInstanceConfig? config = null,
         IOperationalIssueReporter? issues = null)
+        => await ExecuteAsync(db, executor, instanceName, logger, ct, config, issues, null);
+
+    public static async Task ExecuteAsync(TorrentarrDbContext db, ISearchExecutor executor,
+        string instanceName, ILogger logger, CancellationToken ct, ArrInstanceConfig? config,
+        IOperationalIssueReporter? issues, DateTimeOffset? deadline)
     {
         var gate = Gate(instanceName);
         await gate.WaitAsync(ct);
@@ -58,6 +63,8 @@ public static class SonarrRetryQueue
             var pending = await db.SonarrSearchRetries.Where(r => r.ArrInstance == instanceName).ToListAsync(ct);
             foreach (var retry in pending)
             {
+                ct.ThrowIfCancellationRequested();
+                if (deadline is { } end && end - DateTimeOffset.UtcNow <= TimeSpan.FromMinutes(1)) break;
                 await db.Entry(retry).ReloadAsync(ct);
                 if (db.Entry(retry).State == EntityState.Detached) continue;
                 try
@@ -70,7 +77,9 @@ public static class SonarrRetryQueue
                         await db.SaveChangesAsync(ct);
                     }
                     var candidates = JsonSerializer.Deserialize<List<SearchCandidate>>(retry.CandidatesJson)!;
-                    var result = await executor.ExecuteSearchesAsync(instanceName, candidates, ct);
+                    var result = await (deadline.HasValue
+                        ? executor.ExecuteSearchesAsync(instanceName, candidates, deadline, ct)
+                        : executor.ExecuteSearchesAsync(instanceName, candidates, ct));
                     if (result.LoopCompleted)
                         db.SonarrSearchRetries.Remove(retry);
                     else
