@@ -28,6 +28,7 @@ public sealed class QBittorrentCompatibilityTests
         (await client.ResumeTorrentAsync("abc")).Should().BeTrue();
         (await (explicitInactive ? client.SetShareLimitsAsync("abc", -1, -1, -1) : client.SetShareLimitsAsync("abc", -1, -1))).Should().BeTrue();
         var modern = version.Contains("5.3");
+        var actionSupported = modern || version.Contains("5.2");
         var inactiveSupported = version.Contains("4.6") || version.TrimStart('v').StartsWith("5.");
         var requests = server.Requests.ToArray();
         requests.Count(r => r.Path == "/api/v2/app/version").Should().Be(1);
@@ -37,10 +38,11 @@ public sealed class QBittorrentCompatibilityTests
         var form = requests.Last().Form;
         var expected = new Dictionary<string, string> { ["hashes"] = "abc", ["ratioLimit"] = "-1", ["seedingTimeLimit"] = "-1" };
         if (inactiveSupported) expected["inactiveSeedingTimeLimit"] = explicitInactive ? "-1" : "45";
-        if (modern) { expected["shareLimitAction"] = "RemoveWithContent"; expected["shareLimitsMode"] = "MatchAll"; }
+        if (actionSupported) expected["shareLimitAction"] = "RemoveWithContent";
+        if (modern) expected["shareLimitsMode"] = "MatchAll";
         form.Should().BeEquivalentTo(expected);
         var reads = requests.Where(r => r.Path == "/api/v2/torrents/info").ToList();
-        reads.Count.Should().Be(modern || (inactiveSupported && !explicitInactive) ? 1 : 0);
+        reads.Count.Should().Be(actionSupported || (inactiveSupported && !explicitInactive) ? 1 : 0);
         reads.Should().OnlyContain(r => r.Query == "?hashes=abc");
     }
 
@@ -87,12 +89,15 @@ public sealed class QBittorrentCompatibilityTests
         (await client.SetShareLimitsAsync("abc", -1, -1)).Should().BeTrue();
         server.Requests.Last().Form["shareLimitsMode"].Should().Be("MatchAll");
         clock.Now += TimeSpan.FromMinutes(29);
+        var writes = server.Requests.Count(r => r.Path.EndsWith("/setShareLimits"));
+        (await client.SetShareLimitsAsync("abc", -1, -1)).Should().BeFalse();
+        server.Requests.Count(r => r.Path.EndsWith("/setShareLimits")).Should().Be(writes);
         await client.ResumeTorrentAsync("abc");
         server.Requests.Last().Path.Should().EndWith("/resume");
         server.VersionStatus = 200;
         await client.ResumeTorrentAsync("abc");
         server.Requests.Last().Path.Should().EndWith("/start");
-        server.Requests.Count(r => r.Path.EndsWith("/version")).Should().Be(4);
+        server.Requests.Count(r => r.Path.EndsWith("/version")).Should().Be(5);
     }
 
     private sealed class ManualClock : TimeProvider
@@ -104,14 +109,15 @@ public sealed class QBittorrentCompatibilityTests
     [Theory]
     [InlineData("unrecognized", 200)]
     [InlineData("v5.3.0", 400)]
-    public async Task DetectionFailure_UsesLegacyRequestsWithoutInventingSettings(string version, int status)
+    public async Task DetectionFailure_SkipsShareLimitsWithoutInventingSettings(string version, int status)
     {
         await using var server = new QBitServer(version) { VersionStatus = status };
         using var client = server.Client();
         (await client.PauseTorrentAsync("abc")).Should().BeTrue();
-        (await client.SetShareLimitsAsync("abc", 2, 60)).Should().BeTrue();
+        (await client.SetShareLimitsAsync("abc", 2, 60)).Should().BeFalse();
+        (await client.SetShareLimitsAsync("abc", 2, 60, -1)).Should().BeFalse();
         server.Requests.ElementAt(1).Path.Should().EndWith("/pause");
-        server.Requests.Last().Form.Keys.Should().BeEquivalentTo("hashes", "ratioLimit", "seedingTimeLimit");
+        server.Requests.Should().NotContain(r => r.Path.EndsWith("/setShareLimits"));
     }
 
     [Fact]
@@ -129,12 +135,16 @@ public sealed class QBittorrentCompatibilityTests
     }
 
     [Theory]
-    [InlineData("[]")]
-    [InlineData("[{\"hash\":\"abc\",\"inactive_seeding_time_limit\":45}]")]
-    [InlineData("[{\"hash\":\"other\",\"inactive_seeding_time_limit\":45,\"share_limit_action\":\"Stop\",\"share_limits_mode\":\"Default\"}]")]
-    public async Task MissingModernSettings_DoesNotMutate(string inventory)
+    [InlineData("v5.2.0", "[]")]
+    [InlineData("v5.2.0", "[{\"hash\":\"abc\",\"inactive_seeding_time_limit\":45}]")]
+    [InlineData("v5.2.0", "[{\"hash\":\"abc\",\"share_limit_action\":\"Stop\"}]")]
+    [InlineData("v5.3.0", "[]")]
+    [InlineData("v5.3.0", "[{\"hash\":\"abc\",\"inactive_seeding_time_limit\":45}]")]
+    [InlineData("v5.3.0", "[{\"hash\":\"abc\",\"inactive_seeding_time_limit\":45,\"share_limit_action\":\"Stop\"}]")]
+    [InlineData("v5.3.0", "[{\"hash\":\"other\",\"inactive_seeding_time_limit\":45,\"share_limit_action\":\"Stop\",\"share_limits_mode\":\"Default\"}]")]
+    public async Task MissingRequiredSettings_DoesNotMutate(string version, string inventory)
     {
-        await using var server = new QBitServer("v5.3.0") { Inventory = inventory };
+        await using var server = new QBitServer(version) { Inventory = inventory };
         using var client = server.Client();
         (await client.SetShareLimitsAsync("abc", -1, -1)).Should().BeFalse();
         server.Requests.Should().NotContain(r => r.Path.EndsWith("/setShareLimits"));
@@ -226,7 +236,24 @@ public sealed class QBittorrentCompatibilityTests
         public int InventoryStatus { get; init; } = 200;
         public int MutationStatus { get; init; } = 200;
         public bool ExpireMutation { get; set; }
-        public string Inventory { get; init; } = "[{\"hash\":\"abc\",\"inactive_seeding_time_limit\":45,\"share_limit_action\":\"RemoveWithContent\",\"share_limits_mode\":\"MatchAll\"}]";
+        public string? Inventory { get; init; }
+
+        private string[] RequiredShareLimitParameters => Version.StartsWith("v5.3", StringComparison.Ordinal)
+            ? ["hashes", "ratioLimit", "seedingTimeLimit", "inactiveSeedingTimeLimit", "shareLimitAction", "shareLimitsMode"]
+            : Version.StartsWith("v5.2", StringComparison.Ordinal)
+                ? ["hashes", "ratioLimit", "seedingTimeLimit", "inactiveSeedingTimeLimit", "shareLimitAction"]
+                : Version.StartsWith("v4.6", StringComparison.Ordinal) || Version.StartsWith("v5.", StringComparison.Ordinal)
+                    ? ["hashes", "ratioLimit", "seedingTimeLimit", "inactiveSeedingTimeLimit"]
+                    : ["hashes", "ratioLimit", "seedingTimeLimit"];
+
+        private string DefaultInventory()
+        {
+            var torrent = new Dictionary<string, object> { ["hash"] = "abc" };
+            if (RequiredShareLimitParameters.Contains("inactiveSeedingTimeLimit")) torrent["inactive_seeding_time_limit"] = 45;
+            if (RequiredShareLimitParameters.Contains("shareLimitAction")) torrent["share_limit_action"] = "RemoveWithContent";
+            if (RequiredShareLimitParameters.Contains("shareLimitsMode")) torrent["share_limits_mode"] = "MatchAll";
+            return JsonConvert.SerializeObject(new[] { torrent });
+        }
 
         public QBitServer(string version)
         {
@@ -248,13 +275,15 @@ public sealed class QBittorrentCompatibilityTests
                         Requests.Enqueue(new(path, context.Request.Url.Query, form, context.Request.Headers["Cookie"] ?? ""));
                         var content = "";
                         if (path.EndsWith("/version")) { context.Response.StatusCode = VersionStatus; content = Version; }
-                        else if (path.EndsWith("/info")) { context.Response.StatusCode = InventoryStatus; content = Inventory; }
+                        else if (path.EndsWith("/info")) { context.Response.StatusCode = InventoryStatus; content = Inventory ?? DefaultInventory(); }
                         else if (path.EndsWith("/login"))
                         {
                             context.Response.StatusCode = 204;
                             context.Response.Headers.Add("Set-Cookie", "QBT_SID_8080=renewed; Path=/");
                         }
                         else if (ExpireMutation) { context.Response.StatusCode = 403; ExpireMutation = false; }
+                        else if (path.EndsWith("/setShareLimits") && RequiredShareLimitParameters.Any(p => !form.ContainsKey(p)))
+                            context.Response.StatusCode = 400;
                         else context.Response.StatusCode = MutationStatus;
                         var bytes = Encoding.UTF8.GetBytes(content);
                         context.Response.ContentLength64 = bytes.Length;

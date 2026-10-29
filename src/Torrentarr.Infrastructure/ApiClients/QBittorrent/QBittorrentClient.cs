@@ -462,9 +462,16 @@ public class QBittorrentClient : ITorrentClient, IDisposable
     private async Task<bool> SetShareLimitsCoreAsync(string hash, double ratio, long time, long? inactive, CancellationToken ct)
     {
         var version = await DetectVersionAsync(ct);
-        var modern = version >= new Version(5, 3);
+        if (version == null)
+        {
+            Serilog.Log.Warning("qBittorrent [{Instance}] setShareLimits skipped for {Hash}: no usable client version is available",
+                Identity.InstanceId, hash);
+            return false;
+        }
+        var supportsAction = version >= new Version(5, 2);
+        var supportsMode = version >= new Version(5, 3);
         TorrentInfo? current = null;
-        if (modern || (version >= new Version(4, 6) && !inactive.HasValue))
+        if (supportsAction || (version >= new Version(4, 6) && !inactive.HasValue))
         {
             var inventory = new RestRequest("/api/v2/torrents/info", Method.Get);
             AddAuthCookie(inventory);
@@ -483,7 +490,8 @@ public class QBittorrentClient : ITorrentClient, IDisposable
                 return false;
             }
             if (current == null || (!inactive.HasValue && !current.InactiveSeedingTimeLimit.HasValue)
-                || (modern && (string.IsNullOrEmpty(current.ShareLimitAction) || string.IsNullOrEmpty(current.ShareLimitsMode))))
+                || (supportsAction && string.IsNullOrEmpty(current.ShareLimitAction))
+                || (supportsMode && string.IsNullOrEmpty(current.ShareLimitsMode)))
             {
                 Serilog.Log.Warning("qBittorrent [{Instance}] setShareLimits skipped for {Hash}: required current settings are unavailable",
                     Identity.InstanceId, hash);
@@ -495,13 +503,12 @@ public class QBittorrentClient : ITorrentClient, IDisposable
         request.AddParameter("hashes", hash);
         request.AddParameter("ratioLimit", ratio);
         request.AddParameter("seedingTimeLimit", time);
-        if (version >= new Version(4, 6) || (version == null && inactive.HasValue))
+        if (version >= new Version(4, 6))
             request.AddParameter("inactiveSeedingTimeLimit", inactive ?? current!.InactiveSeedingTimeLimit!.Value);
-        if (modern)
-        {
+        if (supportsAction)
             request.AddParameter("shareLimitAction", current!.ShareLimitAction);
-            request.AddParameter("shareLimitsMode", current.ShareLimitsMode);
-        }
+        if (supportsMode)
+            request.AddParameter("shareLimitsMode", current!.ShareLimitsMode);
         return await ExecuteMutationAsync(request, hash, ct);
     }
 
