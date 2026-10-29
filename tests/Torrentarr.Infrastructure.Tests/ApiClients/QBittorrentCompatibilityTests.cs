@@ -75,6 +75,26 @@ public sealed class QBittorrentCompatibilityTests
         server.Requests.Count(r => r.Path.EndsWith("/version")).Should().Be(2);
     }
 
+    [Fact]
+    public async Task FailedVersionRefresh_UsesBoundedLastKnownVersionAndKeepsRetrying()
+    {
+        await using var server = new QBitServer("v5.3.0");
+        using var client = server.Client();
+        var clock = new ManualClock(); client.Clock = clock;
+        (await client.SetShareLimitsAsync("abc", -1, -1)).Should().BeTrue();
+        server.VersionStatus = 400;
+        clock.Now += TimeSpan.FromMinutes(31);
+        (await client.SetShareLimitsAsync("abc", -1, -1)).Should().BeTrue();
+        server.Requests.Last().Form["shareLimitsMode"].Should().Be("MatchAll");
+        clock.Now += TimeSpan.FromMinutes(29);
+        await client.ResumeTorrentAsync("abc");
+        server.Requests.Last().Path.Should().EndWith("/resume");
+        server.VersionStatus = 200;
+        await client.ResumeTorrentAsync("abc");
+        server.Requests.Last().Path.Should().EndWith("/start");
+        server.Requests.Count(r => r.Path.EndsWith("/version")).Should().Be(4);
+    }
+
     private sealed class ManualClock : TimeProvider
     {
         public DateTimeOffset Now { get; set; } = DateTimeOffset.UnixEpoch;

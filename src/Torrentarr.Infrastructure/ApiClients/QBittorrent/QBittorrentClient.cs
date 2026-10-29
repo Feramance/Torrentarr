@@ -72,24 +72,24 @@ public class QBittorrentClient : ITorrentClient, IDisposable
         try
         {
             if (_version != null && Clock.GetUtcNow() - _versionAt < TimeSpan.FromMinutes(30)) return _version;
-            _version = null;
             try
             {
                 var text = (await GetVersionAsync(ct)).Trim();
                 var match = System.Text.RegularExpressions.Regex.Match(text,
                     @"^[vV]?(\d+\.\d+(?:\.\d+)?)(?:[-+].*|(?:alpha|beta|rc)\d*)?$",
                     System.Text.RegularExpressions.RegexOptions.IgnoreCase);
-                if (!match.Success || !Version.TryParse(match.Groups[1].Value, out _version))
+                if (!match.Success || !Version.TryParse(match.Groups[1].Value, out var detectedVersion))
                     throw new HttpRequestException("Unrecognized qBittorrent version.");
+                _version = detectedVersion;
                 _versionAt = Clock.GetUtcNow();
             }
             catch (Exception ex) when (ex is not OperationCanceledException)
             {
-                Serilog.Log.Warning("qBittorrent [{Instance}] version detection failed ({ErrorType}); using legacy requests",
+                Serilog.Log.Warning("qBittorrent [{Instance}] version detection failed ({ErrorType}); using the last known version when still within its fallback window",
                     Identity.InstanceId, ex.GetType().Name);
             }
             ct.ThrowIfCancellationRequested();
-            return _version;
+            return Clock.GetUtcNow() - _versionAt < TimeSpan.FromHours(1) ? _version : null;
         }
         finally { _versionGate.Release(); }
     }
