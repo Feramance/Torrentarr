@@ -160,14 +160,26 @@ SearchMode = "Standard"  # or "Interactive" or "RSS"
 
 ### Sonarr Search Modes
 
-- **Series** - Search entire series
-- **Season** - Search specific season
-- **Episode** - Search individual episodes
+The WebUI **Search Mode** dropdown offers four choices:
+
+| Selection | `SearchBySeries` value | Behavior |
+| --- | --- | --- |
+| Smart (default) | `"smart"` | Use series, then season searches when more than half of in-scope aired episodes need searching, with at least two eligible episodes; otherwise search episodes. |
+| Series | `"series"` | Search each affected series once, splitting into permitted seasons when needed to exclude specials. |
+| Season | `"season"` | Search each affected season once, without requiring a majority. |
+| Episode | `"episode"` | Search individual episodes. |
 
 ```toml
-[Sonarr-TV]
-DefaultSearchMode = "Episode"  # More targeted
+[Sonarr-TV.EntrySearch]
+SearchBySeries = "smart"  # "series", "season", or "episode"
+AlsoSearchSpecials = false
 ```
+
+Legacy `true` / `"true"` values select Series, and `false` / `"false"` select Episode. Saving uses the named mode. Smart counts configured missing, quality, custom-format, and upgrade needs across all years; the current search pass must contain a candidate to trigger a search.
+
+Specials require `AlsoSearchSpecials = true` **and** at least one monitored special in that series. Once permitted, `Unmonitored = true` may include its other unmonitored specials. This gate applies to every mode and blocklist retries, including specials that a series command would search implicitly. Unmonitored episodes use explicit episode searches.
+
+See [Sonarr search configuration](../arr/sonarr.md#search-mode) for details. Broad searches may also upgrade other permitted episodes according to Sonarr's profiles.
 
 ## Advanced Search Options
 

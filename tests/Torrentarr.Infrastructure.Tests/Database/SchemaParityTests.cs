@@ -43,7 +43,7 @@ public class SchemaParityTests
         {
             "albumfilesmodel", "albumqueuemodel", "artistfilesmodel", "authorfilesmodel", "bookfilesmodel", "bookqueuemodel",
             "episodefilesmodel", "episodequeuemodel",
-            "filesqueued", "moviequeuemodel", "moviesfilesmodel", "searchactivity", "seriesfilesmodel", "torrentarr_maintenance_state", "torrentlibrary",
+            "filesqueued", "moviequeuemodel", "moviesfilesmodel", "searchactivity", "seriesfilesmodel", "torrentarr_maintenance_state", "torrentarr_sonarr_search_retries", "torrentlibrary",
             "trackfilesmodel"
         };
         tableNames.Should().Equal(expected);

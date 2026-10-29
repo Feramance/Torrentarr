@@ -61,10 +61,10 @@ graph TD
 
 ## Basic Configuration
 
-Enable automated search in the `[<Arr>-<Name>.Search]` section:
+Enable automated search in the `[<Arr>-<Name>.EntrySearch]` section:
 
 ```toml
-[Radarr-Movies.Search]
+[Radarr-Movies.EntrySearch]
 # Enable searching for missing movies
 SearchMissing = true
 
@@ -412,7 +412,9 @@ AlsoSearchSpecials = false
 **Type:** Boolean
 **Default:** `false`
 
-Include special episodes (Season 00) in searches.
+Include special episodes (Season 00) only when **at least one special in the same series is monitored**. This requirement applies even with `Unmonitored = true`. Once it is satisfied, `Unmonitored` controls whether that series' other unmonitored specials can be searched.
+
+The gate applies to smart, series, season, and episode modes, including upgrades and blocklist retries. A series search that would implicitly search disallowed specials is split into permitted seasons; Torrentarr does not modify Sonarr's monitoring settings.
 
 **What are specials?**
 
@@ -425,7 +427,7 @@ Include special episodes (Season 00) in searches.
 **Recommendation:**
 
 - `false` - Skip specials (most users)
-- `true` - Include specials (completionists)
+- `true` - Include specials only for series with at least one monitored special
 
 ---
 
@@ -497,15 +499,20 @@ SearchBySeries = "smart"
 
 **Type:** String
 **Default:** `"smart"`
-**Options:** `true`, `false`, `"smart"`
+**Options:** `"smart"`, `"series"`, `"season"`, `"episode"`
 
-Control series vs episode search mode.
+The WebUI **Search Mode** dropdown contains **Smart**, **Series**, **Season**, and **Episode**. Legacy `true` / `"true"` maps to `"series"`; `false` / `"false"` maps to `"episode"`. Saved configurations use the named mode.
 
 **Modes:**
 
-- `true` - **Always** series search (entire series/season at once)
-- `false` - **Always** episode search (individual episodes)
-- `"smart"` - **Automatic** (series for seasons, episode for singles)
+- `"series"` - Search each affected series once; use permitted seasons instead when required to exclude specials.
+- `"season"` - Search each affected season once, without the smart-mode majority threshold.
+- `"episode"` - Search individual episodes.
+- `"smart"` - Search a series when more than half of its in-scope aired episodes need searching; otherwise use the same rule per season, then individual episodes. A broader scope requires at least two eligible episodes; exactly 50% does not qualify.
+
+Smart counts combine outstanding needs under the enabled missing, quality, custom-format, and upgrade settings across **all years**. `SearchByYear` still determines which candidates can initiate a search. Satisfied aired episodes count in the denominator; future and unknown-airdate episodes do not. Unmonitored episodes use episode searches. Successful broad searches mark all covered eligible episodes, including other years, to avoid duplicate searches. Blocklist retries use the same scope selection.
+
+Broader searches may also upgrade other episodes according to Sonarr's profiles. This applies to all supported Sonarr versions, with v5 providing its improved season-pack and release handling internally.
 
 **Comparison:**
 
@@ -516,7 +523,7 @@ graph LR
         direction TB
         S1["⚡ Speed: FAST<br/>(1 search per series)"]
         S2["🎯 Precision: LOWER<br/>(bulk matching)"]
-        S3["⚙️ Quality Control: LIMITED<br/>(ignores QualityUnmetSearch)"]
+        S3["⚙️ Quality Control: LIMITED<br/>(Sonarr profiles govern results)"]
         S4["📦 Use Case:<br/>Batch downloading<br/>entire series/seasons"]
     end
 
@@ -544,8 +551,8 @@ graph LR
 
     - ✅ Entire series/season is missing
     - ✅ Fast bulk downloads needed
-    - ✅ Quality doesn't matter (grab anything)
-    - ⚠️ You don't need upgrade searches
+    - ✅ Let Sonarr's profiles select releases across the series
+    - ⚠️ Other episodes may also be upgraded
 
 - :material-target:{ .lg .middle style="color: #51cf66" } **Use Episode Search When:**
 
@@ -570,10 +577,12 @@ graph LR
 **Smart mode logic:**
 
 ```
-If entire series/season is missing:
-  → Series search (fast)
-Else if single episodes missing:
-  → Episode search (precise)
+Combine configured outstanding needs across all years.
+If at least two episodes need searching and exceed half the series population:
+  → Series search
+Otherwise, apply the same threshold per season:
+  → Season search for qualifying seasons
+  → Episode searches for the remainder
 ```
 
 **Recommendation:** `"smart"` for best balance.
@@ -910,7 +919,7 @@ For details, see the Overseerr configuration section in [Radarr](../configuratio
 ### Ombi Configuration
 
 ```toml
-[Sonarr-TV.Search.Ombi]
+[Sonarr-TV.EntrySearch.Ombi]
 # Enable Ombi integration
 SearchOmbiRequests = false
 
@@ -935,7 +944,7 @@ ApprovedOnly = true
 Fill a new library quickly:
 
 ```toml
-[Radarr-Movies.Search]
+[Radarr-Movies.EntrySearch]
 SearchMissing = true
 SearchByYear = true  # Recent movies first
 SearchInReverse = false
@@ -952,7 +961,7 @@ SearchAgainOnSearchCompletion = true  # Continuous
 Build a high-quality library:
 
 ```toml
-[Radarr-4K.Search]
+[Radarr-4K.EntrySearch]
 SearchMissing = true
 SearchRequestsEvery = 600  # 10 minutes (conservative)
 DoUpgradeSearch = true  # Always seek better
@@ -969,7 +978,7 @@ SearchAgainOnSearchCompletion = true
 Fill in classic movies/TV:
 
 ```toml
-[Radarr-Classics.Search]
+[Radarr-Classics.EntrySearch]
 SearchMissing = true
 SearchByYear = true
 SearchInReverse = true  # Start with oldest
@@ -985,7 +994,7 @@ SearchAgainOnSearchCompletion = false  # One pass
 Stay current with airing shows:
 
 ```toml
-[Sonarr-TV.Search]
+[Sonarr-TV.EntrySearch]
 SearchMissing = true
 AlsoSearchSpecials = false
 Unmonitored = false
@@ -1006,7 +1015,7 @@ SearchAgainOnSearchCompletion = true
 Music library - get MP3 now, upgrade to FLAC later:
 
 ```toml
-[Lidarr-Music.Search]
+[Lidarr-Music.EntrySearch]
 SearchMissing = true
 SearchInReverse = false
 SearchRequestsEvery = 300
@@ -1529,13 +1538,13 @@ tail -f ~/logs/Radarr-Movies.log | grep -i "failed\|error"
 **A:** Yes! Configure per-instance:
 
 ```toml
-[Radarr-4K.Search]
+[Radarr-4K.EntrySearch]
 TempProfileResetTimeoutMinutes = 43200  # 30 days for 4K
 
-[Sonarr-TV.Search]
+[Sonarr-TV.EntrySearch]
 TempProfileResetTimeoutMinutes = 1440  # 1 day for TV
 
-[Lidarr-Music.Search]
+[Lidarr-Music.EntrySearch]
 TempProfileResetTimeoutMinutes = 10080  # 7 days for music
 ```
 

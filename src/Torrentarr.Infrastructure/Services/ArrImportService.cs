@@ -6,6 +6,7 @@ using Torrentarr.Infrastructure.ApiClients.QBittorrent;
 using Torrentarr.Infrastructure.Database;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Logging.Abstractions;
 
 namespace Torrentarr.Infrastructure.Services;
 
@@ -15,17 +16,22 @@ public class ArrImportService : IArrImportService
     private readonly TorrentarrConfig _config;
     private readonly ITorrentClientRegistry _qbitManager;
     private readonly TorrentarrDbContext _dbContext;
+    private readonly ISearchExecutor _searchExecutor;
 
     public ArrImportService(
         ILogger<ArrImportService> logger,
         TorrentarrConfig config,
         ITorrentClientRegistry qbitManager,
-        TorrentarrDbContext dbContext)
+        TorrentarrDbContext dbContext,
+        ISearchExecutor? searchExecutor = null)
     {
         _logger = logger;
         _config = config;
         _qbitManager = qbitManager;
         _dbContext = dbContext;
+        var coordinator = new DatabaseRestartCoordinator();
+        _searchExecutor = searchExecutor ?? new SearchExecutor(NullLogger<SearchExecutor>.Instance, config, dbContext,
+            new QualityProfileSwitcherService(NullLogger<QualityProfileSwitcherService>.Instance, dbContext, coordinator), coordinator);
     }
 
     public async Task<ImportResult> TriggerImportAsync(
@@ -404,7 +410,7 @@ public class ArrImportService : IArrImportService
         var arrName = _config.ArrInstances.FirstOrDefault(kv =>
             kv.Value == config).Key ?? "";
 
-        var isSeriesSearch = config.Search.SearchBySeries.Equals("true", StringComparison.OrdinalIgnoreCase);
+        var isSeriesSearch = config.Search.SearchBySeries.Equals("series", StringComparison.OrdinalIgnoreCase);
 
         if (isSeriesSearch)
         {
@@ -522,17 +528,26 @@ public class ArrImportService : IArrImportService
         var deleted = await client.DeleteFromQueueAsync(record.Id, removeFromClient: false, blocklist: true, ct, skipRedownload: true);
         if (deleted && config.ReSearch)
         {
-            var searchBySeries = (config.Search.SearchBySeries ?? "smart").Trim('"').ToLowerInvariant();
-            var useSeriesSearch = searchBySeries == "true" || (searchBySeries == "smart" && record.EpisodeIds.Count > 1);
-            if (useSeriesSearch && record.SeriesId is int seriesId)
+            var instanceName = _config.ArrInstances.First(kv => kv.Value == config).Key;
+            var retries = record.EpisodeIds.Distinct().Select(id => new SearchCandidate
             {
-                _logger.LogInformation("Re-Searching Sonarr series {SeriesId} after blocklist", seriesId);
-                await client.SearchSeriesAsync(seriesId, ct);
-            }
-            else if (record.EpisodeIds.Count > 0)
+                ArrId = id,
+                SeriesId = record.SeriesId,
+                Type = "Episode",
+                Reason = "Retry"
+            }).ToList();
+            if (retries.Count == 0 && record.SeriesId.HasValue &&
+                config.Search.SearchBySeries.Equals("series", StringComparison.OrdinalIgnoreCase))
+                retries.Add(new SearchCandidate { SeriesId = record.SeriesId, Type = "Episode", Reason = "Retry" });
+            var pending = await _dbContext.SonarrSearchRetries.FindAsync([instanceName, downloadId], ct);
+            if (pending == null)
             {
-                await client.SearchEpisodeAsync(record.EpisodeIds, ct);
+                pending = new Database.Models.SonarrSearchRetry { ArrInstance = instanceName, DownloadId = downloadId };
+                _dbContext.SonarrSearchRetries.Add(pending);
             }
+            pending.CandidatesJson = System.Text.Json.JsonSerializer.Serialize(retries);
+            await _dbContext.SaveChangesAsync(ct);
+            await SonarrRetryQueue.ExecuteAsync(_dbContext, _searchExecutor, instanceName, _logger, ct);
         }
         return deleted;
     }

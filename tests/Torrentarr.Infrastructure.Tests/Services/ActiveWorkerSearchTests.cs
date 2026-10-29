@@ -15,6 +15,37 @@ namespace Torrentarr.Infrastructure.Tests.Services;
 public class ActiveWorkerSearchTests
 {
     [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task SonarrRetries_RunOnWorkerCycle_WhenScheduledSearchIsDisabled(bool processingOnly)
+    {
+        var config = new ArrInstanceConfig
+        {
+            Type = "sonarr",
+            ReSearch = true,
+            ProcessingOnly = processingOnly,
+            Search = new SearchConfig { SearchMissing = false }
+        };
+        using var harness = new Harness(config, sqlite: true);
+        harness.Db.SonarrSearchRetries.Add(new()
+        {
+            ArrInstance = "Radarr",
+            DownloadId = "ABC",
+            CandidatesJson = """[{"ArrId":1,"SeriesId":7,"Reason":"Retry","Type":"Episode"}]"""
+        });
+        await harness.Db.SaveChangesAsync();
+        harness.Executor.Setup(e => e.ExecuteSearchesAsync("Radarr", It.IsAny<IEnumerable<SearchCandidate>>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new SearchResult { LoopCompleted = true, SearchesTriggered = 1 });
+
+        await harness.Worker.ProcessSearchAsync(CancellationToken.None);
+
+        harness.Executor.Verify(e => e.ExecuteSearchesAsync("Radarr",
+            It.Is<IEnumerable<SearchCandidate>>(c => c.Single().ArrId == 1), It.IsAny<CancellationToken>()), Times.Once);
+        harness.Db.SonarrSearchRetries.Should().BeEmpty();
+        harness.Media.VerifyNoOtherCalls();
+    }
+
+    [Theory]
     [InlineData(false, false, 1, 0)]
     [InlineData(true, false, 0, 1)]
     [InlineData(false, true, 1, 1)]
@@ -257,6 +288,7 @@ public class ActiveWorkerSearchTests
     private sealed class Harness : IDisposable
     {
         public Mock<IArrMediaService> Media { get; } = new(MockBehavior.Strict);
+        public Mock<ISearchExecutor> Executor { get; } = new(MockBehavior.Strict);
         public WorkerRuntimeMetrics Metrics { get; } = new();
         public ServiceProvider Provider { get; }
         public TorrentarrDbContext Db { get; }
@@ -273,7 +305,7 @@ public class ActiveWorkerSearchTests
             if (sqlite) Db.Database.OpenConnection();
             Db.Database.EnsureCreated();
             var services = new ServiceCollection();
-            services.AddSingleton(config).AddSingleton(Db).AddSingleton(Media.Object);
+            services.AddSingleton(config).AddSingleton(Db).AddSingleton(Media.Object).AddSingleton(Executor.Object);
             if (reloader != null) services.AddSingleton(reloader);
             services.AddSingleton(Mock.Of<ITorrentProcessor>()).AddSingleton(Mock.Of<ITorrentCacheService>());
             services.AddSingleton<IImportPathTracker, ImportPathTracker>();

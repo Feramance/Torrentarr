@@ -108,6 +108,16 @@ public class SonarrClient
         return response.IsSuccessful;
     }
 
+    /// <summary>Trigger a season search using Sonarr's release selection.</summary>
+    public async Task<bool> SearchSeasonAsync(int seriesId, int seasonNumber, CancellationToken ct = default)
+    {
+        var request = await CreateRequestAsync("command", Method.Post, ct);
+        AddApiKeyHeader(request);
+        request.AddJsonBody(new { name = "SeasonSearch", seriesId, seasonNumber });
+        var response = await ArrClientResponse.ExecuteAsync(_client, request, ct);
+        return response.IsSuccessful;
+    }
+
     /// <summary>
     /// Trigger episode search
     /// </summary>

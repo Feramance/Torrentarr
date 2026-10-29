@@ -26,6 +26,26 @@ public class ConfigurationLoaderTests : IDisposable
 
     private void WriteToml(string content) => File.WriteAllText(_tempFilePath, content);
 
+    [Theory]
+    [InlineData("true", "series")]
+    [InlineData("false", "episode")]
+    [InlineData("\"true\"", "series")]
+    [InlineData("\"FALSE\"", "episode")]
+    [InlineData("\"series\"", "series")]
+    [InlineData("\"season\"", "season")]
+    [InlineData("\"episode\"", "episode")]
+    [InlineData("\"smart\"", "smart")]
+    public void SonarrSearchMode_LoadsAliasesAndRoundTripsNamedModes(string toml, string expected)
+    {
+        WriteToml($"[Sonarr-TV.EntrySearch]\nSearchBySeries = {toml}\n");
+        var loader = new ConfigurationLoader(_tempFilePath);
+        var config = loader.Load();
+        config.ArrInstances["Sonarr-TV"].Search.SearchBySeries.Should().Be(expected);
+        loader.SaveConfig(config);
+        new ConfigurationLoader(_tempFilePath).Load().ArrInstances["Sonarr-TV"].Search.SearchBySeries.Should().Be(expected);
+        File.ReadAllText(_tempFilePath).Should().Contain($"SearchBySeries = \"{expected}\"");
+    }
+
     [Fact]
     public void Load_ParsesSettings_CorrectValues()
     {

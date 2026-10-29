@@ -20,7 +20,8 @@ public static class InstanceRenamePersistence
         [.. new[] { "torrentlibrary", "moviesfilesmodel", "episodefilesmodel", "seriesfilesmodel",
         "albumfilesmodel", "trackfilesmodel", "artistfilesmodel", "bookfilesmodel", "authorfilesmodel",
         "moviequeuemodel", "episodequeuemodel", "albumqueuemodel", "bookqueuemodel", "filesqueued" }
-            .Select(table => (table, "arrinstance")), ("searchactivity", "category")];
+            .Select(table => (table, "arrinstance")), ("searchactivity", "category"),
+            ("torrentarr_sonarr_search_retries", "ArrInstance")];
     private static string Digest(byte[] bytes) => Convert.ToHexString(SHA256.HashData(bytes));
 
     public static void Validate(TorrentarrConfig current, TorrentarrConfig updated, JObject? renames)

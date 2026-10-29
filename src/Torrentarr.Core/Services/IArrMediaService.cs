@@ -16,6 +16,10 @@ public class SearchResult
     public int ItemsSearched { get; set; }
     public int SearchesTriggered { get; set; }
     public List<int> SearchedIds { get; set; } = new();
+    [System.Text.Json.Serialization.JsonIgnore]
+    public List<SearchCandidate>? RetryCandidates { get; set; }
+    [System.Text.Json.Serialization.JsonIgnore]
+    public bool OnlyRetryResolutionFailed { get; set; }
     public List<string> Errors { get; set; } = new();
     public DateTime SearchTime { get; set; } = DateTime.UtcNow;
 

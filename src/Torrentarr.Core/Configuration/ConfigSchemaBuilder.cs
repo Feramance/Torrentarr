@@ -20,9 +20,21 @@ public static class ConfigSchemaBuilder
             ["WebUI"] = Qbitrr5146ConfigSchema.WebUI,
             ["qBit"] = TorrentClientFields().Where(f => f.key != "Type").Select(f => f with { section = "qBit" }).ToList(),
             ["TorrentClient"] = TorrentClientFields(),
-            ["Arr"] = Qbitrr5146ConfigSchema.Arr.Select(ClarifyTrackerMessages).ToList(),
+            ["Arr"] = Qbitrr5146ConfigSchema.Arr.Select(ClarifyTrackerMessages).Select(ClarifySearchScope).ToList(),
             ["TrackerProtection"] = ProtectionFields().Select(f => f with { section = "TrackerProtection" }).ToList()
         };
+
+    private static ConfigSchemaField ClarifySearchScope(ConfigSchemaField field)
+    {
+        if (field.key == "EntrySearch.AlsoSearchSpecials")
+        {
+            const string specials = "Include season-zero episodes only when this series has at least one monitored special. Unmonitored also controls whether other specials may be searched.";
+            return field with { description = specials, comments = new[] { specials } };
+        }
+        if (field.key != "EntrySearch.SearchBySeries") return field;
+        const string description = "Smart: search a series, then seasons, when more than half of in-scope aired episodes need searching (at least two); otherwise search episodes. Series/season/episode force that scope. Counts use enabled missing, quality and custom-format settings across all years. Series searches split into permitted seasons when needed to exclude specials. Legacy true/false mean series/episode. Broad searches may also upgrade other episodes under Sonarr's profiles.";
+        return field with { label = "Search Mode", options = new[] { "smart", "series", "season", "episode" }, description = description, comments = new[] { description } };
+    }
 
     private static ConfigSchemaField ClarifyTrackerMessages(ConfigSchemaField field)
     {

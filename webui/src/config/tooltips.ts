@@ -100,7 +100,7 @@ export const FIELD_TOOLTIPS: Record<string, string> = {
 
   "EntrySearch.SearchMissing": "Search for missing media items.",
   "EntrySearch.AlsoSearchSpecials":
-    "Include season 0 specials in missing searches.",
+    "Search season-zero episodes only when this series has at least one monitored special. Unmonitored controls whether its other specials may also be searched.",
   "EntrySearch.Unmonitored":
     "Include unmonitored series or episodes in searches.",
   "EntrySearch.SearchLimit":
@@ -130,7 +130,7 @@ export const FIELD_TOOLTIPS: Record<string, string> = {
   "EntrySearch.TempQualityProfile":
     "[DEPRECATED - Use QualityProfileMappings instead] Temporary quality profile names, paired with the primary profiles.",
   "EntrySearch.SearchBySeries":
-    "Search by entire series instead of individual episodes when applicable.",
+    "Choose Smart, Series, Season, or Episode. Smart uses a strict majority of configured search needs across all years, with at least two eligible episodes. Series searches split into permitted seasons when needed to exclude specials. Legacy true/false select Series/Episode. Broad searches may also upgrade other episodes under Sonarr’s profiles.",
   "EntrySearch.PrioritizeTodaysReleases":
     "Prioritise items released today (similar to RSS prioritisation).",
 

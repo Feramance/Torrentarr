@@ -204,7 +204,7 @@ ForceMinimumCustomFormat = false  # Enable for strict CF enforcement
 3. **Update Sonarr search mode:**
 
 ```toml
-[Sonarr-TV.Search]
+[Sonarr-TV.EntrySearch]
 SearchBySeries = "smart"  # New smart mode (recommended)
 ```
 
