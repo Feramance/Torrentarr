@@ -156,11 +156,13 @@ public class SearchExecutorTests
     public async Task Deadline_DoesNotShortenConfiguredDelay()
     {
         var service = CreateTestService(CreateConfigWithRadarr(searchLoopDelay: 1));
-        var elapsed = System.Diagnostics.Stopwatch.StartNew();
+        var clock = new ManualClock(); service.Clock = clock;
+        var started = clock.Now;
         var result = await service.ExecuteSearchesAsync("Radarr-test", [new() { ArrId = 1 }, new() { ArrId = 2 }],
-            DateTimeOffset.UtcNow.AddMinutes(2), default);
+            clock.Now.AddMinutes(2), default);
         result.LoopCompleted.Should().BeTrue();
-        elapsed.Elapsed.Should().BeGreaterThanOrEqualTo(TimeSpan.FromSeconds(1));
+        clock.Delays.Should().Equal(TimeSpan.FromSeconds(1));
+        (clock.Now - started).Should().Be(TimeSpan.FromSeconds(1));
     }
 
     [Fact]
