@@ -117,6 +117,12 @@ public class TorrentInfo
     public long SeedingTimeLimit { get; set; }
     [JsonProperty("inactive_seeding_time_limit")]
     public long? InactiveSeedingTimeLimit { get; set; }
+    [JsonProperty("share_limit_action")]
+    [System.Text.Json.Serialization.JsonIgnore]
+    public string? ShareLimitAction { get; set; }
+    [JsonProperty("share_limits_mode")]
+    [System.Text.Json.Serialization.JsonIgnore]
+    public string? ShareLimitsMode { get; set; }
     [JsonProperty("dl_limit")]
     public long DownloadLimit { get; set; }
     [JsonProperty("up_limit")]

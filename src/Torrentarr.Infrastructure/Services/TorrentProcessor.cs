@@ -393,6 +393,28 @@ public class TorrentProcessor : ITorrentProcessor
             await ProcessSingleTorrentAsync(torrent, category, stats, ct);
             if (_issues != null) await _issues.ResolveAsync(issue, ct);
         }
+        catch (HttpRequestException ex) when (ex.StatusCode == System.Net.HttpStatusCode.NotFound)
+        {
+            var client = _qbitManager.GetClient(torrent.ClientInstanceId);
+            List<TorrentInfo>? inventory = null;
+            try
+            {
+                if (client != null) inventory = await client.GetTorrentsAsync(cancellationToken: ct);
+            }
+            catch (Exception refreshError) when (refreshError is not OperationCanceledException)
+            {
+                if (_issues != null) await _issues.ReportAsync(issue, ct);
+                throw;
+            }
+            if (inventory != null && !inventory.Any(t => t.Hash.Equals(torrent.Hash, StringComparison.OrdinalIgnoreCase)))
+            {
+                _logger.LogDebug("Torrent {Hash} disappeared from {Instance}; skipping stale inventory", torrent.Hash, torrent.ClientInstanceId);
+                if (_issues != null) await _issues.ResolveAsync(issue, ct);
+                return;
+            }
+            if (_issues != null) await _issues.ReportAsync(issue, ct);
+            throw;
+        }
         catch (Exception ex) when (ex is not OperationCanceledException)
         {
             if (_issues != null) await _issues.ReportAsync(issue, ct);
@@ -1479,7 +1501,7 @@ public class TorrentProcessor : ITorrentProcessor
 
         if (allowedFiles.Count == 0)
         {
-            WarnAllowlistBlocked(torrent, "no allowed files remain");
+            WarnAllowlistBlocked(torrent, "no allowed files remain", excludedFiles);
             var hnrAllows = _seedingService != null &&
                 await _seedingService.HnrAllowsDeleteAsync(torrent, "all files excluded by import allowlist", ct);
             if (!hnrAllows)
@@ -1500,7 +1522,7 @@ public class TorrentProcessor : ITorrentProcessor
 
         if (!TorrentStorageAvailable(torrent, allowedFiles))
         {
-            WarnAllowlistBlocked(torrent, "content storage is unavailable");
+            WarnAllowlistBlocked(torrent, "content storage is unavailable", excludedFiles);
             return FileFilterResult.PendingResult;
         }
 
@@ -1511,7 +1533,7 @@ public class TorrentProcessor : ITorrentProcessor
                 await _seedingService.HnrAllowsDeleteAsync(torrent, "excluded file cleanup by import allowlist", ct);
             if (!hnrAllows)
             {
-                WarnAllowlistBlocked(torrent, "H&R obligations prevent excluded file cleanup");
+                WarnAllowlistBlocked(torrent, "H&R obligations prevent excluded file cleanup", remaining);
                 return FileFilterResult.PendingResult;
             }
 
@@ -1524,11 +1546,11 @@ public class TorrentProcessor : ITorrentProcessor
         if (remaining.Count == 0)
             return FileFilterResult.ReadyResult;
 
-        WarnAllowlistBlocked(torrent, $"{remaining.Count} disallowed file(s) remain");
+        WarnAllowlistBlocked(torrent, $"{remaining.Count} disallowed file(s) remain", remaining);
         return FileFilterResult.PendingResult;
     }
 
-    private void WarnAllowlistBlocked(TorrentInfo torrent, string reason)
+    private void WarnAllowlistBlocked(TorrentInfo torrent, string reason, IReadOnlyList<TorrentFileRecord> excludedFiles)
     {
         var now = DateTimeOffset.UtcNow;
         if (!_cache.ShouldLogAllowlistWarning(
@@ -1540,7 +1562,9 @@ public class TorrentProcessor : ITorrentProcessor
             return;
         }
 
-        _logger.LogWarning("Import blocked by file allowlist for [{Name}] ({Hash}): {Reason}", torrent.Name, torrent.Hash, reason);
+        _logger.LogWarning("Import blocked by file allowlist for [{Name}] ({Hash}): {Reason}; excluded files ({Count} total, {Remaining} more): {Files}",
+            torrent.Name, torrent.Hash, reason, excludedFiles.Count, Math.Max(0, excludedFiles.Count - 5),
+            string.Join(", ", excludedFiles.Take(5).Select(f => f.Name.Length > 200 ? f.Name[..200] + "…" : f.Name)));
     }
 
     internal static (int StalledDelay, int IgnoreTorrentsYoungerThan) ResolveStalledSettings(

@@ -14,6 +14,29 @@ namespace Torrentarr.Infrastructure.Tests.Services;
 
 public class ActiveWorkerSearchTests
 {
+    [Fact]
+    public async Task SharedDeadline_YieldPreservesMetricsAndSkipsAdditiveUpgrade()
+    {
+        var config = new ArrInstanceConfig
+        {
+            Category = "movies",
+            Search = new SearchConfig
+            {
+                SearchMissing = true,
+                QualityUnmetSearch = true,
+                SearchRequestsEvery = 3600
+            }
+        };
+        using var harness = new Harness(config);
+        var deadline = DateTimeOffset.UtcNow.AddMinutes(30);
+        harness.Media.Setup(m => m.SearchMissingMediaAsync("movies", deadline, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new SearchResult { SearchesTriggered = 2, ItemsSearched = 2, BudgetExhausted = true });
+        await harness.Worker.ProcessSearchAsync(CancellationToken.None, deadline);
+        harness.Metrics.SearchSummary.Should().Contain("2 searches triggered");
+        harness.Media.Verify(m => m.SearchQualityUpgradesAsync(It.IsAny<string>(), It.IsAny<DateTimeOffset?>(), It.IsAny<CancellationToken>()), Times.Never);
+        harness.Db.SearchActivity.Should().ContainSingle();
+    }
+
     [Theory]
     [InlineData("sonarr", false)]
     [InlineData("sonarr", true)]
