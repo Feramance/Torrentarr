@@ -187,17 +187,19 @@ public sealed class ReauditRegressionTests
     }
 
     [Theory]
-    [InlineData(false, false)]
-    [InlineData(true, false)]
-    [InlineData(false, true)]
-    public async Task PerTorrent404_IsQuietOnlyAfterVerifiedDisappearance(bool stillPresent, bool refreshFails)
+    [InlineData(false, false, false)]
+    [InlineData(true, false, false)]
+    [InlineData(false, true, false)]
+    [InlineData(false, false, true)]
+    public async Task PerTorrent404_IsQuietOnlyAfterVerifiedDisappearance(bool stillPresent, bool refreshFails, bool refreshCanceled)
     {
         var cfg = new TorrentarrConfig(); cfg.Settings.Tagless = true;
         cfg.ArrInstances["Arr"] = new() { Type = "radarr", Category = "media" };
         var torrent = new TorrentInfo { Hash = "gone", ClientInstanceId = "client", Category = "media", AddedOn = 1 };
         var client = new Mock<ITorrentClient>();
         client.Setup(c => c.GetTorrentsAsync(It.IsAny<string?>(), It.IsAny<string?>(), It.IsAny<CancellationToken>()))
-            .Returns(() => refreshFails ? Task.FromException<List<TorrentInfo>>(new IOException("refresh failed"))
+            .Returns(() => refreshCanceled ? Task.FromException<List<TorrentInfo>>(new OperationCanceledException())
+                : refreshFails ? Task.FromException<List<TorrentInfo>>(new IOException("refresh failed"))
                 : Task.FromResult(stillPresent ? new List<TorrentInfo> { torrent } : []));
         var registry = new Mock<ITorrentClientRegistry>(); registry.Setup(r => r.GetClient("client")).Returns(client.Object);
         var seeding = new Mock<ISeedingService>();
@@ -209,7 +211,16 @@ public sealed class ReauditRegressionTests
             new TorrentCacheService(NullLogger<TorrentCacheService>.Instance), new(), seedingService: seeding.Object, issues: reporter.Object);
         var method = typeof(TorrentProcessor).GetMethod("ProcessObservedTorrentAsync", System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance)!;
         Func<Task> action = () => (Task)method.Invoke(processor, [torrent, "media", new TorrentProcessingStats(), CancellationToken.None])!;
-        if (refreshFails) await FluentActions.Awaiting(action).Should().ThrowAsync<IOException>();
+        if (refreshCanceled)
+        {
+            await FluentActions.Awaiting(action).Should().ThrowAsync<OperationCanceledException>();
+            reports.Should().BeEmpty();
+        }
+        else if (refreshFails)
+        {
+            await FluentActions.Awaiting(action).Should().ThrowAsync<IOException>();
+            reports.Should().Contain("torrent.processing");
+        }
         else if (stillPresent) await FluentActions.Awaiting(action).Should().ThrowAsync<HttpRequestException>();
         else
         {
@@ -271,6 +282,6 @@ public sealed class ReauditRegressionTests
                 }
             });
         }
-        public void Dispose() { _listener.Stop(); _listener.Close(); _loop.GetAwaiter().GetResult(); }
+        public void Dispose() { _listener.Close(); _loop.GetAwaiter().GetResult(); }
     }
 }

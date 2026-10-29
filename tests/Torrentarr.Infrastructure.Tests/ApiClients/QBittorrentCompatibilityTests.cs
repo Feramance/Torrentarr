@@ -56,6 +56,31 @@ public sealed class QBittorrentCompatibilityTests
         newServer.Requests.Last().Path.Should().EndWith("/stop");
     }
 
+    [Fact]
+    public async Task CachedVersion_RefreshesAfterUpgradeAtSameAddress()
+    {
+        await using var server = new QBitServer("v4.5.5");
+        using var client = server.Client();
+        var clock = new ManualClock(); client.Clock = clock;
+        await client.PauseTorrentAsync("abc");
+        server.Version = "v5.3.0";
+        clock.Now += TimeSpan.FromMinutes(29);
+        await client.PauseTorrentAsync("abc");
+        server.Requests.Last().Path.Should().EndWith("/pause");
+        clock.Now += TimeSpan.FromMinutes(1);
+        (await client.SetShareLimitsAsync("abc", -1, -1)).Should().BeTrue();
+        server.Requests.Last().Form["shareLimitsMode"].Should().Be("MatchAll");
+        await client.ResumeTorrentAsync("abc");
+        server.Requests.Last().Path.Should().EndWith("/start");
+        server.Requests.Count(r => r.Path.EndsWith("/version")).Should().Be(2);
+    }
+
+    private sealed class ManualClock : TimeProvider
+    {
+        public DateTimeOffset Now { get; set; } = DateTimeOffset.UnixEpoch;
+        public override DateTimeOffset GetUtcNow() => Now;
+    }
+
     [Theory]
     [InlineData("unrecognized", 200)]
     [InlineData("v5.3.0", 400)]
@@ -176,6 +201,7 @@ public sealed class QBittorrentCompatibilityTests
         private readonly Task _loop;
         private readonly int _port;
         public ConcurrentQueue<Request> Requests { get; } = new();
+        public string Version { get; set; }
         public int VersionStatus { get; set; } = 200;
         public int InventoryStatus { get; init; } = 200;
         public int MutationStatus { get; init; } = 200;
@@ -184,6 +210,7 @@ public sealed class QBittorrentCompatibilityTests
 
         public QBitServer(string version)
         {
+            Version = version;
             using var socket = new TcpListener(IPAddress.Loopback, 0);
             socket.Start(); _port = ((IPEndPoint)socket.LocalEndpoint).Port; socket.Stop();
             _listener.Prefixes.Add($"http://127.0.0.1:{_port}/"); _listener.Start();
@@ -200,7 +227,7 @@ public sealed class QBittorrentCompatibilityTests
                             .ToDictionary(p => WebUtility.UrlDecode(p[0]), p => WebUtility.UrlDecode(p.Length > 1 ? p[1] : ""));
                         Requests.Enqueue(new(path, context.Request.Url.Query, form, context.Request.Headers["Cookie"] ?? ""));
                         var content = "";
-                        if (path.EndsWith("/version")) { context.Response.StatusCode = VersionStatus; content = version; }
+                        if (path.EndsWith("/version")) { context.Response.StatusCode = VersionStatus; content = Version; }
                         else if (path.EndsWith("/info")) { context.Response.StatusCode = InventoryStatus; content = Inventory; }
                         else if (path.EndsWith("/login"))
                         {

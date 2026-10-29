@@ -19,6 +19,8 @@ public class QBittorrentClient : ITorrentClient, IDisposable
     private readonly string _password;
     private string? _cookie;
     private Version? _version;
+    private DateTimeOffset _versionAt;
+    internal TimeProvider Clock { get; set; } = TimeProvider.System;
     private readonly SemaphoreSlim _versionGate = new(1, 1);
 
     public TorrentClientIdentity Identity { get; }
@@ -69,7 +71,8 @@ public class QBittorrentClient : ITorrentClient, IDisposable
         await _versionGate.WaitAsync(ct);
         try
         {
-            if (_version != null) return _version;
+            if (_version != null && Clock.GetUtcNow() - _versionAt < TimeSpan.FromMinutes(30)) return _version;
+            _version = null;
             try
             {
                 var text = (await GetVersionAsync(ct)).Trim();
@@ -78,6 +81,7 @@ public class QBittorrentClient : ITorrentClient, IDisposable
                     System.Text.RegularExpressions.RegexOptions.IgnoreCase);
                 if (!match.Success || !Version.TryParse(match.Groups[1].Value, out _version))
                     throw new HttpRequestException("Unrecognized qBittorrent version.");
+                _versionAt = Clock.GetUtcNow();
             }
             catch (Exception ex) when (ex is not OperationCanceledException)
             {

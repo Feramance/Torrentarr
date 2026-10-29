@@ -396,8 +396,17 @@ public class TorrentProcessor : ITorrentProcessor
         catch (HttpRequestException ex) when (ex.StatusCode == System.Net.HttpStatusCode.NotFound)
         {
             var client = _qbitManager.GetClient(torrent.ClientInstanceId);
-            if (client != null && !(await client.GetTorrentsAsync(cancellationToken: ct))
-                .Any(t => t.Hash.Equals(torrent.Hash, StringComparison.OrdinalIgnoreCase)))
+            List<TorrentInfo>? inventory = null;
+            try
+            {
+                if (client != null) inventory = await client.GetTorrentsAsync(cancellationToken: ct);
+            }
+            catch (Exception refreshError) when (refreshError is not OperationCanceledException)
+            {
+                if (_issues != null) await _issues.ReportAsync(issue, ct);
+                throw;
+            }
+            if (inventory != null && !inventory.Any(t => t.Hash.Equals(torrent.Hash, StringComparison.OrdinalIgnoreCase)))
             {
                 _logger.LogDebug("Torrent {Hash} disappeared from {Instance}; skipping stale inventory", torrent.Hash, torrent.ClientInstanceId);
                 if (_issues != null) await _issues.ResolveAsync(issue, ct);
