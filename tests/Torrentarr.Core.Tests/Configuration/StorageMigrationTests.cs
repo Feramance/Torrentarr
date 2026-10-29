@@ -1,9 +1,12 @@
 using FluentAssertions;
+using Tomlyn;
+using Tomlyn.Model;
 using Torrentarr.Core.Configuration;
 using Xunit;
 
 namespace Torrentarr.Core.Tests.Configuration;
 
+[Collection("Configuration environment")]
 public sealed class StorageMigrationTests : IDisposable
 {
     private readonly string _file = Path.GetTempFileName();
@@ -11,6 +14,72 @@ public sealed class StorageMigrationTests : IDisposable
     {
         File.WriteAllText(_file, toml);
         return new ConfigurationLoader(_file).Load();
+    }
+
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public void LegacyDurationsSurviveStorageMigrationAndRuntimeOverrides(bool withEnvironment)
+    {
+        var root = Path.GetTempPath().Replace('\\', '/').TrimEnd('/');
+        var original = $"""
+            [Settings]
+            ConfigVersion = "5.14.7"
+            CompletedDownloadFolder = '{root}/file'
+            FreeSpace = "10G"
+            AutoPauseResume = true
+            [qBit]
+            Host = "localhost"
+            [[qBit.Maintenance.PathMappings]]
+            ClientPath = "/remote"
+            LocalPath = '{root}'
+            [qBit.CategorySeeding]
+            MaxSeedingTime = "2w"
+            [[qBit.Trackers]]
+            URI = "https://one.example/announce"
+            MaxSeedingTime = "2w"
+            [[qBit.Trackers]]
+            URI = "https://two.example/announce"
+            MaxSeedingTime = "2w"
+            [[qBit.Trackers]]
+            URI = "https://three.example/announce"
+            MaxSeedingTime = "2w"
+            """;
+        var previousLimit = Environment.GetEnvironmentVariable("TORRENTARR_SETTINGS_FREE_SPACE");
+        var previousRoot = Environment.GetEnvironmentVariable("TORRENTARR_SETTINGS_COMPLETED_DOWNLOAD_FOLDER");
+        try
+        {
+            Environment.SetEnvironmentVariable("TORRENTARR_SETTINGS_FREE_SPACE", withEnvironment ? "42G" : null);
+            Environment.SetEnvironmentVariable("TORRENTARR_SETTINGS_COMPLETED_DOWNLOAD_FOLDER", withEnvironment ? root + "/runtime" : null);
+            File.WriteAllText(_file, original);
+            var loader = new ConfigurationLoader(_file);
+            string? migrated = null;
+            for (var pass = 0; pass < 2; pass++)
+            {
+                var client = loader.Load().QBitInstances["qBit"];
+                client.CategorySeeding.MaxSeedingTime.Should().Be(1209600);
+                client.Trackers.Should().HaveCount(3).And.OnlyContain(t => t.MaxSeedingTime == 1209600);
+                client.DownloadPath.Should().Be(withEnvironment ? "/remote/runtime" : "/remote/file");
+                var monitor = client.FreeSpace.Single();
+                monitor.Path.Should().Be(root + (withEnvironment ? "/runtime" : "/file"));
+                monitor.Limit.Should().Be(withEnvironment ? "42G" : "10G");
+                monitor.Enabled.Should().BeTrue();
+                File.ReadAllText(_file + ".bak").Should().Be(original);
+                var persisted = File.ReadAllText(_file);
+                if (migrated != null) persisted.Should().Be(migrated);
+                migrated = persisted;
+                var table = (TomlTable)TomlSerializer.Deserialize<TomlTable>(persisted)!["qBit"];
+                ((TomlTable)table["CategorySeeding"])["MaxSeedingTime"].Should().Be("2w");
+                ((TomlTableArray)table["Trackers"]).Should().HaveCount(3)
+                    .And.OnlyContain(t => (string)t["MaxSeedingTime"] == "2w");
+                persisted.Should().NotContain("42G").And.NotContain(root + "/runtime");
+            }
+        }
+        finally
+        {
+            Environment.SetEnvironmentVariable("TORRENTARR_SETTINGS_FREE_SPACE", previousLimit);
+            Environment.SetEnvironmentVariable("TORRENTARR_SETTINGS_COMPLETED_DOWNLOAD_FOLDER", previousRoot);
+        }
     }
 
     [Theory]

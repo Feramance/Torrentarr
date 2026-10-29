@@ -65,12 +65,30 @@ public static class StorageConfigMigration
         return true;
     }
 
+    private static TorrentClientInstanceConfig ReadStorage(TomlTable table)
+    {
+        // Seeding and tracker durations are parsed separately by ConfigurationLoader.
+        var storage = new TomlTable();
+        foreach (var key in new[] { "DownloadPath", "FreeSpace" })
+            if (table.TryGetValue(key, out var value)) storage[key] = value;
+        if (table.TryGetValue("Maintenance", out var maintenance))
+        {
+            if (maintenance is TomlTable fields)
+            {
+                if (fields.TryGetValue("PathMappings", out var mappings))
+                    storage["Maintenance"] = new TomlTable { ["PathMappings"] = mappings };
+            }
+            else storage["Maintenance"] = maintenance;
+        }
+        return TomlSerializer.Deserialize<TorrentClientInstanceConfig>(TomlSerializer.Serialize(storage))!;
+    }
+
     private static void ConvertClients(TomlTable root, TomlTable legacy)
     {
         var clients = Clients(root).ToList();
         foreach (var (id, table) in clients)
         {
-            var client = TomlSerializer.Deserialize<TorrentClientInstanceConfig>(TomlSerializer.Serialize(table))!;
+            var client = ReadStorage(table);
             var completed = Value(legacy, "CompletedDownloadFolder")?.ToString();
             if (clients.Count == 1 && !Usable(client.DownloadPath) && Usable(completed))
             {
@@ -106,7 +124,7 @@ public static class StorageConfigMigration
         var clients = Clients(root).ToList();
         foreach (var (id, table) in clients)
         {
-            var client = TomlSerializer.Deserialize<TorrentClientInstanceConfig>(TomlSerializer.Serialize(table))!;
+            var client = ReadStorage(table);
             if (clients.Count == 1 && keys.Contains("CompletedDownloadFolder"))
             {
                 var rootPath = Map(legacy["CompletedDownloadFolder"].ToString(), client.Maintenance.PathMappings, reverse: true);
