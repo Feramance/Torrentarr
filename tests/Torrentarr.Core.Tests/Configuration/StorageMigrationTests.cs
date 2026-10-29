@@ -47,8 +47,12 @@ public sealed class StorageMigrationTests : IDisposable
             """;
         var previousLimit = Environment.GetEnvironmentVariable("TORRENTARR_SETTINGS_FREE_SPACE");
         var previousRoot = Environment.GetEnvironmentVariable("TORRENTARR_SETTINGS_COMPLETED_DOWNLOAD_FOLDER");
+        var previousAliasLimit = Environment.GetEnvironmentVariable("QBITRR_SETTINGS_FREE_SPACE");
+        var previousAliasRoot = Environment.GetEnvironmentVariable("QBITRR_SETTINGS_COMPLETED_DOWNLOAD_FOLDER");
         try
         {
+            Environment.SetEnvironmentVariable("QBITRR_SETTINGS_FREE_SPACE", null);
+            Environment.SetEnvironmentVariable("QBITRR_SETTINGS_COMPLETED_DOWNLOAD_FOLDER", null);
             Environment.SetEnvironmentVariable("TORRENTARR_SETTINGS_FREE_SPACE", withEnvironment ? "42G" : null);
             Environment.SetEnvironmentVariable("TORRENTARR_SETTINGS_COMPLETED_DOWNLOAD_FOLDER", withEnvironment ? root + "/runtime" : null);
             File.WriteAllText(_file, original);
@@ -79,6 +83,8 @@ public sealed class StorageMigrationTests : IDisposable
         {
             Environment.SetEnvironmentVariable("TORRENTARR_SETTINGS_FREE_SPACE", previousLimit);
             Environment.SetEnvironmentVariable("TORRENTARR_SETTINGS_COMPLETED_DOWNLOAD_FOLDER", previousRoot);
+            Environment.SetEnvironmentVariable("QBITRR_SETTINGS_FREE_SPACE", previousAliasLimit);
+            Environment.SetEnvironmentVariable("QBITRR_SETTINGS_COMPLETED_DOWNLOAD_FOLDER", previousAliasRoot);
         }
     }
 
