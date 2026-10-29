@@ -165,6 +165,10 @@ builder.Services.AddHostedService<LiveConfigurationRuntime>();
 builder.Services.AddSingleton(configLoader);
 
 builder.Services.AddSingleton<IPasswordHasher, BCryptPasswordHasher>();
+builder.Services.AddSingleton<OperationalIssueReporter>();
+builder.Services.AddSingleton<IOperationalIssueReporter>(sp => sp.GetRequiredService<OperationalIssueReporter>());
+builder.Services.AddHostedService(sp => sp.GetRequiredService<OperationalIssueReporter>());
+builder.Services.AddHostedService<OperationalIssueMonitor>();
 builder.Services.AddSingleton<ITorrentClientFactory, QBittorrentTorrentClientFactory>();
 builder.Services.AddSingleton<QBittorrentConnectionManager>();
 builder.Services.AddSingleton<ITorrentClientRegistry>(sp => sp.GetRequiredService<QBittorrentConnectionManager>());
@@ -408,6 +412,8 @@ app.Use(async (context, next) =>
 static bool WebUIAuthRequired(TorrentarrConfig c) => !c.WebUI.AuthDisabled;
 
 app.MapControllers();
+app.MapOperationalIssueEndpoints("/web");
+app.MapOperationalIssueEndpoints("/api");
 
 // Health check endpoint
 app.MapGet("/health", () => Results.Ok(new

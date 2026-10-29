@@ -1,5 +1,6 @@
 namespace Torrentarr.Core.Services;
 
+/// <summary>Category arguments are resolved owner categories, not raw client subcategories.</summary>
 public interface IArrImportService
 {
     Task<ImportResult> TriggerImportAsync(

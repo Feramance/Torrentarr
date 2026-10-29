@@ -54,6 +54,7 @@ public interface ITorrentCacheService
     /// Clear all caches
     /// </summary>
     void Clear();
+    void InvalidateTorrent(string instanceId, string hash);
 
     /// <summary>
     /// Clean expired entries from all caches

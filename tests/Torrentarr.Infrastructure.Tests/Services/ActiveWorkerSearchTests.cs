@@ -15,13 +15,19 @@ namespace Torrentarr.Infrastructure.Tests.Services;
 public class ActiveWorkerSearchTests
 {
     [Theory]
-    [InlineData(false)]
-    [InlineData(true)]
-    public async Task SonarrRetries_RunOnWorkerCycle_WhenScheduledSearchIsDisabled(bool processingOnly)
+    [InlineData("sonarr", false)]
+    [InlineData("sonarr", true)]
+    [InlineData("radarr", false)]
+    [InlineData("radarr", true)]
+    [InlineData("lidarr", false)]
+    [InlineData("lidarr", true)]
+    [InlineData("readarr", false)]
+    [InlineData("readarr", true)]
+    public async Task ReplacementRetries_RunOnWorkerCycle_WhenScheduledSearchIsDisabled(string type, bool processingOnly)
     {
         var config = new ArrInstanceConfig
         {
-            Type = "sonarr",
+            Type = type,
             ReSearch = true,
             ProcessingOnly = processingOnly,
             Search = new SearchConfig { SearchMissing = false }

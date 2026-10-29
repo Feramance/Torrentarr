@@ -692,6 +692,20 @@ export function ProcessesView({ active }: ProcessesViewProps): JSX.Element {
               ) : null}
             </div>
             <div className="process-card__header-actions">
+              <button
+                type="button"
+                className="btn small ghost"
+                aria-label={`View issues for ${displayName}`}
+                onClick={() =>
+                  requestNavigateTab({
+                    tab: "issues",
+                    issueInstance: app === "Other" ? undefined : name,
+                    issueCategory: "system",
+                  })
+                }
+              >
+                Issues
+              </button>
               <div
                 className={statusToneClass(tone)}
                 title={statusLabel}

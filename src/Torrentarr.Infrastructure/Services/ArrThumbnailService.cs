@@ -1,4 +1,5 @@
 using System.Net.Http.Headers;
+using Torrentarr.Core.Services;
 using System.Security.Cryptography;
 using System.Text;
 using Torrentarr.Core.Configuration;
@@ -18,13 +19,15 @@ public class ArrThumbnailService
     private readonly TorrentarrConfig _config;
     private readonly IHttpClientFactory _httpClientFactory;
     private readonly string _cacheDir;
+    private readonly IOperationalIssueReporter? _issues;
 
     public ArrThumbnailService(
         TorrentarrDbContext db,
         TorrentarrConfig config,
-        IHttpClientFactory httpClientFactory)
+        IHttpClientFactory httpClientFactory, IOperationalIssueReporter? issues = null)
     {
         _db = db;
+        _issues = issues;
         _config = config;
         _httpClientFactory = httpClientFactory;
         _cacheDir = Path.Combine(ConfigurationLoader.GetDataDirectoryPath(), "cache", "thumbnails");
@@ -69,7 +72,9 @@ public class ArrThumbnailService
         var candidates = BuildCandidateUrls(baseUri, arrType, arrId.Value).ToList();
         for (var i = 0; i < candidates.Count; i++)
         {
-            var fetched = await TryFetchSameHostAsync(candidates[i], instance.Value.URI, instance.Value.APIKey, ct);
+            (byte[] Bytes, string ContentType)? fetched;
+            try { fetched = await TryFetchSameHostAsync(candidates[i], instance.Value.URI, instance.Value.APIKey, instance.Value.SkipTLSVerify, ct); }
+            catch (Exception ex) when (!ct.IsCancellationRequested && ex is HttpRequestException or IOException or OperationCanceledException) { fetched = null; }
             if (fetched is null)
             {
                 if (isSonarr && i == 0)
@@ -84,20 +89,25 @@ public class ArrThumbnailService
                     catch (Exception ex) when (!ct.IsCancellationRequested &&
                         ex is HttpRequestException or ArrApiException or Newtonsoft.Json.JsonException or OperationCanceledException or TimeoutException)
                     {
+                        if (_issues != null) await _issues.ReportAsync(ThumbnailIssue(instance.Key), ct);
                         return null;
                     }
                 }
                 continue;
             }
 
+            if (_issues != null) await _issues.ResolveAsync(ThumbnailIssue(instance.Key), ct);
             await File.WriteAllBytesAsync(cachePath, fetched.Value.Bytes, ct);
             var etag = Convert.ToHexString(SHA256.HashData(fetched.Value.Bytes)).ToLowerInvariant();
             await File.WriteAllTextAsync(etagPath, etag, ct);
             return (fetched.Value.Bytes, fetched.Value.ContentType, etag);
         }
 
+        if (_issues != null) await _issues.ReportAsync(ThumbnailIssue(instance.Key), ct);
         return null;
     }
+
+    private static OperationalIssueReport ThumbnailIssue(string instance) => new("thumbnail.fetch", "system", "Arr posters could not be retrieved", "Uncached posters are unavailable.", "Check Arr connectivity, certificate settings and reverse proxy configuration.", ArrInstance: instance, Severity: "warning", Target: "config");
 
     private static async Task<string> ReadOrCreateETagAsync(
         string etagPath,
@@ -172,13 +182,13 @@ public class ArrThumbnailService
     private async Task<(byte[] Bytes, string ContentType)?> TryFetchSameHostAsync(
         string url,
         string arrBaseUri,
-        string apiKey,
+        string apiKey, bool skipTlsVerify,
         CancellationToken ct)
     {
         if (!IsSameHost(url, arrBaseUri))
             return null;
 
-        using var client = _httpClientFactory.CreateClient(nameof(ArrThumbnailService));
+        using var client = _httpClientFactory.CreateClient(skipTlsVerify ? "ArrOpenSkipTls" : "ArrOpen");
         client.Timeout = TimeSpan.FromSeconds(20);
         using var request = new HttpRequestMessage(HttpMethod.Get, url);
         if (!url.Contains("apikey=", StringComparison.OrdinalIgnoreCase))

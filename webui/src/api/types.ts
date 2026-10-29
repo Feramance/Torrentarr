@@ -745,3 +745,57 @@ export interface TorrentAutomationStatus {
   recovery: NonNullable<MaintenanceStatus["recovery"]>;
   inspections: NonNullable<MaintenanceStatus["inspections"]>;
 }
+
+export interface OperationalIssue {
+  id: number;
+  code: string;
+  category: "automation" | "system";
+  arrInstance: string;
+  clientInstance: string;
+  subjectType: string;
+  subjectId: string;
+  severity: "warning" | "error";
+  title: string;
+  impact: string;
+  remediation: string;
+  target: string;
+  firstObserved: string;
+  lastObserved: string;
+  resolvedAt: string | null;
+  resolution?: string | null;
+  occurrences: number;
+}
+export interface OperationalIssueGroup extends OperationalIssue {
+  affected: number;
+  examples: OperationalIssue[];
+}
+export interface PendingOperationalIssue {
+  report: Omit<
+    OperationalIssue,
+    "id" | "firstObserved" | "lastObserved" | "resolvedAt" | "occurrences"
+  >;
+  resolved: boolean;
+  observedAt: string;
+}
+export interface IssuesResponse {
+  available: boolean;
+  total: number | null;
+  items: OperationalIssueGroup[];
+  page: number;
+  pageSize: number;
+  pending: PendingOperationalIssue[];
+}
+export interface IssuesSummary {
+  instances?: string[];
+  available: boolean;
+  activeGroups: number | null;
+  counts: {
+    category: string;
+    severity: string;
+    arrInstance: string;
+    clientInstance: string;
+    code: string;
+    affected: number;
+  }[];
+  pending: PendingOperationalIssue[];
+}

@@ -12,6 +12,7 @@ public sealed record WorkerLoopProgress(string Phase, DateTimeOffset StartedAt, 
 public sealed record WorkerHeartbeat
 {
     public static readonly JsonSerializerOptions JsonOptions = new(JsonSerializerDefaults.Web);
+    public IReadOnlyList<Torrentarr.Core.Services.PendingOperationalIssue> PendingIssues { get; init; } = [];
     public int Version { get; init; } = 2;
     public string Instance { get; init; } = "";
     public int Pid { get; init; }

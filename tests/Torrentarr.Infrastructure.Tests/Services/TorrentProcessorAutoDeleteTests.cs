@@ -39,11 +39,13 @@ public sealed class TorrentProcessorAutoDeleteTests : IDisposable
         IArrImportService? import = null,
         IMediaValidationService? media = null, ISafeDeletionService? deletion = null)
     {
+        var config = new TorrentarrConfig();
+        config.ArrInstances["Radarr-Movies"] = new ArrInstanceConfig { Type = "radarr", Category = "movies" };
         return new TorrentProcessor(
             NullLogger<TorrentProcessor>.Instance,
             new QBittorrentConnectionManager(NullLogger<QBittorrentConnectionManager>.Instance),
             _db,
-            new TorrentarrConfig(),
+            config,
             new TorrentCacheService(NullLogger<TorrentCacheService>.Instance),
             new DatabaseRestartCoordinator(),
             import,

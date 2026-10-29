@@ -15,7 +15,12 @@ import { useToast } from "./context/ToastContext";
 import { useSearch } from "./context/SearchContext";
 import { useWebUI } from "./context/WebUIContext";
 import { useNetworkStatus } from "./hooks/useNetworkStatus";
-import { getMeta, getStatus, triggerUpdate } from "./api/client";
+import {
+  getMeta,
+  getStatus,
+  triggerUpdate,
+  getIssuesSummary,
+} from "./api/client";
 import { webPath } from "./api/urlBase";
 import type { ArrInfo, MetaResponse } from "./api/types";
 import { IconImage } from "./components/IconImage";
@@ -23,6 +28,7 @@ import ExternalIcon from "./icons/github.svg";
 import RefreshIcon from "./icons/refresh-arrow.svg";
 import UpdateIcon from "./icons/up-arrow.svg";
 import ProcessesIcon from "./icons/process.svg";
+import IssuesIcon from "./icons/alert.svg";
 import LogsIcon from "./icons/log.svg";
 import RadarrIcon from "./icons/radarr.svg";
 import SonarrIcon from "./icons/sonarr.svg";
@@ -39,6 +45,7 @@ import {
 } from "./utils/navigateTab";
 
 type Tab =
+  | "issues"
   | "processes"
   | "logs"
   | "radarr"
@@ -68,6 +75,11 @@ const loadConfigView = () =>
     default: module.ConfigView,
   }));
 
+const loadIssuesView = () =>
+  import("./pages/IssuesView").then((module) => ({
+    default: module.IssuesView,
+  }));
+const IssuesView = lazy(loadIssuesView);
 const ProcessesView = lazy(loadProcessesView);
 const LogsView = lazy(loadLogsView);
 const ArrCatalogView = lazy(loadArrCatalogView);
@@ -85,6 +97,7 @@ const ChangelogModal = lazy(() =>
 );
 
 const TAB_PREFETCHERS: Record<Tab, () => Promise<unknown>> = {
+  issues: loadIssuesView,
   processes: loadProcessesView,
   logs: loadLogsView,
   radarr: loadArrCatalogView,
@@ -117,6 +130,39 @@ function AppShell({
   onSignOut: () => void;
   initialMeta?: MetaResponse | null;
 }): JSX.Element {
+  const [issueSelection, setIssueSelection] = useState<{
+    instance: string;
+    category: "automation" | "system";
+  }>();
+  const [issueCount, setIssueCount] = useState<number | null>(null);
+  useEffect(() => {
+    let mounted = true;
+    let busy = false;
+    const refresh = async () => {
+      if (document.hidden || busy) return;
+      busy = true;
+      try {
+        const summary = await getIssuesSummary();
+        if (mounted)
+          setIssueCount(summary.available ? summary.activeGroups : null);
+      } catch {
+        if (mounted) setIssueCount(null);
+      } finally {
+        busy = false;
+      }
+    };
+    void refresh();
+    const interval = window.setInterval(() => void refresh(), 15000);
+    const visible = () => {
+      if (!document.hidden) void refresh();
+    };
+    document.addEventListener("visibilitychange", visible);
+    return () => {
+      mounted = false;
+      window.clearInterval(interval);
+      document.removeEventListener("visibilitychange", visible);
+    };
+  }, []);
   const [activeTab, setActiveTab] = useState<Tab>("processes");
   const tabScroll = useRef<Partial<Record<Tab, number>>>({});
   useLayoutEffect(() => {
@@ -363,6 +409,7 @@ function AppShell({
         const tabIndex = parseInt(event.key) - 1;
         const tabIds: Tab[] = [
           "processes",
+          "issues",
           "logs",
           ...(configuredTabs.radarr ? (["radarr"] as Tab[]) : []),
           ...(configuredTabs.sonarr ? (["sonarr"] as Tab[]) : []),
@@ -397,6 +444,11 @@ function AppShell({
       ) {
         return;
       }
+      if (tab === "issues")
+        setIssueSelection({
+          instance: detail.issueInstance ?? "",
+          category: detail.issueCategory ?? "automation",
+        });
       if (detail.manageClientId) setManageClientId(detail.manageClientId);
       switchTab(tab as Tab, detail.preserveConfigDraft);
       if (detail.qbitCategory) {
@@ -618,6 +670,7 @@ function AppShell({
   const tabs = useMemo<NavTab[]>(() => {
     const nextTabs: NavTab[] = [
       { id: "processes", label: "Processes", icon: ProcessesIcon },
+      { id: "issues", label: "Issues", icon: IssuesIcon },
       { id: "logs", label: "Logs", icon: LogsIcon },
     ];
     if (configuredTabs.radarr) {
@@ -926,11 +979,31 @@ function AppShell({
             >
               <IconImage src={tab.icon} />
               <span>{tab.label}</span>
+              {tab.id === "issues" && (
+                <span
+                  className="issue-count"
+                  aria-label={
+                    issueCount == null
+                      ? "Issue count unavailable"
+                      : `${issueCount} active issue groups`
+                  }
+                >
+                  {issueCount ?? "?"}
+                </span>
+              )}
             </button>
           ))}
         </nav>
         <Suspense fallback={<div className="loading">Loading...</div>}>
           <div className="view-transition">
+            {visitedTabs.has("issues") && (
+              <div hidden={activeTab !== "issues"}>
+                <IssuesView
+                  active={activeTab === "issues"}
+                  selection={issueSelection}
+                />
+              </div>
+            )}
             {visitedTabs.has("processes") ? (
               <div hidden={activeTab !== "processes"}>
                 <ProcessesView active={activeTab === "processes"} />

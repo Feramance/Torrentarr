@@ -15,6 +15,7 @@ public class SearchExecutor : ISearchExecutor
     private readonly TorrentarrDbContext _db;
     private readonly QualityProfileSwitcherService _profileSwitcher;
     private readonly DatabaseRestartCoordinator _restartCoordinator;
+    private readonly IOperationalIssueReporter? _issues;
 
     // Cached per-instance Arr clients — created once, reused across calls
     private readonly Dictionary<string, object> _clientCache = new(StringComparer.OrdinalIgnoreCase);
@@ -36,13 +37,14 @@ public class SearchExecutor : ISearchExecutor
         TorrentarrConfig config,
         TorrentarrDbContext db,
         QualityProfileSwitcherService profileSwitcher,
-        DatabaseRestartCoordinator restartCoordinator)
+        DatabaseRestartCoordinator restartCoordinator, IOperationalIssueReporter? issues = null)
     {
         _logger = logger;
         _config = config;
         _db = db;
         _profileSwitcher = profileSwitcher;
         _restartCoordinator = restartCoordinator;
+        _issues = issues;
     }
 
     public async Task<SearchResult> ExecuteSearchesAsync(
@@ -99,19 +101,6 @@ public class SearchExecutor : ISearchExecutor
             plans = await RestrictSonarrSeriesSearchesAsync(instanceName, arrConfig, plans, inventory, cancellationToken);
         }
 
-        if (arrConfig.Search.UseTempForMissing && arrConfig.Search.QualityProfileMappings.Count > 0)
-        {
-            try
-            {
-                await _profileSwitcher.SwitchToTempProfilesAsync(instanceName, arrConfig, plans.SelectMany(p => p.Covered).DistinctBy(c => c.ArrId), cancellationToken);
-            }
-            catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested) { throw; }
-            catch (Exception ex)
-            {
-                _logger.LogWarning(ex, "SearchExecutor: profile switch failed for {Name}, continuing anyway", instanceName);
-            }
-        }
-
         var firstSearch = true;
         var drained = result.Errors.Count == 0;
         var submissionStopped = false;
@@ -144,6 +133,15 @@ public class SearchExecutor : ISearchExecutor
 
             try
             {
+                // Recheck capacity after sleeping, before changing any external profile.
+                if (!CanSearch(await GetActiveCommandCountAsync(instanceName, cancellationToken), searchLimit))
+                { drained = false; submissionStopped = true; break; }
+                if (!await _profileSwitcher.SwitchToTempProfilesAsync(instanceName, arrConfig, plan.Covered, cancellationToken))
+                {
+                    drained = false; submissionStopped = true;
+                    result.Errors.Add($"Search skipped for {candidate.Title}: temporary profile preparation failed.");
+                    continue;
+                }
                 var useSeriesSearch = plan.Command == "SeriesSearch";
                 if (isSonarr)
                     _logger.LogInformation("Sonarr {Command}: series={SeriesId}, season={Season}, eligible={Eligible}/{Total}",
@@ -186,6 +184,7 @@ public class SearchExecutor : ISearchExecutor
                     : await TriggerSearchForCandidateAsync(instanceName, arrConfig, candidate, false, cancellationToken);
                 if (triggered)
                 {
+                    if (_issues != null) await _issues.ResolveAsync(SearchIssue(instanceName, "submission", candidate.ArrId.ToString()), cancellationToken);
                     result.SearchesTriggered++;
                     foreach (var covered in plan.Covered)
                     {
@@ -198,6 +197,8 @@ public class SearchExecutor : ISearchExecutor
                 {
                     submissionStopped = true;
                     drained = false;
+                    result.Errors.Add("Arr rejected a search submission.");
+                    if (_issues != null) await _issues.ReportAsync(SearchIssue(instanceName, "submission", candidate.ArrId.ToString()), cancellationToken);
                     _logger.LogTrace("SearchExecutor: search not triggered for {Title}", candidate.Title);
                 }
             }
@@ -227,6 +228,7 @@ public class SearchExecutor : ISearchExecutor
             if (group.Key is not > 0)
             {
                 _logger.LogWarning("Skipping Sonarr retry without episode/series metadata; cannot verify specials permission");
+                searchResult.Errors.Add("Sonarr replacement metadata is incomplete; the retry is retained.");
                 continue;
             }
             try
@@ -392,14 +394,22 @@ public class SearchExecutor : ISearchExecutor
                 ActiveCommandStatuses.Contains(c.Status) &&
                 SearchCommandNames.Contains(c.Name));
 
+            if (_issues != null) await _issues.ResolveAsync(SearchIssue(instanceName, "capacity"), cancellationToken);
             return activeSearchCommands;
         }
+        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested) { throw; }
         catch (Exception ex)
         {
             _logger.LogWarning(ex, "SearchExecutor: failed to get commands for {Name}", instanceName);
-            return 0;
+            if (_issues != null) await _issues.ReportAsync(SearchIssue(instanceName, "capacity"), cancellationToken);
+            throw;
         }
     }
+
+    private static OperationalIssueReport SearchIssue(string instance, string operation, string id = "") => new(
+        "search." + operation, "automation", operation == "capacity" ? "Search capacity could not be verified" : "Arr rejected a search",
+        "Search submission is held back; affected candidates remain unsearched.", "Check Arr connectivity, command access and Logs before retrying.",
+        ArrInstance: instance, SubjectType: "search", SubjectId: id);
 
     public bool CanSearch(int activeCommandCount, int searchLimit)
     {
@@ -431,6 +441,8 @@ public class SearchExecutor : ISearchExecutor
                 case LidarrClient lidarrClient:
                     return await lidarrClient.SearchAlbumAsync(new List<int> { candidate.ArrId }, cancellationToken);
 
+                case ReadarrClient readarrClient when candidate.Type.Equals("Author", StringComparison.OrdinalIgnoreCase):
+                    return await readarrClient.SearchAuthorAsync(candidate.AuthorId ?? candidate.ArrId, cancellationToken);
                 case ReadarrClient readarrClient:
                     return await readarrClient.SearchBookAsync(new List<int> { candidate.ArrId }, cancellationToken);
 
@@ -489,6 +501,8 @@ public class SearchExecutor : ISearchExecutor
                     }
                     break;
 
+                case "readarr" when candidate.Type.Equals("Author", StringComparison.OrdinalIgnoreCase):
+                    break; // An author replacement must not mark a book with the same numeric ID searched.
                 case "readarr":
                     var book = await _db.Books
                         .FirstOrDefaultAsync(b => b.ArrId == candidate.ArrId && b.ArrInstance == instanceName, cancellationToken);

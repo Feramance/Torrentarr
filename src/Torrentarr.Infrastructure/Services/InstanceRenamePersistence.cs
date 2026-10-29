@@ -21,7 +21,7 @@ public static class InstanceRenamePersistence
         "albumfilesmodel", "trackfilesmodel", "artistfilesmodel", "bookfilesmodel", "authorfilesmodel",
         "moviequeuemodel", "episodequeuemodel", "albumqueuemodel", "bookqueuemodel", "filesqueued" }
             .Select(table => (table, "arrinstance")), ("searchactivity", "category"),
-            ("torrentarr_sonarr_search_retries", "ArrInstance")];
+            ("torrentarr_sonarr_search_retries", "ArrInstance"), ("torrentarr_operational_issues", "ArrInstance")];
     private static string Digest(byte[] bytes) => Convert.ToHexString(SHA256.HashData(bytes));
 
     public static void Validate(TorrentarrConfig current, TorrentarrConfig updated, JObject? renames)
@@ -82,7 +82,7 @@ public static class InstanceRenamePersistence
             {
                 var destination = rename.Value.Value<string>()!;
                 var client = current.GetTorrentClient(rename.Name);
-                foreach (var (table, column) in client != null ? [("torrentlibrary", "qbitinstance")] : ArrStateColumns)
+                foreach (var (table, column) in client != null ? [("torrentlibrary", "qbitinstance"), ("torrentarr_operational_issues", "ClientInstance")] : ArrStateColumns)
                 {
                     if (!await TableExistsAsync(connection, transaction, table, ct)) continue;
                     if ((await RowsAsync(connection, transaction, table, column, destination, ct)).Count != 0)
@@ -273,7 +273,8 @@ public static class InstanceRenamePersistence
                 continue;
             }
             if (!(ArrStateColumns.Contains((move.Table, move.Column))
-                || move.Column == "qbitinstance" && move.Table == "torrentlibrary"))
+                || move.Column == "qbitinstance" && move.Table == "torrentlibrary"
+                || move.Column == "ClientInstance" && move.Table == "torrentarr_operational_issues"))
                 throw new InvalidOperationException("Invalid rename recovery table.");
             foreach (var row in move.Rows)
             {

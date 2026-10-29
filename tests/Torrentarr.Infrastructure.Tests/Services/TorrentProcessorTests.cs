@@ -241,6 +241,7 @@ public sealed class TorrentProcessorTests : IDisposable
             RegisterTestClient(manager, instance, new StubQBittorrentClient(new TorrentInfo
             {
                 Hash = hash,
+                Category = "radarr-hd",
                 ContentPath = tempFile,
                 QBitInstanceName = instance
             }));
@@ -295,6 +296,7 @@ public sealed class TorrentProcessorTests : IDisposable
             RegisterTestClient(manager, instance, new StubQBittorrentClient(new TorrentInfo
             {
                 Hash = hash,
+                Category = "radarr-hd",
                 ContentPath = directory.FullName,
                 QBitInstanceName = instance
             }));

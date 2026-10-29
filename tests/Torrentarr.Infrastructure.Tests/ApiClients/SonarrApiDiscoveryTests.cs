@@ -37,6 +37,7 @@ public sealed class SonarrApiDiscoveryTests : IDisposable
     private int _automaticSearches;
     private (bool Remove, bool Blocklist)? _deletion;
     private string? _queueJson;
+    private int _seriesProfile = 1;
     private string _commandsJson = "[]";
     private bool _limitAfterFirstSearch;
     private readonly string _key = Guid.NewGuid().ToString();
@@ -146,6 +147,7 @@ public sealed class SonarrApiDiscoveryTests : IDisposable
     [InlineData(true)]
     public async Task Worker_RestoresExpiredProfilesWithoutScheduledSearch(bool processingOnly)
     {
+        _seriesProfile = 2;
         _queueJson = """{"records":[]}""";
         var cfg = new TorrentarrConfig();
         var arr = new ArrInstanceConfig
@@ -221,7 +223,7 @@ public sealed class SonarrApiDiscoveryTests : IDisposable
         await db.SaveChangesAsync();
         var service = new ArrImportService(NullLogger<ArrImportService>.Instance, cfg,
             new QBittorrentConnectionManager(NullLogger<QBittorrentConnectionManager>.Instance), db);
-        (await service.BlocklistAndReSearchAsync("abc", "tv")).Should().BeTrue();
+        (await service.BlocklistAndReSearchAsync("abc", "tv")).Should().BeFalse();
         var pending = System.Text.Json.JsonSerializer.Deserialize<List<Torrentarr.Core.Services.SearchCandidate>>(
             (await db.SonarrSearchRetries.SingleAsync()).CandidatesJson)!;
         pending.Should().ContainSingle(c => c.ArrId == 2);
@@ -256,7 +258,7 @@ public sealed class SonarrApiDiscoveryTests : IDisposable
         {
             var service = new ArrImportService(NullLogger<ArrImportService>.Instance, cfg,
                 new QBittorrentConnectionManager(NullLogger<QBittorrentConnectionManager>.Instance), db);
-            (await service.BlocklistAndReSearchAsync("abc", "tv")).Should().BeTrue();
+            (await service.BlocklistAndReSearchAsync("abc", "tv")).Should().BeFalse();
             (await db.SonarrSearchRetries.SingleAsync()).CandidatesJson.Should().Contain("\"ArrId\":1").And.Contain("\"ArrId\":2");
             _automaticSearches.Should().Be(0);
             if (!failSubmission) _requests.Should().NotContain(r => r.Method == "POST");
@@ -485,14 +487,14 @@ public sealed class SonarrApiDiscoveryTests : IDisposable
             .UseInMemoryDatabase(Guid.NewGuid().ToString()).Options);
         var service = new ArrImportService(NullLogger<ArrImportService>.Instance, cfg,
             new QBittorrentConnectionManager(NullLogger<QBittorrentConnectionManager>.Instance), db);
-        (await service.BlocklistAndReSearchAsync("abc", "tv")).Should().BeTrue();
+        (await service.BlocklistAndReSearchAsync("abc", "tv")).Should().BeFalse();
         var sync = new ArrSyncService(NullLogger<ArrSyncService>.Instance, cfg, db, new DatabaseRestartCoordinator());
         await sync.SyncQueueAsync("Sonarr-test");
         var stored = await db.EpisodeQueue.SingleAsync();
         stored.DownloadId.Should().Be("ABC");
         stored.SeriesId.Should().BeNull();
-        _requests.Count(r => r.Method == "DELETE").Should().Be(1);
-        _deletion.Should().Be((false, true));
+        _requests.Should().NotContain(r => r.Method == "DELETE");
+        _deletion.Should().BeNull();
     }
 
     [Theory]
@@ -518,7 +520,7 @@ public sealed class SonarrApiDiscoveryTests : IDisposable
             .UseInMemoryDatabase(Guid.NewGuid().ToString()).Options);
         var service = new ArrImportService(NullLogger<ArrImportService>.Instance, cfg,
             new QBittorrentConnectionManager(NullLogger<QBittorrentConnectionManager>.Instance), db);
-        (await service.BlocklistAndReSearchAsync("abc", "tv")).Should().BeTrue();
+        (await service.BlocklistAndReSearchAsync("abc", "tv")).Should().Be(command != null);
         _automaticSearches.Should().Be(0);
         var searches = _requests.Where(r => r.Method == "POST").ToList();
         if (command == null)
@@ -725,7 +727,7 @@ public sealed class SonarrApiDiscoveryTests : IDisposable
                 : relative.EndsWith("/series/1") || relative.EndsWith("/series/7") ? JsonConvert.SerializeObject(new
                 {
                     id = relative.EndsWith("/series/1") ? 1 : 7,
-                    qualityProfileId = 1,
+                    qualityProfileId = _seriesProfile,
                     tags = new[] { 7 },
                     seasons = new[] { new { seasonNumber = 0, monitored = _specialsSeasonMonitored }, new { seasonNumber = 1, monitored = true }, new { seasonNumber = 2, monitored = true } }
                 })
@@ -744,6 +746,14 @@ public sealed class SonarrApiDiscoveryTests : IDisposable
             {
                 var queue = JObject.Parse(json);
                 queue["records"] = new JArray(((JArray)queue["records"]!).Where(r => r["seriesId"]?.Type == JTokenType.Integer));
+                json = queue.ToString(Formatting.None);
+            }
+            if (relative.Contains("/queue?"))
+            {
+                var queue = JObject.Parse(json);
+                queue["page"] = int.Parse(ctx.Request.QueryString["page"] ?? "1");
+                queue["pageSize"] = int.Parse(ctx.Request.QueryString["pageSize"] ?? "1000");
+                queue["totalRecords"] = ((JArray)queue["records"]!).Count;
                 json = queue.ToString(Formatting.None);
             }
             ctx.Response.StatusCode = relative == "" ? _discoveryStatus : relative.EndsWith("/system/status") ? _statusCode : (_failWrites && ctx.Request.HttpMethod == "DELETE" || _failSearchWrites && ctx.Request.HttpMethod == "POST") ? 400 : 200;

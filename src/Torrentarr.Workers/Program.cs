@@ -200,6 +200,9 @@ try
 
     builder.Services.AddSerilog();
     builder.Services.AddSingleton(config);
+    builder.Services.AddSingleton<OperationalIssueReporter>();
+    builder.Services.AddSingleton<IOperationalIssueReporter>(sp => sp.GetRequiredService<OperationalIssueReporter>());
+    builder.Services.AddHostedService(sp => sp.GetRequiredService<OperationalIssueReporter>());
     builder.Services.AddSingleton(instanceConfig);
     builder.Services.AddSingleton(levelSwitch);
     builder.Services.AddSingleton<ConfigReloader>(sp => new ConfigReloader(
@@ -241,6 +244,7 @@ try
     builder.Services.AddHostedService<ArrWorkerService>();
 
     using var host = builder.Build();
+    runtimeMetrics.PendingIssues = () => host.Services.GetRequiredService<IOperationalIssueReporter>().Pending;
 
     await ArrWorkerService.LoadSearchActivityAsync(host.Services, instanceName, runtimeMetrics, Log.Logger, monitorCts.Token);
     var liveConfig = host.Services.GetRequiredService<IConfigReloader>();
@@ -446,6 +450,7 @@ class ArrWorkerService : BackgroundService
                 await ProcessTorrentsAsync(cycle.Token);
                 _consecutiveErrors = 0;
                 _runtimeMetrics.Torrent = _runtimeMetrics.Torrent with { LastSuccess = DateTimeOffset.UtcNow };
+                await ObserveLoopAsync("torrent", true, cycle.Token);
             }
             catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested) { break; }
             catch (ConfigurationBusyException) { }
@@ -453,6 +458,7 @@ class ArrWorkerService : BackgroundService
             {
                 _runtimeMetrics.Torrent = new(cycle.IsCancellationRequested ? "Timed out" : "Error", DateTimeOffset.UtcNow, LastSuccess: _runtimeMetrics.Torrent.LastSuccess);
                 _logger.LogError(ex, "Error processing torrents for {Instance}", _context.InstanceName);
+                await ObserveLoopAsync("torrent", false, cancellationToken);
                 HandleProcessingError();
             }
             Interlocked.Exchange(ref _runtimeMetrics.TorrentRevision, _config.Revision);
@@ -501,6 +507,7 @@ class ArrWorkerService : BackgroundService
                 await ProcessSearchAsync(cycle.Token);
                 _consecutiveSearchErrors = 0;
                 _runtimeMetrics.Search = _runtimeMetrics.Search with { LastSuccess = DateTimeOffset.UtcNow };
+                await ObserveLoopAsync("search", true, cycle.Token);
             }
             catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested) { break; }
             catch (ConfigurationBusyException) { }
@@ -508,6 +515,7 @@ class ArrWorkerService : BackgroundService
             {
                 _runtimeMetrics.Search = new(cycle.IsCancellationRequested ? "Timed out" : "Error", DateTimeOffset.UtcNow, LastSuccess: _runtimeMetrics.Search.LastSuccess);
                 _logger.LogError(ex, "Error searching for {Instance}", _context.InstanceName);
+                await ObserveLoopAsync("search", false, cancellationToken);
                 HandleSearchError();
             }
             Interlocked.Exchange(ref _runtimeMetrics.SearchRevision, _config.Revision);
@@ -586,6 +594,15 @@ class ArrWorkerService : BackgroundService
         _lastSearchErrorTime = DateTime.UtcNow;
         _logger.LogWarning("Search error #{Count}, next backoff delay will be approximately {Delay}",
             _consecutiveSearchErrors, _backoffDelays[Math.Min(_consecutiveSearchErrors - 1, _backoffDelays.Count - 1)]);
+    }
+
+    private Task ObserveLoopAsync(string loop, bool healthy, CancellationToken ct)
+    {
+        var reporter = _serviceProvider.GetService<IOperationalIssueReporter>();
+        if (reporter == null) return Task.CompletedTask;
+        var issue = new OperationalIssueReport("worker." + loop, "system", "Worker " + loop + " cycle failed",
+            "This loop could not complete its work; the worker will retry with backoff.", "Inspect worker logs and Arr/client connectivity.", ArrInstance: _context.InstanceName, SubjectType: "loop", SubjectId: loop, Target: "processes");
+        return healthy ? reporter.ResolveAsync(issue, ct) : reporter.ReportAsync(issue, ct);
     }
 
     internal async Task ProcessTorrentsAsync(CancellationToken cancellationToken)
@@ -678,9 +695,10 @@ class ArrWorkerService : BackgroundService
             }
         }
 
-        if (_instanceConfig.Type.Equals("sonarr", StringComparison.OrdinalIgnoreCase) && _instanceConfig.ReSearch)
+        if (_instanceConfig.ReSearch)
             await SonarrRetryQueue.ExecuteAsync(scope.ServiceProvider.GetRequiredService<TorrentarrDbContext>(),
-                scope.ServiceProvider.GetRequiredService<ISearchExecutor>(), _context.InstanceName, _logger, cancellationToken);
+                scope.ServiceProvider.GetRequiredService<ISearchExecutor>(), _context.InstanceName, _logger, cancellationToken,
+                _instanceConfig, scope.ServiceProvider.GetService<IOperationalIssueReporter>());
         await syncService.SyncAsync(_context.InstanceName, cancellationToken);
         if (_instanceConfig.Search.SearchMissing)
             await syncService.MarkRequestsAsync(_context.InstanceName, cancellationToken);
@@ -897,6 +915,7 @@ class ArrWorkerService : BackgroundService
 
 sealed class WorkerRuntimeMetrics
 {
+    public Func<IReadOnlyList<PendingOperationalIssue>> PendingIssues { get; set; } = () => [];
     public string? InstanceName { get; set; }
     public long TorrentRevision;
     public long SearchRevision;
@@ -906,6 +925,7 @@ sealed class WorkerRuntimeMetrics
     public WorkerLoopProgress Search { get => Volatile.Read(ref _search); set => Volatile.Write(ref _search, value); }
     public WorkerHeartbeat Snapshot(string instance, bool restartRequested) => new()
     {
+        PendingIssues = PendingIssues(),
         Instance = instance,
         Pid = Environment.ProcessId,
         Heartbeat = DateTimeOffset.UtcNow,

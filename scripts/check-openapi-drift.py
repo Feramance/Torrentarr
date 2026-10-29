@@ -12,7 +12,7 @@ from pathlib import Path
 from typing import Any
 
 HTTP_METHODS = {"get", "put", "post", "delete", "patch", "head", "options", "trace"}
-TORRENTARR_EXTENSIONS = MAINTENANCE_PATHS | {
+TORRENTARR_EXTENSIONS = MAINTENANCE_PATHS | {f"{prefix}/issues{suffix}" for prefix in ("/web", "/api") for suffix in ("", "/summary", "/{id}")} | {
     "/api/arr/{category}/open/{kind}/{entryId}",
     "/api/lidarr/{category}/tracks",
     "/api/qbit/categories",

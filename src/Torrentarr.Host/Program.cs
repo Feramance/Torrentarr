@@ -269,6 +269,10 @@ try
     builder.Services.AddHostedService<AutoUpdateBackgroundService>();
 
     builder.Services.AddSingleton<IPasswordHasher, BCryptPasswordHasher>();
+    builder.Services.AddSingleton<OperationalIssueReporter>();
+    builder.Services.AddSingleton<IOperationalIssueReporter>(sp => sp.GetRequiredService<OperationalIssueReporter>());
+    builder.Services.AddHostedService(sp => sp.GetRequiredService<OperationalIssueReporter>());
+    builder.Services.AddHostedService<OperationalIssueMonitor>();
     builder.Services.AddHttpClient();
     builder.Services.AddHttpClient("ArrOpen").ConfigurePrimaryHttpMessageHandler(() => new HttpClientHandler { AllowAutoRedirect = false });
     builder.Services.AddHttpClient("ArrOpenSkipTls").ConfigurePrimaryHttpMessageHandler(() => new HttpClientHandler
@@ -652,6 +656,8 @@ try
     }
 
     app.MapControllers();
+    app.MapOperationalIssueEndpoints("/web");
+    app.MapOperationalIssueEndpoints("/api");
     app.MapArrCatalogEndpoints();
     app.MapRadarrMoviesEndpoints();
 
