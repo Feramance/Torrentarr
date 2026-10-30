@@ -19,6 +19,9 @@ export function logLevel(line: string): string | undefined {
   const level = (match?.[1] ?? match?.[2])?.toUpperCase();
   return level ? ALIASES[level] ?? level : undefined;
 }
+// @melloware/react-logviewer recognises only SGR foreground 30-37 and 90.
+// Bright foreground codes 91-97 are silently ignored by its ansiparse parser.
+// Keep all display-only colours within the supported range.
 // Tokenise messages once, prioritising full quoted values, addresses and paths
 // over individual words to avoid fragmented ANSI-coloured output.
 const MESSAGE_TOKENS =
@@ -28,20 +31,16 @@ const FAILURE =
 const SUCCESS =
   /^(?:authenticated|connected|accepted|started|success|succeeded|completed|allowed|healthy|enabled|matched|online|active|passed|ready|running|finished|imported|removed|downloaded|updated|saved)$/i;
 
-function colourMessage(
-  message: string,
-  baseColour: string,
-  dark: boolean,
-): string {
+function colourMessage(message: string, baseColour: string): string {
   const highlighted = message.replace(MESSAGE_TOKENS, (token) => {
     let colour: string;
     if (token.startsWith('"') || token.startsWith("'"))
-      colour = dark ? "93" : "33";
-    else if (FAILURE.test(token)) colour = dark ? "91" : "31";
-    else if (SUCCESS.test(token)) colour = dark ? "92" : "32";
+      colour = "33";
+    else if (FAILURE.test(token)) colour = "31";
+    else if (SUCCESS.test(token)) colour = "32";
     else if (/^\d/.test(token) || /^[0-9a-f]{8}-/i.test(token))
-      colour = dark ? "96" : "36";
-    else colour = dark ? "94" : "34";
+      colour = "36";
+    else colour = "34";
     return "\x1b[" + colour + "m" + token + "\x1b[" + baseColour + "m";
   });
   return "\x1b[" + baseColour + "m" + highlighted + "\x1b[0m";
@@ -55,21 +54,21 @@ export function colourLog(text: string, dark: boolean): string {
   const severity = (level: string | undefined): string => {
     switch (level) {
       case "ERROR":
-        return dark ? "91" : "31";
+        return "31";
       case "CRITICAL":
-        return dark ? "1;91" : "1;31";
+        return dark ? "1;31" : "1;31";
       case "WARNING":
-        return dark ? "93" : "33";
+        return "33";
       case "NOTICE":
-        return dark ? "96" : "36";
+        return "36";
       case "DEBUG":
-        return dark ? "95" : "35";
+        return "35";
       case "TRACE":
         return "90";
       case "SUCCESS":
-        return dark ? "92" : "32";
+        return "32";
       default:
-        return dark ? "92" : "32";
+        return "32";
     }
   };
   return text
@@ -82,8 +81,8 @@ export function colourLog(text: string, dark: boolean): string {
       if (level) previousLevel = level;
       const colour = severity(level ?? previousLevel);
       const neutral = dark ? "37" : "30";
-      const sourceColour = dark ? "94" : "34";
-      const timestampColour = dark ? "92" : "32";
+      const sourceColour = "34";
+      const timestampColour = "32";
       // Host logs: padded level and logger names are display formatting only.
       const host = line.match(
         /^(\[[^\]]+\])(\[([^\]]+)\])(\[([^\]]+)\])([\s\S]*)$/,
@@ -94,7 +93,7 @@ export function colourLog(text: string, dark: boolean): string {
           paint(host[1], timestampColour) +
           paint("[" + host[3].trim() + "]", colour) +
           paint("[" + host[5].trim() + "]", sourceColour) +
-          (message ? " " + colourMessage(message, neutral, dark) : "")
+          (message ? " " + colourMessage(message, neutral) : "")
         );
       }
       // Worker logs: retain date and message while highlighting the level.
@@ -106,10 +105,10 @@ export function colourLog(text: string, dark: boolean): string {
           paint(worker[1], timestampColour) +
           paint("[" + worker[3].trim() + "]", colour) +
           worker[4] +
-          colourMessage(worker[5], neutral, dark)
+          colourMessage(worker[5], neutral)
         );
       }
-      return colourMessage(line, neutral, dark);
+      return colourMessage(line, neutral);
     })
     .join("\n");
 }

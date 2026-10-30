@@ -365,10 +365,10 @@ it("colours structured log fields and removes padded logger spacing", async () =
   const source =
     "[2026-10-30 17:06:16][DEBUG   ][Torrentarr        ]Connection started.";
   const rendered = colourLog(source, true);
-  expect(rendered).toContain("\x1b[95m[DEBUG]\x1b[0m");
-  expect(rendered).toContain("\x1b[94m[Torrentarr]\x1b[0m");
+  expect(rendered).toContain("\x1b[35m[DEBUG]\x1b[0m");
+  expect(rendered).toContain("\x1b[34m[Torrentarr]\x1b[0m");
   expect(rendered).toContain(
-    "\x1b[37mConnection \x1b[92mstarted\x1b[37m.\x1b[0m",
+    "\x1b[37mConnection \x1b[32mstarted\x1b[37m.\x1b[0m",
   );
   expect(rendered).not.toContain("Torrentarr        ");
   const precoloured = "\x1b[31m" + source + "\x1b[0m";
@@ -384,8 +384,8 @@ it("distinguishes severity colours and retains exception continuation lines", as
     "[2026-10-30][INFO    ][Torrentarr       ]Recovered",
   ].join("\n");
   const rendered = colourLog(source, true);
-  expect(rendered).toContain("\x1b[91m[ERROR]\x1b[0m");
-  expect(rendered).toContain("\x1b[93m[WARNING]\x1b[0m");
-  expect(rendered).toContain("\x1b[92m[INFO]\x1b[0m");
+  expect(rendered).toContain("\x1b[31m[ERROR]\x1b[0m");
+  expect(rendered).toContain("\x1b[33m[WARNING]\x1b[0m");
+  expect(rendered).toContain("\x1b[32m[INFO]\x1b[0m");
   expect(rendered).toContain("   at Service.Run()");
 });
