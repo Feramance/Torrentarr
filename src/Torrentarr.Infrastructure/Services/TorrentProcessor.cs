@@ -1634,6 +1634,14 @@ public class TorrentProcessor : ITorrentProcessor
                 await _seedingService.HnrAllowsDeleteAsync(torrent, "excluded file cleanup by import allowlist", ct);
             if (!hnrAllows)
             {
+                // H&R must prevent deleting owned files, but does not need to block
+                // importing valid media when only harmless metadata sidecars remain.
+                if (CanImportWithPreservedSidecars(torrent, remaining))
+                {
+                    _logger.LogInformation("Import permitted for {Hash}; preserving {Count} excluded .nfo/.txt sidecar files due to H&R obligations",
+                        torrent.Hash, remaining.Count);
+                    return FileFilterResult.ReadyResult;
+                }
                 WarnAllowlistBlocked(torrent, "H&R obligations prevent excluded file cleanup", remaining);
                 return FileFilterResult.PendingResult;
             }
@@ -1647,8 +1655,40 @@ public class TorrentProcessor : ITorrentProcessor
         if (remaining.Count == 0)
             return FileFilterResult.ReadyResult;
 
+        if (CanImportWithPreservedSidecars(torrent, remaining))
+        {
+            _logger.LogInformation("Import permitted for {Hash}; preserving {Count} excluded .nfo/.txt metadata sidecars",
+                torrent.Hash, remaining.Count);
+            return FileFilterResult.ReadyResult;
+        }
+
         WarnAllowlistBlocked(torrent, $"{remaining.Count} disallowed file(s) remain", remaining);
         return FileFilterResult.PendingResult;
+    }
+
+    private bool CanImportWithPreservedSidecars(TorrentInfo torrent, IReadOnlyCollection<TorrentFileRecord> remaining)
+    {
+        if (remaining.Count == 0 || MaintenanceRecovery.BlocksAutomaticRemoval(_dbContext, torrent,
+            _config.GetTorrentClient(torrent.ClientInstanceId)?.Maintenance.ErrorRecovery ?? new ErrorRecoveryConfig()))
+            return false;
+
+        foreach (var file in remaining)
+        {
+            var extension = Path.GetExtension(file.Name);
+            if (!extension.Equals(".nfo", StringComparison.OrdinalIgnoreCase)
+                && !extension.Equals(".txt", StringComparison.OrdinalIgnoreCase))
+                return false;
+            try
+            {
+                // Do not relax the import barrier for symlink, traversal, or invalid paths.
+                _ = ResolveTorrentOwnedPath(torrent, file.Name);
+            }
+            catch
+            {
+                return false;
+            }
+        }
+        return true;
     }
 
     private void WarnAllowlistBlocked(TorrentInfo torrent, string reason, IReadOnlyList<TorrentFileRecord> excludedFiles)
