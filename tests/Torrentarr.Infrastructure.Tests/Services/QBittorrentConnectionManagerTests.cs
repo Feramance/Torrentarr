@@ -141,7 +141,7 @@ public class QBittorrentConnectionManagerTests
         (await manager.ReconcileAsync(desired)).Should().Be(0);
         client.Verify(c => c.LoginAsync(It.IsAny<CancellationToken>()), Times.Once);
         manager.GetConnectionErrors()["client"].Should().Contain("Authentication rejected");
-        (await manager.InitializeAsync("client", instance)).Should().BeFalse();
+        (await manager.ForceReconnectAsync("client", instance)).Should().BeFalse();
         client.Verify(c => c.LoginAsync(It.IsAny<CancellationToken>()), Times.Exactly(2));
     }
 
