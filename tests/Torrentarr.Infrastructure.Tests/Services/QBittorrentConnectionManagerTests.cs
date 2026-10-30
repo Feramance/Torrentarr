@@ -144,6 +144,23 @@ public class QBittorrentConnectionManagerTests
     }
 
     [Fact]
+    public async Task ExplicitReconnect_AuthenticatesAgainEvenWhenCurrentSessionIsHealthy()
+    {
+        var client = new Mock<ITorrentClient>();
+        client.Setup(c => c.LoginAsync(It.IsAny<CancellationToken>())).ReturnsAsync(true);
+        client.Setup(c => c.GetVersionAsync(It.IsAny<CancellationToken>())).ReturnsAsync("5.2");
+        var factory = new Mock<ITorrentClientFactory>();
+        factory.SetupGet(f => f.Type).Returns("fake");
+        factory.Setup(f => f.Create(It.IsAny<string>(), It.IsAny<TorrentClientInstanceConfig>())).Returns(client.Object);
+        var manager = new QBittorrentConnectionManager(NullLogger<QBittorrentConnectionManager>.Instance, [factory.Object]);
+        var instance = new TorrentClientInstanceConfig { Type = "fake", Host = "fixture" };
+        (await manager.InitializeAsync("client", instance)).Should().BeTrue();
+        (await manager.ForceReconnectAsync("client", instance)).Should().BeTrue();
+        client.Verify(c => c.LoginAsync(It.IsAny<CancellationToken>()), Times.Exactly(2));
+        factory.Verify(f => f.Create(It.IsAny<string>(), It.IsAny<TorrentClientInstanceConfig>()), Times.Exactly(2));
+    }
+
+    [Fact]
     public async Task ExplicitReconnect_BypassesCachedAuthenticationFailure()
     {
         var config = new TorrentarrConfig();

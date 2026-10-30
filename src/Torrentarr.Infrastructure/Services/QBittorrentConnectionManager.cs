@@ -54,7 +54,12 @@ public class QBittorrentConnectionManager : ITorrentClientRegistry
         await _reconcile.WaitAsync(ct);
         try
         {
-            lock (_clientsLock) _authenticationFailures.Remove(name);
+            lock (_clientsLock)
+            {
+                _authenticationFailures.Remove(name);
+                _connectionErrors.Remove(name);
+                RemoveClient(name);
+            }
             return await ConnectAsync(name, config, ct);
         }
         finally { _reconcile.Release(); }
