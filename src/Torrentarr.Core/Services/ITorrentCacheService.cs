@@ -79,6 +79,10 @@ public interface ITorrentCacheService
         string hash,
         DateTimeOffset timestamp,
         TimeSpan throttlePeriod);
+
+    /// <summary>Throttle repeated identical removal blocks, reporting a changed reason immediately.</summary>
+    bool ShouldLogRemovalBlock(string instanceId, string hash, string reason,
+        DateTimeOffset timestamp, TimeSpan throttlePeriod) => true;
 }
 
 public class TorrentCacheStats
