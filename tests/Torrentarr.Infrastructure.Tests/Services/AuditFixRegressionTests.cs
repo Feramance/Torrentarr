@@ -100,6 +100,55 @@ public sealed class AuditFixRegressionTests
         (await db.Movies.SingleAsync()).OriginalProfileId.Should().Be(7);
     }
 
+    [Theory]
+    [InlineData("radarr", false)]
+    [InlineData("sonarr", false)]
+    [InlineData("lidarr", false)]
+    [InlineData("readarr", false)]
+    [InlineData("radarr", true)]
+    [InlineData("sonarr", true)]
+    [InlineData("lidarr", true)]
+    [InlineData("readarr", true)]
+    public async Task VerifiedRestorationClosesPreparationIssue_OnlyAfterRecoverySave(string type, bool timedOut)
+    {
+        using var stub = new ArrStub(type) { RejectPut = true };
+        await using var db = new FailingDb(new DbContextOptionsBuilder<TorrentarrDbContext>().UseInMemoryDatabase(Guid.NewGuid().ToString()).Options);
+        object row = type switch
+        {
+            "radarr" => new MoviesFilesModel { EntryId = 1, ArrId = 42, ArrInstance = "Arr" },
+            "sonarr" => new SeriesFilesModel { EntryId = 1, ArrId = 42, ArrInstance = "Arr" },
+            "lidarr" => new ArtistFilesModel { EntryId = 1, ArrId = 42, ArrInstance = "Arr" },
+            _ => new AuthorFilesModel { EntryId = 1, ArrId = 42, ArrInstance = "Arr" }
+        };
+        db.Add(row); await db.SaveChangesAsync();
+        var resolved = new List<OperationalIssueReport>();
+        var reporter = new Moq.Mock<IOperationalIssueReporter>();
+        reporter.Setup(r => r.ResolveAsync(Moq.It.IsAny<OperationalIssueReport>(), Moq.It.IsAny<CancellationToken>()))
+            .Callback<OperationalIssueReport, CancellationToken>((issue, _) => resolved.Add(issue)).Returns(Task.CompletedTask);
+        var switcher = new QualityProfileSwitcherService(NullLogger<QualityProfileSwitcherService>.Instance, db, new(), reporter.Object);
+        var config = Config(type, stub.Url); config.Search.TempProfileResetTimeoutMinutes = 1;
+        (await switcher.SwitchToTempProfilesAsync("Arr", config,
+            [new SearchCandidate { ArrId = 42, SeriesId = 42, ArtistId = 42, AuthorId = 42, Reason = "Missing" }])).Should().BeFalse();
+        reporter.Verify(r => r.ReportAsync(Moq.It.Is<OperationalIssueReport>(i => i.Code == "profile.prepare" && i.SubjectId == "42"), Moq.It.IsAny<CancellationToken>()), Moq.Times.Once);
+        var saved = (await db.FindAsync(row.GetType(), 1))!;
+        db.Entry(saved).Property("LastProfileSwitchTime").CurrentValue = DateTime.UtcNow.AddHours(-1);
+        await db.SaveChangesAsync();
+        Task Restore() => timedOut ? switcher.RestoreTimedOutProfilesAsync("Arr", config) : switcher.ForceResetAllTempProfilesAsync("Arr", config);
+
+        stub.Profile = 99;
+        await Restore(); // A rejected restoration must not close either report.
+        resolved.Should().BeEmpty();
+        stub.RejectPut = false; db.FailSaves = true;
+        await Restore(); // Arr recovered, but saving that recovery failed.
+        stub.Profile.Should().Be(7); resolved.Should().BeEmpty();
+        db.FailSaves = false;
+        await Restore(); // Verify the original profile and save the recovered state.
+        resolved.Should().Contain(i => i.Code == "profile.prepare" && i.ArrInstance == "Arr" && i.SubjectId == "42");
+        resolved.Should().Contain(i => i.Code == "profile.restore" && i.SubjectId == "42");
+        db.ChangeTracker.Clear();
+        db.Entry((await db.FindAsync(row.GetType(), 1))!).Property("OriginalProfileId").CurrentValue.Should().BeNull();
+    }
+
     [Fact]
     public void TargetedInvalidationPreservesOtherClientsAndTorrents()
     {

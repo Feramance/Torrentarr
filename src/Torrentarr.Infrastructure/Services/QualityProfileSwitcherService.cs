@@ -110,6 +110,7 @@ public class QualityProfileSwitcherService(ILogger<QualityProfileSwitcherService
                         original.CurrentValue = null;
                         switchedAt.CurrentValue = null;
                         await db.SaveChangesWithRetryAsync(logger, restartCoordinator, cancellationToken: ct);
+                        if (issues != null) await issues.ResolveAsync(Issue(instance, "prepare", id.ToString()), ct);
                     }
                     else if (observed == original.CurrentValue)
                     {
