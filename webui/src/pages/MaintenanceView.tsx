@@ -785,8 +785,15 @@ export function MaintenanceView({
             {!selectedHistory.length ? (
               <p>No runs yet.</p>
             ) : (
-              <div className="table-wrap">
-                <table>
+              <div className="table-wrap" style={{ overflowX: "auto" }}>
+                <table style={{ width: "100%", tableLayout: "fixed" }}>
+                  <colgroup>
+                    <col style={{ width: "16%" }} />
+                    <col style={{ width: "10%" }} />
+                    <col style={{ width: "12%" }} />
+                    <col style={{ width: "12%" }} />
+                    <col style={{ width: "50%" }} />
+                  </colgroup>
                   <thead>
                     <tr>
                       <th>Started</th>
@@ -800,12 +807,18 @@ export function MaintenanceView({
                     {selectedHistory.slice(0, 20).map((run) => (
                       <tr key={run.runId}>
                         <td>{time(run.startedAt)}</td>
-                        <td>{run.result}</td>
+                        <td style={{ overflowWrap: "anywhere" }}>{run.result}</td>
                         <td>{bytes(run.bytesMoved)}</td>
                         <td>{bytes(run.bytesReclaimed ?? 0)}</td>
                         <td>
-                          {run.errors.join("; ") ||
-                            `${run.applied} applied, ${run.skipped} skipped, ${run.failed} failed`}
+                          {run.errors.length ? (
+                            <details>
+                              <summary>{run.failed} failed · {run.errors.length} error(s) — view details</summary>
+                              <ul style={{ margin: "0.5rem 0", paddingLeft: "1.25rem" }}>
+                                {run.errors.map((error, index) => <li key={index}>{error}</li>)}
+                              </ul>
+                            </details>
+                          ) : `${run.applied} applied, ${run.skipped} skipped, ${run.failed} failed`}
                         </td>
                       </tr>
                     ))}
