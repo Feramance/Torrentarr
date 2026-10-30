@@ -107,6 +107,8 @@ public class QBittorrentConnectionManagerTests
         config.Apply(new TorrentarrConfig(), 1);
         var client = new Mock<ITorrentClient>();
         client.SetupGet(c => c.LastConnectionFailure).Returns("qBittorrent rejected credentials (Fails.)");
+        client.SetupGet(c => c.LastConnectionFailureKind).Returns(TorrentClientConnectionFailureKind.AuthenticationRejected);
+        client.SetupGet(c => c.LastConnectionFailureKind).Returns(TorrentClientConnectionFailureKind.AuthenticationRejected);
         client.Setup(c => c.LoginAsync(It.IsAny<CancellationToken>())).ReturnsAsync(false);
         var factory = new Mock<ITorrentClientFactory>();
         factory.SetupGet(f => f.Type).Returns("fake");
@@ -164,4 +166,68 @@ public class QBittorrentConnectionManagerTests
         client.Verify(c => c.LoginAsync(It.IsAny<CancellationToken>()), Times.Exactly(2));
     }
 
+    [Fact]
+    public async Task ExistingSession_IsVerifiedInsteadOfAssumingRegisteredMeansConnected()
+    {
+        var client = new Mock<ITorrentClient>();
+        client.Setup(c => c.LoginAsync(It.IsAny<CancellationToken>())).ReturnsAsync(true);
+        client.SetupSequence(c => c.GetVersionAsync(It.IsAny<CancellationToken>()))
+            .ReturnsAsync("5.2").ThrowsAsync(new HttpRequestException("private-url?token=secret"))
+            .ReturnsAsync("5.2");
+        var factory = new Mock<ITorrentClientFactory>();
+        factory.SetupGet(f => f.Type).Returns("fake");
+        factory.Setup(f => f.Create(It.IsAny<string>(), It.IsAny<TorrentClientInstanceConfig>())).Returns(client.Object);
+        var manager = new QBittorrentConnectionManager(NullLogger<QBittorrentConnectionManager>.Instance, [factory.Object]);
+        var instance = new TorrentClientInstanceConfig { Type = "fake", Host = "fixture" };
+
+        (await manager.InitializeAsync("client", instance)).Should().BeTrue();
+        (await manager.InitializeAsync("client", instance)).Should().BeFalse();
+        manager.IsConnected("client").Should().BeFalse();
+        manager.GetConnectionErrors()["client"].Should().NotContain("secret");
+        (await manager.InitializeAsync("client", instance)).Should().BeTrue();
+        manager.GetConnectionErrors().Should().BeEmpty();
+        client.Verify(c => c.LoginAsync(It.IsAny<CancellationToken>()), Times.Exactly(2));
+    }
+
+    [Fact]
+    public async Task RemovedOrDisabledClient_DoesNotKeepStaleConnectionFailures()
+    {
+        var client = new Mock<ITorrentClient>();
+        client.Setup(c => c.LoginAsync(It.IsAny<CancellationToken>())).ReturnsAsync(false);
+        var factory = new Mock<ITorrentClientFactory>();
+        factory.SetupGet(f => f.Type).Returns("fake");
+        factory.Setup(f => f.Create(It.IsAny<string>(), It.IsAny<TorrentClientInstanceConfig>())).Returns(client.Object);
+        var manager = new QBittorrentConnectionManager(NullLogger<QBittorrentConnectionManager>.Instance, [factory.Object]);
+        var instance = new TorrentClientInstanceConfig { Type = "fake", Host = "fixture" };
+        var desired = new[] { new KeyValuePair<string, TorrentClientInstanceConfig>("client", instance) };
+
+        (await manager.ReconcileAsync(desired)).Should().Be(0);
+        manager.GetConnectionErrors().Should().ContainKey("client");
+        (await manager.ReconcileAsync([])).Should().Be(0);
+        manager.GetConnectionErrors().Should().BeEmpty();
+
+        (await manager.ReconcileAsync(desired)).Should().Be(0);
+        instance.Disabled = true;
+        (await manager.ReconcileAsync(desired)).Should().Be(0);
+        manager.GetConnectionErrors().Should().BeEmpty();
+    }
+
+    [Fact]
+    public async Task StructuredAuthRejection_IsSuppressedRegardlessOfFailureMessage()
+    {
+        var config = new TorrentarrConfig();
+        config.Apply(new TorrentarrConfig(), 1);
+        var client = new Mock<ITorrentClient>();
+        client.SetupGet(c => c.LastConnectionFailure).Returns("A nonstandard login response");
+        client.SetupGet(c => c.LastConnectionFailureKind).Returns(TorrentClientConnectionFailureKind.AuthenticationRejected);
+        client.Setup(c => c.LoginAsync(It.IsAny<CancellationToken>())).ReturnsAsync(false);
+        var factory = new Mock<ITorrentClientFactory>();
+        factory.SetupGet(f => f.Type).Returns("fake");
+        factory.Setup(f => f.Create(It.IsAny<string>(), It.IsAny<TorrentClientInstanceConfig>())).Returns(client.Object);
+        var manager = new QBittorrentConnectionManager(NullLogger<QBittorrentConnectionManager>.Instance, [factory.Object], config);
+        var instance = new TorrentClientInstanceConfig { Type = "fake", Host = "fixture" };
+        (await manager.InitializeAsync("client", instance)).Should().BeFalse();
+        (await manager.InitializeAsync("client", instance)).Should().BeFalse();
+        client.Verify(c => c.LoginAsync(It.IsAny<CancellationToken>()), Times.Once);
+    }
 }
