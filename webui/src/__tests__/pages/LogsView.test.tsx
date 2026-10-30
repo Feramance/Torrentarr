@@ -14,7 +14,10 @@ import * as api from "../../api/client";
 
 vi.mock("@melloware/react-logviewer", () => ({
   LazyLog: ({ text }: { text: string }) => (
-    <div data-testid="lazy-log">{text.replace(/\x1b\[[0-9;]*m/g, "")}</div>
+    <div data-testid="lazy-log">{text.replace(
+      new RegExp(String.fromCharCode(27) + "\\[[0-9;]*m", "g"),
+      "",
+    )}</div>
   ),
 }));
 vi.mock("../../api/client", () => ({
