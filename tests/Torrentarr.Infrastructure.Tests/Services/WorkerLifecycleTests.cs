@@ -52,6 +52,26 @@ public class WorkerLifecycleTests
     }
 
     [Fact]
+    public async Task ReconcileConfiguration_SameRevision_DoesNotBypassRestartBackoff()
+    {
+        var attempts = 0;
+        var config = Config();
+        config.Apply(config, 2);
+        config.Settings.ProcessRestartDelay = 60;
+        using var supervisor = new WorkerProcessSupervisor(config, NullLogger<WorkerProcessSupervisor>.Instance,
+            Mock.Of<IMediaValidationService>(), _ => { Interlocked.Increment(ref attempts); throw new IOException("launch failed"); });
+        var orchestrator = (IProcessOrchestrator)supervisor;
+        try
+        {
+            await supervisor.ReconcileConfigurationAsync();
+            await supervisor.ReconcileConfigurationAsync();
+            attempts.Should().Be(1);
+            (await supervisor.GetProcessStatusAsync())["Radarr"].Status.Should().Be("Backoff");
+        }
+        finally { await orchestrator.StopAsync(); }
+    }
+
+    [Fact]
     public async Task ManualRestart_CancelsOldRetryWithoutChargingAllowance()
     {
         if (OperatingSystem.IsWindows()) return;
