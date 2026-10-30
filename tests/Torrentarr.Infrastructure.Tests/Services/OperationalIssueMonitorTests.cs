@@ -12,6 +12,36 @@ namespace Torrentarr.Infrastructure.Tests.Services;
 public sealed class OperationalIssueMonitorTests
 {
     [Fact]
+    public async Task MultiClientMaintenanceFailureIsReportedOnce_AndOnlySameScopeSuccessClearsIt()
+    {
+        var reported = new List<OperationalIssueReport>(); var resolved = new List<OperationalIssueReport>();
+        var reporter = new Mock<IOperationalIssueReporter>();
+        reporter.Setup(r => r.ReportAsync(It.IsAny<OperationalIssueReport>(), It.IsAny<CancellationToken>())).Callback<OperationalIssueReport, CancellationToken>((r, _) => reported.Add(r)).Returns(Task.CompletedTask);
+        reporter.Setup(r => r.ResolveAsync(It.IsAny<OperationalIssueReport>(), It.IsAny<CancellationToken>())).Callback<OperationalIssueReport, CancellationToken>((r, _) => resolved.Add(r)).Returns(Task.CompletedTask);
+        var history = new List<Torrentarr.Core.Models.MaintenanceRunSummary>
+        {
+            new() { ClientInstanceIds = ["healthy", "failed"], Failed = 1, Applied = 1, Result = "partial", CompletedAt = DateTimeOffset.UtcNow }
+        };
+        var maintenance = new Mock<IMaintenanceCoordinator>(); maintenance.Setup(m => m.GetHistory(It.IsAny<int>())).Returns(() => history);
+        await using var services = new ServiceCollection().AddSingleton(maintenance.Object).BuildServiceProvider();
+        using var monitor = new OperationalIssueMonitor(services.GetRequiredService<IServiceScopeFactory>(), reporter.Object, new(), NullLogger<OperationalIssueMonitor>.Instance);
+        await monitor.InspectAsync(default);
+        reported.Should().ContainSingle(); reported[0].ClientInstance.Should().BeEmpty();
+        reported[0].SubjectType.Should().Be("maintenance");
+        await monitor.InspectAsync(default); reported.Should().ContainSingle();
+        history.Add(new() { ClientInstanceIds = ["healthy"], Result = "success", CompletedAt = DateTimeOffset.UtcNow.AddSeconds(1) });
+        await monitor.InspectAsync(default);
+        resolved.Should().NotContain(r => r.SubjectId == reported[0].SubjectId);
+        history.Add(new() { ClientInstanceIds = ["failed", "healthy"], Result = "partial", Skipped = 1, CompletedAt = DateTimeOffset.UtcNow.AddSeconds(2) });
+        await monitor.InspectAsync(default);
+        resolved.Should().NotContain(r => r.SubjectId == reported[0].SubjectId);
+        history.Add(new() { ClientInstanceIds = ["failed", "healthy"], Result = "success", CompletedAt = DateTimeOffset.UtcNow.AddSeconds(3) });
+        await monitor.InspectAsync(default);
+        resolved.Should().Contain(r => r.SubjectId == reported[0].SubjectId);
+        resolved.Should().Contain(r => r.ClientInstance == "failed" && r.SubjectType == "service" && r.SubjectId == "");
+    }
+
+    [Fact]
     public async Task PendingConfigurationNeverClearsAnError_AndRecoveryRequiresSuccessfulObservation()
     {
         var reports = new List<OperationalIssueReport>(); var resolved = new List<OperationalIssueReport>();

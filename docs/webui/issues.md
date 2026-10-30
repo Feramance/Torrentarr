@@ -13,6 +13,8 @@ A search whose temporary profile cannot be safely prepared is skipped and retrie
 
 Replacement-search details are saved before blocklisting. After a restart or uncertain response, Torrentarr reads the complete Arr queue before continuing. Rejected submissions remain queued for retry. A full command queue causes a normal delay; an unreadable command queue blocks profile changes and search submission and creates an issue. Client connectivity and worker recovery require successful fresh observations. On Windows, starting the update helper does not close an update failure; its successful outcome must be confirmed.
 
+Maintenance execution failures are reported once for the selected set of clients. An aggregate failure does not identify which client failed. Review Manage history for action errors; a successful retry with the same client selection closes the issue. An unrelated successful run does not clear it.
+
 **Issue history unavailable** means SQLite could not be read, not that the application is healthy. Each process retains up to 100 pending issue updates and retries persistence. Pending worker reports are also carried in worker heartbeats. A crash during a database outage can lose pending history. Safety checks do not depend on issue reporting succeeding.
 
 Routine activity, intentional pauses, disabled features, and a full search-command queue are not issues. Existing logs retain full exception details. The Issues view contains plain-language descriptions without credentials or raw upstream responses. Issue reporting does not send external notifications or perform repairs.

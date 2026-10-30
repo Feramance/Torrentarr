@@ -183,7 +183,70 @@ public sealed class ReauditRegressionTests
         bad.AddedOn = 0; bad.State = "uploading"; resolved.Clear();
         await processor.ProcessTorrentsAsync("media"); resolved.Should().Contain("torrent.processing");
         client.Setup(c => c.GetTorrentsAsync(It.IsAny<string?>(), It.IsAny<string?>(), It.IsAny<CancellationToken>())).ThrowsAsync(new IOException());
-        await FluentActions.Awaiting(() => processor.ProcessTorrentsAsync("media")).Should().ThrowAsync<IOException>();
+        await FluentActions.Awaiting(() => processor.ProcessTorrentsAsync("media")).Should().ThrowAsync<AggregateException>();
+    }
+
+    [Theory]
+    [InlineData(true, false)]
+    [InlineData(false, false)]
+    [InlineData(true, true)]
+    [InlineData(false, true)]
+    public async Task ClientReadFailureDoesNotDiscardHealthyClientWork(bool failedClientFirst, bool subcategories)
+    {
+        var cfg = new TorrentarrConfig(); cfg.Settings.Tagless = true;
+        cfg.ArrInstances["Arr"] = new() { Type = "radarr", Category = "media" };
+        cfg.QBitInstances.Clear();
+        cfg.QBitInstances["healthy"] = new() { MatchSubcategories = subcategories };
+        cfg.QBitInstances["offline"] = new() { MatchSubcategories = subcategories };
+        var healthy = new Mock<ITorrentClient>();
+        healthy.Setup(c => c.GetTorrentsAsync(It.IsAny<string?>(), It.IsAny<string?>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync([new() { Hash = "kept", Category = subcategories ? "media/sub" : "media", State = "uploading" }]);
+        var offline = new Mock<ITorrentClient>();
+        offline.Setup(c => c.GetTorrentsAsync(It.IsAny<string?>(), It.IsAny<string?>(), It.IsAny<CancellationToken>())).ThrowsAsync(new IOException("offline"));
+        var clients = new Dictionary<string, ITorrentClient>();
+        if (failedClientFirst) clients["offline"] = offline.Object;
+        clients["healthy"] = healthy.Object;
+        if (!failedClientFirst) clients["offline"] = offline.Object;
+        var registry = new Mock<ITorrentClientRegistry>();
+        registry.Setup(r => r.GetAllClients()).Returns(clients);
+        registry.Setup(r => r.GetClient(It.IsAny<string>())).Returns((string id) => clients[id]);
+        await using var db = new TorrentarrDbContext(Options());
+        var reports = new List<string>(); var resolved = new List<string>(); var reporter = Reporter(reports, resolved);
+        var processor = new TorrentProcessor(NullLogger<TorrentProcessor>.Instance, registry.Object, db, cfg,
+            new TorrentCacheService(NullLogger<TorrentCacheService>.Instance), new(), issues: reporter.Object);
+        await FluentActions.Awaiting(() => processor.ProcessTorrentsAsync("media")).Should().ThrowAsync<AggregateException>();
+        (await db.TorrentLibrary.SingleAsync()).QbitInstance.Should().Be("healthy");
+        reports.Should().Contain("torrent.processing");
+        reporter.Verify(r => r.ResolveAsync(It.Is<OperationalIssueReport>(i => i.SubjectType == "category"), It.IsAny<CancellationToken>()), Times.Never);
+        offline.Setup(c => c.GetTorrentsAsync(It.IsAny<string?>(), It.IsAny<string?>(), It.IsAny<CancellationToken>())).ReturnsAsync([]);
+        await processor.ProcessTorrentsAsync("media");
+        reporter.Verify(r => r.ResolveAsync(It.Is<OperationalIssueReport>(i => i.SubjectType == "category"), It.IsAny<CancellationToken>()), Times.Once);
+        using var cancel = new CancellationTokenSource(); cancel.Cancel();
+        offline.Setup(c => c.GetTorrentsAsync(It.IsAny<string?>(), It.IsAny<string?>(), It.IsAny<CancellationToken>())).ThrowsAsync(new OperationCanceledException(cancel.Token));
+        await FluentActions.Awaiting(() => processor.ProcessTorrentsAsync("media", cancel.Token)).Should().ThrowAsync<OperationCanceledException>();
+    }
+
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task IndependentSeedingMaintenanceRunsBeforeFailureIsPropagated(bool failTags)
+    {
+        var cfg = new TorrentarrConfig(); cfg.Settings.Tagless = true;
+        cfg.ArrInstances["Arr"] = new() { Type = "radarr", Category = "media" };
+        var client = new Mock<ITorrentClient>();
+        client.Setup(c => c.GetTorrentsAsync(It.IsAny<string?>(), It.IsAny<string?>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(failTags ? [] : [new() { Hash = "invalid", Category = "media", AddedOn = long.MaxValue }]);
+        var registry = new Mock<ITorrentClientRegistry>(); registry.Setup(r => r.GetAllClients()).Returns(new Dictionary<string, ITorrentClient> { ["qBit"] = client.Object });
+        var seeding = new Mock<ISeedingService>();
+        if (failTags) seeding.Setup(s => s.UpdateSeedingTagsAsync("media", It.IsAny<CancellationToken>())).ThrowsAsync(new IOException());
+        else seeding.Setup(s => s.UpdateSeedingTagsAsync("media", It.IsAny<CancellationToken>())).Returns(Task.CompletedTask);
+        seeding.Setup(s => s.RemoveCompletedTorrentsAsync("media", It.IsAny<CancellationToken>())).ReturnsAsync(new RemovalResult());
+        await using var db = new TorrentarrDbContext(Options());
+        var processor = new TorrentProcessor(NullLogger<TorrentProcessor>.Instance, registry.Object, db, cfg,
+            new TorrentCacheService(NullLogger<TorrentCacheService>.Instance), new(), seedingService: seeding.Object);
+        await FluentActions.Awaiting(() => processor.ProcessTorrentsAsync("media")).Should().ThrowAsync<AggregateException>();
+        seeding.Verify(s => s.UpdateSeedingTagsAsync("media", It.IsAny<CancellationToken>()), Times.Once);
+        seeding.Verify(s => s.RemoveCompletedTorrentsAsync("media", It.IsAny<CancellationToken>()), Times.Once);
     }
 
     [Theory]

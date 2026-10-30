@@ -91,13 +91,14 @@ public class TorrentProcessor : ITorrentProcessor
         return ownership.Owned && ownership.AddedOn == torrent.AddedOn;
     }
 
-    private async Task<List<TorrentInfo>> ReadClientTorrentsAsync(string id, ITorrentClient client, string? category, CancellationToken ct)
+    private async Task<List<TorrentInfo>> ReadClientTorrentsAsync(string id, ITorrentClient client, string? category, List<Exception> failures, CancellationToken ct)
     {
         try { return await client.GetTorrentsAsync(category, cancellationToken: ct); }
         catch (Exception ex) when (ex is not OperationCanceledException)
         {
             _logger.LogWarning(ex, "Unable to read torrent client {Instance}", id);
-            throw;
+            failures.Add(ex);
+            return [];
         }
     }
 
@@ -129,15 +130,16 @@ public class TorrentProcessor : ITorrentProcessor
                     await EnsureTagsExistAsync(c, cancellationToken);
             }
 
+            var failures = new List<Exception>();
             // Gather torrents (MatchSubcategories-aware — qBitrr _get_torrents_from_all_instances)
             var fetchAll = allClients.ToDictionary(
                 kv => kv.Key,
                 kv => (Func<CancellationToken, Task<List<TorrentInfo>>>)(ct =>
-                    ReadClientTorrentsAsync(kv.Key, kv.Value, null, ct)));
+                    ReadClientTorrentsAsync(kv.Key, kv.Value, null, failures, ct)));
             var fetchByCategory = allClients.ToDictionary(
                 kv => kv.Key,
                 kv => (Func<string, CancellationToken, Task<List<TorrentInfo>>>)(async (cat, ct) =>
-                    await ReadClientTorrentsAsync(kv.Key, kv.Value, cat, ct)));
+                    await ReadClientTorrentsAsync(kv.Key, kv.Value, cat, failures, ct)));
 
             var torrents = await CategoryOwnershipHelper.GatherTorrentsForOwnerAsync(
                 _config, category, fetchAll, fetchByCategory, cancellationToken);
@@ -148,7 +150,6 @@ public class TorrentProcessor : ITorrentProcessor
                 TotalTorrents = torrents.Count
             };
 
-            var failures = new List<Exception>();
             foreach (var torrent in torrents)
             {
                 try
@@ -162,14 +163,15 @@ public class TorrentProcessor : ITorrentProcessor
                 }
             }
 
-            if (failures.Count > 0) throw new AggregateException("Some torrents could not be processed.", failures);
-
-            // Update seeding tags for completed torrents
+            // Independent maintenance still runs for healthy clients and torrents before failing the cycle.
             if (_seedingService != null)
             {
-                await _seedingService.UpdateSeedingTagsAsync(category, cancellationToken);
-                await _seedingService.RemoveCompletedTorrentsAsync(category, cancellationToken);
+                try { await _seedingService.UpdateSeedingTagsAsync(category, cancellationToken); }
+                catch (Exception ex) when (ex is not OperationCanceledException) { failures.Add(ex); }
+                try { await _seedingService.RemoveCompletedTorrentsAsync(category, cancellationToken); }
+                catch (Exception ex) when (ex is not OperationCanceledException) { failures.Add(ex); }
             }
+            if (failures.Count > 0) throw new AggregateException("Some torrent work could not be completed.", failures);
 
             if (_issues != null) await _issues.ResolveAsync(ProcessingIssue(category), cancellationToken);
             _logger.LogInformation(

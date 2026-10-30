@@ -995,12 +995,12 @@ export async function getIssues(
   const params = new URLSearchParams(
     Object.entries(filters).map(([key, value]) => [key, String(value)]),
   );
-  return fetchJson(webPath(`/web/issues?${params}`));
+  return fetchJson(`/web/issues?${params}`);
 }
 export async function getIssuesSummary(): Promise<
   import("./types").IssuesSummary
 > {
-  return fetchJson(webPath("/web/issues/summary"));
+  return fetchJson("/web/issues/summary");
 }
 export async function getIssueDetails(
   id: number,
@@ -1012,5 +1012,5 @@ export async function getIssueDetails(
   page: number;
   pageSize: number;
 }> {
-  return fetchJson(webPath(`/web/issues/${id}?page=${page}`));
+  return fetchJson(`/web/issues/${id}?page=${page}`);
 }

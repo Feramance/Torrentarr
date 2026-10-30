@@ -82,12 +82,20 @@ public sealed class OperationalIssueMonitor(IServiceScopeFactory scopes, IOperat
         }
         if (services.GetService<IMaintenanceCoordinator>() is { } maintenance)
             foreach (var latest in maintenance.GetHistory().Where(r => r.CompletedAt.HasValue)
-                .SelectMany(run => run.ClientInstanceIds.Select(id => (id, run))).GroupBy(x => x.id).Select(g => g.MaxBy(x => x.run.CompletedAt)))
+                .GroupBy(run => System.Text.Json.JsonSerializer.Serialize(run.ClientInstanceIds.Select(id => id.ToUpperInvariant()).Distinct().Order()))
+                .Select(group => (Scope: group.Key, Run: group.MaxBy(run => run.CompletedAt)!)))
             {
-                if (_maintenanceRuns.GetValueOrDefault(latest.id) == latest.run.RunId || latest.run.Result is not ("success" or "partial" or "failed")) continue;
-                if (latest.run.Result == "success" || latest.run.Failed > 0)
-                    await Observe(new("maintenance.run", "system", "Maintenance execution failed", "Some maintenance actions failed during execution.", "Review Manage history and its diagnostics before retrying.", ClientInstance: latest.id, Target: "maintenance"), latest.run.Failed > 0, ct);
-                _maintenanceRuns[latest.id] = latest.run.RunId;
+                if (_maintenanceRuns.GetValueOrDefault(latest.Scope) == latest.Run.RunId || latest.Run.Result is not ("success" or "partial" or "failed")) continue;
+                // History has aggregate counts, so report once for the selected set rather than blaming each client.
+                var issue = new OperationalIssueReport("maintenance.run", "system", "Maintenance execution failed", "Some actions failed in the selected maintenance run; the aggregate result does not identify a failing client.",
+                    "Review Manage history and its diagnostics, then retry the same client selection.", SubjectType: "maintenance", SubjectId: latest.Scope, Target: "maintenance");
+                if (latest.Run.Result == "success" || latest.Run.Failed > 0)
+                    await Observe(issue, latest.Run.Failed > 0, ct);
+                // A verified successful run can also close records written by the former per-client reporter.
+                if (latest.Run.Result == "success")
+                    foreach (var client in latest.Run.ClientInstanceIds)
+                        await issues.ResolveAsync(issue with { ClientInstance = client, SubjectType = "service", SubjectId = "" }, ct);
+                _maintenanceRuns[latest.Scope] = latest.Run.RunId;
             }
     }
 

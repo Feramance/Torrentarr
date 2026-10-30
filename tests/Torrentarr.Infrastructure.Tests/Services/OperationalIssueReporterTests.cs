@@ -13,6 +13,38 @@ namespace Torrentarr.Infrastructure.Tests.Services;
 public sealed class OperationalIssueReporterTests
 {
     [Fact]
+    public async Task HealthyResolvesDoNotAcquireAWriteTransaction_ButActiveRecoveryStillWrites()
+    {
+        await using var connection = new Microsoft.Data.Sqlite.SqliteConnection("Data Source=:memory:"); await connection.OpenAsync();
+        var commands = new WriteCounter();
+        await using var services = new ServiceCollection().AddDbContext<TorrentarrDbContext>(o => o.UseSqlite(connection).AddInterceptors(commands)).BuildServiceProvider();
+        using (var scope = services.CreateScope()) await scope.ServiceProvider.GetRequiredService<TorrentarrDbContext>().Database.EnsureCreatedAsync();
+        commands.Writes = 0;
+        using var reporter = new OperationalIssueReporter(services.GetRequiredService<IServiceScopeFactory>(), NullLogger<OperationalIssueReporter>.Instance, new());
+        var issue = new OperationalIssueReport("test.health", "system", "Unavailable", "Work held", "Retry", ArrInstance: "Arr");
+        await reporter.ResolveAsync(issue); await reporter.ResolveAsync(issue);
+        commands.Writes.Should().Be(0);
+        await reporter.ReportAsync(issue);
+        commands.Writes = 0;
+        await reporter.ResolveAsync(issue with { ArrInstance = "arr" });
+        commands.Writes.Should().Be(1);
+        commands.Writes = 0;
+        await reporter.ResolveAsync(issue);
+        commands.Writes.Should().Be(0);
+        using var check = services.CreateScope();
+        (await check.ServiceProvider.GetRequiredService<TorrentarrDbContext>().OperationalIssues.SingleAsync()).ResolvedAt.Should().NotBeNull();
+    }
+
+    private sealed class WriteCounter : Microsoft.EntityFrameworkCore.Diagnostics.DbCommandInterceptor
+    {
+        public int Writes;
+        public override ValueTask<Microsoft.EntityFrameworkCore.Diagnostics.InterceptionResult<int>> NonQueryExecutingAsync(
+            System.Data.Common.DbCommand command, Microsoft.EntityFrameworkCore.Diagnostics.CommandEventData eventData,
+            Microsoft.EntityFrameworkCore.Diagnostics.InterceptionResult<int> result, CancellationToken ct = default)
+        { Writes++; return ValueTask.FromResult(result); }
+    }
+
+    [Fact]
     public async Task IndependentReportersDeduplicatePersistResolveAndReopen()
     {
         var path = Path.Combine(Path.GetTempPath(), "issues-" + Guid.NewGuid().ToString("N") + ".db");
