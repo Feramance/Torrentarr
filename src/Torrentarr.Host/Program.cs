@@ -722,7 +722,9 @@ try
                     ? Results.Ok(new { id, connected = true, workersNotified = notified })
                     : Results.Json(new
                     {
-                        id, connected = true, workersNotified = notified,
+                        id,
+                        connected = true,
+                        workersNotified = notified,
                         error = $"Connected in Host, but could not notify workers: {string.Join(", ", failed)}."
                     }, statusCode: StatusCodes.Status503ServiceUnavailable);
             }

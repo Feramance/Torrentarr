@@ -124,7 +124,7 @@ public sealed class TorrentProcessorImportAllowlistTests : IDisposable
     }
 
     [Fact]
-    public async Task CompletedTorrent_WithoutAutoDelete_BlocksImportWhileDisallowedFileRemains()
+    public async Task CompletedTorrent_WithoutAutoDelete_WaitsWhenAllowedFileIsUnavailable()
     {
         var root = Directory.CreateTempSubdirectory("torrentarr-no-delete-");
         try
