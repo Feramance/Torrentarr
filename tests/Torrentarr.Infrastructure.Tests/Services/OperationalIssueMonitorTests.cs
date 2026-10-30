@@ -46,12 +46,21 @@ public sealed class OperationalIssueMonitorTests
     {
         var reported = new List<OperationalIssueReport>();
         var resolved = new List<OperationalIssueReport>();
+        var events = new List<(string Action, OperationalIssueReport Issue)>();
         var reporter = new Mock<IOperationalIssueReporter>();
         reporter.Setup(r => r.ReportAsync(It.IsAny<OperationalIssueReport>(), It.IsAny<CancellationToken>()))
-            .Callback<OperationalIssueReport, CancellationToken>((r, _) => reported.Add(r))
+            .Callback<OperationalIssueReport, CancellationToken>((r, _) =>
+            {
+                reported.Add(r);
+                events.Add(("report", r));
+            })
             .Returns(Task.CompletedTask);
         reporter.Setup(r => r.ResolveAsync(It.IsAny<OperationalIssueReport>(), It.IsAny<CancellationToken>()))
-            .Callback<OperationalIssueReport, CancellationToken>((r, _) => resolved.Add(r))
+            .Callback<OperationalIssueReport, CancellationToken>((r, _) =>
+            {
+                resolved.Add(r);
+                events.Add(("resolve", r));
+            })
             .Returns(Task.CompletedTask);
         var started = DateTimeOffset.UtcNow.AddMinutes(-10);
         var completed = started.AddMinutes(5);
@@ -71,6 +80,8 @@ public sealed class OperationalIssueMonitorTests
         await monitor.InspectAsync(default);
         reported.Should().ContainSingle(r => r.Code == "maintenance.run");
         resolved.Should().Contain(r => r.Code == "maintenance.run" && r.SubjectType == "maintenance");
+        events.Where(e => e.Issue.Code == "maintenance.run" && e.Issue.SubjectType == "maintenance")
+            .Select(e => e.Action).Should().Equal("report", "resolve");
         var resolutionCount = resolved.Count;
         await monitor.InspectAsync(default);
         reported.Should().HaveCount(1);

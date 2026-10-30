@@ -146,12 +146,17 @@ public class QBittorrentConnectionManagerTests
     [Fact]
     public async Task WorkerReconnectionNotification_InvalidatesOnlyTargetedAuthenticationRejection()
     {
-        var client = new Mock<ITorrentClient>();
-        client.SetupGet(c => c.LastConnectionFailureKind).Returns(TorrentClientConnectionFailureKind.AuthenticationRejected);
-        client.Setup(c => c.LoginAsync(It.IsAny<CancellationToken>())).ReturnsAsync(false);
+        var first = new Mock<ITorrentClient>();
+        var second = new Mock<ITorrentClient>();
+        foreach (var client in new[] { first, second })
+        {
+            client.SetupGet(c => c.LastConnectionFailureKind).Returns(TorrentClientConnectionFailureKind.AuthenticationRejected);
+            client.Setup(c => c.LoginAsync(It.IsAny<CancellationToken>())).ReturnsAsync(false);
+        }
         var factory = new Mock<ITorrentClientFactory>();
         factory.SetupGet(f => f.Type).Returns("fake");
-        factory.Setup(f => f.Create(It.IsAny<string>(), It.IsAny<TorrentClientInstanceConfig>())).Returns(client.Object);
+        factory.Setup(f => f.Create(It.IsAny<string>(), It.IsAny<TorrentClientInstanceConfig>()))
+            .Returns((string name, TorrentClientInstanceConfig _) => name == "first" ? first.Object : second.Object);
         var manager = new QBittorrentConnectionManager(
             NullLogger<QBittorrentConnectionManager>.Instance, [factory.Object]);
         var instance = new TorrentClientInstanceConfig { Type = "fake", Host = "fixture" };
@@ -163,10 +168,12 @@ public class QBittorrentConnectionManagerTests
 
         (await manager.ReconcileAsync(desired)).Should().Be(0);
         (await manager.ReconcileAsync(desired)).Should().Be(0);
-        client.Verify(c => c.LoginAsync(It.IsAny<CancellationToken>()), Times.Exactly(2));
+        first.Verify(c => c.LoginAsync(It.IsAny<CancellationToken>()), Times.Once);
+        second.Verify(c => c.LoginAsync(It.IsAny<CancellationToken>()), Times.Once);
         await manager.InvalidateAuthenticationFailureAsync("first");
         (await manager.ReconcileAsync(desired)).Should().Be(0);
-        client.Verify(c => c.LoginAsync(It.IsAny<CancellationToken>()), Times.Exactly(3));
+        first.Verify(c => c.LoginAsync(It.IsAny<CancellationToken>()), Times.Exactly(2));
+        second.Verify(c => c.LoginAsync(It.IsAny<CancellationToken>()), Times.Once);
         manager.GetConnectionErrors()["second"].Should().Contain("Authentication rejected");
     }
 

@@ -714,10 +714,11 @@ try
             if (client.Disabled || string.IsNullOrWhiteSpace(client.Host) || client.Host == "CHANGE_ME")
                 return Results.Conflict(new { error = "Torrent client is disabled or has no configured endpoint." });
             var connected = await manager.ForceReconnectAsync(id, client, ct);
+            // Notify workers even when the Host's attempt fails transiently: their independent
+            // cached credential rejections would otherwise outlive the Host's recovery.
+            var (notified, failed) = await workers.NotifyClientReconnectAsync(id, ct);
             if (connected)
             {
-                // Workers own independent connection managers and authentication-rejection caches.
-                var (notified, failed) = await workers.NotifyClientReconnectAsync(id, ct);
                 return failed.Count == 0
                     ? Results.Ok(new { id, connected = true, workersNotified = notified })
                     : Results.Json(new
@@ -729,7 +730,8 @@ try
                     }, statusCode: StatusCodes.Status503ServiceUnavailable);
             }
             var error = manager.GetConnectionErrors().GetValueOrDefault(id, "Connection unavailable.");
-            return Results.Json(new { id, connected = false, error }, statusCode: StatusCodes.Status503ServiceUnavailable);
+            return Results.Json(new { id, connected = false, error, workersNotified = notified, workersNotNotified = failed },
+                statusCode: StatusCodes.Status503ServiceUnavailable);
         });
 
     }
