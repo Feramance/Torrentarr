@@ -42,6 +42,42 @@ public sealed class OperationalIssueMonitorTests
     }
 
     [Fact]
+    public async Task EqualCompletionTime_UsesStartedOrderSoSuccessResolvesEarlierFailure()
+    {
+        var reported = new List<OperationalIssueReport>();
+        var resolved = new List<OperationalIssueReport>();
+        var reporter = new Mock<IOperationalIssueReporter>();
+        reporter.Setup(r => r.ReportAsync(It.IsAny<OperationalIssueReport>(), It.IsAny<CancellationToken>()))
+            .Callback<OperationalIssueReport, CancellationToken>((r, _) => reported.Add(r))
+            .Returns(Task.CompletedTask);
+        reporter.Setup(r => r.ResolveAsync(It.IsAny<OperationalIssueReport>(), It.IsAny<CancellationToken>()))
+            .Callback<OperationalIssueReport, CancellationToken>((r, _) => resolved.Add(r))
+            .Returns(Task.CompletedTask);
+        var started = DateTimeOffset.UtcNow.AddMinutes(-10);
+        var completed = started.AddMinutes(5);
+        // GetHistory returns newest first. The monitor must process the failure first.
+        var history = new List<Torrentarr.Core.Models.MaintenanceRunSummary>
+        {
+            new() { RunId = "success-second", ClientInstanceIds = ["same"], Result = "success",
+                StartedAt = started.AddMinutes(1), CompletedAt = completed },
+            new() { RunId = "failure-first", ClientInstanceIds = ["same"], Result = "failed",
+                Failed = 1, StartedAt = started, CompletedAt = completed }
+        };
+        var maintenance = new Mock<IMaintenanceCoordinator>();
+        maintenance.Setup(m => m.GetHistory(It.IsAny<int>())).Returns(() => history);
+        await using var services = new ServiceCollection().AddSingleton(maintenance.Object).BuildServiceProvider();
+        using var monitor = new OperationalIssueMonitor(services.GetRequiredService<IServiceScopeFactory>(),
+            reporter.Object, new(), NullLogger<OperationalIssueMonitor>.Instance);
+        await monitor.InspectAsync(default);
+        reported.Should().ContainSingle(r => r.Code == "maintenance.run");
+        resolved.Should().Contain(r => r.Code == "maintenance.run" && r.SubjectType == "maintenance");
+        var resolutionCount = resolved.Count;
+        await monitor.InspectAsync(default);
+        reported.Should().HaveCount(1);
+        resolved.Should().HaveCount(resolutionCount);
+    }
+
+    [Fact]
     public async Task RunsSharingCompletionTimestamp_AreProcessedOnceEach()
     {
         var reported = new List<OperationalIssueReport>();

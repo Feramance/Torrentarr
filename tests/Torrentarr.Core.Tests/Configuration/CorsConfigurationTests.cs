@@ -18,6 +18,8 @@ public class CorsConfigurationTests
     [InlineData(" https://example.com", false)]
     [InlineData("https://example.com/", false)]
     [InlineData("https://example.com/ui", false)]
+    [InlineData("https://example.com/ui/..", false)]
+    [InlineData("https://example.com/a/../", false)]
     [InlineData("https://example.com?token=secret", false)]
     [InlineData("https://example.com#fragment", false)]
     [InlineData("https://user:secret@example.com", false)]

@@ -2603,6 +2603,11 @@ svg[height] {
   list-style: none;
   outline: none;
 }
+details > summary:focus-visible {
+  outline: 2px solid var(--primary);
+  outline-offset: 3px;
+  border-radius: 4px;
+}
 .config-section summary::-webkit-details-marker {
   display: none;
 }

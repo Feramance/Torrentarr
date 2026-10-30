@@ -142,8 +142,18 @@ public static class LogFileApi
     public static async Task<Stream> CreateDownloadSnapshotAsync(string path, CancellationToken ct)
     {
         var tempPath = Path.Combine(Path.GetTempPath(), $"torrentarr-download-{Guid.NewGuid():N}.tmp");
-        var snapshot = new FileStream(tempPath, FileMode.CreateNew, FileAccess.ReadWrite,
-            FileShare.Read, 65536, FileOptions.Asynchronous | FileOptions.DeleteOnClose);
+        var options = new FileStreamOptions
+        {
+            Mode = FileMode.CreateNew,
+            Access = FileAccess.ReadWrite,
+            Share = FileShare.Read,
+            BufferSize = 65536,
+            Options = FileOptions.Asynchronous | FileOptions.DeleteOnClose
+        };
+        // The source log may contain secrets. Restrict the snapshot from its first byte.
+        if (!OperatingSystem.IsWindows())
+            options.UnixCreateMode = UnixFileMode.UserRead | UnixFileMode.UserWrite;
+        var snapshot = new FileStream(tempPath, options);
         try
         {
             await using (var source = new FileStream(path, FileMode.Open, FileAccess.Read,

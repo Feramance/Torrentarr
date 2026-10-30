@@ -36,14 +36,17 @@ public class LiveConfigurationRuntimeTests
         reloader.SetupGet(r => r.Revision).Returns(12);
         var attempts = 0;
         var twice = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        // Acknowledge runs after the warning, unlike the ReconcileAsync callback.
+        reloader.Setup(r => r.Acknowledge("runtime", 12, It.IsAny<string>()))
+            .Callback((string _, long ignoredRevision, string? error) =>
+            {
+                if (error != null && Interlocked.Increment(ref attempts) >= 2)
+                    twice.TrySetResult();
+            });
         var clients = new Mock<ITorrentClientRegistry>();
         clients.Setup(c => c.ReconcileAsync(It.IsAny<IEnumerable<KeyValuePair<string, TorrentClientInstanceConfig>>>(),
                 true, It.IsAny<CancellationToken>()))
-            .Returns(() =>
-            {
-                if (Interlocked.Increment(ref attempts) >= 2) twice.TrySetResult();
-                return Task.FromException<int>(new IOException("https://internal.example/?apiKey=secret"));
-            });
+            .Returns(() => Task.FromException<int>(new IOException("https://internal.example/?apiKey=secret")));
         using var services = new ServiceCollection().BuildServiceProvider();
         using var logger = new RecordingLogger();
         using var runtime = new LiveConfigurationRuntime(config, reloader.Object, clients.Object, services,

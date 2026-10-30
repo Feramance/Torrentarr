@@ -16,12 +16,19 @@ if (rootElement) {
 
 if (import.meta.env.PROD) {
   window.addEventListener("vite:preloadError", (event) => {
-    handleChunkPreloadError(
-      event,
-      window.sessionStorage,
-      () => window.location.reload(),
-      Date.now(),
-    );
+    // The sessionStorage getter itself can throw when browser policy denies storage.
+    // Prevent Vite from surfacing an unhandled preload exception in that case.
+    event.preventDefault();
+    try {
+      handleChunkPreloadError(
+        event,
+        window.sessionStorage,
+        () => window.location.reload(),
+        Date.now(),
+      );
+    } catch {
+      // Do not reload without the storage guard; it could loop indefinitely.
+    }
   });
 }
 

@@ -114,7 +114,8 @@ public static class ConfigValidationHelper
             if (string.IsNullOrWhiteSpace(origin) || origin.Trim() != origin || origin.Contains('*')
                 || !Uri.TryCreate(origin, UriKind.Absolute, out var uri) || uri.Scheme is not ("http" or "https")
                 || string.IsNullOrEmpty(uri.Host) || !uri.IsWellFormedOriginalString() || uri.UserInfo.Length > 0
-                || uri.AbsolutePath != "/" || origin.EndsWith('/') || uri.Query.Length > 0 || uri.Fragment.Length > 0)
+                || uri.AbsolutePath != "/" || origin.EndsWith('/') || uri.Query.Length > 0 || uri.Fragment.Length > 0
+                || origin.AsSpan(origin.IndexOf("://", StringComparison.Ordinal) + 3).IndexOfAny('/', '?', '#') >= 0)
                 return error;
         return null;
     }

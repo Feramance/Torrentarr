@@ -84,6 +84,7 @@ public sealed class OperationalIssueMonitor(IServiceScopeFactory scopes, IOperat
         if (services.GetService<IMaintenanceCoordinator>() is { } maintenance)
             foreach (var latest in maintenance.GetHistory().Where(r => r.CompletedAt.HasValue)
                 .OrderBy(run => run.CompletedAt)
+                .ThenBy(run => run.StartedAt)
                 .Select(run => (Scope: System.Text.Json.JsonSerializer.Serialize(run.ClientInstanceIds.Select(id => id.ToUpperInvariant()).Distinct().Order()), Run: run)))
             {
                 if (latest.Run.Result is not ("success" or "partial" or "failed")) continue;
