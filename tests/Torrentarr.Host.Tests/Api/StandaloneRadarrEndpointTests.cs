@@ -19,6 +19,7 @@ using Torrentarr.Core.Services;
 using System.Net.Http.Json;
 using Torrentarr.Infrastructure.Database;
 using Torrentarr.Infrastructure.Database.Models;
+using Torrentarr.Infrastructure.Services;
 using Xunit;
 
 namespace Torrentarr.Host.Tests.Api;
