@@ -91,9 +91,14 @@ public class TorrentProcessor : ITorrentProcessor
         return ownership.Owned && ownership.AddedOn == torrent.AddedOn;
     }
 
-    private async Task<List<TorrentInfo>> ReadClientTorrentsAsync(string id, ITorrentClient client, string? category, List<Exception> failures, CancellationToken ct)
+    private async Task<List<TorrentInfo>> ReadClientTorrentsAsync(string id, ITorrentClient client, string? category, List<Exception> failures, HashSet<string> observedClients, CancellationToken ct)
     {
-        try { return await client.GetTorrentsAsync(category, cancellationToken: ct); }
+        try
+        {
+            var torrents = await client.GetTorrentsAsync(category, cancellationToken: ct);
+            observedClients.Add(id);
+            return torrents;
+        }
         catch (Exception ex) when (ex is not OperationCanceledException)
         {
             _logger.LogWarning(ex, "Unable to read torrent client {Instance}", id);
@@ -131,15 +136,16 @@ public class TorrentProcessor : ITorrentProcessor
             }
 
             var failures = new List<Exception>();
+            var observedClients = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
             // Gather torrents (MatchSubcategories-aware — qBitrr _get_torrents_from_all_instances)
             var fetchAll = allClients.ToDictionary(
                 kv => kv.Key,
                 kv => (Func<CancellationToken, Task<List<TorrentInfo>>>)(ct =>
-                    ReadClientTorrentsAsync(kv.Key, kv.Value, null, failures, ct)));
+                    ReadClientTorrentsAsync(kv.Key, kv.Value, null, failures, observedClients, ct)));
             var fetchByCategory = allClients.ToDictionary(
                 kv => kv.Key,
                 kv => (Func<string, CancellationToken, Task<List<TorrentInfo>>>)(async (cat, ct) =>
-                    await ReadClientTorrentsAsync(kv.Key, kv.Value, cat, failures, ct)));
+                    await ReadClientTorrentsAsync(kv.Key, kv.Value, cat, failures, observedClients, ct)));
 
             var torrents = await CategoryOwnershipHelper.GatherTorrentsForOwnerAsync(
                 _config, category, fetchAll, fetchByCategory, cancellationToken);
@@ -162,6 +168,9 @@ public class TorrentProcessor : ITorrentProcessor
                     _logger.LogError(ex, "Error processing torrent {Hash} ({Name})", torrent.Hash, torrent.Name);
                 }
             }
+
+            try { await ResolveRemovedTorrentIssuesAsync(observedClients, failures, cancellationToken); }
+            catch (Exception ex) when (ex is not OperationCanceledException) { failures.Add(ex); }
 
             // Independent maintenance still runs for healthy clients and torrents before failing the cycle.
             if (_seedingService != null)
@@ -187,6 +196,32 @@ public class TorrentProcessor : ITorrentProcessor
             _logger.LogError(ex, "Error processing torrents for category {Category}", category);
             if (_issues != null) await _issues.ReportAsync(ProcessingIssue(category), cancellationToken);
             throw;
+        }
+    }
+
+    private async Task ResolveRemovedTorrentIssuesAsync(HashSet<string> observedClients, List<Exception> failures, CancellationToken ct)
+    {
+        if (_issues == null || observedClients.Count == 0) return;
+        var outstanding = await _dbContext.OperationalIssues.AsNoTracking().Where(i => i.Code == "torrent.processing"
+            && i.SubjectType == "torrent" && i.ResolvedAt == null && observedClients.Contains(i.ClientInstance)).ToListAsync(ct);
+        foreach (var group in outstanding.GroupBy(i => i.ClientInstance, StringComparer.OrdinalIgnoreCase))
+        {
+            try
+            {
+                var client = _qbitManager.GetClient(group.Key);
+                if (client == null) continue;
+                var observedAt = DateTime.UtcNow;
+                // Absence from a category is not proof of removal: the torrent may have moved to another owner.
+                var hashes = (await client.GetTorrentsAsync(cancellationToken: ct)).Select(t => t.Hash).ToHashSet(StringComparer.OrdinalIgnoreCase);
+                foreach (var issue in group.Where(i => i.LastObserved <= observedAt && !hashes.Contains(i.SubjectId)))
+                    await _issues.ResolveAsync(new(issue.Code, issue.Category, issue.Title, issue.Impact, issue.Remediation,
+                        issue.ArrInstance, issue.ClientInstance, issue.SubjectType, issue.SubjectId, issue.Severity, issue.Target), ct);
+            }
+            catch (Exception ex) when (ex is not OperationCanceledException)
+            {
+                failures.Add(ex);
+                _logger.LogWarning(ex, "Unable to reconcile processing issues for client {Instance}; existing reports retained", group.Key);
+            }
         }
     }
 
