@@ -2,6 +2,7 @@ using System.Collections.Generic;
 using FluentAssertions;
 using Moq;
 using Torrentarr.Core.Interfaces;
+using Torrentarr.Core.Services;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging.Abstractions;
 using Torrentarr.Core.Configuration;
