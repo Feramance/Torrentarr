@@ -535,6 +535,32 @@ public sealed class SonarrApiDiscoveryTests : IDisposable
     }
 
 
+    [Fact]
+    public async Task Blocklist_FailedRetryPersistenceNeverDeletesSonarrQueueRows()
+    {
+        _queueJson = """
+            {"records":[{"id":11,"downloadId":"ABC","seriesId":7,"episodeIds":[1]},
+            {"id":12,"downloadId":"ABC","seriesId":7,"episodeIds":[2]}]}
+            """;
+        using var connection = new Microsoft.Data.Sqlite.SqliteConnection("Data Source=:memory:");
+        await connection.OpenAsync();
+        var options = new DbContextOptionsBuilder<TorrentarrDbContext>().UseSqlite(connection).Options;
+        await using var db = new TorrentarrDbContext(options);
+        await db.Database.EnsureCreatedAsync();
+        // Reads still work, but saving the durable retry row must fail.
+        await db.Database.ExecuteSqlRawAsync("PRAGMA query_only=ON;");
+
+        var cfg = new TorrentarrConfig();
+        cfg.ArrInstances["Sonarr-test"] = new ArrInstanceConfig
+            { Type = "sonarr", URI = _url, APIKey = _key, Category = "tv", ReSearch = true };
+        var service = new ArrImportService(NullLogger<ArrImportService>.Instance, cfg,
+            new QBittorrentConnectionManager(NullLogger<QBittorrentConnectionManager>.Instance), db);
+
+        (await service.BlocklistAndReSearchAsync("abc", "tv")).Should().BeFalse();
+        _requests.Should().NotContain(r => r.Method is "DELETE" or "POST");
+        (await db.SonarrSearchRetries.AsNoTracking().ToListAsync()).Should().BeEmpty();
+    }
+
     [Theory]
     [InlineData(false)]
     [InlineData(true)]
