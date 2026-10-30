@@ -25,13 +25,13 @@ public class LiveConfigurationRuntimeTests
         reloader.SetupGet(r => r.Revision).Returns(2);
         reloader.Setup(r => r.WaitForChangeAsync(It.IsAny<long>(), It.IsAny<TimeSpan>(), It.IsAny<CancellationToken>()))
             .Returns((long _, TimeSpan _, CancellationToken ct) => Task.Delay(Timeout.Infinite, ct));
-        var failed = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var failed = new TaskCompletionSource<string>(TaskCreationOptions.RunContinuationsAsynchronously);
         var applied = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
         reloader.Setup(r => r.Acknowledge("runtime", 2, It.IsAny<string>()))
             .Callback((string _, long _, string? error) =>
             {
                 if (error == null) applied.TrySetResult();
-                else failed.TrySetResult();
+                else failed.TrySetResult(error);
             });
         var clients = new Mock<ITorrentClientRegistry>();
         clients.SetupSequence(c => c.ReconcileAsync(It.IsAny<IEnumerable<KeyValuePair<string, TorrentClientInstanceConfig>>>(), true, It.IsAny<CancellationToken>()))
@@ -42,7 +42,8 @@ public class LiveConfigurationRuntimeTests
         try
         {
             await runtime.StartAsync(default);
-            await failed.Task.WaitAsync(TimeSpan.FromSeconds(5));
+            var firstError = await failed.Task.WaitAsync(TimeSpan.FromSeconds(5));
+            firstError.Should().Contain("revision 2").And.Contain("active");
             applied.Task.IsCompleted.Should().BeFalse();
             await applied.Task.WaitAsync(TimeSpan.FromSeconds(10));
             clients.Verify(c => c.ReconcileAsync(It.IsAny<IEnumerable<KeyValuePair<string, TorrentClientInstanceConfig>>>(), true, It.IsAny<CancellationToken>()), Times.Exactly(2));
