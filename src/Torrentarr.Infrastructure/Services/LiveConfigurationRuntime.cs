@@ -13,7 +13,7 @@ public sealed class LiveConfigurationRuntime(TorrentarrConfig config, IConfigRel
     ITorrentClientRegistry clients, IServiceProvider services, LoggingLevelSwitch levelSwitch,
     ILogger<LiveConfigurationRuntime> logger) : BackgroundService
 {
-    private sealed class ClientActivationException(string message) : IOException(message);
+    private sealed class ClientActivationException(string message) : IOException(message) { }
 
     public static LogEventLevel ParseLevel(string? value) => value?.Trim().ToUpperInvariant() switch
     {
