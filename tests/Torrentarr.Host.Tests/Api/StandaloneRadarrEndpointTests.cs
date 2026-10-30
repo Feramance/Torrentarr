@@ -242,6 +242,36 @@ public class StandaloneRadarrEndpointTests
     }
 
     [Fact]
+    public async Task StandaloneTorrentClientList_DoesNotReportUnhealthyRegisteredClientAsConnected()
+    {
+        await using var factory = new StandaloneFactory();
+        var adapter = new Mock<ITorrentClient>();
+        adapter.Setup(c => c.LoginAsync(It.IsAny<CancellationToken>())).ReturnsAsync(true);
+        adapter.Setup(c => c.GetVersionAsync(It.IsAny<CancellationToken>())).ReturnsAsync("fixture-version");
+        var adapterFactory = new Mock<ITorrentClientFactory>();
+        adapterFactory.SetupGet(f => f.Type).Returns("qbittorrent");
+        adapterFactory.Setup(f => f.Create(It.IsAny<string>(), It.IsAny<TorrentClientInstanceConfig>())).Returns(adapter.Object);
+        await using var configured = factory.WithWebHostBuilder(builder => builder.ConfigureServices(services =>
+        {
+            services.RemoveAll<ITorrentClientFactory>();
+            services.AddSingleton(adapterFactory.Object);
+        }));
+        using var client = configured.CreateClient();
+        var config = configured.Services.GetRequiredService<TorrentarrConfig>();
+        config.QBitInstances.Clear();
+        config.TorrentClients["one"] = new() { Host = "fixture" };
+        var manager = configured.Services.GetRequiredService<QBittorrentConnectionManager>();
+        (await manager.InitializeAsync("one", config.TorrentClients["one"])).Should().BeTrue();
+
+        adapter.Setup(c => c.GetVersionAsync(It.IsAny<CancellationToken>()))
+            .ThrowsAsync(new HttpRequestException("health probe failed"));
+        var response = await client.GetFromJsonAsync<JsonElement>("/web/torrent-clients");
+        var entry = response.EnumerateArray().Single(item => item.GetProperty("id").GetString() == "one");
+        entry.GetProperty("connected").GetBoolean().Should().BeFalse();
+        entry.GetProperty("version").ValueKind.Should().Be(JsonValueKind.Null);
+    }
+
+    [Fact]
     public async Task StandaloneStatus_ConnectsClientsBeforeFirstStatusResponse()
     {
         await using var factory = new StandaloneFactory();
