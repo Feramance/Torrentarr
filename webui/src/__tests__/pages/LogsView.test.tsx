@@ -354,3 +354,30 @@ it("keeps background rollover discovery failures quiet", async () => {
     vi.useRealTimers();
   }
 });
+
+
+it("colours structured log fields and removes padded logger spacing", async () => {
+  const { colourLog } = await import("../../pages/logPresentation");
+  const source = "[2026-10-30 17:06:16][DEBUG   ][Torrentarr        ]Connection started.";
+  const rendered = colourLog(source, true);
+  expect(rendered).toContain("\x1b[95m[DEBUG]\x1b[0m");
+  expect(rendered).toContain("\x1b[94m[Torrentarr]\x1b[0m");
+  expect(rendered).toContain("\x1b[37mConnection started.\x1b[0m");
+  expect(rendered).not.toContain("Torrentarr        ");
+  expect(colourLog("\x1b[31m" + source + "\x1b[0m", true)).toBe(rendered);
+});
+
+it("distinguishes severity colours and retains exception continuation lines", async () => {
+  const { colourLog } = await import("../../pages/logPresentation");
+  const source = [
+    "[2026-10-30][ERROR   ][Torrentarr       ]Failed",
+    "   at Service.Run()",
+    "[2026-10-30][WARNING ][Torrentarr       ]Retrying",
+    "[2026-10-30][INFO    ][Torrentarr       ]Recovered",
+  ].join("\n");
+  const rendered = colourLog(source, true);
+  expect(rendered).toContain("\x1b[91m[ERROR]\x1b[0m");
+  expect(rendered).toContain("\x1b[93m[WARNING]\x1b[0m");
+  expect(rendered).toContain("\x1b[92m[INFO]\x1b[0m");
+  expect(rendered).toContain("   at Service.Run()");
+});
