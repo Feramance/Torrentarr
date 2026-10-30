@@ -175,8 +175,7 @@ public class QBittorrentConnectionManagerTests
             .Returns(client.Object);
         var manager = new QBittorrentConnectionManager(
             NullLogger<QBittorrentConnectionManager>.Instance, [factory.Object], config);
-        var instance = new TorrentClientInstanceConfig
-            { Type = "fake", Host = "fixture", UserName = "operator", Password = "bad" };
+        var instance = new TorrentClientInstanceConfig { Type = "fake", Host = "fixture", UserName = "operator", Password = "bad" };
         var desired = new[] { new KeyValuePair<string, TorrentClientInstanceConfig>("client", instance) };
 
         (await manager.ReconcileAsync(desired)).Should().Be(0);
