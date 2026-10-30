@@ -64,9 +64,34 @@ public class QBittorrentConnectionManager : ITorrentClientRegistry
     {
         var settings = new ConnectionSettings(config.Type, config.Host, config.Port, config.UserName, config.Password, config.SkipTLSVerify);
         var revision = _config?.Revision ?? 0;
+        ITorrentClient? existing = null;
         lock (_clientsLock)
         {
-            if (!config.Disabled && config.Host != "CHANGE_ME" && _settings.GetValueOrDefault(name) == settings && _clients.ContainsKey(name)) return true;
+            if (!config.Disabled && config.Host != "CHANGE_ME" && _settings.GetValueOrDefault(name) == settings)
+                _clients.TryGetValue(name, out existing);
+        }
+        if (existing != null)
+        {
+            try
+            {
+                // A registered object is not proof the remote service is still available.
+                await existing.GetVersionAsync(ct);
+                return true;
+            }
+            catch (OperationCanceledException) when (ct.IsCancellationRequested) { throw; }
+            catch (Exception ex)
+            {
+                lock (_clientsLock)
+                {
+                    RemoveClient(name);
+                    _connectionErrors[name] = "The existing torrent-client session is unavailable; reconnection will be retried.";
+                }
+                _logger.LogWarning(ex, "Torrent client {Name} failed its connection health check", name);
+                return false;
+            }
+        }
+        lock (_clientsLock)
+        {
             if (_authenticationFailures.TryGetValue(name, out var failure))
             {
                 if (failure.Settings == settings && failure.Revision == revision) return false;
@@ -88,10 +113,10 @@ public class QBittorrentConnectionManager : ITorrentClientRegistry
             client = factory.Create(name, config);
             if (!await client.LoginAsync(ct))
             {
-                var rejectedCredentials = client.LastConnectionFailure?.Contains("rejected credentials", StringComparison.OrdinalIgnoreCase) == true;
+                var rejectedCredentials = client.LastConnectionFailureKind == TorrentClientConnectionFailureKind.AuthenticationRejected;
                 lock (_clientsLock) _connectionErrors[name] = rejectedCredentials
                     ? "Authentication rejected. Check credentials or reconnect after restoring access."
-                    : $"Connection/login failed: {client.LastConnectionFailure ?? "No reason supplied"}.";
+                    : "Connection/login failed. Check the torrent-client service and server logs.";
                 (client as IDisposable)?.Dispose();
                 if (rejectedCredentials)
                     lock (_clientsLock) _authenticationFailures[name] = new AuthenticationFailure(settings, revision);
@@ -112,7 +137,7 @@ public class QBittorrentConnectionManager : ITorrentClientRegistry
         catch (OperationCanceledException) { (client as IDisposable)?.Dispose(); throw; }
         catch (Exception ex)
         {
-            lock (_clientsLock) _connectionErrors[name] = $"{ex.GetType().Name}: {ex.Message}";
+            lock (_clientsLock) _connectionErrors[name] = $"Connection failed ({ex.GetType().Name}). Check server logs.";
             (client as IDisposable)?.Dispose();
             _logger.LogWarning("Could not connect torrent client {Name} ({Type})", name, config.Type);
             return false;
@@ -147,6 +172,8 @@ public class QBittorrentConnectionManager : ITorrentClientRegistry
                 }
                 foreach (var name in _authenticationFailures.Keys.Where(id => !desired.ContainsKey(id)).ToList())
                     _authenticationFailures.Remove(name);
+                foreach (var name in _connectionErrors.Keys.Where(id => !desired.ContainsKey(id)).ToList())
+                    _connectionErrors.Remove(name);
             }
             var count = 0;
             foreach (var (name, config) in desired)
@@ -159,7 +186,12 @@ public class QBittorrentConnectionManager : ITorrentClientRegistry
                 {
                     var settings = new ConnectionSettings(config.Type, config.Host, config.Port, config.UserName, config.Password, config.SkipTLSVerify);
                     lock (_clientsLock)
-                        if (config.Disabled || config.Host == "CHANGE_ME" || _settings.GetValueOrDefault(name) != settings) RemoveClient(name);
+                        if (config.Disabled || config.Host == "CHANGE_ME" || _settings.GetValueOrDefault(name) != settings)
+                        {
+                            RemoveClient(name);
+                            _authenticationFailures.Remove(name);
+                            _connectionErrors.Remove(name);
+                        }
                 }
             }
             return count;
