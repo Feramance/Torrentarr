@@ -90,6 +90,16 @@ public class QBittorrentConnectionManager : ITorrentClientRegistry
                 return false;
             }
         }
+        if (config.Disabled || config.Host == "CHANGE_ME")
+        {
+            lock (_clientsLock)
+            {
+                RemoveClient(name);
+                _authenticationFailures.Remove(name);
+                _connectionErrors.Remove(name);
+            }
+            return false;
+        }
         lock (_clientsLock)
         {
             if (_authenticationFailures.TryGetValue(name, out var failure))
