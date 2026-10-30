@@ -1045,7 +1045,7 @@ public class TorrentProcessor : ITorrentProcessor
             var hnrAllows = _seedingService != null && await _seedingService.HnrAllowsDeleteAsync(torrent, reason, ct);
             if (hnrAllows)
             {
-                _logger.LogWarning("Deleting stalled torrent ({Reason}): [{Name}] | Availability[{Avail:P1}] | Hash[{Hash}]",
+                _logger.LogWarning("Removal requested for stalled torrent ({Reason}): [{Name}] | Availability[{Avail:P1}] | Hash[{Hash}]",
                     reason, torrent.Name, torrent.Availability, torrent.Hash);
                 if (await DeleteTorrentFromClientAsync(client, torrent, deleteFiles: true, ct))
                 {
@@ -1549,7 +1549,7 @@ public class TorrentProcessor : ITorrentProcessor
                 return FileFilterResult.PendingResult;
 
             _logger.LogWarning(
-                "All {Total} files excluded in [{Name}] ({Hash}) — deleting torrent",
+                "All {Total} files excluded in [{Name}] ({Hash}) — removal requested",
                 meaningfulFiles.Count, torrent.Name, torrent.Hash);
             return await DeleteTorrentFromClientAsync(client, torrent, deleteFiles: true, ct)
                 ? FileFilterResult.DeletedResult : FileFilterResult.PendingResult;

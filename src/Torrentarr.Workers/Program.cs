@@ -1,3 +1,4 @@
+using Torrentarr.Infrastructure.Logging;
 using Microsoft.Extensions.Logging;
 using Torrentarr.Core.Configuration;
 using Torrentarr.Core.Interfaces;
@@ -64,12 +65,8 @@ Log.Logger = new LoggerConfiguration()
         e.RenderMessage().Contains("Writing value of type") ||
         e.RenderMessage().Contains("is valid for the request") ||
         e.RenderMessage().Contains("A data reader"))
-    .WriteTo.Console()
-    .WriteTo.File(
-        Path.Combine(logsPath, $"worker-{instanceName}.log"),
-        rollingInterval: RollingInterval.Day,
-        shared: true,
-        retainedFileCountLimit: 7)
+    .WriteTo.Sink(new ServiceLogSink(logsPath, "Worker"))
+    .WriteTo.Console(new ServiceLogFormatter(colour: true))
     .CreateLogger();
 
 // Monitor for log level changes via file

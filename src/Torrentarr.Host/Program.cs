@@ -1,3 +1,4 @@
+using Torrentarr.Infrastructure.Logging;
 using Torrentarr.Core.Configuration;
 using Torrentarr.Core.Interfaces;
 using Torrentarr.Core.Models;
@@ -127,8 +128,8 @@ Log.Logger = new LoggerConfiguration()
         e.RenderMessage().Contains("queryContext.StartTracking") ||
         e.RenderMessage().Contains("InternalEntityEntry") ||
         e.RenderMessage().Contains("shadowSnapshot"))
-    .WriteTo.Console()
     .WriteTo.Sink(workerSink)
+    .WriteTo.Console(new ServiceLogFormatter(colour: true))
     .CreateLogger();
 
 try

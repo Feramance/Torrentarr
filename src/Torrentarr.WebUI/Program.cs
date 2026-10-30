@@ -1,3 +1,4 @@
+using Torrentarr.Infrastructure.Logging;
 using Torrentarr.Core.Configuration;
 using Torrentarr.Core.Interfaces;
 using Torrentarr.Core.Models;
@@ -38,12 +39,8 @@ Log.Logger = new LoggerConfiguration()
     .Enrich.WithProperty("ProcessType", "WebUI")
     .Enrich.WithProperty("ProcessId", Environment.ProcessId)
     .Enrich.WithProperty("MachineName", Environment.MachineName)
-    .WriteTo.Console()
-    .WriteTo.File(
-        Path.Combine(logsPath, "webui.log"),
-        rollingInterval: RollingInterval.Day,
-        shared: true,
-        retainedFileCountLimit: 7)
+    .WriteTo.Sink(new ServiceLogSink(logsPath, "WebUI"))
+    .WriteTo.Console(new ServiceLogFormatter(colour: true))
     .CreateLogger();
 
 builder.Host.UseSerilog(dispose: true);

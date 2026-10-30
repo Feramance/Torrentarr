@@ -8,10 +8,13 @@ The **Logs View** provides real-time streaming and viewing of Torrentarr's log f
 
 Torrentarr generates structured logs for all major components:
 
-- **Main.log**: Core application events, initialization, shutdown
-- **WebUI / API logs**: ASP.NET Core and API request logs
-- **<ArrName>.log**: Per-instance logs (e.g., `Radarr-Movies.log`, `Sonarr-TV.log`) if emitted
-- **Rotated logs**: Timestamped backups (e.g., `Main.log.2025-11-27`)
+- **all-YYYYMMDD.log**: Every emitted Host, Worker, and standalone WebUI event, including exception details and source instances.
+- **torrentarr-YYYYMMDD.log**: Host and orchestration events.
+- **worker-<ArrName>-YYYYMMDD.log**: Per-instance worker events.
+- **freespace-YYYYMMDD.log**: Free-space allocation, pause/resume failures, and cycle summaries.
+- **webui-YYYYMMDD.log**: Standalone WebUI events (the normal Host embeds its WebUI).
+
+Files append safely across restarts and roll at local midnight. Each stream retains seven daily files. Files are plain text; the terminal and viewer add colours. Existing historical filenames remain readable. At TRACE level, the aggregate can be large because it includes all worker output.
 
 The Logs view provides:
 
@@ -35,12 +38,15 @@ Select which log file to view from all available `.log` files in the logs direct
 
 | Log File | Description |
 |----------|-------------|
-| `Main.log` | Core application events, process management, config loading |
-| `WebUI.log` | HTTP server logs, API requests, authentication failures |
-| `<ArrName>.log` | Per-instance logs for each managed Arr (e.g., `Radarr-Movies.log`) |
-| `<ArrName>.log.<date>` | Rotated log archives (timestamped backups) |
+| `all-YYYYMMDD.log` | Combined output from every process; default selection |
+| `torrentarr-YYYYMMDD.log` | Host, embedded WebUI, and orchestration |
+| `worker-<ArrName>-YYYYMMDD.log` | Worker instance output |
+| `freespace-YYYYMMDD.log` | Free-space management and completion summaries |
+| `webui-YYYYMMDD.log` | Standalone WebUI output |
 
-**Default Selection**: `Main.log` (falls back to first available log if Main.log doesn't exist)
+**Default Selection**: The newest `all-YYYYMMDD.log`. Live viewing with Follow enabled discovers the next daily aggregate automatically. Explicitly selecting a historical file keeps that selection.
+
+Legacy qBitrr files can be previewed with `python3 scripts/cleanup-qbitrr-logs.py /path/to/logs` and removed with `--apply`. The tool requires `lsof`, checks the known filenames and qBitrr content, and refuses active or uncertain files. It preserves Torrentarr history.
 
 ### Log Viewer
 
@@ -48,7 +54,7 @@ Select which log file to view from all available `.log` files in the logs direct
 
 Displays the full content of the selected log file with:
 
-- **ANSI Color Support**: Preserves terminal colors (red errors, green success, blue info)
+- **Colour Support**: Adds colours by severity and source in both themes, and preserves ANSI colours in historical files
 - **Monospace Font**: `Cascadia Code`, `Fira Code`, `Consolas`, `Monaco`
 - **Dark Background**: `#0a0e14` for readability
 - **Line Wrapping**: Pre-wrap style for long log lines
@@ -56,11 +62,10 @@ Displays the full content of the selected log file with:
 
 **Example Display**:
 ```plaintext
-2025-11-27 10:30:15 | INFO     | Torrentarr.Main | Starting Torrentarr 5.0.3
-2025-11-27 10:30:15 | INFO     | Torrentarr.Main | Loading config from /config/config.toml
-2025-11-27 10:30:16 | NOTICE   | Torrentarr.Main | Connected to qBittorrent v5.0.2
-2025-11-27 10:30:17 | SUCCESS  | Torrentarr.Main | Radarr-Movies: API connection successful
-2025-11-27 10:30:18 | ERROR    | Torrentarr.Main | Sonarr-TV: Connection refused (Host: http://sonarr:8989)
+[2026-10-30 12:00:00][INFO    ][Torrentarr          ]Torrentarr starting...
+[2026-10-30 12:00:01][INFO    ][Torrentarr.Sonarr-TV]Worker started
+[2026-10-30 12:00:02][WARNING ][Torrentarr          ]FreeSpace: [seedbox] Resume failed for torrent abc; remaining shared-storage resumes withheld
+System.IO.IOException: Torrent client rejected free-space resume.
 ```
 
 ### Action Buttons

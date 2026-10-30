@@ -233,3 +233,119 @@ it("serializes slow polls and discards their results after switching files", asy
     vi.useRealTimers();
   }
 });
+
+it("selects the current aggregate instead of the legacy All.log", async () => {
+  vi.mocked(api.getLogs).mockResolvedValue({
+    files: ["All.log", "all-20261029.log", "all-20261030.log"],
+  });
+  view();
+  await waitFor(() =>
+    expect(api.getLogTailJson).toHaveBeenCalledWith(
+      "all-20261030.log",
+      expect.anything(),
+    ),
+  );
+});
+
+it("keeps exception continuation lines when filtering errors", async () => {
+  vi.mocked(api.getLogTailJson).mockResolvedValue({
+    ...payload,
+    content:
+      "[now] ERROR : failed\nIOException: denied\n   at Pause()\n[now] INFO : ready\n",
+  });
+  view();
+  await screen.findByTestId("lazy-log");
+  fireEvent.click(screen.getByRole("button", { name: "ERROR" }));
+  expect(screen.getByTestId("lazy-log")).toHaveTextContent(
+    "IOException: denied",
+  );
+  expect(screen.getByTestId("lazy-log")).toHaveTextContent("at Pause()");
+  expect(screen.getByTestId("lazy-log")).not.toHaveTextContent("ready");
+});
+
+it("follows aggregate rollover while live", async () => {
+  vi.useFakeTimers();
+  try {
+    vi.mocked(api.getLogs).mockResolvedValue({ files: ["all-20261030.log"] });
+    view();
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(50);
+    });
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(50);
+    });
+    expect(api.getLogTailJson).toHaveBeenCalledWith(
+      "all-20261030.log",
+      expect.anything(),
+    );
+    vi.mocked(api.getLogs).mockResolvedValue({
+      files: ["all-20261030.log", "all-20261031.log"],
+    });
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(15050);
+    });
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(50);
+    });
+    expect(api.getLogTailJson).toHaveBeenCalledWith(
+      "all-20261031.log",
+      expect.anything(),
+    );
+  } finally {
+    vi.useRealTimers();
+  }
+});
+
+it("preserves an explicitly selected historical log during rollover", async () => {
+  vi.mocked(api.getLogs).mockResolvedValue({
+    files: ["all-20261030.log", "all-20261029.log"],
+  });
+  view();
+  await screen.findByTestId("lazy-log");
+  fireEvent.keyDown(screen.getByRole("combobox"), { key: "ArrowDown" });
+  fireEvent.click(screen.getByText("all-20261029.log"));
+  await waitFor(() =>
+    expect(api.getLogTailJson).toHaveBeenCalledWith(
+      "all-20261029.log",
+      expect.anything(),
+    ),
+  );
+  vi.mocked(api.getLogTailJson).mockClear();
+  vi.mocked(api.getLogs).mockResolvedValue({
+    files: ["all-20261031.log", "all-20261029.log"],
+  });
+  fireEvent.click(screen.getByRole("button", { name: "More" }));
+  fireEvent.click(screen.getByRole("menuitem", { name: "Reload List" }));
+  await waitFor(() => expect(api.getLogs).toHaveBeenCalledTimes(2));
+  expect(api.getLogTailJson).not.toHaveBeenCalledWith(
+    "all-20261031.log",
+    expect.anything(),
+  );
+});
+
+it("keeps background rollover discovery failures quiet", async () => {
+  vi.useFakeTimers();
+  try {
+    vi.mocked(api.getLogs).mockResolvedValue({ files: ["all-20261030.log"] });
+    view();
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(50);
+    });
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(50);
+    });
+    vi.mocked(api.getLogs).mockRejectedValue(
+      new Error("temporarily unavailable"),
+    );
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(15050);
+    });
+    expect(api.getLogs).toHaveBeenCalledTimes(2);
+    expect(
+      screen.queryByText(/Failed to refresh log list/),
+    ).not.toBeInTheDocument();
+    expect(screen.getByTestId("lazy-log")).toHaveTextContent("ready");
+  } finally {
+    vi.useRealTimers();
+  }
+});
