@@ -394,7 +394,20 @@ public class StandaloneRadarrEndpointTests
             _connection.Dispose();
             Environment.SetEnvironmentVariable("TORRENTARR_CONFIG", _previousConfig);
             ConfigurationLoader.TestConfigPathOverride = _previousOverride;
-            if (Directory.Exists(_directory)) Directory.Delete(_directory, recursive: true);
+            // The configuration watcher can briefly create files while the test host shuts down.
+            // Retry transient directory-not-empty errors instead of failing an otherwise successful test.
+            for (var attempt = 0; attempt < 6; attempt++)
+            {
+                try
+                {
+                    if (Directory.Exists(_directory)) Directory.Delete(_directory, recursive: true);
+                    break;
+                }
+                catch (IOException) when (attempt < 5)
+                {
+                    await Task.Delay(TimeSpan.FromMilliseconds(100 * (attempt + 1)));
+                }
+            }
         }
     }
 }
