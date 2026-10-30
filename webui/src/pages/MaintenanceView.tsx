@@ -786,7 +786,13 @@ export function MaintenanceView({
               <p>No runs yet.</p>
             ) : (
               <div className="table-wrap" style={{ overflowX: "auto" }}>
-                <table style={{ width: "100%", minWidth: "780px", tableLayout: "fixed" }}>
+                <table
+                  style={{
+                    width: "100%",
+                    minWidth: "780px",
+                    tableLayout: "fixed",
+                  }}
+                >
                   <colgroup>
                     <col style={{ width: "16%" }} />
                     <col style={{ width: "10%" }} />
@@ -806,19 +812,43 @@ export function MaintenanceView({
                   <tbody>
                     {selectedHistory.slice(0, 20).map((run) => (
                       <tr key={run.runId}>
-                        <td style={{ overflowWrap: "anywhere" }}>{time(run.startedAt)}</td>
-                        <td style={{ overflowWrap: "anywhere" }}>{run.result}</td>
+                        <td style={{ overflowWrap: "anywhere" }}>
+                          {time(run.startedAt)}
+                        </td>
+                        <td style={{ overflowWrap: "anywhere" }}>
+                          {run.result}
+                        </td>
                         <td>{bytes(run.bytesMoved)}</td>
                         <td>{bytes(run.bytesReclaimed ?? 0)}</td>
                         <td>
                           {run.errors.length ? (
                             <details>
-                              <summary>{run.failed} failed · {run.errors.length} error(s) — view details</summary>
-                              <ul style={{ margin: "0.5rem 0", paddingLeft: "1.25rem" }}>
-                                {run.errors.map((error, index) => <li key={index} style={{ overflowWrap: "anywhere", whiteSpace: "pre-wrap" }}>{error}</li>)}
+                              <summary>
+                                {run.failed} failed · {run.errors.length}{" "}
+                                error(s) — view details
+                              </summary>
+                              <ul
+                                style={{
+                                  margin: "0.5rem 0",
+                                  paddingLeft: "1.25rem",
+                                }}
+                              >
+                                {run.errors.map((error, index) => (
+                                  <li
+                                    key={index}
+                                    style={{
+                                      overflowWrap: "anywhere",
+                                      whiteSpace: "pre-wrap",
+                                    }}
+                                  >
+                                    {error}
+                                  </li>
+                                ))}
                               </ul>
                             </details>
-                          ) : `${run.applied} applied, ${run.skipped} skipped, ${run.failed} failed`}
+                          ) : (
+                            `${run.applied} applied, ${run.skipped} skipped, ${run.failed} failed`
+                          )}
                         </td>
                       </tr>
                     ))}
