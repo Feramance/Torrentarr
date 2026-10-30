@@ -12,6 +12,59 @@ namespace Torrentarr.Infrastructure.Tests.Services;
 public sealed class OperationalIssueMonitorTests
 {
     [Fact]
+    public async Task CompletedMaintenanceRuns_AreNotReplayedAcrossInspections()
+    {
+        var reports = new List<OperationalIssueReport>();
+        var resolutions = new List<OperationalIssueReport>();
+        var reporter = new Mock<IOperationalIssueReporter>();
+        reporter.Setup(r => r.ReportAsync(It.IsAny<OperationalIssueReport>(), It.IsAny<CancellationToken>()))
+            .Callback<OperationalIssueReport, CancellationToken>((r, _) => reports.Add(r)).Returns(Task.CompletedTask);
+        reporter.Setup(r => r.ResolveAsync(It.IsAny<OperationalIssueReport>(), It.IsAny<CancellationToken>()))
+            .Callback<OperationalIssueReport, CancellationToken>((r, _) => resolutions.Add(r)).Returns(Task.CompletedTask);
+        var finished = DateTimeOffset.UtcNow;
+        var history = new List<Torrentarr.Core.Models.MaintenanceRunSummary>
+        {
+            new() { RunId = "failed-first", ClientInstanceIds = ["one"], Failed = 1, Result = "failed", CompletedAt = finished },
+            new() { RunId = "success-second", ClientInstanceIds = ["one"], Result = "success", CompletedAt = finished.AddSeconds(1) }
+        };
+        var maintenance = new Mock<IMaintenanceCoordinator>();
+        maintenance.Setup(m => m.GetHistory(It.IsAny<int>())).Returns(() => history);
+        await using var services = new ServiceCollection().AddSingleton(maintenance.Object).BuildServiceProvider();
+        using var monitor = new OperationalIssueMonitor(services.GetRequiredService<IServiceScopeFactory>(), reporter.Object,
+            new(), NullLogger<OperationalIssueMonitor>.Instance);
+        await monitor.InspectAsync(default);
+        reports.Should().ContainSingle(r => r.Code == "maintenance.run");
+        resolutions.Should().Contain(r => r.Code == "maintenance.run" && r.SubjectType == "maintenance");
+        var previousResolutions = resolutions.Count;
+        await monitor.InspectAsync(default);
+        reports.Should().HaveCount(1);
+        resolutions.Should().HaveCount(previousResolutions);
+    }
+
+    [Fact]
+    public async Task RunsSharingCompletionTimestamp_AreProcessedOnceEach()
+    {
+        var reported = new List<OperationalIssueReport>();
+        var reporter = new Mock<IOperationalIssueReporter>();
+        reporter.Setup(r => r.ReportAsync(It.IsAny<OperationalIssueReport>(), It.IsAny<CancellationToken>()))
+            .Callback<OperationalIssueReport, CancellationToken>((r, _) => reported.Add(r)).Returns(Task.CompletedTask);
+        var when = DateTimeOffset.UtcNow;
+        var history = new List<Torrentarr.Core.Models.MaintenanceRunSummary>
+        {
+            new() { RunId = "one", ClientInstanceIds = ["same"], Failed = 1, Result = "failed", CompletedAt = when },
+            new() { RunId = "two", ClientInstanceIds = ["same"], Failed = 1, Result = "failed", CompletedAt = when }
+        };
+        var maintenance = new Mock<IMaintenanceCoordinator>();
+        maintenance.Setup(m => m.GetHistory(It.IsAny<int>())).Returns(() => history);
+        await using var services = new ServiceCollection().AddSingleton(maintenance.Object).BuildServiceProvider();
+        using var monitor = new OperationalIssueMonitor(services.GetRequiredService<IServiceScopeFactory>(), reporter.Object,
+            new(), NullLogger<OperationalIssueMonitor>.Instance);
+        await monitor.InspectAsync(default);
+        await monitor.InspectAsync(default);
+        reported.Should().HaveCount(2);
+    }
+
+    [Fact]
     public async Task MultiClientMaintenanceFailureIsReportedOnce_AndOnlySameScopeSuccessClearsIt()
     {
         var reported = new List<OperationalIssueReport>(); var resolved = new List<OperationalIssueReport>();

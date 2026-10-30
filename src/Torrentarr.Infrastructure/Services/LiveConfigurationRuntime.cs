@@ -28,6 +28,7 @@ public sealed class LiveConfigurationRuntime(TorrentarrConfig config, IConfigRel
     protected override async Task ExecuteAsync(CancellationToken stoppingToken)
     {
         long applied = -1;
+        (long Revision, string ErrorType, string Message)? lastFailure = null;
         try
         {
             while (!stoppingToken.IsCancellationRequested)
@@ -57,10 +58,18 @@ public sealed class LiveConfigurationRuntime(TorrentarrConfig config, IConfigRel
                         }
                         reloader.Acknowledge("runtime", revision);
                         applied = revision;
+                        lastFailure = null;
                     }
                     catch (Exception ex) when (ex is not OperationCanceledException)
                     {
-                        logger.LogWarning(ex, "Configuration runtime update failed at revision {Revision}", revision);
+                        var failure = (Revision: revision, ErrorType: ex.GetType().Name, Message: ex.Message);
+                        if (lastFailure != failure)
+                        {
+                            // Do not log raw HTTP exceptions; they may contain URL query credentials.
+                            logger.LogWarning("Configuration runtime update failed at revision {Revision} ({ErrorType}); inspect component status",
+                                revision, ex.GetType().Name);
+                            lastFailure = failure;
+                        }
                         reloader.Acknowledge("runtime", revision, ex is ClientActivationException
                             ? ex.Message
                             : $"Configuration revision {revision}: runtime update failed ({ex.GetType().Name}). Inspect server logs.");

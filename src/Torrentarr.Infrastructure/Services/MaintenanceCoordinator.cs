@@ -207,7 +207,12 @@ public sealed class MaintenanceCoordinator : BackgroundService, IMaintenanceCoor
                     var missing = new List<string>();
                     if (!inventory.IsComplete)
                     {
-                        var failures = inventory.Diagnostics.Where(d => d.Severity == "error").Select(d => $"{d.ClientInstanceId}: {d.Code}: {d.Message}").Distinct().Take(8).ToArray();
+                        var failures = inventory.Diagnostics.Where(d => d.Severity == "error" || d.Code is
+                            "ownership-not-inspected" or "client-unavailable" or "client-disabled" or
+                            "torrent-list-failed" or "file-enumeration-unsupported" or "file-list-failed" or
+                            "empty-file-list" or "missing-mapping" or "invalid-mapping" or
+                            "unmatched-prefix" or "unsafe-path" or "inaccessible-local-root")
+                            .Select(d => $"{d.ClientInstanceId}: {d.Code}: {d.Message}").Distinct().Take(8).ToArray();
                         missing.Add(failures.Length > 0
                             ? $"global torrent ownership inventory is incomplete ({string.Join("; ", failures)})"
                             : "global torrent ownership inventory is incomplete; inspect client and file enumeration diagnostics");
