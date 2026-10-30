@@ -13,7 +13,11 @@ export function handleChunkPreloadError(
   event.preventDefault();
   try {
     const previous = Number(storage.getItem(reloadKey));
-    if (previous > 0 && now - previous >= 0 && now - previous < retryIntervalMs) {
+    if (
+      previous > 0 &&
+      now - previous >= 0 &&
+      now - previous < retryIntervalMs
+    ) {
       return;
     }
     storage.setItem(reloadKey, String(now));
