@@ -49,9 +49,7 @@ describe("log presentation", () => {
       expect(rendered).toContain(
         "\x1b[" + (dark ? "93" : "33") + 'm"@HNPMISEGMV5K"',
       );
-      expect(rendered).toContain(
-        "\x1b[" + (dark ? "92" : "32") + "maccepted",
-      );
+      expect(rendered).toContain("\x1b[" + (dark ? "92" : "32") + "maccepted");
       expect(rendered).toContain("\x1b[" + (dark ? "96" : "36") + "m2");
       expect(rendered).toContain(
         "\x1b[" + (dark ? "94" : "34") + "m/web/logs/all-20261030.log",
@@ -70,5 +68,4 @@ describe("log presentation", () => {
     expect(rendered).toContain("\x1b[91mfailed");
     expect(rendered).toContain('\x1b[93m"Movie 42"');
   });
-
 });

@@ -21,11 +21,18 @@ export function logLevel(line: string): string | undefined {
 }
 // Tokenise messages once, prioritising full quoted values, addresses and paths
 // over individual words to avoid fragmented ANSI-coloured output.
-const MESSAGE_TOKENS = /"(?:\\.|[^"\\])*"|'(?:\\.|[^'\\])*'|https?:\/\/[^\s"'<>]+|(?:\/[\w.%{}@+~?=&#:-]+){2,}|\b[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}\b|\b(?:\d{1,3}\.){3}\d{1,3}(?::\d+)?\b|\b(?:connection refused|access denied|not found|timed out|error|failed|failure|denied|rejected|invalid|exception|unauthenticated|timeout|disconnected|disconnecting|stopped|unavailable|missing|aborted|cancelled|canceled|warning|authenticated|connected|accepted|started|success|succeeded|completed|allowed|healthy|enabled|matched|online|active|passed|ready|running|finished|imported|removed|downloaded|updated|saved)\b|\b[a-z_][\w.-]*(?=\s*[=:])|\b\d+(?:\.\d+)?(?:\s?(?:ms|KiB|MiB|GiB|KB|MB|GB|TB|s|m|h))?%?/gi;
-const FAILURE = /^(?:connection refused|access denied|not found|timed out|error|failed|failure|denied|rejected|invalid|exception|unauthenticated|timeout|disconnected|disconnecting|stopped|unavailable|missing|aborted|cancelled|canceled|warning)$/i;
-const SUCCESS = /^(?:authenticated|connected|accepted|started|success|succeeded|completed|allowed|healthy|enabled|matched|online|active|passed|ready|running|finished|imported|removed|downloaded|updated|saved)$/i;
+const MESSAGE_TOKENS =
+  /"(?:\\.|[^"\\])*"|'(?:\\.|[^'\\])*'|https?:\/\/[^\s"'<>]+|(?:\/[\w.%{}@+~?=&#:-]+){2,}|\b[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}\b|\b(?:\d{1,3}\.){3}\d{1,3}(?::\d+)?\b|\b(?:connection refused|access denied|not found|timed out|error|failed|failure|denied|rejected|invalid|exception|unauthenticated|timeout|disconnected|disconnecting|stopped|unavailable|missing|aborted|cancelled|canceled|warning|authenticated|connected|accepted|started|success|succeeded|completed|allowed|healthy|enabled|matched|online|active|passed|ready|running|finished|imported|removed|downloaded|updated|saved)\b|\b[a-z_][\w.-]*(?=\s*[=:])|\b\d+(?:\.\d+)?(?:\s?(?:ms|KiB|MiB|GiB|KB|MB|GB|TB|s|m|h))?%?/gi;
+const FAILURE =
+  /^(?:connection refused|access denied|not found|timed out|error|failed|failure|denied|rejected|invalid|exception|unauthenticated|timeout|disconnected|disconnecting|stopped|unavailable|missing|aborted|cancelled|canceled|warning)$/i;
+const SUCCESS =
+  /^(?:authenticated|connected|accepted|started|success|succeeded|completed|allowed|healthy|enabled|matched|online|active|passed|ready|running|finished|imported|removed|downloaded|updated|saved)$/i;
 
-function colourMessage(message: string, baseColour: string, dark: boolean): string {
+function colourMessage(
+  message: string,
+  baseColour: string,
+  dark: boolean,
+): string {
   const highlighted = message.replace(MESSAGE_TOKENS, (token) => {
     let colour: string;
     if (token.startsWith('"') || token.startsWith("'"))
