@@ -220,7 +220,10 @@ public sealed class SafeDeletionService : ISafeDeletionService
             if (current == null || (expected != null && !SeedingService.SameRemovalCandidate(expected, current))) return false;
             current.ClientInstanceId = instanceId;
             // An owned pause preserves validated stalled-idle evidence; all other fields and protection stay fresh.
-            if (stateBeforeOwnedPause != null && SeedingService.IsStalledUploadState(stateBeforeOwnedPause)) current.State = stateBeforeOwnedPause;
+            if (stateBeforeOwnedPause != null
+                && (SeedingService.IsStalledUploadState(stateBeforeOwnedPause)
+                    || intent == TorrentRemovalIntent.StalledDownload))
+                current.State = stateBeforeOwnedPause;
             var cleared = intent == TorrentRemovalIntent.SeedingLimit
                 ? await seeding.CanDeleteTorrentAsync(current, "final safe-removal boundary", ct)
                 : await seeding.CanDeleteTorrentForIntentAsync(current, intent, "final safe-removal boundary", ct);
