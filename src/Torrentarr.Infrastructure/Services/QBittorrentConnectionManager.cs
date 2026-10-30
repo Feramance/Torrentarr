@@ -206,12 +206,19 @@ public class QBittorrentConnectionManager : ITorrentClientRegistry
                 {
                     var settings = new ConnectionSettings(config.Type, config.Host, config.Port, config.UserName, config.Password, config.SkipTLSVerify);
                     lock (_clientsLock)
-                        if (config.Disabled || config.Host == "CHANGE_ME" || _settings.GetValueOrDefault(name) != settings)
-                        {
+                    {
+                        var inactive = config.Disabled || config.Host == "CHANGE_ME";
+                        if (inactive || _settings.GetValueOrDefault(name) != settings)
                             RemoveClient(name);
+                        // A failed login has no registered client settings. Do not clear its
+                        // rejection cache during a disconnect-only reconciliation unless the
+                        // credentials actually changed or the client was disabled.
+                        if (inactive || _authenticationFailures.TryGetValue(name, out var failure)
+                            && failure.Settings != settings)
                             _authenticationFailures.Remove(name);
+                        if (inactive || !_authenticationFailures.ContainsKey(name))
                             _connectionErrors.Remove(name);
-                        }
+                    }
                 }
             }
             return count;
