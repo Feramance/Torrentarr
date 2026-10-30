@@ -8,6 +8,7 @@ public interface IImportPathTracker
     bool IsPathAlreadyScanned(string instanceId, string normalizedPath);
     bool IsHashAlreadyScanned(string instanceId, string hash);
     void Clear();
+    void InvalidateTorrent(string instanceId, string hash);
     void MarkScanned(string instanceId, string normalizedPath, string hash);
     void RemoveEmptyPathsUnder(string completedFolderRoot);
     void ClearIfFolderEmpty(string completedFolderRoot);

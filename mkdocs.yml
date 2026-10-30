@@ -258,6 +258,7 @@ nav:
 - Web UI:
   - webui/index.md
   - Processes View: webui/processes.md
+  - Issues View: webui/issues.md
   - Logs View: webui/logs.md
   - Arr Views: webui/arr-views.md
   - Config Editor: webui/config-editor.md

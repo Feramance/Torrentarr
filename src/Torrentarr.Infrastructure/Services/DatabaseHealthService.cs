@@ -17,12 +17,14 @@ public class DatabaseHealthService : IDatabaseHealthService
     private readonly ILogger<DatabaseHealthService> _logger;
     private readonly TorrentarrDbContext _dbContext;
     private readonly string _dbPath;
+    private readonly IOperationalIssueReporter? _issues;
 
     public DatabaseHealthService(
         ILogger<DatabaseHealthService> logger,
-        TorrentarrDbContext dbContext)
+        TorrentarrDbContext dbContext, IOperationalIssueReporter? issues = null)
     {
         _logger = logger;
+        _issues = issues;
         _dbContext = dbContext;
         _dbPath = GetDatabasePath();
     }
@@ -71,6 +73,11 @@ public class DatabaseHealthService : IDatabaseHealthService
             _logger.LogError(ex, "Error checking database health");
         }
 
+        if (_issues != null)
+        {
+            var issue = new OperationalIssueReport("database.health", "system", "Database health could not be confirmed", "Persistent state may be unavailable; safety-sensitive work remains held back.", "Inspect database logs, storage access and recovery status.");
+            if (result.IsHealthy) await _issues.ResolveAsync(issue, cancellationToken); else await _issues.ReportAsync(issue, cancellationToken);
+        }
         return result;
     }
 

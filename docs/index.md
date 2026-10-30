@@ -213,7 +213,7 @@ Total time to library: 20.5 minutes (26% faster)
 
 ### Required Services
 
-- **qBittorrent**: Version 4.1.0+ or 5.x (including 5.2) with WebUI enabled
+- **qBittorrent**: Version 4.1.0+ or 5.x (including 5.3) with WebUI enabled
 - **Arr Instance**: At least one of:
     - Radarr: v3.x, v4.x, v5.x, v6.x
     - Sonarr: v3.x, v4.x, v5.x
@@ -234,12 +234,15 @@ Total time to library: 20.5 minutes (26% faster)
 
 | Version | Status | Notes |
 |---------|--------|-------|
-| 5.2+ | ✅ Fully Supported | Session cookie `QBT_SID_*`; HTTP 204 login |
-| 5.0–5.1 | ✅ Fully Supported | Auto-detected |
-| 4.6.x | ✅ Fully Supported | Latest stable |
-| 4.5.x | ✅ Supported | Older stable |
+| 5.3+ | ✅ Fully Supported | Preserves per-torrent share-limit action and matching mode |
+| 5.2.x | ✅ Fully Supported | Session cookie `QBT_SID_*`; HTTP 204 login |
+| 5.0–5.1 | ✅ Fully Supported | Uses stop/start endpoints |
+| 4.6.x | ✅ Fully Supported | Uses pause/resume; includes inactive-seeding limits |
+| 4.5.x | ✅ Supported | Retains legacy pause/resume and share-limit requests |
 | 4.1-4.4 | ✅ Supported | Some features limited |
 | < 4.1 | ❌ Not Supported | Upgrade required |
+
+Versions are detected separately for each configured client. Mixed 4.x and 5.x instances require no compatibility setting. Missing inventory fields on older clients remain valid.
 
 ### Radarr
 

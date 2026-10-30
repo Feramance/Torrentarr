@@ -16,6 +16,16 @@ public class ImportPathTracker : IImportPathTracker
         lock (_gate) return !string.IsNullOrEmpty(normalizedPath) && _scanned.ContainsKey((Instance(instanceId), PathKey(normalizedPath)));
     }
 
+    public void InvalidateTorrent(string instanceId, string hash)
+    {
+        lock (_gate)
+        {
+            foreach (var entry in _scanned.Where(p => p.Key.Instance == Instance(instanceId) && p.Value.Equals(hash, StringComparison.OrdinalIgnoreCase)))
+                _scanned.TryRemove(entry.Key, out _);
+            _hashes.Remove((Instance(instanceId), hash.ToUpperInvariant()));
+        }
+    }
+
     public void Clear()
     {
         lock (_gate) { _scanned.Clear(); _hashes.Clear(); }

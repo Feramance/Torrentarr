@@ -32,9 +32,15 @@ public class TorrentarrDbContext : DbContext
     public DbSet<SonarrSearchRetry> SonarrSearchRetries { get; set; }
     public DbSet<MaintenanceState> MaintenanceState { get; set; }
 
+    public DbSet<OperationalIssue> OperationalIssues { get; set; }
+
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
         base.OnModelCreating(modelBuilder);
+        modelBuilder.Entity<OperationalIssue>().Property(i => i.ArrInstance).UseCollation("NOCASE");
+        modelBuilder.Entity<OperationalIssue>().Property(i => i.ClientInstance).UseCollation("NOCASE");
+        modelBuilder.Entity<OperationalIssue>().HasIndex(i => new { i.Code, i.ArrInstance, i.ClientInstance, i.SubjectType, i.SubjectId }).IsUnique();
+        modelBuilder.Entity<OperationalIssue>().HasIndex(i => new { i.ResolvedAt, i.Category, i.LastObserved });
 
         // Configure table names to match qBitrr (lowercase)
         modelBuilder.Entity<MoviesFilesModel>().ToTable("moviesfilesmodel");

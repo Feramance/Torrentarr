@@ -14,10 +14,12 @@ namespace Torrentarr.Infrastructure.Tests.Services;
 public sealed class ProtectionLimitTests
 {
     [Theory]
-    [InlineData(false, false)]
-    [InlineData(true, false)]
-    [InlineData(false, true)]
-    public async Task ProtectedLimits_ClearAllThree_AndPreserveSubsequentUserChanges(bool userChanged, bool revisedWhileProtected)
+    [InlineData(false, false, false, false)]
+    [InlineData(true, false, false, false)]
+    [InlineData(false, true, false, false)]
+    [InlineData(false, false, true, false)]
+    [InlineData(false, false, false, true)]
+    public async Task ProtectedLimits_ClearAllThree_AndPreserveSubsequentUserChanges(bool userChanged, bool revisedWhileProtected, bool clearRejected, bool restoreRejected)
     {
         using var db = new TorrentarrDbContext(new DbContextOptionsBuilder<TorrentarrDbContext>().UseSqlite("Data Source=:memory:").Options);
         db.Database.OpenConnection(); db.Database.EnsureCreated();
@@ -47,8 +49,17 @@ public sealed class ProtectionLimitTests
             InactiveSeedingTimeLimit = 30
         };
         List<TorrentTracker> trackers = [new() { Url = "https://tracker.example/announce", Status = 2 }];
+        var clearCalls = 0;
+        client.Setup(c => c.SetShareLimitsAsync("hash", -1, -1, -1, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(() => !clearRejected || ++clearCalls > 1);
         await service.ReconcileProtectionLimitsAsync(torrent, trackers, default);
         client.Verify(c => c.SetShareLimitsAsync("hash", -1, -1, -1, It.IsAny<CancellationToken>()), Times.Once);
+        if (clearRejected)
+        {
+            torrent.RatioLimit.Should().Be(1);
+            await service.ReconcileProtectionLimitsAsync(torrent, trackers, default);
+            clearCalls.Should().Be(2);
+        }
         if (revisedWhileProtected)
         {
             torrent.RatioLimit = 2; torrent.SeedingTimeLimit = 120; torrent.InactiveSeedingTimeLimit = 45;
@@ -57,13 +68,24 @@ public sealed class ProtectionLimitTests
         var ratio = revisedWhileProtected ? 2 : 1;
         var seedTime = revisedWhileProtected ? 120 : 60;
         var inactiveTime = revisedWhileProtected ? 45 : 30;
+        var restoreCalls = 0;
+        client.Setup(c => c.SetShareLimitsAsync("hash", ratio, seedTime, inactiveTime, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(() => !restoreRejected || ++restoreCalls > 1);
         torrent.Ratio = 1;
         torrent.RatioLimit = userChanged ? 2 : -1;
         torrent.SeedingTimeLimit = -1; torrent.InactiveSeedingTimeLimit = -1;
         await service.ReconcileProtectionLimitsAsync(torrent, trackers, default);
         client.Verify(c => c.SetShareLimitsAsync("hash", ratio, seedTime, inactiveTime, It.IsAny<CancellationToken>()), userChanged ? Times.Never() : Times.Once());
+        if (restoreRejected)
+        {
+            var key = MaintenancePersistence.Key("client", "hash", "native-limits");
+            MaintenancePersistence.Read<ProtectionObservation>(db, key).PreviousRatioLimit.Should().Be(ratio);
+            await service.ReconcileProtectionLimitsAsync(torrent, trackers, default);
+            restoreCalls.Should().Be(2);
+            MaintenancePersistence.Read<ProtectionObservation>(db, key).PreviousRatioLimit.Should().BeNull();
+        }
         // A completed restore (or a user edit) releases ownership and cannot be replayed.
         await service.ReconcileProtectionLimitsAsync(torrent, trackers, default);
-        client.Verify(c => c.SetShareLimitsAsync("hash", ratio, seedTime, inactiveTime, It.IsAny<CancellationToken>()), userChanged ? Times.Never() : Times.Once());
+        client.Verify(c => c.SetShareLimitsAsync("hash", ratio, seedTime, inactiveTime, It.IsAny<CancellationToken>()), userChanged ? Times.Never() : Times.Exactly(restoreRejected ? 2 : 1));
     }
 }

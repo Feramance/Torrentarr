@@ -33,6 +33,7 @@ public interface ISeedingService
     /// Update seeding tags for all completed torrents in a category.
     /// Adds qBitrr-allowed_seeding tag when requirements are met.
     /// </summary>
+    /// <exception cref="AggregateException">Failures are propagated after independent client and torrent maintenance completes.</exception>
     Task UpdateSeedingTagsAsync(string category, CancellationToken cancellationToken = default);
 
     /// <summary>

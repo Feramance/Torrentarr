@@ -6,6 +6,12 @@ public interface IArrMediaService
 
     Task<SearchResult> SearchQualityUpgradesAsync(string category, CancellationToken cancellationToken = default);
 
+    Task<SearchResult> SearchMissingMediaAsync(string category, DateTimeOffset? deadline, CancellationToken cancellationToken)
+        => SearchMissingMediaAsync(category, cancellationToken);
+
+    Task<SearchResult> SearchQualityUpgradesAsync(string category, DateTimeOffset? deadline, CancellationToken cancellationToken)
+        => SearchQualityUpgradesAsync(category, cancellationToken);
+
     Task<List<WantedMedia>> GetWantedMediaAsync(string category, CancellationToken cancellationToken = default);
 
     Task<QualityUpgradeResult> GetCustomFormatUnmetMediaAsync(string category, CancellationToken cancellationToken = default);
@@ -13,6 +19,8 @@ public interface IArrMediaService
 
 public class SearchResult
 {
+    [System.Text.Json.Serialization.JsonIgnore]
+    public bool BudgetExhausted { get; set; }
     public int ItemsSearched { get; set; }
     public int SearchesTriggered { get; set; }
     public List<int> SearchedIds { get; set; } = new();

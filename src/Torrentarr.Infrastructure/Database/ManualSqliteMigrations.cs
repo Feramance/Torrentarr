@@ -11,6 +11,18 @@ public static class ManualSqliteMigrations
 {
     public static void Apply(TorrentarrDbContext db)
     {
+        CreateTableIfMissing(db, "torrentarr_operational_issues", """
+            CREATE TABLE IF NOT EXISTS torrentarr_operational_issues (
+                Id INTEGER PRIMARY KEY AUTOINCREMENT, Code TEXT NOT NULL, Category TEXT NOT NULL,
+                ArrInstance TEXT COLLATE NOCASE NOT NULL DEFAULT '', ClientInstance TEXT COLLATE NOCASE NOT NULL DEFAULT '',
+                SubjectType TEXT NOT NULL, SubjectId TEXT NOT NULL DEFAULT '', Severity TEXT NOT NULL,
+                Title TEXT NOT NULL, Impact TEXT NOT NULL, Remediation TEXT NOT NULL, Target TEXT NOT NULL,
+                FirstObserved TEXT NOT NULL, LastObserved TEXT NOT NULL, ResolvedAt TEXT, Resolution TEXT,
+                Occurrences INTEGER NOT NULL DEFAULT 1,
+                UNIQUE(Code, ArrInstance, ClientInstance, SubjectType, SubjectId)
+            );
+            """);
+        db.Database.ExecuteSqlRaw("CREATE INDEX IF NOT EXISTS idx_operational_issues_state ON torrentarr_operational_issues (ResolvedAt, Category, LastObserved)");
         AddColumnIfMissing(db, "seriesfilesmodel", "tvdbid", "INTEGER NOT NULL DEFAULT 0");
 
         AddColumnIfMissing(db, "moviesfilesmodel", "InCinemas", "TEXT");
@@ -32,6 +44,8 @@ public static class ManualSqliteMigrations
 
         CreateTableIfMissing(db, "searchactivity", "CREATE TABLE IF NOT EXISTS searchactivity ( category TEXT NOT NULL PRIMARY KEY, summary TEXT, timestamp TEXT );");
         CreateTableIfMissing(db, "torrentarr_sonarr_search_retries", "CREATE TABLE IF NOT EXISTS torrentarr_sonarr_search_retries ( ArrInstance TEXT NOT NULL, DownloadId TEXT NOT NULL, CandidatesJson TEXT NOT NULL DEFAULT '[]', PRIMARY KEY (ArrInstance, DownloadId) );");
+
+        AddColumnIfMissing(db, "torrentarr_sonarr_search_retries", "BlocklistPending", "INTEGER NOT NULL DEFAULT 0");
 
         CreateTableIfMissing(db, "bookfilesmodel", """
             CREATE TABLE IF NOT EXISTS bookfilesmodel (

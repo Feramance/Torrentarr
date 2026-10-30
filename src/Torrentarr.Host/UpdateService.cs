@@ -7,6 +7,7 @@ using Microsoft.Extensions.Logging;
 using Newtonsoft.Json.Linq;
 using Torrentarr.Core.Configuration;
 using Torrentarr.Infrastructure.Services;
+using Torrentarr.Core.Services;
 
 namespace Torrentarr.Host;
 
@@ -19,6 +20,8 @@ public class UpdateService
     private readonly ILogger<UpdateService> _logger;
     private readonly TorrentarrConfig _config;
     private readonly WorkerProcessSupervisor? _workers;
+    private readonly IOperationalIssueReporter? _issues;
+    private static OperationalIssueReport Issue(string operation) => new("update." + operation, "system", "Application update " + operation + " failed", "Update progress could not be confirmed; the last known installation is retained.", "Check network connectivity, release availability and application logs.");
 
     // Cached check result — refreshed at most once per hour
     private DateTime _lastChecked = DateTime.MinValue;
@@ -48,11 +51,12 @@ public class UpdateService
         string.Equals(Environment.GetEnvironmentVariable("DOTNET_RUNNING_IN_CONTAINER"), "true", StringComparison.OrdinalIgnoreCase)
         || File.Exists("/.dockerenv");
 
-    public UpdateService(ILogger<UpdateService> logger, TorrentarrConfig config, WorkerProcessSupervisor? workers = null)
+    public UpdateService(ILogger<UpdateService> logger, TorrentarrConfig config, WorkerProcessSupervisor? workers = null, IOperationalIssueReporter? issues = null)
     {
         _logger = logger;
         _config = config;
         _workers = workers;
+        _issues = issues;
         if (OperatingSystem.IsWindows())
         {
             try
@@ -91,12 +95,20 @@ public class UpdateService
         return $"{ver.Major}.{ver.Minor}.{ver.Build}";
     }
 
+    internal async Task ObserveApplyResultAsync(CancellationToken ct = default)
+    {
+        if (_issues == null) return;
+        if (ApplyState.LastResult == "success") await _issues.ResolveAsync(Issue("apply"), ct);
+        else if (ApplyState.LastResult == "error") await _issues.ReportAsync(Issue("apply"), ct);
+    }
+
     /// <summary>
     /// Fetches the latest GitHub release and caches the result for one hour.
     /// Set <paramref name="forceRefresh"/> to bypass the cache.
     /// </summary>
     public async Task CheckForUpdateAsync(bool forceRefresh = false, CancellationToken ct = default)
     {
+        await ObserveApplyResultAsync(ct);
         if (!forceRefresh && _lastChecked != DateTime.MinValue &&
             (DateTime.UtcNow - _lastChecked).TotalHours < 1)
             return;
@@ -122,15 +134,18 @@ public class UpdateService
                 var release = await FetchReleaseForChannelAsync(http, channel, ct);
                 if (release == null)
                 {
+                    if (_issues != null) await _issues.ReportAsync(Issue("check"), ct);
                     _checkError = "GitHub API returned no matching release";
                     _lastChecked = DateTime.UtcNow;
                     return;
                 }
 
                 ApplyReleaseMetadata(release, currentVersion, assetPattern, allowBinary: CanApplyBinaries);
+                if (_issues != null) await _issues.ResolveAsync(Issue("check"), ct);
             }
             catch (Exception ex)
             {
+                if (_issues != null) await _issues.ReportAsync(Issue("check"), ct);
                 _checkError = ex.Message;
                 _logger.LogWarning(ex, "UpdateService: GitHub check failed");
             }
@@ -344,6 +359,7 @@ public class UpdateService
                 }
                 ApplyState.LastError = null;
 
+                await ObserveApplyResultAsync(ct);
                 _logger.LogInformation("UpdateService: Update staged or applied — stopping application for restart");
                 await Task.Delay(500, CancellationToken.None);
                 lifetime.StopApplication();
@@ -353,6 +369,7 @@ public class UpdateService
                 if (workersStopped && !helperStarted && _workers != null)
                     try { await ((Torrentarr.Core.Interfaces.IProcessOrchestrator)_workers).StartAsync(CancellationToken.None); }
                     catch (Exception restartError) { _logger.LogError(restartError, "Unable to resume workers after failed update"); }
+                if (_issues != null) await _issues.ReportAsync(Issue("apply"), ct);
                 _logger.LogError(ex, "UpdateService: Update failed");
                 ApplyState.InProgress = false;
                 ApplyState.LastResult = "error";

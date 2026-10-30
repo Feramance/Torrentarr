@@ -988,3 +988,29 @@ export async function watchConfiguration(
 export const getTorrentAutomationStatus = (): Promise<
   import("./types").TorrentAutomationStatus
 > => fetchJson("/web/torrent-automation/status");
+
+export async function getIssues(
+  filters: Record<string, string | number> = {},
+): Promise<import("./types").IssuesResponse> {
+  const params = new URLSearchParams(
+    Object.entries(filters).map(([key, value]) => [key, String(value)]),
+  );
+  return fetchJson(`/web/issues?${params}`);
+}
+export async function getIssuesSummary(): Promise<
+  import("./types").IssuesSummary
+> {
+  return fetchJson("/web/issues/summary");
+}
+export async function getIssueDetails(
+  id: number,
+  page = 0,
+): Promise<{
+  available: boolean;
+  total: number;
+  items: import("./types").OperationalIssue[];
+  page: number;
+  pageSize: number;
+}> {
+  return fetchJson(`/web/issues/${id}?page=${page}`);
+}

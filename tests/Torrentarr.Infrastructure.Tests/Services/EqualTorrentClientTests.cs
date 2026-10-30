@@ -21,6 +21,12 @@ public class EqualTorrentClientTests
         client.SetupGet(c => c.Identity).Returns(new TorrentClientIdentity(id, "fake"));
         client.SetupGet(c => c.Capabilities).Returns(TorrentClientCapabilities.QBittorrent);
         client.Setup(c => c.GetVersionAsync(It.IsAny<CancellationToken>())).ReturnsAsync(id + "-version");
+        client.Setup(c => c.GetTagsAsync(It.IsAny<CancellationToken>())).ReturnsAsync(["qBitrr-allowed_seeding"]);
+        client.Setup(c => c.GetTorrentTrackersAsync(It.IsAny<string>(), It.IsAny<CancellationToken>())).ReturnsAsync([]);
+        client.Setup(c => c.AddTagsAsync(It.IsAny<List<string>>(), It.IsAny<List<string>>(), It.IsAny<CancellationToken>())).ReturnsAsync(true);
+        client.Setup(c => c.RemoveTagsAsync(It.IsAny<List<string>>(), It.IsAny<List<string>>(), It.IsAny<CancellationToken>())).ReturnsAsync(true);
+        client.Setup(c => c.AddTrackersAsync(It.IsAny<string>(), It.IsAny<List<string>>(), It.IsAny<CancellationToken>())).ReturnsAsync(true);
+        client.Setup(c => c.SetSuperSeedingAsync(It.IsAny<string>(), It.IsAny<bool>(), It.IsAny<CancellationToken>())).ReturnsAsync(true);
         client.Setup(c => c.GetTorrentsAsync(It.IsAny<string?>(), It.IsAny<string?>(), It.IsAny<CancellationToken>())).ReturnsAsync(torrents.ToList());
         return client;
     }
@@ -32,6 +38,58 @@ public class EqualTorrentClientTests
         registry.Setup(r => r.GetAllClients()).Returns(map);
         registry.Setup(r => r.GetClient(It.IsAny<string>())).Returns((string id) => map.GetValueOrDefault(id));
         return registry;
+    }
+
+    [Theory]
+    [InlineData("inventory")]
+    [InlineData("tag-exception")]
+    [InlineData("tag-rejected")]
+    [InlineData("tracker")]
+    [InlineData("creation-exception")]
+    [InlineData("creation-rejected")]
+    [InlineData("tracker-tag-rejected")]
+    [InlineData("tracker-add-rejected")]
+    [InlineData("super-seed-rejected")]
+    public async Task SeedingMaintenanceCollectsFailuresWithoutSkippingIndependentWork(string failure)
+    {
+        var bad = new TorrentInfo { Hash = "bad", Category = "movies", Progress = 1 };
+        var after = new TorrentInfo { Hash = "after", Category = "movies", Progress = 1 };
+        var first = Client("one", bad, after);
+        var healthy = Client("two", new TorrentInfo { Hash = "healthy", Category = "movies", Progress = 1 });
+        if (failure == "inventory") first.Setup(c => c.GetTorrentsAsync(It.IsAny<string?>(), It.IsAny<string?>(), It.IsAny<CancellationToken>())).ThrowsAsync(new IOException());
+        if (failure == "tag-exception") first.Setup(c => c.AddTagsAsync(It.Is<List<string>>(h => h.Contains("bad")), It.IsAny<List<string>>(), It.IsAny<CancellationToken>())).ThrowsAsync(new IOException());
+        if (failure == "tag-rejected") first.Setup(c => c.AddTagsAsync(It.Is<List<string>>(h => h.Contains("bad")), It.IsAny<List<string>>(), It.IsAny<CancellationToken>())).ReturnsAsync(false);
+        if (failure == "tracker") first.Setup(c => c.GetTorrentTrackersAsync("bad", It.IsAny<CancellationToken>())).ThrowsAsync(new IOException());
+        if (failure.StartsWith("creation"))
+        {
+            first.Setup(c => c.GetTagsAsync(It.IsAny<CancellationToken>())).ReturnsAsync([]);
+            if (failure == "creation-exception") first.Setup(c => c.CreateTagsAsync(It.IsAny<List<string>>(), It.IsAny<CancellationToken>())).ThrowsAsync(new IOException());
+            else first.Setup(c => c.CreateTagsAsync(It.IsAny<List<string>>(), It.IsAny<CancellationToken>())).ReturnsAsync(false);
+        }
+        if (failure is "tracker-tag-rejected" or "super-seed-rejected")
+            first.Setup(c => c.GetTorrentTrackersAsync("bad", It.IsAny<CancellationToken>())).ReturnsAsync([new() { Url = "https://tracker.example/announce" }]);
+        if (failure == "tracker-tag-rejected") first.Setup(c => c.AddTagsAsync(It.Is<List<string>>(h => h.Contains("bad")), It.Is<List<string>>(t => t.Contains("tracker-tag")), It.IsAny<CancellationToken>())).ReturnsAsync(false);
+        if (failure == "tracker-add-rejected") first.Setup(c => c.AddTrackersAsync("bad", It.IsAny<List<string>>(), It.IsAny<CancellationToken>())).ReturnsAsync(false);
+        if (failure == "super-seed-rejected") first.Setup(c => c.SetSuperSeedingAsync("bad", true, It.IsAny<CancellationToken>())).ReturnsAsync(false);
+        var registry = Registry(("one", first), ("two", healthy));
+        var config = new TorrentarrConfig();
+        config.TorrentClients["one"] = new() { Host = "fixture", Trackers = [new() { Uri = "https://tracker.example/announce", AddTags = ["tracker-tag"], AddTrackerIfMissing = failure == "tracker-add-rejected", SuperSeedMode = failure == "super-seed-rejected" ? true : null }] };
+        config.TorrentClients["two"] = new() { Host = "fixture" };
+        using var db = new TorrentarrDbContext(new DbContextOptionsBuilder<TorrentarrDbContext>().UseInMemoryDatabase(Guid.NewGuid().ToString()).Options);
+        var seeding = new SeedingService(NullLogger<SeedingService>.Instance, db, config, registry.Object);
+        await FluentActions.Awaiting(() => seeding.UpdateSeedingTagsAsync("movies")).Should().ThrowAsync<AggregateException>();
+        healthy.Verify(c => c.AddTagsAsync(It.Is<List<string>>(h => h.Contains("healthy")), It.IsAny<List<string>>(), It.IsAny<CancellationToken>()), Times.Once);
+        if (failure != "inventory") first.Verify(c => c.AddTagsAsync(It.Is<List<string>>(h => h.Contains("after")), It.IsAny<List<string>>(), It.IsAny<CancellationToken>()), Times.Once);
+        first.Setup(c => c.GetTorrentsAsync(It.IsAny<string?>(), It.IsAny<string?>(), It.IsAny<CancellationToken>())).ReturnsAsync([bad, after]);
+        first.Setup(c => c.AddTagsAsync(It.Is<List<string>>(h => h.Contains("bad")), It.IsAny<List<string>>(), It.IsAny<CancellationToken>())).ReturnsAsync(true);
+        first.Setup(c => c.GetTorrentTrackersAsync("bad", It.IsAny<CancellationToken>())).ReturnsAsync([]);
+        first.Setup(c => c.CreateTagsAsync(It.IsAny<List<string>>(), It.IsAny<CancellationToken>())).ReturnsAsync(true);
+        first.Setup(c => c.AddTrackersAsync("bad", It.IsAny<List<string>>(), It.IsAny<CancellationToken>())).ReturnsAsync(true);
+        first.Setup(c => c.SetSuperSeedingAsync("bad", true, It.IsAny<CancellationToken>())).ReturnsAsync(true);
+        // The repaired observation has no matching tracker, so the rejected optional tracker-tag write is no longer required.
+        await seeding.UpdateSeedingTagsAsync("movies");
+        first.Setup(c => c.GetTorrentsAsync(It.IsAny<string?>(), It.IsAny<string?>(), It.IsAny<CancellationToken>())).ThrowsAsync(new OperationCanceledException());
+        await FluentActions.Awaiting(() => seeding.UpdateSeedingTagsAsync("movies")).Should().ThrowAsync<OperationCanceledException>();
     }
 
     [Theory]
@@ -116,7 +174,8 @@ public class EqualTorrentClientTests
         config.TorrentClients["one"] = new() { Host = "fixture" };
         config.TorrentClients["two"] = new() { Host = "fixture" };
         var seeding = new SeedingService(NullLogger<SeedingService>.Instance, db, config, registry.Object);
-        await seeding.UpdateSeedingTagsAsync("movies");
+        if (offline) await FluentActions.Awaiting(() => seeding.UpdateSeedingTagsAsync("movies")).Should().ThrowAsync<AggregateException>();
+        else await seeding.UpdateSeedingTagsAsync("movies");
         first.Verify(c => c.AddTagsAsync(It.Is<List<string>>(h => h.Contains("abc")),
             It.Is<List<string>>(tags => tags.Contains("qBitrr-allowed_seeding")), It.IsAny<CancellationToken>()), Times.Once);
         if (!offline)

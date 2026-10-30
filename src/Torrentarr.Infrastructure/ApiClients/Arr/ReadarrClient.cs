@@ -108,8 +108,8 @@ public class ReadarrClient
         return null;
     }
 
-    public Task<bool> UpdateAuthorQualityProfileAsync(int authorId, int qualityProfileId, CancellationToken ct = default) =>
-        ArrQualityProfilePut.UpdateAsync(_client, _apiKey, $"/api/v1/author/{authorId}", qualityProfileId, ct);
+    public Task<bool> UpdateAuthorQualityProfileAsync(int authorId, int qualityProfileId, CancellationToken ct = default, int? expectedProfileId = null) =>
+        ArrQualityProfilePut.UpdateAsync(_client, _apiKey, $"/api/v1/author/{authorId}", qualityProfileId, ct, expectedProfileId);
 
     /// <summary>
     /// Sets <c>qualityProfileId</c> on a raw Readarr author payload so a PUT keeps
@@ -133,6 +133,13 @@ public class ReadarrClient
 
         return JsonConvert.DeserializeObject<ReadarrQueueResponse>(response.Content) ?? new ReadarrQueueResponse();
     }
+
+    public Task<List<ReadarrQueueItem>> GetAllQueueAsync(CancellationToken ct = default)
+        => ArrQueuePaging.ReadAllAsync(async (page, size) =>
+        {
+            var response = await GetQueueAsync(page, size, ct);
+            return (response.Page, response.PageSize, response.TotalRecords, response.Records);
+        }, item => item.Id, ct);
 
     public async Task<CommandResponse?> TriggerDownloadedBooksScanAsync(
         string path,
@@ -167,20 +174,19 @@ public class ReadarrClient
 
         var response = await ArrClientResponse.ExecuteAsync(_client, request, ct);
 
-        if (response.IsSuccessful && !string.IsNullOrEmpty(response.Content))
-        {
-            return JsonConvert.DeserializeObject<List<CommandStatus>>(response.Content) ?? new List<CommandStatus>();
-        }
-
-        return new List<CommandStatus>();
+        ArrClientResponse.EnsureSuccess(response, "GET commands");
+        if (string.IsNullOrWhiteSpace(response.Content)) throw new IOException("Arr returned no command inventory.");
+        return JsonConvert.DeserializeObject<List<CommandStatus>>(response.Content)
+            ?? throw new IOException("Arr returned an invalid command inventory.");
     }
 
-    public async Task<bool> DeleteFromQueueAsync(int id, bool removeFromClient = true, bool blocklist = false, CancellationToken ct = default)
+    public async Task<bool> DeleteFromQueueAsync(int id, bool removeFromClient = true, bool blocklist = false, CancellationToken ct = default, bool skipRedownload = false)
     {
         var request = new RestRequest($"/api/v1/queue/{id}", Method.Delete);
         AddApiKeyHeader(request);
         request.AddQueryParameter("removeFromClient", removeFromClient.ToString().ToLower());
         request.AddQueryParameter("blocklist", blocklist.ToString().ToLower());
+        request.AddQueryParameter("skipRedownload", skipRedownload.ToString().ToLowerInvariant());
         var response = await ArrClientResponse.ExecuteAsync(_client, request, ct);
         return response.IsSuccessful;
     }

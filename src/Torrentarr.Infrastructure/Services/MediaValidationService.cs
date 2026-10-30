@@ -2,6 +2,8 @@ using System.Diagnostics;
 using System.IO.Compression;
 using System.Runtime.InteropServices;
 using System.Text.Json;
+using System.Text.Json.Serialization;
+using System.Globalization;
 using System.Text.RegularExpressions;
 using Torrentarr.Core.Configuration;
 using Torrentarr.Core.Services;
@@ -17,6 +19,7 @@ public class MediaValidationService : IMediaValidationService
 {
     private readonly ILogger<MediaValidationService> _logger;
     private readonly TorrentarrConfig _config;
+    private readonly IOperationalIssueReporter? _issues;
     private readonly string _ffprobePath;
     private readonly string _ffprobeVersionPath;
     private readonly HashSet<string> _probedFiles = new(StringComparer.OrdinalIgnoreCase);
@@ -31,10 +34,11 @@ public class MediaValidationService : IMediaValidationService
 
     public MediaValidationService(
         ILogger<MediaValidationService> logger,
-        TorrentarrConfig config)
+        TorrentarrConfig config, IOperationalIssueReporter? issues = null)
     {
         _logger = logger;
         _config = config;
+        _issues = issues;
 
         var appDataPath = GetAppDataPath();
         _ffprobePath = Path.Combine(appDataPath, RuntimeInformation.IsOSPlatform(OSPlatform.Windows) ? "ffprobe.exe" : "ffprobe");
@@ -47,6 +51,7 @@ public class MediaValidationService : IMediaValidationService
 
         if (!IsFFprobeAvailable)
         {
+            if (_issues != null) await _issues.ReportAsync(ProbeIssue, cancellationToken);
             result.IsValid = true;
             result.ErrorMessage = "ffprobe not available";
             _logger.LogTrace("ffprobe not available, skipping validation for {File}", filePath);
@@ -106,15 +111,17 @@ public class MediaValidationService : IMediaValidationService
             result.IsValid = true;
             result.IsMediaFile = true;
             result.Format = probeResult.Format?.FormatName;
-            result.Duration = probeResult.Format?.Duration;
+            result.Duration = ParseDuration(probeResult.Format?.Duration);
             result.Codec = probeResult.Streams?.FirstOrDefault()?.CodecName;
             result.Width = probeResult.Streams?.FirstOrDefault()?.Width;
             result.Height = probeResult.Streams?.FirstOrDefault()?.Height;
 
+            if (_issues != null) await _issues.ResolveAsync(ProbeIssue, cancellationToken);
             _probedFiles.Add(filePath);
             _logger.LogTrace("Validated media file: {File} (Format: {Format}, Duration: {Duration})",
                 filePath, result.Format, result.Duration);
         }
+        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested) { throw; }
         catch (Exception ex)
         {
             result.IsValid = false;
@@ -219,14 +226,16 @@ public class MediaValidationService : IMediaValidationService
             var currentVersion = GetCurrentVersion();
             var latestVersion = await GetLatestVersionAsync(cancellationToken);
 
-            if (latestVersion == null)
+            if (latestVersion == null || string.IsNullOrWhiteSpace(latestVersion.Version) || latestVersion.Bin == null)
             {
-                _logger.LogWarning("Could not retrieve latest ffprobe version");
+                if (_issues != null) await _issues.ReportAsync(UpdateIssue, cancellationToken);
+                _logger.LogWarning("Could not retrieve usable ffprobe download metadata");
                 return false;
             }
 
             if (currentVersion == latestVersion.Version && IsFFprobeAvailable)
             {
+                if (_issues != null) await _issues.ResolveAsync(UpdateIssue, cancellationToken);
                 _logger.LogTrace("FFprobe is up to date: {Version}", currentVersion);
                 return true;
             }
@@ -234,6 +243,7 @@ public class MediaValidationService : IMediaValidationService
             var downloadUrl = GetDownloadUrl(latestVersion);
             if (downloadUrl == null)
             {
+                if (_issues != null) await _issues.ReportAsync(UpdateIssue, cancellationToken);
                 _logger.LogWarning("Could not determine ffprobe download URL for current platform");
                 return false;
             }
@@ -251,17 +261,21 @@ public class MediaValidationService : IMediaValidationService
                     File.SetUnixFileMode(_ffprobePath, UnixFileMode.UserRead | UnixFileMode.UserWrite | UnixFileMode.UserExecute |
                         UnixFileMode.GroupRead | UnixFileMode.GroupExecute | UnixFileMode.OtherRead | UnixFileMode.OtherExecute);
                 }
+                catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested) { throw; }
                 catch (Exception ex)
                 {
                     _logger.LogWarning(ex, "Failed to set ffprobe permissions");
                 }
             }
 
+            if (_issues != null) await _issues.ResolveAsync(UpdateIssue, cancellationToken);
             _logger.LogInformation("FFprobe updated to version {Version}", latestVersion.Version);
             return true;
         }
+        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested) { throw; }
         catch (Exception ex)
         {
+            if (_issues != null) await _issues.ReportAsync(UpdateIssue, cancellationToken);
             _logger.LogError(ex, "Failed to update ffprobe");
             return false;
         }
@@ -322,6 +336,7 @@ public class MediaValidationService : IMediaValidationService
             var response = await client.GetStringAsync("https://ffbinaries.com/api/v1/version/latest", cancellationToken);
             return JsonSerializer.Deserialize<FFprobeLatestVersion>(response);
         }
+        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested) { throw; }
         catch (Exception ex)
         {
             _logger.LogError(ex, "Failed to get latest ffprobe version");
@@ -397,33 +412,57 @@ public class MediaValidationService : IMediaValidationService
         return configPath;
     }
 
+    private static readonly OperationalIssueReport ProbeIssue = new("media.validation-unavailable", "automation", "Media inspection is unavailable",
+        "Files are accepted without ffprobe inspection.", "Install ffprobe or enable its automatic update, then validate a media file.", Severity: "warning", Target: "config");
+    private static readonly OperationalIssueReport UpdateIssue = new("ffprobe.update", "system", "ffprobe update failed",
+        "Media inspection may be unavailable or out of date.", "Check network access and the ffprobe installation directory.", Target: "logs");
+
+    internal static TimeSpan? ParseDuration(string? duration)
+    {
+        if (string.IsNullOrWhiteSpace(duration) || duration == "N/A") return null;
+        if (!double.TryParse(duration, NumberStyles.Float, CultureInfo.InvariantCulture, out var seconds)
+            || !double.IsFinite(seconds) || seconds < 0 || seconds >= TimeSpan.MaxValue.TotalSeconds)
+            throw new InvalidDataException("Invalid ffprobe duration.");
+        return TimeSpan.FromSeconds(seconds);
+    }
+
     private class FFprobeResult
     {
+        [JsonPropertyName("format")]
         public FFprobeFormat? Format { get; set; }
+        [JsonPropertyName("streams")]
         public List<FFprobeStream>? Streams { get; set; }
     }
 
     private class FFprobeFormat
     {
+        [JsonPropertyName("format_name")]
         public string? FormatName { get; set; }
-        public TimeSpan? Duration { get; set; }
+        [JsonPropertyName("duration")]
+        public string? Duration { get; set; }
     }
 
     private class FFprobeStream
     {
+        [JsonPropertyName("codec_name")]
         public string? CodecName { get; set; }
+        [JsonPropertyName("width")]
         public int? Width { get; set; }
+        [JsonPropertyName("height")]
         public int? Height { get; set; }
     }
 
     private class FFprobeVersionInfo
     {
+        [JsonPropertyName("version")]
         public string? Version { get; set; }
     }
 
     private class FFprobeLatestVersion
     {
+        [JsonPropertyName("version")]
         public string? Version { get; set; }
+        [JsonPropertyName("bin")]
         public Dictionary<string, Dictionary<string, string>>? Bin { get; set; }
     }
 }

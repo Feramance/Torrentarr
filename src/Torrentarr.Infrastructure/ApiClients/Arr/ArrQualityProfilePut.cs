@@ -18,7 +18,7 @@ internal static class ArrQualityProfilePut
         string apiKey,
         string resourcePath,
         int qualityProfileId,
-        CancellationToken ct)
+        CancellationToken ct, int? expectedProfileId = null)
     {
         var get = new RestRequest(resourcePath, Method.Get);
         get.AddHeader("X-Api-Key", apiKey);
@@ -36,6 +36,8 @@ internal static class ArrQualityProfilePut
             return false;
         }
 
+        // Recheck the same raw payload we will PUT, so a newly observed manual change is preserved.
+        if (expectedProfileId.HasValue && resource.Value<int?>("qualityProfileId") != expectedProfileId) return false;
         ApplyQualityProfileId(resource, qualityProfileId);
 
         var put = new RestRequest(resourcePath, Method.Put);

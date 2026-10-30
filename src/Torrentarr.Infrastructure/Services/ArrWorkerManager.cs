@@ -403,6 +403,13 @@ public class ArrWorkerManager : BackgroundService
                         s.Status = "Syncing database...";
                         s.SearchSummary = "Updating database";
                     });
+                    if (arrCfg.ReSearch)
+                    {
+                        using var retryScope = _scopeFactory.CreateScope();
+                        await SonarrRetryQueue.ExecuteAsync(retryScope.ServiceProvider.GetRequiredService<TorrentarrDbContext>(),
+                            retryScope.ServiceProvider.GetRequiredService<ISearchExecutor>(), instanceName, _logger, ct,
+                            arrCfg, retryScope.ServiceProvider.GetService<IOperationalIssueReporter>());
+                    }
                     await RunSyncAsync(instanceName, arrCfg, ct);
 
                     if (!arrCfg.ProcessingOnly && ShouldRunSearch(instanceName, arrCfg))

@@ -6,6 +6,7 @@ import {
   useState,
   type JSX,
 } from "react";
+import { colourLog, logLevel, newestAggregate } from "./logPresentation";
 import { LazyLog } from "@melloware/react-logviewer";
 import {
   getLogDelta,
@@ -36,7 +37,6 @@ type LiveTransport = "sse" | "poll";
 const DEFAULT_LOG_TAIL_LINES = 2000;
 const RING_BUFFER_MAX_LINES = 20_000;
 const POLL_INTERVAL_MS = 1800;
-const ANSI_CSI = new RegExp(`${String.fromCharCode(27)}\\[[0-9;]*m`, "g");
 const LEVEL_OPTIONS = [
   "ERROR",
   "WARNING",
@@ -76,35 +76,8 @@ function trimRingBuffer(lines: string[]): string[] {
   return lines.slice(lines.length - RING_BUFFER_MAX_LINES);
 }
 
-/** Strip ANSI CSI sequences so level filters work on colored log files. */
-function stripAnsi(text: string): string {
-  return text.replace(ANSI_CSI, "");
-}
-
 function lineMatchesLevel(line: string, levels: Set<string>): boolean {
-  if (levels.size === 0) {
-    return true;
-  }
-  const plain = stripAnsi(line);
-  const names: Record<string, string> = {
-    INF: "INFO",
-    WRN: "WARNING",
-    WARN: "WARNING",
-    ERR: "ERROR",
-    DBG: "DEBUG",
-    VRB: "TRACE",
-    FTL: "CRITICAL",
-    FATAL: "CRITICAL",
-    VERBOSE: "TRACE",
-  };
-  const match = plain.match(
-    /\[(?:[^\]]*?\s)?(TRACE|DEBUG|INFO|NOTICE|WARNING|WARN|ERROR|CRITICAL|FATAL|SUCCESS|INF|WRN|ERR|DBG|VRB|FTL)\s*\]|\b(TRACE|DEBUG|INFO|NOTICE|WARNING|ERROR|CRITICAL|SUCCESS)\s*:/i,
-  );
-  if (match) {
-    const level = (match[1] ?? match[2]).toUpperCase();
-    return levels.has(names[level] ?? level);
-  }
-  return false;
+  return levels.size === 0 || levels.has(logLevel(line) ?? "");
 }
 
 export function LogsView({ active }: LogsViewProps): JSX.Element {
@@ -115,7 +88,7 @@ export function LogsView({ active }: LogsViewProps): JSX.Element {
     return () => document.removeEventListener("visibilitychange", changed);
   }, []);
   const [files, setFiles] = useState<string[]>([]);
-  const [selected, setSelected] = useState<string>("All.log");
+  const [selected, setSelected] = useState<string>("");
   const [lines, setLines] = useState<string[]>([]);
   const [follow, setFollow] = useState(true);
   const [liveUpdates, setLiveUpdates] = useState(true);
@@ -141,6 +114,7 @@ export function LogsView({ active }: LogsViewProps): JSX.Element {
   /** Generation of the loaded JSON tail; zero while replacing the window. */
   const [tailReady, setTailReady] = useState(0);
 
+  const followAggregateRef = useRef(true);
   const linesRef = useRef<string[]>([]);
   const headBytesRef = useRef(0);
   const windowEpoch = useRef(0);
@@ -238,30 +212,38 @@ export function LogsView({ active }: LogsViewProps): JSX.Element {
     [],
   );
 
-  const loadList = useCallback(async () => {
-    setLoadingList(true);
-    try {
-      const data = await getLogs();
-      const list = (data.files ?? []).map((file) =>
-        typeof file === "string" ? file : file.name,
-      );
-      setFiles(list);
-      if (list.length) {
-        setSelected((prev) => {
-          if (prev && list.includes(prev)) {
-            return prev;
-          }
-          return list.find((file) => file === "All.log") ?? list[0];
-        });
-      } else {
-        setSelected("");
+  const loadList = useCallback(
+    async (background = false) => {
+      if (!background) setLoadingList(true);
+      try {
+        const data = await getLogs();
+        const list = (data.files ?? []).map((file) =>
+          typeof file === "string" ? file : file.name,
+        );
+        setFiles(list);
+        if (list.length) {
+          setSelected((prev) => {
+            const aggregate = newestAggregate(list);
+            if (followAggregateRef.current && aggregate) return aggregate;
+            if (prev && list.includes(prev)) {
+              return prev;
+            }
+            return (
+              aggregate ?? list.find((file) => file === "All.log") ?? list[0]
+            );
+          });
+        } else {
+          setSelected("");
+        }
+      } catch (error) {
+        if (!background)
+          push(describeError(error, "Failed to refresh log list"), "error");
+      } finally {
+        if (!background) setLoadingList(false);
       }
-    } catch (error) {
-      push(describeError(error, "Failed to refresh log list"), "error");
-    } finally {
-      setLoadingList(false);
-    }
-  }, [push]);
+    },
+    [push],
+  );
 
   useEffect(() => {
     if (!active) return;
@@ -544,6 +526,13 @@ export function LogsView({ active }: LogsViewProps): JSX.Element {
     liveActive && (transport === "poll" || forcePoll) ? POLL_INTERVAL_MS : null,
   );
 
+  useInterval(
+    () => {
+      void loadList(true);
+    },
+    liveActive && follow && followAggregateRef.current ? 15000 : null,
+  );
+
   const handleRefreshLogs = useCallback(() => {
     setForcePoll(false);
     sseFailCountRef.current = 0;
@@ -589,10 +578,16 @@ export function LogsView({ active }: LogsViewProps): JSX.Element {
   }, []);
 
   const filteredText = useMemo(() => {
-    const filtered =
-      levelFilters.size === 0
-        ? lines
-        : lines.filter((line) => lineMatchesLevel(line, levelFilters));
+    let currentLevel: string | undefined;
+    const filtered = lines.filter((line) => {
+      currentLevel = logLevel(line) ?? currentLevel;
+      return (
+        levelFilters.size === 0 ||
+        (currentLevel
+          ? levelFilters.has(currentLevel)
+          : lineMatchesLevel(line, levelFilters))
+      );
+    });
     return filtered.join("\n");
   }, [lines, levelFilters]);
 
@@ -623,6 +618,7 @@ export function LogsView({ active }: LogsViewProps): JSX.Element {
 
   const openSearchMatch = useCallback(
     async (match: LogSearchMatch) => {
+      followAggregateRef.current = false;
       const epoch = ++windowEpoch.current;
       closeStream();
       setOffsetFromEnd(1);
@@ -661,7 +657,10 @@ export function LogsView({ active }: LogsViewProps): JSX.Element {
       : "Paused"
     : "Paused";
 
-  const viewerText = filteredText || " ";
+  const viewerText = useMemo(
+    () => colourLog(filteredText || " ", isDark),
+    [filteredText, isDark],
+  );
 
   return (
     <section className="card logs-view">
@@ -675,6 +674,7 @@ export function LogsView({ active }: LogsViewProps): JSX.Element {
               options={files.map((f) => ({ value: f, label: f }))}
               value={selected ? { value: selected, label: selected } : null}
               onChange={(option) => {
+                followAggregateRef.current = false;
                 const next = option?.value || "";
                 if (next !== selected) {
                   setSelected(next);

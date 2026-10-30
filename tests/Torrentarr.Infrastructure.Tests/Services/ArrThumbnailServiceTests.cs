@@ -276,6 +276,33 @@ public class ArrThumbnailServiceTests : IDisposable
             $"/api/{apiVersion}/system/status", $"/api/{apiVersion}/MediaCover/42/poster.jpg");
     }
 
+    [Theory]
+    [InlineData(false, "ArrOpen")]
+    [InlineData(true, "ArrOpenSkipTls")]
+    public async Task ThumbnailUsesInstanceTlsClient_AndCachedReadsDoNotConfirmRecovery(bool skip, string expected)
+    {
+        var id = skip ? 8501 : 8502;
+        ClearThumbnailCache("radarr", "radarr", id);
+        await using var db = CreateDb();
+        db.Movies.Add(new() { EntryId = id, ArrId = 42, ArrInstance = "radarr", Title = "Poster" }); await db.SaveChangesAsync();
+        var config = LoadConfig(); config.ArrInstances.Values.Single().SkipTLSVerify = skip;
+        var failed = true;
+        var factory = new StubHttpClientFactory(_ => failed ? new HttpResponseMessage(HttpStatusCode.NotFound)
+            : new HttpResponseMessage(HttpStatusCode.OK) { Content = new ByteArrayContent(FakeJpegBytes()) });
+        var issues = new Moq.Mock<Torrentarr.Core.Services.IOperationalIssueReporter>();
+        issues.Setup(r => r.ReportAsync(Moq.It.IsAny<Torrentarr.Core.Services.OperationalIssueReport>(), Moq.It.IsAny<CancellationToken>())).Returns(Task.CompletedTask);
+        issues.Setup(r => r.ResolveAsync(Moq.It.IsAny<Torrentarr.Core.Services.OperationalIssueReport>(), Moq.It.IsAny<CancellationToken>())).Returns(Task.CompletedTask);
+        var service = new ArrThumbnailService(db, config, factory, issues.Object);
+        (await service.GetThumbnailAsync("radarr", "radarr", id)).Should().BeNull();
+        issues.Verify(r => r.ReportAsync(Moq.It.Is<Torrentarr.Core.Services.OperationalIssueReport>(i => i.Code == "thumbnail.fetch"), Moq.It.IsAny<CancellationToken>()), Moq.Times.Once());
+        failed = false;
+        (await service.GetThumbnailAsync("radarr", "radarr", id)).Should().NotBeNull();
+        var remoteCalls = factory.Names.Count;
+        (await service.GetThumbnailAsync("radarr", "radarr", id)).Should().NotBeNull();
+        factory.Names.Should().HaveCount(remoteCalls).And.OnlyContain(n => n == expected);
+        issues.Verify(r => r.ResolveAsync(Moq.It.IsAny<Torrentarr.Core.Services.OperationalIssueReport>(), Moq.It.IsAny<CancellationToken>()), Moq.Times.Once());
+    }
+
     private static string Sha256Hex(string input)
         => Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(input))).ToLowerInvariant();
 
@@ -296,6 +323,7 @@ public class ArrThumbnailServiceTests : IDisposable
 
     private sealed class StubHttpClientFactory(Func<HttpRequestMessage, HttpResponseMessage> handler) : IHttpClientFactory
     {
-        public HttpClient CreateClient(string name) => new HttpClient(new StubHandler(handler));
+        public List<string> Names { get; } = [];
+        public HttpClient CreateClient(string name) { Names.Add(name); return new HttpClient(new StubHandler(handler)); }
     }
 }
