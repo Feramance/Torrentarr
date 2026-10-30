@@ -1234,11 +1234,10 @@ foreach (var prefix in new[] { "/web", "/api" })
         if (client.Disabled || string.IsNullOrWhiteSpace(client.Host) || client.Host == "CHANGE_ME")
             return Results.Conflict(new { error = "Torrent client is disabled or has no configured endpoint." });
         var connected = await manager.ForceReconnectAsync(id, client, ct);
+        var error = manager.GetConnectionErrors().GetValueOrDefault(id, "Connection unavailable.");
         return connected
             ? Results.Ok(new { id, connected = true })
-            : Results.Json(new { id, connected = false,
-                error = manager.GetConnectionErrors().GetValueOrDefault(id, "Connection unavailable.") },
-                statusCode: StatusCodes.Status503ServiceUnavailable);
+            : Results.Json(new { id, connected = false, error }, statusCode: StatusCodes.Status503ServiceUnavailable);
     });
 }
 app.MapTorrentMaintenanceEndpoints("/web", standalone: true);
