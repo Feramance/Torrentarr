@@ -205,7 +205,13 @@ public sealed class MaintenanceCoordinator : BackgroundService, IMaintenanceCoor
                 {
                     result.State = "blocked";
                     var missing = new List<string>();
-                    if (!inventory.IsComplete) missing.Add("global torrent ownership inventory is incomplete; verify every enabled torrent client can be listed");
+                    if (!inventory.IsComplete)
+                    {
+                        var failures = inventory.Diagnostics.Where(d => d.Severity == "error").Select(d => $"{d.ClientInstanceId}: {d.Code}: {d.Message}").Distinct().Take(8).ToArray();
+                        missing.Add(failures.Length > 0
+                            ? $"global torrent ownership inventory is incomplete ({string.Join("; ", failures)})"
+                            : "global torrent ownership inventory is incomplete; inspect client and file enumeration diagnostics");
+                    }
                     if (cfg.Maintenance.PathMappings.Count == 0) missing.Add("Maintenance.PathMappings has no entries");
                     if (!cfg.Maintenance.RecycleBin.Enabled) missing.Add("Maintenance.RecycleBin.Enabled is false");
                     if (cfg.Maintenance.Orphans.ScanRoots.Count == 0) missing.Add("Maintenance.Orphans.ScanRoots has no entries");
