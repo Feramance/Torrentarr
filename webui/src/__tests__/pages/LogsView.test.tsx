@@ -14,9 +14,7 @@ import * as api from "../../api/client";
 
 vi.mock("@melloware/react-logviewer", () => ({
   LazyLog: ({ text }: { text: string }) => (
-    <div data-testid="lazy-log">
-      {text.replace(/\x1b\[[0-9;]*m/g, "")}
-    </div>
+    <div data-testid="lazy-log">{text.replace(/\x1b\[[0-9;]*m/g, "")}</div>
   ),
 }));
 vi.mock("../../api/client", () => ({
@@ -364,7 +362,9 @@ it("colours structured log fields and removes padded logger spacing", async () =
   const rendered = colourLog(source, true);
   expect(rendered).toContain("\x1b[95m[DEBUG]\x1b[0m");
   expect(rendered).toContain("\x1b[94m[Torrentarr]\x1b[0m");
-  expect(rendered).toContain("\x1b[37mConnection \x1b[92mstarted\x1b[37m.\x1b[0m");
+  expect(rendered).toContain(
+    "\x1b[37mConnection \x1b[92mstarted\x1b[37m.\x1b[0m",
+  );
   expect(rendered).not.toContain("Torrentarr        ");
   const precoloured = "\x1b[31m" + source + "\x1b[0m";
   expect(colourLog(precoloured, true)).toBe(precoloured);
