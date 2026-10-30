@@ -34,12 +34,10 @@ const SUCCESS =
 function colourMessage(message: string, baseColour: string): string {
   const highlighted = message.replace(MESSAGE_TOKENS, (token) => {
     let colour: string;
-    if (token.startsWith('"') || token.startsWith("'"))
-      colour = "33";
+    if (token.startsWith('"') || token.startsWith("'")) colour = "33";
     else if (FAILURE.test(token)) colour = "31";
     else if (SUCCESS.test(token)) colour = "32";
-    else if (/^\d/.test(token) || /^[0-9a-f]{8}-/i.test(token))
-      colour = "36";
+    else if (/^\d/.test(token) || /^[0-9a-f]{8}-/i.test(token)) colour = "36";
     else colour = "34";
     return "\x1b[" + colour + "m" + token + "\x1b[" + baseColour + "m";
   });
