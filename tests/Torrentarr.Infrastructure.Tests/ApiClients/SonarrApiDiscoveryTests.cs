@@ -540,10 +540,12 @@ public sealed class SonarrApiDiscoveryTests : IDisposable
     [InlineData(true)]
     public async Task Blocklist_AllMatchingSonarrRowsAreStagedBeforeAnyRemoval(bool failDelete)
     {
-        _queueJson = """{"records":[{"id":11,"downloadId":"ABC","seriesId":7,"episodeIds":[1,2]},
+        _queueJson = """
+            {"records":[{"id":11,"downloadId":"ABC","seriesId":7,"episodeIds":[1,2]},
             {"id":12,"downloadId":"abc","seriesId":7,"episodeIds":[2,3]},
             {"id":13,"downloadId":"ABC","seriesId":7,"episodeIds":[4]},
-            {"id":14,"downloadId":"OTHER","seriesId":7,"episodeIds":[99]}]}""";
+            {"id":14,"downloadId":"OTHER","seriesId":7,"episodeIds":[99]}]}
+            """;
         _commandsJson = """[{"name":"EpisodeSearch","status":"started"}]""";
         _failWrites = failDelete;
 
@@ -576,9 +578,11 @@ public sealed class SonarrApiDiscoveryTests : IDisposable
     [InlineData(true)]
     public async Task Blocklist_NoReSearchDeletesAllMatchingRowsAndReportsPartialFailure(bool failDelete)
     {
-        _queueJson = """{"records":[{"id":11,"downloadId":"ABC","seriesId":7,"episodeIds":[1]},
+        _queueJson = """
+            {"records":[{"id":11,"downloadId":"ABC","seriesId":7,"episodeIds":[1]},
             {"id":12,"downloadId":"abc","seriesId":7,"episodeIds":[2]},
-            {"id":13,"downloadId":"OTHER","seriesId":7,"episodeIds":[3]}]}""";
+            {"id":13,"downloadId":"OTHER","seriesId":7,"episodeIds":[3]}]}
+            """;
         _failWrites = failDelete;
         var cfg = new TorrentarrConfig();
         cfg.ArrInstances["Sonarr-test"] = new ArrInstanceConfig
@@ -600,9 +604,11 @@ public sealed class SonarrApiDiscoveryTests : IDisposable
     [InlineData("series")]
     public async Task Blocklist_UnidentifiableMultipleSeriesNeverDeletesOrStagesPartialRecovery(string mode)
     {
-        _queueJson = """{"records":[{"id":11,"downloadId":"ABC","seriesId":7,"episodeIds":[1]},
+        _queueJson = """
+            {"records":[{"id":11,"downloadId":"ABC","seriesId":7,"episodeIds":[1]},
             {"id":12,"downloadId":"ABC","seriesId":8},
-            {"id":13,"downloadId":"ABC","seriesId":9}]}""";
+            {"id":13,"downloadId":"ABC","seriesId":9}]}
+            """;
         var cfg = new TorrentarrConfig();
         var arr = new ArrInstanceConfig { Type = "sonarr", URI = _url, APIKey = _key, Category = "tv", ReSearch = true };
         arr.Search.SearchBySeries = mode;
@@ -622,9 +628,11 @@ public sealed class SonarrApiDiscoveryTests : IDisposable
     [InlineData("series")]
     public async Task CustomFormatUnmet_ConsidersEveryQueueRowForSameDownload(string mode)
     {
-        _queueJson = """{"records":[{"id":11,"downloadId":"ABC","seriesId":7,"episodeIds":[1],"customFormatScore":50},
+        _queueJson = """
+            {"records":[{"id":11,"downloadId":"ABC","seriesId":7,"episodeIds":[1],"customFormatScore":50},
             {"id":12,"downloadId":"ABC","seriesId":7,"episodeIds":[2],"customFormatScore":0},
-            {"id":13,"downloadId":"OTHER","seriesId":7,"episodeIds":[3],"customFormatScore":0}]}""";
+            {"id":13,"downloadId":"OTHER","seriesId":7,"episodeIds":[3],"customFormatScore":0}]}
+            """;
         var cfg = new TorrentarrConfig();
         var arr = new ArrInstanceConfig { Type = "sonarr", URI = _url, APIKey = _key, Category = "tv" };
         arr.Search.SearchBySeries = mode;
