@@ -770,6 +770,75 @@ public sealed class TorrentProcessorTests : IDisposable
         positive.Should().BeFalse("metadata stall age is based on AddedOn, not LastActivity");
     }
 
+    [Fact]
+    public async Task FailedSafeDeletion_LogsExactReasonOncePerThrottleWindow()
+    {
+        var torrent = new TorrentInfo
+        {
+            Hash = "blocked-removal", Name = "Movie", Category = "movies", State = "downloading",
+            ClientInstanceId = "qBit", QBitInstanceName = "qBit",
+            AddedOn = DateTimeOffset.UtcNow.AddHours(-2).ToUnixTimeSeconds(),
+            LastActivity = DateTimeOffset.UtcNow.AddHours(-1).ToUnixTimeSeconds()
+        };
+        var client = new StubQBittorrentClient(torrent);
+        var seeding = new Mock<ISeedingService>();
+        seeding.Setup(x => x.CanDeleteTorrentForIntentAsync(It.IsAny<TorrentInfo>(),
+            TorrentRemovalIntent.RejectedByAllowlist, It.IsAny<string>(), It.IsAny<CancellationToken>())).ReturnsAsync(true);
+        var deletion = new Mock<ISafeDeletionService>();
+        deletion.Setup(x => x.RemoveTorrentForIntentAsync("qBit", torrent.Hash, true,
+            TorrentRemovalIntent.RejectedByAllowlist, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new SafeDeletionResult(false, true, 0, "Recycle-bin content removal is disabled."));
+        var logger = new Mock<Microsoft.Extensions.Logging.ILogger<TorrentProcessor>>();
+        var processor = new TorrentProcessor(logger.Object,
+            new QBittorrentConnectionManager(NullLogger<QBittorrentConnectionManager>.Instance), _db,
+            new TorrentarrConfig(), new TorrentCacheService(NullLogger<TorrentCacheService>.Instance),
+            new DatabaseRestartCoordinator(), seedingService: seeding.Object, safeDeletion: deletion.Object);
+        var method = typeof(TorrentProcessor).GetMethod("DeleteTorrentFromClientAsync",
+            BindingFlags.NonPublic | BindingFlags.Instance)!;
+        for (var i = 0; i < 2; i++)
+        {
+            var task = (Task<bool>)method.Invoke(processor,
+                [client, torrent, true, CancellationToken.None, null, TorrentRemovalIntent.RejectedByAllowlist])!;
+            (await task).Should().BeFalse();
+        }
+        deletion.Verify(x => x.RemoveTorrentForIntentAsync("qBit", torrent.Hash, true,
+            TorrentRemovalIntent.RejectedByAllowlist, It.IsAny<CancellationToken>()), Times.Exactly(2));
+        var warnings = logger.Invocations.Where(x => x.Method.Name == "Log"
+            && x.Arguments[0] is Microsoft.Extensions.Logging.LogLevel.Warning).ToList();
+        warnings.Should().ContainSingle();
+        warnings[0].Arguments[2]?.ToString().Should().Contain("Recycle-bin content removal is disabled");
+    }
+
+    [Fact]
+    public async Task StalledRemoval_ForwardsIntentToSafeDeletion()
+    {
+        var torrent = new TorrentInfo
+        {
+            Hash = "stalled-removal", Name = "Stalled", Category = "tv", State = "stalledDL",
+            ClientInstanceId = "qBit", QBitInstanceName = "qBit",
+            AddedOn = DateTimeOffset.UtcNow.AddHours(-2).ToUnixTimeSeconds(),
+            LastActivity = DateTimeOffset.UtcNow.AddHours(-1).ToUnixTimeSeconds()
+        };
+        var client = new StubQBittorrentClient(torrent);
+        var seeding = new Mock<ISeedingService>();
+        seeding.Setup(x => x.CanDeleteTorrentForIntentAsync(It.IsAny<TorrentInfo>(),
+            TorrentRemovalIntent.StalledDownload, It.IsAny<string>(), It.IsAny<CancellationToken>())).ReturnsAsync(true);
+        var deletion = new Mock<ISafeDeletionService>();
+        deletion.Setup(x => x.RemoveTorrentForIntentAsync("qBit", torrent.Hash, true,
+            TorrentRemovalIntent.StalledDownload, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new SafeDeletionResult(true, false, 0));
+        var processor = new TorrentProcessor(NullLogger<TorrentProcessor>.Instance,
+            new QBittorrentConnectionManager(NullLogger<QBittorrentConnectionManager>.Instance), _db,
+            new TorrentarrConfig(), new TorrentCacheService(NullLogger<TorrentCacheService>.Instance),
+            new DatabaseRestartCoordinator(), seedingService: seeding.Object, safeDeletion: deletion.Object);
+        var method = typeof(TorrentProcessor).GetMethod("DeleteTorrentFromClientAsync",
+            BindingFlags.NonPublic | BindingFlags.Instance)!;
+        var task = (Task<bool>)method.Invoke(processor,
+            [client, torrent, true, CancellationToken.None, null, TorrentRemovalIntent.StalledDownload])!;
+        (await task).Should().BeTrue();
+        deletion.VerifyAll();
+    }
+
     private static void RegisterTestClient(
         QBittorrentConnectionManager manager,
         string instanceName,

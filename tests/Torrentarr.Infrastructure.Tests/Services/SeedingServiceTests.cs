@@ -107,6 +107,56 @@ public class SeedingServiceTests
             .MaxUploadRatio.Should().Be(3.0);
     }
 
+    [Fact]
+    public async Task StalledRemoval_RechecksStateAndAgeWithoutRatioRemovalPolicy()
+    {
+        var now = DateTimeOffset.UtcNow.ToUnixTimeSeconds();
+        var config = new TorrentarrConfig();
+        config.QBitInstances["qBit"] = new QBitConfig
+        {
+            CategorySeeding = new CategorySeedingConfig
+            {
+                RemoveTorrent = -1, StalledDelay = 5, IgnoreTorrentsYoungerThan = 60
+            }
+        };
+        var service = CreateService(config);
+        var torrent = new TorrentInfo
+        {
+            Hash = "stalled", ClientInstanceId = "qBit", QBitInstanceName = "qBit",
+            Category = "tv", State = "stalledDL", Progress = 0.2, IsPrivate = false,
+            AddedOn = now - 7200, LastActivity = now - 3600
+        };
+        (await service.CanDeleteTorrentAsync(torrent, "seeding")).Should().BeFalse();
+        (await service.CanDeleteTorrentForIntentAsync(torrent, TorrentRemovalIntent.StalledDownload, "stalled")).Should().BeTrue();
+        torrent.LastActivity = now - 10;
+        (await service.CanDeleteTorrentForIntentAsync(torrent, TorrentRemovalIntent.StalledDownload, "stalled")).Should().BeFalse();
+        torrent.LastActivity = now - 3600;
+        torrent.State = "downloading";
+        torrent.Availability = 1;
+        (await service.CanDeleteTorrentForIntentAsync(torrent, TorrentRemovalIntent.StalledDownload, "stalled")).Should().BeFalse();
+    }
+
+    [Fact]
+    public async Task RejectedAllowlist_RemovalRequiresAgeAndTagClearanceButNotRatioPolicy()
+    {
+        var now = DateTimeOffset.UtcNow.ToUnixTimeSeconds();
+        var config = new TorrentarrConfig();
+        config.QBitInstances["qBit"] = new QBitConfig { CategorySeeding = new CategorySeedingConfig { RemoveTorrent = -1 } };
+        var service = CreateService(config);
+        var torrent = new TorrentInfo
+        {
+            Hash = "excluded", ClientInstanceId = "qBit", QBitInstanceName = "qBit",
+            Category = "tv", State = "downloading", Progress = 0.1, IsPrivate = false,
+            AddedOn = now - 7200, LastActivity = now - 3600
+        };
+        (await service.CanDeleteTorrentForIntentAsync(torrent, TorrentRemovalIntent.RejectedByAllowlist, "allowlist")).Should().BeTrue();
+        torrent.Tags = "qBitrr-ignored";
+        (await service.CanDeleteTorrentForIntentAsync(torrent, TorrentRemovalIntent.RejectedByAllowlist, "allowlist")).Should().BeFalse();
+        torrent.Tags = "";
+        torrent.AddedOn = now - 2;
+        (await service.CanDeleteTorrentForIntentAsync(torrent, TorrentRemovalIntent.RejectedByAllowlist, "allowlist")).Should().BeFalse();
+    }
+
     // ── ExtractTrackerHost ─────────────────────────────────────────────────────
 
     [Theory]
