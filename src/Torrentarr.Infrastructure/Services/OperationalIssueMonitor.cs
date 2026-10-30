@@ -82,8 +82,8 @@ public sealed class OperationalIssueMonitor(IServiceScopeFactory scopes, IOperat
         }
         if (services.GetService<IMaintenanceCoordinator>() is { } maintenance)
             foreach (var latest in maintenance.GetHistory().Where(r => r.CompletedAt.HasValue)
-                .GroupBy(run => System.Text.Json.JsonSerializer.Serialize(run.ClientInstanceIds.Select(id => id.ToUpperInvariant()).Distinct().Order()))
-                .Select(group => (Scope: group.Key, Run: group.MaxBy(run => run.CompletedAt)!)))
+                .OrderBy(run => run.CompletedAt)
+                .Select(run => (Scope: System.Text.Json.JsonSerializer.Serialize(run.ClientInstanceIds.Select(id => id.ToUpperInvariant()).Distinct().Order()), Run: run)))
             {
                 if (_maintenanceRuns.GetValueOrDefault(latest.Scope) == latest.Run.RunId || latest.Run.Result is not ("success" or "partial" or "failed")) continue;
                 // History has aggregate counts, so report once for the selected set rather than blaming each client.
