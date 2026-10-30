@@ -45,14 +45,21 @@ public sealed class LiveConfigurationRuntime(TorrentarrConfig config, IConfigRel
                         if (services.GetService<QBitCategoryWorkerManager>() is { } categories)
                             await categories.SyncWorkersWithConfigAsync();
                         if (connected < expected)
-                            throw new IOException("Torrent client connection settings could not be activated.");
+                            {
+                            var unavailable = desired.Where(pair => !pair.Value.Disabled && pair.Value.Host != "CHANGE_ME"
+                                && !clients.IsConnected(pair.Key)).Select(pair => pair.Key).ToArray();
+                            var failures = (clients as QBittorrentConnectionManager)?.GetConnectionErrors();
+                            var detail = string.Join("; ", unavailable.Select(id =>
+                                $"{id}: {(failures != null && failures.TryGetValue(id, out var error) ? error : "client not connected")}"));
+                            throw new IOException($"Configuration revision {revision}: {unavailable.Length} of {expected} enabled torrent clients unavailable. {detail}");
+                        }
                         reloader.Acknowledge("runtime", revision);
                         applied = revision;
                     }
                     catch (Exception ex) when (ex is not OperationCanceledException)
                     {
-                        logger.LogWarning("Configuration runtime update failed ({ErrorType})", ex.GetType().Name);
-                        reloader.Acknowledge("runtime", revision, "Runtime configuration could not be applied.");
+                        logger.LogWarning(ex, "Configuration runtime update failed at revision {Revision}", revision);
+                        reloader.Acknowledge("runtime", revision, ex.Message);
                         await Task.Delay(TimeSpan.FromSeconds(5), stoppingToken);
                         continue;
                     }
