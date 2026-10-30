@@ -7,6 +7,13 @@ namespace Torrentarr.Core.Services;
 /// Service for managing torrent seeding rules and Hit &amp; Run protection.
 /// Matches qBitrr's qbit_category_manager.py implementation exactly.
 /// </summary>
+public enum TorrentRemovalIntent
+{
+    SeedingLimit,
+    StalledDownload,
+    RejectedByAllowlist
+}
+
 public interface ISeedingService
 {
     /// <summary>
@@ -74,6 +81,10 @@ public interface ISeedingService
     /// <summary>Require HnR, effective age/stalled grace, and seeding policy clearance for any deletion.</summary>
     Task<bool> CanDeleteTorrentAsync(TorrentInfo torrent, string reason, CancellationToken cancellationToken = default)
         => Task.FromResult(false);
+
+    /// <summary>Fail-closed final authorization for explicitly triggered removals.</summary>
+    Task<bool> CanDeleteTorrentForIntentAsync(TorrentInfo torrent, TorrentRemovalIntent intent,
+        string reason, CancellationToken cancellationToken = default) => Task.FromResult(false);
 
     /// <summary>
     /// Apply seeding limits (ratio, time, rate limits) to a torrent.

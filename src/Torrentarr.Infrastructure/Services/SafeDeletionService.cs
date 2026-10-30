@@ -35,10 +35,15 @@ public sealed class SafeDeletionService : ISafeDeletionService
     public Task<SafeDeletionResult> RemoveTorrentAsync(string clientInstanceId, string hash, bool removeContent, CancellationToken ct = default)
         => RemoveAsync(clientInstanceId, hash, removeContent, null, ct);
 
+    public Task<SafeDeletionResult> RemoveTorrentForIntentAsync(string clientInstanceId, string hash, bool removeContent,
+        TorrentRemovalIntent intent, CancellationToken ct = default)
+        => RemoveAsync(clientInstanceId, hash, removeContent, null, ct, intent);
+
     public Task<SafeDeletionResult> RemoveMaintenanceTorrentAsync(string clientInstanceId, string hash, bool removeContent, TorrentInventory inventory, CancellationToken ct = default)
         => RemoveAsync(clientInstanceId, hash, removeContent, inventory, ct);
 
-    private async Task<SafeDeletionResult> RemoveAsync(string clientInstanceId, string hash, bool removeContent, TorrentInventory? validatedInventory, CancellationToken ct)
+    private async Task<SafeDeletionResult> RemoveAsync(string clientInstanceId, string hash, bool removeContent,
+        TorrentInventory? validatedInventory, CancellationToken ct, TorrentRemovalIntent intent = TorrentRemovalIntent.SeedingLimit)
     {
         using var configuration = _config.BeginOperation();
         using var processing = ConfigMutationGuard.EnterProcessing();
@@ -52,8 +57,9 @@ public sealed class SafeDeletionService : ISafeDeletionService
             && t.Torrent.Hash.Equals(hash, StringComparison.OrdinalIgnoreCase))?.Torrent
             ?? (await client.GetTorrentsAsync(cancellationToken: ct))
                 .FirstOrDefault(t => t.Hash.Equals(hash, StringComparison.OrdinalIgnoreCase));
-        if (expected == null || !await ProtectionAllowsAsync(clientInstanceId, hash, ct, expected))
-            return new(false, true, 0, "Removal protections are unmet, unknown, or changed; torrent and content preserved.");
+        if (expected == null) return new(false, true, 0, "Torrent no longer exists in the client.");
+        if (!await ProtectionAllowsAsync(clientInstanceId, hash, ct, expected, intent: intent))
+            return new(false, true, 0, $"Final {intent} protection clearance rejected or changed (HnR, age, tags, torrent identity or configuration); torrent and content preserved.");
 
         if (!removeContent)
             return await client.DeleteTorrentsAsync([hash], false, ct)
@@ -95,7 +101,7 @@ public sealed class SafeDeletionService : ISafeDeletionService
                 || !owner.Torrent.ClientInstanceId.Equals(clientInstanceId, StringComparison.OrdinalIgnoreCase)));
         if (shared)
         {
-            if (!await ProtectionAllowsAsync(clientInstanceId, hash, ct, expected)) return new(false, true, 0, "Removal clearance changed.");
+            if (!await ProtectionAllowsAsync(clientInstanceId, hash, ct, expected, intent: intent)) return new(false, true, 0, "Removal clearance changed.");
             var removed = await client.DeleteTorrentsAsync([hash], false, ct);
             return removed
                 ? new(true, true, 0)
@@ -114,7 +120,7 @@ public sealed class SafeDeletionService : ISafeDeletionService
         string? stateBeforeOwnedPause = null;
         try
         {
-            if (!await ProtectionAllowsAsync(clientInstanceId, hash, ct, expected))
+            if (!await ProtectionAllowsAsync(clientInstanceId, hash, ct, expected, intent: intent))
                 throw new IOException("Removal clearance changed before pause.");
             var current = (await client.GetTorrentsAsync(cancellationToken: ct))
                 .FirstOrDefault(t => t.Hash.Equals(hash, StringComparison.OrdinalIgnoreCase))
@@ -135,7 +141,7 @@ public sealed class SafeDeletionService : ISafeDeletionService
                 stateBeforeOwnedPause = expected.State;
                 expected.State = current.State;
             }
-            if (!await ProtectionAllowsAsync(clientInstanceId, hash, ct, expected, stateBeforeOwnedPause))
+            if (!await ProtectionAllowsAsync(clientInstanceId, hash, ct, expected, stateBeforeOwnedPause, intent))
                 throw new IOException("Removal clearance changed before recycling.");
             foreach (var source in CollapseRoots(localFiles))
             {
@@ -153,7 +159,7 @@ public sealed class SafeDeletionService : ISafeDeletionService
                 RemoveEmptyParents(Path.GetDirectoryName(source), cfg);
             }
             ct.ThrowIfCancellationRequested();
-            if (!await ProtectionAllowsAsync(clientInstanceId, hash, ct, expected, stateBeforeOwnedPause))
+            if (!await ProtectionAllowsAsync(clientInstanceId, hash, ct, expected, stateBeforeOwnedPause, intent))
                 throw new IOException("Removal clearance changed before client removal.");
             removalAttempted = true;
             if (!await client.DeleteTorrentsAsync([hash], false, ct))
@@ -199,7 +205,8 @@ public sealed class SafeDeletionService : ISafeDeletionService
         }
     }
 
-    private async Task<bool> ProtectionAllowsAsync(string instanceId, string hash, CancellationToken ct, TorrentInfo? expected = null, string? stateBeforeOwnedPause = null)
+    private async Task<bool> ProtectionAllowsAsync(string instanceId, string hash, CancellationToken ct, TorrentInfo? expected = null,
+        string? stateBeforeOwnedPause = null, TorrentRemovalIntent intent = TorrentRemovalIntent.SeedingLimit)
     {
         if (_scopes == null || _config.Revision != _config.LatestRevision || _config.GetTorrentClient(instanceId)?.Disabled != false) return false;
         try
@@ -214,7 +221,11 @@ public sealed class SafeDeletionService : ISafeDeletionService
             current.ClientInstanceId = instanceId;
             // An owned pause preserves validated stalled-idle evidence; all other fields and protection stay fresh.
             if (stateBeforeOwnedPause != null && SeedingService.IsStalledUploadState(stateBeforeOwnedPause)) current.State = stateBeforeOwnedPause;
-            return await seeding.CanDeleteTorrentAsync(current, "final safe-removal boundary", ct);
+            var cleared = intent == TorrentRemovalIntent.SeedingLimit
+                ? await seeding.CanDeleteTorrentAsync(current, "final safe-removal boundary", ct)
+                : await seeding.CanDeleteTorrentForIntentAsync(current, intent, "final safe-removal boundary", ct);
+            if (!cleared) _logger.LogDebug("Protection rejected {Intent} deletion for {Hash} on {Client}", intent, hash, instanceId);
+            return cleared;
         }
         catch (Exception ex) when (ex is not OperationCanceledException)
         {
