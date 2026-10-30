@@ -117,15 +117,23 @@ public class SeedingServiceTests
         {
             CategorySeeding = new CategorySeedingConfig
             {
-                RemoveTorrent = -1, StalledDelay = 5, IgnoreTorrentsYoungerThan = 60
+                RemoveTorrent = -1,
+                StalledDelay = 5,
+                IgnoreTorrentsYoungerThan = 60
             }
         };
         var service = CreateService(config);
         var torrent = new TorrentInfo
         {
-            Hash = "stalled", ClientInstanceId = "qBit", QBitInstanceName = "qBit",
-            Category = "tv", State = "stalledDL", Progress = 0.2, IsPrivate = false,
-            AddedOn = now - 7200, LastActivity = now - 3600
+            Hash = "stalled",
+            ClientInstanceId = "qBit",
+            QBitInstanceName = "qBit",
+            Category = "tv",
+            State = "stalledDL",
+            Progress = 0.2,
+            IsPrivate = false,
+            AddedOn = now - 7200,
+            LastActivity = now - 3600
         };
         (await service.CanDeleteTorrentAsync(torrent, "seeding")).Should().BeFalse();
         (await service.CanDeleteTorrentForIntentAsync(torrent, TorrentRemovalIntent.StalledDownload, "stalled")).Should().BeTrue();
@@ -146,9 +154,15 @@ public class SeedingServiceTests
         var service = CreateService(config);
         var torrent = new TorrentInfo
         {
-            Hash = "excluded", ClientInstanceId = "qBit", QBitInstanceName = "qBit",
-            Category = "tv", State = "downloading", Progress = 0.1, IsPrivate = false,
-            AddedOn = now - 7200, LastActivity = now - 3600
+            Hash = "excluded",
+            ClientInstanceId = "qBit",
+            QBitInstanceName = "qBit",
+            Category = "tv",
+            State = "downloading",
+            Progress = 0.1,
+            IsPrivate = false,
+            AddedOn = now - 7200,
+            LastActivity = now - 3600
         };
         (await service.CanDeleteTorrentForIntentAsync(torrent, TorrentRemovalIntent.RejectedByAllowlist, "allowlist")).Should().BeTrue();
         torrent.Tags = "qBitrr-ignored";
