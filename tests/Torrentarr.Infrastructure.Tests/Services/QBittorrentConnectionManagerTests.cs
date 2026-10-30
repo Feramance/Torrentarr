@@ -161,6 +161,38 @@ public class QBittorrentConnectionManagerTests
     }
 
     [Fact]
+    public async Task DisconnectOnlyReconciliation_PreservesAuthenticationSuppressionUntilCredentialsChange()
+    {
+        var config = new TorrentarrConfig();
+        config.Apply(new TorrentarrConfig(), 5);
+        var client = new Mock<ITorrentClient>();
+        client.SetupGet(c => c.LastConnectionFailureKind)
+            .Returns(TorrentClientConnectionFailureKind.AuthenticationRejected);
+        client.Setup(c => c.LoginAsync(It.IsAny<CancellationToken>())).ReturnsAsync(false);
+        var factory = new Mock<ITorrentClientFactory>();
+        factory.SetupGet(f => f.Type).Returns("fake");
+        factory.Setup(f => f.Create(It.IsAny<string>(), It.IsAny<TorrentClientInstanceConfig>()))
+            .Returns(client.Object);
+        var manager = new QBittorrentConnectionManager(
+            NullLogger<QBittorrentConnectionManager>.Instance, [factory.Object], config);
+        var instance = new TorrentClientInstanceConfig
+            { Type = "fake", Host = "fixture", UserName = "operator", Password = "bad" };
+        var desired = new[] { new KeyValuePair<string, TorrentClientInstanceConfig>("client", instance) };
+
+        (await manager.ReconcileAsync(desired)).Should().Be(0);
+        (await manager.ReconcileAsync(desired, connect: false)).Should().Be(0);
+        manager.GetConnectionErrors()["client"].Should().Contain("Authentication rejected");
+        (await manager.ReconcileAsync(desired)).Should().Be(0);
+        client.Verify(c => c.LoginAsync(It.IsAny<CancellationToken>()), Times.Once);
+
+        instance.Password = "updated";
+        (await manager.ReconcileAsync(desired, connect: false)).Should().Be(0);
+        manager.GetConnectionErrors().Should().BeEmpty();
+        (await manager.ReconcileAsync(desired)).Should().Be(0);
+        client.Verify(c => c.LoginAsync(It.IsAny<CancellationToken>()), Times.Exactly(2));
+    }
+
+    [Fact]
     public async Task ExplicitReconnect_BypassesCachedAuthenticationFailure()
     {
         var config = new TorrentarrConfig();
