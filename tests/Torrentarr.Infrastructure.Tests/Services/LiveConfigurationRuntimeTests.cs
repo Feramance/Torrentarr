@@ -1,5 +1,6 @@
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging.Abstractions;
+using Microsoft.Extensions.Logging;
 using Moq;
 using Serilog.Core;
 using Torrentarr.Core.Configuration;
@@ -14,6 +15,50 @@ namespace Torrentarr.Infrastructure.Tests.Services;
 
 public class LiveConfigurationRuntimeTests
 {
+    private sealed class RecordingLogger : ILogger<LiveConfigurationRuntime>, IDisposable
+    {
+        public List<string> Messages { get; } = [];
+        public IDisposable BeginScope<TState>(TState state) where TState : notnull => this;
+        public bool IsEnabled(LogLevel level) => true;
+        public void Log<TState>(LogLevel level, EventId id, TState state, Exception? exception,
+            Func<TState, Exception?, string> formatter)
+        {
+            Messages.Add(formatter(state, exception) + (exception?.ToString() ?? ""));
+        }
+        public void Dispose() { }
+    }
+
+    [Fact]
+    public async Task RepeatedRuntimeFailure_LogsOnlyOnceAndNeverLeaksExceptionMessage()
+    {
+        var config = new TorrentarrConfig();
+        var reloader = new Mock<IConfigReloader>();
+        reloader.SetupGet(r => r.Revision).Returns(12);
+        var attempts = 0;
+        var twice = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var clients = new Mock<ITorrentClientRegistry>();
+        clients.Setup(c => c.ReconcileAsync(It.IsAny<IEnumerable<KeyValuePair<string, TorrentClientInstanceConfig>>>(),
+                true, It.IsAny<CancellationToken>()))
+            .Returns(() =>
+            {
+                if (Interlocked.Increment(ref attempts) >= 2) twice.TrySetResult();
+                return Task.FromException<int>(new IOException("https://internal.example/?apiKey=secret"));
+            });
+        using var services = new ServiceCollection().BuildServiceProvider();
+        using var logger = new RecordingLogger();
+        using var runtime = new LiveConfigurationRuntime(config, reloader.Object, clients.Object, services,
+            new LoggingLevelSwitch(), logger);
+        try
+        {
+            await runtime.StartAsync(default);
+            await twice.Task.WaitAsync(TimeSpan.FromSeconds(12));
+            logger.Messages.Should().ContainSingle();
+            logger.Messages.Single().Should().NotContain("secret").And.NotContain("internal.example");
+        }
+        finally { await runtime.StopAsync(default); }
+    }
+
+
     [Fact]
     public async Task Runtime_RetriesFailedClientActivationBeforeAcknowledgingSuccess()
     {

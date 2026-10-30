@@ -704,6 +704,21 @@ try
             return Results.Ok(clients);
         });
         app.MapTorrentMaintenanceEndpoints(prefix);
+        app.MapPost(prefix + "/torrent-clients/{id}/reconnect", async (string id, TorrentarrConfig cfg,
+            QBittorrentConnectionManager manager, CancellationToken ct) =>
+        {
+            if (!cfg.GetAllTorrentClients().TryGetValue(id, out var client))
+                return Results.NotFound(new { error = "Unknown torrent client." });
+            if (client.Disabled || string.IsNullOrWhiteSpace(client.Host) || client.Host == "CHANGE_ME")
+                return Results.Conflict(new { error = "Torrent client is disabled or has no configured endpoint." });
+            var connected = await manager.ForceReconnectAsync(id, client, ct);
+            return connected
+                ? Results.Ok(new { id, connected = true })
+                : Results.Json(new { id, connected = false,
+                    error = manager.GetConnectionErrors().GetValueOrDefault(id, "Connection unavailable.") },
+                    statusCode: StatusCodes.Status503ServiceUnavailable);
+        });
+
     }
 
     // ==================== /web/* endpoints ====================

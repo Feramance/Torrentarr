@@ -27,6 +27,15 @@ namespace Torrentarr.Host.Tests.Api;
 public class StandaloneRadarrEndpointTests
 {
     [Fact]
+    public async Task StandaloneReconnect_UnknownClientReturnsNotFound()
+    {
+        await using var factory = new StandaloneFactory();
+        using var client = factory.CreateClient();
+        var response = await client.PostAsync("/web/torrent-clients/no-such-client/reconnect", null);
+        response.StatusCode.Should().Be(System.Net.HttpStatusCode.NotFound);
+    }
+
+    [Fact]
     public async Task Standalone_CorsPolicyChangesWithoutRestart()
     {
         await using var factory = new StandaloneFactory();
