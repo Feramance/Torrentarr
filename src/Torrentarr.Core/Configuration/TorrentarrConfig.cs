@@ -353,6 +353,7 @@ public class WebUIConfig
     public bool LiveArr { get; set; } = true;
     public string Theme { get; set; } = "Dark";
     public string ViewDensity { get; set; } = "Comfortable";
+    public List<string> CorsAllowedOrigins { get; set; } = new();
     public OIDCConfig? OIDC { get; set; }
 }
 

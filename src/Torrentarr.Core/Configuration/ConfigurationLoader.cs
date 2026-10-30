@@ -1599,6 +1599,15 @@ public class ConfigurationLoader
         if (table.TryGetValue("ViewDensity", out var viewDensity))
             webui.ViewDensity = viewDensity?.ToString() ?? "Comfortable";
 
+        if (table.TryGetValue("CorsAllowedOrigins", out var corsOrigins))
+        {
+            if (corsOrigins is not TomlArray origins || origins.Any(origin => origin is not string))
+                throw new InvalidOperationException("CorsAllowedOrigins must be an array of HTTP(S) origin strings.");
+            webui.CorsAllowedOrigins = origins.Cast<string>().ToList();
+        }
+        if (ConfigValidationHelper.ValidateCorsOrigins(webui) is { } corsError)
+            throw new InvalidOperationException(corsError);
+
         if (table.TryGetValue("OIDC", out var oidcObj) && oidcObj is TomlTable oidcTable)
             webui.OIDC = ParseOIDC(oidcTable);
 
@@ -2102,6 +2111,7 @@ public class ConfigurationLoader
         sb.AppendLine($"LiveArr = {config.WebUI.LiveArr.ToString().ToLower()}");
         sb.AppendLine($"Theme = \"{config.WebUI.Theme}\"");
         sb.AppendLine($"ViewDensity = \"{config.WebUI.ViewDensity}\"");
+        sb.AppendLine($"CorsAllowedOrigins = [{string.Join(", ", config.WebUI.CorsAllowedOrigins.Select(origin => $"\"{EscapeTomlString(origin)}\""))}]");
         if (config.WebUI.OIDC != null)
         {
             var o = config.WebUI.OIDC;

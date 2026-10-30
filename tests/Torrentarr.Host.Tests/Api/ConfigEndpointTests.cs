@@ -452,7 +452,7 @@ public class ConfigRedactionTests : IClassFixture<LocalAuthWebApplicationFactory
                     JsonValueKind.Number => webuiProp.Value.GetInt32(),
                     JsonValueKind.True => true,
                     JsonValueKind.False => false,
-                    _ => webuiProp.Value.ToString()
+                    _ => webuiProp.Value.Clone()
                 };
         }
 

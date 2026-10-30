@@ -159,7 +159,14 @@ export function simpleGroups(
         "Proxy and exposure",
         ["WebUI.BehindHttpsProxy", "WebUI.AllowInsecureExposure"],
       ],
-      ["API access", ["WebUI.Token", "WebUI.AllowInsecureTokenQuery"]],
+      [
+        "API access",
+        [
+          "WebUI.Token",
+          "WebUI.AllowInsecureTokenQuery",
+          "WebUI.CorsAllowedOrigins",
+        ],
+      ],
       [
         "Appearance and live display",
         ["WebUI.Theme", "WebUI.ViewDensity", "WebUI.LiveArr"],

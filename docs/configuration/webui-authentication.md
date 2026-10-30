@@ -209,8 +209,9 @@ RequireHttpsMetadata = true
 
 ## Deployment and security
 
-- **CORS:** The WebUI server may allow cross-origin requests (e.g. `AllowAnyOrigin` in development). In sensitive deployments, restrict CORS to trusted origins via your reverse proxy or application configuration so that only your intended UI origin can call the API.
+- **CORS:** Set `WebUI.CorsAllowedOrigins` to exact HTTP(S) origins, such as `["https://torrentarr.example.com", "http://localhost:5173"]`. Do not include paths, trailing slashes, wildcards, or credentials. Only listed origins receive cross-origin access with credentials; an omitted or empty list preserves access from any origin without credentials. The setting appears under Web Settings → API access and applies live in both Host and standalone WebUI. Authentication still applies; CORS does not restrict non-browser clients.
 - **HTTPS:** In production, serve Torrentarr over HTTPS (e.g. behind a reverse proxy with TLS). Session cookies use `SecurePolicy=SameAsRequest`, so they are only sent over HTTPS when the request is HTTPS.
+- **Disabling authentication:** The configuration editor asks for confirmation before changing `AuthDisabled` to true. Confirming edits the draft; save the section to apply it.
 
 ---
 

@@ -93,16 +93,8 @@ builder.Services.AddResponseCompression(options =>
     options.EnableForHttps = true;
 });
 
-// Add CORS for development
-builder.Services.AddCors(options =>
-{
-    options.AddPolicy("AllowAll", policy =>
-    {
-        policy.AllowAnyOrigin()
-              .AllowAnyMethod()
-              .AllowAnyHeader();
-    });
-});
+builder.Services.AddCors();
+builder.Services.AddSingleton<Microsoft.AspNetCore.Cors.Infrastructure.ICorsPolicyProvider, LiveCorsPolicyProvider>();
 
 // Configure Database - use same dbPath as defined at startup
 builder.Services.AddDbContext<TorrentarrDbContext>(options =>
@@ -271,7 +263,7 @@ app.UseSwagger();
 app.UseSwaggerUI();
 
 app.UseResponseCompression();
-app.UseCors("AllowAll");
+app.UseCors("WebUI");
 
 // Security headers
 app.Use(async (context, next) =>

@@ -5,6 +5,18 @@ import {
 } from "../../config/configFields.generated";
 
 describe("generated config schema", () => {
+  it("exposes the live browser-origin allowlist", () => {
+    const origins = CONFIG_SCHEMA.sections.WebUI.find(
+      (field) => String(field.key) === "CorsAllowedOrigins",
+    );
+    expect(origins).toMatchObject({
+      kind: "tags",
+      default: [],
+      applyLive: true,
+      requiresRestart: false,
+    });
+  });
+
   it("contains the pinned qBitrr 5.14.5 field inventory", () => {
     const qbitrrFieldCount = Object.entries(CONFIG_SCHEMA.sections)
       .filter(([section]) => section !== "TorrentClient")

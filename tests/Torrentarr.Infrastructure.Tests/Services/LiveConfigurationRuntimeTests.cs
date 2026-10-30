@@ -15,6 +15,42 @@ namespace Torrentarr.Infrastructure.Tests.Services;
 public class LiveConfigurationRuntimeTests
 {
     [Fact]
+    public async Task Runtime_RetriesFailedClientActivationBeforeAcknowledgingSuccess()
+    {
+        var config = new TorrentarrConfig();
+        config.TorrentClients["active"] = new() { Host = "fixture" };
+        config.TorrentClients["disabled"] = new() { Host = "offline", Disabled = true };
+        config.QBitInstances["placeholder"] = new();
+        var reloader = new Mock<IConfigReloader>();
+        reloader.SetupGet(r => r.Revision).Returns(2);
+        reloader.Setup(r => r.WaitForChangeAsync(It.IsAny<long>(), It.IsAny<TimeSpan>(), It.IsAny<CancellationToken>()))
+            .Returns((long _, TimeSpan _, CancellationToken ct) => Task.Delay(Timeout.Infinite, ct));
+        var failed = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var applied = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        reloader.Setup(r => r.Acknowledge("runtime", 2, It.IsAny<string>()))
+            .Callback((string _, long _, string? error) =>
+            {
+                if (error == null) applied.TrySetResult();
+                else failed.TrySetResult();
+            });
+        var clients = new Mock<ITorrentClientRegistry>();
+        clients.SetupSequence(c => c.ReconcileAsync(It.IsAny<IEnumerable<KeyValuePair<string, TorrentClientInstanceConfig>>>(), true, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(0).ReturnsAsync(1);
+        using var services = new ServiceCollection().BuildServiceProvider();
+        using var runtime = new LiveConfigurationRuntime(config, reloader.Object, clients.Object, services,
+            new LoggingLevelSwitch(), NullLogger<LiveConfigurationRuntime>.Instance);
+        try
+        {
+            await runtime.StartAsync(default);
+            await failed.Task.WaitAsync(TimeSpan.FromSeconds(5));
+            applied.Task.IsCompleted.Should().BeFalse();
+            await applied.Task.WaitAsync(TimeSpan.FromSeconds(10));
+            clients.Verify(c => c.ReconcileAsync(It.IsAny<IEnumerable<KeyValuePair<string, TorrentClientInstanceConfig>>>(), true, It.IsAny<CancellationToken>()), Times.Exactly(2));
+        }
+        finally { await runtime.StopAsync(default); }
+    }
+
+    [Fact]
     public async Task Runtime_ReconcilesCategoryWorkersBeforeAcknowledgingEachRevision()
     {
         var config = new TorrentarrConfig();

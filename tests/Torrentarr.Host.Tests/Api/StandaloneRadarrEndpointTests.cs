@@ -26,6 +26,14 @@ namespace Torrentarr.Host.Tests.Api;
 [Collection("HostWebCatalog")]
 public class StandaloneRadarrEndpointTests
 {
+    [Fact]
+    public async Task Standalone_CorsPolicyChangesWithoutRestart()
+    {
+        await using var factory = new StandaloneFactory();
+        using var client = factory.CreateClient();
+        await CorsEndpointTests.AssertLivePolicyAsync(client, factory.Services.GetRequiredService<TorrentarrConfig>());
+    }
+
 
     [Fact]
     public async Task StandaloneApplicationStatus_DoesNotWaitForWorkersItDoesNotLaunch()

@@ -37,11 +37,15 @@ public sealed class LiveConfigurationRuntime(TorrentarrConfig config, IConfigRel
                     {
                         using var operation = config.BeginOperation();
                         levelSwitch.MinimumLevel = ParseLevel(config.Settings.ConsoleLevel);
-                        await clients.ReconcileAsync(config.GetAllTorrentClients(), ct: stoppingToken);
+                        var desired = config.GetAllTorrentClients();
+                        var connected = await clients.ReconcileAsync(desired, ct: stoppingToken);
+                        var expected = desired.Values.Count(client => !client.Disabled && client.Host != "CHANGE_ME");
                         if (services.GetService<WorkerProcessSupervisor>() is { } workers)
                             await workers.ReconcileConfigurationAsync(stoppingToken);
                         if (services.GetService<QBitCategoryWorkerManager>() is { } categories)
                             await categories.SyncWorkersWithConfigAsync();
+                        if (connected < expected)
+                            throw new IOException("Torrent client connection settings could not be activated.");
                         reloader.Acknowledge("runtime", revision);
                         applied = revision;
                     }

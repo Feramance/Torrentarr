@@ -88,6 +88,10 @@ Theme = "Dark"
 # View density (Comfortable or Compact)
 ViewDensity = "Comfortable"
 
+# Browser origins allowed to call the API. Changes apply live; use exact origins without trailing slashes.
+# Empty allows any origin without credentials; a list allows credentials only for those origins.
+CorsAllowedOrigins = []
+
 [qBit]
 # Default path as seen by this torrent client (category creation uses this root).
 DownloadPath = "/downloads/completed"
