@@ -19,15 +19,21 @@ public class QBittorrentConnectionManager : ITorrentClientRegistry
     private readonly object _clientsLock = new();
     private readonly SemaphoreSlim _reconcile = new(1, 1);
     private readonly Dictionary<string, ConnectionSettings> _settings = new(StringComparer.OrdinalIgnoreCase);
+    private readonly Dictionary<string, AuthenticationFailure> _authenticationFailures = new(StringComparer.OrdinalIgnoreCase);
+    private readonly Dictionary<string, string> _connectionErrors = new(StringComparer.OrdinalIgnoreCase);
     private sealed record ConnectionSettings(string Type, string Host, int Port, string UserName, string Password, bool SkipTLSVerify);
+    private sealed record AuthenticationFailure(ConnectionSettings Settings, long Revision);
     private readonly ConcurrentDictionary<string, DateTime> _lastConnected = new(StringComparer.OrdinalIgnoreCase);
     private readonly IReadOnlyDictionary<string, ITorrentClientFactory> _factories;
+    private readonly TorrentarrConfig? _config;
 
     public QBittorrentConnectionManager(
         ILogger<QBittorrentConnectionManager> logger,
-        IEnumerable<ITorrentClientFactory>? factories = null)
+        IEnumerable<ITorrentClientFactory>? factories = null,
+        TorrentarrConfig? config = null)
     {
         _logger = logger;
+        _config = config;
         _factories = (factories ?? [new QBittorrentTorrentClientFactory()])
             .ToDictionary(factory => factory.Type, StringComparer.OrdinalIgnoreCase);
     }
@@ -42,17 +48,95 @@ public class QBittorrentConnectionManager : ITorrentClientRegistry
         finally { _reconcile.Release(); }
     }
 
+    /// <summary>Explicit operator-initiated reconnection, including after credentials are restored externally.</summary>
+    public async Task<bool> ForceReconnectAsync(string name, TorrentClientInstanceConfig config, CancellationToken ct = default)
+    {
+        await _reconcile.WaitAsync(ct);
+        try
+        {
+            lock (_clientsLock)
+            {
+                _authenticationFailures.Remove(name);
+                _connectionErrors.Remove(name);
+                RemoveClient(name);
+            }
+            return await ConnectAsync(name, config, ct);
+        }
+        finally { _reconcile.Release(); }
+    }
+
+    /// <summary>Let a worker retry rejected credentials after the Host explicitly reconnects.</summary>
+    public async Task InvalidateAuthenticationFailureAsync(string name, CancellationToken ct = default)
+    {
+        await _reconcile.WaitAsync(ct);
+        try
+        {
+            lock (_clientsLock)
+            {
+                _authenticationFailures.Remove(name);
+                _connectionErrors.Remove(name);
+            }
+        }
+        finally { _reconcile.Release(); }
+    }
+
     private async Task<bool> ConnectAsync(string name, TorrentClientInstanceConfig config, CancellationToken ct)
     {
         var settings = new ConnectionSettings(config.Type, config.Host, config.Port, config.UserName, config.Password, config.SkipTLSVerify);
+        var revision = _config?.Revision ?? 0;
+        ITorrentClient? existing = null;
         lock (_clientsLock)
         {
-            if (!config.Disabled && config.Host != "CHANGE_ME" && _settings.GetValueOrDefault(name) == settings && _clients.ContainsKey(name)) return true;
+            if (!config.Disabled && config.Host != "CHANGE_ME" && _settings.GetValueOrDefault(name) == settings)
+                _clients.TryGetValue(name, out existing);
+        }
+        if (existing != null)
+        {
+            try
+            {
+                // A registered object is not proof the remote service is still available.
+                if (string.IsNullOrWhiteSpace(await existing.GetVersionAsync(ct)))
+                    throw new IOException("Torrent client returned an empty version response.");
+                return true;
+            }
+            catch (OperationCanceledException) when (ct.IsCancellationRequested) { throw; }
+            catch (Exception ex)
+            {
+                lock (_clientsLock)
+                {
+                    RemoveClient(name);
+                    _connectionErrors[name] = "The existing torrent-client session is unavailable; reconnection will be retried.";
+                }
+                // HTTP exceptions can include credential-bearing URLs: log only safe diagnostic context.
+                _logger.LogWarning("Torrent client {Name} failed its connection health check ({ErrorType})",
+                    name, ex.GetType().Name);
+                return false;
+            }
+        }
+        if (config.Disabled || config.Host == "CHANGE_ME")
+        {
+            lock (_clientsLock)
+            {
+                RemoveClient(name);
+                _authenticationFailures.Remove(name);
+                _connectionErrors.Remove(name);
+            }
+            return false;
+        }
+        lock (_clientsLock)
+        {
+            if (_authenticationFailures.TryGetValue(name, out var failure))
+            {
+                if (failure.Settings == settings && failure.Revision == revision) return false;
+                _authenticationFailures.Remove(name);
+            }
             RemoveClient(name);
+            _connectionErrors.Remove(name);
         }
         if (config.Disabled || config.Host == "CHANGE_ME") return false;
         if (!_factories.TryGetValue(config.Type, out var factory))
         {
+            lock (_clientsLock) _connectionErrors[name] = $"Unsupported client type: {config.Type}.";
             _logger.LogError("Torrent client type {Type} is not registered for {Name}", config.Type, name);
             return false;
         }
@@ -62,22 +146,33 @@ public class QBittorrentConnectionManager : ITorrentClientRegistry
             client = factory.Create(name, config);
             if (!await client.LoginAsync(ct))
             {
+                var rejectedCredentials = client.LastConnectionFailureKind == TorrentClientConnectionFailureKind.AuthenticationRejected;
+                lock (_clientsLock) _connectionErrors[name] = rejectedCredentials
+                    ? "Authentication rejected. Check credentials or reconnect after restoring access."
+                    : "Connection/login failed. Check the torrent-client service and server logs.";
                 (client as IDisposable)?.Dispose();
+                if (rejectedCredentials)
+                    lock (_clientsLock) _authenticationFailures[name] = new AuthenticationFailure(settings, revision);
                 return false;
             }
             var version = await client.GetVersionAsync(ct);
+            if (string.IsNullOrWhiteSpace(version))
+                throw new IOException("Torrent client returned an empty version response.");
             lock (_clientsLock)
             {
                 _clients[name] = new RegisteredTorrentClient(client);
                 _settings[name] = settings;
+                _authenticationFailures.Remove(name);
+                _connectionErrors.Remove(name);
                 _lastConnected[name] = DateTime.UtcNow;
             }
             _logger.LogInformation("Connected torrent client {Name} ({Type}) {Version}", name, config.Type, version);
             return true;
         }
         catch (OperationCanceledException) { (client as IDisposable)?.Dispose(); throw; }
-        catch (Exception)
+        catch (Exception ex)
         {
+            lock (_clientsLock) _connectionErrors[name] = $"Connection failed ({ex.GetType().Name}). Check server logs.";
             (client as IDisposable)?.Dispose();
             _logger.LogWarning("Could not connect torrent client {Name} ({Type})", name, config.Type);
             return false;
@@ -104,7 +199,17 @@ public class QBittorrentConnectionManager : ITorrentClientRegistry
         try
         {
             lock (_clientsLock)
-                foreach (var name in _clients.Keys.Where(id => !desired.ContainsKey(id)).ToList()) RemoveClient(name);
+            {
+                foreach (var name in _clients.Keys.Where(id => !desired.ContainsKey(id)).ToList())
+                {
+                    RemoveClient(name);
+                    _authenticationFailures.Remove(name);
+                }
+                foreach (var name in _authenticationFailures.Keys.Where(id => !desired.ContainsKey(id)).ToList())
+                    _authenticationFailures.Remove(name);
+                foreach (var name in _connectionErrors.Keys.Where(id => !desired.ContainsKey(id)).ToList())
+                    _connectionErrors.Remove(name);
+            }
             var count = 0;
             foreach (var (name, config) in desired)
             {
@@ -116,12 +221,30 @@ public class QBittorrentConnectionManager : ITorrentClientRegistry
                 {
                     var settings = new ConnectionSettings(config.Type, config.Host, config.Port, config.UserName, config.Password, config.SkipTLSVerify);
                     lock (_clientsLock)
-                        if (config.Disabled || config.Host == "CHANGE_ME" || _settings.GetValueOrDefault(name) != settings) RemoveClient(name);
+                    {
+                        var inactive = config.Disabled || config.Host == "CHANGE_ME";
+                        if (inactive || _settings.GetValueOrDefault(name) != settings)
+                            RemoveClient(name);
+                        // A failed login has no registered client settings. Do not clear its
+                        // rejection cache during a disconnect-only reconciliation unless the
+                        // credentials actually changed or the client was disabled.
+                        if (inactive || _authenticationFailures.TryGetValue(name, out var failure)
+                            && failure.Settings != settings)
+                            _authenticationFailures.Remove(name);
+                        if (inactive || !_authenticationFailures.ContainsKey(name))
+                            _connectionErrors.Remove(name);
+                    }
                 }
             }
             return count;
         }
         finally { _reconcile.Release(); }
+    }
+
+    /// <summary>Connection errors for runtime diagnostics.</summary>
+    public IReadOnlyDictionary<string, string> GetConnectionErrors()
+    {
+        lock (_clientsLock) return new Dictionary<string, string>(_connectionErrors, StringComparer.OrdinalIgnoreCase);
     }
 
     /// <summary>

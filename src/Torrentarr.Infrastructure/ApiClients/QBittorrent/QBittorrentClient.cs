@@ -26,6 +26,7 @@ public class QBittorrentClient : ITorrentClient, IDisposable
     public TorrentClientIdentity Identity { get; }
     public TorrentClientCapabilities Capabilities => TorrentClientCapabilities.QBittorrent;
     public string? LastConnectionFailure => LastLoginFailure;
+    public TorrentClientConnectionFailureKind LastConnectionFailureKind { get; private set; }
 
     /// <summary>Set when <see cref="LoginAsync"/> returns false; includes HTTP status and cookie names.</summary>
     public string? LastLoginFailure { get; private set; }
@@ -127,6 +128,7 @@ public class QBittorrentClient : ITorrentClient, IDisposable
     public async Task<bool> LoginAsync(CancellationToken ct = default)
     {
         LastLoginFailure = null;
+        LastConnectionFailureKind = TorrentClientConnectionFailureKind.Unknown;
         var request = new RestRequest("/api/v2/auth/login", Method.Post);
         request.AddParameter("username", _username);
         request.AddParameter("password", _password);
@@ -149,6 +151,9 @@ public class QBittorrentClient : ITorrentClient, IDisposable
         var body = string.IsNullOrWhiteSpace(response.Content) ? "(empty)" : TruncateForLog(response.Content.Trim());
         LastLoginFailure =
             $"HTTP {(int)response.StatusCode} {response.StatusCode}; body={body}; cookies=[{cookieNames}]; {failureReason}";
+        LastConnectionFailureKind = string.Equals(response.Content?.Trim(), "Fails.", StringComparison.OrdinalIgnoreCase)
+            ? TorrentClientConnectionFailureKind.AuthenticationRejected
+            : TorrentClientConnectionFailureKind.Transient;
         return false;
     }
 

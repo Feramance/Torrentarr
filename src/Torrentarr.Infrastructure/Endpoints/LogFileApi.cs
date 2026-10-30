@@ -134,6 +134,41 @@ public static class LogFileApi
     public const double SsePingSeconds = 15.0;
     public const double SseMaxSeconds = 120.0;
 
+
+    /// <summary>
+    /// Make a stable, on-disk snapshot of a log that may be appended or rotated while
+    /// being downloaded. DeleteOnClose prevents lingering temporary files.
+    /// </summary>
+    public static async Task<Stream> CreateDownloadSnapshotAsync(string path, CancellationToken ct)
+    {
+        var tempPath = Path.Combine(Path.GetTempPath(), $"torrentarr-download-{Guid.NewGuid():N}.tmp");
+        var options = new FileStreamOptions
+        {
+            Mode = FileMode.CreateNew,
+            Access = FileAccess.ReadWrite,
+            Share = FileShare.Read,
+            BufferSize = 65536,
+            Options = FileOptions.Asynchronous | FileOptions.DeleteOnClose
+        };
+        // The source log may contain secrets. Restrict the snapshot from its first byte.
+        if (!OperatingSystem.IsWindows())
+            options.UnixCreateMode = UnixFileMode.UserRead | UnixFileMode.UserWrite;
+        var snapshot = new FileStream(tempPath, options);
+        try
+        {
+            await using (var source = new FileStream(path, FileMode.Open, FileAccess.Read,
+                FileShare.ReadWrite | FileShare.Delete, 65536, FileOptions.Asynchronous))
+                await source.CopyToAsync(snapshot, ct);
+            snapshot.Position = 0;
+            return snapshot;
+        }
+        catch
+        {
+            await snapshot.DisposeAsync();
+            throw;
+        }
+    }
+
     public static bool IsValidLogFileName(string name) =>
         !string.IsNullOrWhiteSpace(name)
         && !name.Contains('/')

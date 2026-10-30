@@ -151,8 +151,11 @@ public class SeedingService : ISeedingService
         _logger.LogTrace("Seeding stats for {Hash}: Ratio={Ratio}, SeedingTime={Time}s, MeetsTime={MeetsTime}, MeetsRatio={MeetsRatio}",
             hash, stats.Ratio, stats.SeedingTimeSeconds, stats.MeetsTimeRequirement, stats.MeetsRatioRequirement);
 
+        // This optional legacy policy is separate from the effective qBittorrent category
+        // overrides and tracker-specific H&R rules.
         var categoryConfig = _config.Settings.CategorySeedingRules?.FirstOrDefault(r => r.Category == category);
-        _logger.LogTrace("Category config for {Category}: {Config}", category, categoryConfig != null ? "found" : "not found");
+        _logger.LogTrace("Optional legacy category rule for {Category}: {Status} (qBit/category and tracker policies are evaluated independently)",
+            category, categoryConfig != null ? "configured" : "not configured");
 
         if (categoryConfig != null)
         {
@@ -589,7 +592,11 @@ public class SeedingService : ISeedingService
         return allowed;
     }
 
-    public async Task<bool> CanDeleteTorrentAsync(TorrentInfo torrent, string reason, CancellationToken cancellationToken = default)
+    public Task<bool> CanDeleteTorrentAsync(TorrentInfo torrent, string reason, CancellationToken cancellationToken = default)
+        => CanDeleteTorrentForIntentAsync(torrent, TorrentRemovalIntent.SeedingLimit, reason, cancellationToken);
+
+    public async Task<bool> CanDeleteTorrentForIntentAsync(TorrentInfo torrent, TorrentRemovalIntent intent,
+        string reason, CancellationToken cancellationToken = default)
     {
         if (_config.GetTorrentClient(torrent.ClientInstanceId)?.Disabled != false
             || !await HnrAllowsDeleteAsync(torrent, reason, cancellationToken)) return false;
@@ -601,6 +608,23 @@ public class SeedingService : ISeedingService
         age = Math.Max(age, GetSeedingConfig(torrent).IgnoreTorrentsYoungerThan);
         var now = DateTimeOffset.UtcNow.ToUnixTimeSeconds();
         if (age < 0 || now - torrent.AddedOn < Math.Max(age, _config.Settings.IgnoreTorrentsYoungerThan)) return false;
+        // An explicit rejected-content trigger is independent of ratio/seeding-time removal.
+        // The worker must have verified the file allowlist and the torrent snapshot.
+        if (intent == TorrentRemovalIntent.RejectedByAllowlist) return true;
+        if (intent == TorrentRemovalIntent.StalledDownload)
+        {
+            if (torrent.Progress >= 1) return false;
+            var stalledMetadata = torrent.State.Equals("metaDL", StringComparison.OrdinalIgnoreCase)
+                || torrent.State.Equals("forcedMetaDL", StringComparison.OrdinalIgnoreCase);
+            var stalled = torrent.State.Equals("stalledDL", StringComparison.OrdinalIgnoreCase);
+            var unavailable = (torrent.State.Equals("downloading", StringComparison.OrdinalIgnoreCase)
+                || torrent.State.Equals("forcedDL", StringComparison.OrdinalIgnoreCase)) && torrent.Availability < 1;
+            var stalledReference = stalledMetadata ? torrent.AddedOn : torrent.LastActivity;
+            return (stalledMetadata || stalled || unavailable) && delay >= 0
+                && stalledReference > 0 && stalledReference <= now
+                && now - stalledReference >= Math.Max(age, delay * 60L);
+        }
+        if (intent != TorrentRemovalIntent.SeedingLimit) return false;
         var policy = GetEffectiveSeedingConfig(torrent, await GetTrackerConfigAsync(torrent, cancellationToken));
         if (policy.RemoveTorrent is < 1 or > 4) return false;
         if (torrent.Progress >= 1)

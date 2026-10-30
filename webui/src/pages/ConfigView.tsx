@@ -61,6 +61,7 @@ import {
 } from "./config/configTypes";
 import {
   ArrInstanceModal,
+  ConfigModalPortal,
   QbitInstanceModal,
   SetPasswordModal,
   SimpleConfigModal,
@@ -132,6 +133,7 @@ export function ConfigView(props?: ConfigViewProps): JSX.Element {
   const [pendingDelete, setPendingDelete] =
     useState<PendingSectionDelete | null>(null);
   const [deletingSection, setDeletingSection] = useState(false);
+  const [confirmDisableAuth, setConfirmDisableAuth] = useState(false);
 
   const loadConfig = useCallback(async () => {
     setLoading(true);
@@ -167,6 +169,14 @@ export function ConfigView(props?: ConfigViewProps): JSX.Element {
     (path: string[], def: FieldDefinition, raw: unknown) => {
       if (!formState) return;
       const parsed = parseFieldValue(def, raw);
+      if (
+        path.join(".") === "WebUI.AuthDisabled" &&
+        parsed === true &&
+        getValue(formState, path) !== true
+      ) {
+        setConfirmDisableAuth(true);
+        return;
+      }
 
       setFormState(
         produce(formState, (draft) => {
@@ -472,6 +482,10 @@ export function ConfigView(props?: ConfigViewProps): JSX.Element {
     if (!active || !anyModalOpen) return;
     const handleKeyDown = (event: KeyboardEvent) => {
       if (event.key === "Escape") {
+        if (confirmDisableAuth) {
+          setConfirmDisableAuth(false);
+          return;
+        }
         const target = event.target;
         if (
           target instanceof HTMLInputElement ||
@@ -501,6 +515,7 @@ export function ConfigView(props?: ConfigViewProps): JSX.Element {
     isSettingsOpen,
     isWebSettingsOpen,
     isAuthSettingsOpen,
+    confirmDisableAuth,
     isSetPasswordOpen,
   ]);
 
@@ -1248,6 +1263,27 @@ export function ConfigView(props?: ConfigViewProps): JSX.Element {
       ) : null}
       {active && isSetPasswordOpen ? (
         <SetPasswordModal onClose={() => setSetPasswordOpen(false)} />
+      ) : null}
+      {active && confirmDisableAuth ? (
+        <ConfigModalPortal>
+          <ConfirmDialog
+            title="Disable authentication?"
+            message="Anyone who can reach this WebUI will be able to change settings and control Torrentarr without logging in. Protect access with an authenticated reverse proxy, VPN, or firewall if you disable authentication."
+            confirmLabel="Disable authentication"
+            danger
+            onCancel={() => setConfirmDisableAuth(false)}
+            onConfirm={() => {
+              setFormState((previous) =>
+                previous
+                  ? produce(previous, (draft) => {
+                      setValue(draft, ["WebUI", "AuthDisabled"], true);
+                    })
+                  : previous,
+              );
+              setConfirmDisableAuth(false);
+            }}
+          />
+        </ConfigModalPortal>
       ) : null}
       {active && activeQbitKey && formState ? (
         <QbitInstanceModal

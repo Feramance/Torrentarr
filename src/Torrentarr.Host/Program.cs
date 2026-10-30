@@ -216,6 +216,7 @@ try
     // Build ASP.NET Core WebApplication
     var builder = WebApplication.CreateBuilder(args);
     builder.Host.UseSerilog();
+    TrustedProxyConfiguration.Configure(builder.Services);
 
     // Register LoggingLevelSwitch so endpoints can change log level at runtime
     builder.Services.AddSingleton(levelSwitch);
@@ -373,11 +374,8 @@ try
         });
     });
 
-    builder.Services.AddCors(options =>
-    {
-        options.AddPolicy("AllowAll", policy =>
-            policy.AllowAnyOrigin().AllowAnyMethod().AllowAnyHeader());
-    });
+    builder.Services.AddCors();
+    builder.Services.AddSingleton<Microsoft.AspNetCore.Cors.Infrastructure.ICorsPolicyProvider, LiveCorsPolicyProvider>();
 
     // Database - paths already defined at top of file
     builder.Services.AddDbContext<TorrentarrDbContext>(options =>
@@ -401,6 +399,7 @@ try
         typeof(Program).Assembly);
 
     liveWeb.Attach(app, config);
+    app.UseForwardedHeaders();
     app.UseRouting();
     app.Services.GetRequiredService<IConfigReloader>().ConfigReloaded += (_, args) =>
     {
@@ -504,7 +503,7 @@ try
     app.UseSwagger();
     app.UseSwaggerUI();
 
-    app.UseCors("AllowAll");
+    app.UseCors("WebUI");
 
     // Security headers
     app.Use(async (context, next) =>
@@ -698,7 +697,7 @@ try
                     id,
                     QbitInstance = id,
                     type = clientCfg.Type,
-                    connected = client != null,
+                    connected = client != null && !string.IsNullOrWhiteSpace(version),
                     version,
                     capabilities = client?.Capabilities ?? TorrentClientCapabilities.None,
                     managedCategories = clientCfg.ManagedCategories
@@ -707,6 +706,34 @@ try
             return Results.Ok(clients);
         });
         app.MapTorrentMaintenanceEndpoints(prefix);
+        app.MapPost(prefix + "/torrent-clients/{id}/reconnect", async (string id, TorrentarrConfig cfg,
+            QBittorrentConnectionManager manager, WorkerProcessSupervisor workers, CancellationToken ct) =>
+        {
+            if (!cfg.GetAllTorrentClients().TryGetValue(id, out var client))
+                return Results.NotFound(new { error = "Unknown torrent client." });
+            if (client.Disabled || string.IsNullOrWhiteSpace(client.Host) || client.Host == "CHANGE_ME")
+                return Results.Conflict(new { error = "Torrent client is disabled or has no configured endpoint." });
+            var connected = await manager.ForceReconnectAsync(id, client, ct);
+            // Notify workers even when the Host's attempt fails transiently: their independent
+            // cached credential rejections would otherwise outlive the Host's recovery.
+            var (notified, failed) = await workers.NotifyClientReconnectAsync(id, ct);
+            if (connected)
+            {
+                return failed.Count == 0
+                    ? Results.Ok(new { id, connected = true, workersNotified = notified })
+                    : Results.Json(new
+                    {
+                        id,
+                        connected = true,
+                        workersNotified = notified,
+                        error = $"Connected in Host, but could not notify workers: {string.Join(", ", failed)}."
+                    }, statusCode: StatusCodes.Status503ServiceUnavailable);
+            }
+            var error = manager.GetConnectionErrors().GetValueOrDefault(id, "Connection unavailable.");
+            return Results.Json(new { id, connected = false, error, workersNotified = notified, workersNotNotified = failed },
+                statusCode: StatusCodes.Status503ServiceUnavailable);
+        });
+
     }
 
     // ==================== /web/* endpoints ====================
@@ -855,14 +882,18 @@ try
     });
 
     // Web Log Download
-    app.MapGet("/web/logs/{name}/download", (string name) =>
+    app.MapGet("/web/logs/{name}/download", async (string name, HttpContext context) =>
     {
         if (!IsValidLogFileName(name))
             return Results.BadRequest(new { error = "Invalid log file name" });
         var logFile = Path.Combine(logsPath, name);
-        if (!File.Exists(logFile))
-            return Results.NotFound();
-        return Results.File(logFile, "text/plain", name);
+        try
+        {
+            var snapshot = await LogFileApi.CreateDownloadSnapshotAsync(logFile, context.RequestAborted);
+            return Results.File(snapshot, "text/plain", name);
+        }
+        catch (FileNotFoundException) { return Results.NotFound(); }
+        catch (DirectoryNotFoundException) { return Results.NotFound(); }
     });
 
     app.MapGet("/web/logs/{name}/search", (string name, HttpRequest request) =>
@@ -1620,14 +1651,18 @@ try
         return Results.Text(string.Join("\n", lines.TakeLast(500)), "text/plain");
     });
 
-    app.MapGet("/api/logs/{name}/download", (string name) =>
+    app.MapGet("/api/logs/{name}/download", async (string name, HttpContext context) =>
     {
         if (!IsValidLogFileName(name))
             return Results.BadRequest(new { error = "Invalid log file name" });
         var logFile = Path.Combine(logsPath, name);
-        if (!File.Exists(logFile))
-            return Results.NotFound();
-        return Results.File(logFile, "text/plain", name);
+        try
+        {
+            var snapshot = await LogFileApi.CreateDownloadSnapshotAsync(logFile, context.RequestAborted);
+            return Results.File(snapshot, "text/plain", name);
+        }
+        catch (FileNotFoundException) { return Results.NotFound(); }
+        catch (DirectoryNotFoundException) { return Results.NotFound(); }
     });
 
     app.MapGet("/api/logs/{name}/search", (string name, HttpRequest request) =>

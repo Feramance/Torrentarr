@@ -3,11 +3,19 @@ using Torrentarr.Core.Models;
 
 namespace Torrentarr.Core.Interfaces;
 
+public enum TorrentClientConnectionFailureKind
+{
+    Unknown,
+    AuthenticationRejected,
+    Transient
+}
+
 public interface ITorrentClient
 {
     TorrentClientIdentity Identity { get; }
     TorrentClientCapabilities Capabilities { get; }
     string? LastConnectionFailure { get; }
+    TorrentClientConnectionFailureKind LastConnectionFailureKind => TorrentClientConnectionFailureKind.Unknown;
 
     Task<bool> LoginAsync(CancellationToken ct = default);
     Task<string> GetVersionAsync(CancellationToken ct = default);

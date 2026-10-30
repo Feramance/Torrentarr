@@ -751,6 +751,23 @@ export const CONFIG_SCHEMA = {
           "Comfortable",
           "Compact"
         ]
+      },
+      {
+        "section": "WebUI",
+        "path": [
+          "CorsAllowedOrigins"
+        ],
+        "key": "CorsAllowedOrigins",
+        "label": "Allowed browser origins",
+        "kind": "tags",
+        "default": [],
+        "comments": "Allowed browser origins. Empty allows any origin without credentials; entries must be exact HTTP(S) origins.",
+        "required": false,
+        "secure": false,
+        "uiExpose": true,
+        "applyLive": true,
+        "requiresRestart": false,
+        "description": "HTTP(S) origins without trailing slashes. Empty allows any origin without credentials; a list permits credentials only for those origins. Changes apply live."
       }
     ],
     "qBit": [

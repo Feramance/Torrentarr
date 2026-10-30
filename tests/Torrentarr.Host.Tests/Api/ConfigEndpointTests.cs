@@ -13,6 +13,31 @@ namespace Torrentarr.Host.Tests.Api;
 [Collection("HostWeb")]
 public class ConfigEndpointTests : IClassFixture<TorrentarrWebApplicationFactory>
 {
+    [Theory]
+    [InlineData("/web/torrent-clients/no-such-client/reconnect")]
+    [InlineData("/api/torrent-clients/no-such-client/reconnect")]
+    public async Task ManualReconnect_UnknownClientReturnsNotFound(string endpoint)
+    {
+        using var client = _factory.CreateClientWithApiToken();
+        var response = await client.PostAsync(endpoint, null);
+        response.StatusCode.Should().Be(HttpStatusCode.NotFound);
+    }
+
+    [Fact]
+    public async Task ManualReconnect_DisabledClientCannotConnect()
+    {
+        var cfg = _factory.Services.GetRequiredService<Torrentarr.Core.Configuration.TorrentarrConfig>();
+        const string id = "disabled-reconnect-fixture";
+        cfg.TorrentClients[id] = new() { Host = "fixture", Disabled = true };
+        try
+        {
+            using var client = _factory.CreateClientWithApiToken();
+            var response = await client.PostAsync($"/api/torrent-clients/{id}/reconnect", null);
+            response.StatusCode.Should().Be(HttpStatusCode.Conflict);
+        }
+        finally { cfg.TorrentClients.Remove(id); }
+    }
+
     private readonly TorrentarrWebApplicationFactory _factory;
 
     public ConfigEndpointTests(TorrentarrWebApplicationFactory factory)
@@ -455,7 +480,7 @@ public class ConfigRedactionTests : IClassFixture<LocalAuthWebApplicationFactory
                     JsonValueKind.Number => webuiProp.Value.GetInt32(),
                     JsonValueKind.True => true,
                     JsonValueKind.False => false,
-                    _ => webuiProp.Value.ToString()
+                    _ => webuiProp.Value.Clone()
                 };
         }
 

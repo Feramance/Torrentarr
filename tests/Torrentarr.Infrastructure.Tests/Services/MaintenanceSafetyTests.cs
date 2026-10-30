@@ -241,7 +241,8 @@ public sealed class MaintenanceSafetyTests : IDisposable
         inventory.Warnings.Should().Contain(w => w.Contains("Disabled client ownership"));
         var plan = await Preview(MaintenanceOperation.OrphanScan);
         plan.CriticalErrors.Should().BeEmpty();
-        plan.OperationResults.Should().Contain(r => r.Operation == MaintenanceOperation.OrphanScan && r.State == "blocked");
+        plan.OperationResults.Should().Contain(r => r.Operation == MaintenanceOperation.OrphanScan && r.State == "blocked"
+            && r.Reason.Contains("client-disabled") && r.Reason.Contains("Disabled client ownership is unknown"));
         (await Apply(plan)).Applied.Should().Be(0);
         File.ReadAllText(Path.Combine(_root, "orphan.mkv")).Should().Be("other client's data");
         _registry.Verify(r => r.GetClient("disabled"), Times.Never);

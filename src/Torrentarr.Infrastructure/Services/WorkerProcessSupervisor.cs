@@ -28,6 +28,9 @@ public sealed class WorkerProcessSupervisor : BackgroundService, IProcessOrchest
     private readonly object _gate = new();
     private readonly SemaphoreSlim _lifecycle = new(1, 1);
     private readonly HashSet<string> _reportedWorkers = new(StringComparer.OrdinalIgnoreCase);
+    private long _lastReconciledRevision = -1;
+    // A failed launch or exhausted retry allowance must not be bypassed by another config reconciliation.
+    private readonly Dictionary<string, long> _attemptedLaunchRevisions = new(StringComparer.OrdinalIgnoreCase);
 
     public WorkerProcessSupervisor(TorrentarrConfig config, ILogger<WorkerProcessSupervisor> logger, IMediaValidationService mediaValidation, IConfigReloader? reloader = null)
         : this(config, logger, mediaValidation, name => ResolveWorkerStartInfo(name), reloader) { }
@@ -157,6 +160,42 @@ public sealed class WorkerProcessSupervisor : BackgroundService, IProcessOrchest
 
     public Task RestartWorkerAsync(string processName) => RestartProcessAsync(processName);
 
+    /// <summary>
+    /// Notify running Arr workers to clear one client's cached authentication rejection.
+    /// Work continues uninterrupted; each worker reconnects on its next normal cycle.
+    /// </summary>
+    public async Task<(int Notified, IReadOnlyList<string> Failed)> NotifyClientReconnectAsync(
+        string clientId, CancellationToken ct = default)
+    {
+        await _lifecycle.WaitAsync(ct);
+        try
+        {
+            KeyValuePair<string, Process>[] running;
+            lock (_gate) running = _processes.ToArray();
+            var failed = new List<string>();
+            var notified = 0;
+            foreach (var (name, process) in running)
+            {
+                try
+                {
+                    if (process.HasExited) continue;
+                    await process.StandardInput.WriteLineAsync($"reconnect:{clientId}".AsMemory(), ct);
+                    await process.StandardInput.FlushAsync(ct);
+                    notified++;
+                }
+                catch (OperationCanceledException) when (ct.IsCancellationRequested) { throw; }
+                catch (Exception ex) when (ex is IOException or InvalidOperationException or Win32Exception)
+                {
+                    failed.Add(name);
+                    _logger.LogWarning("Unable to send client reconnect command to worker {Instance} ({ErrorType})",
+                        name, ex.GetType().Name);
+                }
+            }
+            return (notified, failed);
+        }
+        finally { _lifecycle.Release(); }
+    }
+
     private async Task EnsureFFprobeUpdatedAsync(CancellationToken cancellationToken)
     {
         if (!_config.Settings.FFprobeAutoUpdate)
@@ -193,27 +232,40 @@ public sealed class WorkerProcessSupervisor : BackgroundService, IProcessOrchest
         await _lifecycle.WaitAsync(ct);
         try
         {
-            var snapshotPath = Path.Combine(ConfigurationLoader.GetDataDirectoryPath(), "active-config.json");
-            var snapshot = File.Exists(snapshotPath)
-                ? Newtonsoft.Json.JsonConvert.DeserializeObject<ConfigurationSnapshot>(File.ReadAllText(snapshotPath)) : null;
-            lock (_gate)
+            var revision = _config.Revision;
+            if (_lastReconciledRevision != revision)
             {
-                foreach (var rename in snapshot?.RenameHistory ?? [])
-                    if (_processes.TryGetValue(rename.From, out var process)
-                        && rename.Revision > _processRevisions.GetValueOrDefault(process) && rename.Revision <= _config.Revision)
-                    {
-                        _processes.Remove(rename.From);
-                        _processes[rename.To] = process;
-                        var statusPath = _statusFiles.GetValueOrDefault(rename.From, StatusPath(rename.From));
-                        _statusFiles.Remove(rename.From);
-                        _statusFiles[rename.To] = statusPath;
-                        _reportedWorkers.Remove(rename.From);
-                    }
-                if (snapshot != null)
-                    foreach (var process in _processes.Values) _processRevisions[process] = _config.Revision;
+                var snapshotPath = Path.Combine(ConfigurationLoader.GetDataDirectoryPath(), "active-config.json");
+                var snapshot = File.Exists(snapshotPath)
+                    ? Newtonsoft.Json.JsonConvert.DeserializeObject<ConfigurationSnapshot>(File.ReadAllText(snapshotPath)) : null;
+                lock (_gate)
+                {
+                    foreach (var rename in snapshot?.RenameHistory ?? [])
+                        if (_processes.TryGetValue(rename.From, out var process)
+                            && rename.Revision > _processRevisions.GetValueOrDefault(process) && rename.Revision <= revision)
+                        {
+                            _processes.Remove(rename.From);
+                            _processes[rename.To] = process;
+                            if (_attemptedLaunchRevisions.Remove(rename.From, out var previousRevision))
+                                _attemptedLaunchRevisions[rename.To] = previousRevision;
+                            var statusPath = _statusFiles.GetValueOrDefault(rename.From, StatusPath(rename.From));
+                            _statusFiles.Remove(rename.From);
+                            _statusFiles[rename.To] = statusPath;
+                            _reportedWorkers.Remove(rename.From);
+                        }
+                    if (snapshot != null)
+                        foreach (var process in _processes.Values) _processRevisions[process] = revision;
+                }
+                _lastReconciledRevision = revision;
             }
+            // Check desired state every pass. Only launch once per revision; retries belong to ScheduleRetry.
             await StopRemovedWorkersAsync(ct, ownsLifecycle: true);
-            StartWorkers();
+            lock (_gate)
+                foreach (var name in _attemptedLaunchRevisions.Keys.Where(n => !_config.ArrInstances.ContainsKey(n)).ToArray())
+                    _attemptedLaunchRevisions.Remove(name);
+            foreach (var (name, config) in _config.ArrInstances)
+                if (IsEligible(config))
+                    StartWorker(name, onlyUnattempted: true);
         }
         finally { _lifecycle.Release(); }
     }
@@ -224,12 +276,18 @@ public sealed class WorkerProcessSupervisor : BackgroundService, IProcessOrchest
         try
         {
             string[] removed;
-            lock (_gate) removed = _processes.Keys.Where(n => !_config.ArrInstances.ContainsKey(n)).ToArray();
+            lock (_gate) removed = _processes.Keys.Concat(_pendingRetries.Keys)
+                .Where(n => !_config.ArrInstances.TryGetValue(n, out var desired) || !IsEligible(desired))
+                .Distinct(StringComparer.OrdinalIgnoreCase).ToArray();
             foreach (var name in removed)
             {
                 Process? process;
                 lock (_gate) _processes.TryGetValue(name, out process);
-                if (process != null && ReadProcessStatus(name, process).ConfigRevision >= _config.Revision)
+                // Preserve the rename-ack window for a deleted name until revision reconciliation
+                // has examined rename history. A disabled worker, however, must stop immediately.
+                var stillConfigured = _config.ArrInstances.ContainsKey(name);
+                if (process == null || stillConfigured || ownsLifecycle
+                    || ReadProcessStatus(name, process).ConfigRevision >= _config.Revision)
                     await StopWorkerAsync(name, ct);
             }
         }
@@ -320,11 +378,14 @@ public sealed class WorkerProcessSupervisor : BackgroundService, IProcessOrchest
         }
     }
 
-    private void StartWorker(string instanceName)
+    private void StartWorker(string instanceName, bool onlyUnattempted = false)
     {
         lock (_gate)
         {
             if (_stopping || !_config.ArrInstances.TryGetValue(instanceName, out var config) || !IsEligible(config)) return;
+            if (onlyUnattempted && (_attemptedLaunchRevisions.GetValueOrDefault(instanceName, -1) == _config.Revision
+                || _pendingRetries.ContainsKey(instanceName))) return;
+            _attemptedLaunchRevisions[instanceName] = _config.Revision;
             if (_processes.TryGetValue(instanceName, out var existing))
             {
                 if (!existing.HasExited) return;

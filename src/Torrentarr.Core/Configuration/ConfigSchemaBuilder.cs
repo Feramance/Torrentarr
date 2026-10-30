@@ -17,7 +17,13 @@ public static class ConfigSchemaBuilder
         new Dictionary<string, IReadOnlyList<ConfigSchemaField>>
         {
             ["Settings"] = Qbitrr5146ConfigSchema.Settings.Where(f => f.key is not ("CompletedDownloadFolder" or "FreeSpace" or "FreeSpaceFolder" or "AutoPauseResume" or "FreeSpaceThresholdGB")).Select(f => f.key == "ConfigVersion" ? f with { @default = ConfigurationLoader.ExpectedConfigVersion } : f).ToList(),
-            ["WebUI"] = Qbitrr5146ConfigSchema.WebUI,
+            ["WebUI"] = [.. Qbitrr5146ConfigSchema.WebUI,
+                Field("CorsAllowedOrigins", "tags", "Allowed browser origins", Array.Empty<string>()) with
+                {
+                    section = "WebUI", applyLive = true, requiresRestart = false,
+                    comments = "Allowed browser origins. Empty allows any origin without credentials; entries must be exact HTTP(S) origins.",
+                    description = "HTTP(S) origins without trailing slashes. Empty allows any origin without credentials; a list permits credentials only for those origins. Changes apply live."
+                }],
             ["qBit"] = TorrentClientFields().Where(f => f.key != "Type").Select(f => f with { section = "qBit" }).ToList(),
             ["TorrentClient"] = TorrentClientFields(),
             ["Arr"] = Qbitrr5146ConfigSchema.Arr.Select(ClarifyTrackerMessages).Select(ClarifySearchScope).ToList(),

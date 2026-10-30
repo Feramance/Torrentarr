@@ -124,7 +124,7 @@ public sealed class TorrentProcessorImportAllowlistTests : IDisposable
     }
 
     [Fact]
-    public async Task CompletedTorrent_WithoutAutoDelete_BlocksImportWhileDisallowedFileRemains()
+    public async Task CompletedTorrent_WithoutAutoDelete_WaitsWhenAllowedFileIsUnavailable()
     {
         var root = Directory.CreateTempSubdirectory("torrentarr-no-delete-");
         try
@@ -136,6 +136,57 @@ public sealed class TorrentProcessorImportAllowlistTests : IDisposable
             var result = await ApplyAsync(CreateProcessor(), Torrent(content.FullName), Config(autoDelete: false), client, completed: true);
 
             Ready(result).Should().BeFalse();
+        }
+        finally
+        {
+            root.Delete(recursive: true);
+        }
+    }
+
+    [Theory]
+    [InlineData(".nfo")]
+    [InlineData(".txt")]
+    public async Task CompletedTorrent_MetadataSidecars_DoNotBlockImportWithoutAutoDelete(string extension)
+    {
+        var root = Directory.CreateTempSubdirectory("torrentarr-metadata-import-");
+        try
+        {
+            var content = Directory.CreateDirectory(Path.Combine(root.FullName, "Movie"));
+            var movie = Path.Combine(content.FullName, "movie.mkv");
+            var metadata = Path.Combine(content.FullName, "release" + extension);
+            await File.WriteAllTextAsync(movie, "valid video");
+            await File.WriteAllTextAsync(metadata, "tracker metadata");
+            var client = new FileClient([
+                TorrentFile(0, "Movie/movie.mkv"),
+                TorrentFile(1, "Movie/release" + extension)]);
+
+            var result = await ApplyAsync(CreateProcessor(), Torrent(content.FullName), Config(autoDelete: false), client, completed: true);
+
+            Ready(result).Should().BeTrue();
+            File.Exists(movie).Should().BeTrue();
+            File.Exists(metadata).Should().BeTrue("import never removes files owned by a seeding torrent");
+            client.PriorityCalls.Should().Be(1);
+        }
+        finally
+        {
+            root.Delete(recursive: true);
+        }
+    }
+
+    [Fact]
+    public async Task CompletedTorrent_DisallowedNonMetadataExtras_StillBlockImport()
+    {
+        var root = Directory.CreateTempSubdirectory("torrentarr-disallowed-import-");
+        try
+        {
+            var content = Directory.CreateDirectory(Path.Combine(root.FullName, "Movie"));
+            await File.WriteAllTextAsync(Path.Combine(content.FullName, "movie.mkv"), "valid video");
+            await File.WriteAllTextAsync(Path.Combine(content.FullName, "extra.dat"), "unwanted extra");
+            var client = new FileClient([
+                TorrentFile(0, "Movie/movie.mkv"), TorrentFile(1, "Movie/extra.dat")]);
+
+            Ready(await ApplyAsync(CreateProcessor(), Torrent(content.FullName), Config(autoDelete: false), client, completed: true))
+                .Should().BeFalse();
         }
         finally
         {
@@ -255,7 +306,7 @@ public sealed class TorrentProcessorImportAllowlistTests : IDisposable
 
             var result = await ApplyAsync(CreateProcessor(seeding.Object), torrent, Config(autoDelete: true), client, completed: true);
 
-            Ready(result).Should().BeFalse();
+            Ready(result).Should().BeTrue("valid media can be imported without deleting H&R-protected metadata sidecars");
             File.Exists(excludedPath).Should().BeTrue();
             seeding.VerifyAll();
         }

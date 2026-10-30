@@ -131,6 +131,7 @@ export function configureConfigFields(
     "UrlBase",
     "AllowInsecureExposure",
     "AllowInsecureTokenQuery",
+    "CorsAllowedOrigins",
     "Theme",
     "ViewDensity",
     "LiveArr",

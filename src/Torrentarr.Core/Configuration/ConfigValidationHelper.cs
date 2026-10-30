@@ -106,8 +106,23 @@ public static class ConfigValidationHelper
         return (true, null);
     }
 
+    public static string? ValidateCorsOrigins(WebUIConfig webui)
+    {
+        const string error = "CorsAllowedOrigins must contain HTTP(S) origins with a host and optional port, without wildcards, credentials, paths or trailing slashes.";
+        if (webui.CorsAllowedOrigins == null) return error;
+        foreach (var origin in webui.CorsAllowedOrigins)
+            if (string.IsNullOrWhiteSpace(origin) || origin.Trim() != origin || origin.Contains('*')
+                || !Uri.TryCreate(origin, UriKind.Absolute, out var uri) || uri.Scheme is not ("http" or "https")
+                || string.IsNullOrEmpty(uri.Host) || !uri.IsWellFormedOriginalString() || uri.UserInfo.Length > 0
+                || uri.AbsolutePath != "/" || origin.EndsWith('/') || uri.Query.Length > 0 || uri.Fragment.Length > 0
+                || origin.AsSpan(origin.IndexOf("://", StringComparison.Ordinal) + 3).IndexOfAny('/', '?', '#') >= 0)
+                return error;
+        return null;
+    }
+
     public static (bool Ok, string? Error) ValidateAll(TorrentarrConfig config)
     {
+        if (ValidateCorsOrigins(config.WebUI) is { } corsError) return (false, corsError);
         if (config.WebUI.Port is < 1 or > 65535 || !System.Net.IPAddress.TryParse(config.WebUI.Host, out _))
             return (false, "WebUI requires an IP bind address and port between 1 and 65535.");
 

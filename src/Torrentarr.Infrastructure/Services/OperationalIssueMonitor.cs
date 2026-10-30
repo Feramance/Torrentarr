@@ -13,7 +13,8 @@ namespace Torrentarr.Infrastructure.Services;
 public sealed class OperationalIssueMonitor(IServiceScopeFactory scopes, IOperationalIssueReporter issues,
     TorrentarrConfig config, ILogger<OperationalIssueMonitor> logger) : BackgroundService
 {
-    private readonly Dictionary<string, string> _maintenanceRuns = new();
+    // Completion cursor per scope; equal timestamps retain IDs to avoid losing simultaneous runs.
+    private readonly Dictionary<string, (DateTimeOffset CompletedAt, HashSet<string> RunIds)> _maintenanceRuns = new();
 
     protected override async Task ExecuteAsync(CancellationToken ct)
     {
@@ -82,20 +83,34 @@ public sealed class OperationalIssueMonitor(IServiceScopeFactory scopes, IOperat
         }
         if (services.GetService<IMaintenanceCoordinator>() is { } maintenance)
             foreach (var latest in maintenance.GetHistory().Where(r => r.CompletedAt.HasValue)
-                .GroupBy(run => System.Text.Json.JsonSerializer.Serialize(run.ClientInstanceIds.Select(id => id.ToUpperInvariant()).Distinct().Order()))
-                .Select(group => (Scope: group.Key, Run: group.MaxBy(run => run.CompletedAt)!)))
+                .OrderBy(run => run.CompletedAt)
+                .ThenBy(run => run.StartedAt)
+                .Select(run => (Scope: System.Text.Json.JsonSerializer.Serialize(run.ClientInstanceIds.Select(id => id.ToUpperInvariant()).Distinct().Order()), Run: run)))
             {
-                if (_maintenanceRuns.GetValueOrDefault(latest.Scope) == latest.Run.RunId || latest.Run.Result is not ("success" or "partial" or "failed")) continue;
+                if (latest.Run.Result is not ("success" or "partial" or "failed")) continue;
+                var completedAt = latest.Run.CompletedAt!.Value;
+                if (_maintenanceRuns.TryGetValue(latest.Scope, out var observed)
+                    && (completedAt < observed.CompletedAt
+                        || completedAt == observed.CompletedAt && observed.RunIds.Contains(latest.Run.RunId)))
+                    continue;
                 // History has aggregate counts, so report once for the selected set rather than blaming each client.
-                var issue = new OperationalIssueReport("maintenance.run", "system", "Maintenance execution failed", "Some actions failed in the selected maintenance run; the aggregate result does not identify a failing client.",
-                    "Review Manage history and its diagnostics, then retry the same client selection.", SubjectType: "maintenance", SubjectId: latest.Scope, Target: "maintenance");
+                var failureSummary = string.Join("; ", latest.Run.Errors.Distinct().Take(3));
+                var issue = new OperationalIssueReport("maintenance.run", "system", "Maintenance execution failed",
+                    latest.Run.Failed > 0
+                        ? $"{latest.Run.Failed} action(s) failed for {string.Join(", ", latest.Run.ClientInstanceIds)}. {failureSummary}"
+                        : "The selected maintenance run completed without failed actions.",
+                    "Open Manage → Recent runs and expand the failed run to inspect each action, client and error before retrying.",
+                    SubjectType: "maintenance", SubjectId: latest.Scope, Target: "maintenance");
                 if (latest.Run.Result == "success" || latest.Run.Failed > 0)
                     await Observe(issue, latest.Run.Failed > 0, ct);
                 // A verified successful run can also close records written by the former per-client reporter.
                 if (latest.Run.Result == "success")
                     foreach (var client in latest.Run.ClientInstanceIds)
                         await issues.ResolveAsync(issue with { ClientInstance = client, SubjectType = "service", SubjectId = "" }, ct);
-                _maintenanceRuns[latest.Scope] = latest.Run.RunId;
+                if (_maintenanceRuns.TryGetValue(latest.Scope, out observed) && completedAt == observed.CompletedAt)
+                    observed.RunIds.Add(latest.Run.RunId);
+                else
+                    _maintenanceRuns[latest.Scope] = (completedAt, new HashSet<string> { latest.Run.RunId });
             }
     }
 

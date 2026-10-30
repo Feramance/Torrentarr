@@ -19,6 +19,7 @@ using Torrentarr.Core.Services;
 using System.Net.Http.Json;
 using Torrentarr.Infrastructure.Database;
 using Torrentarr.Infrastructure.Database.Models;
+using Torrentarr.Infrastructure.Services;
 using Xunit;
 
 namespace Torrentarr.Host.Tests.Api;
@@ -26,6 +27,23 @@ namespace Torrentarr.Host.Tests.Api;
 [Collection("HostWebCatalog")]
 public class StandaloneRadarrEndpointTests
 {
+    [Fact]
+    public async Task StandaloneReconnect_UnknownClientReturnsNotFound()
+    {
+        await using var factory = new StandaloneFactory();
+        using var client = factory.CreateClient();
+        var response = await client.PostAsync("/web/torrent-clients/no-such-client/reconnect", null);
+        response.StatusCode.Should().Be(System.Net.HttpStatusCode.NotFound);
+    }
+
+    [Fact]
+    public async Task Standalone_CorsPolicyChangesWithoutRestart()
+    {
+        await using var factory = new StandaloneFactory();
+        using var client = factory.CreateClient();
+        await CorsEndpointTests.AssertLivePolicyAsync(client, factory.Services.GetRequiredService<TorrentarrConfig>());
+    }
+
 
     [Fact]
     public async Task StandaloneApplicationStatus_DoesNotWaitForWorkersItDoesNotLaunch()
@@ -222,6 +240,36 @@ public class StandaloneRadarrEndpointTests
             response.StatusCode.Should().Be(System.Net.HttpStatusCode.Gone);
             (await response.Content.ReadAsStringAsync()).Should().Contain("Automatic").And.Contain("Manual");
         }
+    }
+
+    [Fact]
+    public async Task StandaloneTorrentClientList_DoesNotReportUnhealthyRegisteredClientAsConnected()
+    {
+        await using var factory = new StandaloneFactory();
+        var adapter = new Mock<ITorrentClient>();
+        adapter.Setup(c => c.LoginAsync(It.IsAny<CancellationToken>())).ReturnsAsync(true);
+        adapter.Setup(c => c.GetVersionAsync(It.IsAny<CancellationToken>())).ReturnsAsync("fixture-version");
+        var adapterFactory = new Mock<ITorrentClientFactory>();
+        adapterFactory.SetupGet(f => f.Type).Returns("qbittorrent");
+        adapterFactory.Setup(f => f.Create(It.IsAny<string>(), It.IsAny<TorrentClientInstanceConfig>())).Returns(adapter.Object);
+        await using var configured = factory.WithWebHostBuilder(builder => builder.ConfigureServices(services =>
+        {
+            services.RemoveAll<ITorrentClientFactory>();
+            services.AddSingleton(adapterFactory.Object);
+        }));
+        using var client = configured.CreateClient();
+        var config = configured.Services.GetRequiredService<TorrentarrConfig>();
+        config.QBitInstances.Clear();
+        config.TorrentClients["one"] = new() { Host = "fixture" };
+        var manager = configured.Services.GetRequiredService<QBittorrentConnectionManager>();
+        (await manager.InitializeAsync("one", config.TorrentClients["one"])).Should().BeTrue();
+
+        adapter.Setup(c => c.GetVersionAsync(It.IsAny<CancellationToken>()))
+            .ThrowsAsync(new HttpRequestException("health probe failed"));
+        var response = await client.GetFromJsonAsync<JsonElement>("/web/torrent-clients");
+        var entry = response.EnumerateArray().Single(item => item.GetProperty("id").GetString() == "one");
+        entry.GetProperty("connected").GetBoolean().Should().BeFalse();
+        entry.GetProperty("version").ValueKind.Should().Be(JsonValueKind.Null);
     }
 
     [Fact]

@@ -89,6 +89,48 @@ function renderConfig() {
   return render(<ConfigView />, { wrapper: Wrapper });
 }
 
+it("requires confirmation before changing the draft to disable authentication", async () => {
+  server.use(
+    http.get("/web/config", () =>
+      HttpResponse.json({
+        ...configQbitOnly,
+        WebUI: { ...configQbitOnly.WebUI, AuthDisabled: false },
+      }),
+    ),
+  );
+  const user = userEvent.setup();
+  renderConfig();
+  const card = (await screen.findByText("Authentication")).closest(".card")!;
+  await user.click(
+    within(card as HTMLElement).getByRole("button", { name: "Configure" }),
+  );
+  const accessControls = screen
+    .getByText("Access controls")
+    .closest("details")!;
+  await user.click(within(accessControls).getByText("Access controls"));
+  const authDisabled = screen.getByLabelText("Auth Disabled");
+  await user.click(authDisabled);
+  const warning = screen.getByRole("dialog", {
+    name: "Disable authentication?",
+  });
+  await user.click(within(warning).getByRole("button", { name: "Cancel" }));
+  expect(accessControls).toHaveAttribute("open");
+  expect(authDisabled).toHaveFocus();
+  expect(authDisabled).not.toBeChecked();
+  await user.click(authDisabled);
+  await user.keyboard("{Escape}");
+  expect(accessControls).toHaveAttribute("open");
+  expect(authDisabled).toHaveFocus();
+  expect(authDisabled).not.toBeChecked();
+  await user.click(authDisabled);
+  await user.click(
+    screen.getByRole("button", { name: "Disable authentication" }),
+  );
+  expect(accessControls).toHaveAttribute("open");
+  expect(authDisabled).toHaveFocus();
+  expect(authDisabled).toBeChecked();
+});
+
 it("lists every client together by name with the same controls and shared settings", async () => {
   server.use(
     http.get("/web/config", () =>

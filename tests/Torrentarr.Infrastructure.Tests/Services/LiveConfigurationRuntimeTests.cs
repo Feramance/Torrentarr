@@ -1,5 +1,6 @@
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging.Abstractions;
+using Microsoft.Extensions.Logging;
 using Moq;
 using Serilog.Core;
 using Torrentarr.Core.Configuration;
@@ -14,6 +15,118 @@ namespace Torrentarr.Infrastructure.Tests.Services;
 
 public class LiveConfigurationRuntimeTests
 {
+    private sealed class RecordingLogger : ILogger<LiveConfigurationRuntime>, IDisposable
+    {
+        public List<string> Messages { get; } = [];
+        public IDisposable BeginScope<TState>(TState state) where TState : notnull => this;
+        public bool IsEnabled(LogLevel level) => true;
+        public void Log<TState>(LogLevel level, EventId id, TState state, Exception? exception,
+            Func<TState, Exception?, string> formatter)
+        {
+            Messages.Add(formatter(state, exception) + (exception?.ToString() ?? ""));
+        }
+        public void Dispose() { }
+    }
+
+    [Fact]
+    public async Task RepeatedRuntimeFailure_LogsOnlyOnceAndNeverLeaksExceptionMessage()
+    {
+        var config = new TorrentarrConfig();
+        var reloader = new Mock<IConfigReloader>();
+        reloader.SetupGet(r => r.Revision).Returns(12);
+        var attempts = 0;
+        var twice = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        // Acknowledge runs after the warning, unlike the ReconcileAsync callback.
+        reloader.Setup(r => r.Acknowledge("runtime", 12, It.IsAny<string>()))
+            .Callback((string _, long ignoredRevision, string? error) =>
+            {
+                if (error != null && Interlocked.Increment(ref attempts) >= 2)
+                    twice.TrySetResult();
+            });
+        var clients = new Mock<ITorrentClientRegistry>();
+        clients.Setup(c => c.ReconcileAsync(It.IsAny<IEnumerable<KeyValuePair<string, TorrentClientInstanceConfig>>>(),
+                true, It.IsAny<CancellationToken>()))
+            .Returns(() => Task.FromException<int>(new IOException("https://internal.example/?apiKey=secret")));
+        using var services = new ServiceCollection().BuildServiceProvider();
+        using var logger = new RecordingLogger();
+        using var runtime = new LiveConfigurationRuntime(config, reloader.Object, clients.Object, services,
+            new LoggingLevelSwitch(), logger);
+        try
+        {
+            await runtime.StartAsync(default);
+            await twice.Task.WaitAsync(TimeSpan.FromSeconds(12));
+            logger.Messages.Should().ContainSingle();
+            logger.Messages.Single().Should().NotContain("secret").And.NotContain("internal.example");
+        }
+        finally { await runtime.StopAsync(default); }
+    }
+
+
+    [Fact]
+    public async Task Runtime_RetriesFailedClientActivationBeforeAcknowledgingSuccess()
+    {
+        var config = new TorrentarrConfig();
+        config.TorrentClients["active"] = new() { Host = "fixture" };
+        config.TorrentClients["disabled"] = new() { Host = "offline", Disabled = true };
+        config.QBitInstances["placeholder"] = new();
+        var reloader = new Mock<IConfigReloader>();
+        reloader.SetupGet(r => r.Revision).Returns(2);
+        reloader.Setup(r => r.WaitForChangeAsync(It.IsAny<long>(), It.IsAny<TimeSpan>(), It.IsAny<CancellationToken>()))
+            .Returns((long _, TimeSpan _, CancellationToken ct) => Task.Delay(Timeout.Infinite, ct));
+        var failed = new TaskCompletionSource<string>(TaskCreationOptions.RunContinuationsAsynchronously);
+        var applied = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        reloader.Setup(r => r.Acknowledge("runtime", 2, It.IsAny<string>()))
+            .Callback((string _, long _, string? error) =>
+            {
+                if (error == null) applied.TrySetResult();
+                else failed.TrySetResult(error);
+            });
+        var clients = new Mock<ITorrentClientRegistry>();
+        clients.SetupSequence(c => c.ReconcileAsync(It.IsAny<IEnumerable<KeyValuePair<string, TorrentClientInstanceConfig>>>(), true, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(0).ReturnsAsync(1);
+        using var services = new ServiceCollection().BuildServiceProvider();
+        using var runtime = new LiveConfigurationRuntime(config, reloader.Object, clients.Object, services,
+            new LoggingLevelSwitch(), NullLogger<LiveConfigurationRuntime>.Instance);
+        try
+        {
+            await runtime.StartAsync(default);
+            var firstError = await failed.Task.WaitAsync(TimeSpan.FromSeconds(5));
+            firstError.Should().Contain("revision 2").And.Contain("active");
+            applied.Task.IsCompleted.Should().BeFalse();
+            await applied.Task.WaitAsync(TimeSpan.FromSeconds(10));
+            clients.Verify(c => c.ReconcileAsync(It.IsAny<IEnumerable<KeyValuePair<string, TorrentClientInstanceConfig>>>(), true, It.IsAny<CancellationToken>()), Times.Exactly(2));
+        }
+        finally { await runtime.StopAsync(default); }
+    }
+
+    [Fact]
+    public async Task Runtime_ReportsSafeErrorWhenReconciliationThrows()
+    {
+        var config = new TorrentarrConfig();
+        var reloader = new Mock<IConfigReloader>();
+        reloader.SetupGet(r => r.Revision).Returns(3);
+        var reported = new TaskCompletionSource<string>(TaskCreationOptions.RunContinuationsAsynchronously);
+        reloader.Setup(r => r.Acknowledge("runtime", 3, It.IsAny<string>()))
+            .Callback((string _, long _, string? error) =>
+            {
+                if (error != null) reported.TrySetResult(error);
+            });
+        var clients = new Mock<ITorrentClientRegistry>();
+        clients.Setup(c => c.ReconcileAsync(It.IsAny<IEnumerable<KeyValuePair<string, TorrentClientInstanceConfig>>>(), true, It.IsAny<CancellationToken>()))
+            .ThrowsAsync(new IOException("http://internal.example/?apiKey=secret"));
+        using var services = new ServiceCollection().BuildServiceProvider();
+        using var runtime = new LiveConfigurationRuntime(config, reloader.Object, clients.Object, services,
+            new LoggingLevelSwitch(), NullLogger<LiveConfigurationRuntime>.Instance);
+        try
+        {
+            await runtime.StartAsync(default);
+            var error = await reported.Task.WaitAsync(TimeSpan.FromSeconds(5));
+            error.Should().Contain("revision 3").And.Contain("IOException");
+            error.Should().NotContain("secret").And.NotContain("internal.example");
+        }
+        finally { await runtime.StopAsync(default); }
+    }
+
     [Fact]
     public async Task Runtime_ReconcilesCategoryWorkersBeforeAcknowledgingEachRevision()
     {

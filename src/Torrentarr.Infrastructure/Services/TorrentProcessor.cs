@@ -36,6 +36,7 @@ public class TorrentProcessor : ITorrentProcessor
     private readonly ISafeDeletionService? _safeDeletion;
     private readonly IOperationalIssueReporter? _issues;
     private static readonly TimeSpan AllowlistWarningLifetime = TimeSpan.FromMinutes(5);
+    private static readonly TimeSpan RemovalFailureWarningLifetime = TimeSpan.FromMinutes(5);
 
     private readonly HashSet<string> _specialCategories;
     private readonly Dictionary<string, int> _recoveryRequests = new(StringComparer.OrdinalIgnoreCase);
@@ -564,7 +565,7 @@ public class TorrentProcessor : ITorrentProcessor
             var hnrAllows = _seedingService != null && await _seedingService.HnrAllowsDeleteAsync(torrent, "CF unmet deletion", ct);
             if (hnrAllows)
             {
-                _logger.LogWarning("Removal requested (custom format unmet): [{Name}] | Hash[{Hash}]",
+                _logger.LogDebug("Removal candidate (custom format unmet): [{Name}] | Hash[{Hash}]",
                     torrent.Name, torrent.Hash);
                 if (await DeleteTorrentFromClientAsync(client, torrent, deleteFiles: true, ct,
                     stillApplies: current => _importService.IsCustomFormatUnmetAsync(current.Hash, ResolveOwner(current) ?? "", ct)))
@@ -575,7 +576,7 @@ public class TorrentProcessor : ITorrentProcessor
         // (qBitrr line 6106-6109: remove_torrent and not leave_alone and amount_left==0)
         else if (!recoveryBlocksRemoval && removeTorrent && !leaveAlone && torrent.AmountLeft == 0)
         {
-            _logger.LogWarning("Removal requested (ratio/seed limit reached): [{Name}] | Ratio[{Ratio:F2}] | SeedingTime[{SeedTime}s] | Hash[{Hash}]",
+            _logger.LogDebug("Removal candidate (ratio/seed limit reached): [{Name}] | Ratio[{Ratio:F2}] | SeedingTime[{SeedTime}s] | Hash[{Hash}]",
                 torrent.Name, torrent.Ratio, torrent.SeedingTime, torrent.Hash);
             if (await DeleteTorrentFromClientAsync(client, torrent, deleteFiles: true, ct))
                 stats.Failed++;
@@ -914,25 +915,82 @@ public class TorrentProcessor : ITorrentProcessor
         return (leaveAlone, maxEta, shouldRemove);
     }
 
+    private void LogRemovalBlocked(TorrentInfo torrent, TorrentRemovalIntent intent, string reason)
+    {
+        if (_cache.ShouldLogRemovalBlock(torrent.ClientInstanceId, torrent.Hash, $"{intent}: {reason}",
+                DateTimeOffset.UtcNow, RemovalFailureWarningLifetime))
+            _logger.LogWarning("Torrent removal blocked: [{Name}] | Hash[{Hash}] | Client[{Client}] | Intent[{Intent}] | Reason[{Reason}]",
+                torrent.Name, torrent.Hash, torrent.ClientInstanceId, intent, reason);
+    }
+
     private async Task<bool> DeleteTorrentFromClientAsync(
         ITorrentClient client, TorrentInfo torrent, bool deleteFiles, CancellationToken ct,
-        Func<TorrentInfo, Task<bool>>? stillApplies = null)
+        Func<TorrentInfo, Task<bool>>? stillApplies = null,
+        TorrentRemovalIntent intent = TorrentRemovalIntent.SeedingLimit)
     {
         if (MaintenanceRecovery.BlocksAutomaticRemoval(_dbContext, torrent,
-                _config.GetTorrentClient(torrent.ClientInstanceId)?.Maintenance.ErrorRecovery ?? new ErrorRecoveryConfig())) return false;
-        var current = (await client.GetTorrentsAsync(cancellationToken: ct)).FirstOrDefault(t => t.Hash.Equals(torrent.Hash, StringComparison.OrdinalIgnoreCase));
-        if (current == null || !SeedingService.SameRemovalCandidate(torrent, current)) return false;
+                _config.GetTorrentClient(torrent.ClientInstanceId)?.Maintenance.ErrorRecovery ?? new ErrorRecoveryConfig()))
+        {
+            LogRemovalBlocked(torrent, intent, "An unresolved error-recovery incident or error state blocks automatic deletion.");
+            return false;
+        }
+
+        var current = (await client.GetTorrentsAsync(cancellationToken: ct))
+            .FirstOrDefault(t => t.Hash.Equals(torrent.Hash, StringComparison.OrdinalIgnoreCase));
+        if (current == null)
+        {
+            LogRemovalBlocked(torrent, intent, "Torrent disappeared before deletion.");
+            return false;
+        }
+        if (!SeedingService.SameRemovalCandidate(torrent, current))
+        {
+            LogRemovalBlocked(torrent, intent, "Torrent metadata changed; waiting for a fresh evaluation.");
+            return false;
+        }
         current.ClientInstanceId = torrent.ClientInstanceId;
-        if (_seedingService == null || !await _seedingService.CanDeleteTorrentAsync(current, "final worker removal", ct)) return false;
-        if (stillApplies != null && !await stillApplies(current)) return false;
-        var deleted = deleteFiles
-            ? _safeDeletion != null && (await _safeDeletion.RemoveTorrentAsync(
-                torrent.ClientInstanceId, torrent.Hash, removeContent: true, ct: ct)).Success
-            : await client.DeleteTorrentsAsync(new List<string> { torrent.Hash }, false, ct);
+        if (_seedingService == null)
+        {
+            LogRemovalBlocked(torrent, intent, "Seeding protection service is unavailable.");
+            return false;
+        }
+        var cleared = intent == TorrentRemovalIntent.SeedingLimit
+            ? await _seedingService.CanDeleteTorrentAsync(current, "final worker removal", ct)
+            : await _seedingService.CanDeleteTorrentForIntentAsync(current, intent, "final worker removal", ct);
+        if (!cleared)
+        {
+            LogRemovalBlocked(torrent, intent, "Final HnR, age, tag or intent-specific removal clearance was denied.");
+            return false;
+        }
+        if (stillApplies != null && !await stillApplies(current))
+        {
+            LogRemovalBlocked(torrent, intent, "Removal trigger no longer applies to refreshed torrent.");
+            return false;
+        }
+        bool deleted;
+        if (deleteFiles)
+        {
+            if (_safeDeletion == null)
+            {
+                LogRemovalBlocked(torrent, intent, "Safe deletion service is unavailable.");
+                return false;
+            }
+            var result = intent == TorrentRemovalIntent.SeedingLimit
+                ? await _safeDeletion.RemoveTorrentAsync(torrent.ClientInstanceId, torrent.Hash, true, ct)
+                : await _safeDeletion.RemoveTorrentForIntentAsync(torrent.ClientInstanceId, torrent.Hash, true, intent, ct);
+            deleted = result.Success;
+            if (!deleted)
+                LogRemovalBlocked(torrent, intent, result.Error ?? "Safe deletion rejected removal without a reason.");
+        }
+        else
+        {
+            deleted = await client.DeleteTorrentsAsync([torrent.Hash], false, ct);
+            if (!deleted) LogRemovalBlocked(torrent, intent, "Torrent client rejected removal of torrent record.");
+        }
         if (deleted)
         {
             _stalledUploads?.Evict(torrent.QBitInstanceName, torrent.Hash);
-            _logger.LogInformation("Removed torrent {Hash} from {Client} after HnR clearance", torrent.Hash, torrent.ClientInstanceId);
+            _cache.InvalidateTorrent(torrent.ClientInstanceId, torrent.Hash);
+            _logger.LogInformation("Removed torrent {Hash} from {Client} after {Intent} clearance", torrent.Hash, torrent.ClientInstanceId, intent);
         }
         return deleted;
     }
@@ -1045,9 +1103,10 @@ public class TorrentProcessor : ITorrentProcessor
             var hnrAllows = _seedingService != null && await _seedingService.HnrAllowsDeleteAsync(torrent, reason, ct);
             if (hnrAllows)
             {
-                _logger.LogWarning("Removal requested for stalled torrent ({Reason}): [{Name}] | Availability[{Avail:P1}] | Hash[{Hash}]",
+                _logger.LogDebug("Removal candidate for stalled torrent ({Reason}): [{Name}] | Availability[{Avail:P1}] | Hash[{Hash}]",
                     reason, torrent.Name, torrent.Availability, torrent.Hash);
-                if (await DeleteTorrentFromClientAsync(client, torrent, deleteFiles: true, ct))
+                if (await DeleteTorrentFromClientAsync(client, torrent, deleteFiles: true, ct,
+                        intent: TorrentRemovalIntent.StalledDownload))
                 {
                     stats.Failed++;
                     if (reSearchStalled && _importService != null
@@ -1548,10 +1607,11 @@ public class TorrentProcessor : ITorrentProcessor
             if (!hnrAllows)
                 return FileFilterResult.PendingResult;
 
-            _logger.LogWarning(
-                "All {Total} files excluded in [{Name}] ({Hash}) — removal requested",
+            _logger.LogDebug(
+                "All {Total} files excluded in [{Name}] ({Hash}) — removal candidate",
                 meaningfulFiles.Count, torrent.Name, torrent.Hash);
-            return await DeleteTorrentFromClientAsync(client, torrent, deleteFiles: true, ct)
+            return await DeleteTorrentFromClientAsync(client, torrent, deleteFiles: true, ct,
+                    intent: TorrentRemovalIntent.RejectedByAllowlist)
                 ? FileFilterResult.DeletedResult : FileFilterResult.PendingResult;
         }
 
@@ -1574,6 +1634,14 @@ public class TorrentProcessor : ITorrentProcessor
                 await _seedingService.HnrAllowsDeleteAsync(torrent, "excluded file cleanup by import allowlist", ct);
             if (!hnrAllows)
             {
+                // H&R must prevent deleting owned files, but does not need to block
+                // importing valid media when only harmless metadata sidecars remain.
+                if (CanImportWithPreservedSidecars(torrent, remaining))
+                {
+                    _logger.LogInformation("Import permitted for {Hash}; preserving {Count} excluded .nfo/.txt sidecar files due to H&R obligations",
+                        torrent.Hash, remaining.Count);
+                    return FileFilterResult.ReadyResult;
+                }
                 WarnAllowlistBlocked(torrent, "H&R obligations prevent excluded file cleanup", remaining);
                 return FileFilterResult.PendingResult;
             }
@@ -1587,8 +1655,40 @@ public class TorrentProcessor : ITorrentProcessor
         if (remaining.Count == 0)
             return FileFilterResult.ReadyResult;
 
+        if (CanImportWithPreservedSidecars(torrent, remaining))
+        {
+            _logger.LogInformation("Import permitted for {Hash}; preserving {Count} excluded .nfo/.txt metadata sidecars",
+                torrent.Hash, remaining.Count);
+            return FileFilterResult.ReadyResult;
+        }
+
         WarnAllowlistBlocked(torrent, $"{remaining.Count} disallowed file(s) remain", remaining);
         return FileFilterResult.PendingResult;
+    }
+
+    private bool CanImportWithPreservedSidecars(TorrentInfo torrent, IReadOnlyCollection<TorrentFileRecord> remaining)
+    {
+        if (remaining.Count == 0 || MaintenanceRecovery.BlocksAutomaticRemoval(_dbContext, torrent,
+            _config.GetTorrentClient(torrent.ClientInstanceId)?.Maintenance.ErrorRecovery ?? new ErrorRecoveryConfig()))
+            return false;
+
+        foreach (var file in remaining)
+        {
+            var extension = Path.GetExtension(file.Name);
+            if (!extension.Equals(".nfo", StringComparison.OrdinalIgnoreCase)
+                && !extension.Equals(".txt", StringComparison.OrdinalIgnoreCase))
+                return false;
+            try
+            {
+                // Do not relax the import barrier for symlink, traversal, or invalid paths.
+                _ = ResolveTorrentOwnedPath(torrent, file.Name);
+            }
+            catch
+            {
+                return false;
+            }
+        }
+        return true;
     }
 
     private void WarnAllowlistBlocked(TorrentInfo torrent, string reason, IReadOnlyList<TorrentFileRecord> excludedFiles)

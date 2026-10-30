@@ -117,7 +117,7 @@ When **OIDCEnabled** is true, add a **\[WebUI.OIDC]** table with your identity p
 
 When Torrentarr is behind a reverse proxy, the redirect URI the IdP must allow is the **public** URL, e.g. `https://torrentarr.example.com/signin-oidc` (same scheme, host, and path as users use to reach Torrentarr).
 
-**Running behind a reverse proxy:** Login and set-password rate limiting (and any IP-based logging) use the connection’s remote IP. Behind a reverse proxy (e.g. Nginx, Traefik), that is usually the proxy’s IP, so all clients share one “IP” and rate limiting applies globally. Configure forwarded headers so Torrentarr sees the real client IP: enable `X-Forwarded-For` and `X-Forwarded-Proto` in your proxy and, if you run Torrentarr with forwarded-headers support, configure `ForwardedHeaders` (e.g. `UseForwardedHeaders`) so rate limiting and logs are per client. See your proxy’s documentation for setting these headers.
+**Running behind a reverse proxy:** Login and set-password rate limiting (and any IP-based logging) use the connection’s remote IP. Behind a reverse proxy (e.g. Nginx, Traefik), that is usually the proxy’s IP, so all clients share one “IP” and rate limiting applies globally. Configure forwarded headers so Torrentarr sees the real client IP: enable `X-Forwarded-For` and `X-Forwarded-Proto` in your proxy, and set the `TORRENTARR_TRUSTED_PROXIES` environment variable to the proxy's IP address as seen by Torrentarr (for example, `TORRENTARR_TRUSTED_PROXIES=192.168.0.240`). Multiple explicit IPs can be comma-separated; both IPv4 and IPv6 addresses are accepted. The configured addresses are trusted in addition to loopback addresses (both IPv4 and IPv6), which remain trusted even when `TORRENTARR_TRUSTED_PROXIES` is set. Do **not** enter client IPs or use an untrusted open proxy, or request headers could spoof the client IP and protocol. Restart Torrentarr after changing the environment variable. If no proxy is configured, loopback forwarding remains the only trusted default.
 
 For a step-by-step example with one IdP, see [OIDC with Authentik](webui-oidc-authentik.md). For Authentik’s OAuth2/OIDC provider details, see the [Authentik OAuth 2.0 provider](https://docs.goauthentik.io/add-secure-apps/providers/oauth2/) documentation.
 
@@ -209,8 +209,9 @@ RequireHttpsMetadata = true
 
 ## Deployment and security
 
-- **CORS:** The WebUI server may allow cross-origin requests (e.g. `AllowAnyOrigin` in development). In sensitive deployments, restrict CORS to trusted origins via your reverse proxy or application configuration so that only your intended UI origin can call the API.
+- **CORS:** Set `WebUI.CorsAllowedOrigins` to exact HTTP(S) origins, such as `["https://torrentarr.example.com", "http://localhost:5173"]`. Do not include paths, trailing slashes, wildcards, or credentials. Only listed origins receive cross-origin access with credentials; an omitted or empty list preserves access from any origin without credentials. The setting appears under Web Settings → API access and applies live in both Host and standalone WebUI. Authentication still applies; CORS does not restrict non-browser clients.
 - **HTTPS:** In production, serve Torrentarr over HTTPS (e.g. behind a reverse proxy with TLS). Session cookies use `SecurePolicy=SameAsRequest`, so they are only sent over HTTPS when the request is HTTPS.
+- **Disabling authentication:** The configuration editor asks for confirmation before changing `AuthDisabled` to true. Confirming edits the draft; save the section to apply it.
 
 ---
 
