@@ -199,7 +199,7 @@ public class TorrentCacheService : ITorrentCacheService
                 _filePrioritiesAppliedHashes.Clear();
                 _fileFilteredHashes.Clear();
                 _allowlistWarningCache.Clear();
-            _removalBlocks.Clear();
+                _removalBlocks.Clear();
                 _lastFullClearUtc = now;
                 _logger.LogInformation("Periodic full cache clear (every {Hours}h) to bound memory growth", (int)FullClearInterval.TotalHours);
             }
