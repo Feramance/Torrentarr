@@ -20,25 +20,48 @@ export function logLevel(line: string): string | undefined {
   return level ? ALIASES[level] ?? level : undefined;
 }
 export function colourLog(text: string, dark: boolean): string {
-  let level: string | undefined;
-  return text
-    .split("\n")
-    .map((line) => {
-      level = logLevel(line) ?? level;
-      if (line.includes(String.fromCharCode(27))) return line;
-      let colour = dark ? "37" : "30";
-      if (level === "ERROR" || level === "CRITICAL")
-        colour = dark ? "91" : "31";
-      else if (level === "WARNING") colour = dark ? "93" : "33";
-      else if (level === "DEBUG" || level === "TRACE")
-        colour = dark ? "95" : "35";
-      else if (level === "SUCCESS") colour = "32";
-      const prefix = line.match(/^(\[[^\]]+\])(\[[^\]]+\])(\[[^\]]+\])(.*)$/);
-      return prefix
-        ? `\x1b[32m${prefix[1]}\x1b[0m\x1b[${colour}m${prefix[2]}\x1b[0m\x1b[${dark ? "94" : "34"}m${prefix[3]}\x1b[0m\x1b[${colour}m${prefix[4]}\x1b[0m`
-        : `\x1b[${colour}m${line}\x1b[0m`;
-    })
-    .join("\n");
+  let previousLevel: string | undefined;
+  const esc = "\x1b[";
+  const paint = (value: string, code: string) => esc + code + "m" + value + esc + "0m";
+  const severity = (level: string | undefined): string => {
+    switch (level) {
+      case "ERROR": return dark ? "91" : "31";
+      case "CRITICAL": return dark ? "1;91" : "1;31";
+      case "WARNING": return dark ? "93" : "33";
+      case "NOTICE": return dark ? "96" : "36";
+      case "DEBUG": return dark ? "95" : "35";
+      case "TRACE": return "90";
+      case "SUCCESS": return dark ? "92" : "32";
+      default: return dark ? "92" : "32";
+    }
+  };
+  return text.split("\n").map((raw) => {
+    // Existing ANSI colours must not prevent consistent browser highlighting.
+    const line = raw.replace(ANSI, "");
+    const level = logLevel(line);
+    if (level) previousLevel = level;
+    const colour = severity(level ?? previousLevel);
+    const neutral = dark ? "37" : "30";
+    const sourceColour = dark ? "94" : "34";
+    const timestampColour = dark ? "92" : "32";
+    // Host logs: padded level and logger names are display formatting only.
+    const host = line.match(/^(\[[^\]]+\])(\[([^\]]+)\])(\[([^\]]+)\])([\s\S]*)$/);
+    if (host && logLevel(host[2])) {
+      const message = host[6].trimStart();
+      return paint(host[1], timestampColour) +
+        paint("[" + host[3].trim() + "]", colour) +
+        paint("[" + host[5].trim() + "]", sourceColour) +
+        (message ? " " + paint(message, neutral) : "");
+    }
+    // Worker logs: retain date and message while highlighting the level.
+    const worker = line.match(/^(\d{4}-\d\d-\d\d[ T][^\[]+)(\[([^\]]+)\])(\s*)([\s\S]*)$/);
+    if (worker && logLevel(worker[2])) {
+      return paint(worker[1], timestampColour) +
+        paint("[" + worker[3].trim() + "]", colour) +
+        worker[4] + paint(worker[5], neutral);
+    }
+    return paint(line, neutral);
+  }).join("\n");
 }
 export function newestAggregate(files: string[]): string | undefined {
   return files
