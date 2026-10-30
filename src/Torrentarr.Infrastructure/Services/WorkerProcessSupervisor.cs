@@ -160,6 +160,42 @@ public sealed class WorkerProcessSupervisor : BackgroundService, IProcessOrchest
 
     public Task RestartWorkerAsync(string processName) => RestartProcessAsync(processName);
 
+    /// <summary>
+    /// Notify running Arr workers to clear one client's cached authentication rejection.
+    /// Work continues uninterrupted; each worker reconnects on its next normal cycle.
+    /// </summary>
+    public async Task<(int Notified, IReadOnlyList<string> Failed)> NotifyClientReconnectAsync(
+        string clientId, CancellationToken ct = default)
+    {
+        await _lifecycle.WaitAsync(ct);
+        try
+        {
+            KeyValuePair<string, Process>[] running;
+            lock (_gate) running = _processes.ToArray();
+            var failed = new List<string>();
+            var notified = 0;
+            foreach (var (name, process) in running)
+            {
+                try
+                {
+                    if (process.HasExited) continue;
+                    await process.StandardInput.WriteLineAsync($"reconnect:{clientId}".AsMemory(), ct);
+                    await process.StandardInput.FlushAsync(ct);
+                    notified++;
+                }
+                catch (OperationCanceledException) when (ct.IsCancellationRequested) { throw; }
+                catch (Exception ex) when (ex is IOException or InvalidOperationException or Win32Exception)
+                {
+                    failed.Add(name);
+                    _logger.LogWarning("Unable to send client reconnect command to worker {Instance} ({ErrorType})",
+                        name, ex.GetType().Name);
+                }
+            }
+            return (notified, failed);
+        }
+        finally { _lifecycle.Release(); }
+    }
+
     private async Task EnsureFFprobeUpdatedAsync(CancellationToken cancellationToken)
     {
         if (!_config.Settings.FFprobeAutoUpdate)

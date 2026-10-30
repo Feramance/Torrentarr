@@ -65,6 +65,21 @@ public class QBittorrentConnectionManager : ITorrentClientRegistry
         finally { _reconcile.Release(); }
     }
 
+    /// <summary>Let a worker retry rejected credentials after the Host explicitly reconnects.</summary>
+    public async Task InvalidateAuthenticationFailureAsync(string name, CancellationToken ct = default)
+    {
+        await _reconcile.WaitAsync(ct);
+        try
+        {
+            lock (_clientsLock)
+            {
+                _authenticationFailures.Remove(name);
+                _connectionErrors.Remove(name);
+            }
+        }
+        finally { _reconcile.Release(); }
+    }
+
     private async Task<bool> ConnectAsync(string name, TorrentClientInstanceConfig config, CancellationToken ct)
     {
         var settings = new ConnectionSettings(config.Type, config.Host, config.Port, config.UserName, config.Password, config.SkipTLSVerify);

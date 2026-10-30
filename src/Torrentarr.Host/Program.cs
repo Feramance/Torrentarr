@@ -707,17 +707,27 @@ try
         });
         app.MapTorrentMaintenanceEndpoints(prefix);
         app.MapPost(prefix + "/torrent-clients/{id}/reconnect", async (string id, TorrentarrConfig cfg,
-            QBittorrentConnectionManager manager, CancellationToken ct) =>
+            QBittorrentConnectionManager manager, WorkerProcessSupervisor workers, CancellationToken ct) =>
         {
             if (!cfg.GetAllTorrentClients().TryGetValue(id, out var client))
                 return Results.NotFound(new { error = "Unknown torrent client." });
             if (client.Disabled || string.IsNullOrWhiteSpace(client.Host) || client.Host == "CHANGE_ME")
                 return Results.Conflict(new { error = "Torrent client is disabled or has no configured endpoint." });
             var connected = await manager.ForceReconnectAsync(id, client, ct);
+            if (connected)
+            {
+                // Workers own independent connection managers and authentication-rejection caches.
+                var (notified, failed) = await workers.NotifyClientReconnectAsync(id, ct);
+                return failed.Count == 0
+                    ? Results.Ok(new { id, connected = true, workersNotified = notified })
+                    : Results.Json(new
+                    {
+                        id, connected = true, workersNotified = notified,
+                        error = $"Connected in Host, but could not notify workers: {string.Join(", ", failed)}."
+                    }, statusCode: StatusCodes.Status503ServiceUnavailable);
+            }
             var error = manager.GetConnectionErrors().GetValueOrDefault(id, "Connection unavailable.");
-            return connected
-                ? Results.Ok(new { id, connected = true })
-                : Results.Json(new { id, connected = false, error }, statusCode: StatusCodes.Status503ServiceUnavailable);
+            return Results.Json(new { id, connected = false, error }, statusCode: StatusCodes.Status503ServiceUnavailable);
         });
 
     }

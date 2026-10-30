@@ -144,6 +144,33 @@ public class QBittorrentConnectionManagerTests
     }
 
     [Fact]
+    public async Task WorkerReconnectionNotification_InvalidatesOnlyTargetedAuthenticationRejection()
+    {
+        var client = new Mock<ITorrentClient>();
+        client.SetupGet(c => c.LastConnectionFailureKind).Returns(TorrentClientConnectionFailureKind.AuthenticationRejected);
+        client.Setup(c => c.LoginAsync(It.IsAny<CancellationToken>())).ReturnsAsync(false);
+        var factory = new Mock<ITorrentClientFactory>();
+        factory.SetupGet(f => f.Type).Returns("fake");
+        factory.Setup(f => f.Create(It.IsAny<string>(), It.IsAny<TorrentClientInstanceConfig>())).Returns(client.Object);
+        var manager = new QBittorrentConnectionManager(
+            NullLogger<QBittorrentConnectionManager>.Instance, [factory.Object]);
+        var instance = new TorrentClientInstanceConfig { Type = "fake", Host = "fixture" };
+        var desired = new[]
+        {
+            new KeyValuePair<string, TorrentClientInstanceConfig>("first", instance),
+            new KeyValuePair<string, TorrentClientInstanceConfig>("second", instance)
+        };
+
+        (await manager.ReconcileAsync(desired)).Should().Be(0);
+        (await manager.ReconcileAsync(desired)).Should().Be(0);
+        client.Verify(c => c.LoginAsync(It.IsAny<CancellationToken>()), Times.Exactly(2));
+        await manager.InvalidateAuthenticationFailureAsync("first");
+        (await manager.ReconcileAsync(desired)).Should().Be(0);
+        client.Verify(c => c.LoginAsync(It.IsAny<CancellationToken>()), Times.Exactly(3));
+        manager.GetConnectionErrors()["second"].Should().Contain("Authentication rejected");
+    }
+
+    [Fact]
     public async Task ExplicitReconnect_AuthenticatesAgainEvenWhenCurrentSessionIsHealthy()
     {
         var client = new Mock<ITorrentClient>();

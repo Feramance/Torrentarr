@@ -257,8 +257,22 @@ try
     {
         try
         {
-            if (Console.IsInputRedirected && (await input.ReadLineAsync(monitorCts.Token))?.Trim().Equals("shutdown", StringComparison.OrdinalIgnoreCase) == true)
-                lifetime.StopApplication();
+            while (Console.IsInputRedirected && !monitorCts.IsCancellationRequested)
+            {
+                var command = (await input.ReadLineAsync(monitorCts.Token))?.Trim();
+                if (command == null) break;
+                if (command.Equals("shutdown", StringComparison.OrdinalIgnoreCase))
+                {
+                    lifetime.StopApplication();
+                    break;
+                }
+                if (command.StartsWith("reconnect:", StringComparison.OrdinalIgnoreCase))
+                {
+                    var clientId = command["reconnect:".Length..];
+                    await host.Services.GetRequiredService<QBittorrentConnectionManager>()
+                        .InvalidateAuthenticationFailureAsync(clientId, monitorCts.Token);
+                }
+            }
         }
         catch (OperationCanceledException) when (monitorCts.IsCancellationRequested) { }
     }));
