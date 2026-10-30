@@ -1,5 +1,6 @@
 import {
   act,
+  cleanup,
   fireEvent,
   render,
   screen,
@@ -79,7 +80,11 @@ beforeEach(() => {
   vi.mocked(api.getLogTailJson).mockResolvedValue(payload);
   vi.mocked(api.getLogDelta).mockResolvedValue({ ...payload, content: "" });
 });
-afterEach(() => vi.unstubAllGlobals());
+afterEach(() => {
+  // Unmount first so deferred live-stream effects cannot use EventSource after it is unstubbed.
+  cleanup();
+  vi.unstubAllGlobals();
+});
 describe("log viewer parity", () => {
   it("falls back to delta polling after repeated stream failures", async () => {
     view();
