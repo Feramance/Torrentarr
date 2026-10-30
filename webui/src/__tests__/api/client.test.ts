@@ -9,6 +9,9 @@ import {
   getRadarrMovies,
   getQbitCategories,
   getStatus,
+  getIssues,
+  getIssuesSummary,
+  getIssueDetails,
   getConfig,
   updateConfig,
   login,
@@ -782,3 +785,32 @@ it("sends Radarr filters without changing the existing call signature", async ()
   expect(urls[1].searchParams.get("reason")).toBe("Missing");
   expect(urls[1].searchParams.get("q")).toBe("Wanted");
 });
+
+it.each(["", "/torrentarr"])(
+  "prefixes all Issues requests exactly once with URL base %s",
+  async (base) => {
+    setUrlBaseFromMeta(base);
+    const requests: string[] = [];
+    server.use(
+      http.get(/\/web\/issues(?:\/.*)?$/, ({ request }) => {
+        requests.push(
+          new URL(request.url).pathname + new URL(request.url).search,
+        );
+        return HttpResponse.json({
+          available: true,
+          items: [],
+          total: 0,
+          counts: [],
+        });
+      }),
+    );
+    await getIssues({ category: "automation", page: 2 });
+    await getIssuesSummary();
+    await getIssueDetails(42, 3);
+    expect(requests).toEqual([
+      `${base}/web/issues?category=automation&page=2`,
+      `${base}/web/issues/summary`,
+      `${base}/web/issues/42?page=3`,
+    ]);
+  },
+);

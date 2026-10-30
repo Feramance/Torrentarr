@@ -913,6 +913,218 @@
         },
         "type": "object"
       },
+      "OperationalIssue": {
+        "properties": {
+          "arrInstance": {
+            "type": "string"
+          },
+          "category": {
+            "type": "string"
+          },
+          "clientInstance": {
+            "type": "string"
+          },
+          "code": {
+            "type": "string"
+          },
+          "firstObserved": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "id": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "impact": {
+            "type": "string"
+          },
+          "lastObserved": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "occurrences": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "remediation": {
+            "type": "string"
+          },
+          "resolution": {
+            "nullable": true,
+            "type": "string"
+          },
+          "resolvedAt": {
+            "format": "date-time",
+            "nullable": true,
+            "type": "string"
+          },
+          "severity": {
+            "type": "string"
+          },
+          "subjectId": {
+            "type": "string"
+          },
+          "subjectType": {
+            "type": "string"
+          },
+          "target": {
+            "type": "string"
+          },
+          "title": {
+            "type": "string"
+          }
+        },
+        "type": "object"
+      },
+      "OperationalIssueDetails": {
+        "properties": {
+          "available": {
+            "type": "boolean"
+          },
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/OperationalIssue"
+            },
+            "type": "array"
+          },
+          "page": {
+            "type": "integer"
+          },
+          "pageSize": {
+            "type": "integer"
+          },
+          "total": {
+            "type": "integer"
+          }
+        },
+        "type": "object"
+      },
+      "OperationalIssueGroup": {
+        "allOf": [
+          {
+            "$ref": "#/components/schemas/OperationalIssue"
+          },
+          {
+            "properties": {
+              "affected": {
+                "type": "integer"
+              },
+              "examples": {
+                "items": {
+                  "$ref": "#/components/schemas/OperationalIssue"
+                },
+                "type": "array"
+              }
+            },
+            "type": "object"
+          }
+        ]
+      },
+      "OperationalIssueSummary": {
+        "properties": {
+          "activeGroups": {
+            "nullable": true,
+            "type": "integer"
+          },
+          "available": {
+            "type": "boolean"
+          },
+          "counts": {
+            "items": {
+              "properties": {
+                "affected": {
+                  "type": "integer"
+                },
+                "arrInstance": {
+                  "type": "string"
+                },
+                "category": {
+                  "type": "string"
+                },
+                "clientInstance": {
+                  "type": "string"
+                },
+                "code": {
+                  "type": "string"
+                },
+                "severity": {
+                  "type": "string"
+                }
+              },
+              "type": "object"
+            },
+            "type": "array"
+          },
+          "instances": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "pending": {
+            "items": {
+              "$ref": "#/components/schemas/PendingOperationalIssue"
+            },
+            "type": "array"
+          }
+        },
+        "type": "object"
+      },
+      "OperationalIssuesResponse": {
+        "properties": {
+          "available": {
+            "type": "boolean"
+          },
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/OperationalIssueGroup"
+            },
+            "type": "array"
+          },
+          "page": {
+            "type": "integer"
+          },
+          "pageSize": {
+            "type": "integer"
+          },
+          "pending": {
+            "items": {
+              "$ref": "#/components/schemas/PendingOperationalIssue"
+            },
+            "type": "array"
+          },
+          "total": {
+            "nullable": true,
+            "type": "integer"
+          }
+        },
+        "type": "object"
+      },
+      "PendingOperationalIssue": {
+        "properties": {
+          "configurationRevision": {
+            "default": 0,
+            "format": "int64",
+            "type": "integer"
+          },
+          "firstObserved": {
+            "format": "date-time",
+            "nullable": true,
+            "type": "string"
+          },
+          "observedAt": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "report": {
+            "$ref": "#/components/schemas/OperationalIssue"
+          },
+          "resolved": {
+            "type": "boolean"
+          }
+        },
+        "type": "object"
+      },
       "ProtectionDecision": {
         "properties": {
           "clientInstanceId": {
@@ -1633,6 +1845,206 @@
         "summary": "Download update artifact (/api)",
         "tags": [
           "WebUI"
+        ]
+      }
+    },
+    "/api/issues": {
+      "get": {
+        "description": "Read-only operational issues. History is retained for 30 days after resolution. available=false means history cannot be read; it is not an empty healthy result. /api requires a Bearer token; /web follows WebUI authentication.",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "category",
+            "required": false,
+            "schema": {
+              "enum": [
+                "automation",
+                "system"
+              ],
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "state",
+            "required": false,
+            "schema": {
+              "enum": [
+                "active",
+                "resolved"
+              ],
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "severity",
+            "required": false,
+            "schema": {
+              "enum": [
+                "warning",
+                "error"
+              ],
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "instance",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "q",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "page",
+            "schema": {
+              "default": 0,
+              "minimum": 0,
+              "type": "integer"
+            }
+          },
+          {
+            "in": "query",
+            "name": "page_size",
+            "schema": {
+              "default": 50,
+              "maximum": 100,
+              "minimum": 1,
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/OperationalIssuesResponse"
+                }
+              }
+            },
+            "description": "Issue observations"
+          },
+          "400": {
+            "description": "Invalid filter"
+          },
+          "401": {
+            "description": "Authentication required"
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "summary": "List operational issues grouped by code and instance",
+        "tags": [
+          "Issues"
+        ]
+      }
+    },
+    "/api/issues/summary": {
+      "get": {
+        "description": "Read-only operational issues. History is retained for 30 days after resolution. available=false means history cannot be read; it is not an empty healthy result. /api requires a Bearer token; /web follows WebUI authentication.",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/OperationalIssueSummary"
+                }
+              }
+            },
+            "description": "Issue observations"
+          },
+          "401": {
+            "description": "Authentication required"
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "summary": "Get active issue counts",
+        "tags": [
+          "Issues"
+        ]
+      }
+    },
+    "/api/issues/{id}": {
+      "get": {
+        "description": "Read-only operational issues. History is retained for 30 days after resolution. available=false means history cannot be read; it is not an empty healthy result. /api requires a Bearer token; /web follows WebUI authentication.",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "page",
+            "schema": {
+              "default": 0,
+              "minimum": 0,
+              "type": "integer"
+            }
+          },
+          {
+            "in": "query",
+            "name": "page_size",
+            "schema": {
+              "default": 50,
+              "maximum": 100,
+              "minimum": 1,
+              "type": "integer"
+            }
+          },
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "format": "int64",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/OperationalIssueDetails"
+                }
+              }
+            },
+            "description": "Issue observations"
+          },
+          "401": {
+            "description": "Authentication required"
+          },
+          "404": {
+            "description": "Issue group not found"
+          },
+          "503": {
+            "description": "Issue history unavailable"
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "summary": "Get affected subjects and resolved history",
+        "tags": [
+          "Issues"
         ]
       }
     },
@@ -4077,6 +4489,191 @@
         "summary": "Download update artifact (/web)",
         "tags": [
           "WebUI"
+        ]
+      }
+    },
+    "/web/issues": {
+      "get": {
+        "description": "Read-only operational issues. History is retained for 30 days after resolution. available=false means history cannot be read; it is not an empty healthy result. /api requires a Bearer token; /web follows WebUI authentication.",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "category",
+            "required": false,
+            "schema": {
+              "enum": [
+                "automation",
+                "system"
+              ],
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "state",
+            "required": false,
+            "schema": {
+              "enum": [
+                "active",
+                "resolved"
+              ],
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "severity",
+            "required": false,
+            "schema": {
+              "enum": [
+                "warning",
+                "error"
+              ],
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "instance",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "q",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "page",
+            "schema": {
+              "default": 0,
+              "minimum": 0,
+              "type": "integer"
+            }
+          },
+          {
+            "in": "query",
+            "name": "page_size",
+            "schema": {
+              "default": 50,
+              "maximum": 100,
+              "minimum": 1,
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/OperationalIssuesResponse"
+                }
+              }
+            },
+            "description": "Issue observations"
+          },
+          "400": {
+            "description": "Invalid filter"
+          },
+          "401": {
+            "description": "Authentication required"
+          }
+        },
+        "summary": "List operational issues grouped by code and instance",
+        "tags": [
+          "Issues"
+        ]
+      }
+    },
+    "/web/issues/summary": {
+      "get": {
+        "description": "Read-only operational issues. History is retained for 30 days after resolution. available=false means history cannot be read; it is not an empty healthy result. /api requires a Bearer token; /web follows WebUI authentication.",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/OperationalIssueSummary"
+                }
+              }
+            },
+            "description": "Issue observations"
+          },
+          "401": {
+            "description": "Authentication required"
+          }
+        },
+        "summary": "Get active issue counts",
+        "tags": [
+          "Issues"
+        ]
+      }
+    },
+    "/web/issues/{id}": {
+      "get": {
+        "description": "Read-only operational issues. History is retained for 30 days after resolution. available=false means history cannot be read; it is not an empty healthy result. /api requires a Bearer token; /web follows WebUI authentication.",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "page",
+            "schema": {
+              "default": 0,
+              "minimum": 0,
+              "type": "integer"
+            }
+          },
+          {
+            "in": "query",
+            "name": "page_size",
+            "schema": {
+              "default": 50,
+              "maximum": 100,
+              "minimum": 1,
+              "type": "integer"
+            }
+          },
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "format": "int64",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/OperationalIssueDetails"
+                }
+              }
+            },
+            "description": "Issue observations"
+          },
+          "401": {
+            "description": "Authentication required"
+          },
+          "404": {
+            "description": "Issue group not found"
+          },
+          "503": {
+            "description": "Issue history unavailable"
+          }
+        },
+        "summary": "Get affected subjects and resolved history",
+        "tags": [
+          "Issues"
         ]
       }
     },

@@ -17,21 +17,36 @@ public class ArrImportService : IArrImportService
     private readonly ITorrentClientRegistry _qbitManager;
     private readonly TorrentarrDbContext _dbContext;
     private readonly ISearchExecutor _searchExecutor;
+    private readonly IOperationalIssueReporter? _issues;
 
     public ArrImportService(
         ILogger<ArrImportService> logger,
         TorrentarrConfig config,
         ITorrentClientRegistry qbitManager,
         TorrentarrDbContext dbContext,
-        ISearchExecutor? searchExecutor = null)
+        ISearchExecutor? searchExecutor = null, IOperationalIssueReporter? issues = null)
     {
         _logger = logger;
+        _issues = issues;
         _config = config;
         _qbitManager = qbitManager;
         _dbContext = dbContext;
         var coordinator = new DatabaseRestartCoordinator();
         _searchExecutor = searchExecutor ?? new SearchExecutor(NullLogger<SearchExecutor>.Instance, config, dbContext,
-            new QualityProfileSwitcherService(NullLogger<QualityProfileSwitcherService>.Instance, dbContext, coordinator), coordinator);
+            new QualityProfileSwitcherService(NullLogger<QualityProfileSwitcherService>.Instance, dbContext, coordinator, issues), coordinator, issues);
+    }
+
+    private OperationalIssueReport ImportIssue(string operation, string category, string hash) => new(
+        "import." + operation, "automation", "Arr " + operation + " could not complete",
+        "Import or replacement progress could not be confirmed; dependent work is held back.",
+        "Check Arr connectivity, its queue, category ownership and application logs.",
+        ArrInstance: CategoryOwnershipHelper.FindArrSectionForCategory(_config, category) ?? "", SubjectType: "torrent", SubjectId: hash.ToUpperInvariant(), Target: "logs");
+
+    private async Task ObserveAsync(string operation, string category, string hash, bool success, CancellationToken ct)
+    {
+        if (_issues == null) return;
+        var issue = ImportIssue(operation, category, hash);
+        if (success) await _issues.ResolveAsync(issue, ct); else await _issues.ReportAsync(issue, ct);
     }
 
     public async Task<ImportResult> TriggerImportAsync(
@@ -81,10 +96,13 @@ public class ArrImportService : IArrImportService
 
             _logger.LogTrace("Import result for {Hash}: Success={Success}, Message={Message}",
                 hash, result.Success, result.Message);
+            await ObserveAsync("scan", category, hash, result.Success, cancellationToken);
             return result;
         }
+        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested) { throw; }
         catch (Exception ex)
         {
+            await ObserveAsync("scan", category, hash, false, cancellationToken);
             _logger.LogError(ex, "Error triggering import for hash {Hash}", hash);
             return new ImportResult
             {
@@ -118,14 +136,17 @@ public class ArrImportService : IArrImportService
                     _ => false
                 };
 
+                await ObserveAsync("queue", arrInstance.Category, hash, true, cancellationToken);
                 if (hasInQueue)
                 {
                     _logger.LogTrace("Hash {Hash} found in queue for {Instance}, not yet imported", hash, arrInstance.Category);
                     return false; // Still in queue, not yet imported
                 }
             }
+            catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested) { throw; }
             catch (Exception ex)
             {
+                await ObserveAsync("queue", arrInstance.Category, hash, false, cancellationToken);
                 hadCheckErrors = true;
                 _logger.LogError(ex, "Error checking queue for instance {Category}", arrInstance.Category);
             }
@@ -278,11 +299,11 @@ public class ArrImportService : IArrImportService
         CancellationToken cancellationToken)
     {
         var client = new RadarrClient(config.URI, config.APIKey, config.SkipTLSVerify);
-        var queue = await client.GetQueueAsync(ct: cancellationToken);
+        var queue = await client.GetAllQueueAsync(ct: cancellationToken);
 
-        return queue?.Records?.Any(r =>
+        return queue.Any(r =>
             r.DownloadId != null &&
-            r.DownloadId.Equals(hash, StringComparison.OrdinalIgnoreCase)) ?? false;
+            r.DownloadId.Equals(hash, StringComparison.OrdinalIgnoreCase));
     }
 
     private async Task<bool> CheckSonarrQueueAsync(
@@ -291,11 +312,11 @@ public class ArrImportService : IArrImportService
         CancellationToken cancellationToken)
     {
         var client = new SonarrClient(config.URI, config.APIKey, config.SkipTLSVerify);
-        var queue = await client.GetQueueAsync(ct: cancellationToken);
+        var queue = await client.GetAllQueueAsync(ct: cancellationToken);
 
-        return queue?.Records?.Any(r =>
+        return queue.Any(r =>
             r.DownloadId != null &&
-            r.DownloadId.Equals(hash, StringComparison.OrdinalIgnoreCase)) ?? false;
+            r.DownloadId.Equals(hash, StringComparison.OrdinalIgnoreCase));
     }
 
     private async Task<bool> CheckLidarrQueueAsync(
@@ -304,11 +325,11 @@ public class ArrImportService : IArrImportService
         CancellationToken cancellationToken)
     {
         var client = new LidarrClient(config.URI, config.APIKey, config.SkipTLSVerify);
-        var queue = await client.GetQueueAsync(ct: cancellationToken);
+        var queue = await client.GetAllQueueAsync(ct: cancellationToken);
 
-        return queue?.Records?.Any(r =>
+        return queue.Any(r =>
             r.DownloadId != null &&
-            r.DownloadId.Equals(hash, StringComparison.OrdinalIgnoreCase)) ?? false;
+            r.DownloadId.Equals(hash, StringComparison.OrdinalIgnoreCase));
     }
 
     private async Task<bool> CheckReadarrQueueAsync(
@@ -317,11 +338,11 @@ public class ArrImportService : IArrImportService
         CancellationToken cancellationToken)
     {
         var client = new ReadarrClient(config.URI, config.APIKey, config.SkipTLSVerify);
-        var queue = await client.GetQueueAsync(ct: cancellationToken);
+        var queue = await client.GetAllQueueAsync(ct: cancellationToken);
 
-        return queue?.Records?.Any(r =>
+        return queue.Any(r =>
             r.DownloadId != null &&
-            r.DownloadId.Equals(hash, StringComparison.OrdinalIgnoreCase)) ?? false;
+            r.DownloadId.Equals(hash, StringComparison.OrdinalIgnoreCase));
     }
 
     public async Task MarkAsImportedAsync(string instanceId, string hash, IEnumerable<string> tags, CancellationToken cancellationToken = default)
@@ -370,8 +391,8 @@ public class ArrImportService : IArrImportService
     private async Task<bool> CheckRadarrCfUnmetAsync(ArrInstanceConfig config, string downloadId, CancellationToken ct)
     {
         var client = new RadarrClient(config.URI, config.APIKey, config.SkipTLSVerify);
-        var queue = await client.GetQueueAsync(ct: ct);
-        var record = queue.Records.FirstOrDefault(r =>
+        var queue = await client.GetAllQueueAsync(ct: ct);
+        var record = queue.FirstOrDefault(r =>
             string.Equals(r.DownloadId, downloadId, StringComparison.OrdinalIgnoreCase));
 
         if (record?.CustomFormatScore == null || record.MovieId == null)
@@ -400,47 +421,47 @@ public class ArrImportService : IArrImportService
     private async Task<bool> CheckSonarrCfUnmetAsync(ArrInstanceConfig config, string downloadId, CancellationToken ct)
     {
         var client = new SonarrClient(config.URI, config.APIKey, config.SkipTLSVerify);
-        var queue = await client.GetQueueAsync(ct: ct);
-        var record = queue.Records.FirstOrDefault(r =>
-            string.Equals(r.DownloadId, downloadId, StringComparison.OrdinalIgnoreCase));
+        var queue = await client.GetAllQueueAsync(ct: ct);
+        var records = queue.Where(r =>
+            string.Equals(r.DownloadId, downloadId, StringComparison.OrdinalIgnoreCase) &&
+            r.CustomFormatScore.HasValue).ToList();
 
-        if (record?.CustomFormatScore == null)
+        if (records.Count == 0)
             return false;
 
         var arrName = _config.ArrInstances.FirstOrDefault(kv =>
             kv.Value == config).Key ?? "";
 
-        var isSeriesSearch = config.Search.SearchBySeries.Equals("series", StringComparison.OrdinalIgnoreCase);
-
-        if (isSeriesSearch)
+        if (config.Search.SearchBySeries.Equals("series", StringComparison.OrdinalIgnoreCase))
         {
-            if (record.SeriesId == null) return false;
+            if (!config.Search.ForceMinimumCustomFormat)
+                return false;
 
-            var seriesEntry = await _dbContext.Series.AsNoTracking()
-                .FirstOrDefaultAsync(s => s.ArrId == record.SeriesId && s.ArrInstance == arrName, ct);
-
-            if (seriesEntry == null) return false;
-
-            if (config.Search.ForceMinimumCustomFormat)
-                return record.CustomFormatScore < (seriesEntry.MinCustomFormatScore ?? 0);
-
-            return false;
-        }
-        else
-        {
-            var episodes = await _dbContext.Episodes.AsNoTracking()
-                .Where(e => record.EpisodeIds.Contains(e.ArrId) && e.ArrInstance == arrName && e.EpisodeFileId > 0)
+            var seriesIds = records.Where(r => r.SeriesId.HasValue)
+                .Select(r => r.SeriesId!.Value).Distinct().ToList();
+            var series = await _dbContext.Series.AsNoTracking()
+                .Where(s => s.ArrInstance == arrName && seriesIds.Contains(s.ArrId))
                 .ToListAsync(ct);
-            return episodes.Any(e => record.CustomFormatScore < (e.CustomFormatScore ?? 0)
-                && (!config.Search.ForceMinimumCustomFormat || record.CustomFormatScore < (e.MinCustomFormatScore ?? 0)));
+            return records.Any(r => r.SeriesId.HasValue &&
+                series.Any(s => s.ArrId == r.SeriesId.Value &&
+                    r.CustomFormatScore!.Value < (s.MinCustomFormatScore ?? 0)));
         }
+
+        var episodeIds = records.SelectMany(r => r.EpisodeIds).Distinct().ToList();
+        var episodes = await _dbContext.Episodes.AsNoTracking()
+            .Where(e => episodeIds.Contains(e.ArrId) && e.ArrInstance == arrName && e.EpisodeFileId > 0)
+            .ToListAsync(ct);
+        return records.Any(r => episodes.Any(e => r.EpisodeIds.Contains(e.ArrId) &&
+            r.CustomFormatScore!.Value < (e.CustomFormatScore ?? 0) &&
+            (!config.Search.ForceMinimumCustomFormat ||
+                r.CustomFormatScore.Value < (e.MinCustomFormatScore ?? 0))));
     }
 
     private async Task<bool> CheckLidarrCfUnmetAsync(ArrInstanceConfig config, string downloadId, CancellationToken ct)
     {
         var client = new LidarrClient(config.URI, config.APIKey, config.SkipTLSVerify);
-        var queue = await client.GetQueueAsync(ct: ct);
-        var record = queue.Records.FirstOrDefault(r =>
+        var queue = await client.GetAllQueueAsync(ct: ct);
+        var record = queue.FirstOrDefault(r =>
             string.Equals(r.DownloadId, downloadId, StringComparison.OrdinalIgnoreCase));
 
         if (record?.CustomFormatScore == null || record.AlbumId == null)
@@ -479,8 +500,14 @@ public class ArrImportService : IArrImportService
         try
         {
             var downloadId = hash.ToUpperInvariant();
+            var instanceName = _config.ArrInstances.First(kv => kv.Value == arrInstance).Key;
+            if (arrInstance.ReSearch && await _dbContext.SonarrSearchRetries.AnyAsync(r => r.ArrInstance == instanceName && r.DownloadId == downloadId, cancellationToken))
+            {
+                await SonarrRetryQueue.ExecuteAsync(_dbContext, _searchExecutor, instanceName, _logger, cancellationToken, arrInstance, _issues);
+                return !await _dbContext.SonarrSearchRetries.AnyAsync(r => r.ArrInstance == instanceName && r.DownloadId == downloadId, cancellationToken);
+            }
 
-            return arrInstance.Type.ToLower() switch
+            var success = arrInstance.Type.ToLower() switch
             {
                 "radarr" => await BlocklistRadarrAsync(arrInstance, downloadId, cancellationToken),
                 "sonarr" => await BlocklistSonarrAsync(arrInstance, downloadId, cancellationToken),
@@ -488,9 +515,13 @@ public class ArrImportService : IArrImportService
                 "readarr" => await BlocklistReadarrAsync(arrInstance, downloadId, cancellationToken),
                 _ => false
             };
+            if (!arrInstance.ReSearch) await ObserveAsync("replacement", category, hash, success, cancellationToken);
+            return success;
         }
+        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested) { throw; }
         catch (Exception ex)
         {
+            await ObserveAsync("replacement", category, hash, false, cancellationToken);
             _logger.LogError(ex, "Error blocklisting torrent {Hash} in {Category}", hash, category);
             return false;
         }
@@ -499,104 +530,105 @@ public class ArrImportService : IArrImportService
     private async Task<bool> BlocklistRadarrAsync(ArrInstanceConfig config, string downloadId, CancellationToken ct)
     {
         var client = new RadarrClient(config.URI, config.APIKey, config.SkipTLSVerify);
-        var queue = await client.GetQueueAsync(ct: ct);
-        var record = queue.Records.FirstOrDefault(r =>
+        var queue = await client.GetAllQueueAsync(ct: ct);
+        var record = queue.FirstOrDefault(r =>
             string.Equals(r.DownloadId, downloadId, StringComparison.OrdinalIgnoreCase));
 
         if (record == null) return false;
 
-        _logger.LogInformation("Blocklisting Radarr queue item {Id} (hash: {Hash})", record.Id, downloadId);
-        var deleted = await client.DeleteFromQueueAsync(record.Id, removeFromClient: false, blocklist: true, ct);
-        if (deleted && config.ReSearch && record.MovieId is int movieId)
-        {
-            _logger.LogInformation("Re-Searching Radarr movie {MovieId} after blocklist", movieId);
-            await client.SearchMovieAsync(movieId, ct);
-        }
-        return deleted;
+        if (!config.ReSearch) return await client.DeleteFromQueueAsync(record.Id, removeFromClient: false, blocklist: true, ct, skipRedownload: true);
+        List<SearchCandidate> candidates = record.MovieId is int id ? [new SearchCandidate { ArrId = id, Type = "Movie", Reason = "Retry" }] : [];
+        var instanceName = _config.ArrInstances.First(kv => kv.Value == config).Key;
+        return await SonarrRetryQueue.StageAndExecuteAsync(_dbContext, _searchExecutor, instanceName, downloadId,
+            candidates, config, _logger, _issues, ct);
     }
 
     private async Task<bool> BlocklistSonarrAsync(ArrInstanceConfig config, string downloadId, CancellationToken ct)
     {
         var client = new SonarrClient(config.URI, config.APIKey, config.SkipTLSVerify);
-        var queue = await client.GetQueueAsync(ct: ct);
-        var record = queue.Records.FirstOrDefault(r =>
-            string.Equals(r.DownloadId, downloadId, StringComparison.OrdinalIgnoreCase));
+        var queue = await client.GetAllQueueAsync(ct: ct);
+        var records = queue.Where(r =>
+            string.Equals(r.DownloadId, downloadId, StringComparison.OrdinalIgnoreCase)).ToList();
 
-        if (record == null) return false;
+        if (records.Count == 0) return false;
 
-        _logger.LogInformation("Blocklisting Sonarr queue item {Id} (hash: {Hash})", record.Id, downloadId);
-        var deleted = await client.DeleteFromQueueAsync(record.Id, removeFromClient: false, blocklist: true, ct, skipRedownload: true);
-        if (deleted && config.ReSearch)
+        if (!config.ReSearch)
         {
-            var instanceName = _config.ArrInstances.First(kv => kv.Value == config).Key;
-            var retries = record.EpisodeIds.Distinct().Select(id => new SearchCandidate
+            var succeeded = true;
+            foreach (var id in records.Select(r => r.Id).Distinct())
+                if (!await client.DeleteFromQueueAsync(id, removeFromClient: false, blocklist: true, ct, skipRedownload: true))
+                    succeeded = false;
+            return succeeded;
+        }
+
+        // A download may produce several queue rows, all removed by ConfirmBlocklistAsync.
+        // Stage every affected episode before deleting any of them.
+        var candidates = records
+            .SelectMany(r => r.EpisodeIds.Where(id => id > 0).Select(id => new SearchCandidate
             {
                 ArrId = id,
-                SeriesId = record.SeriesId,
+                SeriesId = r.SeriesId,
                 Type = "Episode",
                 Reason = "Retry"
-            }).ToList();
-            if (retries.Count == 0 && record.SeriesId.HasValue &&
-                config.Search.SearchBySeries.Equals("series", StringComparison.OrdinalIgnoreCase))
-                retries.Add(new SearchCandidate { SeriesId = record.SeriesId, Type = "Episode", Reason = "Retry" });
-            var pending = await _dbContext.SonarrSearchRetries.FindAsync([instanceName, downloadId], ct);
-            if (pending == null)
+            }))
+            .DistinctBy(c => c.ArrId)
+            .ToList();
+
+        var unidentified = records.Where(r => !r.EpisodeIds.Any(id => id > 0)).ToList();
+        if (unidentified.Count > 0)
+        {
+            // The retry planner deduplicates on ArrId; multiple ArrId=0 series
+            // fallbacks would collapse and lose replacement intent.
+            var seriesIds = unidentified.Where(r => r.SeriesId is > 0)
+                .Select(r => r.SeriesId!.Value).Distinct().ToList();
+            if (!config.Search.SearchBySeries.Equals("series", StringComparison.OrdinalIgnoreCase) ||
+                seriesIds.Count != 1 || unidentified.Any(r => r.SeriesId is not > 0))
+                throw new IOException("Cannot preserve replacement intent for all Sonarr queue rows; blocklisting was skipped.");
+
+            candidates.Add(new SearchCandidate
             {
-                pending = new Database.Models.SonarrSearchRetry { ArrInstance = instanceName, DownloadId = downloadId };
-                _dbContext.SonarrSearchRetries.Add(pending);
-            }
-            pending.CandidatesJson = System.Text.Json.JsonSerializer.Serialize(retries);
-            await _dbContext.SaveChangesAsync(ct);
-            await SonarrRetryQueue.ExecuteAsync(_dbContext, _searchExecutor, instanceName, _logger, ct);
+                SeriesId = seriesIds[0],
+                Type = "Episode",
+                Reason = "Retry"
+            });
         }
-        return deleted;
+
+        var instanceName = _config.ArrInstances.First(kv => kv.Value == config).Key;
+        return await SonarrRetryQueue.StageAndExecuteAsync(_dbContext, _searchExecutor, instanceName, downloadId,
+            candidates, config, _logger, _issues, ct);
     }
 
     private async Task<bool> BlocklistLidarrAsync(ArrInstanceConfig config, string downloadId, CancellationToken ct)
     {
         var client = new LidarrClient(config.URI, config.APIKey, config.SkipTLSVerify);
-        var queue = await client.GetQueueAsync(ct: ct);
-        var record = queue.Records.FirstOrDefault(r =>
+        var queue = await client.GetAllQueueAsync(ct: ct);
+        var record = queue.FirstOrDefault(r =>
             string.Equals(r.DownloadId, downloadId, StringComparison.OrdinalIgnoreCase));
 
         if (record == null) return false;
 
-        _logger.LogInformation("Blocklisting Lidarr queue item {Id} (hash: {Hash})", record.Id, downloadId);
-        var deleted = await client.DeleteFromQueueAsync(record.Id, removeFromClient: false, blocklist: true, ct);
-        if (deleted && config.ReSearch && record.AlbumId is int albumId)
-        {
-            _logger.LogInformation("Re-Searching Lidarr album {AlbumId} after blocklist", albumId);
-            await client.SearchAlbumAsync(new List<int> { albumId }, ct);
-        }
-        return deleted;
+        if (!config.ReSearch) return await client.DeleteFromQueueAsync(record.Id, removeFromClient: false, blocklist: true, ct, skipRedownload: true);
+        List<SearchCandidate> candidates = record.AlbumId is int id ? [new SearchCandidate { ArrId = id, Type = "Album", Reason = "Retry" }] : [];
+        var instanceName = _config.ArrInstances.First(kv => kv.Value == config).Key;
+        return await SonarrRetryQueue.StageAndExecuteAsync(_dbContext, _searchExecutor, instanceName, downloadId,
+            candidates, config, _logger, _issues, ct);
     }
 
     private async Task<bool> BlocklistReadarrAsync(ArrInstanceConfig config, string downloadId, CancellationToken ct)
     {
         var client = new ReadarrClient(config.URI, config.APIKey, config.SkipTLSVerify);
-        var queue = await client.GetQueueAsync(ct: ct);
-        var record = queue.Records.FirstOrDefault(r =>
+        var queue = await client.GetAllQueueAsync(ct: ct);
+        var record = queue.FirstOrDefault(r =>
             string.Equals(r.DownloadId, downloadId, StringComparison.OrdinalIgnoreCase));
 
         if (record == null) return false;
 
-        _logger.LogInformation("Blocklisting Readarr queue item {Id} (hash: {Hash})", record.Id, downloadId);
-        var deleted = await client.DeleteFromQueueAsync(record.Id, removeFromClient: false, blocklist: true, ct);
-        if (deleted && config.ReSearch)
-        {
-            var reSearch = ResolveReadarrReSearch(record.BookId, record.AuthorId);
-            if (reSearch is ("book", int bookId))
-            {
-                _logger.LogInformation("Re-Searching Readarr book {BookId} after blocklist", bookId);
-                await client.SearchBookAsync(new List<int> { bookId }, ct);
-            }
-            else if (reSearch is ("author", int authorId))
-            {
-                _logger.LogInformation("Re-Searching Readarr author {AuthorId} after blocklist", authorId);
-                await client.SearchAuthorAsync(authorId, ct);
-            }
-        }
-        return deleted;
+        if (!config.ReSearch) return await client.DeleteFromQueueAsync(record.Id, removeFromClient: false, blocklist: true, ct, skipRedownload: true);
+        List<SearchCandidate> candidates = record.BookId is int book ? [new SearchCandidate { ArrId = book, Type = "Book", Reason = "Retry" }]
+            : record.AuthorId is int author ? [new SearchCandidate { ArrId = author, AuthorId = author, Type = "Author", Reason = "Retry" }] : [];
+        var instanceName = _config.ArrInstances.First(kv => kv.Value == config).Key;
+        return await SonarrRetryQueue.StageAndExecuteAsync(_dbContext, _searchExecutor, instanceName, downloadId,
+            candidates, config, _logger, _issues, ct);
     }
 
     internal static (string Kind, int Id)? ResolveReadarrReSearch(int? bookId, int? authorId)
@@ -611,8 +643,8 @@ public class ArrImportService : IArrImportService
     private async Task<bool> CheckReadarrCfUnmetAsync(ArrInstanceConfig config, string downloadId, CancellationToken ct)
     {
         var client = new ReadarrClient(config.URI, config.APIKey, config.SkipTLSVerify);
-        var queue = await client.GetQueueAsync(ct: ct);
-        var record = queue.Records.FirstOrDefault(r =>
+        var queue = await client.GetAllQueueAsync(ct: ct);
+        var record = queue.FirstOrDefault(r =>
             string.Equals(r.DownloadId, downloadId, StringComparison.OrdinalIgnoreCase));
 
         if (record?.CustomFormatScore == null || record.BookId == null)

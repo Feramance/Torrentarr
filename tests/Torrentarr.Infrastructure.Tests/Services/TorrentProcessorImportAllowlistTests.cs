@@ -2,6 +2,7 @@ using System.Reflection;
 using FluentAssertions;
 using Microsoft.Data.Sqlite;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Logging.Abstractions;
 using Moq;
 using Torrentarr.Core.Configuration;
@@ -433,10 +434,27 @@ public sealed class TorrentProcessorImportAllowlistTests : IDisposable
         }
     }
 
+    [Fact]
+    public async Task AllowlistWarning_ShowsBoundedExamplesAndKeepsThrottle()
+    {
+        var logger = new Mock<ILogger<TorrentProcessor>>();
+        var seeding = new Mock<ISeedingService>();
+        seeding.Setup(s => s.HnrAllowsDeleteAsync(It.IsAny<TorrentInfo>(), It.IsAny<string>(), It.IsAny<CancellationToken>())).ReturnsAsync(false);
+        var processor = CreateProcessor(seeding.Object, logger: logger.Object);
+        var files = Enumerable.Range(0, 8).Select(i => TorrentFile(i, $"Movie/sample{i}.txt")).ToList();
+        var client = new FileClient(files);
+        var torrent = Torrent("/downloads/Movie");
+        Ready(await ApplyAsync(processor, torrent, Config(false), client, true)).Should().BeFalse();
+        Ready(await ApplyAsync(processor, torrent, Config(false), client, true)).Should().BeFalse();
+        var warning = logger.Invocations.Where(i => i.Method.Name == "Log" && i.Arguments[0] is LogLevel.Warning)
+            .Should().ContainSingle().Subject!.Arguments[2]?.ToString();
+        warning.Should().Contain("8 total, 3 more").And.Contain("sample0.txt").And.Contain("sample4.txt").And.NotContain("sample5.txt");
+    }
+
     private TorrentProcessor CreateProcessor(
         ISeedingService? seeding = null,
-        ITorrentCacheService? cache = null, ISafeDeletionService? deletion = null) => new(
-        NullLogger<TorrentProcessor>.Instance,
+        ITorrentCacheService? cache = null, ISafeDeletionService? deletion = null, ILogger<TorrentProcessor>? logger = null) => new(
+        logger ?? NullLogger<TorrentProcessor>.Instance,
         new QBittorrentConnectionManager(NullLogger<QBittorrentConnectionManager>.Instance),
         _db,
         new TorrentarrConfig(),

@@ -1,3 +1,4 @@
+using Torrentarr.Infrastructure.Logging;
 using Torrentarr.Core.Configuration;
 using Torrentarr.Core.Interfaces;
 using Torrentarr.Core.Models;
@@ -127,8 +128,8 @@ Log.Logger = new LoggerConfiguration()
         e.RenderMessage().Contains("queryContext.StartTracking") ||
         e.RenderMessage().Contains("InternalEntityEntry") ||
         e.RenderMessage().Contains("shadowSnapshot"))
-    .WriteTo.Console()
     .WriteTo.Sink(workerSink)
+    .WriteTo.Console(new ServiceLogFormatter(colour: true))
     .CreateLogger();
 
 try
@@ -251,6 +252,7 @@ try
     builder.Services.AddSingleton<IMediaValidationService, MediaValidationService>();
     builder.Services.AddScoped<ITorrentProcessor, TorrentProcessor>();
     builder.Services.AddScoped<IArrMediaService, ArrMediaService>();
+    builder.Services.AddSingleton<SearchSubmissionTiming>();
     builder.Services.AddScoped<ISearchExecutor, SearchExecutor>();
     builder.Services.AddScoped<QualityProfileSwitcherService>();
     builder.Services.AddSingleton<ITorrentCacheService, TorrentCacheService>();
@@ -269,6 +271,10 @@ try
     builder.Services.AddHostedService<AutoUpdateBackgroundService>();
 
     builder.Services.AddSingleton<IPasswordHasher, BCryptPasswordHasher>();
+    builder.Services.AddSingleton<OperationalIssueReporter>();
+    builder.Services.AddSingleton<IOperationalIssueReporter>(sp => sp.GetRequiredService<OperationalIssueReporter>());
+    builder.Services.AddHostedService(sp => sp.GetRequiredService<OperationalIssueReporter>());
+    builder.Services.AddHostedService<OperationalIssueMonitor>();
     builder.Services.AddHttpClient();
     builder.Services.AddHttpClient("ArrOpen").ConfigurePrimaryHttpMessageHandler(() => new HttpClientHandler { AllowAutoRedirect = false });
     builder.Services.AddHttpClient("ArrOpenSkipTls").ConfigurePrimaryHttpMessageHandler(() => new HttpClientHandler
@@ -652,6 +658,8 @@ try
     }
 
     app.MapControllers();
+    app.MapOperationalIssueEndpoints("/web");
+    app.MapOperationalIssueEndpoints("/api");
     app.MapArrCatalogEndpoints();
     app.MapRadarrMoviesEndpoints();
 

@@ -18,6 +18,7 @@ public class ConnectivityService : IConnectivityService
     private readonly ILogger<ConnectivityService> _logger;
     private readonly ITorrentClientRegistry _qbitManager;
     private readonly TorrentarrConfig _config;
+    private readonly IOperationalIssueReporter? _issues;
     private readonly Func<string, CancellationToken, Task<bool>> _probeAsync;
 
     private volatile bool _isConnected = true;
@@ -37,8 +38,8 @@ public class ConnectivityService : IConnectivityService
     public ConnectivityService(
         ILogger<ConnectivityService> logger,
         ITorrentClientRegistry qbitManager,
-        TorrentarrConfig config)
-        : this(logger, qbitManager, config, probe: null)
+        TorrentarrConfig config, IOperationalIssueReporter? issues = null)
+        : this(logger, qbitManager, config, probe: null, issues)
     {
     }
 
@@ -46,21 +47,27 @@ public class ConnectivityService : IConnectivityService
         ILogger<ConnectivityService> logger,
         ITorrentClientRegistry qbitManager,
         TorrentarrConfig config,
-        Func<string, CancellationToken, Task<bool>>? probe)
+        Func<string, CancellationToken, Task<bool>>? probe, IOperationalIssueReporter? issues = null)
     {
         _logger = logger;
         _qbitManager = qbitManager;
         _config = config;
+        _issues = issues;
         _probeAsync = probe ?? ProbeHostAsync;
     }
 
-    private void SetState(bool connected)
+    private async Task SetStateAsync(bool connected, CancellationToken ct)
     {
         _isConnected = connected;
         lock (_stateLock)
         {
             _lastChecked = DateTime.UtcNow;
             _lastCheckedSet = true;
+        }
+        if (_issues != null)
+        {
+            var issue = new OperationalIssueReport("network.internet", "system", "Internet connectivity is unavailable", "Internet-dependent work is delayed.", "Check the host network, DNS and configured connectivity hosts.");
+            if (connected) await _issues.ResolveAsync(issue, ct); else await _issues.ReportAsync(issue, ct);
         }
     }
 
@@ -75,7 +82,7 @@ public class ConnectivityService : IConnectivityService
             if (qbitReachable)
             {
                 _logger.LogTrace("qBittorrent is reachable - connectivity confirmed");
-                SetState(true);
+                await SetStateAsync(true, cancellationToken);
                 return true;
             }
 
@@ -87,7 +94,7 @@ public class ConnectivityService : IConnectivityService
                 if (await _probeAsync(host, cancellationToken))
                 {
                     _logger.LogTrace("Probe successful to {Host} - connectivity confirmed", host);
-                    SetState(true);
+                    await SetStateAsync(true, cancellationToken);
                     return true;
                 }
 
@@ -95,7 +102,7 @@ public class ConnectivityService : IConnectivityService
                 _logger.LogTrace("Probe failed to {Host}", host);
             }
 
-            SetState(false);
+            await SetStateAsync(false, cancellationToken);
             _logger.LogWarning(
                 "No internet connectivity detected (qBittorrent unreachable; failed probes: {Hosts})",
                 failed.Count == 0 ? "(no PingURLS configured)" : string.Join(", ", failed));
@@ -104,7 +111,7 @@ public class ConnectivityService : IConnectivityService
         catch (Exception ex) when (ex is not OperationCanceledException)
         {
             _logger.LogError(ex, "Error checking internet connectivity");
-            SetState(false);
+            await SetStateAsync(false, cancellationToken);
             return false;
         }
     }

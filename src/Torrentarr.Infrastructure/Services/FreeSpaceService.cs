@@ -172,6 +172,7 @@ public class FreeSpaceService(
         if (!allocationComplete) logger.LogWarning("FreeSpace: unresolved download locations; automatic resumes withheld");
         static string Key(Monitor m) => m.Space?.Identity ?? $"unavailable:{m.Client}:{m.Config.Path}";
         int paused = 0, resumed = 0;
+        var resumesWithheld = !allocationComplete || monitors.Any(m => m.Space == null);
         foreach (var group in monitors.GroupBy(Key))
         {
             var rows = group.ToList();
@@ -187,18 +188,20 @@ public class FreeSpaceService(
                 && !TorrentPolicyHelper.IsPausedDownloadStateForFreeSpace(i.Torrent.State))) Reserve(Math.Max(0, item.Torrent.AmountLeft));
 
             var safe = rows.All(m => m.Space != null) && allocationComplete;
-            var resumes = new List<Func<Task>>();
+            var resumes = new List<(FreeSpaceTorrent Item, Func<Task> Run)>();
             var ordered = items.Where(Managed)
                 .OrderBy(i => i.Torrent.AddedOn);
             foreach (var item in ordered)
             {
                 cancellationToken.ThrowIfCancellationRequested();
+                var operation = "read pause marker";
                 try
                 {
                     var torrent = item.Torrent;
                     var marked = await HasMarker(item, cancellationToken);
                     var download = TorrentPolicyHelper.IsFreeSpaceDownloadState(torrent.State);
                     var stopped = TorrentPolicyHelper.IsPausedDownloadStateForFreeSpace(torrent.State);
+                    operation = "reconcile pause marker";
                     if (!download) { if (marked) await SetMarker(item, false, cancellationToken); continue; }
                     if (stopped && !marked) continue;
                     if (!stopped && marked) await SetMarker(item, false, cancellationToken);
@@ -206,6 +209,7 @@ public class FreeSpaceService(
                     var fits = rows[0].Space != null && remaining >= needed;
                     if (!fits && !stopped)
                     {
+                        operation = "mark and pause torrent";
                         await SetMarker(item, true, cancellationToken);
                         await FreeSpaceInventory.PauseAndRollbackMarkerAsync(item.Client, torrent.Hash,
                             () => SetMarker(item, false, CancellationToken.None), cancellationToken);
@@ -214,34 +218,51 @@ public class FreeSpaceService(
                     else if (fits && (!stopped || safe))
                     {
                         Reserve(needed);
-                        if (stopped && safe) resumes.Add(async () =>
+                        if (stopped && safe)
                         {
-                            await FreeSpaceInventory.ResumeAndClearMarkerAsync(item.Client, torrent.Hash,
-                                () => SetMarker(item, false, CancellationToken.None), cancellationToken);
-                            resumed++;
-                        });
+                            async Task ResumeAsync()
+                            {
+                                await FreeSpaceInventory.ResumeAndClearMarkerAsync(item.Client, torrent.Hash,
+                                    () => SetMarker(item, false, CancellationToken.None), cancellationToken);
+                                resumed++;
+                            }
+                            resumes.Add((item, ResumeAsync));
+                        }
                     }
                 }
                 catch (Exception ex) when (ex is not OperationCanceledException)
                 {
                     safe = false;
+                    resumesWithheld = true;
                     if (TorrentPolicyHelper.IsFreeSpaceDownloadState(item.Torrent.State)
                         && !TorrentPolicyHelper.IsPausedDownloadStateForFreeSpace(item.Torrent.State))
                         Reserve(Math.Max(0, item.Torrent.AmountLeft));
-                    logger.LogWarning(ex, "FreeSpace: [{Client}] Operation failed; shared-storage resumes withheld", item.InstanceName);
+                    logger.LogWarning(ex, "FreeSpace: [{Client}] {Operation} failed for torrent {Hash}; shared-storage resumes withheld", item.InstanceName, operation, item.Torrent.Hash);
                 }
             }
             if (safe)
                 foreach (var resume in resumes)
                 {
-                    try { await resume(); }
+                    try { await resume.Run(); }
                     catch (Exception ex) when (ex is not OperationCanceledException)
-                    { logger.LogWarning(ex, "FreeSpace: resume failed; remaining shared-storage resumes withheld"); break; }
+                    {
+                        resumesWithheld = true;
+                        logger.LogWarning(ex, "FreeSpace: [{Client}] Resume failed for torrent {Hash}; remaining shared-storage resumes withheld", resume.Item.InstanceName, resume.Item.Torrent.Hash);
+                        break;
+                    }
                 }
         }
         var markedCount = 0;
         foreach (var item in inventory.Torrents)
-            if (await HasMarker(item, cancellationToken)) markedCount++;
+        {
+            try { if (await HasMarker(item, cancellationToken)) markedCount++; }
+            catch (Exception ex) when (ex is not OperationCanceledException)
+            {
+                logger.LogWarning(ex, "FreeSpace: [{Client}] Cannot count pause marker for torrent {Hash}; cycle incomplete", item.InstanceName, item.Torrent.Hash);
+                throw;
+            }
+        }
+        logger.LogInformation("FreeSpace: cycle completed; paused={Paused}, resumed={Resumed}, marked={Marked}, resumesWithheld={ResumesWithheld}", paused, resumed, markedCount, resumesWithheld);
         return new(paused, resumed, markedCount, monitors.Any(m => m.Space != null));
     }
 

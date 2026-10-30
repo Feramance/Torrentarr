@@ -169,6 +169,13 @@ public class RadarrClient
     /// <summary>
     /// Trigger manual import scan for downloaded movie
     /// </summary>
+    public Task<List<QueueItem>> GetAllQueueAsync(CancellationToken ct = default)
+        => ArrQueuePaging.ReadAllAsync(async (page, size) =>
+        {
+            var response = await GetQueueAsync(page, size, ct);
+            return (response.Page, response.PageSize, response.TotalRecords, response.Records);
+        }, item => item.Id, ct);
+
     public async Task<CommandResponse?> TriggerDownloadedMoviesScanAsync(
         string path,
         string downloadClientId,
@@ -208,12 +215,10 @@ public class RadarrClient
 
         var response = await ArrClientResponse.ExecuteAsync(_client, request, ct);
 
-        if (response.IsSuccessful && !string.IsNullOrEmpty(response.Content))
-        {
-            return JsonConvert.DeserializeObject<List<CommandStatus>>(response.Content) ?? new List<CommandStatus>();
-        }
-
-        return new List<CommandStatus>();
+        ArrClientResponse.EnsureSuccess(response, "GET commands");
+        if (string.IsNullOrWhiteSpace(response.Content)) throw new IOException("Arr returned no command inventory.");
+        return JsonConvert.DeserializeObject<List<CommandStatus>>(response.Content)
+            ?? throw new IOException("Arr returned an invalid command inventory.");
     }
 
     /// <summary>
@@ -237,13 +242,14 @@ public class RadarrClient
     /// <summary>
     /// Delete item from queue
     /// </summary>
-    public async Task<bool> DeleteFromQueueAsync(int id, bool removeFromClient = true, bool blocklist = false, CancellationToken ct = default)
+    public async Task<bool> DeleteFromQueueAsync(int id, bool removeFromClient = true, bool blocklist = false, CancellationToken ct = default, bool skipRedownload = false)
     {
         var request = new RestRequest($"/api/v3/queue/{id}", Method.Delete);
         AddApiKeyHeader(request);
 
         request.AddQueryParameter("removeFromClient", removeFromClient.ToString().ToLower());
         request.AddQueryParameter("blocklist", blocklist.ToString().ToLower());
+        request.AddQueryParameter("skipRedownload", skipRedownload.ToString().ToLowerInvariant());
 
         var response = await ArrClientResponse.ExecuteAsync(_client, request, ct);
         return response.IsSuccessful;
@@ -294,8 +300,8 @@ public class RadarrClient
     /// <summary>
     /// Update movie quality profile, preserving unmapped fields via a raw JSON round-trip.
     /// </summary>
-    public Task<bool> UpdateMovieQualityProfileAsync(int movieId, int qualityProfileId, CancellationToken ct = default) =>
-        ArrQualityProfilePut.UpdateAsync(_client, _apiKey, $"/api/v3/movie/{movieId}", qualityProfileId, ct);
+    public Task<bool> UpdateMovieQualityProfileAsync(int movieId, int qualityProfileId, CancellationToken ct = default, int? expectedProfileId = null) =>
+        ArrQualityProfilePut.UpdateAsync(_client, _apiKey, $"/api/v3/movie/{movieId}", qualityProfileId, ct, expectedProfileId);
 
     /// <summary>
     /// Get custom formats

@@ -480,6 +480,7 @@ public class ArrWorkerManagerTests
             services.AddSingleton(db);
             services.AddSingleton<TorrentarrDbContext>(db);
             services.AddSingleton<IArrMediaService>(media);
+            services.AddSingleton(Mock.Of<ISearchExecutor>());
             services.AddSingleton<ITorrentProcessor>(torrentProcessor);
             services.AddSingleton<IImportPathTracker>(new StubImportPathTracker());
             services.AddSingleton<ILogger<ArrSyncService>>(NullLogger<ArrSyncService>.Instance);
@@ -512,6 +513,7 @@ public class ArrWorkerManagerTests
 
     private sealed class StubImportPathTracker : IImportPathTracker
     {
+        public void InvalidateTorrent(string instanceId, string hash) { }
         public void Clear() { }
         public bool IsPathAlreadyScanned(string instanceId, string normalizedPath) => false;
         public bool IsHashAlreadyScanned(string instanceId, string hash) => false;

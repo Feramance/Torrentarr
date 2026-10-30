@@ -9,6 +9,26 @@ namespace Torrentarr.Infrastructure.Tests.Database;
 public class ManualSqliteMigrationsTests
 {
     [Fact]
+    public void Apply_UpgradesExistingRetryRowsAsReadyWithoutLosingCandidates()
+    {
+        using var connection = new SqliteConnection("Data Source=:memory:");
+        connection.Open();
+        using var db = new TorrentarrDbContext(new DbContextOptionsBuilder<TorrentarrDbContext>().UseSqlite(connection).Options);
+        db.Database.EnsureCreated();
+        db.Database.ExecuteSqlRaw("ALTER TABLE torrentarr_sonarr_search_retries DROP COLUMN BlocklistPending");
+        using var command = connection.CreateCommand();
+        command.CommandText = "INSERT INTO torrentarr_sonarr_search_retries VALUES ('Sonarr-test', 'ABC', '[{\"ArrId\":42}]')";
+        command.ExecuteNonQuery();
+        ManualSqliteMigrations.Apply(db);
+        var retry = db.SonarrSearchRetries.Single();
+        retry.BlocklistPending.Should().BeFalse();
+        retry.CandidatesJson.Should().Contain("42");
+        retry.BlocklistPending = true; db.SaveChanges();
+        db.ChangeTracker.Clear();
+        db.SonarrSearchRetries.Single().BlocklistPending.Should().BeTrue();
+    }
+
+    [Fact]
     public void Apply_CreatesReadarrTablesOnPreExistingSqliteFile()
     {
         var connection = new SqliteConnection("Data Source=:memory:");
@@ -55,5 +75,10 @@ public class ManualSqliteMigrationsTests
         ctx.SaveChanges();
         ManualSqliteMigrations.Apply(ctx);
         ctx.SonarrSearchRetries.Single().DownloadId.Should().Be("ABC");
+        ctx.SonarrSearchRetries.Single().BlocklistPending.Should().BeFalse();
+        ctx.SonarrSearchRetries.Single().BlocklistPending = true;
+        ctx.SaveChanges();
+        ctx.ChangeTracker.Clear();
+        ctx.SonarrSearchRetries.Single().BlocklistPending.Should().BeTrue();
     }
 }

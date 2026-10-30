@@ -76,6 +76,7 @@ public class ConfigEndpointTests : IClassFixture<TorrentarrWebApplicationFactory
             AllowedStalled = true,
             FreeSpacePaused = true
         });
+        db.OperationalIssues.Add(new() { Code = "rename.test", Category = "system", ClientInstance = "qBit-before", FirstObserved = DateTime.UtcNow, LastObserved = DateTime.UtcNow });
         await db.SaveChangesAsync();
         try
         {
@@ -93,6 +94,7 @@ public class ConfigEndpointTests : IClassFixture<TorrentarrWebApplicationFactory
             response.EnsureSuccessStatusCode();
             var state = await db.TorrentLibrary.AsNoTracking().SingleAsync(t => t.Hash == "rename-state");
             state.QbitInstance.Should().Be("qBit-after");
+            (await db.OperationalIssues.AsNoTracking().SingleAsync(i => i.Code == "rename.test")).ClientInstance.Should().Be("qBit-after");
             state.Imported.Should().BeTrue(); state.AllowedSeeding.Should().BeTrue();
             state.AllowedStalled.Should().BeTrue(); state.FreeSpacePaused.Should().BeTrue();
             var clients = Torrentarr.Core.Configuration.TorrentClientConfigExtensions.GetAllTorrentClients(config);
@@ -101,6 +103,7 @@ public class ConfigEndpointTests : IClassFixture<TorrentarrWebApplicationFactory
         }
         finally
         {
+            await db.OperationalIssues.Where(i => i.Code == "rename.test").ExecuteDeleteAsync();
             await db.TorrentLibrary.Where(t => t.Hash == "rename-state").ExecuteDeleteAsync();
             config.QBitInstances.Remove("qBit-before");
             config.QBitInstances.Remove("qBit-after");

@@ -3,6 +3,7 @@
 export const NAVIGATE_TAB_EVENT = "qbitrr:navigate-tab";
 
 export type NavigableTab =
+  | "issues"
   | "processes"
   | "logs"
   | "radarr"
@@ -16,6 +17,8 @@ export type NavigableTab =
 export interface NavigateTabDetail {
   tab: NavigableTab;
   manageClientId?: string;
+  issueInstance?: string;
+  issueCategory?: "automation" | "system";
   preserveConfigDraft?: boolean;
   /** When set with tab=qbittorrent, expand/focus this category after navigation. */
   qbitCategory?: string;

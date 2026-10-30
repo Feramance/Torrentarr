@@ -149,8 +149,8 @@ public class LidarrClient
     /// Update an artist's quality profile (§1.2 UseTempForMissing), preserving unmapped fields
     /// via a raw JSON round-trip.
     /// </summary>
-    public Task<bool> UpdateArtistQualityProfileAsync(int artistId, int qualityProfileId, CancellationToken ct = default) =>
-        ArrQualityProfilePut.UpdateAsync(_client, _apiKey, $"/api/v1/artist/{artistId}", qualityProfileId, ct);
+    public Task<bool> UpdateArtistQualityProfileAsync(int artistId, int qualityProfileId, CancellationToken ct = default, int? expectedProfileId = null) =>
+        ArrQualityProfilePut.UpdateAsync(_client, _apiKey, $"/api/v1/artist/{artistId}", qualityProfileId, ct, expectedProfileId);
 
     /// <summary>
     /// Get wanted/missing albums
@@ -196,6 +196,13 @@ public class LidarrClient
     /// <summary>
     /// Trigger manual import scan for downloaded albums
     /// </summary>
+    public Task<List<LidarrQueueItem>> GetAllQueueAsync(CancellationToken ct = default)
+        => ArrQueuePaging.ReadAllAsync(async (page, size) =>
+        {
+            var response = await GetQueueAsync(page, size, ct);
+            return (response.Page, response.PageSize, response.TotalRecords, response.Records);
+        }, item => item.Id, ct);
+
     public async Task<CommandResponse?> TriggerDownloadedAlbumsScanAsync(
         string path,
         string downloadClientId,
@@ -235,12 +242,10 @@ public class LidarrClient
 
         var response = await ArrClientResponse.ExecuteAsync(_client, request, ct);
 
-        if (response.IsSuccessful && !string.IsNullOrEmpty(response.Content))
-        {
-            return JsonConvert.DeserializeObject<List<CommandStatus>>(response.Content) ?? new List<CommandStatus>();
-        }
-
-        return new List<CommandStatus>();
+        ArrClientResponse.EnsureSuccess(response, "GET commands");
+        if (string.IsNullOrWhiteSpace(response.Content)) throw new IOException("Arr returned no command inventory.");
+        return JsonConvert.DeserializeObject<List<CommandStatus>>(response.Content)
+            ?? throw new IOException("Arr returned an invalid command inventory.");
     }
 
     /// <summary>
@@ -286,13 +291,14 @@ public class LidarrClient
     /// <summary>
     /// Delete item from queue
     /// </summary>
-    public async Task<bool> DeleteFromQueueAsync(int id, bool removeFromClient = true, bool blocklist = false, CancellationToken ct = default)
+    public async Task<bool> DeleteFromQueueAsync(int id, bool removeFromClient = true, bool blocklist = false, CancellationToken ct = default, bool skipRedownload = false)
     {
         var request = new RestRequest($"/api/v1/queue/{id}", Method.Delete);
         AddApiKeyHeader(request);
 
         request.AddQueryParameter("removeFromClient", removeFromClient.ToString().ToLower());
         request.AddQueryParameter("blocklist", blocklist.ToString().ToLower());
+        request.AddQueryParameter("skipRedownload", skipRedownload.ToString().ToLowerInvariant());
 
         var response = await ArrClientResponse.ExecuteAsync(_client, request, ct);
         return response.IsSuccessful;

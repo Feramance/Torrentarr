@@ -37,6 +37,7 @@ public sealed class SonarrApiDiscoveryTests : IDisposable
     private int _automaticSearches;
     private (bool Remove, bool Blocklist)? _deletion;
     private string? _queueJson;
+    private int _seriesProfile = 1;
     private string _commandsJson = "[]";
     private bool _limitAfterFirstSearch;
     private readonly string _key = Guid.NewGuid().ToString();
@@ -146,6 +147,7 @@ public sealed class SonarrApiDiscoveryTests : IDisposable
     [InlineData(true)]
     public async Task Worker_RestoresExpiredProfilesWithoutScheduledSearch(bool processingOnly)
     {
+        _seriesProfile = 2;
         _queueJson = """{"records":[]}""";
         var cfg = new TorrentarrConfig();
         var arr = new ArrInstanceConfig
@@ -221,7 +223,7 @@ public sealed class SonarrApiDiscoveryTests : IDisposable
         await db.SaveChangesAsync();
         var service = new ArrImportService(NullLogger<ArrImportService>.Instance, cfg,
             new QBittorrentConnectionManager(NullLogger<QBittorrentConnectionManager>.Instance), db);
-        (await service.BlocklistAndReSearchAsync("abc", "tv")).Should().BeTrue();
+        (await service.BlocklistAndReSearchAsync("abc", "tv")).Should().BeFalse();
         var pending = System.Text.Json.JsonSerializer.Deserialize<List<Torrentarr.Core.Services.SearchCandidate>>(
             (await db.SonarrSearchRetries.SingleAsync()).CandidatesJson)!;
         pending.Should().ContainSingle(c => c.ArrId == 2);
@@ -256,7 +258,7 @@ public sealed class SonarrApiDiscoveryTests : IDisposable
         {
             var service = new ArrImportService(NullLogger<ArrImportService>.Instance, cfg,
                 new QBittorrentConnectionManager(NullLogger<QBittorrentConnectionManager>.Instance), db);
-            (await service.BlocklistAndReSearchAsync("abc", "tv")).Should().BeTrue();
+            (await service.BlocklistAndReSearchAsync("abc", "tv")).Should().BeFalse();
             (await db.SonarrSearchRetries.SingleAsync()).CandidatesJson.Should().Contain("\"ArrId\":1").And.Contain("\"ArrId\":2");
             _automaticSearches.Should().Be(0);
             if (!failSubmission) _requests.Should().NotContain(r => r.Method == "POST");
@@ -485,14 +487,14 @@ public sealed class SonarrApiDiscoveryTests : IDisposable
             .UseInMemoryDatabase(Guid.NewGuid().ToString()).Options);
         var service = new ArrImportService(NullLogger<ArrImportService>.Instance, cfg,
             new QBittorrentConnectionManager(NullLogger<QBittorrentConnectionManager>.Instance), db);
-        (await service.BlocklistAndReSearchAsync("abc", "tv")).Should().BeTrue();
+        (await service.BlocklistAndReSearchAsync("abc", "tv")).Should().BeFalse();
         var sync = new ArrSyncService(NullLogger<ArrSyncService>.Instance, cfg, db, new DatabaseRestartCoordinator());
         await sync.SyncQueueAsync("Sonarr-test");
         var stored = await db.EpisodeQueue.SingleAsync();
         stored.DownloadId.Should().Be("ABC");
         stored.SeriesId.Should().BeNull();
-        _requests.Count(r => r.Method == "DELETE").Should().Be(1);
-        _deletion.Should().Be((false, true));
+        _requests.Should().NotContain(r => r.Method == "DELETE");
+        _deletion.Should().BeNull();
     }
 
     [Theory]
@@ -518,7 +520,7 @@ public sealed class SonarrApiDiscoveryTests : IDisposable
             .UseInMemoryDatabase(Guid.NewGuid().ToString()).Options);
         var service = new ArrImportService(NullLogger<ArrImportService>.Instance, cfg,
             new QBittorrentConnectionManager(NullLogger<QBittorrentConnectionManager>.Instance), db);
-        (await service.BlocklistAndReSearchAsync("abc", "tv")).Should().BeTrue();
+        (await service.BlocklistAndReSearchAsync("abc", "tv")).Should().Be(command != null);
         _automaticSearches.Should().Be(0);
         var searches = _requests.Where(r => r.Method == "POST").ToList();
         if (command == null)
@@ -530,6 +532,154 @@ public sealed class SonarrApiDiscoveryTests : IDisposable
         body.Value<string>("name").Should().Be(command);
         if (command == "EpisodeSearch") body["episodeIds"]!.ToObject<List<int>>()!.Should().Equal(episodeIds);
         else body.Value<int?>("seriesId").Should().Be(seriesId);
+    }
+
+
+    [Fact]
+    public async Task Blocklist_FailedRetryPersistenceNeverDeletesSonarrQueueRows()
+    {
+        _queueJson = """
+            {"records":[{"id":11,"downloadId":"ABC","seriesId":7,"episodeIds":[1]},
+            {"id":12,"downloadId":"ABC","seriesId":7,"episodeIds":[2]}]}
+            """;
+        using var connection = new Microsoft.Data.Sqlite.SqliteConnection("Data Source=:memory:");
+        await connection.OpenAsync();
+        var options = new DbContextOptionsBuilder<TorrentarrDbContext>().UseSqlite(connection).Options;
+        await using var db = new TorrentarrDbContext(options);
+        await db.Database.EnsureCreatedAsync();
+        // Reads still work, but saving the durable retry row must fail.
+        await db.Database.ExecuteSqlRawAsync("PRAGMA query_only=ON;");
+
+        var cfg = new TorrentarrConfig();
+        cfg.ArrInstances["Sonarr-test"] = new ArrInstanceConfig
+        { Type = "sonarr", URI = _url, APIKey = _key, Category = "tv", ReSearch = true };
+        var service = new ArrImportService(NullLogger<ArrImportService>.Instance, cfg,
+            new QBittorrentConnectionManager(NullLogger<QBittorrentConnectionManager>.Instance), db);
+
+        (await service.BlocklistAndReSearchAsync("abc", "tv")).Should().BeFalse();
+        _requests.Should().NotContain(r => r.Method == "DELETE" || r.Method == "POST");
+        (await db.SonarrSearchRetries.AsNoTracking().ToListAsync()).Should().BeEmpty();
+    }
+
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task Blocklist_AllMatchingSonarrRowsAreStagedBeforeAnyRemoval(bool failDelete)
+    {
+        _queueJson = """
+            {"records":[{"id":11,"downloadId":"ABC","seriesId":7,"episodeIds":[1,2]},
+            {"id":12,"downloadId":"abc","seriesId":7,"episodeIds":[2,3]},
+            {"id":13,"downloadId":"ABC","seriesId":7,"episodeIds":[4]},
+            {"id":14,"downloadId":"OTHER","seriesId":7,"episodeIds":[99]}]}
+            """;
+        _commandsJson = """[{"name":"EpisodeSearch","status":"started"}]""";
+        _failWrites = failDelete;
+
+        var cfg = new TorrentarrConfig();
+        var arr = new ArrInstanceConfig { Type = "sonarr", URI = _url, APIKey = _key, Category = "tv", ReSearch = true };
+        arr.Search.SearchBySeries = "episode";
+        arr.Search.SearchLimit = 1;
+        cfg.ArrInstances["Sonarr-test"] = arr;
+        await using var db = new TorrentarrDbContext(new DbContextOptionsBuilder<TorrentarrDbContext>()
+            .UseInMemoryDatabase(Guid.NewGuid().ToString()).Options);
+        var service = new ArrImportService(NullLogger<ArrImportService>.Instance, cfg,
+            new QBittorrentConnectionManager(NullLogger<QBittorrentConnectionManager>.Instance), db);
+
+        (await service.BlocklistAndReSearchAsync("abc", "tv")).Should().BeFalse();
+        var retry = await db.SonarrSearchRetries.SingleAsync();
+        var candidates = System.Text.Json.JsonSerializer.Deserialize<List<SearchCandidate>>(retry.CandidatesJson)!;
+        candidates.Select(c => c.ArrId).Should().BeEquivalentTo(new[] { 1, 2, 3, 4 });
+        candidates.Should().OnlyContain(c => c.SeriesId == 7 && c.Type == "Episode" && c.Reason == "Retry");
+        retry.BlocklistPending.Should().Be(failDelete);
+        var deletes = _requests.Where(r => r.Method == "DELETE").Select(r => r.Path.Split('?')[0]).ToList();
+        if (failDelete)
+            deletes.Should().ContainSingle().Which.Should().EndWith("/queue/11");
+        else
+            deletes.Should().BeEquivalentTo(new[] { "/sonarr/api/v5/queue/11", "/sonarr/api/v5/queue/12", "/sonarr/api/v5/queue/13" });
+        _requests.Should().NotContain(r => r.Method == "POST");
+    }
+
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task Blocklist_NoReSearchDeletesAllMatchingRowsAndReportsPartialFailure(bool failDelete)
+    {
+        _queueJson = """
+            {"records":[{"id":11,"downloadId":"ABC","seriesId":7,"episodeIds":[1]},
+            {"id":12,"downloadId":"abc","seriesId":7,"episodeIds":[2]},
+            {"id":13,"downloadId":"OTHER","seriesId":7,"episodeIds":[3]}]}
+            """;
+        _failWrites = failDelete;
+        var cfg = new TorrentarrConfig();
+        cfg.ArrInstances["Sonarr-test"] = new ArrInstanceConfig
+        { Type = "sonarr", URI = _url, APIKey = _key, Category = "tv", ReSearch = false };
+        await using var db = new TorrentarrDbContext(new DbContextOptionsBuilder<TorrentarrDbContext>()
+            .UseInMemoryDatabase(Guid.NewGuid().ToString()).Options);
+        var service = new ArrImportService(NullLogger<ArrImportService>.Instance, cfg,
+            new QBittorrentConnectionManager(NullLogger<QBittorrentConnectionManager>.Instance), db);
+
+        (await service.BlocklistAndReSearchAsync("abc", "tv")).Should().Be(!failDelete);
+        _requests.Where(r => r.Method == "DELETE").Select(r => r.Path.Split('?')[0])
+            .Should().BeEquivalentTo(new[] { "/sonarr/api/v5/queue/11", "/sonarr/api/v5/queue/12" });
+        _requests.Should().NotContain(r => r.Method == "POST");
+        (await db.SonarrSearchRetries.ToListAsync()).Should().BeEmpty();
+    }
+
+    [Theory]
+    [InlineData("episode")]
+    [InlineData("series")]
+    public async Task Blocklist_UnidentifiableMultipleSeriesNeverDeletesOrStagesPartialRecovery(string mode)
+    {
+        _queueJson = """
+            {"records":[{"id":11,"downloadId":"ABC","seriesId":7,"episodeIds":[1]},
+            {"id":12,"downloadId":"ABC","seriesId":8},
+            {"id":13,"downloadId":"ABC","seriesId":9}]}
+            """;
+        var cfg = new TorrentarrConfig();
+        var arr = new ArrInstanceConfig { Type = "sonarr", URI = _url, APIKey = _key, Category = "tv", ReSearch = true };
+        arr.Search.SearchBySeries = mode;
+        cfg.ArrInstances["Sonarr-test"] = arr;
+        await using var db = new TorrentarrDbContext(new DbContextOptionsBuilder<TorrentarrDbContext>()
+            .UseInMemoryDatabase(Guid.NewGuid().ToString()).Options);
+        var service = new ArrImportService(NullLogger<ArrImportService>.Instance, cfg,
+            new QBittorrentConnectionManager(NullLogger<QBittorrentConnectionManager>.Instance), db);
+
+        (await service.BlocklistAndReSearchAsync("abc", "tv")).Should().BeFalse();
+        (await db.SonarrSearchRetries.ToListAsync()).Should().BeEmpty();
+        _requests.Should().NotContain(r => r.Method == "DELETE" || r.Method == "POST");
+    }
+
+    [Theory]
+    [InlineData("episode")]
+    [InlineData("series")]
+    public async Task CustomFormatUnmet_ConsidersEveryQueueRowForSameDownload(string mode)
+    {
+        _queueJson = """
+            {"records":[{"id":11,"downloadId":"ABC","seriesId":7,"episodeIds":[1],"customFormatScore":50},
+            {"id":12,"downloadId":"ABC","seriesId":7,"episodeIds":[2],"customFormatScore":0},
+            {"id":13,"downloadId":"OTHER","seriesId":7,"episodeIds":[3],"customFormatScore":0}]}
+            """;
+        var cfg = new TorrentarrConfig();
+        var arr = new ArrInstanceConfig { Type = "sonarr", URI = _url, APIKey = _key, Category = "tv" };
+        arr.Search.SearchBySeries = mode;
+        arr.Search.CustomFormatUnmetSearch = true;
+        arr.Search.ForceMinimumCustomFormat = mode == "series";
+        cfg.ArrInstances["Sonarr-test"] = arr;
+        await using var db = new TorrentarrDbContext(new DbContextOptionsBuilder<TorrentarrDbContext>()
+            .UseInMemoryDatabase(Guid.NewGuid().ToString()).Options);
+        db.Series.Add(new SeriesFilesModel { ArrId = 7, ArrInstance = "Sonarr-test", MinCustomFormatScore = 10 });
+        db.Episodes.AddRange(Enumerable.Range(1, 2).Select(id => new EpisodeFilesModel
+        {
+            ArrId = id,
+            ArrInstance = "Sonarr-test",
+            ArrSeriesId = 7,
+            EpisodeFileId = id,
+            CustomFormatScore = 20
+        }));
+        await db.SaveChangesAsync();
+        var service = new ArrImportService(NullLogger<ArrImportService>.Instance, cfg,
+            new QBittorrentConnectionManager(NullLogger<QBittorrentConnectionManager>.Instance), db);
+        (await service.IsCustomFormatUnmetAsync("abc", "tv")).Should().BeTrue();
     }
 
     [Theory]
@@ -725,7 +875,7 @@ public sealed class SonarrApiDiscoveryTests : IDisposable
                 : relative.EndsWith("/series/1") || relative.EndsWith("/series/7") ? JsonConvert.SerializeObject(new
                 {
                     id = relative.EndsWith("/series/1") ? 1 : 7,
-                    qualityProfileId = 1,
+                    qualityProfileId = _seriesProfile,
                     tags = new[] { 7 },
                     seasons = new[] { new { seasonNumber = 0, monitored = _specialsSeasonMonitored }, new { seasonNumber = 1, monitored = true }, new { seasonNumber = 2, monitored = true } }
                 })
@@ -744,6 +894,14 @@ public sealed class SonarrApiDiscoveryTests : IDisposable
             {
                 var queue = JObject.Parse(json);
                 queue["records"] = new JArray(((JArray)queue["records"]!).Where(r => r["seriesId"]?.Type == JTokenType.Integer));
+                json = queue.ToString(Formatting.None);
+            }
+            if (relative.Contains("/queue?"))
+            {
+                var queue = JObject.Parse(json);
+                queue["page"] = int.Parse(ctx.Request.QueryString["page"] ?? "1");
+                queue["pageSize"] = int.Parse(ctx.Request.QueryString["pageSize"] ?? "1000");
+                queue["totalRecords"] = ((JArray)queue["records"]!).Count;
                 json = queue.ToString(Formatting.None);
             }
             ctx.Response.StatusCode = relative == "" ? _discoveryStatus : relative.EndsWith("/system/status") ? _statusCode : (_failWrites && ctx.Request.HttpMethod == "DELETE" || _failSearchWrites && ctx.Request.HttpMethod == "POST") ? 400 : 200;

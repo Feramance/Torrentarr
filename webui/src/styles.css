@@ -5885,3 +5885,75 @@ section.maintenance-workspace {
 .maintenance-workspace .config-section > summary {
   color: var(--on-surface);
 }
+
+.issues-view .instance-tabs,
+.issue-filters {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.75rem;
+  margin-bottom: 1rem;
+}
+.issue-filters label {
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+}
+.issue-filters select,
+.issue-filters input {
+  color: inherit;
+  background: var(--bg-secondary, transparent);
+  border: 1px solid var(--border, #777);
+  border-radius: 0.35rem;
+  padding: 0.45rem;
+}
+.issue-row {
+  border: 1px solid var(--border, #777);
+  border-radius: 0.5rem;
+  margin: 0.65rem 0;
+  padding: 0.8rem;
+}
+.issue-row summary {
+  cursor: pointer;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.65rem;
+}
+.issue-row summary time {
+  margin-left: auto;
+  font-size: 0.85em;
+}
+.issue-details {
+  padding: 0.5rem 0.25rem;
+  overflow-wrap: anywhere;
+}
+.issue-severity,
+.issue-count {
+  border: 1px solid currentColor;
+  border-radius: 1rem;
+  padding: 0.1rem 0.5rem;
+  font-size: 0.8em;
+}
+.issue-severity--error,
+.issue-unavailable {
+  color: var(--danger, #d65a5a);
+}
+.issue-severity--warning {
+  color: var(--warning, #bd841c);
+}
+.issue-pagination {
+  margin-top: 1rem;
+  align-items: center;
+}
+
+.issues-view [role="tab"][aria-selected="true"] {
+  border-color: var(--accent, #3b82f6);
+  color: var(--accent, #3b82f6);
+  font-weight: 600;
+}
+.issue-row summary::before {
+  content: "▸";
+}
+.issue-row[open] summary::before {
+  content: "▾";
+}

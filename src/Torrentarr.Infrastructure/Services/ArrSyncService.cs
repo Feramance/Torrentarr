@@ -31,6 +31,7 @@ public class ArrSyncService
     private readonly DatabaseRestartCoordinator _restartCoordinator;
     private readonly ITorrentClientRegistry? _torrents;
     private readonly ISafeDeletionService? _deletion;
+    private readonly IOperationalIssueReporter? _issues;
 
     public ArrSyncService(ILogger<ArrSyncService> logger, TorrentarrConfig config,
         TorrentarrDbContext db, DatabaseRestartCoordinator restartCoordinator)
@@ -41,7 +42,7 @@ public class ArrSyncService
         TorrentarrConfig config,
         TorrentarrDbContext db,
         DatabaseRestartCoordinator restartCoordinator,
-        ITorrentClientRegistry? torrents, ISafeDeletionService? deletion)
+        ITorrentClientRegistry? torrents, ISafeDeletionService? deletion, IOperationalIssueReporter? issues = null)
     {
         _logger = logger;
         _config = config;
@@ -49,6 +50,7 @@ public class ArrSyncService
         _restartCoordinator = restartCoordinator;
         _torrents = torrents;
         _deletion = deletion;
+        _issues = issues;
     }
 
     public async Task SyncAsync(string instanceName, CancellationToken ct = default)
@@ -97,6 +99,7 @@ public class ArrSyncService
                     break;
             }
 
+            if (_issues != null) await _issues.ResolveAsync(SyncIssue(instanceName, "catalog"), ct);
             _logger.LogTrace("[{Instance}] Sync completed for {Name}", instanceName, instanceName);
         }
         catch (OperationCanceledException) when (ct.IsCancellationRequested)
@@ -105,6 +108,7 @@ public class ArrSyncService
         }
         catch (Exception ex)
         {
+            if (_issues != null) await _issues.ReportAsync(SyncIssue(instanceName, "catalog"), ct);
             _logger.LogError(ex, "[{Instance}] ArrSyncService: error syncing {Type} instance {Name}", instanceName, arrConfig.Type, instanceName);
             throw;
         }
@@ -142,12 +146,18 @@ public class ArrSyncService
                     await SyncReadarrQueueAsync(instanceName, arrConfig, ct);
                     break;
             }
+            if (_issues != null) await _issues.ResolveAsync(SyncIssue(instanceName, "queue"), ct);
         }
+        catch (OperationCanceledException) when (ct.IsCancellationRequested) { throw; }
         catch (Exception ex)
         {
+            if (_issues != null) await _issues.ReportAsync(SyncIssue(instanceName, "queue"), ct);
             _logger.LogError(ex, "ArrSyncService: error syncing queue for {Name}", instanceName);
         }
     }
+
+    private static OperationalIssueReport SyncIssue(string instance, string kind) => new("arr.sync." + kind, "system", "Arr " + kind + " synchronization failed",
+        "The last confirmed queue or catalog state is retained.", "Check Arr connectivity and application logs; incomplete queues are never used to prune records.", ArrInstance: instance);
 
     // ── Radarr ──────────────────────────────────────────────────────────────
 
@@ -257,8 +267,8 @@ public class ArrSyncService
     {
         var client = new RadarrClient(cfg.URI, cfg.APIKey, cfg.SkipTLSVerify);
 
-        var queueResponse = await client.GetQueueAsync(ct: ct);
-        var queueItems = queueResponse.Records;
+        var queueResponse = await client.GetAllQueueAsync(ct: ct);
+        var queueItems = queueResponse;
 
         var dbQueue = await _db.MovieQueue
             .Where(q => q.ArrInstance == instanceName)
@@ -488,8 +498,8 @@ public class ArrSyncService
     {
         var client = new SonarrClient(cfg.URI, cfg.APIKey, cfg.SkipTLSVerify);
 
-        var queueResponse = await client.GetQueueAsync(ct: ct);
-        var queueItems = queueResponse.Records;
+        var queueResponse = await client.GetAllQueueAsync(ct: ct);
+        var queueItems = queueResponse;
 
         var dbQueue = await _db.EpisodeQueue
             .Where(q => q.ArrInstance == instanceName)
@@ -945,8 +955,8 @@ public class ArrSyncService
     {
         var client = new LidarrClient(cfg.URI, cfg.APIKey, cfg.SkipTLSVerify);
 
-        var queueResponse = await client.GetQueueAsync(ct: ct);
-        var queueItems = queueResponse.Records;
+        var queueResponse = await client.GetAllQueueAsync(ct: ct);
+        var queueItems = queueResponse;
 
         var dbQueue = await _db.AlbumQueue
             .Where(q => q.ArrInstance == instanceName)
@@ -1213,8 +1223,8 @@ public class ArrSyncService
     {
         var client = new ReadarrClient(cfg.URI, cfg.APIKey, cfg.SkipTLSVerify);
 
-        var queueResponse = await client.GetQueueAsync(ct: ct);
-        var queueItems = queueResponse.Records;
+        var queueResponse = await client.GetAllQueueAsync(ct: ct);
+        var queueItems = queueResponse;
 
         var dbQueue = await _db.BookQueue
             .Where(q => q.ArrInstance == instanceName)

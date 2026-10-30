@@ -161,6 +161,26 @@ public sealed class SonarrSearchExecutionTests : IDisposable
     }
 
     [Fact]
+    public async Task RetryDeadline_IsForwardedAndPartialResultsRemainDurable()
+    {
+        _db.SonarrSearchRetries.Add(new()
+        {
+            ArrInstance = "Sonarr-test",
+            DownloadId = "ABC",
+            CandidatesJson = """[{"ArrId":1,"Reason":"Retry"},{"ArrId":2,"Reason":"Retry"}]"""
+        });
+        await _db.SaveChangesAsync();
+        var deadline = DateTimeOffset.UtcNow.AddMinutes(2);
+        var executor = new Mock<ISearchExecutor>();
+        executor.Setup(e => e.ExecuteSearchesAsync("Sonarr-test", It.IsAny<IEnumerable<SearchCandidate>>(), deadline, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new SearchResult { SearchesTriggered = 1, SearchedIds = [1], BudgetExhausted = true });
+        await SonarrRetryQueue.ExecuteAsync(_db, executor.Object, "Sonarr-test", NullLogger.Instance, default, _arr, null, deadline);
+        var remaining = System.Text.Json.JsonSerializer.Deserialize<List<SearchCandidate>>((await _db.SonarrSearchRetries.SingleAsync()).CandidatesJson)!;
+        remaining.Should().ContainSingle(c => c.ArrId == 2);
+        executor.VerifyAll();
+    }
+
+    [Fact]
     public async Task PendingRetries_SurviveNewContext_AndSearchWithoutScheduledSearching()
     {
         var options = new DbContextOptionsBuilder<TorrentarrDbContext>()

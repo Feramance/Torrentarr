@@ -145,6 +145,16 @@ public class TorrentCacheService : ITorrentCacheService
         }
     }
 
+    public void InvalidateTorrent(string instanceId, string hash)
+    {
+        lock (_lock)
+        {
+            var key = FileStateKey(instanceId, hash);
+            _categoryCache.Remove(key); _nameCache.Remove(key); _ignoreCache.Remove(key);
+            _filePrioritiesAppliedHashes.Remove(key); _fileFilteredHashes.Remove(key); _allowlistWarningCache.Remove(key);
+        }
+    }
+
     public void Clear()
     {
         lock (_lock)

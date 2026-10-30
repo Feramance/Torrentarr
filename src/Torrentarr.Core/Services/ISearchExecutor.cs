@@ -7,6 +7,10 @@ public interface ISearchExecutor
         IEnumerable<SearchCandidate> candidates,
         CancellationToken cancellationToken = default);
 
+    Task<SearchResult> ExecuteSearchesAsync(string instanceName, IEnumerable<SearchCandidate> candidates,
+        DateTimeOffset? deadline, CancellationToken cancellationToken)
+        => ExecuteSearchesAsync(instanceName, candidates, cancellationToken);
+
     Task<int> GetActiveCommandCountAsync(string instanceName, CancellationToken cancellationToken = default);
 
     bool CanSearch(int activeCommandCount, int searchLimit);

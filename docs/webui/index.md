@@ -2,6 +2,8 @@
 
 Torrentarr includes a modern, React-based web interface for real-time monitoring, configuration management, and system control. Built with TypeScript and Mantine UI components, the WebUI provides a responsive, intuitive interface for managing your Torrentarr instance.
 
+For grouped operational failures, recovery guidance, and recent history, open the [Issues view](issues.md).
+
 ---
 
 ## Accessing the WebUI

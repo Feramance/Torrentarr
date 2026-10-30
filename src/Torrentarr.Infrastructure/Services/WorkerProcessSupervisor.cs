@@ -236,6 +236,21 @@ public sealed class WorkerProcessSupervisor : BackgroundService, IProcessOrchest
         finally { if (!ownsLifecycle) _lifecycle.Release(); }
     }
 
+    public IReadOnlyList<PendingOperationalIssue> GetPendingIssues()
+    {
+        var pending = new List<PendingOperationalIssue>();
+        lock (_gate)
+            foreach (var (name, process) in _processes)
+                try
+                {
+                    var heartbeat = JsonSerializer.Deserialize<WorkerHeartbeat>(File.ReadAllText(_statusFiles.GetValueOrDefault(name, StatusPath(name))), WorkerHeartbeat.JsonOptions);
+                    if (heartbeat != null && !process.HasExited && heartbeat.Pid == process.Id && heartbeat.Heartbeat >= process.StartTime.ToUniversalTime())
+                        pending.AddRange(heartbeat.PendingIssues.Take(100));
+                }
+                catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or JsonException or InvalidOperationException or Win32Exception) { }
+        return pending;
+    }
+
     public Task<Dictionary<string, ProcessStatus>> GetProcessStatusAsync()
     {
         var result = new Dictionary<string, ProcessStatus>(StringComparer.OrdinalIgnoreCase);

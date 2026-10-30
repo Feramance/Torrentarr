@@ -207,6 +207,13 @@ public class SonarrClient
     /// <summary>
     /// Trigger manual import scan for downloaded episodes
     /// </summary>
+    public Task<List<SonarrQueueItem>> GetAllQueueAsync(CancellationToken ct = default)
+        => ArrQueuePaging.ReadAllAsync(async (page, size) =>
+        {
+            var response = await GetQueueAsync(page, size, ct);
+            return (response.Page, response.PageSize, response.TotalRecords, response.Records);
+        }, item => item.Id, ct);
+
     public async Task<CommandResponse?> TriggerDownloadedEpisodesScanAsync(
         string path,
         string downloadClientId,
@@ -246,12 +253,10 @@ public class SonarrClient
 
         var response = await ArrClientResponse.ExecuteAsync(_client, request, ct);
 
-        if (response.IsSuccessful && !string.IsNullOrEmpty(response.Content))
-        {
-            return JsonConvert.DeserializeObject<List<CommandStatus>>(response.Content) ?? new List<CommandStatus>();
-        }
-
-        return new List<CommandStatus>();
+        ArrClientResponse.EnsureSuccess(response, "GET commands");
+        if (string.IsNullOrWhiteSpace(response.Content)) throw new IOException("Arr returned no command inventory.");
+        return JsonConvert.DeserializeObject<List<CommandStatus>>(response.Content)
+            ?? throw new IOException("Arr returned an invalid command inventory.");
     }
 
     /// <summary>
@@ -341,10 +346,10 @@ public class SonarrClient
     /// <summary>
     /// Update series quality profile, preserving unmapped fields via a raw JSON round-trip.
     /// </summary>
-    public async Task<bool> UpdateSeriesQualityProfileAsync(int seriesId, int qualityProfileId, CancellationToken ct = default)
+    public async Task<bool> UpdateSeriesQualityProfileAsync(int seriesId, int qualityProfileId, CancellationToken ct = default, int? expectedProfileId = null)
     {
         var request = await CreateRequestAsync($"series/{seriesId}", Method.Get, ct);
-        return await ArrQualityProfilePut.UpdateAsync(_client, _apiKey, request.Resource, qualityProfileId, ct);
+        return await ArrQualityProfilePut.UpdateAsync(_client, _apiKey, request.Resource, qualityProfileId, ct, expectedProfileId);
     }
 
     /// <summary>

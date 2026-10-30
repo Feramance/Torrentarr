@@ -23,6 +23,24 @@ public class UpdateServiceTests
     }
 
     [Fact]
+    public async Task PendingUpdateNeverResolvesAnApplyFailure_OnlyVerifiedSuccessDoes()
+    {
+        var reporter = new Moq.Mock<Torrentarr.Core.Services.IOperationalIssueReporter>();
+        reporter.Setup(r => r.ReportAsync(Moq.It.IsAny<Torrentarr.Core.Services.OperationalIssueReport>(), Moq.It.IsAny<CancellationToken>())).Returns(Task.CompletedTask);
+        reporter.Setup(r => r.ResolveAsync(Moq.It.IsAny<Torrentarr.Core.Services.OperationalIssueReport>(), Moq.It.IsAny<CancellationToken>())).Returns(Task.CompletedTask);
+        var service = new UpdateService(NullLogger<UpdateService>.Instance, new TorrentarrConfig(), issues: reporter.Object);
+        service.ApplyState.LastResult = "pending";
+        await service.ObserveApplyResultAsync();
+        reporter.Verify(r => r.ResolveAsync(Moq.It.IsAny<Torrentarr.Core.Services.OperationalIssueReport>(), Moq.It.IsAny<CancellationToken>()), Moq.Times.Never);
+        service.ApplyState.LastResult = "error";
+        await service.ObserveApplyResultAsync();
+        reporter.Verify(r => r.ReportAsync(Moq.It.Is<Torrentarr.Core.Services.OperationalIssueReport>(r => r.Code == "update.apply"), Moq.It.IsAny<CancellationToken>()), Moq.Times.Once);
+        service.ApplyState.LastResult = "success";
+        await service.ObserveApplyResultAsync();
+        reporter.Verify(r => r.ResolveAsync(Moq.It.Is<Torrentarr.Core.Services.OperationalIssueReport>(r => r.Code == "update.apply"), Moq.It.IsAny<CancellationToken>()), Moq.Times.Once);
+    }
+
+    [Fact]
     public async Task DockerMetadata_DisablesBinaryReplacement()
     {
         var previous = Environment.GetEnvironmentVariable("DOTNET_RUNNING_IN_CONTAINER");

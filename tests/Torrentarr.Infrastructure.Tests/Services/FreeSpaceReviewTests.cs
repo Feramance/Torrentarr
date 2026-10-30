@@ -1,5 +1,6 @@
 using FluentAssertions;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Logging.Abstractions;
 using Moq;
 using Torrentarr.Core.Configuration;
@@ -266,6 +267,58 @@ public sealed class FreeSpaceReviewTests : IDisposable
             .Should().ThrowAsync<IOException>().WithMessage("*marker rollback failed*");
         result.Which.InnerException!.Message.Should().Be("marker unavailable");
         client.Verify(c => c.ResumeTorrentAsync(It.IsAny<string>(), It.IsAny<CancellationToken>()), Times.Never);
+    }
+
+    [Theory]
+    [InlineData(false, false)]
+    [InlineData(false, true)]
+    [InlineData(true, false)]
+    [InlineData(true, true)]
+    public async Task DiagnosticsIdentifyFailedOperation_AndSummarizeEveryCompletedPass(bool resume, bool accepted)
+    {
+        var torrent = new TorrentInfo
+        {
+            Hash = "diagnostic-hash",
+            State = resume ? "pausedDL" : "downloading",
+            Category = "movies",
+            Tags = resume ? "qBitrr-free_space_paused" : "",
+            AmountLeft = resume ? 1 : 1000
+        };
+        var client = Client("diagnostic-client", true, torrent);
+        client.Setup(c => c.PauseTorrentAsync(torrent.Hash, It.IsAny<CancellationToken>())).ReturnsAsync(accepted);
+        client.Setup(c => c.ResumeTorrentAsync(torrent.Hash, It.IsAny<CancellationToken>())).ReturnsAsync(accepted);
+        var logger = new DiagnosticLogger();
+        var result = await new DiagnosticService(logger, _config, _registry.Object, _db)
+            .ProcessAsync(new HashSet<string> { "movies" });
+        var summary = logger.Entries.Single(e => e.Message.Contains("cycle completed"));
+        summary.Message.Should().Contain($"paused={(accepted && !resume ? 1 : 0)}")
+            .And.Contain($"resumed={(accepted && resume ? 1 : 0)}")
+            .And.Contain($"resumesWithheld={!accepted}");
+        if (!accepted)
+        {
+            var failure = logger.Entries.Single(e => e.Exception != null);
+            failure.Message.Should().Contain("diagnostic-client").And.Contain("diagnostic-hash")
+                .And.Contain(resume ? "Resume" : "mark and pause");
+            failure.Exception.Should().BeOfType<IOException>();
+        }
+        else logger.Entries.Should().OnlyContain(e => e.Exception == null);
+        (resume ? result.Resumed : result.Paused).Should().Be(accepted ? 1 : 0);
+    }
+
+    private sealed class DiagnosticService(ILogger<FreeSpaceService> logger, TorrentarrConfig config,
+        ITorrentClientRegistry registry, TorrentarrDbContext db) : FreeSpaceService(logger, config, registry, db)
+    {
+        protected override string IdentifyStorage(string path) => "diagnostic-disk";
+        protected override StorageSpace ReadSpace(string path) => new("diagnostic-disk", 1000, 100);
+    }
+
+    private sealed class DiagnosticLogger : ILogger<FreeSpaceService>
+    {
+        public List<(string Message, Exception? Exception)> Entries { get; } = [];
+        public IDisposable? BeginScope<TState>(TState state) where TState : notnull => null;
+        public bool IsEnabled(LogLevel level) => true;
+        public void Log<TState>(LogLevel level, EventId id, TState state, Exception? exception, Func<TState, Exception?, string> formatter)
+            => Entries.Add((formatter(state, exception), exception));
     }
 
     private sealed class SharedDiskService(TorrentarrConfig config, ITorrentClientRegistry registry, TorrentarrDbContext db, string otherDisk)
