@@ -117,7 +117,7 @@ jobs:
       run: |
         set -euo pipefail
 
-        BRANCH="automation/release-v${VERSION}-version"
+        BRANCH="automation/release-v${VERSION}-version-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}"
         TITLE="chore: bump version to v${VERSION}"
 
         git config user.name "${GITHUB_ACTOR}"
@@ -502,7 +502,7 @@ jobs:
           exit 0
         fi
 
-        BRANCH="automation/release-v${VERSION}-changelog"
+        BRANCH="automation/release-v${VERSION}-changelog-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}"
         TITLE="chore: update changelog for v${VERSION}"
 
         git config user.name "${GITHUB_ACTOR}"
