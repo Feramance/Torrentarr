@@ -203,7 +203,13 @@ public sealed class MaintenanceCoordinator : BackgroundService, IMaintenanceCoor
                 }
                 if (operation == MaintenanceOperation.OrphanScan && (!inventory.IsComplete || cfg.Maintenance.PathMappings.Count == 0 || !cfg.Maintenance.RecycleBin.Enabled || cfg.Maintenance.Orphans.ScanRoots.Count == 0))
                 {
-                    result.State = "blocked"; result.Reason = "Orphan scanning requires complete global ownership, explicit accessible mappings, and recycling.";
+                    result.State = "blocked";
+                    var missing = new List<string>();
+                    if (!inventory.IsComplete) missing.Add("global torrent ownership inventory is incomplete; verify every enabled torrent client can be listed");
+                    if (cfg.Maintenance.PathMappings.Count == 0) missing.Add("Maintenance.PathMappings has no entries");
+                    if (!cfg.Maintenance.RecycleBin.Enabled) missing.Add("Maintenance.RecycleBin.Enabled is false");
+                    if (cfg.Maintenance.Orphans.ScanRoots.Count == 0) missing.Add("Maintenance.Orphans.ScanRoots has no entries");
+                    result.Reason = $"Orphan scan blocked for {id}: {string.Join("; ", missing)}.";
                     AddIssue("orphan-prerequisite", result.Reason); continue;
                 }
                 if (operation == MaintenanceOperation.HardlinkAudit && cfg.Maintenance.Hardlinks.CountLinksInsideRoot)
@@ -662,14 +668,14 @@ public sealed class MaintenanceCoordinator : BackgroundService, IMaintenanceCoor
                     else
                     {
                         run.Failed++;
-                        run.Errors.Add(result.Error ?? $"Action {action.Id} failed.");
+                        run.Errors.Add($"{action.ClientInstanceId}: {action.Kind} ({action.TorrentName ?? action.TorrentHash ?? action.Path ?? action.Id}): {result.Error ?? "Torrent client rejected the operation."}");
                     }
                     linked.Token.ThrowIfCancellationRequested();
                 }
                 catch (Exception ex) when (ex is not OperationCanceledException)
                 {
                     run.Failed++;
-                    run.Errors.Add($"{action.Kind} for {action.TorrentName ?? action.Path}: {ex.Message}");
+                    run.Errors.Add($"{action.ClientInstanceId}: {action.Kind} for {action.TorrentName ?? action.TorrentHash ?? action.Path ?? action.Id}: {ex.Message}");
                     _logger.LogError(ex, "Maintenance action {ActionId} failed", action.Id);
                 }
             }
