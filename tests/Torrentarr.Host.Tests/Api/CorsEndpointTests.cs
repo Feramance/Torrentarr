@@ -25,6 +25,8 @@ public class CorsEndpointTests(TorrentarrWebApplicationFactory factory)
             config.WebUI.CorsAllowedOrigins = ["https://first.example"];
             await Check("https://first.example", "https://first.example", true);
             await Check("https://second.example", null, false);
+            config.WebUI.CorsAllowedOrigins = ["https://first.example:443"];
+            await Check("https://first.example", "https://first.example", true);
             config.WebUI.CorsAllowedOrigins = ["https://second.example"];
             await Check("https://first.example", null, false);
             await Check("https://second.example", "https://second.example", true);
