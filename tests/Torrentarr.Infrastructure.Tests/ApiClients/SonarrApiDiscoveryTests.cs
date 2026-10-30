@@ -552,12 +552,12 @@ public sealed class SonarrApiDiscoveryTests : IDisposable
 
         var cfg = new TorrentarrConfig();
         cfg.ArrInstances["Sonarr-test"] = new ArrInstanceConfig
-            { Type = "sonarr", URI = _url, APIKey = _key, Category = "tv", ReSearch = true };
+        { Type = "sonarr", URI = _url, APIKey = _key, Category = "tv", ReSearch = true };
         var service = new ArrImportService(NullLogger<ArrImportService>.Instance, cfg,
             new QBittorrentConnectionManager(NullLogger<QBittorrentConnectionManager>.Instance), db);
 
         (await service.BlocklistAndReSearchAsync("abc", "tv")).Should().BeFalse();
-        _requests.Should().NotContain(r => r.Method is "DELETE" or "POST");
+        _requests.Should().NotContain(r => r.Method == "DELETE" || r.Method == "POST");
         (await db.SonarrSearchRetries.AsNoTracking().ToListAsync()).Should().BeEmpty();
     }
 
@@ -612,7 +612,7 @@ public sealed class SonarrApiDiscoveryTests : IDisposable
         _failWrites = failDelete;
         var cfg = new TorrentarrConfig();
         cfg.ArrInstances["Sonarr-test"] = new ArrInstanceConfig
-            { Type = "sonarr", URI = _url, APIKey = _key, Category = "tv", ReSearch = false };
+        { Type = "sonarr", URI = _url, APIKey = _key, Category = "tv", ReSearch = false };
         await using var db = new TorrentarrDbContext(new DbContextOptionsBuilder<TorrentarrDbContext>()
             .UseInMemoryDatabase(Guid.NewGuid().ToString()).Options);
         var service = new ArrImportService(NullLogger<ArrImportService>.Instance, cfg,
@@ -646,7 +646,7 @@ public sealed class SonarrApiDiscoveryTests : IDisposable
 
         (await service.BlocklistAndReSearchAsync("abc", "tv")).Should().BeFalse();
         (await db.SonarrSearchRetries.ToListAsync()).Should().BeEmpty();
-        _requests.Should().NotContain(r => r.Method is "DELETE" or "POST");
+        _requests.Should().NotContain(r => r.Method == "DELETE" || r.Method == "POST");
     }
 
     [Theory]
@@ -670,7 +670,10 @@ public sealed class SonarrApiDiscoveryTests : IDisposable
         db.Series.Add(new SeriesFilesModel { ArrId = 7, ArrInstance = "Sonarr-test", MinCustomFormatScore = 10 });
         db.Episodes.AddRange(Enumerable.Range(1, 2).Select(id => new EpisodeFilesModel
         {
-            ArrId = id, ArrInstance = "Sonarr-test", ArrSeriesId = 7, EpisodeFileId = id,
+            ArrId = id,
+            ArrInstance = "Sonarr-test",
+            ArrSeriesId = 7,
+            EpisodeFileId = id,
             CustomFormatScore = 20
         }));
         await db.SaveChangesAsync();
