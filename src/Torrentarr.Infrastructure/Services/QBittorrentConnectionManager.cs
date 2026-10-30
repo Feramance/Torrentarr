@@ -119,6 +119,7 @@ public class QBittorrentConnectionManager : ITorrentClientRegistry
         try
         {
             lock (_clientsLock)
+            {
                 foreach (var name in _clients.Keys.Where(id => !desired.ContainsKey(id)).ToList())
                 {
                     RemoveClient(name);
@@ -126,6 +127,7 @@ public class QBittorrentConnectionManager : ITorrentClientRegistry
                 }
                 foreach (var name in _authenticationFailures.Keys.Where(id => !desired.ContainsKey(id)).ToList())
                     _authenticationFailures.Remove(name);
+            }
             var count = 0;
             foreach (var (name, config) in desired)
             {
