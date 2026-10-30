@@ -1246,7 +1246,7 @@ export function ConfigView(props?: ConfigViewProps): JSX.Element {
           validationErrors={webSaveGate.validationErrors}
         />
       ) : null}
-      {active && isAuthSettingsOpen && !confirmDisableAuth ? (
+      {active && isAuthSettingsOpen ? (
         <SimpleConfigModal
           title="Authentication"
           fields={AUTH_SETTINGS_FIELDS}
