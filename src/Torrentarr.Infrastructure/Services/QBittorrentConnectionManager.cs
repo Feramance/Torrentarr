@@ -44,10 +44,18 @@ public class QBittorrentConnectionManager : ITorrentClientRegistry
     public async Task<bool> InitializeAsync(string name, TorrentClientInstanceConfig config, CancellationToken cancellationToken = default)
     {
         await _reconcile.WaitAsync(cancellationToken);
+        try { return await ConnectAsync(name, config, cancellationToken); }
+        finally { _reconcile.Release(); }
+    }
+
+    /// <summary>Explicit operator-initiated reconnection, including after credentials are restored externally.</summary>
+    public async Task<bool> ForceReconnectAsync(string name, TorrentClientInstanceConfig config, CancellationToken ct = default)
+    {
+        await _reconcile.WaitAsync(ct);
         try
         {
-            lock (_clientsLock) _authenticationFailures.Remove(name); // Explicit reconnect bypasses cached rejection.
-            return await ConnectAsync(name, config, cancellationToken);
+            lock (_clientsLock) _authenticationFailures.Remove(name);
+            return await ConnectAsync(name, config, ct);
         }
         finally { _reconcile.Release(); }
     }
