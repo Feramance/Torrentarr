@@ -863,13 +863,14 @@ public class SeedingService : ISeedingService
 
     public async Task UpdateSeedingTagsAsync(string category, CancellationToken cancellationToken = default)
     {
+        var failures = new List<Exception>();
         foreach (var (instanceName, client) in _qbitManager.GetAllClients())
         {
+            if (!_config.Settings.Tagless)
+                try { await EnsureTagsExistAsync(client, cancellationToken); }
+                catch (Exception ex) when (ex is not OperationCanceledException) { failures.Add(ex); }
             try
             {
-                if (!_config.Settings.Tagless)
-                    await EnsureTagsExistAsync(client, cancellationToken);
-
                 var torrents = await client.GetTorrentsAsync(category, cancellationToken: cancellationToken);
                 foreach (var torrent in torrents) torrent.QBitInstanceName = instanceName;
                 var completedTorrents = torrents.Where(t =>
@@ -886,6 +887,7 @@ public class SeedingService : ISeedingService
                     }
                     catch (Exception ex) when (ex is not OperationCanceledException)
                     {
+                        failures.Add(ex);
                         _logger.LogError(ex, "Error updating seeding tag for torrent {Hash}", torrent.Hash);
                     }
                 }
@@ -899,6 +901,7 @@ public class SeedingService : ISeedingService
                     }
                     catch (Exception ex) when (ex is not OperationCanceledException)
                     {
+                        failures.Add(ex);
                         _logger.LogError(ex, "Error applying tracker actions for {Hash}", torrent.Hash);
                     }
                     try
@@ -907,15 +910,18 @@ public class SeedingService : ISeedingService
                     }
                     catch (Exception ex) when (ex is not OperationCanceledException)
                     {
+                        failures.Add(ex);
                         _logger.LogError(ex, "Error processing tracker messages for {Hash}", torrent.Hash);
                     }
                 }
             }
             catch (Exception ex) when (ex is not OperationCanceledException)
             {
+                failures.Add(ex);
                 _logger.LogError(ex, "Error updating seeding tags for instance '{Instance}' category {Category}", instanceName, category);
             }
         }
+        if (failures.Count > 0) throw new AggregateException("Some seeding maintenance could not be completed.", failures);
     }
 
     private bool HasConfiguredProtection(TorrentInfo torrent) =>
@@ -1019,10 +1025,10 @@ public class SeedingService : ISeedingService
             }
             else
             {
-                await client.AddTagsAsync(
+                if (!await client.AddTagsAsync(
                     new List<string> { torrent.Hash },
                     new List<string> { AllowedSeedingTag },
-                    cancellationToken);
+                    cancellationToken)) throw new IOException("Torrent client rejected the seeding tag update.");
             }
             _logger.LogTrace("AllowedSeeding set for torrent {Name} (Tagless={Tagless})", torrent.Name, _config.Settings.Tagless);
         }
@@ -1036,10 +1042,10 @@ public class SeedingService : ISeedingService
             }
             else
             {
-                await client.RemoveTagsAsync(
+                if (!await client.RemoveTagsAsync(
                     new List<string> { torrent.Hash },
                     new List<string> { AllowedSeedingTag },
-                    cancellationToken);
+                    cancellationToken)) throw new IOException("Torrent client rejected the seeding tag update.");
             }
             _logger.LogTrace("AllowedSeeding cleared for torrent {Name} (Tagless={Tagless})", torrent.Name, _config.Settings.Tagless);
         }
@@ -1092,13 +1098,14 @@ public class SeedingService : ISeedingService
 
             if (tagsToCreate.Count > 0)
             {
-                await client.CreateTagsAsync(tagsToCreate, cancellationToken);
+                if (!await client.CreateTagsAsync(tagsToCreate, cancellationToken)) throw new IOException("Torrent client rejected tag creation.");
                 _logger.LogTrace("Created tags: {Tags}", string.Join(", ", tagsToCreate));
             }
         }
         catch (Exception ex) when (ex is not OperationCanceledException)
         {
             _logger.LogWarning(ex, "Failed to ensure tags exist");
+            throw;
         }
     }
 
@@ -1244,7 +1251,7 @@ public class SeedingService : ISeedingService
         catch (Exception ex) when (ex is not OperationCanceledException)
         {
             _logger.LogWarning(ex, "ApplyTrackerActions: failed to get trackers for {Hash}", torrent.Hash);
-            return;
+            throw;
         }
 
         var existingTagSet = (torrent.Tags ?? "")
@@ -1277,7 +1284,7 @@ public class SeedingService : ISeedingService
                 if (urlsToRemove.Count > 0 && client.Capabilities.TrackerMutation)
                 {
                     _logger.LogDebug("RemoveIfExists: removing tracker host {Host} from [{Name}]", cfgHost, torrent.Name);
-                    await client.RemoveTrackersAsync(torrent.Hash, urlsToRemove, ct);
+                    if (!await client.RemoveTrackersAsync(torrent.Hash, urlsToRemove, ct)) throw new IOException("Torrent client rejected tracker removal.");
                     isPresent = false; // tracker was removed; AddTrackerIfMissing should not re-add
                 }
             }
@@ -1286,7 +1293,7 @@ public class SeedingService : ISeedingService
             if (client.Capabilities.TrackerMutation && cfg.AddTrackerIfMissing && !isPresent && !string.IsNullOrEmpty(cfg.Uri))
             {
                 _logger.LogDebug("AddTrackerIfMissing: adding tracker {Uri} to [{Name}]", cfg.Uri, torrent.Name);
-                await client.AddTrackersAsync(torrent.Hash, new List<string> { cfg.Uri }, ct);
+                if (!await client.AddTrackersAsync(torrent.Hash, new List<string> { cfg.Uri }, ct)) throw new IOException("Torrent client rejected tracker addition.");
             }
 
             // AddTags: active tracker match → queue user-defined tags
@@ -1300,7 +1307,7 @@ public class SeedingService : ISeedingService
             if (client.Capabilities.SuperSeeding && cfg.SuperSeedMode.HasValue && isPresent)
             {
                 _logger.LogDebug("SuperSeedMode={Mode}: applying to [{Name}]", cfg.SuperSeedMode.Value, torrent.Name);
-                await client.SetSuperSeedingAsync(torrent.Hash, cfg.SuperSeedMode.Value, ct);
+                if (!await client.SetSuperSeedingAsync(torrent.Hash, cfg.SuperSeedMode.Value, ct)) throw new IOException("Torrent client rejected super-seeding update.");
             }
         }
 
@@ -1309,7 +1316,7 @@ public class SeedingService : ISeedingService
         if (client.Capabilities.Tags && newTags.Count > 0)
         {
             _logger.LogDebug("AddTags: adding {Tags} to [{Name}]", string.Join(", ", newTags), torrent.Name);
-            await client.AddTagsAsync(new List<string> { torrent.Hash }, newTags, ct);
+            if (!await client.AddTagsAsync(new List<string> { torrent.Hash }, newTags, ct)) throw new IOException("Torrent client rejected tracker tag update.");
         }
     }
 
@@ -1379,7 +1386,7 @@ public class SeedingService : ISeedingService
                     "RemoveTrackerWithMessage: removing tracker {Url} from [{Name}] — message: \"{Msg}\"",
                     tracker.Url, torrent.Name, msg);
                 if (client.Capabilities.TrackerMutation)
-                    await client.RemoveTrackersAsync(torrent.Hash, new List<string> { tracker.Url }, ct);
+                    if (!await client.RemoveTrackersAsync(torrent.Hash, new List<string> { tracker.Url }, ct)) throw new IOException("Torrent client rejected tracker message cleanup.");
             }
         }
     }

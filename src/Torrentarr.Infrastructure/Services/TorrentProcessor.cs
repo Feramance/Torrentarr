@@ -168,7 +168,11 @@ public class TorrentProcessor : ITorrentProcessor
             {
                 try { await _seedingService.UpdateSeedingTagsAsync(category, cancellationToken); }
                 catch (Exception ex) when (ex is not OperationCanceledException) { failures.Add(ex); }
-                try { await _seedingService.RemoveCompletedTorrentsAsync(category, cancellationToken); }
+                try
+                {
+                    var removal = await _seedingService.RemoveCompletedTorrentsAsync(category, cancellationToken);
+                    failures.AddRange(removal.Errors.Select(error => new IOException(error)));
+                }
                 catch (Exception ex) when (ex is not OperationCanceledException) { failures.Add(ex); }
             }
             if (failures.Count > 0) throw new AggregateException("Some torrent work could not be completed.", failures);

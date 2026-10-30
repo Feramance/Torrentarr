@@ -249,6 +249,28 @@ public sealed class ReauditRegressionTests
         seeding.Verify(s => s.RemoveCompletedTorrentsAsync("media", It.IsAny<CancellationToken>()), Times.Once);
     }
 
+    [Fact]
+    public async Task ReturnedRemovalErrorsPreventRecoveryUntilACompleteSuccessfulCycle()
+    {
+        var cfg = new TorrentarrConfig(); cfg.Settings.Tagless = true;
+        cfg.ArrInstances["Arr"] = new() { Type = "radarr", Category = "media" };
+        var client = new Mock<ITorrentClient>();
+        client.Setup(c => c.GetTorrentsAsync(It.IsAny<string?>(), It.IsAny<string?>(), It.IsAny<CancellationToken>())).ReturnsAsync([]);
+        var registry = new Mock<ITorrentClientRegistry>(); registry.Setup(r => r.GetAllClients()).Returns(new Dictionary<string, ITorrentClient> { ["qBit"] = client.Object });
+        var seeding = new Mock<ISeedingService>();
+        seeding.Setup(s => s.UpdateSeedingTagsAsync("media", It.IsAny<CancellationToken>())).Returns(Task.CompletedTask);
+        seeding.Setup(s => s.RemoveCompletedTorrentsAsync("media", It.IsAny<CancellationToken>())).ReturnsAsync(new RemovalResult { Errors = ["Client inventory unavailable during cleanup"] });
+        await using var db = new TorrentarrDbContext(Options());
+        var reports = new List<string>(); var resolved = new List<string>(); var reporter = Reporter(reports, resolved);
+        var processor = new TorrentProcessor(NullLogger<TorrentProcessor>.Instance, registry.Object, db, cfg,
+            new TorrentCacheService(NullLogger<TorrentCacheService>.Instance), new(), seedingService: seeding.Object, issues: reporter.Object);
+        await FluentActions.Awaiting(() => processor.ProcessTorrentsAsync("media")).Should().ThrowAsync<AggregateException>();
+        reports.Should().Contain("torrent.processing"); resolved.Should().BeEmpty();
+        seeding.Setup(s => s.RemoveCompletedTorrentsAsync("media", It.IsAny<CancellationToken>())).ReturnsAsync(new RemovalResult());
+        await processor.ProcessTorrentsAsync("media");
+        resolved.Should().Contain("torrent.processing");
+    }
+
     [Theory]
     [InlineData(false, false, false)]
     [InlineData(true, false, false)]
