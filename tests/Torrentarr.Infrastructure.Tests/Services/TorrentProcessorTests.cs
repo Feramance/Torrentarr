@@ -775,8 +775,12 @@ public sealed class TorrentProcessorTests : IDisposable
     {
         var torrent = new TorrentInfo
         {
-            Hash = "blocked-removal", Name = "Movie", Category = "movies", State = "downloading",
-            ClientInstanceId = "qBit", QBitInstanceName = "qBit",
+            Hash = "blocked-removal",
+            Name = "Movie",
+            Category = "movies",
+            State = "downloading",
+            ClientInstanceId = "qBit",
+            QBitInstanceName = "qBit",
             AddedOn = DateTimeOffset.UtcNow.AddHours(-2).ToUnixTimeSeconds(),
             LastActivity = DateTimeOffset.UtcNow.AddHours(-1).ToUnixTimeSeconds()
         };
@@ -814,8 +818,12 @@ public sealed class TorrentProcessorTests : IDisposable
     {
         var torrent = new TorrentInfo
         {
-            Hash = "stalled-removal", Name = "Stalled", Category = "tv", State = "stalledDL",
-            ClientInstanceId = "qBit", QBitInstanceName = "qBit",
+            Hash = "stalled-removal",
+            Name = "Stalled",
+            Category = "tv",
+            State = "stalledDL",
+            ClientInstanceId = "qBit",
+            QBitInstanceName = "qBit",
             AddedOn = DateTimeOffset.UtcNow.AddHours(-2).ToUnixTimeSeconds(),
             LastActivity = DateTimeOffset.UtcNow.AddHours(-1).ToUnixTimeSeconds()
         };
