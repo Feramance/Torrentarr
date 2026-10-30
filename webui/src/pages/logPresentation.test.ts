@@ -51,9 +51,7 @@ describe("log presentation", () => {
       expect(rendered).toContain('\x1b[33m"@HNPMISEGMV5K"');
       expect(rendered).toContain("\x1b[32maccepted");
       expect(rendered).toContain("\x1b[36m2");
-      expect(rendered).toContain(
-        "\x1b[34m/web/logs/all-20261030.log",
-      );
+      expect(rendered).toContain("\x1b[34m/web/logs/all-20261030.log");
     },
   );
 
