@@ -87,8 +87,13 @@ public sealed class OperationalIssueMonitor(IServiceScopeFactory scopes, IOperat
             {
                 if (_maintenanceRuns.GetValueOrDefault(latest.Scope) == latest.Run.RunId || latest.Run.Result is not ("success" or "partial" or "failed")) continue;
                 // History has aggregate counts, so report once for the selected set rather than blaming each client.
-                var issue = new OperationalIssueReport("maintenance.run", "system", "Maintenance execution failed", "Some actions failed in the selected maintenance run; the aggregate result does not identify a failing client.",
-                    "Review Manage history and its diagnostics, then retry the same client selection.", SubjectType: "maintenance", SubjectId: latest.Scope, Target: "maintenance");
+                var failureSummary = string.Join("; ", latest.Run.Errors.Distinct().Take(3));
+                var issue = new OperationalIssueReport("maintenance.run", "system", "Maintenance execution failed",
+                    latest.Run.Failed > 0
+                        ? $"{latest.Run.Failed} action(s) failed for {string.Join(", ", latest.Run.ClientInstanceIds)}. {failureSummary}"
+                        : "The selected maintenance run completed without failed actions.",
+                    "Open Manage → Recent runs and expand the failed run to inspect each action, client and error before retrying.",
+                    SubjectType: "maintenance", SubjectId: latest.Scope, Target: "maintenance");
                 if (latest.Run.Result == "success" || latest.Run.Failed > 0)
                     await Observe(issue, latest.Run.Failed > 0, ct);
                 // A verified successful run can also close records written by the former per-client reporter.
