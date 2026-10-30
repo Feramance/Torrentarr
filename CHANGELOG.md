@@ -1,5 +1,33 @@
 # Changelog
 
+## v6.19.4-1 (2026-10-30)
+
+### Bug Fixes
+- [patch] fix: isolate release automation branches per workflow attempt ([a5d623c](https://github.com/Feramance/Torrentarr/commit/a5d623ce0f1462ea7cb0212071e6646e8b593821))
+- fix: preserve all Sonarr queue rows and durable replacement intent ([3b25162](https://github.com/Feramance/Torrentarr/commit/3b25162ebe93763cd3817779cc28bcc89efa384b))
+- fix: resolve preparation issues after verified profile restoration ([b488574](https://github.com/Feramance/Torrentarr/commit/b488574d7c30fb898add0998914aa05f5acd93fd))
+- fix: unify service logs and restore readable diagnostics ([20daf4e](https://github.com/Feramance/Torrentarr/commit/20daf4e1e6d423bd49bbc10362e5b9b3f35554e4))
+- fix: reconcile processing issues after verified torrent removal ([40bd830](https://github.com/Feramance/Torrentarr/commit/40bd830188e6c75566ea2df9e1a4210c98dc0363))
+- fix: propagate seeding maintenance failures before reporting recovery ([b9775bb](https://github.com/Feramance/Torrentarr/commit/b9775bb5ba82935f6b4343027f0810acc51f6633))
+- fix: isolate torrent failures and correct operational issue reporting ([b8f87dd](https://github.com/Feramance/Torrentarr/commit/b8f87ddff30ecb3644f8b419968536192126dcd7))
+- fix: match share-limit requests to qBittorrent versions ([2b52163](https://github.com/Feramance/Torrentarr/commit/2b5216339e5d4bf2d2d1b4be126bd8bb2e36829e))
+- fix: retain bounded version fallback during transient failures ([ff683ca](https://github.com/Feramance/Torrentarr/commit/ff683cac641b66698c442d97a180323fe322f362))
+- fix: refresh client versions and preserve torrent failure reports ([05f8093](https://github.com/Feramance/Torrentarr/commit/05f8093889533016420f5a4498d243a46b4b1469))
+- fix: retain search pacing across worker cycles ([ca4209d](https://github.com/Feramance/Torrentarr/commit/ca4209d23a29afd60528e503020c1680d30bee8a))
+- fix: preserve qBittorrent compatibility and prevent search timeouts ([a915123](https://github.com/Feramance/Torrentarr/commit/a9151232d5f03181d2bbfe67e3f35cd52f90bb66))
+- fix: preserve automation recovery and surface operational issues ([3d13d06](https://github.com/Feramance/Torrentarr/commit/3d13d0693fa1c456a87a93e022a68f60f56ba8b0))
+
+### Maintenance
+- test: unmount logs view before removing EventSource stub ([4ece740](https://github.com/Feramance/Torrentarr/commit/4ece740c4b43ea0e9723fbf8d8a39fdc83bd23cc))
+- test: retry transient standalone host fixture cleanup race ([6c68d8b](https://github.com/Feramance/Torrentarr/commit/6c68d8b086dad5570658e2f9bcd8a51932dcf740))
+- test: fix expression tree predicates and format Sonarr regressions ([559c8fd](https://github.com/Feramance/Torrentarr/commit/559c8fd28941c4871a82bb8d8894c366f1eed214))
+- test: ensure failed retry persistence cannot remove Sonarr queue rows ([209d22d](https://github.com/Feramance/Torrentarr/commit/209d22dbc31d71a27cffbf45e935321ccb2f7c90))
+- test: use valid multiline raw strings for Sonarr queue fixtures ([afc6050](https://github.com/Feramance/Torrentarr/commit/afc60508021ed27da096f1477e35e6c0dfb6549a))
+- test: scope maintenance selection to the active popup ([e4f7e37](https://github.com/Feramance/Torrentarr/commit/e4f7e374e24ed8a5707150ae79ebf6436bf52e28))
+- test: verify search spacing with the injected clock ([0a74348](https://github.com/Feramance/Torrentarr/commit/0a74348d522ff3176b5113780a834a297aad4eb0))
+
+---
+
 ## v6.19.3-1 (2026-10-29)
 
 ### Bug Fixes
