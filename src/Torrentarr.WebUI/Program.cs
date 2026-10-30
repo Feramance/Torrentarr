@@ -32,6 +32,7 @@ Directory.CreateDirectory(logsPath);
 var levelSwitch = new LoggingLevelSwitch(LogEventLevel.Information);
 
 var builder = WebApplication.CreateBuilder(args);
+TrustedProxyConfiguration.Configure(builder.Services);
 
 // Configure Serilog - write to .config/logs/ with process metadata enrichment
 Log.Logger = new LoggerConfiguration()
@@ -239,6 +240,7 @@ app.MapGet("/web/config/status", (IConfigReloader reloader) => Results.Ok(reload
 app.MapGet("/api/config/status", (IConfigReloader reloader) => Results.Ok(reloader.GetStatus()));
 
 liveWeb.Attach(app, configForDI);
+app.UseForwardedHeaders();
 app.UseRouting();
 app.Services.GetRequiredService<IConfigReloader>().ConfigReloaded += (_, args) =>
 {

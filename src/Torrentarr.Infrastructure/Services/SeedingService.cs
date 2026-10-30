@@ -151,8 +151,11 @@ public class SeedingService : ISeedingService
         _logger.LogTrace("Seeding stats for {Hash}: Ratio={Ratio}, SeedingTime={Time}s, MeetsTime={MeetsTime}, MeetsRatio={MeetsRatio}",
             hash, stats.Ratio, stats.SeedingTimeSeconds, stats.MeetsTimeRequirement, stats.MeetsRatioRequirement);
 
+        // This optional legacy policy is separate from the effective qBittorrent category
+        // overrides and tracker-specific H&R rules.
         var categoryConfig = _config.Settings.CategorySeedingRules?.FirstOrDefault(r => r.Category == category);
-        _logger.LogTrace("Category config for {Category}: {Config}", category, categoryConfig != null ? "found" : "not found");
+        _logger.LogTrace("Optional legacy category rule for {Category}: {Status} (qBit/category and tracker policies are evaluated independently)",
+            category, categoryConfig != null ? "configured" : "not configured");
 
         if (categoryConfig != null)
         {

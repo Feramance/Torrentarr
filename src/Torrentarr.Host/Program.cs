@@ -216,6 +216,7 @@ try
     // Build ASP.NET Core WebApplication
     var builder = WebApplication.CreateBuilder(args);
     builder.Host.UseSerilog();
+    TrustedProxyConfiguration.Configure(builder.Services);
 
     // Register LoggingLevelSwitch so endpoints can change log level at runtime
     builder.Services.AddSingleton(levelSwitch);
@@ -398,6 +399,7 @@ try
         typeof(Program).Assembly);
 
     liveWeb.Attach(app, config);
+    app.UseForwardedHeaders();
     app.UseRouting();
     app.Services.GetRequiredService<IConfigReloader>().ConfigReloaded += (_, args) =>
     {
