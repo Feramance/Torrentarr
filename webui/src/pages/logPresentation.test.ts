@@ -1,6 +1,8 @@
 import { describe, expect, it } from "vitest";
 import { colourLog, logLevel, newestAggregate } from "./logPresentation";
 
+const ANSI_STRIP = new RegExp(String.fromCharCode(27) + "\\[[0-9;]*m", "g");
+
 describe("log presentation", () => {
   it("prefers the newest aggregate over stale qBitrr and service logs", () => {
     expect(
@@ -43,7 +45,7 @@ describe("log presentation", () => {
       const plain =
         '[2026-10-30 17:06:16][INFO   ][Torrentarr          ]Connection id "@HNPMISEGMV5K" accepted. 2 candidate(s) found at /web/logs/all-20261030.log';
       const rendered = colourLog(plain, dark);
-      expect(rendered.replace(/\x1b\[[0-9;]*m/g, "")).toBe(
+      expect(rendered.replace(ANSI_STRIP, "")).toBe(
         '[2026-10-30 17:06:16][INFO][Torrentarr] Connection id "@HNPMISEGMV5K" accepted. 2 candidate(s) found at /web/logs/all-20261030.log',
       );
       expect(rendered).toContain(
@@ -62,7 +64,7 @@ describe("log presentation", () => {
       '2026-10-30 17:06:16 +00:00 [WRN] Download failed for "Movie 42"',
       true,
     );
-    expect(rendered.replace(/\x1b\[[0-9;]*m/g, "")).toBe(
+    expect(rendered.replace(ANSI_STRIP, "")).toBe(
       '2026-10-30 17:06:16 +00:00 [WRN] Download failed for "Movie 42"',
     );
     expect(rendered).toContain("\x1b[91mfailed");

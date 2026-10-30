@@ -99,7 +99,7 @@ export function colourLog(text: string, dark: boolean): string {
       }
       // Worker logs: retain date and message while highlighting the level.
       const worker = line.match(
-        /^(\d{4}-\d\d-\d\d[ T][^\[]+)(\[([^\]]+)\])(\s*)([\s\S]*)$/,
+        /^(\d{4}-\d\d-\d\d[ T][^[]+)(\[([^\]]+)\])(\s*)([\s\S]*)$/,
       );
       if (worker && logLevel(worker[2])) {
         return (
