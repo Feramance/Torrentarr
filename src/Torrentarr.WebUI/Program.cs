@@ -1159,27 +1159,19 @@ app.MapGet("/web/logs/{name}", async (string name, HttpRequest request, int? lin
     });
 });
 
-// §6.9: Log file download — streams named log file as an attachment
-app.MapGet("/web/logs/{name}/download", (string name, HttpResponse response) =>
+// §6.9: Download a stable snapshot, not a continuously growing log file.
+app.MapGet("/web/logs/{name}/download", async (string name, HttpContext context) =>
 {
-    var safeName = Path.GetFileName(name);
-    if (!IsValidLogFileName(safeName))
+    var path = LogFileApi.ResolveLogFile(logsPath, name);
+    if (path == null)
         return Results.BadRequest(new { error = "Invalid log file name" });
-
-    var fullLogsPath = Path.GetFullPath(logsPath);
-    var combinedPath = Path.Combine(fullLogsPath, safeName);
-    var fullLogFile = Path.GetFullPath(combinedPath);
-
-    if (!fullLogFile.StartsWith(fullLogsPath + Path.DirectorySeparatorChar, StringComparison.OrdinalIgnoreCase))
+    try
     {
-        return Results.BadRequest(new { error = "Invalid log file name" });
+        var snapshot = await LogFileApi.CreateDownloadSnapshotAsync(path, context.RequestAborted);
+        return Results.File(snapshot, "application/octet-stream", name);
     }
-
-    if (!File.Exists(fullLogFile))
-        return Results.NotFound(new { error = "Log file not found" });
-
-    response.Headers["Content-Disposition"] = $"attachment; filename=\"{safeName}\"";
-    return Results.File(fullLogFile, "application/octet-stream", safeName);
+    catch (FileNotFoundException) { return Results.NotFound(); }
+    catch (DirectoryNotFoundException) { return Results.NotFound(); }
 });
 
 app.MapGet("/web/logs/{name}/search", (string name, HttpRequest request) =>

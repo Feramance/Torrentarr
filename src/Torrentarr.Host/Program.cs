@@ -866,14 +866,18 @@ try
     });
 
     // Web Log Download
-    app.MapGet("/web/logs/{name}/download", (string name) =>
+    app.MapGet("/web/logs/{name}/download", async (string name, HttpContext context) =>
     {
         if (!IsValidLogFileName(name))
             return Results.BadRequest(new { error = "Invalid log file name" });
         var logFile = Path.Combine(logsPath, name);
-        if (!File.Exists(logFile))
-            return Results.NotFound();
-        return Results.File(logFile, "text/plain", name);
+        try
+        {
+            var snapshot = await LogFileApi.CreateDownloadSnapshotAsync(logFile, context.RequestAborted);
+            return Results.File(snapshot, "text/plain", name);
+        }
+        catch (FileNotFoundException) { return Results.NotFound(); }
+        catch (DirectoryNotFoundException) { return Results.NotFound(); }
     });
 
     app.MapGet("/web/logs/{name}/search", (string name, HttpRequest request) =>
@@ -1631,14 +1635,18 @@ try
         return Results.Text(string.Join("\n", lines.TakeLast(500)), "text/plain");
     });
 
-    app.MapGet("/api/logs/{name}/download", (string name) =>
+    app.MapGet("/api/logs/{name}/download", async (string name, HttpContext context) =>
     {
         if (!IsValidLogFileName(name))
             return Results.BadRequest(new { error = "Invalid log file name" });
         var logFile = Path.Combine(logsPath, name);
-        if (!File.Exists(logFile))
-            return Results.NotFound();
-        return Results.File(logFile, "text/plain", name);
+        try
+        {
+            var snapshot = await LogFileApi.CreateDownloadSnapshotAsync(logFile, context.RequestAborted);
+            return Results.File(snapshot, "text/plain", name);
+        }
+        catch (FileNotFoundException) { return Results.NotFound(); }
+        catch (DirectoryNotFoundException) { return Results.NotFound(); }
     });
 
     app.MapGet("/api/logs/{name}/search", (string name, HttpRequest request) =>
