@@ -101,6 +101,25 @@ public class QBittorrentConnectionManagerTests
         info.Should().BeEmpty();
     }
     [Fact]
+    public async Task EmptyVersionResponse_PreventsInitialActivationAndRegisteredSessionRecovery()
+    {
+        var client = new Mock<ITorrentClient>();
+        client.Setup(c => c.LoginAsync(It.IsAny<CancellationToken>())).ReturnsAsync(true);
+        client.SetupSequence(c => c.GetVersionAsync(It.IsAny<CancellationToken>()))
+            .ReturnsAsync("").ReturnsAsync("5.2").ReturnsAsync("");
+        var factory = new Mock<ITorrentClientFactory>();
+        factory.SetupGet(f => f.Type).Returns("fake");
+        factory.Setup(f => f.Create(It.IsAny<string>(), It.IsAny<TorrentClientInstanceConfig>())).Returns(client.Object);
+        var manager = new QBittorrentConnectionManager(NullLogger<QBittorrentConnectionManager>.Instance, [factory.Object]);
+        var instance = new TorrentClientInstanceConfig { Type = "fake", Host = "fixture" };
+        (await manager.InitializeAsync("client", instance)).Should().BeFalse();
+        manager.IsConnected("client").Should().BeFalse();
+        (await manager.InitializeAsync("client", instance)).Should().BeTrue();
+        (await manager.InitializeAsync("client", instance)).Should().BeFalse();
+        manager.IsConnected("client").Should().BeFalse();
+    }
+
+    [Fact]
     public async Task RejectedCredentials_AreSuppressedUntilConfigurationRevisionChanges()
     {
         var config = new TorrentarrConfig();

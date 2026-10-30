@@ -75,7 +75,8 @@ public class QBittorrentConnectionManager : ITorrentClientRegistry
             try
             {
                 // A registered object is not proof the remote service is still available.
-                await existing.GetVersionAsync(ct);
+                if (string.IsNullOrWhiteSpace(await existing.GetVersionAsync(ct)))
+                    throw new IOException("Torrent client returned an empty version response.");
                 return true;
             }
             catch (OperationCanceledException) when (ct.IsCancellationRequested) { throw; }
@@ -86,7 +87,9 @@ public class QBittorrentConnectionManager : ITorrentClientRegistry
                     RemoveClient(name);
                     _connectionErrors[name] = "The existing torrent-client session is unavailable; reconnection will be retried.";
                 }
-                _logger.LogWarning(ex, "Torrent client {Name} failed its connection health check", name);
+                // HTTP exceptions can include credential-bearing URLs: log only safe diagnostic context.
+                _logger.LogWarning("Torrent client {Name} failed its connection health check ({ErrorType})",
+                    name, ex.GetType().Name);
                 return false;
             }
         }
@@ -133,6 +136,8 @@ public class QBittorrentConnectionManager : ITorrentClientRegistry
                 return false;
             }
             var version = await client.GetVersionAsync(ct);
+            if (string.IsNullOrWhiteSpace(version))
+                throw new IOException("Torrent client returned an empty version response.");
             lock (_clientsLock)
             {
                 _clients[name] = new RegisteredTorrentClient(client);

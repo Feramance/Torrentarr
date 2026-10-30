@@ -21,6 +21,7 @@ public static class ConfigSchemaBuilder
                 Field("CorsAllowedOrigins", "tags", "Allowed browser origins", Array.Empty<string>()) with
                 {
                     section = "WebUI", applyLive = true, requiresRestart = false,
+                    comments = "Allowed browser origins. Empty allows any origin without credentials; entries must be exact HTTP(S) origins.",
                     description = "HTTP(S) origins without trailing slashes. Empty allows any origin without credentials; a list permits credentials only for those origins. Changes apply live."
                 }],
             ["qBit"] = TorrentClientFields().Where(f => f.key != "Type").Select(f => f with { section = "qBit" }).ToList(),

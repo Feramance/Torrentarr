@@ -224,6 +224,9 @@ public sealed class WorkerProcessSupervisor : BackgroundService, IProcessOrchest
             }
             // Check desired state every pass. Only launch once per revision; retries belong to ScheduleRetry.
             await StopRemovedWorkersAsync(ct, ownsLifecycle: true);
+            lock (_gate)
+                foreach (var name in _attemptedLaunchRevisions.Keys.Where(n => !_config.ArrInstances.ContainsKey(n)).ToArray())
+                    _attemptedLaunchRevisions.Remove(name);
             foreach (var (name, config) in _config.ArrInstances)
                 if (IsEligible(config))
                     StartWorker(name, onlyUnattempted: true);
@@ -237,12 +240,18 @@ public sealed class WorkerProcessSupervisor : BackgroundService, IProcessOrchest
         try
         {
             string[] removed;
-            lock (_gate) removed = _processes.Keys.Where(n => !_config.ArrInstances.ContainsKey(n)).ToArray();
+            lock (_gate) removed = _processes.Keys.Concat(_pendingRetries.Keys)
+                .Where(n => !_config.ArrInstances.TryGetValue(n, out var desired) || !IsEligible(desired))
+                .Distinct(StringComparer.OrdinalIgnoreCase).ToArray();
             foreach (var name in removed)
             {
                 Process? process;
                 lock (_gate) _processes.TryGetValue(name, out process);
-                if (process != null && ReadProcessStatus(name, process).ConfigRevision >= _config.Revision)
+                // Preserve the rename-ack window for a deleted name until revision reconciliation
+                // has examined rename history. A disabled worker, however, must stop immediately.
+                var stillConfigured = _config.ArrInstances.ContainsKey(name);
+                if (process == null || stillConfigured || ownsLifecycle
+                    || ReadProcessStatus(name, process).ConfigRevision >= _config.Revision)
                     await StopWorkerAsync(name, ct);
             }
         }

@@ -52,6 +52,28 @@ public class WorkerLifecycleTests
     }
 
     [Fact]
+    public async Task DisablingManagedWorker_StopsRunningProcessOnReconciliation()
+    {
+        if (OperatingSystem.IsWindows()) return;
+        var config = Config();
+        config.Apply(config, 2);
+        using var supervisor = new WorkerProcessSupervisor(config, NullLogger<WorkerProcessSupervisor>.Instance,
+            Mock.Of<IMediaValidationService>(), _ => new ProcessStartInfo("/bin/sh")
+            { ArgumentList = { "-c", "read command" }, UseShellExecute = false, RedirectStandardInput = true });
+        var orchestrator = (IProcessOrchestrator)supervisor;
+        await orchestrator.StartAsync();
+        try
+        {
+            (await supervisor.GetProcessStatusAsync()).Should().ContainKey("Radarr");
+            config.ArrInstances["Radarr"].Managed = false;
+            config.Apply(config, 3);
+            await supervisor.ReconcileConfigurationAsync();
+            (await supervisor.GetProcessStatusAsync()).Should().NotContainKey("Radarr");
+        }
+        finally { await orchestrator.StopAsync(); }
+    }
+
+    [Fact]
     public async Task ReconcileConfiguration_SameRevision_DoesNotBypassRestartBackoff()
     {
         var attempts = 0;

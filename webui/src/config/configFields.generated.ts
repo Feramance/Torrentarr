@@ -761,7 +761,7 @@ export const CONFIG_SCHEMA = {
         "label": "Allowed browser origins",
         "kind": "tags",
         "default": [],
-        "comments": "Allowed browser origins. Empty applies no additional list entries; operation filters inherit client scope.",
+        "comments": "Allowed browser origins. Empty allows any origin without credentials; entries must be exact HTTP(S) origins.",
         "required": false,
         "secure": false,
         "uiExpose": true,
