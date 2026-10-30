@@ -104,7 +104,9 @@ it("requires confirmation before changing the draft to disable authentication", 
   await user.click(
     within(card as HTMLElement).getByRole("button", { name: "Configure" }),
   );
-  const accessControls = screen.getByText("Access controls").closest("details")!;
+  const accessControls = screen
+    .getByText("Access controls")
+    .closest("details")!;
   await user.click(within(accessControls).getByText("Access controls"));
   const authDisabled = screen.getByLabelText("Auth Disabled");
   await user.click(authDisabled);
