@@ -1216,7 +1216,7 @@ app.MapGet("/web/torrent-clients", async (ITorrentClientRegistry registry, Torre
             id,
             QbitInstance = id,
             type = clientCfg.Type,
-            connected = client != null,
+            connected = client != null && !string.IsNullOrWhiteSpace(version),
             version,
             capabilities = client?.Capabilities ?? TorrentClientCapabilities.None,
             managedCategories = clientCfg.ManagedCategories
