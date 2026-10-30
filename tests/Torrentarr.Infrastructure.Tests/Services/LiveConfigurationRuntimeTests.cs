@@ -52,6 +52,34 @@ public class LiveConfigurationRuntimeTests
     }
 
     [Fact]
+    public async Task Runtime_ReportsSafeErrorWhenReconciliationThrows()
+    {
+        var config = new TorrentarrConfig();
+        var reloader = new Mock<IConfigReloader>();
+        reloader.SetupGet(r => r.Revision).Returns(3);
+        var reported = new TaskCompletionSource<string>(TaskCreationOptions.RunContinuationsAsynchronously);
+        reloader.Setup(r => r.Acknowledge("runtime", 3, It.IsAny<string>()))
+            .Callback((string _, long _, string? error) =>
+            {
+                if (error != null) reported.TrySetResult(error);
+            });
+        var clients = new Mock<ITorrentClientRegistry>();
+        clients.Setup(c => c.ReconcileAsync(It.IsAny<IEnumerable<KeyValuePair<string, TorrentClientInstanceConfig>>>(), true, It.IsAny<CancellationToken>()))
+            .ThrowsAsync(new IOException("http://internal.example/?apiKey=secret"));
+        using var services = new ServiceCollection().BuildServiceProvider();
+        using var runtime = new LiveConfigurationRuntime(config, reloader.Object, clients.Object, services,
+            new LoggingLevelSwitch(), NullLogger<LiveConfigurationRuntime>.Instance);
+        try
+        {
+            await runtime.StartAsync(default);
+            var error = await reported.Task.WaitAsync(TimeSpan.FromSeconds(5));
+            error.Should().Contain("revision 3").And.Contain("IOException");
+            error.Should().NotContain("secret").And.NotContain("internal.example");
+        }
+        finally { await runtime.StopAsync(default); }
+    }
+
+    [Fact]
     public async Task Runtime_ReconcilesCategoryWorkersBeforeAcknowledgingEachRevision()
     {
         var config = new TorrentarrConfig();
