@@ -12,7 +12,15 @@ public sealed class LiveCorsPolicyProvider(TorrentarrConfig config) : ICorsPolic
         var policy = new CorsPolicyBuilder().AllowAnyMethod().AllowAnyHeader();
         var origins = config.WebUI.CorsAllowedOrigins;
         if (origins.Count == 0) policy.AllowAnyOrigin();
-        else policy.WithOrigins(origins.ToArray()).AllowCredentials();
+        else policy.WithOrigins(origins.Select(NormalizeOrigin).ToArray()).AllowCredentials();
         return Task.FromResult<CorsPolicy?>(policy.Build());
+    }
+
+    private static string NormalizeOrigin(string origin)
+    {
+        var uri = new Uri(origin, UriKind.Absolute);
+        if (!uri.IsDefaultPort) return origin;
+        var normalized = new UriBuilder(uri) { Port = -1 }.Uri;
+        return normalized.GetLeftPart(UriPartial.Authority);
     }
 }
