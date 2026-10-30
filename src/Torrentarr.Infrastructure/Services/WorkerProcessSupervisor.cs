@@ -28,6 +28,7 @@ public sealed class WorkerProcessSupervisor : BackgroundService, IProcessOrchest
     private readonly object _gate = new();
     private readonly SemaphoreSlim _lifecycle = new(1, 1);
     private readonly HashSet<string> _reportedWorkers = new(StringComparer.OrdinalIgnoreCase);
+    private long _lastReconciledRevision = -1;
 
     public WorkerProcessSupervisor(TorrentarrConfig config, ILogger<WorkerProcessSupervisor> logger, IMediaValidationService mediaValidation, IConfigReloader? reloader = null)
         : this(config, logger, mediaValidation, name => ResolveWorkerStartInfo(name), reloader) { }
@@ -193,6 +194,8 @@ public sealed class WorkerProcessSupervisor : BackgroundService, IProcessOrchest
         await _lifecycle.WaitAsync(ct);
         try
         {
+            var revision = _config.Revision;
+            if (_lastReconciledRevision == revision) return;
             var snapshotPath = Path.Combine(ConfigurationLoader.GetDataDirectoryPath(), "active-config.json");
             var snapshot = File.Exists(snapshotPath)
                 ? Newtonsoft.Json.JsonConvert.DeserializeObject<ConfigurationSnapshot>(File.ReadAllText(snapshotPath)) : null;
@@ -214,6 +217,7 @@ public sealed class WorkerProcessSupervisor : BackgroundService, IProcessOrchest
             }
             await StopRemovedWorkersAsync(ct, ownsLifecycle: true);
             StartWorkers();
+            _lastReconciledRevision = revision;
         }
         finally { _lifecycle.Release(); }
     }
