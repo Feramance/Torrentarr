@@ -611,15 +611,15 @@ public class SeedingService : ISeedingService
         if (intent == TorrentRemovalIntent.StalledDownload)
         {
             if (torrent.Progress >= 1) return false;
-            var metadata = torrent.State.Equals("metaDL", StringComparison.OrdinalIgnoreCase)
+            var stalledMetadata = torrent.State.Equals("metaDL", StringComparison.OrdinalIgnoreCase)
                 || torrent.State.Equals("forcedMetaDL", StringComparison.OrdinalIgnoreCase);
             var stalled = torrent.State.Equals("stalledDL", StringComparison.OrdinalIgnoreCase);
             var unavailable = (torrent.State.Equals("downloading", StringComparison.OrdinalIgnoreCase)
                 || torrent.State.Equals("forcedDL", StringComparison.OrdinalIgnoreCase)) && torrent.Availability < 1;
-            var reference = metadata ? torrent.AddedOn : torrent.LastActivity;
-            return (metadata || stalled || unavailable) && delay >= 0
-                && reference > 0 && reference <= now
-                && now - reference >= Math.Max(age, delay * 60L);
+            var stalledReference = stalledMetadata ? torrent.AddedOn : torrent.LastActivity;
+            return (stalledMetadata || stalled || unavailable) && delay >= 0
+                && stalledReference > 0 && stalledReference <= now
+                && now - stalledReference >= Math.Max(age, delay * 60L);
         }
         if (intent != TorrentRemovalIntent.SeedingLimit) return false;
         var policy = GetEffectiveSeedingConfig(torrent, await GetTrackerConfigAsync(torrent, cancellationToken));
