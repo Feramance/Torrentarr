@@ -20,7 +20,7 @@ describe("log presentation", () => {
       const plain =
         "[2026-10-30 12:00:00][ERROR   ][Torrentarr          ]failed\nSystem.IO.IOException: denied";
       const rendered = colourLog(plain, dark);
-      expect(rendered).toContain(`\x1b[${"31"}m`);
+      expect(rendered).toContain("\x1b[31m");
       expect(
         rendered.replace(
           new RegExp(`${String.fromCharCode(27)}\\[[0-9;]*m`, "g"),
@@ -48,11 +48,11 @@ describe("log presentation", () => {
       expect(rendered.replace(ANSI_STRIP, "")).toBe(
         '[2026-10-30 17:06:16][INFO][Torrentarr] Connection id "@HNPMISEGMV5K" accepted. 2 candidate(s) found at /web/logs/all-20261030.log',
       );
-      expect(rendered).toContain("\x1b[" + "33" + 'm"@HNPMISEGMV5K"');
-      expect(rendered).toContain("\x1b[" + "32" + "maccepted");
-      expect(rendered).toContain("\x1b[" + "36" + "m2");
+      expect(rendered).toContain('\x1b[33m"@HNPMISEGMV5K"');
+      expect(rendered).toContain("\x1b[32maccepted");
+      expect(rendered).toContain("\x1b[36m2");
       expect(rendered).toContain(
-        "\x1b[" + "34" + "m/web/logs/all-20261030.log",
+        "\x1b[34m/web/logs/all-20261030.log",
       );
     },
   );

@@ -54,7 +54,7 @@ export function colourLog(text: string, dark: boolean): string {
       case "ERROR":
         return "31";
       case "CRITICAL":
-        return dark ? "1;31" : "1;31";
+        return "1;31";
       case "WARNING":
         return "33";
       case "NOTICE":
