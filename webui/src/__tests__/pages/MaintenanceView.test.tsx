@@ -233,6 +233,62 @@ it("checks only the selected tool and applies a reviewed preview once", async ()
     "open",
   );
 });
+it("expands failed run diagnostics without breaking the recent runs table", async () => {
+  vi.mocked(api.getMaintenanceHistory).mockResolvedValue([
+    {
+      runId: "failed-run",
+      clientInstanceIds: ["one"],
+      trigger: "manual",
+      startedAt: new Date().toISOString(),
+      completedAt: new Date().toISOString(),
+      planned: 1,
+      applied: 0,
+      skipped: 0,
+      failed: 1,
+      blocked: 0,
+      pending: 0,
+      operationResults: [],
+      diagnostics: [],
+      bytesMoved: 0,
+      result: "failed",
+      errors: [
+        "one: OrphanScan: global ownership inventory incomplete; inaccessible mapping /mnt/media/a-very-long-path",
+      ],
+    },
+  ]);
+  show();
+  await loaded();
+  fireEvent.click(screen.getByText("Recent runs"));
+  const table = await screen.findByRole("table");
+  expect(table).toHaveStyle({ width: "100%", tableLayout: "fixed" });
+  fireEvent.click(screen.getByText(/1 failed.*1 error/));
+  expect(
+    screen.getByText(/global ownership inventory incomplete/),
+  ).toBeVisible();
+});
+
+it("displays specific orphan-scan blockers from preview diagnostics", async () => {
+  plan = {
+    ...plan,
+    actions: [],
+    candidateCount: 0,
+    blockedCount: 1,
+    criticalErrors: [
+      "Orphan scan blocked for one: Maintenance.PathMappings has no entries; Maintenance.RecycleBin.Enabled is false.",
+    ],
+  };
+  show();
+  await loaded();
+  openTool("Orphan-file cleanup");
+  fireEvent.click(
+    screen.getByRole("button", { name: "Check orphan-file cleanup" }),
+  );
+  expect(
+    await screen.findByText(/Maintenance.PathMappings has no entries/),
+  ).toBeVisible();
+  expect(api.applyMaintenance).not.toHaveBeenCalled();
+});
+
 it("saves only changed maintenance paths and never executes on save", async () => {
   show();
   await loaded();
