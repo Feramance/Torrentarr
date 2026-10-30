@@ -60,8 +60,13 @@ function openTool(name: string) {
   return card;
 }
 async function chooseRecycle() {
-  await userEvent.click(screen.getByLabelText(/Outcome after failed repair/));
-  await userEvent.click(screen.getByRole("option", { name: "recycle" }));
+  const input = screen.getByLabelText(/Outcome after failed repair/);
+  await userEvent.click(input);
+  const menu = input.ownerDocument.getElementById(
+    input.getAttribute("aria-controls")!,
+  );
+  expect(menu).not.toBeNull();
+  await userEvent.click(within(menu!).getByRole("option", { name: "recycle" }));
 }
 async function loaded() {
   await screen.findByText("Shared settings · enabled");
