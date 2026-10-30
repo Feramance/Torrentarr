@@ -19,15 +19,20 @@ public class QBittorrentConnectionManager : ITorrentClientRegistry
     private readonly object _clientsLock = new();
     private readonly SemaphoreSlim _reconcile = new(1, 1);
     private readonly Dictionary<string, ConnectionSettings> _settings = new(StringComparer.OrdinalIgnoreCase);
+    private readonly Dictionary<string, AuthenticationFailure> _authenticationFailures = new(StringComparer.OrdinalIgnoreCase);
     private sealed record ConnectionSettings(string Type, string Host, int Port, string UserName, string Password, bool SkipTLSVerify);
+    private sealed record AuthenticationFailure(ConnectionSettings Settings, long Revision);
     private readonly ConcurrentDictionary<string, DateTime> _lastConnected = new(StringComparer.OrdinalIgnoreCase);
     private readonly IReadOnlyDictionary<string, ITorrentClientFactory> _factories;
+    private readonly TorrentarrConfig? _config;
 
     public QBittorrentConnectionManager(
         ILogger<QBittorrentConnectionManager> logger,
-        IEnumerable<ITorrentClientFactory>? factories = null)
+        IEnumerable<ITorrentClientFactory>? factories = null,
+        TorrentarrConfig? config = null)
     {
         _logger = logger;
+        _config = config;
         _factories = (factories ?? [new QBittorrentTorrentClientFactory()])
             .ToDictionary(factory => factory.Type, StringComparer.OrdinalIgnoreCase);
     }
@@ -45,9 +50,15 @@ public class QBittorrentConnectionManager : ITorrentClientRegistry
     private async Task<bool> ConnectAsync(string name, TorrentClientInstanceConfig config, CancellationToken ct)
     {
         var settings = new ConnectionSettings(config.Type, config.Host, config.Port, config.UserName, config.Password, config.SkipTLSVerify);
+        var revision = _config?.Revision ?? 0;
         lock (_clientsLock)
         {
             if (!config.Disabled && config.Host != "CHANGE_ME" && _settings.GetValueOrDefault(name) == settings && _clients.ContainsKey(name)) return true;
+            if (_authenticationFailures.TryGetValue(name, out var failure))
+            {
+                if (failure.Settings == settings && failure.Revision == revision) return false;
+                _authenticationFailures.Remove(name);
+            }
             RemoveClient(name);
         }
         if (config.Disabled || config.Host == "CHANGE_ME") return false;
@@ -62,7 +73,10 @@ public class QBittorrentConnectionManager : ITorrentClientRegistry
             client = factory.Create(name, config);
             if (!await client.LoginAsync(ct))
             {
+                var rejectedCredentials = client.LastConnectionFailure?.Contains("rejected credentials", StringComparison.OrdinalIgnoreCase) == true;
                 (client as IDisposable)?.Dispose();
+                if (rejectedCredentials)
+                    lock (_clientsLock) _authenticationFailures[name] = new AuthenticationFailure(settings, revision);
                 return false;
             }
             var version = await client.GetVersionAsync(ct);
@@ -70,6 +84,7 @@ public class QBittorrentConnectionManager : ITorrentClientRegistry
             {
                 _clients[name] = new RegisteredTorrentClient(client);
                 _settings[name] = settings;
+                _authenticationFailures.Remove(name);
                 _lastConnected[name] = DateTime.UtcNow;
             }
             _logger.LogInformation("Connected torrent client {Name} ({Type}) {Version}", name, config.Type, version);
@@ -104,7 +119,13 @@ public class QBittorrentConnectionManager : ITorrentClientRegistry
         try
         {
             lock (_clientsLock)
-                foreach (var name in _clients.Keys.Where(id => !desired.ContainsKey(id)).ToList()) RemoveClient(name);
+                foreach (var name in _clients.Keys.Where(id => !desired.ContainsKey(id)).ToList())
+                {
+                    RemoveClient(name);
+                    _authenticationFailures.Remove(name);
+                }
+                foreach (var name in _authenticationFailures.Keys.Where(id => !desired.ContainsKey(id)).ToList())
+                    _authenticationFailures.Remove(name);
             var count = 0;
             foreach (var (name, config) in desired)
             {
