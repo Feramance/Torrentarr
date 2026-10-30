@@ -422,39 +422,39 @@ public class ArrImportService : IArrImportService
     {
         var client = new SonarrClient(config.URI, config.APIKey, config.SkipTLSVerify);
         var queue = await client.GetAllQueueAsync(ct: ct);
-        var record = queue.FirstOrDefault(r =>
-            string.Equals(r.DownloadId, downloadId, StringComparison.OrdinalIgnoreCase));
+        var records = queue.Where(r =>
+            string.Equals(r.DownloadId, downloadId, StringComparison.OrdinalIgnoreCase) &&
+            r.CustomFormatScore.HasValue).ToList();
 
-        if (record?.CustomFormatScore == null)
+        if (records.Count == 0)
             return false;
 
         var arrName = _config.ArrInstances.FirstOrDefault(kv =>
             kv.Value == config).Key ?? "";
 
-        var isSeriesSearch = config.Search.SearchBySeries.Equals("series", StringComparison.OrdinalIgnoreCase);
-
-        if (isSeriesSearch)
+        if (config.Search.SearchBySeries.Equals("series", StringComparison.OrdinalIgnoreCase))
         {
-            if (record.SeriesId == null) return false;
+            if (!config.Search.ForceMinimumCustomFormat)
+                return false;
 
-            var seriesEntry = await _dbContext.Series.AsNoTracking()
-                .FirstOrDefaultAsync(s => s.ArrId == record.SeriesId && s.ArrInstance == arrName, ct);
-
-            if (seriesEntry == null) return false;
-
-            if (config.Search.ForceMinimumCustomFormat)
-                return record.CustomFormatScore < (seriesEntry.MinCustomFormatScore ?? 0);
-
-            return false;
-        }
-        else
-        {
-            var episodes = await _dbContext.Episodes.AsNoTracking()
-                .Where(e => record.EpisodeIds.Contains(e.ArrId) && e.ArrInstance == arrName && e.EpisodeFileId > 0)
+            var seriesIds = records.Where(r => r.SeriesId.HasValue)
+                .Select(r => r.SeriesId!.Value).Distinct().ToList();
+            var series = await _dbContext.Series.AsNoTracking()
+                .Where(s => s.ArrInstance == arrName && seriesIds.Contains(s.ArrId))
                 .ToListAsync(ct);
-            return episodes.Any(e => record.CustomFormatScore < (e.CustomFormatScore ?? 0)
-                && (!config.Search.ForceMinimumCustomFormat || record.CustomFormatScore < (e.MinCustomFormatScore ?? 0)));
+            return records.Any(r => r.SeriesId.HasValue &&
+                series.Any(s => s.ArrId == r.SeriesId.Value &&
+                    r.CustomFormatScore!.Value < (s.MinCustomFormatScore ?? 0)));
         }
+
+        var episodeIds = records.SelectMany(r => r.EpisodeIds).Distinct().ToList();
+        var episodes = await _dbContext.Episodes.AsNoTracking()
+            .Where(e => episodeIds.Contains(e.ArrId) && e.ArrInstance == arrName && e.EpisodeFileId > 0)
+            .ToListAsync(ct);
+        return records.Any(r => episodes.Any(e => r.EpisodeIds.Contains(e.ArrId) &&
+            r.CustomFormatScore!.Value < (e.CustomFormatScore ?? 0) &&
+            (!config.Search.ForceMinimumCustomFormat ||
+                r.CustomFormatScore.Value < (e.MinCustomFormatScore ?? 0))));
     }
 
     private async Task<bool> CheckLidarrCfUnmetAsync(ArrInstanceConfig config, string downloadId, CancellationToken ct)
@@ -547,15 +547,52 @@ public class ArrImportService : IArrImportService
     {
         var client = new SonarrClient(config.URI, config.APIKey, config.SkipTLSVerify);
         var queue = await client.GetAllQueueAsync(ct: ct);
-        var record = queue.FirstOrDefault(r =>
-            string.Equals(r.DownloadId, downloadId, StringComparison.OrdinalIgnoreCase));
+        var records = queue.Where(r =>
+            string.Equals(r.DownloadId, downloadId, StringComparison.OrdinalIgnoreCase)).ToList();
 
-        if (record == null) return false;
+        if (records.Count == 0) return false;
 
-        if (!config.ReSearch) return await client.DeleteFromQueueAsync(record.Id, removeFromClient: false, blocklist: true, ct, skipRedownload: true);
-        List<SearchCandidate> candidates = record.EpisodeIds.Distinct().Select(id => new SearchCandidate { ArrId = id, SeriesId = record.SeriesId, Type = "Episode", Reason = "Retry" }).ToList();
-        if (candidates.Count == 0 && record.SeriesId.HasValue && config.Search.SearchBySeries.Equals("series", StringComparison.OrdinalIgnoreCase))
-            candidates.Add(new SearchCandidate { SeriesId = record.SeriesId, Type = "Episode", Reason = "Retry" });
+        if (!config.ReSearch)
+        {
+            var succeeded = true;
+            foreach (var id in records.Select(r => r.Id).Distinct())
+                if (!await client.DeleteFromQueueAsync(id, removeFromClient: false, blocklist: true, ct, skipRedownload: true))
+                    succeeded = false;
+            return succeeded;
+        }
+
+        // A download may produce several queue rows, all removed by ConfirmBlocklistAsync.
+        // Stage every affected episode before deleting any of them.
+        var candidates = records
+            .SelectMany(r => r.EpisodeIds.Where(id => id > 0).Select(id => new SearchCandidate
+            {
+                ArrId = id,
+                SeriesId = r.SeriesId,
+                Type = "Episode",
+                Reason = "Retry"
+            }))
+            .DistinctBy(c => c.ArrId)
+            .ToList();
+
+        var unidentified = records.Where(r => !r.EpisodeIds.Any(id => id > 0)).ToList();
+        if (unidentified.Count > 0)
+        {
+            // The retry planner deduplicates on ArrId; multiple ArrId=0 series
+            // fallbacks would collapse and lose replacement intent.
+            var seriesIds = unidentified.Where(r => r.SeriesId is > 0)
+                .Select(r => r.SeriesId!.Value).Distinct().ToList();
+            if (!config.Search.SearchBySeries.Equals("series", StringComparison.OrdinalIgnoreCase) ||
+                seriesIds.Count != 1 || unidentified.Any(r => r.SeriesId is not > 0))
+                throw new IOException("Cannot preserve replacement intent for all Sonarr queue rows; blocklisting was skipped.");
+
+            candidates.Add(new SearchCandidate
+            {
+                SeriesId = seriesIds[0],
+                Type = "Episode",
+                Reason = "Retry"
+            });
+        }
+
         var instanceName = _config.ArrInstances.First(kv => kv.Value == config).Key;
         return await SonarrRetryQueue.StageAndExecuteAsync(_dbContext, _searchExecutor, instanceName, downloadId,
             candidates, config, _logger, _issues, ct);
