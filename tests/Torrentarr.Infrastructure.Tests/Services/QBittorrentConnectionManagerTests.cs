@@ -108,7 +108,6 @@ public class QBittorrentConnectionManagerTests
         var client = new Mock<ITorrentClient>();
         client.SetupGet(c => c.LastConnectionFailure).Returns("qBittorrent rejected credentials (Fails.)");
         client.SetupGet(c => c.LastConnectionFailureKind).Returns(TorrentClientConnectionFailureKind.AuthenticationRejected);
-        client.SetupGet(c => c.LastConnectionFailureKind).Returns(TorrentClientConnectionFailureKind.AuthenticationRejected);
         client.Setup(c => c.LoginAsync(It.IsAny<CancellationToken>())).ReturnsAsync(false);
         var factory = new Mock<ITorrentClientFactory>();
         factory.SetupGet(f => f.Type).Returns("fake");
@@ -132,6 +131,7 @@ public class QBittorrentConnectionManagerTests
         config.Apply(new TorrentarrConfig(), 1);
         var client = new Mock<ITorrentClient>();
         client.SetupGet(c => c.LastConnectionFailure).Returns("qBittorrent rejected credentials (Fails.)");
+        client.SetupGet(c => c.LastConnectionFailureKind).Returns(TorrentClientConnectionFailureKind.AuthenticationRejected);
         client.Setup(c => c.LoginAsync(It.IsAny<CancellationToken>())).ReturnsAsync(false);
         var factory = new Mock<ITorrentClientFactory>();
         factory.SetupGet(f => f.Type).Returns("fake");
