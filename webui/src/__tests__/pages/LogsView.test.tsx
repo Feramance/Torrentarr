@@ -355,10 +355,10 @@ it("keeps background rollover discovery failures quiet", async () => {
   }
 });
 
-
 it("colours structured log fields and removes padded logger spacing", async () => {
   const { colourLog } = await import("../../pages/logPresentation");
-  const source = "[2026-10-30 17:06:16][DEBUG   ][Torrentarr        ]Connection started.";
+  const source =
+    "[2026-10-30 17:06:16][DEBUG   ][Torrentarr        ]Connection started.";
   const rendered = colourLog(source, true);
   expect(rendered).toContain("\x1b[95m[DEBUG]\x1b[0m");
   expect(rendered).toContain("\x1b[94m[Torrentarr]\x1b[0m");
