@@ -204,7 +204,8 @@
                   "Resume",
                   "RecycleContent",
                   "DeleteExpiredRecycleItem",
-                  "RegisterRecycleEntry"
+                  "RegisterRecycleEntry",
+                  "DeleteContent"
                 ],
                 "type": "string"
               },
@@ -415,6 +416,10 @@
           "consecutiveFailures": {
             "format": "int32",
             "type": "integer"
+          },
+          "lastError": {
+            "nullable": true,
+            "type": "string"
           },
           "lastSucceededAt": {
             "format": "date-time",
