@@ -43,6 +43,24 @@ public class RequestDiagnosticsTests
     }
 
     [Fact]
+    public async Task RequestValuesCannotForgeLogLinesOrTerminalEscapes()
+    {
+        var sink = new Sink();
+        using var log = new LoggerConfiguration().MinimumLevel.Debug().WriteTo.Sink(sink).CreateLogger();
+        var context = new DefaultHttpContext();
+        context.Request.Method = "GET\r\n[ERROR] forged\u001b[31m";
+        context.TraceIdentifier = "request\r\nforged\u0085\u2028";
+        await new RequestDiagnosticsMiddleware(_ => Task.CompletedTask, log).InvokeAsync(context);
+        var entry = sink.Events.Should().ContainSingle().Subject;
+        foreach (var name in new[] { "Method", "RequestId" })
+        {
+            var value = ((ScalarValue)entry.Properties[name]).Value!.ToString()!;
+            value.Any(c => char.IsControl(c) || c is '\u2028' or '\u2029').Should().BeFalse();
+        }
+        entry.RenderMessage().Should().NotContain("\n").And.NotContain("\r").And.NotContain("\u001b");
+    }
+
+    [Fact]
     public async Task ExceptionHasOneSanitizedErrorAndPropagates()
     {
         var sink = new Sink();
