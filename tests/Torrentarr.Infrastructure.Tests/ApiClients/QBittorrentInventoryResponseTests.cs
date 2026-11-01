@@ -105,7 +105,7 @@ public sealed class QBittorrentInventoryResponseTests
                 listener.Start();
                 return listener;
             }
-            catch (HttpListenerException ex) when (ex.NativeErrorCode is 98 or 10048 or 183 && attempt < 19)
+            catch (HttpListenerException ex) when (ex.NativeErrorCode is 48 or 98 or 10048 or 183 && attempt < 19)
             {
                 listener.Close();
             }
