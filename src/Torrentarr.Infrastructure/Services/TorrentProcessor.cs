@@ -195,7 +195,7 @@ public class TorrentProcessor : ITorrentProcessor
         catch (Exception ex) when (ex is not OperationCanceledException)
         {
             _logger.LogError(ex, "Error processing torrents for category {Category}", category);
-            if (_issues != null) await _issues.ReportAsync(ProcessingIssue(category), cancellationToken);
+            if (_issues != null) await _issues.ReportAsync(ProcessingIssue(category).WithEvidence(DiagnosticText.Error(ex)), cancellationToken);
             throw;
         }
     }
@@ -203,7 +203,7 @@ public class TorrentProcessor : ITorrentProcessor
     private async Task ResolveRemovedTorrentIssuesAsync(HashSet<string> observedClients, List<Exception> failures, CancellationToken ct)
     {
         if (_issues == null || observedClients.Count == 0) return;
-        var outstanding = await _dbContext.OperationalIssues.AsNoTracking().Where(i => i.Code == "torrent.processing"
+        var outstanding = await _dbContext.OperationalIssues.AsNoTracking().Where(i => (i.Code == "torrent.processing" || i.Code.StartsWith("torrent.removal."))
             && i.SubjectType == "torrent" && i.ResolvedAt == null && observedClients.Contains(i.ClientInstance)).ToListAsync(ct);
         foreach (var group in outstanding.GroupBy(i => i.ClientInstance, StringComparer.OrdinalIgnoreCase))
         {
@@ -445,7 +445,7 @@ public class TorrentProcessor : ITorrentProcessor
             }
             catch (Exception refreshError) when (refreshError is not OperationCanceledException)
             {
-                if (_issues != null) await _issues.ReportAsync(issue, ct);
+                if (_issues != null) await _issues.ReportAsync(issue.WithEvidence(DiagnosticText.Error(refreshError)), ct);
                 throw;
             }
             if (inventory != null && !inventory.Any(t => t.Hash.Equals(torrent.Hash, StringComparison.OrdinalIgnoreCase)))
@@ -454,12 +454,12 @@ public class TorrentProcessor : ITorrentProcessor
                 if (_issues != null) await _issues.ResolveAsync(issue, ct);
                 return;
             }
-            if (_issues != null) await _issues.ReportAsync(issue, ct);
+            if (_issues != null) await _issues.ReportAsync(issue.WithEvidence(DiagnosticText.Error(ex)), ct);
             throw;
         }
         catch (Exception ex) when (ex is not OperationCanceledException)
         {
-            if (_issues != null) await _issues.ReportAsync(issue, ct);
+            if (_issues != null) await _issues.ReportAsync(issue.WithEvidence(DiagnosticText.Error(ex)), ct);
             throw;
         }
     }
@@ -915,23 +915,37 @@ public class TorrentProcessor : ITorrentProcessor
         return (leaveAlone, maxEta, shouldRemove);
     }
 
-    private void LogRemovalBlocked(TorrentInfo torrent, TorrentRemovalIntent intent, string reason)
+    private OperationalIssueReport RemovalIssue(TorrentInfo torrent, TorrentRemovalIntent intent) => new(
+        "torrent.removal." + intent, "automation", $"Torrent removal blocked ({intent})", "",
+        "Resolve the specific blocker below, then allow a fresh evaluation; do not bypass unmet tracker obligations.",
+        ArrInstance: ResolveOwner(torrent) ?? "", ClientInstance: torrent.ClientInstanceId,
+        SubjectType: "torrent", SubjectId: torrent.Hash, Severity: "warning", Target: "maintenance");
+
+    private async Task LogRemovalBlocked(TorrentInfo torrent, TorrentRemovalIntent intent, string reason, string? cause = null)
     {
-        if (_cache.ShouldLogRemovalBlock(torrent.ClientInstanceId, torrent.Hash, $"{intent}: {reason}",
-                DateTimeOffset.UtcNow, RemovalFailureWarningLifetime))
-            _logger.LogWarning("Torrent removal blocked: [{Name}] | Hash[{Hash}] | Client[{Client}] | Intent[{Intent}] | Reason[{Reason}]",
-                torrent.Name, torrent.Hash, torrent.ClientInstanceId, intent, reason);
+        if (!_cache.ShouldLogRemovalBlock(torrent.ClientInstanceId, torrent.Hash, $"{intent}:{_config.Revision}: {cause ?? System.Text.RegularExpressions.Regex.Replace(reason, @"\b\d+(?:[.,]\d+)*\b", "#")}",
+                DateTimeOffset.UtcNow, RemovalFailureWarningLifetime)) return;
+        _logger.LogWarning("Torrent removal blocked: [{Name}] | Hash[{Hash}] | Client[{Client}] | Arr[{Arr}] | Category[{Category}] | Intent[{Intent}] | Mode[{Mode}] | Reason[{Reason}]",
+                torrent.Name, torrent.Hash, torrent.ClientInstanceId, ResolveOwner(torrent), torrent.Category, intent,
+                _config.GetTorrentClient(torrent.ClientInstanceId)?.Maintenance.RecycleBin.Enabled == true ? "recycle" : "native client deletion",
+                DiagnosticText.Safe(reason));
+        if (_issues != null) await _issues.ReportAsync(RemovalIssue(torrent, intent) with
+        {
+            Impact = DiagnosticText.Safe($"Torrent={torrent.Name}; hash={torrent.Hash}; client={torrent.ClientInstanceId}; category={torrent.Category}; intent={intent}; mode={(_config.GetTorrentClient(torrent.ClientInstanceId)?.Maintenance.RecycleBin.Enabled == true ? "recycle" : "native deletion")}. {reason}")
+        });
     }
 
     private async Task<bool> DeleteTorrentFromClientAsync(
         ITorrentClient client, TorrentInfo torrent, bool deleteFiles, CancellationToken ct,
         Func<TorrentInfo, Task<bool>>? stillApplies = null,
-        TorrentRemovalIntent intent = TorrentRemovalIntent.SeedingLimit)
+        TorrentRemovalIntent intent = TorrentRemovalIntent.SeedingLimit, string? triggerEvidence = null)
     {
+        Task Block(string reason, string? cause = null) => LogRemovalBlocked(torrent, intent,
+            triggerEvidence == null ? reason : $"{triggerEvidence} Blocker: {reason}", cause);
         if (MaintenanceRecovery.BlocksAutomaticRemoval(_dbContext, torrent,
                 _config.GetTorrentClient(torrent.ClientInstanceId)?.Maintenance.ErrorRecovery ?? new ErrorRecoveryConfig()))
         {
-            LogRemovalBlocked(torrent, intent, "An unresolved error-recovery incident or error state blocks automatic deletion.");
+            await Block($"State={torrent.State}; configured error states={string.Join(",", _config.GetTorrentClient(torrent.ClientInstanceId)?.Maintenance.ErrorRecovery.States ?? [])}; recovery incidents={string.Join("; ", new[] { "UnregisteredCleanup", "ErrorRecovery" }.Select(kind => { var incident = MaintenanceRecovery.Read(_dbContext, torrent, kind); return $"{kind}: stage={incident.Stage}, attempts={incident.Attempts}, failureSince={incident.FailureSince:O}, lastObserved={incident.LastObserved:O}"; }))}. Resolve the incident before automatic deletion.");
             return false;
         }
 
@@ -939,31 +953,33 @@ public class TorrentProcessor : ITorrentProcessor
             .FirstOrDefault(t => t.Hash.Equals(torrent.Hash, StringComparison.OrdinalIgnoreCase));
         if (current == null)
         {
-            LogRemovalBlocked(torrent, intent, "Torrent disappeared before deletion.");
+            await Block("Torrent disappeared before deletion.");
             return false;
         }
         if (!SeedingService.SameRemovalCandidate(torrent, current))
         {
-            LogRemovalBlocked(torrent, intent, "Torrent metadata changed; waiting for a fresh evaluation.");
+            await Block(SeedingService.DescribeRemovalChanges(torrent, current));
             return false;
         }
         current.ClientInstanceId = torrent.ClientInstanceId;
         if (_seedingService == null)
         {
-            LogRemovalBlocked(torrent, intent, "Seeding protection service is unavailable.");
+            await Block("Seeding protection service is unavailable.");
             return false;
         }
-        var cleared = intent == TorrentRemovalIntent.SeedingLimit
+        var decision = await _seedingService.EvaluateRemovalAsync(current, intent, ct);
+        var cleared = decision?.Allowed ?? (intent == TorrentRemovalIntent.SeedingLimit
             ? await _seedingService.CanDeleteTorrentAsync(current, "final worker removal", ct)
-            : await _seedingService.CanDeleteTorrentForIntentAsync(current, intent, "final worker removal", ct);
+            : await _seedingService.CanDeleteTorrentForIntentAsync(current, intent, "final worker removal", ct));
         if (!cleared)
         {
-            LogRemovalBlocked(torrent, intent, "Final HnR, age, tag or intent-specific removal clearance was denied.");
+            await Block(decision?.Reason ?? "Protection service denied removal without supplying a diagnostic decision; inspect the protection implementation.",
+                decision == null ? "protection.unknown" : string.Join(",", decision.Blockers.Select(b => b.Code)));
             return false;
         }
         if (stillApplies != null && !await stillApplies(current))
         {
-            LogRemovalBlocked(torrent, intent, "Removal trigger no longer applies to refreshed torrent.");
+            await Block("Removal trigger no longer applies to refreshed torrent.");
             return false;
         }
         bool deleted;
@@ -971,7 +987,7 @@ public class TorrentProcessor : ITorrentProcessor
         {
             if (_safeDeletion == null)
             {
-                LogRemovalBlocked(torrent, intent, "Safe deletion service is unavailable.");
+                await Block("Safe deletion service is unavailable.");
                 return false;
             }
             var result = intent == TorrentRemovalIntent.SeedingLimit
@@ -979,17 +995,18 @@ public class TorrentProcessor : ITorrentProcessor
                 : await _safeDeletion.RemoveTorrentForIntentAsync(torrent.ClientInstanceId, torrent.Hash, true, intent, ct);
             deleted = result.Success;
             if (!deleted)
-                LogRemovalBlocked(torrent, intent, result.Error ?? "Safe deletion rejected removal without a reason.");
+                await Block(result.Error ?? "Safe deletion rejected removal without a reason.");
         }
         else
         {
             deleted = await client.DeleteTorrentsAsync([torrent.Hash], false, ct);
-            if (!deleted) LogRemovalBlocked(torrent, intent, "Torrent client rejected removal of torrent record.");
+            if (!deleted) await Block("Torrent client rejected removal of torrent record.");
         }
         if (deleted)
         {
             _stalledUploads?.Evict(torrent.QBitInstanceName, torrent.Hash);
             _cache.InvalidateTorrent(torrent.ClientInstanceId, torrent.Hash);
+            if (_issues != null) await _issues.ResolveAsync(RemovalIssue(torrent, intent), ct);
             _logger.LogInformation("Removed torrent {Hash} from {Client} after {Intent} clearance", torrent.Hash, torrent.ClientInstanceId, intent);
         }
         return deleted;
@@ -1605,13 +1622,18 @@ public class TorrentProcessor : ITorrentProcessor
             var hnrAllows = _seedingService != null &&
                 await _seedingService.HnrAllowsDeleteAsync(torrent, "all files excluded by import allowlist", ct);
             if (!hnrAllows)
+            {
+                var decision = _seedingService == null ? null : await _seedingService.EvaluateRemovalAsync(torrent, TorrentRemovalIntent.RejectedByAllowlist, ct);
+                await LogRemovalBlocked(torrent, TorrentRemovalIntent.RejectedByAllowlist, decision?.Reason ?? "HnR inspection could not authorize removal.", "allowlist.hnr");
                 return FileFilterResult.PendingResult;
+            }
 
             _logger.LogDebug(
                 "All {Total} files excluded in [{Name}] ({Hash}) — removal candidate",
                 meaningfulFiles.Count, torrent.Name, torrent.Hash);
             return await DeleteTorrentFromClientAsync(client, torrent, deleteFiles: true, ct,
-                    intent: TorrentRemovalIntent.RejectedByAllowlist)
+                    intent: TorrentRemovalIntent.RejectedByAllowlist,
+                    triggerEvidence: $"All {meaningfulFiles.Count} meaningful files were excluded. Files={string.Join("; ", excludedFiles.Select(f => f.Name))}; effective extension allowlist={string.Join("; ", cfg.FileExtensionAllowlist)}; filename exclusions={string.Join("; ", cfg.FileNameExclusionRegex)}; folder exclusions={string.Join("; ", cfg.FolderExclusionRegex)}.")
                 ? FileFilterResult.DeletedResult : FileFilterResult.PendingResult;
         }
 

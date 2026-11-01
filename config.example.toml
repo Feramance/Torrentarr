@@ -238,7 +238,7 @@ MaxInspectedFilesPerRun = 10000
 ExcludePatterns = []
 
 [qBit.Maintenance.RecycleBin]
-Enabled = true
+Enabled = false
 Path = ''
 RetentionEnabled = true
 RetentionDays = 30

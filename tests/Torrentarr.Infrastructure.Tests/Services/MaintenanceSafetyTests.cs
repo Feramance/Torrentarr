@@ -242,7 +242,7 @@ public sealed class MaintenanceSafetyTests : IDisposable
         var plan = await Preview(MaintenanceOperation.OrphanScan);
         plan.CriticalErrors.Should().BeEmpty();
         plan.OperationResults.Should().Contain(r => r.Operation == MaintenanceOperation.OrphanScan && r.State == "blocked"
-            && r.Reason.Contains("client-disabled") && r.Reason.Contains("Disabled client ownership is unknown"));
+            && r.Reason != null && r.Reason.Contains("client-disabled") && r.Reason.Contains("Disabled client ownership is unknown"));
         (await Apply(plan)).Applied.Should().Be(0);
         File.ReadAllText(Path.Combine(_root, "orphan.mkv")).Should().Be("other client's data");
         _registry.Verify(r => r.GetClient("disabled"), Times.Never);
@@ -534,14 +534,87 @@ public sealed class MaintenanceSafetyTests : IDisposable
     }
 
     [Fact]
-    public async Task StrictMaintenance_DoesNotUseLegacyDeletionFallback()
+    public async Task DisabledRecycle_MaintenanceUsesNativeDeletion()
     {
         AddTorrent();
         ClientConfig.Maintenance.PathMappings.Clear();
         ClientConfig.Maintenance.RecycleBin.Enabled = false;
-        (await _deletion.RemoveMaintenanceTorrentAsync("one", "abc", true, await _inventory.BuildAsync())).Success.Should().BeFalse();
-        _client.Verify(c => c.DeleteTorrentsAsync(It.IsAny<List<string>>(), true, It.IsAny<CancellationToken>()), Times.Never);
+        (await _deletion.RemoveMaintenanceTorrentAsync("one", "abc", true, await _inventory.BuildAsync())).Success.Should().BeTrue();
+        _client.Verify(c => c.DeleteTorrentsAsync(It.IsAny<List<string>>(), true, It.IsAny<CancellationToken>()), Times.Once);
         (await _deletion.RemoveTorrentAsync("one", "abc", true)).Success.Should().BeTrue();
+    }
+
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task DisabledRecycle_BypassesGlobalInventoryAndLocalPaths(bool maintenance)
+    {
+        AddTorrent();
+        ClientConfig.Maintenance.RecycleBin.Enabled = false;
+        ClientConfig.Maintenance.PathMappings.Clear();
+        _config.TorrentClients["offline-second"] = new() { Host = "offline" };
+        var inventory = new Mock<ITorrentInventoryService>(MockBehavior.Strict);
+        var deletion = new SafeDeletionService(_registry.Object, inventory.Object, new PathMappingService(), _config,
+            NullLogger<SafeDeletionService>.Instance, _services.GetRequiredService<IServiceScopeFactory>());
+        var result = maintenance
+            ? await deletion.RemoveMaintenanceTorrentAsync("one", "abc", true, new TorrentInventory { OwnershipRequested = true })
+            : await deletion.RemoveTorrentForIntentAsync("one", "abc", true, TorrentRemovalIntent.RejectedByAllowlist);
+        result.Success.Should().BeTrue();
+        _client.Verify(c => c.DeleteTorrentsAsync(It.IsAny<List<string>>(), true, It.IsAny<CancellationToken>()), Times.Once);
+        inventory.VerifyNoOtherCalls();
+        File.Exists(Path.Combine(_root, "movie.mkv")).Should().BeTrue("only the mocked native client deletes content; Torrentarr must not move files");
+    }
+
+    [Fact]
+    public async Task RemovalDecisionNamesEveryKnownBlocker()
+    {
+        var torrent = AddTorrent();
+        torrent.Tags = "qBitrr-ignored";
+        torrent.AddedOn = DateTimeOffset.UtcNow.ToUnixTimeSeconds() - 1;
+        ClientConfig.CategorySeeding.IgnoreTorrentsYoungerThan = 3600;
+        var decision = await _seeding.EvaluateRemovalAsync(torrent, TorrentRemovalIntent.RejectedByAllowlist);
+        decision.Allowed.Should().BeFalse();
+        decision.Reason.Should().Contain("minimum-age").And.Contain("3600").And.Contain("Age=").And.Contain("Next:");
+    }
+
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task NativeCleanupPreviewDoesNotNeedMappingsOrRecycleBudget(bool changeMode)
+    {
+        var torrent = AddTorrent();
+        ClientConfig.Maintenance.RecycleBin.Enabled = false;
+        ClientConfig.Maintenance.RecycleBin.MaxTorrentMovesPerRun = 0;
+        ClientConfig.Maintenance.PathMappings.Clear();
+        ClientConfig.Maintenance.Unregistered.Enabled = true;
+        _config.TorrentClients["offline"] = new() { Host = "offline" };
+        MaintenancePersistence.Write(_db, MaintenancePersistence.Key("one", torrent.Hash, "recovery:UnregisteredCleanup"), new RecoveryIncident
+        {
+            AddedOn = torrent.AddedOn,
+            Stage = "recurring",
+            Attempts = 1,
+            CompletedAt = DateTimeOffset.UtcNow.AddDays(-2),
+            FailureSince = DateTimeOffset.UtcNow.AddDays(-2),
+            LastObserved = DateTimeOffset.UtcNow
+        });
+        _client.Setup(c => c.GetTorrentTrackersAsync(torrent.Hash, It.IsAny<CancellationToken>()))
+            .ReturnsAsync([new() { Url = "https://tracker.example/announce", Msg = "unregistered torrent" }]);
+        var plan = await Preview(MaintenanceOperation.UnregisteredCleanup);
+        var action = plan.Actions.Should().ContainSingle().Subject;
+        action.Kind.Should().Be(MaintenanceActionKind.DeleteContent);
+        action.Reason.Should().Contain("permanently deleted");
+        action.BlockedReason.Should().BeNull();
+        if (changeMode)
+        {
+            ClientConfig.Maintenance.RecycleBin.Enabled = true;
+            await FluentActions.Awaiting(() => Apply(plan)).Should().ThrowAsync<InvalidOperationException>();
+            _client.Verify(c => c.DeleteTorrentsAsync(It.IsAny<List<string>>(), It.IsAny<bool>(), It.IsAny<CancellationToken>()), Times.Never);
+        }
+        else
+        {
+            (await Apply(plan)).Applied.Should().Be(1);
+            _client.Verify(c => c.DeleteTorrentsAsync(It.IsAny<List<string>>(), true, It.IsAny<CancellationToken>()), Times.Once);
+        }
     }
 
     [Fact]

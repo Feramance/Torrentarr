@@ -42,11 +42,11 @@ public class ArrImportService : IArrImportService
         "Check Arr connectivity, its queue, category ownership and application logs.",
         ArrInstance: CategoryOwnershipHelper.FindArrSectionForCategory(_config, category) ?? "", SubjectType: "torrent", SubjectId: hash.ToUpperInvariant(), Target: "logs");
 
-    private async Task ObserveAsync(string operation, string category, string hash, bool success, CancellationToken ct)
+    private async Task ObserveAsync(string operation, string category, string hash, bool success, CancellationToken ct, string? evidence = null)
     {
         if (_issues == null) return;
         var issue = ImportIssue(operation, category, hash);
-        if (success) await _issues.ResolveAsync(issue, ct); else await _issues.ReportAsync(issue, ct);
+        if (success) await _issues.ResolveAsync(issue, ct); else await _issues.ReportAsync(issue.WithEvidence($"Operation={operation}; category={category}; torrent={hash}; {evidence ?? "Arr operation returned false without additional response details."}"), ct);
     }
 
     public async Task<ImportResult> TriggerImportAsync(
@@ -96,13 +96,13 @@ public class ArrImportService : IArrImportService
 
             _logger.LogTrace("Import result for {Hash}: Success={Success}, Message={Message}",
                 hash, result.Success, result.Message);
-            await ObserveAsync("scan", category, hash, result.Success, cancellationToken);
+            await ObserveAsync("scan", category, hash, result.Success, cancellationToken, result.Message);
             return result;
         }
         catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested) { throw; }
         catch (Exception ex)
         {
-            await ObserveAsync("scan", category, hash, false, cancellationToken);
+            await ObserveAsync("scan", category, hash, false, cancellationToken, DiagnosticText.Error(ex));
             _logger.LogError(ex, "Error triggering import for hash {Hash}", hash);
             return new ImportResult
             {
@@ -146,7 +146,7 @@ public class ArrImportService : IArrImportService
             catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested) { throw; }
             catch (Exception ex)
             {
-                await ObserveAsync("queue", arrInstance.Category, hash, false, cancellationToken);
+                await ObserveAsync("queue", arrInstance.Category, hash, false, cancellationToken, DiagnosticText.Error(ex));
                 hadCheckErrors = true;
                 _logger.LogError(ex, "Error checking queue for instance {Category}", arrInstance.Category);
             }
@@ -521,7 +521,7 @@ public class ArrImportService : IArrImportService
         catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested) { throw; }
         catch (Exception ex)
         {
-            await ObserveAsync("replacement", category, hash, false, cancellationToken);
+            await ObserveAsync("replacement", category, hash, false, cancellationToken, DiagnosticText.Error(ex));
             _logger.LogError(ex, "Error blocklisting torrent {Hash} in {Category}", hash, category);
             return false;
         }

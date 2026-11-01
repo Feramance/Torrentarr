@@ -19,6 +19,7 @@ public interface IConnectivityService
     /// Get the last known connectivity status
     /// </summary>
     bool IsConnected { get; }
+    string? FailureReason => null;
 
     /// <summary>
     /// Get the last connectivity check time

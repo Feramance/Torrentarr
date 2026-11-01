@@ -105,7 +105,7 @@ public static class ConfigSchemaBuilder
         Field("Maintenance.Unregistered.MaxPerTrackerPerRun", "number", "Maximum removals per tracker per run", 10, minimum: 0),
         Field("Maintenance.Unregistered.CompletedOnly", "checkbox", "Only clean up completed torrents", false),
         Field("Maintenance.Unregistered.Messages", "tags", "Unregistered tracker messages", new[] { "unregistered torrent", "torrent not registered", "torrent not found", "torrent not authorized" }),
-        Field("Maintenance.RecycleBin.Enabled", "checkbox", "Enable recycle bin and retention", true),
+        Field("Maintenance.RecycleBin.Enabled", "checkbox", "Enable recycle bin and retention", false),
         Field("Maintenance.RecycleBin.Path", "text", "Recycle bin path", "") with { description = "Absolute path visible to Torrentarr. Blank uses .torrentarr-recycle inside the first mapped local root." },
         Field("Maintenance.RecycleBin.RetentionDays", "number", "Recycle retention (days)", 30, minimum: 0) with { description = "Expired recycle files are permanently deleted after this many days." },
         Field("Maintenance.RecycleBin.MaxTorrentMovesPerRun", "number", "Maximum torrent moves per run", 10, minimum: 0),
@@ -224,7 +224,7 @@ public static class ConfigSchemaBuilder
         "Maintenance.ErrorRecovery.States" => "Exact client error-state names eligible for repair. Tracker messages alone never interrupt healthy protected seeding.",
         "Maintenance.Repair.ResumeCompleted" => "Explicitly authorizes resuming complete paused torrents, including deliberate user pauses. Review before enabling.",
         "Maintenance.Repair.RecheckIncomplete" => "Request file rechecks for incomplete paused torrents. This can create disk IO; it does not prove successful recovery.",
-        "Maintenance.RecycleBin.Enabled" => "Allow local recycle storage for content moves. Retention deletion has a separate enablement and operation policy.",
+        "Maintenance.RecycleBin.Enabled" => "Opt-in local recycle storage. Off delegates authorized torrent/content deletion to the client without local mapping or global ownership checks. On requires safe recycling and never falls back to permanent deletion. Retention has a separate policy.",
         _ => label + (kind == "number" && key.Contains("Max", StringComparison.Ordinal) ? ". Zero permits no mutations for action/deletion caps; inspection budgets must be positive."
             : kind == "tags" ? ". Empty applies no additional list entries; operation filters inherit client scope."
             : kind == "checkbox" ? ". Off disables this behavior; operation enablement and authorization still apply."

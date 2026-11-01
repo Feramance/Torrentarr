@@ -315,6 +315,7 @@ export function MaintenanceView({
   const toRecycle = candidateActions.filter(
     (a) => a.kind === "QuarantineFile" || a.kind === "RecycleContent",
   );
+  const toDelete = candidateActions.filter((a) => a.kind === "DeleteContent");
   const toPurge = candidateActions.filter(
     (a) => a.kind === "DeleteExpiredRecycleItem",
   );
@@ -678,7 +679,8 @@ export function MaintenanceView({
                   {bytes(toRecycle.reduce((sum, a) => sum + a.bytes, 0))}). To
                   purge: {toPurge.length} entries (
                   {bytes(toPurge.reduce((sum, a) => sum + a.bytes, 0))}).
-                  Blocked changes: {plan.blockedCount}.
+                  Permanently delete through client: {toDelete.length} torrents
+                  (recycling disabled). Blocked changes: {plan.blockedCount}.
                 </p>
                 <ul>
                   {plan.operationResults?.map((result) => (

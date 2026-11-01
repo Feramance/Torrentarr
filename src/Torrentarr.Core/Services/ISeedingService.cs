@@ -82,6 +82,9 @@ public interface ISeedingService
     Task<bool> CanDeleteTorrentAsync(TorrentInfo torrent, string reason, CancellationToken cancellationToken = default)
         => Task.FromResult(false);
 
+    Task<RemovalDecision> EvaluateRemovalAsync(TorrentInfo torrent, TorrentRemovalIntent intent, CancellationToken ct = default)
+        => Task.FromResult(new RemovalDecision([new("removal.unsupported-evidence", "This protection service does not provide removal evidence.", "Use a protection service with diagnostic decision support.")]));
+
     /// <summary>Fail-closed final authorization for explicitly triggered removals.</summary>
     Task<bool> CanDeleteTorrentForIntentAsync(TorrentInfo torrent, TorrentRemovalIntent intent,
         string reason, CancellationToken cancellationToken = default) => Task.FromResult(false);

@@ -188,7 +188,7 @@ public class RecycleBinConfig
 {
     public bool RetentionEnabled { get; set; } = true;
     public int MaxFilesDeletedPerRun { get; set; } = 100;
-    public bool Enabled { get; set; } = true;
+    public bool Enabled { get; set; }
     public string Path { get; set; } = "";
     public int RetentionDays { get; set; } = 30;
     public int MaxTorrentMovesPerRun { get; set; } = 10;

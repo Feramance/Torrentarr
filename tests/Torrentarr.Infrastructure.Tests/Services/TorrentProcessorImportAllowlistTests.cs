@@ -497,7 +497,8 @@ public sealed class TorrentProcessorImportAllowlistTests : IDisposable
         var torrent = Torrent("/downloads/Movie");
         Ready(await ApplyAsync(processor, torrent, Config(false), client, true)).Should().BeFalse();
         Ready(await ApplyAsync(processor, torrent, Config(false), client, true)).Should().BeFalse();
-        var warning = logger.Invocations.Where(i => i.Method.Name == "Log" && i.Arguments[0] is LogLevel.Warning)
+        var warning = logger.Invocations.Where(i => i.Method.Name == "Log" && i.Arguments[0] is LogLevel.Warning
+            && i.Arguments[2]?.ToString()?.StartsWith("Import blocked by file allowlist") == true)
             .Should().ContainSingle().Subject!.Arguments[2]?.ToString();
         warning.Should().Contain("8 total, 3 more").And.Contain("sample0.txt").And.Contain("sample4.txt").And.NotContain("sample5.txt");
     }

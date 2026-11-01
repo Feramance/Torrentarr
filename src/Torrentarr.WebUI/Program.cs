@@ -37,6 +37,7 @@ TrustedProxyConfiguration.Configure(builder.Services);
 // Configure Serilog - write to .config/logs/ with process metadata enrichment
 Log.Logger = new LoggerConfiguration()
     .MinimumLevel.ControlledBy(levelSwitch)
+    .MinimumLevel.Override("Microsoft.AspNetCore", LogEventLevel.Warning)
     .Enrich.WithProperty("ProcessType", "WebUI")
     .Enrich.WithProperty("ProcessId", Environment.ProcessId)
     .Enrich.WithProperty("MachineName", Environment.MachineName)
@@ -241,6 +242,7 @@ app.MapGet("/api/config/status", (IConfigReloader reloader) => Results.Ok(reload
 
 liveWeb.Attach(app, configForDI);
 app.UseForwardedHeaders();
+app.UseMiddleware<Torrentarr.Infrastructure.Logging.RequestDiagnosticsMiddleware>();
 app.UseRouting();
 app.Services.GetRequiredService<IConfigReloader>().ConfigReloaded += (_, args) =>
 {

@@ -26,6 +26,7 @@ public enum MaintenanceActionKind
     // Retired action IDs stay unused for persisted-history compatibility.
     RecycleContent = 9,
     RegisterRecycleEntry = 14,
+    DeleteContent = 15,
     DeleteExpiredRecycleItem = 13
 }
 
@@ -254,6 +255,7 @@ public sealed class MaintenanceInspectionStatus
     public DateTimeOffset? LastSucceededAt { get; init; }
     public DateTimeOffset? NextAttempt { get; init; }
     public int ConsecutiveFailures { get; init; }
+    public string? LastError { get; init; }
 }
 
 public sealed class TorrentAutomationStatus

@@ -47,3 +47,11 @@ Path mappings describe the same storage in two namespaces; they do not mount or 
 All original tools and their settings remain supported. Interim `Storage` and `Recovery` settings fill missing canonical maintenance values. Existing canonical values, disabled states, scopes, zero budgets, outcomes, and schedules take precedence. Schema 6.20.2 changes existing `session` execution modes to `manual`; schedules and all other settings remain saved. Tools without an operation policy also default to Manual. Select Automatic explicitly to resume scheduling. Migration never enables unrelated tools.
 
 See [workflow and safety](../features/torrent-maintenance.md), [all controls](maintenance-controls.md), and [examples](../features/maintenance-examples.md).
+
+## Recycling and native deletion
+
+`Maintenance.RecycleBin.Enabled` is opt-in and defaults to `false`. Existing explicit values are preserved. When false, automatic torrent removal and Manage cleanup send the authorized deletion to the torrent client, including content deletion when requested. No local path mappings or global ownership inventory are required for native deletion. The client controls content handling; Torrentarr does not protect shared files across clients on this path.
+
+When true, cleanup moves eligible files to recycling and retains ownership, shared-file and rollback checks. A recycling failure never falls back to permanent deletion. Manage previews label permanent deletion separately, and configuration changes require a new preview. Orphan quarantine and recycle retention still require an enabled recycle bin.
+
+Issue details show the affected subject's evidence and next action. HTTP request summaries include method, route template, status, duration and request ID: successful requests are DEBUG, 4xx WARNING and 5xx ERROR. URLs, credentials and tracker passkeys are redacted from diagnostic evidence.

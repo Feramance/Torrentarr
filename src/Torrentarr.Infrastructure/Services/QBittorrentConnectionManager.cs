@@ -1,3 +1,4 @@
+using Torrentarr.Core.Services;
 using System.Collections.Concurrent;
 using Torrentarr.Core.Configuration;
 using Torrentarr.Core.Interfaces;
@@ -148,8 +149,8 @@ public class QBittorrentConnectionManager : ITorrentClientRegistry
             {
                 var rejectedCredentials = client.LastConnectionFailureKind == TorrentClientConnectionFailureKind.AuthenticationRejected;
                 lock (_clientsLock) _connectionErrors[name] = rejectedCredentials
-                    ? "Authentication rejected. Check credentials or reconnect after restoring access."
-                    : "Connection/login failed. Check the torrent-client service and server logs.";
+                    ? $"Authentication rejected. {DiagnosticText.Safe(client.LastConnectionFailure)} Check credentials or reconnect after restoring access."
+                    : $"Connection/login failed. {DiagnosticText.Safe(client.LastConnectionFailure ?? "The client supplied no HTTP status or transport detail.")}";
                 (client as IDisposable)?.Dispose();
                 if (rejectedCredentials)
                     lock (_clientsLock) _authenticationFailures[name] = new AuthenticationFailure(settings, revision);
@@ -172,7 +173,7 @@ public class QBittorrentConnectionManager : ITorrentClientRegistry
         catch (OperationCanceledException) { (client as IDisposable)?.Dispose(); throw; }
         catch (Exception ex)
         {
-            lock (_clientsLock) _connectionErrors[name] = $"Connection failed ({ex.GetType().Name}). Check server logs.";
+            lock (_clientsLock) _connectionErrors[name] = $"Connection to {DiagnosticText.Safe(config.Host)}:{config.Port} failed. {DiagnosticText.Error(ex)}";
             (client as IDisposable)?.Dispose();
             _logger.LogWarning("Could not connect torrent client {Name} ({Type})", name, config.Type);
             return false;

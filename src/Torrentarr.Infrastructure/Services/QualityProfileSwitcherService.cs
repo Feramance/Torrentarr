@@ -70,7 +70,7 @@ public class QualityProfileSwitcherService(ILogger<QualityProfileSwitcherService
         catch (Exception ex)
         {
             logger.LogWarning(ex, "Profile {Operation} failed for {Instance}; recovery evidence retained", subject, instance);
-            if (issues != null) await issues.ReportAsync(Issue(instance, subject, failureSubject), ct);
+            if (issues != null) await issues.ReportAsync(Issue(instance, subject, failureSubject).WithEvidence(DiagnosticText.Error(ex)), ct);
             return false;
         }
     }
@@ -143,7 +143,7 @@ public class QualityProfileSwitcherService(ILogger<QualityProfileSwitcherService
                 // Discard uncommitted local changes, including a failed restoration save.
                 entry.State = EntityState.Detached;
                 logger.LogWarning(ex, "Profile operation failed for {Instance}/{Id}; search skipped and evidence preserved", instance, id);
-                if (issues != null) await issues.ReportAsync(issue, ct);
+                if (issues != null) await issues.ReportAsync(issue.WithEvidence($"Subject={id}; operation={issue.Code}; {DiagnosticText.Error(ex)}"), ct);
             }
         }
         if (ok && issues != null) await issues.ResolveAsync(Issue(instance, ids == null ? "restore" : "prepare", ids == null ? "" : string.Join(",", ids.Order())), ct);

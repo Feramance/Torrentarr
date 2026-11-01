@@ -89,7 +89,7 @@ public static class SonarrRetryQueue
                     if (issues != null)
                     {
                         if (result.LoopCompleted) await issues.ResolveAsync(Issue(instanceName, retry.DownloadId), ct);
-                        else if (result.Errors.Count > 0) await issues.ReportAsync(Issue(instanceName, retry.DownloadId), ct);
+                        else if (result.Errors.Count > 0) await issues.ReportAsync(Issue(instanceName, retry.DownloadId).WithEvidence(string.Join("; ", result.Errors)), ct);
                     }
                     // Capacity limits retain work without creating an operational issue.
                     if (!result.LoopCompleted && !result.OnlyRetryResolutionFailed) break;
@@ -99,7 +99,7 @@ public static class SonarrRetryQueue
                 {
                     db.Entry(retry).State = EntityState.Detached;
                     logger.LogWarning(ex, "Replacement search for {Instance}/{Hash} retained for retry", instanceName, retry.DownloadId);
-                    if (issues != null) await issues.ReportAsync(Issue(instanceName, retry.DownloadId), ct);
+                    if (issues != null) await issues.ReportAsync(Issue(instanceName, retry.DownloadId).WithEvidence(DiagnosticText.Error(ex)), ct);
                 }
             }
         }

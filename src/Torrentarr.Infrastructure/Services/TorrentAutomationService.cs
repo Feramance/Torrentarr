@@ -21,6 +21,7 @@ public sealed class TorrentAutomationService(TorrentarrConfig config, ITorrentCl
     private readonly ConcurrentDictionary<string, List<ProtectionDecision>> _protection = new();
     private readonly ConcurrentDictionary<string, DateTimeOffset> _nextInspection = new();
     private readonly ConcurrentDictionary<string, int> _inspectionFailures = new();
+    private readonly ConcurrentDictionary<string, string> _inspectionErrors = new();
     private readonly ConcurrentDictionary<string, (DateTimeOffset At, List<TorrentTracker> Trackers)> _trackerInspections = new();
     private readonly ConcurrentDictionary<string, DateTimeOffset> _nextFullInspection = new();
     private readonly ConcurrentDictionary<string, DateTimeOffset> _lastInspection = new();
@@ -57,7 +58,8 @@ public sealed class TorrentAutomationService(TorrentarrConfig config, ITorrentCl
                 ClientInstanceId = id,
                 LastSucceededAt = _lastInspection.TryGetValue(id, out var at) ? at : null,
                 NextAttempt = _nextInspection.TryGetValue(id, out var next) ? next : null,
-                ConsecutiveFailures = _inspectionFailures.GetValueOrDefault(id)
+                ConsecutiveFailures = _inspectionFailures.GetValueOrDefault(id),
+                LastError = _inspectionErrors.GetValueOrDefault(id)
             }).ToList()
         };
     }
@@ -173,13 +175,15 @@ public sealed class TorrentAutomationService(TorrentarrConfig config, ITorrentCl
                 if (full) _nextFullInspection[id] = inspectionStarted.AddMinutes(5);
                 _lastInspection[id] = DateTimeOffset.UtcNow;
                 _inspectionFailures[id] = 0;
+                _inspectionErrors.TryRemove(id, out _);
                 _nextInspection[id] = inspectionStarted.AddMinutes(urgent ? 1 : 5);
             }
             catch (Exception ex) when (!ct.IsCancellationRequested)
             {
+                _inspectionErrors[id] = DiagnosticText.Error(ex);
                 var failures = _inspectionFailures.AddOrUpdate(id, 1, (_, n) => Math.Min(6, n + 1));
                 _nextInspection[id] = DateTimeOffset.UtcNow.AddMinutes(Math.Min(30, Math.Pow(2, failures - 1)));
-                _logger.LogWarning(ex, "Protection inspection delayed for {Instance}; existing protection retained", id);
+                _logger.LogWarning("Protection inspection delayed for {Instance}; existing protection retained. {Error}", id, _inspectionErrors[id]);
             }
         }
         _appliedRevision = _config.Revision;

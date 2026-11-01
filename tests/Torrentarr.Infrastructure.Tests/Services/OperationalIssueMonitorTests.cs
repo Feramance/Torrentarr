@@ -158,6 +158,9 @@ public sealed class OperationalIssueMonitorTests
         using var monitor = new OperationalIssueMonitor(services.GetRequiredService<IServiceScopeFactory>(), reporter.Object, new TorrentarrConfig(), NullLogger<OperationalIssueMonitor>.Instance);
         await monitor.InspectAsync(default);
         reports.Select(r => r.Code).Should().Contain(["config.apply", "network.internet", "storage.reserve"]);
+        reports.Single(r => r.Code == "config.apply").Impact.Should().Contain("revision=");
+        reports.Single(r => r.Code == "network.internet").Impact.Should().Contain("connectivity check=");
+        reports.Single(r => r.Code == "storage.reserve").Impact.Should().Contain("/downloads").And.Contain("free=").And.Contain("reserve=");
         resolved.Should().BeEmpty();
         state = state with { State = "pending" }; await monitor.InspectAsync(default);
         resolved.Should().NotContain(r => r.Code == "config.apply");

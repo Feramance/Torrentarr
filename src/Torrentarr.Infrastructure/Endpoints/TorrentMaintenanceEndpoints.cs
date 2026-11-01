@@ -25,8 +25,8 @@ public static class TorrentMaintenanceEndpoints
                 var selection = string.Join(",", preview.Operations.Order());
                 foreach (var diagnostic in preview.Diagnostics)
                     await issues.ReportAsync(new("maintenance.preview." + diagnostic.Code, "automation", "Maintenance preview needs attention",
-                        "The requested preview could not validate all requirements; affected actions remain blocked.",
-                        "Open Manage and review the preview diagnostics before applying changes.", ClientInstance: diagnostic.ClientInstanceId,
+                        $"Preview operations={selection}; diagnostic={diagnostic.Code}; {DiagnosticText.Safe(diagnostic.Message)} Examples: {string.Join("; ", diagnostic.Examples.Select(e => DiagnosticText.Safe(System.Text.Json.JsonSerializer.Serialize(e))))}",
+                        DiagnosticText.Safe(diagnostic.Remediation), ClientInstance: diagnostic.ClientInstanceId,
                         SubjectType: "preview", SubjectId: selection, Severity: diagnostic.Severity, Target: "maintenance"), ct);
                 try
                 {

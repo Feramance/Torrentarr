@@ -39,6 +39,8 @@ public class ProcessStatus
     public DateTime? StartTime { get; set; }
     public DateTime? LastHeartbeat { get; set; }
     public int RestartCount { get; set; }
+    public int? LastExitCode { get; set; }
+    public string? LastFailure { get; set; }
     public bool RestartRequested { get; set; }
     public long ConfigRevision { get; set; }
     public string? SearchSummary { get; set; }

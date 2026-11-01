@@ -791,7 +791,7 @@ public sealed class TorrentProcessorTests : IDisposable
         var deletion = new Mock<ISafeDeletionService>();
         deletion.Setup(x => x.RemoveTorrentForIntentAsync("qBit", torrent.Hash, true,
             TorrentRemovalIntent.RejectedByAllowlist, It.IsAny<CancellationToken>()))
-            .ReturnsAsync(new SafeDeletionResult(false, true, 0, "Recycle-bin content removal is disabled."));
+            .ReturnsAsync(new SafeDeletionResult(false, true, 0, "Client rejected native content deletion: HTTP 403."));
         var logger = new Mock<Microsoft.Extensions.Logging.ILogger<TorrentProcessor>>();
         var processor = new TorrentProcessor(logger.Object,
             new QBittorrentConnectionManager(NullLogger<QBittorrentConnectionManager>.Instance), _db,
@@ -802,7 +802,7 @@ public sealed class TorrentProcessorTests : IDisposable
         for (var i = 0; i < 2; i++)
         {
             var task = (Task<bool>)method.Invoke(processor,
-                [client, torrent, true, CancellationToken.None, null, TorrentRemovalIntent.RejectedByAllowlist])!;
+                [client, torrent, true, CancellationToken.None, null, TorrentRemovalIntent.RejectedByAllowlist, null])!;
             (await task).Should().BeFalse();
         }
         deletion.Verify(x => x.RemoveTorrentForIntentAsync("qBit", torrent.Hash, true,
@@ -810,7 +810,7 @@ public sealed class TorrentProcessorTests : IDisposable
         var warnings = logger.Invocations.Where(x => x.Method.Name == "Log"
             && x.Arguments[0] is Microsoft.Extensions.Logging.LogLevel.Warning).ToList();
         warnings.Should().ContainSingle();
-        warnings[0].Arguments[2]?.ToString().Should().Contain("Recycle-bin content removal is disabled");
+        warnings[0].Arguments[2]?.ToString().Should().Contain("Client rejected native content deletion: HTTP 403");
     }
 
     [Fact]
@@ -842,7 +842,7 @@ public sealed class TorrentProcessorTests : IDisposable
         var method = typeof(TorrentProcessor).GetMethod("DeleteTorrentFromClientAsync",
             BindingFlags.NonPublic | BindingFlags.Instance)!;
         var task = (Task<bool>)method.Invoke(processor,
-            [client, torrent, true, CancellationToken.None, null, TorrentRemovalIntent.StalledDownload])!;
+            [client, torrent, true, CancellationToken.None, null, TorrentRemovalIntent.StalledDownload, null])!;
         (await task).Should().BeTrue();
         deletion.VerifyAll();
     }

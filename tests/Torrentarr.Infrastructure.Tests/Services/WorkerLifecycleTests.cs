@@ -49,6 +49,7 @@ public class WorkerLifecycleTests
         await orchestrator.StopAsync();
         attempts.Should().Be(3);
         (await supervisor.GetProcessStatusAsync())["Radarr"].Status.Should().Be("Stopped");
+        (await supervisor.GetProcessStatusAsync())["Radarr"].LastFailure.Should().Contain("launch failed");
     }
 
     [Fact]

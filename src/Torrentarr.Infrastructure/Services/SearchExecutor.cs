@@ -229,7 +229,7 @@ public class SearchExecutor : ISearchExecutor
                         submissionStopped = true;
                         drained = false;
                         result.Errors.Add("Arr rejected a search submission.");
-                        if (_issues != null) await _issues.ReportAsync(SearchIssue(instanceName, "submission", candidate.ArrId.ToString()), cancellationToken);
+                        if (_issues != null) await _issues.ReportAsync(SearchIssue(instanceName, "submission", candidate.ArrId.ToString()).WithEvidence($"Candidate={candidate.Title}; Arr ID={candidate.ArrId}; endpoint={DiagnosticText.Safe(arrConfig.URI)}; search API returned false; HTTP status was not supplied by the API adapter."), cancellationToken);
                         _logger.LogTrace("SearchExecutor: search not triggered for {Title}", candidate.Title);
                     }
                 }
@@ -239,7 +239,9 @@ public class SearchExecutor : ISearchExecutor
                     submissionStopped = true;
                     drained = false;
                     _logger.LogError(ex, "SearchExecutor: error searching {Title}", candidate.Title);
-                    result.Errors.Add($"Failed to search {candidate.Title}: {ex.Message}");
+                    result.Errors.Add($"Failed to search {candidate.Title}: {DiagnosticText.Error(ex)}");
+                    if (_issues != null) await _issues.ReportAsync(SearchIssue(instanceName, "submission", candidate.ArrId.ToString())
+                        .WithEvidence($"Candidate={candidate.Title}; Arr ID={candidate.ArrId}; endpoint={DiagnosticText.Safe(arrConfig.URI)}; {DiagnosticText.Error(ex)}"), cancellationToken);
                 }
             }
             finally { gate.Release(); }
@@ -434,7 +436,7 @@ public class SearchExecutor : ISearchExecutor
         catch (Exception ex)
         {
             _logger.LogWarning(ex, "SearchExecutor: failed to get commands for {Name}", instanceName);
-            if (_issues != null) await _issues.ReportAsync(SearchIssue(instanceName, "capacity"), cancellationToken);
+            if (_issues != null) await _issues.ReportAsync(SearchIssue(instanceName, "capacity").WithEvidence(DiagnosticText.Error(ex)), cancellationToken);
             throw;
         }
     }

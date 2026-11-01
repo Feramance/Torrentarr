@@ -108,7 +108,7 @@ public class ArrSyncService
         }
         catch (Exception ex)
         {
-            if (_issues != null) await _issues.ReportAsync(SyncIssue(instanceName, "catalog"), ct);
+            if (_issues != null) await _issues.ReportAsync(SyncIssue(instanceName, "catalog").WithEvidence(DiagnosticText.Error(ex)), ct);
             _logger.LogError(ex, "[{Instance}] ArrSyncService: error syncing {Type} instance {Name}", instanceName, arrConfig.Type, instanceName);
             throw;
         }
@@ -151,7 +151,7 @@ public class ArrSyncService
         catch (OperationCanceledException) when (ct.IsCancellationRequested) { throw; }
         catch (Exception ex)
         {
-            if (_issues != null) await _issues.ReportAsync(SyncIssue(instanceName, "queue"), ct);
+            if (_issues != null) await _issues.ReportAsync(SyncIssue(instanceName, "queue").WithEvidence(DiagnosticText.Error(ex)), ct);
             _logger.LogError(ex, "ArrSyncService: error syncing queue for {Name}", instanceName);
         }
     }

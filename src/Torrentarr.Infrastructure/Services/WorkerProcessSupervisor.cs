@@ -29,6 +29,7 @@ public sealed class WorkerProcessSupervisor : BackgroundService, IProcessOrchest
     private readonly SemaphoreSlim _lifecycle = new(1, 1);
     private readonly HashSet<string> _reportedWorkers = new(StringComparer.OrdinalIgnoreCase);
     private long _lastReconciledRevision = -1;
+    private readonly Dictionary<string, (int? ExitCode, string Error)> _lastFailures = new(StringComparer.OrdinalIgnoreCase);
     // A failed launch or exhausted retry allowance must not be bypassed by another config reconciliation.
     private readonly Dictionary<string, long> _attemptedLaunchRevisions = new(StringComparer.OrdinalIgnoreCase);
 
@@ -326,6 +327,10 @@ public sealed class WorkerProcessSupervisor : BackgroundService, IProcessOrchest
                         Status = _pendingRetries.ContainsKey(name) ? "Backoff" : "Stopped"
                     };
         }
+        lock (_gate)
+            foreach (var (name, state) in result)
+                if (_lastFailures.TryGetValue(name, out var failure))
+                { state.LastExitCode = failure.ExitCode; state.LastFailure = failure.Error; }
         return Task.FromResult(result);
     }
 
@@ -411,6 +416,7 @@ public sealed class WorkerProcessSupervisor : BackgroundService, IProcessOrchest
                 var child = process;
                 process.Exited += (sender, args) => { _ = Task.Run(() => WorkerExited(instanceName, child)); };
                 _reportedWorkers.Remove(instanceName);
+                _lastFailures.Remove(instanceName);
                 _processes[instanceName] = process;
                 _processRevisions[process] = _config.Revision;
                 process.EnableRaisingEvents = true;
@@ -430,7 +436,8 @@ public sealed class WorkerProcessSupervisor : BackgroundService, IProcessOrchest
                     catch (Exception cleanupError) { _logger.LogWarning(cleanupError, "Unable to terminate failed worker launch for {Instance}", instanceName); }
                     finally { process.Dispose(); }
                 }
-                _logger.LogError(ex, "Unable to start worker for {Instance}", instanceName);
+                _lastFailures[instanceName] = (null, DiagnosticText.Error(ex));
+                _logger.LogError("Unable to start worker for {Instance}: {Error}", instanceName, _lastFailures[instanceName].Error);
                 ScheduleRetry(instanceName);
             }
         }
@@ -446,7 +453,11 @@ public sealed class WorkerProcessSupervisor : BackgroundService, IProcessOrchest
             _processRevisions.Remove(process);
             _statusFiles.Remove(name);
             _reportedWorkers.Remove(name);
-            try { _logger.LogWarning("Worker {Instance} exited with code {Code}", name, process.ExitCode); }
+            try
+            {
+                _lastFailures[name] = (process.ExitCode, $"Worker process exited with code {process.ExitCode}.");
+                _logger.LogWarning("Worker {Instance} exited with code {Code}", name, process.ExitCode);
+            }
             finally { process.Dispose(); }
             ScheduleRetry(name);
         }

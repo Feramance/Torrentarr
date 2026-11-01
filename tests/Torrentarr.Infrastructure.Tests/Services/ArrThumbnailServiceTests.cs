@@ -294,7 +294,7 @@ public class ArrThumbnailServiceTests : IDisposable
         issues.Setup(r => r.ResolveAsync(Moq.It.IsAny<Torrentarr.Core.Services.OperationalIssueReport>(), Moq.It.IsAny<CancellationToken>())).Returns(Task.CompletedTask);
         var service = new ArrThumbnailService(db, config, factory, issues.Object);
         (await service.GetThumbnailAsync("radarr", "radarr", id)).Should().BeNull();
-        issues.Verify(r => r.ReportAsync(Moq.It.Is<Torrentarr.Core.Services.OperationalIssueReport>(i => i.Code == "thumbnail.fetch"), Moq.It.IsAny<CancellationToken>()), Moq.Times.Once());
+        issues.Verify(r => r.ReportAsync(Moq.It.Is<Torrentarr.Core.Services.OperationalIssueReport>(i => i.Code == "thumbnail.fetch" && i.Impact.Contains("HTTP 404")), Moq.It.IsAny<CancellationToken>()), Moq.Times.Once());
         failed = false;
         (await service.GetThumbnailAsync("radarr", "radarr", id)).Should().NotBeNull();
         var remoteCalls = factory.Names.Count;

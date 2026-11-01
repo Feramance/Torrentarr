@@ -413,7 +413,7 @@ public class SeedingService : ISeedingService
                 decision = new()
                 {
                     State = safe && healthy ? "eligible" : healthy ? "protected" : "unknown",
-                    Reason = safe && healthy ? "Legacy configured obligations met (client estimate)." : "Tracker obligations or healthy accounting remain unmet."
+                    Reason = $"Legacy mode={effective.HitAndRunMode}; ratio={torrent.Ratio:F3}/{effective.MinSeedRatio}; seed={torrent.SeedingTime}s/{effective.MinSeedingTimeDays * 86400}s; minimum download={effective.HitAndRunMinimumDownloadPercent}%; partial ratio={effective.HitAndRunPartialSeedRatio}; tracker healthy={healthy}; obligations met={safe}."
                 };
             }
             decision.ClientInstanceId = torrent.ClientInstanceId; decision.TorrentHash = torrent.Hash; decision.TorrentName = torrent.Name; decision.Tracker = host;
@@ -442,7 +442,7 @@ public class SeedingService : ISeedingService
                 TorrentHash = torrent.Hash,
                 TorrentName = torrent.Name,
                 State = categoryConfigured && healthy ? categorySafe ? "eligible" : "protected" : knownPublic && !legacy ? "eligible" : "unknown",
-                Reason = categoryConfigured ? "Legacy category obligations evaluated using current client estimates and tracker health."
+                Reason = categoryConfigured ? $"Category mode={category.HitAndRunMode}; ratio={torrent.Ratio:F3}/{category.MinSeedRatio}; seed={torrent.SeedingTime}s/{category.MinSeedingTimeDays * 86400}s; minimum download={category.HitAndRunMinimumDownloadPercent}%; partial ratio={category.HitAndRunPartialSeedRatio}; tracker healthy={healthy}; obligations met={categorySafe}."
                     : knownPublic && !legacy ? "Public torrent without configured HnR obligations." : "Unmatched private/unknown tracker: preserve and report."
             });
         }
@@ -587,8 +587,10 @@ public class SeedingService : ISeedingService
             || DateTimeOffset.UtcNow.ToUnixTimeSeconds() - torrent.AddedOn < _config.Settings.IgnoreTorrentsYoungerThan) return false;
         if (!torrent.IsPrivate.HasValue)
             torrent.IsPrivate = (await client.GetTorrentPropertiesAsync(torrent.Hash, cancellationToken))?.IsPrivate;
-        var allowed = HnrAllowsDelete(torrent, await client.GetTorrentTrackersAsync(torrent.Hash, cancellationToken));
-        if (!allowed) _logger.LogInformation("HnR protection blocked {Reason} of {Hash}", reason, torrent.Hash);
+        var trackerEvidence = await client.GetTorrentTrackersAsync(torrent.Hash, cancellationToken);
+        var allowed = HnrAllowsDelete(torrent, trackerEvidence);
+        if (!allowed) _logger.LogDebug("HnR protection blocked {Reason} of {Hash}: {Evidence}", reason, torrent.Hash,
+            DiagnosticText.Safe(string.Join("; ", GetProtectionDecisions(torrent, trackerEvidence).Where(d => d.State != "eligible").Select(d => $"{d.Tracker}: {d.State}; {d.Reason}"))));
         return allowed;
     }
 
@@ -597,46 +599,86 @@ public class SeedingService : ISeedingService
 
     public async Task<bool> CanDeleteTorrentForIntentAsync(TorrentInfo torrent, TorrentRemovalIntent intent,
         string reason, CancellationToken cancellationToken = default)
+        => (await EvaluateRemovalAsync(torrent, intent, cancellationToken)).Allowed;
+
+    public async Task<RemovalDecision> EvaluateRemovalAsync(TorrentInfo torrent, TorrentRemovalIntent intent, CancellationToken ct = default)
     {
-        if (_config.GetTorrentClient(torrent.ClientInstanceId)?.Disabled != false
-            || !await HnrAllowsDeleteAsync(torrent, reason, cancellationToken)) return false;
-        var tags = torrent.Tags.Split(',', StringSplitOptions.TrimEntries | StringSplitOptions.RemoveEmptyEntries);
-        if (tags.Contains(IgnoredTag) || tags.Contains(FreeSpacePausedTag)
-            || torrent.SuperSeeding || torrent.State.Equals("forcedUP", StringComparison.OrdinalIgnoreCase)) return false;
-        var arr = _config.ArrInstances.Values.FirstOrDefault(a => CategoryOwnershipHelper.ArrOwnsTorrent(_config, a, torrent));
-        var (delay, age) = TorrentProcessor.ResolveStalledSettings(_config, torrent, arr);
-        age = Math.Max(age, GetSeedingConfig(torrent).IgnoreTorrentsYoungerThan);
+        var blockers = new List<RemovalBlocker>();
+        void Block(string code, string evidence, string next) => blockers.Add(new(code, DiagnosticText.Safe(evidence), next));
+        var cfg = _config.GetTorrentClient(torrent.ClientInstanceId);
         var now = DateTimeOffset.UtcNow.ToUnixTimeSeconds();
-        if (age < 0 || now - torrent.AddedOn < Math.Max(age, _config.Settings.IgnoreTorrentsYoungerThan)) return false;
-        // An explicit rejected-content trigger is independent of ratio/seeding-time removal.
-        // The worker must have verified the file allowlist and the torrent snapshot.
-        if (intent == TorrentRemovalIntent.RejectedByAllowlist) return true;
-        if (intent == TorrentRemovalIntent.StalledDownload)
+        if (cfg?.Disabled != false) Block("client.disabled", $"Client '{torrent.ClientInstanceId}' is {(cfg == null ? "not configured" : "disabled")}", "Enable/configure this client before requesting removal.");
+        if (_config.Revision != _config.LatestRevision) Block("config.pending", $"Applied revision {_config.Revision}; accepted revision {_config.LatestRevision}", "Wait for configuration activation to complete.");
+        if (torrent.AddedOn <= 0 || torrent.AddedOn > now) Block("torrent.added-on", $"Invalid AddedOn={torrent.AddedOn}; now={now}", "Refresh torrent metadata from the client.");
+        if (!double.IsFinite(torrent.Progress) || torrent.Progress is < 0 or > 1 || !double.IsFinite(torrent.Ratio) || torrent.Ratio < 0 || torrent.SeedingTime < 0)
+            Block("torrent.invalid-evidence", $"Progress={torrent.Progress}, ratio={torrent.Ratio}, seedingTime={torrent.SeedingTime}s", "Refresh invalid client statistics; removal remains blocked until evidence is valid.");
+        try
         {
-            if (torrent.Progress >= 1) return false;
-            var stalledMetadata = torrent.State.Equals("metaDL", StringComparison.OrdinalIgnoreCase)
-                || torrent.State.Equals("forcedMetaDL", StringComparison.OrdinalIgnoreCase);
+            var client = GetClient(torrent);
+            if (client == null) Block("client.disconnected", $"Client '{torrent.ClientInstanceId}' has no connected session", "Reconnect this client in configuration.");
+            else
+            {
+                if (!torrent.IsPrivate.HasValue) torrent.IsPrivate = (await client.GetTorrentPropertiesAsync(torrent.Hash, ct))?.IsPrivate;
+                var trackers = await client.GetTorrentTrackersAsync(torrent.Hash, ct);
+                foreach (var decision in GetProtectionDecisions(torrent, trackers).Where(d => d.State != "eligible"))
+                    Block("hnr." + decision.State, $"Tracker={decision.Tracker}; state={decision.State}; {decision.Reason} Observed seed={decision.ObservedSeedSeconds:F0}s; remaining={decision.RemainingSeedSeconds:F0}s; ratio={torrent.Ratio:F3}; progress={torrent.Progress:P1}; native ratioLimit={torrent.RatioLimit}, timeLimit={torrent.SeedingTimeLimit}", "Meet this tracker/category's configured obligations and verify healthy tracker accounting.");
+            }
+            var tags = torrent.Tags.Split(',', StringSplitOptions.TrimEntries | StringSplitOptions.RemoveEmptyEntries);
+            foreach (var tag in tags.Where(t => t == IgnoredTag || t == FreeSpacePausedTag))
+                Block("torrent.protected-tag", $"Blocking tag '{tag}' is present", "Resolve the owning ignore/free-space policy before removing its tag.");
+            if (torrent.SuperSeeding || torrent.State.Equals("forcedUP", StringComparison.OrdinalIgnoreCase))
+                Block("torrent.protected-state", $"SuperSeeding={torrent.SuperSeeding}; state={torrent.State}", "Disable forced/super-seeding intentionally before removal.");
+            var arr = _config.ArrInstances.Values.FirstOrDefault(a => CategoryOwnershipHelper.ArrOwnsTorrent(_config, a, torrent));
+            var (delay, age) = TorrentProcessor.ResolveStalledSettings(_config, torrent, arr);
+            age = Math.Max(age, GetSeedingConfig(torrent).IgnoreTorrentsYoungerThan);
+            var requiredAge = Math.Max(age, _config.Settings.IgnoreTorrentsYoungerThan);
+            if (age < 0 || now - torrent.AddedOn < requiredAge)
+                Block("torrent.minimum-age", $"Age={now - torrent.AddedOn}s; effective IgnoreTorrentsYoungerThan={requiredAge}s; category/Arr value={age}s", "Wait until the minimum age is met or correct the effective age policy.");
+            if (intent == TorrentRemovalIntent.RejectedByAllowlist) return new(blockers);
+            if (intent is not (TorrentRemovalIntent.SeedingLimit or TorrentRemovalIntent.StalledDownload))
+            { Block("removal.unsupported-intent", $"Unknown removal intent '{intent}'", "Use a supported removal intent."); return new(blockers); }
+            if (intent == TorrentRemovalIntent.SeedingLimit)
+            {
+                var policy = GetEffectiveSeedingConfig(torrent, await GetTrackerConfigAsync(torrent, ct));
+                if (policy.RemoveTorrent is < 1 or > 4)
+                    Block("seeding.removal-disabled", $"Effective RemoveTorrent={policy.RemoveTorrent}; supported removal modes are 1=ratio, 2=time, 3=OR, 4=AND", "Configure the intended removal mode for this category/tracker.");
+                if (torrent.Progress >= 1)
+                {
+                    if (!await MeetsSeedingRequirementsAsync(torrent.Hash, torrent.Category, torrent.ClientInstanceId, ct))
+                    {
+                        var legacy = _config.Settings.CategorySeedingRules?.FirstOrDefault(r => r.Category == torrent.Category);
+                        Block("seeding.minimum", $"Category='{torrent.Category}'; ratio={torrent.Ratio:F3}; seed={torrent.SeedingTime}s; optional category minimum ratio={legacy?.MinimumRatio}; minimum time={legacy?.MinimumSeedingTime}min", "Meet the category's minimum seeding requirements; verify fresh client statistics.");
+                    }
+                    if (!RemovalLimitsMet(torrent, policy))
+                        Block("seeding.limit", $"RemoveTorrent={policy.RemoveTorrent}; ratio={torrent.Ratio:F3}/{policy.MaxUploadRatio}; seed={torrent.SeedingTime}/{policy.MaxSeedingTime}s; state={torrent.State}", "Meet the effective ratio/time limit using the configured AND/OR removal mode.");
+                    return new(blockers);
+                }
+            }
+            else if (torrent.Progress >= 1) Block("stalled.completed", $"Progress={torrent.Progress:P1}", "Use completed-torrent seeding policy; this torrent is no longer an incomplete stalled download.");
+            var metadata = torrent.State.Equals("metaDL", StringComparison.OrdinalIgnoreCase) || torrent.State.Equals("forcedMetaDL", StringComparison.OrdinalIgnoreCase);
             var stalled = torrent.State.Equals("stalledDL", StringComparison.OrdinalIgnoreCase);
-            var unavailable = (torrent.State.Equals("downloading", StringComparison.OrdinalIgnoreCase)
-                || torrent.State.Equals("forcedDL", StringComparison.OrdinalIgnoreCase)) && torrent.Availability < 1;
-            var stalledReference = stalledMetadata ? torrent.AddedOn : torrent.LastActivity;
-            return (stalledMetadata || stalled || unavailable) && delay >= 0
-                && stalledReference > 0 && stalledReference <= now
-                && now - stalledReference >= Math.Max(age, delay * 60L);
+            var unavailable = (torrent.State.Equals("downloading", StringComparison.OrdinalIgnoreCase) || torrent.State.Equals("forcedDL", StringComparison.OrdinalIgnoreCase)) && torrent.Availability < 1;
+            if (intent == TorrentRemovalIntent.StalledDownload && !metadata && !stalled && !unavailable)
+                Block("stalled.trigger-cleared", $"State={torrent.State}; availability={torrent.Availability}; progress={torrent.Progress:P1}", "Wait for a fresh stalled-download evaluation; the original trigger no longer applies.");
+            var reference = metadata ? torrent.AddedOn : torrent.LastActivity;
+            if (delay < 0 || reference <= 0 || reference > now || now - reference < Math.Max(age, delay * 60L))
+                Block("stalled.grace", $"StalledDelay={delay}min; reference={(metadata ? "AddedOn" : "LastActivity")}={reference}; idle={now - reference}s; required={Math.Max(age, delay * 60L)}s", "Wait for the configured stalled grace; a negative delay disables stalled removal.");
         }
-        if (intent != TorrentRemovalIntent.SeedingLimit) return false;
-        var policy = GetEffectiveSeedingConfig(torrent, await GetTrackerConfigAsync(torrent, cancellationToken));
-        if (policy.RemoveTorrent is < 1 or > 4) return false;
-        if (torrent.Progress >= 1)
+        catch (OperationCanceledException) when (ct.IsCancellationRequested) { throw; }
+        catch (Exception ex) { Block("removal.inspection-failed", DiagnosticText.Error(ex), "Restore client/storage access and retry inspection; missing evidence cannot authorize deletion."); }
+        return new(blockers);
+    }
+
+    internal static string DescribeRemovalChanges(TorrentInfo expected, TorrentInfo current)
+    {
+        var fields = new (string Name, object? Before, object? After)[]
         {
-            return await MeetsSeedingRequirementsAsync(torrent.Hash, torrent.Category, torrent.ClientInstanceId, cancellationToken)
-                && RemovalLimitsMet(torrent, policy);
-        }
-        var metadata = torrent.State.Equals("metaDL", StringComparison.OrdinalIgnoreCase)
-            || torrent.State.Equals("forcedMetaDL", StringComparison.OrdinalIgnoreCase);
-        var reference = metadata ? torrent.AddedOn : torrent.LastActivity;
-        return delay >= 0 && reference > 0 && reference <= now
-            && now - reference >= Math.Max(age, delay * 60L);
+            ("AddedOn", expected.AddedOn, current.AddedOn), ("Category", expected.Category, current.Category),
+            ("State", expected.State, current.State), ("Progress", expected.Progress, current.Progress),
+            ("LastActivity", expected.LastActivity, current.LastActivity), ("SavePath", expected.SavePath, current.SavePath),
+            ("ContentPath", expected.ContentPath, current.ContentPath)
+        };
+        return string.Join("; ", fields.Where(f => !Equals(f.Before, f.After)).Select(f => $"{f.Name}: '{f.Before}' -> '{f.After}'"));
     }
 
     internal static bool SameRemovalCandidate(TorrentInfo expected, TorrentInfo current)

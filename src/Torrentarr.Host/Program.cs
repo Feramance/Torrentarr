@@ -90,6 +90,7 @@ var workerSink = new WorkerLogEventSink(logsPath);
 // Configure Serilog - write to .config/logs/ (same path as API reads from) with process metadata enrichment
 Log.Logger = new LoggerConfiguration()
     .MinimumLevel.ControlledBy(levelSwitch)
+    .MinimumLevel.Override("Microsoft.AspNetCore", LogEventLevel.Warning)
     .Enrich.WithProperty("ProcessType", "Host")
     .Enrich.WithProperty("ProcessId", Environment.ProcessId)
     .Enrich.WithProperty("MachineName", Environment.MachineName)
@@ -117,12 +118,6 @@ Log.Logger = new LoggerConfiguration()
         e.RenderMessage().Contains("Disposed connection to database") ||
         e.RenderMessage().Contains("DbContext") ||
         e.RenderMessage().Contains("was detected as changed") ||
-        e.RenderMessage().Contains("Executing endpoint") ||
-        e.RenderMessage().Contains("Executed endpoint") ||
-        e.RenderMessage().Contains("Request starting") ||
-        e.RenderMessage().Contains("Request finished") ||
-        e.RenderMessage().Contains("Writing value of type") ||
-        e.RenderMessage().Contains("is valid for the request") ||
         e.RenderMessage().Contains("A data reader") ||
         e.RenderMessage().Contains("Entity Framework Core") ||
         e.RenderMessage().Contains("queryContext.StartTracking") ||
@@ -400,6 +395,7 @@ try
 
     liveWeb.Attach(app, config);
     app.UseForwardedHeaders();
+    app.UseMiddleware<Torrentarr.Infrastructure.Logging.RequestDiagnosticsMiddleware>();
     app.UseRouting();
     app.Services.GetRequiredService<IConfigReloader>().ConfigReloaded += (_, args) =>
     {

@@ -156,6 +156,8 @@ export function maintenanceActionTitle(action: MaintenanceAction): string {
       return `Change category to “${action.arguments?.category ?? "configured category"}”`;
     case "QuarantineFile":
       return "Move file into recycling";
+    case "DeleteContent":
+      return "Permanently delete content and remove torrent entry (recycling disabled)";
     case "RecycleContent":
       return "Recycle files and remove torrent entry";
     case "RegisterRecycleEntry":

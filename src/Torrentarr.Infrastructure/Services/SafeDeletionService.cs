@@ -58,24 +58,22 @@ public sealed class SafeDeletionService : ISafeDeletionService
             ?? (await client.GetTorrentsAsync(cancellationToken: ct))
                 .FirstOrDefault(t => t.Hash.Equals(hash, StringComparison.OrdinalIgnoreCase));
         if (expected == null) return new(false, true, 0, "Torrent no longer exists in the client.");
-        if (!await ProtectionAllowsAsync(clientInstanceId, hash, ct, expected, intent: intent))
-            return new(false, true, 0, $"Final {intent} protection clearance rejected or changed (HnR, age, tags, torrent identity or configuration); torrent and content preserved.");
+        var clearance = await ProtectionDecisionAsync(clientInstanceId, hash, ct, expected, intent: intent);
+        if (!clearance.Allowed)
+            return new(false, true, 0, clearance.Reason);
 
         if (!removeContent)
             return await client.DeleteTorrentsAsync([hash], false, ct)
                 ? new(true, true, 0)
                 : new(false, true, 0, "Torrent client rejected removal.");
 
-        // Preserve legacy failed-torrent cleanup for installations that have no
-        // optional maintenance mappings, but only through the client's explicit
-        // content-deletion capability and with recycling disabled.
-        if (validatedInventory == null && _config.GetAllTorrentClients().Count == 1 && cfg.Maintenance.PathMappings.Count == 0 && !cfg.Maintenance.RecycleBin.Enabled)
+        if (!cfg.Maintenance.RecycleBin.Enabled)
         {
             if (!client.Capabilities.ContentDeletion)
-                return new(false, true, 0, "No path mapping is configured and the client cannot delete content safely.");
+                return new(false, true, 0, $"Client '{clientInstanceId}' does not support native content deletion. Recycling is disabled; no local files were touched.");
             return await client.DeleteTorrentsAsync([hash], true, ct)
                 ? new(true, false, 0)
-                : new(false, true, 0, "Torrent client rejected legacy content deletion.");
+                : new(false, true, 0, $"Client '{clientInstanceId}' rejected native deletion of torrent '{hash}' with deleteFiles=true. Recycling is disabled. Check the client's permissions and API logs.");
         }
 
         var inventory = validatedInventory ?? await _inventory.BuildAsync(ct: ct);
@@ -101,15 +99,13 @@ public sealed class SafeDeletionService : ISafeDeletionService
                 || !owner.Torrent.ClientInstanceId.Equals(clientInstanceId, StringComparison.OrdinalIgnoreCase)));
         if (shared)
         {
-            if (!await ProtectionAllowsAsync(clientInstanceId, hash, ct, expected, intent: intent)) return new(false, true, 0, "Removal clearance changed.");
+            var sharedClearance = await ProtectionDecisionAsync(clientInstanceId, hash, ct, expected, intent: intent);
+            if (!sharedClearance.Allowed) return new(false, true, 0, sharedClearance.Reason);
             var removed = await client.DeleteTorrentsAsync([hash], false, ct);
             return removed
                 ? new(true, true, 0)
                 : new(false, true, 0, "Torrent client rejected cross-seed-safe removal.");
         }
-
-        if (!cfg.Maintenance.RecycleBin.Enabled)
-            return new(false, true, 0, "Recycle-bin content removal is disabled; refusing destructive deletion.");
 
         long moved = 0;
         var movedPaths = new List<(string Source, string Destination)>();
@@ -120,8 +116,7 @@ public sealed class SafeDeletionService : ISafeDeletionService
         string? stateBeforeOwnedPause = null;
         try
         {
-            if (!await ProtectionAllowsAsync(clientInstanceId, hash, ct, expected, intent: intent))
-                throw new IOException("Removal clearance changed before pause.");
+            await RequireProtectionAsync(clientInstanceId, hash, ct, expected, intent: intent);
             var current = (await client.GetTorrentsAsync(cancellationToken: ct))
                 .FirstOrDefault(t => t.Hash.Equals(hash, StringComparison.OrdinalIgnoreCase))
                 ?? throw new IOException("Torrent no longer exists.");
@@ -141,8 +136,7 @@ public sealed class SafeDeletionService : ISafeDeletionService
                 stateBeforeOwnedPause = expected.State;
                 expected.State = current.State;
             }
-            if (!await ProtectionAllowsAsync(clientInstanceId, hash, ct, expected, stateBeforeOwnedPause, intent))
-                throw new IOException("Removal clearance changed before recycling.");
+            await RequireProtectionAsync(clientInstanceId, hash, ct, expected, stateBeforeOwnedPause, intent);
             foreach (var source in CollapseRoots(localFiles))
             {
                 var validation = ValidateSource(source, cfg);
@@ -159,8 +153,7 @@ public sealed class SafeDeletionService : ISafeDeletionService
                 RemoveEmptyParents(Path.GetDirectoryName(source), cfg);
             }
             ct.ThrowIfCancellationRequested();
-            if (!await ProtectionAllowsAsync(clientInstanceId, hash, ct, expected, stateBeforeOwnedPause, intent))
-                throw new IOException("Removal clearance changed before client removal.");
+            await RequireProtectionAsync(clientInstanceId, hash, ct, expected, stateBeforeOwnedPause, intent);
             removalAttempted = true;
             if (!await client.DeleteTorrentsAsync([hash], false, ct))
             {
@@ -205,36 +198,46 @@ public sealed class SafeDeletionService : ISafeDeletionService
         }
     }
 
-    private async Task<bool> ProtectionAllowsAsync(string instanceId, string hash, CancellationToken ct, TorrentInfo? expected = null,
+    private async Task RequireProtectionAsync(string instanceId, string hash, CancellationToken ct, TorrentInfo expected,
         string? stateBeforeOwnedPause = null, TorrentRemovalIntent intent = TorrentRemovalIntent.SeedingLimit)
     {
-        if (_scopes == null || _config.Revision != _config.LatestRevision || _config.GetTorrentClient(instanceId)?.Disabled != false) return false;
+        var decision = await ProtectionDecisionAsync(instanceId, hash, ct, expected, stateBeforeOwnedPause, intent);
+        if (!decision.Allowed) throw new IOException(decision.Reason);
+    }
+
+    private async Task<bool> ProtectionAllowsAsync(string instanceId, string hash, CancellationToken ct, TorrentInfo? expected = null,
+        string? stateBeforeOwnedPause = null, TorrentRemovalIntent intent = TorrentRemovalIntent.SeedingLimit)
+        => (await ProtectionDecisionAsync(instanceId, hash, ct, expected, stateBeforeOwnedPause, intent)).Allowed;
+
+    private async Task<RemovalDecision> ProtectionDecisionAsync(string instanceId, string hash, CancellationToken ct, TorrentInfo? expected = null,
+        string? stateBeforeOwnedPause = null, TorrentRemovalIntent intent = TorrentRemovalIntent.SeedingLimit)
+    {
+        RemovalDecision Block(string code, string reason, string next) => new([new(code, DiagnosticText.Safe(reason), next)]);
+        if (_scopes == null) return Block("removal.services-unavailable", "No service scope factory is registered for final protection checks", "Restore seeding/protection service registration.");
+        if (_config.Revision != _config.LatestRevision) return Block("config.pending", $"Applied revision={_config.Revision}; accepted={_config.LatestRevision}", "Wait for configuration activation.");
+        if (_config.GetTorrentClient(instanceId)?.Disabled != false) return Block("client.disabled", $"Client '{instanceId}' is disabled or unconfigured", "Enable/configure this client.");
         try
         {
             var client = _registry.GetClient(instanceId);
-            if (client == null) return false;
+            if (client == null) return Block("client.disconnected", $"Client '{instanceId}' has no active connection", "Reconnect the client.");
             using var scope = _scopes.CreateScope();
             var seeding = scope.ServiceProvider.GetRequiredService<ISeedingService>();
-            var current = (await client.GetTorrentsAsync(cancellationToken: ct))
-                .FirstOrDefault(t => t.Hash.Equals(hash, StringComparison.OrdinalIgnoreCase));
-            if (current == null || (expected != null && !SeedingService.SameRemovalCandidate(expected, current))) return false;
+            var current = (await client.GetTorrentsAsync(cancellationToken: ct)).FirstOrDefault(t => t.Hash.Equals(hash, StringComparison.OrdinalIgnoreCase));
+            if (current == null) return Block("torrent.missing", $"Torrent '{hash}' no longer exists on '{instanceId}'", "Refresh the torrent list; no deletion was sent.");
+            if (expected != null && !SeedingService.SameRemovalCandidate(expected, current))
+                return Block("torrent.changed", SeedingService.DescribeRemovalChanges(expected, current), "Wait for a fresh evaluation of the changed torrent.");
             current.ClientInstanceId = instanceId;
-            // An owned pause preserves validated stalled-idle evidence; all other fields and protection stay fresh.
-            if (stateBeforeOwnedPause != null
-                && (SeedingService.IsStalledUploadState(stateBeforeOwnedPause)
-                    || intent == TorrentRemovalIntent.StalledDownload))
+            if (stateBeforeOwnedPause != null && (SeedingService.IsStalledUploadState(stateBeforeOwnedPause) || intent == TorrentRemovalIntent.StalledDownload))
                 current.State = stateBeforeOwnedPause;
-            var cleared = intent == TorrentRemovalIntent.SeedingLimit
+            var decision = await seeding.EvaluateRemovalAsync(current, intent, ct);
+            if (decision != null) return decision;
+            var allowed = intent == TorrentRemovalIntent.SeedingLimit
                 ? await seeding.CanDeleteTorrentAsync(current, "final safe-removal boundary", ct)
                 : await seeding.CanDeleteTorrentForIntentAsync(current, intent, "final safe-removal boundary", ct);
-            if (!cleared) _logger.LogDebug("Protection rejected {Intent} deletion for {Hash} on {Client}", intent, hash, instanceId);
-            return cleared;
+            return allowed ? new([]) : Block("removal.evidence-unavailable", $"Protection service rejected {intent} but supplied no diagnostic decision", "Inspect the protection service implementation; deletion remains blocked.");
         }
-        catch (Exception ex) when (ex is not OperationCanceledException)
-        {
-            _logger.LogWarning(ex, "HnR clearance unavailable for {Hash} on {Client}; preserving torrent", hash, instanceId);
-            return false;
-        }
+        catch (OperationCanceledException) when (ct.IsCancellationRequested) { throw; }
+        catch (Exception ex) { return Block("removal.inspection-failed", DiagnosticText.Error(ex), "Restore protection/client access and retry inspection."); }
     }
 
     public async Task<bool> DeleteOwnedFileAsync(string instanceId, string hash, string path, CancellationToken ct = default)

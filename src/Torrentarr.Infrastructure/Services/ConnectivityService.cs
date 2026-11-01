@@ -27,6 +27,7 @@ public class ConnectivityService : IConnectivityService
     private readonly object _stateLock = new();
 
     public bool IsConnected => _isConnected;
+    public string? FailureReason { get; private set; }
     public DateTime? LastChecked
     {
         get
@@ -56,9 +57,10 @@ public class ConnectivityService : IConnectivityService
         _probeAsync = probe ?? ProbeHostAsync;
     }
 
-    private async Task SetStateAsync(bool connected, CancellationToken ct)
+    private async Task SetStateAsync(bool connected, CancellationToken ct, string? evidence = null)
     {
         _isConnected = connected;
+        FailureReason = connected ? null : DiagnosticText.Safe(evidence);
         lock (_stateLock)
         {
             _lastChecked = DateTime.UtcNow;
@@ -67,7 +69,7 @@ public class ConnectivityService : IConnectivityService
         if (_issues != null)
         {
             var issue = new OperationalIssueReport("network.internet", "system", "Internet connectivity is unavailable", "Internet-dependent work is delayed.", "Check the host network, DNS and configured connectivity hosts.");
-            if (connected) await _issues.ResolveAsync(issue, ct); else await _issues.ReportAsync(issue, ct);
+            if (connected) await _issues.ResolveAsync(issue, ct); else await _issues.ReportAsync(issue.WithEvidence(evidence ?? "Connectivity could not be established; no additional probe evidence was supplied."), ct);
         }
     }
 
@@ -102,7 +104,7 @@ public class ConnectivityService : IConnectivityService
                 _logger.LogTrace("Probe failed to {Host}", host);
             }
 
-            await SetStateAsync(false, cancellationToken);
+            await SetStateAsync(false, cancellationToken, $"qBittorrent version probes failed; HTTP/TCP probe targets: {string.Join(", ", failed.Select(DiagnosticText.Safe))}; no successful response.");
             _logger.LogWarning(
                 "No internet connectivity detected (qBittorrent unreachable; failed probes: {Hosts})",
                 failed.Count == 0 ? "(no PingURLS configured)" : string.Join(", ", failed));
@@ -111,7 +113,7 @@ public class ConnectivityService : IConnectivityService
         catch (Exception ex) when (ex is not OperationCanceledException)
         {
             _logger.LogError(ex, "Error checking internet connectivity");
-            await SetStateAsync(false, cancellationToken);
+            await SetStateAsync(false, cancellationToken, DiagnosticText.Error(ex));
             return false;
         }
     }

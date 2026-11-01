@@ -31,6 +31,25 @@ public class CorsConfigurationTests
         ConfigValidationHelper.ValidateAll(config).Ok.Should().Be(valid);
     }
 
+    [Theory]
+    [InlineData("", false)]
+    [InlineData("Enabled = false", false)]
+    [InlineData("Enabled = true", true)]
+    public void RecyclingIsOptInAndRoundTrips(string setting, bool enabled)
+    {
+        var path = Path.Combine(Path.GetTempPath(), Guid.NewGuid() + ".toml");
+        try
+        {
+            File.WriteAllText(path, "[qBit.Maintenance.RecycleBin]\n" + setting + "\n");
+            var loader = new ConfigurationLoader(path);
+            var config = loader.Load();
+            config.QBitInstances["qBit"].Maintenance.RecycleBin.Enabled.Should().Be(enabled);
+            loader.SaveConfig(config);
+            loader.Load().QBitInstances["qBit"].Maintenance.RecycleBin.Enabled.Should().Be(enabled);
+        }
+        finally { File.Delete(path); }
+    }
+
     [Fact]
     public void Origins_RoundTripAndClearingPersists()
     {

@@ -101,6 +101,7 @@ public static class TrackerProtectionEvaluator
                 if (result.CompletionRisk == "unknown-eta" && result.DeadlineRisk == "none") result.DeadlineRisk = "unknown-eta";
             }
         }
+        result.Reason += $" Policy={policy.Policy}; maximum downloaded={percent:F2}%; threshold={(inclusive ? ">=" : ">")}{threshold}%; partial={partial}; partial policy={partialPolicy}; ratio={torrent.Ratio:F3}, ratio clearance enabled={policy.AllowClientRatioClearance}, required ratio={(policy.Policy == "torrentleech-power" ? 1 : policy.MinimumRatio)}; observed seed={observation.SeedSeconds:F0}s, required={(required + policy.AdditionalSeedHours * 3600):F0}s; healthy tracker={healthy}; accounting grace={policy.AccountingGraceMinutes}min, eligible since={observation.EligibleSince:O}.";
         return result;
     }
 

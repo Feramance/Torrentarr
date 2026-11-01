@@ -22,7 +22,15 @@ const group = {
   affected: 2,
   occurrences: 3,
   examples: [
-    { id: 1, subjectType: "profile", subjectId: "42", resolvedAt: null },
+    {
+      id: 1,
+      subjectType: "profile",
+      subjectId: "42",
+      resolvedAt: null,
+      title: "Profile 42 failed",
+      impact: "Observed profile 7; expected profile 9",
+      remediation: "Restore profile 9 before searching",
+    },
   ],
 };
 const server = setupServer(
@@ -60,6 +68,12 @@ describe("Issues view", () => {
     expect(screen.getByText(/2 affected/)).toBeInTheDocument();
     await user.click(screen.getByText("Search skipped"));
     expect(screen.getByText("Check Arr profile mappings")).toBeVisible();
+    expect(
+      screen.getByText(/Observed profile 7; expected profile 9/),
+    ).toBeVisible();
+    expect(
+      screen.getByText(/Restore profile 9 before searching/),
+    ).toBeVisible();
     expect(screen.getByRole("button", { name: "Open config" })).toBeVisible();
     await user.click(screen.getByRole("tab", { name: "System & services" }));
     await screen.findByText("Worker timed out");
