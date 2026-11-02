@@ -22,8 +22,8 @@ public static class OperationalIssueEndpoints
         {
             foreach (var item in group)
             {
-                item.SubjectName = cache?.GetName(group.Key, item.SubjectId);
-                item.SubjectCategory = cache?.GetCategory(group.Key, item.SubjectId);
+                item.SubjectName = cache?.GetName(group.Key, item.SubjectId) is { } name ? DiagnosticText.Safe(name) : null;
+                item.SubjectCategory = cache?.GetCategory(group.Key, item.SubjectId) is { } category ? DiagnosticText.Safe(category) : null;
             }
             if (group.Any(i => i.SubjectName == null || i.SubjectCategory == null) && registry?.GetClient(group.Key) is { } client)
             {

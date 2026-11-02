@@ -45,7 +45,7 @@ public sealed class OperationalIssueEndpointTests
         using var factory = new TorrentarrWebApplicationFactory(); using var client = factory.CreateClientWithApiToken();
         var cache = factory.Services.GetRequiredService<ITorrentCacheService>();
         cache.SetName("qBit-General", "abc123", "A Returners Magic S02E04");
-        cache.SetCategory("qBit-General", "abc123", "sonarr-anime");
+        cache.SetCategory("qBit-General", "abc123", "sonarr-anime token=secret");
         cache.SetName("another-client", "abc123", "Wrong client torrent");
         await factory.Services.GetRequiredService<IOperationalIssueReporter>().ReportAsync(new(
             "import.ownership", "automation", "Import owner is unresolved", "Import skipped", "Check category ownership",
@@ -55,7 +55,7 @@ public sealed class OperationalIssueEndpointTests
         var example = group.GetProperty("examples")[0];
         example.GetProperty("subjectId").GetString().Should().Be("abc123");
         example.GetProperty("subjectName").GetString().Should().Be("A Returners Magic S02E04");
-        example.GetProperty("subjectCategory").GetString().Should().Be("sonarr-anime");
+        example.GetProperty("subjectCategory").GetString().Should().Be("sonarr-anime token=[redacted]");
         var details = await client.GetFromJsonAsync<JsonElement>(prefix + "/issues/" + group.GetProperty("id").GetInt64());
         details.GetProperty("items")[0].GetProperty("subjectName").GetString().Should().Be("A Returners Magic S02E04");
     }
