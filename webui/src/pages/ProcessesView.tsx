@@ -563,6 +563,17 @@ export function ProcessesView({ active }: ProcessesViewProps): JSX.Element {
         if (proc.pid != null) clientBucket.get(proc.name)!.push(proc);
         continue;
       }
+      if (
+        proc.kind.toLowerCase() === "category" &&
+        qbitCategories.some(
+          (cat) =>
+            cat.managedBy === "qbit" &&
+            cat.category === proc.category &&
+            proc.name === `qbit-${cat.category}` &&
+            clients.includes(cat.instance),
+        )
+      )
+        continue;
       const arr = arrs.find((arr) => arr.name === proc.name);
       if (!arr && /^(radarr|sonarr|lidarr|readarr)/i.test(proc.name)) continue;
       const app = arr ? formatKind(arr.type) : "Other";
@@ -603,7 +614,7 @@ export function ProcessesView({ active }: ProcessesViewProps): JSX.Element {
     });
 
     return result;
-  }, [processes, statusData]);
+  }, [processes, statusData, qbitCategories]);
 
   const cardsByApp = groupedProcesses.map(({ app, instances }) => {
     const cards = instances.map(({ name: instanceName, items }) => {

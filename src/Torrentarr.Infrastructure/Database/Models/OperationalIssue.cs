@@ -13,6 +13,8 @@ public sealed class OperationalIssue
     public string ClientInstance { get; set; } = "";
     public string SubjectType { get; set; } = "service";
     public string SubjectId { get; set; } = "";
+    [NotMapped] public string? SubjectName { get; set; }
+    [NotMapped] public string? SubjectCategory { get; set; }
     public string Severity { get; set; } = "error";
     public string Title { get; set; } = "";
     public string Impact { get; set; } = "";

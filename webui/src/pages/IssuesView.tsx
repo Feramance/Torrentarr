@@ -103,8 +103,12 @@ function IssueDetails({ group }: { group: OperationalIssueGroup }) {
         {items.map((item) => (
           <li key={item.id}>
             <strong>{item.subjectType}</strong>
-            {item.subjectId ? `: ${item.subjectId}` : ""} —{" "}
-            {item.resolvedAt ? item.resolution ?? "Recovered" : "Active"}
+            {item.subjectType === "torrent"
+              ? `: ${item.subjectName || "Name unavailable"} · Category: ${item.subjectCategory === "" ? "Uncategorized" : item.subjectCategory ?? "unavailable"}`
+              : item.subjectId
+                ? `: ${item.subjectId}`
+                : ""}{" "}
+            — {item.resolvedAt ? item.resolution ?? "Recovered" : "Active"}
             <p>
               <strong>What happened:</strong> {item.title}
             </p>

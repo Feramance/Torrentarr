@@ -1,10 +1,12 @@
 using System.Net;
+using Microsoft.AspNetCore.Hosting;
 using System.Net.Http.Json;
 using System.Text.Json;
 using FluentAssertions;
 using Microsoft.Extensions.DependencyInjection;
 using Torrentarr.Core.Services;
 using Xunit;
+using Moq;
 
 namespace Torrentarr.Host.Tests.Api;
 
@@ -33,6 +35,55 @@ public sealed class OperationalIssueEndpointTests
         (await client.GetAsync(prefix + "/issues?state=invalid")).StatusCode.Should().Be(HttpStatusCode.BadRequest);
         var summary = await client.GetFromJsonAsync<JsonElement>(prefix + "/issues/summary");
         summary.GetProperty("activeGroups").GetInt32().Should().Be(1);
+    }
+
+    [Theory]
+    [InlineData("/web")]
+    [InlineData("/api")]
+    public async Task TorrentSubjectsUseClientScopedNamesAndCategoriesWithoutChangingIdentity(string prefix)
+    {
+        using var factory = new TorrentarrWebApplicationFactory(); using var client = factory.CreateClientWithApiToken();
+        var cache = factory.Services.GetRequiredService<ITorrentCacheService>();
+        cache.SetName("qBit-General", "abc123", "A Returners Magic S02E04");
+        cache.SetCategory("qBit-General", "abc123", "sonarr-anime");
+        cache.SetName("another-client", "abc123", "Wrong client torrent");
+        await factory.Services.GetRequiredService<IOperationalIssueReporter>().ReportAsync(new(
+            "import.ownership", "automation", "Import owner is unresolved", "Import skipped", "Check category ownership",
+            ClientInstance: "qBit-General", SubjectType: "torrent", SubjectId: "abc123"));
+        var response = await client.GetFromJsonAsync<JsonElement>(prefix + "/issues");
+        var group = response.GetProperty("items")[0];
+        var example = group.GetProperty("examples")[0];
+        example.GetProperty("subjectId").GetString().Should().Be("abc123");
+        example.GetProperty("subjectName").GetString().Should().Be("A Returners Magic S02E04");
+        example.GetProperty("subjectCategory").GetString().Should().Be("sonarr-anime");
+        var details = await client.GetFromJsonAsync<JsonElement>(prefix + "/issues/" + group.GetProperty("id").GetInt64());
+        details.GetProperty("items")[0].GetProperty("subjectName").GetString().Should().Be("A Returners Magic S02E04");
+    }
+
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task TorrentMetadataLookupSupportsExistingIssuesAndUnavailableClients(bool fail)
+    {
+        var torrentClient = new Moq.Mock<Torrentarr.Core.Interfaces.ITorrentClient>();
+        if (fail) torrentClient.Setup(c => c.GetTorrentsAsync(null, null, Moq.It.IsAny<CancellationToken>())).ThrowsAsync(new HttpRequestException("unavailable"));
+        else torrentClient.Setup(c => c.GetTorrentsAsync(null, null, Moq.It.IsAny<CancellationToken>())).ReturnsAsync([
+            new Torrentarr.Core.Models.TorrentInfo { Hash = "abc123", Name = "Anime episode", Category = "autobrr" }]);
+        var registry = new Moq.Mock<Torrentarr.Core.Interfaces.ITorrentClientRegistry>();
+        registry.Setup(r => r.GetClient("qBit-General")).Returns(torrentClient.Object);
+        using var source = new TorrentarrWebApplicationFactory();
+        using var factory = source.WithWebHostBuilder(builder => builder.ConfigureServices(services =>
+            services.AddSingleton(registry.Object)));
+        using var client = factory.CreateClient();
+        await factory.Services.GetRequiredService<IOperationalIssueReporter>().ReportAsync(new(
+            "import.ownership", "automation", "Import owner is unresolved", "Import skipped", "Check category ownership",
+            ClientInstance: "qBit-General", SubjectType: "torrent", SubjectId: "abc123"));
+        var response = await client.GetFromJsonAsync<JsonElement>("/web/issues");
+        response.GetProperty("available").GetBoolean().Should().BeTrue();
+        var example = response.GetProperty("items")[0].GetProperty("examples")[0];
+        example.GetProperty("subjectName").GetString().Should().Be(fail ? null : "Anime episode");
+        example.GetProperty("subjectCategory").GetString().Should().Be(fail ? null : "autobrr");
+        torrentClient.Verify(c => c.GetTorrentsAsync(null, null, Moq.It.IsAny<CancellationToken>()), Moq.Times.Once);
     }
 
     [Fact]

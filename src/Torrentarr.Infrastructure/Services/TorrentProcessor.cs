@@ -306,7 +306,7 @@ public class TorrentProcessor : ITorrentProcessor
         {
             var owner = ResolveOwner(torrent);
             var ownershipIssue = new OperationalIssueReport("import.ownership", "automation", "Import owner is unresolved",
-                "Import was skipped to avoid sending this torrent to the wrong Arr service.",
+                DiagnosticText.Safe($"Import skipped for torrent \"{torrent.Name}\"; category=\"{torrent.Category}\"; client=\"{torrent.ClientInstanceId}\"; resolved Arr owner=\"{owner ?? "none"}\". No configured Arr service owns this category."),
                 "Check category ownership and subcategory settings.", ClientInstance: torrent.ClientInstanceId, SubjectType: "torrent", SubjectId: hash, Target: "config");
             if (owner == null || CategoryOwnershipHelper.FindArrSectionForCategory(_config, owner) == null)
             {

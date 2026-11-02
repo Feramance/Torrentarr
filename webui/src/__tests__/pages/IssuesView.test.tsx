@@ -81,6 +81,62 @@ describe("Issues view", () => {
       screen.getByRole("tab", { name: "System & services" }),
     ).toHaveAttribute("aria-selected", "true");
   });
+  it("shows torrent names and categories instead of hashes, including unavailable metadata", async () => {
+    server.use(
+      http.get("/web/issues", () =>
+        HttpResponse.json({
+          available: true,
+          total: 1,
+          page: 0,
+          pageSize: 50,
+          pending: [],
+          items: [
+            {
+              ...group,
+              title: "Import owner is unresolved",
+              examples: [
+                {
+                  ...group.examples[0],
+                  subjectType: "torrent",
+                  subjectId: "deadbeef",
+                  subjectName: "Anime S02E04",
+                  subjectCategory: "sonarr-anime",
+                },
+                {
+                  ...group.examples[0],
+                  id: 2,
+                  subjectType: "torrent",
+                  subjectId: "missinghash",
+                },
+                {
+                  ...group.examples[0],
+                  id: 3,
+                  subjectType: "torrent",
+                  subjectId: "uncategorizedhash",
+                  subjectName: "Movie",
+                  subjectCategory: "",
+                },
+              ],
+            },
+          ],
+        }),
+      ),
+    );
+    render(<IssuesView />);
+    await userEvent.click(
+      await screen.findByText("Import owner is unresolved"),
+    );
+    expect(
+      screen.getByText(/Anime S02E04 · Category: sonarr-anime/),
+    ).toBeVisible();
+    expect(
+      screen.getByText(/Name unavailable · Category: unavailable/),
+    ).toBeVisible();
+    expect(screen.getByText(/Movie · Category: Uncategorized/)).toBeVisible();
+    expect(
+      screen.queryByText(/deadbeef|missinghash|uncategorizedhash/),
+    ).not.toBeInTheDocument();
+  });
   it("does not claim healthy when history is unavailable", async () => {
     server.use(
       http.get("/web/issues", () =>

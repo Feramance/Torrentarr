@@ -966,7 +966,17 @@
           "severity": {
             "type": "string"
           },
+          "subjectCategory": {
+            "description": "Torrent category; empty means uncategorized, null means unavailable.",
+            "nullable": true,
+            "type": "string"
+          },
           "subjectId": {
+            "type": "string"
+          },
+          "subjectName": {
+            "description": "Torrent display name when client metadata is available.",
+            "nullable": true,
             "type": "string"
           },
           "subjectType": {
