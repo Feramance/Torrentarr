@@ -78,61 +78,19 @@ Torrentarr has multiple event loops with configurable timers:
 | **Refresh Downloads** | Update queue status | `RefreshDownloadsTimer` | 1min | 1-15min |
 | **Stalled Check** | Detect stalled torrents | `StalledDelay` | 15min | 10-60min |
 
-### Main Loop Timer
+### Torrent scan interval and database refresh
 
-**Controls:** How often Torrentarr checks torrents for completion and triggers imports.
+`TorrentScanIntervalSeconds` controls completion/import detection and routine torrent policy work for each client. Choose only 5, 15, 30, 60, 90, or 120 seconds; new clients default to 30. Faster scans issue more API requests. Slow operations and backoff can extend the actual interval.
 
 ```toml
+[TorrentClient.local]
+TorrentScanIntervalSeconds = 30
+
 [Settings]
-LoopSleepTimer = 5  # Seconds between checks
+LoopSleepTimer = 3600  # Periodic Arr catalog refresh into SQLite
 ```
 
-**Tuning Guidance:**
-
-| Library Size | Torrent Count | Recommended Timer |
-|--------------|---------------|-------------------|
-| < 1,000 items | < 50 torrents | 5s (default) |
-| 1,000-10,000 items | 50-200 torrents | 10-15s |
-| > 10,000 items | 200-500 torrents | 30-60s |
-| > 50,000 items | > 500 torrents | 60s+ |
-
-**Impact:**
-
-- **Lower values** (faster loops):
-  - ✅ Faster imports (detects completion sooner)
-  - ❌ Higher CPU usage
-  - ❌ More API requests to qBittorrent
-
-- **Higher values** (slower loops):
-  - ✅ Lower CPU usage
-  - ✅ Fewer API requests
-  - ❌ Slower import detection (up to `LoopSleepTimer` delay)
-
-**Example Configurations:**
-
-=== "Fast (Responsive)"
-    ```toml
-    [Settings]
-    LoopSleepTimer = 5  # Check every 5 seconds
-```
-
-    **Use when:** Small library, few torrents, powerful hardware
-
-=== "Balanced"
-    ```toml
-    [Settings]
-    LoopSleepTimer = 15  # Check every 15 seconds
-```
-
-    **Use when:** Medium library, moderate torrent count
-
-=== "Slow (Low Resource)"
-    ```toml
-    [Settings]
-    LoopSleepTimer = 60  # Check every minute
-```
-
-    **Use when:** Large library, many torrents, limited CPU/memory
+`LoopSleepTimer` affects catalog refresh cost and catalog freshness independently of torrent response time. Operational writes remain immediate. On migration, missing client scan intervals use the closest allowed interval to the saved legacy timer, capped at 120 seconds.
 
 ### Search Loop Delay
 
@@ -465,7 +423,7 @@ If database exceeds 500 MB, consider:
 
 ```toml
 [Settings]
-LoopSleepTimer = 30  # Slower main loop
+LoopSleepTimer = 30  # Less frequent catalog refreshes
 SearchLoopDelay = 60  # Increase delay between searches
 
 [Radarr-Movies]
@@ -501,7 +459,7 @@ LiveArr = false
 
 ```toml
 [Settings]
-LoopSleepTimer = 60  # Check torrents once per minute
+LoopSleepTimer = 60  # Refresh the Arr catalog once per minute
 NoInternetSleepTimer = 300  # Longer delay on connection issues
 ```
 
@@ -712,7 +670,7 @@ Expected improvements:
 
 ```toml
 [Settings]
-LoopSleepTimer = 60  # Very slow loops
+LoopSleepTimer = 60  # Less frequent catalog refreshes
 SearchLoopDelay = 120  # Long delay between searches
 LogLevel = "INFO"  # Minimal logging
 FFprobeAutoUpdate = false  # Skip verification

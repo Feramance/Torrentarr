@@ -5,6 +5,11 @@ across clients sharing the same local filesystem, using the largest configured
 reserve for that filesystem. Downloads are considered oldest first. Completed seeders
 are preserved; low space does not authorize deleting protected content.
 
+Checks follow the fastest client scan interval on each shared filesystem. Allowed
+client intervals are 5, 15, 30, 60, 90, or 120 seconds; new clients default to 30.
+Independent filesystems retain their own deadlines. `Settings.LoopSleepTimer`
+controls Arr catalog refreshes into SQLite, independently of space protection.
+
 ## Configuration
 
 Use **Config → client → Download location**, **Path mappings**, and **Free-space
@@ -17,6 +22,7 @@ Type = 'qbittorrent'
 Host = 'localhost'
 Port = 8080
 DownloadPath = '/downloads'
+TorrentScanIntervalSeconds = 30
 
 [[TorrentClient.seedbox.Maintenance.PathMappings]]
 ClientPath = '/downloads'

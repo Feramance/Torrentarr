@@ -282,16 +282,17 @@ public class LidarrClient
         var response = await ArrClientResponse.ExecuteAsync(_client, request, ct);
         ArrClientResponse.EnsureSuccess(response, "GET /api/v1/track");
 
-        if (string.IsNullOrEmpty(response.Content))
-            return new List<Track>();
+        if (string.IsNullOrWhiteSpace(response.Content))
+            throw new IOException("Arr returned no track inventory.");
 
-        return JsonConvert.DeserializeObject<List<Track>>(response.Content) ?? new List<Track>();
+        return JsonConvert.DeserializeObject<List<Track>>(response.Content)
+            ?? throw new IOException("Arr returned an invalid track inventory.");
     }
 
     /// <summary>
     /// Delete item from queue
     /// </summary>
-    public async Task<bool> DeleteFromQueueAsync(int id, bool removeFromClient = true, bool blocklist = false, CancellationToken ct = default, bool skipRedownload = false)
+    public async Task<bool> DeleteFromQueueAsync(int id, bool removeFromClient = true, bool blocklist = false, CancellationToken ct = default, bool skipRedownload = false, bool throwOnFailure = false)
     {
         var request = new RestRequest($"/api/v1/queue/{id}", Method.Delete);
         AddApiKeyHeader(request);
@@ -301,6 +302,7 @@ public class LidarrClient
         request.AddQueryParameter("skipRedownload", skipRedownload.ToString().ToLowerInvariant());
 
         var response = await ArrClientResponse.ExecuteAsync(_client, request, ct);
+        if (throwOnFailure) ArrClientResponse.EnsureSuccess(response, $"DELETE queue/{id} (blocklist={blocklist})");
         return response.IsSuccessful;
     }
 

@@ -104,7 +104,7 @@ function IssueDetails({ group }: { group: OperationalIssueGroup }) {
           <li key={item.id}>
             <strong>{item.subjectType}</strong>
             {item.subjectType === "torrent"
-              ? `: ${item.subjectName || "Name unavailable"} · Category: ${item.subjectCategory === "" ? "Uncategorized" : item.subjectCategory ?? "unavailable"}`
+              ? `: ${item.subjectName || item.subjectId || "Name unavailable"} · Category: ${item.subjectCategory === "" ? "Uncategorized" : item.subjectCategory ?? "unavailable"}`
               : item.subjectId
                 ? `: ${item.subjectId}`
                 : ""}{" "}

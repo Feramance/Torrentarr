@@ -26,6 +26,23 @@ function check(
 }
 
 describe("configuration groups", () => {
+  it("uses numeric scan dropdown values and a separate database refresh field", () => {
+    const scan = getClientFields().find(
+      (field) => field.path?.join(".") === "TorrentScanIntervalSeconds",
+    )!;
+    expect(scan.type).toBe("select");
+    expect(scan.default).toBe(30);
+    expect(scan.options).toEqual(["5", "15", "30", "60", "90", "120"]);
+    expect(scan.parse?.("120")).toBe(120);
+    expect(scan.validate?.(10, { root: {} })).toContain("must be");
+    expect(scan.validate?.(30, { root: {} })).toBeUndefined();
+    expect(
+      SETTINGS_FIELDS.find(
+        (field) => field.path?.join(".") === "Settings.LoopSleepTimer",
+      )?.label,
+    ).toBe("Database refresh interval");
+  });
+
   it("renders every field exactly once and keeps connection fields together", () => {
     const fields = getClientFields();
     const groups = clientGroups(fields);

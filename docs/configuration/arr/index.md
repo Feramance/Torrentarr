@@ -336,6 +336,20 @@ SearchByYear = true  # Prioritize newest content
 SearchInReverse = false  # Start from newest to oldest
 ```
 
+`SearchRequestsEvery` controls the interval between scheduled search passes in seconds,
+independently of torrent processing. A nonpositive `SearchRequestsEvery` keeps
+searching eligible on each configured catalog tick. `Settings.LoopSleepTimer` controls torrent
+processing and catalog refreshes; searches reuse the database between refreshes.
+`Settings.SearchLoopDelay` spaces individual submissions, and `SearchLimit` caps
+active search commands. A full command queue is checked again every 30 seconds
+within the worker's cycle budget. Deferred searches retain their progress.
+Configuration changes wake the worker and refresh its catalog.
+
+Automatic missing-episode searches wait for a known air date that has elapsed.
+Undated episodes remain visible in the catalog, and explicit replacement retries
+retain their existing eligibility checks. Upgrade searches can run with
+`SearchMissing = false` when an upgrade mode is enabled.
+
 **Optimization tips:**
 - **Large libraries** - Increase `SearchRequestsEvery` to reduce API load
 - **New content priority** - Enable `SearchByYear` and disable `SearchInReverse`

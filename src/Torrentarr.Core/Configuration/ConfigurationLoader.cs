@@ -14,7 +14,7 @@ internal sealed class TorrentClientConfigDocument
 public class ConfigurationLoader
 {
     /// <summary>Expected config schema version (qBitrr parity). Used for validation and mismatch warning.</summary>
-    public const string ExpectedConfigVersion = "6.20.2";
+    public const string ExpectedConfigVersion = "6.20.3";
 
     /// <summary>
     /// TEST USE ONLY. When set by test fixtures, GetDefaultConfigPath() returns this instead of env/defaults.
@@ -117,7 +117,8 @@ public class ConfigurationLoader
         foreach (var (key, value) in storageEnvironment) runtimeStorage[key] = value;
 
         // Apply config migrations on the raw TOML table before parsing (qBitrr parity)
-        var migrated = ApplyConfigMigrations(tomlTable);
+        var scanMigrated = TorrentScanInterval.Migrate(tomlTable);
+        var migrated = ApplyConfigMigrations(tomlTable) || scanMigrated;
         if (migrated && persistMigrations)
         {
             try
@@ -197,7 +198,7 @@ public class ConfigurationLoader
         ApplyEnvironmentOverrides(config);
         foreach (var (id, client) in config.GetAllTorrentClients())
         {
-            var error = StorageConfigMigration.Validate(client) ?? MaintenanceConfigValidation.Validate(client.Maintenance) ?? StorageConfigurationValidation.Validate(client);
+            var error = TorrentScanInterval.Validate(client.TorrentScanIntervalSeconds) ?? StorageConfigMigration.Validate(client) ?? MaintenanceConfigValidation.Validate(client.Maintenance) ?? StorageConfigurationValidation.Validate(client);
             if (error != null) throw new InvalidDataException($"Torrent client '{id}': {error}");
         }
 
@@ -1242,6 +1243,8 @@ public class ConfigurationLoader
     private QBitConfig ParseQBit(TomlTable table)
     {
         var qbit = new QBitConfig();
+        if (table.TryGetValue("TorrentScanIntervalSeconds", out var scanInterval))
+            qbit.TorrentScanIntervalSeconds = Convert.ToInt32(scanInterval);
 
         if (table.TryGetValue("Disabled", out var disabled))
             qbit.Disabled = Convert.ToBoolean(disabled);
@@ -2141,6 +2144,7 @@ public class ConfigurationLoader
             sb.AppendLine($"UserName = \"{qbit.UserName}\"");
             sb.AppendLine($"Password = \"{qbit.Password}\"");
             sb.AppendLine($"SkipTLSVerify = {qbit.SkipTLSVerify.ToString().ToLower()}");
+            sb.AppendLine($"TorrentScanIntervalSeconds = {qbit.TorrentScanIntervalSeconds}");
             if (!string.IsNullOrEmpty(qbit.DownloadPath))
                 sb.AppendLine($"DownloadPath = \"{EscapeTomlString(qbit.DownloadPath)}\"");
             sb.AppendLine("FreeSpace = [" + string.Join(", ", qbit.FreeSpace.Select(m =>
@@ -2277,10 +2281,8 @@ public class ConfigurationLoader
             sb.AppendLine($"SearchAgainOnSearchCompletion = {instance.Search.SearchAgainOnSearchCompletion.ToString().ToLower()}");
             sb.AppendLine($"UseTempForMissing = {instance.Search.UseTempForMissing.ToString().ToLower()}");
             sb.AppendLine($"KeepTempProfile = {instance.Search.KeepTempProfile.ToString().ToLower()}");
-            if (instance.Search.QualityProfileMappings.Count > 0)
-            {
-                sb.AppendLine($"QualityProfileMappings = {{{string.Join(", ", instance.Search.QualityProfileMappings.Select(m => $"\"{m.Key}\" = \"{m.Value}\""))}}}");
-            }
+            // Keep empty mappings so startup does not migrate again and replace the original backup.
+            sb.AppendLine($"QualityProfileMappings = {{{string.Join(", ", instance.Search.QualityProfileMappings.Select(m => $"\"{m.Key}\" = \"{m.Value}\""))}}}");
             sb.AppendLine($"ForceResetTempProfiles = {instance.Search.ForceResetTempProfiles.ToString().ToLower()}");
             sb.AppendLine($"TempProfileResetTimeoutMinutes = {instance.Search.TempProfileResetTimeoutMinutes}");
             sb.AppendLine($"ProfileSwitchRetryAttempts = {instance.Search.ProfileSwitchRetryAttempts}");

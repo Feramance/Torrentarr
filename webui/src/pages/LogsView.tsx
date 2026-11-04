@@ -785,9 +785,21 @@ export function LogsView({ active }: LogsViewProps): JSX.Element {
           <span>{selected || "No file"}</span>
           <span>·</span>
           <span>
-            {lines.length.toLocaleString()} lines
+            {lines.length.toLocaleString()} loaded lines
             {levelFilters.size > 0 ? " (filtered)" : ""}
           </span>
+          {hasMoreAbove && (
+            <span>
+              · Earlier entries are on disk. Load older entries or download the
+              complete file.
+            </span>
+          )}
+          {lines.length >= RING_BUFFER_MAX_LINES && (
+            <span>
+              · Viewer limited to {RING_BUFFER_MAX_LINES.toLocaleString()}{" "}
+              lines; the complete file is retained on disk.
+            </span>
+          )}
         </div>
 
         <div

@@ -81,7 +81,7 @@ describe("Issues view", () => {
       screen.getByRole("tab", { name: "System & services" }),
     ).toHaveAttribute("aria-selected", "true");
   });
-  it("shows torrent names and categories instead of hashes, including unavailable metadata", async () => {
+  it("shows torrent names and categories with hash fallback for unavailable metadata", async () => {
     server.use(
       http.get("/web/issues", () =>
         HttpResponse.json({
@@ -130,11 +130,11 @@ describe("Issues view", () => {
       screen.getByText(/Anime S02E04 · Category: sonarr-anime/),
     ).toBeVisible();
     expect(
-      screen.getByText(/Name unavailable · Category: unavailable/),
+      screen.getByText(/missinghash · Category: unavailable/),
     ).toBeVisible();
     expect(screen.getByText(/Movie · Category: Uncategorized/)).toBeVisible();
     expect(
-      screen.queryByText(/deadbeef|missinghash|uncategorizedhash/),
+      screen.queryByText(/deadbeef|uncategorizedhash/),
     ).not.toBeInTheDocument();
   });
   it("does not claim healthy when history is unavailable", async () => {

@@ -86,6 +86,42 @@ public sealed class OperationalIssueEndpointTests
         torrentClient.Verify(c => c.GetTorrentsAsync(null, null, Moq.It.IsAny<CancellationToken>()), Moq.Times.Once);
     }
 
+    [Theory]
+    [InlineData(0)]
+    [InlineData(1)]
+    [InlineData(2)]
+    public async Task ArrOnlyIssues_UseOnlyUnambiguousLibraryAssociation(int matches)
+    {
+        using var factory = new TorrentarrWebApplicationFactory();
+        using var client = factory.CreateClient();
+        var config = factory.Services.GetRequiredService<Torrentarr.Core.Configuration.TorrentarrConfig>();
+        config.ArrInstances["Sonarr-Anime"] = new() { Category = "sonarr-anime" };
+        using (var scope = factory.Services.CreateScope())
+        {
+            var db = scope.ServiceProvider.GetRequiredService<Torrentarr.Infrastructure.Database.TorrentarrDbContext>();
+            for (var n = 0; n < matches; n++)
+                db.TorrentLibrary.Add(new() { Hash = "abc123", ArrInstance = "Sonarr-Anime", QbitInstance = "client-" + n });
+            // Same hash belonging to another Arr must not affect the match.
+            db.TorrentLibrary.Add(new() { Hash = "abc123", ArrInstance = "Other-Arr", QbitInstance = "wrong" });
+            await db.SaveChangesAsync();
+        }
+        var cache = factory.Services.GetRequiredService<ITorrentCacheService>();
+        cache.SetName("client-0", "ABC123", "Anime episode");
+        cache.SetCategory("client-0", "ABC123", "sonarr-anime/season");
+        await factory.Services.GetRequiredService<IOperationalIssueReporter>().ReportAsync(new(
+            "import.replacement", "automation", "Replacement failed", "Retrying", "Check logs",
+            ArrInstance: "Sonarr-Anime", SubjectType: "torrent", SubjectId: "ABC123"));
+        var response = await client.GetFromJsonAsync<JsonElement>("/web/issues");
+        var group = response.GetProperty("items")[0];
+        var example = group.GetProperty("examples")[0];
+        example.GetProperty("subjectName").GetString().Should().Be(matches == 1 ? "Anime episode" : null);
+        example.GetProperty("subjectCategory").GetString().Should().Be(matches == 1 ? "sonarr-anime/season" : "sonarr-anime");
+        example.GetProperty("clientInstance").GetString().Should().BeEmpty();
+        var history = await client.GetFromJsonAsync<JsonElement>("/web/issues/" + group.GetProperty("id").GetInt64());
+        history.GetProperty("items")[0].GetProperty("subjectName").GetString().Should().Be(matches == 1 ? "Anime episode" : null);
+        history.GetProperty("items")[0].GetProperty("subjectCategory").GetString().Should().Be(matches == 1 ? "sonarr-anime/season" : "sonarr-anime");
+    }
+
     [Fact]
     public async Task DatabaseOutageReturnsUnavailableAndPendingReports_NotHealthyEmptyHistory()
     {

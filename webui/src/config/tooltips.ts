@@ -11,7 +11,7 @@ export const FIELD_TOOLTIPS: Record<string, string> = {
   "Settings.NoInternetSleepTimer":
     "Delay, in seconds, before retrying when no internet connectivity is detected.",
   "Settings.LoopSleepTimer":
-    "Delay, in seconds, between processing passes when monitoring torrents.",
+    "Interval in seconds between Arr catalog refreshes into SQLite. Torrent scans use each client’s scan interval.",
   "Settings.SearchLoopDelay":
     "Delay, in seconds, between media search requests.",
   "Settings.FailedCategory": "Category that marks torrents as failed.",

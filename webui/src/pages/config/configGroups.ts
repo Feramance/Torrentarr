@@ -51,7 +51,10 @@ export function clientGroups(fields: FieldDefinition[]): ConfigFieldGroup[] {
   return groupFields(fields, [
     ["General", ["__name", "Type", "Disabled"]],
     ["Connection", ["Host", "Port", "UserName", "Password", "SkipTLSVerify"]],
-    ["Torrent scope", ["ManagedCategories", "MatchSubcategories"]],
+    [
+      "Torrent scope",
+      ["TorrentScanIntervalSeconds", "ManagedCategories", "MatchSubcategories"],
+    ],
     ["Download location", ["DownloadPath"]],
     ["Free-space monitors", ["FreeSpace"]],
     ["Seeding and Hit & Run", ["CategorySeeding.*"]],

@@ -37,6 +37,8 @@ TrustedProxyConfiguration.Configure(builder.Services);
 // Configure Serilog - write to .config/logs/ with process metadata enrichment
 Log.Logger = new LoggerConfiguration()
     .MinimumLevel.ControlledBy(levelSwitch)
+    .MinimumLevel.Override("Microsoft.EntityFrameworkCore", LogEventLevel.Warning)
+    .Enrich.FromLogContext()
     .MinimumLevel.Override("Microsoft.AspNetCore", LogEventLevel.Warning)
     .Enrich.WithProperty("ProcessType", "WebUI")
     .Enrich.WithProperty("ProcessId", Environment.ProcessId)
@@ -162,6 +164,7 @@ builder.Services.AddHostedService(sp => sp.GetRequiredService<OperationalIssueRe
 builder.Services.AddHostedService<OperationalIssueMonitor>();
 builder.Services.AddSingleton<ITorrentClientFactory, QBittorrentTorrentClientFactory>();
 builder.Services.AddSingleton<QBittorrentConnectionManager>();
+builder.Services.AddHostedService(sp => sp.GetRequiredService<QBittorrentConnectionManager>());
 builder.Services.AddSingleton<ITorrentClientRegistry>(sp => sp.GetRequiredService<QBittorrentConnectionManager>());
 builder.Services.AddSingleton<IPathMappingService, PathMappingService>();
 builder.Services.AddSingleton<ITorrentInventoryService, TorrentInventoryService>();
@@ -533,16 +536,7 @@ app.MapGet("/web/auth/oidc/challenge", async (HttpContext ctx, TorrentarrConfig 
 
 app.MapPost("/web/loglevel", (LogLevelRequest req, LoggingLevelSwitch ls) =>
 {
-    var newLevel = req.Level?.ToUpperInvariant() switch
-    {
-        "TRACE" or "VERBOSE" => LogEventLevel.Verbose,
-        "DEBUG" => LogEventLevel.Debug,
-        "INFORMATION" or "INFO" => LogEventLevel.Information,
-        "WARNING" or "WARN" => LogEventLevel.Warning,
-        "ERROR" => LogEventLevel.Error,
-        "CRITICAL" or "FATAL" => LogEventLevel.Fatal,
-        _ => LogEventLevel.Information
-    };
+    var newLevel = LiveConfigurationRuntime.ParseLevel(req.Level);
 
     ls.MinimumLevel = newLevel;
     Log.Information("Log level changed to {Level}", req.Level);

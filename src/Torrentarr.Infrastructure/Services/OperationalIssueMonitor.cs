@@ -48,7 +48,9 @@ public sealed class OperationalIssueMonitor(IServiceScopeFactory scopes, IOperat
                 {
                     if (clients.GetClient(id) is { } client)
                     {
-                        var version = await client.GetVersionAsync(ct);
+                        using var timeout = CancellationTokenSource.CreateLinkedTokenSource(ct);
+                        timeout.CancelAfter(TimeSpan.FromSeconds(5));
+                        var version = await client.GetVersionAsync(timeout.Token);
                         reachable = !string.IsNullOrWhiteSpace(version);
                         evidence = reachable ? $"Version probe succeeded: {version}" : "Version probe returned an empty response.";
                     }
@@ -60,8 +62,7 @@ public sealed class OperationalIssueMonitor(IServiceScopeFactory scopes, IOperat
         if (services.GetService<WorkerProcessSupervisor>() is { } workers)
             foreach (var (id, state) in await workers.GetProcessStatusAsync())
             {
-                // A running PID alone is not evidence of recovered worker progress.
-                var healthy = state.IsAlive && state.LastHeartbeat.HasValue && state.Torrent?.LastSuccess != null && state.Search?.LastSuccess != null;
+                var healthy = HasHealthyProgress(state, DateTimeOffset.UtcNow);
                 var issue = new OperationalIssueReport("worker.lifecycle", "system", "Worker is not making healthy progress", $"Worker={id}; PID={state.ProcessId}; alive={state.IsAlive}; status={state.Status}; last exit={state.LastExitCode}; last failure={state.LastFailure ?? "none recorded"}; restarts={state.RestartCount}; started={state.StartTime:O}; heartbeat={state.LastHeartbeat:O}; config revision={state.ConfigRevision}. Torrent loop={state.Torrent?.Phase ?? "unavailable"}, last success={state.Torrent?.LastSuccess:O}; search loop={state.Search?.Phase ?? "unavailable"}, last success={state.Search?.LastSuccess:O}.", "Check worker logs and connection settings; restart after correcting the cause.", ArrInstance: id, Target: "processes");
                 if (!state.IsAlive) await issues.ReportAsync(issue, ct); else if (healthy) await issues.ResolveAsync(issue, ct);
             }
@@ -110,7 +111,10 @@ public sealed class OperationalIssueMonitor(IServiceScopeFactory scopes, IOperat
                         : "The selected maintenance run completed without failed actions.",
                     "Open Manage → Recent runs and expand the failed run to inspect each action, client and error before retrying.",
                     SubjectType: "maintenance", SubjectId: latest.Scope, Target: "maintenance");
-                if (latest.Run.Result == "success" || latest.Run.Failed > 0)
+                var historyDb = services.GetService<TorrentarrDbContext>();
+                var alreadyObserved = historyDb != null && await historyDb.OperationalIssues.AsNoTracking().AnyAsync(i =>
+                    i.Code == "maintenance.run" && i.SubjectType == "maintenance" && i.SubjectId == latest.Scope && i.LastObserved >= completedAt.UtcDateTime, ct);
+                if (!alreadyObserved && (latest.Run.Result == "success" || latest.Run.Failed > 0))
                     await Observe(issue, latest.Run.Failed > 0, ct);
                 // A verified successful run can also close records written by the former per-client reporter.
                 if (latest.Run.Result == "success")
@@ -125,4 +129,11 @@ public sealed class OperationalIssueMonitor(IServiceScopeFactory scopes, IOperat
 
     private Task Observe(OperationalIssueReport issue, bool failed, CancellationToken ct)
         => failed ? issues.ReportAsync(issue, ct) : issues.ResolveAsync(issue, ct);
+
+    internal static bool HasHealthyProgress(ProcessStatus state, DateTimeOffset now)
+        => state.IsAlive && state.LastHeartbeat is { } heartbeat && now - heartbeat < TimeSpan.FromSeconds(15)
+            && Healthy(state.Torrent, now) && Healthy(state.Search, now);
+
+    private static bool Healthy(Torrentarr.Core.Models.WorkerLoopProgress? loop, DateTimeOffset now)
+        => loop != null && !loop.IsStalled(now) && loop.Phase is "Running" or "Sleeping" or "Disabled";
 }

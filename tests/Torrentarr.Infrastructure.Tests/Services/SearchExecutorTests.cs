@@ -37,7 +37,7 @@ public class SearchExecutorTests
 
     private static TestSearchExecutor CreateTestService(
         TorrentarrConfig? config = null,
-        TorrentarrDbContext? dbContext = null, SearchSubmissionTiming? timing = null)
+        TorrentarrDbContext? dbContext = null, SearchSubmissionTiming? timing = null, ILogger<SearchExecutor>? logger = null)
     {
         var options = new DbContextOptionsBuilder<TorrentarrDbContext>()
             .UseInMemoryDatabase(Guid.NewGuid().ToString())
@@ -51,11 +51,35 @@ public class SearchExecutorTests
             new DatabaseRestartCoordinator());
 
         return new TestSearchExecutor(
-            NullLogger<SearchExecutor>.Instance,
+            logger ?? NullLogger<SearchExecutor>.Instance,
             cfg,
             db,
             switcher,
             new DatabaseRestartCoordinator(), timing);
+    }
+
+    [Theory]
+    [InlineData(true)]
+    [InlineData(false)]
+    public async Task SearchSubmission_LogsAttemptAndActualOutcomeAtInformation(bool accepted)
+    {
+        var logger = new ActivityLogger<SearchExecutor>();
+        var service = CreateTestService(CreateConfigWithRadarr(), logger: logger);
+        service.TriggerAccepted = accepted;
+        var result = await service.ExecuteSearchesAsync("Radarr-test", [new() { ArrId = 1, Title = "Example", Type = "Movie", Reason = "Missing" }]);
+        logger.Messages.Should().Contain(m => m.Contains("Searching for:") && m.Contains("Example"));
+        logger.Messages.Should().Contain(m => m.Contains(accepted ? "Search accepted" : "search not triggered"));
+        if (!accepted) logger.Messages.Should().NotContain(m => m.Contains("Search accepted"));
+        result.SearchesTriggered.Should().Be(accepted ? 1 : 0);
+    }
+
+    [Fact]
+    public async Task EmptySearch_ExplainsWhyNothingWasSubmittedAtInformation()
+    {
+        var logger = new ActivityLogger<SearchExecutor>();
+        var service = CreateTestService(CreateConfigWithRadarr(), logger: logger);
+        await service.ExecuteSearchesAsync("Radarr-test", []);
+        logger.Messages.Should().Contain(m => m.Contains("no candidates") && m.Contains("Radarr-test"));
     }
 
     private static TorrentarrConfig CreateConfigWithRadarr(int searchLoopDelay = 30, int searchLimit = 5)
@@ -131,7 +155,7 @@ public class SearchExecutorTests
         using var stop = new CancellationTokenSource();
         try
         {
-            var waiting = service.ExecuteSearchesAsync("Radarr-test", [new() { ArrId = 1 }], stop.Token);
+            var waiting = service.ExecuteSearchesAsync("Radarr-test", [new() { ArrId = 1 }], DateTimeOffset.UtcNow.AddMinutes(10), stop.Token);
             waiting.IsCompleted.Should().BeFalse();
             stop.Cancel();
             await FluentActions.Awaiting(() => waiting).Should().ThrowAsync<OperationCanceledException>();
@@ -187,6 +211,142 @@ public class SearchExecutorTests
         using var stop = new CancellationTokenSource(); stop.Cancel();
         await FluentActions.Awaiting(() => service.ExecuteSearchesAsync("Radarr-test", [new() { ArrId = 1 }],
             DateTimeOffset.UtcNow.AddMinutes(2), stop.Token)).Should().ThrowAsync<OperationCanceledException>();
+    }
+
+    [Fact]
+    public async Task Deadline_WaitsForCapacityWithoutDiscardingSubmissionSpacing()
+    {
+        var service = CreateTestService(CreateConfigWithRadarr(searchLoopDelay: 300, searchLimit: 1));
+        var clock = new ManualClock();
+        service.Clock = clock;
+        service.OnCapacityRead = () => service.ActiveCommandCount = clock.Now < DateTimeOffset.UnixEpoch.AddMinutes(1) ? 1 : 0;
+        var result = await service.ExecuteSearchesAsync("Radarr-test", [new() { ArrId = 1 }, new() { ArrId = 2 }], clock.Now.AddMinutes(10), default);
+        result.SearchesTriggered.Should().Be(2);
+        result.LoopCompleted.Should().BeTrue();
+        clock.Delays.Should().Equal(TimeSpan.FromSeconds(30), TimeSpan.FromSeconds(30), TimeSpan.FromMinutes(5));
+    }
+
+    [Fact]
+    public async Task Deadline_PermanentlyFullCapacityYieldsWithoutSearching()
+    {
+        var service = CreateTestService(CreateConfigWithRadarr(searchLimit: 1));
+        var clock = new ManualClock(); service.Clock = clock;
+        service.ActiveCommandCount = 1;
+        var result = await service.ExecuteSearchesAsync("Radarr-test", [new() { ArrId = 1 }], clock.Now.AddMinutes(2), default);
+        result.BudgetExhausted.Should().BeTrue();
+        result.LoopCompleted.Should().BeFalse();
+        result.Errors.Should().BeEmpty();
+        service.TriggeredCandidates.Should().BeEmpty();
+        clock.Delays.Should().Equal(TimeSpan.FromSeconds(30));
+    }
+
+    [Fact]
+    public async Task CapacityPolling_PropagatesCancellationAndReleasesGate()
+    {
+        var service = CreateTestService(CreateConfigWithRadarr(searchLimit: 1));
+        var clock = new ManualClock(); service.Clock = clock;
+        using var stop = new CancellationTokenSource();
+        var reads = 0;
+        service.ActiveCommandCount = 1;
+        service.OnCapacityRead = () => { if (++reads == 2) stop.Cancel(); };
+        await FluentActions.Awaiting(() => service.ExecuteSearchesAsync("Radarr-test", [new() { ArrId = 1 }], clock.Now.AddMinutes(10), stop.Token))
+            .Should().ThrowAsync<OperationCanceledException>();
+        service.ActiveCommandCount = 0;
+        service.OnCapacityRead = null;
+        (await service.ExecuteSearchesAsync("Radarr-test", [new() { ArrId = 1 }])).SearchesTriggered.Should().Be(1);
+    }
+
+    [Fact]
+    public async Task ProgressFailure_PreservesAcceptanceButStopsFurtherSubmissions()
+    {
+        var service = CreateTestService(CreateConfigWithRadarr());
+        service.FailProgressSave = true;
+        var result = await service.ExecuteSearchesAsync("Radarr-test", [new() { ArrId = 1 }, new() { ArrId = 2 }]);
+        result.SearchesTriggered.Should().Be(1);
+        result.ItemsSearched.Should().Be(0);
+        result.SearchedIds.Should().BeEmpty();
+        result.Errors.Should().ContainSingle();
+        result.LoopCompleted.Should().BeFalse();
+        service.TriggeredCandidates.Should().ContainSingle();
+    }
+
+    [Fact]
+    public async Task AcceptedSearch_RealProgressSaveFailureIsNotAcknowledged()
+    {
+        var config = CreateConfigWithRadarr();
+        await using var db = new RejectingProgressDb(new DbContextOptionsBuilder<TorrentarrDbContext>()
+            .UseInMemoryDatabase(Guid.NewGuid().ToString()).Options);
+        db.Movies.Add(new() { ArrId = 1, ArrInstance = "Radarr-test" });
+        await db.SaveChangesAsync();
+        db.RejectWrites = true;
+        var restart = new DatabaseRestartCoordinator();
+        var service = new TriggerOnlySearchExecutor(NullLogger<SearchExecutor>.Instance, config, db,
+            new QualityProfileSwitcherService(NullLogger<QualityProfileSwitcherService>.Instance, db, restart), restart);
+        var result = await service.ExecuteSearchesAsync("Radarr-test", [new() { ArrId = 1 }, new() { ArrId = 2 }]);
+        result.SearchesTriggered.Should().Be(1);
+        result.SearchedIds.Should().BeEmpty();
+        result.Errors.Should().ContainSingle();
+        result.LoopCompleted.Should().BeFalse();
+        db.ChangeTracker.Clear();
+        (await db.Movies.SingleAsync()).Searched.Should().BeFalse();
+    }
+
+    [Fact]
+    public async Task ImmediateReplacement_DoesNotWaitForAnotherSubmissionGate()
+    {
+        var timing = new SearchSubmissionTiming();
+        var service = CreateTestService(CreateConfigWithRadarr(), timing: timing);
+        var gate = timing.Gate("Radarr-test");
+        await gate.WaitAsync();
+        try
+        {
+            var pending = service.ExecuteSearchesAsync("Radarr-test", [new() { ArrId = 1, Reason = "Retry" }]);
+            pending.IsCompleted.Should().BeTrue();
+            var result = await pending;
+            result.LoopCompleted.Should().BeFalse();
+            result.SearchesTriggered.Should().Be(0);
+            result.Errors.Should().BeEmpty();
+        }
+        finally { gate.Release(); }
+    }
+
+    [Fact]
+    public async Task ConfigurationPublicationDuringCapacityRead_DefersBeforeSubmission()
+    {
+        var config = CreateConfigWithRadarr();
+        var service = CreateTestService(config);
+        service.OnCapacityRead = () => config.Apply(config, 2);
+        using var snapshot = config.BeginOperation();
+        await FluentActions.Awaiting(() => service.ExecuteSearchesAsync("Radarr-test", [new() { ArrId = 1 }], DateTimeOffset.UtcNow.AddMinutes(10), default))
+            .Should().ThrowAsync<ConfigurationBusyException>();
+        service.TriggeredCandidates.Should().BeEmpty();
+    }
+
+    [Fact]
+    public async Task ConfigurationSignal_InterruptsSubmissionDelayBeforeAnotherCommand()
+    {
+        var config = CreateConfigWithRadarr(searchLoopDelay: 300);
+        await using var db = new TorrentarrDbContext(new DbContextOptionsBuilder<TorrentarrDbContext>()
+            .UseInMemoryDatabase(Guid.NewGuid().ToString()).Options);
+        var reloader = new Mock<IConfigReloader>();
+        reloader.Setup(r => r.WaitForChangeAsync(0, It.IsAny<TimeSpan>(), It.IsAny<CancellationToken>()))
+            .Callback(() => config.Apply(config, 2)).Returns(Task.CompletedTask);
+        var restart = new DatabaseRestartCoordinator();
+        var service = new TestSearchExecutor(NullLogger<SearchExecutor>.Instance, config, db,
+            new QualityProfileSwitcherService(NullLogger<QualityProfileSwitcherService>.Instance, db, restart), restart,
+            configReloader: reloader.Object);
+        using var snapshot = config.BeginOperation();
+        await FluentActions.Awaiting(() => service.ExecuteSearchesAsync("Radarr-test", [new() { ArrId = 1 }, new() { ArrId = 2 }]))
+            .Should().ThrowAsync<ConfigurationBusyException>();
+        service.TriggeredCandidates.Should().ContainSingle();
+        reloader.Verify(r => r.WaitForChangeAsync(0, It.Is<TimeSpan>(d => d.TotalSeconds > 299 && d.TotalSeconds <= 300), It.IsAny<CancellationToken>()), Times.Once);
+    }
+
+    private sealed class RejectingProgressDb(DbContextOptions<TorrentarrDbContext> options) : TorrentarrDbContext(options)
+    {
+        public bool RejectWrites { get; set; }
+        public override Task<int> SaveChangesAsync(CancellationToken cancellationToken = default)
+            => RejectWrites ? Task.FromException<int>(new IOException("Database unavailable")) : base.SaveChangesAsync(cancellationToken);
     }
 
     private sealed class ManualClock : TimeProvider
@@ -424,6 +584,8 @@ public class SearchExecutorTests
 
 internal sealed class TestSearchExecutor : SearchExecutor
 {
+    public bool TriggerAccepted { get; set; } = true;
+    public bool FailProgressSave { get; set; }
     public int ActiveCommandCount { get; set; }
     public Action? OnCapacityRead { get; set; }
     public List<SearchCandidate> TriggeredCandidates { get; } = new();
@@ -433,8 +595,8 @@ internal sealed class TestSearchExecutor : SearchExecutor
         TorrentarrConfig config,
         TorrentarrDbContext db,
         QualityProfileSwitcherService profileSwitcher,
-        DatabaseRestartCoordinator restartCoordinator, SearchSubmissionTiming? timing = null)
-        : base(logger, config, db, profileSwitcher, restartCoordinator, null, timing ?? new SearchSubmissionTiming())
+        DatabaseRestartCoordinator restartCoordinator, SearchSubmissionTiming? timing = null, IConfigReloader? configReloader = null)
+        : base(logger, config, db, profileSwitcher, restartCoordinator, null, timing ?? new SearchSubmissionTiming(), configReloader)
     {
     }
 
@@ -452,7 +614,7 @@ internal sealed class TestSearchExecutor : SearchExecutor
         CancellationToken cancellationToken)
     {
         TriggeredCandidates.Add(candidate);
-        return Task.FromResult(true);
+        return Task.FromResult(TriggerAccepted);
     }
 
     protected override Task MarkAsSearchedAsync(
@@ -460,7 +622,7 @@ internal sealed class TestSearchExecutor : SearchExecutor
         ArrInstanceConfig arrConfig,
         SearchCandidate candidate,
         CancellationToken cancellationToken)
-        => Task.CompletedTask;
+        => FailProgressSave ? Task.FromException(new IOException("Progress save failed")) : Task.CompletedTask;
 }
 
 internal sealed class TriggerOnlySearchExecutor : SearchExecutor

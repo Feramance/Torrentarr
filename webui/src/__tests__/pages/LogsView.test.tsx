@@ -156,6 +156,8 @@ describe("log viewer parity", () => {
   it("loads older windows and searches rotated files", async () => {
     view();
     await screen.findByTestId("lazy-log");
+    expect(screen.getByText(/2 loaded lines/)).toBeInTheDocument();
+    expect(screen.getByText(/Earlier entries are on disk/)).toBeInTheDocument();
     fireEvent.click(screen.getByRole("button", { name: /Load older logs/ }));
     await waitFor(() =>
       expect(api.getLogTailJson).toHaveBeenCalledWith(

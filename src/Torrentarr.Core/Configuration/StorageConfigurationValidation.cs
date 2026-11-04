@@ -4,6 +4,7 @@ public static class StorageConfigurationValidation
 {
     public static string? Validate(TorrentClientInstanceConfig client)
     {
+        if (TorrentScanInterval.Validate(client.TorrentScanIntervalSeconds) is { } scanError) return scanError;
         var storage = client.Maintenance;
         var recovery = storage?.ErrorRecovery;
         if (storage == null || storage.PathMappings == null || storage.Orphans == null || storage.RecycleBin == null || recovery == null)

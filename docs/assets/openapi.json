@@ -205,7 +205,9 @@
                   "RecycleContent",
                   "DeleteExpiredRecycleItem",
                   "RegisterRecycleEntry",
-                  "DeleteContent"
+                  "DeleteContent",
+                  "DeleteOrphanFile",
+                  "DeleteEmptyOrphanDirectory"
                 ],
                 "type": "string"
               },

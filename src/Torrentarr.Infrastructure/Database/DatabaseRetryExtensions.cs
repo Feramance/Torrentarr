@@ -17,11 +17,37 @@ public static class DatabaseRetryExtensions
         int maxAttempts = 5,
         CancellationToken cancellationToken = default)
     {
+        // Capture only operational identifiers and state, never arbitrary entity values or payloads.
+        var changes = logger?.IsEnabled(LogLevel.Information) == true
+            ? context.ChangeTracker.Entries()
+                .Where(e => e.State is EntityState.Added or EntityState.Modified or EntityState.Deleted)
+                .Select(e => (Entry: e, State: e.State)).ToArray()
+            : [];
+
+        async Task<int> SaveAsync()
+        {
+            var count = await context.SaveChangesAsync(cancellationToken);
+            foreach (var (entry, state) in changes)
+            {
+                var identity = string.Join(", ", entry.Properties.Where(p => p.Metadata.Name is
+                    "ArrInstance" or "ArrId" or "EntryId" or "Title" or "SeriesTitle" or "QueueId" or
+                    "QbitInstance" or "Hash" or "Category" or "Monitored" or "HasFile" or "Reason" or
+                    "Searched" or "Upgrade" or "IsRequest" or "Imported" or "QualityMet" or "CustomFormatMet" or
+                    "SeasonNumber" or "EpisodeNumber" or "ArrSeriesId" or "AirDateUtc" or "ReleaseDate")
+                    .Select(p => $"{p.Metadata.Name}={p.CurrentValue}"));
+                logger?.LogInformation("Database saved {Operation}: {Entity} | {Identity}", state, entry.Metadata.ClrType.Name, identity);
+            }
+            logger?.LogInformation("Database save completed: {Count} entries saved (added={Added}, updated={Updated}, deleted={Deleted})",
+                count, changes.Count(c => c.State == EntityState.Added), changes.Count(c => c.State == EntityState.Modified),
+                changes.Count(c => c.State == EntityState.Deleted));
+            return count;
+        }
+
         for (var attempt = 0; attempt < maxAttempts; attempt++)
         {
             try
             {
-                var result = await context.SaveChangesAsync(cancellationToken);
+                var result = await SaveAsync();
                 restartCoordinator?.RecordDatabaseSuccess();
                 return result;
             }
@@ -58,7 +84,7 @@ public static class DatabaseRetryExtensions
             }
         }
 
-        return await context.SaveChangesAsync(cancellationToken);
+        return await SaveAsync();
     }
 
     public static bool IsSqliteCorruption(Exception ex)

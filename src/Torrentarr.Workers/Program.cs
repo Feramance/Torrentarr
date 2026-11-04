@@ -41,30 +41,12 @@ var levelSwitch = new LoggingLevelSwitch(LogEventLevel.Information);
 // Configure Serilog - write to .config/logs/ with process metadata enrichment
 Log.Logger = new LoggerConfiguration()
     .MinimumLevel.ControlledBy(levelSwitch)
+    .MinimumLevel.Override("Microsoft.EntityFrameworkCore", LogEventLevel.Warning)
+    .Enrich.FromLogContext()
     .Enrich.WithProperty("ProcessType", "Worker")
     .Enrich.WithProperty("ProcessInstance", instanceName)
     .Enrich.WithProperty("ProcessId", Environment.ProcessId)
     .Enrich.WithProperty("MachineName", Environment.MachineName)
-    .Filter.ByExcluding(e =>
-        e.RenderMessage().Contains("DbCommand") ||
-        e.RenderMessage().Contains("started tracking") ||
-        e.RenderMessage().Contains("changed state from") ||
-        e.RenderMessage().Contains("generated temporary value") ||
-        e.RenderMessage().Contains("Closing data reader") ||
-        e.RenderMessage().Contains("DetectChanges") ||
-        e.RenderMessage().Contains("SaveChanges") ||
-        e.RenderMessage().Contains("Opening connection") ||
-        e.RenderMessage().Contains("Opened connection") ||
-        e.RenderMessage().Contains("Closing connection") ||
-        e.RenderMessage().Contains("Closed connection") ||
-        e.RenderMessage().Contains("was detected as changed") ||
-        e.RenderMessage().Contains("Executing endpoint") ||
-        e.RenderMessage().Contains("Executed endpoint") ||
-        e.RenderMessage().Contains("Request starting") ||
-        e.RenderMessage().Contains("Request finished") ||
-        e.RenderMessage().Contains("Writing value of type") ||
-        e.RenderMessage().Contains("is valid for the request") ||
-        e.RenderMessage().Contains("A data reader"))
     .WriteTo.Sink(new ServiceLogSink(logsPath, "Worker"))
     .WriteTo.Console(new ServiceLogFormatter(colour: true))
     .CreateLogger();
@@ -82,16 +64,7 @@ var logWatcherTask = Task.Run(async () =>
             {
                 var level = await File.ReadAllTextAsync(logLevelFilePath, logWatcherCts.Token);
                 level = level.Trim().ToUpperInvariant();
-                var newLevel = level switch
-                {
-                    "TRACE" or "VERBOSE" => LogEventLevel.Verbose,
-                    "DEBUG" => LogEventLevel.Debug,
-                    "INFORMATION" or "INFO" => LogEventLevel.Information,
-                    "WARNING" or "WARN" => LogEventLevel.Warning,
-                    "ERROR" => LogEventLevel.Error,
-                    "CRITICAL" or "FATAL" => LogEventLevel.Fatal,
-                    _ => LogEventLevel.Information
-                };
+                var newLevel = LiveConfigurationRuntime.ParseLevel(level);
                 levelSwitch.MinimumLevel = newLevel;
                 Log.Information("Log level changed to {Level} via file", level);
                 File.Delete(logLevelFilePath);
@@ -165,15 +138,7 @@ try
                 await Task.Delay(250, monitorCts.Token);
             }
         }
-        levelSwitch.MinimumLevel = config.Settings.ConsoleLevel?.Trim().ToUpperInvariant() switch
-        {
-            "TRACE" or "VERBOSE" => LogEventLevel.Verbose,
-            "DEBUG" => LogEventLevel.Debug,
-            "WARNING" or "WARN" => LogEventLevel.Warning,
-            "ERROR" => LogEventLevel.Error,
-            "CRITICAL" or "FATAL" => LogEventLevel.Fatal,
-            _ => LogEventLevel.Information
-        };
+        levelSwitch.MinimumLevel = LiveConfigurationRuntime.ParseLevel(config.Settings.ConsoleLevel);
         Log.Information("Configuration loaded successfully");
     }
     catch (FileNotFoundException ex)
@@ -218,6 +183,7 @@ try
     // Add services
     builder.Services.AddSingleton(restartCoordinator);
     builder.Services.AddSingleton<QBittorrentConnectionManager>();
+    builder.Services.AddHostedService(sp => sp.GetRequiredService<QBittorrentConnectionManager>());
     builder.Services.AddSingleton<ITorrentClientFactory, QBittorrentTorrentClientFactory>();
     builder.Services.AddSingleton<ITorrentClientRegistry>(sp => sp.GetRequiredService<QBittorrentConnectionManager>());
     builder.Services.AddSingleton<ITorrentCacheService, TorrentCacheService>();
@@ -323,8 +289,16 @@ class WorkerContext
     public IDisposable BeginOperation()
     {
         var previous = _operationName.Value;
+        var previousContext = Torrentarr.Core.InstanceContext.Current;
         _operationName.Value = InstanceName;
-        return new NameScope(() => _operationName.Value = previous);
+        Torrentarr.Core.InstanceContext.Current = _operationName.Value;
+        var logScope = Serilog.Context.LogContext.PushProperty("ProcessInstance", _operationName.Value);
+        return new NameScope(() =>
+        {
+            logScope.Dispose();
+            Torrentarr.Core.InstanceContext.Current = previousContext;
+            _operationName.Value = previous;
+        });
     }
     private sealed class NameScope(Action release) : IDisposable { public void Dispose() => release(); }
 }
@@ -350,6 +324,7 @@ class ArrWorkerService : BackgroundService
     private bool _searchLoopCompleted;
     private volatile bool _initialized;
     private bool _qbitSetupComplete;
+    private readonly Dictionary<string, int> _categoryCounts = new(StringComparer.OrdinalIgnoreCase);
 
     private int _consecutiveErrors = 0;
     private DateTime _lastErrorTime = DateTime.MinValue;
@@ -413,17 +388,30 @@ class ArrWorkerService : BackgroundService
 
     private async Task RunTorrentLoopAsync(CancellationToken cancellationToken)
     {
+        var scans = new TorrentScanSchedule(Clock);
+        var scannedConnectionRevision = _qbitManager.ConnectionRevision;
         while (!cancellationToken.IsCancellationRequested)
         {
             using var configuration = _config.BeginOperation();
             using var identity = _context.BeginOperation();
             _runtimeMetrics.InstanceName = _context.InstanceName;
+            using var logScope = _logger.BeginScope(new Dictionary<string, object>
+            {
+                ["ProcessInstance"] = _context.InstanceName,
+                ["Operation"] = "TorrentCycle",
+                ["CycleId"] = Guid.NewGuid().ToString("N")
+            });
             if (!_instanceConfig.Managed || string.IsNullOrWhiteSpace(_instanceConfig.URI) || _instanceConfig.URI == "CHANGE_ME")
             {
                 await SleepLoopAsync("Torrent", "Disabled", TimeSpan.FromSeconds(2), cancellationToken);
                 continue;
             }
+            var intervals = TorrentScanSchedule.Intervals(_config);
+            var due = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
             var cycleStart = System.Diagnostics.Stopwatch.GetTimestamp();
+            var outcome = "cancelled";
+            var connectionRevision = _qbitManager.ConnectionRevision;
+            _logger.LogInformation("Torrent cycle started for {Instance}; configurationRevision={Revision}", _context.InstanceName, _config.Revision);
             using var cycle = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
             cycle.CancelAfter(WorkerLoopProgress.CycleTimeout);
             _runtimeMetrics.Torrent = new("Running", DateTimeOffset.UtcNow, LastSuccess: _runtimeMetrics.Torrent.LastSuccess);
@@ -431,12 +419,15 @@ class ArrWorkerService : BackgroundService
             {
                 if (!await _connectivityService.IsConnectedAsync(cycle.Token))
                 {
+                    outcome = "waiting for connectivity";
                     await SleepLoopAsync("Torrent", "Waiting for connectivity", TimeSpan.FromSeconds(_config.Settings.NoInternetSleepTimer), cancellationToken);
                     continue;
                 }
                 using var processing = ConfigMutationGuard.EnterProcessing();
                 RequireCurrentConfiguration();
+                Interlocked.Exchange(ref _runtimeMetrics.TorrentRevision, _config.Revision);
                 await _qbitManager.EnsureAllConnectedAsync(_config.GetAllTorrentClients(), cycle.Token);
+                connectionRevision = _qbitManager.ConnectionRevision;
                 if (!_initialized || _initializedRevision != _config.Revision)
                 {
                     _qbitSetupComplete = false;
@@ -456,27 +447,44 @@ class ArrWorkerService : BackgroundService
                 if (backoffDelay > TimeSpan.Zero)
                 {
                     processing.Dispose();
+                    outcome = "backoff";
                     await SleepLoopAsync("Torrent", "Backoff", backoffDelay, cancellationToken);
                     continue;
                 }
-                await ProcessTorrentsAsync(cycle.Token);
+                if (connectionRevision != scannedConnectionRevision) scans.Reset();
+                scannedConnectionRevision = connectionRevision;
+                due = scans.TakeDue(intervals, _config.Revision);
+                if (due.Count > 0) await ProcessTorrentsAsync(cycle.Token, due);
+                else await RunPeriodicCommandsAsync(cycle.Token);
                 _consecutiveErrors = 0;
                 _runtimeMetrics.Torrent = _runtimeMetrics.Torrent with { LastSuccess = DateTimeOffset.UtcNow };
                 await ObserveLoopAsync("torrent", true, cycle.Token);
+                outcome = "success";
             }
             catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested) { break; }
-            catch (ConfigurationBusyException) { }
+            catch (ConfigurationBusyException)
+            {
+                outcome = "configuration pending";
+                _logger.LogDebug("Torrent cycle deferred: configuration changed before processing could start");
+            }
             catch (Exception ex)
             {
+                outcome = cycle.IsCancellationRequested ? "timed out" : "failed";
                 _runtimeMetrics.Torrent = new(cycle.IsCancellationRequested ? "Timed out" : "Error", DateTimeOffset.UtcNow, LastSuccess: _runtimeMetrics.Torrent.LastSuccess);
                 _logger.LogError(ex, "Error processing torrents for {Instance}", _context.InstanceName);
                 await ObserveLoopAsync("torrent", false, cancellationToken);
                 HandleProcessingError();
             }
+            finally
+            {
+                _logger.LogInformation("Torrent cycle ended for {Instance}: outcome={Outcome}; elapsed={ElapsedMs:F1}ms", _context.InstanceName, outcome,
+                    System.Diagnostics.Stopwatch.GetElapsedTime(cycleStart).TotalMilliseconds);
+            }
             Interlocked.Exchange(ref _runtimeMetrics.TorrentRevision, _config.Revision);
-            var remaining = GetLoopDelay(_config.Settings.LoopSleepTimer, System.Diagnostics.Stopwatch.GetElapsedTime(cycleStart));
+            scans.Complete(due, intervals);
+            var remaining = PeriodicCommandDelay(scans.Delay);
             if (remaining > TimeSpan.Zero)
-                await SleepLoopAsync("Torrent", "Sleeping", remaining, cancellationToken);
+                await SleepLoopAsync("Torrent", "Sleeping", remaining, cancellationToken, connectionRevision);
         }
     }
 
@@ -487,12 +495,20 @@ class ArrWorkerService : BackgroundService
             using var configuration = _config.BeginOperation();
             using var identity = _context.BeginOperation();
             _runtimeMetrics.InstanceName = _context.InstanceName;
+            using var logScope = _logger.BeginScope(new Dictionary<string, object>
+            {
+                ["ProcessInstance"] = _context.InstanceName,
+                ["Operation"] = "SearchCycle",
+                ["CycleId"] = Guid.NewGuid().ToString("N")
+            });
             if (!_instanceConfig.Managed || string.IsNullOrWhiteSpace(_instanceConfig.URI) || _instanceConfig.URI == "CHANGE_ME")
             {
                 await SleepLoopAsync("Search", "Disabled", TimeSpan.FromSeconds(2), cancellationToken);
                 continue;
             }
             var cycleStart = System.Diagnostics.Stopwatch.GetTimestamp();
+            var outcome = "cancelled";
+            _logger.LogInformation("Search cycle started for {Instance}; configurationRevision={Revision}", _context.InstanceName, _config.Revision);
             using var cycle = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
             cycle.CancelAfter(WorkerLoopProgress.CycleTimeout);
             _runtimeMetrics.Search = new("Running", DateTimeOffset.UtcNow, LastSuccess: _runtimeMetrics.Search.LastSuccess);
@@ -500,38 +516,55 @@ class ArrWorkerService : BackgroundService
             {
                 if (!_initialized)
                 {
-                    await SleepLoopAsync("Search", "Initializing", TimeSpan.FromSeconds(_config.Settings.LoopSleepTimer), cancellationToken);
+                    outcome = "initializing";
+                    await SleepLoopAsync("Search", "Initializing", TimeSpan.FromSeconds(2), cancellationToken);
                     continue;
                 }
                 if (!await _connectivityService.IsConnectedAsync(cycle.Token))
                 {
+                    outcome = "waiting for connectivity";
                     await SleepLoopAsync("Search", "Waiting for connectivity", TimeSpan.FromSeconds(_config.Settings.NoInternetSleepTimer), cancellationToken);
                     continue;
                 }
                 var backoffDelay = GetSearchBackoffDelay();
                 if (backoffDelay > TimeSpan.Zero)
                 {
+                    outcome = "backoff";
                     await SleepLoopAsync("Search", "Backoff", backoffDelay, cancellationToken);
                     continue;
                 }
                 using var processing = ConfigMutationGuard.EnterProcessing();
                 RequireCurrentConfiguration();
-                await ProcessSearchAsync(cycle.Token, DateTimeOffset.UtcNow + WorkerLoopProgress.CycleTimeout - System.Diagnostics.Stopwatch.GetElapsedTime(cycleStart));
+                Interlocked.Exchange(ref _runtimeMetrics.SearchRevision, _config.Revision);
+                var result = await ProcessSearchAsync(cycle.Token, DateTimeOffset.UtcNow + WorkerLoopProgress.CycleTimeout - System.Diagnostics.Stopwatch.GetElapsedTime(cycleStart));
+                if (result?.Errors.Count > 0)
+                    throw new IOException($"Search cycle partially failed: {string.Join("; ", result.Errors)}");
+                outcome = result is { LoopCompleted: false } ? "deferred" : "success";
                 _consecutiveSearchErrors = 0;
                 _runtimeMetrics.Search = _runtimeMetrics.Search with { LastSuccess = DateTimeOffset.UtcNow };
                 await ObserveLoopAsync("search", true, cycle.Token);
             }
             catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested) { break; }
-            catch (ConfigurationBusyException) { }
+            catch (ConfigurationBusyException)
+            {
+                outcome = "configuration pending";
+                _logger.LogDebug("Search cycle deferred: configuration changed before processing could start");
+            }
             catch (Exception ex)
             {
+                outcome = cycle.IsCancellationRequested ? "timed out" : "failed";
                 _runtimeMetrics.Search = new(cycle.IsCancellationRequested ? "Timed out" : "Error", DateTimeOffset.UtcNow, LastSuccess: _runtimeMetrics.Search.LastSuccess);
                 _logger.LogError(ex, "Error searching for {Instance}", _context.InstanceName);
                 await ObserveLoopAsync("search", false, cancellationToken);
                 HandleSearchError();
             }
+            finally
+            {
+                _logger.LogInformation("Search cycle ended for {Instance}: outcome={Outcome}; elapsed={ElapsedMs:F1}ms", _context.InstanceName, outcome,
+                    System.Diagnostics.Stopwatch.GetElapsedTime(cycleStart).TotalMilliseconds);
+            }
             Interlocked.Exchange(ref _runtimeMetrics.SearchRevision, _config.Revision);
-            var remaining = GetLoopDelay(_config.Settings.LoopSleepTimer, System.Diagnostics.Stopwatch.GetElapsedTime(cycleStart));
+            var remaining = SearchLoopDelay;
             if (remaining > TimeSpan.Zero)
                 await SleepLoopAsync("Search", "Sleeping", remaining, cancellationToken);
         }
@@ -544,19 +577,33 @@ class ArrWorkerService : BackgroundService
             throw new ConfigurationBusyException("Configuration changed before processing started.");
     }
 
-    private async Task SleepLoopAsync(string loop, string phase, TimeSpan delay, CancellationToken ct)
+    private async Task SleepLoopAsync(string loop, string phase, TimeSpan delay, CancellationToken ct, long? connectionRevision = null)
     {
         var now = DateTimeOffset.UtcNow;
+        _logger.LogInformation("{Loop} loop for {Instance}: {Phase}, waiting {Seconds:F1}s; nextWakeAt={WakeAt:O}", loop, _context.InstanceName, phase, delay.TotalSeconds, now + delay);
         if (loop == "Torrent") _runtimeMetrics.Torrent = new(phase, now, now + delay, _runtimeMetrics.Torrent.LastSuccess);
         else _runtimeMetrics.Search = new(phase, now, now + delay, _runtimeMetrics.Search.LastSuccess);
         if (loop == "Torrent") Interlocked.Exchange(ref _runtimeMetrics.TorrentRevision, _config.Revision);
         else Interlocked.Exchange(ref _runtimeMetrics.SearchRevision, _config.Revision);
-        if (_reloader != null) await _reloader.WaitForChangeAsync(_config.Revision, delay, ct);
-        else await Task.Delay(delay, ct);
+        if (loop != "Torrent" || phase != "Sleeping" || _instanceConfig.SearchOnly)
+        {
+            if (_reloader != null) await _reloader.WaitForChangeAsync(_config.Revision, delay, ct);
+            else await Task.Delay(delay, Clock, ct);
+            return;
+        }
+        var recoveryRevision = connectionRevision ?? _qbitManager.ConnectionRevision;
+        var sleepUntil = Clock.GetUtcNow() + delay;
+        do
+        {
+            var remaining = sleepUntil - Clock.GetUtcNow();
+            if (remaining <= TimeSpan.Zero) break;
+            if (_qbitManager.ConnectionRevision != recoveryRevision) break;
+            var wait = remaining > TimeSpan.FromSeconds(5) ? TimeSpan.FromSeconds(5) : remaining;
+            if (_reloader != null) await _reloader.WaitForChangeAsync(_config.Revision, wait, ct);
+            else await Task.Delay(wait, Clock, ct);
+            if (_config.Revision != _config.LatestRevision || _qbitManager.ConnectionRevision != recoveryRevision) break;
+        } while (Clock.GetUtcNow() < sleepUntil);
     }
-
-    internal static TimeSpan GetLoopDelay(int seconds, TimeSpan elapsed) =>
-        TimeSpan.FromSeconds(seconds) > elapsed ? TimeSpan.FromSeconds(seconds) - elapsed : TimeSpan.Zero;
 
     private TimeSpan GetBackoffDelay()
     {
@@ -617,7 +664,7 @@ class ArrWorkerService : BackgroundService
         return healthy ? reporter.ResolveAsync(issue, ct) : reporter.ReportAsync(issue, ct);
     }
 
-    internal async Task ProcessTorrentsAsync(CancellationToken cancellationToken)
+    internal async Task ProcessTorrentsAsync(CancellationToken cancellationToken, IReadOnlySet<string>? clientIds = null)
     {
         _logger.LogTrace("Processing torrents for {Instance}", _context.InstanceName);
 
@@ -648,15 +695,18 @@ class ArrWorkerService : BackgroundService
 
         // Process all torrents for this category (excluding special categories which are handled globally)
         if (!_instanceConfig.SearchOnly)
-            await torrentProcessor.ProcessTorrentsAsync(_instanceConfig.Category, cancellationToken);
+            if (clientIds == null) await torrentProcessor.ProcessTorrentsAsync(_instanceConfig.Category, cancellationToken);
+            else await torrentProcessor.ProcessTorrentsAsync(_instanceConfig.Category, clientIds, cancellationToken);
 
         try
         {
-            var categoryCount = 0;
-            foreach (var client in _qbitManager.GetAllClients().Values)
-                try { categoryCount += (await client.GetTorrentsAsync(_instanceConfig.Category, cancellationToken: cancellationToken)).Count; }
+            var clients = _qbitManager.GetAllClients();
+            foreach (var id in _categoryCounts.Keys.Where(id => !clients.ContainsKey(id)).ToList()) _categoryCounts.Remove(id);
+            foreach (var (id, client) in clients.Where(pair => clientIds == null || clientIds.Contains(pair.Key)))
+                try { _categoryCounts[id] = (await client.GetTorrentsAsync(_instanceConfig.Category, cancellationToken: cancellationToken)).Count; }
+                catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested) { throw; }
                 catch { }
-            _runtimeMetrics.CategoryCount = categoryCount;
+            _runtimeMetrics.CategoryCount = _categoryCounts.Values.Sum();
 
             var db = scope.ServiceProvider.GetRequiredService<TorrentarrDbContext>();
             _runtimeMetrics.QueueCount = _instanceConfig.Type.ToLowerInvariant() switch
@@ -688,7 +738,7 @@ class ArrWorkerService : BackgroundService
     internal Task ProcessSearchAsync(CancellationToken cancellationToken)
         => ProcessSearchAsync(cancellationToken, null);
 
-    internal async Task ProcessSearchAsync(CancellationToken cancellationToken, DateTimeOffset? deadline)
+    internal async Task<SearchResult?> ProcessSearchAsync(CancellationToken cancellationToken, DateTimeOffset? deadline)
     {
         using var scope = _serviceProvider.CreateScope();
         var syncService = scope.ServiceProvider.GetRequiredService<ArrSyncService>();
@@ -714,8 +764,13 @@ class ArrWorkerService : BackgroundService
             await SonarrRetryQueue.ExecuteAsync(scope.ServiceProvider.GetRequiredService<TorrentarrDbContext>(),
                 scope.ServiceProvider.GetRequiredService<ISearchExecutor>(), _context.InstanceName, _logger, cancellationToken,
                 _instanceConfig, scope.ServiceProvider.GetService<IOperationalIssueReporter>(), deadline);
-        await syncService.SyncAsync(_context.InstanceName, cancellationToken);
-        if (_instanceConfig.Search.SearchMissing)
+        if (CatalogSyncDue)
+        {
+            await syncService.SyncAsync(_context.InstanceName, cancellationToken);
+            _lastCatalogSync = Clock.GetUtcNow();
+            _catalogRevision = _config.Revision;
+        }
+        if (_instanceConfig.Search.SearchMissing && !_instanceConfig.ProcessingOnly && SearchDispatchDue)
             await syncService.MarkRequestsAsync(_context.InstanceName, cancellationToken);
 
         SearchResult? searchResult = null;
@@ -759,6 +814,9 @@ class ArrWorkerService : BackgroundService
                     {
                         searchResult.SearchesTriggered += upgradeResult.SearchesTriggered;
                         searchResult.ItemsSearched += upgradeResult.ItemsSearched;
+                        searchResult.SearchedIds.AddRange(upgradeResult.SearchedIds);
+                        searchResult.Errors.AddRange(upgradeResult.Errors);
+                        searchResult.BudgetExhausted |= upgradeResult.BudgetExhausted;
                         searchResult.LoopCompleted &= upgradeResult.LoopCompleted;
                     }
                     if (upgradeResult.SearchesTriggered > 0)
@@ -766,8 +824,10 @@ class ArrWorkerService : BackgroundService
                 }
             }
         }
+        else if (_instanceConfig.ProcessingOnly)
+            _logger.LogInformation("Search skipped for {Instance}: ProcessingOnly is enabled", _context.InstanceName);
 
-        if (searchResult?.LoopCompleted == true)
+        if (searchResult is { LoopCompleted: true, BudgetExhausted: false, Errors.Count: 0 })
         {
             var hasMoreYears = SearchYearCursor.ShouldFilter(_instanceConfig)
                 && _yearCursor.Advance(_context.InstanceName);
@@ -792,6 +852,7 @@ class ArrWorkerService : BackgroundService
             catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested) { throw; }
             catch (Exception ex) { _logger.LogWarning(ex, "Unable to persist search activity for {Instance}", _context.InstanceName); }
         }
+        return searchResult;
     }
 
     internal static async Task LoadSearchActivityAsync(IServiceProvider services, string instance, WorkerRuntimeMetrics metrics, Serilog.ILogger logger, CancellationToken ct)
@@ -877,9 +938,24 @@ class ArrWorkerService : BackgroundService
         return categoriesReady && tagsReady && allConfiguredClientsConnected;
     }
 
+    internal TimeSpan PeriodicCommandDelay(TimeSpan scanDelay)
+    {
+        var now = Clock.GetUtcNow().UtcDateTime;
+        foreach (var (minutes, last) in new[] {
+            (_instanceConfig.RssSyncTimer, _lastRssSync),
+            (_instanceConfig.Type.Equals("lidarr", StringComparison.OrdinalIgnoreCase) ? 0 : _instanceConfig.RefreshDownloadsTimer, _lastRefreshDownloads) })
+        {
+            if (minutes <= 0) continue;
+            var dueIn = last.AddMinutes(minutes) - now;
+            if (dueIn < TimeSpan.FromSeconds(5)) dueIn = TimeSpan.FromSeconds(5);
+            if (dueIn < scanDelay) scanDelay = dueIn;
+        }
+        return scanDelay;
+    }
+
     private async Task RunPeriodicCommandsAsync(CancellationToken cancellationToken)
     {
-        var now = DateTime.UtcNow;
+        var now = Clock.GetUtcNow().UtcDateTime;
         if (_instanceConfig.RssSyncTimer > 0 && now - _lastRssSync >= TimeSpan.FromMinutes(_instanceConfig.RssSyncTimer))
         {
             try
@@ -915,21 +991,47 @@ class ArrWorkerService : BackgroundService
         }
     }
 
+    internal TimeProvider Clock { get; set; } = TimeProvider.System;
+    private DateTimeOffset? _lastCatalogSync;
+    private long _catalogRevision;
+    internal bool CatalogSyncDue => !_lastCatalogSync.HasValue || _catalogRevision != _config.Revision
+        || Clock.GetUtcNow() - _lastCatalogSync.Value >= TimeSpan.FromSeconds(Math.Max(0, _config.Settings.LoopSleepTimer));
+    internal int SearchTickSeconds => Math.Max(5, _instanceConfig.Search.SearchRequestsEvery);
+    internal TimeSpan SearchLoopDelay
+    {
+        get
+        {
+            var now = Clock.GetUtcNow();
+            var search = _lastSearchTime.AddSeconds(SearchTickSeconds) - now.UtcDateTime;
+            var catalog = (_lastCatalogSync ?? now).AddSeconds(Math.Max(0, _config.Settings.LoopSleepTimer)) - now;
+            if (search <= TimeSpan.Zero) search = TimeSpan.FromSeconds(5);
+            if (catalog <= TimeSpan.Zero) catalog = TimeSpan.FromSeconds(5);
+            return search < catalog ? search : catalog;
+        }
+    }
+
     private DateTime _lastSearchTime = DateTime.MinValue;
+    private bool SearchDispatchDue => Clock.GetUtcNow().UtcDateTime - _lastSearchTime
+        >= TimeSpan.FromSeconds(Math.Max(5, _instanceConfig.Search.SearchRequestsEvery));
 
     internal bool ShouldRunSearch()
     {
-        if (!_instanceConfig.Search.SearchMissing)
-            return false;
-
-        var searchInterval = TimeSpan.FromSeconds(_instanceConfig.Search.SearchRequestsEvery);
-
-        if (DateTime.UtcNow - _lastSearchTime >= searchInterval)
+        var search = _instanceConfig.Search;
+        if (!search.SearchMissing && !search.DoUpgradeSearch && !search.QualityUnmetSearch && !search.CustomFormatUnmetSearch)
         {
-            _lastSearchTime = DateTime.UtcNow;
+            _logger.LogInformation("Search skipped for {Instance}: all search modes are disabled", _context.InstanceName);
+            return false;
+        }
+
+        var searchInterval = TimeSpan.FromSeconds(Math.Max(5, _instanceConfig.Search.SearchRequestsEvery));
+
+        if (Clock.GetUtcNow().UtcDateTime - _lastSearchTime >= searchInterval)
+        {
+            _lastSearchTime = Clock.GetUtcNow().UtcDateTime;
             return true;
         }
 
+        _logger.LogInformation("Search deferred for {Instance}: SearchRequestsEvery interval ({Seconds}s) has not elapsed", _context.InstanceName, searchInterval.TotalSeconds);
         return false;
     }
 }

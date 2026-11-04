@@ -1,4 +1,5 @@
 using FluentAssertions;
+using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging.Abstractions;
 using Moq;
@@ -11,6 +12,46 @@ namespace Torrentarr.Infrastructure.Tests.Services;
 
 public sealed class OperationalIssueMonitorTests
 {
+    [Fact]
+    public async Task Restart_DoesNotReplayPersistedMaintenanceFailuresAsNewObservations()
+    {
+        await using var db = new Torrentarr.Infrastructure.Database.TorrentarrDbContext(new Microsoft.EntityFrameworkCore.DbContextOptionsBuilder<Torrentarr.Infrastructure.Database.TorrentarrDbContext>()
+            .UseInMemoryDatabase(Guid.NewGuid().ToString()).Options);
+        var completed = DateTimeOffset.UtcNow.AddHours(-2);
+        db.OperationalIssues.Add(new() { Code = "maintenance.run", SubjectType = "maintenance", SubjectId = "[\"ONE\"]", LastObserved = completed.UtcDateTime.AddMinutes(1) });
+        await db.SaveChangesAsync();
+        var reporter = new Mock<IOperationalIssueReporter>();
+        var maintenance = new Mock<IMaintenanceCoordinator>();
+        maintenance.Setup(m => m.GetHistory(It.IsAny<int>())).Returns([new() { RunId = "old-failure", ClientInstanceIds = ["one"], Failed = 3, Result = "partial", CompletedAt = completed }]);
+        await using var services = new ServiceCollection().AddSingleton(db).AddSingleton(maintenance.Object).BuildServiceProvider();
+        using var monitor = new OperationalIssueMonitor(services.GetRequiredService<IServiceScopeFactory>(), reporter.Object, new(), NullLogger<OperationalIssueMonitor>.Instance);
+        await monitor.InspectAsync(default);
+        reporter.Verify(r => r.ReportAsync(It.IsAny<OperationalIssueReport>(), It.IsAny<CancellationToken>()), Times.Never());
+    }
+
+    [Theory]
+    [InlineData("Running", 10, true)]
+    [InlineData("Running", 31, false)]
+    [InlineData("Error", 1, false)]
+    [InlineData("Timed out", 1, false)]
+    [InlineData("Initializing", 1, false)]
+    [InlineData("Backoff", 1, false)]
+    [InlineData("Waiting for connectivity", 1, false)]
+    public void WorkerRecovery_UsesCurrentProgressWithoutWaitingForFirstSearchBatch(string phase, int ageMinutes, bool healthy)
+    {
+        var now = DateTimeOffset.UtcNow;
+        var state = new Torrentarr.Core.Interfaces.ProcessStatus
+        {
+            IsAlive = true,
+            LastHeartbeat = now.UtcDateTime,
+            Torrent = new("Sleeping", now, now.AddHours(1), now),
+            Search = new(phase, now.AddMinutes(-ageMinutes))
+        };
+        OperationalIssueMonitor.HasHealthyProgress(state, now).Should().Be(healthy);
+        state.LastHeartbeat = now.AddSeconds(-16).UtcDateTime;
+        OperationalIssueMonitor.HasHealthyProgress(state, now).Should().BeFalse();
+    }
+
     [Fact]
     public async Task CompletedMaintenanceRuns_AreNotReplayedAcrossInspections()
     {

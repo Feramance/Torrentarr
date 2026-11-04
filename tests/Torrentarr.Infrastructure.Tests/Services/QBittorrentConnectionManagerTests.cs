@@ -18,6 +18,32 @@ public class QBittorrentConnectionManagerTests
     private static QBittorrentConnectionManager CreateManager() =>
         new(NullLogger<QBittorrentConnectionManager>.Instance);
 
+    [Fact]
+    public async Task TransientProbeTimeout_IsBoundedAndRecoversWithoutConfigurationChange()
+    {
+        var client = new Mock<ITorrentClient>();
+        var attempts = 0;
+        client.Setup(c => c.LoginAsync(It.IsAny<CancellationToken>())).Returns(async (CancellationToken ct) =>
+        {
+            if (Interlocked.Increment(ref attempts) == 1) await Task.Delay(Timeout.InfiniteTimeSpan, ct);
+            return true;
+        });
+        client.Setup(c => c.GetVersionAsync(It.IsAny<CancellationToken>())).ReturnsAsync("5.2");
+        var factory = new Mock<ITorrentClientFactory>();
+        factory.SetupGet(f => f.Type).Returns("fake");
+        factory.Setup(f => f.Create(It.IsAny<string>(), It.IsAny<TorrentClientInstanceConfig>())).Returns(client.Object);
+        var manager = new QBittorrentConnectionManager(NullLogger<QBittorrentConnectionManager>.Instance, [factory.Object]);
+        var config = new TorrentClientInstanceConfig { Type = "fake", Host = "fixture" };
+        using var deadline = new CancellationTokenSource(TimeSpan.FromSeconds(15));
+        (await manager.EnsureAllConnectedAsync(new Dictionary<string, TorrentClientInstanceConfig> { ["one"] = config }, deadline.Token)).Should().Be(0);
+        manager.GetConnectionErrors()["one"].Should().Contain("timed out");
+        (await manager.EnsureAllConnectedAsync(new Dictionary<string, TorrentClientInstanceConfig> { ["one"] = config }, deadline.Token)).Should().Be(1);
+        manager.GetConnectionErrors().Should().BeEmpty();
+        using var cancelled = new CancellationTokenSource();
+        cancelled.Cancel();
+        await FluentActions.Awaiting(() => manager.InitializeAsync("one", config, cancelled.Token)).Should().ThrowAsync<OperationCanceledException>();
+    }
+
     // ── Empty manager ─────────────────────────────────────────────────────────
 
     [Fact]

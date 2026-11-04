@@ -15,6 +15,105 @@ namespace Torrentarr.Infrastructure.Tests.Services;
 public class ActiveWorkerSearchTests
 {
     [Fact]
+    public async Task TorrentSleep_WakesOnRecoveryWithoutConfigurationChange()
+    {
+        var client = new Mock<Torrentarr.Core.Interfaces.ITorrentClient>();
+        client.Setup(c => c.LoginAsync(It.IsAny<CancellationToken>())).ReturnsAsync(true);
+        client.Setup(c => c.GetVersionAsync(It.IsAny<CancellationToken>())).ReturnsAsync("5.3");
+        var factory = new Mock<Torrentarr.Core.Interfaces.ITorrentClientFactory>();
+        factory.SetupGet(f => f.Type).Returns("fake");
+        factory.Setup(f => f.Create(It.IsAny<string>(), It.IsAny<TorrentClientInstanceConfig>())).Returns(client.Object);
+        using var manager = new QBittorrentConnectionManager(NullLogger<QBittorrentConnectionManager>.Instance, [factory.Object]);
+        var reloader = new Mock<IConfigReloader>();
+        var instance = new ArrInstanceConfig();
+        using var harness = new Harness(instance, reloader: reloader.Object);
+        using var worker = new ArrWorkerService(NullLogger<ArrWorkerService>.Instance,
+            harness.Provider.GetRequiredService<TorrentarrConfig>(), instance,
+            new WorkerContext { InstanceName = "Radarr" }, harness.Provider, manager,
+            Mock.Of<IConnectivityService>(), new SearchYearCursor(), harness.Metrics);
+        reloader.Setup(r => r.WaitForChangeAsync(0, It.IsAny<TimeSpan>(), It.IsAny<CancellationToken>()))
+            .Returns(async (long _, TimeSpan delay, CancellationToken ct) =>
+            {
+                delay.Should().Be(TimeSpan.FromSeconds(5));
+                await manager.InitializeAsync("one", new TorrentClientInstanceConfig { Type = "fake", Host = "fixture" }, ct);
+            });
+        var method = typeof(ArrWorkerService).GetMethod("SleepLoopAsync",
+            System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.NonPublic)!;
+        using var timeout = new CancellationTokenSource(TimeSpan.FromSeconds(5));
+        await ((Task)method.Invoke(worker, ["Torrent", "Sleeping", TimeSpan.FromHours(1), timeout.Token, 0L])!).WaitAsync(timeout.Token);
+        manager.IsConnected("one").Should().BeTrue();
+        reloader.Verify(r => r.WaitForChangeAsync(0, It.IsAny<TimeSpan>(), It.IsAny<CancellationToken>()), Times.Once);
+    }
+
+    [Theory]
+    [InlineData(3600, 60, 60)]
+    [InlineData(20, 300, 300)]
+    [InlineData(600, 120, 120)]
+    [InlineData(5, 0, 5)]
+    public async Task SearchTiming_UsesConfiguredIntervalsAndReusesCatalog(int refreshSeconds, int searchSeconds, int tickSeconds)
+    {
+        var instance = new ArrInstanceConfig { Search = new SearchConfig { SearchRequestsEvery = searchSeconds } };
+        using var harness = new Harness(instance);
+        var config = harness.Provider.GetRequiredService<TorrentarrConfig>();
+        config.Settings.LoopSleepTimer = refreshSeconds;
+        var clock = new TestClock(); harness.Worker.Clock = clock;
+        harness.Media.Setup(m => m.SearchMissingMediaAsync(It.IsAny<string>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new SearchResult { LoopCompleted = false });
+        harness.Worker.SearchTickSeconds.Should().Be(tickSeconds);
+        harness.Worker.CatalogSyncDue.Should().BeTrue();
+        await harness.Worker.ProcessSearchAsync(default);
+        harness.Worker.CatalogSyncDue.Should().BeFalse();
+        harness.Worker.SearchLoopDelay.Should().Be(TimeSpan.FromSeconds(Math.Min(refreshSeconds, Math.Max(5, searchSeconds))));
+        clock.Now += TimeSpan.FromSeconds(Math.Max(5, searchSeconds));
+        await harness.Worker.ProcessSearchAsync(default);
+        harness.Media.Verify(m => m.SearchMissingMediaAsync(It.IsAny<string>(), It.IsAny<CancellationToken>()), Times.Exactly(2));
+        clock.Now += TimeSpan.FromSeconds(refreshSeconds);
+        harness.Worker.CatalogSyncDue.Should().BeTrue();
+        await harness.Worker.ProcessSearchAsync(default);
+        harness.Worker.CatalogSyncDue.Should().BeFalse();
+        config.Apply(config, config.Revision + 1);
+        harness.Worker.CatalogSyncDue.Should().BeTrue();
+        instance.Search.SearchRequestsEvery = 7;
+        harness.Worker.SearchTickSeconds.Should().Be(7);
+    }
+
+    [Theory]
+    [InlineData(true)]
+    [InlineData(false)]
+    public async Task UpgradeOnly_IsNotDisabledByMissingSearchFlag(bool exclusive)
+    {
+        var instance = new ArrInstanceConfig { Search = new SearchConfig { SearchMissing = false, DoUpgradeSearch = exclusive, QualityUnmetSearch = !exclusive } };
+        using var harness = new Harness(instance);
+        harness.Media.Setup(m => m.SearchQualityUpgradesAsync(It.IsAny<string>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new SearchResult { LoopCompleted = true });
+        await harness.Worker.ProcessSearchAsync(default);
+        harness.Media.Verify(m => m.SearchQualityUpgradesAsync(It.IsAny<string>(), It.IsAny<CancellationToken>()), Times.Once);
+    }
+
+    [Fact]
+    public async Task AdditiveResult_RetainsErrorsBudgetAndIdsWithoutCompletingPass()
+    {
+        var instance = new ArrInstanceConfig { Search = new SearchConfig { QualityUnmetSearch = true } };
+        using var harness = new Harness(instance);
+        harness.Media.Setup(m => m.SearchMissingMediaAsync(It.IsAny<string>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new SearchResult { SearchesTriggered = 1, ItemsSearched = 1, SearchedIds = [1], LoopCompleted = true });
+        harness.Media.Setup(m => m.SearchQualityUpgradesAsync(It.IsAny<string>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new SearchResult { SearchesTriggered = 1, ItemsSearched = 1, SearchedIds = [2], Errors = ["save failed"], BudgetExhausted = true });
+        var result = await harness.Worker.ProcessSearchAsync(default, null);
+        result!.SearchesTriggered.Should().Be(2);
+        result.SearchedIds.Should().Equal(1, 2);
+        result.Errors.Should().Equal("save failed");
+        result.BudgetExhausted.Should().BeTrue();
+        result.LoopCompleted.Should().BeFalse();
+    }
+
+    private sealed class TestClock : TimeProvider
+    {
+        public DateTimeOffset Now { get; set; } = new(2026, 11, 3, 0, 0, 0, TimeSpan.Zero);
+        public override DateTimeOffset GetUtcNow() => Now;
+    }
+
+    [Fact]
     public async Task SharedDeadline_YieldPreservesMetricsAndSkipsAdditiveUpgrade()
     {
         var config = new ArrInstanceConfig
@@ -112,11 +211,11 @@ public class ActiveWorkerSearchTests
     [Fact]
     public async Task DisabledSearch_DoesNotCallMedia_AndRequestTimeoutPropagates()
     {
-        var config = new ArrInstanceConfig { Category = "movies", Search = new SearchConfig { SearchMissing = false, DoUpgradeSearch = true } };
+        var config = new ArrInstanceConfig { Category = "movies", Search = new SearchConfig { SearchMissing = false } };
         using var harness = new Harness(config);
         await harness.Worker.ProcessSearchAsync(CancellationToken.None);
         harness.Media.VerifyNoOtherCalls();
-        config.Search.SearchMissing = true;
+        config.Search.DoUpgradeSearch = true;
         harness.Media.Setup(m => m.SearchQualityUpgradesAsync("movies", It.IsAny<CancellationToken>()))
             .ThrowsAsync(new TaskCanceledException("request timeout"));
         await FluentActions.Awaiting(() => harness.Worker.ProcessSearchAsync(CancellationToken.None)).Should().ThrowAsync<TaskCanceledException>();
@@ -137,6 +236,8 @@ public class ActiveWorkerSearchTests
             }
         };
         using var harness = new Harness(config, sqlite: true);
+        var clock = new TestClock();
+        harness.Worker.Clock = clock;
         harness.Db.Movies.AddRange(new MoviesFilesModel { EntryId = 1, ArrInstance = "Radarr", Searched = true, Upgrade = true },
             new MoviesFilesModel { EntryId = 2, ArrInstance = "Other", Searched = true, Upgrade = true });
         await harness.Db.SaveChangesAsync();
@@ -161,6 +262,7 @@ public class ActiveWorkerSearchTests
         harness.Db.ChangeTracker.Clear();
         (await harness.Db.Movies.SingleAsync(m => m.ArrInstance == "Radarr")).Searched.Should().BeTrue();
         config.Search.SearchMissing = true;
+        clock.Now += TimeSpan.FromSeconds(5);
         await harness.Worker.ProcessSearchAsync(CancellationToken.None);
         harness.Db.ChangeTracker.Clear();
         var own = await harness.Db.Movies.SingleAsync(m => m.ArrInstance == "Radarr");
@@ -312,6 +414,51 @@ public class ActiveWorkerSearchTests
         harness.Metrics.Torrent.LastSuccess.Should().BeNull();
         harness.Metrics.Search.LastSuccess.Should().BeNull();
         harness.Db.Movies.Should().BeEmpty();
+    }
+
+    [Fact]
+    public async Task TorrentPass_FiltersClientReadsAndPreservesOtherClientsMetrics()
+    {
+        var instance = new ArrInstanceConfig { Type = "radarr", Category = "movies", RssSyncTimer = 0, RefreshDownloadsTimer = 0 };
+        using var harness = new Harness(instance);
+        var config = harness.Provider.GetRequiredService<TorrentarrConfig>();
+        var fast = new Mock<Torrentarr.Core.Interfaces.ITorrentClient>();
+        var slow = new Mock<Torrentarr.Core.Interfaces.ITorrentClient>();
+        foreach (var client in new[] { fast, slow })
+        {
+            client.Setup(c => c.LoginAsync(It.IsAny<CancellationToken>())).ReturnsAsync(true);
+            client.Setup(c => c.GetVersionAsync(It.IsAny<CancellationToken>())).ReturnsAsync("5.3");
+        }
+        fast.Setup(c => c.GetTorrentsAsync(It.IsAny<string?>(), It.IsAny<string?>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(Enumerable.Range(0, 4).Select(_ => new Torrentarr.Core.Models.TorrentInfo()).ToList());
+        slow.Setup(c => c.GetTorrentsAsync(It.IsAny<string?>(), It.IsAny<string?>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(Enumerable.Range(0, 7).Select(_ => new Torrentarr.Core.Models.TorrentInfo()).ToList());
+        var factory = new Mock<Torrentarr.Core.Interfaces.ITorrentClientFactory>();
+        factory.SetupGet(f => f.Type).Returns("fake");
+        factory.Setup(f => f.Create(It.IsAny<string>(), It.IsAny<TorrentClientInstanceConfig>()))
+            .Returns((string id, TorrentClientInstanceConfig _) => id == "fast" ? fast.Object : slow.Object);
+        using var registry = new QBittorrentConnectionManager(NullLogger<QBittorrentConnectionManager>.Instance, [factory.Object]);
+        config.Settings.LoopSleepTimer = 3600;
+        config.TorrentClients["fast"] = new() { Type = "fake", Host = "fixture", TorrentScanIntervalSeconds = 5 };
+        config.TorrentClients["slow"] = new() { Type = "fake", Host = "fixture", TorrentScanIntervalSeconds = 120 };
+        await registry.EnsureAllConnectedAsync(config.GetAllTorrentClients());
+        using var worker = new ArrWorkerService(NullLogger<ArrWorkerService>.Instance, config, instance,
+            new WorkerContext { InstanceName = "Radarr" }, harness.Provider, registry, Mock.Of<IConnectivityService>(),
+            new SearchYearCursor(), harness.Metrics);
+        await worker.ProcessTorrentsAsync(default, new HashSet<string> { "fast", "slow" });
+        harness.Metrics.CategoryCount.Should().Be(11);
+        fast.Setup(c => c.GetTorrentsAsync(It.IsAny<string?>(), It.IsAny<string?>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(Enumerable.Range(0, 2).Select(_ => new Torrentarr.Core.Models.TorrentInfo()).ToList());
+        await worker.ProcessTorrentsAsync(default, new HashSet<string> { "fast" });
+        harness.Metrics.CategoryCount.Should().Be(9);
+        slow.Verify(c => c.GetTorrentsAsync(It.IsAny<string?>(), It.IsAny<string?>(), It.IsAny<CancellationToken>()), Times.Once);
+        Mock.Get(harness.Provider.GetRequiredService<ITorrentProcessor>()).Verify(p => p.ProcessTorrentsAsync("movies",
+            It.Is<IReadOnlySet<string>>(ids => ids.SetEquals(new[] { "fast" })), It.IsAny<CancellationToken>()), Times.Once);
+        var clock = new TestClock(); worker.Clock = clock;
+        instance.RssSyncTimer = 1;
+        typeof(ArrWorkerService).GetField("_lastRssSync", System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.NonPublic)!
+            .SetValue(worker, clock.Now.UtcDateTime);
+        worker.PeriodicCommandDelay(TimeSpan.FromSeconds(120)).Should().Be(TimeSpan.FromSeconds(60));
     }
 
     private sealed class Harness : IDisposable

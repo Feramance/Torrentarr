@@ -1,6 +1,7 @@
 using Torrentarr.Core.Configuration;
 using Torrentarr.Core.Services;
 using Torrentarr.Infrastructure.Database.Models;
+using Microsoft.Extensions.Logging;
 
 namespace Torrentarr.Infrastructure.Services;
 
@@ -10,7 +11,7 @@ internal sealed record SonarrSearchPlan(
 internal static class SonarrSearchScope
 {
     internal static List<SearchCandidate> Candidates(IEnumerable<EpisodeFilesModel> episodes, SearchConfig config,
-        DateTime now, bool upgradesOnly = false)
+        DateTime now, bool upgradesOnly = false, ILogger? logger = null)
     {
         var inventory = episodes.ToList();
         var specialsAllowed = SpecialSeries(inventory, config);
@@ -19,7 +20,12 @@ internal static class SonarrSearchScope
         {
             if ((!config.Unmonitored && episode.Monitored != true) ||
                 (episode.SeasonNumber == 0 && !specialsAllowed.Contains(episode.ArrSeriesId)))
+            {
+                logger?.LogInformation("Search skipped for {Title} S{Season}E{Episode} [id={ArrId}, instance={Instance}]: monitored={Monitored}, specialsAllowed={Specials}",
+                    episode.SeriesTitle, episode.SeasonNumber, episode.EpisodeNumber, episode.ArrId, episode.ArrInstance,
+                    episode.Monitored, specialsAllowed.Contains(episode.ArrSeriesId));
                 continue;
+            }
 
             string? reason = null;
             if (config.DoUpgradeSearch)
@@ -29,10 +35,13 @@ internal static class SonarrSearchScope
             else if (!episode.Searched)
             {
                 if (!episode.HasFile && config.SearchMissing && !upgradesOnly &&
-                    episode.Reason != "NotAvailable" && (episode.AirDateUtc == null || episode.AirDateUtc <= now)) reason = "Missing";
+                    episode.Reason != "NotAvailable" && (episode.AirDateUtc.HasValue && episode.AirDateUtc <= now)) reason = "Missing";
                 else if (episode.HasFile && config.CustomFormatUnmetSearch && !episode.CustomFormatMet) reason = "CustomFormat";
                 else if (episode.HasFile && config.QualityUnmetSearch && !episode.QualityMet) reason = "Quality";
             }
+            logger?.LogInformation("Search eligibility for {Title} S{Season}E{Episode} [id={ArrId}, instance={Instance}]: reason={Reason}, hasFile={HasFile}, searched={Searched}, upgrade={Upgrade}, airDate={AirDate}, qualityMet={Quality}, customFormatMet={CustomFormat}",
+                episode.SeriesTitle, episode.SeasonNumber, episode.EpisodeNumber, episode.ArrId, episode.ArrInstance,
+                reason ?? "No enabled search applies", episode.HasFile, episode.Searched, episode.Upgrade, episode.AirDateUtc, episode.QualityMet, episode.CustomFormatMet);
             if (reason == null) continue;
 
             candidates.Add(new SearchCandidate

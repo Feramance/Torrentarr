@@ -100,7 +100,7 @@ export const maintenanceOperations: {
     category: "Storage",
     group: "Storage",
     description:
-      "Recycle unreferenced files after checking ownership across every torrent client.",
+      "Recycle unreferenced files when recycling is enabled; otherwise permanently delete them, after checking ownership across every torrent client.",
     paths: ["Orphans"],
     essential: ["Orphans.ScanRoots", "Orphans.MinimumAgeMinutes"],
   },
@@ -156,6 +156,10 @@ export function maintenanceActionTitle(action: MaintenanceAction): string {
       return `Change category to “${action.arguments?.category ?? "configured category"}”`;
     case "QuarantineFile":
       return "Move file into recycling";
+    case "DeleteEmptyOrphanDirectory":
+      return "Remove empty orphan folder";
+    case "DeleteOrphanFile":
+      return "Permanently delete orphan file (recycling disabled)";
     case "DeleteContent":
       return "Permanently delete content and remove torrent entry (recycling disabled)";
     case "RecycleContent":

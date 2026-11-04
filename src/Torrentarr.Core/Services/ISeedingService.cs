@@ -35,6 +35,7 @@ public interface ISeedingService
     /// Remove completed torrents that meet seeding requirements
     /// </summary>
     Task<RemovalResult> RemoveCompletedTorrentsAsync(string category, CancellationToken cancellationToken = default);
+    Task<RemovalResult> RemoveCompletedTorrentsAsync(string category, IReadOnlySet<string>? clientIds, CancellationToken cancellationToken = default);
 
     /// <summary>
     /// Update seeding tags for all completed torrents in a category.
@@ -42,6 +43,7 @@ public interface ISeedingService
     /// </summary>
     /// <exception cref="AggregateException">Failures are propagated after independent client and torrent maintenance completes.</exception>
     Task UpdateSeedingTagsAsync(string category, CancellationToken cancellationToken = default);
+    Task UpdateSeedingTagsAsync(string category, IReadOnlySet<string>? clientIds, CancellationToken cancellationToken = default);
 
     /// <summary>
     /// Get the highest-priority matching tracker config for a torrent.

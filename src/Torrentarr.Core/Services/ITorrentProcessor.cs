@@ -9,6 +9,7 @@ public interface ITorrentProcessor
     /// Process all torrents for a specific category
     /// </summary>
     Task ProcessTorrentsAsync(string category, CancellationToken cancellationToken = default);
+    Task ProcessTorrentsAsync(string category, IReadOnlySet<string>? clientIds, CancellationToken cancellationToken = default);
 
     /// <summary>
     /// Process all special category torrents (failed, recheck)

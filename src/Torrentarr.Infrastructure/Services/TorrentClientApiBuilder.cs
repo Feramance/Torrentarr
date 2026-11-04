@@ -16,8 +16,14 @@ public static class TorrentClientApiBuilder
             string? version = null;
             if (alive)
             {
-                try { version = await client!.GetVersionAsync(ct); }
-                catch (Exception ex) when (ex is not OperationCanceledException) { alive = false; }
+                try
+                {
+                    using var timeout = CancellationTokenSource.CreateLinkedTokenSource(ct);
+                    timeout.CancelAfter(TimeSpan.FromSeconds(5));
+                    version = await client!.GetVersionAsync(timeout.Token);
+                    alive = !string.IsNullOrWhiteSpace(version);
+                }
+                catch (Exception) when (!ct.IsCancellationRequested) { alive = false; }
             }
             instances[id] = new { alive, host = cfg.Host, port = cfg.Port, version };
         }
@@ -27,6 +33,8 @@ public static class TorrentClientApiBuilder
     public static async Task<List<object>> CategoriesAsync(TorrentarrConfig config, ITorrentClientRegistry registry, bool extendedPolicy = false, CancellationToken ct = default)
     {
         var categories = new List<object>();
+        Exception? failure = null;
+        var inspected = 0;
         var arrCategories = config.ArrInstances.Values.Select(a => a.Category)
             .Where(c => !string.IsNullOrWhiteSpace(c)).ToHashSet(StringComparer.OrdinalIgnoreCase);
         foreach (var (id, cfg) in config.GetAllTorrentClients())
@@ -35,8 +43,17 @@ public static class TorrentClientApiBuilder
             var client = registry.GetClient(id);
             if (client == null) continue;
             List<TorrentInfo> torrents;
-            try { torrents = await client.GetTorrentsAsync(cancellationToken: ct); }
-            catch (Exception ex) when (ex is not OperationCanceledException) { continue; }
+            try
+            {
+                using var timeout = CancellationTokenSource.CreateLinkedTokenSource(ct);
+                timeout.CancelAfter(TimeSpan.FromSeconds(5));
+                torrents = await client.GetTorrentsAsync(cancellationToken: timeout.Token);
+                inspected++;
+            }
+            catch (OperationCanceledException) when (!ct.IsCancellationRequested)
+            { failure = new TimeoutException("Torrent-client category inspection timed out."); continue; }
+            catch (Exception ex) when (ex is not OperationCanceledException)
+            { failure = ex; continue; }
             foreach (var category in cfg.ManagedCategories.Union(arrCategories, StringComparer.OrdinalIgnoreCase))
             {
                 var inCategory = CategorySeedingApiResolver.SelectAggregateTorrents(torrents, category, cfg.MatchSubcategories);
@@ -59,6 +76,7 @@ public static class TorrentClientApiBuilder
                 categories.Add(row);
             }
         }
+        if (inspected == 0 && failure != null) throw failure;
         return categories;
     }
 }

@@ -420,6 +420,7 @@ public sealed class WorkerProcessSupervisor : BackgroundService, IProcessOrchest
                 _processes[instanceName] = process;
                 _processRevisions[process] = _config.Revision;
                 process.EnableRaisingEvents = true;
+                _logger.LogInformation("Worker launched for {Instance}: pid={Pid}; configurationRevision={Revision}; heartbeatPath={HeartbeatPath}", instanceName, process.Id, _config.Revision, _statusFiles.GetValueOrDefault(instanceName, StatusPath(instanceName)));
             }
             catch (Exception ex)
             {
@@ -482,6 +483,7 @@ public sealed class WorkerProcessSupervisor : BackgroundService, IProcessOrchest
         }
         var count = times.Count;
         var delay = TimeSpan.FromSeconds(Math.Clamp(_config.Settings.ProcessRestartDelay * Math.Pow(1.5, count), 0, 1800));
+        _logger.LogInformation("Worker restart scheduled for {Instance}: recentRestarts={Restarts}/{Limit}; delay={Delay:F1}s; nextAttempt={NextAttempt:O}", name, count, _config.Settings.MaxProcessRestarts, delay.TotalSeconds, DateTimeOffset.UtcNow + delay);
         var retry = new CancellationTokenSource();
         _pendingRetries[name] = retry;
         var task = Task.Run(async () =>

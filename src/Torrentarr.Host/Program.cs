@@ -90,39 +90,12 @@ var workerSink = new WorkerLogEventSink(logsPath);
 // Configure Serilog - write to .config/logs/ (same path as API reads from) with process metadata enrichment
 Log.Logger = new LoggerConfiguration()
     .MinimumLevel.ControlledBy(levelSwitch)
+    .MinimumLevel.Override("Microsoft.EntityFrameworkCore", LogEventLevel.Warning)
+    .Enrich.FromLogContext()
     .MinimumLevel.Override("Microsoft.AspNetCore", LogEventLevel.Warning)
     .Enrich.WithProperty("ProcessType", "Host")
     .Enrich.WithProperty("ProcessId", Environment.ProcessId)
     .Enrich.WithProperty("MachineName", Environment.MachineName)
-    .Filter.ByExcluding(e =>
-        e.RenderMessage().Contains("DbCommand") ||
-        e.RenderMessage().Contains("started tracking") ||
-        e.RenderMessage().Contains("changed state from") ||
-        e.RenderMessage().Contains("generated temporary value") ||
-        e.RenderMessage().Contains("Closing data reader") ||
-        e.RenderMessage().Contains("DetectChanges") ||
-        e.RenderMessage().Contains("SaveChanges") ||
-        e.RenderMessage().Contains("Opening connection") ||
-        e.RenderMessage().Contains("Opened connection") ||
-        e.RenderMessage().Contains("Closing connection") ||
-        e.RenderMessage().Contains("Closed connection") ||
-        e.RenderMessage().Contains("Creating DbConnection") ||
-        e.RenderMessage().Contains("Created DbConnection") ||
-        e.RenderMessage().Contains("Beginning transaction") ||
-        e.RenderMessage().Contains("Began transaction") ||
-        e.RenderMessage().Contains("Committing transaction") ||
-        e.RenderMessage().Contains("Committed transaction") ||
-        e.RenderMessage().Contains("Disposing transaction") ||
-        e.RenderMessage().Contains("Disposed transaction") ||
-        e.RenderMessage().Contains("Disposing connection to database") ||
-        e.RenderMessage().Contains("Disposed connection to database") ||
-        e.RenderMessage().Contains("DbContext") ||
-        e.RenderMessage().Contains("was detected as changed") ||
-        e.RenderMessage().Contains("A data reader") ||
-        e.RenderMessage().Contains("Entity Framework Core") ||
-        e.RenderMessage().Contains("queryContext.StartTracking") ||
-        e.RenderMessage().Contains("InternalEntityEntry") ||
-        e.RenderMessage().Contains("shadowSnapshot"))
     .WriteTo.Sink(workerSink)
     .WriteTo.Console(new ServiceLogFormatter(colour: true))
     .CreateLogger();
@@ -182,16 +155,7 @@ try
 
     if (config.Settings.ConsoleLevel != null)
     {
-        levelSwitch.MinimumLevel = config.Settings.ConsoleLevel.ToUpperInvariant() switch
-        {
-            "TRACE" => LogEventLevel.Verbose,
-            "DEBUG" => LogEventLevel.Debug,
-            "INFO" or "INFORMATION" or "NOTICE" => LogEventLevel.Information,
-            "WARNING" or "WARN" => LogEventLevel.Warning,
-            "ERROR" => LogEventLevel.Error,
-            "CRITICAL" or "FATAL" => LogEventLevel.Fatal,
-            _ => LogEventLevel.Information
-        };
+        levelSwitch.MinimumLevel = LiveConfigurationRuntime.ParseLevel(config.Settings.ConsoleLevel);
         Log.Information("Log level set to {Level} from config ConsoleLevel", levelSwitch.MinimumLevel);
     }
 
@@ -221,6 +185,7 @@ try
     builder.Services.AddHostedService<DatabaseRestartWatchdogService>();
     builder.Services.AddSingleton<ITorrentClientFactory, QBittorrentTorrentClientFactory>();
     builder.Services.AddSingleton<QBittorrentConnectionManager>();
+    builder.Services.AddHostedService(sp => sp.GetRequiredService<QBittorrentConnectionManager>());
     builder.Services.AddSingleton<ITorrentClientRegistry>(sp => sp.GetRequiredService<QBittorrentConnectionManager>());
     builder.Services.AddSingleton<IPathMappingService, PathMappingService>();
     builder.Services.AddSingleton<IHardlinkInspector, HardlinkInspector>();
@@ -375,8 +340,7 @@ try
     // Database - paths already defined at top of file
     builder.Services.AddDbContext<TorrentarrDbContext>(options =>
     {
-        options.UseSqlite($"Data Source={dbPath}")
-               .LogTo(_ => { }, LogLevel.None);  // Suppress all EF Core SQL logs
+        options.UseSqlite($"Data Source={dbPath}");
         if (builder.Environment.IsDevelopment())
             options.EnableSensitiveDataLogging();
     });
@@ -833,14 +797,7 @@ try
     // Web Log Level — actually changes the Serilog level at runtime
     app.MapPost("/web/loglevel", (LoggerConfigurationRequest req, LoggingLevelSwitch ls, TorrentarrConfig cfg) =>
     {
-        ls.MinimumLevel = req.Level?.ToUpperInvariant() switch
-        {
-            "DEBUG" or "VERBOSE" => LogEventLevel.Debug,
-            "WARNING" or "WARN" => LogEventLevel.Warning,
-            "ERROR" => LogEventLevel.Error,
-            "CRITICAL" or "FATAL" => LogEventLevel.Fatal,
-            _ => LogEventLevel.Information
-        };
+        ls.MinimumLevel = LiveConfigurationRuntime.ParseLevel(req.Level);
         foreach (var instanceName in cfg.ArrInstances.Keys)
             File.WriteAllText(Path.Combine(logsPath, $"worker-{instanceName}.loglevel"), ls.MinimumLevel.ToString());
         return Results.Ok(new { success = true, level = ls.MinimumLevel.ToString() });
@@ -1609,14 +1566,7 @@ try
 
     app.MapPost("/api/loglevel", (LoggerConfigurationRequest req, LoggingLevelSwitch ls, TorrentarrConfig cfg) =>
     {
-        ls.MinimumLevel = req.Level?.ToUpperInvariant() switch
-        {
-            "DEBUG" or "VERBOSE" => LogEventLevel.Debug,
-            "WARNING" or "WARN" => LogEventLevel.Warning,
-            "ERROR" => LogEventLevel.Error,
-            "CRITICAL" or "FATAL" => LogEventLevel.Fatal,
-            _ => LogEventLevel.Information
-        };
+        ls.MinimumLevel = LiveConfigurationRuntime.ParseLevel(req.Level);
         foreach (var instanceName in cfg.ArrInstances.Keys)
             File.WriteAllText(Path.Combine(logsPath, $"worker-{instanceName}.loglevel"), ls.MinimumLevel.ToString());
         return Results.Ok(new { success = true, level = ls.MinimumLevel.ToString() });
@@ -2603,6 +2553,7 @@ class ProcessOrchestratorService : BackgroundService
     private bool _qbitConfigured;
     private readonly IConfigReloader? _reloader;
     private readonly SemaphoreSlim _configurationChanged = new(0, 1);
+    internal TimeProvider Clock { get; set; } = TimeProvider.System;
 
     public ProcessOrchestratorService(
         ILogger<ProcessOrchestratorService> logger,
@@ -2690,37 +2641,65 @@ class ProcessOrchestratorService : BackgroundService
                 });
             }
 
+            var scans = new TorrentScanSchedule(Clock);
+            var storageScans = new TorrentScanSchedule(Clock, StringComparer.Ordinal);
+            var refresh = true;
             while (!stoppingToken.IsCancellationRequested)
             {
                 var passRevision = _config.Revision;
+                var connectionRevision = (_qbitManager as QBittorrentConnectionManager)?.ConnectionRevision;
+                var intervals = new Dictionary<string, int>();
+                var due = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+                var freeSpaceEnabled = false;
                 try
                 {
                     using var configuration = _config.BeginOperation();
                     RefreshConfiguration();
-                    if (!TorrentPolicyHelper.EnableFreeSpace(_config))
-                        _stateManager.Update("FreeSpaceManager", state => state.Alive = false);
+                    intervals = TorrentScanSchedule.Intervals(_config);
+                    freeSpaceEnabled = TorrentPolicyHelper.EnableFreeSpace(_config);
+                    if (!freeSpaceEnabled) _stateManager.Update("FreeSpaceManager", state => state.Alive = false);
                     if (_qbitConfigured)
                     {
                         await _qbitManager.EnsureAllConnectedAsync(_config.GetAllTorrentClients(), stoppingToken);
+                        var latest = (_qbitManager as QBittorrentConnectionManager)?.ConnectionRevision;
+                        if (refresh || latest != connectionRevision)
+                        { scans.Reset(); storageScans.Reset(); refresh = true; }
+                        connectionRevision = latest;
+                        due = scans.TakeDue(intervals, passRevision);
                         if (_qbitManager.IsConnected())
                         {
-                            await ProcessSpecialCategoriesAsync(stoppingToken);
-
-                            var enableTrackerSort = TorrentPolicyHelper.EnableTrackerSort(_config);
-                            var enableFreeSpace = TorrentPolicyHelper.EnableFreeSpace(_config);
+                            if (due.Count > 0) await ProcessSpecialCategoriesAsync(stoppingToken, due);
                             var managedCategories = TorrentPolicyHelper.GetAllMonitoredPolicyCategories(_config);
-                            if (managedCategories.Count > 0 && (enableTrackerSort || enableFreeSpace))
-                                await ProcessTorrentPolicyAsync(managedCategories, enableTrackerSort, enableFreeSpace, stoppingToken);
+                            var sort = due.Count > 0 && TorrentPolicyHelper.EnableTrackerSort(_config);
+                            if (managedCategories.Count > 0 && sort)
+                                await ProcessTorrentPolicyAsync(managedCategories, due, stoppingToken);
+                            if (managedCategories.Count > 0 && freeSpaceEnabled && (refresh || storageScans.Delay <= TimeSpan.Zero))
+                                await ProcessFreeSpaceManagerAsync(managedCategories, stoppingToken, storageScans);
                         }
                     }
                 }
+                catch (OperationCanceledException) when (stoppingToken.IsCancellationRequested) { throw; }
                 catch (Exception ex)
                 {
                     _logger.LogError(ex, "Error in orchestrator loop");
                 }
-
+                scans.Complete(due, intervals);
+                refresh = false;
                 _reloader?.Acknowledge("torrent-policy", passRevision);
-                await _configurationChanged.WaitAsync(TimeSpan.FromSeconds(_config.Settings.LoopSleepTimer), stoppingToken);
+                var delay = scans.Delay;
+                if (freeSpaceEnabled && storageScans.Delay < delay) delay = storageScans.Delay;
+                if (delay <= TimeSpan.Zero) delay = TimeSpan.FromSeconds(5);
+                var sleepUntil = Clock.GetUtcNow() + delay;
+                while (sleepUntil > Clock.GetUtcNow())
+                {
+                    if ((_qbitManager as QBittorrentConnectionManager)?.ConnectionRevision != connectionRevision)
+                    { refresh = true; break; }
+                    delay = sleepUntil - Clock.GetUtcNow();
+                    if (delay > TimeSpan.FromSeconds(5)) delay = TimeSpan.FromSeconds(5);
+                    if (delay <= TimeSpan.Zero) break;
+                    if (await _configurationChanged.WaitAsync(delay, stoppingToken))
+                    { refresh = true; break; }
+                }
             }
         }
         catch (OperationCanceledException)
@@ -2733,12 +2712,12 @@ class ProcessOrchestratorService : BackgroundService
         }
     }
 
-    private async Task ProcessSpecialCategoriesAsync(CancellationToken cancellationToken)
+    private async Task ProcessSpecialCategoriesAsync(CancellationToken cancellationToken, IReadOnlySet<string> clientIds)
     {
         using var processing = ConfigMutationGuard.EnterProcessing();
         int totalFailed = 0;
         int totalRecheck = 0;
-        foreach (var (instanceName, client) in _qbitManager.GetAllClients())
+        foreach (var (instanceName, client) in _qbitManager.GetAllClients().Where(pair => clientIds.Contains(pair.Key)))
         {
             try
             {
@@ -2800,47 +2779,13 @@ class ProcessOrchestratorService : BackgroundService
         _stateManager.Update("Recheck", s => { s.CategoryCount = totalRecheck; s.Alive = true; });
     }
 
-    /// <summary>
-    /// qBitrr <c>TorrentPolicyManager.process_torrents</c>: optional pre-sort sync + queue sort, then optional free-space.
-    /// </summary>
-    private async Task ProcessTorrentPolicyAsync(
-        HashSet<string> managedCategories,
-        bool enableTrackerSort,
-        bool enableFreeSpace,
-        CancellationToken cancellationToken)
+    private async Task ProcessTorrentPolicyAsync(HashSet<string> managedCategories, IReadOnlySet<string> clientIds, CancellationToken cancellationToken)
     {
         using var processing = ConfigMutationGuard.EnterProcessing();
-        IServiceScope? policyScope = null;
-        try
-        {
-            ISeedingService? seeding = null;
-            if (enableTrackerSort)
-            {
-                policyScope = _scopeFactory.CreateScope();
-                seeding = policyScope.ServiceProvider.GetRequiredService<ISeedingService>();
-            }
-
-            if (enableTrackerSort && seeding != null)
-            {
-                _logger.LogDebug(
-                    "TorrentPolicyManager workflow: pre-sort tracker/tag sync -> queue sort{Tail}",
-                    enableFreeSpace ? " -> free-space" : "");
-                await PreSortTrackerTagSyncAsync(seeding, managedCategories, cancellationToken);
-                await SortManagedTorrentsByTrackerPriorityAsync(seeding, managedCategories, cancellationToken);
-            }
-            else if (enableFreeSpace)
-            {
-                _logger.LogDebug(
-                    "TorrentPolicyManager tracker sorting disabled: Arr loops retain tracker/tag sync ownership");
-            }
-
-            if (enableFreeSpace)
-                await ProcessFreeSpaceManagerAsync(managedCategories, cancellationToken);
-        }
-        finally
-        {
-            policyScope?.Dispose();
-        }
+        using var scope = _scopeFactory.CreateScope();
+        var seeding = scope.ServiceProvider.GetRequiredService<ISeedingService>();
+        await PreSortTrackerTagSyncAsync(seeding, managedCategories, clientIds, cancellationToken);
+        await SortManagedTorrentsByTrackerPriorityAsync(seeding, managedCategories, clientIds, cancellationToken);
     }
 
     /// <summary>
@@ -2849,9 +2794,9 @@ class ProcessOrchestratorService : BackgroundService
     private async Task PreSortTrackerTagSyncAsync(
         ISeedingService seeding,
         HashSet<string> managedCategories,
-        CancellationToken cancellationToken)
+        IReadOnlySet<string> clientIds, CancellationToken cancellationToken)
     {
-        foreach (var (instanceName, client) in _qbitManager.GetAllClients())
+        foreach (var (instanceName, client) in _qbitManager.GetAllClients().Where(pair => clientIds.Contains(pair.Key)))
         {
             foreach (var category in managedCategories)
             {
@@ -2877,11 +2822,11 @@ class ProcessOrchestratorService : BackgroundService
         }
     }
 
-    private async Task ProcessFreeSpaceManagerAsync(HashSet<string> managedCategories, CancellationToken cancellationToken)
+    private async Task ProcessFreeSpaceManagerAsync(HashSet<string> managedCategories, CancellationToken cancellationToken, TorrentScanSchedule schedule)
     {
         using var scope = _scopeFactory.CreateScope();
         var manager = scope.ServiceProvider.GetRequiredService<IFreeSpaceService>();
-        var result = await manager.ProcessAsync(managedCategories, cancellationToken);
+        var result = await manager.ProcessScheduledAsync(managedCategories, schedule, cancellationToken);
         _stateManager.Update("FreeSpaceManager", state =>
         {
             state.CategoryCount = result.MarkedCount;
@@ -2896,10 +2841,10 @@ class ProcessOrchestratorService : BackgroundService
     private async Task SortManagedTorrentsByTrackerPriorityAsync(
         ISeedingService seeding,
         HashSet<string> managedCategories,
-        CancellationToken cancellationToken)
+        IReadOnlySet<string> clientIds, CancellationToken cancellationToken)
     {
         var tagToPriority = TorrentPolicyHelper.MergeGlobalTrackerTagToPriorityMax(_config);
-        foreach (var (instanceName, client) in _qbitManager.GetAllClients())
+        foreach (var (instanceName, client) in _qbitManager.GetAllClients().Where(pair => clientIds.Contains(pair.Key)))
         {
             try
             {

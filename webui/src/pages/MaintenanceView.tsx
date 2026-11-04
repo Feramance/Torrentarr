@@ -315,6 +315,12 @@ export function MaintenanceView({
   const toRecycle = candidateActions.filter(
     (a) => a.kind === "QuarantineFile" || a.kind === "RecycleContent",
   );
+  const emptyOrphanFolders = candidateActions.filter(
+    (a) => a.kind === "DeleteEmptyOrphanDirectory",
+  );
+  const orphanDeletes = candidateActions.filter(
+    (a) => a.kind === "DeleteOrphanFile",
+  );
   const toDelete = candidateActions.filter((a) => a.kind === "DeleteContent");
   const toPurge = candidateActions.filter(
     (a) => a.kind === "DeleteExpiredRecycleItem",
@@ -679,8 +685,15 @@ export function MaintenanceView({
                   {bytes(toRecycle.reduce((sum, a) => sum + a.bytes, 0))}). To
                   purge: {toPurge.length} entries (
                   {bytes(toPurge.reduce((sum, a) => sum + a.bytes, 0))}).
+                  Permanently delete orphan files: {orphanDeletes.length} files
+                  ({bytes(orphanDeletes.reduce((sum, a) => sum + a.bytes, 0))}).{" "}
+                  Remove empty orphan folders: {emptyOrphanFolders.length}.{" "}
                   Permanently delete through client: {toDelete.length} torrents
-                  (recycling disabled). Blocked changes: {plan.blockedCount}.
+                  (recycling disabled). Blocked candidate actions:{" "}
+                  {plan.blockedCount}. Blocked operations:{" "}
+                  {plan.operationResults?.filter((r) => r.state === "blocked")
+                    .length ?? 0}
+                  .
                 </p>
                 <ul>
                   {plan.operationResults?.map((result) => (
@@ -710,7 +723,7 @@ export function MaintenanceView({
                     {d.examples?.map((example, index) => (
                       <span className="cleanup-path" key={index}>
                         {" "}
-                        Source: {example.clientPath} · Recycled:{" "}
+                        Client path: {example.clientPath} · Local path:{" "}
                         {example.localPath}
                       </span>
                     ))}

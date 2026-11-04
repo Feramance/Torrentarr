@@ -15,6 +15,29 @@ namespace Torrentarr.Infrastructure.Tests.Services;
 
 public class EqualTorrentClientTests
 {
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task CategoryFailure_DoesNotHideHealthyClientsOrReturnFalseEmptySuccess(bool healthyAvailable)
+    {
+        var failed = Client("failed");
+        failed.Setup(c => c.GetTorrentsAsync(It.IsAny<string?>(), It.IsAny<string?>(), It.IsAny<CancellationToken>()))
+            .ThrowsAsync(new OperationCanceledException());
+        var healthy = Client("healthy", new TorrentInfo { Hash = "abc", Category = "movies", State = "uploading" });
+        var registry = Registry(("failed", failed), ("healthy", healthy));
+        var config = new TorrentarrConfig();
+        config.TorrentClients["failed"] = new() { Host = "fixture", ManagedCategories = ["movies"] };
+        if (healthyAvailable) config.TorrentClients["healthy"] = new() { Host = "fixture", ManagedCategories = ["movies"] };
+        if (healthyAvailable)
+        {
+            var categories = JsonSerializer.SerializeToElement(await TorrentClientApiBuilder.CategoriesAsync(config, registry.Object));
+            categories.GetArrayLength().Should().Be(1);
+            categories[0].GetProperty("instance").GetString().Should().Be("healthy");
+        }
+        else
+            await FluentActions.Awaiting(() => TorrentClientApiBuilder.CategoriesAsync(config, registry.Object)).Should().ThrowAsync<TimeoutException>();
+    }
+
     private static Mock<ITorrentClient> Client(string id, params TorrentInfo[] torrents)
     {
         var client = new Mock<ITorrentClient>();

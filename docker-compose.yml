@@ -7,7 +7,7 @@ services:
     - 6970:6969
     volumes:
     - .config:/config
-    - torrents:/torrents
+    - torrents-writable:/torrents
     environment:
     - TZ=Europe/Malta
     - PUID=1000
@@ -21,9 +21,9 @@ services:
       start_period: 40s
 
 volumes:
-  torrents:
+  torrents-writable:
     driver: local
     driver_opts:
       type: cifs
       device: ${CIFS_PATH}
-      o: username=${CIFS_USER},password=${CIFS_PASS},vers=3.1.1,iocharset=utf8
+      o: username=${CIFS_USER},password=${CIFS_PASS},vers=3.1.1,iocharset=utf8,uid=1000,gid=1000,forceuid,forcegid,file_mode=0664,dir_mode=0775

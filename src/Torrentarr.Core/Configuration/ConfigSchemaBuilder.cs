@@ -16,7 +16,8 @@ public static class ConfigSchemaBuilder
     public static IReadOnlyDictionary<string, IReadOnlyList<ConfigSchemaField>> Sections { get; } =
         new Dictionary<string, IReadOnlyList<ConfigSchemaField>>
         {
-            ["Settings"] = Qbitrr5146ConfigSchema.Settings.Where(f => f.key is not ("CompletedDownloadFolder" or "FreeSpace" or "FreeSpaceFolder" or "AutoPauseResume" or "FreeSpaceThresholdGB")).Select(f => f.key == "ConfigVersion" ? f with { @default = ConfigurationLoader.ExpectedConfigVersion } : f).ToList(),
+            ["Settings"] = Qbitrr5146ConfigSchema.Settings.Where(f => f.key is not ("CompletedDownloadFolder" or "FreeSpace" or "FreeSpaceFolder" or "AutoPauseResume" or "FreeSpaceThresholdGB")).Select(f => f.key == "ConfigVersion" ? f with { @default = ConfigurationLoader.ExpectedConfigVersion }
+                : f.key == "LoopSleepTimer" ? f with { label = "Database refresh interval", comments = "Interval in seconds between Arr catalog refreshes into SQLite. Torrent scans use each client’s scan interval." } : f).ToList(),
             ["WebUI"] = [.. Qbitrr5146ConfigSchema.WebUI,
                 Field("CorsAllowedOrigins", "tags", "Allowed browser origins", Array.Empty<string>()) with
                 {
@@ -66,6 +67,9 @@ public static class ConfigSchemaBuilder
         Field("Password", "password", "Password", "CHANGE_ME", secure: true),
         Field("DownloadPath", "text", "Download path", "") with
         { description = "Default download root as seen by this torrent client. Existing category paths are preserved.", applyLive = true, requiresRestart = false },
+        Field("TorrentScanIntervalSeconds", "select", "Torrent scan interval (seconds)", 30,
+            options: TorrentScanInterval.AllowedSeconds.Select(value => value.ToString(System.Globalization.CultureInfo.InvariantCulture)).ToArray()) with
+        { description = "Regular torrent processing interval. Shared-storage free space checks use the fastest participating client. Safety checks and manual actions may run sooner." },
         Field("FreeSpace", "collection", "Free-space monitors", Array.Empty<object>()) with
         {
             description = "Paths visible to Torrentarr. One manager shares a budget across all clients using the same filesystem, preserving the largest configured reserve.",
@@ -85,7 +89,7 @@ public static class ConfigSchemaBuilder
         Field("Maintenance.ExplicitCategories", "tags", "Explicit categories", Array.Empty<string>()),
         Field("Maintenance.ExcludedCategories", "tags", "Excluded categories", Array.Empty<string>()),
         Field("Maintenance.ExcludedTags", "tags", "Excluded tags", Array.Empty<string>()),
-        Field("Maintenance.Orphans.Enabled", "checkbox", "Enable orphan scan", false) with { description = "Moves unreferenced files into the recycle bin; requires complete ownership inspection and local path mappings." },
+        Field("Maintenance.Orphans.Enabled", "checkbox", "Enable orphan scan", false) with { description = "Recycles unreferenced files when recycling is enabled; otherwise permanently deletes them. Requires complete ownership inspection and local path mappings." },
         Field("Maintenance.Orphans.MinimumAgeMinutes", "number", "Minimum orphan file age (minutes)", 1440, minimum: 0),
         Field("Maintenance.Orphans.MaxFilesPerRun", "number", "Maximum orphan files per run", 10, minimum: 0),
         Field("Maintenance.Orphans.ExcludePatterns", "tags", "Orphan exclusion patterns", Array.Empty<string>()),

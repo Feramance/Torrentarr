@@ -31,8 +31,7 @@ export function TorrentAutomationIssues({ clientId }: { clientId: string }) {
         (p) =>
           p.state === "unknown" ||
           p.deadlineRisk !== "none" ||
-          p.nativeStopLimitRisk ||
-          p.reason.includes("pause ownership"),
+          p.nativeStopLimitRisk,
       ) ?? [];
   const recovery = status?.recovery?.filter(selected) ?? [];
   const trackerIssues = status?.trackerIssues?.filter(selected) ?? [];

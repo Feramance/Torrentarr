@@ -1,9 +1,11 @@
+using System.IO.Enumeration;
 using Torrentarr.Core.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
 using Torrentarr.Core.Interfaces;
 using Torrentarr.Core.Models;
 using Torrentarr.Core.Services;
+using Torrentarr.Infrastructure.Database;
 
 namespace Torrentarr.Infrastructure.Services;
 
@@ -210,7 +212,7 @@ public sealed class SafeDeletionService : ISafeDeletionService
         => (await ProtectionDecisionAsync(instanceId, hash, ct, expected, stateBeforeOwnedPause, intent)).Allowed;
 
     private async Task<RemovalDecision> ProtectionDecisionAsync(string instanceId, string hash, CancellationToken ct, TorrentInfo? expected = null,
-        string? stateBeforeOwnedPause = null, TorrentRemovalIntent intent = TorrentRemovalIntent.SeedingLimit)
+        string? stateBeforeOwnedPause = null, TorrentRemovalIntent intent = TorrentRemovalIntent.SeedingLimit, bool ownedFileCleanup = false)
     {
         RemovalDecision Block(string code, string reason, string next) => new([new(code, DiagnosticText.Safe(reason), next)]);
         if (_scopes == null) return Block("removal.services-unavailable", "No service scope factory is registered for final protection checks", "Restore seeding/protection service registration.");
@@ -224,9 +226,15 @@ public sealed class SafeDeletionService : ISafeDeletionService
             var seeding = scope.ServiceProvider.GetRequiredService<ISeedingService>();
             var current = (await client.GetTorrentsAsync(cancellationToken: ct)).FirstOrDefault(t => t.Hash.Equals(hash, StringComparison.OrdinalIgnoreCase));
             if (current == null) return Block("torrent.missing", $"Torrent '{hash}' no longer exists on '{instanceId}'", "Refresh the torrent list; no deletion was sent.");
+            current.ClientInstanceId = instanceId;
+            if (ownedFileCleanup)
+            {
+                var db = scope.ServiceProvider.GetService<TorrentarrDbContext>();
+                if (db == null || MaintenanceRecovery.BlocksAutomaticRemoval(db, current, _config.GetTorrentClient(instanceId)!.Maintenance.ErrorRecovery))
+                    return Block("torrent.recovery", "Owned files are protected by recovery or recovery evidence is unavailable", "Complete recovery before excluded-file cleanup.");
+            }
             if (expected != null && !SeedingService.SameRemovalCandidate(expected, current))
                 return Block("torrent.changed", SeedingService.DescribeRemovalChanges(expected, current), "Wait for a fresh evaluation of the changed torrent.");
-            current.ClientInstanceId = instanceId;
             if (stateBeforeOwnedPause != null && (SeedingService.IsStalledUploadState(stateBeforeOwnedPause) || intent == TorrentRemovalIntent.StalledDownload))
                 current.State = stateBeforeOwnedPause;
             var decision = await seeding.EvaluateRemovalAsync(current, intent, ct);
@@ -244,18 +252,90 @@ public sealed class SafeDeletionService : ISafeDeletionService
     {
         using var configuration = _config.BeginOperation();
         using var processing = ConfigMutationGuard.EnterProcessing();
+        bool Denied(string reason)
+        {
+            _logger.LogWarning("Excluded-file cleanup denied for {Instance}/{Hash}: {Path}; reason={Reason}", instanceId, hash, path, reason);
+            return false;
+        }
         var cfg = _config.GetTorrentClient(instanceId);
-        if (cfg == null || ValidateSource(path, cfg) != null) return false;
+        if (cfg == null) return Denied("Client is unconfigured.");
+        var validation = ValidateSource(path, cfg);
+        if (validation != null) return Denied(validation);
         var inventory = await _inventory.BuildAsync(ct: ct);
         if (!inventory.IsComplete || !inventory.LocalPathReferences.TryGetValue(Path.GetFullPath(path), out var owners)
             || !owners.Any(o => o.Torrent.ClientInstanceId.Equals(instanceId, StringComparison.OrdinalIgnoreCase)
-                && o.Torrent.Hash.Equals(hash, StringComparison.OrdinalIgnoreCase))) return false;
+                && o.Torrent.Hash.Equals(hash, StringComparison.OrdinalIgnoreCase))) return Denied("Complete file ownership could not be established.");
         foreach (var owner in owners)
-            if (!await ProtectionAllowsAsync(owner.Torrent.ClientInstanceId, owner.Torrent.Hash, ct, owner.Torrent)) return false;
-        if (ValidateSource(path, cfg) != null) return false;
+        {
+            var decision = await ProtectionDecisionAsync(owner.Torrent.ClientInstanceId, owner.Torrent.Hash, ct, owner.Torrent,
+                intent: TorrentRemovalIntent.RejectedByAllowlist, ownedFileCleanup: true);
+            if (!decision.Allowed) return Denied(decision.Reason);
+        }
+        validation = ValidateSource(path, cfg);
+        if (validation != null) return Denied(validation);
         ct.ThrowIfCancellationRequested();
         File.Delete(path);
         return true;
+    }
+
+    internal static bool IsAutomationStorage(string path, TorrentarrConfig config, IPathMappingService paths)
+    {
+        foreach (var cfg in config.GetAllTorrentClients().Values)
+        {
+            var storage = cfg.Maintenance;
+            var root = storage.RecycleBin.Path.Length > 0 ? storage.RecycleBin.Path
+                : storage.PathMappings.Count > 0 ? Path.Combine(storage.PathMappings[0].LocalPath, ".torrentarr-recycle") : null;
+            if (root != null && paths.IsSafeDescendant(path, root)) return true;
+            if (storage.RecycleBin.ResumeDataPath.Length > 0 && paths.IsSafeDescendant(path, storage.RecycleBin.ResumeDataPath)) return true;
+        }
+        var data = ConfigurationLoader.GetDataDirectoryPath();
+        if (paths.IsSafeDescendant(path, Path.Combine(data, "logs"))) return true;
+        return new[] { "torrentarr.db", "torrentarr.db-wal", "torrentarr.db-shm", "maintenance-history.jsonl", "active-config.json", ".torrentarr-host.lock" }
+            .Any(name => Path.GetFullPath(path) == Path.Combine(data, name));
+    }
+
+    public Task<SafeDeletionResult> DeleteOrphanFileAsync(string clientInstanceId, string localPath, TorrentInventory inventory, CancellationToken ct = default)
+    {
+        var cfg = _config.GetTorrentClient(clientInstanceId);
+        if (cfg == null || cfg.Disabled || !MaintenanceRequirements.Enabled(MaintenanceOperation.OrphanScan, cfg.Maintenance)
+            || cfg.Maintenance.RecycleBin.Enabled)
+            return Task.FromResult(new SafeDeletionResult(false, true, 0, "Permanent orphan deletion is not enabled."));
+        var full = Path.GetFullPath(localPath);
+        var validation = ValidateSource(full, cfg);
+        if (validation != null || !File.Exists(full))
+            return Task.FromResult(new SafeDeletionResult(false, true, 0, validation ?? "Orphan file no longer exists."));
+        var mapping = cfg.Maintenance.PathMappings.FirstOrDefault(m => cfg.Maintenance.Orphans.ScanRoots.Contains(m.LocalPath)
+            && _paths.IsSafeDescendant(full, m.LocalPath));
+        if (mapping == null || File.GetLastWriteTimeUtc(full) > DateTime.UtcNow.AddMinutes(-cfg.Maintenance.Orphans.MinimumAgeMinutes)
+            || cfg.Maintenance.Orphans.ExcludePatterns.Any(pattern => FileSystemName.MatchesSimpleExpression(pattern, Path.GetRelativePath(mapping.LocalPath, full), OperatingSystem.IsWindows()))
+            || IsAutomationStorage(full, _config, _paths)
+            || !inventory.IsComplete || inventory.LocalPathReferences.ContainsKey(full)
+            || GetRecoveryPaths().Any(p => _paths.IsSafeDescendant(full, p)))
+            return Task.FromResult(new SafeDeletionResult(false, true, 0, "File ownership is incomplete or the file is protected."));
+        ct.ThrowIfCancellationRequested();
+        File.Delete(full);
+        return Task.FromResult(new SafeDeletionResult(true, false, 0));
+    }
+
+    public Task<SafeDeletionResult> DeleteEmptyOrphanDirectoryAsync(string clientInstanceId, string localPath, TorrentInventory inventory, CancellationToken ct = default)
+    {
+        var cfg = _config.GetTorrentClient(clientInstanceId);
+        var full = Path.GetFullPath(localPath);
+        if (cfg == null || cfg.Disabled || !MaintenanceRequirements.Enabled(MaintenanceOperation.OrphanScan, cfg.Maintenance))
+            return Task.FromResult(new SafeDeletionResult(false, true, 0, "Orphan cleanup is not enabled."));
+        var mapping = cfg.Maintenance.PathMappings.FirstOrDefault(m => cfg.Maintenance.Orphans.ScanRoots.Contains(m.LocalPath)
+            && _paths.IsSafeDescendant(full, m.LocalPath));
+        if (mapping == null || ValidateSource(full, cfg) != null || !Directory.Exists(full)
+            || cfg.Maintenance.PathMappings.Any(m => Path.TrimEndingDirectorySeparator(Path.GetFullPath(m.LocalPath)).Equals(
+                    Path.TrimEndingDirectorySeparator(Path.GetFullPath(full)), OperatingSystem.IsWindows() ? StringComparison.OrdinalIgnoreCase : StringComparison.Ordinal))
+            || IsAutomationStorage(full, _config, _paths) || GetRecoveryPaths().Any(p => _paths.IsSafeDescendant(full, p))
+            || !inventory.IsComplete || inventory.LocalPathReferences.Keys.Any(p => _paths.IsSafeDescendant(p, full))
+            || cfg.Maintenance.Orphans.ExcludePatterns.Any(pattern => FileSystemName.MatchesSimpleExpression(pattern, Path.GetRelativePath(mapping.LocalPath, full), OperatingSystem.IsWindows()))
+            || Directory.EnumerateFileSystemEntries(full).Any())
+            return Task.FromResult(new SafeDeletionResult(false, true, 0, "Folder is protected, no longer orphaned, or not empty."));
+        ct.ThrowIfCancellationRequested();
+        Directory.Delete(full, recursive: false);
+        return Task.FromResult(new SafeDeletionResult(true, true, 0));
     }
 
     public async Task<SafeDeletionResult> QuarantineFileAsync(string clientInstanceId, string localPath, CancellationToken ct = default)

@@ -190,7 +190,6 @@ public class MediaValidationService : IMediaValidationService
     internal static bool MatchesExtensionAllowlist(string filePath, IReadOnlyCollection<string> allowlist)
     {
         var ext = Path.GetExtension(filePath);
-        var name = Path.GetFileName(filePath);
         foreach (var allowed in allowlist)
         {
             if (string.IsNullOrWhiteSpace(allowed))
@@ -202,13 +201,14 @@ public class MediaValidationService : IMediaValidationService
                 return true;
             try
             {
-                if (Regex.IsMatch(name, allowed, RegexOptions.IgnoreCase))
+                if (Regex.IsMatch(ext, "^(?:" + allowed + ")$", RegexOptions.IgnoreCase, TimeSpan.FromMilliseconds(100)))
                     return true;
             }
             catch (ArgumentException)
             {
                 // skip invalid regex patterns
             }
+            catch (RegexMatchTimeoutException) { }
         }
         return false;
     }

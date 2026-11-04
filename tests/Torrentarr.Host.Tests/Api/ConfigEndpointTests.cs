@@ -1,4 +1,5 @@
 using FluentAssertions;
+using Torrentarr.Core.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.EntityFrameworkCore;
 using Torrentarr.Infrastructure.Database;
@@ -46,6 +47,24 @@ public class ConfigEndpointTests : IClassFixture<TorrentarrWebApplicationFactory
     }
 
 
+
+    [Theory]
+    [InlineData("/web/config", 10)]
+    [InlineData("/web/config", 30.5)]
+    [InlineData("/api/config", 10)]
+    [InlineData("/api/config", 30.5)]
+    public async Task UnsupportedScanInterval_IsRejectedWithoutChangingConfig(string endpoint, double value)
+    {
+        using var client = _factory.CreateClientWithApiToken();
+        var loader = _factory.Services.GetRequiredService<ConfigurationLoader>();
+        var before = File.ReadAllText(loader.ConfigPath);
+        var response = await client.PostAsJsonAsync(endpoint, new
+        {
+            changes = new Dictionary<string, object> { ["TorrentClient.invalid-scan.TorrentScanIntervalSeconds"] = value }
+        });
+        response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
+        File.ReadAllText(loader.ConfigPath).Should().Be(before);
+    }
 
     [Theory]
     [InlineData("/web/config")]

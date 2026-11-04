@@ -70,7 +70,7 @@ The `[Settings]` section contains global configuration that applies to all Torre
 ```toml
 [Settings]
 # Internal config schema version - DO NOT MODIFY
-ConfigVersion = "6.20.2"
+ConfigVersion = "6.20.3"
 
 # Logging
 ConsoleLevel = "INFO"
@@ -112,7 +112,7 @@ ProcessRestartDelay = 5
 ### ConfigVersion
 
 ```toml
-ConfigVersion = "6.20.2"
+ConfigVersion = "6.20.3"
 ```
 
 **Type:** String
@@ -187,6 +187,7 @@ Type = "qbittorrent"
 Host = "localhost"
 Port = 8080
 DownloadPath = "/downloads"
+TorrentScanIntervalSeconds = 30
 FreeSpace = [
   { Path = "/data/downloads", Enabled = true, Limit = "50G" },
   { Path = "/data/archive", Enabled = false, Limit = "100G" }
@@ -201,9 +202,15 @@ The same fields work in legacy `[qBit]` and `[qBit-name]` sections. `DownloadPat
 
 New clients have no monitors. New monitor rows start disabled with a `10G` limit. Limits accept nonnegative bytes or K/M/G/T suffixes (powers of 1024); use `Enabled = false` to disable a row. Duplicate paths are rejected, while temporarily unavailable paths may still be saved.
 
+`TorrentScanIntervalSeconds` accepts only 5, 15, 30, 60, 90, or 120 seconds; new clients default to 30. Arr and qBit-only torrent processing, tracker sorting, failed/recheck handling, and routine protection inspections follow this per-client interval. Free space checks use the shortest interval among clients sharing each filesystem. Independent filesystems keep separate deadlines. Scans run immediately at startup; configuration changes and client reconnections can wake processing early. Each loop runs sequentially and skips missed ticks; slow operations and error backoff can delay scans. Fresh safety checks and manual actions may run between scans.
+
 Exactly one host-owned `FreeSpaceManager` reads the client inventories and allocates space per shared filesystem. Clients and paths on the same storage share one budget and the largest enabled reserve. Remaining active unmanaged downloads consume that budget too. Managed downloads are evaluated globally oldest first by added date, reserving each torrent's remaining bytes once, and only downloads that do not fit are paused. User-paused torrents remain paused.
 
 Unavailable enabled paths pause affected managed downloads and withhold resumes; healthy independent storage continues. If an enabled client’s torrent inventory is unavailable, all resumes are withheld because its download locations are unknown. Unresolved active download paths also withhold resumes across monitored storage. Unmatched paths are logged and left alone. Disabling/removing a monitor does not automatically resume torrents paused by it. Changes apply on the next processing cycle.
+
+#### Migration to 6.20.3
+
+Clients missing `TorrentScanIntervalSeconds` inherit the nearest allowed interval from the saved `Settings.LoopSleepTimer`. Values above 120 map to 120, below 5 to 5, and ties select the longer interval. Explicit valid values are preserved; unsupported explicit values are rejected. Migration saves `config.toml.bak` before persisting the result. New clients default to 30 seconds regardless of the database refresh interval.
 
 #### Migration to 6.20.2
 
@@ -241,31 +248,22 @@ How long to wait when internet connection is lost before checking again.
 
 ---
 
-### LoopSleepTimer
+### LoopSleepTimer — Database refresh interval
 
 ```toml
-LoopSleepTimer = 5
+[Settings]
+LoopSleepTimer = 3600  # Refresh the Arr catalog into SQLite once an hour
+
+[TorrentClient.local]
+TorrentScanIntervalSeconds = 30
 ```
 
-**Type:** Integer (seconds)
+**Type:** Integer or duration (seconds)
 **Default:** `5`
 
-Delay between each torrent processing loop. Lower values = more responsive, higher CPU usage.
+Controls periodic Arr catalog synchronization into SQLite. It does not control torrent scans, free space protection, tracker sorting, failed/recheck processing, or search dispatch. Pause ownership, import results, recovery state, and search progress are persisted immediately when actions occur. Catalog sync runs at startup and after configuration changes, then follows this interval.
 
-**What happens each loop:**
-
-- Check all managed torrents
-- Detect stalled/failed downloads
-- Process completed torrents
-- Trigger imports
-- Check disk space
-
-**Recommendations:**
-
-- `5` - **(Default)** Balanced
-- `3` - More responsive
-- `10` - Lower resource usage
-- `1` - Very responsive (higher CPU)
+Search dispatch uses each Arr instance's `EntrySearch.SearchRequestsEvery`; nonpositive values permit continuous searches with a five-second dispatch floor. `SearchLoopDelay` remains the delay between individual search commands. RSS, refresh-download commands, connection recovery, maintenance schedules, and failure backoff retain their own timing.
 
 ---
 
@@ -1102,7 +1100,7 @@ Absolute minimum configuration to get started:
 
 ```toml
 [Settings]
-ConfigVersion = "6.20.2"
+ConfigVersion = "6.20.3"
 
 [WebUI]
 Host = "0.0.0.0"

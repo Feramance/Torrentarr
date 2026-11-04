@@ -4,6 +4,7 @@ using Torrentarr.Core.Configuration;
 using Torrentarr.Core.Interfaces;
 using Torrentarr.Infrastructure.ApiClients.QBittorrent;
 using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Hosting;
 
 namespace Torrentarr.Infrastructure.Services;
 
@@ -11,8 +12,32 @@ namespace Torrentarr.Infrastructure.Services;
 /// Manages connections to one or more qBittorrent instances.
 /// Instances are keyed by their config section name ("qBit", "qBit-seedbox", …).
 /// </summary>
-public class QBittorrentConnectionManager : ITorrentClientRegistry
+public class QBittorrentConnectionManager : BackgroundService, ITorrentClientRegistry
 {
+    private long _connectionRevision;
+    public long ConnectionRevision => Interlocked.Read(ref _connectionRevision);
+
+    protected override async Task ExecuteAsync(CancellationToken stoppingToken)
+    {
+        if (_config == null) return;
+        while (!stoppingToken.IsCancellationRequested)
+        {
+            try
+            {
+                using var processing = ConfigMutationGuard.EnterProcessing();
+                using var configuration = _config.BeginOperation();
+                await EnsureAllConnectedAsync(_config.GetAllTorrentClients(), stoppingToken);
+            }
+            catch (OperationCanceledException) when (stoppingToken.IsCancellationRequested) { break; }
+            catch (Exception ex)
+            {
+                _logger.LogWarning("Torrent client connection recovery deferred ({ErrorType})", ex.GetType().Name);
+            }
+            try { await Task.Delay(TimeSpan.FromSeconds(15), stoppingToken); }
+            catch (OperationCanceledException) when (stoppingToken.IsCancellationRequested) { break; }
+        }
+    }
+
     private readonly ILogger<QBittorrentConnectionManager> _logger;
     // A regular dictionary is kept behind a lock so existing reflection-based
     // integrations remain compatible while snapshots stay race-free.
@@ -81,10 +106,15 @@ public class QBittorrentConnectionManager : ITorrentClientRegistry
         finally { _reconcile.Release(); }
     }
 
-    private async Task<bool> ConnectAsync(string name, TorrentClientInstanceConfig config, CancellationToken ct)
+    private async Task<bool> ConnectAsync(string name, TorrentClientInstanceConfig config, CancellationToken cancellationToken)
     {
+        using var timeout = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
+        timeout.CancelAfter(TimeSpan.FromSeconds(5));
+        var ct = timeout.Token;
         var settings = new ConnectionSettings(config.Type, config.Host, config.Port, config.UserName, config.Password, config.SkipTLSVerify);
         var revision = _config?.Revision ?? 0;
+        using var connectionScope = _logger.BeginScope(new Dictionary<string, object> { ["Operation"] = "ClientConnection", ["ClientInstance"] = name });
+        _logger.LogDebug("Client connection reconciliation: type={Type}; endpoint={Host}:{Port}; disabled={Disabled}; revision={Revision}; probeBudget=5s", config.Type, DiagnosticText.Safe(config.Host), config.Port, config.Disabled, revision);
         ITorrentClient? existing = null;
         lock (_clientsLock)
         {
@@ -100,13 +130,13 @@ public class QBittorrentConnectionManager : ITorrentClientRegistry
                     throw new IOException("Torrent client returned an empty version response.");
                 return true;
             }
-            catch (OperationCanceledException) when (ct.IsCancellationRequested) { throw; }
+            catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested) { throw; }
             catch (Exception ex)
             {
                 lock (_clientsLock)
                 {
                     RemoveClient(name);
-                    _connectionErrors[name] = "The existing torrent-client session is unavailable; reconnection will be retried.";
+                    _connectionErrors[name] = "The existing torrent-client session is unavailable; reconnection will be retried. " + DiagnosticText.Error(ex);
                 }
                 // HTTP exceptions can include credential-bearing URLs: log only safe diagnostic context.
                 _logger.LogWarning("Torrent client {Name} failed its connection health check ({ErrorType})",
@@ -128,7 +158,11 @@ public class QBittorrentConnectionManager : ITorrentClientRegistry
         {
             if (_authenticationFailures.TryGetValue(name, out var failure))
             {
-                if (failure.Settings == settings && failure.Revision == revision) return false;
+                if (failure.Settings == settings && failure.Revision == revision)
+                {
+                    _logger.LogDebug("Client login deferred: credentials were rejected at revision {Revision}; waiting for changed configuration or explicit reconnect", revision);
+                    return false;
+                }
                 _authenticationFailures.Remove(name);
             }
             RemoveClient(name);
@@ -151,6 +185,7 @@ public class QBittorrentConnectionManager : ITorrentClientRegistry
                 lock (_clientsLock) _connectionErrors[name] = rejectedCredentials
                     ? $"Authentication rejected. {DiagnosticText.Safe(client.LastConnectionFailure)} Check credentials or reconnect after restoring access."
                     : $"Connection/login failed. {DiagnosticText.Safe(client.LastConnectionFailure ?? "The client supplied no HTTP status or transport detail.")}";
+                _logger.LogDebug("Client login failed: kind={Kind}; evidence={Evidence}; retrySuppressed={Suppressed}", client.LastConnectionFailureKind, DiagnosticText.Safe(client.LastConnectionFailure), rejectedCredentials);
                 (client as IDisposable)?.Dispose();
                 if (rejectedCredentials)
                     lock (_clientsLock) _authenticationFailures[name] = new AuthenticationFailure(settings, revision);
@@ -166,11 +201,12 @@ public class QBittorrentConnectionManager : ITorrentClientRegistry
                 _authenticationFailures.Remove(name);
                 _connectionErrors.Remove(name);
                 _lastConnected[name] = DateTime.UtcNow;
+                Interlocked.Increment(ref _connectionRevision);
             }
             _logger.LogInformation("Connected torrent client {Name} ({Type}) {Version}", name, config.Type, version);
             return true;
         }
-        catch (OperationCanceledException) { (client as IDisposable)?.Dispose(); throw; }
+        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested) { (client as IDisposable)?.Dispose(); throw; }
         catch (Exception ex)
         {
             lock (_clientsLock) _connectionErrors[name] = $"Connection to {DiagnosticText.Safe(config.Host)}:{config.Port} failed. {DiagnosticText.Error(ex)}";
@@ -196,7 +232,8 @@ public class QBittorrentConnectionManager : ITorrentClientRegistry
     public async Task<int> ReconcileAsync(IEnumerable<KeyValuePair<string, TorrentClientInstanceConfig>> instances, bool connect = true, CancellationToken ct = default)
     {
         var desired = instances.ToDictionary(p => p.Key, p => p.Value, StringComparer.OrdinalIgnoreCase);
-        await _reconcile.WaitAsync(ct);
+        if (!await _reconcile.WaitAsync(TimeSpan.FromSeconds(5), ct))
+            throw new TimeoutException("Torrent-client reconciliation is busy; retry shortly.");
         try
         {
             lock (_clientsLock)

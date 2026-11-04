@@ -9,6 +9,20 @@ namespace Torrentarr.Infrastructure.Tests.ApiClients;
 
 public sealed class QBittorrentInventoryResponseTests
 {
+    [Fact]
+    public async Task FailedLogin_PreservesTransportDiagnosisWithoutCredentials()
+    {
+        using var socket = new Socket(AddressFamily.InterNetwork, SocketType.Stream, ProtocolType.Tcp);
+        socket.Bind(new IPEndPoint(IPAddress.Loopback, 0));
+        var port = ((IPEndPoint)socket.LocalEndPoint!).Port;
+        // A bound socket without a listener refuses connections without a port-reuse race.
+        using var client = new QBittorrentClient("127.0.0.1", port, "private-user", "private-password");
+        using var timeout = new CancellationTokenSource(TimeSpan.FromSeconds(10));
+        (await client.LoginAsync(timeout.Token)).Should().BeFalse();
+        client.LastConnectionFailure.Should().Contain("transport=").And.Contain("ConnectionRefused")
+            .And.NotContain("private-user").And.NotContain("private-password");
+    }
+
     [Theory]
     [InlineData(403, "", "version")]
     [InlineData(503, "secret-response", "version")]

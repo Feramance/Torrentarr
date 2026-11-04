@@ -49,7 +49,7 @@ public class ArrMediaService : IArrMediaService
         cancellationToken.ThrowIfCancellationRequested();
         if (deadline is { } end && end - DateTimeOffset.UtcNow <= TimeSpan.FromMinutes(1))
             return new SearchResult { BudgetExhausted = true };
-        _logger.LogTrace("Starting missing media search for category {Category}", category);
+        _logger.LogInformation("Starting missing media search for category {Category}", category);
 
         var arrInstance = _config.ArrInstances.Values.FirstOrDefault(i =>
             i.Category.Equals(category, StringComparison.OrdinalIgnoreCase));
@@ -57,17 +57,17 @@ public class ArrMediaService : IArrMediaService
         if (arrInstance == null)
         {
             _logger.LogWarning("No Arr instance found for category {Category}", category);
-            _logger.LogTrace("Search aborted - no Arr instance for {Category}", category);
+            _logger.LogInformation("Search aborted - no Arr instance for {Category}", category);
             return new SearchResult();
         }
 
         var instanceName = _config.ArrInstances.First(kvp => kvp.Value == arrInstance).Key;
-        _logger.LogTrace("Found Arr instance {Name} for category {Category}", instanceName, category);
+        _logger.LogInformation("Found Arr instance {Name} for category {Category}", instanceName, category);
 
         if (!arrInstance.Search.SearchMissing)
         {
-            _logger.LogTrace("SearchMissing disabled for {Category}", category);
-            _logger.LogTrace("Search skipped - SearchMissing disabled");
+            _logger.LogInformation("SearchMissing disabled for {Category}", category);
+            _logger.LogInformation("Search skipped - SearchMissing disabled");
             return new SearchResult();
         }
 
@@ -76,13 +76,13 @@ public class ArrMediaService : IArrMediaService
         _logger.LogTrace("Getting search candidates for {Name}", instanceName);
         var candidates = await GetSearchCandidatesAsync(instanceName, arrInstance, cancellationToken);
         candidates = await ApplySearchByYearAsync(instanceName, arrInstance, candidates, cancellationToken);
-        _logger.LogTrace("Found {Count} search candidates", candidates.Count);
+        _logger.LogInformation("Found {Count} search candidates", candidates.Count);
 
         _logger.LogTrace("Executing searches for {Count} candidates", candidates.Count);
         var result = await (deadline.HasValue
             ? _searchExecutor.ExecuteSearchesAsync(instanceName, candidates, deadline, cancellationToken)
             : _searchExecutor.ExecuteSearchesAsync(instanceName, candidates, cancellationToken));
-        _logger.LogTrace("Search complete - triggered {Count} searches", result.SearchesTriggered);
+        _logger.LogInformation("Search complete - triggered {Count} searches", result.SearchesTriggered);
 
         return result;
     }
@@ -95,25 +95,25 @@ public class ArrMediaService : IArrMediaService
         cancellationToken.ThrowIfCancellationRequested();
         if (deadline is { } end && end - DateTimeOffset.UtcNow <= TimeSpan.FromMinutes(1))
             return new SearchResult { BudgetExhausted = true };
-        _logger.LogTrace("Starting quality upgrade search for category {Category}", category);
+        _logger.LogInformation("Starting quality upgrade search for category {Category}", category);
 
         var arrInstance = _config.ArrInstances.Values.FirstOrDefault(i =>
             i.Category.Equals(category, StringComparison.OrdinalIgnoreCase));
 
         if (arrInstance == null)
         {
-            _logger.LogTrace("No Arr instance found for category {Category}", category);
-            _logger.LogTrace("Search aborted - no Arr instance for {Category}", category);
+            _logger.LogInformation("No Arr instance found for category {Category}", category);
+            _logger.LogInformation("Search aborted - no Arr instance for {Category}", category);
             return new SearchResult();
         }
 
         var instanceName = _config.ArrInstances.First(kvp => kvp.Value == arrInstance).Key;
-        _logger.LogTrace("Found Arr instance {Name} for category {Category}", instanceName, category);
+        _logger.LogInformation("Found Arr instance {Name} for category {Category}", instanceName, category);
 
         if (!arrInstance.Search.DoUpgradeSearch && !arrInstance.Search.CustomFormatUnmetSearch && !arrInstance.Search.QualityUnmetSearch)
         {
-            _logger.LogTrace("Quality upgrade search disabled for {Category}", category);
-            _logger.LogTrace("Search skipped - all upgrade searches disabled");
+            _logger.LogInformation("Quality upgrade search disabled for {Category}", category);
+            _logger.LogInformation("Search skipped - all upgrade searches disabled");
             return new SearchResult();
         }
 
@@ -330,17 +330,19 @@ public class ArrMediaService : IArrMediaService
             {
                 case "radarr":
                     // §2.10: When Unmonitored=true, include unmonitored items
-                    var movies = searchConfig.Unmonitored
-                        ? await _dbContext.Movies
-                            .Where(m => m.ArrInstance == instanceName && !m.Searched)
-                            .ToListAsync(cancellationToken)
-                        : await _dbContext.Movies
-                            .Where(m => m.ArrInstance == instanceName && m.Monitored && !m.Searched)
-                            .ToListAsync(cancellationToken);
+                    var movies = await _dbContext.Movies.AsNoTracking()
+                            .Where(m => m.ArrInstance == instanceName).ToListAsync(cancellationToken);
 
                     foreach (var movie in movies)
                     {
+                        if ((!searchConfig.Unmonitored && movie.Monitored != true) || movie.Searched)
+                        {
+                            _logger.LogInformation("Search skipped for {Title} [id={ArrId}, instance={Instance}]: monitored={Monitored}, searched={Searched}", movie.Title, movie.ArrId, instanceName, movie.Monitored, movie.Searched);
+                            continue;
+                        }
                         var priority = GetReasonPriority(movie.Reason, searchConfig);
+                        _logger.LogInformation("Search eligibility for {Title} [id={ArrId}, instance={Instance}]: eligible={Eligible}, reason={Reason}, missingSearch={Missing}, qualitySearch={Quality}, customFormatSearch={CustomFormat}, upgradeSearch={Upgrade}", movie.Title, movie.ArrId, instanceName, priority < 99, movie.Reason, searchConfig.SearchMissing, searchConfig.QualityUnmetSearch, searchConfig.CustomFormatUnmetSearch, searchConfig.DoUpgradeSearch);
+
                         if (priority >= 99) continue;
 
                         candidates.Add(new SearchCandidate
@@ -358,22 +360,23 @@ public class ArrMediaService : IArrMediaService
                 case "sonarr":
                     var episodes = await _dbContext.Episodes.AsNoTracking()
                         .Where(e => e.ArrInstance == instanceName).ToListAsync(cancellationToken);
-                    candidates.AddRange(SonarrSearchScope.Candidates(episodes, searchConfig, DateTime.UtcNow));
+                    candidates.AddRange(SonarrSearchScope.Candidates(episodes, searchConfig, DateTime.UtcNow, logger: _logger));
                     break;
 
                 case "lidarr":
                     // §2.10: When Unmonitored=true, include unmonitored items
-                    var albums = searchConfig.Unmonitored
-                        ? await _dbContext.Albums
-                            .Where(a => a.ArrInstance == instanceName && !a.Searched)
-                            .ToListAsync(cancellationToken)
-                        : await _dbContext.Albums
-                            .Where(a => a.ArrInstance == instanceName && a.Monitored && !a.Searched)
-                            .ToListAsync(cancellationToken);
+                    var albums = await _dbContext.Albums.AsNoTracking()
+                            .Where(m => m.ArrInstance == instanceName).ToListAsync(cancellationToken);
 
                     foreach (var album in albums)
                     {
+                        if ((!searchConfig.Unmonitored && album.Monitored != true) || album.Searched)
+                        {
+                            _logger.LogInformation("Search skipped for {Title} [id={ArrId}, instance={Instance}]: monitored={Monitored}, searched={Searched}", album.Title, album.ArrId, instanceName, album.Monitored, album.Searched);
+                            continue;
+                        }
                         var priority = GetReasonPriority(album.Reason, searchConfig);
+                        _logger.LogInformation("Search eligibility for {Title} [id={ArrId}, instance={Instance}]: eligible={Eligible}, reason={Reason}, missingSearch={Missing}, qualitySearch={Quality}, customFormatSearch={CustomFormat}, upgradeSearch={Upgrade}", album.Title, album.ArrId, instanceName, priority < 99, album.Reason, searchConfig.SearchMissing, searchConfig.QualityUnmetSearch, searchConfig.CustomFormatUnmetSearch, searchConfig.DoUpgradeSearch);
                         if (priority >= 99) continue;
 
                         candidates.Add(new SearchCandidate
@@ -391,17 +394,18 @@ public class ArrMediaService : IArrMediaService
                     break;
 
                 case "readarr":
-                    var books = searchConfig.Unmonitored
-                        ? await _dbContext.Books
-                            .Where(b => b.ArrInstance == instanceName && !b.Searched)
-                            .ToListAsync(cancellationToken)
-                        : await _dbContext.Books
-                            .Where(b => b.ArrInstance == instanceName && b.Monitored && !b.Searched)
-                            .ToListAsync(cancellationToken);
+                    var books = await _dbContext.Books.AsNoTracking()
+                            .Where(m => m.ArrInstance == instanceName).ToListAsync(cancellationToken);
 
                     foreach (var book in books)
                     {
+                        if ((!searchConfig.Unmonitored && book.Monitored != true) || book.Searched)
+                        {
+                            _logger.LogInformation("Search skipped for {Title} [id={ArrId}, instance={Instance}]: monitored={Monitored}, searched={Searched}", book.Title, book.ArrId, instanceName, book.Monitored, book.Searched);
+                            continue;
+                        }
                         var priority = GetReasonPriority(book.Reason, searchConfig);
+                        _logger.LogInformation("Search eligibility for {Title} [id={ArrId}, instance={Instance}]: eligible={Eligible}, reason={Reason}, missingSearch={Missing}, qualitySearch={Quality}, customFormatSearch={CustomFormat}, upgradeSearch={Upgrade}", book.Title, book.ArrId, instanceName, priority < 99, book.Reason, searchConfig.SearchMissing, searchConfig.QualityUnmetSearch, searchConfig.CustomFormatUnmetSearch, searchConfig.DoUpgradeSearch);
                         if (priority >= 99) continue;
 
                         candidates.Add(new SearchCandidate
@@ -420,9 +424,11 @@ public class ArrMediaService : IArrMediaService
             }
 
         }
+        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested) { throw; }
         catch (Exception ex)
         {
-            _logger.LogError(ex, "Search candidate loop failed for {Instance} — isolating so the worker continues", instanceName);
+            _logger.LogError(ex, "Search candidate loop failed for {Instance}", instanceName);
+            throw;
         }
 
         return candidates;
@@ -439,16 +445,18 @@ public class ArrMediaService : IArrMediaService
         switch (arrConfig.Type.ToLowerInvariant())
         {
             case "radarr":
-                var moviesQuery = _dbContext.Movies
-                    .Where(m => m.ArrInstance == instanceName && m.Monitored && m.HasFile);
-                moviesQuery = searchConfig.DoUpgradeSearch
-                    ? moviesQuery.Where(m => !m.Upgrade)
-                    : moviesQuery.Where(m => !m.Searched);
-                var movies = await moviesQuery.ToListAsync(cancellationToken);
+                var movies = await _dbContext.Movies.AsNoTracking()
+                    .Where(m => m.ArrInstance == instanceName).ToListAsync(cancellationToken);
 
                 foreach (var movie in movies)
                 {
+                    if (movie.Monitored != true || !movie.HasFile || (searchConfig.DoUpgradeSearch ? movie.Upgrade : movie.Searched))
+                    {
+                        _logger.LogInformation("Upgrade search skipped for {Title} [id={ArrId}, instance={Instance}]: monitored={Monitored}, hasFile={HasFile}, upgrade={Upgrade}, searched={Searched}", movie.Title, movie.ArrId, instanceName, movie.Monitored, movie.HasFile, movie.Upgrade, movie.Searched);
+                        continue;
+                    }
                     var priority = GetUpgradePriority(movie.QualityMet, movie.CustomFormatMet, searchConfig);
+                    _logger.LogInformation("Search eligibility for {Title} [id={ArrId}, instance={Instance}]: eligible={Eligible}, reason={Reason}, missingSearch={Missing}, qualitySearch={Quality}, customFormatSearch={CustomFormat}, upgradeSearch={Upgrade}", movie.Title, movie.ArrId, instanceName, priority < 99, movie.Reason, searchConfig.SearchMissing, searchConfig.QualityUnmetSearch, searchConfig.CustomFormatUnmetSearch, searchConfig.DoUpgradeSearch);
                     if (priority >= 99) continue;
 
                     var reason = DetermineUpgradeReason(movie.QualityMet, movie.CustomFormatMet, searchConfig);
@@ -468,20 +476,22 @@ public class ArrMediaService : IArrMediaService
             case "sonarr":
                 var episodes = await _dbContext.Episodes.AsNoTracking()
                     .Where(e => e.ArrInstance == instanceName).ToListAsync(cancellationToken);
-                candidates.AddRange(SonarrSearchScope.Candidates(episodes, searchConfig, DateTime.UtcNow, upgradesOnly: true));
+                candidates.AddRange(SonarrSearchScope.Candidates(episodes, searchConfig, DateTime.UtcNow, upgradesOnly: true, logger: _logger));
                 break;
 
             case "lidarr":
-                var albumsQuery = _dbContext.Albums
-                    .Where(a => a.ArrInstance == instanceName && a.Monitored && a.HasFile);
-                albumsQuery = searchConfig.DoUpgradeSearch
-                    ? albumsQuery.Where(a => !a.Upgrade)
-                    : albumsQuery.Where(a => !a.Searched);
-                var albums = await albumsQuery.ToListAsync(cancellationToken);
+                var albums = await _dbContext.Albums.AsNoTracking()
+                    .Where(m => m.ArrInstance == instanceName).ToListAsync(cancellationToken);
 
                 foreach (var album in albums)
                 {
+                    if (album.Monitored != true || !album.HasFile || (searchConfig.DoUpgradeSearch ? album.Upgrade : album.Searched))
+                    {
+                        _logger.LogInformation("Upgrade search skipped for {Title} [id={ArrId}, instance={Instance}]: monitored={Monitored}, hasFile={HasFile}, upgrade={Upgrade}, searched={Searched}", album.Title, album.ArrId, instanceName, album.Monitored, album.HasFile, album.Upgrade, album.Searched);
+                        continue;
+                    }
                     var priority = GetUpgradePriority(album.QualityMet, album.CustomFormatMet, searchConfig);
+                    _logger.LogInformation("Search eligibility for {Title} [id={ArrId}, instance={Instance}]: eligible={Eligible}, reason={Reason}, missingSearch={Missing}, qualitySearch={Quality}, customFormatSearch={CustomFormat}, upgradeSearch={Upgrade}", album.Title, album.ArrId, instanceName, priority < 99, album.Reason, searchConfig.SearchMissing, searchConfig.QualityUnmetSearch, searchConfig.CustomFormatUnmetSearch, searchConfig.DoUpgradeSearch);
                     if (priority >= 99) continue;
 
                     var reason = DetermineUpgradeReason(album.QualityMet, album.CustomFormatMet, searchConfig);
@@ -494,22 +504,25 @@ public class ArrMediaService : IArrMediaService
                         Reason = reason,
                         Priority = priority,
                         ArtistId = album.ArrArtistId,
+                        AlbumId = album.ArrId,
                         Year = album.ReleaseDate?.Year
                     });
                 }
                 break;
 
             case "readarr":
-                var booksQuery = _dbContext.Books
-                    .Where(b => b.ArrInstance == instanceName && b.Monitored && b.HasFile);
-                booksQuery = searchConfig.DoUpgradeSearch
-                    ? booksQuery.Where(b => !b.Upgrade)
-                    : booksQuery.Where(b => !b.Searched);
-                var books = await booksQuery.ToListAsync(cancellationToken);
+                var books = await _dbContext.Books.AsNoTracking()
+                    .Where(m => m.ArrInstance == instanceName).ToListAsync(cancellationToken);
 
                 foreach (var book in books)
                 {
+                    if (book.Monitored != true || !book.HasFile || (searchConfig.DoUpgradeSearch ? book.Upgrade : book.Searched))
+                    {
+                        _logger.LogInformation("Upgrade search skipped for {Title} [id={ArrId}, instance={Instance}]: monitored={Monitored}, hasFile={HasFile}, upgrade={Upgrade}, searched={Searched}", book.Title, book.ArrId, instanceName, book.Monitored, book.HasFile, book.Upgrade, book.Searched);
+                        continue;
+                    }
                     var priority = GetUpgradePriority(book.QualityMet, book.CustomFormatMet, searchConfig);
+                    _logger.LogInformation("Search eligibility for {Title} [id={ArrId}, instance={Instance}]: eligible={Eligible}, reason={Reason}, missingSearch={Missing}, qualitySearch={Quality}, customFormatSearch={CustomFormat}, upgradeSearch={Upgrade}", book.Title, book.ArrId, instanceName, priority < 99, book.Reason, searchConfig.SearchMissing, searchConfig.QualityUnmetSearch, searchConfig.CustomFormatUnmetSearch, searchConfig.DoUpgradeSearch);
                     if (priority >= 99) continue;
 
                     var reason = DetermineUpgradeReason(book.QualityMet, book.CustomFormatMet, searchConfig);
@@ -593,11 +606,14 @@ public class ArrMediaService : IArrMediaService
         var currentYear = _yearCursor.CurrentYear(instanceName, arrConfig, years);
         if (currentYear is null)
         {
-            _logger.LogDebug("SearchByYear enabled for {Instance} but no years available; skipping year filter", instanceName);
+            _logger.LogInformation("SearchByYear enabled for {Instance} but no years available; skipping year filter", instanceName);
             return candidates;
         }
 
-        _logger.LogDebug("SearchByYear: {Instance} current year {Year}", instanceName, currentYear);
+        _logger.LogInformation("SearchByYear: {Instance} current year {Year}", instanceName, currentYear);
+        foreach (var candidate in candidates)
+            _logger.LogInformation("Search year decision for {Title} [id={ArrId}, instance={Instance}]: year={Year}, current={CurrentYear}, todaysRelease={Today}, eligible={Eligible}",
+                candidate.Title, candidate.ArrId, instanceName, candidate.Year, currentYear, candidate.IsTodaysRelease, candidate.IsTodaysRelease || candidate.Year == currentYear);
         return candidates
             .Where(c => c.IsTodaysRelease || c.Year == currentYear)
             .ToList();

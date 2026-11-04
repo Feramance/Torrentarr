@@ -51,7 +51,7 @@ CaseSensitiveMatches = false
 **Type:** List of regex patterns
 **Default:** Common extras/sample folders
 
-Exclude entire folders matching these regex patterns from processing.
+Exclude internal torrent subfolders matching these regex patterns from processing. The torrent's top-level title folder is preserved, so a title containing “Special” does not match a rule intended for a `Specials` subfolder.
 
 **Default patterns:**
 
@@ -141,7 +141,7 @@ FileNameExclusionRegex = [
 **Type:** List of file extensions
 **Default:** Common video/subtitle extensions
 
-Only allow files with these extensions. Empty list = allow all.
+Only allow files with these extensions. Regex extension patterns such as `'\.r[0-9]{2}'` are also supported and match the complete extension. Empty list = allow all. Filtering and media validation use the same matcher.
 
 **Default:**
 

@@ -1,7 +1,9 @@
 using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Http;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.DependencyInjection;
 using Torrentarr.Core.Services;
+using Torrentarr.Core.Configuration;
 using Torrentarr.Core.Interfaces;
 using Torrentarr.Infrastructure.Database;
 using Torrentarr.Infrastructure.Database.Models;
@@ -18,14 +20,31 @@ public static class OperationalIssueEndpoints
     {
         var cache = services.GetService(typeof(ITorrentCacheService)) as ITorrentCacheService;
         var registry = services.GetService(typeof(ITorrentClientRegistry)) as ITorrentClientRegistry;
-        foreach (var group in items.Where(i => i.SubjectType == "torrent").GroupBy(i => i.ClientInstance))
+        var db = services.GetRequiredService<TorrentarrDbContext>();
+        var config = services.GetRequiredService<TorrentarrConfig>();
+        var clients = new Dictionary<long, string>();
+        foreach (var item in items.Where(i => i.SubjectType == "torrent"))
+        {
+            var client = item.ClientInstance;
+            if (client.Length == 0 && item.ArrInstance.Length > 0)
+            {
+                var hash = item.SubjectId.ToUpperInvariant();
+                var arr = item.ArrInstance.ToUpperInvariant();
+                var matches = await db.TorrentLibrary.AsNoTracking()
+                    .Where(t => t.Hash.ToUpper() == hash && t.ArrInstance.ToUpper() == arr)
+                    .Select(t => t.QbitInstance).Distinct().ToListAsync(ct);
+                if (matches.Count == 1) client = matches[0];
+            }
+            clients[item.Id] = client;
+        }
+        foreach (var group in items.Where(i => i.SubjectType == "torrent").GroupBy(i => clients[i.Id]))
         {
             foreach (var item in group)
             {
                 item.SubjectName = cache?.GetName(group.Key, item.SubjectId) is { } name ? DiagnosticText.Safe(name) : null;
                 item.SubjectCategory = cache?.GetCategory(group.Key, item.SubjectId) is { } category ? DiagnosticText.Safe(category) : null;
             }
-            if (group.Any(i => i.SubjectName == null || i.SubjectCategory == null) && registry?.GetClient(group.Key) is { } client)
+            if (group.Key.Length > 0 && group.Any(i => i.SubjectName == null || i.SubjectCategory == null) && registry?.GetClient(group.Key) is { } client)
             {
                 try
                 {
@@ -45,6 +64,9 @@ public static class OperationalIssueEndpoints
                 catch (Exception) when (!ct.IsCancellationRequested) { /* Issue history remains available when client metadata is unavailable. */ }
             }
         }
+        foreach (var item in items.Where(i => i.SubjectType == "torrent" && i.SubjectCategory == null))
+            if (config.ArrInstances.TryGetValue(item.ArrInstance, out var arr))
+                item.SubjectCategory = DiagnosticText.Safe(arr.Category);
     }
 
     public static void MapOperationalIssueEndpoints(this WebApplication app, string prefix)

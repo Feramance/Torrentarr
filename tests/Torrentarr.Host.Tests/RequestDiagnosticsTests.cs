@@ -65,10 +65,45 @@ public class RequestDiagnosticsTests
     {
         var sink = new Sink();
         using var log = new LoggerConfiguration().MinimumLevel.Debug().WriteTo.Sink(sink).CreateLogger();
-        var middleware = new RequestDiagnosticsMiddleware(_ => throw new HttpRequestException("secret response"), log);
-        await FluentActions.Awaiting(() => middleware.InvokeAsync(new DefaultHttpContext())).Should().ThrowAsync<HttpRequestException>();
+        var middleware = new RequestDiagnosticsMiddleware(_ => throw new InvalidOperationException("password=secret"), log);
+        await FluentActions.Awaiting(() => middleware.InvokeAsync(new DefaultHttpContext())).Should().ThrowAsync<InvalidOperationException>();
         sink.Events.Should().ContainSingle().Which.Level.Should().Be(LogEventLevel.Error);
-        sink.Events[0].RenderMessage().Should().Contain("unmatched route").And.Contain("500").And.NotContain("secret response");
+        sink.Events[0].RenderMessage().Should().Contain("unmatched route").And.Contain("500").And.NotContain("password=secret");
+    }
+
+    [Theory]
+    [InlineData(false, 503)]
+    [InlineData(true, 504)]
+    public async Task DependencyFailures_ReturnSafeUnavailableResponse(bool timeout, int status)
+    {
+        var sink = new Sink();
+        using var log = new LoggerConfiguration().MinimumLevel.Debug().WriteTo.Sink(sink).CreateLogger();
+        var context = new DefaultHttpContext();
+        context.Response.Body = new MemoryStream();
+        var middleware = new RequestDiagnosticsMiddleware(_ => throw (timeout
+            ? new OperationCanceledException("password=secret") : new HttpRequestException("secret response")), log);
+        await middleware.InvokeAsync(context);
+        context.Response.StatusCode.Should().Be(status);
+        context.Response.Body.Position = 0;
+        (await new StreamReader(context.Response.Body).ReadToEndAsync()).Should().NotContain("secret");
+        sink.Events.Should().ContainSingle().Which.RenderMessage().Should().Contain(status.ToString()).And.NotContain("secret response");
+    }
+
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task CallerCancellation_IsDebugAndNeverAnApplicationFailure(bool disconnected)
+    {
+        var sink = new Sink();
+        using var log = new LoggerConfiguration().MinimumLevel.Debug().WriteTo.Sink(sink).CreateLogger();
+        using var cancellation = new CancellationTokenSource();
+        cancellation.Cancel();
+        var context = new DefaultHttpContext { RequestAborted = cancellation.Token };
+        await new RequestDiagnosticsMiddleware(_ => throw (disconnected
+            ? new IOException("Client disconnected") : new OperationCanceledException(cancellation.Token)), log).InvokeAsync(context);
+        context.Response.StatusCode.Should().Be(499);
+        sink.Events.Should().ContainSingle().Which.Level.Should().Be(LogEventLevel.Debug);
+        sink.Events[0].RenderMessage().Should().Contain("499").And.NotContain("500");
     }
 
     [Fact]

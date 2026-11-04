@@ -89,7 +89,6 @@ RUN chmod 0755 /usr/local/bin/torrentarr-entrypoint.sh
 
 # Set environment variables
 ENV ASPNETCORE_ENVIRONMENT=Production \
-    ASPNETCORE_URLS=http://+:6969 \
     ASPNETCORE_CONTENTROOT=/app \
     DOTNET_RUNNING_IN_CONTAINER=true \
     DOTNET_SYSTEM_GLOBALIZATION_INVARIANT=false \

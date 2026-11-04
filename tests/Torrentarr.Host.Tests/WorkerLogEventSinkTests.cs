@@ -1,4 +1,5 @@
 using FluentAssertions;
+using Serilog;
 using Serilog.Events;
 using Serilog.Parsing;
 using Torrentarr.Host.Sinks;
@@ -8,6 +9,58 @@ namespace Torrentarr.Host.Tests;
 
 public sealed class WorkerLogEventSinkTests
 {
+    [Fact]
+    public async Task ContextSurvivesConcurrentScopesAndMatchesConsoleAggregateAndProcessFiles()
+    {
+        var directory = Directory.CreateTempSubdirectory("torrentarr-log-context-");
+        try
+        {
+            using (var sink = new WorkerLogEventSink(directory.FullName))
+            using (var log = new Serilog.LoggerConfiguration().MinimumLevel.Verbose().Enrich.FromLogContext().WriteTo.Sink(sink).CreateLogger())
+            {
+                await Task.WhenAll(Enumerable.Range(1, 12).Select(async i =>
+                {
+                    using var instance = Serilog.Context.LogContext.PushProperty("ProcessInstance", "Arr-" + i);
+                    using var cycle = Serilog.Context.LogContext.PushProperty("CycleId", "cycle-" + i);
+                    using var operation = Serilog.Context.LogContext.PushProperty("Operation", "TorrentCycle");
+                    using var client = Serilog.Context.LogContext.PushProperty("ClientInstance", "client-" + i);
+                    await Task.Yield();
+                    log.ForContext("SourceContext", "TorrentProcessor").ForContext("ProcessId", 42).Verbose("decision {Number}", i);
+                }));
+            }
+            var aggregate = File.ReadAllLines(Directory.GetFiles(directory.FullName, "all-*.log").Single());
+            aggregate.Should().HaveCount(12);
+            for (var i = 1; i <= 12; i++)
+            {
+                var line = File.ReadAllLines(Directory.GetFiles(directory.FullName, $"worker-Arr-{i}-*.log").Single()).Should().ContainSingle().Subject;
+                line.Should().Contain($"CycleId[cycle-{i}]").And.Contain($"ClientInstance[client-{i}]").And.Contain("SourceContext[TorrentProcessor]").And.Contain("ProcessId[42]");
+                aggregate.Should().Contain(line);
+            }
+        }
+        finally { directory.Delete(true); }
+    }
+
+    [Fact]
+    public void FormatterRedactsSecretsAndPreservesMultilineExceptionCauses()
+    {
+        var message = new MessageTemplateParser().Parse("Request password=message-secret failed at https://user:credential-secret@arr.test/private-passkey?apikey=query-secret");
+        var entry = new LogEvent(DateTimeOffset.Now, LogEventLevel.Error,
+            new IOException("cookie=cookie-secret", new InvalidOperationException("token=inner-secret")), message,
+            [new("CycleId", new ScalarValue("cycle-1")), new("ClientInstance", new ScalarValue("client\nforged"))]);
+        string Format(bool colour)
+        {
+            using var writer = new StringWriter();
+            new Torrentarr.Infrastructure.Logging.ServiceLogFormatter(colour).Format(entry, writer);
+            return System.Text.RegularExpressions.Regex.Replace(writer.ToString(), @"\x1b\[[0-9;]*m", "");
+        }
+        var plain = Format(false);
+        plain.Should().Be(Format(true)).And.Contain("System.IO.IOException").And.Contain("System.InvalidOperationException")
+            .And.Contain("[redacted]").And.Contain("CycleId[cycle-1]").And.NotContain("\nforged");
+        foreach (var secret in new[] { "message-secret", "credential-secret", "private-passkey", "query-secret", "cookie-secret", "inner-secret" })
+            plain.Should().NotContain(secret);
+        plain.Split('\n').Length.Should().BeGreaterThan(2);
+    }
+
     [Theory]
     [InlineData("FreeSpace: operation failed", "freespace-")]
     [InlineData("UpdateService: GitHub check failed", "torrentarr-")]
@@ -80,6 +133,43 @@ public sealed class WorkerLogEventSinkTests
         new Torrentarr.Infrastructure.Logging.ServiceLogFormatter().Format(evt, file);
         console.ToString().Should().Contain("\u001b[1;31m");
         file.ToString().Should().NotContain("\u001b[").And.Contain("IOException: failed");
+    }
+
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public void WorkerContext_ReachesConsoleAggregateAndWorkerFile(bool isolated)
+    {
+        var directory = Directory.CreateTempSubdirectory("torrentarr-context-");
+        var previous = Torrentarr.Core.InstanceContext.Current;
+        try
+        {
+            Torrentarr.Core.InstanceContext.Current = isolated ? null : "Sonarr-TV";
+            using var output = new StringWriter();
+            using (var sink = new Torrentarr.Infrastructure.Logging.ServiceLogSink(directory.FullName, isolated ? "Worker" : "Host"))
+            {
+                var properties = new List<LogEventProperty>
+                {
+                    new("ClientInstance", new ScalarValue("seedbox")),
+                    new("TorrentCategory", new ScalarValue("tv")),
+                    new("TorrentHash", new ScalarValue("abc"))
+                };
+                if (isolated) properties.Add(new("ProcessInstance", new ScalarValue("Sonarr-TV")));
+                var evt = new LogEvent(DateTimeOffset.Now, LogEventLevel.Information, null,
+                    new MessageTemplateParser().Parse("Keeping torrent: H&R obligations remain"), properties);
+                sink.Emit(evt);
+                new Torrentarr.Infrastructure.Logging.ServiceLogFormatter().Format(evt, output);
+            }
+            var aggregate = File.ReadAllText(Directory.GetFiles(directory.FullName, "all-*.log").Single());
+            aggregate.Should().Be(output.ToString()).And.Contain("Torrentarr.Sonarr-TV")
+                .And.Contain("ClientInstance[seedbox]").And.Contain("TorrentCategory[tv]").And.Contain("TorrentHash[abc]");
+            File.ReadAllText(Directory.GetFiles(directory.FullName, "worker-Sonarr-TV-*.log").Single()).Should().Be(aggregate);
+        }
+        finally
+        {
+            Torrentarr.Core.InstanceContext.Current = previous;
+            directory.Delete(true);
+        }
     }
 
     [Fact]

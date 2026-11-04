@@ -55,7 +55,7 @@ public class TorrentarrConfig
 
 public class SettingsConfig
 {
-    public string ConfigVersion { get; set; } = "6.20.2";
+    public string ConfigVersion { get; set; } = "6.20.3";
     public string ConsoleLevel { get; set; } = "INFO";
     public bool Logging { get; set; } = true;
     public int NoInternetSleepTimer { get; set; } = 15;
@@ -106,6 +106,8 @@ public class TorrentClientInstanceConfig
     public string Password { get; set; } = "CHANGE_ME";
     /// <summary>When true, do not verify TLS certificates for this qBittorrent WebUI (self-signed certs).</summary>
     public bool SkipTLSVerify { get; set; }
+    [Newtonsoft.Json.JsonConverter(typeof(TorrentScanIntervalJsonConverter))]
+    public int TorrentScanIntervalSeconds { get; set; } = 30;
     public List<FreeSpaceMonitorConfig> FreeSpace { get; set; } = new();
     public string? DownloadPath { get; set; }
     public List<string> ManagedCategories { get; set; } = new();

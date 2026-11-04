@@ -2,6 +2,7 @@ using Microsoft.EntityFrameworkCore;
 using Torrentarr.Core.Configuration;
 using Torrentarr.Core.Interfaces;
 using Torrentarr.Core.Models;
+using Torrentarr.Core.Services;
 using Torrentarr.Infrastructure.Database;
 
 namespace Torrentarr.Infrastructure.Services;
@@ -25,7 +26,7 @@ public sealed class RecoveryIncident
 public static class MaintenanceRecovery
 {
     public static bool IsError(TorrentInfo torrent, MaintenanceConfig cfg) => cfg.ErrorRecovery.States.Any(s => torrent.State.Equals(s, StringComparison.OrdinalIgnoreCase));
-    public static bool HealthyTracker(IEnumerable<TorrentTracker> trackers) => trackers.Any(t => t.Status == 2 && string.IsNullOrWhiteSpace(t.Msg));
+    public static bool HealthyTracker(IEnumerable<TorrentTracker> trackers) => trackers.Any(t => t.Tier >= 0 && t.Status == 2 && string.IsNullOrWhiteSpace(t.Msg));
     public static RecoveryIncident Read(TorrentarrDbContext db, TorrentInfo torrent, string kind)
     {
         var state = MaintenancePersistence.Read<RecoveryIncident>(db, MaintenancePersistence.Key(torrent.ClientInstanceId, torrent.Hash, "recovery:" + kind));
@@ -40,9 +41,11 @@ public static class MaintenanceRecovery
         state.AddedOn = torrent.AddedOn;
         state.TorrentName = torrent.Name;
         var contiguous = state.LastObserved is { } last && now >= last && now - last <= TimeSpan.FromMinutes(6);
+        if (state.CompletedAt.HasValue && state.Stage is "checking" or "requested")
+            state.Stage = "checked";
         if (state.RequestedAt.HasValue && state.CompletedAt == null && now - state.RequestedAt > TimeSpan.FromMinutes(cfg.RecheckTimeoutMinutes))
             state.Stage = "unconfirmed";
-        if (state.Stage != "unconfirmed" && torrent.State.Contains("checking", StringComparison.OrdinalIgnoreCase) && state.RequestedAt.HasValue)
+        if (state.Stage != "unconfirmed" && state.CompletedAt == null && torrent.State.Contains("checking", StringComparison.OrdinalIgnoreCase) && state.RequestedAt.HasValue)
         { state.CheckingAt ??= now; state.Stage = "checking"; }
         else if (state.Stage != "unconfirmed" && state.CheckingAt.HasValue && state.CompletedAt == null)
         { state.CompletedAt = now; state.Stage = "checked"; }
@@ -72,9 +75,13 @@ public static class MaintenanceRecovery
             && state.LastObserved.HasValue && now - state.LastObserved <= TimeSpan.FromMinutes(6);
 
     public static async Task<bool> RequestAsync(TorrentarrDbContext db, ITorrentClient client, TorrentInfo torrent, string kind, ErrorRecoveryConfig cfg, CancellationToken ct)
+        => (await RequestWithResultAsync(db, client, torrent, kind, cfg, ct)).Success;
+
+    public static async Task<SafeDeletionResult> RequestWithResultAsync(TorrentarrDbContext db, ITorrentClient client, TorrentInfo torrent, string kind, ErrorRecoveryConfig cfg, CancellationToken ct)
     {
         var key = MaintenancePersistence.Key(torrent.ClientInstanceId, torrent.Hash, "recovery:" + kind);
-        if ((await client.GetTorrentsAsync(cancellationToken: ct)).Any(t => t.State.Contains("checking", StringComparison.OrdinalIgnoreCase))) return false;
+        if ((await client.GetTorrentsAsync(cancellationToken: ct)).Any(t => t.State.Contains("checking", StringComparison.OrdinalIgnoreCase)))
+            return new(false, true, 0, "Another recheck is active on this client; retry after it completes.", Deferred: true);
         using (var transaction = db.Database.BeginTransaction())
         {
             var state = Read(db, torrent, kind);
@@ -82,8 +89,14 @@ public static class MaintenanceRecovery
                 .Select(s => Newtonsoft.Json.JsonConvert.DeserializeObject<RecoveryIncident>(s.Data))
                 .Any(s => s is { Stage: "requested" or "checking", CompletedAt: null, RequestedAt: not null }
                     && DateTimeOffset.UtcNow < (s.RequestExpiresAt ?? s.RequestedAt.Value.AddHours(1)));
-            if (active || state.Stage is "requested" or "checking" or "unconfirmed" || !client.Capabilities.Recheck || state.Attempts >= cfg.MaxRepairAttempts
-                || state.RequestedAt is { } previous && DateTimeOffset.UtcNow - previous < TimeSpan.FromMinutes(cfg.RetryMinutes)) return false;
+            if (active || state.Stage is "requested" or "checking" or "unconfirmed")
+                return new(false, true, 0, "Recheck deferred: a recovery claim is active or its outcome is unconfirmed.", Deferred: true);
+            if (!client.Capabilities.Recheck)
+                return new(false, true, 0, "Recheck deferred: this client does not support rechecks.", Deferred: true);
+            if (state.Attempts >= cfg.MaxRepairAttempts)
+                return new(false, true, 0, "Recheck deferred: the repair attempt limit has been reached; keep the torrent for inspection.", Deferred: true);
+            if (state.RequestedAt is { } previous && DateTimeOffset.UtcNow - previous < TimeSpan.FromMinutes(cfg.RetryMinutes))
+                return new(false, true, 0, "Recheck deferred: waiting for the configured retry interval.", Deferred: true);
             // A durable claim prevents workers and maintenance from submitting the same check.
             state.AddedOn = torrent.AddedOn;
             state.CheckingAt = null; state.CompletedAt = null; state.FailureSince = null; state.HealthySince = null;
@@ -97,7 +110,7 @@ public static class MaintenanceRecovery
             var state = Read(db, torrent, kind); state.Attempts--; state.Stage = "rejected";
             MaintenancePersistence.Write(db, key, state); transaction.Commit();
         }
-        return accepted;
+        return new(accepted, true, 0, accepted ? null : "Torrent client rejected the recheck.");
     }
 
     public static bool IsErrorState(TorrentInfo torrent, ErrorRecoveryConfig config) => torrent.State.Equals("error", StringComparison.OrdinalIgnoreCase)

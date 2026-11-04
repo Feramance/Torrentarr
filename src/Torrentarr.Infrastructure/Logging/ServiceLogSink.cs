@@ -6,6 +6,7 @@ using Serilog.Core;
 using Serilog.Events;
 using Serilog.Formatting;
 using Torrentarr.Core;
+using Torrentarr.Core.Services;
 
 namespace Torrentarr.Infrastructure.Logging;
 
@@ -97,11 +98,18 @@ public sealed class ServiceLogFormatter(bool colour = false) : ITextFormatter
         if (colour) output.Write($"\u001b[0m\u001b[{code}m");
         output.Write($"[{level,-8}]");
         if (colour) output.Write("\u001b[0m\u001b[34m");
-        output.Write($"[{source,-20}]");
+        output.Write($"[{DiagnosticText.Safe(source),-20}]");
         if (colour) output.Write($"\u001b[0m\u001b[{code}m");
-        output.Write(logEvent.RenderMessage(CultureInfo.InvariantCulture));
+        output.Write(DiagnosticText.Safe(logEvent.RenderMessage(CultureInfo.InvariantCulture)));
+        foreach (var key in new[] { "ProcessId", "SourceContext", "Operation", "CycleId", "ArrInstance", "ClientInstance", "TorrentCategory", "TorrentHash", "MediaId", "CommandId" })
+            if (logEvent.Properties.TryGetValue(key, out var context))
+                output.Write($" | {key}[{DiagnosticText.Safe(Convert.ToString((context as ScalarValue)?.Value, CultureInfo.InvariantCulture))}]");
         if (colour) output.Write("\u001b[0m");
         output.WriteLine();
-        if (logEvent.Exception != null) output.WriteLine(logEvent.Exception);
+        if (logEvent.Exception != null)
+        {
+            using var lines = new StringReader(logEvent.Exception.ToString());
+            while (lines.ReadLine() is { } line) output.WriteLine(DiagnosticText.Safe(line));
+        }
     }
 }

@@ -437,3 +437,62 @@ it("reveals an invalid schedule even while the tool is Manual", async () => {
   ).toBeVisible();
   expect(api.updateConfig).not.toHaveBeenCalled();
 });
+
+it("distinguishes permanent orphan deletion, blocked operations and mapped diagnostic paths", async () => {
+  plan.actions[0].kind = "DeleteOrphanFile";
+  plan.actions.push({
+    ...plan.actions[0],
+    id: "folder",
+    path: "/downloads/empty",
+    bytes: 0,
+    kind: "DeleteEmptyOrphanDirectory",
+  });
+  plan.operationResults = [
+    {
+      clientInstanceId: "one",
+      operation: "OrphanScan",
+      state: "blocked",
+      examined: 0,
+      excluded: 0,
+      uninspectable: 0,
+      actionable: 0,
+      blockedActions: 0,
+    },
+  ];
+  plan.diagnostics = [
+    {
+      code: "missing-file",
+      clientInstanceId: "one",
+      severity: "warning",
+      message: "A sidecar is absent.",
+      remediation: "Check its download status.",
+      affectedFiles: 1,
+      affectedTorrents: 1,
+      operations: ["OrphanScan"],
+      examples: [
+        { clientPath: "/downloads/movie.nfo", localPath: "/local/movie.nfo" },
+      ],
+    },
+  ];
+  show();
+  await loaded();
+  openTool("Orphan-file cleanup");
+  fireEvent.click(
+    screen.getByRole("button", { name: "Check orphan-file cleanup" }),
+  );
+  expect(
+    await screen.findByText(/Permanently delete orphan files: 1 files/),
+  ).toBeVisible();
+  expect(
+    screen.getByText(/Blocked candidate actions: 0.*Blocked operations: 1/),
+  ).toBeVisible();
+  expect(
+    screen.getByText(/Client path:.*downloads.*Local path:.*local/),
+  ).toBeVisible();
+  expect(
+    screen.getByText("Permanently delete orphan file (recycling disabled)"),
+  ).toBeVisible();
+  expect(screen.getByText(/Remove empty orphan folders: 1/)).toBeVisible();
+  expect(screen.getByText("Remove empty orphan folder")).toBeVisible();
+  expect(screen.queryByText(/Recycled:/)).not.toBeInTheDocument();
+});

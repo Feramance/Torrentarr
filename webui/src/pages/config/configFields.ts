@@ -100,6 +100,11 @@ function fields(
           !Number.isInteger(Number(value))
         )
           return `${f.label} must be a whole number.`;
+        if (
+          f.key === "TorrentScanIntervalSeconds" &&
+          !f.options?.includes(String(value))
+        )
+          return "Torrent scan interval must be 5, 15, 30, 60, 90, or 120 seconds.";
         const number = Number(value);
         if (f.minimum != null && number < f.minimum)
           return `${f.label} must be at least ${f.minimum}.`;

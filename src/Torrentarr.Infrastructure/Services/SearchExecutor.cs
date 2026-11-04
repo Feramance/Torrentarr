@@ -17,6 +17,7 @@ public class SearchExecutor : ISearchExecutor
     private readonly DatabaseRestartCoordinator _restartCoordinator;
     private readonly IOperationalIssueReporter? _issues;
     private readonly SearchSubmissionTiming _timing;
+    private readonly IConfigReloader? _configReloader;
 
     internal TimeProvider Clock { get; set; } = TimeProvider.System;
 
@@ -45,8 +46,9 @@ public class SearchExecutor : ISearchExecutor
 
     public SearchExecutor(ILogger<SearchExecutor> logger, TorrentarrConfig config, TorrentarrDbContext db,
         QualityProfileSwitcherService profileSwitcher, DatabaseRestartCoordinator restartCoordinator,
-        IOperationalIssueReporter? issues, SearchSubmissionTiming timing)
+        IOperationalIssueReporter? issues, SearchSubmissionTiming timing, IConfigReloader? configReloader = null)
     {
+        _configReloader = configReloader;
         _timing = timing;
         _logger = logger;
         _config = config;
@@ -63,6 +65,7 @@ public class SearchExecutor : ISearchExecutor
     public async Task<SearchResult> ExecuteSearchesAsync(string instanceName, IEnumerable<SearchCandidate> candidates,
         DateTimeOffset? deadline, CancellationToken cancellationToken)
     {
+        using var logScope = _logger.BeginScope(new Dictionary<string, object> { ["ProcessInstance"] = instanceName });
         cancellationToken.ThrowIfCancellationRequested();
         var result = new SearchResult();
 
@@ -86,6 +89,39 @@ public class SearchExecutor : ISearchExecutor
 
         var searchLimit = arrConfig.Search.SearchLimit > 0 ? arrConfig.Search.SearchLimit : 5;
 
+        void RequireCurrentConfiguration()
+        {
+            if (_config.Revision != _config.LatestRevision)
+                throw new ConfigurationBusyException("Search deferred because a newer configuration is pending.");
+        }
+
+        async Task WaitAsync(TimeSpan delay)
+        {
+            if (_configReloader != null)
+                await _configReloader.WaitForChangeAsync(_config.Revision, delay, cancellationToken);
+            else
+                await Task.Delay(delay, Clock, cancellationToken);
+            RequireCurrentConfiguration();
+        }
+
+        async Task<bool> WaitForCapacityAsync()
+        {
+            while (true)
+            {
+                cancellationToken.ThrowIfCancellationRequested();
+                RequireCurrentConfiguration();
+                var active = await GetActiveCommandCountAsync(instanceName, cancellationToken);
+                RequireCurrentConfiguration();
+                _logger.LogDebug("Search capacity for {Instance}: active={Active}/{Limit}", instanceName, active, searchLimit);
+                if (CanSearch(active, searchLimit)) return true;
+                _logger.LogInformation("Search deferred for {Instance}: command limit reached ({Active}/{Limit})", instanceName, active, searchLimit);
+                if (!deadline.HasValue) return false;
+                var poll = TimeSpan.FromSeconds(30);
+                if (OutOfBudget(poll)) { Yield(); return false; }
+                await WaitAsync(poll);
+            }
+        }
+
         // SearchInReverse=false (default) → oldest first (ASC); SearchInReverse=true → newest first (DESC)
         var candidatesList = arrConfig.Search.SearchInReverse
             ? candidates
@@ -101,7 +137,7 @@ public class SearchExecutor : ISearchExecutor
 
         if (candidatesList.Count == 0)
         {
-            _logger.LogTrace("SearchExecutor: no candidates for {Name}", instanceName);
+            _logger.LogInformation("SearchExecutor: no candidates for {Name}", instanceName);
             result.LoopCompleted = true;
             return result;
         }
@@ -127,10 +163,18 @@ public class SearchExecutor : ISearchExecutor
         foreach (var plan in plans)
         {
             var gate = _timing.Gate(instanceName);
-            await gate.WaitAsync(cancellationToken);
+            if (!deadline.HasValue && !await gate.WaitAsync(0, cancellationToken))
+            {
+                _logger.LogInformation("Search deferred for {Instance}: another submission owns the instance gate", instanceName);
+                drained = false; submissionStopped = true; break;
+            }
+            if (deadline.HasValue) await gate.WaitAsync(cancellationToken);
             try
             {
                 var candidate = plan.Trigger;
+                using var candidateScope = _logger.BeginScope(new Dictionary<string, object> { ["MediaId"] = candidate.ArrId, ["Operation"] = "SearchSubmission" });
+                _logger.LogTrace("Search plan for {Title}: mediaId={MediaId}; reason={Reason}; scope={Scope}; coveredIds={CoveredIds}; priority={Priority}; year={Year}; deadline={Deadline:O}; commandLimit={CommandLimit}; submissionDelay={Delay}s",
+                    candidate.Title, candidate.ArrId, candidate.Reason, plan.Command.Length == 0 ? arrConfig.Type : plan.Command, string.Join(",", plan.Covered.Select(c => c.ArrId)), candidate.Priority, candidate.Year, deadline, searchLimit, searchLoopDelay);
                 cancellationToken.ThrowIfCancellationRequested();
                 var delay = _timing.RemainingDelay(instanceName, Clock.GetUtcNow(), TimeSpan.FromSeconds(searchLoopDelay));
                 if (OutOfBudget(delay))
@@ -138,25 +182,23 @@ public class SearchExecutor : ISearchExecutor
                     Yield(); drained = false; submissionStopped = true; break;
                 }
 
-                var activeCommands = await GetActiveCommandCountAsync(instanceName, cancellationToken);
-                if (!CanSearch(activeCommands, searchLimit))
-                {
-                    submissionStopped = true;
-                    _logger.LogTrace("SearchExecutor: command limit reached ({Active}/{Limit}), pausing searches",
-                        activeCommands, searchLimit);
-                    drained = false;
-                    break;
-                }
+                if (!await WaitForCapacityAsync())
+                { drained = false; submissionStopped = true; break; }
 
                 delay = _timing.RemainingDelay(instanceName, Clock.GetUtcNow(), TimeSpan.FromSeconds(searchLoopDelay));
                 if (OutOfBudget(delay))
                 { Yield(); drained = false; submissionStopped = true; break; }
-                if (delay > TimeSpan.Zero) await Task.Delay(delay, Clock, cancellationToken);
+                if (delay > TimeSpan.Zero)
+                {
+                    _logger.LogInformation("Search deferred for {Title} [id={ArrId}]: waiting {Seconds:F1}s between submissions", candidate.Title, candidate.ArrId, delay.TotalSeconds);
+                    await WaitAsync(delay);
+                }
 
+                var commandAccepted = false;
                 try
                 {
                     // Recheck capacity after sleeping, before changing any external profile.
-                    if (!CanSearch(await GetActiveCommandCountAsync(instanceName, cancellationToken), searchLimit))
+                    if (!await WaitForCapacityAsync())
                     { drained = false; submissionStopped = true; break; }
                     if (OutOfBudget(TimeSpan.Zero))
                     { Yield(); drained = false; submissionStopped = true; break; }
@@ -164,6 +206,7 @@ public class SearchExecutor : ISearchExecutor
                     {
                         drained = false; submissionStopped = true;
                         result.Errors.Add($"Search skipped for {candidate.Title}: temporary profile preparation failed.");
+                        _logger.LogInformation("Search skipped for {Title} [id={ArrId}]: temporary profile preparation failed", candidate.Title, candidate.ArrId);
                         continue;
                     }
                     if (OutOfBudget(TimeSpan.Zero))
@@ -197,7 +240,7 @@ public class SearchExecutor : ISearchExecutor
                         case "album":
                             _logger.LogInformation(
                                 "Searching for: {ArtistName:l} [id={AlbumId}|album]{Reason:l}",
-                                candidate.Title, candidate.AlbumId ?? 0, reasonText);
+                                candidate.Title, candidate.ArrId, reasonText);
                             break;
                         default:
                             _logger.LogInformation("Searching for: {Title:l} [id={ArrId}|{Type:l}]{Reason:l}",
@@ -205,6 +248,7 @@ public class SearchExecutor : ISearchExecutor
                             break;
                     }
 
+                    RequireCurrentConfiguration();
                     bool triggered;
                     try
                     {
@@ -215,13 +259,19 @@ public class SearchExecutor : ISearchExecutor
                     finally { _timing.Record(instanceName, Clock.GetUtcNow()); }
                     if (triggered)
                     {
-                        if (_issues != null) await _issues.ResolveAsync(SearchIssue(instanceName, "submission", candidate.ArrId.ToString()), cancellationToken);
+                        _logger.LogInformation("Search accepted for {Title} [id={ArrId}, reason={Reason}], covering {Count} items", candidate.Title, candidate.ArrId, candidate.Reason, plan.Covered.Count);
+                        commandAccepted = true;
                         result.SearchesTriggered++;
                         foreach (var covered in plan.Covered)
                         {
                             if (covered.ArrId <= 0) continue;
                             await MarkAsSearchedAsync(instanceName, arrConfig, covered, cancellationToken);
                             result.SearchedIds.Add(covered.ArrId);
+                        }
+                        if (_issues != null)
+                        {
+                            await _issues.ResolveAsync(SearchIssue(instanceName, "submission", candidate.ArrId.ToString()), cancellationToken);
+                            await _issues.ResolveAsync(SearchIssue(instanceName, "progress", candidate.ArrId.ToString()), cancellationToken);
                         }
                     }
                     else
@@ -230,18 +280,20 @@ public class SearchExecutor : ISearchExecutor
                         drained = false;
                         result.Errors.Add("Arr rejected a search submission.");
                         if (_issues != null) await _issues.ReportAsync(SearchIssue(instanceName, "submission", candidate.ArrId.ToString()).WithEvidence($"Candidate={candidate.Title}; Arr ID={candidate.ArrId}; endpoint={DiagnosticText.Safe(arrConfig.URI)}; search API returned false; HTTP status was not supplied by the API adapter."), cancellationToken);
-                        _logger.LogTrace("SearchExecutor: search not triggered for {Title}", candidate.Title);
+                        _logger.LogInformation("SearchExecutor: search not triggered for {Title}", candidate.Title);
                     }
                 }
                 catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested) { throw; }
+                catch (ConfigurationBusyException) { throw; }
                 catch (Exception ex)
                 {
                     submissionStopped = true;
                     drained = false;
                     _logger.LogError(ex, "SearchExecutor: error searching {Title}", candidate.Title);
                     result.Errors.Add($"Failed to search {candidate.Title}: {DiagnosticText.Error(ex)}");
-                    if (_issues != null) await _issues.ReportAsync(SearchIssue(instanceName, "submission", candidate.ArrId.ToString())
-                        .WithEvidence($"Candidate={candidate.Title}; Arr ID={candidate.ArrId}; endpoint={DiagnosticText.Safe(arrConfig.URI)}; {DiagnosticText.Error(ex)}"), cancellationToken);
+                    if (_issues != null) await _issues.ReportAsync(SearchIssue(instanceName, commandAccepted ? "progress" : "submission", candidate.ArrId.ToString())
+                        .WithEvidence($"Candidate={candidate.Title}; Arr ID={candidate.ArrId}; commandAccepted={commandAccepted}; endpoint={DiagnosticText.Safe(arrConfig.URI)}; {DiagnosticText.Error(ex)}"), cancellationToken);
+                    break;
                 }
             }
             finally { gate.Release(); }
@@ -250,6 +302,8 @@ public class SearchExecutor : ISearchExecutor
         result.ItemsSearched = result.SearchedIds.Count;
         result.LoopCompleted = drained;
         result.OnlyRetryResolutionFailed = !drained && !submissionStopped;
+        _logger.LogInformation("Search cycle completed: {Commands} searches accepted, {Items} items searched, {Errors} errors, drained={Drained}",
+            result.SearchesTriggered, result.ItemsSearched, result.Errors.Count, result.LoopCompleted);
         return result;
     }
 
@@ -442,8 +496,8 @@ public class SearchExecutor : ISearchExecutor
     }
 
     private static OperationalIssueReport SearchIssue(string instance, string operation, string id = "") => new(
-        "search." + operation, "automation", operation == "capacity" ? "Search capacity could not be verified" : "Arr rejected a search",
-        "Search submission is held back; affected candidates remain unsearched.", "Check Arr connectivity, command access and Logs before retrying.",
+        "search." + operation, "automation", operation == "capacity" ? "Search capacity could not be verified" : operation == "progress" ? "Accepted search progress could not be recorded" : "Arr rejected a search",
+        operation == "progress" ? "Arr accepted the command, but local progress could not be recorded; a later retry may repeat it." : "Search submission is held back; affected candidates remain unsearched.", "Check Arr connectivity, command access and Logs before retrying.",
         ArrInstance: instance, SubjectType: "search", SubjectId: id);
 
     public bool CanSearch(int activeCommandCount, int searchLimit)
@@ -501,11 +555,14 @@ public class SearchExecutor : ISearchExecutor
     {
         try
         {
+            // Explicit retries may resolve identities from Arr before they exist in the local catalog.
             switch (arrConfig.Type.ToLowerInvariant())
             {
                 case "radarr":
                     var movie = await _db.Movies
                         .FirstOrDefaultAsync(m => m.ArrId == candidate.ArrId && m.ArrInstance == instanceName, cancellationToken);
+                    if (movie == null && candidate.Reason != "Retry")
+                        throw new IOException($"Search progress row is missing for {candidate.ArrId} on {instanceName}.");
                     if (movie != null)
                     {
                         movie.Searched = true;
@@ -517,6 +574,8 @@ public class SearchExecutor : ISearchExecutor
                 case "sonarr":
                     var episode = await _db.Episodes
                         .FirstOrDefaultAsync(e => e.ArrId == candidate.ArrId && e.ArrInstance == instanceName, cancellationToken);
+                    if (episode == null && candidate.Reason != "Retry")
+                        throw new IOException($"Search progress row is missing for {candidate.ArrId} on {instanceName}.");
                     if (episode != null)
                     {
                         episode.Searched = true;
@@ -528,6 +587,8 @@ public class SearchExecutor : ISearchExecutor
                 case "lidarr":
                     var album = await _db.Albums
                         .FirstOrDefaultAsync(a => a.ArrId == candidate.ArrId && a.ArrInstance == instanceName, cancellationToken);
+                    if (album == null && candidate.Reason != "Retry")
+                        throw new IOException($"Search progress row is missing for {candidate.ArrId} on {instanceName}.");
                     if (album != null)
                     {
                         album.Searched = true;
@@ -541,6 +602,8 @@ public class SearchExecutor : ISearchExecutor
                 case "readarr":
                     var book = await _db.Books
                         .FirstOrDefaultAsync(b => b.ArrId == candidate.ArrId && b.ArrInstance == instanceName, cancellationToken);
+                    if (book == null && candidate.Reason != "Retry")
+                        throw new IOException($"Search progress row is missing for {candidate.ArrId} on {instanceName}.");
                     if (book != null)
                     {
                         book.Searched = true;
@@ -553,7 +616,8 @@ public class SearchExecutor : ISearchExecutor
         catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested) { throw; }
         catch (Exception ex)
         {
-            _logger.LogWarning(ex, "SearchExecutor: failed to mark {Title} as searched", candidate.Title);
+            _logger.LogWarning(ex, "SearchExecutor: failed to mark {Title} as searched after command acceptance", candidate.Title);
+            throw;
         }
     }
 }

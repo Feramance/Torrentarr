@@ -1,5 +1,4 @@
 using Microsoft.AspNetCore.Builder;
-using Microsoft.EntityFrameworkCore;
 using Microsoft.AspNetCore.Http;
 using Torrentarr.Core.Configuration;
 using Torrentarr.Core.Models;
@@ -15,29 +14,13 @@ public static class TorrentMaintenanceEndpoints
         app.MapGet(prefix + "/maintenance/status", (IMaintenanceCoordinator cleanup) => Results.Ok(cleanup.GetStatus()));
         app.MapGet(prefix + "/maintenance/history", (IMaintenanceCoordinator cleanup, int? limit) => Results.Ok(cleanup.GetHistory(limit ?? 50)));
         app.MapGet(prefix + "/torrent-automation/status", (TorrentAutomationService automation) => Results.Ok(automation.GetStatus()));
-        app.MapPost(prefix + "/maintenance/preview", async (MaintenancePreviewRequest request, IMaintenanceCoordinator cleanup, IOperationalIssueReporter issues, Torrentarr.Infrastructure.Database.TorrentarrDbContext db, CancellationToken ct) =>
+        app.MapPost(prefix + "/maintenance/preview", async (MaintenancePreviewRequest request, IMaintenanceCoordinator cleanup, CancellationToken ct) =>
         {
             if (request.ClientInstanceIds == null || request.Operations == null || request.MaintenanceOverrides == null || request.Operations.Any(op => !Enum.IsDefined(op)))
                 return Results.BadRequest(new { error = "Invalid cleanup selection." });
             try
             {
-                var preview = await cleanup.PreviewAsync(request, ct);
-                var selection = string.Join(",", preview.Operations.Order());
-                foreach (var diagnostic in preview.Diagnostics)
-                    await issues.ReportAsync(new("maintenance.preview." + diagnostic.Code, "automation", "Maintenance preview needs attention",
-                        $"Preview operations={selection}; diagnostic={diagnostic.Code}; {DiagnosticText.Safe(diagnostic.Message)} Examples: {string.Join("; ", diagnostic.Examples.Select(e => DiagnosticText.Safe(System.Text.Json.JsonSerializer.Serialize(e))))}",
-                        DiagnosticText.Safe(diagnostic.Remediation), ClientInstance: diagnostic.ClientInstanceId,
-                        SubjectType: "preview", SubjectId: selection, Severity: diagnostic.Severity, Target: "maintenance"), ct);
-                try
-                {
-                    var verifiedClients = preview.CriticalErrors.Count == 0
-                        ? preview.OperationResults.GroupBy(r => r.ClientInstanceId).Where(g => g.All(r => r.State == "ready")).Select(g => g.Key).ToList() : [];
-                    var previous = await db.OperationalIssues.Where(i => i.SubjectType == "preview" && i.SubjectId == selection && i.ResolvedAt == null && verifiedClients.Contains(i.ClientInstance)).ToListAsync(ct);
-                    foreach (var old in previous.Where(i => !preview.Diagnostics.Any(d => "maintenance.preview." + d.Code == i.Code && d.ClientInstanceId == i.ClientInstance)))
-                        await issues.ResolveAsync(new(old.Code, old.Category, old.Title, old.Impact, old.Remediation, old.ArrInstance, old.ClientInstance, old.SubjectType, old.SubjectId, old.Severity, old.Target), ct);
-                }
-                catch (Exception) when (!ct.IsCancellationRequested) { /* Diagnostics persistence must not change preview results. */ }
-                return Results.Ok(preview);
+                return Results.Ok(await cleanup.PreviewAsync(request, ct));
             }
             catch (NotSupportedException ex) { return Results.Json(new { error = ex.Message }, statusCode: 410); }
             catch (ArgumentException ex) { return Results.BadRequest(new { error = ex.Message }); }
@@ -72,4 +55,5 @@ public static class TorrentMaintenanceEndpoints
         });
         app.MapPost(prefix + "/maintenance/cancel", (IMaintenanceCoordinator cleanup) => { cleanup.Cancel(); return Results.Accepted(); });
     }
+
 }
