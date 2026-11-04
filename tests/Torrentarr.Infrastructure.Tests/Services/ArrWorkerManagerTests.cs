@@ -339,8 +339,8 @@ public class ArrWorkerManagerTests
     {
         var torrentGate = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
         var torrent = new Mock<ITorrentProcessor>();
-        torrent.Setup(p => p.ProcessTorrentsAsync(It.IsAny<string>(), It.IsAny<CancellationToken>()))
-            .Returns(async (string _, CancellationToken ct) =>
+        torrent.Setup(p => p.ProcessTorrentsAsync(It.IsAny<string>(), It.IsAny<IReadOnlySet<string>>(), It.IsAny<CancellationToken>()))
+            .Returns(async (string _, IReadOnlySet<string>? ids, CancellationToken ct) =>
             {
                 try { await torrentGate.Task.WaitAsync(ct); }
                 catch (OperationCanceledException) { }
@@ -380,8 +380,8 @@ public class ArrWorkerManagerTests
         var searchCalled = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
 
         var torrent = new Mock<ITorrentProcessor>();
-        torrent.Setup(p => p.ProcessTorrentsAsync(It.IsAny<string>(), It.IsAny<CancellationToken>()))
-            .Returns(async (string _, CancellationToken ct) =>
+        torrent.Setup(p => p.ProcessTorrentsAsync(It.IsAny<string>(), It.IsAny<IReadOnlySet<string>>(), It.IsAny<CancellationToken>()))
+            .Returns(async (string _, IReadOnlySet<string>? ids, CancellationToken ct) =>
             {
                 torrentStarted.TrySetResult();
                 try { await torrentRelease.Task.WaitAsync(ct); }
@@ -457,6 +457,7 @@ public class ArrWorkerManagerTests
 
             var config = new TorrentarrConfig();
             config.Settings.LoopSleepTimer = 1;
+            config.TorrentClients["fixture"] = new() { TorrentScanIntervalSeconds = 5 };
             config.Settings.FFprobeAutoUpdate = false;
             if (managedInstance)
             {
@@ -473,7 +474,7 @@ public class ArrWorkerManagerTests
 
             var state = new ProcessStateManager();
             var torrentProcessor = torrent ?? Mock.Of<ITorrentProcessor>(p =>
-                p.ProcessTorrentsAsync(It.IsAny<string>(), It.IsAny<CancellationToken>()) == Task.CompletedTask);
+                p.ProcessTorrentsAsync(It.IsAny<string>(), It.IsAny<IReadOnlySet<string>>(), It.IsAny<CancellationToken>()) == Task.CompletedTask);
 
             var services = new ServiceCollection();
             services.AddSingleton(config);

@@ -150,10 +150,12 @@ public sealed class TaglessInstanceScopeTests
 
         await using var db = CreateDbWithDuplicateHashRows();
         var config = new TorrentarrConfig { Settings = { Tagless = true } };
+        config.ArrInstances["Radarr"] = new() { Category = "radarr", Type = "radarr" };
         var manager = new QBittorrentConnectionManager(NullLogger<QBittorrentConnectionManager>.Instance);
         RegisterStubClient(manager, "qBit", new TorrentInfo
         {
             Hash = hash,
+            Category = "radarr",
             Progress = 0.5,
             State = "stalledDL",
             CompletionOn = 0
@@ -161,6 +163,7 @@ public sealed class TaglessInstanceScopeTests
         RegisterStubClient(manager, "qBit-seedbox", new TorrentInfo
         {
             Hash = hash,
+            Category = "radarr",
             Progress = 1.0,
             State = "stalledUP",
             CompletionOn = completionOn

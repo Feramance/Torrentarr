@@ -180,7 +180,7 @@ public class ReadarrClient
             ?? throw new IOException("Arr returned an invalid command inventory.");
     }
 
-    public async Task<bool> DeleteFromQueueAsync(int id, bool removeFromClient = true, bool blocklist = false, CancellationToken ct = default, bool skipRedownload = false)
+    public async Task<bool> DeleteFromQueueAsync(int id, bool removeFromClient = true, bool blocklist = false, CancellationToken ct = default, bool skipRedownload = false, bool throwOnFailure = false)
     {
         var request = new RestRequest($"/api/v1/queue/{id}", Method.Delete);
         AddApiKeyHeader(request);
@@ -188,6 +188,7 @@ public class ReadarrClient
         request.AddQueryParameter("blocklist", blocklist.ToString().ToLower());
         request.AddQueryParameter("skipRedownload", skipRedownload.ToString().ToLowerInvariant());
         var response = await ArrClientResponse.ExecuteAsync(_client, request, ct);
+        if (throwOnFailure) ArrClientResponse.EnsureSuccess(response, $"DELETE queue/{id} (blocklist={blocklist})");
         return response.IsSuccessful;
     }
 

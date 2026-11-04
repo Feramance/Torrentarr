@@ -4,6 +4,7 @@ using Newtonsoft.Json;
 using RestSharp;
 using RestSharp.Authenticators;
 using Torrentarr.Infrastructure.Http;
+using Torrentarr.Core.Services;
 
 namespace Torrentarr.Infrastructure.ApiClients.QBittorrent;
 
@@ -25,7 +26,8 @@ public class QBittorrentClient : ITorrentClient, IDisposable
 
     public TorrentClientIdentity Identity { get; }
     public TorrentClientCapabilities Capabilities => TorrentClientCapabilities.QBittorrent;
-    public string? LastConnectionFailure => LastLoginFailure;
+    public string? LastConnectionFailure { get; private set; }
+    public TorrentClientConnectionFailureKind LastConnectionFailureKind { get; private set; }
 
     /// <summary>Set when <see cref="LoginAsync"/> returns false; includes HTTP status and cookie names.</summary>
     public string? LastLoginFailure { get; private set; }
@@ -52,14 +54,18 @@ public class QBittorrentClient : ITorrentClient, IDisposable
 
     public void Dispose() => _client.Dispose();
 
-    private Task<RestResponse> ExecuteAsync(RestRequest request, CancellationToken ct) =>
-        HttpRetryHelper.ExecuteQBitAsync(_client, request, ct);
+    private async Task<RestResponse> ExecuteAsync(RestRequest request, CancellationToken ct)
+    {
+        using var scope = Serilog.Context.LogContext.PushProperty("ClientInstance", Identity.InstanceId);
+        return await HttpRetryHelper.ExecuteQBitAsync(_client, request, ct);
+    }
 
     private async Task<RestResponse> ExecuteAuthenticatedAsync(RestRequest request, CancellationToken ct)
     {
         var response = await ExecuteAsync(request, ct);
         if (response.StatusCode == System.Net.HttpStatusCode.Forbidden && await LoginAsync(ct))
         {
+            Serilog.Log.Debug("qBittorrent session renewed for {ClientInstance}; retrying {Method} {Route}", Identity.InstanceId, request.Method, request.Resource.Split('?', '#')[0]);
             request.AddOrUpdateHeader("Cookie", _cookie!);
             response = await ExecuteAsync(request, ct);
         }
@@ -127,11 +133,14 @@ public class QBittorrentClient : ITorrentClient, IDisposable
     public async Task<bool> LoginAsync(CancellationToken ct = default)
     {
         LastLoginFailure = null;
+        LastConnectionFailure = null;
+        LastConnectionFailureKind = TorrentClientConnectionFailureKind.Unknown;
         var request = new RestRequest("/api/v2/auth/login", Method.Post);
         request.AddParameter("username", _username);
         request.AddParameter("password", _password);
 
         var response = await ExecuteAsync(request, ct);
+        ct.ThrowIfCancellationRequested();
         var cookies = ExtractLoginCookies(response);
 
         if (QBittorrentLoginParser.TryAccept(
@@ -149,6 +158,11 @@ public class QBittorrentClient : ITorrentClient, IDisposable
         var body = string.IsNullOrWhiteSpace(response.Content) ? "(empty)" : TruncateForLog(response.Content.Trim());
         LastLoginFailure =
             $"HTTP {(int)response.StatusCode} {response.StatusCode}; body={body}; cookies=[{cookieNames}]; {failureReason}";
+        LastConnectionFailureKind = string.Equals(response.Content?.Trim(), "Fails.", StringComparison.OrdinalIgnoreCase)
+            ? TorrentClientConnectionFailureKind.AuthenticationRejected
+            : TorrentClientConnectionFailureKind.Transient;
+        var transport = response.ErrorException == null ? response.ResponseStatus.ToString() : DiagnosticText.Error(response.ErrorException);
+        LastConnectionFailure = $"Login endpoint=/api/v2/auth/login; HTTP {(int)response.StatusCode} {response.StatusCode}; failure={LastConnectionFailureKind}; {failureReason}; transport={transport}";
         return false;
     }
 
@@ -252,7 +266,8 @@ public class QBittorrentClient : ITorrentClient, IDisposable
         request.AddParameter("deleteFiles", deleteFiles.ToString().ToLower());
 
         // A retry could hide whether an earlier delete reached the server.
-        var response = await _client.ExecuteAsync(request, ct);
+        using var scope = Serilog.Context.LogContext.PushProperty("ClientInstance", Identity.InstanceId);
+        var response = await HttpRetryHelper.ExecuteQBitOnceAsync(_client, request, ct);
         if (response.IsSuccessful) return true;
         ct.ThrowIfCancellationRequested();
         if ((int)response.StatusCode is >= 400 and < 500

@@ -8,7 +8,7 @@ using Xunit;
 namespace Torrentarr.Infrastructure.Tests.Services;
 
 /// <summary>
-/// Tests for TorrentProcessor.ShouldExcludeFile (§2.1 File Filtering).
+/// Tests for TorrentProcessor.FileExclusionReason (§2.1 File Filtering).
 /// The method is private static — invoked via reflection.
 /// Logic:
 ///   1. Check each folder component against FolderExclusionRegex patterns.
@@ -18,18 +18,53 @@ namespace Torrentarr.Infrastructure.Tests.Services;
 /// </summary>
 public class TorrentProcessorFileFilterTests
 {
+    [Theory]
+    [InlineData("Movie/extras/feature.mkv", "Folder 'extras' matched")]
+    [InlineData("Movie/sample.mkv", "Filename matched")]
+    [InlineData("Movie/movie.exe", "Extension '.exe'")]
+    public void ExclusionReason_IdentifiesTheWinningRule(string path, string expected)
+    {
+        var reason = typeof(TorrentProcessor).GetMethod("FileExclusionReason", BindingFlags.NonPublic | BindingFlags.Static)!
+            .Invoke(null, [path, new TorrentConfig(), RegexOptions.IgnoreCase]);
+        reason.Should().BeOfType<string>().Which.Should().Contain(expected);
+    }
+
     private static bool CallShouldExcludeFile(
         string filePath,
         TorrentConfig cfg,
         RegexOptions options = RegexOptions.IgnoreCase)
     {
         var method = typeof(TorrentProcessor)
-            .GetMethod("ShouldExcludeFile",
+            .GetMethod("FileExclusionReason",
                 BindingFlags.NonPublic | BindingFlags.Static);
-        return (bool)method!.Invoke(null, new object?[] { filePath, cfg, options })!;
+        return method!.Invoke(null, new object?[] { filePath, cfg, options }) != null;
     }
 
     // ── Extension allowlist ───────────────────────────────────────────────────
+
+    [Theory]
+    [InlineData("A.Returners.Magic.Should.Be.Special/episode.mkv", false)]
+    [InlineData("Show/Specials/episode.mkv", true)]
+    [InlineData("Show\\Specials\\episode.mkv", true)]
+    [InlineData("Special/Season 1/episode.mkv", false)]
+    [InlineData("", true)]
+    [InlineData("/", true)]
+    public void FolderExclusions_ApplyOnlyInsideTheTitleFolder(string path, bool excluded)
+    {
+        var config = new TorrentConfig { FolderExclusionRegex = [@"\bspecials?\b"], FileNameExclusionRegex = [], FileExtensionAllowlist = [".mkv"] };
+        CallShouldExcludeFile(path, config).Should().Be(excluded);
+    }
+
+    [Theory]
+    [InlineData("Movie/file.r01", @"\.r[0-9]{2}", false)]
+    [InlineData("Movie/file.r99", @"\.r[0-9]{2}", false)]
+    [InlineData("Movie/file.mkv.exe", ".mkv", true)]
+    [InlineData("Movie/file.MKV", @"\.mkv", false)]
+    public void ExtensionPatterns_AreSharedWithMediaValidation(string path, string pattern, bool excluded)
+    {
+        var config = new TorrentConfig { FolderExclusionRegex = [], FileNameExclusionRegex = [], FileExtensionAllowlist = [pattern] };
+        CallShouldExcludeFile(path, config).Should().Be(excluded);
+    }
 
     [Fact]
     public void ShouldExclude_ExtensionInAllowlist_NotExcluded()

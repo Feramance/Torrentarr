@@ -267,7 +267,7 @@ export function ArrInstanceModal({
     <ConfigModalPortal>
       <div className="modal-backdrop" role="presentation">
         <div
-          className="modal"
+          className="modal config-modal"
           role="dialog"
           aria-modal="true"
           aria-labelledby="arr-instance-modal-title"
@@ -570,7 +570,7 @@ export function QbitInstanceModal({
     <ConfigModalPortal>
       <div className="modal-backdrop" role="presentation">
         <div
-          className="modal"
+          className="modal config-modal config-modal--torrent-client"
           role="dialog"
           aria-modal="true"
           aria-labelledby="qbit-instance-modal-title"
@@ -589,79 +589,90 @@ export function QbitInstanceModal({
               Close
             </button>
           </div>
-          <div className="modal-body">
-            <QbitTorrentSummary state={state} />
-            <CategoryOverlapAlert messages={overlapWarnings} />
-            {clientGroups(fields)
-              .filter(
-                (group) =>
-                  !["Manage", "Storage", "Torrent automation"].includes(
-                    group.title,
-                  ),
-              )
-              .map((group) => (
-                <FieldGroup
-                  key={group.title}
-                  title={
-                    group.fields.length === 1 &&
-                    group.fields[0]?.type === "collection"
-                      ? null
-                      : group.title
-                  }
-                  fields={group.fields}
-                  state={state}
-                  basePath={[]}
-                  onChange={(path, def, value) =>
-                    onChange([keyName, ...path], def, value)
-                  }
-                  onRenameSection={onRename}
-                  sectionKey={fieldPathPrefix ?? keyName}
-                  defaultOpen={group.defaultOpen}
-                  validationErrors={validationErrors}
-                />
-              ))}
-            <FieldGroup
-              title="Trackers"
-              fields={[...ARR_TRACKER_FIELDS, ...getTrackerProtectionFields()]}
-              state={state}
-              basePath={[]}
-              onChange={(path, def, value) =>
-                onChange([keyName, ...path], def, value)
-              }
-              defaultOpen={false}
-              qbitTrackers
-              sectionKey={fieldPathPrefix ?? keyName}
-              validationErrors={validationErrors}
-            />
-            <div className="config-section">
-              <h3>Manage</h3>
-              <p>
-                Configure recovery, organization, and storage tools in Manage.
-              </p>
-              <p>
-                {(state as ConfigDocument)?.Maintenance &&
-                ((state as ConfigDocument).Maintenance as ConfigDocument)
-                  .Enabled
-                  ? "Maintenance enabled"
-                  : "Maintenance disabled"}
-              </p>
-              <button
-                type="button"
-                className="btn"
-                disabled={!manageClientId}
-                onClick={() =>
-                  requestNavigateTab({
-                    tab: "maintenance",
-                    manageClientId,
-                    preserveConfigDraft: true,
-                  })
+          <div className="modal-body config-modal__client-layout">
+            <aside
+              className="config-modal__summary"
+              aria-label="How torrents are handled"
+              tabIndex={0}
+            >
+              <QbitTorrentSummary state={state} />
+            </aside>
+            <div className="config-modal__fields">
+              <CategoryOverlapAlert messages={overlapWarnings} />
+              {clientGroups(fields)
+                .filter(
+                  (group) =>
+                    !["Manage", "Storage", "Torrent automation"].includes(
+                      group.title,
+                    ),
+                )
+                .map((group) => (
+                  <FieldGroup
+                    key={group.title}
+                    title={
+                      group.fields.length === 1 &&
+                      group.fields[0]?.type === "collection"
+                        ? null
+                        : group.title
+                    }
+                    fields={group.fields}
+                    state={state}
+                    basePath={[]}
+                    onChange={(path, def, value) =>
+                      onChange([keyName, ...path], def, value)
+                    }
+                    onRenameSection={onRename}
+                    sectionKey={fieldPathPrefix ?? keyName}
+                    defaultOpen={group.defaultOpen}
+                    validationErrors={validationErrors}
+                  />
+                ))}
+              <FieldGroup
+                title="Trackers"
+                fields={[
+                  ...ARR_TRACKER_FIELDS,
+                  ...getTrackerProtectionFields(),
+                ]}
+                state={state}
+                basePath={[]}
+                onChange={(path, def, value) =>
+                  onChange([keyName, ...path], def, value)
                 }
-              >
-                Open Manage
-              </button>
-              {!manageClientId && (
-                <p>Save this client and its name before opening Manage.</p>
-              )}
+                defaultOpen={false}
+                qbitTrackers
+                sectionKey={fieldPathPrefix ?? keyName}
+                validationErrors={validationErrors}
+              />
+              <div className="config-section">
+                <h3>Manage</h3>
+                <p>
+                  Configure recovery, organization, and storage tools in Manage.
+                </p>
+                <p>
+                  {(state as ConfigDocument)?.Maintenance &&
+                  ((state as ConfigDocument).Maintenance as ConfigDocument)
+                    .Enabled
+                    ? "Maintenance enabled"
+                    : "Maintenance disabled"}
+                </p>
+                <button
+                  type="button"
+                  className="btn"
+                  disabled={!manageClientId}
+                  onClick={() =>
+                    requestNavigateTab({
+                      tab: "maintenance",
+                      manageClientId,
+                      preserveConfigDraft: true,
+                    })
+                  }
+                >
+                  Open Manage
+                </button>
+                {!manageClientId && (
+                  <p>Save this client and its name before opening Manage.</p>
+                )}
+              </div>
             </div>
           </div>
           {(validationErrors.length || saveDisabled) && saveBlockedReason ? (
@@ -763,7 +774,7 @@ export function SimpleConfigModal({
     <ConfigModalPortal>
       <div className="modal-backdrop" role="presentation">
         <div
-          className="modal"
+          className="modal config-modal"
           role="dialog"
           aria-modal="true"
           aria-labelledby={`${title}-modal-title`}

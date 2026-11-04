@@ -32,6 +32,26 @@ public class SonarrSearchScopeTests
     private List<SonarrSearchPlan> Plan(List<EpisodeFilesModel> episodes, List<SearchCandidate>? requested = null) =>
         SonarrSearchScope.Plan(requested ?? Needs(episodes), episodes, _series, _config, Now);
 
+    [Fact]
+    public void UnknownAirdate_WaitsForReleaseButAllowsUpgradeAndExplicitRetry()
+    {
+        var episodes = Episodes(1, 1);
+        episodes[0].AirDateUtc = null;
+        Needs(episodes).Should().BeEmpty();
+        var retry = new SearchCandidate { ArrId = 1, SeriesId = 7, SeasonNumber = 1, Reason = "Retry" };
+        Plan(episodes, [retry]).Single().Command.Should().Be("EpisodeSearch");
+        episodes[0].AirDateUtc = Now.AddDays(1);
+        Needs(episodes).Should().BeEmpty();
+        episodes[0].AirDateUtc = Now;
+        Needs(episodes).Should().ContainSingle();
+        episodes[0].AirDateUtc = null;
+        episodes[0].HasFile = true;
+        episodes[0].QualityMet = false;
+        _config.SearchMissing = false;
+        _config.QualityUnmetSearch = true;
+        Needs(episodes).Single().Reason.Should().Be("Quality");
+    }
+
     [Theory]
     [InlineData(5, 2, "EpisodeSearch", 2)]
     [InlineData(4, 2, "EpisodeSearch", 2)]

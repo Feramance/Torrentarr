@@ -16,6 +16,7 @@ public class ManualSqliteMigrationsTests
         using var db = new TorrentarrDbContext(new DbContextOptionsBuilder<TorrentarrDbContext>().UseSqlite(connection).Options);
         db.Database.EnsureCreated();
         db.Database.ExecuteSqlRaw("ALTER TABLE torrentarr_sonarr_search_retries DROP COLUMN BlocklistPending");
+        db.Database.ExecuteSqlRaw("ALTER TABLE torrentarr_sonarr_search_retries DROP COLUMN ConsecutiveFailures");
         using var command = connection.CreateCommand();
         command.CommandText = "INSERT INTO torrentarr_sonarr_search_retries VALUES ('Sonarr-test', 'ABC', '[{\"ArrId\":42}]')";
         command.ExecuteNonQuery();
@@ -23,9 +24,12 @@ public class ManualSqliteMigrationsTests
         var retry = db.SonarrSearchRetries.Single();
         retry.BlocklistPending.Should().BeFalse();
         retry.CandidatesJson.Should().Contain("42");
+        retry.ConsecutiveFailures.Should().Be(0);
+        retry.ConsecutiveFailures = 2;
         retry.BlocklistPending = true; db.SaveChanges();
         db.ChangeTracker.Clear();
         db.SonarrSearchRetries.Single().BlocklistPending.Should().BeTrue();
+        db.SonarrSearchRetries.Single().ConsecutiveFailures.Should().Be(2);
     }
 
     [Fact]

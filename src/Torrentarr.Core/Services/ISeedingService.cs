@@ -7,6 +7,13 @@ namespace Torrentarr.Core.Services;
 /// Service for managing torrent seeding rules and Hit &amp; Run protection.
 /// Matches qBitrr's qbit_category_manager.py implementation exactly.
 /// </summary>
+public enum TorrentRemovalIntent
+{
+    SeedingLimit,
+    StalledDownload,
+    RejectedByAllowlist
+}
+
 public interface ISeedingService
 {
     /// <summary>
@@ -28,6 +35,7 @@ public interface ISeedingService
     /// Remove completed torrents that meet seeding requirements
     /// </summary>
     Task<RemovalResult> RemoveCompletedTorrentsAsync(string category, CancellationToken cancellationToken = default);
+    Task<RemovalResult> RemoveCompletedTorrentsAsync(string category, IReadOnlySet<string>? clientIds, CancellationToken cancellationToken = default);
 
     /// <summary>
     /// Update seeding tags for all completed torrents in a category.
@@ -35,6 +43,7 @@ public interface ISeedingService
     /// </summary>
     /// <exception cref="AggregateException">Failures are propagated after independent client and torrent maintenance completes.</exception>
     Task UpdateSeedingTagsAsync(string category, CancellationToken cancellationToken = default);
+    Task UpdateSeedingTagsAsync(string category, IReadOnlySet<string>? clientIds, CancellationToken cancellationToken = default);
 
     /// <summary>
     /// Get the highest-priority matching tracker config for a torrent.
@@ -74,6 +83,13 @@ public interface ISeedingService
     /// <summary>Require HnR, effective age/stalled grace, and seeding policy clearance for any deletion.</summary>
     Task<bool> CanDeleteTorrentAsync(TorrentInfo torrent, string reason, CancellationToken cancellationToken = default)
         => Task.FromResult(false);
+
+    Task<RemovalDecision> EvaluateRemovalAsync(TorrentInfo torrent, TorrentRemovalIntent intent, CancellationToken ct = default)
+        => Task.FromResult(new RemovalDecision([new("removal.unsupported-evidence", "This protection service does not provide removal evidence.", "Use a protection service with diagnostic decision support.")]));
+
+    /// <summary>Fail-closed final authorization for explicitly triggered removals.</summary>
+    Task<bool> CanDeleteTorrentForIntentAsync(TorrentInfo torrent, TorrentRemovalIntent intent,
+        string reason, CancellationToken cancellationToken = default) => Task.FromResult(false);
 
     /// <summary>
     /// Apply seeding limits (ratio, time, rate limits) to a torrent.

@@ -191,9 +191,9 @@ public class AvailabilityCheckTests
     }
 
     [Fact]
-    public void CheckEpisodeAvailability_NoAirDate_ReturnsTrue()
+    public void CheckEpisodeAvailability_NoAirDate_ReturnsFalse()
     {
-        CallCheckEpisodeAvailability(null, "S01E01").Should().BeTrue();
+        CallCheckEpisodeAvailability(null, "S01E01").Should().BeFalse();
     }
 
     [Fact]

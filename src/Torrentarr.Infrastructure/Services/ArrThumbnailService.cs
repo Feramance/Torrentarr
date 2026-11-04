@@ -70,11 +70,12 @@ public class ArrThumbnailService
         var baseUri = instance.Value.URI.TrimEnd('/');
         var isSonarr = arrType.Equals("sonarr", StringComparison.OrdinalIgnoreCase);
         var candidates = BuildCandidateUrls(baseUri, arrType, arrId.Value).ToList();
+        string? failureEvidence = null;
         for (var i = 0; i < candidates.Count; i++)
         {
             (byte[] Bytes, string ContentType)? fetched;
-            try { fetched = await TryFetchSameHostAsync(candidates[i], instance.Value.URI, instance.Value.APIKey, instance.Value.SkipTLSVerify, ct); }
-            catch (Exception ex) when (!ct.IsCancellationRequested && ex is HttpRequestException or IOException or OperationCanceledException) { fetched = null; }
+            try { fetched = await TryFetchSameHostAsync(candidates[i], instance.Value.URI, instance.Value.APIKey, instance.Value.SkipTLSVerify, ct, reason => failureEvidence = reason); }
+            catch (Exception ex) when (!ct.IsCancellationRequested && ex is HttpRequestException or IOException or OperationCanceledException) { fetched = null; failureEvidence = DiagnosticText.Error(ex); }
             if (fetched is null)
             {
                 if (isSonarr && i == 0)
@@ -89,7 +90,7 @@ public class ArrThumbnailService
                     catch (Exception ex) when (!ct.IsCancellationRequested &&
                         ex is HttpRequestException or ArrApiException or Newtonsoft.Json.JsonException or OperationCanceledException or TimeoutException)
                     {
-                        if (_issues != null) await _issues.ReportAsync(ThumbnailIssue(instance.Key), ct);
+                        if (_issues != null) await _issues.ReportAsync(ThumbnailIssue(instance.Key).WithEvidence(DiagnosticText.Error(ex)), ct);
                         return null;
                     }
                 }
@@ -103,7 +104,7 @@ public class ArrThumbnailService
             return (fetched.Value.Bytes, fetched.Value.ContentType, etag);
         }
 
-        if (_issues != null) await _issues.ReportAsync(ThumbnailIssue(instance.Key), ct);
+        if (_issues != null) await _issues.ReportAsync(ThumbnailIssue(instance.Key).WithEvidence($"Arr={instance.Key}; type={arrType}; entry={entryId}; Arr ID={arrId}; endpoint={DiagnosticText.Safe(baseUri)}; tried={candidates.Count} same-host poster routes; {failureEvidence ?? "No usable image response or cached poster was available; response details were not supplied by the fetch adapter."}"), ct);
         return null;
     }
 
@@ -183,7 +184,7 @@ public class ArrThumbnailService
         string url,
         string arrBaseUri,
         string apiKey, bool skipTlsVerify,
-        CancellationToken ct)
+        CancellationToken ct, Action<string> failure)
     {
         if (!IsSameHost(url, arrBaseUri))
             return null;
@@ -196,14 +197,16 @@ public class ArrThumbnailService
 
         using var response = await client.SendAsync(request, HttpCompletionOption.ResponseHeadersRead, ct);
         if (!response.IsSuccessStatusCode)
-            return null;
+        { failure($"GET poster response: HTTP {(int)response.StatusCode}; endpoint={DiagnosticText.Safe(url)}"); return null; }
 
         var bytes = await response.Content.ReadAsByteArrayAsync(ct);
         if (bytes.Length == 0 || bytes.Length > MaxBytes)
-            return null;
+        { failure($"Poster size={bytes.Length} bytes; accepted range=1..{MaxBytes} bytes."); return null; }
 
         var contentType = GuessMime(bytes);
-        return contentType == "application/octet-stream" ? null : (bytes, contentType);
+        if (contentType == "application/octet-stream")
+        { failure($"Poster HTTP 200 response is not a recognized image ({bytes.Length} bytes); possible login/proxy response. Body omitted."); return null; }
+        return (bytes, contentType);
     }
 
     private static bool IsSameHost(string url, string arrBaseUri)

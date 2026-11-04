@@ -16,7 +16,7 @@ internal static class ArrClientResponse
         {
             throw new ArrApiException(
                 $"Arr API {operation} failed: {response.ResponseStatus}",
-                null,
+                (int)response.StatusCode >= 400 ? response.StatusCode : null,
                 response.ErrorMessage);
         }
 

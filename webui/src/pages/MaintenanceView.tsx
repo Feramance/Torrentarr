@@ -315,6 +315,13 @@ export function MaintenanceView({
   const toRecycle = candidateActions.filter(
     (a) => a.kind === "QuarantineFile" || a.kind === "RecycleContent",
   );
+  const emptyOrphanFolders = candidateActions.filter(
+    (a) => a.kind === "DeleteEmptyOrphanDirectory",
+  );
+  const orphanDeletes = candidateActions.filter(
+    (a) => a.kind === "DeleteOrphanFile",
+  );
+  const toDelete = candidateActions.filter((a) => a.kind === "DeleteContent");
   const toPurge = candidateActions.filter(
     (a) => a.kind === "DeleteExpiredRecycleItem",
   );
@@ -678,7 +685,15 @@ export function MaintenanceView({
                   {bytes(toRecycle.reduce((sum, a) => sum + a.bytes, 0))}). To
                   purge: {toPurge.length} entries (
                   {bytes(toPurge.reduce((sum, a) => sum + a.bytes, 0))}).
-                  Blocked changes: {plan.blockedCount}.
+                  Permanently delete orphan files: {orphanDeletes.length} files
+                  ({bytes(orphanDeletes.reduce((sum, a) => sum + a.bytes, 0))}).{" "}
+                  Remove empty orphan folders: {emptyOrphanFolders.length}.{" "}
+                  Permanently delete through client: {toDelete.length} torrents
+                  (recycling disabled). Blocked candidate actions:{" "}
+                  {plan.blockedCount}. Blocked operations:{" "}
+                  {plan.operationResults?.filter((r) => r.state === "blocked")
+                    .length ?? 0}
+                  .
                 </p>
                 <ul>
                   {plan.operationResults?.map((result) => (
@@ -708,7 +723,7 @@ export function MaintenanceView({
                     {d.examples?.map((example, index) => (
                       <span className="cleanup-path" key={index}>
                         {" "}
-                        Source: {example.clientPath} · Recycled:{" "}
+                        Client path: {example.clientPath} · Local path:{" "}
                         {example.localPath}
                       </span>
                     ))}
@@ -785,8 +800,21 @@ export function MaintenanceView({
             {!selectedHistory.length ? (
               <p>No runs yet.</p>
             ) : (
-              <div className="table-wrap">
-                <table>
+              <div className="table-wrap" style={{ overflowX: "auto" }}>
+                <table
+                  style={{
+                    width: "100%",
+                    minWidth: "780px",
+                    tableLayout: "fixed",
+                  }}
+                >
+                  <colgroup>
+                    <col style={{ width: "16%" }} />
+                    <col style={{ width: "10%" }} />
+                    <col style={{ width: "12%" }} />
+                    <col style={{ width: "12%" }} />
+                    <col style={{ width: "50%" }} />
+                  </colgroup>
                   <thead>
                     <tr>
                       <th>Started</th>
@@ -799,13 +827,43 @@ export function MaintenanceView({
                   <tbody>
                     {selectedHistory.slice(0, 20).map((run) => (
                       <tr key={run.runId}>
-                        <td>{time(run.startedAt)}</td>
-                        <td>{run.result}</td>
+                        <td style={{ overflowWrap: "anywhere" }}>
+                          {time(run.startedAt)}
+                        </td>
+                        <td style={{ overflowWrap: "anywhere" }}>
+                          {run.result}
+                        </td>
                         <td>{bytes(run.bytesMoved)}</td>
                         <td>{bytes(run.bytesReclaimed ?? 0)}</td>
                         <td>
-                          {run.errors.join("; ") ||
-                            `${run.applied} applied, ${run.skipped} skipped, ${run.failed} failed`}
+                          {run.errors.length ? (
+                            <details>
+                              <summary>
+                                {run.failed} failed · {run.errors.length}{" "}
+                                error(s) — view details
+                              </summary>
+                              <ul
+                                style={{
+                                  margin: "0.5rem 0",
+                                  paddingLeft: "1.25rem",
+                                }}
+                              >
+                                {run.errors.map((error, index) => (
+                                  <li
+                                    key={index}
+                                    style={{
+                                      overflowWrap: "anywhere",
+                                      whiteSpace: "pre-wrap",
+                                    }}
+                                  >
+                                    {error}
+                                  </li>
+                                ))}
+                              </ul>
+                            </details>
+                          ) : (
+                            `${run.applied} applied, ${run.skipped} skipped, ${run.failed} failed`
+                          )}
                         </td>
                       </tr>
                     ))}

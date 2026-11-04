@@ -160,10 +160,23 @@ public class FreeSpaceService(
         return null;
     }
 
-    public async Task<FreeSpacePassResult> ProcessAsync(IReadOnlySet<string> managedCategories, CancellationToken cancellationToken = default)
+    public Task<FreeSpacePassResult> ProcessAsync(IReadOnlySet<string> managedCategories, CancellationToken cancellationToken = default)
+        => ProcessCoreAsync(managedCategories, null, cancellationToken);
+
+    public Task<FreeSpacePassResult> ProcessScheduledAsync(IReadOnlySet<string> managedCategories, TorrentScanSchedule schedule, CancellationToken cancellationToken = default)
+        => ProcessCoreAsync(managedCategories, schedule, cancellationToken);
+
+    private async Task<FreeSpacePassResult> ProcessCoreAsync(IReadOnlySet<string> managedCategories, TorrentScanSchedule? schedule, CancellationToken cancellationToken)
     {
+        using var logScope = logger.BeginScope(new Dictionary<string, object> { ["Operation"] = "FreeSpaceCycle", ["CycleId"] = Guid.NewGuid().ToString("N") });
+        var started = System.Diagnostics.Stopwatch.GetTimestamp();
+        logger.LogInformation("FreeSpace: cycle started; managedCategories={Count}", managedCategories.Count);
         var monitors = ReadMonitors();
-        if (monitors.Count == 0) return new(0, 0, 0, false);
+        if (monitors.Count == 0)
+        {
+            logger.LogInformation("FreeSpace: skipped; no enabled monitors");
+            return new(0, 0, 0, false);
+        }
         var inventory = await FreeSpaceInventory.ReadAsync(config, registry, logger, cancellationToken);
         var assignments = inventory.Torrents.Select(item => (Item: item, Monitor: Match(item, monitors))).ToList();
         var allocationComplete = inventory.Complete && assignments.All(a => a.Monitor != null
@@ -173,12 +186,19 @@ public class FreeSpaceService(
         static string Key(Monitor m) => m.Space?.Identity ?? $"unavailable:{m.Client}:{m.Config.Path}";
         int paused = 0, resumed = 0;
         var resumesWithheld = !allocationComplete || monitors.Any(m => m.Space == null);
-        foreach (var group in monitors.GroupBy(Key))
+        var groups = monitors.GroupBy(Key).ToList();
+        var intervals = groups.ToDictionary(group => group.Key, group =>
+            group.Select(m => m.Client).Concat(assignments.Where(a => a.Monitor != null && Key(a.Monitor) == group.Key)
+                .Select(a => a.Item.InstanceName)).Distinct(StringComparer.OrdinalIgnoreCase)
+                .Min(id => config.GetTorrentClient(id)!.TorrentScanIntervalSeconds), StringComparer.Ordinal);
+        var due = schedule?.TakeDue(intervals, config.Revision);
+        foreach (var group in groups.Where(group => due == null || due.Contains(group.Key)))
         {
             var rows = group.ToList();
             var items = assignments.Where(a => a.Monitor != null && Key(a.Monitor) == group.Key).Select(a => a.Item).ToList();
             var available = rows[0].Space?.FreeBytes ?? 0;
             var reserve = rows.Max(m => FreeSpaceThreshold.Parse(m.Config.Limit));
+            logger.LogInformation("FreeSpace: storage {Storage}, available={Available}, reserve={Reserve}, inventoryComplete={Complete}", group.Key, available, reserve, allocationComplete);
             // Saturate subtraction so very large torrent inventories cannot overflow into free space.
             long remaining = available >= reserve ? available - reserve : -1;
             void Reserve(long bytes) => remaining = bytes > remaining ? -1 : remaining - Math.Max(0, bytes);
@@ -201,9 +221,20 @@ public class FreeSpaceService(
                     var marked = await HasMarker(item, cancellationToken);
                     var download = TorrentPolicyHelper.IsFreeSpaceDownloadState(torrent.State);
                     var stopped = TorrentPolicyHelper.IsPausedDownloadStateForFreeSpace(torrent.State);
+                    logger.LogInformation("FreeSpace: [{Client}] Evaluating [{Name}] ({Hash}): state={State}, marker={Marked}, remaining={Remaining}, needed={Needed}, resumesAllowed={Safe}",
+                        item.InstanceName, torrent.Name, torrent.Hash, torrent.State, marked, remaining, torrent.AmountLeft, safe);
                     operation = "reconcile pause marker";
-                    if (!download) { if (marked) await SetMarker(item, false, cancellationToken); continue; }
-                    if (stopped && !marked) continue;
+                    if (!download)
+                    {
+                        if (marked) await SetMarker(item, false, cancellationToken);
+                        logger.LogInformation("FreeSpace: [{Client}] Skipping {Hash}: not downloading", item.InstanceName, torrent.Hash);
+                        continue;
+                    }
+                    if (stopped && !marked)
+                    {
+                        logger.LogInformation("FreeSpace: [{Client}] Keeping {Hash} paused: pause is not owned by Torrentarr", item.InstanceName, torrent.Hash);
+                        continue;
+                    }
                     if (!stopped && marked) await SetMarker(item, false, cancellationToken);
                     var needed = Math.Max(0, torrent.AmountLeft);
                     var fits = rows[0].Space != null && remaining >= needed;
@@ -214,6 +245,7 @@ public class FreeSpaceService(
                         await FreeSpaceInventory.PauseAndRollbackMarkerAsync(item.Client, torrent.Hash,
                             () => SetMarker(item, false, CancellationToken.None), cancellationToken);
                         paused++;
+                        logger.LogInformation("FreeSpace: [{Client}] Paused {Hash}: insufficient available storage", item.InstanceName, torrent.Hash);
                     }
                     else if (fits && (!stopped || safe))
                     {
@@ -225,10 +257,13 @@ public class FreeSpaceService(
                                 await FreeSpaceInventory.ResumeAndClearMarkerAsync(item.Client, torrent.Hash,
                                     () => SetMarker(item, false, CancellationToken.None), cancellationToken);
                                 resumed++;
+                                logger.LogInformation("FreeSpace: [{Client}] Resumed {Hash}: storage allocation permits download", item.InstanceName, torrent.Hash);
                             }
                             resumes.Add((item, ResumeAsync));
                         }
                     }
+                    else
+                        logger.LogInformation("FreeSpace: [{Client}] Keeping {Hash} paused: fits={Fits}, resumesAllowed={Safe}", item.InstanceName, torrent.Hash, fits, safe);
                 }
                 catch (Exception ex) when (ex is not OperationCanceledException)
                 {
@@ -252,6 +287,7 @@ public class FreeSpaceService(
                     }
                 }
         }
+        if (due != null) schedule!.Complete(due, intervals);
         var markedCount = 0;
         foreach (var item in inventory.Torrents)
         {
@@ -262,7 +298,7 @@ public class FreeSpaceService(
                 throw;
             }
         }
-        logger.LogInformation("FreeSpace: cycle completed; paused={Paused}, resumed={Resumed}, marked={Marked}, resumesWithheld={ResumesWithheld}", paused, resumed, markedCount, resumesWithheld);
+        logger.LogInformation("FreeSpace: cycle completed; paused={Paused}, resumed={Resumed}, marked={Marked}, resumesWithheld={ResumesWithheld}; elapsed={ElapsedMs:F1}ms", paused, resumed, markedCount, resumesWithheld, System.Diagnostics.Stopwatch.GetElapsedTime(started).TotalMilliseconds);
         return new(paused, resumed, markedCount, monitors.Any(m => m.Space != null));
     }
 

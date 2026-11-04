@@ -13,6 +13,7 @@ internal sealed class RegisteredTorrentClient(ITorrentClient client) : ITorrentC
     public TorrentClientIdentity Identity => client.Identity;
     public TorrentClientCapabilities Capabilities => client.Capabilities;
     public string? LastConnectionFailure => client.LastConnectionFailure;
+    public TorrentClientConnectionFailureKind LastConnectionFailureKind => client.LastConnectionFailureKind;
 
     private async Task<T> UseAsync<T>(Func<Task<T>> request)
     {

@@ -17,6 +17,159 @@ namespace Torrentarr.Infrastructure.Tests.Services;
 public class ArrSyncSearchProgressTests
 {
     [Theory]
+    [InlineData("sonarr", "episodefilesmodel")]
+    [InlineData("lidarr", "trackfilesmodel")]
+    public async Task IdenticalSync_PreservesRowsAndDoesNotWrite(string type, string table)
+    {
+        using var api = new ArrSyncStub();
+        var config = new TorrentarrConfig();
+        config.ArrInstances["Test"] = new() { Type = type, URI = api.Url, Category = "test", APIKey = "test" };
+        await using var db = new TorrentarrDbContext(new DbContextOptionsBuilder<TorrentarrDbContext>().UseSqlite("Data Source=:memory:").Options);
+        await db.Database.OpenConnectionAsync(); await db.Database.EnsureCreatedAsync();
+        var sync = new ArrSyncService(NullLogger<ArrSyncService>.Instance, config, db, new DatabaseRestartCoordinator());
+        await sync.SyncAsync("Test");
+        var idSql = "SELECT entryid AS Value FROM " + table;
+        var id = await db.Database.SqlQueryRaw<int>(idSql).SingleAsync();
+        var changes = await db.Database.SqlQueryRaw<int>("SELECT total_changes() AS Value").SingleAsync();
+        db.ChangeTracker.Clear();
+        await sync.SyncAsync("Test");
+        (await db.Database.SqlQueryRaw<int>(idSql).SingleAsync()).Should().Be(id);
+        (await db.Database.SqlQueryRaw<int>("SELECT total_changes() AS Value").SingleAsync()).Should().Be(changes);
+        if (type == "lidarr") (await db.Tracks.SingleAsync()).ArrId.Should().Be(1);
+        else
+        {
+            api.EpisodeAirDate = null;
+            db.ChangeTracker.Clear();
+            await sync.SyncAsync("Test");
+            (await db.Episodes.SingleAsync()).Reason.Should().Be("NotAvailable");
+            api.EpisodeAirDate = "2000-01-01T00:00:00Z";
+            db.ChangeTracker.Clear();
+            await sync.SyncAsync("Test");
+            (await db.Episodes.SingleAsync()).Reason.Should().Be("Missing");
+            (await db.Episodes.SingleAsync()).Searched.Should().BeFalse();
+        }
+    }
+
+    [Theory]
+    [InlineData("sonarr", "episode", "")]
+    [InlineData("sonarr", "episode", "null")]
+    [InlineData("sonarr", "episode", "[{\"id\":0}]")]
+    [InlineData("sonarr", "episode", "[{\"id\":1},{\"id\":1}]")]
+    [InlineData("lidarr", "track", "")]
+    [InlineData("lidarr", "track", "null")]
+    [InlineData("lidarr", "track", "[{\"id\":0}]")]
+    [InlineData("lidarr", "track", "[{\"id\":1},{\"id\":1}]")]
+    public async Task InvalidInventory_PreservesStoredRows(string type, string resource, string response)
+    {
+        using var api = new ArrSyncStub();
+        var config = new TorrentarrConfig();
+        config.ArrInstances["Test"] = new() { Type = type, URI = api.Url, Category = "test", APIKey = "test" };
+        await using var db = new TorrentarrDbContext(new DbContextOptionsBuilder<TorrentarrDbContext>().UseSqlite("Data Source=:memory:").Options);
+        await db.Database.OpenConnectionAsync(); await db.Database.EnsureCreatedAsync();
+        var sync = new ArrSyncService(NullLogger<ArrSyncService>.Instance, config, db, new DatabaseRestartCoordinator());
+        await sync.SyncAsync("Test");
+        api.Responses[resource] = response;
+        db.ChangeTracker.Clear();
+        await FluentActions.Awaiting(() => sync.SyncAsync("Test")).Should().ThrowAsync<Exception>();
+        db.ChangeTracker.Clear();
+        if (type == "sonarr") (await db.Episodes.SingleAsync()).Title.Should().Be("Episode");
+        else (await db.Tracks.SingleAsync()).Title.Should().Be("Track");
+    }
+
+    [Fact]
+    public async Task Tracks_LegacyTransitionUpdatesAndRemovalsStayWithinInstance()
+    {
+        using var api = new ArrSyncStub();
+        var config = new TorrentarrConfig();
+        config.ArrInstances["Test"] = new() { Type = "lidarr", URI = api.Url, Category = "test", APIKey = "test" };
+        await using var db = new TorrentarrDbContext(new DbContextOptionsBuilder<TorrentarrDbContext>().UseSqlite("Data Source=:memory:").Options);
+        await db.Database.OpenConnectionAsync(); await db.Database.EnsureCreatedAsync();
+        var sync = new ArrSyncService(NullLogger<ArrSyncService>.Instance, config, db, new DatabaseRestartCoordinator());
+        await sync.SyncAsync("Test");
+        var legacy = await db.Tracks.SingleAsync();
+        legacy.ArrId = 0;
+        db.Tracks.Add(new() { ArrInstance = "Other", ArrId = 1, AlbumId = legacy.AlbumId, Title = "Other" });
+        await db.SaveChangesAsync();
+        api.Responses["track"] = "[]";
+        db.ChangeTracker.Clear();
+        await sync.SyncAsync("Test");
+        (await db.Tracks.SingleAsync(t => t.ArrInstance == "Test")).ArrId.Should().Be(0);
+        api.Responses.Remove("track");
+        db.ChangeTracker.Clear();
+        await sync.SyncAsync("Test");
+        var current = await db.Tracks.SingleAsync(t => t.ArrInstance == "Test");
+        current.ArrId.Should().Be(1);
+        current.EntryId.Should().NotBe(legacy.EntryId);
+        var stableId = current.EntryId;
+        api.Responses["track"] = "[{\"id\":1,\"albumId\":1,\"title\":\"Changed\",\"trackNumber\":\"A\"},{\"id\":2,\"albumId\":1,\"title\":\"New\"}]";
+        db.ChangeTracker.Clear();
+        await sync.SyncAsync("Test");
+        current = await db.Tracks.SingleAsync(t => t.ArrInstance == "Test" && t.ArrId == 1);
+        current.EntryId.Should().Be(stableId);
+        current.Title.Should().Be("Changed");
+        (await db.Tracks.CountAsync(t => t.ArrInstance == "Test")).Should().Be(2);
+        api.Responses.Remove("track");
+        db.ChangeTracker.Clear();
+        await sync.SyncAsync("Test");
+        (await db.Tracks.CountAsync(t => t.ArrInstance == "Test")).Should().Be(1);
+        (await db.Tracks.SingleAsync(t => t.ArrInstance == "Other")).Title.Should().Be("Other");
+        api.Responses["track"] = "[{\"id\":1,\"albumId\":999,\"title\":\"Unmapped\"}]";
+        db.ChangeTracker.Clear();
+        await sync.SyncAsync("Test");
+        (await db.Tracks.SingleAsync(t => t.ArrInstance == "Test")).Title.Should().Be("Track");
+    }
+
+    [Fact]
+    public async Task PartialArtistEmptyInventory_DoesNotRemoveOtherStoredTracks()
+    {
+        using var api = new ArrSyncStub();
+        api.Responses["artist"] = "[{\"id\":1,\"foreignArtistId\":\"one\",\"artistName\":\"One\",\"monitored\":true},{\"id\":2,\"foreignArtistId\":\"two\",\"artistName\":\"Two\",\"monitored\":true}]";
+        api.Responses["album"] = "[{\"id\":1,\"foreignAlbumId\":\"one\",\"artistId\":1,\"monitored\":true},{\"id\":2,\"foreignAlbumId\":\"two\",\"artistId\":2,\"monitored\":true}]";
+        api.Responses["track:1"] = "[{\"id\":1,\"albumId\":1,\"title\":\"One\"}]";
+        api.Responses["track:2"] = "[{\"id\":2,\"albumId\":2,\"title\":\"Two\"}]";
+        var config = new TorrentarrConfig();
+        config.ArrInstances["Test"] = new() { Type = "lidarr", URI = api.Url, Category = "test", APIKey = "test" };
+        await using var db = new TorrentarrDbContext(new DbContextOptionsBuilder<TorrentarrDbContext>().UseSqlite("Data Source=:memory:").Options);
+        await db.Database.OpenConnectionAsync(); await db.Database.EnsureCreatedAsync();
+        var sync = new ArrSyncService(NullLogger<ArrSyncService>.Instance, config, db, new DatabaseRestartCoordinator());
+        await sync.SyncAsync("Test");
+        api.Responses["track:2"] = "[]";
+        db.ChangeTracker.Clear();
+        await sync.SyncAsync("Test");
+        (await db.Tracks.OrderBy(t => t.ArrId).Select(t => t.Title).ToListAsync()).Should().Equal("One", "Two");
+    }
+
+    [Fact]
+    public async Task EpisodeEditsAdditionsAndRemovals_PreserveOtherRowsAndSearchFlags()
+    {
+        using var api = new ArrSyncStub();
+        var config = new TorrentarrConfig();
+        config.ArrInstances["Test"] = new() { Type = "sonarr", URI = api.Url, Category = "test", APIKey = "test" };
+        await using var db = new TorrentarrDbContext(new DbContextOptionsBuilder<TorrentarrDbContext>().UseSqlite("Data Source=:memory:").Options);
+        await db.Database.OpenConnectionAsync(); await db.Database.EnsureCreatedAsync();
+        var sync = new ArrSyncService(NullLogger<ArrSyncService>.Instance, config, db, new DatabaseRestartCoordinator());
+        await sync.SyncAsync("Test");
+        var episode = await db.Episodes.SingleAsync();
+        var id = episode.EntryId;
+        episode.Searched = true;
+        db.Episodes.Add(new() { ArrInstance = "Other", ArrId = 1, Title = "Other" });
+        await db.SaveChangesAsync();
+        api.Responses["episode"] = "[{\"id\":1,\"seriesId\":1,\"title\":\"Changed\",\"monitored\":true,\"seasonNumber\":1,\"episodeNumber\":1,\"airDateUtc\":\"2000-01-01T00:00:00Z\"},{\"id\":2,\"seriesId\":1,\"title\":\"New\",\"monitored\":true,\"seasonNumber\":1,\"episodeNumber\":2,\"airDateUtc\":\"2000-01-02T00:00:00Z\"}]";
+        db.ChangeTracker.Clear();
+        await sync.SyncAsync("Test");
+        episode = await db.Episodes.SingleAsync(e => e.ArrInstance == "Test" && e.ArrId == 1);
+        episode.EntryId.Should().Be(id);
+        episode.Title.Should().Be("Changed");
+        episode.Searched.Should().BeTrue();
+        (await db.Episodes.CountAsync(e => e.ArrInstance == "Test")).Should().Be(2);
+        api.Responses.Remove("episode");
+        db.ChangeTracker.Clear();
+        await sync.SyncAsync("Test");
+        (await db.Episodes.CountAsync(e => e.ArrInstance == "Test")).Should().Be(1);
+        (await db.Episodes.SingleAsync(e => e.ArrInstance == "Other")).Title.Should().Be("Other");
+    }
+
+    [Theory]
     [InlineData("radarr", "moviesfilesmodel")]
     [InlineData("sonarr", "episodefilesmodel")]
     [InlineData("lidarr", "albumfilesmodel")]
@@ -89,6 +242,8 @@ internal sealed class ArrSyncStub : IDisposable
     public string Url { get; }
     public bool Monitored { get; set; } = true;
     public bool FailTracks { get; set; }
+    public string? EpisodeAirDate { get; set; } = "2000-01-01T00:00:00Z";
+    public Dictionary<string, string> Responses { get; } = new();
     public string TrackNumber { get; set; } = "1";
     public ArrSyncStub()
     {
@@ -104,9 +259,16 @@ internal sealed class ArrSyncStub : IDisposable
     private async Task ServeAsync(HttpContext request)
     {
         var resource = request.Request.Path.Value!.Split('/').Last();
-        if (resource == "track" && (FailTracks || request.Request.Query["artistId"] != "1"))
+        if (resource == "track" && (FailTracks || string.IsNullOrEmpty(request.Request.Query["artistId"])))
         {
             request.Response.StatusCode = FailTracks ? 500 : 400;
+            return;
+        }
+        if (Responses.TryGetValue(resource + ":" + request.Request.Query["artistId"], out var response)
+            || Responses.TryGetValue(resource, out response))
+        {
+            request.Response.ContentType = "application/json";
+            await request.Response.WriteAsync(response);
             return;
         }
         object data = resource switch
@@ -116,7 +278,7 @@ internal sealed class ArrSyncStub : IDisposable
             "qualityprofile" => new[] { new { id = 1, name = "Default" } },
             "movie" => new[] { new { id = 1, tmdbId = 1, title = "Movie", monitored = Monitored, year = 2000, qualityProfileId = 1, hasFile = false } },
             "series" => new[] { new { id = 1, tvdbId = 1, title = "Series", monitored = Monitored, qualityProfileId = 1 } },
-            "episode" => new[] { new { id = 1, seriesId = 1, title = "Episode", monitored = Monitored, seasonNumber = 1, episodeNumber = 1, airDateUtc = "2000-01-01T00:00:00Z", hasFile = false } },
+            "episode" => new[] { new { id = 1, seriesId = 1, title = "Episode", monitored = Monitored, seasonNumber = 1, episodeNumber = 1, airDateUtc = EpisodeAirDate, hasFile = false } },
             "artist" => new[] { new { id = 1, foreignArtistId = "artist", artistName = "Artist", monitored = Monitored, qualityProfileId = 1 } },
             "album" => new[] { new { id = 1, foreignAlbumId = "album", title = "Album", artistId = 1, monitored = Monitored, qualityProfileId = 1, releaseDate = "2000-01-01T00:00:00Z" } },
             "track" => new[] { new { id = 1, albumId = 1, title = "Track", trackNumber = TrackNumber, hasFile = true, duration = 180000 } },

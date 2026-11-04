@@ -12,4 +12,5 @@ public sealed class SonarrSearchRetry
     public string CandidatesJson { get; set; } = "[]";
     // The historical table also holds other Arr replacement searches.
     public bool BlocklistPending { get; set; }
+    public int ConsecutiveFailures { get; set; }
 }

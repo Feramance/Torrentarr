@@ -46,13 +46,13 @@ public sealed class TorrentProcessorTests : IDisposable
         _keepAlive.Dispose();
     }
 
-    private TorrentProcessor CreateProcessor(TorrentarrConfig? config = null)
+    private TorrentProcessor CreateProcessor(TorrentarrConfig? config = null, Microsoft.Extensions.Logging.ILogger<TorrentProcessor>? logger = null)
     {
         config ??= new TorrentarrConfig();
         var manager = new QBittorrentConnectionManager(
             NullLogger<QBittorrentConnectionManager>.Instance);
         return new TorrentProcessor(
-            NullLogger<TorrentProcessor>.Instance,
+            logger ?? NullLogger<TorrentProcessor>.Instance,
             manager,
             _db,
             config,
@@ -61,6 +61,15 @@ public sealed class TorrentProcessorTests : IDisposable
     }
 
     // ── Constructor ────────────────────────────────────────────────────────────
+
+    [Fact]
+    public async Task ImportDecision_IsVisibleAtInformation_WhenTorrentIsMissing()
+    {
+        var logger = new ActivityLogger<TorrentProcessor>();
+        var processor = CreateProcessor(logger: logger);
+        (await processor.IsReadyForImportAsync("missing", "qBit-test")).Should().BeFalse();
+        logger.Messages.Should().Contain(m => m.Contains("Import deferred") && m.Contains("missing") && m.Contains("qBit-test"));
+    }
 
     [Fact]
     public void Constructor_WithDefaultConfig_DoesNotThrow()
@@ -210,6 +219,70 @@ public sealed class TorrentProcessorTests : IDisposable
         var act = async () => await svc.ImportTorrentAsync("abc123def456");
 
         await act.Should().NotThrowAsync();
+    }
+
+    [Theory]
+    [InlineData("autobrr", false, false)]
+    [InlineData("autobrr", true, false)]
+    [InlineData("unowned", true, false)]
+    [InlineData("media/anime", true, true)]
+    [InlineData("media/anime", true, false)]
+    public async Task ImportEligibility_RequiresArrOwner(string category, bool hasImportService, bool owned)
+    {
+        var config = new TorrentarrConfig();
+        config.QBitInstances["qBit"] = new() { ManagedCategories = ["autobrr"], MatchSubcategories = owned };
+        config.ArrInstances["Sonarr"] = new() { Category = "media", Managed = false, SearchOnly = true };
+        var torrent = new TorrentInfo
+        {
+            Hash = "eligibility",
+            Category = category,
+            QBitInstanceName = "qBit",
+            Progress = 1,
+            State = "uploading",
+            CompletionOn = DateTimeOffset.UtcNow.AddMinutes(-2).ToUnixTimeSeconds()
+        };
+        _db.TorrentLibrary.Add(new() { Hash = torrent.Hash, QbitInstance = "qBit", Category = category });
+        await _db.SaveChangesAsync();
+        var manager = new QBittorrentConnectionManager(NullLogger<QBittorrentConnectionManager>.Instance);
+        RegisterTestClient(manager, "qBit", new StubQBittorrentClient(torrent));
+        var imports = new Mock<IArrImportService>();
+        imports.Setup(i => i.TriggerImportAsync(torrent.Hash, It.IsAny<string>(), "media", It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new ImportResult { Success = true });
+        var issues = new Mock<IOperationalIssueReporter>();
+        var processor = new TorrentProcessor(NullLogger<TorrentProcessor>.Instance, manager, _db, config,
+            new TorrentCacheService(NullLogger<TorrentCacheService>.Instance), new(),
+            hasImportService ? imports.Object : null, issues: issues.Object);
+
+        (await processor.IsReadyForImportAsync(torrent.Hash, "qBit")).Should().Be(owned);
+        await processor.ImportTorrentAsync(torrent.Hash, "qBit");
+
+        imports.Verify(i => i.TriggerImportAsync(It.IsAny<string>(), It.IsAny<string>(), It.IsAny<string>(), It.IsAny<CancellationToken>()),
+            owned ? Times.Once() : Times.Never());
+        (await _db.TorrentLibrary.SingleAsync()).Imported.Should().BeFalse();
+        issues.Verify(i => i.ReportAsync(It.Is<OperationalIssueReport>(r => r.Code == "import.ownership"), It.IsAny<CancellationToken>()), Times.Never());
+        issues.Verify(i => i.ResolveAsync(It.Is<OperationalIssueReport>(r => r.Code == "import.ownership" && r.SubjectId == torrent.Hash), It.IsAny<CancellationToken>()), Times.AtLeastOnce());
+    }
+
+    [Fact]
+    public async Task ObservingIgnoredUnownedTorrent_ResolvesLegacyOwnershipIssue()
+    {
+        var config = new TorrentarrConfig();
+        config.Settings.Tagless = true;
+        config.QBitInstances["qBit"] = new() { ManagedCategories = ["autobrr"] };
+        var manager = new QBittorrentConnectionManager(NullLogger<QBittorrentConnectionManager>.Instance);
+        RegisterTestClient(manager, "qBit", new StubQBittorrentClient(new TorrentInfo
+        {
+            Hash = "ignored",
+            QBitInstanceName = "qBit",
+            Category = "autobrr",
+            Tags = "qBitrr-ignored"
+        }));
+        var issues = new Mock<IOperationalIssueReporter>();
+        var processor = new TorrentProcessor(NullLogger<TorrentProcessor>.Instance, manager, _db, config,
+            new TorrentCacheService(NullLogger<TorrentCacheService>.Instance), new(), issues: issues.Object);
+        await processor.ProcessTorrentAsync("ignored");
+        issues.Verify(i => i.ResolveAsync(It.Is<OperationalIssueReport>(r => r.Code == "import.ownership" && r.SubjectId == "ignored"),
+            It.IsAny<CancellationToken>()), Times.Once());
     }
 
     [Fact]
@@ -768,6 +841,83 @@ public sealed class TorrentProcessorTests : IDisposable
         infinite.Should().BeTrue();
         immediate.Should().BeFalse();
         positive.Should().BeFalse("metadata stall age is based on AddedOn, not LastActivity");
+    }
+
+    [Fact]
+    public async Task FailedSafeDeletion_LogsExactReasonOncePerThrottleWindow()
+    {
+        var torrent = new TorrentInfo
+        {
+            Hash = "blocked-removal",
+            Name = "Movie",
+            Category = "movies",
+            State = "downloading",
+            ClientInstanceId = "qBit",
+            QBitInstanceName = "qBit",
+            AddedOn = DateTimeOffset.UtcNow.AddHours(-2).ToUnixTimeSeconds(),
+            LastActivity = DateTimeOffset.UtcNow.AddHours(-1).ToUnixTimeSeconds()
+        };
+        var client = new StubQBittorrentClient(torrent);
+        var seeding = new Mock<ISeedingService>();
+        seeding.Setup(x => x.CanDeleteTorrentForIntentAsync(It.IsAny<TorrentInfo>(),
+            TorrentRemovalIntent.RejectedByAllowlist, It.IsAny<string>(), It.IsAny<CancellationToken>())).ReturnsAsync(true);
+        var deletion = new Mock<ISafeDeletionService>();
+        deletion.Setup(x => x.RemoveTorrentForIntentAsync("qBit", torrent.Hash, true,
+            TorrentRemovalIntent.RejectedByAllowlist, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new SafeDeletionResult(false, true, 0, "Client rejected native content deletion: HTTP 403."));
+        var logger = new Mock<Microsoft.Extensions.Logging.ILogger<TorrentProcessor>>();
+        var processor = new TorrentProcessor(logger.Object,
+            new QBittorrentConnectionManager(NullLogger<QBittorrentConnectionManager>.Instance), _db,
+            new TorrentarrConfig(), new TorrentCacheService(NullLogger<TorrentCacheService>.Instance),
+            new DatabaseRestartCoordinator(), seedingService: seeding.Object, safeDeletion: deletion.Object);
+        var method = typeof(TorrentProcessor).GetMethod("DeleteTorrentFromClientAsync",
+            BindingFlags.NonPublic | BindingFlags.Instance)!;
+        for (var i = 0; i < 2; i++)
+        {
+            var task = (Task<bool>)method.Invoke(processor,
+                [client, torrent, true, CancellationToken.None, null, TorrentRemovalIntent.RejectedByAllowlist, null])!;
+            (await task).Should().BeFalse();
+        }
+        deletion.Verify(x => x.RemoveTorrentForIntentAsync("qBit", torrent.Hash, true,
+            TorrentRemovalIntent.RejectedByAllowlist, It.IsAny<CancellationToken>()), Times.Exactly(2));
+        var warnings = logger.Invocations.Where(x => x.Method.Name == "Log"
+            && x.Arguments[0] is Microsoft.Extensions.Logging.LogLevel.Warning).ToList();
+        warnings.Should().ContainSingle();
+        warnings[0].Arguments[2]?.ToString().Should().Contain("Client rejected native content deletion: HTTP 403");
+    }
+
+    [Fact]
+    public async Task StalledRemoval_ForwardsIntentToSafeDeletion()
+    {
+        var torrent = new TorrentInfo
+        {
+            Hash = "stalled-removal",
+            Name = "Stalled",
+            Category = "tv",
+            State = "stalledDL",
+            ClientInstanceId = "qBit",
+            QBitInstanceName = "qBit",
+            AddedOn = DateTimeOffset.UtcNow.AddHours(-2).ToUnixTimeSeconds(),
+            LastActivity = DateTimeOffset.UtcNow.AddHours(-1).ToUnixTimeSeconds()
+        };
+        var client = new StubQBittorrentClient(torrent);
+        var seeding = new Mock<ISeedingService>();
+        seeding.Setup(x => x.CanDeleteTorrentForIntentAsync(It.IsAny<TorrentInfo>(),
+            TorrentRemovalIntent.StalledDownload, It.IsAny<string>(), It.IsAny<CancellationToken>())).ReturnsAsync(true);
+        var deletion = new Mock<ISafeDeletionService>();
+        deletion.Setup(x => x.RemoveTorrentForIntentAsync("qBit", torrent.Hash, true,
+            TorrentRemovalIntent.StalledDownload, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new SafeDeletionResult(true, false, 0));
+        var processor = new TorrentProcessor(NullLogger<TorrentProcessor>.Instance,
+            new QBittorrentConnectionManager(NullLogger<QBittorrentConnectionManager>.Instance), _db,
+            new TorrentarrConfig(), new TorrentCacheService(NullLogger<TorrentCacheService>.Instance),
+            new DatabaseRestartCoordinator(), seedingService: seeding.Object, safeDeletion: deletion.Object);
+        var method = typeof(TorrentProcessor).GetMethod("DeleteTorrentFromClientAsync",
+            BindingFlags.NonPublic | BindingFlags.Instance)!;
+        var task = (Task<bool>)method.Invoke(processor,
+            [client, torrent, true, CancellationToken.None, null, TorrentRemovalIntent.StalledDownload, null])!;
+        (await task).Should().BeTrue();
+        deletion.VerifyAll();
     }
 
     private static void RegisterTestClient(

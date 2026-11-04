@@ -11,7 +11,7 @@ export const CONFIG_SCHEMA = {
         "key": "ConfigVersion",
         "label": "Config Version",
         "kind": "text",
-        "default": "6.20.2",
+        "default": "6.20.3",
         "comments": [
           "Internal config schema version - DO NOT MODIFY",
           "This is managed automatically by qBitrr for config migrations"
@@ -86,10 +86,10 @@ export const CONFIG_SCHEMA = {
           "LoopSleepTimer"
         ],
         "key": "LoopSleepTimer",
-        "label": "Loop Sleep",
+        "label": "Database refresh interval",
         "kind": "duration",
         "default": 5,
-        "comments": "Time to sleep between reprocessing torrents (in seconds: 600 = 10 Minutes)",
+        "comments": "Interval in seconds between Arr catalog refreshes into SQLite. Torrent scans use each client\u2019s scan interval.",
         "required": false,
         "secure": false,
         "uiExpose": true,
@@ -751,6 +751,23 @@ export const CONFIG_SCHEMA = {
           "Comfortable",
           "Compact"
         ]
+      },
+      {
+        "section": "WebUI",
+        "path": [
+          "CorsAllowedOrigins"
+        ],
+        "key": "CorsAllowedOrigins",
+        "label": "Allowed browser origins",
+        "kind": "tags",
+        "default": [],
+        "comments": "Allowed browser origins. Empty allows any origin without credentials; entries must be exact HTTP(S) origins.",
+        "required": false,
+        "secure": false,
+        "uiExpose": true,
+        "applyLive": true,
+        "requiresRestart": false,
+        "description": "HTTP(S) origins without trailing slashes. Empty allows any origin without credentials; a list permits credentials only for those origins. Changes apply live."
       }
     ],
     "qBit": [
@@ -1169,6 +1186,31 @@ export const CONFIG_SCHEMA = {
       {
         "section": "qBit",
         "path": [
+          "TorrentScanIntervalSeconds"
+        ],
+        "key": "TorrentScanIntervalSeconds",
+        "label": "Torrent scan interval (seconds)",
+        "kind": "select",
+        "default": 30,
+        "comments": "Torrent scan interval (seconds). Uses the displayed units and default; operation prerequisites and protection checks still apply.",
+        "required": false,
+        "secure": false,
+        "uiExpose": true,
+        "applyLive": true,
+        "requiresRestart": false,
+        "options": [
+          "5",
+          "15",
+          "30",
+          "60",
+          "90",
+          "120"
+        ],
+        "description": "Regular torrent processing interval. Shared-storage free space checks use the fastest participating client. Safety checks and manual actions may run sooner."
+      },
+      {
+        "section": "qBit",
+        "path": [
           "FreeSpace"
         ],
         "key": "FreeSpace",
@@ -1397,7 +1439,7 @@ export const CONFIG_SCHEMA = {
         "uiExpose": true,
         "applyLive": true,
         "requiresRestart": false,
-        "description": "Moves unreferenced files into the recycle bin; requires complete ownership inspection and local path mappings."
+        "description": "Recycles unreferenced files when recycling is enabled; otherwise permanently deletes them. Requires complete ownership inspection and local path mappings."
       },
       {
         "section": "qBit",
@@ -1766,8 +1808,8 @@ export const CONFIG_SCHEMA = {
         "key": "Maintenance.RecycleBin.Enabled",
         "label": "Enable recycle bin and retention",
         "kind": "checkbox",
-        "default": true,
-        "comments": "Allow local recycle storage for content moves. Retention deletion has a separate enablement and operation policy.",
+        "default": false,
+        "comments": "Opt-in local recycle storage. Off delegates authorized torrent/content deletion to the client without local mapping or global ownership checks. On requires safe recycling and never falls back to permanent deletion. Retention has a separate policy.",
         "required": false,
         "secure": false,
         "uiExpose": true,
@@ -4349,6 +4391,31 @@ export const CONFIG_SCHEMA = {
       {
         "section": "TorrentClient",
         "path": [
+          "TorrentScanIntervalSeconds"
+        ],
+        "key": "TorrentScanIntervalSeconds",
+        "label": "Torrent scan interval (seconds)",
+        "kind": "select",
+        "default": 30,
+        "comments": "Torrent scan interval (seconds). Uses the displayed units and default; operation prerequisites and protection checks still apply.",
+        "required": false,
+        "secure": false,
+        "uiExpose": true,
+        "applyLive": true,
+        "requiresRestart": false,
+        "options": [
+          "5",
+          "15",
+          "30",
+          "60",
+          "90",
+          "120"
+        ],
+        "description": "Regular torrent processing interval. Shared-storage free space checks use the fastest participating client. Safety checks and manual actions may run sooner."
+      },
+      {
+        "section": "TorrentClient",
+        "path": [
           "FreeSpace"
         ],
         "key": "FreeSpace",
@@ -4577,7 +4644,7 @@ export const CONFIG_SCHEMA = {
         "uiExpose": true,
         "applyLive": true,
         "requiresRestart": false,
-        "description": "Moves unreferenced files into the recycle bin; requires complete ownership inspection and local path mappings."
+        "description": "Recycles unreferenced files when recycling is enabled; otherwise permanently deletes them. Requires complete ownership inspection and local path mappings."
       },
       {
         "section": "TorrentClient",
@@ -4946,8 +5013,8 @@ export const CONFIG_SCHEMA = {
         "key": "Maintenance.RecycleBin.Enabled",
         "label": "Enable recycle bin and retention",
         "kind": "checkbox",
-        "default": true,
-        "comments": "Allow local recycle storage for content moves. Retention deletion has a separate enablement and operation policy.",
+        "default": false,
+        "comments": "Opt-in local recycle storage. Off delegates authorized torrent/content deletion to the client without local mapping or global ownership checks. On requires safe recycling and never falls back to permanent deletion. Retention has a separate policy.",
         "required": false,
         "secure": false,
         "uiExpose": true,

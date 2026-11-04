@@ -82,10 +82,11 @@ public class SonarrClient
         var response = await ArrClientResponse.ExecuteAsync(_client, request, ct);
         ArrClientResponse.EnsureSuccess(response, $"GET /{request.Resource}");
 
-        if (string.IsNullOrEmpty(response.Content))
-            return new List<SonarrEpisode>();
+        if (string.IsNullOrWhiteSpace(response.Content))
+            throw new IOException("Arr returned no episode inventory.");
 
-        return JsonConvert.DeserializeObject<List<SonarrEpisode>>(response.Content) ?? new List<SonarrEpisode>();
+        return JsonConvert.DeserializeObject<List<SonarrEpisode>>(response.Content)
+            ?? throw new IOException("Arr returned an invalid episode inventory.");
     }
 
     /// <summary>
@@ -281,7 +282,7 @@ public class SonarrClient
     /// Delete item from queue
     /// </summary>
     public async Task<bool> DeleteFromQueueAsync(int id, bool removeFromClient = true, bool blocklist = false,
-        CancellationToken ct = default, bool skipRedownload = false)
+        CancellationToken ct = default, bool skipRedownload = false, bool throwOnFailure = false)
     {
         var request = await CreateRequestAsync($"queue/{id}", Method.Delete, ct);
         AddApiKeyHeader(request);
@@ -298,6 +299,7 @@ public class SonarrClient
         }
 
         var response = await ArrClientResponse.ExecuteAsync(_client, request, ct);
+        if (throwOnFailure) ArrClientResponse.EnsureSuccess(response, $"DELETE queue/{id} (blocklist={blocklist})");
         return response.IsSuccessful;
     }
 

@@ -21,6 +21,9 @@ public sealed class LiveWebConfiguration
     public LiveWebConfiguration(IWebHostBuilder builder, WebUIConfig config)
     {
         UpdateListener(config);
+        builder.UseSetting(WebHostDefaults.ServerUrlsKey, "");
+        builder.UseSetting("http_ports", "");
+        builder.UseSetting("https_ports", "");
         builder.ConfigureKestrel(options => options.Configure(_listener, reloadOnChange: true));
     }
 

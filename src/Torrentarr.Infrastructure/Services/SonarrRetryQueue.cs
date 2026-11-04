@@ -40,6 +40,7 @@ public static class SonarrRetryQueue
                 });
                 // No external mutation until the recovery details are durable.
                 await db.SaveChangesAsync(ct);
+                logger.LogInformation("Replacement intent persisted for {Instance}/{Hash}: candidates={Count}; blocklistPending=true", instance, hash, candidates.Count);
             }
         }
         finally { gate.Release(); }
@@ -61,12 +62,20 @@ public static class SonarrRetryQueue
         try
         {
             var pending = await db.SonarrSearchRetries.Where(r => r.ArrInstance == instanceName).ToListAsync(ct);
+            logger.LogDebug("Replacement retry queue for {Instance}: pending={Count}; deadline={Deadline:O}", instanceName, pending.Count, deadline);
             foreach (var retry in pending)
             {
+                using var retryScope = logger.BeginScope(new Dictionary<string, object> { ["ProcessInstance"] = instanceName, ["Operation"] = "ReplacementRetry", ["TorrentHash"] = retry.DownloadId });
                 ct.ThrowIfCancellationRequested();
-                if (deadline is { } end && end - DateTimeOffset.UtcNow <= TimeSpan.FromMinutes(1)) break;
+                if (deadline is { } end && end - DateTimeOffset.UtcNow <= TimeSpan.FromMinutes(1))
+                { logger.LogDebug("Replacement retry deferred: less than one minute remains before deadline {Deadline:O}", end); break; }
                 await db.Entry(retry).ReloadAsync(ct);
                 if (db.Entry(retry).State == EntityState.Detached) continue;
+                string? failure = null;
+                var completed = false;
+                var stop = false;
+                var phase = retry.BlocklistPending ? "blocklist" : "search";
+                logger.LogTrace("Replacement retry starting: phase={Phase}; consecutiveFailures={Failures}; blocklistPending={BlocklistPending}", phase, retry.ConsecutiveFailures, retry.BlocklistPending);
                 try
                 {
                     if (retry.BlocklistPending)
@@ -76,6 +85,7 @@ public static class SonarrRetryQueue
                         retry.BlocklistPending = false;
                         await db.SaveChangesAsync(ct);
                     }
+                    phase = "search";
                     var candidates = JsonSerializer.Deserialize<List<SearchCandidate>>(retry.CandidatesJson)!;
                     var result = await (deadline.HasValue
                         ? executor.ExecuteSearchesAsync(instanceName, candidates, deadline, ct)
@@ -86,21 +96,37 @@ public static class SonarrRetryQueue
                         retry.CandidatesJson = JsonSerializer.Serialize((result.RetryCandidates ?? candidates)
                             .Where(c => !result.SearchedIds.Contains(c.ArrId)));
                     await db.SaveChangesAsync(ct);
-                    if (issues != null)
-                    {
-                        if (result.LoopCompleted) await issues.ResolveAsync(Issue(instanceName, retry.DownloadId), ct);
-                        else if (result.Errors.Count > 0) await issues.ReportAsync(Issue(instanceName, retry.DownloadId), ct);
-                    }
-                    // Capacity limits retain work without creating an operational issue.
-                    if (!result.LoopCompleted && !result.OnlyRetryResolutionFailed) break;
+                    completed = result.LoopCompleted;
+                    logger.LogDebug("Replacement retry result: commandsAccepted={Accepted}; itemsSearched={Items}; completed={Completed}; budgetExhausted={BudgetExhausted}; onlyRetryResolutionFailed={ResolutionOnly}",
+                        result.SearchesTriggered, result.ItemsSearched, completed, result.BudgetExhausted, result.OnlyRetryResolutionFailed);
+                    if (!completed && result.Errors.Count > 0) failure = string.Join("; ", result.Errors);
+                    stop = !completed && !result.OnlyRetryResolutionFailed;
                 }
                 catch (OperationCanceledException) when (ct.IsCancellationRequested) { throw; }
                 catch (Exception ex)
                 {
-                    db.Entry(retry).State = EntityState.Detached;
-                    logger.LogWarning(ex, "Replacement search for {Instance}/{Hash} retained for retry", instanceName, retry.DownloadId);
-                    if (issues != null) await issues.ReportAsync(Issue(instanceName, retry.DownloadId), ct);
+                    // Discard uncommitted blocklist/search changes before recording the failed attempt.
+                    await db.Entry(retry).ReloadAsync(ct);
+                    failure = DiagnosticText.Error(ex);
                 }
+                if (completed)
+                {
+                    if (issues != null) await issues.ResolveAsync(Issue(instanceName, retry.DownloadId), ct);
+                }
+                else
+                {
+                    retry.ConsecutiveFailures = failure == null ? 0 : retry.ConsecutiveFailures + 1;
+                    await db.SaveChangesAsync(ct);
+                    if (failure != null)
+                    {
+                        var evidence = $"Phase={phase}; hash={retry.DownloadId}; category={config?.Category ?? "unavailable"}; failed attempts={retry.ConsecutiveFailures}; {failure}";
+                        logger.LogWarning("Replacement search for {Instance} retained for retry: {Evidence}", instanceName, evidence);
+                        if (issues != null && retry.ConsecutiveFailures >= 3)
+                            await issues.ReportAsync(Issue(instanceName, retry.DownloadId).WithEvidence(evidence), ct);
+                    }
+                }
+                // Capacity limits retain work without creating an operational issue.
+                if (stop) break;
             }
         }
         finally { gate.Release(); }
@@ -116,22 +142,31 @@ public static class SonarrRetryQueue
             case "sonarr":
                 var s = new SonarrClient(config.URI, config.APIKey, config.SkipTLSVerify);
                 ids = (await s.GetAllQueueAsync(ct)).Where(q => string.Equals(q.DownloadId, hash, StringComparison.OrdinalIgnoreCase)).Select(q => q.Id).ToList();
-                remove = id => s.DeleteFromQueueAsync(id, false, true, ct, skipRedownload: true); break;
+                remove = id => s.DeleteFromQueueAsync(id, false, true, ct, skipRedownload: true, throwOnFailure: true); break;
             case "radarr":
                 var r = new RadarrClient(config.URI, config.APIKey, config.SkipTLSVerify);
                 ids = (await r.GetAllQueueAsync(ct)).Where(q => string.Equals(q.DownloadId, hash, StringComparison.OrdinalIgnoreCase)).Select(q => q.Id).ToList();
-                remove = id => r.DeleteFromQueueAsync(id, false, true, ct, skipRedownload: true); break;
+                remove = id => r.DeleteFromQueueAsync(id, false, true, ct, skipRedownload: true, throwOnFailure: true); break;
             case "lidarr":
                 var l = new LidarrClient(config.URI, config.APIKey, config.SkipTLSVerify);
                 ids = (await l.GetAllQueueAsync(ct)).Where(q => string.Equals(q.DownloadId, hash, StringComparison.OrdinalIgnoreCase)).Select(q => q.Id).ToList();
-                remove = id => l.DeleteFromQueueAsync(id, false, true, ct, skipRedownload: true); break;
+                remove = id => l.DeleteFromQueueAsync(id, false, true, ct, skipRedownload: true, throwOnFailure: true); break;
             case "readarr":
                 var b = new ReadarrClient(config.URI, config.APIKey, config.SkipTLSVerify);
                 ids = (await b.GetAllQueueAsync(ct)).Where(q => string.Equals(q.DownloadId, hash, StringComparison.OrdinalIgnoreCase)).Select(q => q.Id).ToList();
-                remove = id => b.DeleteFromQueueAsync(id, false, true, ct, skipRedownload: true); break;
+                remove = id => b.DeleteFromQueueAsync(id, false, true, ct, skipRedownload: true, throwOnFailure: true); break;
             default: throw new IOException("Unknown Arr type for pending blocklisting.");
         }
         foreach (var id in ids)
-            if (!await remove(id)) throw new IOException("Arr rejected blocklisting; replacement search remains staged.");
+        {
+            try
+            {
+                if (!await remove(id)) throw new IOException("Arr rejected blocklisting; replacement search remains staged.");
+            }
+            catch (Exception ex) when (ex is not OperationCanceledException)
+            {
+                throw new IOException($"Blocklist DELETE queue/{id} failed: {DiagnosticText.Error(ex)}", ex);
+            }
+        }
     }
 }

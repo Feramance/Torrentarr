@@ -22,6 +22,15 @@ public sealed class OperationalIssueReporter(IServiceScopeFactory scopes, ILogge
 
     private async Task SubmitAsync(PendingOperationalIssue update, CancellationToken ct)
     {
+        update = update with
+        {
+            Report = update.Report with
+            {
+                Title = DiagnosticText.Safe(update.Report.Title),
+                Impact = DiagnosticText.Safe(update.Report.Impact),
+                Remediation = DiagnosticText.Safe(update.Report.Remediation)
+            }
+        };
         lock (_gate)
         {
             var key = Key(update.Report);

@@ -13,6 +13,17 @@ namespace Torrentarr.Infrastructure.Tests.Services;
 public sealed class OperationalIssueReporterTests
 {
     [Fact]
+    public async Task PendingEvidenceIsRedactedEvenWhenPersistenceIsUnavailable()
+    {
+        await using var services = new ServiceCollection().BuildServiceProvider();
+        using var reporter = new OperationalIssueReporter(services.GetRequiredService<IServiceScopeFactory>(), NullLogger<OperationalIssueReporter>.Instance, new());
+        await reporter.ReportAsync(new("test.failure", "system", "Failed", "GET https://user:secret@host/announce/passkey?token=secret", "password=secret"));
+        var pending = reporter.Pending.Should().ContainSingle().Subject.Report;
+        pending.Impact.Should().Contain("host").And.NotContain("secret").And.NotContain("/passkey");
+        pending.Remediation.Should().NotContain("secret");
+    }
+
+    [Fact]
     public async Task HealthyResolvesDoNotAcquireAWriteTransaction_ButActiveRecoveryStillWrites()
     {
         await using var connection = new Microsoft.Data.Sqlite.SqliteConnection("Data Source=:memory:"); await connection.OpenAsync();

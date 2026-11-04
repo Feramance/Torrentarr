@@ -103,8 +103,21 @@ function IssueDetails({ group }: { group: OperationalIssueGroup }) {
         {items.map((item) => (
           <li key={item.id}>
             <strong>{item.subjectType}</strong>
-            {item.subjectId ? `: ${item.subjectId}` : ""} —{" "}
-            {item.resolvedAt ? item.resolution ?? "Recovered" : "Active"}
+            {item.subjectType === "torrent"
+              ? `: ${item.subjectName || item.subjectId || "Name unavailable"} · Category: ${item.subjectCategory === "" ? "Uncategorized" : item.subjectCategory ?? "unavailable"}`
+              : item.subjectId
+                ? `: ${item.subjectId}`
+                : ""}{" "}
+            — {item.resolvedAt ? item.resolution ?? "Recovered" : "Active"}
+            <p>
+              <strong>What happened:</strong> {item.title}
+            </p>
+            <p>
+              <strong>Evidence and impact:</strong> {item.impact}
+            </p>
+            <p>
+              <strong>How to fix:</strong> {item.remediation}
+            </p>
           </li>
         ))}
       </ul>

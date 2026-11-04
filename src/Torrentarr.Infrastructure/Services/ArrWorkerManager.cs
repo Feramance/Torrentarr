@@ -26,6 +26,10 @@ public class ArrWorkerManager : BackgroundService
     private readonly ILogger<ArrWorkerManager> _logger;
     private readonly IServiceScopeFactory _scopeFactory;
     private readonly TorrentarrConfig _config;
+    internal TimeProvider Clock { get; set; } = TimeProvider.System;
+    private readonly ConcurrentDictionary<string, ConcurrentDictionary<string, int>> _categoryCounts = new(StringComparer.OrdinalIgnoreCase);
+    private readonly IConfigReloader? _reloader;
+    private readonly ITorrentClientRegistry? _registry;
     private readonly ProcessStateManager _stateManager;
 
     // Per-instance worker tracking: instanceName → (Task, CancellationTokenSource)
@@ -74,7 +78,7 @@ public class ArrWorkerManager : BackgroundService
         ProcessStateManager stateManager,
         IConnectivityService connectivityService,
         SearchYearCursor? yearCursor = null,
-        ITorrentClientFactory? torrentClientFactory = null)
+        ITorrentClientFactory? torrentClientFactory = null, IConfigReloader? reloader = null, ITorrentClientRegistry? registry = null)
     {
         _logger = logger;
         _scopeFactory = scopeFactory;
@@ -83,6 +87,8 @@ public class ArrWorkerManager : BackgroundService
         _connectivityService = connectivityService;
         _yearCursor = yearCursor ?? new SearchYearCursor();
         _torrentClientFactory = torrentClientFactory ?? new QBittorrentTorrentClientFactory();
+        _reloader = reloader;
+        _registry = registry;
     }
 
     protected override async Task ExecuteAsync(CancellationToken stoppingToken)
@@ -328,11 +334,14 @@ public class ArrWorkerManager : BackgroundService
         string instanceName, ArrInstanceConfig arrCfg, string torrentStateName, CancellationToken ct)
     {
         int consecutiveErrors = 0;
+        var scans = new TorrentScanSchedule(Clock);
         try
         {
             while (!ct.IsCancellationRequested)
             {
-                var loopStart = DateTime.UtcNow;
+                using var configuration = _config.BeginOperation();
+                var intervals = TorrentScanSchedule.Intervals(_config);
+                var due = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
                 try
                 {
                     if (!await _connectivityService.IsConnectedAsync(ct))
@@ -348,7 +357,8 @@ public class ArrWorkerManager : BackgroundService
                     if (!arrCfg.SearchOnly)
                     {
                         _stateManager.Update(torrentStateName, s => s.Status = "Processing torrents...");
-                        await RunTorrentProcessingAsync(instanceName, arrCfg, ct);
+                        due = scans.TakeDue(intervals, _config.Revision);
+                        if (due.Count > 0) await RunTorrentProcessingAsync(instanceName, arrCfg, due, ct);
                     }
 
                     await RunRssSyncIfDueAsync(instanceName, arrCfg, ct);
@@ -371,7 +381,19 @@ public class ArrWorkerManager : BackgroundService
                     continue;
                 }
 
-                await SleepRemainderAsync(loopStart, torrentStateName, ct);
+                scans.Complete(due, intervals);
+                var revision = (_registry as QBittorrentConnectionManager)?.ConnectionRevision;
+                var until = Clock.GetUtcNow() + PeriodicCommandDelay(instanceName, arrCfg, scans.Delay);
+                while (until > Clock.GetUtcNow())
+                {
+                    var delay = until - Clock.GetUtcNow();
+                    if (delay > TimeSpan.FromSeconds(5)) delay = TimeSpan.FromSeconds(5);
+                    if (_reloader != null) await _reloader.WaitForChangeAsync(_config.Revision, delay, ct);
+                    else await Task.Delay(delay, Clock, ct);
+                    if (_config.LatestRevision != _config.Revision) break;
+                    if ((_registry as QBittorrentConnectionManager)?.ConnectionRevision != revision)
+                    { scans.Reset(); break; }
+                }
             }
         }
         catch (OperationCanceledException) { }
@@ -381,11 +403,13 @@ public class ArrWorkerManager : BackgroundService
         string instanceName, ArrInstanceConfig arrCfg, string searchStateName, CancellationToken ct)
     {
         int consecutiveErrors = 0;
+        DateTimeOffset? lastCatalogSync = null;
+        long catalogRevision = -1;
         try
         {
             while (!ct.IsCancellationRequested)
             {
-                var loopStart = DateTime.UtcNow;
+
                 try
                 {
                     if (!await _connectivityService.IsConnectedAsync(ct))
@@ -410,11 +434,22 @@ public class ArrWorkerManager : BackgroundService
                             retryScope.ServiceProvider.GetRequiredService<ISearchExecutor>(), instanceName, _logger, ct,
                             arrCfg, retryScope.ServiceProvider.GetService<IOperationalIssueReporter>());
                     }
-                    await RunSyncAsync(instanceName, arrCfg, ct);
+                    if (!lastCatalogSync.HasValue || catalogRevision != _config.Revision
+                        || Clock.GetUtcNow() - lastCatalogSync.Value >= TimeSpan.FromSeconds(Math.Max(0, _config.Settings.LoopSleepTimer)))
+                    {
+                        await RunSyncAsync(instanceName, arrCfg, ct);
+                        lastCatalogSync = Clock.GetUtcNow();
+                        catalogRevision = _config.Revision;
+                    }
 
                     if (!arrCfg.ProcessingOnly && ShouldRunSearch(instanceName, arrCfg))
                     {
                         _stateManager.Update(searchStateName, s => s.Status = "Searching...");
+                        if (arrCfg.Search.SearchMissing)
+                        {
+                            using var scope = _scopeFactory.CreateScope();
+                            await scope.ServiceProvider.GetRequiredService<ArrSyncService>().MarkRequestsAsync(instanceName, ct);
+                        }
                         var result = await RunSearchAsync(instanceName, arrCfg, ct);
                         if (result != null)
                         {
@@ -446,20 +481,18 @@ public class ArrWorkerManager : BackgroundService
                     continue;
                 }
 
-                await SleepRemainderAsync(loopStart, searchStateName, ct);
+                var now = Clock.GetUtcNow();
+                var searchDelay = _lastSearchTime.GetValueOrDefault(instanceName, DateTime.MinValue)
+                    .AddSeconds(Math.Max(5, arrCfg.Search.SearchRequestsEvery)) - now.UtcDateTime;
+                var catalogDelay = (lastCatalogSync ?? now).AddSeconds(Math.Max(0, _config.Settings.LoopSleepTimer)) - now;
+                if (searchDelay <= TimeSpan.Zero) searchDelay = TimeSpan.FromSeconds(5);
+                if (catalogDelay <= TimeSpan.Zero) catalogDelay = TimeSpan.FromSeconds(5);
+                var delay = searchDelay < catalogDelay ? searchDelay : catalogDelay;
+                _stateManager.Update(searchStateName, s => s.Status = "Waiting for next cycle...");
+                if (_reloader != null) await _reloader.WaitForChangeAsync(_config.Revision, delay, ct);
+                else await Task.Delay(delay, Clock, ct);
             }
         }
-        catch (OperationCanceledException) { }
-    }
-
-    private async Task SleepRemainderAsync(DateTime loopStart, string stateName, CancellationToken ct)
-    {
-        var elapsed = (int)(DateTime.UtcNow - loopStart).TotalMilliseconds;
-        var sleepMs = Math.Max(0, _config.Settings.LoopSleepTimer * 1000 - elapsed);
-        if (sleepMs <= 0)
-            return;
-        _stateManager.Update(stateName, s => s.Status = "Waiting for next cycle...");
-        try { await Task.Delay(sleepMs, ct); }
         catch (OperationCanceledException) { }
     }
 
@@ -494,8 +527,6 @@ public class ArrWorkerManager : BackgroundService
             using var scope = _scopeFactory.CreateScope();
             var svc = scope.ServiceProvider.GetRequiredService<ArrSyncService>();
             await svc.SyncAsync(instanceName, ct);
-            if (arrCfg.Search.SearchMissing)
-                await svc.MarkRequestsAsync(instanceName, ct);
 
             await UpdateCountsAsync(instanceName, ct);
         }
@@ -581,7 +612,6 @@ public class ArrWorkerManager : BackgroundService
         try
         {
             int? queueCount = null;
-            int? categoryCount = null;
 
             var client = _arrClientCache.GetOrAdd(instanceName, _ => arrCfg.Type.ToLowerInvariant() switch
             {
@@ -613,35 +643,9 @@ public class ArrWorkerManager : BackgroundService
                 queueCount = queue?.TotalRecords ?? 0;
             }
 
-            foreach (var (qbitName, qbitCfg) in _config.GetAllTorrentClients())
-            {
-                if (qbitCfg.Disabled || qbitCfg.Host == "CHANGE_ME")
-                    continue;
-
-                if (!qbitCfg.Type.Equals(_torrentClientFactory.Type, StringComparison.OrdinalIgnoreCase))
-                    continue;
-                var qbitClient = _qbitClientCache.GetOrAdd(qbitName, _ =>
-                    _torrentClientFactory.Create(qbitName, qbitCfg));
-                try
-                {
-                    var loginSuccess = await qbitClient.LoginAsync(ct);
-                    if (!loginSuccess)
-                        continue;
-
-                    var torrents = await qbitClient.GetTorrentsAsync(arrCfg.Category, cancellationToken: ct);
-                    categoryCount = torrents.Count;
-                    break;
-                }
-                catch
-                {
-                    continue;
-                }
-            }
-
             _stateManager.Update(torrentStateName, s =>
             {
                 s.QueueCount = queueCount;
-                s.CategoryCount = categoryCount;
             });
         }
         catch (Exception ex)
@@ -650,14 +654,42 @@ public class ArrWorkerManager : BackgroundService
         }
     }
 
-    private async Task RunTorrentProcessingAsync(string instanceName, ArrInstanceConfig arrCfg, CancellationToken ct)
+    internal async Task UpdateTorrentCountsAsync(string instanceName, ArrInstanceConfig arr, IReadOnlySet<string> clientIds, CancellationToken ct)
+    {
+        var counts = _categoryCounts.GetOrAdd(instanceName, _ => new(StringComparer.OrdinalIgnoreCase));
+        var clients = _config.GetAllTorrentClients().Where(pair => !pair.Value.Disabled && pair.Value.Host != "CHANGE_ME")
+            .ToDictionary(pair => pair.Key, pair => pair.Value, StringComparer.OrdinalIgnoreCase);
+        foreach (var id in counts.Keys.Where(id => !clients.ContainsKey(id))) counts.TryRemove(id, out _);
+        var registered = _registry?.GetAllClients();
+        foreach (var (id, cfg) in clients.Where(pair => clientIds.Contains(pair.Key)))
+        {
+            try
+            {
+                ITorrentClient? client;
+                if (registered != null) client = registered.GetValueOrDefault(id);
+                else if (cfg.Type.Equals(_torrentClientFactory.Type, StringComparison.OrdinalIgnoreCase))
+                {
+                    client = _qbitClientCache.GetOrAdd(id, _ => _torrentClientFactory.Create(id, cfg));
+                    if (!await client.LoginAsync(ct)) continue;
+                }
+                else continue;
+                if (client != null) counts[id] = (await client.GetTorrentsAsync(arr.Category, cancellationToken: ct)).Count;
+            }
+            catch (OperationCanceledException) when (ct.IsCancellationRequested) { throw; }
+            catch (Exception ex) { _logger.LogDebug(ex, "Cannot update torrent count for {Instance}/{Client}", instanceName, id); }
+        }
+        _stateManager.Update(instanceName + "-torrent", state => state.CategoryCount = counts.Values.Sum());
+    }
+
+    private async Task RunTorrentProcessingAsync(string instanceName, ArrInstanceConfig arrCfg, IReadOnlySet<string> clientIds, CancellationToken ct)
     {
         try
         {
             _logger.LogInformation("Starting torrent monitoring for {Instance}", instanceName);
             using var scope = _scopeFactory.CreateScope();
             var processor = scope.ServiceProvider.GetRequiredService<ITorrentProcessor>();
-            await processor.ProcessTorrentsAsync(arrCfg.Category, ct);
+            await processor.ProcessTorrentsAsync(arrCfg.Category, clientIds, ct);
+            await UpdateTorrentCountsAsync(instanceName, arrCfg, clientIds, ct);
 
             var pathTracker = scope.ServiceProvider.GetRequiredService<IImportPathTracker>();
             ClientDownloadPaths.Clean(_config, pathTracker);
@@ -668,6 +700,22 @@ public class ArrWorkerManager : BackgroundService
         }
     }
 
+    private TimeSpan PeriodicCommandDelay(string instanceName, ArrInstanceConfig arr, TimeSpan scanDelay)
+    {
+        var now = Clock.GetUtcNow().UtcDateTime;
+        foreach (var (minutes, last) in new[] {
+            (arr.RssSyncTimer, _lastRssSyncTime.GetValueOrDefault(instanceName, DateTime.MinValue)),
+            (arr.Type.Equals("lidarr", StringComparison.OrdinalIgnoreCase) ? 0 : arr.RefreshDownloadsTimer,
+                _lastRefreshDownloadsTime.GetValueOrDefault(instanceName, DateTime.MinValue)) })
+        {
+            if (minutes <= 0) continue;
+            var dueIn = last.AddMinutes(minutes) - now;
+            if (dueIn < TimeSpan.FromSeconds(5)) dueIn = TimeSpan.FromSeconds(5);
+            if (dueIn < scanDelay) scanDelay = dueIn;
+        }
+        return scanDelay;
+    }
+
     private async Task RunRssSyncIfDueAsync(string instanceName, ArrInstanceConfig arrCfg, CancellationToken ct)
     {
         // qBitrr: RssSyncTimer <= 0 disables the command (no 15-minute fallback).
@@ -676,7 +724,7 @@ public class ArrWorkerManager : BackgroundService
 
         var interval = TimeSpan.FromMinutes(arrCfg.RssSyncTimer);
         var last = _lastRssSyncTime.GetValueOrDefault(instanceName, DateTime.MinValue);
-        if (DateTime.UtcNow - last < interval) return;
+        if (Clock.GetUtcNow().UtcDateTime - last < interval) return;
 
         try
         {
@@ -688,7 +736,7 @@ public class ArrWorkerManager : BackgroundService
                 case "lidarr": await new Torrentarr.Infrastructure.ApiClients.Arr.LidarrClient(arrCfg.URI, arrCfg.APIKey, arrCfg.SkipTLSVerify).RssSyncAsync(ct); break;
                 case "readarr": await new Torrentarr.Infrastructure.ApiClients.Arr.ReadarrClient(arrCfg.URI, arrCfg.APIKey, arrCfg.SkipTLSVerify).RssSyncAsync(ct); break;
             }
-            _lastRssSyncTime[instanceName] = DateTime.UtcNow;
+            _lastRssSyncTime[instanceName] = Clock.GetUtcNow().UtcDateTime;
         }
         catch (Exception ex)
         {
@@ -706,7 +754,7 @@ public class ArrWorkerManager : BackgroundService
 
         var interval = TimeSpan.FromMinutes(arrCfg.RefreshDownloadsTimer);
         var last = _lastRefreshDownloadsTime.GetValueOrDefault(instanceName, DateTime.MinValue);
-        if (DateTime.UtcNow - last < interval) return;
+        if (Clock.GetUtcNow().UtcDateTime - last < interval) return;
 
         try
         {
@@ -717,7 +765,7 @@ public class ArrWorkerManager : BackgroundService
                 case "sonarr": await new Torrentarr.Infrastructure.ApiClients.Arr.SonarrClient(arrCfg.URI, arrCfg.APIKey, arrCfg.SkipTLSVerify).RefreshMonitoredDownloadsAsync(ct); break;
                 case "readarr": await new Torrentarr.Infrastructure.ApiClients.Arr.ReadarrClient(arrCfg.URI, arrCfg.APIKey, arrCfg.SkipTLSVerify).RefreshMonitoredDownloadsAsync(ct); break;
             }
-            _lastRefreshDownloadsTime[instanceName] = DateTime.UtcNow;
+            _lastRefreshDownloadsTime[instanceName] = Clock.GetUtcNow().UtcDateTime;
         }
         catch (Exception ex)
         {
@@ -731,15 +779,19 @@ public class ArrWorkerManager : BackgroundService
     internal bool ShouldRunSearch(string instanceName, ArrInstanceConfig arrCfg)
     {
         if (!arrCfg.Search.SearchMissing)
-            return false;
-
-        var interval = TimeSpan.FromSeconds(arrCfg.Search.SearchRequestsEvery);
-        var last = _lastSearchTime.GetValueOrDefault(instanceName, DateTime.MinValue);
-        if (DateTime.UtcNow - last >= interval)
         {
-            _lastSearchTime[instanceName] = DateTime.UtcNow;
+            _logger.LogInformation("Search skipped for {Instance}: SearchMissing is disabled", instanceName);
+            return false;
+        }
+
+        var interval = TimeSpan.FromSeconds(Math.Max(5, arrCfg.Search.SearchRequestsEvery));
+        var last = _lastSearchTime.GetValueOrDefault(instanceName, DateTime.MinValue);
+        if (Clock.GetUtcNow().UtcDateTime - last >= interval)
+        {
+            _lastSearchTime[instanceName] = Clock.GetUtcNow().UtcDateTime;
             return true;
         }
+        _logger.LogInformation("Search deferred for {Instance}: SearchRequestsEvery interval ({Seconds}s) has not elapsed", instanceName, interval.TotalSeconds);
         return false;
     }
 

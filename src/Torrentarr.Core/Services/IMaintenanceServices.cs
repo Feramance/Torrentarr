@@ -30,8 +30,14 @@ public interface ISafeDeletionService
 {
     Task<bool> DeleteOwnedFileAsync(string clientInstanceId, string hash, string path, CancellationToken ct = default) => Task.FromResult(false);
     Task<SafeDeletionResult> RemoveTorrentAsync(string clientInstanceId, string hash, bool removeContent, CancellationToken ct = default);
+    /// <summary>Keep the original removal trigger across final HnR and content-safety checks.</summary>
+    Task<SafeDeletionResult> RemoveTorrentForIntentAsync(string clientInstanceId, string hash, bool removeContent,
+        TorrentRemovalIntent intent, CancellationToken ct = default)
+        => Task.FromResult(new SafeDeletionResult(false, true, 0, "Intent-aware removal is unsupported by this deletion service."));
     Task<SafeDeletionResult> RemoveMaintenanceTorrentAsync(string clientInstanceId, string hash, bool removeContent, TorrentInventory inventory, CancellationToken ct = default);
     Task<SafeDeletionResult> QuarantineFileAsync(string clientInstanceId, string localPath, CancellationToken ct = default);
+    Task<SafeDeletionResult> DeleteOrphanFileAsync(string clientInstanceId, string localPath, TorrentInventory inventory, CancellationToken ct = default);
+    Task<SafeDeletionResult> DeleteEmptyOrphanDirectoryAsync(string clientInstanceId, string localPath, TorrentInventory inventory, CancellationToken ct = default);
     IReadOnlyList<string> GetRecoveryPaths() => [];
     IReadOnlyList<RecycleEntry> InspectRecycleEntries(string clientInstanceId) => [];
     IReadOnlyList<RecycleFileSnapshot> InspectRecycleFiles(RecycleEntry entry) => [];
@@ -40,7 +46,7 @@ public interface ISafeDeletionService
     Task<int> CleanupExpiredAsync(string clientInstanceId, CancellationToken ct = default);
 }
 
-public sealed record SafeDeletionResult(bool Success, bool ContentPreserved, long BytesMoved, string? Error = null);
+public sealed record SafeDeletionResult(bool Success, bool ContentPreserved, long BytesMoved, string? Error = null, bool Deferred = false);
 
 public interface IMaintenanceCoordinator
 {

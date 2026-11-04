@@ -75,6 +75,50 @@ public sealed class SharedStorageTests : IDisposable
             client.Verify(c => c.GetTorrentsAsync(It.IsAny<string?>(), It.IsAny<string?>(), It.IsAny<CancellationToken>()), Times.Once);
     }
 
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task ScheduledPass_UsesFastestSharedClientAndLeavesIndependentStorageAlone(bool shared)
+    {
+        var first = Client("one", "first", 1000);
+        var second = Client("two", shared ? "first" : "second", 1000);
+        _config.TorrentClients["one"].TorrentScanIntervalSeconds = 60;
+        _config.TorrentClients["two"].TorrentScanIntervalSeconds = 90;
+        var clock = new ScheduleClock();
+        var schedule = new Torrentarr.Core.Services.TorrentScanSchedule(clock);
+        var service = new FixtureService(_config, _registry.Object, _db, _disks);
+        var categories = new HashSet<string> { "movies" };
+        (await service.ProcessScheduledAsync(categories, schedule)).Paused.Should().Be(2);
+        clock.Now += TimeSpan.FromSeconds(60);
+        (await service.ProcessScheduledAsync(categories, schedule)).Paused.Should().Be(shared ? 2 : 1);
+        clock.Now += TimeSpan.FromSeconds(30);
+        (await service.ProcessScheduledAsync(categories, schedule)).Paused.Should().Be(shared ? 0 : 1);
+        first.Verify(c => c.PauseTorrentAsync("one", It.IsAny<CancellationToken>()), Times.Exactly(2));
+        second.Verify(c => c.PauseTorrentAsync("two", It.IsAny<CancellationToken>()), Times.Exactly(2));
+    }
+
+    private sealed class ScheduleClock : TimeProvider
+    {
+        public DateTimeOffset Now { get; set; } = DateTimeOffset.UnixEpoch;
+        public override DateTimeOffset GetUtcNow() => Now;
+    }
+
+    [Fact]
+    public async Task NewlyAddedDownloadBelowReserve_PausesUntilRemainingBytesFit()
+    {
+        var client = Client("one", "shared", 50, reserve: 100);
+        var torrent = (await client.Object.GetTorrentsAsync()).Single();
+        _disks[Root("one")] = new("shared", 1000, 99);
+        (await Process()).Paused.Should().Be(1);
+        torrent.State = "stoppedDL";
+        _disks[Root("one")] = new("shared", 1000, 149);
+        (await Process()).Resumed.Should().Be(0);
+        _disks[Root("one")] = new("shared", 1000, 150);
+        (await Process()).Resumed.Should().Be(1);
+        client.Verify(c => c.PauseTorrentAsync("one", It.IsAny<CancellationToken>()), Times.Once);
+        client.Verify(c => c.ResumeTorrentAsync("one", It.IsAny<CancellationToken>()), Times.Once);
+    }
+
     [Fact]
     public async Task SharedStorageUsesLargestReserve()
     {

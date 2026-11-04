@@ -754,6 +754,8 @@ export interface OperationalIssue {
   clientInstance: string;
   subjectType: string;
   subjectId: string;
+  subjectName?: string | null;
+  subjectCategory?: string | null;
   severity: "warning" | "error";
   title: string;
   impact: string;

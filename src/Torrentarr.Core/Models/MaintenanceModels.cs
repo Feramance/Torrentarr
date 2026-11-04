@@ -26,6 +26,9 @@ public enum MaintenanceActionKind
     // Retired action IDs stay unused for persisted-history compatibility.
     RecycleContent = 9,
     RegisterRecycleEntry = 14,
+    DeleteContent = 15,
+    DeleteOrphanFile = 16,
+    DeleteEmptyOrphanDirectory = 17,
     DeleteExpiredRecycleItem = 13
 }
 
@@ -147,6 +150,7 @@ public sealed class TorrentFileInventoryItem
     public required TorrentFileRecord File { get; init; }
     public required string ClientPath { get; init; }
     public string? LocalPath { get; init; }
+    public string? ExpectedLocalPath { get; init; }
 }
 
 public sealed record TorrentClientView(
@@ -254,6 +258,7 @@ public sealed class MaintenanceInspectionStatus
     public DateTimeOffset? LastSucceededAt { get; init; }
     public DateTimeOffset? NextAttempt { get; init; }
     public int ConsecutiveFailures { get; init; }
+    public string? LastError { get; init; }
 }
 
 public sealed class TorrentAutomationStatus

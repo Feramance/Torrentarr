@@ -3,6 +3,7 @@ namespace Torrentarr.Core.Services;
 public interface IFreeSpaceService
 {
     Task<IReadOnlyList<FreeSpaceStats>> GetFreeSpaceStatsAsync(CancellationToken cancellationToken = default);
+    Task<FreeSpacePassResult> ProcessScheduledAsync(IReadOnlySet<string> managedCategories, TorrentScanSchedule schedule, CancellationToken cancellationToken = default);
     Task<FreeSpacePassResult> ProcessAsync(IReadOnlySet<string> managedCategories, CancellationToken cancellationToken = default);
 }
 

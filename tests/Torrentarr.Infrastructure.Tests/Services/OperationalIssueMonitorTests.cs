@@ -1,4 +1,5 @@
 using FluentAssertions;
+using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging.Abstractions;
 using Moq;
@@ -11,6 +12,189 @@ namespace Torrentarr.Infrastructure.Tests.Services;
 
 public sealed class OperationalIssueMonitorTests
 {
+    [Theory]
+    [InlineData(false, false)]
+    [InlineData(true, false)]
+    [InlineData(false, true)]
+    [InlineData(true, true)]
+    public async Task PersistedMaintenanceHistory_ResolvesLaterSuccessWithoutReplayingFailures(bool equalCompletion, bool previouslyReported)
+    {
+        await using var db = new Torrentarr.Infrastructure.Database.TorrentarrDbContext(new DbContextOptionsBuilder<Torrentarr.Infrastructure.Database.TorrentarrDbContext>()
+            .UseSqlite("Data Source=:memory:").Options);
+        await db.Database.OpenConnectionAsync();
+        await db.Database.EnsureCreatedAsync();
+        var completed = DateTimeOffset.UtcNow.AddMinutes(-2);
+        if (previouslyReported)
+        {
+            db.OperationalIssues.Add(new() { Code = "maintenance.run", SubjectType = "maintenance", SubjectId = "[\"ONE\"]", LastObserved = DateTime.UtcNow, Occurrences = 1 });
+            await db.SaveChangesAsync();
+        }
+        var history = new List<Torrentarr.Core.Models.MaintenanceRunSummary>
+        {
+            new() { RunId = "failure", ClientInstanceIds = ["one"], Failed = 1, Result = "failed", StartedAt = completed.AddMinutes(-2), CompletedAt = completed },
+            new() { RunId = "success", ClientInstanceIds = ["one"], Result = "success", StartedAt = completed.AddMinutes(-1), CompletedAt = equalCompletion ? completed : completed.AddSeconds(1) }
+        };
+        var maintenance = new Mock<IMaintenanceCoordinator>();
+        maintenance.Setup(m => m.GetHistory(It.IsAny<int>())).Returns(() => history);
+        await using var services = new ServiceCollection().AddSingleton(db).AddSingleton(maintenance.Object).BuildServiceProvider();
+        using var reporter = new OperationalIssueReporter(services.GetRequiredService<IServiceScopeFactory>(), NullLogger<OperationalIssueReporter>.Instance, new());
+        using var monitor = new OperationalIssueMonitor(services.GetRequiredService<IServiceScopeFactory>(), reporter, new(), NullLogger<OperationalIssueMonitor>.Instance);
+        await monitor.InspectAsync(default);
+        await monitor.InspectAsync(default);
+        using var restarted = new OperationalIssueMonitor(services.GetRequiredService<IServiceScopeFactory>(), reporter, new(), NullLogger<OperationalIssueMonitor>.Instance);
+        await restarted.InspectAsync(default);
+        db.ChangeTracker.Clear();
+        var issue = await db.OperationalIssues.SingleAsync();
+        issue.ResolvedAt.Should().NotBeNull();
+        issue.Occurrences.Should().Be(1);
+        history.Add(new() { RunId = "new-failure", ClientInstanceIds = ["one"], Failed = 1, Result = "failed", CompletedAt = DateTimeOffset.UtcNow.AddSeconds(1) });
+        await restarted.InspectAsync(default);
+        db.ChangeTracker.Clear();
+        issue = await db.OperationalIssues.SingleAsync();
+        issue.ResolvedAt.Should().BeNull();
+        issue.Occurrences.Should().Be(2);
+    }
+
+    [Fact]
+    public async Task Restart_DoesNotReplayPersistedMaintenanceFailuresAsNewObservations()
+    {
+        await using var db = new Torrentarr.Infrastructure.Database.TorrentarrDbContext(new Microsoft.EntityFrameworkCore.DbContextOptionsBuilder<Torrentarr.Infrastructure.Database.TorrentarrDbContext>()
+            .UseInMemoryDatabase(Guid.NewGuid().ToString()).Options);
+        var completed = DateTimeOffset.UtcNow.AddHours(-2);
+        db.OperationalIssues.Add(new() { Code = "maintenance.run", SubjectType = "maintenance", SubjectId = "[\"ONE\"]", LastObserved = completed.UtcDateTime.AddMinutes(1) });
+        await db.SaveChangesAsync();
+        var reporter = new Mock<IOperationalIssueReporter>();
+        var maintenance = new Mock<IMaintenanceCoordinator>();
+        maintenance.Setup(m => m.GetHistory(It.IsAny<int>())).Returns([new() { RunId = "old-failure", ClientInstanceIds = ["one"], Failed = 3, Result = "partial", CompletedAt = completed }]);
+        await using var services = new ServiceCollection().AddSingleton(db).AddSingleton(maintenance.Object).BuildServiceProvider();
+        using var monitor = new OperationalIssueMonitor(services.GetRequiredService<IServiceScopeFactory>(), reporter.Object, new(), NullLogger<OperationalIssueMonitor>.Instance);
+        await monitor.InspectAsync(default);
+        reporter.Verify(r => r.ReportAsync(It.IsAny<OperationalIssueReport>(), It.IsAny<CancellationToken>()), Times.Never());
+    }
+
+    [Theory]
+    [InlineData("Running", 10, true)]
+    [InlineData("Running", 31, false)]
+    [InlineData("Error", 1, false)]
+    [InlineData("Timed out", 1, false)]
+    [InlineData("Initializing", 1, false)]
+    [InlineData("Backoff", 1, false)]
+    [InlineData("Waiting for connectivity", 1, false)]
+    public void WorkerRecovery_UsesCurrentProgressWithoutWaitingForFirstSearchBatch(string phase, int ageMinutes, bool healthy)
+    {
+        var now = DateTimeOffset.UtcNow;
+        var state = new Torrentarr.Core.Interfaces.ProcessStatus
+        {
+            IsAlive = true,
+            LastHeartbeat = now.UtcDateTime,
+            Torrent = new("Sleeping", now, now.AddHours(1), now),
+            Search = new(phase, now.AddMinutes(-ageMinutes))
+        };
+        OperationalIssueMonitor.HasHealthyProgress(state, now).Should().Be(healthy);
+        state.LastHeartbeat = now.AddSeconds(-16).UtcDateTime;
+        OperationalIssueMonitor.HasHealthyProgress(state, now).Should().BeFalse();
+    }
+
+    [Fact]
+    public async Task CompletedMaintenanceRuns_AreNotReplayedAcrossInspections()
+    {
+        var reports = new List<OperationalIssueReport>();
+        var resolutions = new List<OperationalIssueReport>();
+        var reporter = new Mock<IOperationalIssueReporter>();
+        reporter.Setup(r => r.ReportAsync(It.IsAny<OperationalIssueReport>(), It.IsAny<CancellationToken>()))
+            .Callback<OperationalIssueReport, CancellationToken>((r, _) => reports.Add(r)).Returns(Task.CompletedTask);
+        reporter.Setup(r => r.ResolveAsync(It.IsAny<OperationalIssueReport>(), It.IsAny<CancellationToken>()))
+            .Callback<OperationalIssueReport, CancellationToken>((r, _) => resolutions.Add(r)).Returns(Task.CompletedTask);
+        var finished = DateTimeOffset.UtcNow;
+        var history = new List<Torrentarr.Core.Models.MaintenanceRunSummary>
+        {
+            new() { RunId = "failed-first", ClientInstanceIds = ["one"], Failed = 1, Result = "failed", CompletedAt = finished },
+            new() { RunId = "success-second", ClientInstanceIds = ["one"], Result = "success", CompletedAt = finished.AddSeconds(1) }
+        };
+        var maintenance = new Mock<IMaintenanceCoordinator>();
+        maintenance.Setup(m => m.GetHistory(It.IsAny<int>())).Returns(() => history);
+        await using var services = new ServiceCollection().AddSingleton(maintenance.Object).BuildServiceProvider();
+        using var monitor = new OperationalIssueMonitor(services.GetRequiredService<IServiceScopeFactory>(), reporter.Object,
+            new(), NullLogger<OperationalIssueMonitor>.Instance);
+        await monitor.InspectAsync(default);
+        reports.Should().ContainSingle(r => r.Code == "maintenance.run");
+        resolutions.Should().Contain(r => r.Code == "maintenance.run" && r.SubjectType == "maintenance");
+        var previousResolutions = resolutions.Count;
+        await monitor.InspectAsync(default);
+        reports.Should().HaveCount(1);
+        resolutions.Should().HaveCount(previousResolutions);
+    }
+
+    [Fact]
+    public async Task EqualCompletionTime_UsesStartedOrderSoSuccessResolvesEarlierFailure()
+    {
+        var reported = new List<OperationalIssueReport>();
+        var resolved = new List<OperationalIssueReport>();
+        var events = new List<(string Action, OperationalIssueReport Issue)>();
+        var reporter = new Mock<IOperationalIssueReporter>();
+        reporter.Setup(r => r.ReportAsync(It.IsAny<OperationalIssueReport>(), It.IsAny<CancellationToken>()))
+            .Callback<OperationalIssueReport, CancellationToken>((r, _) =>
+            {
+                reported.Add(r);
+                events.Add(("report", r));
+            })
+            .Returns(Task.CompletedTask);
+        reporter.Setup(r => r.ResolveAsync(It.IsAny<OperationalIssueReport>(), It.IsAny<CancellationToken>()))
+            .Callback<OperationalIssueReport, CancellationToken>((r, _) =>
+            {
+                resolved.Add(r);
+                events.Add(("resolve", r));
+            })
+            .Returns(Task.CompletedTask);
+        var started = DateTimeOffset.UtcNow.AddMinutes(-10);
+        var completed = started.AddMinutes(5);
+        // GetHistory returns newest first. The monitor must process the failure first.
+        var history = new List<Torrentarr.Core.Models.MaintenanceRunSummary>
+        {
+            new() { RunId = "success-second", ClientInstanceIds = ["same"], Result = "success",
+                StartedAt = started.AddMinutes(1), CompletedAt = completed },
+            new() { RunId = "failure-first", ClientInstanceIds = ["same"], Result = "failed",
+                Failed = 1, StartedAt = started, CompletedAt = completed }
+        };
+        var maintenance = new Mock<IMaintenanceCoordinator>();
+        maintenance.Setup(m => m.GetHistory(It.IsAny<int>())).Returns(() => history);
+        await using var services = new ServiceCollection().AddSingleton(maintenance.Object).BuildServiceProvider();
+        using var monitor = new OperationalIssueMonitor(services.GetRequiredService<IServiceScopeFactory>(),
+            reporter.Object, new(), NullLogger<OperationalIssueMonitor>.Instance);
+        await monitor.InspectAsync(default);
+        reported.Should().ContainSingle(r => r.Code == "maintenance.run");
+        resolved.Should().Contain(r => r.Code == "maintenance.run" && r.SubjectType == "maintenance");
+        events.Where(e => e.Issue.Code == "maintenance.run" && e.Issue.SubjectType == "maintenance")
+            .Select(e => e.Action).Should().Equal("report", "resolve");
+        var resolutionCount = resolved.Count;
+        await monitor.InspectAsync(default);
+        reported.Should().HaveCount(1);
+        resolved.Should().HaveCount(resolutionCount);
+    }
+
+    [Fact]
+    public async Task RunsSharingCompletionTimestamp_AreProcessedOnceEach()
+    {
+        var reported = new List<OperationalIssueReport>();
+        var reporter = new Mock<IOperationalIssueReporter>();
+        reporter.Setup(r => r.ReportAsync(It.IsAny<OperationalIssueReport>(), It.IsAny<CancellationToken>()))
+            .Callback<OperationalIssueReport, CancellationToken>((r, _) => reported.Add(r)).Returns(Task.CompletedTask);
+        var when = DateTimeOffset.UtcNow;
+        var history = new List<Torrentarr.Core.Models.MaintenanceRunSummary>
+        {
+            new() { RunId = "one", ClientInstanceIds = ["same"], Failed = 1, Result = "failed", CompletedAt = when },
+            new() { RunId = "two", ClientInstanceIds = ["same"], Failed = 1, Result = "failed", CompletedAt = when }
+        };
+        var maintenance = new Mock<IMaintenanceCoordinator>();
+        maintenance.Setup(m => m.GetHistory(It.IsAny<int>())).Returns(() => history);
+        await using var services = new ServiceCollection().AddSingleton(maintenance.Object).BuildServiceProvider();
+        using var monitor = new OperationalIssueMonitor(services.GetRequiredService<IServiceScopeFactory>(), reporter.Object,
+            new(), NullLogger<OperationalIssueMonitor>.Instance);
+        await monitor.InspectAsync(default);
+        await monitor.InspectAsync(default);
+        reported.Should().HaveCount(2);
+    }
+
     [Fact]
     public async Task MultiClientMaintenanceFailureIsReportedOnce_AndOnlySameScopeSuccessClearsIt()
     {
@@ -58,6 +242,9 @@ public sealed class OperationalIssueMonitorTests
         using var monitor = new OperationalIssueMonitor(services.GetRequiredService<IServiceScopeFactory>(), reporter.Object, new TorrentarrConfig(), NullLogger<OperationalIssueMonitor>.Instance);
         await monitor.InspectAsync(default);
         reports.Select(r => r.Code).Should().Contain(["config.apply", "network.internet", "storage.reserve"]);
+        reports.Single(r => r.Code == "config.apply").Impact.Should().Contain("revision=");
+        reports.Single(r => r.Code == "network.internet").Impact.Should().Contain("connectivity check=");
+        reports.Single(r => r.Code == "storage.reserve").Impact.Should().Contain("/downloads").And.Contain("free=").And.Contain("reserve=");
         resolved.Should().BeEmpty();
         state = state with { State = "pending" }; await monitor.InspectAsync(default);
         resolved.Should().NotContain(r => r.Code == "config.apply");

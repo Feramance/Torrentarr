@@ -69,14 +69,14 @@ public class DatabaseHealthService : IDatabaseHealthService
         catch (Exception ex)
         {
             result.IsHealthy = false;
-            result.Message = $"Health check error: {ex.Message}";
+            result.Message = $"Health check error: {DiagnosticText.Error(ex)}";
             _logger.LogError(ex, "Error checking database health");
         }
 
         if (_issues != null)
         {
             var issue = new OperationalIssueReport("database.health", "system", "Database health could not be confirmed", "Persistent state may be unavailable; safety-sensitive work remains held back.", "Inspect database logs, storage access and recovery status.");
-            if (result.IsHealthy) await _issues.ResolveAsync(issue, cancellationToken); else await _issues.ReportAsync(issue, cancellationToken);
+            if (result.IsHealthy) await _issues.ResolveAsync(issue, cancellationToken); else await _issues.ReportAsync(issue.WithEvidence($"Database={_dbPath}; checked={result.CheckedAt:O}; size={result.SizeBytes} bytes; WAL={result.WalSizeBytes} bytes; pages={result.PageCount}; {result.Message}"), cancellationToken);
         }
         return result;
     }

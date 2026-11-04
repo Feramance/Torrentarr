@@ -2603,6 +2603,11 @@ svg[height] {
   list-style: none;
   outline: none;
 }
+details > summary:focus-visible {
+  outline: 2px solid var(--primary);
+  outline-offset: 3px;
+  border-radius: 4px;
+}
 .config-section summary::-webkit-details-marker {
   display: none;
 }
@@ -2712,6 +2717,53 @@ svg[height] {
     0 24px 64px rgba(0, 0, 0, 0.2),
     0 8px 16px rgba(0, 0, 0, 0.1);
   animation: modalSlideIn 0.15s ease;
+}
+
+.config-modal .modal-body {
+  min-height: 0;
+}
+.config-modal .modal-header,
+.config-modal .modal-footer,
+.config-modal .modal-footer-note {
+  flex-shrink: 0;
+}
+.config-modal__summary,
+.config-modal__fields {
+  min-width: 0;
+}
+.config-modal__fields {
+  display: grid;
+  align-content: start;
+  gap: inherit;
+}
+@media (min-width: 1024px) {
+  .config-modal {
+    width: min(1800px, 95%);
+  }
+  .config-modal--torrent-client {
+    height: min(92vh, calc(100dvh - 48px));
+  }
+  .config-modal .config-modal__client-layout {
+    flex: 1;
+    overflow: hidden;
+    grid-template-columns: minmax(0, 62fr) minmax(0, 38fr);
+    grid-template-rows: minmax(0, 1fr);
+  }
+  .config-modal__summary,
+  .config-modal__fields {
+    min-height: 0;
+    overflow-y: auto;
+    overflow-wrap: anywhere;
+    scrollbar-gutter: stable;
+  }
+  .config-modal__summary {
+    grid-column: 2;
+    grid-row: 1;
+  }
+  .config-modal__fields {
+    grid-column: 1;
+    grid-row: 1;
+  }
 }
 
 [data-theme="dark"] .modal {

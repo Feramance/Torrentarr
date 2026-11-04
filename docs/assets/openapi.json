@@ -204,7 +204,10 @@
                   "Resume",
                   "RecycleContent",
                   "DeleteExpiredRecycleItem",
-                  "RegisterRecycleEntry"
+                  "RegisterRecycleEntry",
+                  "DeleteContent",
+                  "DeleteOrphanFile",
+                  "DeleteEmptyOrphanDirectory"
                 ],
                 "type": "string"
               },
@@ -415,6 +418,10 @@
           "consecutiveFailures": {
             "format": "int32",
             "type": "integer"
+          },
+          "lastError": {
+            "nullable": true,
+            "type": "string"
           },
           "lastSucceededAt": {
             "format": "date-time",
@@ -961,7 +968,17 @@
           "severity": {
             "type": "string"
           },
+          "subjectCategory": {
+            "description": "Torrent category; empty means uncategorized, null means unavailable.",
+            "nullable": true,
+            "type": "string"
+          },
           "subjectId": {
+            "type": "string"
+          },
+          "subjectName": {
+            "description": "Torrent display name when client metadata is available.",
+            "nullable": true,
             "type": "string"
           },
           "subjectType": {
@@ -1300,6 +1317,10 @@
           "clientPath": {
             "additionalProperties": true,
             "type": "object"
+          },
+          "expectedLocalPath": {
+            "nullable": true,
+            "type": "string"
           },
           "file": {
             "additionalProperties": true,

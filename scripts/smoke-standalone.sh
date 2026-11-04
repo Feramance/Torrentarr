@@ -88,7 +88,7 @@ done
 
 curl --fail --silent "$base_url/health" | grep -q '"healthy"'
 index=$(curl --fail --silent --location "$base_url/ui/")
-printf '%s\n' "$index" | grep -q '<html'
+[[ "$index" == *'<html'* ]]
 asset=$(printf '%s\n' "$index" | node -e '
   const html = require("fs").readFileSync(0, "utf8");
   const src = html.match(/<script[^>]*src="((?:\.\/|\/)assets\/[^" ]+\.js)"/);

@@ -505,12 +505,12 @@ DownloadPath = "/downloads"
 
 1. **Too frequent loop processing:**
    ```toml
-   [Settings]
-   LoopSleepTimer = 1  # Very aggressive
+   [TorrentClient.local]
+   TorrentScanIntervalSeconds = 5  # Fastest allowed interval
 ```
-   **Solution:** Increase to 5-10 seconds:
+   **Solution:** Increase the client scan interval to 15 or 30 seconds:
    ```toml
-   LoopSleepTimer = 5
+   TorrentScanIntervalSeconds = 30
 ```
 
 2. **Too many concurrent searches:**

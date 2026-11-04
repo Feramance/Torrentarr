@@ -3,6 +3,8 @@ using System.Net;
 using System.Net.Http.Json;
 using System.Text.Json;
 using Xunit;
+using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Logging;
 
 namespace Torrentarr.Host.Tests.Api;
 
@@ -63,7 +65,7 @@ public class LogLevelEndpointTests : IClassFixture<TorrentarrWebApplicationFacto
     [InlineData("debug")]
     [InlineData("warning")]
     [InlineData("error")]
-    [InlineData("VERBOSE")]   // alias for debug
+    [InlineData("VERBOSE")]   // alias for trace
     [InlineData("CRITICAL")]  // alias for fatal
     public async Task PostLogLevel_ValidLevel_Returns200(string level)
     {
@@ -111,5 +113,66 @@ public class LogLevelEndpointTests : IClassFixture<TorrentarrWebApplicationFacto
 
         json.TryGetProperty("success", out _).Should().BeTrue();
         json.TryGetProperty("level", out _).Should().BeTrue();
+    }
+
+    [Theory]
+    [InlineData("/web/loglevel", "TRACE")]
+    [InlineData("/web/loglevel", "VERBOSE")]
+    [InlineData("/api/loglevel", "TRACE")]
+    [InlineData("/api/loglevel", "VERBOSE")]
+    public async Task TraceAliases_EnableVerbose_AndPropagateToWorkers(string route, string level)
+    {
+        using var client = _factory.CreateClientWithApiToken();
+        var config = _factory.Services.GetRequiredService<Torrentarr.Core.Configuration.TorrentarrConfig>();
+        config.ArrInstances["logging-test"] = new();
+        var signal = Path.Combine(Torrentarr.Core.Configuration.ConfigurationLoader.GetDataDirectoryPath(), "logs", "worker-logging-test.loglevel");
+        try
+        {
+            var response = await client.PostAsJsonAsync(route, new { level });
+            response.EnsureSuccessStatusCode();
+            var body = await response.Content.ReadFromJsonAsync<JsonElement>();
+            body.GetProperty("level").GetString().Should().Be("Verbose");
+            (await File.ReadAllTextAsync(signal)).Should().Be("Verbose");
+        }
+        finally
+        {
+            config.ArrInstances.Remove("logging-test");
+            File.Delete(signal);
+            await client.PostAsJsonAsync(route, new { level = "INFO" });
+        }
+    }
+
+    [Fact]
+    public async Task ApplicationEvents_ReachAggregateAndWorkerFiles_WhileEfNoiseIsSuppressed()
+    {
+        using var client = _factory.CreateClientWithApiToken();
+        await client.PostAsJsonAsync("/web/loglevel", new { level = "TRACE" });
+        var factory = _factory.Services.GetRequiredService<ILoggerFactory>();
+        var application = factory.CreateLogger("Torrentarr.Infrastructure.Services.ArrSyncService");
+        var ef = factory.CreateLogger("Microsoft.EntityFrameworkCore.Database.Command");
+        var marker = Guid.NewGuid().ToString("N");
+        var instance = "logging-" + marker;
+        var root = Path.Combine(Torrentarr.Core.Configuration.ConfigurationLoader.GetDataDirectoryPath(), "logs");
+        try
+        {
+            using (application.BeginScope(new Dictionary<string, object> { ["ProcessInstance"] = instance }))
+                application.LogInformation("Database SaveChanges DbContext DbCommand {Marker:l}", marker);
+            ef.IsEnabled(LogLevel.Debug).Should().BeFalse();
+            ef.IsEnabled(LogLevel.Information).Should().BeFalse();
+            ef.IsEnabled(LogLevel.Warning).Should().BeTrue();
+            ef.LogWarning("Database warning {Marker:l}", marker);
+            var aggregate = string.Join('\n', Directory.GetFiles(root, "all-*.log").SelectMany(path => ReadLog(path).Split('\n')).Where(line => line.Contains(marker)));
+            aggregate.Should().Contain("Database SaveChanges DbContext DbCommand " + marker).And.Contain("Database warning " + marker);
+            var worker = Directory.GetFiles(root, $"worker-{instance}-*.log").Should().ContainSingle().Subject;
+            ReadLog(worker).Should().Contain("Database SaveChanges DbContext DbCommand " + marker).And.Contain("Torrentarr." + instance);
+        }
+        finally { await client.PostAsJsonAsync("/web/loglevel", new { level = "INFO" }); }
+    }
+
+    private static string ReadLog(string path)
+    {
+        using var stream = new FileStream(path, FileMode.Open, FileAccess.Read, FileShare.ReadWrite | FileShare.Delete);
+        using var reader = new StreamReader(stream);
+        return reader.ReadToEnd();
     }
 }

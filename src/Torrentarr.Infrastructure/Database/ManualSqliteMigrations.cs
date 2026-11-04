@@ -46,6 +46,7 @@ public static class ManualSqliteMigrations
         CreateTableIfMissing(db, "torrentarr_sonarr_search_retries", "CREATE TABLE IF NOT EXISTS torrentarr_sonarr_search_retries ( ArrInstance TEXT NOT NULL, DownloadId TEXT NOT NULL, CandidatesJson TEXT NOT NULL DEFAULT '[]', PRIMARY KEY (ArrInstance, DownloadId) );");
 
         AddColumnIfMissing(db, "torrentarr_sonarr_search_retries", "BlocklistPending", "INTEGER NOT NULL DEFAULT 0");
+        AddColumnIfMissing(db, "torrentarr_sonarr_search_retries", "ConsecutiveFailures", "INTEGER NOT NULL DEFAULT 0");
 
         CreateTableIfMissing(db, "bookfilesmodel", """
             CREATE TABLE IF NOT EXISTS bookfilesmodel (

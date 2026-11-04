@@ -490,19 +490,14 @@ Response:
 
 ### Performance Considerations
 
-Each instance adds ~50-200ms overhead per scan loop. Recommended settings:
+Select each client's scan interval according to API capacity and desired response time. New clients default to 30 seconds. Allowed values are 5, 15, 30, 60, 90, and 120 seconds:
 
-| Instances | Recommended `LoopSleepTimer` |
-|-----------|------------------------------|
-| 1-3       | 5 (default)                  |
-| 4-5       | 10                           |
-| 6+        | 15                           |
-
-Update in `[Settings]`:
 ```toml
-[Settings]
-LoopSleepTimer = 10  # Increase for multiple instances
+[TorrentClient.local]
+TorrentScanIntervalSeconds = 30
 ```
+
+Legacy `[qBit]` and `[qBit-name]` sections support the same field. Clients sharing a filesystem use the fastest client's interval for coordinated free space checks. `Settings.LoopSleepTimer` controls Arr catalog synchronization into SQLite independently of torrent scans.
 
 ### Troubleshooting Multi-Instance
 

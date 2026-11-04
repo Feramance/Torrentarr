@@ -36,6 +36,7 @@ public class TorrentProcessor : ITorrentProcessor
     private readonly ISafeDeletionService? _safeDeletion;
     private readonly IOperationalIssueReporter? _issues;
     private static readonly TimeSpan AllowlistWarningLifetime = TimeSpan.FromMinutes(5);
+    private static readonly TimeSpan RemovalFailureWarningLifetime = TimeSpan.FromMinutes(5);
 
     private readonly HashSet<string> _specialCategories;
     private readonly Dictionary<string, int> _recoveryRequests = new(StringComparer.OrdinalIgnoreCase);
@@ -77,9 +78,17 @@ public class TorrentProcessor : ITorrentProcessor
 
     private async Task<bool> MayPauseAsync(ITorrentClient client, TorrentInfo torrent, CancellationToken ct)
     {
-        if (_seedingService == null) return false;
+        if (_seedingService == null)
+        {
+            _logger.LogInformation("Pause withheld for {Hash}: seeding protection service is unavailable", torrent.Hash);
+            return false;
+        }
         var current = (await client.GetTorrentsAsync(cancellationToken: ct)).FirstOrDefault(t => t.Hash.Equals(torrent.Hash, StringComparison.OrdinalIgnoreCase));
-        if (current == null) return false;
+        if (current == null)
+        {
+            _logger.LogInformation("Pause withheld for {Hash}: torrent is absent from fresh client inventory", torrent.Hash);
+            return false;
+        }
         current.ClientInstanceId = torrent.ClientInstanceId;
         return await _seedingService.HnrAllowsDeleteAsync(current, "routine pause", ct);
     }
@@ -88,7 +97,15 @@ public class TorrentProcessor : ITorrentProcessor
     {
         var ownership = MaintenancePersistence.Read<PauseOwnership>(_dbContext,
             MaintenancePersistence.Key(torrent.ClientInstanceId, torrent.Hash, "routine-pause"));
-        return ownership.Owned && ownership.AddedOn == torrent.AddedOn;
+        var allowed = ownership.Owned && ownership.AddedOn == torrent.AddedOn;
+        _logger.LogInformation("Automatic resume decision for {Hash}: allowed={Allowed}, pauseOwned={Owned}, sameTorrent={SameTorrent}", torrent.Hash, allowed, ownership.Owned, ownership.AddedOn == torrent.AddedOn);
+        return allowed;
+    }
+
+    private bool LogActionResult(TorrentInfo torrent, string action, bool accepted)
+    {
+        _logger.LogInformation("Torrent action {Action} for [{Name}] ({Hash}) on {Client}: accepted={Accepted}", action, torrent.Name, torrent.Hash, torrent.ClientInstanceId, accepted);
+        return accepted;
     }
 
     private async Task<List<TorrentInfo>> ReadClientTorrentsAsync(string id, ITorrentClient client, string? category, List<Exception> failures, HashSet<string> observedClients, CancellationToken ct)
@@ -107,12 +124,16 @@ public class TorrentProcessor : ITorrentProcessor
         }
     }
 
-    public async Task ProcessTorrentsAsync(string category, CancellationToken cancellationToken = default)
+    public Task ProcessTorrentsAsync(string category, CancellationToken cancellationToken = default)
+        => ProcessTorrentsAsync(category, null, cancellationToken);
+
+    public async Task ProcessTorrentsAsync(string category, IReadOnlySet<string>? clientIds, CancellationToken cancellationToken = default)
     {
-        _logger.LogTrace("Starting torrent processing for category {Category}", category);
+        _logger.LogInformation("Starting torrent processing for category {Category}", category);
 
         _recoveryRequests.Clear();
-        var allClients = _qbitManager.GetAllClients();
+        var allClients = _qbitManager.GetAllClients().Where(pair => clientIds == null || clientIds.Contains(pair.Key))
+            .ToDictionary(pair => pair.Key, pair => pair.Value, StringComparer.OrdinalIgnoreCase);
         if (allClients.Count == 0)
         {
             _logger.LogWarning("No qBittorrent client available");
@@ -122,7 +143,7 @@ public class TorrentProcessor : ITorrentProcessor
         // Skip special categories - they are handled globally by the Host orchestrator
         if (_specialCategories.Contains(category))
         {
-            _logger.LogTrace("Skipping special category {Category} - handled by Host orchestrator", category);
+            _logger.LogInformation("Skipping special category {Category} - handled by Host orchestrator", category);
             return;
         }
 
@@ -149,7 +170,7 @@ public class TorrentProcessor : ITorrentProcessor
 
             var torrents = await CategoryOwnershipHelper.GatherTorrentsForOwnerAsync(
                 _config, category, fetchAll, fetchByCategory, cancellationToken);
-            _logger.LogDebug("Found {Count} torrents in category {Category}", torrents.Count, category);
+            _logger.LogInformation("Found {Count} torrents in category {Category}", torrents.Count, category);
 
             var stats = new TorrentProcessingStats
             {
@@ -175,11 +196,11 @@ public class TorrentProcessor : ITorrentProcessor
             // Independent maintenance still runs for healthy clients and torrents before failing the cycle.
             if (_seedingService != null)
             {
-                try { await _seedingService.UpdateSeedingTagsAsync(category, cancellationToken); }
+                try { await (clientIds == null ? _seedingService.UpdateSeedingTagsAsync(category, cancellationToken) : _seedingService.UpdateSeedingTagsAsync(category, clientIds, cancellationToken)); }
                 catch (Exception ex) when (ex is not OperationCanceledException) { failures.Add(ex); }
                 try
                 {
-                    var removal = await _seedingService.RemoveCompletedTorrentsAsync(category, cancellationToken);
+                    var removal = await (clientIds == null ? _seedingService.RemoveCompletedTorrentsAsync(category, cancellationToken) : _seedingService.RemoveCompletedTorrentsAsync(category, clientIds, cancellationToken));
                     failures.AddRange(removal.Errors.Select(error => new IOException(error)));
                 }
                 catch (Exception ex) when (ex is not OperationCanceledException) { failures.Add(ex); }
@@ -194,7 +215,7 @@ public class TorrentProcessor : ITorrentProcessor
         catch (Exception ex) when (ex is not OperationCanceledException)
         {
             _logger.LogError(ex, "Error processing torrents for category {Category}", category);
-            if (_issues != null) await _issues.ReportAsync(ProcessingIssue(category), cancellationToken);
+            if (_issues != null) await _issues.ReportAsync(ProcessingIssue(category).WithEvidence(DiagnosticText.Error(ex)), cancellationToken);
             throw;
         }
     }
@@ -202,7 +223,7 @@ public class TorrentProcessor : ITorrentProcessor
     private async Task ResolveRemovedTorrentIssuesAsync(HashSet<string> observedClients, List<Exception> failures, CancellationToken ct)
     {
         if (_issues == null || observedClients.Count == 0) return;
-        var outstanding = await _dbContext.OperationalIssues.AsNoTracking().Where(i => i.Code == "torrent.processing"
+        var outstanding = await _dbContext.OperationalIssues.AsNoTracking().Where(i => (i.Code == "torrent.processing" || i.Code == "import.ownership" || i.Code.StartsWith("torrent.removal."))
             && i.SubjectType == "torrent" && i.ResolvedAt == null && observedClients.Contains(i.ClientInstance)).ToListAsync(ct);
         foreach (var group in outstanding.GroupBy(i => i.ClientInstance, StringComparer.OrdinalIgnoreCase))
         {
@@ -254,7 +275,17 @@ public class TorrentProcessor : ITorrentProcessor
         var torrent = await TorrentClientLookup.FindAsync(_qbitManager, hash, qbitInstance, _logger, cancellationToken);
         var resolvedInstance = torrent?.ClientInstanceId;
 
-        if (torrent == null) return false;
+        if (torrent == null)
+        {
+            _logger.LogInformation("Import deferred for {Hash} on {Client}: torrent not found", hash, qbitInstance);
+            return false;
+        }
+        if (_issues != null) await _issues.ResolveAsync(OwnershipIssue(torrent), cancellationToken);
+        if (ResolveArrOwner(torrent) == null)
+        {
+            _logger.LogInformation("Import deferred for {Hash} on {Client}: Arr owner is unresolved", hash, resolvedInstance);
+            return false;
+        }
 
         var isComplete = torrent.Progress >= 1.0;
         var isSeeding = TorrentPolicyHelper.IsQueueSeedingForSort(torrent.State);
@@ -263,6 +294,7 @@ public class TorrentProcessor : ITorrentProcessor
         if (torrent.CompletionOn <= 0 ||
             DateTimeOffset.FromUnixTimeSeconds(torrent.CompletionOn).UtcDateTime > DateTime.UtcNow.AddSeconds(-60))
         {
+            _logger.LogInformation("Import deferred for {Hash} on {Client}: completion grace period has not elapsed", hash, resolvedInstance);
             return false;
         }
 
@@ -270,6 +302,7 @@ public class TorrentProcessor : ITorrentProcessor
 
         var notImported = libraryEntry == null || !libraryEntry.Imported;
 
+        _logger.LogInformation("Import readiness for {Hash} on {Client}: complete={Complete}, seeding={Seeding}, notImported={NotImported}", hash, resolvedInstance, isComplete, isSeeding, notImported);
         return isComplete && isSeeding && notImported;
     }
 
@@ -279,12 +312,22 @@ public class TorrentProcessor : ITorrentProcessor
 
         var torrent = await TorrentClientLookup.FindAsync(_qbitManager, hash, qbitInstance, _logger, cancellationToken);
         var torrentInstanceName = torrent?.ClientInstanceId;
+        using var logScope = _logger.BeginScope(new Dictionary<string, object>
+        {
+            ["ClientInstance"] = torrentInstanceName ?? qbitInstance ?? "unknown",
+            ["TorrentCategory"] = torrent?.Category ?? "unknown",
+            ["TorrentHash"] = hash
+        });
 
         if (torrent == null)
         {
             _logger.LogWarning("Torrent {Hash} not found in qBittorrent", hash);
             return;
         }
+
+        if (_issues != null) await _issues.ResolveAsync(OwnershipIssue(torrent), cancellationToken);
+        var owner = ResolveArrOwner(torrent);
+        if (owner == null) return;
 
         var client = _qbitManager.GetClient(torrentInstanceName!);
         if (client == null)
@@ -303,24 +346,14 @@ public class TorrentProcessor : ITorrentProcessor
 
         if (_importService != null)
         {
-            var owner = ResolveOwner(torrent);
-            var ownershipIssue = new OperationalIssueReport("import.ownership", "automation", "Import owner is unresolved",
-                "Import was skipped to avoid sending this torrent to the wrong Arr service.",
-                "Check category ownership and subcategory settings.", ClientInstance: torrent.ClientInstanceId, SubjectType: "torrent", SubjectId: hash, Target: "config");
-            if (owner == null || CategoryOwnershipHelper.FindArrSectionForCategory(_config, owner) == null)
-            {
-                if (_issues != null) await _issues.ReportAsync(ownershipIssue, cancellationToken);
-                return;
-            }
             await EnsureTorrentInDatabaseAsync(torrent, owner, cancellationToken);
-            if (_issues != null) await _issues.ResolveAsync(ownershipIssue, cancellationToken);
 
             var contentPath = torrent.ContentPath;
             if (!string.IsNullOrEmpty(contentPath))
             {
                 if (_pathTracker?.IsHashAlreadyScanned(torrent.QBitInstanceName, torrent.Hash) == true)
                 {
-                    _logger.LogTrace("Skipping import — hash already sent to scan: {Hash}", hash);
+                    _logger.LogInformation("Skipping import — hash already sent to scan: {Hash}", hash);
                     return;
                 }
                 if (!File.Exists(contentPath) && !Directory.Exists(contentPath))
@@ -331,7 +364,7 @@ public class TorrentProcessor : ITorrentProcessor
                 }
                 if (_pathTracker?.IsPathAlreadyScanned(torrent.QBitInstanceName, contentPath) == true)
                 {
-                    _logger.LogTrace("Skipping import — path already sent to scan: {Path}", contentPath);
+                    _logger.LogInformation("Skipping import — path already sent to scan: {Path}", contentPath);
                     return;
                 }
             }
@@ -421,16 +454,22 @@ public class TorrentProcessor : ITorrentProcessor
             await _importService.BlocklistAndReSearchAsync(torrent.Hash, ResolveOwner(torrent) ?? "", ct);
     }
 
-
     // ========================================================================================
     // CORE STATE MACHINE — matches qBitrr's _process_single_torrent (arss.py:6065-6253)
     // ========================================================================================
 
     private async Task ProcessObservedTorrentAsync(TorrentInfo torrent, string category, TorrentProcessingStats stats, CancellationToken ct)
     {
+        using var logScope = _logger.BeginScope(new Dictionary<string, object>
+        {
+            ["ClientInstance"] = torrent.ClientInstanceId,
+            ["TorrentCategory"] = category,
+            ["TorrentHash"] = torrent.Hash
+        });
         var issue = ProcessingIssue(category, torrent.ClientInstanceId, torrent.Hash);
         try
         {
+            if (_issues != null) await _issues.ResolveAsync(OwnershipIssue(torrent), ct);
             await ProcessSingleTorrentAsync(torrent, category, stats, ct);
             if (_issues != null) await _issues.ResolveAsync(issue, ct);
         }
@@ -444,21 +483,21 @@ public class TorrentProcessor : ITorrentProcessor
             }
             catch (Exception refreshError) when (refreshError is not OperationCanceledException)
             {
-                if (_issues != null) await _issues.ReportAsync(issue, ct);
+                if (_issues != null) await _issues.ReportAsync(issue.WithEvidence(DiagnosticText.Error(refreshError)), ct);
                 throw;
             }
             if (inventory != null && !inventory.Any(t => t.Hash.Equals(torrent.Hash, StringComparison.OrdinalIgnoreCase)))
             {
-                _logger.LogDebug("Torrent {Hash} disappeared from {Instance}; skipping stale inventory", torrent.Hash, torrent.ClientInstanceId);
+                _logger.LogInformation("Torrent {Hash} disappeared from {Instance}; skipping stale inventory", torrent.Hash, torrent.ClientInstanceId);
                 if (_issues != null) await _issues.ResolveAsync(issue, ct);
                 return;
             }
-            if (_issues != null) await _issues.ReportAsync(issue, ct);
+            if (_issues != null) await _issues.ReportAsync(issue.WithEvidence(DiagnosticText.Error(ex)), ct);
             throw;
         }
         catch (Exception ex) when (ex is not OperationCanceledException)
         {
-            if (_issues != null) await _issues.ReportAsync(issue, ct);
+            if (_issues != null) await _issues.ReportAsync(issue.WithEvidence(DiagnosticText.Error(ex)), ct);
             throw;
         }
     }
@@ -471,15 +510,25 @@ public class TorrentProcessor : ITorrentProcessor
     {
         _logger.LogTrace(
             "Torrent [{Name}]: State[{State}] | Progress[{Progress:P1}] | Ratio[{Ratio:F2}] | " +
-            "AddedOn[{AddedOn}] | Availability[{Availability:P1}] | Size[{Size}] | Hash[{Hash}]",
+            "AddedOn[{AddedOn}] | Availability[{Availability:P1}] | Size[{Size}] | Hash[{Hash}] | " +
+            "ETA[{Eta}s] | LastActivity[{LastActivity}] | CompletionOn[{CompletionOn}] | SeedingTime[{SeedTime}s] | " +
+            "NativeRatioLimit[{RatioLimit}] | NativeSeedLimit[{SeedLimit}min] | NativeInactiveLimit[{InactiveLimit}min]",
             torrent.Name, torrent.State, torrent.Progress, torrent.Ratio,
-            DateTimeOffset.FromUnixTimeSeconds(torrent.AddedOn).DateTime,
-            torrent.Availability, torrent.Size, torrent.Hash);
+            torrent.AddedOn, torrent.Availability, torrent.Size, torrent.Hash,
+            torrent.Eta, torrent.LastActivity, torrent.CompletionOn, torrent.SeedingTime,
+            torrent.RatioLimit, torrent.SeedingTimeLimit, torrent.InactiveSeedingTimeLimit);
 
         var state = ParseTorrentState(torrent.State);
         var arrCfg = _config.ArrInstances.Values.FirstOrDefault(a =>
             CategoryPathHelper.CategoryEquals(a.Category, category));
         var stalledSettings = ResolveStalledSettings(_config, torrent, arrCfg);
+        _logger.LogTrace("Torrent policy inputs for {Hash}: parsedState={ParsedState}; effectiveIgnoreYoungerThan={IgnoreAge}s; effectiveStalledDelay={StalledDelay}min; ArrConfigured={ArrConfigured}; importedTag={Imported}; ignoredTag={Ignored}; freeSpacePaused={FreeSpacePaused}",
+            torrent.Hash, state, stalledSettings.IgnoreTorrentsYoungerThan, stalledSettings.StalledDelay, arrCfg != null,
+            HasTag(torrent, "qBitrr-imported"), HasTag(torrent, IgnoredTag), HasTag(torrent, FreeSpacePausedTag));
+        static string Timestamp(long value) => value is > 0 and <= 253402300799
+            ? DateTimeOffset.FromUnixTimeSeconds(value).ToString("O") : $"unknown ({value})";
+        _logger.LogTrace("Torrent timeline for {Hash}: added={AddedAt}; lastActive={LastActiveAt}; completed={CompletedAt}",
+            torrent.Hash, Timestamp(torrent.AddedOn), Timestamp(torrent.LastActivity), Timestamp(torrent.CompletionOn));
         var ignoreYoungerThan = stalledSettings.IgnoreTorrentsYoungerThan;
         var timeNow = DateTimeOffset.UtcNow.ToUnixTimeSeconds();
 
@@ -503,7 +552,7 @@ public class TorrentProcessor : ITorrentProcessor
 
         // PRE-STEP 1: Resolve leave_alone / remove_torrent / maxEta (qBitrr: _should_leave_alone)
         var (leaveAlone, maxEta, removeTorrent) = await ResolveLeaveAloneAsync(torrent, state, arrCfg, ct);
-        _logger.LogTrace("Torrent [{Name}]: LeaveAlone={LeaveAlone}, MaxETA={MaxEta}, RemoveTorrent={Remove}",
+        _logger.LogInformation("Torrent [{Name}]: LeaveAlone={LeaveAlone}, MaxETA={MaxEta}, RemoveTorrent={Remove}",
             torrent.Name, leaveAlone, maxEta, removeTorrent);
 
         // PRE-STEP 2: Stalled check for MetaDL / StalledDL / Downloading states
@@ -525,6 +574,7 @@ public class TorrentProcessor : ITorrentProcessor
         // If ignored via tag: clean up seeding/free-space tags and skip (qBitrr: lines 6094-6098)
         if (HasTag(torrent, IgnoredTag))
         {
+            _logger.LogInformation("Ignoring torrent [{Name}]: ignored tag is set", torrent.Name);
             var ignClient = _qbitManager.GetClient(torrent.QBitInstanceName);
             if (ignClient?.Capabilities.Tags == true && !_config.Settings.Tagless)
                 await ignClient.RemoveTagsAsync(new List<string> { torrent.Hash },
@@ -537,7 +587,11 @@ public class TorrentProcessor : ITorrentProcessor
         UpdateStats(state, stats);
 
         var client = _qbitManager.GetClient(torrent.QBitInstanceName);
-        if (client == null) return;
+        if (client == null)
+        {
+            _logger.LogInformation("Skipping torrent [{Name}]: client is unavailable", torrent.Name);
+            return;
+        }
 
         var recovery = _config.GetTorrentClient(torrent.ClientInstanceId)?.Maintenance.ErrorRecovery ?? new ErrorRecoveryConfig();
         if (MaintenanceRecovery.IsErrorState(torrent, recovery) || MaintenanceRecovery.Read(_dbContext, torrent, "ErrorRecovery").Stage != "new")
@@ -546,7 +600,7 @@ public class TorrentProcessor : ITorrentProcessor
         var recoveryBlocksRemoval = MaintenanceRecovery.BlocksAutomaticRemoval(_dbContext, torrent, recovery);
         if (MaintenanceRecovery.IsErrorState(torrent, recovery))
         {
-            _logger.LogDebug("Keeping {Hash}: recovery is pending, disabled, or unsuccessful", torrent.Hash);
+            _logger.LogInformation("Keeping {Hash}: recovery is pending, disabled, or unsuccessful", torrent.Hash);
             return;
         }
 
@@ -564,7 +618,7 @@ public class TorrentProcessor : ITorrentProcessor
             var hnrAllows = _seedingService != null && await _seedingService.HnrAllowsDeleteAsync(torrent, "CF unmet deletion", ct);
             if (hnrAllows)
             {
-                _logger.LogWarning("Removal requested (custom format unmet): [{Name}] | Hash[{Hash}]",
+                _logger.LogInformation("Removal candidate (custom format unmet): [{Name}] | Hash[{Hash}]",
                     torrent.Name, torrent.Hash);
                 if (await DeleteTorrentFromClientAsync(client, torrent, deleteFiles: true, ct,
                     stillApplies: current => _importService.IsCustomFormatUnmetAsync(current.Hash, ResolveOwner(current) ?? "", ct)))
@@ -575,7 +629,7 @@ public class TorrentProcessor : ITorrentProcessor
         // (qBitrr line 6106-6109: remove_torrent and not leave_alone and amount_left==0)
         else if (!recoveryBlocksRemoval && removeTorrent && !leaveAlone && torrent.AmountLeft == 0)
         {
-            _logger.LogWarning("Removal requested (ratio/seed limit reached): [{Name}] | Ratio[{Ratio:F2}] | SeedingTime[{SeedTime}s] | Hash[{Hash}]",
+            _logger.LogInformation("Removal candidate (ratio/seed limit reached): [{Name}] | Ratio[{Ratio:F2}] | SeedingTime[{SeedTime}s] | Hash[{Hash}]",
                 torrent.Name, torrent.Ratio, torrent.SeedingTime, torrent.Hash);
             if (await DeleteTorrentFromClientAsync(client, torrent, deleteFiles: true, ct))
                 stats.Failed++;
@@ -592,7 +646,7 @@ public class TorrentProcessor : ITorrentProcessor
         else if (torrent.Category.Equals(_config.Settings.RecheckCategory, StringComparison.OrdinalIgnoreCase))
         {
             _logger.LogInformation("Re-checking manually set torrent: [{Name}] | Hash[{Hash}]", torrent.Name, torrent.Hash);
-            if (client.Capabilities.Recheck) await client.RecheckTorrentsAsync(new List<string> { torrent.Hash }, ct);
+            if (client.Capabilities.Recheck) LogActionResult(torrent, "recheck", await client.RecheckTorrentsAsync(new List<string> { torrent.Hash }, ct));
         }
         // Branch 5: Missing files → delete from client, no blacklist (qBitrr line 6116-6118)
         else if (IsMissingFilesTorrent(torrent, state))
@@ -605,7 +659,7 @@ public class TorrentProcessor : ITorrentProcessor
         // Branch 6: Ignored states → skip (qBitrr line 6119-6120: is_ignored_state)
         else if (IsIgnoredState(state))
         {
-            _logger.LogTrace("Skipping torrent in ignored state: [{Name}] | State[{State}]", torrent.Name, state);
+            _logger.LogInformation("Skipping torrent in ignored state: [{Name}] | State[{State}]", torrent.Name, state);
         }
         // Branch 7: Stopped + leave_alone → resume (qBitrr line 6121-6133)
         else if (torrent.IsStopped
@@ -613,9 +667,9 @@ public class TorrentProcessor : ITorrentProcessor
             && !HasTag(torrent, FreeSpacePausedTag)
             && !HasTag(torrent, IgnoredTag))
         {
-            _logger.LogDebug("Resuming stopped torrent (leave_alone): [{Name}] | State[{State}] | Hash[{Hash}]",
+            _logger.LogInformation("Resuming stopped torrent (leave_alone): [{Name}] | State[{State}] | Hash[{Hash}]",
                 torrent.Name, torrent.State, torrent.Hash);
-            if (CanResumeAutomatically(torrent) && await client.ResumeTorrentsAsync(new List<string> { torrent.Hash }, ct))
+            if (CanResumeAutomatically(torrent) && LogActionResult(torrent, "resume", await client.ResumeTorrentsAsync(new List<string> { torrent.Hash }, ct)))
                 MaintenancePersistence.Write(_dbContext, MaintenancePersistence.Key(torrent.ClientInstanceId, torrent.Hash, "routine-pause"), new PauseOwnership());
         }
         // Branch 8: Stalled DL / MetaDL + not stalled_ignore → stalled processing (qBitrr line 6134-6140)
@@ -657,13 +711,13 @@ public class TorrentProcessor : ITorrentProcessor
                 && !HasTag(torrent, FreeSpacePausedTag)
                 && !HasTag(torrent, IgnoredTag))
             {
-                _logger.LogDebug("Resuming stopped torrent (in ignore cache): [{Name}]", torrent.Name);
-                if (CanResumeAutomatically(torrent) && await client.ResumeTorrentsAsync(new List<string> { torrent.Hash }, ct))
+                _logger.LogInformation("Resuming stopped torrent (in ignore cache): [{Name}]", torrent.Name);
+                if (CanResumeAutomatically(torrent) && LogActionResult(torrent, "resume", await client.ResumeTorrentsAsync(new List<string> { torrent.Hash }, ct)))
                     MaintenancePersistence.Write(_dbContext, MaintenancePersistence.Key(torrent.ClientInstanceId, torrent.Hash, "routine-pause"), new PauseOwnership());
             }
             else
             {
-                _logger.LogTrace("Skipping torrent in ignore cache: [{Name}]", torrent.Name);
+                _logger.LogInformation("Skipping torrent in ignore cache: [{Name}]", torrent.Name);
             }
         }
         // Branch 11: Queued upload → pause if !leave_alone (qBitrr line 6164-6165)
@@ -671,16 +725,16 @@ public class TorrentProcessor : ITorrentProcessor
         {
             if (leaveAlone)
             {
-                _logger.LogTrace("Queued upload, allowing seeding: [{Name}]", torrent.Name);
+                _logger.LogInformation("Queued upload, allowing seeding: [{Name}]", torrent.Name);
             }
             else
             {
-                _logger.LogTrace("Pausing queued upload torrent: [{Name}]", torrent.Name);
+                _logger.LogInformation("Pausing queued upload torrent: [{Name}]", torrent.Name);
                 if (await MayPauseAsync(client, torrent, ct))
                 {
                     var key = MaintenancePersistence.Key(torrent.ClientInstanceId, torrent.Hash, "routine-pause");
                     MaintenancePersistence.Write(_dbContext, key, new PauseOwnership { Owned = true, AddedOn = torrent.AddedOn });
-                    if (!await client.PauseTorrentsAsync(new List<string> { torrent.Hash }, ct))
+                    if (!LogActionResult(torrent, "pause", await client.PauseTorrentsAsync(new List<string> { torrent.Hash }, ct)))
                         MaintenancePersistence.Write(_dbContext, key, new PauseOwnership());
                 }
             }
@@ -691,10 +745,10 @@ public class TorrentProcessor : ITorrentProcessor
             && !HasTag(torrent, FreeSpacePausedTag)
             && !HasTag(torrent, IgnoredTag))
         {
-            _logger.LogDebug("Resuming incomplete paused download: [{Name}] | Progress[{Progress:P1}] | Hash[{Hash}]",
+            _logger.LogInformation("Resuming incomplete paused download: [{Name}] | Progress[{Progress:P1}] | Hash[{Hash}]",
                 torrent.Name, torrent.Progress, torrent.Hash);
             _cache.AddToIgnoreCache(torrent.QBitInstanceName, torrent.Hash, TimeSpan.FromSeconds(ignoreYoungerThan));
-            if (CanResumeAutomatically(torrent) && await client.ResumeTorrentsAsync(new List<string> { torrent.Hash }, ct))
+            if (CanResumeAutomatically(torrent) && LogActionResult(torrent, "resume", await client.ResumeTorrentsAsync(new List<string> { torrent.Hash }, ct)))
                 MaintenancePersistence.Write(_dbContext, MaintenancePersistence.Key(torrent.ClientInstanceId, torrent.Hash, "routine-pause"), new PauseOwnership());
         }
         // Branch 13: Percentage threshold — high progress, not complete, already filtered (qBitrr line 6174-6181)
@@ -721,15 +775,15 @@ public class TorrentProcessor : ITorrentProcessor
         {
             var finalizedImport = await TryFinalizeImportedTorrentAsync(torrent, ct);
             if (finalizedImport)
-                _logger.LogTrace("Skipping already-imported torrent: [{Name}]", torrent.Name);
+                _logger.LogInformation("Skipping already-imported torrent: [{Name}]", torrent.Name);
             else
-                _logger.LogTrace("Skipping torrent already sent to scan and awaiting Arr completion: [{Name}]", torrent.Name);
+                _logger.LogInformation("Skipping torrent already sent to scan and awaiting Arr completion: [{Name}]", torrent.Name);
         }
         // Branch 15: Error state → recheck (qBitrr line 6191-6192)
         else if (state == TorrentState.Error)
         {
             _logger.LogInformation("Re-checking errored torrent: [{Name}] | Hash[{Hash}]", torrent.Name, torrent.Hash);
-            _logger.LogDebug("Keeping errored torrent {Hash}; recovery never authorizes removal", torrent.Hash);
+            _logger.LogInformation("Keeping errored torrent {Hash}; recovery never authorizes removal", torrent.Hash);
         }
         // Branch 16: Fully completed (60s grace period) → trigger import (qBitrr line 6196-6205)
         // Python: if leave_alone → allow seeding; elif not tagged qBitrr-imported → dispatch to import_torrents
@@ -751,11 +805,11 @@ public class TorrentProcessor : ITorrentProcessor
             }
             if (leaveAlone && !recoveryBlocksRemoval || state == TorrentState.ForcedUploading)
             {
-                _logger.LogTrace("Completed torrent — allowing seeding: [{Name}]", torrent.Name);
+                _logger.LogInformation("Completed torrent — allowing seeding: [{Name}]", torrent.Name);
             }
             else if (await IsReadyForImportAsync(torrent.Hash, torrent.QBitInstanceName, ct))
             {
-                _logger.LogDebug("Completed torrent ready for import: [{Name}] | Progress[{Progress:P1}] | Hash[{Hash}]",
+                _logger.LogInformation("Completed torrent ready for import: [{Name}] | Progress[{Progress:P1}] | Hash[{Hash}]",
                     torrent.Name, torrent.Progress, torrent.Hash);
                 await ImportTorrentAsync(torrent.Hash, torrent.QBitInstanceName, ct);
             }
@@ -771,7 +825,7 @@ public class TorrentProcessor : ITorrentProcessor
         {
             if (leaveAlone || state == TorrentState.ForcedUploading)
             {
-                _logger.LogTrace("Uploading, allowing seeding: [{Name}]", torrent.Name);
+                _logger.LogInformation("Uploading, allowing seeding: [{Name}]", torrent.Name);
             }
             else
             {
@@ -781,7 +835,7 @@ public class TorrentProcessor : ITorrentProcessor
                 {
                     var key = MaintenancePersistence.Key(torrent.ClientInstanceId, torrent.Hash, "routine-pause");
                     MaintenancePersistence.Write(_dbContext, key, new PauseOwnership { Owned = true, AddedOn = torrent.AddedOn });
-                    if (!await client.PauseTorrentsAsync(new List<string> { torrent.Hash }, ct))
+                    if (!LogActionResult(torrent, "pause", await client.PauseTorrentsAsync(new List<string> { torrent.Hash }, ct)))
                         MaintenancePersistence.Write(_dbContext, key, new PauseOwnership());
                 }
             }
@@ -825,7 +879,7 @@ public class TorrentProcessor : ITorrentProcessor
             else if (_cache.AreFilePrioritiesApplied(torrent.QBitInstanceName, torrent.Hash))
             {
                 // Already filtered, skip
-                _logger.LogTrace("Already cleaned up: [{Name}]", torrent.Name);
+                _logger.LogInformation("Already cleaned up: [{Name}]", torrent.Name);
             }
             else
             {
@@ -843,14 +897,16 @@ public class TorrentProcessor : ITorrentProcessor
         // Python: self.resume.add(torrent.hash) — ensures paused-upload complete torrents resume seeding
         else if (IsCompleteState(state) && leaveAlone)
         {
-            _logger.LogTrace("Allowing seeding for complete torrent: [{Name}]", torrent.Name);
-            if (CanResumeAutomatically(torrent) && await client.ResumeTorrentsAsync(new List<string> { torrent.Hash }, ct))
+            _logger.LogInformation("Allowing seeding for complete torrent: [{Name}]", torrent.Name);
+            if (CanResumeAutomatically(torrent) && LogActionResult(torrent, "resume", await client.ResumeTorrentsAsync(new List<string> { torrent.Hash }, ct)))
                 MaintenancePersistence.Write(_dbContext, MaintenancePersistence.Key(torrent.ClientInstanceId, torrent.Hash, "routine-pause"), new PauseOwnership());
         }
         // Branch 21: Default — unprocessed
         else
         {
-            _logger.LogTrace("Unprocessed torrent: [{Name}] | State[{State}] | Progress[{Progress:P1}]",
+            if (IsCompleteState(state) && (torrent.CompletionOn <= 0 || torrent.CompletionOn >= timeNow - 60))
+                _logger.LogInformation("Import deferred for [{Name}]: completion grace period has not elapsed (completion={Completion})", torrent.Name, torrent.CompletionOn);
+            _logger.LogInformation("Unprocessed torrent: [{Name}] | State[{State}] | Progress[{Progress:P1}]",
                 torrent.Name, state, torrent.Progress);
         }
     }
@@ -870,19 +926,27 @@ public class TorrentProcessor : ITorrentProcessor
         var defaultMaxEta = arrCfg?.Torrent.MaximumETA ?? -1;
 
         if (_seedingService == null)
+        {
+            _logger.LogDebug("Leave-alone decision for {Hash}: protection service unavailable; keeping torrent", torrent.Hash);
             return (true, defaultMaxEta, false);
+        }
 
         _stalledUploads?.Touch(torrent.QBitInstanceName, torrent.Hash, SeedingService.IsStalledUploadState(torrent.State));
 
         // Super seeding or forced upload → always leave alone (qBitrr: lines 5809-5810)
         if (torrent.SuperSeeding || state == TorrentState.ForcedUploading)
+        {
+            _logger.LogDebug("Leave-alone decision for {Hash}: superSeeding={SuperSeeding}, state={State}; routine interruption withheld", torrent.Hash, torrent.SuperSeeding, state);
             return (true, -1, false);
+        }
 
         var isUploading = IsUploadingState(state);
 
         // Get tracker config for MaxETA override (qBitrr: data_settings.get("max_eta"))
         var trackerCfg = await _seedingService.GetTrackerConfigAsync(torrent, ct);
         var maxEta = SeedingLimitMerge.MergeMaxEta(defaultMaxEta, trackerCfg?.MaxETA);
+        _logger.LogTrace("ETA policy for {Hash}: ArrMaximumETA={ArrEta}s; trackerMaximumETA={TrackerEta}s; effectiveMaximumETA={EffectiveEta}s; actualETA={ActualEta}s",
+            torrent.Hash, defaultMaxEta, trackerCfg?.MaxETA, maxEta, torrent.Eta);
 
         // Check if torrent should be removed (ratio/time limits met, including stalledUP idle)
         var shouldRemove = await _seedingService.ShouldRemoveTorrentAsync(torrent, ct);
@@ -892,7 +956,10 @@ public class TorrentProcessor : ITorrentProcessor
 
         // Free space paused → leave alone — qBitrr line 5867-5868
         if (HasTag(torrent, FreeSpacePausedTag))
+        {
             leaveAlone = true;
+            _logger.LogDebug("Leave-alone decision for {Hash}: free-space pause marker takes precedence", torrent.Hash);
+        }
 
         // Tag management: qBitrr-allowed_seeding (qBitrr lines 5869-5878)
         var client = _qbitManager.GetClient(torrent.QBitInstanceName);
@@ -914,25 +981,99 @@ public class TorrentProcessor : ITorrentProcessor
         return (leaveAlone, maxEta, shouldRemove);
     }
 
+    private OperationalIssueReport RemovalIssue(TorrentInfo torrent, TorrentRemovalIntent intent) => new(
+        "torrent.removal." + intent, "automation", $"Torrent removal blocked ({intent})", "",
+        "Resolve the specific blocker below, then allow a fresh evaluation; do not bypass unmet tracker obligations.",
+        ArrInstance: ResolveOwner(torrent) ?? "", ClientInstance: torrent.ClientInstanceId,
+        SubjectType: "torrent", SubjectId: torrent.Hash, Severity: "warning", Target: "maintenance");
+
+    private async Task LogRemovalBlocked(TorrentInfo torrent, TorrentRemovalIntent intent, string reason, string? cause = null)
+    {
+        if (!_cache.ShouldLogRemovalBlock(torrent.ClientInstanceId, torrent.Hash, $"{intent}:{_config.Revision}: {cause ?? System.Text.RegularExpressions.Regex.Replace(reason, @"\b\d+(?:[.,]\d+)*\b", "#")}",
+                DateTimeOffset.UtcNow, RemovalFailureWarningLifetime)) return;
+        _logger.LogWarning("Torrent removal blocked: [{Name}] | Hash[{Hash}] | Client[{Client}] | Arr[{Arr}] | Category[{Category}] | Intent[{Intent}] | Mode[{Mode}] | Reason[{Reason}]",
+                torrent.Name, torrent.Hash, torrent.ClientInstanceId, ResolveOwner(torrent), torrent.Category, intent,
+                _config.GetTorrentClient(torrent.ClientInstanceId)?.Maintenance.RecycleBin.Enabled == true ? "recycle" : "native client deletion",
+                DiagnosticText.Safe(reason));
+        if (_issues != null) await _issues.ReportAsync(RemovalIssue(torrent, intent) with
+        {
+            Impact = DiagnosticText.Safe($"Torrent={torrent.Name}; hash={torrent.Hash}; client={torrent.ClientInstanceId}; category={torrent.Category}; intent={intent}; mode={(_config.GetTorrentClient(torrent.ClientInstanceId)?.Maintenance.RecycleBin.Enabled == true ? "recycle" : "native deletion")}. {reason}")
+        });
+    }
+
     private async Task<bool> DeleteTorrentFromClientAsync(
         ITorrentClient client, TorrentInfo torrent, bool deleteFiles, CancellationToken ct,
-        Func<TorrentInfo, Task<bool>>? stillApplies = null)
+        Func<TorrentInfo, Task<bool>>? stillApplies = null,
+        TorrentRemovalIntent intent = TorrentRemovalIntent.SeedingLimit, string? triggerEvidence = null)
     {
+        Task Block(string reason, string? cause = null) => LogRemovalBlocked(torrent, intent,
+            triggerEvidence == null ? reason : $"{triggerEvidence} Blocker: {reason}", cause);
         if (MaintenanceRecovery.BlocksAutomaticRemoval(_dbContext, torrent,
-                _config.GetTorrentClient(torrent.ClientInstanceId)?.Maintenance.ErrorRecovery ?? new ErrorRecoveryConfig())) return false;
-        var current = (await client.GetTorrentsAsync(cancellationToken: ct)).FirstOrDefault(t => t.Hash.Equals(torrent.Hash, StringComparison.OrdinalIgnoreCase));
-        if (current == null || !SeedingService.SameRemovalCandidate(torrent, current)) return false;
+                _config.GetTorrentClient(torrent.ClientInstanceId)?.Maintenance.ErrorRecovery ?? new ErrorRecoveryConfig()))
+        {
+            await Block($"State={torrent.State}; configured error states={string.Join(",", _config.GetTorrentClient(torrent.ClientInstanceId)?.Maintenance.ErrorRecovery.States ?? [])}; recovery incidents={string.Join("; ", new[] { "UnregisteredCleanup", "ErrorRecovery" }.Select(kind => { var incident = MaintenanceRecovery.Read(_dbContext, torrent, kind); return $"{kind}: stage={incident.Stage}, attempts={incident.Attempts}, failureSince={incident.FailureSince:O}, lastObserved={incident.LastObserved:O}"; }))}. Resolve the incident before automatic deletion.");
+            return false;
+        }
+
+        var current = (await client.GetTorrentsAsync(cancellationToken: ct))
+            .FirstOrDefault(t => t.Hash.Equals(torrent.Hash, StringComparison.OrdinalIgnoreCase));
+        if (current == null)
+        {
+            await Block("Torrent disappeared before deletion.");
+            return false;
+        }
+        if (!SeedingService.SameRemovalCandidate(torrent, current))
+        {
+            await Block(SeedingService.DescribeRemovalChanges(torrent, current));
+            return false;
+        }
         current.ClientInstanceId = torrent.ClientInstanceId;
-        if (_seedingService == null || !await _seedingService.CanDeleteTorrentAsync(current, "final worker removal", ct)) return false;
-        if (stillApplies != null && !await stillApplies(current)) return false;
-        var deleted = deleteFiles
-            ? _safeDeletion != null && (await _safeDeletion.RemoveTorrentAsync(
-                torrent.ClientInstanceId, torrent.Hash, removeContent: true, ct: ct)).Success
-            : await client.DeleteTorrentsAsync(new List<string> { torrent.Hash }, false, ct);
+        if (_seedingService == null)
+        {
+            await Block("Seeding protection service is unavailable.");
+            return false;
+        }
+        var decision = await _seedingService.EvaluateRemovalAsync(current, intent, ct);
+        var cleared = decision?.Allowed ?? (intent == TorrentRemovalIntent.SeedingLimit
+            ? await _seedingService.CanDeleteTorrentAsync(current, "final worker removal", ct)
+            : await _seedingService.CanDeleteTorrentForIntentAsync(current, intent, "final worker removal", ct));
+        if (!cleared)
+        {
+            await Block(decision?.Reason ?? "Protection service denied removal without supplying a diagnostic decision; inspect the protection implementation.",
+                decision == null ? "protection.unknown" : string.Join(",", decision.Blockers.Select(b => b.Code)));
+            return false;
+        }
+        if (stillApplies != null && !await stillApplies(current))
+        {
+            await Block("Removal trigger no longer applies to refreshed torrent.");
+            return false;
+        }
+        bool deleted;
+        if (deleteFiles)
+        {
+            if (_safeDeletion == null)
+            {
+                await Block("Safe deletion service is unavailable.");
+                return false;
+            }
+            var result = intent == TorrentRemovalIntent.SeedingLimit
+                ? await _safeDeletion.RemoveTorrentAsync(torrent.ClientInstanceId, torrent.Hash, true, ct)
+                : await _safeDeletion.RemoveTorrentForIntentAsync(torrent.ClientInstanceId, torrent.Hash, true, intent, ct);
+            deleted = result.Success;
+            if (!deleted)
+                await Block(result.Error ?? "Safe deletion rejected removal without a reason.");
+        }
+        else
+        {
+            deleted = await client.DeleteTorrentsAsync([torrent.Hash], false, ct);
+            if (!deleted) await Block("Torrent client rejected removal of torrent record.");
+        }
         if (deleted)
         {
             _stalledUploads?.Evict(torrent.QBitInstanceName, torrent.Hash);
-            _logger.LogInformation("Removed torrent {Hash} from {Client} after HnR clearance", torrent.Hash, torrent.ClientInstanceId);
+            _cache.InvalidateTorrent(torrent.ClientInstanceId, torrent.Hash);
+            if (_issues != null) await _issues.ResolveAsync(RemovalIssue(torrent, intent), ct);
+            _logger.LogInformation("Removed torrent {Hash} from {Client} after {Intent} clearance", torrent.Hash, torrent.ClientInstanceId, intent);
         }
         return deleted;
     }
@@ -961,7 +1102,7 @@ public class TorrentProcessor : ITorrentProcessor
         // Too young → stalled_ignore = True (qBitrr line 5984)
         if (timeNow < torrent.AddedOn + ignoreYoungerThan)
         {
-            _logger.LogTrace("Stalled check: torrent too young [{Name}]", torrent.Name);
+            _logger.LogInformation("Stalled check: torrent too young [{Name}]", torrent.Name);
             return true;
         }
 
@@ -998,7 +1139,7 @@ public class TorrentProcessor : ITorrentProcessor
                 : torrent.LastActivity;
             if (stalledDelay > 0 && timeNow >= stallReference + stalledDelaySeconds)
             {
-                _logger.LogTrace("Stalled delay expired for [{Name}]", torrent.Name);
+                _logger.LogInformation("Stalled delay expired for [{Name}]", torrent.Name);
                 return false;
             }
 
@@ -1045,9 +1186,10 @@ public class TorrentProcessor : ITorrentProcessor
             var hnrAllows = _seedingService != null && await _seedingService.HnrAllowsDeleteAsync(torrent, reason, ct);
             if (hnrAllows)
             {
-                _logger.LogWarning("Removal requested for stalled torrent ({Reason}): [{Name}] | Availability[{Avail:P1}] | Hash[{Hash}]",
+                _logger.LogInformation("Removal candidate for stalled torrent ({Reason}): [{Name}] | Availability[{Avail:P1}] | Hash[{Hash}]",
                     reason, torrent.Name, torrent.Availability, torrent.Hash);
-                if (await DeleteTorrentFromClientAsync(client, torrent, deleteFiles: true, ct))
+                if (await DeleteTorrentFromClientAsync(client, torrent, deleteFiles: true, ct,
+                        intent: TorrentRemovalIntent.StalledDownload))
                 {
                     stats.Failed++;
                     if (reSearchStalled && _importService != null
@@ -1058,7 +1200,7 @@ public class TorrentProcessor : ITorrentProcessor
         }
         else
         {
-            _logger.LogTrace("Ignoring stale torrent ({Reason}): [{Name}] (too young or recently active)", reason, torrent.Name);
+            _logger.LogInformation("Ignoring stale torrent ({Reason}): [{Name}] (too young or recently active)", reason, torrent.Name);
         }
     }
 
@@ -1088,7 +1230,7 @@ public class TorrentProcessor : ITorrentProcessor
         }
         else
         {
-            _logger.LogTrace("Skipping high-percentage torrent (still active): [{Name}] | Progress[{Progress:P1}]",
+            _logger.LogInformation("Skipping high-percentage torrent (still active): [{Name}] | Progress[{Progress:P1}]",
                 torrent.Name, torrent.Progress);
         }
     }
@@ -1411,8 +1553,8 @@ public class TorrentProcessor : ITorrentProcessor
 
             if (tagsToCreate.Count > 0)
             {
-                await client.CreateTagsAsync(tagsToCreate, cancellationToken);
-                _logger.LogTrace("Created tags: {Tags}", string.Join(", ", tagsToCreate));
+                var accepted = await client.CreateTagsAsync(tagsToCreate, cancellationToken);
+                _logger.LogInformation("Tag creation requested: {Tags}, accepted={Accepted}", string.Join(", ", tagsToCreate), accepted);
             }
         }
         catch (Exception ex) when (ex is not OperationCanceledException)
@@ -1443,6 +1585,14 @@ public class TorrentProcessor : ITorrentProcessor
         else entry.ArrInstance = arr;
         await _dbContext.SaveChangesWithRetryAsync(_logger, _restartCoordinator, cancellationToken: cancellationToken);
     }
+
+    private static OperationalIssueReport OwnershipIssue(TorrentInfo torrent) => new(
+        "import.ownership", "automation", "Import owner is unresolved", "Import excluded or ownership verified.",
+        "Check category ownership and subcategory settings.", ClientInstance: torrent.ClientInstanceId,
+        SubjectType: "torrent", SubjectId: torrent.Hash, Target: "config");
+
+    private string? ResolveArrOwner(TorrentInfo torrent) => ResolveOwner(torrent) is { } owner
+        && CategoryOwnershipHelper.FindArrSectionForCategory(_config, owner) != null ? owner : null;
 
     private string? ResolveOwner(TorrentInfo torrent) => CategoryOwnershipHelper.ResolveOwningCategory(_config, torrent.Category, torrent.ClientInstanceId);
 
@@ -1494,11 +1644,17 @@ public class TorrentProcessor : ITorrentProcessor
         if (cfg.FolderExclusionRegex.Count == 0 &&
             cfg.FileNameExclusionRegex.Count == 0 &&
             cfg.FileExtensionAllowlist.Count == 0)
+        {
+            _logger.LogInformation("File filtering skipped for [{Name}]: no exclusion or allowlist rules configured", torrent.Name);
             return FileFilterResult.ReadyResult;
+        }
 
         var files = await client.GetTorrentFilesAsync(torrent.Hash, ct);
         if (files.Count == 0)
+        {
+            _logger.LogInformation("File filtering deferred for [{Name}]: client returned no files", torrent.Name);
             return FileFilterResult.PendingResult;
+        }
 
         var regexOptions = cfg.CaseSensitiveMatches ? RegexOptions.None : RegexOptions.IgnoreCase;
 
@@ -1507,7 +1663,11 @@ public class TorrentProcessor : ITorrentProcessor
         var allowedFiles = new List<TorrentFileRecord>();
         foreach (var file in meaningfulFiles)
         {
-            (ShouldExcludeFile(file.Name, cfg, regexOptions) ? excludedFiles : allowedFiles).Add(file);
+            var reason = FileExclusionReason(file.Name, cfg, regexOptions);
+            var excluded = reason != null;
+            _logger.LogTrace("File filter decision for {File} in [{Name}]: excluded={Excluded}; reason={Reason}; priority={Priority}; progress={Progress:P2}; size={Size} bytes; folderRules={FolderRules}; filenameRules={FilenameRules}; extensionRules={ExtensionRules}; caseSensitive={CaseSensitive}",
+                file.Name, torrent.Name, excluded, reason ?? "allowed by configured rules", file.Priority, file.Progress, file.Size, string.Join("; ", cfg.FolderExclusionRegex), string.Join("; ", cfg.FileNameExclusionRegex), string.Join("; ", cfg.FileExtensionAllowlist), cfg.CaseSensitiveMatches);
+            (excluded ? excludedFiles : allowedFiles).Add(file);
         }
         var excludedIds = excludedFiles.Select(f => f.Index).ToArray();
         var prioritiesToApply = excludedFiles
@@ -1518,7 +1678,7 @@ public class TorrentProcessor : ITorrentProcessor
         {
             // Set excluded files to priority 0 (do not download), including when H&R
             // prevents deletion of a torrent whose every meaningful file is excluded.
-            _logger.LogDebug(
+            _logger.LogInformation(
                 "File filter: setting {Excluded}/{Total} files to priority 0 in [{Name}]: {Files}",
                 prioritiesToApply.Length, files.Count, torrent.Name,
                 string.Join(", ", files.Where(f => prioritiesToApply.Contains(f.Index)).Select(f => f.Name)));
@@ -1546,12 +1706,18 @@ public class TorrentProcessor : ITorrentProcessor
             var hnrAllows = _seedingService != null &&
                 await _seedingService.HnrAllowsDeleteAsync(torrent, "all files excluded by import allowlist", ct);
             if (!hnrAllows)
+            {
+                var decision = _seedingService == null ? null : await _seedingService.EvaluateRemovalAsync(torrent, TorrentRemovalIntent.RejectedByAllowlist, ct);
+                await LogRemovalBlocked(torrent, TorrentRemovalIntent.RejectedByAllowlist, decision?.Reason ?? "HnR inspection could not authorize removal.", "allowlist.hnr");
                 return FileFilterResult.PendingResult;
+            }
 
-            _logger.LogWarning(
-                "All {Total} files excluded in [{Name}] ({Hash}) — removal requested",
+            _logger.LogInformation(
+                "All {Total} files excluded in [{Name}] ({Hash}) — removal candidate",
                 meaningfulFiles.Count, torrent.Name, torrent.Hash);
-            return await DeleteTorrentFromClientAsync(client, torrent, deleteFiles: true, ct)
+            return await DeleteTorrentFromClientAsync(client, torrent, deleteFiles: true, ct,
+                    intent: TorrentRemovalIntent.RejectedByAllowlist,
+                    triggerEvidence: $"All {meaningfulFiles.Count} meaningful files were excluded. Files={string.Join("; ", excludedFiles.Select(f => f.Name))}; effective extension allowlist={string.Join("; ", cfg.FileExtensionAllowlist)}; filename exclusions={string.Join("; ", cfg.FileNameExclusionRegex)}; folder exclusions={string.Join("; ", cfg.FolderExclusionRegex)}.")
                 ? FileFilterResult.DeletedResult : FileFilterResult.PendingResult;
         }
 
@@ -1574,6 +1740,14 @@ public class TorrentProcessor : ITorrentProcessor
                 await _seedingService.HnrAllowsDeleteAsync(torrent, "excluded file cleanup by import allowlist", ct);
             if (!hnrAllows)
             {
+                // H&R must prevent deleting owned files, but does not need to block
+                // importing valid media when only harmless metadata sidecars remain.
+                if (CanImportWithPreservedSidecars(torrent, remaining))
+                {
+                    _logger.LogInformation("Import permitted for {Hash}; preserving {Count} excluded .nfo/.txt sidecar files due to H&R obligations",
+                        torrent.Hash, remaining.Count);
+                    return FileFilterResult.ReadyResult;
+                }
                 WarnAllowlistBlocked(torrent, "H&R obligations prevent excluded file cleanup", remaining);
                 return FileFilterResult.PendingResult;
             }
@@ -1587,8 +1761,40 @@ public class TorrentProcessor : ITorrentProcessor
         if (remaining.Count == 0)
             return FileFilterResult.ReadyResult;
 
+        if (CanImportWithPreservedSidecars(torrent, remaining))
+        {
+            _logger.LogInformation("Import permitted for {Hash}; preserving {Count} excluded .nfo/.txt metadata sidecars",
+                torrent.Hash, remaining.Count);
+            return FileFilterResult.ReadyResult;
+        }
+
         WarnAllowlistBlocked(torrent, $"{remaining.Count} disallowed file(s) remain", remaining);
         return FileFilterResult.PendingResult;
+    }
+
+    private bool CanImportWithPreservedSidecars(TorrentInfo torrent, IReadOnlyCollection<TorrentFileRecord> remaining)
+    {
+        if (remaining.Count == 0 || MaintenanceRecovery.BlocksAutomaticRemoval(_dbContext, torrent,
+            _config.GetTorrentClient(torrent.ClientInstanceId)?.Maintenance.ErrorRecovery ?? new ErrorRecoveryConfig()))
+            return false;
+
+        foreach (var file in remaining)
+        {
+            var extension = Path.GetExtension(file.Name);
+            if (!extension.Equals(".nfo", StringComparison.OrdinalIgnoreCase)
+                && !extension.Equals(".txt", StringComparison.OrdinalIgnoreCase))
+                return false;
+            try
+            {
+                // Do not relax the import barrier for symlink, traversal, or invalid paths.
+                _ = ResolveTorrentOwnedPath(torrent, file.Name);
+            }
+            catch
+            {
+                return false;
+            }
+        }
+        return true;
     }
 
     private void WarnAllowlistBlocked(TorrentInfo torrent, string reason, IReadOnlyList<TorrentFileRecord> excludedFiles)
@@ -1641,8 +1847,8 @@ public class TorrentProcessor : ITorrentProcessor
         try
         {
             var path = ResolveTorrentOwnedPath(torrent, relativePath);
-            if (File.Exists(path) && _safeDeletion != null)
-                await _safeDeletion.DeleteOwnedFileAsync(torrent.ClientInstanceId, torrent.Hash, path, ct);
+            if (File.Exists(path) && (_safeDeletion == null || !await _safeDeletion.DeleteOwnedFileAsync(torrent.ClientInstanceId, torrent.Hash, path, ct)))
+                _logger.LogWarning("Excluded-file cleanup was not authorized for {Hash}: {Path}; import remains pending", torrent.Hash, path);
         }
         catch (Exception ex) when (ex is not OperationCanceledException)
         {
@@ -1746,14 +1952,16 @@ public class TorrentProcessor : ITorrentProcessor
     /// <summary>
     /// Returns true if a file should be excluded based on folder/filename regex and extension allowlist.
     /// </summary>
-    private static bool ShouldExcludeFile(string filePath, TorrentConfig cfg, RegexOptions regexOptions)
+    private static string? FileExclusionReason(string filePath, TorrentConfig cfg, RegexOptions regexOptions)
     {
         // Normalize to forward slashes
         filePath = filePath.Replace('\\', '/');
 
         var parts = filePath.Split('/', StringSplitOptions.RemoveEmptyEntries);
+        if (parts.Length == 0) return "Path has no filename.";
         var fileName = parts.Last();
-        var folderParts = parts.Take(parts.Length - 1);
+        // The first component is the torrent's title, not an internal exclusion folder.
+        var folderParts = parts.Skip(1).Take(Math.Max(0, parts.Length - 2));
 
         // Check folder exclusion regex against each path component
         foreach (var folder in folderParts)
@@ -1763,7 +1971,7 @@ public class TorrentProcessor : ITorrentProcessor
                 try
                 {
                     if (Regex.IsMatch(folder, pattern, regexOptions))
-                        return true;
+                        return $"Folder '{folder}' matched exclusion regex '{pattern}'.";
                 }
                 catch (ArgumentException) { /* skip bad regex patterns */ }
             }
@@ -1775,7 +1983,7 @@ public class TorrentProcessor : ITorrentProcessor
             try
             {
                 if (Regex.IsMatch(fileName, pattern, regexOptions))
-                    return true;
+                    return $"Filename matched exclusion regex '{pattern}'.";
             }
             catch (ArgumentException) { /* skip bad regex patterns */ }
         }
@@ -1783,13 +1991,11 @@ public class TorrentProcessor : ITorrentProcessor
         // Check file extension allowlist — if allowlist is non-empty, extension must be in it
         if (cfg.FileExtensionAllowlist.Count > 0)
         {
-            var ext = Path.GetExtension(fileName);
-            if (!cfg.FileExtensionAllowlist.Any(allowed =>
-                    string.Equals(allowed, ext, StringComparison.OrdinalIgnoreCase)))
-                return true;
+            if (!MediaValidationService.MatchesExtensionAllowlist(fileName, cfg.FileExtensionAllowlist))
+                return $"Extension '{Path.GetExtension(fileName)}' is not allowed.";
         }
 
-        return false;
+        return null;
     }
 
     /// <summary>

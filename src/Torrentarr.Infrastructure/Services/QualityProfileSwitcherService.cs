@@ -70,7 +70,7 @@ public class QualityProfileSwitcherService(ILogger<QualityProfileSwitcherService
         catch (Exception ex)
         {
             logger.LogWarning(ex, "Profile {Operation} failed for {Instance}; recovery evidence retained", subject, instance);
-            if (issues != null) await issues.ReportAsync(Issue(instance, subject, failureSubject), ct);
+            if (issues != null) await issues.ReportAsync(Issue(instance, subject, failureSubject).WithEvidence(DiagnosticText.Error(ex)), ct);
             return false;
         }
     }
@@ -91,6 +91,7 @@ public class QualityProfileSwitcherService(ILogger<QualityProfileSwitcherService
         {
             var entry = db.Entry(row);
             var id = entry.Property<int>("ArrId").CurrentValue;
+            using var logScope = logger.BeginScope(new Dictionary<string, object> { ["ProcessInstance"] = instance, ["MediaId"] = id, ["Operation"] = ids == null ? "ProfileRestore" : "ProfilePrepare" });
             var original = entry.Property<int?>("OriginalProfileId");
             var temporary = entry.Property<int?>("CurrentProfileId");
             var switchedAt = entry.Property<DateTime?>("LastProfileSwitchTime");
@@ -98,6 +99,8 @@ public class QualityProfileSwitcherService(ILogger<QualityProfileSwitcherService
             try
             {
                 var observed = await read(id) ?? throw new IOException("Current Arr profile is unknown.");
+                logger.LogTrace("Profile decision: observed={Observed}; original={Original}; temporary={Temporary}; lastSwitch={LastSwitch:O}; restoreBefore={Cutoff:O}; retryLimit={RetryLimit}",
+                    observed, original.CurrentValue, temporary.CurrentValue, switchedAt.CurrentValue, cutoff, config.Search.ProfileSwitchRetryAttempts);
                 if (original.CurrentValue.HasValue)
                 {
                     if (observed != original.CurrentValue && observed != temporary.CurrentValue)
@@ -123,10 +126,18 @@ public class QualityProfileSwitcherService(ILogger<QualityProfileSwitcherService
                     available ??= await profiles(id);
                     var currentName = available.FirstOrDefault(p => p.Id == observed)?.Name
                         ?? throw new IOException("Current quality profile is absent from Arr profiles.");
-                    if (!config.Search.QualityProfileMappings.TryGetValue(currentName, out var targetName)) continue;
+                    if (!config.Search.QualityProfileMappings.TryGetValue(currentName, out var targetName))
+                    {
+                        logger.LogInformation("Temporary profile skipped for {Instance}/{Id}: no mapping for {Profile}", instance, id, currentName);
+                        continue;
+                    }
                     var target = available.FirstOrDefault(p => p.Name.Equals(targetName, StringComparison.OrdinalIgnoreCase))
                         ?? throw new IOException("Configured temporary quality profile is absent.");
-                    if (target.Id == observed) continue;
+                    if (target.Id == observed)
+                    {
+                        logger.LogInformation("Temporary profile unchanged for {Instance}/{Id}: already using {Profile}", instance, id, currentName);
+                        continue;
+                    }
                     original.CurrentValue = observed;
                     temporary.CurrentValue = target.Id;
                     switchedAt.CurrentValue = DateTime.UtcNow;
@@ -134,6 +145,7 @@ public class QualityProfileSwitcherService(ILogger<QualityProfileSwitcherService
                     await db.SaveChangesWithRetryAsync(logger, restartCoordinator, cancellationToken: ct);
                     if (!await RetryAsync(() => update(id, target.Id, observed), config, ct)) throw new IOException("Arr rejected temporary profile preparation.");
                 }
+                logger.LogInformation("Profile operation completed for {Instance}/{Id}: operation={Operation}, observedProfile={Profile}", instance, id, ids == null ? "restore" : "prepare", observed);
                 if (issues != null) await issues.ResolveAsync(issue, ct);
             }
             catch (OperationCanceledException) when (ct.IsCancellationRequested) { throw; }
@@ -143,7 +155,7 @@ public class QualityProfileSwitcherService(ILogger<QualityProfileSwitcherService
                 // Discard uncommitted local changes, including a failed restoration save.
                 entry.State = EntityState.Detached;
                 logger.LogWarning(ex, "Profile operation failed for {Instance}/{Id}; search skipped and evidence preserved", instance, id);
-                if (issues != null) await issues.ReportAsync(issue, ct);
+                if (issues != null) await issues.ReportAsync(issue.WithEvidence($"Subject={id}; operation={issue.Code}; {DiagnosticText.Error(ex)}"), ct);
             }
         }
         if (ok && issues != null) await issues.ResolveAsync(Issue(instance, ids == null ? "restore" : "prepare", ids == null ? "" : string.Join(",", ids.Order())), ct);
@@ -160,10 +172,20 @@ public class QualityProfileSwitcherService(ILogger<QualityProfileSwitcherService
         var attempts = Math.Max(1, config.Search.ProfileSwitchRetryAttempts);
         for (var i = 0; i < attempts; i++)
         {
-            try { if (await action()) return true; }
+            logger.LogDebug("Profile request attempt {Attempt}/{MaximumAttempts}", i + 1, attempts);
+            try
+            {
+                var accepted = await action();
+                logger.LogDebug("Profile request attempt {Attempt}/{MaximumAttempts}: accepted={Accepted}", i + 1, attempts, accepted);
+                if (accepted) return true;
+            }
             catch (OperationCanceledException) when (ct.IsCancellationRequested) { throw; }
             catch (Exception ex) { logger.LogWarning(ex, "Profile request failed (attempt {Attempt})", i + 1); }
-            if (i + 1 < attempts) await Task.Delay(TimeSpan.FromSeconds(1), ct);
+            if (i + 1 < attempts)
+            {
+                logger.LogDebug("Profile request retry scheduled: delay=1000ms; nextAttempt={Attempt}/{MaximumAttempts}", i + 2, attempts);
+                await Task.Delay(TimeSpan.FromSeconds(1), ct);
+            }
         }
         return false;
     }

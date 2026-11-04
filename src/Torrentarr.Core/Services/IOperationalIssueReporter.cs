@@ -12,3 +12,9 @@ public interface IOperationalIssueReporter
     Task ResolveAsync(OperationalIssueReport report, CancellationToken ct = default);
     IReadOnlyList<PendingOperationalIssue> Pending { get; }
 }
+
+public static class OperationalIssueEvidence
+{
+    public static OperationalIssueReport WithEvidence(this OperationalIssueReport report, string evidence)
+        => report with { Impact = $"{report.Impact} Evidence: {DiagnosticText.Safe(evidence)}" };
+}

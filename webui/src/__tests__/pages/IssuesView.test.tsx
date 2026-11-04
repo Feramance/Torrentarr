@@ -22,7 +22,15 @@ const group = {
   affected: 2,
   occurrences: 3,
   examples: [
-    { id: 1, subjectType: "profile", subjectId: "42", resolvedAt: null },
+    {
+      id: 1,
+      subjectType: "profile",
+      subjectId: "42",
+      resolvedAt: null,
+      title: "Profile 42 failed",
+      impact: "Observed profile 7; expected profile 9",
+      remediation: "Restore profile 9 before searching",
+    },
   ],
 };
 const server = setupServer(
@@ -60,12 +68,74 @@ describe("Issues view", () => {
     expect(screen.getByText(/2 affected/)).toBeInTheDocument();
     await user.click(screen.getByText("Search skipped"));
     expect(screen.getByText("Check Arr profile mappings")).toBeVisible();
+    expect(
+      screen.getByText(/Observed profile 7; expected profile 9/),
+    ).toBeVisible();
+    expect(
+      screen.getByText(/Restore profile 9 before searching/),
+    ).toBeVisible();
     expect(screen.getByRole("button", { name: "Open config" })).toBeVisible();
     await user.click(screen.getByRole("tab", { name: "System & services" }));
     await screen.findByText("Worker timed out");
     expect(
       screen.getByRole("tab", { name: "System & services" }),
     ).toHaveAttribute("aria-selected", "true");
+  });
+  it("shows torrent names and categories with hash fallback for unavailable metadata", async () => {
+    server.use(
+      http.get("/web/issues", () =>
+        HttpResponse.json({
+          available: true,
+          total: 1,
+          page: 0,
+          pageSize: 50,
+          pending: [],
+          items: [
+            {
+              ...group,
+              title: "Import owner is unresolved",
+              examples: [
+                {
+                  ...group.examples[0],
+                  subjectType: "torrent",
+                  subjectId: "deadbeef",
+                  subjectName: "Anime S02E04",
+                  subjectCategory: "sonarr-anime",
+                },
+                {
+                  ...group.examples[0],
+                  id: 2,
+                  subjectType: "torrent",
+                  subjectId: "missinghash",
+                },
+                {
+                  ...group.examples[0],
+                  id: 3,
+                  subjectType: "torrent",
+                  subjectId: "uncategorizedhash",
+                  subjectName: "Movie",
+                  subjectCategory: "",
+                },
+              ],
+            },
+          ],
+        }),
+      ),
+    );
+    render(<IssuesView />);
+    await userEvent.click(
+      await screen.findByText("Import owner is unresolved"),
+    );
+    expect(
+      screen.getByText(/Anime S02E04 · Category: sonarr-anime/),
+    ).toBeVisible();
+    expect(
+      screen.getByText(/missinghash · Category: unavailable/),
+    ).toBeVisible();
+    expect(screen.getByText(/Movie · Category: Uncategorized/)).toBeVisible();
+    expect(
+      screen.queryByText(/deadbeef|uncategorizedhash/),
+    ).not.toBeInTheDocument();
   });
   it("does not claim healthy when history is unavailable", async () => {
     server.use(

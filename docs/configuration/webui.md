@@ -290,6 +290,14 @@ Default color theme for the WebUI.
 
 ---
 
+## CorsAllowedOrigins
+
+```toml
+CorsAllowedOrigins = ["https://torrentarr.example.com", "http://localhost:5173"]
+```
+
+Optional array of exact HTTP(S) browser origins, without paths, trailing slashes, wildcards, or credentials. An omitted or empty array allows any origin without credentials. A non-empty array allows credentials only for listed origins. Edit this under **Web Settings → API access**; changes apply live in Host and standalone WebUI. Existing authentication requirements still apply.
+
 ## Complete Configuration Examples
 
 ### Example 1: Default (Public Access)

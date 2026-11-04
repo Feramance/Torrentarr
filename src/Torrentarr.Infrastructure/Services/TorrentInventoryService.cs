@@ -87,18 +87,27 @@ public sealed class TorrentInventoryService(ITorrentClientRegistry registry, Tor
                                 var invalidName = fileName.StartsWith('/') || fileName.Length > 1 && fileName[1] == ':';
                                 var mapping = local && !invalidName ? paths.Resolve(clientPath, cfg.Maintenance.PathMappings) : null;
                                 var localPath = mapping?.LocalPath;
+                                var expectedLocalPath = localPath;
                                 if (local)
                                 {
                                     var code = invalidName ? "unsafe-path" : mapping?.Code;
                                     code ??= localPath != null ? paths.ValidateLocalPath(localPath, mapping!.LocalRoot!, true) : "unmatched-prefix";
+                                    if (code == "missing-file" && cfg.Type.Equals("qbittorrent", StringComparison.OrdinalIgnoreCase)
+                                        && paths.ValidateLocalPath(localPath + ".!qB", mapping!.LocalRoot!, true) == null)
+                                    {
+                                        localPath += ".!qB";
+                                        code = null;
+                                    }
                                     if (code != null)
                                     {
                                         item.LocalFilesComplete = false;
-                                        Issue(code, mapping?.Error ?? LocalError(code), torrent, clientPath, localPath ?? mapping?.LocalRoot, true, code != "missing-file");
+                                        var expectedMissing = code == "missing-file" && (file.Priority == 0 || file.Progress < 1 && !file.IsSeed);
+                                        if (!expectedMissing)
+                                            Issue(code, mapping?.Error ?? LocalError(code), torrent, clientPath, localPath ?? mapping?.LocalRoot, true, code != "missing-file");
                                         if (code != "missing-file") localPath = null;
                                     }
                                 }
-                                item.Files.Add(new() { File = file, ClientPath = clientPath, LocalPath = localPath });
+                                item.Files.Add(new() { File = file, ClientPath = clientPath, LocalPath = localPath, ExpectedLocalPath = localPath != null ? expectedLocalPath : null });
                             }
                         }
                         catch (Exception ex) when (ex is not OperationCanceledException)
@@ -120,19 +129,34 @@ public sealed class TorrentInventoryService(ITorrentClientRegistry registry, Tor
             {
                 if (blocksOwnership) result.OwnershipComplete = false;
                 MaintenanceDiagnostic.Add(result.Diagnostics, code, id, message,
-                    code is "client-unavailable" or "client-disabled" or "torrent-list-failed" or "tracker-list-failed" or "file-list-failed"
-                        ? "Check the client's connection and permissions, then preview again."
-                        : "Check Maintenance.PathMappings and the local filesystem mount in Config, then preview again.",
+                    code == "missing-file"
+                        ? "Check this file's download progress and selection in the torrent client. If it should already exist, verify its mapped local path."
+                        : code is "client-unavailable" or "client-disabled" or "torrent-list-failed" or "tracker-list-failed" or "file-list-failed"
+                            ? "Check the client's connection and permissions, then preview again."
+                            : "Check Maintenance.PathMappings and the local filesystem mount in Config, then preview again.",
                     torrent != null || clientPath != null || localPath != null ? new(torrent?.Hash, torrent?.Name, clientPath, localPath) : null, file);
             }
         }
         foreach (var item in result.Torrents)
-            foreach (var path in item.Files.Select(f => f.LocalPath).OfType<string>().Distinct())
+        {
+            var qbit = configured[item.Torrent.ClientInstanceId].Type.Equals("qbittorrent", StringComparison.OrdinalIgnoreCase);
+            var references = item.Files.SelectMany(f => new[] { f.LocalPath, f.ExpectedLocalPath,
+                qbit && f.ExpectedLocalPath != null ? f.ExpectedLocalPath + ".!qB" : null });
+            if (qbit && item.Torrent.Hash.All(char.IsAsciiHexDigit) && item.Torrent.Hash.Length > 0)
+            {
+                var hash = item.Torrent.Hash.ToLowerInvariant();
+                var hashes = hash.Length > 40 ? new[] { hash, hash[..40] } : new[] { hash };
+                references = references.Concat(hashes.Select(h => paths.MapToLocal(
+                    item.Torrent.SavePath.TrimEnd('/', '\\') + "/." + h + ".parts",
+                    configured[item.Torrent.ClientInstanceId].Maintenance.PathMappings)));
+            }
+            foreach (var path in references.OfType<string>().Distinct())
             {
                 var full = Path.GetFullPath(path);
                 if (!result.LocalPathReferences.TryGetValue(full, out var owners)) result.LocalPathReferences[full] = owners = [];
                 owners.Add(item);
             }
+        }
         result.Warnings.AddRange(result.Diagnostics.Select(d => $"[{d.ClientInstanceId}] {d.Message} ({d.AffectedFiles} files, {d.AffectedTorrents} torrents)"));
         return result;
     }

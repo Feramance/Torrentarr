@@ -1,7 +1,10 @@
 using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Http;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.DependencyInjection;
 using Torrentarr.Core.Services;
+using Torrentarr.Core.Configuration;
+using Torrentarr.Core.Interfaces;
 using Torrentarr.Infrastructure.Database;
 using Torrentarr.Infrastructure.Database.Models;
 using Torrentarr.Infrastructure.Services;
@@ -12,6 +15,59 @@ public static class OperationalIssueEndpoints
 {
     private static IReadOnlyList<PendingOperationalIssue> Pending(IOperationalIssueReporter reporter, WorkerProcessSupervisor? workers)
         => reporter.Pending.Concat(workers?.GetPendingIssues() ?? []).GroupBy(p => new { p.Report.Code, p.Report.ArrInstance, p.Report.ClientInstance, p.Report.SubjectType, p.Report.SubjectId }).Select(g => g.MaxBy(p => p.ObservedAt)!).ToList();
+
+    private static async Task DescribeSubjectsAsync(List<OperationalIssue> items, IServiceProvider services, CancellationToken ct)
+    {
+        var cache = services.GetService(typeof(ITorrentCacheService)) as ITorrentCacheService;
+        var registry = services.GetService(typeof(ITorrentClientRegistry)) as ITorrentClientRegistry;
+        var db = services.GetRequiredService<TorrentarrDbContext>();
+        var config = services.GetRequiredService<TorrentarrConfig>();
+        var clients = new Dictionary<long, string>();
+        foreach (var item in items.Where(i => i.SubjectType == "torrent"))
+        {
+            var client = item.ClientInstance;
+            if (client.Length == 0 && item.ArrInstance.Length > 0)
+            {
+                var hash = item.SubjectId.ToUpperInvariant();
+                var arr = item.ArrInstance.ToUpperInvariant();
+                var matches = await db.TorrentLibrary.AsNoTracking()
+                    .Where(t => t.Hash.ToUpper() == hash && t.ArrInstance.ToUpper() == arr)
+                    .Select(t => t.QbitInstance).Distinct().ToListAsync(ct);
+                if (matches.Count == 1) client = matches[0];
+            }
+            clients[item.Id] = client;
+        }
+        foreach (var group in items.Where(i => i.SubjectType == "torrent").GroupBy(i => clients[i.Id]))
+        {
+            foreach (var item in group)
+            {
+                item.SubjectName = cache?.GetName(group.Key, item.SubjectId) is { } name ? DiagnosticText.Safe(name) : null;
+                item.SubjectCategory = cache?.GetCategory(group.Key, item.SubjectId) is { } category ? DiagnosticText.Safe(category) : null;
+            }
+            if (group.Key.Length > 0 && group.Any(i => i.SubjectName == null || i.SubjectCategory == null) && registry?.GetClient(group.Key) is { } client)
+            {
+                try
+                {
+                    using var timeout = CancellationTokenSource.CreateLinkedTokenSource(ct);
+                    timeout.CancelAfter(TimeSpan.FromSeconds(3));
+                    var torrents = await client.GetTorrentsAsync(cancellationToken: timeout.Token);
+                    foreach (var item in group)
+                    {
+                        var torrent = torrents.Find(t => string.Equals(t.Hash, item.SubjectId, StringComparison.OrdinalIgnoreCase));
+                        if (torrent == null) continue;
+                        item.SubjectName = DiagnosticText.Safe(torrent.Name);
+                        item.SubjectCategory = DiagnosticText.Safe(torrent.Category);
+                        cache?.SetName(group.Key, item.SubjectId, item.SubjectName);
+                        cache?.SetCategory(group.Key, item.SubjectId, item.SubjectCategory);
+                    }
+                }
+                catch (Exception) when (!ct.IsCancellationRequested) { /* Issue history remains available when client metadata is unavailable. */ }
+            }
+        }
+        foreach (var item in items.Where(i => i.SubjectType == "torrent" && i.SubjectCategory == null))
+            if (config.ArrInstances.TryGetValue(item.ArrInstance, out var arr))
+                item.SubjectCategory = DiagnosticText.Safe(arr.Category);
+    }
 
     public static void MapOperationalIssueEndpoints(this WebApplication app, string prefix)
     {
@@ -67,10 +123,12 @@ public static class OperationalIssueEndpoints
                 var groups = await grouped.OrderBy(g => g.severity == "error" ? 0 : 1).ThenByDescending(g => g.lastObserved)
                     .Skip((int)Math.Min((long)currentPage * pageSize, int.MaxValue)).Take(pageSize).ToListAsync(ct);
                 var items = new List<object>();
+                var subjects = new List<OperationalIssue>();
                 foreach (var group in groups)
                 {
                     var examples = await query.Where(i => i.Code == group.Code && i.ArrInstance == group.ArrInstance && i.ClientInstance == group.ClientInstance)
                         .OrderByDescending(i => i.LastObserved).Take(5).ToListAsync(ct);
+                    subjects.AddRange(examples);
                     items.Add(new
                     {
                         group.id,
@@ -80,8 +138,8 @@ public static class OperationalIssueEndpoints
                         group.ClientInstance,
                         group.severity,
                         group.title,
-                        group.impact,
-                        group.remediation,
+                        impact = group.affected == 1 ? group.impact : $"{group.affected} affected subjects. Expand each subject below for its own failure evidence.",
+                        remediation = group.affected == 1 ? group.remediation : "Follow the specific remediation shown for each affected subject.",
                         group.target,
                         group.firstObserved,
                         group.lastObserved,
@@ -91,11 +149,12 @@ public static class OperationalIssueEndpoints
                         examples
                     });
                 }
+                await DescribeSubjectsAsync(subjects, services, ct);
                 return Results.Ok(new { available = true, items, total, page = currentPage, pageSize, pending });
             }
             catch (Exception) when (!ct.IsCancellationRequested) { return Results.Ok(new { available = false, items = Array.Empty<object>(), total = (int?)null, page = currentPage, pageSize, pending }); }
         });
-        app.MapGet(prefix + "/issues/{id:long}", async (long id, TorrentarrDbContext db, int? page, int? page_size, CancellationToken ct) =>
+        app.MapGet(prefix + "/issues/{id:long}", async (long id, TorrentarrDbContext db, IServiceProvider services, int? page, int? page_size, CancellationToken ct) =>
         {
             try
             {
@@ -103,7 +162,9 @@ public static class OperationalIssueEndpoints
                 if (issue == null) return Results.NotFound();
                 var query = db.OperationalIssues.AsNoTracking().Where(i => i.Code == issue.Code && i.ArrInstance == issue.ArrInstance && i.ClientInstance == issue.ClientInstance);
                 var current = Math.Max(0, page ?? 0); var size = Math.Clamp(page_size ?? 50, 1, 100);
-                return Results.Ok(new { available = true, total = await query.CountAsync(ct), items = await query.OrderBy(i => i.ResolvedAt != null).ThenByDescending(i => i.LastObserved).Skip((int)Math.Min((long)current * size, int.MaxValue)).Take(size).ToListAsync(ct), page = current, pageSize = size });
+                var items = await query.OrderBy(i => i.ResolvedAt != null).ThenByDescending(i => i.LastObserved).Skip((int)Math.Min((long)current * size, int.MaxValue)).Take(size).ToListAsync(ct);
+                await DescribeSubjectsAsync(items, services, ct);
+                return Results.Ok(new { available = true, total = await query.CountAsync(ct), items, page = current, pageSize = size });
             }
             catch (Exception) when (!ct.IsCancellationRequested) { return Results.Json(new { available = false, error = "Issue history unavailable." }, statusCode: 503); }
         });

@@ -7,7 +7,8 @@ OPERATIONS = ['OrphanScan', 'HardlinkAudit', 'UnregisteredCleanup', 'CategoryRec
               'AutomaticManagement', 'PrivateTagging', 'TrackerErrorTagging', 'RepairPaused',
               'RecycleRetention', 'ErrorRecovery']
 KINDS = ['QuarantineFile', 'AddTag', 'RemoveTag', 'SetCategory', 'SetAutomaticManagement',
-         'Recheck', 'Resume', 'RecycleContent', 'DeleteExpiredRecycleItem', 'RegisterRecycleEntry']
+         'Recheck', 'Resume', 'RecycleContent', 'DeleteExpiredRecycleItem', 'RegisterRecycleEntry', 'DeleteContent',
+         'DeleteOrphanFile', 'DeleteEmptyOrphanDirectory']
 EXTENSION_PATHS = {f'{prefix}/maintenance/{name}' for prefix in ('/web', '/api')
                    for name in ('status', 'history', 'preview', 'apply', 'arm', 'disarm', 'run', 'cancel')} | {f'{prefix}/torrent-automation/status' for prefix in ('/web', '/api')}
 

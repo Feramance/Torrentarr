@@ -197,7 +197,29 @@ describe("ProcessesView – qBit category chips", () => {
 
     server.use(
       http.get("/web/processes", () =>
-        HttpResponse.json({ processes: [qbitProcess] }),
+        HttpResponse.json({
+          processes: [
+            qbitProcess,
+            {
+              name: "qbit-autobrr",
+              category: "autobrr",
+              kind: "category",
+              alive: true,
+            },
+            {
+              name: "qbit-seed",
+              category: "seed",
+              kind: "category",
+              alive: true,
+            },
+            {
+              name: "Recheck",
+              category: "recheck",
+              kind: "category",
+              alive: true,
+            },
+          ],
+        }),
       ),
       http.get("/web/status", () =>
         HttpResponse.json({
@@ -213,7 +235,10 @@ describe("ProcessesView – qBit category chips", () => {
         }),
       ),
       http.get("/web/qbit/categories", () =>
-        HttpResponse.json({ categories: [qbitCategory], ready: true }),
+        HttpResponse.json({
+          categories: [qbitCategory, { ...qbitCategory, category: "seed" }],
+          ready: true,
+        }),
       ),
     );
 
@@ -221,6 +246,11 @@ describe("ProcessesView – qBit category chips", () => {
 
     await screen.findByText("Torrent Clients");
     await screen.findByText("autobrr");
+    expect(screen.getAllByText("autobrr")).toHaveLength(1);
+    expect(screen.getByText("seed")).toBeInTheDocument();
+    expect(screen.queryByText("qbit-autobrr")).not.toBeInTheDocument();
+    expect(screen.queryByText("qbit-seed")).not.toBeInTheDocument();
+    expect(screen.getByText("Recheck")).toBeInTheDocument();
     expect(
       screen.getByRole("button", { name: /autobrr/ }).querySelector(".badge"),
     ).toBeNull();

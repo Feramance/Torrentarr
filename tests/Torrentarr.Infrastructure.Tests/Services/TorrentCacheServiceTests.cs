@@ -170,6 +170,22 @@ public class TorrentCacheServiceTests
     }
 
     [Fact]
+    public void RemovalWarnings_ThrottleSameReasonButReportChangedReasons()
+    {
+        var svc = CreateService();
+        var now = DateTimeOffset.UtcNow;
+        var window = TimeSpan.FromMinutes(5);
+
+        svc.ShouldLogRemovalBlock("client-a", "hash", "HnR clearance", now, window).Should().BeTrue();
+        svc.ShouldLogRemovalBlock("client-a", "hash", "HnR clearance", now.AddSeconds(5), window).Should().BeFalse();
+        svc.ShouldLogRemovalBlock("client-a", "hash", "Missing path mapping", now.AddSeconds(6), window).Should().BeTrue();
+        svc.ShouldLogRemovalBlock("client-b", "hash", "Missing path mapping", now.AddSeconds(7), window).Should().BeTrue();
+        svc.ShouldLogRemovalBlock("client-a", "hash", "Missing path mapping", now.AddMinutes(6), window).Should().BeTrue();
+        svc.InvalidateTorrent("client-a", "hash");
+        svc.ShouldLogRemovalBlock("client-a", "hash", "Missing path mapping", now.AddMinutes(6), window).Should().BeTrue();
+    }
+
+    [Fact]
     public void GetStats_ReturnsCorrectCounts()
     {
         var svc = CreateService();

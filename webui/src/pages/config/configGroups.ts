@@ -51,7 +51,10 @@ export function clientGroups(fields: FieldDefinition[]): ConfigFieldGroup[] {
   return groupFields(fields, [
     ["General", ["__name", "Type", "Disabled"]],
     ["Connection", ["Host", "Port", "UserName", "Password", "SkipTLSVerify"]],
-    ["Torrent scope", ["ManagedCategories", "MatchSubcategories"]],
+    [
+      "Torrent scope",
+      ["TorrentScanIntervalSeconds", "ManagedCategories", "MatchSubcategories"],
+    ],
     ["Download location", ["DownloadPath"]],
     ["Free-space monitors", ["FreeSpace"]],
     ["Seeding and Hit & Run", ["CategorySeeding.*"]],
@@ -159,7 +162,14 @@ export function simpleGroups(
         "Proxy and exposure",
         ["WebUI.BehindHttpsProxy", "WebUI.AllowInsecureExposure"],
       ],
-      ["API access", ["WebUI.Token", "WebUI.AllowInsecureTokenQuery"]],
+      [
+        "API access",
+        [
+          "WebUI.Token",
+          "WebUI.AllowInsecureTokenQuery",
+          "WebUI.CorsAllowedOrigins",
+        ],
+      ],
       [
         "Appearance and live display",
         ["WebUI.Theme", "WebUI.ViewDensity", "WebUI.LiveArr"],

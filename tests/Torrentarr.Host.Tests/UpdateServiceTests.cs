@@ -92,7 +92,8 @@ public class UpdateServiceTests
         var dir = Path.Combine(Path.GetTempPath(), $"torrentarr-update-test-{Guid.NewGuid():N}");
         var extracted = Path.Combine(dir, "extracted");
         Directory.CreateDirectory(extracted);
-        var worker = Path.Combine(dir, "torrentarr-workers-linux-x64");
+        // Multicall coreutils binaries select the command by executable name.
+        var worker = Path.Combine(dir, "sleep");
         File.Copy("/bin/sleep", worker);
         File.SetUnixFileMode(worker, UnixFileMode.UserRead | UnixFileMode.UserWrite | UnixFileMode.UserExecute);
         using var process = System.Diagnostics.Process.Start(worker, "60")!;
@@ -101,8 +102,8 @@ public class UpdateServiceTests
             var host = Path.Combine(dir, "torrentarr");
             await File.WriteAllTextAsync(host, "old host");
             await File.WriteAllTextAsync(Path.Combine(extracted, "torrentarr-linux-x64"), "new host");
-            await File.WriteAllTextAsync(Path.Combine(extracted, Path.GetFileName(worker)), "new worker");
-            await UpdateService.ApplyUnixUpdateAsync(host, dir, extracted);
+            await File.WriteAllTextAsync(Path.Combine(extracted, "torrentarr-workers-linux-x64"), "new worker");
+            await UpdateService.ApplyUnixUpdateAsync(host, dir, extracted, configuredWorker: worker);
             (await File.ReadAllTextAsync(worker)).Should().Be("new worker");
             (await File.ReadAllTextAsync(host)).Should().Be("new host");
             process.HasExited.Should().BeFalse();

@@ -8,6 +8,10 @@
   </PropertyGroup>
 
   <ItemGroup>
+    <None Include="../Fixtures/qbitrr-5.14.8.toml" Link="Fixtures/qbitrr-5.14.8.toml" CopyToOutputDirectory="PreserveNewest" />
+  </ItemGroup>
+
+  <ItemGroup>
     <ProjectReference Include="..\..\src\Torrentarr.Core\Torrentarr.Core.csproj" />
   </ItemGroup>
 

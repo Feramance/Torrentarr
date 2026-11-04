@@ -85,6 +85,10 @@ public sealed class ReauditRegressionTests
         var imports = new ArrImportService(NullLogger<ArrImportService>.Instance, cfg, Mock.Of<ITorrentClientRegistry>(), db, issues: reporter.Object);
         (await imports.BlocklistAndReSearchAsync("ABC", "media")).Should().BeFalse();
         (await db.SonarrSearchRetries.SingleAsync()).BlocklistPending.Should().BeFalse();
+        reports.Should().NotContain("import.replacement");
+        (await imports.BlocklistAndReSearchAsync("ABC", "media")).Should().BeFalse();
+        reports.Should().NotContain("import.replacement");
+        (await imports.BlocklistAndReSearchAsync("ABC", "media")).Should().BeFalse();
         reports.Should().Contain("import.replacement"); resolved.Should().NotContain("import.replacement");
         stub.RejectSearch = false;
         (await imports.BlocklistAndReSearchAsync("ABC", "media")).Should().BeTrue();
@@ -130,7 +134,15 @@ public sealed class ReauditRegressionTests
         (await SonarrRetryQueue.StageAndExecuteAsync(db, executor.Object, "Arr", "ABC", Candidates.ToList(), Config(type, stub.Url), NullLogger.Instance, reporter.Object, default)).Should().BeFalse();
         (await db.SonarrSearchRetries.SingleAsync()).BlocklistPending.Should().BeTrue();
         executor.Verify(e => e.ExecuteSearchesAsync(It.IsAny<string>(), It.IsAny<IEnumerable<SearchCandidate>>(), It.IsAny<CancellationToken>()), Times.Never);
-        reports.Should().Contain("import.replacement"); resolved.Should().BeEmpty();
+        reports.Should().BeEmpty();
+        (await db.SonarrSearchRetries.SingleAsync()).ConsecutiveFailures.Should().Be(1);
+        db.ChangeTracker.Clear();
+        await SonarrRetryQueue.ExecuteAsync(db, executor.Object, "Arr", NullLogger.Instance, default, Config(type, stub.Url), reporter.Object);
+        reports.Should().BeEmpty();
+        await SonarrRetryQueue.ExecuteAsync(db, executor.Object, "Arr", NullLogger.Instance, default, Config(type, stub.Url), reporter.Object);
+        reports.Should().ContainSingle().Which.Should().Be("import.replacement"); resolved.Should().BeEmpty();
+        reporter.Verify(r => r.ReportAsync(It.Is<OperationalIssueReport>(i => i.Impact.Contains("Phase=blocklist")
+            && i.Impact.Contains("hash=ABC") && i.Impact.Contains("category=media") && i.Impact.Contains("queue/1") && i.Impact.Contains("HTTP status=400")), It.IsAny<CancellationToken>()), Times.Once());
         stub.RejectDelete = false;
         await SonarrRetryQueue.ExecuteAsync(db, executor.Object, "Arr", NullLogger.Instance, default, Config(type, stub.Url), reporter.Object);
         (await db.SonarrSearchRetries.CountAsync()).Should().Be(0);
@@ -148,6 +160,64 @@ public sealed class ReauditRegressionTests
         (await SonarrRetryQueue.StageAndExecuteAsync(db, executor.Object, "Arr", "ABC", Candidates.ToList(), Config("radarr", stub.Url), NullLogger.Instance, reporter.Object, default)).Should().BeFalse();
         reports.Should().BeEmpty(); resolved.Should().BeEmpty();
         (await db.SonarrSearchRetries.CountAsync()).Should().Be(1);
+    }
+
+    [Fact]
+    public async Task ReplacementFailureCount_SurvivesRestart_ResetsOnDeferral_AndIgnoresCancellation()
+    {
+        using var connection = new Microsoft.Data.Sqlite.SqliteConnection("Data Source=:memory:");
+        await connection.OpenAsync();
+        var options = new DbContextOptionsBuilder<TorrentarrDbContext>().UseSqlite(connection).Options;
+        await using (var initial = new TorrentarrDbContext(options))
+        {
+            await initial.Database.EnsureCreatedAsync();
+            initial.SonarrSearchRetries.Add(new() { ArrInstance = "Arr", DownloadId = "ABC", ConsecutiveFailures = 2 });
+            await initial.SaveChangesAsync();
+        }
+        await using var db = new TorrentarrDbContext(options);
+        var executor = new Mock<ISearchExecutor>();
+        executor.Setup(e => e.ExecuteSearchesAsync("Arr", It.IsAny<IEnumerable<SearchCandidate>>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new SearchResult { Errors = ["search rejected"] });
+        var reports = new List<string>(); var resolved = new List<string>(); var reporter = Reporter(reports, resolved);
+        await SonarrRetryQueue.ExecuteAsync(db, executor.Object, "Arr", NullLogger.Instance, default, issues: reporter.Object);
+        reports.Should().ContainSingle();
+        (await db.SonarrSearchRetries.SingleAsync()).ConsecutiveFailures.Should().Be(3);
+        executor.Setup(e => e.ExecuteSearchesAsync("Arr", It.IsAny<IEnumerable<SearchCandidate>>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new SearchResult());
+        await SonarrRetryQueue.ExecuteAsync(db, executor.Object, "Arr", NullLogger.Instance, default, issues: reporter.Object);
+        (await db.SonarrSearchRetries.SingleAsync()).ConsecutiveFailures.Should().Be(0);
+        resolved.Should().BeEmpty("capacity is not verified completion");
+        using var cancel = new CancellationTokenSource();
+        executor.Setup(e => e.ExecuteSearchesAsync("Arr", It.IsAny<IEnumerable<SearchCandidate>>(), It.IsAny<CancellationToken>()))
+            .Callback(() => cancel.Cancel()).ThrowsAsync(new OperationCanceledException(cancel.Token));
+        await FluentActions.Awaiting(() => SonarrRetryQueue.ExecuteAsync(db, executor.Object, "Arr", NullLogger.Instance, cancel.Token))
+            .Should().ThrowAsync<OperationCanceledException>();
+        (await db.SonarrSearchRetries.SingleAsync()).ConsecutiveFailures.Should().Be(0);
+    }
+
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task LegacyOwnershipIssue_RemovalRequiresSuccessfulInventory(bool unavailable)
+    {
+        var cfg = new TorrentarrConfig(); cfg.Settings.Tagless = true;
+        cfg.QBitInstances["qBit"] = new() { ManagedCategories = ["autobrr"] };
+        var client = new Mock<ITorrentClient>();
+        if (unavailable)
+            client.Setup(c => c.GetTorrentsAsync(It.IsAny<string?>(), It.IsAny<string?>(), It.IsAny<CancellationToken>())).ThrowsAsync(new IOException("offline"));
+        else client.Setup(c => c.GetTorrentsAsync(It.IsAny<string?>(), It.IsAny<string?>(), It.IsAny<CancellationToken>())).ReturnsAsync([]);
+        var registry = new Mock<ITorrentClientRegistry>();
+        registry.Setup(r => r.GetAllClients()).Returns(new Dictionary<string, ITorrentClient> { ["qBit"] = client.Object });
+        registry.Setup(r => r.GetClient("qBit")).Returns(client.Object);
+        await using var db = new TorrentarrDbContext(Options());
+        db.OperationalIssues.Add(new() { Code = "import.ownership", SubjectType = "torrent", SubjectId = "removed", ClientInstance = "qBit" });
+        await db.SaveChangesAsync();
+        var reports = new List<string>(); var resolved = new List<string>(); var reporter = Reporter(reports, resolved);
+        var processor = new TorrentProcessor(NullLogger<TorrentProcessor>.Instance, registry.Object, db, cfg,
+            new TorrentCacheService(NullLogger<TorrentCacheService>.Instance), new(), issues: reporter.Object);
+        if (unavailable) await FluentActions.Awaiting(() => processor.ProcessTorrentsAsync("autobrr")).Should().ThrowAsync<AggregateException>();
+        else await processor.ProcessTorrentsAsync("autobrr");
+        resolved.Contains("import.ownership").Should().Be(!unavailable);
     }
 
     [Fact]
@@ -176,10 +246,17 @@ public sealed class ReauditRegressionTests
         registry.Setup(r => r.GetClient("qBit")).Returns(client.Object);
         await using var db = new TorrentarrDbContext(Options());
         var reports = new List<string>(); var resolved = new List<string>(); var reporter = Reporter(reports, resolved);
-        var processor = new TorrentProcessor(NullLogger<TorrentProcessor>.Instance, registry.Object, db, cfg, new TorrentCacheService(NullLogger<TorrentCacheService>.Instance), new(), issues: reporter.Object);
-        await FluentActions.Awaiting(() => processor.ProcessTorrentsAsync("media")).Should().ThrowAsync<AggregateException>();
+        var failWork = true;
+        var seeding = new Mock<ISeedingService>();
+        seeding.Setup(service => service.ApplySeedingLimitsAsync(bad, It.IsAny<CancellationToken>()))
+            .Returns(() => failWork ? Task.FromException(new IOException("Injected torrent work failure")) : Task.CompletedTask);
+        seeding.Setup(service => service.RemoveCompletedTorrentsAsync("media", It.IsAny<CancellationToken>())).ReturnsAsync(new RemovalResult());
+        var processor = new TorrentProcessor(NullLogger<TorrentProcessor>.Instance, registry.Object, db, cfg, new TorrentCacheService(NullLogger<TorrentCacheService>.Instance), new(), seedingService: seeding.Object, issues: reporter.Object);
+        var failure = await FluentActions.Awaiting(() => processor.ProcessTorrentsAsync("media")).Should().ThrowAsync<AggregateException>();
+        failure.Which.Flatten().InnerExceptions.Should().Contain(e => e.Message == "Injected torrent work failure");
         reports.Should().Contain("torrent.processing");
         (await db.TorrentLibrary.AnyAsync(t => t.Hash == "good")).Should().BeTrue();
+        failWork = false;
         bad.AddedOn = 0; bad.State = "uploading"; resolved.Clear();
         await processor.ProcessTorrentsAsync("media"); resolved.Should().Contain("torrent.processing");
         client.Setup(c => c.GetTorrentsAsync(It.IsAny<string?>(), It.IsAny<string?>(), It.IsAny<CancellationToken>())).ThrowsAsync(new IOException());
@@ -235,16 +312,17 @@ public sealed class ReauditRegressionTests
         cfg.ArrInstances["Arr"] = new() { Type = "radarr", Category = "media" };
         var client = new Mock<ITorrentClient>();
         client.Setup(c => c.GetTorrentsAsync(It.IsAny<string?>(), It.IsAny<string?>(), It.IsAny<CancellationToken>()))
-            .ReturnsAsync(failTags ? [] : [new() { Hash = "invalid", Category = "media", AddedOn = long.MaxValue }]);
+            .ReturnsAsync(failTags ? [] : [new() { Hash = "save-failure", Category = "media", AddedOn = long.MaxValue }]);
         var registry = new Mock<ITorrentClientRegistry>(); registry.Setup(r => r.GetAllClients()).Returns(new Dictionary<string, ITorrentClient> { ["qBit"] = client.Object });
         var seeding = new Mock<ISeedingService>();
         if (failTags) seeding.Setup(s => s.UpdateSeedingTagsAsync("media", It.IsAny<CancellationToken>())).ThrowsAsync(new IOException());
         else seeding.Setup(s => s.UpdateSeedingTagsAsync("media", It.IsAny<CancellationToken>())).Returns(Task.CompletedTask);
         seeding.Setup(s => s.RemoveCompletedTorrentsAsync("media", It.IsAny<CancellationToken>())).ReturnsAsync(new RemovalResult());
-        await using var db = new TorrentarrDbContext(Options());
+        await using var db = new FailingDb(Options()) { FailAll = !failTags };
         var processor = new TorrentProcessor(NullLogger<TorrentProcessor>.Instance, registry.Object, db, cfg,
             new TorrentCacheService(NullLogger<TorrentCacheService>.Instance), new(), seedingService: seeding.Object);
-        await FluentActions.Awaiting(() => processor.ProcessTorrentsAsync("media")).Should().ThrowAsync<AggregateException>();
+        var failure = await FluentActions.Awaiting(() => processor.ProcessTorrentsAsync("media")).Should().ThrowAsync<AggregateException>();
+        if (!failTags) failure.Which.Flatten().InnerExceptions.Should().Contain(e => e.Message == "Injected save failure");
         seeding.Verify(s => s.UpdateSeedingTagsAsync("media", It.IsAny<CancellationToken>()), Times.Once);
         seeding.Verify(s => s.RemoveCompletedTorrentsAsync("media", It.IsAny<CancellationToken>()), Times.Once);
     }

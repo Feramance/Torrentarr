@@ -6,15 +6,6 @@ namespace Torrentarr.Infrastructure.Tests.Services;
 
 public class IsolatedWorkerTests
 {
-    [Theory]
-    [InlineData(5, 4, 1)]
-    [InlineData(5, 7, 0)]
-    [InlineData(5, 0, 5)]
-    public void LoopDelay_SubtractsWorkAndNeverGoesNegative(int interval, int work, int expected)
-    {
-        ArrWorkerService.GetLoopDelay(interval, TimeSpan.FromSeconds(work)).Should().Be(TimeSpan.FromSeconds(expected));
-    }
-
     [Fact]
     public void ThrottledSearch_PreservesLastResultAndTimestamp()
     {

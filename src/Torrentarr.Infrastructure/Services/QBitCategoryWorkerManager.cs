@@ -19,22 +19,25 @@ public class QBitCategoryWorkerManager : BackgroundService
     private readonly ProcessStateManager _stateManager;
     private readonly IConnectivityService _connectivityService;
     private readonly IConfigReloader? _reloader;
+    private readonly Torrentarr.Core.Interfaces.ITorrentClientRegistry? _registry;
 
     private readonly ConcurrentDictionary<string, (Task Task, CancellationTokenSource Cts)> _workers =
         new(StringComparer.OrdinalIgnoreCase);
 
     private CancellationToken _appStopping = CancellationToken.None;
+    internal TimeProvider Clock { get; set; } = TimeProvider.System;
 
     public QBitCategoryWorkerManager(
         ILogger<QBitCategoryWorkerManager> logger,
         TorrentarrConfig config,
         IServiceScopeFactory scopeFactory,
         ProcessStateManager stateManager,
-        IConnectivityService connectivityService, IConfigReloader? reloader = null)
+        IConnectivityService connectivityService, IConfigReloader? reloader = null, Torrentarr.Core.Interfaces.ITorrentClientRegistry? registry = null)
     {
         _logger = logger;
         _config = config;
         _reloader = reloader;
+        _registry = registry;
         _scopeFactory = scopeFactory;
         _stateManager = stateManager;
         _connectivityService = connectivityService;
@@ -210,7 +213,7 @@ public class QBitCategoryWorkerManager : BackgroundService
             await StopCategoryAsync(category);
     }
 
-    private Task WaitAsync(TimeSpan delay, CancellationToken ct) => _reloader?.WaitForChangeAsync(_config.Revision, delay, ct) ?? Task.Delay(delay, ct);
+    private Task WaitAsync(TimeSpan delay, CancellationToken ct) => _reloader?.WaitForChangeAsync(_config.Revision, delay, ct) ?? Task.Delay(delay, Clock, ct);
 
     private async Task RunCategoryLoopAsync(string category, string stateName, CancellationToken ct)
     {
@@ -219,10 +222,12 @@ public class QBitCategoryWorkerManager : BackgroundService
         try
         {
             long initializedRevision = -1;
+            var scans = new TorrentScanSchedule(Clock);
             while (!ct.IsCancellationRequested)
             {
                 using var configuration = _config.BeginOperation();
-                var loopStart = DateTime.UtcNow;
+                var intervals = TorrentScanSchedule.Intervals(_config);
+                var due = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
                 try
                 {
                     if (!await _connectivityService.IsConnectedAsync(ct))
@@ -244,11 +249,10 @@ public class QBitCategoryWorkerManager : BackgroundService
                     _stateManager.Update(stateName, s => s.Status = "Processing torrents...");
                     using var scope = _scopeFactory.CreateScope();
                     var processor = scope.ServiceProvider.GetRequiredService<ITorrentProcessor>();
-                    var seeding = scope.ServiceProvider.GetRequiredService<ISeedingService>();
                     var pathTracker = scope.ServiceProvider.GetRequiredService<IImportPathTracker>();
 
-                    await processor.ProcessTorrentsAsync(category, ct);
-                    await seeding.RemoveCompletedTorrentsAsync(category, ct);
+                    due = scans.TakeDue(intervals, _config.Revision);
+                    if (due.Count > 0) await processor.ProcessTorrentsAsync(category, due, ct);
 
                     ClientDownloadPaths.Clean(_config, pathTracker);
                 }
@@ -262,10 +266,19 @@ public class QBitCategoryWorkerManager : BackgroundService
                     _logger.LogError(ex, "Error in qBit category worker for {Category}", category);
                 }
 
-                var elapsed = DateTime.UtcNow - loopStart;
-                var sleep = TimeSpan.FromSeconds(_config.Settings.LoopSleepTimer) - elapsed;
-                if (sleep > TimeSpan.Zero)
-                    await WaitAsync(sleep, ct);
+                scans.Complete(due, intervals);
+                var sleep = scans.Delay;
+                var connectionRevision = (_registry as QBittorrentConnectionManager)?.ConnectionRevision;
+                var until = Clock.GetUtcNow() + sleep;
+                while (until > Clock.GetUtcNow())
+                {
+                    var remaining = until - Clock.GetUtcNow();
+                    if (remaining > TimeSpan.FromSeconds(5)) remaining = TimeSpan.FromSeconds(5);
+                    await WaitAsync(remaining, ct);
+                    if (_config.Revision != _config.LatestRevision) break;
+                    if ((_registry as QBittorrentConnectionManager)?.ConnectionRevision != connectionRevision)
+                    { scans.Reset(); break; }
+                }
             }
         }
         finally

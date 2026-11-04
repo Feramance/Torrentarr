@@ -16,8 +16,15 @@ public static class ConfigSchemaBuilder
     public static IReadOnlyDictionary<string, IReadOnlyList<ConfigSchemaField>> Sections { get; } =
         new Dictionary<string, IReadOnlyList<ConfigSchemaField>>
         {
-            ["Settings"] = Qbitrr5146ConfigSchema.Settings.Where(f => f.key is not ("CompletedDownloadFolder" or "FreeSpace" or "FreeSpaceFolder" or "AutoPauseResume" or "FreeSpaceThresholdGB")).Select(f => f.key == "ConfigVersion" ? f with { @default = ConfigurationLoader.ExpectedConfigVersion } : f).ToList(),
-            ["WebUI"] = Qbitrr5146ConfigSchema.WebUI,
+            ["Settings"] = Qbitrr5146ConfigSchema.Settings.Where(f => f.key is not ("CompletedDownloadFolder" or "FreeSpace" or "FreeSpaceFolder" or "AutoPauseResume" or "FreeSpaceThresholdGB")).Select(f => f.key == "ConfigVersion" ? f with { @default = ConfigurationLoader.ExpectedConfigVersion }
+                : f.key == "LoopSleepTimer" ? f with { label = "Database refresh interval", comments = "Interval in seconds between Arr catalog refreshes into SQLite. Torrent scans use each client’s scan interval." } : f).ToList(),
+            ["WebUI"] = [.. Qbitrr5146ConfigSchema.WebUI,
+                Field("CorsAllowedOrigins", "tags", "Allowed browser origins", Array.Empty<string>()) with
+                {
+                    section = "WebUI", applyLive = true, requiresRestart = false,
+                    comments = "Allowed browser origins. Empty allows any origin without credentials; entries must be exact HTTP(S) origins.",
+                    description = "HTTP(S) origins without trailing slashes. Empty allows any origin without credentials; a list permits credentials only for those origins. Changes apply live."
+                }],
             ["qBit"] = TorrentClientFields().Where(f => f.key != "Type").Select(f => f with { section = "qBit" }).ToList(),
             ["TorrentClient"] = TorrentClientFields(),
             ["Arr"] = Qbitrr5146ConfigSchema.Arr.Select(ClarifyTrackerMessages).Select(ClarifySearchScope).ToList(),
@@ -60,6 +67,9 @@ public static class ConfigSchemaBuilder
         Field("Password", "password", "Password", "CHANGE_ME", secure: true),
         Field("DownloadPath", "text", "Download path", "") with
         { description = "Default download root as seen by this torrent client. Existing category paths are preserved.", applyLive = true, requiresRestart = false },
+        Field("TorrentScanIntervalSeconds", "select", "Torrent scan interval (seconds)", 30,
+            options: TorrentScanInterval.AllowedSeconds.Select(value => value.ToString(System.Globalization.CultureInfo.InvariantCulture)).ToArray()) with
+        { description = "Regular torrent processing interval. Shared-storage free space checks use the fastest participating client. Safety checks and manual actions may run sooner." },
         Field("FreeSpace", "collection", "Free-space monitors", Array.Empty<object>()) with
         {
             description = "Paths visible to Torrentarr. One manager shares a budget across all clients using the same filesystem, preserving the largest configured reserve.",
@@ -79,7 +89,7 @@ public static class ConfigSchemaBuilder
         Field("Maintenance.ExplicitCategories", "tags", "Explicit categories", Array.Empty<string>()),
         Field("Maintenance.ExcludedCategories", "tags", "Excluded categories", Array.Empty<string>()),
         Field("Maintenance.ExcludedTags", "tags", "Excluded tags", Array.Empty<string>()),
-        Field("Maintenance.Orphans.Enabled", "checkbox", "Enable orphan scan", false) with { description = "Moves unreferenced files into the recycle bin; requires complete ownership inspection and local path mappings." },
+        Field("Maintenance.Orphans.Enabled", "checkbox", "Enable orphan scan", false) with { description = "Recycles unreferenced files when recycling is enabled; otherwise permanently deletes them. Requires complete ownership inspection and local path mappings." },
         Field("Maintenance.Orphans.MinimumAgeMinutes", "number", "Minimum orphan file age (minutes)", 1440, minimum: 0),
         Field("Maintenance.Orphans.MaxFilesPerRun", "number", "Maximum orphan files per run", 10, minimum: 0),
         Field("Maintenance.Orphans.ExcludePatterns", "tags", "Orphan exclusion patterns", Array.Empty<string>()),
@@ -99,7 +109,7 @@ public static class ConfigSchemaBuilder
         Field("Maintenance.Unregistered.MaxPerTrackerPerRun", "number", "Maximum removals per tracker per run", 10, minimum: 0),
         Field("Maintenance.Unregistered.CompletedOnly", "checkbox", "Only clean up completed torrents", false),
         Field("Maintenance.Unregistered.Messages", "tags", "Unregistered tracker messages", new[] { "unregistered torrent", "torrent not registered", "torrent not found", "torrent not authorized" }),
-        Field("Maintenance.RecycleBin.Enabled", "checkbox", "Enable recycle bin and retention", true),
+        Field("Maintenance.RecycleBin.Enabled", "checkbox", "Enable recycle bin and retention", false),
         Field("Maintenance.RecycleBin.Path", "text", "Recycle bin path", "") with { description = "Absolute path visible to Torrentarr. Blank uses .torrentarr-recycle inside the first mapped local root." },
         Field("Maintenance.RecycleBin.RetentionDays", "number", "Recycle retention (days)", 30, minimum: 0) with { description = "Expired recycle files are permanently deleted after this many days." },
         Field("Maintenance.RecycleBin.MaxTorrentMovesPerRun", "number", "Maximum torrent moves per run", 10, minimum: 0),
@@ -218,7 +228,7 @@ public static class ConfigSchemaBuilder
         "Maintenance.ErrorRecovery.States" => "Exact client error-state names eligible for repair. Tracker messages alone never interrupt healthy protected seeding.",
         "Maintenance.Repair.ResumeCompleted" => "Explicitly authorizes resuming complete paused torrents, including deliberate user pauses. Review before enabling.",
         "Maintenance.Repair.RecheckIncomplete" => "Request file rechecks for incomplete paused torrents. This can create disk IO; it does not prove successful recovery.",
-        "Maintenance.RecycleBin.Enabled" => "Allow local recycle storage for content moves. Retention deletion has a separate enablement and operation policy.",
+        "Maintenance.RecycleBin.Enabled" => "Opt-in local recycle storage. Off delegates authorized torrent/content deletion to the client without local mapping or global ownership checks. On requires safe recycling and never falls back to permanent deletion. Retention has a separate policy.",
         _ => label + (kind == "number" && key.Contains("Max", StringComparison.Ordinal) ? ". Zero permits no mutations for action/deletion caps; inspection budgets must be positive."
             : kind == "tags" ? ". Empty applies no additional list entries; operation filters inherit client scope."
             : kind == "checkbox" ? ". Off disables this behavior; operation enablement and authorization still apply."

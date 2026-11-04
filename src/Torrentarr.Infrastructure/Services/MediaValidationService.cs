@@ -51,7 +51,7 @@ public class MediaValidationService : IMediaValidationService
 
         if (!IsFFprobeAvailable)
         {
-            if (_issues != null) await _issues.ReportAsync(ProbeIssue, cancellationToken);
+            if (_issues != null) await _issues.ReportAsync(ProbeIssue.WithEvidence($"Required executable={_ffprobePath}; available={IsFFprobeAvailable}; affected media file={filePath}. Enable ffprobe auto-update or install an executable at the expected path."), cancellationToken);
             result.IsValid = true;
             result.ErrorMessage = "ffprobe not available";
             _logger.LogTrace("ffprobe not available, skipping validation for {File}", filePath);
@@ -190,7 +190,6 @@ public class MediaValidationService : IMediaValidationService
     internal static bool MatchesExtensionAllowlist(string filePath, IReadOnlyCollection<string> allowlist)
     {
         var ext = Path.GetExtension(filePath);
-        var name = Path.GetFileName(filePath);
         foreach (var allowed in allowlist)
         {
             if (string.IsNullOrWhiteSpace(allowed))
@@ -202,13 +201,14 @@ public class MediaValidationService : IMediaValidationService
                 return true;
             try
             {
-                if (Regex.IsMatch(name, allowed, RegexOptions.IgnoreCase))
+                if (Regex.IsMatch(ext, "^(?:" + allowed + ")$", RegexOptions.IgnoreCase, TimeSpan.FromMilliseconds(100)))
                     return true;
             }
             catch (ArgumentException)
             {
                 // skip invalid regex patterns
             }
+            catch (RegexMatchTimeoutException) { }
         }
         return false;
     }
@@ -228,7 +228,7 @@ public class MediaValidationService : IMediaValidationService
 
             if (latestVersion == null || string.IsNullOrWhiteSpace(latestVersion.Version) || latestVersion.Bin == null)
             {
-                if (_issues != null) await _issues.ReportAsync(UpdateIssue, cancellationToken);
+                if (_issues != null) await _issues.ReportAsync(UpdateIssue.WithEvidence("Release metadata has no usable version or binary list; no download was attempted."), cancellationToken);
                 _logger.LogWarning("Could not retrieve usable ffprobe download metadata");
                 return false;
             }
@@ -243,7 +243,7 @@ public class MediaValidationService : IMediaValidationService
             var downloadUrl = GetDownloadUrl(latestVersion);
             if (downloadUrl == null)
             {
-                if (_issues != null) await _issues.ReportAsync(UpdateIssue, cancellationToken);
+                if (_issues != null) await _issues.ReportAsync(UpdateIssue.WithEvidence($"No supported ffprobe download for OS={RuntimeInformation.OSDescription}, architecture={RuntimeInformation.ProcessArchitecture}, release={latestVersion.Version}."), cancellationToken);
                 _logger.LogWarning("Could not determine ffprobe download URL for current platform");
                 return false;
             }
@@ -275,7 +275,7 @@ public class MediaValidationService : IMediaValidationService
         catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested) { throw; }
         catch (Exception ex)
         {
-            if (_issues != null) await _issues.ReportAsync(UpdateIssue, cancellationToken);
+            if (_issues != null) await _issues.ReportAsync(UpdateIssue.WithEvidence($"Destination={_ffprobePath}; {DiagnosticText.Error(ex)}"), cancellationToken);
             _logger.LogError(ex, "Failed to update ffprobe");
             return false;
         }

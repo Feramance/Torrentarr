@@ -32,10 +32,14 @@ Directory.CreateDirectory(logsPath);
 var levelSwitch = new LoggingLevelSwitch(LogEventLevel.Information);
 
 var builder = WebApplication.CreateBuilder(args);
+TrustedProxyConfiguration.Configure(builder.Services);
 
 // Configure Serilog - write to .config/logs/ with process metadata enrichment
 Log.Logger = new LoggerConfiguration()
     .MinimumLevel.ControlledBy(levelSwitch)
+    .MinimumLevel.Override("Microsoft.EntityFrameworkCore", LogEventLevel.Warning)
+    .Enrich.FromLogContext()
+    .MinimumLevel.Override("Microsoft.AspNetCore", LogEventLevel.Warning)
     .Enrich.WithProperty("ProcessType", "WebUI")
     .Enrich.WithProperty("ProcessId", Environment.ProcessId)
     .Enrich.WithProperty("MachineName", Environment.MachineName)
@@ -90,16 +94,8 @@ builder.Services.AddResponseCompression(options =>
     options.EnableForHttps = true;
 });
 
-// Add CORS for development
-builder.Services.AddCors(options =>
-{
-    options.AddPolicy("AllowAll", policy =>
-    {
-        policy.AllowAnyOrigin()
-              .AllowAnyMethod()
-              .AllowAnyHeader();
-    });
-});
+builder.Services.AddCors();
+builder.Services.AddSingleton<Microsoft.AspNetCore.Cors.Infrastructure.ICorsPolicyProvider, LiveCorsPolicyProvider>();
 
 // Configure Database - use same dbPath as defined at startup
 builder.Services.AddDbContext<TorrentarrDbContext>(options =>
@@ -168,6 +164,7 @@ builder.Services.AddHostedService(sp => sp.GetRequiredService<OperationalIssueRe
 builder.Services.AddHostedService<OperationalIssueMonitor>();
 builder.Services.AddSingleton<ITorrentClientFactory, QBittorrentTorrentClientFactory>();
 builder.Services.AddSingleton<QBittorrentConnectionManager>();
+builder.Services.AddHostedService(sp => sp.GetRequiredService<QBittorrentConnectionManager>());
 builder.Services.AddSingleton<ITorrentClientRegistry>(sp => sp.GetRequiredService<QBittorrentConnectionManager>());
 builder.Services.AddSingleton<IPathMappingService, PathMappingService>();
 builder.Services.AddSingleton<ITorrentInventoryService, TorrentInventoryService>();
@@ -247,6 +244,8 @@ app.MapGet("/web/config/status", (IConfigReloader reloader) => Results.Ok(reload
 app.MapGet("/api/config/status", (IConfigReloader reloader) => Results.Ok(reloader.GetStatus()));
 
 liveWeb.Attach(app, configForDI);
+app.UseForwardedHeaders();
+app.UseMiddleware<Torrentarr.Infrastructure.Logging.RequestDiagnosticsMiddleware>();
 app.UseRouting();
 app.Services.GetRequiredService<IConfigReloader>().ConfigReloaded += (_, args) =>
 {
@@ -272,7 +271,7 @@ app.UseSwagger();
 app.UseSwaggerUI();
 
 app.UseResponseCompression();
-app.UseCors("AllowAll");
+app.UseCors("WebUI");
 
 // Security headers
 app.Use(async (context, next) =>
@@ -537,16 +536,7 @@ app.MapGet("/web/auth/oidc/challenge", async (HttpContext ctx, TorrentarrConfig 
 
 app.MapPost("/web/loglevel", (LogLevelRequest req, LoggingLevelSwitch ls) =>
 {
-    var newLevel = req.Level?.ToUpperInvariant() switch
-    {
-        "TRACE" or "VERBOSE" => LogEventLevel.Verbose,
-        "DEBUG" => LogEventLevel.Debug,
-        "INFORMATION" or "INFO" => LogEventLevel.Information,
-        "WARNING" or "WARN" => LogEventLevel.Warning,
-        "ERROR" => LogEventLevel.Error,
-        "CRITICAL" or "FATAL" => LogEventLevel.Fatal,
-        _ => LogEventLevel.Information
-    };
+    var newLevel = LiveConfigurationRuntime.ParseLevel(req.Level);
 
     ls.MinimumLevel = newLevel;
     Log.Information("Log level changed to {Level}", req.Level);
@@ -1167,27 +1157,19 @@ app.MapGet("/web/logs/{name}", async (string name, HttpRequest request, int? lin
     });
 });
 
-// §6.9: Log file download — streams named log file as an attachment
-app.MapGet("/web/logs/{name}/download", (string name, HttpResponse response) =>
+// §6.9: Download a stable snapshot, not a continuously growing log file.
+app.MapGet("/web/logs/{name}/download", async (string name, HttpContext context) =>
 {
-    var safeName = Path.GetFileName(name);
-    if (!IsValidLogFileName(safeName))
+    var path = LogFileApi.ResolveLogFile(logsPath, name);
+    if (path == null)
         return Results.BadRequest(new { error = "Invalid log file name" });
-
-    var fullLogsPath = Path.GetFullPath(logsPath);
-    var combinedPath = Path.Combine(fullLogsPath, safeName);
-    var fullLogFile = Path.GetFullPath(combinedPath);
-
-    if (!fullLogFile.StartsWith(fullLogsPath + Path.DirectorySeparatorChar, StringComparison.OrdinalIgnoreCase))
+    try
     {
-        return Results.BadRequest(new { error = "Invalid log file name" });
+        var snapshot = await LogFileApi.CreateDownloadSnapshotAsync(path, context.RequestAborted);
+        return Results.File(snapshot, "application/octet-stream", name);
     }
-
-    if (!File.Exists(fullLogFile))
-        return Results.NotFound(new { error = "Log file not found" });
-
-    response.Headers["Content-Disposition"] = $"attachment; filename=\"{safeName}\"";
-    return Results.File(fullLogFile, "application/octet-stream", safeName);
+    catch (FileNotFoundException) { return Results.NotFound(); }
+    catch (DirectoryNotFoundException) { return Results.NotFound(); }
 });
 
 app.MapGet("/web/logs/{name}/search", (string name, HttpRequest request) =>
@@ -1224,7 +1206,7 @@ app.MapGet("/web/torrent-clients", async (ITorrentClientRegistry registry, Torre
             id,
             QbitInstance = id,
             type = clientCfg.Type,
-            connected = client != null,
+            connected = client != null && !string.IsNullOrWhiteSpace(version),
             version,
             capabilities = client?.Capabilities ?? TorrentClientCapabilities.None,
             managedCategories = clientCfg.ManagedCategories
@@ -1232,6 +1214,22 @@ app.MapGet("/web/torrent-clients", async (ITorrentClientRegistry registry, Torre
     }
     return Results.Ok(clients);
 });
+foreach (var prefix in new[] { "/web", "/api" })
+{
+    app.MapPost(prefix + "/torrent-clients/{id}/reconnect", async (string id, TorrentarrConfig cfg,
+        QBittorrentConnectionManager manager, CancellationToken ct) =>
+    {
+        if (!cfg.GetAllTorrentClients().TryGetValue(id, out var client))
+            return Results.NotFound(new { error = "Unknown torrent client." });
+        if (client.Disabled || string.IsNullOrWhiteSpace(client.Host) || client.Host == "CHANGE_ME")
+            return Results.Conflict(new { error = "Torrent client is disabled or has no configured endpoint." });
+        var connected = await manager.ForceReconnectAsync(id, client, ct);
+        var error = manager.GetConnectionErrors().GetValueOrDefault(id, "Connection unavailable.");
+        return connected
+            ? Results.Ok(new { id, connected = true })
+            : Results.Json(new { id, connected = false, error }, statusCode: StatusCodes.Status503ServiceUnavailable);
+    });
+}
 app.MapTorrentMaintenanceEndpoints("/web", standalone: true);
 app.MapTorrentMaintenanceEndpoints("/api", standalone: true);
 

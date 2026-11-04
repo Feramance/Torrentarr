@@ -25,6 +25,7 @@ Port = 8080
 UserName = 'admin'
 Password = 'replace-me'
 DownloadPath = '/downloads'
+TorrentScanIntervalSeconds = 30
 
 [Radarr-Movies]
 Managed = true
@@ -62,6 +63,8 @@ and [disk-space behavior](../features/disk-space.md).
 
 Partial saves preserve unrelated values, unknown saved fields and redacted secrets.
 Numeric bounds, narrowing filters and explicit storage mappings are validated.
+Torrent scan intervals are selected per client from 5, 15, 30, 60, 90, or 120 seconds;
+`Settings.LoopSleepTimer` controls periodic Arr catalog refreshes into SQLite.
 Identity/connection sections open by default; validation opens affected sections.
 Worker cycles adopt saved revisions at safe boundaries. Use Config status to distinguish
 saved/pending/applied. Connection replacement failures do not reuse an old endpoint.

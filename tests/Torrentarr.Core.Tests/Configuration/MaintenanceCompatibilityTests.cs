@@ -95,7 +95,7 @@ public sealed class MaintenanceCompatibilityTests : IDisposable
         for (var attempt = 0; attempt < 3; attempt++)
         {
             var config = loader.Load();
-            config.Settings.ConfigVersion.Should().Be("6.20.2");
+            config.Settings.ConfigVersion.Should().Be("6.20.3");
             var client = config.GetTorrentClient(id)!;
             var policy = client.Maintenance.Operations["PrivateTagging"];
             policy.ExecutionMode.Should().Be("manual");

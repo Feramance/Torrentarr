@@ -66,6 +66,15 @@ it("names concrete tag and category changes", () => {
   expect(
     maintenanceActionTitle({
       ...action,
+      kind: "DeleteContent",
+      destructive: true,
+    }),
+  ).toBe(
+    "Permanently delete content and remove torrent entry (recycling disabled)",
+  );
+  expect(
+    maintenanceActionTitle({
+      ...action,
       kind: "SetCategory",
       arguments: { category: "movies" },
     }),

@@ -148,4 +148,26 @@ public class LogFileApiTests
         finally { File.Delete(path); }
     }
 
+
+    [Fact]
+    public async Task DownloadSnapshot_IsStableWhenTheActiveLogGrows()
+    {
+        var dir = Directory.CreateTempSubdirectory("torrentarr-log-download-");
+        try
+        {
+            var path = Path.Combine(dir.FullName, "all.log");
+            await File.WriteAllTextAsync(path, "before\n");
+            await using (var snapshot = await LogFileApi.CreateDownloadSnapshotAsync(path, CancellationToken.None))
+            {
+                await File.AppendAllTextAsync(path, "after\n");
+                using var reader = new StreamReader(snapshot, leaveOpen: true);
+                (await reader.ReadToEndAsync()).Should().Be("before\n");
+                snapshot.Length.Should().Be(7);
+            }
+        }
+        finally
+        {
+            dir.Delete(recursive: true);
+        }
+    }
 }

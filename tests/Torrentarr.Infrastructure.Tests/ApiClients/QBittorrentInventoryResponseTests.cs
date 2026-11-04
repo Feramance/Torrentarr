@@ -9,6 +9,41 @@ namespace Torrentarr.Infrastructure.Tests.ApiClients;
 
 public sealed class QBittorrentInventoryResponseTests
 {
+    [Fact]
+    public async Task FailedLogin_PreservesTransportDiagnosisWithoutCredentials()
+    {
+        using var socket = new Socket(AddressFamily.InterNetwork, SocketType.Stream, ProtocolType.Tcp);
+        socket.Bind(new IPEndPoint(IPAddress.Loopback, 0));
+        socket.Listen();
+        var port = ((IPEndPoint)socket.LocalEndPoint!).Port;
+        using var timeout = new CancellationTokenSource(TimeSpan.FromSeconds(10));
+        // Reset accepted connections; bound non-listening sockets can time out on macOS and Windows.
+        var server = Task.Run(async () =>
+        {
+            try
+            {
+                while (true)
+                {
+                    using var connection = await socket.AcceptAsync(timeout.Token);
+                    connection.LingerState = new LingerOption(true, 0);
+                }
+            }
+            catch (OperationCanceledException) when (timeout.IsCancellationRequested) { }
+        });
+        using var client = new QBittorrentClient("127.0.0.1", port, "private-user", "private-password");
+        try
+        {
+            (await client.LoginAsync(timeout.Token)).Should().BeFalse();
+            client.LastConnectionFailure.Should().Contain("transport=").And.Contain("Socket error=")
+                .And.NotContain("private-user").And.NotContain("private-password");
+        }
+        finally
+        {
+            await timeout.CancelAsync();
+            await server;
+        }
+    }
+
     [Theory]
     [InlineData(403, "", "version")]
     [InlineData(503, "secret-response", "version")]
@@ -40,10 +75,7 @@ public sealed class QBittorrentInventoryResponseTests
     [InlineData("version")]
     public async Task ExpiredSession_ReauthenticatesAndRetriesInventoryOnce(string operation)
     {
-        using var socket = new TcpListener(IPAddress.Loopback, 0);
-        socket.Start(); var port = ((IPEndPoint)socket.LocalEndpoint).Port; socket.Stop();
-        using var listener = new HttpListener();
-        listener.Prefixes.Add($"http://127.0.0.1:{port}/"); listener.Start();
+        using var listener = StartListenerOnAvailablePort(out var port);
         var paths = new List<string>();
         var server = Task.Run(async () =>
         {
@@ -90,12 +122,40 @@ public sealed class QBittorrentInventoryResponseTests
         });
     }
 
+    private static HttpListener StartListenerOnAvailablePort(out int port)
+    {
+        // Reserving an ephemeral socket and immediately releasing it cannot guarantee that
+        // another parallel test will not claim the port before HttpListener.Start().
+        for (var attempt = 0; attempt < 20; attempt++)
+        {
+            using var probe = new TcpListener(IPAddress.Loopback, 0);
+            probe.Start();
+            port = ((IPEndPoint)probe.LocalEndpoint).Port;
+            probe.Stop();
+
+            var listener = new HttpListener();
+            listener.Prefixes.Add($"http://127.0.0.1:{port}/");
+            try
+            {
+                listener.Start();
+                return listener;
+            }
+            catch (HttpListenerException ex) when (ex.NativeErrorCode is 48 or 98 or 10048 or 183 && attempt < 19)
+            {
+                listener.Close();
+            }
+            catch
+            {
+                listener.Close();
+                throw;
+            }
+        }
+        throw new InvalidOperationException("Unable to start HTTP test listener after retrying port collisions.");
+    }
+
     private static async Task Request(int status, string body, string operation, Func<Func<Task>, Task> verify)
     {
-        var socket = new TcpListener(IPAddress.Loopback, 0);
-        socket.Start(); var port = ((IPEndPoint)socket.LocalEndpoint).Port; socket.Stop();
-        using var listener = new HttpListener();
-        listener.Prefixes.Add($"http://127.0.0.1:{port}/"); listener.Start();
+        using var listener = StartListenerOnAvailablePort(out var port);
         using var cancellation = new CancellationTokenSource();
         var requests = 0;
         var server = Task.Run(async () =>

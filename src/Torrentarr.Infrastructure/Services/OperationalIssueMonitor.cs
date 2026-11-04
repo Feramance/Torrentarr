@@ -13,7 +13,8 @@ namespace Torrentarr.Infrastructure.Services;
 public sealed class OperationalIssueMonitor(IServiceScopeFactory scopes, IOperationalIssueReporter issues,
     TorrentarrConfig config, ILogger<OperationalIssueMonitor> logger) : BackgroundService
 {
-    private readonly Dictionary<string, string> _maintenanceRuns = new();
+    // Completion cursor per scope; equal timestamps retain IDs to avoid losing simultaneous runs.
+    private readonly Dictionary<string, (DateTimeOffset CompletedAt, HashSet<string> RunIds)> _maintenanceRuns = new();
 
     protected override async Task ExecuteAsync(CancellationToken ct)
     {
@@ -34,44 +35,54 @@ public sealed class OperationalIssueMonitor(IServiceScopeFactory scopes, IOperat
         if (services.GetService<IConfigReloader>() is { } reloader)
         {
             var state = reloader.GetStatus();
-            if (state.State is "error" or "applied") await Observe(new("config.apply", "system", "Configuration could not be applied", "Some services may still use the previous configuration.", "Check configuration validation and component status.", Target: "config"), state.State == "error", ct);
+            if (state.State is "error" or "applied") await Observe(new("config.apply", "system", "Configuration could not be applied", $"Accepted revision={state.AcceptedRevision}; state={state.State}; error={DiagnosticText.Safe(state.Error)}; components: {string.Join("; ", state.Components.Select(c => $"{c.Key}: applied={c.Value.AppliedRevision}, error={DiagnosticText.Safe(c.Value.Error)}"))}.", "Check configuration validation and component status.", Target: "config"), state.State == "error", ct);
         }
         if (services.GetService<IConnectivityService>() is { LastChecked: not null } network)
-            await Observe(new("network.internet", "system", "Internet connectivity is unavailable", "Internet-dependent work is delayed.", "Check the host network, DNS and configured connectivity hosts."), !network.IsConnected, ct);
+            await Observe(new("network.internet", "system", "Internet connectivity is unavailable", $"Last connectivity check={network.LastChecked:O}; connected={network.IsConnected}. {network.FailureReason ?? "Client reachability and configured HTTP/TCP probes did not establish connectivity; no further probe detail was supplied."}", "Check the host network, DNS and configured connectivity hosts."), !network.IsConnected, ct);
         if (services.GetService<ITorrentClientRegistry>() is { } clients)
             foreach (var (id, cfg) in config.GetAllTorrentClients().Where(p => !p.Value.Disabled && !string.IsNullOrWhiteSpace(p.Value.Host) && p.Value.Host != "CHANGE_ME"))
             {
                 var reachable = false;
-                try { reachable = clients.GetClient(id) is { } client && !string.IsNullOrWhiteSpace(await client.GetVersionAsync(ct)); }
+                var evidence = $"No registered session for '{id}'. " + ((clients as QBittorrentConnectionManager)?.GetConnectionErrors().GetValueOrDefault(id) ?? "No connection failure detail was recorded.");
+                try
+                {
+                    if (clients.GetClient(id) is { } client)
+                    {
+                        using var timeout = CancellationTokenSource.CreateLinkedTokenSource(ct);
+                        timeout.CancelAfter(TimeSpan.FromSeconds(5));
+                        var version = await client.GetVersionAsync(timeout.Token);
+                        reachable = !string.IsNullOrWhiteSpace(version);
+                        evidence = reachable ? $"Version probe succeeded: {version}" : "Version probe returned an empty response.";
+                    }
+                }
                 catch (OperationCanceledException) when (ct.IsCancellationRequested) { throw; }
-                catch (Exception ex) { logger.LogWarning(ex, "Torrent client connectivity check failed for {Instance}", id); }
-                await Observe(new("client.connection", "system", "Torrent client is disconnected", "Torrent management and ownership inspection are incomplete.", "Check the client address, credentials and network.", ClientInstance: id, Target: "config"), !reachable, ct);
+                catch (Exception ex) { evidence = DiagnosticText.Error(ex); logger.LogWarning("Torrent client connectivity check failed for {Instance}: {Evidence}", id, evidence); }
+                await Observe(new("client.connection", "system", "Torrent client is disconnected", $"Client={id}; type={cfg.Type}; endpoint={DiagnosticText.Safe(cfg.Host)}:{cfg.Port}; operation=version probe; {evidence} Torrent management and ownership inspection are incomplete.", "Check the client address, credentials and network.", ClientInstance: id, Target: "config"), !reachable, ct);
             }
         if (services.GetService<WorkerProcessSupervisor>() is { } workers)
             foreach (var (id, state) in await workers.GetProcessStatusAsync())
             {
-                // A running PID alone is not evidence of recovered worker progress.
-                var healthy = state.IsAlive && state.LastHeartbeat.HasValue && state.Torrent?.LastSuccess != null && state.Search?.LastSuccess != null;
-                var issue = new OperationalIssueReport("worker.lifecycle", "system", "Worker is not making healthy progress", "This Arr instance may not process torrents or searches.", "Check worker logs and connection settings; restart after correcting the cause.", ArrInstance: id, Target: "processes");
+                var healthy = HasHealthyProgress(state, DateTimeOffset.UtcNow);
+                var issue = new OperationalIssueReport("worker.lifecycle", "system", "Worker is not making healthy progress", $"Worker={id}; PID={state.ProcessId}; alive={state.IsAlive}; status={state.Status}; last exit={state.LastExitCode}; last failure={state.LastFailure ?? "none recorded"}; restarts={state.RestartCount}; started={state.StartTime:O}; heartbeat={state.LastHeartbeat:O}; config revision={state.ConfigRevision}. Torrent loop={state.Torrent?.Phase ?? "unavailable"}, last success={state.Torrent?.LastSuccess:O}; search loop={state.Search?.Phase ?? "unavailable"}, last success={state.Search?.LastSuccess:O}.", "Check worker logs and connection settings; restart after correcting the cause.", ArrInstance: id, Target: "processes");
                 if (!state.IsAlive) await issues.ReportAsync(issue, ct); else if (healthy) await issues.ResolveAsync(issue, ct);
             }
         if (services.GetService<IFreeSpaceService>() is { } storage)
             foreach (var disk in await storage.GetFreeSpaceStatsAsync(ct))
-                await Observe(new("storage.reserve", "system", "Download storage needs attention", "Free-space protection may hold downloads paused.", "Restore access to the monitored directory or free space above its configured reserve.", ClientInstance: disk.ClientInstanceId, SubjectType: "storage", SubjectId: disk.Path, Severity: "warning", Target: "config"), disk.Error != null || disk.BelowThreshold, ct);
+                await Observe(new("storage.reserve", "system", "Download storage needs attention", $"Client={disk.ClientInstanceId}; path={disk.Path}; free={disk.FreeBytes} bytes; reserve={disk.ThresholdBytes} bytes; total={disk.TotalBytes} bytes; below threshold={disk.BelowThreshold}; inspection error={disk.Error ?? "none"}. Downloads may remain paused until the reserve is restored.", "Restore access to the monitored directory or free space above its configured reserve.", ClientInstance: disk.ClientInstanceId, SubjectType: "storage", SubjectId: disk.Path, Severity: "warning", Target: "config"), disk.Error != null || disk.BelowThreshold, ct);
         if (services.GetService<TorrentAutomationService>() is { } automation)
         {
             var state = automation.GetStatus();
             var current = new List<OperationalIssueReport>();
             foreach (var tracker in state.TrackerIssues)
-                current.Add(new("automation.tracker", "automation", "Tracker reports a torrent problem", "Tracker protection or torrent progress needs attention.", "Inspect tracker status and protection settings before taking action.", ClientInstance: tracker.ClientInstanceId, SubjectType: "torrent", SubjectId: tracker.TorrentHash, Severity: "warning", Target: "maintenance"));
+                current.Add(new("automation.tracker", "automation", "Tracker reports a torrent problem", $"Torrent={tracker.TorrentName}; hash={tracker.TorrentHash}; client={tracker.ClientInstanceId}; added={tracker.AddedOn}; {tracker.Reason}", "Inspect tracker status and protection settings before taking action.", ClientInstance: tracker.ClientInstanceId, SubjectType: "torrent", SubjectId: tracker.TorrentHash, Severity: "warning", Target: "maintenance"));
             foreach (var recovery in state.Recovery.Where(r => r.Stage is not ("new" or "checked")))
-                current.Add(new("automation.recovery", "automation", "Torrent recovery is pending", "The torrent is preserved while repair is pending or unresolved.", "Inspect the recovery status and storage access; do not remove protection evidence.", ClientInstance: recovery.ClientInstanceId, SubjectType: "torrent", SubjectId: recovery.TorrentHash, Severity: "warning", Target: "maintenance"));
+                current.Add(new("automation.recovery", "automation", "Torrent recovery is pending", $"Torrent={recovery.TorrentName}; hash={recovery.TorrentHash}; operation={recovery.Operation}; stage={recovery.Stage}; attempts={recovery.Attempts}; failure since={recovery.FailureSince:O}; {recovery.Reason}", "Inspect the recovery status and storage access; do not remove protection evidence.", ClientInstance: recovery.ClientInstanceId, SubjectType: "torrent", SubjectId: recovery.TorrentHash, Severity: "warning", Target: "maintenance"));
             foreach (var group in state.Protection.Where(p => p.NativeStopLimitRisk || p.DeadlineRisk is "warning" or "critical" or "unachievable").GroupBy(p => new { p.ClientInstanceId, p.TorrentHash }))
-                current.Add(new("automation.protection", "automation", "Tracker obligation may be at risk", "A tracker deadline or native stop limit can prevent the required seeding obligation from being met.", "Review tracker protection and seeding limits in Manage; preserve the torrent while obligations remain.", ClientInstance: group.Key.ClientInstanceId, SubjectType: "torrent", SubjectId: group.Key.TorrentHash,
+                current.Add(new("automation.protection", "automation", "Tracker obligation may be at risk", $"Hash={group.Key.TorrentHash}; {string.Join("; ", group.Select(p => $"{p.TorrentName}: tracker={p.Tracker}, state={p.State}, observed={p.ObservedSeedSeconds:F0}s, remaining={p.RemainingSeedSeconds:F0}s, deadline={p.Deadline:O}, recovery deadline={p.LatestRecoveryStart:O}, risk={p.DeadlineRisk}, native stop risk={p.NativeStopLimitRisk}. {p.Reason}"))}", "Review tracker protection and seeding limits in Manage; preserve the torrent while obligations remain.", ClientInstance: group.Key.ClientInstanceId, SubjectType: "torrent", SubjectId: group.Key.TorrentHash,
                     Severity: group.Any(p => p.DeadlineRisk is "critical" or "unachievable") ? "error" : "warning", Target: "maintenance"));
             foreach (var inspection in state.Inspections)
                 if (inspection.ConsecutiveFailures > 0 || inspection.LastSucceededAt.HasValue)
-                    await Observe(new("automation.inspection", "system", "Torrent protection inspection is unavailable", "Previous protection evidence is retained; removal remains conservative.", "Check client connectivity and tracker access before retrying.", ClientInstance: inspection.ClientInstanceId, Target: "maintenance"), inspection.ConsecutiveFailures > 0, ct);
+                    await Observe(new("automation.inspection", "system", "Torrent protection inspection is unavailable", $"Client={inspection.ClientInstanceId}; consecutive inspection failures={inspection.ConsecutiveFailures}; last success={inspection.LastSucceededAt:O}; next attempt={inspection.NextAttempt:O}. Previous protection evidence is retained. Failure={inspection.LastError ?? "No failure detail supplied by this inspection implementation."}", "Check client connectivity and tracker access before retrying.", ClientInstance: inspection.ClientInstanceId, Target: "maintenance"), inspection.ConsecutiveFailures > 0, ct);
             foreach (var issue in current) await issues.ReportAsync(issue, ct);
             // Clear only clients whose latest complete protection inspection succeeded.
             var inspected = state.Inspections.Where(i => i.ConsecutiveFailures == 0 && i.LastSucceededAt.HasValue).Select(i => i.ClientInstanceId).ToList();
@@ -81,24 +92,63 @@ public sealed class OperationalIssueMonitor(IServiceScopeFactory scopes, IOperat
                 await issues.ResolveAsync(new(old.Code, old.Category, old.Title, old.Impact, old.Remediation, old.ArrInstance, old.ClientInstance, old.SubjectType, old.SubjectId, old.Severity, old.Target), ct);
         }
         if (services.GetService<IMaintenanceCoordinator>() is { } maintenance)
-            foreach (var latest in maintenance.GetHistory().Where(r => r.CompletedAt.HasValue)
-                .GroupBy(run => System.Text.Json.JsonSerializer.Serialize(run.ClientInstanceIds.Select(id => id.ToUpperInvariant()).Distinct().Order()))
-                .Select(group => (Scope: group.Key, Run: group.MaxBy(run => run.CompletedAt)!)))
+        {
+            var history = maintenance.GetHistory().Where(r => r.CompletedAt.HasValue && r.Result is "success" or "partial" or "failed")
+                .OrderBy(run => run.CompletedAt)
+                .ThenBy(run => run.StartedAt)
+                .Select(run => (Scope: System.Text.Json.JsonSerializer.Serialize(run.ClientInstanceIds.Select(id => id.ToUpperInvariant()).Distinct().Order()), Run: run)).ToArray();
+            // Seed completion cursors before reporting: reporting writes a later wall-clock timestamp.
+            if (services.GetService<TorrentarrDbContext>() is { } historyDb)
+                foreach (var group in history.GroupBy(item => item.Scope).Where(group => !_maintenanceRuns.ContainsKey(group.Key)))
+                {
+                    var previous = await historyDb.OperationalIssues.AsNoTracking().SingleOrDefaultAsync(i =>
+                        i.Code == "maintenance.run" && i.SubjectType == "maintenance" && i.SubjectId == group.Key
+                        && i.ClientInstance == "" && i.ArrInstance == "", ct);
+                    if (previous == null) continue;
+                    var observedRuns = group.Where(item => item.Run.CompletedAt!.Value.UtcDateTime <= previous.LastObserved).ToArray();
+                    if (observedRuns.Length == 0) continue;
+                    var last = observedRuns[^1].Run;
+                    var ids = observedRuns.Where(item => item.Run.CompletedAt == last.CompletedAt).Select(item => item.Run.RunId).ToHashSet();
+                    // Recover an old active issue even when its report timestamp followed the successful run.
+                    if (last.Result == "success" && previous.ResolvedAt == null) ids.Remove(last.RunId);
+                    _maintenanceRuns[group.Key] = (last.CompletedAt!.Value, ids);
+                }
+            foreach (var latest in history)
             {
-                if (_maintenanceRuns.GetValueOrDefault(latest.Scope) == latest.Run.RunId || latest.Run.Result is not ("success" or "partial" or "failed")) continue;
+                var completedAt = latest.Run.CompletedAt!.Value;
+                if (_maintenanceRuns.TryGetValue(latest.Scope, out var observed)
+                    && (completedAt < observed.CompletedAt
+                        || completedAt == observed.CompletedAt && observed.RunIds.Contains(latest.Run.RunId)))
+                    continue;
                 // History has aggregate counts, so report once for the selected set rather than blaming each client.
-                var issue = new OperationalIssueReport("maintenance.run", "system", "Maintenance execution failed", "Some actions failed in the selected maintenance run; the aggregate result does not identify a failing client.",
-                    "Review Manage history and its diagnostics, then retry the same client selection.", SubjectType: "maintenance", SubjectId: latest.Scope, Target: "maintenance");
+                var failureSummary = string.Join("; ", latest.Run.Errors.Distinct().Take(3));
+                var issue = new OperationalIssueReport("maintenance.run", "system", "Maintenance execution failed",
+                    latest.Run.Failed > 0
+                        ? $"{latest.Run.Failed} action(s) failed for {string.Join(", ", latest.Run.ClientInstanceIds)}. {failureSummary}"
+                        : "The selected maintenance run completed without failed actions.",
+                    "Open Manage → Recent runs and expand the failed run to inspect each action, client and error before retrying.",
+                    SubjectType: "maintenance", SubjectId: latest.Scope, Target: "maintenance");
                 if (latest.Run.Result == "success" || latest.Run.Failed > 0)
                     await Observe(issue, latest.Run.Failed > 0, ct);
                 // A verified successful run can also close records written by the former per-client reporter.
                 if (latest.Run.Result == "success")
                     foreach (var client in latest.Run.ClientInstanceIds)
                         await issues.ResolveAsync(issue with { ClientInstance = client, SubjectType = "service", SubjectId = "" }, ct);
-                _maintenanceRuns[latest.Scope] = latest.Run.RunId;
+                if (_maintenanceRuns.TryGetValue(latest.Scope, out observed) && completedAt == observed.CompletedAt)
+                    observed.RunIds.Add(latest.Run.RunId);
+                else
+                    _maintenanceRuns[latest.Scope] = (completedAt, new HashSet<string> { latest.Run.RunId });
             }
+        }
     }
 
     private Task Observe(OperationalIssueReport issue, bool failed, CancellationToken ct)
         => failed ? issues.ReportAsync(issue, ct) : issues.ResolveAsync(issue, ct);
+
+    internal static bool HasHealthyProgress(ProcessStatus state, DateTimeOffset now)
+        => state.IsAlive && state.LastHeartbeat is { } heartbeat && now - heartbeat < TimeSpan.FromSeconds(15)
+            && Healthy(state.Torrent, now) && Healthy(state.Search, now);
+
+    private static bool Healthy(Torrentarr.Core.Models.WorkerLoopProgress? loop, DateTimeOffset now)
+        => loop != null && !loop.IsStalled(now) && loop.Phase is "Running" or "Sleeping" or "Disabled";
 }

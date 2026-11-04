@@ -138,21 +138,24 @@ public class SeedingService : ISeedingService
 
     private async Task<bool> MeetsSeedingRequirementsAsync(string hash, string category, string? instanceId, CancellationToken cancellationToken)
     {
-        _logger.LogTrace("Checking seeding requirements for hash {Hash} in category {Category}", hash, category);
+        _logger.LogInformation("Checking seeding requirements for hash {Hash} in category {Category}", hash, category);
 
         var stats = await GetSeedingStatsAsync(hash, instanceId, cancellationToken);
 
         if (stats == null)
         {
-            _logger.LogTrace("No seeding stats found for {Hash} - returning false", hash);
+            _logger.LogInformation("No seeding stats found for {Hash} - returning false", hash);
             return false;
         }
 
-        _logger.LogTrace("Seeding stats for {Hash}: Ratio={Ratio}, SeedingTime={Time}s, MeetsTime={MeetsTime}, MeetsRatio={MeetsRatio}",
+        _logger.LogInformation("Seeding stats for {Hash}: Ratio={Ratio}, SeedingTime={Time}s, MeetsTime={MeetsTime}, MeetsRatio={MeetsRatio}",
             hash, stats.Ratio, stats.SeedingTimeSeconds, stats.MeetsTimeRequirement, stats.MeetsRatioRequirement);
 
+        // This optional legacy policy is separate from the effective qBittorrent category
+        // overrides and tracker-specific H&R rules.
         var categoryConfig = _config.Settings.CategorySeedingRules?.FirstOrDefault(r => r.Category == category);
-        _logger.LogTrace("Category config for {Category}: {Config}", category, categoryConfig != null ? "found" : "not found");
+        _logger.LogInformation("Optional legacy category rule for {Category}: {Status} (qBit/category and tracker policies are evaluated independently)",
+            category, categoryConfig != null ? "configured" : "not configured");
 
         if (categoryConfig != null)
         {
@@ -161,11 +164,11 @@ public class SeedingService : ISeedingService
                 var seedingTime = TimeSpan.FromSeconds(stats.SeedingTimeSeconds);
                 var requiredTime = TimeSpan.FromMinutes(categoryConfig.MinimumSeedingTime);
 
-                _logger.LogTrace("Checking minimum seeding time: {Current} vs required {Required}", seedingTime, requiredTime);
+                _logger.LogInformation("Checking minimum seeding time: {Current} vs required {Required}", seedingTime, requiredTime);
 
                 if (seedingTime < requiredTime)
                 {
-                    _logger.LogDebug("Torrent {Hash} has not met minimum seeding time ({Current} < {Required})",
+                    _logger.LogInformation("Torrent {Hash} has not met minimum seeding time ({Current} < {Required})",
                         hash, seedingTime, requiredTime);
                     return false;
                 }
@@ -173,7 +176,7 @@ public class SeedingService : ISeedingService
 
             if (categoryConfig.MinimumRatio > 0 && stats.Ratio < categoryConfig.MinimumRatio)
             {
-                _logger.LogDebug("Torrent {Hash} has not met minimum ratio ({Current} < {Required})",
+                _logger.LogInformation("Torrent {Hash} has not met minimum ratio ({Current} < {Required})",
                     hash, stats.Ratio, categoryConfig.MinimumRatio);
                 return false;
             }
@@ -181,11 +184,11 @@ public class SeedingService : ISeedingService
 
         foreach (var trackerReq in stats.TrackerRequirements)
         {
-            _logger.LogDebug("Tracker requirement for {Hash}: {Requirement}", hash, trackerReq);
+            _logger.LogInformation("Tracker requirement for {Hash}: {Requirement}", hash, trackerReq);
         }
 
         var result = stats.MeetsTimeRequirement && stats.MeetsRatioRequirement;
-        _logger.LogTrace("Seeding requirements result for {Hash}: {Result}", hash, result);
+        _logger.LogInformation("Seeding requirements result for {Hash}: {Result}", hash, result);
 
         return result;
     }
@@ -248,7 +251,7 @@ public class SeedingService : ISeedingService
                     stats.MeetsRatioRequirement = false;
 
                 stats.TrackerRequirements.Add(
-                    $"{tracker.TrackerUrl}: Ratio {tracker.MinimumRatio}, Time {tracker.MinimumSeedingTime}min");
+                    $"{TrackerLogHost(tracker.TrackerUrl)}: Ratio {tracker.MinimumRatio}, Time {tracker.MinimumSeedingTime}min");
             }
         }
 
@@ -332,9 +335,18 @@ public class SeedingService : ISeedingService
     }
 
     private static bool TrackerHostMatches(string host, string configuredHost)
-        => !string.IsNullOrEmpty(configuredHost)
+    {
+        host = CanonicalTrackerHost(host);
+        configuredHost = CanonicalTrackerHost(configuredHost);
+        return !string.IsNullOrEmpty(configuredHost)
             && (host.Equals(configuredHost, StringComparison.OrdinalIgnoreCase)
                 || host.EndsWith("." + configuredHost, StringComparison.OrdinalIgnoreCase));
+    }
+
+    // TorrentLeech's alternate announce domain carries the same tracker obligations.
+    private static string CanonicalTrackerHost(string host)
+        => host == "tleechreload.org" || host.EndsWith(".tleechreload.org", StringComparison.OrdinalIgnoreCase)
+            ? host[..^"tleechreload.org".Length] + "torrentleech.org" : host;
 
     public bool HnrAllowsDelete(TorrentInfo torrent, IReadOnlyList<TorrentTracker> torrentTrackers)
     {
@@ -365,7 +377,7 @@ public class SeedingService : ISeedingService
                     ClientInstanceId = torrent.ClientInstanceId,
                     TorrentHash = torrent.Hash,
                     TorrentName = torrent.Name,
-                    Tracker = ExtractTrackerHost(cfg.Uri),
+                    Tracker = TrackerLogHost(cfg.Uri),
                     Reason = "Private tracker has no configured clearance requirements."
                 });
                 continue;
@@ -410,10 +422,10 @@ public class SeedingService : ISeedingService
                 decision = new()
                 {
                     State = safe && healthy ? "eligible" : healthy ? "protected" : "unknown",
-                    Reason = safe && healthy ? "Legacy configured obligations met (client estimate)." : "Tracker obligations or healthy accounting remain unmet."
+                    Reason = $"Legacy mode={effective.HitAndRunMode}; ratio={torrent.Ratio:F3}/{effective.MinSeedRatio}; seed={torrent.SeedingTime}s/{effective.MinSeedingTimeDays * 86400}s; minimum download={effective.HitAndRunMinimumDownloadPercent}%; partial ratio={effective.HitAndRunPartialSeedRatio}; tracker healthy={healthy}; obligations met={safe}."
                 };
             }
-            decision.ClientInstanceId = torrent.ClientInstanceId; decision.TorrentHash = torrent.Hash; decision.TorrentName = torrent.Name; decision.Tracker = host;
+            decision.ClientInstanceId = torrent.ClientInstanceId; decision.TorrentHash = torrent.Hash; decision.TorrentName = torrent.Name; decision.Tracker = TrackerLogHost(cfg.Uri);
             decisions.Add(decision);
         }
         if (matched.Count == 0 || torrent.IsPrivate == true && torrentTrackers.Any(t =>
@@ -439,7 +451,7 @@ public class SeedingService : ISeedingService
                 TorrentHash = torrent.Hash,
                 TorrentName = torrent.Name,
                 State = categoryConfigured && healthy ? categorySafe ? "eligible" : "protected" : knownPublic && !legacy ? "eligible" : "unknown",
-                Reason = categoryConfigured ? "Legacy category obligations evaluated using current client estimates and tracker health."
+                Reason = categoryConfigured ? $"Category mode={category.HitAndRunMode}; ratio={torrent.Ratio:F3}/{category.MinSeedRatio}; seed={torrent.SeedingTime}s/{category.MinSeedingTimeDays * 86400}s; minimum download={category.HitAndRunMinimumDownloadPercent}%; partial ratio={category.HitAndRunPartialSeedRatio}; tracker healthy={healthy}; obligations met={categorySafe}."
                     : knownPublic && !legacy ? "Public torrent without configured HnR obligations." : "Unmatched private/unknown tracker: preserve and report."
             });
         }
@@ -458,6 +470,10 @@ public class SeedingService : ISeedingService
             decision.NativeStopLimitRisk = torrent.RatioLimit != -1 || torrent.SeedingTimeLimit != -1 || (torrent.InactiveSeedingTimeLimit.HasValue && torrent.InactiveSeedingTimeLimit != -1);
             if (decision.NativeStopLimitRisk) decision.Reason += " Native stop limits may interrupt seeding; changes require verification.";
         }
+        foreach (var decision in decisions)
+            _logger.LogTrace("Tracker protection decision for {Hash}: tracker={Tracker}; state={State}; progress={Progress:P2}; ratio={Ratio:F4}; seed={SeedTime}s; observedSeed={ObservedSeed}s; remainingSeed={RemainingSeed}s; deadline={Deadline:O}; risk={Risk}; nativeStopRisk={NativeStopRisk}; reason={Reason}",
+                torrent.Hash, decision.Tracker, decision.State, torrent.Progress, torrent.Ratio, torrent.SeedingTime, decision.ObservedSeedSeconds,
+                decision.RemainingSeedSeconds, decision.Deadline, decision.DeadlineRisk, decision.NativeStopLimitRisk, decision.Reason);
         return decisions;
     }
 
@@ -581,38 +597,111 @@ public class SeedingService : ISeedingService
     {
         var client = GetClient(torrent);
         if (client == null || torrent.AddedOn <= 0 || torrent.AddedOn > DateTimeOffset.UtcNow.ToUnixTimeSeconds()
-            || DateTimeOffset.UtcNow.ToUnixTimeSeconds() - torrent.AddedOn < _config.Settings.IgnoreTorrentsYoungerThan) return false;
+            || DateTimeOffset.UtcNow.ToUnixTimeSeconds() - torrent.AddedOn < _config.Settings.IgnoreTorrentsYoungerThan)
+        {
+            _logger.LogInformation("HnR check blocked {Reason} of {Hash} on {Client}: client unavailable or torrent age is unverified/too young", reason, torrent.Hash, torrent.ClientInstanceId);
+            return false;
+        }
         if (!torrent.IsPrivate.HasValue)
             torrent.IsPrivate = (await client.GetTorrentPropertiesAsync(torrent.Hash, cancellationToken))?.IsPrivate;
-        var allowed = HnrAllowsDelete(torrent, await client.GetTorrentTrackersAsync(torrent.Hash, cancellationToken));
-        if (!allowed) _logger.LogInformation("HnR protection blocked {Reason} of {Hash}", reason, torrent.Hash);
+        var trackerEvidence = await client.GetTorrentTrackersAsync(torrent.Hash, cancellationToken);
+        var allowed = HnrAllowsDelete(torrent, trackerEvidence);
+        if (!allowed) _logger.LogInformation("HnR protection blocked {Reason} of {Hash}: {Evidence}", reason, torrent.Hash,
+            DiagnosticText.Safe(string.Join("; ", GetProtectionDecisions(torrent, trackerEvidence).Where(d => d.State != "eligible").Select(d => $"{d.Tracker}: {d.State}; {d.Reason}"))));
+        if (allowed) _logger.LogInformation("HnR obligations cleared for {Reason} of {Hash} on {Client}", reason, torrent.Hash, torrent.ClientInstanceId);
         return allowed;
     }
 
-    public async Task<bool> CanDeleteTorrentAsync(TorrentInfo torrent, string reason, CancellationToken cancellationToken = default)
+    public Task<bool> CanDeleteTorrentAsync(TorrentInfo torrent, string reason, CancellationToken cancellationToken = default)
+        => CanDeleteTorrentForIntentAsync(torrent, TorrentRemovalIntent.SeedingLimit, reason, cancellationToken);
+
+    public async Task<bool> CanDeleteTorrentForIntentAsync(TorrentInfo torrent, TorrentRemovalIntent intent,
+        string reason, CancellationToken cancellationToken = default)
+        => (await EvaluateRemovalAsync(torrent, intent, cancellationToken)).Allowed;
+
+    public async Task<RemovalDecision> EvaluateRemovalAsync(TorrentInfo torrent, TorrentRemovalIntent intent, CancellationToken ct = default)
     {
-        if (_config.GetTorrentClient(torrent.ClientInstanceId)?.Disabled != false
-            || !await HnrAllowsDeleteAsync(torrent, reason, cancellationToken)) return false;
-        var tags = torrent.Tags.Split(',', StringSplitOptions.TrimEntries | StringSplitOptions.RemoveEmptyEntries);
-        if (tags.Contains(IgnoredTag) || tags.Contains(FreeSpacePausedTag)
-            || torrent.SuperSeeding || torrent.State.Equals("forcedUP", StringComparison.OrdinalIgnoreCase)) return false;
-        var arr = _config.ArrInstances.Values.FirstOrDefault(a => CategoryOwnershipHelper.ArrOwnsTorrent(_config, a, torrent));
-        var (delay, age) = TorrentProcessor.ResolveStalledSettings(_config, torrent, arr);
-        age = Math.Max(age, GetSeedingConfig(torrent).IgnoreTorrentsYoungerThan);
-        var now = DateTimeOffset.UtcNow.ToUnixTimeSeconds();
-        if (age < 0 || now - torrent.AddedOn < Math.Max(age, _config.Settings.IgnoreTorrentsYoungerThan)) return false;
-        var policy = GetEffectiveSeedingConfig(torrent, await GetTrackerConfigAsync(torrent, cancellationToken));
-        if (policy.RemoveTorrent is < 1 or > 4) return false;
-        if (torrent.Progress >= 1)
+        var blockers = new List<RemovalBlocker>();
+        void Block(string code, string evidence, string next)
         {
-            return await MeetsSeedingRequirementsAsync(torrent.Hash, torrent.Category, torrent.ClientInstanceId, cancellationToken)
-                && RemovalLimitsMet(torrent, policy);
+            blockers.Add(new(code, DiagnosticText.Safe(evidence), next));
+            _logger.LogInformation("Removal blocked for [{Name}] ({Hash}) on {Client}, category={Category}, intent={Intent}: {Code}; {Evidence}",
+                torrent.Name, torrent.Hash, torrent.ClientInstanceId, torrent.Category, intent, code, DiagnosticText.Safe(evidence));
         }
-        var metadata = torrent.State.Equals("metaDL", StringComparison.OrdinalIgnoreCase)
-            || torrent.State.Equals("forcedMetaDL", StringComparison.OrdinalIgnoreCase);
-        var reference = metadata ? torrent.AddedOn : torrent.LastActivity;
-        return delay >= 0 && reference > 0 && reference <= now
-            && now - reference >= Math.Max(age, delay * 60L);
+        var cfg = _config.GetTorrentClient(torrent.ClientInstanceId);
+        var now = DateTimeOffset.UtcNow.ToUnixTimeSeconds();
+        if (cfg?.Disabled != false) Block("client.disabled", $"Client '{torrent.ClientInstanceId}' is {(cfg == null ? "not configured" : "disabled")}", "Enable/configure this client before requesting removal.");
+        if (_config.Revision != _config.LatestRevision) Block("config.pending", $"Applied revision {_config.Revision}; accepted revision {_config.LatestRevision}", "Wait for configuration activation to complete.");
+        if (torrent.AddedOn <= 0 || torrent.AddedOn > now) Block("torrent.added-on", $"Invalid AddedOn={torrent.AddedOn}; now={now}", "Refresh torrent metadata from the client.");
+        if (!double.IsFinite(torrent.Progress) || torrent.Progress is < 0 or > 1 || !double.IsFinite(torrent.Ratio) || torrent.Ratio < 0 || torrent.SeedingTime < 0)
+            Block("torrent.invalid-evidence", $"Progress={torrent.Progress}, ratio={torrent.Ratio}, seedingTime={torrent.SeedingTime}s", "Refresh invalid client statistics; removal remains blocked until evidence is valid.");
+        try
+        {
+            var client = GetClient(torrent);
+            if (client == null) Block("client.disconnected", $"Client '{torrent.ClientInstanceId}' has no connected session", "Reconnect this client in configuration.");
+            else
+            {
+                if (!torrent.IsPrivate.HasValue) torrent.IsPrivate = (await client.GetTorrentPropertiesAsync(torrent.Hash, ct))?.IsPrivate;
+                var trackers = await client.GetTorrentTrackersAsync(torrent.Hash, ct);
+                foreach (var decision in GetProtectionDecisions(torrent, trackers).Where(d => d.State != "eligible"))
+                    Block("hnr." + decision.State, $"Tracker={decision.Tracker}; state={decision.State}; {decision.Reason} Observed seed={decision.ObservedSeedSeconds:F0}s; remaining={decision.RemainingSeedSeconds:F0}s; ratio={torrent.Ratio:F3}; progress={torrent.Progress:P1}; native ratioLimit={torrent.RatioLimit}, timeLimit={torrent.SeedingTimeLimit}", "Meet this tracker/category's configured obligations and verify healthy tracker accounting.");
+            }
+            var tags = torrent.Tags.Split(',', StringSplitOptions.TrimEntries | StringSplitOptions.RemoveEmptyEntries);
+            foreach (var tag in tags.Where(t => t == IgnoredTag || t == FreeSpacePausedTag))
+                Block("torrent.protected-tag", $"Blocking tag '{tag}' is present", "Resolve the owning ignore/free-space policy before removing its tag.");
+            if (torrent.SuperSeeding || torrent.State.Equals("forcedUP", StringComparison.OrdinalIgnoreCase))
+                Block("torrent.protected-state", $"SuperSeeding={torrent.SuperSeeding}; state={torrent.State}", "Disable forced/super-seeding intentionally before removal.");
+            var arr = _config.ArrInstances.Values.FirstOrDefault(a => CategoryOwnershipHelper.ArrOwnsTorrent(_config, a, torrent));
+            var (delay, age) = TorrentProcessor.ResolveStalledSettings(_config, torrent, arr);
+            age = Math.Max(age, GetSeedingConfig(torrent).IgnoreTorrentsYoungerThan);
+            var requiredAge = Math.Max(age, _config.Settings.IgnoreTorrentsYoungerThan);
+            if (age < 0 || now - torrent.AddedOn < requiredAge)
+                Block("torrent.minimum-age", $"Age={now - torrent.AddedOn}s; effective IgnoreTorrentsYoungerThan={requiredAge}s; category/Arr value={age}s", "Wait until the minimum age is met or correct the effective age policy.");
+            if (intent == TorrentRemovalIntent.RejectedByAllowlist) return new(blockers);
+            if (intent is not (TorrentRemovalIntent.SeedingLimit or TorrentRemovalIntent.StalledDownload))
+            { Block("removal.unsupported-intent", $"Unknown removal intent '{intent}'", "Use a supported removal intent."); return new(blockers); }
+            if (intent == TorrentRemovalIntent.SeedingLimit)
+            {
+                var policy = GetEffectiveSeedingConfig(torrent, await GetTrackerConfigAsync(torrent, ct));
+                if (policy.RemoveTorrent is < 1 or > 4)
+                    Block("seeding.removal-disabled", $"Effective RemoveTorrent={policy.RemoveTorrent}; supported removal modes are 1=ratio, 2=time, 3=OR, 4=AND", "Configure the intended removal mode for this category/tracker.");
+                if (torrent.Progress >= 1)
+                {
+                    if (!await MeetsSeedingRequirementsAsync(torrent.Hash, torrent.Category, torrent.ClientInstanceId, ct))
+                    {
+                        var legacy = _config.Settings.CategorySeedingRules?.FirstOrDefault(r => r.Category == torrent.Category);
+                        Block("seeding.minimum", $"Category='{torrent.Category}'; ratio={torrent.Ratio:F3}; seed={torrent.SeedingTime}s; optional category minimum ratio={legacy?.MinimumRatio}; minimum time={legacy?.MinimumSeedingTime}min", "Meet the category's minimum seeding requirements; verify fresh client statistics.");
+                    }
+                    if (!RemovalLimitsMet(torrent, policy))
+                        Block("seeding.limit", $"RemoveTorrent={policy.RemoveTorrent}; ratio={torrent.Ratio:F3}/{policy.MaxUploadRatio}; seed={torrent.SeedingTime}/{policy.MaxSeedingTime}s; state={torrent.State}", "Meet the effective ratio/time limit using the configured AND/OR removal mode.");
+                    return new(blockers);
+                }
+            }
+            else if (torrent.Progress >= 1) Block("stalled.completed", $"Progress={torrent.Progress:P1}", "Use completed-torrent seeding policy; this torrent is no longer an incomplete stalled download.");
+            var metadata = torrent.State.Equals("metaDL", StringComparison.OrdinalIgnoreCase) || torrent.State.Equals("forcedMetaDL", StringComparison.OrdinalIgnoreCase);
+            var stalled = torrent.State.Equals("stalledDL", StringComparison.OrdinalIgnoreCase);
+            var unavailable = (torrent.State.Equals("downloading", StringComparison.OrdinalIgnoreCase) || torrent.State.Equals("forcedDL", StringComparison.OrdinalIgnoreCase)) && torrent.Availability < 1;
+            if (intent == TorrentRemovalIntent.StalledDownload && !metadata && !stalled && !unavailable)
+                Block("stalled.trigger-cleared", $"State={torrent.State}; availability={torrent.Availability}; progress={torrent.Progress:P1}", "Wait for a fresh stalled-download evaluation; the original trigger no longer applies.");
+            var reference = metadata ? torrent.AddedOn : torrent.LastActivity;
+            if (delay < 0 || reference <= 0 || reference > now || now - reference < Math.Max(age, delay * 60L))
+                Block("stalled.grace", $"StalledDelay={delay}min; reference={(metadata ? "AddedOn" : "LastActivity")}={reference}; idle={now - reference}s; required={Math.Max(age, delay * 60L)}s", "Wait for the configured stalled grace; a negative delay disables stalled removal.");
+        }
+        catch (OperationCanceledException) when (ct.IsCancellationRequested) { throw; }
+        catch (Exception ex) { Block("removal.inspection-failed", DiagnosticText.Error(ex), "Restore client/storage access and retry inspection; missing evidence cannot authorize deletion."); }
+        return new(blockers);
+    }
+
+    internal static string DescribeRemovalChanges(TorrentInfo expected, TorrentInfo current)
+    {
+        var fields = new (string Name, object? Before, object? After)[]
+        {
+            ("AddedOn", expected.AddedOn, current.AddedOn), ("Category", expected.Category, current.Category),
+            ("State", expected.State, current.State), ("Progress", expected.Progress, current.Progress),
+            ("LastActivity", expected.LastActivity, current.LastActivity), ("SavePath", expected.SavePath, current.SavePath),
+            ("ContentPath", expected.ContentPath, current.ContentPath)
+        };
+        return string.Join("; ", fields.Where(f => !Equals(f.Before, f.After)).Select(f => $"{f.Name}: '{f.Before}' -> '{f.After}'"));
     }
 
     internal static bool SameRemovalCandidate(TorrentInfo expected, TorrentInfo current)
@@ -629,14 +718,24 @@ public class SeedingService : ISeedingService
     /// </summary>
     public async Task<bool> ShouldRemoveTorrentAsync(TorrentInfo torrent, CancellationToken cancellationToken = default)
     {
-        if (MaintenanceRecovery.BlocksAutomaticRemoval(_dbContext, torrent, _config.GetTorrentClient(torrent.ClientInstanceId)?.Maintenance.ErrorRecovery ?? new ErrorRecoveryConfig())) return false;
+        if (MaintenanceRecovery.BlocksAutomaticRemoval(_dbContext, torrent, _config.GetTorrentClient(torrent.ClientInstanceId)?.Maintenance.ErrorRecovery ?? new ErrorRecoveryConfig()))
+        {
+            _logger.LogDebug("Seeding removal withheld for {Hash}: unresolved error recovery", torrent.Hash);
+            return false;
+        }
         _stalledUploads.Touch(torrent.QBitInstanceName, torrent.Hash, IsStalledUploadState(torrent.State));
 
         var trackerConfig = await GetTrackerConfigAsync(torrent, cancellationToken);
         var seedingConfig = GetEffectiveSeedingConfig(torrent, trackerConfig);
-
-        return IsUploadingState(torrent.State) && RemovalLimitsMet(torrent, seedingConfig)
-            && await HnrAllowsDeleteAsync(torrent, "seeding limit", cancellationToken);
+        if (!IsUploadingState(torrent.State))
+        {
+            _logger.LogDebug("Seeding removal withheld for {Hash}: state={State} is not uploading", torrent.Hash, torrent.State);
+            return false;
+        }
+        if (!RemovalLimitsMet(torrent, seedingConfig)) return false;
+        var allowed = await HnrAllowsDeleteAsync(torrent, "seeding limit", cancellationToken);
+        _logger.LogDebug("Seeding removal decision for {Hash}: limits met; HnR clearance={Allowed}", torrent.Hash, allowed);
+        return allowed;
     }
 
     private bool RemovalLimitsMet(TorrentInfo torrent, CategorySeedingConfig policy)
@@ -645,7 +744,7 @@ public class SeedingService : ISeedingService
         var ratioMet = policy.MaxUploadRatio > 0 && torrent.Ratio >= policy.MaxUploadRatio;
         var timeMet = policy.MaxSeedingTime > 0 && (torrent.SeedingTime >= policy.MaxSeedingTime
             || (IsStalledUploadState(torrent.State) && _stalledUploads.IdleMeets(torrent.ClientInstanceId, torrent.Hash, policy.MaxSeedingTime)));
-        return policy.RemoveTorrent switch
+        var met = policy.RemoveTorrent switch
         {
             1 => ratioMet,
             2 => timeMet,
@@ -653,6 +752,9 @@ public class SeedingService : ISeedingService
             4 => ratioMet && timeMet,
             _ => false
         };
+        _logger.LogDebug("Seeding limit decision for {Hash}: mode={Mode}; ratio={Ratio:F4}/{RequiredRatio}; ratioMet={RatioMet}; seed={SeedTime}s/{RequiredTime}s; timeMet={TimeMet}; state={State}; removalLimitsMet={Met}",
+            torrent.Hash, policy.RemoveTorrent, torrent.Ratio, policy.MaxUploadRatio, ratioMet, torrent.SeedingTime, policy.MaxSeedingTime, timeMet, torrent.State, met);
+        return met;
     }
 
     /// <summary>
@@ -714,7 +816,16 @@ public class SeedingService : ISeedingService
         var category = GetSeedingConfig(torrent);
         var arr = _config.ArrInstances.Values
             .FirstOrDefault(a => CategoryOwnershipHelper.ArrOwnsTorrent(_config, a, torrent));
-        return SeedingLimitMerge.Merge(category, arr?.Torrent.SeedingMode, tracker);
+        var effective = SeedingLimitMerge.Merge(category, arr?.Torrent.SeedingMode, tracker);
+        _logger.LogTrace("Seeding policy for {Hash}: precedence=category -> positive Arr override -> positive tracker override; category={Category}; tracker={Tracker}; " +
+            "categoryRatio={CategoryRatio}; categoryTime={CategoryTime}s; ArrRatio={ArrRatio}; ArrTime={ArrTime}s; trackerRatio={TrackerRatio}; trackerTime={TrackerTime}s; " +
+            "effectiveRatio={EffectiveRatio}; effectiveTime={EffectiveTime}s; removalMode={Mode}; HnRMode={HnrMode}; minimumRatio={MinRatio}; minimumSeedDays={MinDays}; " +
+            "clientRatioLimit={ClientRatio}; clientSeedLimit={ClientTime}min; clientInactiveLimit={InactiveTime}min",
+            torrent.Hash, torrent.Category, tracker == null ? "category fallback" : TrackerLogHost(tracker.Uri),
+            category.MaxUploadRatio, category.MaxSeedingTime, arr?.Torrent.SeedingMode?.MaxUploadRatio, arr?.Torrent.SeedingMode?.MaxSeedingTime,
+            tracker?.MaxUploadRatio, tracker?.MaxSeedingTime, effective.MaxUploadRatio, effective.MaxSeedingTime, effective.RemoveTorrent,
+            effective.HitAndRunMode, effective.MinSeedRatio, effective.MinSeedingTimeDays, torrent.RatioLimit, torrent.SeedingTimeLimit, torrent.InactiveSeedingTimeLimit);
+        return effective;
     }
 
     /// <summary>
@@ -725,6 +836,14 @@ public class SeedingService : ISeedingService
         if (string.IsNullOrEmpty(mode)) return false;
         var lower = mode.Trim().ToLowerInvariant();
         return lower is "and" or "or";
+    }
+
+    // Presentation only: policy matching keeps its existing normalization.
+    private static string TrackerLogHost(string? url)
+    {
+        if (Uri.TryCreate(url, UriKind.Absolute, out var uri) && !string.IsNullOrEmpty(uri.Host)) return uri.Host;
+        return Uri.TryCreate("https://" + url, UriKind.Absolute, out uri) && !string.IsNullOrEmpty(uri.Host)
+            ? uri.Host : "unknown tracker";
     }
 
     /// <summary>
@@ -773,11 +892,15 @@ public class SeedingService : ISeedingService
         }
     }
 
-    public async Task<RemovalResult> RemoveCompletedTorrentsAsync(string category, CancellationToken cancellationToken = default)
+    public Task<RemovalResult> RemoveCompletedTorrentsAsync(string category, CancellationToken cancellationToken = default)
+        => RemoveCompletedTorrentsAsync(category, null, cancellationToken);
+
+    public async Task<RemovalResult> RemoveCompletedTorrentsAsync(string category, IReadOnlySet<string>? clientIds, CancellationToken cancellationToken = default)
     {
         var result = new RemovalResult();
 
-        var allClients = _qbitManager.GetAllClients();
+        var allClients = _qbitManager.GetAllClients().Where(pair => clientIds == null || clientIds.Contains(pair.Key))
+            .ToDictionary(pair => pair.Key, pair => pair.Value, StringComparer.OrdinalIgnoreCase);
         if (allClients.Count == 0)
         {
             result.Errors.Add("No qBittorrent clients available");
@@ -808,19 +931,25 @@ public class SeedingService : ISeedingService
         }
 
         result.TorrentsChecked = completedByInstance.Count;
-        _logger.LogTrace("H&R Check: Processing {Count} completed torrents in category {Category}", completedByInstance.Count, category);
+        _logger.LogInformation("H&R Check: Processing {Count} completed torrents in category {Category}", completedByInstance.Count, category);
 
         foreach (var (instanceName, client, torrent) in completedByInstance)
         {
+            using var logScope = _logger.BeginScope(new Dictionary<string, object>
+            {
+                ["ClientInstance"] = instanceName,
+                ["TorrentCategory"] = torrent.Category,
+                ["TorrentHash"] = torrent.Hash
+            });
             try
             {
-                _logger.LogTrace("H&R Check: [{Name}] | Ratio[{Ratio:F2}] | SeedingTime[{SeedingTime}s] | State[{State}] | Hash[{Hash}]",
+                _logger.LogInformation("H&R Check: [{Name}] | Ratio[{Ratio:F2}] | SeedingTime[{SeedingTime}s] | State[{State}] | Hash[{Hash}]",
                     torrent.Name, torrent.Ratio, torrent.SeedingTime, torrent.State, torrent.Hash);
 
                 var shouldRemove = await ShouldRemoveTorrentAsync(torrent, cancellationToken);
                 if (!shouldRemove)
                 {
-                    _logger.LogTrace("H&R: Keeping torrent [{Name}] - does not meet removal criteria | Ratio[{Ratio:F2}] | SeedingTime[{SeedingTime}s]",
+                    _logger.LogInformation("H&R: Keeping torrent [{Name}] - does not meet removal criteria | Ratio[{Ratio:F2}] | SeedingTime[{SeedingTime}s]",
                         torrent.Name, torrent.Ratio, torrent.SeedingTime);
                     result.TorrentsProtected++;
                     continue;
@@ -832,10 +961,12 @@ public class SeedingService : ISeedingService
                 var current = (await client.GetTorrentsAsync(cancellationToken: cancellationToken))
                     .FirstOrDefault(t => t.Hash.Equals(torrent.Hash, StringComparison.OrdinalIgnoreCase));
                 if (current != null) current.ClientInstanceId = instanceName;
-                if (imported && current != null && SameRemovalCandidate(torrent, current)
-                    && await CanDeleteTorrentAsync(current, "final seeding removal", cancellationToken))
+                var sameCandidate = imported && current != null && SameRemovalCandidate(torrent, current);
+                if (sameCandidate && await CanDeleteTorrentAsync(current!, "final seeding removal", cancellationToken))
                 {
+                    _logger.LogInformation("Seeding removal requested for {Hash}: deleteFiles=false; imported=true; freshCandidate=true", torrent.Hash);
                     var deleted = await client.DeleteTorrentsAsync(new List<string> { torrent.Hash }, deleteFiles: false, cancellationToken);
+                    _logger.LogInformation("Seeding removal result for {Hash}: accepted={Accepted}", torrent.Hash, deleted);
                     if (deleted)
                     {
                         _stalledUploads.Evict(instanceName, torrent.Hash);
@@ -847,7 +978,9 @@ public class SeedingService : ISeedingService
                 }
                 else
                 {
-                    _logger.LogTrace("H&R: Keeping torrent [{Name}] - not imported yet | Hash[{Hash}]", torrent.Name, torrent.Hash);
+                    var reason = !imported ? "not imported yet" : current == null ? "torrent absent from fresh inventory"
+                        : !sameCandidate ? "torrent metadata changed since evaluation" : "final protection clearance denied";
+                    _logger.LogInformation("H&R: Keeping torrent [{Name}] - {Reason} | Hash[{Hash}]", torrent.Name, reason, torrent.Hash);
                     result.TorrentsProtected++;
                 }
             }
@@ -861,10 +994,13 @@ public class SeedingService : ISeedingService
         return result;
     }
 
-    public async Task UpdateSeedingTagsAsync(string category, CancellationToken cancellationToken = default)
+    public Task UpdateSeedingTagsAsync(string category, CancellationToken cancellationToken = default)
+        => UpdateSeedingTagsAsync(category, null, cancellationToken);
+
+    public async Task UpdateSeedingTagsAsync(string category, IReadOnlySet<string>? clientIds, CancellationToken cancellationToken = default)
     {
         var failures = new List<Exception>();
-        foreach (var (instanceName, client) in _qbitManager.GetAllClients())
+        foreach (var (instanceName, client) in _qbitManager.GetAllClients().Where(pair => clientIds == null || clientIds.Contains(pair.Key)))
         {
             if (!_config.Settings.Tagless)
                 try { await EnsureTagsExistAsync(client, cancellationToken); }
@@ -982,8 +1118,8 @@ public class SeedingService : ISeedingService
             try
             {
                 var limitBytes = dlLimit > 0 ? dlLimit * 1024 : -1;
-                await client.SetDownloadLimitAsync(torrent.Hash, limitBytes, cancellationToken);
-                _logger.LogTrace("Set download limit for '{Name}': {Limit} KB/s", torrent.Name, dlLimit);
+                var accepted = await client.SetDownloadLimitAsync(torrent.Hash, limitBytes, cancellationToken);
+                _logger.LogInformation("Download limit requested for '{Name}': {Limit} KB/s, accepted={Accepted}", torrent.Name, dlLimit, accepted);
             }
             catch (Exception ex) when (ex is not OperationCanceledException)
             {
@@ -997,8 +1133,8 @@ public class SeedingService : ISeedingService
             try
             {
                 var limitBytes = ulLimit > 0 ? ulLimit * 1024 : -1;
-                await client.SetUploadLimitAsync(torrent.Hash, limitBytes, cancellationToken);
-                _logger.LogTrace("Set upload limit for '{Name}': {Limit} KB/s", torrent.Name, ulLimit);
+                var accepted = await client.SetUploadLimitAsync(torrent.Hash, limitBytes, cancellationToken);
+                _logger.LogInformation("Upload limit requested for '{Name}': {Limit} KB/s, accepted={Accepted}", torrent.Name, ulLimit, accepted);
             }
             catch (Exception ex) when (ex is not OperationCanceledException)
             {
@@ -1030,7 +1166,7 @@ public class SeedingService : ISeedingService
                     new List<string> { AllowedSeedingTag },
                     cancellationToken)) throw new IOException("Torrent client rejected the seeding tag update.");
             }
-            _logger.LogTrace("AllowedSeeding set for torrent {Name} (Tagless={Tagless})", torrent.Name, _config.Settings.Tagless);
+            _logger.LogInformation("AllowedSeeding set for torrent {Name} (Tagless={Tagless})", torrent.Name, _config.Settings.Tagless);
         }
         else if (!meetsRequirements && hasAllowedSeedingTag)
         {
@@ -1047,7 +1183,7 @@ public class SeedingService : ISeedingService
                     new List<string> { AllowedSeedingTag },
                     cancellationToken)) throw new IOException("Torrent client rejected the seeding tag update.");
             }
-            _logger.LogTrace("AllowedSeeding cleared for torrent {Name} (Tagless={Tagless})", torrent.Name, _config.Settings.Tagless);
+            _logger.LogInformation("AllowedSeeding cleared for torrent {Name} (Tagless={Tagless})", torrent.Name, _config.Settings.Tagless);
         }
     }
 
@@ -1099,7 +1235,7 @@ public class SeedingService : ISeedingService
             if (tagsToCreate.Count > 0)
             {
                 if (!await client.CreateTagsAsync(tagsToCreate, cancellationToken)) throw new IOException("Torrent client rejected tag creation.");
-                _logger.LogTrace("Created tags: {Tags}", string.Join(", ", tagsToCreate));
+                _logger.LogInformation("Created tags: {Tags}", string.Join(", ", tagsToCreate));
             }
         }
         catch (Exception ex) when (ex is not OperationCanceledException)
@@ -1142,7 +1278,7 @@ public class SeedingService : ISeedingService
                 if (toCreate.Count > 0)
                 {
                     if (await client.CreateTagsAsync(toCreate, cancellationToken))
-                        _logger.LogDebug("Pre-created tracker tags on qBit: {Tags}", string.Join(", ", toCreate));
+                        _logger.LogInformation("Pre-created tracker tags on qBit: {Tags}", string.Join(", ", toCreate));
                     else
                         succeeded = false;
                 }
@@ -1283,8 +1419,9 @@ public class SeedingService : ISeedingService
                 var urlsToRemove = matchingTrackers.Select(t => t.Url ?? "").Where(u => u.Length > 0).ToList();
                 if (urlsToRemove.Count > 0 && client.Capabilities.TrackerMutation)
                 {
-                    _logger.LogDebug("RemoveIfExists: removing tracker host {Host} from [{Name}]", cfgHost, torrent.Name);
+                    _logger.LogInformation("RemoveIfExists: removing tracker host {Host} from [{Name}]", TrackerLogHost(cfg.Uri), torrent.Name);
                     if (!await client.RemoveTrackersAsync(torrent.Hash, urlsToRemove, ct)) throw new IOException("Torrent client rejected tracker removal.");
+                    _logger.LogInformation("Client accepted tracker removal for {Hash} on {Client}", torrent.Hash, torrent.ClientInstanceId);
                     isPresent = false; // tracker was removed; AddTrackerIfMissing should not re-add
                 }
             }
@@ -1292,8 +1429,9 @@ public class SeedingService : ISeedingService
             // AddTrackerIfMissing: torrent lacks this tracker → inject it
             if (client.Capabilities.TrackerMutation && cfg.AddTrackerIfMissing && !isPresent && !string.IsNullOrEmpty(cfg.Uri))
             {
-                _logger.LogDebug("AddTrackerIfMissing: adding tracker {Uri} to [{Name}]", cfg.Uri, torrent.Name);
+                _logger.LogInformation("AddTrackerIfMissing: adding tracker host {Host} to [{Name}]", TrackerLogHost(cfg.Uri), torrent.Name);
                 if (!await client.AddTrackersAsync(torrent.Hash, new List<string> { cfg.Uri }, ct)) throw new IOException("Torrent client rejected tracker addition.");
+                _logger.LogInformation("Client accepted tracker addition for {Hash} on {Client}", torrent.Hash, torrent.ClientInstanceId);
             }
 
             // AddTags: active tracker match → queue user-defined tags
@@ -1306,8 +1444,9 @@ public class SeedingService : ISeedingService
             // §3.5: SuperSeedMode — set or clear super-seed mode when active tracker matches
             if (client.Capabilities.SuperSeeding && cfg.SuperSeedMode.HasValue && isPresent)
             {
-                _logger.LogDebug("SuperSeedMode={Mode}: applying to [{Name}]", cfg.SuperSeedMode.Value, torrent.Name);
+                _logger.LogInformation("SuperSeedMode={Mode}: applying to [{Name}]", cfg.SuperSeedMode.Value, torrent.Name);
                 if (!await client.SetSuperSeedingAsync(torrent.Hash, cfg.SuperSeedMode.Value, ct)) throw new IOException("Torrent client rejected super-seeding update.");
+                _logger.LogInformation("Client accepted super-seeding update for {Hash} on {Client}", torrent.Hash, torrent.ClientInstanceId);
             }
         }
 
@@ -1315,8 +1454,9 @@ public class SeedingService : ISeedingService
         var newTags = tagsToAdd.Where(t => !existingTagSet.Contains(t)).ToList();
         if (client.Capabilities.Tags && newTags.Count > 0)
         {
-            _logger.LogDebug("AddTags: adding {Tags} to [{Name}]", string.Join(", ", newTags), torrent.Name);
+            _logger.LogInformation("AddTags: adding {Tags} to [{Name}]", string.Join(", ", newTags), torrent.Name);
             if (!await client.AddTagsAsync(new List<string> { torrent.Hash }, newTags, ct)) throw new IOException("Torrent client rejected tracker tag update.");
+            _logger.LogInformation("Client accepted tracker tag update for {Hash} on {Client}", torrent.Hash, torrent.ClientInstanceId);
         }
     }
 
@@ -1325,12 +1465,8 @@ public class SeedingService : ISeedingService
     /// If matched: remove the tracker only after protection clearance; RemoveDeadTrackers=true reports and preserves.
     /// Checks both Arr-level SeedingMode and TorrentConfig lists.
     /// </summary>
-    private async Task ProcessTrackerMessagesAsync(
-        ITorrentClient client,
-        TorrentInfo torrent,
-        CancellationToken ct)
+    internal async Task ObserveTrackerIssueAsync(TorrentInfo torrent, IReadOnlyList<TorrentTracker> trackers, CancellationToken ct)
     {
-        var trackers = await client.GetTorrentTrackersAsync(torrent.Hash, ct);
         var issueKey = MaintenancePersistence.Key(torrent.ClientInstanceId, torrent.Hash, "tracker-issue");
         var rejected = trackers.Any(t => TrackerMessageIndicatesDead(t.Msg));
         if (rejected)
@@ -1341,6 +1477,15 @@ public class SeedingService : ISeedingService
             var issue = await _dbContext.MaintenanceState.FindAsync([issueKey], ct);
             if (issue != null) { _dbContext.MaintenanceState.Remove(issue); await _dbContext.SaveChangesAsync(ct); }
         }
+    }
+
+    private async Task ProcessTrackerMessagesAsync(
+        ITorrentClient client,
+        TorrentInfo torrent,
+        CancellationToken ct)
+    {
+        var trackers = await client.GetTorrentTrackersAsync(torrent.Hash, ct);
+        await ObserveTrackerIssueAsync(torrent, trackers, ct);
         // Determine effective RemoveTrackerWithMessage and RemoveDeadTrackers from Arr config
         var arrCfg = _config.ArrInstances.Values
             .FirstOrDefault(a => CategoryOwnershipHelper.ArrOwnsTorrent(_config, a, torrent));
@@ -1382,9 +1527,9 @@ public class SeedingService : ISeedingService
             }
             if (!await FreshAllowsMutationAsync(client, torrent, "tracker message removal", ct)) continue;
             {
-                _logger.LogDebug(
-                    "RemoveTrackerWithMessage: removing tracker {Url} from [{Name}] — message: \"{Msg}\"",
-                    tracker.Url, torrent.Name, msg);
+                _logger.LogInformation(
+                    "RemoveTrackerWithMessage: removing tracker host {Host} from [{Name}] — message: \"{Msg}\"",
+                    TrackerLogHost(tracker.Url), torrent.Name, DiagnosticText.Safe(msg));
                 if (client.Capabilities.TrackerMutation)
                     if (!await client.RemoveTrackersAsync(torrent.Hash, new List<string> { tracker.Url }, ct)) throw new IOException("Torrent client rejected tracker message cleanup.");
             }

@@ -1,0 +1,1380 @@
+# This is a config file for the qBitrr Script - Make sure to change all entries of "CHANGE_ME".
+# This is a config file should be moved to "/home/qBitrr/.config".
+
+[Settings]
+# Internal config schema version - DO NOT MODIFY
+# This is managed automatically by qBitrr for config migrations
+ConfigVersion = "5.14.8"
+
+# Level of logging; One of CRITICAL, ERROR, WARNING, NOTICE, INFO, DEBUG, TRACE
+ConsoleLevel = "INFO"
+
+# Enable logging to files
+Logging = true
+
+# Folder where your completed downloads are put into. Can be found in qBitTorrent -> Options -> Downloads -> Default Save Path (Please note, replace all '\' with '/')
+CompletedDownloadFolder = "CHANGE_ME"
+
+# The desired amount of free space in the downloads directory [K=kilobytes, M=megabytes, G=gigabytes, T=terabytes] (set to -1 to disable, this bypasses AutoPauseResume)
+FreeSpace = "-1"
+
+# Folder where the free space handler will check for free space (Please note, replace all '' with '/')
+FreeSpaceFolder = "CHANGE_ME"
+
+# Enable automation of pausing and resuming torrents as needed (Required enabled for the FreeSpace logic to function)
+AutoPauseResume = true
+
+# Time to sleep for if there is no internet (in seconds: 600 = 10 Minutes)
+NoInternetSleepTimer = 15
+
+# Time to sleep between reprocessing torrents (in seconds: 600 = 10 Minutes)
+LoopSleepTimer = 5
+
+# Time to sleep between posting search commands (in seconds: 600 = 10 Minutes)
+SearchLoopDelay = -1
+
+# Add torrents to this category to mark them as failed
+FailedCategory = "failed"
+
+# Add torrents to this category to trigger them to be rechecked properly
+RecheckCategory = "recheck"
+
+# Tagless operation
+Tagless = false
+
+# Ignore Torrents which are younger than this value (in seconds: 600 = 10 Minutes)
+# Only applicable to Re-check and failed categories
+IgnoreTorrentsYoungerThan = 180
+
+# URL to be pinged to check if you have a valid internet connection
+# These will be pinged a **LOT** make sure the service is okay with you sending all the continuous pings.
+PingURLS = ["one.one.one.one", "dns.google.com"]
+
+# FFprobe auto updates, binaries are downloaded from https://ffbinaries.com/downloads
+# If this is disabled and you want ffprobe to work
+# Ensure that you add the ffprobe binary to the folder"/home/qBitrr/.config/qBitManager/ffprobe.exe"
+# If no `ffprobe` binary is found in the folder above all ffprobe functionality will be disabled.
+# By default this will always be on even if config does not have these key - to disable you need to explicitly set it to `False`
+FFprobeAutoUpdate = true
+
+# Automatically attempt to update qBitrr on a schedule
+# Set to true to enable the auto-update worker.
+AutoUpdateEnabled = false
+
+# Cron expression describing when to check for updates
+# Default is weekly Sunday at 03:00 (0 3 * * 0).
+AutoUpdateCron = "0 3 * * 0"
+
+# Release channel for update checks and auto-updates
+# latest  = newest GitHub/PyPI release (includes [build] bumps)
+# stable  = newest non-build release (build segment == 1)
+# nightly = tip of master (unsupported for binary installs)
+AutoUpdateChannel = "latest"
+
+# Automatically restart worker processes that fail or crash
+# Set to false to disable auto-restart (processes will only log failures)
+AutoRestartProcesses = true
+
+# Maximum number of restart attempts per process within the restart window
+# Prevents infinite restart loops for processes that crash immediately
+MaxProcessRestarts = 5
+
+# Time window (seconds) for tracking restart attempts
+# If a process restarts MaxProcessRestarts times within this window, auto-restart is disabled for that process
+ProcessRestartWindow = 300
+
+# Delay (seconds) before attempting to restart a failed process
+ProcessRestartDelay = 5
+
+[WebUI]
+# WebUI listen host (default 0.0.0.0; use 127.0.0.1 for localhost-only)
+Host = "0.0.0.0"
+
+# WebUI listen port (default 6969)
+Port = 6969
+
+# Bearer token used when authentication is enabled; does not enable auth by itself.
+# Available via /api/token and /web/token when authorized (including when AuthDisabled).
+# Send as Authorization: Bearer <token> on API requests when auth is required.
+Token = ""
+
+# When true, login is not required and the full admin API is open to anyone who can
+# reach the WebUI port (including token retrieval, config writes, and self-update).
+# New installs default to false (login required). Legacy configs missing this key
+# still treat auth as disabled for backward compatibility.
+AuthDisabled = false
+
+# Required acknowledgment when AuthDisabled is true and Host is 0.0.0.0 or ::.
+# Set to true only if you intentionally expose an unauthenticated admin WebUI
+# (e.g. behind a reverse proxy that already authenticates clients).
+# Legacy configs missing this key keep warn-only behavior; new installs default false.
+AllowInsecureExposure = false
+
+# Allow authentication via ?token= query parameter (insecure: leaks in logs/history).
+# Prefer Authorization: Bearer. Legacy configs missing this key still accept query tokens.
+AllowInsecureTokenQuery = false
+
+# Set to true when the WebUI is reached over HTTPS (e.g. behind a reverse proxy).
+# When true, the app trusts X-Forwarded-Proto and sets the session cookie as Secure. Leave false for plain HTTP.
+# Only enable behind a trusted proxy that overwrites X-Forwarded-* headers (spoofed
+# X-Forwarded-For can bypass login rate limits if the app is reachable directly).
+BehindHttpsProxy = false
+
+# Public URL path prefix when served behind a reverse proxy (no trailing slash).
+# Example: "/qbitrr" serves the UI at https://host/qbitrr/ui. Leave empty for site root.
+UrlBase = ""
+
+# Enable username/password login
+LocalAuthEnabled = false
+
+# Enable OIDC login
+OIDCEnabled = false
+
+# Username for local auth
+Username = ""
+
+# BCrypt password hash — set via the WebUI 'Set Password' button, never plain text
+PasswordHash = ""
+
+[WebUI.OIDC]
+# OIDC issuer/authority URL (e.g. https://auth.example.com/application/o/qbitrr)
+Authority = ""
+
+# OAuth2 client ID
+ClientId = ""
+
+# OAuth2 client secret
+ClientSecret = ""
+
+# Space-separated OIDC scopes
+Scopes = "openid profile"
+
+# OIDC callback path (must match IdP redirect URI)
+CallbackPath = "/signin-oidc"
+
+# Require HTTPS for IdP metadata (set false only for local dev OIDC)
+RequireHttpsMetadata = true
+
+# Enable live updates for Arr views
+LiveArr = true
+
+# WebUI theme (Light or Dark)
+Theme = "Dark"
+
+# WebUI view density (Comfortable or Compact)
+ViewDensity = "Comfortable"
+
+[qBit]
+# Skip connecting this qBit instance while keeping the section in config.
+# Does not enable global headless mode; omit all [qBit] / [qBit-*] sections
+# (or use QBITRR_QBIT_DISABLED / SEARCH_ONLY) for search-only without torrent management.
+Disabled = false
+
+# qbittorrent WebUI URL/IP - Can be found in Options > Web UI (called "IP Address")
+Host = "CHANGE_ME"
+
+# qbittorrent WebUI Port - Can be found in Options > Web UI (called "Port" on top right corner of the window)
+Port = 8080
+
+# qbittorrent WebUI Authentication - Can be found in Options > Web UI > Authentication
+UserName = "CHANGE_ME"
+
+# If you set "Bypass authentication on localhost or whitelisted IPs" remove this field.
+Password = "CHANGE_ME"
+
+# If true, do not verify TLS certificates for HTTPS WebUI (self-signed certs). Disables MITM protection for that connection.
+SkipTLSVerify = false
+
+# Categories managed directly by this qBit instance (not managed by Arr instances).
+# These categories will have seeding settings applied according to CategorySeeding configuration.
+# Example: ['downloads', 'private-tracker', 'long-term-seed']
+ManagedCategories = []
+
+# When true, torrents in child categories under each ManagedCategories entry are included (see docs/configuration/qbittorrent.md § Subcategories).
+MatchSubcategories = false
+
+# Shared tracker configs inherited by all Arr instances on this qBit instance.
+# Define tracker-specific rate limits, HnR protection, and management rules here.
+# Arr instances can optionally override per-tracker settings in their own Trackers section.
+Trackers = []
+
+[qBit.CategorySeeding]
+# Download rate limit per torrent in KB/s (-1 = disabled)
+DownloadRateLimitPerTorrent = -1
+
+# Upload rate limit per torrent in KB/s (-1 = disabled)
+UploadRateLimitPerTorrent = -1
+
+# Maximum upload ratio (-1 = disabled, e.g. 2.0 for 200%)
+MaxUploadRatio = -1
+
+# Maximum seeding time in seconds (-1 = disabled, e.g. 604800 for 7 days)
+MaxSeedingTime = -1
+
+# When to remove torrents from qBittorrent:
+#   -1 = Never remove
+#    1 = Remove when MaxUploadRatio is reached
+#    2 = Remove when MaxSeedingTime is reached
+#    3 = Remove when either condition is met (OR)
+#    4 = Remove when both conditions are met (AND)
+RemoveTorrent = -1
+
+# Hit and Run mode: and = require both ratio and time; or = either clears; disabled = no clearance requirements from this rule; private torrents still need verified clearance
+HitAndRunMode = "disabled"
+
+# Minimum seed ratio before removal allowed (HnR protection)
+MinSeedRatio = 1.0
+
+# Minimum seeding time in days before removal allowed (HnR protection, 0 = ratio only)
+MinSeedingTimeDays = 0
+
+# Minimum download percentage before a torrent is considered for HnR (0-100, default 10)
+HitAndRunMinimumDownloadPercent = 10
+
+# Minimum ratio for partial downloads (>=HitAndRunMinimumDownloadPercent% but <100% complete)
+HitAndRunPartialSeedRatio = 1.0
+
+# Extra seconds buffer for tracker stats lag (0 = disabled)
+TrackerUpdateBuffer = 0
+
+# Stalled cleanup grace period in minutes (-1 = infinite, 0 = immediate cleanup)
+StalledDelay = -1
+
+# Ignore torrents younger than this (seconds). Stalled removal also requires last_activity older than this.
+IgnoreTorrentsYoungerThan = 180
+
+
+[Sonarr-TV]
+
+# Toggle whether to manage the Servarr instance torrents.
+Managed = true
+
+# The URL used to access Servarr interface eg. http://ip:port(if you use a domain enter the domain without a port)
+URI = "CHANGE_ME"
+
+# The Servarr API Key, Can be found it Settings > General > Security
+APIKey = "CHANGE_ME"
+
+# If true, do not verify TLS for this Servarr API (HTTPS). Does not affect Overseerr/Ombi. Disables MITM protection for that connection.
+SkipTLSVerify = false
+
+# Category applied by Servarr to torrents in qBitTorrent, can be found in Settings > Download Clients > qBit > Category
+Category = "sonarr-tv"
+
+# Toggle whether to send a query to Servarr to search any failed torrents
+ReSearch = true
+
+# The Servarr's Import Mode(one of Move, Copy or Auto)
+importMode = "Auto"
+
+# Timer to call RSSSync (In minutes) - Set to 0 to disable (Values below 5 can cause errors for maximum retires)
+RssSyncTimer = 1
+
+# Timer to call RefreshDownloads to update the queue. (In minutes) - Set to 0 to disable (Values below 5 can cause errors for maximum retires)
+RefreshDownloadsTimer = 1
+
+# Error messages shown my the Arr instance which should be considered failures.
+# This entry should be a list, leave it empty if you want to disable this error handling.
+# If enabled qBitrr will remove the failed files and tell the Arr instance the download failed
+ArrErrorCodesToBlocklist = ["Unable to determine if file is a sample", "Not an upgrade for existing episode file(s)", "Not a preferred word upgrade for existing episode file(s)"]
+
+[Sonarr-TV.EntrySearch]
+# Should search for Missing files?
+SearchMissing = true
+
+# Should search for specials episodes? (Season 00)
+AlsoSearchSpecials = false
+
+# Should search for unmonitored episodes/series?
+Unmonitored = false
+
+# Maximum allowed Searches at any one points (I wouldn't recommend settings this too high)
+# Sonarr has a hardcoded cap of 3 simultaneous tasks
+SearchLimit = 5
+
+# It will order searches by the year the episode was first aired
+SearchByYear = true
+
+# Reverse search order (Start searching oldest to newest)
+SearchInReverse = false
+
+# Delay (in seconds) between checking for new Overseerr/Ombi requests. Does NOT affect delay between individual search commands (use Settings.SearchLoopDelay for that).
+SearchRequestsEvery = 300
+
+# Search media which already have a file in hopes of finding a better quality version.
+DoUpgradeSearch = false
+
+# Do a quality unmet search for existing entries.
+QualityUnmetSearch = false
+
+# Do a minimum custom format score unmet search for existing entries.
+CustomFormatUnmetSearch = false
+
+# Automatically remove torrents that do not mee the minimum custom format score.
+ForceMinimumCustomFormat = false
+
+# Once you have search all files on your specified year range restart the loop and search again.
+SearchAgainOnSearchCompletion = true
+
+# Use Temp profile for missing
+UseTempForMissing = false
+
+# Don't change back to main profile
+KeepTempProfile = false
+
+# Quality profile mappings for temp profile switching (Main Profile Name -> Temp Profile Name)
+# Profile names must match exactly as they appear in your Arr instance
+# Example: QualityProfileMappings = {"HD-1080p" = "SD", "HD-720p" = "SD"}
+QualityProfileMappings = {}
+
+# Reset all items using temp profiles to their original main profile on qBitrr startup
+ForceResetTempProfiles = false
+
+# Timeout in minutes after which items with temp profiles are automatically reset to main profile (0 = disabled)
+TempProfileResetTimeoutMinutes = 0
+
+# Number of retry attempts for profile switch API calls (default: 3)
+ProfileSwitchRetryAttempts = 3
+
+
+# Search mode: true (always series search), false (always episode search), or 'smart' (automatic)
+# Smart mode: uses series search for entire seasons/series, episode search for single episodes
+# (Series search ignores QualityUnmetSearch and CustomFormatUnmetSearch settings)
+SearchBySeries = "smart"
+
+# Prioritize Today's releases (Similar effect as RSS Sync, where it searches today's release episodes first, only works on Sonarr).
+PrioritizeTodaysReleases = true
+
+[Sonarr-TV.EntrySearch.Ombi]
+# Search Ombi for pending requests (Will only work if 'SearchMissing' is enabled.)
+SearchOmbiRequests = false
+
+# Ombi URI eg. http://ip:port (Note that this has to be the instance of Ombi which manage the Arr instance request (If you have multiple Ombi instances)
+OmbiURI = "CHANGE_ME"
+
+# Ombi's API Key
+OmbiAPIKey = "CHANGE_ME"
+
+# Only process approved requests
+ApprovedOnly = true
+
+# If true, do not verify TLS for Ombi HTTPS (self-signed). Disables MITM protection.
+SkipTLSVerify = false
+
+[Sonarr-TV.EntrySearch.Overseerr]
+# Search Overseerr for pending requests (Will only work if 'SearchMissing' is enabled.)
+# If this and Ombi are both enable, Ombi will be ignored
+SearchOverseerrRequests = false
+
+# Overseerr's URI eg. http://ip:port
+OverseerrURI = "CHANGE_ME"
+
+# Overseerr's API Key
+OverseerrAPIKey = "CHANGE_ME"
+
+# Only process approved requests
+ApprovedOnly = true
+
+# If true, do not verify TLS for Overseerr HTTPS (self-signed). Disables MITM protection.
+SkipTLSVerify = false
+
+# Only for 4K Instances
+# Only for 4K Instances
+Is4K = false
+
+
+[Sonarr-TV.Torrent]
+# Set it to regex matches to respect/ignore case.
+CaseSensitiveMatches = false
+
+# These regex values will match any folder where the full name matches the specified values here, comma separated strings.
+# These regex need to be escaped, that's why you see so many backslashes.
+FolderExclusionRegex = ["\\bextras?\\b", "\\bfeaturettes?\\b", "\\bsamples?\\b", "\\bscreens?\\b", "\\bnc(ed|op)?(\\\\d+)?\\b"]
+
+# These regex values will match any folder where the full name matches the specified values here, comma separated strings.
+# These regex need to be escaped, that's why you see so many backslashes.
+FileNameExclusionRegex = ["\\bncop\\\\d+?\\b", "\\bnced\\\\d+?\\b", "\\bsample\\b", "brarbg.com\\b", "\\btrailer\\b", "music video", "comandotorrents.com"]
+
+# Only files with these extensions will be allowed to be downloaded, comma separated strings or regex, leave it empty to allow all extensions
+FileExtensionAllowlist = [".mp4", ".mkv", ".sub", ".ass", ".srt", ".!qB", ".parts"]
+
+# Auto delete files that can't be playable (i.e .exe, .png)
+AutoDelete = false
+
+# Ignore Torrents which are younger than this value (in seconds: 600 = 10 Minutes)
+IgnoreTorrentsYoungerThan = 180
+
+# Maximum allowed remaining ETA for torrent completion (in seconds: 3600 = 1 Hour)
+# Note that if you set the MaximumETA on a tracker basis that value is favoured over this value
+MaximumETA = -1
+
+# Do not delete torrents with higher completion percentage than this setting (0.5 = 50%, 1.0 = 100%)
+MaximumDeletablePercentage = 0.99
+
+# Ignore slow torrents.
+DoNotRemoveSlow = true
+
+# Stalled cleanup grace period in minutes (-1 = Infinite, 0 = immediate cleanup)
+StalledDelay = 15
+
+# Re-search stalled torrents when StalledDelay is enabled and you want to re-search before removing the stalled torrent, or only after the torrent is removed.
+ReSearchStalled = false
+
+# Optional per-Arr tracker overrides. Trackers are inherited from qBit.Trackers by default.
+# Add entries here only if this Arr instance needs different settings for a tracker (matched by URI).
+Trackers = []
+
+[Sonarr-TV.Torrent.SeedingMode]
+# Set the maximum allowed download rate for torrents
+# Set this value to -1 to disabled it
+# Note that if you set the DownloadRateLimit on a tracker basis that value is favoured over this value
+DownloadRateLimitPerTorrent = -1
+
+# Set the maximum allowed upload rate for torrents
+# Set this value to -1 to disabled it
+# Note that if you set the UploadRateLimit on a tracker basis that value is favoured over this value
+UploadRateLimitPerTorrent = -1
+
+# Set the maximum allowed upload ratio for torrents
+# Set this value to -1 to disabled it
+# Note that if you set the MaxUploadRatio on a tracker basis that value is favoured over this value
+MaxUploadRatio = -1
+
+# Set the maximum seeding time in seconds for torrents
+# Set this value to -1 to disabled it
+# Note that if you set the MaxSeedingTime on a tracker basis that value is favoured over this value
+MaxSeedingTime = -1
+
+# Remove torrent condition (-1=Do not remove, 1=Remove on MaxUploadRatio, 2=Remove on MaxSeedingTime, 3=Remove on MaxUploadRatio or MaxSeedingTime, 4=Remove on MaxUploadRatio and MaxSeedingTime)
+RemoveTorrent = -1
+
+# Enable if you want to remove dead trackers
+RemoveDeadTrackers = false
+
+# If "RemoveDeadTrackers" is set to true then remove trackers with the following messages
+RemoveTrackerWithMessage = ["skipping tracker announce (unreachable)", "No such host is known", "unsupported URL protocol", "info hash is not authorized with this tracker"]
+
+
+[Sonarr-Anime]
+
+# Toggle whether to manage the Servarr instance torrents.
+Managed = true
+
+# The URL used to access Servarr interface eg. http://ip:port(if you use a domain enter the domain without a port)
+URI = "CHANGE_ME"
+
+# The Servarr API Key, Can be found it Settings > General > Security
+APIKey = "CHANGE_ME"
+
+# If true, do not verify TLS for this Servarr API (HTTPS). Does not affect Overseerr/Ombi. Disables MITM protection for that connection.
+SkipTLSVerify = false
+
+# Category applied by Servarr to torrents in qBitTorrent, can be found in Settings > Download Clients > qBit > Category
+Category = "sonarr-anime"
+
+# Toggle whether to send a query to Servarr to search any failed torrents
+ReSearch = true
+
+# The Servarr's Import Mode(one of Move, Copy or Auto)
+importMode = "Auto"
+
+# Timer to call RSSSync (In minutes) - Set to 0 to disable (Values below 5 can cause errors for maximum retires)
+RssSyncTimer = 1
+
+# Timer to call RefreshDownloads to update the queue. (In minutes) - Set to 0 to disable (Values below 5 can cause errors for maximum retires)
+RefreshDownloadsTimer = 1
+
+# Error messages shown my the Arr instance which should be considered failures.
+# This entry should be a list, leave it empty if you want to disable this error handling.
+# If enabled qBitrr will remove the failed files and tell the Arr instance the download failed
+ArrErrorCodesToBlocklist = ["Unable to determine if file is a sample", "Not an upgrade for existing episode file(s)", "Not a preferred word upgrade for existing episode file(s)"]
+
+[Sonarr-Anime.EntrySearch]
+# Should search for Missing files?
+SearchMissing = true
+
+# Should search for specials episodes? (Season 00)
+AlsoSearchSpecials = false
+
+# Should search for unmonitored episodes/series?
+Unmonitored = false
+
+# Maximum allowed Searches at any one points (I wouldn't recommend settings this too high)
+# Sonarr has a hardcoded cap of 3 simultaneous tasks
+SearchLimit = 5
+
+# It will order searches by the year the episode was first aired
+SearchByYear = true
+
+# Reverse search order (Start searching oldest to newest)
+SearchInReverse = false
+
+# Delay (in seconds) between checking for new Overseerr/Ombi requests. Does NOT affect delay between individual search commands (use Settings.SearchLoopDelay for that).
+SearchRequestsEvery = 300
+
+# Search media which already have a file in hopes of finding a better quality version.
+DoUpgradeSearch = false
+
+# Do a quality unmet search for existing entries.
+QualityUnmetSearch = false
+
+# Do a minimum custom format score unmet search for existing entries.
+CustomFormatUnmetSearch = false
+
+# Automatically remove torrents that do not mee the minimum custom format score.
+ForceMinimumCustomFormat = false
+
+# Once you have search all files on your specified year range restart the loop and search again.
+SearchAgainOnSearchCompletion = true
+
+# Use Temp profile for missing
+UseTempForMissing = false
+
+# Don't change back to main profile
+KeepTempProfile = false
+
+# Quality profile mappings for temp profile switching (Main Profile Name -> Temp Profile Name)
+# Profile names must match exactly as they appear in your Arr instance
+# Example: QualityProfileMappings = {"HD-1080p" = "SD", "HD-720p" = "SD"}
+QualityProfileMappings = {}
+
+# Reset all items using temp profiles to their original main profile on qBitrr startup
+ForceResetTempProfiles = false
+
+# Timeout in minutes after which items with temp profiles are automatically reset to main profile (0 = disabled)
+TempProfileResetTimeoutMinutes = 0
+
+# Number of retry attempts for profile switch API calls (default: 3)
+ProfileSwitchRetryAttempts = 3
+
+
+# Search mode: true (always series search), false (always episode search), or 'smart' (automatic)
+# Smart mode: uses series search for entire seasons/series, episode search for single episodes
+# (Series search ignores QualityUnmetSearch and CustomFormatUnmetSearch settings)
+SearchBySeries = "smart"
+
+# Prioritize Today's releases (Similar effect as RSS Sync, where it searches today's release episodes first, only works on Sonarr).
+PrioritizeTodaysReleases = true
+
+[Sonarr-Anime.EntrySearch.Ombi]
+# Search Ombi for pending requests (Will only work if 'SearchMissing' is enabled.)
+SearchOmbiRequests = false
+
+# Ombi URI eg. http://ip:port (Note that this has to be the instance of Ombi which manage the Arr instance request (If you have multiple Ombi instances)
+OmbiURI = "CHANGE_ME"
+
+# Ombi's API Key
+OmbiAPIKey = "CHANGE_ME"
+
+# Only process approved requests
+ApprovedOnly = true
+
+# If true, do not verify TLS for Ombi HTTPS (self-signed). Disables MITM protection.
+SkipTLSVerify = false
+
+[Sonarr-Anime.EntrySearch.Overseerr]
+# Search Overseerr for pending requests (Will only work if 'SearchMissing' is enabled.)
+# If this and Ombi are both enable, Ombi will be ignored
+SearchOverseerrRequests = false
+
+# Overseerr's URI eg. http://ip:port
+OverseerrURI = "CHANGE_ME"
+
+# Overseerr's API Key
+OverseerrAPIKey = "CHANGE_ME"
+
+# Only process approved requests
+ApprovedOnly = true
+
+# If true, do not verify TLS for Overseerr HTTPS (self-signed). Disables MITM protection.
+SkipTLSVerify = false
+
+# Only for 4K Instances
+# Only for 4K Instances
+Is4K = false
+
+
+[Sonarr-Anime.Torrent]
+# Set it to regex matches to respect/ignore case.
+CaseSensitiveMatches = false
+
+# These regex values will match any folder where the full name matches the specified values here, comma separated strings.
+# These regex need to be escaped, that's why you see so many backslashes.
+FolderExclusionRegex = ["\\bextras?\\b", "\\bfeaturettes?\\b", "\\bsamples?\\b", "\\bscreens?\\b", "\\bspecials?\\b", "\\bova\\b", "\\bnc(ed|op)?(\\\\d+)?\\b"]
+
+# These regex values will match any folder where the full name matches the specified values here, comma separated strings.
+# These regex need to be escaped, that's why you see so many backslashes.
+FileNameExclusionRegex = ["\\bncop\\\\d+?\\b", "\\bnced\\\\d+?\\b", "\\bsample\\b", "brarbg.com\\b", "\\btrailer\\b", "music video", "comandotorrents.com"]
+
+# Only files with these extensions will be allowed to be downloaded, comma separated strings or regex, leave it empty to allow all extensions
+FileExtensionAllowlist = [".mp4", ".mkv", ".sub", ".ass", ".srt", ".!qB", ".parts"]
+
+# Auto delete files that can't be playable (i.e .exe, .png)
+AutoDelete = false
+
+# Ignore Torrents which are younger than this value (in seconds: 600 = 10 Minutes)
+IgnoreTorrentsYoungerThan = 180
+
+# Maximum allowed remaining ETA for torrent completion (in seconds: 3600 = 1 Hour)
+# Note that if you set the MaximumETA on a tracker basis that value is favoured over this value
+MaximumETA = -1
+
+# Do not delete torrents with higher completion percentage than this setting (0.5 = 50%, 1.0 = 100%)
+MaximumDeletablePercentage = 0.99
+
+# Ignore slow torrents.
+DoNotRemoveSlow = true
+
+# Stalled cleanup grace period in minutes (-1 = Infinite, 0 = immediate cleanup)
+StalledDelay = 15
+
+# Re-search stalled torrents when StalledDelay is enabled and you want to re-search before removing the stalled torrent, or only after the torrent is removed.
+ReSearchStalled = false
+
+# Optional per-Arr tracker overrides. Trackers are inherited from qBit.Trackers by default.
+# Add entries here only if this Arr instance needs different settings for a tracker (matched by URI).
+Trackers = []
+
+[Sonarr-Anime.Torrent.SeedingMode]
+# Set the maximum allowed download rate for torrents
+# Set this value to -1 to disabled it
+# Note that if you set the DownloadRateLimit on a tracker basis that value is favoured over this value
+DownloadRateLimitPerTorrent = -1
+
+# Set the maximum allowed upload rate for torrents
+# Set this value to -1 to disabled it
+# Note that if you set the UploadRateLimit on a tracker basis that value is favoured over this value
+UploadRateLimitPerTorrent = -1
+
+# Set the maximum allowed upload ratio for torrents
+# Set this value to -1 to disabled it
+# Note that if you set the MaxUploadRatio on a tracker basis that value is favoured over this value
+MaxUploadRatio = -1
+
+# Set the maximum seeding time in seconds for torrents
+# Set this value to -1 to disabled it
+# Note that if you set the MaxSeedingTime on a tracker basis that value is favoured over this value
+MaxSeedingTime = -1
+
+# Remove torrent condition (-1=Do not remove, 1=Remove on MaxUploadRatio, 2=Remove on MaxSeedingTime, 3=Remove on MaxUploadRatio or MaxSeedingTime, 4=Remove on MaxUploadRatio and MaxSeedingTime)
+RemoveTorrent = -1
+
+# Enable if you want to remove dead trackers
+RemoveDeadTrackers = false
+
+# If "RemoveDeadTrackers" is set to true then remove trackers with the following messages
+RemoveTrackerWithMessage = ["skipping tracker announce (unreachable)", "No such host is known", "unsupported URL protocol", "info hash is not authorized with this tracker"]
+
+
+[Radarr-1080]
+
+# Toggle whether to manage the Servarr instance torrents.
+Managed = true
+
+# The URL used to access Servarr interface eg. http://ip:port(if you use a domain enter the domain without a port)
+URI = "CHANGE_ME"
+
+# The Servarr API Key, Can be found it Settings > General > Security
+APIKey = "CHANGE_ME"
+
+# If true, do not verify TLS for this Servarr API (HTTPS). Does not affect Overseerr/Ombi. Disables MITM protection for that connection.
+SkipTLSVerify = false
+
+# Category applied by Servarr to torrents in qBitTorrent, can be found in Settings > Download Clients > qBit > Category
+Category = "radarr-1080"
+
+# Toggle whether to send a query to Servarr to search any failed torrents
+ReSearch = true
+
+# The Servarr's Import Mode(one of Move, Copy or Auto)
+importMode = "Auto"
+
+# Timer to call RSSSync (In minutes) - Set to 0 to disable (Values below 5 can cause errors for maximum retires)
+RssSyncTimer = 1
+
+# Timer to call RefreshDownloads to update the queue. (In minutes) - Set to 0 to disable (Values below 5 can cause errors for maximum retires)
+RefreshDownloadsTimer = 1
+
+# Error messages shown my the Arr instance which should be considered failures.
+# This entry should be a list, leave it empty if you want to disable this error handling.
+# If enabled qBitrr will remove the failed files and tell the Arr instance the download failed
+ArrErrorCodesToBlocklist = ["Unable to determine if file is a sample", "Not a preferred word upgrade for existing movie file(s)", "Not an upgrade for existing movie file(s)"]
+
+[Radarr-1080.EntrySearch]
+# Should search for Missing files?
+SearchMissing = true
+
+# Should search for unmonitored movies?
+Unmonitored = false
+
+# Radarr has a default of 3 simultaneous tasks, which can be increased up to 10 tasks
+# If you set the environment variable of "THREAD_LIMIT" to a number between and including 2-10
+# Radarr devs have stated that this is an unsupported feature so you will not get any support for doing so from them.
+# That being said I've been daily driving 10 simultaneous tasks for quite a while now with no issues.
+SearchLimit = 5
+
+# It will order searches by the year the movie was released
+SearchByYear = true
+
+# Reverse search order (Start searching oldest to newest)
+SearchInReverse = false
+
+# Delay (in seconds) between checking for new Overseerr/Ombi requests. Does NOT affect delay between individual search commands (use Settings.SearchLoopDelay for that).
+SearchRequestsEvery = 300
+
+# Search media which already have a file in hopes of finding a better quality version.
+DoUpgradeSearch = false
+
+# Do a quality unmet search for existing entries.
+QualityUnmetSearch = false
+
+# Do a minimum custom format score unmet search for existing entries.
+CustomFormatUnmetSearch = false
+
+# Automatically remove torrents that do not mee the minimum custom format score.
+ForceMinimumCustomFormat = false
+
+# Once you have search all files on your specified year range restart the loop and search again.
+SearchAgainOnSearchCompletion = true
+
+# Use Temp profile for missing
+UseTempForMissing = false
+
+# Don't change back to main profile
+KeepTempProfile = false
+
+# Quality profile mappings for temp profile switching (Main Profile Name -> Temp Profile Name)
+# Profile names must match exactly as they appear in your Arr instance
+# Example: QualityProfileMappings = {"HD-1080p" = "SD", "HD-720p" = "SD"}
+QualityProfileMappings = {}
+
+# Reset all items using temp profiles to their original main profile on qBitrr startup
+ForceResetTempProfiles = false
+
+# Timeout in minutes after which items with temp profiles are automatically reset to main profile (0 = disabled)
+TempProfileResetTimeoutMinutes = 0
+
+# Number of retry attempts for profile switch API calls (default: 3)
+ProfileSwitchRetryAttempts = 3
+
+
+[Radarr-1080.EntrySearch.Ombi]
+# Search Ombi for pending requests (Will only work if 'SearchMissing' is enabled.)
+SearchOmbiRequests = false
+
+# Ombi URI eg. http://ip:port (Note that this has to be the instance of Ombi which manage the Arr instance request (If you have multiple Ombi instances)
+OmbiURI = "CHANGE_ME"
+
+# Ombi's API Key
+OmbiAPIKey = "CHANGE_ME"
+
+# Only process approved requests
+ApprovedOnly = true
+
+# If true, do not verify TLS for Ombi HTTPS (self-signed). Disables MITM protection.
+SkipTLSVerify = false
+
+[Radarr-1080.EntrySearch.Overseerr]
+# Search Overseerr for pending requests (Will only work if 'SearchMissing' is enabled.)
+# If this and Ombi are both enable, Ombi will be ignored
+SearchOverseerrRequests = false
+
+# Overseerr's URI eg. http://ip:port
+OverseerrURI = "CHANGE_ME"
+
+# Overseerr's API Key
+OverseerrAPIKey = "CHANGE_ME"
+
+# Only process approved requests
+ApprovedOnly = true
+
+# If true, do not verify TLS for Overseerr HTTPS (self-signed). Disables MITM protection.
+SkipTLSVerify = false
+
+# Only for 4K Instances
+# Only for 4K Instances
+Is4K = false
+
+
+[Radarr-1080.Torrent]
+# Set it to regex matches to respect/ignore case.
+CaseSensitiveMatches = false
+
+# These regex values will match any folder where the full name matches the specified values here, comma separated strings.
+# These regex need to be escaped, that's why you see so many backslashes.
+FolderExclusionRegex = ["\\bextras?\\b", "\\bfeaturettes?\\b", "\\bsamples?\\b", "\\bscreens?\\b", "\\bnc(ed|op)?(\\\\d+)?\\b"]
+
+# These regex values will match any folder where the full name matches the specified values here, comma separated strings.
+# These regex need to be escaped, that's why you see so many backslashes.
+FileNameExclusionRegex = ["\\bncop\\\\d+?\\b", "\\bnced\\\\d+?\\b", "\\bsample\\b", "brarbg.com\\b", "\\btrailer\\b", "music video", "comandotorrents.com"]
+
+# Only files with these extensions will be allowed to be downloaded, comma separated strings or regex, leave it empty to allow all extensions
+FileExtensionAllowlist = [".mp4", ".mkv", ".sub", ".ass", ".srt", ".!qB", ".parts"]
+
+# Auto delete files that can't be playable (i.e .exe, .png)
+AutoDelete = false
+
+# Ignore Torrents which are younger than this value (in seconds: 600 = 10 Minutes)
+IgnoreTorrentsYoungerThan = 180
+
+# Maximum allowed remaining ETA for torrent completion (in seconds: 3600 = 1 Hour)
+# Note that if you set the MaximumETA on a tracker basis that value is favoured over this value
+MaximumETA = -1
+
+# Do not delete torrents with higher completion percentage than this setting (0.5 = 50%, 1.0 = 100%)
+MaximumDeletablePercentage = 0.99
+
+# Ignore slow torrents.
+DoNotRemoveSlow = true
+
+# Stalled cleanup grace period in minutes (-1 = Infinite, 0 = immediate cleanup)
+StalledDelay = 15
+
+# Re-search stalled torrents when StalledDelay is enabled and you want to re-search before removing the stalled torrent, or only after the torrent is removed.
+ReSearchStalled = false
+
+# Optional per-Arr tracker overrides. Trackers are inherited from qBit.Trackers by default.
+# Add entries here only if this Arr instance needs different settings for a tracker (matched by URI).
+Trackers = []
+
+[Radarr-1080.Torrent.SeedingMode]
+# Set the maximum allowed download rate for torrents
+# Set this value to -1 to disabled it
+# Note that if you set the DownloadRateLimit on a tracker basis that value is favoured over this value
+DownloadRateLimitPerTorrent = -1
+
+# Set the maximum allowed upload rate for torrents
+# Set this value to -1 to disabled it
+# Note that if you set the UploadRateLimit on a tracker basis that value is favoured over this value
+UploadRateLimitPerTorrent = -1
+
+# Set the maximum allowed upload ratio for torrents
+# Set this value to -1 to disabled it
+# Note that if you set the MaxUploadRatio on a tracker basis that value is favoured over this value
+MaxUploadRatio = -1
+
+# Set the maximum seeding time in seconds for torrents
+# Set this value to -1 to disabled it
+# Note that if you set the MaxSeedingTime on a tracker basis that value is favoured over this value
+MaxSeedingTime = -1
+
+# Remove torrent condition (-1=Do not remove, 1=Remove on MaxUploadRatio, 2=Remove on MaxSeedingTime, 3=Remove on MaxUploadRatio or MaxSeedingTime, 4=Remove on MaxUploadRatio and MaxSeedingTime)
+RemoveTorrent = -1
+
+# Enable if you want to remove dead trackers
+RemoveDeadTrackers = false
+
+# If "RemoveDeadTrackers" is set to true then remove trackers with the following messages
+RemoveTrackerWithMessage = ["skipping tracker announce (unreachable)", "No such host is known", "unsupported URL protocol", "info hash is not authorized with this tracker"]
+
+
+[Radarr-4K]
+
+# Toggle whether to manage the Servarr instance torrents.
+Managed = true
+
+# The URL used to access Servarr interface eg. http://ip:port(if you use a domain enter the domain without a port)
+URI = "CHANGE_ME"
+
+# The Servarr API Key, Can be found it Settings > General > Security
+APIKey = "CHANGE_ME"
+
+# If true, do not verify TLS for this Servarr API (HTTPS). Does not affect Overseerr/Ombi. Disables MITM protection for that connection.
+SkipTLSVerify = false
+
+# Category applied by Servarr to torrents in qBitTorrent, can be found in Settings > Download Clients > qBit > Category
+Category = "radarr-4k"
+
+# Toggle whether to send a query to Servarr to search any failed torrents
+ReSearch = true
+
+# The Servarr's Import Mode(one of Move, Copy or Auto)
+importMode = "Auto"
+
+# Timer to call RSSSync (In minutes) - Set to 0 to disable (Values below 5 can cause errors for maximum retires)
+RssSyncTimer = 1
+
+# Timer to call RefreshDownloads to update the queue. (In minutes) - Set to 0 to disable (Values below 5 can cause errors for maximum retires)
+RefreshDownloadsTimer = 1
+
+# Error messages shown my the Arr instance which should be considered failures.
+# This entry should be a list, leave it empty if you want to disable this error handling.
+# If enabled qBitrr will remove the failed files and tell the Arr instance the download failed
+ArrErrorCodesToBlocklist = ["Unable to determine if file is a sample", "Not a preferred word upgrade for existing movie file(s)", "Not an upgrade for existing movie file(s)"]
+
+[Radarr-4K.EntrySearch]
+# Should search for Missing files?
+SearchMissing = true
+
+# Should search for unmonitored movies?
+Unmonitored = false
+
+# Radarr has a default of 3 simultaneous tasks, which can be increased up to 10 tasks
+# If you set the environment variable of "THREAD_LIMIT" to a number between and including 2-10
+# Radarr devs have stated that this is an unsupported feature so you will not get any support for doing so from them.
+# That being said I've been daily driving 10 simultaneous tasks for quite a while now with no issues.
+SearchLimit = 5
+
+# It will order searches by the year the movie was released
+SearchByYear = true
+
+# Reverse search order (Start searching oldest to newest)
+SearchInReverse = false
+
+# Delay (in seconds) between checking for new Overseerr/Ombi requests. Does NOT affect delay between individual search commands (use Settings.SearchLoopDelay for that).
+SearchRequestsEvery = 300
+
+# Search media which already have a file in hopes of finding a better quality version.
+DoUpgradeSearch = false
+
+# Do a quality unmet search for existing entries.
+QualityUnmetSearch = false
+
+# Do a minimum custom format score unmet search for existing entries.
+CustomFormatUnmetSearch = false
+
+# Automatically remove torrents that do not mee the minimum custom format score.
+ForceMinimumCustomFormat = false
+
+# Once you have search all files on your specified year range restart the loop and search again.
+SearchAgainOnSearchCompletion = true
+
+# Use Temp profile for missing
+UseTempForMissing = false
+
+# Don't change back to main profile
+KeepTempProfile = false
+
+# Quality profile mappings for temp profile switching (Main Profile Name -> Temp Profile Name)
+# Profile names must match exactly as they appear in your Arr instance
+# Example: QualityProfileMappings = {"HD-1080p" = "SD", "HD-720p" = "SD"}
+QualityProfileMappings = {}
+
+# Reset all items using temp profiles to their original main profile on qBitrr startup
+ForceResetTempProfiles = false
+
+# Timeout in minutes after which items with temp profiles are automatically reset to main profile (0 = disabled)
+TempProfileResetTimeoutMinutes = 0
+
+# Number of retry attempts for profile switch API calls (default: 3)
+ProfileSwitchRetryAttempts = 3
+
+
+[Radarr-4K.EntrySearch.Ombi]
+# Search Ombi for pending requests (Will only work if 'SearchMissing' is enabled.)
+SearchOmbiRequests = false
+
+# Ombi URI eg. http://ip:port (Note that this has to be the instance of Ombi which manage the Arr instance request (If you have multiple Ombi instances)
+OmbiURI = "CHANGE_ME"
+
+# Ombi's API Key
+OmbiAPIKey = "CHANGE_ME"
+
+# Only process approved requests
+ApprovedOnly = true
+
+# If true, do not verify TLS for Ombi HTTPS (self-signed). Disables MITM protection.
+SkipTLSVerify = false
+
+[Radarr-4K.EntrySearch.Overseerr]
+# Search Overseerr for pending requests (Will only work if 'SearchMissing' is enabled.)
+# If this and Ombi are both enable, Ombi will be ignored
+SearchOverseerrRequests = false
+
+# Overseerr's URI eg. http://ip:port
+OverseerrURI = "CHANGE_ME"
+
+# Overseerr's API Key
+OverseerrAPIKey = "CHANGE_ME"
+
+# Only process approved requests
+ApprovedOnly = true
+
+# If true, do not verify TLS for Overseerr HTTPS (self-signed). Disables MITM protection.
+SkipTLSVerify = false
+
+# Only for 4K Instances
+# Only for 4K Instances
+Is4K = true
+
+
+[Radarr-4K.Torrent]
+# Set it to regex matches to respect/ignore case.
+CaseSensitiveMatches = false
+
+# These regex values will match any folder where the full name matches the specified values here, comma separated strings.
+# These regex need to be escaped, that's why you see so many backslashes.
+FolderExclusionRegex = ["\\bextras?\\b", "\\bfeaturettes?\\b", "\\bsamples?\\b", "\\bscreens?\\b", "\\bnc(ed|op)?(\\\\d+)?\\b"]
+
+# These regex values will match any folder where the full name matches the specified values here, comma separated strings.
+# These regex need to be escaped, that's why you see so many backslashes.
+FileNameExclusionRegex = ["\\bncop\\\\d+?\\b", "\\bnced\\\\d+?\\b", "\\bsample\\b", "brarbg.com\\b", "\\btrailer\\b", "music video", "comandotorrents.com"]
+
+# Only files with these extensions will be allowed to be downloaded, comma separated strings or regex, leave it empty to allow all extensions
+FileExtensionAllowlist = [".mp4", ".mkv", ".sub", ".ass", ".srt", ".!qB", ".parts"]
+
+# Auto delete files that can't be playable (i.e .exe, .png)
+AutoDelete = false
+
+# Ignore Torrents which are younger than this value (in seconds: 600 = 10 Minutes)
+IgnoreTorrentsYoungerThan = 180
+
+# Maximum allowed remaining ETA for torrent completion (in seconds: 3600 = 1 Hour)
+# Note that if you set the MaximumETA on a tracker basis that value is favoured over this value
+MaximumETA = -1
+
+# Do not delete torrents with higher completion percentage than this setting (0.5 = 50%, 1.0 = 100%)
+MaximumDeletablePercentage = 0.99
+
+# Ignore slow torrents.
+DoNotRemoveSlow = true
+
+# Stalled cleanup grace period in minutes (-1 = Infinite, 0 = immediate cleanup)
+StalledDelay = 15
+
+# Re-search stalled torrents when StalledDelay is enabled and you want to re-search before removing the stalled torrent, or only after the torrent is removed.
+ReSearchStalled = false
+
+# Optional per-Arr tracker overrides. Trackers are inherited from qBit.Trackers by default.
+# Add entries here only if this Arr instance needs different settings for a tracker (matched by URI).
+Trackers = []
+
+[Radarr-4K.Torrent.SeedingMode]
+# Set the maximum allowed download rate for torrents
+# Set this value to -1 to disabled it
+# Note that if you set the DownloadRateLimit on a tracker basis that value is favoured over this value
+DownloadRateLimitPerTorrent = -1
+
+# Set the maximum allowed upload rate for torrents
+# Set this value to -1 to disabled it
+# Note that if you set the UploadRateLimit on a tracker basis that value is favoured over this value
+UploadRateLimitPerTorrent = -1
+
+# Set the maximum allowed upload ratio for torrents
+# Set this value to -1 to disabled it
+# Note that if you set the MaxUploadRatio on a tracker basis that value is favoured over this value
+MaxUploadRatio = -1
+
+# Set the maximum seeding time in seconds for torrents
+# Set this value to -1 to disabled it
+# Note that if you set the MaxSeedingTime on a tracker basis that value is favoured over this value
+MaxSeedingTime = -1
+
+# Remove torrent condition (-1=Do not remove, 1=Remove on MaxUploadRatio, 2=Remove on MaxSeedingTime, 3=Remove on MaxUploadRatio or MaxSeedingTime, 4=Remove on MaxUploadRatio and MaxSeedingTime)
+RemoveTorrent = -1
+
+# Enable if you want to remove dead trackers
+RemoveDeadTrackers = false
+
+# If "RemoveDeadTrackers" is set to true then remove trackers with the following messages
+RemoveTrackerWithMessage = ["skipping tracker announce (unreachable)", "No such host is known", "unsupported URL protocol", "info hash is not authorized with this tracker"]
+
+
+[Lidarr-Music]
+
+# Toggle whether to manage the Servarr instance torrents.
+Managed = true
+
+# The URL used to access Servarr interface eg. http://ip:port(if you use a domain enter the domain without a port)
+URI = "CHANGE_ME"
+
+# The Servarr API Key, Can be found it Settings > General > Security
+APIKey = "CHANGE_ME"
+
+# If true, do not verify TLS for this Servarr API (HTTPS). Disables MITM protection for that connection.
+SkipTLSVerify = false
+
+# Category applied by Servarr to torrents in qBitTorrent, can be found in Settings > Download Clients > qBit > Category
+Category = "lidarr-music"
+
+# Toggle whether to send a query to Servarr to search any failed torrents
+ReSearch = true
+
+# The Servarr's Import Mode(one of Move, Copy or Auto)
+importMode = "Auto"
+
+# Timer to call RSSSync (In minutes) - Set to 0 to disable (Values below 5 can cause errors for maximum retires)
+RssSyncTimer = 1
+
+# Timer to call RefreshDownloads to update the queue. (In minutes) - Set to 0 to disable (Values below 5 can cause errors for maximum retires)
+RefreshDownloadsTimer = 1
+
+# Error messages shown my the Arr instance which should be considered failures.
+# This entry should be a list, leave it empty if you want to disable this error handling.
+# If enabled qBitrr will remove the failed files and tell the Arr instance the download failed
+ArrErrorCodesToBlocklist = ["Not a preferred word upgrade for existing track file(s)", "Unable to determine if file is a sample", "Not an upgrade for existing track file(s)"]
+
+[Lidarr-Music.EntrySearch]
+# Should search for Missing files?
+SearchMissing = true
+
+# Reverse search order (Start searching oldest to newest)
+SearchInReverse = false
+
+# Delay (in seconds) between checking for new Overseerr/Ombi requests. Does NOT affect delay between individual search commands (use Settings.SearchLoopDelay for that).
+SearchRequestsEvery = 300
+
+# Search media which already have a file in hopes of finding a better quality version.
+DoUpgradeSearch = false
+
+# Do a quality unmet search for existing entries.
+QualityUnmetSearch = false
+
+# Do a minimum custom format score unmet search for existing entries.
+CustomFormatUnmetSearch = false
+
+# Automatically remove torrents that do not mee the minimum custom format score.
+ForceMinimumCustomFormat = false
+
+# Once you have search all files on your specified year range restart the loop and search again.
+SearchAgainOnSearchCompletion = true
+
+# Use Temp profile for missing
+UseTempForMissing = false
+
+# Don't change back to main profile
+KeepTempProfile = false
+
+# Quality profile mappings for temp profile switching (Main Profile Name -> Temp Profile Name)
+# Profile names must match exactly as they appear in your Arr instance
+# Example: QualityProfileMappings = {"HD-1080p" = "SD", "HD-720p" = "SD"}
+QualityProfileMappings = {}
+
+# Reset all items using temp profiles to their original main profile on qBitrr startup
+ForceResetTempProfiles = false
+
+# Timeout in minutes after which items with temp profiles are automatically reset to main profile (0 = disabled)
+TempProfileResetTimeoutMinutes = 0
+
+# Number of retry attempts for profile switch API calls (default: 3)
+ProfileSwitchRetryAttempts = 3
+
+
+[Lidarr-Music.Torrent]
+# Set it to regex matches to respect/ignore case.
+CaseSensitiveMatches = false
+
+# These regex values will match any folder where the full name matches the specified values here, comma separated strings.
+# These regex need to be escaped, that's why you see so many backslashes.
+FolderExclusionRegex = ["\\bextras?\\b", "\\bsamples?\\b", "\\bscreens?\\b"]
+
+# These regex values will match any folder where the full name matches the specified values here, comma separated strings.
+# These regex need to be escaped, that's why you see so many backslashes.
+FileNameExclusionRegex = ["\\bsample\\b", "brarbg.com\\b", "\\btrailer\\b", "comandotorrents.com"]
+
+# Only files with these extensions will be allowed to be downloaded, comma separated strings or regex, leave it empty to allow all extensions
+FileExtensionAllowlist = [".mp3", ".flac", ".m4a", ".aac", ".ogg", ".opus", ".wav", ".ape", ".wma", ".!qB", ".parts"]
+
+# Auto delete files that can't be playable (i.e .exe, .png)
+AutoDelete = false
+
+# Ignore Torrents which are younger than this value (in seconds: 600 = 10 Minutes)
+IgnoreTorrentsYoungerThan = 180
+
+# Maximum allowed remaining ETA for torrent completion (in seconds: 3600 = 1 Hour)
+# Note that if you set the MaximumETA on a tracker basis that value is favoured over this value
+MaximumETA = -1
+
+# Do not delete torrents with higher completion percentage than this setting (0.5 = 50%, 1.0 = 100%)
+MaximumDeletablePercentage = 0.99
+
+# Ignore slow torrents.
+DoNotRemoveSlow = true
+
+# Stalled cleanup grace period in minutes (-1 = Infinite, 0 = immediate cleanup)
+StalledDelay = 15
+
+# Re-search stalled torrents when StalledDelay is enabled and you want to re-search before removing the stalled torrent, or only after the torrent is removed.
+ReSearchStalled = false
+
+# Optional per-Arr tracker overrides. Trackers are inherited from qBit.Trackers by default.
+# Add entries here only if this Arr instance needs different settings for a tracker (matched by URI).
+Trackers = []
+
+[Lidarr-Music.Torrent.SeedingMode]
+# Set the maximum allowed download rate for torrents
+# Set this value to -1 to disabled it
+# Note that if you set the DownloadRateLimit on a tracker basis that value is favoured over this value
+DownloadRateLimitPerTorrent = -1
+
+# Set the maximum allowed upload rate for torrents
+# Set this value to -1 to disabled it
+# Note that if you set the UploadRateLimit on a tracker basis that value is favoured over this value
+UploadRateLimitPerTorrent = -1
+
+# Set the maximum allowed upload ratio for torrents
+# Set this value to -1 to disabled it
+# Note that if you set the MaxUploadRatio on a tracker basis that value is favoured over this value
+MaxUploadRatio = -1
+
+# Set the maximum seeding time in seconds for torrents
+# Set this value to -1 to disabled it
+# Note that if you set the MaxSeedingTime on a tracker basis that value is favoured over this value
+MaxSeedingTime = -1
+
+# Remove torrent condition (-1=Do not remove, 1=Remove on MaxUploadRatio, 2=Remove on MaxSeedingTime, 3=Remove on MaxUploadRatio or MaxSeedingTime, 4=Remove on MaxUploadRatio and MaxSeedingTime)
+RemoveTorrent = -1
+
+# Enable if you want to remove dead trackers
+RemoveDeadTrackers = false
+
+# If "RemoveDeadTrackers" is set to true then remove trackers with the following messages
+RemoveTrackerWithMessage = ["skipping tracker announce (unreachable)", "No such host is known", "unsupported URL protocol", "info hash is not authorized with this tracker"]
+
+
+[Readarr-Books]
+
+# Toggle whether to manage the Servarr instance torrents.
+Managed = true
+
+# The URL used to access Servarr interface eg. http://ip:port(if you use a domain enter the domain without a port)
+URI = "CHANGE_ME"
+
+# The Servarr API Key, Can be found it Settings > General > Security
+APIKey = "CHANGE_ME"
+
+# If true, do not verify TLS for this Servarr API (HTTPS). Disables MITM protection for that connection.
+SkipTLSVerify = false
+
+# Category applied by Servarr to torrents in qBitTorrent, can be found in Settings > Download Clients > qBit > Category
+Category = "readarr-books"
+
+# Toggle whether to send a query to Servarr to search any failed torrents
+ReSearch = true
+
+# The Servarr's Import Mode(one of Move, Copy or Auto)
+importMode = "Auto"
+
+# Timer to call RSSSync (In minutes) - Set to 0 to disable (Values below 5 can cause errors for maximum retires)
+RssSyncTimer = 1
+
+# Timer to call RefreshDownloads to update the queue. (In minutes) - Set to 0 to disable (Values below 5 can cause errors for maximum retires)
+RefreshDownloadsTimer = 1
+
+# Error messages shown my the Arr instance which should be considered failures.
+# This entry should be a list, leave it empty if you want to disable this error handling.
+# If enabled qBitrr will remove the failed files and tell the Arr instance the download failed
+ArrErrorCodesToBlocklist = ["Not a preferred word upgrade for existing book file(s)", "Not an upgrade for existing book file(s)", "Unable to determine if file is a sample"]
+
+[Readarr-Books.EntrySearch]
+# Should search for Missing files?
+SearchMissing = true
+
+# Should search for unmonitored books?
+Unmonitored = false
+
+# Maximum allowed Searches at any one point
+SearchLimit = 5
+
+# It will order searches by the year the book was released
+SearchByYear = true
+
+# Reverse search order (Start searching oldest to newest)
+SearchInReverse = false
+
+# Search media which already have a file in hopes of finding a better quality version.
+DoUpgradeSearch = false
+
+# Do a quality unmet search for existing entries.
+QualityUnmetSearch = false
+
+# Do a minimum custom format score unmet search for existing entries.
+CustomFormatUnmetSearch = false
+
+# Automatically remove torrents that do not mee the minimum custom format score.
+ForceMinimumCustomFormat = false
+
+# Once you have search all files on your specified year range restart the loop and search again.
+SearchAgainOnSearchCompletion = true
+
+# Use Temp profile for missing
+UseTempForMissing = false
+
+# Don't change back to main profile
+KeepTempProfile = false
+
+# Quality profile mappings for temp profile switching (Main Profile Name -> Temp Profile Name)
+# Profile names must match exactly as they appear in your Arr instance
+# Example: QualityProfileMappings = {"HD-1080p" = "SD", "HD-720p" = "SD"}
+QualityProfileMappings = {}
+
+# Reset all items using temp profiles to their original main profile on qBitrr startup
+ForceResetTempProfiles = false
+
+# Timeout in minutes after which items with temp profiles are automatically reset to main profile (0 = disabled)
+TempProfileResetTimeoutMinutes = 0
+
+# Number of retry attempts for profile switch API calls (default: 3)
+ProfileSwitchRetryAttempts = 3
+
+
+[Readarr-Books.Torrent]
+# Set it to regex matches to respect/ignore case.
+CaseSensitiveMatches = false
+
+# These regex values will match any folder where the full name matches the specified values here, comma separated strings.
+# These regex need to be escaped, that's why you see so many backslashes.
+FolderExclusionRegex = ["\\bextras?\\b", "\\bsamples?\\b", "\\bscreens?\\b"]
+
+# These regex values will match any folder where the full name matches the specified values here, comma separated strings.
+# These regex need to be escaped, that's why you see so many backslashes.
+FileNameExclusionRegex = ["\\bsample\\b", "brarbg.com\\b", "\\btrailer\\b", "comandotorrents.com"]
+
+# Only files with these extensions will be allowed to be downloaded, comma separated strings or regex, leave it empty to allow all extensions
+FileExtensionAllowlist = [".epub", ".kepub", ".mobi", ".azw", ".azw3", ".pdf", ".cbz", ".cbr", ".flac", ".ape", ".wavpack", ".wav", ".alac", ".mp2", ".mp3", ".wma", ".m4a", ".m4p", ".m4b", ".aac", ".mp4a", ".ogg", ".oga", ".vorbis", ".!qB", ".parts"]
+
+# Auto delete files that can't be playable (i.e .exe, .png)
+AutoDelete = false
+
+# Ignore Torrents which are younger than this value (in seconds: 600 = 10 Minutes)
+IgnoreTorrentsYoungerThan = 180
+
+# Maximum allowed remaining ETA for torrent completion (in seconds: 3600 = 1 Hour)
+# Note that if you set the MaximumETA on a tracker basis that value is favoured over this value
+MaximumETA = -1
+
+# Do not delete torrents with higher completion percentage than this setting (0.5 = 50%, 1.0 = 100%)
+MaximumDeletablePercentage = 0.99
+
+# Ignore slow torrents.
+DoNotRemoveSlow = true
+
+# Stalled cleanup grace period in minutes (-1 = Infinite, 0 = immediate cleanup)
+StalledDelay = 15
+
+# Re-search stalled torrents when StalledDelay is enabled and you want to re-search before removing the stalled torrent, or only after the torrent is removed.
+ReSearchStalled = false
+
+# Optional per-Arr tracker overrides. Trackers are inherited from qBit.Trackers by default.
+# Add entries here only if this Arr instance needs different settings for a tracker (matched by URI).
+Trackers = []
+
+[Readarr-Books.Torrent.SeedingMode]
+# Set the maximum allowed download rate for torrents
+# Set this value to -1 to disabled it
+# Note that if you set the DownloadRateLimit on a tracker basis that value is favoured over this value
+DownloadRateLimitPerTorrent = -1
+
+# Set the maximum allowed upload rate for torrents
+# Set this value to -1 to disabled it
+# Note that if you set the UploadRateLimit on a tracker basis that value is favoured over this value
+UploadRateLimitPerTorrent = -1
+
+# Set the maximum allowed upload ratio for torrents
+# Set this value to -1 to disabled it
+# Note that if you set the MaxUploadRatio on a tracker basis that value is favoured over this value
+MaxUploadRatio = -1
+
+# Set the maximum seeding time in seconds for torrents
+# Set this value to -1 to disabled it
+# Note that if you set the MaxSeedingTime on a tracker basis that value is favoured over this value
+MaxSeedingTime = -1
+
+# Remove torrent condition (-1=Do not remove, 1=Remove on MaxUploadRatio, 2=Remove on MaxSeedingTime, 3=Remove on MaxUploadRatio or MaxSeedingTime, 4=Remove on MaxUploadRatio and MaxSeedingTime)
+RemoveTorrent = -1
+
+# Enable if you want to remove dead trackers
+RemoveDeadTrackers = false
+
+# If "RemoveDeadTrackers" is set to true then remove trackers with the following messages
+RemoveTrackerWithMessage = ["skipping tracker announce (unreachable)", "No such host is known", "unsupported URL protocol", "info hash is not authorized with this tracker"]
