@@ -92,12 +92,29 @@ public sealed class OperationalIssueMonitor(IServiceScopeFactory scopes, IOperat
                 await issues.ResolveAsync(new(old.Code, old.Category, old.Title, old.Impact, old.Remediation, old.ArrInstance, old.ClientInstance, old.SubjectType, old.SubjectId, old.Severity, old.Target), ct);
         }
         if (services.GetService<IMaintenanceCoordinator>() is { } maintenance)
-            foreach (var latest in maintenance.GetHistory().Where(r => r.CompletedAt.HasValue)
+        {
+            var history = maintenance.GetHistory().Where(r => r.CompletedAt.HasValue && r.Result is "success" or "partial" or "failed")
                 .OrderBy(run => run.CompletedAt)
                 .ThenBy(run => run.StartedAt)
-                .Select(run => (Scope: System.Text.Json.JsonSerializer.Serialize(run.ClientInstanceIds.Select(id => id.ToUpperInvariant()).Distinct().Order()), Run: run)))
+                .Select(run => (Scope: System.Text.Json.JsonSerializer.Serialize(run.ClientInstanceIds.Select(id => id.ToUpperInvariant()).Distinct().Order()), Run: run)).ToArray();
+            // Seed completion cursors before reporting: reporting writes a later wall-clock timestamp.
+            if (services.GetService<TorrentarrDbContext>() is { } historyDb)
+                foreach (var group in history.GroupBy(item => item.Scope).Where(group => !_maintenanceRuns.ContainsKey(group.Key)))
+                {
+                    var previous = await historyDb.OperationalIssues.AsNoTracking().SingleOrDefaultAsync(i =>
+                        i.Code == "maintenance.run" && i.SubjectType == "maintenance" && i.SubjectId == group.Key
+                        && i.ClientInstance == "" && i.ArrInstance == "", ct);
+                    if (previous == null) continue;
+                    var observedRuns = group.Where(item => item.Run.CompletedAt!.Value.UtcDateTime <= previous.LastObserved).ToArray();
+                    if (observedRuns.Length == 0) continue;
+                    var last = observedRuns[^1].Run;
+                    var ids = observedRuns.Where(item => item.Run.CompletedAt == last.CompletedAt).Select(item => item.Run.RunId).ToHashSet();
+                    // Recover an old active issue even when its report timestamp followed the successful run.
+                    if (last.Result == "success" && previous.ResolvedAt == null) ids.Remove(last.RunId);
+                    _maintenanceRuns[group.Key] = (last.CompletedAt!.Value, ids);
+                }
+            foreach (var latest in history)
             {
-                if (latest.Run.Result is not ("success" or "partial" or "failed")) continue;
                 var completedAt = latest.Run.CompletedAt!.Value;
                 if (_maintenanceRuns.TryGetValue(latest.Scope, out var observed)
                     && (completedAt < observed.CompletedAt
@@ -111,10 +128,7 @@ public sealed class OperationalIssueMonitor(IServiceScopeFactory scopes, IOperat
                         : "The selected maintenance run completed without failed actions.",
                     "Open Manage → Recent runs and expand the failed run to inspect each action, client and error before retrying.",
                     SubjectType: "maintenance", SubjectId: latest.Scope, Target: "maintenance");
-                var historyDb = services.GetService<TorrentarrDbContext>();
-                var alreadyObserved = historyDb != null && await historyDb.OperationalIssues.AsNoTracking().AnyAsync(i =>
-                    i.Code == "maintenance.run" && i.SubjectType == "maintenance" && i.SubjectId == latest.Scope && i.LastObserved >= completedAt.UtcDateTime, ct);
-                if (!alreadyObserved && (latest.Run.Result == "success" || latest.Run.Failed > 0))
+                if (latest.Run.Result == "success" || latest.Run.Failed > 0)
                     await Observe(issue, latest.Run.Failed > 0, ct);
                 // A verified successful run can also close records written by the former per-client reporter.
                 if (latest.Run.Result == "success")
@@ -125,6 +139,7 @@ public sealed class OperationalIssueMonitor(IServiceScopeFactory scopes, IOperat
                 else
                     _maintenanceRuns[latest.Scope] = (completedAt, new HashSet<string> { latest.Run.RunId });
             }
+        }
     }
 
     private Task Observe(OperationalIssueReport issue, bool failed, CancellationToken ct)

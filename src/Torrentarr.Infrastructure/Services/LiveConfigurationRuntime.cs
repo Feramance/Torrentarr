@@ -28,6 +28,7 @@ public sealed class LiveConfigurationRuntime(TorrentarrConfig config, IConfigRel
     protected override async Task ExecuteAsync(CancellationToken stoppingToken)
     {
         long applied = -1;
+        long loggingApplied = -1;
         (long Revision, string ErrorType, string Message)? lastFailure = null;
         try
         {
@@ -39,7 +40,11 @@ public sealed class LiveConfigurationRuntime(TorrentarrConfig config, IConfigRel
                     try
                     {
                         using var operation = config.BeginOperation();
-                        levelSwitch.MinimumLevel = ParseLevel(config.Settings.ConsoleLevel);
+                        if (loggingApplied != revision)
+                        {
+                            levelSwitch.MinimumLevel = ParseLevel(config.Settings.ConsoleLevel);
+                            loggingApplied = revision;
+                        }
                         var desired = config.GetAllTorrentClients();
                         var connected = await clients.ReconcileAsync(desired, ct: stoppingToken);
                         var expected = desired.Values.Count(client => !client.Disabled && client.Host != "CHANGE_ME");

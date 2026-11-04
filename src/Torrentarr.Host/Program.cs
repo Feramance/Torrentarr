@@ -2553,6 +2553,7 @@ class ProcessOrchestratorService : BackgroundService
     private bool _qbitConfigured;
     private readonly IConfigReloader? _reloader;
     private readonly SemaphoreSlim _configurationChanged = new(0, 1);
+    private readonly Dictionary<string, (int Failed, int Recheck)> _specialCategoryCounts = new(StringComparer.OrdinalIgnoreCase);
     internal TimeProvider Clock { get; set; } = TimeProvider.System;
 
     public ProcessOrchestratorService(
@@ -2715,8 +2716,9 @@ class ProcessOrchestratorService : BackgroundService
     private async Task ProcessSpecialCategoriesAsync(CancellationToken cancellationToken, IReadOnlySet<string> clientIds)
     {
         using var processing = ConfigMutationGuard.EnterProcessing();
-        int totalFailed = 0;
-        int totalRecheck = 0;
+        var configured = _config.GetAllTorrentClients();
+        foreach (var id in _specialCategoryCounts.Keys.Where(id => !configured.TryGetValue(id, out var cfg) || cfg.Disabled).ToArray())
+            _specialCategoryCounts.Remove(id);
         foreach (var (instanceName, client) in _qbitManager.GetAllClients().Where(pair => clientIds.Contains(pair.Key)))
         {
             try
@@ -2726,7 +2728,8 @@ class ProcessOrchestratorService : BackgroundService
                 var allTorrents = await client.GetTorrentsAsync(cancellationToken: cancellationToken);
                 MaintenanceRecovery.ObserveExplicitExits(recoveryDb, instanceName, allTorrents, _config.Settings.RecheckCategory);
                 var failedTorrents = allTorrents.Where(t => t.Category.Equals(_config.Settings.FailedCategory, StringComparison.OrdinalIgnoreCase)).ToList();
-                totalFailed += failedTorrents.Count;
+                var recheckTorrents = allTorrents.Where(t => t.Category.Equals(_config.Settings.RecheckCategory, StringComparison.OrdinalIgnoreCase)).ToList();
+                _specialCategoryCounts[instanceName] = (failedTorrents.Count, recheckTorrents.Count);
                 foreach (var torrent in failedTorrents)
                 {
                     // §2.13: Settings-level IgnoreTorrentsYoungerThan applies to failed/recheck
@@ -2748,8 +2751,6 @@ class ProcessOrchestratorService : BackgroundService
                         _logger.LogWarning("[{Instance}] Safe deletion skipped for {Name}: {Reason}", instanceName, torrent.Name, deletion.Error);
                 }
 
-                var recheckTorrents = allTorrents.Where(t => t.Category.Equals(_config.Settings.RecheckCategory, StringComparison.OrdinalIgnoreCase)).ToList();
-                totalRecheck += recheckTorrents.Count;
                 foreach (var torrent in recheckTorrents)
                 {
                     // §2.13: Settings-level IgnoreTorrentsYoungerThan applies to failed/recheck
@@ -2775,8 +2776,8 @@ class ProcessOrchestratorService : BackgroundService
                 _logger.LogError(ex, "[{Instance}] Error processing special categories", instanceName);
             }
         }
-        _stateManager.Update("Failed", s => { s.CategoryCount = totalFailed; s.Alive = true; });
-        _stateManager.Update("Recheck", s => { s.CategoryCount = totalRecheck; s.Alive = true; });
+        _stateManager.Update("Failed", s => { s.CategoryCount = _specialCategoryCounts.Values.Sum(counts => counts.Failed); s.Alive = true; });
+        _stateManager.Update("Recheck", s => { s.CategoryCount = _specialCategoryCounts.Values.Sum(counts => counts.Recheck); s.Alive = true; });
     }
 
     private async Task ProcessTorrentPolicyAsync(HashSet<string> managedCategories, IReadOnlySet<string> clientIds, CancellationToken cancellationToken)

@@ -12,6 +12,49 @@ namespace Torrentarr.Infrastructure.Tests.Services;
 
 public sealed class OperationalIssueMonitorTests
 {
+    [Theory]
+    [InlineData(false, false)]
+    [InlineData(true, false)]
+    [InlineData(false, true)]
+    [InlineData(true, true)]
+    public async Task PersistedMaintenanceHistory_ResolvesLaterSuccessWithoutReplayingFailures(bool equalCompletion, bool previouslyReported)
+    {
+        await using var db = new Torrentarr.Infrastructure.Database.TorrentarrDbContext(new DbContextOptionsBuilder<Torrentarr.Infrastructure.Database.TorrentarrDbContext>()
+            .UseSqlite("Data Source=:memory:").Options);
+        await db.Database.OpenConnectionAsync();
+        await db.Database.EnsureCreatedAsync();
+        var completed = DateTimeOffset.UtcNow.AddMinutes(-2);
+        if (previouslyReported)
+        {
+            db.OperationalIssues.Add(new() { Code = "maintenance.run", SubjectType = "maintenance", SubjectId = "[\"ONE\"]", LastObserved = DateTime.UtcNow, Occurrences = 1 });
+            await db.SaveChangesAsync();
+        }
+        var history = new List<Torrentarr.Core.Models.MaintenanceRunSummary>
+        {
+            new() { RunId = "failure", ClientInstanceIds = ["one"], Failed = 1, Result = "failed", StartedAt = completed.AddMinutes(-2), CompletedAt = completed },
+            new() { RunId = "success", ClientInstanceIds = ["one"], Result = "success", StartedAt = completed.AddMinutes(-1), CompletedAt = equalCompletion ? completed : completed.AddSeconds(1) }
+        };
+        var maintenance = new Mock<IMaintenanceCoordinator>();
+        maintenance.Setup(m => m.GetHistory(It.IsAny<int>())).Returns(() => history);
+        await using var services = new ServiceCollection().AddSingleton(db).AddSingleton(maintenance.Object).BuildServiceProvider();
+        using var reporter = new OperationalIssueReporter(services.GetRequiredService<IServiceScopeFactory>(), NullLogger<OperationalIssueReporter>.Instance, new());
+        using var monitor = new OperationalIssueMonitor(services.GetRequiredService<IServiceScopeFactory>(), reporter, new(), NullLogger<OperationalIssueMonitor>.Instance);
+        await monitor.InspectAsync(default);
+        await monitor.InspectAsync(default);
+        using var restarted = new OperationalIssueMonitor(services.GetRequiredService<IServiceScopeFactory>(), reporter, new(), NullLogger<OperationalIssueMonitor>.Instance);
+        await restarted.InspectAsync(default);
+        db.ChangeTracker.Clear();
+        var issue = await db.OperationalIssues.SingleAsync();
+        issue.ResolvedAt.Should().NotBeNull();
+        issue.Occurrences.Should().Be(1);
+        history.Add(new() { RunId = "new-failure", ClientInstanceIds = ["one"], Failed = 1, Result = "failed", CompletedAt = DateTimeOffset.UtcNow.AddSeconds(1) });
+        await restarted.InspectAsync(default);
+        db.ChangeTracker.Clear();
+        issue = await db.OperationalIssues.SingleAsync();
+        issue.ResolvedAt.Should().BeNull();
+        issue.Occurrences.Should().Be(2);
+    }
+
     [Fact]
     public async Task Restart_DoesNotReplayPersistedMaintenanceFailuresAsNewObservations()
     {

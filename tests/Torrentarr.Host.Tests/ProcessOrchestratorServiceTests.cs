@@ -65,6 +65,9 @@ public class ProcessOrchestratorServiceTests
         var slow = new Mock<ITorrentClient>();
         foreach (var client in new[] { fast, slow })
             client.Setup(c => c.GetTorrentsAsync(It.IsAny<string?>(), It.IsAny<string?>(), It.IsAny<CancellationToken>())).ReturnsAsync([]);
+        slow.Setup(c => c.GetTorrentsAsync(It.IsAny<string?>(), It.IsAny<string?>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync([new() { Category = config.Settings.FailedCategory, AddedOn = DateTimeOffset.UtcNow.ToUnixTimeSeconds() },
+                new() { Category = config.Settings.RecheckCategory, AddedOn = DateTimeOffset.UtcNow.ToUnixTimeSeconds() }]);
         var attempts = 0;
         fast.Setup(c => c.GetTorrentsAsync(It.IsAny<string?>(), It.IsAny<string?>(), It.IsAny<CancellationToken>()))
             .Returns(() => Interlocked.Increment(ref attempts) == 1 && failFirstPass
@@ -95,8 +98,13 @@ public class ProcessOrchestratorServiceTests
             slow.Verify(c => c.GetTorrentsAsync(It.IsAny<string?>(), It.IsAny<string?>(), It.IsAny<CancellationToken>()), Times.Exactly(3));
             reads = clock.Reads;
             await WaitUntilAsync(() => clock.Reads > reads);
+            states.GetState("Failed")!.CategoryCount.Should().Be(1);
+            states.GetState("Recheck")!.CategoryCount.Should().Be(1);
             clock.Advance(TimeSpan.FromSeconds(115));
             await WaitUntilAsync(() => slow.Invocations.Count(i => i.Method.Name == nameof(ITorrentClient.GetTorrentsAsync)) == 6);
+            config.TorrentClients.Remove("slow");
+            service.NotifyConfigurationChanged();
+            await WaitUntilAsync(() => states.GetState("Failed")!.CategoryCount == 0 && states.GetState("Recheck")!.CategoryCount == 0);
         }
         finally { await service.StopAsync(CancellationToken.None); }
     }

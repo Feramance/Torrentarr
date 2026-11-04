@@ -85,15 +85,18 @@ public class LiveConfigurationRuntimeTests
         clients.SetupSequence(c => c.ReconcileAsync(It.IsAny<IEnumerable<KeyValuePair<string, TorrentClientInstanceConfig>>>(), true, It.IsAny<CancellationToken>()))
             .ReturnsAsync(0).ReturnsAsync(1);
         using var services = new ServiceCollection().BuildServiceProvider();
+        var levelSwitch = new LoggingLevelSwitch();
         using var runtime = new LiveConfigurationRuntime(config, reloader.Object, clients.Object, services,
-            new LoggingLevelSwitch(), NullLogger<LiveConfigurationRuntime>.Instance);
+            levelSwitch, NullLogger<LiveConfigurationRuntime>.Instance);
         try
         {
             await runtime.StartAsync(default);
             var firstError = await failed.Task.WaitAsync(TimeSpan.FromSeconds(5));
             firstError.Should().Contain("revision 2").And.Contain("active");
             applied.Task.IsCompleted.Should().BeFalse();
+            levelSwitch.MinimumLevel = LogEventLevel.Verbose;
             await applied.Task.WaitAsync(TimeSpan.FromSeconds(10));
+            levelSwitch.MinimumLevel.Should().Be(LogEventLevel.Verbose);
             clients.Verify(c => c.ReconcileAsync(It.IsAny<IEnumerable<KeyValuePair<string, TorrentClientInstanceConfig>>>(), true, It.IsAny<CancellationToken>()), Times.Exactly(2));
         }
         finally { await runtime.StopAsync(default); }
