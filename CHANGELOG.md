@@ -1,5 +1,65 @@
 # Changelog
 
+## v6.20.0-1 (2026-11-04)
+
+### Bug Fixes
+- Fix PR validation drift and sanitize maintenance request logs ([32e87d4](https://github.com/Feramance/Torrentarr/commit/32e87d4cd2dac3f96adea6d6e33b2a1918f62dda))
+- Fix logging dependency downgrade with EF Core 10.0.14 ([6af3d6d](https://github.com/Feramance/Torrentarr/commit/6af3d6d9d5e7c80bb02be7905833b414059d9a9b))
+- fix: redact cached torrent issue metadata ([7aa9b06](https://github.com/Feramance/Torrentarr/commit/7aa9b06393178e55d790a4b68c3d4b6528b4eabe))
+- fix: identify affected torrents and remove duplicate category cards ([d59685f](https://github.com/Feramance/Torrentarr/commit/d59685f9ae7915cfe1491dad053b01c7efc2d0f1))
+- fix: sanitize request values before logging ([2cae92a](https://github.com/Feramance/Torrentarr/commit/2cae92a92137cade98760bb9a9a895eb52988273))
+- fix: make recycling opt-in and explain operational failures ([f3e5cae](https://github.com/Feramance/Torrentarr/commit/f3e5caecf45654a27f9aea81491daa0d7613b9a9))
+- fix: forward reconnect attempts on transient failures and strengthen regression assertions ([422b65b](https://github.com/Feramance/Torrentarr/commit/422b65b19d35a8be974d0d2f5af516a1cb26d0d7))
+- fix: restore .NET formatting and correct unavailable-media test naming ([2563b3a](https://github.com/Feramance/Torrentarr/commit/2563b3ae5564458f4f63ce8a94d889b4b347443b))
+- fix: propagate client reconnect requests to Arr worker auth caches ([5fb1bc9](https://github.com/Feramance/Torrentarr/commit/5fb1bc9f01e2529baacdab1c1852e2e5c0dc40a6))
+- fix: address PR 546 review findings and ANSI log test regressions ([3d63ca0](https://github.com/Feramance/Torrentarr/commit/3d63ca0b814d5ee2f59800dbc4640be2a2939046))
+- fix: import eligible media while retaining H&R-protected metadata sidecars ([28d663b](https://github.com/Feramance/Torrentarr/commit/28d663baa92ec8a2abe52708f2c4e07916cceffe))
+- fix: import ForwardedHeadersOptions namespace for trusted-proxy configuration ([9e83bf2](https://github.com/Feramance/Torrentarr/commit/9e83bf203e52448000ef508a062db62755915d12))
+- fix: recover from missing deploy-hashed lazy-loaded frontend chunks ([17502e6](https://github.com/Feramance/Torrentarr/commit/17502e6ea4daff08f9ad17e2136baf3bae0c80cf))
+- fix: explicitly trust configured reverse proxies for forwarded headers ([45389f7](https://github.com/Feramance/Torrentarr/commit/45389f76182db70ea2769401eb2bee70968fdc5c))
+- fix: avoid local variable shadowing in intent-specific deletion validation ([ade755b](https://github.com/Feramance/Torrentarr/commit/ade755b3762e8c33c09a95074b6c309ae01e25c4))
+
+### Documentation
+- docs: refresh native cleanup and inspection API contract ([b950456](https://github.com/Feramance/Torrentarr/commit/b950456ecda1167933441b85c80bb924844d0f73))
+
+### Maintenance
+- Preserve maintenance recovery, scan counts, and runtime logging during retries ([eded915](https://github.com/Feramance/Torrentarr/commit/eded915197508dfd26f093b62d29ec8a239b38bb))
+- Keep updater process fixture compatible with multicall coreutils ([d54c822](https://github.com/Feramance/Torrentarr/commit/d54c8223da98bd690f074044e6177c06d9ca206e))
+- Improve torrent scheduling, maintenance safety, and diagnostics ([f138e06](https://github.com/Feramance/Torrentarr/commit/f138e06e08e712cdf16dafb8b73127f163e18f97))
+- Widen configuration dialogs and pin torrent summary on desktop ([d3a5101](https://github.com/Feramance/Torrentarr/commit/d3a5101ed6ef8b3c19b0df14fb194c1872d0fb3e))
+- Bump Microsoft.AspNetCore.Mvc.Testing from 10.0.13 to 10.0.14 ([193bfcf](https://github.com/Feramance/Torrentarr/commit/193bfcfc036a5cd59c0524da5d798679ff20b1d1))
+- Bump Microsoft.EntityFrameworkCore from 10.0.13 to 10.0.14 ([6243fb9](https://github.com/Feramance/Torrentarr/commit/6243fb9635042de1a0c95bc747844d68d70c9bdb))
+- build(deps-dev): bump @types/react-dom from 19.2.3 to 19.3.0 in /webui ([38991cc](https://github.com/Feramance/Torrentarr/commit/38991cc2e994f2a1395ec49eb11f9aa836c01d7d))
+- build(deps-dev): bump postcss from 8.5.31 to 8.5.32 in /webui ([2989ae7](https://github.com/Feramance/Torrentarr/commit/2989ae722939d55acb0267180d3527e92c87e8e4))
+- build(deps-dev): bump jsdom from 30.1.1 to 30.1.3 in /webui ([9431874](https://github.com/Feramance/Torrentarr/commit/9431874f3f94fe4a3490918c6440ace17eb80f5d))
+- build(deps): bump @melloware/react-logviewer in /webui ([a1e83c7](https://github.com/Feramance/Torrentarr/commit/a1e83c771c651c07e884ea3433571e1b04af45ca))
+- test: retry macOS HTTP listener port collisions ([42b0b79](https://github.com/Feramance/Torrentarr/commit/42b0b7924a3cfc8593f47da5123b0dba4499bca0))
+- Bump Microsoft.EntityFrameworkCore.InMemory from 10.0.13 to 10.0.14 ([f19ca20](https://github.com/Feramance/Torrentarr/commit/f19ca20b3d56c78edcb68d4102f43c5e56ee3d58))
+- Bump Microsoft.AspNetCore.Mvc.NewtonsoftJson from 10.0.13 to 10.0.14 ([da94b4e](https://github.com/Feramance/Torrentarr/commit/da94b4e64d894350983ed7efe44ae5fcfd7fd531))
+- Bump Microsoft.AspNetCore.Authentication.OpenIdConnect from 10.0.13 to 10.0.14 ([e114097](https://github.com/Feramance/Torrentarr/commit/e114097435c19aa383c8463b00a11ba2fffa592e))
+- build(deps): bump @mantine/hooks from 9.6.1 to 9.7.4 in /webui ([aab7b35](https://github.com/Feramance/Torrentarr/commit/aab7b35ebdd8971c0da37f7acf190c5687cf3b39))
+- [pre-commit.ci] auto fixes from pre-commit.com hooks ([39e9da8](https://github.com/Feramance/Torrentarr/commit/39e9da84fbf9612295f6b91706dd2d5d620e38a8))
+- refactor(webui): simplify supported ANSI code assertions ([14ea161](https://github.com/Feramance/Torrentarr/commit/14ea16160e34461191f87018172e51615c99c14a))
+- [pre-commit.ci] auto fixes from pre-commit.com hooks ([aa7abc6](https://github.com/Feramance/Torrentarr/commit/aa7abc666acb342daf97e4e3eb8d014e8025d9d4))
+- fix(webui): use ANSI colours supported by react-logviewer ([f94be40](https://github.com/Feramance/Torrentarr/commit/f94be409a0a68121c92b3a4e6b0e5c588dc8854a))
+- test: retry ephemeral HTTP listener port collisions in parallel CI ([7e39420](https://github.com/Feramance/Torrentarr/commit/7e394209f959e5e9ea82a83c76b5aa956b5bf74c))
+- [pre-commit.ci] auto fixes from pre-commit.com hooks ([639f844](https://github.com/Feramance/Torrentarr/commit/639f84443dfa9924f2bc65e91284be5fcbf56b74))
+- test(webui): strip ANSI in log viewer mock without forbidden control regex ([2f27220](https://github.com/Feramance/Torrentarr/commit/2f27220a1d2c910bc01f64884149a9eb4264efbb))
+- [pre-commit.ci] auto fixes from pre-commit.com hooks ([b7f1e08](https://github.com/Feramance/Torrentarr/commit/b7f1e08458092f80dbcffce548deab68554adae9))
+- fix(webui): resolve formatter and regression-test lint errors ([07285fb](https://github.com/Feramance/Torrentarr/commit/07285fb85864184584b68339c0efdaae6ce2b6b7))
+- [pre-commit.ci] auto fixes from pre-commit.com hooks ([0bae84d](https://github.com/Feramance/Torrentarr/commit/0bae84d519e5841cc7b885836e0619b26732e575))
+- fix(webui): highlight log message tokens and align formatter regression tests ([b444f10](https://github.com/Feramance/Torrentarr/commit/b444f10224115cc06913aebf862913c6804f7168))
+- [pre-commit.ci] auto fixes from pre-commit.com hooks ([684396c](https://github.com/Feramance/Torrentarr/commit/684396c2d7cf9c6b4f4d05e739cdd0cf27e1a5c4))
+- [pre-commit.ci] auto fixes from pre-commit.com hooks ([76755bb](https://github.com/Feramance/Torrentarr/commit/76755bb486db02d7ab4e10058f8464e7bec18d85))
+- test(webui): cover compact log prefixes and severity highlighting ([9abf715](https://github.com/Feramance/Torrentarr/commit/9abf715d516014d48e34101c7ff342ba99b89876))
+- fix(webui): compact padded log source labels and colour log fields independently ([dbbe777](https://github.com/Feramance/Torrentarr/commit/dbbe7773a2b692cd4a1d20223a2b51c4811f4919))
+- [pre-commit.ci] auto fixes from pre-commit.com hooks ([04e17bc](https://github.com/Feramance/Torrentarr/commit/04e17bc637818024fa15397e0ce1697cd13a201c))
+- style: fix .NET format findings in removal safety regression coverage ([77888a5](https://github.com/Feramance/Torrentarr/commit/77888a5e7c1649edc8ee48aba47d05e21730c057))
+- style: fix .NET format findings in removal safety regression coverage ([25b973f](https://github.com/Feramance/Torrentarr/commit/25b973fee58f6dcd3d70eeb8fec2cd3e977a29b9))
+- style: fix .NET format findings in removal safety regression coverage ([2556ec3](https://github.com/Feramance/Torrentarr/commit/2556ec33f1a97132f17027ce64538da1cab6fa47))
+
+---
+
 ## v6.19.4-1 (2026-10-30)
 
 ### Bug Fixes
