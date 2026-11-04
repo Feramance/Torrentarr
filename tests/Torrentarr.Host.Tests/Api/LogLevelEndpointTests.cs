@@ -161,11 +161,18 @@ public class LogLevelEndpointTests : IClassFixture<TorrentarrWebApplicationFacto
             ef.IsEnabled(LogLevel.Information).Should().BeFalse();
             ef.IsEnabled(LogLevel.Warning).Should().BeTrue();
             ef.LogWarning("Database warning {Marker:l}", marker);
-            var aggregate = string.Join('\n', Directory.GetFiles(root, "all-*.log").SelectMany(File.ReadLines).Where(line => line.Contains(marker)));
+            var aggregate = string.Join('\n', Directory.GetFiles(root, "all-*.log").SelectMany(path => ReadLog(path).Split('\n')).Where(line => line.Contains(marker)));
             aggregate.Should().Contain("Database SaveChanges DbContext DbCommand " + marker).And.Contain("Database warning " + marker);
             var worker = Directory.GetFiles(root, $"worker-{instance}-*.log").Should().ContainSingle().Subject;
-            File.ReadAllText(worker).Should().Contain("Database SaveChanges DbContext DbCommand " + marker).And.Contain("Torrentarr." + instance);
+            ReadLog(worker).Should().Contain("Database SaveChanges DbContext DbCommand " + marker).And.Contain("Torrentarr." + instance);
         }
         finally { await client.PostAsJsonAsync("/web/loglevel", new { level = "INFO" }); }
+    }
+
+    private static string ReadLog(string path)
+    {
+        using var stream = new FileStream(path, FileMode.Open, FileAccess.Read, FileShare.ReadWrite | FileShare.Delete);
+        using var reader = new StreamReader(stream);
+        return reader.ReadToEnd();
     }
 }

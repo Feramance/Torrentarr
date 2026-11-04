@@ -102,7 +102,9 @@ public sealed class MaintenanceCoordinator : BackgroundService, IMaintenanceCoor
     {
         using var previewScope = _logger.BeginScope(new Dictionary<string, object> { ["Operation"] = "MaintenancePreview", ["CycleId"] = Guid.NewGuid().ToString("N") });
         var started = System.Diagnostics.Stopwatch.GetTimestamp();
-        _logger.LogInformation("Maintenance preview started: clients={Clients}; operations={Operations}; draft={Draft}", string.Join(",", request.ClientInstanceIds), string.Join(",", request.Operations), request.MaintenanceOverrides.Count > 0);
+        var clientNames = string.Join(",", request.ClientInstanceIds).Replace("\r", "").Replace("\n", "");
+        var operationNames = string.Join(",", request.Operations).Replace("\r", "").Replace("\n", "");
+        _logger.LogInformation("Maintenance preview started: clients={Clients}; operations={Operations}; draft={Draft}", DiagnosticText.Safe(clientNames), DiagnosticText.Safe(operationNames), request.MaintenanceOverrides.Count > 0);
         using var configuration = _config.BeginOperation();
         using var processing = ConfigMutationGuard.EnterProcessing();
         PrunePlans();
@@ -145,7 +147,8 @@ public sealed class MaintenanceCoordinator : BackgroundService, IMaintenanceCoor
         plan.CriticalErrors.AddRange(plan.Diagnostics.Where(d => d.Severity == "error").Select(d => d.Message));
         if (plan.CriticalErrors.Count > 0)
         {
-            _logger.LogDebug("Maintenance preview stopped: criticalErrors={Errors}", string.Join("; ", plan.CriticalErrors));
+            var errors = string.Join("; ", plan.CriticalErrors).Replace("\r", "").Replace("\n", "");
+            _logger.LogDebug("Maintenance preview stopped: criticalErrors={Errors}", DiagnosticText.Safe(errors));
             await ObservePreviewIssuesAsync(plan, scope.ServiceProvider, ct);
             return SavePlan(plan);
         }
@@ -592,7 +595,8 @@ public sealed class MaintenanceCoordinator : BackgroundService, IMaintenanceCoor
             Diagnostics = plan.Diagnostics
         };
         using var runScope = _logger.BeginScope(new Dictionary<string, object> { ["Operation"] = "MaintenanceRun", ["CycleId"] = run.RunId });
-        _logger.LogInformation("Maintenance run started: trigger={Trigger}; clients={Clients}; planned={Planned}; blocked={Blocked}", trigger, string.Join(",", run.ClientInstanceIds), run.Planned, run.Blocked);
+        var clientNames = string.Join(",", run.ClientInstanceIds).Replace("\r", "").Replace("\n", "");
+        _logger.LogInformation("Maintenance run started: trigger={Trigger}; clients={Clients}; planned={Planned}; blocked={Blocked}", DiagnosticText.Safe(trigger), DiagnosticText.Safe(clientNames), run.Planned, run.Blocked);
         lock (_stateLock)
         {
             if (_current != null) throw new InvalidOperationException("A maintenance run is already active.");

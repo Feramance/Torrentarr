@@ -8,7 +8,7 @@
 
 [Settings]
 # Internal config schema version - managed automatically
-ConfigVersion = "6.20.2"
+ConfigVersion = "6.20.3"
 
 # Logging level: CRITICAL, ERROR, WARNING, NOTICE, INFO, DEBUG, TRACE
 ConsoleLevel = "INFO"
@@ -19,7 +19,7 @@ Logging = true
 # Sleep time when no internet connection (seconds)
 NoInternetSleepTimer = 15
 
-# Time between torrent processing loops (seconds)
+# Time between Arr catalog refreshes (seconds)
 LoopSleepTimer = 5
 
 # Time between search commands (-1 to disable, seconds)

@@ -32,6 +32,25 @@ public sealed class MaintenanceSafetyTests : IDisposable
     private readonly MaintenanceCoordinator _maintenance;
     private TorrentClientInstanceConfig ClientConfig => _config.TorrentClients["one"];
 
+    [Fact]
+    public async Task PreviewLogs_SanitizeUnknownClientNamesAndErrors()
+    {
+        var logger = new ActivityLogger<MaintenanceCoordinator>(Microsoft.Extensions.Logging.LogLevel.Debug);
+        using var maintenance = new MaintenanceCoordinator(_config, _registry.Object, _inventory, new PathMappingService(),
+            Mock.Of<IHardlinkInspector>(), _deletion, logger, _services.GetRequiredService<IServiceScopeFactory>());
+
+        var plan = await maintenance.PreviewAsync(new() { ClientInstanceIds = ["unknown\r\nforged\u001b[31m\u2028 token=secret"] });
+
+        plan.CriticalErrors.Should().ContainSingle();
+        logger.Messages.Should().Contain(m => m.Contains("Maintenance preview started"));
+        logger.Messages.Should().Contain(m => m.Contains("Maintenance preview stopped"));
+        foreach (var message in logger.Messages)
+        {
+            message.Any(c => char.IsControl(c) || c is '\u2028' or '\u2029').Should().BeFalse();
+            message.Should().NotContain("token=secret");
+        }
+    }
+
     [Theory]
     [InlineData("ready", false, true)]
     [InlineData("partial", false, true)]

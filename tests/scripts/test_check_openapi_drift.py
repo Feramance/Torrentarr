@@ -22,6 +22,9 @@ class OpenApiDriftTests(unittest.TestCase):
         self.assertEqual(module.maintenance_drift(contract), [])
         schemas = contract["components"]["schemas"]
         self.assertIn("DeleteContent", schemas["MaintenanceAction"]["properties"]["kind"]["oneOf"][0]["enum"])
+        self.assertIn("DeleteOrphanFile", schemas["MaintenanceAction"]["properties"]["kind"]["oneOf"][0]["enum"])
+        self.assertIn("DeleteEmptyOrphanDirectory", schemas["MaintenanceAction"]["properties"]["kind"]["oneOf"][0]["enum"])
+        self.assertTrue(schemas["TorrentFileInventoryItem"]["properties"]["expectedLocalPath"]["nullable"])
         self.assertTrue(schemas["MaintenanceInspectionStatus"]["properties"]["lastError"]["nullable"])
 
     def test_maintenance_generation_detects_missing_inspection_evidence(self):

@@ -17,7 +17,8 @@ public sealed class QBittorrentInventoryResponseTests
         var port = ((IPEndPoint)socket.LocalEndPoint!).Port;
         // A bound socket without a listener refuses connections without a port-reuse race.
         using var client = new QBittorrentClient("127.0.0.1", port, "private-user", "private-password");
-        using var timeout = new CancellationTokenSource(TimeSpan.FromSeconds(10));
+        // Windows can take two seconds per refused connection, in addition to retry backoff.
+        using var timeout = new CancellationTokenSource(TimeSpan.FromSeconds(30));
         (await client.LoginAsync(timeout.Token)).Should().BeFalse();
         client.LastConnectionFailure.Should().Contain("transport=").And.Contain("ConnectionRefused")
             .And.NotContain("private-user").And.NotContain("private-password");

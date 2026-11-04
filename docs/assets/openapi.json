@@ -1318,6 +1318,10 @@
             "additionalProperties": true,
             "type": "object"
           },
+          "expectedLocalPath": {
+            "nullable": true,
+            "type": "string"
+          },
           "file": {
             "additionalProperties": true,
             "type": "object"
