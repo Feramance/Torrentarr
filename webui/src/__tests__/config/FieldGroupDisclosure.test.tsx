@@ -1,7 +1,7 @@
 import { QbitInstanceModal } from "../../pages/config/configModals";
 import { useState } from "react";
 import { describe, expect, it, vi } from "vitest";
-import { fireEvent, render, screen } from "@testing-library/react";
+import { fireEvent, render, screen, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { FieldGroup } from "../../pages/config/configFieldComponents";
 import type { FieldDefinition } from "../../pages/config/configTypes";
@@ -94,4 +94,39 @@ it("keeps maintenance forms out of the client dialog and links saved clients to 
   expect(
     screen.queryByText("Storage", { selector: "summary" }),
   ).not.toBeInTheDocument();
+});
+
+it("separates the scrollable client summary and fields from dialog actions", async () => {
+  const onClose = vi.fn();
+  render(
+    <QbitInstanceModal
+      keyName="qBit"
+      fields={[]}
+      state={{}}
+      onChange={vi.fn()}
+      onRename={vi.fn()}
+      onClose={onClose}
+      onSave={vi.fn(async () => true)}
+      overlapWarnings={[]}
+    />,
+  );
+  const dialog = screen.getByRole("dialog");
+  const summary = within(dialog).getByRole("complementary", {
+    name: "How torrents are handled",
+  });
+  const fields = dialog.querySelector(".config-modal__fields")!;
+  expect(summary).toHaveAttribute("tabindex", "0");
+  expect(summary.parentElement).toBe(fields.parentElement);
+  expect(fields).not.toContainElement(summary);
+  expect(fields).not.toContainElement(
+    screen.getByRole("button", { name: "Save" }),
+  );
+  const close = screen.getByRole("button", { name: "Close" });
+  expect(close).toHaveFocus();
+  await userEvent.tab({ shift: true });
+  expect(screen.getByRole("button", { name: "Save" })).toHaveFocus();
+  await userEvent.tab();
+  expect(close).toHaveFocus();
+  await userEvent.click(close);
+  expect(onClose).toHaveBeenCalledOnce();
 });
