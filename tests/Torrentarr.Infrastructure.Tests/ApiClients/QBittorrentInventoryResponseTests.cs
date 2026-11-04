@@ -14,14 +14,34 @@ public sealed class QBittorrentInventoryResponseTests
     {
         using var socket = new Socket(AddressFamily.InterNetwork, SocketType.Stream, ProtocolType.Tcp);
         socket.Bind(new IPEndPoint(IPAddress.Loopback, 0));
+        socket.Listen();
         var port = ((IPEndPoint)socket.LocalEndPoint!).Port;
-        // A bound socket without a listener refuses connections without a port-reuse race.
+        using var timeout = new CancellationTokenSource(TimeSpan.FromSeconds(10));
+        // Reset accepted connections; bound non-listening sockets can time out on macOS and Windows.
+        var server = Task.Run(async () =>
+        {
+            try
+            {
+                while (true)
+                {
+                    using var connection = await socket.AcceptAsync(timeout.Token);
+                    connection.LingerState = new LingerOption(true, 0);
+                }
+            }
+            catch (OperationCanceledException) when (timeout.IsCancellationRequested) { }
+        });
         using var client = new QBittorrentClient("127.0.0.1", port, "private-user", "private-password");
-        // Windows can take two seconds per refused connection, in addition to retry backoff.
-        using var timeout = new CancellationTokenSource(TimeSpan.FromSeconds(30));
-        (await client.LoginAsync(timeout.Token)).Should().BeFalse();
-        client.LastConnectionFailure.Should().Contain("transport=").And.Contain("ConnectionRefused")
-            .And.NotContain("private-user").And.NotContain("private-password");
+        try
+        {
+            (await client.LoginAsync(timeout.Token)).Should().BeFalse();
+            client.LastConnectionFailure.Should().Contain("transport=").And.Contain("Socket error=")
+                .And.NotContain("private-user").And.NotContain("private-password");
+        }
+        finally
+        {
+            await timeout.CancelAsync();
+            await server;
+        }
     }
 
     [Theory]
