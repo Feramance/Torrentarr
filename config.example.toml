@@ -225,6 +225,8 @@ ExcludedCategories = []
 ExcludedTags = []
 
 # Explicit mappings describe the same folder in the client and Torrentarr.
+# Recycling requires mappings even when both paths are identical. In Docker,
+# LocalPath is inside Torrentarr; the directory must already be mounted/readable.
 # [[qBit.Maintenance.PathMappings]]
 # ClientPath = '/downloads'
 # LocalPath = '/data/downloads'

@@ -292,13 +292,6 @@ public sealed class MaintenanceCoordinator : BackgroundService, IMaintenanceCoor
                             else if (!await seeding.CanDeleteTorrentAsync(candidate.Torrent, "maintenance preview", ct))
                                 action.BlockedReason ??= (await seeding.EvaluateRemovalAsync(candidate.Torrent, TorrentRemovalIntent.SeedingLimit, ct))?.Reason ?? "Protection service rejected removal without diagnostic evidence.";
                         }
-                        if (action.Kind is MaintenanceActionKind.SetCategory or MaintenanceActionKind.SetAutomaticManagement)
-                        {
-                            var candidate = inspectable.FirstOrDefault(i => i.Torrent.Hash == action.TorrentHash);
-                            if (candidate == null || !seeding.HnrAllowsDelete(candidate.Torrent, candidate.Trackers))
-                                action.BlockedReason ??= candidate == null ? "Torrent metadata is missing; refresh the preview." : ProtectionEvidence(seeding, candidate);
-                        }
-
                         if (MaintenanceRequirements.MovesContent(action.Kind))
                         {
                             var item = inventory.Torrents.FirstOrDefault(i => i.Torrent.ClientInstanceId.Equals(id, StringComparison.OrdinalIgnoreCase) && i.Torrent.Hash == action.TorrentHash);
@@ -865,14 +858,11 @@ public sealed class MaintenanceCoordinator : BackgroundService, IMaintenanceCoor
             if (action.Kind is MaintenanceActionKind.RecycleContent or MaintenanceActionKind.DeleteContent
                 && !await seeding.CanDeleteTorrentAsync(item.Torrent, "maintenance apply", ct))
                 return (await seeding.EvaluateRemovalAsync(item.Torrent, TorrentRemovalIntent.SeedingLimit, ct))?.Reason ?? "Protection service rejected removal without diagnostic evidence.";
-            if (action.Kind is MaintenanceActionKind.RecycleContent or MaintenanceActionKind.DeleteContent or MaintenanceActionKind.SetAutomaticManagement or MaintenanceActionKind.SetCategory)
+            if (action.Kind is MaintenanceActionKind.RecycleContent or MaintenanceActionKind.DeleteContent)
             {
                 if (!item.TrackersComplete || !seeding.HnrAllowsDelete(item.Torrent, item.Trackers))
                     return ProtectionEvidence(seeding, item);
             }
-            if (action.Kind == MaintenanceActionKind.Recheck && item.Torrent.IsSeeding && !MaintenanceRecovery.IsError(item.Torrent, cfg.Maintenance)
-                && (!item.TrackersComplete || !seeding.HnrAllowsDelete(item.Torrent, item.Trackers)))
-                return "Protected seeding must not be interrupted for a tracker-only issue.";
             var required = MaintenanceRequirements.For(action.Operation, cfg.Maintenance);
             if (required.HasFlag(InventoryRequirements.Trackers) && !item.TrackersComplete) return "Tracker inspection is incomplete.";
             if (required.HasFlag(InventoryRequirements.Files) && !item.FilesComplete) return "Torrent file enumeration is incomplete.";

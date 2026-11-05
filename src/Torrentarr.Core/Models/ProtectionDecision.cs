@@ -20,6 +20,8 @@ public sealed class ProtectionDecision
     public string DeadlineRisk { get; set; } = "none";
     public bool LocalEstimate { get; set; } = true;
     public bool NativeStopLimitRisk { get; set; }
+
+    public string SeedAccountingDescription() => $"{(LocalEstimate ? "Locally observed" : "Client-reported")} seed={ObservedSeedSeconds:F0}s; remaining time requirement={RemainingSeedSeconds:F0}s (ratio/accounting requirements may still apply)";
 }
 
 public sealed class ProtectionObservation

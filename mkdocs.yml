@@ -257,6 +257,7 @@ nav:
 
 - Web UI:
   - webui/index.md
+  - Console and Statistics: webui/console-statistics.md
   - Processes View: webui/processes.md
   - Issues View: webui/issues.md
   - Logs View: webui/logs.md

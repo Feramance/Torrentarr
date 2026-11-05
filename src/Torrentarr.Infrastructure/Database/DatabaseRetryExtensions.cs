@@ -18,7 +18,7 @@ public static class DatabaseRetryExtensions
         CancellationToken cancellationToken = default)
     {
         // Capture only operational identifiers and state, never arbitrary entity values or payloads.
-        var changes = logger?.IsEnabled(LogLevel.Information) == true
+        var changes = logger?.IsEnabled(LogLevel.Debug) == true
             ? context.ChangeTracker.Entries()
                 .Where(e => e.State is EntityState.Added or EntityState.Modified or EntityState.Deleted)
                 .Select(e => (Entry: e, State: e.State)).ToArray()
@@ -35,9 +35,9 @@ public static class DatabaseRetryExtensions
                     "Searched" or "Upgrade" or "IsRequest" or "Imported" or "QualityMet" or "CustomFormatMet" or
                     "SeasonNumber" or "EpisodeNumber" or "ArrSeriesId" or "AirDateUtc" or "ReleaseDate")
                     .Select(p => $"{p.Metadata.Name}={p.CurrentValue}"));
-                logger?.LogInformation("Database saved {Operation}: {Entity} | {Identity}", state, entry.Metadata.ClrType.Name, identity);
+                logger?.LogDebug("Database saved {Operation}: {Entity} | {Identity}", state, entry.Metadata.ClrType.Name, identity);
             }
-            logger?.LogInformation("Database save completed: {Count} entries saved (added={Added}, updated={Updated}, deleted={Deleted})",
+            logger?.LogDebug("Database save completed: {Count} entries saved (added={Added}, updated={Updated}, deleted={Deleted})",
                 count, changes.Count(c => c.State == EntityState.Added), changes.Count(c => c.State == EntityState.Modified),
                 changes.Count(c => c.State == EntityState.Deleted));
             return count;
@@ -103,11 +103,16 @@ public static class DatabaseRetryExtensions
         return false;
     }
 
-    private static bool IsRetriable(Exception ex) =>
-        ex is DbUpdateException or SqliteException
-        && (ex.Message.Contains("database is locked", StringComparison.OrdinalIgnoreCase)
-            || ex.Message.Contains("disk I/O", StringComparison.OrdinalIgnoreCase)
-            || ex.Message.Contains("malformed", StringComparison.OrdinalIgnoreCase));
+    private static bool IsRetriable(Exception error)
+    {
+        for (Exception? current = error; current != null; current = current.InnerException)
+            if (current is SqliteException sqlite && sqlite.SqliteErrorCode is 5 or 6
+                || current is DbUpdateException or SqliteException &&
+                (current.Message.Contains("database is locked", StringComparison.OrdinalIgnoreCase)
+                 || current.Message.Contains("disk I/O", StringComparison.OrdinalIgnoreCase)
+                 || current.Message.Contains("malformed", StringComparison.OrdinalIgnoreCase))) return true;
+        return false;
+    }
 
     private static bool IsCorruption(Exception ex) => IsSqliteCorruption(ex);
 }

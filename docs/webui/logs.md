@@ -32,9 +32,9 @@ attempts/retries and decision reasons; TRACE adds snapshots, effective settings
 and rule inputs. Runtime level selection is available from Processes. Persistent
 changes belong in the configuration editor. See [Debug logging](../troubleshooting/debug-logging.md).
 
-Files append on restart and rotate daily with seven files retained per stream.
-There is **no size-based rotation or file size cap**. Large TRACE files remain
-accessible through bounded tail reads and streaming downloads.
+Use **INFO** for normal operation and enable TRACE temporarily for investigations. Repeated per-item skips and database details require DEBUG/TRACE; cycle summaries and actionable failures remain available at INFO.
+
+Files append on restart and rotate daily or when they reach **128 MiB**. Each stream retains at most **eight files**, with a **seven-day age limit**; whichever limit is reached first applies. Size rotation uses numbered suffixes, and individual events remain intact. Existing oversized files age out through normal retention. Aggregate and per-service streams are retained, and sanitized file-sink diagnostics are written to stderr.
 
 ## API
 

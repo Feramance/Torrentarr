@@ -7,12 +7,13 @@ import json
 import sys
 from copy import deepcopy
 from openapi_status import STATUS_SCHEMA
+from openapi_statistics import EXTENSION_PATHS as STATISTICS_PATHS, apply as apply_statistics
 from openapi_maintenance import EXTENSION_PATHS as MAINTENANCE_PATHS, apply as apply_maintenance
 from pathlib import Path
 from typing import Any
 
 HTTP_METHODS = {"get", "put", "post", "delete", "patch", "head", "options", "trace"}
-TORRENTARR_EXTENSIONS = MAINTENANCE_PATHS | {f"{prefix}/issues{suffix}" for prefix in ("/web", "/api") for suffix in ("", "/summary", "/{id}")} | {
+TORRENTARR_EXTENSIONS = STATISTICS_PATHS | MAINTENANCE_PATHS | {f"{prefix}/issues{suffix}" for prefix in ("/web", "/api") for suffix in ("", "/summary", "/{id}")} | {
     "/api/arr/{category}/open/{kind}/{entryId}",
     "/api/lidarr/{category}/tracks",
     "/api/qbit/categories",
@@ -365,13 +366,21 @@ def maintenance_drift(document: dict) -> list[str]:
     return errors
 
 
+def statistics_drift(document: dict) -> list[str]:
+    expected = {"paths": {}}
+    apply_statistics(expected)
+    return [f"generated statistics operation differs: {path}"
+            for path, operations in expected['paths'].items()
+            if document.get('paths', {}).get(path) != operations]
+
+
 def main(argv: list[str]) -> int:
     if len(argv) != 3:
         print(f"usage: {argv[0]} TORRENTARR_SPEC QBITRR_SPEC", file=sys.stderr)
         return 2
     torrentarr = load(argv[1])
     qbitrr = load(argv[2])
-    errors = compare(torrentarr, qbitrr) + maintenance_drift(torrentarr)
+    errors = compare(torrentarr, qbitrr) + maintenance_drift(torrentarr) + statistics_drift(torrentarr)
     if errors:
         print(f"OpenAPI parity failed with {len(errors)} difference(s):")
         for error in errors:

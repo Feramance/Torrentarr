@@ -15,6 +15,44 @@ namespace Torrentarr.Infrastructure.Tests.Services;
 public class ActiveWorkerSearchTests
 {
     [Fact]
+    public async Task UnavailableTorrentCycle_WaitsWithoutAdvancingLastSuccess()
+    {
+        var instance = new ArrInstanceConfig { Managed = true, URI = "http://fixture", Category = "movies", RssSyncTimer = 0, RefreshDownloadsTimer = 0 };
+        var reloader = new Mock<IConfigReloader>(); reloader.Setup(r => r.ReloadConfig()).Returns(true);
+        using var harness = new Harness(instance, skipSync: false, reloader: reloader.Object);
+        var config = harness.Provider.GetRequiredService<TorrentarrConfig>();
+        config.TorrentClients["missing"] = new() { Type = "fake", Host = "fixture" };
+        Mock.Get(harness.Provider.GetRequiredService<ITorrentProcessor>())
+            .Setup(p => p.ProcessTorrentsAsync("movies", It.IsAny<IReadOnlySet<string>>(), It.IsAny<CancellationToken>()))
+            .ThrowsAsync(new TorrentProcessingUnavailableException("Client unavailable"));
+        var client = new Mock<Torrentarr.Core.Interfaces.ITorrentClient>();
+        client.Setup(c => c.LoginAsync(It.IsAny<CancellationToken>())).ReturnsAsync(false);
+        var factory = new Mock<Torrentarr.Core.Interfaces.ITorrentClientFactory>();
+        factory.SetupGet(f => f.Type).Returns("fake");
+        factory.Setup(f => f.Create(It.IsAny<string>(), It.IsAny<TorrentClientInstanceConfig>())).Returns(client.Object);
+        using var manager = new QBittorrentConnectionManager(NullLogger<QBittorrentConnectionManager>.Instance, [factory.Object]);
+        var connectivity = new Mock<IConnectivityService>(); connectivity.Setup(c => c.IsConnectedAsync(It.IsAny<CancellationToken>())).ReturnsAsync(true);
+        using var worker = new ArrWorkerService(NullLogger<ArrWorkerService>.Instance, config, instance,
+            new WorkerContext { InstanceName = "Radarr" }, harness.Provider, manager, connectivity.Object, new SearchYearCursor(), harness.Metrics);
+        foreach (var field in new[] { "_initialized", "_qbitSetupComplete" })
+            typeof(ArrWorkerService).GetField(field, System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.NonPublic)!.SetValue(worker, true);
+        var previous = DateTimeOffset.UtcNow.AddHours(-1);
+        harness.Metrics.Torrent = new("Sleeping", previous, LastSuccess: previous);
+        using var timeout = new CancellationTokenSource(TimeSpan.FromSeconds(10));
+        reloader.Setup(r => r.WaitForChangeAsync(0, TimeSpan.FromSeconds(5), It.IsAny<CancellationToken>()))
+            .Returns((long _, TimeSpan _, CancellationToken ct) =>
+            {
+                harness.Metrics.Torrent.Phase.Should().Be("Waiting for client");
+                harness.Metrics.Torrent.LastSuccess.Should().Be(previous);
+                timeout.Cancel();
+                return Task.FromCanceled(ct);
+            });
+        var method = typeof(ArrWorkerService).GetMethod("RunTorrentLoopAsync", System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.NonPublic)!;
+        await FluentActions.Awaiting(() => (Task)method.Invoke(worker, [timeout.Token])!).Should().ThrowAsync<OperationCanceledException>();
+        reloader.Verify(r => r.WaitForChangeAsync(0, TimeSpan.FromSeconds(5), It.IsAny<CancellationToken>()), Times.Once());
+    }
+
+    [Fact]
     public async Task TorrentSleep_WakesOnRecoveryWithoutConfigurationChange()
     {
         var client = new Mock<Torrentarr.Core.Interfaces.ITorrentClient>();
@@ -351,7 +389,8 @@ public class ActiveWorkerSearchTests
             });
             await (Task)typeof(ArrWorkerService).GetMethod($"Run{loop}LoopAsync", flags)!.Invoke(worker, [stop.Token])!;
             calls.Should().Be(2);
-            (loop == "Torrent" ? harness.Metrics.Torrent : harness.Metrics.Search).LastSuccess.Should().NotBeNull();
+            if (loop == "Torrent") harness.Metrics.Torrent.LastSuccess.Should().BeNull("no client inventory was due for inspection");
+            else harness.Metrics.Search.LastSuccess.Should().NotBeNull();
             (loop == "Torrent" ? harness.Metrics.TorrentRevision : harness.Metrics.SearchRevision).Should().Be(42);
         }
         harness.Metrics.Snapshot("Radarr", false).ConfigRevision.Should().Be(42);

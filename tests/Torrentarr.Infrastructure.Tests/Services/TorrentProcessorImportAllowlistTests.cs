@@ -89,7 +89,7 @@ public sealed class TorrentProcessorImportAllowlistTests : IDisposable
                 new RecoveryIncident { AddedOn = torrent.AddedOn, Stage = "checked", Attempts = 1 });
             var result = await ApplyAsync(CreateProcessor(seeding.Object, deletion: deletion.Object), torrent, Config(autoDelete: true), client, completed: true);
 
-            Ready(result).Should().Be(!repaired);
+            Ready(result).Should().BeTrue("cleanup restrictions must not block allowed imports");
             File.Exists(allowed).Should().BeTrue();
             File.Exists(disallowed).Should().Be(repaired);
             File.Exists(sibling).Should().BeTrue();
@@ -174,7 +174,7 @@ public sealed class TorrentProcessorImportAllowlistTests : IDisposable
     }
 
     [Fact]
-    public async Task CompletedTorrent_DisallowedNonMetadataExtras_StillBlockImport()
+    public async Task CompletedTorrent_DisallowedExtras_DoNotBlockConfiguredMedia()
     {
         var root = Directory.CreateTempSubdirectory("torrentarr-disallowed-import-");
         try
@@ -186,7 +186,7 @@ public sealed class TorrentProcessorImportAllowlistTests : IDisposable
                 TorrentFile(0, "Movie/movie.mkv"), TorrentFile(1, "Movie/extra.dat")]);
 
             Ready(await ApplyAsync(CreateProcessor(), Torrent(content.FullName), Config(autoDelete: false), client, completed: true))
-                .Should().BeFalse();
+                .Should().BeTrue();
         }
         finally
         {
@@ -288,25 +288,32 @@ public sealed class TorrentProcessorImportAllowlistTests : IDisposable
         seeding.VerifyAll();
     }
 
-    [Fact]
-    public async Task PartialExclusion_WhenHnrBlocksCleanup_DoesNotDeleteExcludedFile()
+    [Theory]
+    [InlineData(".txt")]
+    [InlineData(".png")]
+    [InlineData(".exe")]
+    [InlineData(".rar")]
+    [InlineData(".mkv")]
+    public async Task PartialExclusion_WhenHnrBlocksCleanup_DoesNotBlockImport(string extension)
     {
         var root = Directory.CreateTempSubdirectory("torrentarr-hnr-cleanup-");
         try
         {
             var content = Directory.CreateDirectory(Path.Combine(root.FullName, "Movie"));
             await File.WriteAllTextAsync(Path.Combine(content.FullName, "movie.mkv"), "video");
-            var excludedPath = Path.Combine(content.FullName, "sample.txt");
+            var excludedPath = Path.Combine(content.FullName, "sample" + extension);
             await File.WriteAllTextAsync(excludedPath, "sample");
             var torrent = Torrent(content.FullName);
             var seeding = new Mock<ISeedingService>();
             seeding.Setup(s => s.HnrAllowsDeleteAsync(torrent, "excluded file cleanup by import allowlist", It.IsAny<CancellationToken>()))
                 .ReturnsAsync(false);
-            var client = new FileClient([TorrentFile(0, "Movie/movie.mkv"), TorrentFile(1, "Movie/sample.txt")]);
+            var client = new FileClient([TorrentFile(0, "Movie/movie.mkv"), TorrentFile(1, "Movie/sample" + extension)]);
 
-            var result = await ApplyAsync(CreateProcessor(seeding.Object), torrent, Config(autoDelete: true), client, completed: true);
+            var cfg = Config(autoDelete: true);
+            cfg.Torrent.FileNameExclusionRegex = ["sample"];
+            var result = await ApplyAsync(CreateProcessor(seeding.Object), torrent, cfg, client, completed: true);
 
-            Ready(result).Should().BeTrue("valid media can be imported without deleting H&R-protected metadata sidecars");
+            Ready(result).Should().BeTrue("valid media can be imported without deleting H&R-protected excluded files");
             File.Exists(excludedPath).Should().BeTrue();
             seeding.VerifyAll();
         }
@@ -357,25 +364,40 @@ public sealed class TorrentProcessorImportAllowlistTests : IDisposable
     }
 
     [Fact]
-    public async Task AllowlistWarning_IsDeduplicatedForFiveMinutesThenExpires()
+    public async Task AllowlistWarning_ReportsChangesAndRecurrenceAfterResolution()
     {
+        var logger = new Mock<ILogger<TorrentProcessor>>();
+        var processor = CreateProcessor(logger: logger.Object);
         var torrent = Torrent("/downloads/Movie");
-        var seeding = new Mock<ISeedingService>();
-        seeding.Setup(s => s.HnrAllowsDeleteAsync(torrent, It.IsAny<string>(), It.IsAny<CancellationToken>()))
-            .ReturnsAsync(false);
-        var cache = new TorrentCacheService(NullLogger<TorrentCacheService>.Instance);
-        var firstProcessor = CreateProcessor(seeding.Object, cache);
-        var secondProcessor = CreateProcessor(seeding.Object, cache);
-        var client = new FileClient([TorrentFile(0, "Movie/sample.txt")]);
-        var started = DateTimeOffset.UtcNow;
+        var client = new FileClient([TorrentFile(0, "Movie/bad.exe")]);
+        await ApplyAsync(processor, torrent, Config(false), client, true);
+        await ApplyAsync(processor, torrent, Config(false), client, true);
+        await ApplyAsync(processor, torrent, Config(false), new FileClient([TorrentFile(0, "Movie/other.exe")]), true);
+        await ApplyAsync(processor, torrent, Config(false), new FileClient([TorrentFile(0, "Movie/movie.mkv")]), true);
+        await ApplyAsync(processor, torrent, Config(false), client, true);
+        var logs = logger.Invocations.Where(i => i.Method.Name == "Log"
+            && i.Arguments[2]?.ToString()?.StartsWith("Import blocked by file allowlist") == true).ToList();
+        logs.Count(i => (LogLevel)i.Arguments[0]! == LogLevel.Warning).Should().Be(3);
+        logs.Count(i => (LogLevel)i.Arguments[0]! == LogLevel.Debug).Should().Be(1);
+        client.PriorityCalls.Should().Be(3);
+    }
 
-        await ApplyAsync(firstProcessor, torrent, Config(autoDelete: false), client, completed: true);
-        cache.ShouldLogAllowlistWarning("qBit", torrent.Hash, started.AddMinutes(1), TimeSpan.FromMinutes(5))
-            .Should().BeFalse();
-
-        await ApplyAsync(secondProcessor, torrent, Config(autoDelete: false), client, completed: true);
-        cache.ShouldLogAllowlistWarning("qBit", torrent.Hash, started.AddMinutes(6), TimeSpan.FromMinutes(5))
-            .Should().BeTrue();
+    [Theory]
+    [InlineData("Movie/release.rar", true)]
+    [InlineData("Movie/release.r00", true)]
+    [InlineData("Movie/release.R123", true)]
+    [InlineData("Movie/release.exe", false)]
+    public async Task RejectedContent_ExplainsArchivesWithoutAllowingImport(string name, bool archive)
+    {
+        var logger = new Mock<ILogger<TorrentProcessor>>();
+        var client = new FileClient([TorrentFile(0, name), TorrentFile(1, "Movie/sample.mkv")]);
+        Ready(await ApplyAsync(CreateProcessor(logger: logger.Object), Torrent("/downloads/Movie"), Config(false), client, true)).Should().BeFalse();
+        var message = logger.Invocations.Single(i => i.Method.Name == "Log"
+            && i.Arguments[2]?.ToString()?.StartsWith("Import blocked by file allowlist") == true).Arguments[2]!.ToString()!;
+        message.Should().Contain(name).And.Contain("extension");
+        message.Contains("archive contents cannot be imported").Should().Be(archive);
+        message.Should().NotContain("archive-only");
+        client.PriorityCalls.Should().Be(1);
     }
 
     [Fact]
@@ -486,7 +508,7 @@ public sealed class TorrentProcessorImportAllowlistTests : IDisposable
     }
 
     [Fact]
-    public async Task AllowlistWarning_ShowsBoundedExamplesAndKeepsThrottle()
+    public async Task AllowlistWarning_ShowsBoundedExamplesAndSuppressesRetries()
     {
         var logger = new Mock<ILogger<TorrentProcessor>>();
         var seeding = new Mock<ISeedingService>();
@@ -503,16 +525,51 @@ public sealed class TorrentProcessorImportAllowlistTests : IDisposable
         warning.Should().Contain("8 total, 3 more").And.Contain("sample0.txt").And.Contain("sample4.txt").And.NotContain("sample5.txt");
     }
 
+    [Theory]
+    [InlineData("hnr.protected", LogLevel.Information)]
+    [InlineData("hnr.unknown", LogLevel.Warning)]
+    [InlineData("hnr.protected.native-stop-risk", LogLevel.Warning)]
+    [InlineData("storage.mapping", LogLevel.Warning)]
+    public async Task RemovalDiagnostics_ReportIssuesIndependentlyOfLogSuppression(string code, LogLevel firstLevel)
+    {
+        var logger = new Mock<ILogger<TorrentProcessor>>();
+        var issues = new Mock<IOperationalIssueReporter>();
+        var config = new TorrentarrConfig();
+        var processor = CreateProcessor(logger: logger.Object, issues: issues.Object, config: config);
+        var torrent = Torrent("/downloads/Movie");
+        var method = typeof(TorrentProcessor).GetMethod("LogRemovalBlocked", BindingFlags.NonPublic | BindingFlags.Instance)!;
+        async Task Block(string reason, string blocker = "")
+        {
+            var decision = new RemovalDecision([new(blocker.Length == 0 ? code : blocker, reason, "Review settings")]);
+            await (Task)method.Invoke(processor, [torrent, TorrentRemovalIntent.RejectedByAllowlist, decision.Reason, null, decision])!;
+        }
+        await Block("ratio=0.048; seed=480000s");
+        await Block("ratio=0.049; seed=480300s");
+        config.Apply(new TorrentarrConfig(), 1);
+        await Block("ratio=0.050; seed=480600s");
+        var logs = logger.Invocations.Where(i => i.Method.Name == "Log").ToList();
+        logs.Select(i => (LogLevel)i.Arguments[0]!).Should().Equal(firstLevel, LogLevel.Debug, firstLevel);
+        issues.Verify(i => i.ReportAsync(It.IsAny<OperationalIssueReport>(), It.IsAny<CancellationToken>()), code == "hnr.protected" ? Times.Never() : Times.Exactly(3));
+        issues.Verify(i => i.ResolveAsync(It.IsAny<OperationalIssueReport>(), It.IsAny<CancellationToken>()), code == "hnr.protected" ? Times.Exactly(3) : Times.Never());
+        await Block("new blocker", "client.disconnected");
+        ((LogLevel)logger.Invocations.Last(i => i.Method.Name == "Log").Arguments[0]!).Should().Be(LogLevel.Warning);
+        var clear = typeof(TorrentProcessor).GetMethod("ClearRemovalBlockAsync", BindingFlags.NonPublic | BindingFlags.Instance)!;
+        await (Task)clear.Invoke(processor, [torrent, TorrentRemovalIntent.RejectedByAllowlist])!;
+        await Block("new blocker", "client.disconnected");
+        ((LogLevel)logger.Invocations.Last(i => i.Method.Name == "Log").Arguments[0]!).Should().Be(LogLevel.Warning);
+    }
+
     private TorrentProcessor CreateProcessor(
         ISeedingService? seeding = null,
-        ITorrentCacheService? cache = null, ISafeDeletionService? deletion = null, ILogger<TorrentProcessor>? logger = null) => new(
+        ITorrentCacheService? cache = null, ISafeDeletionService? deletion = null, ILogger<TorrentProcessor>? logger = null,
+        IOperationalIssueReporter? issues = null, TorrentarrConfig? config = null) => new(
         logger ?? NullLogger<TorrentProcessor>.Instance,
         new QBittorrentConnectionManager(NullLogger<QBittorrentConnectionManager>.Instance),
         _db,
-        new TorrentarrConfig(),
+        config ?? new TorrentarrConfig(),
         cache ?? new TorrentCacheService(NullLogger<TorrentCacheService>.Instance),
         new DatabaseRestartCoordinator(),
-        seedingService: seeding, safeDeletion: deletion);
+        seedingService: seeding, safeDeletion: deletion, issues: issues);
 
     private static ArrInstanceConfig Config(bool autoDelete) => new()
     {

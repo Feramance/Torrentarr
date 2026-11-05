@@ -122,14 +122,10 @@ A missed deadline preserves protection and triggers reporting/recovery.
 Protection checks normally run at least every five minutes when enabled, with
 targeted one-minute inspection for deadline or native stop-limit risk. Monitoring runs independently of long maintenance jobs. Outages may delay these checks;
 failures back off and preserve protection. These checks cannot guarantee service
-availability or tracker-side acceptance. Authorized Torrentarr-owned pauses may be
-recovered; deliberate user pauses remain blockers unless explicit paused-repair
-resume permission was selected.
+availability or tracker-side acceptance. H&R only restricts torrent/content deletion and recycling. Imports, pause/resume, tracker/category changes, and repair follow their configured policies and ownership checks independently.
 
 Per-torrent native ratio, seed-time and inactive seed-time stop limits can interrupt
-protected seeding. Explicit protection temporarily overrides conflicting limits and
-records their original values, restoring them after clearance if the user has not
-changed them. Global client preferences are unchanged. See the [official qBittorrent
+protected seeding. Protection reports that risk without overriding configured limits. Previously overridden limits are restored only when Torrentarr still owns the unlimited values and the torrent identity matches. Global client preferences are unchanged. See the [official qBittorrent
 share-limit contract](https://github.com/qbittorrent/qBittorrent/wiki/WebUI-API-%28qBittorrent-5.0%29#set-torrent-share-limit).
 
 ## Global seeding settings
@@ -224,10 +220,7 @@ New policies expose AccountingGraceMinutes and AdditionalSeedHours independently
 
 ## Native stop limits
 
-When protection is explicitly configured, conflicting managed per-torrent stop
-limits are recorded and temporarily disabled to preserve seeding. After clearance,
-previous values are restored only if the unlimited values still belong to Torrentarr;
-later user changes are retained. Global qBittorrent preferences are never changed.
+H&R does not disable native stop limits or resume torrents to enforce continuous seeding. Existing overrides from older versions are restored only while their unlimited values still belong to Torrentarr; later user changes are retained. Global qBittorrent preferences are never changed.
 A stopped torrent with unknown pause ownership is reported rather than assumed safe
 to resume. Review client global stop/queue settings separately.
 

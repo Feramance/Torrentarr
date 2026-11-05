@@ -457,11 +457,23 @@ class ArrWorkerService : BackgroundService
                 if (due.Count > 0) await ProcessTorrentsAsync(cycle.Token, due);
                 else await RunPeriodicCommandsAsync(cycle.Token);
                 _consecutiveErrors = 0;
-                _runtimeMetrics.Torrent = _runtimeMetrics.Torrent with { LastSuccess = DateTimeOffset.UtcNow };
-                await ObserveLoopAsync("torrent", true, cycle.Token);
-                outcome = "success";
+                if (due.Count > 0)
+                {
+                    _runtimeMetrics.Torrent = _runtimeMetrics.Torrent with { LastSuccess = DateTimeOffset.UtcNow };
+                    await ObserveLoopAsync("torrent", true, cycle.Token);
+                }
+                outcome = due.Count > 0 ? "success" : "idle";
             }
             catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested) { break; }
+            catch (TorrentProcessingUnavailableException ex)
+            {
+                outcome = "waiting for torrent client";
+                _logger.LogInformation("Torrent processing deferred for {Instance}: {Reason}", _context.InstanceName, ex.Message);
+                await ObserveLoopAsync("torrent", false, cancellationToken);
+                scans.Reset();
+                await SleepLoopAsync("Torrent", "Waiting for client", TimeSpan.FromSeconds(5), cancellationToken, connectionRevision);
+                continue;
+            }
             catch (ConfigurationBusyException)
             {
                 outcome = "configuration pending";

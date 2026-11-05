@@ -57,7 +57,10 @@ export function ArrCatalogBodyChrome({
         <button
           className="btn ghost"
           type="button"
-          onClick={onRefresh}
+          onClick={() => {
+            onRefresh();
+            window.dispatchEvent(new Event("torrentarr:statistics-refresh"));
+          }}
           disabled={loading}
         >
           <IconImage src={RefreshIcon} />

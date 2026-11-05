@@ -17,6 +17,16 @@ def document(paths, components=None):
 
 
 class OpenApiDriftTests(unittest.TestCase):
+    def test_statistics_generation_documents_coverage_and_detects_drift(self):
+        contract = json.loads((SCRIPT.parents[1] / "docs/assets/openapi.json").read_text())
+        self.assertEqual(module.statistics_drift(contract), [])
+        schema = contract['paths']['/web/statistics/transfers']['get']['responses']['200']['content']['application/json']['schema']
+        bucket = schema['properties']['series']['items']['properties']['points']['items']
+        self.assertTrue(bucket['properties']['downloadRate']['nullable'])
+        self.assertIn('expectedSamples', bucket['properties'])
+        del contract['paths']['/web/statistics/transfers']
+        self.assertTrue(module.statistics_drift(contract))
+
     def test_checked_in_contract_documents_native_cleanup_and_inspection_failure(self):
         contract = json.loads((SCRIPT.parents[1] / "docs/assets/openapi.json").read_text())
         self.assertEqual(module.maintenance_drift(contract), [])

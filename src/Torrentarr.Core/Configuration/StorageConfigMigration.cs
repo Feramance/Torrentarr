@@ -94,7 +94,7 @@ public static class StorageConfigMigration
             {
                 var download = Map(completed, client.Maintenance.PathMappings, reverse: true);
                 if (download != null) { table["DownloadPath"] = download; client.DownloadPath = download; }
-                else Warn(id, "could not translate the old completed folder to a client download path");
+                else Warn(id, table, "could not translate the old completed folder to a client download path");
             }
             if (table.ContainsKey("FreeSpace")) continue;
             var path = LocalDownloadPath(client);
@@ -113,8 +113,8 @@ public static class StorageConfigMigration
             table["FreeSpace"] = validPath
                 ? new TomlTableArray { new TomlTable { ["Path"] = path!, ["Enabled"] = enabled, ["Limit"] = limit } }
                 : new TomlTableArray();
-            if (ambiguous && validPath) Warn(id, "legacy monitor ownership is ambiguous; the inherited path is disabled for review");
-            if (!validPath) Warn(id, "no unambiguous local monitor path; free-space protection remains disabled until configured");
+            if (ambiguous && validPath) Warn(id, table, "legacy monitor ownership is ambiguous; the inherited path is disabled for review");
+            if (!validPath) Warn(id, table, "no unambiguous local monitor path; free-space protection remains disabled until configured");
         }
     }
 
@@ -129,7 +129,7 @@ public static class StorageConfigMigration
             {
                 var rootPath = Map(legacy["CompletedDownloadFolder"].ToString(), client.Maintenance.PathMappings, reverse: true);
                 if (rootPath != null) { table["DownloadPath"] = rootPath; client.DownloadPath = rootPath; }
-                else Warn(id, "legacy environment download folder cannot be reverse-mapped");
+                else Warn(id, table, "legacy environment download folder cannot be reverse-mapped");
             }
             if (client.FreeSpace.Count == 0) table.Remove("FreeSpace");
             else
@@ -168,5 +168,13 @@ public static class StorageConfigMigration
         return null;
     }
 
-    private static void Warn(string id, string message) => Console.Error.WriteLine($"Storage migration [{id}]: {message}.");
+    private static void Warn(string id, TomlTable client, string message)
+    {
+        if (!client.TryGetValue("Migration", out var value)) client["Migration"] = value = new TomlTable();
+        var migration = value as TomlTable ?? throw new InvalidDataException("Migration must be a table.");
+        if (!migration.TryGetValue("Notices", out var noticesValue)) migration["Notices"] = noticesValue = new TomlArray();
+        var notices = noticesValue as TomlArray ?? throw new InvalidDataException("Migration.Notices must be a list.");
+        if (!notices.Contains(message)) notices.Add(message);
+        Console.Error.WriteLine($"Storage migration [{id}]: {message}.");
+    }
 }

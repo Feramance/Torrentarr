@@ -174,6 +174,32 @@ public sealed class StorageMigrationTests : IDisposable
         config.QBitInstances["qBit-one"].FreeSpace.Single().Enabled.Should().BeTrue();
         config.TorrentClients["two"].DownloadPath.Should().BeNull();
         config.TorrentClients["two"].FreeSpace.Should().OnlyContain(m => !m.Enabled);
+        config.QBitInstances["qBit-one"].Migration.Notices.Should().BeEmpty();
+        config.TorrentClients["two"].Migration.Notices.Should().ContainSingle().Which.Should().Contain("ambiguous");
+        var persisted = File.ReadAllText(_file);
+        var loader = new ConfigurationLoader(_file);
+        loader.Load().TorrentClients["two"].Migration.Notices.Should().Equal(config.TorrentClients["two"].Migration.Notices);
+        File.ReadAllText(_file).Should().Be(persisted);
+        config.TorrentClients["two"].Migration.Notices.Clear();
+        loader.SaveConfig(config);
+        loader.Load().TorrentClients["two"].Migration.Notices.Should().BeEmpty();
+    }
+
+    [Theory]
+    [InlineData("qBit")]
+    [InlineData("TorrentClient.named")]
+    public void MissingLegacyStoragePaths_PersistAnActionableMigrationNotice(string section)
+    {
+        var config = Load($"""
+            [Settings]
+            FreeSpace = "10G"
+            [{section}]
+            Host = "localhost"
+            """);
+        var client = config.GetAllTorrentClients().Values.Single();
+        client.FreeSpace.Should().BeEmpty();
+        client.Migration.Notices.Should().ContainSingle().Which.Should().Contain("free-space protection remains disabled until configured");
+        new ConfigurationLoader(_file).Load().GetAllTorrentClients().Values.Single().Migration.Notices.Should().Equal(client.Migration.Notices);
     }
 
     [Theory]

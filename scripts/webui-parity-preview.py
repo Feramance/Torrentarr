@@ -9,6 +9,8 @@ from urllib.parse import urlparse, parse_qs, unquote
 import argparse
 import json
 import threading
+import math
+from datetime import datetime, timezone
 parser = argparse.ArgumentParser(description=__doc__)
 parser.add_argument('--scenario', choices=['full', 'empty', 'no-readarr', 'offline', 'large', 'missing-images', 'login', 'setup', 'update'], default='full')
 scenario = parser.parse_args().scenario
@@ -89,6 +91,38 @@ class Handler(SimpleHTTPRequestHandler):
                 return self.reply(config)
             if p == '/web/meta':
                 return self.reply(dict(current_version='6.15.2', ready=True, auth_required=scenario in ('login', 'setup'), local_auth_enabled=True, setup_required=scenario == 'setup', url_base='/prefix' if u.path.startswith('/prefix/') else '', repository_url='https://github.com/Feramance/Torrentarr', installation_type='docker', auto_update_supported=False, update_available=scenario == 'update', latest_version='6.15.3', changelog='Fixture release notes'))
+            if p == '/web/statistics/arr-activity':
+                selected_range = q.get('range', ['24h'])[0]
+                minutes, bucket = {'1h': (60, 1), '24h': (1440, 5), '7d': (10080, 30)}[selected_range]
+                end = int(datetime.now(timezone.utc).timestamp() / 60) // bucket * bucket
+                activity = []
+                for worker_index, arr in enumerate(arrs):
+                    points = [dict(timestamp=datetime.fromtimestamp((end-minutes+i*bucket)*60, timezone.utc).isoformat(),
+                        queueDepth=max(0, round(12+worker_index*4+8*math.sin(i/17+worker_index))) if i%45 else None,
+                        searchesCompleted=(i+worker_index)%4 if i%45 else None,
+                        importsConfirmed=(i+worker_index)%3 if i%45 else None,
+                        queueSamples=bucket if i%45 else 0, completionSamples=bucket if i%45 else 0, expectedSamples=bucket)
+                        for i in range(minutes//bucket)]
+                    activity.append(dict(instance=arr['name'], type=arr['type'], points=points))
+                return self.reply(dict(range=selected_range,bucketMinutes=bucket,generatedAt=datetime.now(timezone.utc).isoformat(),series=activity))
+            if p == '/web/statistics/transfers':
+                ranges = {'1h': (60, 1), '24h': (1440, 5), '7d': (10080, 30)}
+                selected_range = q.get('range', ['24h'])[0]
+                minutes, bucket = ranges[selected_range]
+                end = int(datetime.now(timezone.utc).timestamp() / 60) // bucket * bucket
+                points = [dict(timestamp=datetime.fromtimestamp((end - minutes + i * bucket) * 60, timezone.utc).isoformat(),
+                    downloadRate=(8 + 6 * math.sin(i / 14)) * 1024 ** 2 if i % 50 else None,
+                    uploadRate=(2 + math.cos(i / 19)) * 1024 ** 2 if i % 50 else None,
+                    samples=bucket if i % 50 else 0, expectedSamples=bucket) for i in range(minutes // bucket)]
+                return self.reply(dict(range=selected_range, bucketMinutes=bucket, generatedAt=datetime.now(timezone.utc).isoformat(),
+                    series=[] if scenario == 'empty' else [dict(instance='qBit-main', points=points)]))
+            if p == '/web/statistics/catalog':
+                unit = {'radarr': 'movies', 'sonarr': 'episodes', 'lidarr': 'albums', 'readarr': 'books'}[q.get('kind', ['radarr'])[0]]
+                return self.reply(dict(unit=unit, total=240, available=180, monitored=210, missing=30))
+            if p == '/web/issues/summary':
+                return self.reply(dict(available=True, activeGroups=0))
+            if p == '/web/issues':
+                return self.reply(dict(available=True, groups=[], total=0, page=0, pageSize=50))
             if p == '/web/status':
                 return self.reply(dict(ready=True, arrs=arrs, qbitInstances={'qBit-main': dict(alive=scenario != 'offline', host='qbittorrent', port=8080, version='5.1')} if scenario != 'empty' else {}))
             if p == '/web/arr':
@@ -105,7 +139,8 @@ class Handler(SimpleHTTPRequestHandler):
             if p == '/web/qbit/categories':
                 return self.reply(dict(ready=True, categories=[] if scenario == 'empty' else [category]))
             if p == '/web/qbit/overview':
-                return self.reply(dict(ready=True, instances=[] if scenario == 'empty' else ['qBit-main'], categories=[] if scenario == 'empty' else [category]))
+                return self.reply(dict(ready=True, instances=[] if scenario == 'empty' else ['qBit-main'], categories=[] if scenario == 'empty' else [category],
+                    summaries=[] if scenario == 'empty' else [dict(instance='qBit-main', torrentCount=42, totalSize=204800, downloading=8, seeding=28, stopped=4, other=2)]))
             if p == '/web/logs':
                 return self.reply(dict(files=['torrentarr.log'] if self.server.reference else [dict(name='torrentarr.log', size=2048, modified='2026-10-18T12:00:00Z')]))
             if p == '/web/logs/search':
@@ -140,6 +175,8 @@ class Handler(SimpleHTTPRequestHandler):
                 if '/author/' in p:
                     return self.reply(dict(**extra, author=author, books=[book]))
                 return self.reply(dict(**extra, book_total=2, authors=[dict(author=author)]))
+            if p == '/web/torrent-clients':
+                return self.reply([])
             if p == '/api/torrent-clients':
                 return self.reply([])
             if 'maintenance' in p:

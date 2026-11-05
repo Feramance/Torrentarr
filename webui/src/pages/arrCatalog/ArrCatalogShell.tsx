@@ -7,6 +7,7 @@ import {
   type ChangeEvent,
   type JSX,
 } from "react";
+import { CatalogStatistics } from "../../components/CatalogStatistics";
 import { getArrList } from "../../api/client";
 import type { ArrInfo } from "../../api/types";
 import { ArrBrowseModeToggle } from "../../components/arr/ArrBrowseModeToggle";
@@ -403,6 +404,11 @@ export function ArrCatalogShell<
               </div>
             </div>
 
+            <CatalogStatistics
+              kind={definition.kind}
+              instance={selection || undefined}
+              active={active && instances.length > 0}
+            />
             {isAggregate
               ? definition.renderAggregateBody({
                   ...renderContext,

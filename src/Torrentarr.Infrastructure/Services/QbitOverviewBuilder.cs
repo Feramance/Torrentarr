@@ -29,6 +29,7 @@ public static class QbitOverviewBuilder
             .ToHashSet(StringComparer.OrdinalIgnoreCase);
 
         var categories = new List<object>();
+        var summaries = new List<object>();
         foreach (var instanceName in instanceNames)
         {
             var qbit = cfg.GetTorrentClient(instanceName);
@@ -53,11 +54,13 @@ public static class QbitOverviewBuilder
             var monitored = new HashSet<string>(qbit.ManagedCategories, StringComparer.OrdinalIgnoreCase);
             monitored.UnionWith(arrCategories);
 
+            var matched = new Dictionary<string, TorrentInfo>(StringComparer.OrdinalIgnoreCase);
             foreach (var catName in monitored.OrderBy(c => c, StringComparer.OrdinalIgnoreCase))
             {
                 var inCat = torrents.Where(t =>
                     CategoryPathHelper.MatchesConfigured(t.Category, new[] { catName }, prefix: CategoryOwnershipHelper.PrefixMatchAllowedForOwner(cfg, catName, instanceName))
                         == CategoryPathHelper.NormalizeCategory(catName)).ToList();
+                foreach (var torrent in inCat) matched.TryAdd(torrent.Hash, torrent);
                 var truncated = inCat.Count > MaxTorrentsPerCategory;
                 var slice = inCat.Take(MaxTorrentsPerCategory).Select(SerializeTorrent).ToList();
                 var seeding = inCat.Count(t => t.IsSeeding);
@@ -80,14 +83,34 @@ public static class QbitOverviewBuilder
                     torrents = slice
                 });
             }
+            var unique = matched.Values.ToList();
+            summaries.Add(new
+            {
+                instance = instanceName,
+                torrentCount = unique.Count,
+                totalSize = unique.Sum(t => t.Size),
+                downloading = unique.Count(t => Activity(t) == "downloading"),
+                seeding = unique.Count(t => Activity(t) == "seeding"),
+                stopped = unique.Count(t => Activity(t) == "stopped"),
+                other = unique.Count(t => Activity(t) == "other")
+            });
         }
 
         return new
         {
             instances = instanceNames,
             categories,
+            summaries,
             ready = true
         };
+    }
+
+    private static string Activity(TorrentInfo torrent)
+    {
+        var state = torrent.State.ToLowerInvariant();
+        if (torrent.IsStopped || state.StartsWith("paused")) return "stopped";
+        if (torrent.IsDownloading || state is "stalleddl" or "forceddl" or "queueddl" or "metadl" or "forcedmetadl") return "downloading";
+        return torrent.IsSeeding ? "seeding" : "other";
     }
 
     private static object SerializeTorrent(TorrentInfo t) => new

@@ -1,5 +1,7 @@
 import { clearUrlBaseCache, setUrlBaseFromMeta, webPath } from "./urlBase";
 import type {
+  TransferHistoryResponse,
+  TransferRange,
   ArrListResponse,
   ConfigDocument,
   ConfigResponseWithWarning,
@@ -1013,4 +1015,39 @@ export async function getIssueDetails(
   pageSize: number;
 }> {
   return fetchJson(`/web/issues/${id}?page=${page}`);
+}
+
+export function getTransferHistory(
+  instance: string | undefined,
+  range: TransferRange,
+) {
+  const params = new URLSearchParams({ range });
+  if (instance) params.set("instance", instance);
+  return fetchJson<TransferHistoryResponse>(
+    `/web/statistics/transfers?${params}`,
+  );
+}
+
+export interface CatalogStatistics {
+  unit: string;
+  total: number;
+  available: number;
+  monitored: number;
+  missing: number;
+}
+export function getCatalogStatistics(kind: string, instance?: string) {
+  const params = new URLSearchParams({ kind });
+  if (instance) params.set("instance", instance);
+  return fetchJson<CatalogStatistics>(`/web/statistics/catalog?${params}`);
+}
+
+export function getArrActivity(
+  range: import("./types").TransferRange,
+  worker?: string,
+) {
+  const params = new URLSearchParams({ range });
+  if (worker) params.set("worker", worker);
+  return fetchJson<import("./types").ArrActivityHistory>(
+    `/web/statistics/arr-activity?${params}`,
+  );
 }

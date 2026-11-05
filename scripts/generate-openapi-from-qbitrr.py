@@ -8,6 +8,7 @@ import sys
 import urllib.request
 from copy import deepcopy
 from openapi_status import STATUS_SCHEMA
+from openapi_statistics import EXTENSION_PATHS as STATISTICS_PATHS, apply as apply_statistics
 from openapi_maintenance import apply as apply_maintenance
 
 QBITRR_REF = os.environ.get("QBITRR_OPENAPI_REF", "v5.14.6-1")
@@ -169,6 +170,7 @@ def main() -> int:
         operation["responses"]["200"]["content"]["application/json"]["schema"] = deepcopy(STATUS_SCHEMA)
 
     apply_maintenance(spec)
+    apply_statistics(spec)
 
     out = sys.argv[1] if len(sys.argv) > 1 else OUT_PATH
     with open(out, "w", encoding="utf-8") as f:

@@ -80,7 +80,11 @@ public sealed class SafeDeletionService : ISafeDeletionService
 
         var inventory = validatedInventory ?? await _inventory.BuildAsync(ct: ct);
         if (!inventory.IsComplete)
-            return new(false, true, 0, $"Content deletion blocked because inventory is incomplete: {string.Join("; ", inventory.Warnings)}");
+        {
+            var mappings = inventory.Diagnostics.Where(d => d.Code is "missing-mapping" or "unmatched-prefix" or "invalid-mapping" or "inaccessible-local-root")
+                .Select(d => $"Client '{d.ClientInstanceId}', client path '{d.Examples.FirstOrDefault()?.ClientPath ?? "unavailable"}': configure this client's Maintenance.PathMappings (ClientPath -> LocalPath) and ensure the local root is mounted and accessible inside Torrentarr. Identical client/local paths also require an explicit mapping.");
+            return new(false, true, 0, DiagnosticText.Safe($"Recycling blocked because global file ownership inventory is incomplete: {string.Join("; ", inventory.Warnings)} {string.Join(" ", mappings)}"));
+        }
         var item = inventory.Torrents.FirstOrDefault(t =>
             t.Torrent.ClientInstanceId.Equals(clientInstanceId, StringComparison.OrdinalIgnoreCase)
             && t.Torrent.Hash.Equals(hash, StringComparison.OrdinalIgnoreCase));

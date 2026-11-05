@@ -61,8 +61,9 @@ public class ArrImportService : IArrImportService
 
         // Find the Arr instance configuration for this category
         _logger.LogTrace("Looking up Arr instance for category {Category}", category);
-        var arrInstance = _config.ArrInstances.Values.FirstOrDefault(i =>
-            i.Category.Equals(category, StringComparison.OrdinalIgnoreCase));
+        var target = _config.ArrInstances.FirstOrDefault(p =>
+            p.Value.Category.Equals(category, StringComparison.OrdinalIgnoreCase));
+        var arrInstance = target.Value;
 
         if (arrInstance == null)
         {
@@ -77,12 +78,13 @@ public class ArrImportService : IArrImportService
 
         _logger.LogInformation("Found Arr instance: Type={Type}, URI={URI}, Category={Category}",
             arrInstance.Type, DiagnosticText.Safe(arrInstance.URI), arrInstance.Category);
-        using var instanceScope = _logger.BeginScope(new Dictionary<string, object> { ["ProcessInstance"] = _config.ArrInstances.FirstOrDefault(p => ReferenceEquals(p.Value, arrInstance)).Key ?? category });
+        using var instanceScope = _logger.BeginScope(new Dictionary<string, object> { ["ProcessInstance"] = target.Key });
         _logger.LogTrace("Import request: path={Path}; configuredMode={ConfiguredMode}; globalMode={GlobalMode}; type={Type}", contentPath, arrInstance.ImportMode, _config.Settings.ImportMode, arrInstance.Type);
 
         try
         {
             _logger.LogInformation("Routing import to {Type} handler", arrInstance.Type);
+            using var activity = ArrActivityTracking.Begin(_dbContext, _logger, target.Key, arrInstance, "import", hash);
             var result = arrInstance.Type.ToLower() switch
             {
                 "radarr" => await TriggerRadarrImportAsync(arrInstance, hash, contentPath, cancellationToken),
@@ -370,8 +372,9 @@ public class ArrImportService : IArrImportService
             ["TorrentHash"] = hash,
             ["TorrentCategory"] = category
         });
-        var arrInstance = _config.ArrInstances.Values.FirstOrDefault(i =>
-            i.Category.Equals(category, StringComparison.OrdinalIgnoreCase));
+        var target = _config.ArrInstances.FirstOrDefault(p =>
+            p.Value.Category.Equals(category, StringComparison.OrdinalIgnoreCase));
+        var arrInstance = target.Value;
 
         if (arrInstance == null || !arrInstance.Search.CustomFormatUnmetSearch)
         {
@@ -537,8 +540,9 @@ public class ArrImportService : IArrImportService
             ["TorrentHash"] = hash,
             ["TorrentCategory"] = category
         });
-        var arrInstance = _config.ArrInstances.Values.FirstOrDefault(i =>
-            i.Category.Equals(category, StringComparison.OrdinalIgnoreCase));
+        var target = _config.ArrInstances.FirstOrDefault(p =>
+            p.Value.Category.Equals(category, StringComparison.OrdinalIgnoreCase));
+        var arrInstance = target.Value;
 
         if (arrInstance == null)
         {

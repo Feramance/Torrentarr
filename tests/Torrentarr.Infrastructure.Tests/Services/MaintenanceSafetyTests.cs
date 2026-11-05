@@ -959,6 +959,22 @@ public sealed class MaintenanceSafetyTests : IDisposable
     }
 
     [Fact]
+    public async Task RecyclingWithoutMappings_ExplainsClientPathAndDoesNotDeleteContent()
+    {
+        AddTorrent();
+        ClientConfig.Maintenance.PathMappings.Clear();
+        var result = await _deletion.RemoveTorrentAsync("one", "abc", true);
+        result.Success.Should().BeFalse();
+        result.Error.Should().Contain("Recycling blocked").And.Contain("Client 'one'")
+            .And.Contain("/downloads/movie.mkv").And.Contain("Maintenance.PathMappings")
+            .And.Contain("mounted and accessible").And.Contain("Identical client/local paths");
+        _client.Verify(c => c.DeleteTorrentsAsync(It.IsAny<List<string>>(), It.IsAny<bool>(), It.IsAny<CancellationToken>()), Times.Never());
+        File.Exists(Path.Combine(_root, "movie.mkv")).Should().BeTrue();
+        ClientConfig.Maintenance.PathMappings.Add(new() { ClientPath = "/downloads", LocalPath = _root });
+        (await _deletion.RemoveTorrentAsync("one", "abc", true)).Success.Should().BeTrue();
+    }
+
+    [Fact]
     public async Task DisabledRecycle_MaintenanceUsesNativeDeletion()
     {
         AddTorrent();

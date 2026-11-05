@@ -1,3 +1,4 @@
+import { BreakdownBar } from "../components/Statistics";
 import { useCallback, useEffect, useRef, useState, type JSX } from "react";
 import equal from "fast-deep-equal";
 import { get, set } from "lodash-es";
@@ -797,6 +798,34 @@ export function MaintenanceView({
         <details ref={historyRef} className="config-section">
           <summary>Recent runs</summary>
           <div className="config-section__body">
+            {selectedHistory.length > 0 && (
+              <BreakdownBar
+                label="Operation outcomes in the latest 20 displayed runs"
+                values={[
+                  {
+                    label: "Applied",
+                    value: selectedHistory
+                      .slice(0, 20)
+                      .reduce((sum, run) => sum + run.applied, 0),
+                    tone: "teal",
+                  },
+                  {
+                    label: "Skipped",
+                    value: selectedHistory
+                      .slice(0, 20)
+                      .reduce((sum, run) => sum + run.skipped, 0),
+                    tone: "muted",
+                  },
+                  {
+                    label: "Failed",
+                    value: selectedHistory
+                      .slice(0, 20)
+                      .reduce((sum, run) => sum + run.failed, 0),
+                    tone: "danger",
+                  },
+                ]}
+              />
+            )}
             {!selectedHistory.length ? (
               <p>No runs yet.</p>
             ) : (

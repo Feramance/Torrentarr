@@ -166,6 +166,8 @@ builder.Services.AddSingleton<ITorrentClientFactory, QBittorrentTorrentClientFac
 builder.Services.AddSingleton<QBittorrentConnectionManager>();
 builder.Services.AddHostedService(sp => sp.GetRequiredService<QBittorrentConnectionManager>());
 builder.Services.AddSingleton<ITorrentClientRegistry>(sp => sp.GetRequiredService<QBittorrentConnectionManager>());
+builder.Services.AddHostedService<TransferHistoryCollector>();
+builder.Services.AddHostedService<ArrActivityCollector>();
 builder.Services.AddSingleton<IPathMappingService, PathMappingService>();
 builder.Services.AddSingleton<ITorrentInventoryService, TorrentInventoryService>();
 builder.Services.AddSingleton<IHardlinkInspector, HardlinkInspector>();
@@ -1232,6 +1234,9 @@ foreach (var prefix in new[] { "/web", "/api" })
 }
 app.MapTorrentMaintenanceEndpoints("/web", standalone: true);
 app.MapTorrentMaintenanceEndpoints("/api", standalone: true);
+
+app.MapTransferHistory();
+app.MapArrActivity();
 
 app.MapGet("/web/qbit/overview", async (HttpRequest request, TorrentarrConfig cfg, ITorrentClientRegistry clientRegistry, CancellationToken ct) =>
 {

@@ -181,16 +181,6 @@ public sealed class TorrentAutomationService(TorrentarrConfig config, ITorrentCl
                                 }
                                 _protection[key] = decisions;
                             }
-                            if ((cfg.Trackers.Any(t => t.Protection != null) || _config.ArrInstances.Values.Any(a => CategoryOwnershipHelper.ArrOwnsTorrent(_config, a, torrent) && a.Torrent.Trackers.Any(t => t.Protection != null))) && torrent.Progress >= 1 && (torrent.IsStopped || torrent.State.Contains("paused", StringComparison.OrdinalIgnoreCase))
-                                && !SplitTags(torrent.Tags).Contains("qBitrr-free_space_paused") && !SplitTags(torrent.Tags).Contains("qBitrr-ignored"))
-                            {
-                                var pauseKey = MaintenancePersistence.Key(id, torrent.Hash, "routine-pause");
-                                var pause = MaintenancePersistence.Read<PauseOwnership>(db, pauseKey);
-                                if (pause.Owned && pause.AddedOn == torrent.AddedOn
-                                    && _protection.Values.SelectMany(decisions => decisions).Any(d => d.ClientInstanceId == id && d.TorrentHash == torrent.Hash && d.State != "eligible")
-                                    && await client.ResumeTorrentsAsync([torrent.Hash], inspectionCt))
-                                    MaintenancePersistence.Write(db, pauseKey, new PauseOwnership());
-                            }
                             _trackerInspections[key] = (fetchedAt, trackers, torrent.IsPrivate);
                         }
                         finally { observations.Release(); }
