@@ -55,7 +55,7 @@ public sealed class WorkerProcessSupervisor : BackgroundService, IProcessOrchest
         {
             while (!stoppingToken.IsCancellationRequested)
             {
-                MonitorWorkers();
+                await MonitorWorkersAsync(stoppingToken);
                 await StopRemovedWorkersAsync(stoppingToken);
                 await Task.Delay(TimeSpan.FromSeconds(5), stoppingToken);
             }
@@ -108,18 +108,19 @@ public sealed class WorkerProcessSupervisor : BackgroundService, IProcessOrchest
         finally { _lifecycle.Release(); }
     }
 
-    private async Task StopWorkerAsync(string instanceName, CancellationToken cancellationToken)
+    private async Task<bool> StopWorkerAsync(string instanceName, CancellationToken cancellationToken, Process? expected = null)
     {
         Process? process;
         lock (_gate)
         {
+            if (expected != null && (!_processes.TryGetValue(instanceName, out var current) || !ReferenceEquals(current, expected))) return false;
             CancelRetry(instanceName);
             _processes.Remove(instanceName, out process);
             if (process != null) _processRevisions.Remove(process);
             _statusFiles.Remove(instanceName);
             _reportedWorkers.Remove(instanceName);
         }
-        if (process == null) return;
+        if (process == null) return false;
         try
         {
             if (!process.HasExited)
@@ -132,12 +133,14 @@ public sealed class WorkerProcessSupervisor : BackgroundService, IProcessOrchest
         {
             if (!process.HasExited)
             {
+                _logger.LogWarning("Worker {Instance} did not stop gracefully; terminating it", instanceName);
                 try { process.Kill(true); }
                 catch (InvalidOperationException) { }
                 await process.WaitForExitAsync(CancellationToken.None);
             }
         }
         finally { process.Dispose(); }
+        return true;
     }
 
     private void CancelRetry(string name)
@@ -519,22 +522,28 @@ public sealed class WorkerProcessSupervisor : BackgroundService, IProcessOrchest
         _ = task.ContinueWith(_ => { lock (_gate) _retryTasks.Remove(task); }, TaskScheduler.Default);
     }
 
-    internal void MonitorWorkers()
+    internal async Task MonitorWorkersAsync(CancellationToken ct = default)
     {
-        lock (_gate)
+        await _lifecycle.WaitAsync(ct);
+        try
         {
-            foreach (var (name, process) in _processes.ToArray())
+            KeyValuePair<string, Process>[] unhealthy;
+            lock (_gate)
+                unhealthy = _processes.Where(p => !p.Value.HasExited)
+                    .Where(p => { var status = ReadProcessStatus(p.Key, p.Value); return !status.IsAlive || status.RestartRequested; })
+                    .ToArray();
+            foreach (var (name, process) in unhealthy)
             {
-                if (process.HasExited) continue;
-                var status = ReadProcessStatus(name, process);
-                if (!status.IsAlive || status.RestartRequested)
+                _logger.LogWarning("Worker {Instance} timed out or requested a restart; requesting graceful shutdown", name);
+                if (!await StopWorkerAsync(name, ct, process)) continue;
+                lock (_gate)
                 {
-                    _logger.LogWarning("Worker {Instance} timed out or requested a restart; terminating it", name);
-                    try { process.Kill(true); }
-                    catch (InvalidOperationException) { }
+                    _lastFailures[name] = (null, "Worker timed out or requested a restart.");
+                    ScheduleRetry(name);
                 }
             }
         }
+        finally { _lifecycle.Release(); }
     }
 
     internal static ProcessStartInfo ResolveWorkerStartInfo(string instanceName, string? baseDirectory = null)

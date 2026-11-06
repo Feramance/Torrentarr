@@ -187,6 +187,8 @@ try
     builder.Services.AddSingleton<QBittorrentConnectionManager>();
     builder.Services.AddHostedService(sp => sp.GetRequiredService<QBittorrentConnectionManager>());
     builder.Services.AddSingleton<ITorrentClientRegistry>(sp => sp.GetRequiredService<QBittorrentConnectionManager>());
+    builder.Services.AddHostedService<TransferHistoryCollector>();
+    builder.Services.AddHostedService<ArrActivityCollector>();
     builder.Services.AddSingleton<IPathMappingService, PathMappingService>();
     builder.Services.AddSingleton<IHardlinkInspector, HardlinkInspector>();
     builder.Services.AddSingleton<ITorrentInventoryService, TorrentInventoryService>();
@@ -868,6 +870,9 @@ try
     });
 
     app.MapGet("/web/config/schema", () => Results.Ok(ConfigSchemaBuilder.Build()));
+
+    app.MapTransferHistory();
+    app.MapArrActivity();
 
     app.MapGet("/web/qbit/overview", async (HttpRequest request, TorrentarrConfig cfg, ITorrentClientRegistry qbitManager) =>
     {
@@ -2771,7 +2776,7 @@ class ProcessOrchestratorService : BackgroundService
                         _logger.LogInformation("[{Instance}] Requested recheck for torrent: {Name}", instanceName, torrent.Name);
                 }
             }
-            catch (Exception ex)
+            catch (Exception ex) when (ex is not OperationCanceledException)
             {
                 _logger.LogError(ex, "[{Instance}] Error processing special categories", instanceName);
             }
@@ -2854,7 +2859,7 @@ class ProcessOrchestratorService : BackgroundService
                 {
                     torrentList = await client.GetTorrentsAsync(category: null, "priority", cancellationToken);
                 }
-                catch (Exception ex)
+                catch (Exception ex) when (ex is not OperationCanceledException)
                 {
                     _logger.LogDebug(ex, "[{Instance}] SortTorrents: falling back to added_on sort", instanceName);
                     torrentList = await client.GetTorrentsAsync(category: null, "added_on", cancellationToken);
@@ -2923,6 +2928,7 @@ class ProcessOrchestratorService : BackgroundService
                         await client.SetTopPriorityAsync(torrent.Hash, cancellationToken);
                 }
             }
+            catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested) { throw; }
             catch (Exception ex)
             {
                 _logger.LogError(ex, "[{Instance}] SortTorrents policy step failed", instanceName);

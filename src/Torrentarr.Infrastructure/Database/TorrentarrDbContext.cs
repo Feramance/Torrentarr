@@ -32,11 +32,26 @@ public class TorrentarrDbContext : DbContext
     public DbSet<SonarrSearchRetry> SonarrSearchRetries { get; set; }
     public DbSet<MaintenanceState> MaintenanceState { get; set; }
 
+    public DbSet<ArrActivitySample> ArrActivitySamples { get; set; }
+    public DbSet<ArrActivityOperation> ArrActivityOperations { get; set; }
+
+    public DbSet<TransferSample> TransferSamples { get; set; }
+
     public DbSet<OperationalIssue> OperationalIssues { get; set; }
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
         base.OnModelCreating(modelBuilder);
+        modelBuilder.Entity<ArrActivitySample>().HasKey(s => new { s.Instance, s.Minute });
+        modelBuilder.Entity<ArrActivitySample>().HasIndex(s => s.Minute);
+        modelBuilder.Entity<ArrActivityOperation>().HasKey(s => new { s.Instance, s.CommandId });
+        modelBuilder.Entity<ArrActivityOperation>().HasIndex(s => new { s.Instance, s.EvidenceId }).IsUnique();
+        modelBuilder.Entity<ArrActivityOperation>().HasIndex(s => s.SubmittedAt);
+        modelBuilder.Entity<ArrActivityOperation>().HasIndex(s => s.ConfirmedAt);
+        modelBuilder.Entity<ArrActivityOperation>().HasIndex(s => new { s.Instance, s.DownloadId });
+        modelBuilder.Entity<ArrActivityOperation>().HasIndex(s => new { s.Instance, s.Outcome });
+        modelBuilder.Entity<TransferSample>().HasKey(s => new { s.ClientInstance, s.Minute });
+        modelBuilder.Entity<TransferSample>().HasIndex(s => s.Minute);
         modelBuilder.Entity<OperationalIssue>().Property(i => i.ArrInstance).UseCollation("NOCASE");
         modelBuilder.Entity<OperationalIssue>().Property(i => i.ClientInstance).UseCollation("NOCASE");
         modelBuilder.Entity<OperationalIssue>().HasIndex(i => new { i.Code, i.ArrInstance, i.ClientInstance, i.SubjectType, i.SubjectId }).IsUnique();

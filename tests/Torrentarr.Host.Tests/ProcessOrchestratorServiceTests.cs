@@ -16,6 +16,32 @@ namespace Torrentarr.Host.Tests;
 public class ProcessOrchestratorServiceTests
 {
     [Fact]
+    public async Task TrackerSort_ShutdownCancellationPropagatesWithoutErrorOrFallback()
+    {
+        using var cancellation = new CancellationTokenSource(); cancellation.Cancel();
+        var client = new Mock<ITorrentClient>();
+        client.Setup(c => c.GetTorrentsAsync(null, "priority", It.IsAny<CancellationToken>()))
+            .ThrowsAsync(new OperationCanceledException(cancellation.Token));
+        var registry = new Mock<ITorrentClientRegistry>();
+        registry.Setup(r => r.GetAllClients()).Returns(new Dictionary<string, ITorrentClient> { ["one"] = client.Object });
+        var entries = new Mock<Microsoft.Extensions.Logging.ILogger>();
+        var factory = new Mock<Microsoft.Extensions.Logging.ILoggerFactory>();
+        factory.Setup(f => f.CreateLogger(It.IsAny<string>())).Returns(entries.Object);
+        var logger = new Microsoft.Extensions.Logging.Logger<ProcessOrchestratorService>(factory.Object);
+        using var provider = new ServiceCollection().BuildServiceProvider();
+        using var service = new ProcessOrchestratorService(logger, new(), registry.Object,
+            provider.GetRequiredService<IServiceScopeFactory>(), new ProcessStateManager(), Mock.Of<ISafeDeletionService>());
+        var method = typeof(ProcessOrchestratorService).GetMethod("SortManagedTorrentsByTrackerPriorityAsync",
+            System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.NonPublic)!;
+        await FluentActions.Awaiting(() => (Task)method.Invoke(service,
+            [Mock.Of<ISeedingService>(), new HashSet<string> { "movies" }, new HashSet<string> { "one" }, cancellation.Token])!)
+            .Should().ThrowAsync<OperationCanceledException>();
+        client.Verify(c => c.GetTorrentsAsync(null, "added_on", It.IsAny<CancellationToken>()), Times.Never());
+        entries.Invocations.Where(i => i.Method.Name == "Log").Should().NotContain(i =>
+            (Microsoft.Extensions.Logging.LogLevel)i.Arguments[0]! == Microsoft.Extensions.Logging.LogLevel.Error);
+    }
+
+    [Fact]
     public async Task FreeSpace_ConfigSaveWakesSingleManagerAndRefreshesClientMonitors()
     {
         var config = new TorrentarrConfig();

@@ -208,7 +208,7 @@ public class WorkerLifecycleTests
             {
                 await supervisor.RestartProcessAsync("Radarr");
                 await supervisor.GetProcessStatusAsync();
-                supervisor.MonitorWorkers();
+                await supervisor.MonitorWorkersAsync();
             }
         }
         finally { await orchestrator.StopAsync(); }
@@ -289,6 +289,36 @@ public class WorkerLifecycleTests
             (await supervisor.GetProcessStatusAsync()).ContainsKey("Radarr").Should().Be(restored);
         }
         finally { await orchestrator.StopAsync(); File.Delete(status); }
+    }
+
+    [Fact]
+    public async Task RequestedRestart_UsesGracefulShutdownBeforeTerminatingWorker()
+    {
+        if (OperatingSystem.IsWindows()) return;
+        var config = Config(); config.Settings.AutoRestartProcesses = false;
+        var evidence = Path.GetTempFileName(); var status = Path.GetTempFileName();
+        using var supervisor = new WorkerProcessSupervisor(config, NullLogger<WorkerProcessSupervisor>.Instance,
+            Mock.Of<IMediaValidationService>(), _ => new ProcessStartInfo("/bin/sh")
+            {
+                ArgumentList = { "-c", "read command; printf '%s' \"$command\" > \"$1\"", "worker", evidence },
+                UseShellExecute = false,
+                RedirectStandardInput = true
+            });
+        var orchestrator = (IProcessOrchestrator)supervisor;
+        try
+        {
+            await orchestrator.StartAsync();
+            var pid = (await supervisor.GetProcessStatusAsync())["Radarr"].ProcessId!.Value;
+            var files = (Dictionary<string, string>)typeof(WorkerProcessSupervisor)
+                .GetField("_statusFiles", System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.NonPublic)!.GetValue(supervisor)!;
+            files["Radarr"] = status;
+            await File.WriteAllTextAsync(status, System.Text.Json.JsonSerializer.Serialize(new WorkerHeartbeat
+            { Instance = "Radarr", Pid = pid, Heartbeat = DateTimeOffset.UtcNow, RestartRequested = true }, WorkerHeartbeat.JsonOptions));
+            await supervisor.MonitorWorkersAsync();
+            (await File.ReadAllTextAsync(evidence)).Should().Be("shutdown");
+            (await supervisor.GetProcessStatusAsync())["Radarr"].IsAlive.Should().BeFalse();
+        }
+        finally { await orchestrator.StopAsync(); File.Delete(evidence); File.Delete(status); }
     }
 
     private static TorrentarrConfig Config()

@@ -71,18 +71,8 @@ public interface ITorrentCacheService
     /// </summary>
     void MarkFileFiltered(string qBitInstanceName, string hash);
 
-    /// <summary>
-    /// Record an allowlist warning and return whether it should be logged after throttling.
-    /// </summary>
-    bool ShouldLogAllowlistWarning(
-        string qBitInstanceName,
-        string hash,
-        DateTimeOffset timestamp,
-        TimeSpan throttlePeriod);
-
-    /// <summary>Throttle repeated identical removal blocks, reporting a changed reason immediately.</summary>
-    bool ShouldLogRemovalBlock(string instanceId, string hash, string reason,
-        DateTimeOffset timestamp, TimeSpan throttlePeriod) => true;
+    /// <summary>Report a changed diagnostic; null evidence clears a resolved stream. State is scoped to client and torrent.</summary>
+    bool DiagnosticChanged(string instanceId, string hash, string stream, string? evidence);
 }
 
 public class TorrentCacheStats

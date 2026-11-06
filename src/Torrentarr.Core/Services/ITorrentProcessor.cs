@@ -74,3 +74,6 @@ public enum TorrentState
     CheckingResumeData,
     MetadataDownloading
 }
+
+/// <summary>A requested torrent inventory could not be inspected; this is not a successful empty scan.</summary>
+public sealed class TorrentProcessingUnavailableException(string message) : IOException(message);

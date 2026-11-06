@@ -7,6 +7,9 @@ import {
   type ChangeEvent,
   type JSX,
 } from "react";
+import { TransferHistory } from "../components/TransferHistory";
+import { BreakdownBar } from "../components/Statistics";
+import type { QbitActivitySummary } from "../api/types";
 import { getQbitOverview, getStatus } from "../api/client";
 import type { QbitOverviewCategory, QbitTorrentOverview } from "../api/types";
 import { QbitTorrentListRow } from "../components/QbitTorrentListRow";
@@ -157,6 +160,7 @@ export function QbitCategoriesView({
 }: QbitCategoriesViewProps): JSX.Element {
   const [instances, setInstances] = useState<string[]>([]);
   const [selection, setSelection] = useState<string | "aggregate" | "">("");
+  const [activity, setActivity] = useState<QbitActivitySummary[]>([]);
   const [categories, setCategories] = useState<QbitOverviewCategory[]>([]);
   const [expanded, setExpanded] = useState<Record<string, boolean>>({});
   const [search, setSearch] = useState("");
@@ -210,6 +214,7 @@ export function QbitCategoriesView({
           return;
         setLoadedSelection(selection);
         setCategories(data.categories);
+        setActivity(data.summaries ?? []);
         if (data.instances.length) {
           setInstances((prev) => {
             const merged = Array.from(
@@ -321,9 +326,15 @@ export function QbitCategoriesView({
     } catch {
       return;
     }
-    if (!focusCategory) return;
-    if (focusInstance && selection !== focusInstance) {
-      setSelection(focusInstance);
+    if (!focusCategory || !instances.length) return;
+    if (search) {
+      setSearch("");
+      return;
+    }
+    const destination =
+      focusInstance ?? (instances.length > 1 ? "aggregate" : instances[0]!);
+    if (selection !== destination) {
+      setSelection(destination);
       return;
     }
     if (
@@ -360,21 +371,35 @@ export function QbitCategoriesView({
       });
     }, 0);
     return () => window.clearTimeout(id);
-  }, [active, filteredCategories, selection, loadedSelection]);
+  }, [
+    active,
+    filteredCategories,
+    selection,
+    loadedSelection,
+    instances,
+    search,
+  ]);
 
   const summary = useMemo(() => {
-    const totalTorrents = filteredCategories.reduce(
-      (sum, cat) => sum + cat.torrentCount,
-      0,
+    const matches = new Map(
+      filteredCategories.flatMap((cat) =>
+        cat.visibleTorrents.map(
+          (torrent) =>
+            [`${cat.qbitInstance}:${torrent.hash}`, torrent] as const,
+        ),
+      ),
     );
-    const totalSeeding = filteredCategories.reduce(
-      (sum, cat) => sum + cat.seedingCount,
-      0,
-    );
-    const totalSize = filteredCategories.reduce(
-      (sum, cat) => sum + cat.totalSize,
-      0,
-    );
+    const rows = [...matches.values()];
+    const useFullTotals = !search.trim() && activity.length > 0;
+    const totalTorrents = useFullTotals
+      ? activity.reduce((sum, item) => sum + item.torrentCount, 0)
+      : rows.length;
+    const totalSeeding = useFullTotals
+      ? activity.reduce((sum, item) => sum + item.seeding, 0)
+      : rows.filter((t) => isSeedingState(t.state)).length;
+    const totalSize = useFullTotals
+      ? activity.reduce((sum, item) => sum + item.totalSize, 0)
+      : rows.reduce((sum, t) => sum + t.size, 0);
     const qbitCount = filteredCategories.filter(
       (cat) => cat.managedBy === "qbit",
     ).length;
@@ -390,12 +415,13 @@ export function QbitCategoriesView({
       arrCount,
       categoryCount: filteredCategories.length,
     };
-  }, [filteredCategories]);
+  }, [filteredCategories, activity, search]);
 
   const summaryLine = (
     <>
       <div>
         Monitored-category torrent overview
+        {search.trim() ? " · Search of loaded torrents" : ""}
         {selection && selection !== "aggregate"
           ? ` · ${selection}`
           : instances.length > 1
@@ -574,6 +600,64 @@ export function QbitCategoriesView({
           </aside>
 
           <div className="pane">
+            <TransferHistory
+              instance={
+                selection && selection !== "aggregate" ? selection : undefined
+              }
+              active={active && instancesLoaded && instances.length > 0}
+            />
+            {loadedSelection === selection && activity.length > 0 && (
+              <div className="activity-summary">
+                <h3>Monitored categories</h3>
+                <BreakdownBar
+                  label="Monitored torrent activity, deduplicated across categories"
+                  values={[
+                    {
+                      label: "Downloading",
+                      value: activity.reduce(
+                        (sum, item) => sum + item.downloading,
+                        0,
+                      ),
+                      tone: "teal",
+                    },
+                    {
+                      label: "Seeding",
+                      value: activity.reduce(
+                        (sum, item) => sum + item.seeding,
+                        0,
+                      ),
+                      tone: "orange",
+                    },
+                    {
+                      label: "Stopped / paused",
+                      value: activity.reduce(
+                        (sum, item) => sum + item.stopped,
+                        0,
+                      ),
+                      tone: "muted",
+                    },
+                    {
+                      label: "Other",
+                      value: activity.reduce(
+                        (sum, item) => sum + item.other,
+                        0,
+                      ),
+                      tone: "subtle",
+                    },
+                  ]}
+                />
+                <p className="hint">
+                  {activity
+                    .reduce((sum, item) => sum + item.torrentCount, 0)
+                    .toLocaleString()}{" "}
+                  unique torrents · independent of category search
+                  {activity.length <
+                  (selection === "aggregate" ? instances.length : 1)
+                    ? " · Some clients unavailable; showing partial coverage"
+                    : ""}
+                </p>
+              </div>
+            )}
             <div className="field mobile-instance-select">
               <label htmlFor="qbit-instance-select">Instance</label>
               <select

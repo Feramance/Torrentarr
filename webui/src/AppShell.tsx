@@ -37,6 +37,7 @@ import ReadarrIcon from "./icons/readarr.svg";
 import QbitIcon from "./icons/qbittorrent.svg";
 import ConfigIcon from "./icons/gear.svg";
 import logoUrl from "./icons/logov2-clean.svg";
+import { ShellDialog } from "./components/ShellDialog";
 import { safeClick } from "./utils/safeClick";
 import {
   NAVIGATE_TAB_EVENT,
@@ -250,6 +251,8 @@ function AppShell({
   const [meta, setMeta] = useState<MetaResponse | null>(initialMeta);
   const [metaLoading, setMetaLoading] = useState(false);
   const [showHelpMenu, setShowHelpMenu] = useState(false);
+  const [navigationOpen, setNavigationOpen] = useState(false);
+  const [displayOpen, setDisplayOpen] = useState(false);
   const [showChangelog, setShowChangelog] = useState(false);
   const [showAlreadyUpToDateModal, setShowAlreadyUpToDateModal] =
     useState(false);
@@ -462,6 +465,7 @@ function AppShell({
               "torrentarr:focusQbitInstance",
               detail.qbitInstance,
             );
+          else sessionStorage.removeItem("torrentarr:focusQbitInstance");
         } catch {
           /* Navigation still works without a persisted focus hint. */
         }
@@ -797,17 +801,173 @@ function AppShell({
     }
   }, [push, refreshMeta]);
 
+  const resourceLinks = (
+    <div
+      className="sidebar__resources"
+      role="group"
+      aria-label="Project resources"
+    >
+      <a
+        href="https://feramance.github.io/Torrentarr/"
+        target="_blank"
+        rel="noopener noreferrer"
+        title="Wiki"
+        aria-label="Wiki (opens in a new tab)"
+      >
+        <svg
+          viewBox="0 0 24 24"
+          fill="none"
+          stroke="currentColor"
+          strokeWidth="1.7"
+          aria-hidden="true"
+        >
+          <path d="M12 5v15M3 4c4-1 6 0 9 2 3-2 5-3 9-2v15c-4-1-6 0-9 2-3-2-5-3-9-2Z" />
+        </svg>
+      </a>
+      <a
+        href={repositoryUrl}
+        target="_blank"
+        rel="noopener noreferrer"
+        title="GitHub"
+        aria-label="GitHub (opens in a new tab)"
+      >
+        <IconImage src={ExternalIcon} />
+      </a>
+    </div>
+  );
+  const navigation = (
+    <nav className="nav" aria-label="Main navigation">
+      {[
+        { label: "Monitor", ids: ["processes", "issues", "logs"] },
+        {
+          label: "Libraries & clients",
+          ids: ["radarr", "sonarr", "lidarr", "readarr", "qbittorrent"],
+        },
+        { label: "Administration", ids: ["maintenance", "config"] },
+      ].map((group) => {
+        const items = tabs.filter((tab) => group.ids.includes(tab.id));
+        return items.length ? (
+          <div className="nav-group" key={group.label}>
+            <div className="nav-group__label">{group.label}</div>
+            {items.map((tab) => (
+              <button
+                type="button"
+                key={tab.id}
+                className={activeTab === tab.id ? "active" : ""}
+                aria-current={activeTab === tab.id ? "page" : undefined}
+                onClick={safeClick(() => {
+                  switchTab(tab.id);
+                  setNavigationOpen(false);
+                })}
+                onMouseEnter={() => prefetchTab(tab.id)}
+                onFocus={() => prefetchTab(tab.id)}
+              >
+                <IconImage src={tab.icon} />
+                <span>{tab.label}</span>
+                {tab.id === "issues" && (
+                  <span
+                    className="issue-count"
+                    aria-label={
+                      issueCount == null
+                        ? "Issue count unavailable"
+                        : `${issueCount} active issue groups`
+                    }
+                  >
+                    {issueCount ?? "?"}
+                  </span>
+                )}
+              </button>
+            ))}
+          </div>
+        ) : null;
+      })}
+    </nav>
+  );
+
   return (
-    <div data-density={viewDensity}>
+    <div data-density={viewDensity} className="console-shell">
+      <aside className="console-sidebar">
+        <div className="sidebar__brand">
+          <IconImage src={logoUrl} alt="Torrentarr Logo" />
+          <strong>Torrentarr</strong>
+        </div>
+        {navigation}
+        {resourceLinks}
+      </aside>
+      {navigationOpen && (
+        <ShellDialog
+          title="Navigation"
+          className="navigation-drawer"
+          onClose={() => setNavigationOpen(false)}
+        >
+          {navigation}
+          {resourceLinks}
+        </ShellDialog>
+      )}
+      {displayOpen && (
+        <ShellDialog
+          title="Display"
+          popover
+          className="display-dialog"
+          onClose={() => setDisplayOpen(false)}
+        >
+          <fieldset>
+            <legend>Theme</legend>
+            <div className="view-density-toggle">
+              <button
+                type="button"
+                aria-pressed={theme === "dark"}
+                className={theme === "dark" ? "active" : ""}
+                onClick={() => setTheme("dark")}
+              >
+                Dark
+              </button>
+              <button
+                type="button"
+                aria-pressed={theme === "light"}
+                className={theme === "light" ? "active" : ""}
+                onClick={() => setTheme("light")}
+              >
+                Light
+              </button>
+            </div>
+          </fieldset>
+          <fieldset>
+            <legend>View density</legend>
+            <div className="view-density-toggle">
+              <button
+                type="button"
+                aria-pressed={viewDensity === "comfortable"}
+                className={viewDensity === "comfortable" ? "active" : ""}
+                onClick={() => setViewDensity("comfortable")}
+              >
+                Comfortable
+              </button>
+              <button
+                type="button"
+                aria-pressed={viewDensity === "compact"}
+                className={viewDensity === "compact" ? "active" : ""}
+                onClick={() => setViewDensity("compact")}
+              >
+                Compact
+              </button>
+            </div>
+          </fieldset>
+        </ShellDialog>
+      )}
       <header className="appbar">
         <div className="appbar__inner">
           <div className="appbar__title">
-            <IconImage
-              src={logoUrl}
-              alt="Torrentarr Logo"
-              className="appbar__logo"
-            />
-            <h1>Torrentarr</h1>
+            <button
+              type="button"
+              className="btn ghost navigation-trigger"
+              aria-haspopup="dialog"
+              aria-expanded={navigationOpen}
+              onClick={() => setNavigationOpen(true)}
+            >
+              Menu
+            </button>
+            <h1>{tabs.find((tab) => tab.id === activeTab)?.label}</h1>
             <span className="appbar__version" title={versionTitle}>
               {displayVersion}
             </span>
@@ -843,40 +1003,15 @@ function AppShell({
                 Offline
               </span>
             )}
-            <div className="view-density-toggle" title="View density">
-              <button
-                type="button"
-                className={viewDensity === "comfortable" ? "active" : ""}
-                onClick={() => setViewDensity("comfortable")}
-                title="Comfortable view"
-              >
-                Comfortable
-              </button>
-              <button
-                type="button"
-                className={viewDensity === "compact" ? "active" : ""}
-                onClick={() => setViewDensity("compact")}
-                title="Compact view"
-              >
-                Compact
-              </button>
-            </div>
-            <div className="view-density-toggle" title="Theme">
-              <button
-                type="button"
-                className={theme === "dark" ? "active" : ""}
-                onClick={() => setTheme("dark")}
-              >
-                Dark
-              </button>
-              <button
-                type="button"
-                className={theme === "light" ? "active" : ""}
-                onClick={() => setTheme("light")}
-              >
-                Light
-              </button>
-            </div>
+            <button
+              type="button"
+              className="btn small ghost"
+              aria-haspopup="dialog"
+              aria-expanded={displayOpen}
+              onClick={() => setDisplayOpen(true)}
+            >
+              Display
+            </button>
             <div className="live-switch">
               <span className="live-switch__label" id="live-switch-label">
                 Live
@@ -967,33 +1102,6 @@ function AppShell({
         </div>
       </header>
       <main className="container">
-        <nav className="nav">
-          {tabs.map((tab) => (
-            <button
-              type="button"
-              key={tab.id}
-              className={activeTab === tab.id ? "active" : ""}
-              onClick={safeClick(() => switchTab(tab.id))}
-              onMouseEnter={() => prefetchTab(tab.id)}
-              onFocus={() => prefetchTab(tab.id)}
-            >
-              <IconImage src={tab.icon} />
-              <span>{tab.label}</span>
-              {tab.id === "issues" && (
-                <span
-                  className="issue-count"
-                  aria-label={
-                    issueCount == null
-                      ? "Issue count unavailable"
-                      : `${issueCount} active issue groups`
-                  }
-                >
-                  {issueCount ?? "?"}
-                </span>
-              )}
-            </button>
-          ))}
-        </nav>
         <Suspense fallback={<div className="loading">Loading...</div>}>
           <div className="view-transition">
             {visitedTabs.has("issues") && (

@@ -18,6 +18,8 @@ import type { ProcessInfo, QbitCategory, StatusResponse } from "../api/types";
 import { useToast } from "../context/ToastContext";
 import { useInterval } from "../hooks/useInterval";
 import { IconImage } from "../components/IconImage";
+import { ArrActivityCharts } from "../components/ArrActivityCharts";
+import { MetricStrip } from "../components/Statistics";
 import { ConfirmDialog } from "../components/ConfirmDialog";
 import { requestNavigateTab } from "../utils/navigateTab";
 
@@ -221,9 +223,11 @@ function buildProcessActivity(item: ProcessInfo): {
 function ProcessChipView({
   item,
   onRestart,
+  onOpen,
 }: {
   item: ProcessInfo;
   onRestart: (category: string, kind: string) => void;
+  onOpen?: () => void;
 }): JSX.Element {
   const aliveLabel = item.alive
     ? "Running"
@@ -231,46 +235,52 @@ function ProcessChipView({
       ? "Disabled"
       : "Stopped";
   const activity = buildProcessActivity(item);
+  const Element = onOpen ? "button" : "div";
   return (
-    <div className="process-chip">
-      <div className="process-chip__row">
-        <span
-          className={`process-status__dot ${
-            item.alive ? "process-status__dot--ok" : "process-status__dot--bad"
-          }`}
-          title={aliveLabel}
-          aria-label={aliveLabel}
-        />
-        <span className="process-chip__name">{formatKind(item.kind)}</span>
-        {item.restartable ?? item.kind === "worker" ? (
-          <div className="process-chip__actions">
-            <button
-              className="btn small ghost process-action-btn"
-              type="button"
-              onClick={() =>
-                onRestart(item.restartKey ?? item.category, item.kind)
-              }
-            >
-              Restart
-            </button>
-          </div>
-        ) : null}
-      </div>
-      {activity.text ? (
-        <div
-          className={`process-chip__summary${
-            activity.warn ? " process-chip__summary--warn" : ""
-          }`}
-          title={activity.text}
-        >
-          {activity.text}
+    <div className="process-chip-container">
+      <Element
+        className={`process-chip${onOpen ? " process-chip--link" : ""}`}
+        type={onOpen ? "button" : undefined}
+        onClick={onOpen}
+        aria-label={onOpen ? `View torrents for ${item.name}` : undefined}
+      >
+        <div className="process-chip__row">
+          <span
+            className={`process-status__dot process-status__dot--${item.alive ? "ok" : "bad"}`}
+            title={aliveLabel}
+            aria-label={aliveLabel}
+          />
+          <span className="process-chip__name">{formatKind(item.kind)}</span>
         </div>
-      ) : null}
+        {activity.text && (
+          <div
+            className={`process-chip__summary${activity.warn ? " process-chip__summary--warn" : ""}`}
+            title={activity.text}
+          >
+            {activity.text}
+          </div>
+        )}
+      </Element>
+      {(item.restartable ?? item.kind === "worker") && (
+        <button
+          className="btn small ghost process-action-btn"
+          type="button"
+          onClick={() => onRestart(item.restartKey ?? item.category, item.kind)}
+        >
+          Restart
+        </button>
+      )}
     </div>
   );
 }
 
-function WorkerChip({ item }: { item: ProcessInfo }): JSX.Element {
+function WorkerChip({
+  item,
+  onOpen,
+}: {
+  item: ProcessInfo;
+  onOpen?: () => void;
+}): JSX.Element {
   return (
     <>
       {(["search", "torrent"] as const).map((kind) => {
@@ -279,8 +289,18 @@ function WorkerChip({ item }: { item: ProcessInfo }): JSX.Element {
         const healthy =
           item.alive && !/error|timed out/i.test(loop?.phase ?? "");
         const state = item.alive ? loop?.phase ?? "Running" : "Stopped";
+        const clickable = kind === "torrent" && onOpen;
+        const Element = clickable ? "button" : "div";
         return (
-          <div className="process-chip" key={kind}>
+          <Element
+            className={`process-chip${clickable ? " process-chip--link" : ""}`}
+            key={kind}
+            type={clickable ? "button" : undefined}
+            onClick={clickable || undefined}
+            aria-label={
+              clickable ? `View torrents for ${item.name}` : undefined
+            }
+          >
             <div className="process-chip__row">
               <span
                 className={`process-status__dot process-status__dot--${healthy ? "ok" : "bad"}`}
@@ -298,7 +318,7 @@ function WorkerChip({ item }: { item: ProcessInfo }): JSX.Element {
                 ? ` · resumes ${new Date(loop.wakeAt).toLocaleTimeString()}`
                 : ""}
             </div>
-          </div>
+          </Element>
         );
       })}
     </>
@@ -354,6 +374,7 @@ export function ProcessesView({ active }: ProcessesViewProps): JSX.Element {
   const [processes, setProcesses] = useState<ProcessInfo[]>([]);
   const [loading, setLoading] = useState(false);
   const [hasLoaded, setHasLoaded] = useState(false);
+  const [hasSnapshot, setHasSnapshot] = useState(false);
   const [restartingAll, setRestartingAll] = useState(false);
   const [rebuildingArrs, setRebuildingArrs] = useState(false);
   const [statusData, setStatusData] = useState<StatusResponse | null>(null);
@@ -395,6 +416,7 @@ export function ProcessesView({ active }: ProcessesViewProps): JSX.Element {
         setProcesses((prev) =>
           areProcessListsEqual(prev, next) ? prev : next,
         );
+        setHasSnapshot(true);
         setStatusData(status);
         if (categoriesData?.categories) {
           setQbitCategories(categoriesData.categories);
@@ -626,6 +648,30 @@ export function ProcessesView({ active }: ProcessesViewProps): JSX.Element {
             )
           : [];
       const name = instanceName;
+      const arr = statusData?.arrs.find((a) => a.name === name);
+      const category =
+        arr?.category ||
+        items.find((item) => item.kind === "worker" || item.kind === "torrent")
+          ?.category;
+      const matchingClients = [
+        ...new Set(
+          qbitCategories
+            .filter(
+              (cat) => cat.category.toLowerCase() === category?.toLowerCase(),
+            )
+            .map((cat) => cat.instance),
+        ),
+      ];
+      const openTorrents =
+        arr && category
+          ? () =>
+              requestNavigateTab({
+                tab: "qbittorrent",
+                qbitCategory: category,
+                qbitInstance:
+                  matchingClients.length === 1 ? matchingClients[0] : undefined,
+              })
+          : undefined;
       const runningCount = items.filter((item) => item.alive).length;
       const totalCount = items.length;
       const qbitInstanceKey = app === "Torrent Clients" ? instanceName : null;
@@ -761,11 +807,16 @@ export function ProcessesView({ active }: ProcessesViewProps): JSX.Element {
           <div className={listClass}>
             {items.map((item) =>
               item.kind === "worker" ? (
-                <WorkerChip key={item.restartKey ?? item.name} item={item} />
+                <WorkerChip
+                  key={item.restartKey ?? item.name}
+                  item={item}
+                  onOpen={openTorrents}
+                />
               ) : (
                 <ProcessChipView
                   key={`${item.category}:${item.kind}`}
                   item={item}
+                  onOpen={item.kind === "torrent" ? openTorrents : undefined}
                   onRestart={(category, kind) => {
                     void handleRestart(category, kind);
                   }}
@@ -795,17 +846,65 @@ export function ProcessesView({ active }: ProcessesViewProps): JSX.Element {
     return { app, cards };
   });
 
+  const byOwner = new Map<string, { queue: number; paused: number }>();
+  for (const process of processes) {
+    const key = process.restartKey ?? process.name;
+    const previous = byOwner.get(key) ?? { queue: 0, paused: 0 };
+    byOwner.set(key, {
+      queue: Math.max(previous.queue, process.queueCount ?? 0),
+      paused: Math.max(previous.paused, process.freeSpacePaused ?? 0),
+    });
+  }
+  const totals = [...byOwner.values()];
+  const workerStates = new Map<string, boolean>();
+  for (const process of processes) {
+    if (process.restartable === false) continue;
+    const key = process.restartKey ?? process.name;
+    workerStates.set(key, (workerStates.get(key) ?? false) || process.alive);
+  }
   return (
     <>
       <section className="card">
         <div className="card-header">Processes</div>
         <div className="card-body stack">
+          <MetricStrip
+            label="Process statistics"
+            items={[
+              {
+                label: "Workers online",
+                value: hasSnapshot
+                  ? `${[...workerStates.values()].filter(Boolean).length} / ${workerStates.size}`
+                  : "—",
+              },
+              {
+                label: "Queued items",
+                value: hasSnapshot
+                  ? totals
+                      .reduce((sum, item) => sum + item.queue, 0)
+                      .toLocaleString()
+                  : "—",
+              },
+              {
+                label: "Paused for space",
+                value: hasSnapshot
+                  ? totals
+                      .reduce((sum, item) => sum + item.paused, 0)
+                      .toLocaleString()
+                  : "—",
+              },
+            ]}
+          />
           <div className="row">
             <div className="col inline">
               <button
                 className="btn ghost"
                 type="button"
-                onClick={() => void load()}
+                onClick={() => {
+                  void load();
+                  window.dispatchEvent(
+                    new Event("torrentarr:statistics-refresh"),
+                  );
+                }}
                 disabled={loading}
               >
                 {loading && <span className="spinner" />}
@@ -834,6 +933,7 @@ export function ProcessesView({ active }: ProcessesViewProps): JSX.Element {
               </button>
             </div>
           </div>
+          <ArrActivityCharts active={active} />
           {!hasLoaded && loading ? (
             <div className="loading">
               <span className="spinner" /> Loading processes…

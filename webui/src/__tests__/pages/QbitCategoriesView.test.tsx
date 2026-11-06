@@ -20,6 +20,7 @@ vi.mock("../../api/client", () => ({
   updateConfig: vi.fn(),
   getStatus: vi.fn(),
   getQbitOverview: vi.fn(),
+  getTransferHistory: vi.fn(async () => ({ series: [] })),
 }));
 const torrent = (
   name = "Example",
@@ -86,6 +87,7 @@ function view(active = true) {
 }
 beforeEach(() => {
   vi.resetAllMocks();
+  sessionStorage.clear();
   vi.mocked(api.getConfig).mockResolvedValue({ WebUI: { LiveArr: false } });
   vi.mocked(api.getStatus).mockResolvedValue({
     qbitInstances: {
@@ -204,4 +206,52 @@ it("fetches the newly selected instance while an old overview is pending", async
   expect(
     screen.queryByRole("button", { name: /movies.*Arr/ }),
   ).not.toBeInTheDocument();
+});
+
+it("clears an old search and opens shared categories across all clients", async () => {
+  vi.mocked(api.getStatus).mockResolvedValue({
+    ready: true,
+    arrs: [],
+    qbitInstances: {
+      "qBit-home": { alive: true, host: "fixture", port: 1, version: null },
+      "qBit-remote": { alive: false, host: "fixture", port: 2, version: null },
+    },
+  });
+  vi.mocked(api.getQbitOverview).mockImplementation(async (instance) => ({
+    ready: true,
+    instances: ["qBit-home", "qBit-remote"],
+    categories: [
+      { ...category(), qbitInstance: "qBit-home" },
+      { ...category(), qbitInstance: "qBit-remote" },
+    ].filter((cat) => !instance || cat.qbitInstance === instance),
+  }));
+  const node = (active: boolean) => (
+    <ToastProvider>
+      <WebUIProvider>
+        <QbitCategoriesView active={active} />
+      </WebUIProvider>
+    </ToastProvider>
+  );
+  const result = render(node(true));
+  await screen.findAllByRole("button", { name: /movies.*Arr/ });
+  fireEvent.change(screen.getByLabelText("Instance"), {
+    target: { value: "qBit-home" },
+  });
+  fireEvent.change(screen.getByLabelText("Search"), {
+    target: { value: "not-a-match" },
+  });
+  result.rerender(node(false));
+  sessionStorage.setItem("qbitrr:focusQbitCategory", "movies");
+  sessionStorage.removeItem("torrentarr:focusQbitInstance");
+  result.rerender(node(true));
+  await waitFor(() => expect(screen.getByLabelText("Search")).toHaveValue(""));
+  await waitFor(() =>
+    expect(screen.getByLabelText("Instance")).toHaveValue("aggregate"),
+  );
+  await waitFor(() => {
+    const buttons = screen.getAllByRole("button", { name: /movies.*Arr/ });
+    expect(buttons).toHaveLength(2);
+    for (const button of buttons)
+      expect(button).toHaveAttribute("aria-expanded", "true");
+  });
 });

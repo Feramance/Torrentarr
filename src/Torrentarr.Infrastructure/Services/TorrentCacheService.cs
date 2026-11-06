@@ -15,8 +15,7 @@ public class TorrentCacheService : ITorrentCacheService
     private readonly Dictionary<string, DateTime> _ignoreCache = new(StringComparer.OrdinalIgnoreCase);
     private readonly HashSet<string> _filePrioritiesAppliedHashes = new(StringComparer.Ordinal);
     private readonly HashSet<string> _fileFilteredHashes = new(StringComparer.Ordinal);
-    private readonly Dictionary<string, DateTimeOffset> _allowlistWarningCache = new(StringComparer.Ordinal);
-    private readonly Dictionary<string, (string Reason, DateTimeOffset At)> _removalBlocks = new(StringComparer.Ordinal);
+    private readonly Dictionary<string, Dictionary<string, string>> _diagnostics = new(StringComparer.Ordinal);
     private readonly object _lock = new();
     private DateTime _lastFullClearUtc = DateTime.MinValue;
     private static readonly TimeSpan FullClearInterval = TimeSpan.FromHours(24);
@@ -126,36 +125,24 @@ public class TorrentCacheService : ITorrentCacheService
         }
     }
 
-    public bool ShouldLogAllowlistWarning(
-        string qBitInstanceName,
-        string hash,
-        DateTimeOffset timestamp,
-        TimeSpan throttlePeriod)
-    {
-        lock (_lock)
-        {
-            var key = FileStateKey(qBitInstanceName, hash);
-            if (_allowlistWarningCache.TryGetValue(key, out var last)
-                && timestamp - last < throttlePeriod)
-            {
-                return false;
-            }
-
-            _allowlistWarningCache[key] = timestamp;
-            return true;
-        }
-    }
-
-    public bool ShouldLogRemovalBlock(string instanceId, string hash, string reason,
-        DateTimeOffset timestamp, TimeSpan throttlePeriod)
+    public bool DiagnosticChanged(string instanceId, string hash, string stream, string? evidence)
     {
         lock (_lock)
         {
             var key = FileStateKey(instanceId, hash);
-            if (_removalBlocks.TryGetValue(key, out var previous)
-                && previous.Reason == reason && timestamp - previous.At < throttlePeriod)
-                return false;
-            _removalBlocks[key] = (reason, timestamp);
+            if (!_diagnostics.TryGetValue(key, out var streams))
+            {
+                if (evidence == null) return false;
+                _diagnostics[key] = streams = new(StringComparer.Ordinal);
+            }
+            if (evidence == null)
+            {
+                var removed = streams.Remove(stream);
+                if (streams.Count == 0) _diagnostics.Remove(key);
+                return removed;
+            }
+            if (streams.TryGetValue(stream, out var previous) && previous == evidence) return false;
+            streams[stream] = evidence;
             return true;
         }
     }
@@ -166,7 +153,7 @@ public class TorrentCacheService : ITorrentCacheService
         {
             var key = FileStateKey(instanceId, hash);
             _categoryCache.Remove(key); _nameCache.Remove(key); _ignoreCache.Remove(key);
-            _filePrioritiesAppliedHashes.Remove(key); _fileFilteredHashes.Remove(key); _allowlistWarningCache.Remove(key); _removalBlocks.Remove(key);
+            _filePrioritiesAppliedHashes.Remove(key); _fileFilteredHashes.Remove(key); _diagnostics.Remove(key);
         }
     }
 
@@ -179,8 +166,7 @@ public class TorrentCacheService : ITorrentCacheService
             _ignoreCache.Clear();
             _filePrioritiesAppliedHashes.Clear();
             _fileFilteredHashes.Clear();
-            _allowlistWarningCache.Clear();
-            _removalBlocks.Clear();
+            _diagnostics.Clear();
             _lastFullClearUtc = DateTime.UtcNow;
             _logger.LogTrace("All caches cleared");
         }
@@ -198,8 +184,7 @@ public class TorrentCacheService : ITorrentCacheService
                 _ignoreCache.Clear();
                 _filePrioritiesAppliedHashes.Clear();
                 _fileFilteredHashes.Clear();
-                _allowlistWarningCache.Clear();
-                _removalBlocks.Clear();
+                _diagnostics.Clear();
                 _lastFullClearUtc = now;
                 _logger.LogInformation("Periodic full cache clear (every {Hours}h) to bound memory growth", (int)FullClearInterval.TotalHours);
             }

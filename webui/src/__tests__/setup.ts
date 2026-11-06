@@ -28,3 +28,21 @@ if (!globalThis.IntersectionObserver)
     unobserve() {}
     disconnect() {}
   } as unknown as typeof IntersectionObserver;
+
+if (!HTMLDialogElement.prototype.showModal) {
+  HTMLDialogElement.prototype.showModal = function () {
+    this.setAttribute("open", "");
+  };
+  HTMLDialogElement.prototype.close = function () {
+    this.removeAttribute("open");
+  };
+}
+
+if (!HTMLElement.prototype.showPopover) {
+  HTMLElement.prototype.showPopover = function () {
+    this.setAttribute("open", "");
+  };
+  HTMLElement.prototype.hidePopover = function () {
+    this.removeAttribute("open");
+  };
+}

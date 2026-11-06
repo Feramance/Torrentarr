@@ -157,32 +157,23 @@ public class TorrentCacheServiceTests
     }
 
     [Fact]
-    public void AllowlistWarnings_AreThrottledPerInstanceAndHash()
+    public void Diagnostics_ReportChangesPerClientTorrentAndStreamUntilReset()
     {
         var svc = CreateService();
-        var now = DateTimeOffset.UtcNow;
-        var throttle = TimeSpan.FromMinutes(5);
-
-        svc.ShouldLogAllowlistWarning("qBit-a", "shared-hash", now, throttle).Should().BeTrue();
-        svc.ShouldLogAllowlistWarning("qBit-a", "shared-hash", now.AddMinutes(1), throttle).Should().BeFalse();
-        svc.ShouldLogAllowlistWarning("qBit-b", "shared-hash", now.AddMinutes(1), throttle).Should().BeTrue();
-        svc.ShouldLogAllowlistWarning("qBit-a", "shared-hash", now.AddMinutes(6), throttle).Should().BeTrue();
-    }
-
-    [Fact]
-    public void RemovalWarnings_ThrottleSameReasonButReportChangedReasons()
-    {
-        var svc = CreateService();
-        var now = DateTimeOffset.UtcNow;
-        var window = TimeSpan.FromMinutes(5);
-
-        svc.ShouldLogRemovalBlock("client-a", "hash", "HnR clearance", now, window).Should().BeTrue();
-        svc.ShouldLogRemovalBlock("client-a", "hash", "HnR clearance", now.AddSeconds(5), window).Should().BeFalse();
-        svc.ShouldLogRemovalBlock("client-a", "hash", "Missing path mapping", now.AddSeconds(6), window).Should().BeTrue();
-        svc.ShouldLogRemovalBlock("client-b", "hash", "Missing path mapping", now.AddSeconds(7), window).Should().BeTrue();
-        svc.ShouldLogRemovalBlock("client-a", "hash", "Missing path mapping", now.AddMinutes(6), window).Should().BeTrue();
+        svc.DiagnosticChanged("client-a", "hash", "allowlist", "no files").Should().BeTrue();
+        svc.DiagnosticChanged("CLIENT-A", "HASH", "allowlist", "no files").Should().BeFalse();
+        svc.DiagnosticChanged("client-b", "hash", "allowlist", "no files").Should().BeTrue();
+        svc.DiagnosticChanged("client-a", "other", "allowlist", "no files").Should().BeTrue();
+        svc.DiagnosticChanged("client-a", "hash", "removal", "hnr.protected").Should().BeTrue();
+        svc.DiagnosticChanged("client-a", "hash", "removal", "missing-mapping").Should().BeTrue();
+        svc.DiagnosticChanged("client-a", "hash", "removal", "missing-mapping").Should().BeFalse();
+        svc.DiagnosticChanged("client-a", "hash", "allowlist", null).Should().BeTrue();
+        svc.DiagnosticChanged("client-a", "hash", "allowlist", "no files").Should().BeTrue();
+        svc.DiagnosticChanged("client-a", "hash", "removal", "missing-mapping").Should().BeFalse();
         svc.InvalidateTorrent("client-a", "hash");
-        svc.ShouldLogRemovalBlock("client-a", "hash", "Missing path mapping", now.AddMinutes(6), window).Should().BeTrue();
+        svc.DiagnosticChanged("client-a", "hash", "removal", "missing-mapping").Should().BeTrue();
+        svc.Clear();
+        svc.DiagnosticChanged("client-a", "hash", "removal", "missing-mapping").Should().BeTrue();
     }
 
     [Fact]

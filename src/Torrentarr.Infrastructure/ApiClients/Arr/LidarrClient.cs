@@ -6,7 +6,7 @@ namespace Torrentarr.Infrastructure.ApiClients.Arr;
 /// <summary>
 /// Lidarr API client using RestSharp
 /// </summary>
-public class LidarrClient
+public partial class LidarrClient : IArrActivityClient
 {
     private readonly RestClient _client;
     private readonly string _apiKey;

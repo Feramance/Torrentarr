@@ -157,7 +157,33 @@ export interface QbitOverviewCategory {
   torrentsTruncated?: boolean;
 }
 
+export interface QbitActivitySummary {
+  instance: string;
+  torrentCount: number;
+  totalSize: number;
+  downloading: number;
+  seeding: number;
+  stopped: number;
+  other: number;
+}
+
+export type TransferRange = "1h" | "24h" | "7d";
+export interface TransferBucket {
+  timestamp: string;
+  downloadRate: number | null;
+  uploadRate: number | null;
+  samples: number;
+  expectedSamples: number;
+}
+export interface TransferHistoryResponse {
+  range: TransferRange;
+  bucketMinutes: number;
+  generatedAt: string;
+  series: { instance: string; points: TransferBucket[] }[];
+}
+
 export interface QbitOverviewResponse {
+  summaries?: QbitActivitySummary[];
   instances: string[];
   categories: QbitOverviewCategory[];
   ready: boolean;
@@ -800,4 +826,25 @@ export interface IssuesSummary {
     affected: number;
   }[];
   pending: PendingOperationalIssue[];
+}
+
+export interface ArrActivityPoint {
+  timestamp: string;
+  queueDepth: number | null;
+  searchesCompleted: number | null;
+  importsConfirmed: number | null;
+  queueSamples: number;
+  completionSamples: number;
+  expectedSamples: number;
+}
+export interface ArrActivitySeries {
+  instance: string;
+  type: string;
+  points: ArrActivityPoint[];
+}
+export interface ArrActivityHistory {
+  range: TransferRange;
+  bucketMinutes: number;
+  generatedAt: string;
+  series: ArrActivitySeries[];
 }

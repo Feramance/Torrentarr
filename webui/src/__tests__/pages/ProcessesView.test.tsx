@@ -1,14 +1,42 @@
 import userEvent from "@testing-library/user-event";
 import React from "react";
-import { describe, it, expect, beforeAll, afterAll, afterEach } from "vitest";
-import { render, screen, waitFor } from "@testing-library/react";
+import {
+  describe,
+  it,
+  expect,
+  beforeAll,
+  afterAll,
+  afterEach,
+  vi,
+} from "vitest";
+import {
+  render,
+  screen,
+  waitFor,
+  within,
+  fireEvent,
+} from "@testing-library/react";
 import { http, HttpResponse } from "msw";
 import { setupServer } from "msw/node";
 import type { ReactNode } from "react";
 import { ProcessesView } from "../../pages/ProcessesView";
+import { WebUIProvider } from "../../context/WebUIContext";
+import { NAVIGATE_TAB_EVENT } from "../../utils/navigateTab";
 import { ToastProvider } from "../../context/ToastContext";
 
-const server = setupServer();
+const server = setupServer(
+  http.get("/web/config", () =>
+    HttpResponse.json({ WebUI: { LiveArr: false } }),
+  ),
+  http.get("/web/statistics/arr-activity", () =>
+    HttpResponse.json({
+      range: "24h",
+      bucketMinutes: 5,
+      generatedAt: "2026-11-04T12:00:00Z",
+      series: [],
+    }),
+  ),
+);
 
 beforeAll(() => server.listen({ onUnhandledRequest: "bypass" }));
 afterEach(() => server.resetHandlers());
@@ -23,7 +51,11 @@ const emptyStatus = {
 const emptyCategories = { categories: [], ready: true };
 
 function Wrapper({ children }: { children: ReactNode }) {
-  return <ToastProvider>{children}</ToastProvider>;
+  return (
+    <ToastProvider>
+      <WebUIProvider>{children}</WebUIProvider>
+    </ToastProvider>
+  );
 }
 
 function renderView(active = true) {
@@ -404,7 +436,9 @@ it("refreshes loop status without showing a worker badge", async () => {
   expect(
     await screen.findByText("Running", {}, { timeout: 3000 }),
   ).toBeInTheDocument();
-  expect(screen.queryByText(/^Worker(?: ·|$)/)).not.toBeInTheDocument();
+  expect(
+    document.querySelector(".process-card__badge"),
+  ).not.toBeInTheDocument();
   expect(screen.getByText(/1 in progress/)).toBeInTheDocument();
 });
 
@@ -492,4 +526,184 @@ it("marks stopped worker activities as stopped despite a stale heartbeat", async
       .filter((el) => el.classList.contains("process-status__dot")),
   ).toHaveLength(2);
   expect(screen.queryByText(/resumes/)).not.toBeInTheDocument();
+});
+
+it("deduplicates role metrics by instance while keeping shared-category instances separate", async () => {
+  server.use(
+    http.get("/web/processes", () =>
+      HttpResponse.json({
+        processes: [
+          {
+            category: "shared",
+            name: "Radarr-one",
+            kind: "search",
+            alive: true,
+            queueCount: 4,
+          },
+          {
+            category: "shared",
+            name: "Radarr-one",
+            kind: "torrent",
+            alive: true,
+            queueCount: 4,
+          },
+          {
+            category: "shared",
+            name: "Radarr-two",
+            kind: "worker",
+            alive: true,
+            queueCount: 3,
+          },
+          {
+            category: "space",
+            name: "FreeSpace",
+            kind: "system",
+            alive: true,
+            restartable: false,
+            freeSpacePaused: 2,
+          },
+        ],
+      }),
+    ),
+    http.get("/web/status", () => HttpResponse.json(emptyStatus)),
+    http.get("/web/qbit/categories", () => HttpResponse.json(emptyCategories)),
+  );
+  renderView();
+  const metrics = screen.getByLabelText("Process statistics");
+  await waitFor(() =>
+    expect(within(metrics).getByText("7")).toBeInTheDocument(),
+  );
+  expect(metrics).toHaveTextContent("Workers online2 / 2");
+  expect(metrics).toHaveTextContent("Paused for space2");
+});
+
+it.each(["worker", "torrent"])(
+  "makes the Arr %s torrent activity target navigate without nesting restart buttons",
+  async (kind) => {
+    const navigation = vi.fn();
+    window.addEventListener(NAVIGATE_TAB_EVENT, navigation);
+    server.use(
+      http.get("/web/processes", () =>
+        HttpResponse.json({
+          processes: [
+            {
+              name: "Sonarr-one",
+              category: "fallback",
+              kind,
+              alive: true,
+              pid: 10,
+              restartable: true,
+            },
+          ],
+        }),
+      ),
+      http.get("/web/status", () =>
+        HttpResponse.json({
+          ready: true,
+          arrs: [{ name: "Sonarr-one", type: "sonarr", category: "tv" }],
+          qbitInstances: { one: { alive: false } },
+        }),
+      ),
+      http.get("/web/qbit/categories", () =>
+        HttpResponse.json({
+          ready: true,
+          categories: [
+            {
+              instance: "one",
+              category: "tv",
+              managedBy: "arr",
+              torrentCount: 2,
+              seedingCount: 0,
+              totalSize: 0,
+            },
+          ],
+        }),
+      ),
+    );
+    try {
+      renderView();
+      const button = await screen.findByRole("button", {
+        name: "View torrents for Sonarr-one",
+      });
+      expect(button.querySelector("button")).toBeNull();
+      fireEvent.click(button);
+      expect(navigation).toHaveBeenCalledTimes(1);
+      expect((navigation.mock.calls[0]![0] as CustomEvent).detail).toEqual({
+        tab: "qbittorrent",
+        qbitCategory: "tv",
+        qbitInstance: "one",
+      });
+      if (kind === "worker")
+        expect(
+          screen.queryByRole("button", { name: /Search/ }),
+        ).not.toBeInTheDocument();
+    } finally {
+      window.removeEventListener(NAVIGATE_TAB_EVENT, navigation);
+    }
+  },
+);
+
+it("uses all clients for a shared Arr category and keeps Restart independent", async () => {
+  const navigation = vi.fn();
+  window.addEventListener(NAVIGATE_TAB_EVENT, navigation);
+  const restarted = vi.fn();
+  server.use(
+    http.get("/web/processes", () =>
+      HttpResponse.json({
+        processes: [
+          {
+            name: "Radarr-one",
+            category: "movies",
+            kind: "torrent",
+            alive: true,
+            pid: 10,
+            restartable: true,
+          },
+        ],
+      }),
+    ),
+    http.get("/web/status", () =>
+      HttpResponse.json({
+        ready: true,
+        arrs: [{ name: "Radarr-one", type: "radarr", category: "movies" }],
+        qbitInstances: { one: { alive: true }, two: { alive: true } },
+      }),
+    ),
+    http.get("/web/qbit/categories", () =>
+      HttpResponse.json({
+        ready: true,
+        categories: ["one", "two"].map((instance) => ({
+          instance,
+          category: "movies",
+          managedBy: "arr",
+          torrentCount: 1,
+          seedingCount: 0,
+          totalSize: 0,
+        })),
+      }),
+    ),
+    http.post("/web/processes/movies/torrent/restart", () => {
+      restarted();
+      return HttpResponse.json({ status: "ok" });
+    }),
+  );
+  try {
+    renderView();
+    fireEvent.click(
+      await screen.findByRole("button", {
+        name: "View torrents for Radarr-one",
+      }),
+    );
+    expect(
+      (navigation.mock.calls[0]![0] as CustomEvent).detail.qbitInstance,
+    ).toBeUndefined();
+    navigation.mockClear();
+    fireEvent.click(
+      screen.getByRole("button", { name: "Restart", exact: true }),
+    );
+    await waitFor(() => expect(restarted).toHaveBeenCalledTimes(1));
+    expect(navigation).not.toHaveBeenCalled();
+  } finally {
+    window.removeEventListener(NAVIGATE_TAB_EVENT, navigation);
+  }
 });
