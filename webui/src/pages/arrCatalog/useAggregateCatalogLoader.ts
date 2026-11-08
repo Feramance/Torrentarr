@@ -1,3 +1,4 @@
+import { useStatisticsUpdates } from "../../hooks/useStatisticsUpdates";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { ArrInfo } from "../../api/types";
 import {
@@ -378,6 +379,10 @@ export function useAggregateCatalogLoader<
       setAggFilter(globalSearch);
     }
   }, [selection, globalSearch]);
+
+  useStatisticsUpdates(active && selection === "aggregate", () => {
+    return loadAggregate({ showLoading: false });
+  });
 
   // Polling on visible aggregate view (only when liveArr is enabled and tab is active).
   useInterval(

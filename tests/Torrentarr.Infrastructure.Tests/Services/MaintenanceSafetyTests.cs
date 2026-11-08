@@ -207,8 +207,15 @@ public sealed class MaintenanceSafetyTests : IDisposable
             _config, NullLogger<OperationalIssueMonitor>.Instance);
         await Inspect(automation, default);
         await monitor.InspectAsync(default);
-        var issue = await _db.OperationalIssues.SingleAsync(i => i.Code == "automation.protection");
-        issue.ResolvedAt.Should().BeNull();
+        var issue = await _db.OperationalIssues.SingleOrDefaultAsync(i => i.Code == "automation.protection");
+        if (accepted)
+        {
+            issue.Should().BeNull();
+            automation.GetStatus().Protection.Should().ContainSingle().Which.NativeStopLimitRisk.Should().BeFalse();
+            return;
+        }
+        issue.Should().NotBeNull();
+        issue!.ResolvedAt.Should().BeNull();
         torrent.RatioLimit = -1; torrent.SeedingTimeLimit = -1; torrent.InactiveSeedingTimeLimit = -1;
         AutomationField<System.Collections.Concurrent.ConcurrentDictionary<string, DateTimeOffset>>(automation, "_nextInspection").Clear();
         await Inspect(automation, default);
@@ -959,6 +966,22 @@ public sealed class MaintenanceSafetyTests : IDisposable
     }
 
     [Fact]
+    public async Task RecyclingWithoutMappings_ExplainsClientPathAndDoesNotDeleteContent()
+    {
+        AddTorrent();
+        ClientConfig.Maintenance.PathMappings.Clear();
+        var result = await _deletion.RemoveTorrentAsync("one", "abc", true);
+        result.Success.Should().BeFalse();
+        result.Error.Should().Contain("Recycling blocked").And.Contain("Client 'one'")
+            .And.Contain("/downloads/movie.mkv").And.Contain("Maintenance.PathMappings")
+            .And.Contain("mounted and accessible").And.Contain("Identical client/local paths");
+        _client.Verify(c => c.DeleteTorrentsAsync(It.IsAny<List<string>>(), It.IsAny<bool>(), It.IsAny<CancellationToken>()), Times.Never());
+        File.Exists(Path.Combine(_root, "movie.mkv")).Should().BeTrue();
+        ClientConfig.Maintenance.PathMappings.Add(new() { ClientPath = "/downloads", LocalPath = _root });
+        (await _deletion.RemoveTorrentAsync("one", "abc", true)).Success.Should().BeTrue();
+    }
+
+    [Fact]
     public async Task DisabledRecycle_MaintenanceUsesNativeDeletion()
     {
         AddTorrent();
@@ -1463,6 +1486,19 @@ public sealed class MaintenanceSafetyTests : IDisposable
         using var automation = new TorrentAutomationService(_config, _registry.Object, _services.GetRequiredService<IServiceScopeFactory>(), NullLogger<TorrentAutomationService>.Instance);
         automation.GetStatus().TrackerIssues.Should().ContainSingle();
         await Inspect(automation, default);
+        automation.GetStatus().TrackerIssues.Should().BeEmpty();
+    }
+
+    [Fact]
+    public async Task TrackerIssue_IsNotReportedWhileAnotherTrackerIsHealthy()
+    {
+        var torrent = AddTorrent();
+        TorrentTracker healthy = new() { Url = "https://tracker.example/announce", Status = 2 };
+        TorrentTracker dead = new() { Url = "https://backup.example/announce", Status = 4, Msg = "unregistered torrent" };
+        await _seeding.ObserveTrackerIssueAsync(torrent, [dead], default);
+        using var automation = new TorrentAutomationService(_config, _registry.Object, _services.GetRequiredService<IServiceScopeFactory>(), NullLogger<TorrentAutomationService>.Instance);
+        automation.GetStatus().TrackerIssues.Should().ContainSingle();
+        await _seeding.ObserveTrackerIssueAsync(torrent, [healthy, dead], default);
         automation.GetStatus().TrackerIssues.Should().BeEmpty();
     }
 

@@ -1,3 +1,5 @@
+import { useContext } from "react";
+import { ConfigFieldSearch } from "./ConfigFieldSearch";
 import { PathMappingsEditor } from "./PathMappingsEditor";
 import React, {
   useCallback,
@@ -22,6 +24,12 @@ import { getArrTorrentHandlingSummary } from "../../config/torrentHandlingSummar
 import { IconImage } from "../../components/IconImage";
 import { TagInput } from "../../components/TagInput";
 import { useWebUI } from "../../context/WebUIContext";
+import {
+  applyTheme,
+  isDarkTheme,
+  SAVED_THEME,
+  themeFromValue,
+} from "../../utils/theme";
 import AddIcon from "../../icons/plus.svg";
 import DeleteIcon from "../../icons/trash.svg";
 import RefreshIcon from "../../icons/refresh-arrow.svg";
@@ -52,11 +60,12 @@ function FieldErrorText({ message }: { message?: string }): JSX.Element | null {
 }
 
 function renderReloadHint(field: FieldDefinition): JSX.Element | null {
-  if (field.applyLive) {
-    return <div className="field-hint">Applies live without restart</div>;
-  }
   if (field.requiresRestart) {
-    return <div className="field-hint">Requires restart to take effect</div>;
+    return (
+      <div className="field-hint">
+        Requires restart: {field.restartComponent ?? "Torrentarr"}
+      </div>
+    );
   }
   return null;
 }
@@ -331,9 +340,10 @@ export function FieldGroup({
   qbitTrackers = false,
   validationErrors = [],
 }: FieldGroupProps): JSX.Element {
+  const search = useContext(ConfigFieldSearch).trim().toLowerCase();
   const { theme } = useWebUI();
   const selectStyles = useMemo(
-    () => getSelectStyles(theme === "dark"),
+    () => getSelectStyles(isDarkTheme(theme)),
     [theme],
   );
   const sectionName = sectionKey ?? basePath[0] ?? "";
@@ -352,10 +362,10 @@ export function FieldGroup({
 
   const details = useRef<HTMLDetailsElement>(null);
   useEffect(() => {
-    if ((defaultOpen || groupHasErrors) && details.current) {
+    if ((defaultOpen || groupHasErrors || search) && details.current) {
       details.current.open = true;
     }
-  }, [defaultOpen, groupHasErrors]);
+  }, [defaultOpen, groupHasErrors, search]);
 
   if (title === "Quality Profile Mappings") {
     const mappings = (getValue(state as ConfigDocument, [
@@ -573,6 +583,13 @@ export function FieldGroup({
   }
 
   const renderedFields = fields.map((field) => {
+    if (
+      search &&
+      !`${title ?? ""} ${field.label} ${field.description ?? ""} ${field.path?.join(".") ?? ""}`
+        .toLowerCase()
+        .includes(search)
+    )
+      return null;
     if (field.sectionName) {
       if (!sectionName) {
         return null;
@@ -724,15 +741,7 @@ export function FieldGroup({
       // Normalize the formatted value for theme field (case-insensitive)
       let displayValue = formatted;
       if (isThemeField && typeof formatted === "string") {
-        const normalizedLower = formatted.toLowerCase();
-        if (normalizedLower === "light") {
-          displayValue = "Light";
-        } else if (normalizedLower === "dark") {
-          displayValue = "Dark";
-        } else {
-          // Default to Dark if invalid
-          displayValue = "Dark";
-        }
+        displayValue = SAVED_THEME[themeFromValue(formatted)];
       }
 
       const optionLabel = (value: string) =>
@@ -775,9 +784,9 @@ export function FieldGroup({
 
               // If this is the theme field, apply immediately
               if (isThemeField && typeof newValue === "string" && newValue) {
-                const theme = newValue.toLowerCase() as "light" | "dark";
-                document.documentElement.setAttribute("data-theme", theme);
-                localStorage.setItem("theme", theme);
+                const nextTheme = themeFromValue(newValue);
+                applyTheme(nextTheme);
+                localStorage.setItem("theme", nextTheme);
               }
             }}
             styles={selectStyles}
@@ -936,6 +945,13 @@ export function FieldGroup({
     );
   });
 
+  if (
+    title &&
+    search &&
+    renderedFields.every((field) => field == null) &&
+    !children
+  )
+    return <></>;
   if (title) {
     return (
       <details className="config-section" ref={details}>

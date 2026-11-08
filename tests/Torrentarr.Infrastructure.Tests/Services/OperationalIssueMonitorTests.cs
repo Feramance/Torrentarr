@@ -13,6 +13,82 @@ namespace Torrentarr.Infrastructure.Tests.Services;
 public sealed class OperationalIssueMonitorTests
 {
     [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task MigrationAndMissingMappings_CreateIssuesBeforeProcessing_AndResolveAfterRestart(bool removeClient)
+    {
+        using var root = new TemporaryDirectory();
+        using var db = new Torrentarr.Infrastructure.Database.TorrentarrDbContext(new DbContextOptionsBuilder<Torrentarr.Infrastructure.Database.TorrentarrDbContext>()
+            .UseSqlite("Data Source=:memory:").Options);
+        await db.Database.OpenConnectionAsync();
+        await db.Database.EnsureCreatedAsync();
+        var config = new TorrentarrConfig();
+        config.TorrentClients["recycling"] = new()
+        {
+            Host = "localhost",
+            Migration = new() { Notices = ["Legacy monitor ownership is ambiguous; review FreeSpace."] },
+            Maintenance = new()
+            {
+                RecycleBin = new() { Enabled = true },
+                PathMappings = [new() { ClientPath = "/downloads", LocalPath = root.Path }]
+            }
+        };
+        config.QBitInstances["qBit-other"] = new() { Host = "localhost" };
+        await using var services = new ServiceCollection().AddSingleton(db).AddSingleton(config)
+            .AddSingleton<IPathMappingService, PathMappingService>().BuildServiceProvider();
+        using var reporter = new OperationalIssueReporter(services.GetRequiredService<IServiceScopeFactory>(), NullLogger<OperationalIssueReporter>.Instance, config);
+        using var monitor = new OperationalIssueMonitor(services.GetRequiredService<IServiceScopeFactory>(), reporter, config, NullLogger<OperationalIssueMonitor>.Instance);
+        await monitor.InspectAsync(default);
+        await monitor.InspectAsync(default);
+        var active = await db.OperationalIssues.AsNoTracking().Where(i => i.ResolvedAt == null).ToListAsync();
+        active.Should().HaveCount(2).And.OnlyContain(i => i.Target == "config" && i.Occurrences == 2);
+        active.Single(i => i.Code == "config.storage").ClientInstance.Should().Be("qBit-other");
+        active.Single(i => i.Code == "config.storage").Remediation.Should().Contain("Maintenance.PathMappings");
+        active.Single(i => i.Code == "config.migration").Remediation.Should().Contain("Migration.Notices");
+        config.TorrentClients["recycling"].Migration.Notices.Clear();
+        if (removeClient) config.QBitInstances.Clear();
+        else config.QBitInstances["qBit-other"].Maintenance.PathMappings.Add(new() { ClientPath = root.Path, LocalPath = root.Path });
+        using var restarted = new OperationalIssueMonitor(services.GetRequiredService<IServiceScopeFactory>(), reporter, config, NullLogger<OperationalIssueMonitor>.Instance);
+        await restarted.InspectAsync(default);
+        var history = await db.OperationalIssues.AsNoTracking().ToListAsync();
+        history.Should().HaveCount(2).And.OnlyContain(i => i.ResolvedAt != null);
+    }
+
+    [Fact]
+    public async Task InvalidOrMissingConfiguration_DirectsUserToConfigAndResolvesAfterCorrection()
+    {
+        using var root = new TemporaryDirectory();
+        var config = new TorrentarrConfig();
+        config.TorrentClients["client"] = new()
+        {
+            TorrentScanIntervalSeconds = 7,
+            Maintenance = new()
+            {
+                RecycleBin = new() { Enabled = true },
+                PathMappings = [new() { ClientPath = "/downloads", LocalPath = System.IO.Path.Combine(root.Path, "missing-mount") }]
+            }
+        };
+        var reports = new List<OperationalIssueReport>();
+        var resolved = new List<OperationalIssueReport>();
+        var reporter = new Mock<IOperationalIssueReporter>();
+        reporter.Setup(r => r.ReportAsync(It.IsAny<OperationalIssueReport>(), It.IsAny<CancellationToken>()))
+            .Callback<OperationalIssueReport, CancellationToken>((r, _) => reports.Add(r)).Returns(Task.CompletedTask);
+        reporter.Setup(r => r.ResolveAsync(It.IsAny<OperationalIssueReport>(), It.IsAny<CancellationToken>()))
+            .Callback<OperationalIssueReport, CancellationToken>((r, _) => resolved.Add(r)).Returns(Task.CompletedTask);
+        await using var services = new ServiceCollection().AddSingleton<IPathMappingService, PathMappingService>().BuildServiceProvider();
+        using var monitor = new OperationalIssueMonitor(services.GetRequiredService<IServiceScopeFactory>(), reporter.Object, config, NullLogger<OperationalIssueMonitor>.Instance);
+        await monitor.InspectAsync(default);
+        reports.Select(r => r.Code).Should().BeEquivalentTo(["config.validation", "config.client", "config.storage"]);
+        reports.Should().OnlyContain(r => r.Target == "config" && r.Remediation.Contains("Open Config"));
+        reports.Single(r => r.Code == "config.validation").Impact.Should().Contain("TorrentScanIntervalSeconds");
+        config.TorrentClients["client"].Host = "localhost";
+        config.TorrentClients["client"].TorrentScanIntervalSeconds = 30;
+        config.TorrentClients["client"].Maintenance.PathMappings[0].LocalPath = root.Path;
+        await monitor.InspectAsync(default);
+        resolved.Select(r => r.Code).Should().BeEquivalentTo(reports.Select(r => r.Code));
+    }
+
+    [Theory]
     [InlineData(false, false)]
     [InlineData(true, false)]
     [InlineData(false, true)]
@@ -251,4 +327,10 @@ public sealed class OperationalIssueMonitorTests
         state = state with { State = "applied", Error = null }; online = true; low = false; await monitor.InspectAsync(default);
         resolved.Select(r => r.Code).Should().Contain(["config.apply", "network.internet", "storage.reserve"]);
     }
+    private sealed class TemporaryDirectory : IDisposable
+    {
+        public string Path { get; } = Directory.CreateTempSubdirectory("migration-issues-").FullName;
+        public void Dispose() => Directory.Delete(Path, recursive: true);
+    }
+
 }

@@ -1,3 +1,4 @@
+import { useStatisticsUpdates } from "../../hooks/useStatisticsUpdates";
 import {
   useCallback,
   useEffect,
@@ -351,6 +352,13 @@ export function useInstancePagedFetch<
       void fetchInstanceRef.current(selection!, 0, term, { showLoading: true });
     },
   );
+
+  useStatisticsUpdates(active && !!selection, () => {
+    if (selection)
+      return fetchInstanceRef.current(selection, page, query, {
+        showLoading: false,
+      });
+  });
 
   // Background polling.
   useInterval(

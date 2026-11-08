@@ -19,7 +19,7 @@ namespace Torrentarr.Infrastructure.Tests.Services;
 /// </summary>
 public class SeedingServiceTests
 {
-    private static SeedingService CreateService(TorrentarrConfig? config = null, StalledUploadTracker? stalled = null)
+    private static SeedingService CreateService(TorrentarrConfig? config = null, StalledUploadTracker? stalled = null, TorrentInfo? observed = null)
     {
         var options = new DbContextOptionsBuilder<TorrentarrDbContext>()
             .UseInMemoryDatabase(Guid.NewGuid().ToString())
@@ -27,12 +27,239 @@ public class SeedingServiceTests
         var dbContext = new TorrentarrDbContext(options);
         var client = new Mock<ITorrentClient>();
         client.SetupGet(c => c.Capabilities).Returns(TorrentClientCapabilities.QBittorrent);
+        client.Setup(c => c.GetTorrentsAsync(It.IsAny<string?>(), It.IsAny<string?>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(observed == null ? [] : [observed]);
         client.Setup(c => c.GetTorrentTrackersAsync(It.IsAny<string>(), It.IsAny<CancellationToken>()))
             .ReturnsAsync([new() { Url = "https://tracker.example/announce", Status = 2 }]);
         var registry = new Mock<ITorrentClientRegistry>();
         registry.Setup(r => r.GetClient(It.IsAny<string>())).Returns(client.Object);
         return new SeedingService(NullLogger<SeedingService>.Instance, dbContext, config ?? new TorrentarrConfig(), registry.Object, stalled);
 
+    }
+
+    [Fact]
+    public async Task ProtectedTorrent_DoesNotApplyConfiguredTrackerRemoval()
+    {
+        var config = new TorrentarrConfig();
+        config.TorrentClients["client"] = new()
+        {
+            Trackers = [new() { Uri = "tracker.example", RemoveIfExists = true,
+            HitAndRunMode = "and", MinSeedRatio = 99 }]
+        };
+        using var db = new TorrentarrDbContext(new DbContextOptionsBuilder<TorrentarrDbContext>().UseInMemoryDatabase(Guid.NewGuid().ToString()).Options);
+        var torrent = new TorrentInfo { ClientInstanceId = "client", Hash = "hash", AddedOn = 1, Progress = 1, IsPrivate = true };
+        var client = new Mock<ITorrentClient>();
+        client.SetupGet(c => c.Capabilities).Returns(TorrentClientCapabilities.QBittorrent);
+        client.Setup(c => c.GetTorrentsAsync(It.IsAny<string?>(), It.IsAny<string?>(), It.IsAny<CancellationToken>())).ReturnsAsync([torrent]);
+        client.Setup(c => c.GetTorrentTrackersAsync("hash", It.IsAny<CancellationToken>())).ReturnsAsync([new() { Url = "https://tracker.example/announce", Status = 2 }]);
+        client.Setup(c => c.RemoveTrackersAsync("hash", It.IsAny<List<string>>(), It.IsAny<CancellationToken>())).ReturnsAsync(true);
+        var registry = new Mock<ITorrentClientRegistry>(); registry.Setup(r => r.GetClient("client")).Returns(client.Object);
+        var service = new SeedingService(NullLogger<SeedingService>.Instance, db, config, registry.Object);
+        await service.ApplyTrackerActionsForTorrentAsync(torrent);
+        client.Verify(c => c.RemoveTrackersAsync("hash", It.IsAny<List<string>>(), It.IsAny<CancellationToken>()), Times.Never());
+    }
+
+    [Theory]
+    [InlineData(false, false)]
+    [InlineData(false, true)]
+    [InlineData(true, false)]
+    [InlineData(true, true)]
+    public async Task SuperSeeding_UsesFinalMatchingRuleAndSkipsUnchangedState(bool observed, bool desired)
+    {
+        var config = new TorrentarrConfig();
+        config.TorrentClients["client"] = new()
+        {
+            Trackers = [new() { Uri = "tracker.example", SuperSeedMode = !desired },
+            new() { Uri = "tracker.example", SuperSeedMode = desired }]
+        };
+        using var db = new TorrentarrDbContext(new DbContextOptionsBuilder<TorrentarrDbContext>().UseInMemoryDatabase(Guid.NewGuid().ToString()).Options);
+        var client = new Mock<ITorrentClient>();
+        client.SetupGet(c => c.Capabilities).Returns(TorrentClientCapabilities.QBittorrent);
+        client.Setup(c => c.GetTorrentTrackersAsync("hash", It.IsAny<CancellationToken>())).ReturnsAsync([new() { Url = "https://tracker.example/announce", Status = 2 }]);
+        client.Setup(c => c.SetSuperSeedingAsync("hash", desired, It.IsAny<CancellationToken>())).ReturnsAsync(true);
+        var registry = new Mock<ITorrentClientRegistry>(); registry.Setup(r => r.GetClient("client")).Returns(client.Object);
+        var service = new SeedingService(NullLogger<SeedingService>.Instance, db, config, registry.Object);
+        var torrent = new TorrentInfo { Hash = "hash", ClientInstanceId = "client", SuperSeeding = observed };
+        await service.ApplyTrackerActionsForTorrentAsync(torrent);
+        await service.ApplyTrackerActionsForTorrentAsync(torrent);
+        client.Verify(c => c.SetSuperSeedingAsync("hash", desired, It.IsAny<CancellationToken>()), observed == desired ? Times.Never() : Times.Once());
+        client.Verify(c => c.SetSuperSeedingAsync("hash", !desired, It.IsAny<CancellationToken>()), Times.Never());
+    }
+
+    [Fact]
+    public async Task OrdinarySeedingLimits_AreIndependentOfHnrDeletionClearance()
+    {
+        var config = new TorrentarrConfig();
+        config.TorrentClients["client"] = new()
+        {
+            CategorySeeding = new()
+            {
+                RemoveTorrent = 1,
+                MaxUploadRatio = 0.1,
+                HitAndRunMode = "and",
+                MinSeedRatio = 2,
+                MinSeedingTimeDays = 8
+            }
+        };
+        var service = CreateService(config);
+        var torrent = new TorrentInfo
+        {
+            ClientInstanceId = "client",
+            Hash = "hash",
+            State = "uploading",
+            AddedOn = 1,
+            Progress = 1,
+            Ratio = 0.5,
+            SeedingTime = 100,
+            IsPrivate = true
+        };
+        (await service.SeedingLimitsMetAsync(torrent)).Should().BeTrue();
+        (await service.ShouldRemoveTorrentAsync(torrent)).Should().BeFalse();
+    }
+
+    [Fact]
+    public async Task CustomFormatRejection_DoesNotRequireOrdinarySeedingLimits()
+    {
+        var config = new TorrentarrConfig();
+        config.TorrentClients["client"] = new() { CategorySeeding = new() { RemoveTorrent = 2, MaxSeedingTime = 100000 } };
+        var torrent = new TorrentInfo
+        {
+            ClientInstanceId = "client",
+            Hash = "hash",
+            State = "uploading",
+            AddedOn = 1,
+            Progress = 1,
+            IsPrivate = false,
+            RatioLimit = -1,
+            SeedingTimeLimit = -1
+        };
+        var service = CreateService(config, observed: torrent);
+        (await service.EvaluateRemovalAsync(torrent, TorrentRemovalIntent.RejectedByCustomFormat)).Allowed.Should().BeTrue();
+        (await service.EvaluateRemovalAsync(torrent, TorrentRemovalIntent.SeedingLimit)).Blockers.Should().Contain(b => b.Code == "seeding.limit");
+        config.TorrentClients["client"].CategorySeeding.HitAndRunMode = "and";
+        config.TorrentClients["client"].CategorySeeding.MinSeedRatio = 2;
+        (await service.EvaluateRemovalAsync(torrent, TorrentRemovalIntent.RejectedByCustomFormat)).Allowed.Should().BeFalse();
+    }
+
+    [Theory]
+    [InlineData("and", 1, 1, 0.1, 80000, 1.0, 6460, false)]
+    [InlineData("and", 1, 1, 0.1, 90000, 1.0, 0, false)]
+    [InlineData("and", 1, 1, 1.0, 86460, 1.0, 0, true)]
+    [InlineData("or", 1, 1, 1.0, 100, 1.0, 86360, true)]
+    [InlineData("or", 1, 1, 0.1, 86460, 1.0, 0, true)]
+    [InlineData("and", 0, 1, 0.0, 86459, 1.0, 1, false)]
+    [InlineData("and", 1, 0, 0.1, 100, 1.0, 0, false)]
+    [InlineData("and", 0, 0, 0.0, 100, 1.0, 0, true)]
+    [InlineData("and", 1, 1, 0.1, 90000, 0.5, 0, false)]
+    [InlineData("and", 1, 1, 1.0, 100, 0.5, 0, true)]
+    [InlineData("and", 1, 1, 0.0, 0, 0.05, 0, true)]
+    public void LegacyDiagnostics_UseClientTimeAndPreserveClearance(string mode, double minimumRatio,
+        int minimumDays, double ratio, long seedSeconds, double progress, double remaining, bool eligible)
+    {
+        foreach (var trackerOverride in new[] { false, true })
+        {
+            var config = new TorrentarrConfig();
+            config.TorrentClients["client"] = new()
+            {
+                CategorySeeding = new()
+                {
+                    HitAndRunMode = mode,
+                    MinSeedRatio = minimumRatio,
+                    MinSeedingTimeDays = minimumDays,
+                    TrackerUpdateBuffer = 60
+                },
+                Trackers = trackerOverride ? [new() { Uri = "tracker.example" }] : []
+            };
+            var service = CreateService(config);
+            var torrent = new TorrentInfo
+            {
+                ClientInstanceId = "client",
+                IsPrivate = true,
+                Ratio = ratio,
+                SeedingTime = seedSeconds,
+                Progress = progress,
+                RatioLimit = -1,
+                SeedingTimeLimit = -1
+            };
+            var decision = service.GetProtectionDecisions(torrent,
+                [new() { Url = "https://tracker.example/announce", Status = 2 }]).Should().ContainSingle().Subject;
+            decision.State.Should().Be(eligible ? "eligible" : "protected");
+            decision.ObservedSeedSeconds.Should().Be(seedSeconds);
+            decision.RemainingSeedSeconds.Should().Be(remaining);
+            decision.LocalEstimate.Should().BeFalse();
+            decision.SeedAccountingDescription().Should().Contain("Client-reported").And.Contain("remaining time requirement");
+            decision.Reason.Should().Contain("tracker update buffer=60s").And.Contain("mode=" + mode);
+        }
+    }
+
+    [Theory]
+    [InlineData(true, false, "hnr.protected")]
+    [InlineData(false, false, "hnr.unknown")]
+    [InlineData(true, true, "hnr.protected.native-stop-risk")]
+    public async Task RemovalDiagnostic_OnlyHealthyProtectionWaitsAreExpected(bool healthy, bool nativeRisk, string code)
+    {
+        var config = new TorrentarrConfig();
+        config.TorrentClients["client"] = new() { CategorySeeding = new() { HitAndRunMode = "and", MinSeedRatio = 1, MinSeedingTimeDays = 8 } };
+        using var db = new TorrentarrDbContext(new DbContextOptionsBuilder<TorrentarrDbContext>().UseInMemoryDatabase(Guid.NewGuid().ToString()).Options);
+        var client = new Mock<ITorrentClient>();
+        client.Setup(c => c.GetTorrentTrackersAsync(It.IsAny<string>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync([new() { Url = "https://tracker.example/announce", Status = healthy ? 2 : 4 }]);
+        var registry = new Mock<ITorrentClientRegistry>();
+        registry.Setup(r => r.GetClient("client")).Returns(client.Object);
+        var service = new SeedingService(NullLogger<SeedingService>.Instance, db, config, registry.Object);
+        var decision = await service.EvaluateRemovalAsync(new()
+        {
+            ClientInstanceId = "client",
+            Hash = "hash",
+            AddedOn = 1,
+            IsPrivate = true,
+            Progress = 1,
+            SeedingTime = 480000,
+            Ratio = 0.048,
+            RatioLimit = nativeRisk ? 1 : -1,
+            SeedingTimeLimit = -1
+        }, TorrentRemovalIntent.RejectedByAllowlist);
+        decision.Blockers.Should().ContainSingle().Which.Code.Should().Be(code);
+        decision.IsExpectedProtectionWait().Should().Be(code is "hnr.protected" or "hnr.protected.native-stop-risk");
+        decision.Reason.Should().Contain("Client-reported seed=480000s").And.Contain("remaining time requirement=211200s");
+    }
+
+    [Fact]
+    public async Task ModernDeadlineRisk_RemainsActionableAndUsesLocalObservations()
+    {
+        var config = new TorrentarrConfig();
+        config.TorrentClients["client"] = new()
+        {
+            Trackers = [new() { Uri = "tracker.example",
+            Protection = new() { MinimumSeedHours = 48, FulfillmentHours = 1 } }]
+        };
+        using var db = new TorrentarrDbContext(new DbContextOptionsBuilder<TorrentarrDbContext>().UseInMemoryDatabase(Guid.NewGuid().ToString()).Options);
+        var client = new Mock<ITorrentClient>();
+        List<TorrentTracker> trackers = [new() { Url = "https://tracker.example/announce", Status = 2 }];
+        client.Setup(c => c.GetTorrentTrackersAsync("hash", It.IsAny<CancellationToken>())).ReturnsAsync(trackers);
+        var registry = new Mock<ITorrentClientRegistry>();
+        registry.Setup(r => r.GetClient("client")).Returns(client.Object);
+        var service = new SeedingService(NullLogger<SeedingService>.Instance, db, config, registry.Object);
+        var torrent = new TorrentInfo
+        {
+            Hash = "hash",
+            ClientInstanceId = "client",
+            AddedOn = DateTimeOffset.UtcNow.AddDays(-1).ToUnixTimeSeconds(),
+            IsPrivate = true,
+            Progress = 1,
+            SeedingTime = 90000,
+            RatioLimit = -1,
+            SeedingTimeLimit = -1
+        };
+        var protection = service.GetProtectionDecisions(torrent, trackers).Should().ContainSingle().Subject;
+        protection.LocalEstimate.Should().BeTrue();
+        protection.ObservedSeedSeconds.Should().Be(0);
+        protection.RemainingSeedSeconds.Should().Be(48 * 3600);
+        protection.DeadlineRisk.Should().Be("unachievable");
+        var decision = await service.EvaluateRemovalAsync(torrent, TorrentRemovalIntent.RejectedByAllowlist);
+        decision.IsExpectedProtectionWait().Should().BeFalse();
+        decision.Blockers.Should().ContainSingle().Which.Code.Should().Be("hnr.protected.deadline-unachievable");
+        decision.Reason.Should().Contain("Locally observed seed=0s").And.Contain("deadline risk=unachievable");
     }
 
     [Fact]
@@ -703,5 +930,52 @@ public class SeedingServiceTests
         var p = await svc.GetTorrentQueueSortPriorityAsync(torrent, map);
 
         p.Should().Be(-100);
+    }
+
+    [Fact]
+    public void ConfiguredTrackerWithDisabledHnr_HasNoProtectionObligation()
+    {
+        var config = new TorrentarrConfig();
+        config.TorrentClients["client"] = new()
+        {
+            Trackers = [new() { Uri = "tracker.example", HitAndRunMode = "disabled" }]
+        };
+        var svc = CreateService(config);
+        var torrent = new TorrentInfo
+        {
+            ClientInstanceId = "client",
+            Hash = "hash",
+            IsPrivate = true,
+            Progress = 1,
+            Ratio = 0,
+            SeedingTime = 0
+        };
+
+        var decision = svc.GetProtectionDecisions(torrent,
+            [new() { Url = "https://tracker.example/announce", Status = 2 }]).Should().ContainSingle().Subject;
+
+        decision.State.Should().Be("eligible");
+        decision.Reason.Should().Contain("no active clearance requirements");
+    }
+
+    [Fact]
+    public void UnmatchedPrivateTracker_RemainsUnknown()
+    {
+        var svc = CreateService();
+        var torrent = new TorrentInfo
+        {
+            ClientInstanceId = "client",
+            Hash = "hash",
+            IsPrivate = true,
+            Progress = 1,
+            Ratio = 0,
+            SeedingTime = 0
+        };
+
+        var decision = svc.GetProtectionDecisions(torrent,
+            [new() { Url = "https://unknown.example/announce", Status = 2 }]).Should().ContainSingle().Subject;
+
+        decision.State.Should().Be("unknown");
+        decision.Reason.Should().Contain("Unmatched private/unknown tracker");
     }
 }

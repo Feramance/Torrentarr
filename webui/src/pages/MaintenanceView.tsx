@@ -1,3 +1,4 @@
+import { BreakdownBar } from "../components/Statistics";
 import { useCallback, useEffect, useRef, useState, type JSX } from "react";
 import equal from "fast-deep-equal";
 import { get, set } from "lodash-es";
@@ -344,13 +345,7 @@ export function MaintenanceView({
       if (resultsRef.current) resultsRef.current.open = true;
     });
   return (
-    <section
-      aria-labelledby="manage-title"
-      className="card maintenance-workspace"
-    >
-      <div className="card-header">
-        <h2 id="manage-title">Manage</h2>
-      </div>
+    <section aria-label="Manage" className="card maintenance-workspace">
       <div className="card-body">
         <p className="hint">
           Configure and run recovery, organization, and storage tools for each
@@ -405,14 +400,12 @@ export function MaintenanceView({
         {loaded && !clientId && <p>No torrent clients configured.</p>}
         {error && <p role="alert">{error}</p>}
         {notice && <p role="status">{notice}</p>}
-        {application && (
+        {application && application.state !== "applied" && (
           <p role="status">
             {application.error ??
-              (application.state === "applied"
-                ? "Configuration applied live"
-                : application.state === "pending"
-                  ? "Configuration saved; waiting for active operations to finish"
-                  : "Configuration could not be applied completely")}
+              (application.state === "pending"
+                ? "Configuration saved; waiting for active operations to finish"
+                : "Configuration could not be applied completely")}
             {Object.entries(application.components ?? {})
               .filter(([, component]) => component.error)
               .map(([name, component]) => (
@@ -797,6 +790,37 @@ export function MaintenanceView({
         <details ref={historyRef} className="config-section">
           <summary>Recent runs</summary>
           <div className="config-section__body">
+            {selectedHistory.length > 0 && (
+              <BreakdownBar
+                key={clientId}
+                active={active}
+                unit="operations"
+                label="Operation outcomes in the latest 20 displayed runs"
+                values={[
+                  {
+                    label: "Applied",
+                    value: selectedHistory
+                      .slice(0, 20)
+                      .reduce((sum, run) => sum + run.applied, 0),
+                    tone: "teal",
+                  },
+                  {
+                    label: "Skipped",
+                    value: selectedHistory
+                      .slice(0, 20)
+                      .reduce((sum, run) => sum + run.skipped, 0),
+                    tone: "muted",
+                  },
+                  {
+                    label: "Failed",
+                    value: selectedHistory
+                      .slice(0, 20)
+                      .reduce((sum, run) => sum + run.failed, 0),
+                    tone: "danger",
+                  },
+                ]}
+              />
+            )}
             {!selectedHistory.length ? (
               <p>No runs yet.</p>
             ) : (

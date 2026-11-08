@@ -36,13 +36,15 @@ public class ConfigurationEventEndpointTests(TorrentarrWebApplicationFactory fac
 [Collection("HostWebAuth")]
 public class ConfigurationEventAuthenticationTests(AuthEnabledWebApplicationFactory factory)
 {
-    [Fact]
-    public async Task Events_RequireAuthentication()
+    [Theory]
+    [InlineData("/web/config/events")]
+    [InlineData("/web/stats/events")]
+    public async Task Events_RequireAuthentication(string endpoint)
     {
         using var client = factory.CreateClient(new Microsoft.AspNetCore.Mvc.Testing.WebApplicationFactoryClientOptions { AllowAutoRedirect = false });
         client.DefaultRequestHeaders.Accept.ParseAdd("application/json");
         using var timeout = new CancellationTokenSource(TimeSpan.FromSeconds(5));
-        using var response = await client.GetAsync("/web/config/events", HttpCompletionOption.ResponseHeadersRead, timeout.Token);
+        using var response = await client.GetAsync(endpoint, HttpCompletionOption.ResponseHeadersRead, timeout.Token);
         response.StatusCode.Should().Be(HttpStatusCode.Unauthorized);
     }
 }

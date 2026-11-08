@@ -67,6 +67,28 @@
             ],
             "type": "string"
           },
+          "restartRequirements": {
+            "items": {
+              "properties": {
+                "category": {
+                  "type": "string"
+                },
+                "component": {
+                  "type": "string"
+                },
+                "kind": {
+                  "type": "string"
+                }
+              },
+              "required": [
+                "component",
+                "category",
+                "kind"
+              ],
+              "type": "object"
+            },
+            "type": "array"
+          },
           "status": {
             "example": "ok",
             "type": "string"
@@ -5902,6 +5924,7 @@
     },
     "/web/qbit/overview": {
       "get": {
+        "description": "Includes optional summaries per available client: instance, torrentCount, totalSize, downloading, seeding, stopped, other. These monitored-category totals are computed before the display cap and deduplicated by client and torrent hash. Clients without an inventory response are omitted.",
         "operationId": "web_qbit_overview",
         "parameters": [
           {
@@ -6423,6 +6446,289 @@
         "summary": "Sonarr series poster thumbnail (/web)",
         "tags": [
           "WebUI"
+        ]
+      }
+    },
+    "/web/statistics/arr-activity": {
+      "get": {
+        "description": "Follows WebUI authentication. Worker-level series retain seven days; no backfill. Queue depth averages fresh heartbeats, rounded to whole items. Completions count only tracked Torrentarr submissions: searches require successful command completion; imports require positive correlated download-import history after submission. Counts are timestamped when confirmed, not when requested. Missing/partial coverage is explicit. Buckets are 1, 5, or 30 minutes. Disabled/deleted workers can remain in retained history.",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "range",
+            "schema": {
+              "default": "24h",
+              "enum": [
+                "1h",
+                "24h",
+                "7d"
+              ],
+              "type": "string"
+            }
+          },
+          {
+            "description": "Optional configured Arr section name.",
+            "in": "query",
+            "name": "worker",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "properties": {
+                    "bucketMinutes": {
+                      "type": "integer"
+                    },
+                    "generatedAt": {
+                      "format": "date-time",
+                      "type": "string"
+                    },
+                    "range": {
+                      "type": "string"
+                    },
+                    "series": {
+                      "items": {
+                        "properties": {
+                          "instance": {
+                            "type": "string"
+                          },
+                          "points": {
+                            "items": {
+                              "properties": {
+                                "completionSamples": {
+                                  "type": "integer"
+                                },
+                                "expectedSamples": {
+                                  "type": "integer"
+                                },
+                                "importsConfirmed": {
+                                  "nullable": true,
+                                  "type": "integer"
+                                },
+                                "queueDepth": {
+                                  "nullable": true,
+                                  "type": "integer"
+                                },
+                                "queueSamples": {
+                                  "type": "integer"
+                                },
+                                "searchesCompleted": {
+                                  "nullable": true,
+                                  "type": "integer"
+                                },
+                                "timestamp": {
+                                  "format": "date-time",
+                                  "type": "string"
+                                }
+                              },
+                              "type": "object"
+                            },
+                            "type": "array"
+                          },
+                          "type": {
+                            "type": "string"
+                          }
+                        },
+                        "type": "object"
+                      },
+                      "type": "array"
+                    }
+                  },
+                  "type": "object"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "400": {
+            "description": "Invalid range or worker"
+          },
+          "401": {
+            "description": "Authentication required"
+          }
+        },
+        "summary": "Persistent Arr queue and confirmed activity history",
+        "tags": [
+          "Torrentarr Statistics"
+        ]
+      }
+    },
+    "/web/statistics/catalog": {
+      "get": {
+        "description": "Follows configured WebUI authentication. Transfer rates are bytes/second, collected once per minute and retained seven days. Completed buckets use 1, 5, or 30 minutes. Null rates indicate no observations; samples below expectedSamples indicate partial coverage. Catalog availability is monitored media with files; missing is monitored minus available. Catalog counts ignore page and text filters.",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "kind",
+            "required": true,
+            "schema": {
+              "enum": [
+                "radarr",
+                "sonarr",
+                "lidarr",
+                "readarr"
+              ],
+              "type": "string"
+            }
+          },
+          {
+            "description": "Arr section name; omitted or aggregate selects all instances of this kind.",
+            "in": "query",
+            "name": "instance",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "properties": {
+                    "available": {
+                      "type": "integer"
+                    },
+                    "missing": {
+                      "type": "integer"
+                    },
+                    "monitored": {
+                      "type": "integer"
+                    },
+                    "total": {
+                      "type": "integer"
+                    },
+                    "unit": {
+                      "type": "string"
+                    }
+                  },
+                  "type": "object"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "400": {
+            "description": "Invalid range, kind, or instance"
+          },
+          "401": {
+            "description": "Authentication required"
+          }
+        },
+        "summary": "Complete catalog availability rollup",
+        "tags": [
+          "Torrentarr Statistics"
+        ]
+      }
+    },
+    "/web/statistics/transfers": {
+      "get": {
+        "description": "Follows configured WebUI authentication. Transfer rates are bytes/second, collected once per minute and retained seven days. Completed buckets use 1, 5, or 30 minutes. Null rates indicate no observations; samples below expectedSamples indicate partial coverage. Catalog availability is monitored media with files; missing is monitored minus available. Catalog counts ignore page and text filters.",
+        "parameters": [
+          {
+            "description": "Enabled client name; omitted or all selects all enabled clients.",
+            "in": "query",
+            "name": "instance",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "range",
+            "schema": {
+              "default": "24h",
+              "enum": [
+                "1h",
+                "24h",
+                "7d"
+              ],
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "properties": {
+                    "bucketMinutes": {
+                      "type": "integer"
+                    },
+                    "generatedAt": {
+                      "format": "date-time",
+                      "type": "string"
+                    },
+                    "range": {
+                      "enum": [
+                        "1h",
+                        "24h",
+                        "7d"
+                      ],
+                      "type": "string"
+                    },
+                    "series": {
+                      "items": {
+                        "properties": {
+                          "instance": {
+                            "type": "string"
+                          },
+                          "points": {
+                            "items": {
+                              "properties": {
+                                "downloadRate": {
+                                  "format": "double",
+                                  "nullable": true,
+                                  "type": "number"
+                                },
+                                "expectedSamples": {
+                                  "type": "integer"
+                                },
+                                "samples": {
+                                  "type": "integer"
+                                },
+                                "timestamp": {
+                                  "format": "date-time",
+                                  "type": "string"
+                                },
+                                "uploadRate": {
+                                  "format": "double",
+                                  "nullable": true,
+                                  "type": "number"
+                                }
+                              },
+                              "type": "object"
+                            },
+                            "type": "array"
+                          }
+                        },
+                        "type": "object"
+                      },
+                      "type": "array"
+                    }
+                  },
+                  "type": "object"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "400": {
+            "description": "Invalid range, kind, or instance"
+          },
+          "401": {
+            "description": "Authentication required"
+          }
+        },
+        "summary": "Persistent whole-client transfer history",
+        "tags": [
+          "Torrentarr Statistics"
         ]
       }
     },

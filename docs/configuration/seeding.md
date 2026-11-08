@@ -68,6 +68,9 @@ TorrentLeech rules are documented in its [HnR rules](https://wiki.torrentleech.o
 and [user classes](https://wiki.torrentleech.org/doku.php/user_classes). Freeleech
 remains protected. OnlyEncodes rules above are supplied by the account owner; its
 0.4 overall account-ratio requirement is separate from per-torrent seed-time clearance.
+A tracker that is configured with `HitAndRunMode = 'disabled'` and no `Protection`
+has no clearance obligation and is treated as eligible. Only a private tracker with
+no matching configuration stays `unknown` and is preserved.
 
 ### Protection controls
 
@@ -127,9 +130,11 @@ recovered; deliberate user pauses remain blockers unless explicit paused-repair
 resume permission was selected.
 
 Per-torrent native ratio, seed-time and inactive seed-time stop limits can interrupt
-protected seeding. Explicit protection temporarily overrides conflicting limits and
-records their original values, restoring them after clearance if the user has not
-changed them. Global client preferences are unchanged. See the [official qBittorrent
+protected seeding. Protection temporarily overrides conflicting limits and records
+their original values, restoring them after clearance if the user has not changed
+them. Private torrents are reconciled even when no tracker policy is configured, so
+qBittorrent cannot natively remove an unmatched private torrent before review.
+Global client preferences are unchanged. See the [official qBittorrent
 share-limit contract](https://github.com/qbittorrent/qBittorrent/wiki/WebUI-API-%28qBittorrent-5.0%29#set-torrent-share-limit).
 
 ## Global seeding settings
@@ -172,7 +177,10 @@ Ordinary tracker handling preserves and reports failures. Manage recovery may re
 ### RemoveTrackerWithMessage
 
 Tracker-message matching for ordinary tracker handling. Removing a configured
-tracker remains subject to fresh protection checks.
+tracker remains subject to fresh protection checks. Private torrents keep the
+configured tracker URL and their last remaining announce URL even when a message
+matches; removing either would destroy the only way to re-announce. Explicit
+`RemoveIfExists` actions are unchanged.
 
 ## Per-tracker configuration
 
@@ -227,7 +235,10 @@ New policies expose AccountingGraceMinutes and AdditionalSeedHours independently
 When protection is explicitly configured, conflicting managed per-torrent stop
 limits are recorded and temporarily disabled to preserve seeding. After clearance,
 previous values are restored only if the unlimited values still belong to Torrentarr;
-later user changes are retained. Global qBittorrent preferences are never changed.
+later user changes are retained. Private torrents without a matching tracker policy
+are also treated as unresolved and keep their native stop limits disabled until
+configuration or manual review resolves them. Global qBittorrent preferences are
+never changed.
 A stopped torrent with unknown pause ownership is reported rather than assumed safe
 to resume. Review client global stop/queue settings separately.
 

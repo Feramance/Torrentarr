@@ -1,17 +1,22 @@
+import { BreakdownBar } from "../components/Statistics";
+import type { QbitActivitySummary } from "../api/types";
+import { TransferHistory } from "../components/TransferHistory";
+import {
+  useInstanceSelection,
+  type InstanceSelectionProps,
+} from "../hooks/useInstanceSelection";
 import {
   useCallback,
   useEffect,
   useMemo,
   useRef,
   useState,
-  type ChangeEvent,
   type JSX,
 } from "react";
 import { getQbitOverview, getStatus } from "../api/client";
 import type { QbitOverviewCategory, QbitTorrentOverview } from "../api/types";
 import { QbitTorrentListRow } from "../components/QbitTorrentListRow";
 import { useToast } from "../context/ToastContext";
-import { useWebUI } from "../context/WebUIContext";
 import { useInterval } from "../hooks/useInterval";
 import { isSeedingState } from "../utils/qbitTorrentDisplay";
 import { TorrentAutomationIssues } from "../components/TorrentAutomationIssues";
@@ -148,15 +153,21 @@ function filterCategories(
   return filtered;
 }
 
-interface QbitCategoriesViewProps {
+interface QbitCategoriesViewProps extends InstanceSelectionProps {
   active: boolean;
 }
 
 export function QbitCategoriesView({
   active,
+  selectedInstance,
+  onSelectInstance,
 }: QbitCategoriesViewProps): JSX.Element {
   const [instances, setInstances] = useState<string[]>([]);
-  const [selection, setSelection] = useState<string | "aggregate" | "">("");
+  const [selection, setSelection] = useInstanceSelection({
+    selectedInstance,
+    onSelectInstance,
+  });
+  const [activity, setActivity] = useState<QbitActivitySummary[]>([]);
   const [categories, setCategories] = useState<QbitOverviewCategory[]>([]);
   const [expanded, setExpanded] = useState<Record<string, boolean>>({});
   const [search, setSearch] = useState("");
@@ -164,7 +175,17 @@ export function QbitCategoriesView({
   const [instancesLoaded, setInstancesLoaded] = useState(false);
   const [overviewLoaded, setOverviewLoaded] = useState(false);
   const { push } = useToast();
-  const { liveArr } = useWebUI();
+  const [scanInterval, setScanInterval] = useState(30);
+  const [observations, setObservations] = useState<
+    Record<
+      string,
+      {
+        observedAt: string | null;
+        error: string | null;
+        scanIntervalSeconds: number;
+      }
+    >
+  >({});
   const isFetching = useRef<string | null>(null);
   const requestId = useRef(0);
   const selectionRef = useRef(selection);
@@ -191,7 +212,7 @@ export function QbitCategoriesView({
     } finally {
       setInstancesLoaded(true);
     }
-  }, [push]);
+  }, [push, setSelection]);
 
   const loadOverview = useCallback(
     async (showLoading = true) => {
@@ -210,6 +231,12 @@ export function QbitCategoriesView({
           return;
         setLoadedSelection(selection);
         setCategories(data.categories);
+        setActivity(data.summaries ?? []);
+        setObservations(data.observations ?? {});
+        const intervals = Object.values(data.observations ?? {}).map(
+          (value) => value.scanIntervalSeconds,
+        );
+        if (intervals.length) setScanInterval(Math.min(...intervals));
         if (data.instances.length) {
           setInstances((prev) => {
             const merged = Array.from(
@@ -279,25 +306,13 @@ export function QbitCategoriesView({
     () => {
       void loadOverview(false);
     },
-    active && liveArr && selection ? 5000 : null,
+    active && selection ? scanInterval * 1000 : null,
   );
 
   const handleRefresh = useCallback(() => {
     void loadInstances();
     void loadOverview();
   }, [loadInstances, loadOverview]);
-
-  const selectInstance = useCallback((value: string | "aggregate") => {
-    setSelection(value);
-    setSearch("");
-  }, []);
-
-  const handleInstanceSelection = useCallback(
-    (event: ChangeEvent<HTMLSelectElement>) => {
-      selectInstance(event.target.value as string | "aggregate");
-    },
-    [selectInstance],
-  );
 
   const toggleSection = useCallback((key: string) => {
     setExpanded((prev) => ({ ...prev, [key]: !prev[key] }));
@@ -322,6 +337,14 @@ export function QbitCategoriesView({
       return;
     }
     if (!focusCategory) return;
+    if (search) {
+      setSearch("");
+      return;
+    }
+    if (!focusInstance && selection !== "aggregate" && instances.length > 1) {
+      setSelection("aggregate");
+      return;
+    }
     if (focusInstance && selection !== focusInstance) {
       setSelection(focusInstance);
       return;
@@ -360,7 +383,15 @@ export function QbitCategoriesView({
       });
     }, 0);
     return () => window.clearTimeout(id);
-  }, [active, filteredCategories, selection, loadedSelection]);
+  }, [
+    active,
+    filteredCategories,
+    selection,
+    loadedSelection,
+    setSelection,
+    search,
+    instances.length,
+  ]);
 
   const summary = useMemo(() => {
     const totalTorrents = filteredCategories.reduce(
@@ -392,14 +423,21 @@ export function QbitCategoriesView({
     };
   }, [filteredCategories]);
 
-  const summaryLine = (
+  const incomplete = Object.values(observations).some(
+    (observation) => observation.observedAt == null,
+  );
+  const summaryLine = incomplete ? (
+    <span className="observation-stale">
+      Awaiting complete client statistics
+    </span>
+  ) : (
     <>
       <div>
         Monitored-category torrent overview
         {selection && selection !== "aggregate"
           ? ` · ${selection}`
           : instances.length > 1
-            ? " · All qBittorrent"
+            ? " · All Torrent Clients"
             : ""}
       </div>
       <div className="qbit-summary-stats">
@@ -546,53 +584,13 @@ export function QbitCategoriesView({
     );
   }
 
+  const cardTitle =
+    selection && selection !== "aggregate" ? selection : "Torrent Clients";
   return (
-    <section className="card">
-      <div className="card-header">qBittorrent</div>
+    <section className="card" aria-label={cardTitle}>
       <div className="card-body">
-        <div className="split">
-          <aside className="pane sidebar">
-            {instances.length > 1 && (
-              <button
-                type="button"
-                className={`btn ${isAggregate ? "active" : ""}`}
-                onClick={() => selectInstance("aggregate")}
-              >
-                All qBittorrent
-              </button>
-            )}
-            {instances.map((name) => (
-              <button
-                type="button"
-                key={name}
-                className={`btn ghost ${selection === name ? "active" : ""}`}
-                onClick={() => selectInstance(name)}
-              >
-                {name}
-              </button>
-            ))}
-          </aside>
-
+        <div className="catalog-workspace">
           <div className="pane">
-            <div className="field mobile-instance-select">
-              <label htmlFor="qbit-instance-select">Instance</label>
-              <select
-                id="qbit-instance-select"
-                value={selection || "aggregate"}
-                onChange={handleInstanceSelection}
-                disabled={!instances.length}
-              >
-                {instances.length > 1 && (
-                  <option value="aggregate">All qBittorrent</option>
-                )}
-                {instances.map((name) => (
-                  <option key={name} value={name}>
-                    {name}
-                  </option>
-                ))}
-              </select>
-            </div>
-
             <div
               className="row"
               style={{
@@ -613,6 +611,75 @@ export function QbitCategoriesView({
               </div>
             </div>
 
+            {Object.entries(observations).map(([id, value]) =>
+              value.error ? (
+                <p key={id} role="status" className="observation-stale">
+                  {id}: {value.error}{" "}
+                  {value.observedAt
+                    ? `Last updated ${new Date(value.observedAt).toLocaleString()}`
+                    : "Awaiting first successful scan."}
+                </p>
+              ) : null,
+            )}
+            <TransferHistory
+              active={active}
+              instance={
+                selection === "aggregate" ? undefined : selection || undefined
+              }
+            />
+            {loadedSelection === selection && activity.length > 0 && (
+              <div className="activity-summary">
+                <h3>Monitored categories</h3>
+                <BreakdownBar
+                  active={active}
+                  label="Monitored torrent activity, deduplicated across categories"
+                  values={[
+                    {
+                      label: "Downloading",
+                      value: activity.reduce(
+                        (sum, item) => sum + item.downloading,
+                        0,
+                      ),
+                      tone: "teal",
+                    },
+                    {
+                      label: "Seeding",
+                      value: activity.reduce(
+                        (sum, item) => sum + item.seeding,
+                        0,
+                      ),
+                      tone: "orange",
+                    },
+                    {
+                      label: "Stopped / paused",
+                      value: activity.reduce(
+                        (sum, item) => sum + item.stopped,
+                        0,
+                      ),
+                      tone: "muted",
+                    },
+                    {
+                      label: "Other",
+                      value: activity.reduce(
+                        (sum, item) => sum + item.other,
+                        0,
+                      ),
+                      tone: "subtle",
+                    },
+                  ]}
+                />
+                <p className="hint">
+                  {activity
+                    .reduce((sum, item) => sum + item.torrentCount, 0)
+                    .toLocaleString()}{" "}
+                  unique torrents · independent of category search
+                  {activity.length <
+                  (selection === "aggregate" ? instances.length : 1)
+                    ? " · Some clients unavailable; showing partial coverage"
+                    : ""}
+                </p>
+              </div>
+            )}
             <TorrentAutomationIssues clientId={selection} />
             <ArrCatalogBodyChrome
               summaryLine={summaryLine}

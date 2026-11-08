@@ -23,7 +23,7 @@ Unsaved changes must be saved or discarded before switching clients or leaving. 
 
 ## Scheduling and protection
 
-Every torrent removal and deletion of referenced torrent content requires current HnR clearance. Manual execution, custom-format rejection, failed categories, import errors, and file exclusions cannot bypass it. Unmet or unknown obligations preserve the torrent and content. Arr queue removal and blocklisting for failed downloads follow confirmed protected removal; Arr is not asked to remove the torrent independently. Recycle preparation rechecks clearance and restores moved content if clearance changes before client removal.
+Every torrent removal and deletion of referenced torrent content requires current HnR clearance. Manual execution, custom-format rejection, failed categories, import errors, and file exclusions cannot bypass it. Unmet or unknown obligations prevent those deletion actions. They do not block imports, configured pauses/resumes, tracker/category changes, or repair; those actions retain their own scope, capability, path, and ownership checks. Arr queue removal and blocklisting for failed downloads follow confirmed protected removal; Arr is not asked to remove the torrent independently. Recycle preparation rechecks clearance and restores moved content if clearance changes before client removal.
 
 Manual mode applies a reviewed preview once. Automatic mode runs on the saved schedule without requiring a restart and retains scheduling across restarts. Existing session settings migrate to Manual with their schedules preserved. Cron expressions use UTC. Missed runs are not replayed; persisted claims prevent the same scheduled minute from running twice after restart.
 

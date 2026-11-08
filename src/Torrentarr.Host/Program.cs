@@ -187,6 +187,8 @@ try
     builder.Services.AddSingleton<QBittorrentConnectionManager>();
     builder.Services.AddHostedService(sp => sp.GetRequiredService<QBittorrentConnectionManager>());
     builder.Services.AddSingleton<ITorrentClientRegistry>(sp => sp.GetRequiredService<QBittorrentConnectionManager>());
+    builder.Services.AddHostedService<TransferHistoryCollector>();
+    builder.Services.AddHostedService<ArrActivityCollector>();
     builder.Services.AddSingleton<IPathMappingService, PathMappingService>();
     builder.Services.AddSingleton<IHardlinkInspector, HardlinkInspector>();
     builder.Services.AddSingleton<ITorrentInventoryService, TorrentInventoryService>();
@@ -209,6 +211,10 @@ try
     builder.Services.AddScoped<ArrSyncService>();
     builder.Services.AddScoped<IArrImportService, ArrImportService>();
     builder.Services.AddScoped<ISeedingService, SeedingService>();
+    builder.Services.AddSingleton<StatisticsEvents>();
+    builder.Services.AddHostedService(sp => sp.GetRequiredService<StatisticsEvents>());
+    builder.Services.AddSingleton<TorrentStatisticsSnapshots>();
+    builder.Services.AddSingleton<FreeSpaceObservations>();
     builder.Services.AddScoped<IFreeSpaceService, FreeSpaceService>();
     builder.Services.AddSingleton<IMediaValidationService, MediaValidationService>();
     builder.Services.AddScoped<ITorrentProcessor, TorrentProcessor>();
@@ -619,6 +625,9 @@ try
     app.MapControllers();
     app.MapOperationalIssueEndpoints("/web");
     app.MapOperationalIssueEndpoints("/api");
+    app.MapStatisticsEndpoints();
+    app.MapTransferHistory();
+    app.MapArrActivity();
     app.MapArrCatalogEndpoints();
     app.MapRadarrMoviesEndpoints();
 
@@ -733,10 +742,10 @@ try
     //   • each Arr instance's Category (Arr-managed)
     // The "instance" field is always the qBit instance name (never the Arr instance name)
     // so that ProcessesView can match categories to the correct qBit process card.
-    app.MapGet("/web/qbit/categories", async (ITorrentClientRegistry registry, TorrentarrConfig cfg, CancellationToken ct) =>
+    app.MapGet("/web/qbit/categories", async (ITorrentClientRegistry registry, TorrentarrConfig cfg, TorrentStatisticsSnapshots snapshots, CancellationToken ct) =>
     {
-        var categories = await TorrentClientApiBuilder.CategoriesAsync(cfg, registry, ct: ct);
-        return Results.Ok(new { categories, ready = true });
+        var categories = await TorrentClientApiBuilder.CategoriesAsync(cfg, registry, ct: ct, snapshots: snapshots);
+        return Results.Ok(new { categories, ready = true, observations = snapshots.Describe(cfg, registry) });
     });
 
     // Web Processes — host tasks and real worker heartbeats; clients use /web/status.
@@ -750,6 +759,16 @@ try
             pid = s.Pid,
             alive = s.Alive,
             rebuilding = s.Rebuilding,
+            searchesTriggered = s.SearchesTriggered,
+            itemsSearched = s.ItemsSearched,
+            downloadingCount = s.DownloadingCount,
+            seedingCount = s.SeedingCount,
+            observedAt = s.ObservedAt,
+            observationError = s.ObservationError,
+            pausedLastPass = s.PausedLastPass,
+            resumedLastPass = s.ResumedLastPass,
+            handledLastPass = s.HandledLastPass,
+            monitoredCategoryCount = s.MonitoredCategoryCount,
             searchSummary = s.SearchSummary,
             searchTimestamp = s.SearchTimestamp,
             queueCount = s.QueueCount,
@@ -761,7 +780,7 @@ try
         }).ToList<object>();
 
         foreach (var status in (await workers.GetProcessStatusAsync()).Values)
-            processes.Add(new { category = cfg.ArrInstances.GetValueOrDefault(status.Name)?.Category ?? status.Name, name = status.Name, kind = status.Kind, pid = status.ProcessId, alive = status.IsAlive, rebuilding = false, searchSummary = status.SearchSummary, searchTimestamp = status.SearchTimestamp, queueCount = status.QueueCount, categoryCount = status.CategoryCount, metricType = status.MetricType, status = status.Status ?? (status.IsAlive ? "Running" : "Stopped"), restartKey = status.Name, restartable = true, torrent = status.Torrent, search = status.Search });
+            processes.Add(new { category = cfg.ArrInstances.GetValueOrDefault(status.Name)?.Category ?? status.Name, name = status.Name, kind = status.Kind, pid = status.ProcessId, alive = status.IsAlive, rebuilding = false, searchesTriggered = status.SearchesTriggered, itemsSearched = status.ItemsSearched, downloadingCount = status.DownloadingCount, seedingCount = status.SeedingCount, observedAt = status.ObservedAt, observationError = status.ObservationError, pausedLastPass = status.PausedLastPass, resumedLastPass = status.ResumedLastPass, handledLastPass = status.HandledLastPass, searchSummary = status.SearchSummary, searchTimestamp = status.SearchTimestamp, queueCount = status.QueueCount, categoryCount = status.CategoryCount, metricType = status.MetricType, status = status.Status ?? (status.IsAlive ? "Running" : "Stopped"), restartKey = status.Name, restartable = true, torrent = status.Torrent, search = status.Search });
 
         return Results.Ok(new { processes });
     });
@@ -869,10 +888,10 @@ try
 
     app.MapGet("/web/config/schema", () => Results.Ok(ConfigSchemaBuilder.Build()));
 
-    app.MapGet("/web/qbit/overview", async (HttpRequest request, TorrentarrConfig cfg, ITorrentClientRegistry qbitManager) =>
+    app.MapGet("/web/qbit/overview", async (HttpRequest request, TorrentarrConfig cfg, ITorrentClientRegistry qbitManager, TorrentStatisticsSnapshots snapshots, CancellationToken ct) =>
     {
         var instance = request.Query["instance"].FirstOrDefault();
-        return Results.Ok(await QbitOverviewBuilder.BuildAsync(cfg, qbitManager, instance));
+        return Results.Ok(await QbitOverviewBuilder.BuildAsync(cfg, qbitManager, instance, ct, snapshots));
     });
 
     // Web Arr List
@@ -1481,10 +1500,10 @@ try
     });
 
     // Web Qbit Categories (api mirror — same logic as /web/qbit/categories, token-protected)
-    app.MapGet("/api/qbit/categories", async (ITorrentClientRegistry registry, TorrentarrConfig cfg, CancellationToken ct) =>
+    app.MapGet("/api/qbit/categories", async (ITorrentClientRegistry registry, TorrentarrConfig cfg, TorrentStatisticsSnapshots snapshots, CancellationToken ct) =>
     {
-        var categories = await TorrentClientApiBuilder.CategoriesAsync(cfg, registry, ct: ct);
-        return Results.Ok(new { categories, ready = true });
+        var categories = await TorrentClientApiBuilder.CategoriesAsync(cfg, registry, ct: ct, snapshots: snapshots);
+        return Results.Ok(new { categories, ready = true, observations = snapshots.Describe(cfg, registry) });
     });
 
     // ==================== /api/* endpoints (Bearer token protected via middleware) ====================
@@ -1525,6 +1544,16 @@ try
             pid = s.Pid,
             alive = s.Alive,
             rebuilding = s.Rebuilding,
+            searchesTriggered = s.SearchesTriggered,
+            itemsSearched = s.ItemsSearched,
+            downloadingCount = s.DownloadingCount,
+            seedingCount = s.SeedingCount,
+            observedAt = s.ObservedAt,
+            observationError = s.ObservationError,
+            pausedLastPass = s.PausedLastPass,
+            resumedLastPass = s.ResumedLastPass,
+            handledLastPass = s.HandledLastPass,
+            monitoredCategoryCount = s.MonitoredCategoryCount,
             searchSummary = s.SearchSummary,
             searchTimestamp = s.SearchTimestamp,
             queueCount = s.QueueCount,
@@ -1535,7 +1564,7 @@ try
             status = s.Status
         }).ToList<object>();
         foreach (var status in (await workers.GetProcessStatusAsync()).Values)
-            processes.Add(new { category = cfg.ArrInstances.GetValueOrDefault(status.Name)?.Category ?? status.Name, name = status.Name, kind = status.Kind, pid = status.ProcessId, alive = status.IsAlive, rebuilding = false, searchSummary = status.SearchSummary, searchTimestamp = status.SearchTimestamp, queueCount = status.QueueCount, categoryCount = status.CategoryCount, metricType = status.MetricType, status = status.Status ?? (status.IsAlive ? "Running" : "Stopped"), restartKey = status.Name, restartable = true, torrent = status.Torrent, search = status.Search });
+            processes.Add(new { category = cfg.ArrInstances.GetValueOrDefault(status.Name)?.Category ?? status.Name, name = status.Name, kind = status.Kind, pid = status.ProcessId, alive = status.IsAlive, rebuilding = false, searchesTriggered = status.SearchesTriggered, itemsSearched = status.ItemsSearched, downloadingCount = status.DownloadingCount, seedingCount = status.SeedingCount, observedAt = status.ObservedAt, observationError = status.ObservationError, pausedLastPass = status.PausedLastPass, resumedLastPass = status.ResumedLastPass, handledLastPass = status.HandledLastPass, searchSummary = status.SearchSummary, searchTimestamp = status.SearchTimestamp, queueCount = status.QueueCount, categoryCount = status.CategoryCount, metricType = status.MetricType, status = status.Status ?? (status.IsAlive ? "Running" : "Stopped"), restartKey = status.Name, restartable = true, torrent = status.Torrent, search = status.Search });
         return Results.Ok(new { processes });
     });
 
@@ -2413,6 +2442,7 @@ static async Task<IResult> SaveAndRespondConfigUpdate(
     {
         status = "ok",
         configReloaded = application?.State == "applied",
+        restartRequirements = Array.Empty<ConfigurationRestartRequirement>(),
         application,
         reloadType,
         affectedInstances = affectedInstancesList,
@@ -2717,6 +2747,9 @@ class ProcessOrchestratorService : BackgroundService
     {
         using var processing = ConfigMutationGuard.EnterProcessing();
         var configured = _config.GetAllTorrentClients();
+        var failedHandled = 0;
+        var recheckHandled = 0;
+        var complete = true;
         foreach (var id in _specialCategoryCounts.Keys.Where(id => !configured.TryGetValue(id, out var cfg) || cfg.Disabled).ToArray())
             _specialCategoryCounts.Remove(id);
         foreach (var (instanceName, client) in _qbitManager.GetAllClients().Where(pair => clientIds.Contains(pair.Key)))
@@ -2747,6 +2780,7 @@ class ProcessOrchestratorService : BackgroundService
                     }
                     _logger.LogWarning("[{Instance}] Deleting failed torrent: {Name}", instanceName, torrent.Name);
                     var deletion = await _safeDeletion.RemoveTorrentAsync(instanceName, torrent.Hash, removeContent: true, ct: cancellationToken);
+                    if (deletion.Success) failedHandled++;
                     if (!deletion.Success)
                         _logger.LogWarning("[{Instance}] Safe deletion skipped for {Name}: {Reason}", instanceName, torrent.Name, deletion.Error);
                 }
@@ -2768,16 +2802,34 @@ class ProcessOrchestratorService : BackgroundService
                     }
                     torrent.ClientInstanceId = instanceName;
                     if (await MaintenanceRecovery.RequestExplicitAsync(recoveryDb, client, torrent, cancellationToken))
+                    {
+                        recheckHandled++;
                         _logger.LogInformation("[{Instance}] Requested recheck for torrent: {Name}", instanceName, torrent.Name);
+                    }
                 }
             }
-            catch (Exception ex)
+            catch (Exception ex) when (ex is not OperationCanceledException)
             {
+                complete = false;
                 _logger.LogError(ex, "[{Instance}] Error processing special categories", instanceName);
             }
         }
-        _stateManager.Update("Failed", s => { s.CategoryCount = _specialCategoryCounts.Values.Sum(counts => counts.Failed); s.Alive = true; });
-        _stateManager.Update("Recheck", s => { s.CategoryCount = _specialCategoryCounts.Values.Sum(counts => counts.Recheck); s.Alive = true; });
+        _stateManager.Update("Failed", s =>
+        {
+            s.CategoryCount = _specialCategoryCounts.Values.Sum(counts => counts.Failed);
+            s.MonitoredCategoryCount = string.IsNullOrWhiteSpace(_config.Settings.FailedCategory) ? 0 : 1;
+            s.Alive = true;
+            s.ObservationError = complete ? null : "Some clients could not be inspected; retaining the last completed pass.";
+            if (complete) { s.HandledLastPass = failedHandled; s.ObservedAt = DateTimeOffset.UtcNow; }
+        });
+        _stateManager.Update("Recheck", s =>
+        {
+            s.CategoryCount = _specialCategoryCounts.Values.Sum(counts => counts.Recheck);
+            s.MonitoredCategoryCount = string.IsNullOrWhiteSpace(_config.Settings.RecheckCategory) ? 0 : 1;
+            s.Alive = true;
+            s.ObservationError = complete ? null : "Some clients could not be inspected; retaining the last completed pass.";
+            if (complete) { s.HandledLastPass = recheckHandled; s.ObservedAt = DateTimeOffset.UtcNow; }
+        });
     }
 
     private async Task ProcessTorrentPolicyAsync(HashSet<string> managedCategories, IReadOnlySet<string> clientIds, CancellationToken cancellationToken)
@@ -2831,6 +2883,9 @@ class ProcessOrchestratorService : BackgroundService
         _stateManager.Update("FreeSpaceManager", state =>
         {
             state.CategoryCount = result.MarkedCount;
+            state.PausedLastPass = result.Paused;
+            state.ResumedLastPass = result.Resumed;
+            state.ObservedAt = DateTimeOffset.UtcNow;
             state.MetricType = "free-space";
             state.Alive = result.Available;
         });
@@ -2854,7 +2909,7 @@ class ProcessOrchestratorService : BackgroundService
                 {
                     torrentList = await client.GetTorrentsAsync(category: null, "priority", cancellationToken);
                 }
-                catch (Exception ex)
+                catch (Exception ex) when (ex is not OperationCanceledException)
                 {
                     _logger.LogDebug(ex, "[{Instance}] SortTorrents: falling back to added_on sort", instanceName);
                     torrentList = await client.GetTorrentsAsync(category: null, "added_on", cancellationToken);
@@ -2923,6 +2978,7 @@ class ProcessOrchestratorService : BackgroundService
                         await client.SetTopPriorityAsync(torrent.Hash, cancellationToken);
                 }
             }
+            catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested) { throw; }
             catch (Exception ex)
             {
                 _logger.LogError(ex, "[{Instance}] SortTorrents policy step failed", instanceName);

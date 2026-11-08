@@ -6,7 +6,7 @@ namespace Torrentarr.Infrastructure.ApiClients.Arr;
 /// <summary>
 /// Sonarr API client using RestSharp
 /// </summary>
-public class SonarrClient
+public partial class SonarrClient : IArrActivityClient
 {
     private readonly RestClient _client;
     private readonly string _apiKey;

@@ -3,11 +3,13 @@
 from __future__ import annotations
 
 import json
+from pathlib import Path
 import os
 import sys
 import urllib.request
 from copy import deepcopy
 from openapi_status import STATUS_SCHEMA
+from openapi_statistics import EXTENSION_PATHS as STATISTICS_PATHS, apply as apply_statistics
 from openapi_maintenance import apply as apply_maintenance
 
 QBITRR_REF = os.environ.get("QBITRR_OPENAPI_REF", "v5.14.6-1")
@@ -143,6 +145,12 @@ def main() -> int:
     with urllib.request.urlopen(url) as resp:
         spec = json.load(resp)
 
+    current_path = Path(OUT_PATH)
+    if current_path.exists():
+        current = json.loads(current_path.read_text())
+        spec["paths"].update({path: value for path, value in current["paths"].items() if "/issues" in path})
+        spec["components"]["schemas"].update({name: value for name, value in current["components"]["schemas"].items() if "Issue" in name})
+
     spec = deepcopy(spec)
     spec["info"] = {
         "title": "Torrentarr API",
@@ -155,6 +163,11 @@ def main() -> int:
         ),
     }
     spec["paths"].update(EXTENSION_PATHS)
+    spec["components"]["schemas"]["ConfigUpdateResponse"]["properties"]["restartRequirements"] = {
+        "type": "array", "items": {"type": "object", "properties": {
+            key: {"type": "string"} for key in ("component", "category", "kind")
+        }, "required": ["component", "category", "kind"]}
+    }
     spec["components"]["schemas"]["ConfigUpdateResponse"]["properties"]["warning"] = {
         "type": "string", "nullable": True,
         "description": "Configuration was saved, but client or worker activation failed."
@@ -169,10 +182,11 @@ def main() -> int:
         operation["responses"]["200"]["content"]["application/json"]["schema"] = deepcopy(STATUS_SCHEMA)
 
     apply_maintenance(spec)
+    apply_statistics(spec)
 
     out = sys.argv[1] if len(sys.argv) > 1 else OUT_PATH
     with open(out, "w", encoding="utf-8") as f:
-        json.dump(spec, f, indent=2)
+        json.dump(spec, f, indent=2, sort_keys=True)
         f.write("\n")
 
     print(f"Wrote {len(spec['paths'])} paths to {out}")

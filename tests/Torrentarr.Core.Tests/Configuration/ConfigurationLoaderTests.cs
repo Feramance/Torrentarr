@@ -301,7 +301,7 @@ public class ConfigurationLoaderTests : IDisposable
 
         // WebUI defaults when [WebUI] omitted
         config.WebUI.Port.Should().Be(6969);
-        config.WebUI.Theme.Should().Be("Dark");
+        config.WebUI.Theme.Should().Be("System");
         config.WebUI.LiveArr.Should().BeTrue();
     }
 
@@ -567,7 +567,7 @@ public class ConfigurationLoaderTests : IDisposable
 
         config.WebUI.Host.Should().Be("0.0.0.0");
         config.WebUI.Port.Should().Be(6969);
-        config.WebUI.Theme.Should().Be("Dark");
+        config.WebUI.Theme.Should().Be("System");
         config.WebUI.ViewDensity.Should().Be("Comfortable");
         config.WebUI.LiveArr.Should().BeTrue();
         // Filled WebUI auth defaults must match GenerateDefaultConfig / qBitrr: auth on, local login opt-in.
@@ -604,6 +604,24 @@ public class ConfigurationLoaderTests : IDisposable
 
         config.WebUI.Theme.Should().Be("Light");
         config.WebUI.ViewDensity.Should().Be("Comfortable");
+    }
+
+    [Fact]
+    public void Load_ValidateAndFill_NormalizesSystemAndMidnightThemes()
+    {
+        WriteToml("""
+            [WebUI]
+            Theme = "system"
+            """);
+
+        new ConfigurationLoader(_tempFilePath).Load().WebUI.Theme.Should().Be("System");
+
+        WriteToml("""
+            [WebUI]
+            Theme = "MIDNIGHT"
+            """);
+
+        new ConfigurationLoader(_tempFilePath).Load().WebUI.Theme.Should().Be("Midnight");
     }
 
     [Fact]

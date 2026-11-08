@@ -10,11 +10,16 @@ import {
 } from "react";
 import { getConfig, updateConfig, watchConfiguration } from "../api/client";
 import { setUrlBaseFromMeta } from "../api/urlBase";
+import {
+  applyTheme,
+  SAVED_THEME,
+  themeFromValue,
+  type Theme,
+} from "../utils/theme";
 import { useToast } from "./ToastContext";
 import { createPersistedBooleanSetter } from "./webUISettingSetters";
 
 type ViewDensity = "comfortable" | "compact";
-type Theme = "light" | "dark";
 
 interface WebUISettings {
   liveArr: boolean;
@@ -42,14 +47,13 @@ function readPreference(key: string): string | null {
 }
 
 function applyThemeEarly(): void {
+  let theme: Theme = "system";
   try {
-    const storedTheme = readPreference("theme");
-    const theme =
-      storedTheme === "light" || storedTheme === "dark" ? storedTheme : "dark";
-    document.documentElement.setAttribute("data-theme", theme);
+    theme = themeFromValue(readPreference("theme"));
   } catch {
-    document.documentElement.setAttribute("data-theme", "dark");
+    /* Storage is optional; use the system default. */
   }
+  applyTheme(theme);
 }
 
 applyThemeEarly();
@@ -61,11 +65,10 @@ export function WebUIProvider({
 }): JSX.Element {
   const [settings, setSettings] = useState<WebUISettings>(() => {
     const storedDensity = readPreference("viewDensity") as ViewDensity | null;
-    const storedTheme = readPreference("theme") as Theme | null;
     return {
       liveArr: true,
       viewDensity: storedDensity === "compact" ? "compact" : "comfortable",
-      theme: storedTheme === "light" ? "light" : "dark",
+      theme: themeFromValue(readPreference("theme")),
     };
   });
   const { push } = useToast();
@@ -92,12 +95,13 @@ export function WebUIProvider({
         const storedDensity = readPreference(
           "viewDensity",
         ) as ViewDensity | null;
-        const storedTheme = readPreference("theme") as Theme | null;
+        const storedTheme = readPreference("theme");
 
         // Get theme and view density from backend or localStorage
         const backendTheme = webui?.Theme as string | undefined;
-        const theme: Theme =
-          storedTheme || (backendTheme?.toLowerCase() as Theme) || "dark";
+        const theme: Theme = storedTheme
+          ? themeFromValue(storedTheme)
+          : themeFromValue(backendTheme);
 
         const backendDensity = webui?.ViewDensity as string | undefined;
         const viewDensity: ViewDensity =
@@ -112,7 +116,7 @@ export function WebUIProvider({
         });
 
         // Apply theme immediately
-        document.documentElement.setAttribute("data-theme", theme);
+        applyTheme(theme);
       } catch {
         // settings load failed, defaults will be used
       }
@@ -158,7 +162,7 @@ export function WebUIProvider({
         await watchConfiguration((event) => {
           const next = event.webui;
           setUrlBaseFromMeta(next.urlBase);
-          const theme = next.theme.toLowerCase() === "light" ? "light" : "dark";
+          const theme = themeFromValue(next.theme);
           const viewDensity =
             next.viewDensity.toLowerCase() === "compact"
               ? "compact"
@@ -174,7 +178,7 @@ export function WebUIProvider({
           } catch {
             /* Backend settings remain authoritative. */
           }
-          document.documentElement.setAttribute("data-theme", theme);
+          applyTheme(theme);
           window.dispatchEvent(
             new CustomEvent("torrentarr:configuration", {
               detail: event.application,
@@ -274,13 +278,24 @@ export function WebUIProvider({
         /* Backend settings remain authoritative. */
       }
       // Apply theme immediately to DOM
-      document.documentElement.setAttribute("data-theme", value);
-      // Save to backend with proper capitalization (Light or Dark)
-      const capitalizedTheme = value === "light" ? "Light" : "Dark";
-      void saveSettings("Theme", capitalizedTheme);
+      applyTheme(value);
+      void saveSettings("Theme", SAVED_THEME[value]);
     },
     [saveSettings],
   );
+
+  useEffect(() => {
+    if (
+      settings.theme !== "system" ||
+      typeof window.matchMedia !== "function"
+    ) {
+      return;
+    }
+    const media = window.matchMedia("(prefers-color-scheme: dark)");
+    const onChange = () => applyTheme("system");
+    media.addEventListener("change", onChange);
+    return () => media.removeEventListener("change", onChange);
+  }, [settings.theme]);
 
   const value = useMemo<WebUIContextValue>(
     () => ({

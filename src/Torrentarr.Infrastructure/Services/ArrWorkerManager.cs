@@ -455,6 +455,8 @@ public class ArrWorkerManager : BackgroundService
                         {
                             _stateManager.Update(searchStateName, s =>
                             {
+                                s.SearchesTriggered = result.SearchesTriggered;
+                                s.ItemsSearched = result.ItemsSearched;
                                 s.SearchSummary = $"{result.SearchesTriggered} searches triggered ({result.ItemsSearched} items)";
                                 s.SearchTimestamp = DateTime.UtcNow.ToString("o");
                                 s.MetricType = "search";

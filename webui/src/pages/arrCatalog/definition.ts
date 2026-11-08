@@ -268,8 +268,6 @@ export interface ArrCatalogDefinition<
 > {
   readonly kind: ArrCatalogKind;
   readonly arrType: ArrType;
-  readonly cardTitle: string;
-  readonly allInstancesLabel: string;
   readonly searchPlaceholder: string;
 
   /** Initial values for filter state owned by the shell. */

@@ -13,6 +13,15 @@ namespace Torrentarr.Infrastructure.Logging;
 /// <summary>Shared daily files for every process, with an aggregate and one service destination.</summary>
 public class ServiceLogSink(string logsPath, string processType) : ILogEventSink, IDisposable
 {
+    internal const long FileSizeLimit = 128L * 1024 * 1024;
+    internal const int RetainedFileCount = 8;
+
+    static ServiceLogSink() => Serilog.Debugging.SelfLog.Enable(message => Console.Error.WriteLine(DiagnosticText.Safe(message)));
+
+    private readonly long _fileSizeLimit = FileSizeLimit;
+    internal ServiceLogSink(string logsPath, string processType, long fileSizeLimit) : this(logsPath, processType)
+        => _fileSizeLimit = fileSizeLimit;
+
     private readonly Dictionary<string, Logger> _writers = new(StringComparer.Ordinal);
     private readonly object _gate = new();
 
@@ -52,7 +61,8 @@ public class ServiceLogSink(string logsPath, string processType) : ILogEventSink
         Directory.CreateDirectory(logsPath);
         writer = new LoggerConfiguration().MinimumLevel.Verbose()
             .WriteTo.File(new ServiceLogFormatter(), Path.Combine(logsPath, service + "-.log"),
-                rollingInterval: RollingInterval.Day, shared: true, retainedFileCountLimit: 7, fileSizeLimitBytes: null)
+                rollingInterval: RollingInterval.Day, shared: true, retainedFileCountLimit: RetainedFileCount,
+                fileSizeLimitBytes: _fileSizeLimit, rollOnFileSizeLimit: true, retainedFileTimeLimit: TimeSpan.FromDays(7))
             .CreateLogger();
         _writers.Add(service, writer);
         return writer;

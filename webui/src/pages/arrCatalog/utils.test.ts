@@ -30,6 +30,15 @@ describe("reconcileArrCatalogSelection", () => {
       ),
     ).toBe("Radarr-4K");
   });
+
+  it("leaves the aggregate view when only one instance remains", () => {
+    expect(
+      reconcileArrCatalogSelection(
+        [{ name: "Radarr-4K", category: "movies", type: "radarr" }],
+        "aggregate",
+      ),
+    ).toBe("Radarr-4K");
+  });
 });
 
 describe("visibleRowsForCachedPage", () => {

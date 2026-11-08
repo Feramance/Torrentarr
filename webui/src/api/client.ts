@@ -1,3 +1,4 @@
+import type { TransferHistoryResponse, TransferRange } from "./types";
 import { clearUrlBaseCache, setUrlBaseFromMeta, webPath } from "./urlBase";
 import type {
   ArrListResponse,
@@ -951,38 +952,35 @@ export function getQbitOverviewPath(instance?: string): string {
 export async function watchConfiguration(
   receive: (event: import("./types").LiveConfigurationEvent) => void,
   signal: AbortSignal,
+  path = "/web/config/events",
 ): Promise<void> {
-  await fetchWithAuthRetry<void>(
-    "/web/config/events",
-    { signal },
-    async (response) => {
-      if (
-        !response.ok ||
-        !response.body ||
-        !response.headers.get("content-type")?.includes("text/event-stream")
-      )
-        throw new Error("Configuration stream unavailable");
-      const reader = response.body
-        .pipeThrough(new TextDecoderStream())
-        .getReader();
-      let pending = "";
-      try {
-        while (!signal.aborted) {
-          const { value, done } = await reader.read();
-          if (done) break;
-          pending += value;
-          let end: number;
-          while ((end = pending.indexOf("\n\n")) >= 0) {
-            const event = pending.slice(0, end);
-            pending = pending.slice(end + 2);
-            if (event.startsWith("data: ")) receive(JSON.parse(event.slice(6)));
-          }
+  await fetchWithAuthRetry<void>(path, { signal }, async (response) => {
+    if (
+      !response.ok ||
+      !response.body ||
+      !response.headers.get("content-type")?.includes("text/event-stream")
+    )
+      throw new Error("Configuration stream unavailable");
+    const reader = response.body
+      .pipeThrough(new TextDecoderStream())
+      .getReader();
+    let pending = "";
+    try {
+      while (!signal.aborted) {
+        const { value, done } = await reader.read();
+        if (done) break;
+        pending += value;
+        let end: number;
+        while ((end = pending.indexOf("\n\n")) >= 0) {
+          const event = pending.slice(0, end);
+          pending = pending.slice(end + 2);
+          if (event.startsWith("data: ")) receive(JSON.parse(event.slice(6)));
         }
-      } finally {
-        reader.releaseLock();
       }
-    },
-  );
+    } finally {
+      reader.releaseLock();
+    }
+  });
 }
 
 export const getTorrentAutomationStatus = (): Promise<
@@ -1013,4 +1011,50 @@ export async function getIssueDetails(
   pageSize: number;
 }> {
   return fetchJson(`/web/issues/${id}?page=${page}`);
+}
+
+export function watchStatistics(
+  receive: () => void,
+  signal: AbortSignal,
+): Promise<void> {
+  return watchConfiguration(() => receive(), signal, "/web/stats/events");
+}
+
+export const getFreeSpaceStatistics = (): Promise<
+  import("./types").FreeSpaceStatistics[]
+> => fetchJson("/web/free-space/stats");
+
+export function getTransferHistory(
+  instance: string | undefined,
+  range: TransferRange,
+) {
+  const params = new URLSearchParams({ range });
+  if (instance) params.set("instance", instance);
+  return fetchJson<TransferHistoryResponse>(
+    `/web/statistics/transfers?${params}`,
+  );
+}
+
+export interface CatalogStatistics {
+  unit: string;
+  total: number;
+  available: number;
+  monitored: number;
+  missing: number;
+}
+export function getCatalogStatistics(kind: string, instance?: string) {
+  const params = new URLSearchParams({ kind });
+  if (instance) params.set("instance", instance);
+  return fetchJson<CatalogStatistics>(`/web/statistics/catalog?${params}`);
+}
+
+export function getArrActivity(
+  range: import("./types").TransferRange,
+  worker?: string,
+) {
+  const params = new URLSearchParams({ range });
+  if (worker) params.set("worker", worker);
+  return fetchJson<import("./types").ArrActivityHistory>(
+    `/web/statistics/arr-activity?${params}`,
+  );
 }

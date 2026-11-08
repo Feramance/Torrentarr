@@ -353,7 +353,7 @@ public class WebUIConfig
     public string Username { get; set; } = "";
     public string PasswordHash { get; set; } = "";
     public bool LiveArr { get; set; } = true;
-    public string Theme { get; set; } = "Dark";
+    public string Theme { get; set; } = "System";
     public string ViewDensity { get; set; } = "Comfortable";
     public List<string> CorsAllowedOrigins { get; set; } = new();
     public OIDCConfig? OIDC { get; set; }
