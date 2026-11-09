@@ -470,7 +470,6 @@ class ArrWorkerService : BackgroundService
                 outcome = "waiting for torrent client";
                 _logger.LogInformation("Torrent processing deferred for {Instance}: {Reason}", _context.InstanceName, ex.Message);
                 await ObserveLoopAsync("torrent", false, cancellationToken);
-                scans.Reset();
                 await SleepLoopAsync("Torrent", "Waiting for client", TimeSpan.FromSeconds(5), cancellationToken, connectionRevision);
                 continue;
             }

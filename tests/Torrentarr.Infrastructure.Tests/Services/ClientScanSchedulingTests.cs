@@ -1,6 +1,7 @@
 using FluentAssertions;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Logging.Abstractions;
 using Moq;
 using Torrentarr.Core.Configuration;
@@ -92,9 +93,11 @@ public class ClientScanSchedulingTests
     }
 
     [Theory]
-    [InlineData(false)]
-    [InlineData(true)]
-    public async Task CategoryLoops_ProcessOnlyDueClientsAndStopCleanly(bool qbitOnly)
+    [InlineData(false, false)]
+    [InlineData(false, true)]
+    [InlineData(true, false)]
+    [InlineData(true, true)]
+    public async Task CategoryLoops_ProcessOnlyDueClientsAndStopCleanly(bool qbitOnly, bool failFirst)
     {
         var clock = new ScanClock();
         var config = Configuration();
@@ -105,6 +108,7 @@ public class ClientScanSchedulingTests
             .Returns((string _, IReadOnlySet<string>? ids, CancellationToken ct) =>
             {
                 seen.Add(ids!.ToHashSet());
+                if (failFirst && seen.Count == 1) throw new TorrentProcessingUnavailableException("client offline");
                 if (clock.Now >= DateTimeOffset.UnixEpoch.AddSeconds(120)) stop.Cancel();
                 return Task.CompletedTask;
             });
@@ -125,11 +129,12 @@ public class ClientScanSchedulingTests
             .AddSingleton(new QBitCategoryEnsureService(NullLogger<QBitCategoryEnsureService>.Instance, config, registry.Object)).BuildServiceProvider();
         var scopes = provider.GetRequiredService<IServiceScopeFactory>();
         var states = new ProcessStateManager();
+        var logger = new Mock<ILogger<QBitCategoryWorkerManager>>();
         Task running;
         const System.Reflection.BindingFlags flags = System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.NonPublic;
         if (qbitOnly)
         {
-            using var manager = new QBitCategoryWorkerManager(NullLogger<QBitCategoryWorkerManager>.Instance,
+            using var manager = new QBitCategoryWorkerManager(logger.Object,
                 config, scopes, states, connectivity.Object, reloader.Object)
             { Clock = clock };
             running = (Task)typeof(QBitCategoryWorkerManager).GetMethod("RunCategoryLoopAsync", flags)!
@@ -150,6 +155,12 @@ public class ClientScanSchedulingTests
         seen.Should().HaveCount(25);
         seen.Count(ids => ids.Contains("slow")).Should().Be(2);
         seen.Should().OnlyContain(ids => ids.Contains("fast"));
+        if (failFirst && !qbitOnly)
+            seen[1].Should().Equal(new[] { "fast" }, "a client outage must not force a full rescan");
+        if (failFirst && qbitOnly)
+            logger.Invocations.Where(i => i.Method.Name == "Log")
+                .Should().Contain(i => (LogLevel)i.Arguments[0]! == LogLevel.Information)
+                .And.NotContain(i => (LogLevel)i.Arguments[0]! == LogLevel.Error);
     }
 
     private static Mock<ITorrentClient> Client()

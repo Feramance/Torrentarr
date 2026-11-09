@@ -21,6 +21,7 @@ public class TorrentProcessor : ITorrentProcessor
     private const string AllowedStalledTag = "qBitrr-allowed_stalled";
     private const string FreeSpacePausedTag = "qBitrr-free_space_paused";
     private const string HnrActiveTag = "qBitrr-hnr_active";
+    private static readonly TimeSpan AllowlistRetryCooldown = TimeSpan.FromMinutes(15);
 
     private readonly ILogger<TorrentProcessor> _logger;
     private readonly ITorrentClientRegistry _qbitManager;
@@ -637,11 +638,13 @@ public class TorrentProcessor : ITorrentProcessor
             && IsCompleteState(state)
             && !string.IsNullOrEmpty(torrent.ContentPath)
             && torrent.CompletionOn < timeNow - 60;
-        if (completedForImport && !_cache.IsFileFiltered(torrent.ClientInstanceId, torrent.Hash))
+        if (completedForImport && !_cache.IsFileFiltered(torrent.ClientInstanceId, torrent.Hash)
+            && !_cache.IsAllowlistRetryCoolingDown(torrent.ClientInstanceId, torrent.Hash, AllowlistRetryCooldown))
         {
             var filterResult = await ApplyFileFilterAsync(torrent, arrCfg!, client, completed: true, ct);
             if (filterResult.Deleted || !filterResult.Ready) return;
-            if (!filterResult.RetryCleanup) _cache.MarkFileFiltered(torrent.ClientInstanceId, torrent.Hash);
+            if (filterResult.RetryCleanup) _cache.MarkAllowlistRetry(torrent.ClientInstanceId, torrent.Hash);
+            else _cache.MarkFileFiltered(torrent.ClientInstanceId, torrent.Hash);
         }
 
         // ================================================================================
