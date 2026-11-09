@@ -15,6 +15,7 @@ public class TorrentCacheService : ITorrentCacheService
     private readonly Dictionary<string, DateTime> _ignoreCache = new(StringComparer.OrdinalIgnoreCase);
     private readonly HashSet<string> _filePrioritiesAppliedHashes = new(StringComparer.Ordinal);
     private readonly HashSet<string> _fileFilteredHashes = new(StringComparer.Ordinal);
+    private readonly Dictionary<string, DateTime> _allowlistRetryAt = new(StringComparer.Ordinal);
     private readonly Dictionary<string, Dictionary<string, string>> _diagnostics = new(StringComparer.Ordinal);
     private readonly object _lock = new();
     private DateTime _lastFullClearUtc = DateTime.MinValue;
@@ -125,6 +126,23 @@ public class TorrentCacheService : ITorrentCacheService
         }
     }
 
+    public bool IsAllowlistRetryCoolingDown(string qBitInstanceName, string hash, TimeSpan cooldown)
+    {
+        lock (_lock)
+        {
+            return _allowlistRetryAt.TryGetValue(FileStateKey(qBitInstanceName, hash), out var at)
+                && DateTime.UtcNow - at < cooldown;
+        }
+    }
+
+    public void MarkAllowlistRetry(string qBitInstanceName, string hash)
+    {
+        lock (_lock)
+        {
+            _allowlistRetryAt[FileStateKey(qBitInstanceName, hash)] = DateTime.UtcNow;
+        }
+    }
+
     public bool DiagnosticChanged(string instanceId, string hash, string stream, string? evidence)
     {
         lock (_lock)
@@ -153,7 +171,7 @@ public class TorrentCacheService : ITorrentCacheService
         {
             var key = FileStateKey(instanceId, hash);
             _categoryCache.Remove(key); _nameCache.Remove(key); _ignoreCache.Remove(key);
-            _filePrioritiesAppliedHashes.Remove(key); _fileFilteredHashes.Remove(key); _diagnostics.Remove(key);
+            _filePrioritiesAppliedHashes.Remove(key); _fileFilteredHashes.Remove(key); _diagnostics.Remove(key); _allowlistRetryAt.Remove(key);
         }
     }
 
@@ -167,6 +185,7 @@ public class TorrentCacheService : ITorrentCacheService
             _filePrioritiesAppliedHashes.Clear();
             _fileFilteredHashes.Clear();
             _diagnostics.Clear();
+            _allowlistRetryAt.Clear();
             _lastFullClearUtc = DateTime.UtcNow;
             _logger.LogTrace("All caches cleared");
         }
@@ -185,6 +204,7 @@ public class TorrentCacheService : ITorrentCacheService
                 _filePrioritiesAppliedHashes.Clear();
                 _fileFilteredHashes.Clear();
                 _diagnostics.Clear();
+                _allowlistRetryAt.Clear();
                 _lastFullClearUtc = now;
                 _logger.LogInformation("Periodic full cache clear (every {Hours}h) to bound memory growth", (int)FullClearInterval.TotalHours);
             }

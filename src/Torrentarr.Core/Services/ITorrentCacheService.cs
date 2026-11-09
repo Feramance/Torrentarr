@@ -71,6 +71,16 @@ public interface ITorrentCacheService
     /// </summary>
     void MarkFileFiltered(string qBitInstanceName, string hash);
 
+    /// <summary>
+    /// Check whether a deferred allowlist cleanup is still inside its retry cooldown.
+    /// </summary>
+    bool IsAllowlistRetryCoolingDown(string qBitInstanceName, string hash, TimeSpan cooldown);
+
+    /// <summary>
+    /// Record a deferred allowlist cleanup so the next retry waits for the cooldown.
+    /// </summary>
+    void MarkAllowlistRetry(string qBitInstanceName, string hash);
+
     /// <summary>Report a changed diagnostic; null evidence clears a resolved stream. State is scoped to client and torrent.</summary>
     bool DiagnosticChanged(string instanceId, string hash, string stream, string? evidence);
 }

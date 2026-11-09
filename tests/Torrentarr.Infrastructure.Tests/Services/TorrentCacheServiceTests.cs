@@ -104,6 +104,7 @@ public class TorrentCacheServiceTests
         svc.AddToIgnoreCache("qBit", "h1", TimeSpan.FromHours(1));
         svc.MarkFilePrioritiesApplied("qBit", "h1");
         svc.MarkFileFiltered("qBit", "h1");
+        svc.MarkAllowlistRetry("qBit", "h1");
 
         svc.Clear();
 
@@ -112,6 +113,20 @@ public class TorrentCacheServiceTests
         svc.IsInIgnoreCache("qBit", "h1").Should().BeFalse();
         svc.AreFilePrioritiesApplied("qBit", "h1").Should().BeFalse();
         svc.IsFileFiltered("qBit", "h1").Should().BeFalse();
+        svc.IsAllowlistRetryCoolingDown("qBit", "h1", TimeSpan.FromHours(1)).Should().BeFalse();
+    }
+
+    [Fact]
+    public void AllowlistRetryCooldown_DefersRetriesUntilCooldownElapses()
+    {
+        var svc = CreateService();
+
+        svc.IsAllowlistRetryCoolingDown("qBit", "h1", TimeSpan.FromHours(1)).Should().BeFalse();
+        svc.MarkAllowlistRetry("qBit", "h1");
+
+        svc.IsAllowlistRetryCoolingDown("qBit", "h1", TimeSpan.FromHours(1)).Should().BeTrue();
+        svc.IsAllowlistRetryCoolingDown("qBit-b", "h1", TimeSpan.FromHours(1)).Should().BeFalse();
+        svc.IsAllowlistRetryCoolingDown("qBit", "h1", TimeSpan.Zero).Should().BeFalse();
     }
 
     [Fact]
