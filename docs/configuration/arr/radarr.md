@@ -1,6 +1,6 @@
 ﻿# Radarr Configuration
 
-This guide covers how to configure Radarr instances in Torrentarr for movie management, automated searching, and quality upgrades.
+This guide covers how to configure Radarr instances in Torrentarr for movie management, automated searching, and quality upgrades. Torrentarr supports Radarr v3.x through v7.x; all versions use the `/api/v3` API.
 
 ---
 

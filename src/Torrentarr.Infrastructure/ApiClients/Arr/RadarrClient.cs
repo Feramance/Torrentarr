@@ -486,7 +486,8 @@ public class QualityProfile
     [JsonProperty("name")]
     public string Name { get; set; } = "";
 
-    [JsonProperty("minCustomFormatScore")]
+    // Arr APIs expose this as minFormatScore; DB column is MinCustomFormatScore.
+    [JsonProperty("minFormatScore")]
     public int? MinCustomFormatScore { get; set; }
 
     [JsonProperty("cutoff")]
