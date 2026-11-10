@@ -329,7 +329,7 @@ public sealed class OperationalIssueMonitorTests
     }
     private sealed class TemporaryDirectory : IDisposable
     {
-        public string Path { get; } = Directory.CreateTempSubdirectory("migration-issues-").FullName;
+        public string Path { get; } = Directory.CreateDirectory(System.IO.Path.Combine(TestPaths.TempPath, "migration-issues-" + Guid.NewGuid().ToString("N"))).FullName;
         public void Dispose() => Directory.Delete(Path, recursive: true);
     }
 
