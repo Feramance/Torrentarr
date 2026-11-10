@@ -864,14 +864,14 @@ Sonarr and Lidarr catalogs always browse as series and artist rows (qBitrr 5.14)
 ### Theme
 
 ```toml
-Theme = "Dark"
+Theme = "System"
 ```
 
 **Type:** String
-**Default:** `"Dark"`
-**Options:** `Dark`, `Light`
+**Default:** `"System"`
+**Options:** `System`, `Light`, `Dark`, `Midnight`
 
-WebUI color theme.
+WebUI color theme. System follows the operating system preference; Midnight uses a black background.
 
 - `Dark` - Dark mode (easier on eyes)
 - `Light` - Light mode (better in bright environments)

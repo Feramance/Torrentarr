@@ -14,8 +14,7 @@ export function ArrBrowseModeToggle({
 }: ArrBrowseModeToggleProps): JSX.Element {
   return (
     <div
-      className="inline"
-      style={{ gap: 6 }}
+      className="inline arr-browse-toggle"
       role="group"
       aria-label="Browse layout"
     >

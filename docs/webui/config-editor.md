@@ -1,15 +1,39 @@
-﻿# Configuration editor
+# Configuration editor
 
-The Config view edits the running Host's TOML through its configuration API. Open
-Configure on a torrent client, Arr instance, Global Settings, Web Settings or
-Authentication. Identity and connection sections start open; secondary sections
-collapse and open when they contain validation errors. Searchable controls retain
-password redaction, tooltips, connection testing and specialized collection editors.
-Unsaved edits remain local until saved; cancelling does not publish them.
+The Config view edits the running Host's TOML through its configuration API.
+Use the Settings, Web Settings, Authentication, Torrent Clients, and Integrations
+tabs. Integrations has separate Radarr, Sonarr, Lidarr, and Readarr sections,
+including empty types. Torrent Clients groups legacy and canonical entries by
+configured type, with qBittorrent first. Each torrent-client section shows its
+instance count and an **Add Instance** button that uses that type's defaults.
+Integrations instead has one **Add Instance** button above its sections; it
+opens an integration-type picker and creates the chosen type's next instance.
+
+Instance rows show address, category scope, enabled state, and unsaved changes;
+client rows also show scan intervals, while integration rows show search/processing
+mode. Both instance tabs start with their overview; select a row or add an instance
+to open its inline editor. Returning to the tab hides the editor while retaining
+its draft. Field search appears only while an editor is open. Editors and Save
+controls use the page scroll, without a nested modal scroll area.
+
+Use **Find a setting in this section** to search field names and descriptions.
+Matching groups open automatically. Dirty section markers and the Unsaved changes
+badge identify local drafts. Switching sections preserves those drafts; saving
+publishes only the selected section. Leaving Config retains its existing
+unsaved-change confirmation.
+
+The editors preserve password redaction, validation, connection testing, tooltips,
+and specialized collection editors. Destructive changes still require confirmation.
+
+Ordinary successful saves report **Configuration saved**. Pending application,
+errors, and warnings remain visible. Only explicit restart requirements returned
+by the save API open a **Restart now / Later** confirmation listing affected
+components. Deferral or restart failure keeps a pending notice with retry; a failed
+save never triggers a restart.
 
 ## Section organization
 
-| Dialog | Ordered sections |
+| Editor | Ordered sections |
 | --- | --- |
 | Torrent client | General; Connection; Torrent scope; Download location; Free-space monitors; Seeding and Hit & Run; Trackers; Manage shortcut |
 | Arr instance | General; Connection; Categories and torrent clients; Entry search; Quality profiles; Request integrations; Torrent handling; Seeding; Trackers |
@@ -20,7 +44,7 @@ Unsaved edits remain local until saved; cancelling does not publish them.
 Host, Port, Username, Password and Skip TLS Verify are consecutive in a client
 Connection section. Arr URI, API key, TLS and connection testing stay together;
 request integration credentials and their TLS settings are grouped. Each exposed
-field appears once in its dialog. Unrecognized saved fields survive ordinary
+field appears once in its editor. Unrecognized saved fields survive ordinary
 partial updates. Blank redacted password placeholders retain the stored secret;
 use the password control to explicitly replace a credential.
 
@@ -59,7 +83,7 @@ monitors after ambiguous multi-client migration. See [storage migration](../conf
 
 ## Manage tools
 
-Maintenance forms are available only in **Manage**. The torrent-client dialog shows a compact summary and an **Open Manage** shortcut selecting that saved client. Save a new or renamed client before using it. The shortcut preserves other unsaved client edits.
+Maintenance forms are available only in **Manage**. The torrent-client editor shows a compact summary and an **Open Manage** shortcut selecting that saved client. Save a new or renamed client before using it. The shortcut preserves other unsaved client edits.
 
 Manage groups all ten tools under Recovery, Organization, and Storage. Expand one card for its settings and actions, with Advanced initially collapsed. Shared scope, mappings, recycling, and safeguards appear once in Shared settings. Save and Discard affect only the selected client's maintenance settings.
 

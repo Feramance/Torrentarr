@@ -183,6 +183,11 @@ builder.Services.AddHttpClient("ArrOpenSkipTls").ConfigurePrimaryHttpMessageHand
     ServerCertificateCustomValidationCallback = HttpClientHandler.DangerousAcceptAnyServerCertificateValidator
 });
 builder.Services.AddScoped<IDatabaseHealthService, DatabaseHealthService>();
+builder.Services.AddSingleton<StatisticsEvents>();
+builder.Services.AddHostedService(sp => sp.GetRequiredService<StatisticsEvents>());
+builder.Services.AddSingleton<TorrentStatisticsSnapshots>();
+builder.Services.AddSingleton<FreeSpaceObservations>();
+builder.Services.AddScoped<IFreeSpaceService, FreeSpaceService>();
 builder.Services.AddScoped<CatalogRollupService>();
 builder.Services.AddScoped<ArrThumbnailService>();
 
@@ -849,6 +854,7 @@ app.MapPost("/web/config", async (HttpContext ctx, TorrentarrConfig config, Conf
     {
         status = "ok",
         configReloaded = reloaded,
+        restartRequirements = Array.Empty<ConfigurationRestartRequirement>(),
         application = reloader.GetStatus(),
         reloadType,
         affectedInstances
@@ -1235,14 +1241,11 @@ foreach (var prefix in new[] { "/web", "/api" })
 app.MapTorrentMaintenanceEndpoints("/web", standalone: true);
 app.MapTorrentMaintenanceEndpoints("/api", standalone: true);
 
-app.MapTransferHistory();
-app.MapArrActivity();
-
-app.MapGet("/web/qbit/overview", async (HttpRequest request, TorrentarrConfig cfg, ITorrentClientRegistry clientRegistry, CancellationToken ct) =>
+app.MapGet("/web/qbit/overview", async (HttpRequest request, TorrentarrConfig cfg, ITorrentClientRegistry clientRegistry, TorrentStatisticsSnapshots snapshots, CancellationToken ct) =>
 {
     var instance = request.Query["instance"].FirstOrDefault();
     await clientRegistry.EnsureAllConnectedAsync(cfg.GetAllTorrentClients(), ct);
-    return Results.Ok(await QbitOverviewBuilder.BuildAsync(cfg, clientRegistry, instance, ct));
+    return Results.Ok(await QbitOverviewBuilder.BuildAsync(cfg, clientRegistry, instance, ct, snapshots));
 });
 
 // Radarr movies for specific category
@@ -1635,11 +1638,11 @@ app.MapPost("/web/arr/rebuild", async (HttpContext ctx, TorrentarrConfig config)
 });
 
 // §6.5: qBit categories — seeding config + live torrent stats per category
-app.MapGet("/web/qbit/categories", async (TorrentarrConfig config, ITorrentClientRegistry registry, CancellationToken ct) =>
+app.MapGet("/web/qbit/categories", async (TorrentarrConfig config, ITorrentClientRegistry registry, TorrentStatisticsSnapshots snapshots, CancellationToken ct) =>
 {
     await registry.EnsureAllConnectedAsync(config.GetAllTorrentClients(), ct);
-    var categories = await TorrentClientApiBuilder.CategoriesAsync(config, registry, extendedPolicy: true, ct: ct);
-    return Results.Ok(new { categories, ready = true });
+    var categories = await TorrentClientApiBuilder.CategoriesAsync(config, registry, extendedPolicy: true, ct: ct, snapshots: snapshots);
+    return Results.Ok(new { categories, ready = true, observations = snapshots.Describe(config, registry) });
 });
 
 app.MapGet("/web/config/full", (TorrentarrConfig config, IConfigReloader reloader) =>
@@ -1713,6 +1716,9 @@ app.MapGet("/web/config/path", (IConfigReloader reloader) =>
     return Results.Ok(new { path = reloader.ConfigPath });
 });
 
+app.MapStatisticsEndpoints();
+app.MapTransferHistory();
+app.MapArrActivity();
 app.MapArrCatalogEndpoints();
 
 // Meta info — matches frontend MetaResponse interface (includes auth flags)

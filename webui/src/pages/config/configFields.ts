@@ -65,6 +65,12 @@ function fields(
       allowNegative: f.allowNegative,
       applyLive: f.applyLive ?? undefined,
       requiresRestart: f.requiresRestart ?? undefined,
+      restartComponent:
+        f.section === "Arr"
+          ? "Arr worker"
+          : f.section === "WebUI"
+            ? "WebUI"
+            : "Torrentarr",
       minimum: f.minimum,
       maximum: f.maximum,
       ...(section === "WebUI"

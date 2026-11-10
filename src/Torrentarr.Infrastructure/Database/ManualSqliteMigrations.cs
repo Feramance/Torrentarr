@@ -164,6 +164,14 @@ public static class ManualSqliteMigrations
             MarkManualMigrationApplied(db, emptyArrInstanceCleanup);
         }
 
+        // QueueDepth was sampled from queue tables that were never populated; clear the false zeros once.
+        const string resetArrQueueDepth = "arr_activity_queue_depth_reset_v1";
+        if (!IsManualMigrationApplied(db, resetArrQueueDepth))
+        {
+            db.Database.ExecuteSqlRaw("UPDATE torrentarr_arr_samples SET QueueDepth = NULL");
+            MarkManualMigrationApplied(db, resetArrQueueDepth);
+        }
+
         CreateIndexIfMissing(db, "idx_arrinstance_movies", "moviesfilesmodel", "arrinstance");
         CreateIndexIfMissing(db, "idx_arrinstance_episodes", "episodefilesmodel", "arrinstance");
         CreateIndexIfMissing(db, "idx_arrinstance_series", "seriesfilesmodel", "arrinstance");

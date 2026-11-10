@@ -1,25 +1,20 @@
 import type { ArrActivityPoint, ArrActivitySeries } from "../api/types";
+import { ARR_TYPES, arrTypeLabel } from "../config/arrSections";
 export type ActivityMetric =
   | "queueDepth"
   | "searchesCompleted"
   | "importsConfirmed";
-const typeNames: Record<string, string> = {
-  radarr: "Radarr",
-  sonarr: "Sonarr",
-  lidarr: "Lidarr",
-  readarr: "Readarr",
-};
 export function groupActivity(
   series: ArrActivitySeries[],
   grouping: "type" | "worker",
 ): ArrActivitySeries[] {
   if (grouping === "worker") return series;
-  return Object.keys(typeNames).flatMap((type) => {
+  return ARR_TYPES.flatMap((type) => {
     const members = series.filter((s) => s.type === type);
     if (!members.length) return [];
     return [
       {
-        instance: typeNames[type]!,
+        instance: arrTypeLabel(type),
         type,
         points: members[0]!.points.map((point, index) => {
           const rows = members
@@ -46,19 +41,14 @@ export function groupActivity(
     ];
   });
 }
-export function workerHue(name: string): number {
-  let hash = 2166136261;
-  for (const character of name)
-    hash = Math.imul(hash ^ character.charCodeAt(0), 16777619);
-  return (hash >>> 0) % 360;
-}
 export function activityColor(
   series: ArrActivitySeries,
   grouping: "type" | "worker",
+  index = 0,
 ): string {
   return grouping === "type"
     ? `var(--arr-${series.type})`
-    : `hsl(${workerHue(series.instance)} 58% var(--chart-worker-lightness))`;
+    : `hsl(${(index * 137.508) % 360} 58% var(--chart-worker-lightness))`;
 }
 export function activityCoverage(
   point: ArrActivityPoint,
@@ -92,21 +82,7 @@ export function activityValue(
   metric: ActivityMetric,
 ): string {
   if (!point || point[metric] == null) return "Unavailable";
-  const value = point[metric]!.toLocaleString(undefined, {
-    maximumFractionDigits: metric === "queueDepth" ? 1 : 0,
+  return point[metric]!.toLocaleString(undefined, {
+    maximumFractionDigits: 0,
   });
-  return activityCoverage(point, metric) === point.expectedSamples
-    ? value
-    : `${value} (partial)`;
-}
-
-export function activityDash(
-  series: ArrActivitySeries,
-  grouping: "type" | "worker",
-): string | undefined {
-  const index =
-    grouping === "worker"
-      ? workerHue(`line:${series.instance}`) % 4
-      : ["radarr", "sonarr", "lidarr", "readarr"].indexOf(series.type);
-  return [undefined, "6 3", "2 3", "8 3 2 3"][index];
 }

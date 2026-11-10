@@ -102,6 +102,13 @@ beforeEach(() => {
   });
 });
 describe("torrent overview parity", () => {
+  it("loads the only configured instance instead of the aggregate view", async () => {
+    view();
+    await waitFor(() =>
+      expect(api.getQbitOverview).toHaveBeenCalledWith("qBit-home"),
+    );
+    expect(screen.queryByText(/All qBittorrent/)).not.toBeInTheDocument();
+  });
   it("expands a category into torrent metrics and retains aggregate statistics", async () => {
     view();
     fireEvent.click(await screen.findByRole("button", { name: /movies.*Arr/ }));
@@ -194,11 +201,15 @@ it("fetches the newly selected instance while an old overview is pending", async
           old = resolve;
         }),
   );
-  view();
+  const { rerender } = view();
   await waitFor(() => expect(api.getQbitOverview).toHaveBeenCalled());
-  fireEvent.change(screen.getByLabelText("Instance"), {
-    target: { value: "qBit-remote" },
-  });
+  rerender(
+    <ToastProvider>
+      <WebUIProvider>
+        <QbitCategoriesView active selectedInstance="qBit-remote" />
+      </WebUIProvider>
+    </ToastProvider>,
+  );
   await screen.findByRole("button", { name: /remote-only/ });
   await act(async () =>
     old({ ready: true, instances: [], categories: [category()] }),
@@ -225,29 +236,27 @@ it("clears an old search and opens shared categories across all clients", async 
       { ...category(), qbitInstance: "qBit-remote" },
     ].filter((cat) => !instance || cat.qbitInstance === instance),
   }));
-  const node = (active: boolean) => (
+  const node = (active: boolean, selectedInstance = "qBit-home") => (
     <ToastProvider>
       <WebUIProvider>
-        <QbitCategoriesView active={active} />
+        <QbitCategoriesView
+          active={active}
+          selectedInstance={selectedInstance}
+        />
       </WebUIProvider>
     </ToastProvider>
   );
   const result = render(node(true));
   await screen.findAllByRole("button", { name: /movies.*Arr/ });
-  fireEvent.change(screen.getByLabelText("Instance"), {
-    target: { value: "qBit-home" },
-  });
   fireEvent.change(screen.getByLabelText("Search"), {
     target: { value: "not-a-match" },
   });
   result.rerender(node(false));
   sessionStorage.setItem("qbitrr:focusQbitCategory", "movies");
   sessionStorage.removeItem("torrentarr:focusQbitInstance");
-  result.rerender(node(true));
+  result.rerender(node(true, "aggregate"));
   await waitFor(() => expect(screen.getByLabelText("Search")).toHaveValue(""));
-  await waitFor(() =>
-    expect(screen.getByLabelText("Instance")).toHaveValue("aggregate"),
-  );
+  expect(screen.queryByLabelText("Instance")).not.toBeInTheDocument();
   await waitFor(() => {
     const buttons = screen.getAllByRole("button", { name: /movies.*Arr/ });
     expect(buttons).toHaveLength(2);

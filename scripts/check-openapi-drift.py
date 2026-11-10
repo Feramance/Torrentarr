@@ -169,6 +169,14 @@ def compare_content_schemas(
                      if key != "description"} == {"type": "string", "nullable": True}
                 and "warning" not in ta_schema.get("required", [])):
             ta_schema["properties"].pop("warning")  # Optional activation warning preserves the upstream payload.
+        if (context in {"response 200 on POST /api/config", "response 200 on POST /web/config"}
+                and media == "application/json" and "restartRequirements" not in qb_schema.get("properties", {})
+                and ta_schema.get("properties", {}).get("restartRequirements") == {
+                    "type": "array", "items": {"type": "object", "properties": {
+                        key: {"type": "string"} for key in ("component", "category", "kind")
+                    }, "required": ["category", "component", "kind"]}}
+                and "restartRequirements" not in ta_schema.get("required", [])):
+            ta_schema["properties"].pop("restartRequirements")
         if qb_schema != ta_schema:
             errors.append(f"{context} schema differs for {media}")
 

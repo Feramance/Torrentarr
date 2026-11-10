@@ -10,59 +10,17 @@ export function webuiChangeNeedsPageReload(
 }
 
 export function formatConfigSaveMessage(
-  reloadType: string,
-  configReloaded: boolean,
-  affectedInstances: string[] | undefined,
-  changedKeys: readonly string[],
+  _reloadType: string,
+  _configReloaded: boolean,
+  _affectedInstances: string[] | undefined,
+  _changedKeys: readonly string[],
   application?: ConfigurationApplicationStatus,
 ): string {
-  let message = "Configuration saved";
-  switch (reloadType) {
-    case "full":
-      message += " • All instances reloaded";
-      break;
-    case "multi_arr":
-      if (affectedInstances?.length) {
-        message += ` • Reloaded ${affectedInstances.length} instances: ${affectedInstances.join(", ")}`;
-      }
-      break;
-    case "single_arr":
-      if (affectedInstances?.length) {
-        message += ` • Reloaded: ${affectedInstances.join(", ")}`;
-      }
-      break;
-    case "live":
-      message +=
-        application?.state === "error"
-          ? " • Some changes could not be applied"
-          : configReloaded
-            ? " • Applied live"
-            : " • Waiting for active operations to finish";
-      break;
-    case "qbit_hot":
-      message += configReloaded
-        ? " • qBittorrent settings reloaded"
-        : " • qBittorrent settings updated";
-      break;
-    case "webui":
-      if (webuiChangeNeedsPageReload(changedKeys)) {
-        message += " • WebUI restarting...";
-      } else {
-        message += " • WebUI settings updated";
-      }
-      break;
-    case "frontend":
-      message += " • Theme/display settings updated";
-      break;
-    case "none":
-      break;
-    default:
-      message += configReloaded
-        ? " • Settings reloaded"
-        : " • Applied without restart";
-      break;
-  }
-  return message;
+  if (application?.state === "error")
+    return "Configuration saved • Some changes could not be applied";
+  if (application?.state === "pending")
+    return "Configuration saved • Waiting for active operations to finish";
+  return "Configuration saved";
 }
 
 export function shouldReloadPageAfterSave(

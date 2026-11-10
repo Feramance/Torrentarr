@@ -982,7 +982,7 @@ public class ConfigurationLoader
                 ("Username", ""),
                 ("PasswordHash", ""),
                 ("LiveArr", true),
-                ("Theme", "Dark"),
+                ("Theme", "System"),
                 ("ViewDensity", "Comfortable"),
             };
             foreach (var (key, defaultVal) in webuiDefaults)
@@ -1011,8 +1011,14 @@ public class ConfigurationLoader
             // Normalize Theme casing
             if (webui.TryGetValue("Theme", out var themeVal))
             {
-                var themeStr = themeVal?.ToString()?.Trim().ToLowerInvariant() ?? "dark";
-                var normalized = themeStr == "light" ? "Light" : "Dark";
+                var themeStr = themeVal?.ToString()?.Trim().ToLowerInvariant() ?? "system";
+                var normalized = themeStr switch
+                {
+                    "light" => "Light",
+                    "dark" => "Dark",
+                    "midnight" => "Midnight",
+                    _ => "System",
+                };
                 if (themeVal?.ToString() != normalized)
                 {
                     webui["Theme"] = normalized;
@@ -1597,7 +1603,7 @@ public class ConfigurationLoader
             webui.AllowInsecureTokenQuery = Convert.ToBoolean(allowInsecureTokenQuery);
 
         if (table.TryGetValue("Theme", out var theme))
-            webui.Theme = theme?.ToString() ?? "Dark";
+            webui.Theme = theme?.ToString() ?? "System";
 
         if (table.TryGetValue("ViewDensity", out var viewDensity))
             webui.ViewDensity = viewDensity?.ToString() ?? "Comfortable";
@@ -2032,7 +2038,7 @@ public class ConfigurationLoader
                 Username = "",
                 PasswordHash = "",
                 LiveArr = true,
-                Theme = "Dark",
+                Theme = "System",
                 ViewDensity = "Comfortable"
             },
             ArrInstances = GenerateDefaultArrInstances()

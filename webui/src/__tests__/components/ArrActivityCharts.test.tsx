@@ -5,7 +5,6 @@ import {
   groupActivity,
   activityPath,
   activityColor,
-  workerHue,
   activityValue,
 } from "../../utils/arrActivityChart";
 import { ArrActivityCharts } from "../../components/ArrActivityCharts";
@@ -18,19 +17,19 @@ vi.mock("../../api/client", async (original) => ({
 }));
 const point = (
   queueDepth: number | null,
-  queueSamples = 5,
+  queueSamples = 60,
 ): ArrActivityPoint => ({
   timestamp: "2026-11-04T11:55:00Z",
   queueDepth,
   queueSamples,
-  completionSamples: 5,
-  expectedSamples: 5,
+  completionSamples: 60,
+  expectedSamples: 60,
   searchesCompleted: 0,
   importsConfirmed: 1,
 });
 const history: ArrActivityHistory = {
   range: "24h",
-  bucketMinutes: 5,
+  bucketMinutes: 60,
   generatedAt: "2026-11-04T12:00:00Z",
   series: [
     { instance: "Sonarr-one", type: "sonarr", points: [point(3)] },
@@ -53,12 +52,13 @@ describe("Arr activity", () => {
     const sonarr = rows.find((s) => s.type === "sonarr")!;
     expect(sonarr.points[0]!.queueDepth).toBe(7);
     expect(sonarr.points[0]!.searchesCompleted).toBe(0);
-    expect(sonarr.points[0]!.expectedSamples).toBe(10);
+    expect(sonarr.points[0]!.expectedSamples).toBe(120);
     const partial = groupActivity(
       [{ ...history.series[0]!, points: [point(null, 0)] }, history.series[1]!],
       "type",
     )[0]!;
-    expect(activityValue(partial.points[0], "queueDepth")).toBe("4 (partial)");
+    expect(activityValue(partial.points[0], "queueDepth")).toBe("4");
+    expect(activityValue(point(4.6), "queueDepth")).toBe("5");
     expect(activityPath(partial.points, "queueDepth", 10)).toBe("");
     expect(
       activityPath(
@@ -69,9 +69,11 @@ describe("Arr activity", () => {
     ).toHaveLength(2);
   });
   it("keeps worker colors deterministic and uses distinct type colors", () => {
-    expect(workerHue("Sonarr-one")).toBe(workerHue("Sonarr-one"));
-    expect(activityColor(history.series[0]!, "worker")).not.toBe(
-      activityColor(history.series[1]!, "worker"),
+    expect(activityColor(history.series[0]!, "worker", 0)).toBe(
+      activityColor(history.series[0]!, "worker", 0),
+    );
+    expect(activityColor(history.series[0]!, "worker", 0)).not.toBe(
+      activityColor(history.series[1]!, "worker", 1),
     );
     expect(activityColor(history.series[0]!, "type")).toBe("var(--arr-sonarr)");
     expect(activityColor(history.series[2]!, "type")).toBe("var(--arr-radarr)");
@@ -100,24 +102,21 @@ describe("Arr activity", () => {
       target: { value: "importsConfirmed" },
     });
     expect(
-      screen.getByText("Torrent imports confirmed · per 5 min"),
+      screen.getByText("Torrent imports confirmed · per hour"),
     ).toBeInTheDocument();
     expect(
       screen.getByRole("slider", { name: "Inspect activity time" }),
     ).toBeInTheDocument();
-    const details = screen.getByText("View activity data").closest("details")!;
-    details.open = true;
-    fireEvent(details, new Event("toggle"));
-    expect(screen.getByRole("table")).toHaveTextContent("Sonarr-two");
-    expect(screen.getByRole("table")).not.toHaveTextContent("Sonarr-one");
+    expect(screen.queryByText("View activity data")).not.toBeInTheDocument();
+    expect(screen.queryByRole("table")).not.toBeInTheDocument();
   });
-  it("polls only while visible, active and live, with manual refresh support", async () => {
+  it("refreshes active graphs from database notifications independently of Live", async () => {
     vi.useFakeTimers();
     vi.mocked(getArrActivity).mockResolvedValue(history);
     const result = render(<ArrActivityCharts active />);
     await settle();
     await act(async () => {
-      await vi.advanceTimersByTimeAsync(60000);
+      window.dispatchEvent(new Event("torrentarr:statistics-updated"));
     });
     expect(getArrActivity).toHaveBeenCalledTimes(2);
     settings.liveArr = false;
@@ -144,5 +143,103 @@ describe("Arr activity", () => {
       "Arr activity unavailable",
     );
     expect(screen.queryByRole("img")).not.toBeInTheDocument();
+  });
+  it("restores the latest interval when hover ends, including after manual inspection", async () => {
+    const twoIntervals = {
+      ...history,
+      series: history.series.map((series) => ({
+        ...series,
+        points: [
+          { ...point(1), timestamp: "2026-11-04T11:50:00Z" },
+          ...series.points,
+        ],
+      })),
+    };
+    vi.mocked(getArrActivity).mockResolvedValue(twoIntervals);
+    render(<ArrActivityCharts active />);
+    await settle();
+    const slider = screen.getByRole("slider", {
+      name: "Inspect activity time",
+    });
+    const plot = screen.getByRole("img", { name: /^Queue depth/ });
+    vi.spyOn(plot, "getBoundingClientRect").mockReturnValue({
+      left: 0,
+      width: 800,
+    } as DOMRect);
+    expect(slider).toHaveValue("1");
+    fireEvent.change(slider, { target: { value: "0" } });
+    expect(slider).toHaveValue("0");
+    fireEvent.pointerMove(plot, { pointerType: "mouse", clientX: 776 });
+    expect(slider).toHaveValue("1");
+    fireEvent.pointerMove(plot, { pointerType: "mouse", clientX: 24 });
+    expect(slider).toHaveValue("0");
+    fireEvent.pointerLeave(plot, { pointerType: "mouse" });
+    expect(slider).toHaveValue("1");
+    fireEvent.pointerMove(plot, { pointerType: "mouse", clientX: 24 });
+    fireEvent.pointerCancel(plot, { pointerType: "mouse" });
+    expect(slider).toHaveValue("1");
+    vi.mocked(getArrActivity).mockResolvedValue({
+      ...twoIntervals,
+      series: twoIntervals.series.map((series) => ({
+        ...series,
+        points: [
+          ...series.points,
+          { ...point(9), timestamp: "2026-11-04T12:00:00Z" },
+        ],
+      })),
+    });
+    window.dispatchEvent(new Event("torrentarr:statistics-updated"));
+    await settle();
+    expect(slider).toHaveValue("2");
+  });
+
+  it("clears keyboard, mouse, touch, and obsolete activity inspections", async () => {
+    vi.mocked(getArrActivity).mockResolvedValue({
+      ...history,
+      series: history.series.map((series) => ({
+        ...series,
+        points: [
+          { ...point(1), timestamp: "2026-11-04T11:50:00Z" },
+          ...series.points,
+        ],
+      })),
+    });
+    const view = render(<ArrActivityCharts active />);
+    await settle();
+    const slider = screen.getByRole("slider", {
+      name: "Inspect activity time",
+    });
+    const plot = () => screen.getByRole("img", { name: /^Queue depth/ });
+    const marker = () => plot().querySelector("circle")!;
+    fireEvent.focus(marker());
+    expect(slider).toHaveValue("0");
+    fireEvent.blur(marker());
+    expect(slider).toHaveValue("1");
+    fireEvent.pointerDown(marker(), { pointerType: "mouse" });
+    fireEvent.focus(marker());
+    fireEvent.click(marker());
+    fireEvent.pointerLeave(plot(), { pointerType: "mouse" });
+    expect(slider).toHaveValue("1");
+    fireEvent.pointerDown(marker(), { pointerType: "touch" });
+    fireEvent.pointerLeave(plot(), { pointerType: "touch" });
+    expect(slider).toHaveValue("0");
+    fireEvent.pointerDown(document.body, { pointerType: "touch" });
+    expect(slider).toHaveValue("1");
+    fireEvent.focus(marker());
+    fireEvent.keyDown(marker(), { key: "Escape" });
+    expect(slider).toHaveValue("1");
+    fireEvent.focus(marker());
+    fireEvent.change(screen.getByLabelText("Group activity by"), {
+      target: { value: "worker" },
+    });
+    expect(slider).toHaveValue("1");
+    fireEvent.focus(marker());
+    fireEvent.change(screen.getByLabelText("Completed activity metric"), {
+      target: { value: "importsConfirmed" },
+    });
+    expect(slider).toHaveValue("1");
+    fireEvent.focus(marker());
+    view.rerender(<ArrActivityCharts active={false} />);
+    expect(slider).toHaveValue("1");
   });
 });

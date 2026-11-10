@@ -8,6 +8,16 @@ export interface WorkerLoopProgress {
 }
 
 export interface ProcessInfo {
+  searchesTriggered?: number | null;
+  itemsSearched?: number | null;
+  downloadingCount?: number | null;
+  seedingCount?: number | null;
+  observedAt?: string | null;
+  observationError?: string | null;
+  pausedLastPass?: number | null;
+  resumedLastPass?: number | null;
+  handledLastPass?: number | null;
+  monitoredCategoryCount?: number | null;
   torrent?: WorkerLoopProgress | null;
   search?: WorkerLoopProgress | null;
   freeSpacePaused?: number;
@@ -53,6 +63,7 @@ export interface ArrListResponse {
 }
 
 export interface QbitInstance {
+  scanIntervalSeconds?: number;
   alive: boolean;
   host: string;
   port: number;
@@ -76,6 +87,10 @@ export interface QbitCategorySeedingConfig {
 }
 
 export interface QbitCategory {
+  downloadingCount?: number;
+  observedAt?: string | null;
+  observationError?: string | null;
+  scanIntervalSeconds?: number;
   category: string;
   instance: string;
   managedBy: "qbit" | "arr";
@@ -87,7 +102,14 @@ export interface QbitCategory {
   seedingConfig: QbitCategorySeedingConfig | null;
 }
 
+export interface ClientObservation {
+  observedAt: string | null;
+  error: string | null;
+  scanIntervalSeconds: number;
+}
+
 export interface QbitCategoriesResponse {
+  observations?: Record<string, ClientObservation>;
   categories: QbitCategory[];
   ready: boolean;
 }
@@ -184,6 +206,14 @@ export interface TransferHistoryResponse {
 
 export interface QbitOverviewResponse {
   summaries?: QbitActivitySummary[];
+  observations?: Record<
+    string,
+    {
+      observedAt: string | null;
+      error: string | null;
+      scanIntervalSeconds: number;
+    }
+  >;
   instances: string[];
   categories: QbitOverviewCategory[];
   ready: boolean;
@@ -540,7 +570,14 @@ export interface MetaResponse {
   url_base?: string;
 }
 
+export interface ConfigRestartRequirement {
+  component: string;
+  category: string;
+  kind: string;
+}
+
 export interface ConfigUpdateResponse {
+  restartRequirements?: ConfigRestartRequirement[];
   application?: ConfigurationApplicationStatus;
   warning?: string | null;
   status: string;
@@ -826,6 +863,18 @@ export interface IssuesSummary {
     affected: number;
   }[];
   pending: PendingOperationalIssue[];
+}
+
+export interface FreeSpaceStatistics {
+  clientInstanceId: string;
+  path: string;
+  error: string | null;
+  freeBytes: number;
+  thresholdBytes: number;
+  committedBytes: number | null;
+  remainingAllocationBytes: number | null;
+  lastCompletedPass: string | null;
+  blockedReason: string | null;
 }
 
 export interface ArrActivityPoint {

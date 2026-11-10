@@ -28,6 +28,7 @@ public sealed class WorkerProcessSupervisor : BackgroundService, IProcessOrchest
     private readonly object _gate = new();
     private readonly SemaphoreSlim _lifecycle = new(1, 1);
     private readonly HashSet<string> _reportedWorkers = new(StringComparer.OrdinalIgnoreCase);
+    private readonly Dictionary<string, WorkerHeartbeat> _lastObservations = new(StringComparer.OrdinalIgnoreCase);
     private long _lastReconciledRevision = -1;
     private readonly Dictionary<string, (int? ExitCode, string Error)> _lastFailures = new(StringComparer.OrdinalIgnoreCase);
     // A failed launch or exhausted retry allowance must not be bypassed by another config reconciliation.
@@ -322,13 +323,7 @@ public sealed class WorkerProcessSupervisor : BackgroundService, IProcessOrchest
                 result[name] = ReadProcessStatus(name, process);
             foreach (var (name, config) in _config.ArrInstances)
                 if (IsEligible(config) && !result.ContainsKey(name))
-                    result[name] = new ProcessStatus
-                    {
-                        Name = name,
-                        Kind = "worker",
-                        IsAlive = false,
-                        Status = _pendingRetries.ContainsKey(name) ? "Backoff" : "Stopped"
-                    };
+                    result[name] = StoppedStatus(name, _pendingRetries.ContainsKey(name) ? "Backoff" : "Stopped");
         }
         lock (_gate)
             foreach (var (name, state) in result)
@@ -337,11 +332,34 @@ public sealed class WorkerProcessSupervisor : BackgroundService, IProcessOrchest
         return Task.FromResult(result);
     }
 
+    private ProcessStatus StoppedStatus(string name, string status)
+    {
+        var observation = _lastObservations.GetValueOrDefault(name);
+        return new ProcessStatus
+        {
+            Name = name,
+            Kind = "worker",
+            IsAlive = false,
+            Status = status,
+            SearchesTriggered = observation?.SearchesTriggered,
+            ItemsSearched = observation?.ItemsSearched,
+            SearchSummary = observation?.SearchSummary,
+            SearchTimestamp = observation?.SearchTimestamp,
+            CategoryCount = observation?.CategoryCount,
+            DownloadingCount = observation?.DownloadingCount,
+            SeedingCount = observation?.SeedingCount,
+            QueueCount = observation?.QueueCount,
+            ObservedAt = observation?.ObservedAt,
+            MetricType = observation?.MetricType,
+            ObservationError = observation == null ? "Awaiting a worker observation." : "Worker is stopped; showing its last successful observation."
+        };
+    }
+
     private ProcessStatus ReadProcessStatus(string name, Process process)
     {
         try
         {
-            if (process.HasExited) return new ProcessStatus { Name = name, Kind = "worker", IsAlive = false, Status = "Stopped" };
+            if (process.HasExited) return StoppedStatus(name, "Stopped");
             var started = process.StartTime.ToUniversalTime();
             var now = DateTimeOffset.UtcNow;
             WorkerHeartbeat? heartbeat = null;
@@ -354,12 +372,14 @@ public sealed class WorkerProcessSupervisor : BackgroundService, IProcessOrchest
             catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or JsonException) { }
             if (heartbeat != null)
             {
+                _lastObservations[name] = heartbeat;
                 _reportedWorkers.Add(name);
                 _reloader?.Acknowledge("worker:" + name, heartbeat.ConfigRevision);
             }
             var alive = !process.HasExited && (heartbeat != null
                 ? now - heartbeat.Heartbeat < TimeSpan.FromSeconds(15) && !heartbeat.IsStalled(now)
                 : !_reportedWorkers.Contains(name) && now - started < WorkerLoopProgress.CycleTimeout);
+            var observed = heartbeat ?? (_lastObservations.TryGetValue(name, out var previous) && previous.Matches(name, process.Id, started) ? previous : null);
             return new ProcessStatus
             {
                 Name = name,
@@ -369,11 +389,17 @@ public sealed class WorkerProcessSupervisor : BackgroundService, IProcessOrchest
                 LastHeartbeat = heartbeat?.Heartbeat.UtcDateTime,
                 RestartRequested = heartbeat?.RestartRequested ?? false,
                 ConfigRevision = heartbeat?.ConfigRevision ?? 0,
-                SearchSummary = heartbeat?.SearchSummary,
-                SearchTimestamp = heartbeat?.SearchTimestamp,
-                QueueCount = heartbeat?.QueueCount,
-                CategoryCount = heartbeat?.CategoryCount,
-                MetricType = heartbeat?.MetricType,
+                SearchesTriggered = observed?.SearchesTriggered,
+                ItemsSearched = observed?.ItemsSearched,
+                DownloadingCount = observed?.DownloadingCount,
+                SeedingCount = observed?.SeedingCount,
+                ObservedAt = observed?.ObservedAt,
+                ObservationError = heartbeat == null ? "Worker observation is unavailable; retaining the last successful metrics." : heartbeat.ObservationError,
+                SearchSummary = observed?.SearchSummary,
+                SearchTimestamp = observed?.SearchTimestamp,
+                QueueCount = observed?.QueueCount,
+                CategoryCount = observed?.CategoryCount,
+                MetricType = observed?.MetricType,
                 Torrent = heartbeat?.Torrent,
                 Search = heartbeat?.Search,
                 Status = !alive ? "Timed out" : heartbeat?.DescribeProgress() ?? "Initializing"

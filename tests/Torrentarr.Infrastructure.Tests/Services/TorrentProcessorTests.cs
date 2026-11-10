@@ -793,7 +793,7 @@ public sealed class TorrentProcessorTests : IDisposable
             imports.Setup(i => i.IsCustomFormatUnmetAsync(torrent.Hash, torrent.Category, It.IsAny<CancellationToken>())).ReturnsAsync(repaired);
             imports.Setup(i => i.TriggerImportAsync(torrent.Hash, path, torrent.Category, It.IsAny<CancellationToken>())).ReturnsAsync(new ImportResult { Success = true });
             var seeding = new Mock<ISeedingService>();
-            seeding.Setup(s => s.SeedingLimitsMetAsync(torrent, It.IsAny<CancellationToken>())).ReturnsAsync(removalLimitMet);
+            seeding.Setup(s => s.ShouldRemoveTorrentAsync(torrent, It.IsAny<CancellationToken>())).ReturnsAsync(removalLimitMet);
             var deletion = new Mock<ISafeDeletionService>(MockBehavior.Strict);
             var cache = new TorrentCacheService(NullLogger<TorrentCacheService>.Instance);
             cache.MarkFileFiltered("qBit", torrent.Hash);

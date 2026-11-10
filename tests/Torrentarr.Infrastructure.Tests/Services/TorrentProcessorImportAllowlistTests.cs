@@ -528,7 +528,7 @@ public sealed class TorrentProcessorImportAllowlistTests : IDisposable
     [Theory]
     [InlineData("hnr.protected", LogLevel.Information)]
     [InlineData("hnr.unknown", LogLevel.Warning)]
-    [InlineData("hnr.protected.native-stop-risk", LogLevel.Warning)]
+    [InlineData("hnr.protected.native-stop-risk", LogLevel.Information)]
     [InlineData("storage.mapping", LogLevel.Warning)]
     public async Task RemovalDiagnostics_ReportIssuesIndependentlyOfLogSuppression(string code, LogLevel firstLevel)
     {
@@ -549,8 +549,9 @@ public sealed class TorrentProcessorImportAllowlistTests : IDisposable
         await Block("ratio=0.050; seed=480600s");
         var logs = logger.Invocations.Where(i => i.Method.Name == "Log").ToList();
         logs.Select(i => (LogLevel)i.Arguments[0]!).Should().Equal(firstLevel, LogLevel.Debug, firstLevel);
-        issues.Verify(i => i.ReportAsync(It.IsAny<OperationalIssueReport>(), It.IsAny<CancellationToken>()), code == "hnr.protected" ? Times.Never() : Times.Exactly(3));
-        issues.Verify(i => i.ResolveAsync(It.IsAny<OperationalIssueReport>(), It.IsAny<CancellationToken>()), code == "hnr.protected" ? Times.Exactly(3) : Times.Never());
+        var expectedWait = code is "hnr.protected" or "hnr.protected.native-stop-risk";
+        issues.Verify(i => i.ReportAsync(It.IsAny<OperationalIssueReport>(), It.IsAny<CancellationToken>()), expectedWait ? Times.Never() : Times.Exactly(3));
+        issues.Verify(i => i.ResolveAsync(It.IsAny<OperationalIssueReport>(), It.IsAny<CancellationToken>()), expectedWait ? Times.Exactly(3) : Times.Never());
         await Block("new blocker", "client.disconnected");
         ((LogLevel)logger.Invocations.Last(i => i.Method.Name == "Log").Arguments[0]!).Should().Be(LogLevel.Warning);
         var clear = typeof(TorrentProcessor).GetMethod("ClearRemovalBlockAsync", BindingFlags.NonPublic | BindingFlags.Instance)!;

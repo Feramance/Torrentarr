@@ -44,6 +44,9 @@ public class StatisticsEndpointTests(TorrentarrWebApplicationFactory factory)
         using var json = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
         json.RootElement.GetProperty("bucketMinutes").GetInt32().Should().Be(1);
         json.RootElement.GetProperty("series").ValueKind.Should().Be(JsonValueKind.Array);
+        var daily = await client.GetAsync("/web/statistics/arr-activity?range=24h");
+        using var dailyJson = JsonDocument.Parse(await daily.Content.ReadAsStringAsync());
+        dailyJson.RootElement.GetProperty("bucketMinutes").GetInt32().Should().Be(60);
     }
 
 }

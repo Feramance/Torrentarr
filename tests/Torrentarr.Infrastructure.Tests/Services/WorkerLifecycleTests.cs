@@ -14,6 +14,24 @@ namespace Torrentarr.Infrastructure.Tests.Services;
 public class WorkerLifecycleTests
 {
     [Fact]
+    public async Task StoppedWorker_RetainsStructuredLastObservation()
+    {
+        var config = Config();
+        using var supervisor = new WorkerProcessSupervisor(config, NullLogger<WorkerProcessSupervisor>.Instance, Mock.Of<IMediaValidationService>());
+        var observations = (Dictionary<string, WorkerHeartbeat>)typeof(WorkerProcessSupervisor)
+            .GetField("_lastObservations", System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.NonPublic)!.GetValue(supervisor)!;
+        var heartbeat = new WorkerHeartbeat { Instance = "Radarr", SearchesTriggered = 0, ItemsSearched = 12, CategoryCount = 40, DownloadingCount = 3, ObservedAt = DateTimeOffset.UtcNow };
+        observations["Radarr"] = System.Text.Json.JsonSerializer.Deserialize<WorkerHeartbeat>(System.Text.Json.JsonSerializer.Serialize(heartbeat, WorkerHeartbeat.JsonOptions), WorkerHeartbeat.JsonOptions)!;
+        var status = (await supervisor.GetProcessStatusAsync())["Radarr"];
+        status.IsAlive.Should().BeFalse();
+        status.SearchesTriggered.Should().Be(0);
+        status.ItemsSearched.Should().Be(12);
+        status.CategoryCount.Should().Be(40);
+        status.DownloadingCount.Should().Be(3);
+        status.ObservationError.Should().Contain("last successful");
+    }
+
+    [Fact]
     public void Heartbeat_RejectsPriorProcessAndDetectsStuckLoopDespiteFreshPublisher()
     {
         var now = DateTimeOffset.UtcNow;

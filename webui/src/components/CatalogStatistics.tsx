@@ -3,7 +3,7 @@ import {
   getCatalogStatistics,
   type CatalogStatistics as Statistics,
 } from "../api/client";
-import { useWebUI } from "../context/WebUIContext";
+import { STATISTICS_UPDATED } from "../hooks/useStatisticsUpdates";
 import { BreakdownBar } from "./Statistics";
 
 export function CatalogStatistics({
@@ -15,7 +15,6 @@ export function CatalogStatistics({
   instance?: string;
   active: boolean;
 }) {
-  const { liveArr } = useWebUI();
   const key = `${kind}:${instance ?? "aggregate"}`;
   const [result, setResult] = useState<{
     key: string;
@@ -43,15 +42,15 @@ export function CatalogStatistics({
     };
     void load();
     window.addEventListener("torrentarr:statistics-refresh", load);
-    const timer = liveArr
-      ? window.setInterval(() => void load(), 60000)
-      : undefined;
+    window.addEventListener(STATISTICS_UPDATED, load);
+    document.addEventListener("visibilitychange", load);
     return () => {
       cancelled = true;
       window.removeEventListener("torrentarr:statistics-refresh", load);
-      window.clearInterval(timer);
+      window.removeEventListener(STATISTICS_UPDATED, load);
+      document.removeEventListener("visibilitychange", load);
     };
-  }, [kind, instance, active, liveArr, key]);
+  }, [kind, instance, active, key]);
   const data = result?.key === key ? result.data : null;
   if (!data)
     return (
@@ -74,6 +73,8 @@ export function CatalogStatistics({
         </span>
       </div>
       <BreakdownBar
+        active={active}
+        unit={data.unit}
         label={`Availability of monitored ${data.unit}`}
         values={[
           { label: "Available", value: data.available, tone: "teal" },

@@ -38,7 +38,7 @@ public class SeedingServiceTests
     }
 
     [Fact]
-    public async Task ProtectedTorrent_StillAppliesConfiguredTrackerRemoval()
+    public async Task ProtectedTorrent_DoesNotApplyConfiguredTrackerRemoval()
     {
         var config = new TorrentarrConfig();
         config.TorrentClients["client"] = new()
@@ -56,7 +56,7 @@ public class SeedingServiceTests
         var registry = new Mock<ITorrentClientRegistry>(); registry.Setup(r => r.GetClient("client")).Returns(client.Object);
         var service = new SeedingService(NullLogger<SeedingService>.Instance, db, config, registry.Object);
         await service.ApplyTrackerActionsForTorrentAsync(torrent);
-        client.Verify(c => c.RemoveTrackersAsync("hash", It.IsAny<List<string>>(), It.IsAny<CancellationToken>()), Times.Once());
+        client.Verify(c => c.RemoveTrackersAsync("hash", It.IsAny<List<string>>(), It.IsAny<CancellationToken>()), Times.Never());
     }
 
     [Theory]
@@ -220,7 +220,7 @@ public class SeedingServiceTests
             SeedingTimeLimit = -1
         }, TorrentRemovalIntent.RejectedByAllowlist);
         decision.Blockers.Should().ContainSingle().Which.Code.Should().Be(code);
-        decision.IsExpectedProtectionWait().Should().Be(code == "hnr.protected");
+        decision.IsExpectedProtectionWait().Should().Be(code is "hnr.protected" or "hnr.protected.native-stop-risk");
         decision.Reason.Should().Contain("Client-reported seed=480000s").And.Contain("remaining time requirement=211200s");
     }
 
@@ -930,5 +930,52 @@ public class SeedingServiceTests
         var p = await svc.GetTorrentQueueSortPriorityAsync(torrent, map);
 
         p.Should().Be(-100);
+    }
+
+    [Fact]
+    public void ConfiguredTrackerWithDisabledHnr_HasNoProtectionObligation()
+    {
+        var config = new TorrentarrConfig();
+        config.TorrentClients["client"] = new()
+        {
+            Trackers = [new() { Uri = "tracker.example", HitAndRunMode = "disabled" }]
+        };
+        var svc = CreateService(config);
+        var torrent = new TorrentInfo
+        {
+            ClientInstanceId = "client",
+            Hash = "hash",
+            IsPrivate = true,
+            Progress = 1,
+            Ratio = 0,
+            SeedingTime = 0
+        };
+
+        var decision = svc.GetProtectionDecisions(torrent,
+            [new() { Url = "https://tracker.example/announce", Status = 2 }]).Should().ContainSingle().Subject;
+
+        decision.State.Should().Be("eligible");
+        decision.Reason.Should().Contain("no active clearance requirements");
+    }
+
+    [Fact]
+    public void UnmatchedPrivateTracker_RemainsUnknown()
+    {
+        var svc = CreateService();
+        var torrent = new TorrentInfo
+        {
+            ClientInstanceId = "client",
+            Hash = "hash",
+            IsPrivate = true,
+            Progress = 1,
+            Ratio = 0,
+            SeedingTime = 0
+        };
+
+        var decision = svc.GetProtectionDecisions(torrent,
+            [new() { Url = "https://unknown.example/announce", Status = 2 }]).Should().ContainSingle().Subject;
+
+        decision.State.Should().Be("unknown");
+        decision.Reason.Should().Contain("Unmatched private/unknown tracker");
     }
 }

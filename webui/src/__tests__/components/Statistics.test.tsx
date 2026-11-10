@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { render, screen } from "@testing-library/react";
+import { render, screen, fireEvent } from "@testing-library/react";
 import { BreakdownBar } from "../../components/Statistics";
 import { transferPath } from "../../utils/transferChart";
 import type { TransferBucket } from "../../api/types";
@@ -40,5 +40,35 @@ describe("statistics", () => {
       "Failed 0",
     );
     expect(screen.getByText("No data yet")).toBeInTheDocument();
+  });
+  it("shows exact values, percentages and units on focus and touch", () => {
+    render(
+      <BreakdownBar
+        label="Availability"
+        unit="movies"
+        values={[
+          { label: "Available", value: 3, tone: "teal" },
+          { label: "Missing", value: 1, tone: "muted" },
+        ]}
+      />,
+    );
+    fireEvent.focus(
+      screen.getByRole("button", { name: /Available: 3 movies/ }),
+    );
+    expect(screen.getByRole("tooltip")).toHaveTextContent(
+      "Available: 3 movies (75.0%)",
+    );
+    const missing = screen.getByRole("button", { name: /Missing: 1 movies/ });
+    fireEvent.pointerDown(missing, { pointerType: "touch" });
+    fireEvent.pointerLeave(missing, { pointerType: "touch" });
+    expect(screen.getByRole("tooltip")).toHaveTextContent(
+      "Missing: 1 movies (25.0%)",
+    );
+    fireEvent.pointerDown(document.body, { pointerType: "touch" });
+    expect(screen.queryByRole("tooltip")).not.toBeInTheDocument();
+    fireEvent.pointerEnter(missing, { pointerType: "mouse" });
+    expect(screen.getByRole("tooltip")).toHaveTextContent("Missing: 1 movies");
+    fireEvent.pointerLeave(missing, { pointerType: "mouse" });
+    expect(screen.queryByRole("tooltip")).not.toBeInTheDocument();
   });
 });

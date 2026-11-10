@@ -62,7 +62,7 @@ function renderView(active = true) {
 // ── Card header ───────────────────────────────────────────────────────────────
 
 describe("Sonarr catalog – card header", () => {
-  it("renders the Sonarr card header", async () => {
+  it("renders the Sonarr catalog region", async () => {
     server.use(
       http.get("/web/config", () => HttpResponse.json(minimalConfig)),
       http.post("/web/config", () => HttpResponse.json({})),
@@ -71,7 +71,7 @@ describe("Sonarr catalog – card header", () => {
 
     renderView();
 
-    await screen.findByText("Sonarr");
+    await screen.findByRole("region", { name: "Sonarr" });
   });
 });
 
@@ -113,8 +113,8 @@ describe("Sonarr catalog – empty state", () => {
 
 // ── Single instance ───────────────────────────────────────────────────────────
 
-describe("Sonarr catalog – instance sidebar", () => {
-  it("shows instance button in sidebar when one sonarr instance is configured", async () => {
+describe("Sonarr catalog – centralized instance selection", () => {
+  it("does not duplicate navigation when one sonarr instance is configured", async () => {
     server.use(
       http.get("/web/config", () => HttpResponse.json(minimalConfig)),
       http.post("/web/config", () => HttpResponse.json({})),
@@ -127,12 +127,10 @@ describe("Sonarr catalog – instance sidebar", () => {
     renderView();
 
     // Use findByRole to get the sidebar button specifically (not the mobile select option)
-    const btn = await screen.findByRole(
-      "button",
-      { name: /sonarr hd/i },
-      { timeout: 5000 },
-    );
-    expect(btn).toBeInTheDocument();
+    await screen.findByRole("region", { name: "Sonarr HD" });
+    expect(
+      screen.queryByRole("button", { name: /sonarr hd/i }),
+    ).not.toBeInTheDocument();
   });
 
   it("shows series table columns when series are returned", async () => {
@@ -195,6 +193,6 @@ describe("Sonarr catalog – inactive", () => {
 
     renderView(false);
 
-    await screen.findByText("Sonarr");
+    await screen.findByRole("region", { name: "Sonarr" });
   });
 });

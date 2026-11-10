@@ -86,7 +86,13 @@ describe("configured navigation", () => {
     vi.mocked(api.getStatus).mockResolvedValue(offline);
     view();
     fireEvent.click(
-      await screen.findByRole("button", { name: "Readarr", exact: true }),
+      await screen.findByRole("button", { name: "Expand Readarr" }),
+    );
+    fireEvent.click(
+      screen.getByRole("button", {
+        name: "Readarr-books",
+        exact: true,
+      }),
     );
     const filter = await screen.findByLabelText("catalog filter");
     fireEvent.change(filter, { target: { value: "Dune" } });
@@ -98,27 +104,31 @@ describe("configured navigation", () => {
     fireEvent.click(
       screen.getByRole("button", { name: "Processes", exact: true }),
     );
+    fireEvent.click(screen.getByRole("button", { name: "Expand Readarr" }));
     fireEvent.click(
-      screen.getByRole("button", { name: "Readarr", exact: true }),
+      screen.getByRole("button", { name: "Readarr-books", exact: true }),
     );
     expect(screen.getByLabelText("catalog filter")).toHaveValue("Dune");
     expect(scrollTo).toHaveBeenLastCalledWith(0, 420);
     Object.defineProperty(window, "scrollY", { value: 0, configurable: true });
     scrollTo.mockRestore();
+    fireEvent.click(
+      screen.getByRole("button", { name: "Expand Torrent Clients" }),
+    );
     expect(
-      screen.getByRole("button", { name: "Torrent Clients", exact: true }),
+      screen.getByRole("button", { name: "transmission", exact: true }),
     ).toBeInTheDocument();
     vi.mocked(api.getStatus).mockRejectedValueOnce(new Error("offline"));
     saved();
     await waitFor(() => expect(api.getStatus).toHaveBeenCalledTimes(3));
     expect(
-      screen.getByRole("button", { name: "Readarr", exact: true }),
+      screen.getByRole("button", { name: "Expand Readarr" }),
     ).toBeInTheDocument();
     vi.mocked(api.getStatus).mockResolvedValue(empty);
     saved();
     await waitFor(() =>
       expect(
-        screen.queryByRole("button", { name: "Readarr", exact: true }),
+        screen.queryByRole("button", { name: "Expand Readarr" }),
       ).not.toBeInTheDocument(),
     );
     await waitFor(() =>
@@ -180,19 +190,111 @@ it("closes the navigation drawer after switching pages and on Escape", async () 
   expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
 });
 
-it("dismisses Display when the native popover closes", () => {
+it("expands Arr choices in the drawer before navigating", async () => {
+  vi.mocked(api.getStatus).mockResolvedValue({
+    ...empty,
+    arrs: [
+      { name: "Radarr-HD", category: "movies", type: "radarr" },
+      { name: "Radarr-4K", category: "movies4k", type: "radarr" },
+    ],
+  });
   view();
-  fireEvent.click(screen.getByRole("button", { name: "Display", exact: true }));
-  const dialog = screen.getByRole("dialog", { name: "Display" });
-  const event = new Event("toggle");
-  Object.defineProperty(event, "newState", { value: "closed" });
-  fireEvent(dialog, event);
+  fireEvent.click(screen.getByRole("button", { name: "Menu", exact: true }));
+  const drawer = screen.getByRole("dialog", { name: "Navigation" });
+  fireEvent.click(
+    await within(drawer).findByRole("button", {
+      name: "Radarr",
+      exact: true,
+    }),
+  );
   expect(
-    screen.queryByRole("dialog", { name: "Display" }),
+    within(drawer).getByRole("button", { name: "All Radarr" }),
+  ).toBeInTheDocument();
+  expect(
+    screen.getByRole("dialog", { name: "Navigation" }),
+  ).toBeInTheDocument();
+  expect(screen.getByRole("heading", { name: "Processes" })).toBeVisible();
+  fireEvent.click(within(drawer).getByRole("button", { name: "Radarr-4K" }));
+  expect(
+    screen.queryByRole("dialog", { name: "Navigation" }),
+  ).not.toBeInTheDocument();
+  expect(
+    await screen.findByRole("heading", { name: "Radarr-4K" }),
+  ).toBeVisible();
+});
+
+it("no longer shows a Help menu in the app bar", () => {
+  view();
+  expect(
+    screen.queryByRole("button", { name: "Help", exact: true }),
   ).not.toBeInTheDocument();
 });
 
-it("provides Wiki and GitHub footer links on desktop and in the navigation drawer", () => {
+it("collapses the desktop navigation to an icon rail", () => {
+  view();
+  const shell = document.querySelector(".console-shell");
+  const trigger = screen.getByRole("button", {
+    name: "Collapse navigation",
+  });
+  expect(trigger).toHaveAttribute("aria-controls", "app-navigation");
+  expect(trigger).toHaveAttribute("aria-expanded", "true");
+  fireEvent.click(trigger);
+  expect(shell).toHaveAttribute("data-nav", "collapsed");
+  expect(
+    screen.getByRole("button", { name: "Expand navigation" }),
+  ).toHaveAttribute("aria-expanded", "false");
+  fireEvent.click(screen.getByRole("button", { name: "Expand navigation" }));
+  expect(shell).toHaveAttribute("data-nav", "expanded");
+  expect(trigger).toHaveAttribute("aria-expanded", "true");
+});
+
+it("expands the rail for instance selection and collapses after choosing", async () => {
+  vi.mocked(api.getStatus).mockResolvedValue({
+    ...empty,
+    arrs: [
+      { name: "Radarr-HD", category: "movies", type: "radarr" },
+      { name: "Radarr-4K", category: "movies4k", type: "radarr" },
+    ],
+  });
+  view();
+  const shell = document.querySelector(".console-shell");
+  await screen.findByRole("button", { name: "Expand Radarr" });
+  fireEvent.click(screen.getByRole("button", { name: "Collapse navigation" }));
+  fireEvent.click(screen.getByRole("button", { name: "Radarr", exact: true }));
+  expect(shell).toHaveAttribute("data-nav", "expanded");
+  expect(screen.getByRole("button", { name: "Radarr-4K" })).toBeInTheDocument();
+  expect(screen.getByRole("heading", { name: "Processes" })).toBeVisible();
+  fireEvent.click(screen.getByRole("button", { name: "Radarr-4K" }));
+  expect(shell).toHaveAttribute("data-nav", "collapsed");
+  expect(
+    await screen.findByRole("heading", { name: "Radarr-4K" }),
+  ).toBeVisible();
+});
+
+it("collapses an expanded Arr section when leaving that view", async () => {
+  vi.mocked(api.getStatus).mockResolvedValue({
+    ...empty,
+    arrs: [
+      { name: "Radarr-HD", category: "movies", type: "radarr" },
+      { name: "Radarr-4K", category: "movies4k", type: "radarr" },
+    ],
+  });
+  view();
+  const disclosure = await screen.findByRole("button", {
+    name: "Expand Radarr",
+  });
+  fireEvent.click(disclosure);
+  expect(screen.getByRole("button", { name: "Radarr-4K" })).toBeInTheDocument();
+  fireEvent.click(
+    screen.getByRole("button", { name: "Processes", exact: true }),
+  );
+  expect(disclosure).toHaveAttribute("aria-expanded", "false");
+  expect(
+    screen.queryByRole("button", { name: "Radarr-4K" }),
+  ).not.toBeInTheDocument();
+});
+
+it("provides Wiki, GitHub and OpenAPI links on desktop and in the drawer", () => {
   view();
   const resources = screen.getByLabelText("Project resources");
   const wiki = within(resources).getByRole("link", { name: /Wiki/ });
@@ -204,6 +306,9 @@ it("provides Wiki and GitHub footer links on desktop and in the navigation drawe
   expect(
     within(resources).getByRole("link", { name: /GitHub/ }),
   ).toHaveAttribute("href", "https://github.com/Feramance/Torrentarr");
+  expect(
+    within(resources).getByRole("link", { name: /OpenAPI/ }),
+  ).toHaveAttribute("href", "/web/docs");
   fireEvent.click(screen.getByRole("button", { name: "Menu", exact: true }));
   const drawer = screen.getByRole("dialog", { name: "Navigation" });
   expect(
@@ -213,12 +318,19 @@ it("provides Wiki and GitHub footer links on desktop and in the navigation drawe
     "rel",
     "noopener noreferrer",
   );
+  expect(within(drawer).getByRole("link", { name: /OpenAPI/ })).toHaveAttribute(
+    "rel",
+    "noopener noreferrer",
+  );
 });
 
 it("clears a stale client focus when Arr navigation requests all clients", async () => {
   vi.mocked(api.getStatus).mockResolvedValue(offline);
   view();
-  await screen.findByRole("button", { name: "Torrent Clients", exact: true });
+  fireEvent.click(
+    await screen.findByRole("button", { name: "Expand Torrent Clients" }),
+  );
+  await screen.findByRole("button", { name: "transmission", exact: true });
   sessionStorage.setItem("torrentarr:focusQbitInstance", "stale");
   window.dispatchEvent(
     new CustomEvent("qbitrr:navigate-tab", {
@@ -228,4 +340,102 @@ it("clears a stale client focus when Arr navigation requests all clients", async
   expect(sessionStorage.getItem("torrentarr:focusQbitInstance")).toBeNull();
   expect(sessionStorage.getItem("qbitrr:focusQbitCategory")).toBe("shared");
   sessionStorage.clear();
+});
+
+it("expands configured instances in the main navigation without replacing the active view", async () => {
+  vi.mocked(api.getStatus).mockResolvedValue({
+    ...empty,
+    arrs: [
+      { name: "Radarr-HD", category: "movies", type: "radarr" },
+      { name: "Radarr-4K", category: "movies4k", type: "radarr" },
+    ],
+  });
+  view();
+  const disclosure = await screen.findByRole("button", {
+    name: "Expand Radarr",
+  });
+  expect(disclosure).toHaveAttribute("aria-expanded", "false");
+  fireEvent.click(disclosure);
+  expect(disclosure).toHaveAttribute("aria-expanded", "true");
+  expect(screen.getByText("Worker dashboard")).toBeVisible();
+  fireEvent.click(screen.getByRole("button", { name: "Radarr-4K" }));
+  expect(screen.getByRole("button", { name: "Radarr-4K" })).toHaveAttribute(
+    "aria-current",
+    "page",
+  );
+  expect(
+    screen.getByRole("button", { name: "All Radarr" }),
+  ).toBeInTheDocument();
+});
+
+it("keeps only one navigation section expanded at a time", async () => {
+  vi.mocked(api.getStatus).mockResolvedValue({
+    ...empty,
+    arrs: [
+      { name: "Radarr-HD", category: "movies", type: "radarr" },
+      { name: "Radarr-4K", category: "movies4k", type: "radarr" },
+    ],
+    qbitInstances: {
+      "qBit-home": { alive: true, host: "fixture", port: 1, version: null },
+      "qBit-seedbox": {
+        alive: true,
+        host: "fixture",
+        port: 2,
+        version: null,
+      },
+    },
+  });
+  view();
+  const radarr = await screen.findByRole("button", { name: "Expand Radarr" });
+  fireEvent.click(radarr);
+  expect(screen.getByRole("button", { name: "Radarr-4K" })).toBeInTheDocument();
+
+  const clients = screen.getByRole("button", {
+    name: "Expand Torrent Clients",
+  });
+  fireEvent.click(clients);
+  expect(radarr).toHaveAttribute("aria-expanded", "false");
+  expect(
+    screen.queryByRole("button", { name: "Radarr-4K" }),
+  ).not.toBeInTheDocument();
+  expect(screen.getByRole("button", { name: "qBit-home" })).toBeInTheDocument();
+
+  fireEvent.click(screen.getByRole("button", { name: "Radarr", exact: true }));
+  expect(clients).toHaveAttribute("aria-expanded", "false");
+  expect(screen.getByRole("button", { name: "Radarr-4K" })).toBeInTheDocument();
+});
+
+it("shows a collapsed section for a single configured instance", async () => {
+  vi.mocked(api.getStatus).mockResolvedValue({
+    ...empty,
+    arrs: [{ name: "Radarr-HD", category: "movies", type: "radarr" }],
+    qbitInstances: {
+      "qBit-home": { alive: true, host: "fixture", port: 1, version: null },
+    },
+  });
+  view();
+  const radarr = await screen.findByRole("button", { name: "Expand Radarr" });
+  const clients = screen.getByRole("button", {
+    name: "Expand Torrent Clients",
+  });
+  expect(radarr).toHaveAttribute("aria-expanded", "false");
+  expect(clients).toHaveAttribute("aria-expanded", "false");
+  expect(
+    screen.queryByRole("button", { name: "Radarr-HD", exact: true }),
+  ).not.toBeInTheDocument();
+
+  fireEvent.click(radarr);
+  expect(radarr).toHaveAttribute("aria-expanded", "true");
+  expect(
+    screen.getByRole("button", { name: "Radarr-HD", exact: true }),
+  ).toBeInTheDocument();
+  expect(
+    screen.queryByRole("button", { name: "All Radarr" }),
+  ).not.toBeInTheDocument();
+
+  fireEvent.click(
+    screen.getByRole("button", { name: "Radarr-HD", exact: true }),
+  );
+  expect(await screen.findByLabelText("catalog filter")).toBeInTheDocument();
+  expect(screen.getByRole("heading", { name: "Radarr-HD" })).toBeVisible();
 });

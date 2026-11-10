@@ -448,9 +448,14 @@ UploadRateLimitPerTorrent = -1          # KB/s upload limit (-1 = unlimited)
 MaxUploadRatio = 2.0                    # Remove after 2:1 ratio
 MaxSeedingTime = 43200                  # Remove after 12 hours (seconds)
 RemoveTorrent = -1                      # Additional removal delay (seconds)
-RemoveDeadTrackers = false              # Remove torrents with dead trackers
-RemoveTrackerWithMessage = []           # Remove if tracker message matches
+RemoveDeadTrackers = false              # Report dead trackers; never delete torrents
+RemoveTrackerWithMessage = []           # Remove matching tracker URLs; private configured/last URLs preserved
 ```
+
+While protection is unmet or a private tracker is unmatched, Torrentarr records and
+temporarily clears conflicting per-torrent native stop limits so qBittorrent cannot
+remove the torrent first. Restored only when Torrentarr still owns the unlimited
+values and the torrent identity matches.
 
 **See also:** [Seeding Configuration Guide](seeding.md)
 

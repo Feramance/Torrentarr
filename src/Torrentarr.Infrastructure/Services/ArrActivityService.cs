@@ -156,7 +156,7 @@ public sealed class ArrActivityCollector(IServiceScopeFactory scopes, IServicePr
     }
 }
 
-public sealed record ArrActivityPoint(DateTimeOffset Timestamp, double? QueueDepth, int? SearchesCompleted,
+public sealed record ArrActivityPoint(DateTimeOffset Timestamp, int? QueueDepth, int? SearchesCompleted,
     int? ImportsConfirmed, int QueueSamples, int CompletionSamples, int ExpectedSamples);
 public sealed record ArrActivitySeries(string Instance, string Type, List<ArrActivityPoint> Points);
 public sealed record ArrActivityHistory(string Range, int BucketMinutes, DateTimeOffset GeneratedAt, List<ArrActivitySeries> Series);
@@ -180,8 +180,8 @@ public static class ArrActivityApi
         var (duration, bucket) = range switch
         {
             "1h" => (60, 1),
-            "24h" => (1440, 5),
-            "7d" => (10080, 30),
+            "24h" => (1440, 60),
+            "7d" => (10080, 60),
             _ => throw new ArgumentOutOfRangeException(nameof(range))
         };
         var end = now.ToUnixTimeSeconds() / 60 / bucket * bucket;
@@ -225,7 +225,8 @@ public static class ArrActivityApi
                 var searches = completed.Sum(e => e.Searches);
                 var imports = completed.Sum(e => e.Imports);
                 return new ArrActivityPoint(DateTimeOffset.FromUnixTimeSeconds(minute * 60),
-                    queueSamples == 0 ? null : rows.Sum(s => (s.QueueDepth ?? 0) * s.QueueSamples) / queueSamples,
+                    queueSamples == 0 ? null : (int)Math.Round(rows.Sum(s => (s.QueueDepth ?? 0) * s.QueueSamples) / queueSamples,
+                        MidpointRounding.AwayFromZero),
                     coverage == 0 && searches == 0 ? null : searches,
                     coverage == 0 && imports == 0 ? null : imports, queueSamples, coverage, bucket);
             }).ToList())).ToList();

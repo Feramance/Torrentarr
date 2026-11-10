@@ -345,13 +345,7 @@ export function MaintenanceView({
       if (resultsRef.current) resultsRef.current.open = true;
     });
   return (
-    <section
-      aria-labelledby="manage-title"
-      className="card maintenance-workspace"
-    >
-      <div className="card-header">
-        <h2 id="manage-title">Manage</h2>
-      </div>
+    <section aria-label="Manage" className="card maintenance-workspace">
       <div className="card-body">
         <p className="hint">
           Configure and run recovery, organization, and storage tools for each
@@ -406,14 +400,12 @@ export function MaintenanceView({
         {loaded && !clientId && <p>No torrent clients configured.</p>}
         {error && <p role="alert">{error}</p>}
         {notice && <p role="status">{notice}</p>}
-        {application && (
+        {application && application.state !== "applied" && (
           <p role="status">
             {application.error ??
-              (application.state === "applied"
-                ? "Configuration applied live"
-                : application.state === "pending"
-                  ? "Configuration saved; waiting for active operations to finish"
-                  : "Configuration could not be applied completely")}
+              (application.state === "pending"
+                ? "Configuration saved; waiting for active operations to finish"
+                : "Configuration could not be applied completely")}
             {Object.entries(application.components ?? {})
               .filter(([, component]) => component.error)
               .map(([name, component]) => (
@@ -800,6 +792,9 @@ export function MaintenanceView({
           <div className="config-section__body">
             {selectedHistory.length > 0 && (
               <BreakdownBar
+                key={clientId}
+                active={active}
+                unit="operations"
                 label="Operation outcomes in the latest 20 displayed runs"
                 values={[
                   {

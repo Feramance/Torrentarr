@@ -33,12 +33,12 @@ def apply(spec):
                 "400": {"description": "Invalid range, kind, or instance"}, "401": {"description": "Authentication required"}}}}
     point = {"type": "object", "properties": {
         "timestamp": {"type": "string", "format": "date-time"},
-        "queueDepth": {"type": "number", "nullable": True},
+        "queueDepth": {"type": "integer", "nullable": True},
         **{name: {"type": "integer", "nullable": True} for name in ("searchesCompleted", "importsConfirmed")},
         **{name: {"type": "integer"} for name in ("queueSamples", "completionSamples", "expectedSamples")}}}
     spec["paths"]["/web/statistics/arr-activity"] = {"get": {
         "tags": ["Torrentarr Statistics"], "summary": "Persistent Arr queue and confirmed activity history",
-        "description": "Follows WebUI authentication. Worker-level series retain seven days; no backfill. Queue depth averages fresh heartbeats. Completions count only tracked Torrentarr submissions: searches require successful command completion; imports require positive correlated download-import history after submission. Counts are timestamped when confirmed, not when requested. Missing/partial coverage is explicit. Buckets are 1, 5, or 30 minutes. Disabled/deleted workers can remain in retained history.",
+        "description": "Follows WebUI authentication. Worker-level series retain seven days; no backfill. Queue depth averages fresh heartbeats, rounded to whole items. Completions count only tracked Torrentarr submissions: searches require successful command completion; imports require positive correlated download-import history after submission. Counts are timestamped when confirmed, not when requested. Missing/partial coverage is explicit. Buckets are 1, 5, or 30 minutes. Disabled/deleted workers can remain in retained history.",
         "parameters": [
             {"name": "range", "in": "query", "schema": {"type": "string", "enum": ["1h", "24h", "7d"], "default": "24h"}},
             {"name": "worker", "in": "query", "schema": {"type": "string"}, "description": "Optional configured Arr section name."}],

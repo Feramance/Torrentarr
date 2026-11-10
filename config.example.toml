@@ -82,8 +82,8 @@ OIDCEnabled = false
 # Enable live updates for Arr views
 LiveArr = true
 
-# WebUI theme (Light or Dark)
-Theme = "Dark"
+# WebUI theme (System, Light, Dark, or Midnight)
+Theme = "System"
 
 # View density (Comfortable or Compact)
 ViewDensity = "Comfortable"

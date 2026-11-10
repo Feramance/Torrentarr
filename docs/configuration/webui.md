@@ -274,17 +274,19 @@ UI density setting for tables and lists.
 ## Theme
 
 ```toml
-Theme = "Dark"
+Theme = "System"
 ```
 
 **Type:** String
-**Default:** `"Dark"`
-**Options:** `"Dark"`, `"Light"`
+**Default:** `"System"`
+**Options:** `"System"`, `"Light"`, `"Dark"`, `"Midnight"`
 
 Default color theme for the WebUI.
 
+- `"System"` - Follow the operating system's light or dark preference
 - `"Dark"` - Dark mode (easier on eyes, lower power consumption)
 - `"Light"` - Light mode (better in bright environments)
+- `"Midnight"` - Black background with near-black surfaces for OLED displays
 
 **Note:** Users can toggle theme in the WebUI itself. This sets the initial default.
 

@@ -1,3 +1,4 @@
+import { useChartInspection } from "../hooks/useChartInspection";
 import { useEffect, useState } from "react";
 import { getArrActivity } from "../api/client";
 import type {
@@ -5,10 +6,9 @@ import type {
   ArrActivitySeries,
   TransferRange,
 } from "../api/types";
-import { useWebUI } from "../context/WebUIContext";
+import { STATISTICS_UPDATED } from "../hooks/useStatisticsUpdates";
 import {
   activityColor,
-  activityDash,
   activityCoverage,
   activityPath,
   activityValue,
@@ -22,14 +22,16 @@ function ActivityPlot({
   title,
   grouping,
   index,
-  inspect,
+  inspection,
+  colorOf,
 }: {
   series: ArrActivitySeries[];
   metric: ActivityMetric;
   title: string;
   grouping: "type" | "worker";
   index: number;
-  inspect: (index: number) => void;
+  inspection: ReturnType<typeof useChartInspection<number>>;
+  colorOf: (series: ArrActivitySeries) => string;
 }) {
   const maximum = Math.max(
     1,
@@ -54,9 +56,13 @@ function ActivityPlot({
             viewBox="0 0 800 166"
             role="img"
             aria-label={`${title}, by ${grouping === "type" ? "Arr type" : "worker"}; incomplete coverage appears as gaps`}
-            onClick={(event) => {
+            onPointerLeave={inspection.leave}
+            onPointerCancel={inspection.clear}
+            onPointerMove={(event) => {
+              if (event.pointerType === "touch") return;
               const rect = event.currentTarget.getBoundingClientRect();
-              inspect(
+              if (!rect.width) return;
+              inspection.inspect(
                 Math.round(
                   Math.max(
                     0,
@@ -82,7 +88,7 @@ function ActivityPlot({
               />
             ))}
             <text x="24" y="16">
-              {maximum.toLocaleString(undefined, { maximumFractionDigits: 1 })}
+              {maximum.toLocaleString(undefined, { maximumFractionDigits: 0 })}
             </text>
             <text x="24" y="160">
               {series[0]?.points[0]
@@ -102,31 +108,30 @@ function ActivityPlot({
               className="activity-cursor"
             />
             {series.map((s) => (
-              <g key={s.instance} style={{ color: activityColor(s, grouping) }}>
+              <g key={s.instance} style={{ color: colorOf(s) }}>
                 <path
                   d={activityPath(s.points, metric, maximum)}
                   fill="none"
                   stroke="currentColor"
                   strokeWidth="2"
                   vectorEffect="non-scaling-stroke"
-                  strokeDasharray={activityDash(s, grouping)}
                 />
                 {s.points.map((p, i) =>
                   p[metric] != null &&
-                  activityCoverage(p, metric) === p.expectedSamples &&
-                  (i === 0 ||
-                    i === s.points.length - 1 ||
-                    activityCoverage(s.points[i - 1]!, metric) !==
-                      p.expectedSamples ||
-                    activityCoverage(s.points[i + 1]!, metric) !==
-                      p.expectedSamples) ? (
+                  activityCoverage(p, metric) === p.expectedSamples ? (
                     <circle
                       key={p.timestamp}
                       cx={24 + (i / Math.max(1, count - 1)) * 752}
                       cy={142 - (p[metric]! / maximum) * 112}
                       r="2"
                       fill="currentColor"
-                    />
+                      tabIndex={0}
+                      role="img"
+                      aria-label={`${s.instance}: ${new Date(p.timestamp).toLocaleString()}, ${title}, ${activityValue(p, metric)}`}
+                      {...inspection.bind(i)}
+                    >
+                      <title>{`${s.instance} · ${new Date(p.timestamp).toLocaleString()} · ${title}: ${activityValue(p, metric)}`}</title>
+                    </circle>
                   ) : null,
                 )}
               </g>
@@ -137,12 +142,7 @@ function ActivityPlot({
               <div key={s.instance}>
                 <dt>
                   <svg width="24" height="8" aria-hidden="true">
-                    <path
-                      d="M0 4H24"
-                      stroke={activityColor(s, grouping)}
-                      strokeWidth="2"
-                      strokeDasharray={activityDash(s, grouping)}
-                    />
+                    <path d="M0 4H24" stroke={colorOf(s)} strokeWidth="2" />
                   </svg>
                   {s.instance}
                 </dt>
@@ -157,20 +157,22 @@ function ActivityPlot({
 }
 
 export function ArrActivityCharts({ active }: { active: boolean }) {
-  const { liveArr } = useWebUI();
   const [range, setRange] = useState<TransferRange>("24h");
   const [grouping, setGrouping] = useState<"type" | "worker">("type");
   const [metric, setMetric] = useState<
     "searchesCompleted" | "importsConfirmed"
   >("searchesCompleted");
   const [hidden, setHidden] = useState<Set<string>>(() => new Set());
-  const [cursor, setCursor] = useState<number | null>(null);
+  const inspection = useChartInspection<number>(
+    `${range}:${grouping}:${metric}:${[...hidden].join(":")}`,
+    active,
+  );
+  const cursor = inspection.value;
   const [result, setResult] = useState<{
     range: TransferRange;
     data: ArrActivityHistory;
   } | null>(null);
   const [failed, setFailed] = useState<TransferRange | null>(null);
-  const [dataOpen, setDataOpen] = useState(false);
   useEffect(() => {
     if (!active) return;
     let cancelled = false,
@@ -192,18 +194,21 @@ export function ArrActivityCharts({ active }: { active: boolean }) {
     };
     void load();
     window.addEventListener("torrentarr:statistics-refresh", load);
-    const timer = liveArr
-      ? window.setInterval(() => void load(), 60000)
-      : undefined;
+    window.addEventListener(STATISTICS_UPDATED, load);
+    document.addEventListener("visibilitychange", load);
     return () => {
       cancelled = true;
-      window.clearInterval(timer);
+      window.removeEventListener(STATISTICS_UPDATED, load);
+      document.removeEventListener("visibilitychange", load);
       window.removeEventListener("torrentarr:statistics-refresh", load);
     };
-  }, [range, active, liveArr]);
+  }, [range, active]);
   const data = result?.range === range ? result.data : null;
   const series = groupActivity(data?.series ?? [], grouping);
   const shown = series.filter((s) => !hidden.has(`${grouping}:${s.instance}`));
+  const workerIndex = new Map(series.map((s, i) => [s.instance, i]));
+  const colorOf = (s: ArrActivitySeries) =>
+    activityColor(s, grouping, workerIndex.get(s.instance) ?? 0);
   const count = series[0]?.points.length ?? 0;
   const index = Math.min(cursor ?? count - 1, Math.max(0, count - 1));
   const time = series[0]?.points[index]?.timestamp;
@@ -212,7 +217,11 @@ export function ArrActivityCharts({ active }: { active: boolean }) {
       ? "Searches completed"
       : "Torrent imports confirmed";
   return (
-    <section className="arr-activity" aria-label="Arr activity history">
+    <section
+      ref={inspection.ref}
+      className="arr-activity"
+      aria-label="Arr activity history"
+    >
       <div className="arr-activity__heading">
         <h3>Arr activity</h3>
         <div className="arr-activity__controls">
@@ -236,7 +245,7 @@ export function ArrActivityCharts({ active }: { active: boolean }) {
                 className={range === value ? "active" : ""}
                 onClick={() => {
                   setRange(value);
-                  setCursor(null);
+                  inspection.clear();
                 }}
               >
                 {value}
@@ -292,12 +301,7 @@ export function ArrActivityCharts({ active }: { active: boolean }) {
                   }
                 >
                   <svg width="24" height="8" aria-hidden="true">
-                    <path
-                      d="M0 4H24"
-                      stroke={activityColor(s, grouping)}
-                      strokeWidth="2"
-                      strokeDasharray={activityDash(s, grouping)}
-                    />
+                    <path d="M0 4H24" stroke={colorOf(s)} strokeWidth="2" />
                   </svg>
                   {s.instance}
                 </button>
@@ -311,15 +315,17 @@ export function ArrActivityCharts({ active }: { active: boolean }) {
               metric="queueDepth"
               grouping={grouping}
               index={index}
-              inspect={setCursor}
+              inspection={inspection}
+              colorOf={colorOf}
             />
             <ActivityPlot
               series={shown}
-              title={`${throughput} · per ${data!.bucketMinutes} min`}
+              title={`${throughput} · per ${data!.bucketMinutes === 60 ? "hour" : `${data!.bucketMinutes} min`}`}
               metric={metric}
               grouping={grouping}
               index={index}
-              inspect={setCursor}
+              inspection={inspection}
+              colorOf={colorOf}
             />
           </div>
           <label className="activity-inspector">
@@ -329,58 +335,16 @@ export function ArrActivityCharts({ active }: { active: boolean }) {
               min="0"
               max={Math.max(0, count - 1)}
               value={index}
-              onChange={(e) => setCursor(Number(e.target.value))}
+              {...inspection.bind(index)}
+              onChange={(e) => inspection.inspect(Number(e.target.value))}
               aria-label="Inspect activity time"
             />
           </label>
           <p className="hint">
-            7 days retained. Queue values are interval averages; completions are
-            counted when confirmed. Partial worker coverage is labeled and
-            breaks the line.
+            7 days retained. Queue values are interval averages rounded to whole
+            items; completions are counted when confirmed. Gaps in worker
+            coverage break the line.
           </p>
-          <details
-            className="activity-data"
-            onToggle={(e) => setDataOpen(e.currentTarget.open)}
-          >
-            <summary>View activity data</summary>
-            {dataOpen && (
-              <div className="table-wrap">
-                <table>
-                  <caption>Observed activity and coverage per interval</caption>
-                  <thead>
-                    <tr>
-                      <th>Time</th>
-                      <th>{grouping === "type" ? "Arr type" : "Worker"}</th>
-                      <th>Queue depth</th>
-                      <th>Searches completed</th>
-                      <th>Imports confirmed</th>
-                      <th>Queue coverage</th>
-                      <th>Completion coverage</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {shown.flatMap((s) =>
-                      s.points.map((p) => (
-                        <tr key={`${s.instance}:${p.timestamp}`}>
-                          <td>{new Date(p.timestamp).toLocaleString()}</td>
-                          <td>{s.instance}</td>
-                          <td>{activityValue(p, "queueDepth")}</td>
-                          <td>{activityValue(p, "searchesCompleted")}</td>
-                          <td>{activityValue(p, "importsConfirmed")}</td>
-                          <td>
-                            {p.queueSamples}/{p.expectedSamples}
-                          </td>
-                          <td>
-                            {p.completionSamples}/{p.expectedSamples}
-                          </td>
-                        </tr>
-                      )),
-                    )}
-                  </tbody>
-                </table>
-              </div>
-            )}
-          </details>
         </>
       )}
     </section>

@@ -1,9 +1,11 @@
+import { useStatisticsUpdates } from "../../hooks/useStatisticsUpdates";
 import { PersistentDetails } from "../PersistentDetails";
 import { useEffect, useState } from "react";
 import type { JSX } from "react";
 import { getLidarrOpenArtistUrl } from "../../api/client";
 import { getLidarrArtistDetail } from "../../api/client";
 import type { LidarrArtistDetailResponse } from "../../api/types";
+import { arrTypeLabel } from "../../config/arrSections";
 import { lidarrArtistThumbnailUrl } from "../../utils/arrThumbnailUrl";
 import { ArrExternalLink, ArrInstanceHint } from "./ArrExternalLink";
 import { ArrPosterImage } from "./ArrPosterImage";
@@ -23,13 +25,22 @@ export function LidarrArtistDetailBody({
   const [payload, setPayload] = useState<LidarrArtistDetailResponse | null>(
     null,
   );
+  const [revision, setRevision] = useState(0);
+  const [observedAt, setObservedAt] = useState<string | null>(null);
+  useStatisticsUpdates(true, () => {
+    setRevision((value) => value + 1);
+  });
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
     let cancelled = false;
     void getLidarrArtistDetail(category, artistId).then(
       (data) => {
-        if (!cancelled) setPayload(data);
+        if (!cancelled) {
+          setPayload(data);
+          setError(null);
+          setObservedAt(new Date().toLocaleString());
+        }
       },
       (e: unknown) => {
         if (!cancelled) {
@@ -40,9 +51,9 @@ export function LidarrArtistDetailBody({
     return () => {
       cancelled = true;
     };
-  }, [category, artistId]);
+  }, [category, artistId, revision]);
 
-  if (error) {
+  if (error && !payload) {
     return <p className="hint">{error}</p>;
   }
 
@@ -74,7 +85,15 @@ export function LidarrArtistDetailBody({
 
   return (
     <div className="arr-detail-radarr">
-      <ArrExternalLink href={openUrl} arrName="Lidarr" />
+      {error && (
+        <p className="observation-stale">
+          {error} · Showing data from {observedAt}
+        </p>
+      )}
+      <ArrExternalLink
+        href={openUrl}
+        instanceLabel={hintLabel ?? arrTypeLabel("lidarr")}
+      />
       <ArrInstanceHint
         instanceLabel={hintLabel}
         qualityProfileName={profileName}

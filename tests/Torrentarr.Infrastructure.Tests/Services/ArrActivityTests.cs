@@ -143,20 +143,21 @@ public sealed class ArrActivityTests : IDisposable
     }
 
     [Fact]
-    public async Task Query_AveragesQueuesSumsConfirmedEventsAndPreservesUnknownAndZero()
+    public async Task Query_RoundsQueueAveragesSumsConfirmedEventsAndPreservesUnknownAndZero()
     {
         await using var db = Db(); var minute = Now.ToUnixTimeSeconds() / 60;
         db.AddRange(new ArrActivitySample { Instance = "Sonarr-one", Type = "sonarr", Minute = minute - 5, QueueDepth = 4, CompletionObserved = true },
-            new ArrActivitySample { Instance = "Sonarr-one", Type = "sonarr", Minute = minute - 4, QueueDepth = 8, CompletionObserved = true });
+            new ArrActivitySample { Instance = "Sonarr-one", Type = "sonarr", Minute = minute - 4, QueueDepth = 8, CompletionObserved = true },
+            new ArrActivitySample { Instance = "Sonarr-one", Type = "sonarr", Minute = minute - 3, QueueDepth = 8, CompletionObserved = true });
         var operation = Operation(1); operation.Outcome = "completed"; operation.ConfirmedAt = Now.AddMinutes(-2).ToUnixTimeSeconds(); db.Add(operation);
         await db.SaveChangesAsync();
         var history = await ArrActivityApi.QueryAsync(db, _config, "24h", null, Now);
         var point = history.Series.Single().Points.Last();
-        point.QueueDepth.Should().Be(6); point.QueueSamples.Should().Be(2); point.ExpectedSamples.Should().Be(5);
+        point.QueueDepth.Should().Be(7); point.QueueSamples.Should().Be(3); point.ExpectedSamples.Should().Be(60);
         point.SearchesCompleted.Should().Be(1); point.ImportsConfirmed.Should().Be(0);
         history.Series.Single().Points.First().SearchesCompleted.Should().BeNull();
-        foreach (var range in new[] { "1h", "7d" })
-            (await ArrActivityApi.QueryAsync(db, _config, range, null, Now)).Series.Single().Points.Count.Should().Be(range == "1h" ? 60 : 336);
+        foreach (var range in new[] { "1h", "24h", "7d" })
+            (await ArrActivityApi.QueryAsync(db, _config, range, null, Now)).Series.Single().Points.Count.Should().Be(range switch { "1h" => 60, "24h" => 24, _ => 168 });
     }
 
     [Fact]

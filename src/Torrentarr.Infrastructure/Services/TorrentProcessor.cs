@@ -37,6 +37,8 @@ public class TorrentProcessor : ITorrentProcessor
     private readonly ISafeDeletionService? _safeDeletion;
     private readonly IOperationalIssueReporter? _issues;
     private readonly HashSet<TorrentRemovalIntent> _activeRemovalBlocks = [];
+    // Persisted warnings are reconciled once per torrent observation; cache changes handle later transitions.
+    private readonly HashSet<(string Client, string Hash, long AddedOn)> _reconciledRemovalIssues = [];
 
     private readonly HashSet<string> _specialCategories;
     private readonly Dictionary<string, int> _recoveryRequests = new(StringComparer.OrdinalIgnoreCase);
@@ -85,8 +87,9 @@ public class TorrentProcessor : ITorrentProcessor
             return false;
         }
         current.ClientInstanceId = torrent.ClientInstanceId;
-        return SeedingService.SameRemovalCandidate(torrent, current) && !current.SuperSeeding
-            && !current.State.Equals("forcedUP", StringComparison.OrdinalIgnoreCase);
+        if (!SeedingService.SameRemovalCandidate(torrent, current) || current.SuperSeeding
+            || current.State.Equals("forcedUP", StringComparison.OrdinalIgnoreCase)) return false;
+        return _seedingService == null || await _seedingService.HnrAllowsDeleteAsync(current, "routine pause", ct);
     }
 
     private bool CanResumeAutomatically(TorrentInfo torrent)
@@ -484,14 +487,17 @@ public class TorrentProcessor : ITorrentProcessor
                 await ClearRemovalBlockAsync(torrent, intent);
             if (_issues != null)
             {
-                // Reconcile persisted warnings too: a restart may have cleared their cache entries.
-                var outstanding = await _dbContext.OperationalIssues.AsNoTracking().Where(i => i.ResolvedAt == null
-                    && i.Code.StartsWith("torrent.removal.") && i.ClientInstance == torrent.ClientInstanceId
-                    && i.SubjectType == "torrent" && i.SubjectId == torrent.Hash).ToListAsync(ct);
-                foreach (var previous in outstanding.Where(i => !_activeRemovalBlocks.Any(intent => i.Code == "torrent.removal." + intent)))
-                    await _issues.ResolveAsync(new(previous.Code, previous.Category, previous.Title, previous.Impact,
-                        previous.Remediation, previous.ArrInstance, previous.ClientInstance, previous.SubjectType,
-                        previous.SubjectId, previous.Severity, previous.Target), ct);
+                // A restart may have cleared the cache entries behind persisted warnings; reconcile once.
+                if (_reconciledRemovalIssues.Add((torrent.ClientInstanceId, torrent.Hash, torrent.AddedOn)))
+                {
+                    var outstanding = await _dbContext.OperationalIssues.AsNoTracking().Where(i => i.ResolvedAt == null
+                        && i.Code.StartsWith("torrent.removal.") && i.ClientInstance == torrent.ClientInstanceId
+                        && i.SubjectType == "torrent" && i.SubjectId == torrent.Hash).ToListAsync(ct);
+                    foreach (var previous in outstanding.Where(i => !_activeRemovalBlocks.Any(intent => i.Code == "torrent.removal." + intent)))
+                        await _issues.ResolveAsync(new(previous.Code, previous.Category, previous.Title, previous.Impact,
+                            previous.Remediation, previous.ArrInstance, previous.ClientInstance, previous.SubjectType,
+                            previous.SubjectId, previous.Severity, previous.Target), ct);
+                }
                 await _issues.ResolveAsync(issue, ct);
             }
         }
@@ -975,8 +981,8 @@ public class TorrentProcessor : ITorrentProcessor
         _logger.LogTrace("ETA policy for {Hash}: ArrMaximumETA={ArrEta}s; trackerMaximumETA={TrackerEta}s; effectiveMaximumETA={EffectiveEta}s; actualETA={ActualEta}s",
             torrent.Hash, defaultMaxEta, trackerCfg?.MaxETA, maxEta, torrent.Eta);
 
-        // Check if torrent should be removed (ratio/time limits met, including stalledUP idle)
-        var shouldRemove = await _seedingService.SeedingLimitsMetAsync(torrent, ct);
+        // Check if torrent should be removed (ratio/time limits met, including stalledUP idle, plus H&R clearance)
+        var shouldRemove = await _seedingService.ShouldRemoveTorrentAsync(torrent, ct);
 
         // leave_alone = NOT (isUploading AND shouldRemove) — qBitrr line 5862-5864
         var leaveAlone = !(isUploading && shouldRemove);

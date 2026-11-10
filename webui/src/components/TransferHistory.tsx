@@ -1,3 +1,4 @@
+import { useChartInspection } from "../hooks/useChartInspection";
 import { useEffect, useState } from "react";
 import { getTransferHistory } from "../api/client";
 import type {
@@ -5,59 +6,9 @@ import type {
   TransferHistoryResponse,
   TransferRange,
 } from "../api/types";
-import { useWebUI } from "../context/WebUIContext";
+import { STATISTICS_UPDATED } from "../hooks/useStatisticsUpdates";
 
 import { rateLabel, transferPath } from "../utils/transferChart";
-
-function TransferData({ points }: { points: TransferBucket[] }) {
-  const [open, setOpen] = useState(false);
-  return (
-    <details
-      className="transfer-data"
-      onToggle={(event) => setOpen(event.currentTarget.open)}
-    >
-      <summary>View sampled data</summary>
-      {open && (
-        <div className="table-wrap">
-          <table>
-            <caption>
-              Rates per interval; incomplete intervals are excluded from the
-              line graph.
-            </caption>
-            <thead>
-              <tr>
-                <th>Interval start</th>
-                <th>Download</th>
-                <th>Upload</th>
-                <th>Minutes sampled</th>
-              </tr>
-            </thead>
-            <tbody>
-              {points.map((point) => (
-                <tr key={point.timestamp}>
-                  <td>{new Date(point.timestamp).toLocaleString()}</td>
-                  <td>
-                    {point.downloadRate == null
-                      ? "Unavailable"
-                      : rateLabel(point.downloadRate)}
-                  </td>
-                  <td>
-                    {point.uploadRate == null
-                      ? "Unavailable"
-                      : rateLabel(point.uploadRate)}
-                  </td>
-                  <td>
-                    {point.samples} / {point.expectedSamples}
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
-      )}
-    </details>
-  );
-}
 
 export function TransferHistory({
   instance,
@@ -72,8 +23,11 @@ export function TransferHistory({
     data: TransferHistoryResponse;
   } | null>(null);
   const [failedKey, setFailedKey] = useState("");
-  const { liveArr } = useWebUI();
   const key = `${instance ?? "all"}:${range}`;
+  const inspection = useChartInspection<{
+    instance: string;
+    point: TransferBucket;
+  }>(key, active);
   const data = result?.key === key ? result.data : null;
   const error =
     failedKey === key ? "Transfer history unavailable. Try again shortly." : "";
@@ -98,15 +52,15 @@ export function TransferHistory({
     };
     void load();
     window.addEventListener("torrentarr:statistics-refresh", load);
-    const timer = liveArr
-      ? window.setInterval(() => void load(), 60000)
-      : undefined;
+    window.addEventListener(STATISTICS_UPDATED, load);
+    document.addEventListener("visibilitychange", load);
     return () => {
       cancelled = true;
       window.removeEventListener("torrentarr:statistics-refresh", load);
-      window.clearInterval(timer);
+      window.removeEventListener(STATISTICS_UPDATED, load);
+      document.removeEventListener("visibilitychange", load);
     };
-  }, [instance, range, active, liveArr, key]);
+  }, [instance, range, active, key]);
   const maximum = Math.max(
     1,
     ...(data?.series.flatMap((series) =>
@@ -117,7 +71,11 @@ export function TransferHistory({
     ) ?? []),
   );
   return (
-    <section className="transfer-history" aria-label="Transfer history">
+    <section
+      ref={inspection.ref}
+      className="transfer-history"
+      aria-label="Transfer history"
+    >
       <div className="transfer-history__heading">
         <div>
           <h3>Transfer activity</h3>
@@ -176,6 +134,8 @@ export function TransferHistory({
             {hasData ? (
               <>
                 <svg
+                  onPointerLeave={inspection.leave}
+                  onPointerCancel={inspection.clear}
                   viewBox="0 0 800 155"
                   role="img"
                   aria-label={`${series.instance} download and upload rates over ${range}; missing or incomplete intervals appear as gaps`}
@@ -213,8 +173,17 @@ export function TransferHistory({
                           }
                           cy={130 - (point.downloadRate / maximum) * 110}
                           r="1.5"
-                          fill="var(--accent)"
-                        />
+                          fill="var(--chart-download)"
+                          {...inspection.bind({
+                            instance: series.instance,
+                            point,
+                          })}
+                          tabIndex={0}
+                          role="img"
+                          aria-label={`${series.instance} · ${new Date(point.timestamp).toLocaleString()} · Download: ${rateLabel(point.downloadRate ?? 0)}`}
+                        >
+                          <title>{`${new Date(point.timestamp).toLocaleString()} · Download: ${rateLabel(point.downloadRate ?? 0)}`}</title>
+                        </circle>
                         <circle
                           cx={
                             20 +
@@ -223,8 +192,17 @@ export function TransferHistory({
                           }
                           cy={130 - ((point.uploadRate ?? 0) / maximum) * 110}
                           r="1.5"
-                          fill="var(--primary)"
-                        />
+                          fill="var(--chart-upload)"
+                          {...inspection.bind({
+                            instance: series.instance,
+                            point,
+                          })}
+                          tabIndex={0}
+                          role="img"
+                          aria-label={`${series.instance} · ${new Date(point.timestamp).toLocaleString()} · Upload: ${rateLabel(point.uploadRate ?? 0)}`}
+                        >
+                          <title>{`${new Date(point.timestamp).toLocaleString()} · Upload: ${rateLabel(point.uploadRate ?? 0)}`}</title>
+                        </circle>
                       </g>
                     ) : null,
                   )}
@@ -235,6 +213,16 @@ export function TransferHistory({
                     {new Date(series.points.at(-1)!.timestamp).toLocaleString()}
                   </text>
                 </svg>
+                {inspection.value?.instance === series.instance && (
+                  <p role="status" className="hint">
+                    {new Date(
+                      inspection.value.point.timestamp,
+                    ).toLocaleString()}{" "}
+                    · Download{" "}
+                    {rateLabel(inspection.value.point.downloadRate ?? 0)} ·
+                    Upload {rateLabel(inspection.value.point.uploadRate ?? 0)}
+                  </p>
+                )}
                 <div className="breakdown__legend">
                   <span>
                     <i className="stat-tone-teal" />
@@ -257,7 +245,6 @@ export function TransferHistory({
                 Collecting history. No samples in this period yet.
               </p>
             )}
-            {hasData && <TransferData points={series.points} />}
           </figure>
         );
       })}

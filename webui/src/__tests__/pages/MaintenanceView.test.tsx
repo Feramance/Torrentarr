@@ -175,7 +175,7 @@ beforeEach(() => {
 it("opens without scans or mutations and keeps every tool collapsed", async () => {
   show();
   await loaded();
-  expect(screen.getByRole("heading", { name: "Manage" })).toBeInTheDocument();
+  expect(screen.getByRole("region", { name: "Manage" })).toBeInTheDocument();
   for (const tool of maintenanceOperations)
     expect(
       screen.getByText(tool.title, { selector: "strong" }).closest("details"),

@@ -413,7 +413,7 @@ Port = 6969
 Token = "your-secret-token"
 
 # Theme
-Theme = "Dark"  # Dark or Light
+Theme = "Dark"  # System, Light, Dark, or Midnight
 ```
 
 **Security:**

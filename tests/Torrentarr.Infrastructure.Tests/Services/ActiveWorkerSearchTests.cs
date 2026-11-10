@@ -469,9 +469,9 @@ public class ActiveWorkerSearchTests
             client.Setup(c => c.GetVersionAsync(It.IsAny<CancellationToken>())).ReturnsAsync("5.3");
         }
         fast.Setup(c => c.GetTorrentsAsync(It.IsAny<string?>(), It.IsAny<string?>(), It.IsAny<CancellationToken>()))
-            .ReturnsAsync(Enumerable.Range(0, 4).Select(_ => new Torrentarr.Core.Models.TorrentInfo()).ToList());
+            .ReturnsAsync(Enumerable.Range(0, 4).Select(_ => new Torrentarr.Core.Models.TorrentInfo { Category = "movies" }).ToList());
         slow.Setup(c => c.GetTorrentsAsync(It.IsAny<string?>(), It.IsAny<string?>(), It.IsAny<CancellationToken>()))
-            .ReturnsAsync(Enumerable.Range(0, 7).Select(_ => new Torrentarr.Core.Models.TorrentInfo()).ToList());
+            .ReturnsAsync(Enumerable.Range(0, 7).Select(_ => new Torrentarr.Core.Models.TorrentInfo { Category = "movies" }).ToList());
         var factory = new Mock<Torrentarr.Core.Interfaces.ITorrentClientFactory>();
         factory.SetupGet(f => f.Type).Returns("fake");
         factory.Setup(f => f.Create(It.IsAny<string>(), It.IsAny<TorrentClientInstanceConfig>()))
@@ -487,7 +487,7 @@ public class ActiveWorkerSearchTests
         await worker.ProcessTorrentsAsync(default, new HashSet<string> { "fast", "slow" });
         harness.Metrics.CategoryCount.Should().Be(11);
         fast.Setup(c => c.GetTorrentsAsync(It.IsAny<string?>(), It.IsAny<string?>(), It.IsAny<CancellationToken>()))
-            .ReturnsAsync(Enumerable.Range(0, 2).Select(_ => new Torrentarr.Core.Models.TorrentInfo()).ToList());
+            .ReturnsAsync(Enumerable.Range(0, 2).Select(_ => new Torrentarr.Core.Models.TorrentInfo { Category = "movies" }).ToList());
         await worker.ProcessTorrentsAsync(default, new HashSet<string> { "fast" });
         harness.Metrics.CategoryCount.Should().Be(9);
         slow.Verify(c => c.GetTorrentsAsync(It.IsAny<string?>(), It.IsAny<string?>(), It.IsAny<CancellationToken>()), Times.Once);

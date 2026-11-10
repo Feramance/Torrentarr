@@ -1,7 +1,4 @@
 import { type JSX, type ReactNode } from "react";
-import { IconImage } from "../../components/IconImage";
-import { useWebUI } from "../../context/WebUIContext";
-import RefreshIcon from "../../icons/refresh-arrow.svg";
 
 interface ArrCatalogBodyChromeProps {
   /** Top-row hint / counts — already includes "(updated …)" tail when relevant. */
@@ -34,7 +31,6 @@ export function ArrCatalogBodyChrome({
   children,
   footer,
 }: ArrCatalogBodyChromeProps): JSX.Element {
-  const { liveArr } = useWebUI();
   const overlayClassName =
     loading && !hasRows
       ? "arr-catalog-body__overlay arr-catalog-body__overlay--solid loading"
@@ -42,17 +38,12 @@ export function ArrCatalogBodyChrome({
 
   return (
     <div className="stack animate-fade-in">
-      <div className="row" style={{ justifyContent: "space-between" }}>
+      <div
+        className="row"
+        style={{ justifyContent: "space-between", alignItems: "center" }}
+      >
         <div className="arr-catalog-summary">
           <div className="arr-catalog-summary__line">{summaryLine}</div>
-          {!liveArr ? (
-            <span
-              className="badge arr-live-off-badge"
-              title="Enable Live in the app bar for automatic refreshes"
-            >
-              Live updates off
-            </span>
-          ) : null}
         </div>
         <button
           className="btn ghost"
@@ -63,7 +54,6 @@ export function ArrCatalogBodyChrome({
           }}
           disabled={loading}
         >
-          <IconImage src={RefreshIcon} />
           Refresh
         </button>
       </div>

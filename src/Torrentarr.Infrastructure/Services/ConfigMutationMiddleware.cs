@@ -16,7 +16,7 @@ public static class ConfigMutationMiddleware
             try
             {
                 var endpoint = context.Request.Path.Value?.TrimEnd('/').ToLowerInvariant();
-                if (endpoint == "/web/config/events") { await next(context); return; }
+                if (endpoint is "/web/config/events" or "/web/stats/events") { await next(context); return; }
                 // Log streams do not use instance state and can stay open indefinitely.
                 if (endpoint != null && (endpoint.StartsWith("/web/logs/") || endpoint.StartsWith("/api/logs/"))
                     && endpoint.EndsWith("/stream", StringComparison.Ordinal))

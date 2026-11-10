@@ -324,7 +324,6 @@ class ArrWorkerService : BackgroundService
     private bool _searchLoopCompleted;
     private volatile bool _initialized;
     private bool _qbitSetupComplete;
-    private readonly Dictionary<string, int> _categoryCounts = new(StringComparer.OrdinalIgnoreCase);
 
     private int _consecutiveErrors = 0;
     private DateTime _lastErrorTime = DateTime.MinValue;
@@ -675,6 +674,8 @@ class ArrWorkerService : BackgroundService
         return healthy ? reporter.ResolveAsync(issue, ct) : reporter.ReportAsync(issue, ct);
     }
 
+    private readonly Dictionary<string, (int Total, int Downloading, int Seeding, DateTimeOffset ObservedAt)> _torrentCounts = new(StringComparer.OrdinalIgnoreCase);
+
     internal async Task ProcessTorrentsAsync(CancellationToken cancellationToken, IReadOnlySet<string>? clientIds = null)
     {
         _logger.LogTrace("Processing torrents for {Instance}", _context.InstanceName);
@@ -711,21 +712,42 @@ class ArrWorkerService : BackgroundService
 
         try
         {
+            var configured = _config.GetAllTorrentClients().Where(pair => !pair.Value.Disabled && !string.IsNullOrWhiteSpace(pair.Value.Host) && pair.Value.Host != "CHANGE_ME").Select(pair => pair.Key).ToHashSet(StringComparer.OrdinalIgnoreCase);
+            foreach (var id in _torrentCounts.Keys.Where(id => !configured.Contains(id)).ToList()) _torrentCounts.Remove(id);
             var clients = _qbitManager.GetAllClients();
-            foreach (var id in _categoryCounts.Keys.Where(id => !clients.ContainsKey(id)).ToList()) _categoryCounts.Remove(id);
-            foreach (var (id, client) in clients.Where(pair => clientIds == null || clientIds.Contains(pair.Key)))
-                try { _categoryCounts[id] = (await client.GetTorrentsAsync(_instanceConfig.Category, cancellationToken: cancellationToken)).Count; }
-                catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested) { throw; }
-                catch { }
-            _runtimeMetrics.CategoryCount = _categoryCounts.Values.Sum();
+            foreach (var id in configured.Where(id => clientIds == null || clientIds.Contains(id)))
+            {
+                if (!clients.TryGetValue(id, out var client)) throw new IOException($"Client {id} is unavailable.");
+                var torrents = await client.GetTorrentsAsync(cancellationToken: cancellationToken);
+                foreach (var torrent in torrents) torrent.QBitInstanceName = id;
+                var owned = torrents.Where(torrent => CategoryOwnershipHelper.ArrOwnsTorrent(_config, _instanceConfig, torrent)).ToList();
+                _torrentCounts[id] = (owned.Count, owned.Count(t => TorrentPolicyHelper.IsActiveDownloadingStateForFreeSpace(t.State)), owned.Count(t => t.IsSeeding), DateTimeOffset.UtcNow);
+            }
+            if (configured.Any(id => !_torrentCounts.ContainsKey(id))) throw new IOException("Awaiting a complete client inventory.");
+            _runtimeMetrics.CategoryCount = _torrentCounts.Values.Sum(value => value.Total);
+            _runtimeMetrics.DownloadingCount = _torrentCounts.Values.Sum(value => value.Downloading);
+            _runtimeMetrics.SeedingCount = _torrentCounts.Values.Sum(value => value.Seeding);
+            _runtimeMetrics.ObservedAt = _torrentCounts.Count > 0 ? _torrentCounts.Values.Min(value => value.ObservedAt) : DateTimeOffset.UtcNow;
+            _runtimeMetrics.ObservationError = null;
+        }
+        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+        {
+            throw;
+        }
+        catch (Exception ex)
+        {
+            _runtimeMetrics.ObservationError = "Unable to refresh torrent activity; showing the last successful observation.";
+            _logger.LogDebug(ex, "Unable to update process metrics for {Instance}", _context.InstanceName);
+        }
 
-            var db = scope.ServiceProvider.GetRequiredService<TorrentarrDbContext>();
+        try
+        {
             _runtimeMetrics.QueueCount = _instanceConfig.Type.ToLowerInvariant() switch
             {
-                "radarr" => await db.MovieQueue.CountAsync(q => q.ArrInstance == _context.InstanceName, cancellationToken),
-                "sonarr" => await db.EpisodeQueue.CountAsync(q => q.ArrInstance == _context.InstanceName, cancellationToken),
-                "lidarr" => await db.AlbumQueue.CountAsync(q => q.ArrInstance == _context.InstanceName, cancellationToken),
-                "readarr" => await db.BookQueue.CountAsync(q => q.ArrInstance == _context.InstanceName, cancellationToken),
+                "radarr" => (await new Torrentarr.Infrastructure.ApiClients.Arr.RadarrClient(_instanceConfig.URI, _instanceConfig.APIKey, _instanceConfig.SkipTLSVerify).GetQueueAsync(ct: cancellationToken)).TotalRecords,
+                "sonarr" => (await new Torrentarr.Infrastructure.ApiClients.Arr.SonarrClient(_instanceConfig.URI, _instanceConfig.APIKey, _instanceConfig.SkipTLSVerify).GetQueueAsync(ct: cancellationToken)).TotalRecords,
+                "lidarr" => (await new Torrentarr.Infrastructure.ApiClients.Arr.LidarrClient(_instanceConfig.URI, _instanceConfig.APIKey, _instanceConfig.SkipTLSVerify).GetQueueAsync(ct: cancellationToken)).TotalRecords,
+                "readarr" => (await new Torrentarr.Infrastructure.ApiClients.Arr.ReadarrClient(_instanceConfig.URI, _instanceConfig.APIKey, _instanceConfig.SkipTLSVerify).GetQueueAsync(ct: cancellationToken)).TotalRecords,
                 _ => null
             };
         }
@@ -735,7 +757,8 @@ class ArrWorkerService : BackgroundService
         }
         catch (Exception ex)
         {
-            _logger.LogDebug(ex, "Unable to update process metrics for {Instance}", _context.InstanceName);
+            _runtimeMetrics.QueueCount = null;
+            _logger.LogDebug(ex, "Unable to read Arr queue depth for {Instance}", _context.InstanceName);
         }
 
         if (!_instanceConfig.SearchOnly)
@@ -887,21 +910,21 @@ class ArrWorkerService : BackgroundService
         {
             case "radarr":
                 await db.Movies.Where(x => x.ArrInstance == _context.InstanceName && x.Searched)
-                    .ExecuteUpdateAsync(s => s.SetProperty(x => x.Searched, false).SetProperty(x => x.Upgrade, false), ct);
+                    .ExecuteUpdateWithRetryAsync(s => s.SetProperty(x => x.Searched, false).SetProperty(x => x.Upgrade, false), _logger, ct);
                 break;
             case "sonarr":
                 await db.Episodes.Where(x => x.ArrInstance == _context.InstanceName && x.Searched)
-                    .ExecuteUpdateAsync(s => s.SetProperty(x => x.Searched, false).SetProperty(x => x.Upgrade, false), ct);
+                    .ExecuteUpdateWithRetryAsync(s => s.SetProperty(x => x.Searched, false).SetProperty(x => x.Upgrade, false), _logger, ct);
                 await db.Series.Where(x => x.ArrInstance == _context.InstanceName && x.Searched)
-                    .ExecuteUpdateAsync(s => s.SetProperty(x => x.Searched, false).SetProperty(x => x.Upgrade, false), ct);
+                    .ExecuteUpdateWithRetryAsync(s => s.SetProperty(x => x.Searched, false).SetProperty(x => x.Upgrade, false), _logger, ct);
                 break;
             case "lidarr":
                 await db.Albums.Where(x => x.ArrInstance == _context.InstanceName && x.Searched)
-                    .ExecuteUpdateAsync(s => s.SetProperty(x => x.Searched, false).SetProperty(x => x.Upgrade, false), ct);
+                    .ExecuteUpdateWithRetryAsync(s => s.SetProperty(x => x.Searched, false).SetProperty(x => x.Upgrade, false), _logger, ct);
                 break;
             case "readarr":
                 await db.Books.Where(x => x.ArrInstance == _context.InstanceName && x.Searched)
-                    .ExecuteUpdateAsync(s => s.SetProperty(x => x.Searched, false).SetProperty(x => x.Upgrade, false), ct);
+                    .ExecuteUpdateWithRetryAsync(s => s.SetProperty(x => x.Searched, false).SetProperty(x => x.Upgrade, false), _logger, ct);
                 break;
         }
     }
@@ -1065,6 +1088,12 @@ sealed class WorkerRuntimeMetrics
         Heartbeat = DateTimeOffset.UtcNow,
         RestartRequested = restartRequested,
         ConfigRevision = Math.Min(Interlocked.Read(ref TorrentRevision), Interlocked.Read(ref SearchRevision)),
+        SearchesTriggered = SearchesTriggered,
+        ItemsSearched = ItemsSearched,
+        DownloadingCount = DownloadingCount,
+        SeedingCount = SeedingCount,
+        ObservedAt = ObservedAt,
+        ObservationError = ObservationError,
         SearchSummary = SearchSummary,
         SearchTimestamp = SearchTimestamp,
         QueueCount = QueueCount,
@@ -1077,11 +1106,19 @@ sealed class WorkerRuntimeMetrics
     public void RecordSearch(SearchResult? result)
     {
         if (result == null) return;
+        SearchesTriggered = result.SearchesTriggered;
+        ItemsSearched = result.ItemsSearched;
         SearchSummary = $"{result.SearchesTriggered} searches triggered ({result.ItemsSearched} items)";
         SearchTimestamp = DateTimeOffset.UtcNow.ToString("O");
         MetricType = "search";
     }
 
+    public int? SearchesTriggered { get; set; }
+    public int? ItemsSearched { get; set; }
+    public int? DownloadingCount { get; set; }
+    public int? SeedingCount { get; set; }
+    public DateTimeOffset? ObservedAt { get; set; }
+    public string? ObservationError { get; set; }
     public string? SearchSummary { get; set; }
     public string? SearchTimestamp { get; set; }
     public int? QueueCount { get; set; }

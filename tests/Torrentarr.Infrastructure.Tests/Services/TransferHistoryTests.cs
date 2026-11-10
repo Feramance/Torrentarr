@@ -99,6 +99,38 @@ public sealed class TransferHistoryTests
     }
 
     [Fact]
+    public async Task Collector_UsesIndependentClientIntervalsAndAppliesChangesLive()
+    {
+        using var connection = new SqliteConnection("Data Source=:memory:");
+        connection.Open();
+        var services = new ServiceCollection();
+        services.AddDbContext<TorrentarrDbContext>(o => o.UseSqlite(connection));
+        using var provider = services.BuildServiceProvider();
+        using (var scope = provider.CreateScope())
+            scope.ServiceProvider.GetRequiredService<TorrentarrDbContext>().Database.EnsureCreated();
+        var config = new TorrentarrConfig();
+        config.TorrentClients["fast"] = new() { Host = "fixture", TorrentScanIntervalSeconds = 10 };
+        config.TorrentClients["slow"] = new() { Host = "fixture", TorrentScanIntervalSeconds = 60 };
+        var fast = new Mock<ITorrentClient>();
+        var slow = new Mock<ITorrentClient>();
+        foreach (var client in new[] { fast, slow })
+            client.Setup(c => c.GetTransferInfoAsync(It.IsAny<CancellationToken>()))
+                .ReturnsAsync(new TorrentTransferRecord { DownloadSpeed = 0, UploadSpeed = 0 });
+        var registry = new Mock<ITorrentClientRegistry>();
+        registry.Setup(r => r.GetClient("fast")).Returns(fast.Object);
+        registry.Setup(r => r.GetClient("slow")).Returns(slow.Object);
+        var collector = new TransferHistoryCollector(provider.GetRequiredService<IServiceScopeFactory>(), config, registry.Object,
+            NullLogger<TransferHistoryCollector>.Instance);
+        await collector.CollectAsync(Now, default);
+        await collector.CollectAsync(Now.AddSeconds(10), default);
+        fast.Verify(c => c.GetTransferInfoAsync(It.IsAny<CancellationToken>()), Times.Exactly(2));
+        slow.Verify(c => c.GetTransferInfoAsync(It.IsAny<CancellationToken>()), Times.Once);
+        config.TorrentClients["slow"].TorrentScanIntervalSeconds = 10;
+        await collector.CollectAsync(Now.AddSeconds(11), default);
+        slow.Verify(c => c.GetTransferInfoAsync(It.IsAny<CancellationToken>()), Times.Exactly(2));
+    }
+
+    [Fact]
     public void Migration_CreatesHistoryTableOnExistingDatabaseAndIsRepeatable()
     {
         using var db = new TorrentarrDbContext(new DbContextOptionsBuilder<TorrentarrDbContext>()

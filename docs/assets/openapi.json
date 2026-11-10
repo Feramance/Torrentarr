@@ -67,6 +67,28 @@
             ],
             "type": "string"
           },
+          "restartRequirements": {
+            "items": {
+              "properties": {
+                "category": {
+                  "type": "string"
+                },
+                "component": {
+                  "type": "string"
+                },
+                "kind": {
+                  "type": "string"
+                }
+              },
+              "required": [
+                "component",
+                "category",
+                "kind"
+              ],
+              "type": "object"
+            },
+            "type": "array"
+          },
           "status": {
             "example": "ok",
             "type": "string"
@@ -6429,7 +6451,7 @@
     },
     "/web/statistics/arr-activity": {
       "get": {
-        "description": "Follows WebUI authentication. Worker-level series retain seven days; no backfill. Queue depth averages fresh heartbeats. Completions count only tracked Torrentarr submissions: searches require successful command completion; imports require positive correlated download-import history after submission. Counts are timestamped when confirmed, not when requested. Missing/partial coverage is explicit. Buckets are 1, 5, or 30 minutes. Disabled/deleted workers can remain in retained history.",
+        "description": "Follows WebUI authentication. Worker-level series retain seven days; no backfill. Queue depth averages fresh heartbeats, rounded to whole items. Completions count only tracked Torrentarr submissions: searches require successful command completion; imports require positive correlated download-import history after submission. Counts are timestamped when confirmed, not when requested. Missing/partial coverage is explicit. Buckets are 1, 5, or 30 minutes. Disabled/deleted workers can remain in retained history.",
         "parameters": [
           {
             "in": "query",
@@ -6490,7 +6512,7 @@
                                 },
                                 "queueDepth": {
                                   "nullable": true,
-                                  "type": "number"
+                                  "type": "integer"
                                 },
                                 "queueSamples": {
                                   "type": "integer"

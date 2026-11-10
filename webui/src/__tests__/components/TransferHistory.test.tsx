@@ -58,7 +58,7 @@ describe("transfer history", () => {
     });
     expect(getTransferHistory).toHaveBeenCalledTimes(1);
     await act(async () => {
-      await vi.advanceTimersByTimeAsync(1);
+      window.dispatchEvent(new Event("torrentarr:statistics-updated"));
     });
     expect(getTransferHistory).toHaveBeenCalledTimes(2);
     view.rerender(<TransferHistory instance="one" active={false} />);
@@ -95,9 +95,14 @@ describe("transfer history", () => {
     await settle();
     expect(screen.queryByText("one")).not.toBeInTheDocument();
     expect(screen.getByText("two")).toBeInTheDocument();
+    fireEvent.focus(
+      screen.getByRole("img", { name: /two.*Download: 1.0 KiB/ }),
+    );
+    expect(screen.getByRole("status")).toBeInTheDocument();
     fireEvent.click(screen.getByRole("button", { name: "7d", exact: true }));
     await settle();
     expect(getTransferHistory).toHaveBeenLastCalledWith("two", "7d");
+    expect(screen.queryByRole("status")).not.toBeInTheDocument();
   });
 
   it("exposes coverage and readable sampled data", async () => {
@@ -105,11 +110,49 @@ describe("transfer history", () => {
     render(<TransferHistory instance="one" active />);
     await settle();
     expect(screen.getByText(/5 \/ 10 minutes sampled/)).toBeInTheDocument();
-    const details = screen.getByText("View sampled data").closest("details")!;
-    details.open = true;
-    fireEvent(details, new Event("toggle"));
+    expect(screen.queryByText("View sampled data")).not.toBeInTheDocument();
+    expect(screen.queryByRole("table")).not.toBeInTheDocument();
+    const point = screen.getByRole("img", { name: /one.*Download: 1.0 KiB/ });
+    fireEvent.focus(point);
+    expect(screen.getByRole("status")).toHaveTextContent("Download 1.0 KiB/s");
+  });
+  it("dismisses historical points on leave, blur, cancel and outside touch", async () => {
+    vi.mocked(getTransferHistory).mockResolvedValue(history("one"));
+    const view = render(<TransferHistory instance="one" active />);
     await settle();
-    expect(screen.getByRole("table")).toHaveTextContent("Unavailable");
-    expect(screen.getByRole("table")).toHaveTextContent("1.0 KiB/s");
+    const marker = screen.getByRole("img", { name: /one.*Download: 1.0 KiB/ });
+    const plot = screen.getByRole("img", { name: /^one download and upload/ });
+    fireEvent.pointerEnter(marker, { pointerType: "mouse" });
+    expect(screen.getByRole("status")).toHaveTextContent("Download 1.0 KiB/s");
+    fireEvent.pointerLeave(marker, {
+      pointerType: "mouse",
+      relatedTarget: plot,
+    });
+    expect(screen.queryByRole("status")).not.toBeInTheDocument();
+    fireEvent.pointerDown(marker, { pointerType: "mouse" });
+    fireEvent.focus(marker);
+    fireEvent.click(marker);
+    fireEvent.pointerLeave(plot, { pointerType: "mouse" });
+    expect(screen.queryByRole("status")).not.toBeInTheDocument();
+    fireEvent.focus(marker);
+    fireEvent.blur(marker);
+    expect(screen.queryByRole("status")).not.toBeInTheDocument();
+    fireEvent.pointerDown(marker, { pointerType: "touch" });
+    fireEvent.pointerLeave(marker, { pointerType: "touch" });
+    expect(screen.getByRole("status")).toBeInTheDocument();
+    fireEvent.pointerDown(document.body, { pointerType: "touch" });
+    expect(screen.queryByRole("status")).not.toBeInTheDocument();
+    fireEvent.pointerEnter(marker, { pointerType: "mouse" });
+    fireEvent.pointerCancel(plot, { pointerType: "mouse" });
+    expect(screen.queryByRole("status")).not.toBeInTheDocument();
+    fireEvent.focus(marker);
+    fireEvent.keyDown(marker, { key: "Escape" });
+    expect(screen.queryByRole("status")).not.toBeInTheDocument();
+    fireEvent.focus(marker);
+    view.rerender(<TransferHistory instance="one" active={false} />);
+    expect(screen.queryByRole("status")).not.toBeInTheDocument();
+    expect(
+      screen.getByText("Latest complete interval", { exact: false }),
+    ).toBeInTheDocument();
   });
 });

@@ -1,3 +1,4 @@
+import { NAVIGATE_TAB_EVENT } from "../../utils/navigateTab";
 import userEvent from "@testing-library/user-event";
 import React from "react";
 import {
@@ -9,19 +10,12 @@ import {
   afterEach,
   vi,
 } from "vitest";
-import {
-  render,
-  screen,
-  waitFor,
-  within,
-  fireEvent,
-} from "@testing-library/react";
+import { render, screen, waitFor, fireEvent } from "@testing-library/react";
 import { http, HttpResponse } from "msw";
 import { setupServer } from "msw/node";
 import type { ReactNode } from "react";
 import { ProcessesView } from "../../pages/ProcessesView";
 import { WebUIProvider } from "../../context/WebUIContext";
-import { NAVIGATE_TAB_EVENT } from "../../utils/navigateTab";
 import { ToastProvider } from "../../context/ToastContext";
 
 const server = setupServer(
@@ -120,6 +114,13 @@ describe("ProcessesView – process grouping", () => {
 
     await screen.findByText("Radarr");
     expect(screen.getByText("Radarr-1080")).toBeInTheDocument();
+    expect(
+      screen.getByText("Awaiting first completed pass"),
+    ).toBeInTheDocument();
+    expect(
+      screen.getByText("Awaiting first successful scan"),
+    ).toBeInTheDocument();
+    expect(screen.getByText("Searches").parentElement).toHaveTextContent("—");
   });
 
   it("groups Sonarr and Radarr processes into separate sections", async () => {
@@ -396,9 +397,9 @@ describe("ProcessesView – Other section", () => {
       screen.getAllByText("Free Space Manager").length,
     ).toBeGreaterThanOrEqual(1);
     expect(
-      screen.getAllByText("Managing 0 categories").length,
+      screen.getAllByText("Torrents in category").length,
     ).toBeGreaterThanOrEqual(2);
-    expect(screen.getByText("0 paused for free space")).toBeInTheDocument();
+    expect(screen.getByText("Paused for free space")).toBeInTheDocument();
   });
 });
 
@@ -439,10 +440,10 @@ it("refreshes loop status without showing a worker badge", async () => {
   expect(
     document.querySelector(".process-card__badge"),
   ).not.toBeInTheDocument();
-  expect(screen.getByText(/1 in progress/)).toBeInTheDocument();
+  expect(screen.getByText("Arr queue").parentElement).toHaveTextContent("1");
 });
 
-it("shows two loop activities with one physical worker count and restart", async () => {
+it("keeps instance controls separate from activity with a secondary restart action", async () => {
   let restarts = 0;
   server.use(
     http.get("/web/status", () =>
@@ -481,9 +482,14 @@ it("shows two loop activities with one physical worker count and restart", async
     }),
   );
   renderView();
-  expect(await screen.findByText("1/1")).toBeInTheDocument();
+  expect(await screen.findByText("Radarr-A")).toBeInTheDocument();
+  expect(screen.queryByText("1/1")).not.toBeInTheDocument();
+  await userEvent.click(screen.getByText("Actions"));
   expect(screen.getByText(/No active search/)).toBeInTheDocument();
-  expect(screen.getByText(/2 in progress/)).toBeInTheDocument();
+  expect(screen.getByText("Arr queue").parentElement).toHaveTextContent("2");
+  const card = screen.getByText("Radarr-A").closest(".process-card")!;
+  expect(card.querySelectorAll(".process-activity")).toHaveLength(2);
+  expect(card.querySelector(".process-metric")).not.toBeInTheDocument();
   expect(
     screen.getAllByRole("button", { name: "Restart worker", exact: true }),
   ).toHaveLength(1);
@@ -519,7 +525,8 @@ it("marks stopped worker activities as stopped despite a stale heartbeat", async
     ),
   );
   renderView();
-  expect(await screen.findByText("0/1")).toBeInTheDocument();
+  expect(await screen.findByText("Radarr-A")).toBeInTheDocument();
+  expect(screen.queryByText("0/1")).not.toBeInTheDocument();
   expect(
     screen
       .getAllByLabelText("Stopped")
@@ -528,53 +535,53 @@ it("marks stopped worker activities as stopped despite a stale heartbeat", async
   expect(screen.queryByText(/resumes/)).not.toBeInTheDocument();
 });
 
-it("deduplicates role metrics by instance while keeping shared-category instances separate", async () => {
+it("keeps successful zero counts and stale observations visible", async () => {
   server.use(
+    http.get("/web/status", () =>
+      HttpResponse.json({
+        ...emptyStatus,
+        arrs: [{ name: "Radarr-A", category: "shared", type: "radarr" }],
+      }),
+    ),
     http.get("/web/processes", () =>
       HttpResponse.json({
         processes: [
           {
+            name: "Radarr-A",
             category: "shared",
-            name: "Radarr-one",
-            kind: "search",
-            alive: true,
-            queueCount: 4,
-          },
-          {
-            category: "shared",
-            name: "Radarr-one",
-            kind: "torrent",
-            alive: true,
-            queueCount: 4,
-          },
-          {
-            category: "shared",
-            name: "Radarr-two",
             kind: "worker",
             alive: true,
-            queueCount: 3,
-          },
-          {
-            category: "space",
-            name: "FreeSpace",
-            kind: "system",
-            alive: true,
-            restartable: false,
-            freeSpacePaused: 2,
+            searchesTriggered: 0,
+            itemsSearched: 0,
+            searchTimestamp: "2026-10-18T12:00:00Z",
+            categoryCount: 12,
+            downloadingCount: 0,
+            seedingCount: 12,
+            observedAt: "2026-10-18T12:00:00Z",
+            observationError: "Client offline; showing last successful scan",
           },
         ],
       }),
     ),
-    http.get("/web/status", () => HttpResponse.json(emptyStatus)),
     http.get("/web/qbit/categories", () => HttpResponse.json(emptyCategories)),
   );
   renderView();
-  const metrics = screen.getByLabelText("Process statistics");
-  await waitFor(() =>
-    expect(within(metrics).getByText("7")).toBeInTheDocument(),
+  await screen.findByText("Radarr-A");
+  expect(screen.getByText("Searches").parentElement).toHaveTextContent(
+    "Searches 0",
   );
-  expect(metrics).toHaveTextContent("Workers online2 / 2");
-  expect(metrics).toHaveTextContent("Paused for space2");
+  expect(screen.getByText("Downloading").parentElement).toHaveTextContent(
+    "Downloading 0",
+  );
+  expect(screen.getByText("Managed").parentElement).toHaveTextContent(
+    "Managed 12",
+  );
+  expect(screen.getByText("Arr queue").parentElement).toHaveTextContent("—");
+  expect(screen.getByText(/Client offline/)).toBeInTheDocument();
+  expect(screen.getByText(/Scanned/)).toBeInTheDocument();
+  expect(
+    screen.queryByText(/Awaiting first completed pass/),
+  ).not.toBeInTheDocument();
 });
 
 it.each(["worker", "torrent"])(
@@ -642,68 +649,3 @@ it.each(["worker", "torrent"])(
     }
   },
 );
-
-it("uses all clients for a shared Arr category and keeps Restart independent", async () => {
-  const navigation = vi.fn();
-  window.addEventListener(NAVIGATE_TAB_EVENT, navigation);
-  const restarted = vi.fn();
-  server.use(
-    http.get("/web/processes", () =>
-      HttpResponse.json({
-        processes: [
-          {
-            name: "Radarr-one",
-            category: "movies",
-            kind: "torrent",
-            alive: true,
-            pid: 10,
-            restartable: true,
-          },
-        ],
-      }),
-    ),
-    http.get("/web/status", () =>
-      HttpResponse.json({
-        ready: true,
-        arrs: [{ name: "Radarr-one", type: "radarr", category: "movies" }],
-        qbitInstances: { one: { alive: true }, two: { alive: true } },
-      }),
-    ),
-    http.get("/web/qbit/categories", () =>
-      HttpResponse.json({
-        ready: true,
-        categories: ["one", "two"].map((instance) => ({
-          instance,
-          category: "movies",
-          managedBy: "arr",
-          torrentCount: 1,
-          seedingCount: 0,
-          totalSize: 0,
-        })),
-      }),
-    ),
-    http.post("/web/processes/movies/torrent/restart", () => {
-      restarted();
-      return HttpResponse.json({ status: "ok" });
-    }),
-  );
-  try {
-    renderView();
-    fireEvent.click(
-      await screen.findByRole("button", {
-        name: "View torrents for Radarr-one",
-      }),
-    );
-    expect(
-      (navigation.mock.calls[0]![0] as CustomEvent).detail.qbitInstance,
-    ).toBeUndefined();
-    navigation.mockClear();
-    fireEvent.click(
-      screen.getByRole("button", { name: "Restart", exact: true }),
-    );
-    await waitFor(() => expect(restarted).toHaveBeenCalledTimes(1));
-    expect(navigation).not.toHaveBeenCalled();
-  } finally {
-    window.removeEventListener(NAVIGATE_TAB_EVENT, navigation);
-  }
-});

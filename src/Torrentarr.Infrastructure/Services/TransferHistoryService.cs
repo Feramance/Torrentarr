@@ -16,16 +16,17 @@ public sealed record TransferBucket(DateTimeOffset Timestamp, double? DownloadRa
 public sealed record TransferSeries(string Instance, List<TransferBucket> Points);
 public sealed record TransferHistoryResponse(string Range, int BucketMinutes, DateTimeOffset GeneratedAt, List<TransferSeries> Series);
 
-/// <summary>One lightweight transfer request per enabled client per minute; no torrent scans.</summary>
+/// <summary>Transfer observations follow each client scan interval; persisted history uses minute buckets.</summary>
 public sealed class TransferHistoryCollector(
     IServiceScopeFactory scopes, TorrentarrConfig config, ITorrentClientRegistry registry,
     ILogger<TransferHistoryCollector> logger) : BackgroundService
 {
+    private readonly Dictionary<string, DateTimeOffset> _lastAttempt = new(StringComparer.OrdinalIgnoreCase);
     private long _lastPruneMinute = long.MinValue;
 
     protected override async Task ExecuteAsync(CancellationToken stoppingToken)
     {
-        using var timer = new PeriodicTimer(TimeSpan.FromMinutes(1));
+        using var timer = new PeriodicTimer(TimeSpan.FromSeconds(1));
         do
         {
             try { await CollectAsync(DateTimeOffset.UtcNow, stoppingToken); }
@@ -42,6 +43,8 @@ public sealed class TransferHistoryCollector(
         foreach (var (name, settings) in config.GetAllTorrentClients().ToArray())
         {
             if (settings.Disabled || registry.GetClient(name) is not { } client) continue;
+            if (_lastAttempt.TryGetValue(name, out var last) && now - last < TimeSpan.FromSeconds(Math.Max(1, settings.TorrentScanIntervalSeconds))) continue;
+            _lastAttempt[name] = now;
             try
             {
                 using var timeout = CancellationTokenSource.CreateLinkedTokenSource(ct);

@@ -256,6 +256,7 @@ public class ConfigEndpointTests : IClassFixture<TorrentarrWebApplicationFactory
         response.StatusCode.Should().Be(HttpStatusCode.OK);
         var json = JsonDocument.Parse(await response.Content.ReadAsStringAsync()).RootElement;
         json.GetProperty("reloadType").GetString().Should().Be("live");
+        json.GetProperty("restartRequirements").GetArrayLength().Should().Be(0);
     }
 
     [Fact]
@@ -276,6 +277,7 @@ public class ConfigEndpointTests : IClassFixture<TorrentarrWebApplicationFactory
         response.StatusCode.Should().Be(HttpStatusCode.OK);
         var json = JsonDocument.Parse(await response.Content.ReadAsStringAsync()).RootElement;
         json.GetProperty("reloadType").GetString().Should().Be("live");
+        json.GetProperty("restartRequirements").GetArrayLength().Should().Be(0);
     }
 
     [Fact]
@@ -296,6 +298,7 @@ public class ConfigEndpointTests : IClassFixture<TorrentarrWebApplicationFactory
         response.StatusCode.Should().Be(HttpStatusCode.OK);
         var json = JsonDocument.Parse(await response.Content.ReadAsStringAsync()).RootElement;
         json.GetProperty("reloadType").GetString().Should().Be("live");
+        json.GetProperty("restartRequirements").GetArrayLength().Should().Be(0);
     }
 
     [Fact]

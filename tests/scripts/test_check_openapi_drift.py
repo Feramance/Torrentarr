@@ -62,6 +62,23 @@ class OpenApiDriftTests(unittest.TestCase):
             schema["properties"]["warning"] = "malformed"
             self.assertTrue(module.compare(local, upstream, set()))
 
+    def test_restart_requirements_are_optional_and_cannot_hide_other_drift(self):
+        for route in ("/web/config", "/api/config"):
+            upstream = document({route: {"post": {"responses": {"200": {"content": {"application/json": {"schema": {
+                "type": "object", "properties": {"status": {"type": "string"}}, "required": ["status"]
+            }}}}}}}})
+            local = deepcopy(upstream)
+            schema = local["paths"][route]["post"]["responses"]["200"]["content"]["application/json"]["schema"]
+            schema["properties"]["restartRequirements"] = {"type": "array", "items": {
+                "type": "object", "properties": {key: {"type": "string"} for key in ("component", "category", "kind")},
+                "required": ["component", "category", "kind"]}}
+            self.assertEqual(module.compare(local, upstream, set()), [])
+            schema["required"].append("restartRequirements")
+            self.assertTrue(module.compare(local, upstream, set()))
+            schema["required"].remove("restartRequirements")
+            schema["properties"]["status"] = {"type": "integer"}
+            self.assertTrue(module.compare(local, upstream, set()))
+
     def test_accepts_only_the_declared_named_client_status_contract(self):
         for route in ("/web/status", "/api/status"):
             def status(schema):

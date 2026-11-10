@@ -1,3 +1,4 @@
+using Microsoft.EntityFrameworkCore.Query;
 using Microsoft.Data.Sqlite;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging;
@@ -10,6 +11,23 @@ namespace Torrentarr.Infrastructure.Database;
 /// </summary>
 public static class DatabaseRetryExtensions
 {
+    /// <summary>Bulk updates bypass SaveChanges, so retry transient SQLite writer contention here.</summary>
+    public static async Task<int> ExecuteUpdateWithRetryAsync<T>(this IQueryable<T> query,
+        Action<UpdateSettersBuilder<T>> setters,
+        ILogger? logger = null, CancellationToken cancellationToken = default)
+    {
+        for (var attempt = 0; ; attempt++)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            try { return await query.ExecuteUpdateAsync(setters, cancellationToken); }
+            catch (SqliteException ex) when (ex.SqliteErrorCode is 5 or 6 && attempt < 2)
+            {
+                logger?.LogWarning("SQLite writer busy; retrying bulk update (attempt {Attempt}/3)", attempt + 2);
+                await Task.Delay(TimeSpan.FromMilliseconds(250 * (1 << attempt)), cancellationToken);
+            }
+        }
+    }
+
     public static async Task<int> SaveChangesWithRetryAsync(
         this DbContext context,
         ILogger? logger = null,

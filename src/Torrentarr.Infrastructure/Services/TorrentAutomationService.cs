@@ -116,13 +116,10 @@ public sealed class TorrentAutomationService(TorrentarrConfig config, ITorrentCl
                 var hashes = allHashes;
                 foreach (var entry in _protection.Where(p => p.Value.Any(d => d.ClientInstanceId == id && !hashes.Contains(d.TorrentHash))).ToList()) _protection.TryRemove(entry.Key, out _);
                 var prefix = id.ToUpperInvariant() + "|";
-                var oldTrackerIssues = await db.MaintenanceState.Where(s => s.Key.StartsWith(prefix) && s.Key.EndsWith("|tracker-issue")).ToListAsync(inspectionCt);
-                var removed = oldTrackerIssues.Where(s => !allHashes.Contains(s.Key.Split('|')[1])).ToList();
-                if (removed.Count > 0)
-                {
-                    db.MaintenanceState.RemoveRange(removed);
-                    await db.SaveChangesAsync(inspectionCt);
-                }
+                var oldTrackerIssues = await db.MaintenanceState.AsNoTracking().Where(s => s.Key.StartsWith(prefix) && s.Key.EndsWith("|tracker-issue"))
+                    .Select(s => s.Key).ToListAsync(inspectionCt);
+                foreach (var stale in oldTrackerIssues.Where(k => !allHashes.Contains(k.Split('|')[1])))
+                    await MaintenancePersistence.DeleteAsync(db, stale, inspectionCt);
                 using var budget = new SemaphoreSlim(2);
                 using var observations = new SemaphoreSlim(1);
                 await Task.WhenAll(torrents.Select(async torrent =>

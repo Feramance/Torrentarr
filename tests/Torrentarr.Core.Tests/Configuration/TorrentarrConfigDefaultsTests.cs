@@ -47,7 +47,7 @@ public class TorrentarrConfigDefaultsTests
         var config = new TorrentarrConfig();
 
         config.WebUI.Port.Should().Be(6969);
-        config.WebUI.Theme.Should().Be("Dark");
+        config.WebUI.Theme.Should().Be("System");
         config.WebUI.LiveArr.Should().BeTrue();
         config.WebUI.LocalAuthEnabled.Should().BeFalse();
         config.WebUI.AllowInsecureTokenQuery.Should().BeNull();

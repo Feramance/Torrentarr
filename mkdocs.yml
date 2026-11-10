@@ -259,6 +259,7 @@ nav:
   - webui/index.md
   - Console and Statistics: webui/console-statistics.md
   - Processes View: webui/processes.md
+  - Console Statistics: webui/console-statistics.md
   - Issues View: webui/issues.md
   - Logs View: webui/logs.md
   - Arr Views: webui/arr-views.md
