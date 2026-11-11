@@ -105,29 +105,44 @@ describe("transfer history", () => {
     expect(screen.queryByRole("status")).not.toBeInTheDocument();
   });
 
-  it("exposes coverage and readable sampled data", async () => {
+  it("exposes coverage, readable sampled data and rate labels", async () => {
     vi.mocked(getTransferHistory).mockResolvedValue(history("one"));
     render(<TransferHistory instance="one" active />);
     await settle();
     expect(screen.getByText(/5 \/ 10 minutes sampled/)).toBeInTheDocument();
     expect(screen.queryByText("View sampled data")).not.toBeInTheDocument();
     expect(screen.queryByRole("table")).not.toBeInTheDocument();
+    expect(screen.getByText("2.0 KiB/s")).toBeInTheDocument();
+    expect(screen.getByText("1.0 KiB/s")).toBeInTheDocument();
+    expect(screen.getByText("0 B/s")).toBeInTheDocument();
     const point = screen.getByRole("img", { name: /one.*Download: 1.0 KiB/ });
     fireEvent.focus(point);
     expect(screen.getByRole("status")).toHaveTextContent("Download 1.0 KiB/s");
   });
-  it("dismisses historical points on leave, blur, cancel and outside touch", async () => {
+  it("keeps the inspected point stable across gaps until leaving the plot", async () => {
     vi.mocked(getTransferHistory).mockResolvedValue(history("one"));
     const view = render(<TransferHistory instance="one" active />);
     await settle();
     const marker = screen.getByRole("img", { name: /one.*Download: 1.0 KiB/ });
     const plot = screen.getByRole("img", { name: /^one download and upload/ });
-    fireEvent.pointerEnter(marker, { pointerType: "mouse" });
+    vi.spyOn(plot, "getBoundingClientRect").mockReturnValue({
+      x: 0,
+      y: 0,
+      width: 800,
+      height: 155,
+      top: 0,
+      left: 0,
+      right: 800,
+      bottom: 155,
+      toJSON: () => ({}),
+    } as DOMRect);
+    fireEvent.pointerMove(plot, { pointerType: "mouse", clientX: 70 });
     expect(screen.getByRole("status")).toHaveTextContent("Download 1.0 KiB/s");
-    fireEvent.pointerLeave(marker, {
-      pointerType: "mouse",
-      relatedTarget: plot,
-    });
+    fireEvent.pointerMove(plot, { pointerType: "mouse", clientX: 780 });
+    expect(screen.getByRole("status")).toHaveTextContent("No complete sample");
+    fireEvent.pointerMove(plot, { pointerType: "mouse", clientX: 70 });
+    expect(screen.getByRole("status")).toHaveTextContent("Download 1.0 KiB/s");
+    fireEvent.pointerLeave(plot, { pointerType: "mouse" });
     expect(screen.queryByRole("status")).not.toBeInTheDocument();
     fireEvent.pointerDown(marker, { pointerType: "mouse" });
     fireEvent.focus(marker);
@@ -142,7 +157,7 @@ describe("transfer history", () => {
     expect(screen.getByRole("status")).toBeInTheDocument();
     fireEvent.pointerDown(document.body, { pointerType: "touch" });
     expect(screen.queryByRole("status")).not.toBeInTheDocument();
-    fireEvent.pointerEnter(marker, { pointerType: "mouse" });
+    fireEvent.pointerMove(plot, { pointerType: "mouse", clientX: 70 });
     fireEvent.pointerCancel(plot, { pointerType: "mouse" });
     expect(screen.queryByRole("status")).not.toBeInTheDocument();
     fireEvent.focus(marker);

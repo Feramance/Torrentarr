@@ -27,7 +27,7 @@ describe("statistics", () => {
     );
     expect(path.match(/M/g)).toHaveLength(3);
     expect(path.match(/L/g)).toHaveLength(1);
-    expect(path).toContain("M20.00,130.00");
+    expect(path).toContain("M70.00,130.00");
   });
   it("shows text equivalents for breakdowns including empty results", () => {
     render(

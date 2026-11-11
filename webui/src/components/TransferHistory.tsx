@@ -8,7 +8,12 @@ import type {
 } from "../api/types";
 import { STATISTICS_UPDATED } from "../hooks/useStatisticsUpdates";
 
-import { rateLabel, transferPath } from "../utils/transferChart";
+import {
+  rateLabel,
+  TRANSFER_LEFT,
+  TRANSFER_RIGHT,
+  transferPath,
+} from "../utils/transferChart";
 
 export function TransferHistory({
   instance,
@@ -114,6 +119,14 @@ export function TransferHistory({
           (point) => point.samples === point.expectedSamples,
         );
         const latest = complete.at(-1);
+        const inspected =
+          inspection.value?.instance === series.instance
+            ? inspection.value.point
+            : null;
+        const chartWidth = TRANSFER_RIGHT - TRANSFER_LEFT;
+        const xAt = (index: number) =>
+          TRANSFER_LEFT +
+          (index / Math.max(1, series.points.length - 1)) * chartWidth;
         const coverage = series.points.reduce(
           (sum, point) => sum + point.samples,
           0,
@@ -136,22 +149,44 @@ export function TransferHistory({
                 <svg
                   onPointerLeave={inspection.leave}
                   onPointerCancel={inspection.clear}
+                  onPointerMove={(event) => {
+                    if (event.pointerType === "touch") return;
+                    const rect = event.currentTarget.getBoundingClientRect();
+                    if (!rect.width) return;
+                    const index = Math.round(
+                      Math.max(
+                        0,
+                        Math.min(
+                          1,
+                          (((event.clientX - rect.left) / rect.width) * 800 -
+                            TRANSFER_LEFT) /
+                            chartWidth,
+                        ),
+                      ) *
+                        (series.points.length - 1),
+                    );
+                    inspection.inspect({
+                      instance: series.instance,
+                      point: series.points[index],
+                    });
+                  }}
                   viewBox="0 0 800 155"
                   role="img"
                   aria-label={`${series.instance} download and upload rates over ${range}; missing or incomplete intervals appear as gaps`}
                 >
-                  <text x="20" y="13">
-                    {rateLabel(maximum)}
-                  </text>
                   {[20, 75, 130].map((y) => (
-                    <line
-                      key={y}
-                      x1="20"
-                      x2="780"
-                      y1={y}
-                      y2={y}
-                      className="chart-grid"
-                    />
+                    <g key={y}>
+                      <line
+                        x1={TRANSFER_LEFT}
+                        x2={TRANSFER_RIGHT}
+                        y1={y}
+                        y2={y}
+                        className="chart-grid"
+                      />
+                      <text x={TRANSFER_LEFT - 6} y={y + 3} textAnchor="end">
+                        {rateLabel(maximum - ((y - 20) / 110) * maximum)}
+                      </text>
+                    </g>
                   ))}
                   <path
                     d={transferPath(series.points, "downloadRate", maximum)}
@@ -166,11 +201,7 @@ export function TransferHistory({
                     point.downloadRate != null ? (
                       <g key={point.timestamp}>
                         <circle
-                          cx={
-                            20 +
-                            (index / Math.max(1, series.points.length - 1)) *
-                              760
-                          }
+                          cx={xAt(index)}
                           cy={130 - (point.downloadRate / maximum) * 110}
                           r="1.5"
                           fill="var(--chart-download)"
@@ -178,6 +209,8 @@ export function TransferHistory({
                             instance: series.instance,
                             point,
                           })}
+                          onPointerEnter={undefined}
+                          onPointerLeave={undefined}
                           tabIndex={0}
                           role="img"
                           aria-label={`${series.instance} · ${new Date(point.timestamp).toLocaleString()} · Download: ${rateLabel(point.downloadRate ?? 0)}`}
@@ -185,11 +218,7 @@ export function TransferHistory({
                           <title>{`${new Date(point.timestamp).toLocaleString()} · Download: ${rateLabel(point.downloadRate ?? 0)}`}</title>
                         </circle>
                         <circle
-                          cx={
-                            20 +
-                            (index / Math.max(1, series.points.length - 1)) *
-                              760
-                          }
+                          cx={xAt(index)}
                           cy={130 - ((point.uploadRate ?? 0) / maximum) * 110}
                           r="1.5"
                           fill="var(--chart-upload)"
@@ -197,6 +226,8 @@ export function TransferHistory({
                             instance: series.instance,
                             point,
                           })}
+                          onPointerEnter={undefined}
+                          onPointerLeave={undefined}
                           tabIndex={0}
                           role="img"
                           aria-label={`${series.instance} · ${new Date(point.timestamp).toLocaleString()} · Upload: ${rateLabel(point.uploadRate ?? 0)}`}
@@ -206,21 +237,25 @@ export function TransferHistory({
                       </g>
                     ) : null,
                   )}
-                  <text x="20" y="150">
+                  <text x={TRANSFER_LEFT} y="150">
                     {new Date(series.points[0]!.timestamp).toLocaleString()}
                   </text>
-                  <text x="780" y="150" textAnchor="end">
+                  <text x={TRANSFER_RIGHT} y="150" textAnchor="end">
                     {new Date(series.points.at(-1)!.timestamp).toLocaleString()}
                   </text>
                 </svg>
-                {inspection.value?.instance === series.instance && (
+                {inspected && (
                   <p role="status" className="hint">
-                    {new Date(
-                      inspection.value.point.timestamp,
-                    ).toLocaleString()}{" "}
-                    · Download{" "}
-                    {rateLabel(inspection.value.point.downloadRate ?? 0)} ·
-                    Upload {rateLabel(inspection.value.point.uploadRate ?? 0)}
+                    {new Date(inspected.timestamp).toLocaleString()} ·{" "}
+                    {inspected.samples === inspected.expectedSamples &&
+                    inspected.downloadRate != null ? (
+                      <>
+                        Download {rateLabel(inspected.downloadRate)} · Upload{" "}
+                        {rateLabel(inspected.uploadRate ?? 0)}
+                      </>
+                    ) : (
+                      "No complete sample"
+                    )}
                   </p>
                 )}
                 <div className="breakdown__legend">
