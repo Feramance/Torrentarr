@@ -123,6 +123,9 @@ export function TransferHistory({
           inspection.value?.instance === series.instance
             ? inspection.value.point
             : null;
+        const shown = inspected ?? latest;
+        const shownComplete =
+          shown != null && shown.samples === shown.expectedSamples;
         const chartWidth = TRANSFER_RIGHT - TRANSFER_LEFT;
         const xAt = (index: number) =>
           TRANSFER_LEFT +
@@ -244,34 +247,37 @@ export function TransferHistory({
                     {new Date(series.points.at(-1)!.timestamp).toLocaleString()}
                   </text>
                 </svg>
-                {inspected && (
-                  <p role="status" className="hint">
-                    {new Date(inspected.timestamp).toLocaleString()} ·{" "}
-                    {inspected.samples === inspected.expectedSamples &&
-                    inspected.downloadRate != null ? (
-                      <>
-                        Download {rateLabel(inspected.downloadRate)} · Upload{" "}
-                        {rateLabel(inspected.uploadRate ?? 0)}
-                      </>
-                    ) : (
-                      "No complete sample"
-                    )}
-                  </p>
-                )}
                 <div className="breakdown__legend">
                   <span>
                     <i className="stat-tone-teal" />
-                    Download {latest ? rateLabel(latest.downloadRate!) : "—"}
+                    Download{" "}
+                    {shown && shownComplete
+                      ? rateLabel(shown.downloadRate ?? 0)
+                      : "—"}
                   </span>
                   <span>
                     <i className="stat-tone-orange" />
-                    Upload {latest ? rateLabel(latest.uploadRate!) : "—"}
+                    Upload{" "}
+                    {shown && shownComplete
+                      ? rateLabel(shown.uploadRate ?? 0)
+                      : "—"}
                   </span>
-                  <span className="hint">
-                    Latest complete interval
-                    {latest
-                      ? ` · ${new Date(latest.timestamp).toLocaleString()}`
-                      : " unavailable"}
+                  <span
+                    className="hint"
+                    role={inspected ? "status" : undefined}
+                    aria-label={
+                      inspected
+                        ? shownComplete
+                          ? `${new Date(inspected.timestamp).toLocaleString()} · Download ${rateLabel(inspected.downloadRate!)} · Upload ${rateLabel(inspected.uploadRate ?? 0)}`
+                          : `${new Date(inspected.timestamp).toLocaleString()} · No complete sample`
+                        : undefined
+                    }
+                  >
+                    {inspected
+                      ? `Inspecting · ${new Date(inspected.timestamp).toLocaleString()}${shownComplete ? "" : " · no sample"}`
+                      : latest
+                        ? `Latest complete interval · ${new Date(latest.timestamp).toLocaleString()}`
+                        : "Latest complete interval unavailable"}
                   </span>
                 </div>
               </>

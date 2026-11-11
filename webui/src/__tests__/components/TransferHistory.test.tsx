@@ -117,7 +117,11 @@ describe("transfer history", () => {
     expect(screen.getByText("0 B/s")).toBeInTheDocument();
     const point = screen.getByRole("img", { name: /one.*Download: 1.0 KiB/ });
     fireEvent.focus(point);
-    expect(screen.getByRole("status")).toHaveTextContent("Download 1.0 KiB/s");
+    expect(screen.getByRole("status")).toHaveTextContent("Inspecting");
+    expect(screen.getByRole("status")).toHaveAttribute(
+      "aria-label",
+      expect.stringContaining("Download 1.0 KiB/s"),
+    );
   });
   it("keeps the inspected point stable across gaps until leaving the plot", async () => {
     vi.mocked(getTransferHistory).mockResolvedValue(history("one"));
@@ -137,13 +141,29 @@ describe("transfer history", () => {
       toJSON: () => ({}),
     } as DOMRect);
     fireEvent.pointerMove(plot, { pointerType: "mouse", clientX: 70 });
-    expect(screen.getByRole("status")).toHaveTextContent("Download 1.0 KiB/s");
+    expect(screen.getByRole("status")).toHaveAttribute(
+      "aria-label",
+      expect.stringContaining("Download 1.0 KiB/s"),
+    );
+    expect(screen.getByRole("status").tagName).toBe("SPAN");
+    expect(
+      screen.queryByText("Latest complete interval", { exact: false }),
+    ).not.toBeInTheDocument();
     fireEvent.pointerMove(plot, { pointerType: "mouse", clientX: 780 });
-    expect(screen.getByRole("status")).toHaveTextContent("No complete sample");
+    expect(screen.getByRole("status")).toHaveAttribute(
+      "aria-label",
+      expect.stringContaining("No complete sample"),
+    );
     fireEvent.pointerMove(plot, { pointerType: "mouse", clientX: 70 });
-    expect(screen.getByRole("status")).toHaveTextContent("Download 1.0 KiB/s");
+    expect(screen.getByRole("status")).toHaveAttribute(
+      "aria-label",
+      expect.stringContaining("Download 1.0 KiB/s"),
+    );
     fireEvent.pointerLeave(plot, { pointerType: "mouse" });
     expect(screen.queryByRole("status")).not.toBeInTheDocument();
+    expect(
+      screen.getByText("Latest complete interval", { exact: false }),
+    ).toBeInTheDocument();
     fireEvent.pointerDown(marker, { pointerType: "mouse" });
     fireEvent.focus(marker);
     fireEvent.click(marker);
