@@ -70,10 +70,10 @@ public class WorkerLifecycleTests
         (await supervisor.GetProcessStatusAsync())["Radarr"].LastFailure.Should().Contain("launch failed");
     }
 
-    [Fact]
+    [SkippableFact]
     public async Task DisablingManagedWorker_StopsRunningProcessOnReconciliation()
     {
-        if (OperatingSystem.IsWindows()) return;
+        Skip.If(OperatingSystem.IsWindows(), "Uses Unix child processes.");
         var config = Config();
         config.Apply(config, 2);
         using var supervisor = new WorkerProcessSupervisor(config, NullLogger<WorkerProcessSupervisor>.Instance,
@@ -152,10 +152,10 @@ public class WorkerLifecycleTests
         finally { await orchestrator.StopAsync(); }
     }
 
-    [Fact]
+    [SkippableFact]
     public async Task ManualRestart_CancelsOldRetryWithoutChargingAllowance()
     {
-        if (OperatingSystem.IsWindows()) return;
+        Skip.If(OperatingSystem.IsWindows(), "Uses Unix child processes.");
         var attempts = 0;
         var config = Config();
         config.Settings.ProcessRestartDelay = 1;
@@ -178,10 +178,10 @@ public class WorkerLifecycleTests
         attempts.Should().Be(3);
     }
 
-    [Fact]
+    [SkippableFact]
     public async Task ConcurrentManualRestarts_LeaveOnlyOneOwnedChild_AndShutdownWaitsForExit()
     {
-        if (OperatingSystem.IsWindows()) return;
+        Skip.If(OperatingSystem.IsWindows(), "Uses Unix child processes.");
         var children = new List<int>();
         var config = Config();
         using var supervisor = new WorkerProcessSupervisor(config, NullLogger<WorkerProcessSupervisor>.Instance,
@@ -207,10 +207,10 @@ public class WorkerLifecycleTests
         }
     }
 
-    [Fact]
+    [SkippableFact]
     public async Task ImmediateChildExit_CannotDisposeProcessDuringStatusRead()
     {
-        if (OperatingSystem.IsWindows()) return;
+        Skip.If(OperatingSystem.IsWindows(), "Uses Unix child processes.");
         var config = Config();
         config.Settings.AutoRestartProcesses = false;
         using var supervisor = new WorkerProcessSupervisor(config, NullLogger<WorkerProcessSupervisor>.Instance,
@@ -254,10 +254,10 @@ public class WorkerLifecycleTests
         attempts.Should().Be(1);
     }
 
-    [Fact]
+    [SkippableFact]
     public async Task CrashedChild_UsesTheSameBoundedRetryPolicyAsLaunchFailure()
     {
-        if (OperatingSystem.IsWindows()) return;
+        Skip.If(OperatingSystem.IsWindows(), "Uses Unix child processes.");
         var attempts = 0;
         var config = Config();
         config.Settings.ProcessRestartDelay = 0;
@@ -276,12 +276,12 @@ public class WorkerLifecycleTests
     }
 
 
-    [Theory]
+    [SkippableTheory]
     [InlineData(false)]
     [InlineData(true)]
     public async Task RemovedWorker_IsRetriedAfterAcknowledgment_UnlessRestored(bool restored)
     {
-        if (OperatingSystem.IsWindows()) return;
+        Skip.If(OperatingSystem.IsWindows(), "Uses Unix child processes.");
         var config = Config();
         config.Apply(config, 2);
         using var supervisor = new WorkerProcessSupervisor(config, NullLogger<WorkerProcessSupervisor>.Instance,
@@ -309,10 +309,10 @@ public class WorkerLifecycleTests
         finally { await orchestrator.StopAsync(); File.Delete(status); }
     }
 
-    [Fact]
+    [SkippableFact]
     public async Task RequestedRestart_UsesGracefulShutdownBeforeTerminatingWorker()
     {
-        if (OperatingSystem.IsWindows()) return;
+        Skip.If(OperatingSystem.IsWindows(), "Uses Unix child processes.");
         var config = Config(); config.Settings.AutoRestartProcesses = false;
         var evidence = Path.GetTempFileName(); var status = Path.GetTempFileName();
         using var supervisor = new WorkerProcessSupervisor(config, NullLogger<WorkerProcessSupervisor>.Instance,

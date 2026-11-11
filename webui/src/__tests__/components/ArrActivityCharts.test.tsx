@@ -59,7 +59,14 @@ describe("Arr activity", () => {
     )[0]!;
     expect(activityValue(partial.points[0], "queueDepth")).toBe("4");
     expect(activityValue(point(4.6), "queueDepth")).toBe("5");
-    expect(activityPath(partial.points, "queueDepth", 10)).toBe("");
+    expect(activityPath(partial.points, "queueDepth", 10)).toMatch(/^M/);
+    const relaxed = activityPath(
+      [point(0), point(1, 30), point(3)],
+      "queueDepth",
+      10,
+    );
+    expect(relaxed.match(/M/g)).toHaveLength(1);
+    expect(relaxed.match(/L/g)).toHaveLength(2);
     expect(
       activityPath(
         [point(0), point(null, 0), point(3)],
@@ -68,6 +75,50 @@ describe("Arr activity", () => {
       ).match(/M/g),
     ).toHaveLength(2);
   });
+  it.each(["type", "worker"])(
+    "plots captured partial hours and preserves genuine gaps by %s",
+    async (grouping) => {
+      vi.mocked(getArrActivity).mockResolvedValue({
+        ...history,
+        series: [
+          {
+            instance: "Sonarr-4K",
+            type: "sonarr",
+            points: [
+              { ...point(3), timestamp: "2026-11-11T06:00:00Z" },
+              {
+                ...point(0, 57),
+                completionSamples: 57,
+                timestamp: "2026-11-11T07:00:00Z",
+              },
+              {
+                ...point(null, 0),
+                searchesCompleted: null,
+                completionSamples: 0,
+                timestamp: "2026-11-11T08:00:00Z",
+              },
+              { ...point(4), timestamp: "2026-11-11T09:00:00Z" },
+            ],
+          },
+        ],
+      });
+      render(<ArrActivityCharts active />);
+      await settle();
+      fireEvent.change(screen.getByLabelText("Group activity by"), {
+        target: { value: grouping },
+      });
+      for (const name of [/^Queue depth/, /^Searches completed/]) {
+        const plot = screen.getByRole("img", { name });
+        expect(plot.querySelectorAll("circle")).toHaveLength(3);
+        expect(
+          within(plot).getByRole("img", { name: /0 \(57\/60 samples\)/ }),
+        ).toBeInTheDocument();
+        const path = plot.querySelector("path")?.getAttribute("d");
+        expect(path?.match(/M/g)).toHaveLength(2);
+        expect(path?.match(/L/g)).toHaveLength(1);
+      }
+    },
+  );
   it("keeps worker colors deterministic and uses distinct type colors", () => {
     expect(activityColor(history.series[0]!, "worker", 0)).toBe(
       activityColor(history.series[0]!, "worker", 0),

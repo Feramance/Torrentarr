@@ -55,10 +55,29 @@ public sealed class TorrentInventoryService(ITorrentClientRegistry registry, Tor
                 Issue("torrent-list-failed", "Torrent listing failed; ownership is unknown."); continue;
             }
             result.InspectedClients.Add(id);
-            foreach (var torrent in torrents)
+            var candidates = torrents.Where(t => candidateHash == null || t.Hash.Equals(candidateHash, StringComparison.OrdinalIgnoreCase));
+            var prefetchFiles = result.OwnershipRequested && required.HasFlag(InventoryRequirements.Files)
+                && client.Capabilities.FileEnumeration;
+            if (prefetchFiles)
+            {
+                foreach (var batch in candidates.Chunk(4))
+                {
+                    ct.ThrowIfCancellationRequested();
+                    var requests = batch.Select(FetchFilesAsync).ToArray();
+                    await Task.WhenAll(requests);
+                    for (var index = 0; index < batch.Length; index++)
+                        await InspectTorrentAsync(batch[index], requests[index]);
+                }
+            }
+            else
+            {
+                foreach (var torrent in candidates)
+                    await InspectTorrentAsync(torrent);
+            }
+
+            async Task InspectTorrentAsync(TorrentInfo torrent, Task<List<TorrentFileRecord>?>? fileList = null)
             {
                 ct.ThrowIfCancellationRequested();
-                if (candidateHash != null && !torrent.Hash.Equals(candidateHash, StringComparison.OrdinalIgnoreCase)) continue;
                 torrent.ClientInstanceId = id;
                 var item = new TorrentInventoryItem { Torrent = torrent, Client = new(client.Identity, client.Capabilities) };
                 result.Torrents.Add(item);
@@ -75,7 +94,10 @@ public sealed class TorrentInventoryService(ITorrentClientRegistry registry, Tor
                     {
                         try
                         {
-                            var files = await client.GetTorrentFilesAsync(torrent.Hash, ct);
+                            var files = fileList == null
+                                ? await client.GetTorrentFilesAsync(torrent.Hash, ct)
+                                : await fileList;
+                            if (files == null) throw new IOException("Torrent file enumeration failed.");
                             item.FilesComplete = files.Count > 0 || torrent.Size == 0;
                             item.LocalFilesComplete = local && item.FilesComplete;
                             if (!item.FilesComplete) Issue("empty-file-list", "File ownership is unavailable for a nonempty torrent.", torrent);
@@ -124,6 +146,13 @@ public sealed class TorrentInventoryService(ITorrentClientRegistry registry, Tor
                     { Issue("tracker-list-failed", "Tracker inspection failed.", torrent, blocksOwnership: false); }
                 }
             }
+
+            async Task<List<TorrentFileRecord>?> FetchFilesAsync(TorrentInfo torrent)
+            {
+                try { return await client.GetTorrentFilesAsync(torrent.Hash, ct); }
+                catch (Exception ex) when (ex is not OperationCanceledException) { return null; }
+            }
+
             void Issue(string code, string message, TorrentInfo? torrent = null, string? clientPath = null,
                 string? localPath = null, bool file = false, bool blocksOwnership = true)
             {

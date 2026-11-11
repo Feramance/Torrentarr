@@ -29,14 +29,17 @@ public class UpdateService
     private bool _updateAvailable;
     private string? _changelog;
     private string? _changelogUrl;
-    private string? _binaryDownloadUrl;
-    private string? _binaryDownloadName;
-    private long? _binaryDownloadSize;
+    internal sealed record ReleaseAssets(string Channel, string? HostUrl, string? HostName, long? HostSize,
+        string? WorkerUrl, string? WorkerName);
+    private volatile ReleaseAssets? _releaseAssets;
+    private string? _checkedChannel;
     private string? _binaryDownloadError;
-    private string? _workerDownloadUrl;
-    private string? _workerDownloadName;
+    internal ReleaseAssets? AssetsForChannel(string channel)
+        => _releaseAssets is { } assets && assets.Channel == channel ? assets : null;
+
     private string? _checkError;
     private readonly SemaphoreSlim _checkLock = new(1, 1);
+    internal Func<HttpClient, string, CancellationToken, Task<JObject?>>? ReleaseFetcher { get; set; }
 
     private const string RepoOwner = "Feramance";
     private const string RepoName = "Torrentarr";
@@ -109,18 +112,20 @@ public class UpdateService
     public async Task CheckForUpdateAsync(bool forceRefresh = false, CancellationToken ct = default)
     {
         await ObserveApplyResultAsync(ct);
-        if (!forceRefresh && _lastChecked != DateTime.MinValue &&
-            (DateTime.UtcNow - _lastChecked).TotalHours < 1)
-            return;
-
         await _checkLock.WaitAsync(ct);
         try
         {
-            // Double-check inside lock
-            if (!forceRefresh && _lastChecked != DateTime.MinValue &&
+            var channel = AutoUpdateChannel;
+            if (!forceRefresh && _checkedChannel == channel && _lastChecked != DateTime.MinValue &&
                 (DateTime.UtcNow - _lastChecked).TotalHours < 1)
                 return;
 
+            _releaseAssets = null;
+            _latestVersion = null;
+            _updateAvailable = false;
+            _changelog = null;
+            _changelogUrl = null;
+            _binaryDownloadError = null;
             var currentVersion = GetCurrentVersion();
             var assetPattern = GetAssetPattern();
 
@@ -130,17 +135,15 @@ public class UpdateService
                 http.DefaultRequestHeaders.Add("User-Agent", $"{RepoName}/{currentVersion}");
                 http.Timeout = TimeSpan.FromSeconds(10);
 
-                var channel = AutoUpdateChannel;
-                var release = await FetchReleaseForChannelAsync(http, channel, ct);
+                var release = await (ReleaseFetcher ?? FetchReleaseForChannelAsync)(http, channel, ct);
                 if (release == null)
                 {
                     if (_issues != null) await _issues.ReportAsync(Issue("check"), ct);
                     _checkError = "GitHub API returned no matching release";
-                    _lastChecked = DateTime.UtcNow;
                     return;
                 }
 
-                ApplyReleaseMetadata(release, currentVersion, assetPattern, allowBinary: CanApplyBinaries);
+                ApplyReleaseMetadata(release, currentVersion, assetPattern, channel, allowBinary: !IsContainer() && !IsSourceBuild() && channel != "nightly");
                 if (_issues != null) await _issues.ResolveAsync(Issue("check"), ct);
             }
             catch (Exception ex)
@@ -152,6 +155,7 @@ public class UpdateService
             finally
             {
                 _lastChecked = DateTime.UtcNow;
+                _checkedChannel = channel;
             }
         }
         finally
@@ -163,6 +167,8 @@ public class UpdateService
     /// <summary>Builds the MetaResponse-compatible anonymous object for <c>GET /web/meta</c>. When <paramref name="webUi"/> is provided, includes auth_required, local_auth_enabled, oidc_enabled.</summary>
     public object BuildMetaResponse(WebUIConfig? webUi = null)
     {
+        var channel = AutoUpdateChannel;
+        var assets = AssetsForChannel(channel);
         var currentVersion = GetCurrentVersion();
         var updateState = new
         {
@@ -188,13 +194,13 @@ public class UpdateService
                 update_state = updateState,
                 installation_type = IsContainer() ? "docker" : IsSourceBuild() ? "source" : "binary",
                 auto_update_supported = CanApplyBinaries,
-                update_channel = AutoUpdateChannel,
-                binary_download_url = _binaryDownloadUrl,
-                binary_download_name = _binaryDownloadName,
-                binary_download_size = _binaryDownloadSize,
+                update_channel = channel,
+                binary_download_url = assets?.HostUrl,
+                binary_download_name = assets?.HostName,
+                binary_download_size = assets?.HostSize,
                 binary_download_error = _binaryDownloadError,
-                worker_download_url = _workerDownloadUrl,
-                worker_download_name = _workerDownloadName,
+                worker_download_url = assets?.WorkerUrl,
+                worker_download_name = assets?.WorkerName,
                 platform = Environment.OSVersion.Platform.ToString(),
                 runtime = $".NET {Environment.Version}"
             };
@@ -214,13 +220,13 @@ public class UpdateService
             update_state = updateState,
             installation_type = IsContainer() ? "docker" : IsSourceBuild() ? "source" : "binary",
             auto_update_supported = CanApplyBinaries,
-            update_channel = AutoUpdateChannel,
-            binary_download_url = _binaryDownloadUrl,
-            binary_download_name = _binaryDownloadName,
-            binary_download_size = _binaryDownloadSize,
+            update_channel = channel,
+            binary_download_url = assets?.HostUrl,
+            binary_download_name = assets?.HostName,
+            binary_download_size = assets?.HostSize,
             binary_download_error = _binaryDownloadError,
-            worker_download_url = _workerDownloadUrl,
-            worker_download_name = _workerDownloadName,
+            worker_download_url = assets?.WorkerUrl,
+            worker_download_name = assets?.WorkerName,
             platform = Environment.OSVersion.Platform.ToString(),
             runtime = $".NET {Environment.Version}",
             auth_required = !webUi.AuthDisabled,
@@ -265,7 +271,8 @@ public class UpdateService
             return Task.CompletedTask;
         }
 
-        if (string.IsNullOrEmpty(_binaryDownloadUrl) || string.IsNullOrEmpty(_workerDownloadUrl))
+        var assets = AssetsForChannel(AutoUpdateChannel);
+        if (assets == null || string.IsNullOrEmpty(assets.HostUrl) || string.IsNullOrEmpty(assets.WorkerUrl))
         {
             ApplyState.LastResult = "error";
             ApplyState.LastError = "No binary download URL available — run update check first.";
@@ -290,30 +297,15 @@ public class UpdateService
                 tempDir = Path.Combine(Path.GetTempPath(), $"torrentarr-update-{Guid.NewGuid():N}");
                 Directory.CreateDirectory(tempDir);
 
-                _logger.LogInformation("UpdateService: Downloading {Url}", _binaryDownloadUrl);
+                _logger.LogInformation("UpdateService: Downloading {Url}", assets.HostUrl);
 
                 using var http = new HttpClient();
                 http.DefaultRequestHeaders.Add("User-Agent", $"{RepoName}/{GetCurrentVersion()}");
                 http.Timeout = TimeSpan.FromMinutes(10);
 
-                var archiveName = _binaryDownloadName ?? "update.zip";
-                var archivePath = Path.Combine(tempDir, archiveName);
-
-                using (var response = await http.GetAsync(_binaryDownloadUrl, HttpCompletionOption.ResponseHeadersRead, ct))
-                {
-                    response.EnsureSuccessStatusCode();
-                    using var fs = File.Create(archivePath);
-                    await response.Content.CopyToAsync(fs, ct);
-                }
-
-                var workerName = _workerDownloadName ?? "worker-update";
-                var workerPath = Path.Combine(tempDir, workerName);
-                using (var response = await http.GetAsync(_workerDownloadUrl, HttpCompletionOption.ResponseHeadersRead, ct))
-                {
-                    response.EnsureSuccessStatusCode();
-                    using var fs = File.Create(workerPath);
-                    await response.Content.CopyToAsync(fs, ct);
-                }
+                var (archivePath, workerPath) = await DownloadReleaseAssetsAsync(http, assets, tempDir, ct);
+                var archiveName = Path.GetFileName(archivePath);
+                var workerName = Path.GetFileName(workerPath);
 
                 _logger.LogInformation("UpdateService: Extracting {Archive}", archiveName);
 
@@ -385,6 +377,24 @@ public class UpdateService
         }, CancellationToken.None);
 
         return Task.CompletedTask;
+    }
+
+    internal static async Task<(string HostPath, string WorkerPath)> DownloadReleaseAssetsAsync(
+        HttpClient http, ReleaseAssets assets, string directory, CancellationToken ct = default)
+    {
+        var host = Path.Combine(directory, assets.HostName ?? "update.zip");
+        var worker = Path.Combine(directory, assets.WorkerName ?? "worker-update");
+        await DownloadAsync(assets.HostUrl!, host);
+        await DownloadAsync(assets.WorkerUrl!, worker);
+        return (host, worker);
+
+        async Task DownloadAsync(string url, string path)
+        {
+            using var response = await http.GetAsync(url, HttpCompletionOption.ResponseHeadersRead, ct);
+            response.EnsureSuccessStatusCode();
+            await using var output = File.Create(path);
+            await response.Content.CopyToAsync(output, ct);
+        }
     }
 
     private sealed record UpdateTarget(string Source, string Destination, string Staged, string Backup, bool Existed);
@@ -614,7 +624,7 @@ public class UpdateService
         return null;
     }
 
-    private void ApplyReleaseMetadata(JObject release, string currentVersion, string assetPattern, bool allowBinary)
+    internal void ApplyReleaseMetadata(JObject release, string currentVersion, string assetPattern, string channel, bool allowBinary)
     {
         var latestTag = release["tag_name"]?.ToObject<string>() ?? currentVersion;
         _latestVersion = latestTag.TrimStart('v');
@@ -625,15 +635,11 @@ public class UpdateService
 
         if (!allowBinary)
         {
-            _binaryDownloadUrl = null;
-            _binaryDownloadName = null;
-            _binaryDownloadSize = null;
-            _workerDownloadUrl = null;
-            _workerDownloadName = null;
+            _releaseAssets = null;
             _binaryDownloadError = IsContainer() ? "Docker installations update by pulling and recreating the container."
-                : AutoUpdateChannel == "nightly"
-                ? "Nightly channel does not download or apply binaries"
-                : "Source builds cannot apply binary updates";
+                : channel == "nightly"
+                    ? "Nightly channel does not download or apply binaries"
+                    : "Source builds cannot apply binary updates";
             return;
         }
 
@@ -648,24 +654,11 @@ public class UpdateService
             && name.StartsWith("torrentarr-workers-", StringComparison.OrdinalIgnoreCase)
             && name.Contains(GetWorkerAssetPattern(), StringComparison.OrdinalIgnoreCase));
 
-        if (asset != null && workerAsset != null)
-        {
-            _binaryDownloadUrl = asset["browser_download_url"]?.ToObject<string>();
-            _binaryDownloadName = asset["name"]?.ToObject<string>();
-            _binaryDownloadSize = asset["size"]?.ToObject<long?>();
-            _binaryDownloadError = null;
-            _workerDownloadUrl = workerAsset["browser_download_url"]?.ToObject<string>();
-            _workerDownloadName = workerAsset["name"]?.ToObject<string>();
-        }
-        else
-        {
-            _binaryDownloadUrl = null;
-            _binaryDownloadName = null;
-            _binaryDownloadSize = null;
-            _binaryDownloadError = $"No asset found for platform: {assetPattern}";
-            _workerDownloadUrl = null;
-            _workerDownloadName = null;
-        }
+        _releaseAssets = asset != null && workerAsset != null
+            ? new ReleaseAssets(channel, asset["browser_download_url"]?.ToObject<string>(), asset["name"]?.ToObject<string>(),
+                asset["size"]?.ToObject<long?>(), workerAsset["browser_download_url"]?.ToObject<string>(), workerAsset["name"]?.ToObject<string>())
+            : null;
+        _binaryDownloadError = _releaseAssets == null ? $"No asset found for platform: {assetPattern}" : null;
     }
 
     private static string GetAssetPattern() => GetAssetPattern(

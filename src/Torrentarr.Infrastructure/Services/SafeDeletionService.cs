@@ -292,6 +292,8 @@ public sealed class SafeDeletionService : ISafeDeletionService
             if (root != null && paths.IsSafeDescendant(path, root)) return true;
             if (storage.RecycleBin.ResumeDataPath.Length > 0 && paths.IsSafeDescendant(path, storage.RecycleBin.ResumeDataPath)) return true;
         }
+        if (Path.GetFullPath(path).Equals(Path.GetFullPath(ConfigurationLoader.GetDefaultConfigPath()),
+            OperatingSystem.IsWindows() ? StringComparison.OrdinalIgnoreCase : StringComparison.Ordinal)) return true;
         var data = ConfigurationLoader.GetDataDirectoryPath();
         if (paths.IsSafeDescendant(path, Path.Combine(data, "logs"))) return true;
         return new[] { "torrentarr.db", "torrentarr.db-wal", "torrentarr.db-shm", "maintenance-history.jsonl", "active-config.json", ".torrentarr-host.lock" }
@@ -464,24 +466,6 @@ public sealed class SafeDeletionService : ISafeDeletionService
             Ledger.Write(entry with { State = "purged" });
         }
         return Task.FromResult(bytes);
-    }
-
-    public async Task<int> CleanupExpiredAsync(string clientInstanceId, CancellationToken ct = default)
-    {
-        var cfg = _config.GetTorrentClient(clientInstanceId);
-        if (cfg == null || !cfg.Maintenance.RecycleBin.Enabled || !cfg.Maintenance.RecycleBin.RetentionEnabled) return 0;
-        var remaining = cfg.Maintenance.RecycleBin.MaxFilesDeletedPerRun;
-        var deleted = 0;
-        foreach (var entry in InspectRecycleEntries(clientInstanceId))
-        {
-            if (entry.State == "legacy") { RegisterLegacyRecycleEntry(clientInstanceId, entry.Destination); continue; }
-            if (entry.State != "committed" || (DateTimeOffset.UtcNow - entry.RecycledAt).TotalDays < cfg.Maintenance.RecycleBin.RetentionDays) continue;
-            var files = InspectRecycleFiles(entry).Take(remaining).ToList();
-            await PurgeRecycleEntryAsync(clientInstanceId, entry.Key, files, ct);
-            remaining -= files.Count; deleted += files.Count;
-            if (remaining == 0) break;
-        }
-        return deleted;
     }
 
     private string? ValidateSource(string source, TorrentClientInstanceConfig cfg)

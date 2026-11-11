@@ -289,8 +289,10 @@ app.Use(async (context, next) =>
     await next(context);
 });
 
-// Serve static files from ClientApp/build
-var clientAppPath = Path.Combine(Directory.GetCurrentDirectory(), "ClientApp", "build");
+// Serve the shared Vite bundle, with the legacy development directory as a fallback.
+var clientAppPath = Path.Combine(AppContext.BaseDirectory, "wwwroot");
+if (!Directory.Exists(clientAppPath))
+    clientAppPath = Path.Combine(Directory.GetCurrentDirectory(), "ClientApp", "build");
 app.Use(async (context, next) =>
 {
     var path = context.Request.Path.Value;
@@ -1307,102 +1309,6 @@ app.MapGet("/web/radarr/{category}/movies", async (string category, TorrentarrCo
         page_size = currentPageSize,
         counts = new { available = availableCount, monitored = monitoredCount, missing = missingCount, quality_met = qualityMetCount, requests = requestsCount },
         movies
-    });
-});
-
-// Sonarr series for specific category
-app.MapGet("/web/sonarr/{category}/series", async (string category, TorrentarrConfig cfg, TorrentarrDbContext db, int? page, int? pageSize, string? q, string? missing, string? reason) =>
-{
-    var keys = ArrCatalogIdentity.QueryKeys(cfg, category);
-    var currentPage = page ?? 1;
-    var currentPageSize = pageSize ?? 50;
-    var skip = (currentPage - 1) * currentPageSize;
-
-    var allSeries = db.Series.Where(s => keys.Contains(s.ArrInstance));
-    // §6.3: text search filter
-    if (!string.IsNullOrWhiteSpace(q))
-        allSeries = allSeries.Where(s => s.Title != null && s.Title.Contains(q));
-    // missing=1: only return series that have unaired/missing episodes
-    if (missing == "1")
-        allSeries = allSeries.Where(s => !s.Searched);
-    if (!string.IsNullOrWhiteSpace(reason) && !reason.Equals("all", StringComparison.OrdinalIgnoreCase))
-    {
-        var notBeingSearched = reason.Equals("Not being searched", StringComparison.OrdinalIgnoreCase);
-        var matchingSeriesIds = db.Episodes
-            .Where(e => keys.Contains(e.ArrInstance)
-                && (notBeingSearched
-                    ? e.Reason == null || e.Reason == "Not being searched"
-                    : e.Reason == reason))
-            .Select(e => e.ArrSeriesId)
-            .Distinct();
-        allSeries = allSeries.Where(s => matchingSeriesIds.Contains(s.ArrId));
-    }
-    var totalSeries = await allSeries.CountAsync();
-    var monitoredCount = await allSeries.CountAsync(s => s.Monitored == true);
-    // §6.4: additional aggregate counts (SeriesFilesModel has no IsRequest/QualityMet; use Searched/Upgrade as proxies)
-    var missingSeriesCount = await allSeries.CountAsync(s => !s.Searched);
-    var qualityMetSeriesCount = await allSeries.CountAsync(s => !s.Upgrade);
-
-    var seriesItems = await allSeries
-        .OrderByDescending(s => s.EntryId)
-        .Skip(skip)
-        .Take(currentPageSize)
-        .Select(s => new
-        {
-            series = new
-            {
-                id = s.EntryId,
-                s.Title,
-                s.TvdbId,
-                s.Monitored,
-                s.Upgrade,
-                s.MinCustomFormatScore,
-                s.QualityProfileId,
-                s.QualityProfileName,
-                s.ArrId,
-                s.ArrInstance
-            },
-            arrSeriesId = s.ArrId,
-            arrInstance = s.ArrInstance,
-            totals = new { available = s.Searched ? 1 : 0, monitored = s.Monitored == true ? 1 : 0 },
-            seasons = new Dictionary<string, object>()
-        })
-        .ToListAsync();
-
-    var seriesIds = seriesItems.Select(s => s.arrSeriesId).ToList();
-    var episodes = await db.Episodes
-        .Where(e => keys.Contains(e.ArrInstance) && seriesIds.Contains(e.ArrSeriesId))
-        .ToListAsync();
-
-    return Results.Ok(new
-    {
-        category,
-        total = totalSeries,
-        page = currentPage,
-        page_size = currentPageSize,
-        counts = new { available = monitoredCount, monitored = monitoredCount, missing = missingSeriesCount, quality_met = qualityMetSeriesCount, requests = 0 },
-        series = seriesItems.Select(s => new
-        {
-            s.series,
-            s.totals,
-            seasons = episodes
-                .Where(e => e.ArrInstance == s.arrInstance && e.ArrSeriesId == s.arrSeriesId)
-                .GroupBy(e => e.SeasonNumber)
-                .ToDictionary(
-                    g => g.Key.ToString(),
-                    g => (object)new
-                    {
-                        episodes = g.Select(e => new
-                        {
-                            episodeNumber = e.EpisodeNumber,
-                            title = e.Title,
-                            monitored = e.Monitored,
-                            hasFile = e.HasFile,
-                            airDateUtc = e.AirDateUtc,
-                            reason = e.Reason
-                        })
-                    })
-        })
     });
 });
 

@@ -64,10 +64,7 @@ export function activityPath(
   let joined = false;
   return points
     .map((point, index) => {
-      if (
-        point[metric] == null ||
-        activityCoverage(point, metric) !== point.expectedSamples
-      ) {
+      if (point[metric] == null) {
         joined = false;
         return "";
       }

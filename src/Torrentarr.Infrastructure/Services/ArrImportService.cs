@@ -116,57 +116,36 @@ public class ArrImportService : IArrImportService
         }
     }
 
-    public async Task<bool> IsImportedAsync(string hash, CancellationToken cancellationToken = default)
+    public async Task<bool> IsImportedAsync(string hash, string category, DateTimeOffset submittedAt,
+        CancellationToken cancellationToken = default)
     {
-        _logger.LogTrace("Checking if hash {Hash} has been imported", hash);
+        cancellationToken.ThrowIfCancellationRequested();
+        var section = CategoryOwnershipHelper.FindArrSectionForCategory(_config, category);
+        if (section == null || !_config.ArrInstances.TryGetValue(section, out var arr)) return false;
 
-        // Check all Arr instances to see if they have this download in their queue
-        var instancesChecked = 0;
-        var hadCheckErrors = false;
-        foreach (var arrInstance in _config.ArrInstances.Values)
+        try
         {
-            instancesChecked++;
-            _logger.LogInformation("Checking Arr instance {Name} ({Type}) for hash {Hash}",
-                arrInstance.Category, arrInstance.Type, hash);
-
-            try
+            var type = arr.Type.ToLowerInvariant();
+            var evidence = new Torrentarr.Infrastructure.Database.Models.ArrActivityOperation
             {
-                var hasInQueue = arrInstance.Type.ToLower() switch
-                {
-                    "radarr" => await CheckRadarrQueueAsync(arrInstance, hash, cancellationToken),
-                    "sonarr" => await CheckSonarrQueueAsync(arrInstance, hash, cancellationToken),
-                    "lidarr" => await CheckLidarrQueueAsync(arrInstance, hash, cancellationToken),
-                    "readarr" => await CheckReadarrQueueAsync(arrInstance, hash, cancellationToken),
-                    _ => false
-                };
-
-                await ObserveAsync("queue", arrInstance.Category, hash, true, cancellationToken);
-                if (hasInQueue)
-                {
-                    _logger.LogInformation("Hash {Hash} found in queue for {Instance}, not yet imported", hash, arrInstance.Category);
-                    return false; // Still in queue, not yet imported
-                }
-            }
-            catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested) { throw; }
-            catch (Exception ex)
-            {
-                await ObserveAsync("queue", arrInstance.Category, hash, false, cancellationToken, DiagnosticText.Error(ex));
-                hadCheckErrors = true;
-                _logger.LogError(ex, "Error checking queue for instance {Category}", arrInstance.Category);
-            }
+                Type = type,
+                DownloadId = hash,
+                SubmittedAt = submittedAt.ToUnixTimeSeconds()
+            };
+            var eventType = type is "lidarr" or "readarr" ? 8 : 3;
+            var since = DateTimeOffset.FromUnixTimeSeconds(evidence.SubmittedAt);
+            var history = await ArrActivityCollector.ReadAsync(arr,
+                $"history/since?date={Uri.EscapeDataString(since.ToString("O"))}&eventType={eventType}", cancellationToken);
+            await ObserveAsync("history", category, hash, true, cancellationToken);
+            return history.Any(item => ArrActivityCollector.PositiveImport(item, evidence));
         }
-
-        if (hadCheckErrors)
+        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested) { throw; }
+        catch (Exception ex)
         {
-            _logger.LogWarning(
-                "Could not confirm import status for hash {Hash} after checking {Count} Arr instance(s); treating as not yet imported",
-                hash, instancesChecked);
+            await ObserveAsync("history", category, hash, false, cancellationToken, DiagnosticText.Error(ex));
+            _logger.LogWarning("Could not verify Arr import history for {Category} and {Hash}", category, hash);
             return false;
         }
-
-        _logger.LogTrace("Checked {Count} Arr instances, hash {Hash} not in any queue", instancesChecked, hash);
-        // Not in any queue means it's been imported
-        return true;
     }
 
     private async Task<ImportResult> TriggerRadarrImportAsync(
@@ -295,58 +274,6 @@ public class ArrImportService : IArrImportService
             Success = false,
             Message = "Failed to trigger Readarr import"
         };
-    }
-
-    private async Task<bool> CheckRadarrQueueAsync(
-        ArrInstanceConfig config,
-        string hash,
-        CancellationToken cancellationToken)
-    {
-        var client = new RadarrClient(config.URI, config.APIKey, config.SkipTLSVerify);
-        var queue = await client.GetAllQueueAsync(ct: cancellationToken);
-
-        return queue.Any(r =>
-            r.DownloadId != null &&
-            r.DownloadId.Equals(hash, StringComparison.OrdinalIgnoreCase));
-    }
-
-    private async Task<bool> CheckSonarrQueueAsync(
-        ArrInstanceConfig config,
-        string hash,
-        CancellationToken cancellationToken)
-    {
-        var client = new SonarrClient(config.URI, config.APIKey, config.SkipTLSVerify);
-        var queue = await client.GetAllQueueAsync(ct: cancellationToken);
-
-        return queue.Any(r =>
-            r.DownloadId != null &&
-            r.DownloadId.Equals(hash, StringComparison.OrdinalIgnoreCase));
-    }
-
-    private async Task<bool> CheckLidarrQueueAsync(
-        ArrInstanceConfig config,
-        string hash,
-        CancellationToken cancellationToken)
-    {
-        var client = new LidarrClient(config.URI, config.APIKey, config.SkipTLSVerify);
-        var queue = await client.GetAllQueueAsync(ct: cancellationToken);
-
-        return queue.Any(r =>
-            r.DownloadId != null &&
-            r.DownloadId.Equals(hash, StringComparison.OrdinalIgnoreCase));
-    }
-
-    private async Task<bool> CheckReadarrQueueAsync(
-        ArrInstanceConfig config,
-        string hash,
-        CancellationToken cancellationToken)
-    {
-        var client = new ReadarrClient(config.URI, config.APIKey, config.SkipTLSVerify);
-        var queue = await client.GetAllQueueAsync(ct: cancellationToken);
-
-        return queue.Any(r =>
-            r.DownloadId != null &&
-            r.DownloadId.Equals(hash, StringComparison.OrdinalIgnoreCase));
     }
 
     public async Task MarkAsImportedAsync(string instanceId, string hash, IEnumerable<string> tags, CancellationToken cancellationToken = default)

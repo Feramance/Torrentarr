@@ -565,7 +565,7 @@ public sealed class TorrentProcessorTests : IDisposable
 
         var importMock = new Mock<IArrImportService>();
         importMock
-            .SetupSequence(s => s.IsImportedAsync(hash, It.IsAny<CancellationToken>()))
+            .SetupSequence(s => s.IsImportedAsync(hash, It.IsAny<string>(), It.IsAny<DateTimeOffset>(), It.IsAny<CancellationToken>()))
             .ReturnsAsync(false)
             .ReturnsAsync(true);
         importMock
@@ -663,7 +663,7 @@ public sealed class TorrentProcessorTests : IDisposable
 
         var importMock = new Mock<IArrImportService>();
         importMock
-            .Setup(s => s.IsImportedAsync(hash, It.IsAny<CancellationToken>()))
+            .Setup(s => s.IsImportedAsync(hash, It.IsAny<string>(), It.IsAny<DateTimeOffset>(), It.IsAny<CancellationToken>()))
             .ReturnsAsync(true);
         importMock
             .Setup(s => s.MarkAsImportedAsync("qBit", hash, It.IsAny<IEnumerable<string>>(), It.IsAny<CancellationToken>()))

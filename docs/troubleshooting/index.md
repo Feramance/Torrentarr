@@ -840,20 +840,8 @@ Sometimes a clean restart resolves issues:
 
 ## Database Issues
 
-If the database becomes corrupt:
-
-1. **Backup existing database:**
-   ```bash
-   cp ~/config/torrentarr.db ~/config/torrentarr.db.backup
-   ```
-
-2. **Let Torrentarr recreate:**
-   ```bash
-   rm ~/config/torrentarr.db
-   # Restart Torrentarr - it will create a new database
-   ```
-
-3. **Recovery:** Torrentarr has automatic database recovery. Check logs for recovery messages.
+If the database becomes corrupt, stop the Host and workers, preserve the database
+and its sidecar files, and follow the [offline recovery steps](database.md#2-database-corruption).
 
 ## Still Need Help?
 

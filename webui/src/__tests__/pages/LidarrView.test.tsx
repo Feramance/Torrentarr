@@ -136,8 +136,6 @@ describe("Lidarr catalog – centralized instance selection", () => {
   });
 
   it("shows artist rows when artists are returned", async () => {
-    // LidarrAlbumsResponse.albums contains LidarrAlbumEntry objects:
-    // each entry has { artist: { artistName, title, ... }, totals, tracks }
     server.use(
       http.get("/web/config", () => HttpResponse.json(minimalConfig)),
       http.post("/web/config", () => HttpResponse.json({})),

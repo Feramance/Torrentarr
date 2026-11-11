@@ -64,6 +64,8 @@ public sealed class TorrentAutomationService(TorrentarrConfig config, ITorrentCl
         };
     }
 
+    internal TimeSpan InspectionBudget { get; set; } = TimeSpan.FromSeconds(55);
+
     internal TimeProvider Clock { get; set; } = TimeProvider.System;
 
     protected override async Task ExecuteAsync(CancellationToken ct)
@@ -97,6 +99,9 @@ public sealed class TorrentAutomationService(TorrentarrConfig config, ITorrentCl
             var started = System.Diagnostics.Stopwatch.GetTimestamp();
             _logger.LogInformation("Protection inspection started for {ClientInstance}", id);
             var inspectionStarted = Clock.GetUtcNow();
+            using var deadline = new CancellationTokenSource(InspectionBudget, Clock);
+            using var inspection = CancellationTokenSource.CreateLinkedTokenSource(ct, deadline.Token);
+            var completed = 0;
             try
             {
                 using var scope = _scopes.CreateScope();
@@ -104,8 +109,6 @@ public sealed class TorrentAutomationService(TorrentarrConfig config, ITorrentCl
                 var seeding = scope.ServiceProvider.GetRequiredService<ISeedingService>() as SeedingService;
                 var urgent = _protection.Values.SelectMany(decisions => decisions).Any(d => d.ClientInstanceId == id && NeedsFreshInspection(d));
                 var full = _nextFullInspection.GetValueOrDefault(id) <= Clock.GetUtcNow();
-                using var inspection = CancellationTokenSource.CreateLinkedTokenSource(ct);
-                inspection.CancelAfter(TimeSpan.FromSeconds(55));
                 var inspectionCt = inspection.Token;
                 var torrents = await client.GetTorrentsAsync(cancellationToken: inspectionCt);
                 var allHashes = torrents.Select(t => t.Hash).ToHashSet(StringComparer.OrdinalIgnoreCase);
@@ -113,6 +116,10 @@ public sealed class TorrentAutomationService(TorrentarrConfig config, ITorrentCl
                     && NeedsFreshInspection(d))).ToList();
                 torrents = torrents.OrderBy(t => _trackerInspections.GetValueOrDefault(id + "|" + t.Hash).At).ThenByDescending(t => _protection.Values.SelectMany(decisions => decisions).Any(d => d.ClientInstanceId == id && d.TorrentHash == t.Hash && d.DeadlineRisk != "none"))
                     .ThenByDescending(t => cfg.Maintenance.ErrorRecovery.States.Contains(t.State, StringComparer.OrdinalIgnoreCase)).ToList();
+                var cachePrefix = id + "|";
+                foreach (var key in _trackerInspections.Keys)
+                    if (key.StartsWith(cachePrefix, StringComparison.OrdinalIgnoreCase) && !allHashes.Contains(key[cachePrefix.Length..]))
+                        _trackerInspections.TryRemove(key, out _);
                 var hashes = allHashes;
                 foreach (var entry in _protection.Where(p => p.Value.Any(d => d.ClientInstanceId == id && !hashes.Contains(d.TorrentHash))).ToList()) _protection.TryRemove(entry.Key, out _);
                 var prefix = id.ToUpperInvariant() + "|";
@@ -179,6 +186,7 @@ public sealed class TorrentAutomationService(TorrentarrConfig config, ITorrentCl
                                 _protection[key] = decisions;
                             }
                             _trackerInspections[key] = (fetchedAt, trackers, torrent.IsPrivate);
+                            completed++;
                         }
                         finally { observations.Release(); }
                     }
@@ -193,6 +201,15 @@ public sealed class TorrentAutomationService(TorrentarrConfig config, ITorrentCl
                 _nextFullInspection[id] = _nextInspection[id];
                 _logger.LogInformation("Protection inspection completed: full={Full}; inventory={InventoryCount}; inspected={InspectedCount}; urgent={Urgent}; elapsed={ElapsedMs:F1}ms; nextAttempt={NextAttempt:O}",
                     full, allHashes.Count, torrents.Count, urgent, System.Diagnostics.Stopwatch.GetElapsedTime(started).TotalMilliseconds, _nextInspection[id]);
+            }
+            catch (OperationCanceledException) when (!ct.IsCancellationRequested && deadline.IsCancellationRequested && completed > 0)
+            {
+                _lastInspection[id] = Clock.GetUtcNow();
+                _inspectionFailures.TryRemove(id, out _);
+                _inspectionErrors.TryRemove(id, out _);
+                _nextInspection[id] = _lastInspection[id];
+                _nextFullInspection[id] = _lastInspection[id];
+                _logger.LogInformation("Protection inspection reached its budget after observing {Count} torrents for {Instance}", completed, id);
             }
             catch (Exception ex) when (!ct.IsCancellationRequested)
             {

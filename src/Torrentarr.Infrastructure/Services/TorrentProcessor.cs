@@ -380,6 +380,7 @@ public class TorrentProcessor : ITorrentProcessor
             }
 
             using var activityClient = ArrActivityTracking.ForClient(torrent.QBitInstanceName);
+            var submittedAt = DateTimeOffset.UtcNow;
             var result = await _importService.TriggerImportAsync(
                 hash, torrent.ContentPath, owner, cancellationToken);
 
@@ -389,7 +390,7 @@ public class TorrentProcessor : ITorrentProcessor
                     hash, result.Message);
 
                 if (!string.IsNullOrEmpty(contentPath))
-                    _pathTracker?.MarkScanned(torrent.QBitInstanceName, contentPath, hash);
+                    _pathTracker?.MarkScanned(torrent.QBitInstanceName, contentPath, hash, submittedAt);
 
                 var arrCfg = _config.ArrInstances.Values.FirstOrDefault(i =>
                     i.Category.Equals(libraryEntry.Category, StringComparison.OrdinalIgnoreCase));
@@ -1391,11 +1392,17 @@ public class TorrentProcessor : ITorrentProcessor
         if (await IsImportedInDatabaseAsync(torrent.Hash, torrent.QBitInstanceName, ct))
             return true;
 
-        if (_pathTracker?.IsHashAlreadyScanned(torrent.QBitInstanceName, torrent.Hash) != true || _importService == null)
+        var submittedAt = _pathTracker?.GetScanStartedAt(torrent.QBitInstanceName, torrent.Hash);
+        var owner = ResolveArrOwner(torrent);
+        if (submittedAt == null || owner == null || _importService == null)
             return false;
 
-        if (!await _importService.IsImportedAsync(torrent.Hash, ct))
+        if (!await _importService.IsImportedAsync(torrent.Hash, owner, submittedAt.Value, ct))
+        {
+            if (DateTimeOffset.UtcNow - submittedAt.Value >= TimeSpan.FromMinutes(15))
+                _pathTracker?.InvalidateTorrent(torrent.QBitInstanceName, torrent.Hash);
             return false;
+        }
 
         var entry = await FindTorrentLibraryEntryAsync(torrent.Hash, torrent.QBitInstanceName, ct);
         if (entry == null)

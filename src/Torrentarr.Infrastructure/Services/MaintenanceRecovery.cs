@@ -85,7 +85,8 @@ public static class MaintenanceRecovery
         using (var transaction = db.Database.BeginTransaction())
         {
             var state = Read(db, torrent, kind);
-            var active = db.MaintenanceState.AsNoTracking().Where(s => s.Key.Contains("|recovery:") && s.Key != key).ToList()
+            var prefix = torrent.ClientInstanceId.ToUpperInvariant() + "|";
+            var active = db.MaintenanceState.AsNoTracking().Where(s => s.Key.StartsWith(prefix) && s.Key.Contains("|recovery:") && s.Key != key).ToList()
                 .Select(s => Newtonsoft.Json.JsonConvert.DeserializeObject<RecoveryIncident>(s.Data))
                 .Any(s => s is { Stage: "requested" or "checking", CompletedAt: null, RequestedAt: not null }
                     && DateTimeOffset.UtcNow < (s.RequestExpiresAt ?? s.RequestedAt.Value.AddHours(1)));

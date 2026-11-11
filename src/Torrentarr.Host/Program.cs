@@ -26,6 +26,25 @@ using System.Security.Cryptography;
 var cmdArgs = Environment.GetCommandLineArgs().Skip(1).ToList();
 var firstArg = cmdArgs.Count > 0 ? cmdArgs[0].Trim().ToLowerInvariant() : "";
 
+if (firstArg == "--healthcheck" && cmdArgs.Count == 1)
+{
+    try
+    {
+        var web = new ConfigurationLoader().Load(persistMigrations: false).WebUI;
+        var address = System.Net.IPAddress.Parse(web.Host);
+        if (address.Equals(System.Net.IPAddress.Any)) address = System.Net.IPAddress.Loopback;
+        if (address.Equals(System.Net.IPAddress.IPv6Any)) address = System.Net.IPAddress.IPv6Loopback;
+        using var http = new HttpClient { Timeout = TimeSpan.FromSeconds(5) };
+        using var response = await http.GetAsync(new UriBuilder("http", address.ToString(), web.Port, "/health").Uri);
+        return response.IsSuccessStatusCode ? 0 : 1;
+    }
+    catch (Exception ex)
+    {
+        Console.Error.WriteLine($"Health check failed ({ex.GetType().Name}).");
+        return 1;
+    }
+}
+
 if (firstArg is "--help" or "-h" or "--version" or "-v" or "--source" or "-s" or "--license" or "-l")
 {
     if (cmdArgs.Count != 1)
@@ -41,7 +60,7 @@ if (firstArg is "--help" or "-h" or "--version" or "-v" or "--source" or "-s" or
         Console.WriteLine("  --source, -s         Show source URL and exit.");
         Console.WriteLine("  --license, -l        Show license and exit.");
         Console.WriteLine("  --gen-config, -gc    Generate default configuration.");
-        Console.WriteLine("  --repair-database    Repair the database.");
+        Console.WriteLine("  --repair-database    Checkpoint the database WAL and check integrity.");
         Console.WriteLine("  --backup-database [destination]  Back up the database.");
         return 0;
     }
@@ -435,26 +454,8 @@ try
         var dest = cmdArgs.Count >= 2
             ? cmdArgs[1]
             : Path.Combine(Path.GetDirectoryName(dbPath) ?? ".", "backups", $"torrentarr.db.{DateTime.UtcNow:yyyyMMdd}");
-        Directory.CreateDirectory(Path.GetDirectoryName(dest)!);
-        using (var source = new Microsoft.Data.Sqlite.SqliteConnection($"Data Source={dbPath};Mode=ReadOnly"))
-        {
-            source.Open();
-            if (File.Exists(dest))
-                File.Delete(dest);
-            using var destConn = new Microsoft.Data.Sqlite.SqliteConnection($"Data Source={dest}");
-            destConn.Open();
-            source.BackupDatabase(destConn);
-        }
-        using (var verify = new Microsoft.Data.Sqlite.SqliteConnection($"Data Source={dest}"))
-        {
-            verify.Open();
-            using var cmd = verify.CreateCommand();
-            cmd.CommandText = "PRAGMA quick_check;";
-            var check = (cmd.ExecuteScalar() as string) ?? "unknown";
-            Console.WriteLine($"Backup: {dest}");
-            Console.WriteLine($"Integrity quick_check: {check}");
-            return check.Equals("ok", StringComparison.OrdinalIgnoreCase) ? 0 : 1;
-        }
+        var logger = app.Services.GetRequiredService<ILogger<Program>>();
+        return await DatabaseHealthService.BackupFileAsync(dbPath, dest, logger) ? 0 : 1;
     }
 
     using (var scope = app.Services.CreateScope())
@@ -917,128 +918,6 @@ try
         return Results.Ok(new { arr, ready = true, counts });
     });
 
-
-    // Web Sonarr Series — seasons populated from episodes table
-    app.MapGet("/web/sonarr/{category}/series", async (string category, TorrentarrConfig cfg, TorrentarrDbContext db, CatalogRollupService rollups, int? page, int? page_size, string? q, int? missing, string? reason) =>
-    {
-        var keys = ArrCatalogIdentity.QueryKeys(cfg, category);
-        var currentPage = page ?? 0;
-        var currentPageSize = page_size ?? 50;
-        var skip = currentPage * currentPageSize;
-
-        var baseQuery = db.Series.Where(s => keys.Contains(s.ArrInstance));
-        var query = baseQuery;
-
-        var reasonFilter = string.IsNullOrWhiteSpace(reason) || reason.Equals("all", StringComparison.OrdinalIgnoreCase)
-            ? null
-            : reason.Trim();
-        if (missing == 1 || reasonFilter is not null)
-        {
-            var episodeQuery = db.Episodes.Where(e => keys.Contains(e.ArrInstance));
-            if (missing == 1)
-                episodeQuery = episodeQuery.Where(e => e.EpisodeFileId == null || e.EpisodeFileId == 0);
-            if (reasonFilter is not null)
-            {
-                if (reasonFilter.Equals("Not being searched", StringComparison.OrdinalIgnoreCase))
-                    episodeQuery = episodeQuery.Where(e => e.Reason == null || e.Reason == "Not being searched");
-                else
-                    episodeQuery = episodeQuery.Where(e => e.Reason == reasonFilter);
-            }
-            var seriesIdsWithMatchingEpisodes = await episodeQuery
-                .Select(e => e.SeriesId)
-                .Distinct()
-                .ToListAsync();
-            baseQuery = baseQuery.Where(s => seriesIdsWithMatchingEpisodes.Contains(s.EntryId));
-            query = baseQuery;
-        }
-
-        if (!string.IsNullOrEmpty(q))
-            query = query.Where(s => s.Title != null && s.Title.Contains(q));
-
-        var total = await baseQuery.CountAsync();
-        var (episodeRollups, _) = await rollups.GetSonarrRollupsAsync(keys);
-
-        var seriesPage = await query
-            .OrderBy(s => s.Title)
-            .Skip(skip)
-            .Take(currentPageSize)
-            .Select(s => new { s.EntryId, s.Title, s.Monitored, s.QualityProfileId, s.QualityProfileName })
-            .ToListAsync();
-
-        var seriesIds = seriesPage.Select(s => s.EntryId).ToList();
-
-        var episodes = await db.Episodes
-            .Where(e => keys.Contains(e.ArrInstance) && seriesIds.Contains(e.SeriesId))
-            .Select(e => new
-            {
-                e.SeriesId,
-                e.SeasonNumber,
-                e.EpisodeNumber,
-                e.Title,
-                e.Monitored,
-                e.EpisodeFileId,
-                e.AirDateUtc,
-                e.Reason
-            })
-            .ToListAsync();
-        var seasonGroups = episodes.GroupBy(e => new { e.SeriesId, e.SeasonNumber }).Select(g => new
-        {
-            g.Key.SeriesId,
-            g.Key.SeasonNumber,
-            TotalCount = g.Count(),
-            HasFileCount = g.Count(e => e.EpisodeFileId != null && e.EpisodeFileId != 0),
-            MonitoredCount = g.Count(e => e.Monitored == true),
-            Episodes = g.Select(e => new { episodeNumber = e.EpisodeNumber, title = e.Title, monitored = e.Monitored, hasFile = e.EpisodeFileId != null && e.EpisodeFileId != 0, airDateUtc = e.AirDateUtc, reason = e.Reason }).ToArray()
-        }).ToList();
-
-        var seriesList = seriesPage.Select(s =>
-        {
-            var seriesSeasonGroups = seasonGroups.Where(g => g.SeriesId == s.EntryId).ToList();
-            var seriesAvailable = seriesSeasonGroups.Sum(g => g.HasFileCount);
-            var seriesMonitored = seriesSeasonGroups.Sum(g => g.MonitoredCount);
-            var seriesTotal = seriesSeasonGroups.Sum(g => g.TotalCount);
-
-            var seasons = seriesSeasonGroups
-                .ToDictionary(
-                    g => g.SeasonNumber.ToString(),
-                    g => (object)new
-                    {
-                        monitored = g.MonitoredCount,
-                        available = g.HasFileCount,
-                        missing = g.TotalCount - g.HasFileCount,
-                        episodes = g.Episodes
-                    });
-
-            return new
-            {
-                series = new
-                {
-                    id = s.EntryId,
-                    title = s.Title,
-                    monitored = s.Monitored,
-                    qualityProfileId = s.QualityProfileId,
-                    qualityProfileName = s.QualityProfileName
-                },
-                totals = new { available = seriesAvailable, monitored = seriesMonitored, missing = seriesTotal - seriesAvailable },
-                seasons
-            };
-        }).ToList();
-
-        return Results.Ok(new
-        {
-            category,
-            total,
-            page = currentPage,
-            page_size = currentPageSize,
-            counts = new
-            {
-                available = episodeRollups.Available,
-                monitored = episodeRollups.Monitored,
-                missing = episodeRollups.Missing
-            },
-            series = seriesList
-        });
-    });
 
     // Web Lidarr Albums — tracks populated from tracks table
     app.MapGet("/web/lidarr/{category}/albums", async (string category, TorrentarrConfig cfg, TorrentarrDbContext db, CatalogRollupService rollups, int? page, int? page_size, string? q, bool? monitored, bool? has_file, bool? quality_met, bool? is_request, bool? flat_mode) =>
@@ -1692,127 +1571,6 @@ try
     });
 
 
-
-    app.MapGet("/api/sonarr/{category}/series", async (string category, TorrentarrConfig cfg, TorrentarrDbContext db, CatalogRollupService rollups, int? page, int? page_size, string? q, int? missing, string? reason) =>
-    {
-        var keys = ArrCatalogIdentity.QueryKeys(cfg, category);
-        var currentPage = page ?? 0;
-        var currentPageSize = page_size ?? 50;
-        var skip = currentPage * currentPageSize;
-
-        var baseQuery = db.Series.Where(s => keys.Contains(s.ArrInstance));
-        var query = baseQuery;
-
-        var reasonFilter = string.IsNullOrWhiteSpace(reason) || reason.Equals("all", StringComparison.OrdinalIgnoreCase)
-            ? null
-            : reason.Trim();
-        if (missing == 1 || reasonFilter is not null)
-        {
-            var episodeQuery = db.Episodes.Where(e => keys.Contains(e.ArrInstance));
-            if (missing == 1)
-                episodeQuery = episodeQuery.Where(e => e.EpisodeFileId == null || e.EpisodeFileId == 0);
-            if (reasonFilter is not null)
-            {
-                if (reasonFilter.Equals("Not being searched", StringComparison.OrdinalIgnoreCase))
-                    episodeQuery = episodeQuery.Where(e => e.Reason == null || e.Reason == "Not being searched");
-                else
-                    episodeQuery = episodeQuery.Where(e => e.Reason == reasonFilter);
-            }
-            var seriesIdsWithMatchingEpisodes = await episodeQuery
-                .Select(e => e.SeriesId)
-                .Distinct()
-                .ToListAsync();
-            baseQuery = baseQuery.Where(s => seriesIdsWithMatchingEpisodes.Contains(s.EntryId));
-            query = baseQuery;
-        }
-
-        if (!string.IsNullOrEmpty(q))
-            query = query.Where(s => s.Title != null && s.Title.Contains(q));
-
-        var total = await baseQuery.CountAsync();
-        var (episodeRollupsApi, _) = await rollups.GetSonarrRollupsAsync(keys);
-
-        var seriesPage = await query
-            .OrderBy(s => s.Title)
-            .Skip(skip)
-            .Take(currentPageSize)
-            .Select(s => new { s.EntryId, s.Title, s.Monitored, s.QualityProfileId, s.QualityProfileName })
-            .ToListAsync();
-
-        var seriesIds = seriesPage.Select(s => s.EntryId).ToList();
-
-        var episodes = await db.Episodes
-            .Where(e => keys.Contains(e.ArrInstance) && seriesIds.Contains(e.SeriesId))
-            .Select(e => new
-            {
-                e.SeriesId,
-                e.SeasonNumber,
-                e.EpisodeNumber,
-                e.Title,
-                e.Monitored,
-                e.EpisodeFileId,
-                e.AirDateUtc,
-                e.Reason
-            })
-            .ToListAsync();
-        var seasonGroups = episodes.GroupBy(e => new { e.SeriesId, e.SeasonNumber }).Select(g => new
-        {
-            g.Key.SeriesId,
-            g.Key.SeasonNumber,
-            TotalCount = g.Count(),
-            HasFileCount = g.Count(e => e.EpisodeFileId != null && e.EpisodeFileId != 0),
-            MonitoredCount = g.Count(e => e.Monitored == true),
-            Episodes = g.Select(e => new { episodeNumber = e.EpisodeNumber, title = e.Title, monitored = e.Monitored, hasFile = e.EpisodeFileId != null && e.EpisodeFileId != 0, airDateUtc = e.AirDateUtc, reason = e.Reason }).ToArray()
-        }).ToList();
-
-        var seriesList = seriesPage.Select(s =>
-        {
-            var seriesSeasonGroups = seasonGroups.Where(g => g.SeriesId == s.EntryId).ToList();
-            var seriesAvailable = seriesSeasonGroups.Sum(g => g.HasFileCount);
-            var seriesMonitored = seriesSeasonGroups.Sum(g => g.MonitoredCount);
-            var seriesTotal = seriesSeasonGroups.Sum(g => g.TotalCount);
-
-            var seasons = seriesSeasonGroups
-                .ToDictionary(
-                    g => g.SeasonNumber.ToString(),
-                    g => (object)new
-                    {
-                        monitored = g.MonitoredCount,
-                        available = g.HasFileCount,
-                        missing = g.TotalCount - g.HasFileCount,
-                        episodes = g.Episodes
-                    });
-
-            return new
-            {
-                series = new
-                {
-                    id = s.EntryId,
-                    title = s.Title,
-                    monitored = s.Monitored,
-                    qualityProfileId = s.QualityProfileId,
-                    qualityProfileName = s.QualityProfileName
-                },
-                totals = new { available = seriesAvailable, monitored = seriesMonitored, missing = seriesTotal - seriesAvailable },
-                seasons
-            };
-        }).ToList();
-
-        return Results.Ok(new
-        {
-            category,
-            total,
-            page = currentPage,
-            page_size = currentPageSize,
-            counts = new
-            {
-                available = episodeRollupsApi.Available,
-                monitored = episodeRollupsApi.Monitored,
-                missing = episodeRollupsApi.Missing
-            },
-            series = seriesList
-        });
-    });
 
     app.MapGet("/api/lidarr/{category}/albums", async (string category, TorrentarrConfig cfg, TorrentarrDbContext db, CatalogRollupService rollups, int? page, int? page_size, string? q, bool? monitored, bool? has_file, bool? quality_met, bool? is_request, bool? flat_mode) =>
     {

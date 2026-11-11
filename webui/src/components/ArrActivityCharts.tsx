@@ -3,6 +3,7 @@ import { useEffect, useState } from "react";
 import { getArrActivity } from "../api/client";
 import type {
   ArrActivityHistory,
+  ArrActivityPoint,
   ArrActivitySeries,
   TransferRange,
 } from "../api/types";
@@ -41,6 +42,10 @@ function ActivityPlot({
   );
   const count = series[0]?.points.length ?? 0;
   const available = series.some((s) => s.points.some((p) => p[metric] != null));
+  const coverageLabel = (point: ArrActivityPoint) =>
+    activityCoverage(point, metric) === point.expectedSamples
+      ? ""
+      : ` (${activityCoverage(point, metric)}/${point.expectedSamples} samples)`;
   return (
     <figure className="arr-activity__plot">
       <figcaption>{title}</figcaption>
@@ -55,7 +60,7 @@ function ActivityPlot({
           <svg
             viewBox="0 0 800 166"
             role="img"
-            aria-label={`${title}, by ${grouping === "type" ? "Arr type" : "worker"}; incomplete coverage appears as gaps`}
+            aria-label={`${title}, by ${grouping === "type" ? "Arr type" : "worker"}; gaps mark intervals with no observations`}
             onPointerLeave={inspection.leave}
             onPointerCancel={inspection.clear}
             onPointerMove={(event) => {
@@ -117,8 +122,7 @@ function ActivityPlot({
                   vectorEffect="non-scaling-stroke"
                 />
                 {s.points.map((p, i) =>
-                  p[metric] != null &&
-                  activityCoverage(p, metric) === p.expectedSamples ? (
+                  p[metric] != null ? (
                     <circle
                       key={p.timestamp}
                       cx={24 + (i / Math.max(1, count - 1)) * 752}
@@ -127,10 +131,10 @@ function ActivityPlot({
                       fill="currentColor"
                       tabIndex={0}
                       role="img"
-                      aria-label={`${s.instance}: ${new Date(p.timestamp).toLocaleString()}, ${title}, ${activityValue(p, metric)}`}
+                      aria-label={`${s.instance}: ${new Date(p.timestamp).toLocaleString()}, ${title}, ${activityValue(p, metric)}${coverageLabel(p)}`}
                       {...inspection.bind(i)}
                     >
-                      <title>{`${s.instance} · ${new Date(p.timestamp).toLocaleString()} · ${title}: ${activityValue(p, metric)}`}</title>
+                      <title>{`${s.instance} · ${new Date(p.timestamp).toLocaleString()} · ${title}: ${activityValue(p, metric)}${coverageLabel(p)}`}</title>
                     </circle>
                   ) : null,
                 )}
@@ -342,8 +346,9 @@ export function ArrActivityCharts({ active }: { active: boolean }) {
           </label>
           <p className="hint">
             7 days retained. Queue values are interval averages rounded to whole
-            items; completions are counted when confirmed. Gaps in worker
-            coverage break the line.
+            items; completions are counted when confirmed. Partial intervals
+            still plot and show their sample count; intervals with no
+            observations remain gaps.
           </p>
         </>
       )}

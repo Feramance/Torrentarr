@@ -1213,9 +1213,8 @@ Torrentarr uses infinite retry loops in specific scenarios for reliability:
 
 ### Database WAL Checkpoint
 
-Torrentarr automatically performs WAL checkpoint and VACUUM on database errors for self-repair.
-
-**Not configurable** - happens automatically during database error recovery.
+The Host runs a scheduled WAL checkpoint and integrity check. Database recovery
+requires stopping the Host and workers.
 
 See [Database Troubleshooting](../troubleshooting/database.md) for details on manual database maintenance.
 

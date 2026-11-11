@@ -34,7 +34,7 @@ public sealed class ArrActivityCollector(IServiceScopeFactory scopes, IServicePr
         } while (await timer.WaitForNextTickAsync(ct));
     }
 
-    private static async Task<JArray> ReadAsync(ArrInstanceConfig settings, string resource, CancellationToken ct)
+    internal static async Task<JArray> ReadAsync(ArrInstanceConfig settings, string resource, CancellationToken ct)
     {
         using IArrActivityClient client = settings.Type.ToLowerInvariant() switch
         {

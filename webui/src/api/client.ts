@@ -16,7 +16,6 @@ import type {
   RadarrMoviesResponse,
   RestartResponse,
   SonarrSeriesResponse,
-  LidarrAlbumsResponse,
   LidarrArtistsResponse,
   LidarrArtistDetailResponse,
   ReadarrAuthorsResponse,
@@ -554,7 +553,7 @@ export async function getSonarrSeries(
   params.set("page_size", String(pageSize));
   if (q) params.set("q", q);
   if (options?.missingOnly) {
-    params.set("missing", "true");
+    params.set("missing", "1");
   }
   if (options?.reasonFilter) params.set("reason", options.reasonFilter);
   return fetchJson<SonarrSeriesResponse>(
@@ -642,25 +641,6 @@ export async function getReadarrAuthorDetail(
   return fetchJson<ReadarrAuthorDetailResponse>(
     `/web/readarr/${encodeURIComponent(category)}/author/${authorId}`,
     signal ? { signal } : undefined,
-  );
-}
-
-export async function getLidarrAlbums(
-  category: string,
-  page: number,
-  pageSize: number,
-  query?: string,
-): Promise<LidarrAlbumsResponse> {
-  const params = new URLSearchParams();
-  params.set("page", page.toString());
-  params.set("page_size", pageSize.toString());
-  if (query) {
-    params.set("q", query);
-  }
-  // Always include tracks
-  params.set("include_tracks", "true");
-  return fetchJson<LidarrAlbumsResponse>(
-    `/web/lidarr/${encodeURIComponent(category)}/albums?${params}`,
   );
 }
 

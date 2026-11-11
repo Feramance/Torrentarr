@@ -20,6 +20,8 @@ public static class ArrCatalogEndpoints
 
     public static void MapArrCatalogEndpoints(this WebApplication app)
     {
+        MapSonarrSeries(app, "/web/sonarr/{category}/series");
+        MapSonarrSeries(app, "/api/sonarr/{category}/series");
         MapLidarrArtists(app, "/web/lidarr/{category}/artists");
         MapLidarrArtists(app, "/api/lidarr/{category}/artists");
         MapLidarrArtistDetail(app, "/web/lidarr/{category}/artist/{artistId:int}");
@@ -49,6 +51,128 @@ public static class ArrCatalogEndpoints
         return reasonFilter.Equals("Not being searched", StringComparison.OrdinalIgnoreCase)
             ? query.Where(m => m.Reason == null || m.Reason == "" || m.Reason == "Not being searched")
             : query.Where(m => m.Reason == reasonFilter);
+    }
+
+    private static void MapSonarrSeries(WebApplication app, string pattern)
+    {
+        app.MapGet(pattern, async (string category, TorrentarrConfig cfg, TorrentarrDbContext db, CatalogRollupService rollups, int? page, int? page_size, string? q, int? missing, string? reason) =>
+        {
+            var keys = ArrCatalogIdentity.QueryKeys(cfg, category);
+            var currentPage = page ?? 0;
+            var currentPageSize = page_size ?? 50;
+            var skip = currentPage * currentPageSize;
+
+            var query = db.Series.Where(s => keys.Contains(s.ArrInstance));
+
+            var reasonFilter = string.IsNullOrWhiteSpace(reason) || reason.Equals("all", StringComparison.OrdinalIgnoreCase)
+                ? null
+                : reason.Trim();
+            if (missing == 1 || reasonFilter is not null)
+            {
+                var episodeQuery = db.Episodes.Where(e => keys.Contains(e.ArrInstance));
+                if (missing == 1)
+                    episodeQuery = episodeQuery.Where(e => e.EpisodeFileId == null || e.EpisodeFileId == 0);
+                if (reasonFilter is not null)
+                {
+                    if (reasonFilter.Equals("Not being searched", StringComparison.OrdinalIgnoreCase))
+                        episodeQuery = episodeQuery.Where(e => e.Reason == null || e.Reason == "Not being searched");
+                    else
+                        episodeQuery = episodeQuery.Where(e => e.Reason == reasonFilter);
+                }
+                var seriesIdsWithMatchingEpisodes = await episodeQuery
+                    .Select(e => e.SeriesId)
+                    .Distinct()
+                    .ToListAsync();
+                query = query.Where(s => seriesIdsWithMatchingEpisodes.Contains(s.EntryId));
+            }
+
+            if (!string.IsNullOrEmpty(q))
+                query = query.Where(s => s.Title != null && s.Title.Contains(q));
+
+            var total = await query.CountAsync();
+            var (episodeRollups, _) = await rollups.GetSonarrRollupsAsync(keys);
+
+            var seriesPage = await query
+                .OrderBy(s => s.Title)
+                .Skip(skip)
+                .Take(currentPageSize)
+                .Select(s => new { s.EntryId, s.Title, s.Monitored, s.QualityProfileId, s.QualityProfileName })
+                .ToListAsync();
+
+            var seriesIds = seriesPage.Select(s => s.EntryId).ToList();
+
+            var episodes = await db.Episodes
+                .Where(e => keys.Contains(e.ArrInstance) && seriesIds.Contains(e.SeriesId))
+                .Select(e => new
+                {
+                    e.SeriesId,
+                    e.SeasonNumber,
+                    e.EpisodeNumber,
+                    e.Title,
+                    e.Monitored,
+                    e.EpisodeFileId,
+                    e.AirDateUtc,
+                    e.Reason
+                })
+                .ToListAsync();
+            var seasonGroups = episodes.GroupBy(e => new { e.SeriesId, e.SeasonNumber }).Select(g => new
+            {
+                g.Key.SeriesId,
+                g.Key.SeasonNumber,
+                TotalCount = g.Count(),
+                HasFileCount = g.Count(e => e.EpisodeFileId != null && e.EpisodeFileId != 0),
+                MonitoredCount = g.Count(e => e.Monitored == true),
+                Episodes = g.Select(e => new { episodeNumber = e.EpisodeNumber, title = e.Title, monitored = e.Monitored, hasFile = e.EpisodeFileId != null && e.EpisodeFileId != 0, airDateUtc = e.AirDateUtc, reason = e.Reason }).ToArray()
+            }).ToList();
+
+            var seriesList = seriesPage.Select(s =>
+            {
+                var seriesSeasonGroups = seasonGroups.Where(g => g.SeriesId == s.EntryId).ToList();
+                var seriesAvailable = seriesSeasonGroups.Sum(g => g.HasFileCount);
+                var seriesMonitored = seriesSeasonGroups.Sum(g => g.MonitoredCount);
+                var seriesTotal = seriesSeasonGroups.Sum(g => g.TotalCount);
+
+                var seasons = seriesSeasonGroups
+                    .ToDictionary(
+                        g => g.SeasonNumber.ToString(),
+                        g => (object)new
+                        {
+                            monitored = g.MonitoredCount,
+                            available = g.HasFileCount,
+                            missing = g.TotalCount - g.HasFileCount,
+                            episodes = g.Episodes
+                        });
+
+                return new
+                {
+                    series = new
+                    {
+                        id = s.EntryId,
+                        title = s.Title,
+                        monitored = s.Monitored,
+                        qualityProfileId = s.QualityProfileId,
+                        qualityProfileName = s.QualityProfileName
+                    },
+                    totals = new { available = seriesAvailable, monitored = seriesMonitored, missing = seriesTotal - seriesAvailable },
+                    seasons
+                };
+            }).ToList();
+
+            return Results.Ok(new
+            {
+                category,
+                total,
+                page = currentPage,
+                page_size = currentPageSize,
+                counts = new
+                {
+                    available = episodeRollups.Available,
+                    monitored = episodeRollups.Monitored,
+                    missing = episodeRollups.Missing
+                },
+                series = seriesList
+            });
+        });
     }
 
     private static void MapRadarrMovies(WebApplication app, string pattern)

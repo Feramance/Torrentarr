@@ -395,16 +395,6 @@ export interface LidarrAlbumEntry {
   [key: string]: unknown;
 }
 
-export interface LidarrAlbumsResponse {
-  category: string;
-  counts: LidarrCounts;
-  counts_tracks?: LidarrCounts;
-  total: number;
-  page: number;
-  page_size: number;
-  albums: LidarrAlbumEntry[];
-}
-
 export interface LidarrArtistEntry {
   artist: {
     id: number;

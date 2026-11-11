@@ -99,7 +99,7 @@ EXPOSE 6969
 
 # Health check
 HEALTHCHECK --interval=30s --timeout=10s --start-period=40s --retries=3 \
-    CMD curl -f http://localhost:6969/health || exit 1
+    CMD ["/app/Torrentarr.Host", "--healthcheck"]
 
 # Volume mounts
 VOLUME ["/config", "/data"]

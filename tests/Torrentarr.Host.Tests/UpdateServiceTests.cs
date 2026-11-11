@@ -9,6 +9,74 @@ namespace Torrentarr.Host.Tests;
 public class UpdateServiceTests
 {
 
+    [Fact]
+    public async Task ReleaseCheckRefreshesImmediatelyWhenChannelChanges()
+    {
+        var config = new TorrentarrConfig();
+        config.Settings.AutoUpdateChannel = "latest";
+        var channels = new List<string>();
+        var service = new UpdateService(NullLogger<UpdateService>.Instance, config)
+        {
+            ReleaseFetcher = (_, channel, _) =>
+            {
+                channels.Add(channel);
+                return Task.FromResult<Newtonsoft.Json.Linq.JObject?>(new() { ["tag_name"] = "v100.0.0" });
+            }
+        };
+        await service.CheckForUpdateAsync();
+        await service.CheckForUpdateAsync();
+        config.Settings.AutoUpdateChannel = "stable";
+        await service.CheckForUpdateAsync();
+        channels.Should().Equal("latest", "stable");
+    }
+
+    [Fact]
+    public async Task ReleaseDownloadsRemainPairedWhenMetadataRefreshesBetweenRequests()
+    {
+        var service = new UpdateService(NullLogger<UpdateService>.Instance, new TorrentarrConfig());
+        var platform = OperatingSystem.IsWindows() ? System.Runtime.InteropServices.OSPlatform.Windows
+            : OperatingSystem.IsMacOS() ? System.Runtime.InteropServices.OSPlatform.OSX : System.Runtime.InteropServices.OSPlatform.Linux;
+        var pattern = UpdateService.GetAssetPattern(platform, System.Runtime.InteropServices.RuntimeInformation.ProcessArchitecture);
+        Newtonsoft.Json.Linq.JObject Release(string version) => new()
+        {
+            ["tag_name"] = version,
+            ["assets"] = new Newtonsoft.Json.Linq.JArray(
+                new Newtonsoft.Json.Linq.JObject { ["name"] = "torrentarr-" + pattern, ["browser_download_url"] = "https://example.test/" + version + "/host" },
+                new Newtonsoft.Json.Linq.JObject { ["name"] = "torrentarr-workers-" + pattern.Replace("macos-", "osx-"), ["browser_download_url"] = "https://example.test/" + version + "/worker" })
+        };
+        service.ApplyReleaseMetadata(Release("1.0.0"), "0.0.0", pattern, "latest", allowBinary: true);
+        var applying = service.AssetsForChannel("latest")!;
+        service.AssetsForChannel("stable").Should().BeNull();
+        var requested = new List<string>();
+        using var http = new HttpClient(new DownloadHandler(uri =>
+        {
+            requested.Add(uri.AbsolutePath);
+            if (requested.Count == 1)
+                service.ApplyReleaseMetadata(Release("2.0.0"), "0.0.0", pattern, "stable", allowBinary: true);
+        }));
+        var directory = Directory.CreateTempSubdirectory("torrentarr-update-");
+        try
+        {
+            var (host, worker) = await UpdateService.DownloadReleaseAssetsAsync(http, applying, directory.FullName);
+            requested.Should().Equal("/1.0.0/host", "/1.0.0/worker");
+            File.ReadAllText(host).Should().Be("/1.0.0/host");
+            File.ReadAllText(worker).Should().Be("/1.0.0/worker");
+        }
+        finally { directory.Delete(recursive: true); }
+        service.AssetsForChannel("latest").Should().BeNull();
+        service.AssetsForChannel("stable")!.WorkerUrl.Should().EndWith("/2.0.0/worker");
+    }
+
+    private sealed class DownloadHandler(Action<Uri> observe) : HttpMessageHandler
+    {
+        protected override Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken cancellationToken)
+        {
+            var uri = request.RequestUri!;
+            observe(uri);
+            return Task.FromResult(new HttpResponseMessage(System.Net.HttpStatusCode.OK) { Content = new StringContent(uri.AbsolutePath) });
+        }
+    }
+
     [Theory]
     [InlineData(false)]
     [InlineData(true)]

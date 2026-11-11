@@ -75,19 +75,20 @@ public class ConfigEndpointTests : IClassFixture<TorrentarrWebApplicationFactory
             services.AddHostedService<ProcessOrchestratorService>()));
         using var client = factory.CreateClient();
         client.DefaultRequestHeaders.Authorization = new System.Net.Http.Headers.AuthenticationHeaderValue("Bearer", "test-api-token");
-        var service = factory.Services.GetServices<Microsoft.Extensions.Hosting.IHostedService>()
-            .OfType<ProcessOrchestratorService>().Single();
         var reloader = factory.Services.GetRequiredService<Torrentarr.Core.Services.IConfigReloader>();
+        var config = factory.Services.GetRequiredService<TorrentarrConfig>();
+        var previousRevision = reloader.Revision;
+        var interval = config.Settings.LoopSleepTimer == 3600 ? 3599 : 3600;
         var response = await client.PostAsJsonAsync(endpoint, new
         {
-            changes = new Dictionary<string, object>
-            {
-                ["Settings.LoopSleepTimer"] = 3600
-            }
+            changes = new Dictionary<string, object> { ["Settings.LoopSleepTimer"] = interval }
         });
         response.EnsureSuccessStatusCode();
+        reloader.Revision.Should().BeGreaterThan(previousRevision);
+        config.Settings.LoopSleepTimer.Should().Be(interval);
+        var acceptedRevision = reloader.Revision;
         using var timeout = new CancellationTokenSource(TimeSpan.FromSeconds(5));
-        while (reloader.GetStatus().Components.GetValueOrDefault("torrent-policy")?.AppliedRevision != reloader.Revision)
+        while (reloader.GetStatus().Components.GetValueOrDefault("torrent-policy")?.AppliedRevision != acceptedRevision)
             await Task.Delay(10, timeout.Token);
     }
 

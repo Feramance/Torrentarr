@@ -323,15 +323,15 @@ sqlite3.OperationalError: disk I/O error
 - Hardware failures (bad sectors, memory errors)
 - File system corruption (ext4, btrfs, zfs)
 
-**Automatic Recovery**:
+Scheduled maintenance checkpoints the write-ahead log (WAL) and checks database integrity.
+If a catalog request detects corruption, it returns HTTP 503. Recovery is an offline operation.
 
-Torrentarr automatically attempts recovery when corruption is detected:
-
-1. **WAL Checkpoint**: Flushes WAL to main database
-2. **Full Repair**: Dumps recoverable data to new database
-3. **Backup**: Original database saved as `torrentarr.db.backup`
-
-**Manual Recovery**:
+Before recovery, stop the Torrentarr Host and all workers. Copy `torrentarr.db` and
+any matching `torrentarr.db-wal` and `torrentarr.db-shm` files together to a separate
+directory. Keep that copy intact. Verify that `PRAGMA integrity_check` returns `ok`
+on a backup or recovered copy before installing it. Move the original database
+and any remaining sidecar files aside together before installing the verified
+copy, so SQLite opens it without sidecars from the old database.
 
 === "Method 0: Torrentarr CLI (no SQLite required)"
     Run WAL checkpoint and integrity check without starting the full app (qBitrr parity):
@@ -365,48 +365,22 @@ Torrentarr automatically attempts recovery when corruption is detected:
     ```
 
 === "Method 2: Dump/Restore"
+    Work on a separate copy of the preserved database and its sidecar files.
+    Dump the recoverable rows into a new database and check the new file:
+
     ```bash
-    # Stop Torrentarr
-    docker stop torrentarr
-
-    # Backup corrupted database
-    cp ~/config/torrentarr.db ~/config/torrentarr.db.corrupt
-
-    # Dump recoverable data
-    sqlite3 ~/config/torrentarr.db ".dump" > ~/config/dump.sql
-
-    # Create new database from dump
-    rm ~/config/torrentarr.db
-    sqlite3 ~/config/torrentarr.db < ~/config/dump.sql
-
-    # Verify
-    sqlite3 ~/config/torrentarr.db "PRAGMA integrity_check;"
-
-    # Restart
-    docker start torrentarr
+    sqlite3 /path/to/working-copy/torrentarr.db ".dump" > dump.sql
+    sqlite3 torrentarr.db.recovered < dump.sql
+    sqlite3 torrentarr.db.recovered "PRAGMA integrity_check;"
     ```
 
-=== "Method 3: Fresh Start"
-    ```bash
-    # CAUTION: Loses all history (searches, imports, etc.)
-
-    # Stop Torrentarr
-    docker stop torrentarr
-
-    # Backup old database
-    mv ~/config/torrentarr.db ~/config/torrentarr.db.old
-
-    # Restart (Torrentarr creates new database)
-    docker start torrentarr
-
-    # Verify
-    docker logs -f torrentarr
-    ```
+    Review dump errors and check that the recovered data includes the history and
+    maintenance state you need before installing it. If recovery fails, keep the
+    preserved copy and restore a verified backup.
 
 !!! warning "Data Loss"
     - **WAL Checkpoint**: No data loss if successful
     - **Dump/Restore**: May lose corrupted rows/tables
-    - **Fresh Start**: Loses all history (searches, import state, torrent tracking)
 
 #### Corruption Prevention
 
@@ -695,13 +669,8 @@ EOF
 
 ## Database Backup & Restore
 
-### Automated Backups
-
-Torrentarr automatically creates backups during recovery:
-
-- **Location**: `~/config/torrentarr.db.backup`
-- **Trigger**: Before repair operations
-- **Retention**: Single backup (overwrites previous)
+Use `torrentarr --backup-database` to create a consistent SQLite backup. Store
+backup copies separately from the live database.
 
 ### Manual Backups
 
@@ -827,15 +796,9 @@ PRAGMA mmap_size=268435456;        -- 256MB memory-mapped I/O
 
 ### Health Checks
 
-Torrentarr performs automatic health checks every 10 event loop iterations:
-
-```python
-# Internal code (automatic)
-healthy, msg = check_database_health(db_path)
-if not healthy:
-    logger.warning("Database unhealthy: %s", msg)
-    # Automatic recovery attempted
-```
+The Host runs a WAL checkpoint and integrity check every five minutes.
+Check the Host logs for errors and follow the offline recovery steps if
+integrity fails.
 
 **Manual Health Check**:
 
@@ -1046,30 +1009,9 @@ sqlite3 ~/config/torrentarr.db "UPDATE moviesfilesmodel SET Searched = 0;"
 
 ### Emergency Recovery
 
-```bash
-# 1. Stop Torrentarr
-docker stop torrentarr
-
-# 2. Backup corrupted database
-cp ~/config/torrentarr.db ~/config/torrentarr.db.corrupt
-
-# 3. Attempt repair
-sqlite3 ~/config/torrentarr.db ".dump" | sqlite3 ~/config/torrentarr.db.new
-mv ~/config/torrentarr.db.new ~/config/torrentarr.db
-
-# 4. Verify
-sqlite3 ~/config/torrentarr.db "PRAGMA integrity_check;"
-
-# 5. Restart
-docker start torrentarr
-```
-
-If repair fails, delete database and rebuild:
-
-```bash
-rm ~/config/torrentarr.db
-docker start torrentarr  # Rebuilds from Arr APIs
-```
+Follow the [offline database recovery steps](#2-database-corruption). Keep the
+original database and sidecar files until you have verified the restored database
+and checked the application state after restart.
 
 ---
 

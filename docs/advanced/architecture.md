@@ -501,7 +501,6 @@ public abstract class ArrManagerBase : BackgroundService
                 }
 
                 await UpdateStatesAsync(torrents, stoppingToken);
-                await CleanupExpiredAsync(stoppingToken);
 
                 await Task.Delay(_config.LoopSleepTimer, stoppingToken);
             }
