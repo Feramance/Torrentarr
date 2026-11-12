@@ -1,6 +1,9 @@
 services:
   torrentarr:
-    build: .
+    build:
+      context: .
+      args:
+      - VERSION
     container_name: torrentarr
     restart: unless-stopped
     ports:
