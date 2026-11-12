@@ -4,7 +4,13 @@ using System.Net.Http.Json;
 using System.Text.Json;
 using FluentAssertions;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Logging.Abstractions;
+using Torrentarr.Core.Configuration;
+using Torrentarr.Core.Interfaces;
+using Torrentarr.Core.Models;
 using Torrentarr.Core.Services;
+using Torrentarr.Infrastructure.Database;
+using Torrentarr.Infrastructure.Services;
 using Xunit;
 using Moq;
 
@@ -13,6 +19,115 @@ namespace Torrentarr.Host.Tests.Api;
 [Collection("HostWeb")]
 public sealed class OperationalIssueEndpointTests
 {
+    [Theory]
+    [InlineData(TorrentRemovalIntent.RejectedByAllowlist, false)]
+    [InlineData(TorrentRemovalIntent.StalledDownload, false)]
+    [InlineData(TorrentRemovalIntent.StalledDownload, true)]
+    public async Task RemovalWarningsStayActiveUntilRecoveryIsVerified(TorrentRemovalIntent intent, bool removeTorrent)
+    {
+        using var factory = new TorrentarrWebApplicationFactory();
+        using var http = factory.CreateClient();
+        const string instance = "qBit-General";
+        const string category = "sonarr-tv";
+        var allowlist = intent == TorrentRemovalIntent.RejectedByAllowlist;
+        var config = factory.Services.GetRequiredService<TorrentarrConfig>();
+        config.Settings.Tagless = true;
+        config.QBitInstances[instance] = new();
+        config.ArrInstances["Sonarr-TV"] = new()
+        {
+            Category = category,
+            Torrent = { FileExtensionAllowlist = [@"\.mkv$"], StalledDelay = allowlist ? -1 : 0 }
+        };
+        var blockedState = allowlist ? "downloading" : "stalledDL";
+        var torrent = new TorrentInfo
+        {
+            Hash = "blocked-removal",
+            Category = category,
+            ClientInstanceId = instance,
+            State = blockedState,
+            AddedOn = 1,
+            LastActivity = 1,
+            Progress = 0.5,
+            AmountLeft = 100
+        };
+        List<TorrentInfo> inventory = [torrent];
+        List<TorrentFileRecord> files = [new() { Name = "episode.txt" }];
+        var client = new Mock<ITorrentClient>();
+        client.SetupGet(c => c.Capabilities).Returns(TorrentClientCapabilities.QBittorrent);
+        client.Setup(c => c.GetTorrentsAsync(It.IsAny<string?>(), It.IsAny<string?>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(() => inventory);
+        client.Setup(c => c.GetTorrentFilesAsync(torrent.Hash, It.IsAny<CancellationToken>())).ReturnsAsync(() => files);
+        var registry = new Mock<ITorrentClientRegistry>();
+        registry.Setup(r => r.GetClient(instance)).Returns(client.Object);
+        registry.Setup(r => r.GetAllClients()).Returns(new Dictionary<string, ITorrentClient> { [instance] = client.Object });
+        var seeding = new Mock<ISeedingService>();
+        seeding.Setup(s => s.HnrAllowsDeleteAsync(torrent, It.IsAny<string>(), It.IsAny<CancellationToken>())).ReturnsAsync(true);
+        seeding.Setup(s => s.EvaluateRemovalAsync(torrent, intent, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new RemovalDecision([new("test.blocker", "Original blocker evidence", "Retry after recovery")]));
+        var failScan = false;
+        seeding.Setup(s => s.ApplySeedingLimitsAsync(torrent, It.IsAny<CancellationToken>()))
+            .Returns(() => failScan ? Task.FromException(new IOException("inspection failed")) : Task.CompletedTask);
+        seeding.Setup(s => s.RemoveCompletedTorrentsAsync(category, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new RemovalResult());
+        var cache = factory.Services.GetRequiredService<ITorrentCacheService>();
+
+        async Task Scan(bool fullScan = false)
+        {
+            using var scope = factory.Services.CreateScope();
+            var services = scope.ServiceProvider;
+            var processor = new TorrentProcessor(NullLogger<TorrentProcessor>.Instance, registry.Object,
+                services.GetRequiredService<TorrentarrDbContext>(), config, cache, new(),
+                seedingService: seeding.Object, issues: services.GetRequiredService<IOperationalIssueReporter>());
+            if (fullScan) await processor.ProcessTorrentsAsync(category);
+            else await processor.ProcessTorrentAsync(torrent.Hash);
+        }
+
+        async Task AssertIssue(string state, int count, int occurrences = 0)
+        {
+            var response = await http.GetFromJsonAsync<JsonElement>($"/web/issues?state={state}&q={intent}");
+            response.GetProperty("available").GetBoolean().Should().BeTrue();
+            response.GetProperty("total").GetInt32().Should().Be(count);
+            if (count == 0) return;
+            var group = response.GetProperty("items")[0];
+            group.GetProperty("affected").GetInt32().Should().Be(1);
+            group.GetProperty("occurrences").GetInt32().Should().Be(occurrences);
+            group.GetProperty("impact").GetString().Should().Contain("Original blocker evidence");
+        }
+
+        await Scan();
+        await AssertIssue("active", 1, 1);
+        torrent.State = "queuedDL";
+        await Scan();
+        await AssertIssue("active", 1, 1);
+        cache.Clear();
+        await Scan();
+        await AssertIssue("active", 1, 1);
+
+        torrent.State = blockedState;
+        if (allowlist)
+        {
+            var excluded = files;
+            files = [];
+            await Scan();
+            await AssertIssue("active", 1, 1);
+            files = excluded;
+        }
+        await Scan();
+        await AssertIssue("active", 1, 2);
+
+        files = [new() { Name = "episode.mkv" }];
+        torrent.State = "downloading";
+        torrent.Availability = 1;
+        failScan = true;
+        await FluentActions.Awaiting(() => Scan()).Should().ThrowAsync<IOException>();
+        await AssertIssue("active", 1, 2);
+        failScan = false;
+        if (removeTorrent) inventory = [];
+        await Scan(fullScan: removeTorrent);
+        await AssertIssue("active", 0);
+        await AssertIssue("resolved", 1, 2);
+    }
+
     [Theory]
     [InlineData("/web")]
     [InlineData("/api")]

@@ -852,7 +852,7 @@ public sealed class TorrentProcessorTests : IDisposable
 
     private sealed class DisposableDownloadDirectory : IDisposable
     {
-        public string Path { get; } = Directory.CreateTempSubdirectory("torrentarr-cleanup-").FullName;
+        public string Path { get; } = Directory.CreateDirectory(System.IO.Path.Combine(TestPaths.TempPath, "torrentarr-cleanup-" + Guid.NewGuid().ToString("N"))).FullName;
         public void Dispose() => Directory.Delete(Path, recursive: true);
     }
 

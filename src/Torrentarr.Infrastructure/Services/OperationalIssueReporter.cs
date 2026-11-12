@@ -124,8 +124,13 @@ public sealed class OperationalIssueReporter(IServiceScopeFactory scopes, ILogge
         var now = DateTime.UtcNow;
         var arrs = config.ArrInstances.Keys.ToList();
         var clients = config.GetAllTorrentClients().Keys.ToList();
-        var retired = await db.OperationalIssues.Where(i => i.ResolvedAt == null &&
+        var retirementCandidates = await db.OperationalIssues.Where(i => i.ResolvedAt == null &&
             (i.ArrInstance != "" && !arrs.Contains(i.ArrInstance) || i.ClientInstance != "" && !clients.Contains(i.ClientInstance))).ToListAsync(ct);
+        // Torrent removal warnings use the owning category in their persisted identity.
+        var retired = retirementCandidates.Where(i => !i.Code.StartsWith("torrent.removal.", StringComparison.Ordinal)
+            || !clients.Contains(i.ClientInstance)
+            || !CategoryPathHelper.CategoryEquals(i.ArrInstance,
+                CategoryOwnershipHelper.ResolveOwningCategory(config, i.ArrInstance, i.ClientInstance)));
         foreach (var issue in retired) { issue.ResolvedAt = now; issue.Resolution = "Instance removed from configuration"; }
         if (now >= _nextCleanup)
         {
