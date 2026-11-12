@@ -145,9 +145,12 @@ public class LogLevelEndpointTests : IClassFixture<TorrentarrWebApplicationFacto
     [Fact]
     public async Task ApplicationEvents_ReachAggregateAndWorkerFiles_WhileEfNoiseIsSuppressed()
     {
-        using var client = _factory.CreateClientWithApiToken();
-        await client.PostAsJsonAsync("/web/loglevel", new { level = "TRACE" });
-        var factory = _factory.Services.GetRequiredService<ILoggerFactory>();
+        // Other test hosts can close the process-wide Serilog logger.
+        using var host = new TorrentarrWebApplicationFactory();
+        using var client = host.CreateClientWithApiToken();
+        using var response = await client.PostAsJsonAsync("/web/loglevel", new { level = "TRACE" });
+        response.EnsureSuccessStatusCode();
+        var factory = host.Services.GetRequiredService<ILoggerFactory>();
         var application = factory.CreateLogger("Torrentarr.Infrastructure.Services.ArrSyncService");
         var ef = factory.CreateLogger("Microsoft.EntityFrameworkCore.Database.Command");
         var marker = Guid.NewGuid().ToString("N");
