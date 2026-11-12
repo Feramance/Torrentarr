@@ -239,6 +239,14 @@ jobs:
         ref: ${{ github.event.pull_request.head.sha }}
         repository: ${{ github.event.pull_request.head.repo.full_name }}
 
+    - name: Set PR build version
+      id: version
+      env:
+        PR_NUMBER: ${{ github.event.pull_request.number }}
+      run: |
+        PROJECT_VERSION=$(grep -oP '<Version>\K[^<]+' Directory.Build.props)
+        echo "value=${PROJECT_VERSION}-pr.${PR_NUMBER}.${GITHUB_RUN_NUMBER}.${GITHUB_RUN_ATTEMPT}" >> "$GITHUB_OUTPUT"
+
     - name: Set up QEMU
       uses: docker/setup-qemu-action@v4
 
@@ -259,6 +267,8 @@ jobs:
         images: ghcr.io/${{ steps.repo.outputs.lowercase }}
         tags: |
           type=raw,value=pr-${{ github.event.pull_request.number }}
+        labels: |
+          org.opencontainers.image.version=${{ steps.version.outputs.value }}
 
     - name: Build and push Docker image
       uses: docker/build-push-action@v7
@@ -266,6 +276,8 @@ jobs:
         context: .
         platforms: linux/amd64,linux/arm64
         push: true
+        build-args: |
+          VERSION=${{ steps.version.outputs.value }}
         tags: ${{ steps.meta.outputs.tags }}
         labels: ${{ steps.meta.outputs.labels }}
         cache-from: type=gha

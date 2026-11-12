@@ -699,6 +699,9 @@ public class UpdateService
     internal static bool IsNewerVersion(string latest, string current)
     {
         var parsedLatest = ParseReleaseVersion(latest);
+        var prSuffix = current.IndexOf("-pr.", StringComparison.Ordinal);
+        if (prSuffix >= 0)
+            current = current[..prSuffix];
         var parsedCurrent = ParseReleaseVersion(current);
         if (parsedLatest is null || parsedCurrent is null)
             return false;

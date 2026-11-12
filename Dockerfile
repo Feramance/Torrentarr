@@ -47,13 +47,16 @@ COPY nuget.config ./
 COPY --from=frontend-build /app/src/Torrentarr.Host/wwwroot ./src/Torrentarr.Host/wwwroot
 
 # Build and publish
+ARG VERSION
 RUN dotnet publish src/Torrentarr.Host/Torrentarr.Host.csproj \
     -c Release \
     -o /app/publish \
+    ${VERSION:+-p:InformationalVersion="$VERSION"} \
     --no-restore
 RUN dotnet publish src/Torrentarr.Workers/Torrentarr.Workers.csproj \
     -c Release \
     -o /app/publish \
+    ${VERSION:+-p:InformationalVersion="$VERSION"} \
     --no-restore
 
 # Stage 3: Runtime Image

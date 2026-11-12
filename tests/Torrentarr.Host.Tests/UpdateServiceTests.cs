@@ -326,6 +326,9 @@ public class UpdateServiceTests
     [InlineData("6.14.3-1", "6.14.3-1", false)]
     [InlineData("6.14.3-1", "6.14.3-2", false)]
     [InlineData("v6.14.3-1", "6.14.3-1", false)]
+    [InlineData("6.20.0-1", "6.20.0-1-pr.563.1774.1", false)]
+    [InlineData("6.20.0-2", "6.20.0-1-pr.563.1774.1", true)]
+    [InlineData("6.20.1-1", "6.20.0-1-pr.563.1774.2", true)]
     public void IsNewerVersion_UnderstandsBuildChannelTags(string latest, string current, bool expected)
     {
         UpdateService.IsNewerVersion(latest, current).Should().Be(expected);
