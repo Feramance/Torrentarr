@@ -28,6 +28,14 @@ namespace Torrentarr.Host.Tests.Api;
 public class StandaloneRadarrEndpointTests
 {
     [Fact]
+    public async Task StandalonePasswordSetup_RejectsUrlAndMalformedHeaderAndAcceptsBearer()
+    {
+        await using var factory = new StandaloneFactory();
+        using var client = factory.CreateClient();
+        await SetPasswordEndpointTests.AssertBootstrapCredentialSources(client, "standalone-test");
+    }
+
+    [Fact]
     public async Task StandaloneReconnect_UnknownClientReturnsNotFound()
     {
         await using var factory = new StandaloneFactory();

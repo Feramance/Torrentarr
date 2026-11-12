@@ -90,8 +90,13 @@ public sealed class TransferHistoryTests
         registry.Setup(r => r.GetClient("unsupported")).Returns(unsupported.Object);
         var collector = new TransferHistoryCollector(provider.GetRequiredService<IServiceScopeFactory>(), config, registry.Object,
             NullLogger<TransferHistoryCollector>.Instance);
-        await collector.CollectAsync(Now, default);
-        await collector.CollectAsync(Now.AddSeconds(20), default);
+        var clock = new Mock<TimeProvider>();
+        var now = Now;
+        clock.Setup(c => c.GetUtcNow()).Returns(() => now);
+        collector.Clock = clock.Object;
+        await collector.CollectAsync(default);
+        now = Now.AddSeconds(20);
+        await collector.CollectAsync(default);
         using var check = provider.CreateScope();
         var saved = await check.ServiceProvider.GetRequiredService<TorrentarrDbContext>().TransferSamples.ToListAsync();
         saved.Should().ContainSingle().Which.DownloadRate.Should().Be(123);
@@ -121,13 +126,68 @@ public sealed class TransferHistoryTests
         registry.Setup(r => r.GetClient("slow")).Returns(slow.Object);
         var collector = new TransferHistoryCollector(provider.GetRequiredService<IServiceScopeFactory>(), config, registry.Object,
             NullLogger<TransferHistoryCollector>.Instance);
-        await collector.CollectAsync(Now, default);
-        await collector.CollectAsync(Now.AddSeconds(10), default);
+        var clock = new Mock<TimeProvider>();
+        var now = Now;
+        clock.Setup(c => c.GetUtcNow()).Returns(() => now);
+        collector.Clock = clock.Object;
+        await collector.CollectAsync(default);
+        now = Now.AddSeconds(10);
+        await collector.CollectAsync(default);
         fast.Verify(c => c.GetTransferInfoAsync(It.IsAny<CancellationToken>()), Times.Exactly(2));
         slow.Verify(c => c.GetTransferInfoAsync(It.IsAny<CancellationToken>()), Times.Once);
         config.TorrentClients["slow"].TorrentScanIntervalSeconds = 10;
-        await collector.CollectAsync(Now.AddSeconds(11), default);
+        now = Now.AddSeconds(11);
+        await collector.CollectAsync(default);
         slow.Verify(c => c.GetTransferInfoAsync(It.IsAny<CancellationToken>()), Times.Exactly(2));
+    }
+
+    [Fact]
+    public async Task Collector_RecordsResponseMinuteWithoutWaitingToPollBehindTimeout()
+    {
+        using var connection = new SqliteConnection("Data Source=:memory:");
+        connection.Open();
+        var services = new ServiceCollection();
+        services.AddDbContext<TorrentarrDbContext>(o => o.UseSqlite(connection));
+        using var provider = services.BuildServiceProvider();
+        using (var scope = provider.CreateScope())
+            scope.ServiceProvider.GetRequiredService<TorrentarrDbContext>().Database.EnsureCreated();
+
+        var config = new TorrentarrConfig();
+        config.TorrentClients["slow"] = new() { Host = "fixture" };
+        config.TorrentClients["healthy"] = new() { Host = "fixture" };
+        var slow = new Mock<ITorrentClient>();
+        slow.Setup(c => c.GetTransferInfoAsync(It.IsAny<CancellationToken>()))
+            .Returns(async (CancellationToken token) =>
+            {
+                await Task.Delay(Timeout.InfiniteTimeSpan, token);
+                return null;
+            });
+        var healthy = new Mock<ITorrentClient>();
+        var healthyPolled = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        healthy.Setup(c => c.GetTransferInfoAsync(It.IsAny<CancellationToken>()))
+            .ReturnsAsync(() =>
+            {
+                healthyPolled.SetResult();
+                return new TorrentTransferRecord { DownloadSpeed = 123, UploadSpeed = 45 };
+            });
+        var registry = new Mock<ITorrentClientRegistry>();
+        registry.Setup(r => r.GetClient("slow")).Returns(slow.Object);
+        registry.Setup(r => r.GetClient("healthy")).Returns(healthy.Object);
+        var clock = new Mock<TimeProvider>();
+        clock.SetupSequence(c => c.GetUtcNow()).Returns(Now.AddSeconds(-1)).Returns(Now);
+        var collector = new TransferHistoryCollector(provider.GetRequiredService<IServiceScopeFactory>(), config, registry.Object,
+            NullLogger<TransferHistoryCollector>.Instance)
+        { Clock = clock.Object };
+
+        using var cancellation = new CancellationTokenSource(TimeSpan.FromSeconds(20));
+        var collection = collector.CollectAsync(cancellation.Token);
+        await healthyPolled.Task.WaitAsync(TimeSpan.FromSeconds(5));
+        await collection;
+
+        using var check = provider.CreateScope();
+        var sample = await check.ServiceProvider.GetRequiredService<TorrentarrDbContext>().TransferSamples.SingleAsync();
+        sample.ClientInstance.Should().Be("healthy");
+        sample.Minute.Should().Be(Now.ToUnixTimeSeconds() / 60);
     }
 
     [Fact]

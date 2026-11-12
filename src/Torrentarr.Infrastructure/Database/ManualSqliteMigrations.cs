@@ -42,12 +42,8 @@ public static class ManualSqliteMigrations
 
         CreateTableIfMissing(db, "torrentarr_arr_samples", "CREATE TABLE IF NOT EXISTS torrentarr_arr_samples (Instance TEXT NOT NULL, Minute INTEGER NOT NULL, Type TEXT NOT NULL, QueueDepth INTEGER, CompletionObserved INTEGER NOT NULL, PRIMARY KEY (Instance, Minute));");
         db.Database.ExecuteSqlRaw("CREATE INDEX IF NOT EXISTS IX_torrentarr_arr_samples_Minute ON torrentarr_arr_samples (Minute)");
-        CreateTableIfMissing(db, "torrentarr_arr_operations", "CREATE TABLE IF NOT EXISTS torrentarr_arr_operations (Instance TEXT NOT NULL, CommandId INTEGER NOT NULL, Type TEXT NOT NULL, Kind TEXT NOT NULL, Server TEXT NOT NULL, ClientInstance TEXT NOT NULL, DownloadId TEXT NOT NULL, SubmittedAt INTEGER NOT NULL, ConfirmedAt INTEGER, Outcome TEXT NOT NULL DEFAULT 'pending', EvidenceId TEXT, PRIMARY KEY (Instance, CommandId));");
-        db.Database.ExecuteSqlRaw("CREATE UNIQUE INDEX IF NOT EXISTS IX_torrentarr_arr_operations_Instance_EvidenceId ON torrentarr_arr_operations (Instance, EvidenceId)");
-        db.Database.ExecuteSqlRaw("CREATE INDEX IF NOT EXISTS IX_torrentarr_arr_operations_SubmittedAt ON torrentarr_arr_operations (SubmittedAt)");
-        db.Database.ExecuteSqlRaw("CREATE INDEX IF NOT EXISTS IX_torrentarr_arr_operations_ConfirmedAt ON torrentarr_arr_operations (ConfirmedAt)");
-        db.Database.ExecuteSqlRaw("CREATE INDEX IF NOT EXISTS IX_torrentarr_arr_operations_Instance_DownloadId ON torrentarr_arr_operations (Instance, DownloadId)");
-        db.Database.ExecuteSqlRaw("CREATE INDEX IF NOT EXISTS IX_torrentarr_arr_operations_Instance_Outcome ON torrentarr_arr_operations (Instance, Outcome)");
+        MigrateArrActivityOperations(db);
+        AddColumnIfMissing(db, "torrentlibrary", "autodeletependingaddedon", "INTEGER");
         CreateTableIfMissing(db, "torrentarr_transfer_samples", "CREATE TABLE IF NOT EXISTS torrentarr_transfer_samples (ClientInstance TEXT NOT NULL, Minute INTEGER NOT NULL, DownloadRate INTEGER NOT NULL, UploadRate INTEGER NOT NULL, PRIMARY KEY (ClientInstance, Minute));");
         db.Database.ExecuteSqlRaw("CREATE INDEX IF NOT EXISTS IX_torrentarr_transfer_samples_Minute ON torrentarr_transfer_samples (Minute)");
         CreateTableIfMissing(db, "torrentarr_maintenance_state", "CREATE TABLE IF NOT EXISTS torrentarr_maintenance_state (Key TEXT NOT NULL PRIMARY KEY, Data TEXT NOT NULL DEFAULT '{}');");
@@ -185,6 +181,35 @@ public static class ManualSqliteMigrations
         CreateIndexIfMissing(db, "idx_arrinstance_albumqueue", "albumqueuemodel", "arrinstance");
         CreateIndexIfMissing(db, "idx_arrinstance_bookqueue", "bookqueuemodel", "arrinstance");
         CreateIndexIfMissing(db, "idx_arrinstance_filesqueued", "filesqueued", "arrinstance");
+    }
+
+    private static void MigrateArrActivityOperations(TorrentarrDbContext db)
+    {
+        using var transaction = db.Database.BeginTransaction();
+        const string createTable = """
+            CREATE TABLE IF NOT EXISTS torrentarr_arr_operations (Instance TEXT NOT NULL, CommandId INTEGER NOT NULL, Type TEXT NOT NULL, Kind TEXT NOT NULL, Server TEXT NOT NULL, ClientInstance TEXT NOT NULL, DownloadId TEXT NOT NULL, SubmittedAt INTEGER NOT NULL, ConfirmedAt INTEGER, Outcome TEXT NOT NULL DEFAULT 'pending', EvidenceId TEXT, PRIMARY KEY (Instance, Server, CommandId));
+            """;
+        db.Database.ExecuteSqlRaw(createTable);
+        var hasServerKey = db.Database.SqlQueryRaw<int>("SELECT COUNT(*) AS Value FROM pragma_table_info('torrentarr_arr_operations') WHERE name = 'Server' AND pk > 0").Single() > 0;
+        if (!hasServerKey)
+        {
+            db.Database.ExecuteSqlRaw("""
+                ALTER TABLE torrentarr_arr_operations RENAME TO torrentarr_arr_operations_legacy;
+                """);
+            db.Database.ExecuteSqlRaw(createTable);
+            db.Database.ExecuteSqlRaw("""
+                INSERT INTO torrentarr_arr_operations (Instance, CommandId, Type, Kind, Server, ClientInstance, DownloadId, SubmittedAt, ConfirmedAt, Outcome, EvidenceId)
+                    SELECT Instance, CommandId, Type, Kind, Server, ClientInstance, DownloadId, SubmittedAt, ConfirmedAt, Outcome, EvidenceId
+                    FROM torrentarr_arr_operations_legacy;
+                DROP TABLE torrentarr_arr_operations_legacy;
+                """);
+        }
+        db.Database.ExecuteSqlRaw("CREATE UNIQUE INDEX IF NOT EXISTS IX_torrentarr_arr_operations_Instance_Server_EvidenceId ON torrentarr_arr_operations (Instance, Server, EvidenceId)");
+        db.Database.ExecuteSqlRaw("CREATE INDEX IF NOT EXISTS IX_torrentarr_arr_operations_SubmittedAt ON torrentarr_arr_operations (SubmittedAt)");
+        db.Database.ExecuteSqlRaw("CREATE INDEX IF NOT EXISTS IX_torrentarr_arr_operations_ConfirmedAt ON torrentarr_arr_operations (ConfirmedAt)");
+        db.Database.ExecuteSqlRaw("CREATE INDEX IF NOT EXISTS IX_torrentarr_arr_operations_Instance_DownloadId ON torrentarr_arr_operations (Instance, DownloadId)");
+        db.Database.ExecuteSqlRaw("CREATE INDEX IF NOT EXISTS IX_torrentarr_arr_operations_Instance_Outcome ON torrentarr_arr_operations (Instance, Outcome)");
+        transaction.Commit();
     }
 
     internal static void CreateTableIfMissing(TorrentarrDbContext db, string tableName, string createSql)

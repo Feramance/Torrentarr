@@ -192,6 +192,47 @@ public sealed class ArrActivityTests : IDisposable
     }
 
     [Fact]
+    public async Task Migration_PreservesHistoryAndAllowsReusedCommandAndEvidenceIdsOnReplacementServer()
+    {
+        await using var db = Db();
+        await db.Database.ExecuteSqlRawAsync("""
+            DROP TABLE torrentarr_arr_operations;
+            CREATE TABLE torrentarr_arr_operations (
+                Instance TEXT NOT NULL, CommandId INTEGER NOT NULL, Type TEXT NOT NULL, Kind TEXT NOT NULL,
+                Server TEXT NOT NULL, ClientInstance TEXT NOT NULL, DownloadId TEXT NOT NULL,
+                SubmittedAt INTEGER NOT NULL, ConfirmedAt INTEGER, Outcome TEXT NOT NULL, EvidenceId TEXT,
+                PRIMARY KEY (Instance, CommandId)
+            );
+            CREATE UNIQUE INDEX IX_torrentarr_arr_operations_Instance_EvidenceId
+                ON torrentarr_arr_operations (Instance, EvidenceId);
+            """);
+        await db.Database.ExecuteSqlInterpolatedAsync($"""
+            INSERT INTO torrentarr_arr_operations VALUES (
+                'Sonarr-one', 1, 'sonarr', 'import', 'old-server', '', 'HASH',
+                {Now.AddMinutes(-5).ToUnixTimeSeconds()}, {Now.ToUnixTimeSeconds()}, 'completed', 'history:8'
+            )
+            """);
+        ManualSqliteMigrations.Apply(db);
+        ManualSqliteMigrations.Apply(db);
+        var replacement = Operation(1, "import", "HASH");
+        db.Add(replacement);
+        await db.SaveChangesAsync();
+
+        var history = new JArray(new JObject
+        {
+            ["id"] = 8,
+            ["downloadId"] = "HASH",
+            ["eventType"] = "downloadFolderImported",
+            ["date"] = Now.ToString("O")
+        });
+        await ArrActivityCollector.ReconcileAsync(db, [replacement], [], history, Now);
+        await db.SaveChangesAsync();
+
+        var rows = await db.ArrActivityOperations.ToListAsync();
+        rows.Should().HaveCount(2).And.OnlyContain(row => row.Outcome == "completed" && row.EvidenceId == "history:8");
+    }
+
+    [Fact]
     public async Task Migration_AddsActivityTablesToExistingDatabaseWithoutLosingData()
     {
         await using var db = Db();

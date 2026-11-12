@@ -44,8 +44,8 @@ public class TorrentarrDbContext : DbContext
         base.OnModelCreating(modelBuilder);
         modelBuilder.Entity<ArrActivitySample>().HasKey(s => new { s.Instance, s.Minute });
         modelBuilder.Entity<ArrActivitySample>().HasIndex(s => s.Minute);
-        modelBuilder.Entity<ArrActivityOperation>().HasKey(s => new { s.Instance, s.CommandId });
-        modelBuilder.Entity<ArrActivityOperation>().HasIndex(s => new { s.Instance, s.EvidenceId }).IsUnique();
+        modelBuilder.Entity<ArrActivityOperation>().HasKey(s => new { s.Instance, s.Server, s.CommandId });
+        modelBuilder.Entity<ArrActivityOperation>().HasIndex(s => new { s.Instance, s.Server, s.EvidenceId }).IsUnique();
         modelBuilder.Entity<ArrActivityOperation>().HasIndex(s => s.SubmittedAt);
         modelBuilder.Entity<ArrActivityOperation>().HasIndex(s => s.ConfirmedAt);
         modelBuilder.Entity<ArrActivityOperation>().HasIndex(s => new { s.Instance, s.DownloadId });

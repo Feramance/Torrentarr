@@ -111,10 +111,11 @@ public sealed class ArrActivityCollector(IServiceScopeFactory scopes, IServicePr
         JArray commands, JArray history, DateTimeOffset now, CancellationToken ct = default)
     {
         var importInstances = pending.Where(o => o.Kind == "import").Select(o => o.Instance).Distinct().ToList();
+        var importServers = pending.Where(o => o.Kind == "import").Select(o => o.Server).Distinct().ToList();
         var importHashes = pending.Where(o => o.Kind == "import").Select(o => o.DownloadId).Distinct().ToList();
         var previousImports = importInstances.Count == 0 ? new List<ArrActivityOperation>() : await db.ArrActivityOperations
-            .Where(o => o.Kind == "import" && importInstances.Contains(o.Instance) && importHashes.Contains(o.DownloadId)).ToListAsync(ct);
-        var claimed = previousImports.Where(o => o.EvidenceId != null).Select(o => (o.Instance, o.EvidenceId)).ToHashSet();
+            .Where(o => o.Kind == "import" && importInstances.Contains(o.Instance) && importServers.Contains(o.Server) && importHashes.Contains(o.DownloadId)).ToListAsync(ct);
+        var claimed = previousImports.Where(o => o.EvidenceId != null).Select(o => (o.Instance, o.Server, o.EvidenceId)).ToHashSet();
         var confirmedImports = previousImports.Where(o => o.Outcome == "completed").ToList();
         foreach (var operation in pending.OrderBy(o => o.SubmittedAt).ThenBy(o => o.CommandId))
         {
@@ -129,13 +130,13 @@ public sealed class ArrActivityCollector(IServiceScopeFactory scopes, IServicePr
             if (operation.Kind == "search" && result is not ("successful" or "1")) continue;
             if (operation.Kind == "import")
             {
-                if (confirmedImports.Any(o => o.Instance == operation.Instance && o.DownloadId == operation.DownloadId
+                if (confirmedImports.Any(o => o.Instance == operation.Instance && o.Server == operation.Server && o.DownloadId == operation.DownloadId
                     && o.ConfirmedAt >= operation.SubmittedAt)) { operation.Outcome = "duplicate"; continue; }
                 var evidence = history.FirstOrDefault(h => PositiveImport(h, operation)
-                    && !claimed.Contains((operation.Instance, "history:" + h["id"]!.Value<string>())));
+                    && !claimed.Contains((operation.Instance, operation.Server, "history:" + h["id"]!.Value<string>())));
                 if (evidence == null) continue;
                 operation.EvidenceId = "history:" + evidence["id"]!.Value<string>();
-                claimed.Add((operation.Instance, operation.EvidenceId));
+                claimed.Add((operation.Instance, operation.Server, operation.EvidenceId));
             }
             operation.Outcome = "completed";
             operation.ConfirmedAt = now.ToUnixTimeSeconds();

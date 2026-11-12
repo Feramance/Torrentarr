@@ -37,7 +37,7 @@ public class FreeSpaceService(
         return new(IdentifyStorage(path), drive.TotalSize, drive.AvailableFreeSpace);
     }
 
-    private static string StorageIdentity(string path)
+    internal static string StorageIdentity(string path, bool distinguishMounts = false)
     {
         path = Path.GetFullPath(path);
         if (OperatingSystem.IsLinux())
@@ -52,7 +52,7 @@ public class FreeSpaceService(
                 .Where(parts => parts.Length > 4 && StorageConfigMigration.Contains(UnescapeMount(parts[4]), path))
                 .OrderByDescending(parts => UnescapeMount(parts[4]).Length).FirstOrDefault();
             if (mount == null) throw new IOException("Cannot identify monitor filesystem.");
-            return mount[2];
+            return mount[distinguishMounts ? 0 : 2];
         }
         if (OperatingSystem.IsWindows()) return path.StartsWith(@"\\", StringComparison.Ordinal)
             ? Path.GetPathRoot(path)!.ToUpperInvariant() : WindowsVolume(path);

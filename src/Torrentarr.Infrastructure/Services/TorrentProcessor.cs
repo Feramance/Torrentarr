@@ -194,7 +194,7 @@ public class TorrentProcessor : ITorrentProcessor
                 }
             }
 
-            try { await ResolveRemovedTorrentIssuesAsync(observedClients, failures, cancellationToken); }
+            try { await ReconcileRemovedTorrentsAsync(category, torrents, observedClients, failures, cancellationToken); }
             catch (Exception ex) when (ex is not OperationCanceledException) { failures.Add(ex); }
 
             // Independent maintenance still runs for healthy clients and torrents before failing the cycle.
@@ -230,30 +230,41 @@ public class TorrentProcessor : ITorrentProcessor
         }
     }
 
-    private async Task ResolveRemovedTorrentIssuesAsync(HashSet<string> observedClients, List<Exception> failures, CancellationToken ct)
+    private async Task ReconcileRemovedTorrentsAsync(string category, IReadOnlyList<TorrentInfo> torrents,
+        HashSet<string> observedClients, List<Exception> failures, CancellationToken ct)
     {
-        if (_issues == null || observedClients.Count == 0) return;
-        var outstanding = await _dbContext.OperationalIssues.AsNoTracking().Where(i => (i.Code == "torrent.processing" || i.Code == "import.ownership" || i.Code.StartsWith("torrent.removal."))
+        if (observedClients.Count == 0) return;
+        var outstanding = _issues == null ? [] : await _dbContext.OperationalIssues.AsNoTracking().Where(i => (i.Code == "torrent.processing" || i.Code == "import.ownership" || i.Code.StartsWith("torrent.removal."))
             && i.SubjectType == "torrent" && i.ResolvedAt == null && observedClients.Contains(i.ClientInstance)).ToListAsync(ct);
-        foreach (var group in outstanding.GroupBy(i => i.ClientInstance, StringComparer.OrdinalIgnoreCase))
+        var seen = torrents.ToLookup(t => t.ClientInstanceId, t => t.Hash, StringComparer.OrdinalIgnoreCase);
+        var pending = await _dbContext.TorrentLibrary.Where(t => t.Category == category
+            && t.AutoDeletePendingAddedOn != null && observedClients.Contains(t.QbitInstance)).ToListAsync(ct);
+        var missing = pending.Where(t => !seen[t.QbitInstance].Contains(t.Hash, StringComparer.OrdinalIgnoreCase))
+            .ToLookup(t => t.QbitInstance, StringComparer.OrdinalIgnoreCase);
+        var issues = outstanding.ToLookup(i => i.ClientInstance, StringComparer.OrdinalIgnoreCase);
+        foreach (var instance in missing.Select(g => g.Key).Union(issues.Select(g => g.Key), StringComparer.OrdinalIgnoreCase))
         {
             try
             {
-                var client = _qbitManager.GetClient(group.Key);
+                var client = _qbitManager.GetClient(instance);
                 if (client == null) continue;
                 var observedAt = DateTime.UtcNow;
                 // Absence from a category is not proof of removal: the torrent may have moved to another owner.
                 var hashes = (await client.GetTorrentsAsync(cancellationToken: ct)).Select(t => t.Hash).ToHashSet(StringComparer.OrdinalIgnoreCase);
-                foreach (var issue in group.Where(i => i.LastObserved <= observedAt && !hashes.Contains(i.SubjectId)))
-                    await _issues.ResolveAsync(new(issue.Code, issue.Category, issue.Title, issue.Impact, issue.Remediation,
-                        issue.ArrInstance, issue.ClientInstance, issue.SubjectType, issue.SubjectId, issue.Severity, issue.Target), ct);
+                foreach (var entry in missing[instance].Where(t => !hashes.Contains(t.Hash)))
+                    entry.AutoDeletePendingAddedOn = null;
+                if (_issues != null)
+                    foreach (var issue in issues[instance].Where(i => i.LastObserved <= observedAt && !hashes.Contains(i.SubjectId)))
+                        await _issues.ResolveAsync(new(issue.Code, issue.Category, issue.Title, issue.Impact, issue.Remediation,
+                            issue.ArrInstance, issue.ClientInstance, issue.SubjectType, issue.SubjectId, issue.Severity, issue.Target), ct);
             }
             catch (Exception ex) when (ex is not OperationCanceledException)
             {
                 failures.Add(ex);
-                _logger.LogWarning(ex, "Unable to reconcile processing issues for client {Instance}; existing reports retained", group.Key);
+                _logger.LogWarning(ex, "Unable to reconcile removed torrents for client {Instance}", instance);
             }
         }
+        await _dbContext.SaveChangesWithRetryAsync(_logger, _restartCoordinator, cancellationToken: ct);
     }
 
     private OperationalIssueReport ProcessingIssue(string category, string client = "", string hash = "") => new(
@@ -566,7 +577,7 @@ public class TorrentProcessor : ITorrentProcessor
         _cache.SetName(torrent.QBitInstanceName, torrent.Hash, torrent.Name);
 
         // Ensure torrent exists in database
-        await EnsureTorrentInDatabaseAsync(torrent, category, ct);
+        var libraryEntry = await EnsureTorrentInDatabaseAsync(torrent, category, ct);
 
         // PRE-STEP 0: Tracker actions — runs for EVERY torrent BEFORE the state machine
         // (qBitrr: _process_single_torrent_trackers — arss.py:6070)
@@ -632,6 +643,10 @@ public class TorrentProcessor : ITorrentProcessor
             _logger.LogInformation("Keeping {Hash}: recovery is pending, disabled, or unsuccessful", torrent.Hash);
             return;
         }
+
+        if (libraryEntry.AutoDeletePendingAddedOn.HasValue
+            && await TryCompleteImportAutoDeleteAsync(client, torrent, libraryEntry, ct))
+            return;
 
         if (_pathTracker?.IsHashAlreadyScanned(torrent.ClientInstanceId, torrent.Hash) == true)
         {
@@ -1414,6 +1429,9 @@ public class TorrentProcessor : ITorrentProcessor
         }
 
         entry.Imported = true;
+        var ownerConfig = _config.ArrInstances.GetValueOrDefault(entry.ArrInstance);
+        if (ownerConfig?.Torrent.AutoDelete == true)
+            entry.AutoDeletePendingAddedOn = torrent.AddedOn;
         await _dbContext.SaveChangesWithRetryAsync(_logger, _restartCoordinator, cancellationToken: ct);
 
         try
@@ -1425,25 +1443,24 @@ public class TorrentProcessor : ITorrentProcessor
             _logger.LogWarning(ex, "Failed to apply imported tag for torrent {Hash}", torrent.Hash);
         }
 
-        var arrCfgForDelete = _config.ArrInstances.Values.FirstOrDefault(a =>
-            string.Equals(a.Category, entry.Category, StringComparison.OrdinalIgnoreCase));
-        if (arrCfgForDelete?.Torrent.AutoDelete == true)
+        if (entry.AutoDeletePendingAddedOn.HasValue && _qbitManager.GetClient(torrent.ClientInstanceId) is { } client)
+            await TryCompleteImportAutoDeleteAsync(client, torrent, entry, ct);
+        return true;
+    }
+
+    private async Task<bool> TryCompleteImportAutoDeleteAsync(ITorrentClient client, TorrentInfo torrent, TorrentLibrary entry, CancellationToken ct)
+    {
+        var deleted = false;
+        if (entry.Imported && entry.AutoDeletePendingAddedOn == torrent.AddedOn
+            && _config.ArrInstances.GetValueOrDefault(entry.ArrInstance)?.Torrent.AutoDelete == true)
         {
-            var client = _qbitManager.GetClient(torrent.QBitInstanceName);
-            if (client == null)
-            {
-                _logger.LogWarning(
-                    "Arr confirmed import for torrent {Hash}, but qBit client {Instance} is unavailable for AutoDelete",
-                    torrent.Hash, torrent.QBitInstanceName);
-            }
-            else
-            {
-                _logger.LogInformation("AutoDelete: removal requested for torrent {Hash} after Arr confirmed import", torrent.Hash);
-                await DeleteTorrentFromClientAsync(client, torrent, deleteFiles: false, ct);
-            }
+            deleted = await DeleteTorrentFromClientAsync(client, torrent, deleteFiles: false, ct);
+            if (!deleted) return false;
         }
 
-        return true;
+        entry.AutoDeletePendingAddedOn = null;
+        await _dbContext.SaveChangesWithRetryAsync(_logger, _restartCoordinator, cancellationToken: ct);
+        return deleted;
     }
 
     private async Task<TorrentLibrary?> FindTorrentLibraryEntryAsync(
@@ -1619,7 +1636,7 @@ public class TorrentProcessor : ITorrentProcessor
         }
     }
 
-    private async Task EnsureTorrentInDatabaseAsync(
+    private async Task<TorrentLibrary> EnsureTorrentInDatabaseAsync(
         TorrentInfo torrent,
         string category,
         CancellationToken cancellationToken)
@@ -1632,14 +1649,16 @@ public class TorrentProcessor : ITorrentProcessor
             entry = new TorrentLibrary { Hash = torrent.Hash, Category = owner, ArrInstance = arr, QbitInstance = torrent.ClientInstanceId };
             _dbContext.TorrentLibrary.Add(entry);
         }
-        else if (!CategoryPathHelper.CategoryEquals(entry.Category, owner) || entry.ArrInstance.Length > 0 && entry.ArrInstance != arr)
+        else if (!CategoryPathHelper.CategoryEquals(entry.Category, owner) || entry.ArrInstance.Length > 0 && entry.ArrInstance != arr
+            || entry.AutoDeletePendingAddedOn is { } addedOn && addedOn != torrent.AddedOn)
         {
-            entry.Category = owner; entry.ArrInstance = arr; entry.Imported = false;
+            entry.Category = owner; entry.ArrInstance = arr; entry.Imported = false; entry.AutoDeletePendingAddedOn = null;
             _cache.InvalidateTorrent(torrent.ClientInstanceId, torrent.Hash);
             _pathTracker?.InvalidateTorrent(torrent.ClientInstanceId, torrent.Hash);
         }
         else entry.ArrInstance = arr;
         await _dbContext.SaveChangesWithRetryAsync(_logger, _restartCoordinator, cancellationToken: cancellationToken);
+        return entry;
     }
 
     private static OperationalIssueReport OwnershipIssue(TorrentInfo torrent) => new(

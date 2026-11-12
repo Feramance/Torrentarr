@@ -325,14 +325,6 @@ try
         });
 
 
-    builder.Services.AddControllers()
-        .AddNewtonsoftJson(options =>
-        {
-            options.SerializerSettings.ContractResolver =
-                new Newtonsoft.Json.Serialization.CamelCasePropertyNamesContractResolver();
-            options.SerializerSettings.NullValueHandling = Newtonsoft.Json.NullValueHandling.Include;
-            options.SerializerSettings.DateTimeZoneHandling = Newtonsoft.Json.DateTimeZoneHandling.Utc;
-        });
     builder.Services.ConfigureHttpJsonOptions(options =>
         options.SerializerOptions.Converters.Add(new System.Text.Json.Serialization.JsonStringEnumConverter()));
 
@@ -623,7 +615,6 @@ try
         return MetaForceRateLimiter.TryAcquire($"meta-force:{ip}");
     }
 
-    app.MapControllers();
     app.MapOperationalIssueEndpoints("/web");
     app.MapOperationalIssueEndpoints("/api");
     app.MapStatisticsEndpoints();
@@ -1322,9 +1313,7 @@ try
         if (body.Password.Length < 8)
             return Results.BadRequest(new { error = "Password must be at least 8 characters" });
 
-        var bearerToken = ctx.Request.Headers.Authorization.FirstOrDefault()?.Replace("Bearer ", "", StringComparison.OrdinalIgnoreCase).Trim();
-        var queryToken = ctx.Request.Query["token"].FirstOrDefault();
-        var suppliedToken = !string.IsNullOrWhiteSpace(bearerToken) ? bearerToken : queryToken;
+        var suppliedToken = WebUIAuthHelpers.GetBearerToken(ctx.Request);
         var isAuthenticated = ctx.User.Identity?.IsAuthenticated == true;
         if (!WebUIAuthHelpers.IsSetPasswordAllowed(cfg, body.SetupToken, isAuthenticated, suppliedToken))
         {

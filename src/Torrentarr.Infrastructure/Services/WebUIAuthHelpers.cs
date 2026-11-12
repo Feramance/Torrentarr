@@ -1,3 +1,4 @@
+using System.Net.Http.Headers;
 using System.Security.Cryptography;
 using System.Text;
 using Microsoft.AspNetCore.Http;
@@ -77,6 +78,14 @@ public static class WebUIAuthHelpers
             "and WebUI.AllowInsecureExposure is false. Set AllowInsecureExposure = true to acknowledge " +
             "that the full admin API is reachable without credentials; bind WebUI.Host to 127.0.0.1; " +
             "or set AuthDisabled = false.";
+    }
+
+    public static string? GetBearerToken(HttpRequest request)
+    {
+        var values = request.Headers.Authorization;
+        return values.Count == 1 && AuthenticationHeaderValue.TryParse(values[0], out var header)
+            && header.Scheme.Equals("Bearer", StringComparison.OrdinalIgnoreCase)
+            ? header.Parameter : null;
     }
 
     public static string? TryGetQueryToken(HttpRequest request, WebUIConfig webUi)

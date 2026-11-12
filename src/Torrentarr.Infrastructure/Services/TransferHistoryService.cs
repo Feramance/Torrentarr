@@ -1,3 +1,4 @@
+using System.Collections.Concurrent;
 using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Routing;
@@ -23,45 +24,61 @@ public sealed class TransferHistoryCollector(
 {
     private readonly Dictionary<string, DateTimeOffset> _lastAttempt = new(StringComparer.OrdinalIgnoreCase);
     private long _lastPruneMinute = long.MinValue;
+    internal TimeProvider Clock { get; set; } = TimeProvider.System;
 
     protected override async Task ExecuteAsync(CancellationToken stoppingToken)
     {
         using var timer = new PeriodicTimer(TimeSpan.FromSeconds(1));
         do
         {
-            try { await CollectAsync(DateTimeOffset.UtcNow, stoppingToken); }
+            try { await CollectAsync(stoppingToken); }
             catch (OperationCanceledException) when (stoppingToken.IsCancellationRequested) { break; }
             catch (Exception ex) { logger.LogWarning(ex, "Transfer history collection failed"); }
         } while (await timer.WaitForNextTickAsync(stoppingToken));
     }
 
-    internal async Task CollectAsync(DateTimeOffset now, CancellationToken ct)
+    internal async Task CollectAsync(CancellationToken ct)
     {
+        var now = Clock.GetUtcNow();
         var minute = now.ToUnixTimeSeconds() / 60;
-        using var scope = scopes.CreateScope();
-        var db = scope.ServiceProvider.GetRequiredService<TorrentarrDbContext>();
+        var due = new List<(string Name, ITorrentClient Client)>();
         foreach (var (name, settings) in config.GetAllTorrentClients().ToArray())
         {
             if (settings.Disabled || registry.GetClient(name) is not { } client) continue;
             if (_lastAttempt.TryGetValue(name, out var last) && now - last < TimeSpan.FromSeconds(Math.Max(1, settings.TorrentScanIntervalSeconds))) continue;
             _lastAttempt[name] = now;
-            try
+            due.Add((name, client));
+        }
+
+        var samples = new ConcurrentQueue<TransferSample>();
+        await Parallel.ForEachAsync(due, new ParallelOptions { MaxDegreeOfParallelism = 4, CancellationToken = ct },
+            async (entry, cancellationToken) =>
             {
-                using var timeout = CancellationTokenSource.CreateLinkedTokenSource(ct);
-                timeout.CancelAfter(TimeSpan.FromSeconds(10));
-                var transfer = await client.GetTransferInfoAsync(timeout.Token);
-                if (transfer == null || transfer.DownloadSpeed < 0 || transfer.UploadSpeed < 0) continue;
-                if (await db.TransferSamples.AnyAsync(s => s.ClientInstance == name && s.Minute == minute, ct)) continue;
-                db.TransferSamples.Add(new TransferSample
+                try
                 {
-                    ClientInstance = name,
-                    Minute = minute,
-                    DownloadRate = transfer.DownloadSpeed,
-                    UploadRate = transfer.UploadSpeed
-                });
-            }
-            catch (OperationCanceledException) when (ct.IsCancellationRequested) { throw; }
-            catch (Exception ex) { logger.LogDebug(ex, "Transfer history unavailable for {Client}", name); }
+                    using var timeout = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
+                    timeout.CancelAfter(TimeSpan.FromSeconds(10));
+                    var transfer = await entry.Client.GetTransferInfoAsync(timeout.Token);
+                    timeout.Token.ThrowIfCancellationRequested();
+                    if (transfer == null || transfer.DownloadSpeed < 0 || transfer.UploadSpeed < 0) return;
+                    samples.Enqueue(new TransferSample
+                    {
+                        ClientInstance = entry.Name,
+                        Minute = Clock.GetUtcNow().ToUnixTimeSeconds() / 60,
+                        DownloadRate = transfer.DownloadSpeed,
+                        UploadRate = transfer.UploadSpeed
+                    });
+                }
+                catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested) { throw; }
+                catch (Exception ex) { logger.LogDebug(ex, "Transfer history unavailable for {Client}", entry.Name); }
+            });
+
+        using var scope = scopes.CreateScope();
+        var db = scope.ServiceProvider.GetRequiredService<TorrentarrDbContext>();
+        foreach (var sample in samples)
+        {
+            if (!await db.TransferSamples.AnyAsync(s => s.ClientInstance == sample.ClientInstance && s.Minute == sample.Minute, ct))
+                db.TransferSamples.Add(sample);
         }
         await db.SaveChangesAsync(ct);
         if (_lastPruneMinute == long.MinValue || minute - _lastPruneMinute >= 60)

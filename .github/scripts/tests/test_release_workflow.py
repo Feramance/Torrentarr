@@ -95,6 +95,7 @@ esac
                             PATH=f"{directory}:{os.environ['PATH']}",
                             CALL_LOG=str(log), MERGE_STATUS=status, VERSION="1.2.3-1",
                             GITHUB_ACTOR="test", GITHUB_REPOSITORY="test/repo",
+                            GITHUB_RUN_ID="1", GITHUB_RUN_ATTEMPT="1",
                             GITHUB_OUTPUT=str(output),
                         )
                         self.assertIn("workflow run classify-prs.yml", log.read_text())

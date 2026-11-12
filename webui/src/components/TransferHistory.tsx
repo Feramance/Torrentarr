@@ -6,7 +6,6 @@ import type {
   TransferHistoryResponse,
   TransferRange,
 } from "../api/types";
-import { STATISTICS_UPDATED } from "../hooks/useStatisticsUpdates";
 
 import {
   rateLabel,
@@ -55,14 +54,26 @@ export function TransferHistory({
         busy = false;
       }
     };
+    const bucketMs = { "1h": 1, "24h": 5, "7d": 30 }[range] * 60_000;
+    let timer: number;
+    const schedule = (delay = bucketMs - (Date.now() % bucketMs)) => {
+      timer = window.setTimeout(() => {
+        if (busy) {
+          schedule(250);
+          return;
+        }
+        void load();
+        schedule();
+      }, delay);
+    };
     void load();
+    schedule();
     window.addEventListener("torrentarr:statistics-refresh", load);
-    window.addEventListener(STATISTICS_UPDATED, load);
     document.addEventListener("visibilitychange", load);
     return () => {
       cancelled = true;
       window.removeEventListener("torrentarr:statistics-refresh", load);
-      window.removeEventListener(STATISTICS_UPDATED, load);
+      window.clearTimeout(timer);
       document.removeEventListener("visibilitychange", load);
     };
   }, [instance, range, active, key]);

@@ -4,8 +4,6 @@ import { TransferHistory } from "../../components/TransferHistory";
 import { getTransferHistory } from "../../api/client";
 import type { TransferHistoryResponse } from "../../api/types";
 
-const settings = vi.hoisted(() => ({ liveArr: true }));
-vi.mock("../../context/WebUIContext", () => ({ useWebUI: () => settings }));
 vi.mock("../../api/client", async (original) => ({
   ...(await original<typeof import("../../api/client")>()),
   getTransferHistory: vi.fn(),
@@ -39,7 +37,6 @@ const history = (instance: string): TransferHistoryResponse => ({
 beforeEach(() => {
   vi.useFakeTimers();
   vi.mocked(getTransferHistory).mockReset();
-  settings.liveArr = true;
 });
 afterEach(() => vi.useRealTimers());
 const settle = () =>
@@ -48,34 +45,31 @@ const settle = () =>
   });
 
 describe("transfer history", () => {
-  it("polls at minute intervals only while active and live", async () => {
+  it("refreshes at the bucket boundary and ignores unrelated statistics updates", async () => {
+    vi.setSystemTime(new Date("2026-11-04T12:04:00Z"));
     vi.mocked(getTransferHistory).mockResolvedValue(history("one"));
     const view = render(<TransferHistory instance="one" active />);
     await settle();
     expect(getTransferHistory).toHaveBeenCalledWith("one", "24h");
+
+    window.dispatchEvent(new Event("torrentarr:statistics-updated"));
     await act(async () => {
-      await vi.advanceTimersByTimeAsync(59999);
+      await vi.advanceTimersByTimeAsync(59_999);
     });
     expect(getTransferHistory).toHaveBeenCalledTimes(1);
     await act(async () => {
-      window.dispatchEvent(new Event("torrentarr:statistics-updated"));
+      await vi.advanceTimersByTimeAsync(1);
     });
     expect(getTransferHistory).toHaveBeenCalledTimes(2);
-    view.rerender(<TransferHistory instance="one" active={false} />);
-    await act(async () => {
-      await vi.advanceTimersByTimeAsync(120000);
-    });
-    expect(getTransferHistory).toHaveBeenCalledTimes(2);
-    settings.liveArr = false;
-    view.rerender(<TransferHistory instance="one" active />);
-    await settle();
-    await act(async () => {
-      await vi.advanceTimersByTimeAsync(120000);
-    });
-    expect(getTransferHistory).toHaveBeenCalledTimes(3);
+
     window.dispatchEvent(new Event("torrentarr:statistics-refresh"));
     await settle();
-    expect(getTransferHistory).toHaveBeenCalledTimes(4);
+    expect(getTransferHistory).toHaveBeenCalledTimes(3);
+    view.rerender(<TransferHistory instance="one" active={false} />);
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(300_000);
+    });
+    expect(getTransferHistory).toHaveBeenCalledTimes(3);
   });
 
   it("changes range without mixing clients and rejects stale responses", async () => {

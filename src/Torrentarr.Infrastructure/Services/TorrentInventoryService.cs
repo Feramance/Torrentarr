@@ -12,11 +12,6 @@ public sealed class TorrentInventoryService(ITorrentClientRegistry registry, Tor
     public Task<TorrentInventory> BuildAsync(IEnumerable<string>? instanceIds = null, CancellationToken ct = default)
         => CollectAsync((instanceIds ?? config.GetAllTorrentClients().Keys).Distinct(StringComparer.OrdinalIgnoreCase)
             .ToDictionary(id => id, _ => InventoryRequirements.All, StringComparer.OrdinalIgnoreCase), ct);
-    public Task<TorrentInventory> RefreshAsync(TorrentInventory previous, string? candidateInstance = null, string? candidateHash = null, CancellationToken ct = default)
-        => BuildAsync(ct: ct);
-    public Task<TorrentInventory> RefreshCandidateAsync(string instanceId, string hash, CancellationToken ct = default)
-        => CollectAsync(new Dictionary<string, InventoryRequirements> { [instanceId] = InventoryRequirements.All & ~InventoryRequirements.GlobalOwnership }, ct, hash);
-
     public async Task<TorrentInventory> CollectAsync(IReadOnlyDictionary<string, InventoryRequirements> requirements, CancellationToken ct = default, string? candidateHash = null)
     {
         var ownership = requirements.Values.Any(r => r.HasFlag(InventoryRequirements.GlobalOwnership));
@@ -99,7 +94,7 @@ public sealed class TorrentInventoryService(ITorrentClientRegistry registry, Tor
                                 : await fileList;
                             if (files == null) throw new IOException("Torrent file enumeration failed.");
                             item.FilesComplete = files.Count > 0 || torrent.Size == 0;
-                            item.LocalFilesComplete = local && item.FilesComplete;
+                            item.RecycleFilesComplete = item.LocalFilesComplete = local && item.FilesComplete;
                             if (!item.FilesComplete) Issue("empty-file-list", "File ownership is unavailable for a nonempty torrent.", torrent);
                             foreach (var file in files)
                             {
@@ -110,6 +105,7 @@ public sealed class TorrentInventoryService(ITorrentClientRegistry registry, Tor
                                 var mapping = local && !invalidName ? paths.Resolve(clientPath, cfg.Maintenance.PathMappings) : null;
                                 var localPath = mapping?.LocalPath;
                                 var expectedLocalPath = localPath;
+                                var expectedMissing = false;
                                 if (local)
                                 {
                                     var code = invalidName ? "unsafe-path" : mapping?.Code;
@@ -123,18 +119,21 @@ public sealed class TorrentInventoryService(ITorrentClientRegistry registry, Tor
                                     if (code != null)
                                     {
                                         item.LocalFilesComplete = false;
-                                        var expectedMissing = code == "missing-file" && (file.Priority == 0 || file.Progress < 1 && !file.IsSeed);
+                                        expectedMissing = code == "missing-file" && (file.Priority == 0 || file.Progress < 1 && !file.IsSeed);
                                         if (!expectedMissing)
+                                        {
+                                            item.RecycleFilesComplete = false;
                                             Issue(code, mapping?.Error ?? LocalError(code), torrent, clientPath, localPath ?? mapping?.LocalRoot, true, code != "missing-file");
+                                        }
                                         if (code != "missing-file") localPath = null;
                                     }
                                 }
-                                item.Files.Add(new() { File = file, ClientPath = clientPath, LocalPath = localPath, ExpectedLocalPath = localPath != null ? expectedLocalPath : null });
+                                item.Files.Add(new() { File = file, ClientPath = clientPath, LocalPath = localPath, ExpectedLocalPath = localPath != null ? expectedLocalPath : null, ExpectedMissing = expectedMissing });
                             }
                         }
                         catch (Exception ex) when (ex is not OperationCanceledException)
                         {
-                            item.FilesComplete = false; item.LocalFilesComplete = false;
+                            item.FilesComplete = false; item.LocalFilesComplete = false; item.RecycleFilesComplete = false;
                             Issue("file-list-failed", "Torrent file enumeration failed.", torrent);
                         }
                     }

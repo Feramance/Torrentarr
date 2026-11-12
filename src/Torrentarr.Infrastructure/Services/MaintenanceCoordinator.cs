@@ -298,9 +298,9 @@ public sealed class MaintenanceCoordinator : BackgroundService, IMaintenanceCoor
                             var blocked = !inventory.IsComplete ? "File ownership inventory is incomplete."
                                 : cfg.Maintenance.PathMappings.Count == 0 ? "Maintenance requires explicit local path mappings."
                                 : !cfg.Maintenance.RecycleBin.Enabled ? "Maintenance recycling is disabled."
-                                : item != null && !item.LocalFilesComplete ? "Torrent files cannot be inspected locally." : null;
+                                : item != null && !item.CanRecycleFiles ? "Torrent files cannot be inspected locally." : null;
                             action.BlockedReason ??= blocked;
-                            if (item != null && (!inventory.IsComplete || !item.LocalFilesComplete) && uninspectableContent.Add(item.Torrent.Hash))
+                            if (item != null && (!inventory.IsComplete || !item.CanRecycleFiles) && uninspectableContent.Add(item.Torrent.Hash))
                             { result.Uninspectable++; result.Examined = Math.Max(0, result.Examined - 1); }
                         }
                         plan.Actions.Add(action);
@@ -644,25 +644,29 @@ public sealed class MaintenanceCoordinator : BackgroundService, IMaintenanceCoor
                     if (_config.Revision != _config.LatestRevision || cfg?.Maintenance.Enabled != true || !MaintenanceRequirements.Enabled(action.Operation, cfg.Maintenance) || (!once && !CanRunAutomatically(action.ClientInstanceId, action.Operation))
                         || plan.ConfigurationFingerprint != Fingerprint())
                         throw new OperationCanceledException("Automatic maintenance is no longer enabled or configuration changed.");
-                    if (action.Kind is MaintenanceActionKind.QuarantineFile or MaintenanceActionKind.DeleteOrphanFile or MaintenanceActionKind.DeleteEmptyOrphanDirectory or MaintenanceActionKind.RecycleContent)
-                    {
-                        inventory = await CollectOwnershipAsync(action, linked.Token);
-                    }
-                    else if (action.TorrentHash != null)
-                        inventory = await _inventory.CollectAsync(new Dictionary<string, InventoryRequirements>
-                        {
-                            [action.ClientInstanceId] = MaintenanceRequirements.For(action.Operation, cfg.Maintenance)
-                                & ~InventoryRequirements.GlobalOwnership
-                        }, linked.Token, action.TorrentHash);
-                    var staleReason = await RevalidateActionAsync(action, inventory, seeding, linked.Token);
+                    string? budgetReason = null;
                     if (action.Kind is MaintenanceActionKind.RecycleContent
                         && movedByClient.GetValueOrDefault(action.ClientInstanceId) >= cfg.Maintenance.RecycleBin.MaxTorrentMovesPerRun)
-                        staleReason = "Per-run content move limit reached.";
+                        budgetReason = "Per-run content move limit reached.";
                     if (action.Kind == MaintenanceActionKind.Recheck && rechecksByClient.GetValueOrDefault(action.ClientInstanceId) >= cfg.Maintenance.ErrorRecovery.MaxPerRun)
-                        staleReason = "Per-run new recheck limit reached.";
+                        budgetReason = "Per-run new recheck limit reached.";
                     var trackerKey = (action.ClientInstanceId.ToUpperInvariant(), action.Arguments.GetValueOrDefault("tracker", ""));
                     if (trackerKey.Item2.Length > 0 && unregisteredByTracker.GetValueOrDefault(trackerKey) >= cfg.Maintenance.Unregistered.MaxPerTrackerPerRun)
-                        staleReason = "Per-tracker cleanup limit reached.";
+                        budgetReason = "Per-tracker cleanup limit reached.";
+                    if (budgetReason == null)
+                    {
+                        if (action.Kind is MaintenanceActionKind.QuarantineFile or MaintenanceActionKind.DeleteOrphanFile or MaintenanceActionKind.DeleteEmptyOrphanDirectory or MaintenanceActionKind.RecycleContent)
+                        {
+                            inventory = await CollectOwnershipAsync(action, linked.Token);
+                        }
+                        else if (action.TorrentHash != null)
+                            inventory = await _inventory.CollectAsync(new Dictionary<string, InventoryRequirements>
+                            {
+                                [action.ClientInstanceId] = MaintenanceRequirements.For(action.Operation, cfg.Maintenance)
+                                    & ~InventoryRequirements.GlobalOwnership
+                            }, linked.Token, action.TorrentHash);
+                    }
+                    var staleReason = budgetReason ?? await RevalidateActionAsync(action, inventory, seeding, linked.Token);
                     if (staleReason != null)
                     {
                         _logger.LogDebug("Maintenance action deferred: {ActionId}; reason={Reason}", action.Id, staleReason);
@@ -866,7 +870,8 @@ public sealed class MaintenanceCoordinator : BackgroundService, IMaintenanceCoor
             var required = MaintenanceRequirements.For(action.Operation, cfg.Maintenance);
             if (required.HasFlag(InventoryRequirements.Trackers) && !item.TrackersComplete) return "Tracker inspection is incomplete.";
             if (required.HasFlag(InventoryRequirements.Files) && !item.FilesComplete) return "Torrent file enumeration is incomplete.";
-            if ((required.HasFlag(InventoryRequirements.LocalFiles) || MaintenanceRequirements.MovesContent(action.Kind)) && !item.LocalFilesComplete)
+            if (action.Kind == MaintenanceActionKind.RecycleContent ? !item.CanRecycleFiles
+                : (required.HasFlag(InventoryRequirements.LocalFiles) || MaintenanceRequirements.MovesContent(action.Kind)) && !item.LocalFilesComplete)
                 return "Local file inspection is incomplete.";
             if (!Enum.TryParse<MaintenanceOperation>(action.Arguments.GetValueOrDefault("operation"), out var operation))
                 return "Action has no valid preview operation.";
