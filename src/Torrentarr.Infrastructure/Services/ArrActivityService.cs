@@ -152,7 +152,7 @@ public sealed class ArrActivityCollector(IServiceScopeFactory scopes, IServicePr
         return history["id"] != null && !string.IsNullOrEmpty(operation.DownloadId)
             && string.Equals(history["downloadId"]?.Value<string>(), operation.DownloadId, StringComparison.OrdinalIgnoreCase)
             && (string.Equals(type, expected, StringComparison.OrdinalIgnoreCase) || type == numeric)
-            && DateTimeOffset.TryParse(history["date"]?.Value<string>(), out var date)
+            && DateTimeOffset.TryParse(history["date"]?.Value<string>(), System.Globalization.CultureInfo.InvariantCulture, System.Globalization.DateTimeStyles.RoundtripKind, out var date)
             && date.ToUnixTimeSeconds() >= operation.SubmittedAt;
     }
 }
