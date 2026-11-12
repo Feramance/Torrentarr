@@ -145,28 +145,41 @@ public class LogLevelEndpointTests : IClassFixture<TorrentarrWebApplicationFacto
     [Fact]
     public async Task ApplicationEvents_ReachAggregateAndWorkerFiles_WhileEfNoiseIsSuppressed()
     {
-        using var client = _factory.CreateClientWithApiToken();
-        await client.PostAsJsonAsync("/web/loglevel", new { level = "TRACE" });
-        var factory = _factory.Services.GetRequiredService<ILoggerFactory>();
-        var application = factory.CreateLogger("Torrentarr.Infrastructure.Services.ArrSyncService");
-        var ef = factory.CreateLogger("Microsoft.EntityFrameworkCore.Database.Command");
-        var marker = Guid.NewGuid().ToString("N");
-        var instance = "logging-" + marker;
-        var root = Path.Combine(Torrentarr.Core.Configuration.ConfigurationLoader.GetDataDirectoryPath(), "logs");
+        var previousConfig = Environment.GetEnvironmentVariable("TORRENTARR_CONFIG");
+        var previousOverride = Torrentarr.Core.Configuration.ConfigurationLoader.TestConfigPathOverride;
         try
         {
-            using (application.BeginScope(new Dictionary<string, object> { ["ProcessInstance"] = instance }))
-                application.LogInformation("Database SaveChanges DbContext DbCommand {Marker:l}", marker);
-            ef.IsEnabled(LogLevel.Debug).Should().BeFalse();
-            ef.IsEnabled(LogLevel.Information).Should().BeFalse();
-            ef.IsEnabled(LogLevel.Warning).Should().BeTrue();
-            ef.LogWarning("Database warning {Marker:l}", marker);
-            var aggregate = string.Join('\n', Directory.GetFiles(root, "all-*.log").SelectMany(path => ReadLog(path).Split('\n')).Where(line => line.Contains(marker)));
-            aggregate.Should().Contain("Database SaveChanges DbContext DbCommand " + marker).And.Contain("Database warning " + marker);
-            var worker = Directory.GetFiles(root, $"worker-{instance}-*.log").Should().ContainSingle().Subject;
-            ReadLog(worker).Should().Contain("Database SaveChanges DbContext DbCommand " + marker).And.Contain("Torrentarr." + instance);
+            // Other test hosts can close the process-wide Serilog logger.
+            using var host = new TorrentarrWebApplicationFactory();
+            using var client = host.CreateClientWithApiToken();
+            using var response = await client.PostAsJsonAsync("/web/loglevel", new { level = "TRACE" });
+            response.EnsureSuccessStatusCode();
+            var factory = host.Services.GetRequiredService<ILoggerFactory>();
+            var application = factory.CreateLogger("Torrentarr.Infrastructure.Services.ArrSyncService");
+            var ef = factory.CreateLogger("Microsoft.EntityFrameworkCore.Database.Command");
+            var marker = Guid.NewGuid().ToString("N");
+            var instance = "logging-" + marker;
+            var root = Path.Combine(Torrentarr.Core.Configuration.ConfigurationLoader.GetDataDirectoryPath(), "logs");
+            try
+            {
+                using (application.BeginScope(new Dictionary<string, object> { ["ProcessInstance"] = instance }))
+                    application.LogInformation("Database SaveChanges DbContext DbCommand {Marker:l}", marker);
+                ef.IsEnabled(LogLevel.Debug).Should().BeFalse();
+                ef.IsEnabled(LogLevel.Information).Should().BeFalse();
+                ef.IsEnabled(LogLevel.Warning).Should().BeTrue();
+                ef.LogWarning("Database warning {Marker:l}", marker);
+                var aggregate = string.Join('\n', Directory.GetFiles(root, "all-*.log").SelectMany(path => ReadLog(path).Split('\n')).Where(line => line.Contains(marker)));
+                aggregate.Should().Contain("Database SaveChanges DbContext DbCommand " + marker).And.Contain("Database warning " + marker);
+                var worker = Directory.GetFiles(root, $"worker-{instance}-*.log").Should().ContainSingle().Subject;
+                ReadLog(worker).Should().Contain("Database SaveChanges DbContext DbCommand " + marker).And.Contain("Torrentarr." + instance);
+            }
+            finally { await client.PostAsJsonAsync("/web/loglevel", new { level = "INFO" }); }
         }
-        finally { await client.PostAsJsonAsync("/web/loglevel", new { level = "INFO" }); }
+        finally
+        {
+            Environment.SetEnvironmentVariable("TORRENTARR_CONFIG", previousConfig);
+            Torrentarr.Core.Configuration.ConfigurationLoader.TestConfigPathOverride = previousOverride;
+        }
     }
 
     private static string ReadLog(string path)
