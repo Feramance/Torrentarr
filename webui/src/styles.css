@@ -882,7 +882,7 @@ body {
 .field input,
 .field select,
 .field textarea {
-  background: var(--control-bg);
+  background-color: var(--control-bg);
   color: var(--on-surface);
   border: 1px solid var(--control-border);
   border-radius: 4px;
@@ -899,7 +899,7 @@ body {
   outline: 2px solid var(--accent);
   outline-offset: 1px;
   border-color: var(--accent);
-  background: var(--control-bg);
+  background-color: var(--control-bg);
 }
 
 .field input:hover:not(:focus),
@@ -1218,28 +1218,24 @@ pre::-webkit-scrollbar-thumb:hover {
 .pagination-jump {
   width: 80px;
   padding: 8px 12px;
-  border: 1px solid var(--border);
-  border-radius: 8px;
-  background: var(--surface);
+  border: 1px solid var(--control-border);
+  border-radius: 4px;
+  background: var(--control-bg);
   color: var(--on-surface);
   font-size: 14px;
   text-align: center;
   transition:
     border-color 0.2s ease,
-    box-shadow 0.2s ease,
     opacity 0.2s ease;
-}
-[data-theme="light"] .pagination-jump {
-  border-color: var(--control-border);
-  border-radius: 4px;
-  background: var(--control-bg);
-  box-shadow: none;
 }
 
 .pagination-jump:focus {
-  outline: none;
   border-color: var(--accent);
-  box-shadow: 0 0 0 2px color-mix(in srgb, var(--accent) 25%, transparent);
+}
+
+.pagination-jump:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 1px;
 }
 
 .pagination-jump:disabled {
@@ -2214,7 +2210,7 @@ details > summary:focus-visible {
   inset: 0;
   min-height: 100dvh;
   box-sizing: border-box;
-  background: rgba(0, 0, 0, 0.5);
+  background: rgb(0 0 0 / 30%);
   display: flex;
   align-items: center;
   justify-content: center;
@@ -2233,13 +2229,6 @@ details > summary:focus-visible {
   z-index: 140;
 }
 
-[data-theme="dark"] .modal-backdrop {
-  background: rgba(0, 0, 0, 0.75);
-}
-
-[data-theme="light"] .modal-backdrop {
-  background: rgba(0, 0, 0, 0.3);
-}
 @keyframes fadeIn {
   from {
     opacity: 0;
@@ -3305,8 +3294,6 @@ details > summary:focus-visible {
   border-radius: 4px;
   border: 1px solid var(--border);
   background: var(--surface);
-}
-[data-theme="light"] .logs-toolbar__more-menu {
   box-shadow: var(--overlay-shadow);
 }
 
@@ -5279,7 +5266,7 @@ section.maintenance-workspace {
 .issue-filters select,
 .issue-filters input {
   color: var(--on-surface);
-  background: var(--control-bg);
+  background-color: var(--control-bg);
   border: 1px solid var(--control-border);
   border-radius: 4px;
   min-height: var(--control-height);
@@ -5356,7 +5343,10 @@ section.maintenance-workspace {
   --space: 20px;
   --row-height: 40px;
   --control-height: 34px;
-  --overlay-shadow: 0 8px 24px #0003;
+  --overlay-shadow-color: rgb(0 0 0 / 28%);
+  --overlay-shadow-contact: rgb(0 0 0 / 18%);
+  --overlay-shadow: 0 10px 30px var(--overlay-shadow-color),
+    0 2px 6px var(--overlay-shadow-contact);
 }
 [data-density="compact"] {
   --space: 12px;
@@ -5369,8 +5359,8 @@ html {
 }
 html[data-theme="light"] {
   color-scheme: light;
-  --overlay-shadow: 0 10px 30px rgba(31, 41, 36, 0.16),
-    0 2px 6px rgba(31, 41, 36, 0.08);
+  --overlay-shadow-color: rgb(31 41 36 / 16%);
+  --overlay-shadow-contact: rgb(31 41 36 / 8%);
 }
 body {
   font-size: 14px;
@@ -5666,7 +5656,7 @@ pre,
 [data-theme="light"] .console-shell .view-density-toggle button.active {
   background: color-mix(in srgb, var(--accent) 12%, var(--surface));
 }
-[data-theme="light"] .arr-browse-toggle {
+.arr-browse-toggle {
   min-height: var(--control-height);
   gap: 2px;
   padding: 3px;
@@ -5674,19 +5664,19 @@ pre,
   border: 1px solid var(--control-border);
   border-radius: 5px;
 }
-[data-theme="light"] .arr-browse-toggle .btn {
+.arr-browse-toggle .btn {
   min-height: calc(var(--control-height) - 8px);
   padding: 2px 11px;
   border-color: transparent;
   background: transparent;
   color: var(--muted);
 }
-[data-theme="light"] .arr-browse-toggle .btn:hover:not(.active) {
+.arr-browse-toggle .btn:hover:not(.active) {
   background: var(--control-hover-bg);
   color: var(--on-surface);
   border-color: transparent;
 }
-[data-theme="light"] .arr-browse-toggle .btn.active {
+.arr-browse-toggle .btn.active {
   background: var(--surface);
   border-color: color-mix(in srgb, var(--accent) 25%, var(--border));
   color: var(--accent);
@@ -5743,8 +5733,23 @@ pre,
   width: min(380px, calc(100vw - 32px));
   box-shadow: var(--overlay-shadow);
 }
-.shell-dialog::backdrop {
+.shell-dialog:modal::backdrop {
   background: #0008;
+}
+.display-popover {
+  position: fixed;
+  inset: auto;
+  margin: 0;
+  min-width: 0;
+  max-width: none;
+  width: min(380px, calc(100vw - 16px));
+  overflow: auto;
+}
+.display-popover fieldset {
+  min-width: 0;
+}
+.display-popover .view-density-toggle {
+  flex-wrap: wrap;
 }
 .shell-dialog__heading {
   display: flex;
@@ -6466,8 +6471,6 @@ pre,
   border: 1px solid var(--border);
   border-radius: 4px;
   min-width: 150px;
-}
-[data-theme="light"] .process-actions__menu {
   box-shadow: var(--overlay-shadow);
 }
 
@@ -6739,9 +6742,6 @@ pre,
 .arr-activity__controls select {
   padding: 5px 8px;
 }
-[data-theme="light"] .arr-activity__controls select {
-  padding-right: 28px;
-}
 .arr-activity__graphs {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
@@ -6910,8 +6910,8 @@ pre,
   }
 }
 
-/* Light mode uses themed native selects with a consistent chevron. */
-[data-theme="light"] select {
+/* Keep native selects and reserve room for the shared chevron. */
+select {
   appearance: none;
   background-color: var(--control-bg);
   background-image: linear-gradient(45deg, transparent 50%, var(--muted) 50%),
@@ -6926,14 +6926,22 @@ pre,
   border: 1px solid var(--control-border);
   box-shadow: none;
 }
-[data-theme="light"] .field select,
-[data-theme="light"] .issue-filters select,
-[data-theme="light"] .arr-activity__controls select,
-[data-theme="light"][data-density="compact"] .field select {
+select,
+.field select,
+.issue-filters select,
+.arr-activity__controls select,
+[data-density="compact"] .field select {
   padding-right: 28px;
 }
 [data-theme="light"] select option,
 [data-theme="light"] select optgroup {
   background-color: var(--surface);
   color: var(--on-surface);
+}
+
+@media (forced-colors: active) {
+  select {
+    appearance: auto;
+    background-image: none;
+  }
 }

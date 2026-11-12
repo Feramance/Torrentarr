@@ -143,6 +143,8 @@ function AppShell({
     Partial<Record<Tab, string>>
   >({});
   const [navigationOpen, setNavigationOpen] = useState(false);
+  const [displayTrigger, setDisplayTrigger] =
+    useState<HTMLButtonElement | null>(null);
   const [navCollapsed, setNavCollapsed] = useState(false);
   const [railSelectionPending, setRailSelectionPending] = useState(false);
   const [expandedNav, setExpandedNav] = useState<Partial<Record<Tab, boolean>>>(
@@ -264,6 +266,7 @@ function AppShell({
       }
       setExpandedNav((current) => (current[tabId] ? current : {}));
       setNavigationOpen(false);
+      setDisplayTrigger(null);
       tabScroll.current[activeTab] = window.scrollY;
       startTransition(() => {
         setActiveTab(tabId);
@@ -285,7 +288,6 @@ function AppShell({
   const isOnline = useNetworkStatus();
   const [meta, setMeta] = useState<MetaResponse | null>(initialMeta);
   const [metaLoading, setMetaLoading] = useState(false);
-  const [displayOpen, setDisplayOpen] = useState(false);
   const [showChangelog, setShowChangelog] = useState(false);
   const [showAlreadyUpToDateModal, setShowAlreadyUpToDateModal] =
     useState(false);
@@ -943,7 +945,8 @@ function AppShell({
       <path d="M12 3a9 9 0 0 0 0 18Z" fill="currentColor" />
     </svg>
   );
-  const navFooter = (scope: string) => (
+  const displayInDrawer = displayTrigger?.closest(".navigation-drawer") != null;
+  const navFooter = (scope: "sidebar" | "drawer") => (
     <div className="sidebar__footer">
       <button
         type="button"
@@ -951,10 +954,14 @@ function AppShell({
         aria-label="Display"
         title="Display"
         aria-haspopup="dialog"
-        aria-expanded={displayOpen}
-        onClick={() => {
-          if (scope === "drawer") setNavigationOpen(false);
-          setDisplayOpen(true);
+        aria-expanded={
+          displayTrigger !== null && displayInDrawer === (scope === "drawer")
+        }
+        onClick={(event) => {
+          const trigger = event.currentTarget;
+          if (displayTrigger === trigger)
+            trigger.focus({ preventScroll: true });
+          setDisplayTrigger(displayTrigger === trigger ? null : trigger);
         }}
       >
         {themeIcon}
@@ -1105,6 +1112,54 @@ function AppShell({
     </nav>
   );
 
+  const displayPanel = displayTrigger && (
+    <ShellDialog
+      title="Display"
+      className="display-popover"
+      anchor={displayTrigger}
+      preferAbove={displayInDrawer}
+      onClose={() => setDisplayTrigger(null)}
+    >
+      <fieldset>
+        <legend>Theme</legend>
+        <div className="view-density-toggle">
+          {THEME_OPTIONS.map((option) => (
+            <button
+              key={option.value}
+              type="button"
+              aria-pressed={theme === option.value}
+              className={theme === option.value ? "active" : ""}
+              onClick={() => setTheme(option.value)}
+            >
+              {option.label}
+            </button>
+          ))}
+        </div>
+      </fieldset>
+      <fieldset>
+        <legend>View density</legend>
+        <div className="view-density-toggle">
+          <button
+            type="button"
+            aria-pressed={viewDensity === "comfortable"}
+            className={viewDensity === "comfortable" ? "active" : ""}
+            onClick={() => setViewDensity("comfortable")}
+          >
+            Comfortable
+          </button>
+          <button
+            type="button"
+            aria-pressed={viewDensity === "compact"}
+            className={viewDensity === "compact" ? "active" : ""}
+            onClick={() => setViewDensity("compact")}
+          >
+            Compact
+          </button>
+        </div>
+      </fieldset>
+    </ShellDialog>
+  );
+
   const selectedTabInstance = instanceSelections[activeTab];
   const activeTabLabel = tabs.find((tab) => tab.id === activeTab)?.label;
   const pageTitle =
@@ -1131,53 +1186,17 @@ function AppShell({
         <ShellDialog
           title="Navigation"
           className="navigation-drawer"
-          onClose={() => setNavigationOpen(false)}
+          onClose={() => {
+            if (displayInDrawer) setDisplayTrigger(null);
+            else setNavigationOpen(false);
+          }}
         >
           {navigation("drawer")}
           {navFooter("drawer")}
+          {displayInDrawer && displayPanel}
         </ShellDialog>
       )}
-      {displayOpen && (
-        <ShellDialog title="Display" onClose={() => setDisplayOpen(false)}>
-          <fieldset>
-            <legend>Theme</legend>
-            <div className="view-density-toggle">
-              {THEME_OPTIONS.map((option) => (
-                <button
-                  key={option.value}
-                  type="button"
-                  aria-pressed={theme === option.value}
-                  className={theme === option.value ? "active" : ""}
-                  onClick={() => setTheme(option.value)}
-                >
-                  {option.label}
-                </button>
-              ))}
-            </div>
-          </fieldset>
-          <fieldset>
-            <legend>View density</legend>
-            <div className="view-density-toggle">
-              <button
-                type="button"
-                aria-pressed={viewDensity === "comfortable"}
-                className={viewDensity === "comfortable" ? "active" : ""}
-                onClick={() => setViewDensity("comfortable")}
-              >
-                Comfortable
-              </button>
-              <button
-                type="button"
-                aria-pressed={viewDensity === "compact"}
-                className={viewDensity === "compact" ? "active" : ""}
-                onClick={() => setViewDensity("compact")}
-              >
-                Compact
-              </button>
-            </div>
-          </fieldset>
-        </ShellDialog>
-      )}
+      {!displayInDrawer && displayPanel}
       <header className="appbar">
         <div className="appbar__inner">
           <div className="appbar__title">

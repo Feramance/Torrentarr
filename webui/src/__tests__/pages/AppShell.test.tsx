@@ -156,6 +156,8 @@ it("opens Display with persisted controls and returns focus on close", async () 
   trigger.focus();
   fireEvent.click(trigger);
   const dialog = screen.getByRole("dialog", { name: "Display" });
+  expect(trigger).toHaveAttribute("aria-expanded", "true");
+  expect(dialog).toHaveAttribute("popover");
   fireEvent.click(
     within(dialog).getByRole("button", { name: "Light", exact: true }),
   );
@@ -171,6 +173,48 @@ it("opens Display with persisted controls and returns focus on close", async () 
     within(dialog).getByRole("button", { name: "Close Display" }),
   );
   expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
+  expect(trigger).toHaveAttribute("aria-expanded", "false");
+  expect(trigger).toHaveFocus();
+});
+
+it("dismisses Display from its trigger or an outside control", () => {
+  view();
+  const trigger = screen.getByRole("button", { name: "Display", exact: true });
+  fireEvent.click(trigger);
+  fireEvent.click(trigger);
+  expect(
+    screen.queryByRole("dialog", { name: "Display" }),
+  ).not.toBeInTheDocument();
+  expect(trigger).toHaveFocus();
+
+  fireEvent.click(trigger);
+  const outside = screen.getByRole("switch");
+  outside.focus();
+  fireEvent.click(outside);
+  expect(trigger).toHaveAttribute("aria-expanded", "false");
+  expect(outside).toHaveFocus();
+});
+
+it("opens Display inside the navigation drawer and closes it first on Escape", () => {
+  view();
+  fireEvent.click(screen.getByRole("button", { name: "Menu", exact: true }));
+  const drawer = screen.getByRole("dialog", { name: "Navigation" });
+  const trigger = within(drawer).getByRole("button", {
+    name: "Display",
+    exact: true,
+  });
+  fireEvent.click(trigger);
+  const display = within(drawer).getByRole("dialog", { name: "Display" });
+  expect(trigger).toHaveAttribute("aria-expanded", "true");
+  fireEvent.keyDown(
+    within(display).getByRole("button", { name: "Close Display" }),
+    {
+      key: "Escape",
+    },
+  );
+  expect(display).not.toBeInTheDocument();
+  expect(drawer).toBeInTheDocument();
+  expect(trigger).toHaveAttribute("aria-expanded", "false");
   expect(trigger).toHaveFocus();
 });
 
